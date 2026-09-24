@@ -36,6 +36,7 @@ Every change lands through a pull request on `code.marleb.org/shgew/shycler`. Th
 | `nix develop` | Shell with Go, gopls, golangci-lint |
 | `go test ./...` | The tight loop |
 | `nix flake check` | Tests, lint and module checks; must pass before a pull request |
+| `nix fmt` | Format Go and Nix files |
 | `sudo go test -tags hardware ./...` | Hardware tests, on the target machine only |
 
 ## Layout
@@ -44,9 +45,11 @@ Every change lands through a pull request on `code.marleb.org/shgew/shycler`. Th
 |---|---|
 | `cmd/shycler` | Command dispatch |
 | `internal/config` | Configuration |
+| `internal/machine` | Shared vocabulary and the seam interfaces the run loop consumes |
 | `internal/journal` | Journal, replay, state file, log lines |
 | `internal/tuner` | Pure decision engine: search, confirmation, guard, regain, tiers |
 | `internal/sim` | Simulator implementing every hardware seam |
+| `internal/session` | The run loop: session start, resume, crash attribution, trials, dead ends |
 | `internal/smu` | `ryzen_smu`: the only package that writes offsets |
 | `internal/trial` | Containment, sampling, load-step signaling |
 | `internal/backend/*` | mprime and y-cruncher integrations |
