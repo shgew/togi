@@ -116,7 +116,7 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(0)
 	case "orphan":
 		for {
-			syscall.RawSyscall(syscall.SYS_PAUSE, 0, 0, 0)
+			_, _, _ = syscall.RawSyscall(syscall.SYS_PAUSE, 0, 0, 0)
 		}
 	case "sleep":
 		time.Sleep(5 * time.Second)

@@ -165,6 +165,7 @@ func (r *running) progress(report machine.Reporter, res machine.Result) {
 		if res.Ran > r.spec.Duration*3/4 {
 			report.Progress("CCD1 only: resumed cores 08-15, stopped cores 00-07")
 		}
+	case machine.R1, machine.R2, machine.R3, machine.R4, machine.R5:
 	}
 }
 

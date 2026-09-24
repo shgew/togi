@@ -94,7 +94,6 @@ func TestHardwareScopeKillsDetachedDescendant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer syscall.Kill(pid, syscall.SIGKILL)
 	for range 50 {
 		fields, err := procStat("/proc/" + strconv.Itoa(pid) + "/stat")
 		if os.IsNotExist(err) || (err == nil && fields[0] == "Z") {
@@ -105,5 +104,6 @@ func TestHardwareScopeKillsDetachedDescendant(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	_ = syscall.Kill(pid, syscall.SIGKILL)
 	t.Fatalf("descendant %d survived teardown: %+v", pid, result)
 }
