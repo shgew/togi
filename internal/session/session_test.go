@@ -696,6 +696,59 @@ func TestSignalStopsCleanly(t *testing.T) {
 	}
 }
 
+type interruptedTrials struct {
+	machine.Trials
+	cancel context.CancelFunc
+}
+
+func (t interruptedTrials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Running, error) {
+	r, err := t.Trials.Start(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	return interruptedRunning{Running: r, cancel: t.cancel}, nil
+}
+
+type interruptedRunning struct {
+	machine.Running
+	cancel context.CancelFunc
+}
+
+func (r interruptedRunning) Wait(context.Context, machine.Reporter) (machine.Result, error) {
+	r.cancel()
+	return machine.Result{Ran: 85 * time.Second}, context.Canceled
+}
+
+func TestInterruptedTrialRecordsTimeRan(t *testing.T) {
+	t.Parallel()
+	in := simInput(t.TempDir(), newSim(t, small()))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	seams := in.Machine.Seams()
+	seams.Trials = interruptedTrials{Trials: seams.Trials, cancel: cancel}
+	boot, _ := seams.Host.BootID()
+	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapFor(in, nil)(j), Machine: seams})
+	if cerr := j.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil || stop.Reason != StopSignal {
+		t.Fatalf("stopped with %+v, %v", stop, err)
+	}
+	for _, e := range readEvents(t, in.Dir) {
+		if p, ok := e.Data.(*journal.TrialEnd); ok {
+			if !p.Interrupted || p.DurationS != 85 || e.Msg != "trial 0001 INCONCLUSIVE after 85s: stopped by signal" {
+				t.Fatalf("trial.end %+v: %s", p, e.Msg)
+			}
+			return
+		}
+	}
+	t.Fatal("no trial.end")
+}
+
 func TestStopRestoresBaseline(t *testing.T) {
 	t.Parallel()
 	sharp := sim.DefaultModel()
