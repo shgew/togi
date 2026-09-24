@@ -1,9 +1,11 @@
 # shycler
 
-Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and keeps testing them. NixOS only. Private for now.
+Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and keeps testing them. NixOS only.
 
 ## Docs
 
+- `README.md`: what shycler does, what works today, and the common commands. The first page a reader sees.
+- `CHANGELOG.md`: user-visible changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 - `CONTEXT.md`: the vocabulary. Name code, events and docs with its terms.
 - `docs/spec/`: normative behavior. Read the relevant spec before changing behavior, and change spec and code in the same pull request.
   - `tuner.md`: offsets, phases, backoffs, regain, tiers, dead ends.
@@ -12,31 +14,43 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
 - `docs/adr/`: decisions and the alternatives rejected. Reversing one needs a new ADR.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
-- `docs/ROADMAP.md`: tasks, dependencies and status.
+- `docs/ROADMAP.md`: the plan to 1.0: tasks, dependencies and status.
 
 ## Workflow
 
-Every change lands through a pull request on `code.marleb.org/shgew/shycler`. The owner reviews and merges.
+Every change, docs included, lands as a pull request against `main` on `code.marleb.org/shgew/shycler`. The owner reviews and merges. When a change is done, open its pull request without asking, unless told otherwise.
 
-1. Create a worktree on branch `<slug>`, starting from `main`, then run `direnv allow` in it.
-2. Commit with short imperative messages.
-3. Push, then open the pull request with `fj pr create --base main --head <slug> --body-file <file>`. The body holds:
-   - a TL;DR;
-   - the roadmap task;
-   - the plan followed;
-   - choices the reviewer may want to change;
-   - the verification that ran;
-   - a demo: the new behavior running, captured from a real invocation, such as a `--sim` session log, a journal excerpt or a command transcript. A pull request with nothing runnable says so.
-4. Read review comments with `fj pr view <n> comments`, address each one, and push to the same branch.
-5. Update the task's row in `docs/ROADMAP.md` in the same pull request.
+- Branch from `main` with a short descriptive name.
+- One concern per pull request.
+- Commit with short imperative messages.
+- The pull request body follows `.github/pull_request_template.md`: a short summary, and the demo in a collapsed block.
+- Address every review comment on the same branch.
+- A pull request that starts or finishes a task in `docs/ROADMAP.md` updates its row.
+
+## Keeping docs current
+
+A pull request updates everything that describes the old state, in the same pull request:
+- `--help` text for every command or flag it adds or changes;
+- the README's Status when what works changes, and its Usage when the common commands change;
+- `CHANGELOG.md` under `## [Unreleased]`, for every change a user of shycler would notice: commands, flags, behavior, output, configuration. One line per change under `Added`, `Changed`, `Fixed` or `Removed`, stating the effect and linking the pull request. Refactors, tests and doc edits that leave the tool unchanged get no entry;
+- the specs, and any comment the change makes wrong.
+
+The first pull request that makes something runnable on real hardware adds `docs/howto.md` with the operator's steps. Later pull requests that change those steps update it.
+
+## Writing
+
+- Write every file as if the repository were public: no personal hostnames, home paths, or setup specific to one machine or tool. Where there are several ways to get somewhere, name them, then continue as if the reader got there.
+- Write commits, pull requests and docs for readers who have not seen the conversation that produced them.
+- Never overstate: claim only what the demo or the checks showed.
 
 ## Commands
 
+Enter the dev shell (Go, gopls, golangci-lint) with `nix develop`, or with `direnv allow` once per checkout if you use direnv. The commands below run inside it.
+
 | Command | Use |
 |---|---|
-| `direnv allow` | Once per worktree: loads the flake's dev shell (Go, gopls, golangci-lint); `nix develop` is the manual equivalent |
 | `go test ./...` | The tight loop |
-| `nix flake check` | Tests, lint and module checks; must pass before a pull request |
+| `nix flake check` | Tests and lint; must pass before a pull request |
 | `nix fmt` | Format Go and Nix files |
 | `go run ./cmd/shycler run --sim 1` | A simulated session through its first clean guard rotation, to Bronze, in a temporary state directory |
 | `sudo go test -tags hardware ./...` | Hardware tests, on the target machine only |

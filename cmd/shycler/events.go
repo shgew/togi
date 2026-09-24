@@ -13,7 +13,15 @@ import (
 	"code.marleb.org/shgew/shycler/internal/journal"
 )
 
-const eventsUsage = "Usage: shycler events [--core N] [--kind K[,K...]] [--trial ID] [--since RFC3339] [--until RFC3339] [--json]"
+const eventsHelp = `Usage: shycler events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--until <time>] [--json]
+
+Print the journal, one readable line per event, oldest first. Filters combine,
+so you can narrow it to one core, one trial or a time window.
+
+Examples:
+  shycler events --core 3                   Everything that happened to core 3
+  shycler events --kind trial,tier.change   Every trial event and tier change
+  shycler events --json --trial 0413        The raw events of trial 0413`
 
 func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 	var (
@@ -22,7 +30,7 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 	)
 	flags := newFlagSet("events", g)
 	flags.Func("core", "only events naming core `N`", coreFlag(&filter.Core))
-	flags.Func("kind", "only these kinds or groups, comma-separated", func(s string) error {
+	flags.Func("kind", "only these comma-separated `kinds`, or groups such as trial for every trial.* kind", func(s string) error {
 		for k := range strings.SplitSeq(s, ",") {
 			if k = strings.TrimSpace(k); k != "" {
 				filter.Kinds = append(filter.Kinds, k)
@@ -31,10 +39,10 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 		return nil
 	})
 	flags.StringVar(&filter.Trial, "trial", "", "only events of trial `ID`")
-	flags.Func("since", "only events at or after this RFC 3339 time", timeFlag(&filter.Since))
-	flags.Func("until", "only events before this RFC 3339 time", timeFlag(&filter.Until))
+	flags.Func("since", "only events at or after this RFC 3339 `time`", timeFlag(&filter.Since))
+	flags.Func("until", "only events before this RFC 3339 `time`", timeFlag(&filter.Until))
 	flags.BoolVar(&rawJSON, "json", false, "print raw JSON events")
-	if code, ok := parseFlags(flags, args, eventsUsage, stdout, stderr); !ok {
+	if code, ok := parseFlags(flags, args, eventsHelp, stdout, stderr); !ok {
 		return code
 	}
 
@@ -81,7 +89,7 @@ func newFlagSet(name string, g *globals) *flag.FlagSet {
 	return flags
 }
 
-func parseFlags(flags *flag.FlagSet, args []string, usageLine string, stdout, stderr io.Writer) (int, bool) {
+func parseFlags(flags *flag.FlagSet, args []string, help string, stdout, stderr io.Writer) (int, bool) {
 	err := flags.Parse(args)
 	if err == nil && flags.NArg() > 0 {
 		err = fmt.Errorf("unexpected argument %q", flags.Arg(0))
@@ -90,17 +98,19 @@ func parseFlags(flags *flag.FlagSet, args []string, usageLine string, stdout, st
 		return exitOK, true
 	}
 	if errors.Is(err, flag.ErrHelp) {
-		commandUsage(flags, usageLine, stdout)
+		commandUsage(flags, help, stdout)
 		return exitOK, false
 	}
 	fmt.Fprintf(stderr, "shycler %s: %v\n", flags.Name(), err)
-	commandUsage(flags, usageLine, stderr)
+	commandUsage(flags, help, stderr)
 	return exitUsage, false
 }
 
-func commandUsage(flags *flag.FlagSet, usageLine string, w io.Writer) {
-	fmt.Fprintf(w, "%s\n\nFlags:\n", usageLine)
-	flags.SetOutput(w)
-	flags.PrintDefaults()
-	flags.SetOutput(io.Discard)
+func commandUsage(flags *flag.FlagSet, help string, w io.Writer) {
+	var b strings.Builder
+	b.WriteString(help)
+	b.WriteString("\n")
+	writeFlags(&b, "Flags", flags, func(f *flag.Flag) bool { return !isGlobal(f) })
+	writeFlags(&b, "Global flags", flags, isGlobal)
+	_, _ = io.WriteString(w, b.String())
 }

@@ -6,18 +6,20 @@ Normative rules for how shycler is invoked, configured and deployed.
 
 | Command | Writes journal | Purpose |
 |---|---|---|
-| `shycler run [--sim <seed>] [--rotations N]` | yes | Start or resume the session in the foreground. The same entry point serves in-session runs and the tuning boot service. With `--rotations N` (N >= 1) it stops, recording `shutdown`, when a rotation would start after the current profile survived N clean guard rotations; without it guard is endless |
+| `shycler run [--sim <seed>] [--rotations <N>]` | yes | Start or resume the session in the foreground. The same entry point serves in-session runs and the tuning boot service. With `--rotations N` (N >= 1) it stops, recording `shutdown`, when a rotation would start after the current profile survived N clean guard rotations; without it guard is endless |
 | `shycler status` | no | Session and BIOS context; phase, tier and guard progress; in-flight action and dead end; per-core table of offset, phase, failed mark, unproven depth, queued command and last decision; clean hours and failure-rate bound overall and per regime, and the highest Tctl. Rendered from a replay of the journal, not `state.json` |
 | `shycler cert` | no | Render the certificate (`tuner.md`) from a replay of the journal, with the SHA-256 of the lines it rendered |
 | `shycler events` | no | Render the journal with filters (`journal.md`) |
-| `shycler regain [--core N]` | yes | Queue one count of regain on every confirmed core with unproven depth, or on core N only (`tuner.md`). Prints `regain queued for cores 03, 07; the next shycler run confirms one count deeper on each`. Exit 1 when a regain is already queued or running, or nothing is left to regain |
-| `shycler reset --core N \| --all` | yes | Exactly one of the two, else exit 2. `--core N` queues the core's reset and prints `reset of core 03 queued; the next shycler run restarts its search from the baseline`. `--all` archives the session and prints `session <id> archived to archive/<id>.jsonl; the next shycler run starts a new session` |
+| `shycler regain [--core <N>]` | yes | Queue one count of regain on every confirmed core with unproven depth, or on core N only (`tuner.md`). Prints `regain queued for cores 03, 07; the next shycler run confirms one count deeper on each`. Exit 1 when a regain is already queued or running, or nothing is left to regain |
+| `shycler reset --core <N> \| --all` | yes | Exactly one of the two, else exit 2. `--core N` queues the core's reset and prints `reset of core 03 queued; the next shycler run restarts its search from the baseline`. `--all` archives the session and prints `session <id> archived to archive/<id>.jsonl; the next shycler run starts a new session` |
 
 `regain` and `reset` read the journal before they open it: no journal or no session exits 1 without creating anything. A core that is not in the session exits 2, and a `run` holding the lock exits 3. Both record their events in the host's current boot, and end it with `shutdown`, so the next `run` treats that boot as ended cleanly.
 
 Global flags: `--config <path>` (default `/etc/shycler/config.toml`), `--state-dir <path>` (default `/var/lib/shycler`).
 
-`shycler` without a command prints the wordmark and the tagline `per-core Curve Optimizer` above the usage, to stderr, and exits 2. `--help`, an unknown command and a flag error print the usage alone.
+`shycler` without a command prints the wordmark and the tagline `per-core Curve Optimizer` above the usage, to stderr, and exits 2. `--help`, an unknown command and a flag error print the usage alone. The usage holds the synopsis, a description, examples, the commands and the global flags.
+
+`shycler <command> --help` prints the command's synopsis, a description of what it does, one or two examples, its own flags and then the global flags, to stdout, and exits 0. A flag error prints the error and the same help to stderr and exits 2. Every flag is shown in its `--long` form.
 
 `shycler run --sim <seed>` drives the seeded simulator (`internal/sim`) instead of hardware: a 16-core machine whose crash reboots are handled in-process, with a real journal. It uses `--state-dir` when given, else a new temporary directory whose path it prints to stderr, and it fsyncs nothing. With `--sim`, `--rotations` defaults to 1. A state directory that already holds a journal or archives resumes the simulated machine after them: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot, and a session after `reset --all` gets a new id. Until the hardware seams exist (T09-T12), `run` without `--sim` refuses with exit code 2.
 

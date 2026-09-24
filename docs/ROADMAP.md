@@ -23,7 +23,7 @@ Work is split into tasks. Each task is sized for one planning session followed b
 | T14 | CI on Forgejo Actions | todo | |
 | T15 | First tuning on the target machine | todo | |
 
-Statuses: `todo`, `in progress`, `in review`, `done`. The pull request that starts or finishes a task updates its row.
+Statuses: `todo`, `in progress`, `in review`, `done`. A pull request that starts or finishes a task updates its row; work outside these tasks needs no row.
 
 ```mermaid
 flowchart LR
@@ -284,10 +284,10 @@ Each task implements one T04 seam. Hardware tests carry the `hardware` build tag
 - **Depends:** T01
 - **Specs:** none
 
-- Check for an Actions runner on `code.marleb.org`. If there is none, set one up on a self-hosted runner host with Nix available.
+- Check for an Actions runner on `code.marleb.org`. If there is none, set one up on a host with Nix available.
 - A workflow runs `nix flake check` on every pull request.
 
-**Done when:** a pull request shows a passing check in `fj pr status`.
+**Done when:** a pull request shows a passing `nix flake check`.
 
 ## M5 First tuning
 
@@ -297,13 +297,11 @@ Each task implements one T04 seam. Hardware tests carry the `hardware` build tag
 - **Specs:** all
 - Needs the owner at the machine for BIOS and booting.
 
-- In the target machine's NixOS configuration: replace linux-corecycler with the shycler flake. That is a separate pull request in that repository.
+- Install shycler on the target machine through the NixOS module.
 - A 30-minute in-session run, then an overnight tuning boot.
 - Each defect found becomes its own pull request here.
 
-**Done when:**
-- the target machine holds a Bronze profile;
-- linux-corecycler is removed from the target machine's NixOS configuration.
+**Done when:** the target machine holds a Bronze profile.
 
 ## Later
 
@@ -314,4 +312,4 @@ Not yet split into tasks:
 - Automatic regain at a chosen tier.
 - More regimes: sleep and wake cycles (`rtcwake`), memory-controller load (stressapptest).
 - Other CPU generations.
-- Open-source release: license and a README for other users.
+- Open-source release: a license, a `CONTRIBUTING.md` that points to `AGENTS.md`, a policy on AI-assisted contributions, and links to the web docs in `--help`.

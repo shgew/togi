@@ -17,11 +17,19 @@ import (
 	"code.marleb.org/shgew/shycler/internal/tuner"
 )
 
-const statusUsage = "Usage: shycler status"
+const statusHelp = `Usage: shycler status
+
+Show the session at a glance: phase, tier and guard progress, then one row per
+core with its offset, unproven depth and last decision. Read-only; rendered from
+the journal.
+
+Examples:
+  shycler status                     The session in the default state directory
+  shycler --state-dir <dir> status   The session in <dir>, such as the one run --sim printed`
 
 func runStatus(g *globals, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("status", g)
-	if code, ok := parseFlags(flags, args, statusUsage, stdout, stderr); !ok {
+	if code, ok := parseFlags(flags, args, statusHelp, stdout, stderr); !ok {
 		return code
 	}
 	_, st, code, ok := loadSession("status", g.stateDir, stderr)
