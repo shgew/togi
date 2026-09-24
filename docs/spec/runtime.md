@@ -91,7 +91,7 @@ The effective configuration is recorded in `config.loaded` at every start. Confi
 Inside the specialisation:
 - `systemd.defaultUnit = "multi-user.target"`, so no graphical session starts;
 - `shycler.service` runs `shycler run --tuning-boot <grubenv>` as root, where `<grubenv>` is `grub/grubenv` under the first of `boot.loader.grub.mirroredBoots` (normally `/boot/grub/grubenv`), with `Restart=on-failure` and `RestartSec=60`, and a start limit of 3 per 30 minutes. `RestartPreventExitStatus` lists the dead-end exit codes 10-15;
-- a tty1 unit follows `shycler.service`'s log;
+- a tty1 unit follows `shycler.service`'s log, in place of the tty1 login prompt;
 - sysctls `kernel.panic=10`, `kernel.panic_on_oops=1`, `kernel.hardlockup_panic=1`, `kernel.softlockup_panic=1`;
 - `systemd.settings.Manager.RuntimeWatchdogSec = "30s"`, so the SP5100 TCO hardware watchdog resets a frozen machine;
 - journald `Storage=persistent` and `SyncIntervalSec=1s`;

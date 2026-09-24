@@ -83,6 +83,8 @@ in
               StateDirectory = "shycler";
             };
           };
+          systemd.services."getty@tty1".enable = false;
+          systemd.services."autovt@tty1".enable = false;
           systemd.services.shycler-console = {
             description = "shycler tuning boot log on tty1";
             after = [ "systemd-user-sessions.service" ];

@@ -39,6 +39,7 @@
               ];
             };
             vendorHash = "sha256-pbA/AlBz3cQYRTMnQ/qBPcinYOKokrBLNhkbRTq54gE=";
+            nativeCheckInputs = [ pkgs.util-linux ];
             meta = {
               description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
               mainProgram = "shycler";

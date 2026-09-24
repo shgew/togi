@@ -31,5 +31,8 @@ pkgs.testers.runNixOSTest {
     deadend = machine.succeed("shycler events --kind deadend")
     assert "preflight" in deadend and "clearing GRUB's saved entry" in deadend, deadend
     machine.wait_for_unit("shycler-console.service")
+    machine.sleep(3)
+    console = machine.succeed("systemctl show shycler-console.service -p ActiveState -p NRestarts").split()
+    assert console == ["ActiveState=active", "NRestarts=0"], f"shycler-console.service: {console}"
   '';
 }
