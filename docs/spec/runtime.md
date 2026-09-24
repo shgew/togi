@@ -35,12 +35,23 @@ Any failed check is a dead end.
 
 ## Configuration
 
-TOML at the `--config` path, produced by the NixOS module from `services.shycler.settings`. It holds:
-- start offset overrides;
-- durations;
-- the guard rotation;
-- dead-end thresholds;
-- backend package paths.
+TOML at the `--config` path, produced by the NixOS module from `services.shycler.settings`:
+
+| Key | Default | Valid |
+|---|---|---|
+| `start_offsets.<core>` | none | Offset override per core id, within [-50, 0] |
+| `durations.search_trial_s` | 90 | [1, 86400] |
+| `durations.confirmation_trial_s` | 300 | [1, 86400] |
+| `durations.guard_trial_s` | 120 | [1, 86400] |
+| `durations.guard_idle_s` | 900 | [1, 86400]; R6 |
+| `durations.guard_all_core_s` | 1200 | [1, 86400]; R7, half on both CCDs and a quarter per CCD |
+| `guard.rotation` | `["R1", "R2", "R6", "R3", "R4", "R7", "R5", "R6"]` | Non-empty list of regimes |
+| `dead_ends.inconclusive_in_a_row` | 3 | [1, 100] |
+| `dead_ends.stray_crashes_in_a_row` | 3 | [1, 100] |
+| `backends.mprime` | not configured | Absolute path |
+| `backends.ycruncher` | not configured | Absolute path |
+
+Unknown keys and out-of-range values are errors. When `--config` is not given and no file exists at the default path, the defaults apply.
 
 The effective configuration is recorded in `config.loaded` at every start. Configuration that changes the meaning of existing evidence, such as trial durations, is allowed mid-session and takes effect from the next trial. The journal shows when it changed.
 
