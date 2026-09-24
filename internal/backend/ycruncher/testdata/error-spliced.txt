@@ -1,0 +1,60 @@
+Running from console...
+
+
+Insufficient permissions to set thread priority. Please retry as root.
+
+Further messages for this warning will be suppressed.
+
+Checking processor/OS features...
+
+Required Features:
+    x64, SSE, SSE2, SSE3
+
+
+
+Reading Hardware Topology...
+
+Logical Cores:
+    0-31
+
+Physical Cores:
+    0-15
+
+NUMA Node 0:
+    0-31
+
+Scheduling Group 0:
+    0-31
+
+
+
+Component Stress Tester
+
+  1   Logical Cores:      1
+  2   Memory:             32.0 MiB  ( 32.0 MiB per thread )
+  3   NUMA Mode:          Local - Memory allocated from local thread.
+  4/5 Time Limit:         30 seconds per test / Run Forever
+  6   Stop on Error:      Enabled
+
+ 7/8  Enable All Tests / Disable All Tests
+ 9/10 Load/Save Configuration File
+
+  #  Tag   Test Name                   Mem/Thread  Component      CPU------Mem
+ 11  BKT   Basecase + Karatsuba          27.9 KiB  Scalar Integer  -|--------
+ 12  BBP   BBP Digit Extraction          Disabled  SSE2 Float      |---------
+ 13  SFTv4 Small In-Cache FFTv4           229 KiB  SSE3 Float      -|--------
+ 14  SNT   Small In-Cache N63            Disabled  Scalar Integer  --|-------
+ 15  SVT   Small In-Cache VT3            Disabled  SSE3 Float      --|-------
+ 16  FFTv4 Fast Fourier Transform (v4)   Disabled  SSE3 Float      ---------|
+ 17  N63   Classic NTT (v2)              Disabled  Scalar Integer  --|-------
+ 18  VT3   Vector Transform (v3)         Disabled  SSE3 Float      --|-------
+
+  0   Start Stress-Testing!
+
+Allocating Memory...
+  Core   2:   229 KiB  
+
+Iteration: 0  Total Elapsed Time: 0.000 seconds  ( 0.000 minutes )
+Running BKT: Passed  Test Speed:  9.6 * 10^08  bits / sec
+Error(s) encountered on logical core 3.
+Checksum mismatch
