@@ -9,7 +9,7 @@ Work is split into tasks. Each task is sized for one planning session followed b
 | T00 | Design documents | done | #1 |
 | T01 | Project skeleton | in review | #2 |
 | T02 | Journal | in review | #3 |
-| T03 | Tuner: search and confirmation | todo | |
+| T03 | Tuner: search and confirmation | in review | #4 |
 | T04 | Simulator | todo | |
 | T05 | Run loop and crash resume | todo | |
 | T06 | Guard | todo | |
