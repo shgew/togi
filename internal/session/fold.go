@@ -241,12 +241,3 @@ func (f *fold) lastIntentIn(boot string) *int {
 	}
 	return nil
 }
-
-func (f *fold) allConfirmed(cores []machine.CoreInfo) bool {
-	for _, c := range cores {
-		if f.phase[c.Core] != journal.PhaseConfirmed {
-			return false
-		}
-	}
-	return true
-}

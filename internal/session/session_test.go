@@ -222,9 +222,25 @@ func TestSixteenCoresReachGuard(t *testing.T) {
 	if v := m.Violations(); len(v) > 0 {
 		t.Errorf("isolation violations: %v", v)
 	}
+	regimes := map[string]machine.Regime{}
+	counted := map[string]bool{}
 	for _, e := range readEvents(t, dir) {
-		if p, ok := e.Data.(*journal.SMUIntent); ok && (p.Offset < machine.MinOffset || p.Offset > machine.MaxOffset) {
-			t.Errorf("seq %d writes %d", e.Seq, p.Offset)
+		switch p := e.Data.(type) {
+		case *journal.SMUIntent:
+			if p.Offset < machine.MinOffset || p.Offset > machine.MaxOffset {
+				t.Errorf("seq %d writes %d", e.Seq, p.Offset)
+			}
+		case *journal.TrialIntent:
+			regimes[p.Trial] = p.Regime
+		case *journal.TrialSignal:
+			if p.Schedule == "" {
+				counted[p.Trial] = true
+			}
+		case *journal.TrialEnd:
+			r := regimes[p.Trial]
+			if (r == machine.R3 || r == machine.R4) && p.Signal != machine.Crash && !p.Interrupted && !counted[p.Trial] {
+				t.Errorf("trial %s (%s) ended without its load-step counts", p.Trial, r)
+			}
 		}
 	}
 }
@@ -476,7 +492,7 @@ func TestDeadEnds(t *testing.T) {
 			in.Machine.SetBIOSContext(changed)
 			in.Machine.Reboot()
 		}, want: journal.DeadEndPreflight, evidence: journal.KindPreflightCheck},
-		{name: "failure at zero", cfg: zeroFails, want: journal.DeadEndFailureAtZero, evidence: journal.KindFailure, sticky: true},
+		{name: "failure at zero", cfg: zeroFails, want: journal.DeadEndFailureAtZero, evidence: journal.KindFailure, killable: true, sticky: true},
 	}
 	for _, tt := range tests {
 		cfg := tt.cfg
@@ -517,8 +533,14 @@ func TestDeadEnds(t *testing.T) {
 				t.Fatalf("failed check %+v, want bios_context", last.Data)
 			}
 			if tt.sticky {
+				before := len(readEvents(t, in.Dir))
 				if again := simulate(t, in); again.Reason != StopDeadEnd || again.DeadEnd.Condition != tt.want {
 					t.Fatalf("second run stopped with %+v", again)
+				}
+				for _, e := range readEvents(t, in.Dir)[before:] {
+					if e.Kind == journal.KindSMUIntent {
+						t.Fatalf("seq %d: %s in the run after the dead end", e.Seq, e.Msg)
+					}
 				}
 			}
 			if !tt.killable {
@@ -629,4 +651,89 @@ func TestSignalStopsCleanly(t *testing.T) {
 	if !slices.ContainsFunc(events[stopped.Seq:], func(e journal.Event) bool { return e.Kind == journal.KindTrialIntent && e.Boot != stopped.Boot }) {
 		t.Fatal("second run did not resume in the next boot")
 	}
+}
+
+type runnerFault struct {
+	fired   bool
+	pending *machine.MCE
+	now     func() time.Time
+}
+
+type faultyTrials struct {
+	machine.Trials
+	f *runnerFault
+}
+
+func (t faultyTrials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Running, error) {
+	if t.f.fired {
+		return t.Trials.Start(ctx, spec)
+	}
+	t.f.fired = true
+	t.f.pending = &machine.MCE{CPU: spec.CPUs[0], Core: spec.Cores[0], BankType: machine.LoadStore, Corrected: true, Time: t.f.now(), Lines: []string{"[Hardware Error]: Corrected error (test)"}}
+	return nil, errors.New("backend exited during setup")
+}
+
+type faultyKernel struct {
+	machine.Kernel
+	f *runnerFault
+}
+
+func (k faultyKernel) MCEs(boot string, since time.Time) ([]machine.MCE, error) {
+	found, err := k.Kernel.MCEs(boot, since)
+	if err == nil && k.f.pending != nil {
+		found = append(found, *k.f.pending)
+		k.f.pending = nil
+	}
+	return found, err
+}
+
+func TestRunnerErrorKeepsMachineCheck(t *testing.T) {
+	t.Parallel()
+	in := simInput(t.TempDir(), newSim(t, small()))
+	seams := in.Machine.Seams()
+	f := &runnerFault{now: in.Machine.Now}
+	seams.Trials = faultyTrials{Trials: seams.Trials, f: f}
+	seams.Kernel = faultyKernel{Kernel: seams.Kernel, f: f}
+	var stop Stop
+	err := machine.ErrCrashed
+	for boots := 0; errors.Is(err, machine.ErrCrashed) && boots < maxSimulatedBoots; boots++ {
+		if boots > 0 {
+			in.Machine.Reboot()
+		}
+		boot, _ := seams.Host.BootID()
+		j, oerr := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now})
+		if oerr != nil {
+			t.Fatal(oerr)
+		}
+		stop, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapFor(in, nil)(j), Machine: seams})
+		if cerr := j.Close(); err == nil {
+			err = cerr
+		}
+	}
+	if err != nil || stop.Reason != StopGuard {
+		t.Fatalf("run stopped with %+v, %v", stop, err)
+	}
+	events := readEvents(t, in.Dir)
+	var intent *journal.TrialIntent
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.TrialIntent:
+			if intent == nil {
+				intent = p
+			}
+		case *journal.TrialEnd:
+			if p.Trial != "0001" {
+				continue
+			}
+			if p.Outcome != journal.OutcomeFailure || p.Signal != machine.CorrectedMCE {
+				t.Fatalf("trial 0001 ended %s %s, want failure corrected_mce", p.Outcome, p.Signal)
+			}
+			fail := failureCiting(events, e.Seq)
+			if fail == nil || fail.Attribution != journal.Attributed || *fail.Core != *intent.Core || *fail.Offset != *intent.Offset {
+				t.Fatalf("failure for trial 0001: %+v, want attributed to core %d at %d", fail, *intent.Core, *intent.Offset)
+			}
+			return
+		}
+	}
+	t.Fatal("no trial.end for trial 0001")
 }

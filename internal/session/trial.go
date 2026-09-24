@@ -140,7 +140,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) (*Stop, error) {
 	if err != nil {
 		return tr.failedToRun(ctx, since, "trial runner failed", err)
 	}
-	if res.Stops+res.Conts > 0 {
+	if s.Schedule != nil {
 		if _, err := r.append(&journal.TrialSignal{Trial: tr.id, Stops: res.Stops, Conts: res.Conts}, started.Seq); err != nil {
 			return nil, err
 		}
@@ -156,12 +156,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) (*Stop, error) {
 	case res.Signal != "":
 		end.Outcome, end.Signal = journal.OutcomeFailure, res.Signal
 	case len(mces) > 0:
-		end.Outcome, end.Signal = journal.OutcomeFailure, machine.UncorrectedMCE
-		for _, m := range mces {
-			if m.corrected {
-				end.Signal = machine.CorrectedMCE
-			}
-		}
+		end.Outcome, end.Signal = journal.OutcomeFailure, mceSignal(mces)
 	case readErr != nil:
 		end.Outcome, end.Reason = journal.OutcomeInconclusive, "kernel log unreadable: "+readErr.Error()
 	case res.Inconclusive != "":
@@ -179,14 +174,18 @@ func (tr *trialRun) failedToRun(ctx context.Context, since time.Time, what strin
 		return nil, err
 	}
 	interrupted := ctx.Err() != nil
-	if _, _, terr := tr.teardown(since); terr != nil {
+	mces, _, terr := tr.teardown(since)
+	if terr != nil {
 		return nil, terr
 	}
 	end := &journal.TrialEnd{Trial: tr.id, Outcome: journal.OutcomeInconclusive, Reason: fmt.Sprintf("%s: %v", what, err)}
 	if interrupted {
 		end.Interrupted, end.Reason = true, "stopped by signal"
 	}
-	if _, err := r.append(end, tr.start); err != nil {
+	if len(mces) > 0 {
+		end.Outcome, end.Signal = journal.OutcomeFailure, mceSignal(mces)
+	}
+	if _, err := r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...); err != nil {
 		return nil, err
 	}
 	if !interrupted {
@@ -199,6 +198,15 @@ func (tr *trialRun) failedToRun(ctx context.Context, since time.Time, what strin
 type recordedMCE struct {
 	seq       int
 	corrected bool
+}
+
+func mceSignal(mces []recordedMCE) machine.Signal {
+	for _, m := range mces {
+		if m.corrected {
+			return machine.CorrectedMCE
+		}
+	}
+	return machine.UncorrectedMCE
 }
 
 func (tr *trialRun) teardown(since time.Time) (mces []recordedMCE, readErr, err error) {

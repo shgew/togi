@@ -59,6 +59,8 @@ type runner struct {
 	fold  *fold
 	state journal.State
 	tuner *tuner.State
+
+	profileApplied bool
 }
 
 func Run(ctx context.Context, in Input) (Stop, error) {
@@ -110,11 +112,6 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 	}
 	if err := r.startSession(); err != nil {
 		return r.afterEvidence(err)
-	}
-	if !r.fold.allConfirmed(r.cores) {
-		if err := r.applyProfile(); err != nil {
-			return r.afterEvidence(err)
-		}
 	}
 	return r.loop(ctx)
 }
@@ -416,6 +413,7 @@ func (r *runner) applyProfile() error {
 	if err != nil {
 		return err
 	}
+	r.profileApplied = true
 	if r.fold.applied[r.in.Boot] != 0 {
 		return nil
 	}
@@ -442,6 +440,15 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 				return Stop{}, err
 			}
 		case tuner.RunTrial:
+			if !r.profileApplied {
+				err := r.applyProfile()
+				if errors.Is(err, errDeadEndEvidence) {
+					continue
+				}
+				if err != nil {
+					return Stop{}, err
+				}
+			}
 			stop, err := r.trial(ctx, a)
 			if errors.Is(err, errDeadEndEvidence) {
 				continue

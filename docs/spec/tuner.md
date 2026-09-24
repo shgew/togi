@@ -54,7 +54,7 @@ At the candidate edge `e`, the core runs one isolated trial per regime R1 to R5.
 
 ## Isolated trial sequence
 
-Between trials every core is at 0. Every `run` start in per-core phases writes every core to 0 with one set-all command and reads each back; `profile.applied` is recorded the first time in each boot. One isolated trial is then:
+Between trials every core is at 0. Before its first trial, every `run` writes every core to 0 with one set-all command and reads each back; `profile.applied` is recorded the first time in each boot. Pending decisions, a failure at 0 among them, are made before that write. One isolated trial is then:
 
 1. `trial.intent`;
 2. SMU set target to its offset (skipped at 0);
@@ -131,10 +131,9 @@ A dead end follows from evidence recorded in the journal, not from memory, so a 
 - an `smu.error`, or an `smu.readback` whose offset differs from `expected`;
 - a `trial.end` with `escaped` CPUs;
 - a backend's streak of inconclusive `trial.end`s reaching the threshold, not counting trials interrupted by a stop or restart;
-- the stray-crash streak reaching the threshold;
-- a failed `preflight.check`.
+- the stray-crash streak reaching the threshold.
 
-A `deadend` event consumes the evidence it reports: the SMU flag, the escape flag, every inconclusive streak or the stray streak. The other conditions are evaluated fresh by the following `run`. A failure at 0 is different: it leaves failed mark 0, so every later `run` stops again until `reset`.
+A `deadend` event consumes the evidence it reports: the SMU flag, the escape flag, every inconclusive streak or the stray streak. The other conditions are evaluated fresh by the following `run`. Preflight is not carried over: every `run` repeats it, and its dead end reflects only that run's checks. A failure at 0 is different: it leaves failed mark 0, so every later `run` stops again until `reset`.
 
 ## Tiers and certificate
 
