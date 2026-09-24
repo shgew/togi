@@ -6,7 +6,10 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -61,4 +64,46 @@ func TestHardwareScope(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("scope still %s 5s after the trial", state)
+}
+
+func TestHardwareScopeKillsDetachedDescendant(t *testing.T) {
+	if _, err := CheckSystemdRun(); err != nil {
+		t.Fatal(err)
+	}
+	cpu := testCPUs(t)[0]
+	o := Options{
+		Dir:      t.TempDir(),
+		Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{"descendant"}},
+		Cores:    []machine.CoreInfo{{Core: 0, CPUs: []int{cpu}}},
+	}
+	spec := machine.TrialSpec{ID: "hw-descendant", Regime: machine.R1, Workload: machine.Workload{Backend: machine.Mprime}, Cores: []int{0}, CPUs: []int{cpu}, Duration: time.Second}
+	r, err := New(o).Start(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec recorder
+	result, err := r.Wait(context.Background(), &rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pidText, err := os.ReadFile(filepath.Join(o.Dir, spec.ID, "descendant.pid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(string(pidText))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Kill(pid, syscall.SIGKILL)
+	for range 50 {
+		fields, err := procStat("/proc/" + strconv.Itoa(pid) + "/stat")
+		if os.IsNotExist(err) || (err == nil && fields[0] == "Z") {
+			return
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("descendant %d survived teardown: %+v", pid, result)
 }

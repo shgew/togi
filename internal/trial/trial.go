@@ -51,6 +51,8 @@ type instance struct {
 	machine.Instance
 	watch     []watchFile
 	done      bool
+	ready     bool
+	setup     bool
 	suspended bool
 	resumed   time.Time
 	active    time.Duration
@@ -58,12 +60,13 @@ type instance struct {
 }
 
 type running struct {
-	spec      machine.TrialSpec
-	backend   backend.Backend
-	options   Options
-	started   machine.Started
-	instances []*instance
-	events    chan streamEvent
+	spec         machine.TrialSpec
+	backend      backend.Backend
+	options      Options
+	started      machine.Started
+	instances    []*instance
+	events       chan streamEvent
+	initialStops int
 }
 
 type streamEvent struct {
@@ -198,8 +201,39 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 			<-done
 			t.events <- streamEvent{index: index, exit: true, err: c.Wait()}
 		}(i, cmd)
+		if spec.Regime == machine.R6 {
+			if !r.options.NoScope {
+				t.awaitScope(ctx, inst)
+			}
+			if err := toggleInstance(inst, true, time.Now()); err != nil {
+				t.abort()
+				return nil, fmt.Errorf("stop initial R6 instance on core %02d: %w", core, err)
+			}
+			inst.active = 0
+			t.initialStops++
+		}
 	}
 	return t, nil
+}
+
+func (t *running) awaitScope(ctx context.Context, inst *instance) {
+	timer := time.NewTimer(min(t.options.StallGrace, 30*time.Second))
+	defer timer.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if ready(inst, false) {
+			inst.ready = true
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func joinCPUs(cpus []int) string {

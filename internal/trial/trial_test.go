@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -24,7 +25,7 @@ func (h helperBackend) Name() string           { return "helper" }
 func (h helperBackend) Check() (string, error) { return "ok", nil }
 func (h helperBackend) Prepare(_ machine.Workload, _ string, cpus []int) (backend.Launch, error) {
 	launch := backend.Launch{Argv: []string{"taskset", "-c", strconv.Itoa(cpus[0]), os.Args[0], "-test.run=TestHelperProcess", "--", "--helper", h.mode}}
-	if h.mode == "watched" {
+	if strings.HasPrefix(h.mode, "watched") {
 		launch.Watch = []string{"results.txt"}
 	}
 	return launch, nil
@@ -35,6 +36,10 @@ func (h helperBackend) Classify(line string) backend.Line {
 	}
 	if strings.HasPrefix(line, "PIN FAILED") {
 		return backend.Line{Kind: backend.SetupError}
+	}
+	if strings.HasPrefix(line, "AFFINITY:") {
+		cpu, _ := strconv.Atoi(strings.TrimPrefix(line, "AFFINITY:"))
+		return backend.Line{Kind: backend.AffinityError, CPU: cpu}
 	}
 	if strings.HasPrefix(line, "progress") {
 		return backend.Line{Kind: backend.Progress, Detail: line}
@@ -86,6 +91,33 @@ func TestHelperProcess(t *testing.T) {
 			os.Exit(2)
 		}
 		os.Exit(0)
+	case "watched-precedence":
+		if err := os.WriteFile("results.txt", []byte("PIN FAILED\nCOMPUTE ERROR\nAFFINITY:42\n"), 0644); err != nil {
+			os.Exit(2)
+		}
+		os.Exit(0)
+	case "setup-then-error":
+		fmt.Println("PIN FAILED")
+		fmt.Println("COMPUTE ERROR")
+		os.Exit(0)
+	case "error-then-affinity":
+		fmt.Println("COMPUTE ERROR")
+		fmt.Println("AFFINITY:42")
+		os.Exit(0)
+	case "descendant":
+		cmd := exec.Command(os.Args[0], "-test.run=TestHelperProcess", "--", "--helper", "orphan")
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		if err := cmd.Start(); err != nil {
+			os.Exit(2)
+		}
+		if err := os.WriteFile("descendant.pid", []byte(strconv.Itoa(cmd.Process.Pid)), 0644); err != nil {
+			os.Exit(2)
+		}
+		os.Exit(0)
+	case "orphan":
+		for {
+			syscall.RawSyscall(syscall.SYS_PAUSE, 0, 0, 0)
+		}
 	case "sleep":
 		time.Sleep(5 * time.Second)
 		os.Exit(0)
@@ -261,6 +293,117 @@ func TestTrials(t *testing.T) {
 	})
 }
 
+func TestScopeNeverReady(t *testing.T) {
+	o := testOptions(t, "work")
+	spec := testSpec("not-ready", machine.R1, 200*time.Millisecond)
+	spec.CPUs = []int{o.Cores[0].CPUs[0]}
+	r, err := New(o).Start(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trial := r.(*running)
+	trial.options.NoScope = false
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte("#!/bin/sh\necho 'Unit not loaded' >&2\nexit 1\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	var rec recorder
+	result, err := trial.Wait(context.Background(), &rec)
+	if err != nil || result.Signal != "" || !strings.Contains(result.Inconclusive, "never entered scope") {
+		t.Fatalf("unready scope result %+v, err %v", result, err)
+	}
+}
+
+func TestQueuedExitBeforeTeardown(t *testing.T) {
+	o := testOptions(t, "exit")
+	spec := testSpec("queued-exit", machine.R1, time.Second)
+	spec.CPUs = []int{o.Cores[0].CPUs[0]}
+	r, err := New(o).Start(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trial := r.(*running)
+	var exit streamEvent
+	timeout := time.After(time.Second)
+	for !exit.exit {
+		select {
+		case exit = <-trial.events:
+		case <-timeout:
+			t.Fatal("helper did not exit")
+		}
+	}
+	trial.events <- exit
+	var rec recorder
+	var result machine.Result
+	trial.drainEvents(&result, &rec, true)
+	if err := trial.teardown(&result, &rec); err != nil {
+		t.Fatal(err)
+	}
+	if result.Signal != machine.UnexpectedExit {
+		t.Fatalf("queued exit result %+v", result)
+	}
+}
+
+func TestTeardownEvidencePrecedence(t *testing.T) {
+	for _, tt := range []struct {
+		mode    string
+		signal  machine.Signal
+		escaped []int
+	}{
+		{"setup-then-error", machine.ComputationError, nil},
+		{"error-then-affinity", "", []int{42}},
+		{"watched-precedence", "", []int{42}},
+	} {
+		t.Run(tt.mode, func(t *testing.T) {
+			o := testOptions(t, tt.mode)
+			spec := testSpec(tt.mode, machine.R1, time.Second)
+			spec.CPUs = []int{o.Cores[0].CPUs[0]}
+			r, err := New(o).Start(context.Background(), spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var rec recorder
+			result, err := r.Wait(context.Background(), &rec)
+			if err != nil || result.Signal != tt.signal || !slices.Equal(result.Escaped, tt.escaped) {
+				t.Fatalf("conflicting evidence result %+v, err %v", result, err)
+			}
+		})
+	}
+}
+
+func TestR6StartsIdle(t *testing.T) {
+	o := testOptions(t, "work")
+	o.SampleInterval = 450 * time.Millisecond
+	spec := testSpec("r6-idle", machine.R6, 600*time.Millisecond)
+	spec.Cores = []int{0, 1}
+	spec.CPUs = []int{o.Cores[0].CPUs[0], o.Cores[1].CPUs[0]}
+	r, err := New(o).Start(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trial := r.(*running)
+	for _, inst := range trial.instances {
+		deadline := time.Now().Add(time.Second)
+		for {
+			fields, err := procStat(fmt.Sprintf("/proc/%d/stat", inst.PID))
+			if err == nil && fields[0] == "T" {
+				break
+			}
+			if time.Now().After(deadline) {
+				trial.abort()
+				t.Fatalf("core %02d not initially stopped: state %v, err %v", inst.Core, fields, err)
+			}
+			runtime.Gosched()
+		}
+	}
+	var rec recorder
+	result, err := trial.Wait(context.Background(), &rec)
+	if err != nil || result.Signal != "" || result.Stops != 3 || result.Conts != 1 {
+		t.Fatalf("R6 initial stops and bursts result %+v, err %v", result, err)
+	}
+}
+
 func TestRetention(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -322,7 +465,7 @@ func TestPlans(t *testing.T) {
 	spec.Cores = []int{0, 1, 2, 3}
 	spec.Duration = 9 * time.Second
 	got = slices.Collect(plan(spec, cores))
-	if len(got) != 7 || got[0].At != 0 || got[1].At != 4500*time.Millisecond || got[1].Instances[0] != 0 || got[3].Instances[0] != 1 {
+	if len(got) != 6 || got[0].At != 4500*time.Millisecond || got[0].Instances[0] != 0 || got[2].Instances[0] != 1 {
 		t.Fatalf("R6 %v", got)
 	}
 	spec.Regime = machine.R7

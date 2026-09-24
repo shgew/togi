@@ -31,8 +31,11 @@ type cpuSample struct {
 
 func (t *running) Wait(ctx context.Context, report machine.Reporter) (result machine.Result, err error) {
 	started := time.Now()
+	result.Stops = t.initialStops
 	for _, inst := range t.instances {
-		inst.resumed = started
+		if !inst.suspended {
+			inst.resumed = started
+		}
 	}
 	deadline := time.NewTimer(t.spec.Duration)
 	defer deadline.Stop()
@@ -71,17 +74,21 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 					decision = true
 					break
 				}
-				if ready(inst, t.options.NoScope) {
-					if cpu, tid, escaped := outsideCPU(inst); escaped {
-						result.Escaped = []int{cpu}
-						report.Sample(machine.Sample{Warning: "outside allowed cpus", PID: inst.PID, TID: tid, CPU: cpu})
-						decision = true
-						break
-					}
-					if t.sample(inst, time.Now(), &result, report) {
-						decision = true
-						break
-					}
+				if !inst.ready && ready(inst, t.options.NoScope) {
+					inst.ready = true
+				}
+				if !inst.ready || (inst.suspended && t.options.NoScope) {
+					continue
+				}
+				if cpu, tid, escaped := outsideCPU(inst); escaped {
+					result.Escaped = []int{cpu}
+					report.Sample(machine.Sample{Warning: "outside allowed cpus", PID: inst.PID, TID: tid, CPU: cpu})
+					decision = true
+					break
+				}
+				if t.sample(inst, time.Now(), &result, report) {
+					decision = true
+					break
 				}
 			}
 			if temp := readTctl(t.options.Hwmon); temp != nil && (result.TctlMaxC == nil || *temp > *result.TctlMaxC) {
@@ -127,28 +134,21 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				}
 				break
 			}
-			inst := t.instances[e.index]
 			if e.err != nil && !e.exit {
 				fatal = e.err
 				decision = true
 				break
 			}
-			if e.exit {
-				inst.done = true
-				if t.tail(inst, &result, report) {
-					decision = true
-					break
-				}
-				if result.Signal == "" && result.Inconclusive == "" && len(result.Escaped) == 0 {
-					result.Signal = machine.UnexpectedExit
-					result.Core = inst.Core
-					report.Progress(fmt.Sprintf("core %02d backend exited early: %v", inst.Core, e.err))
-					decision = true
-				}
-			} else if !e.eof {
-				if t.classify(inst, e.line, e.stderr, &result, report) {
-					decision = true
-				}
+			if t.handleEvent(e, &result, report, true) {
+				decision = true
+			}
+		}
+	}
+	t.drainEvents(&result, report, ctx.Err() == nil)
+	if !t.options.NoScope {
+		for _, inst := range t.instances {
+			if !inst.ready && !ready(inst, false) && result.Signal == "" && len(result.Escaped) == 0 && result.Inconclusive == "" {
+				result.Inconclusive = fmt.Sprintf("core %02d setup error: never entered scope %s", inst.Core, inst.Scope)
 			}
 		}
 	}
@@ -183,16 +183,26 @@ func (t *running) classify(inst *instance, line string, stderr bool, result *mac
 			report.Progress(detail)
 		}
 	case backend.ComputationError:
-		result.Signal = machine.ComputationError
-		result.Core = inst.Core
-		report.Progress(fmt.Sprintf("core %02d computation error: %s", inst.Core, line))
+		if len(result.Escaped) == 0 && result.Signal != machine.ComputationError {
+			result.Signal = machine.ComputationError
+			result.Core = inst.Core
+			result.Inconclusive = ""
+			report.Progress(fmt.Sprintf("core %02d computation error: %s", inst.Core, line))
+		}
 		return true
 	case backend.SetupError:
-		result.Inconclusive = fmt.Sprintf("%s setup error: %s", t.backend.Name(), line)
+		inst.setup = true
+		if len(result.Escaped) == 0 && result.Signal == "" && result.Inconclusive == "" {
+			result.Inconclusive = fmt.Sprintf("%s setup error: %s", t.backend.Name(), line)
+		}
 		return true
 	case backend.AffinityError:
-		result.Escaped = []int{classified.CPU}
-		report.Sample(machine.Sample{Warning: "backend could not set affinity", PID: inst.PID, TID: inst.PID, CPU: classified.CPU})
+		if len(result.Escaped) == 0 {
+			result.Escaped = []int{classified.CPU}
+			result.Signal = ""
+			result.Inconclusive = ""
+			report.Sample(machine.Sample{Warning: "backend could not set affinity", PID: inst.PID, TID: inst.PID, CPU: classified.CPU})
+		}
 		return true
 	case backend.Other:
 	}
@@ -200,6 +210,7 @@ func (t *running) classify(inst *instance, line string, stderr bool, result *mac
 }
 
 func (t *running) tail(inst *instance, result *machine.Result, report machine.Reporter) bool {
+	var found bool
 	for i := range inst.watch {
 		w := &inst.watch[i]
 		f, err := os.Open(w.path)
@@ -207,19 +218,28 @@ func (t *running) tail(inst *instance, result *machine.Result, report machine.Re
 			continue
 		}
 		if err != nil {
-			result.Inconclusive = fmt.Sprintf("read watched file %s: %v", w.path, err)
-			return true
+			if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
+				result.Inconclusive = fmt.Sprintf("read watched file %s: %v", w.path, err)
+			}
+			found = true
+			continue
 		}
 		if _, err = f.Seek(w.offset, io.SeekStart); err != nil {
 			f.Close()
-			result.Inconclusive = fmt.Sprintf("seek watched file %s: %v", w.path, err)
-			return true
+			if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
+				result.Inconclusive = fmt.Sprintf("seek watched file %s: %v", w.path, err)
+			}
+			found = true
+			continue
 		}
 		data, err := io.ReadAll(f)
 		f.Close()
 		if err != nil {
-			result.Inconclusive = fmt.Sprintf("read watched file %s: %v", w.path, err)
-			return true
+			if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
+				result.Inconclusive = fmt.Sprintf("read watched file %s: %v", w.path, err)
+			}
+			found = true
+			continue
 		}
 		w.offset += int64(len(data))
 		w.pending += string(data)
@@ -231,16 +251,13 @@ func (t *running) tail(inst *instance, result *machine.Result, report machine.Re
 			line := w.pending[:j]
 			w.pending = w.pending[j+1:]
 			if t.classifyWatch(inst, line, result, report) {
-				return true
+				found = true
 			}
 		}
 	}
-	return false
+	return found
 }
 func (t *running) classifyWatch(inst *instance, line string, result *machine.Result, report machine.Reporter) bool {
-	if result.Signal != "" || result.Inconclusive != "" || len(result.Escaped) > 0 {
-		return false
-	}
 	switch t.backend.Classify(line).Kind {
 	case backend.ComputationError, backend.SetupError, backend.AffinityError:
 		return t.classify(inst, line, false, result, report)
@@ -268,30 +285,64 @@ func toggleInstance(inst *instance, stop bool, now time.Time) error {
 	return nil
 }
 
+func (t *running) handleEvent(e streamEvent, result *machine.Result, report machine.Reporter, unexpected bool) bool {
+	inst := t.instances[e.index]
+	if e.exit {
+		inst.done = true
+		found := t.tail(inst, result, report)
+		if unexpected && !inst.setup && len(result.Escaped) == 0 && result.Signal == "" {
+			result.Signal = machine.UnexpectedExit
+			result.Core = inst.Core
+			result.Inconclusive = ""
+			report.Progress(fmt.Sprintf("core %02d backend exited early: %v", inst.Core, e.err))
+			return true
+		}
+		return found
+	}
+	if !e.eof && e.err == nil {
+		return t.classify(inst, e.line, e.stderr, result, report)
+	}
+	return false
+}
+
+func (t *running) drainEvents(result *machine.Result, report machine.Reporter, unexpected bool) {
+	for {
+		select {
+		case e := <-t.events:
+			t.handleEvent(e, result, report, unexpected)
+		default:
+			return
+		}
+	}
+}
+
 func (t *running) teardown(result *machine.Result, report machine.Reporter) error {
 	for _, inst := range t.instances {
 		_ = syscall.Kill(-inst.PID, syscall.SIGCONT)
 		_ = syscall.Kill(-inst.PID, syscall.SIGTERM)
 	}
-	if !t.collect(t.options.StopGrace, result, report) {
-		for _, inst := range t.instances {
-			if !inst.done {
-				if !t.options.NoScope {
-					args := []string{}
-					if os.Geteuid() != 0 {
-						args = append(args, "--user")
-					}
-					args = append(args, "kill", "--signal=SIGKILL", "--kill-whom=all", inst.Scope+".scope")
-					_ = exec.Command("systemctl", args...).Run()
-				}
-				_ = syscall.Kill(-inst.PID, syscall.SIGKILL)
+	var cleanupErr error
+	t.collect(t.options.StopGrace, result, report)
+	for _, inst := range t.instances {
+		if !t.options.NoScope {
+			args := []string{}
+			if os.Geteuid() != 0 {
+				args = append(args, "--user")
+			}
+			args = append(args, "kill", "--signal=SIGKILL", "--kill-whom=all", inst.Scope+".scope")
+			out, err := exec.Command("systemctl", args...).CombinedOutput()
+			if err != nil && !strings.Contains(string(out), "not loaded") && !strings.Contains(string(out), "could not be found") && cleanupErr == nil {
+				cleanupErr = fmt.Errorf("kill scope %s: %w: %s", inst.Scope, err, strings.TrimSpace(string(out)))
 			}
 		}
-		if !t.collect(10*time.Second, result, report) {
-			for _, inst := range t.instances {
-				if !inst.done {
-					return fmt.Errorf("backend on core %02d did not exit after SIGKILL", inst.Core)
-				}
+		if !inst.done {
+			_ = syscall.Kill(-inst.PID, syscall.SIGKILL)
+		}
+	}
+	if !t.collect(10*time.Second, result, report) {
+		for _, inst := range t.instances {
+			if !inst.done {
+				return fmt.Errorf("backend on core %02d did not exit after SIGKILL", inst.Core)
 			}
 		}
 	}
@@ -305,7 +356,7 @@ func (t *running) teardown(result *machine.Result, report machine.Reporter) erro
 			}
 		}
 	}
-	return nil
+	return cleanupErr
 }
 func (t *running) collect(timeout time.Duration, result *machine.Result, report machine.Reporter) bool {
 	remaining := 0
@@ -319,16 +370,10 @@ func (t *running) collect(timeout time.Duration, result *machine.Result, report 
 	for remaining > 0 {
 		select {
 		case e := <-t.events:
-			if e.exit {
-				inst := t.instances[e.index]
-				if !inst.done {
-					inst.done = true
-					remaining--
-				}
+			if e.exit && !t.instances[e.index].done {
+				remaining--
 			}
-			if !e.exit && !e.eof && result.Signal == "" && result.Inconclusive == "" && len(result.Escaped) == 0 {
-				t.classify(t.instances[e.index], e.line, e.stderr, result, report)
-			}
+			t.handleEvent(e, result, report, false)
 		case <-timer.C:
 			return false
 		}

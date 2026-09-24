@@ -32,7 +32,7 @@ Known quirks the integrations handle:
 | R3 load steps | Current transients between busy and idle | An R1 or R2 workload suspended and resumed with `SIGSTOP`/`SIGCONT`. On and off periods are drawn from {10 ms, 50 ms, 200 ms, 1 s, 5 s} with a recorded seed |
 | R4 medium load | Partial duty cycles | An R1 workload at 25%, 50% or 75% duty with a 100 ms period, cycling per trial |
 | R5 SMT pair | Both threads of one core | R1 and R2 workloads with 2 threads on both logical CPUs of the core |
-| R6 idle | Normal power management with the profile applied | One confined 1-thread R1 instance per core, all stopped with SIGSTOP from the start. First half: no load at all. Second half: short bursts (SIGCONT, then SIGSTOP 100 ms later, every 2 s) on one core at a time in scheduling order |
+| R6 idle | Normal power management with the profile applied | One confined 1-thread R1 instance per core, each stopped with SIGSTOP as soon as it enters its scope, before the next instance launches. Trial timing begins only after all instances are stopped. First half: no load at all. Second half: short bursts (SIGCONT, then SIGSTOP 100 ms later, every 2 s) on one core at a time in scheduling order |
 | R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance per core. First both CCDs, then CCD0 only (CCD1's instances stopped), then CCD1 only |
 
 Within a regime, each core cycles through the listed workloads trial by trial, so backends alternate on the same core.
@@ -91,6 +91,8 @@ A trial passes when all of these hold:
 - every sampled thread was on an allowed logical CPU.
 
 When evidence conflicts, it is weighed in this order: a containment violation first (a dead end), then a failure signal from the backend or any MCE in the trial window, then inconclusive, then pass. A kernel log that cannot be read makes the trial inconclusive.
+
+A scoped instance that never entered its scope by the trial deadline is a setup error and makes the trial inconclusive unless higher-precedence evidence was found. A process exit queued before teardown begins is an unexpected exit; exits caused by teardown are not.
 
 Failure signals:
 

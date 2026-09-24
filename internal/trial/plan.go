@@ -32,13 +32,6 @@ func plan(spec machine.TrialSpec, cores []machine.CoreInfo) iter.Seq[toggle] {
 				stop = !stop
 			}
 		case machine.R6:
-			all := make([]int, len(spec.Cores))
-			for i := range all {
-				all[i] = i
-			}
-			if !yield(toggle{Stop: true, Instances: all}) {
-				return
-			}
 			selected := make([]machine.CoreInfo, 0, len(spec.Cores))
 			for _, c := range cores {
 				if slices.Contains(spec.Cores, c.Core) {
