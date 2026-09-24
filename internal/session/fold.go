@@ -108,6 +108,11 @@ func (f *fold) Fold(e journal.Event) {
 	case *journal.SMUIntent:
 		f.dropSMUIntent()
 		f.unmatched = append(f.unmatched, openIntent{seq: e.Seq, kind: e.Kind, boot: e.Boot})
+		if p.Offset != 0 && f.open == nil {
+			f.applied[e.Boot] = e.Seq
+			f.appliedCond[e.Boot] = machine.Resident
+			f.stray = nil
+		}
 	case *journal.SMUWrite:
 		f.dropSMUIntent()
 	case *journal.SMUError:
