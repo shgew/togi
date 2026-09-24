@@ -54,6 +54,29 @@ func TestStatusAndCert(t *testing.T) {
 		}
 	}
 	checkRows(t, "cert", cert, regexp.MustCompile(`(?m)^  (\d\d)  +(-?\d+)  `), st)
+
+	events, _, err := journal.Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := st
+	moved.Cores = append([]journal.CoreState(nil), st.Cores...)
+	moved.Cores[3].Offset++
+	var out bytes.Buffer
+	writeCert(&out, events, moved)
+	checkRows(t, "cert with core 03 moved", out.String(), regexp.MustCompile(`(?m)^  (\d\d)  +(-?\d+)  `), st)
+	if want := fmt.Sprintf("core 03 is at %d since", moved.Cores[3].Offset); !strings.Contains(out.String(), want) {
+		t.Fatalf("cert with core 03 moved lacks %q:\n%s", want, out.String())
+	}
+}
+
+func TestRateRoundsUp(t *testing.T) {
+	t.Parallel()
+	for bound, want := range map[float64]string{0.1241: "< 0.13/h", 0.12: "< 0.12/h", 3: "< 3.00/h"} {
+		if got := rate(&bound); got != want {
+			t.Errorf("rate(%v) = %q, want %q", bound, got, want)
+		}
+	}
 }
 
 func checkRows(t *testing.T, name, out string, row *regexp.Regexp, st journal.State) {

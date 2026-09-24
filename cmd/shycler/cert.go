@@ -78,14 +78,25 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 	}
 	tw := newTable(w)
 	fmt.Fprintln(tw, "  CORE\tEDGE\tFAILED\tUNPROVEN\tDECIDED")
-	for _, c := range st.Cores {
+	var moved []string
+	for i, c := range st.Cores {
 		decided := "-"
 		if d := c.LastDecision; d != nil {
 			decided = fmt.Sprintf("[#%d]", d.Seq)
 		}
-		fmt.Fprintf(tw, "  %02d\t%d\t%s\t%d\t%s\n", c.Core, c.Offset, mark(c.FailedMark), c.UnprovenDepth, decided)
+		edge := c.Offset
+		if gs != nil && i < len(gs.Profile) {
+			edge = gs.Profile[i]
+		}
+		if edge != c.Offset {
+			moved = append(moved, fmt.Sprintf("  core %02d is at %d since %s; the next profile.change restarts guard", c.Core, c.Offset, decided))
+		}
+		fmt.Fprintf(tw, "  %02d\t%d\t%s\t%d\t%s\n", c.Core, edge, mark(c.FailedMark), c.UnprovenDepth, decided)
 	}
 	_ = tw.Flush()
+	for _, m := range moved {
+		fmt.Fprintln(w, m)
+	}
 	fmt.Fprintln(w)
 
 	if gs == nil {

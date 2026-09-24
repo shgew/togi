@@ -2,7 +2,6 @@ package tuner
 
 import (
 	"fmt"
-	"math"
 	"slices"
 
 	"code.marleb.org/shgew/shycler/internal/journal"
@@ -52,5 +51,5 @@ func rateBound(cleanS int) *float64 {
 	if cleanS <= 0 {
 		return nil
 	}
-	return new(math.Round(3*3600/float64(cleanS)*1e4) / 1e4)
+	return new(float64((3*3600*10000+cleanS-1)/cleanS) / 10000)
 }

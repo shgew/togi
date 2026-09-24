@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -156,5 +157,5 @@ func rate(bound *float64) string {
 	if bound == nil {
 		return "-"
 	}
-	return fmt.Sprintf("< %.2f/h", *bound)
+	return fmt.Sprintf("< %.2f/h", math.Ceil(*bound*100-1e-9)/100)
 }

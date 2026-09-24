@@ -80,12 +80,12 @@ No SMU write happens between resident trials: the profile stays applied.
 
 ## Crashes
 
-A crash is classified by what its boot recorded:
+A crash is classified by what its boot recorded. A resident application counts as applied from its first nonzero `smu.intent`, before its `profile.applied`: a crash part-way through it ran with resident offsets on some cores.
 - A trial in flight in the crashed boot: a failure of that trial. An isolated trial's failure is attributed to its target at its offset; a resident trial's is attributed by the resident rule in Guard.
-- `profile.applied` in that boot and no trial in flight: an idle crash. With the isolated profile last applied it is an unattributed failure that changes nothing, since every core was at 0. With the resident profile last applied it counts as an unattributed failure of an R6 trial.
-- No `profile.applied` in that boot: a stray crash. Stray crashes count in a row until the next `profile.applied`; reaching `dead_ends.stray_crashes_in_a_row` is the boot-loop dead end.
+- The profile applied in that boot and no trial in flight: an idle crash. With the isolated profile last applied it is an unattributed failure that changes nothing, since every core was at 0. With the resident profile last applied, or partly applied, it counts as an unattributed failure of an R6 trial.
+- Nothing applied in that boot: a stray crash. Stray crashes count in a row until the next application; reaching `dead_ends.stray_crashes_in_a_row` is the boot-loop dead end.
 
-`crash.detected` carries the condition of the boot's last `profile.applied`.
+`crash.detected` carries the condition of the boot's last application.
 
 ## Decision events
 
@@ -178,11 +178,11 @@ The tuner records every change as `tier.change` with the old and new tier and a 
 - `every core is confirmed and the profile survived a clean rotation`: cites the clean rotation end, and precedes the next rotation start, so a `run` stopped by `--rotations` has recorded its Bronze;
 - `24 clean hours since the profile change` and `100 clean hours since the profile change`: cite the passed trial that crossed the threshold.
 
-Each regime `r` with clean hours `T_r` shows its failure-rate bound: with zero failures, the rate is below `3 / T_r` per hour at 95% confidence (rule of three). The overall bound uses all clean hours. Without clean hours there is no bound.
+Each regime `r` with clean hours `T_r` shows its failure-rate bound: with zero failures, the rate is below `3 / T_r` per hour at 95% confidence (rule of three). The overall bound uses all clean hours. Without clean hours there is no bound. Recorded and displayed bounds round up, never understating it.
 
 `shycler status` and `shycler cert` render from a replay of the journal (`runtime.md`). The certificate shows:
 - the tier with its `tier.change`, and progress towards the higher tiers;
-- the profile with its `profile.change`, as a per-core table of edges, failed marks, unproven depth and the deciding event;
+- the profile with its `profile.change`, as a per-core table of edges, failed marks, unproven depth and the deciding event, followed by any core whose offset was decided after that `profile.change`;
 - clean hours and failure-rate bound per regime and overall, and the highest Tctl across counted trials with its `trial.end`;
 - the BIOS context and session start;
 - the SHA-256 of the journal's complete lines it rendered, and the last `seq` among them.
