@@ -15,6 +15,25 @@ Normative rules for how shycler is invoked, configured and deployed.
 
 Global flags: `--config <path>` (default `/etc/shycler/config.toml`), `--state-dir <path>` (default `/var/lib/shycler`).
 
+`shycler run --sim <seed>` drives the seeded simulator (`internal/sim`) instead of hardware: a 16-core machine whose crash reboots are handled in-process, with a real journal. It uses `--state-dir` when given, else a new temporary directory whose path it prints to stderr, and it fsyncs nothing. Until the hardware seams exist (T09-T12), `run` without `--sim` refuses with exit code 2.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Stopped cleanly: by a signal, or on reaching guard |
+| 1 | Error |
+| 2 | Usage or configuration error, including a start offset for a core that does not exist |
+| 3 | The journal is held by another writer |
+| 10 | Dead end `failure_at_zero` |
+| 11 | Dead end `smu` |
+| 12 | Dead end `no_evidence` |
+| 13 | Dead end `boot_loop` |
+| 14 | Dead end `containment` |
+| 15 | Dead end `preflight` |
+
+`run` records `shutdown` only for the clean stops (exit 0) and the dead ends (10-15). Any other exit writes nothing, so the next boot treats the gap as a crash.
+
 ## Privileges
 
 `run`, `regain` and `reset` require root: they change core voltage and the boot entry, and create cgroup scopes. The read-only commands work for any user who can read the state directory.
@@ -65,7 +84,7 @@ The effective configuration is recorded in `config.loaded` at every start. Confi
 
 Inside the specialisation:
 - `systemd.defaultUnit = "multi-user.target"`, so no graphical session starts;
-- `shycler.service` runs `shycler run` as root with `Restart=on-failure` and `RestartSec=60`, and a start limit of 3 per 30 minutes. Dead-end exit codes are listed in `RestartPreventExitStatus`;
+- `shycler.service` runs `shycler run` as root with `Restart=on-failure` and `RestartSec=60`, and a start limit of 3 per 30 minutes. `RestartPreventExitStatus` lists the dead-end exit codes 10-15;
 - a tty1 unit follows `shycler.service`'s log;
 - sysctls `kernel.panic=10`, `kernel.panic_on_oops=1`, `kernel.hardlockup_panic=1`, `kernel.softlockup_panic=1`;
 - `systemd.settings.Manager.RuntimeWatchdogSec = "30s"`, so the SP5100 TCO hardware watchdog resets a frozen machine;

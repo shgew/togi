@@ -16,8 +16,10 @@ import (
 const defaultStateDir = "/var/lib/shycler"
 
 type globals struct {
-	config   string
-	stateDir string
+	config      string
+	configSet   bool
+	stateDir    string
+	stateDirSet bool
 }
 
 type command struct {
@@ -28,6 +30,7 @@ type command struct {
 
 var commands = []command{
 	{name: "events", summary: "Render the journal", run: runEvents},
+	{name: "run", summary: "Start or resume the session in the foreground", run: runRun},
 }
 
 func main() {
@@ -63,8 +66,14 @@ func cli(args []string, stdout, stderr io.Writer) int {
 }
 
 func registerGlobals(fs *flag.FlagSet, g *globals) {
-	fs.StringVar(&g.config, "config", g.config, "configuration file")
-	fs.StringVar(&g.stateDir, "state-dir", g.stateDir, "state directory")
+	fs.Func("config", "configuration `file` (default "+config.DefaultPath+")", func(s string) error {
+		g.config, g.configSet = s, true
+		return nil
+	})
+	fs.Func("state-dir", "state `directory` (default "+defaultStateDir+")", func(s string) error {
+		g.stateDir, g.stateDirSet = s, true
+		return nil
+	})
 }
 
 func usage(w io.Writer) {

@@ -1,0 +1,470 @@
+// Package session is the run loop: session start, resume, crash attribution, trials and dead ends.
+package session
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+	"time"
+
+	"code.marleb.org/shgew/shycler/internal/config"
+	"code.marleb.org/shgew/shycler/internal/journal"
+	"code.marleb.org/shgew/shycler/internal/machine"
+	"code.marleb.org/shgew/shycler/internal/tuner"
+)
+
+type Input struct {
+	Config     config.Config
+	ConfigPath string
+	ConfigFile bool
+	Boot       string
+	Journal    Journal
+	Machine    machine.Machine
+}
+
+type Journal interface {
+	Events() []journal.Event
+	Append(p journal.Payload, cause ...int) (journal.Event, error)
+	WriteState(s journal.State) error
+	ReadState() (journal.State, error)
+}
+
+type StopReason string
+
+const (
+	StopSignal  StopReason = "signal"
+	StopDeadEnd StopReason = "dead_end"
+	StopGuard   StopReason = "guard"
+)
+
+type Stop struct {
+	Reason   StopReason
+	DeadEnd  *journal.DeadEnd
+	Evidence []journal.Event
+}
+
+var ErrNoSuchCore = errors.New("no such core")
+
+var errDeadEndEvidence = errors.New("dead-end evidence recorded")
+
+const deadEndAction = "exit"
+
+type runner struct {
+	in    Input
+	cores []machine.CoreInfo
+	fold  *fold
+	state journal.State
+	tuner *tuner.State
+
+	profileApplied bool
+}
+
+func Run(ctx context.Context, in Input) (Stop, error) {
+	r := &runner{in: in, fold: newFold(), tuner: tuner.New()}
+	stop, err := r.run(ctx)
+	if errors.Is(err, errDeadEndEvidence) {
+		return Stop{}, errors.New("dead-end evidence recorded without a dead end")
+	}
+	return stop, err
+}
+
+func (r *runner) run(ctx context.Context) (Stop, error) {
+	cores, err := r.in.Machine.Host.Topology()
+	if err != nil {
+		return Stop{}, fmt.Errorf("read topology: %w", err)
+	}
+	slices.SortFunc(cores, func(a, b machine.CoreInfo) int { return a.Core - b.Core })
+	r.cores = cores
+	for _, core := range slices.Sorted(maps.Keys(r.in.Config.StartOffsets)) {
+		if r.coreInfo(core) == nil {
+			return Stop{}, fmt.Errorf("start offset for core %d: %w", core, ErrNoSuchCore)
+		}
+	}
+
+	events := r.in.Journal.Events()
+	journal.Replay(events, r.fold, &r.state, r.tuner)
+	r.tuner.Project(&r.state)
+	if len(events) > 0 {
+		if err := r.checkState(); err != nil {
+			return Stop{}, err
+		}
+	}
+	if !r.fold.started {
+		if _, err := r.append(&journal.SessionStart{Schema: journal.Schema, Session: r.in.Machine.Clock.Now().UTC().Format("20060102T150405Z"), Cores: cores}); err != nil {
+			return Stop{}, err
+		}
+	}
+	if _, err := r.append(&journal.ConfigLoaded{Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: r.in.Config}); err != nil {
+		return Stop{}, err
+	}
+	if err := r.recoverCrashes(); err != nil {
+		return Stop{}, err
+	}
+	if stop, err := r.checkDeadEnd(); stop != nil || err != nil {
+		return deref(stop), err
+	}
+	if stop, err := r.preflight(); stop != nil || err != nil {
+		return deref(stop), err
+	}
+	if err := r.startSession(); err != nil {
+		return r.afterEvidence(err)
+	}
+	return r.loop(ctx)
+}
+
+func deref(s *Stop) Stop {
+	if s == nil {
+		return Stop{}
+	}
+	return *s
+}
+
+func (r *runner) coreInfo(core int) *machine.CoreInfo {
+	for i := range r.cores {
+		if r.cores[i].Core == core {
+			return &r.cores[i]
+		}
+	}
+	return nil
+}
+
+func (r *runner) append(p journal.Payload, cause ...int) (journal.Event, error) {
+	e, err := r.in.Journal.Append(p, cause...)
+	if err != nil {
+		return journal.Event{}, err
+	}
+	r.fold.Fold(e)
+	r.state.Fold(e)
+	r.tuner.Fold(e)
+	r.tuner.Project(&r.state)
+	if err := r.in.Journal.WriteState(r.state); err != nil {
+		return journal.Event{}, err
+	}
+	return e, nil
+}
+
+func (r *runner) checkState() error {
+	saved, err := r.in.Journal.ReadState()
+	fields := journal.StateFields()
+	if err == nil {
+		fields = journal.DiffFields(saved, r.state)
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	if err := r.in.Journal.WriteState(r.state); err != nil {
+		return err
+	}
+	_, err = r.append(&journal.StateRebuilt{Fields: fields})
+	return err
+}
+
+func (r *runner) recoverCrashes() error {
+	boot := r.in.Boot
+	for _, crashed := range r.fold.crashedBoots(boot) {
+		next := r.fold.nextBoot(crashed, boot)
+		own, err := r.in.Machine.Kernel.MCEs(crashed, time.Time{})
+		if err != nil {
+			return fmt.Errorf("read kernel log of boot %s: %w", crashed, err)
+		}
+		after, err := r.in.Machine.Kernel.MCEs(next, time.Time{})
+		if err != nil {
+			return fmt.Errorf("read kernel log of boot %s: %w", next, err)
+		}
+		for _, m := range own {
+			if err := r.recordMCE(m, crashed); err != nil {
+				return err
+			}
+		}
+		for _, m := range after {
+			if !m.Corrected {
+				if err := r.recordMCE(m, next); err != nil {
+					return err
+				}
+			}
+		}
+		inTrial := r.fold.open != nil && r.fold.open.boot == crashed
+		kind := tuner.ClassifyCrash(inTrial, r.fold.applied[crashed] != 0)
+		detected := &journal.CrashDetected{PreviousBoot: crashed, InFlight: r.fold.lastIntentIn(crashed), Stray: kind == tuner.CrashStray}
+		if _, err := r.append(detected, r.fold.recordedFor(crashed, boot)...); err != nil {
+			return err
+		}
+	}
+	if err := r.closeOpenTrial(); err != nil {
+		return err
+	}
+	for _, seq := range slices.Clone(r.fold.pendingIdle) {
+		crash := r.eventAt(seq).Data.(*journal.CrashDetected)
+		cause := append([]int{seq}, r.fold.recordedFor(crash.PreviousBoot, boot)...)
+		if _, err := r.append(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed}, cause...); err != nil {
+			return err
+		}
+	}
+	for {
+		a, ok := r.tuner.Attribution()
+		if !ok {
+			return nil
+		}
+		if _, err := r.append(a.Payload, a.Cause...); err != nil {
+			return err
+		}
+	}
+}
+
+func (r *runner) recordMCE(m machine.MCE, fromBoot string) error {
+	if r.fold.mceKeys[mceKey(fromBoot, m.Lines)] {
+		return nil
+	}
+	_, err := r.append(&journal.MCE{CPU: m.CPU, Core: m.Core, Bank: m.Bank, BankType: m.BankType, Corrected: m.Corrected, FromBoot: fromBoot, Lines: m.Lines})
+	return err
+}
+
+func (r *runner) closeOpenTrial() error {
+	open := r.fold.open
+	if open == nil {
+		return nil
+	}
+	end := &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeInconclusive, Interrupted: true, Reason: "shycler stopped during the trial"}
+	cause := []int{open.seq}
+	if seq, crashed := r.fold.crashSeq[open.boot]; crashed {
+		end = &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Reason: "machine crashed during the trial"}
+		cause = append([]int{seq}, r.fold.recordedFor(open.boot, r.in.Boot)...)
+	} else if len(open.mces) > 0 {
+		signal := machine.UncorrectedMCE
+		if open.corrected {
+			signal = machine.CorrectedMCE
+		}
+		end = &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeFailure, Signal: signal, Interrupted: true, Reason: "shycler stopped during the trial after a machine check"}
+		cause = append(cause, open.mces...)
+	}
+	_, err := r.append(end, cause...)
+	return err
+}
+
+func (r *runner) eventAt(seq int) journal.Event {
+	return r.in.Journal.Events()[seq-1]
+}
+
+func (r *runner) checkDeadEnd() (*Stop, error) {
+	f := r.fold
+	if f.smuSeq != 0 {
+		return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndSMU, Detail: f.smuDetail}, f.smuSeq)
+	}
+	if f.escapeSeq != 0 {
+		return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndContainment, Detail: f.escapeDetail}, f.escapeSeq)
+	}
+	for _, b := range []machine.Backend{machine.Mprime, machine.Ycruncher} {
+		if streak := f.streaks[b]; len(streak) >= r.in.Config.DeadEnds.InconclusiveInARow {
+			return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Detail: fmt.Sprintf("%s inconclusive %d times in a row", b, len(streak))}, streak...)
+		}
+	}
+	if len(f.stray) >= r.in.Config.DeadEnds.StrayCrashesInARow {
+		return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndBootLoop, Detail: fmt.Sprintf("%d crashes in a row before the profile was applied", len(f.stray))}, f.stray...)
+	}
+	return nil, nil
+}
+
+func (r *runner) afterEvidence(err error) (Stop, error) {
+	if !errors.Is(err, errDeadEndEvidence) {
+		return Stop{}, err
+	}
+	stop, err := r.checkDeadEnd()
+	if err != nil {
+		return Stop{}, err
+	}
+	if stop == nil {
+		return Stop{}, errDeadEndEvidence
+	}
+	return *stop, nil
+}
+
+func (r *runner) deadEnd(d *journal.DeadEnd, cause ...int) (*Stop, error) {
+	d.Action = deadEndAction
+	cause = slices.Clone(cause)
+	if _, err := r.append(d, cause...); err != nil {
+		return nil, err
+	}
+	if _, err := r.append(&journal.Shutdown{Reason: journal.ShutdownDeadEnd}); err != nil {
+		return nil, err
+	}
+	stop := &Stop{Reason: StopDeadEnd, DeadEnd: d}
+	for _, seq := range cause {
+		stop.Evidence = append(stop.Evidence, r.eventAt(seq))
+	}
+	return stop, nil
+}
+
+func (r *runner) preflight() (*Stop, error) {
+	var (
+		failed []int
+		names  []string
+	)
+	for _, c := range r.in.Machine.Host.Preflight() {
+		e, err := r.append(&journal.PreflightCheck{Check: c.Name, Detail: c.Detail, OK: c.OK})
+		if err != nil {
+			return nil, err
+		}
+		if !c.OK {
+			failed = append(failed, e.Seq)
+			names = append(names, fmt.Sprintf("%s (%s)", c.Name, c.Detail))
+		}
+	}
+	if recorded := r.fold.context; recorded != nil {
+		current, err := r.in.Machine.Host.BIOSContext()
+		if err != nil {
+			return nil, fmt.Errorf("read BIOS context: %w", err)
+		}
+		detail, ok := compareContext(*recorded, current)
+		e, err := r.append(&journal.PreflightCheck{Check: "bios_context", Detail: detail, OK: ok})
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			failed = append(failed, e.Seq)
+			names = append(names, fmt.Sprintf("bios_context (%s)", detail))
+		}
+	}
+	if len(failed) == 0 {
+		return nil, nil
+	}
+	return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndPreflight, Detail: "failed checks: " + strings.Join(names, ", ")}, failed...)
+}
+
+func compareContext(recorded, current machine.BIOSContext) (string, bool) {
+	var a, b map[string]any
+	ra, _ := json.Marshal(recorded)
+	rb, _ := json.Marshal(current)
+	_ = json.Unmarshal(ra, &a)
+	_ = json.Unmarshal(rb, &b)
+	for _, field := range []string{"bios_version", "board", "cpu_model", "microcode", "boost_limit_mhz"} {
+		if a[field] != b[field] {
+			return fmt.Sprintf("%s is %v; the session recorded %v", field, b[field], a[field]), false
+		}
+	}
+	return "matches the session", true
+}
+
+func (r *runner) startSession() error {
+	if r.fold.context == nil {
+		ctx, err := r.in.Machine.Host.BIOSContext()
+		if err != nil {
+			return fmt.Errorf("read BIOS context: %w", err)
+		}
+		if _, err := r.append(&journal.SessionContext{BIOSContext: ctx}); err != nil {
+			return err
+		}
+	}
+	if r.fold.baselineSeq == 0 {
+		offsets := make([]int, len(r.cores))
+		var reads []int
+		for i, c := range r.cores {
+			o, err := r.in.Machine.SMU.Offset(c.Core)
+			if err != nil {
+				return r.smuFailed(journal.SMURead, new(c.Core), 0, 0, err)
+			}
+			e, err := r.append(&journal.SMUReadback{Core: c.Core, Offset: o})
+			if err != nil {
+				return err
+			}
+			offsets[i] = o
+			reads = append(reads, e.Seq)
+		}
+		if _, err := r.append(&journal.SessionBaseline{Offsets: offsets}, reads...); err != nil {
+			return err
+		}
+	}
+	if !r.fold.noticed {
+		var nonzero []int
+		for i, o := range r.fold.baseline {
+			if o != 0 {
+				nonzero = append(nonzero, r.cores[i].Core)
+			}
+		}
+		if len(nonzero) > 0 {
+			if _, err := r.append(&journal.SessionNotice{Notice: journal.NoticeNonzeroBaseline, Cores: nonzero}, r.fold.baselineSeq); err != nil {
+				return err
+			}
+		}
+	}
+	for i, c := range r.cores {
+		if _, ok := r.fold.phase[c.Core]; ok {
+			continue
+		}
+		b := r.fold.baseline[i]
+		start, reason := machine.ClampOffset(b), "baseline"
+		if o, ok := r.in.Config.StartOffsets[c.Core]; ok {
+			start, reason = o, "configured start offset"
+		} else if start != b {
+			reason = fmt.Sprintf("baseline %d clamped to %d", b, start)
+		}
+		if _, err := r.append(&journal.CorePhase{Core: c.Core, To: journal.PhaseSearch, Offset: start, Reason: reason}, r.fold.baselineSeq); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *runner) applyProfile() error {
+	reads, err := r.setAll(0)
+	if err != nil {
+		return err
+	}
+	r.profileApplied = true
+	if r.fold.applied[r.in.Boot] != 0 {
+		return nil
+	}
+	_, err = r.append(&journal.ProfileApplied{Offsets: make([]int, len(r.cores)), Condition: machine.Isolated}, reads...)
+	return err
+}
+
+func (r *runner) loop(ctx context.Context) (Stop, error) {
+	for {
+		if ctx.Err() != nil {
+			return r.shutdown(journal.ShutdownSignal, StopSignal)
+		}
+		if stop, err := r.checkDeadEnd(); stop != nil || err != nil {
+			return deref(stop), err
+		}
+		a := r.tuner.Next()
+		switch a.Kind {
+		case tuner.Decide:
+			if d, ok := a.Payload.(*journal.DeadEnd); ok {
+				stop, err := r.deadEnd(d, a.Cause...)
+				return deref(stop), err
+			}
+			if _, err := r.append(a.Payload, a.Cause...); err != nil {
+				return Stop{}, err
+			}
+		case tuner.RunTrial:
+			if !r.profileApplied {
+				err := r.applyProfile()
+				if errors.Is(err, errDeadEndEvidence) {
+					continue
+				}
+				if err != nil {
+					return Stop{}, err
+				}
+			}
+			stop, err := r.trial(ctx, a)
+			if errors.Is(err, errDeadEndEvidence) {
+				continue
+			}
+			if stop != nil || err != nil {
+				return deref(stop), err
+			}
+		case tuner.EnterGuard:
+			return r.shutdown(journal.ShutdownGuard, StopGuard)
+		}
+	}
+}
+
+func (r *runner) shutdown(reason journal.ShutdownReason, stop StopReason) (Stop, error) {
+	if _, err := r.append(&journal.Shutdown{Reason: reason}); err != nil {
+		return Stop{}, err
+	}
+	return Stop{Reason: stop}, nil
+}

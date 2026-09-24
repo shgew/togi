@@ -88,6 +88,8 @@ A trial passes when all of these hold:
 - no failure signal named a core;
 - every sampled thread was on an allowed logical CPU.
 
+When evidence conflicts, it is weighed in this order: a containment violation first (a dead end), then a failure signal from the backend or any MCE in the trial window, then inconclusive, then pass. A kernel log that cannot be read makes the trial inconclusive.
+
 Failure signals:
 
 | Signal | Detection | Attribution |
@@ -100,6 +102,10 @@ Failure signals:
 | Crash | Boot ID differs from the last one in the journal, with no clean-shutdown event | Unattributed, unless an MCE above names a core |
 
 In isolated trials every failure is attributed to the target, including an MCE that names another core: only the target carries an offset (`tuner.md`).
+
+Crash detection and evidence: every boot in the journal other than the current one, whose last event is not `shutdown` and that no `crash.detected` names, has crashed. Its evidence is every MCE in its own kernel log plus the uncorrected MCEs logged by the boot after it (the next boot in the journal, or the current boot), each recorded once as an `mce` event with `from_boot`. Recovery is idempotent: detection, closing the crashed trial and its failure are each redone by the next `run` if a further crash or kill interrupts them, so a crash during recovery is detected on its own, normally as stray, without losing the first.
+
+A trial still open when `run` starts, in a boot that did not crash (the same boot, or one that ended in `shutdown`), ends as `interrupted`: a failure (`corrected_mce`, or `uncorrected_mce` when none is corrected) when `mce` events were already recorded for it, else inconclusive. Interrupted trials do not count toward the inconclusive dead end.
 
 MCE attribution rules:
 - Attribution uses the SMCA bank type decoded by the kernel (`edac_mce_amd`), never a hard-coded bank number.

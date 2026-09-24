@@ -191,6 +191,14 @@ func ReadState(dir string) (State, error) {
 	return s, nil
 }
 
+func (j *Journal) ReadState() (State, error) {
+	return ReadState(j.dir)
+}
+
+func StateFields() []string {
+	return slices.Sorted(maps.Keys(fields(State{})))
+}
+
 func DiffFields(a, b State) []string {
 	ma, mb := fields(a), fields(b)
 	var diff []string
