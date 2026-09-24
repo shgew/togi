@@ -535,9 +535,6 @@ func (r *runner) ensureCondition(t tuner.Trial) error {
 
 func (r *runner) loop(ctx context.Context) (Stop, error) {
 	for {
-		if ctx.Err() != nil {
-			return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
-		}
 		if stop, err := r.checkDeadEnd(); stop != nil || err != nil {
 			return deref(stop), err
 		}
@@ -555,6 +552,9 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 				return Stop{}, err
 			}
 		case tuner.RunTrial:
+			if ctx.Err() != nil {
+				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
+			}
 			err := r.ensureCondition(a.Trial)
 			if errors.Is(err, errDeadEndEvidence) {
 				continue
@@ -562,12 +562,8 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 			if err != nil {
 				return Stop{}, err
 			}
-			stop, err := r.trial(ctx, a)
-			if errors.Is(err, errDeadEndEvidence) {
-				continue
-			}
-			if stop != nil || err != nil {
-				return deref(stop), err
+			if err := r.trial(ctx, a); err != nil && !errors.Is(err, errDeadEndEvidence) {
+				return Stop{}, err
 			}
 		}
 	}
@@ -588,7 +584,7 @@ func (r *runner) shutdown(p *journal.Shutdown, stop StopReason) (Stop, error) {
 }
 
 // restore writes every core back to its baseline once this process has written offsets, so the machine keeps running
-// on the values it had before shycler started, except that a core never goes back to its failed mark or deeper.
+// on the values it had before shycler started, except that a core never goes deeper than its current offset.
 func (r *runner) restore() error {
 	if r.applied == nil {
 		return nil
@@ -596,8 +592,8 @@ func (r *runner) restore() error {
 	targets := make([]int, len(r.cores))
 	for i, c := range r.cores {
 		o := r.fold.baseline[i]
-		if s := slices.IndexFunc(r.state.Cores, func(s journal.CoreState) bool { return s.Core == c.Core }); s >= 0 && r.state.Cores[s].FailedMark != nil {
-			o = max(o, *r.state.Cores[s].FailedMark+1)
+		if s := slices.IndexFunc(r.state.Cores, func(s journal.CoreState) bool { return s.Core == c.Core }); s >= 0 {
+			o = max(o, r.state.Cores[s].Offset)
 		}
 		targets[i] = machine.ClampOffset(o)
 	}

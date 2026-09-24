@@ -90,14 +90,14 @@ type trialRun struct {
 	start  int
 }
 
-func (r *runner) trial(ctx context.Context, a tuner.Action) (*Stop, error) {
+func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	t := a.Trial
 	var cores, cpus []int
 	index := r.fold.allIndex[t.Regime]
 	info := r.coreInfo(t.Core)
 	if !t.AllCores {
 		if info == nil {
-			return nil, fmt.Errorf("trial on core %d: %w", t.Core, ErrNoSuchCore)
+			return fmt.Errorf("trial on core %d: %w", t.Core, ErrNoSuchCore)
 		}
 		index = r.fold.index[t.Core][t.Regime]
 	}
@@ -123,12 +123,12 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) (*Stop, error) {
 	}
 	intent, err := r.append(p, a.Cause...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	tr.intent, tr.start = intent, intent.Seq
 	if tr.writesTarget() {
 		if _, err := r.set(t.Core, t.Offset, intent.Seq); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -151,30 +151,30 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) (*Stop, error) {
 	}
 	started, err := r.append(ts, intent.Seq)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	tr.start = started.Seq
 	if s.Schedule != nil {
 		if _, err := r.append(&journal.TrialSignal{Trial: tr.id, Schedule: s.Schedule.String(), Seed: s.Schedule.Seed}, started.Seq); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	report := &trialReport{tr: tr}
 	res, err := running.Wait(ctx, report)
 	if report.err != nil {
-		return nil, report.err
+		return report.err
 	}
 	if err != nil {
 		return tr.failedToRun(ctx, since, "trial runner failed", err)
 	}
 	if s.Schedule != nil {
 		if _, err := r.append(&journal.TrialSignal{Trial: tr.id, Stops: res.Stops, Conts: res.Conts}, started.Seq); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	mces, readErr, err := tr.teardown(since)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	end := &journal.TrialEnd{Trial: tr.id, DurationS: int(res.Ran.Seconds()), TctlMaxC: res.TctlMaxC}
 	switch {
@@ -195,14 +195,14 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) (*Stop, error) {
 		end.Outcome = journal.OutcomePass
 	}
 	if _, err := r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...); err != nil {
-		return nil, err
+		return err
 	}
 	if end.Outcome == journal.OutcomePass {
 		if err := r.in.Machine.Trials.Passed(tr.id); err != nil {
-			return nil, fmt.Errorf("mark trial %s passed: %w", tr.id, err)
+			return fmt.Errorf("mark trial %s passed: %w", tr.id, err)
 		}
 	}
-	return nil, nil
+	return nil
 }
 
 // trialReport records what the runner reports during Wait; the first append error ends the trial after Wait returns.
@@ -251,15 +251,15 @@ func (tr *trialRun) writesTarget() bool {
 	return tr.t.Condition == machine.Isolated && tr.t.Offset != 0
 }
 
-func (tr *trialRun) failedToRun(ctx context.Context, since time.Time, what string, err error) (*Stop, error) {
+func (tr *trialRun) failedToRun(ctx context.Context, since time.Time, what string, err error) error {
 	r := tr.r
 	if errors.Is(err, machine.ErrCrashed) {
-		return nil, err
+		return err
 	}
 	interrupted := ctx.Err() != nil
 	mces, _, terr := tr.teardown(since)
 	if terr != nil {
-		return nil, terr
+		return terr
 	}
 	end := &journal.TrialEnd{Trial: tr.id, Outcome: journal.OutcomeInconclusive, Reason: fmt.Sprintf("%s: %v", what, err)}
 	if interrupted {
@@ -268,14 +268,8 @@ func (tr *trialRun) failedToRun(ctx context.Context, since time.Time, what strin
 	if len(mces) > 0 {
 		end.Outcome, end.Signal = journal.OutcomeFailure, mceSignal(mces)
 	}
-	if _, err := r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...); err != nil {
-		return nil, err
-	}
-	if !interrupted {
-		return nil, nil
-	}
-	stop, err := r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
-	return &stop, err
+	_, err = r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...)
+	return err
 }
 
 type recordedMCE struct {

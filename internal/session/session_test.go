@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -648,11 +649,15 @@ func TestCrashThenPreflightFailure(t *testing.T) {
 }
 
 type afterLines struct {
-	n  int
-	do func()
+	match string
+	n     int
+	do    func()
 }
 
 func (a *afterLines) Write(p []byte) (int, error) {
+	if !bytes.Contains(p, []byte(a.match)) {
+		return len(p), nil
+	}
 	if a.n--; a.n == 0 {
 		a.do()
 	}
@@ -693,22 +698,28 @@ func TestSignalStopsCleanly(t *testing.T) {
 
 func TestStopRestoresBaseline(t *testing.T) {
 	t.Parallel()
+	sharp := sim.DefaultModel()
+	sharp.PastEdgeRate, sharp.Signals = 1e6, map[machine.Signal]float64{machine.ComputationError: 1}
 	uneven := small()
 	uneven.BIOS = []int{-10, -5}
 	zeroFails := small()
 	zeroFails.Edges[0].Isolated = [5]int{1, 1, 1, 1, 1}
-	sharp := sim.DefaultModel()
-	sharp.PastEdgeRate, sharp.Signals = 1e6, map[machine.Signal]float64{machine.ComputationError: 1}
 	zeroFails.Model = &sharp
+	baselineFails := small()
+	baselineFails.Edges[0].Isolated = [5]int{-5, -5, -5, -5, -5}
+	baselineFails.Model = &sharp
+	interrupt := func(_ *sim.Machine, cancel context.CancelFunc) { cancel() }
 	tests := []struct {
 		name    string
 		cfg     sim.Config
+		match   string
 		at      int
 		do      func(m *sim.Machine, cancel context.CancelFunc)
 		want    StopReason
 		offsets []int
 	}{
-		{name: "signal during search", cfg: small(), at: 50, do: func(_ *sim.Machine, cancel context.CancelFunc) { cancel() }, want: StopSignal, offsets: []int{-10, -10}},
+		{name: "signal during search", cfg: small(), at: 50, do: interrupt, want: StopSignal, offsets: []int{-10, -10}},
+		{name: "signal as a trial fails at the baseline", cfg: baselineFails, match: " FAIL ", at: 1, do: interrupt, want: StopSignal, offsets: []int{-5, -10}},
 		{name: "rotations with the profile applied", cfg: uneven, want: StopRotations, offsets: []int{-10, -5}},
 		{name: "dead end, failed mark above the baseline", cfg: zeroFails, want: StopDeadEnd, offsets: []int{0, -10}},
 		{name: "SMU dead end", cfg: small(), at: 50, do: func(m *sim.Machine, _ context.CancelFunc) { m.CorruptReadback(0) }, want: StopDeadEnd},
@@ -720,7 +731,7 @@ func TestStopRestoresBaseline(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			if tt.do != nil {
-				in.Log = &afterLines{n: tt.at, do: func() { tt.do(in.Machine, cancel) }}
+				in.Log = &afterLines{match: tt.match, n: tt.at, do: func() { tt.do(in.Machine, cancel) }}
 			}
 			stop, err := runSim(ctx, in, nil)
 			if err != nil || stop.Reason != tt.want {
@@ -760,6 +771,42 @@ func TestStopRestoresBaseline(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCrashDuringRestoreKeepsTheAppliedCondition(t *testing.T) {
+	t.Parallel()
+	signalled := func(dir string, tr *trigger, m *sim.Machine) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		in := simInput(dir, m)
+		in.Log = &afterLines{n: 50, do: cancel}
+		if _, err := runSim(ctx, in, tr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ref := t.TempDir()
+	signalled(ref, nil, newSim(t, small()))
+	events := readEvents(t, ref)
+	baseline := events[slices.IndexFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindSessionBaseline })].Seq
+	restoring := slices.IndexFunc(events, func(e journal.Event) bool {
+		return e.Kind == journal.KindSMUIntent && slices.Contains(e.Cause, baseline)
+	})
+	if restoring < 0 {
+		t.Fatal("reference run did not restore the baseline")
+	}
+
+	dir := t.TempDir()
+	m := newSim(t, small())
+	signalled(dir, crashAt(events[restoring].Seq, m), m)
+	for _, e := range readEvents(t, dir) {
+		if c, ok := e.Data.(*journal.CrashDetected); ok {
+			if c.Condition != machine.Isolated {
+				t.Fatalf("seq %d: %s; want the isolated condition applied before the restore", e.Seq, e.Msg)
+			}
+			return
+		}
+	}
+	t.Fatal("no crash.detected after crashing during the restore")
 }
 
 type runnerFault struct {

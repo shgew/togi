@@ -298,7 +298,7 @@ type ProfileRestored struct {
 
 func (*ProfileRestored) Kind() Kind { return KindProfileRestored }
 func (p *ProfileRestored) Message() string {
-	return fmt.Sprintf("offsets restored before stopping: %v (each core's baseline, or one step shallower than its failed mark)", p.Offsets)
+	return fmt.Sprintf("offsets restored before stopping: %v (each core's baseline, or its current offset where that is shallower)", p.Offsets)
 }
 
 type TrialIntent struct {

@@ -85,6 +85,8 @@ A crash is classified by what its boot recorded. A resident application counts a
 - The profile applied in that boot and no trial in flight: an idle crash. With the isolated profile last applied it is an unattributed failure that changes nothing, since every core was at 0. With the resident profile last applied, or partly applied, it counts as an unattributed failure of an R6 trial.
 - Nothing applied in that boot: a stray crash. Stray crashes count in a row until the next application; reaching `dead_ends.stray_crashes_in_a_row` is the boot-loop dead end.
 
+Restoring offsets before `shutdown` (`runtime.md`) is not an application: its `smu.intent` events cite `session.baseline` and leave the boot's last application as it was, so a crash part-way through is classified by what was applied before. After `profile.restored` the cores are back at shycler-independent values, and a crash counts as if nothing was applied.
+
 `crash.detected` carries the condition of the boot's last application.
 
 ## Decision events
