@@ -71,7 +71,12 @@ func transcript(t *testing.T, seed uint64) []string {
 		for _, o := range []int{edge - 2, edge, edge + 1} {
 			for _, r := range []machine.Regime{machine.R1, machine.R3, machine.R4} {
 				res, err := trial(m, core, machine.ClampOffset(o), r, machine.Isolated, 0)
-				log("core %d offset %d %s: %+v %v at %s", core, o, r, res, err, m.Now())
+				tctl := -1
+				if res.TctlMaxC != nil {
+					tctl = *res.TctlMaxC
+				}
+				res.TctlMaxC = nil
+				log("core %d offset %d %s: %+v tctl %d %v at %s", core, o, r, res, tctl, err, m.Now())
 				if errors.Is(err, machine.ErrCrashed) {
 					m.Reboot()
 				}
