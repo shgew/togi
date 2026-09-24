@@ -39,6 +39,10 @@ Within a regime, each core cycles through the listed workloads trial by trial, s
 
 R6 and R7 exist only in guard. R7 runs one instance per core, so a computation error or stall stays attributed to that instance's core.
 
+### Load-step schedules
+
+An R3 or R4 workload starts running, then alternates on and off periods; each on period ends with SIGSTOP and each off period with SIGCONT. R3 draws each period independently and uniformly from {10 ms, 50 ms, 200 ms, 1 s, 5 s} with a PCG seeded by the recorded seed, so the seed reproduces the schedule. R4 runs for its duty share of every 100 ms period. The trial end records how many of each signal were sent.
+
 ## Durations and guard schedule
 
 Defaults, all configurable:
