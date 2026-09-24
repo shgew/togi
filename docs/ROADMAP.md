@@ -197,7 +197,7 @@ Make durability visible.
 
 ## M3 Hardware
 
-Each task implements one T04 seam. Hardware tests carry the `hardware` build tag and run as root on the target machine.
+Each task implements one T04 seam. Hardware tests carry the `hardware` build tag and run on the target machine (`AGENTS.md`, Commands).
 
 ### T09 SMU driver and preflight
 
@@ -277,7 +277,7 @@ Each task implements one T04 seam. Hardware tests carry the `hardware` build tag
 - The GRUB specialisation with the service, tty1 unit, sysctls, watchdog, journald settings and the GRUB assertion.
 - Dead-end actions: verify and implement the `grub-editenv` change, and the boot-loop reboot.
 
-**Done when:** `nix flake check` includes a NixOS VM test that boots the module, runs `shycler run --sim` as the service, and verifies that a dead end clears the saved entry. VM tests take minutes; the seconds-long loop stays `go test`.
+**Done when:** `nix flake check` includes a NixOS VM test that boots the module, runs the unmodified tuning boot service, which reaches the preflight dead end in a VM without `ryzen_smu`, and verifies that a dead end clears the saved entry. VM tests take minutes; the seconds-long loop stays `go test`.
 
 ### T14 CI on Forgejo Actions
 

@@ -18,7 +18,7 @@ A backend integration:
 - reports setup problems as inconclusive, never as failures.
 
 Known quirks the integrations handle:
-- **mprime:** needs `NumCPUs`, `CoresPerTest`, the `CpuSupports*` switches for the instruction set and the FFT range in `local.txt`/`prime.txt`. Errors land in `results.txt`, and mprime can keep running after one.
+- **mprime:** needs `NumCPUs`, `CoresPerTest`, the `CpuSupports*` switches for the instruction set and the FFT range in `local.txt`/`prime.txt`. `TortureTime=1` keeps each FFT size to one minute, so a trial covers several sizes. Errors land in `results.txt`, which the runner tails once per second, and mprime can keep running after one.
 - **y-cruncher:** command-line thread options do not confine it; only a config file names the CPUs. It prints `Failed to set core affinity` when confinement and config disagree, which counts as a containment violation. Its startup is slow and needs the stall grace period.
 
 ## Regimes
@@ -32,12 +32,12 @@ Known quirks the integrations handle:
 | R3 load steps | Current transients between busy and idle | An R1 or R2 workload suspended and resumed with `SIGSTOP`/`SIGCONT`. On and off periods are drawn from {10 ms, 50 ms, 200 ms, 1 s, 5 s} with a recorded seed |
 | R4 medium load | Partial duty cycles | An R1 workload at 25%, 50% or 75% duty with a 100 ms period, cycling per trial |
 | R5 SMT pair | Both threads of one core | R1 and R2 workloads with 2 threads on both logical CPUs of the core |
-| R6 idle | Normal power management with the profile applied | First half: no load at all. Second half: short R1 bursts (100 ms every 2 s) on one core at a time in scheduling order |
-| R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance per core. First both CCDs, then CCD0 only, then CCD1 only |
+| R6 idle | Normal power management with the profile applied | One confined 1-thread R1 instance per core, all stopped with SIGSTOP from the start. First half: no load at all. Second half: short bursts (SIGCONT, then SIGSTOP 100 ms later, every 2 s) on one core at a time in scheduling order |
+| R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance per core. First both CCDs, then CCD0 only (CCD1's instances stopped), then CCD1 only |
 
 Within a regime, each core cycles through the listed workloads trial by trial, so backends alternate on the same core.
 
-R6 and R7 exist only in guard. Their trial targets every core: `trial.intent` lists every core in `cores`, and the trial runs on each core's first logical CPU. R7 runs one instance per core, so a computation error or stall stays attributed to that instance's core.
+R6 and R7 exist only in guard. Their trial targets every core: `trial.intent` lists every core in `cores`, and the trial runs on each core's first logical CPU. R6 and R7 run one instance per core, each in its own scope and work directory, so a computation error or stall stays attributed to that instance's core.
 
 ### Load-step schedules
 
@@ -77,7 +77,9 @@ Each backend instance runs as a child of shycler inside a transient scope confin
 systemd-run --scope --quiet --collect -p AllowedCPUs=<cpus> -- <argv>
 ```
 
-The kernel enforces the cpuset whatever the backend does. shycler also samples the processor field of every backend thread in `/proc/<pid>/task/*/stat` once per second. A thread seen outside its allowed logical CPUs is a dead end. Stopping a trial terminates the whole scope.
+The kernel enforces the cpuset whatever the backend does. shycler also samples the processor field of every backend thread in `/proc/<pid>/task/*/stat` once per second, from the moment the process is inside its scope. A thread seen outside its allowed logical CPUs is a dead end. Stopping a trial terminates the whole scope.
+
+Teardown, per instance: SIGCONT then SIGTERM to the process group, and up to 3 s for it to exit; then SIGKILL to everything in the scope (`systemctl kill --kill-whom=all`) and to the process group, and up to 10 s more. A backend still running after that is a runner error. The output left in the pipes and watched files is read to the end before the outcome is decided, so an error printed during teardown still fails the trial.
 
 ## Trial outcome
 
@@ -117,4 +119,4 @@ MCA bank contents survive a warm reset and the kernel logs them early in the nex
 
 ## Temperature
 
-Tctl from the `k10temp` hwmon (`temp1_input`) is sampled once per second during each trial. The maximum goes into the trial's end event. Temperature never decides an outcome.
+Tctl comes from the first hwmon whose `name` is `k10temp` or `zenpower`, using the `temp*_input` whose `temp*_label` is `Tctl`. It is sampled once per second during each trial. Without such a sensor the trial end has no Tctl. The maximum goes into the trial's end event. Temperature never decides an outcome.
