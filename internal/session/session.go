@@ -83,6 +83,17 @@ func Run(ctx context.Context, in Input) (Stop, error) {
 }
 
 func (r *runner) run(ctx context.Context) (Stop, error) {
+	events := r.in.Journal.Events()
+	journal.Replay(events, r.fold, &r.state, r.tuner)
+	r.tuner.Project(&r.state)
+	if len(events) > 0 {
+		if err := r.checkState(); err != nil {
+			return Stop{}, err
+		}
+	}
+	if stop, err := r.resumeDeadEnd(events); stop != nil || err != nil {
+		return deref(stop), err
+	}
 	cores, err := r.in.Machine.Host.Topology()
 	if err != nil {
 		return Stop{}, fmt.Errorf("read topology: %w", err)
@@ -95,14 +106,6 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 		}
 	}
 
-	events := r.in.Journal.Events()
-	journal.Replay(events, r.fold, &r.state, r.tuner)
-	r.tuner.Project(&r.state)
-	if len(events) > 0 {
-		if err := r.checkState(); err != nil {
-			return Stop{}, err
-		}
-	}
 	if !r.fold.started {
 		if _, err := r.append(&journal.SessionStart{Schema: journal.Schema, Session: r.in.Machine.Clock.Now().UTC().Format("20060102T150405Z"), Cores: cores}); err != nil {
 			return Stop{}, err
@@ -299,6 +302,29 @@ func (r *runner) afterEvidence(err error) (Stop, error) {
 	return *stop, nil
 }
 
+func (r *runner) resumeDeadEnd(events []journal.Event) (*Stop, error) {
+	for i := len(events) - 1; i >= 0; i-- {
+		e := events[i]
+		if _, ok := e.Data.(*journal.DeadEnd); !ok {
+			continue
+		}
+		entry, shutdown := false, false
+		for _, next := range events[i+1:] {
+			if next.Kind == journal.KindBootSavedEntry && slices.Contains(next.Cause, e.Seq) {
+				entry = true
+			}
+			if next.Kind == journal.KindShutdown && next.Data.(*journal.Shutdown).Reason == journal.ShutdownDeadEnd {
+				shutdown = true
+			}
+		}
+		if shutdown {
+			return nil, nil
+		}
+		return r.finishDeadEnd(e, !entry)
+	}
+	return nil, nil
+}
+
 func (r *runner) deadEnd(d *journal.DeadEnd, cause ...int) (*Stop, error) {
 	switch {
 	case r.in.Bootloader == nil:
@@ -313,8 +339,15 @@ func (r *runner) deadEnd(d *journal.DeadEnd, cause ...int) (*Stop, error) {
 	if err != nil {
 		return nil, err
 	}
-	cleared := false
-	if r.in.Bootloader != nil {
+	return r.finishDeadEnd(e, true)
+}
+
+func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
+	d := e.Data.(*journal.DeadEnd)
+	cleared := d.Action == journal.ActionExit
+	switch {
+	case d.Action == journal.ActionExit || (clear && r.in.Bootloader == nil):
+	case clear:
 		before, after, cerr := r.in.Bootloader.ClearSavedEntry()
 		entry := &journal.BootSavedEntry{Before: before, After: after}
 		if cerr != nil {
@@ -324,13 +357,18 @@ func (r *runner) deadEnd(d *journal.DeadEnd, cause ...int) (*Stop, error) {
 			return nil, err
 		}
 		cleared = cerr == nil
+	default:
+		for _, event := range r.in.Journal.Events() {
+			if event.Kind == journal.KindBootSavedEntry && slices.Contains(event.Cause, e.Seq) {
+				cleared = event.Data.(*journal.BootSavedEntry).Error == ""
+			}
+		}
 	}
 	if _, err := r.append(&journal.Shutdown{Reason: journal.ShutdownDeadEnd}); err != nil {
 		return nil, err
 	}
-	// A failed clear never reboots: the next boot would land back in the tuning boot.
 	stop := &Stop{Reason: StopDeadEnd, DeadEnd: d, Reboot: d.Action == journal.ActionClearSavedEntryAndReboot && cleared}
-	for _, seq := range cause {
+	for _, seq := range e.Cause {
 		stop.Evidence = append(stop.Evidence, r.eventAt(seq))
 	}
 	return stop, nil

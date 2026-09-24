@@ -107,6 +107,8 @@ Inside the specialisation:
 
 A failed clear never reboots: the next boot would land back in the tuning boot.
 
+If a `run` starts after `deadend` but before `boot.saved_entry`, it completes the recorded action before any preflight, SMU write or trial: it clears GRUB's saved entry, appends `boot.saved_entry`, records `shutdown`, and exits with the same dead-end condition and evidence. A `clear_saved_entry_and_reboot` action still requests a reboot after a successful clear; a failed clear records the error and exits without rebooting. A `run` without `--tuning-boot` cannot clear the entry: it records `shutdown` and exits with the dead-end condition, leaving GRUB's saved entry as the operator last chose it. If `boot.saved_entry` exists but `shutdown` does not, the next `run` records `shutdown` and exits without clearing again or tuning. An interrupted in-session `exit` action likewise records `shutdown` and exits. Once the dead end and shutdown are fully recorded, a later `run` starts normally and re-evaluates the conditions; a still-failing preflight stops before tuning.
+
 ## NixOS module
 
 `nixosModules.default` from the flake:

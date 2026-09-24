@@ -68,6 +68,151 @@ func TestDeadEndClearsSavedEntry(t *testing.T) {
 	}
 }
 
+func TestResumeInterruptedDeadEnd(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		fault  func(*sim.Machine)
+		action journal.DeadEndAction
+		err    error
+		reboot bool
+	}{
+		{"clear", func(m *sim.Machine) { m.CorruptReadback(0) }, journal.ActionClearSavedEntry, nil, false},
+		{"clear and reboot", func(m *sim.Machine) { m.CrashBeforeApply(3) }, journal.ActionClearSavedEntryAndReboot, nil, true},
+		{"failed clear", func(m *sim.Machine) { m.CrashBeforeApply(3) }, journal.ActionClearSavedEntryAndReboot, errors.New("grub-editenv: exit status 1"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reference := simInput(t.TempDir(), newSim(t, small()))
+			tt.fault(reference.Machine)
+			reference.Bootloader = &fakeBootloader{}
+			simulate(t, reference)
+			refEvents := readEvents(t, reference.Dir)
+			deadSeq := refEvents[slices.IndexFunc(refEvents, func(e journal.Event) bool { return e.Kind == journal.KindDeadEnd })].Seq
+
+			in := simInput(t.TempDir(), newSim(t, small()))
+			tt.fault(in.Machine)
+			bl := &fakeBootloader{err: tt.err}
+			in.Bootloader = bl
+			stop := drive(t, in, killAt(deadSeq))
+			if stop.Reason != StopDeadEnd || stop.DeadEnd.Action != tt.action || stop.Reboot != tt.reboot {
+				t.Fatalf("resumed stop %+v, want dead end action %s, reboot %v", stop, tt.action, tt.reboot)
+			}
+			if bl.calls != 1 {
+				t.Fatalf("clear called %d times, want once on resume", bl.calls)
+			}
+			events := readEvents(t, in.Dir)
+			dead := slices.IndexFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindDeadEnd })
+			if dead < 0 {
+				t.Fatal("no deadend")
+			}
+			var resumed []journal.Kind
+			for _, e := range events[dead+1:] {
+				if e.Kind == journal.KindSMUIntent || e.Kind == journal.KindTrialIntent || e.Kind == journal.KindDeadEnd {
+					t.Fatalf("resumed tuning after dead end: %s", e.Kind)
+				}
+				if e.Kind != journal.KindStateRebuilt {
+					resumed = append(resumed, e.Kind)
+				}
+			}
+			if !slices.Equal(resumed, []journal.Kind{journal.KindBootSavedEntry, journal.KindShutdown}) {
+				t.Fatalf("resume events after dead end: %v", resumed)
+			}
+			entry := events[slices.IndexFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindBootSavedEntry })].Data.(*journal.BootSavedEntry)
+			if (entry.Error != "") != (tt.err != nil) {
+				t.Fatalf("recorded clear error %q, expected error %v", entry.Error, tt.err)
+			}
+		})
+	}
+}
+
+func TestResumeAfterSavedEntryRecorded(t *testing.T) {
+	t.Parallel()
+	reference := simInput(t.TempDir(), newSim(t, small()))
+	reference.Machine.CorruptReadback(0)
+	reference.Bootloader = &fakeBootloader{}
+	simulate(t, reference)
+	events := readEvents(t, reference.Dir)
+	entry := events[slices.IndexFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindBootSavedEntry })]
+
+	in := simInput(t.TempDir(), newSim(t, small()))
+	in.Machine.CorruptReadback(0)
+	bl := &fakeBootloader{}
+	in.Bootloader = bl
+	stop := drive(t, in, killAt(entry.Seq))
+	if stop.Reason != StopDeadEnd || bl.calls != 1 {
+		t.Fatalf("resumed stop %+v after %d clears", stop, bl.calls)
+	}
+	events = readEvents(t, in.Dir)
+	if events[len(events)-1].Kind != journal.KindShutdown {
+		t.Fatalf("last event %s, want shutdown", events[len(events)-1].Kind)
+	}
+	for _, e := range events[entry.Seq:] {
+		if e.Kind == journal.KindSMUIntent || e.Kind == journal.KindTrialIntent || e.Kind == journal.KindBootSavedEntry {
+			t.Fatalf("repeated tuning or GRUB action after saved entry: %s", e.Kind)
+		}
+	}
+}
+
+func TestResumeInterruptedDeadEndOutsideTuningBoot(t *testing.T) {
+	t.Parallel()
+	reference := simInput(t.TempDir(), newSim(t, small()))
+	reference.Machine.CorruptReadback(0)
+	reference.Bootloader = &fakeBootloader{}
+	simulate(t, reference)
+	refEvents := readEvents(t, reference.Dir)
+	deadSeq := refEvents[slices.IndexFunc(refEvents, func(e journal.Event) bool { return e.Kind == journal.KindDeadEnd })].Seq
+
+	in := simInput(t.TempDir(), newSim(t, small()))
+	in.Machine.CorruptReadback(0)
+	bl := &fakeBootloader{}
+	in.Bootloader = bl
+	if _, err := simulateBoot(context.Background(), in, wrapFor(in, killAt(deadSeq))); !errors.Is(err, errKilled) {
+		t.Fatalf("first boot: %v, want killed at deadend", err)
+	}
+	in.Bootloader = nil
+	stop := simulate(t, in)
+	if stop.Reason != StopDeadEnd || stop.DeadEnd.Action != journal.ActionClearSavedEntry || stop.Reboot || bl.calls != 0 {
+		t.Fatalf("resumed stop %+v after %d clears", stop, bl.calls)
+	}
+	events := readEvents(t, in.Dir)
+	var resumed []journal.Kind
+	for _, e := range events[deadSeq:] {
+		if e.Kind != journal.KindStateRebuilt {
+			resumed = append(resumed, e.Kind)
+		}
+	}
+	if !slices.Equal(resumed, []journal.Kind{journal.KindShutdown}) {
+		t.Fatalf("resume events after dead end: %v", resumed)
+	}
+	if stop := simulate(t, in); stop.Reason != StopRotations {
+		t.Fatalf("next run did not resume tuning: %+v", stop)
+	}
+}
+
+func TestFullyRecordedDeadEndReevaluatesPreflight(t *testing.T) {
+	t.Parallel()
+	in := simInput(t.TempDir(), newSim(t, small()))
+	in.Machine.FailCheck("root", "uid 1000")
+	bl := &fakeBootloader{}
+	in.Bootloader = bl
+	if stop := simulate(t, in); stop.Reason != StopDeadEnd {
+		t.Fatalf("first stop %+v", stop)
+	}
+	before := len(readEvents(t, in.Dir))
+	if stop := simulate(t, in); stop.Reason != StopDeadEnd || stop.DeadEnd.Condition != journal.DeadEndPreflight {
+		t.Fatalf("second stop %+v", stop)
+	}
+	if bl.calls != 2 {
+		t.Fatalf("clear called %d times after two dead ends", bl.calls)
+	}
+	for _, e := range readEvents(t, in.Dir)[before:] {
+		if e.Kind == journal.KindSMUIntent || e.Kind == journal.KindTrialIntent {
+			t.Fatalf("tuning with failing preflight after complete dead end: %s", e.Kind)
+		}
+	}
+}
+
 func TestDeadEndWithoutBootloaderExits(t *testing.T) {
 	t.Parallel()
 	in := simInput(t.TempDir(), newSim(t, small()))
