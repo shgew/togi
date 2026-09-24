@@ -50,6 +50,7 @@ type CoreState struct {
 	Pass          *int         `json:"pass"`
 	FailedMark    *int         `json:"failed_mark"`
 	UnprovenDepth int          `json:"unproven_depth"`
+	Queued        string       `json:"queued,omitempty"`
 	LastDecision  *DecisionRef `json:"last_decision"`
 }
 

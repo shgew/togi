@@ -17,6 +17,7 @@ import (
 const (
 	eventsFile = "events.jsonl"
 	lockFile   = "lock"
+	archiveDir = "archive"
 )
 
 type Options struct {
@@ -76,6 +77,15 @@ func open(dir string, opts Options) (*Journal, error) {
 	if err != nil {
 		lock.Close()
 		return nil, err
+	}
+	if n := len(events); n > 0 && end == len(data) {
+		if a, ok := events[n-1].Data.(*SessionArchived); ok {
+			if err := finishArchive(dir, a.Path, opts.Sync); err != nil {
+				lock.Close()
+				return nil, fmt.Errorf("finish archive: %w", err)
+			}
+			events, data, end = nil, nil, 0
+		}
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
@@ -144,18 +154,67 @@ func parse(data []byte) (events []Event, end int, err error) {
 }
 
 func Read(dir string) (events []Event, torn []byte, err error) {
-	data, err := os.ReadFile(filepath.Join(dir, eventsFile))
+	return ReadFile(filepath.Join(dir, eventsFile))
+}
+
+func ReadFile(path string) (events []Event, torn []byte, err error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read journal %s: %w", dir, err)
+		return nil, nil, fmt.Errorf("read journal %s: %w", path, err)
 	}
 	events, end, err := parse(data)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read journal %s: %w", dir, err)
+		return nil, nil, fmt.Errorf("read journal %s: %w", path, err)
 	}
 	if end < len(data) {
 		torn = data[end:]
 	}
 	return events, torn, nil
+}
+
+// Archive records session.archived, then moves the journal to archive/<session>.jsonl and removes the state file. The
+// journal is spent afterwards: close it. Open finishes an archive that was recorded but not moved.
+func (j *Journal) Archive(session string) (string, error) {
+	rel := filepath.Join(archiveDir, session+".jsonl")
+	path := filepath.Join(j.dir, rel)
+	if _, err := os.Stat(path); err == nil {
+		return "", fmt.Errorf("archive %s already exists", path)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("archive: %w", err)
+	}
+	if _, err := j.Append(&SessionArchived{Session: session, Path: rel}); err != nil {
+		return "", err
+	}
+	if j.opts.Sync {
+		if err := j.f.Sync(); err != nil {
+			return "", fmt.Errorf("sync %s: %w", KindSessionArchived, err)
+		}
+	}
+	if err := finishArchive(j.dir, rel, j.opts.Sync); err != nil {
+		return "", fmt.Errorf("archive: %w", err)
+	}
+	return rel, nil
+}
+
+func finishArchive(dir, rel string, sync bool) error {
+	archive := filepath.Join(dir, archiveDir)
+	if err := os.MkdirAll(archive, 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(filepath.Join(dir, eventsFile), filepath.Join(dir, rel)); err != nil {
+		return err
+	}
+	if sync {
+		for _, d := range []string{dir, archive} {
+			if err := syncDir(d); err != nil {
+				return fmt.Errorf("sync directory %s: %w", d, err)
+			}
+		}
+	}
+	if err := os.Remove(filepath.Join(dir, stateFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func Replay(events []Event, folders ...Folder) {

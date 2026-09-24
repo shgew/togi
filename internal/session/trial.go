@@ -191,7 +191,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) (*Stop, error) {
 func (r *runner) durationS(t tuner.Trial) int {
 	d := r.in.Config.Durations
 	switch t.Phase {
-	case journal.PhaseConfirmation:
+	case journal.PhaseConfirmation, journal.PhaseRegain:
 		return d.ConfirmationTrialS
 	case journal.PhaseGuard:
 		switch t.Regime {

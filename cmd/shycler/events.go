@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -22,14 +21,7 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 		rawJSON bool
 	)
 	flags := newFlagSet("events", g)
-	flags.Func("core", "only events naming core `N`", func(s string) error {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 0 {
-			return errors.New("must be a non-negative integer")
-		}
-		filter.Core = &n
-		return nil
-	})
+	flags.Func("core", "only events naming core `N`", coreFlag(&filter.Core))
 	flags.Func("kind", "only these kinds or groups, comma-separated", func(s string) error {
 		for k := range strings.SplitSeq(s, ",") {
 			if k = strings.TrimSpace(k); k != "" {

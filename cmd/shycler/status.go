@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -84,14 +85,15 @@ func writeStatus(w io.Writer, st journal.State) {
 
 	fmt.Fprintln(w)
 	tw := newTable(w)
-	fmt.Fprintln(tw, "CORE\tCCD\tOFFSET\tPHASE\tFAILED\tUNPROVEN\tLAST DECISION")
+	fmt.Fprintln(tw, "CORE\tCCD\tOFFSET\tPHASE\tFAILED\tUNPROVEN\tQUEUED\tLAST DECISION")
 	var unproven []string
 	for _, c := range st.Cores {
 		last := "-"
 		if d := c.LastDecision; d != nil {
 			last = fmt.Sprintf("[#%d] %s", d.Seq, d.Msg)
 		}
-		fmt.Fprintf(tw, "%02d\t%d\t%d\t%s\t%s\t%d\t%s\n", c.Core, c.CCD, c.Offset, c.Phase, mark(c.FailedMark), c.UnprovenDepth, last)
+		queued := cmp.Or(c.Queued, "-")
+		fmt.Fprintf(tw, "%02d\t%d\t%d\t%s\t%s\t%d\t%s\t%s\n", c.Core, c.CCD, c.Offset, c.Phase, mark(c.FailedMark), c.UnprovenDepth, queued, last)
 		if c.UnprovenDepth > 0 {
 			unproven = append(unproven, fmt.Sprintf("%02d", c.Core))
 		}

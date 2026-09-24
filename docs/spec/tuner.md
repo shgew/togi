@@ -118,20 +118,22 @@ Clean hours are the durations of passed resident trials since the last `profile.
 
 ## Regain
 
-Suspect backoffs are never undone automatically. `shycler status` lists each core's unproven depth. `shycler regain [--core N]` takes each selected core with unproven depth, in scheduling order, one count deeper per invocation:
+Suspect backoffs are never undone automatically. `shycler status` lists each core's unproven depth. `shycler regain [--core N]` records `command.regain` naming each selected core that is confirmed with unproven depth and has nothing queued, in scheduling order, and queues one count of regain on each. It refuses while a regain is queued or running, so one invocation is one count per core. The next `run` works the queue before guard continues:
 
-1. Move the core one count deeper, undoing one suspect step.
+1. `core.phase` confirmed -> `regain`, one count deeper, citing `command.regain`. Unproven depth stays until the count is proven. A regain core is scheduled like confirmation.
 2. Run isolated confirmation R1 to R5 at that offset.
-3. Pass: that count is regained, and its unproven depth drops by one.
-4. Attributed failure: proven backoff. The failed mark cancels the core's remaining unproven depth, since those steps were all deeper.
-5. Guard resumes with the new profile, and clean hours reset. Resident evidence for the regained count comes from guard, so one count per invocation keeps each regain exposed to a full guard before the next.
+3. Pass: `core.phase` regain -> confirmed at that offset; the count is regained and unproven depth drops by one.
+4. Attributed failure at `o`: proven backoff, `core.phase` regain -> confirmed at `o + 1` with `fail = o`, where the core was confirmed before, so no re-confirmation runs. The failed mark cancels the core's remaining unproven depth, since those steps were all deeper.
+5. Guard resumes: the open rotation ends not clean, the tier drops to none, and a `profile.change` follows even when the profile is unchanged, so clean hours reset and a new rotation starts. Resident evidence for the regained count comes from guard, so one count per invocation keeps each regain exposed to a full guard before the next.
+
+A queued regain is dropped when a decision leaves the core with no unproven depth first, such as a proven backoff. Every `core.phase` carries the core's pass and failed mark; only reset clears them.
 
 Proven failed marks are never retried within a session.
 
 ## Reset
 
-- `reset --core N`: clears the core's failed mark, unproven depth and confirmation. The core restarts search from its baseline and the profile changes.
-- `reset --all`: archives the session. The next `run` starts a new session with a fresh baseline and BIOS context.
+- `reset --core N`: records `command.reset` and queues the reset. The next `run`, before any other decision except a pending attribution, records `core.phase` to `search` at the baseline clamped to [-50, 0], with failed mark, pass, unproven depth and confirmation cleared. A failed mark at 0 is cleared too, so reset is the way out of that dead end. The profile changes when the core is confirmed again.
+- `reset --all`: archives the session (`journal.md`). The next `run` starts a new session with a fresh baseline and BIOS context.
 
 `regain` and `reset` write to the journal, so they refuse while a `run` holds it (`journal.md`).
 

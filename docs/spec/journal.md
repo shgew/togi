@@ -27,7 +27,7 @@ Retention: trial directories of failed and inconclusive trials are kept forever.
 2. **Intent before action.** An action that may crash the machine, such as an SMU write or a trial start, is appended and fsynced before it happens. On the next boot the last intent without a matching result is the in-flight action. Intents (`smu.intent`, `trial.intent`) are fsynced before `Append` returns, every event is written with a single `write`, and closing the journal fsyncs it. Opening the journal fsyncs the state directory and its parent, so a newly created journal file survives a crash. `run` appends `shutdown` when it stops on a signal, at a dead end, or on reaching the requested rotations; any other exit writes nothing, so a later boot whose journal ends without `shutdown` is treated as a crash (`workloads.md`, Failure signals). `run --sim` fsyncs nothing, because a simulated crash cannot lose written data.
 3. **Decisions name their cause.** A decision event carries `cause`: the `seq` numbers of the events it was derived from, plus a `reason` in plain words.
 4. **The journal wins.** On start, shycler rebuilds the state by replaying the journal. If `state.json` disagrees with the rebuild, it is rewritten and a `state.rebuilt` event records the difference.
-5. **One writer.** `run`, `regain` and `reset` take `lock` before appending; `regain` and `reset` refuse while a `run` holds it. `status`, `cert` and `events` only read.
+5. **One writer.** `run`, `regain` and `reset` take `lock` before appending; `regain` and `reset` refuse while a `run` holds it. `status`, `cert` and `events` only read. `regain` and `reset --core` end with `shutdown` (reason `command`), so the next `run` never reads their boot as a crash. `reset --all` appends `command.reset` and `session.archived`, fsyncs, then moves `events.jsonl` to `archive/<session-id>.jsonl` and removes `state.json`; it refuses when that archive already exists. Opening a journal whose last event is `session.archived` finishes that move first and continues with an empty journal.
 6. **Torn tails are expected.** A crash can leave a partial last line. Replay drops it and appends a `journal.torn` event with the discarded bytes, hex-encoded. A torn first line leaves an empty journal: nothing happened before `session.start`, so nothing is recorded.
 
 ## Event format
@@ -69,7 +69,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Trials | `trial.intent`, `trial.start`, `trial.progress` (backend milestones such as a finished FFT size), `trial.signal` (load-step schedule), `trial.sample` (containment or stall warnings only), `trial.end` |
 | Evidence | `failure` (kind, attribution, evidence `seq`), `mce` (raw and decoded lines, cpu, core, bank type), `crash.detected` (previous boot ID, in-flight action) |
 | Tuner | `tuner.decision`, `core.phase`, `guard.rotation` (start and end), `escalation.window` (open and close), `tier.change` (from, to, reason) |
-| Commands | `command.regain`, `command.reset` |
+| Commands | `command.regain` (the cores queued), `command.reset` (a core, or all) |
 | Stop | `deadend` (condition, evidence, action taken), `boot.saved_entry` (GRUB change), `shutdown` (clean stop) |
 | Journal | `journal.torn`, `state.rebuilt` |
 
@@ -78,14 +78,12 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 `state.json` is rewritten atomically after every event that changes it: temp file, fsync, rename, directory fsync. It is shaped for one-glance reading:
 
 - `schema`, `session` (id, start time, BIOS context, baseline), `last_seq`;
-- `phase`: `per_core` while any core is in search or confirmation, else `guard` (`regain` arrives with T08);
-- `cores[]`: `core`, `ccd`, `cpus`, `offset`, `baseline`, `phase`, `pass`, `failed_mark`, `unproven_depth`, and `last_decision` (its `seq` and `msg`);
+- `phase`: `per_core` while any core is in search or confirmation, else `regain` while any core is in regain, else `guard`;
+- `cores[]`: `core`, `ccd`, `cpus`, `offset`, `baseline`, `phase`, `pass`, `failed_mark`, `unproven_depth`, `queued` (`regain` or `reset` while a command waits for the next `run`, else omitted), and `last_decision` (its `seq` and `msg`);
 - `in_flight`: the most recent intent without a result yet, or null;
 - `dead_end`: the condition and its `seq`, or null. It clears when the next `run` starts (`config.loaded`);
 - `guard`: null before the first `profile.change`, then `rotation` and `rotation_open`, the rotation's `steps` and `steps_done`, the `profile` and its `profile_seq`, `clean_rotations` and `clean_s` since that `profile.change`, `regimes[]` with each regime's `clean_s` and `rate_bound_per_h` (R1 to R7 in order), `escalation_window_open`, the overall `rate_bound_per_h`, and `tctl_max_c` with its `tctl_max_seq`, the highest Tctl among the passed resident trials since that `profile.change`. A rate bound is `3 / clean hours` per hour, rounded to 4 decimals, and null without clean hours;
 - `tier` and `tier_seq`: the tier of the last `tier.change` and its `seq`; `none` and 0 before the first.
-
-The task that computes it adds the remaining field: the `regain` phase in T08.
 
 ## Human-readable log
 

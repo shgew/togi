@@ -12,6 +12,7 @@ type coreStart struct {
 	phase      journal.Phase
 	offset     int
 	pass, fail *int
+	unproven   int
 }
 
 type harness struct {
@@ -31,7 +32,7 @@ func newHarness(t *testing.T, cores ...coreStart) *harness {
 	}
 	start := h.add(&journal.SessionStart{Schema: journal.Schema, Session: "s", Cores: infos})
 	for i, c := range cores {
-		h.add(&journal.CorePhase{Core: i, To: c.phase, Offset: c.offset, Pass: c.pass, FailedMark: c.fail, Reason: "test"}, start.Seq)
+		h.add(&journal.CorePhase{Core: i, To: c.phase, Offset: c.offset, Pass: c.pass, FailedMark: c.fail, UnprovenDepth: c.unproven, Reason: "test"}, start.Seq)
 	}
 	return h
 }
