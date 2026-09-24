@@ -28,6 +28,7 @@ type trials struct{ m *Machine }
 
 type running struct {
 	m       *Machine
+	boot    int
 	spec    machine.TrialSpec
 	started machine.Started
 	escape  bool
@@ -55,6 +56,7 @@ func (t trials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Runn
 	n, _ := strconv.Atoi(spec.ID)
 	r := &running{
 		m:    m,
+		boot: m.boot,
 		spec: spec,
 		started: machine.Started{
 			PID:      1000 + n,
@@ -73,7 +75,7 @@ func (r *running) Started() machine.Started { return r.started }
 
 func (r *running) Wait(ctx context.Context) (machine.Result, error) {
 	m := r.m
-	if m.crashed {
+	if m.crashed || r.boot != m.boot {
 		return machine.Result{}, machine.ErrCrashed
 	}
 	if err := ctx.Err(); err != nil {

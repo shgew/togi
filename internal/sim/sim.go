@@ -194,6 +194,7 @@ func (m *Machine) startBoot() {
 	m.regs = slices.Clone(m.cfg.BIOS)
 	m.crashed = false
 	m.wroteThisBoot = false
+	clear(m.corruptPending)
 	for _, mce := range m.queued {
 		m.logMCE(m.bootID, mce, m.now)
 	}
