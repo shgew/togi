@@ -1,0 +1,13 @@
+version: "2"
+linters:
+  enable:
+    - exhaustive
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: false
+  exclusions:
+    presets:
+      - std-error-handling
+formatters:
+  enable:
+    - gofmt
