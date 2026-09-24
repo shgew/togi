@@ -96,6 +96,11 @@ func TestClassify(t *testing.T) {
 			t.Errorf("%q classified as %v", line, got)
 		}
 	}
+	for _, line := range []string{"Error allocating memory for FFT data.", "Out of memory!", "Unable to allocate memory.  One possible cause is the operating system's swap area is too small.", "Cannot initialize FFT code, errcode=1002"} {
+		if got := m.Classify(line); got.Kind != backend.SetupError {
+			t.Errorf("%q classified as %v", line, got)
+		}
+	}
 	if got := m.Classify("Self-test 21K (thread 1 of 2) passed!"); got.Kind != backend.Progress || got.Detail != "self-test 21K passed" {
 		t.Errorf("progress: %#v", got)
 	}

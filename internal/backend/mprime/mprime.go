@@ -68,12 +68,16 @@ var computationErrors = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)FATAL ERROR|ERROR: ILLEGAL SUMOUT|Possible hardware failure|Hardware failure detected|Maximum number of warnings exceeded|TORTURE TEST FAILED|Torture Test completed .* - [1-9]\d* errors`),
 	regexp.MustCompile(`(?i)ERROR: SUM\(INPUTS\) != SUM\(OUTPUTS\)|ERROR: Shift counter corrupt|ERROR: Illegal double encountered|ERROR: FFT data has been zeroed|ERROR: Jacobi error check failed|Warning: ILLEGAL SUMOUT|Warning: SUMOUT MISMATCH`),
 }
+var setupErrors = regexp.MustCompile(`(?i)Error allocating memory|Out of memory|Unable to allocate memory|Cannot initialize FFT code`)
 
 func (m *Mprime) Classify(line string) backend.Line {
 	for _, pattern := range computationErrors {
 		if pattern.MatchString(line) {
 			return backend.Line{Kind: backend.ComputationError, Detail: line}
 		}
+	}
+	if setupErrors.MatchString(line) {
+		return backend.Line{Kind: backend.SetupError, Detail: line}
 	}
 	if match := progress.FindStringSubmatch(line); match != nil {
 		return backend.Line{Kind: backend.Progress, Detail: "self-test " + match[1] + " passed"}
