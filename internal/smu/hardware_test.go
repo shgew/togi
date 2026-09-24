@@ -19,7 +19,9 @@ func TestHardwareSMU(t *testing.T) {
 		}
 		t.Logf("%s: %s", c.Name, c.Detail)
 	}
-	for _, core := range d.Topology() {
+	cores := d.Topology()
+	originals := make(map[int]int, len(cores))
+	for _, core := range cores {
 		cur, err := d.Offset(core.Core)
 		if err != nil {
 			t.Fatal(err)
@@ -27,6 +29,17 @@ func TestHardwareSMU(t *testing.T) {
 		if cur != machine.ClampOffset(cur) {
 			t.Fatalf("core %02d reads %d, outside [%d, %d]: writing it back would clamp it", core.Core, cur, machine.MinOffset, machine.MaxOffset)
 		}
+		originals[core.Core] = cur
+	}
+	t.Cleanup(func() {
+		for _, core := range cores {
+			if err := d.SetOffset(core.Core, originals[core.Core]); err != nil {
+				t.Errorf("restore core %02d offset: %v", core.Core, err)
+			}
+		}
+	})
+	for _, core := range cores {
+		cur := originals[core.Core]
 		if err := d.SetOffset(core.Core, cur); err != nil {
 			t.Fatal(err)
 		}
