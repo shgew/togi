@@ -12,7 +12,7 @@ Work is split into tasks. Each task is sized for one planning session followed b
 | T03 | Tuner: search and confirmation | done | #4 |
 | T04 | Simulator | done | #5 |
 | T05 | Run loop and crash resume | done | #6 |
-| T06 | Guard | todo | |
+| T06 | Guard | in review | |
 | T07 | Tiers, status and certificate | todo | |
 | T08 | Regain and reset | todo | |
 | T09 | SMU driver and preflight | todo | |

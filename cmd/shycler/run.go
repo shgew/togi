@@ -18,12 +18,14 @@ import (
 	"code.marleb.org/shgew/shycler/internal/sim"
 )
 
-const runUsage = "Usage: shycler run [--sim <seed>]"
+const runUsage = "Usage: shycler run [--sim <seed>] [--rotations N]"
 
 func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	var (
-		seed    uint64
-		seedSet bool
+		seed         uint64
+		seedSet      bool
+		rotations    int
+		rotationsSet bool
 	)
 	flags := newFlagSet("run", g)
 	flags.Func("sim", "drive a simulated 16-core machine with this `seed` instead of hardware", func(s string) error {
@@ -32,6 +34,14 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 			return errors.New("must be a non-negative integer")
 		}
 		seed, seedSet = v, true
+		return nil
+	})
+	flags.Func("rotations", "stop after `N` clean guard rotations of one profile (default 1 with --sim, else endless)", func(s string) error {
+		v, err := strconv.Atoi(s)
+		if err != nil || v < 1 {
+			return errors.New("must be a positive integer")
+		}
+		rotations, rotationsSet = v, true
 		return nil
 	})
 	if code, ok := parseFlags(flags, args, runUsage, stdout, stderr); !ok {
@@ -55,14 +65,22 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintf(stderr, "shycler run: simulated state directory %s\n", dir)
 	}
-	m, err := sim.New(sim.Config{Seed: seed})
+	if !rotationsSet {
+		rotations = 1
+	}
+	simCfg, err := session.Resume(dir, sim.Config{Seed: seed})
+	if err != nil {
+		fmt.Fprintf(stderr, "shycler run: %v\n", err)
+		return exitError
+	}
+	m, err := sim.New(simCfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitError
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	stop, err := session.Simulate(ctx, session.SimInput{Config: cfg, ConfigPath: g.config, ConfigFile: file, Dir: dir, Machine: m, Log: stderr})
+	stop, err := session.Simulate(ctx, session.SimInput{Config: cfg, ConfigPath: g.config, ConfigFile: file, Dir: dir, Machine: m, Log: stderr, Rotations: rotations})
 	switch {
 	case errors.Is(err, session.ErrNoSuchCore):
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
@@ -75,7 +93,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	switch stop.Reason {
-	case session.StopSignal, session.StopGuard:
+	case session.StopSignal, session.StopRotations:
 		return exitOK
 	case session.StopDeadEnd:
 		fmt.Fprintf(stderr, "shycler: dead end %s: %s\n", stop.DeadEnd.Condition, stop.DeadEnd.Detail)

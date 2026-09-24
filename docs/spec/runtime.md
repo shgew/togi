@@ -6,7 +6,7 @@ Normative rules for how shycler is invoked, configured and deployed.
 
 | Command | Writes journal | Purpose |
 |---|---|---|
-| `shycler run` | yes | Start or resume the session in the foreground. The same entry point serves in-session runs and the tuning boot service |
+| `shycler run [--sim <seed>] [--rotations N]` | yes | Start or resume the session in the foreground. The same entry point serves in-session runs and the tuning boot service. With `--rotations N` (N >= 1) it stops, recording `shutdown`, when a rotation would start after the current profile survived N clean guard rotations; without it guard is endless |
 | `shycler status` | no | Per-core table: offset, phase, failed mark, unproven depth, clean hours per regime; plus tier and in-flight action |
 | `shycler cert` | no | Render the certificate (`tuner.md`) |
 | `shycler events` | no | Render the journal with filters (`journal.md`) |
@@ -15,13 +15,13 @@ Normative rules for how shycler is invoked, configured and deployed.
 
 Global flags: `--config <path>` (default `/etc/shycler/config.toml`), `--state-dir <path>` (default `/var/lib/shycler`).
 
-`shycler run --sim <seed>` drives the seeded simulator (`internal/sim`) instead of hardware: a 16-core machine whose crash reboots are handled in-process, with a real journal. It uses `--state-dir` when given, else a new temporary directory whose path it prints to stderr, and it fsyncs nothing. Until the hardware seams exist (T09-T12), `run` without `--sim` refuses with exit code 2.
+`shycler run --sim <seed>` drives the seeded simulator (`internal/sim`) instead of hardware: a 16-core machine whose crash reboots are handled in-process, with a real journal. It uses `--state-dir` when given, else a new temporary directory whose path it prints to stderr, and it fsyncs nothing. With `--sim`, `--rotations` defaults to 1. A state directory that already holds a journal resumes the simulated machine after it: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot. Until the hardware seams exist (T09-T12), `run` without `--sim` refuses with exit code 2.
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
-| 0 | Stopped cleanly: by a signal, or on reaching guard |
+| 0 | Stopped cleanly: by a signal, or after the requested clean rotations |
 | 1 | Error |
 | 2 | Usage or configuration error, including a start offset for a core that does not exist |
 | 3 | The journal is held by another writer |

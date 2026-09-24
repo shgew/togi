@@ -24,9 +24,7 @@ Retention: trial directories of failed and inconclusive trials are kept forever.
    - every decision.
 
    The one exception: sub-second `SIGSTOP`/`SIGCONT` cycles in R3 and R4 are recorded as the schedule and seed at trial start and as counts at trial end.
-2. **Intent before action.** An action that may crash the machine, such as an SMU write or a trial start, is appended and fsynced before it happens. On the next boot the last intent without a matching result is the in-flight action. Intents (`smu.intent`, `trial.intent`) are fsynced before `Append` returns, every event is written with a single `write`, and closing the journal fsyncs it. Opening the journal fsyncs the state directory and its parent, so a newly created journal file survives a crash. `run` appends `shutdown` when it stops on a signal, at a dead end, or on reaching guard; any other exit writes nothing, so a later boot whose journal ends without `shutdown` is treated as a crash (`workloads.md`, Failure signals). `run --sim` fsyncs nothing, because a simulated crash cannot lose written data.
-||||||| dda6f88
-2. **Intent before action.** An action that may crash the machine, such as an SMU write or a trial start, is appended and fsynced before it happens. On the next boot the last intent without a matching result is the in-flight action. Intents (`smu.intent`, `trial.intent`) are fsynced before `Append` returns, every event is written with a single `write`, and closing the journal fsyncs it. Opening the journal fsyncs the state directory and its parent, so a newly created journal file survives a crash.
+2. **Intent before action.** An action that may crash the machine, such as an SMU write or a trial start, is appended and fsynced before it happens. On the next boot the last intent without a matching result is the in-flight action. Intents (`smu.intent`, `trial.intent`) are fsynced before `Append` returns, every event is written with a single `write`, and closing the journal fsyncs it. Opening the journal fsyncs the state directory and its parent, so a newly created journal file survives a crash. `run` appends `shutdown` when it stops on a signal, at a dead end, or on reaching the requested rotations; any other exit writes nothing, so a later boot whose journal ends without `shutdown` is treated as a crash (`workloads.md`, Failure signals). `run --sim` fsyncs nothing, because a simulated crash cannot lose written data.
 3. **Decisions name their cause.** A decision event carries `cause`: the `seq` numbers of the events it was derived from, plus a `reason` in plain words.
 4. **The journal wins.** On start, shycler rebuilds the state by replaying the journal. If `state.json` disagrees with the rebuild, it is rewritten and a `state.rebuilt` event records the difference.
 5. **One writer.** `run`, `regain` and `reset` take `lock` before appending; `regain` and `reset` refuse while a `run` holds it. `status`, `cert` and `events` only read.
@@ -67,7 +65,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Session | `session.start`, `session.context` (BIOS context), `session.baseline` (baseline profile), `session.notice`, `session.archived` |
 | Config and preflight | `config.loaded` (effective config), `preflight.check` (one per check, with result) |
 | SMU | `smu.intent`, `smu.write`, `smu.readback`, `smu.error` |
-| Profile | `profile.applied` (first application in a boot), `profile.change` |
+| Profile | `profile.applied` (every application of every core's offset, with its condition), `profile.change` (the profile under guard: on entering guard, with `from` null, and after every guard decision) |
 | Trials | `trial.intent`, `trial.start`, `trial.progress` (backend milestones such as a finished FFT size), `trial.signal` (load-step schedule), `trial.sample` (containment or stall warnings only), `trial.end` |
 | Evidence | `failure` (kind, attribution, evidence `seq`), `mce` (raw and decoded lines, cpu, core, bank type), `crash.detected` (previous boot ID, in-flight action) |
 | Tuner | `tuner.decision`, `core.phase`, `guard.rotation` (start and end), `escalation.window` (open and close), `tier.change` |
@@ -80,12 +78,13 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 `state.json` is rewritten atomically after every event that changes it: temp file, fsync, rename, directory fsync. It is shaped for one-glance reading:
 
 - `schema`, `session` (id, start time, BIOS context, baseline), `last_seq`;
-- `phase`: `per_core` or `guard` (`regain` arrives with T08);
-- `cores[]`: `core`, `ccd`, `cpus`, `offset`, `baseline`, `phase`, `pass`, `failed_mark`, and `last_decision` (its `seq` and `msg`);
+- `phase`: `per_core` while any core is in search or confirmation, else `guard` (`regain` arrives with T08);
+- `cores[]`: `core`, `ccd`, `cpus`, `offset`, `baseline`, `phase`, `pass`, `failed_mark`, `unproven_depth`, and `last_decision` (its `seq` and `msg`);
 - `in_flight`: the most recent intent without a result yet, or null;
-- `dead_end`: the condition and its `seq`, or null. It clears when the next `run` starts (`config.loaded`).
+- `dead_end`: the condition and its `seq`, or null. It clears when the next `run` starts (`config.loaded`);
+- `guard`: null before the first `profile.change`, then `rotation` and `rotation_open`, the rotation's `steps` and `steps_done`, the `profile` and its `profile_seq`, `clean_rotations` and `clean_s` since that `profile.change`, `regimes[]` with each regime's `clean_s` (R1 to R7 in order), and `escalation_window_open`.
 
-The tasks that compute them add the remaining fields: `unproven_depth` per core and `guard` (rotation step, clean hours overall and per regime, whether the escalation window is open) in T06, `tier`, the failure-rate bounds and `tctl_max_c` over counted trials in T07, and the `regain` phase in T08.
+The tasks that compute them add the remaining fields: `tier`, the failure-rate bounds and `tctl_max_c` over counted trials in T07, and the `regain` phase in T08.
 
 ## Human-readable log
 

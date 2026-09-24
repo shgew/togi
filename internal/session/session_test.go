@@ -42,11 +42,11 @@ func newSim(t *testing.T, cfg sim.Config) *sim.Machine {
 }
 
 func simInput(dir string, m *sim.Machine) SimInput {
-	return SimInput{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m}
+	return SimInput{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}
 }
 
 // memState stands in for state.json: rewriting a file after every event dominates these tests on
-// copy-on-write filesystems, and the file itself is covered by the journal package and TestSixteenCoresReachGuard.
+// copy-on-write filesystems, and the file itself is covered by the journal package and TestSixteenCoresSurviveARotation.
 type memState struct {
 	mu   sync.Mutex
 	data []byte
@@ -151,6 +151,7 @@ type coreSummary struct {
 	Offset     int
 	Pass       *int
 	FailedMark *int
+	Unproven   int
 }
 
 func (c coreSummary) String() string {
@@ -160,7 +161,7 @@ func (c coreSummary) String() string {
 		}
 		return fmt.Sprint(*p)
 	}
-	return fmt.Sprintf("%s at %d (pass %s, failed mark %s)", c.Phase, c.Offset, ptr(c.Pass), ptr(c.FailedMark))
+	return fmt.Sprintf("%s at %d (pass %s, failed mark %s, unproven %d)", c.Phase, c.Offset, ptr(c.Pass), ptr(c.FailedMark), c.Unproven)
 }
 
 func summary(t *testing.T, dir string) string {
@@ -171,7 +172,10 @@ func summary(t *testing.T, dir string) string {
 	}
 	out := fmt.Sprintf("phase %s, dead end %v:", st.Phase, st.DeadEnd)
 	for _, c := range st.Cores {
-		out += fmt.Sprintf(" core %d %s;", c.Core, coreSummary{c.Phase, c.Offset, c.Pass, c.FailedMark})
+		out += fmt.Sprintf(" core %d %s;", c.Core, coreSummary{c.Phase, c.Offset, c.Pass, c.FailedMark, c.UnprovenDepth})
+	}
+	if g := st.Guard; g != nil {
+		out += fmt.Sprintf(" guard rotation %d, clean rotations %d, clean %d s, window open %v", g.Rotation, g.CleanRotations, g.CleanS, g.EscalationWindow)
 	}
 	return out
 }
@@ -188,13 +192,13 @@ func readEvents(t *testing.T, dir string) []journal.Event {
 func reference(t *testing.T, cfg sim.Config) (dir string, events []journal.Event) {
 	t.Helper()
 	dir = t.TempDir()
-	if stop := simulate(t, simInput(dir, newSim(t, cfg))); stop.Reason != StopGuard {
+	if stop := simulate(t, simInput(dir, newSim(t, cfg))); stop.Reason != StopRotations {
 		t.Fatalf("reference run stopped with %+v", stop)
 	}
 	return dir, readEvents(t, dir)
 }
 
-func TestSixteenCoresReachGuard(t *testing.T) {
+func TestSixteenCoresSurviveARotation(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	m := newSim(t, sim.Config{Seed: 1})
@@ -204,19 +208,19 @@ func TestSixteenCoresReachGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("16-core session took %s", time.Since(began))
-	if stop.Reason != StopGuard {
+	if stop.Reason != StopRotations {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	st, err := journal.ReadState(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Phase != "guard" || len(st.Cores) != 16 {
-		t.Fatalf("state phase %s with %d cores", st.Phase, len(st.Cores))
+	if st.Phase != "guard" || len(st.Cores) != 16 || st.Guard == nil || st.Guard.CleanRotations != 1 {
+		t.Fatalf("state phase %s with %d cores, guard %+v", st.Phase, len(st.Cores), st.Guard)
 	}
 	for _, c := range st.Cores {
-		if c.Phase != journal.PhaseConfirmed || c.Offset != m.IsolatedEdge(c.Core) {
-			t.Errorf("core %d %s at %d, hidden edge %d", c.Core, c.Phase, c.Offset, m.IsolatedEdge(c.Core))
+		if c.Phase != journal.PhaseConfirmed || c.Offset < m.ResidentEdge(c.Core) || c.Offset > 0 {
+			t.Errorf("core %d %s at %d, hidden resident edge %d", c.Core, c.Phase, c.Offset, m.ResidentEdge(c.Core))
 		}
 	}
 	if v := m.Violations(); len(v) > 0 {
@@ -254,7 +258,7 @@ func TestKillAtEveryEvent(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			m := newSim(t, small())
-			if stop := drive(t, simInput(dir, m), killAt(k)); stop.Reason != StopGuard {
+			if stop := drive(t, simInput(dir, m), killAt(k)); stop.Reason != StopRotations {
 				t.Fatalf("stopped with %+v", stop)
 			}
 			if got := summary(t, dir); got != want {
@@ -317,6 +321,9 @@ func checkNeverAtFailedMark(t *testing.T, events []journal.Event) {
 		case *journal.CorePhase:
 			marks[p.Core] = p.FailedMark
 		case *journal.TrialIntent:
+			if p.Core == nil {
+				continue
+			}
 			if mark := marks[*p.Core]; mark != nil && *p.Offset <= *mark {
 				t.Fatalf("trial %s on core %d at %d, failed mark %d", p.Trial, *p.Core, *p.Offset, *mark)
 			}
@@ -354,12 +361,14 @@ func TestCrashAtEveryTrialEvent(t *testing.T) {
 			switch {
 			case f == nil:
 				t.Fatalf("no failure cites crash.detected seq %d", crash.Seq)
-			case !ended && (f.Attribution != journal.Attributed || *f.Core != *intent.Core || *f.Offset != *intent.Offset || f.Trial != intent.Trial || f.Signal != machine.Crash):
+			case !ended && intent.Condition == machine.Resident && (f.Attribution != journal.Unattributed || f.Trial != intent.Trial || f.Regime != intent.Regime || f.Condition != machine.Resident || f.Signal != machine.Crash):
+				t.Fatalf("crash at %d (%s) during resident trial %s: failure %+v", k, hit.Kind, intent.Trial, f)
+			case !ended && intent.Condition == machine.Isolated && (f.Attribution != journal.Attributed || *f.Core != *intent.Core || *f.Offset != *intent.Offset || f.Trial != intent.Trial || f.Signal != machine.Crash):
 				t.Fatalf("crash at %d (%s) during trial %s: failure %+v", k, hit.Kind, intent.Trial, f)
 			case ended && f.Attribution != journal.Unattributed:
 				t.Fatalf("crash at %d (%s) after trial %s ended: failure %+v", k, hit.Kind, intent.Trial, f)
 			}
-			if stop.Reason != StopGuard {
+			if stop.Reason != StopRotations {
 				t.Fatalf("stopped with %+v", stop)
 			}
 			st, _ := readMemState(stateOf(dir))
@@ -402,7 +411,7 @@ func TestCrashDuringRecovery(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			m := newSim(t, cfg)
-			if stop := drive(t, simInput(dir, m), crashAt(k, m)); stop.Reason != StopGuard {
+			if stop := drive(t, simInput(dir, m), crashAt(k, m)); stop.Reason != StopRotations {
 				t.Fatalf("stopped with %+v", stop)
 			}
 			events := readEvents(t, dir)
@@ -447,7 +456,7 @@ func TestStrayCrashes(t *testing.T) {
 					t.Fatalf("stopped with %+v after %d stray crashes", stop, strays)
 				}
 			default:
-				if stop.Reason != StopGuard || strays != 2 {
+				if stop.Reason != StopRotations || strays != 2 {
 					t.Fatalf("stopped with %+v after %d stray crashes", stop, strays)
 				}
 			}
@@ -486,7 +495,7 @@ func TestDeadEnds(t *testing.T) {
 		{name: "escaped thread", fault: (*sim.Machine).Escape, want: journal.DeadEndContainment, evidence: journal.KindTrialEnd, killable: true},
 		{name: "failed preflight", fault: func(m *sim.Machine) { m.FailCheck("root", "uid 1000") }, want: journal.DeadEndPreflight, evidence: journal.KindPreflightCheck},
 		{name: "changed BIOS context", before: func(t *testing.T, in SimInput) {
-			if stop := simulate(t, in); stop.Reason != StopGuard {
+			if stop := simulate(t, in); stop.Reason != StopRotations {
 				t.Fatalf("first run stopped with %+v", stop)
 			}
 			in.Machine.SetBIOSContext(changed)
@@ -514,8 +523,8 @@ func TestDeadEnds(t *testing.T) {
 			in := setup(t)
 			stop := simulate(t, in)
 			if tt.want == "" {
-				if stop.Reason != StopGuard {
-					t.Fatalf("stopped with %+v, want guard", stop)
+				if stop.Reason != StopRotations {
+					t.Fatalf("stopped with %+v, want rotations", stop)
 				}
 				return
 			}
@@ -595,7 +604,7 @@ func TestCrashThenPreflightFailure(t *testing.T) {
 		}
 	}
 	m.FailCheck("root", "")
-	if stop := simulate(t, in); stop.Reason != StopGuard {
+	if stop := simulate(t, in); stop.Reason != StopRotations {
 		t.Fatalf("second run stopped with %+v", stop)
 	}
 	failures := 0
@@ -639,7 +648,7 @@ func TestSignalStopsCleanly(t *testing.T) {
 	}
 	m.Reboot()
 	in.Log = io.Discard
-	if stop := simulate(t, in); stop.Reason != StopGuard {
+	if stop := simulate(t, in); stop.Reason != StopRotations {
 		t.Fatalf("second run stopped with %+v", stop)
 	}
 	events := readEvents(t, dir)
@@ -705,12 +714,12 @@ func TestRunnerErrorKeepsMachineCheck(t *testing.T) {
 		if oerr != nil {
 			t.Fatal(oerr)
 		}
-		stop, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapFor(in, nil)(j), Machine: seams})
+		stop, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapFor(in, nil)(j), Machine: seams, Rotations: in.Rotations})
 		if cerr := j.Close(); err == nil {
 			err = cerr
 		}
 	}
-	if err != nil || stop.Reason != StopGuard {
+	if err != nil || stop.Reason != StopRotations {
 		t.Fatalf("run stopped with %+v, %v", stop, err)
 	}
 	events := readEvents(t, in.Dir)

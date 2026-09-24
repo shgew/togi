@@ -28,13 +28,14 @@ func drive(h *harness, outcome func(Trial) journal.TrialEnd, check func(Action))
 		switch a.Kind {
 		case Decide:
 			h.decide(a)
-			if d, ok := a.Payload.(*journal.DeadEnd); ok {
-				return stop{dead: d}
+			switch p := a.Payload.(type) {
+			case *journal.DeadEnd:
+				return stop{dead: p}
+			case *journal.ProfileChange:
+				return stop{guard: true}
 			}
 		case RunTrial:
 			h.trial(a, outcome(a.Trial))
-		case EnterGuard:
-			return stop{guard: true}
 		}
 	}
 	h.t.Fatalf("no dead end or guard after %d actions", maxActions)
@@ -128,7 +129,6 @@ func TestInvariantsOverRandomOutcomes(t *testing.T) {
 				case *journal.CorePhase:
 					inRange("phase", p.Offset)
 				}
-			case EnterGuard:
 			}
 		})
 	}

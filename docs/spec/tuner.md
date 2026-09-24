@@ -54,7 +54,7 @@ At the candidate edge `e`, the core runs one isolated trial per regime R1 to R5.
 
 ## Isolated trial sequence
 
-Between trials every core is at 0. Before its first trial, every `run` writes every core to 0 with one set-all command and reads each back; `profile.applied` is recorded the first time in each boot. Pending decisions, a failure at 0 among them, are made before that write. One isolated trial is then:
+Between trials every core is at 0. Before its first isolated trial, a `run` writes every core to 0 with one set-all command and reads each back, then records `profile.applied` with condition `isolated`. Pending decisions, a failure at 0 among them, are made before that write. One isolated trial is then:
 
 1. `trial.intent`;
 2. SMU set target to its offset (skipped at 0);
@@ -65,33 +65,56 @@ Between trials every core is at 0. Before its first trial, every `run` writes ev
 7. `trial.end`;
 8. the tuner's `failure` when the trial failed.
 
+## Resident trial sequence
+
+Guard trials run on the profile of the last `profile.change`. Before the first resident trial of a `run`, and after every profile change, each core is set to its profile offset in core-id order, each write read back, then `profile.applied` is recorded with condition `resident`. One resident trial is then:
+
+1. `trial.intent`, naming its core, or every core for R6 and R7;
+2. `trial.start`, plus `trial.signal` for R3 and R4;
+3. the trial, then `trial.signal` counts for R3 and R4;
+4. `mce` events for the trial window;
+5. `trial.end`, naming the backend instance's core when a backend signal ended it;
+6. the tuner's `failure` when the trial failed.
+
+No SMU write happens between resident trials: the profile stays applied.
+
 ## Crashes
 
-In per-core phases a crash is classified by what its boot recorded:
-- A trial in flight in the crashed boot: a failure of that trial, attributed to its target at its offset.
-- `profile.applied` in that boot and no trial in flight: an unattributed failure that changes nothing, since every core was at 0.
+A crash is classified by what its boot recorded:
+- A trial in flight in the crashed boot: a failure of that trial. An isolated trial's failure is attributed to its target at its offset; a resident trial's is attributed by the resident rule in Guard.
+- `profile.applied` in that boot and no trial in flight: an idle crash. With the isolated profile last applied it is an unattributed failure that changes nothing, since every core was at 0. With the resident profile last applied it counts as an unattributed failure of an R6 trial.
 - No `profile.applied` in that boot: a stray crash. Stray crashes count in a row until the next `profile.applied`; reaching `dead_ends.stray_crashes_in_a_row` is the boot-loop dead end.
+
+`crash.detected` carries the condition of the boot's last `profile.applied`.
 
 ## Decision events
 
-Moves within a phase are `tuner.decision` events: `step_deeper` after a passed search step, `backoff` after an attributed failure. Reaching a candidate edge (search to confirmation) and passing confirmation (confirmation to confirmed) are `core.phase` events. Both carry the resulting `pass` and `failed_mark`, so replaying the journal never re-runs a rule.
+Moves within a phase are `tuner.decision` events: `step_deeper` after a passed search step, `backoff` after an attributed failure, `suspect_backoff` after an unattributed one in guard. Reaching a candidate edge (search to confirmation) and passing confirmation (confirmation to confirmed) are `core.phase` events. Both carry the resulting `pass`, `failed_mark` and `unproven_depth`, so replaying the journal never re-runs a rule. Guard decisions have phase `guard`; the core stays `confirmed`.
 
 ## Guard
 
-Guard starts once every core is confirmed. The profile of all edges is applied and stays applied between trials.
+Guard starts once every core is confirmed, with a `profile.change` whose `from` is null. The profile of all edges is applied and stays applied between trials (Resident trial sequence).
 
-A rotation runs the schedule in `workloads.md`. It restarts from the first step whenever the profile changes, so a clean rotation always covers one unchanged profile.
+A rotation runs the configured `guard.rotation` steps (`workloads.md`), captured in its `guard.rotation` start event. A per-core step (R1 to R5) is one trial per core in scheduling order; an R6 or R7 step is one trial targeting every core. The rotation ends clean when every step passed. A profile change ends the open rotation as not clean, and the next rotation starts from the first step, so a clean rotation always covers one unchanged profile. The order is always: the backoff, the unclean rotation end, `profile.change`, the next rotation start.
+
+Resident attribution: the backend instance whose signal ended the trial names its core. Without one, the core-local MCEs among the trial end's evidence name their cores. Exactly one named core makes the failure attributed to that core at its current offset; no named core, or more than one, makes it unattributed.
 
 Failure handling:
-- **Attributed** failure on core `c` at offset `o`: proven backoff, so `fail = o` and `c` moves to `o + 1`. Isolated confirmation at `o` already covers the shallower `o + 1`, so no re-confirmation runs. `o == 0` is a dead end.
+- **Attributed** failure on core `c` at offset `o`: proven backoff, so `fail = o`, `c` moves to `o + 1`, and its unproven depth drops to 0, since every suspect step lay deeper than `o`. Isolated confirmation at `o` or deeper already covers `o + 1`, so no re-confirmation runs. `o == 0` is a dead end.
 - **Unattributed** failure:
-  - The escalation window is closed and the trial had a single target core `c`: suspect backoff of `c` by one count, and the window opens.
-  - Otherwise, meaning the window was already open or the trial was R6 or R7: suspect backoff by one count on every core with a nonzero offset, and the window stays open.
+  - The escalation window is closed and the trial had a single target core `c` with a nonzero offset: suspect backoff of `c` by one count, and the window opens.
+  - Otherwise, meaning the window was already open, the trial was R6 or R7, or its single target was at 0: suspect backoff by one count on every core with a nonzero offset, in scheduling order. The window opens if it was closed.
+  - No core has a nonzero offset: dead end `failure_at_zero` without a core. It leaves no failed mark, so the next `run` continues guard.
+  - A suspect backoff adds one count to the core's unproven depth and leaves its failed mark unchanged.
   - The window closes when a rotation completes clean.
-- A crash with the profile applied and no trial in flight counts as an unattributed failure of an R6 trial.
+- A crash with the resident profile applied and no trial in flight counts as an unattributed failure of an R6 trial.
 - **Inconclusive** trials are retried and change nothing.
 
 Every backoff changes the profile: clean hours reset and the rotation restarts.
+
+Clean hours are the durations of passed resident trials since the last `profile.change`, overall and per regime.
+
+`run` stops, recording `shutdown`, when a rotation would start after the requested number of clean rotations since the last `profile.change` (`runtime.md`); without that request guard is endless.
 
 ## Regain
 
@@ -118,7 +141,7 @@ shycler stops when it cannot make progress:
 
 | Condition | Why it cannot continue |
 |---|---|
-| Attributed failure at offset 0 | The instability is not caused by Curve Optimizer. |
+| Attributed failure at offset 0, or an unattributed resident failure with every core at 0 | The instability is not caused by Curve Optimizer. |
 | SMU readback differs from the written value, or an SMU command fails | Offsets can no longer be trusted. |
 | The same backend is inconclusive 3 times in a row, or is missing | No evidence can be produced. |
 | 3 stray crashes in a row | The machine crashes before shycler acts: a boot loop. |
@@ -133,7 +156,7 @@ A dead end follows from evidence recorded in the journal, not from memory, so a 
 - a backend's streak of inconclusive `trial.end`s reaching the threshold, not counting trials interrupted by a stop or restart;
 - the stray-crash streak reaching the threshold.
 
-A `deadend` event consumes the evidence it reports: the SMU flag, the escape flag, every inconclusive streak or the stray streak. The other conditions are evaluated fresh by the following `run`. Preflight is not carried over: every `run` repeats it, and its dead end reflects only that run's checks. A failure at 0 is different: it leaves failed mark 0, so every later `run` stops again until `reset`.
+A `deadend` event consumes the evidence it reports: the SMU flag, the escape flag, every inconclusive streak or the stray streak. The other conditions are evaluated fresh by the following `run`. Preflight is not carried over: every `run` repeats it, and its dead end reflects only that run's checks. A failure at 0 is different: it leaves failed mark 0 on its core, so every later `run` stops again until `reset`, in every phase, guard included.
 
 ## Tiers and certificate
 
