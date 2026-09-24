@@ -57,6 +57,9 @@ type core struct {
 	lastSeq     int
 	zeroSeq     int
 	decisionSeq int
+	baseline    int
+	queued      string
+	queueSeq    int
 }
 
 type State struct {
@@ -126,14 +129,33 @@ func (s *State) Fold(e journal.Event) {
 		}
 	case *journal.ConfigLoaded:
 		s.steps = slices.Clone(p.Config.Guard.Rotation)
+	case *journal.SessionBaseline:
+		for i, c := range s.byID() {
+			if i < len(p.Offsets) {
+				c.baseline = p.Offsets[i]
+			}
+		}
+	case *journal.CommandRegain:
+		s.queueRegain(e.Seq, p.Cores)
+	case *journal.CommandReset:
+		if p.Core == nil {
+			return
+		}
+		if c := s.core(*p.Core); c != nil {
+			c.queued, c.queueSeq = queuedReset, e.Seq
+		}
 	case *journal.CorePhase:
 		if c := s.core(p.Core); c != nil {
 			c.phase, c.offset, c.pass, c.fail, c.unproven = p.To, p.Offset, p.Pass, p.FailedMark, p.UnprovenDepth
+			c.queued = ""
 			s.decided(c, e.Seq)
 		}
 	case *journal.TunerDecision:
 		if c := s.core(p.Core); c != nil {
 			c.offset, c.pass, c.fail, c.unproven = p.ToOffset, p.Pass, p.FailedMark, p.UnprovenDepth
+			if c.queued == queuedRegain && c.unproven == 0 {
+				c.queued = ""
+			}
 			s.decided(c, e.Seq)
 			if p.Decision == journal.SuspectBackoff {
 				s.suspectBackedOff(c.id)
@@ -183,6 +205,9 @@ func (s *State) decided(c *core, seq int) {
 	c.decisionSeq = seq
 	s.guard.dirty, s.guard.dirtySeq = true, seq
 	s.tierCause = seq
+	if s.retry != nil && s.retry.Condition == machine.Isolated && s.retry.Core == c.id {
+		s.retry = nil
+	}
 }
 
 func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
@@ -256,6 +281,9 @@ func (s *State) Next() Action {
 	if a, ok := s.Attribution(); ok {
 		return a
 	}
+	if a, ok := s.queued(queuedReset); ok {
+		return a
+	}
 	for _, c := range s.cores {
 		if c.fail != nil && *c.fail == 0 {
 			return Action{
@@ -271,6 +299,9 @@ func (s *State) Next() Action {
 		}
 	}
 	if a, ok := s.suspectNext(); ok {
+		return a
+	}
+	if a, ok := s.queued(queuedRegain); ok {
 		return a
 	}
 	if g := &s.guard; g.open && g.dirty {
@@ -299,6 +330,10 @@ func (s *State) perCore() (Action, bool) {
 			if c.hasPassed(machine.ConfirmationRegimes...) {
 				return Action{Kind: Decide, Payload: confirmed(c.snapshot()), Cause: slices.Clone(c.passedSeqs)}, true
 			}
+		case journal.PhaseRegain:
+			if c.hasPassed(machine.ConfirmationRegimes...) {
+				return Action{Kind: Decide, Payload: regained(c.snapshot()), Cause: slices.Clone(c.passedSeqs)}, true
+			}
 		case journal.PhaseConfirmed, journal.PhaseGuard:
 		}
 	}
@@ -316,7 +351,7 @@ func (s *State) perCore() (Action, bool) {
 		switch c.phase {
 		case journal.PhaseSearch:
 			return s.runTrial(c.isolated(machine.R1)), true
-		case journal.PhaseConfirmation:
+		case journal.PhaseConfirmation, journal.PhaseRegain:
 			for _, r := range machine.ConfirmationRegimes {
 				if !slices.Contains(c.passed, r) {
 					return s.runTrial(c.isolated(r)), true
@@ -341,7 +376,7 @@ func (s *State) anyActive() bool {
 }
 
 func (c *core) active() bool {
-	return c.phase == journal.PhaseSearch || c.phase == journal.PhaseConfirmation
+	return c.phase == journal.PhaseSearch || c.phase == journal.PhaseConfirmation || c.phase == journal.PhaseRegain
 }
 
 func (c *core) hasPassed(regimes ...machine.Regime) bool {
@@ -371,8 +406,11 @@ func (s *State) CleanRotations() int { return s.guard.cleanRotations }
 
 func (s *State) Project(st *journal.State) {
 	st.Phase = "guard"
-	if len(s.cores) == 0 || s.anyActive() {
+	switch {
+	case len(s.cores) == 0 || slices.ContainsFunc(s.cores, func(c *core) bool { return c.phase == journal.PhaseSearch || c.phase == journal.PhaseConfirmation }):
 		st.Phase = "per_core"
+	case s.anyActive():
+		st.Phase = "regain"
 	}
 	for i := range st.Cores {
 		c := s.core(st.Cores[i].Core)
@@ -384,6 +422,7 @@ func (s *State) Project(st *journal.State) {
 		st.Cores[i].Pass = c.pass
 		st.Cores[i].FailedMark = c.fail
 		st.Cores[i].UnprovenDepth = c.unproven
+		st.Cores[i].Queued = c.queued
 	}
 	st.Guard = s.guard.project()
 	st.Tier, st.TierSeq = s.tier, s.tierSeq

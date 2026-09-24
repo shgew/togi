@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"path/filepath"
+	"time"
 
 	"code.marleb.org/shgew/shycler/internal/config"
 	"code.marleb.org/shgew/shycler/internal/journal"
@@ -26,24 +28,35 @@ type SimInput struct {
 	Rotations int
 }
 
-// Resume continues the simulated machine after the journal in dir: its boots are counted and its clock starts after
-// the last event, so a later simulated run never reuses a boot ID or rewinds time.
+// Resume continues the simulated machine after the journal in dir and its archives: their boots are counted and the
+// clock starts after their last event, so a later simulated run never reuses a boot ID, a session ID or rewinds time.
 func Resume(dir string, cfg sim.Config) (sim.Config, error) {
-	events, _, err := journal.Read(dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return cfg, nil
-	}
+	archives, err := filepath.Glob(filepath.Join(dir, "archive", "*.jsonl"))
 	if err != nil {
 		return cfg, fmt.Errorf("resume simulator: %w", err)
 	}
 	boots := map[string]bool{}
-	for _, e := range events {
-		boots[e.Boot] = true
+	var last time.Time
+	for _, path := range append(archives, filepath.Join(dir, "events.jsonl")) {
+		events, _, err := journal.ReadFile(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return cfg, fmt.Errorf("resume simulator: %w", err)
+		}
+		for _, e := range events {
+			boots[e.Boot] = true
+			if e.Time.After(last) {
+				last = e.Time
+			}
+		}
+	}
+	if len(boots) == 0 {
+		return cfg, nil
 	}
 	cfg.Boots = len(boots)
-	if n := len(events); n > 0 {
-		cfg.Start = events[n-1].Time.Add(sim.RebootTime)
-	}
+	cfg.Start = last.Add(sim.RebootTime)
 	return cfg, nil
 }
 

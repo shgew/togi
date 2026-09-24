@@ -31,6 +31,8 @@ type command struct {
 var commands = []command{
 	{name: "cert", summary: "Render the certificate", run: runCert},
 	{name: "events", summary: "Render the journal", run: runEvents},
+	{name: "regain", summary: "Queue regain of unproven depth", run: runRegain},
+	{name: "reset", summary: "Reset one core or archive the session", run: runReset},
 	{name: "run", summary: "Start or resume the session in the foreground", run: runRun},
 	{name: "status", summary: "Show per-core offsets, tier and clean hours", run: runStatus},
 }

@@ -114,6 +114,8 @@ func describe(a Action) string {
 		return "profile"
 	case *journal.TierChange:
 		return "tier " + string(p.To)
+	case *journal.CorePhase:
+		return fmt.Sprintf("%s->%s %d u%d", p.From, p.To, p.Offset, p.UnprovenDepth)
 	}
 	return fmt.Sprintf("%T", a.Payload)
 }

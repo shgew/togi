@@ -1,0 +1,188 @@
+package session
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"code.marleb.org/shgew/shycler/internal/journal"
+	"code.marleb.org/shgew/shycler/internal/machine"
+	"code.marleb.org/shgew/shycler/internal/sim"
+)
+
+// command runs f on the journal in dir as a separate command process would, one second after the last event.
+func command(t *testing.T, dir string, f func(*journal.Journal) error) error {
+	t.Helper()
+	at := lastEvent(t, dir).Time.Add(time.Second)
+	j, err := journal.Open(dir, journal.Options{Boot: "command-boot", Now: func() time.Time { return at }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = f(j)
+	if cerr := j.Close(); cerr != nil {
+		t.Fatal(cerr)
+	}
+	return err
+}
+
+func memJournal(dir string, j *journal.Journal) Journal {
+	return wrapFor(SimInput{Dir: dir}, nil)(j)
+}
+
+func resumed(t *testing.T, dir string, cfg sim.Config) *sim.Machine {
+	t.Helper()
+	cfg, err := Resume(dir, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return newSim(t, cfg)
+}
+
+func coreState(t *testing.T, dir string, core int) journal.CoreState {
+	t.Helper()
+	st, err := readMemState(stateOf(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st.Cores[core]
+}
+
+func TestRegainOnSimulator(t *testing.T) {
+	t.Parallel()
+	model := func(s machine.Signal) *sim.Model {
+		md := sim.DefaultModel()
+		md.Signals, md.CrashMCE = map[machine.Signal]float64{s: 1}, 0
+		return &md
+	}
+	cfg := sim.Config{Seed: 1, Cores: 2, BIOS: []int{0, 0}, Model: model(machine.Crash), Edges: []sim.Edges{
+		{Isolated: [5]int{-12, -12, -12, -12, -12}, Resident: [7]int{-12, -12, -12, -12, -12, -12, -12}},
+		{Isolated: [5]int{-13, -13, -13, -13, -13}, Resident: [7]int{-13, -13, -13, -13, -13, -13, -11}},
+	}}
+	dir := t.TempDir()
+	if stop := simulate(t, simInput(dir, newSim(t, cfg))); stop.Reason != StopRotations {
+		t.Fatalf("first run stopped with %+v", stop)
+	}
+	if c0, c1 := coreState(t, dir, 0), coreState(t, dir, 1); c0.UnprovenDepth == 0 || c1.UnprovenDepth == 0 || c1.Offset < -11 {
+		t.Fatalf("crashes without evidence left core 0 %+v, core 1 %+v; want unproven depth on both", c0, c1)
+	}
+
+	cfg.Model = model(machine.ComputationError)
+	for range 5 {
+		err := command(t, dir, func(j *journal.Journal) error {
+			_, err := Regain(memJournal(dir, j), nil)
+			return err
+		})
+		if errors.Is(err, ErrNothingToRegain) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stop := simulate(t, simInput(dir, resumed(t, dir, cfg))); stop.Reason != StopRotations {
+			t.Fatalf("regain run stopped with %+v", stop)
+		}
+	}
+
+	c0, c1 := coreState(t, dir, 0), coreState(t, dir, 1)
+	if c0.Offset != -12 || c0.UnprovenDepth != 0 {
+		t.Errorf("core 0 %+v, want its hidden edge -12 regained", c0)
+	}
+	if c1.Offset != -11 || c1.FailedMark == nil || *c1.FailedMark != -12 || c1.UnprovenDepth != 0 {
+		t.Errorf("core 1 %+v, want -11 proven by a failed mark at -12", c1)
+	}
+	events := readEvents(t, dir)
+	regained := slices.ContainsFunc(events, func(e journal.Event) bool {
+		p, ok := e.Data.(*journal.CorePhase)
+		return ok && p.Core == 0 && p.From == journal.PhaseRegain && strings.Contains(p.Reason, "one count regained")
+	})
+	proven := slices.ContainsFunc(events, func(e journal.Event) bool {
+		p, ok := e.Data.(*journal.TunerDecision)
+		return ok && p.Core == 1 && p.Phase == journal.PhaseGuard && p.Decision == journal.Backoff && p.FromOffset == -12 && p.ToOffset == -11
+	})
+	if !regained || !proven {
+		t.Fatalf("core 0 regained a count: %v; core 1 proven back from -12 in guard: %v", regained, proven)
+	}
+}
+
+func TestResetCore(t *testing.T) {
+	t.Parallel()
+	dir, ref := reference(t, small())
+	if err := command(t, dir, func(j *journal.Journal) error { return ResetCore(memJournal(dir, j), 1) }); err != nil {
+		t.Fatal(err)
+	}
+	m := resumed(t, dir, small())
+	if stop := simulate(t, simInput(dir, m)); stop.Reason != StopRotations {
+		t.Fatalf("stopped with %+v", stop)
+	}
+	events := readEvents(t, dir)
+	reset := slices.IndexFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindCommandReset })
+	if reset < len(ref) || events[reset+1].Kind != journal.KindShutdown {
+		t.Fatalf("command.reset at index %d, not after the reference run and followed by shutdown", reset)
+	}
+	restart := slices.IndexFunc(events, func(e journal.Event) bool {
+		p, ok := e.Data.(*journal.CorePhase)
+		return ok && p.Core == 1 && p.From == journal.PhaseConfirmed && p.To == journal.PhaseSearch && slices.Equal(e.Cause, []int{events[reset].Seq})
+	})
+	if restart < 0 {
+		t.Fatal("no confirmed -> search for core 1 citing command.reset")
+	}
+	if c := coreState(t, dir, 1); c.Phase != journal.PhaseConfirmed || c.Offset != m.IsolatedEdge(1) {
+		t.Fatalf("core 1 %+v, want confirmed again at its edge %d", c, m.IsolatedEdge(1))
+	}
+	if st, _ := readMemState(stateOf(dir)); st.Tier != journal.TierBronze {
+		t.Fatalf("tier %s, want bronze again", st.Tier)
+	}
+}
+
+func TestResetAll(t *testing.T) {
+	t.Parallel()
+	dir, ref := reference(t, small())
+	old := ref[0].Data.(*journal.SessionStart).Session
+	var path string
+	if err := command(t, dir, func(j *journal.Journal) (err error) {
+		path, err = ResetAll(j)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	archived, _, err := journal.ReadFile(filepath.Join(dir, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, ok := archived[len(archived)-1].Data.(*journal.SessionArchived); !ok || p.Session != old || path != filepath.Join("archive", old+".jsonl") {
+		t.Fatalf("archive %s ends with %s", path, archived[len(archived)-1].Msg)
+	}
+	states.Delete(dir)
+	if stop := simulate(t, simInput(dir, resumed(t, dir, small()))); stop.Reason != StopRotations {
+		t.Fatalf("stopped with %+v", stop)
+	}
+	if s := readEvents(t, dir)[0].Data.(*journal.SessionStart).Session; s == old {
+		t.Fatalf("the next run reused session %s", s)
+	}
+}
+
+func TestResetAllRefusesAnExistingArchive(t *testing.T) {
+	t.Parallel()
+	dir, ref := reference(t, small())
+	taken := filepath.Join(dir, "archive", ref[0].Data.(*journal.SessionStart).Session+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(taken), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(taken, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := command(t, dir, func(j *journal.Journal) error {
+		_, err := ResetAll(j)
+		return err
+	})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("ResetAll over an existing archive: %v", err)
+	}
+	if got := readEvents(t, dir); len(got) != len(ref) {
+		t.Fatalf("the refused reset left %d events, want the %d it found", len(got), len(ref))
+	}
+}

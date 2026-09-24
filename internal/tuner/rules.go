@@ -36,6 +36,8 @@ func failureRule(c coreState) journal.Payload {
 		return searchFailure(c)
 	case journal.PhaseConfirmation:
 		return confirmationFailure(c)
+	case journal.PhaseRegain:
+		return regainFailure(c)
 	case journal.PhaseConfirmed, journal.PhaseGuard:
 	}
 	return guardFailure(c)

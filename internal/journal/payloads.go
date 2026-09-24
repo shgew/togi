@@ -2,6 +2,7 @@ package journal
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -16,6 +17,7 @@ const (
 	PhaseConfirmation Phase = "confirmation"
 	PhaseConfirmed    Phase = "confirmed"
 	PhaseGuard        Phase = "guard"
+	PhaseRegain       Phase = "regain"
 )
 
 type Decision string
@@ -84,6 +86,7 @@ const (
 	ShutdownSignal    ShutdownReason = "signal"
 	ShutdownDeadEnd   ShutdownReason = "dead_end"
 	ShutdownRotations ShutdownReason = "rotations"
+	ShutdownCommand   ShutdownReason = "command"
 )
 
 func coreID(c int) string { return fmt.Sprintf("%02d", c) }
@@ -280,8 +283,11 @@ type ProfileChange struct {
 
 func (*ProfileChange) Kind() Kind { return KindProfileChange }
 func (p *ProfileChange) Message() string {
-	if p.From == nil {
+	switch {
+	case p.From == nil:
 		return fmt.Sprintf("profile for guard: %v", p.To)
+	case slices.Equal(p.From, p.To):
+		return fmt.Sprintf("profile unchanged at %v; guard restarts", p.To)
 	}
 	return fmt.Sprintf("profile changed %v -> %v", p.From, p.To)
 }
@@ -522,7 +528,7 @@ func (p *TunerDecision) Message() string {
 		switch p.Phase {
 		case PhaseSearch:
 			verb = "failed"
-		case PhaseConfirmation, PhaseConfirmed:
+		case PhaseConfirmation, PhaseConfirmed, PhaseRegain:
 			verb = "failed confirmation"
 		case PhaseGuard:
 			verb = "failed in guard"
@@ -665,6 +671,8 @@ func (p *Shutdown) Message() string {
 		return "stopped at a dead end"
 	case ShutdownRotations:
 		return fmt.Sprintf("the profile survived the requested %d clean rotation(s); stopping", p.Rotations)
+	case ShutdownCommand:
+		return "command finished"
 	}
 	return fmt.Sprintf("stopped: %s", p.Reason)
 }
