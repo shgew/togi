@@ -18,7 +18,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 
 Every change lands through a pull request on `code.marleb.org/shgew/shycler`. The owner reviews and merges.
 
-1. Create a worktree on branch `<slug>`, starting from `main`.
+1. Create a worktree on branch `<slug>`, starting from `main`, then run `direnv allow` in it.
 2. Commit with short imperative messages.
 3. Push, then open the pull request with `fj pr create --base main --head <slug> --body-file <file>`. The body holds:
    - a TL;DR;
@@ -33,7 +33,7 @@ Every change lands through a pull request on `code.marleb.org/shgew/shycler`. Th
 
 | Command | Use |
 |---|---|
-| `nix develop` | Shell with Go, gopls, golangci-lint |
+| `direnv allow` | Once per worktree: loads the flake's dev shell (Go, gopls, golangci-lint); `nix develop` is the manual equivalent |
 | `go test ./...` | The tight loop |
 | `nix flake check` | Tests, lint and module checks; must pass before a pull request |
 | `nix fmt` | Format Go and Nix files |
