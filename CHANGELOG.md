@@ -16,6 +16,10 @@ All notable changes to shycler are documented in this file. The format is based 
 - The journal: every action and decision is recorded crash-safely in `events.jsonl`, and `shycler events` prints it, filtered by core, kind, trial or time ([#3]).
 - The `shycler` command, its TOML configuration, which rejects unknown keys and out-of-range values, and a Nix flake with the package and a dev shell ([#2]).
 
+### Changed
+
+- Every command's `--help` gives a description and examples, lists its own flags before the global ones, and shows every flag in `--long` form ([#12]).
+
 [#2]: https://code.marleb.org/shgew/shycler/pulls/2
 [#3]: https://code.marleb.org/shgew/shycler/pulls/3
 [#4]: https://code.marleb.org/shgew/shycler/pulls/4
@@ -25,3 +29,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#8]: https://code.marleb.org/shgew/shycler/pulls/8
 [#9]: https://code.marleb.org/shgew/shycler/pulls/9
 [#11]: https://code.marleb.org/shgew/shycler/pulls/11
+[#12]: https://code.marleb.org/shgew/shycler/pulls/12
