@@ -182,6 +182,62 @@ func TestStatusAndBlockBoundaries(t *testing.T) {
 	}
 }
 
+func TestInterleavedBankAttribution(t *testing.T) {
+	statuses := map[int]string{
+		0: "[Hardware Error]: CPU:0 (1a:44:0) MC3_STATUS[Over|CE|-]: 0xbc00000000010135",
+		9: "[Hardware Error]: CPU:9 (1a:44:0) MC0_STATUS[Over|CE|-]: 0xbc00000000010135",
+		3: "[Hardware Error]: CPU 3: Machine Check: 0 Bank 5: bea0000000000108",
+	}
+	banks := map[int]string{
+		0: "[Hardware Error]: Decode Unit Ext. Error Code: 1",
+		9: "[Hardware Error]: Load Store Unit Ext. Error Code: 13",
+	}
+	for _, tt := range []struct {
+		name   string
+		order  []int
+		lines  []int
+		marker bool
+		want   map[int]machine.BankType
+	}{
+		{"CPU 0 then CPU 9", []int{0, 9}, []int{0, 9}, false, map[int]machine.BankType{0: machine.UnknownBank, 9: machine.UnknownBank}},
+		{"CPU 9 then CPU 0 with banner", []int{9, 0}, []int{9, 0}, true, map[int]machine.BankType{0: machine.UnknownBank, 9: machine.UnknownBank}},
+		{"sequential records", []int{0, 9}, nil, false, map[int]machine.BankType{0: machine.DecodeUnit, 9: machine.LoadStore}},
+		{"raw record then decoded", []int{3, 0}, nil, false, map[int]machine.BankType{3: machine.UnknownBank, 0: machine.DecodeUnit}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var msgs []Message
+			add := func(text string) {
+				msgs = append(msgs, Message{Time: time.UnixMicro(int64(len(msgs))), Text: text})
+			}
+			for i, cpu := range tt.order {
+				add("[Hardware Error]: Corrected error, no action required.")
+				add(statuses[cpu])
+				if tt.marker && i == 0 {
+					add("mce: [Hardware Error]: Machine check events logged")
+				}
+				if tt.lines == nil {
+					if bank, ok := banks[cpu]; ok {
+						add(bank)
+					}
+				} else if i == len(tt.order)-1 {
+					for _, owner := range tt.lines {
+						add(banks[owner])
+					}
+				}
+			}
+			got := Parse(msgs, map[int]int{0: 0, 3: 3, 9: 9})
+			if len(got) != len(tt.order) {
+				t.Fatalf("got %d MCEs, want %d", len(got), len(tt.order))
+			}
+			for _, mce := range got {
+				if mce.BankType != tt.want[mce.CPU] {
+					t.Errorf("CPU %d bank type = %v, want %v", mce.CPU, mce.BankType, tt.want[mce.CPU])
+				}
+			}
+		})
+	}
+}
+
 func TestJournalBootAndByteArray(t *testing.T) {
 	bin := t.TempDir()
 	path := filepath.Join(bin, "journalctl")

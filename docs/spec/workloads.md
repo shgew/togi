@@ -111,6 +111,7 @@ A trial still open when `run` starts, in a boot that did not crash (the same boo
 
 MCE attribution rules:
 - Attribution uses the SMCA bank type decoded by the kernel (`edac_mce_amd`), never a hard-coded bank number.
+- A decoded bank continuation is assigned only when exactly one MCE could own it. If multiple status records arrive before their bank lines, those records keep an unknown bank type and are unattributed; journal message order alone cannot identify the owner.
 - Core-local types (load-store, instruction fetch, L2, decode, execution, floating point) name a core.
 - Shared types (L3, memory controller, data fabric and others) name none.
 - In resident trials, a core-local MCE on a core whose offset is 0 is an attributed failure at 0, which is a dead end.
