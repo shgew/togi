@@ -588,13 +588,26 @@ func (p *EscalationWindow) Message() string {
 	return fmt.Sprintf("escalation window %s: %s", p.State, p.Reason)
 }
 
+type Tier string
+
+const (
+	TierNone     Tier = "none"
+	TierBronze   Tier = "bronze"
+	TierSilver   Tier = "silver"
+	TierGold     Tier = "gold"
+	TierPlatinum Tier = "platinum"
+)
+
 type TierChange struct {
-	From string `json:"from"`
-	To   string `json:"to"`
+	From   Tier   `json:"from"`
+	To     Tier   `json:"to"`
+	Reason string `json:"reason"`
 }
 
-func (*TierChange) Kind() Kind        { return KindTierChange }
-func (p *TierChange) Message() string { return fmt.Sprintf("tier %s -> %s", p.From, p.To) }
+func (*TierChange) Kind() Kind { return KindTierChange }
+func (p *TierChange) Message() string {
+	return fmt.Sprintf("tier %s -> %s: %s", p.From, p.To, p.Reason)
+}
 
 type CommandRegain struct {
 	Cores []int `json:"cores"`

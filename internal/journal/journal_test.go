@@ -191,7 +191,7 @@ func TestRoundTrip(t *testing.T) {
 		&GuardRotation{Rotation: 2, Event: RotationEnd, Clean: true},
 		&GuardRotation{Rotation: 2, Event: RotationEnd, Reason: "the profile changed"},
 		&EscalationWindow{State: WindowOpen, Reason: "r"},
-		&TierChange{From: "none", To: "bronze"},
+		&TierChange{From: TierNone, To: TierBronze, Reason: "r"},
 		&CommandRegain{Cores: []int{7}},
 		&CommandReset{Core: new(7)},
 		&DeadEnd{Condition: DeadEndFailureAtZero, Core: new(7), Detail: "core 07 failed at CO 0", Action: "exit"},

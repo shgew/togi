@@ -68,7 +68,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Profile | `profile.applied` (every application of every core's offset, with its condition), `profile.change` (the profile under guard: on entering guard, with `from` null, and after every guard decision) |
 | Trials | `trial.intent`, `trial.start`, `trial.progress` (backend milestones such as a finished FFT size), `trial.signal` (load-step schedule), `trial.sample` (containment or stall warnings only), `trial.end` |
 | Evidence | `failure` (kind, attribution, evidence `seq`), `mce` (raw and decoded lines, cpu, core, bank type), `crash.detected` (previous boot ID, in-flight action) |
-| Tuner | `tuner.decision`, `core.phase`, `guard.rotation` (start and end), `escalation.window` (open and close), `tier.change` |
+| Tuner | `tuner.decision`, `core.phase`, `guard.rotation` (start and end), `escalation.window` (open and close), `tier.change` (from, to, reason) |
 | Commands | `command.regain`, `command.reset` |
 | Stop | `deadend` (condition, evidence, action taken), `boot.saved_entry` (GRUB change), `shutdown` (clean stop) |
 | Journal | `journal.torn`, `state.rebuilt` |
@@ -82,9 +82,10 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 - `cores[]`: `core`, `ccd`, `cpus`, `offset`, `baseline`, `phase`, `pass`, `failed_mark`, `unproven_depth`, and `last_decision` (its `seq` and `msg`);
 - `in_flight`: the most recent intent without a result yet, or null;
 - `dead_end`: the condition and its `seq`, or null. It clears when the next `run` starts (`config.loaded`);
-- `guard`: null before the first `profile.change`, then `rotation` and `rotation_open`, the rotation's `steps` and `steps_done`, the `profile` and its `profile_seq`, `clean_rotations` and `clean_s` since that `profile.change`, `regimes[]` with each regime's `clean_s` (R1 to R7 in order), and `escalation_window_open`.
+- `guard`: null before the first `profile.change`, then `rotation` and `rotation_open`, the rotation's `steps` and `steps_done`, the `profile` and its `profile_seq`, `clean_rotations` and `clean_s` since that `profile.change`, `regimes[]` with each regime's `clean_s` and `rate_bound_per_h` (R1 to R7 in order), `escalation_window_open`, the overall `rate_bound_per_h`, and `tctl_max_c` with its `tctl_max_seq`, the highest Tctl among the passed resident trials since that `profile.change`. A rate bound is `3 / clean hours` per hour, rounded to 4 decimals, and null without clean hours;
+- `tier` and `tier_seq`: the tier of the last `tier.change` and its `seq`; `none` and 0 before the first.
 
-The tasks that compute them add the remaining fields: `tier`, the failure-rate bounds and `tctl_max_c` over counted trials in T07, and the `regain` phase in T08.
+The task that computes it adds the remaining field: the `regain` phase in T08.
 
 ## Human-readable log
 

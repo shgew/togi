@@ -69,6 +69,10 @@ type State struct {
 	steps    []machine.Regime
 	guard    guard
 	suspect  *suspect
+	tier     journal.Tier
+	tierSeq  int
+	// tierCause is the latest decision, profile change, rotation event or resident pass: what a tier change cites.
+	tierCause int
 }
 
 func New() *State {
@@ -78,6 +82,7 @@ func New() *State {
 		mces:    map[int]*journal.MCE{},
 		steps:   config.Default().Guard.Rotation,
 		guard:   guard{dirty: true, cleanByRegime: map[machine.Regime]int{}},
+		tier:    journal.TierNone,
 	}
 }
 
@@ -161,10 +166,14 @@ func (s *State) Fold(e journal.Event) {
 		}
 	case *journal.ProfileChange:
 		s.guard.changed(e.Seq, p.To)
+		s.tierCause = e.Seq
 	case *journal.GuardRotation:
 		s.guard.rotated(e.Seq, p)
+		s.tierCause = e.Seq
 	case *journal.EscalationWindow:
 		s.foldWindow(p)
+	case *journal.TierChange:
+		s.tier, s.tierSeq = p.To, e.Seq
 	}
 }
 
@@ -173,6 +182,7 @@ func (s *State) decided(c *core, seq int) {
 	c.lastSeq = seq
 	c.decisionSeq = seq
 	s.guard.dirty, s.guard.dirtySeq = true, seq
+	s.tierCause = seq
 }
 
 func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
@@ -265,6 +275,9 @@ func (s *State) Next() Action {
 	}
 	if g := &s.guard; g.open && g.dirty {
 		return Action{Kind: Decide, Payload: &journal.GuardRotation{Rotation: g.rotation, Event: journal.RotationEnd, Reason: "the profile changed"}, Cause: []int{g.dirtySeq}}
+	}
+	if a, ok := s.tierNext(); ok {
+		return a
 	}
 	if s.anyActive() {
 		if a, ok := s.perCore(); ok {
@@ -373,4 +386,5 @@ func (s *State) Project(st *journal.State) {
 		st.Cores[i].UnprovenDepth = c.unproven
 	}
 	st.Guard = s.guard.project()
+	st.Tier, st.TierSeq = s.tier, s.tierSeq
 }

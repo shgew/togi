@@ -27,6 +27,8 @@ type State struct {
 	InFlight *InFlight    `json:"in_flight"`
 	DeadEnd  *DeadEndRef  `json:"dead_end"`
 	Guard    *GuardState  `json:"guard"`
+	Tier     Tier         `json:"tier"`
+	TierSeq  int          `json:"tier_seq"`
 
 	open []openIntent
 }
@@ -62,11 +64,15 @@ type GuardState struct {
 	CleanS           int              `json:"clean_s"`
 	Regimes          []RegimeClean    `json:"regimes"`
 	EscalationWindow bool             `json:"escalation_window_open"`
+	RateBoundPerH    *float64         `json:"rate_bound_per_h"`
+	TctlMaxC         *int             `json:"tctl_max_c"`
+	TctlMaxSeq       int              `json:"tctl_max_seq"`
 }
 
 type RegimeClean struct {
-	Regime machine.Regime `json:"regime"`
-	CleanS int            `json:"clean_s"`
+	Regime        machine.Regime `json:"regime"`
+	CleanS        int            `json:"clean_s"`
+	RateBoundPerH *float64       `json:"rate_bound_per_h"`
 }
 
 type DecisionRef struct {

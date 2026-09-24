@@ -160,20 +160,27 @@ A `deadend` event consumes the evidence it reports: the SMU flag, the escape fla
 
 ## Tiers and certificate
 
-Tiers rank the current profile by durability, not proof. Any profile change drops the tier until Bronze is earned again.
+Tiers rank the current profile by durability, not proof. Any profile change drops the tier to none until Bronze is earned again.
 
 | Tier | Requirement |
 |---|---|
+| none | A core is not confirmed, the profile changed since the last `profile.change`, or no rotation since it completed clean. |
 | Bronze | Every core confirmed, and one clean rotation since the last profile change. |
 | Silver | Bronze, and 24 clean hours. |
 | Gold | Bronze, and 100 clean hours. |
-| Platinum | Gold, and 200 field hours: real use observed by the future `observe` service with the BIOS offsets equal to the profile. Unavailable until `observe` exists. |
+| Platinum | Gold, and 200 field hours: real use observed by the future `observe` service with the BIOS offsets equal to the profile. Unavailable until `observe` exists; the tuner never computes it. |
 
-Each regime `r` with clean hours `T_r` shows its failure-rate bound: with zero failures, the rate is below `3 / T_r` per hour at 95% confidence (rule of three). The overall bound uses all clean hours.
+The tuner records every change as `tier.change` with the old and new tier and a reason, citing the event that caused it:
+- `core NN is in <phase>`: the first core in scheduling order that is not confirmed;
+- `the profile changed`: an offset changed since the last `profile.change`. It follows the unclean rotation end and precedes the new `profile.change`;
+- `every core is confirmed and the profile survived a clean rotation`: cites the clean rotation end, and precedes the next rotation start, so a `run` stopped by `--rotations` has recorded its Bronze;
+- `24 clean hours since the profile change` and `100 clean hours since the profile change`: cite the passed trial that crossed the threshold.
 
-The certificate shows:
-- the tier, and the profile as a per-core table of edges;
-- clean hours and failure-rate bound per regime, and the highest Tctl across counted trials;
-- unproven depth per core;
+Each regime `r` with clean hours `T_r` shows its failure-rate bound: with zero failures, the rate is below `3 / T_r` per hour at 95% confidence (rule of three). The overall bound uses all clean hours. Without clean hours there is no bound.
+
+`shycler status` and `shycler cert` render from a replay of the journal (`runtime.md`). The certificate shows:
+- the tier with its `tier.change`, and progress towards the higher tiers;
+- the profile with its `profile.change`, as a per-core table of edges, failed marks, unproven depth and the deciding event;
+- clean hours and failure-rate bound per regime and overall, and the highest Tctl across counted trials with its `trial.end`;
 - the BIOS context and session start;
-- the SHA-256 of the journal up to the moment the certificate was rendered.
+- the SHA-256 of the journal's complete lines it rendered, and the last `seq` among them.
