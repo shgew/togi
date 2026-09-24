@@ -59,6 +59,72 @@ func trial(m *Machine, core, offset int, r machine.Regime, cond machine.Conditio
 	return run.Wait(context.Background(), nil)
 }
 
+type progressRecorder struct{ details []string }
+
+func (r *progressRecorder) Progress(detail string) { r.details = append(r.details, detail) }
+func (*progressRecorder) Sample(machine.Sample)    {}
+
+func TestRegimeProgressRespectsTrialDuration(t *testing.T) {
+	t.Parallel()
+	for _, regime := range []machine.Regime{machine.R6, machine.R7} {
+		t.Run(string(regime), func(t *testing.T) {
+			m := newMachine(t, Config{Seed: 3, Cores: 16, Edges: flat(16, -10, -10)})
+			cores := make([]int, 16)
+			for i := range cores {
+				cores[i] = i
+			}
+			spec := machine.TrialSpec{ID: "0001", Regime: regime, Condition: machine.Resident, Cores: cores, CPUs: cores, Duration: 90 * time.Second}
+			run, err := m.Seams().Trials.Start(context.Background(), spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := &progressRecorder{}
+			res, err := run.Wait(context.Background(), report)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if regime == machine.R6 {
+				want := []string{"first half idle, then 100ms bursts every 2s, one core at a time", "bursts: 23 continues, 39 stops"}
+				if !slices.Equal(report.details, want) || res.Stops != 39 || res.Conts != 23 {
+					t.Fatalf("R6 progress %v, counts %d/%d; want %v and 39/23", report.details, res.Stops, res.Conts, want)
+				}
+			} else {
+				want := []string{"CCD0 only: stopped cores 08-15", "CCD1 only: resumed cores 08-15, stopped cores 00-07"}
+				if !slices.Equal(report.details, want) {
+					t.Fatalf("R7 progress %v, want %v", report.details, want)
+				}
+			}
+		})
+	}
+	t.Run("early exit", func(t *testing.T) {
+		for _, regime := range []machine.Regime{machine.R6, machine.R7} {
+			m := newMachine(t, Config{Seed: 3, Cores: 16, Edges: flat(16, 0, 0), Model: sharp(machine.UnexpectedExit)})
+			if err := m.Seams().SMU.SetOffset(0, -1); err != nil {
+				t.Fatal(err)
+			}
+			spec := machine.TrialSpec{ID: "0002", Regime: regime, Condition: machine.Resident, Cores: []int{0}, CPUs: []int{0}, Duration: 90 * time.Second}
+			run, err := m.Seams().Trials.Start(context.Background(), spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := &progressRecorder{}
+			res, err := run.Wait(context.Background(), report)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Ran >= spec.Duration/2 {
+				t.Fatalf("%s failure at %s was not before the transition", regime, res.Ran)
+			}
+			if regime == machine.R7 && len(report.details) != 0 {
+				t.Fatalf("early R7 failure reported later phases: %v", report.details)
+			}
+			if regime == machine.R6 && !slices.Equal(report.details, []string{"bursts: 0 continues, 1 stops"}) {
+				t.Fatalf("early R6 failure progress %v", report.details)
+			}
+		}
+	})
+}
+
 func transcript(t *testing.T, seed uint64) []string {
 	m := newMachine(t, Config{Seed: seed, Cores: 4})
 	s := m.Seams()
