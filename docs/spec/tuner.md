@@ -23,9 +23,11 @@ Normative rules for how shycler moves offsets. Terms are defined in `CONTEXT.md`
 
 Cores are visited in CCD-alternating order: 0, 8, 1, 9, ... 7, 15. Each slot goes to the next core in that order that is still in search or confirmation, and that core runs its next step. Interleaving cores this way gives every core time to cool between its own trials.
 
+A slot is one search step (R1, then R2 if R1 passed) or one confirmation trial. An inconclusive trial is retried at once in the same slot.
+
 ## Search
 
-A search step is two isolated trials at the same offset: R1, then R2. The step passes when both pass.
+A search step is two isolated trials at the same offset: R1, then R2. The step passes when both pass. A step whose R1 fails ends without R2.
 
 Each core tracks its current offset `o`, `pass` (the deepest offset with a passed step, or none) and `fail` (its failed mark, or none).
 
@@ -49,6 +51,10 @@ Any failure during an isolated trial is attributed to the target, crashes includ
 At the candidate edge `e`, the core runs one isolated trial per regime R1 to R5.
 - All pass: the core is confirmed and `e` is its edge.
 - An attributed failure sets `fail = e` and moves the core to `e + 1`, where confirmation restarts from R1. A failure at `e == 0` is a dead end.
+
+## Decision events
+
+Moves within a phase are `tuner.decision` events: `step_deeper` after a passed search step, `backoff` after an attributed failure. Reaching a candidate edge (search to confirmation) and passing confirmation (confirmation to confirmed) are `core.phase` events. Both carry the resulting `pass` and `failed_mark`, so replaying the journal never re-runs a rule.
 
 ## Guard
 
