@@ -6,7 +6,7 @@ Normative rules for how shycler is invoked, configured and deployed.
 
 | Command | Writes journal | Purpose |
 |---|---|---|
-| `shycler run [--sim <seed>] [--rotations <N>] [--tuning-boot <grubenv>]` | yes | Start or resume the session in the foreground. The same entry point serves in-session runs and the tuning boot service, which passes `--tuning-boot` with its GRUB environment file (Dead-end actions). With `--rotations N` (N >= 1) it stops, recording `shutdown`, when a rotation would start after the current profile survived N clean guard rotations; without it guard is endless |
+| `shycler run [--sim <seed>] [--rotations <N>] [--tuning-boot <grubenv>]` | yes | Start or resume the session in the foreground. The same entry point serves in-session runs and the tuning boot service, which passes `--tuning-boot` with its GRUB environment file (Dead-end actions). `--sim` and `--tuning-boot` together are a usage error, so a simulated dead end never touches the host's boot entry. With `--rotations N` (N >= 1) it stops, recording `shutdown`, when a rotation would start after the current profile survived N clean guard rotations; without it guard is endless |
 | `shycler status` | no | Session and BIOS context; phase, tier and guard progress; in-flight action and dead end; per-core table of offset, phase, failed mark, unproven depth, queued command and last decision; clean hours and failure-rate bound overall and per regime, and the highest Tctl. Rendered from a replay of the journal, not `state.json` |
 | `shycler cert` | no | Render the certificate (`tuner.md`) from a replay of the journal, with the SHA-256 of the lines it rendered |
 | `shycler events` | no | Render the journal with filters (`journal.md`) |

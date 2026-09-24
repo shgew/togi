@@ -63,19 +63,24 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	if code, ok := parseFlags(flags, args, runHelp, stdout, stderr); !ok {
 		return code
 	}
+	if seedSet && grubenv != "" {
+		fmt.Fprintln(stderr, "shycler run: --sim and --tuning-boot cannot be combined: a simulated dead end must not change the host's boot entry")
+		commandUsage(flags, runHelp, stderr)
+		return exitUsage
+	}
 
 	cfg, file, err := loadConfig(g)
 	if err != nil {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitUsage
 	}
-	var bootloader session.Bootloader
-	if grubenv != "" {
-		bootloader = hardware.GRUB{Env: grubenv}
-	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	if !seedSet {
+		var bootloader session.Bootloader
+		if grubenv != "" {
+			bootloader = hardware.GRUB{Env: grubenv}
+		}
 		return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr)
 	}
 	dir := g.stateDir
@@ -99,7 +104,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitError
 	}
-	stop, err := session.Simulate(ctx, session.SimInput{Config: cfg, ConfigPath: g.config, ConfigFile: file, Dir: dir, Machine: m, Log: stderr, Rotations: rotations, Bootloader: bootloader})
+	stop, err := session.Simulate(ctx, session.SimInput{Config: cfg, ConfigPath: g.config, ConfigFile: file, Dir: dir, Machine: m, Log: stderr, Rotations: rotations})
 	return runResult(stop, err, stderr)
 }
 
