@@ -140,7 +140,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	}
 	running, err := r.in.Machine.Trials.Start(ctx, spec)
 	if err != nil {
-		return tr.failedToRun(ctx, since, "setup failed", err)
+		return tr.failedToRun(ctx, since, 0, "setup failed", err)
 	}
 	s := running.Started()
 	ts := &journal.TrialStart{Trial: tr.id, Scope: s.Scope, PID: s.PID, CPUs: s.CPUs, Argv: s.Argv, Files: s.Files}
@@ -165,7 +165,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 		return report.err
 	}
 	if err != nil {
-		return tr.failedToRun(ctx, since, "trial runner failed", err)
+		return tr.failedToRun(ctx, since, res.Ran, "trial runner failed", err)
 	}
 	if s.Schedule != nil {
 		if _, err := r.append(&journal.TrialSignal{Trial: tr.id, Stops: res.Stops, Conts: res.Conts}, started.Seq); err != nil {
@@ -251,7 +251,7 @@ func (tr *trialRun) writesTarget() bool {
 	return tr.t.Condition == machine.Isolated && tr.t.Offset != 0
 }
 
-func (tr *trialRun) failedToRun(ctx context.Context, since time.Time, what string, err error) error {
+func (tr *trialRun) failedToRun(ctx context.Context, since time.Time, ran time.Duration, what string, err error) error {
 	r := tr.r
 	if errors.Is(err, machine.ErrCrashed) {
 		return err
@@ -261,7 +261,7 @@ func (tr *trialRun) failedToRun(ctx context.Context, since time.Time, what strin
 	if terr != nil {
 		return terr
 	}
-	end := &journal.TrialEnd{Trial: tr.id, Outcome: journal.OutcomeInconclusive, Reason: fmt.Sprintf("%s: %v", what, err)}
+	end := &journal.TrialEnd{Trial: tr.id, Outcome: journal.OutcomeInconclusive, DurationS: int(ran.Seconds()), Reason: fmt.Sprintf("%s: %v", what, err)}
 	if interrupted {
 		end.Interrupted, end.Reason = true, "stopped by signal"
 	}

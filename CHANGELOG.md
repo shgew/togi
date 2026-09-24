@@ -28,6 +28,10 @@ All notable changes to shycler are documented in this file. The format is based 
 - `run` writes every core back to its baseline, or to its current offset where that is shallower, before stopping cleanly or at a dead end, instead of leaving the tested offsets applied until the next reboot ([#14]).
 - A signal still interrupts the running trial, but `run` now records the decisions from that trial before stopping instead of leaving them to the next run ([#14]).
 
+### Fixed
+
+- A trial interrupted by a signal now records how long it ran, instead of `after 0s` ([#15]).
+
 [#2]: https://code.marleb.org/shgew/shycler/pulls/2
 [#3]: https://code.marleb.org/shgew/shycler/pulls/3
 [#4]: https://code.marleb.org/shgew/shycler/pulls/4
@@ -40,3 +44,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#12]: https://code.marleb.org/shgew/shycler/pulls/12
 [#13]: https://code.marleb.org/shgew/shycler/pulls/13
 [#14]: https://code.marleb.org/shgew/shycler/pulls/14
+[#15]: https://code.marleb.org/shgew/shycler/pulls/15
