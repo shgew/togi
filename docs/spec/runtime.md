@@ -17,6 +17,8 @@ Normative rules for how shycler is invoked, configured and deployed.
 
 Global flags: `--config <path>` (default `/etc/shycler/config.toml`), `--state-dir <path>` (default `/var/lib/shycler`).
 
+`shycler` without a command prints the wordmark and the tagline `per-core Curve Optimizer` above the usage, to stderr, and exits 2. `--help`, an unknown command and a flag error print the usage alone.
+
 `shycler run --sim <seed>` drives the seeded simulator (`internal/sim`) instead of hardware: a 16-core machine whose crash reboots are handled in-process, with a real journal. It uses `--state-dir` when given, else a new temporary directory whose path it prints to stderr, and it fsyncs nothing. With `--sim`, `--rotations` defaults to 1. A state directory that already holds a journal or archives resumes the simulated machine after them: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot, and a session after `reset --all` gets a new id. Until the hardware seams exist (T09-T12), `run` without `--sim` refuses with exit code 2.
 
 ## Exit codes

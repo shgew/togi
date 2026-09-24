@@ -15,6 +15,17 @@ import (
 
 const defaultStateDir = "/var/lib/shycler"
 
+const banner = `         __               __
+   _____/ /_  __  _______/ /__  _____
+  / ___/ __ \/ / / / ___/ / _ \/ ___/
+ (__  ) / / / /_/ / /__/ /  __/ /
+/____/_/ /_/\__, /\___/_/\___/_/
+           /____/
+
+  per-core Curve Optimizer
+
+`
+
 type globals struct {
 	config      string
 	configSet   bool
@@ -56,6 +67,7 @@ func cli(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	if fs.NArg() == 0 {
+		_, _ = io.WriteString(stderr, banner)
 		usage(stderr)
 		return exitUsage
 	}
