@@ -18,7 +18,16 @@ import (
 	"code.marleb.org/shgew/shycler/internal/sim"
 )
 
-const runUsage = "Usage: shycler run [--sim <seed>] [--rotations N]"
+const runHelp = `Usage: shycler run [--sim <seed>] [--rotations <N>]
+
+Start or resume the tuning session in the foreground: search each core's deepest
+stable offset, confirm it, then keep guarding all offsets together. After a crash,
+the next run attributes it from the journal and continues. Until hardware support
+lands, run needs --sim.
+
+Examples:
+  shycler run --sim 1                  Simulate a session through its first clean guard rotation
+  shycler run --sim 1 --rotations 20   Keep the simulated guard going for 20 clean rotations`
 
 func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	var (
@@ -44,7 +53,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		rotations, rotationsSet = v, true
 		return nil
 	})
-	if code, ok := parseFlags(flags, args, runUsage, stdout, stderr); !ok {
+	if code, ok := parseFlags(flags, args, runHelp, stdout, stderr); !ok {
 		return code
 	}
 

@@ -15,15 +15,30 @@ import (
 )
 
 const (
-	regainUsage = "Usage: shycler regain [--core N]"
-	resetUsage  = "Usage: shycler reset --core N | --all"
+	regainHelp = `Usage: shycler regain [--core <N>]
+
+Queue one count of regain on every confirmed core with unproven depth, or on
+core N only. Unproven depth is what a suspect backoff gave up without proof; the
+next run confirms one count deeper on each queued core.
+
+Examples:
+  sudo shycler regain            Every core with unproven depth
+  sudo shycler regain --core 3   Core 3 only`
+	resetHelp = `Usage: shycler reset --core <N> | --all
+
+Reset one core, so the next run restarts its search from the baseline, or archive
+the whole session, so the next run starts a new one. Give exactly one of the two.
+
+Examples:
+  sudo shycler reset --core 3   Search core 3 again from its baseline
+  sudo shycler reset --all      Archive the session and start over`
 )
 
 func runRegain(g *globals, args []string, stdout, stderr io.Writer) int {
 	var core *int
 	flags := newFlagSet("regain", g)
 	flags.Func("core", "only core `N`", coreFlag(&core))
-	if code, ok := parseFlags(flags, args, regainUsage, stdout, stderr); !ok {
+	if code, ok := parseFlags(flags, args, regainHelp, stdout, stderr); !ok {
 		return code
 	}
 	j, _, code, ok := openForCommand("regain", g.stateDir, stderr)
@@ -50,12 +65,12 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("reset", g)
 	flags.Func("core", "reset core `N`: its search restarts from the baseline", coreFlag(&core))
 	flags.BoolVar(&all, "all", false, "archive the session; the next run starts a new one")
-	if code, ok := parseFlags(flags, args, resetUsage, stdout, stderr); !ok {
+	if code, ok := parseFlags(flags, args, resetHelp, stdout, stderr); !ok {
 		return code
 	}
 	if (core != nil) == all {
 		fmt.Fprintln(stderr, "shycler reset: exactly one of --core or --all")
-		commandUsage(flags, resetUsage, stderr)
+		commandUsage(flags, resetHelp, stderr)
 		return exitUsage
 	}
 	j, id, code, ok := openForCommand("reset", g.stateDir, stderr)

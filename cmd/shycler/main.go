@@ -82,13 +82,36 @@ func cli(args []string, stdout, stderr io.Writer) int {
 }
 
 func registerGlobals(fs *flag.FlagSet, g *globals) {
-	fs.Func("config", "configuration `file` (default "+config.DefaultPath+")", func(s string) error {
+	fs.Func("config", "configuration file `path` (default "+config.DefaultPath+")", func(s string) error {
 		g.config, g.configSet = s, true
 		return nil
 	})
-	fs.Func("state-dir", "state `directory` (default "+defaultStateDir+")", func(s string) error {
+	fs.Func("state-dir", "state directory `path` (default "+defaultStateDir+")", func(s string) error {
 		g.stateDir, g.stateDirSet = s, true
 		return nil
+	})
+}
+
+func isGlobal(f *flag.Flag) bool {
+	return f.Name == "config" || f.Name == "state-dir"
+}
+
+func writeFlags(b *strings.Builder, title string, flags *flag.FlagSet, include func(*flag.Flag) bool) {
+	first := true
+	flags.VisitAll(func(f *flag.Flag) {
+		if !include(f) {
+			return
+		}
+		if first {
+			fmt.Fprintf(b, "\n%s:\n", title)
+			first = false
+		}
+		arg, text := flag.UnquoteUsage(f)
+		name := "--" + f.Name
+		if arg != "" {
+			name += " <" + arg + ">"
+		}
+		fmt.Fprintf(b, "  %-21s%s\n", name, text)
 	})
 }
 
@@ -96,14 +119,17 @@ func usage(w io.Writer) {
 	var b strings.Builder
 	b.WriteString("Usage: shycler [--config <path>] [--state-dir <path>] <command> [flags]\n\n")
 	b.WriteString("Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs.\n\n")
+	b.WriteString("Examples:\n")
+	b.WriteString("  shycler run --sim 1   Simulate a session, without hardware or root\n")
+	b.WriteString("  shycler status        Show per-core offsets, tier and clean hours\n\n")
 	b.WriteString("Commands:\n")
 	sorted := slices.SortedFunc(slices.Values(commands), func(a, b command) int { return strings.Compare(a.name, b.name) })
 	for _, c := range sorted {
 		fmt.Fprintf(&b, "  %-9s%s\n", c.name, c.summary)
 	}
-	b.WriteString("\nFlags:\n")
-	fmt.Fprintf(&b, "  --config <path>      configuration file (default %s)\n", config.DefaultPath)
-	fmt.Fprintf(&b, "  --state-dir <path>   state directory (default %s)\n", defaultStateDir)
-	b.WriteString("\nRun 'shycler <command> --help' for its flags.\n")
+	fs := flag.NewFlagSet("shycler", flag.ContinueOnError)
+	registerGlobals(fs, &globals{})
+	writeFlags(&b, "Flags", fs, isGlobal)
+	b.WriteString("\nRun 'shycler <command> --help' for its description, examples and flags.\n")
 	_, _ = io.WriteString(w, b.String())
 }

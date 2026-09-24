@@ -12,7 +12,14 @@ import (
 )
 
 const (
-	certUsage = "Usage: shycler cert"
+	certHelp = `Usage: shycler cert
+
+Render the certificate: the tier the current profile earned, each core's edge,
+clean hours and failure-rate bounds per regime, and the SHA-256 of the journal
+lines it was rendered from. The edges are the values to enter in BIOS.
+
+Examples:
+  shycler cert   The certificate of the session in the default state directory`
 	certWidth = 62
 	certText  = 17
 )
@@ -39,7 +46,7 @@ var ladder = []struct {
 
 func runCert(g *globals, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("cert", g)
-	if code, ok := parseFlags(flags, args, certUsage, stdout, stderr); !ok {
+	if code, ok := parseFlags(flags, args, certHelp, stdout, stderr); !ok {
 		return code
 	}
 	events, st, code, ok := loadSession("cert", g.stateDir, stderr)

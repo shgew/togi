@@ -98,7 +98,7 @@ Each event's `msg` goes to stderr, prefixed by local time and kind padded to 14 
 `shycler events` renders the journal the same way:
 
 ```
-shycler events [--core N] [--kind K[,K...]] [--trial ID] [--since RFC3339] [--until RFC3339] [--json]
+shycler events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--until <time>] [--json]
 ```
 
 - `--core N`: events whose `core` is N or whose `cores` include N.
