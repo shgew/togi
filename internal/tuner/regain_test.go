@@ -117,4 +117,15 @@ func TestReset(t *testing.T) {
 		h.add(&journal.CommandReset{Core: new(0)})
 		h.expect("confirmed->search -50 u0", "trial R1 c0")
 	})
+	t.Run("reset drops a pending retry of the core", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t, searchAt(-15)...)
+		h.add(&journal.SessionBaseline{Offsets: []int{-5}})
+		h.trial(h.s.Next(), unsure)
+		h.add(&journal.CommandReset{Core: new(0)})
+		h.expect("search->search -5 u0", "trial R1 c0")
+		if a := h.s.Next(); a.Trial.Offset != -5 || a.Trial.Retry {
+			t.Fatalf("trial %+v after the reset, want R1 at the baseline -5", a.Trial)
+		}
+	})
 }

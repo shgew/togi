@@ -23,7 +23,7 @@ Normative rules for how shycler moves offsets. Terms are defined in `CONTEXT.md`
 
 Cores are visited in CCD-alternating order: 0, 8, 1, 9, ... 7, 15. Each slot goes to the next core in that order that is still in search or confirmation, and that core runs its next step. Interleaving cores this way gives every core time to cool between its own trials.
 
-A slot is one search step (R1, then R2 if R1 passed) or one confirmation trial. An inconclusive trial is retried at once in the same slot.
+A slot is one search step (R1, then R2 if R1 passed) or one confirmation trial. An inconclusive trial is retried at once in the same slot, unless a decision for its core comes first (a queued reset): the decision replaces the slot.
 
 ## Search
 

@@ -205,6 +205,9 @@ func (s *State) decided(c *core, seq int) {
 	c.decisionSeq = seq
 	s.guard.dirty, s.guard.dirtySeq = true, seq
 	s.tierCause = seq
+	if s.retry != nil && s.retry.Condition == machine.Isolated && s.retry.Core == c.id {
+		s.retry = nil
+	}
 }
 
 func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {

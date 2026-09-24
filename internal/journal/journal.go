@@ -172,15 +172,25 @@ func ReadFile(path string) (events []Event, torn []byte, err error) {
 	return events, torn, nil
 }
 
-// Archive records session.archived, then moves the journal to archive/<session>.jsonl and removes the state file. The
-// journal is spent afterwards: close it. Open finishes an archive that was recorded but not moved.
-func (j *Journal) Archive(session string) (string, error) {
+// ArchivePath is where Archive moves the session's journal, relative to the state directory; it fails when that
+// archive already exists, so a caller can refuse before recording anything.
+func (j *Journal) ArchivePath(session string) (string, error) {
 	rel := filepath.Join(archiveDir, session+".jsonl")
 	path := filepath.Join(j.dir, rel)
 	if _, err := os.Stat(path); err == nil {
 		return "", fmt.Errorf("archive %s already exists", path)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return "", fmt.Errorf("archive: %w", err)
+	}
+	return rel, nil
+}
+
+// Archive records session.archived, then removes the state file and moves the journal to ArchivePath. The journal is
+// spent afterwards: close it. Open finishes an archive that was recorded but not moved.
+func (j *Journal) Archive(session string) (string, error) {
+	rel, err := j.ArchivePath(session)
+	if err != nil {
+		return "", err
 	}
 	if _, err := j.Append(&SessionArchived{Session: session, Path: rel}); err != nil {
 		return "", err
@@ -196,23 +206,25 @@ func (j *Journal) Archive(session string) (string, error) {
 	return rel, nil
 }
 
+// finishArchive removes the state file before moving the journal: once the journal is gone nothing would finish the
+// removal, while a journal still in place ends with session.archived and Open retries both.
 func finishArchive(dir, rel string, sync bool) error {
 	archive := filepath.Join(dir, archiveDir)
 	if err := os.MkdirAll(archive, 0o755); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(dir, stateFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	if err := os.Rename(filepath.Join(dir, eventsFile), filepath.Join(dir, rel)); err != nil {
 		return err
 	}
 	if sync {
-		for _, d := range []string{dir, archive} {
+		for _, d := range []string{archive, dir} {
 			if err := syncDir(d); err != nil {
 				return fmt.Errorf("sync directory %s: %w", d, err)
 			}
 		}
-	}
-	if err := os.Remove(filepath.Join(dir, stateFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package session
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -161,5 +162,27 @@ func TestResetAll(t *testing.T) {
 	}
 	if s := readEvents(t, dir)[0].Data.(*journal.SessionStart).Session; s == old {
 		t.Fatalf("the next run reused session %s", s)
+	}
+}
+
+func TestResetAllRefusesAnExistingArchive(t *testing.T) {
+	t.Parallel()
+	dir, ref := reference(t, small())
+	taken := filepath.Join(dir, "archive", ref[0].Data.(*journal.SessionStart).Session+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(taken), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(taken, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := command(t, dir, func(j *journal.Journal) error {
+		_, err := ResetAll(j)
+		return err
+	})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("ResetAll over an existing archive: %v", err)
+	}
+	if got := readEvents(t, dir); len(got) != len(ref) {
+		t.Fatalf("the refused reset left %d events, want the %d it found", len(got), len(ref))
 	}
 }

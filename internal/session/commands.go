@@ -98,6 +98,9 @@ func ResetAll(j *journal.Journal) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if _, err := j.ArchivePath(r.state.Session.ID); err != nil {
+		return "", fmt.Errorf("reset: %w", err)
+	}
 	if _, err := j.Append(&journal.CommandReset{All: true}); err != nil {
 		return "", fmt.Errorf("reset: %w", err)
 	}
