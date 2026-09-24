@@ -24,6 +24,8 @@ type Input struct {
 	Boot       string
 	Journal    Journal
 	Machine    machine.Machine
+	// Rotations is the number of clean rotations of one profile after which the run stops; 0 runs guard endlessly.
+	Rotations int
 }
 
 type Journal interface {
@@ -36,9 +38,9 @@ type Journal interface {
 type StopReason string
 
 const (
-	StopSignal  StopReason = "signal"
-	StopDeadEnd StopReason = "dead_end"
-	StopGuard   StopReason = "guard"
+	StopSignal    StopReason = "signal"
+	StopDeadEnd   StopReason = "dead_end"
+	StopRotations StopReason = "rotations"
 )
 
 type Stop struct {
@@ -60,7 +62,9 @@ type runner struct {
 	state journal.State
 	tuner *tuner.State
 
-	profileApplied bool
+	// condition and applied describe what this process last wrote to every core; empty until then.
+	condition machine.Condition
+	applied   []int
 }
 
 func Run(ctx context.Context, in Input) (Stop, error) {
@@ -190,6 +194,9 @@ func (r *runner) recoverCrashes() error {
 		inTrial := r.fold.open != nil && r.fold.open.boot == crashed
 		kind := tuner.ClassifyCrash(inTrial, r.fold.applied[crashed] != 0)
 		detected := &journal.CrashDetected{PreviousBoot: crashed, InFlight: r.fold.lastIntentIn(crashed), Stray: kind == tuner.CrashStray}
+		if !detected.Stray {
+			detected.Condition = r.fold.appliedCond[crashed]
+		}
 		if _, err := r.append(detected, r.fold.recordedFor(crashed, boot)...); err != nil {
 			return err
 		}
@@ -200,7 +207,11 @@ func (r *runner) recoverCrashes() error {
 	for _, seq := range slices.Clone(r.fold.pendingIdle) {
 		crash := r.eventAt(seq).Data.(*journal.CrashDetected)
 		cause := append([]int{seq}, r.fold.recordedFor(crash.PreviousBoot, boot)...)
-		if _, err := r.append(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed}, cause...); err != nil {
+		failure := &journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed}
+		if crash.Condition == machine.Resident {
+			failure.Regime, failure.Condition = machine.R6, machine.Resident
+		}
+		if _, err := r.append(failure, cause...); err != nil {
 			return err
 		}
 	}
@@ -408,23 +419,53 @@ func (r *runner) startSession() error {
 	return nil
 }
 
-func (r *runner) applyProfile() error {
-	reads, err := r.setAll(0)
-	if err != nil {
-		return err
+// ensureCondition writes every core for the trial's condition unless this process already did: all at 0 for isolated
+// trials, the profile for resident ones. condition is cleared first, so a failed or interrupted write is redone.
+func (r *runner) ensureCondition(t tuner.Trial) error {
+	switch t.Condition {
+	case machine.Isolated:
+		if r.condition == machine.Isolated {
+			return nil
+		}
+		r.condition = ""
+		reads, err := r.setAll(0)
+		if err != nil {
+			return err
+		}
+		zeros := make([]int, len(r.cores))
+		if _, err := r.append(&journal.ProfileApplied{Offsets: zeros, Condition: machine.Isolated}, reads...); err != nil {
+			return err
+		}
+		r.condition, r.applied = machine.Isolated, zeros
+	case machine.Resident:
+		profile := r.tuner.Profile()
+		if r.condition == machine.Resident && slices.Equal(r.applied, profile) {
+			return nil
+		}
+		if len(profile) != len(r.cores) {
+			return fmt.Errorf("resident trial with a profile of %d offsets for %d cores", len(profile), len(r.cores))
+		}
+		r.condition = ""
+		reads := make([]int, len(r.cores))
+		for i, c := range r.cores {
+			seq, err := r.set(c.Core, profile[i], r.tuner.ProfileSeq())
+			if err != nil {
+				return err
+			}
+			reads[i] = seq
+		}
+		if _, err := r.append(&journal.ProfileApplied{Offsets: profile, Condition: machine.Resident}, reads...); err != nil {
+			return err
+		}
+		r.condition, r.applied = machine.Resident, profile
 	}
-	r.profileApplied = true
-	if r.fold.applied[r.in.Boot] != 0 {
-		return nil
-	}
-	_, err = r.append(&journal.ProfileApplied{Offsets: make([]int, len(r.cores)), Condition: machine.Isolated}, reads...)
-	return err
+	return nil
 }
 
 func (r *runner) loop(ctx context.Context) (Stop, error) {
 	for {
 		if ctx.Err() != nil {
-			return r.shutdown(journal.ShutdownSignal, StopSignal)
+			return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
 		}
 		if stop, err := r.checkDeadEnd(); stop != nil || err != nil {
 			return deref(stop), err
@@ -436,18 +477,19 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 				stop, err := r.deadEnd(d, a.Cause...)
 				return deref(stop), err
 			}
+			if g, ok := a.Payload.(*journal.GuardRotation); ok && g.Event == journal.RotationStart && r.reachedRotations() {
+				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownRotations, Rotations: r.in.Rotations}, StopRotations)
+			}
 			if _, err := r.append(a.Payload, a.Cause...); err != nil {
 				return Stop{}, err
 			}
 		case tuner.RunTrial:
-			if !r.profileApplied {
-				err := r.applyProfile()
-				if errors.Is(err, errDeadEndEvidence) {
-					continue
-				}
-				if err != nil {
-					return Stop{}, err
-				}
+			err := r.ensureCondition(a.Trial)
+			if errors.Is(err, errDeadEndEvidence) {
+				continue
+			}
+			if err != nil {
+				return Stop{}, err
 			}
 			stop, err := r.trial(ctx, a)
 			if errors.Is(err, errDeadEndEvidence) {
@@ -456,14 +498,16 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 			if stop != nil || err != nil {
 				return deref(stop), err
 			}
-		case tuner.EnterGuard:
-			return r.shutdown(journal.ShutdownGuard, StopGuard)
 		}
 	}
 }
 
-func (r *runner) shutdown(reason journal.ShutdownReason, stop StopReason) (Stop, error) {
-	if _, err := r.append(&journal.Shutdown{Reason: reason}); err != nil {
+func (r *runner) reachedRotations() bool {
+	return r.in.Rotations > 0 && r.tuner.CleanRotations() >= r.in.Rotations
+}
+
+func (r *runner) shutdown(p *journal.Shutdown, stop StopReason) (Stop, error) {
+	if _, err := r.append(p); err != nil {
 		return Stop{}, err
 	}
 	return Stop{Reason: stop}, nil

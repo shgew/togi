@@ -37,7 +37,7 @@ Known quirks the integrations handle:
 
 Within a regime, each core cycles through the listed workloads trial by trial, so backends alternate on the same core.
 
-R6 and R7 exist only in guard. R7 runs one instance per core, so a computation error or stall stays attributed to that instance's core.
+R6 and R7 exist only in guard. Their trial targets every core: `trial.intent` lists every core in `cores`, and the trial runs on each core's first logical CPU. R7 runs one instance per core, so a computation error or stall stays attributed to that instance's core.
 
 ### Load-step schedules
 
@@ -101,9 +101,9 @@ Failure signals:
 | Uncorrected MCE | Kernel log of the next boot, or of the crashed boot in the persistent system journal | Same rule |
 | Crash | Boot ID differs from the last one in the journal, with no clean-shutdown event | Unattributed, unless an MCE above names a core |
 
-In isolated trials every failure is attributed to the target, including an MCE that names another core: only the target carries an offset (`tuner.md`).
+In isolated trials every failure is attributed to the target, including an MCE that names another core: only the target carries an offset (`tuner.md`). In resident trials, evidence naming more than one core is unattributed.
 
-Crash detection and evidence: every boot in the journal other than the current one, whose last event is not `shutdown` and that no `crash.detected` names, has crashed. Its evidence is every MCE in its own kernel log plus the uncorrected MCEs logged by the boot after it (the next boot in the journal, or the current boot), each recorded once as an `mce` event with `from_boot`. Recovery is idempotent: detection, closing the crashed trial and its failure are each redone by the next `run` if a further crash or kill interrupts them, so a crash during recovery is detected on its own, normally as stray, without losing the first.
+Crash detection and evidence: every boot in the journal other than the current one, whose last event is not `shutdown` and that no `crash.detected` names, has crashed. Its evidence is every MCE in its own kernel log plus the uncorrected MCEs logged by the boot after it (the next boot in the journal, or the current boot), each recorded once as an `mce` event with `from_boot`. An MCE that an earlier `crash.detected` already cites is evidence of that crash only: a boot's own log starts with the MCEs its predecessor's crash left in the banks. Recovery is idempotent: detection, closing the crashed trial and its failure are each redone by the next `run` if a further crash or kill interrupts them, so a crash during recovery is detected on its own, normally as stray, without losing the first.
 
 A trial still open when `run` starts, in a boot that did not crash (the same boot, or one that ended in `shutdown`), ends as `interrupted`: a failure (`corrected_mce`, or `uncorrected_mce` when none is corrected) when `mce` events were already recorded for it, else inconclusive. Interrupted trials do not count toward the inconclusive dead end.
 

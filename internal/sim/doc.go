@@ -18,6 +18,11 @@
 // fails within its duration. R3 and R4 fail by their edges alone: the simulator follows the load-step schedule of
 // package machine only to report SIGSTOP and SIGCONT counts, not to change failure rates.
 //
+// Resident trials fail by each target's resident edge at the offset in its register, so every other core's offset
+// only matters when it is a target too. R6 and R7 trials target every core for their whole duration: each core fails
+// by its own R6 or R7 edge, and the first to fail produces the signal. R6's idle half and R7's per-CCD phases are not
+// modelled.
+//
 // A failing core produces one signal, drawn by the Model.Signals weights:
 //   - computation_error, stall, unexpected_exit: the trial ends at the failure time with that signal;
 //   - corrected_mce: a corrected MCE on the core's first logical CPU enters the current boot's kernel log and the
@@ -35,8 +40,10 @@
 //
 // # Machine lifecycle
 //
-// The clock starts at 2026-01-01T00:00:00Z and advances only by trial time and 90 s per reboot. Crash stops the
-// machine: every seam call returns machine.ErrCrashed until Reboot starts the next boot with a new boot ID and the
-// BIOS offsets in every register. Faults (failed SMU writes, corrupt readbacks, setup failures, escaped threads,
-// failed preflight checks, crashes before the first write of a boot) are injected by the methods on Machine.
+// The clock starts at 2026-01-01T00:00:00Z, or at Config.Start, and advances only by trial time and 90 s per reboot.
+// Config.Boots continues boot numbering, so a machine built to resume a journal gets boot IDs the journal has not
+// seen. Crash stops the machine: every seam call returns machine.ErrCrashed until Reboot starts the next boot with a
+// new boot ID and the BIOS offsets in every register. Faults (failed SMU writes, corrupt readbacks, setup failures,
+// escaped threads, failed preflight checks, crashes before the first write of a boot) are injected by the methods on
+// Machine.
 package sim

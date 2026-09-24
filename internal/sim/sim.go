@@ -24,6 +24,10 @@ type Config struct {
 	Edges []Edges
 	// Model nil means DefaultModel(); a non-nil model is used verbatim, zero fields included.
 	Model *Model
+	// Boots counts the boots before the first; boot numbering and boot IDs continue from it.
+	Boots int
+	// Start is the clock at the first boot; zero means 2026-01-01T00:00:00Z.
+	Start time.Time
 }
 
 // Edges index 0 is R1; Resident[5] and Resident[6] are R6 and R7.
@@ -68,7 +72,7 @@ var defaultBIOSContext = machine.BIOSContext{
 
 var epoch = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-const rebootTime = 90 * time.Second
+const RebootTime = 90 * time.Second
 
 type Machine struct {
 	cfg        Config
@@ -119,11 +123,16 @@ func New(cfg Config) (*Machine, error) {
 	if cfg.Model != nil {
 		model = *cfg.Model
 	}
+	start := epoch
+	if !cfg.Start.IsZero() {
+		start = cfg.Start
+	}
 	m := &Machine{
 		cfg:            cfg,
 		model:          model,
 		edges:          cfg.Edges,
-		now:            epoch,
+		boot:           cfg.Boots,
+		now:            start,
 		logs:           map[string][]machine.MCE{},
 		bios:           cfg.BIOSContext,
 		corruptArmed:   map[int]bool{},
@@ -209,10 +218,12 @@ func (m *Machine) Now() time.Time { return m.now }
 
 func (m *Machine) IsolatedEdge(core int) int { return slices.Max(m.edges[core].Isolated[:]) }
 
+func (m *Machine) ResidentEdge(core int) int { return slices.Max(m.edges[core].Resident[:]) }
+
 func (m *Machine) Crash() { m.crashed = true }
 
 func (m *Machine) Reboot() {
-	m.now = m.now.Add(rebootTime)
+	m.now = m.now.Add(RebootTime)
 	m.startBoot()
 }
 

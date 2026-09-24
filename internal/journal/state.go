@@ -26,6 +26,7 @@ type State struct {
 	Cores    []CoreState  `json:"cores"`
 	InFlight *InFlight    `json:"in_flight"`
 	DeadEnd  *DeadEndRef  `json:"dead_end"`
+	Guard    *GuardState  `json:"guard"`
 
 	open []openIntent
 }
@@ -38,15 +39,34 @@ type SessionInfo struct {
 }
 
 type CoreState struct {
-	Core         int          `json:"core"`
-	CCD          int          `json:"ccd"`
-	CPUs         []int        `json:"cpus"`
-	Baseline     *int         `json:"baseline"`
-	Offset       int          `json:"offset"`
-	Phase        Phase        `json:"phase"`
-	Pass         *int         `json:"pass"`
-	FailedMark   *int         `json:"failed_mark"`
-	LastDecision *DecisionRef `json:"last_decision"`
+	Core          int          `json:"core"`
+	CCD           int          `json:"ccd"`
+	CPUs          []int        `json:"cpus"`
+	Baseline      *int         `json:"baseline"`
+	Offset        int          `json:"offset"`
+	Phase         Phase        `json:"phase"`
+	Pass          *int         `json:"pass"`
+	FailedMark    *int         `json:"failed_mark"`
+	UnprovenDepth int          `json:"unproven_depth"`
+	LastDecision  *DecisionRef `json:"last_decision"`
+}
+
+type GuardState struct {
+	Rotation         int              `json:"rotation"`
+	RotationOpen     bool             `json:"rotation_open"`
+	Steps            []machine.Regime `json:"steps"`
+	StepsDone        int              `json:"steps_done"`
+	Profile          []int            `json:"profile"`
+	ProfileSeq       int              `json:"profile_seq"`
+	CleanRotations   int              `json:"clean_rotations"`
+	CleanS           int              `json:"clean_s"`
+	Regimes          []RegimeClean    `json:"regimes"`
+	EscalationWindow bool             `json:"escalation_window_open"`
+}
+
+type RegimeClean struct {
+	Regime machine.Regime `json:"regime"`
+	CleanS int            `json:"clean_s"`
 }
 
 type DecisionRef struct {

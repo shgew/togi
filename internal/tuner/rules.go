@@ -8,11 +8,12 @@ import (
 )
 
 type coreState struct {
-	core   int
-	phase  journal.Phase
-	offset int
-	pass   *int
-	fail   *int
+	core     int
+	phase    journal.Phase
+	offset   int
+	pass     *int
+	fail     *int
+	unproven int
 }
 
 func searchPass(c coreState) journal.Payload {
@@ -33,9 +34,11 @@ func failureRule(c coreState) journal.Payload {
 	switch c.phase {
 	case journal.PhaseSearch:
 		return searchFailure(c)
-	case journal.PhaseConfirmation, journal.PhaseConfirmed:
+	case journal.PhaseConfirmation:
+		return confirmationFailure(c)
+	case journal.PhaseConfirmed, journal.PhaseGuard:
 	}
-	return confirmationFailure(c)
+	return guardFailure(c)
 }
 
 func searchFailure(c coreState) journal.Payload {
@@ -66,8 +69,35 @@ func confirmationFailure(c coreState) journal.Payload {
 	return &journal.TunerDecision{Core: c.core, Phase: journal.PhaseConfirmation, Decision: journal.Backoff, FromOffset: e, ToOffset: e + 1, Pass: pass, FailedMark: new(e), Reason: "confirmation restarts from R1" + discarded}
 }
 
+func guardFailure(c coreState) journal.Payload {
+	o := c.offset
+	if o == machine.MaxOffset {
+		return failedAtZero(c.core)
+	}
+	pass, discarded := keepPass(c.pass, o)
+	reason := fmt.Sprintf("proven backoff; isolated confirmation at or deeper than %d covers %d%s", o, o+1, discarded)
+	if c.unproven > 0 {
+		reason += fmt.Sprintf("; the failed mark cancels unproven depth %d", c.unproven)
+	}
+	return &journal.TunerDecision{Core: c.core, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: o, ToOffset: o + 1, Pass: pass, FailedMark: new(o), Reason: reason}
+}
+
+func suspectBackoff(c coreState, sp *suspect) *journal.TunerDecision {
+	f := sp.failure
+	where := "with the profile applied and no trial in flight"
+	if f.Trial != "" {
+		where = fmt.Sprintf("in resident %s trial %s", f.Regime, f.Trial)
+	}
+	u := c.unproven + 1
+	return &journal.TunerDecision{
+		Core: c.core, Phase: journal.PhaseGuard, Decision: journal.SuspectBackoff, FromOffset: c.offset, ToOffset: c.offset + 1,
+		Pass: c.pass, FailedMark: c.fail, UnprovenDepth: u,
+		Reason: fmt.Sprintf("unattributed %s failure %s; %s; unproven depth %d", f.Signal, where, sp.scope, u),
+	}
+}
+
 func confirmed(c coreState) journal.Payload {
-	return &journal.CorePhase{Core: c.core, From: journal.PhaseConfirmation, To: journal.PhaseConfirmed, Offset: c.offset, Pass: c.pass, FailedMark: c.fail, Reason: "R1 to R5 passed"}
+	return &journal.CorePhase{Core: c.core, From: journal.PhaseConfirmation, To: journal.PhaseConfirmed, Offset: c.offset, Pass: c.pass, FailedMark: c.fail, UnprovenDepth: c.unproven, Reason: "R1 to R5 passed"}
 }
 
 func candidate(c coreState, offset int, pass, fail *int, reason string) *journal.CorePhase {

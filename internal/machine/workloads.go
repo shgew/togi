@@ -32,8 +32,8 @@ var baseR2 = []Workload{
 var catalog = buildCatalog()
 
 func buildCatalog() map[Regime][]Workload {
-	base := append(append([]Workload{}, baseR1...), baseR2...)
-	derive := func(idSuffix, labelSuffix string, threads int) []Workload {
+	mixed := append(append([]Workload{}, baseR1...), baseR2...)
+	derive := func(base []Workload, idSuffix, labelSuffix string, threads int) []Workload {
 		out := make([]Workload, len(base))
 		for i, w := range base {
 			out[i] = Workload{ID: w.ID + idSuffix, Backend: w.Backend, Label: w.Label + labelSuffix, Threads: threads}
@@ -55,9 +55,11 @@ func buildCatalog() map[Regime][]Workload {
 	return map[Regime][]Workload{
 		R1: baseR1,
 		R2: baseR2,
-		R3: derive("-steps", " load steps", 1),
+		R3: derive(mixed, "-steps", " load steps", 1),
 		R4: r4,
-		R5: derive("-smt", " SMT pair", 2),
+		R5: derive(mixed, "-smt", " SMT pair", 2),
+		R6: derive(baseR1, "-idle", " idle then bursts", 1),
+		R7: derive(baseR2, "-allcore", " all-core", 1),
 	}
 }
 

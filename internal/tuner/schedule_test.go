@@ -37,9 +37,9 @@ func TestSearchSchedule(t *testing.T) {
 	h := newHarness(t, searchAt(-10, -10)...)
 	search := journal.PhaseSearch
 
-	wantTrial(t, h.s.Next(), Trial{Core: 0, Offset: -10, Regime: machine.R1, Phase: search}, 2)
+	wantTrial(t, h.s.Next(), Trial{Core: 0, Offset: -10, Regime: machine.R1, Phase: search, Condition: machine.Isolated}, 2)
 	_, r1 := h.trial(h.s.Next(), passed)
-	wantTrial(t, h.s.Next(), Trial{Core: 0, Offset: -10, Regime: machine.R2, Phase: search}, r1.Seq)
+	wantTrial(t, h.s.Next(), Trial{Core: 0, Offset: -10, Regime: machine.R2, Phase: search, Condition: machine.Isolated}, r1.Seq)
 	_, r2 := h.trial(h.s.Next(), passed)
 
 	a := h.s.Next()
@@ -49,7 +49,7 @@ func TestSearchSchedule(t *testing.T) {
 	}
 	decision := h.decide(a)
 
-	wantTrial(t, h.s.Next(), Trial{Core: 1, Offset: -10, Regime: machine.R1, Phase: search}, 3)
+	wantTrial(t, h.s.Next(), Trial{Core: 1, Offset: -10, Regime: machine.R1, Phase: search, Condition: machine.Isolated}, 3)
 	intent, end := h.trial(h.s.Next(), failed)
 
 	a = h.s.Next()
@@ -65,9 +65,9 @@ func TestSearchSchedule(t *testing.T) {
 	}
 	h.decide(a)
 
-	wantTrial(t, h.s.Next(), Trial{Core: 0, Offset: -15, Regime: machine.R1, Phase: search}, decision.Seq)
+	wantTrial(t, h.s.Next(), Trial{Core: 0, Offset: -15, Regime: machine.R1, Phase: search, Condition: machine.Isolated}, decision.Seq)
 	_, inconclusive := h.trial(h.s.Next(), unsure)
-	wantTrial(t, h.s.Next(), Trial{Core: 0, Offset: -15, Regime: machine.R1, Phase: search, Retry: true}, inconclusive.Seq)
+	wantTrial(t, h.s.Next(), Trial{Core: 0, Offset: -15, Regime: machine.R1, Phase: search, Condition: machine.Isolated, Retry: true}, inconclusive.Seq)
 }
 
 func TestConfirmationSchedule(t *testing.T) {
@@ -95,9 +95,10 @@ func TestConfirmationSchedule(t *testing.T) {
 	if p, ok := done.Payload.(*journal.CorePhase); !ok || p.Core != 1 || p.To != journal.PhaseConfirmed {
 		t.Fatalf("after core 1 passed R1-R5: %+v", done)
 	}
-	h.decide(done)
-	if a := h.s.Next(); a.Kind != EnterGuard {
-		t.Fatalf("every core confirmed: %+v, want EnterGuard", a)
+	confirmedAt := h.decide(done)
+	a := h.s.Next()
+	if p, ok := a.Payload.(*journal.ProfileChange); a.Kind != Decide || !ok || p.From != nil || !slices.Equal(p.To, []int{-12, -11}) || a.Cause[len(a.Cause)-1] != confirmedAt.Seq {
+		t.Fatalf("every core confirmed: %+v, want profile.change for guard", a)
 	}
 	st := projected(h)
 	if st.Phase != "guard" || st.Cores[0].Offset != -12 || st.Cores[1].Phase != journal.PhaseConfirmed {

@@ -53,17 +53,29 @@ func (h *harness) add(p journal.Payload, cause ...int) journal.Event {
 
 func (h *harness) trial(a Action, end journal.TrialEnd) (intent, ended journal.Event) {
 	h.t.Helper()
+	intent = h.start(a)
+	end.Trial = intent.Data.(*journal.TrialIntent).Trial
+	return intent, h.add(&end, intent.Seq)
+}
+
+func (h *harness) start(a Action) journal.Event {
+	h.t.Helper()
 	if a.Kind != RunTrial {
 		h.t.Fatalf("action %+v, want RunTrial", a)
 	}
 	h.trials++
-	id := fmt.Sprintf("%04d", h.trials)
-	intent = h.add(&journal.TrialIntent{
-		Trial: id, Core: new(a.Trial.Core), Offset: new(a.Trial.Offset), Regime: a.Trial.Regime,
-		Workload: "w", DurationS: 90, Condition: machine.Isolated, Phase: a.Trial.Phase, Retry: a.Trial.Retry,
-	}, a.Cause...)
-	end.Trial = id
-	return intent, h.add(&end, intent.Seq)
+	p := &journal.TrialIntent{
+		Trial: fmt.Sprintf("%04d", h.trials), Regime: a.Trial.Regime, Workload: "w", DurationS: 90,
+		Condition: a.Trial.Condition, Phase: a.Trial.Phase, Retry: a.Trial.Retry, Rotation: a.Trial.Rotation,
+	}
+	if a.Trial.AllCores {
+		for _, c := range h.s.byID() {
+			p.Cores = append(p.Cores, c.id)
+		}
+	} else {
+		p.Core, p.Offset = new(a.Trial.Core), new(a.Trial.Offset)
+	}
+	return h.add(p, a.Cause...)
 }
 
 func (h *harness) decide(a Action) journal.Event {

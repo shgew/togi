@@ -30,6 +30,8 @@ type recoveredMCE struct {
 	seq       int
 	fromBoot  string
 	corrected bool
+	// claimed is the boot whose crash.detected first cited this MCE; it is no evidence of any other crash.
+	claimed string
 }
 
 type fold struct {
@@ -40,10 +42,11 @@ type fold struct {
 	noticed     bool
 	phase       map[int]journal.Phase
 
-	boots    []string
-	lastKind map[string]journal.Kind
-	applied  map[string]int
-	crashSeq map[string]int
+	boots       []string
+	lastKind    map[string]journal.Kind
+	applied     map[string]int
+	appliedCond map[string]machine.Condition
+	crashSeq    map[string]int
 
 	unmatched   []openIntent
 	open        *openTrial
@@ -58,19 +61,22 @@ type fold struct {
 	streaks      map[machine.Backend][]int
 	stray        []int
 
-	trials int
-	index  map[int]map[machine.Regime]int
+	trials   int
+	index    map[int]map[machine.Regime]int
+	allIndex map[machine.Regime]int
 }
 
 func newFold() *fold {
 	return &fold{
-		phase:    map[int]journal.Phase{},
-		lastKind: map[string]journal.Kind{},
-		applied:  map[string]int{},
-		crashSeq: map[string]int{},
-		mceKeys:  map[string]bool{},
-		streaks:  map[machine.Backend][]int{},
-		index:    map[int]map[machine.Regime]int{},
+		phase:       map[int]journal.Phase{},
+		lastKind:    map[string]journal.Kind{},
+		applied:     map[string]int{},
+		appliedCond: map[string]machine.Condition{},
+		crashSeq:    map[string]int{},
+		mceKeys:     map[string]bool{},
+		streaks:     map[machine.Backend][]int{},
+		index:       map[int]map[machine.Regime]int{},
+		allIndex:    map[machine.Regime]int{},
 	}
 }
 
@@ -97,10 +103,16 @@ func (f *fold) Fold(e journal.Event) {
 		f.phase[p.Core] = p.To
 	case *journal.ProfileApplied:
 		f.applied[e.Boot] = e.Seq
+		f.appliedCond[e.Boot] = p.Condition
 		f.stray = nil
 	case *journal.SMUIntent:
 		f.dropSMUIntent()
 		f.unmatched = append(f.unmatched, openIntent{seq: e.Seq, kind: e.Kind, boot: e.Boot})
+		if p.Offset != 0 && f.open == nil {
+			f.applied[e.Boot] = e.Seq
+			f.appliedCond[e.Boot] = machine.Resident
+			f.stray = nil
+		}
 	case *journal.SMUWrite:
 		f.dropSMUIntent()
 	case *journal.SMUError:
@@ -132,6 +144,11 @@ func (f *fold) Fold(e journal.Event) {
 		}
 	case *journal.CrashDetected:
 		f.crashSeq[p.PreviousBoot] = e.Seq
+		for i := range f.recovered {
+			if m := &f.recovered[i]; m.claimed == "" && slices.Contains(e.Cause, m.seq) {
+				m.claimed = p.PreviousBoot
+			}
+		}
 		f.unmatched = slices.DeleteFunc(f.unmatched, func(o openIntent) bool { return o.boot == p.PreviousBoot })
 		inTrial := f.open != nil && f.open.boot == p.PreviousBoot
 		if p.Stray {
@@ -179,12 +196,14 @@ func (f *fold) trialEnded(e journal.Event, p *journal.TrialEnd) {
 		}
 	case journal.OutcomePass, journal.OutcomeFailure:
 		f.streaks[w.Backend] = nil
-		if intent.Core != nil {
-			if f.index[*intent.Core] == nil {
-				f.index[*intent.Core] = map[machine.Regime]int{}
-			}
-			f.index[*intent.Core][intent.Regime]++
+		if intent.Core == nil {
+			f.allIndex[intent.Regime]++
+			break
 		}
+		if f.index[*intent.Core] == nil {
+			f.index[*intent.Core] = map[machine.Regime]int{}
+		}
+		f.index[*intent.Core][intent.Regime]++
 	}
 	if len(p.Escaped) > 0 {
 		f.escapeSeq = e.Seq
@@ -226,6 +245,9 @@ func (f *fold) recordedFor(boot, current string) []int {
 	next := f.nextBoot(boot, current)
 	var seqs []int
 	for _, m := range f.recovered {
+		if m.claimed != "" && m.claimed != boot {
+			continue
+		}
 		if m.fromBoot == boot || (m.fromBoot == next && !m.corrected) {
 			seqs = append(seqs, m.seq)
 		}

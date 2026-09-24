@@ -15,13 +15,15 @@ const (
 	PhaseSearch       Phase = "search"
 	PhaseConfirmation Phase = "confirmation"
 	PhaseConfirmed    Phase = "confirmed"
+	PhaseGuard        Phase = "guard"
 )
 
 type Decision string
 
 const (
-	StepDeeper Decision = "step_deeper"
-	Backoff    Decision = "backoff"
+	StepDeeper     Decision = "step_deeper"
+	Backoff        Decision = "backoff"
+	SuspectBackoff Decision = "suspect_backoff"
 )
 
 type Outcome string
@@ -79,9 +81,9 @@ const (
 type ShutdownReason string
 
 const (
-	ShutdownSignal  ShutdownReason = "signal"
-	ShutdownDeadEnd ShutdownReason = "dead_end"
-	ShutdownGuard   ShutdownReason = "guard"
+	ShutdownSignal    ShutdownReason = "signal"
+	ShutdownDeadEnd   ShutdownReason = "dead_end"
+	ShutdownRotations ShutdownReason = "rotations"
 )
 
 func coreID(c int) string { return fmt.Sprintf("%02d", c) }
@@ -278,6 +280,9 @@ type ProfileChange struct {
 
 func (*ProfileChange) Kind() Kind { return KindProfileChange }
 func (p *ProfileChange) Message() string {
+	if p.From == nil {
+		return fmt.Sprintf("profile for guard: %v", p.To)
+	}
 	return fmt.Sprintf("profile changed %v -> %v", p.From, p.To)
 }
 
@@ -292,6 +297,7 @@ type TrialIntent struct {
 	Condition machine.Condition `json:"condition"`
 	Phase     Phase             `json:"phase,omitempty"`
 	Retry     bool              `json:"retry,omitempty"`
+	Rotation  int               `json:"rotation,omitempty"`
 }
 
 func (*TrialIntent) Kind() Kind { return KindTrialIntent }
@@ -313,6 +319,9 @@ func (p *TrialIntent) Message() string {
 	fmt.Fprintf(&b, " %s %s %ds %s", p.Regime, label, p.DurationS, p.Condition)
 	if p.Retry {
 		b.WriteString(" (retry)")
+	}
+	if p.Rotation > 0 {
+		fmt.Fprintf(&b, " rotation %d", p.Rotation)
 	}
 	return b.String()
 }
@@ -378,6 +387,7 @@ type TrialEnd struct {
 	Trial       string         `json:"trial"`
 	Outcome     Outcome        `json:"outcome"`
 	Signal      machine.Signal `json:"signal,omitempty"`
+	Core        *int           `json:"core,omitempty"`
 	DurationS   int            `json:"duration_s"`
 	TctlMaxC    *int           `json:"tctl_max_c,omitempty"`
 	Reason      string         `json:"reason,omitempty"`
@@ -395,6 +405,9 @@ func (p *TrialEnd) Message() string {
 	case OutcomePass:
 		return fmt.Sprintf("trial %s PASS %ds%s", p.Trial, p.DurationS, tctl)
 	case OutcomeFailure:
+		if p.Core != nil {
+			return fmt.Sprintf("trial %s FAIL %s on core %s after %ds%s", p.Trial, p.Signal, coreID(*p.Core), p.DurationS, tctl)
+		}
 		return fmt.Sprintf("trial %s FAIL %s after %ds%s", p.Trial, p.Signal, p.DurationS, tctl)
 	case OutcomeInconclusive:
 		return fmt.Sprintf("trial %s INCONCLUSIVE after %ds: %s", p.Trial, p.DurationS, p.Reason)
@@ -403,21 +416,34 @@ func (p *TrialEnd) Message() string {
 }
 
 type Failure struct {
-	Signal      machine.Signal `json:"signal"`
-	Attribution Attribution    `json:"attribution"`
-	Core        *int           `json:"core,omitempty"`
-	Offset      *int           `json:"offset,omitempty"`
-	Trial       string         `json:"trial,omitempty"`
+	Signal      machine.Signal    `json:"signal"`
+	Attribution Attribution       `json:"attribution"`
+	Core        *int              `json:"core,omitempty"`
+	Offset      *int              `json:"offset,omitempty"`
+	Trial       string            `json:"trial,omitempty"`
+	Regime      machine.Regime    `json:"regime,omitempty"`
+	Condition   machine.Condition `json:"condition,omitempty"`
 }
 
 func (*Failure) Kind() Kind { return KindFailure }
 func (p *Failure) Message() string {
+	resident := p.Condition == machine.Resident
 	switch p.Attribution {
 	case Attributed:
-		if p.Core != nil && p.Offset != nil {
-			return fmt.Sprintf("core %s failure at CO %d: %s in trial %s (isolated: attributed to the target)", coreID(*p.Core), *p.Offset, p.Signal, p.Trial)
+		if p.Core == nil || p.Offset == nil {
+			break
 		}
+		if resident {
+			return fmt.Sprintf("core %s failure at CO %d: %s in resident %s trial %s", coreID(*p.Core), *p.Offset, p.Signal, p.Regime, p.Trial)
+		}
+		return fmt.Sprintf("core %s failure at CO %d: %s in trial %s (isolated: attributed to the target)", coreID(*p.Core), *p.Offset, p.Signal, p.Trial)
 	case Unattributed:
+		switch {
+		case resident && p.Trial != "":
+			return fmt.Sprintf("unattributed %s failure in resident %s trial %s: no evidence names a single core", p.Signal, p.Regime, p.Trial)
+		case resident:
+			return fmt.Sprintf("unattributed %s failure with the profile applied and no trial in flight: counted as an %s failure", p.Signal, p.Regime)
+		}
 		return fmt.Sprintf("unattributed %s failure: no trial was in flight", p.Signal)
 	}
 	return fmt.Sprintf("%s %s failure", p.Attribution, p.Signal)
@@ -451,9 +477,10 @@ func (p *MCE) Message() string {
 }
 
 type CrashDetected struct {
-	PreviousBoot string `json:"previous_boot"`
-	InFlight     *int   `json:"in_flight,omitempty"`
-	Stray        bool   `json:"stray,omitempty"`
+	PreviousBoot string            `json:"previous_boot"`
+	InFlight     *int              `json:"in_flight,omitempty"`
+	Stray        bool              `json:"stray,omitempty"`
+	Condition    machine.Condition `json:"condition,omitempty"`
 }
 
 func (*CrashDetected) Kind() Kind { return KindCrashDetected }
@@ -467,18 +494,22 @@ func (p *CrashDetected) Message() string {
 	if p.Stray {
 		msg += "; stray: the profile was never applied in that boot"
 	}
+	if p.Condition == machine.Resident {
+		msg += "; the resident profile was applied"
+	}
 	return msg
 }
 
 type TunerDecision struct {
-	Core       int      `json:"core"`
-	Phase      Phase    `json:"phase"`
-	Decision   Decision `json:"decision"`
-	FromOffset int      `json:"from_offset"`
-	ToOffset   int      `json:"to_offset"`
-	Pass       *int     `json:"pass"`
-	FailedMark *int     `json:"failed_mark"`
-	Reason     string   `json:"reason"`
+	Core          int      `json:"core"`
+	Phase         Phase    `json:"phase"`
+	Decision      Decision `json:"decision"`
+	FromOffset    int      `json:"from_offset"`
+	ToOffset      int      `json:"to_offset"`
+	Pass          *int     `json:"pass"`
+	FailedMark    *int     `json:"failed_mark"`
+	UnprovenDepth int      `json:"unproven_depth,omitempty"`
+	Reason        string   `json:"reason"`
 }
 
 func (*TunerDecision) Kind() Kind { return KindTunerDecision }
@@ -493,19 +524,24 @@ func (p *TunerDecision) Message() string {
 			verb = "failed"
 		case PhaseConfirmation, PhaseConfirmed:
 			verb = "failed confirmation"
+		case PhaseGuard:
+			verb = "failed in guard"
 		}
+	case SuspectBackoff:
+		verb = "backed off on suspicion"
 	}
 	return fmt.Sprintf("core %s %s at %d; next %d (%s)", coreID(p.Core), verb, p.FromOffset, p.ToOffset, p.Reason)
 }
 
 type CorePhase struct {
-	Core       int    `json:"core"`
-	From       Phase  `json:"from"`
-	To         Phase  `json:"to"`
-	Offset     int    `json:"offset"`
-	Pass       *int   `json:"pass"`
-	FailedMark *int   `json:"failed_mark"`
-	Reason     string `json:"reason"`
+	Core          int    `json:"core"`
+	From          Phase  `json:"from"`
+	To            Phase  `json:"to"`
+	Offset        int    `json:"offset"`
+	Pass          *int   `json:"pass"`
+	FailedMark    *int   `json:"failed_mark"`
+	UnprovenDepth int    `json:"unproven_depth,omitempty"`
+	Reason        string `json:"reason"`
 }
 
 func (*CorePhase) Kind() Kind { return KindCorePhase }
@@ -517,26 +553,40 @@ func (p *CorePhase) Message() string {
 }
 
 type GuardRotation struct {
-	Rotation int           `json:"rotation"`
-	Event    RotationEvent `json:"event"`
-	Clean    bool          `json:"clean,omitempty"`
+	Rotation int              `json:"rotation"`
+	Event    RotationEvent    `json:"event"`
+	Clean    bool             `json:"clean,omitempty"`
+	Steps    []machine.Regime `json:"steps,omitempty"`
+	Reason   string           `json:"reason,omitempty"`
 }
 
 func (*GuardRotation) Kind() Kind { return KindGuardRotation }
 func (p *GuardRotation) Message() string {
-	msg := fmt.Sprintf("guard rotation %d %s", p.Rotation, p.Event)
-	if p.Event == RotationEnd && p.Clean {
-		msg += " clean"
+	switch p.Event {
+	case RotationStart:
+		steps := make([]string, len(p.Steps))
+		for i, r := range p.Steps {
+			steps[i] = string(r)
+		}
+		return fmt.Sprintf("guard rotation %d start: %s", p.Rotation, strings.Join(steps, " "))
+	case RotationEnd:
+		if p.Clean {
+			return fmt.Sprintf("guard rotation %d end clean", p.Rotation)
+		}
+		return fmt.Sprintf("guard rotation %d end, not clean: %s", p.Rotation, p.Reason)
 	}
-	return msg
+	return fmt.Sprintf("guard rotation %d %s", p.Rotation, p.Event)
 }
 
 type EscalationWindow struct {
-	State WindowState `json:"state"`
+	State  WindowState `json:"state"`
+	Reason string      `json:"reason,omitempty"`
 }
 
-func (*EscalationWindow) Kind() Kind        { return KindEscalationWindow }
-func (p *EscalationWindow) Message() string { return fmt.Sprintf("escalation window %s", p.State) }
+func (*EscalationWindow) Kind() Kind { return KindEscalationWindow }
+func (p *EscalationWindow) Message() string {
+	return fmt.Sprintf("escalation window %s: %s", p.State, p.Reason)
+}
 
 type TierChange struct {
 	From string `json:"from"`
@@ -589,7 +639,8 @@ func (p *BootSavedEntry) Message() string {
 }
 
 type Shutdown struct {
-	Reason ShutdownReason `json:"reason"`
+	Reason    ShutdownReason `json:"reason"`
+	Rotations int            `json:"rotations,omitempty"`
 }
 
 func (*Shutdown) Kind() Kind { return KindShutdown }
@@ -599,8 +650,8 @@ func (p *Shutdown) Message() string {
 		return "stopped by signal"
 	case ShutdownDeadEnd:
 		return "stopped at a dead end"
-	case ShutdownGuard:
-		return "every core is confirmed; guard is not implemented yet, stopping"
+	case ShutdownRotations:
+		return fmt.Sprintf("the profile survived the requested %d clean rotation(s); stopping", p.Rotations)
 	}
 	return fmt.Sprintf("stopped: %s", p.Reason)
 }
