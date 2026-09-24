@@ -34,6 +34,8 @@ type running struct {
 	escape  bool
 }
 
+func (trials) Passed(string) error { return nil }
+
 func (t trials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Running, error) {
 	m := t.m
 	if m.crashed {
@@ -73,7 +75,7 @@ func (t trials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Runn
 
 func (r *running) Started() machine.Started { return r.started }
 
-func (r *running) Wait(ctx context.Context) (machine.Result, error) {
+func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Result, error) {
 	m := r.m
 	if m.crashed || r.boot != m.boot {
 		return machine.Result{}, machine.ErrCrashed
@@ -91,14 +93,16 @@ func (r *running) Wait(ctx context.Context) (machine.Result, error) {
 	}
 	res := machine.Result{Ran: spec.Duration}
 	if len(spec.Cores) > 0 {
-		res.TctlMaxC = 62 + m.trialRNG("tctl", spec, spec.Cores[0]).IntN(15)
+		res.TctlMaxC = new(62 + m.trialRNG("tctl", spec, spec.Cores[0]).IntN(15))
 	}
 	if r.escape && len(spec.Cores) > 0 {
 		res.Escaped = []int{spec.Cores[0] + 2*m.cfg.Cores}
 	}
 	if failCore < 0 {
 		m.now = start.Add(spec.Duration)
-		return r.counted(res), nil
+		res = r.counted(res)
+		r.progress(report, res)
+		return res, nil
 	}
 	rng := m.trialRNG("signal", spec, failCore)
 	signal := m.drawSignal(rng.Float64())
@@ -106,13 +110,18 @@ func (r *running) Wait(ctx context.Context) (machine.Result, error) {
 	case machine.ComputationError, machine.Stall, machine.UnexpectedExit:
 		m.now = start.Add(failAt)
 		res.Ran, res.Signal, res.Core = failAt, signal, failCore
-		return r.counted(res), nil
+		res = r.counted(res)
+		r.progress(report, res)
+		return res, nil
 	case machine.CorrectedMCE:
 		m.logMCE(m.bootID, m.mce(rng.Float64(), failCore, true), start.Add(failAt))
 		m.now = start.Add(spec.Duration)
-		return r.counted(res), nil
+		res = r.counted(res)
+		r.progress(report, res)
+		return res, nil
 	case machine.Crash:
 		m.now = start.Add(failAt)
+		r.progress(report, r.counted(machine.Result{Ran: failAt}))
 		if rng.Float64() < m.model.CrashMCE {
 			m.queued = append(m.queued, m.mce(rng.Float64(), failCore, false))
 		}
@@ -127,7 +136,37 @@ func (r *running) counted(res machine.Result) machine.Result {
 	if s := r.started.Schedule; s != nil {
 		res.Stops, res.Conts = s.Counts(res.Ran)
 	}
+	if r.spec.Regime == machine.R6 && res.Ran > 0 {
+		res.Stops = len(r.spec.Cores)
+		for at := r.spec.Duration / 2; at < res.Ran && at < r.spec.Duration; at += 2 * time.Second {
+			res.Conts++
+			if at+100*time.Millisecond < res.Ran && at+100*time.Millisecond < r.spec.Duration {
+				res.Stops++
+			}
+		}
+	}
 	return res
+}
+
+func (r *running) progress(report machine.Reporter, res machine.Result) {
+	if report == nil {
+		return
+	}
+	switch r.spec.Regime {
+	case machine.R6:
+		if res.Ran > r.spec.Duration/2 {
+			report.Progress("first half idle, then 100ms bursts every 2s, one core at a time")
+		}
+		report.Progress(fmt.Sprintf("bursts: %d continues, %d stops", res.Conts, res.Stops))
+	case machine.R7:
+		if res.Ran > r.spec.Duration/2 {
+			report.Progress("CCD0 only: stopped cores 08-15")
+		}
+		if res.Ran > r.spec.Duration*3/4 {
+			report.Progress("CCD1 only: resumed cores 08-15, stopped cores 00-07")
+		}
+	case machine.R1, machine.R2, machine.R3, machine.R4, machine.R5:
+	}
 }
 
 func (m *Machine) trialRNG(purpose string, spec machine.TrialSpec, core int) *rand.Rand {

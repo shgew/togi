@@ -14,26 +14,34 @@ Works today, on a simulated 16-core machine:
 - the full tuning lifecycle: per-core search and confirmation, the endless guard, crash resume, tiers, regain and reset;
 - reading a session with `status`, `cert` and `events`.
 
+Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:
+- the `ryzen_smu` driver with its verified core-to-slot mapping;
+- mprime and y-cruncher trials, each confined to its cores in a systemd scope;
+- machine-check detection from the kernel log;
+- the NixOS module and the unattended tuning boot, checked in a NixOS VM.
+
 Not yet:
-- running on real hardware: the SMU driver, the workload backends, and crash and machine-check detection;
-- the NixOS module and the unattended tuning boot;
+- a full tuning session on real hardware, start to Bronze;
 - CI.
 
 ## Usage
 
 ```sh
+sudo shycler run                          # tune this machine; Ctrl-C stops, the next run resumes
+shycler status                            # per-core offsets, tier and clean hours
 shycler run --sim 1                       # simulate a session; prints its state directory
 shycler --state-dir <dir> status          # per-core offsets, tier and clean hours
 shycler --state-dir <dir> cert            # the certificate: edges to enter in BIOS
 shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 ```
 
-`shycler --help` lists every command, and `shycler <command> --help` gives its description, examples and flags. [Commands](docs/spec/runtime.md#commands) describes each one in full.
+[docs/howto.md](docs/howto.md) walks through installing the NixOS module, a first in-session run and an overnight tuning boot. `shycler --help` lists every command, and `shycler <command> --help` gives its description, examples and flags. [Commands](docs/spec/runtime.md#commands) describes each one in full.
 
 ## Documentation
 
 |Document|Read it for|
 |---|---|
+|[docs/howto.md](docs/howto.md)|Installing shycler and running a tuning session|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
 |[CONTEXT.md](CONTEXT.md)|The vocabulary: offsets, phases, regimes, tiers|
 |[docs/spec/tuner.md](docs/spec/tuner.md)|How offsets are searched, confirmed, guarded and certified|

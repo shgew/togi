@@ -30,13 +30,17 @@ const (
 	L3Cache          BankType = "l3_cache"
 	MemoryController BankType = "unified_memory_controller"
 	DataFabric       BankType = "data_fabric"
+	// OtherBank is a bank the kernel decoded that is none of the named ones.
+	OtherBank BankType = "other"
+	// UnknownBank is a machine check without a decoded bank line.
+	UnknownBank BankType = "unknown"
 )
 
 func (b BankType) CoreLocal() bool {
 	switch b {
 	case LoadStore, InstructionFetch, L2Cache, DecodeUnit, ExecutionUnit, FloatingPoint:
 		return true
-	case L3Cache, MemoryController, DataFabric:
+	case L3Cache, MemoryController, DataFabric, OtherBank, UnknownBank:
 		return false
 	}
 	return false

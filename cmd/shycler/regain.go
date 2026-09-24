@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"code.marleb.org/shgew/shycler/internal/detect"
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/session"
 )
@@ -107,7 +107,7 @@ func openForCommand(name, dir string, stderr io.Writer) (*journal.Journal, strin
 		fmt.Fprintf(stderr, "shycler %s: no session in %s\n", name, dir)
 		return nil, "", exitError, false
 	}
-	boot, err := hostBootID()
+	boot, err := detect.BootID()
 	if err != nil {
 		fmt.Fprintf(stderr, "shycler %s: %v\n", name, err)
 		return nil, "", exitError, false
@@ -133,14 +133,6 @@ func closeCommand(name string, j *journal.Journal, err error, stderr io.Writer) 
 		return exitUsage, false
 	}
 	return exitError, false
-}
-
-func hostBootID() (string, error) {
-	b, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
-	if err != nil {
-		return "", fmt.Errorf("read boot id: %w", err)
-	}
-	return strings.TrimSpace(string(b)), nil
 }
 
 func coreFlag(dst **int) func(string) error {

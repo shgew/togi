@@ -1,0 +1,59 @@
+Running from console...
+
+[01;31m
+Insufficient permissions to set thread priority. Please retry as root.
+[01;37m[01;31m
+Further messages for this warning will be suppressed.
+[01;37m
+Checking processor/OS features...
+
+Required Features:
+[01;36m    x64, SSE, SSE2, SSE3
+
+[01;37m
+
+Reading Hardware Topology...
+
+Logical Cores:
+    0-31
+
+Physical Cores:
+    0-15
+
+NUMA Node 0:
+    0-31
+
+Scheduling Group 0:
+    0-31
+
+
+[01;35m
+Component Stress Tester
+
+[01;37m  1   Logical Cores:      [01;36m1[01;37m
+[01;37m  2   Memory:             [01;33m32.0 MiB[01;37m[01;37m  ( [01;36m32.0 MiB[01;37m per thread )
+[01;37m  3   NUMA Mode:          [01;31mLocal - Memory allocated from local thread.[01;37m
+  4/5 Time Limit:         [01;32m30[01;37m seconds per test / [01;32mRun Forever
+[01;37m  6   Stop on Error:      [01;32mEnabled[01;37m
+
+[01;37m 7/8  [22;32mEnable All Tests / Disable All Tests[01;37m
+[01;37m 9/10 [22;32mLoad/Save Configuration File[01;37m
+
+[01;37m  #  Tag   Test Name                   Mem/Thread  Component      CPU------Mem
+ 11  [22;31mBKT  [01;37m [22;36mBasecase + Karatsuba          [22;31mDisabled  [22;33mScalar Integer  [01;37m-|--------
+ 12  [22;31mBBP  [01;37m [22;36mBBP Digit Extraction          [22;31mDisabled  [22;33mSSE2 Float      [01;37m|---------
+ 13  [22;31mSFTv4[01;37m [22;36mSmall In-Cache FFTv4          [22;31mDisabled  [22;33mSSE3 Float      [01;37m-|--------
+ 14  [01;31mSNT  [01;37m [01;36mSmall In-Cache N63            [01;32m18.2 MiB  [01;33mScalar Integer  [01;37m--|-------
+ 15  [01;31mSVT  [01;37m [01;36mSmall In-Cache VT3            [01;32m28.5 MiB  [01;33mSSE3 Float      [01;37m--|-------
+ 16  [22;31mFFTv4[01;37m [22;36mFast Fourier Transform (v4)   [22;31mDisabled  [22;33mSSE3 Float      [01;37m---------|
+ 17  [22;31mN63  [01;37m [22;36mClassic NTT (v2)              [22;31mDisabled  [22;33mScalar Integer  [01;37m--|-------
+ 18  [22;31mVT3  [01;37m [22;36mVector Transform (v3)         [22;31mDisabled  [22;33mSSE3 Float      [01;37m--|-------
+
+[01;37m  0   [01;32mStart Stress-Testing![01;37m
+
+Allocating Memory...
+[01;37m  Core   2:  [01;32m28.5 MiB[01;33m  
+
+[01;37mIteration: [01;33m0[01;37m[01;37m  Total Elapsed Time: [01;32m0.007 seconds  ( 0.000 minutes )[01;37m
+[39;49m[39;49m[01;37mRunning SNT: [01;32mPassed[01;37m  Test Speed:  [01;36m4.76 * 10^08[01;37m  bits / sec[01;37m
+[39;49m

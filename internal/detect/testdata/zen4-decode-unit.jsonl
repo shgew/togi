@@ -1,0 +1,18 @@
+{"MESSAGE":"mce: [Hardware Error]: Machine check events logged","__REALTIME_TIMESTAMP":"1789894568637961"}
+{"MESSAGE":"[Hardware Error]: Corrected error, no action required.","__REALTIME_TIMESTAMP":"1789894568643762"}
+{"MESSAGE":"[Hardware Error]: CPU:0 (19:61:2) MC3_STATUS[-|CE|MiscV|-|-|-|SyndV|-|-|-]: 0x9820000000010150","__REALTIME_TIMESTAMP":"1789894568643817"}
+{"MESSAGE":"[Hardware Error]: IPID: 0x000300b020009600, Syndrome: 0x000000001a00026a","__REALTIME_TIMESTAMP":"1789894568649293"}
+{"MESSAGE":"[Hardware Error]: Decode Unit Ext. Error Code: 1","__REALTIME_TIMESTAMP":"1789894568659454"}
+{"MESSAGE":"[Hardware Error]: cache level: RESV, tx: INSN, mem-tx: IRD","__REALTIME_TIMESTAMP":"1789894568659494"}
+{"MESSAGE":"mce: [Hardware Error]: Machine check events logged","__REALTIME_TIMESTAMP":"1789910756603196"}
+{"MESSAGE":"[Hardware Error]: Corrected error, no action required.","__REALTIME_TIMESTAMP":"1789910756609204"}
+{"MESSAGE":"[Hardware Error]: CPU:8 (19:61:2) MC3_STATUS[-|CE|MiscV|-|-|-|SyndV|-|-|-]: 0x9820000000010150","__REALTIME_TIMESTAMP":"1789910756609287"}
+{"MESSAGE":"[Hardware Error]: IPID: 0x000300b020009700, Syndrome: 0x000000001a000228","__REALTIME_TIMESTAMP":"1789910756615008"}
+{"MESSAGE":"[Hardware Error]: Decode Unit Ext. Error Code: 1","__REALTIME_TIMESTAMP":"1789910756625478"}
+{"MESSAGE":"[Hardware Error]: cache level: RESV, tx: INSN, mem-tx: IRD","__REALTIME_TIMESTAMP":"1789910756625514"}
+{"MESSAGE":"mce: [Hardware Error]: Machine check events logged","__REALTIME_TIMESTAMP":"1789921490038382"}
+{"MESSAGE":"[Hardware Error]: Corrected error, no action required.","__REALTIME_TIMESTAMP":"1789921490044210"}
+{"MESSAGE":"[Hardware Error]: CPU:13 (19:61:2) MC3_STATUS[-|CE|MiscV|-|-|-|SyndV|-|-|-]: 0x9820000000010150","__REALTIME_TIMESTAMP":"1789921490044261"}
+{"MESSAGE":"[Hardware Error]: IPID: 0x000300b0200a9700, Syndrome: 0x000000001a00022c","__REALTIME_TIMESTAMP":"1789921490044317"}
+{"MESSAGE":"[Hardware Error]: Decode Unit Ext. Error Code: 1","__REALTIME_TIMESTAMP":"1789921490050356"}
+{"MESSAGE":"[Hardware Error]: cache level: RESV, tx: INSN, mem-tx: IRD","__REALTIME_TIMESTAMP":"1789921490050402"}

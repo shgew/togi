@@ -160,6 +160,8 @@ A dead end follows from evidence recorded in the journal, not from memory, so a 
 
 A `deadend` event consumes the evidence it reports: the SMU flag, the escape flag, every inconclusive streak or the stray streak. The other conditions are evaluated fresh by the following `run`. Preflight is not carried over: every `run` repeats it, and its dead end reflects only that run's checks. A failure at 0 is different: it leaves failed mark 0 on its core, so every later `run` stops again until `reset`, in every phase, guard included.
 
+That fresh evaluation applies only after the dead end has recorded its boot action and `shutdown`. If a process stops between `deadend` and those events, the next `run` finishes that same dead-end action and exits without making a tuning decision.
+
 ## Tiers and certificate
 
 Tiers rank the current profile by durability, not proof. Any profile change drops the tier to none until Bronze is earned again.

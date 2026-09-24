@@ -196,6 +196,8 @@ func TestRoundTrip(t *testing.T) {
 		&CommandReset{Core: new(7)},
 		&DeadEnd{Condition: DeadEndFailureAtZero, Core: new(7), Detail: "core 07 failed at CO 0", Action: "exit"},
 		&BootSavedEntry{Before: "shycler", After: ""},
+		&BootSavedEntry{Before: "shycler", After: "shycler", Error: "grub-editenv: exit status 1"},
+		&TrialStart{Trial: "0009", Scope: "shycler-trial-0009", PID: 10, CPUs: []int{0, 8}, Argv: []string{"mprime"}, Files: []string{"c00/prime.txt"}, Instances: []TrialInstance{{Core: 0, CPUs: []int{0}, PID: 10, Scope: "shycler-trial-0009-c00"}, {Core: 8, CPUs: []int{8}, PID: 11, Scope: "shycler-trial-0009-c08"}}},
 		&Shutdown{Reason: ShutdownRotations, Rotations: 3},
 		&JournalTorn{Offset: 120, BytesHex: "7b22"},
 		&StateRebuilt{Fields: []string{"cores", "last_seq"}},

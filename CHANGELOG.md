@@ -6,6 +6,11 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ### Added
 
+- `sudo shycler run` tunes the real machine: offsets through `ryzen_smu` with a fuse-verified core-to-slot mapping, mprime and y-cruncher trials confined to their cores in systemd scopes, and machine checks read from the kernel log ([#13]).
+- Preflight checks the CPU, `ryzen_smu`, SMU readback, the slot mapping, both backends and `systemd-run` before a hardware run ([#13]).
+- `shycler run --tuning-boot <grubenv>` clears GRUB's saved entry at a dead end, and reboots into the normal system after a boot loop ([#13]).
+- The NixOS module `nixosModules.default` (`services.shycler`) and the GRUB tuning boot entry "shycler" that tunes unattended ([#13]).
+- `run` records a clean stop when its terminal closes (SIGHUP) ([#13]).
 - The wordmark and tagline print above the usage when `shycler` runs without a command ([#11]).
 - `shycler regain` queues one count of regain on cores with unproven depth, and `shycler reset` restarts one core's search or archives the whole session ([#9]).
 - Durability tiers, `shycler status` for the session at a glance, and `shycler cert` for the certificate with the edges to enter in BIOS ([#8]).
@@ -18,6 +23,7 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ### Changed
 
+- `shycler reset --all` also moves the trial work directories to `archive/<session-id>-trials/` ([#13]).
 - Every command's `--help` gives a description and examples, lists its own flags before the global ones, and shows every flag in `--long` form ([#12]).
 
 [#2]: https://code.marleb.org/shgew/shycler/pulls/2
@@ -30,3 +36,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#9]: https://code.marleb.org/shgew/shycler/pulls/9
 [#11]: https://code.marleb.org/shgew/shycler/pulls/11
 [#12]: https://code.marleb.org/shgew/shycler/pulls/12
+[#13]: https://code.marleb.org/shgew/shycler/pulls/13

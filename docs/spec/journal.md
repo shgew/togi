@@ -12,6 +12,7 @@ All files live in the state directory, default `/var/lib/shycler`:
 | `state.json` | The current state, a projection of the journal for readers |
 | `trials/<trial-id>/` | Per-trial work directory: backend config files, raw stdout/stderr, backend result files |
 | `archive/<session-id>.jsonl` | Journals of sessions ended by `reset --all` |
+| `archive/<session-id>-trials/` | The `trials/` directory of a session ended by `reset --all` |
 | `lock` | Held with `flock` by the one process allowed to write the journal |
 
 Retention: trial directories of failed and inconclusive trials are kept forever. Passing ones are pruned beyond the newest 200.
@@ -23,11 +24,12 @@ Retention: trial directories of failed and inconclusive trials are kept forever.
    - every observation that feeds a decision;
    - every decision.
 
-   The one exception: sub-second `SIGSTOP`/`SIGCONT` cycles in R3 and R4 are recorded as the schedule and seed at trial start and as counts at trial end.
+   The one exception: `SIGSTOP`/`SIGCONT` cycles too frequent to record one by one. R3 and R4 cycles are recorded as the schedule and seed at trial start and as counts at trial end. R6 bursts are recorded as a `trial.progress` when they begin and as counts in a `trial.progress` at trial end. R7's phase changes are each a `trial.progress`.
 2. **Intent before action.** An action that may crash the machine, such as an SMU write or a trial start, is appended and fsynced before it happens. On the next boot the last intent without a matching result is the in-flight action. Intents (`smu.intent`, `trial.intent`) are fsynced before `Append` returns, every event is written with a single `write`, and closing the journal fsyncs it. Opening the journal fsyncs the state directory and its parent, so a newly created journal file survives a crash. `run` appends `shutdown` when it stops on a signal, at a dead end, or on reaching the requested rotations; any other exit writes nothing, so a later boot whose journal ends without `shutdown` is treated as a crash (`workloads.md`, Failure signals). `run --sim` fsyncs nothing, because a simulated crash cannot lose written data.
+   A `deadend` without its `boot.saved_entry` (for a GRUB action) or without `shutdown` is an interrupted dead-end action, not permission to resume tuning: the next `run` completes the missing action and records `shutdown` before doing other work; a `run` without `--tuning-boot` cannot clear GRUB's saved entry and only records `shutdown`. A `boot.saved_entry` tied to that dead end is not cleared again. Once `shutdown` is present, the next `run` starts normally and re-evaluates dead-end conditions.
 3. **Decisions name their cause.** A decision event carries `cause`: the `seq` numbers of the events it was derived from, plus a `reason` in plain words.
 4. **The journal wins.** On start, shycler rebuilds the state by replaying the journal. If `state.json` disagrees with the rebuild, it is rewritten and a `state.rebuilt` event records the difference.
-5. **One writer.** `run`, `regain` and `reset` take `lock` before appending; `regain` and `reset` refuse while a `run` holds it. `status`, `cert` and `events` only read. `regain` and `reset --core` end with `shutdown` (reason `command`), so the next `run` never reads their boot as a crash. `reset --all` appends `command.reset` and `session.archived`, fsyncs, removes `state.json`, then moves `events.jsonl` to `archive/<session-id>.jsonl`; it refuses before appending anything when that archive already exists. Opening a journal whose last event is `session.archived` finishes that move first and continues with an empty journal.
+5. **One writer.** `run`, `regain` and `reset` take `lock` before appending; `regain` and `reset` refuse while a `run` holds it. `status`, `cert` and `events` only read. `regain` and `reset --core` end with `shutdown` (reason `command`), so the next `run` never reads their boot as a crash. `reset --all` appends `command.reset` and `session.archived`, fsyncs, removes `state.json`, moves `trials/` to `archive/<session-id>-trials/`, then moves `events.jsonl` to `archive/<session-id>.jsonl`; it refuses before appending anything when either archive path already exists. Opening a journal whose last event is `session.archived` finishes that move first and continues with an empty journal.
 6. **Torn tails are expected.** A crash can leave a partial last line. Replay drops it and appends a `journal.torn` event with the discarded bytes, hex-encoded. A torn first line leaves an empty journal: nothing happened before `session.start`, so nothing is recorded.
 
 ## Event format
@@ -66,7 +68,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Config and preflight | `config.loaded` (effective config), `preflight.check` (one per check, with result) |
 | SMU | `smu.intent`, `smu.write`, `smu.readback`, `smu.error` |
 | Profile | `profile.applied` (every application of every core's offset, with its condition), `profile.change` (the profile under guard: on entering guard, with `from` null, and after every guard decision) |
-| Trials | `trial.intent`, `trial.start`, `trial.progress` (backend milestones such as a finished FFT size), `trial.signal` (load-step schedule), `trial.sample` (containment or stall warnings only), `trial.end` |
+| Trials | `trial.intent`, `trial.start` (pid, scope, cpus and argv; the config `files` written; `instances` with core, cpus, pid and scope when the trial runs more than one), `trial.progress` (backend milestones such as a finished FFT size), `trial.signal` (load-step schedule), `trial.sample` (containment or stall warnings only), `trial.end` |
 | Evidence | `failure` (kind, attribution, evidence `seq`), `mce` (raw and decoded lines, cpu, core, bank type), `crash.detected` (previous boot ID, in-flight action) |
 | Tuner | `tuner.decision`, `core.phase`, `guard.rotation` (start and end), `escalation.window` (open and close), `tier.change` (from, to, reason) |
 | Commands | `command.regain` (the cores queued), `command.reset` (a core, or all) |

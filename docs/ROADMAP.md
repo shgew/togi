@@ -15,11 +15,11 @@ Work is split into tasks. Each task is sized for one planning session followed b
 | T06 | Guard | done | #7 |
 | T07 | Tiers, status and certificate | done | #8 |
 | T08 | Regain and reset | done | #9 |
-| T09 | SMU driver and preflight | todo | |
-| T10 | Trial runner and containment | todo | |
-| T11 | Backends: mprime and y-cruncher | todo | |
-| T12 | Kernel evidence: MCE and crash detection | todo | |
-| T13 | NixOS module and tuning boot | todo | |
+| T09 | SMU driver and preflight | done | #13 |
+| T10 | Trial runner and containment | done | #13 |
+| T11 | Backends: mprime and y-cruncher | done | #13 |
+| T12 | Kernel evidence: MCE and crash detection | done | #13 |
+| T13 | NixOS module and tuning boot | done | #13 |
 | T14 | CI on Forgejo Actions | todo | |
 | T15 | First tuning on the target machine | todo | |
 
@@ -197,7 +197,7 @@ Make durability visible.
 
 ## M3 Hardware
 
-Each task implements one T04 seam. Hardware tests carry the `hardware` build tag and run as root on the target machine.
+Each task implements one T04 seam. Hardware tests carry the `hardware` build tag and run on the target machine (`AGENTS.md`, Commands).
 
 ### T09 SMU driver and preflight
 
@@ -277,7 +277,7 @@ Each task implements one T04 seam. Hardware tests carry the `hardware` build tag
 - The GRUB specialisation with the service, tty1 unit, sysctls, watchdog, journald settings and the GRUB assertion.
 - Dead-end actions: verify and implement the `grub-editenv` change, and the boot-loop reboot.
 
-**Done when:** `nix flake check` includes a NixOS VM test that boots the module, runs `shycler run --sim` as the service, and verifies that a dead end clears the saved entry. VM tests take minutes; the seconds-long loop stays `go test`.
+**Done when:** `nix flake check` includes a NixOS VM test that boots the module, runs the unmodified tuning boot service, which reaches the preflight dead end in a VM without `ryzen_smu`, and verifies that a dead end clears the saved entry. VM tests take minutes; the seconds-long loop stays `go test`.
 
 ### T14 CI on Forgejo Actions
 

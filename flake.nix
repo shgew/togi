@@ -14,6 +14,8 @@
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [ "x86_64-linux" ];
 
+      flake.nixosModules.default = import ./nix/module.nix { inherit (inputs) self; };
+
       perSystem =
         {
           config,
@@ -37,6 +39,7 @@
               ];
             };
             vendorHash = "sha256-pbA/AlBz3cQYRTMnQ/qBPcinYOKokrBLNhkbRTq54gE=";
+            nativeCheckInputs = [ pkgs.util-linux ];
             meta = {
               description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
               mainProgram = "shycler";
@@ -54,6 +57,10 @@
 
           checks = {
             package = config.packages.default;
+            vm = import ./nix/vm-test.nix {
+              inherit pkgs;
+              inherit (inputs) self;
+            };
             lint = config.packages.default.overrideAttrs (old: {
               pname = "shycler-lint";
               nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.golangci-lint ];

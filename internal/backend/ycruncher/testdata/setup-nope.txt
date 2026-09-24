@@ -1,0 +1,37 @@
+Running from console...
+
+[01;31m
+Insufficient permissions to set thread priority. Please retry as root.
+[01;37m[01;31m
+Further messages for this warning will be suppressed.
+[01;37m
+Checking processor/OS features...
+
+Required Features:
+[01;36m    x64, SSE, SSE2, SSE3
+
+[01;37m
+
+Reading Hardware Topology...
+
+Logical Cores:
+    0-31
+
+Physical Cores:
+    0-15
+
+NUMA Node 0:
+    0-31
+
+Scheduling Group 0:
+    0-31
+
+
+[01;31m
+
+Exception Encountered: InvalidParametersException
+
+Unknown Test: NOPE
+
+
+[01;37m[39;49m

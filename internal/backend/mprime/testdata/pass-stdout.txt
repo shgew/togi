@@ -1,0 +1,17 @@
+[Main thread Sep 24 21:42] Starting worker.
+[Worker #1 Sep 24 21:42] Worker starting
+[Worker #1 Sep 24 21:42] Beginning a continuous torture test on your computer.
+[Worker #1 Sep 24 21:42] Please read /nix/store/64hjzgj1msiyndpdxrk9l3gkjf3sczgj-mprime-31.04b02/share/mprime/doc/stress.txt.  Hit ^C to end this test.
+[Worker #1 Sep 24 21:42] Test 1, 1600000 Lucas-Lehmer in-place iterations of M83839 using FFT length 4K.
+[Worker #1 Sep 24 21:43] Self-test 4K passed!
+[Worker #1 Sep 24 21:43] Test 1, 1120000 Lucas-Lehmer in-place iterations of M107519 using FFT length 5K.
+[Worker #1 Sep 24 21:43] Self-test 5K passed!
+[Worker #1 Sep 24 21:43] Test 1, 920000 Lucas-Lehmer in-place iterations of M129023 using FFT length 6K.
+[Worker #1 Sep 24 21:43] Self-test 6K passed!
+[Worker #1 Sep 24 21:43] Test 1, 800000 Lucas-Lehmer in-place iterations of M172031 using FFT length 8K.
+[Worker #1 Sep 24 21:43] Self-test 8K passed!
+[Worker #1 Sep 24 21:43] Test 1, 560000 Lucas-Lehmer in-place iterations of M212991 using type-0 FFT length 10K, Pass1=40, Pass2=256, clm=4.
+[Main thread Sep 24 21:44] Stopping all worker windows.
+[Worker #1 Sep 24 21:44] Torture Test completed 4 tests in 1 minutes - 0 errors, 0 warnings.
+[Worker #1 Sep 24 21:44] Worker stopped.
+[Main thread Sep 24 21:44] Execution halted.

@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -228,6 +229,7 @@ func TestSixteenCoresSurviveARotation(t *testing.T) {
 	}
 	regimes := map[string]machine.Regime{}
 	counted := map[string]bool{}
+	progress := map[machine.Regime]map[string]bool{}
 	for _, e := range readEvents(t, dir) {
 		switch p := e.Data.(type) {
 		case *journal.SMUIntent:
@@ -236,6 +238,12 @@ func TestSixteenCoresSurviveARotation(t *testing.T) {
 			}
 		case *journal.TrialIntent:
 			regimes[p.Trial] = p.Regime
+		case *journal.TrialProgress:
+			r := regimes[p.Trial]
+			if progress[r] == nil {
+				progress[r] = map[string]bool{}
+			}
+			progress[r][p.Detail] = true
 		case *journal.TrialSignal:
 			if p.Schedule == "" {
 				counted[p.Trial] = true
@@ -246,6 +254,27 @@ func TestSixteenCoresSurviveARotation(t *testing.T) {
 				t.Errorf("trial %s (%s) ended without its load-step counts", p.Trial, r)
 			}
 		}
+	}
+	for _, tc := range []struct {
+		regime machine.Regime
+		detail string
+	}{
+		{machine.R6, "first half idle, then 100ms bursts every 2s, one core at a time"},
+		{machine.R7, "CCD0 only: stopped cores 08-15"},
+		{machine.R7, "CCD1 only: resumed cores 08-15, stopped cores 00-07"},
+	} {
+		if !progress[tc.regime][tc.detail] {
+			t.Errorf("simulated journal lacks %s progress %q", tc.regime, tc.detail)
+		}
+	}
+	foundBursts := false
+	for detail := range progress[machine.R6] {
+		if strings.HasPrefix(detail, "bursts: ") && strings.Contains(detail, " continues, ") && strings.HasSuffix(detail, " stops") {
+			foundBursts = true
+		}
+	}
+	if !foundBursts {
+		t.Error("simulated journal lacks R6 burst counts")
 	}
 }
 

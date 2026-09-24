@@ -53,7 +53,7 @@ Enter the dev shell (Go, gopls, golangci-lint) with `nix develop`, or with `dire
 | `nix flake check` | Tests and lint; must pass before a pull request |
 | `nix fmt` | Format Go and Nix files |
 | `go run ./cmd/shycler run --sim 1` | A simulated session through its first clean guard rotation, to Bronze, in a temporary state directory |
-| `sudo go test -tags hardware ./...` | Hardware tests, on the target machine only |
+| `go test -tags hardware ./...` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `SHYCLER_MPRIME` and `SHYCLER_YCRUNCHER`, else from `/etc/shycler/config.toml` |
 
 ## Layout
 
@@ -69,6 +69,7 @@ Enter the dev shell (Go, gopls, golangci-lint) with `nix develop`, or with `dire
 | `internal/smu` | `ryzen_smu`: the only package that writes offsets |
 | `internal/trial` | Containment, sampling, load-step signaling |
 | `internal/backend/*` | mprime and y-cruncher integrations |
+| `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
 | `nix/` | NixOS module and VM tests |
 
@@ -87,4 +88,4 @@ Keep packages near 1000 lines; split by responsibility when one grows past that.
 - **Simulator first:** behavior is proven on `internal/sim` with fixed seeds, never by waiting for hardware.
 - Tests pin spec behavior: rules, boundaries, invariants, crash-resume. Table tests for rules, property tests for invariants.
 - Real-process tests use a helper program built by the test, not mprime or y-cruncher.
-- Hardware tests carry `//go:build hardware`, run as root on the target machine, and restore every offset they change.
+- Hardware tests carry `//go:build hardware`, run on the target machine, and restore every offset they change.
