@@ -1,0 +1,114 @@
+package main
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"io/fs"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"code.marleb.org/shgew/shycler/internal/journal"
+)
+
+const eventsUsage = "Usage: shycler events [--core N] [--kind K[,K...]] [--trial ID] [--since RFC3339] [--until RFC3339] [--json]"
+
+func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
+	var (
+		filter  journal.Filter
+		rawJSON bool
+	)
+	flags := newFlagSet("events", g)
+	flags.Func("core", "only events naming core `N`", func(s string) error {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 0 {
+			return errors.New("must be a non-negative integer")
+		}
+		filter.Core = &n
+		return nil
+	})
+	flags.Func("kind", "only these kinds or groups, comma-separated", func(s string) error {
+		for k := range strings.SplitSeq(s, ",") {
+			if k = strings.TrimSpace(k); k != "" {
+				filter.Kinds = append(filter.Kinds, k)
+			}
+		}
+		return nil
+	})
+	flags.StringVar(&filter.Trial, "trial", "", "only events of trial `ID`")
+	flags.Func("since", "only events at or after this RFC 3339 time", timeFlag(&filter.Since))
+	flags.Func("until", "only events before this RFC 3339 time", timeFlag(&filter.Until))
+	flags.BoolVar(&rawJSON, "json", false, "print raw JSON events")
+	if code, ok := parseFlags(flags, args, eventsUsage, stdout, stderr); !ok {
+		return code
+	}
+
+	events, torn, err := journal.Read(g.stateDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		fmt.Fprintf(stderr, "shycler events: no journal at %s\n", filepath.Join(g.stateDir, "events.jsonl"))
+		return exitError
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "shycler events: %v\n", err)
+		return exitError
+	}
+	for _, e := range events {
+		if !filter.Match(e) {
+			continue
+		}
+		if rawJSON {
+			fmt.Fprintf(stdout, "%s\n", e.Raw)
+		} else {
+			fmt.Fprintln(stdout, journal.FormatLine(e, time.Local))
+		}
+	}
+	if len(torn) > 0 {
+		fmt.Fprintf(stderr, "shycler events: journal ends with %d torn bytes; the next run records journal.torn\n", len(torn))
+	}
+	return exitOK
+}
+
+func timeFlag(t *time.Time) func(string) error {
+	return func(s string) error {
+		v, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return errors.New("must be an RFC 3339 time")
+		}
+		*t = v
+		return nil
+	}
+}
+
+func newFlagSet(name string, g *globals) *flag.FlagSet {
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	registerGlobals(flags, g)
+	return flags
+}
+
+func parseFlags(flags *flag.FlagSet, args []string, usageLine string, stdout, stderr io.Writer) (int, bool) {
+	err := flags.Parse(args)
+	if err == nil && flags.NArg() > 0 {
+		err = fmt.Errorf("unexpected argument %q", flags.Arg(0))
+	}
+	if err == nil {
+		return exitOK, true
+	}
+	if errors.Is(err, flag.ErrHelp) {
+		commandUsage(flags, usageLine, stdout)
+		return exitOK, false
+	}
+	fmt.Fprintf(stderr, "shycler %s: %v\n", flags.Name(), err)
+	commandUsage(flags, usageLine, stderr)
+	return exitUsage, false
+}
+
+func commandUsage(flags *flag.FlagSet, usageLine string, w io.Writer) {
+	fmt.Fprintf(w, "%s\n\nFlags:\n", usageLine)
+	flags.SetOutput(w)
+	flags.PrintDefaults()
+	flags.SetOutput(io.Discard)
+}

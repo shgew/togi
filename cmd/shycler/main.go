@@ -26,7 +26,9 @@ type command struct {
 	run     func(g *globals, args []string, stdout, stderr io.Writer) int
 }
 
-var commands []command
+var commands = []command{
+	{name: "events", summary: "Render the journal", run: runEvents},
+}
 
 func main() {
 	os.Exit(cli(os.Args[1:], os.Stdout, os.Stderr))

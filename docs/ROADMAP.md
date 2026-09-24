@@ -8,7 +8,7 @@ Work is split into tasks. Each task is sized for one planning session followed b
 |---|---|---|---|
 | T00 | Design documents | done | #1 |
 | T01 | Project skeleton | in review | #2 |
-| T02 | Journal | todo | |
+| T02 | Journal | in review | #3 |
 | T03 | Tuner: search and confirmation | todo | |
 | T04 | Simulator | todo | |
 | T05 | Run loop and crash resume | todo | |
@@ -91,7 +91,7 @@ The journal is the source of truth, so it has to be crash-safe before anything w
 - `shycler events` with its filters and `--json`.
 
 **Done when:**
-- replaying a journal truncated at every byte offset yields every complete event before the cut, plus `journal.torn`;
+- replaying a journal truncated at every byte offset yields every complete event before the cut, plus `journal.torn`, except that a cut inside the first event leaves an empty journal;
 - a second writer is refused while the lock is held;
 - an interrupted `state.json` write leaves the previous file intact;
 - `shycler events` renders a fixture journal.
