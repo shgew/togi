@@ -80,12 +80,12 @@ No SMU write happens between resident trials: the profile stays applied.
 
 ## Crashes
 
-A crash is classified by what its boot recorded:
+A crash is classified by what its boot recorded. A resident application counts as applied from its first nonzero `smu.intent`, before its `profile.applied`: a crash part-way through it ran with resident offsets on some cores.
 - A trial in flight in the crashed boot: a failure of that trial. An isolated trial's failure is attributed to its target at its offset; a resident trial's is attributed by the resident rule in Guard.
-- `profile.applied` in that boot and no trial in flight: an idle crash. With the isolated profile last applied it is an unattributed failure that changes nothing, since every core was at 0. With the resident profile last applied it counts as an unattributed failure of an R6 trial.
-- No `profile.applied` in that boot: a stray crash. Stray crashes count in a row until the next `profile.applied`; reaching `dead_ends.stray_crashes_in_a_row` is the boot-loop dead end.
+- The profile applied in that boot and no trial in flight: an idle crash. With the isolated profile last applied it is an unattributed failure that changes nothing, since every core was at 0. With the resident profile last applied, or partly applied, it counts as an unattributed failure of an R6 trial.
+- Nothing applied in that boot: a stray crash. Stray crashes count in a row until the next application; reaching `dead_ends.stray_crashes_in_a_row` is the boot-loop dead end.
 
-`crash.detected` carries the condition of the boot's last `profile.applied`.
+`crash.detected` carries the condition of the boot's last application.
 
 ## Decision events
 

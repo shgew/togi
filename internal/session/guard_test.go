@@ -69,48 +69,76 @@ func TestResidentInstabilitiesConverge(t *testing.T) {
 func TestIdleCrashInGuard(t *testing.T) {
 	t.Parallel()
 	_, ref := reference(t, small())
-	i := slices.IndexFunc(ref, func(e journal.Event) bool {
+	applied := slices.IndexFunc(ref, func(e journal.Event) bool {
 		p, ok := e.Data.(*journal.ProfileApplied)
 		return ok && p.Condition == machine.Resident
 	})
-	if i < 0 {
+	if applied < 0 {
 		t.Fatal("reference run never applied the resident profile")
 	}
-	dir := t.TempDir()
-	m := newSim(t, small())
-	if stop := drive(t, simInput(dir, m), crashAt(ref[i].Seq, m)); stop.Reason != StopRotations {
-		t.Fatalf("stopped with %+v", stop)
-	}
-	events := readEvents(t, dir)
-	crash, ok := crashDetectedFor(events, ref[i].Boot)
-	if !ok || crash.Data.(*journal.CrashDetected).Condition != machine.Resident {
-		t.Fatalf("crash.detected for the crashed boot: %+v", crash.Data)
-	}
-	want := &journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R6, Condition: machine.Resident}
-	f := slices.IndexFunc(events, func(e journal.Event) bool {
-		return e.Kind == journal.KindFailure && slices.Contains(e.Cause, crash.Seq)
-	})
-	if f < 0 {
-		t.Fatalf("no failure cites crash.detected seq %d", crash.Seq)
-	}
-	if !reflect.DeepEqual(events[f].Data, want) {
-		t.Fatalf("failure citing seq %d: %+v, want %+v", crash.Seq, events[f].Data, want)
-	}
-	var backedOff []int
-	opened := false
-	for _, e := range events[f+1:] {
-		switch p := e.Data.(type) {
-		case *journal.TunerDecision:
-			if p.Decision == journal.SuspectBackoff && slices.Contains(e.Cause, events[f].Seq) {
-				backedOff = append(backedOff, p.Core)
-			}
-		case *journal.EscalationWindow:
-			opened = opened || (p.State == journal.WindowOpen && slices.Contains(e.Cause, events[f].Seq))
+	firstWrite := -1
+	for j := applied - 1; j >= 0 && isSMU(ref[j]); j-- {
+		if p, ok := ref[j].Data.(*journal.SMUIntent); ok && p.Offset != 0 {
+			firstWrite = j
 		}
 	}
-	if !slices.Equal(backedOff, []int{0, 1}) || !opened {
-		t.Fatalf("suspect backoffs of cores %v, window opened %v; want cores [0 1] and the window", backedOff, opened)
+	if firstWrite < 0 {
+		t.Fatalf("no nonzero smu.intent before the resident profile.applied at seq %d", ref[applied].Seq)
 	}
+	for _, tc := range []struct {
+		name string
+		at   journal.Event
+	}{
+		{"after profile.applied", ref[applied]},
+		{"part-way through the application", ref[firstWrite]},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			m := newSim(t, small())
+			if stop := drive(t, simInput(dir, m), crashAt(tc.at.Seq, m)); stop.Reason != StopRotations {
+				t.Fatalf("stopped with %+v", stop)
+			}
+			events := readEvents(t, dir)
+			crash, ok := crashDetectedFor(events, tc.at.Boot)
+			if !ok || crash.Data.(*journal.CrashDetected).Condition != machine.Resident {
+				t.Fatalf("crash.detected for the crashed boot: %+v", crash.Data)
+			}
+			want := &journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R6, Condition: machine.Resident}
+			f := slices.IndexFunc(events, func(e journal.Event) bool {
+				return e.Kind == journal.KindFailure && slices.Contains(e.Cause, crash.Seq)
+			})
+			if f < 0 {
+				t.Fatalf("no failure cites crash.detected seq %d", crash.Seq)
+			}
+			if !reflect.DeepEqual(events[f].Data, want) {
+				t.Fatalf("failure citing seq %d: %+v, want %+v", crash.Seq, events[f].Data, want)
+			}
+			var backedOff []int
+			opened := false
+			for _, e := range events[f+1:] {
+				switch p := e.Data.(type) {
+				case *journal.TunerDecision:
+					if p.Decision == journal.SuspectBackoff && slices.Contains(e.Cause, events[f].Seq) {
+						backedOff = append(backedOff, p.Core)
+					}
+				case *journal.EscalationWindow:
+					opened = opened || (p.State == journal.WindowOpen && slices.Contains(e.Cause, events[f].Seq))
+				}
+			}
+			if !slices.Equal(backedOff, []int{0, 1}) || !opened {
+				t.Fatalf("suspect backoffs of cores %v, window opened %v; want cores [0 1] and the window", backedOff, opened)
+			}
+		})
+	}
+}
+
+func isSMU(e journal.Event) bool {
+	switch e.Data.(type) {
+	case *journal.SMUIntent, *journal.SMUWrite, *journal.SMUReadback:
+		return true
+	}
+	return false
 }
 
 func TestResumeContinuesBoots(t *testing.T) {
