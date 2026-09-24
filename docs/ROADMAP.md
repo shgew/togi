@@ -7,11 +7,11 @@ Work is split into tasks. Each task is sized for one planning session followed b
 | Task | Title | Status | PRs |
 |---|---|---|---|
 | T00 | Design documents | done | #1 |
-| T01 | Project skeleton | in review | #2 |
-| T02 | Journal | in review | #3 |
-| T03 | Tuner: search and confirmation | in review | #4 |
-| T04 | Simulator | in review | #5 |
-| T05 | Run loop and crash resume | in review | #6 |
+| T01 | Project skeleton | done | #2 |
+| T02 | Journal | done | #3 |
+| T03 | Tuner: search and confirmation | done | #4 |
+| T04 | Simulator | done | #5 |
+| T05 | Run loop and crash resume | done | #6 |
 | T06 | Guard | todo | |
 | T07 | Tiers, status and certificate | todo | |
 | T08 | Regain and reset | todo | |
