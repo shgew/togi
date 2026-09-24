@@ -25,7 +25,8 @@ Every change lands through a pull request on `code.marleb.org/shgew/shycler`. Th
    - the roadmap task;
    - the plan followed;
    - choices the reviewer may want to change;
-   - the verification that ran.
+   - the verification that ran;
+   - a demo: the new behavior running, captured from a real invocation, such as a `--sim` session log, a journal excerpt or a command transcript. A pull request with nothing runnable says so.
 4. Read review comments with `fj pr view <n> comments`, address each one, and push to the same branch.
 5. Update the task's row in `docs/ROADMAP.md` in the same pull request.
 
