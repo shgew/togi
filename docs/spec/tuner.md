@@ -52,6 +52,26 @@ At the candidate edge `e`, the core runs one isolated trial per regime R1 to R5.
 - All pass: the core is confirmed and `e` is its edge.
 - An attributed failure sets `fail = e` and moves the core to `e + 1`, where confirmation restarts from R1. A failure at `e == 0` is a dead end.
 
+## Isolated trial sequence
+
+Between trials every core is at 0. Every `run` start in per-core phases writes every core to 0 with one set-all command and reads each back; `profile.applied` is recorded the first time in each boot. One isolated trial is then:
+
+1. `trial.intent`;
+2. SMU set target to its offset (skipped at 0);
+3. `trial.start`, plus `trial.signal` with the load-step schedule for R3 and R4;
+4. the trial, then `trial.signal` with the SIGSTOP and SIGCONT counts for R3 and R4;
+5. SMU set target to 0 (skipped at 0);
+6. `mce` events for the trial window;
+7. `trial.end`;
+8. the tuner's `failure` when the trial failed.
+
+## Crashes
+
+In per-core phases a crash is classified by what its boot recorded:
+- A trial in flight in the crashed boot: a failure of that trial, attributed to its target at its offset.
+- `profile.applied` in that boot and no trial in flight: an unattributed failure that changes nothing, since every core was at 0.
+- No `profile.applied` in that boot: a stray crash. Stray crashes count in a row until the next `profile.applied`; reaching `dead_ends.stray_crashes_in_a_row` is the boot-loop dead end.
+
 ## Decision events
 
 Moves within a phase are `tuner.decision` events: `step_deeper` after a passed search step, `backoff` after an attributed failure. Reaching a candidate edge (search to confirmation) and passing confirmation (confirmation to confirmed) are `core.phase` events. Both carry the resulting `pass` and `failed_mark`, so replaying the journal never re-runs a rule.
@@ -106,6 +126,15 @@ shycler stops when it cannot make progress:
 | Preflight fails, including a changed BIOS context | The environment is not the one being tuned. |
 
 What a dead end does in each run mode is in `runtime.md`. Thresholds are configurable.
+
+A dead end follows from evidence recorded in the journal, not from memory, so a kill between the evidence and the `deadend` event still stops the next `run` before any SMU write. The evidence:
+- an `smu.error`, or an `smu.readback` whose offset differs from `expected`;
+- a `trial.end` with `escaped` CPUs;
+- a backend's streak of inconclusive `trial.end`s reaching the threshold, not counting trials interrupted by a stop or restart;
+- the stray-crash streak reaching the threshold;
+- a failed `preflight.check`.
+
+A `deadend` event consumes the evidence it reports: the SMU flag, the escape flag, every inconclusive streak or the stray streak. The other conditions are evaluated fresh by the following `run`. A failure at 0 is different: it leaves failed mark 0, so every later `run` stops again until `reset`.
 
 ## Tiers and certificate
 

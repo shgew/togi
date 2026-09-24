@@ -52,6 +52,7 @@ type SMUOp string
 const (
 	SMUSet    SMUOp = "set"
 	SMUSetAll SMUOp = "set_all"
+	SMURead   SMUOp = "read"
 )
 
 type Attribution string
@@ -201,6 +202,10 @@ func smuCommand(op SMUOp, core *int, offset int) string {
 		}
 	case SMUSetAll:
 		return fmt.Sprintf("set all cores to CO %d", offset)
+	case SMURead:
+		if core != nil {
+			return fmt.Sprintf("read core %s", coreID(*core))
+		}
 	}
 	return fmt.Sprintf("%s to CO %d", op, offset)
 }
@@ -220,6 +225,7 @@ func (p *SMUWrite) Message() string {
 		}
 	case SMUSetAll:
 		return fmt.Sprintf("SMU wrote all cores CO %d", p.Offset)
+	case SMURead:
 	}
 	return fmt.Sprintf("SMU wrote %s CO %d", p.Op, p.Offset)
 }
