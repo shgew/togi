@@ -11,7 +11,7 @@ Work is split into tasks. Each task is sized for one planning session followed b
 | T02 | Journal | in review | #3 |
 | T03 | Tuner: search and confirmation | in review | #4 |
 | T04 | Simulator | in review | #5 |
-| T05 | Run loop and crash resume | in review | |
+| T05 | Run loop and crash resume | in review | #6 |
 | T06 | Guard | todo | |
 | T07 | Tiers, status and certificate | todo | |
 | T08 | Regain and reset | todo | |
