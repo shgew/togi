@@ -1,0 +1,7 @@
+{"MESSAGE":"mce: [Hardware Error]: Machine check events logged","__REALTIME_TIMESTAMP":"1789921500000000"}
+{"MESSAGE":"[Hardware Error]: Corrected error, no action required.","__REALTIME_TIMESTAMP":"1789921500000001"}
+{"MESSAGE":"[Hardware Error]: CPU:9 (1a:44:0) MC0_STATUS[Over|CE|MiscV|AddrV|-|-|SyndV|CECC|-|-|-]: 0xdc204000000d0175","__REALTIME_TIMESTAMP":"1789921500000002"}
+{"MESSAGE":"[Hardware Error]: Error Addr: 0x00000002a90b5060","__REALTIME_TIMESTAMP":"1789921500000003"}
+{"MESSAGE":"[Hardware Error]: IPID: 0x000000b000000000, Syndrome: 0x000000021a17010a","__REALTIME_TIMESTAMP":"1789921500000004"}
+{"MESSAGE":"[Hardware Error]: Load Store Unit Ext. Error Code: 13","__REALTIME_TIMESTAMP":"1789921500000005"}
+{"MESSAGE":"[Hardware Error]: cache level: L1, tx: DATA, mem-tx: EV","__REALTIME_TIMESTAMP":"1789921500000006"}
