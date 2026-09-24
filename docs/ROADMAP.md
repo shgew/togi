@@ -15,11 +15,11 @@ Work is split into tasks. Each task is sized for one planning session followed b
 | T06 | Guard | done | #7 |
 | T07 | Tiers, status and certificate | done | #8 |
 | T08 | Regain and reset | done | #9 |
-| T09 | SMU driver and preflight | todo | |
-| T10 | Trial runner and containment | todo | |
-| T11 | Backends: mprime and y-cruncher | todo | |
-| T12 | Kernel evidence: MCE and crash detection | todo | |
-| T13 | NixOS module and tuning boot | todo | |
+| T09 | SMU driver and preflight | done | #13 |
+| T10 | Trial runner and containment | done | #13 |
+| T11 | Backends: mprime and y-cruncher | done | #13 |
+| T12 | Kernel evidence: MCE and crash detection | done | #13 |
+| T13 | NixOS module and tuning boot | done | #13 |
 | T14 | CI on Forgejo Actions | todo | |
 | T15 | First tuning on the target machine | todo | |
 
