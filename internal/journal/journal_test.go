@@ -169,6 +169,7 @@ func TestRoundTrip(t *testing.T) {
 		&ProfileApplied{Offsets: []int{0, 0}, Condition: machine.Isolated},
 		&ProfileChange{From: []int{0, -5}, To: []int{0, -4}},
 		&ProfileChange{To: []int{0, -5}},
+		&ProfileRestored{Offsets: []int{0, -5}},
 		&TrialIntent{Trial: "0413", Core: new(7), Offset: new(-32), Regime: machine.R2, Workload: "mprime-avx2-36k-248k", DurationS: 90, Condition: machine.Isolated, Phase: PhaseSearch, Retry: true},
 		&TrialIntent{Trial: "0414", Cores: []int{0, 7}, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", DurationS: 1200, Condition: machine.Resident, Phase: PhaseGuard, Rotation: 3},
 		&TrialStart{Trial: "0413", Scope: "shycler-trial-0413", PID: 48211, CPUs: []int{7, 23}, Argv: []string{"mprime", "-t"}},

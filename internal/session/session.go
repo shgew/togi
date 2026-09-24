@@ -364,6 +364,11 @@ func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 			}
 		}
 	}
+	if d.Condition != journal.DeadEndSMU {
+		if err := r.restore(); err != nil && !errors.Is(err, errDeadEndEvidence) {
+			return nil, err
+		}
+	}
 	if _, err := r.append(&journal.Shutdown{Reason: journal.ShutdownDeadEnd}); err != nil {
 		return nil, err
 	}
@@ -573,8 +578,48 @@ func (r *runner) reachedRotations() bool {
 }
 
 func (r *runner) shutdown(p *journal.Shutdown, stop StopReason) (Stop, error) {
+	if err := r.restore(); err != nil {
+		return r.afterEvidence(err)
+	}
 	if _, err := r.append(p); err != nil {
 		return Stop{}, err
 	}
 	return Stop{Reason: stop}, nil
+}
+
+// restore writes every core back to its baseline once this process has written offsets, so the machine keeps running
+// on the values it had before shycler started, except that a core never goes back to its failed mark or deeper.
+func (r *runner) restore() error {
+	if r.applied == nil {
+		return nil
+	}
+	targets := make([]int, len(r.cores))
+	for i, c := range r.cores {
+		o := r.fold.baseline[i]
+		if s := slices.IndexFunc(r.state.Cores, func(s journal.CoreState) bool { return s.Core == c.Core }); s >= 0 && r.state.Cores[s].FailedMark != nil {
+			o = max(o, *r.state.Cores[s].FailedMark+1)
+		}
+		targets[i] = machine.ClampOffset(o)
+	}
+	if slices.Equal(r.applied, targets) {
+		return nil
+	}
+	var reads []int
+	if slices.Min(targets) == slices.Max(targets) {
+		seqs, err := r.setAll(targets[0], r.fold.baselineSeq)
+		if err != nil {
+			return err
+		}
+		reads = seqs
+	} else {
+		for i, c := range r.cores {
+			seq, err := r.set(c.Core, targets[i], r.fold.baselineSeq)
+			if err != nil {
+				return err
+			}
+			reads = append(reads, seq)
+		}
+	}
+	_, err := r.append(&journal.ProfileRestored{Offsets: targets}, reads...)
+	return err
 }

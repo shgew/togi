@@ -40,6 +40,8 @@ Global flags: `--config <path>` (default `/etc/shycler/config.toml`), `--state-d
 
 `run` records `shutdown` only for the clean stops (exit 0) and the dead ends (10-15). Any other exit writes nothing, so the next boot treats the gap as a crash.
 
+Before it records `shutdown`, a `run` that has written offsets restores them, so the machine goes on running as it did before shycler started: each core goes back to its baseline, or one step shallower than its failed mark if the baseline is at or deeper than that mark, clamped to [-50, 0]. The writes follow the usual intent, write and readback, then `profile.restored` records the offsets. It skips the writes when the cores already hold those offsets, when this `run` wrote nothing, and at an `smu` dead end, where SMU writes are not trusted. A readback that differs during a clean stop turns it into an `smu` dead end; during another dead end it is recorded as evidence and the dead end stops as planned. In the tuning boot this happens before tty1 shows the dead end; at power-off it is redundant, since firmware restores the BIOS values at the next boot.
+
 ## Privileges
 
 `run`, `regain` and `reset` require root: they change core voltage and the boot entry, and create cgroup scopes. The read-only commands work for any user who can read the state directory.

@@ -25,6 +25,7 @@ All notable changes to shycler are documented in this file. The format is based 
 
 - `shycler reset --all` also moves the trial work directories to `archive/<session-id>-trials/` ([#13]).
 - Every command's `--help` gives a description and examples, lists its own flags before the global ones, and shows every flag in `--long` form ([#12]).
+- `run` writes every core back to its baseline before stopping cleanly or at a dead end, instead of leaving the tested offsets applied until the next reboot; a core never goes back to its failed mark or deeper ([#14]).
 
 [#2]: https://code.marleb.org/shgew/shycler/pulls/2
 [#3]: https://code.marleb.org/shgew/shycler/pulls/3
@@ -37,3 +38,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#11]: https://code.marleb.org/shgew/shycler/pulls/11
 [#12]: https://code.marleb.org/shgew/shycler/pulls/12
 [#13]: https://code.marleb.org/shgew/shycler/pulls/13
+[#14]: https://code.marleb.org/shgew/shycler/pulls/14
