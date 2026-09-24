@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -647,14 +648,18 @@ func TestCrashThenPreflightFailure(t *testing.T) {
 	}
 }
 
-type cancelAfter struct {
-	n      int
-	cancel context.CancelFunc
+type afterLines struct {
+	match string
+	n     int
+	do    func()
 }
 
-func (c *cancelAfter) Write(p []byte) (int, error) {
-	if c.n--; c.n == 0 {
-		c.cancel()
+func (a *afterLines) Write(p []byte) (int, error) {
+	if !bytes.Contains(p, []byte(a.match)) {
+		return len(p), nil
+	}
+	if a.n--; a.n == 0 {
+		a.do()
 	}
 	return len(p), nil
 }
@@ -666,7 +671,7 @@ func TestSignalStopsCleanly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	in := simInput(dir, m)
-	in.Log = &cancelAfter{n: 50, cancel: cancel}
+	in.Log = &afterLines{n: 50, do: cancel}
 	stop, err := runSim(ctx, in, nil)
 	if err != nil || stop.Reason != StopSignal {
 		t.Fatalf("stopped with %+v, %v", stop, err)
@@ -689,6 +694,119 @@ func TestSignalStopsCleanly(t *testing.T) {
 	if !slices.ContainsFunc(events[stopped.Seq:], func(e journal.Event) bool { return e.Kind == journal.KindTrialIntent && e.Boot != stopped.Boot }) {
 		t.Fatal("second run did not resume in the next boot")
 	}
+}
+
+func TestStopRestoresBaseline(t *testing.T) {
+	t.Parallel()
+	sharp := sim.DefaultModel()
+	sharp.PastEdgeRate, sharp.Signals = 1e6, map[machine.Signal]float64{machine.ComputationError: 1}
+	uneven := small()
+	uneven.BIOS = []int{-10, -5}
+	zeroFails := small()
+	zeroFails.Edges[0].Isolated = [5]int{1, 1, 1, 1, 1}
+	zeroFails.Model = &sharp
+	baselineFails := small()
+	baselineFails.Edges[0].Isolated = [5]int{-5, -5, -5, -5, -5}
+	baselineFails.Model = &sharp
+	interrupt := func(_ *sim.Machine, cancel context.CancelFunc) { cancel() }
+	tests := []struct {
+		name    string
+		cfg     sim.Config
+		match   string
+		at      int
+		do      func(m *sim.Machine, cancel context.CancelFunc)
+		want    StopReason
+		offsets []int
+	}{
+		{name: "signal during search", cfg: small(), at: 50, do: interrupt, want: StopSignal, offsets: []int{-10, -10}},
+		{name: "signal as a trial fails at the baseline", cfg: baselineFails, match: " FAIL ", at: 1, do: interrupt, want: StopSignal, offsets: []int{-5, -10}},
+		{name: "rotations with the profile applied", cfg: uneven, want: StopRotations, offsets: []int{-10, -5}},
+		{name: "dead end, failed mark above the baseline", cfg: zeroFails, want: StopDeadEnd, offsets: []int{0, -10}},
+		{name: "SMU dead end", cfg: small(), at: 50, do: func(m *sim.Machine, _ context.CancelFunc) { m.CorruptReadback(0) }, want: StopDeadEnd},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			in := simInput(t.TempDir(), newSim(t, tt.cfg))
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tt.do != nil {
+				in.Log = &afterLines{match: tt.match, n: tt.at, do: func() { tt.do(in.Machine, cancel) }}
+			}
+			stop, err := runSim(ctx, in, nil)
+			if err != nil || stop.Reason != tt.want {
+				t.Fatalf("stopped with %+v, %v; want %s", stop, err, tt.want)
+			}
+			if tt.offsets == nil && stop.DeadEnd.Condition != journal.DeadEndSMU {
+				t.Fatalf("dead end %s, want %s", stop.DeadEnd.Condition, journal.DeadEndSMU)
+			}
+			events := readEvents(t, in.Dir)
+			last := len(events) - 1
+			if events[last].Kind != journal.KindShutdown {
+				t.Fatalf("last event %s, want shutdown", events[last].Kind)
+			}
+			restored, lastIntent := -1, -1
+			for i, e := range events {
+				if e.Kind == journal.KindProfileRestored {
+					restored = i
+				}
+				if e.Kind == journal.KindSMUIntent {
+					lastIntent = i
+				}
+			}
+			if tt.offsets == nil {
+				if restored >= 0 {
+					t.Fatalf("seq %d: %s after the SMU failed", events[restored].Seq, events[restored].Msg)
+				}
+				return
+			}
+			if restored < lastIntent || restored != last-1 {
+				t.Fatalf("profile.restored at index %d, want after the last smu.intent (%d) and right before shutdown (%d)", restored, lastIntent, last)
+			}
+			smu := in.Machine.Seams().SMU
+			for c, want := range tt.offsets {
+				if got, err := smu.Offset(c); err != nil || got != want {
+					t.Errorf("core %d at CO %d (%v) after the stop, want %d", c, got, err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestCrashDuringRestoreKeepsTheAppliedCondition(t *testing.T) {
+	t.Parallel()
+	signalled := func(dir string, tr *trigger, m *sim.Machine) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		in := simInput(dir, m)
+		in.Log = &afterLines{n: 50, do: cancel}
+		if _, err := runSim(ctx, in, tr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ref := t.TempDir()
+	signalled(ref, nil, newSim(t, small()))
+	events := readEvents(t, ref)
+	baseline := events[slices.IndexFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindSessionBaseline })].Seq
+	restoring := slices.IndexFunc(events, func(e journal.Event) bool {
+		return e.Kind == journal.KindSMUIntent && slices.Contains(e.Cause, baseline)
+	})
+	if restoring < 0 {
+		t.Fatal("reference run did not restore the baseline")
+	}
+
+	dir := t.TempDir()
+	m := newSim(t, small())
+	signalled(dir, crashAt(events[restoring].Seq, m), m)
+	for _, e := range readEvents(t, dir) {
+		if c, ok := e.Data.(*journal.CrashDetected); ok {
+			if c.Condition != machine.Isolated {
+				t.Fatalf("seq %d: %s; want the isolated condition applied before the restore", e.Seq, e.Msg)
+			}
+			return
+		}
+	}
+	t.Fatal("no crash.detected after crashing during the restore")
 }
 
 type runnerFault struct {

@@ -364,6 +364,11 @@ func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 			}
 		}
 	}
+	if d.Condition != journal.DeadEndSMU {
+		if err := r.restore(); err != nil && !errors.Is(err, errDeadEndEvidence) {
+			return nil, err
+		}
+	}
 	if _, err := r.append(&journal.Shutdown{Reason: journal.ShutdownDeadEnd}); err != nil {
 		return nil, err
 	}
@@ -530,9 +535,6 @@ func (r *runner) ensureCondition(t tuner.Trial) error {
 
 func (r *runner) loop(ctx context.Context) (Stop, error) {
 	for {
-		if ctx.Err() != nil {
-			return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
-		}
 		if stop, err := r.checkDeadEnd(); stop != nil || err != nil {
 			return deref(stop), err
 		}
@@ -550,6 +552,9 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 				return Stop{}, err
 			}
 		case tuner.RunTrial:
+			if ctx.Err() != nil {
+				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
+			}
 			err := r.ensureCondition(a.Trial)
 			if errors.Is(err, errDeadEndEvidence) {
 				continue
@@ -557,12 +562,8 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 			if err != nil {
 				return Stop{}, err
 			}
-			stop, err := r.trial(ctx, a)
-			if errors.Is(err, errDeadEndEvidence) {
-				continue
-			}
-			if stop != nil || err != nil {
-				return deref(stop), err
+			if err := r.trial(ctx, a); err != nil && !errors.Is(err, errDeadEndEvidence) {
+				return Stop{}, err
 			}
 		}
 	}
@@ -573,8 +574,48 @@ func (r *runner) reachedRotations() bool {
 }
 
 func (r *runner) shutdown(p *journal.Shutdown, stop StopReason) (Stop, error) {
+	if err := r.restore(); err != nil {
+		return r.afterEvidence(err)
+	}
 	if _, err := r.append(p); err != nil {
 		return Stop{}, err
 	}
 	return Stop{Reason: stop}, nil
+}
+
+// restore writes every core back to its baseline once this process has written offsets, so the machine keeps running
+// on the values it had before shycler started, except that a core never goes deeper than its current offset.
+func (r *runner) restore() error {
+	if r.applied == nil {
+		return nil
+	}
+	targets := make([]int, len(r.cores))
+	for i, c := range r.cores {
+		o := r.fold.baseline[i]
+		if s := slices.IndexFunc(r.state.Cores, func(s journal.CoreState) bool { return s.Core == c.Core }); s >= 0 {
+			o = max(o, r.state.Cores[s].Offset)
+		}
+		targets[i] = machine.ClampOffset(o)
+	}
+	if slices.Equal(r.applied, targets) {
+		return nil
+	}
+	var reads []int
+	if slices.Min(targets) == slices.Max(targets) {
+		seqs, err := r.setAll(targets[0], r.fold.baselineSeq)
+		if err != nil {
+			return err
+		}
+		reads = seqs
+	} else {
+		for i, c := range r.cores {
+			seq, err := r.set(c.Core, targets[i], r.fold.baselineSeq)
+			if err != nil {
+				return err
+			}
+			reads = append(reads, seq)
+		}
+	}
+	_, err := r.append(&journal.ProfileRestored{Offsets: targets}, reads...)
+	return err
 }

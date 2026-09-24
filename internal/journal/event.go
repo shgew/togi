@@ -30,6 +30,7 @@ const (
 	KindSMUError         Kind = "smu.error"
 	KindProfileApplied   Kind = "profile.applied"
 	KindProfileChange    Kind = "profile.change"
+	KindProfileRestored  Kind = "profile.restored"
 	KindTrialIntent      Kind = "trial.intent"
 	KindTrialStart       Kind = "trial.start"
 	KindTrialProgress    Kind = "trial.progress"
@@ -178,6 +179,8 @@ func decodePayload(kind Kind, raw []byte) (Payload, error) {
 		p = &ProfileApplied{}
 	case KindProfileChange:
 		p = &ProfileChange{}
+	case KindProfileRestored:
+		p = &ProfileRestored{}
 	case KindTrialIntent:
 		p = &TrialIntent{}
 	case KindTrialStart:

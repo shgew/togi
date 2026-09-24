@@ -105,10 +105,13 @@ func (f *fold) Fold(e journal.Event) {
 		f.applied[e.Boot] = e.Seq
 		f.appliedCond[e.Boot] = p.Condition
 		f.stray = nil
+	case *journal.ProfileRestored:
+		delete(f.applied, e.Boot)
+		delete(f.appliedCond, e.Boot)
 	case *journal.SMUIntent:
 		f.dropSMUIntent()
 		f.unmatched = append(f.unmatched, openIntent{seq: e.Seq, kind: e.Kind, boot: e.Boot})
-		if p.Offset != 0 && f.open == nil {
+		if p.Offset != 0 && f.open == nil && !slices.Contains(e.Cause, f.baselineSeq) {
 			f.applied[e.Boot] = e.Seq
 			f.appliedCond[e.Boot] = machine.Resident
 			f.stray = nil

@@ -67,7 +67,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Session | `session.start`, `session.context` (BIOS context), `session.baseline` (baseline profile), `session.notice`, `session.archived` |
 | Config and preflight | `config.loaded` (effective config), `preflight.check` (one per check, with result) |
 | SMU | `smu.intent`, `smu.write`, `smu.readback`, `smu.error` |
-| Profile | `profile.applied` (every application of every core's offset, with its condition), `profile.change` (the profile under guard: on entering guard, with `from` null, and after every guard decision) |
+| Profile | `profile.applied` (every application of every core's offset, with its condition), `profile.change` (the profile under guard: on entering guard, with `from` null, and after every guard decision), `profile.restored` (the offsets written back before `shutdown`, `runtime.md`) |
 | Trials | `trial.intent`, `trial.start` (pid, scope, cpus and argv; the config `files` written; `instances` with core, cpus, pid and scope when the trial runs more than one), `trial.progress` (backend milestones such as a finished FFT size), `trial.signal` (load-step schedule), `trial.sample` (containment or stall warnings only), `trial.end` |
 | Evidence | `failure` (kind, attribution, evidence `seq`), `mce` (raw and decoded lines, cpu, core, bank type), `crash.detected` (previous boot ID, in-flight action) |
 | Tuner | `tuner.decision`, `core.phase`, `guard.rotation` (start and end), `escalation.window` (open and close), `tier.change` (from, to, reason) |

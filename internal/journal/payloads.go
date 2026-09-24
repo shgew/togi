@@ -292,6 +292,15 @@ func (p *ProfileChange) Message() string {
 	return fmt.Sprintf("profile changed %v -> %v", p.From, p.To)
 }
 
+type ProfileRestored struct {
+	Offsets []int `json:"offsets"`
+}
+
+func (*ProfileRestored) Kind() Kind { return KindProfileRestored }
+func (p *ProfileRestored) Message() string {
+	return fmt.Sprintf("offsets restored before stopping: %v (each core's baseline, or its current offset where that is shallower)", p.Offsets)
+}
+
 type TrialIntent struct {
 	Trial     string            `json:"trial"`
 	Core      *int              `json:"core,omitempty"`
