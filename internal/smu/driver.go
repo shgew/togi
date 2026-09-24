@@ -104,9 +104,35 @@ func (d *Driver) mapSlots() {
 	slices.Sort(ccds)
 	var details []string
 	for _, ccd := range ccds {
-		fuse, err := d.mb.ReadSMN(0x304a03dc + uint32(ccd)<<25)
+		const rsmuResponse = 0x03b10570
+		const rsmuCommand = 0x03b10524
+		addr := 0x304a03dc + uint32(ccd)<<25
+		firstProbe, err := d.mb.ReadSMN(rsmuResponse)
+		if err != nil {
+			d.mappingErr = fmt.Errorf("read RSMU response before CCD%d fuse: %w", ccd, err)
+			return
+		}
+		fuse, err := d.mb.ReadSMN(addr)
 		if err != nil {
 			d.mappingErr = fmt.Errorf("read CCD%d fuse: %w", ccd, err)
+			return
+		}
+		secondProbe, err := d.mb.ReadSMN(rsmuCommand)
+		if err != nil {
+			d.mappingErr = fmt.Errorf("read RSMU command before CCD%d fuse: %w", ccd, err)
+			return
+		}
+		repeatedFuse, err := d.mb.ReadSMN(addr)
+		if err != nil {
+			d.mappingErr = fmt.Errorf("repeat CCD%d fuse read: %w", ccd, err)
+			return
+		}
+		if firstProbe == secondProbe {
+			d.mappingErr = fmt.Errorf("CCD%d fuse reads cannot be verified: RSMU probes both returned 0x%x", ccd, firstProbe)
+			return
+		}
+		if fuse != repeatedFuse {
+			d.mappingErr = fmt.Errorf("CCD%d fuse reads disagree: 0x%x and 0x%x", ccd, fuse, repeatedFuse)
 			return
 		}
 		disabled := uint8(fuse)

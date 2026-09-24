@@ -51,7 +51,7 @@ Global flags: `--config <path>` (default `/etc/shycler/config.toml`), `--state-d
 2. The CPU is family `0x1A`, model `0x40`-`0x4F` (Granite Ridge desktop).
 3. `ryzen_smu` is loaded and reports a matching codename.
 4. Every core's offset reads back through the SMU.
-5. The core-to-SMU slot mapping is verified (`../prior-art.md`).
+5. The core-to-SMU slot mapping is verified (`../prior-art.md`): each CCD fuse is read twice with distinct RSMU register reads interleaved, and the disabled-slot count must match the OS topology. Indistinguishable RSMU probes, inconsistent fuse reads, or a live-core count mismatch refuse all per-core access.
 6. Both backends are configured and present.
 7. `systemd-run` can create a scope confined to CPU 0.
 8. The BIOS context matches the session, when resuming and checks 1-7 passed.

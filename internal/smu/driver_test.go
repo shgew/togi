@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,6 +20,7 @@ type fakeMailbox struct {
 	responses map[uint32][6]uint32
 	commands  []call
 	err       error
+	smnRead   func(uint32) (uint32, error)
 }
 
 func (f *fakeMailbox) Command(cmd uint32, args [6]uint32) ([6]uint32, error) {
@@ -27,6 +29,9 @@ func (f *fakeMailbox) Command(cmd uint32, args [6]uint32) ([6]uint32, error) {
 }
 
 func (f *fakeMailbox) ReadSMN(addr uint32) (uint32, error) {
+	if f.smnRead != nil {
+		return f.smnRead(addr)
+	}
 	return f.fuses[addr], f.err
 }
 
@@ -54,7 +59,7 @@ func cpu(t *testing.T, root string, cpuID, coreID, ccd int, cache bool) {
 func fixture(t *testing.T, coresPerCCD int, cache bool) (string, *fakeMailbox) {
 	t.Helper()
 	root := t.TempDir()
-	mb := &fakeMailbox{fuses: map[uint32]uint32{}, responses: map[uint32][6]uint32{}}
+	mb := &fakeMailbox{fuses: map[uint32]uint32{0x03b10570: 1, 0x03b10524: 0x6e}, responses: map[uint32][6]uint32{}}
 	for ccd := range 2 {
 		for index := range coresPerCCD {
 			core := ccd*8 + index
@@ -163,6 +168,73 @@ func TestMappingAndFallback(t *testing.T) {
 			}
 			if err := d.SetOffset(5, -10); err != nil || mb.commands[1].arg>>20&7 != 6 {
 				t.Fatalf("harvested slot 6: %+v, %v", mb.commands, err)
+			}
+		})
+	}
+}
+
+func TestStaleCCDFuseRefusesPerCoreAccess(t *testing.T) {
+	for _, failRead := range [][]int{{1}, {2}, {1, 2}} {
+		t.Run(fmt.Sprint(failRead), func(t *testing.T) {
+			root, mb := fixture(t, 6, true)
+			const ccd0 = 0x304a03dc
+			const ccd1 = ccd0 + 1<<25
+			mb.fuses[ccd0] = 0x81
+			mb.fuses[ccd1] = 0x42
+			var previous uint32
+			var ccd1Reads int
+			mb.smnRead = func(addr uint32) (uint32, error) {
+				if addr == ccd1 {
+					ccd1Reads++
+					if slices.Contains(failRead, ccd1Reads) {
+						return previous, nil
+					}
+				}
+				previous = mb.fuses[addr]
+				return previous, nil
+			}
+			d, err := Open(root, mb)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if check := d.CheckSlotMapping(); check.OK {
+				t.Fatalf("stale fuse accepted: %+v", check)
+			}
+			if _, err := d.Offset(8); err == nil {
+				t.Fatal("per-core read accepted stale fuse")
+			}
+			if err := d.SetOffset(8, -10); err == nil {
+				t.Fatal("per-core write accepted stale fuse")
+			}
+			if len(mb.commands) != 0 {
+				t.Fatalf("commands issued with unverified slot mapping: %+v", mb.commands)
+			}
+		})
+	}
+}
+
+func TestFuseEqualToProbeAcceptedWhenFresh(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		response, cmd uint32
+		valid         bool
+	}{
+		{"response", 0x03, 0x6e, true},
+		{"command", 0x01, 0x03, true},
+		{"indistinguishable", 0x03, 0x03, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, mb := fixture(t, 6, true)
+			mb.fuses[0x304a03dc] = 0x03
+			mb.fuses[0x304a03dc+1<<25] = 0x81
+			mb.fuses[0x03b10570] = tc.response
+			mb.fuses[0x03b10524] = tc.cmd
+			d, err := Open(root, mb)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if check := d.CheckSlotMapping(); check.OK != tc.valid {
+				t.Fatalf("fresh fuse probe collision: %+v", check)
 			}
 		})
 	}
