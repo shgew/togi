@@ -35,6 +35,27 @@ func TestTierFor(t *testing.T) {
 	}
 }
 
+func TestRateBoundNeverUnderstates(t *testing.T) {
+	t.Parallel()
+	if got := rateBound(0); got != nil {
+		t.Errorf("rateBound(0) = %v, want nil", *got)
+	}
+	for _, tt := range []struct {
+		cleanS int
+		want   float64
+	}{
+		{3600, 3},
+		{86400, 0.125},
+		{86600, 0.1248},
+		{7, 1542.8572},
+	} {
+		got := rateBound(tt.cleanS)
+		if got == nil || *got != tt.want || *got < 10800/float64(tt.cleanS) {
+			t.Errorf("rateBound(%d) = %v, want %v", tt.cleanS, got, tt.want)
+		}
+	}
+}
+
 func TestTierTransitions(t *testing.T) {
 	t.Parallel()
 	h, a := newGuardHarness(t, []int{-10}, []*int{new(-11)})
