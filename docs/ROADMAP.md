@@ -13,7 +13,7 @@ Work is split into tasks. Each task is sized for one planning session followed b
 | T04 | Simulator | done | #5 |
 | T05 | Run loop and crash resume | done | #6 |
 | T06 | Guard | in review | #7 |
-| T07 | Tiers, status and certificate | in review | |
+| T07 | Tiers, status and certificate | in review | #8 |
 | T08 | Regain and reset | in review | |
 | T09 | SMU driver and preflight | todo | |
 | T10 | Trial runner and containment | todo | |
