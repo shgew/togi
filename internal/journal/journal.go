@@ -82,6 +82,15 @@ func open(dir string, opts Options) (*Journal, error) {
 		lock.Close()
 		return nil, err
 	}
+	if opts.Sync {
+		for _, d := range []string{dir, filepath.Dir(dir)} {
+			if err := syncDir(d); err != nil {
+				f.Close()
+				lock.Close()
+				return nil, fmt.Errorf("sync directory %s: %w", d, err)
+			}
+		}
+	}
 	j := &Journal{dir: dir, opts: opts, lock: lock, f: f, events: events}
 	if end == len(data) {
 		return j, nil

@@ -304,8 +304,17 @@ func TestReboot(t *testing.T) {
 	s := m.Seams()
 	before, _ := s.Host.BootID()
 	start := m.Now()
+	m.CorruptReadback(0)
 	_ = s.SMU.SetAllOffsets(-9)
+	run, err := s.Trials.Start(context.Background(), machine.TrialSpec{ID: "0001", Regime: machine.R1, Condition: machine.Resident, Cores: []int{0}, CPUs: []int{0}, Duration: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Crash()
 	m.Reboot()
+	if _, err := run.Wait(context.Background()); !errors.Is(err, machine.ErrCrashed) {
+		t.Fatalf("Wait on a trial of the crashed boot: %v, want ErrCrashed", err)
+	}
 	after, _ := s.Host.BootID()
 	a, _ := s.SMU.Offset(0)
 	b, _ := s.SMU.Offset(1)

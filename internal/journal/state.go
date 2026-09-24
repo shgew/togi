@@ -167,6 +167,10 @@ func writeState(dir string, s State, sync bool) error {
 	if !sync {
 		return nil
 	}
+	return syncDir(dir)
+}
+
+func syncDir(dir string) error {
 	d, err := os.Open(dir)
 	if err != nil {
 		return err
