@@ -31,6 +31,9 @@ type guard struct {
 
 	window   bool
 	closeDue bool
+
+	tctlMax *int
+	tctlSeq int
 }
 
 // suspect is an unattributed resident failure whose suspect backoffs and window opening are still due.
@@ -48,6 +51,7 @@ func (g *guard) changed(seq int, to []int) {
 	g.dirty = false
 	g.cleanRotations, g.cleanS = 0, 0
 	g.cleanByRegime = map[machine.Regime]int{}
+	g.tctlMax, g.tctlSeq = nil, 0
 }
 
 func (g *guard) rotated(seq int, p *journal.GuardRotation) {
@@ -88,6 +92,10 @@ func (s *State) foldResidentEnd(e journal.Event, p *journal.TrialEnd, intent *jo
 		g.lastSeq = e.Seq
 		g.cleanS += p.DurationS
 		g.cleanByRegime[intent.Regime] += p.DurationS
+		s.tierCause = e.Seq
+		if p.TctlMaxC != nil && (g.tctlMax == nil || *p.TctlMaxC > *g.tctlMax) {
+			g.tctlMax, g.tctlSeq = new(*p.TctlMaxC), e.Seq
+		}
 		if !g.open || intent.Rotation != g.rotation || g.stepsDone >= len(g.steps) || intent.Regime != g.steps[g.stepsDone] {
 			return
 		}
@@ -246,7 +254,7 @@ func (g *guard) project() *journal.GuardState {
 	}
 	regimes := make([]journal.RegimeClean, len(machine.Regimes))
 	for i, r := range machine.Regimes {
-		regimes[i] = journal.RegimeClean{Regime: r, CleanS: g.cleanByRegime[r]}
+		regimes[i] = journal.RegimeClean{Regime: r, CleanS: g.cleanByRegime[r], RateBoundPerH: rateBound(g.cleanByRegime[r])}
 	}
 	return &journal.GuardState{
 		Rotation:         g.rotation,
@@ -259,5 +267,8 @@ func (g *guard) project() *journal.GuardState {
 		CleanS:           g.cleanS,
 		Regimes:          regimes,
 		EscalationWindow: g.window,
+		RateBoundPerH:    rateBound(g.cleanS),
+		TctlMaxC:         g.tctlMax,
+		TctlMaxSeq:       g.tctlSeq,
 	}
 }

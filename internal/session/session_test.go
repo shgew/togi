@@ -215,8 +215,8 @@ func TestSixteenCoresSurviveARotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Phase != "guard" || len(st.Cores) != 16 || st.Guard == nil || st.Guard.CleanRotations != 1 {
-		t.Fatalf("state phase %s with %d cores, guard %+v", st.Phase, len(st.Cores), st.Guard)
+	if st.Phase != "guard" || len(st.Cores) != 16 || st.Guard == nil || st.Guard.CleanRotations != 1 || st.Tier != journal.TierBronze {
+		t.Fatalf("state phase %s tier %s with %d cores, guard %+v", st.Phase, st.Tier, len(st.Cores), st.Guard)
 	}
 	for _, c := range st.Cores {
 		if c.Phase != journal.PhaseConfirmed || c.Offset < m.ResidentEdge(c.Core) || c.Offset > 0 {

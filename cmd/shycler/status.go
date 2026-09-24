@@ -1,0 +1,159 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"math"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"code.marleb.org/shgew/shycler/internal/journal"
+	"code.marleb.org/shgew/shycler/internal/tuner"
+)
+
+const statusUsage = "Usage: shycler status"
+
+func runStatus(g *globals, args []string, stdout, stderr io.Writer) int {
+	flags := newFlagSet("status", g)
+	if code, ok := parseFlags(flags, args, statusUsage, stdout, stderr); !ok {
+		return code
+	}
+	_, st, code, ok := loadSession("status", g.stateDir, stderr)
+	if !ok {
+		return code
+	}
+	writeStatus(stdout, st)
+	return exitOK
+}
+
+func replayDir(dir string) ([]journal.Event, journal.State, []byte, error) {
+	events, torn, err := journal.Read(dir)
+	if err != nil {
+		return nil, journal.State{}, nil, err
+	}
+	var st journal.State
+	t := tuner.New()
+	journal.Replay(events, &st, t)
+	t.Project(&st)
+	return events, st, torn, nil
+}
+
+func loadSession(name, dir string, stderr io.Writer) ([]journal.Event, journal.State, int, bool) {
+	events, st, torn, err := replayDir(dir)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		fmt.Fprintf(stderr, "shycler %s: no journal at %s\n", name, filepath.Join(dir, "events.jsonl"))
+		return nil, st, exitError, false
+	case err != nil:
+		fmt.Fprintf(stderr, "shycler %s: %v\n", name, err)
+		return nil, st, exitError, false
+	case st.Session == nil:
+		fmt.Fprintf(stderr, "shycler %s: no session in %s\n", name, dir)
+		return nil, st, exitError, false
+	}
+	if len(torn) > 0 {
+		fmt.Fprintf(stderr, "shycler %s: journal ends with %d torn bytes; the next run records journal.torn\n", name, len(torn))
+	}
+	return events, st, exitOK, true
+}
+
+func writeStatus(w io.Writer, st journal.State) {
+	fmt.Fprintf(w, "session %s started %s\n", st.Session.ID, st.Session.Start.UTC().Format(time.RFC3339))
+	writeBIOSLine(w, st.Session)
+	guardPart := "guard not started"
+	if gs := st.Guard; gs != nil {
+		window := "closed"
+		if gs.EscalationWindow {
+			window = "open"
+		}
+		guardPart = fmt.Sprintf("rotation %d, %d of %d steps | escalation window %s", gs.Rotation, gs.StepsDone, len(gs.Steps), window)
+	}
+	fmt.Fprintf(w, "phase %s | tier %s | %s\n", st.Phase, tierRef(st), guardPart)
+	if f := st.InFlight; f != nil {
+		fmt.Fprintf(w, "in flight: [#%d] %s\n", f.Seq, f.Msg)
+	} else {
+		fmt.Fprintln(w, "in flight: none")
+	}
+	if d := st.DeadEnd; d != nil {
+		fmt.Fprintf(w, "dead end: %s [#%d]\n", d.Condition, d.Seq)
+	}
+
+	fmt.Fprintln(w)
+	tw := newTable(w)
+	fmt.Fprintln(tw, "CORE\tCCD\tOFFSET\tPHASE\tFAILED\tUNPROVEN\tLAST DECISION")
+	var unproven []string
+	for _, c := range st.Cores {
+		last := "-"
+		if d := c.LastDecision; d != nil {
+			last = fmt.Sprintf("[#%d] %s", d.Seq, d.Msg)
+		}
+		fmt.Fprintf(tw, "%02d\t%d\t%d\t%s\t%s\t%d\t%s\n", c.Core, c.CCD, c.Offset, c.Phase, mark(c.FailedMark), c.UnprovenDepth, last)
+		if c.UnprovenDepth > 0 {
+			unproven = append(unproven, fmt.Sprintf("%02d", c.Core))
+		}
+	}
+	_ = tw.Flush()
+
+	gs := st.Guard
+	if gs == nil {
+		return
+	}
+	fmt.Fprintln(w)
+	overall := "no failure-rate bound yet"
+	if gs.RateBoundPerH != nil {
+		overall = fmt.Sprintf("failure rate %s at 95%%", rate(gs.RateBoundPerH))
+	}
+	fmt.Fprintf(w, "clean hours since profile.change [#%d]: %s h, %s\n", gs.ProfileSeq, hours(gs.CleanS), overall)
+	tw = newTable(w)
+	fmt.Fprintln(tw, "REGIME\tCLEAN H\tRATE BOUND")
+	for _, r := range gs.Regimes {
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", r.Regime, hours(r.CleanS), rate(r.RateBoundPerH))
+	}
+	_ = tw.Flush()
+	if gs.TctlMaxC != nil {
+		fmt.Fprintf(w, "Tctl max %d°C [#%d]\n", *gs.TctlMaxC, gs.TctlMaxSeq)
+	}
+	if (st.Tier == journal.TierSilver || st.Tier == journal.TierGold) && len(unproven) > 0 {
+		fmt.Fprintf(w, "hint: cores %s have unproven depth; shycler regain retries one count per core\n", strings.Join(unproven, ", "))
+	}
+}
+
+func writeBIOSLine(w io.Writer, s *journal.SessionInfo) {
+	if b := s.BIOSContext; b != nil {
+		fmt.Fprintf(w, "BIOS %s on %s, %s, microcode %s, boost limit %d MHz\n", b.BIOSVersion, b.Board, b.CPUModel, b.Microcode, b.BoostLimitMHz)
+	}
+}
+
+func newTable(w io.Writer) *tabwriter.Writer {
+	return tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+}
+
+func tierRef(st journal.State) string {
+	if st.TierSeq == 0 {
+		return string(st.Tier)
+	}
+	return fmt.Sprintf("%s [#%d]", st.Tier, st.TierSeq)
+}
+
+func mark(p *int) string {
+	if p == nil {
+		return "-"
+	}
+	return strconv.Itoa(*p)
+}
+
+func hours(s int) string {
+	return strconv.FormatFloat(float64(s)/3600, 'f', 1, 64)
+}
+
+func rate(bound *float64) string {
+	if bound == nil {
+		return "-"
+	}
+	return fmt.Sprintf("< %.2f/h", math.Ceil(*bound*100-1e-9)/100)
+}

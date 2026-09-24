@@ -38,7 +38,7 @@ Every change lands through a pull request on `code.marleb.org/shgew/shycler`. Th
 | `go test ./...` | The tight loop |
 | `nix flake check` | Tests, lint and module checks; must pass before a pull request |
 | `nix fmt` | Format Go and Nix files |
-| `go run ./cmd/shycler run --sim 1` | A simulated session through its first clean guard rotation in a temporary state directory |
+| `go run ./cmd/shycler run --sim 1` | A simulated session through its first clean guard rotation, to Bronze, in a temporary state directory |
 | `sudo go test -tags hardware ./...` | Hardware tests, on the target machine only |
 
 ## Layout

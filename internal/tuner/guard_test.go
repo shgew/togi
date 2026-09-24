@@ -112,6 +112,8 @@ func describe(a Action) string {
 		return "end unclean"
 	case *journal.ProfileChange:
 		return "profile"
+	case *journal.TierChange:
+		return "tier " + string(p.To)
 	}
 	return fmt.Sprintf("%T", a.Payload)
 }
@@ -170,7 +172,7 @@ func TestGuardRotationSchedule(t *testing.T) {
 		a = h.s.Next()
 	}
 	h.decide(a)
-	if got := h.until(); !slices.Equal(got, []string{"start 2", "trial R1 c0"}) {
+	if got := h.until(); !slices.Equal(got, []string{"tier bronze", "start 2", "trial R1 c0"}) {
 		t.Fatalf("after rotation 1: %s then %v", describe(a), got)
 	}
 	if describe(a) != "end clean" {
@@ -258,7 +260,7 @@ func TestGuardEscalation(t *testing.T) {
 			for a := h.s.Next(); a.Kind == RunTrial; a = h.s.Next() {
 				h.trial(a, passed)
 			}
-		}, []string{"end clean", "window close", "start 3", "trial R1 c0"}, ""},
+		}, []string{"end clean", "tier bronze", "window close", "start 3", "trial R1 c0"}, ""},
 		{"inconclusive retries the trial", nil, func(h *harness) { h.trial(h.s.Next(), unsure) }, []string{"trial R1 c0 retry"}, ""},
 		{"proven backoff cancels unproven depth", nil, func(h *harness) {
 			afterSuspect(h)

@@ -126,7 +126,7 @@ The span after a suspect backoff, lasting until a rotation completes clean, in w
 The duration of passed resident trials since the last profile change.
 
 **Tier**:
-The durability rank of the current profile: Bronze, Silver, Gold or Platinum.
+The durability rank of the current profile: Bronze, Silver, Gold or Platinum, or none until Bronze is earned.
 _Avoid_: score, level, stable
 
 **Certificate**:
