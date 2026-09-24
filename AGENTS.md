@@ -20,7 +20,7 @@ Every change lands through a pull request on `code.marleb.org/shgew/shycler`. Th
 
 1. Create a worktree on branch `<slug>`, starting from `main`.
 2. Commit with short imperative messages.
-3. Push, then open the pull request. The body holds:
+3. Push, then open the pull request with `fj pr create --base main --head <slug> --body-file <file>`. The body holds:
    - a TL;DR;
    - the roadmap task;
    - the plan followed;
@@ -28,18 +28,6 @@ Every change lands through a pull request on `code.marleb.org/shgew/shycler`. Th
    - the verification that ran.
 4. Read review comments with `fj pr view <n> comments`, address each one, and push to the same branch.
 5. Update the task's row in `docs/ROADMAP.md` in the same pull request.
-
-fj 0.6.0 cannot create pull requests on this server: it URL-encodes the `/` in its pull request template lookup, and Forgejo 16 answers with 400. Until a fixed fj ships, create through the API with fj's stored token:
-
-```sh
-T=$(jq -r '.. | objects | .token? // empty' ~/.local/share/forgejo-cli/keys.json | head -n1)
-jq -n --rawfile body <file> --arg head <slug> --arg title <title> \
-  '{title: $title, head: $head, base: "main", body: $body}' |
-  curl -sf -X POST -H "Authorization: token $T" -H 'Content-Type: application/json' \
-    --data @- https://code.marleb.org/api/v1/repos/shgew/shycler/pulls | jq -r .html_url
-```
-
-`fj pr view`, `fj pr view <n> comments` and `fj pr view <n> files` work. `fj pr status` fails until a pull request has a CI status.
 
 ## Commands
 
