@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -18,6 +19,7 @@ const (
 	eventsFile = "events.jsonl"
 	lockFile   = "lock"
 	archiveDir = "archive"
+	trialsDir  = "trials"
 )
 
 type Options struct {
@@ -177,10 +179,12 @@ func ReadFile(path string) (events []Event, torn []byte, err error) {
 func (j *Journal) ArchivePath(session string) (string, error) {
 	rel := filepath.Join(archiveDir, session+".jsonl")
 	path := filepath.Join(j.dir, rel)
-	if _, err := os.Stat(path); err == nil {
-		return "", fmt.Errorf("archive %s already exists", path)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("archive: %w", err)
+	for _, p := range []string{path, filepath.Join(j.dir, archiveDir, session+trialsSuffix)} {
+		if _, err := os.Stat(p); err == nil {
+			return "", fmt.Errorf("archive %s already exists", p)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("archive: %w", err)
+		}
 	}
 	return rel, nil
 }
@@ -206,14 +210,20 @@ func (j *Journal) Archive(session string) (string, error) {
 	return rel, nil
 }
 
-// finishArchive removes the state file before moving the journal: once the journal is gone nothing would finish the
-// removal, while a journal still in place ends with session.archived and Open retries both.
+const trialsSuffix = "-trials"
+
+// finishArchive removes the state file and moves the trial directories before moving the journal: once the journal is
+// gone nothing would finish the rest, while a journal still in place ends with session.archived and Open retries.
 func finishArchive(dir, rel string, sync bool) error {
 	archive := filepath.Join(dir, archiveDir)
 	if err := os.MkdirAll(archive, 0o755); err != nil {
 		return err
 	}
 	if err := os.Remove(filepath.Join(dir, stateFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	session := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
+	if err := os.Rename(filepath.Join(dir, trialsDir), filepath.Join(archive, session+trialsSuffix)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	if err := os.Rename(filepath.Join(dir, eventsFile), filepath.Join(dir, rel)); err != nil {

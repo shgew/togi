@@ -56,7 +56,7 @@ func trial(m *Machine, core, offset int, r machine.Regime, cond machine.Conditio
 	if err != nil {
 		return machine.Result{}, err
 	}
-	return run.Wait(context.Background())
+	return run.Wait(context.Background(), nil)
 }
 
 func transcript(t *testing.T, seed uint64) []string {
@@ -312,7 +312,7 @@ func TestReboot(t *testing.T) {
 	}
 	m.Crash()
 	m.Reboot()
-	if _, err := run.Wait(context.Background()); !errors.Is(err, machine.ErrCrashed) {
+	if _, err := run.Wait(context.Background(), nil); !errors.Is(err, machine.ErrCrashed) {
 		t.Fatalf("Wait on a trial of the crashed boot: %v, want ErrCrashed", err)
 	}
 	after, _ := s.Host.BootID()
@@ -333,7 +333,7 @@ func TestContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	start := m.Now()
-	if _, err := run.Wait(ctx); !errors.Is(err, context.Canceled) || !m.Now().Equal(start) {
+	if _, err := run.Wait(ctx, nil); !errors.Is(err, context.Canceled) || !m.Now().Equal(start) {
 		t.Fatalf("Wait on a done context: %v, clock moved %s", err, m.Now().Sub(start))
 	}
 }

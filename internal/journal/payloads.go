@@ -333,15 +333,27 @@ func (p *TrialIntent) Message() string {
 }
 
 type TrialStart struct {
-	Trial string   `json:"trial"`
-	Scope string   `json:"scope"`
-	PID   int      `json:"pid"`
-	CPUs  []int    `json:"cpus"`
-	Argv  []string `json:"argv"`
+	Trial     string          `json:"trial"`
+	Scope     string          `json:"scope"`
+	PID       int             `json:"pid"`
+	CPUs      []int           `json:"cpus"`
+	Argv      []string        `json:"argv"`
+	Files     []string        `json:"files,omitempty"`
+	Instances []TrialInstance `json:"instances,omitempty"`
+}
+
+type TrialInstance struct {
+	Core  int    `json:"core"`
+	CPUs  []int  `json:"cpus"`
+	PID   int    `json:"pid"`
+	Scope string `json:"scope"`
 }
 
 func (*TrialStart) Kind() Kind { return KindTrialStart }
 func (p *TrialStart) Message() string {
+	if len(p.Instances) > 1 {
+		return fmt.Sprintf("trial %s started %d instances in scopes %s-cNN on cpus %s", p.Trial, len(p.Instances), p.Scope, cpuList(p.CPUs))
+	}
 	where := "cpu"
 	if len(p.CPUs) > 1 {
 		where = "cpus"
@@ -641,19 +653,46 @@ type DeadEnd struct {
 	Condition DeadEndCondition `json:"condition"`
 	Core      *int             `json:"core,omitempty"`
 	Detail    string           `json:"detail"`
-	Action    string           `json:"action,omitempty"`
+	Action    DeadEndAction    `json:"action,omitempty"`
 }
 
-func (*DeadEnd) Kind() Kind        { return KindDeadEnd }
-func (p *DeadEnd) Message() string { return fmt.Sprintf("dead end %s: %s", p.Condition, p.Detail) }
+type DeadEndAction string
+
+const (
+	ActionExit                     DeadEndAction = "exit"
+	ActionClearSavedEntry          DeadEndAction = "clear_saved_entry"
+	ActionClearSavedEntryAndReboot DeadEndAction = "clear_saved_entry_and_reboot"
+)
+
+func (*DeadEnd) Kind() Kind { return KindDeadEnd }
+func (p *DeadEnd) Message() string {
+	msg := fmt.Sprintf("dead end %s: %s", p.Condition, p.Detail)
+	switch p.Action {
+	case ActionClearSavedEntry:
+		msg += "; clearing GRUB's saved entry"
+	case ActionClearSavedEntryAndReboot:
+		msg += "; clearing GRUB's saved entry and rebooting"
+	case ActionExit:
+	}
+	return msg
+}
 
 type BootSavedEntry struct {
 	Before string `json:"before"`
 	After  string `json:"after"`
+	Error  string `json:"error,omitempty"`
 }
 
 func (*BootSavedEntry) Kind() Kind { return KindBootSavedEntry }
 func (p *BootSavedEntry) Message() string {
+	switch {
+	case p.Error != "":
+		return "GRUB saved entry not cleared: " + p.Error
+	case p.After == "" && p.Before == "":
+		return "GRUB saved entry was already unset"
+	case p.After == "":
+		return fmt.Sprintf("GRUB saved entry %s cleared; the next boot selects the first menu entry", p.Before)
+	}
 	return fmt.Sprintf("GRUB saved entry %s -> %s", p.Before, p.After)
 }
 

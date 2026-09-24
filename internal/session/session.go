@@ -26,6 +26,12 @@ type Input struct {
 	Machine    machine.Machine
 	// Rotations is the number of clean rotations of one profile after which the run stops; 0 runs guard endlessly.
 	Rotations int
+	// Bootloader is set only in the tuning boot, where a dead end hands the next boot back to the normal system.
+	Bootloader Bootloader
+}
+
+type Bootloader interface {
+	ClearSavedEntry() (before, after string, err error)
 }
 
 type Journal interface {
@@ -47,13 +53,13 @@ type Stop struct {
 	Reason   StopReason
 	DeadEnd  *journal.DeadEnd
 	Evidence []journal.Event
+	// Reboot is set when the dead end asks the caller to reboot into the normal system.
+	Reboot bool
 }
 
 var ErrNoSuchCore = errors.New("no such core")
 
 var errDeadEndEvidence = errors.New("dead-end evidence recorded")
-
-const deadEndAction = "exit"
 
 type runner struct {
 	in    Input
@@ -294,15 +300,36 @@ func (r *runner) afterEvidence(err error) (Stop, error) {
 }
 
 func (r *runner) deadEnd(d *journal.DeadEnd, cause ...int) (*Stop, error) {
-	d.Action = deadEndAction
+	switch {
+	case r.in.Bootloader == nil:
+		d.Action = journal.ActionExit
+	case d.Condition == journal.DeadEndBootLoop:
+		d.Action = journal.ActionClearSavedEntryAndReboot
+	default:
+		d.Action = journal.ActionClearSavedEntry
+	}
 	cause = slices.Clone(cause)
-	if _, err := r.append(d, cause...); err != nil {
+	e, err := r.append(d, cause...)
+	if err != nil {
 		return nil, err
+	}
+	cleared := false
+	if r.in.Bootloader != nil {
+		before, after, cerr := r.in.Bootloader.ClearSavedEntry()
+		entry := &journal.BootSavedEntry{Before: before, After: after}
+		if cerr != nil {
+			entry.Error = cerr.Error()
+		}
+		if _, err := r.append(entry, e.Seq); err != nil {
+			return nil, err
+		}
+		cleared = cerr == nil
 	}
 	if _, err := r.append(&journal.Shutdown{Reason: journal.ShutdownDeadEnd}); err != nil {
 		return nil, err
 	}
-	stop := &Stop{Reason: StopDeadEnd, DeadEnd: d}
+	// A failed clear never reboots: the next boot would land back in the tuning boot.
+	stop := &Stop{Reason: StopDeadEnd, DeadEnd: d, Reboot: d.Action == journal.ActionClearSavedEntryAndReboot && cleared}
 	for _, seq := range cause {
 		stop.Evidence = append(stop.Evidence, r.eventAt(seq))
 	}
@@ -324,7 +351,8 @@ func (r *runner) preflight() (*Stop, error) {
 			names = append(names, fmt.Sprintf("%s (%s)", c.Name, c.Detail))
 		}
 	}
-	if recorded := r.fold.context; recorded != nil {
+	// Check 8 reads the BIOS context through the SMU, which a failed check may make unreachable.
+	if recorded := r.fold.context; recorded != nil && len(failed) == 0 {
 		current, err := r.in.Machine.Host.BIOSContext()
 		if err != nil {
 			return nil, fmt.Errorf("read BIOS context: %w", err)

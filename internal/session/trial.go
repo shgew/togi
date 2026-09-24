@@ -143,7 +143,13 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) (*Stop, error) {
 		return tr.failedToRun(ctx, since, "setup failed", err)
 	}
 	s := running.Started()
-	started, err := r.append(&journal.TrialStart{Trial: tr.id, Scope: s.Scope, PID: s.PID, CPUs: s.CPUs, Argv: s.Argv}, intent.Seq)
+	ts := &journal.TrialStart{Trial: tr.id, Scope: s.Scope, PID: s.PID, CPUs: s.CPUs, Argv: s.Argv, Files: s.Files}
+	if len(s.Instances) > 1 {
+		for _, in := range s.Instances {
+			ts.Instances = append(ts.Instances, journal.TrialInstance{Core: in.Core, CPUs: in.CPUs, PID: in.PID, Scope: in.Scope})
+		}
+	}
+	started, err := r.append(ts, intent.Seq)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +159,11 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) (*Stop, error) {
 			return nil, err
 		}
 	}
-	res, err := running.Wait(ctx)
+	report := &trialReport{tr: tr}
+	res, err := running.Wait(ctx, report)
+	if report.err != nil {
+		return nil, report.err
+	}
 	if err != nil {
 		return tr.failedToRun(ctx, since, "trial runner failed", err)
 	}
@@ -166,7 +176,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) (*Stop, error) {
 	if err != nil {
 		return nil, err
 	}
-	end := &journal.TrialEnd{Trial: tr.id, DurationS: int(res.Ran.Seconds()), TctlMaxC: new(res.TctlMaxC)}
+	end := &journal.TrialEnd{Trial: tr.id, DurationS: int(res.Ran.Seconds()), TctlMaxC: res.TctlMaxC}
 	switch {
 	case len(res.Escaped) > 0:
 		end.Outcome, end.Escaped, end.Reason = journal.OutcomeInconclusive, res.Escaped, "backend thread outside allowed cpus"
@@ -184,8 +194,36 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) (*Stop, error) {
 	default:
 		end.Outcome = journal.OutcomePass
 	}
-	_, err = r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...)
-	return nil, err
+	if _, err := r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...); err != nil {
+		return nil, err
+	}
+	if end.Outcome == journal.OutcomePass {
+		if err := r.in.Machine.Trials.Passed(tr.id); err != nil {
+			return nil, fmt.Errorf("mark trial %s passed: %w", tr.id, err)
+		}
+	}
+	return nil, nil
+}
+
+// trialReport records what the runner reports during Wait; the first append error ends the trial after Wait returns.
+type trialReport struct {
+	tr  *trialRun
+	err error
+}
+
+func (p *trialReport) Progress(detail string) {
+	p.record(&journal.TrialProgress{Trial: p.tr.id, Detail: detail})
+}
+
+func (p *trialReport) Sample(s machine.Sample) {
+	p.record(&journal.TrialSample{Trial: p.tr.id, Warning: s.Warning, PID: s.PID, TID: s.TID, CPU: s.CPU})
+}
+
+func (p *trialReport) record(payload journal.Payload) {
+	if p.err != nil {
+		return
+	}
+	_, p.err = p.tr.r.append(payload, p.tr.start)
 }
 
 func (r *runner) durationS(t tuner.Trial) int {

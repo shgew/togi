@@ -87,7 +87,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitError
 	}
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	stop, err := session.Simulate(ctx, session.SimInput{Config: cfg, ConfigPath: g.config, ConfigFile: file, Dir: dir, Machine: m, Log: stderr, Rotations: rotations})
 	switch {

@@ -25,7 +25,8 @@ type SimInput struct {
 	Machine    *sim.Machine
 	Log        io.Writer
 	// Rotations is the number of clean rotations of one profile after which the run stops; 0 runs guard endlessly.
-	Rotations int
+	Rotations  int
+	Bootloader Bootloader
 }
 
 // Resume continues the simulated machine after the journal in dir and its archives: their boots are counted and the
@@ -87,7 +88,7 @@ func simulateBoot(ctx context.Context, in SimInput, wrap func(*journal.Journal) 
 	if wrap != nil {
 		jr = wrap(j)
 	}
-	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, ConfigFile: in.ConfigFile, Boot: boot, Journal: jr, Machine: seams, Rotations: in.Rotations})
+	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, ConfigFile: in.ConfigFile, Boot: boot, Journal: jr, Machine: seams, Rotations: in.Rotations, Bootloader: in.Bootloader})
 	if cerr := j.Close(); err == nil && cerr != nil {
 		return Stop{}, cerr
 	}

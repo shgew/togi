@@ -34,6 +34,8 @@ type running struct {
 	escape  bool
 }
 
+func (trials) Passed(string) error { return nil }
+
 func (t trials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Running, error) {
 	m := t.m
 	if m.crashed {
@@ -73,7 +75,7 @@ func (t trials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Runn
 
 func (r *running) Started() machine.Started { return r.started }
 
-func (r *running) Wait(ctx context.Context) (machine.Result, error) {
+func (r *running) Wait(ctx context.Context, _ machine.Reporter) (machine.Result, error) {
 	m := r.m
 	if m.crashed || r.boot != m.boot {
 		return machine.Result{}, machine.ErrCrashed
@@ -91,7 +93,7 @@ func (r *running) Wait(ctx context.Context) (machine.Result, error) {
 	}
 	res := machine.Result{Ran: spec.Duration}
 	if len(spec.Cores) > 0 {
-		res.TctlMaxC = 62 + m.trialRNG("tctl", spec, spec.Cores[0]).IntN(15)
+		res.TctlMaxC = new(62 + m.trialRNG("tctl", spec, spec.Cores[0]).IntN(15))
 	}
 	if r.escape && len(spec.Cores) > 0 {
 		res.Escaped = []int{spec.Cores[0] + 2*m.cfg.Cores}

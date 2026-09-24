@@ -50,6 +50,9 @@ type Started struct {
 	Scope string
 	CPUs  []int
 	Argv  []string
+	// Files are the config files written into the trial directory, relative to it.
+	Files     []string
+	Instances []Instance
 	// Schedule is the SIGSTOP/SIGCONT plan the runner follows; nil outside R3 and R4.
 	Schedule *LoadSchedule
 }
@@ -63,19 +66,42 @@ type Result struct {
 	// Inconclusive, when not empty, says why the trial proves nothing.
 	Inconclusive string
 	// Escaped lists logical CPUs a backend thread was seen on outside the trial's CPUs.
-	Escaped  []int
-	TctlMaxC int
+	Escaped []int
+	// TctlMaxC is nil when there is no Tctl sensor.
+	TctlMaxC *int
 	Stops    int
 	Conts    int
 }
 
+type Instance struct {
+	Core  int
+	CPUs  []int
+	PID   int
+	Scope string
+}
+
+type Sample struct {
+	Warning string
+	PID     int
+	TID     int
+	CPU     int
+}
+
+// Reporter is called only on the goroutine that called Wait.
+type Reporter interface {
+	Progress(detail string)
+	Sample(s Sample)
+}
+
 type Running interface {
 	Started() Started
-	Wait(ctx context.Context) (Result, error)
+	Wait(ctx context.Context, report Reporter) (Result, error)
 }
 
 type Trials interface {
 	Start(ctx context.Context, spec TrialSpec) (Running, error)
+	// Passed marks a passed trial's work directory so retention may prune it.
+	Passed(id string) error
 }
 
 type MCE struct {

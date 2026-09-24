@@ -21,6 +21,12 @@ func TestOpenFinishesArchive(t *testing.T) {
 	if err := j.Close(); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(dir, "trials", "0001"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "trials", "0001", "x"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	recorded, err := os.ReadFile(filepath.Join(dir, eventsFile))
 	if err != nil {
 		t.Fatal(err)
@@ -36,6 +42,12 @@ func TestOpenFinishesArchive(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, stateFile)); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("state file after the archive: %v", err)
+	}
+	if x, err := os.ReadFile(filepath.Join(dir, "archive", "20261002T011407Z-trials", "0001", "x")); err != nil || string(x) != "x" {
+		t.Fatalf("archived trial file: %v, %q", err, x)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "trials")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("trials directory after the archive: %v", err)
 	}
 
 	appendAll(t, j, []Payload{sessionStart()})

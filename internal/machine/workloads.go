@@ -10,7 +10,9 @@ const (
 )
 
 type Workload struct {
-	ID      string
+	ID string
+	// Base is the ID of the R1 or R2 workload this one derives from.
+	Base    string
 	Backend Backend
 	Label   string
 	Threads int
@@ -32,11 +34,16 @@ var baseR2 = []Workload{
 var catalog = buildCatalog()
 
 func buildCatalog() map[Regime][]Workload {
+	for _, base := range [][]Workload{baseR1, baseR2} {
+		for i := range base {
+			base[i].Base = base[i].ID
+		}
+	}
 	mixed := append(append([]Workload{}, baseR1...), baseR2...)
 	derive := func(base []Workload, idSuffix, labelSuffix string, threads int) []Workload {
 		out := make([]Workload, len(base))
 		for i, w := range base {
-			out[i] = Workload{ID: w.ID + idSuffix, Backend: w.Backend, Label: w.Label + labelSuffix, Threads: threads}
+			out[i] = Workload{ID: w.ID + idSuffix, Base: w.ID, Backend: w.Backend, Label: w.Label + labelSuffix, Threads: threads}
 		}
 		return out
 	}
@@ -46,6 +53,7 @@ func buildCatalog() map[Regime][]Workload {
 		w := baseR1[d.w]
 		r4[i] = Workload{
 			ID:      fmt.Sprintf("%s-duty%d", w.ID, d.pct),
+			Base:    w.ID,
 			Backend: w.Backend,
 			Label:   fmt.Sprintf("%s %d%% duty", w.Label, d.pct),
 			Threads: 1,
