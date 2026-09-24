@@ -47,7 +47,7 @@ in
         specialisation.shycler.configuration = {
           system.nixos.tags = [ "shycler" ];
           boot.loader.grub.configurationName = "shycler";
-          systemd.defaultUnit = "multi-user.target";
+          systemd.defaultUnit = lib.mkForce "multi-user.target";
           boot.kernel.sysctl = {
             "kernel.panic" = 10;
             "kernel.panic_on_oops" = 1;
