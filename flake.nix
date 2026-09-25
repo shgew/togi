@@ -12,7 +12,10 @@
   outputs =
     inputs@{ flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
-      systems = [ "x86_64-linux" ];
+      systems = [
+        "x86_64-linux"
+        "aarch64-darwin"
+      ];
 
       flake.nixosModules.default = import ./nix/module.nix { inherit (inputs) self; };
 
@@ -42,7 +45,7 @@
               ];
             };
             vendorHash = "sha256-pbA/AlBz3cQYRTMnQ/qBPcinYOKokrBLNhkbRTq54gE=";
-            nativeCheckInputs = [ pkgs.util-linux ];
+            nativeCheckInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
             ldflags = [
               "-X code.marleb.org/shgew/shycler.rev=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dev"}"
             ];
@@ -69,10 +72,6 @@
 
           checks = {
             package = config.packages.default;
-            vm = import ./nix/vm-test.nix {
-              inherit pkgs;
-              inherit (inputs) self;
-            };
             lint = config.packages.default.overrideAttrs (old: {
               pname = "shycler-lint";
               nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.golangci-lint ];
@@ -86,6 +85,12 @@
               installPhase = "mkdir -p $out";
               dontFixup = true;
             });
+          }
+          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            vm = import ./nix/vm-test.nix {
+              inherit pkgs;
+              inherit (inputs) self;
+            };
           };
 
           formatter = pkgs.treefmt.withConfig {

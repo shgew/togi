@@ -133,6 +133,10 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 }
 
 func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, rotations int, stderr io.Writer, renderer journal.Renderer) int {
+	if err := hardware.CheckPlatform(); err != nil {
+		fmt.Fprintf(stderr, "shycler run: %v\n", err)
+		return exitError
+	}
 	boot, err := detect.BootID()
 	if err != nil {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
@@ -215,7 +219,7 @@ func defectPrompt(stderr io.Writer) func(defect.Finding) (bool, error) {
 	}
 	isTerminal := func(file *os.File) bool {
 		var termios syscall.Termios
-		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&termios)))
+		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), getTermios, uintptr(unsafe.Pointer(&termios)))
 		return errno == 0
 	}
 	if !isTerminal(os.Stdin) || !isTerminal(out) {
