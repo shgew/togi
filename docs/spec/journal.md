@@ -118,11 +118,11 @@ The run log and `shycler events` color the whole human-readable line according t
 | Moment | Color |
 |---|---|
 | Trial ends with failure (`trial.end` outcome `failure`), `failure`, `crash.detected` | Red |
-| Dead end (`deadend`), refusal (when it has an event) | Red, bold |
+| Dead end (`deadend` event and `run` summary), refusal (when it has an event) | Red, bold |
 | Search step passed (R1 and R2 at one offset passed; the following `tuner.decision` with `decision: step_deeper`) | Green |
-| Core confirmed, edge reported (`core.phase` to `confirmed`, or `search` to `confirmation` for a candidate edge) | Green, bold |
+| Core confirmed, edge reported (`core.phase` from `confirmation` to `confirmed`, `regain` to `confirmed` without `backoff: true`, or `search` to `confirmation` for a candidate edge) | Green, bold |
 | Clean guard rotation (`guard.rotation` end with `clean: true`), tier earned (`tier.change` to a higher tier) | Green, bold |
-| Proven or suspect backoff (`tuner.decision` with `decision: backoff` or `suspect_backoff`) | Yellow |
+| Proven or suspect backoff (`tuner.decision` with `decision: backoff` or `suspect_backoff`, or a failed `regain` to `confirmed` with `backoff: true`) | Yellow |
 | Inconclusive trial (`trial.end` outcome `inconclusive`) | Dim |
 | Everything else, including a single trial passing | Plain |
 

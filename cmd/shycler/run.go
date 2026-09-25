@@ -148,7 +148,8 @@ func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.
 	case session.StopSignal, session.StopRotations:
 		return exitOK
 	case session.StopDeadEnd:
-		fmt.Fprintf(stderr, "shycler: dead end %s: %s\n", stop.DeadEnd.Condition, stop.DeadEnd.Detail)
+		line := fmt.Sprintf("shycler: dead end %s: %s", stop.DeadEnd.Condition, stop.DeadEnd.Detail)
+		fmt.Fprintln(stderr, renderer.Text(journal.Event{Kind: journal.KindDeadEnd, Data: stop.DeadEnd}, line))
 		for _, e := range stop.Evidence {
 			fmt.Fprintln(stderr, renderer.Text(e, "  evidence: "+journal.FormatLine(e, time.Local)))
 		}

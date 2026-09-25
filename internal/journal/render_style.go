@@ -43,6 +43,9 @@ func StyleOf(e Event) Style {
 			return Yellow
 		}
 	case *CorePhase:
+		if p.From == PhaseRegain && p.To == PhaseConfirmed && p.Backoff {
+			return Yellow
+		}
 		if p.To == PhaseConfirmation && p.From == PhaseSearch || p.To == PhaseConfirmed && (p.From == PhaseConfirmation || p.From == PhaseRegain) {
 			return GreenBold
 		}

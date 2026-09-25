@@ -568,6 +568,7 @@ type CorePhase struct {
 	Pass          *int   `json:"pass"`
 	FailedMark    *int   `json:"failed_mark"`
 	UnprovenDepth int    `json:"unproven_depth,omitempty"`
+	Backoff       bool   `json:"backoff,omitempty"`
 	Reason        string `json:"reason"`
 }
 

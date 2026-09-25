@@ -56,6 +56,9 @@ func TestRunDeadEndEvidencePriority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if got := string(data); !strings.HasPrefix(got, "<3>\x1b[1;31mshycler: dead end smu: failed\x1b[0m\n") {
+		t.Fatalf("summary not decorated as a red-bold priority-err line: %q", got)
+	}
 	if got := string(data); !strings.Contains(got, "\n<3>\x1b[31m  evidence: ") || !strings.Contains(got, "\x1b[0m\n") {
 		t.Fatalf("evidence not decorated as a whole line: %q", got)
 	}
