@@ -55,8 +55,7 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "shycler events: no journal at %s\n", filepath.Join(g.stateDir, "events.jsonl"))
 		return exitError
 	}
-	var incompatible *journal.IncompatibleError
-	if errors.As(err, &incompatible) {
+	if incompatible, ok := errors.AsType[*journal.IncompatibleError](err); ok {
 		fmt.Fprintln(stderr, journal.NewRenderer(stderr, os.Getenv).Styled(journal.RedBold, "shycler events: "+incompatible.Error()))
 		return exitError
 	}

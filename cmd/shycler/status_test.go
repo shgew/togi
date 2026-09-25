@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"code.marleb.org/shgew/shycler/internal/config"
@@ -41,6 +43,7 @@ func TestStatusAndCert(t *testing.T) {
 		t.Fatalf("status lacks %q:\n%s", want, status)
 	}
 	checkRows(t, "status", status, regexp.MustCompile(`(?m)^(\d\d)  +\d  +(-?\d+)  `), st)
+	golden(t, "status", status)
 
 	stdout.Reset()
 	if code := cli([]string{"--state-dir", dir, "cert"}, &stdout, &stderr); code != exitOK {
@@ -57,6 +60,7 @@ func TestStatusAndCert(t *testing.T) {
 		}
 	}
 	checkRows(t, "cert", cert, regexp.MustCompile(`(?m)^  (\d\d)  +(-?\d+)  `), st)
+	golden(t, "cert", strings.ReplaceAll(cert, fmt.Sprintf("%x", sha256.Sum256(raw)), "<journal sha256>"))
 
 	events, _, err := journal.Read(dir)
 	if err != nil {
@@ -137,15 +141,54 @@ func TestRateRoundsUp(t *testing.T) {
 	}
 }
 
+var (
+	simulatedOnce  sync.Once
+	simulatedFiles map[string][]byte
+	simulatedErr   error
+)
+
 func simulated(t *testing.T, dir string) {
 	t.Helper()
-	m, err := sim.New(sim.Config{Seed: 1})
-	if err != nil {
-		t.Fatal(err)
+	simulatedOnce.Do(func() {
+		src := t.TempDir()
+		m, err := sim.New(sim.Config{Seed: 1})
+		if err != nil {
+			simulatedErr = err
+			return
+		}
+		stop, err := simrun.Simulate(context.Background(), simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Rotations: 1})
+		if err != nil || stop.Reason != session.StopRotations {
+			simulatedErr = fmt.Errorf("simulate: %+v, %w", stop, err)
+			return
+		}
+		simulatedFiles = make(map[string][]byte)
+		simulatedErr = filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || !d.Type().IsRegular() {
+				return err
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(src, path)
+			if err != nil {
+				return err
+			}
+			simulatedFiles[rel] = data
+			return nil
+		})
+	})
+	if simulatedErr != nil {
+		t.Fatal(simulatedErr)
 	}
-	stop, err := simrun.Simulate(context.Background(), simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1})
-	if err != nil || stop.Reason != session.StopRotations {
-		t.Fatalf("simulate: %+v, %v", stop, err)
+	for rel, data := range simulatedFiles {
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

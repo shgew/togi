@@ -1,0 +1,28 @@
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: nix-latest
+    env:
+      NIX_CONFIG: |
+        experimental-features = nix-command flakes
+        system-features = nixos-test benchmark big-parallel kvm
+    steps:
+      - name: Install Node for JavaScript actions
+        run: nix profile add nixpkgs#nodejs_24
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Give build users KVM
+        run: chmod 0666 /dev/kvm
+      - name: just check
+        run: nix develop --command just check
+      - name: just vuln
+        run: nix develop --command just vuln

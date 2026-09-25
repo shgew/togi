@@ -29,8 +29,8 @@ func (h *harness) expect(want ...string) {
 
 func lastPayload[P journal.Payload](h *harness) P {
 	h.t.Helper()
-	for i := len(h.events) - 1; i >= 0; i-- {
-		if p, ok := h.events[i].Data.(P); ok {
+	for _, e := range slices.Backward(h.events) {
+		if p, ok := e.Data.(P); ok {
 			return p
 		}
 	}

@@ -473,9 +473,9 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 	if err != nil {
 		return Event{}, fmt.Errorf("append %s: %w", kind, err)
 	}
-	line := append(raw, '\n')
-	e.Raw = line[:len(line)-1]
-	if _, err := j.f.Write(line); err != nil {
+	raw = append(raw, '\n')
+	e.Raw = raw[:len(raw)-1]
+	if _, err := j.f.Write(raw); err != nil {
 		return Event{}, fmt.Errorf("append %s: %w", kind, err)
 	}
 	if j.opts.Sync && (kind == KindSMUIntent || kind == KindTrialIntent) {

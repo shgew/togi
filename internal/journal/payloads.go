@@ -146,8 +146,7 @@ type SessionNotice struct {
 
 func (*SessionNotice) Kind() Kind { return KindSessionNotice }
 func (p *SessionNotice) Message() string {
-	switch p.Notice {
-	case NoticeNonzeroBaseline:
+	if p.Notice == NoticeNonzeroBaseline {
 		return fmt.Sprintf("baseline has nonzero offsets on cores %s; BIOS CO 0 is recommended for tuning; starting from the baseline", coreList(p.Cores))
 	}
 	return fmt.Sprintf("notice %s", p.Notice)

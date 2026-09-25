@@ -126,6 +126,7 @@ func TestRegimeProgressRespectsTrialDuration(t *testing.T) {
 }
 
 func transcript(t *testing.T, seed uint64) []string {
+	t.Helper()
 	m := newMachine(t, Config{Seed: seed, Cores: 4})
 	s := m.Seams()
 	var out []string
@@ -263,6 +264,7 @@ func TestBankTypes(t *testing.T) {
 func TestFaults(t *testing.T) {
 	t.Parallel()
 	fresh := func(t *testing.T) (*Machine, machine.Machine) {
+		t.Helper()
 		m := newMachine(t, Config{Seed: 5, Cores: 2, Edges: flat(2, -10, -10)})
 		return m, m.Seams()
 	}

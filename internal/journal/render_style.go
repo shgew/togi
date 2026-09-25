@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -96,9 +97,8 @@ func NewRenderer(stream io.Writer, getenv func(string) string) Renderer {
 	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
 		device, inode, paired := strings.Cut(getenv("JOURNAL_STREAM"), ":")
 		if paired {
-			dev, devErr := strconv.ParseUint(device, 10, 64)
 			ino, inoErr := strconv.ParseUint(inode, 10, 64)
-			r.journald = devErr == nil && inoErr == nil && uint64(stat.Dev) == dev && stat.Ino == ino
+			r.journald = device == fmt.Sprint(stat.Dev) && inoErr == nil && stat.Ino == ino
 		}
 	}
 	r.color = getenv("NO_COLOR") == "" && (info.Mode()&os.ModeCharDevice != 0 || r.journald)

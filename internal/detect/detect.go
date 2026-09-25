@@ -20,7 +20,8 @@ type Message struct {
 }
 
 type Kernel struct {
-	cpuCore map[int]int
+	cpuCore    map[int]int
+	journalctl func(args []string) (stdout, stderr []byte, exitCode int, err error)
 }
 
 func NewKernel(cores []machine.CoreInfo) *Kernel {
@@ -30,7 +31,18 @@ func NewKernel(cores []machine.CoreInfo) *Kernel {
 			cpuCore[cpu] = core.Core
 		}
 	}
-	return &Kernel{cpuCore: cpuCore}
+	return &Kernel{cpuCore: cpuCore, journalctl: runJournalctl}
+}
+
+func runJournalctl(args []string) (stdout, stderr []byte, exitCode int, err error) {
+	cmd := exec.Command("journalctl", args...)
+	var errOut bytes.Buffer
+	cmd.Stderr = &errOut
+	out, err := cmd.Output()
+	if exit, ok := errors.AsType[*exec.ExitError](err); ok && exit.Exited() {
+		return out, errOut.Bytes(), exit.ExitCode(), nil
+	}
+	return out, errOut.Bytes(), 0, err
 }
 
 func (k *Kernel) MCEs(boot string, since time.Time) ([]machine.MCE, error) {
@@ -38,18 +50,15 @@ func (k *Kernel) MCEs(boot string, since time.Time) ([]machine.MCE, error) {
 	if !since.IsZero() {
 		args = append(args, "--since", fmt.Sprintf("@%d", since.Unix()))
 	}
-	cmd := exec.Command("journalctl", args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	out, stderr, code, err := k.journalctl(args)
 	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 1 &&
-			(strings.Contains(stderr.String(), "No journal boot entry found") ||
-				len(out) == 0 && stderr.Len() == 0) {
+		return nil, fmt.Errorf("read kernel log of boot %s: %w: %s", boot, err, bytes.TrimSpace(stderr))
+	}
+	if code != 0 {
+		if code == 1 && (bytes.Contains(stderr, []byte("No journal boot entry found")) || len(out) == 0 && len(stderr) == 0) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("read kernel log of boot %s: %w: %s", boot, err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("read kernel log of boot %s: exit status %d: %s", boot, code, bytes.TrimSpace(stderr))
 	}
 
 	var msgs []Message

@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
 	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/google/go-cmp/cmp"
 )
 
 type call struct{ command, arg uint32 }
@@ -78,8 +78,12 @@ func TestTopologyAndEncoding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := d.Topology(); len(got) != 16 || got[9].CCD != 1 || !reflect.DeepEqual(got[9].CPUs, []int{9, 25}) {
+	got := d.Topology()
+	if len(got) != 16 || got[9].CCD != 1 {
 		t.Fatalf("topology: %+v", got)
+	}
+	if diff := cmp.Diff([]int{9, 25}, got[9].CPUs); diff != "" {
+		t.Fatalf("core 9 cpus mismatch (-want +got):\n%s", diff)
 	}
 	if check := d.CheckSlotMapping(); !check.OK || check.Detail != "CCD0 fuse 0x00: cores 00-07 on slots 0-7; CCD1 fuse 0x00: cores 08-15 on slots 0-7" {
 		t.Fatalf("mapping: %+v", check)

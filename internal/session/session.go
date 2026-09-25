@@ -3,7 +3,6 @@ package session
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -99,7 +98,7 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 		if err := journal.Compatible(journal.BuildOf(events), Build()); err != nil {
 			if r.in.Bootloader != nil {
 				if _, _, clearErr := r.in.Bootloader.ClearSavedEntry(); clearErr != nil {
-					return Stop{}, fmt.Errorf("clear GRUB saved entry after incompatible journal: %w: %v", err, clearErr)
+					return Stop{}, fmt.Errorf("clear GRUB saved entry after incompatible journal: %w: %w", err, clearErr)
 				}
 			}
 			return Stop{}, err
@@ -328,8 +327,7 @@ func (r *runner) afterEvidence(err error) (Stop, error) {
 }
 
 func (r *runner) resumeDeadEnd(events []journal.Event) (*Stop, error) {
-	for i := len(events) - 1; i >= 0; i-- {
-		e := events[i]
+	for i, e := range slices.Backward(events) {
 		if _, ok := e.Data.(*journal.DeadEnd); !ok {
 			continue
 		}
@@ -442,17 +440,26 @@ func (r *runner) preflight() (*Stop, error) {
 }
 
 func compareContext(recorded, current machine.BIOSContext) (string, bool) {
-	var a, b map[string]any
-	ra, _ := json.Marshal(recorded)
-	rb, _ := json.Marshal(current)
-	_ = json.Unmarshal(ra, &a)
-	_ = json.Unmarshal(rb, &b)
-	for _, field := range []string{"bios_version", "board", "cpu_model", "microcode", "boost_limit_mhz"} {
-		if a[field] != b[field] {
-			return fmt.Sprintf("%s is %v; the session recorded %v", field, b[field], a[field]), false
+	for _, f := range []struct {
+		name            string
+		recorded, found any
+	}{
+		{"bios_version", recorded.BIOSVersion, journalString(current.BIOSVersion)},
+		{"board", recorded.Board, journalString(current.Board)},
+		{"cpu_model", recorded.CPUModel, journalString(current.CPUModel)},
+		{"microcode", recorded.Microcode, journalString(current.Microcode)},
+		{"boost_limit_mhz", recorded.BoostLimitMHz, current.BoostLimitMHz},
+	} {
+		if f.recorded != f.found {
+			return fmt.Sprintf("%s is %v; the session recorded %v", f.name, f.found, f.recorded), false
 		}
 	}
 	return "matches the session", true
+}
+
+// journalString replaces each invalid UTF-8 byte with U+FFFD, as the journal's JSON encoding does to recorded values.
+func journalString(s string) string {
+	return string([]rune(s))
 }
 
 func (r *runner) startSession() error {

@@ -3,8 +3,9 @@ package journal
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestInterruptedStateWriteKeepsPrevious(t *testing.T) {
@@ -47,8 +48,8 @@ func TestDiffFields(t *testing.T) {
 	b := a
 	b.LastSeq = 5
 	b.Cores = []CoreState{{Core: 0, Offset: -6}}
-	if d := DiffFields(a, b); !reflect.DeepEqual(d, []string{"cores", "last_seq"}) {
-		t.Fatalf("DiffFields = %v, want [cores last_seq]", d)
+	if diff := cmp.Diff([]string{"cores", "last_seq"}, DiffFields(a, b)); diff != "" {
+		t.Fatalf("DiffFields mismatch (-want +got):\n%s", diff)
 	}
 }
 

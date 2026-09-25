@@ -11,7 +11,7 @@ _default:
 # Run the Go test suite with optional test flags
 [group('test')]
 test *args:
-    {{ dev }} go test ./... "$@"
+    {{ dev }} go test -shuffle=on ./... "$@"
 
 # Run one package (`just focus ./internal/tuner`) or test pattern (`just focus TestGuard/crash`)
 [group('test')]
@@ -23,10 +23,20 @@ focus +args:
 hardware *args:
     {{ dev }} go test -tags hardware ./... "$@"
 
+# Fuzz the journal parser for the given time (`just fuzz 5m`); failures land in internal/journal/testdata/fuzz
+[group('test')]
+fuzz time="1m":
+    {{ dev }} go test -run '^$' -fuzz '^FuzzParse$' -fuzztime "$1" ./internal/journal
+
 # Lint all Go packages with optional lint flags
 [group('quality')]
 lint *args:
     {{ dev }} golangci-lint run ./... "$@"
+
+# Report known vulnerabilities in the dependencies and standard library code this module calls
+[group('quality')]
+vuln:
+    {{ dev }} govulncheck ./...
 
 # Format Go, Nix and this justfile in place
 [group('quality')]

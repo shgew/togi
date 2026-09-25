@@ -3,12 +3,12 @@ package mprime
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
 	"code.marleb.org/shgew/shycler/internal/backend"
 	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/google/go-cmp/cmp"
 )
 
 func fakePackage(t *testing.T) string {
@@ -48,8 +48,8 @@ func TestPrepare(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := backend.Launch{Argv: []string{filepath.Join(pkg, "bin/mprime"), "-t", "-W" + dir}, Files: []string{"prime.txt", "local.txt"}, Watch: []string{"results.txt"}}
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("launch = %#v, want %#v", got, want)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("launch mismatch (-want +got):\n%s", diff)
 			}
 			fft := strings.Split(tc.fft, ",")
 			flags := strings.Split(tc.flags, ",")

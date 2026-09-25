@@ -3,12 +3,12 @@ package ycruncher
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
 	"code.marleb.org/shgew/shycler/internal/backend"
 	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/google/go-cmp/cmp"
 )
 
 func fakePackage(t *testing.T, zen5 bool) string {
@@ -60,8 +60,8 @@ func TestPrepare(t *testing.T) {
 			}
 			cfg := filepath.Join(dir, "stress.cfg")
 			want := backend.Launch{Argv: []string{filepath.Join(pkg, "lib/y-cruncher/Binaries", tc.binary), "skip-warnings", "pause:-2", "status:none", "config", cfg}, Files: []string{"stress.cfg"}}
-			if !reflect.DeepEqual(launch, want) {
-				t.Fatalf("launch = %#v, want %#v", launch, want)
+			if diff := cmp.Diff(want, launch); diff != "" {
+				t.Fatalf("launch mismatch (-want +got):\n%s", diff)
 			}
 			cpus := "2"
 			if len(tc.cpus) > 1 {
@@ -115,15 +115,15 @@ func TestClassify(t *testing.T) {
 		}
 	}
 	var details []string
-	for _, line := range strings.Split("Running BKT: Passed\rRunning SFTv4: Passed", "\r") {
+	for line := range strings.SplitSeq("Running BKT: Passed\rRunning SFTv4: Passed", "\r") {
 		result := y.Classify(line)
 		if result.Kind != backend.Progress {
 			t.Fatalf("carriage-return progress %q: %#v", line, result)
 		}
 		details = append(details, result.Detail)
 	}
-	if !reflect.DeepEqual(details, []string{"BKT passed", "SFTv4 passed"}) {
-		t.Errorf("carriage-return progress = %q", details)
+	if diff := cmp.Diff([]string{"BKT passed", "SFTv4 passed"}, details); diff != "" {
+		t.Errorf("carriage-return progress mismatch (-want +got):\n%s", diff)
 	}
 	for _, file := range []struct {
 		name string

@@ -1,18 +1,15 @@
-//go:build linux
-
 package trial
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"code.marleb.org/shgew/shycler/internal/backend"
@@ -28,7 +25,10 @@ type Options struct {
 	Hwmon                                              string
 }
 
-type Runner struct{ options Options }
+type Runner struct {
+	options Options
+	host    processHost
+}
 
 func New(o Options) *Runner {
 	if o.SampleInterval <= 0 {
@@ -46,7 +46,7 @@ func New(o Options) *Runner {
 	if o.Hwmon == "" {
 		o.Hwmon = "/sys/class/hwmon"
 	}
-	return &Runner{options: o}
+	return &Runner{options: o, host: newOSHost()}
 }
 
 type instance struct {
@@ -65,6 +65,7 @@ type running struct {
 	spec         machine.TrialSpec
 	backend      backend.Backend
 	options      Options
+	host         processHost
 	started      machine.Started
 	instances    []*instance
 	events       chan streamEvent
@@ -92,7 +93,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return nil, fmt.Errorf("create trial directory %s: %w", root, err)
 	}
-	t := &running{spec: spec, backend: b, options: r.options, events: make(chan streamEvent, 1024)}
+	t := &running{spec: spec, backend: b, options: r.options, host: r.host, events: make(chan streamEvent, 1024)}
 	t.started.Scope = "shycler-trial-" + spec.ID
 	t.started.CPUs = slices.Clone(spec.CPUs)
 	t.started.Schedule = machine.ScheduleFor(spec)
@@ -134,75 +135,47 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 		if !r.options.NoScope {
 			argv = scopeArgv(scope, cpus, launch.Argv...)
 		}
-		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-		cmd.Dir = dir
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
-		in, err := os.Open(os.DevNull)
-		if err != nil {
-			t.abort()
-			return nil, fmt.Errorf("open stdin: %w", err)
-		}
 		out, err := os.OpenFile(filepath.Join(dir, "stdout.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
-			in.Close()
 			t.abort()
 			return nil, fmt.Errorf("open stdout log: %w", err)
 		}
 		erlog, err := os.OpenFile(filepath.Join(dir, "stderr.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
-			in.Close()
 			out.Close()
 			t.abort()
 			return nil, fmt.Errorf("open stderr log: %w", err)
 		}
-		stdout, err := cmd.StdoutPipe()
+		p, err := t.host.Start(ctx, argv, dir)
 		if err != nil {
-			in.Close()
-			out.Close()
-			erlog.Close()
-			t.abort()
-			return nil, fmt.Errorf("pipe stdout: %w", err)
-		}
-		stderr, err := cmd.StderrPipe()
-		if err != nil {
-			in.Close()
-			out.Close()
-			erlog.Close()
-			t.abort()
-			return nil, fmt.Errorf("pipe stderr: %w", err)
-		}
-		cmd.Stdin = in
-		if err := cmd.Start(); err != nil {
-			in.Close()
 			out.Close()
 			erlog.Close()
 			t.abort()
 			return nil, fmt.Errorf("start %s: %w", scope, err)
 		}
-		in.Close()
-		inst := &instance{Instance: machine.Instance{Core: core, CPUs: slices.Clone(cpus), PID: cmd.Process.Pid, Scope: scope}, resumed: time.Now()}
+		inst := &instance{Instance: machine.Instance{Core: core, CPUs: slices.Clone(cpus), PID: p.PID(), Scope: scope}, resumed: time.Now()}
 		for _, name := range launch.Watch {
 			inst.watch = append(inst.watch, watchFile{path: filepath.Join(dir, name)})
 		}
 		t.instances = append(t.instances, inst)
 		t.started.Instances = append(t.started.Instances, inst.Instance)
 		if i == 0 {
-			t.started.PID = cmd.Process.Pid
+			t.started.PID = p.PID()
 			t.started.Argv = slices.Clone(launch.Argv)
 		}
 		done := make(chan struct{}, 2)
-		go t.readStream(i, stdout, out, false, done)
-		go t.readStream(i, stderr, erlog, true, done)
-		go func(index int, c *exec.Cmd) {
+		go t.readStream(i, p.Stdout(), out, false, done)
+		go t.readStream(i, p.Stderr(), erlog, true, done)
+		go func(index int, p process) {
 			<-done
 			<-done
-			t.events <- streamEvent{index: index, exit: true, err: c.Wait()}
-		}(i, cmd)
+			t.events <- streamEvent{index: index, exit: true, err: p.Wait()}
+		}(i, p)
 		if spec.Regime == machine.R6 {
 			if !r.options.NoScope {
 				t.awaitScope(ctx, inst)
 			}
-			if err := toggleInstance(inst, true, time.Now()); err != nil {
+			if err := t.toggle(inst, true, time.Now()); err != nil {
 				t.abort()
 				return nil, fmt.Errorf("stop initial R6 instance on core %02d: %w", core, err)
 			}
@@ -219,7 +192,7 @@ func (t *running) awaitScope(ctx context.Context, inst *instance) {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if ready(inst, false) {
+		if t.inScope(inst) {
 			inst.ready = true
 			return
 		}
@@ -250,15 +223,6 @@ func scopeArgv(unit string, cpus []int, argv ...string) []string {
 	}
 	a = append(a, "--scope", "--quiet", "--collect", "--unit", unit, "-p", "AllowedCPUs="+joinCPUs(cpus), "-p", "DefaultDependencies=no", "--")
 	return append(a, argv...)
-}
-
-func CheckSystemdRun() (string, error) {
-	argv := scopeArgv(fmt.Sprintf("shycler-preflight-%d", os.Getpid()), []int{0}, "/bin/sh", "-c", "exit 0")
-	out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("systemd-run: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return "scope confined to cpu 0 created", nil
 }
 
 func (r *Runner) Passed(id string) error {
@@ -328,7 +292,7 @@ func (t *running) readStream(i int, src io.Reader, log *os.File, stderr bool, do
 			if len(pending) > 0 {
 				t.events <- streamEvent{index: i, line: string(pending), stderr: stderr}
 			}
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				t.events <- streamEvent{index: i, err: fmt.Errorf("read backend output: %w", err)}
 			}
 			t.events <- streamEvent{index: i, stderr: stderr, eof: true}

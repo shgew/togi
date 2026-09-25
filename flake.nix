@@ -44,7 +44,7 @@
                 ./tools
               ];
             };
-            vendorHash = "sha256-pbA/AlBz3cQYRTMnQ/qBPcinYOKokrBLNhkbRTq54gE=";
+            vendorHash = "sha256-XXgXzv6MARTUse1lf4RAaMp9xg8FfysaPMM7wq5zdlw=";
             nativeCheckInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
             ldflags = [
               "-X code.marleb.org/shgew/shycler.rev=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dev"}"
@@ -53,7 +53,7 @@
             checkPhase = ''
               runHook preCheck
               export GOFLAGS=''${GOFLAGS//-trimpath/}
-              go test -p $NIX_BUILD_CORES ./...
+              go test -p $NIX_BUILD_CORES -race -shuffle=on ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "-tags integration"} ./...
               runHook postCheck
             '';
             meta = {
@@ -70,6 +70,7 @@
               pkgs.golangci-lint
               pkgs.just
               pkgs.nixfmt
+              pkgs.govulncheck
             ];
             SHYCLER_DEV_SHELL = "1";
           };

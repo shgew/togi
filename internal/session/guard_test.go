@@ -2,13 +2,13 @@ package session
 
 import (
 	"fmt"
-	"reflect"
 	"slices"
 	"testing"
 
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/machine"
 	"code.marleb.org/shgew/shycler/internal/sim"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestResidentInstabilitiesConverge(t *testing.T) {
@@ -111,8 +111,8 @@ func TestIdleCrashInGuard(t *testing.T) {
 			if f < 0 {
 				t.Fatalf("no failure cites crash.detected seq %d", crash.Seq)
 			}
-			if !reflect.DeepEqual(events[f].Data, want) {
-				t.Fatalf("failure citing seq %d: %+v, want %+v", crash.Seq, events[f].Data, want)
+			if diff := cmp.Diff(want, events[f].Data); diff != "" {
+				t.Fatalf("failure citing seq %d mismatch (-want +got):\n%s", crash.Seq, diff)
 			}
 			var backedOff []int
 			opened := false

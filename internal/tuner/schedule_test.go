@@ -1,12 +1,12 @@
 package tuner
 
 import (
-	"reflect"
 	"slices"
 	"testing"
 
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestOrder(t *testing.T) {
@@ -44,8 +44,11 @@ func TestSearchSchedule(t *testing.T) {
 
 	a := h.s.Next()
 	want := &journal.TunerDecision{Core: 0, Phase: search, Decision: journal.StepDeeper, FromOffset: -10, ToOffset: -15, Pass: new(-10), Reason: "coarse, no failed mark yet"}
-	if a.Kind != Decide || !reflect.DeepEqual(a.Payload, want) || !slices.Equal(a.Cause, []int{r1.Seq, r2.Seq}) {
-		t.Fatalf("after R1+R2 passed: %+v, want %+v with cause [%d %d]", a, want, r1.Seq, r2.Seq)
+	if a.Kind != Decide || !slices.Equal(a.Cause, []int{r1.Seq, r2.Seq}) {
+		t.Fatalf("after R1+R2 passed: %+v, want a decision with cause [%d %d]", a, r1.Seq, r2.Seq)
+	}
+	if diff := cmp.Diff(want, a.Payload); diff != "" {
+		t.Fatalf("after R1+R2 passed mismatch (-want +got):\n%s", diff)
 	}
 	decision := h.decide(a)
 
@@ -54,14 +57,20 @@ func TestSearchSchedule(t *testing.T) {
 
 	a = h.s.Next()
 	attributed := &journal.Failure{Signal: machine.ComputationError, Attribution: journal.Attributed, Core: new(1), Offset: new(-10), Trial: "0003"}
-	if a.Kind != Decide || !reflect.DeepEqual(a.Payload, attributed) || !slices.Equal(a.Cause, []int{end.Seq, intent.Seq}) {
-		t.Fatalf("after failed trial: %+v, want %+v with cause [%d %d]", a, attributed, end.Seq, intent.Seq)
+	if a.Kind != Decide || !slices.Equal(a.Cause, []int{end.Seq, intent.Seq}) {
+		t.Fatalf("after failed trial: %+v, want a decision with cause [%d %d]", a, end.Seq, intent.Seq)
+	}
+	if diff := cmp.Diff(attributed, a.Payload); diff != "" {
+		t.Fatalf("after failed trial mismatch (-want +got):\n%s", diff)
 	}
 	failure := h.decide(a)
 	a = h.s.Next()
 	back := &journal.TunerDecision{Core: 1, Phase: search, Decision: journal.Backoff, FromOffset: -10, ToOffset: -5, FailedMark: new(-10), Reason: "coarse, no passed step"}
-	if a.Kind != Decide || !reflect.DeepEqual(a.Payload, back) || !slices.Equal(a.Cause, []int{failure.Seq}) {
-		t.Fatalf("after failure: %+v, want %+v", a, back)
+	if a.Kind != Decide || !slices.Equal(a.Cause, []int{failure.Seq}) {
+		t.Fatalf("after failure: %+v, want a decision with cause [%d]", a, failure.Seq)
+	}
+	if diff := cmp.Diff(back, a.Payload); diff != "" {
+		t.Fatalf("after failure mismatch (-want +got):\n%s", diff)
 	}
 	h.decide(a)
 
@@ -125,8 +134,11 @@ func TestFailureAtZeroStaysStopped(t *testing.T) {
 	h.trial(h.s.Next(), failed)
 	failure := h.decide(h.s.Next())
 	a := h.s.Next()
-	if !reflect.DeepEqual(a.Payload, deadAtZero0()) || !slices.Equal(a.Cause, []int{failure.Seq}) {
-		t.Fatalf("failure at 0: %+v", a)
+	if !slices.Equal(a.Cause, []int{failure.Seq}) {
+		t.Fatalf("failure at 0: %+v, want cause [%d]", a, failure.Seq)
+	}
+	if diff := cmp.Diff(deadAtZero0(), a.Payload); diff != "" {
+		t.Fatalf("failure at 0 mismatch (-want +got):\n%s", diff)
 	}
 	dead := h.decide(a)
 	for range 2 {
@@ -158,8 +170,12 @@ func TestAttributionPrecedesDeadEnd(t *testing.T) {
 	if !ok || *f.Core != 1 || f.Trial != "0099" || !slices.Equal(a.Cause, []int{end.Seq, crash.Seq}) {
 		t.Fatalf("with a failing trial awaiting attribution: %+v, want its failure", a)
 	}
-	if b, ok := h.s.Attribution(); !ok || !reflect.DeepEqual(b, a) {
+	b, ok := h.s.Attribution()
+	if !ok {
 		t.Fatalf("Attribution = %+v, %v; want the same failure", b, ok)
+	}
+	if diff := cmp.Diff(a, b); diff != "" {
+		t.Fatalf("Attribution mismatch (-want +got):\n%s", diff)
 	}
 	h.decide(a)
 	if d, ok := h.s.Next().Payload.(*journal.DeadEnd); !ok || *d.Core != 0 {
