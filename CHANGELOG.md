@@ -31,6 +31,7 @@ All notable changes to shycler are documented in this file. The format is based 
 ### Fixed
 
 - A trial interrupted by a signal now records how long it ran, instead of `after 0s` ([#15]).
+- Powering off during a trial no longer records a failure on the target core: trial scopes no longer stop with the system before `run` does, so the trial ends interrupted ([#16]).
 
 [#2]: https://code.marleb.org/shgew/shycler/pulls/2
 [#3]: https://code.marleb.org/shgew/shycler/pulls/3
@@ -45,3 +46,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#13]: https://code.marleb.org/shgew/shycler/pulls/13
 [#14]: https://code.marleb.org/shgew/shycler/pulls/14
 [#15]: https://code.marleb.org/shgew/shycler/pulls/15
+[#16]: https://code.marleb.org/shgew/shycler/pulls/16
