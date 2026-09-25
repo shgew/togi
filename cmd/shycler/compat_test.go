@@ -121,34 +121,19 @@ func TestRegainRefusesDifferentRuleset(t *testing.T) {
 	}
 }
 
-func TestSimulatedRunRefusesIncompatibleJournal(t *testing.T) {
+func TestRunChecksCompatibilityBeforeConfig(t *testing.T) {
 	dir, original := incompatibleFixture(t, "ruleset")
+	configPath := filepath.Join(t.TempDir(), "invalid.toml")
+	if err := os.WriteFile(configPath, []byte("removed_key = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "run", "--sim", "1"}, &stdout, &stderr); code != exitIncompatible || !strings.Contains(stderr.String(), "Install shycler 0.2.1") {
+	if code := cli([]string{"--state-dir", dir, "--config", configPath, "run"}, &stdout, &stderr); code != exitIncompatible || !strings.Contains(stderr.String(), "uses ruleset") || strings.Contains(stderr.String(), "removed_key") {
 		t.Fatalf("run exit %d, stderr %q", code, stderr.String())
 	}
 	after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
 	if err != nil || !bytes.Equal(after, original) {
 		t.Fatalf("run changed journal: %v", err)
-	}
-}
-
-func TestRunChecksCompatibilityBeforeConfig(t *testing.T) {
-	for _, command := range [][]string{{"run", "--sim", "1"}, {"run"}} {
-		dir, original := incompatibleFixture(t, "ruleset")
-		configPath := filepath.Join(t.TempDir(), "invalid.toml")
-		if err := os.WriteFile(configPath, []byte("removed_key = true\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		var stdout, stderr bytes.Buffer
-		args := append([]string{"--state-dir", dir, "--config", configPath}, command...)
-		if code := cli(args, &stdout, &stderr); code != exitIncompatible || !strings.Contains(stderr.String(), "uses ruleset") || strings.Contains(stderr.String(), "removed_key") {
-			t.Fatalf("%v exit %d, stderr %q", command, code, stderr.String())
-		}
-		after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
-		if err != nil || !bytes.Equal(after, original) {
-			t.Fatalf("run changed journal: %v", err)
-		}
 	}
 }
 
@@ -167,7 +152,7 @@ func TestRunStillRejectsInvalidConfigForCompatibleJournal(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "--config", configPath, "run", "--sim", "1"}, &stdout, &stderr); code != exitUsage {
+	if code := cli([]string{"--state-dir", dir, "--config", configPath, "run"}, &stdout, &stderr); code != exitUsage {
 		t.Fatalf("compatible journal: exit %d, want %d, stderr %q", code, exitUsage, stderr.String())
 	}
 	after, err := os.ReadFile(path)

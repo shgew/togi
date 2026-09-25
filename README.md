@@ -24,13 +24,14 @@ Not yet:
 - a full tuning session on real hardware, start to Bronze;
 - CI.
 
+`just sim` runs a simulated session from a source checkout, for development; see [docs/simulating.md](docs/simulating.md).
+
 ## Usage
 
 ```sh
 shycler --version                         # version and git revision of this build
 sudo shycler run                          # tune this machine; Ctrl-C stops, the next run resumes
 shycler status                            # per-core offsets, tier and clean hours
-shycler run --sim 1                       # simulate a session; prints its state directory
 shycler --state-dir <dir> status          # per-core offsets, tier and clean hours
 shycler --state-dir <dir> cert            # the certificate: edges to enter in BIOS
 shycler --state-dir <dir> events --core 3 # everything that happened to core 3
@@ -44,6 +45,7 @@ shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 |---|---|
 |[docs/howto.md](docs/howto.md)|Installing shycler and running a tuning session|
 |[docs/releasing.md](docs/releasing.md)|Versioning, release pull requests and tags|
+|[docs/simulating.md](docs/simulating.md)|Running a simulated session for development|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
 |[CONTEXT.md](CONTEXT.md)|The vocabulary: offsets, phases, regimes, tiers|
 |[docs/spec/tuner.md](docs/spec/tuner.md)|How offsets are searched, confirmed, guarded and certified|
@@ -59,4 +61,4 @@ shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 
 Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, `just gate` runs lint, formatting checks and tests, and `just check` runs every flake check before a pull request. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the rest.
 
-shycler runs on NixOS. Development also works on macOS (aarch64-darwin): the dev shell, the tests, `just sim`, and `status`, `cert`, `events`, `regain` and `reset` against a copied state directory. `just check` there skips the VM test, and `shycler run` without `--sim` exits with an error.
+shycler runs on NixOS. Development also works on macOS (aarch64-darwin): the dev shell, the tests, `just sim`, and `status`, `cert`, `events`, `regain` and `reset` against a copied state directory. `just check` there skips the VM test, and `shycler run` exits with an error.

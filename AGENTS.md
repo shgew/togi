@@ -13,6 +13,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
   - `journal.md`: events, state, logging.
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
 - `docs/releasing.md`: versioning rules and the release pull request and tagging procedure.
+- `docs/simulating.md`: running a simulated session with `tools/sim`.
 - `docs/adr/`: decisions and the alternatives rejected. Reversing one needs a new ADR.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
 - Issues on `code.marleb.org/shgew/shycler`: the plan, ideas and bugs (Issues, below).
@@ -67,7 +68,7 @@ Enter the dev shell (Go, gopls, golangci-lint, just, nixfmt) with `nix develop`,
 | `just gate` | Lint, formatting check and tests: the quick check before handing off |
 | `just check` | Every flake check: package, lint and the VM test; must pass before a pull request |
 | `just fmt` | Format Go, Nix and the justfile |
-| `just sim [seed]` | A simulated session through its first clean guard rotation, to Bronze, in a temporary state directory |
+| `just sim [seed]` | A simulated session through its first clean guard rotation, to Bronze, in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just release` | Open the release pull request, or tag a merged one; see `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `SHYCLER_MPRIME` and `SHYCLER_YCRUNCHER`, else from `/etc/shycler/config.toml` |
 
@@ -85,14 +86,16 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/defect` | Known decision-changing bugs and pure matching against the journal |
 | `internal/journal` | Journal, replay, state file, log lines |
 | `internal/tuner` | Pure decision engine: search, confirmation, guard, regain, tiers |
-| `internal/sim` | Simulator implementing every hardware seam |
+| `internal/sim` | Simulator implementing every hardware seam, and resuming it after a journal |
 | `internal/session` | The run loop: session start, resume, crash attribution, trials, dead ends |
+| `internal/simrun` | A session on the simulator, across its crash reboots |
 | `internal/smu` | `ryzen_smu`: the only package that writes offsets |
 | `internal/trial` | Containment, sampling, load-step signaling |
 | `internal/backend/*` | mprime and y-cruncher integrations |
 | `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
 | `nix/` | NixOS module and VM tests |
+| `tools/*` | Development programs, never shipped: `release`, `sim`. Development and debugging behavior lives here, never in `cmd/shycler` |
 
 Keep packages near 1000 lines; split by responsibility when one grows past that.
 

@@ -22,114 +22,67 @@ import (
 	"code.marleb.org/shgew/shycler/internal/hardware"
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/session"
-	"code.marleb.org/shgew/shycler/internal/sim"
 )
 
-const runHelp = `Usage: shycler run [--sim <seed>] [--rotations <N>] [--tuning-boot <grubenv>]
+const runHelp = `Usage: shycler run [--rotations <N>] [--tuning-boot <grubenv>]
 
 Start or resume the tuning session in the foreground: search each core's deepest
 stable offset, confirm it, then keep guarding all offsets together. After a crash,
 the next run attributes it from the journal and continues. On resume, known
 defects affecting past decisions name the cores; in a terminal run offers to reset
-them. An unanswered too-aggressive defect stops an unattended run. On hardware
-it needs root; --sim drives a simulated machine instead. A different journal
-ruleset or schema stops the run before another event is written; reset --all
-archives that session. Journal lines are colored on terminals and in the system
-journal unless NO_COLOR is set.
+them. An unanswered too-aggressive defect stops an unattended run. It needs root.
+A different journal ruleset or schema stops the run before another event is
+written; reset --all archives that session. Journal lines are colored on
+terminals and in the system journal unless NO_COLOR is set.
 
 Examples:
   sudo shycler run                     Tune this machine until a signal or a dead end
-  sudo shycler run --rotations 1       Stop after the first clean guard rotation
-  shycler run --sim 1                  Simulate a session through its first clean guard rotation`
+  sudo shycler run --rotations 1       Stop after the first clean guard rotation`
 
 func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	var (
-		seed         uint64
-		seedSet      bool
-		rotations    int
-		rotationsSet bool
-		grubenv      string
+		rotations int
+		grubenv   string
 	)
 	flags := newFlagSet("run", g)
-	flags.Func("sim", "drive a simulated 16-core machine with this `seed` instead of hardware", func(s string) error {
-		v, err := strconv.ParseUint(s, 10, 64)
-		if err != nil {
-			return errors.New("must be a non-negative integer")
-		}
-		seed, seedSet = v, true
-		return nil
-	})
-	flags.Func("rotations", "stop after `N` clean guard rotations of one profile (default 1 with --sim, else endless)", func(s string) error {
+	flags.Func("rotations", "stop after `N` clean guard rotations of one profile (default endless)", func(s string) error {
 		v, err := strconv.Atoi(s)
 		if err != nil || v < 1 {
 			return errors.New("must be a positive integer")
 		}
-		rotations, rotationsSet = v, true
+		rotations = v
 		return nil
 	})
 	flags.StringVar(&grubenv, "tuning-boot", "", "run as the tuning boot service: at a dead end clear saved_entry in this GRUB environment `file`, and reboot after a boot loop")
 	if code, ok := parseFlags(flags, args, runHelp, stdout, stderr); !ok {
 		return code
 	}
-	if seedSet && grubenv != "" {
-		fmt.Fprintln(stderr, "shycler run: --sim and --tuning-boot cannot be combined: a simulated dead end must not change the host's boot entry")
-		commandUsage(flags, runHelp, stderr)
-		return exitUsage
-	}
-
 	renderer := journal.NewRenderer(stderr, os.Getenv)
-	if !seedSet || g.stateDirSet {
-		if stamp, _, scanErr := journal.Scan(g.stateDir); scanErr == nil {
-			if stamp.Schema != 0 {
-				if err := journal.Compatible(stamp, session.Build()); err != nil {
-					if grubenv != "" {
-						return runResult(session.Stop{}, err, stderr, renderer, hardware.GRUB{Env: grubenv})
-					}
-					return runResult(session.Stop{}, err, stderr, renderer)
+	if stamp, _, scanErr := journal.Scan(g.stateDir); scanErr == nil {
+		if stamp.Schema != 0 {
+			if err := journal.Compatible(stamp, session.Build()); err != nil {
+				if grubenv != "" {
+					return runResult(session.Stop{}, err, stderr, renderer, hardware.GRUB{Env: grubenv})
 				}
+				return runResult(session.Stop{}, err, stderr, renderer)
 			}
-		} else if !errors.Is(scanErr, fs.ErrNotExist) {
-			fmt.Fprintf(stderr, "shycler run: %v\n", scanErr)
-			return exitError
 		}
+	} else if !errors.Is(scanErr, fs.ErrNotExist) {
+		fmt.Fprintf(stderr, "shycler run: %v\n", scanErr)
+		return exitError
 	}
 	cfg, file, err := loadConfig(g)
 	if err != nil {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitUsage
 	}
-	prompt := defectPrompt(stderr)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
-	if !seedSet {
-		var bootloader session.Bootloader
-		if grubenv != "" {
-			bootloader = hardware.GRUB{Env: grubenv}
-		}
-		return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr, renderer)
+	var bootloader session.Bootloader
+	if grubenv != "" {
+		bootloader = hardware.GRUB{Env: grubenv}
 	}
-	dir := g.stateDir
-	if !g.stateDirSet {
-		if dir, err = os.MkdirTemp("", "shycler-sim-"); err != nil {
-			fmt.Fprintf(stderr, "shycler run: %v\n", err)
-			return exitError
-		}
-		fmt.Fprintf(stderr, "shycler run: simulated state directory %s\n", dir)
-	}
-	if !rotationsSet {
-		rotations = 1
-	}
-	simCfg, err := session.Resume(dir, sim.Config{Seed: seed})
-	if err != nil {
-		return runResult(session.Stop{}, err, stderr, renderer)
-	}
-	m, err := sim.New(simCfg)
-	if err != nil {
-		fmt.Fprintf(stderr, "shycler run: %v\n", err)
-		return exitError
-	}
-	stop, err := session.Simulate(ctx, session.SimInput{Config: cfg, ConfigPath: g.config, ConfigFile: file, Dir: dir, Machine: m, Log: stderr, Renderer: renderer, Rotations: rotations, Prompt: prompt})
-	return runResult(stop, err, stderr, renderer)
+	return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr, renderer)
 }
 
 func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, rotations int, stderr io.Writer, renderer journal.Renderer) int {

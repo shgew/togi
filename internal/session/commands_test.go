@@ -30,12 +30,12 @@ func command(t *testing.T, dir string, f func(*journal.Journal) error) error {
 }
 
 func memJournal(dir string, j *journal.Journal) Journal {
-	return wrapFor(SimInput{Dir: dir}, nil)(j)
+	return wrapFor(simRun{Dir: dir}, nil)(j)
 }
 
 func resumed(t *testing.T, dir string, cfg sim.Config) *sim.Machine {
 	t.Helper()
-	cfg, err := Resume(dir, cfg)
+	cfg, err := sim.Resume(dir, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

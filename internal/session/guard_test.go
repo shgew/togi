@@ -144,7 +144,7 @@ func isSMU(e journal.Event) bool {
 func TestResumeContinuesBoots(t *testing.T) {
 	t.Parallel()
 	dir, first := reference(t, small())
-	cfg, err := Resume(dir, small())
+	cfg, err := sim.Resume(dir, small())
 	if err != nil {
 		t.Fatal(err)
 	}

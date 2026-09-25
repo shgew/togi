@@ -128,8 +128,8 @@ func usage(w io.Writer) {
 	b.WriteString("       shycler --version\n\n")
 	b.WriteString("Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs.\n\n")
 	b.WriteString("Examples:\n")
-	b.WriteString("  shycler run --sim 1   Simulate a session, without hardware or root\n")
-	b.WriteString("  shycler status        Show per-core offsets, tier and clean hours\n\n")
+	b.WriteString("  sudo shycler run   Tune this machine until a signal or a dead end\n")
+	b.WriteString("  shycler status     Show per-core offsets, tier and clean hours\n\n")
 	b.WriteString("Commands:\n")
 	sorted := slices.SortedFunc(slices.Values(commands), func(a, b command) int { return strings.Compare(a.name, b.name) })
 	for _, c := range sorted {
