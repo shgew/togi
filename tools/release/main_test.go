@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 const apiPrefix = "/api/v1/repos/o/r"
@@ -56,8 +57,8 @@ func assertRequests(t *testing.T, got []string, suffix ...string) {
 	t.Helper()
 	want := []string{"GET " + apiPrefix, "GET " + apiPrefix + "/raw/version.txt?ref=main", "GET " + apiPrefix + "/raw/CHANGELOG.md?ref=main"}
 	want = append(want, suffix...)
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("requests:\n%q\nwant:\n%q", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("requests mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -536,7 +537,7 @@ func TestClampedPagination(t *testing.T) {
 		apiPrefix + "/tags?limit=50&page=1",
 		apiPrefix + "/tags?limit=50&page=2",
 	}
-	if !reflect.DeepEqual(requests, want) {
-		t.Fatalf("requests = %q, want %q", requests, want)
+	if diff := cmp.Diff(want, requests); diff != "" {
+		t.Fatalf("requests mismatch (-want +got):\n%s", diff)
 	}
 }

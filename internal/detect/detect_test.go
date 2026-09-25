@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/google/go-cmp/cmp"
 )
 
 func loadFixture(t *testing.T, name string) []Message {
@@ -165,8 +165,11 @@ func TestStatusAndBlockBoundaries(t *testing.T) {
 			if strings.HasPrefix(tt.name, "raw") {
 				bank = machine.UnknownBank
 			}
-			if len(got) != 1 || got[0].Corrected != tt.corrected || got[0].BankType != bank || got[0].Core != 6 || got[0].Bank != 1 || !reflect.DeepEqual(got[0].Lines, []string{stamped(msgs[0]), stamped(msgs[1]), stamped(msgs[2])}) {
+			if len(got) != 1 || got[0].Corrected != tt.corrected || got[0].BankType != bank || got[0].Core != 6 || got[0].Bank != 1 {
 				t.Fatalf("unexpected block: %+v", got)
+			}
+			if diff := cmp.Diff([]string{stamped(msgs[0]), stamped(msgs[1]), stamped(msgs[2])}, got[0].Lines); diff != "" {
+				t.Fatalf("block lines mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

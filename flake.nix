@@ -44,7 +44,7 @@
                 ./tools
               ];
             };
-            vendorHash = "sha256-pbA/AlBz3cQYRTMnQ/qBPcinYOKokrBLNhkbRTq54gE=";
+            vendorHash = "sha256-XXgXzv6MARTUse1lf4RAaMp9xg8FfysaPMM7wq5zdlw=";
             nativeCheckInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
             ldflags = [
               "-X code.marleb.org/shgew/shycler.rev=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dev"}"

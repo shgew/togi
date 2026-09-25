@@ -6,12 +6,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 	"time"
 
 	"code.marleb.org/shgew/shycler/internal/config"
 	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/google/go-cmp/cmp"
 )
 
 func fixedClock() func() time.Time {
@@ -247,8 +247,8 @@ func TestRoundTrip(t *testing.T) {
 	}
 	for i, e := range events {
 		w := written[i]
-		if !reflect.DeepEqual(e.Data, w.Data) {
-			t.Errorf("%s: read %+v, wrote %+v", w.Kind, e.Data, w.Data)
+		if diff := cmp.Diff(w.Data, e.Data); diff != "" {
+			t.Errorf("%s: data mismatch (-wrote +read):\n%s", w.Kind, diff)
 		}
 		if e.Msg != w.Msg || e.Seq != w.Seq || !e.Time.Equal(w.Time) || e.Boot != w.Boot || !bytes.Equal(e.Raw, w.Raw) {
 			t.Errorf("%s: envelope differs: %s vs %s", w.Kind, e.Raw, w.Raw)

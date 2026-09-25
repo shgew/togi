@@ -1,10 +1,10 @@
 package tuner
 
 import (
-	"reflect"
 	"testing"
 
 	"code.marleb.org/shgew/shycler/internal/journal"
+	"github.com/google/go-cmp/cmp"
 )
 
 func search(offset int, pass, fail *int) coreState {
@@ -60,8 +60,8 @@ func TestRules(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := tt.rule(tt.in); !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("got  %+v\nwant %+v", got, tt.want)
+			if diff := cmp.Diff(tt.want, tt.rule(tt.in)); diff != "" {
+				t.Fatalf("decision mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

@@ -3,7 +3,6 @@ package tuner
 import (
 	"fmt"
 	"math/rand/v2"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -11,6 +10,7 @@ import (
 	"code.marleb.org/shgew/shycler/internal/config"
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/google/go-cmp/cmp"
 )
 
 const allCores = -1
@@ -153,8 +153,8 @@ func TestGuardRotationSchedule(t *testing.T) {
 		&journal.ProfileChange{To: []int{-10, -12}},
 		&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: config.Default().Guard.Rotation},
 	}
-	if !reflect.DeepEqual(decided, want) {
-		t.Fatalf("guard entry %+v, want %+v", decided, want)
+	if diff := cmp.Diff(want, decided); diff != "" {
+		t.Fatalf("guard entry mismatch (-want +got):\n%s", diff)
 	}
 	schedule := []string{
 		"trial R1 c0", "trial R1 c1", "trial R2 c0", "trial R2 c1", "trial R6 all", "trial R3 c0", "trial R3 c1",
