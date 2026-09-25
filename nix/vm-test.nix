@@ -58,6 +58,14 @@ pkgs.testers.runNixOSTest {
     machine.sleep(3)
     console = machine.succeed("systemctl show shycler-console.service -p ActiveState -p NRestarts").split()
     assert console == ["ActiveState=active", "NRestarts=0"], f"shycler-console.service: {console}"
+    machine.succeed("grub-set-default 'NixOS - shycler' && sync")
+    machine.crash()
+    machine.start(allow_reboot=True)
+    machine.wait_for_unit("multi-user.target")
+    booted_system = machine.succeed("readlink -f /run/current-system").strip()
+    assert booted_system == tuning_system, f"crash left the tuning boot: {booted_system}"
+    machine.wait_until_succeeds("systemctl is-failed shycler.service")
+    machine.succeed("grub-set-default 'NixOS - shycler' && sync")
     machine.reboot()
     machine.wait_for_unit("multi-user.target")
     assert machine.succeed("readlink -f /run/current-system").strip() == normal_system

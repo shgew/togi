@@ -55,11 +55,11 @@ If the machine crashes during a trial, it comes back to the normal desktop; the 
 
 ## 4. Overnight: the tuning boot
 
-Reboot and pick "NixOS - shycler" in the GRUB menu once. That entry boots to a console with no desktop, and tty1 shows shycler's log. `shycler.service` tunes unattended. GRUB remembers the entry, so every crash reboot returns to it and the service resumes.
+Reboot and pick "NixOS - shycler" in the GRUB menu once. That entry boots to a console with no desktop, and tty1 shows shycler's log. `shycler.service` tunes unattended. GRUB remembers the entry, so every crash reboot returns to it and the service resumes. Shutting down or rebooting on purpose, with the power button, `poweroff` or `reboot`, leaves the tuning boot: shycler stops cleanly and the next boot selects your newest normal generation. To keep tuning across your own reboots instead, set `services.shycler.tuning.leaveOnShutdown = false;`.
 
 ## 5. In the morning
 
-Reboot and pick your normal entry. GRUB remembers that choice too. Then:
+Shut down or reboot. The next boot is your normal system; with `leaveOnShutdown` off, pick your normal entry in the GRUB menu. Then:
 
 ```sh
 shycler status

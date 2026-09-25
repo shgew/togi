@@ -6,6 +6,7 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ### Added
 
+- Shutting down or rebooting the tuning boot on purpose clears GRUB's saved entry, so the next boot is the normal system; crash reboots still return to the tuning boot. `services.shycler.tuning.leaveOnShutdown = false` turns it off ([#53]).
 - The flake provides the package, dev shell and checks on aarch64-darwin for development; the VM test and hardware runs stay Linux-only, and `shycler run` there exits with an error ([#45]).
 - On resume, `run` finds decisions made by a known, since-fixed bug and names the affected cores; `status` shows the reset command, and in a terminal `run` offers to reset them. The first entry is the false failure at power-off fixed in [#16] ([#40]).
 - Every session start and resume records the build's version, revision, ruleset and schema, and `run` refuses to resume a session written under a different ruleset or schema, naming the version that wrote it; in a tuning boot this is a dead end ([#38]).
@@ -65,3 +66,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#40]: https://code.marleb.org/shgew/shycler/pulls/40
 [#45]: https://code.marleb.org/shgew/shycler/pulls/45
 [#46]: https://code.marleb.org/shgew/shycler/pulls/46
+[#53]: https://code.marleb.org/shgew/shycler/pulls/53
