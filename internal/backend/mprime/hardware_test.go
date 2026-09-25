@@ -1,4 +1,4 @@
-//go:build hardware
+//go:build hardware && linux
 
 package mprime_test
 

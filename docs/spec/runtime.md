@@ -26,7 +26,7 @@ On resume, `run` checks historical decisions for known defects before queued res
 
 `shycler run --sim <seed>` drives the seeded simulator (`internal/sim`) instead of hardware: a 16-core machine whose crash reboots are handled in-process, with a real journal. It uses `--state-dir` when given, else a new temporary directory whose path it prints to stderr, and it fsyncs nothing. With `--sim`, `--rotations` defaults to 1. A state directory that already holds a journal or archives resumes the simulated machine after them: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot, and a session after `reset --all` gets a new id.
 
-`run` without `--sim` needs Linux. On any other platform it prints `shycler run: hardware runs need Linux: unsupported operation` and exits 1 before it reads the boot id or opens the journal.
+`run` without `--sim` needs Linux. On any other platform, once the journal compatibility check and the configuration pass, it prints `shycler run: hardware runs need Linux: unsupported operation` and exits 1 before it reads the boot id or opens the journal.
 
 ## Exit codes
 
