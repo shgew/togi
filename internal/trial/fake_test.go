@@ -34,6 +34,7 @@ type fakeProc struct {
 	once             sync.Once
 	exitErr          error
 	busy, stopped    bool
+	resume           chan struct{}
 	cpu              time.Duration
 	since            time.Time
 	escapeCPU        int
@@ -91,6 +92,17 @@ func (p *fakeProc) setBusy(escape int) {
 func (p *fakeProc) sleep(d time.Duration) bool {
 	select {
 	case <-time.After(d):
+	case <-p.exited:
+		return false
+	}
+	p.host.mu.Lock()
+	resume := p.resume
+	p.host.mu.Unlock()
+	if resume == nil {
+		return true
+	}
+	select {
+	case <-resume:
 		return true
 	case <-p.exited:
 		return false
@@ -154,7 +166,15 @@ func (h *fakeHost) SignalGroup(pid int, sig syscall.Signal) error {
 	default:
 	}
 	p.accrue(time.Now())
-	p.stopped = sig == syscall.SIGSTOP || p.stopped && sig != syscall.SIGCONT
+	switch {
+	case sig == syscall.SIGSTOP && !p.stopped:
+		p.stopped = true
+		p.resume = make(chan struct{})
+	case sig == syscall.SIGCONT && p.stopped:
+		p.stopped = false
+		close(p.resume)
+		p.resume = nil
+	}
 	h.mu.Unlock()
 	if sig == syscall.SIGTERM || sig == syscall.SIGKILL {
 		p.finish(errors.New("signal: killed"))

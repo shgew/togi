@@ -264,6 +264,10 @@ func TestR6Bursts(t *testing.T) {
 		if err != nil || result.Signal != "" || result.Stops != 3 || result.Conts != 1 {
 			t.Fatalf("R6 initial stops and bursts result %+v, err %v", result, err)
 		}
+		idle := slices.IndexFunc(rec.progress, func(line string) bool { return strings.HasPrefix(line, "first half idle") })
+		if idle < 0 || slices.ContainsFunc(rec.progress[:idle], func(line string) bool { return strings.HasSuffix(line, "progress 1") }) {
+			t.Fatalf("stopped instances made progress before the bursts: %q", rec.progress)
+		}
 	})
 }
 
