@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"code.marleb.org/shgew/shycler"
 	"code.marleb.org/shgew/shycler/internal/config"
 )
 
@@ -54,9 +55,11 @@ func main() {
 
 func cli(args []string, stdout, stderr io.Writer) int {
 	g := globals{config: config.DefaultPath, stateDir: defaultStateDir}
+	var version bool
 	fs := flag.NewFlagSet("shycler", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	registerGlobals(fs, &g)
+	fs.BoolVar(&version, "version", false, "print the build version and git revision")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			usage(stdout)
@@ -65,6 +68,10 @@ func cli(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "shycler: %v\n", err)
 		usage(stderr)
 		return exitUsage
+	}
+	if version {
+		fmt.Fprintf(stdout, "shycler %s\n", shycler.String())
+		return exitOK
 	}
 	if fs.NArg() == 0 {
 		_, _ = io.WriteString(stderr, banner)
@@ -93,7 +100,7 @@ func registerGlobals(fs *flag.FlagSet, g *globals) {
 }
 
 func isGlobal(f *flag.Flag) bool {
-	return f.Name == "config" || f.Name == "state-dir"
+	return f.Name == "config" || f.Name == "state-dir" || f.Name == "version"
 }
 
 func writeFlags(b *strings.Builder, title string, flags *flag.FlagSet, include func(*flag.Flag) bool) {
@@ -117,7 +124,8 @@ func writeFlags(b *strings.Builder, title string, flags *flag.FlagSet, include f
 
 func usage(w io.Writer) {
 	var b strings.Builder
-	b.WriteString("Usage: shycler [--config <path>] [--state-dir <path>] <command> [flags]\n\n")
+	b.WriteString("Usage: shycler [--config <path>] [--state-dir <path>] <command> [flags]\n")
+	b.WriteString("       shycler --version\n\n")
 	b.WriteString("Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs.\n\n")
 	b.WriteString("Examples:\n")
 	b.WriteString("  shycler run --sim 1   Simulate a session, without hardware or root\n")
@@ -129,6 +137,7 @@ func usage(w io.Writer) {
 	}
 	fs := flag.NewFlagSet("shycler", flag.ContinueOnError)
 	registerGlobals(fs, &globals{})
+	fs.Bool("version", false, "print the build version and git revision")
 	writeFlags(&b, "Flags", fs, isGlobal)
 	b.WriteString("\nRun 'shycler <command> --help' for its description, examples and flags.\n")
 	_, _ = io.WriteString(w, b.String())

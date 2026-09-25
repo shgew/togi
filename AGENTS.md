@@ -12,6 +12,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
   - `workloads.md`: regimes, backends, containment, failure detection.
   - `journal.md`: events, state, logging.
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
+- `docs/releasing.md`: versioning rules and the release pull request and tagging procedure.
 - `docs/adr/`: decisions and the alternatives rejected. Reversing one needs a new ADR.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
 - Issues on `code.marleb.org/shgew/shycler`: the plan, ideas and bugs (Issues, below).
@@ -27,6 +28,7 @@ Every change, docs included, lands as a pull request against `main` on `code.mar
 - Address every review comment on the same branch.
 - A pull request that finishes an issue says `Closes #N` in its body; one that only makes progress says `Refs #N`.
 - A pull request that breaks resuming an existing session or reading an existing journal starts its title with `[BREAKING]`, carries the `breaking` label, and starts its changelog line with `**BREAKING**`.
+- A breaking pull request merges only after `[Unreleased]` has been released (see `docs/releasing.md`).
 
 ## Issues
 
@@ -65,6 +67,7 @@ Enter the dev shell (Go, gopls, golangci-lint, just, nixfmt) with `nix develop`,
 | `just check` | Every flake check: package, lint and the VM test; must pass before a pull request |
 | `just fmt` | Format Go, Nix and the justfile |
 | `just sim [seed]` | A simulated session through its first clean guard rotation, to Bronze, in a temporary state directory |
+| `just release` | Open the release pull request, or tag a merged one; see `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `SHYCLER_MPRIME` and `SHYCLER_YCRUNCHER`, else from `/etc/shycler/config.toml` |
 
 A command needed twice gets a recipe, in the same pull request.
