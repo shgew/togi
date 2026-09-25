@@ -27,8 +27,10 @@ const runHelp = `Usage: shycler run [--sim <seed>] [--rotations <N>] [--tuning-b
 Start or resume the tuning session in the foreground: search each core's deepest
 stable offset, confirm it, then keep guarding all offsets together. After a crash,
 the next run attributes it from the journal and continues. On hardware it needs
-root; --sim drives a simulated machine instead. Journal lines are colored on
-terminals and in the system journal unless NO_COLOR is set.
+root; --sim drives a simulated machine instead. A different journal ruleset
+or schema stops the run before another event is written; reset --all archives
+that session. Journal lines are colored on terminals and in the system journal
+unless NO_COLOR is set.
 
 Examples:
   sudo shycler run                     Tune this machine until a signal or a dead end
@@ -96,10 +98,19 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	if !rotationsSet {
 		rotations = 1
 	}
+	if stamp, _, scanErr := journal.Scan(dir); scanErr == nil {
+		if stamp.Schema != 0 {
+			if err := journal.Compatible(stamp, session.Build()); err != nil {
+				return runResult(session.Stop{}, err, stderr, renderer)
+			}
+		}
+	} else if !errors.Is(scanErr, fs.ErrNotExist) {
+		fmt.Fprintf(stderr, "shycler run: %v\n", scanErr)
+		return exitError
+	}
 	simCfg, err := session.Resume(dir, sim.Config{Seed: seed})
 	if err != nil {
-		fmt.Fprintf(stderr, "shycler run: %v\n", err)
-		return exitError
+		return runResult(session.Stop{}, err, stderr, renderer)
 	}
 	m, err := sim.New(simCfg)
 	if err != nil {
@@ -116,23 +127,45 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitError
 	}
+	j, err := journal.Open(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: stderr, Renderer: renderer, Build: session.Build()})
+	if err != nil {
+		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
+	}
+	if len(j.Events()) > 0 {
+		if err := journal.Compatible(journal.BuildOf(j.Events()), session.Build()); err != nil {
+			if cerr := j.Close(); cerr != nil {
+				err = errors.Join(err, cerr)
+			}
+			return runResult(session.Stop{}, err, stderr, renderer, bootloader)
+		}
+	}
 	m, err := hardware.New(cfg, g.stateDir)
 	if err != nil {
+		_ = j.Close()
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitError
-	}
-	j, err := journal.Open(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: stderr, Renderer: renderer})
-	if err != nil {
-		return runResult(session.Stop{}, err, stderr, renderer)
 	}
 	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader})
 	if cerr := j.Close(); err == nil && cerr != nil {
 		err = cerr
 	}
-	return runResult(stop, err, stderr, renderer)
+	return runResult(stop, err, stderr, renderer, bootloader)
 }
 
-func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.Renderer) int {
+func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.Renderer, bootloader ...session.Bootloader) int {
+	var incompatible *journal.IncompatibleError
+	if errors.As(err, &incompatible) {
+		fmt.Fprintln(stderr, renderer.Styled(journal.RedBold, "shycler run: "+incompatible.Error()))
+		if len(bootloader) > 0 && bootloader[0] != nil {
+			before, after, clearErr := bootloader[0].ClearSavedEntry()
+			if clearErr != nil {
+				fmt.Fprintf(stderr, "shycler: clear GRUB saved entry: %v; no reboot requested\n", clearErr)
+			} else {
+				fmt.Fprintf(stderr, "shycler: cleared GRUB saved entry from %q to %q; the next boot selects the normal system\n", before, after)
+			}
+		}
+		return exitIncompatible
+	}
 	switch {
 	case errors.Is(err, session.ErrNoSuchCore):
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)

@@ -46,7 +46,7 @@ func appendAll(t *testing.T, j *Journal, payloads []Payload) []Event {
 }
 
 func sessionStart() *SessionStart {
-	return &SessionStart{Schema: Schema, Session: "20261002T011407Z", Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 16}}, {Core: 7, CCD: 0, CPUs: []int{7, 23}}}}
+	return &SessionStart{Build: Build{Schema: Schema}, Session: "20261002T011407Z", Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 16}}, {Core: 7, CCD: 0, CPUs: []int{7, 23}}}}
 }
 
 func TestReplayTruncatedAtEveryOffset(t *testing.T) {

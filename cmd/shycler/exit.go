@@ -13,6 +13,7 @@ const (
 	exitBootLoop      = 13
 	exitContainment   = 14
 	exitPreflight     = 15
+	exitIncompatible  = 16
 )
 
 func deadEndExit(c journal.DeadEndCondition) int {

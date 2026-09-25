@@ -16,7 +16,8 @@ const (
 
 Render the certificate: the tier the current profile earned, each core's edge,
 clean hours and failure-rate bounds per regime, and the SHA-256 of the journal
-lines it was rendered from. The edges are the values to enter in BIOS.
+lines it was rendered from. The edges are the values to enter in BIOS. A
+different ruleset warns before rendering; a different schema is refused.
 
 Examples:
   shycler cert   The certificate of the session in the default state directory`

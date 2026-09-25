@@ -110,14 +110,14 @@ func cpuList(cpus []int) string {
 func shortBoot(b string) string { return b[:min(8, len(b))] }
 
 type SessionStart struct {
-	Schema  int                `json:"schema"`
+	Build
 	Session string             `json:"session"`
 	Cores   []machine.CoreInfo `json:"cores"`
 }
 
 func (*SessionStart) Kind() Kind { return KindSessionStart }
 func (p *SessionStart) Message() string {
-	return fmt.Sprintf("session %s started (schema %d, %d cores)", p.Session, p.Schema, len(p.Cores))
+	return fmt.Sprintf("session %s started by %s (schema %d, ruleset %d, fixes %d, %d cores)", p.Session, p.name(), p.Schema, p.Ruleset, p.Fixes, len(p.Cores))
 }
 
 type SessionContext struct {
@@ -163,6 +163,7 @@ func (p *SessionArchived) Message() string {
 }
 
 type ConfigLoaded struct {
+	Build
 	Path   string        `json:"path"`
 	File   bool          `json:"file"`
 	Config config.Config `json:"config"`
@@ -171,9 +172,9 @@ type ConfigLoaded struct {
 func (*ConfigLoaded) Kind() Kind { return KindConfigLoaded }
 func (p *ConfigLoaded) Message() string {
 	if p.File {
-		return fmt.Sprintf("config loaded from %s", p.Path)
+		return fmt.Sprintf("config loaded from %s by %s (schema %d, ruleset %d, fixes %d)", p.Path, p.name(), p.Schema, p.Ruleset, p.Fixes)
 	}
-	return fmt.Sprintf("no config at %s; using defaults", p.Path)
+	return fmt.Sprintf("no config at %s; using defaults with %s (schema %d, ruleset %d, fixes %d)", p.Path, p.name(), p.Schema, p.Ruleset, p.Fixes)
 }
 
 type PreflightCheck struct {

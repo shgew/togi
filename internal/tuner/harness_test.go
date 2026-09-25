@@ -30,7 +30,7 @@ func newHarness(t *testing.T, cores ...coreStart) *harness {
 	for i := range cores {
 		infos[i] = machine.CoreInfo{Core: i, CCD: i / half, CPUs: []int{i, i + len(cores)}}
 	}
-	start := h.add(&journal.SessionStart{Schema: journal.Schema, Session: "s", Cores: infos})
+	start := h.add(&journal.SessionStart{Build: journal.Build{Schema: journal.Schema}, Session: "s", Cores: infos})
 	for i, c := range cores {
 		h.add(&journal.CorePhase{Core: i, To: c.phase, Offset: c.offset, Pass: c.pass, FailedMark: c.fail, UnprovenDepth: c.unproven, Reason: "test"}, start.Seq)
 	}

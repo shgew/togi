@@ -11,6 +11,9 @@ import (
 	"code.marleb.org/shgew/shycler/internal/machine"
 )
 
+// Ruleset must be bumped for changes to steps, offset range, phases, regimes, confirmation, tiers or backoffs; this is breaking.
+const Ruleset = 1
+
 type ActionKind int
 
 const (
