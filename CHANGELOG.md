@@ -6,6 +6,7 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ### Added
 
+- The run log and `shycler events` color failures and dead ends red, passed steps, confirmations and tiers green, backoffs yellow and inconclusive trials dim, on a terminal or in the system journal, where failures are logged at priority err; `NO_COLOR` turns it off ([#35]).
 - `shycler --version` prints the version and the git revision of the build ([#34]).
 - `sudo shycler run` tunes the real machine: offsets through `ryzen_smu` with a fuse-verified core-to-slot mapping, mprime and y-cruncher trials confined to their cores in systemd scopes, and machine checks read from the kernel log ([#13]).
 - Preflight checks the CPU, `ryzen_smu`, SMU readback, the slot mapping, both backends and `systemd-run` before a hardware run ([#13]).
@@ -51,3 +52,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#16]: https://code.marleb.org/shgew/shycler/pulls/16
 [#17]: https://code.marleb.org/shgew/shycler/pulls/17
 [#34]: https://code.marleb.org/shgew/shycler/pulls/34
+[#35]: https://code.marleb.org/shgew/shycler/pulls/35

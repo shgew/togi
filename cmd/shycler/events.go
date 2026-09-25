@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,7 +17,8 @@ import (
 const eventsHelp = `Usage: shycler events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--until <time>] [--json]
 
 Print the journal, one readable line per event, oldest first. Filters combine,
-so you can narrow it to one core, one trial or a time window.
+so you can narrow it to one core, one trial or a time window. On a terminal or
+in the system journal, readable lines are colored unless NO_COLOR is set.
 
 Examples:
   shycler events --core 3                   Everything that happened to core 3
@@ -41,7 +43,7 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&filter.Trial, "trial", "", "only events of trial `ID`")
 	flags.Func("since", "only events at or after this RFC 3339 `time`", timeFlag(&filter.Since))
 	flags.Func("until", "only events before this RFC 3339 `time`", timeFlag(&filter.Until))
-	flags.BoolVar(&rawJSON, "json", false, "print raw JSON events")
+	flags.BoolVar(&rawJSON, "json", false, "print raw, uncolored JSON events")
 	if code, ok := parseFlags(flags, args, eventsHelp, stdout, stderr); !ok {
 		return code
 	}
@@ -55,6 +57,7 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "shycler events: %v\n", err)
 		return exitError
 	}
+	renderer := journal.NewRenderer(stdout, os.Getenv)
 	for _, e := range events {
 		if !filter.Match(e) {
 			continue
@@ -62,7 +65,7 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 		if rawJSON {
 			fmt.Fprintf(stdout, "%s\n", e.Raw)
 		} else {
-			fmt.Fprintln(stdout, journal.FormatLine(e, time.Local))
+			fmt.Fprintln(stdout, renderer.Line(e, time.Local))
 		}
 	}
 	if len(torn) > 0 {
