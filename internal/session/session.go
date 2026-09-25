@@ -444,10 +444,10 @@ func compareContext(recorded, current machine.BIOSContext) (string, bool) {
 		name            string
 		recorded, found any
 	}{
-		{"bios_version", recorded.BIOSVersion, current.BIOSVersion},
-		{"board", recorded.Board, current.Board},
-		{"cpu_model", recorded.CPUModel, current.CPUModel},
-		{"microcode", recorded.Microcode, current.Microcode},
+		{"bios_version", recorded.BIOSVersion, journalString(current.BIOSVersion)},
+		{"board", recorded.Board, journalString(current.Board)},
+		{"cpu_model", recorded.CPUModel, journalString(current.CPUModel)},
+		{"microcode", recorded.Microcode, journalString(current.Microcode)},
 		{"boost_limit_mhz", recorded.BoostLimitMHz, current.BoostLimitMHz},
 	} {
 		if f.recorded != f.found {
@@ -455,6 +455,11 @@ func compareContext(recorded, current machine.BIOSContext) (string, bool) {
 		}
 	}
 	return "matches the session", true
+}
+
+// journalString replaces each invalid UTF-8 byte with U+FFFD, as the journal's JSON encoding does to recorded values.
+func journalString(s string) string {
+	return string([]rune(s))
 }
 
 func (r *runner) startSession() error {
