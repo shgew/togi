@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,6 +71,44 @@ func TestDefectDeadEndExit(t *testing.T) {
 	stop := session.Stop{Reason: session.StopDeadEnd, DeadEnd: &journal.DeadEnd{Condition: journal.DeadEndDefect, Detail: "operator decision required"}}
 	if code := runResult(stop, nil, &stderr, journal.Renderer{}); code != 17 || !strings.Contains(stderr.String(), "dead end defect") {
 		t.Fatalf("exit %d, stderr %q", code, stderr.String())
+	}
+}
+
+func TestParseDefectAnswer(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		line string
+		err  error
+		want bool
+	}{
+		{name: "yes", line: "Yes \n", want: true},
+		{name: "short yes", line: "Y\n", want: true},
+		{name: "no", line: "no\n"},
+		{name: "other", line: "sure\n"},
+		{name: "empty", line: "\n"},
+		{name: "yes without newline at EOF", line: "yes", err: io.EOF},
+		{name: "yes with read error", line: "yes\n", err: errors.New("read failed")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseDefectAnswer(tc.line, tc.err); got != tc.want {
+				t.Fatalf("parseDefectAnswer(%q, %v) = %t, want %t", tc.line, tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDefectPromptRejectsCharacterDevicesThatAreNotTerminals(t *testing.T) {
+	null, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer null.Close()
+	stdin := os.Stdin
+	os.Stdin = null
+	defer func() { os.Stdin = stdin }()
+	if prompt := defectPrompt(null); prompt != nil {
+		t.Fatal("/dev/null must not be treated as a terminal")
 	}
 }
 

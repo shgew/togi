@@ -2,6 +2,7 @@
 package defect
 
 import (
+	"fmt"
 	"slices"
 	"time"
 
@@ -27,9 +28,10 @@ type trialKey struct{ boot, trial string }
 
 // Evidence supplies the journal and indexed facts to a defect predicate.
 type Evidence struct {
-	Events    []journal.Event
-	trialEnds map[trialKey]journal.Event
-	stops     map[string][]journal.Event
+	Events        []journal.Event
+	trialEnds     map[trialKey]journal.Event
+	trialProgress map[trialKey][]journal.Event
+	stops         map[string][]journal.Event
 }
 
 type Entry struct {
@@ -49,7 +51,7 @@ type Finding struct {
 
 var entries = []Entry{{
 	ID: 1, Title: "False failure at power-off", PR: 16, Direction: TooCautious,
-	Detail:    "At power-off, systemd stopped the trial scope before shycler received SIGTERM; the backend exit looked like a failure and caused a proven backoff.",
+	Detail:    "At power-off, systemd stopped the trial scope before shycler received SIGTERM; the backend exited cleanly (<nil>) but was reported as a failure and caused a proven backoff.",
 	Decisions: []DecisionMatch{{Kind: journal.KindTunerDecision, Decision: journal.Backoff, Cause: journal.KindFailure, Predicate: powerOffFailure}},
 }}
 
@@ -65,7 +67,7 @@ func Find(events []journal.Event) []Finding { return FindWith(events, entries) }
 // FindWith uses a supplied list for scenarios where an entry is not yet in the binary.
 func FindWith(events []journal.Event, list []Entry) []Finding {
 	bySeq := make(map[int]journal.Event, len(events))
-	ev := Evidence{Events: events, trialEnds: make(map[trialKey]journal.Event), stops: make(map[string][]journal.Event)}
+	ev := Evidence{Events: events, trialEnds: make(map[trialKey]journal.Event), trialProgress: make(map[trialKey][]journal.Event), stops: make(map[string][]journal.Event)}
 	for _, e := range events {
 		bySeq[e.Seq] = e
 		switch p := e.Data.(type) {
@@ -73,6 +75,8 @@ func FindWith(events []journal.Event, list []Entry) []Finding {
 			if p.Outcome == journal.OutcomeFailure && p.Signal == machine.UnexpectedExit {
 				ev.trialEnds[trialKey{e.Boot, p.Trial}] = e
 			}
+		case *journal.TrialProgress:
+			ev.trialProgress[trialKey{e.Boot, p.Trial}] = append(ev.trialProgress[trialKey{e.Boot, p.Trial}], e)
 		case *journal.Shutdown:
 			if p.Reason == journal.ShutdownSignal {
 				ev.stops[e.Boot] = append(ev.stops[e.Boot], e)
@@ -132,6 +136,17 @@ func powerOffFailure(ev Evidence, decision, cause journal.Event) bool {
 	}
 	end, ok := ev.trialEnds[trialKey{cause.Boot, failure.Trial}]
 	if !ok || end.Seq >= cause.Seq {
+		return false
+	}
+	cleanExit := fmt.Sprintf("core %02d backend exited early: <nil>", decision.Data.(*journal.TunerDecision).Core)
+	matched := false
+	for _, progress := range ev.trialProgress[trialKey{cause.Boot, failure.Trial}] {
+		if progress.Seq < end.Seq && progress.Data.(*journal.TrialProgress).Detail == cleanExit {
+			matched = true
+			break
+		}
+	}
+	if !matched {
 		return false
 	}
 	for _, stop := range ev.stops[end.Boot] {

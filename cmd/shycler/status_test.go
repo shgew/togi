@@ -71,45 +71,61 @@ func TestStatusAndCert(t *testing.T) {
 	}
 }
 
-func TestStatusShowsUnansweredDefectResetCommands(t *testing.T) {
+func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
 	if code := cli([]string{"--state-dir", dir, "run", "--sim", "1"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("initial run: exit %d, stderr %s", code, stderr.String())
 	}
-	j, err := journal.Open(dir, journal.Options{Boot: "status-test", Build: session.Build()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := j.Append(&journal.DefectFound{ID: 1, Title: "False failure at power-off", PR: 16, Direction: "too_cautious", Cores: []int{3, 7}, Decisions: []int{42}}, 42); err != nil {
-		t.Fatal(err)
-	}
-	if err := j.Close(); err != nil {
-		t.Fatal(err)
-	}
-	stdout.Reset()
-	if code := cli([]string{"--state-dir", dir, "status"}, &stdout, &stderr); code != exitOK {
-		t.Fatalf("status: exit %d, stderr %s", code, stderr.String())
-	}
-	for _, want := range []string{"defect 1: False failure at power-off", "shycler reset --core 3", "shycler reset --core 7"} {
-		if !strings.Contains(stdout.String(), want) {
-			t.Fatalf("status lacks %q:\n%s", want, stdout.String())
+	record := func(payload journal.Payload) {
+		t.Helper()
+		j, err := journal.Open(dir, journal.Options{Boot: "status-test", Build: session.Build()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := j.Append(payload); err != nil {
+			t.Fatal(err)
+		}
+		if err := j.Close(); err != nil {
+			t.Fatal(err)
 		}
 	}
-	j, err = journal.Open(dir, journal.Options{Boot: "status-test", Build: session.Build()})
-	if err != nil {
-		t.Fatal(err)
+	status := func() string {
+		t.Helper()
+		stdout.Reset()
+		stderr.Reset()
+		if code := cli([]string{"--state-dir", dir, "status"}, &stdout, &stderr); code != exitOK {
+			t.Fatalf("status: exit %d, stderr %s", code, stderr.String())
+		}
+		return stdout.String()
 	}
-	if _, err := j.Append(&journal.DefectAnswered{ID: 1, Cores: []int{3, 7}, Answer: "no"}); err != nil {
-		t.Fatal(err)
+	check := func(want []string, absent []string) {
+		t.Helper()
+		out := status()
+		for _, text := range want {
+			if !strings.Contains(out, text) {
+				t.Fatalf("status lacks %q:\n%s", text, out)
+			}
+		}
+		for _, text := range absent {
+			if strings.Contains(out, text) {
+				t.Fatalf("status unexpectedly shows %q:\n%s", text, out)
+			}
+		}
 	}
-	if err := j.Close(); err != nil {
-		t.Fatal(err)
-	}
-	stdout.Reset()
-	if code := cli([]string{"--state-dir", dir, "status"}, &stdout, &stderr); code != exitOK || strings.Contains(stdout.String(), "shycler reset --core") {
-		t.Fatalf("answered defect still shown: exit %d, status %s, stderr %s", code, stdout.String(), stderr.String())
-	}
+	title := "defect 1: False failure at power-off"
+	core3, core7 := "shycler reset --core 3", "shycler reset --core 7"
+	record(&journal.DefectFound{ID: 1, Title: "False failure at power-off", PR: 16, Direction: "too_cautious", Cores: []int{3, 7}, Decisions: []int{42}})
+	check([]string{title, core3, core7}, nil)
+	record(&journal.DefectAnswered{ID: 1, Cores: []int{3, 7}, Answer: "no"})
+	check([]string{title, core3, core7}, nil)
+	record(&journal.CommandReset{Core: new(3)})
+	check([]string{title, core7, "affected cores [7]"}, []string{core3})
+	record(&journal.CommandReset{Core: new(7)})
+	check(nil, []string{title, core3, core7})
+	record(&journal.DefectFound{ID: 1, Title: "False failure at power-off", PR: 16, Direction: "too_cautious", Cores: []int{3, 7}, Decisions: []int{42}})
+	record(&journal.CommandReset{All: true})
+	check(nil, []string{title, core3, core7})
 }
 
 func TestRateRoundsUp(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -127,8 +128,27 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		}
 	}
 	_ = tw.Flush()
-	for _, finding := range defect.Unanswered(events) {
-		if defect.Direction(finding.Direction) != defect.TooCautious {
+	var findings []journal.DefectFound
+	for _, event := range events {
+		switch p := event.Data.(type) {
+		case *journal.DefectFound:
+			if defect.Direction(p.Direction) == defect.TooCautious {
+				finding := *p
+				finding.Cores = slices.Clone(p.Cores)
+				findings = append(findings, finding)
+			}
+		case *journal.CommandReset:
+			if p.All {
+				findings = nil
+			} else if p.Core != nil {
+				for i := range findings {
+					findings[i].Cores = slices.DeleteFunc(findings[i].Cores, func(core int) bool { return core == *p.Core })
+				}
+			}
+		}
+	}
+	for _, finding := range findings {
+		if len(finding.Cores) == 0 {
 			continue
 		}
 		fmt.Fprintf(w, "\ndefect %d: %s (fixed by pull request #%d); decisions %v affected cores %v\n", finding.ID, finding.Title, finding.PR, finding.Decisions, finding.Cores)

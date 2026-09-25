@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"code.marleb.org/shgew/shycler/internal/config"
 	"code.marleb.org/shgew/shycler/internal/defect"
@@ -212,9 +213,12 @@ func defectPrompt(stderr io.Writer) func(defect.Finding) (bool, error) {
 	if !ok {
 		return nil
 	}
-	inInfo, inErr := os.Stdin.Stat()
-	outInfo, outErr := out.Stat()
-	if inErr != nil || outErr != nil || inInfo.Mode()&os.ModeCharDevice == 0 || outInfo.Mode()&os.ModeCharDevice == 0 {
+	isTerminal := func(file *os.File) bool {
+		var termios syscall.Termios
+		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&termios)))
+		return errno == 0
+	}
+	if !isTerminal(os.Stdin) || !isTerminal(out) {
 		return nil
 	}
 	reader := bufio.NewReader(os.Stdin)
@@ -232,11 +236,16 @@ func defectPrompt(stderr io.Writer) func(defect.Finding) (bool, error) {
 		}
 		fmt.Fprint(stderr, "? [y/N] ")
 		line, err := reader.ReadString('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			return false, fmt.Errorf("read defect answer: %w", err)
-		}
-		return strings.EqualFold(strings.TrimSpace(line), "y") || strings.EqualFold(strings.TrimSpace(line), "yes"), nil
+		return parseDefectAnswer(line, err), nil
 	}
+}
+
+func parseDefectAnswer(line string, err error) bool {
+	if err != nil || !strings.HasSuffix(line, "\n") {
+		return false
+	}
+	answer := strings.TrimSpace(line)
+	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes")
 }
 
 func loadConfig(g *globals) (config.Config, bool, error) {

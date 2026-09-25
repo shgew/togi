@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"code.marleb.org/shgew/shycler/internal/journal"
+	"code.marleb.org/shgew/shycler/internal/tuner"
 )
 
 func fixture(t *testing.T) []journal.Event {
@@ -23,12 +24,25 @@ func TestPowerOffDefect(t *testing.T) {
 		edit func([]journal.Event)
 		want bool
 	}{
-		{"pre-fix power-off and unrelated unexpected exit", nil, true},
+		{"pre-fix clean exit and unrelated crash", nil, true},
 		{"fixed before decision", func(e []journal.Event) { e[1].Data.(*journal.ConfigLoaded).Fixes = 1 }, false},
-		{"shutdown outside five seconds", func(e []journal.Event) { e[5].Time = e[2].Time.Add(6 * time.Second) }, false},
-		{"shutdown from another boot", func(e []journal.Event) { e[5].Boot = "boot-b" }, false},
-		{"unrelated shutdown reason", func(e []journal.Event) { e[5].Data.(*journal.Shutdown).Reason = journal.ShutdownRotations }, false},
-		{"decision does not cite the failure", func(e []journal.Event) { e[4].Cause = []int{3} }, false},
+		{"shutdown outside five seconds", func(e []journal.Event) { e[13].Time = e[10].Time.Add(6 * time.Second) }, false},
+		{"shutdown from another boot", func(e []journal.Event) { e[13].Boot = "boot-c" }, false},
+		{"unrelated shutdown reason", func(e []journal.Event) { e[13].Data.(*journal.Shutdown).Reason = journal.ShutdownRotations }, false},
+		{"decision does not cite the failure", func(e []journal.Event) { e[12].Cause = []int{11} }, false},
+		{"no clean exit progress", func(e []journal.Event) {
+			e[9].Data.(*journal.TrialProgress).Detail = "core 10 backend exited early: exit status 1"
+		}, false},
+		{"progress belongs to another trial", func(e []journal.Event) { e[9].Data.(*journal.TrialProgress).Trial = "0002" }, false},
+		{"progress belongs to another core", func(e []journal.Event) {
+			e[9].Data.(*journal.TrialProgress).Detail = "core 07 backend exited early: <nil>"
+		}, false},
+		{"clean exit progress after trial end", func(e []journal.Event) { e[9].Seq = 22 }, false},
+		{"genuine crash then Ctrl-C within five seconds", func(e []journal.Event) {
+			e[20].Boot = "boot-b"
+			e[20].Time = e[17].Time.Add(200 * time.Millisecond)
+			e[9].Data.(*journal.TrialProgress).Detail = "core 10 backend exited early: exit status 1"
+		}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			events := fixture(t)
@@ -42,13 +56,36 @@ func TestPowerOffDefect(t *testing.T) {
 				}
 				return
 			}
-			if len(got) != 1 || got[0].Entry.ID != 1 || !slices.Equal(got[0].Cores, []int{10}) || !slices.Equal(got[0].Decisions, []int{5}) {
-				t.Fatalf("findings %+v; want defect 1, only core 10 and decision #5", got)
+			if len(got) != 1 || got[0].Entry.ID != 1 || !slices.Equal(got[0].Cores, []int{10}) || !slices.Equal(got[0].Decisions, []int{13}) {
+				t.Fatalf("findings %+v; want defect 1, only core 10 and decision #13", got)
 			}
-			events = append(events, journal.Event{Seq: 11, Kind: journal.KindDefectFound, Data: &journal.DefectFound{ID: 1}})
+			events = append(events, journal.Event{Seq: 22, Kind: journal.KindDefectFound, Data: &journal.DefectFound{ID: 1}})
 			if got := Find(events); len(got) != 0 {
 				t.Fatalf("second resume repeated finding: %+v", got)
 			}
 		})
 	}
+}
+
+func TestPowerOffFixtureReplaysBackoff(t *testing.T) {
+	events := fixture(t)
+	var state journal.State
+	engine := tuner.New()
+	journal.Replay(events[:12], &state, engine)
+	action := engine.Next()
+	decision, ok := action.Payload.(*journal.TunerDecision)
+	if !ok || decision.Core != 10 || decision.Decision != journal.Backoff || decision.FromOffset != -50 || decision.ToOffset != -45 || !slices.Equal(action.Cause, []int{12}) {
+		t.Fatalf("tuner decision after attributed failure: %+v; want core 10 backoff -50 to -45 citing failure #12", action)
+	}
+	journal.Replay(events[12:], &state, engine)
+	engine.Project(&state)
+	for _, core := range state.Cores {
+		if core.Core == 10 {
+			if core.Offset != -45 || core.FailedMark == nil || *core.FailedMark != -50 || core.LastDecision == nil || core.LastDecision.Seq != 13 {
+				t.Fatalf("replayed core 10: %+v", core)
+			}
+			return
+		}
+	}
+	t.Fatal("replayed journal missing core 10")
 }
