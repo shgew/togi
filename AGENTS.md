@@ -27,7 +27,7 @@ Every change, docs included, lands as a pull request against `main` on `code.mar
 - The pull request body follows `.github/pull_request_template.md`: a short summary, and the demo in a collapsed block.
 - Address every review comment on the same branch.
 - A pull request that finishes an issue says `Closes #N` in its body; one that only makes progress says `Refs #N`.
-- A pull request that breaks resuming an existing session or reading an existing journal starts its title with `[BREAKING]`, carries the `breaking` label, and starts its changelog line with `**BREAKING**`.
+- A pull request that bumps `journal.Schema` or `tuner.Ruleset` is breaking: its title starts with `[BREAKING]`, it carries the `breaking` label, and its changelog line starts with `**BREAKING**`.
 - A breaking pull request merges only after `[Unreleased]` has been released (see `docs/releasing.md`).
 
 ## Issues

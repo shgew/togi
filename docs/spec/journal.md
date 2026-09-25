@@ -13,6 +13,7 @@ All files live in the state directory, default `/var/lib/shycler`:
 | `trials/<trial-id>/` | Per-trial work directory: backend config files, raw stdout/stderr, backend result files |
 | `archive/<session-id>.jsonl` | Journals of sessions ended by `reset --all` |
 | `archive/<session-id>-trials/` | The `trials/` directory of a session ended by `reset --all` |
+| `archive/<session-id>-compat-pending` | Crash-recovery marker while `reset --all` archives a journal with another schema; removed on completion |
 | `lock` | Held with `flock` by the one process allowed to write the journal |
 
 Retention: trial directories of failed and inconclusive trials are kept forever. Passing ones are pruned beyond the newest 200.
@@ -24,12 +25,13 @@ Retention: trial directories of failed and inconclusive trials are kept forever.
    - every observation that feeds a decision;
    - every decision.
 
-   The one exception: `SIGSTOP`/`SIGCONT` cycles too frequent to record one by one. R3 and R4 cycles are recorded as the schedule and seed at trial start and as counts at trial end. R6 bursts are recorded as a `trial.progress` when they begin and as counts in a `trial.progress` at trial end. R7's phase changes are each a `trial.progress`.
+   Exceptions: `SIGSTOP`/`SIGCONT` cycles too frequent to record one by one. R3 and R4 cycles are recorded as the schedule and seed at trial start and as counts at trial end. R6 bursts are recorded as a `trial.progress` when they begin and as counts in a `trial.progress` at trial end. R7's phase changes are each a `trial.progress`. A refusal caused by a schema or ruleset mismatch writes no event: the build that wrote this journal must remain able to resume it. The reason goes to stderr, which is the system journal in a tuning boot; clearing GRUB's saved entry for that refusal also writes no event.
 2. **Intent before action.** An action that may crash the machine, such as an SMU write or a trial start, is appended and fsynced before it happens. On the next boot the last intent without a matching result is the in-flight action. Intents (`smu.intent`, `trial.intent`) are fsynced before `Append` returns, every event is written with a single `write`, and closing the journal fsyncs it. Opening the journal fsyncs the state directory and its parent, so a newly created journal file survives a crash. `run` appends `shutdown` when it stops on a signal, at a dead end, or on reaching the requested rotations; any other exit writes nothing, so a later boot whose journal ends without `shutdown` is treated as a crash (`workloads.md`, Failure signals). `run --sim` fsyncs nothing, because a simulated crash cannot lose written data.
    A `deadend` without its `boot.saved_entry` (for a GRUB action) or without `shutdown` is an interrupted dead-end action, not permission to resume tuning: the next `run` completes the missing action and records `shutdown` before doing other work; a `run` without `--tuning-boot` cannot clear GRUB's saved entry and only records `shutdown`. A `boot.saved_entry` tied to that dead end is not cleared again. Once `shutdown` is present, the next `run` starts normally and re-evaluates dead-end conditions.
 3. **Decisions name their cause.** A decision event carries `cause`: the `seq` numbers of the events it was derived from, plus a `reason` in plain words.
 4. **The journal wins.** On start, shycler rebuilds the state by replaying the journal. If `state.json` disagrees with the rebuild, it is rewritten and a `state.rebuilt` event records the difference.
-5. **One writer.** `run`, `regain` and `reset` take `lock` before appending; `regain` and `reset` refuse while a `run` holds it. `status`, `cert` and `events` only read. `regain` and `reset --core` end with `shutdown` (reason `command`), so the next `run` never reads their boot as a crash. `reset --all` appends `command.reset` and `session.archived`, fsyncs, removes `state.json`, moves `trials/` to `archive/<session-id>-trials/`, then moves `events.jsonl` to `archive/<session-id>.jsonl`; it refuses before appending anything when either archive path already exists. Opening a journal whose last event is `session.archived` finishes that move first and continues with an empty journal.
+5. **One writer.** `run`, `regain` and `reset` take `lock` before appending; `regain` and `reset` refuse while a `run` holds it. `status`, `cert` and `events` only read. `regain` and `reset --core` end with `shutdown` (reason `command`), so the next `run` never reads their boot as a crash. `reset --all` appends `command.reset` and `session.archived`, fsyncs, removes `state.json`, moves `trials/` to `archive/<session-id>-trials/`, then moves `events.jsonl` to `archive/<session-id>.jsonl`; it refuses before appending anything when either archive path already exists. Opening a journal whose last event is `session.archived` finishes that move first and continues with an empty journal. For an incompatible schema, `reset --all` cannot append: with the lock held it writes and fsyncs a temporary archive marker, removes the state file, moves `trials/` and then `events.jsonl` without writing to the old journal, fsyncing both directories after the renames, and removes the marker. A following `reset --all` resumes an interrupted move only if that marker exists; an archive path collision without the marker is refused. If the archive exists but `events.jsonl` is already gone, the next `reset --all` or journal open removes the marker and fsyncs the archive directory under the writer lock.
+   If the old schema already recorded `session.archived` before the update, `reset --all` completes that recorded move without creating a marker, including when `trials/` was moved before the interruption.
 6. **Torn tails are expected.** A crash can leave a partial last line. Replay drops it and appends a `journal.torn` event with the discarded bytes, hex-encoded. A torn first line leaves an empty journal: nothing happened before `session.start`, so nothing is recorded.
 
 ## Event format
@@ -47,7 +49,7 @@ One JSON object per line. Common fields:
 
 Kind-specific fields are flat, snake_case and carry units in their names (`duration_s`, `period_ms`, `tctl_max_c`). Values use the vocabulary in `CONTEXT.md`. Cores are always `core` (the kernel `core_id`); logical CPUs are always `cpu`. The one exception to flat fields: `config.loaded` carries the effective configuration nested under `config`.
 
-The first event of a session is `session.start` with `schema`, an integer bumped on any incompatible change.
+The first event of a session is `session.start` with a flat build stamp: `version`, `rev`, `ruleset`, `schema` and `fixes` (the last three are integers). `config.loaded` carries the same fields at every start or resume. The starting stamp determines the session's ruleset and schema; the last stamped `config.loaded` identifies the build and fixes used most recently. Missing ruleset means ruleset 1; an absent version means the writing build is unknown, and absent fixes means 0. Only bump `journal.Schema` when this build cannot read an older journal the same way: adding fields or kinds does not bump it.
 
 Example trial, abbreviated:
 
@@ -64,8 +66,8 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 
 | Group | Kinds |
 |---|---|
-| Session | `session.start`, `session.context` (BIOS context), `session.baseline` (baseline profile), `session.notice`, `session.archived` |
-| Config and preflight | `config.loaded` (effective config), `preflight.check` (one per check, with result) |
+| Session | `session.start` (session ID, cores and build stamp), `session.context` (BIOS context), `session.baseline` (baseline profile), `session.notice`, `session.archived` |
+| Config and preflight | `config.loaded` (effective config and build stamp), `preflight.check` (one per check, with result) |
 | SMU | `smu.intent`, `smu.write`, `smu.readback`, `smu.error` |
 | Profile | `profile.applied` (every application of every core's offset, with its condition), `profile.change` (the profile under guard: on entering guard, with `from` null, and after every guard decision), `profile.restored` (the offsets written back before `shutdown`, `runtime.md`) |
 | Trials | `trial.intent`, `trial.start` (pid, scope, cpus and argv; the config `files` written; `instances` with core, cpus, pid and scope when the trial runs more than one), `trial.progress` (backend milestones such as a finished FFT size), `trial.signal` (load-step schedule), `trial.sample` (containment or stall warnings only), `trial.end` |
@@ -118,11 +120,12 @@ The run log and `shycler events` color the whole human-readable line according t
 | Moment | Color |
 |---|---|
 | Trial ends with failure (`trial.end` outcome `failure`), `failure`, `crash.detected` | Red |
-| Dead end (`deadend` event and `run` summary), refusal (when it has an event) | Red, bold |
+| Dead end (`deadend` event and `run` summary), incompatible-session refusal line (not an event) | Red, bold |
 | Search step passed (R1 and R2 at one offset passed; the following `tuner.decision` with `decision: step_deeper`) | Green |
 | Core confirmed, edge reported (`core.phase` from `confirmation` to `confirmed`, `regain` to `confirmed` without `backoff: true`, or `search` to `confirmation` for a candidate edge) | Green, bold |
 | Clean guard rotation (`guard.rotation` end with `clean: true`), tier earned (`tier.change` to a higher tier) | Green, bold |
 | Proven or suspect backoff (`tuner.decision` with `decision: backoff` or `suspect_backoff`, or a failed `regain` to `confirmed` with `backoff: true`) | Yellow |
+| Ruleset mismatch warning on read-only commands (not an event) | Yellow |
 | Inconclusive trial (`trial.end` outcome `inconclusive`) | Dim |
 | Everything else, including a single trial passing | Plain |
 

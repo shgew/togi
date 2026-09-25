@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"code.marleb.org/shgew/shycler/internal/journal"
+	"code.marleb.org/shgew/shycler/internal/session"
 	"code.marleb.org/shgew/shycler/internal/tuner"
 )
 
@@ -21,7 +23,8 @@ const statusHelp = `Usage: shycler status
 
 Show the session at a glance: phase, tier and guard progress, then one row per
 core with its offset, unproven depth and last decision. Read-only; rendered from
-the journal.
+the journal. A different ruleset warns before rendering; a different schema
+is refused.
 
 Examples:
   shycler status                     The session in the default state directory
@@ -54,9 +57,13 @@ func replayDir(dir string) ([]journal.Event, journal.State, []byte, error) {
 
 func loadSession(name, dir string, stderr io.Writer) ([]journal.Event, journal.State, int, bool) {
 	events, st, torn, err := replayDir(dir)
+	var incompatible *journal.IncompatibleError
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		fmt.Fprintf(stderr, "shycler %s: no journal at %s\n", name, filepath.Join(dir, "events.jsonl"))
+		return nil, st, exitError, false
+	case errors.As(err, &incompatible):
+		fmt.Fprintln(stderr, journal.NewRenderer(stderr, os.Getenv).Styled(journal.RedBold, "shycler "+name+": "+incompatible.Error()))
 		return nil, st, exitError, false
 	case err != nil:
 		fmt.Fprintf(stderr, "shycler %s: %v\n", name, err)
@@ -65,10 +72,21 @@ func loadSession(name, dir string, stderr io.Writer) ([]journal.Event, journal.S
 		fmt.Fprintf(stderr, "shycler %s: no session in %s\n", name, dir)
 		return nil, st, exitError, false
 	}
+	if len(events) > 0 {
+		warnRuleset(events, stderr)
+	}
 	if len(torn) > 0 {
 		fmt.Fprintf(stderr, "shycler %s: journal ends with %d torn bytes; the next run records journal.torn\n", name, len(torn))
 	}
 	return events, st, exitOK, true
+}
+
+func warnRuleset(events []journal.Event, stderr io.Writer) {
+	recorded := journal.BuildOf(events)
+	binary := session.Build()
+	if recorded.Ruleset != binary.Ruleset {
+		fmt.Fprintln(stderr, journal.NewRenderer(stderr, os.Getenv).Styled(journal.Yellow, journal.RulesetWarning(recorded, binary)))
+	}
 }
 
 func writeStatus(w io.Writer, st journal.State) {

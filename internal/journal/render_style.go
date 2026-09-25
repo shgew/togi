@@ -108,7 +108,11 @@ func (r Renderer) Line(e Event, loc *time.Location) string {
 }
 
 func (r Renderer) Text(e Event, line string) string {
-	style := StyleOf(e)
+	return r.Styled(StyleOf(e), line)
+}
+
+// Styled applies the same terminal and journald style to a non-event line.
+func (r Renderer) Styled(style Style, line string) string {
 	if r.color {
 		var sgr string
 		switch style {

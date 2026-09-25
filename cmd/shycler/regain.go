@@ -19,7 +19,8 @@ const (
 
 Queue one count of regain on every confirmed core with unproven depth, or on
 core N only. Unproven depth is what a suspect backoff gave up without proof; the
-next run confirms one count deeper on each queued core.
+next run confirms one count deeper on each queued core. A different journal
+ruleset or schema is refused without queuing anything.
 
 Examples:
   sudo shycler regain            Every core with unproven depth
@@ -28,6 +29,7 @@ Examples:
 
 Reset one core, so the next run restarts its search from the baseline, or archive
 the whole session, so the next run starts a new one. Give exactly one of the two.
+--core refuses a different journal ruleset or schema; --all archives either.
 
 Examples:
   sudo shycler reset --core 3   Search core 3 again from its baseline
@@ -41,7 +43,7 @@ func runRegain(g *globals, args []string, stdout, stderr io.Writer) int {
 	if code, ok := parseFlags(flags, args, regainHelp, stdout, stderr); !ok {
 		return code
 	}
-	j, _, code, ok := openForCommand("regain", g.stateDir, stderr)
+	j, _, code, ok := openForCommand("regain", g.stateDir, stderr, false)
 	if !ok {
 		return code
 	}
@@ -73,7 +75,45 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 		commandUsage(flags, resetHelp, stderr)
 		return exitUsage
 	}
-	j, id, code, ok := openForCommand("reset", g.stateDir, stderr)
+	if all {
+		stamp, id, err := journal.Scan(g.stateDir)
+		if errors.Is(err, fs.ErrNotExist) {
+			recovered, recoverErr := journal.RecoverPendingArchive(g.stateDir)
+			if recoverErr != nil {
+				fmt.Fprintf(stderr, "shycler reset: %v\n", recoverErr)
+				if errors.Is(recoverErr, journal.ErrLocked) {
+					return exitLocked
+				}
+				return exitError
+			}
+			if recovered != "" {
+				fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next shycler run starts a new session\n", recovered, filepath.Join("archive", recovered+".jsonl"))
+				return exitOK
+			}
+		}
+		if err == nil && stamp.Schema != journal.Schema {
+			boot, bootErr := detect.BootID()
+			if bootErr != nil {
+				fmt.Fprintf(stderr, "shycler reset: %v\n", bootErr)
+				return exitError
+			}
+			j, openErr := journal.OpenForArchive(g.stateDir, journal.Options{Boot: boot, Sync: true})
+			if openErr != nil {
+				fmt.Fprintf(stderr, "shycler reset: %v\n", openErr)
+				if errors.Is(openErr, journal.ErrLocked) {
+					return exitLocked
+				}
+				return exitError
+			}
+			path, archiveErr := j.ArchiveUnreadable(id)
+			if code, ok := closeCommand("reset", j, archiveErr, stderr); !ok {
+				return code
+			}
+			fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next shycler run starts a new session\n", id, path)
+			return exitOK
+		}
+	}
+	j, id, code, ok := openForCommand("reset", g.stateDir, stderr, all)
 	if !ok {
 		return code
 	}
@@ -94,7 +134,15 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 }
 
 // openForCommand refuses a directory without a session before it creates anything there.
-func openForCommand(name, dir string, stderr io.Writer) (*journal.Journal, string, int, bool) {
+func openForCommand(name, dir string, stderr io.Writer, allowRuleset bool) (*journal.Journal, string, int, bool) {
+	if !allowRuleset {
+		if stamp, _, scanErr := journal.Scan(dir); scanErr == nil && stamp.Schema != 0 {
+			if err := journal.Compatible(stamp, session.Build()); err != nil {
+				fmt.Fprintf(stderr, "shycler %s: %v\n", name, err)
+				return nil, "", exitError, false
+			}
+		}
+	}
 	events, _, err := journal.Read(dir)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -107,12 +155,22 @@ func openForCommand(name, dir string, stderr io.Writer) (*journal.Journal, strin
 		fmt.Fprintf(stderr, "shycler %s: no session in %s\n", name, dir)
 		return nil, "", exitError, false
 	}
+	if !allowRuleset {
+		if err := journal.Compatible(journal.BuildOf(events), session.Build()); err != nil {
+			fmt.Fprintf(stderr, "shycler %s: %v\n", name, err)
+			return nil, "", exitError, false
+		}
+	}
 	boot, err := detect.BootID()
 	if err != nil {
 		fmt.Fprintf(stderr, "shycler %s: %v\n", name, err)
 		return nil, "", exitError, false
 	}
-	j, err := journal.Open(dir, journal.Options{Boot: boot, Sync: true, Log: stderr})
+	build := session.Build()
+	if allowRuleset {
+		build.Ruleset = 0
+	}
+	j, err := journal.Open(dir, journal.Options{Boot: boot, Sync: true, Log: stderr, Build: build})
 	if err != nil {
 		fmt.Fprintf(stderr, "shycler %s: %v\n", name, err)
 		if errors.Is(err, journal.ErrLocked) {

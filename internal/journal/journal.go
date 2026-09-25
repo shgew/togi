@@ -3,6 +3,7 @@ package journal
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,7 @@ type Options struct {
 	Sync     bool
 	Log      io.Writer
 	Renderer Renderer
+	Build    Build
 }
 
 var ErrLocked = errors.New("another shycler process holds the journal lock")
@@ -45,14 +47,23 @@ type Folder interface {
 }
 
 func Open(dir string, opts Options) (*Journal, error) {
-	j, err := open(dir, opts)
+	j, err := open(dir, opts, false)
 	if err != nil {
 		return nil, fmt.Errorf("open journal %s: %w", dir, err)
 	}
 	return j, nil
 }
 
-func open(dir string, opts Options) (*Journal, error) {
+// OpenForArchive holds the writer lock without decoding a journal with another schema.
+func OpenForArchive(dir string, opts Options) (*Journal, error) {
+	j, err := open(dir, opts, true)
+	if err != nil {
+		return nil, fmt.Errorf("open journal for archive %s: %w", dir, err)
+	}
+	return j, nil
+}
+
+func open(dir string, opts Options, allowIncompatible bool) (*Journal, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
@@ -76,10 +87,20 @@ func open(dir string, opts Options) (*Journal, error) {
 		lock.Close()
 		return nil, err
 	}
-	events, end, err := parse(data)
+	if errors.Is(err, fs.ErrNotExist) {
+		if _, err := finishPendingArchive(dir); err != nil {
+			lock.Close()
+			return nil, err
+		}
+	}
+	events, end, err := parse(data, opts.Build)
 	if err != nil {
-		lock.Close()
-		return nil, err
+		var mismatch *IncompatibleError
+		if !allowIncompatible || !errors.As(err, &mismatch) || mismatch.Field != "schema" {
+			lock.Close()
+			return nil, err
+		}
+		events, end = nil, len(data)
 	}
 	if n := len(events); n > 0 && end == len(data) {
 		if a, ok := events[n-1].Data.(*SessionArchived); ok {
@@ -127,7 +148,75 @@ func open(dir string, opts Options) (*Journal, error) {
 	return j, nil
 }
 
-func parse(data []byte) (events []Event, end int, err error) {
+// RecoverPendingArchive completes a moved incompatible journal without creating a new one.
+// It returns the archived session ID only when a pending marker was removed.
+func RecoverPendingArchive(dir string) (string, error) {
+	id, err := pendingArchive(dir)
+	if err != nil || id == "" {
+		return id, err
+	}
+	lock, err := os.OpenFile(filepath.Join(dir, lockFile), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return "", fmt.Errorf("open journal lock: %w", err)
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return "", ErrLocked
+		}
+		return "", fmt.Errorf("lock: %w", err)
+	}
+	return finishPendingArchive(dir)
+}
+
+func pendingArchive(dir string) (string, error) {
+	if _, err := os.Stat(filepath.Join(dir, eventsFile)); err == nil {
+		return "", nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("check journal for archive recovery: %w", err)
+	}
+	archive := filepath.Join(dir, archiveDir)
+	entries, err := os.ReadDir(archive)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read archive markers: %w", err)
+	}
+	for _, entry := range entries {
+		id, found := strings.CutSuffix(entry.Name(), "-compat-pending")
+		if !found || id == "" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(archive, id+".jsonl")); err != nil {
+			return "", fmt.Errorf("check pending archive %s: %w", id, err)
+		}
+		return id, nil
+	}
+	return "", nil
+}
+
+func finishPendingArchive(dir string) (string, error) {
+	id, err := pendingArchive(dir)
+	if err != nil || id == "" {
+		return id, err
+	}
+	archive := filepath.Join(dir, archiveDir)
+	for _, d := range []string{archive, dir} {
+		if err := syncDir(d); err != nil {
+			return "", fmt.Errorf("sync pending archive directory %s: %w", d, err)
+		}
+	}
+	if err := os.Remove(filepath.Join(archive, id+"-compat-pending")); err != nil {
+		return "", fmt.Errorf("remove incompatible archive marker: %w", err)
+	}
+	if err := syncDir(archive); err != nil {
+		return "", fmt.Errorf("sync incompatible archive completion: %w", err)
+	}
+	return id, nil
+}
+
+func parse(data []byte, binary Build) (events []Event, end int, err error) {
 	for {
 		i := bytes.IndexByte(data[end:], '\n')
 		if i < 0 {
@@ -135,6 +224,34 @@ func parse(data []byte) (events []Event, end int, err error) {
 		}
 		line := data[end : end+i]
 		n := len(events) + 1
+		if n == 1 {
+			var first struct {
+				Kind Kind `json:"kind"`
+				Build
+			}
+			if err := json.Unmarshal(line, &first); err != nil {
+				return nil, 0, fmt.Errorf("journal line 1: %w", err)
+			}
+			if first.Kind == KindSessionStart {
+				if binary.Schema == 0 {
+					binary = binarySchemaBuild()
+				}
+				recordedRuleset := first.Ruleset
+				if recordedRuleset == 0 {
+					recordedRuleset = 1
+				}
+				if binary.Ruleset == 0 {
+					binary.Ruleset = recordedRuleset
+				}
+				if first.Schema != binary.Schema || recordedRuleset != binary.Ruleset {
+					stamp, _, err := scanBuild(data)
+					if err != nil {
+						return nil, 0, err
+					}
+					return nil, 0, Compatible(stamp, binary)
+				}
+			}
+		}
 		e, err := decode(line)
 		if err != nil {
 			return nil, 0, fmt.Errorf("journal line %d: %w", n, err)
@@ -143,12 +260,8 @@ func parse(data []byte) (events []Event, end int, err error) {
 			return nil, 0, fmt.Errorf("journal line %d: seq %d, want %d", n, e.Seq, n)
 		}
 		if n == 1 {
-			start, ok := e.Data.(*SessionStart)
-			if !ok {
+			if _, ok := e.Data.(*SessionStart); !ok {
 				return nil, 0, fmt.Errorf("journal line 1: first event is %s, want %s", e.Kind, KindSessionStart)
-			}
-			if start.Schema != Schema {
-				return nil, 0, fmt.Errorf("journal line 1: schema %d, want %d", start.Schema, Schema)
 			}
 		}
 		events = append(events, e)
@@ -165,7 +278,7 @@ func ReadFile(path string) (events []Event, torn []byte, err error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("read journal %s: %w", path, err)
 	}
-	events, end, err := parse(data)
+	events, end, err := parse(data, Build{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("read journal %s: %w", path, err)
 	}
@@ -211,6 +324,81 @@ func (j *Journal) Archive(session string) (string, error) {
 	return rel, nil
 }
 
+// ArchiveUnreadable moves an old-schema session without writing in its format.
+// OpenForArchive must hold the lock before this is called.
+func (j *Journal) ArchiveUnreadable(session string) (string, error) {
+	rel := filepath.Join(archiveDir, session+".jsonl")
+	// A previous build may already have recorded session.archived before the update.
+	data, err := os.ReadFile(filepath.Join(j.dir, eventsFile))
+	if err != nil {
+		return "", fmt.Errorf("read incompatible journal for archive recovery: %w", err)
+	}
+	if len(data) > 0 && data[len(data)-1] == '\n' {
+		end := len(data) - 1
+		start := bytes.LastIndexByte(data[:end], '\n') + 1
+		var last struct {
+			Kind    Kind   `json:"kind"`
+			Path    string `json:"path"`
+			Session string `json:"session"`
+		}
+		if json.Unmarshal(data[start:end], &last) == nil && last.Kind == KindSessionArchived && last.Session == session && last.Path == rel {
+			if err := finishArchive(j.dir, rel, j.opts.Sync); err != nil {
+				return "", fmt.Errorf("finish recorded incompatible archive: %w", err)
+			}
+			return rel, nil
+		}
+	}
+	archive := filepath.Join(j.dir, archiveDir)
+	pending := filepath.Join(archive, session+"-compat-pending")
+	_, pendingErr := os.Stat(pending)
+	switch {
+	case errors.Is(pendingErr, fs.ErrNotExist):
+		if _, err := j.ArchivePath(session); err != nil {
+			return "", err
+		}
+		if err := os.MkdirAll(archive, 0o755); err != nil {
+			return "", fmt.Errorf("create archive directory: %w", err)
+		}
+		marker, err := os.OpenFile(pending, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err != nil {
+			return "", fmt.Errorf("mark incompatible archive pending: %w", err)
+		}
+		if j.opts.Sync {
+			if err := marker.Sync(); err != nil {
+				_ = marker.Close()
+				return "", fmt.Errorf("sync incompatible archive marker: %w", err)
+			}
+		}
+		if err := marker.Close(); err != nil {
+			return "", fmt.Errorf("close incompatible archive marker: %w", err)
+		}
+		if j.opts.Sync {
+			if err := syncDir(archive); err != nil {
+				return "", fmt.Errorf("sync incompatible archive marker: %w", err)
+			}
+		}
+	case pendingErr != nil:
+		return "", fmt.Errorf("check incompatible archive marker: %w", pendingErr)
+	}
+	if _, err := os.Stat(filepath.Join(j.dir, rel)); err == nil {
+		return "", fmt.Errorf("archive %s already exists", filepath.Join(j.dir, rel))
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("check archive: %w", err)
+	}
+	if err := finishArchive(j.dir, rel, j.opts.Sync); err != nil {
+		return "", fmt.Errorf("archive incompatible journal: %w", err)
+	}
+	if err := os.Remove(pending); err != nil {
+		return "", fmt.Errorf("remove incompatible archive marker: %w", err)
+	}
+	if j.opts.Sync {
+		if err := syncDir(archive); err != nil {
+			return "", fmt.Errorf("sync incompatible archive completion: %w", err)
+		}
+	}
+	return rel, nil
+}
+
 const trialsSuffix = "-trials"
 
 // finishArchive removes the state file and moves the trial directories before moving the journal: once the journal is
@@ -226,6 +414,13 @@ func finishArchive(dir, rel string, sync bool) error {
 	session := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
 	if err := os.Rename(filepath.Join(dir, trialsDir), filepath.Join(archive, session+trialsSuffix)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
+	}
+	if sync {
+		for _, d := range []string{archive, dir} {
+			if err := syncDir(d); err != nil {
+				return fmt.Errorf("sync trial archive directory %s: %w", d, err)
+			}
+		}
 	}
 	if err := os.Rename(filepath.Join(dir, eventsFile), filepath.Join(dir, rel)); err != nil {
 		return err

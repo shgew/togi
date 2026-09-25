@@ -6,6 +6,8 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ### Added
 
+- Every session start and resume records the build's version, revision, ruleset and schema, and `run` refuses to resume a session written under a different ruleset or schema, naming the version that wrote it; in a tuning boot this is a dead end ([#38]).
+- `status`, `cert` and `events` warn when a journal was written under a different ruleset, and refuse one with a different schema ([#38]).
 - The run log and `shycler events` color failures and dead ends red, passed steps, confirmations and tiers green, backoffs yellow and inconclusive trials dim, on a terminal or in the system journal, where failures are logged at priority err; `NO_COLOR` turns it off ([#35]).
 - `shycler --version` prints the version and the git revision of the build ([#34]).
 - `sudo shycler run` tunes the real machine: offsets through `ryzen_smu` with a fuse-verified core-to-slot mapping, mprime and y-cruncher trials confined to their cores in systemd scopes, and machine checks read from the kernel log ([#13]).
@@ -53,3 +55,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#17]: https://code.marleb.org/shgew/shycler/pulls/17
 [#34]: https://code.marleb.org/shgew/shycler/pulls/34
 [#35]: https://code.marleb.org/shgew/shycler/pulls/35
+[#38]: https://code.marleb.org/shgew/shycler/pulls/38

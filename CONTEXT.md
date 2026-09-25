@@ -132,6 +132,9 @@ _Avoid_: score, level, stable
 **Certificate**:
 The rendering of a profile's tier with the evidence behind it.
 
+**Ruleset**:
+The hardcoded strategy that decides how offsets are searched, confirmed, guarded, backed off and ranked.
+
 **Dead end**:
 A condition under which shycler cannot make progress and stops itself.
 
@@ -149,6 +152,9 @@ _Avoid_: log, history, database
 
 **Event**:
 One entry of the journal.
+
+**Build stamp**:
+The recorded version, revision, ruleset, journal schema and fixes of the shycler build that started or resumed a session.
 
 **State**:
 The current situation derived from the journal, kept as a file for readers.

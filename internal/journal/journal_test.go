@@ -46,7 +46,42 @@ func appendAll(t *testing.T, j *Journal, payloads []Payload) []Event {
 }
 
 func sessionStart() *SessionStart {
-	return &SessionStart{Schema: Schema, Session: "20261002T011407Z", Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 16}}, {Core: 7, CCD: 0, CPUs: []int{7, 23}}}}
+	return &SessionStart{Build: Build{Schema: Schema}, Session: "20261002T011407Z", Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 16}}, {Core: 7, CCD: 0, CPUs: []int{7, 23}}}}
+}
+
+func TestOpenFinishesRenamedIncompatibleArchive(t *testing.T) {
+	dir := t.TempDir()
+	id := "20261002T011407Z"
+	archive := filepath.Join(dir, archiveDir)
+	if err := os.Mkdir(archive, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(`{"seq":1,"kind":"session.start","session":"` + id + `","schema":99}` + "\n")
+	path := filepath.Join(archive, id+".jsonl")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(archive, id+"-compat-pending")
+	if err := os.WriteFile(marker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	j, err := Open(dir, Options{Boot: "next", Sync: true})
+	if err != nil {
+		t.Fatalf("open after archive rename: %v", err)
+	}
+	if len(j.Events()) != 0 {
+		t.Fatalf("new journal contains old session: %d events", len(j.Events()))
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("pending marker remains: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(after, data) {
+		t.Fatalf("archive changed: %v", err)
+	}
 }
 
 func TestReplayTruncatedAtEveryOffset(t *testing.T) {

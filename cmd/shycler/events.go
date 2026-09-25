@@ -17,8 +17,10 @@ import (
 const eventsHelp = `Usage: shycler events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--until <time>] [--json]
 
 Print the journal, one readable line per event, oldest first. Filters combine,
-so you can narrow it to one core, one trial or a time window. On a terminal or
-in the system journal, readable lines are colored unless NO_COLOR is set.
+so you can narrow it to one core, one trial or a time window. A different
+ruleset warns before rendering, including --json; a different schema is
+refused. Readable lines are colored on terminals and in the system journal
+unless NO_COLOR is set.
 
 Examples:
   shycler events --core 3                   Everything that happened to core 3
@@ -53,9 +55,17 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "shycler events: no journal at %s\n", filepath.Join(g.stateDir, "events.jsonl"))
 		return exitError
 	}
+	var incompatible *journal.IncompatibleError
+	if errors.As(err, &incompatible) {
+		fmt.Fprintln(stderr, journal.NewRenderer(stderr, os.Getenv).Styled(journal.RedBold, "shycler events: "+incompatible.Error()))
+		return exitError
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "shycler events: %v\n", err)
 		return exitError
+	}
+	if len(events) > 0 {
+		warnRuleset(events, stderr)
 	}
 	renderer := journal.NewRenderer(stdout, os.Getenv)
 	for _, e := range events {

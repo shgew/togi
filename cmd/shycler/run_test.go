@@ -63,3 +63,37 @@ func TestRunDeadEndEvidencePriority(t *testing.T) {
 		t.Fatalf("evidence not decorated as a whole line: %q", got)
 	}
 }
+
+type clearingBootloader struct{ calls int }
+
+func (b *clearingBootloader) ClearSavedEntry() (string, string, error) {
+	b.calls++
+	return "shycler", "", nil
+}
+
+func TestCompatibilityRefusalClearsGRUBAndUsesErrPriority(t *testing.T) {
+	stderr, err := os.CreateTemp(t.TempDir(), "refusal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stderr.Close()
+	stream := journalStreamFor(t, stderr)
+	renderer := journal.NewRenderer(stderr, func(key string) string {
+		if key == "JOURNAL_STREAM" {
+			return stream
+		}
+		return ""
+	})
+	bl := &clearingBootloader{}
+	mismatch := &journal.IncompatibleError{Field: "ruleset", Journal: journal.Build{Version: "0.2.1", Rev: "def5678", Schema: 1, Ruleset: 99}, Binary: session.Build()}
+	if code := runResult(session.Stop{}, mismatch, stderr, renderer, bl); code != exitIncompatible || bl.calls != 1 {
+		t.Fatalf("exit %d; clear calls %d", code, bl.calls)
+	}
+	data, err := os.ReadFile(stderr.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); !strings.Contains(got, "<3>\x1b[1;31mshycler run: this journal was written by shycler 0.2.1+def5678") || !strings.Contains(got, "cleared GRUB saved entry") {
+		t.Fatalf("refusal line and clear report: %q", got)
+	}
+}

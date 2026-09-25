@@ -2,6 +2,10 @@
 
 Normative rules for how shycler moves offsets. Terms are defined in `CONTEXT.md`. Regimes, workloads and failure detection are in `workloads.md`; how decisions are recorded is in `journal.md`.
 
+## Ruleset
+
+The ruleset is the hardcoded strategy: steps, offset range, phases, which workloads each regime runs, the confirmation set, tiers and backoff rules. A change to any of these bumps `tuner.Ruleset` and is breaking for an active session. Fixes that record facts more accurately or change decisions, and changes to configurable defaults, do not bump it.
+
 ## Invariants
 
 1. Every offset stays within [-50, 0]. shycler never writes a positive offset.

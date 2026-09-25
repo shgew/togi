@@ -26,6 +26,9 @@ func replayFor(j Journal) (replayed, error) {
 	if len(events) == 0 {
 		return r, ErrNoSession
 	}
+	if err := journal.Compatible(journal.BuildOf(events), Build()); err != nil {
+		return r, err
+	}
 	journal.Replay(events, &r.state, r.tuner)
 	r.tuner.Project(&r.state)
 	return r, nil
@@ -94,15 +97,16 @@ func ResetCore(j Journal, core int) error {
 
 // ResetAll records the reset and archives the session; the journal is spent afterwards.
 func ResetAll(j *journal.Journal) (string, error) {
-	r, err := replayFor(j)
-	if err != nil {
-		return "", err
+	events := j.Events()
+	if len(events) == 0 {
+		return "", ErrNoSession
 	}
-	if _, err := j.ArchivePath(r.state.Session.ID); err != nil {
+	session := events[0].Data.(*journal.SessionStart).Session
+	if _, err := j.ArchivePath(session); err != nil {
 		return "", err
 	}
 	if _, err := j.Append(&journal.CommandReset{All: true}); err != nil {
 		return "", fmt.Errorf("reset: %w", err)
 	}
-	return j.Archive(r.state.Session.ID)
+	return j.Archive(session)
 }

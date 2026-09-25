@@ -11,11 +11,19 @@ import (
 	"strings"
 	"time"
 
+	shycler "code.marleb.org/shgew/shycler"
 	"code.marleb.org/shgew/shycler/internal/config"
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/machine"
 	"code.marleb.org/shgew/shycler/internal/tuner"
 )
+
+const fixes = 0
+
+// Build is the build that stamps each session start and resume.
+func Build() journal.Build {
+	return journal.Build{Version: shycler.Version(), Rev: shycler.Rev(), Ruleset: tuner.Ruleset, Schema: journal.Schema, Fixes: fixes}
+}
 
 type Input struct {
 	Config     config.Config
@@ -84,6 +92,16 @@ func Run(ctx context.Context, in Input) (Stop, error) {
 
 func (r *runner) run(ctx context.Context) (Stop, error) {
 	events := r.in.Journal.Events()
+	if len(events) > 0 {
+		if err := journal.Compatible(journal.BuildOf(events), Build()); err != nil {
+			if r.in.Bootloader != nil {
+				if _, _, clearErr := r.in.Bootloader.ClearSavedEntry(); clearErr != nil {
+					return Stop{}, fmt.Errorf("clear GRUB saved entry after incompatible journal: %w: %v", err, clearErr)
+				}
+			}
+			return Stop{}, err
+		}
+	}
 	journal.Replay(events, r.fold, &r.state, r.tuner)
 	r.tuner.Project(&r.state)
 	if len(events) > 0 {
@@ -107,11 +125,11 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 	}
 
 	if !r.fold.started {
-		if _, err := r.append(&journal.SessionStart{Schema: journal.Schema, Session: r.in.Machine.Clock.Now().UTC().Format("20060102T150405Z"), Cores: cores}); err != nil {
+		if _, err := r.append(&journal.SessionStart{Build: Build(), Session: r.in.Machine.Clock.Now().UTC().Format("20060102T150405Z"), Cores: cores}); err != nil {
 			return Stop{}, err
 		}
 	}
-	if _, err := r.append(&journal.ConfigLoaded{Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: r.in.Config}); err != nil {
+	if _, err := r.append(&journal.ConfigLoaded{Build: Build(), Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: r.in.Config}); err != nil {
 		return Stop{}, err
 	}
 	if err := r.recoverCrashes(); err != nil {
