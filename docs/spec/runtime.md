@@ -88,7 +88,7 @@ The effective configuration is recorded in `config.loaded` at every start. Confi
 
 ## Tuning boot
 
-`services.shycler.tuning.enable` adds a GRUB specialisation named `shycler` and makes GRUB remember the last booted entry (`boot.loader.grub.default = "saved"`). Picking "shycler" once in the menu starts unattended tuning. Every crash reboot returns to it until a dead end, or you, select a normal entry. The module asserts that GRUB is the bootloader; other bootloaders are on the roadmap.
+`services.shycler.tuning.enable` adds a GRUB specialisation named `shycler` and makes GRUB remember the last booted entry (`boot.loader.grub.default = "saved"`). Picking "shycler" once in the menu starts unattended tuning. Every crash reboot returns to it until a dead end, or you, select a normal entry. The module asserts that GRUB is the bootloader; other bootloaders are [#27](https://code.marleb.org/shgew/shycler/issues/27).
 
 Inside the specialisation:
 - `systemd.defaultUnit = "multi-user.target"`, so no graphical session starts;

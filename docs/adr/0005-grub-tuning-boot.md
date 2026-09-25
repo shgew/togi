@@ -1,6 +1,6 @@
 # Unattended tuning is a GRUB boot entry
 
-Unattended tuning happens in a NixOS specialisation that GRUB remembers as the last booted entry, so crash reboots land back in tuning with no action. This matches how the owner already runs linux-corecycler. Only GRUB is supported at first; other bootloaders are a roadmap item.
+Unattended tuning happens in a NixOS specialisation that GRUB remembers as the last booted entry, so crash reboots land back in tuning with no action. This matches how the owner already runs linux-corecycler. Only GRUB is supported at first; other bootloaders are [#27](https://code.marleb.org/shgew/shycler/issues/27).
 
 ## Considered Options
 
