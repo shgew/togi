@@ -261,6 +261,7 @@ func (r *runner) closeOpenTrial() error {
 		end = &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeFailure, Signal: signal, Interrupted: true, Reason: "shycler stopped during the trial after a machine check"}
 		cause = append(cause, open.mces...)
 	}
+	end.DurationS = int(open.ran().Seconds())
 	_, err := r.append(end, cause...)
 	return err
 }

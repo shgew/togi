@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/machine"
@@ -22,8 +23,19 @@ type openTrial struct {
 	boot      string
 	startSeq  int
 	startCPUs []int
+	started   time.Time
+	last      time.Time
 	mces      []int
 	corrected bool
+}
+
+// ran is how long the trial is known to have run: from its start to its last recorded event. Only intents are
+// fsynced, so after a crash this is a lower bound.
+func (o *openTrial) ran() time.Duration {
+	if o.startSeq == 0 {
+		return 0
+	}
+	return o.last.Sub(o.started)
 }
 
 type recoveredMCE struct {
@@ -132,7 +144,14 @@ func (f *fold) Fold(e journal.Event) {
 	case *journal.TrialStart:
 		if f.open != nil && f.open.intent.Trial == p.Trial {
 			f.open.startSeq, f.open.startCPUs = e.Seq, p.CPUs
+			f.open.started, f.open.last = e.Time, e.Time
 		}
+	case *journal.TrialProgress:
+		f.trialActivity(p.Trial, e.Time)
+	case *journal.TrialSignal:
+		f.trialActivity(p.Trial, e.Time)
+	case *journal.TrialSample:
+		f.trialActivity(p.Trial, e.Time)
 	case *journal.MCE:
 		boot := p.FromBoot
 		if boot == "" {
@@ -182,6 +201,12 @@ func (f *fold) Fold(e journal.Event) {
 			f.stray = nil
 		case journal.DeadEndFailureAtZero, journal.DeadEndPreflight:
 		}
+	}
+}
+
+func (f *fold) trialActivity(trial string, at time.Time) {
+	if f.open != nil && f.open.startSeq != 0 && f.open.intent.Trial == trial {
+		f.open.last = at
 	}
 }
 

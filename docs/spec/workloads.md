@@ -113,6 +113,8 @@ Crash detection and evidence: every boot in the journal other than the current o
 
 A trial still open when `run` starts, in a boot that did not crash (the same boot, or one that ended in `shutdown`), ends as `interrupted`: a failure (`corrected_mce`, or `uncorrected_mce` when none is corrected) when `mce` events were already recorded for it, else inconclusive. Interrupted trials do not count toward the inconclusive dead end.
 
+A trial closed this way, after a crash or an interruption, records as its `duration_s` the time from its `trial.start` to its last `trial.progress`, `trial.signal` or `trial.sample` in the journal, or 0 without a `trial.start`. Only intents are fsynced, so after a crash this is a lower bound.
+
 MCE attribution rules:
 - Attribution uses the SMCA bank type decoded by the kernel (`edac_mce_amd`), never a hard-coded bank number.
 - A decoded bank continuation is assigned only when exactly one MCE could own it. If multiple status records arrive before their bank lines, those records keep an unknown bank type and are unattributed; journal message order alone cannot identify the owner.
