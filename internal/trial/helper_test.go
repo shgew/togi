@@ -24,7 +24,7 @@ type helperBackend struct{ mode string }
 func (h helperBackend) Name() string           { return "helper" }
 func (h helperBackend) Check() (string, error) { return "ok", nil }
 func (h helperBackend) Prepare(_ machine.Workload, _ string, cpus []int) (backend.Launch, error) {
-	launch := backend.Launch{Argv: []string{"taskset", "-c", strconv.Itoa(cpus[0]), os.Args[0], "-test.run=TestHelperProcess", "--", "--helper", h.mode}}
+	launch := backend.Launch{Argv: []string{"env", "GORACE=atexit_sleep_ms=0", "taskset", "-c", strconv.Itoa(cpus[0]), os.Args[0], "-test.run=TestHelperProcess", "--", "--helper", h.mode}}
 	if strings.HasPrefix(h.mode, "watched") {
 		launch.Watch = []string{"results.txt"}
 	}
