@@ -70,6 +70,7 @@
               pkgs.golangci-lint
               pkgs.just
               pkgs.nixfmt
+              pkgs.govulncheck
             ];
             SHYCLER_DEV_SHELL = "1";
           };
