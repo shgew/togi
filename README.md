@@ -55,4 +55,4 @@ shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 
 ## Development
 
-Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `go test ./...` is the tight loop, and `nix flake check` runs tests and lint. [AGENTS.md](AGENTS.md) has the rest.
+Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, `just gate` runs lint, formatting checks and tests, and `just check` runs every flake check before a pull request. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the rest.

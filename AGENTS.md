@@ -55,15 +55,19 @@ The first pull request that makes something runnable on real hardware adds `docs
 
 ## Commands
 
-Enter the dev shell (Go, gopls, golangci-lint) with `nix develop`, or with `direnv allow` once per checkout if you use direnv. The commands below run inside it.
+Enter the dev shell (Go, gopls, golangci-lint, just) with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes also work outside the dev shell: they enter it with `nix develop` when needed.
 
 | Command | Use |
 |---|---|
-| `go test ./...` | The tight loop |
-| `nix flake check` | Tests and lint; must pass before a pull request |
-| `nix fmt` | Format Go and Nix files |
-| `go run ./cmd/shycler run --sim 1` | A simulated session through its first clean guard rotation, to Bronze, in a temporary state directory |
-| `go test -tags hardware ./...` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `SHYCLER_MPRIME` and `SHYCLER_YCRUNCHER`, else from `/etc/shycler/config.toml` |
+| `just` | List the recipes |
+| `just test` | The tight loop |
+| `just gate` | Lint, formatting check and tests: the quick check before handing off |
+| `just check` | Every flake check: package, lint and the VM test; must pass before a pull request |
+| `just fmt` | Format Go, Nix and the justfile |
+| `just sim [seed]` | A simulated session through its first clean guard rotation, to Bronze, in a temporary state directory |
+| `just hardware` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `SHYCLER_MPRIME` and `SHYCLER_YCRUNCHER`, else from `/etc/shycler/config.toml` |
+
+A command needed twice gets a recipe, in the same pull request.
 
 ## Layout
 
