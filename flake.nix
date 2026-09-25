@@ -53,7 +53,7 @@
             checkPhase = ''
               runHook preCheck
               export GOFLAGS=''${GOFLAGS//-trimpath/}
-              go test -p $NIX_BUILD_CORES ./...
+              go test -p $NIX_BUILD_CORES -shuffle=on ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "-tags integration"} ./...
               runHook postCheck
             '';
             meta = {

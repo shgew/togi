@@ -1,5 +1,3 @@
-//go:build linux
-
 package trial
 
 import (
@@ -9,7 +7,6 @@ import (
 	"io"
 	"iter"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -76,13 +73,13 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 					decision = true
 					break
 				}
-				if !inst.ready && ready(inst, t.options.NoScope) {
+				if !inst.ready && t.inScope(inst) {
 					inst.ready = true
 				}
 				if !inst.ready || (inst.suspended && t.options.NoScope) {
 					continue
 				}
-				if cpu, tid, escaped := outsideCPU(inst); escaped {
+				if cpu, tid, escaped := t.outsideCPU(inst); escaped {
 					result.Escaped = []int{cpu}
 					report.Sample(machine.Sample{Warning: "outside allowed cpus", PID: inst.PID, TID: tid, CPU: cpu})
 					decision = true
@@ -112,7 +109,7 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 			}
 			for _, idx := range step.Instances {
 				inst := t.instances[idx]
-				if err := toggleInstance(inst, step.Stop, now); err != nil {
+				if err := t.toggle(inst, step.Stop, now); err != nil {
 					fatal = err
 					decision = true
 					break
@@ -149,7 +146,7 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	t.drainEvents(&result, report, ctx.Err() == nil)
 	if !t.options.NoScope {
 		for _, inst := range t.instances {
-			if !inst.ready && !ready(inst, false) && result.Signal == "" && len(result.Escaped) == 0 && result.Inconclusive == "" {
+			if !inst.ready && !t.inScope(inst) && result.Signal == "" && len(result.Escaped) == 0 && result.Inconclusive == "" {
 				result.Inconclusive = fmt.Sprintf("core %02d setup error: never entered scope %s", inst.Core, inst.Scope)
 			}
 		}
@@ -268,12 +265,12 @@ func (t *running) classifyWatch(inst *instance, line string, result *machine.Res
 	return false
 }
 
-func toggleInstance(inst *instance, stop bool, now time.Time) error {
+func (t *running) toggle(inst *instance, stop bool, now time.Time) error {
 	sig := syscall.SIGCONT
 	if stop {
 		sig = syscall.SIGSTOP
 	}
-	if err := syscall.Kill(-inst.PID, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
+	if err := t.host.SignalGroup(inst.PID, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return fmt.Errorf("signal core %02d: %w", inst.Core, err)
 	}
 	if stop && !inst.suspended {
@@ -324,25 +321,20 @@ func (t *running) drainEvents(result *machine.Result, report machine.Reporter, u
 
 func (t *running) teardown(result *machine.Result, report machine.Reporter) error {
 	for _, inst := range t.instances {
-		_ = syscall.Kill(-inst.PID, syscall.SIGCONT)
-		_ = syscall.Kill(-inst.PID, syscall.SIGTERM)
+		_ = t.host.SignalGroup(inst.PID, syscall.SIGCONT)
+		_ = t.host.SignalGroup(inst.PID, syscall.SIGTERM)
 	}
 	var cleanupErr error
 	t.collect(t.options.StopGrace, result, report)
 	for _, inst := range t.instances {
 		if !t.options.NoScope {
-			args := []string{}
-			if os.Geteuid() != 0 {
-				args = append(args, "--user")
-			}
-			args = append(args, "kill", "--signal=SIGKILL", "--kill-whom=all", inst.Scope+".scope")
-			out, err := exec.Command("systemctl", args...).CombinedOutput()
+			out, err := t.host.KillScope(inst.Scope)
 			if err != nil && !strings.Contains(string(out), "not loaded") && !strings.Contains(string(out), "could not be found") && cleanupErr == nil {
 				cleanupErr = fmt.Errorf("kill scope %s: %w: %s", inst.Scope, err, strings.TrimSpace(string(out)))
 			}
 		}
 		if !inst.done {
-			_ = syscall.Kill(-inst.PID, syscall.SIGKILL)
+			_ = t.host.SignalGroup(inst.PID, syscall.SIGKILL)
 		}
 	}
 	if !t.collect(10*time.Second, result, report) {
@@ -388,8 +380,8 @@ func (t *running) collect(timeout time.Duration, result *machine.Result, report 
 }
 func (t *running) abort() {
 	for _, inst := range t.instances {
-		_ = syscall.Kill(-inst.PID, syscall.SIGCONT)
-		_ = syscall.Kill(-inst.PID, syscall.SIGKILL)
+		_ = t.host.SignalGroup(inst.PID, syscall.SIGCONT)
+		_ = t.host.SignalGroup(inst.PID, syscall.SIGKILL)
 	}
 	for _, inst := range t.instances {
 		for !inst.done {
@@ -401,61 +393,24 @@ func (t *running) abort() {
 	}
 }
 
-func ready(inst *instance, noScope bool) bool {
-	if noScope {
-		return true
-	}
-	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", inst.PID))
-	if err != nil {
-		return false
-	}
-	for line := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
-		if strings.HasSuffix(line, "/"+inst.Scope+".scope") {
-			return true
-		}
-	}
-	return false
+func (t *running) inScope(inst *instance) bool {
+	return t.options.NoScope || t.host.InScope(inst.PID, inst.Scope)
 }
 
-func procStat(path string) (fields []string, err error) {
-	b, err := os.ReadFile(path)
+func (t *running) outsideCPU(inst *instance) (cpu, tid int, escaped bool) {
+	threads, err := t.host.Threads(inst.PID)
 	if err != nil {
-		return nil, err
+		return 0, 0, false
 	}
-	end := strings.LastIndexByte(string(b), ')')
-	if end < 0 {
-		return nil, fmt.Errorf("malformed proc stat %s", path)
-	}
-	fields = strings.Fields(string(b[end+1:]))
-	if len(fields) < 37 {
-		return nil, fmt.Errorf("short proc stat %s", path)
-	}
-	return fields, nil
-}
-func fieldInt(fields []string, number int) int64 {
-	v, _ := strconv.ParseInt(fields[number-3], 10, 64)
-	return v
-}
-func outsideCPU(inst *instance) (cpu, tid int, escaped bool) {
-	tasks, err := os.ReadDir(fmt.Sprintf("/proc/%d/task", inst.PID))
-	if err != nil {
-		return
-	}
-	for _, task := range tasks {
-		stat, err := procStat(fmt.Sprintf("/proc/%d/task/%s/stat", inst.PID, task.Name()))
-		if err != nil {
-			continue
-		}
-		cpu = int(fieldInt(stat, 39))
-		if !slices.Contains(inst.CPUs, cpu) {
-			tid, _ = strconv.Atoi(task.Name())
-			return cpu, tid, true
+	for _, task := range threads {
+		if !slices.Contains(inst.CPUs, task.CPU) {
+			return task.CPU, task.TID, true
 		}
 	}
 	return 0, 0, false
 }
 func (t *running) sample(inst *instance, now time.Time, result *machine.Result, report machine.Reporter) bool {
-	fields, err := procStat(fmt.Sprintf("/proc/%d/stat", inst.PID))
+	reading, err := t.host.Usage(inst.PID)
 	if err != nil {
 		return false
 	}
@@ -463,15 +418,14 @@ func (t *running) sample(inst *instance, now time.Time, result *machine.Result, 
 	if !inst.suspended {
 		active += now.Sub(inst.resumed)
 	}
-	cpu := time.Duration(fieldInt(fields, 14)+fieldInt(fields, 15)) * time.Second / 100
+	cpu := reading.CPUTime
 	current := cpuSample{active: active, cpu: cpu}
 	inst.samples = append(inst.samples, current)
 	if active < t.options.StallGrace {
 		return false
 	}
 	latest := -1
-	for i := len(inst.samples) - 1; i >= 0; i-- {
-		earlier := inst.samples[i]
+	for i, earlier := range slices.Backward(inst.samples) {
 		if earlier.active < t.options.StallGrace {
 			break
 		}
@@ -490,7 +444,7 @@ func (t *running) sample(inst *instance, now time.Time, result *machine.Result, 
 		used := cpu - earlier.cpu
 		result.Signal = machine.Stall
 		result.Core = inst.Core
-		report.Sample(machine.Sample{Warning: fmt.Sprintf("stalled: %.1fs cpu in %.1fs running", used.Seconds(), span.Seconds()), PID: inst.PID, TID: inst.PID, CPU: int(fieldInt(fields, 39))})
+		report.Sample(machine.Sample{Warning: fmt.Sprintf("stalled: %.1fs cpu in %.1fs running", used.Seconds(), span.Seconds()), PID: inst.PID, TID: inst.PID, CPU: reading.CPU})
 		return true
 	}
 	return false
