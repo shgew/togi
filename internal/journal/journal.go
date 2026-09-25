@@ -478,7 +478,7 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 	if _, err := j.f.Write(raw); err != nil {
 		return Event{}, fmt.Errorf("append %s: %w", kind, err)
 	}
-	if j.opts.Sync && (kind == KindSMUIntent || kind == KindTrialIntent) {
+	if j.opts.Sync {
 		if err := j.f.Sync(); err != nil {
 			return Event{}, fmt.Errorf("sync %s: %w", kind, err)
 		}
