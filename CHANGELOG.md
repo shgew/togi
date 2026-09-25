@@ -44,6 +44,7 @@ All notable changes to shycler are documented in this file. The format is based 
 - A trial interrupted by a signal now records how long it ran, instead of `after 0s` ([#15]).
 - Powering off during a trial no longer records a failure on the target core: trial scopes no longer stop with the system before `run` does, so the trial ends interrupted ([#16]).
 - A trial the machine crashed during now records how long it is known to have run, up to its last recorded progress, instead of `after 0s` ([#17]).
+- Every journal event is fsynced, not only intents, so a crash no longer loses up to a minute of `events.jsonl`: the SMU write, readback and trial start before a crash stay recorded, and a crashed trial's duration runs to its last progress ([#54]).
 
 [#2]: https://code.marleb.org/shgew/shycler/pulls/2
 [#3]: https://code.marleb.org/shgew/shycler/pulls/3
@@ -67,3 +68,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#45]: https://code.marleb.org/shgew/shycler/pulls/45
 [#46]: https://code.marleb.org/shgew/shycler/pulls/46
 [#53]: https://code.marleb.org/shgew/shycler/pulls/53
+[#54]: https://code.marleb.org/shgew/shycler/pulls/54

@@ -29,8 +29,8 @@ type openTrial struct {
 	corrected bool
 }
 
-// ran is how long the trial is known to have run: from its start to its last recorded event. Only intents are
-// fsynced, so after a crash this is a lower bound.
+// ran is how long the trial is known to have run: from its start to its last recorded event. Nothing is recorded
+// between events, so after a crash this is a lower bound.
 func (o *openTrial) ran() time.Duration {
 	if o.startSeq == 0 {
 		return 0
