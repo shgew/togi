@@ -14,7 +14,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
 - `docs/adr/`: decisions and the alternatives rejected. Reversing one needs a new ADR.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
-- `docs/ROADMAP.md`: the plan to 1.0: tasks, dependencies and status.
+- Issues on `code.marleb.org/shgew/shycler`: the plan, ideas and bugs (Issues, below).
 
 ## Workflow
 
@@ -25,7 +25,16 @@ Every change, docs included, lands as a pull request against `main` on `code.mar
 - Commit with short imperative messages.
 - The pull request body follows `.github/pull_request_template.md`: a short summary, and the demo in a collapsed block.
 - Address every review comment on the same branch.
-- A pull request that starts or finishes a task in `docs/ROADMAP.md` updates its row.
+- A pull request that finishes an issue says `Closes #N` in its body; one that only makes progress says `Refs #N`.
+- A pull request that breaks resuming an existing session or reading an existing journal starts its title with `[BREAKING]`, carries the `breaking` label, and starts its changelog line with `**BREAKING**`.
+
+## Issues
+
+Planning lives in issues, filed from the templates in `.github/ISSUE_TEMPLATE/`.
+
+- Labels name the kind: `idea` (a thought, not yet discussed), `design` (decided, waiting to be scheduled), `feature` (ready to build), `bugfix`, and `breaking` on issues and pull requests alike.
+- The `1.0` milestone holds what ships in 1.0.
+- Lifecycle: an idea is discussed until decided, then its issue becomes a design with Why, Decided, Open and Links. When a discussion settles decisions, file or update the issue before it ends. The pull request that implements a design moves its decisions into the spec or an ADR and closes the issue; the spec and ADRs stay the lasting record.
 
 ## Keeping docs current
 
@@ -42,6 +51,7 @@ The first pull request that makes something runnable on real hardware adds `docs
 - Write every file as if the repository were public: no personal hostnames, home paths, or setup specific to one machine or tool. Where there are several ways to get somewhere, name them, then continue as if the reader got there.
 - Write commits, pull requests and docs for readers who have not seen the conversation that produced them.
 - Never overstate: claim only what the demo or the checks showed.
+- Describe workflow steps by the action (open a pull request, set the milestone), so they hold whatever program performs them. Name the repository's own commands.
 
 ## Commands
 

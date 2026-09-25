@@ -50,7 +50,7 @@ shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 |[docs/spec/runtime.md](docs/spec/runtime.md)|Commands, configuration, the tuning boot and the NixOS module|
 |[docs/adr/](docs/adr/)|Why each major decision was made|
 |[docs/prior-art.md](docs/prior-art.md)|What was taken from, and left out of, earlier tools|
-|[docs/ROADMAP.md](docs/ROADMAP.md)|Plan to 1.0|
+|[Issues](https://code.marleb.org/shgew/shycler/issues)|The plan, ideas and bugs; the `1.0` milestone holds what ships in 1.0|
 |[AGENTS.md](AGENTS.md)|Contributing: workflow, commands and conventions|
 
 ## Development
