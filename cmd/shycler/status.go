@@ -57,9 +57,13 @@ func replayDir(dir string) ([]journal.Event, journal.State, []byte, error) {
 
 func loadSession(name, dir string, stderr io.Writer) ([]journal.Event, journal.State, int, bool) {
 	events, st, torn, err := replayDir(dir)
+	var incompatible *journal.IncompatibleError
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		fmt.Fprintf(stderr, "shycler %s: no journal at %s\n", name, filepath.Join(dir, "events.jsonl"))
+		return nil, st, exitError, false
+	case errors.As(err, &incompatible):
+		fmt.Fprintln(stderr, journal.NewRenderer(stderr, os.Getenv).Styled(journal.RedBold, "shycler "+name+": "+incompatible.Error()))
 		return nil, st, exitError, false
 	case err != nil:
 		fmt.Fprintf(stderr, "shycler %s: %v\n", name, err)

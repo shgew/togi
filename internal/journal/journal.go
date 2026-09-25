@@ -87,6 +87,12 @@ func open(dir string, opts Options, allowIncompatible bool) (*Journal, error) {
 		lock.Close()
 		return nil, err
 	}
+	if errors.Is(err, fs.ErrNotExist) {
+		if _, err := finishPendingArchive(dir); err != nil {
+			lock.Close()
+			return nil, err
+		}
+	}
 	events, end, err := parse(data, opts.Build)
 	if err != nil {
 		var mismatch *IncompatibleError
@@ -140,6 +146,74 @@ func open(dir string, opts Options, allowIncompatible bool) (*Journal, error) {
 		}
 	}
 	return j, nil
+}
+
+// RecoverPendingArchive completes a moved incompatible journal without creating a new one.
+// It returns the archived session ID only when a pending marker was removed.
+func RecoverPendingArchive(dir string) (string, error) {
+	id, err := pendingArchive(dir)
+	if err != nil || id == "" {
+		return id, err
+	}
+	lock, err := os.OpenFile(filepath.Join(dir, lockFile), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return "", fmt.Errorf("open journal lock: %w", err)
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return "", ErrLocked
+		}
+		return "", fmt.Errorf("lock: %w", err)
+	}
+	return finishPendingArchive(dir)
+}
+
+func pendingArchive(dir string) (string, error) {
+	if _, err := os.Stat(filepath.Join(dir, eventsFile)); err == nil {
+		return "", nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("check journal for archive recovery: %w", err)
+	}
+	archive := filepath.Join(dir, archiveDir)
+	entries, err := os.ReadDir(archive)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read archive markers: %w", err)
+	}
+	for _, entry := range entries {
+		id, found := strings.CutSuffix(entry.Name(), "-compat-pending")
+		if !found || id == "" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(archive, id+".jsonl")); err != nil {
+			return "", fmt.Errorf("check pending archive %s: %w", id, err)
+		}
+		return id, nil
+	}
+	return "", nil
+}
+
+func finishPendingArchive(dir string) (string, error) {
+	id, err := pendingArchive(dir)
+	if err != nil || id == "" {
+		return id, err
+	}
+	archive := filepath.Join(dir, archiveDir)
+	for _, d := range []string{archive, dir} {
+		if err := syncDir(d); err != nil {
+			return "", fmt.Errorf("sync pending archive directory %s: %w", d, err)
+		}
+	}
+	if err := os.Remove(filepath.Join(archive, id+"-compat-pending")); err != nil {
+		return "", fmt.Errorf("remove incompatible archive marker: %w", err)
+	}
+	if err := syncDir(archive); err != nil {
+		return "", fmt.Errorf("sync incompatible archive completion: %w", err)
+	}
+	return id, nil
 }
 
 func parse(data []byte, binary Build) (events []Event, end int, err error) {

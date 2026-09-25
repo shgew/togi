@@ -56,6 +56,36 @@ func TestReadCommandsHandleIncompatibleJournal(t *testing.T) {
 	}
 }
 
+func TestReadCommandsStyleSchemaRefusalInJournal(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	for _, command := range []string{"status", "cert", "events"} {
+		t.Run(command, func(t *testing.T) {
+			dir, original := incompatibleFixture(t, "schema")
+			stderr, err := os.CreateTemp(t.TempDir(), "refusal")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stderr.Close()
+			t.Setenv("JOURNAL_STREAM", journalStreamFor(t, stderr))
+			var stdout bytes.Buffer
+			if code := cli([]string{"--state-dir", dir, command}, &stdout, stderr); code != exitError {
+				t.Fatalf("%s exit %d, want %d", command, code, exitError)
+			}
+			line, err := os.ReadFile(stderr.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.HasPrefix(line, []byte("<3>\x1b[1;31mshycler "+command+": this journal")) || !bytes.HasSuffix(line, []byte("\x1b[0m\n")) {
+				t.Fatalf("schema refusal not red bold in journald: %q", line)
+			}
+			after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+			if err != nil || !bytes.Equal(after, original) {
+				t.Fatalf("read changed journal: %v", err)
+			}
+		})
+	}
+}
+
 func TestResetAllArchivesUnrecognizedSchema(t *testing.T) {
 	dir, original := incompatibleFixture(t, "schema")
 	trial := filepath.Join(dir, "trials", "0001")
@@ -103,6 +133,49 @@ func TestSimulatedRunRefusesIncompatibleJournal(t *testing.T) {
 	}
 }
 
+func TestRunChecksCompatibilityBeforeConfig(t *testing.T) {
+	for _, command := range [][]string{{"run", "--sim", "1"}, {"run"}} {
+		dir, original := incompatibleFixture(t, "ruleset")
+		configPath := filepath.Join(t.TempDir(), "invalid.toml")
+		if err := os.WriteFile(configPath, []byte("removed_key = true\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var stdout, stderr bytes.Buffer
+		args := append([]string{"--state-dir", dir, "--config", configPath}, command...)
+		if code := cli(args, &stdout, &stderr); code != exitIncompatible || !strings.Contains(stderr.String(), "uses ruleset") || strings.Contains(stderr.String(), "removed_key") {
+			t.Fatalf("%v exit %d, stderr %q", command, code, stderr.String())
+		}
+		after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+		if err != nil || !bytes.Equal(after, original) {
+			t.Fatalf("run changed journal: %v", err)
+		}
+	}
+}
+
+func TestRunStillRejectsInvalidConfigForCompatibleJournal(t *testing.T) {
+	dir := t.TempDir()
+	fixture, err := os.ReadFile("testdata/events.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "events.jsonl")
+	if err := os.WriteFile(path, fixture, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "invalid.toml")
+	if err := os.WriteFile(configPath, []byte("removed_key = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := cli([]string{"--state-dir", dir, "--config", configPath, "run", "--sim", "1"}, &stdout, &stderr); code != exitUsage {
+		t.Fatalf("compatible journal: exit %d, want %d, stderr %q", code, exitUsage, stderr.String())
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(after, fixture) {
+		t.Fatalf("config refusal changed journal: %v", err)
+	}
+}
+
 func TestIncompatibleArchiveRefusesCollisionAndResumesPendingMove(t *testing.T) {
 	dir, original := incompatibleFixture(t, "schema")
 	id := "20261002T011000Z"
@@ -134,6 +207,37 @@ func TestIncompatibleArchiveRefusesCollisionAndResumesPendingMove(t *testing.T) 
 	}
 	if _, err := os.Stat(filepath.Join(archive, id+"-compat-pending")); !os.IsNotExist(err) {
 		t.Fatalf("pending marker remains: %v", err)
+	}
+}
+
+func TestResetAllCompletesRenamedIncompatibleArchive(t *testing.T) {
+	dir, original := incompatibleFixture(t, "schema")
+	id := "20261002T011000Z"
+	archive := filepath.Join(dir, "archive")
+	if err := os.Mkdir(archive, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(archive, id+".jsonl")
+	if err := os.Rename(filepath.Join(dir, "events.jsonl"), path); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(archive, id+"-compat-pending")
+	if err := os.WriteFile(marker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := cli([]string{"--state-dir", dir, "reset", "--all"}, &stdout, &stderr); code != exitOK || !strings.Contains(stdout.String(), "session "+id+" archived to archive/") {
+		t.Fatalf("resume archive exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("pending marker remains: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "events.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("reset recreated journal: %v", err)
+	}
+	archived, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(archived, original) {
+		t.Fatalf("archived journal changed: %v", err)
 	}
 }
 

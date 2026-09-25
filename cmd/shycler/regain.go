@@ -77,6 +77,20 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	}
 	if all {
 		stamp, id, err := journal.Scan(g.stateDir)
+		if errors.Is(err, fs.ErrNotExist) {
+			recovered, recoverErr := journal.RecoverPendingArchive(g.stateDir)
+			if recoverErr != nil {
+				fmt.Fprintf(stderr, "shycler reset: %v\n", recoverErr)
+				if errors.Is(recoverErr, journal.ErrLocked) {
+					return exitLocked
+				}
+				return exitError
+			}
+			if recovered != "" {
+				fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next shycler run starts a new session\n", recovered, filepath.Join("archive", recovered+".jsonl"))
+				return exitOK
+			}
+		}
 		if err == nil && stamp.Schema != journal.Schema {
 			boot, bootErr := detect.BootID()
 			if bootErr != nil {

@@ -72,12 +72,27 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 
+	renderer := journal.NewRenderer(stderr, os.Getenv)
+	if !seedSet || g.stateDirSet {
+		if stamp, _, scanErr := journal.Scan(g.stateDir); scanErr == nil {
+			if stamp.Schema != 0 {
+				if err := journal.Compatible(stamp, session.Build()); err != nil {
+					if grubenv != "" {
+						return runResult(session.Stop{}, err, stderr, renderer, hardware.GRUB{Env: grubenv})
+					}
+					return runResult(session.Stop{}, err, stderr, renderer)
+				}
+			}
+		} else if !errors.Is(scanErr, fs.ErrNotExist) {
+			fmt.Fprintf(stderr, "shycler run: %v\n", scanErr)
+			return exitError
+		}
+	}
 	cfg, file, err := loadConfig(g)
 	if err != nil {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitUsage
 	}
-	renderer := journal.NewRenderer(stderr, os.Getenv)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	if !seedSet {
@@ -97,16 +112,6 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	}
 	if !rotationsSet {
 		rotations = 1
-	}
-	if stamp, _, scanErr := journal.Scan(dir); scanErr == nil {
-		if stamp.Schema != 0 {
-			if err := journal.Compatible(stamp, session.Build()); err != nil {
-				return runResult(session.Stop{}, err, stderr, renderer)
-			}
-		}
-	} else if !errors.Is(scanErr, fs.ErrNotExist) {
-		fmt.Fprintf(stderr, "shycler run: %v\n", scanErr)
-		return exitError
 	}
 	simCfg, err := session.Resume(dir, sim.Config{Seed: seed})
 	if err != nil {
