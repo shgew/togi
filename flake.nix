@@ -52,7 +52,10 @@
               pkgs.go
               pkgs.gopls
               pkgs.golangci-lint
+              pkgs.just
+              pkgs.nixfmt
             ];
+            SHYCLER_DEV_SHELL = "1";
           };
 
           checks = {
