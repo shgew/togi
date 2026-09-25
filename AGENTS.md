@@ -59,20 +59,25 @@ The first pull request that makes something runnable on real hardware adds `docs
 
 ## Commands
 
-Enter the dev shell (Go, gopls, golangci-lint, just, nixfmt) with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes also work outside the dev shell: they enter it with `nix develop` when needed.
+Enter the dev shell (Go, gopls, golangci-lint, govulncheck, just, nixfmt) with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes also work outside the dev shell: they enter it with `nix develop` when needed.
 
 | Command | Use |
 |---|---|
 | `just` | List the recipes |
 | `just test` | The tight loop |
 | `just gate` | Lint, formatting check and tests: the quick check before handing off |
-| `just check` | Every flake check: package, lint and the VM test; must pass before a pull request |
+| `just check` | Every flake check: package, lint and the VM test; must pass before a pull request; CI runs it on every pull request and push to `main` |
 | `just fmt` | Format Go, Nix and the justfile |
 | `just sim [seed]` | A simulated session through its first clean guard rotation, to Bronze, in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just release` | Open the release pull request, or tag a merged one; see `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `SHYCLER_MPRIME` and `SHYCLER_YCRUNCHER`, else from `/etc/shycler/config.toml` |
+| `just race` | The suite under the race detector, with the integration tests on Linux; CI runs it |
+| `just fuzz [time]` | Fuzz the journal parser |
+| `just vuln` | Known vulnerabilities in called dependency and standard library code; CI runs it |
 
-On macOS (aarch64-darwin) the dev shell, `just test`, `just gate`, `just sim` and the read-only commands work; `just check` builds `package` and `lint` and skips the VM test, `just hardware` is Linux-only, and `internal/trial` with its tests builds only on Linux. Linux-only code follows the Go convention: OS-suffixed files (`_linux.go`, `_darwin.go`) for real implementations, and a `//go:build !linux` fallback returning a wrapped `errors.ErrUnsupported`.
+CI (`.forgejo/workflows/check.yml`) runs on a Forgejo runner offering the `nix-latest` label (the `nixos/nix` image) with `/dev/kvm` passed to job containers, which the NixOS VM test needs.
+
+On macOS (aarch64-darwin) the dev shell, `just test`, `just gate`, `just sim` and the read-only commands work; `just check` builds `package` and `lint` and skips the VM test, `just hardware` and the `integration` tests are Linux-only. Linux-only code follows the Go convention: OS-suffixed files (`_linux.go`, `_darwin.go`) for real implementations, and a `//go:build !linux` fallback returning a wrapped `errors.ErrUnsupported`.
 
 A command needed twice gets a recipe, in the same pull request.
 
@@ -108,8 +113,8 @@ Keep packages near 1000 lines; split by responsibility when one grows past that.
 
 ## Testing
 
-- **Tight:** `go test ./...` finishes in under 10 seconds from a cold cache. Time comes from an injected clock, so tests never sleep.
+- **Fast and deterministic:** a unit test exercises logic, never the world around it. It does not wait on real time, reach the network, start processes or depend on the machine it runs on: time comes from an injected clock or a `testing/synctest` bubble, everything else from fakes. Keep each test as quick as the behavior it proves allows.
 - **Simulator first:** behavior is proven on `internal/sim` with fixed seeds, never by waiting for hardware.
-- Tests pin spec behavior: rules, boundaries, invariants, crash-resume. Table tests for rules, property tests for invariants.
-- Real-process tests use a helper program built by the test, not mprime or y-cruncher.
-- Hardware tests carry `//go:build hardware`, run on the target machine, and restore every offset they change.
+- Tests pin spec behavior: rules, boundaries, invariants, crash-resume. Table tests for rules, property tests for invariants, golden files for rendered output (`go test ./cmd/shycler -update` rewrites them), a fuzz target for the journal parser (`just fuzz`). Compare values with `cmp.Diff`.
+- Concurrent code is tested on real goroutines; run `just race` after changing it.
+- Tests that need the real world carry a build tag and stay out of `go test ./...`: `integration` for real processes (a helper program built by the test, never mprime or y-cruncher), `hardware` for the target machine, restoring every offset they change.
