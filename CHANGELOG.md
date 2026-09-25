@@ -6,6 +6,7 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ### Added
 
+- The flake provides the package, dev shell and checks on aarch64-darwin for development; the VM test and hardware runs stay Linux-only, and `shycler run` there exits with an error ([#45]).
 - On resume, `run` finds decisions made by a known, since-fixed bug and names the affected cores; `status` shows the reset command, and in a terminal `run` offers to reset them. The first entry is the false failure at power-off fixed in [#16] ([#40]).
 - Every session start and resume records the build's version, revision, ruleset and schema, and `run` refuses to resume a session written under a different ruleset or schema, naming the version that wrote it; in a tuning boot this is a dead end ([#38]).
 - `status`, `cert` and `events` warn when a journal was written under a different ruleset, and refuse one with a different schema ([#38]).
@@ -58,3 +59,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#35]: https://code.marleb.org/shgew/shycler/pulls/35
 [#38]: https://code.marleb.org/shgew/shycler/pulls/38
 [#40]: https://code.marleb.org/shgew/shycler/pulls/40
+[#45]: https://code.marleb.org/shgew/shycler/pulls/45
