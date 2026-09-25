@@ -110,3 +110,23 @@ shycler events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--
 - `--json`: print the raw event lines instead.
 
 All given filters must match. A torn tail is reported on stderr and left for the next `run` to record.
+
+### Colors
+
+The run log and `shycler events` color the whole human-readable line according to its moment:
+
+| Moment | Color |
+|---|---|
+| Trial ends with failure (`trial.end` outcome `failure`), `failure`, `crash.detected` | Red |
+| Dead end (`deadend` event and `run` summary), refusal (when it has an event) | Red, bold |
+| Search step passed (R1 and R2 at one offset passed; the following `tuner.decision` with `decision: step_deeper`) | Green |
+| Core confirmed, edge reported (`core.phase` from `confirmation` to `confirmed`, `regain` to `confirmed` without `backoff: true`, or `search` to `confirmation` for a candidate edge) | Green, bold |
+| Clean guard rotation (`guard.rotation` end with `clean: true`), tier earned (`tier.change` to a higher tier) | Green, bold |
+| Proven or suspect backoff (`tuner.decision` with `decision: backoff` or `suspect_backoff`, or a failed `regain` to `confirmed` with `backoff: true`) | Yellow |
+| Inconclusive trial (`trial.end` outcome `inconclusive`) | Dim |
+| Everything else, including a single trial passing | Plain |
+
+ANSI SGR is used when that output stream is a terminal (character device) or `JOURNAL_STREAM` names that stream (its device and inode match). A non-empty `NO_COLOR` disables ANSI even in the system journal. `events.jsonl`, `state.json` and `shycler events --json` stay uncolored. When `JOURNAL_STREAM` names that stream, red and red-bold lines start with `<3>` so systemd stores them at priority err (`SyslogLevelPrefix=` is on by default), including with `NO_COLOR`; no other line gets a priority prefix, and terminals outside the system journal never get one. `shycler events` uses the same rules on stdout.
+
+Every new event kind names its row here, or plain.
+

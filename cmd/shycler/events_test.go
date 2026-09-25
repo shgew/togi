@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -32,6 +34,7 @@ func lines(idx ...int) string {
 }
 
 func TestEvents(t *testing.T) {
+	t.Setenv("JOURNAL_STREAM", "")
 	time.Local = time.UTC
 	fixture, err := os.ReadFile("testdata/events.jsonl")
 	if err != nil {
@@ -67,6 +70,67 @@ func TestEvents(t *testing.T) {
 				t.Fatalf("stdout:\n%s\nwant:\n%s", stdout.String(), tt.want)
 			}
 		})
+	}
+}
+
+func journalStreamFor(t *testing.T, f *os.File) string {
+	t.Helper()
+	info, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatalf("stat %s has no device and inode", f.Name())
+	}
+	return fmt.Sprintf("%d:%d", stat.Dev, stat.Ino)
+}
+
+func TestEventsJSONUncoloredInSystemJournal(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	fixture, err := os.ReadFile("testdata/events.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := os.CreateTemp(t.TempDir(), "events-output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdout.Close()
+	t.Setenv("JOURNAL_STREAM", journalStreamFor(t, stdout))
+	var stderr bytes.Buffer
+	args := []string{"events", "--state-dir", dir, "--kind", "failure"}
+	if code := cli(args, stdout, &stderr); code != exitOK {
+		t.Fatalf("human-readable exit %d: %s", code, stderr.String())
+	}
+	human, err := os.ReadFile(stdout.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(human); !strings.HasPrefix(got, "<3>\x1b[31m") || !strings.HasSuffix(got, "\x1b[0m\n") {
+		t.Fatalf("human-readable failure = %q", got)
+	}
+	if err := stdout.Truncate(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stdout.Seek(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	stderr.Reset()
+	if code := cli(append(args, "--json"), stdout, &stderr); code != exitOK {
+		t.Fatalf("JSON exit %d: %s", code, stderr.String())
+	}
+	jsonOutput, err := os.ReadFile(stdout.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.SplitAfter(string(fixture), "\n")[10]
+	if got := string(jsonOutput); got != want || strings.ContainsRune(got, '\x1b') || strings.HasPrefix(got, "<3>") {
+		t.Fatalf("JSON = %q, want undecorated %q", got, want)
 	}
 }
 

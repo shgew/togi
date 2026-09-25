@@ -85,7 +85,7 @@ func regainFailure(c coreState) *journal.CorePhase {
 	o := c.offset
 	pass, discarded := keepPass(c.pass, o)
 	return &journal.CorePhase{
-		Core: c.core, From: journal.PhaseRegain, To: journal.PhaseConfirmed, Offset: o + 1, Pass: pass, FailedMark: new(o),
+		Core: c.core, From: journal.PhaseRegain, To: journal.PhaseConfirmed, Offset: o + 1, Pass: pass, FailedMark: new(o), Backoff: true,
 		Reason: fmt.Sprintf("failed regain at %d: proven backoff to %d, confirmed there before; the failed mark cancels the remaining unproven depth%s", o, o+1, discarded),
 	}
 }

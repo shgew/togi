@@ -23,10 +23,11 @@ const (
 )
 
 type Options struct {
-	Boot string
-	Now  func() time.Time
-	Sync bool
-	Log  io.Writer
+	Boot     string
+	Now      func() time.Time
+	Sync     bool
+	Log      io.Writer
+	Renderer Renderer
 }
 
 var ErrLocked = errors.New("another shycler process holds the journal lock")
@@ -289,7 +290,7 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 	}
 	j.events = append(j.events, e)
 	if j.opts.Log != nil {
-		fmt.Fprintln(j.opts.Log, FormatLine(e, time.Local))
+		fmt.Fprintln(j.opts.Log, j.opts.Renderer.Line(e, time.Local))
 	}
 	return e, nil
 }

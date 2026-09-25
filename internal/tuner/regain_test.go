@@ -54,6 +54,9 @@ func TestRegain(t *testing.T) {
 			h.trial(a, passed)
 		}
 		h.expect("regain->confirmed -19 u1", "profile", "start 2", "trial R1 c0")
+		if p := lastPayload[*journal.CorePhase](h); p.Backoff {
+			t.Fatalf("successful regain marked as backoff: %+v", p)
+		}
 		if p := lastPayload[*journal.ProfileChange](h); !slices.Equal(p.To, []int{-19}) {
 			t.Fatalf("profile %v, want [-19]", p.To)
 		}
@@ -68,6 +71,9 @@ func TestRegain(t *testing.T) {
 		h.expect("confirmed->regain -19 u2", "end unclean", "trial R1 c0")
 		h.trial(h.s.Next(), failed)
 		h.expect("attributed 0 at -19", "regain->confirmed -18 u0", "profile", "start 2", "trial R1 c0")
+		if p := lastPayload[*journal.CorePhase](h); !p.Backoff {
+			t.Fatalf("failed regain not marked as backoff: %+v", p)
+		}
 		p := lastPayload[*journal.ProfileChange](h)
 		if !slices.Equal(p.From, p.To) || !strings.Contains(p.Message(), "unchanged") {
 			t.Fatalf("profile change %v -> %v: %q", p.From, p.To, p.Message())

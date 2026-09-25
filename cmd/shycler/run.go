@@ -27,7 +27,8 @@ const runHelp = `Usage: shycler run [--sim <seed>] [--rotations <N>] [--tuning-b
 Start or resume the tuning session in the foreground: search each core's deepest
 stable offset, confirm it, then keep guarding all offsets together. After a crash,
 the next run attributes it from the journal and continues. On hardware it needs
-root; --sim drives a simulated machine instead.
+root; --sim drives a simulated machine instead. Journal lines are colored on
+terminals and in the system journal unless NO_COLOR is set.
 
 Examples:
   sudo shycler run                     Tune this machine until a signal or a dead end
@@ -74,6 +75,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitUsage
 	}
+	renderer := journal.NewRenderer(stderr, os.Getenv)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	if !seedSet {
@@ -81,7 +83,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		if grubenv != "" {
 			bootloader = hardware.GRUB{Env: grubenv}
 		}
-		return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr)
+		return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr, renderer)
 	}
 	dir := g.stateDir
 	if !g.stateDirSet {
@@ -104,11 +106,11 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitError
 	}
-	stop, err := session.Simulate(ctx, session.SimInput{Config: cfg, ConfigPath: g.config, ConfigFile: file, Dir: dir, Machine: m, Log: stderr, Rotations: rotations})
-	return runResult(stop, err, stderr)
+	stop, err := session.Simulate(ctx, session.SimInput{Config: cfg, ConfigPath: g.config, ConfigFile: file, Dir: dir, Machine: m, Log: stderr, Renderer: renderer, Rotations: rotations})
+	return runResult(stop, err, stderr, renderer)
 }
 
-func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, rotations int, stderr io.Writer) int {
+func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, rotations int, stderr io.Writer, renderer journal.Renderer) int {
 	boot, err := detect.BootID()
 	if err != nil {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
@@ -119,18 +121,18 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitError
 	}
-	j, err := journal.Open(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: stderr})
+	j, err := journal.Open(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: stderr, Renderer: renderer})
 	if err != nil {
-		return runResult(session.Stop{}, err, stderr)
+		return runResult(session.Stop{}, err, stderr, renderer)
 	}
 	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader})
 	if cerr := j.Close(); err == nil && cerr != nil {
 		err = cerr
 	}
-	return runResult(stop, err, stderr)
+	return runResult(stop, err, stderr, renderer)
 }
 
-func runResult(stop session.Stop, err error, stderr io.Writer) int {
+func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.Renderer) int {
 	switch {
 	case errors.Is(err, session.ErrNoSuchCore):
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
@@ -146,9 +148,10 @@ func runResult(stop session.Stop, err error, stderr io.Writer) int {
 	case session.StopSignal, session.StopRotations:
 		return exitOK
 	case session.StopDeadEnd:
-		fmt.Fprintf(stderr, "shycler: dead end %s: %s\n", stop.DeadEnd.Condition, stop.DeadEnd.Detail)
+		line := fmt.Sprintf("shycler: dead end %s: %s", stop.DeadEnd.Condition, stop.DeadEnd.Detail)
+		fmt.Fprintln(stderr, renderer.Text(journal.Event{Kind: journal.KindDeadEnd, Data: stop.DeadEnd}, line))
 		for _, e := range stop.Evidence {
-			fmt.Fprintf(stderr, "  evidence: %s\n", journal.FormatLine(e, time.Local))
+			fmt.Fprintln(stderr, renderer.Text(e, "  evidence: "+journal.FormatLine(e, time.Local)))
 		}
 		if stop.Reboot {
 			fmt.Fprintln(stderr, "shycler: rebooting into the normal system")
