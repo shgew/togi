@@ -379,12 +379,30 @@ func TestCrashAtEveryTrialEvent(t *testing.T) {
 			}
 			var intent *journal.TrialIntent
 			var ended bool
+			var started, last time.Time
 			for _, e := range events[:k] {
 				switch p := e.Data.(type) {
 				case *journal.TrialIntent:
-					intent, ended = p, false
+					intent, ended, started, last = p, false, time.Time{}, time.Time{}
+				case *journal.TrialStart:
+					started, last = e.Time, e.Time
+				case *journal.TrialProgress, *journal.TrialSignal, *journal.TrialSample:
+					if !started.IsZero() {
+						last = e.Time
+					}
 				case *journal.TrialEnd:
 					ended = ended || p.Trial == intent.Trial
+				}
+			}
+			if !ended {
+				want := int(last.Sub(started).Seconds())
+				for _, e := range events[k:] {
+					if p, ok := e.Data.(*journal.TrialEnd); ok && p.Trial == intent.Trial {
+						if p.DurationS != want || !strings.HasSuffix(e.Msg, fmt.Sprintf("after %ds", want)) {
+							t.Fatalf("crash at %d (%s): trial.end %+v %q, want %ds", k, hit.Kind, p, e.Msg, want)
+						}
+						break
+					}
 				}
 			}
 			f := failureCiting(events, crash.Seq)
