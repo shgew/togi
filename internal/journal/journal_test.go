@@ -22,23 +22,23 @@ func fixedClock() func() time.Time {
 	}
 }
 
-func openTest(t *testing.T, dir string) *Journal {
-	t.Helper()
+func openTest(tb testing.TB, dir string) *Journal {
+	tb.Helper()
 	j, err := Open(dir, Options{Boot: "e8f9a0b1-0000-0000-0000-000000000000", Now: fixedClock(), Sync: true})
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		tb.Fatalf("Open: %v", err)
 	}
-	t.Cleanup(func() { j.Close() })
+	tb.Cleanup(func() { j.Close() })
 	return j
 }
 
-func appendAll(t *testing.T, j *Journal, payloads []Payload) []Event {
-	t.Helper()
+func appendAll(tb testing.TB, j *Journal, payloads []Payload) []Event {
+	tb.Helper()
 	var out []Event
 	for _, p := range payloads {
 		e, err := j.Append(p)
 		if err != nil {
-			t.Fatalf("Append %s: %v", p.Kind(), err)
+			tb.Fatalf("Append %s: %v", p.Kind(), err)
 		}
 		out = append(out, e)
 	}
@@ -84,11 +84,8 @@ func TestOpenFinishesRenamedIncompatibleArchive(t *testing.T) {
 	}
 }
 
-func TestReplayTruncatedAtEveryOffset(t *testing.T) {
-	t.Parallel()
-	src := t.TempDir()
-	j := openTest(t, src)
-	appendAll(t, j, []Payload{
+func samplePayloads() []Payload {
+	return []Payload{
 		sessionStart(),
 		&ConfigLoaded{Path: config.DefaultPath, Config: config.Default()},
 		&SMUIntent{Op: SMUSet, Core: new(7), Offset: -32},
@@ -97,7 +94,14 @@ func TestReplayTruncatedAtEveryOffset(t *testing.T) {
 		&TrialEnd{Trial: "0001", Outcome: OutcomePass, DurationS: 900},
 		&TunerDecision{Core: 7, Phase: PhaseSearch, Decision: StepDeeper, FromOffset: -32, ToOffset: -37, Reason: "coarse, no failed mark yet"},
 		&DeadEnd{Condition: DeadEndSMU, Detail: "SMU command failed: timeout", Action: "exit"},
-	})
+	}
+}
+
+func TestReplayTruncatedAtEveryOffset(t *testing.T) {
+	t.Parallel()
+	src := t.TempDir()
+	j := openTest(t, src)
+	appendAll(t, j, samplePayloads())
 	j.Close()
 	data, err := os.ReadFile(filepath.Join(src, eventsFile))
 	if err != nil {
