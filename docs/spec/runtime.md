@@ -97,11 +97,12 @@ The TOML configuration has no version field. Renamed or removed options are hand
 
 ## Tuning boot
 
-`services.shycler.tuning.enable` adds a GRUB specialisation named `shycler` and makes GRUB remember the last booted entry (`boot.loader.grub.default = "saved"`). Picking "shycler" once in the menu starts unattended tuning. Every crash reboot returns to it until a dead end, or you, select a normal entry. The module asserts that GRUB is the bootloader; other bootloaders are [#27](https://code.marleb.org/shgew/shycler/issues/27).
+`services.shycler.tuning.enable` adds a GRUB specialisation named `shycler` and makes GRUB remember the last booted entry (`boot.loader.grub.default = "saved"`). Picking "shycler" once in the menu starts unattended tuning. Every crash reboot returns to it until a dead end, an orderly shutdown or reboot (unless `tuning.leaveOnShutdown` is off), or you, select a normal entry. The module asserts that GRUB is the bootloader; other bootloaders are [#27](https://code.marleb.org/shgew/shycler/issues/27).
 
 Inside the specialisation:
 - `systemd.defaultUnit = "multi-user.target"`, so no graphical session starts;
 - `shycler.service` runs `shycler run --tuning-boot <grubenv>` as root, where `<grubenv>` is the GRUB environment under the first mirrored boot directory, with `Restart=on-failure`, `RestartSec=60`, a start limit of 3 per 30 minutes, and `RestartPreventExitStatus` listing dead-end exit codes 10-17;
+- with `tuning.leaveOnShutdown` (the default), `shycler-leave-tuning-boot.service`, a oneshot unit ordered before `shycler.service`, so it stops after it, whose `ExecStop` runs `grub-editenv <grubenv> unset saved_entry`. An orderly shutdown or reboot therefore hands the next boot to the newest normal generation; a panic, a watchdog reset or a power loss never runs it, so crash reboots stay in the tuning boot. The clear is logged to the system journal, not to shycler's journal. The unit is not restarted when a configuration switch changes it;
 - a tty1 unit follows `shycler.service`'s log, in place of the tty1 login prompt;
 - sysctls `kernel.panic=10`, `kernel.panic_on_oops=1`, `kernel.hardlockup_panic=1`, `kernel.softlockup_panic=1`;
 - `systemd.settings.Manager.RuntimeWatchdogSec = "30s"`, so the SP5100 TCO hardware watchdog resets a frozen machine;
@@ -129,6 +130,7 @@ If a `run` starts after `deadend` but before `boot.saved_entry`, it completes th
 |---|---|
 | `services.shycler.enable` | Install shycler and load `ryzen_smu` (`hardware.cpu.amd.ryzen-smu.enable`, set with `mkDefault`, so a host that loads its own build can turn it off) |
 | `services.shycler.tuning.enable` | Add the tuning boot specialisation above |
+| `services.shycler.tuning.leaveOnShutdown` | Default `true`: an orderly shutdown or reboot of the tuning boot clears GRUB's saved entry, so the next boot is the normal system. `false` keeps the tuning boot selected until a dead end or you pick another entry |
 | `services.shycler.settings` | Freeform attrset rendered to `/etc/shycler/config.toml` |
 | `services.shycler.backends.mprime.enable` | Set `settings.backends.mprime` to the nixpkgs `mprime` package (unfree) |
 | `services.shycler.backends.ycruncher.enable` | Set `settings.backends.ycruncher` to the nixpkgs `y-cruncher` package (unfree) |

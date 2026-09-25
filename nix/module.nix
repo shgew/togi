@@ -16,6 +16,11 @@ in
   options.services.shycler = {
     enable = lib.mkEnableOption "shycler, the per-core Curve Optimizer tuner";
     tuning.enable = lib.mkEnableOption "the shycler tuning boot, a GRUB entry that tunes unattended";
+    tuning.leaveOnShutdown = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Clear GRUB's saved entry on an orderly shutdown or reboot of the tuning boot, so the next boot is the normal system. Crash reboots return to the tuning boot either way.";
+    };
     backends.mprime.enable = lib.mkEnableOption "the mprime backend (unfree)";
     backends.ycruncher.enable = lib.mkEnableOption "the y-cruncher backend (unfree)";
     settings = lib.mkOption {
@@ -81,6 +86,19 @@ in
               RestartSec = 60;
               RestartPreventExitStatus = "10 11 12 13 14 15 16 17";
               StateDirectory = "shycler";
+            };
+          };
+          systemd.services.shycler-leave-tuning-boot = lib.mkIf cfg.tuning.leaveOnShutdown {
+            description = "Return the next boot to the normal system after an orderly shutdown";
+            wantedBy = [ "multi-user.target" ];
+            before = [ "shycler.service" ];
+            restartIfChanged = false;
+            unitConfig.RequiresMountsFor = grubenv;
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              ExecStart = "${pkgs.coreutils}/bin/true";
+              ExecStop = "${pkgs.grub2}/bin/grub-editenv ${grubenv} unset saved_entry";
             };
           };
           systemd.services."getty@tty1".enable = false;
