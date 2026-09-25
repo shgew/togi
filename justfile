@@ -13,10 +13,10 @@ _default:
 test *args:
     {{ dev }} go test ./... "$@"
 
-# Run one package (`just focus ./internal/tuner`) or test pattern (`just focus TestGuard`)
+# Run one package (`just focus ./internal/tuner`) or test pattern (`just focus TestGuard/crash`)
 [group('test')]
 focus +args:
-    if [[ "$1" == ./* || "$1" == */* || "$1" == *... ]]; then {{ dev }} go test "$@"; else pattern="$1"; shift; {{ dev }} go test -run "$pattern" ./... "$@"; fi
+    if [[ "$1" == ./* || "$1" == ../* || "$1" == *... || -d "$1" ]]; then {{ dev }} go test "$@"; else pattern="$1"; shift; {{ dev }} go test -run "$pattern" ./... "$@"; fi
 
 # Run the hardware tests on the target machine
 [group('test')]
@@ -37,7 +37,8 @@ fmt:
 # Check formatting of Go, Nix and this justfile without changing files
 [group('quality')]
 _fmt-check:
-    nix fmt -- --ci
+    unformatted=$({{ dev }} gofmt -l .); if [[ -n "$unformatted" ]]; then printf 'not gofmt-formatted:\n%s\n' "$unformatted"; exit 1; fi
+    {{ dev }} nixfmt --check flake.nix nix/*.nix
     {{ just_executable() }} --justfile '{{ justfile() }}' --fmt --check
 
 # Pre-handoff gate: lint, formatting check, then tests
