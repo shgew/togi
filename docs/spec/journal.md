@@ -73,9 +73,18 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Trials | `trial.intent`, `trial.start` (pid, scope, cpus and argv; the config `files` written; `instances` with core, cpus, pid and scope when the trial runs more than one), `trial.progress` (backend milestones such as a finished FFT size), `trial.signal` (load-step schedule), `trial.sample` (containment or stall warnings only), `trial.end` |
 | Evidence | `failure` (kind, attribution, evidence `seq`), `mce` (raw and decoded lines, cpu, core, bank type), `crash.detected` (previous boot ID, in-flight action) |
 | Tuner | `tuner.decision`, `core.phase`, `guard.rotation` (start and end), `escalation.window` (open and close), `tier.change` (from, to, reason) |
+| Defects | `defect.found` (known defect, direction, affected cores and decision sequences), `defect.answered` (reset answer and cores) |
 | Commands | `command.regain` (the cores queued), `command.reset` (a core, or all) |
 | Stop | `deadend` (condition, evidence, action taken), `boot.saved_entry` (GRUB change), `shutdown` (clean stop) |
 | Journal | `journal.torn`, `state.rebuilt` |
+
+## Defects
+
+The binary's defect list gives each entry an increasing integer `id`, short `title`, fixing pull request `pr`, affected decision `kind` and `decision`, required cause kind, optional predicate on surrounding events, and `direction` (`too_cautious` or `too_aggressive`). The highest ID is the binary's `fixes` stamp. A decision uses the most recent `session.start` or `config.loaded` `fixes` before it (absent means 0). A matching decision recorded with fixes below that entry's ID is not recomputed or removed: on resume, the build appends one `defect.found` per defect per session, aggregating the affected `cores` and `decisions` (their `seq`s); `cause` lists those decision sequences. A prior `defect.found` suppresses another finding for that ID.
+
+The first entry, ID 1, is the false failure on power-off fixed in pull request #16, direction `too_cautious`. It matches a `tuner.decision` with `decision: backoff` citing a `failure` with `signal: unexpected_exit`, whose trial's `trial.end` failed with the same signal, whose `trial.progress` in that boot before the end has `detail: "core NN backend exited early: <nil>"` for the affected core, and whose boot has a signal `shutdown` after the decision within 5 seconds of that `trial.end`. The `<nil>` status recorded the clean backend exit in pre-fix builds; an `exit status N` or `signal: ...` indicates a real failure even if a signal shutdown follows immediately. The observed failure preceded the shutdown by about 100 ms; 5 seconds allows clean-stop work between them. An unrelated unexpected backend exit without that same-boot shutdown is not a match.
+
+`defect.found` carries `id`, `title`, `detail` (why), `pr`, `direction`, `cores` and `decisions`. `defect.answered` carries `id`, `cores` and `answer` (`yes` or `no`), with `cause` citing the finding. A yes first appends one `command.reset` per affected core, each citing the finding, and then records the answer; a no records only the answer. Either answer prevents another prompt for that ID; an answer does not hide a too-cautious finding from `status`. `status` keeps showing the finding's reset command for each affected core until a later `command.reset` for that core or `reset --all`. The original decisions and every journal line remain unchanged.
 
 ## State file
 
@@ -125,9 +134,10 @@ The run log and `shycler events` color the whole human-readable line according t
 | Core confirmed, edge reported (`core.phase` from `confirmation` to `confirmed`, `regain` to `confirmed` without `backoff: true`, or `search` to `confirmation` for a candidate edge) | Green, bold |
 | Clean guard rotation (`guard.rotation` end with `clean: true`), tier earned (`tier.change` to a higher tier) | Green, bold |
 | Proven or suspect backoff (`tuner.decision` with `decision: backoff` or `suspect_backoff`, or a failed `regain` to `confirmed` with `backoff: true`) | Yellow |
+| A known defect found (`defect.found`) | Yellow |
 | Ruleset mismatch warning on read-only commands (not an event) | Yellow |
 | Inconclusive trial (`trial.end` outcome `inconclusive`) | Dim |
-| Everything else, including a single trial passing | Plain |
+| Everything else, including `defect.answered` and a single trial passing | Plain |
 
 ANSI SGR is used when that output stream is a terminal (character device) or `JOURNAL_STREAM` names that stream (its device and inode match). A non-empty `NO_COLOR` disables ANSI even in the system journal. `events.jsonl`, `state.json` and `shycler events --json` stay uncolored. When `JOURNAL_STREAM` names that stream, red and red-bold lines start with `<3>` so systemd stores them at priority err (`SyslogLevelPrefix=` is on by default), including with `NO_COLOR`; no other line gets a priority prefix, and terminals outside the system journal never get one. `shycler events` uses the same rules on stdout.
 

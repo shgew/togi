@@ -33,6 +33,8 @@ func StyleOf(e Event) Style {
 		}
 	case *Failure, *CrashDetected:
 		return Red
+	case *DefectFound:
+		return Yellow
 	case *DeadEnd:
 		return RedBold
 	case *TunerDecision:

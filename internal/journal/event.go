@@ -47,6 +47,8 @@ const (
 	KindTierChange       Kind = "tier.change"
 	KindCommandRegain    Kind = "command.regain"
 	KindCommandReset     Kind = "command.reset"
+	KindDefectFound      Kind = "defect.found"
+	KindDefectAnswered   Kind = "defect.answered"
 	KindDeadEnd          Kind = "deadend"
 	KindBootSavedEntry   Kind = "boot.saved_entry"
 	KindShutdown         Kind = "shutdown"
@@ -213,6 +215,10 @@ func decodePayload(kind Kind, raw []byte) (Payload, error) {
 		p = &CommandRegain{}
 	case KindCommandReset:
 		p = &CommandReset{}
+	case KindDefectFound:
+		p = &DefectFound{}
+	case KindDefectAnswered:
+		p = &DefectAnswered{}
 	case KindDeadEnd:
 		p = &DeadEnd{}
 	case KindBootSavedEntry:

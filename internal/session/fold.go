@@ -199,7 +199,7 @@ func (f *fold) Fold(e journal.Event) {
 			f.streaks = map[machine.Backend][]int{}
 		case journal.DeadEndBootLoop:
 			f.stray = nil
-		case journal.DeadEndFailureAtZero, journal.DeadEndPreflight:
+		case journal.DeadEndFailureAtZero, journal.DeadEndPreflight, journal.DeadEndDefect:
 		}
 	}
 }

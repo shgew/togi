@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"code.marleb.org/shgew/shycler/internal/config"
+	"code.marleb.org/shgew/shycler/internal/defect"
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/machine"
 	"code.marleb.org/shgew/shycler/internal/sim"
@@ -31,6 +32,8 @@ type SimInput struct {
 	// Rotations is the number of clean rotations of one profile after which the run stops; 0 runs guard endlessly.
 	Rotations  int
 	Bootloader Bootloader
+	Prompt     func(defect.Finding) (bool, error)
+	Defects    []defect.Entry
 }
 
 // Resume continues the simulated machine after the journal in dir and its archives: their boots are counted and the
@@ -125,7 +128,7 @@ func simulateBoot(ctx context.Context, in SimInput, wrap func(*journal.Journal) 
 	if wrap != nil {
 		jr = wrap(j)
 	}
-	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, ConfigFile: in.ConfigFile, Boot: boot, Journal: jr, Machine: seams, Rotations: in.Rotations, Bootloader: in.Bootloader})
+	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, ConfigFile: in.ConfigFile, Boot: boot, Journal: jr, Machine: seams, Rotations: in.Rotations, Bootloader: in.Bootloader, Prompt: in.Prompt, Defects: in.Defects})
 	if cerr := j.Close(); err == nil && cerr != nil {
 		return Stop{}, cerr
 	}

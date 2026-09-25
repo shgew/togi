@@ -35,6 +35,8 @@ func TestStyleOf(t *testing.T) {
 		{"platinum earned", &TierChange{From: TierGold, To: TierPlatinum}, GreenBold},
 		{"proven backoff", &TunerDecision{Decision: Backoff}, Yellow},
 		{"suspect backoff", &TunerDecision{Decision: SuspectBackoff}, Yellow},
+		{"defect found", &DefectFound{}, Yellow},
+		{"defect answered", &DefectAnswered{}, Plain},
 		{"inconclusive trial", &TrialEnd{Outcome: OutcomeInconclusive}, Dim},
 		{"single passed trial", &TrialEnd{Outcome: OutcomePass}, Plain},
 		{"tier drop", &TierChange{From: TierGold, To: TierNone}, Plain},

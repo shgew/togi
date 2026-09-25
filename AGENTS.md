@@ -29,6 +29,7 @@ Every change, docs included, lands as a pull request against `main` on `code.mar
 - A pull request that finishes an issue says `Closes #N` in its body; one that only makes progress says `Refs #N`.
 - A pull request that bumps `journal.Schema` or `tuner.Ruleset` is breaking: its title starts with `[BREAKING]`, it carries the `breaking` label, and its changelog line starts with `**BREAKING**`.
 - A breaking pull request merges only after `[Unreleased]` has been released (see `docs/releasing.md`).
+- A pull request that fixes a bug that changed decisions adds a defect entry, with a test replaying a fixture journal from before the fix, when the affected decisions can be matched. Otherwise its changelog line tells the operator which `shycler reset --core` to run.
 
 ## Issues
 
@@ -79,6 +80,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `cmd/shycler` | Command dispatch |
 | `internal/config` | Configuration |
 | `internal/machine` | Shared vocabulary and the seam interfaces the run loop consumes |
+| `internal/defect` | Known decision-changing bugs and pure matching against the journal |
 | `internal/journal` | Journal, replay, state file, log lines |
 | `internal/tuner` | Pure decision engine: search, confirmation, guard, regain, tiers |
 | `internal/sim` | Simulator implementing every hardware seam |

@@ -13,16 +13,15 @@ import (
 
 	shycler "code.marleb.org/shgew/shycler"
 	"code.marleb.org/shgew/shycler/internal/config"
+	"code.marleb.org/shgew/shycler/internal/defect"
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/machine"
 	"code.marleb.org/shgew/shycler/internal/tuner"
 )
 
-const fixes = 0
-
 // Build is the build that stamps each session start and resume.
 func Build() journal.Build {
-	return journal.Build{Version: shycler.Version(), Rev: shycler.Rev(), Ruleset: tuner.Ruleset, Schema: journal.Schema, Fixes: fixes}
+	return journal.Build{Version: shycler.Version(), Rev: shycler.Rev(), Ruleset: tuner.Ruleset, Schema: journal.Schema, Fixes: defect.Fixed()}
 }
 
 type Input struct {
@@ -36,6 +35,10 @@ type Input struct {
 	Rotations int
 	// Bootloader is set only in the tuning boot, where a dead end hands the next boot back to the normal system.
 	Bootloader Bootloader
+	// Prompt is nil when stdin or stderr is not a terminal.
+	Prompt func(defect.Finding) (bool, error)
+	// Defects overrides the binary's entries in tests; nil uses the shipped list.
+	Defects []defect.Entry
 }
 
 type Bootloader interface {
@@ -134,6 +137,9 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 	}
 	if err := r.recoverCrashes(); err != nil {
 		return Stop{}, err
+	}
+	if stop, err := r.checkDefects(); stop != nil || err != nil {
+		return deref(stop), err
 	}
 	if stop, err := r.checkDeadEnd(); stop != nil || err != nil {
 		return deref(stop), err
