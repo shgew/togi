@@ -55,7 +55,7 @@ func sectionNamed(changelog, name string) (section, bool) {
 
 func entries(body string) []string {
 	var lines []string
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		if strings.HasPrefix(line, "- ") {
 			lines = append(lines, line)
 		}
@@ -103,7 +103,7 @@ func bump(version, body string) (string, string, error) {
 
 func addedEntries(body string) bool {
 	inAdded := false
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		if strings.HasPrefix(line, "### ") {
 			inAdded = line == "### Added"
 		} else if inAdded && strings.HasPrefix(line, "- ") {

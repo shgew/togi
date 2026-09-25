@@ -85,11 +85,10 @@ func scanBuild(data []byte) (Build, string, error) {
 		Build
 		Session string `json:"session"`
 	}
-	i := bytes.IndexByte(data, '\n')
-	if i < 0 {
+	first, rest, ok := bytes.Cut(data, []byte{'\n'})
+	if !ok {
 		return Build{}, "", nil
 	}
-	first := data[:i]
 	if err := json.Unmarshal(first, &start); err != nil {
 		return Build{}, "", fmt.Errorf("read session.start stamp: %w", err)
 	}
@@ -100,7 +99,7 @@ func scanBuild(data []byte) (Build, string, error) {
 	if build.Ruleset == 0 {
 		build.Ruleset = 1
 	}
-	for rest := data[i+1:]; len(rest) > 0; {
+	for len(rest) > 0 {
 		next := bytes.IndexByte(rest, '\n')
 		if next < 0 {
 			break

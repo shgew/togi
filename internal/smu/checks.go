@@ -127,7 +127,7 @@ func (d *Driver) cpuInfo() (map[string]string, error) {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	info := make(map[string]string)
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if strings.TrimSpace(line) == "" {
 			break
 		}

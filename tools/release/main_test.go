@@ -475,7 +475,7 @@ func TestClampedPagination(t *testing.T) {
 		case apiPrefix + "/pulls":
 			if page == "1" || page == "2" {
 				fmt.Fprint(w, "[")
-				for i := 0; i < 20; i++ {
+				for i := range 20 {
 					if i > 0 {
 						fmt.Fprint(w, ",")
 					}
@@ -493,7 +493,7 @@ func TestClampedPagination(t *testing.T) {
 			switch page {
 			case "1":
 				fmt.Fprint(w, "[")
-				for i := 0; i < 20; i++ {
+				for i := range 20 {
 					if i > 0 {
 						fmt.Fprint(w, ",")
 					}

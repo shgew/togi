@@ -49,7 +49,7 @@ func TestRules(t *testing.T) {
 		{"failure next to pass makes it the candidate", failureRule, search(-11, new(-10), new(-15)), toConfirmation(-10, new(-10), new(-11), "candidate edge: -11 is the failed mark")},
 		{"contradicted pass is discarded", failureRule, search(-18, new(-20), nil), backoff(journal.PhaseSearch, -18, -13, nil, new(-18), "coarse, no passed step; passed step at -20 discarded, the failure contradicts it")},
 		{"search failure at 0 is a dead end", failureRule, search(0, nil, nil), deadAtZero},
-		{"confirmation passes", func(c coreState) journal.Payload { return confirmed(c) }, confirming(-14, new(-14), new(-15)),
+		{"confirmation passes", confirmed, confirming(-14, new(-14), new(-15)),
 			&journal.CorePhase{Core: 7, From: journal.PhaseConfirmation, To: journal.PhaseConfirmed, Offset: -14, Pass: new(-14), FailedMark: new(-15), Reason: "R1 to R5 passed"}},
 		{"confirmation failure moves to e+1", failureRule, confirming(-14, new(-14), new(-15)),
 			backoff(journal.PhaseConfirmation, -14, -13, nil, new(-14), "confirmation restarts from R1; passed step at -14 discarded, the failure contradicts it")},

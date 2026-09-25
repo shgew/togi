@@ -121,8 +121,7 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 }
 
 func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.Renderer, bootloader ...session.Bootloader) int {
-	var incompatible *journal.IncompatibleError
-	if errors.As(err, &incompatible) {
+	if incompatible, ok := errors.AsType[*journal.IncompatibleError](err); ok {
 		fmt.Fprintln(stderr, renderer.Styled(journal.RedBold, "shycler run: "+incompatible.Error()))
 		if len(bootloader) > 0 && bootloader[0] != nil {
 			before, after, clearErr := bootloader[0].ClearSavedEntry()

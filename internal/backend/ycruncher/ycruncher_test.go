@@ -115,7 +115,7 @@ func TestClassify(t *testing.T) {
 		}
 	}
 	var details []string
-	for _, line := range strings.Split("Running BKT: Passed\rRunning SFTv4: Passed", "\r") {
+	for line := range strings.SplitSeq("Running BKT: Passed\rRunning SFTv4: Passed", "\r") {
 		result := y.Classify(line)
 		if result.Kind != backend.Progress {
 			t.Fatalf("carriage-return progress %q: %#v", line, result)

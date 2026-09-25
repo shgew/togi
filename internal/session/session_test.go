@@ -466,6 +466,7 @@ func TestStrayCrashes(t *testing.T) {
 }
 
 func lastEvent(t *testing.T, dir string) journal.Event {
+	t.Helper()
 	events := readEvents(t, dir)
 	return events[len(events)-1]
 }
@@ -496,6 +497,7 @@ func TestDeadEnds(t *testing.T) {
 		{name: "escaped thread", fault: (*sim.Machine).Escape, want: journal.DeadEndContainment, evidence: journal.KindTrialEnd, killable: true},
 		{name: "failed preflight", fault: func(m *sim.Machine) { m.FailCheck("root", "uid 1000") }, want: journal.DeadEndPreflight, evidence: journal.KindPreflightCheck},
 		{name: "changed BIOS context", before: func(t *testing.T, in simRun) {
+			t.Helper()
 			if stop := simulate(t, in); stop.Reason != StopRotations {
 				t.Fatalf("first run stopped with %+v", stop)
 			}
@@ -510,6 +512,7 @@ func TestDeadEnds(t *testing.T) {
 			cfg = small()
 		}
 		setup := func(t *testing.T) simRun {
+			t.Helper()
 			in := simInput(t.TempDir(), newSim(t, cfg))
 			if tt.fault != nil {
 				tt.fault(in.Machine)

@@ -1,13 +1,13 @@
 version: "2"
+run:
+  build-tags: [integration, hardware]
 linters:
-  enable:
-    - exhaustive
+  default: standard
+  enable: [exhaustive, misspell, unconvert, nolintlint, errorlint, gocritic, modernize, usetesting, thelper]
   settings:
     exhaustive:
       default-signifies-exhaustive: false
   exclusions:
-    presets:
-      - std-error-handling
+    presets: [std-error-handling]
 formatters:
-  enable:
-    - gofmt
+  enable: [gofmt]

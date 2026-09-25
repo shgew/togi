@@ -334,7 +334,7 @@ func (r runner) releasePullRequest(branch, version, changelog string) error {
 		}
 		matched, checkErr := r.branchMatches(newBranch, files)
 		if checkErr != nil {
-			return fmt.Errorf("release pull request: commit release files: %w (check existing branch: %v)", err, checkErr)
+			return fmt.Errorf("release pull request: commit release files: %w (check existing branch: %w)", err, checkErr)
 		}
 		if !matched {
 			return fmt.Errorf("release pull request: commit release files: %w (existing branch has different contents)", err)

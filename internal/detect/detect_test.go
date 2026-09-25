@@ -20,7 +20,7 @@ func loadFixture(t *testing.T, name string) []Message {
 		t.Fatal(err)
 	}
 	var msgs []Message
-	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
 		var entry struct {
 			Message   string `json:"MESSAGE"`
 			Timestamp string `json:"__REALTIME_TIMESTAMP"`

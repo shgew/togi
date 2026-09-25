@@ -284,9 +284,9 @@ func (f *fold) recordedFor(boot, current string) []int {
 }
 
 func (f *fold) lastIntentIn(boot string) *int {
-	for i := len(f.unmatched) - 1; i >= 0; i-- {
-		if f.unmatched[i].boot == boot {
-			return new(f.unmatched[i].seq)
+	for _, m := range slices.Backward(f.unmatched) {
+		if m.boot == boot {
+			return new(m.seq)
 		}
 	}
 	return nil
