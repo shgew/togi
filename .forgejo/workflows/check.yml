@@ -13,13 +13,12 @@ jobs:
         experimental-features = nix-command flakes
         system-features = nixos-test benchmark big-parallel kvm
     steps:
-      - name: Install Node for JavaScript actions
-        run: nix profile add nixpkgs#nodejs_24
       - name: Check out
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
+        run: |
+          git init -q .
+          git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+          git -c http.extraHeader="Authorization: Basic $(printf 'x-access-token:%s' '${{ github.token }}' | base64 -w0)" fetch -q origin "${{ github.sha }}"
+          git checkout -q --detach FETCH_HEAD
       - name: Give build users KVM
         run: chmod 0666 /dev/kvm
       - name: just check
