@@ -59,7 +59,7 @@ The first pull request that makes something runnable on real hardware adds `docs
 
 ## Commands
 
-Enter the dev shell (Go, gopls, golangci-lint, govulncheck, just, nixfmt) with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes also work outside the dev shell: they enter it with `nix develop` when needed.
+Enter the dev shell (Go, gopls, golangci-lint, govulncheck, just, nixfmt, and on Linux util-linux for the integration tests' `taskset`) with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes also work outside the dev shell: they enter it with `nix develop` when needed.
 
 | Command | Use |
 |---|---|

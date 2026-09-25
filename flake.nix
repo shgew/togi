@@ -71,7 +71,8 @@
               pkgs.just
               pkgs.nixfmt
               pkgs.govulncheck
-            ];
+            ]
+            ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
             SHYCLER_DEV_SHELL = "1";
           };
 
