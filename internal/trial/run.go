@@ -294,7 +294,11 @@ func (t *running) handleEvent(e streamEvent, result *machine.Result, report mach
 			result.Signal = machine.UnexpectedExit
 			result.Core = inst.Core
 			result.Inconclusive = ""
-			report.Progress(fmt.Sprintf("core %02d backend exited early: %v", inst.Core, e.err))
+			status := "exit status 0"
+			if e.err != nil {
+				status = e.err.Error()
+			}
+			report.Progress(fmt.Sprintf("core %02d backend exited early: %s", inst.Core, status))
 			return true
 		}
 		return found

@@ -130,12 +130,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 		}
 		argv := launch.Argv
 		if !r.options.NoScope {
-			argv = []string{"systemd-run"}
-			if os.Geteuid() != 0 {
-				argv = append(argv, "--user")
-			}
-			argv = append(argv, "--scope", "--quiet", "--collect", "--unit", scope, "-p", "AllowedCPUs="+joinCPUs(cpus), "--")
-			argv = append(argv, launch.Argv...)
+			argv = scopeArgv(scope, cpus, launch.Argv...)
 		}
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		cmd.Dir = dir
@@ -244,13 +239,20 @@ func joinCPUs(cpus []int) string {
 	return strings.Join(a, ",")
 }
 
-func CheckSystemdRun() (string, error) {
-	argv := []string{}
+// scopeArgv wraps argv in a transient scope confined to cpus. DefaultDependencies=no keeps a system shutdown from
+// stopping the scope before shycler: shycler's own teardown ends the trial, so it ends interrupted, not failed.
+func scopeArgv(unit string, cpus []int, argv ...string) []string {
+	a := []string{"systemd-run"}
 	if os.Geteuid() != 0 {
-		argv = append(argv, "--user")
+		a = append(a, "--user")
 	}
-	argv = append(argv, "--scope", "--quiet", "--collect", "--unit", fmt.Sprintf("shycler-preflight-%d", os.Getpid()), "-p", "AllowedCPUs=0", "--", "/bin/sh", "-c", "exit 0")
-	out, err := exec.Command("systemd-run", argv...).CombinedOutput()
+	a = append(a, "--scope", "--quiet", "--collect", "--unit", unit, "-p", "AllowedCPUs="+joinCPUs(cpus), "-p", "DefaultDependencies=no", "--")
+	return append(a, argv...)
+}
+
+func CheckSystemdRun() (string, error) {
+	argv := scopeArgv(fmt.Sprintf("shycler-preflight-%d", os.Getpid()), []int{0}, "/bin/sh", "-c", "exit 0")
+	out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("systemd-run: %w: %s", err, strings.TrimSpace(string(out)))
 	}

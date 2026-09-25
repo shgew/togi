@@ -74,8 +74,10 @@ Rough times to Bronze on 16 cores: search 6-9 h depending on how far edges lie f
 Each backend instance runs as a child of shycler inside a transient scope confined to its logical CPUs:
 
 ```
-systemd-run --scope --quiet --collect -p AllowedCPUs=<cpus> -- <argv>
+systemd-run --scope --quiet --collect -p AllowedCPUs=<cpus> -p DefaultDependencies=no -- <argv>
 ```
+
+`DefaultDependencies=no` keeps a system shutdown from stopping the scope on its own. Otherwise systemd stops the scope and the unit running shycler at the same moment, the backend can exit before shycler sees its signal, and the trial would end as an unexpected exit on the target instead of interrupted. Without the default dependencies, shycler's teardown ends the scope after the signal reaches it.
 
 The kernel enforces the cpuset whatever the backend does. shycler also samples the processor field of every backend thread in `/proc/<pid>/task/*/stat` once per second, from the moment the process is inside its scope. A thread seen outside its allowed logical CPUs is a dead end. Stopping a trial terminates the whole scope.
 
