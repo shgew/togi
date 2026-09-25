@@ -1,0 +1,11 @@
+01:10:00 session.start  session 20261002T011000Z started (schema 1, 2 cores)
+01:10:00 config.loaded  no config at /etc/shycler/config.toml; using defaults
+01:10:00 core.phase     core 03 starts search at 0 (baseline)
+01:14:07 trial.intent   trial 0413 core 07 CO -32 R2 mprime AVX2 36K-248K 90s isolated
+01:14:07 smu.intent     SMU set core 07 to CO -32
+01:14:07 smu.write      SMU wrote core 07 CO -32
+01:14:07 smu.readback   SMU core 07 reads CO -32
+01:14:07 trial.start    trial 0413 started pid 48211 in scope shycler-trial-0413 on cpu 7
+01:15:37 trial.end      trial 0413 PASS 90s | Tctl max 71°C
+01:15:37 tuner.decision core 07 passed R1+R2 at -32; next -37 (coarse, no failed mark yet)
+01:20:00 failure        unattributed crash failure: no trial was in flight
