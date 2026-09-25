@@ -10,7 +10,7 @@ import (
 
 var sectionHeading = regexp.MustCompile(`(?m)^## \[([^]\n]+)\](?: - (\d{4}-\d{2}-\d{2}))?[ \t]*$`)
 var versionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
-var reference = regexp.MustCompile(`\[#([0-9]+)\]`)
+var reference = regexp.MustCompile(`\[([^]\n]+)\](?:\[([^]\n]*)\])?`)
 var definition = regexp.MustCompile(`(?m)^\[#([0-9]+)\]: .+$`)
 var linkDefinition = regexp.MustCompile(`(?m)^\[[^]\n]+\]: \S.*$`)
 
@@ -116,13 +116,23 @@ func addedEntries(body string) bool {
 func releaseNotes(changelog string, s section) string {
 	body := strings.TrimSpace(s.body)
 	used := make(map[string]bool)
-	for _, match := range reference.FindAllStringSubmatch(body, -1) {
-		used[match[1]] = true
+	for _, match := range reference.FindAllStringSubmatchIndex(body, -1) {
+		if match[4] < 0 && match[1] < len(body) && body[match[1]] == '(' {
+			continue
+		}
+		label := body[match[2]:match[3]]
+		if match[4] >= 0 && match[4] != match[5] {
+			label = body[match[4]:match[5]]
+		}
+		used[strings.ToLower(strings.Join(strings.Fields(label), " "))] = true
 	}
-	for _, match := range definition.FindAllStringSubmatch(changelog, -1) {
-		if used[match[1]] {
-			body += "\n\n" + match[0]
-			delete(used, match[1])
+	for _, match := range linkDefinition.FindAllStringSubmatchIndex(changelog, -1) {
+		line := changelog[match[0]:match[1]]
+		label := line[1:strings.IndexByte(line, ']')]
+		key := strings.ToLower(strings.Join(strings.Fields(label), " "))
+		if used[key] {
+			body += "\n\n" + line
+			delete(used, key)
 		}
 	}
 	return body

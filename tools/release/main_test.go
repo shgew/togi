@@ -68,7 +68,11 @@ func TestTagRelease(t *testing.T) {
 		case apiPrefix + "/tags/v0.1.0":
 			w.WriteHeader(http.StatusNotFound)
 		case apiPrefix + "/pulls":
-			fmt.Fprint(w, `[{"merged":false,"head":{"ref":"release-0.1.0"}},{"merged":true,"merge_commit_sha":"merge-sha","head":{"ref":"release-0.1.0"}}]`)
+			if req.URL.Query().Get("page") != "1" {
+				fmt.Fprint(w, `[]`)
+				break
+			}
+			fmt.Fprint(w, `[{"merged":false,"head":{"ref":"release-0.1.0"}},{"merged":true,"merge_commit_sha":"merge-sha","head":{"ref":"refs/pull/35/head","label":"o:release-0.1.0"}}]`)
 		case apiPrefix + "/releases":
 			var post struct {
 				Tag, Commit, Name, Body string
@@ -94,7 +98,7 @@ func TestTagRelease(t *testing.T) {
 	if got := out.String(); got != "https://forge.example/o/r/releases/tag/v0.1.0\n" {
 		t.Fatalf("output = %q", got)
 	}
-	assertRequests(t, *requests, "GET "+apiPrefix+"/tags/v0.1.0", "GET "+apiPrefix+"/pulls?state=closed&limit=50&page=1", "POST "+apiPrefix+"/releases")
+	assertRequests(t, *requests, "GET "+apiPrefix+"/tags/v0.1.0", "GET "+apiPrefix+"/pulls?state=closed&limit=50&page=1", "GET "+apiPrefix+"/pulls?state=closed&limit=50&page=2", "POST "+apiPrefix+"/releases")
 }
 
 func TestTagDryRun(t *testing.T) {
@@ -104,6 +108,10 @@ func TestTagDryRun(t *testing.T) {
 		case apiPrefix + "/tags/v0.1.0":
 			w.WriteHeader(http.StatusNotFound)
 		case apiPrefix + "/pulls":
+			if req.URL.Query().Get("page") != "1" {
+				fmt.Fprint(w, `[]`)
+				break
+			}
 			fmt.Fprint(w, `[{"merged":true,"merge_commit_sha":"merge-sha","head":{"ref":"release-0.1.0"}}]`)
 		default:
 			t.Errorf("dry run changed repository: %s %s", req.Method, req.URL)
@@ -116,7 +124,7 @@ func TestTagDryRun(t *testing.T) {
 	if out.String() != "Would publish release v0.1.0 at merge commit merge-sha\n" {
 		t.Fatalf("output = %q", out.String())
 	}
-	assertRequests(t, *requests, "GET "+apiPrefix+"/tags/v0.1.0", "GET "+apiPrefix+"/pulls?state=closed&limit=50&page=1")
+	assertRequests(t, *requests, "GET "+apiPrefix+"/tags/v0.1.0", "GET "+apiPrefix+"/pulls?state=closed&limit=50&page=1", "GET "+apiPrefix+"/pulls?state=closed&limit=50&page=2")
 }
 
 func TestTagRequiresMergedReleasePullRequest(t *testing.T) {
@@ -126,6 +134,10 @@ func TestTagRequiresMergedReleasePullRequest(t *testing.T) {
 		case apiPrefix + "/tags/v0.1.0":
 			w.WriteHeader(http.StatusNotFound)
 		case apiPrefix + "/pulls":
+			if req.URL.Query().Get("page") != "1" {
+				fmt.Fprint(w, `[]`)
+				break
+			}
 			fmt.Fprint(w, `[{"merged":false,"head":{"ref":"release-0.1.0"}}]`)
 		default:
 			t.Errorf("unexpected write or request: %s %s", req.Method, req.URL)
@@ -136,7 +148,7 @@ func TestTagRequiresMergedReleasePullRequest(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "no merged pull request with head release-0.1.0") {
 		t.Fatalf("error = %v", err)
 	}
-	assertRequests(t, *requests, "GET "+apiPrefix+"/tags/v0.1.0", "GET "+apiPrefix+"/pulls?state=closed&limit=50&page=1")
+	assertRequests(t, *requests, "GET "+apiPrefix+"/tags/v0.1.0", "GET "+apiPrefix+"/pulls?state=closed&limit=50&page=1", "GET "+apiPrefix+"/pulls?state=closed&limit=50&page=2")
 }
 
 func TestReleasePullRequest(t *testing.T) {
@@ -215,7 +227,11 @@ func TestOpenReleasePullRequest(t *testing.T) {
 	t.Parallel()
 	server, requests := releaseServer(t, "0.1.0", unreleased, func(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Path == apiPrefix+"/pulls" {
-			fmt.Fprint(w, `[{"head":{"ref":"topic"}},{"head":{"ref":"release-0.2.0"},"html_url":"https://forge.example/o/r/pulls/35"}]`)
+			if req.URL.Query().Get("page") == "1" {
+				fmt.Fprint(w, `[{"head":{"ref":"topic"}},{"head":{"ref":"refs/pull/35/head","label":"o:release-0.2.0"},"html_url":"https://forge.example/o/r/pulls/35"}]`)
+			} else {
+				fmt.Fprint(w, `[]`)
+			}
 		} else {
 			t.Errorf("unexpected request %s", req.URL)
 		}
@@ -227,7 +243,7 @@ func TestOpenReleasePullRequest(t *testing.T) {
 	if out.String() != "https://forge.example/o/r/pulls/35\n" {
 		t.Fatalf("output = %q", out.String())
 	}
-	assertRequests(t, *requests, "GET "+apiPrefix+"/pulls?state=open&limit=50&page=1")
+	assertRequests(t, *requests, "GET "+apiPrefix+"/pulls?state=open&limit=50&page=1", "GET "+apiPrefix+"/pulls?state=open&limit=50&page=2")
 }
 
 func TestNothingToRelease(t *testing.T) {
@@ -337,6 +353,8 @@ func TestRecoverCommittedBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	createdBranch := false
+	prFailed := false
 	server, requests := releaseServer(t, "0.1.0", unreleased, func(w http.ResponseWriter, req *http.Request) {
 		switch {
 		case req.URL.Path == apiPrefix+"/pulls" && req.Method == http.MethodGet:
@@ -356,9 +374,49 @@ func TestRecoverCommittedBranch(t *testing.T) {
 			}
 			fmt.Fprintf(w, `{"content":%q}`, base64.StdEncoding.EncodeToString([]byte(text)))
 		case req.URL.Path == apiPrefix+"/contents":
+			if !createdBranch {
+				var payload struct {
+					Files []struct {
+						Path, Content string
+					}
+				}
+				if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+					t.Error(err)
+					return
+				}
+				if len(payload.Files) != 2 {
+					t.Errorf("release files = %+v", payload.Files)
+				}
+				for _, file := range payload.Files {
+					content, err := base64.StdEncoding.DecodeString(file.Content)
+					if err != nil {
+						t.Error(err)
+						continue
+					}
+					want := updated
+					if file.Path == "version.txt" {
+						want = "0.1.0\n"
+					} else if file.Path != "CHANGELOG.md" {
+						t.Errorf("unexpected release file %q", file.Path)
+					}
+					if string(content) != want {
+						t.Errorf("%s content = %q, want %q", file.Path, content, want)
+					}
+				}
+				createdBranch = true
+				w.WriteHeader(http.StatusCreated)
+				fmt.Fprint(w, `{}`)
+				return
+			}
 			w.WriteHeader(http.StatusConflict)
 			fmt.Fprint(w, `{"message":"branch already exists"}`)
 		case req.URL.Path == apiPrefix+"/pulls" && req.Method == http.MethodPost:
+			if !prFailed {
+				prFailed = true
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprint(w, `{"message":"pull request failed"}`)
+				return
+			}
 			w.WriteHeader(http.StatusCreated)
 			fmt.Fprint(w, `{"html_url":"https://forge.example/o/r/pulls/35"}`)
 		default:
@@ -366,11 +424,119 @@ func TestRecoverCommittedBranch(t *testing.T) {
 		}
 	})
 	var out bytes.Buffer
-	if err := releaseRunner(server, &out, false).run(); err != nil {
+	first := releaseRunner(server, &out, false)
+	if err := first.run(); err == nil || !strings.Contains(err.Error(), "open pull request") {
+		t.Fatalf("first pull request attempt error = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("unexpected first attempt output %q", out.String())
+	}
+	*requests = nil
+	retry := releaseRunner(server, &out, false)
+	retry.now = func() time.Time { return time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC) }
+	if err := retry.run(); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != "https://forge.example/o/r/pulls/35\n" {
 		t.Fatalf("output = %q", out.String())
 	}
 	assertRequests(t, *requests, "GET "+apiPrefix+"/pulls?state=open&limit=50&page=1", "GET "+apiPrefix+"/tags?limit=50&page=1", "GET "+apiPrefix+"/contents/CHANGELOG.md?ref=main", "GET "+apiPrefix+"/contents/version.txt?ref=main", "POST "+apiPrefix+"/contents", "GET "+apiPrefix+"/contents/CHANGELOG.md?ref=release-0.1.0", "GET "+apiPrefix+"/contents/version.txt?ref=release-0.1.0", "POST "+apiPrefix+"/pulls")
+}
+
+func TestSameReleaseChangelog(t *testing.T) {
+	t.Parallel()
+	const existing = "## [Unreleased]\n\n## [0.1.0] - 2026-09-25\n\n- One change.\n"
+	for _, tc := range []struct {
+		name, updated string
+		match         bool
+	}{
+		{"next day", "## [Unreleased]\n\n## [0.1.0] - 2026-09-26\n\n- One change.\n", true},
+		{"changed entry", "## [Unreleased]\n\n## [0.1.0] - 2026-09-26\n\n- Different change.\n", false},
+		{"changed heading", "## [Unreleased]\n\n## [0.1.1] - 2026-09-26\n\n- One change.\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sameReleaseChangelog(existing, tc.updated, "0.1.0"); got != tc.match {
+				t.Fatalf("sameReleaseChangelog = %v, want %v", got, tc.match)
+			}
+		})
+	}
+}
+
+func TestClampedPagination(t *testing.T) {
+	t.Parallel()
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		requests = append(requests, req.URL.RequestURI())
+		if req.URL.Query().Get("limit") != "50" {
+			t.Errorf("limit = %q", req.URL.Query().Get("limit"))
+		}
+		page := req.URL.Query().Get("page")
+		switch req.URL.Path {
+		case apiPrefix + "/pulls":
+			if page == "1" || page == "2" {
+				fmt.Fprint(w, "[")
+				for i := 0; i < 20; i++ {
+					if i > 0 {
+						fmt.Fprint(w, ",")
+					}
+					if page == "2" && i == 19 {
+						fmt.Fprint(w, `{"head":{"ref":"release-0.1.0"}}`)
+					} else {
+						fmt.Fprint(w, `{"head":{"ref":"topic"}}`)
+					}
+				}
+				fmt.Fprint(w, "]")
+			} else {
+				fmt.Fprint(w, `[]`)
+			}
+		case apiPrefix + "/tags":
+			switch page {
+			case "1":
+				fmt.Fprint(w, "[")
+				for i := 0; i < 20; i++ {
+					if i > 0 {
+						fmt.Fprint(w, ",")
+					}
+					fmt.Fprint(w, `{"name":"topic"}`)
+				}
+				fmt.Fprint(w, "]")
+			case "2":
+				fmt.Fprint(w, `[{"name":"v0.1.0"}]`)
+			default:
+				fmt.Fprint(w, `[]`)
+			}
+		default:
+			t.Errorf("unexpected request %s", req.URL)
+		}
+	}))
+	t.Cleanup(server.Close)
+	api := forgejo{base: server.URL + "/api/v1", client: server.Client()}
+	repo := repository{owner: "o", name: "r"}
+	pulls, err := api.pulls(repo, "closed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pulls) != 40 {
+		t.Fatalf("pull pages: got %d pulls, want 40", len(pulls))
+	}
+	if pulls[39].headBranch() != "release-0.1.0" {
+		t.Fatalf("last pull = %+v", pulls[39])
+	}
+	tags, err := api.hasTags(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tags {
+		t.Fatal("version tag on second clamped page not found")
+	}
+	want := []string{
+		apiPrefix + "/pulls?state=closed&limit=50&page=1",
+		apiPrefix + "/pulls?state=closed&limit=50&page=2",
+		apiPrefix + "/pulls?state=closed&limit=50&page=3",
+		apiPrefix + "/tags?limit=50&page=1",
+		apiPrefix + "/tags?limit=50&page=2",
+	}
+	if !reflect.DeepEqual(requests, want) {
+		t.Fatalf("requests = %q, want %q", requests, want)
+	}
 }

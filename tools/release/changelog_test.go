@@ -78,6 +78,12 @@ func TestReleaseSections(t *testing.T) {
 			"no-references", "## [1.2.1] - 2026-09-25\n\n### Fixed\n\n- Repair.\n",
 			"1.2.1", "### Fixed\n\n- Repair.", "### Fixed\n\n- Repair.",
 		},
+		{
+			"named-links",
+			"## [1.2.2] - 2026-09-25\n\n- See [the guide][guide] and [source].\n\n[guide]: https://forge.example/guide\n[source]: https://forge.example/source\n[unused]: https://forge.example/unused\n",
+			"1.2.2", "- See [the guide][guide] and [source].",
+			"- See [the guide][guide] and [source].\n\n[guide]: https://forge.example/guide\n\n[source]: https://forge.example/source",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

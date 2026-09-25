@@ -115,8 +115,19 @@ type pull struct {
 	Merged         bool   `json:"merged"`
 	MergeCommitSHA string `json:"merge_commit_sha"`
 	Head           struct {
-		Ref string `json:"ref"`
+		Label string `json:"label"`
+		Ref   string `json:"ref"`
 	} `json:"head"`
+}
+
+func (p pull) headBranch() string {
+	if _, branch, ok := strings.Cut(p.Head.Label, ":"); ok {
+		return branch
+	}
+	if p.Head.Label != "" {
+		return p.Head.Label
+	}
+	return p.Head.Ref
 }
 
 func (f forgejo) pulls(r repository, state string) ([]pull, error) {
@@ -128,7 +139,7 @@ func (f forgejo) pulls(r repository, state string) ([]pull, error) {
 			return nil, err
 		}
 		all = append(all, batch...)
-		if len(batch) < 50 {
+		if len(batch) == 0 {
 			return all, nil
 		}
 	}
@@ -148,7 +159,7 @@ func (f forgejo) hasTags(r repository) (bool, error) {
 				return true, nil
 			}
 		}
-		if len(batch) < 50 {
+		if len(batch) == 0 {
 			return false, nil
 		}
 	}
@@ -231,7 +242,7 @@ func (r runner) tag(version string, s section, changelog string) error {
 		return fmt.Errorf("tag release: find merged release pull request: %w", err)
 	}
 	for _, p := range pulls {
-		if p.Head.Ref != "release-"+version || !p.Merged {
+		if p.headBranch() != "release-"+version || !p.Merged {
 			continue
 		}
 		if p.MergeCommitSHA == "" {
@@ -263,7 +274,7 @@ func (r runner) releasePullRequest(branch, version, changelog string) error {
 		return fmt.Errorf("release pull request: find open pull requests: %w", err)
 	}
 	for _, p := range pulls {
-		if strings.HasPrefix(p.Head.Ref, "release-") {
+		if strings.HasPrefix(p.headBranch(), "release-") {
 			fmt.Fprintln(r.out, p.HTMLURL)
 			return nil
 		}
@@ -354,11 +365,28 @@ func (r runner) branchMatches(branch string, files []map[string]string) (bool, e
 			return false, fmt.Errorf("decode existing %s: %w", file["path"], err)
 		}
 		want, _ := base64.StdEncoding.DecodeString(file["content"])
-		if !bytes.Equal(got, want) {
-			return false, nil
+		if bytes.Equal(got, want) {
+			continue
 		}
+		if file["path"] == "CHANGELOG.md" && sameReleaseChangelog(string(got), string(want), strings.TrimPrefix(branch, "release-")) {
+			continue
+		}
+		return false, nil
 	}
 	return true, nil
+}
+
+func sameReleaseChangelog(got, want, version string) bool {
+	existing, foundExisting := sectionNamed(got, version)
+	expected, foundExpected := sectionNamed(want, version)
+	if !foundExisting || !foundExpected || existing.date == "" || expected.date == "" {
+		return false
+	}
+	dateOffset := len("## [" + version + "] - ")
+	existingDate := existing.start + dateOffset
+	expectedDate := expected.start + dateOffset
+	return got[:existingDate] == want[:expectedDate] &&
+		got[existingDate+len(existing.date):] == want[expectedDate+len(expected.date):]
 }
 
 func main() {

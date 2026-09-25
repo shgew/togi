@@ -32,7 +32,6 @@ type globals struct {
 	configSet   bool
 	stateDir    string
 	stateDirSet bool
-	version     bool
 }
 
 type command struct {
@@ -56,9 +55,11 @@ func main() {
 
 func cli(args []string, stdout, stderr io.Writer) int {
 	g := globals{config: config.DefaultPath, stateDir: defaultStateDir}
+	var version bool
 	fs := flag.NewFlagSet("shycler", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	registerGlobals(fs, &g)
+	fs.BoolVar(&version, "version", false, "print the build version and git revision")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			usage(stdout)
@@ -68,7 +69,7 @@ func cli(args []string, stdout, stderr io.Writer) int {
 		usage(stderr)
 		return exitUsage
 	}
-	if g.version {
+	if version {
 		fmt.Fprintf(stdout, "shycler %s\n", shycler.String())
 		return exitOK
 	}
@@ -96,7 +97,6 @@ func registerGlobals(fs *flag.FlagSet, g *globals) {
 		g.stateDir, g.stateDirSet = s, true
 		return nil
 	})
-	fs.BoolVar(&g.version, "version", false, "print the build version and git revision")
 }
 
 func isGlobal(f *flag.Flag) bool {
@@ -137,6 +137,7 @@ func usage(w io.Writer) {
 	}
 	fs := flag.NewFlagSet("shycler", flag.ContinueOnError)
 	registerGlobals(fs, &globals{})
+	fs.Bool("version", false, "print the build version and git revision")
 	writeFlags(&b, "Flags", fs, isGlobal)
 	b.WriteString("\nRun 'shycler <command> --help' for its description, examples and flags.\n")
 	_, _ = io.WriteString(w, b.String())
