@@ -41,9 +41,9 @@
 // # Machine lifecycle
 //
 // The clock starts at 2026-01-01T00:00:00Z, or at Config.Start, and advances only by trial time and 90 s per reboot.
-// Config.Boots continues boot numbering, so a machine built to resume a journal gets boot IDs the journal has not
-// seen. Crash stops the machine: every seam call returns machine.ErrCrashed until Reboot starts the next boot with a
-// new boot ID and the BIOS offsets in every register. Faults (failed SMU writes, corrupt readbacks, setup failures,
-// escaped threads, failed preflight checks, crashes before the first write of a boot) are injected by the methods on
-// Machine.
+// Config.Boots continues boot numbering; Resume sets both from a state directory's journal and archives, so a machine
+// built to resume a journal gets boot IDs the journal has not seen. Crash stops the machine: every seam call returns
+// machine.ErrCrashed until Reboot starts the next boot with a new boot ID and the BIOS offsets in every register.
+// Faults (failed SMU writes, corrupt readbacks, setup failures, escaped threads, failed preflight checks, crashes
+// before the first write of a boot) are injected by the methods on Machine.
 package sim

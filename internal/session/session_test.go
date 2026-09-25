@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"code.marleb.org/shgew/shycler/internal/config"
+	"code.marleb.org/shgew/shycler/internal/defect"
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/machine"
 	"code.marleb.org/shgew/shycler/internal/sim"
@@ -43,12 +44,43 @@ func newSim(t *testing.T, cfg sim.Config) *sim.Machine {
 	return m
 }
 
-func simInput(dir string, m *sim.Machine) SimInput {
-	return SimInput{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}
+const maxSimulatedBoots = 1000
+
+type simRun struct {
+	Config     config.Config
+	ConfigPath string
+	Dir        string
+	Machine    *sim.Machine
+	Log        io.Writer
+	Rotations  int
+	Bootloader Bootloader
+	Prompt     func(defect.Finding) (bool, error)
+	Defects    []defect.Entry
+}
+
+func simInput(dir string, m *sim.Machine) simRun {
+	return simRun{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}
+}
+
+func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Journal) (Stop, error) {
+	seams := in.Machine.Seams()
+	boot, err := seams.Host.BootID()
+	if err != nil {
+		return Stop{}, fmt.Errorf("read boot id: %w", err)
+	}
+	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Log: in.Log, Build: Build()})
+	if err != nil {
+		return Stop{}, err
+	}
+	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrap(j), Machine: seams, Rotations: in.Rotations, Bootloader: in.Bootloader, Prompt: in.Prompt, Defects: in.Defects})
+	if cerr := j.Close(); err == nil && cerr != nil {
+		return Stop{}, cerr
+	}
+	return stop, err
 }
 
 // memState stands in for state.json: rewriting a file after every event dominates these tests on
-// copy-on-write filesystems, and the file itself is covered by the journal package and TestSixteenCoresSurviveARotation.
+// copy-on-write filesystems, and the file itself is covered by the journal package and simrun's TestSixteenCoresSurviveARotation.
 type memState struct {
 	mu   sync.Mutex
 	data []byte
@@ -115,12 +147,12 @@ func readMemState(m *memState) (journal.State, error) {
 	return s, err
 }
 
-func wrapFor(in SimInput, tr *trigger) func(*journal.Journal) Journal {
+func wrapFor(in simRun, tr *trigger) func(*journal.Journal) Journal {
 	st := stateOf(in.Dir)
 	return func(j *journal.Journal) Journal { return &testJournal{Journal: j, state: st, t: tr} }
 }
 
-func runSim(ctx context.Context, in SimInput, tr *trigger) (Stop, error) {
+func runSim(ctx context.Context, in simRun, tr *trigger) (Stop, error) {
 	for range maxSimulatedBoots {
 		stop, err := simulateBoot(ctx, in, wrapFor(in, tr))
 		switch {
@@ -134,7 +166,7 @@ func runSim(ctx context.Context, in SimInput, tr *trigger) (Stop, error) {
 	return Stop{}, errors.New("too many boots")
 }
 
-func drive(t *testing.T, in SimInput, tr *trigger) Stop {
+func drive(t *testing.T, in simRun, tr *trigger) Stop {
 	t.Helper()
 	stop, err := runSim(context.Background(), in, tr)
 	if err != nil {
@@ -143,7 +175,7 @@ func drive(t *testing.T, in SimInput, tr *trigger) Stop {
 	return stop
 }
 
-func simulate(t *testing.T, in SimInput) Stop {
+func simulate(t *testing.T, in simRun) Stop {
 	t.Helper()
 	return drive(t, in, nil)
 }
@@ -198,85 +230,6 @@ func reference(t *testing.T, cfg sim.Config) (dir string, events []journal.Event
 		t.Fatalf("reference run stopped with %+v", stop)
 	}
 	return dir, readEvents(t, dir)
-}
-
-func TestSixteenCoresSurviveARotation(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	m := newSim(t, sim.Config{Seed: 1})
-	began := time.Now()
-	stop, err := Simulate(context.Background(), simInput(dir, m))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("16-core session took %s", time.Since(began))
-	if stop.Reason != StopRotations {
-		t.Fatalf("stopped with %+v", stop)
-	}
-	st, err := journal.ReadState(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st.Phase != "guard" || len(st.Cores) != 16 || st.Guard == nil || st.Guard.CleanRotations != 1 || st.Tier != journal.TierBronze {
-		t.Fatalf("state phase %s tier %s with %d cores, guard %+v", st.Phase, st.Tier, len(st.Cores), st.Guard)
-	}
-	for _, c := range st.Cores {
-		if c.Phase != journal.PhaseConfirmed || c.Offset < m.ResidentEdge(c.Core) || c.Offset > 0 {
-			t.Errorf("core %d %s at %d, hidden resident edge %d", c.Core, c.Phase, c.Offset, m.ResidentEdge(c.Core))
-		}
-	}
-	if v := m.Violations(); len(v) > 0 {
-		t.Errorf("isolation violations: %v", v)
-	}
-	regimes := map[string]machine.Regime{}
-	counted := map[string]bool{}
-	progress := map[machine.Regime]map[string]bool{}
-	for _, e := range readEvents(t, dir) {
-		switch p := e.Data.(type) {
-		case *journal.SMUIntent:
-			if p.Offset < machine.MinOffset || p.Offset > machine.MaxOffset {
-				t.Errorf("seq %d writes %d", e.Seq, p.Offset)
-			}
-		case *journal.TrialIntent:
-			regimes[p.Trial] = p.Regime
-		case *journal.TrialProgress:
-			r := regimes[p.Trial]
-			if progress[r] == nil {
-				progress[r] = map[string]bool{}
-			}
-			progress[r][p.Detail] = true
-		case *journal.TrialSignal:
-			if p.Schedule == "" {
-				counted[p.Trial] = true
-			}
-		case *journal.TrialEnd:
-			r := regimes[p.Trial]
-			if (r == machine.R3 || r == machine.R4) && p.Signal != machine.Crash && !p.Interrupted && !counted[p.Trial] {
-				t.Errorf("trial %s (%s) ended without its load-step counts", p.Trial, r)
-			}
-		}
-	}
-	for _, tc := range []struct {
-		regime machine.Regime
-		detail string
-	}{
-		{machine.R6, "first half idle, then 100ms bursts every 2s, one core at a time"},
-		{machine.R7, "CCD0 only: stopped cores 08-15"},
-		{machine.R7, "CCD1 only: resumed cores 08-15, stopped cores 00-07"},
-	} {
-		if !progress[tc.regime][tc.detail] {
-			t.Errorf("simulated journal lacks %s progress %q", tc.regime, tc.detail)
-		}
-	}
-	foundBursts := false
-	for detail := range progress[machine.R6] {
-		if strings.HasPrefix(detail, "bursts: ") && strings.Contains(detail, " continues, ") && strings.HasSuffix(detail, " stops") {
-			foundBursts = true
-		}
-	}
-	if !foundBursts {
-		t.Error("simulated journal lacks R6 burst counts")
-	}
 }
 
 func TestKillAtEveryEvent(t *testing.T) {
@@ -530,7 +483,7 @@ func TestDeadEnds(t *testing.T) {
 		name     string
 		cfg      sim.Config
 		fault    func(*sim.Machine)
-		before   func(t *testing.T, in SimInput)
+		before   func(t *testing.T, in simRun)
 		want     journal.DeadEndCondition
 		evidence journal.Kind
 		killable bool
@@ -542,7 +495,7 @@ func TestDeadEnds(t *testing.T) {
 		{name: "two setup failures", fault: func(m *sim.Machine) { m.FailSetup(2) }},
 		{name: "escaped thread", fault: (*sim.Machine).Escape, want: journal.DeadEndContainment, evidence: journal.KindTrialEnd, killable: true},
 		{name: "failed preflight", fault: func(m *sim.Machine) { m.FailCheck("root", "uid 1000") }, want: journal.DeadEndPreflight, evidence: journal.KindPreflightCheck},
-		{name: "changed BIOS context", before: func(t *testing.T, in SimInput) {
+		{name: "changed BIOS context", before: func(t *testing.T, in simRun) {
 			if stop := simulate(t, in); stop.Reason != StopRotations {
 				t.Fatalf("first run stopped with %+v", stop)
 			}
@@ -556,7 +509,7 @@ func TestDeadEnds(t *testing.T) {
 		if cfg.Cores == 0 {
 			cfg = small()
 		}
-		setup := func(t *testing.T) SimInput {
+		setup := func(t *testing.T) simRun {
 			in := simInput(t.TempDir(), newSim(t, cfg))
 			if tt.fault != nil {
 				tt.fault(in.Machine)

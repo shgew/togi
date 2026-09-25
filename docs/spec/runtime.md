@@ -6,7 +6,7 @@ Normative rules for how shycler is invoked, configured and deployed.
 
 | Command | Writes journal | Purpose |
 |---|---|---|
-| `shycler run [--sim <seed>] [--rotations <N>] [--tuning-boot <grubenv>]` | yes | Start or resume the session in the foreground. The same entry point serves in-session runs and the tuning boot service, which passes `--tuning-boot` with its GRUB environment file (Dead-end actions). `--sim` and `--tuning-boot` together are a usage error, so a simulated dead end never touches the host's boot entry. With `--rotations N` (N >= 1) it stops, recording `shutdown`, when a rotation would start after the current profile survived N clean guard rotations; without it guard is endless |
+| `shycler run [--rotations <N>] [--tuning-boot <grubenv>]` | yes | Start or resume the session in the foreground. The same entry point serves in-session runs and the tuning boot service, which passes `--tuning-boot` with its GRUB environment file (Dead-end actions). With `--rotations N` (N >= 1) it stops, recording `shutdown`, when a rotation would start after the current profile survived N clean guard rotations; without it guard is endless |
 | `shycler status` | no | Session and BIOS context; phase, tier and guard progress; in-flight action and dead end; per-core table of offset, phase, failed mark, unproven depth, queued command and last decision; too-cautious defects with one `shycler reset --core N` command per affected core not yet reset since the finding, even if the prompt was declined; clean hours and failure-rate bound overall and per regime, and the highest Tctl. Rendered from a replay of the journal, not `state.json` |
 | `shycler cert` | no | Render the certificate (`tuner.md`) from a replay of the journal, with the SHA-256 of the lines it rendered |
 | `shycler events` | no | Render the journal with filters (`journal.md`) |
@@ -24,9 +24,9 @@ On resume, `run` checks historical decisions for known defects before queued res
 
 `shycler <command> --help` prints the command's synopsis, a description of what it does, one or two examples, its own flags and then the shared `--config` and `--state-dir` flags (not `--version`), to stdout, and exits 0. A flag error prints the error and the same help to stderr and exits 2. Every flag is shown in its `--long` form.
 
-`shycler run --sim <seed>` drives the seeded simulator (`internal/sim`) instead of hardware: a 16-core machine whose crash reboots are handled in-process, with a real journal. It uses `--state-dir` when given, else a new temporary directory whose path it prints to stderr, and it fsyncs nothing. With `--sim`, `--rotations` defaults to 1. A state directory that already holds a journal or archives resumes the simulated machine after them: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot, and a session after `reset --all` gets a new id.
+`run` needs Linux. On any other platform, once the journal compatibility check and the configuration pass, it prints `shycler run: hardware runs need Linux: unsupported operation` and exits 1 before it reads the boot id or opens the journal.
 
-`run` without `--sim` needs Linux. On any other platform, once the journal compatibility check and the configuration pass, it prints `shycler run: hardware runs need Linux: unsupported operation` and exits 1 before it reads the boot id or opens the journal.
+Simulation is not part of `shycler`: development programs live in `tools/` and are not installed ([ADR 0010](../adr/0010-development-programs-in-tools.md)). [Simulating](../simulating.md) describes `tools/sim`.
 
 ## Exit codes
 
@@ -133,4 +133,4 @@ If a `run` starts after `deadend` but before `boot.saved_entry`, it completes th
 | `services.shycler.backends.mprime.enable` | Set `settings.backends.mprime` to the nixpkgs `mprime` package (unfree) |
 | `services.shycler.backends.ycruncher.enable` | Set `settings.backends.ycruncher` to the nixpkgs `y-cruncher` package (unfree) |
 
-The flake also exposes `packages.x86_64-linux.default` and a dev shell, and the same for `aarch64-darwin` for development, where the checks are `package` and `lint` without the VM test. The installed package contains only the `shycler` executable. The release procedure and version bump rules are in [Releasing](../releasing.md).
+The flake also exposes `packages.x86_64-linux.default` and a dev shell, and the same for `aarch64-darwin` for development, where the checks are `package` and `lint` without the VM test. The package builds only `cmd/shycler` and runs the tests of every package, so the installed package contains only the `shycler` executable. The release procedure and version bump rules are in [Releasing](../releasing.md).

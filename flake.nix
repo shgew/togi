@@ -49,8 +49,12 @@
             ldflags = [
               "-X code.marleb.org/shgew/shycler.rev=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dev"}"
             ];
-            postInstall = ''
-              rm $out/bin/release
+            subPackages = [ "cmd/shycler" ];
+            checkPhase = ''
+              runHook preCheck
+              export GOFLAGS=''${GOFLAGS//-trimpath/}
+              go test -p $NIX_BUILD_CORES ./...
+              runHook postCheck
             '';
             meta = {
               description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";

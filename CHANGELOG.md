@@ -34,6 +34,10 @@ All notable changes to shycler are documented in this file. The format is based 
 - `run` writes every core back to its baseline, or to its current offset where that is shallower, before stopping cleanly or at a dead end, instead of leaving the tested offsets applied until the next reboot ([#14]).
 - A signal still interrupts the running trial, but `run` now records the decisions from that trial before stopping instead of leaving them to the next run ([#14]).
 
+### Removed
+
+- `shycler run --sim`: simulate from a source checkout with `just sim` (`go run ./tools/sim`) ([#46]).
+
 ### Fixed
 
 - A trial interrupted by a signal now records how long it ran, instead of `after 0s` ([#15]).
@@ -60,3 +64,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#38]: https://code.marleb.org/shgew/shycler/pulls/38
 [#40]: https://code.marleb.org/shgew/shycler/pulls/40
 [#45]: https://code.marleb.org/shgew/shycler/pulls/45
+[#46]: https://code.marleb.org/shgew/shycler/pulls/46

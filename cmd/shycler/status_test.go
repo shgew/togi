@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -11,16 +12,17 @@ import (
 	"strings"
 	"testing"
 
+	"code.marleb.org/shgew/shycler/internal/config"
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/session"
+	"code.marleb.org/shgew/shycler/internal/sim"
+	"code.marleb.org/shgew/shycler/internal/simrun"
 )
 
 func TestStatusAndCert(t *testing.T) {
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "run", "--sim", "1"}, &stdout, &stderr); code != exitOK {
-		t.Fatalf("run: exit %d, stderr %s", code, stderr.String())
-	}
+	simulated(t, dir)
 	st, err := journal.ReadState(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -74,9 +76,7 @@ func TestStatusAndCert(t *testing.T) {
 func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "run", "--sim", "1"}, &stdout, &stderr); code != exitOK {
-		t.Fatalf("initial run: exit %d, stderr %s", code, stderr.String())
-	}
+	simulated(t, dir)
 	record := func(payload journal.Payload) {
 		t.Helper()
 		j, err := journal.Open(dir, journal.Options{Boot: "status-test", Build: session.Build()})
@@ -134,6 +134,18 @@ func TestRateRoundsUp(t *testing.T) {
 		if got := rate(&bound); got != want {
 			t.Errorf("rate(%v) = %q, want %q", bound, got, want)
 		}
+	}
+}
+
+func simulated(t *testing.T, dir string) {
+	t.Helper()
+	m, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop, err := simrun.Simulate(context.Background(), simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1})
+	if err != nil || stop.Reason != session.StopRotations {
+		t.Fatalf("simulate: %+v, %v", stop, err)
 	}
 }
 

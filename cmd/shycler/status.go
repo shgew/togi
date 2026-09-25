@@ -30,7 +30,7 @@ A different ruleset warns before rendering; a different schema is refused.
 
 Examples:
   shycler status                     The session in the default state directory
-  shycler --state-dir <dir> status   The session in <dir>, such as the one run --sim printed`
+  shycler --state-dir <dir> status   The session in <dir>, such as a copied state directory`
 
 func runStatus(g *globals, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("status", g)

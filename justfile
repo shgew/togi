@@ -58,7 +58,7 @@ check-one +names:
 # Run a simulated session through its first clean guard rotation in temporary state
 [group('run')]
 sim seed="1":
-    {{ dev }} go run ./cmd/shycler run --sim "$1"
+    {{ dev }} go run ./tools/sim --seed "$1"
 
 # Open the release pull request, or tag and publish a merged one (needs FORGEJO_TOKEN)
 [group('release')]
