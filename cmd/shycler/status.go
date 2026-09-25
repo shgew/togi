@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"code.marleb.org/shgew/shycler/internal/defect"
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/session"
 	"code.marleb.org/shgew/shycler/internal/tuner"
@@ -22,9 +23,9 @@ import (
 const statusHelp = `Usage: shycler status
 
 Show the session at a glance: phase, tier and guard progress, then one row per
-core with its offset, unproven depth and last decision. Read-only; rendered from
-the journal. A different ruleset warns before rendering; a different schema
-is refused.
+core with its offset, unproven depth and last decision. Lists reset commands
+for unanswered too-cautious defects. Read-only; rendered from the journal.
+A different ruleset warns before rendering; a different schema is refused.
 
 Examples:
   shycler status                     The session in the default state directory
@@ -35,11 +36,11 @@ func runStatus(g *globals, args []string, stdout, stderr io.Writer) int {
 	if code, ok := parseFlags(flags, args, statusHelp, stdout, stderr); !ok {
 		return code
 	}
-	_, st, code, ok := loadSession("status", g.stateDir, stderr)
+	events, st, code, ok := loadSession("status", g.stateDir, stderr)
 	if !ok {
 		return code
 	}
-	writeStatus(stdout, st)
+	writeStatus(stdout, st, events)
 	return exitOK
 }
 
@@ -89,7 +90,7 @@ func warnRuleset(events []journal.Event, stderr io.Writer) {
 	}
 }
 
-func writeStatus(w io.Writer, st journal.State) {
+func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	fmt.Fprintf(w, "session %s started %s\n", st.Session.ID, st.Session.Start.UTC().Format(time.RFC3339))
 	writeBIOSLine(w, st.Session)
 	guardPart := "guard not started"
@@ -126,6 +127,15 @@ func writeStatus(w io.Writer, st journal.State) {
 		}
 	}
 	_ = tw.Flush()
+	for _, finding := range defect.Unanswered(events) {
+		if defect.Direction(finding.Direction) != defect.TooCautious {
+			continue
+		}
+		fmt.Fprintf(w, "\ndefect %d: %s (fixed by pull request #%d); decisions %v affected cores %v\n", finding.ID, finding.Title, finding.PR, finding.Decisions, finding.Cores)
+		for _, core := range finding.Cores {
+			fmt.Fprintf(w, "  shycler reset --core %d\n", core)
+		}
+	}
 
 	gs := st.Guard
 	if gs == nil {

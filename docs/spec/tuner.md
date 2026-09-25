@@ -136,6 +136,10 @@ A queued regain is dropped when a decision leaves the core with no unproven dept
 
 Proven failed marks are never retried within a session.
 
+## Defect list
+
+Known defects identify decisions made under earlier builds whose decisions cannot safely be rerun. On resume, their journal causes and build fixes stamps are matched as specified in `journal.md`. A too-cautious finding leaves guard running and `status` names the affected cores' individual reset commands. A too-aggressive finding stops unattended tuning until an operator has answered a terminal reset prompt. Resetting a core queues the normal `reset --core` decision: it clears that core's failed mark and confirmation, then searches from its baseline; it does not reset the rest of the profile.
+
 ## Reset
 
 - `reset --core N`: records `command.reset` and queues the reset. The next `run`, before any other decision except a pending attribution, records `core.phase` to `search` at the baseline clamped to [-50, 0], with failed mark, pass, unproven depth and confirmation cleared. A failed mark at 0 is cleared too, so reset is the way out of that dead end. The profile changes when the core is confirmed again.
@@ -155,6 +159,7 @@ shycler stops when it cannot make progress:
 | 3 stray crashes in a row | The machine crashes before shycler acts: a boot loop. |
 | A backend thread observed outside its allowed logical CPUs | Attribution is broken. |
 | Preflight fails, including a changed BIOS context | The environment is not the one being tuned. |
+| An unanswered too-aggressive defect without a terminal | Earlier decisions may have moved offsets deeper than proven; an operator must decide whether to reset the affected cores. |
 
 What a dead end does in each run mode is in `runtime.md`. Thresholds are configurable.
 

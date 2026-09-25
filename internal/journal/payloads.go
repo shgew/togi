@@ -45,6 +45,7 @@ const (
 	DeadEndBootLoop      DeadEndCondition = "boot_loop"
 	DeadEndContainment   DeadEndCondition = "containment"
 	DeadEndPreflight     DeadEndCondition = "preflight"
+	DeadEndDefect        DeadEndCondition = "defect"
 )
 
 type Notice string
@@ -658,6 +659,36 @@ func (p *CommandReset) Message() string {
 		return fmt.Sprintf("reset core %s", coreID(*p.Core))
 	}
 	return "reset all: new session on next run"
+}
+
+type DefectFound struct {
+	ID        int    `json:"id"`
+	Title     string `json:"title"`
+	Detail    string `json:"detail"`
+	PR        int    `json:"pr"`
+	Direction string `json:"direction"`
+	Cores     []int  `json:"cores"`
+	Decisions []int  `json:"decisions"`
+}
+
+func (*DefectFound) Kind() Kind { return KindDefectFound }
+func (p *DefectFound) Message() string {
+	msg := fmt.Sprintf("defect %d (%s, fixed in pull request #%d): %s decisions %v affected cores %s", p.ID, p.Title, p.PR, p.Direction, p.Decisions, coreList(p.Cores))
+	if p.Detail != "" {
+		msg += "; " + p.Detail
+	}
+	return msg
+}
+
+type DefectAnswered struct {
+	ID     int    `json:"id"`
+	Cores  []int  `json:"cores"`
+	Answer string `json:"answer"`
+}
+
+func (*DefectAnswered) Kind() Kind { return KindDefectAnswered }
+func (p *DefectAnswered) Message() string {
+	return fmt.Sprintf("defect %d: answered %s to reset cores %s", p.ID, p.Answer, coreList(p.Cores))
 }
 
 type DeadEnd struct {

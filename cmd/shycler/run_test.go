@@ -64,6 +64,14 @@ func TestRunDeadEndEvidencePriority(t *testing.T) {
 	}
 }
 
+func TestDefectDeadEndExit(t *testing.T) {
+	var stderr bytes.Buffer
+	stop := session.Stop{Reason: session.StopDeadEnd, DeadEnd: &journal.DeadEnd{Condition: journal.DeadEndDefect, Detail: "operator decision required"}}
+	if code := runResult(stop, nil, &stderr, journal.Renderer{}); code != 17 || !strings.Contains(stderr.String(), "dead end defect") {
+		t.Fatalf("exit %d, stderr %q", code, stderr.String())
+	}
+}
+
 type clearingBootloader struct{ calls int }
 
 func (b *clearingBootloader) ClearSavedEntry() (string, string, error) {

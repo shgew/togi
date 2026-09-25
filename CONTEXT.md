@@ -156,5 +156,8 @@ One entry of the journal.
 **Build stamp**:
 The recorded version, revision, ruleset, journal schema and fixes of the shycler build that started or resumed a session.
 
+**Defect**:
+A since-fixed bug that changed a recorded decision, identifiable from its cause and surrounding journal events.
+
 **State**:
 The current situation derived from the journal, kept as a file for readers.

@@ -79,7 +79,7 @@ in
               ExecStart = "${lib.getExe package} run --tuning-boot ${grubenv}";
               Restart = "on-failure";
               RestartSec = 60;
-              RestartPreventExitStatus = "10 11 12 13 14 15 16";
+              RestartPreventExitStatus = "10 11 12 13 14 15 16 17";
               StateDirectory = "shycler";
             };
           };

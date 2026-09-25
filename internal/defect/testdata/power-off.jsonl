@@ -1,0 +1,10 @@
+{"seq":1,"time":"2026-01-01T11:00:00.000000000Z","boot":"boot-a","kind":"session.start","msg":"session started before fix #16","session":"old","ruleset":1,"schema":1,"cores":[]}
+{"seq":2,"time":"2026-01-01T11:00:00.100000000Z","boot":"boot-a","kind":"config.loaded","msg":"old build loaded configuration","ruleset":1,"schema":1,"config":{}}
+{"seq":3,"time":"2026-01-01T11:14:44.383000000Z","boot":"boot-a","kind":"trial.end","msg":"trial 0416 FAIL unexpected_exit after 136s","trial":"0416","outcome":"failure","signal":"unexpected_exit","duration_s":136}
+{"seq":4,"time":"2026-01-01T11:14:44.393000000Z","boot":"boot-a","kind":"failure","msg":"core 10 failure at CO -50: unexpected_exit in trial 0416 (isolated: attributed to the target)","signal":"unexpected_exit","attribution":"attributed","core":10,"offset":-50,"trial":"0416","cause":[3]}
+{"seq":5,"time":"2026-01-01T11:14:44.400000000Z","boot":"boot-a","kind":"tuner.decision","msg":"core 10 failed at -50; next -45","core":10,"phase":"search","decision":"backoff","from_offset":-50,"to_offset":-45,"reason":"attributed failure","cause":[4]}
+{"seq":6,"time":"2026-01-01T11:14:44.600000000Z","boot":"boot-a","kind":"shutdown","msg":"stopped by signal","reason":"signal"}
+{"seq":7,"time":"2026-01-02T11:14:44.383000000Z","boot":"boot-b","kind":"trial.end","msg":"trial 0417 FAIL unexpected_exit after 136s","trial":"0417","outcome":"failure","signal":"unexpected_exit","duration_s":136}
+{"seq":8,"time":"2026-01-02T11:14:44.393000000Z","boot":"boot-b","kind":"failure","msg":"core 07 failure at CO -40: unexpected_exit in trial 0417 (isolated: attributed to the target)","signal":"unexpected_exit","attribution":"attributed","core":7,"offset":-40,"trial":"0417","cause":[7]}
+{"seq":9,"time":"2026-01-02T11:14:44.400000000Z","boot":"boot-b","kind":"tuner.decision","msg":"core 07 failed at -40; next -35","core":7,"phase":"search","decision":"backoff","from_offset":-40,"to_offset":-35,"reason":"attributed failure","cause":[8]}
+{"seq":10,"time":"2026-01-03T11:14:44.600000000Z","boot":"boot-c","kind":"shutdown","msg":"stopped by signal","reason":"signal"}

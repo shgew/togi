@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"code.marleb.org/shgew/shycler/internal/journal"
+	"code.marleb.org/shgew/shycler/internal/session"
 )
 
 func TestStatusAndCert(t *testing.T) {
@@ -67,6 +68,47 @@ func TestStatusAndCert(t *testing.T) {
 	checkRows(t, "cert with core 03 moved", out.String(), regexp.MustCompile(`(?m)^  (\d\d)  +(-?\d+)  `), st)
 	if want := fmt.Sprintf("core 03 is at %d since", moved.Cores[3].Offset); !strings.Contains(out.String(), want) {
 		t.Fatalf("cert with core 03 moved lacks %q:\n%s", want, out.String())
+	}
+}
+
+func TestStatusShowsUnansweredDefectResetCommands(t *testing.T) {
+	dir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	if code := cli([]string{"--state-dir", dir, "run", "--sim", "1"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("initial run: exit %d, stderr %s", code, stderr.String())
+	}
+	j, err := journal.Open(dir, journal.Options{Boot: "status-test", Build: session.Build()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Append(&journal.DefectFound{ID: 1, Title: "False failure at power-off", PR: 16, Direction: "too_cautious", Cores: []int{3, 7}, Decisions: []int{42}}, 42); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	if code := cli([]string{"--state-dir", dir, "status"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("status: exit %d, stderr %s", code, stderr.String())
+	}
+	for _, want := range []string{"defect 1: False failure at power-off", "shycler reset --core 3", "shycler reset --core 7"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("status lacks %q:\n%s", want, stdout.String())
+		}
+	}
+	j, err = journal.Open(dir, journal.Options{Boot: "status-test", Build: session.Build()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Append(&journal.DefectAnswered{ID: 1, Cores: []int{3, 7}, Answer: "no"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	if code := cli([]string{"--state-dir", dir, "status"}, &stdout, &stderr); code != exitOK || strings.Contains(stdout.String(), "shycler reset --core") {
+		t.Fatalf("answered defect still shown: exit %d, status %s, stderr %s", code, stdout.String(), stderr.String())
 	}
 }
 

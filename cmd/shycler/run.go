@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"code.marleb.org/shgew/shycler/internal/config"
+	"code.marleb.org/shgew/shycler/internal/defect"
 	"code.marleb.org/shgew/shycler/internal/detect"
 	"code.marleb.org/shgew/shycler/internal/hardware"
 	"code.marleb.org/shgew/shycler/internal/journal"
@@ -26,11 +28,13 @@ const runHelp = `Usage: shycler run [--sim <seed>] [--rotations <N>] [--tuning-b
 
 Start or resume the tuning session in the foreground: search each core's deepest
 stable offset, confirm it, then keep guarding all offsets together. After a crash,
-the next run attributes it from the journal and continues. On hardware it needs
-root; --sim drives a simulated machine instead. A different journal ruleset
-or schema stops the run before another event is written; reset --all archives
-that session. Journal lines are colored on terminals and in the system journal
-unless NO_COLOR is set.
+the next run attributes it from the journal and continues. On resume, known
+defects affecting past decisions name the cores; in a terminal run offers to reset
+them. An unanswered too-aggressive defect stops an unattended run. On hardware
+it needs root; --sim drives a simulated machine instead. A different journal
+ruleset or schema stops the run before another event is written; reset --all
+archives that session. Journal lines are colored on terminals and in the system
+journal unless NO_COLOR is set.
 
 Examples:
   sudo shycler run                     Tune this machine until a signal or a dead end
@@ -93,6 +97,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitUsage
 	}
+	prompt := defectPrompt(stderr)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	if !seedSet {
@@ -122,7 +127,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitError
 	}
-	stop, err := session.Simulate(ctx, session.SimInput{Config: cfg, ConfigPath: g.config, ConfigFile: file, Dir: dir, Machine: m, Log: stderr, Renderer: renderer, Rotations: rotations})
+	stop, err := session.Simulate(ctx, session.SimInput{Config: cfg, ConfigPath: g.config, ConfigFile: file, Dir: dir, Machine: m, Log: stderr, Renderer: renderer, Rotations: rotations, Prompt: prompt})
 	return runResult(stop, err, stderr, renderer)
 }
 
@@ -150,7 +155,7 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitError
 	}
-	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader})
+	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: defectPrompt(stderr)})
 	if cerr := j.Close(); err == nil && cerr != nil {
 		err = cerr
 	}
@@ -200,6 +205,38 @@ func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.
 		return deadEndExit(stop.DeadEnd.Condition)
 	}
 	return exitError
+}
+
+func defectPrompt(stderr io.Writer) func(defect.Finding) (bool, error) {
+	out, ok := stderr.(*os.File)
+	if !ok {
+		return nil
+	}
+	inInfo, inErr := os.Stdin.Stat()
+	outInfo, outErr := out.Stat()
+	if inErr != nil || outErr != nil || inInfo.Mode()&os.ModeCharDevice == 0 || outInfo.Mode()&os.ModeCharDevice == 0 {
+		return nil
+	}
+	reader := bufio.NewReader(os.Stdin)
+	return func(f defect.Finding) (bool, error) {
+		fmt.Fprintf(stderr, "shycler: defect %d: %s (fixed by pull request #%d); %s decisions %v affected cores %v\n", f.Entry.ID, f.Entry.Title, f.Entry.PR, f.Entry.Direction, f.Decisions, f.Cores)
+		if f.Entry.Detail != "" {
+			fmt.Fprintln(stderr, f.Entry.Detail)
+		}
+		fmt.Fprint(stderr, "Reset cores ")
+		for i, core := range f.Cores {
+			if i > 0 {
+				fmt.Fprint(stderr, ", ")
+			}
+			fmt.Fprint(stderr, core)
+		}
+		fmt.Fprint(stderr, "? [y/N] ")
+		line, err := reader.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return false, fmt.Errorf("read defect answer: %w", err)
+		}
+		return strings.EqualFold(strings.TrimSpace(line), "y") || strings.EqualFold(strings.TrimSpace(line), "yes"), nil
+	}
 }
 
 func loadConfig(g *globals) (config.Config, bool, error) {

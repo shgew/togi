@@ -14,6 +14,7 @@ const (
 	exitContainment   = 14
 	exitPreflight     = 15
 	exitIncompatible  = 16
+	exitDefect        = 17
 )
 
 func deadEndExit(c journal.DeadEndCondition) int {
@@ -30,6 +31,8 @@ func deadEndExit(c journal.DeadEndCondition) int {
 		return exitContainment
 	case journal.DeadEndPreflight:
 		return exitPreflight
+	case journal.DeadEndDefect:
+		return exitDefect
 	}
 	return exitError
 }
