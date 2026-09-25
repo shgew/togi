@@ -3,7 +3,6 @@ set positional-arguments
 
 dev := if env("SHYCLER_DEV_SHELL", "") == "1" { "" } else { "nix develop --command" }
 system := arch() + "-" + replace(os(), "macos", "darwin")
-integration := if os() == "linux" { "-tags integration" } else { "" }
 
 # List recipes by group in file order
 _default:
@@ -23,11 +22,6 @@ focus +args:
 [group('test')]
 hardware *args:
     {{ dev }} go test -tags hardware ./... "$@"
-
-# Run the Go test suite under the race detector, with the integration tests on Linux
-[group('test')]
-race *args:
-    {{ dev }} go test -race {{ integration }} ./... "$@"
 
 # Fuzz the journal parser for the given time (`just fuzz 5m`); failures land in internal/journal/testdata/fuzz
 [group('test')]

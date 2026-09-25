@@ -53,7 +53,7 @@
             checkPhase = ''
               runHook preCheck
               export GOFLAGS=''${GOFLAGS//-trimpath/}
-              go test -p $NIX_BUILD_CORES -shuffle=on ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "-tags integration"} ./...
+              go test -p $NIX_BUILD_CORES -race -shuffle=on ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "-tags integration"} ./...
               runHook postCheck
             '';
             meta = {
@@ -71,8 +71,7 @@
               pkgs.just
               pkgs.nixfmt
               pkgs.govulncheck
-            ]
-            ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
+            ];
             SHYCLER_DEV_SHELL = "1";
           };
 

@@ -23,7 +23,5 @@ jobs:
         run: chmod 0666 /dev/kvm
       - name: just check
         run: nix develop --command just check
-      - name: just race
-        run: nix develop --command just race
       - name: just vuln
         run: nix develop --command just vuln
