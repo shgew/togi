@@ -17,11 +17,26 @@ import (
 const apiPrefix = "/api/v1/repos/o/r"
 const unreleased = "## [Unreleased]\n\n### Added\n\n- New option ([#34]).\n\n[#34]: https://forge.example/o/r/pulls/34\n"
 const released = "## [Unreleased]\n\n## [0.1.0] - 2026-09-25\n\n### Added\n\n- New option ([#34]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[#34]: https://forge.example/o/r/pulls/34\n"
+const testBase = "https://forge.example/api/v1"
 
-func releaseServer(t *testing.T, version, changelog string, extra func(http.ResponseWriter, *http.Request)) (*httptest.Server, *[]string) {
+type handlerTransport struct{ handler http.Handler }
+
+func (h handlerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r := req.Clone(req.Context())
+	if r.Body == nil {
+		r.Body = http.NoBody
+	}
+	rec := httptest.NewRecorder()
+	h.handler.ServeHTTP(rec, r)
+	res := rec.Result()
+	res.Request = req
+	return res, nil
+}
+
+func releaseAPI(t *testing.T, version, changelog string, extra func(http.ResponseWriter, *http.Request)) (forgejo, *[]string) {
 	t.Helper()
 	requests := new([]string)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		*requests = append(*requests, req.Method+" "+req.URL.RequestURI())
 		if got := req.Header.Get("Authorization"); got != "token test-token" {
 			t.Errorf("Authorization = %q", got)
@@ -39,14 +54,13 @@ func releaseServer(t *testing.T, version, changelog string, extra func(http.Resp
 		default:
 			extra(w, req)
 		}
-	}))
-	t.Cleanup(server.Close)
-	return server, requests
+	})
+	return forgejo{base: testBase, token: "test-token", client: &http.Client{Transport: handlerTransport{handler}}}, requests
 }
 
-func releaseRunner(server *httptest.Server, out *bytes.Buffer, dryRun bool) runner {
+func releaseRunner(api forgejo, out *bytes.Buffer, dryRun bool) runner {
 	return runner{
-		api:  forgejo{base: server.URL + "/api/v1", token: "test-token", client: server.Client()},
+		api:  api,
 		repo: repository{owner: "o", name: "r", webURL: "https://forge.example/o/r"},
 		now:  func() time.Time { return time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC) },
 		out:  out, dryRun: dryRun,
@@ -64,7 +78,7 @@ func assertRequests(t *testing.T, got []string, suffix ...string) {
 
 func TestTagRelease(t *testing.T) {
 	t.Parallel()
-	server, requests := releaseServer(t, "0.1.0", released, func(w http.ResponseWriter, req *http.Request) {
+	api, requests := releaseAPI(t, "0.1.0", released, func(w http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case apiPrefix + "/tags/v0.1.0":
 			w.WriteHeader(http.StatusNotFound)
@@ -93,7 +107,7 @@ func TestTagRelease(t *testing.T) {
 		}
 	})
 	var out bytes.Buffer
-	if err := releaseRunner(server, &out, false).run(); err != nil {
+	if err := releaseRunner(api, &out, false).run(); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); got != "https://forge.example/o/r/releases/tag/v0.1.0\n" {
@@ -104,7 +118,7 @@ func TestTagRelease(t *testing.T) {
 
 func TestTagDryRun(t *testing.T) {
 	t.Parallel()
-	server, requests := releaseServer(t, "0.1.0", released, func(w http.ResponseWriter, req *http.Request) {
+	api, requests := releaseAPI(t, "0.1.0", released, func(w http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case apiPrefix + "/tags/v0.1.0":
 			w.WriteHeader(http.StatusNotFound)
@@ -119,7 +133,7 @@ func TestTagDryRun(t *testing.T) {
 		}
 	})
 	var out bytes.Buffer
-	if err := releaseRunner(server, &out, true).run(); err != nil {
+	if err := releaseRunner(api, &out, true).run(); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != "Would publish release v0.1.0 at merge commit merge-sha\n" {
@@ -130,7 +144,7 @@ func TestTagDryRun(t *testing.T) {
 
 func TestTagRequiresMergedReleasePullRequest(t *testing.T) {
 	t.Parallel()
-	server, requests := releaseServer(t, "0.1.0", released, func(w http.ResponseWriter, req *http.Request) {
+	api, requests := releaseAPI(t, "0.1.0", released, func(w http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case apiPrefix + "/tags/v0.1.0":
 			w.WriteHeader(http.StatusNotFound)
@@ -145,7 +159,7 @@ func TestTagRequiresMergedReleasePullRequest(t *testing.T) {
 		}
 	})
 	var out bytes.Buffer
-	err := releaseRunner(server, &out, false).run()
+	err := releaseRunner(api, &out, false).run()
 	if err == nil || !strings.Contains(err.Error(), "no merged pull request with head release-0.1.0") {
 		t.Fatalf("error = %v", err)
 	}
@@ -155,7 +169,7 @@ func TestTagRequiresMergedReleasePullRequest(t *testing.T) {
 func TestReleasePullRequest(t *testing.T) {
 	t.Parallel()
 	changelog := "## [Unreleased]\n\n### Added\n\n- New option ([#34]).\n\n## [0.1.0] - 2026-09-01\n\n### Fixed\n\n- Old fix.\n\n[#34]: https://forge.example/o/r/pulls/34\n"
-	server, requests := releaseServer(t, "0.1.0", changelog, func(w http.ResponseWriter, req *http.Request) {
+	api, requests := releaseAPI(t, "0.1.0", changelog, func(w http.ResponseWriter, req *http.Request) {
 		switch {
 		case req.URL.Path == apiPrefix+"/tags/v0.1.0":
 			fmt.Fprint(w, `{"name":"v0.1.0"}`)
@@ -215,7 +229,7 @@ func TestReleasePullRequest(t *testing.T) {
 		}
 	})
 	var out bytes.Buffer
-	if err := releaseRunner(server, &out, false).run(); err != nil {
+	if err := releaseRunner(api, &out, false).run(); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); got != "https://forge.example/o/r/pulls/35\n" {
@@ -226,7 +240,7 @@ func TestReleasePullRequest(t *testing.T) {
 
 func TestOpenReleasePullRequest(t *testing.T) {
 	t.Parallel()
-	server, requests := releaseServer(t, "0.1.0", unreleased, func(w http.ResponseWriter, req *http.Request) {
+	api, requests := releaseAPI(t, "0.1.0", unreleased, func(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Path == apiPrefix+"/pulls" {
 			if req.URL.Query().Get("page") == "1" {
 				fmt.Fprint(w, `[{"head":{"ref":"topic"}},{"head":{"ref":"refs/pull/35/head","label":"o:release-0.2.0"},"html_url":"https://forge.example/o/r/pulls/35"}]`)
@@ -238,7 +252,7 @@ func TestOpenReleasePullRequest(t *testing.T) {
 		}
 	})
 	var out bytes.Buffer
-	if err := releaseRunner(server, &out, false).run(); err != nil {
+	if err := releaseRunner(api, &out, false).run(); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != "https://forge.example/o/r/pulls/35\n" {
@@ -249,7 +263,7 @@ func TestOpenReleasePullRequest(t *testing.T) {
 
 func TestNothingToRelease(t *testing.T) {
 	t.Parallel()
-	server, requests := releaseServer(t, "0.1.0", "## [Unreleased]\n\n### Added\n\n## [0.1.0] - 2026-09-01\n\n- Previous.\n", func(w http.ResponseWriter, req *http.Request) {
+	api, requests := releaseAPI(t, "0.1.0", "## [Unreleased]\n\n### Added\n\n## [0.1.0] - 2026-09-01\n\n- Previous.\n", func(w http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case apiPrefix + "/tags/v0.1.0":
 			fmt.Fprint(w, `{}`)
@@ -260,7 +274,7 @@ func TestNothingToRelease(t *testing.T) {
 		}
 	})
 	var out bytes.Buffer
-	if err := releaseRunner(server, &out, false).run(); err != nil {
+	if err := releaseRunner(api, &out, false).run(); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != "nothing to release\n" {
@@ -271,7 +285,7 @@ func TestNothingToRelease(t *testing.T) {
 
 func TestFirstRelease(t *testing.T) {
 	t.Parallel()
-	server, requests := releaseServer(t, "0.1.0", unreleased, func(w http.ResponseWriter, req *http.Request) {
+	api, requests := releaseAPI(t, "0.1.0", unreleased, func(w http.ResponseWriter, req *http.Request) {
 		switch {
 		case req.URL.Path == apiPrefix+"/pulls" && req.Method == http.MethodGet:
 			fmt.Fprint(w, `[]`)
@@ -319,7 +333,7 @@ func TestFirstRelease(t *testing.T) {
 		}
 	})
 	var out bytes.Buffer
-	if err := releaseRunner(server, &out, false).run(); err != nil {
+	if err := releaseRunner(api, &out, false).run(); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != "https://forge.example/o/r/pulls/35\n" {
@@ -330,7 +344,7 @@ func TestFirstRelease(t *testing.T) {
 
 func TestFirstReleaseDryRun(t *testing.T) {
 	t.Parallel()
-	server, requests := releaseServer(t, "0.1.0", unreleased, func(w http.ResponseWriter, req *http.Request) {
+	api, requests := releaseAPI(t, "0.1.0", unreleased, func(w http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
 		case apiPrefix + "/pulls", apiPrefix + "/tags":
 			fmt.Fprint(w, `[]`)
@@ -339,7 +353,7 @@ func TestFirstReleaseDryRun(t *testing.T) {
 		}
 	})
 	var out bytes.Buffer
-	if err := releaseRunner(server, &out, true).run(); err != nil {
+	if err := releaseRunner(api, &out, true).run(); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "Would open release pull request for 0.1.0 on release-0.1.0") {
@@ -356,7 +370,7 @@ func TestRecoverCommittedBranch(t *testing.T) {
 	}
 	createdBranch := false
 	prFailed := false
-	server, requests := releaseServer(t, "0.1.0", unreleased, func(w http.ResponseWriter, req *http.Request) {
+	api, requests := releaseAPI(t, "0.1.0", unreleased, func(w http.ResponseWriter, req *http.Request) {
 		switch {
 		case req.URL.Path == apiPrefix+"/pulls" && req.Method == http.MethodGet:
 			fmt.Fprint(w, `[]`)
@@ -425,7 +439,7 @@ func TestRecoverCommittedBranch(t *testing.T) {
 		}
 	})
 	var out bytes.Buffer
-	first := releaseRunner(server, &out, false)
+	first := releaseRunner(api, &out, false)
 	if err := first.run(); err == nil || !strings.Contains(err.Error(), "open pull request") {
 		t.Fatalf("first pull request attempt error = %v", err)
 	}
@@ -433,7 +447,7 @@ func TestRecoverCommittedBranch(t *testing.T) {
 		t.Fatalf("unexpected first attempt output %q", out.String())
 	}
 	*requests = nil
-	retry := releaseRunner(server, &out, false)
+	retry := releaseRunner(api, &out, false)
 	retry.now = func() time.Time { return time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC) }
 	if err := retry.run(); err != nil {
 		t.Fatal(err)
@@ -466,7 +480,7 @@ func TestSameReleaseChangelog(t *testing.T) {
 func TestClampedPagination(t *testing.T) {
 	t.Parallel()
 	var requests []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		requests = append(requests, req.URL.RequestURI())
 		if req.URL.Query().Get("limit") != "50" {
 			t.Errorf("limit = %q", req.URL.Query().Get("limit"))
@@ -509,9 +523,8 @@ func TestClampedPagination(t *testing.T) {
 		default:
 			t.Errorf("unexpected request %s", req.URL)
 		}
-	}))
-	t.Cleanup(server.Close)
-	api := forgejo{base: server.URL + "/api/v1", client: server.Client()}
+	})
+	api := forgejo{base: testBase, client: &http.Client{Transport: handlerTransport{handler}}}
 	repo := repository{owner: "o", name: "r"}
 	pulls, err := api.pulls(repo, "closed")
 	if err != nil {

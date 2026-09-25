@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"code.marleb.org/shgew/shycler/internal/config"
 	"code.marleb.org/shgew/shycler/internal/journal"
@@ -20,12 +19,10 @@ func TestSixteenCoresSurviveARotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	began := time.Now()
 	stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("16-core session took %s", time.Since(began))
 	if stop.Reason != session.StopRotations {
 		t.Fatalf("stopped with %+v", stop)
 	}
