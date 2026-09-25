@@ -2,7 +2,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 set positional-arguments
 
 dev := if env("SHYCLER_DEV_SHELL", "") == "1" { "" } else { "nix develop --command" }
-system := arch() + "-" + os()
+system := arch() + "-" + replace(os(), "macos", "darwin")
 
 # List recipes by group in file order
 _default:
@@ -18,7 +18,7 @@ test *args:
 focus +args:
     if [[ "$1" == ./* || "$1" == ../* || "$1" == *... || -d "$1" ]]; then {{ dev }} go test "$@"; else pattern="$1"; shift; {{ dev }} go test -run "$pattern" ./... "$@"; fi
 
-# Run the hardware tests on the target machine
+# Run the hardware tests on the target machine (Linux only)
 [group('test')]
 hardware *args:
     {{ dev }} go test -tags hardware ./... "$@"
@@ -50,7 +50,7 @@ gate: lint _fmt-check test
 check *args:
     nix flake check "$@"
 
-# Build named flake checks: package, vm or lint (`just check-one vm`)
+# Build named flake checks: package, lint or, on Linux, vm (`just check-one vm`)
 [group('nix')]
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")

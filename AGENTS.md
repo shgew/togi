@@ -1,6 +1,6 @@
 # shycler
 
-Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and keeps testing them. NixOS only.
+Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and keeps testing them. Runs on NixOS; development also works on macOS.
 
 ## Docs
 
@@ -70,6 +70,8 @@ Enter the dev shell (Go, gopls, golangci-lint, just, nixfmt) with `nix develop`,
 | `just sim [seed]` | A simulated session through its first clean guard rotation, to Bronze, in a temporary state directory |
 | `just release` | Open the release pull request, or tag a merged one; see `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `SHYCLER_MPRIME` and `SHYCLER_YCRUNCHER`, else from `/etc/shycler/config.toml` |
+
+On macOS (aarch64-darwin) the dev shell, `just test`, `just gate`, `just sim` and the read-only commands work; `just check` builds `package` and `lint` and skips the VM test, `just hardware` is Linux-only, and `internal/trial` with its tests builds only on Linux. Linux-only code follows the Go convention: OS-suffixed files (`_linux.go`, `_darwin.go`) for real implementations, and a `//go:build !linux` fallback returning a wrapped `errors.ErrUnsupported`.
 
 A command needed twice gets a recipe, in the same pull request.
 

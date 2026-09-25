@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -14,14 +13,6 @@ import (
 
 	"code.marleb.org/shgew/shycler/internal/machine"
 )
-
-func BootID() (string, error) {
-	b, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
-	if err != nil {
-		return "", fmt.Errorf("read boot id: %w", err)
-	}
-	return strings.TrimSpace(string(b)), nil
-}
 
 type Message struct {
 	Time time.Time

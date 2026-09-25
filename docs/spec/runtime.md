@@ -26,6 +26,8 @@ On resume, `run` checks historical decisions for known defects before queued res
 
 `shycler run --sim <seed>` drives the seeded simulator (`internal/sim`) instead of hardware: a 16-core machine whose crash reboots are handled in-process, with a real journal. It uses `--state-dir` when given, else a new temporary directory whose path it prints to stderr, and it fsyncs nothing. With `--sim`, `--rotations` defaults to 1. A state directory that already holds a journal or archives resumes the simulated machine after them: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot, and a session after `reset --all` gets a new id.
 
+`run` without `--sim` needs Linux. On any other platform, once the journal compatibility check and the configuration pass, it prints `shycler run: hardware runs need Linux: unsupported operation` and exits 1 before it reads the boot id or opens the journal.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -131,4 +133,4 @@ If a `run` starts after `deadend` but before `boot.saved_entry`, it completes th
 | `services.shycler.backends.mprime.enable` | Set `settings.backends.mprime` to the nixpkgs `mprime` package (unfree) |
 | `services.shycler.backends.ycruncher.enable` | Set `settings.backends.ycruncher` to the nixpkgs `y-cruncher` package (unfree) |
 
-The flake also exposes `packages.x86_64-linux.default` and a dev shell. The installed package contains only the `shycler` executable. The release procedure and version bump rules are in [Releasing](../releasing.md).
+The flake also exposes `packages.x86_64-linux.default` and a dev shell, and the same for `aarch64-darwin` for development, where the checks are `package` and `lint` without the VM test. The installed package contains only the `shycler` executable. The release procedure and version bump rules are in [Releasing](../releasing.md).
