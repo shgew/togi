@@ -15,7 +15,7 @@ Normative rules for how shycler is invoked, configured and deployed.
 
 `regain` and `reset` read the journal before they open it: no journal or no session exits 1 without creating anything. A core that is not in the session exits 2, and a `run` holding the lock exits 3. Both record their events in the host's current boot, and end it with `shutdown`, so the next `run` treats that boot as ended cleanly.
 
-Global flags: `--config <path>` (default `/etc/shycler/config.toml`), `--state-dir <path>` (default `/var/lib/shycler`).
+Global flags: `--config <path>` (default `/etc/shycler/config.toml`), `--state-dir <path>` (default `/var/lib/shycler`), and `--version` (print `shycler x.y.z+rev` to stdout and exit 0; `go run` uses `dev` as the revision). The version is read from root `version.txt` by both Go and the flake; the flake supplies the git revision at build time.
 
 `shycler` without a command prints the wordmark and the tagline `per-core Curve Optimizer` above the usage, to stderr, and exits 2. `--help`, an unknown command and a flag error print the usage alone. The usage holds the synopsis, a description, examples, the commands and the global flags.
 
@@ -123,4 +123,4 @@ If a `run` starts after `deadend` but before `boot.saved_entry`, it completes th
 | `services.shycler.backends.mprime.enable` | Set `settings.backends.mprime` to the nixpkgs `mprime` package (unfree) |
 | `services.shycler.backends.ycruncher.enable` | Set `settings.backends.ycruncher` to the nixpkgs `y-cruncher` package (unfree) |
 
-The flake also exposes `packages.x86_64-linux.default` and a dev shell.
+The flake also exposes `packages.x86_64-linux.default` and a dev shell. The installed package contains only the `shycler` executable. The release procedure and version bump rules are in [Releasing](../releasing.md).

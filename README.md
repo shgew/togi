@@ -27,6 +27,7 @@ Not yet:
 ## Usage
 
 ```sh
+shycler --version                         # version and git revision of this build
 sudo shycler run                          # tune this machine; Ctrl-C stops, the next run resumes
 shycler status                            # per-core offsets, tier and clean hours
 shycler run --sim 1                       # simulate a session; prints its state directory
@@ -42,6 +43,7 @@ shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 |Document|Read it for|
 |---|---|
 |[docs/howto.md](docs/howto.md)|Installing shycler and running a tuning session|
+|[docs/releasing.md](docs/releasing.md)|Versioning, release pull requests and tags|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
 |[CONTEXT.md](CONTEXT.md)|The vocabulary: offsets, phases, regimes, tiers|
 |[docs/spec/tuner.md](docs/spec/tuner.md)|How offsets are searched, confirmed, guarded and certified|

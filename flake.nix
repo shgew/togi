@@ -27,19 +27,28 @@
         {
           packages.default = pkgs.buildGoModule {
             pname = "shycler";
-            version = "0.1.0";
+            version = lib.fileContents ./version.txt;
             src = lib.fileset.toSource {
               root = ./.;
               fileset = lib.fileset.unions [
                 ./go.mod
                 ./go.sum
                 ./.golangci.yml
+                ./version.txt
+                ./version.go
                 ./cmd
                 ./internal
+                ./tools
               ];
             };
             vendorHash = "sha256-pbA/AlBz3cQYRTMnQ/qBPcinYOKokrBLNhkbRTq54gE=";
             nativeCheckInputs = [ pkgs.util-linux ];
+            ldflags = [
+              "-X code.marleb.org/shgew/shycler.rev=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dev"}"
+            ];
+            postInstall = ''
+              rm $out/bin/release
+            '';
             meta = {
               description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
               mainProgram = "shycler";

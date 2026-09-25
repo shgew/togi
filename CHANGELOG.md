@@ -6,6 +6,7 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ### Added
 
+- `shycler --version` prints the version and the git revision of the build ([#34]).
 - `sudo shycler run` tunes the real machine: offsets through `ryzen_smu` with a fuse-verified core-to-slot mapping, mprime and y-cruncher trials confined to their cores in systemd scopes, and machine checks read from the kernel log ([#13]).
 - Preflight checks the CPU, `ryzen_smu`, SMU readback, the slot mapping, both backends and `systemd-run` before a hardware run ([#13]).
 - `shycler run --tuning-boot <grubenv>` clears GRUB's saved entry at a dead end, and reboots into the normal system after a boot loop ([#13]).
@@ -49,3 +50,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#15]: https://code.marleb.org/shgew/shycler/pulls/15
 [#16]: https://code.marleb.org/shgew/shycler/pulls/16
 [#17]: https://code.marleb.org/shgew/shycler/pulls/17
+[#34]: https://code.marleb.org/shgew/shycler/pulls/34

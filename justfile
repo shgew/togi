@@ -59,3 +59,8 @@ check-one +names:
 [group('run')]
 sim seed="1":
     {{ dev }} go run ./cmd/shycler run --sim "$1"
+
+# Open the release pull request, or tag and publish a merged one (needs FORGEJO_TOKEN)
+[group('release')]
+release *args:
+    {{ dev }} go run ./tools/release "$@"
