@@ -242,35 +242,37 @@ func TestInterleavedBankAttribution(t *testing.T) {
 }
 
 func TestJournalBootAndByteArray(t *testing.T) {
-	bin := t.TempDir()
-	path := filepath.Join(bin, "journalctl")
-	argsPath := filepath.Join(bin, "args")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsPath + "\ncase \"$*\" in\n  *unknown*) echo 'No journal boot entry found' >&2; exit 1;;\n  *empty*) exit 1;;\n  *broken*) echo 'permission denied' >&2; exit 2;;\nesac\nprintf '%s\\n' '{\"MESSAGE\":[91,72,97,114,100,119,97,114,101,32,69,114,114,111,114,93,58,32,67,80,85,58,50,32,40,49,97,58,52,52,58,48,41,32,77,67,48,95,83,84,65,84,85,83,91,79,118,101,114,124,67,69,93,58,32,48,120,100,99,50,48,52,48,48,48,48,48,48,100,48,49,55,53],\"__REALTIME_TIMESTAMP\":\"2000000\"}'\n"
-	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	var got [][]string
 	kernel := NewKernel([]machine.CoreInfo{{Core: 1, CPUs: []int{2, 18}}})
-	got, err := kernel.MCEs("1234-abcd", time.Unix(1, 0))
-	if err != nil || len(got) != 1 || got[0].Core != 1 || got[0].Time != time.Unix(2, 0) {
-		t.Fatalf("byte-array journal entry: %+v, %v", got, err)
+	kernel.journalctl = func(args []string) ([]byte, []byte, int, error) {
+		got = append(got, args)
+		switch args[2] {
+		case "unknown":
+			return nil, []byte("No journal boot entry found\n"), 1, nil
+		case "empty":
+			return nil, nil, 1, nil
+		case "broken":
+			return nil, []byte("permission denied\n"), 2, nil
+		}
+		return []byte(`{"MESSAGE":[91,72,97,114,100,119,97,114,101,32,69,114,114,111,114,93,58,32,67,80,85,58,50,32,40,49,97,58,52,52,58,48,41,32,77,67,48,95,83,84,65,84,85,83,91,79,118,101,114,124,67,69,93,58,32,48,120,100,99,50,48,52,48,48,48,48,48,48,100,48,49,55,53],"__REALTIME_TIMESTAMP":"2000000"}` + "\n"), nil, 0, nil
 	}
-	args, err := os.ReadFile(argsPath)
-	if err != nil {
-		t.Fatal(err)
+	mces, err := kernel.MCEs("1234-abcd", time.Unix(1, 0))
+	if err != nil || len(mces) != 1 || mces[0].Core != 1 || mces[0].Time != time.Unix(2, 0) {
+		t.Fatalf("byte-array journal entry: %+v, %v", mces, err)
 	}
-	if !strings.Contains(string(args), "1234abcd\n") || !strings.Contains(string(args), "--since\n@1\n") {
-		t.Fatalf("journalctl arguments: %s", args)
+	want := []string{"-k", "-b", "1234abcd", "-o", "json", "--output-fields=MESSAGE,__REALTIME_TIMESTAMP", "--grep", "Hardware Error", "--no-pager", "-q", "--since", "@1"}
+	if diff := cmp.Diff(want, got[0]); diff != "" {
+		t.Fatalf("journalctl arguments mismatch (-want +got):\n%s", diff)
 	}
-	got, err = kernel.MCEs("unknown", time.Time{})
-	if err != nil || got != nil {
-		t.Fatalf("unknown boot: %+v, %v", got, err)
+	mces, err = kernel.MCEs("unknown", time.Time{})
+	if err != nil || mces != nil {
+		t.Fatalf("unknown boot: %+v, %v", mces, err)
 	}
-	got, err = kernel.MCEs("empty", time.Time{})
-	if err != nil || got != nil {
-		t.Fatalf("no matches: %+v, %v", got, err)
+	mces, err = kernel.MCEs("empty", time.Time{})
+	if err != nil || mces != nil {
+		t.Fatalf("no matches: %+v, %v", mces, err)
 	}
-	if _, err := kernel.MCEs("broken", time.Time{}); err == nil || !strings.Contains(err.Error(), "read kernel log of boot broken:") || !strings.Contains(err.Error(), "permission denied") {
+	if _, err := kernel.MCEs("broken", time.Time{}); err == nil || err.Error() != "read kernel log of boot broken: exit status 2: permission denied" {
 		t.Fatalf("journal failure: %v", err)
 	}
 }
