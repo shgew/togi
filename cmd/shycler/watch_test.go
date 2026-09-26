@@ -18,6 +18,8 @@ import (
 type watchCut struct {
 	name   string
 	events []journal.Event
+	sizes  [][2]int
+	color  bool
 }
 
 func watchCuts(t *testing.T) []watchCut {
@@ -47,6 +49,10 @@ func watchCuts(t *testing.T) []watchCut {
 		p, ok := e.Data.(*journal.CorePhase)
 		return ok && p.To == journal.PhaseConfirmation
 	})
+	confirm := through(func(e journal.Event) bool {
+		p, ok := e.Data.(*journal.CorePhase)
+		return ok && p.To == journal.PhaseConfirmed
+	})
 	guard := through(func(e journal.Event) bool {
 		p, ok := e.Data.(*journal.TunerDecision)
 		return ok && p.Decision == journal.SuspectBackoff
@@ -56,7 +62,13 @@ func watchCuts(t *testing.T) []watchCut {
 	deadEnd := slices.Concat(events, []journal.Event{
 		{Seq: last.Seq + 1, Time: last.Time.Add(time.Minute), Boot: last.Boot, Kind: journal.KindDeadEnd, Msg: p.Message(), Data: p},
 	})
-	return []watchCut{{"search", search}, {"guard", guard}, {"deadend", deadEnd}}
+	all := [][2]int{{240, 67}, {160, 45}, {120, 33}}
+	return []watchCut{
+		{name: "search", events: search, sizes: all, color: true},
+		{name: "confirm", events: confirm, sizes: all[:1]},
+		{name: "guard", events: guard, sizes: all, color: true},
+		{name: "deadend", events: deadEnd, sizes: all[:1]},
+	}
 }
 
 func cutTime(events []journal.Event) time.Time {
@@ -67,16 +79,12 @@ func TestWatchFrames(t *testing.T) {
 	t.Parallel()
 	for _, c := range watchCuts(t) {
 		s, now := watch.Project(c.events), cutTime(c.events)
-		sizes := [][2]int{{240, 67}, {160, 45}, {120, 33}}
-		if c.name == "deadend" {
-			sizes = sizes[:1]
-		}
-		for _, size := range sizes {
+		for _, size := range c.sizes {
 			frame := watch.Render(s, size[0], size[1], now)
 			golden(t, fmt.Sprintf("watch-%s-%dx%d", c.name, size[0], size[1]), ansi.Strip(frame)+"\n")
-			if c.name != "deadend" && size[0] == 240 {
-				golden(t, fmt.Sprintf("watch-%s-240x67-color", c.name), frame+"\n")
-			}
+		}
+		if c.color {
+			golden(t, fmt.Sprintf("watch-%s-240x67-color", c.name), watch.Render(s, 240, 67, now)+"\n")
 		}
 	}
 }
@@ -84,20 +92,23 @@ func TestWatchFrames(t *testing.T) {
 func TestWatchFrameFitsScreen(t *testing.T) {
 	t.Parallel()
 	for _, c := range watchCuts(t) {
-		s, now := watch.Project(c.events), cutTime(c.events)
-		for w := 1; w <= 300; w += 7 {
-			for h := 2; h <= 100; h += 5 {
-				lines := strings.Split(watch.Render(s, w, h, now), "\n")
-				if len(lines) != h-1 {
-					t.Errorf("%s %dx%d: %d lines, want %d", c.name, w, h, len(lines), h-1)
-				}
-				for i, ln := range lines {
-					if lipgloss.Width(ln) > w-1 {
-						t.Errorf("%s %dx%d: line %d is %d cells wide, want at most %d", c.name, w, h, i, lipgloss.Width(ln), w-1)
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			s, now := watch.Project(c.events), cutTime(c.events)
+			for w := 1; w <= 300; w += 7 {
+				for h := 2; h <= 100; h += 5 {
+					lines := strings.Split(watch.Render(s, w, h, now), "\n")
+					if len(lines) != h-1 {
+						t.Errorf("%dx%d: %d lines, want %d", w, h, len(lines), h-1)
+					}
+					for i, ln := range lines {
+						if lipgloss.Width(ln) > w-1 {
+							t.Errorf("%dx%d: line %d is %d cells wide, want at most %d", w, h, i, lipgloss.Width(ln), w-1)
+						}
 					}
 				}
 			}
-		}
+		})
 	}
 }
 

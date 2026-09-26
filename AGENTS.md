@@ -66,7 +66,7 @@ Enter the dev shell (Go, gopls, golangci-lint, govulncheck, just, nixfmt) with `
 | `just` | List the recipes |
 | `just test` | The tight loop |
 | `just gate` | Lint, formatting check and tests: the quick check before handing off |
-| `just check` | Every flake check: package (its tests run shuffled under the race detector, with the integration tests on Linux), lint and the VM test; must pass before a pull request; CI runs it on every pull request and push to `main` |
+| `just check` | Every flake check: package (its tests run shuffled, with the integration tests on Linux), lint and the VM test; must pass before a pull request. `just check --race` also runs those tests under the race detector; CI runs it on every pull request and push to `main` |
 | `just fmt` | Format Go, Nix and the justfile |
 | `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just release` | Open the release pull request; CI publishes it once merged. See `docs/releasing.md` |
@@ -116,5 +116,5 @@ Keep packages near 1000 lines; split by responsibility when one grows past that.
 - **Fast and deterministic:** a unit test exercises logic, never the world around it. It does not wait on real time, reach the network, start processes or depend on the machine it runs on: time comes from an injected clock or a `testing/synctest` bubble, everything else from fakes. Keep each test as quick as the behavior it proves allows.
 - **Simulator first:** behavior is proven on `internal/sim` with fixed seeds, never by waiting for hardware.
 - Tests pin spec behavior: rules, boundaries, invariants, crash-resume. Table tests for rules, property tests for invariants, golden files for rendered output (`go test ./cmd/shycler -update` rewrites them), a fuzz target for the journal parser (`just fuzz`). Compare values with `cmp.Diff`.
-- Concurrent code is tested on real goroutines under the race detector: `just check` runs the suite with `-race`, and `just test -race` is the quicker local pass.
+- Concurrent code is tested on real goroutines under the race detector: CI runs the suite with `-race` through `just check --race`, and `just test -race` is the quicker local pass.
 - Tests that need the real world carry a build tag and stay out of `go test ./...`: `integration` for real processes (a helper program built by the test, never mprime or y-cruncher), `hardware` for the target machine, restoring every offset they change.
