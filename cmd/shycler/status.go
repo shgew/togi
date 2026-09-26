@@ -14,10 +14,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/defect"
-	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/session"
-	"code.marleb.org/shgew/shycler/internal/tuner"
+	"github.com/shgew/shycler/internal/defect"
+	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/session"
+	"github.com/shgew/shycler/internal/tuner"
 )
 
 const statusHelp = `Usage: shycler status

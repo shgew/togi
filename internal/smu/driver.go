@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 type location struct{ ccd, slot uint32 }

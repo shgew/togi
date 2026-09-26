@@ -101,7 +101,7 @@ The TOML configuration has no version field. Renamed or removed options are hand
 
 ## Tuning boot
 
-`services.shycler.tuning.enable` adds a GRUB specialisation named `shycler` and makes GRUB remember the last booted entry (`boot.loader.grub.default = "saved"`). Picking "shycler" once in the menu starts unattended tuning. Every crash reboot returns to it until a dead end, an orderly shutdown or reboot (unless `tuning.leaveOnShutdown` is off), or you, select a normal entry. The module asserts that GRUB is the bootloader; other bootloaders are [#27](https://code.marleb.org/shgew/shycler/issues/27).
+`services.shycler.tuning.enable` adds a GRUB specialisation named `shycler` and makes GRUB remember the last booted entry (`boot.loader.grub.default = "saved"`). Picking "shycler" once in the menu starts unattended tuning. Every crash reboot returns to it until a dead end, an orderly shutdown or reboot (unless `tuning.leaveOnShutdown` is off), or you, select a normal entry. The module asserts that GRUB is the bootloader; other bootloaders are [#18](https://github.com/shgew/shycler/issues/18).
 
 Inside the specialisation:
 - `systemd.defaultUnit = "multi-user.target"`, so no graphical session starts;

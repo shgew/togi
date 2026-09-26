@@ -7,9 +7,9 @@ import (
 	"maps"
 	"slices"
 
-	"code.marleb.org/shgew/shycler/internal/config"
-	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/shgew/shycler/internal/config"
+	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 // Ruleset must be bumped for changes to steps, offset range, phases, regimes, confirmation, tiers or backoffs; this is breaking.

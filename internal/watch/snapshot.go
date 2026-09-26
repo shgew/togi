@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/machine"
-	"code.marleb.org/shgew/shycler/internal/tuner"
+	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/shycler/internal/tuner"
 )
 
 const recentLimit = 100

@@ -12,7 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 
-	"code.marleb.org/shgew/shycler/internal/watch"
+	"github.com/shgew/shycler/internal/watch"
 )
 
 const watchHelp = `Usage: shycler watch [--width <columns>] [--height <rows>]

@@ -1,4 +1,4 @@
-// Command release opens shycler's release pull request with a git push, and publishes a merged release from CI.
+// Command release builds shycler's release commit and publishes the release, from the release workflow.
 package main
 
 import (
@@ -20,7 +20,6 @@ import (
 const (
 	remote        = "origin"
 	defaultBranch = "main"
-	releaseTopic  = "release"
 )
 
 var repoPart = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
@@ -59,12 +58,12 @@ func parseRepository(name string) (repository, error) {
 	return repository{owner, repo}, nil
 }
 
-type forgejo struct {
+type github struct {
 	base, token string
 	client      *http.Client
 }
 
-func (f forgejo) request(method, path string, body any, result any, allowed ...int) (int, error) {
+func (g github) request(method, path string, body any, result any, allowed ...int) (int, error) {
 	var input io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -73,15 +72,17 @@ func (f forgejo) request(method, path string, body any, result any, allowed ...i
 		}
 		input = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequest(method, strings.TrimRight(f.base, "/")+path, input)
+	req, err := http.NewRequest(method, strings.TrimRight(g.base, "/")+path, input)
 	if err != nil {
 		return 0, fmt.Errorf("prepare %s %s: %w", method, path, err)
 	}
-	req.Header.Set("Authorization", "token "+f.token)
+	req.Header.Set("Authorization", "Bearer "+g.token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := f.client.Do(req)
+	resp, err := g.client.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("%s %s: %w", method, path, err)
 	}
@@ -110,7 +111,7 @@ type runner struct {
 	git    gitFunc
 	now    func() time.Time
 	out    io.Writer
-	dryRun bool
+	commit bool
 }
 
 func (r runner) output(args ...string) (string, error) {
@@ -118,7 +119,7 @@ func (r runner) output(args ...string) (string, error) {
 	return stdout, err
 }
 
-func (r runner) prepare() error {
+func (r runner) release() error {
 	if _, err := r.output("fetch", "--quiet", remote, defaultBranch); err != nil {
 		return fmt.Errorf("fetch %s: %w", defaultBranch, err)
 	}
@@ -149,16 +150,24 @@ func (r runner) prepare() error {
 	if !ok {
 		return errors.New("read CHANGELOG.md: missing [Unreleased] section")
 	}
-	if len(entries(s.body)) == 0 {
-		fmt.Fprintln(r.out, "nothing to release")
-		return nil
-	}
 	tags, err := r.output("ls-remote", "--tags", remote, "refs/tags/v*")
 	if err != nil {
 		return fmt.Errorf("list release tags: %w", err)
 	}
+	current, released := sectionNamed(changelog, version)
+	if len(entries(s.body)) == 0 {
+		if released && current.date != "" && !hasTag(tags, "v"+version) {
+			fmt.Fprintf(r.out, "%s is released in CHANGELOG.md but not yet published; publishing %s as it is\n", version, base)
+			return r.checkout(baseCommit)
+		}
+		if r.commit {
+			return errors.New("nothing to release: [Unreleased] in CHANGELOG.md is empty")
+		}
+		fmt.Fprintln(r.out, "nothing to release")
+		return nil
+	}
 	next, reason := version, "First release; version.txt sets the initial version."
-	if _, released := sectionNamed(changelog, version); released || strings.TrimSpace(tags) != "" {
+	if released || strings.TrimSpace(tags) != "" {
 		if next, reason, err = bump(version, s.body); err != nil {
 			return fmt.Errorf("bump version: %w", err)
 		}
@@ -168,27 +177,36 @@ func (r runner) prepare() error {
 		return fmt.Errorf("rewrite changelog: %w", err)
 	}
 	message := "Release " + next + "\n\n" + reason + "\n"
-	if r.dryRun {
-		released, _ := sectionNamed(updated, next)
-		fmt.Fprintf(r.out, "Would open a release pull request from %s:\n\n%s\n%s\n", base, message, releaseNotes(updated, released))
+	if !r.commit {
+		notes, _ := sectionNamed(updated, next)
+		fmt.Fprintf(r.out, "Would release from %s:\n\n%s\n%s\n", base, message, releaseNotes(updated, notes))
 		return nil
 	}
-	commit, err := r.commit(baseCommit, message, map[string]string{"version.txt": next + "\n", "CHANGELOG.md": updated})
+	commit, err := r.commitFiles(baseCommit, message, map[string]string{"version.txt": next + "\n", "CHANGELOG.md": updated})
 	if err != nil {
 		return fmt.Errorf("commit release %s: %w", next, err)
 	}
-	_, stderr, err := r.git(gitCmd{args: []string{"push", remote, commit + ":refs/for/" + defaultBranch, "-o", "topic=" + releaseTopic}})
-	fmt.Fprint(r.out, stderr)
-	if err != nil {
-		if strings.Contains(stderr, "force-push") {
-			return errors.New("push release commit: a release pull request is already open; merge or close it first")
+	fmt.Fprintf(r.out, "Release %s committed as %s on top of %s\n", next, commit, base)
+	return r.checkout(commit)
+}
+
+func hasTag(lsRemote, tag string) bool {
+	for line := range strings.SplitSeq(lsRemote, "\n") {
+		if _, ref, ok := strings.Cut(line, "\t"); ok && ref == "refs/tags/"+tag {
+			return true
 		}
-		return fmt.Errorf("push release commit: %w", err)
+	}
+	return false
+}
+
+func (r runner) checkout(commit string) error {
+	if _, err := r.output("checkout", "--quiet", "--detach", commit); err != nil {
+		return fmt.Errorf("check out %s: %w", commit, err)
 	}
 	return nil
 }
 
-func (r runner) commit(parent, message string, files map[string]string) (string, error) {
+func (r runner) commitFiles(parent, message string, files map[string]string) (string, error) {
 	indexPath, err := r.output("rev-parse", "--git-path", "shycler-release-index")
 	if err != nil {
 		return "", fmt.Errorf("locate temporary index: %w", err)
@@ -223,7 +241,7 @@ func (r runner) commit(parent, message string, files map[string]string) (string,
 	return commit, nil
 }
 
-func (r runner) publish(api forgejo, repo repository) error {
+func (r runner) publish(api github, repo repository) error {
 	var files [2]string
 	for i, path := range []string{"version.txt", "CHANGELOG.md"} {
 		text, err := r.output("show", "HEAD:"+path)
@@ -243,7 +261,7 @@ func (r runner) publish(api forgejo, repo repository) error {
 	}
 	prefix := "/repos/" + url.PathEscape(repo.owner) + "/" + url.PathEscape(repo.name)
 	tag := "v" + version
-	status, err := api.request(http.MethodGet, prefix+"/tags/"+url.PathEscape(tag), nil, nil, http.StatusNotFound)
+	status, err := api.request(http.MethodGet, prefix+"/git/ref/tags/"+url.PathEscape(tag), nil, nil, http.StatusNotFound)
 	if err != nil {
 		return fmt.Errorf("check tag %s: %w", tag, err)
 	}
@@ -259,10 +277,6 @@ func (r runner) publish(api forgejo, repo repository) error {
 	if commit == "" {
 		return fmt.Errorf("find the commit that set version.txt to %s: no commit changed version.txt", version)
 	}
-	if r.dryRun {
-		fmt.Fprintf(r.out, "Would publish %s at %s\n", tag, commit)
-		return nil
-	}
 	var result struct {
 		HTMLURL string `json:"html_url"`
 	}
@@ -275,20 +289,24 @@ func (r runner) publish(api forgejo, repo repository) error {
 }
 
 func main() {
-	var publish, dryRun bool
-	flag.BoolVar(&publish, "publish", false, "publish the release version.txt names, if not yet published (CI; reads GITHUB_SERVER_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
-	flag.BoolVar(&dryRun, "dry-run", false, "print what would happen without pushing or publishing")
+	var commit, publish bool
+	flag.BoolVar(&commit, "commit", false, "commit the next release on top of origin/main and check it out (release workflow)")
+	flag.BoolVar(&publish, "publish", false, "publish the release version.txt names at HEAD, if not yet published (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
+	flag.Usage = func() {
+		fmt.Fprintln(flag.CommandLine.Output(), "Usage: release [-commit | -publish]\n\nWithout flags, prints the release the release workflow would make from origin/main.")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
-	if flag.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "release: unexpected positional arguments")
+	if flag.NArg() != 0 || commit && publish {
+		flag.Usage()
 		os.Exit(2)
 	}
-	r := runner{git: runGit, now: time.Now, out: os.Stdout, dryRun: dryRun}
+	r := runner{git: runGit, now: time.Now, out: os.Stdout, commit: commit}
 	var err error
 	if publish {
 		err = runPublish(r)
 	} else {
-		err = r.prepare()
+		err = r.release()
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "release:", err)
@@ -298,7 +316,7 @@ func main() {
 
 func runPublish(r runner) error {
 	env := map[string]string{}
-	for _, key := range []string{"GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "GITHUB_TOKEN"} {
+	for _, key := range []string{"GITHUB_API_URL", "GITHUB_REPOSITORY", "GITHUB_TOKEN"} {
 		if env[key] = os.Getenv(key); env[key] == "" {
 			return fmt.Errorf("%s is unset", key)
 		}
@@ -307,6 +325,5 @@ func runPublish(r runner) error {
 	if err != nil {
 		return err
 	}
-	api := forgejo{base: strings.TrimRight(env["GITHUB_SERVER_URL"], "/") + "/api/v1", token: env["GITHUB_TOKEN"], client: http.DefaultClient}
-	return r.publish(api, repo)
+	return r.publish(github{base: env["GITHUB_API_URL"], token: env["GITHUB_TOKEN"], client: http.DefaultClient}, repo)
 }

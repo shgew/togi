@@ -6,8 +6,8 @@ import (
 	"slices"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 type Direction string
@@ -50,7 +50,7 @@ type Finding struct {
 }
 
 var entries = []Entry{{
-	ID: 1, Title: "False failure at power-off", PR: 16, Direction: TooCautious,
+	ID: 1, Title: "False failure at power-off", PR: 14, Direction: TooCautious,
 	Detail:    "At power-off, systemd stopped the trial scope before shycler received SIGTERM; the backend exited cleanly (<nil>) but was reported as a failure and caused a proven backoff.",
 	Decisions: []DecisionMatch{{Kind: journal.KindTunerDecision, Decision: journal.Backoff, Cause: journal.KindFailure, Predicate: powerOffFailure}},
 }}

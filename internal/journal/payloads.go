@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"code.marleb.org/shgew/shycler/internal/config"
-	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/shgew/shycler/internal/config"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 type Phase string

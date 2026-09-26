@@ -55,7 +55,12 @@ _fmt-check:
 [group('quality')]
 gate: lint _fmt-check test
 
-# Run every flake check; `--race` also runs the Go tests under the race detector, as CI does
+# The pull request checks CI runs: lint, formatting check, then the tests, with the integration tests on Linux
+[group('quality')]
+ci: lint _fmt-check
+    {{ dev }} go test -shuffle=on {{ if os() == "linux" { "-tags integration" } else { "" } }} ./...
+
+# Run every flake check; `--race` also runs the Go tests under the race detector, as the release workflow does
 [group('nix')]
 check *args:
     race=0; flags=(); for a in "$@"; do if [[ "$a" == --race ]]; then race=1; else flags+=("$a"); fi; done; nix flake check "${flags[@]}"; if (( race )); then nix build --no-link .#legacyPackages.{{ system }}.race; fi
@@ -70,7 +75,12 @@ check-one +names:
 sim seed="1":
     {{ dev }} go run ./tools/sim --seed "$1"
 
-# Open the release pull request from origin/main with a git push (-dry-run previews it)
+# Start the release workflow on main and follow it: it commits the release, runs the checks, pushes to main and publishes
 [group('release')]
-release *args:
-    {{ dev }} go run ./tools/release "$@"
+release:
+    url=$({{ dev }} gh workflow run release.yml --ref main); echo "$url"; {{ dev }} gh run watch "${url##*/}" --exit-status
+
+# Print the release the release workflow would make from origin/main
+[group('release')]
+release-preview:
+    {{ dev }} go run ./tools/release

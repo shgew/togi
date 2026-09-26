@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"code.marleb.org/shgew/shycler/internal/config"
-	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/shgew/shycler/internal/config"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 var errPlatform = fmt.Errorf("hardware runs need Linux: %w", errors.ErrUnsupported)

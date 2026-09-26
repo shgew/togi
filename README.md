@@ -44,7 +44,7 @@ shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 |Document|Read it for|
 |---|---|
 |[docs/howto.md](docs/howto.md)|Installing shycler and running a tuning session|
-|[docs/releasing.md](docs/releasing.md)|Versioning, release pull requests and tags|
+|[docs/releasing.md](docs/releasing.md)|Versioning, the release workflow and tags|
 |[docs/simulating.md](docs/simulating.md)|Running a simulated session for development|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
 |[CONTEXT.md](CONTEXT.md)|The vocabulary: offsets, phases, regimes, tiers|
@@ -54,11 +54,11 @@ shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 |[docs/spec/runtime.md](docs/spec/runtime.md)|Commands, configuration, the tuning boot and the NixOS module|
 |[docs/adr/](docs/adr/)|Why each major decision was made|
 |[docs/prior-art.md](docs/prior-art.md)|What was taken from, and left out of, earlier tools|
-|[Issues](https://code.marleb.org/shgew/shycler/issues)|The plan, ideas and bugs; the `1.0` milestone holds what ships in 1.0|
+|[Issues](https://github.com/shgew/shycler/issues)|The plan, ideas and bugs; the `1.0` milestone holds what ships in 1.0|
 |[AGENTS.md](AGENTS.md)|Contributing: workflow, commands and conventions|
 
 ## Development
 
-Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, `just gate` runs lint, formatting checks and tests, and `just check` runs every flake check before a pull request. CI runs `just check --race`, which adds the tests under the race detector, and `just vuln` on every pull request. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the rest.
+Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, `just gate` runs lint, formatting checks and tests, and `just ci` adds the integration tests; it runs on every pull request. `just check` runs every flake check, including the NixOS VM test; the release workflow runs it with `--race`, which adds the tests under the race detector, and `just vuln`, before it publishes. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the rest.
 
 shycler runs on NixOS. Development also works on macOS (aarch64-darwin): the dev shell, the tests, `just sim`, and `status`, `cert`, `events` and `reset` against a copied state directory. `just check` there skips the VM test, and `shycler run` exits with an error.

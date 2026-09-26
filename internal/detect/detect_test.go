@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/machine"
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 func loadFixture(t *testing.T, name string) []Message {

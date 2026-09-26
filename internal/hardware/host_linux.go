@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/backend"
-	"code.marleb.org/shgew/shycler/internal/backend/mprime"
-	"code.marleb.org/shgew/shycler/internal/backend/ycruncher"
-	"code.marleb.org/shgew/shycler/internal/config"
-	"code.marleb.org/shgew/shycler/internal/detect"
-	"code.marleb.org/shgew/shycler/internal/machine"
-	"code.marleb.org/shgew/shycler/internal/smu"
-	"code.marleb.org/shgew/shycler/internal/trial"
+	"github.com/shgew/shycler/internal/backend"
+	"github.com/shgew/shycler/internal/backend/mprime"
+	"github.com/shgew/shycler/internal/backend/ycruncher"
+	"github.com/shgew/shycler/internal/config"
+	"github.com/shgew/shycler/internal/detect"
+	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/shycler/internal/smu"
+	"github.com/shgew/shycler/internal/trial"
 )
 
 // CheckPlatform reports whether this platform can run on real hardware.

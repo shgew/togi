@@ -1,6 +1,6 @@
 package main
 
-import "code.marleb.org/shgew/shycler/internal/journal"
+import "github.com/shgew/shycler/internal/journal"
 
 const (
 	exitOK            = 0

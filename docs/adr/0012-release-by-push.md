@@ -1,3 +1,5 @@
+Superseded by [ADR 0014](0014-release-from-a-workflow.md).
+
 # Releases open with a push and publish from CI
 
 A release changes `version.txt` and `CHANGELOG.md`, so it lands as a pull request like any change. The first release tool opened that pull request through the Forgejo API and published only when run a second time after the merge. Every run needed a personal token, and the second run was easy to forget.

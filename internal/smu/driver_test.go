@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"code.marleb.org/shgew/shycler/internal/machine"
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 type call struct{ command, arg uint32 }

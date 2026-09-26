@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/backend"
-	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/shgew/shycler/internal/backend"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 func TestHardwareScope(t *testing.T) {

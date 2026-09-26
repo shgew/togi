@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"code.marleb.org/shgew/shycler/internal/detect"
-	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/session"
+	"github.com/shgew/shycler/internal/detect"
+	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/session"
 )
 
 const resetHelp = `Usage: shycler reset --core <N> | --all

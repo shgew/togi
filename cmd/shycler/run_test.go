@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/session"
+	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/session"
 )
 
 func TestRunDeadEndEvidencePriority(t *testing.T) {

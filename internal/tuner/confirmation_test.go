@@ -3,7 +3,7 @@ package tuner
 import (
 	"testing"
 
-	"code.marleb.org/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/journal"
 )
 
 func TestConfirmation(t *testing.T) {

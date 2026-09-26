@@ -55,7 +55,7 @@
             vendorHash = "sha256-OGYOqVtPseV1QvWhbVlQfXPcuTGIWne3Fk7JYtee1ak=";
             nativeCheckInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
             ldflags = [
-              "-X code.marleb.org/shgew/shycler.rev=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dev"}"
+              "-X github.com/shgew/shycler.rev=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dev"}"
             ];
             subPackages = [ "cmd/shycler" ];
             checkPhase = testPhase "";
@@ -69,6 +69,7 @@
           devShells.default = pkgs.mkShell {
             packages = [
               pkgs.go_1_27
+              pkgs.gh
               pkgs.gopls
               pkgs.golangci-lint
               pkgs.just

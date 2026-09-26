@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	shycler "code.marleb.org/shgew/shycler"
-	"code.marleb.org/shgew/shycler/internal/config"
-	"code.marleb.org/shgew/shycler/internal/defect"
-	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/machine"
-	"code.marleb.org/shgew/shycler/internal/tuner"
+	shycler "github.com/shgew/shycler"
+	"github.com/shgew/shycler/internal/config"
+	"github.com/shgew/shycler/internal/defect"
+	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/shycler/internal/tuner"
 )
 
 // Build is the build that stamps each session start and resume.

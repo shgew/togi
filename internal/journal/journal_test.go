@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/config"
-	"code.marleb.org/shgew/shycler/internal/machine"
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/shycler/internal/config"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 func fixedClock() func() time.Time {

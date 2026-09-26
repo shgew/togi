@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 func TestHardwareKernelLog(t *testing.T) {
