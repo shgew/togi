@@ -93,10 +93,20 @@ type trialRun struct {
 
 func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	t := a.Trial
+	multi := len(t.Cores) > 0
 	var cores, cpus []int
 	index := r.fold.allIndex[t.Regime]
 	info := r.coreInfo(t.Core)
-	if !t.AllCores {
+	if multi {
+		for _, id := range t.Cores {
+			c := r.coreInfo(id)
+			if c == nil {
+				return fmt.Errorf("trial on core %d: %w", id, ErrNoSuchCore)
+			}
+			cores = append(cores, id)
+			cpus = append(cpus, c.CPUs[0])
+		}
+	} else {
 		if info == nil {
 			return fmt.Errorf("trial on core %d: %w", t.Core, ErrNoSuchCore)
 		}
@@ -110,12 +120,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 		}
 		w = machine.Workloads(t.Regime)[i]
 	}
-	if t.AllCores {
-		for _, c := range r.cores {
-			cores = append(cores, c.Core)
-			cpus = append(cpus, c.CPUs[0])
-		}
-	} else {
+	if !multi {
 		cores, cpus = []int{t.Core}, info.CPUs[:min(w.Threads, len(info.CPUs))]
 	}
 	duration := r.durationS(t)
@@ -124,7 +129,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 		Trial: tr.id, Regime: t.Regime, Workload: w.ID, DurationS: duration,
 		Condition: t.Condition, Phase: t.Phase, Retry: t.Retry, Rotation: t.Rotation,
 	}
-	if t.AllCores {
+	if multi {
 		p.Cores = cores
 	} else {
 		p.Core, p.Offset = new(t.Core), new(t.Offset)
@@ -244,13 +249,31 @@ func (r *runner) durationS(t tuner.Trial) int {
 		case machine.R6:
 			return d.GuardIdleS
 		case machine.R7:
-			return d.GuardAllCoreS
+			return r.r7DurationS(t)
 		case machine.R1, machine.R2, machine.R3, machine.R4, machine.R5:
 		}
 		return d.GuardTrialS
 	case journal.PhaseSearch, journal.PhaseConfirmed:
 	}
 	return d.SearchTrialS
+}
+
+// r7DurationS splits guard_all_core_s over one R7 step: each single-CCD trial gets a quarter, the all-core trial the
+// rest.
+func (r *runner) r7DurationS(t tuner.Trial) int {
+	d := r.in.Config.Durations.GuardAllCoreS
+	ccds := map[int]bool{}
+	for _, c := range r.cores {
+		ccds[c.CCD] = true
+	}
+	n := len(ccds)
+	switch {
+	case n == 1:
+		return d
+	case len(t.Cores) < len(r.cores):
+		return d / 4
+	}
+	return d - n*(d/4)
 }
 
 // writesTarget reports whether the trial sets its target before and resets it after: isolated trials at a nonzero

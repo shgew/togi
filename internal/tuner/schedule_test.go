@@ -27,7 +27,7 @@ func TestOrder(t *testing.T) {
 
 func wantTrial(t *testing.T, a Action, want Trial, cause ...int) {
 	t.Helper()
-	if a.Kind != RunTrial || a.Trial != want || !slices.Equal(a.Cause, cause) {
+	if a.Kind != RunTrial || !cmp.Equal(a.Trial, want) || !slices.Equal(a.Cause, cause) {
 		t.Fatalf("action %+v, want trial %+v with cause %v", a, want, cause)
 	}
 }
@@ -141,7 +141,7 @@ func TestConfirmationRestartsFromFirstR1Workload(t *testing.T) {
 
 	r1 := machine.Workloads(machine.R1)
 	a = h.s.Next()
-	if want := (Trial{Offset: -11, Regime: machine.R1, Phase: confirmation, Condition: machine.Isolated, Workload: r1[0].ID}); a.Trial != want {
+	if want := (Trial{Offset: -11, Regime: machine.R1, Phase: confirmation, Condition: machine.Isolated, Workload: r1[0].ID}); !cmp.Equal(a.Trial, want) {
 		t.Fatalf("after the backoff: %+v, want %+v", a.Trial, want)
 	}
 	h.trial(a, passed)

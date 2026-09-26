@@ -8,6 +8,7 @@ import (
 	"code.marleb.org/shgew/shycler/internal/config"
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/google/go-cmp/cmp"
 )
 
 // regainHarness has core 0 confirmed at -18 with failed mark -21 and two suspect counts, at its first guard trial.
@@ -48,7 +49,7 @@ func TestRegain(t *testing.T) {
 		h.expect("confirmed->regain -19 u2", "end unclean", "trial R1 c0")
 		for _, r := range machine.ConfirmationRegimes {
 			a := h.s.Next()
-			if a.Kind != RunTrial || a.Trial != (Trial{Core: 0, Offset: -19, Regime: r, Phase: journal.PhaseRegain, Condition: machine.Isolated}) {
+			if a.Kind != RunTrial || !cmp.Equal(a.Trial, Trial{Core: 0, Offset: -19, Regime: r, Phase: journal.PhaseRegain, Condition: machine.Isolated}) {
 				t.Fatalf("%s: %+v, want an isolated regain trial at -19", r, a)
 			}
 			h.trial(a, passed)

@@ -19,9 +19,9 @@
 // package machine only to report SIGSTOP and SIGCONT counts, not to change failure rates.
 //
 // Resident trials fail by each target's resident edge at the offset in its register, so every other core's offset
-// only matters when it is a target too. R6 and R7 trials target every core for their whole duration: each core fails
-// by its own R6 or R7 edge, and the first to fail produces the signal. R6's idle half and R7's per-CCD phases are not
-// modelled.
+// only matters when it is a target too. R6 trials and R7 trials load the cores in TrialSpec.Cores for their whole
+// duration: each loaded core fails by its own R6 or R7 edge, and the first to fail produces the signal. R6's idle half
+// is not modelled.
 //
 // A failing core produces one signal, drawn by the Model.Signals weights:
 //   - computation_error, stall, unexpected_exit: the trial ends at the failure time with that signal;

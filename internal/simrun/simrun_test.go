@@ -78,8 +78,6 @@ func TestSixteenCoresSurviveARotation(t *testing.T) {
 		detail string
 	}{
 		{machine.R6, "first half idle, then 100ms bursts every 2s, one core at a time"},
-		{machine.R7, "CCD0 only: stopped cores 08-15"},
-		{machine.R7, "CCD1 only: resumed cores 08-15, stopped cores 00-07"},
 	} {
 		if !progress[tc.regime][tc.detail] {
 			t.Errorf("simulated journal lacks %s progress %q", tc.regime, tc.detail)

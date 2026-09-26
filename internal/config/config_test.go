@@ -19,6 +19,8 @@ func TestLoad(t *testing.T) {
 	offsets := Default()
 	offsets.StartOffsets = map[int]int{3: -10}
 	rotation := Default()
+	allCore := Default()
+	allCore.Durations.GuardAllCoreS = 4
 	rotation.Guard.Rotation = []machine.Regime{machine.R7}
 
 	tests := []struct {
@@ -31,6 +33,8 @@ func TestLoad(t *testing.T) {
 		{name: "partial file", content: "[durations]\nsearch_trial_s = 60\n", want: partial},
 		{name: "start offset", content: "[start_offsets]\n3 = -10\n", want: offsets},
 		{name: "rotation replaced", content: "[guard]\nrotation = [\"R7\"]\n", want: rotation},
+		{name: "shortest all-core duration", content: "[durations]\nguard_all_core_s = 4\n", want: allCore},
+		{name: "all-core duration too short to split", content: "[durations]\nguard_all_core_s = 3\n", wantErr: "durations.guard_all_core_s = 3: must be within [4, 86400]"},
 		{name: "unknown top-level key", content: "bogus = 1\n", wantErr: "unknown keys: bogus"},
 		{name: "unknown nested key", content: "[durations]\nsearch_s = 1\n", wantErr: "unknown keys: durations.search_s"},
 		{name: "syntax error", content: "[durations\n", wantErr: "load config"},

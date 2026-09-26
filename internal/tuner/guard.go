@@ -22,6 +22,10 @@ type guard struct {
 	stepsDone int
 	// passed holds the cores that passed the current per-core step.
 	passed  []int
+	// partsPassed holds the indexes into State.parts that passed the current R7 step.
+	partsPassed []int
+	// r7Index counts the R7 steps concluded this session; it picks the R7 workload.
+	r7Index int
 	lastSeq int
 	endSeq  int
 
@@ -59,7 +63,7 @@ func (g *guard) rotated(seq int, p *journal.GuardRotation) {
 	switch p.Event {
 	case journal.RotationStart:
 		g.rotation, g.open, g.startSeq = p.Rotation, true, seq
-		g.steps, g.stepsDone, g.passed = slices.Clone(p.Steps), 0, nil
+		g.steps, g.stepsDone, g.passed, g.partsPassed = slices.Clone(p.Steps), 0, nil, nil
 	case journal.RotationEnd:
 		g.open = false
 		if p.Clean {
@@ -99,6 +103,18 @@ func (s *State) foldResidentEnd(e journal.Event, p *journal.TrialEnd, intent *jo
 		if !g.open || intent.Rotation != g.rotation || g.stepsDone >= len(g.steps) || intent.Regime != g.steps[g.stepsDone] {
 			return
 		}
+		if intent.Regime == machine.R7 {
+			i := slices.IndexFunc(s.parts, func(part []int) bool { return slices.Equal(part, intent.Cores) })
+			if i >= 0 && !slices.Contains(g.partsPassed, i) {
+				g.partsPassed = append(g.partsPassed, i)
+			}
+			if len(g.partsPassed) == len(s.parts) {
+				g.stepsDone++
+				g.partsPassed = nil
+				g.r7Index++
+			}
+			return
+		}
 		if intent.Core == nil {
 			g.stepsDone++
 			return
@@ -116,12 +132,15 @@ func (s *State) foldResidentEnd(e journal.Event, p *journal.TrialEnd, intent *jo
 		t.Retry = true
 		s.retry = &t
 	case journal.OutcomeFailure:
+		if intent.Regime == machine.R7 {
+			g.r7Index++
+		}
 		s.awaiting = &awaiting{intent: intent, end: p, seq: e.Seq, cause: e.Cause}
 	}
 }
 
 func residentTrial(intent *journal.TrialIntent) Trial {
-	t := Trial{Regime: intent.Regime, Phase: intent.Phase, Condition: machine.Resident, Rotation: intent.Rotation, AllCores: intent.Core == nil, Workload: intent.Workload}
+	t := Trial{Regime: intent.Regime, Phase: intent.Phase, Condition: machine.Resident, Rotation: intent.Rotation, Cores: slices.Clone(intent.Cores), Workload: intent.Workload}
 	if intent.Core != nil {
 		t.Core = *intent.Core
 	}
@@ -235,9 +254,22 @@ func (s *State) guardNext() Action {
 		return Action{Kind: RunTrial, Trial: *s.retry, Cause: cause}
 	}
 	t := Trial{Regime: g.steps[g.stepsDone], Phase: journal.PhaseGuard, Condition: machine.Resident, Rotation: g.rotation}
-	if t.Regime.AllCores() {
-		t.AllCores = true
+	switch t.Regime {
+	case machine.R7:
+		for i, part := range s.parts {
+			if !slices.Contains(g.partsPassed, i) {
+				t.Cores = slices.Clone(part)
+				break
+			}
+		}
+		t.Workload = machine.PickWorkload(machine.R7, g.r7Index).ID
 		return Action{Kind: RunTrial, Trial: t, Cause: cause}
+	case machine.R6:
+		for _, c := range s.byID() {
+			t.Cores = append(t.Cores, c.id)
+		}
+		return Action{Kind: RunTrial, Trial: t, Cause: cause}
+	case machine.R1, machine.R2, machine.R3, machine.R4, machine.R5:
 	}
 	for _, c := range s.cores {
 		if !slices.Contains(g.passed, c.id) {

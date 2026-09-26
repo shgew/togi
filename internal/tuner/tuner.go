@@ -4,6 +4,7 @@ package tuner
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 
 	"code.marleb.org/shgew/shycler/internal/config"
@@ -28,14 +29,15 @@ type Action struct {
 	Cause   []int
 }
 
-// Trial is one trial to run. AllCores trials target every core and leave Core and Offset zero.
+// Trial is one trial to run. Multi-core trials (R6, R7) list their loaded cores in Cores, in core-id order, and leave
+// Core and Offset zero; per-core trials leave Cores empty.
 type Trial struct {
 	Core      int
 	Offset    int
 	Regime    machine.Regime
 	Phase     journal.Phase
 	Condition machine.Condition
-	AllCores  bool
+	Cores     []int
 	Rotation  int
 	Retry     bool
 	// Workload is empty when the run loop picks it by its per-regime index.
@@ -99,6 +101,10 @@ type State struct {
 	awaiting *awaiting
 	mces     map[int]*journal.MCE
 	steps    []machine.Regime
+	// ccd maps each core to its CCD.
+	ccd map[int]int
+	// parts are the R7 trials of one step: each CCD's cores, then every core when there is more than one CCD.
+	parts [][]int
 	guard    guard
 	suspect  *suspect
 	tier     journal.Tier
@@ -149,6 +155,26 @@ func (s *State) core(id int) *core {
 	return nil
 }
 
+func partition(cores []machine.CoreInfo) (map[int]int, [][]int) {
+	ccd := map[int]int{}
+	byCCD := map[int][]int{}
+	var all []int
+	for _, c := range cores {
+		ccd[c.Core] = c.CCD
+		byCCD[c.CCD] = append(byCCD[c.CCD], c.Core)
+		all = append(all, c.Core)
+	}
+	slices.Sort(all)
+	if len(byCCD) == 1 {
+		return ccd, [][]int{all}
+	}
+	var parts [][]int
+	for _, id := range slices.Sorted(maps.Keys(byCCD)) {
+		parts = append(parts, slices.Sorted(slices.Values(byCCD[id])))
+	}
+	return ccd, append(parts, all)
+}
+
 func (s *State) Fold(e journal.Event) {
 	switch p := e.Data.(type) {
 	case *journal.SessionStart:
@@ -156,6 +182,7 @@ func (s *State) Fold(e journal.Event) {
 		for _, id := range Order(p.Cores) {
 			s.cores = append(s.cores, &core{id: id})
 		}
+		s.ccd, s.parts = partition(p.Cores)
 	case *journal.ConfigLoaded:
 		s.steps = slices.Clone(p.Config.Guard.Rotation)
 	case *journal.SessionBaseline:

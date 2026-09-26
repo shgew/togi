@@ -129,16 +129,19 @@ type intField struct {
 }
 
 func validate(c Config) error {
-	durations := []intField{
-		{"search_trial_s", c.Durations.SearchTrialS},
-		{"confirmation_trial_s", c.Durations.ConfirmationTrialS},
-		{"guard_trial_s", c.Durations.GuardTrialS},
-		{"guard_idle_s", c.Durations.GuardIdleS},
-		{"guard_all_core_s", c.Durations.GuardAllCoreS},
+	durations := []struct {
+		key        string
+		value, min int
+	}{
+		{"search_trial_s", c.Durations.SearchTrialS, 1},
+		{"confirmation_trial_s", c.Durations.ConfirmationTrialS, 1},
+		{"guard_trial_s", c.Durations.GuardTrialS, 1},
+		{"guard_idle_s", c.Durations.GuardIdleS, 1},
+		{"guard_all_core_s", c.Durations.GuardAllCoreS, 4},
 	}
 	for _, d := range durations {
-		if d.value < 1 || d.value > 86400 {
-			return fmt.Errorf("durations.%s = %d: must be within [1, 86400]", d.key, d.value)
+		if d.value < d.min || d.value > 86400 {
+			return fmt.Errorf("durations.%s = %d: must be within [%d, 86400]", d.key, d.value, d.min)
 		}
 	}
 	if len(c.Guard.Rotation) == 0 {

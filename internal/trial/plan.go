@@ -56,38 +56,7 @@ func plan(spec machine.TrialSpec, cores []machine.CoreInfo) iter.Seq[toggle] {
 					}
 				}
 			}
-		case machine.R7:
-			var first, second []int
-			low := int(^uint(0) >> 1)
-			for _, c := range cores {
-				if slices.Contains(spec.Cores, c.Core) {
-					low = min(low, c.CCD)
-				}
-			}
-			for i, id := range spec.Cores {
-				for _, c := range cores {
-					if c.Core == id {
-						if c.CCD == low {
-							first = append(first, i)
-						} else {
-							second = append(second, i)
-						}
-						break
-					}
-				}
-			}
-			if spec.Duration/2 < spec.Duration {
-				if !yield(toggle{At: spec.Duration / 2, Stop: true, Instances: second}) {
-					return
-				}
-			}
-			if spec.Duration*3/4 < spec.Duration {
-				if !yield(toggle{At: spec.Duration * 3 / 4, Instances: second}) {
-					return
-				}
-				yield(toggle{At: spec.Duration * 3 / 4, Stop: true, Instances: first})
-			}
-		case machine.R1, machine.R2, machine.R5:
+		case machine.R1, machine.R2, machine.R5, machine.R7:
 		}
 	}
 }

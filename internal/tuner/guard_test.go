@@ -42,17 +42,28 @@ func (h *harness) decideUntilTrial() Action {
 
 // intent records a resident guard trial on core, or on every core when core is allCores.
 func (h *harness) intent(core int, r machine.Regime) journal.Event {
+	if core == allCores {
+		var ids []int
+		for _, c := range h.s.byID() {
+			ids = append(ids, c.id)
+		}
+		return h.intentOn(r, ids...)
+	}
 	h.trials++
 	p := &journal.TrialIntent{
 		Trial: fmt.Sprintf("%04d", h.trials), Regime: r, Workload: "w", DurationS: 120,
 		Condition: machine.Resident, Phase: journal.PhaseGuard, Rotation: h.s.guard.rotation,
+		Core: new(core), Offset: new(h.s.core(core).offset),
 	}
-	if core == allCores {
-		for _, c := range h.s.byID() {
-			p.Cores = append(p.Cores, c.id)
-		}
-	} else {
-		p.Core, p.Offset = new(core), new(h.s.core(core).offset)
+	return h.add(p, h.s.guard.lastSeq)
+}
+
+// intentOn records a resident guard trial loading cores.
+func (h *harness) intentOn(r machine.Regime, cores ...int) journal.Event {
+	h.trials++
+	p := &journal.TrialIntent{
+		Trial: fmt.Sprintf("%04d", h.trials), Regime: r, Workload: "w", DurationS: 120,
+		Condition: machine.Resident, Phase: journal.PhaseGuard, Rotation: h.s.guard.rotation, Cores: cores,
 	}
 	return h.add(p, h.s.guard.lastSeq)
 }
@@ -66,12 +77,15 @@ func (h *harness) mce(core int, bank machine.BankType, fromBoot string) journal.
 	return h.add(&journal.MCE{CPU: core, Core: core, Bank: 3, BankType: bank, Corrected: fromBoot == "", FromBoot: fromBoot, Lines: []string{fmt.Sprintf("mce %d", len(h.events))}})
 }
 
-func describe(a Action) string {
+func (h *harness) describe(a Action) string {
 	if a.Kind == RunTrial {
 		t := a.Trial
 		target := fmt.Sprintf("c%d", t.Core)
-		if t.AllCores {
+		switch {
+		case len(t.Cores) == len(h.s.cores):
 			target = "all"
+		case len(t.Cores) > 0:
+			target = "cores " + strings.ReplaceAll(strings.Trim(fmt.Sprint(t.Cores), "[]"), " ", ",")
 		}
 		if t.Retry {
 			target += " retry"
@@ -126,7 +140,7 @@ func (h *harness) until() []string {
 	var got []string
 	for range 100 {
 		a := h.s.Next()
-		got = append(got, describe(a))
+		got = append(got, h.describe(a))
 		if a.Kind == RunTrial {
 			return got
 		}
@@ -158,11 +172,12 @@ func TestGuardRotationSchedule(t *testing.T) {
 	}
 	schedule := []string{
 		"trial R1 c0", "trial R1 c1", "trial R2 c0", "trial R2 c1", "trial R6 all", "trial R3 c0", "trial R3 c1",
-		"trial R4 c0", "trial R4 c1", "trial R7 all", "trial R5 c0", "trial R5 c1", "trial R6 all",
+		"trial R4 c0", "trial R4 c1", "trial R7 cores 0", "trial R7 cores 1", "trial R7 all", "trial R5 c0", "trial R5 c1",
+		"trial R6 all",
 	}
 	clean := map[machine.Regime]int{}
 	for i, w := range schedule {
-		if got := describe(a); got != w {
+		if got := h.describe(a); got != w {
 			t.Fatalf("slot %d: %s, want %s", i, got, w)
 		}
 		if a.Trial.Condition != machine.Resident || a.Trial.Phase != journal.PhaseGuard || a.Trial.Rotation != 1 {
@@ -175,10 +190,10 @@ func TestGuardRotationSchedule(t *testing.T) {
 	}
 	h.decide(a)
 	if got := h.until(); !slices.Equal(got, []string{"tier bronze", "start 2", "trial R1 c0"}) {
-		t.Fatalf("after rotation 1: %s then %v", describe(a), got)
+		t.Fatalf("after rotation 1: %s then %v", h.describe(a), got)
 	}
-	if describe(a) != "end clean" {
-		t.Fatalf("after the last step: %s, want end clean", describe(a))
+	if h.describe(a) != "end clean" {
+		t.Fatalf("after the last step: %s, want end clean", h.describe(a))
 	}
 	g := projected(h).Guard
 	if g == nil || g.CleanRotations != 1 || g.Rotation != 2 || !g.RotationOpen {
@@ -194,6 +209,80 @@ func TestGuardRotationSchedule(t *testing.T) {
 	if g.CleanS != total {
 		t.Errorf("clean %d s, want %d", g.CleanS, total)
 	}
+}
+
+// passUntil passes every trial and takes every decision until the next trial of regime r.
+func (h *harness) passUntil(a Action, r machine.Regime) Action {
+	h.t.Helper()
+	for range 1000 {
+		switch {
+		case a.Kind == RunTrial && a.Trial.Regime == r:
+			return a
+		case a.Kind == RunTrial:
+			h.trial(a, passed)
+		default:
+			h.decide(a)
+		}
+		a = h.s.Next()
+	}
+	h.t.Fatalf("no %s trial after 1000 actions", r)
+	return Action{}
+}
+
+func TestGuardR7Trials(t *testing.T) {
+	t.Parallel()
+	wantR7 := func(t *testing.T, a Action, retry bool, workload int, cores ...int) {
+		t.Helper()
+		w := machine.PickWorkload(machine.R7, workload).ID
+		if a.Kind != RunTrial || a.Trial.Regime != machine.R7 || !slices.Equal(a.Trial.Cores, cores) || a.Trial.Workload != w || a.Trial.Retry != retry {
+			t.Fatalf("action %+v, want R7 on cores %v with workload %s, retry %v", a, cores, w, retry)
+		}
+	}
+	t.Run("two CCDs", func(t *testing.T) {
+		t.Parallel()
+		h, a := newGuardHarness(t, []int{-10, -12, -11, -13}, []*int{new(-11), new(-13), new(-12), new(-14)})
+		a = h.passUntil(a, machine.R7)
+		wantR7(t, a, false, 0, 0, 1)
+		h.trial(a, passed)
+		a = h.s.Next()
+		wantR7(t, a, false, 0, 2, 3)
+		h.trial(a, unsure)
+		a = h.s.Next()
+		wantR7(t, a, true, 0, 2, 3)
+		replayed := New()
+		for _, e := range h.events {
+			replayed.Fold(e)
+		}
+		if diff := cmp.Diff(a, replayed.Next()); diff != "" {
+			t.Fatalf("replayed mid-step mismatch (-live +replayed):\n%s", diff)
+		}
+		h.trial(a, passed)
+		a = h.s.Next()
+		wantR7(t, a, false, 0, 0, 1, 2, 3)
+		h.trial(a, passed)
+		if a = h.s.Next(); a.Kind != RunTrial || a.Trial.Regime != machine.R5 {
+			t.Fatalf("after the R7 step: %+v, want R5", a)
+		}
+
+		a = h.passUntil(a, machine.R7)
+		if a.Trial.Rotation != 2 {
+			t.Fatalf("R7 in rotation %d, want 2", a.Trial.Rotation)
+		}
+		wantR7(t, a, false, 1, 0, 1)
+		h.trial(a, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+		a = h.passUntil(h.s.Next(), machine.R7)
+		wantR7(t, a, false, 2, 0, 1)
+	})
+	t.Run("one CCD", func(t *testing.T) {
+		t.Parallel()
+		h, a := newGuardHarness(t, []int{-10}, []*int{new(-11)})
+		a = h.passUntil(a, machine.R7)
+		wantR7(t, a, false, 0, 0)
+		h.trial(a, passed)
+		if a = h.s.Next(); a.Kind != RunTrial || a.Trial.Regime != machine.R5 {
+			t.Fatalf("after the R7 step: %+v, want R5", a)
+		}
+	})
 }
 
 func TestGuardEscalation(t *testing.T) {
@@ -314,7 +403,7 @@ func TestGuardNeverDeepens(t *testing.T) {
 			switch p := a.Payload.(type) {
 			case *journal.TunerDecision:
 				if p.ToOffset != p.FromOffset+1 || p.ToOffset > machine.MaxOffset {
-					t.Fatalf("seed %d: guard decision %s", seed, describe(a))
+					t.Fatalf("seed %d: guard decision %s", seed, h.describe(a))
 				}
 			case *journal.ProfileChange:
 				for i := range p.To {
@@ -323,7 +412,7 @@ func TestGuardNeverDeepens(t *testing.T) {
 					}
 				}
 			}
-			if a.Kind != RunTrial || a.Trial.AllCores {
+			if a.Kind != RunTrial || len(a.Trial.Cores) > 0 {
 				return
 			}
 			if f := h.s.core(a.Trial.Core).fail; f != nil && a.Trial.Offset <= *f {
@@ -345,8 +434,8 @@ func TestGuardNeverDeepens(t *testing.T) {
 				continue
 			}
 			target := a.Trial.Core
-			if a.Trial.AllCores {
-				target = rng.IntN(propertyCores)
+			if len(a.Trial.Cores) > 0 {
+				target = a.Trial.Cores[rng.IntN(len(a.Trial.Cores))]
 			}
 			switch x := rng.Float64(); {
 			case x < 0.6:
