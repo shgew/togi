@@ -76,9 +76,9 @@ shycler stops by itself only at a dead end: a core fails at offset 0, the SMU mi
 
 ## 7. Starting again after a breaking update
 
-An update whose changelog line starts with **BREAKING** refuses to continue a session written by an earlier build. Before archiving it, note each core's failed mark, or its edge where it has none, from `shycler status`. Archive the session with `sudo shycler reset --all`; the archived journal stays in `/var/lib/shycler/archive/`.
+An update whose changelog line starts with **BREAKING** refuses to continue a session written by an earlier build. Before archiving it, note each core's failed mark from the FAILED column of `shycler status`, and for cores without one the offset each was last confirmed at, from `shycler events --kind core.phase`. OFFSET in `status` can be shallower than that after a suspect backoff. Archive the session with `sudo shycler reset --all`; the archived journal stays in `/var/lib/shycler/archive/`.
 
-To skip searching for edges you already know, give each core a candidate edge: its failed mark plus one, or its edge where it has no failed mark. Such a core starts the new session in confirmation at that offset. Confirmation still runs every trial, so a value that no longer holds costs a failure and moves the core one count shallower:
+To skip searching for edges you already know, give each core a candidate edge: its failed mark plus one, or the offset it was last confirmed at where it has no failed mark. A core with failed mark 0 gets none: it failed at CO 0, so fix that cause first. Such a core starts the new session in confirmation at that offset. Confirmation still runs every trial, so a value that no longer holds costs a failure and moves the core one count shallower:
 
 ```nix
 services.shycler.settings.candidate_edges = {
@@ -87,4 +87,4 @@ services.shycler.settings.candidate_edges = {
 };
 ```
 
-Rebuild, then run `sudo shycler run` or pick "NixOS - shycler". The values are read only when the new session records each core's first phase; remove them once it has started. `start_offsets` is the gentler alternative: search starts from that offset and still steps deeper until it fails.
+Rebuild, then run `sudo shycler run` or pick "NixOS - shycler". Each value is read only when the new session records that core's first phase; once every core in `shycler status` shows a phase, remove them so a later `reset --all` starts from the baseline. `start_offsets` is the gentler alternative: search starts from that offset and still steps deeper until it fails.

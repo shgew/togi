@@ -114,7 +114,9 @@ func Project(events []journal.Event) Snapshot {
 			tl.number, tl.hasNumber = c.Offset, true
 			tl.regain = c.UnprovenDepth - c.SettledDepth
 			tl.settled = c.SettledDepth
-		case journal.PhaseSearch, journal.PhaseConfirmation:
+		case journal.PhaseConfirmation:
+			tl.number, tl.hasNumber = c.Offset, true
+		case journal.PhaseSearch:
 			if c.Pass != nil {
 				tl.number, tl.hasNumber = *c.Pass, true
 			}
