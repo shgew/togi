@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const Schema = 1
+const Schema = 2
 
 const timeLayout = "2006-01-02T15:04:05.000000000Z"
 
