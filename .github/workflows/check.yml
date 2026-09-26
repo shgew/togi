@@ -13,8 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/nix
-      - name: just check --race
-        run: nix develop --command just check --race
-      - name: just vuln
-        run: nix develop --command just vuln
+      - uses: cachix/install-nix-action@v31
+      - name: just ci
+        run: nix develop --command just ci

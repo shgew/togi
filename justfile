@@ -55,7 +55,12 @@ _fmt-check:
 [group('quality')]
 gate: lint _fmt-check test
 
-# Run every flake check; `--race` also runs the Go tests under the race detector, as CI does
+# The pull request checks CI runs: lint, formatting check, then the tests under the race detector, with the integration tests on Linux
+[group('quality')]
+ci: lint _fmt-check
+    {{ dev }} go test -shuffle=on -race {{ if os() == "linux" { "-tags integration" } else { "" } }} ./...
+
+# Run every flake check; `--race` also runs the Go tests under the race detector, as the release workflow does
 [group('nix')]
 check *args:
     race=0; flags=(); for a in "$@"; do if [[ "$a" == --race ]]; then race=1; else flags+=("$a"); fi; done; nix flake check "${flags[@]}"; if (( race )); then nix build --no-link .#legacyPackages.{{ system }}.race; fi
