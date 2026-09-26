@@ -125,6 +125,11 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 			return Stop{}, fmt.Errorf("start offset for core %d: %w", core, ErrNoSuchCore)
 		}
 	}
+	for _, core := range slices.Sorted(maps.Keys(r.in.Config.CandidateEdges)) {
+		if r.coreInfo(core) == nil {
+			return Stop{}, fmt.Errorf("candidate edge for core %d: %w", core, ErrNoSuchCore)
+		}
+	}
 
 	if !r.fold.started {
 		if _, err := r.append(&journal.SessionStart{Build: Build(), Session: r.in.Machine.Clock.Now().UTC().Format("20060102T150405Z"), Cores: cores}); err != nil {
@@ -509,13 +514,15 @@ func (r *runner) startSession() error {
 			continue
 		}
 		b := r.fold.baseline[i]
-		start, reason := machine.ClampOffset(b), "baseline"
-		if o, ok := r.in.Config.StartOffsets[c.Core]; ok {
+		phase, start, reason := journal.PhaseSearch, machine.ClampOffset(b), "baseline"
+		if o, ok := r.in.Config.CandidateEdges[c.Core]; ok {
+			phase, start, reason = journal.PhaseConfirmation, o, "configured candidate edge"
+		} else if o, ok := r.in.Config.StartOffsets[c.Core]; ok {
 			start, reason = o, "configured start offset"
 		} else if start != b {
 			reason = fmt.Sprintf("baseline %d clamped to %d", b, start)
 		}
-		if _, err := r.append(&journal.CorePhase{Core: c.Core, To: journal.PhaseSearch, Offset: start, Reason: reason}, r.fold.baselineSeq); err != nil {
+		if _, err := r.append(&journal.CorePhase{Core: c.Core, To: phase, Offset: start, Reason: reason}, r.fold.baselineSeq); err != nil {
 			return err
 		}
 	}

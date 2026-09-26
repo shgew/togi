@@ -73,3 +73,18 @@ shycler cert
 shycler stops by itself only at a dead end: a core fails at offset 0, the SMU misbehaves, trials prove nothing several times in a row, the machine keeps crashing before any trial, a backend escapes its cores, or a preflight check fails. In the tuning boot it records the dead end, clears GRUB's saved entry so the next boot selects your newest normal generation, and stops with the explanation on tty1's dashboard. After a boot loop it reboots into the normal system at once.
 
 `shycler status` shows the dead end, and `shycler events --kind deadend,boot.saved_entry` shows what happened. Fix the cause, then run `sudo shycler run` or pick "NixOS - shycler" again to resume. A core that failed at offset 0 stops every later run until `sudo shycler reset --core <N>`, and a changed BIOS context until `sudo shycler reset --all` starts a new session. [runtime.md](spec/runtime.md#dead-end-actions) and [tuner.md](spec/tuner.md) describe each condition.
+
+## 7. Starting again after a breaking update
+
+An update whose changelog line starts with **BREAKING** refuses to continue a session written by an earlier build. Before archiving it, note each core's failed mark, or its edge where it has none, from `shycler status`. Archive the session with `sudo shycler reset --all`; the archived journal stays in `/var/lib/shycler/archive/`.
+
+To skip searching for edges you already know, give each core a candidate edge: its failed mark plus one, or its edge where it has no failed mark. Such a core starts the new session in confirmation at that offset. Confirmation still runs every trial, so a value that no longer holds costs a failure and moves the core one count shallower:
+
+```nix
+services.shycler.settings.candidate_edges = {
+  "0" = -36;
+  "8" = -50;
+};
+```
+
+Rebuild, then run `sudo shycler run` or pick "NixOS - shycler". The values are read only when the new session records each core's first phase; remove them once it has started. `start_offsets` is the gentler alternative: search starts from that offset and still steps deeper until it fails.

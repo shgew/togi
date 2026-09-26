@@ -52,7 +52,7 @@ func (e *IncompatibleError) Error() string {
 	} else {
 		value = e.Binary.Ruleset
 	}
-	return fmt.Sprintf("%s; this build, %s, uses %s %d. %s, or run shycler reset --all to archive it and start over.", written, e.Binary.name(), e.Field, value, advice)
+	return fmt.Sprintf("%s; this build, %s, uses %s %d. %s, or run shycler reset --all to archive it and start over; candidate_edges in the configuration can start the new session in confirmation at the edges this one found.", written, e.Binary.name(), e.Field, value, advice)
 }
 
 // Compatible checks schema first, then strategy. A missing ruleset stamp means ruleset 1.

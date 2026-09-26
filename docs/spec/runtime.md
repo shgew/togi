@@ -75,6 +75,7 @@ TOML at the `--config` path, produced by the NixOS module from `services.shycler
 | Key | Default | Valid |
 |---|---|---|
 | `start_offsets.<core>` | none | Offset override per core id, within [-50, 0] |
+| `candidate_edges.<core>` | none | Offset per core id, within [-50, 0], at which the core starts in confirmation instead of search; not together with `start_offsets` for the same core |
 | `durations.search_trial_s` | 90 | [1, 86400] |
 | `durations.confirmation_trial_s` | 300 | [1, 86400] |
 | `durations.guard_trial_s` | 120 | [1, 86400] |

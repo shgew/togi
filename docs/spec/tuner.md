@@ -19,7 +19,7 @@ The ruleset is the hardcoded strategy: steps, offset range, phases, which worklo
 
 1. Preflight (`runtime.md`) passes, or shycler stops at a dead end.
 2. The first `run` of a session reads every core's offset from the SMU as the baseline and records the BIOS context.
-3. Each core's start offset is the configured override if one exists, else its baseline, clamped to [-50, 0].
+3. Each core's start offset is the configured override if one exists, else its baseline, clamped to [-50, 0]. A core with a configured candidate edge starts in confirmation at that offset instead, with no pass and no failed mark, and confirmation runs as for an edge found by search ([ADR 0013](../adr/0013-candidate-edges-for-a-new-session.md)).
 4. A nonzero baseline produces a notice recommending BIOS CO 0 for tuning. shycler still starts from it.
 5. A later `run` whose BIOS context differs from the session's is a dead end until `reset --all` starts a new session.
 
