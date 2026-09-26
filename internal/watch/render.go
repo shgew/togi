@@ -352,17 +352,17 @@ func (s Snapshot) board(f *frame, l layout) {
 			}
 		}
 		for r := 0; r < len(group); r += cols {
-			var row []string
+			var lines []string
 			for i, t := range group[r:min(r+cols, len(group))] {
-				rendered := t.render(l.widths[i], f.mode)
-				if i > 0 {
-					rendered = lipgloss.JoinHorizontal(lipgloss.Top, strings.Repeat(" ", l.gap), rendered)
+				for j, ln := range t.render(l.widths[i], f.mode) {
+					if i == 0 {
+						lines = append(lines, pad+ln)
+					} else {
+						lines[j] += strings.Repeat(" ", l.gap) + ln
+					}
 				}
-				row = append(row, rendered)
 			}
-			for ln := range strings.SplitSeq(lipgloss.JoinHorizontal(lipgloss.Top, row...), "\n") {
-				f.add(pad + ln)
-			}
+			f.add(lines...)
 			if r+cols < len(group) {
 				f.air(1, 0)
 			}

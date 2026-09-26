@@ -68,31 +68,44 @@ func cellOf(d, n int) int {
 }
 
 func (t tile) gauge(n int) string {
-	var b strings.Builder
+	kinds := make([]cellKind, n)
 	for i := range n {
 		lo, hi := span(i, n)
-		k := emptyCell
 		for d := lo; d <= hi; d++ {
-			k = max(k, t.kindAt(d, cellOf(d, n) == i))
-		}
-		switch k {
-		case failCell:
-			b.WriteString(failStyle.Render("x"))
-		case regainCell:
-			b.WriteString(regainStyle.Render("▒"))
-		case settledCell:
-			b.WriteString(dim.Render(":"))
-		case tryingCell:
-			b.WriteString(trialStyle.Render(">"))
-		case unexploredCell:
-			b.WriteString(searchStyle.Render("░"))
-		case filledCell:
-			b.WriteString(phaseColor(t.phase).Render("█"))
-		case emptyCell:
-			b.WriteString(dim.Render("."))
+			kinds[i] = max(kinds[i], t.kindAt(d, cellOf(d, n) == i))
 		}
 	}
+	var b strings.Builder
+	for i := 0; i < n; {
+		j := i + 1
+		for j < n && kinds[j] == kinds[i] {
+			j++
+		}
+		style, glyph := t.cellLook(kinds[i])
+		b.WriteString(style.Render(strings.Repeat(glyph, j-i)))
+		i = j
+	}
 	return b.String()
+}
+
+func (t tile) cellLook(k cellKind) (lipgloss.Style, string) {
+	switch k {
+	case failCell:
+		return failStyle, "x"
+	case regainCell:
+		return regainStyle, "▒"
+	case settledCell:
+		return dim, ":"
+	case tryingCell:
+		return trialStyle, ">"
+	case unexploredCell:
+		return searchStyle, "░"
+	case filledCell:
+		return phaseColor(t.phase), "█"
+	case emptyCell:
+		return dim, "."
+	}
+	return dim, "."
 }
 
 type label struct {
@@ -177,7 +190,7 @@ func pick(short bool, long, brief string) string {
 	return long
 }
 
-func (t tile) render(width int, m mode) string {
+func (t tile) render(width int, m mode) []string {
 	border := phaseColor(t.phase)
 	if t.regain > 0 {
 		border = regainStyle
@@ -208,14 +221,14 @@ func (t tile) render(width int, m mode) string {
 		}
 	}
 	rows = append(rows, t.gauge(inner), axis(labels, inner))
-	for i, r := range rows {
-		rows[i] = ansi.Truncate(r, inner, "")
+	side := border.Render("│")
+	lines := []string{t.topEdge(width, border)}
+	for _, r := range rows {
+		r = ansi.Truncate(r, inner, "")
+		lines = append(lines, side+" "+r+strings.Repeat(" ", inner-ansi.StringWidth(r))+" "+side)
 	}
-	body := lipgloss.NewStyle().Width(width).Padding(0, 1).
-		Border(lipgloss.NormalBorder(), false, true, true, true).
-		BorderForeground(border.GetForeground()).
-		Render(strings.Join(rows, "\n"))
-	return t.topEdge(width, border) + "\n" + body
+	lines = append(lines, border.Render("└"+strings.Repeat("─", width-2)+"┘"))
+	return lines
 }
 
 var font = map[rune][3]string{

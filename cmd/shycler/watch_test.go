@@ -92,20 +92,23 @@ func TestWatchFrames(t *testing.T) {
 func TestWatchFrameFitsScreen(t *testing.T) {
 	t.Parallel()
 	for _, c := range watchCuts(t) {
-		s, now := watch.Project(c.events), cutTime(c.events)
-		for w := 1; w <= 300; w += 7 {
-			for h := 2; h <= 100; h += 5 {
-				lines := strings.Split(watch.Render(s, w, h, now), "\n")
-				if len(lines) != h-1 {
-					t.Errorf("%s %dx%d: %d lines, want %d", c.name, w, h, len(lines), h-1)
-				}
-				for i, ln := range lines {
-					if lipgloss.Width(ln) > w-1 {
-						t.Errorf("%s %dx%d: line %d is %d cells wide, want at most %d", c.name, w, h, i, lipgloss.Width(ln), w-1)
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			s, now := watch.Project(c.events), cutTime(c.events)
+			for w := 1; w <= 300; w += 7 {
+				for h := 2; h <= 100; h += 5 {
+					lines := strings.Split(watch.Render(s, w, h, now), "\n")
+					if len(lines) != h-1 {
+						t.Errorf("%dx%d: %d lines, want %d", w, h, len(lines), h-1)
+					}
+					for i, ln := range lines {
+						if lipgloss.Width(ln) > w-1 {
+							t.Errorf("%dx%d: line %d is %d cells wide, want at most %d", w, h, i, lipgloss.Width(ln), w-1)
+						}
 					}
 				}
 			}
-		}
+		})
 	}
 }
 
