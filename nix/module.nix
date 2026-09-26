@@ -26,8 +26,8 @@ in
     tuning.consoleFont = lib.mkOption {
       type = lib.types.nullOr (lib.types.either lib.types.str lib.types.path);
       default = null;
-      example = lib.literalExpression ''"''${pkgs.terminus_font}/share/consolefonts/ter-v32n.psf.gz"'';
-      description = "Console font of the tuning boot, as console.font takes it. null keeps the system's font.";
+      example = lib.literalExpression ''"''${pkgs.terminus_font}/share/consolefonts/ter-i32b.psf.gz"'';
+      description = "Console font of the tuning boot, as console.font takes it. The dashboard draws with IBM437 block and box glyphs, which the kernel's built-in fonts and Terminus' ter-i fonts have; ter-v and Lat2 fonts lack the half block its digits use. null keeps the system's font.";
     };
     settings = lib.mkOption {
       type = toml.type;
