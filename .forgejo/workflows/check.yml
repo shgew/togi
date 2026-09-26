@@ -25,22 +25,8 @@ jobs:
         run: nix develop --command just check
       - name: just vuln
         run: nix develop --command just vuln
-
-  publish:
-    needs: check
-    if: github.event_name == 'push'
-    runs-on: nix-latest
-    env:
-      NIX_CONFIG: |
-        experimental-features = nix-command flakes
-    steps:
-      - name: Check out
-        run: |
-          git init -q .
-          git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
-          git -c http.extraHeader="Authorization: Basic $(printf 'x-access-token:%s' '${{ github.token }}' | base64 -w0)" fetch -q origin "${{ github.sha }}"
-          git checkout -q --detach FETCH_HEAD
       - name: Publish a merged release
+        if: github.event_name == 'push'
         env:
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_REPOSITORY: ${{ github.repository }}
