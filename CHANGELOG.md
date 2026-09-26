@@ -4,6 +4,8 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-26
+
 ### Added
 
 - `shycler watch` shows the session as a dashboard that redraws every second: stage, running trial, one tile per core with its offset, failed mark and regainable or settled depth, and the latest events. Off a terminal it prints one frame and exits ([#65]).
@@ -79,6 +81,8 @@ All notable changes to shycler are documented in this file. The format is based 
 [0.1.0]: https://code.marleb.org/shgew/shycler/releases/tag/v0.1.0
 
 [0.2.0]: https://code.marleb.org/shgew/shycler/releases/tag/v0.2.0
+
+[0.2.1]: https://code.marleb.org/shgew/shycler/releases/tag/v0.2.1
 
 [#2]: https://code.marleb.org/shgew/shycler/pulls/2
 [#3]: https://code.marleb.org/shgew/shycler/pulls/3
