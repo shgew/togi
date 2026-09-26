@@ -27,13 +27,20 @@ import (
 const runHelp = `Usage: shycler run [--rotations <N>] [--tuning-boot <grubenv>]
 
 Start or resume the tuning session in the foreground: search each core's deepest
-stable offset, confirm it, then keep guarding all offsets together. After a crash,
-the next run attributes it from the journal and continues. On resume, known
-defects affecting past decisions name the cores; in a terminal run offers to reset
-them. An unanswered too-aggressive defect stops an unattended run. It needs root.
-A different journal ruleset or schema stops the run before another event is
-written; reset --all archives that session. Journal lines are colored on
-terminals and in the system journal unless NO_COLOR is set.
+stable offset, confirm it, then keep guarding all offsets together. After each
+clean guard rotation it regains one count of suspect depth per core, then guards
+the deeper profile. After a crash, the next run attributes it from the journal
+and continues. On resume, known defects affecting past decisions name the cores;
+in a terminal run offers to reset them. An unanswered too-aggressive defect
+stops an unattended run. It needs root. A different journal ruleset or schema
+stops the run before another event is written; reset --all archives that
+session. Journal lines are colored on terminals and in the system journal
+unless NO_COLOR is set.
+
+--rotations N stops once the current profile has survived N clean rotations,
+counted across runs, before any regain. Every regain changes the profile and
+restarts the count, so with depth left to regain --rotations 1 stops without
+Bronze.
 
 Examples:
   sudo shycler run                     Tune this machine until a signal or a dead end

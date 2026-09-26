@@ -30,6 +30,14 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ### Changed
 
+- **BREAKING** Confirmation now runs every R1 and R2 workload, then R3, R4 and R5, at each candidate edge; a failure restarts the nine-trial set from the first R1 workload ([#PR](https://code.marleb.org/shgew/shycler/pulls/PR)).
+- **BREAKING** Guard R7 runs CCD0, CCD1 and then all cores as separate resident trials with a shared workload instead of switching loads within one trial ([#PR](https://code.marleb.org/shgew/shycler/pulls/PR)).
+- **BREAKING** Unattributed resident failures back off only their loaded cores (or every nonzero core when that narrower scope is at zero), instead of escalating later failures to every core ([#PR](https://code.marleb.org/shgew/shycler/pulls/PR)).
+- **BREAKING** After each clean rotation, guard automatically regains one count per core with regainable depth and tests the changed profile; each step gets one retry and settles if suspect-backed-off from that step again, until `reset --core` ([#PR](https://code.marleb.org/shgew/shycler/pulls/PR)).
+- **BREAKING** Bronze waits until every core is confirmed, no regainable depth remains and the current profile survives one clean rotation; settled depth alone does not block a tier ([#PR](https://code.marleb.org/shgew/shycler/pulls/PR)).
+- `status` and `cert` now show REGAINABLE and SETTLED depth separately rather than total unproven depth ([#PR](https://code.marleb.org/shgew/shycler/pulls/PR)).
+- `durations.guard_all_core_s` now requires at least 4 seconds so the separate R7 trials have time to run ([#PR](https://code.marleb.org/shgew/shycler/pulls/PR)).
+- **BREAKING** Tuning ruleset and journal schema are now 2: archive a ruleset-1 session with `sudo shycler reset --all` before starting again. Setting `start_offsets.<core>` to an archived failed mark plus one can skip early search steps, but is a hint, not evidence ([#PR](https://code.marleb.org/shgew/shycler/pulls/PR)).
 - `shycler reset --all` also moves the trial work directories to `archive/<session-id>-trials/` ([#13]).
 - Every command's `--help` gives a description and examples, lists its own flags before the global ones, and shows every flag in `--long` form ([#12]).
 - `run` writes every core back to its baseline, or to its current offset where that is shallower, before stopping cleanly or at a dead end, instead of leaving the tested offsets applied until the next reboot ([#14]).
@@ -37,6 +45,8 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ### Removed
 
+- **BREAKING** Removed `shycler regain` and its isolated re-confirmation; guard regains eligible depth automatically after clean rotations ([#PR](https://code.marleb.org/shgew/shycler/pulls/PR)).
+- **BREAKING** Removed the escalation window and its journal event; each unattributed failure is blamed by its own trial's loaded cores ([#PR](https://code.marleb.org/shgew/shycler/pulls/PR)).
 - `shycler run --sim`: simulate from a source checkout with `just sim` (`go run ./tools/sim`) ([#46]).
 
 ### Fixed

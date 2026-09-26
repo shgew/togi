@@ -12,7 +12,7 @@ The ruleset is the hardcoded strategy: steps, offset range, phases, which worklo
 2. During an isolated trial only the target carries a nonzero offset. Every other core is written to 0 first, including at the start of each boot, when firmware has restored the BIOS values.
 3. Every SMU write is preceded by a durable intent event and followed by a readback. A readback that differs from the written value is a dead end.
 4. A core never runs at or deeper than its failed mark, except after `reset`.
-5. After confirmation, offsets only get shallower, except through an explicit `regain`.
+5. After confirmation, offsets only get shallower except through automatic regain at a clean rotation end; regain never crosses a settled step or the failed mark.
 6. Every decision is an event that names its cause (`journal.md`).
 
 ## Session start
@@ -25,9 +25,9 @@ The ruleset is the hardcoded strategy: steps, offset range, phases, which worklo
 
 ## Scheduling
 
-Cores are visited in CCD-alternating order: 0, 8, 1, 9, ... 7, 15. Each slot goes to the next core in that order that is still in search or confirmation, and that core runs its next step. Interleaving cores this way gives every core time to cool between its own trials.
+Cores are visited in CCD-alternating order: 0, 8, 1, 9, ... 7, 15. Each turn goes to the next core in that order still in search or confirmation, and that core runs its next trial. Interleaving cores this way gives every core time to cool between its own trials.
 
-A slot is one search step (R1, then R2 if R1 passed) or one confirmation trial. An inconclusive trial is retried at once in the same slot, unless a decision for its core comes first (a queued reset): the decision replaces the slot.
+A search step runs R1 and then R2 if R1 passed. Confirmation has nine trial slots per core: each R1 workload, each R2 workload, then R3, R4 and R5. An inconclusive trial is retried at once with the same workload in the same slot, unless a decision for its core comes first (a queued reset): the decision replaces the slot.
 
 ## Search
 
@@ -52,9 +52,9 @@ Any failure during an isolated trial is attributed to the target, crashes includ
 
 ## Confirmation
 
-At the candidate edge `e`, the core runs one isolated trial per regime R1 to R5.
-- All pass: the core is confirmed and `e` is its edge.
-- An attributed failure sets `fail = e` and moves the core to `e + 1`, where confirmation restarts from R1. A failure at `e == 0` is a dead end.
+At the candidate edge `e`, the core runs nine isolated trials: each R1 workload in catalog order, each R2 workload in catalog order, then R3, R4 and R5 (one workload each). Each trial gets a turn in the CCD-alternating order.
+- All nine pass: the core is confirmed and `e` is its edge.
+- An attributed failure sets `fail = e` and moves the core to `e + 1`, where the entire set restarts from the first R1 workload. A failure at `e == 0` is a dead end. An inconclusive retry repeats the same workload.
 
 ## Isolated trial sequence
 
@@ -73,7 +73,7 @@ Between trials every core is at 0. Before its first isolated trial, a `run` writ
 
 Guard trials run on the profile of the last `profile.change`. Before the first resident trial of a `run`, and after every profile change, each core is set to its profile offset in core-id order, each write read back, then `profile.applied` is recorded with condition `resident`. One resident trial is then:
 
-1. `trial.intent`, naming its core, or every core for R6 and R7;
+1. `trial.intent`, naming its loaded core for R1 to R5, or the loaded cores in `cores` for R6 and R7;
 2. `trial.start`, plus `trial.signal` for R3 and R4;
 3. the trial, then `trial.signal` counts for R3 and R4;
 4. `mce` events for the trial window;
@@ -81,6 +81,8 @@ Guard trials run on the profile of the last `profile.change`. Before the first r
 6. the tuner's `failure` when the trial failed.
 
 No SMU write happens between resident trials: the profile stays applied.
+
+R6 loads every core. On two CCDs, an R7 guard step runs three separate resident trials: CCD0 alone, CCD1 alone, then every core. The step passes only after all three pass. On one CCD it runs one all-core trial. Each R7 trial has its own intent, instance set and teardown; all parts of one step share a workload, which advances on the next concluded R7 step. An inconclusive retry uses the same loaded cores and workload, and parts already passed remain passed across interruptions. Only loaded cores run backend instances; the resident offsets on all cores stay applied.
 
 ## Crashes
 
@@ -95,46 +97,43 @@ Restoring offsets before `shutdown` (`runtime.md`) is not an application: its `s
 
 ## Decision events
 
-Moves within a phase are `tuner.decision` events: `step_deeper` after a passed search step, `backoff` after an attributed failure, `suspect_backoff` after an unattributed one in guard. Reaching a candidate edge (search to confirmation) and passing confirmation (confirmation to confirmed) are `core.phase` events. Both carry the resulting `pass`, `failed_mark` and `unproven_depth`, so replaying the journal never re-runs a rule. Guard decisions have phase `guard`; the core stays `confirmed`.
+Moves within a phase are `tuner.decision` events: `step_deeper` after a passed search step, `backoff` after an attributed failure, `suspect_backoff` after an unattributed one in guard, and `regain` after a clean rotation. Reaching a candidate edge (search to confirmation) and passing confirmation (confirmation to confirmed) are `core.phase` events. Both carry the resulting `pass`, `failed_mark` and `unproven_depth`, so replaying the journal never re-runs a rule. Guard decisions have phase `guard`; the core stays `confirmed`.
 
 ## Guard
 
 Guard starts once every core is confirmed, with a `profile.change` whose `from` is null. The profile of all edges is applied and stays applied between trials (Resident trial sequence).
 
-A rotation runs the configured `guard.rotation` steps (`workloads.md`), captured in its `guard.rotation` start event. A per-core step (R1 to R5) is one trial per core in scheduling order; an R6 or R7 step is one trial targeting every core. The rotation ends clean when every step passed. A profile change ends the open rotation as not clean, and the next rotation starts from the first step, so a clean rotation always covers one unchanged profile. The order is always: the backoff, the unclean rotation end, `profile.change`, the next rotation start.
+A rotation runs the configured `guard.rotation` steps (`workloads.md`), captured in its `guard.rotation` start event. A per-core step (R1 to R5) is one trial per core in scheduling order; R6 is one all-core trial and R7 is three trials (or one on a single-CCD machine), still one rotation step. The rotation ends clean when every step passed. A profile change ends the open rotation as not clean, and the next rotation starts from the first step, so a clean rotation always covers one unchanged profile. After a failure the order is: backoff, unclean rotation end, `profile.change`, next rotation start.
 
 Resident attribution: the backend instance whose signal ended the trial names its core. Without one, the core-local MCEs among the trial end's evidence name their cores. Exactly one named core makes the failure attributed to that core at its current offset; no named core, or more than one, makes it unattributed.
 
 Failure handling:
-- **Attributed** failure on core `c` at offset `o`: proven backoff, so `fail = o`, `c` moves to `o + 1`, and its unproven depth drops to 0, since every suspect step lay deeper than `o`. Isolated confirmation at `o` or deeper already covers `o + 1`, so no re-confirmation runs. `o == 0` is a dead end.
-- **Unattributed** failure:
-  - The escalation window is closed and the trial had a single target core `c` with a nonzero offset: suspect backoff of `c` by one count, and the window opens.
-  - Otherwise, meaning the window was already open, the trial was R6 or R7, or its single target was at 0: suspect backoff by one count on every core with a nonzero offset, in scheduling order. The window opens if it was closed.
-  - No core has a nonzero offset: dead end `failure_at_zero` without a core. It leaves no failed mark, so the next `run` continues guard.
-  - A suspect backoff adds one count to the core's unproven depth and leaves its failed mark unchanged.
-  - The window closes when a rotation completes clean.
-- A crash with the resident profile applied and no trial in flight counts as an unattributed failure of an R6 trial.
-- **Inconclusive** trials are retried and change nothing.
+- **Attributed** failure on core `c` at offset `o`: proven backoff, so `fail = o`, `c` moves to `o + 1`, and its unproven depth drops to 0, since every suspect step lay deeper than `o`. Isolated confirmation at `o` or deeper already covers `o + 1`, so no re-confirmation runs. Spent retries remain but the settled mark clears. `o == 0` is a dead end. A core-local MCE naming exactly one core remains attributed even if that core was outside the trial's loaded cores.
+- **Unattributed** resident failure: suspect backoff by one count on each nonzero core in the following scope, in scheduling order:
+
+  | Failure in flight | Initial scope |
+  |---|---|
+  | R1 to R5 trial | Its loaded core |
+  | Single-CCD R7 trial | The loaded CCD's cores |
+  | All-core R7 or R6 trial | Every core |
+  | No trial, resident profile applied or partly applied | Every core |
+
+  If the initial scope is narrower than every core and all its cores are at 0, every nonzero core backs off instead. If no core has a nonzero offset, this is a dead end `failure_at_zero` without a core; it leaves no failed mark, so the next `run` continues guard. A suspect backoff adds one count of unproven depth and leaves the failed mark unchanged. Each failure is judged independently by the load of its own trial.
+- **Inconclusive** trials are retried with the same loaded cores and workload and change nothing.
 
 Every backoff changes the profile: clean hours reset and the rotation restarts.
 
 Clean hours are the durations of passed resident trials since the last `profile.change`, overall and per regime.
 
-`run` stops, recording `shutdown`, when a rotation would start after the requested number of clean rotations since the last `profile.change` (`runtime.md`); without that request guard is endless.
+`run` stops, recording `shutdown`, once the current profile has survived the requested number of clean rotations (`runtime.md`), before automatic regain; without that request guard is endless.
 
 ## Regain
 
-Suspect backoffs are never undone automatically. `shycler status` lists each core's unproven depth. `shycler regain [--core N]` records `command.regain` naming each selected core that is confirmed with unproven depth and has nothing queued, in scheduling order, and queues one count of regain on each. It refuses while a regain is queued or running, so one invocation is one count per core. The next `run` works the queue before guard continues:
+At a clean `guard.rotation` end, if neither `--rotations` nor a pending stop signal stops the run, each confirmed core with regainable depth moves one count deeper, in scheduling order. Each `tuner.decision` with `decision: regain` cites that clean end, records the resulting offset and unproven depth, and spends the retried step. The SMU writes follow the recorded decisions. Then `profile.change` resets clean hours and tier progress, and the next rotation tests the deeper profile under resident load. There is no isolated re-confirmation: the regained offsets already passed isolated confirmation.
 
-1. `core.phase` confirmed -> `regain`, one count deeper, citing `command.regain`. Unproven depth stays until the count is proven. A regain core is scheduled like confirmation.
-2. Run isolated confirmation R1 to R5 at that offset.
-3. Pass: `core.phase` regain -> confirmed at that offset; the count is regained and unproven depth drops by one.
-4. Attributed failure at `o`: proven backoff, `core.phase` regain -> confirmed at `o + 1` with `fail = o`, where the core was confirmed before, so no re-confirmation runs. The failed mark cancels the core's remaining unproven depth, since those steps were all deeper.
-5. Guard resumes: the open rotation ends not clean, the tier drops to none, and a `profile.change` follows even when the profile is unchanged, so clean hours reset and a new rotation starts. Resident evidence for the regained count comes from guard, so one count per invocation keeps each regain exposed to a full guard before the next.
+A step is one core at one numeric offset. Each step gets only one automatic-regain retry. A suspect backoff from a step whose retry was spent settles it; automatic regain never takes the core back to that offset or deeper until `reset --core`. The shallowest settled offset is the settled mark. Regainable depth is the unproven depth from the current offset down to, but not including, its nearest settled step, never past the confirmed edge or at/deeper than the failed mark. `status` and the certificate show regainable and settled depth separately; their sum is the total unproven depth. Spent retries persist across clean rotations and proven failures; a proven failure cancels unproven depth (including settled depth) and clears the settled mark, but does not unspend retries.
 
-A queued regain is dropped when a decision leaves the core with no unproven depth first, such as a proven backoff. Every `core.phase` carries the core's pass and failed mark; only reset clears them.
-
-Proven failed marks are never retried within a session.
+An interrupted run replays recorded regain decisions; it does not retry a spent step or regain a core twice from one clean rotation end. A later backoff or reset decision after the clean end cancels any remaining regains due from that end. Proven failed marks are never retried within a session.
 
 ## Defect list
 
@@ -142,10 +141,10 @@ Known defects identify decisions made under earlier builds whose decisions canno
 
 ## Reset
 
-- `reset --core N`: records `command.reset` and queues the reset. The next `run`, before any other decision except a pending attribution, records `core.phase` to `search` at the baseline clamped to [-50, 0], with failed mark, pass, unproven depth and confirmation cleared. A failed mark at 0 is cleared too, so reset is the way out of that dead end. The profile changes when the core is confirmed again.
+- `reset --core N`: records `command.reset` and queues the reset. The next `run`, before any other decision except a pending attribution, records `core.phase` to `search` at the baseline clamped to [-50, 0], with failed mark, pass, unproven depth, confirmation, spent retries and settled steps cleared. A failed mark at 0 is cleared too, so reset is the way out of that dead end. The profile changes when the core is confirmed again.
 - `reset --all`: archives the session (`journal.md`). The next `run` starts a new session with a fresh baseline and BIOS context.
 
-`regain` and `reset` write to the journal, so they refuse while a `run` holds it (`journal.md`).
+`reset` writes to the journal, so it refuses while a `run` holds it (`journal.md`).
 
 ## Dead ends
 
@@ -179,8 +178,8 @@ Tiers rank the current profile by durability, not proof. Any profile change drop
 
 | Tier | Requirement |
 |---|---|
-| none | A core is not confirmed, the profile changed since the last `profile.change`, or no rotation since it completed clean. |
-| Bronze | Every core confirmed, and one clean rotation since the last profile change. |
+| none | A core is not confirmed, regainable depth remains, or the current profile has not survived a clean rotation. |
+| Bronze | Every core confirmed, no regainable depth and one clean rotation since the last profile change. Settled depth alone does not block it. |
 | Silver | Bronze, and 24 clean hours. |
 | Gold | Bronze, and 100 clean hours. |
 | Platinum | Gold, and 200 field hours: real use observed by the future `observe` service with the BIOS offsets equal to the profile. Unavailable until `observe` exists; the tuner never computes it. |
@@ -188,14 +187,15 @@ Tiers rank the current profile by durability, not proof. Any profile change drop
 The tuner records every change as `tier.change` with the old and new tier and a reason, citing the event that caused it:
 - `core NN is in <phase>`: the first core in scheduling order that is not confirmed;
 - `the profile changed`: an offset changed since the last `profile.change`. It follows the unclean rotation end and precedes the new `profile.change`;
-- `every core is confirmed and the profile survived a clean rotation`: cites the clean rotation end, and precedes the next rotation start, so a `run` stopped by `--rotations` has recorded its Bronze;
+- `core NN has depth left to regain`: the first regainable core in scheduling order, when no other condition blocks Bronze;
+- `every core is confirmed, nothing is left to regain and the profile survived a clean rotation`: cites the clean rotation end, and precedes the next rotation start. A `run` stopped by `--rotations` can finish without Bronze when depth remains.
 - `24 clean hours since the profile change` and `100 clean hours since the profile change`: cite the passed trial that crossed the threshold.
 
 Each regime `r` with clean hours `T_r` shows its failure-rate bound: with zero failures, the rate is below `3 / T_r` per hour at 95% confidence (rule of three). The overall bound uses all clean hours. Without clean hours there is no bound. Recorded and displayed bounds round up, never understating it.
 
 `shycler status` and `shycler cert` render from a replay of the journal (`runtime.md`). The certificate shows:
 - the tier with its `tier.change`, and progress towards the higher tiers;
-- the profile with its `profile.change`, as a per-core table of edges, failed marks, unproven depth and the deciding event, followed by any core whose offset was decided after that `profile.change`;
+- the profile with its `profile.change`, as a per-core table of edges, failed marks, regainable and settled depth and the deciding event, followed by any core whose offset was decided after that `profile.change`;
 - clean hours and failure-rate bound per regime and overall, and the highest Tctl across counted trials with its `trial.end`;
 - the BIOS context and session start;
 - the SHA-256 of the journal's complete lines it rendered, and the last `seq` among them.

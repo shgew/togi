@@ -11,7 +11,7 @@ Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains,
 ## Status
 
 Works today, on a simulated 16-core machine:
-- the full tuning lifecycle: per-core search and confirmation, the endless guard, crash resume, tiers, regain and reset;
+- the full tuning lifecycle: per-core search and confirmation, the endless guard, crash resume, tiers, automatic regain and reset;
 - reading a session with `status`, `cert` and `events`.
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:
@@ -60,4 +60,4 @@ shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 
 Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, `just gate` runs lint, formatting checks and tests, and `just check` runs every flake check before a pull request, with the tests under the race detector. CI runs `just check` and `just vuln` on every pull request. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the rest.
 
-shycler runs on NixOS. Development also works on macOS (aarch64-darwin): the dev shell, the tests, `just sim`, and `status`, `cert`, `events`, `regain` and `reset` against a copied state directory. `just check` there skips the VM test, and `shycler run` exits with an error.
+shycler runs on NixOS. Development also works on macOS (aarch64-darwin): the dev shell, the tests, `just sim`, and `status`, `cert`, `events` and `reset` against a copied state directory. `just check` there skips the VM test, and `shycler run` exits with an error.
