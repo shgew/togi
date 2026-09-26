@@ -50,8 +50,10 @@ func TestStatusAndCert(t *testing.T) {
 		t.Fatalf("cert: exit %d, stderr %s", code, stderr.String())
 	}
 	cert := stdout.String()
+	if want := regexp.MustCompile(fmt.Sprintf(`BRONZE +\[tier\.change #%d\]`, st.TierSeq)); !want.MatchString(cert) {
+		t.Fatalf("cert lacks %s:\n%s", want, cert)
+	}
 	for _, want := range []string{
-		fmt.Sprintf("BRONZE                    [tier.change #%d]", st.TierSeq),
 		"Platinum  locked until shycler observe exists",
 		fmt.Sprintf("Journal SHA-256 %x through seq %d", sha256.Sum256(raw), st.LastSeq),
 	} {
@@ -156,7 +158,7 @@ func simulated(t *testing.T, dir string) {
 			simulatedErr = err
 			return
 		}
-		stop, err := simrun.Simulate(context.Background(), simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Rotations: 1})
+		stop, err := simrun.Simulate(context.Background(), simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Rotations: 2})
 		if err != nil || stop.Reason != session.StopRotations {
 			simulatedErr = fmt.Errorf("simulate: %+v, %w", stop, err)
 			return

@@ -9,11 +9,7 @@ import (
 	"code.marleb.org/shgew/shycler/internal/tuner"
 )
 
-var (
-	ErrRegainPending   = errors.New("a regain is already queued or running; shycler run finishes it")
-	ErrNothingToRegain = errors.New("no unproven depth to regain")
-	ErrNoSession       = errors.New("no session in the journal")
-)
+var ErrNoSession = errors.New("no session in the journal")
 
 type replayed struct {
 	state journal.State
@@ -51,34 +47,6 @@ func (r replayed) record(j Journal, p journal.Payload) error {
 	journal.Replay([]journal.Event{cmd, stop}, &r.state, r.tuner)
 	r.tuner.Project(&r.state)
 	return j.WriteState(r.state)
-}
-
-// Regain queues one count of regain on each eligible core, or only on core when it is given.
-func Regain(j Journal, core *int) ([]int, error) {
-	r, err := replayFor(j)
-	if err != nil {
-		return nil, err
-	}
-	if r.tuner.RegainPending() {
-		return nil, ErrRegainPending
-	}
-	cores := r.tuner.Regainable()
-	if core != nil {
-		if !r.hasCore(*core) {
-			return nil, fmt.Errorf("regain core %d: %w", *core, ErrNoSuchCore)
-		}
-		if !slices.Contains(cores, *core) {
-			return nil, fmt.Errorf("core %02d: %w", *core, ErrNothingToRegain)
-		}
-		cores = []int{*core}
-	}
-	if len(cores) == 0 {
-		return nil, ErrNothingToRegain
-	}
-	if err := r.record(j, &journal.CommandRegain{Cores: cores}); err != nil {
-		return nil, fmt.Errorf("queue regain: %w", err)
-	}
-	return cores, nil
 }
 
 func ResetCore(j Journal, core int) error {

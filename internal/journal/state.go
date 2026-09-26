@@ -56,19 +56,18 @@ type CoreState struct {
 }
 
 type GuardState struct {
-	Rotation         int              `json:"rotation"`
-	RotationOpen     bool             `json:"rotation_open"`
-	Steps            []machine.Regime `json:"steps"`
-	StepsDone        int              `json:"steps_done"`
-	Profile          []int            `json:"profile"`
-	ProfileSeq       int              `json:"profile_seq"`
-	CleanRotations   int              `json:"clean_rotations"`
-	CleanS           int              `json:"clean_s"`
-	Regimes          []RegimeClean    `json:"regimes"`
-	EscalationWindow bool             `json:"escalation_window_open"`
-	RateBoundPerH    *float64         `json:"rate_bound_per_h"`
-	TctlMaxC         *int             `json:"tctl_max_c"`
-	TctlMaxSeq       int              `json:"tctl_max_seq"`
+	Rotation       int              `json:"rotation"`
+	RotationOpen   bool             `json:"rotation_open"`
+	Steps          []machine.Regime `json:"steps"`
+	StepsDone      int              `json:"steps_done"`
+	Profile        []int            `json:"profile"`
+	ProfileSeq     int              `json:"profile_seq"`
+	CleanRotations int              `json:"clean_rotations"`
+	CleanS         int              `json:"clean_s"`
+	Regimes        []RegimeClean    `json:"regimes"`
+	RateBoundPerH  *float64         `json:"rate_bound_per_h"`
+	TctlMaxC       *int             `json:"tctl_max_c"`
+	TctlMaxSeq     int              `json:"tctl_max_seq"`
 }
 
 type RegimeClean struct {

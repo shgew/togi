@@ -91,6 +91,10 @@ type core struct {
 	baseline    int
 	queued      string
 	queueSeq    int
+	// settled is the shallowest offset whose regain retry was spent and backed off from again.
+	settled *int
+	// spent lists, ascending, the offsets whose one regain retry is used.
+	spent []int
 }
 
 type State struct {
@@ -104,11 +108,11 @@ type State struct {
 	// ccd maps each core to its CCD.
 	ccd map[int]int
 	// parts are the R7 trials of one step: each CCD's cores, then every core when there is more than one CCD.
-	parts [][]int
-	guard    guard
-	suspect  *suspect
-	tier     journal.Tier
-	tierSeq  int
+	parts   [][]int
+	guard   guard
+	suspect *suspect
+	tier    journal.Tier
+	tierSeq int
 	// tierCause is the latest decision, profile change, rotation event or resident pass: what a tier change cites.
 	tierCause int
 }
@@ -191,8 +195,6 @@ func (s *State) Fold(e journal.Event) {
 				c.baseline = p.Offsets[i]
 			}
 		}
-	case *journal.CommandRegain:
-		s.queueRegain(e.Seq, p.Cores)
 	case *journal.CommandReset:
 		if p.Core == nil {
 			return
@@ -203,18 +205,24 @@ func (s *State) Fold(e journal.Event) {
 	case *journal.CorePhase:
 		if c := s.core(p.Core); c != nil {
 			c.phase, c.offset, c.pass, c.fail, c.unproven = p.To, p.Offset, p.Pass, p.FailedMark, p.UnprovenDepth
+			c.settled, c.spent = nil, nil
 			c.queued = ""
 			s.decided(c, e.Seq)
+			s.guard.regainFrom = 0
 		}
 	case *journal.TunerDecision:
 		if c := s.core(p.Core); c != nil {
 			c.offset, c.pass, c.fail, c.unproven = p.ToOffset, p.Pass, p.FailedMark, p.UnprovenDepth
-			if c.queued == queuedRegain && c.unproven == 0 {
-				c.queued = ""
-			}
+			c.settled, c.spent = p.SettledMark, slices.Clone(p.SpentSteps)
 			s.decided(c, e.Seq)
-			if p.Decision == journal.SuspectBackoff {
+			switch p.Decision {
+			case journal.Regain:
+				s.guard.regained = append(s.guard.regained, c.id)
+			case journal.SuspectBackoff:
 				s.suspectBackedOff(c.id)
+				s.guard.regainFrom = 0
+			case journal.StepDeeper, journal.Backoff:
+				s.guard.regainFrom = 0
 			}
 		}
 	case *journal.TrialIntent:
@@ -248,8 +256,6 @@ func (s *State) Fold(e journal.Event) {
 	case *journal.GuardRotation:
 		s.guard.rotated(e.Seq, p)
 		s.tierCause = e.Seq
-	case *journal.EscalationWindow:
-		s.foldWindow(p)
 	case *journal.TierChange:
 		s.tier, s.tierSeq = p.To, e.Seq
 	}
@@ -337,7 +343,7 @@ func (s *State) Next() Action {
 	if a, ok := s.Attribution(); ok {
 		return a
 	}
-	if a, ok := s.queued(queuedReset); ok {
+	if a, ok := s.queuedReset(); ok {
 		return a
 	}
 	for _, c := range s.cores {
@@ -357,11 +363,11 @@ func (s *State) Next() Action {
 	if a, ok := s.suspectNext(); ok {
 		return a
 	}
-	if a, ok := s.queued(queuedRegain); ok {
-		return a
-	}
 	if g := &s.guard; g.open && g.dirty {
 		return Action{Kind: Decide, Payload: &journal.GuardRotation{Rotation: g.rotation, Event: journal.RotationEnd, Reason: "the profile changed"}, Cause: []int{g.dirtySeq}}
+	}
+	if a, ok := s.regainNext(); ok {
+		return a
 	}
 	if a, ok := s.tierNext(); ok {
 		return a
@@ -385,10 +391,6 @@ func (s *State) perCore() (Action, bool) {
 		case journal.PhaseConfirmation:
 			if c.hasPassed(confirmationSet...) {
 				return Action{Kind: Decide, Payload: confirmed(c.snapshot()), Cause: slices.Clone(c.passedSeqs)}, true
-			}
-		case journal.PhaseRegain:
-			if c.hasPassed(regainSet...) {
-				return Action{Kind: Decide, Payload: regained(c.snapshot()), Cause: slices.Clone(c.passedSeqs)}, true
 			}
 		case journal.PhaseConfirmed, journal.PhaseGuard:
 		}
@@ -415,12 +417,6 @@ func (s *State) perCore() (Action, bool) {
 					return s.runTrial(t), true
 				}
 			}
-		case journal.PhaseRegain:
-			for _, sl := range regainSet {
-				if !slices.Contains(c.passed, sl) {
-					return s.runTrial(c.isolated(sl.regime)), true
-				}
-			}
 		case journal.PhaseConfirmed, journal.PhaseGuard:
 		}
 	}
@@ -440,7 +436,7 @@ func (s *State) anyActive() bool {
 }
 
 func (c *core) active() bool {
-	return c.phase == journal.PhaseSearch || c.phase == journal.PhaseConfirmation || c.phase == journal.PhaseRegain
+	return c.phase == journal.PhaseSearch || c.phase == journal.PhaseConfirmation
 }
 
 func (c *core) hasPassed(slots ...slot) bool {
@@ -452,10 +448,8 @@ func (c *core) hasPassed(slots ...slot) bool {
 	return true
 }
 
-var regainSet = []slot{{regime: machine.R1}, {regime: machine.R2}, {regime: machine.R3}, {regime: machine.R4}, {regime: machine.R5}}
-
 func (c *core) snapshot() coreState {
-	return coreState{core: c.id, phase: c.phase, offset: c.offset, pass: c.pass, fail: c.fail, unproven: c.unproven}
+	return coreState{core: c.id, phase: c.phase, offset: c.offset, pass: c.pass, fail: c.fail, unproven: c.unproven, settled: c.settled, spent: c.spent}
 }
 
 func (s *State) byID() []*core {
@@ -472,11 +466,8 @@ func (s *State) CleanRotations() int { return s.guard.cleanRotations }
 
 func (s *State) Project(st *journal.State) {
 	st.Phase = "guard"
-	switch {
-	case len(s.cores) == 0 || slices.ContainsFunc(s.cores, func(c *core) bool { return c.phase == journal.PhaseSearch || c.phase == journal.PhaseConfirmation }):
+	if len(s.cores) == 0 || s.anyActive() {
 		st.Phase = "per_core"
-	case s.anyActive():
-		st.Phase = "regain"
 	}
 	for i := range st.Cores {
 		c := s.core(st.Cores[i].Core)
@@ -488,6 +479,7 @@ func (s *State) Project(st *journal.State) {
 		st.Cores[i].Pass = c.pass
 		st.Cores[i].FailedMark = c.fail
 		st.Cores[i].UnprovenDepth = c.unproven
+		st.Cores[i].SettledDepth = c.unproven - c.regainable()
 		st.Cores[i].Queued = c.queued
 	}
 	st.Guard = s.guard.project()

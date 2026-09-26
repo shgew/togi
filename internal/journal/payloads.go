@@ -17,7 +17,6 @@ const (
 	PhaseConfirmation Phase = "confirmation"
 	PhaseConfirmed    Phase = "confirmed"
 	PhaseGuard        Phase = "guard"
-	PhaseRegain       Phase = "regain"
 )
 
 type Decision string
@@ -73,13 +72,6 @@ type RotationEvent string
 const (
 	RotationStart RotationEvent = "start"
 	RotationEnd   RotationEvent = "end"
-)
-
-type WindowState string
-
-const (
-	WindowOpen  WindowState = "open"
-	WindowClose WindowState = "close"
 )
 
 type ShutdownReason string
@@ -553,7 +545,7 @@ func (p *TunerDecision) Message() string {
 		switch p.Phase {
 		case PhaseSearch:
 			verb = "failed"
-		case PhaseConfirmation, PhaseConfirmed, PhaseRegain:
+		case PhaseConfirmation, PhaseConfirmed:
 			verb = "failed confirmation"
 		case PhaseGuard:
 			verb = "failed in guard"
@@ -574,7 +566,6 @@ type CorePhase struct {
 	Pass          *int   `json:"pass"`
 	FailedMark    *int   `json:"failed_mark"`
 	UnprovenDepth int    `json:"unproven_depth,omitempty"`
-	Backoff       bool   `json:"backoff,omitempty"`
 	Reason        string `json:"reason"`
 }
 
@@ -612,16 +603,6 @@ func (p *GuardRotation) Message() string {
 	return fmt.Sprintf("guard rotation %d %s", p.Rotation, p.Event)
 }
 
-type EscalationWindow struct {
-	State  WindowState `json:"state"`
-	Reason string      `json:"reason,omitempty"`
-}
-
-func (*EscalationWindow) Kind() Kind { return KindEscalationWindow }
-func (p *EscalationWindow) Message() string {
-	return fmt.Sprintf("escalation window %s: %s", p.State, p.Reason)
-}
-
 type Tier string
 
 const (
@@ -641,15 +622,6 @@ type TierChange struct {
 func (*TierChange) Kind() Kind { return KindTierChange }
 func (p *TierChange) Message() string {
 	return fmt.Sprintf("tier %s -> %s: %s", p.From, p.To, p.Reason)
-}
-
-type CommandRegain struct {
-	Cores []int `json:"cores"`
-}
-
-func (*CommandRegain) Kind() Kind { return KindCommandRegain }
-func (p *CommandRegain) Message() string {
-	return fmt.Sprintf("regain requested for cores %s", coreList(p.Cores))
 }
 
 type CommandReset struct {

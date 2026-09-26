@@ -14,15 +14,15 @@ const (
 
 var tierReasons = map[journal.Tier]string{
 	journal.TierNone:   "the profile changed",
-	journal.TierBronze: "every core is confirmed and the profile survived a clean rotation",
+	journal.TierBronze: "every core is confirmed, nothing is left to regain and the profile survived a clean rotation",
 	journal.TierSilver: "24 clean hours since the profile change",
 	journal.TierGold:   "100 clean hours since the profile change",
 }
 
 // tierFor never returns Platinum: it needs field hours from the observe service.
-func tierFor(allConfirmed, dirty bool, cleanRotations, cleanS int) journal.Tier {
+func tierFor(allConfirmed, regainable, dirty bool, cleanRotations, cleanS int) journal.Tier {
 	switch {
-	case !allConfirmed || dirty || cleanRotations == 0:
+	case !allConfirmed || regainable || dirty || cleanRotations == 0:
 		return journal.TierNone
 	case cleanS >= goldCleanS:
 		return journal.TierGold
@@ -35,14 +35,18 @@ func tierFor(allConfirmed, dirty bool, cleanRotations, cleanS int) journal.Tier 
 func (s *State) tierNext() (Action, bool) {
 	g := &s.guard
 	unconfirmed := slices.IndexFunc(s.cores, func(c *core) bool { return c.phase != journal.PhaseConfirmed })
-	to := tierFor(unconfirmed < 0, g.dirty, g.cleanRotations, g.cleanS)
+	regainable := slices.IndexFunc(s.cores, func(c *core) bool { return c.regainable() > 0 })
+	to := tierFor(unconfirmed < 0, regainable >= 0, g.dirty, g.cleanRotations, g.cleanS)
 	if to == s.tier {
 		return Action{}, false
 	}
 	reason := tierReasons[to]
-	if unconfirmed >= 0 {
+	switch {
+	case unconfirmed >= 0:
 		c := s.cores[unconfirmed]
 		reason = fmt.Sprintf("core %02d is in %s", c.id, c.phase)
+	case to == journal.TierNone && !g.dirty && regainable >= 0:
+		reason = fmt.Sprintf("core %02d has depth left to regain", s.cores[regainable].id)
 	}
 	return Action{Kind: Decide, Payload: &journal.TierChange{From: s.tier, To: to, Reason: reason}, Cause: []int{s.tierCause}}, true
 }

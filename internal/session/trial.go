@@ -242,7 +242,7 @@ func (p *trialReport) record(payload journal.Payload) {
 func (r *runner) durationS(t tuner.Trial) int {
 	d := r.in.Config.Durations
 	switch t.Phase {
-	case journal.PhaseConfirmation, journal.PhaseRegain:
+	case journal.PhaseConfirmation:
 		return d.ConfirmationTrialS
 	case journal.PhaseGuard:
 		switch t.Regime {

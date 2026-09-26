@@ -580,6 +580,14 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 			if g, ok := a.Payload.(*journal.GuardRotation); ok && g.Event == journal.RotationStart && r.reachedRotations() {
 				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownRotations, Rotations: r.in.Rotations}, StopRotations)
 			}
+			if d, ok := a.Payload.(*journal.TunerDecision); ok && d.Decision == journal.Regain {
+				if ctx.Err() != nil {
+					return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
+				}
+				if r.reachedRotations() {
+					return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownRotations, Rotations: r.in.Rotations}, StopRotations)
+				}
+			}
 			if _, err := r.append(a.Payload, a.Cause...); err != nil {
 				return Stop{}, err
 			}

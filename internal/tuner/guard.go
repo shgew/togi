@@ -21,33 +21,32 @@ type guard struct {
 	steps     []machine.Regime
 	stepsDone int
 	// passed holds the cores that passed the current per-core step.
-	passed  []int
+	passed []int
 	// partsPassed holds the indexes into State.parts that passed the current R7 step.
 	partsPassed []int
 	// r7Index counts the R7 steps concluded this session; it picks the R7 workload.
 	r7Index int
 	lastSeq int
-	endSeq  int
 
 	cleanRotations int
 	cleanS         int
 	cleanByRegime  map[machine.Regime]int
 
-	window   bool
-	closeDue bool
-
 	tctlMax *int
 	tctlSeq int
+
+	// regainFrom is the seq of the clean rotation end whose regains are due, 0 when none are.
+	regainFrom int
+	// regained holds the cores that regained since regainFrom.
+	regained []int
 }
 
-// suspect is an unattributed resident failure whose suspect backoffs and window opening are still due.
+// suspect is an unattributed resident failure whose suspect backoffs are still due.
 type suspect struct {
-	seq        int
-	failure    *journal.Failure
-	scope      string
-	pending    []int
-	backedOff  int
-	openWindow bool
+	seq     int
+	failure *journal.Failure
+	scope   string
+	pending []int
 }
 
 func (g *guard) changed(seq int, to []int) {
@@ -56,6 +55,7 @@ func (g *guard) changed(seq int, to []int) {
 	g.cleanRotations, g.cleanS = 0, 0
 	g.cleanByRegime = map[machine.Regime]int{}
 	g.tctlMax, g.tctlSeq = nil, 0
+	g.regainFrom, g.regained = 0, nil
 }
 
 func (g *guard) rotated(seq int, p *journal.GuardRotation) {
@@ -64,28 +64,13 @@ func (g *guard) rotated(seq int, p *journal.GuardRotation) {
 	case journal.RotationStart:
 		g.rotation, g.open, g.startSeq = p.Rotation, true, seq
 		g.steps, g.stepsDone, g.passed, g.partsPassed = slices.Clone(p.Steps), 0, nil, nil
+		g.regainFrom, g.regained = 0, nil
 	case journal.RotationEnd:
 		g.open = false
 		if p.Clean {
 			g.cleanRotations++
-			g.endSeq = seq
-			g.closeDue = g.window
+			g.regainFrom, g.regained = seq, nil
 		}
-	}
-}
-
-func (s *State) foldWindow(p *journal.EscalationWindow) {
-	switch p.State {
-	case journal.WindowOpen:
-		s.guard.window = true
-		if sp := s.suspect; sp != nil {
-			sp.openWindow = false
-			if len(sp.pending) == 0 {
-				s.suspect = nil
-			}
-		}
-	case journal.WindowClose:
-		s.guard.window, s.guard.closeDue = false, false
 	}
 }
 
@@ -174,29 +159,44 @@ func (s *State) attributeResident(a *awaiting) *journal.Failure {
 }
 
 func (s *State) newSuspect(seq int, p *journal.Failure) *suspect {
-	sp := &suspect{seq: seq, failure: p, openWindow: !s.guard.window}
-	var target *core
-	if intent := s.intents[p.Trial]; p.Trial != "" && intent != nil && intent.Core != nil && !p.Regime.AllCores() {
-		target = s.core(*intent.Core)
+	sp := &suspect{seq: seq, failure: p}
+	var intent *journal.TrialIntent
+	if p.Trial != "" {
+		intent = s.intents[p.Trial]
 	}
+	var scope []int
+	var narrowed string
 	switch {
-	case s.guard.window:
-		sp.scope = "escalation window open: every core backs off"
-	case target != nil && target.offset < 0:
+	case intent == nil:
+		sp.scope = "no trial was in flight: every core backs off"
+	case intent.Core != nil:
+		scope = []int{*intent.Core}
 		sp.scope = "the only loaded core"
-		sp.pending = []int{target.id}
-		return sp
-	case target != nil:
-		sp.scope = fmt.Sprintf("the only loaded core %02d is at CO 0: every core backs off", target.id)
+		narrowed = fmt.Sprintf("the only loaded core %02d is at CO 0: every core backs off", *intent.Core)
+	case len(intent.Cores) > 0 && len(intent.Cores) < len(s.cores):
+		scope = intent.Cores
+		ccd := s.ccd[intent.Cores[0]]
+		sp.scope = fmt.Sprintf("%s loaded only CCD %d: its cores back off", p.Regime, ccd)
+		narrowed = fmt.Sprintf("every core %s loaded on CCD %d is at CO 0: every core backs off", p.Regime, ccd)
 	default:
-		sp.scope = fmt.Sprintf("%s involves every core", p.Regime)
+		sp.scope = fmt.Sprintf("%s loaded every core", p.Regime)
 	}
-	for _, c := range s.cores {
-		if c.offset < 0 {
-			sp.pending = append(sp.pending, c.id)
-		}
+	sp.pending = s.nonzero(scope)
+	if len(sp.pending) == 0 && scope != nil {
+		sp.pending, sp.scope = s.nonzero(nil), narrowed
 	}
 	return sp
+}
+
+// nonzero lists, in scheduling order, the cores below CO 0, only those in scope unless scope is nil.
+func (s *State) nonzero(scope []int) []int {
+	var out []int
+	for _, c := range s.cores {
+		if c.offset < 0 && (scope == nil || slices.Contains(scope, c.id)) {
+			out = append(out, c.id)
+		}
+	}
+	return out
 }
 
 func (s *State) suspectBackedOff(core int) {
@@ -205,8 +205,7 @@ func (s *State) suspectBackedOff(core int) {
 		return
 	}
 	sp.pending = slices.DeleteFunc(sp.pending, func(c int) bool { return c == core })
-	sp.backedOff++
-	if len(sp.pending) == 0 && !sp.openWindow {
+	if len(sp.pending) == 0 {
 		s.suspect = nil
 	}
 }
@@ -217,14 +216,11 @@ func (s *State) suspectNext() (Action, bool) {
 		return Action{}, false
 	}
 	cause := []int{sp.seq}
-	switch {
-	case len(sp.pending) > 0:
+	if len(sp.pending) > 0 {
 		return Action{Kind: Decide, Payload: suspectBackoff(s.core(sp.pending[0]).snapshot(), sp), Cause: cause}, true
-	case sp.backedOff == 0:
-		detail := fmt.Sprintf("unattributed %s failure with every core at CO 0; the instability is not caused by Curve Optimizer", sp.failure.Signal)
-		return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Detail: detail}, Cause: cause}, true
 	}
-	return Action{Kind: Decide, Payload: &journal.EscalationWindow{State: journal.WindowOpen, Reason: "a further unattributed failure before a clean rotation backs off every core"}, Cause: cause}, true
+	detail := fmt.Sprintf("unattributed %s failure with every core at CO 0; the instability is not caused by Curve Optimizer", sp.failure.Signal)
+	return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Detail: detail}, Cause: cause}, true
 }
 
 func (s *State) guardNext() Action {
@@ -244,8 +240,6 @@ func (s *State) guardNext() Action {
 		return decide(&journal.ProfileChange{From: slices.Clone(g.profile), To: to}, cause...)
 	case g.open && g.stepsDone == len(g.steps):
 		return decide(&journal.GuardRotation{Rotation: g.rotation, Event: journal.RotationEnd, Clean: true}, g.startSeq, g.lastSeq)
-	case g.closeDue:
-		return decide(&journal.EscalationWindow{State: journal.WindowClose, Reason: fmt.Sprintf("rotation %d completed clean", g.rotation)}, g.endSeq)
 	case !g.open:
 		return decide(&journal.GuardRotation{Rotation: g.rotation + 1, Event: journal.RotationStart, Steps: slices.Clone(s.steps)}, g.lastSeq)
 	}
@@ -289,18 +283,17 @@ func (g *guard) project() *journal.GuardState {
 		regimes[i] = journal.RegimeClean{Regime: r, CleanS: g.cleanByRegime[r], RateBoundPerH: rateBound(g.cleanByRegime[r])}
 	}
 	return &journal.GuardState{
-		Rotation:         g.rotation,
-		RotationOpen:     g.open,
-		Steps:            slices.Clone(g.steps),
-		StepsDone:        g.stepsDone,
-		Profile:          slices.Clone(g.profile),
-		ProfileSeq:       g.profileSeq,
-		CleanRotations:   g.cleanRotations,
-		CleanS:           g.cleanS,
-		Regimes:          regimes,
-		EscalationWindow: g.window,
-		RateBoundPerH:    rateBound(g.cleanS),
-		TctlMaxC:         g.tctlMax,
-		TctlMaxSeq:       g.tctlSeq,
+		Rotation:       g.rotation,
+		RotationOpen:   g.open,
+		Steps:          slices.Clone(g.steps),
+		StepsDone:      g.stepsDone,
+		Profile:        slices.Clone(g.profile),
+		ProfileSeq:     g.profileSeq,
+		CleanRotations: g.cleanRotations,
+		CleanS:         g.cleanS,
+		Regimes:        regimes,
+		RateBoundPerH:  rateBound(g.cleanS),
+		TctlMaxC:       g.tctlMax,
+		TctlMaxSeq:     g.tctlSeq,
 	}
 }

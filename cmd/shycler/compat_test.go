@@ -109,15 +109,15 @@ func TestResetAllArchivesUnrecognizedSchema(t *testing.T) {
 	}
 }
 
-func TestRegainRefusesDifferentRuleset(t *testing.T) {
+func TestResetCoreRefusesDifferentRuleset(t *testing.T) {
 	dir, original := incompatibleFixture(t, "ruleset")
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "regain"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "uses ruleset 1") {
-		t.Fatalf("regain exit %d, stderr %q", code, stderr.String())
+	if code := cli([]string{"--state-dir", dir, "reset", "--core", "3"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "uses ruleset 1") {
+		t.Fatalf("reset --core exit %d, stderr %q", code, stderr.String())
 	}
 	after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
 	if err != nil || !bytes.Equal(after, original) {
-		t.Fatalf("regain changed journal: %v", err)
+		t.Fatalf("reset --core changed journal: %v", err)
 	}
 }
 

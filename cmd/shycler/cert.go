@@ -85,7 +85,7 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 		fmt.Fprintln(w, withRef("Profile", certWidth, journal.KindProfileChange, gs.ProfileSeq))
 	}
 	tw := newTable(w)
-	fmt.Fprintln(tw, "  CORE\tEDGE\tFAILED\tUNPROVEN\tDECIDED")
+	fmt.Fprintln(tw, "  CORE\tEDGE\tFAILED\tREGAINABLE\tSETTLED\tDECIDED")
 	var moved []string
 	for i, c := range st.Cores {
 		decided := "-"
@@ -99,7 +99,7 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 		if edge != c.Offset {
 			moved = append(moved, fmt.Sprintf("  core %02d is at %d since %s; the next profile.change restarts guard", c.Core, c.Offset, decided))
 		}
-		fmt.Fprintf(tw, "  %02d\t%d\t%s\t%d\t%s\n", c.Core, edge, mark(c.FailedMark), c.UnprovenDepth, decided)
+		fmt.Fprintf(tw, "  %02d\t%d\t%s\t%d\t%d\t%s\n", c.Core, edge, mark(c.FailedMark), c.UnprovenDepth-c.SettledDepth, c.SettledDepth, decided)
 	}
 	_ = tw.Flush()
 	for _, m := range moved {
@@ -166,7 +166,7 @@ func tierLines(st journal.State) []string {
 		case i < reached:
 			what = "earned"
 		case l.tier == journal.TierBronze:
-			what = "every core confirmed and one clean rotation"
+			what = "every core confirmed, nothing to regain, one clean rotation"
 		default:
 			what = fmt.Sprintf("%s of %d clean hours", hours(clean), l.cleanH)
 		}

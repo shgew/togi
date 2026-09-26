@@ -1,7 +1,6 @@
 package session
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/machine"
 	"code.marleb.org/shgew/shycler/internal/sim"
 )
 
@@ -49,63 +47,6 @@ func coreState(t *testing.T, dir string, core int) journal.CoreState {
 		t.Fatal(err)
 	}
 	return st.Cores[core]
-}
-
-func TestRegainOnSimulator(t *testing.T) {
-	t.Parallel()
-	model := func(s machine.Signal) *sim.Model {
-		md := sim.DefaultModel()
-		md.Signals, md.CrashMCE = map[machine.Signal]float64{s: 1}, 0
-		return &md
-	}
-	cfg := sim.Config{Seed: 1, Cores: 2, BIOS: []int{0, 0}, Model: model(machine.Crash), Edges: []sim.Edges{
-		{Isolated: [5]int{-12, -12, -12, -12, -12}, Resident: [7]int{-12, -12, -12, -12, -12, -12, -12}},
-		{Isolated: [5]int{-13, -13, -13, -13, -13}, Resident: [7]int{-13, -13, -13, -13, -13, -13, -11}},
-	}}
-	dir := t.TempDir()
-	if stop := simulate(t, simInput(dir, newSim(t, cfg))); stop.Reason != StopRotations {
-		t.Fatalf("first run stopped with %+v", stop)
-	}
-	if c0, c1 := coreState(t, dir, 0), coreState(t, dir, 1); c0.UnprovenDepth == 0 || c1.UnprovenDepth == 0 || c1.Offset < -11 {
-		t.Fatalf("crashes without evidence left core 0 %+v, core 1 %+v; want unproven depth on both", c0, c1)
-	}
-
-	cfg.Model = model(machine.ComputationError)
-	for range 5 {
-		err := command(t, dir, func(j *journal.Journal) error {
-			_, err := Regain(memJournal(dir, j), nil)
-			return err
-		})
-		if errors.Is(err, ErrNothingToRegain) {
-			break
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		if stop := simulate(t, simInput(dir, resumed(t, dir, cfg))); stop.Reason != StopRotations {
-			t.Fatalf("regain run stopped with %+v", stop)
-		}
-	}
-
-	c0, c1 := coreState(t, dir, 0), coreState(t, dir, 1)
-	if c0.Offset != -12 || c0.UnprovenDepth != 0 {
-		t.Errorf("core 0 %+v, want its hidden edge -12 regained", c0)
-	}
-	if c1.Offset != -11 || c1.FailedMark == nil || *c1.FailedMark != -12 || c1.UnprovenDepth != 0 {
-		t.Errorf("core 1 %+v, want -11 proven by a failed mark at -12", c1)
-	}
-	events := readEvents(t, dir)
-	regained := slices.ContainsFunc(events, func(e journal.Event) bool {
-		p, ok := e.Data.(*journal.CorePhase)
-		return ok && p.Core == 0 && p.From == journal.PhaseRegain && strings.Contains(p.Reason, "one count regained")
-	})
-	proven := slices.ContainsFunc(events, func(e journal.Event) bool {
-		p, ok := e.Data.(*journal.TunerDecision)
-		return ok && p.Core == 1 && p.Phase == journal.PhaseGuard && p.Decision == journal.Backoff && p.FromOffset == -12 && p.ToOffset == -11
-	})
-	if !regained || !proven {
-		t.Fatalf("core 0 regained a count: %v; core 1 proven back from -12 in guard: %v", regained, proven)
-	}
 }
 
 func TestResetCore(t *testing.T) {
