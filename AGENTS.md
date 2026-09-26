@@ -12,15 +12,15 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
   - `workloads.md`: regimes, backends, containment, failure detection.
   - `journal.md`: events, state, logging.
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
-- `docs/releasing.md`: versioning rules, the release pull request and publishing.
+- `docs/releasing.md`: versioning rules, the release workflow and publishing.
 - `docs/simulating.md`: running a simulated session with `tools/sim`.
 - `docs/adr/`: decisions and the alternatives rejected. Reversing one needs a new ADR.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
-- Issues on `code.marleb.org/shgew/shycler`: the plan, ideas and bugs (Issues, below).
+- Issues on `github.com/shgew/shycler`: the plan, ideas and bugs (Issues, below).
 
 ## Workflow
 
-Every change, docs included, lands as a pull request against `main` on `code.marleb.org/shgew/shycler`. The owner reviews and merges. When a change is done, open its pull request without asking, unless told otherwise.
+Every change, docs included, lands as a pull request against `main` on `github.com/shgew/shycler`. The owner reviews and merges. When a change is done, open its pull request without asking, unless told otherwise. The one commit that reaches `main` without a pull request is the release commit the release workflow pushes (`docs/releasing.md`).
 
 - Branch from `main` with a short descriptive name.
 - One concern per pull request.
@@ -59,7 +59,7 @@ The first pull request that makes something runnable on real hardware adds `docs
 
 ## Commands
 
-Enter the dev shell (Go, gopls, golangci-lint, govulncheck, just, nixfmt) with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes also work outside the dev shell: they enter it with `nix develop` when needed.
+Enter the dev shell (Go, gh, gopls, golangci-lint, govulncheck, just, nixfmt) with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes also work outside the dev shell: they enter it with `nix develop` when needed.
 
 | Command | Use |
 |---|---|
@@ -69,12 +69,12 @@ Enter the dev shell (Go, gopls, golangci-lint, govulncheck, just, nixfmt) with `
 | `just check` | Every flake check: package (its tests run shuffled, with the integration tests on Linux), lint and the VM test; must pass before a pull request. `just check --race` also runs those tests under the race detector; CI runs it on every pull request and push to `main` |
 | `just fmt` | Format Go, Nix and the justfile |
 | `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
-| `just release` | Open the release pull request; CI publishes it once merged. See `docs/releasing.md` |
+| `just release` | Start the release workflow on `main`: it commits the release, runs the checks, pushes to `main` and publishes. `just release-preview` shows what it would release. See `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `SHYCLER_MPRIME` and `SHYCLER_YCRUNCHER`, else from `/etc/shycler/config.toml` |
 | `just fuzz [time]` | Fuzz the journal parser |
 | `just vuln` | Known vulnerabilities in called dependency and standard library code; CI runs it |
 
-CI (`.forgejo/workflows/check.yml`) runs on a Forgejo runner offering the `nix-latest` label (the `nixos/nix` image) with `/dev/kvm` passed to job containers, which the NixOS VM test needs.
+CI (`.github/workflows/check.yml`) runs on GitHub-hosted `ubuntu-latest` runners, with `/dev/kvm` opened to the Nix build users for the NixOS VM test (`.github/actions/nix`). The release workflow (`.github/workflows/release.yml`) runs the same checks on the release commit.
 
 On macOS (aarch64-darwin) the dev shell, `just test`, `just gate`, `just sim` and the read-only commands work; `just check` builds `package` and `lint` and skips the VM test, `just hardware` and the `integration` tests are Linux-only. Linux-only code follows the Go convention: OS-suffixed files (`_linux.go`, `_darwin.go`) for real implementations, and a `//go:build !linux` fallback returning a wrapped `errors.ErrUnsupported`.
 

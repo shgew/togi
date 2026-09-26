@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 
-	"code.marleb.org/shgew/shycler/internal/watch"
+	"github.com/shgew/shycler/internal/watch"
 )
 
 // dashboard draws the session on out while it shows and drops the event lines written to it meanwhile; they stay in

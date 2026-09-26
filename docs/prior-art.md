@@ -39,7 +39,7 @@ What shycler takes from existing tools and research, and what it deliberately le
 | SQLite history | [ADR 0003](adr/0003-journal-is-source-of-truth.md) |
 | Seven validation stages, endurance banks, annealing | Replaced by confirmation plus an endless guard with tiers |
 | Multi-boot crash hunt and bisection | [ADR 0007](adr/0007-suspect-backoffs.md) |
-| Zen 1-5 command table, APU dialects | Zen 5 desktop only; other generations are [#30](https://code.marleb.org/shgew/shycler/issues/30) |
+| Zen 1-5 command table, APU dialects | Zen 5 desktop only; other generations are [#20](https://github.com/shgew/shycler/issues/20) |
 | stress-ng and stressapptest backends | [ADR 0008](adr/0008-self-checking-workloads.md) |
 | PBO limit, scalar and frequency control | shycler tunes CO only; the rest is BIOS context |
 

@@ -70,7 +70,12 @@ check-one +names:
 sim seed="1":
     {{ dev }} go run ./tools/sim --seed "$1"
 
-# Open the release pull request from origin/main with a git push (-dry-run previews it)
+# Start the release workflow on main and follow it: it commits the release, runs the checks, pushes to main and publishes
 [group('release')]
-release *args:
-    {{ dev }} go run ./tools/release "$@"
+release:
+    url=$({{ dev }} gh workflow run release.yml --ref main); echo "$url"; {{ dev }} gh run watch "${url##*/}" --exit-status
+
+# Print the release the release workflow would make from origin/main
+[group('release')]
+release-preview:
+    {{ dev }} go run ./tools/release

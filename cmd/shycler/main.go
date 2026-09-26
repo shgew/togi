@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"code.marleb.org/shgew/shycler"
-	"code.marleb.org/shgew/shycler/internal/config"
+	"github.com/shgew/shycler"
+	"github.com/shgew/shycler/internal/config"
 )
 
 const defaultStateDir = "/var/lib/shycler"

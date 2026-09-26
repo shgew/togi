@@ -1,0 +1,34 @@
+name: release
+
+on: workflow_dispatch
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      GIT_AUTHOR_NAME: github-actions[bot]
+      GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      GIT_COMMITTER_NAME: github-actions[bot]
+      GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/nix
+      - name: Commit the release
+        run: nix develop --command go run ./tools/release -commit
+      - name: just check --race
+        run: nix develop --command just check --race
+      - name: just vuln
+        run: nix develop --command just vuln
+      - name: Push to main
+        run: git push origin HEAD:refs/heads/main
+      - name: Publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: nix develop --command go run ./tools/release -publish

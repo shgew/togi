@@ -16,12 +16,12 @@ import (
 	"time"
 	"unsafe"
 
-	"code.marleb.org/shgew/shycler/internal/config"
-	"code.marleb.org/shgew/shycler/internal/defect"
-	"code.marleb.org/shgew/shycler/internal/detect"
-	"code.marleb.org/shgew/shycler/internal/hardware"
-	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/session"
+	"github.com/shgew/shycler/internal/config"
+	"github.com/shgew/shycler/internal/defect"
+	"github.com/shgew/shycler/internal/detect"
+	"github.com/shgew/shycler/internal/hardware"
+	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/session"
 )
 
 const runHelp = `Usage: shycler run [--rotations <N>] [--tuning-boot <grubenv>] [--no-tui]

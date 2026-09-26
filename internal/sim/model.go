@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 var signalOrder = []machine.Signal{machine.ComputationError, machine.Stall, machine.UnexpectedExit, machine.CorrectedMCE, machine.Crash}

@@ -4,9 +4,9 @@ import (
 	"slices"
 	"testing"
 
-	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/machine"
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 func TestOrder(t *testing.T) {

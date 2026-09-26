@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/config"
-	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/session"
-	"code.marleb.org/shgew/shycler/internal/sim"
-	"code.marleb.org/shgew/shycler/internal/simrun"
+	"github.com/shgew/shycler/internal/config"
+	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/session"
+	"github.com/shgew/shycler/internal/sim"
+	"github.com/shgew/shycler/internal/simrun"
 )
 
 func main() {

@@ -3,8 +3,8 @@ package tuner
 import (
 	"testing"
 
-	"code.marleb.org/shgew/shycler/internal/journal"
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/shycler/internal/journal"
 )
 
 func search(offset int, pass, fail *int) coreState {

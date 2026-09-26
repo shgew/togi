@@ -5,7 +5,7 @@ package smu
 import (
 	"testing"
 
-	"code.marleb.org/shgew/shycler/internal/machine"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 func TestHardwareSMU(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	shycler "code.marleb.org/shgew/shycler"
+	shycler "github.com/shgew/shycler"
 )
 
 // Build identifies the rules and journal format used by a shycler binary.

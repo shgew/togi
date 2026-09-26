@@ -9,7 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"code.marleb.org/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/journal"
 )
 
 var (

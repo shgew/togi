@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"code.marleb.org/shgew/shycler/internal/backend"
-	"code.marleb.org/shgew/shycler/internal/machine"
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/shycler/internal/backend"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 func fakePackage(t *testing.T) string {

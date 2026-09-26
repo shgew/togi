@@ -9,7 +9,7 @@ Add shycler to your flake inputs and import its module in the host's configurati
 ```nix
 # flake.nix
 inputs.shycler = {
-  url = "git+https://code.marleb.org/shgew/shycler.git";
+  url = "github:shgew/shycler";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```

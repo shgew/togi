@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -67,12 +66,12 @@ func mainGit(version, changelog, tags string) *fakeGit {
 	}
 }
 
-func prepareRunner(git *fakeGit, out *bytes.Buffer, dryRun bool) runner {
+func releaseRunner(git *fakeGit, out *bytes.Buffer, commit bool) runner {
 	return runner{
 		git:    git.run,
 		now:    func() time.Time { return time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC) },
 		out:    out,
-		dryRun: dryRun,
+		commit: commit,
 	}
 }
 
@@ -84,7 +83,7 @@ var readMain = []string{
 	"show base:go.mod",
 }
 
-func TestPrepare(t *testing.T) {
+func TestRelease(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name, version, changelog, tags string
@@ -104,10 +103,8 @@ func TestPrepare(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			git := mainGit(tc.version, tc.changelog, tc.tags)
-			push := "push origin commit:refs/for/main -o topic=release"
-			git.stderr[push] = "remote:   https://forge.example/o/r/pulls/60\n"
 			var out bytes.Buffer
-			if err := prepareRunner(git, &out, false).prepare(); err != nil {
+			if err := releaseRunner(git, &out, true).release(); err != nil {
 				t.Fatal(err)
 			}
 			want := append(append([]string{}, readMain...),
@@ -120,7 +117,7 @@ func TestPrepare(t *testing.T) {
 				"update-index --cacheinfo 100644,blob,CHANGELOG.md",
 				"write-tree",
 				"commit-tree tree -p base -F -",
-				push,
+				"checkout --quiet --detach commit",
 			)
 			if diff := cmp.Diff(want, git.commands()); diff != "" {
 				t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
@@ -136,52 +133,68 @@ func TestPrepare(t *testing.T) {
 					t.Fatalf("%s env mismatch (-want +got):\n%s", strings.Join(c.args, " "), diff)
 				}
 			}
-			if got := out.String(); got != git.stderr[push] {
+			if got, want := out.String(), "Release "+tc.next+" committed as commit on top of origin/main\n"; got != want {
 				t.Fatalf("output = %q", got)
 			}
 		})
 	}
 }
 
-func TestPrepareRefusesWhileReleaseOpen(t *testing.T) {
+func TestReleaseNothingToRelease(t *testing.T) {
 	t.Parallel()
-	git := mainGit("0.1.0", unreleased, "sha\trefs/tags/v0.1.0\n")
-	push := "push origin commit:refs/for/main -o topic=release"
-	git.failures[push] = errors.New("exit status 1")
-	git.stderr[push] = " ! [remote rejected] commit -> refs/for/main (Updates were rejected because the tip of your current branch is behind its remote counterpart. If this is intentional, set the `force-push` option by adding `-o force-push=true` to your `git push` command.)\n"
-	var out bytes.Buffer
-	err := prepareRunner(git, &out, false).prepare()
-	if err == nil || !strings.Contains(err.Error(), "a release pull request is already open") {
-		t.Fatalf("prepare error = %v", err)
+	for _, tc := range []struct {
+		name   string
+		commit bool
+		err    string
+		output string
+	}{
+		{name: "preview", output: "nothing to release\n"},
+		{name: "commit", commit: true, err: "nothing to release: [Unreleased] in CHANGELOG.md is empty"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			git := mainGit("0.1.0", released, "sha\trefs/tags/v0.1.0\n")
+			var out bytes.Buffer
+			err := releaseRunner(git, &out, tc.commit).release()
+			if got := fmt.Sprint(err); tc.err != "" && got != tc.err || tc.err == "" && err != nil {
+				t.Fatalf("release error = %v, want %q", err, tc.err)
+			}
+			if diff := cmp.Diff(append(append([]string{}, readMain...), "ls-remote --tags origin refs/tags/v*"), git.commands()); diff != "" {
+				t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
+			}
+			if got := out.String(); got != tc.output {
+				t.Fatalf("output = %q", got)
+			}
+		})
 	}
 }
 
-func TestPrepareNothingToRelease(t *testing.T) {
+func TestReleaseResumesUnpublished(t *testing.T) {
 	t.Parallel()
-	git := mainGit("0.1.0", released, "sha\trefs/tags/v0.1.0\n")
+	git := mainGit("0.1.0", released, "sha\trefs/tags/v0.0.9\n")
 	var out bytes.Buffer
-	if err := prepareRunner(git, &out, false).prepare(); err != nil {
+	if err := releaseRunner(git, &out, true).release(); err != nil {
 		t.Fatal(err)
 	}
-	if diff := cmp.Diff(readMain, git.commands()); diff != "" {
+	if diff := cmp.Diff(append(append([]string{}, readMain...), "ls-remote --tags origin refs/tags/v*", "checkout --quiet --detach base"), git.commands()); diff != "" {
 		t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
 	}
-	if got := out.String(); got != "nothing to release\n" {
+	if got, want := out.String(), "0.1.0 is released in CHANGELOG.md but not yet published; publishing origin/main as it is\n"; got != want {
 		t.Fatalf("output = %q", got)
 	}
 }
 
-func TestPrepareDryRun(t *testing.T) {
+func TestReleasePreview(t *testing.T) {
 	t.Parallel()
 	git := mainGit("0.1.0", unreleased, "sha\trefs/tags/v0.1.0\n")
 	var out bytes.Buffer
-	if err := prepareRunner(git, &out, true).prepare(); err != nil {
+	if err := releaseRunner(git, &out, false).release(); err != nil {
 		t.Fatal(err)
 	}
 	if diff := cmp.Diff(append(append([]string{}, readMain...), "ls-remote --tags origin refs/tags/v*"), git.commands()); diff != "" {
 		t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
 	}
-	want := "Would open a release pull request from origin/main:\n\nRelease 0.1.1\n\nNo breaking changes (patch bump).\n\n### Fixed\n\n- A fix ([#35]).\n\n[#35]: https://forge.example/o/r/pulls/35\n"
+	want := "Would release from origin/main:\n\nRelease 0.1.1\n\nNo breaking changes (patch bump).\n\n### Fixed\n\n- A fix ([#35]).\n\n[#35]: https://forge.example/o/r/pulls/35\n"
 	if diff := cmp.Diff(want, out.String()); diff != "" {
 		t.Fatalf("output mismatch (-want +got):\n%s", diff)
 	}
@@ -201,7 +214,7 @@ func (h handlerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return res, nil
 }
 
-func publishFixture(t *testing.T, version, changelog string, tagStatus int) (*fakeGit, forgejo, *[]string, *map[string]string) {
+func publishFixture(t *testing.T, version, changelog string, tagStatus int) (*fakeGit, github, *[]string, *map[string]string) {
 	t.Helper()
 	git := &fakeGit{responses: map[string]string{
 		"show HEAD:version.txt":                                 version + "\n",
@@ -212,14 +225,14 @@ func publishFixture(t *testing.T, version, changelog string, tagStatus int) (*fa
 	posted := new(map[string]string)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		*requests = append(*requests, req.Method+" "+req.URL.RequestURI())
-		if got := req.Header.Get("Authorization"); got != "token test-token" {
+		if got := req.Header.Get("Authorization"); got != "Bearer test-token" {
 			t.Errorf("Authorization = %q", got)
 		}
 		switch req.Method + " " + req.URL.Path {
-		case "GET /api/v1/repos/o/r/tags/v" + version:
+		case "GET /repos/o/r/git/ref/tags/v" + version:
 			w.WriteHeader(tagStatus)
 			fmt.Fprint(w, `{}`)
-		case "POST /api/v1/repos/o/r/releases":
+		case "POST /repos/o/r/releases":
 			if err := json.NewDecoder(req.Body).Decode(posted); err != nil {
 				t.Error(err)
 			}
@@ -229,7 +242,7 @@ func publishFixture(t *testing.T, version, changelog string, tagStatus int) (*fa
 			t.Errorf("unexpected request %s %s", req.Method, req.URL)
 		}
 	})
-	api := forgejo{base: "https://forge.example/api/v1", token: "test-token", client: &http.Client{Transport: handlerTransport{handler}}}
+	api := github{base: "https://api.forge.example", token: "test-token", client: &http.Client{Transport: handlerTransport{handler}}}
 	return git, api, requests, posted
 }
 
@@ -237,7 +250,7 @@ func TestPublish(t *testing.T) {
 	t.Parallel()
 	git, api, requests, posted := publishFixture(t, "0.1.0", released, http.StatusNotFound)
 	var out bytes.Buffer
-	if err := prepareRunner(git, &out, false).publish(api, repository{"o", "r"}); err != nil {
+	if err := releaseRunner(git, &out, false).publish(api, repository{"o", "r"}); err != nil {
 		t.Fatal(err)
 	}
 	wantPost := map[string]string{
@@ -247,7 +260,7 @@ func TestPublish(t *testing.T) {
 	if diff := cmp.Diff(wantPost, *posted); diff != "" {
 		t.Fatalf("release payload mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff([]string{"GET /api/v1/repos/o/r/tags/v0.1.0", "POST /api/v1/repos/o/r/releases"}, *requests); diff != "" {
+	if diff := cmp.Diff([]string{"GET /repos/o/r/git/ref/tags/v0.1.0", "POST /repos/o/r/releases"}, *requests); diff != "" {
 		t.Fatalf("requests mismatch (-want +got):\n%s", diff)
 	}
 	if got := out.String(); got != "https://forge.example/o/r/releases/tag/v0.1.0\n" {
@@ -263,14 +276,14 @@ func TestPublishSkips(t *testing.T) {
 		requests                 []string
 		output                   string
 	}{
-		{"already published", "0.1.0", released, http.StatusOK, []string{"GET /api/v1/repos/o/r/tags/v0.1.0"}, "nothing to publish: v0.1.0 already exists\n"},
+		{"already published", "0.1.0", released, http.StatusOK, []string{"GET /repos/o/r/git/ref/tags/v0.1.0"}, "nothing to publish: v0.1.0 already exists\n"},
 		{"not released yet", "0.1.0", firstUnreleased, http.StatusNotFound, nil, "nothing to publish: CHANGELOG.md has no released [0.1.0] section\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			git, api, requests, posted := publishFixture(t, tc.version, tc.changelog, tc.tagStatus)
 			var out bytes.Buffer
-			if err := prepareRunner(git, &out, false).publish(api, repository{"o", "r"}); err != nil {
+			if err := releaseRunner(git, &out, false).publish(api, repository{"o", "r"}); err != nil {
 				t.Fatal(err)
 			}
 			if *posted != nil {

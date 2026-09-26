@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/sim"
+	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/sim"
 )
 
 // command runs f on the journal in dir as a separate command process would, one second after the last event.

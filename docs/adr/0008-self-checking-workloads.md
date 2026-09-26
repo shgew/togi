@@ -5,4 +5,4 @@ Production studies at Google and Meta found cores that return wrong results with
 ## Considered Options
 
 - **stress-ng `--cpu-load` and `--cpu-load-slice`:** convenient duty cycles, but no result verification.
-- **stressapptest:** targets the memory controller more than cores; deferred to [#29](https://code.marleb.org/shgew/shycler/issues/29).
+- **stressapptest:** targets the memory controller more than cores; deferred to [#19](https://github.com/shgew/shycler/issues/19).

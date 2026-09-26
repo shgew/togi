@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"code.marleb.org/shgew/shycler/internal/config"
-	"code.marleb.org/shgew/shycler/internal/journal"
-	"code.marleb.org/shgew/shycler/internal/machine"
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/shycler/internal/config"
+	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/machine"
 )
 
 // confirmedHarness has core 0 confirmed at -18 with failed mark -21 and the given suspect counts, at its first guard

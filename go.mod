@@ -1,4 +1,4 @@
-module code.marleb.org/shgew/shycler
+module github.com/shgew/shycler
 
 go 1.27
 

@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"code.marleb.org/shgew/shycler/internal/journal"
+	"github.com/shgew/shycler/internal/journal"
 )
 
 // Resume continues the simulated machine after the journal in dir and its archives: their boots are counted and the

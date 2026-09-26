@@ -44,7 +44,7 @@ shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 |Document|Read it for|
 |---|---|
 |[docs/howto.md](docs/howto.md)|Installing shycler and running a tuning session|
-|[docs/releasing.md](docs/releasing.md)|Versioning, release pull requests and tags|
+|[docs/releasing.md](docs/releasing.md)|Versioning, the release workflow and tags|
 |[docs/simulating.md](docs/simulating.md)|Running a simulated session for development|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
 |[CONTEXT.md](CONTEXT.md)|The vocabulary: offsets, phases, regimes, tiers|
@@ -54,7 +54,7 @@ shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 |[docs/spec/runtime.md](docs/spec/runtime.md)|Commands, configuration, the tuning boot and the NixOS module|
 |[docs/adr/](docs/adr/)|Why each major decision was made|
 |[docs/prior-art.md](docs/prior-art.md)|What was taken from, and left out of, earlier tools|
-|[Issues](https://code.marleb.org/shgew/shycler/issues)|The plan, ideas and bugs; the `1.0` milestone holds what ships in 1.0|
+|[Issues](https://github.com/shgew/shycler/issues)|The plan, ideas and bugs; the `1.0` milestone holds what ships in 1.0|
 |[AGENTS.md](AGENTS.md)|Contributing: workflow, commands and conventions|
 
 ## Development
