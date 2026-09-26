@@ -54,10 +54,17 @@ pkgs.testers.runNixOSTest {
         e["kind"] == "boot.saved_entry" and e["before"] == "NixOS - shycler" and e["after"] == ""
         for e in events
     ), events
-    machine.wait_for_unit("shycler-console.service")
+    machine.wait_for_unit("shycler-watch.service")
+    machine.wait_until_succeeds("grep -aq 'dead end preflight' /dev/vcs1")
+    machine.succeed("systemctl kill --signal=SIGSTOP shycler-watch.service")
+    machine.succeed("echo '<0>shycler-kmsg-probe' > /dev/kmsg")
+    machine.wait_until_succeeds("grep -aq shycler-kmsg-probe /dev/vcs3")
+    machine.fail("grep -aq shycler-kmsg-probe /dev/vcs1")
+    machine.succeed("systemctl kill --signal=SIGCONT shycler-watch.service")
     machine.sleep(3)
-    console = machine.succeed("systemctl show shycler-console.service -p ActiveState -p NRestarts").split()
-    assert console == ["ActiveState=active", "NRestarts=0"], f"shycler-console.service: {console}"
+    for unit in ["shycler-watch.service", "shycler-console.service"]:
+        state = machine.succeed(f"systemctl show {unit} -p ActiveState -p NRestarts").split()
+        assert state == ["ActiveState=active", "NRestarts=0"], f"{unit}: {state}"
     machine.succeed("grub-set-default 'NixOS - shycler' && sync")
     machine.crash()
     machine.start(allow_reboot=True)

@@ -12,7 +12,7 @@ Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains,
 
 Works today, on a simulated 16-core machine:
 - the full tuning lifecycle: per-core search and confirmation, the endless guard, crash resume, tiers, automatic regain and reset;
-- reading a session with `status`, `cert` and `events`.
+- reading a session with `status`, `cert`, `events` and the live `watch` dashboard.
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:
 - the `ryzen_smu` driver with its verified core-to-slot mapping;
@@ -31,6 +31,7 @@ Not yet:
 shycler --version                         # version and git revision of this build
 sudo shycler run                          # tune this machine; Ctrl-C stops, the next run resumes
 shycler status                            # per-core offsets, tier and clean hours
+shycler watch                             # live dashboard of the session
 shycler --state-dir <dir> status          # per-core offsets, tier and clean hours
 shycler --state-dir <dir> cert            # the certificate: edges to enter in BIOS
 shycler --state-dir <dir> events --core 3 # everything that happened to core 3

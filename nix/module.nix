@@ -23,6 +23,12 @@ in
     };
     backends.mprime.enable = lib.mkEnableOption "the mprime backend (unfree)";
     backends.ycruncher.enable = lib.mkEnableOption "the y-cruncher backend (unfree)";
+    tuning.consoleFont = lib.mkOption {
+      type = lib.types.nullOr (lib.types.either lib.types.str lib.types.path);
+      default = null;
+      example = lib.literalExpression ''"''${pkgs.terminus_font}/share/consolefonts/ter-v32n.psf.gz"'';
+      description = "Console font of the tuning boot, as console.font takes it. null keeps the system's font.";
+    };
     settings = lib.mkOption {
       type = toml.type;
       default = { };
@@ -101,18 +107,58 @@ in
               ExecStop = "${pkgs.grub2}/bin/grub-editenv ${grubenv} unset saved_entry";
             };
           };
+          console.font = lib.mkIf (cfg.tuning.consoleFont != null) cfg.tuning.consoleFont;
+          boot.kernelParams = lib.mkForce (
+            lib.filter (p: builtins.match "console=tty[0-9]+(,.*)?" p == null) config.boot.kernelParams
+            ++ [ "console=tty3" ]
+          );
           systemd.services."getty@tty1".enable = false;
           systemd.services."autovt@tty1".enable = false;
-          systemd.services.shycler-console = {
-            description = "shycler tuning boot log on tty1";
-            after = [ "systemd-user-sessions.service" ];
+          systemd.services."getty@tty3".enable = false;
+          systemd.services."autovt@tty3".enable = false;
+          systemd.services.shycler-kernel-log = {
+            description = "Send kernel messages to tty3 in the shycler tuning boot";
+            wantedBy = [ "multi-user.target" ];
+            before = [ "shycler-watch.service" ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              ExecStart = "${pkgs.kbd}/bin/setlogcons 3";
+            };
+          };
+          systemd.services.shycler-watch = {
+            description = "shycler dashboard on tty1";
+            after = [
+              "systemd-user-sessions.service"
+              "shycler-kernel-log.service"
+            ];
+            wants = [ "shycler-kernel-log.service" ];
             wantedBy = [ "multi-user.target" ];
             unitConfig.ConditionPathExists = "/dev/tty1";
+            environment.TERM = "linux";
+            serviceConfig = {
+              ExecStart = "${lib.getExe package} watch";
+              StandardOutput = "tty";
+              StandardError = "journal";
+              TTYPath = "/dev/tty1";
+              TTYReset = true;
+              TTYVHangup = true;
+              TTYVTDisallocate = true;
+              Restart = "always";
+              RestartSec = 1;
+              Nice = -10;
+            };
+          };
+          systemd.services.shycler-console = {
+            description = "shycler tuning boot log on tty3";
+            after = [ "systemd-user-sessions.service" ];
+            wantedBy = [ "multi-user.target" ];
+            unitConfig.ConditionPathExists = "/dev/tty3";
             serviceConfig = {
               ExecStart = "${lib.getExe' config.systemd.package "journalctl"} --follow --lines 100 --no-pager --unit shycler.service --output cat";
               StandardOutput = "tty";
               StandardError = "tty";
-              TTYPath = "/dev/tty1";
+              TTYPath = "/dev/tty3";
               TTYReset = true;
               TTYVHangup = true;
               TTYVTDisallocate = true;

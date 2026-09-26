@@ -462,6 +462,21 @@ func (s *State) Profile() []int { return slices.Clone(s.guard.profile) }
 
 func (s *State) ProfileSeq() int { return s.guard.profileSeq }
 
+// Confirmation counts the confirmation slots core id has passed at its current offset, out of all it needs.
+func (s *State) Confirmation(id int) (passed, total int) {
+	total = len(confirmationSet)
+	c := s.core(id)
+	if c == nil || c.phase != journal.PhaseConfirmation {
+		return 0, total
+	}
+	for _, sl := range confirmationSet {
+		if slices.Contains(c.passed, sl) {
+			passed++
+		}
+	}
+	return passed, total
+}
+
 // CleanRotations counts the clean rotations since the last profile.change.
 func (s *State) CleanRotations() int { return s.guard.cleanRotations }
 

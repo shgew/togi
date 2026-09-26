@@ -95,6 +95,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/simrun` | A session on the simulator, across its crash reboots |
 | `internal/smu` | `ryzen_smu`: the only package that writes offsets |
 | `internal/trial` | Containment, sampling, load-step signaling |
+| `internal/watch` | The read-only dashboard: journal projection, frame rendering and the redraw loop |
 | `internal/backend/*` | mprime and y-cruncher integrations |
 | `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
