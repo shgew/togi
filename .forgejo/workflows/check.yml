@@ -21,8 +21,8 @@ jobs:
           git checkout -q --detach FETCH_HEAD
       - name: Give build users KVM
         run: chmod 0666 /dev/kvm
-      - name: just check
-        run: nix develop --command just check
+      - name: just check --race
+        run: nix develop --command just check --race
       - name: just vuln
         run: nix develop --command just vuln
       - name: Publish a merged release

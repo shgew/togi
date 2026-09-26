@@ -27,6 +27,14 @@
           system,
           ...
         }:
+        let
+          testPhase = flags: ''
+            runHook preCheck
+            export GOFLAGS=''${GOFLAGS//-trimpath/}
+            go test -p $NIX_BUILD_CORES ${flags} -shuffle=on ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "-tags integration"} ./...
+            runHook postCheck
+          '';
+        in
         {
           packages.default = pkgs.buildGo127Module {
             pname = "shycler";
@@ -50,12 +58,7 @@
               "-X code.marleb.org/shgew/shycler.rev=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dev"}"
             ];
             subPackages = [ "cmd/shycler" ];
-            checkPhase = ''
-              runHook preCheck
-              export GOFLAGS=''${GOFLAGS//-trimpath/}
-              go test -p $NIX_BUILD_CORES -race -shuffle=on ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "-tags integration"} ./...
-              runHook postCheck
-            '';
+            checkPhase = testPhase "";
             meta = {
               description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
               mainProgram = "shycler";
@@ -73,6 +76,11 @@
               pkgs.govulncheck
             ];
             SHYCLER_DEV_SHELL = "1";
+          };
+
+          legacyPackages.race = config.packages.default.overrideAttrs {
+            pname = "shycler-race";
+            checkPhase = testPhase "-race";
           };
 
           checks = {
