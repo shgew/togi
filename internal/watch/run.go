@@ -15,26 +15,34 @@ import (
 	"golang.org/x/term"
 )
 
-// source reloads the journal only when events.jsonl changed size or modification time since the last read.
+// source reloads the journal only when events.jsonl is a different file or changed size or modification time since
+// the last read.
 type source struct {
 	dir  string
-	size int64
-	mod  time.Time
-	ok   bool
+	info os.FileInfo
 	snap Snapshot
 }
 
 func (s *source) snapshot() Snapshot {
 	info, err := os.Stat(filepath.Join(s.dir, "events.jsonl"))
 	if err != nil {
-		s.ok = false
+		s.info = nil
 		return Load(s.dir)
 	}
-	if s.ok && info.Size() == s.size && info.ModTime().Equal(s.mod) {
+	if s.info != nil && os.SameFile(s.info, info) && info.Size() == s.info.Size() && info.ModTime().Equal(s.info.ModTime()) {
 		return s.snap
 	}
-	s.size, s.mod, s.ok, s.snap = info.Size(), info.ModTime(), true, Load(s.dir)
+	s.info, s.snap = info, Load(s.dir)
 	return s.snap
+}
+
+// profile is the colour profile of out; NO_COLOR with any value turns colour off, as no-color.org defines it.
+func profile(out *os.File) colorprofile.Profile {
+	p := colorprofile.Detect(out, os.Environ())
+	if os.Getenv("NO_COLOR") != "" {
+		p = min(p, colorprofile.ASCII)
+	}
+	return p
 }
 
 // Run redraws the dashboard for the journal in dir on out once a second until ctx ends.
@@ -52,7 +60,7 @@ func Run(ctx context.Context, dir string, out *os.File) error {
 
 	src := source{dir: dir}
 	var buf bytes.Buffer
-	styled := &colorprofile.Writer{Forward: &buf, Profile: colorprofile.Detect(out, os.Environ())}
+	styled := &colorprofile.Writer{Forward: &buf, Profile: profile(out)}
 	var lastW, lastH int
 	for {
 		w, h, err := term.GetSize(int(out.Fd()))

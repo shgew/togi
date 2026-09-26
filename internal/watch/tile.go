@@ -30,12 +30,14 @@ func (t tile) confirmed() bool {
 	return t.phase == journal.PhaseConfirmed || t.phase == journal.PhaseGuard
 }
 
-func (t tile) kindAt(d int) cellKind {
+// kindAt is what depth d shows; markers is false in the cells after a depth's first, where the failed mark and the
+// trial marker are not repeated.
+func (t tile) kindAt(d int, markers bool) cellKind {
 	e := -t.number
 	switch {
-	case t.fail != nil && d == -*t.fail:
+	case markers && t.fail != nil && d == -*t.fail:
 		return failCell
-	case t.trying != nil && d == -*t.trying:
+	case markers && t.trying != nil && d == -*t.trying:
 		return tryingCell
 	case t.confirmed() && d > e && d <= e+t.regain:
 		return regainCell
@@ -71,17 +73,7 @@ func (t tile) gauge(n int) string {
 		lo, hi := span(i, n)
 		k := emptyCell
 		for d := lo; d <= hi; d++ {
-			kd := t.kindAt(d)
-			if cellOf(d, n) != i {
-				switch kd {
-				case failCell:
-					kd = emptyCell
-				case tryingCell:
-					kd = unexploredCell
-				case emptyCell, filledCell, unexploredCell, settledCell, regainCell:
-				}
-			}
-			k = max(k, kd)
+			k = max(k, t.kindAt(d, cellOf(d, n) == i))
 		}
 		switch k {
 		case failCell:
@@ -169,6 +161,10 @@ func (t tile) topEdge(width int, border lipgloss.Style) string {
 		if width-lipgloss.Width(left)-lipgloss.Width(right)-1 >= 1 {
 			break
 		}
+	}
+	if width-lipgloss.Width(left)-lipgloss.Width(right)-1 < 1 {
+		right = border.Render("─┐")
+		left = ansi.Truncate(left, width-lipgloss.Width(right)-2, "")
 	}
 	fill := width - lipgloss.Width(left) - lipgloss.Width(right) - 1
 	return left + " " + border.Render(strings.Repeat("─", max(1, fill))) + right

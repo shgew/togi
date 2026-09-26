@@ -27,7 +27,7 @@ in
       type = lib.types.nullOr (lib.types.either lib.types.str lib.types.path);
       default = null;
       example = lib.literalExpression ''"''${pkgs.terminus_font}/share/consolefonts/ter-i32b.psf.gz"'';
-      description = "Console font of the tuning boot, as console.font takes it. The dashboard draws with IBM437 block and box glyphs, which the kernel's built-in fonts and Terminus' ter-i fonts have; ter-v and Lat2 fonts lack the half block its digits use. null keeps the system's font.";
+      description = "Console font of the tuning boot, as console.font takes it. The default, null, is the kernel's built-in font whatever the system sets: 8x16 below 2560x1080 and Terminus 16x32 bold from there, which make the 240x67 frame the dashboard is laid out for at 1080p and 4K, and which cover IBM437, whose block and box glyphs the dashboard draws with. A font set here must cover them too: Terminus' ter-i fonts do, while ter-v and Lat2-Terminus fonts lack the half block the digits use.";
     };
     settings = lib.mkOption {
       type = toml.type;
@@ -107,7 +107,7 @@ in
               ExecStop = "${pkgs.grub2}/bin/grub-editenv ${grubenv} unset saved_entry";
             };
           };
-          console.font = lib.mkIf (cfg.tuning.consoleFont != null) cfg.tuning.consoleFont;
+          console.font = lib.mkForce cfg.tuning.consoleFont;
           boot.kernelParams = lib.mkForce (
             lib.filter (p: builtins.match "console=tty[0-9]+(,.*)?" p == null) config.boot.kernelParams
             ++ [ "console=tty3" ]

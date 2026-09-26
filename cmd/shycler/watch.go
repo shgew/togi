@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 
 	"code.marleb.org/shgew/shycler/internal/watch"
@@ -50,6 +50,6 @@ func runWatch(g *globals, args []string, stdout, stderr io.Writer) int {
 		}
 		return exitOK
 	}
-	_, _ = lipgloss.Fprint(stdout, watch.Render(watch.Load(g.stateDir), *width, *height, time.Now())+"\n")
+	_, _ = io.WriteString(stdout, ansi.Strip(watch.Render(watch.Load(g.stateDir), *width, *height, time.Now()))+"\n")
 	return exitOK
 }

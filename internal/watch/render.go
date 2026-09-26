@@ -281,10 +281,9 @@ func (s Snapshot) scheduleLine() string {
 		names[i] = string(r)
 	}
 	var out string
-	if gs.RotationOpen && len(names) > 0 {
-		m := len(names)
-		cur := min(gs.StepsDone, m-1)
-		out = dim.Render(fmt.Sprintf("rotation %d   step %d/%d   ", gs.Rotation, gs.StepsDone+1, m))
+	if m := len(names); gs.RotationOpen && gs.StepsDone < m {
+		cur := gs.StepsDone
+		out = dim.Render(fmt.Sprintf("rotation %d   step %d/%d   ", gs.Rotation, cur+1, m))
 		if cur > 0 {
 			out += dim.Render(steps(names[:cur])) + dim.Render(" | ")
 		}
