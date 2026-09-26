@@ -133,7 +133,7 @@ At a clean `guard.rotation` end, if neither `--rotations` nor a pending stop sig
 
 A step is one core at one numeric offset. Each step gets only one automatic-regain retry. A suspect backoff from a step whose retry was spent settles it; automatic regain never takes the core back to that offset or deeper until `reset --core`. The shallowest settled offset is the settled mark. Regainable depth is the unproven depth from the current offset down to, but not including, its nearest settled step, never past the confirmed edge or at/deeper than the failed mark. `status` and the certificate show regainable and settled depth separately; their sum is the total unproven depth. Spent retries persist across clean rotations and proven failures; a proven failure cancels unproven depth (including settled depth) and clears the settled mark, but does not unspend retries.
 
-An interrupted run replays recorded regain decisions; it does not retry a spent step or regain a core twice from one clean rotation end. A later backoff or reset decision after the clean end cancels any remaining regains due from that end. Proven failed marks are never retried within a session.
+An interrupted run replays recorded regain decisions; it does not retry a spent step or regain a core twice from one clean rotation end. A later `failure`, search step or reset after the clean end cancels any remaining regains due from that end, including a failure that ends in a dead end without a backoff. Proven failed marks are never retried within a session.
 
 ## Defect list
 

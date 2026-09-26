@@ -220,9 +220,9 @@ func (s *State) Fold(e journal.Event) {
 				s.guard.regained = append(s.guard.regained, c.id)
 			case journal.SuspectBackoff:
 				s.suspectBackedOff(c.id)
+			case journal.StepDeeper:
 				s.guard.regainFrom = 0
-			case journal.StepDeeper, journal.Backoff:
-				s.guard.regainFrom = 0
+			case journal.Backoff:
 			}
 		}
 	case *journal.TrialIntent:
@@ -306,6 +306,7 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 	if a := s.awaiting; a != nil && a.intent.Trial == p.Trial {
 		s.awaiting = nil
 	}
+	s.guard.regainFrom = 0
 	switch {
 	case p.Attribution == journal.Attributed && p.Trial != "" && p.Core != nil:
 		if c := s.core(*p.Core); c != nil {

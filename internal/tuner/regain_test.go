@@ -160,6 +160,22 @@ func TestFailureAfterCleanEndCancelsRegain(t *testing.T) {
 	h.expect("suspect 0 -9>-8 u2", "suspect 2 -10>-9 u2", "suspect 1 -11>-10 u2", "suspect 3 -12>-11 u2", "profile", "start 3", "trial R1 c0")
 }
 
+func TestFailureAtZeroAfterCleanEndCancelsRegain(t *testing.T) {
+	t.Parallel()
+	h, _ := newGuardHarness(t, []int{-1}, []*int{new(-4)})
+	h.add(idleCrash())
+	h.decideUntilTrial()
+	h.cleanEnd()
+	h.add(idleCrash())
+	if a := h.s.Next(); h.describe(a) != "dead end" {
+		t.Fatalf("failure with every core at CO 0: %s, want the dead end", h.describe(a))
+	}
+	h.decide(h.s.Next())
+	if p, ok := h.s.Next().Payload.(*journal.TunerDecision); ok && p.Decision == journal.Regain {
+		t.Fatalf("after the dead end: regain of core %d, want none from the earlier clean end", p.Core)
+	}
+}
+
 func TestReset(t *testing.T) {
 	t.Parallel()
 	t.Run("search restarts from the baseline and the tier drops", func(t *testing.T) {
