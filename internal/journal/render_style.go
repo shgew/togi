@@ -40,7 +40,7 @@ func StyleOf(e Event) Style {
 		return RedBold
 	case *TunerDecision:
 		switch p.Decision {
-		case StepDeeper:
+		case StepDeeper, Regain:
 			return Green
 		case Backoff, SuspectBackoff:
 			return Yellow

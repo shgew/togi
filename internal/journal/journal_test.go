@@ -226,6 +226,7 @@ func TestRoundTrip(t *testing.T) {
 		&CrashDetected{PreviousBoot: "e8f9a0b1", Condition: machine.Resident},
 		&TunerDecision{Core: 7, Phase: PhaseConfirmation, Decision: Backoff, FromOffset: -33, ToOffset: -32, Pass: new(-30), FailedMark: new(-33), Reason: "confirmation restarts from R1"},
 		&TunerDecision{Core: 7, Phase: PhaseGuard, Decision: SuspectBackoff, FromOffset: -32, ToOffset: -31, Pass: new(-33), FailedMark: new(-34), UnprovenDepth: 2, Reason: "r"},
+		&TunerDecision{Core: 3, Phase: PhaseGuard, Decision: Regain, FromOffset: -30, ToOffset: -31, UnprovenDepth: 1, SettledMark: new(-33), SpentSteps: []int{-31}, Reason: "r"},
 		&CorePhase{Core: 7, From: PhaseSearch, To: PhaseConfirmation, Offset: -33, Pass: new(-33), FailedMark: new(-34), UnprovenDepth: 1, Reason: "candidate edge: -34 is the failed mark"},
 		&GuardRotation{Rotation: 2, Event: RotationStart, Steps: []machine.Regime{machine.R1, machine.R6}},
 		&GuardRotation{Rotation: 2, Event: RotationEnd, Clean: true},
