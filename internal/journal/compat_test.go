@@ -73,9 +73,9 @@ func TestScanBuildSkipsUnknownSchemaPayloads(t *testing.T) {
 }
 
 func TestBuildOfUsesLastStampedResume(t *testing.T) {
-	first := &SessionStart{Build: Build{Schema: 1, Ruleset: 1, Version: "0.1.0"}}
+	first := &SessionStart{Schema: 1, Ruleset: 1, Version: "0.1.0"}
 	old := &ConfigLoaded{}
-	latest := &ConfigLoaded{Build: Build{Version: "0.2.1", Rev: "def5678", Fixes: 2}}
+	latest := &ConfigLoaded{Version: "0.2.1", Rev: "def5678", Fixes: 2}
 	got := BuildOf([]Event{{Data: first}, {Data: latest}, {Data: old}})
 	if got.Version != latest.Version || got.Rev != latest.Rev || got.Fixes != 2 || got.Schema != 1 || got.Ruleset != 1 {
 		t.Fatalf("last stamp: %+v", got)

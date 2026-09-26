@@ -28,7 +28,7 @@
           ...
         }:
         {
-          packages.default = pkgs.buildGoModule {
+          packages.default = pkgs.buildGo127Module {
             pname = "shycler";
             version = lib.fileContents ./version.txt;
             src = lib.fileset.toSource {
@@ -65,7 +65,7 @@
 
           devShells.default = pkgs.mkShell {
             packages = [
-              pkgs.go
+              pkgs.go_1_27
               pkgs.gopls
               pkgs.golangci-lint
               pkgs.just
@@ -101,7 +101,7 @@
           formatter = pkgs.treefmt.withConfig {
             runtimeInputs = [
               pkgs.nixfmt
-              pkgs.go
+              pkgs.go_1_27
             ];
             settings = {
               on-unmatched = "info";

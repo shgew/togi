@@ -46,7 +46,7 @@ func appendAll(tb testing.TB, j *Journal, payloads []Payload) []Event {
 }
 
 func sessionStart() *SessionStart {
-	return &SessionStart{Build: Build{Schema: Schema}, Session: "20261002T011407Z", Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 16}}, {Core: 7, CCD: 0, CPUs: []int{7, 23}}}}
+	return &SessionStart{Schema: Schema, Session: "20261002T011407Z", Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 16}}, {Core: 7, CCD: 0, CPUs: []int{7, 23}}}}
 }
 
 func TestOpenFinishesRenamedIncompatibleArchive(t *testing.T) {
@@ -195,7 +195,7 @@ func TestRoundTrip(t *testing.T) {
 	cfg.StartOffsets[3] = -10
 	payloads := []Payload{
 		sessionStart(),
-		&SessionContext{BIOSContext: machine.BIOSContext{BIOSVersion: "3205", Board: "X870E", CPUModel: "Ryzen 9 9950X", Microcode: "0xb404023", BoostLimitMHz: 5700}},
+		&SessionContext{BIOSVersion: "3205", Board: "X870E", CPUModel: "Ryzen 9 9950X", Microcode: "0xb404023", BoostLimitMHz: 5700},
 		&SessionBaseline{Offsets: []int{0, -5}},
 		&SessionNotice{Notice: NoticeNonzeroBaseline, Cores: []int{7}},
 		&SessionArchived{Session: "20261002T011407Z", Path: "archive/20261002T011407Z.jsonl"},

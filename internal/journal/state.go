@@ -132,11 +132,11 @@ func (s *State) Fold(e Event) {
 		s.DeadEnd = nil
 	case *SMUIntent:
 		s.open = slices.DeleteFunc(s.open, func(o openIntent) bool { return o.Kind == KindSMUIntent })
-		s.open = append(s.open, openIntent{InFlight: InFlight{Seq: e.Seq, Kind: e.Kind, Msg: e.Msg}, boot: e.Boot})
+		s.open = append(s.open, openIntent{Seq: e.Seq, Kind: e.Kind, Msg: e.Msg, boot: e.Boot})
 	case *SMUWrite, *SMUError:
 		s.open = slices.DeleteFunc(s.open, func(o openIntent) bool { return o.Kind == KindSMUIntent })
 	case *TrialIntent:
-		s.open = append(s.open, openIntent{InFlight: InFlight{Seq: e.Seq, Kind: e.Kind, Msg: e.Msg}, boot: e.Boot, trial: p.Trial})
+		s.open = append(s.open, openIntent{Seq: e.Seq, Kind: e.Kind, Msg: e.Msg, boot: e.Boot, trial: p.Trial})
 	case *TrialEnd:
 		s.open = slices.DeleteFunc(s.open, func(o openIntent) bool { return o.Kind == KindTrialIntent && o.trial == p.Trial })
 	case *CrashDetected:
