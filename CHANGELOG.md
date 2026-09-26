@@ -114,3 +114,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#58]: https://code.marleb.org/shgew/shycler/pulls/58
 [#65]: https://code.marleb.org/shgew/shycler/pulls/65
 [#66]: https://code.marleb.org/shgew/shycler/pulls/66
+[#69]: https://code.marleb.org/shgew/shycler/pulls/69
