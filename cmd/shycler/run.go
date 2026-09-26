@@ -24,7 +24,7 @@ import (
 	"code.marleb.org/shgew/shycler/internal/session"
 )
 
-const runHelp = `Usage: shycler run [--rotations <N>] [--tuning-boot <grubenv>]
+const runHelp = `Usage: shycler run [--rotations <N>] [--tuning-boot <grubenv>] [--no-tui]
 
 Start or resume the tuning session in the foreground: search each core's deepest
 stable offset, confirm it, then keep guarding all offsets together. After each
@@ -37,6 +37,10 @@ stops the run before another event is written; reset --all archives that
 session. Journal lines are colored on terminals and in the system journal
 unless NO_COLOR is set.
 
+When stdin and stderr are terminals, run shows the session as the watch
+dashboard instead of one line per event, and prints the outcome when it stops;
+events.jsonl still records every event. --no-tui prints the lines instead.
+
 --rotations N stops once the current profile has survived N clean rotations,
 counted across runs, before any regain. Every regain changes the profile and
 restarts the count, so with depth left to regain --rotations 1 stops without
@@ -44,12 +48,14 @@ Bronze.
 
 Examples:
   sudo shycler run                     Tune this machine until a signal or a dead end
-  sudo shycler run --rotations 1       Stop after the first clean guard rotation`
+  sudo shycler run --rotations 1       Stop after the first clean guard rotation
+  sudo shycler run --no-tui            Print one line per event instead of the dashboard`
 
 func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	var (
 		rotations int
 		grubenv   string
+		noTUI     bool
 	)
 	flags := newFlagSet("run", g)
 	flags.Func("rotations", "stop after `N` clean guard rotations of one profile (default endless)", func(s string) error {
@@ -61,6 +67,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		return nil
 	})
 	flags.StringVar(&grubenv, "tuning-boot", "", "run as the tuning boot service: at a dead end clear saved_entry in this GRUB environment `file`, and reboot after a boot loop")
+	flags.BoolVar(&noTUI, "no-tui", false, "print one line per event instead of the dashboard on a terminal")
 	if code, ok := parseFlags(flags, args, runHelp, stdout, stderr); !ok {
 		return code
 	}
@@ -89,10 +96,14 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	if grubenv != "" {
 		bootloader = hardware.GRUB{Env: grubenv}
 	}
-	return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr, renderer)
+	var dash *dashboard
+	if out, ok := stderr.(*os.File); ok && !noTUI && interactive(out) {
+		dash = &dashboard{dir: g.stateDir, out: out}
+	}
+	return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr, renderer, dash)
 }
 
-func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, rotations int, stderr io.Writer, renderer journal.Renderer) int {
+func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, rotations int, stderr io.Writer, renderer journal.Renderer, dash *dashboard) int {
 	if err := hardware.CheckPlatform(); err != nil {
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitError
@@ -102,7 +113,11 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitError
 	}
-	j, err := journal.Open(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: stderr, Renderer: renderer, Build: session.Build()})
+	log := stderr
+	if dash != nil {
+		log = dash
+	}
+	j, err := journal.Open(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: log, Renderer: renderer, Build: session.Build()})
 	if err != nil {
 		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 	}
@@ -120,7 +135,21 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 		fmt.Fprintf(stderr, "shycler run: %v\n", err)
 		return exitError
 	}
-	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: defectPrompt(stderr)})
+	prompt := defectPrompt(stderr)
+	if dash != nil {
+		dash.show()
+		if ask := prompt; ask != nil {
+			prompt = func(f defect.Finding) (bool, error) {
+				dash.hide()
+				defer dash.show()
+				return ask(f)
+			}
+		}
+	}
+	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt})
+	if dash != nil {
+		dash.hide()
+	}
 	if cerr := j.Close(); err == nil && cerr != nil {
 		err = cerr
 	}
@@ -173,15 +202,7 @@ func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.
 
 func defectPrompt(stderr io.Writer) func(defect.Finding) (bool, error) {
 	out, ok := stderr.(*os.File)
-	if !ok {
-		return nil
-	}
-	isTerminal := func(file *os.File) bool {
-		var termios syscall.Termios
-		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), getTermios, uintptr(unsafe.Pointer(&termios)))
-		return errno == 0
-	}
-	if !isTerminal(os.Stdin) || !isTerminal(out) {
+	if !ok || !interactive(out) {
 		return nil
 	}
 	reader := bufio.NewReader(os.Stdin)
@@ -201,6 +222,15 @@ func defectPrompt(stderr io.Writer) func(defect.Finding) (bool, error) {
 		line, err := reader.ReadString('\n')
 		return parseDefectAnswer(line, err), nil
 	}
+}
+
+func interactive(out *os.File) bool {
+	isTerminal := func(file *os.File) bool {
+		var termios syscall.Termios
+		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), getTermios, uintptr(unsafe.Pointer(&termios)))
+		return errno == 0
+	}
+	return isTerminal(os.Stdin) && isTerminal(out)
 }
 
 func parseDefectAnswer(line string, err error) bool {
