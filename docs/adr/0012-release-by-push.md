@@ -6,7 +6,7 @@ A release changes `version.txt` and `CHANGELOG.md`, so it lands as a pull reques
 
 `just release` opens the release pull request with a plain `git push` to Forgejo's `refs/for/main` ref (its [AGit workflow](https://forgejo.org/docs/latest/user/git-cli/agit-support/)), using the pusher's git credentials. The push carries the fixed topic `release`, so while a release pull request is open Forgejo rejects the next push, and the tool refuses instead of updating or replacing it. A person pushes the commit, so `check` runs on the pull request.
 
-Merging publishes. A `publish` job in CI, after `check` passes on a push to `main`, creates the release with the workflow's automatic token when `version.txt` names a version with a dated changelog section and no tag. It targets the first-parent commit that last changed `version.txt`, so a publish retried on a later push still tags the release pull request's merge commit.
+Merging publishes. The final step of the CI `check` job, run only on a push to `main` and only once the checks before it pass, creates the release with the workflow's automatic token when `version.txt` names a version with a dated changelog section and no tag. It is a step rather than a separate job so pull requests do not carry a skipped `publish` status. It targets the first-parent commit that last changed `version.txt`, so a publish retried on a later push still tags the release pull request's merge commit.
 
 `version.txt` stays the version source, because flake builds cannot see tags. Bumps stay computed from the changelog.
 
