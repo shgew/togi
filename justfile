@@ -55,10 +55,10 @@ _fmt-check:
 [group('quality')]
 gate: lint _fmt-check test
 
-# Run every flake check
+# Run every flake check; `--race` also runs the Go tests under the race detector, as CI does
 [group('nix')]
 check *args:
-    nix flake check "$@"
+    race=0; flags=(); for a in "$@"; do if [[ "$a" == --race ]]; then race=1; else flags+=("$a"); fi; done; nix flake check "${flags[@]}"; if (( race )); then nix build --no-link .#legacyPackages.{{ system }}.race; fi
 
 # Build named flake checks: package, lint or, on Linux, vm (`just check-one vm`)
 [group('nix')]

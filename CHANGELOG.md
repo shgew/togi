@@ -4,6 +4,15 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ## [Unreleased]
 
+### Added
+
+- `shycler watch` shows the session as a dashboard that redraws every second: stage, running trial, one tile per core with its offset, failed mark and regainable or settled depth, and the latest events. Off a terminal it prints one frame and exits ([#65]).
+- `services.shycler.tuning.consoleFont` sets the tuning boot's console font; by default the tuning boot uses the kernel's built-in font, whatever font the system sets, because the dashboard's digits need IBM437 block glyphs that fonts such as `Lat2-Terminus16` lack ([#65]).
+
+### Changed
+
+- The tuning boot shows `shycler watch` on tty1 instead of the service log, which moves to tty3 along with kernel messages and `/dev/console` output, so nothing else writes over the dashboard ([#65]).
+
 ## [0.2.0] - 2026-09-26
 
 ### Changed
@@ -94,3 +103,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#53]: https://code.marleb.org/shgew/shycler/pulls/53
 [#54]: https://code.marleb.org/shgew/shycler/pulls/54
 [#58]: https://code.marleb.org/shgew/shycler/pulls/58
+[#65]: https://code.marleb.org/shgew/shycler/pulls/65

@@ -55,7 +55,7 @@ If the machine crashes during a trial, it comes back to the normal desktop; the 
 
 ## 4. Overnight: the tuning boot
 
-Reboot and pick "NixOS - shycler" in the GRUB menu once. That entry boots to a console with no desktop, and tty1 shows shycler's log. `shycler.service` tunes unattended. GRUB remembers the entry, so every crash reboot returns to it and the service resumes. Shutting down or rebooting on purpose, with the power button, `poweroff` or `reboot`, leaves the tuning boot: shycler stops cleanly and the next boot selects your newest normal generation. To keep tuning across your own reboots instead, set `services.shycler.tuning.leaveOnShutdown = false;`.
+Reboot and pick "NixOS - shycler" in the GRUB menu once. That entry boots to a console with no desktop, and tty1 shows `shycler watch`, a dashboard of the session. Its log is on tty3 (Alt+F3), with the kernel's messages; tty2 has a login prompt. `shycler.service` tunes unattended. GRUB remembers the entry, so every crash reboot returns to it and the service resumes. Shutting down or rebooting on purpose, with the power button, `poweroff` or `reboot`, leaves the tuning boot: shycler stops cleanly and the next boot selects your newest normal generation. To keep tuning across your own reboots instead, set `services.shycler.tuning.leaveOnShutdown = false;`.
 
 ## 5. In the morning
 
@@ -70,6 +70,6 @@ shycler cert
 
 ## 6. Dead ends
 
-shycler stops by itself only at a dead end: a core fails at offset 0, the SMU misbehaves, trials prove nothing several times in a row, the machine keeps crashing before any trial, a backend escapes its cores, or a preflight check fails. In the tuning boot it records the dead end, clears GRUB's saved entry so the next boot selects your newest normal generation, and stops with the explanation on tty1. After a boot loop it reboots into the normal system at once.
+shycler stops by itself only at a dead end: a core fails at offset 0, the SMU misbehaves, trials prove nothing several times in a row, the machine keeps crashing before any trial, a backend escapes its cores, or a preflight check fails. In the tuning boot it records the dead end, clears GRUB's saved entry so the next boot selects your newest normal generation, and stops with the explanation on tty1's dashboard. After a boot loop it reboots into the normal system at once.
 
 `shycler status` shows the dead end, and `shycler events --kind deadend,boot.saved_entry` shows what happened. Fix the cause, then run `sudo shycler run` or pick "NixOS - shycler" again to resume. A core that failed at offset 0 stops every later run until `sudo shycler reset --core <N>`, and a changed BIOS context until `sudo shycler reset --all` starts a new session. [runtime.md](spec/runtime.md#dead-end-actions) and [tuner.md](spec/tuner.md) describe each condition.

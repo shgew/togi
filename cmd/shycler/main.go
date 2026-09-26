@@ -46,6 +46,7 @@ var commands = []command{
 	{name: "reset", summary: "Reset one core or archive the session", run: runReset},
 	{name: "run", summary: "Start or resume the session in the foreground", run: runRun},
 	{name: "status", summary: "Show per-core offsets, tier and clean hours", run: runStatus},
+	{name: "watch", summary: "Show the session as a live dashboard", run: runWatch},
 }
 
 func main() {

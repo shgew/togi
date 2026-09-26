@@ -21,6 +21,7 @@ The read-only commands work on the result:
 go run ./cmd/shycler --state-dir <dir> status
 go run ./cmd/shycler --state-dir <dir> cert
 go run ./cmd/shycler --state-dir <dir> events --core 3
+go run ./cmd/shycler --state-dir <dir> watch
 ```
 
 Fault injection, explicit edges and the failure model are a Go API for tests (`sim.Config`, `sim.Edges`, `sim.Model` and the methods on `sim.Machine`); `internal/sim/doc.go` describes the model. `internal/simrun` drives a session on the simulator across its crashes for tests that need a simulated journal.
