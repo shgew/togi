@@ -153,7 +153,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 			t.abort()
 			return nil, fmt.Errorf("start %s: %w", scope, err)
 		}
-		inst := &instance{Instance: machine.Instance{Core: core, CPUs: slices.Clone(cpus), PID: p.PID(), Scope: scope}, resumed: time.Now()}
+		inst := &instance{Core: core, CPUs: slices.Clone(cpus), PID: p.PID(), Scope: scope, resumed: time.Now()}
 		for _, name := range launch.Watch {
 			inst.watch = append(inst.watch, watchFile{path: filepath.Join(dir, name)})
 		}
