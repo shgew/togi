@@ -4,6 +4,22 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING** Confirmation now runs every R1 and R2 workload, then R3, R4 and R5, at each candidate edge; a failure restarts the nine-trial set from the first R1 workload ([#58]).
+- **BREAKING** Guard R7 runs CCD0, CCD1 and then all cores as separate resident trials with a shared workload instead of switching loads within one trial ([#58]).
+- **BREAKING** Unattributed resident failures back off only their loaded cores (or every nonzero core when that narrower scope is at zero), instead of escalating later failures to every core ([#58]).
+- **BREAKING** After each clean rotation, guard automatically regains one count per core with regainable depth and tests the changed profile; each step gets one retry and settles if suspect-backed-off from that step again, until `reset --core` ([#58]).
+- **BREAKING** Bronze waits until every core is confirmed, no regainable depth remains and the current profile survives one clean rotation; settled depth alone does not block a tier ([#58]).
+- `status` and `cert` now show REGAINABLE and SETTLED depth separately rather than total unproven depth ([#58]).
+- `durations.guard_all_core_s` now requires at least 4 seconds so the separate R7 trials have time to run ([#58]).
+- **BREAKING** Tuning ruleset and journal schema are now 2: archive a ruleset-1 session with `sudo shycler reset --all` before starting again. Setting `start_offsets.<core>` to an archived failed mark plus one can skip early search steps, but is a hint, not evidence ([#58]).
+
+### Removed
+
+- **BREAKING** Removed `shycler regain` and its isolated re-confirmation; guard regains eligible depth automatically after clean rotations ([#58]).
+- **BREAKING** Removed the escalation window and its journal event; each unattributed failure is blamed by its own trial's loaded cores ([#58]).
+
 ## [0.1.0] - 2026-09-26
 
 ### Added
@@ -73,3 +89,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#46]: https://code.marleb.org/shgew/shycler/pulls/46
 [#53]: https://code.marleb.org/shgew/shycler/pulls/53
 [#54]: https://code.marleb.org/shgew/shycler/pulls/54
+[#58]: https://code.marleb.org/shgew/shycler/pulls/58

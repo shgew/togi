@@ -7,57 +7,22 @@ import (
 	"io/fs"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"code.marleb.org/shgew/shycler/internal/detect"
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/session"
 )
 
-const (
-	regainHelp = `Usage: shycler regain [--core <N>]
-
-Queue one count of regain on every confirmed core with unproven depth, or on
-core N only. Unproven depth is what a suspect backoff gave up without proof; the
-next run confirms one count deeper on each queued core. A different journal
-ruleset or schema is refused without queuing anything.
-
-Examples:
-  sudo shycler regain            Every core with unproven depth
-  sudo shycler regain --core 3   Core 3 only`
-	resetHelp = `Usage: shycler reset --core <N> | --all
+const resetHelp = `Usage: shycler reset --core <N> | --all
 
 Reset one core, so the next run restarts its search from the baseline, or archive
 the whole session, so the next run starts a new one. Give exactly one of the two.
+Resetting a core also clears its spent regain retries and settled steps.
 --core refuses a different journal ruleset or schema; --all archives either.
 
 Examples:
   sudo shycler reset --core 3   Search core 3 again from its baseline
   sudo shycler reset --all      Archive the session and start over`
-)
-
-func runRegain(g *globals, args []string, stdout, stderr io.Writer) int {
-	var core *int
-	flags := newFlagSet("regain", g)
-	flags.Func("core", "only core `N`", coreFlag(&core))
-	if code, ok := parseFlags(flags, args, regainHelp, stdout, stderr); !ok {
-		return code
-	}
-	j, _, code, ok := openForCommand("regain", g.stateDir, stderr, false)
-	if !ok {
-		return code
-	}
-	cores, err := session.Regain(j, core)
-	if code, ok := closeCommand("regain", j, err, stderr); !ok {
-		return code
-	}
-	ids := make([]string, len(cores))
-	for i, c := range cores {
-		ids[i] = fmt.Sprintf("%02d", c)
-	}
-	fmt.Fprintf(stdout, "regain queued for cores %s; the next shycler run confirms one count deeper on each\n", strings.Join(ids, ", "))
-	return exitOK
-}
 
 func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	var (

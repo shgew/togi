@@ -149,12 +149,6 @@ func TestWait(t *testing.T) {
 				if tt.name == "pass" && len(rec.progress) == 0 {
 					t.Fatal("no progress captured")
 				}
-				if tt.name == "R7" {
-					joined := strings.Join(rec.progress, "\n")
-					if !strings.Contains(joined, "CCD0 only") || !strings.Contains(joined, "CCD1 only") {
-						t.Fatalf("phase progress: %s", joined)
-					}
-				}
 			})
 		})
 	}
@@ -337,7 +331,7 @@ func TestPlans(t *testing.T) {
 	}
 	spec.Regime = machine.R7
 	got = slices.Collect(plan(spec, cores))
-	if len(got) != 3 || !slices.Equal(got[0].Instances, []int{1, 3}) || !slices.Equal(got[2].Instances, []int{0, 2}) {
+	if len(got) != 0 {
 		t.Fatalf("R7 %v", got)
 	}
 }

@@ -13,23 +13,25 @@ func TestTierFor(t *testing.T) {
 	tests := []struct {
 		name           string
 		allConfirmed   bool
+		regainable     bool
 		dirty          bool
 		cleanRotations int
 		cleanS         int
 		want           journal.Tier
 	}{
-		{"a core unconfirmed", false, false, 5, 400000, journal.TierNone},
-		{"profile changed", true, true, 5, 400000, journal.TierNone},
-		{"no clean rotation", true, false, 0, 400000, journal.TierNone},
-		{"one rotation, no hours", true, false, 1, 0, journal.TierBronze},
-		{"just under 24 h", true, false, 1, 86399, journal.TierBronze},
-		{"24 h", true, false, 3, 86400, journal.TierSilver},
-		{"just under 100 h", true, false, 12, 359999, journal.TierSilver},
-		{"100 h", true, false, 13, 360000, journal.TierGold},
-		{"1000 h is still gold", true, false, 125, 3600000, journal.TierGold},
+		{"a core unconfirmed", false, false, false, 5, 400000, journal.TierNone},
+		{"profile changed", true, false, true, 5, 400000, journal.TierNone},
+		{"depth left to regain", true, true, false, 5, 400000, journal.TierNone},
+		{"no clean rotation", true, false, false, 0, 400000, journal.TierNone},
+		{"one rotation, no hours", true, false, false, 1, 0, journal.TierBronze},
+		{"just under 24 h", true, false, false, 1, 86399, journal.TierBronze},
+		{"24 h", true, false, false, 3, 86400, journal.TierSilver},
+		{"just under 100 h", true, false, false, 12, 359999, journal.TierSilver},
+		{"100 h", true, false, false, 13, 360000, journal.TierGold},
+		{"1000 h is still gold", true, false, false, 125, 3600000, journal.TierGold},
 	}
 	for _, tt := range tests {
-		if got := tierFor(tt.allConfirmed, tt.dirty, tt.cleanRotations, tt.cleanS); got != tt.want {
+		if got := tierFor(tt.allConfirmed, tt.regainable, tt.dirty, tt.cleanRotations, tt.cleanS); got != tt.want {
 			t.Errorf("%s: %s, want %s", tt.name, got, tt.want)
 		}
 	}
@@ -88,7 +90,7 @@ func TestTierTransitions(t *testing.T) {
 	}
 	runUntil(100)
 	want := []change{
-		{journal.TierBronze, 8, journal.KindGuardRotation, "every core is confirmed and the profile survived a clean rotation"},
+		{journal.TierBronze, 8, journal.KindGuardRotation, "every core is confirmed, nothing is left to regain and the profile survived a clean rotation"},
 		{journal.TierSilver, 24, journal.KindTrialEnd, "24 clean hours since the profile change"},
 		{journal.TierGold, 100, journal.KindTrialEnd, "100 clean hours since the profile change"},
 	}
@@ -110,7 +112,7 @@ func TestTierTransitions(t *testing.T) {
 
 	changes, hours, a = nil, 0, h.s.Next()
 	runUntil(8)
-	if want := []change{{journal.TierBronze, 8, journal.KindGuardRotation, "every core is confirmed and the profile survived a clean rotation"}}; !slices.Equal(changes, want) {
+	if want := []change{{journal.TierBronze, 8, journal.KindGuardRotation, "every core is confirmed, nothing is left to regain and the profile survived a clean rotation"}}; !slices.Equal(changes, want) {
 		t.Fatalf("after the new rotation: %+v, want %+v", changes, want)
 	}
 }

@@ -65,7 +65,7 @@ check *args:
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")
 
-# Run a simulated session through its first clean guard rotation in temporary state
+# Run a simulated session through its first clean guard rotation in temporary state; Bronze needs no depth left to regain
 [group('run')]
 sim seed="1":
     {{ dev }} go run ./tools/sim --seed "$1"

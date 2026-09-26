@@ -10,50 +10,48 @@ import (
 	"time"
 )
 
-const Schema = 1
+const Schema = 2
 
 const timeLayout = "2006-01-02T15:04:05.000000000Z"
 
 type Kind string
 
 const (
-	KindSessionStart     Kind = "session.start"
-	KindSessionContext   Kind = "session.context"
-	KindSessionBaseline  Kind = "session.baseline"
-	KindSessionNotice    Kind = "session.notice"
-	KindSessionArchived  Kind = "session.archived"
-	KindConfigLoaded     Kind = "config.loaded"
-	KindPreflightCheck   Kind = "preflight.check"
-	KindSMUIntent        Kind = "smu.intent"
-	KindSMUWrite         Kind = "smu.write"
-	KindSMUReadback      Kind = "smu.readback"
-	KindSMUError         Kind = "smu.error"
-	KindProfileApplied   Kind = "profile.applied"
-	KindProfileChange    Kind = "profile.change"
-	KindProfileRestored  Kind = "profile.restored"
-	KindTrialIntent      Kind = "trial.intent"
-	KindTrialStart       Kind = "trial.start"
-	KindTrialProgress    Kind = "trial.progress"
-	KindTrialSignal      Kind = "trial.signal"
-	KindTrialSample      Kind = "trial.sample"
-	KindTrialEnd         Kind = "trial.end"
-	KindFailure          Kind = "failure"
-	KindMCE              Kind = "mce"
-	KindCrashDetected    Kind = "crash.detected"
-	KindTunerDecision    Kind = "tuner.decision"
-	KindCorePhase        Kind = "core.phase"
-	KindGuardRotation    Kind = "guard.rotation"
-	KindEscalationWindow Kind = "escalation.window"
-	KindTierChange       Kind = "tier.change"
-	KindCommandRegain    Kind = "command.regain"
-	KindCommandReset     Kind = "command.reset"
-	KindDefectFound      Kind = "defect.found"
-	KindDefectAnswered   Kind = "defect.answered"
-	KindDeadEnd          Kind = "deadend"
-	KindBootSavedEntry   Kind = "boot.saved_entry"
-	KindShutdown         Kind = "shutdown"
-	KindJournalTorn      Kind = "journal.torn"
-	KindStateRebuilt     Kind = "state.rebuilt"
+	KindSessionStart    Kind = "session.start"
+	KindSessionContext  Kind = "session.context"
+	KindSessionBaseline Kind = "session.baseline"
+	KindSessionNotice   Kind = "session.notice"
+	KindSessionArchived Kind = "session.archived"
+	KindConfigLoaded    Kind = "config.loaded"
+	KindPreflightCheck  Kind = "preflight.check"
+	KindSMUIntent       Kind = "smu.intent"
+	KindSMUWrite        Kind = "smu.write"
+	KindSMUReadback     Kind = "smu.readback"
+	KindSMUError        Kind = "smu.error"
+	KindProfileApplied  Kind = "profile.applied"
+	KindProfileChange   Kind = "profile.change"
+	KindProfileRestored Kind = "profile.restored"
+	KindTrialIntent     Kind = "trial.intent"
+	KindTrialStart      Kind = "trial.start"
+	KindTrialProgress   Kind = "trial.progress"
+	KindTrialSignal     Kind = "trial.signal"
+	KindTrialSample     Kind = "trial.sample"
+	KindTrialEnd        Kind = "trial.end"
+	KindFailure         Kind = "failure"
+	KindMCE             Kind = "mce"
+	KindCrashDetected   Kind = "crash.detected"
+	KindTunerDecision   Kind = "tuner.decision"
+	KindCorePhase       Kind = "core.phase"
+	KindGuardRotation   Kind = "guard.rotation"
+	KindTierChange      Kind = "tier.change"
+	KindCommandReset    Kind = "command.reset"
+	KindDefectFound     Kind = "defect.found"
+	KindDefectAnswered  Kind = "defect.answered"
+	KindDeadEnd         Kind = "deadend"
+	KindBootSavedEntry  Kind = "boot.saved_entry"
+	KindShutdown        Kind = "shutdown"
+	KindJournalTorn     Kind = "journal.torn"
+	KindStateRebuilt    Kind = "state.rebuilt"
 )
 
 type Payload interface {
@@ -207,12 +205,8 @@ func decodePayload(kind Kind, raw []byte) (Payload, error) {
 		p = &CorePhase{}
 	case KindGuardRotation:
 		p = &GuardRotation{}
-	case KindEscalationWindow:
-		p = &EscalationWindow{}
 	case KindTierChange:
 		p = &TierChange{}
-	case KindCommandRegain:
-		p = &CommandRegain{}
 	case KindCommandReset:
 		p = &CommandReset{}
 	case KindDefectFound:

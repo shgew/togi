@@ -93,14 +93,28 @@ func stateOf(dir string) *memState {
 	return v.(*memState)
 }
 
+// trigger acts once when the journal appends seq k: it crashes the machine, cancels the run's context, or kills the
+// process. Chained triggers act in order, each after the previous one fired.
 type trigger struct {
-	k     int
-	crash *sim.Machine
-	fired bool
+	k      int
+	crash  *sim.Machine
+	cancel context.CancelFunc
+	fired  bool
+	next   *trigger
 }
 
-func killAt(k int) *trigger                  { return &trigger{k: k} }
-func crashAt(k int, m *sim.Machine) *trigger { return &trigger{k: k, crash: m} }
+func killAt(k int) *trigger                              { return &trigger{k: k} }
+func crashAt(k int, m *sim.Machine) *trigger             { return &trigger{k: k, crash: m} }
+func cancelAt(k int, cancel context.CancelFunc) *trigger { return &trigger{k: k, cancel: cancel} }
+
+func (t *trigger) then(n *trigger) *trigger {
+	last := t
+	for last.next != nil {
+		last = last.next
+	}
+	last.next = n
+	return t
+}
 
 type testJournal struct {
 	*journal.Journal
@@ -110,13 +124,21 @@ type testJournal struct {
 
 func (j *testJournal) Append(p journal.Payload, cause ...int) (journal.Event, error) {
 	e, err := j.Journal.Append(p, cause...)
-	if err != nil || j.t == nil || j.t.fired || e.Seq != j.t.k {
+	tr := j.t
+	for tr != nil && tr.fired {
+		tr = tr.next
+	}
+	if err != nil || tr == nil || e.Seq != tr.k {
 		return e, err
 	}
-	j.t.fired = true
-	if j.t.crash != nil {
-		j.t.crash.Crash()
+	tr.fired = true
+	switch {
+	case tr.crash != nil:
+		tr.crash.Crash()
 		return e, machine.ErrCrashed
+	case tr.cancel != nil:
+		tr.cancel()
+		return e, nil
 	}
 	return e, errKilled
 }
@@ -209,7 +231,7 @@ func summary(t *testing.T, dir string) string {
 		out += fmt.Sprintf(" core %d %s;", c.Core, coreSummary{c.Phase, c.Offset, c.Pass, c.FailedMark, c.UnprovenDepth})
 	}
 	if g := st.Guard; g != nil {
-		out += fmt.Sprintf(" guard rotation %d, clean rotations %d, clean %d s, window open %v", g.Rotation, g.CleanRotations, g.CleanS, g.EscalationWindow)
+		out += fmt.Sprintf(" guard rotation %d, clean rotations %d, clean %d s", g.Rotation, g.CleanRotations, g.CleanS)
 	}
 	return out
 }

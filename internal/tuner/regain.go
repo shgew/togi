@@ -8,55 +8,16 @@ import (
 	"code.marleb.org/shgew/shycler/internal/machine"
 )
 
-const (
-	queuedRegain = "regain"
-	queuedReset  = "reset"
-)
+const queuedReset = "reset"
 
-func (s *State) queueRegain(seq int, cores []int) {
-	for _, id := range cores {
-		if c := s.core(id); c != nil && c.regainable() {
-			c.queued, c.queueSeq = queuedRegain, seq
-		}
-	}
-}
-
-func (c *core) regainable() bool {
-	return c.phase == journal.PhaseConfirmed && c.unproven > 0 && c.queued == ""
-}
-
-// queued starts the first core in scheduling order whose queued command is kind.
-func (s *State) queued(kind string) (Action, bool) {
+// queuedReset starts the reset queued first in scheduling order.
+func (s *State) queuedReset() (Action, bool) {
 	for _, c := range s.cores {
-		if c.queued != kind {
-			continue
+		if c.queued == queuedReset {
+			return Action{Kind: Decide, Payload: reset(c.snapshot(), c.baseline), Cause: []int{c.queueSeq}}, true
 		}
-		var p journal.Payload
-		switch kind {
-		case queuedReset:
-			p = reset(c.snapshot(), c.baseline)
-		case queuedRegain:
-			p = regainStart(c.snapshot())
-		}
-		return Action{Kind: Decide, Payload: p, Cause: []int{c.queueSeq}}, true
 	}
 	return Action{}, false
-}
-
-// Regainable lists, in scheduling order, the confirmed cores with unproven depth and nothing queued.
-func (s *State) Regainable() []int {
-	var out []int
-	for _, c := range s.cores {
-		if c.regainable() {
-			out = append(out, c.id)
-		}
-	}
-	return out
-}
-
-// RegainPending reports a regain that is queued or running.
-func (s *State) RegainPending() bool {
-	return slices.ContainsFunc(s.cores, func(c *core) bool { return c.queued == queuedRegain || c.phase == journal.PhaseRegain })
 }
 
 func reset(c coreState, baseline int) *journal.CorePhase {
@@ -66,26 +27,41 @@ func reset(c coreState, baseline int) *journal.CorePhase {
 	}
 }
 
-func regainStart(c coreState) *journal.CorePhase {
-	return &journal.CorePhase{
-		Core: c.core, From: journal.PhaseConfirmed, To: journal.PhaseRegain, Offset: c.offset - 1,
-		Pass: c.pass, FailedMark: c.fail, UnprovenDepth: c.unproven,
-		Reason: fmt.Sprintf("regain: one count deeper, undoing one of %d suspect counts", c.unproven),
+// regainable is the unproven depth a confirmed core may still regain: never to its settled mark or deeper. Since
+// offset - unproven is the confirmed edge or one shallower than the failed mark, regain stays within both.
+func (c *core) regainable() int {
+	if c.phase != journal.PhaseConfirmed {
+		return 0
 	}
+	n := c.unproven
+	if c.settled != nil {
+		n = min(n, c.offset-1-*c.settled)
+	}
+	return max(n, 0)
 }
 
-func regained(c coreState) *journal.CorePhase {
-	return &journal.CorePhase{
-		Core: c.core, From: journal.PhaseRegain, To: journal.PhaseConfirmed, Offset: c.offset,
-		Pass: c.pass, FailedMark: c.fail, UnprovenDepth: c.unproven - 1, Reason: "R1 to R5 passed; one count regained",
+// regainNext regains one count on the first core in scheduling order that has regainable depth and has not regained
+// since the clean rotation end that made regains due.
+func (s *State) regainNext() (Action, bool) {
+	g := &s.guard
+	if g.open || g.regainFrom == 0 {
+		return Action{}, false
 	}
+	for _, c := range s.cores {
+		if c.regainable() > 0 && !slices.Contains(g.regained, c.id) {
+			return Action{Kind: Decide, Payload: regain(c.snapshot(), g.rotation), Cause: []int{g.regainFrom}}, true
+		}
+	}
+	return Action{}, false
 }
 
-func regainFailure(c coreState) *journal.CorePhase {
-	o := c.offset
-	pass, discarded := keepPass(c.pass, o)
-	return &journal.CorePhase{
-		Core: c.core, From: journal.PhaseRegain, To: journal.PhaseConfirmed, Offset: o + 1, Pass: pass, FailedMark: new(o), Backoff: true,
-		Reason: fmt.Sprintf("failed regain at %d: proven backoff to %d, confirmed there before; the failed mark cancels the remaining unproven depth%s", o, o+1, discarded),
+func regain(c coreState, rotation int) *journal.TunerDecision {
+	to := c.offset - 1
+	spent := append(slices.Clone(c.spent), to)
+	slices.Sort(spent)
+	return &journal.TunerDecision{
+		Core: c.core, Phase: journal.PhaseGuard, Decision: journal.Regain, FromOffset: c.offset, ToOffset: to,
+		Pass: c.pass, FailedMark: c.fail, UnprovenDepth: c.unproven - 1, SettledMark: c.settled, SpentSteps: spent,
+		Reason: fmt.Sprintf("rotation %d completed clean: one of %d suspect counts regained, its retry at %d spent; unproven depth %d", rotation, c.unproven, to, c.unproven-1),
 	}
 }

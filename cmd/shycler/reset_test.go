@@ -23,7 +23,7 @@ func TestCommandsRefuseWhileLocked(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer j.Close()
-	for _, args := range [][]string{{"regain"}, {"reset", "--core", "3"}, {"reset", "--all"}} {
+	for _, args := range [][]string{{"reset", "--core", "3"}, {"reset", "--all"}} {
 		var stdout, stderr bytes.Buffer
 		if code := cli(append([]string{"--state-dir", dir}, args...), &stdout, &stderr); code != exitLocked {
 			t.Errorf("%v: exit %d, want %d; stderr %q", args, code, exitLocked, stderr.String())

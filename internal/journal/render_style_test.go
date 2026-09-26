@@ -13,7 +13,6 @@ import (
 
 func TestStyleOf(t *testing.T) {
 	t.Parallel()
-	passed, previousFail, backedOff := -20, -21, -19
 	tests := []struct {
 		name string
 		data Payload
@@ -26,8 +25,7 @@ func TestStyleOf(t *testing.T) {
 		{"passed search step", &TunerDecision{Decision: StepDeeper}, Green},
 		{"candidate edge", &CorePhase{From: PhaseSearch, To: PhaseConfirmation}, GreenBold},
 		{"confirmed edge", &CorePhase{From: PhaseConfirmation, To: PhaseConfirmed}, GreenBold},
-		{"regained edge", &CorePhase{From: PhaseRegain, To: PhaseConfirmed, Offset: passed, Pass: &backedOff, FailedMark: &previousFail, UnprovenDepth: 0}, GreenBold},
-		{"failed regain backoff", &CorePhase{From: PhaseRegain, To: PhaseConfirmed, Offset: backedOff, Pass: &backedOff, FailedMark: &passed, Backoff: true}, Yellow},
+		{"regain", &TunerDecision{Decision: Regain}, Green},
 		{"clean rotation", &GuardRotation{Event: RotationEnd, Clean: true}, GreenBold},
 		{"bronze earned", &TierChange{From: TierNone, To: TierBronze}, GreenBold},
 		{"silver earned", &TierChange{From: TierBronze, To: TierSilver}, GreenBold},

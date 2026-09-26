@@ -68,7 +68,7 @@ Enter the dev shell (Go, gopls, golangci-lint, govulncheck, just, nixfmt) with `
 | `just gate` | Lint, formatting check and tests: the quick check before handing off |
 | `just check` | Every flake check: package (its tests run shuffled under the race detector, with the integration tests on Linux), lint and the VM test; must pass before a pull request; CI runs it on every pull request and push to `main` |
 | `just fmt` | Format Go, Nix and the justfile |
-| `just sim [seed]` | A simulated session through its first clean guard rotation, to Bronze, in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
+| `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just release` | Open the release pull request, or tag a merged one; see `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `SHYCLER_MPRIME` and `SHYCLER_YCRUNCHER`, else from `/etc/shycler/config.toml` |
 | `just fuzz [time]` | Fuzz the journal parser |

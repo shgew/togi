@@ -40,16 +40,13 @@ func StyleOf(e Event) Style {
 		return RedBold
 	case *TunerDecision:
 		switch p.Decision {
-		case StepDeeper:
+		case StepDeeper, Regain:
 			return Green
 		case Backoff, SuspectBackoff:
 			return Yellow
 		}
 	case *CorePhase:
-		if p.From == PhaseRegain && p.To == PhaseConfirmed && p.Backoff {
-			return Yellow
-		}
-		if p.To == PhaseConfirmation && p.From == PhaseSearch || p.To == PhaseConfirmed && (p.From == PhaseConfirmation || p.From == PhaseRegain) {
+		if p.To == PhaseConfirmation && p.From == PhaseSearch || p.To == PhaseConfirmed && p.From == PhaseConfirmation {
 			return GreenBold
 		}
 	case *GuardRotation:

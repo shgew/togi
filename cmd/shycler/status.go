@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -24,9 +23,10 @@ import (
 const statusHelp = `Usage: shycler status
 
 Show the session at a glance: phase, tier and guard progress, then one row per
-core with its offset, unproven depth and last decision. Lists reset commands
-for unanswered too-cautious defects. Read-only; rendered from the journal.
-A different ruleset warns before rendering; a different schema is refused.
+core with its offset, regainable and settled depth and last decision. Lists
+reset commands for unanswered too-cautious defects. Read-only; rendered from
+the journal. A different ruleset warns before rendering; a different schema is
+refused.
 
 Examples:
   shycler status                     The session in the default state directory
@@ -96,11 +96,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	writeBIOSLine(w, st.Session)
 	guardPart := "guard not started"
 	if gs := st.Guard; gs != nil {
-		window := "closed"
-		if gs.EscalationWindow {
-			window = "open"
-		}
-		guardPart = fmt.Sprintf("rotation %d, %d of %d steps | escalation window %s", gs.Rotation, gs.StepsDone, len(gs.Steps), window)
+		guardPart = fmt.Sprintf("rotation %d, %d of %d steps", gs.Rotation, gs.StepsDone, len(gs.Steps))
 	}
 	fmt.Fprintf(w, "phase %s | tier %s | %s\n", st.Phase, tierRef(st), guardPart)
 	if f := st.InFlight; f != nil {
@@ -114,18 +110,14 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 
 	fmt.Fprintln(w)
 	tw := newTable(w)
-	fmt.Fprintln(tw, "CORE\tCCD\tOFFSET\tPHASE\tFAILED\tUNPROVEN\tQUEUED\tLAST DECISION")
-	var unproven []string
+	fmt.Fprintln(tw, "CORE\tCCD\tOFFSET\tPHASE\tFAILED\tREGAINABLE\tSETTLED\tQUEUED\tLAST DECISION")
 	for _, c := range st.Cores {
 		last := "-"
 		if d := c.LastDecision; d != nil {
 			last = fmt.Sprintf("[#%d] %s", d.Seq, d.Msg)
 		}
 		queued := cmp.Or(c.Queued, "-")
-		fmt.Fprintf(tw, "%02d\t%d\t%d\t%s\t%s\t%d\t%s\t%s\n", c.Core, c.CCD, c.Offset, c.Phase, mark(c.FailedMark), c.UnprovenDepth, queued, last)
-		if c.UnprovenDepth > 0 {
-			unproven = append(unproven, fmt.Sprintf("%02d", c.Core))
-		}
+		fmt.Fprintf(tw, "%02d\t%d\t%d\t%s\t%s\t%d\t%d\t%s\t%s\n", c.Core, c.CCD, c.Offset, c.Phase, mark(c.FailedMark), c.UnprovenDepth-c.SettledDepth, c.SettledDepth, queued, last)
 	}
 	_ = tw.Flush()
 	var findings []journal.DefectFound
@@ -175,9 +167,6 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	_ = tw.Flush()
 	if gs.TctlMaxC != nil {
 		fmt.Fprintf(w, "Tctl max %d°C [#%d]\n", *gs.TctlMaxC, gs.TctlMaxSeq)
-	}
-	if (st.Tier == journal.TierSilver || st.Tier == journal.TierGold) && len(unproven) > 0 {
-		fmt.Fprintf(w, "hint: cores %s have unproven depth; shycler regain retries one count per core\n", strings.Join(unproven, ", "))
 	}
 }
 

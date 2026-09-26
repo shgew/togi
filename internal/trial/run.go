@@ -99,14 +99,6 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				r6start = true
 				report.Progress("first half idle, then 100ms bursts every 2s, one core at a time")
 			}
-			if t.spec.Regime == machine.R7 {
-				if step.At == t.spec.Duration/2 {
-					report.Progress("CCD0 only: stopped cores 08-15")
-				}
-				if step.At == t.spec.Duration*3/4 && !step.Stop {
-					report.Progress("CCD1 only: resumed cores 08-15, stopped cores 00-07")
-				}
-			}
 			for _, idx := range step.Instances {
 				inst := t.instances[idx]
 				if err := t.toggle(inst, step.Stop, now); err != nil {

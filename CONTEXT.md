@@ -71,7 +71,7 @@ A trial condition where the whole profile is applied.
 The phase that finds a core's candidate edge with short isolated trials.
 
 **Confirmation**:
-The phase that checks a candidate edge with longer isolated trials across R1 to R5.
+The phase that checks a candidate edge with longer isolated trials covering every R1 and R2 workload and one trial each of R3 to R5.
 
 **Guard**:
 The endless phase that runs resident trials across all regimes once every core is confirmed.
@@ -116,11 +116,23 @@ A backoff caused by an attributed failure; it sets the failed mark.
 **Suspect backoff**:
 A precautionary backoff caused by an unattributed failure.
 
-**Unproven depth**:
-The counts a core gave up through suspect backoffs and has not regained.
+**Step**:
+One core at one numeric offset when measuring lost depth and retries.
 
-**Escalation window**:
-The span after a suspect backoff, lasting until a rotation completes clean, in which a further unattributed failure backs off every core.
+**Spent retry**:
+A step's single automatic-regain retry has been used; it stays spent until that core is reset.
+
+**Settled step**:
+A spent step from which the core was suspect-backed-off again; automatic regain cannot return that core to this step or deeper until reset.
+
+**Settled mark**:
+The shallowest settled offset of a core.
+
+**Unproven depth**:
+The total counts a core gave up through suspect backoffs and has not regained, including settled depth that automatic regain cannot recover.
+
+**Regain**:
+Moving a confirmed core one count deeper after a clean rotation, to retry a lost step under the resident profile.
 
 **Clean hours**:
 The duration of passed resident trials since the last profile change.

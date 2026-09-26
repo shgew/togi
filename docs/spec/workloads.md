@@ -33,11 +33,11 @@ Known quirks the integrations handle:
 | R4 medium load | Partial duty cycles | An R1 workload at 25%, 50% or 75% duty with a 100 ms period, cycling per trial |
 | R5 SMT pair | Both threads of one core | R1 and R2 workloads with 2 threads on both logical CPUs of the core |
 | R6 idle | Normal power management with the profile applied | One confined 1-thread R1 instance per core, each stopped with SIGSTOP as soon as it enters its scope, before the next instance launches. Trial timing begins only after all instances are stopped. First half: no load at all. Second half: short bursts (SIGCONT, then SIGSTOP 100 ms later, every 2 s) on one core at a time in scheduling order |
-| R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance per core. First both CCDs, then CCD0 only (CCD1's instances stopped), then CCD1 only |
+| R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance on each loaded core. A guard step runs CCD0 alone, CCD1 alone, then every core as three separate trials on two CCDs; on one CCD, one all-core trial |
 
-Within a regime, each core cycles through the listed workloads trial by trial, so backends alternate on the same core.
+Within a regime, search and guard cycle through the listed workloads trial by trial, so backends alternate on the same core. Confirmation selects each R1 and R2 workload by ID at the candidate edge. The three R7 trials of a step share one R2 workload, which advances when the step concludes (pass or failure); inconclusive retries use the same workload.
 
-R6 and R7 exist only in guard. Their trial targets every core: `trial.intent` lists every core in `cores`, and the trial runs on each core's first logical CPU. R6 and R7 run one instance per core, each in its own scope and work directory, so a computation error or stall stays attributed to that instance's core.
+R6 and R7 exist only in guard. R6 targets every core; an R7 trial targets the cores of one CCD or every core. `trial.intent.cores` lists exactly the loaded cores, and the trial runs on each loaded core's first logical CPU. They run one instance per loaded core, each in its own scope and work directory, so a computation error or stall stays attributed to that instance's core.
 
 ### Load-step schedules
 
@@ -50,10 +50,12 @@ Defaults, all configurable:
 | Use | Duration |
 |---|---|
 | Search trial (R1, then R2) | 90 s each |
-| Confirmation trial (R1 to R5) | 5 min each |
+| Confirmation trial (three R1 workloads, three R2 workloads, R3, R4, R5) | 5 min each; nine trials per core |
 | Guard per-core trial (R1 to R5) | 2 min each |
 | Guard R6 | 15 min |
-| Guard R7 | 20 min: 10 min both CCDs, 5 min per CCD |
+| Guard R7 | 20 min total on two CCDs: 5 min CCD0, 5 min CCD1, 10 min all cores; 20 min on one CCD |
+
+For `D = durations.guard_all_core_s` and `n` CCDs, R7 runs for `D` on one CCD; on multiple CCDs, each single-CCD trial runs `floor(D / 4)` seconds and the all-core trial runs `D - n*floor(D / 4)` seconds. `guard_all_core_s` must be in [4, 86400]. A trial is torn down before the next part starts, with no in-trial CCD phases or phase-change progress events. An inconclusive retry repeats that part's loaded cores and workload. Parts already passed survive interruption.
 
 Default guard rotation, about 3.5 h:
 1. R1 on every core
@@ -67,7 +69,7 @@ Default guard rotation, about 3.5 h:
 
 Per-core steps follow the scheduling order in `tuner.md`.
 
-Rough times to Bronze on 16 cores: search 6-9 h depending on how far edges lie from the baseline, confirmation about 7 h, first rotation about 3.5 h.
+Rough times to the first clean rotation on 16 cores: search 6-9 h depending on how far edges lie from the baseline, confirmation 45 min per core (nine × 5 min, about 12 h total), first rotation about 3.5 h. Bronze follows that rotation only if nothing is left to regain.
 
 ## Containment
 

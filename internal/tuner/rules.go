@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"fmt"
+	"slices"
 
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/machine"
@@ -14,6 +15,8 @@ type coreState struct {
 	pass     *int
 	fail     *int
 	unproven int
+	settled  *int
+	spent    []int
 }
 
 func searchPass(c coreState) journal.Payload {
@@ -36,8 +39,6 @@ func failureRule(c coreState) journal.Payload {
 		return searchFailure(c)
 	case journal.PhaseConfirmation:
 		return confirmationFailure(c)
-	case journal.PhaseRegain:
-		return regainFailure(c)
 	case journal.PhaseConfirmed, journal.PhaseGuard:
 	}
 	return guardFailure(c)
@@ -81,7 +82,7 @@ func guardFailure(c coreState) journal.Payload {
 	if c.unproven > 0 {
 		reason += fmt.Sprintf("; the failed mark cancels unproven depth %d", c.unproven)
 	}
-	return &journal.TunerDecision{Core: c.core, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: o, ToOffset: o + 1, Pass: pass, FailedMark: new(o), Reason: reason}
+	return &journal.TunerDecision{Core: c.core, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: o, ToOffset: o + 1, Pass: pass, FailedMark: new(o), SpentSteps: slices.Clone(c.spent), Reason: reason}
 }
 
 func suspectBackoff(c coreState, sp *suspect) *journal.TunerDecision {
@@ -91,15 +92,21 @@ func suspectBackoff(c coreState, sp *suspect) *journal.TunerDecision {
 		where = fmt.Sprintf("in resident %s trial %s", f.Regime, f.Trial)
 	}
 	u := c.unproven + 1
+	settled := c.settled
+	reason := fmt.Sprintf("unattributed %s failure %s; %s; unproven depth %d", f.Signal, where, sp.scope, u)
+	if slices.Contains(c.spent, c.offset) {
+		settled = new(c.offset)
+		reason += fmt.Sprintf("; the retry at %d was spent, so the step is settled until reset --core", c.offset)
+	}
 	return &journal.TunerDecision{
 		Core: c.core, Phase: journal.PhaseGuard, Decision: journal.SuspectBackoff, FromOffset: c.offset, ToOffset: c.offset + 1,
-		Pass: c.pass, FailedMark: c.fail, UnprovenDepth: u,
-		Reason: fmt.Sprintf("unattributed %s failure %s; %s; unproven depth %d", f.Signal, where, sp.scope, u),
+		Pass: c.pass, FailedMark: c.fail, UnprovenDepth: u, SettledMark: settled, SpentSteps: slices.Clone(c.spent),
+		Reason: reason,
 	}
 }
 
 func confirmed(c coreState) journal.Payload {
-	return &journal.CorePhase{Core: c.core, From: journal.PhaseConfirmation, To: journal.PhaseConfirmed, Offset: c.offset, Pass: c.pass, FailedMark: c.fail, UnprovenDepth: c.unproven, Reason: "R1 to R5 passed"}
+	return &journal.CorePhase{Core: c.core, From: journal.PhaseConfirmation, To: journal.PhaseConfirmed, Offset: c.offset, Pass: c.pass, FailedMark: c.fail, UnprovenDepth: c.unproven, Reason: "every R1 and R2 workload, R3, R4 and R5 passed"}
 }
 
 func candidate(c coreState, offset int, pass, fail *int, reason string) *journal.CorePhase {

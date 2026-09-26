@@ -158,14 +158,7 @@ func (r *running) progress(report machine.Reporter, res machine.Result) {
 			report.Progress("first half idle, then 100ms bursts every 2s, one core at a time")
 		}
 		report.Progress(fmt.Sprintf("bursts: %d continues, %d stops", res.Conts, res.Stops))
-	case machine.R7:
-		if res.Ran > r.spec.Duration/2 {
-			report.Progress("CCD0 only: stopped cores 08-15")
-		}
-		if res.Ran > r.spec.Duration*3/4 {
-			report.Progress("CCD1 only: resumed cores 08-15, stopped cores 00-07")
-		}
-	case machine.R1, machine.R2, machine.R3, machine.R4, machine.R5:
+	case machine.R1, machine.R2, machine.R3, machine.R4, machine.R5, machine.R7:
 	}
 }
 

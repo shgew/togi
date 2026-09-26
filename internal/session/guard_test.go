@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"testing"
@@ -8,13 +9,14 @@ import (
 	"code.marleb.org/shgew/shycler/internal/journal"
 	"code.marleb.org/shgew/shycler/internal/machine"
 	"code.marleb.org/shgew/shycler/internal/sim"
+	"code.marleb.org/shgew/shycler/internal/tuner"
 	"github.com/google/go-cmp/cmp"
 )
 
 func TestResidentInstabilitiesConverge(t *testing.T) {
 	t.Parallel()
 	const seeds = 12
-	type result struct{ suspect, proven int }
+	type result struct{ suspect, proven, regain int }
 	results := make([]result, seeds)
 	t.Run("seeds", func(t *testing.T) {
 		for seed := 1; seed <= seeds; seed++ {
@@ -36,9 +38,27 @@ func TestResidentInstabilitiesConverge(t *testing.T) {
 						t.Errorf("core %d %s at %d, hidden resident edge %d", c.Core, c.Phase, c.Offset, m.ResidentEdge(c.Core))
 					}
 				}
-				for _, e := range readEvents(t, dir) {
+				events := readEvents(t, dir)
+				perCause := map[[2]int]bool{}
+				regainedTo := map[[2]int]bool{}
+				for _, e := range events {
 					d, ok := e.Data.(*journal.TunerDecision)
 					if !ok || d.Phase != journal.PhaseGuard {
+						continue
+					}
+					if d.Decision == journal.Regain {
+						results[seed-1].regain++
+						if d.ToOffset != d.FromOffset-1 {
+							t.Errorf("seq %d regains more than one count: %s", e.Seq, e.Msg)
+						}
+						if len(e.Cause) != 1 || !cleanEnd(events[e.Cause[0]-1]) {
+							t.Errorf("seq %d regains without citing a clean rotation end: %v", e.Seq, e.Cause)
+							continue
+						}
+						if perCause[[2]int{d.Core, e.Cause[0]}] || regainedTo[[2]int{d.Core, d.ToOffset}] {
+							t.Errorf("seq %d regains again: %s", e.Seq, e.Msg)
+						}
+						perCause[[2]int{d.Core, e.Cause[0]}], regainedTo[[2]int{d.Core, d.ToOffset}] = true, true
 						continue
 					}
 					if d.ToOffset <= d.FromOffset {
@@ -51,6 +71,7 @@ func TestResidentInstabilitiesConverge(t *testing.T) {
 						results[seed-1].proven++
 					case journal.StepDeeper:
 						t.Errorf("seq %d steps deeper in guard: %s", e.Seq, e.Msg)
+					case journal.Regain:
 					}
 				}
 			})
@@ -60,15 +81,20 @@ func TestResidentInstabilitiesConverge(t *testing.T) {
 	for _, r := range results {
 		total.suspect += r.suspect
 		total.proven += r.proven
+		total.regain += r.regain
 	}
-	if total.suspect == 0 || total.proven == 0 {
-		t.Fatalf("seeds exercise no suspect/proven backoff: %+v", total)
+	if total.suspect == 0 || total.proven == 0 || total.regain == 0 {
+		t.Fatalf("seeds exercise no suspect/proven backoff or regain: %+v", total)
 	}
 }
 
-func TestIdleCrashInGuard(t *testing.T) {
-	t.Parallel()
-	_, ref := reference(t, small())
+func cleanEnd(e journal.Event) bool {
+	p, ok := e.Data.(*journal.GuardRotation)
+	return ok && p.Event == journal.RotationEnd && p.Clean
+}
+
+func residentApplied(t *testing.T, ref []journal.Event) int {
+	t.Helper()
 	applied := slices.IndexFunc(ref, func(e journal.Event) bool {
 		p, ok := e.Data.(*journal.ProfileApplied)
 		return ok && p.Condition == machine.Resident
@@ -76,6 +102,13 @@ func TestIdleCrashInGuard(t *testing.T) {
 	if applied < 0 {
 		t.Fatal("reference run never applied the resident profile")
 	}
+	return applied
+}
+
+func TestIdleCrashInGuard(t *testing.T) {
+	t.Parallel()
+	_, ref := reference(t, small())
+	applied := residentApplied(t, ref)
 	firstWrite := -1
 	for j := applied - 1; j >= 0 && isSMU(ref[j]); j-- {
 		if p, ok := ref[j].Data.(*journal.SMUIntent); ok && p.Offset != 0 {
@@ -115,22 +148,113 @@ func TestIdleCrashInGuard(t *testing.T) {
 				t.Fatalf("failure citing seq %d mismatch (-want +got):\n%s", crash.Seq, diff)
 			}
 			var backedOff []int
-			opened := false
 			for _, e := range events[f+1:] {
-				switch p := e.Data.(type) {
-				case *journal.TunerDecision:
-					if p.Decision == journal.SuspectBackoff && slices.Contains(e.Cause, events[f].Seq) {
-						backedOff = append(backedOff, p.Core)
-					}
-				case *journal.EscalationWindow:
-					opened = opened || (p.State == journal.WindowOpen && slices.Contains(e.Cause, events[f].Seq))
+				if p, ok := e.Data.(*journal.TunerDecision); ok && p.Decision == journal.SuspectBackoff && slices.Contains(e.Cause, events[f].Seq) {
+					backedOff = append(backedOff, p.Core)
 				}
 			}
-			if !slices.Equal(backedOff, []int{0, 1}) || !opened {
-				t.Fatalf("suspect backoffs of cores %v, window opened %v; want cores [0 1] and the window", backedOff, opened)
+			if !slices.Equal(backedOff, []int{0, 1}) {
+				t.Fatalf("suspect backoffs of cores %v, want [0 1]", backedOff)
+			}
+			if len(regainsIn(events)) != 0 {
+				t.Fatal("regained with --rotations 1; the run should stop at the clean rotation end")
+			}
+			if last, ok := events[len(events)-1].Data.(*journal.Shutdown); !ok || last.Reason != journal.ShutdownRotations {
+				t.Fatalf("last event %s, want shutdown for rotations", events[len(events)-1].Msg)
 			}
 		})
 	}
+}
+
+func regainsIn(events []journal.Event) []journal.Event {
+	var out []journal.Event
+	for _, e := range events {
+		if d, ok := e.Data.(*journal.TunerDecision); ok && d.Decision == journal.Regain {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func TestRegainAfterCleanRotation(t *testing.T) {
+	t.Parallel()
+	_, ref := reference(t, small())
+	at := ref[residentApplied(t, ref)].Seq
+	run := func(t *testing.T, ctx context.Context, tr func(*sim.Machine) *trigger) (Stop, string, []journal.Event) {
+		t.Helper()
+		dir := t.TempDir()
+		m := newSim(t, small())
+		in := simInput(dir, m)
+		in.Rotations = 2
+		stop, err := runSim(ctx, in, tr(m))
+		if err != nil {
+			t.Fatalf("simulate: %v", err)
+		}
+		return stop, dir, readEvents(t, dir)
+	}
+	stop, dir, events := run(t, context.Background(), func(m *sim.Machine) *trigger { return crashAt(at, m) })
+	if stop.Reason != StopRotations {
+		t.Fatalf("stopped with %+v", stop)
+	}
+	order := tuner.Order(events[0].Data.(*journal.SessionStart).Cores)
+	oneEach := func(t *testing.T, events []journal.Event) journal.Event {
+		t.Helper()
+		regains := regainsIn(events)
+		var cores []int
+		for _, e := range regains {
+			cores = append(cores, e.Data.(*journal.TunerDecision).Core)
+			if len(e.Cause) != 1 || e.Cause[0] != regains[0].Cause[0] {
+				t.Fatalf("regain seq %d cites %v, want %v like the first", e.Seq, e.Cause, regains[0].Cause)
+			}
+		}
+		if !slices.Equal(cores, order) {
+			t.Fatalf("regained cores %v, want one each in scheduling order %v", cores, order)
+		}
+		end := events[regains[0].Cause[0]-1]
+		if !cleanEnd(end) {
+			t.Fatalf("regains cite %s, want a clean rotation end", end.Msg)
+		}
+		return end
+	}
+	end := oneEach(t, events)
+	last := regainsIn(events)[len(order)-1]
+	if next := events[last.Seq]; next.Kind != journal.KindProfileChange {
+		t.Fatalf("after the last regain: %s, want profile.change", next.Msg)
+	}
+	st, err := readMemState(stateOf(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before []int
+	for _, e := range events[:at] {
+		if p, ok := e.Data.(*journal.ProfileChange); ok {
+			before = p.To
+		}
+	}
+	if st.Tier != journal.TierBronze || !slices.Equal(st.Guard.Profile, before) {
+		t.Fatalf("tier %s, profile %v; want bronze and the pre-crash profile %v", st.Tier, st.Guard.Profile, before)
+	}
+
+	t.Run("kill", func(t *testing.T) {
+		t.Parallel()
+		first := regainsIn(events)[0].Seq
+		_, _, killed := run(t, context.Background(), func(m *sim.Machine) *trigger { return crashAt(at, m).then(killAt(first)) })
+		if got := oneEach(t, killed); got.Seq != end.Seq {
+			t.Fatalf("regains cite seq %d, want %d", got.Seq, end.Seq)
+		}
+	})
+	t.Run("signal", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		stop, _, signalled := run(t, ctx, func(m *sim.Machine) *trigger { return crashAt(at, m).then(cancelAt(end.Seq, cancel)) })
+		if stop.Reason != StopSignal || len(regainsIn(signalled)) != 0 {
+			t.Fatalf("stopped with %+v after %d regains; want a signal stop before any", stop, len(regainsIn(signalled)))
+		}
+		if p, ok := signalled[len(signalled)-1].Data.(*journal.Shutdown); !ok || p.Reason != journal.ShutdownSignal {
+			t.Fatalf("last event %s, want shutdown for the signal", signalled[len(signalled)-1].Msg)
+		}
+	})
 }
 
 func isSMU(e journal.Event) bool {

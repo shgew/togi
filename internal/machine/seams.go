@@ -39,7 +39,7 @@ type TrialSpec struct {
 	Cores     []int
 	CPUs      []int
 	Duration  time.Duration
-	// Index counts the conclusive trials of this regime on this core so far; it picks the workload and seeds the simulator.
+	// Index counts the conclusive trials of this regime on this core so far; it picks the workload unless the tuner chose one, and seeds the simulator.
 	Index int
 	// Seed is the R3 load-step seed; the run loop passes the trial.intent seq, which is never 0.
 	Seed uint64
