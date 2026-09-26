@@ -4,12 +4,12 @@ The owner decides when to release. `version.txt` is the single source of the pac
 
 A pull request marked breaking merges only after the current `[Unreleased]` changes have been released. This ensures every downgrade target has a version.
 
-Set `FORGEJO_TOKEN` to a Forgejo token with repository write access. In a checkout with `remote.origin.url` set to the Forgejo repository:
+Releasing needs push access to the repository and nothing else: no token, no Forgejo client.
 
-1. Run `just release` to open the release pull request. The command reads the default branch through the Forgejo API, updates `version.txt` and `CHANGELOG.md` together on `release-<version>`, and opens the pull request. An already open release pull request is reported instead. Agents may review this pull request.
+1. Run `just release`. It fetches `main`, computes the next version from `[Unreleased]`, and builds a `Release x.y.z` commit on top of `origin/main` that updates `version.txt` and `CHANGELOG.md` together, without touching your checkout. It pushes that commit to `refs/for/main` with the push option `topic=release`, which Forgejo turns into a pull request ([AGit workflow](https://forgejo.org/docs/latest/user/git-cli/agit-support/)): the commit subject is its title, the reason for the bump its description, and the push prints its link. `check` runs on it like on any pull request. Agents may review it. `just release -dry-run` prints the version, the reason and the release notes without pushing.
 2. Review and merge the release pull request.
-3. Run `just release` again. It tags the release pull request's merge commit (not the current default branch head), publishes the release, and uses that version's changelog section as the release notes, including its referenced pull request links.
+3. CI publishes. After `check` passes on a push to `main`, the `publish` job runs `go run ./tools/release -publish` with the workflow's automatic token. When `version.txt` names a version with a dated changelog section and no `v<version>` tag, it creates the release on the first-parent commit that last changed `version.txt`, the release pull request's merge commit, with that version's changelog section, including its pull request links, as the notes. Forgejo creates the tag with the release. A failed publish is retried by the next push to `main` or by re-running the job.
 
-The command is `go run ./tools/release`. Use `-dry-run` to see the due step without writing to Forgejo. `-repo owner/name` and `-url https://host` override the values derived from `remote.origin.url`; supply both to run without a checkout. The supported remote URL forms are `ssh://git@host/owner/name.git` and `https://host/owner/name` (with or without `.git`). `FORGEJO_TOKEN` is required even for a dry run.
+Only one release pull request is open at a time. While one is open, Forgejo rejects the next `just release` push, and the command says so: merge or close the open one first.
 
 Releases carry no binary artifacts. Flake users build from a tag. Dev builds report `x.y.z+rev` (or `x.y.z+rev-dirty` for dirty flakes); `go run` reports `x.y.z+dev`. `shycler --version` prints the build version and revision.

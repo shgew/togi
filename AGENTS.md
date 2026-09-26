@@ -12,7 +12,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
   - `workloads.md`: regimes, backends, containment, failure detection.
   - `journal.md`: events, state, logging.
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
-- `docs/releasing.md`: versioning rules and the release pull request and tagging procedure.
+- `docs/releasing.md`: versioning rules, the release pull request and publishing.
 - `docs/simulating.md`: running a simulated session with `tools/sim`.
 - `docs/adr/`: decisions and the alternatives rejected. Reversing one needs a new ADR.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
@@ -69,7 +69,7 @@ Enter the dev shell (Go, gopls, golangci-lint, govulncheck, just, nixfmt) with `
 | `just check` | Every flake check: package (its tests run shuffled under the race detector, with the integration tests on Linux), lint and the VM test; must pass before a pull request; CI runs it on every pull request and push to `main` |
 | `just fmt` | Format Go, Nix and the justfile |
 | `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
-| `just release` | Open the release pull request, or tag a merged one; see `docs/releasing.md` |
+| `just release` | Open the release pull request; CI publishes it once merged. See `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `SHYCLER_MPRIME` and `SHYCLER_YCRUNCHER`, else from `/etc/shycler/config.toml` |
 | `just fuzz [time]` | Fuzz the journal parser |
 | `just vuln` | Known vulnerabilities in called dependency and standard library code; CI runs it |

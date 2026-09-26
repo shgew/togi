@@ -70,7 +70,7 @@ check-one +names:
 sim seed="1":
     {{ dev }} go run ./tools/sim --seed "$1"
 
-# Open the release pull request, or tag and publish a merged one (needs FORGEJO_TOKEN)
+# Open the release pull request from origin/main with a git push (-dry-run previews it)
 [group('release')]
 release *args:
     {{ dev }} go run ./tools/release "$@"

@@ -1,9 +1,8 @@
-// Command release prepares and publishes shycler releases through the Forgejo API.
+// Command release opens shycler's release pull request with a git push, and publishes a merged release from CI.
 package main
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -18,45 +17,46 @@ import (
 	"time"
 )
 
-type repository struct {
-	owner, name, webURL string
-}
+const (
+	remote        = "origin"
+	defaultBranch = "main"
+	releaseTopic  = "release"
+)
 
 var repoPart = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+var modulePath = regexp.MustCompile(`(?m)^module[ \t]+(\S+)[ \t]*$`)
 
-func parseRepository(name, webURL string) (repository, error) {
+type gitCmd struct {
+	args  []string
+	env   []string
+	stdin string
+}
+
+type gitFunc func(gitCmd) (stdout, stderr string, err error)
+
+func runGit(c gitCmd) (string, string, error) {
+	cmd := exec.Command("git", c.args...)
+	cmd.Env = append(os.Environ(), c.env...)
+	cmd.Stdin = strings.NewReader(c.stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	if err != nil {
+		err = fmt.Errorf("git %s: %w: %s", strings.Join(c.args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return stdout.String(), stderr.String(), err
+}
+
+type repository struct {
+	owner, name string
+}
+
+func parseRepository(name string) (repository, error) {
 	owner, repo, ok := strings.Cut(name, "/")
 	if !ok || !repoPart.MatchString(owner) || !repoPart.MatchString(repo) || owner == "." || owner == ".." || repo == "." || repo == ".." {
 		return repository{}, fmt.Errorf("invalid repository %q (expected owner/name)", name)
 	}
-	u, err := url.Parse(webURL)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-		return repository{}, fmt.Errorf("invalid Forgejo URL %q (expected https://host)", webURL)
-	}
-	return repository{owner, repo, strings.TrimRight(webURL, "/") + "/" + name}, nil
-}
-
-func parseRemote(remote string) (repository, string, error) {
-	u, err := url.Parse(strings.TrimSpace(remote))
-	if err != nil || (u.Scheme != "https" && u.Scheme != "ssh") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || (u.Scheme == "ssh" && (u.User == nil || u.User.Username() != "git")) || (u.Scheme == "https" && u.User != nil) {
-		return repository{}, "", fmt.Errorf("unsupported remote URL %q", remote)
-	}
-	name := strings.TrimPrefix(u.Path, "/")
-	name = strings.TrimSuffix(name, ".git")
-	webURL := "https://" + u.Host
-	r, err := parseRepository(name, webURL)
-	if err != nil {
-		return repository{}, "", fmt.Errorf("remote URL %q: %w", remote, err)
-	}
-	return r, webURL, nil
-}
-
-func remoteOrigin() (repository, string, error) {
-	output, err := exec.Command("git", "config", "--get", "remote.origin.url").Output()
-	if err != nil {
-		return repository{}, "", fmt.Errorf("read remote.origin.url with git config: %w", err)
-	}
-	return parseRemote(string(output))
+	return repository{owner, repo}, nil
 }
 
 type forgejo struct {
@@ -106,329 +106,207 @@ func (f forgejo) request(method, path string, body any, result any, allowed ...i
 	return resp.StatusCode, nil
 }
 
-func (f forgejo) repoPath(r repository) string {
-	return "/repos/" + url.PathEscape(r.owner) + "/" + url.PathEscape(r.name)
-}
-
-type pull struct {
-	HTMLURL        string `json:"html_url"`
-	Merged         bool   `json:"merged"`
-	MergeCommitSHA string `json:"merge_commit_sha"`
-	Head           struct {
-		Label string `json:"label"`
-		Ref   string `json:"ref"`
-	} `json:"head"`
-}
-
-func (p pull) headBranch() string {
-	if _, branch, ok := strings.Cut(p.Head.Label, ":"); ok {
-		return branch
-	}
-	if p.Head.Label != "" {
-		return p.Head.Label
-	}
-	return p.Head.Ref
-}
-
-func (f forgejo) pulls(r repository, state string) ([]pull, error) {
-	var all []pull
-	for page := 1; ; page++ {
-		var batch []pull
-		path := fmt.Sprintf("%s/pulls?state=%s&limit=50&page=%d", f.repoPath(r), state, page)
-		if _, err := f.request(http.MethodGet, path, nil, &batch); err != nil {
-			return nil, err
-		}
-		all = append(all, batch...)
-		if len(batch) == 0 {
-			return all, nil
-		}
-	}
-}
-
-func (f forgejo) hasTags(r repository) (bool, error) {
-	for page := 1; ; page++ {
-		var batch []struct {
-			Name string `json:"name"`
-		}
-		path := fmt.Sprintf("%s/tags?limit=50&page=%d", f.repoPath(r), page)
-		if _, err := f.request(http.MethodGet, path, nil, &batch); err != nil {
-			return false, err
-		}
-		for _, tag := range batch {
-			if strings.HasPrefix(tag.Name, "v") {
-				return true, nil
-			}
-		}
-		if len(batch) == 0 {
-			return false, nil
-		}
-	}
-}
-
 type runner struct {
-	api    forgejo
-	repo   repository
+	git    gitFunc
 	now    func() time.Time
 	out    io.Writer
 	dryRun bool
 }
 
-func (r runner) run() error {
-	prefix := r.api.repoPath(r.repo)
-	var info struct {
-		DefaultBranch string `json:"default_branch"`
+func (r runner) output(args ...string) (string, error) {
+	stdout, _, err := r.git(gitCmd{args: args})
+	return stdout, err
+}
+
+func (r runner) prepare() error {
+	if _, err := r.output("fetch", "--quiet", remote, defaultBranch); err != nil {
+		return fmt.Errorf("fetch %s: %w", defaultBranch, err)
 	}
-	if _, err := r.api.request(http.MethodGet, prefix, nil, &info); err != nil {
-		return fmt.Errorf("read repository: %w", err)
+	base := remote + "/" + defaultBranch
+	baseCommit, err := r.output("rev-parse", "--verify", base+"^{commit}")
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", base, err)
 	}
-	if info.DefaultBranch == "" {
-		return errors.New("read repository: missing default_branch")
-	}
-	branch := url.QueryEscape(info.DefaultBranch)
-	var rawVersion, changelog string
-	for _, file := range []struct {
-		path string
-		into *string
-	}{{"version.txt", &rawVersion}, {"CHANGELOG.md", &changelog}} {
-		path := prefix + "/raw/" + file.path + "?ref=" + branch
-		var data string
-		if err := r.raw(path, &data); err != nil {
-			return fmt.Errorf("read %s: %w", file.path, err)
+	baseCommit = strings.TrimSpace(baseCommit)
+	files := map[string]string{}
+	for _, path := range []string{"version.txt", "CHANGELOG.md", "go.mod"} {
+		text, err := r.output("show", baseCommit+":"+path)
+		if err != nil {
+			return fmt.Errorf("read %s from %s: %w", path, base, err)
 		}
-		*file.into = data
+		files[path] = text
 	}
-	version := strings.TrimSpace(rawVersion)
+	version := strings.TrimSpace(files["version.txt"])
 	if !versionPattern.MatchString(version) {
 		return fmt.Errorf("read version.txt: invalid semantic version %q", version)
 	}
-	if s, exists := sectionNamed(changelog, version); exists && s.date != "" {
-		path := prefix + "/tags/v" + url.PathEscape(version)
-		status, err := r.api.request(http.MethodGet, path, nil, nil, http.StatusNotFound)
-		if err != nil {
-			return fmt.Errorf("check release tag: %w", err)
-		}
-		if status == http.StatusNotFound {
-			return r.tag(version, s, changelog)
-		}
+	module := modulePath.FindStringSubmatch(files["go.mod"])
+	if module == nil {
+		return errors.New("read go.mod: missing module path")
 	}
-	return r.releasePullRequest(info.DefaultBranch, version, changelog)
-}
-
-func (r runner) raw(path string, data *string) error {
-	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(r.api.base, "/")+path, nil)
-	if err != nil {
-		return fmt.Errorf("prepare GET %s: %w", path, err)
-	}
-	req.Header.Set("Authorization", "token "+r.api.token)
-	resp, err := r.api.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("GET %s: %w", path, err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read GET %s response: %w", path, err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("GET %s: HTTP %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	*data = string(body)
-	return nil
-}
-
-func (r runner) tag(version string, s section, changelog string) error {
-	pulls, err := r.api.pulls(r.repo, "closed")
-	if err != nil {
-		return fmt.Errorf("tag release: find merged release pull request: %w", err)
-	}
-	for _, p := range pulls {
-		if p.headBranch() != "release-"+version || !p.Merged {
-			continue
-		}
-		if p.MergeCommitSHA == "" {
-			return fmt.Errorf("tag release: merged release-%s pull request has no merge_commit_sha", version)
-		}
-		if r.dryRun {
-			fmt.Fprintf(r.out, "Would publish release v%s at merge commit %s\n", version, p.MergeCommitSHA)
-			return nil
-		}
-		var result struct {
-			HTMLURL string `json:"html_url"`
-		}
-		body := map[string]any{
-			"tag_name": "v" + version, "target_commitish": p.MergeCommitSHA,
-			"name": version, "body": releaseNotes(changelog, s),
-		}
-		if _, err := r.api.request(http.MethodPost, r.api.repoPath(r.repo)+"/releases", body, &result); err != nil {
-			return fmt.Errorf("tag release: create release: %w", err)
-		}
-		fmt.Fprintln(r.out, result.HTMLURL)
-		return nil
-	}
-	return fmt.Errorf("tag release: no merged pull request with head release-%s", version)
-}
-
-func (r runner) releasePullRequest(branch, version, changelog string) error {
-	pulls, err := r.api.pulls(r.repo, "open")
-	if err != nil {
-		return fmt.Errorf("release pull request: find open pull requests: %w", err)
-	}
-	for _, p := range pulls {
-		if strings.HasPrefix(p.headBranch(), "release-") {
-			fmt.Fprintln(r.out, p.HTMLURL)
-			return nil
-		}
-	}
+	changelog := files["CHANGELOG.md"]
 	s, ok := sectionNamed(changelog, "Unreleased")
 	if !ok {
-		return errors.New("release pull request: missing [Unreleased] section")
+		return errors.New("read CHANGELOG.md: missing [Unreleased] section")
 	}
 	if len(entries(s.body)) == 0 {
 		fmt.Fprintln(r.out, "nothing to release")
 		return nil
 	}
-	hasTags, err := r.api.hasTags(r.repo)
+	tags, err := r.output("ls-remote", "--tags", remote, "refs/tags/v*")
 	if err != nil {
-		return fmt.Errorf("release pull request: list tags: %w", err)
+		return fmt.Errorf("list release tags: %w", err)
 	}
 	next, reason := version, "First release; version.txt sets the initial version."
-	if hasTags {
-		next, reason, err = bump(version, s.body)
-		if err != nil {
-			return fmt.Errorf("release pull request: bump version: %w", err)
-		}
-	} else if _, exists := sectionNamed(changelog, version); exists {
-		next, reason, err = bump(version, s.body)
-		if err != nil {
-			return fmt.Errorf("release pull request: bump version: %w", err)
+	if _, released := sectionNamed(changelog, version); released || strings.TrimSpace(tags) != "" {
+		if next, reason, err = bump(version, s.body); err != nil {
+			return fmt.Errorf("bump version: %w", err)
 		}
 	}
-	updated, err := rewriteChangelog(changelog, next, r.repo.webURL, r.now())
+	updated, err := rewriteChangelog(changelog, next, "https://"+module[1], r.now())
 	if err != nil {
-		return fmt.Errorf("release pull request: rewrite changelog: %w", err)
+		return fmt.Errorf("rewrite changelog: %w", err)
 	}
+	message := "Release " + next + "\n\n" + reason + "\n"
 	if r.dryRun {
-		fmt.Fprintf(r.out, "Would open release pull request for %s on release-%s: %s\n", next, next, reason)
+		released, _ := sectionNamed(updated, next)
+		fmt.Fprintf(r.out, "Would open a release pull request from %s:\n\n%s\n%s\n", base, message, releaseNotes(updated, released))
 		return nil
 	}
-	prefix := r.api.repoPath(r.repo)
-	files := make([]map[string]string, 0, 2)
-	for _, file := range []struct{ path, text string }{{"CHANGELOG.md", updated}, {"version.txt", next + "\n"}} {
-		var contents struct {
-			SHA string `json:"sha"`
-		}
-		path := prefix + "/contents/" + file.path + "?ref=" + url.QueryEscape(branch)
-		if _, err := r.api.request(http.MethodGet, path, nil, &contents); err != nil {
-			return fmt.Errorf("release pull request: read %s SHA: %w", file.path, err)
-		}
-		if contents.SHA == "" {
-			return fmt.Errorf("release pull request: missing %s SHA", file.path)
-		}
-		files = append(files, map[string]string{"operation": "update", "path": file.path, "content": base64.StdEncoding.EncodeToString([]byte(file.text)), "sha": contents.SHA})
+	commit, err := r.commit(baseCommit, message, map[string]string{"version.txt": next + "\n", "CHANGELOG.md": updated})
+	if err != nil {
+		return fmt.Errorf("commit release %s: %w", next, err)
 	}
-	newBranch := "release-" + next
-	commit := map[string]any{"branch": branch, "new_branch": newBranch, "message": "Release " + next, "files": files}
-	if status, err := r.api.request(http.MethodPost, prefix+"/contents", commit, nil); err != nil {
-		if status != http.StatusConflict && status != http.StatusUnprocessableEntity {
-			return fmt.Errorf("release pull request: commit release files: %w", err)
+	_, stderr, err := r.git(gitCmd{args: []string{"push", remote, commit + ":refs/for/" + defaultBranch, "-o", "topic=" + releaseTopic}})
+	fmt.Fprint(r.out, stderr)
+	if err != nil {
+		if strings.Contains(stderr, "force-push") {
+			return errors.New("push release commit: a release pull request is already open; merge or close it first")
 		}
-		matched, checkErr := r.branchMatches(newBranch, files)
-		if checkErr != nil {
-			return fmt.Errorf("release pull request: commit release files: %w (check existing branch: %w)", err, checkErr)
-		}
-		if !matched {
-			return fmt.Errorf("release pull request: commit release files: %w (existing branch has different contents)", err)
-		}
+		return fmt.Errorf("push release commit: %w", err)
 	}
-	var created struct {
-		HTMLURL string `json:"html_url"`
-	}
-	pr := map[string]string{"title": "Release " + next, "head": newBranch, "base": branch, "body": "Release " + next + "\n\n" + reason}
-	if _, err := r.api.request(http.MethodPost, prefix+"/pulls", pr, &created); err != nil {
-		return fmt.Errorf("release pull request: open pull request: %w", err)
-	}
-	fmt.Fprintln(r.out, created.HTMLURL)
 	return nil
 }
 
-func (r runner) branchMatches(branch string, files []map[string]string) (bool, error) {
-	for _, file := range files {
-		path := r.api.repoPath(r.repo) + "/contents/" + file["path"] + "?ref=" + url.QueryEscape(branch)
-		var contents struct {
-			Content string `json:"content"`
-		}
-		if _, err := r.api.request(http.MethodGet, path, nil, &contents); err != nil {
-			return false, err
-		}
-		got, err := base64.StdEncoding.DecodeString(contents.Content)
-		if err != nil {
-			return false, fmt.Errorf("decode existing %s: %w", file["path"], err)
-		}
-		want, _ := base64.StdEncoding.DecodeString(file["content"])
-		if bytes.Equal(got, want) {
-			continue
-		}
-		if file["path"] == "CHANGELOG.md" && sameReleaseChangelog(string(got), string(want), strings.TrimPrefix(branch, "release-")) {
-			continue
-		}
-		return false, nil
+func (r runner) commit(parent, message string, files map[string]string) (string, error) {
+	indexPath, err := r.output("rev-parse", "--git-path", "shycler-release-index")
+	if err != nil {
+		return "", fmt.Errorf("locate temporary index: %w", err)
 	}
-	return true, nil
+	indexPath = strings.TrimSpace(indexPath)
+	defer os.Remove(indexPath)
+	env := []string{"GIT_INDEX_FILE=" + indexPath}
+	indexed := func(stdin string, args ...string) (string, error) {
+		stdout, _, err := r.git(gitCmd{args: args, env: env, stdin: stdin})
+		return strings.TrimSpace(stdout), err
+	}
+	if _, err := indexed("", "read-tree", parent); err != nil {
+		return "", fmt.Errorf("read parent tree: %w", err)
+	}
+	for _, path := range []string{"version.txt", "CHANGELOG.md"} {
+		blob, err := indexed(files[path], "hash-object", "-w", "--stdin")
+		if err != nil {
+			return "", fmt.Errorf("store %s: %w", path, err)
+		}
+		if _, err := indexed("", "update-index", "--cacheinfo", "100644,"+blob+","+path); err != nil {
+			return "", fmt.Errorf("stage %s: %w", path, err)
+		}
+	}
+	tree, err := indexed("", "write-tree")
+	if err != nil {
+		return "", fmt.Errorf("write tree: %w", err)
+	}
+	commit, err := indexed(message, "commit-tree", tree, "-p", parent, "-F", "-")
+	if err != nil {
+		return "", fmt.Errorf("create commit: %w", err)
+	}
+	return commit, nil
 }
 
-func sameReleaseChangelog(got, want, version string) bool {
-	existing, foundExisting := sectionNamed(got, version)
-	expected, foundExpected := sectionNamed(want, version)
-	if !foundExisting || !foundExpected || existing.date == "" || expected.date == "" {
-		return false
+func (r runner) publish(api forgejo, repo repository) error {
+	var files [2]string
+	for i, path := range []string{"version.txt", "CHANGELOG.md"} {
+		text, err := r.output("show", "HEAD:"+path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		files[i] = text
 	}
-	dateOffset := len("## [" + version + "] - ")
-	existingDate := existing.start + dateOffset
-	expectedDate := expected.start + dateOffset
-	return got[:existingDate] == want[:expectedDate] &&
-		got[existingDate+len(existing.date):] == want[expectedDate+len(expected.date):]
+	version, changelog := strings.TrimSpace(files[0]), files[1]
+	if !versionPattern.MatchString(version) {
+		return fmt.Errorf("read version.txt: invalid semantic version %q", version)
+	}
+	s, released := sectionNamed(changelog, version)
+	if !released || s.date == "" {
+		fmt.Fprintf(r.out, "nothing to publish: CHANGELOG.md has no released [%s] section\n", version)
+		return nil
+	}
+	prefix := "/repos/" + url.PathEscape(repo.owner) + "/" + url.PathEscape(repo.name)
+	tag := "v" + version
+	status, err := api.request(http.MethodGet, prefix+"/tags/"+url.PathEscape(tag), nil, nil, http.StatusNotFound)
+	if err != nil {
+		return fmt.Errorf("check tag %s: %w", tag, err)
+	}
+	if status != http.StatusNotFound {
+		fmt.Fprintf(r.out, "nothing to publish: %s already exists\n", tag)
+		return nil
+	}
+	commit, err := r.output("log", "--first-parent", "-1", "--format=%H", "HEAD", "--", "version.txt")
+	if err != nil {
+		return fmt.Errorf("find the commit that set version.txt to %s: %w", version, err)
+	}
+	commit = strings.TrimSpace(commit)
+	if commit == "" {
+		return fmt.Errorf("find the commit that set version.txt to %s: no commit changed version.txt", version)
+	}
+	if r.dryRun {
+		fmt.Fprintf(r.out, "Would publish %s at %s\n", tag, commit)
+		return nil
+	}
+	var result struct {
+		HTMLURL string `json:"html_url"`
+	}
+	body := map[string]any{"tag_name": tag, "target_commitish": commit, "name": version, "body": releaseNotes(changelog, s)}
+	if _, err := api.request(http.MethodPost, prefix+"/releases", body, &result); err != nil {
+		return fmt.Errorf("create release %s: %w", tag, err)
+	}
+	fmt.Fprintln(r.out, result.HTMLURL)
+	return nil
 }
 
 func main() {
-	var repoFlag, urlFlag string
-	var dryRun bool
-	flag.StringVar(&repoFlag, "repo", "", "Forgejo repository (owner/name; defaults to remote.origin.url)")
-	flag.StringVar(&urlFlag, "url", "", "Forgejo server (https://host; defaults to remote.origin.url)")
-	flag.BoolVar(&dryRun, "dry-run", false, "report the due step without making changes")
+	var publish, dryRun bool
+	flag.BoolVar(&publish, "publish", false, "publish the release version.txt names, if not yet published (CI; reads GITHUB_SERVER_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
+	flag.BoolVar(&dryRun, "dry-run", false, "print what would happen without pushing or publishing")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		fmt.Fprintln(os.Stderr, "release: unexpected positional arguments")
 		os.Exit(2)
 	}
-	if err := runCLI(repoFlag, urlFlag, dryRun); err != nil {
+	r := runner{git: runGit, now: time.Now, out: os.Stdout, dryRun: dryRun}
+	var err error
+	if publish {
+		err = runPublish(r)
+	} else {
+		err = r.prepare()
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "release:", err)
 		os.Exit(1)
 	}
 }
 
-func runCLI(repoFlag, urlFlag string, dryRun bool) error {
-	token := os.Getenv("FORGEJO_TOKEN")
-	if token == "" {
-		return errors.New("FORGEJO_TOKEN is unset")
-	}
-	if repoFlag == "" || urlFlag == "" {
-		origin, webURL, err := remoteOrigin()
-		if err != nil {
-			return err
-		}
-		if repoFlag == "" {
-			repoFlag = origin.owner + "/" + origin.name
-		}
-		if urlFlag == "" {
-			urlFlag = webURL
+func runPublish(r runner) error {
+	env := map[string]string{}
+	for _, key := range []string{"GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "GITHUB_TOKEN"} {
+		if env[key] = os.Getenv(key); env[key] == "" {
+			return fmt.Errorf("%s is unset", key)
 		}
 	}
-	repo, err := parseRepository(repoFlag, urlFlag)
+	repo, err := parseRepository(env["GITHUB_REPOSITORY"])
 	if err != nil {
 		return err
 	}
-	return runner{
-		api:  forgejo{base: urlFlag + "/api/v1", token: token, client: http.DefaultClient},
-		repo: repo, now: time.Now, out: os.Stdout, dryRun: dryRun,
-	}.run()
+	api := forgejo{base: strings.TrimRight(env["GITHUB_SERVER_URL"], "/") + "/api/v1", token: env["GITHUB_TOKEN"], client: http.DefaultClient}
+	return r.publish(api, repo)
 }
