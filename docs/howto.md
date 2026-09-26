@@ -44,7 +44,7 @@ Rebuild (`nixos-rebuild boot`, or your usual way), then reboot. In BIOS, every C
 sudo shycler run
 ```
 
-It prints one line per event: the preflight checks, the BIOS context, the baseline, then each search trial's intent, start and end. Watch a few trials, then press Ctrl-C. It writes each core back to its baseline, or to its current offset where that is shallower, records `shutdown` and exits 0; the next `sudo shycler run` resumes where it stopped.
+It shows the session as a dashboard that redraws every second: the stage, the running trial and one tile per core. Watch a few trials, then press Ctrl-C. It writes each core back to its baseline, or to its current offset where that is shallower, records `shutdown` and exits 0; the next `sudo shycler run` resumes where it stopped. `sudo shycler run --no-tui` prints one line per event instead: the preflight checks, the BIOS context, the baseline, then each search trial's intent, start and end.
 
 ```sh
 shycler status
