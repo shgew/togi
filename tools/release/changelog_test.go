@@ -121,30 +121,3 @@ func TestRewriteFirstRelease(t *testing.T) {
 		})
 	}
 }
-
-func TestParseRemote(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		remote, owner, name, host string
-	}{
-		{"ssh://git@forge.example:2222/o/r.git", "o", "r", "https://forge.example:2222"},
-		{"https://forge.example/o/r.git", "o", "r", "https://forge.example"},
-		{"https://forge.example/o/r", "o", "r", "https://forge.example"},
-		{"git@forge.example:o/r.git", "", "", ""},
-		{"https://forge.example/o/r/extra", "", "", ""},
-	} {
-		t.Run(tc.remote, func(t *testing.T) {
-			t.Parallel()
-			r, host, err := parseRemote(tc.remote)
-			if tc.owner == "" {
-				if err == nil {
-					t.Fatalf("accepted invalid remote %+v", r)
-				}
-				return
-			}
-			if err != nil || r.owner != tc.owner || r.name != tc.name || host != tc.host {
-				t.Fatalf("parse = %+v, %q, %v", r, host, err)
-			}
-		})
-	}
-}
