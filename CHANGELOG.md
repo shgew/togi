@@ -8,6 +8,7 @@ All notable changes to shycler are documented in this file. The format is based 
 
 - `shycler watch` shows the session as a dashboard that redraws every second: stage, running trial, one tile per core with its offset, failed mark and regainable or settled depth, and the latest events. Off a terminal it prints one frame and exits ([#65]).
 - `services.shycler.tuning.consoleFont` sets the tuning boot's console font; by default the tuning boot uses the kernel's built-in font, whatever font the system sets, because the dashboard's digits need IBM437 block glyphs that fonts such as `Lat2-Terminus16` lack ([#65]).
+- `candidate_edges.<core>` starts a core of a new session in confirmation at the given offset instead of searching, so a session started again after `reset --all` can skip re-finding known edges ([#66]).
 
 ### Changed
 
@@ -104,3 +105,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#54]: https://code.marleb.org/shgew/shycler/pulls/54
 [#58]: https://code.marleb.org/shgew/shycler/pulls/58
 [#65]: https://code.marleb.org/shgew/shycler/pulls/65
+[#66]: https://code.marleb.org/shgew/shycler/pulls/66

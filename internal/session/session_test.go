@@ -273,6 +273,25 @@ func TestKillAtEveryEvent(t *testing.T) {
 	}
 }
 
+func TestCandidateEdgesSkipSearch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	in := simInput(dir, newSim(t, small()))
+	in.Config.CandidateEdges = map[int]int{0: -12, 1: -13}
+	if stop := simulate(t, in); stop.Reason != StopRotations {
+		t.Fatalf("stopped with %+v", stop)
+	}
+	for _, e := range readEvents(t, dir) {
+		if p, ok := e.Data.(*journal.TrialIntent); ok && p.Phase == journal.PhaseSearch {
+			t.Fatalf("search trial %s ran despite a candidate edge", p.Trial)
+		}
+	}
+	want := "phase guard, dead end <nil>: core 0 confirmed at -12 (pass none, failed mark none, unproven 0); core 1 confirmed at -11 (pass none, failed mark -12, unproven 0);"
+	if got := summary(t, dir); !strings.HasPrefix(got, want) {
+		t.Fatalf("got  %s\nwant %s…", got, want)
+	}
+}
+
 func trialEvents(events []journal.Event) []int {
 	var ks []int
 	for i, e := range events {

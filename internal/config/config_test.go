@@ -18,6 +18,9 @@ func TestLoad(t *testing.T) {
 	partial.Durations.SearchTrialS = 60
 	offsets := Default()
 	offsets.StartOffsets = map[int]int{3: -10}
+	edges := Default()
+	edges.StartOffsets = map[int]int{2: -5}
+	edges.CandidateEdges = map[int]int{3: -36}
 	rotation := Default()
 	allCore := Default()
 	allCore.Durations.GuardAllCoreS = 4
@@ -32,6 +35,9 @@ func TestLoad(t *testing.T) {
 		{name: "empty file", content: "", want: Default()},
 		{name: "partial file", content: "[durations]\nsearch_trial_s = 60\n", want: partial},
 		{name: "start offset", content: "[start_offsets]\n3 = -10\n", want: offsets},
+		{name: "candidate edge beside another core's start offset", content: "[start_offsets]\n2 = -5\n[candidate_edges]\n3 = -36\n", want: edges},
+		{name: "candidate edge and start offset for one core", content: "[start_offsets]\n3 = -30\n[candidate_edges]\n3 = -36\n", wantErr: `start_offsets."3" and candidate_edges."3": set at most one per core`},
+		{name: "candidate edge below floor", content: "[candidate_edges]\n3 = -51\n", wantErr: `candidate_edges."3" = -51: offset must be within [-50, 0]`},
 		{name: "rotation replaced", content: "[guard]\nrotation = [\"R7\"]\n", want: rotation},
 		{name: "shortest all-core duration", content: "[durations]\nguard_all_core_s = 4\n", want: allCore},
 		{name: "all-core duration too short to split", content: "[durations]\nguard_all_core_s = 3\n", wantErr: "durations.guard_all_core_s = 3: must be within [4, 86400]"},

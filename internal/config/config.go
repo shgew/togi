@@ -18,11 +18,12 @@ import (
 const DefaultPath = "/etc/shycler/config.toml"
 
 type Config struct {
-	StartOffsets map[int]int `json:"start_offsets"`
-	Durations    Durations   `json:"durations"`
-	Guard        Guard       `json:"guard"`
-	DeadEnds     DeadEnds    `json:"dead_ends"`
-	Backends     Backends    `json:"backends"`
+	StartOffsets   map[int]int `json:"start_offsets"`
+	CandidateEdges map[int]int `json:"candidate_edges"`
+	Durations      Durations   `json:"durations"`
+	Guard          Guard       `json:"guard"`
+	DeadEnds       DeadEnds    `json:"dead_ends"`
+	Backends       Backends    `json:"backends"`
 }
 
 type Durations struct {
@@ -49,7 +50,8 @@ type Backends struct {
 
 func Default() Config {
 	return Config{
-		StartOffsets: map[int]int{},
+		StartOffsets:   map[int]int{},
+		CandidateEdges: map[int]int{},
 		Durations: Durations{
 			SearchTrialS:       90,
 			ConfirmationTrialS: 300,
@@ -68,11 +70,12 @@ func Default() Config {
 }
 
 type file struct {
-	StartOffsets map[string]int `toml:"start_offsets"`
-	Durations    *Durations     `toml:"durations"`
-	Guard        *Guard         `toml:"guard"`
-	DeadEnds     *DeadEnds      `toml:"dead_ends"`
-	Backends     *Backends      `toml:"backends"`
+	StartOffsets   map[string]int `toml:"start_offsets"`
+	CandidateEdges map[string]int `toml:"candidate_edges"`
+	Durations      *Durations     `toml:"durations"`
+	Guard          *Guard         `toml:"guard"`
+	DeadEnds       *DeadEnds      `toml:"dead_ends"`
+	Backends       *Backends      `toml:"backends"`
 }
 
 func Load(path string) (Config, error) {
@@ -97,7 +100,10 @@ func load(path string) (Config, error) {
 		}
 		return Config{}, fmt.Errorf("unknown keys: %s", strings.Join(keys, ", "))
 	}
-	if err := convertStartOffsets(f.StartOffsets, c.StartOffsets); err != nil {
+	if err := convertOffsets("start_offsets", f.StartOffsets, c.StartOffsets); err != nil {
+		return Config{}, err
+	}
+	if err := convertOffsets("candidate_edges", f.CandidateEdges, c.CandidateEdges); err != nil {
 		return Config{}, err
 	}
 	if err := validate(c); err != nil {
@@ -106,18 +112,18 @@ func load(path string) (Config, error) {
 	return c, nil
 }
 
-func convertStartOffsets(in map[string]int, out map[int]int) error {
+func convertOffsets(table string, in map[string]int, out map[int]int) error {
 	keys := slices.Sorted(maps.Keys(in))
 	for _, key := range keys {
 		core, err := strconv.Atoi(key)
 		if err != nil || core < 0 || strconv.Itoa(core) != key {
-			return fmt.Errorf("start_offsets.%q: core must be a non-negative integer", key)
+			return fmt.Errorf("%s.%q: core must be a non-negative integer", table, key)
 		}
 		out[core] = in[key]
 	}
 	for _, key := range keys {
 		if v := in[key]; v < machine.MinOffset || v > machine.MaxOffset {
-			return fmt.Errorf("start_offsets.%q = %d: offset must be within [%d, %d]", key, v, machine.MinOffset, machine.MaxOffset)
+			return fmt.Errorf("%s.%q = %d: offset must be within [%d, %d]", table, key, v, machine.MinOffset, machine.MaxOffset)
 		}
 	}
 	return nil
@@ -142,6 +148,11 @@ func validate(c Config) error {
 	for _, d := range durations {
 		if d.value < d.min || d.value > 86400 {
 			return fmt.Errorf("durations.%s = %d: must be within [%d, 86400]", d.key, d.value, d.min)
+		}
+	}
+	for _, core := range slices.Sorted(maps.Keys(c.CandidateEdges)) {
+		if _, ok := c.StartOffsets[core]; ok {
+			return fmt.Errorf("start_offsets.\"%d\" and candidate_edges.\"%d\": set at most one per core", core, core)
 		}
 	}
 	if len(c.Guard.Rotation) == 0 {
