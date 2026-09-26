@@ -76,43 +76,82 @@ func TestSearchSchedule(t *testing.T) {
 
 	wantTrial(t, h.s.Next(), Trial{Core: 0, Offset: -15, Regime: machine.R1, Phase: search, Condition: machine.Isolated}, decision.Seq)
 	_, inconclusive := h.trial(h.s.Next(), unsure)
-	wantTrial(t, h.s.Next(), Trial{Core: 0, Offset: -15, Regime: machine.R1, Phase: search, Condition: machine.Isolated, Retry: true}, inconclusive.Seq)
+	wantTrial(t, h.s.Next(), Trial{Core: 0, Offset: -15, Regime: machine.R1, Phase: search, Condition: machine.Isolated, Retry: true, Workload: "w"}, inconclusive.Seq)
 }
 
 func TestConfirmationSchedule(t *testing.T) {
 	t.Parallel()
 	confirmation := journal.PhaseConfirmation
 	h := newHarness(t, coreStart{phase: confirmation, offset: -12}, coreStart{phase: confirmation, offset: -11})
-	for _, r := range machine.ConfirmationRegimes {
+	passes := map[int][]int{}
+	for i, sl := range confirmationSet {
 		for core, offset := range []int{-12, -11} {
 			a := h.s.Next()
-			if a.Kind != RunTrial || a.Trial.Core != core || a.Trial.Regime != r || a.Trial.Offset != offset {
-				t.Fatalf("slot for %s: %+v, want core %d", r, a, core)
+			want := Trial{Core: core, Offset: offset, Regime: sl.regime, Phase: confirmation, Condition: machine.Isolated, Workload: sl.workload}
+			if a.Kind != RunTrial {
+				t.Fatalf("slot %d for core %d: %+v, want a trial", i, core, a)
 			}
-			h.trial(a, passed)
-			if core == 1 || r != machine.R5 {
+			if diff := cmp.Diff(want, a.Trial); diff != "" {
+				t.Fatalf("slot %d for core %d mismatch (-want +got):\n%s", i, core, diff)
+			}
+			_, end := h.trial(a, passed)
+			passes[core] = append(passes[core], end.Seq)
+			if i < len(confirmationSet)-1 {
 				continue
 			}
 			done := h.s.Next()
-			if p, ok := done.Payload.(*journal.CorePhase); !ok || p.Core != 0 || p.To != journal.PhaseConfirmed || len(done.Cause) != 5 {
-				t.Fatalf("after core 0 passed R1-R5: %+v", done)
+			if p, ok := done.Payload.(*journal.CorePhase); !ok || p.Core != core || p.To != journal.PhaseConfirmed || !slices.Equal(done.Cause, passes[core]) {
+				t.Fatalf("after core %d passed every slot: %+v, want confirmed citing %v", core, done, passes[core])
 			}
 			h.decide(done)
 		}
 	}
-	done := h.s.Next()
-	if p, ok := done.Payload.(*journal.CorePhase); !ok || p.Core != 1 || p.To != journal.PhaseConfirmed {
-		t.Fatalf("after core 1 passed R1-R5: %+v", done)
+	if got := len(passes[0]) + len(passes[1]); got != 18 {
+		t.Fatalf("%d confirmation trials, want 18", got)
 	}
-	confirmedAt := h.decide(done)
 	a := h.s.Next()
-	if p, ok := a.Payload.(*journal.ProfileChange); a.Kind != Decide || !ok || p.From != nil || !slices.Equal(p.To, []int{-12, -11}) || a.Cause[len(a.Cause)-1] != confirmedAt.Seq {
+	if p, ok := a.Payload.(*journal.ProfileChange); a.Kind != Decide || !ok || p.From != nil || !slices.Equal(p.To, []int{-12, -11}) {
 		t.Fatalf("every core confirmed: %+v, want profile.change for guard", a)
 	}
 	st := projected(h)
 	if st.Phase != "guard" || st.Cores[0].Offset != -12 || st.Cores[1].Phase != journal.PhaseConfirmed {
 		t.Fatalf("projection %+v", st)
 	}
+}
+
+func TestConfirmationRestartsFromFirstR1Workload(t *testing.T) {
+	t.Parallel()
+	confirmation := journal.PhaseConfirmation
+	h := newHarness(t, coreStart{phase: confirmation, offset: -12})
+	for range 4 {
+		h.trial(h.s.Next(), passed)
+	}
+	a := h.s.Next()
+	if a.Trial.Regime != machine.R2 || a.Trial.Workload != machine.Workloads(machine.R2)[1].ID {
+		t.Fatalf("fifth trial %+v, want the second R2 workload", a.Trial)
+	}
+	h.trial(a, failed)
+	failure := h.decide(h.s.Next())
+	a = h.s.Next()
+	back, ok := a.Payload.(*journal.TunerDecision)
+	if !ok || back.Decision != journal.Backoff || back.ToOffset != -11 || !slices.Equal(a.Cause, []int{failure.Seq}) {
+		t.Fatalf("after the failure: %+v, want a backoff to -11 citing %d", a, failure.Seq)
+	}
+	h.decide(a)
+
+	r1 := machine.Workloads(machine.R1)
+	a = h.s.Next()
+	if want := (Trial{Offset: -11, Regime: machine.R1, Phase: confirmation, Condition: machine.Isolated, Workload: r1[0].ID}); a.Trial != want {
+		t.Fatalf("after the backoff: %+v, want %+v", a.Trial, want)
+	}
+	h.trial(a, passed)
+	a = h.s.Next()
+	if a.Trial.Workload != r1[1].ID {
+		t.Fatalf("second trial %+v, want workload %s", a.Trial, r1[1].ID)
+	}
+	_, inconclusive := h.trial(a, unsure)
+	want := Trial{Offset: -11, Regime: machine.R1, Phase: confirmation, Condition: machine.Isolated, Workload: r1[1].ID, Retry: true}
+	wantTrial(t, h.s.Next(), want, inconclusive.Seq)
 }
 
 func TestConfirmedCoresAreSkipped(t *testing.T) {

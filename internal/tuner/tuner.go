@@ -38,6 +38,32 @@ type Trial struct {
 	AllCores  bool
 	Rotation  int
 	Retry     bool
+	// Workload is empty when the run loop picks it by its per-regime index.
+	Workload string
+}
+
+// slot is one trial a core must pass; an empty workload accepts any workload of the regime.
+type slot struct {
+	regime   machine.Regime
+	workload string
+}
+
+// confirmationSet is every R1 and R2 workload in catalog order, then R3, R4 and R5.
+var confirmationSet = func() []slot {
+	var set []slot
+	for _, r := range []machine.Regime{machine.R1, machine.R2} {
+		for _, w := range machine.Workloads(r) {
+			set = append(set, slot{r, w.ID})
+		}
+	}
+	return append(set, slot{regime: machine.R3}, slot{regime: machine.R4}, slot{regime: machine.R5})
+}()
+
+func passedSlot(intent *journal.TrialIntent) slot {
+	if intent.Phase == journal.PhaseConfirmation && (intent.Regime == machine.R1 || intent.Regime == machine.R2) {
+		return slot{intent.Regime, intent.Workload}
+	}
+	return slot{regime: intent.Regime}
 }
 
 type awaiting struct {
@@ -54,7 +80,7 @@ type core struct {
 	pass        *int
 	fail        *int
 	unproven    int
-	passed      []machine.Regime
+	passed      []slot
 	passedSeqs  []int
 	pending     int
 	lastSeq     int
@@ -233,11 +259,11 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 	switch p.Outcome {
 	case journal.OutcomePass:
 		if intent.Phase == c.phase && *intent.Offset == c.offset {
-			c.passed = append(c.passed, intent.Regime)
+			c.passed = append(c.passed, passedSlot(intent))
 			c.passedSeqs = append(c.passedSeqs, e.Seq)
 		}
 	case journal.OutcomeInconclusive:
-		s.retry = &Trial{Core: c.id, Offset: *intent.Offset, Regime: intent.Regime, Phase: intent.Phase, Condition: machine.Isolated, Retry: true}
+		s.retry = &Trial{Core: c.id, Offset: *intent.Offset, Regime: intent.Regime, Phase: intent.Phase, Condition: machine.Isolated, Retry: true, Workload: intent.Workload}
 	case journal.OutcomeFailure:
 		s.awaiting = &awaiting{intent: intent, end: p, seq: e.Seq, cause: e.Cause}
 	}
@@ -326,15 +352,15 @@ func (s *State) perCore() (Action, bool) {
 		c := s.cores[s.cursor]
 		switch c.phase {
 		case journal.PhaseSearch:
-			if c.hasPassed(machine.R1, machine.R2) {
+			if c.hasPassed(slot{regime: machine.R1}, slot{regime: machine.R2}) {
 				return Action{Kind: Decide, Payload: searchPass(c.snapshot()), Cause: slices.Clone(c.passedSeqs)}, true
 			}
 		case journal.PhaseConfirmation:
-			if c.hasPassed(machine.ConfirmationRegimes...) {
+			if c.hasPassed(confirmationSet...) {
 				return Action{Kind: Decide, Payload: confirmed(c.snapshot()), Cause: slices.Clone(c.passedSeqs)}, true
 			}
 		case journal.PhaseRegain:
-			if c.hasPassed(machine.ConfirmationRegimes...) {
+			if c.hasPassed(regainSet...) {
 				return Action{Kind: Decide, Payload: regained(c.snapshot()), Cause: slices.Clone(c.passedSeqs)}, true
 			}
 		case journal.PhaseConfirmed, journal.PhaseGuard:
@@ -345,7 +371,7 @@ func (s *State) perCore() (Action, bool) {
 	}
 	if s.cursor >= 0 {
 		c := s.cores[s.cursor]
-		if c.phase == journal.PhaseSearch && slices.Equal(c.passed, []machine.Regime{machine.R1}) {
+		if c.phase == journal.PhaseSearch && slices.Equal(c.passed, []slot{{regime: machine.R1}}) {
 			return s.runTrial(c.isolated(machine.R2)), true
 		}
 	}
@@ -354,10 +380,18 @@ func (s *State) perCore() (Action, bool) {
 		switch c.phase {
 		case journal.PhaseSearch:
 			return s.runTrial(c.isolated(machine.R1)), true
-		case journal.PhaseConfirmation, journal.PhaseRegain:
-			for _, r := range machine.ConfirmationRegimes {
-				if !slices.Contains(c.passed, r) {
-					return s.runTrial(c.isolated(r)), true
+		case journal.PhaseConfirmation:
+			for _, sl := range confirmationSet {
+				if !slices.Contains(c.passed, sl) {
+					t := c.isolated(sl.regime)
+					t.Workload = sl.workload
+					return s.runTrial(t), true
+				}
+			}
+		case journal.PhaseRegain:
+			for _, sl := range regainSet {
+				if !slices.Contains(c.passed, sl) {
+					return s.runTrial(c.isolated(sl.regime)), true
 				}
 			}
 		case journal.PhaseConfirmed, journal.PhaseGuard:
@@ -382,14 +416,16 @@ func (c *core) active() bool {
 	return c.phase == journal.PhaseSearch || c.phase == journal.PhaseConfirmation || c.phase == journal.PhaseRegain
 }
 
-func (c *core) hasPassed(regimes ...machine.Regime) bool {
-	for _, r := range regimes {
-		if !slices.Contains(c.passed, r) {
+func (c *core) hasPassed(slots ...slot) bool {
+	for _, sl := range slots {
+		if !slices.Contains(c.passed, sl) {
 			return false
 		}
 	}
 	return true
 }
+
+var regainSet = []slot{{regime: machine.R1}, {regime: machine.R2}, {regime: machine.R3}, {regime: machine.R4}, {regime: machine.R5}}
 
 func (c *core) snapshot() coreState {
 	return coreState{core: c.id, phase: c.phase, offset: c.offset, pass: c.pass, fail: c.fail, unproven: c.unproven}

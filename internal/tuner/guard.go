@@ -121,7 +121,7 @@ func (s *State) foldResidentEnd(e journal.Event, p *journal.TrialEnd, intent *jo
 }
 
 func residentTrial(intent *journal.TrialIntent) Trial {
-	t := Trial{Regime: intent.Regime, Phase: intent.Phase, Condition: machine.Resident, Rotation: intent.Rotation, AllCores: intent.Core == nil}
+	t := Trial{Regime: intent.Regime, Phase: intent.Phase, Condition: machine.Resident, Rotation: intent.Rotation, AllCores: intent.Core == nil, Workload: intent.Workload}
 	if intent.Core != nil {
 		t.Core = *intent.Core
 	}

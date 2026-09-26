@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"cmp"
 	"fmt"
 	"testing"
 
@@ -66,7 +67,7 @@ func (h *harness) start(a Action) journal.Event {
 	}
 	h.trials++
 	p := &journal.TrialIntent{
-		Trial: fmt.Sprintf("%04d", h.trials), Regime: a.Trial.Regime, Workload: "w", DurationS: 90,
+		Trial: fmt.Sprintf("%04d", h.trials), Regime: a.Trial.Regime, Workload: cmp.Or(a.Trial.Workload, "w"), DurationS: 90,
 		Condition: a.Trial.Condition, Phase: a.Trial.Phase, Retry: a.Trial.Retry, Rotation: a.Trial.Rotation,
 	}
 	if a.Trial.AllCores {

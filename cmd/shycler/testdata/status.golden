@@ -1,27 +1,27 @@
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on shycler simulator, Simulated Zen 5 16-Core Processor, microcode 0x0, boost limit 5700 MHz
-phase guard | tier bronze [#6188] | rotation 13, 8 of 8 steps | escalation window closed
+phase guard | tier bronze [#6675] | rotation 11, 8 of 8 steps | escalation window closed
 in flight: none
 
 CORE  CCD  OFFSET  PHASE      FAILED  UNPROVEN  QUEUED  LAST DECISION
-00    0    -35     confirmed  -38     2         -       [#5432] core 00 backed off on suspicion at -36; next -35 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 2)
-01    0    -30     confirmed  -32     1         -       [#5434] core 01 backed off on suspicion at -31; next -30 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 1)
-02    0    -33     confirmed  -36     2         -       [#5436] core 02 backed off on suspicion at -34; next -33 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 2)
-03    0    -15     confirmed  -18     2         -       [#5438] core 03 backed off on suspicion at -16; next -15 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 2)
-04    0    -30     confirmed  -33     2         -       [#5440] core 04 backed off on suspicion at -31; next -30 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 2)
-05    0    -6      confirmed  -9      2         -       [#5442] core 05 backed off on suspicion at -7; next -6 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 2)
-06    0    -26     confirmed  -29     2         -       [#5444] core 06 backed off on suspicion at -27; next -26 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 2)
-07    0    -30     confirmed  -33     2         -       [#5446] core 07 backed off on suspicion at -31; next -30 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 2)
-08    1    -24     confirmed  -27     2         -       [#5433] core 08 backed off on suspicion at -25; next -24 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 2)
-09    1    -14     confirmed  -17     2         -       [#5435] core 09 backed off on suspicion at -15; next -14 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 2)
-10    1    -14     confirmed  -17     2         -       [#5437] core 10 backed off on suspicion at -15; next -14 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 2)
-11    1    -4      confirmed  -6      1         -       [#5439] core 11 backed off on suspicion at -5; next -4 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 1)
-12    1    -5      confirmed  -8      2         -       [#5441] core 12 backed off on suspicion at -6; next -5 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 2)
-13    1    -21     confirmed  -24     2         -       [#5443] core 13 backed off on suspicion at -22; next -21 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 2)
-14    1    0       confirmed  -2      1         -       [#5445] core 14 backed off on suspicion at -1; next 0 (unattributed corrected_mce failure in resident R4 trial 0666; escalation window open: every core backs off; unproven depth 1)
-15    1    -35     confirmed  -36     0         -       [#5815] core 15 failed in guard at -36; next -35 (proven backoff; isolated confirmation at or deeper than -36 covers -35; the failed mark cancels unproven depth 2)
+00    0    -35     confirmed  -38     2         -       [#5601] core 00 backed off on suspicion at -36; next -35 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 2)
+01    0    -31     confirmed  -33     1         -       [#5603] core 01 backed off on suspicion at -32; next -31 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 1)
+02    0    -33     confirmed  -36     2         -       [#5605] core 02 backed off on suspicion at -34; next -33 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 2)
+03    0    -15     confirmed  -18     2         -       [#5607] core 03 backed off on suspicion at -16; next -15 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 2)
+04    0    -30     confirmed  -33     2         -       [#5609] core 04 backed off on suspicion at -31; next -30 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 2)
+05    0    -7      confirmed  -10     2         -       [#5611] core 05 backed off on suspicion at -8; next -7 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 2)
+06    0    -26     confirmed  -29     2         -       [#5613] core 06 backed off on suspicion at -27; next -26 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 2)
+07    0    -30     confirmed  -33     2         -       [#5615] core 07 backed off on suspicion at -31; next -30 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 2)
+08    1    -24     confirmed  -27     2         -       [#5602] core 08 backed off on suspicion at -25; next -24 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 2)
+09    1    -14     confirmed  -17     2         -       [#5604] core 09 backed off on suspicion at -15; next -14 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 2)
+10    1    -14     confirmed  -17     2         -       [#5606] core 10 backed off on suspicion at -15; next -14 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 2)
+11    1    -4      confirmed  -5      0         -       [#5934] core 11 failed in guard at -5; next -4 (proven backoff; isolated confirmation at or deeper than -5 covers -4; passed step at -7 discarded, the failure contradicts it; the failed mark cancels unproven depth 2)
+12    1    -5      confirmed  -8      2         -       [#5610] core 12 backed off on suspicion at -6; next -5 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 2)
+13    1    -21     confirmed  -24     2         -       [#5612] core 13 backed off on suspicion at -22; next -21 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 2)
+14    1    0       confirmed  -2      1         -       [#5614] core 14 backed off on suspicion at -1; next 0 (unattributed crash failure in resident R3 trial 0625; escalation window open: every core backs off; unproven depth 1)
+15    1    -35     confirmed  -36     0         -       [#6302] core 15 failed in guard at -36; next -35 (proven backoff; isolated confirmation at or deeper than -36 covers -35; the failed mark cancels unproven depth 2)
 
-clean hours since profile.change [#5817]: 3.5 h, failure rate < 0.86/h at 95%
+clean hours since profile.change [#6304]: 3.5 h, failure rate < 0.86/h at 95%
 REGIME  CLEAN H  RATE BOUND
 R1      0.5      < 5.63/h
 R2      0.5      < 5.63/h
@@ -30,4 +30,4 @@ R4      0.5      < 5.63/h
 R5      0.5      < 5.63/h
 R6      0.5      < 6.00/h
 R7      0.3      < 9.00/h
-Tctl max 76°C [#5873]
+Tctl max 76°C [#6432]

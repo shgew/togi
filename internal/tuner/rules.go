@@ -99,7 +99,7 @@ func suspectBackoff(c coreState, sp *suspect) *journal.TunerDecision {
 }
 
 func confirmed(c coreState) journal.Payload {
-	return &journal.CorePhase{Core: c.core, From: journal.PhaseConfirmation, To: journal.PhaseConfirmed, Offset: c.offset, Pass: c.pass, FailedMark: c.fail, UnprovenDepth: c.unproven, Reason: "R1 to R5 passed"}
+	return &journal.CorePhase{Core: c.core, From: journal.PhaseConfirmation, To: journal.PhaseConfirmed, Offset: c.offset, Pass: c.pass, FailedMark: c.fail, UnprovenDepth: c.unproven, Reason: "every R1 and R2 workload, R3, R4 and R5 passed"}
 }
 
 func candidate(c coreState, offset int, pass, fail *int, reason string) *journal.CorePhase {

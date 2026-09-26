@@ -3,30 +3,30 @@
 +------------------------------------------------------------+
 
       .---.
-     / * * \     BRONZE                    [tier.change #6188]
+     / * * \     BRONZE                    [tier.change #6675]
     |   *   |    Silver    3.5 of 24 clean hours
      \ * * /     Gold      3.5 of 100 clean hours
       '---'      Platinum  locked until shycler observe exists
        | |
 
-Profile                                 [profile.change #5817]
+Profile                                 [profile.change #6304]
   CORE  EDGE  FAILED  UNPROVEN  DECIDED
-  00    -35   -38     2         [#5432]
-  01    -30   -32     1         [#5434]
-  02    -33   -36     2         [#5436]
-  03    -15   -18     2         [#5438]
-  04    -30   -33     2         [#5440]
-  05    -6    -9      2         [#5442]
-  06    -26   -29     2         [#5444]
-  07    -30   -33     2         [#5446]
-  08    -24   -27     2         [#5433]
-  09    -14   -17     2         [#5435]
-  10    -14   -17     2         [#5437]
-  11    -4    -6      1         [#5439]
-  12    -5    -8      2         [#5441]
-  13    -21   -24     2         [#5443]
-  14    0     -2      1         [#5445]
-  15    -35   -36     0         [#5815]
+  00    -35   -38     2         [#5601]
+  01    -31   -33     1         [#5603]
+  02    -33   -36     2         [#5605]
+  03    -15   -18     2         [#5607]
+  04    -30   -33     2         [#5609]
+  05    -7    -10     2         [#5611]
+  06    -26   -29     2         [#5613]
+  07    -30   -33     2         [#5615]
+  08    -24   -27     2         [#5602]
+  09    -14   -17     2         [#5604]
+  10    -14   -17     2         [#5606]
+  11    -4    -5      0         [#5934]
+  12    -5    -8      2         [#5610]
+  13    -21   -24     2         [#5612]
+  14    0     -2      1         [#5614]
+  15    -35   -36     0         [#6302]
 
 Evidence since the profile change
   REGIME  CLEAN H  RATE BOUND
@@ -38,11 +38,11 @@ Evidence since the profile change
   R6      0.5      < 6.00/h
   R7      0.3      < 9.00/h
   all     3.5      < 0.86/h
-  Tctl max 76°C                              [trial.end #5873]
+  Tctl max 76°C                              [trial.end #6432]
   Rate bound = 3 / clean hours, 95% confidence (rule of three).
 
 Session 20260101T000000Z, started 2026-01-01T00:00:00Z
 BIOS SIM.1 on shycler simulator, Simulated Zen 5 16-Core Processor, microcode 0x0, boost limit 5700 MHz
 
-Journal SHA-256 <journal sha256> through seq 6209
+Journal SHA-256 <journal sha256> through seq 6696
 Durability is a bound, not proof.

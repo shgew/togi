@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"code.marleb.org/shgew/shycler/internal/journal"
@@ -102,6 +103,13 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 		index = r.fold.index[t.Core][t.Regime]
 	}
 	w := machine.PickWorkload(t.Regime, index)
+	if t.Workload != "" {
+		i := slices.IndexFunc(machine.Workloads(t.Regime), func(w machine.Workload) bool { return w.ID == t.Workload })
+		if i < 0 {
+			return fmt.Errorf("trial workload %s: not a %s workload", t.Workload, t.Regime)
+		}
+		w = machine.Workloads(t.Regime)[i]
+	}
 	if t.AllCores {
 		for _, c := range r.cores {
 			cores = append(cores, c.Core)
