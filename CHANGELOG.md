@@ -4,6 +4,8 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-26
+
 ### Added
 
 - Shutting down or rebooting the tuning boot on purpose clears GRUB's saved entry, so the next boot is the normal system; crash reboots still return to the tuning boot. `services.shycler.tuning.leaveOnShutdown = false` turns it off ([#53]).
@@ -55,6 +57,8 @@ All notable changes to shycler are documented in this file. The format is based 
 - Powering off during a trial no longer records a failure on the target core: trial scopes no longer stop with the system before `run` does, so the trial ends interrupted ([#16]).
 - A trial the machine crashed during now records how long it is known to have run, up to its last recorded progress, instead of `after 0s` ([#17]).
 - Every journal event is fsynced, not only intents, so a crash no longer loses up to a minute of `events.jsonl`: the SMU write, readback and trial start before a crash stay recorded, and a crashed trial's duration runs to its last progress ([#54]).
+
+[0.1.0]: https://code.marleb.org/shgew/shycler/releases/tag/v0.1.0
 
 [#2]: https://code.marleb.org/shgew/shycler/pulls/2
 [#3]: https://code.marleb.org/shgew/shycler/pulls/3
