@@ -6,7 +6,7 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ### Changed
 
-- `shycler run` on a terminal shows the `watch` dashboard instead of one line per event, and prints the outcome when it stops; `--no-tui` keeps the lines ([#69]).
+- `shycler run` on a terminal shows the `watch` dashboard instead of one line per event, and prints the outcome when it stops, including the restored offsets and the reason after Ctrl-C; `--no-tui` keeps the lines ([#69]).
 
 ## [0.2.1] - 2026-09-26
 

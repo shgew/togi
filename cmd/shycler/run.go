@@ -38,7 +38,8 @@ session. Journal lines are colored on terminals and in the system journal
 unless NO_COLOR is set.
 
 When stdin and stderr are terminals, run shows the session as the watch
-dashboard instead of one line per event, and prints the outcome when it stops;
+dashboard instead of one line per event, and prints the outcome when it stops:
+the restored offsets and why it stopped, or the dead end or error;
 events.jsonl still records every event. --no-tui prints the lines instead.
 
 --rotations N stops once the current profile has survived N clean rotations,
@@ -149,11 +150,24 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt})
 	if dash != nil {
 		dash.hide()
+		if err == nil && stop.Reason != session.StopDeadEnd {
+			printCleanStop(j.Events(), stderr, renderer)
+		}
 	}
 	if cerr := j.Close(); err == nil && cerr != nil {
 		err = cerr
 	}
 	return runResult(stop, err, stderr, renderer, bootloader)
+}
+
+// printCleanStop repeats the closing profile.restored and shutdown lines the dashboard kept off the screen.
+func printCleanStop(events []journal.Event, stderr io.Writer, renderer journal.Renderer) {
+	tail := events[max(0, len(events)-2):]
+	for _, e := range tail {
+		if e.Kind == journal.KindProfileRestored || e.Kind == journal.KindShutdown {
+			fmt.Fprintln(stderr, renderer.Text(e, journal.FormatLine(e, time.Local)))
+		}
+	}
 }
 
 func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.Renderer, bootloader ...session.Bootloader) int {
