@@ -4,6 +4,8 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-26
+
 ### Changed
 
 - **BREAKING** Confirmation now runs every R1 and R2 workload, then R3, R4 and R5, at each candidate edge; a failure restarts the nine-trial set from the first R1 workload ([#58]).
@@ -65,6 +67,8 @@ All notable changes to shycler are documented in this file. The format is based 
 - Every journal event is fsynced, not only intents, so a crash no longer loses up to a minute of `events.jsonl`: the SMU write, readback and trial start before a crash stay recorded, and a crashed trial's duration runs to its last progress ([#54]).
 
 [0.1.0]: https://code.marleb.org/shgew/shycler/releases/tag/v0.1.0
+
+[0.2.0]: https://code.marleb.org/shgew/shycler/releases/tag/v0.2.0
 
 [#2]: https://code.marleb.org/shgew/shycler/pulls/2
 [#3]: https://code.marleb.org/shgew/shycler/pulls/3
