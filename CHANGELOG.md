@@ -4,6 +4,8 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-27
+
 ### Changed
 
 - **BREAKING** Confirmation runs mprime AVX-512 first, then the other eight trials in their previous order, so the workload most likely to fail no longer waits behind four passes; a ruleset-2 session must be archived with `shycler reset --all` ([#47]).
@@ -103,6 +105,8 @@ All notable changes to shycler are documented in this file. The format is based 
 [0.2.1]: https://github.com/shgew/shycler/releases/tag/v0.2.1
 
 [0.2.2]: https://github.com/shgew/shycler/releases/tag/v0.2.2
+
+[0.3.0]: https://github.com/shgew/shycler/releases/tag/v0.3.0
 
 [#1]: https://github.com/shgew/shycler/issues/1
 [#2]: https://github.com/shgew/shycler/issues/2
