@@ -4,6 +4,8 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-27
+
 ### Added
 
 - `reset --all` warns about each configured candidate edge at or deeper than that core's failed mark in the session it archives ([#48]).
@@ -95,6 +97,8 @@ All notable changes to shycler are documented in this file. The format is based 
 [0.2.0]: https://github.com/shgew/shycler/releases/tag/v0.2.0
 
 [0.2.1]: https://github.com/shgew/shycler/releases/tag/v0.2.1
+
+[0.2.2]: https://github.com/shgew/shycler/releases/tag/v0.2.2
 
 [#1]: https://github.com/shgew/shycler/issues/1
 [#2]: https://github.com/shgew/shycler/issues/2
