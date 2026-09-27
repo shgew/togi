@@ -404,6 +404,11 @@ func (p *TrialSample) Message() string {
 	return fmt.Sprintf("trial %s thread %d %s on cpu %d", p.Trial, p.TID, p.Warning, p.CPU)
 }
 
+const (
+	TrialReasonStoppedDuringTrial       = "shycler stopped during the trial"
+	TrialReasonStoppedAfterMachineCheck = "shycler stopped during the trial after a machine check"
+)
+
 type TrialEnd struct {
 	Trial       string         `json:"trial"`
 	Outcome     Outcome        `json:"outcome"`
@@ -423,7 +428,7 @@ func (p *TrialEnd) Message() string {
 		tctl = fmt.Sprintf(" | Tctl max %d°C", *p.TctlMaxC)
 	}
 	duration := fmt.Sprintf(" after %ds", p.DurationS)
-	if p.Signal == machine.Crash || p.Interrupted && strings.HasPrefix(p.Reason, "shycler stopped during the trial") {
+	if p.Signal == machine.Crash || p.Interrupted && (p.Reason == TrialReasonStoppedDuringTrial || p.Reason == TrialReasonStoppedAfterMachineCheck) {
 		duration = fmt.Sprintf(", last evidence %ds after start", p.DurationS)
 	}
 	switch p.Outcome {
