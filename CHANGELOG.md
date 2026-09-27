@@ -4,6 +4,10 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ## [Unreleased]
 
+### Added
+
+- `reset --all` warns about each configured candidate edge at or deeper than that core's failed mark in the session it archives ([#48]).
+
 ### Changed
 
 - `status` labels its Tctl line as the current profile's maximum ([#44]).
@@ -120,4 +124,5 @@ All notable changes to shycler are documented in this file. The format is based 
 [#39]: https://github.com/shgew/shycler/issues/39
 [#40]: https://github.com/shgew/shycler/pull/40
 [#44]: https://github.com/shgew/shycler/pull/44
+[#48]: https://github.com/shgew/shycler/pull/48
 [#49]: https://github.com/shgew/shycler/pull/49
