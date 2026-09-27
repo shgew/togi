@@ -83,7 +83,7 @@ func TestAutomaticRegain(t *testing.T) {
 	h := suspectedHarness(t)
 	end := h.cleanEnd()
 	from := len(h.events)
-	h.expect("regain 0 -9>-10 u0", "regain 2 -10>-11 u0", "regain 1 -11>-12 u0", "regain 3 -12>-13 u0", "profile", "start 3", "trial R1 c0")
+	h.expect("regain 0 -9>-10 u0", "regain 2 -10>-11 u0", "regain 1 -11>-12 u0", "regain 3 -12>-13 u0", "profile", "start 3", "trial R2 c0")
 	for _, e := range h.events[from:] {
 		if p, ok := e.Data.(*journal.TunerDecision); ok && !slices.Equal(e.Cause, []int{end.Seq}) {
 			t.Fatalf("regain of core %d cites %v, want the clean end %d", p.Core, e.Cause, end.Seq)
@@ -123,10 +123,10 @@ func TestSpentStepSettles(t *testing.T) {
 	crash := journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash}
 	h := suspectedHarness(t)
 	h.cleanEnd()
-	h.expect("regain 0 -9>-10 u0", "regain 2 -10>-11 u0", "regain 1 -11>-12 u0", "regain 3 -12>-13 u0", "profile", "start 3", "trial R1 c0")
+	h.expect("regain 0 -9>-10 u0", "regain 2 -10>-11 u0", "regain 1 -11>-12 u0", "regain 3 -12>-13 u0", "profile", "start 3", "trial R2 c0")
 
 	h.end(h.intent(0, machine.R1), crash)
-	h.expect("unattributed", "suspect 0 -10>-9 u1", "end unclean", "profile", "start 4", "trial R1 c0")
+	h.expect("unattributed", "suspect 0 -10>-9 u1", "end unclean", "profile", "start 4", "trial R2 c0")
 	p := lastPayload[*journal.TunerDecision](h)
 	if p.SettledMark == nil || *p.SettledMark != -10 || !strings.Contains(p.Reason, "the retry at -10 was spent, so the step is settled until reset --core") {
 		t.Fatalf("suspect backoff from a spent step: settled %v, reason %q", p.SettledMark, p.Reason)
@@ -136,10 +136,10 @@ func TestSpentStepSettles(t *testing.T) {
 	}
 
 	h.cleanEnd()
-	h.expect("tier bronze", "start 5", "trial R1 c0")
+	h.expect("tier bronze", "start 5", "trial R2 c0")
 
 	h.end(h.intent(0, machine.R1), journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0), DurationS: 30})
-	h.expect("attributed 0 at -9", "backoff 0 -9>-8 mark -9 u0", "end unclean", "tier none", "profile", "start 6", "trial R1 c0")
+	h.expect("attributed 0 at -9", "backoff 0 -9>-8 mark -9 u0", "end unclean", "tier none", "profile", "start 6", "trial R2 c0")
 	p = lastPayload[*journal.TunerDecision](h)
 	if p.SettledMark != nil || !slices.Equal(p.SpentSteps, []int{-10}) || p.UnprovenDepth != 0 {
 		t.Fatalf("proven backoff: settled %v, spent %v, unproven %d; want none, [-10], 0", p.SettledMark, p.SpentSteps, p.UnprovenDepth)
@@ -157,7 +157,7 @@ func TestFailureAfterCleanEndCancelsRegain(t *testing.T) {
 	h := suspectedHarness(t)
 	h.cleanEnd()
 	h.add(idleCrash())
-	h.expect("suspect 0 -9>-8 u2", "suspect 2 -10>-9 u2", "suspect 1 -11>-10 u2", "suspect 3 -12>-11 u2", "profile", "start 3", "trial R1 c0")
+	h.expect("suspect 0 -9>-8 u2", "suspect 2 -10>-9 u2", "suspect 1 -11>-10 u2", "suspect 3 -12>-11 u2", "profile", "start 3", "trial R2 c0")
 }
 
 func TestFailureAtZeroAfterCleanEndCancelsRegain(t *testing.T) {
@@ -182,7 +182,7 @@ func TestReset(t *testing.T) {
 		t.Parallel()
 		h := confirmedHarness(t, 0)
 		h.cleanEnd()
-		h.expect("tier bronze", "start 2", "trial R1 c0")
+		h.expect("tier bronze", "start 2", "trial R2 c0")
 		h.add(&journal.CommandReset{Core: new(0)})
 		h.expect("confirmed->search -5 u0", "end unclean", "tier none", "trial R1 c0")
 		if p := lastPayload[*journal.TierChange](h); p.Reason != "core 00 is in search" {
@@ -197,7 +197,7 @@ func TestReset(t *testing.T) {
 		t.Parallel()
 		h := confirmedHarness(t, 2)
 		h.cleanEnd()
-		h.expect("regain 0 -18>-19 u1", "profile", "start 2", "trial R1 c0")
+		h.expect("regain 0 -18>-19 u1", "profile", "start 2", "trial R2 c0")
 		if diff := cmp.Diff(journal.TierNone, projected(h).Tier); diff != "" {
 			t.Fatalf("tier mismatch (-want +got):\n%s", diff)
 		}
