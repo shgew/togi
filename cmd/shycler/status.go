@@ -166,7 +166,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	}
 	_ = tw.Flush()
 	if gs.TctlMaxC != nil {
-		fmt.Fprintf(w, "Tctl max %d°C [#%d]\n", *gs.TctlMaxC, gs.TctlMaxSeq)
+		fmt.Fprintf(w, "Tctl max on this profile %d°C [#%d]\n", *gs.TctlMaxC, gs.TctlMaxSeq)
 	}
 }
 
