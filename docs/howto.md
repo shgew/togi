@@ -87,4 +87,4 @@ services.shycler.settings.candidate_edges = {
 };
 ```
 
-Rebuild, then run `sudo shycler run` or pick "NixOS - shycler". Each value is read only when the new session records that core's first phase; once every core in `shycler status` shows a phase, remove them so a later `reset --all` starts from the baseline. `start_offsets` is the gentler alternative: search starts from that offset and still steps deeper until it fails.
+Rebuild, then run `sudo shycler run` or pick "NixOS - shycler". Each value is read only when the new session records that core's first phase; once every core in `shycler status` shows a phase, remove them so a later `reset --all` starts from the baseline. If a configured candidate edge remains at or deeper than a failed mark in the session being archived, `reset --all` warns but still archives it; set the edge to the failed mark plus one before starting the new session. `start_offsets` is the gentler alternative: search starts from that offset and still steps deeper until it fails.
