@@ -57,7 +57,7 @@
  [90m23h26m[m  trial 0487 PASS 120s | Tctl max 70 C
  [90m23h26m[m  trial 0488 core 12 CO -9 R1 mprime SSE 4K-21K 120s resident rotation 2
  [90m23h28m[m  crash: boot b89a6bc7 ended without a clean shutdown; in flight: seq 4800; the resident profile was applied
- [90m23h28m[m  trial 0488 FAIL crash after 0s
+ [90m23h28m[m  trial 0488 FAIL crash, last evidence 0s after start
  [90m23h28m[m  unattributed crash failure in resident R1 trial 0488: no evidence names a single core
  [90m23h28m[m  core 12 backed off on suspicion at -9; next -8 (unattributed crash failure in resident R1 trial 0488; the only loaded core; unproven depth 1)
  [90m23h28m[m  guard rotation 2 end, not clean: the profile changed
