@@ -404,6 +404,11 @@ func (p *TrialSample) Message() string {
 	return fmt.Sprintf("trial %s thread %d %s on cpu %d", p.Trial, p.TID, p.Warning, p.CPU)
 }
 
+const (
+	TrialReasonStoppedDuringTrial       = "shycler stopped during the trial"
+	TrialReasonStoppedAfterMachineCheck = "shycler stopped during the trial after a machine check"
+)
+
 type TrialEnd struct {
 	Trial       string         `json:"trial"`
 	Outcome     Outcome        `json:"outcome"`
@@ -422,18 +427,22 @@ func (p *TrialEnd) Message() string {
 	if p.TctlMaxC != nil {
 		tctl = fmt.Sprintf(" | Tctl max %d°C", *p.TctlMaxC)
 	}
+	duration := fmt.Sprintf(" after %ds", p.DurationS)
+	if p.Signal == machine.Crash || p.Interrupted && (p.Reason == TrialReasonStoppedDuringTrial || p.Reason == TrialReasonStoppedAfterMachineCheck) {
+		duration = fmt.Sprintf(", last evidence %ds after start", p.DurationS)
+	}
 	switch p.Outcome {
 	case OutcomePass:
 		return fmt.Sprintf("trial %s PASS %ds%s", p.Trial, p.DurationS, tctl)
 	case OutcomeFailure:
 		if p.Core != nil {
-			return fmt.Sprintf("trial %s FAIL %s on core %s after %ds%s", p.Trial, p.Signal, coreID(*p.Core), p.DurationS, tctl)
+			return fmt.Sprintf("trial %s FAIL %s on core %s%s%s", p.Trial, p.Signal, coreID(*p.Core), duration, tctl)
 		}
-		return fmt.Sprintf("trial %s FAIL %s after %ds%s", p.Trial, p.Signal, p.DurationS, tctl)
+		return fmt.Sprintf("trial %s FAIL %s%s%s", p.Trial, p.Signal, duration, tctl)
 	case OutcomeInconclusive:
-		return fmt.Sprintf("trial %s INCONCLUSIVE after %ds: %s", p.Trial, p.DurationS, p.Reason)
+		return fmt.Sprintf("trial %s INCONCLUSIVE%s: %s", p.Trial, duration, p.Reason)
 	}
-	return fmt.Sprintf("trial %s %s after %ds", p.Trial, p.Outcome, p.DurationS)
+	return fmt.Sprintf("trial %s %s%s", p.Trial, p.Outcome, duration)
 }
 
 type Failure struct {

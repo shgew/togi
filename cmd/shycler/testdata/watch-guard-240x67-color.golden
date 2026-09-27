@@ -50,7 +50,7 @@
  [1mRecent[m
  [90m27h00m[m  trial 0593 cores 08, 09, 10, 11, 12, 13, 14, 15 R7 mprime AVX2 36K-248K all-core 300s resident rotation 8
  [90m27h02m[m  crash: boot 1a2f1bca ended without a clean shutdown; in flight: seq 5472; the resident profile was applied
- [90m27h02m[m  trial 0593 FAIL crash after 0s
+ [90m27h02m[m  trial 0593 FAIL crash, last evidence 0s after start
  [90m27h02m[m  unattributed crash failure in resident R7 trial 0593: no evidence names a single core
  [90m27h02m[m  core 08 backed off on suspicion at -26; next -25 (unattributed crash failure in resident R7 trial 0593; R7 loaded only CCD 1: its cores back off; unproven depth 1)
  [90m27h02m[m  core 09 backed off on suspicion at -16; next -15 (unattributed crash failure in resident R7 trial 0593; R7 loaded only CCD 1: its cores back off; unproven depth 1)

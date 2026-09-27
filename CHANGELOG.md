@@ -11,6 +11,7 @@ All notable changes to shycler are documented in this file. The format is based 
 ### Changed
 
 - `status` labels its Tctl line as the current profile's maximum ([#44]).
+- A trial closed after a crash or an interrupted run says how long after its start the last evidence was recorded, instead of a duration that read as measured ([#46]).
 - `shycler run` on a terminal shows the `watch` dashboard instead of one line per event, and prints the outcome when it stops, including the restored offsets and the reason after Ctrl-C; `--no-tui` keeps the lines ([#39]).
 - shycler moved to GitHub: the flake is now `github:shgew/shycler`, and the issue and pull request numbers in this changelog, the docs and defect messages refer to `github.com/shgew/shycler` ([#40]).
 - The default guard rotation runs R2, R7, R6 and R5 before R1, R3 and R4, so regimes that failed in guard or were never reached before a failure restarted the rotation run first; a rotation already open keeps its order ([#49]).
@@ -124,5 +125,6 @@ All notable changes to shycler are documented in this file. The format is based 
 [#39]: https://github.com/shgew/shycler/issues/39
 [#40]: https://github.com/shgew/shycler/pull/40
 [#44]: https://github.com/shgew/shycler/pull/44
+[#46]: https://github.com/shgew/shycler/pull/46
 [#48]: https://github.com/shgew/shycler/pull/48
 [#49]: https://github.com/shgew/shycler/pull/49
