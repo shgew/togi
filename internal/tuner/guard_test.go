@@ -173,9 +173,9 @@ func TestGuardRotationSchedule(t *testing.T) {
 		t.Fatalf("guard entry mismatch (-want +got):\n%s", diff)
 	}
 	schedule := []string{
-		"trial R1 c0", "trial R1 c1", "trial R2 c0", "trial R2 c1", "trial R6 all", "trial R3 c0", "trial R3 c1",
-		"trial R4 c0", "trial R4 c1", "trial R7 cores 0", "trial R7 cores 1", "trial R7 all", "trial R5 c0", "trial R5 c1",
-		"trial R6 all",
+		"trial R2 c0", "trial R2 c1", "trial R7 cores 0", "trial R7 cores 1", "trial R7 all", "trial R6 all",
+		"trial R5 c0", "trial R5 c1", "trial R1 c0", "trial R1 c1", "trial R3 c0", "trial R3 c1",
+		"trial R4 c0", "trial R4 c1", "trial R6 all",
 	}
 	clean := map[machine.Regime]int{}
 	for i, w := range schedule {
@@ -191,7 +191,7 @@ func TestGuardRotationSchedule(t *testing.T) {
 		a = h.s.Next()
 	}
 	h.decide(a)
-	if got := h.until(); !slices.Equal(got, []string{"tier bronze", "start 2", "trial R1 c0"}) {
+	if got := h.until(); !slices.Equal(got, []string{"tier bronze", "start 2", "trial R2 c0"}) {
 		t.Fatalf("after rotation 1: %s then %v", h.describe(a), got)
 	}
 	if h.describe(a) != "end clean" {
@@ -210,6 +210,33 @@ func TestGuardRotationSchedule(t *testing.T) {
 	}
 	if g.CleanS != total {
 		t.Errorf("clean %d s, want %d", g.CleanS, total)
+	}
+}
+
+func TestGuardRotationKeepsRecordedStepsAfterConfigChange(t *testing.T) {
+	t.Parallel()
+	h, a := newGuardHarness(t, []int{-10}, []*int{new(-11)})
+	original := slices.Clone(config.Default().Guard.Rotation)
+	updated := config.Default()
+	updated.Guard.Rotation = []machine.Regime{machine.R1}
+	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: updated})
+
+	for _, regime := range original {
+		if a.Kind != RunTrial || a.Trial.Regime != regime {
+			t.Fatalf("open rotation: got %s, want %s", h.describe(a), regime)
+		}
+		h.trial(a, passed)
+		a = h.s.Next()
+	}
+	if got := h.describe(a); got != "end clean" {
+		t.Fatalf("after recorded steps: got %s, want end clean", got)
+	}
+	h.decide(a)
+	if got := h.until(); !slices.Equal(got, []string{"tier bronze", "start 2", "trial R1 c0"}) {
+		t.Fatalf("next rotation: got %v, want updated R1 order", got)
+	}
+	if got := projected(h).Guard.Steps; !slices.Equal(got, updated.Guard.Rotation) {
+		t.Fatalf("new rotation steps mismatch (-want +got):\n%s", cmp.Diff(updated.Guard.Rotation, got))
 	}
 }
 
@@ -262,8 +289,8 @@ func TestGuardR7Trials(t *testing.T) {
 		a = h.s.Next()
 		wantR7(t, a, false, 0, 0, 1, 2, 3)
 		h.trial(a, passed)
-		if a = h.s.Next(); a.Kind != RunTrial || a.Trial.Regime != machine.R5 {
-			t.Fatalf("after the R7 step: %+v, want R5", a)
+		if a = h.s.Next(); a.Kind != RunTrial || a.Trial.Regime != machine.R6 {
+			t.Fatalf("after the R7 step: %+v, want R6", a)
 		}
 
 		a = h.passUntil(a, machine.R7)
@@ -281,8 +308,8 @@ func TestGuardR7Trials(t *testing.T) {
 		a = h.passUntil(a, machine.R7)
 		wantR7(t, a, false, 0, 0)
 		h.trial(a, passed)
-		if a = h.s.Next(); a.Kind != RunTrial || a.Trial.Regime != machine.R5 {
-			t.Fatalf("after the R7 step: %+v, want R5", a)
+		if a = h.s.Next(); a.Kind != RunTrial || a.Trial.Regime != machine.R6 {
+			t.Fatalf("after the R7 step: %+v, want R6", a)
 		}
 	})
 }
@@ -294,7 +321,7 @@ func TestGuardBlameByLoad(t *testing.T) {
 		return journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(core), DurationS: 30}
 	}
 	corrected := journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.CorrectedMCE, DurationS: 120}
-	restart := []string{"end unclean", "profile", "start 2", "trial R1 c0"}
+	restart := []string{"end unclean", "profile", "start 2", "trial R2 c0"}
 	suspects := func(lines ...string) []string {
 		return append(append([]string{"unattributed"}, lines...), restart...)
 	}
@@ -330,7 +357,7 @@ func TestGuardBlameByLoad(t *testing.T) {
 			h.end(h.intent(0, machine.R1), crash)
 			h.decideUntilTrial()
 			h.end(h.intent(2, machine.R1), crash)
-		}, []string{"unattributed", "suspect 2 -11>-10 u1", "end unclean", "profile", "start 3", "trial R1 c0"}, "the only loaded core"},
+		}, []string{"unattributed", "suspect 2 -11>-10 u1", "end unclean", "profile", "start 3", "trial R2 c0"}, "the only loaded core"},
 		{"backend signal names its instance's core", nil, func(h *harness) { h.end(h.intent(allCores, machine.R7), signal(1)) },
 			append([]string{"attributed 1 at -12", "backoff 1 -12>-11 mark -12 u0"}, restart...), ""},
 		{"crash with an uncorrected core-local MCE from the next boot", nil, func(h *harness) {
@@ -339,12 +366,12 @@ func TestGuardBlameByLoad(t *testing.T) {
 			detected := h.add(&journal.CrashDetected{PreviousBoot: "b", InFlight: new(i.Seq), Condition: machine.Resident}, m.Seq)
 			h.end(i, crash, detected.Seq, m.Seq)
 		}, append([]string{"attributed 0 at -10", "backoff 0 -10>-9 mark -10 u0"}, restart...), ""},
-		{"inconclusive retries the trial", nil, func(h *harness) { h.trial(h.s.Next(), unsure) }, []string{"trial R1 c0 retry"}, ""},
+		{"inconclusive retries the trial", nil, func(h *harness) { h.trial(h.s.Next(), unsure) }, []string{"trial R2 c0 retry"}, ""},
 		{"proven backoff cancels unproven depth", nil, func(h *harness) {
 			h.end(h.intent(0, machine.R1), crash)
 			h.decideUntilTrial()
 			h.end(h.intent(0, machine.R1), signal(0))
-		}, []string{"attributed 0 at -9", "backoff 0 -9>-8 mark -9 u0", "end unclean", "profile", "start 3", "trial R1 c0"}, "the failed mark cancels unproven depth 1"},
+		}, []string{"attributed 0 at -9", "backoff 0 -9>-8 mark -9 u0", "end unclean", "profile", "start 3", "trial R2 c0"}, "the failed mark cancels unproven depth 1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

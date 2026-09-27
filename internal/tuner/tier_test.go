@@ -103,7 +103,7 @@ func TestTierTransitions(t *testing.T) {
 
 	h.end(h.intent(0, machine.R2), journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0), DurationS: 30})
 	got := h.until()
-	if w := []string{"attributed 0 at -10", "backoff 0 -10>-9 mark -10 u0", "end unclean", "tier none", "profile", "start 14", "trial R1 c0"}; !slices.Equal(got, w) {
+	if w := []string{"attributed 0 at -10", "backoff 0 -10>-9 mark -10 u0", "end unclean", "tier none", "profile", "start 14", "trial R2 c0"}; !slices.Equal(got, w) {
 		t.Fatalf("after a failure: %v, want %v", got, w)
 	}
 	if last := h.events[len(h.events)-3].Data.(*journal.TierChange); last.Reason != "the profile changed" {
