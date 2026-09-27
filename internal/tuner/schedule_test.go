@@ -134,7 +134,7 @@ func TestConfirmationRestartsFromAVX512(t *testing.T) {
 	t.Parallel()
 	confirmation := journal.PhaseConfirmation
 	h := newHarness(t, coreStart{phase: confirmation, offset: -12})
-	avx512 := machine.Workloads(machine.R2)[1].ID
+	avx512 := machine.MprimeAVX512ID
 	a := h.s.Next()
 	wantTrial(t, a, Trial{Offset: -12, Regime: machine.R2, Phase: confirmation, Condition: machine.Isolated, Workload: avx512}, 2)
 	h.trial(a, failed)

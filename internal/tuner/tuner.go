@@ -51,14 +51,19 @@ type slot struct {
 }
 
 var confirmationSet = func() []slot {
-	avx512 := machine.Workloads(machine.R2)[1].ID
-	set := []slot{{regime: machine.R2, workload: avx512}}
+	set := []slot{{regime: machine.R2, workload: machine.MprimeAVX512ID}}
+	found := false
 	for _, r := range []machine.Regime{machine.R1, machine.R2} {
 		for _, w := range machine.Workloads(r) {
-			if w.ID != avx512 {
-				set = append(set, slot{r, w.ID})
+			if r == machine.R2 && w.ID == machine.MprimeAVX512ID {
+				found = true
+				continue
 			}
+			set = append(set, slot{r, w.ID})
 		}
+	}
+	if !found {
+		panic("confirmation workload mprime AVX-512 missing from R2 catalog")
 	}
 	return append(set, slot{regime: machine.R3}, slot{regime: machine.R4}, slot{regime: machine.R5})
 }()

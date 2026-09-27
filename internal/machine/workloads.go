@@ -19,6 +19,8 @@ type Workload struct {
 	DutyPct int
 }
 
+const MprimeAVX512ID = "mprime-avx512-36k-248k"
+
 var baseR1 = []Workload{
 	{ID: "mprime-sse-4k-21k", Backend: Mprime, Label: "mprime SSE 4K-21K", Threads: 1},
 	{ID: "ycruncher-bkt-sftv4", Backend: Ycruncher, Label: "y-cruncher BKT + SFTv4", Threads: 1},
@@ -27,7 +29,7 @@ var baseR1 = []Workload{
 
 var baseR2 = []Workload{
 	{ID: "mprime-avx2-36k-248k", Backend: Mprime, Label: "mprime AVX2 36K-248K", Threads: 1},
-	{ID: "mprime-avx512-36k-248k", Backend: Mprime, Label: "mprime AVX-512 36K-248K", Threads: 1},
+	{ID: MprimeAVX512ID, Backend: Mprime, Label: "mprime AVX-512 36K-248K", Threads: 1},
 	{ID: "ycruncher-fftv4-n63-vt3", Backend: Ycruncher, Label: "y-cruncher FFTv4 + N63 + VT3", Threads: 1},
 }
 
