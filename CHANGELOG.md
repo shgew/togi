@@ -4,6 +4,10 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING** Confirmation runs mprime AVX-512 first, then the other eight trials in their previous order, so the workload most likely to fail no longer waits behind four passes; a ruleset-2 session must be archived with `shycler reset --all` ([#47]).
+
 ## [0.2.2] - 2026-09-27
 
 ### Added
@@ -14,7 +18,6 @@ All notable changes to shycler are documented in this file. The format is based 
 
 - `status` labels its Tctl line as the current profile's maximum ([#44]).
 - A trial closed after a crash or an interrupted run says how long after its start the last evidence was recorded, instead of a duration that read as measured ([#46]).
-- **BREAKING** Confirmation runs mprime AVX-512 first, then the other eight trials in their previous order, so the workload most likely to fail no longer waits behind four passes; a ruleset-2 session must be archived with `shycler reset --all` ([#47]).
 - `shycler run` on a terminal shows the `watch` dashboard instead of one line per event, and prints the outcome when it stops, including the restored offsets and the reason after Ctrl-C; `--no-tui` keeps the lines ([#39]).
 - shycler moved to GitHub: the flake is now `github:shgew/shycler`, and the issue and pull request numbers in this changelog, the docs and defect messages refer to `github.com/shgew/shycler` ([#40]).
 - The default guard rotation runs R2, R7, R6 and R5 before R1, R3 and R4, so regimes that failed in guard or were never reached before a failure restarted the rotation run first; a rotation already open keeps its order ([#49]).
