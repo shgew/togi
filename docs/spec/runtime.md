@@ -83,7 +83,7 @@ TOML at the `--config` path, produced by the NixOS module from `services.shycler
 | `durations.guard_trial_s` | 120 | [1, 86400] |
 | `durations.guard_idle_s` | 900 | [1, 86400]; R6 |
 | `durations.guard_all_core_s` | 1200 | [4, 86400]; R7: on two CCDs, a quarter per CCD then the remaining half on all cores |
-| `guard.rotation` | `["R1", "R2", "R6", "R3", "R4", "R7", "R5", "R6"]` | Non-empty list of regimes |
+| `guard.rotation` | `["R2", "R7", "R6", "R5", "R1", "R3", "R4", "R6"]` | Non-empty list of regimes |
 | `dead_ends.inconclusive_in_a_row` | 3 | [1, 100] |
 | `dead_ends.stray_crashes_in_a_row` | 3 | [1, 100] |
 | `backends.mprime` | not configured | Absolute path of the package (`bin/mprime` inside it) |
