@@ -108,9 +108,6 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 }
 
 func resetWarnings(events []journal.Event, g *globals) []string {
-	if err := journal.Compatible(journal.BuildOf(events), session.Build()); err != nil {
-		return nil
-	}
 	cfg, _, err := loadConfig(g)
 	if err != nil {
 		if g.configSet {

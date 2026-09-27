@@ -163,17 +163,29 @@ func TestResetAllSkipsUnavailableConfig(t *testing.T) {
 	}
 }
 
-func TestResetAllSkipsIncompatibleRulesetCandidateCheck(t *testing.T) {
-	dir, _ := incompatibleFixture(t, "ruleset")
+func TestResetAllWarnsAcrossRulesets(t *testing.T) {
+	dir := resetCandidateFixture(t, -10)
+	path := filepath.Join(dir, "events.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	older := strings.ReplaceAll(string(data), `"ruleset":3`, `"ruleset":2`)
+	if older == string(data) {
+		t.Fatal("fixture did not contain a ruleset stamp")
+	}
+	if err := os.WriteFile(path, []byte(older), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	cfg := filepath.Join(t.TempDir(), "config.toml")
-	if err := os.WriteFile(cfg, []byte("[candidate_edges]\n\"3\" = -50\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte("[candidate_edges]\n\"3\" = -10\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
 	if code := cli([]string{"--state-dir", dir, "--config", cfg, "reset", "--all"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("reset exit %d: %s", code, stderr.String())
 	}
-	if strings.Contains(stderr.String(), "candidate edge") || !strings.Contains(stdout.String(), "archived to archive/") {
-		t.Errorf("incompatible archive: stdout %q, stderr %q", stdout.String(), stderr.String())
+	if !strings.Contains(stderr.String(), "candidate edge -10 for core 03") || !strings.Contains(stdout.String(), "archived to archive/") {
+		t.Errorf("ruleset-2 archive: stdout %q, stderr %q", stdout.String(), stderr.String())
 	}
 }
