@@ -69,7 +69,7 @@ func confirmationFailure(c coreState) journal.Payload {
 		return failedAtZero(c.core)
 	}
 	pass, discarded := keepPass(c.pass, e)
-	return &journal.TunerDecision{Core: c.core, Phase: journal.PhaseConfirmation, Decision: journal.Backoff, FromOffset: e, ToOffset: e + 1, Pass: pass, FailedMark: new(e), Reason: "confirmation restarts from R1" + discarded}
+	return &journal.TunerDecision{Core: c.core, Phase: journal.PhaseConfirmation, Decision: journal.Backoff, FromOffset: e, ToOffset: e + 1, Pass: pass, FailedMark: new(e), Reason: "confirmation restarts from R2 mprime AVX-512" + discarded}
 }
 
 func guardFailure(c coreState) journal.Payload {

@@ -14,11 +14,11 @@ func incompatibleFixture(t *testing.T, field string) (string, []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stamp := `,"version":"0.2.1","rev":"def5678","ruleset":2,"schema":99`
+	stamp := `,"version":"0.2.1","rev":"def5678","ruleset":3,"schema":99`
 	if field == "ruleset" {
-		stamp = `,"version":"0.2.1","rev":"def5678","ruleset":99,"schema":2`
+		stamp = `,"version":"0.2.1","rev":"def5678","ruleset":2,"schema":2`
 	}
-	data := []byte(strings.Replace(string(fixture), `,"schema":2,"ruleset":2`, stamp, 1))
+	data := []byte(strings.Replace(string(fixture), `,"schema":2,"ruleset":3`, stamp, 1))
 	if bytes.Equal(fixture, data) {
 		t.Fatal("fixture did not contain schema stamp")
 	}
@@ -112,7 +112,7 @@ func TestResetAllArchivesUnrecognizedSchema(t *testing.T) {
 func TestResetCoreRefusesDifferentRuleset(t *testing.T) {
 	dir, original := incompatibleFixture(t, "ruleset")
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "reset", "--core", "3"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "uses ruleset 2") {
+	if code := cli([]string{"--state-dir", dir, "reset", "--core", "3"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "uses ruleset 3") {
 		t.Fatalf("reset --core exit %d, stderr %q", code, stderr.String())
 	}
 	after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))

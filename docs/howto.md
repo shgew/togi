@@ -76,7 +76,7 @@ shycler stops by itself only at a dead end: a core fails at offset 0, the SMU mi
 
 ## 7. Starting again after a breaking update
 
-An update whose changelog line starts with **BREAKING** refuses to continue a session written by an earlier build. Before archiving it, note each core's failed mark from the FAILED column of `shycler status`, and for cores without one the offset each was last confirmed at, from `shycler events --kind core.phase`. OFFSET in `status` can be shallower than that after a suspect backoff. Archive the session with `sudo shycler reset --all`; the archived journal stays in `/var/lib/shycler/archive/`.
+An update whose changelog line starts with **BREAKING** refuses to continue a session written by an earlier build. In particular, ruleset-2 sessions must be archived before resuming under ruleset 3, which starts confirmation with R2 mprime AVX-512. Before archiving, note each core's failed mark from the FAILED column of `shycler status`, and for cores without one the offset each was last confirmed at, from `shycler events --kind core.phase`. OFFSET in `status` can be shallower than that after a suspect backoff. Archive the session with `sudo shycler reset --all`; the archived journal stays in `/var/lib/shycler/archive/`.
 
 To skip searching for edges you already know, give each core a candidate edge: its failed mark plus one, or the offset it was last confirmed at where it has no failed mark. A core with failed mark 0 gets none: it failed at CO 0, so fix that cause first. Such a core starts the new session in confirmation at that offset. Confirmation still runs every trial, so a value that no longer holds costs a failure and moves the core one count shallower:
 

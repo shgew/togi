@@ -52,9 +52,9 @@ func TestRules(t *testing.T) {
 		{"confirmation passes", confirmed, confirming(-14, new(-14), new(-15)),
 			&journal.CorePhase{Core: 7, From: journal.PhaseConfirmation, To: journal.PhaseConfirmed, Offset: -14, Pass: new(-14), FailedMark: new(-15), Reason: "every R1 and R2 workload, R3, R4 and R5 passed"}},
 		{"confirmation failure moves to e+1", failureRule, confirming(-14, new(-14), new(-15)),
-			backoff(journal.PhaseConfirmation, -14, -13, nil, new(-14), "confirmation restarts from R1; passed step at -14 discarded, the failure contradicts it")},
+			backoff(journal.PhaseConfirmation, -14, -13, nil, new(-14), "confirmation restarts from R2 mprime AVX-512; passed step at -14 discarded, the failure contradicts it")},
 		{"confirmation failure keeps a shallower pass", failureRule, confirming(-14, new(-13), new(-15)),
-			backoff(journal.PhaseConfirmation, -14, -13, new(-13), new(-14), "confirmation restarts from R1")},
+			backoff(journal.PhaseConfirmation, -14, -13, new(-13), new(-14), "confirmation restarts from R2 mprime AVX-512")},
 		{"confirmation failure at 0 is a dead end", failureRule, confirming(0, new(0), new(-1)), deadAtZero},
 	}
 	for _, tt := range tests {

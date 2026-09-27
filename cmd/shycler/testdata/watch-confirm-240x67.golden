@@ -48,18 +48,18 @@
 
 
  Recent
- 11h46m  trial 0332 core 09 CO -18 R2 mprime AVX-512 36K-248K 300s isolated
+ 11h46m  trial 0332 core 09 CO -18 R2 mprime AVX2 36K-248K 300s isolated
  11h51m  trial 0332 PASS 300s | Tctl max 76 C
- 11h51m  trial 0333 core 02 CO -35 R2 mprime AVX2 36K-248K 300s isolated
- 11h56m  trial 0333 PASS 300s | Tctl max 65 C
+ 11h51m  trial 0333 core 02 CO -35 R1 y-cruncher SNT + SVT 300s isolated
+ 11h56m  trial 0333 PASS 300s | Tctl max 63 C
  11h56m  trial 0334 core 10 CO -16 R3 mprime SSE 4K-21K load steps 300s isolated
  12h01m  trial 0334 PASS 300s | Tctl max 62 C
  12h01m  trial 0335 core 03 CO -17 R2 y-cruncher FFTv4 + N63 + VT3 300s isolated
  12h06m  trial 0335 PASS 300s | Tctl max 73 C
  12h06m  trial 0336 core 11 CO -7 R4 mprime SSE 4K-21K 25% duty 300s isolated
  12h11m  trial 0336 PASS 300s | Tctl max 73 C
- 12h11m  trial 0337 core 04 CO -32 R1 y-cruncher SNT + SVT 300s isolated
- 12h16m  trial 0337 PASS 300s | Tctl max 73 C
+ 12h11m  trial 0337 core 04 CO -32 R1 y-cruncher BKT + SFTv4 300s isolated
+ 12h16m  trial 0337 PASS 300s | Tctl max 72 C
  12h16m  trial 0338 core 12 CO -10 R5 mprime SSE 4K-21K SMT pair 300s isolated
  12h21m  trial 0338 PASS 300s | Tctl max 65 C
  12h21m  core 12 confirmation -> confirmed at -10 (every R1 and R2 workload, R3, R4 and R5 passed)

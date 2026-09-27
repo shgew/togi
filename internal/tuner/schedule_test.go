@@ -83,8 +83,19 @@ func TestConfirmationSchedule(t *testing.T) {
 	t.Parallel()
 	confirmation := journal.PhaseConfirmation
 	h := newHarness(t, coreStart{phase: confirmation, offset: -12}, coreStart{phase: confirmation, offset: -11})
+	wantSlots := []slot{
+		{machine.R2, "mprime-avx512-36k-248k"},
+		{machine.R1, "mprime-sse-4k-21k"},
+		{machine.R1, "ycruncher-bkt-sftv4"},
+		{machine.R1, "ycruncher-snt-svt"},
+		{machine.R2, "mprime-avx2-36k-248k"},
+		{machine.R2, "ycruncher-fftv4-n63-vt3"},
+		{regime: machine.R3},
+		{regime: machine.R4},
+		{regime: machine.R5},
+	}
 	passes := map[int][]int{}
-	for i, sl := range confirmationSet {
+	for i, sl := range wantSlots {
 		for core, offset := range []int{-12, -11} {
 			a := h.s.Next()
 			want := Trial{Core: core, Offset: offset, Regime: sl.regime, Phase: confirmation, Condition: machine.Isolated, Workload: sl.workload}
@@ -96,7 +107,7 @@ func TestConfirmationSchedule(t *testing.T) {
 			}
 			_, end := h.trial(a, passed)
 			passes[core] = append(passes[core], end.Seq)
-			if i < len(confirmationSet)-1 {
+			if i < len(wantSlots)-1 {
 				continue
 			}
 			done := h.s.Next()
@@ -119,38 +130,32 @@ func TestConfirmationSchedule(t *testing.T) {
 	}
 }
 
-func TestConfirmationRestartsFromFirstR1Workload(t *testing.T) {
+func TestConfirmationRestartsFromAVX512(t *testing.T) {
 	t.Parallel()
 	confirmation := journal.PhaseConfirmation
 	h := newHarness(t, coreStart{phase: confirmation, offset: -12})
-	for range 4 {
-		h.trial(h.s.Next(), passed)
-	}
+	avx512 := machine.MprimeAVX512ID
 	a := h.s.Next()
-	if a.Trial.Regime != machine.R2 || a.Trial.Workload != machine.Workloads(machine.R2)[1].ID {
-		t.Fatalf("fifth trial %+v, want the second R2 workload", a.Trial)
-	}
+	wantTrial(t, a, Trial{Offset: -12, Regime: machine.R2, Phase: confirmation, Condition: machine.Isolated, Workload: avx512}, 2)
 	h.trial(a, failed)
 	failure := h.decide(h.s.Next())
 	a = h.s.Next()
 	back, ok := a.Payload.(*journal.TunerDecision)
 	if !ok || back.Decision != journal.Backoff || back.ToOffset != -11 || !slices.Equal(a.Cause, []int{failure.Seq}) {
-		t.Fatalf("after the failure: %+v, want a backoff to -11 citing %d", a, failure.Seq)
+		t.Fatalf("after AVX-512 failure: %+v, want a backoff to -11 citing %d", a, failure.Seq)
 	}
-	h.decide(a)
+	backEvent := h.decide(a)
 
-	r1 := machine.Workloads(machine.R1)
 	a = h.s.Next()
-	if want := (Trial{Offset: -11, Regime: machine.R1, Phase: confirmation, Condition: machine.Isolated, Workload: r1[0].ID}); !cmp.Equal(a.Trial, want) {
-		t.Fatalf("after the backoff: %+v, want %+v", a.Trial, want)
-	}
+	wantTrial(t, a, Trial{Offset: -11, Regime: machine.R2, Phase: confirmation, Condition: machine.Isolated, Workload: avx512}, backEvent.Seq)
 	h.trial(a, passed)
 	a = h.s.Next()
-	if a.Trial.Workload != r1[1].ID {
-		t.Fatalf("second trial %+v, want workload %s", a.Trial, r1[1].ID)
+	r1 := machine.Workloads(machine.R1)[0].ID
+	if want := (Trial{Offset: -11, Regime: machine.R1, Phase: confirmation, Condition: machine.Isolated, Workload: r1}); !cmp.Equal(a.Trial, want) {
+		t.Fatalf("after AVX-512 pass: %+v, want %+v", a.Trial, want)
 	}
 	_, inconclusive := h.trial(a, unsure)
-	want := Trial{Offset: -11, Regime: machine.R1, Phase: confirmation, Condition: machine.Isolated, Workload: r1[1].ID, Retry: true}
+	want := Trial{Offset: -11, Regime: machine.R1, Phase: confirmation, Condition: machine.Isolated, Workload: r1, Retry: true}
 	wantTrial(t, h.s.Next(), want, inconclusive.Seq)
 }
 
