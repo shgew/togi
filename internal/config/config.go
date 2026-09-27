@@ -60,7 +60,7 @@ func Default() Config {
 			GuardAllCoreS:      1200,
 		},
 		Guard: Guard{
-			Rotation: []machine.Regime{machine.R1, machine.R2, machine.R6, machine.R3, machine.R4, machine.R7, machine.R5, machine.R6},
+			Rotation: []machine.Regime{machine.R2, machine.R7, machine.R6, machine.R5, machine.R1, machine.R3, machine.R4, machine.R6},
 		},
 		DeadEnds: DeadEnds{
 			InconclusiveInARow: 3,

@@ -58,13 +58,13 @@ Defaults, all configurable:
 For `D = durations.guard_all_core_s` and `n` CCDs, R7 runs for `D` on one CCD; on multiple CCDs, each single-CCD trial runs `floor(D / 4)` seconds and the all-core trial runs `D - n*floor(D / 4)` seconds. `guard_all_core_s` must be in [4, 86400]. A trial is torn down before the next part starts, with no in-trial CCD phases or phase-change progress events. An inconclusive retry repeats that part's loaded cores and workload. Parts already passed survive interruption.
 
 Default guard rotation, about 3.5 h:
-1. R1 on every core
-2. R2 on every core
+1. R2 on every core
+2. R7
 3. R6
-4. R3 on every core
-5. R4 on every core
-6. R7
-7. R5 on every core
+4. R5 on every core
+5. R1 on every core
+6. R3 on every core
+7. R4 on every core
 8. R6
 
 Per-core steps follow the scheduling order in `tuner.md`.
