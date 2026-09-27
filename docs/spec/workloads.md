@@ -70,6 +70,7 @@ Default guard rotation, about 3.5 h:
 Per-core steps follow the scheduling order in `tuner.md`.
 
 Rough times to the first clean rotation on 16 cores: search 6-9 h depending on how far edges lie from the baseline, confirmation 45 min per core (nine × 5 min, about 12 h total), first rotation about 3.5 h. Bronze follows that rotation only if nothing is left to regain.
+The confirmation estimate assumes no failures. Each confirmation failure below offset 0 restarts that core's nine trials one count shallower, adding up to nine trials (45 min at the default duration); a failure at 0 is a dead end.
 
 ## Containment
 
