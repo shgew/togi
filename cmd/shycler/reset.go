@@ -135,7 +135,11 @@ func resetWarnings(events []journal.Event, g *globals) []string {
 	for _, core := range slices.Sorted(maps.Keys(cfg.CandidateEdges)) {
 		edge := cfg.CandidateEdges[core]
 		if mark, ok := marks[core]; ok && edge <= mark {
-			warnings = append(warnings, fmt.Sprintf("warning: candidate edge %d for core %02d is at or deeper than its failed mark %d in the archived session; the new session would start confirmation where core %02d already failed. The how-to suggests the failed mark plus one.", edge, core, mark, core))
+			remedy := "remove it"
+			if mark < 0 {
+				remedy = fmt.Sprintf("use %d, the failed mark plus one, or remove it", mark+1)
+			}
+			warnings = append(warnings, fmt.Sprintf("warning: candidate edge %d for core %02d is at or deeper than its failed mark %d in the archived session; %s", edge, core, mark, remedy))
 		}
 	}
 	return warnings

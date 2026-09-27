@@ -49,18 +49,20 @@ func TestResetAllCandidateEdges(t *testing.T) {
 	tests := []struct {
 		name    string
 		core    int
+		mark    int
 		edge    int
 		warning bool
 	}{
-		{"at failed mark", 3, -10, true},
-		{"deeper than failed mark", 3, -11, true},
-		{"shallower than failed mark", 3, -9, false},
-		{"no failed mark", 7, -10, false},
-		{"suspect backoff only", 7, -11, false},
+		{"at failed mark", 3, -10, -10, true},
+		{"deeper than failed mark", 3, -10, -11, true},
+		{"shallower than failed mark", 3, -10, -9, false},
+		{"failed at zero", 3, 0, 0, true},
+		{"no failed mark", 7, -10, -10, false},
+		{"suspect backoff only", 7, -10, -11, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir := resetCandidateFixture(t)
+			dir := resetCandidateFixture(t, tt.mark)
 			cfg := filepath.Join(t.TempDir(), "config.toml")
 			if err := os.WriteFile(cfg, []byte(fmt.Sprintf("[candidate_edges]\n\"%d\" = %d\n", tt.core, tt.edge)), 0o644); err != nil {
 				t.Fatal(err)
@@ -73,6 +75,15 @@ func TestResetAllCandidateEdges(t *testing.T) {
 			if diff := cmp.Diff(tt.warning, got); diff != "" {
 				t.Errorf("candidate warning (-want +got):\n%s; stderr %q", diff, stderr.String())
 			}
+			if tt.warning {
+				remedy := "remove it"
+				if tt.mark < 0 {
+					remedy = fmt.Sprintf("use %d, the failed mark plus one, or remove it", tt.mark+1)
+				}
+				if !strings.Contains(stderr.String(), remedy) {
+					t.Errorf("missing remedy %q: %q", remedy, stderr.String())
+				}
+			}
 			if !strings.Contains(stdout.String(), "archived to archive/") {
 				t.Errorf("missing archive line: %q", stdout.String())
 			}
@@ -80,7 +91,7 @@ func TestResetAllCandidateEdges(t *testing.T) {
 	}
 }
 
-func resetCandidateFixture(t *testing.T) string {
+func resetCandidateFixture(t *testing.T, mark int) string {
 	t.Helper()
 	fixture, err := os.ReadFile("testdata/events.jsonl")
 	if err != nil {
@@ -102,10 +113,10 @@ func resetCandidateFixture(t *testing.T) string {
 		}
 		return event
 	}
-	fail := appendEvent(&journal.Failure{Signal: machine.Signal("error"), Attribution: journal.Attributed, Core: new(3), Offset: new(-10)})
+	fail := appendEvent(&journal.Failure{Signal: machine.Signal("error"), Attribution: journal.Attributed, Core: new(3), Offset: new(mark)})
 	appendEvent(&journal.TunerDecision{
 		Core: 3, Phase: journal.PhaseSearch, Decision: journal.Backoff,
-		FromOffset: -10, ToOffset: -9, FailedMark: new(-10), Reason: "attributed failure",
+		FromOffset: mark, ToOffset: min(mark+1, 0), FailedMark: new(mark), Reason: "attributed failure",
 	}, fail.Seq)
 	appendEvent(&journal.CorePhase{Core: 7, To: journal.PhaseGuard, Offset: -10, Reason: "confirmed"})
 	appendEvent(&journal.TunerDecision{
@@ -130,7 +141,7 @@ func TestResetAllSkipsUnavailableConfig(t *testing.T) {
 		{"explicit invalid", "removed_key = true\n", true, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			dir := resetCandidateFixture(t)
+			dir := resetCandidateFixture(t, -10)
 			cfg := filepath.Join(t.TempDir(), "config.toml")
 			if tt.config != "" {
 				if err := os.WriteFile(cfg, []byte(tt.config), 0o644); err != nil {
@@ -138,19 +149,9 @@ func TestResetAllSkipsUnavailableConfig(t *testing.T) {
 				}
 			}
 			var stdout, stderr bytes.Buffer
-			args := []string{"--state-dir", dir, "reset", "--all"}
-			if tt.explicit {
-				args = append(args, "--config", cfg)
-			} else {
-				g := &globals{config: cfg, stateDir: dir}
-				if code := runReset(g, []string{"--all"}, &stdout, &stderr); code != exitOK {
-					t.Fatalf("reset exit %d: %s", code, stderr.String())
-				}
-			}
-			if tt.explicit {
-				if code := cli(args, &stdout, &stderr); code != exitOK {
-					t.Fatalf("reset exit %d: %s", code, stderr.String())
-				}
+			g := &globals{config: cfg, stateDir: dir, configSet: tt.explicit}
+			if code := runReset(g, []string{"--all"}, &stdout, &stderr); code != exitOK {
+				t.Fatalf("reset exit %d: %s", code, stderr.String())
 			}
 			if diff := cmp.Diff(tt.warning, strings.Contains(stderr.String(), "cannot check candidate edges")); diff != "" {
 				t.Errorf("config warning (-want +got):\n%s; stderr %q", diff, stderr.String())
