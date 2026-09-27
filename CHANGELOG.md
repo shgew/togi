@@ -6,6 +6,7 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ### Changed
 
+- A trial closed after a crash or an interrupted run says how long after its start the last evidence was recorded, instead of a duration that read as measured ([#46]).
 - `shycler run` on a terminal shows the `watch` dashboard instead of one line per event, and prints the outcome when it stops, including the restored offsets and the reason after Ctrl-C; `--no-tui` keeps the lines ([#39]).
 - shycler moved to GitHub: the flake is now `github:shgew/shycler`, and the issue and pull request numbers in this changelog, the docs and defect messages refer to `github.com/shgew/shycler` ([#40]).
 
@@ -117,3 +118,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#38]: https://github.com/shgew/shycler/issues/38
 [#39]: https://github.com/shgew/shycler/issues/39
 [#40]: https://github.com/shgew/shycler/pull/40
+[#46]: https://github.com/shgew/shycler/pull/46
