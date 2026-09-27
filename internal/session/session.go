@@ -276,7 +276,7 @@ func (r *runner) closeOpenTrial() error {
 	if open == nil {
 		return nil
 	}
-	end := &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeInconclusive, Interrupted: true, Reason: "shycler stopped during the trial"}
+	end := &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeInconclusive, Interrupted: true, Reason: journal.TrialReasonStoppedDuringTrial}
 	cause := []int{open.seq}
 	if seq, crashed := r.fold.crashSeq[open.boot]; crashed {
 		end = &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Reason: "machine crashed during the trial"}
@@ -286,7 +286,7 @@ func (r *runner) closeOpenTrial() error {
 		if open.corrected {
 			signal = machine.CorrectedMCE
 		}
-		end = &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeFailure, Signal: signal, Interrupted: true, Reason: "shycler stopped during the trial after a machine check"}
+		end = &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeFailure, Signal: signal, Interrupted: true, Reason: journal.TrialReasonStoppedAfterMachineCheck}
 		cause = append(cause, open.mces...)
 	}
 	end.DurationS = int(open.ran().Seconds())

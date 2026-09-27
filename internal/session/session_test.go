@@ -258,6 +258,7 @@ func TestKillAtEveryEvent(t *testing.T) {
 	t.Parallel()
 	refDir, events := reference(t, small())
 	want := summary(t, refDir)
+	firstStart := slices.IndexFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindTrialStart }) + 1
 	for k := 1; k <= len(events); k++ {
 		t.Run(fmt.Sprint(k), func(t *testing.T) {
 			t.Parallel()
@@ -268,6 +269,17 @@ func TestKillAtEveryEvent(t *testing.T) {
 			}
 			if got := summary(t, dir); got != want {
 				t.Fatalf("killed at %d (%s):\n got %s\nwant %s", k, events[k-1].Kind, got, want)
+			}
+			if k == firstStart {
+				for _, e := range readEvents(t, dir) {
+					if p, ok := e.Data.(*journal.TrialEnd); ok && p.Trial == "0001" {
+						if !p.Interrupted || p.DurationS != 0 || e.Msg != "trial 0001 INCONCLUSIVE, last evidence 0s after start: shycler stopped during the trial" {
+							t.Fatalf("trial.end %+v: %s", p, e.Msg)
+						}
+						return
+					}
+				}
+				t.Fatal("no trial.end for trial 0001")
 			}
 		})
 	}
@@ -392,8 +404,8 @@ func TestCrashAtEveryTrialEvent(t *testing.T) {
 				want := int(last.Sub(started).Seconds())
 				for _, e := range events[k:] {
 					if p, ok := e.Data.(*journal.TrialEnd); ok && p.Trial == intent.Trial {
-						if p.DurationS != want || !strings.HasSuffix(e.Msg, fmt.Sprintf("after %ds", want)) {
-							t.Fatalf("crash at %d (%s): trial.end %+v %q, want %ds", k, hit.Kind, p, e.Msg, want)
+						if p.DurationS != want || !strings.HasSuffix(e.Msg, fmt.Sprintf(", last evidence %ds after start", want)) {
+							t.Fatalf("crash at %d (%s): trial.end %+v %q, want last evidence %ds after start", k, hit.Kind, p, e.Msg, want)
 						}
 						break
 					}

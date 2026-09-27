@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strconv"
 
 	"github.com/shgew/shycler/internal/detect"
 	"github.com/shgew/shycler/internal/journal"
 	"github.com/shgew/shycler/internal/session"
+	"github.com/shgew/shycler/internal/tuner"
 )
 
 const resetHelp = `Usage: shycler reset --core <N> | --all
@@ -18,6 +21,8 @@ const resetHelp = `Usage: shycler reset --core <N> | --all
 Reset one core, so the next run restarts its search from the baseline, or archive
 the whole session, so the next run starts a new one. Give exactly one of the two.
 Resetting a core also clears its spent regain retries and settled steps.
+--all warns if a configured candidate edge reached a failed mark in the archived
+session; missing or invalid configuration does not prevent archiving.
 --core refuses a different journal ruleset or schema; --all archives either.
 
 Examples:
@@ -90,12 +95,54 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "reset of core %02d queued; the next shycler run restarts its search from the baseline\n", *core)
 		return exitOK
 	}
+	warnings := resetWarnings(j.Events(), g)
 	path, err := session.ResetAll(j)
 	if code, ok := closeCommand("reset", j, err, stderr); !ok {
 		return code
 	}
 	fmt.Fprintf(stdout, "session %s archived to %s; the next shycler run starts a new session\n", id, path)
+	for _, warning := range warnings {
+		fmt.Fprintln(stderr, warning)
+	}
 	return exitOK
+}
+
+func resetWarnings(events []journal.Event, g *globals) []string {
+	if err := journal.Compatible(journal.BuildOf(events), session.Build()); err != nil {
+		return nil
+	}
+	cfg, _, err := loadConfig(g)
+	if err != nil {
+		if g.configSet {
+			return []string{fmt.Sprintf("warning: cannot check candidate edges: %v", err)}
+		}
+		return nil
+	}
+	if len(cfg.CandidateEdges) == 0 {
+		return nil
+	}
+	var state journal.State
+	t := tuner.New()
+	journal.Replay(events, &state, t)
+	t.Project(&state)
+	marks := make(map[int]int, len(state.Cores))
+	for _, core := range state.Cores {
+		if core.FailedMark != nil {
+			marks[core.Core] = *core.FailedMark
+		}
+	}
+	var warnings []string
+	for _, core := range slices.Sorted(maps.Keys(cfg.CandidateEdges)) {
+		edge := cfg.CandidateEdges[core]
+		if mark, ok := marks[core]; ok && edge <= mark {
+			remedy := "remove it"
+			if mark < 0 {
+				remedy = fmt.Sprintf("use %d, the failed mark plus one, or remove it", mark+1)
+			}
+			warnings = append(warnings, fmt.Sprintf("warning: candidate edge %d for core %02d is at or deeper than its failed mark %d in the archived session; %s", edge, core, mark, remedy))
+		}
+	}
+	return warnings
 }
 
 // openForCommand refuses a directory without a session before it creates anything there.

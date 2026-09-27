@@ -58,18 +58,19 @@ Defaults, all configurable:
 For `D = durations.guard_all_core_s` and `n` CCDs, R7 runs for `D` on one CCD; on multiple CCDs, each single-CCD trial runs `floor(D / 4)` seconds and the all-core trial runs `D - n*floor(D / 4)` seconds. `guard_all_core_s` must be in [4, 86400]. A trial is torn down before the next part starts, with no in-trial CCD phases or phase-change progress events. An inconclusive retry repeats that part's loaded cores and workload. Parts already passed survive interruption.
 
 Default guard rotation, about 3.5 h:
-1. R1 on every core
-2. R2 on every core
+1. R2 on every core
+2. R7
 3. R6
-4. R3 on every core
-5. R4 on every core
-6. R7
-7. R5 on every core
+4. R5 on every core
+5. R1 on every core
+6. R3 on every core
+7. R4 on every core
 8. R6
 
 Per-core steps follow the scheduling order in `tuner.md`.
 
 Rough times to the first clean rotation on 16 cores: search 6-9 h depending on how far edges lie from the baseline, confirmation 45 min per core (nine × 5 min, about 12 h total), first rotation about 3.5 h. Bronze follows that rotation only if nothing is left to regain.
+The confirmation estimate assumes no failures. Each confirmation failure below offset 0 restarts that core's nine trials one count shallower, adding up to nine trials (45 min at the default duration); a failure at 0 is a dead end.
 
 ## Containment
 
@@ -116,6 +117,8 @@ Crash detection and evidence: every boot in the journal other than the current o
 A trial still open when `run` starts, in a boot that did not crash (the same boot, or one that ended in `shutdown`), ends as `interrupted`: a failure (`corrected_mce`, or `uncorrected_mce` when none is corrected) when `mce` events were already recorded for it, else inconclusive. Interrupted trials do not count toward the inconclusive dead end.
 
 A trial closed this way, after a crash or an interruption, records as its `duration_s` the time from its `trial.start` to its last `trial.progress`, `trial.signal` or `trial.sample` in the journal, or 0 without a `trial.start`. Nothing is recorded between those events, so after a crash this is a lower bound.
+
+The `trial.end` message for a trial closed on resume says `last evidence Ns after start` instead of presenting `duration_s` as elapsed time. A trial that ends while shycler watches it, including an orderly stop by signal, reports its measured duration with `after Ns`.
 
 MCE attribution rules:
 - Attribution uses the SMCA bank type decoded by the kernel (`edac_mce_amd`), never a hard-coded bank number.
