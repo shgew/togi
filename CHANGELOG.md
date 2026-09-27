@@ -4,6 +4,10 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ## [Unreleased]
 
+### Added
+
+- `reset --all` warns about each configured candidate edge at or deeper than that core's failed mark in the session it archives ([#48]).
+
 ### Changed
 
 - `shycler run` on a terminal shows the `watch` dashboard instead of one line per event, and prints the outcome when it stops, including the restored offsets and the reason after Ctrl-C; `--no-tui` keeps the lines ([#39]).
@@ -117,3 +121,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#38]: https://github.com/shgew/shycler/issues/38
 [#39]: https://github.com/shgew/shycler/issues/39
 [#40]: https://github.com/shgew/shycler/pull/40
+[#48]: https://github.com/shgew/shycler/pull/48
