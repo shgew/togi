@@ -4,6 +4,10 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ## [Unreleased]
 
+### Fixed
+
+- `reset --all` warns about stale candidate edges also when the archived session was written under another ruleset, as after a breaking update ([#50]).
+
 ## [0.3.0] - 2026-09-27
 
 ### Changed
@@ -141,3 +145,4 @@ All notable changes to shycler are documented in this file. The format is based 
 [#47]: https://github.com/shgew/shycler/pull/47
 [#48]: https://github.com/shgew/shycler/pull/48
 [#49]: https://github.com/shgew/shycler/pull/49
+[#50]: https://github.com/shgew/shycler/pull/50
