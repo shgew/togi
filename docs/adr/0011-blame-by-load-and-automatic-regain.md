@@ -1,3 +1,5 @@
+Confirmation order superseded by [ADR 0015](0015-avx-512-first-in-confirmation.md); the nine workloads and backoff rule remain.
+
 # Blame unattributed failures by load and regain depth automatically
 
 Resident crashes often lack evidence naming a core. Under the escalation window, a second such failure before a clean rotation backed off every core, even when only one core was loaded. Confirmation could miss an R1 or R2 workload that guard later ran, while R7 loaded both CCDs before it could narrow a failure. Manual regain then repeated isolated confirmation at previously tested offsets. These observations motivate wider confirmation and narrower blame; they do not establish that confirmation would have prevented those crashes.

@@ -6,6 +6,7 @@ All notable changes to shycler are documented in this file. The format is based 
 
 ### Changed
 
+- **BREAKING** Confirmation runs mprime AVX-512 first, then the other eight trials in their previous order, so the workload most likely to fail no longer waits behind four passes; a ruleset-2 session must be archived with `shycler reset --all`.
 - `shycler run` on a terminal shows the `watch` dashboard instead of one line per event, and prints the outcome when it stops, including the restored offsets and the reason after Ctrl-C; `--no-tui` keeps the lines ([#39]).
 - shycler moved to GitHub: the flake is now `github:shgew/shycler`, and the issue and pull request numbers in this changelog, the docs and defect messages refer to `github.com/shgew/shycler` ([#40]).
 

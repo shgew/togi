@@ -27,7 +27,7 @@ The ruleset is the hardcoded strategy: steps, offset range, phases, which worklo
 
 Cores are visited in CCD-alternating order: 0, 8, 1, 9, ... 7, 15. Each turn goes to the next core in that order still in search or confirmation, and that core runs its next trial. Interleaving cores this way gives every core time to cool between its own trials.
 
-A search step runs R1 and then R2 if R1 passed. Confirmation has nine trial slots per core: each R1 workload, each R2 workload, then R3, R4 and R5. An inconclusive trial is retried at once with the same workload in the same slot, unless a decision for its core comes first (a queued reset): the decision replaces the slot.
+A search step runs R1 and then R2 if R1 passed. Confirmation has nine trial slots per core: R2 mprime AVX-512 36K-248K first, then each R1 workload, the remaining R2 workloads, R3, R4 and R5. An inconclusive trial is retried at once with the same workload in the same slot, unless a decision for its core comes first (a queued reset): the decision replaces the slot.
 
 ## Search
 
@@ -52,9 +52,9 @@ Any failure during an isolated trial is attributed to the target, crashes includ
 
 ## Confirmation
 
-At the candidate edge `e`, the core runs nine isolated trials: each R1 workload in catalog order, each R2 workload in catalog order, then R3, R4 and R5 (one workload each). Each trial gets a turn in the CCD-alternating order.
+At the candidate edge `e`, the core runs nine isolated trials: R2 mprime AVX-512 36K-248K first, then each R1 workload in catalog order, the remaining R2 workloads in catalog order, then R3, R4 and R5 (one workload each). Each trial gets a turn in the CCD-alternating order. The shared workload catalog is unchanged: search and guard still cycle workloads in catalog order.
 - All nine pass: the core is confirmed and `e` is its edge.
-- An attributed failure sets `fail = e` and moves the core to `e + 1`, where the entire set restarts from the first R1 workload. A failure at `e == 0` is a dead end. An inconclusive retry repeats the same workload.
+- An attributed failure sets `fail = e` and moves the core to `e + 1`, where the entire set restarts from R2 mprime AVX-512. A failure at `e == 0` is a dead end. An inconclusive retry repeats the same workload.
 
 ## Isolated trial sequence
 

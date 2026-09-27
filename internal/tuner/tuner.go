@@ -13,7 +13,7 @@ import (
 )
 
 // Ruleset must be bumped for changes to steps, offset range, phases, regimes, confirmation, tiers or backoffs; this is breaking.
-const Ruleset = 2
+const Ruleset = 3
 
 type ActionKind int
 
@@ -50,12 +50,14 @@ type slot struct {
 	workload string
 }
 
-// confirmationSet is every R1 and R2 workload in catalog order, then R3, R4 and R5.
 var confirmationSet = func() []slot {
-	var set []slot
+	avx512 := machine.Workloads(machine.R2)[1].ID
+	set := []slot{{regime: machine.R2, workload: avx512}}
 	for _, r := range []machine.Regime{machine.R1, machine.R2} {
 		for _, w := range machine.Workloads(r) {
-			set = append(set, slot{r, w.ID})
+			if w.ID != avx512 {
+				set = append(set, slot{r, w.ID})
+			}
 		}
 	}
 	return append(set, slot{regime: machine.R3}, slot{regime: machine.R4}, slot{regime: machine.R5})
