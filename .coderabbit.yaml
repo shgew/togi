@@ -74,6 +74,12 @@ reviews:
           If the pull request changes the value of `journal.Schema` or `tuner.Ruleset`, its title
           starts with `[BREAKING]`, it carries the `breaking` label, and its CHANGELOG.md line
           starts with `**BREAKING**`. Otherwise, none of these markers is present.
+      - name: Issue reference
+        mode: warning
+        instructions: >-
+          A pull request that finishes an issue says `Closes #N` in its body; one that only makes
+          progress on an issue says `Refs #N`. Warn when the keyword does not match what the pull
+          request does to the linked issue.
   tools:
     gitleaks:
       enabled: true
@@ -114,7 +120,8 @@ knowledge_base:
     enabled: true
     filePatterns:
       - CONTEXT.md
-      - docs/spec/**
+      - files: docs/spec/**
+        applyTo: cmd/**,internal/**,nix/**
   learnings:
     scope: local
 issue_enrichment:
