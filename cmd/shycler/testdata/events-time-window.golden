@@ -1,3 +1,0 @@
-01:14:07 smu.readback   SMU core 07 reads CO -32
-01:14:07 trial.start    trial 0413 started pid 48211 in scope shycler-trial-0413 on cpu 7
-01:15:37 trial.end      trial 0413 PASS 90s | Tctl max 71°C

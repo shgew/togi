@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/togi/internal/journal"
 )
 
 const (

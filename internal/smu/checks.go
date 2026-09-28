@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/machine"
 )
 
 func (d *Driver) CheckCPU() machine.Check {

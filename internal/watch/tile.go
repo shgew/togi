@@ -7,7 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/togi/internal/journal"
 )
 
 type cellKind int

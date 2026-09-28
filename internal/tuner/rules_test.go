@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/togi/internal/journal"
 )
 
 func search(offset int, pass, fail *int) coreState {

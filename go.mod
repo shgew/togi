@@ -1,4 +1,4 @@
-module github.com/shgew/shycler
+module github.com/shgew/togi
 
 go 1.27
 

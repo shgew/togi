@@ -37,7 +37,7 @@
         in
         {
           packages.default = pkgs.buildGo127Module {
-            pname = "shycler";
+            pname = "togi";
             version = lib.fileContents ./version.txt;
             src = lib.fileset.toSource {
               root = ./.;
@@ -55,13 +55,13 @@
             vendorHash = "sha256-OGYOqVtPseV1QvWhbVlQfXPcuTGIWne3Fk7JYtee1ak=";
             nativeCheckInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
             ldflags = [
-              "-X github.com/shgew/shycler.rev=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dev"}"
+              "-X github.com/shgew/togi.rev=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dev"}"
             ];
-            subPackages = [ "cmd/shycler" ];
+            subPackages = [ "cmd/togi" ];
             checkPhase = testPhase "";
             meta = {
               description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
-              mainProgram = "shycler";
+              mainProgram = "togi";
               platforms = [ system ];
             };
           };
@@ -75,13 +75,13 @@
               pkgs.just
               pkgs.nixfmt
             ];
-            SHYCLER_DEV_SHELL = "1";
+            TOGI_DEV_SHELL = "1";
           };
 
           checks = {
             package = config.packages.default;
             lint = config.packages.default.overrideAttrs (old: {
-              pname = "shycler-lint";
+              pname = "togi-lint";
               nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.golangci-lint ];
               buildPhase = ''
                 runHook preBuild
@@ -94,7 +94,7 @@
               dontFixup = true;
             });
             fmt =
-              pkgs.runCommand "shycler-fmt"
+              pkgs.runCommand "togi-fmt"
                 {
                   nativeBuildInputs = [ config.formatter ];
                   src = lib.fileset.toSource {

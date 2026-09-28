@@ -1,4 +1,4 @@
-// Command release builds shycler's release commit and publishes the release, from the release workflow.
+// Command release builds togi's release commit and publishes the release, from the release workflow.
 package main
 
 import (
@@ -212,7 +212,7 @@ func (r runner) checkout(commit string) error {
 }
 
 func (r runner) commitFiles(parent, message string, files map[string]string) (string, error) {
-	indexPath, err := r.output("rev-parse", "--git-path", "shycler-release-index")
+	indexPath, err := r.output("rev-parse", "--git-path", "togi-release-index")
 	if err != nil {
 		return "", fmt.Errorf("locate temporary index: %w", err)
 	}

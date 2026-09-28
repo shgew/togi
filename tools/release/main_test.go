@@ -54,15 +54,15 @@ func (f *fakeGit) stdin(command string) []string {
 func mainGit(version, changelog, tags string) *fakeGit {
 	return &fakeGit{
 		responses: map[string]string{
-			"rev-parse --verify origin/main^{commit}":    "base\n",
-			"show base:version.txt":                      version + "\n",
-			"show base:CHANGELOG.md":                     changelog,
-			"show base:go.mod":                           "module forge.example/o/r\n\ngo 1.27\n",
-			"ls-remote --tags origin refs/tags/v*":       tags,
-			"rev-parse --git-path shycler-release-index": "index\n",
-			"hash-object -w --stdin":                     "blob\n",
-			"write-tree":                                 "tree\n",
-			"commit-tree tree -p base -F -":              "commit\n",
+			"rev-parse --verify origin/main^{commit}": "base\n",
+			"show base:version.txt":                   version + "\n",
+			"show base:CHANGELOG.md":                  changelog,
+			"show base:go.mod":                        "module forge.example/o/r\n\ngo 1.27\n",
+			"ls-remote --tags origin refs/tags/v*":    tags,
+			"rev-parse --git-path togi-release-index": "index\n",
+			"hash-object -w --stdin":                  "blob\n",
+			"write-tree":                              "tree\n",
+			"commit-tree tree -p base -F -":           "commit\n",
 		},
 		failures: map[string]error{},
 		stderr:   map[string]string{},
@@ -116,7 +116,7 @@ func TestRelease(t *testing.T) {
 			}
 			want := append(append([]string{}, readMain...),
 				"ls-remote --tags origin refs/tags/v*",
-				"rev-parse --git-path shycler-release-index",
+				"rev-parse --git-path togi-release-index",
 				"read-tree base",
 				"hash-object -w --stdin",
 				"update-index --cacheinfo 100644,blob,version.txt",

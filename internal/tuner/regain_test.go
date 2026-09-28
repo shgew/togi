@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/shgew/shycler/internal/config"
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
 
 // confirmedHarness has core 0 confirmed at -18 with failed mark -21 and the given suspect counts, at its first guard

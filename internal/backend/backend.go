@@ -1,7 +1,7 @@
 // Package backend is the contract between the trial runner and the stress programs it launches.
 package backend
 
-import "github.com/shgew/shycler/internal/machine"
+import "github.com/shgew/togi/internal/machine"
 
 type Kind int
 

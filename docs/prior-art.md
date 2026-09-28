@@ -1,6 +1,6 @@
 # Prior art
 
-What shycler takes from existing tools and research, and what it deliberately leaves out. Read before proposing a feature: if it is listed under Rejected, it needs a new ADR.
+What togi takes from existing tools and research, and what it deliberately leaves out. Read before proposing a feature: if it is listed under Rejected, it needs a new ADR.
 
 ## linux-corecycler
 
@@ -12,7 +12,7 @@ What shycler takes from existing tools and research, and what it deliberately le
   - `0x06` sets one core, `0x07` sets all cores, `0xD5` reads one core.
   - All go through the RSMU mailbox of `ryzen_smu` (`/sys/kernel/ryzen_smu_drv/rsmu_cmd` and `smu_args`).
   - `0x6E` reads the boost limit, which is used for the BIOS context.
-  - The fork allows -50..+10; shycler uses -50..0.
+  - The fork allows -50..+10; togi uses -50..0.
 - **Argument encoding:** `(ccd << 28) | (slot << 20) | (offset & 0xFFFF)`, where `slot` is the physical core position within its CCD. Readback returns the offset as a 16-bit two's complement value in the low bits.
 - **Core-to-slot mapping:**
   - The SMU addresses physical slots, counting fused-off ones.
@@ -35,13 +35,13 @@ What shycler takes from existing tools and research, and what it deliberately le
 | Feature | Why |
 |---|---|
 | Qt GUI, desktop entry, notifications | CLI first; a TUI later reads the journal |
-| Monitoring subsystem (hwmon, SPD, RAPL, APERF/MPERF, Super I/O) | Not needed to judge a trial; shycler reads Tctl only |
+| Monitoring subsystem (hwmon, SPD, RAPL, APERF/MPERF, Super I/O) | Not needed to judge a trial; togi reads Tctl only |
 | SQLite history | [ADR 0003](adr/0003-journal-is-source-of-truth.md) |
 | Seven validation stages, endurance banks, annealing | Replaced by confirmation plus an endless guard with tiers |
 | Multi-boot crash hunt and bisection | [ADR 0007](adr/0007-suspect-backoffs.md) |
-| Zen 1-5 command table, APU dialects | Zen 5 desktop only; other generations are [#20](https://github.com/shgew/shycler/issues/20) |
+| Zen 1-5 command table, APU dialects | Zen 5 desktop only; other generations are [#20](https://github.com/shgew/togi/issues/20) |
 | stress-ng and stressapptest backends | [ADR 0008](adr/0008-self-checking-workloads.md) |
-| PBO limit, scalar and frequency control | shycler tunes CO only; the rest is BIOS context |
+| PBO limit, scalar and frequency control | togi tunes CO only; the rest is BIOS context |
 
 ## sp00n/corecycler
 
@@ -51,8 +51,8 @@ What shycler takes from existing tools and research, and what it deliberately le
 
 - Test one core at a time with one thread. All-core load lowers boost and hides single-core instability; the README's example is a 5900X that passed all-core Prime95 at -30 but needed -9 on one core.
 - Prime95 SSE is the lightest load and reaches the highest boost; heavier AVX modes cover other units. Both are needed.
-- Suspending and resuming the backend (`suspendPeriodically`) produces load transitions. shycler adds configurable periods and duty cycles (R3, R4).
-- Apply the offset only to the tested core (`setVoltageOnlyForTestedCore`); this is shycler's isolated condition.
+- Suspending and resuming the backend (`suspendPeriodically`) produces load transitions. togi adds configurable periods and duty cycles (R3, R4).
+- Apply the offset only to the tested core (`setVoltageOnlyForTestedCore`); this is togi's isolated condition.
 - Alternate CCDs between cores to spread heat.
 
 ### Rejected

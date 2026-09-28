@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/machine"
 )
 
 type call struct{ command, arg uint32 }

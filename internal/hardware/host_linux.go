@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shgew/shycler/internal/backend"
-	"github.com/shgew/shycler/internal/backend/mprime"
-	"github.com/shgew/shycler/internal/backend/ycruncher"
-	"github.com/shgew/shycler/internal/config"
-	"github.com/shgew/shycler/internal/detect"
-	"github.com/shgew/shycler/internal/machine"
-	"github.com/shgew/shycler/internal/smu"
-	"github.com/shgew/shycler/internal/trial"
+	"github.com/shgew/togi/internal/backend"
+	"github.com/shgew/togi/internal/backend/mprime"
+	"github.com/shgew/togi/internal/backend/ycruncher"
+	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/detect"
+	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/smu"
+	"github.com/shgew/togi/internal/trial"
 )
 
 // CheckPlatform reports whether this platform can run on real hardware.

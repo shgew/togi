@@ -12,10 +12,10 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/machine"
 )
 
-const DefaultPath = "/etc/shycler/config.toml"
+const DefaultPath = "/etc/togi/config.toml"
 
 type Config struct {
 	StartOffsets   map[int]int `json:"start_offsets"`

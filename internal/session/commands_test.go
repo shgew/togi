@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/sim"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/sim"
 )
 
 // command runs f on the journal in dir as a separate command process would, one second after the last event.

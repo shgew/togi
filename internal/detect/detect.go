@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/machine"
 )
 
 type Message struct {

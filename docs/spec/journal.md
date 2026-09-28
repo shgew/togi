@@ -1,10 +1,10 @@
 # Journal and state
 
-Normative rules for what shycler records. Goal: anyone, human or agent, reading only the journal can reconstruct everything shycler did and why, without reading code.
+Normative rules for what togi records. Goal: anyone, human or agent, reading only the journal can reconstruct everything togi did and why, without reading code.
 
 ## Files
 
-All files live in the state directory, default `/var/lib/shycler`:
+All files live in the state directory, default `/var/lib/togi`:
 
 | Path | Role |
 |---|---|
@@ -21,7 +21,7 @@ Retention: trial directories of failed and inconclusive trials are kept forever.
 ## Rules
 
 1. **Everything is an event.** These are all events:
-   - every action with an effect outside shycler's memory: SMU command, process start, signal or stop, scope creation, file written for a backend, sysctl, GRUB change;
+   - every action with an effect outside togi's memory: SMU command, process start, signal or stop, scope creation, file written for a backend, sysctl, GRUB change;
    - every observation that feeds a decision;
    - every decision.
 
@@ -29,7 +29,7 @@ Retention: trial directories of failed and inconclusive trials are kept forever.
 2. **Intent before action.** An action that may crash the machine, such as an SMU write or a trial start, is appended and fsynced before it happens. On the next boot the last intent without a matching result is the in-flight action. Every event is written with a single `write` and fsynced before `Append` returns, so a crash loses at most the line being written (rule 6); closing the journal fsyncs it. Opening the journal fsyncs the state directory and its parent, so a newly created journal file survives a crash. `run` appends `shutdown` when it stops on a signal, at a dead end, or on reaching the requested rotations; any other exit writes nothing, so a later boot whose journal ends without `shutdown` is treated as a crash (`workloads.md`, Failure signals). `tools/sim` fsyncs nothing, because a simulated crash cannot lose written data.
    A `deadend` without its `boot.saved_entry` (for a GRUB action) or without `shutdown` is an interrupted dead-end action, not permission to resume tuning: the next `run` completes the missing action and records `shutdown` before doing other work; a `run` without `--tuning-boot` cannot clear GRUB's saved entry and only records `shutdown`. A `boot.saved_entry` tied to that dead end is not cleared again. Once `shutdown` is present, the next `run` starts normally and re-evaluates dead-end conditions.
 3. **Decisions name their cause.** A decision event carries `cause`: the `seq` numbers of the events it was derived from, plus a `reason` in plain words.
-4. **The journal wins.** On start, shycler rebuilds the state by replaying the journal. If `state.json` disagrees with the rebuild, it is rewritten and a `state.rebuilt` event records the difference.
+4. **The journal wins.** On start, togi rebuilds the state by replaying the journal. If `state.json` disagrees with the rebuild, it is rewritten and a `state.rebuilt` event records the difference.
 5. **One writer.** `run` and `reset` take `lock` before appending; `reset` refuses while a `run` holds it. `status`, `cert`, `events` and `watch` only read. `watch` projects `session.start`, `trial.intent`, `trial.start` and `trial.end` (the in-flight trial, its progress and the last Tctl), `failure`, `crash.detected` and `deadend`, and logs `session.start`, `trial.intent`, `trial.end`, `failure`, `crash.detected`, `tuner.decision`, `core.phase`, `guard.rotation`, `profile.change`, `tier.change`, `deadend`, `defect.found`, `command.reset` and `shutdown`; the per-core state comes from the replay. `reset --core` ends with `shutdown` (reason `command`), so the next `run` never reads its boot as a crash. `reset --all` appends `command.reset` and `session.archived`, fsyncs, removes `state.json`, moves `trials/` to `archive/<session-id>-trials/`, then moves `events.jsonl` to `archive/<session-id>.jsonl`; it refuses before appending anything when either archive path already exists. Opening a journal whose last event is `session.archived` finishes that move first and continues with an empty journal. For an incompatible schema, `reset --all` cannot append: with the lock held it writes and fsyncs a temporary archive marker, removes the state file, moves `trials/` and then `events.jsonl` without writing to the old journal, fsyncing both directories after the renames, and removes the marker. A following `reset --all` resumes an interrupted move only if that marker exists; an archive path collision without the marker is refused. If the archive exists but `events.jsonl` is already gone, the next `reset --all` or journal open removes the marker and fsyncs the archive directory under the writer lock.
    If the old schema already recorded `session.archived` before the update, `reset --all` completes that recorded move without creating a marker, including when `trials/` was moved before the interruption.
 6. **Torn tails are expected.** A crash can leave a partial last line. Replay drops it and appends a `journal.torn` event with the discarded bytes, hex-encoded. A torn first line leaves an empty journal: nothing happened before `session.start`, so nothing is recorded.
@@ -44,7 +44,7 @@ One JSON object per line. Common fields:
 | `time` | RFC 3339 UTC with nanoseconds, always nine fractional digits |
 | `boot` | Kernel boot ID (`/proc/sys/kernel/random/boot_id`) |
 | `kind` | Event kind from the catalog below |
-| `msg` | One human-readable line, the exact text shycler logs |
+| `msg` | One human-readable line, the exact text togi logs |
 | `cause` | Optional array of `seq` this event follows from |
 
 Kind-specific fields are flat, snake_case and carry units in their names (`duration_s`, `period_ms`, `tctl_max_c`). Values use the vocabulary in `CONTEXT.md`. Cores are always `core` (the kernel `core_id`); logical CPUs are always `cpu`. The one exception to flat fields: `config.loaded` carries the effective configuration nested under `config`.
@@ -55,12 +55,12 @@ Example trial, abbreviated:
 
 ```json
 {"seq":812,"time":"2026-10-02T01:14:07.120000000Z","boot":"e8f9...","kind":"trial.intent","msg":"trial 0413 core 07 CO -32 R2 mprime AVX2 36K-248K 90s isolated","trial":"0413","core":7,"offset":-32,"regime":"R2","workload":"mprime-avx2-36k-248k","duration_s":90,"condition":"isolated","phase":"search","cause":[811]}
-{"seq":815,"time":"2026-10-02T01:14:07.410000000Z","boot":"e8f9...","kind":"trial.start","msg":"trial 0413 started pid 48211 in scope shycler-trial-0413 on cpu 7","trial":"0413","scope":"shycler-trial-0413","pid":48211,"cpus":[7],"argv":["mprime","-t","-W/var/lib/shycler/trials/0413"],"cause":[812]}
+{"seq":815,"time":"2026-10-02T01:14:07.410000000Z","boot":"e8f9...","kind":"trial.start","msg":"trial 0413 started pid 48211 in scope togi-trial-0413 on cpu 7","trial":"0413","scope":"togi-trial-0413","pid":48211,"cpus":[7],"argv":["mprime","-t","-W/var/lib/togi/trials/0413"],"cause":[812]}
 {"seq":819,"time":"2026-10-02T01:15:37.460000000Z","boot":"e8f9...","kind":"trial.end","msg":"trial 0413 PASS 90s | Tctl max 71°C","trial":"0413","outcome":"pass","duration_s":90,"tctl_max_c":71,"cause":[815]}
 {"seq":820,"time":"2026-10-02T01:15:37.461000000Z","boot":"e8f9...","kind":"tuner.decision","msg":"core 07 passed R1+R2 at -32; next -37 (coarse, no failed mark yet)","core":7,"phase":"search","decision":"step_deeper","from_offset":-32,"to_offset":-37,"pass":-32,"failed_mark":null,"reason":"coarse, no failed mark yet","cause":[811,819]}
 ```
 
-When a trial is closed on resume, its `trial.end` message names the last evidence rather than implying its `duration_s` measured the full run. For example, a crashed trial says `trial 0330 FAIL crash, last evidence 0s after start`; an interrupted trial without a failure says `trial 0331 INCONCLUSIVE, last evidence 0s after start: shycler stopped during the trial`. A trial ended while shycler watches it, including an orderly stop by signal, keeps `after Ns` for its measured duration.
+When a trial is closed on resume, its `trial.end` message names the last evidence rather than implying its `duration_s` measured the full run. For example, a crashed trial says `trial 0330 FAIL crash, last evidence 0s after start`; an interrupted trial without a failure says `trial 0331 INCONCLUSIVE, last evidence 0s after start: togi stopped during the trial`. A trial ended while togi watches it, including an orderly stop by signal, keeps `after Ns` for its measured duration.
 
 ## Event catalog
 
@@ -86,7 +86,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 
 The binary's defect list gives each entry an increasing integer `id`, short `title`, fixing pull request `pr`, affected decision `kind` and `decision`, required cause kind, optional predicate on surrounding events, and `direction` (`too_cautious` or `too_aggressive`). The highest ID is the binary's `fixes` stamp. A decision uses the most recent `session.start` or `config.loaded` `fixes` before it (absent means 0). A matching decision recorded with fixes below that entry's ID is not recomputed or removed: on resume, the build appends one `defect.found` per defect per session, aggregating the affected `cores` and `decisions` (their `seq`s); `cause` lists those decision sequences. A prior `defect.found` suppresses another finding for that ID.
 
-The first entry, ID 1, is the false failure on power-off fixed in [#14](https://github.com/shgew/shycler/issues/14), direction `too_cautious`. It matches a `tuner.decision` with `decision: backoff` citing a `failure` with `signal: unexpected_exit`, whose trial's `trial.end` failed with the same signal, whose `trial.progress` in that boot before the end has `detail: "core NN backend exited early: <nil>"` for the affected core, and whose boot has a signal `shutdown` after the decision within 5 seconds of that `trial.end`. The `<nil>` status recorded the clean backend exit in pre-fix builds; an `exit status N` or `signal: ...` indicates a real failure even if a signal shutdown follows immediately. The observed failure preceded the shutdown by about 100 ms; 5 seconds allows clean-stop work between them. An unrelated unexpected backend exit without that same-boot shutdown is not a match.
+The first entry, ID 1, is the false failure on power-off fixed in [#14](https://github.com/shgew/togi/issues/14), direction `too_cautious`. It matches a `tuner.decision` with `decision: backoff` citing a `failure` with `signal: unexpected_exit`, whose trial's `trial.end` failed with the same signal, whose `trial.progress` in that boot before the end has `detail: "core NN backend exited early: <nil>"` for the affected core, and whose boot has a signal `shutdown` after the decision within 5 seconds of that `trial.end`. The `<nil>` status recorded the clean backend exit in pre-fix builds; an `exit status N` or `signal: ...` indicates a real failure even if a signal shutdown follows immediately. The observed failure preceded the shutdown by about 100 ms; 5 seconds allows clean-stop work between them. An unrelated unexpected backend exit without that same-boot shutdown is not a match.
 
 `defect.found` carries `id`, `title`, `detail` (why), `pr`, `direction`, `cores` and `decisions`. `defect.answered` carries `id`, `cores` and `answer` (`yes` or `no`), with `cause` citing the finding. A yes first appends one `command.reset` per affected core, each citing the finding, and then records the answer; a no records only the answer. Either answer prevents another prompt for that ID; an answer does not hide a too-cautious finding from `status`. `status` keeps showing the finding's reset command for each affected core until a later `command.reset` for that core or `reset --all`. The original decisions and every journal line remain unchanged.
 
@@ -112,10 +112,10 @@ Each event's `msg` goes to stderr, prefixed by local time and kind padded to 14 
 01:15:37 tuner.decision core 07 passed R1+R2 at -32; next -37 (coarse, no failed mark yet)
 ```
 
-`shycler events` renders the journal the same way:
+`togi events` renders the journal the same way:
 
 ```
-shycler events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--until <time>] [--json]
+togi events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--until <time>] [--json]
 ```
 
 - `--core N`: events whose `core` is N or whose `cores` include N.
@@ -128,7 +128,7 @@ All given filters must match. A torn tail is reported on stderr and left for the
 
 ### Colors
 
-The run log and `shycler events` color the whole human-readable line according to its moment:
+The run log and `togi events` color the whole human-readable line according to its moment:
 
 | Moment | Color |
 |---|---|
@@ -143,7 +143,7 @@ The run log and `shycler events` color the whole human-readable line according t
 | Inconclusive trial (`trial.end` outcome `inconclusive`) | Dim |
 | Everything else, including `defect.answered` and a single trial passing | Plain |
 
-ANSI SGR is used when that output stream is a terminal (character device) or `JOURNAL_STREAM` names that stream (its device and inode match). A non-empty `NO_COLOR` disables ANSI even in the system journal. `events.jsonl`, `state.json` and `shycler events --json` stay uncolored. When `JOURNAL_STREAM` names that stream, red and red-bold lines start with `<3>` so systemd stores them at priority err (`SyslogLevelPrefix=` is on by default), including with `NO_COLOR`; no other line gets a priority prefix, and terminals outside the system journal never get one. `shycler events` uses the same rules on stdout.
+ANSI SGR is used when that output stream is a terminal (character device) or `JOURNAL_STREAM` names that stream (its device and inode match). A non-empty `NO_COLOR` disables ANSI even in the system journal. `events.jsonl`, `state.json` and `togi events --json` stay uncolored. When `JOURNAL_STREAM` names that stream, red and red-bold lines start with `<3>` so systemd stores them at priority err (`SyslogLevelPrefix=` is on by default), including with `NO_COLOR`; no other line gets a priority prefix, and terminals outside the system journal never get one. `togi events` uses the same rules on stdout.
 
 Every new event kind names its row here, or plain.
 

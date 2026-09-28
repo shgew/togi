@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/shgew/shycler/internal/config"
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
 
 const allCores = -1

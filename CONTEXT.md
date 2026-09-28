@@ -1,6 +1,6 @@
-# shycler
+# togi
 
-shycler finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them to measure how durable they are.
+togi finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them to measure how durable they are.
 
 ## Language
 
@@ -43,7 +43,7 @@ The identity of the firmware and CPU a session is tuned under: BIOS version, boa
 One tuning effort under one BIOS context, from the first `run` until `reset --all`, spanning any number of reboots.
 
 **Backend**:
-An external stress program shycler drives: mprime or y-cruncher.
+An external stress program togi drives: mprime or y-cruncher.
 _Avoid_: tool, stressor
 
 **Regime**:
@@ -92,7 +92,7 @@ The machine rebooted or froze without a clean shutdown, detected on the next boo
 _Avoid_: hang, freeze, reset
 
 **Stray crash**:
-A crash that happened before shycler applied its profile in that boot.
+A crash that happened before togi applied its profile in that boot.
 
 **Attributed**:
 A failure whose evidence names one core.
@@ -104,7 +104,7 @@ A failure whose evidence names no single core.
 The shallowest offset at which a core has had an attributed failure since its last reset.
 
 **Edge**:
-A confirmed core's current offset; the value shycler reports for entering into BIOS.
+A confirmed core's current offset; the value togi reports for entering into BIOS.
 _Avoid_: stable value, optimal offset, result
 
 **Backoff**:
@@ -148,25 +148,25 @@ The rendering of a profile's tier with the evidence behind it.
 The hardcoded strategy that decides how offsets are searched, confirmed, guarded, backed off and ranked.
 
 **Dead end**:
-A condition under which shycler cannot make progress and stops itself.
+A condition under which togi cannot make progress and stops itself.
 
 ### Runtime
 
 **Tuning boot**:
-A boot into the shycler boot entry, where shycler runs unattended and crash reboots return to the same entry.
+A boot into the togi boot entry, where togi runs unattended and crash reboots return to the same entry.
 
 **In-session run**:
-`shycler run` started by hand on a normal boot.
+`togi run` started by hand on a normal boot.
 
 **Journal**:
-The append-only record of every action shycler took and every decision it made; the source of truth.
+The append-only record of every action togi took and every decision it made; the source of truth.
 _Avoid_: log, history, database
 
 **Event**:
 One entry of the journal.
 
 **Build stamp**:
-The recorded version, revision, ruleset, journal schema and fixes of the shycler build that started or resumed a session.
+The recorded version, revision, ruleset, journal schema and fixes of the togi build that started or resumed a session.
 
 **Defect**:
 A since-fixed bug that changed a recorded decision, identifiable from its cause and surrounding journal events.

@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
-	shycler "github.com/shgew/shycler"
+	togi "github.com/shgew/togi"
 )
 
-// Build identifies the rules and journal format used by a shycler binary.
+// Build identifies the rules and journal format used by a togi binary.
 type Build struct {
 	Version string `json:"version"`
 	Rev     string `json:"rev"`
@@ -20,17 +20,17 @@ type Build struct {
 }
 
 func binarySchemaBuild() Build {
-	return Build{Version: shycler.Version(), Rev: shycler.Rev(), Schema: Schema}
+	return Build{Version: togi.Version(), Rev: togi.Rev(), Schema: Schema}
 }
 
 func (b Build) name() string {
 	if b.Version == "" {
-		return "a shycler build from before version stamps"
+		return "a togi build from before version stamps"
 	}
 	if b.Rev == "" {
-		return "shycler " + b.Version
+		return "togi " + b.Version
 	}
-	return "shycler " + b.Version + "+" + b.Rev
+	return "togi " + b.Version + "+" + b.Rev
 }
 
 // IncompatibleError describes a journal that this binary cannot safely modify.
@@ -42,9 +42,9 @@ type IncompatibleError struct {
 
 func (e *IncompatibleError) Error() string {
 	written := fmt.Sprintf("this journal was written by %s (schema %d, ruleset %d)", e.Journal.name(), e.Journal.Schema, e.Journal.Ruleset)
-	advice := "Install the shycler build that wrote it to continue this session"
+	advice := "Install the togi build that wrote it to continue this session"
 	if e.Journal.Version != "" {
-		advice = "Install shycler " + e.Journal.Version + " to continue this session"
+		advice = "Install togi " + e.Journal.Version + " to continue this session"
 	}
 	var value int
 	if e.Field == "schema" {
@@ -52,7 +52,7 @@ func (e *IncompatibleError) Error() string {
 	} else {
 		value = e.Binary.Ruleset
 	}
-	return fmt.Sprintf("%s; this build, %s, uses %s %d. %s, or run shycler reset --all to archive it and start over; candidate_edges in the configuration can start the new session in confirmation at the edges this one found.", written, e.Binary.name(), e.Field, value, advice)
+	return fmt.Sprintf("%s; this build, %s, uses %s %d. %s, or run togi reset --all to archive it and start over; candidate_edges in the configuration can start the new session in confirmation at the edges this one found.", written, e.Binary.name(), e.Field, value, advice)
 }
 
 // Compatible checks schema first, then strategy. A missing ruleset stamp means ruleset 1.

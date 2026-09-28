@@ -10,17 +10,17 @@ import (
 	"strings"
 	"time"
 
-	shycler "github.com/shgew/shycler"
-	"github.com/shgew/shycler/internal/config"
-	"github.com/shgew/shycler/internal/defect"
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
-	"github.com/shgew/shycler/internal/tuner"
+	togi "github.com/shgew/togi"
+	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/defect"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 // Build is the build that stamps each session start and resume.
 func Build() journal.Build {
-	return journal.Build{Version: shycler.Version(), Rev: shycler.Rev(), Ruleset: tuner.Ruleset, Schema: journal.Schema, Fixes: defect.Fixed()}
+	return journal.Build{Version: togi.Version(), Rev: togi.Rev(), Ruleset: tuner.Ruleset, Schema: journal.Schema, Fixes: defect.Fixed()}
 }
 
 type Input struct {
@@ -631,7 +631,7 @@ func (r *runner) shutdown(p *journal.Shutdown, stop StopReason) (Stop, error) {
 }
 
 // restore writes every core back to its baseline once this process has written offsets, so the machine keeps running
-// on the values it had before shycler started, except that a core never goes deeper than its current offset.
+// on the values it had before togi started, except that a core never goes deeper than its current offset.
 func (r *runner) restore() error {
 	if r.applied == nil {
 		return nil

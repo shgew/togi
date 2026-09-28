@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
 
 func TestTierFor(t *testing.T) {

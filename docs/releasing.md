@@ -1,6 +1,6 @@
 # Releasing
 
-The owner decides when to release. `version.txt` is the single source of the package version. shycler uses Semantic Versioning: before 1.0, a breaking change bumps MINOR and every other release bumps PATCH. From 1.0 onward, a breaking change bumps MAJOR, otherwise entries under `### Added` bump MINOR and other releases bump PATCH. A changelog line beginning `- **BREAKING**` makes the release breaking. If there are no `v*` tags and no changelog section for the current version, the first release uses the version already in `version.txt` without a bump.
+The owner decides when to release. `version.txt` is the single source of the package version. togi uses Semantic Versioning: before 1.0, a breaking change bumps MINOR and every other release bumps PATCH. From 1.0 onward, a breaking change bumps MAJOR, otherwise entries under `### Added` bump MINOR and other releases bump PATCH. A changelog line beginning `- **BREAKING**` makes the release breaking. If there are no `v*` tags and no changelog section for the current version, the first release uses the version already in `version.txt` without a bump.
 
 A pull request marked breaking merges only after the current `[Unreleased]` changes have been released. This ensures every downgrade target has a version.
 
@@ -11,4 +11,4 @@ Releasing needs permission to start workflows in the repository ([ADR 0014](adr/
 
 If a run pushed the release commit but failed to publish, run `just release` again: it finds the dated version without a tag and publishes it without a new commit.
 
-Releases carry no binary artifacts. Flake users build from a tag. Dev builds report `x.y.z+rev` (or `x.y.z+rev-dirty` for dirty flakes); `go run` reports `x.y.z+dev`. `shycler --version` prints the build version and revision.
+Releases carry no binary artifacts. Flake users build from a tag. Dev builds report `x.y.z+rev` (or `x.y.z+rev-dirty` for dirty flakes); `go run` reports `x.y.z+dev`. `togi --version` prints the build version and revision.

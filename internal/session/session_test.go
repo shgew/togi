@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shgew/shycler/internal/config"
-	"github.com/shgew/shycler/internal/defect"
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
-	"github.com/shgew/shycler/internal/sim"
+	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/defect"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/sim"
 )
 
 var errKilled = errors.New("killed")
@@ -273,7 +273,7 @@ func TestKillAtEveryEvent(t *testing.T) {
 			if k == firstStart {
 				for _, e := range readEvents(t, dir) {
 					if p, ok := e.Data.(*journal.TrialEnd); ok && p.Trial == "0001" {
-						if !p.Interrupted || p.DurationS != 0 || e.Msg != "trial 0001 INCONCLUSIVE, last evidence 0s after start: shycler stopped during the trial" {
+						if !p.Interrupted || p.DurationS != 0 || e.Msg != "trial 0001 INCONCLUSIVE, last evidence 0s after start: togi stopped during the trial" {
 							t.Fatalf("trial.end %+v: %s", p, e.Msg)
 						}
 						return
@@ -532,7 +532,7 @@ func TestDeadEnds(t *testing.T) {
 	sharp.PastEdgeRate = 1e6
 	zeroFails.Model = &sharp
 
-	changed := machine.BIOSContext{BIOSVersion: "SIM.2", Board: "shycler simulator", CPUModel: "Simulated Zen 5 16-Core Processor", Microcode: "0x0", BoostLimitMHz: 5700}
+	changed := machine.BIOSContext{BIOSVersion: "SIM.2", Board: "togi simulator", CPUModel: "Simulated Zen 5 16-Core Processor", Microcode: "0x0", BoostLimitMHz: 5700}
 	tests := []struct {
 		name     string
 		cfg      sim.Config

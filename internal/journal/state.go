@@ -10,7 +10,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/machine"
 )
 
 const (

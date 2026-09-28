@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shgew/shycler/internal/backend"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/backend"
+	"github.com/shgew/togi/internal/machine"
 )
 
 type Options struct {
@@ -94,7 +94,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 		return nil, fmt.Errorf("create trial directory %s: %w", root, err)
 	}
 	t := &running{spec: spec, backend: b, options: r.options, host: r.host, events: make(chan streamEvent, 1024)}
-	t.started.Scope = "shycler-trial-" + spec.ID
+	t.started.Scope = "togi-trial-" + spec.ID
 	t.started.CPUs = slices.Clone(spec.CPUs)
 	t.started.Schedule = machine.ScheduleFor(spec)
 	cores := spec.Cores
@@ -215,7 +215,7 @@ func joinCPUs(cpus []int) string {
 }
 
 // scopeArgv wraps argv in a transient scope confined to cpus. DefaultDependencies=no keeps a system shutdown from
-// stopping the scope before shycler: shycler's own teardown ends the trial, so it ends interrupted, not failed.
+// stopping the scope before togi: togi's own teardown ends the trial, so it ends interrupted, not failed.
 func scopeArgv(unit string, cpus []int, argv ...string) []string {
 	a := []string{"systemd-run"}
 	if os.Geteuid() != 0 {

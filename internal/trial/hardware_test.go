@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shgew/shycler/internal/backend"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/backend"
+	"github.com/shgew/togi/internal/machine"
 )
 
 func TestHardwareScope(t *testing.T) {
@@ -46,7 +46,7 @@ func TestHardwareScope(t *testing.T) {
 	if !strings.Contains(res.Inconclusive, "PIN FAILED") {
 		t.Fatalf("the helper's pin to cpu 3 was not refused: %+v", res)
 	}
-	args := []string{"show", "shycler-trial-hw01.scope", "-p", "ActiveState", "--value"}
+	args := []string{"show", "togi-trial-hw01.scope", "-p", "ActiveState", "--value"}
 	if os.Geteuid() != 0 {
 		args = append([]string{"--user"}, args...)
 	}

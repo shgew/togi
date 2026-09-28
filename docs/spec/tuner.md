@@ -1,6 +1,6 @@
 # Tuner
 
-Normative rules for how shycler moves offsets. Terms are defined in `CONTEXT.md`. Regimes, workloads and failure detection are in `workloads.md`; how decisions are recorded is in `journal.md`.
+Normative rules for how togi moves offsets. Terms are defined in `CONTEXT.md`. Regimes, workloads and failure detection are in `workloads.md`; how decisions are recorded is in `journal.md`.
 
 ## Ruleset
 
@@ -8,7 +8,7 @@ The ruleset is the hardcoded strategy: steps, offset range, phases, which worklo
 
 ## Invariants
 
-1. Every offset stays within [-50, 0]. shycler never writes a positive offset.
+1. Every offset stays within [-50, 0]. togi never writes a positive offset.
 2. During an isolated trial only the target carries a nonzero offset. Every other core is written to 0 first, including at the start of each boot, when firmware has restored the BIOS values.
 3. Every SMU write is preceded by a durable intent event and followed by a readback. A readback that differs from the written value is a dead end.
 4. A core never runs at or deeper than its failed mark, except after `reset`.
@@ -17,10 +17,10 @@ The ruleset is the hardcoded strategy: steps, offset range, phases, which worklo
 
 ## Session start
 
-1. Preflight (`runtime.md`) passes, or shycler stops at a dead end.
+1. Preflight (`runtime.md`) passes, or togi stops at a dead end.
 2. The first `run` of a session reads every core's offset from the SMU as the baseline and records the BIOS context.
 3. Each core's start offset is the configured override if one exists, else its baseline, clamped to [-50, 0]. A core with a configured candidate edge starts in confirmation at that offset instead, with no pass and no failed mark, and confirmation runs as for an edge found by search ([ADR 0013](../adr/0013-candidate-edges-for-a-new-session.md)).
-4. A nonzero baseline produces a notice recommending BIOS CO 0 for tuning. shycler still starts from it.
+4. A nonzero baseline produces a notice recommending BIOS CO 0 for tuning. togi still starts from it.
 5. A later `run` whose BIOS context differs from the session's is a dead end until `reset --all` starts a new session.
 
 ## Scheduling
@@ -91,7 +91,7 @@ A crash is classified by what its boot recorded. A resident application counts a
 - The profile applied in that boot and no trial in flight: an idle crash. With the isolated profile last applied it is an unattributed failure that changes nothing, since every core was at 0. With the resident profile last applied, or partly applied, it counts as an unattributed failure of an R6 trial.
 - Nothing applied in that boot: a stray crash. Stray crashes count in a row until the next application; reaching `dead_ends.stray_crashes_in_a_row` is the boot-loop dead end.
 
-Restoring offsets before `shutdown` (`runtime.md`) is not an application: its `smu.intent` events cite `session.baseline` and leave the boot's last application as it was, so a crash part-way through is classified by what was applied before. After `profile.restored` the cores are back at shycler-independent values, and a crash counts as if nothing was applied.
+Restoring offsets before `shutdown` (`runtime.md`) is not an application: its `smu.intent` events cite `session.baseline` and leave the boot's last application as it was, so a crash part-way through is classified by what was applied before. After `profile.restored` the cores are back at togi-independent values, and a crash counts as if nothing was applied.
 
 `crash.detected` carries the condition of the boot's last application.
 
@@ -148,14 +148,14 @@ Known defects identify decisions made under earlier builds whose decisions canno
 
 ## Dead ends
 
-shycler stops when it cannot make progress:
+togi stops when it cannot make progress:
 
 | Condition | Why it cannot continue |
 |---|---|
 | Attributed failure at offset 0, or an unattributed resident failure with every core at 0 | The instability is not caused by Curve Optimizer. |
 | SMU readback differs from the written value, or an SMU command fails | Offsets can no longer be trusted. |
 | The same backend is inconclusive 3 times in a row, or is missing | No evidence can be produced. |
-| 3 stray crashes in a row | The machine crashes before shycler acts: a boot loop. |
+| 3 stray crashes in a row | The machine crashes before togi acts: a boot loop. |
 | A backend thread observed outside its allowed logical CPUs | Attribution is broken. |
 | Preflight fails, including a changed BIOS context | The environment is not the one being tuned. |
 | An unanswered too-aggressive defect without a terminal | Earlier decisions may have moved offsets deeper than proven; an operator must decide whether to reset the affected cores. |
@@ -193,7 +193,7 @@ The tuner records every change as `tier.change` with the old and new tier and a 
 
 Each regime `r` with clean hours `T_r` shows its failure-rate bound: with zero failures, the rate is below `3 / T_r` per hour at 95% confidence (rule of three). The overall bound uses all clean hours. Without clean hours there is no bound. Recorded and displayed bounds round up, never understating it.
 
-`shycler status` and `shycler cert` render from a replay of the journal (`runtime.md`). The certificate shows:
+`togi status` and `togi cert` render from a replay of the journal (`runtime.md`). The certificate shows:
 - the tier with its `tier.change`, and progress towards the higher tiers;
 - the profile with its `profile.change`, as a per-core table of edges, failed marks, regainable and settled depth and the deciding event, followed by any core whose offset was decided after that `profile.change`;
 - clean hours and failure-rate bound per regime and overall, and the highest Tctl across counted trials with its `trial.end`;

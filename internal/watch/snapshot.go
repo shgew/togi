@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
-	"github.com/shgew/shycler/internal/tuner"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 const recentLimit = 100

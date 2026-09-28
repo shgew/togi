@@ -32,7 +32,7 @@ type Options struct {
 	Build    Build
 }
 
-var ErrLocked = errors.New("another shycler process holds the journal lock")
+var ErrLocked = errors.New("another togi process holds the journal lock")
 
 type Journal struct {
 	dir    string

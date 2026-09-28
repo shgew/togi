@@ -7,9 +7,9 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/shgew/shycler/internal/config"
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
 
 // Ruleset must be bumped for changes to steps, offset range, phases, regimes, confirmation, tiers or backoffs; this is breaking.
