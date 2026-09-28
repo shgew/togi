@@ -40,19 +40,31 @@ func StyleOf(e Event) Style {
 		return RedBold
 	case *TunerDecision:
 		switch p.Decision {
-		case StepDeeper, Regain:
+		case StepDeeper, Deepen:
 			return Green
-		case Backoff, SuspectBackoff:
+		case Backoff, Yield:
 			return Yellow
 		}
 	case *CorePhase:
-		if p.To == PhaseConfirmation && p.From == PhaseSearch || p.To == PhaseConfirmed && p.From == PhaseConfirmation {
+		if p.To == PhaseDone || p.To == PhaseResident && p.From == PhaseSearch {
 			return GreenBold
 		}
 	case *GuardRotation:
-		if p.Event == RotationEnd && p.Clean {
+		if p.Event == RotationEnd && p.Clean && p.Qualifying {
 			return GreenBold
 		}
+	case *HuntStart, *MarkJoint, *TunerWarning:
+		return Yellow
+	case *HuntEnd:
+		if p.Result == "culprit" || p.Result == "joint" || p.Result == "direct" {
+			return Green
+		}
+	case *RefineRound:
+		if p.Event == RotationEnd && p.Passed {
+			return GreenBold
+		}
+	case *BackendRetry:
+		return Dim
 	case *TierChange:
 		order := func(t Tier) int {
 			switch t {

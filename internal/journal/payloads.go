@@ -13,19 +13,22 @@ import (
 type Phase string
 
 const (
-	PhaseSearch       Phase = "search"
-	PhaseConfirmation Phase = "confirmation"
-	PhaseConfirmed    Phase = "confirmed"
-	PhaseGuard        Phase = "guard"
+	PhaseSearch   Phase = "search"
+	PhaseResident Phase = "resident"
+	PhaseDone     Phase = "done"
+	PhaseGuard    Phase = "guard"
+	PhaseHunt     Phase = "hunt"
+	PhaseRefine   Phase = "refine"
 )
 
 type Decision string
 
 const (
-	StepDeeper     Decision = "step_deeper"
-	Backoff        Decision = "backoff"
-	SuspectBackoff Decision = "suspect_backoff"
-	Regain         Decision = "regain"
+	StepDeeper Decision = "step_deeper"
+	Backoff    Decision = "backoff"
+	CheckEdge  Decision = "check_edge"
+	Deepen     Decision = "deepen"
+	Yield      Decision = "yield"
 )
 
 type Outcome string
@@ -46,6 +49,7 @@ const (
 	DeadEndContainment   DeadEndCondition = "containment"
 	DeadEndPreflight     DeadEndCondition = "preflight"
 	DeadEndDefect        DeadEndCondition = "defect"
+	DeadEndThermalTrip   DeadEndCondition = "thermal_trip"
 )
 
 type Notice string
@@ -328,7 +332,7 @@ func (p *ProfileChange) Message() string {
 	case p.From == nil:
 		return fmt.Sprintf("profile for guard: %v", p.To)
 	case slices.Equal(p.From, p.To):
-		return fmt.Sprintf("profile unchanged at %v; guard restarts", p.To)
+		return fmt.Sprintf("profile unchanged at %v", p.To)
 	}
 	return fmt.Sprintf("profile changed %v -> %v", p.From, p.To)
 }
@@ -344,6 +348,7 @@ func (p *ProfileRestored) Message() string {
 
 type TrialIntent struct {
 	Trial     string            `json:"trial"`
+	Profile   []int             `json:"profile"`
 	Core      *int              `json:"core,omitempty"`
 	Cores     []int             `json:"cores,omitempty"`
 	Offset    *int              `json:"offset,omitempty"`
@@ -354,6 +359,10 @@ type TrialIntent struct {
 	Phase     Phase             `json:"phase,omitempty"`
 	Retry     bool              `json:"retry,omitempty"`
 	Rotation  int               `json:"rotation,omitempty"`
+	Hunt      int               `json:"hunt,omitempty"`
+	Mask      int               `json:"mask,omitempty"`
+	Round     int               `json:"round,omitempty"`
+	Rerun     bool              `json:"rerun,omitempty"`
 }
 
 func (*TrialIntent) Kind() Kind { return KindTrialIntent }
@@ -378,6 +387,15 @@ func (p *TrialIntent) Message() string {
 	}
 	if p.Rotation > 0 {
 		fmt.Fprintf(&b, " rotation %d", p.Rotation)
+	}
+	if p.Hunt > 0 {
+		fmt.Fprintf(&b, " hunt %d mask %d", p.Hunt, p.Mask)
+	}
+	if p.Round > 0 {
+		fmt.Fprintf(&b, " round %d", p.Round)
+	}
+	if p.Rerun {
+		b.WriteString(" rerun")
 	}
 	return b.String()
 }
@@ -412,8 +430,10 @@ func (p *TrialStart) Message() string {
 }
 
 type TrialProgress struct {
-	Trial  string `json:"trial"`
-	Detail string `json:"detail"`
+	Trial  string         `json:"trial"`
+	Detail string         `json:"detail"`
+	Signal machine.Signal `json:"signal,omitempty"`
+	Core   *int           `json:"core,omitempty"`
 }
 
 func (*TrialProgress) Kind() Kind        { return KindTrialProgress }
@@ -457,15 +477,16 @@ const (
 )
 
 type TrialEnd struct {
-	Trial       string         `json:"trial"`
-	Outcome     Outcome        `json:"outcome"`
-	Signal      machine.Signal `json:"signal,omitempty"`
-	Core        *int           `json:"core,omitempty"`
-	DurationS   int            `json:"duration_s"`
-	TctlMaxC    *int           `json:"tctl_max_c,omitempty"`
-	Reason      string         `json:"reason,omitempty"`
-	Interrupted bool           `json:"interrupted,omitempty"`
-	Escaped     []int          `json:"escaped,omitempty"`
+	Trial          string         `json:"trial"`
+	Outcome        Outcome        `json:"outcome"`
+	Signal         machine.Signal `json:"signal,omitempty"`
+	Core           *int           `json:"core,omitempty"`
+	DurationS      int            `json:"duration_s"`
+	TctlMaxC       *int           `json:"tctl_max_c,omitempty"`
+	Reason         string         `json:"reason,omitempty"`
+	Interrupted    bool           `json:"interrupted,omitempty"`
+	Escaped        []int          `json:"escaped,omitempty"`
+	BackendMissing bool           `json:"backend_missing,omitempty"`
 }
 
 func (*TrialEnd) Kind() Kind { return KindTrialEnd }
@@ -500,6 +521,7 @@ type Failure struct {
 	Trial       string            `json:"trial,omitempty"`
 	Regime      machine.Regime    `json:"regime,omitempty"`
 	Condition   machine.Condition `json:"condition,omitempty"`
+	Profile     []int             `json:"profile,omitempty"`
 }
 
 func (*Failure) Kind() Kind { return KindFailure }
@@ -554,10 +576,13 @@ func (p *MCE) Message() string {
 }
 
 type CrashDetected struct {
-	PreviousBoot string            `json:"previous_boot"`
-	InFlight     *int              `json:"in_flight,omitempty"`
-	Stray        bool              `json:"stray,omitempty"`
-	Condition    machine.Condition `json:"condition,omitempty"`
+	PreviousBoot   string            `json:"previous_boot"`
+	InFlight       *int              `json:"in_flight,omitempty"`
+	Stray          bool              `json:"stray,omitempty"`
+	Condition      machine.Condition `json:"condition,omitempty"`
+	ResetReason    machine.ResetKind `json:"reset_reason,omitempty"`
+	ResetReasonRaw string            `json:"reset_reason_raw,omitempty"`
+	Inconclusive   bool              `json:"inconclusive,omitempty"`
 }
 
 func (*CrashDetected) Kind() Kind { return KindCrashDetected }
@@ -574,21 +599,29 @@ func (p *CrashDetected) Message() string {
 	if p.Condition == machine.Resident {
 		msg += "; the resident profile was applied"
 	}
+	if p.ResetReason != "" || p.ResetReasonRaw != "" {
+		reason := p.ResetReasonRaw
+		if reason == "" {
+			reason = string(p.ResetReason)
+		}
+		msg += "; reset reason: " + reason
+	}
+	if p.Inconclusive {
+		msg += "; inconclusive: reset does not establish a tuning failure"
+	}
 	return msg
 }
 
 type TunerDecision struct {
-	Core          int      `json:"core"`
-	Phase         Phase    `json:"phase"`
-	Decision      Decision `json:"decision"`
-	FromOffset    int      `json:"from_offset"`
-	ToOffset      int      `json:"to_offset"`
-	Pass          *int     `json:"pass"`
-	FailedMark    *int     `json:"failed_mark"`
-	UnprovenDepth int      `json:"unproven_depth,omitempty"`
-	SettledMark   *int     `json:"settled_mark,omitempty"`
-	SpentSteps    []int    `json:"spent_steps,omitempty"`
-	Reason        string   `json:"reason"`
+	Core       int      `json:"core"`
+	Phase      Phase    `json:"phase"`
+	Decision   Decision `json:"decision"`
+	FromOffset int      `json:"from_offset"`
+	ToOffset   int      `json:"to_offset"`
+	Pass       *int     `json:"pass"`
+	FailedMark *int     `json:"failed_mark"`
+	Workloads  []string `json:"workloads,omitempty"`
+	Reason     string   `json:"reason"`
 }
 
 func (*TunerDecision) Kind() Kind { return KindTunerDecision }
@@ -597,32 +630,33 @@ func (p *TunerDecision) Message() string {
 	switch p.Decision {
 	case StepDeeper:
 		verb = "passed R1+R2"
+	case CheckEdge:
+		verb = "checks its edge"
+	case Deepen:
+		verb = "deepened"
+	case Yield:
+		verb = "yielded"
 	case Backoff:
-		switch p.Phase {
-		case PhaseSearch:
+		if p.Phase == PhaseSearch {
 			verb = "failed"
-		case PhaseConfirmation, PhaseConfirmed:
-			verb = "failed confirmation"
-		case PhaseGuard:
-			verb = "failed in guard"
+		} else {
+			verb = "backed off"
 		}
-	case SuspectBackoff:
-		verb = "backed off on suspicion"
-	case Regain:
-		verb = "regained one count"
 	}
 	return fmt.Sprintf("core %s %s at %d; next %d (%s)", coreID(p.Core), verb, p.FromOffset, p.ToOffset, p.Reason)
 }
 
 type CorePhase struct {
-	Core          int    `json:"core"`
-	From          Phase  `json:"from"`
-	To            Phase  `json:"to"`
-	Offset        int    `json:"offset"`
-	Pass          *int   `json:"pass"`
-	FailedMark    *int   `json:"failed_mark"`
-	UnprovenDepth int    `json:"unproven_depth,omitempty"`
-	Reason        string `json:"reason"`
+	Core         int      `json:"core"`
+	From         Phase    `json:"from"`
+	To           Phase    `json:"to"`
+	Offset       int      `json:"offset"`
+	Pass         *int     `json:"pass"`
+	FailedMark   *int     `json:"failed_mark"`
+	CheckEdge    bool     `json:"check_edge,omitempty"`
+	Workloads    []string `json:"workloads,omitempty"`
+	ClearedJoint []int    `json:"cleared_joint,omitempty"`
+	Reason       string   `json:"reason"`
 }
 
 func (*CorePhase) Kind() Kind { return KindCorePhase }
@@ -634,11 +668,13 @@ func (p *CorePhase) Message() string {
 }
 
 type GuardRotation struct {
-	Rotation int              `json:"rotation"`
-	Event    RotationEvent    `json:"event"`
-	Clean    bool             `json:"clean,omitempty"`
-	Steps    []machine.Regime `json:"steps,omitempty"`
-	Reason   string           `json:"reason,omitempty"`
+	Rotation   int              `json:"rotation"`
+	Event      RotationEvent    `json:"event"`
+	Clean      bool             `json:"clean,omitempty"`
+	Qualifying bool             `json:"qualifying,omitempty"`
+	Missing    []string         `json:"missing,omitempty"`
+	Steps      []machine.Regime `json:"steps,omitempty"`
+	Reason     string           `json:"reason,omitempty"`
 }
 
 func (*GuardRotation) Kind() Kind { return KindGuardRotation }
