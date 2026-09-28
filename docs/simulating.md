@@ -13,7 +13,7 @@ go run ./tools/sim [--seed N] [--rotations N] [--state-dir DIR]
 
 A crash reboots the simulated machine in-process and the next boot resumes the journal, as a real reboot would. Journal lines go to stderr as `togi run` logs them, and nothing is fsynced. A state directory that already holds a journal or archives resumes the simulated machine after them: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot, and a session after `reset --all` gets a new id.
 
-The session uses the default configuration, never `/etc/togi/config.toml`, and runs unattended: an unanswered too-aggressive defect is a dead end. `sim` exits 0 when the session stops cleanly, 1 at a dead end or on an error, and 2 on a flag error. A journal written under a different ruleset or schema is refused before another event is appended.
+The session uses the default configuration, never `/etc/togi/config.toml`, and runs unattended: an unanswered too-aggressive defect is a dead end. `sim` exits 0 when the session stops cleanly, 1 at a dead end or on an error, and 2 on a flag error. A journal written under an older ruleset or schema is archived and seeds a new session, as `togi run` does; the resumed machine reports the BIOS context the journals recorded, so their failed marks carry. A journal written under a newer ruleset or schema is refused before another event is appended.
 
 The read-only commands work on the result:
 

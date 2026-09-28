@@ -17,6 +17,7 @@ Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains,
 
 Works today, on a simulated 16-core machine:
 - the full tuning lifecycle: per-core search and confirmation, the endless guard, crash resume, tiers, automatic regain and reset;
+- a new session seeded with the edges and failed marks of one an earlier ruleset wrote, after a breaking update;
 - reading a session with `status`, `cert`, `events` and the live `watch` dashboard.
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:

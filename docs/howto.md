@@ -74,20 +74,22 @@ togi stops by itself only at a dead end: a core fails at offset 0, the SMU misbe
 
 `togi status` shows the dead end, and `togi events --kind deadend,boot.saved_entry` shows what happened. Fix the cause, then run `sudo togi run` or pick "NixOS - togi" again to resume. A core that failed at offset 0 stops every later run until `sudo togi reset --core <N>`, and a changed BIOS context until `sudo togi reset --all` starts a new session. [runtime.md](spec/runtime.md#dead-end-actions) and [tuner.md](spec/tuner.md) describe each condition.
 
-## 7. Starting again after a breaking update
+## 7. After a breaking update
 
-An update whose changelog line starts with **BREAKING** refuses to continue a session written by an earlier build. In particular, ruleset-2 sessions must be archived before resuming under ruleset 3, which starts confirmation with R2 mprime AVX-512. Before archiving, note each core's failed mark from the FAILED column of `togi status`, and for cores without one the offset each was last confirmed at, from `togi events --kind core.phase`. OFFSET in `status` can be shallower than that after a suspect backoff. Archive the session with `sudo togi reset --all`; the archived journal stays in `/var/lib/togi/archive/`.
+An update whose changelog line starts with **BREAKING** changes the tuning rules or the journal format, so it cannot continue a session written by an earlier build. Nothing needs doing by hand: rebuild, then run `sudo togi run` or pick "NixOS - togi". The first run archives the old session to `/var/lib/togi/archive/` and starts a new one that carries what the old one found:
+- each core's deepest offset that passed an isolated trial becomes a candidate edge, and the core starts in confirmation there;
+- each core's shallowest attributed failure becomes a carried failed mark, and the core never runs at or deeper than it;
+- a candidate edge at or deeper than the core's carried mark is clamped to one count shallower than the mark.
 
-To skip searching for edges you already know, give each core a candidate edge: its failed mark plus one, or the offset it was last confirmed at where it has no failed mark. A core with failed mark 0 gets none: it failed at CO 0, so fix that cause first. Such a core starts the new session in confirmation at that offset. Confirmation still runs every trial, so a value that no longer holds costs a failure and moves the core one count shallower:
+When the old session was started by hand after an earlier breaking update, with `reset --all`, the carry also reads the sessions archived before it, as long as they ran under the same BIOS and each under a different ruleset from the one after it.
 
-```nix
-services.togi.settings.candidate_edges = {
-  "0" = -36;
-  "8" = -50;
-};
-```
+`togi status` shows the carry on its `carried:` line, and each core's first `core.phase` in `togi events --kind core.phase` names where its start came from. `togi events --kind session.carried` shows the whole event, with the session and `seq` behind every carried value.
 
-Rebuild, then run `sudo togi run` or pick "NixOS - togi". Each value is read only when the new session records that core's first phase; once every core in `togi status` shows a phase, remove them so a later `reset --all` starts from the baseline. If a configured candidate edge remains at or deeper than a failed mark in the session being archived, `reset --all` warns but still archives it; use the value it suggests (the failed mark plus one), or remove the edge. If the failed mark is 0, remove the edge and fix the cause first. `start_offsets` is the gentler alternative: search starts from that offset and still steps deeper until it fails.
+If the BIOS changed since the old session (another BIOS version, microcode, board, CPU or boost limit), only the candidate edges are carried: a BIOS change can move an edge either way, and the old failed marks no longer apply. The `carried:` line says which field changed.
+
+A configured `candidate_edges` or `start_offsets` value for a core wins over what is carried, but a carried failed mark still clamps it. A core with a carried mark at 0 failed at CO 0: the new session stops at a dead end for it, as the old one did, until you fix the cause and run `sudo togi reset --core N`.
+
+To start over with nothing carried, run `sudo togi reset --all` instead of `togi run`. A session written by a newer build than the one installed is still refused: install that build again, or archive the session with `sudo togi reset --all`.
 
 ## 8. Moving from shycler
 

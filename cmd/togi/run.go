@@ -16,6 +16,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/shgew/togi/internal/carry"
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/detect"
@@ -32,10 +33,11 @@ clean guard rotation it regains one count of suspect depth per core, then guards
 the deeper profile. After a crash, the next run attributes it from the journal
 and continues. On resume, known defects affecting past decisions name the cores;
 in a terminal run offers to reset them. An unanswered too-aggressive defect
-stops an unattended run. It needs root. A different journal ruleset or schema
-stops the run before another event is written; reset --all archives that
-session. Journal lines are colored on terminals and in the system journal
-unless NO_COLOR is set.
+stops an unattended run. It needs root. A journal from an older ruleset or schema
+is archived, and the new session starts each core from the edges and failed
+marks it found. A newer one stops the run before another event is written;
+reset --all archives that session. Journal lines are colored on terminals and
+in the system journal unless NO_COLOR is set.
 
 When stdin and stderr are terminals, run shows the session as the watch
 dashboard instead of one line per event, and prints the outcome when it stops:
@@ -74,7 +76,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	}
 	renderer := journal.NewRenderer(stderr, os.Getenv)
 	if stamp, _, scanErr := journal.Scan(g.stateDir); scanErr == nil {
-		if stamp.Schema != 0 {
+		if stamp.Schema != 0 && !journal.Older(stamp, session.Build()) {
 			if err := journal.Compatible(stamp, session.Build()); err != nil {
 				if grubenv != "" {
 					return runResult(session.Stop{}, err, stderr, renderer, hardware.GRUB{Env: grubenv})
@@ -114,6 +116,10 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
 	}
+	carried, err := carry.Prepare(g.stateDir, journal.Options{Boot: boot, Sync: true}, session.Build(), nil)
+	if err != nil {
+		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
+	}
 	log := stderr
 	if dash != nil {
 		log = dash
@@ -147,7 +153,7 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 			}
 		}
 	}
-	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt})
+	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried})
 	if dash != nil {
 		dash.hide()
 		if err == nil && stop.Reason != session.StopDeadEnd {

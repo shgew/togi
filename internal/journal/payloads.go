@@ -155,6 +155,53 @@ func (p *SessionArchived) Message() string {
 	return fmt.Sprintf("session %s archived to %s", p.Session, p.Path)
 }
 
+type SessionCarried struct {
+	Sources []CarriedSource `json:"sources"`
+	Marks   bool            `json:"marks"`
+	Detail  string          `json:"detail,omitempty"`
+	Carried []CarriedCore   `json:"carried,omitempty"`
+}
+
+type CarriedSource struct {
+	Session string `json:"session"`
+	Path    string `json:"path"`
+	Schema  int    `json:"schema"`
+	Ruleset int    `json:"ruleset"`
+}
+
+type CarriedCore struct {
+	Core        int            `json:"core"`
+	Edge        *int           `json:"edge,omitempty"`
+	EdgeSession string         `json:"edge_session,omitempty"`
+	EdgeSeq     int            `json:"edge_seq,omitempty"`
+	FailedMark  *int           `json:"failed_mark,omitempty"`
+	MarkSession string         `json:"mark_session,omitempty"`
+	MarkSeq     int            `json:"mark_seq,omitempty"`
+	MarkSignal  machine.Signal `json:"mark_signal,omitempty"`
+}
+
+func (*SessionCarried) Kind() Kind { return KindSessionCarried }
+func (p *SessionCarried) Message() string {
+	sources := make([]string, len(p.Sources))
+	for i, s := range p.Sources {
+		sources[i] = fmt.Sprintf("session %s (schema %d, ruleset %d)", s.Session, s.Schema, s.Ruleset)
+	}
+	from := strings.Join(sources, ", ")
+	var edges, marks int
+	for _, c := range p.Carried {
+		if c.Edge != nil {
+			edges++
+		}
+		if c.FailedMark != nil {
+			marks++
+		}
+	}
+	if p.Marks {
+		return fmt.Sprintf("carried %d candidate edges and %d failed marks from %s", edges, marks, from)
+	}
+	return fmt.Sprintf("carried %d candidate edges from %s; failed marks stay behind: %s", edges, from, p.Detail)
+}
+
 type ConfigLoaded struct {
 	Build
 	Path   string        `json:"path"`

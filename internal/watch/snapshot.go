@@ -65,7 +65,7 @@ type trial struct {
 }
 
 var logged = []journal.Kind{
-	journal.KindSessionStart, journal.KindTrialIntent, journal.KindTrialEnd, journal.KindFailure, journal.KindCrashDetected,
+	journal.KindSessionStart, journal.KindSessionCarried, journal.KindTrialIntent, journal.KindTrialEnd, journal.KindFailure, journal.KindCrashDetected,
 	journal.KindTunerDecision, journal.KindCorePhase, journal.KindGuardRotation, journal.KindProfileChange,
 	journal.KindTierChange, journal.KindDeadEnd, journal.KindDefectFound, journal.KindCommandReset, journal.KindShutdown,
 }

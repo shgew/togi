@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,6 +162,31 @@ func TestResetAllSkipsUnavailableConfig(t *testing.T) {
 				t.Errorf("missing archive line: %q", stdout.String())
 			}
 		})
+	}
+}
+
+func TestResetAllDropsAPendingCarry(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/events.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "archive", "x-carry-pending")
+	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for path, data := range map[string][]byte{filepath.Join(dir, "events.jsonl"): fixture, marker: nil} {
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	g := &globals{config: filepath.Join(t.TempDir(), "config.toml"), stateDir: dir}
+	if code := runReset(g, []string{"--all"}, &stdout, &stderr); code != exitOK {
+		t.Fatalf("reset exit %d: %s", code, stderr.String())
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("carry marker after reset --all: %v", err)
 	}
 }
 

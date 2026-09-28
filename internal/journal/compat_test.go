@@ -53,9 +53,37 @@ func TestRefusalNamesTheProductABuildWasReleasedAs(t *testing.T) {
 		{"0.10.2", "Install togi 0.10.2"},
 		{"1.0.0", "Install togi 1.0.0"},
 	} {
-		err := Compatible(Build{Version: tc.version, Schema: 2, Ruleset: 3}, binary)
+		err := Compatible(Build{Version: tc.version, Schema: 2, Ruleset: 5}, binary)
 		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "this build, togi 0.4.0,") {
 			t.Errorf("version %q: %v, want %q", tc.version, err, tc.want)
+		}
+	}
+}
+
+func TestRefusalOfAnOlderJournalNamesTheCarry(t *testing.T) {
+	err := Compatible(Build{Version: "0.4.0", Schema: 2, Ruleset: 3}, Build{Version: "0.5.0", Schema: 2, Ruleset: 4})
+	want := "this journal was written by togi 0.4.0 (schema 2, ruleset 3); this build, togi 0.5.0, uses ruleset 4. togi run archives it and starts a new session that carries its edges and failed marks; togi reset --all archives it and starts over."
+	if err == nil || err.Error() != want {
+		t.Fatalf("Compatible: %v, want %q", err, want)
+	}
+}
+
+func TestOlder(t *testing.T) {
+	binary := Build{Schema: 2, Ruleset: 3}
+	for _, tc := range []struct {
+		name     string
+		recorded Build
+		want     bool
+	}{
+		{"older ruleset", Build{Schema: 2, Ruleset: 2}, true},
+		{"older schema and ruleset", Build{Schema: 1, Ruleset: 1}, true},
+		{"same build", Build{Schema: 2, Ruleset: 3}, false},
+		{"newer ruleset", Build{Schema: 2, Ruleset: 4}, false},
+		{"newer schema, older ruleset", Build{Schema: 3, Ruleset: 1}, false},
+		{"unstamped ruleset", Build{Schema: 2}, true},
+	} {
+		if got := Older(tc.recorded, binary); got != tc.want {
+			t.Errorf("%s: Older(%+v) = %v, want %v", tc.name, tc.recorded, got, tc.want)
 		}
 	}
 }

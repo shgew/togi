@@ -288,6 +288,63 @@ func ReadFile(path string) (events []Event, torn []byte, err error) {
 	return events, torn, nil
 }
 
+var carryKinds = map[Kind]bool{
+	KindSessionStart:   true,
+	KindSessionContext: true,
+	KindSessionCarried: true,
+	KindTrialIntent:    true,
+	KindTrialEnd:       true,
+	KindTrialProgress:  true,
+	KindFailure:        true,
+	KindCommandReset:   true,
+	KindShutdown:       true,
+	KindTunerDecision:  true,
+	KindDefectFound:    true,
+}
+
+// ReadForCarry decodes, from a journal of any schema that shipped, only the kinds a carry reads.
+func ReadForCarry(path string) ([]Event, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read journal %s: %w", path, err)
+	}
+	var events []Event
+	for n := 1; ; n++ {
+		line, rest, ok := bytes.Cut(data, []byte{'\n'})
+		if !ok {
+			break
+		}
+		data = rest
+		var env envelope
+		if err := json.Unmarshal(line, &env); err != nil {
+			return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
+		}
+		if n == 1 && env.Kind != KindSessionStart {
+			return nil, fmt.Errorf("read journal %s line 1: first event is %s, want %s", path, env.Kind, KindSessionStart)
+		}
+		var p Payload
+		switch {
+		case carryKinds[env.Kind]:
+			if p, err = decodePayload(env.Kind, line); err != nil {
+				return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
+			}
+		case env.Kind == KindConfigLoaded:
+			var b Build
+			if err := json.Unmarshal(line, &b); err != nil {
+				return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
+			}
+			p = &ConfigLoaded{Build: b}
+		default:
+			continue
+		}
+		events = append(events, Event{Seq: env.Seq, Time: env.Time, Boot: env.Boot, Kind: env.Kind, Msg: env.Msg, Cause: env.Cause, Data: p, Raw: line})
+	}
+	if len(events) == 0 {
+		return nil, fmt.Errorf("read journal %s: no session.start", path)
+	}
+	return events, nil
+}
+
 // ArchivePath is where Archive moves the session's journal, relative to the state directory; it fails when that
 // archive already exists, so a caller can refuse before recording anything.
 func (j *Journal) ArchivePath(session string) (string, error) {
@@ -397,6 +454,101 @@ func (j *Journal) ArchiveUnreadable(session string) (string, error) {
 		}
 	}
 	return rel, nil
+}
+
+const carrySuffix = "-carry-pending"
+
+// ArchiveForCarry archives an older session like ArchiveUnreadable, leaving a marker that its carry is pending until
+// a new session records it. A journal already archived before the update carries nothing.
+// OpenForArchive must hold the lock before this is called.
+func (j *Journal) ArchiveForCarry(session string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(j.dir, eventsFile))
+	if err != nil {
+		return "", fmt.Errorf("read journal for carry: %w", err)
+	}
+	if len(data) == 0 {
+		return "", nil
+	}
+	if end := bytes.LastIndexByte(data, '\n'); end > 0 {
+		start := bytes.LastIndexByte(data[:end], '\n') + 1
+		var last struct {
+			Kind Kind `json:"kind"`
+		}
+		if json.Unmarshal(data[start:end], &last) == nil && last.Kind == KindSessionArchived {
+			if _, err := j.ArchiveUnreadable(session); err != nil {
+				return "", err
+			}
+			return "", nil
+		}
+	}
+	if err := ClearPendingCarry(j.dir); err != nil {
+		return "", err
+	}
+	archive := filepath.Join(j.dir, archiveDir)
+	if err := os.MkdirAll(archive, 0o755); err != nil {
+		return "", fmt.Errorf("create archive directory: %w", err)
+	}
+	marker, err := os.OpenFile(filepath.Join(archive, session+carrySuffix), os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return "", fmt.Errorf("mark carry pending: %w", err)
+	}
+	if j.opts.Sync {
+		if err := marker.Sync(); err != nil {
+			_ = marker.Close()
+			return "", fmt.Errorf("sync carry marker: %w", err)
+		}
+	}
+	if err := marker.Close(); err != nil {
+		return "", fmt.Errorf("close carry marker: %w", err)
+	}
+	if j.opts.Sync {
+		if err := syncDir(archive); err != nil {
+			return "", fmt.Errorf("sync carry marker: %w", err)
+		}
+	}
+	return j.ArchiveUnreadable(session)
+}
+
+// PendingCarry returns the session whose carry no journal has recorded yet, or "" when there is none.
+func PendingCarry(dir string) (string, error) {
+	entries, err := os.ReadDir(filepath.Join(dir, archiveDir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read carry markers: %w", err)
+	}
+	var pending string
+	for _, entry := range entries {
+		if id, found := strings.CutSuffix(entry.Name(), carrySuffix); found && id > pending {
+			pending = id
+		}
+	}
+	return pending, nil
+}
+
+// ClearPendingCarry drops every pending carry.
+func ClearPendingCarry(dir string) error {
+	archive := filepath.Join(dir, archiveDir)
+	entries, err := os.ReadDir(archive)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read carry markers: %w", err)
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), carrySuffix) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(archive, entry.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove carry marker: %w", err)
+		}
+	}
+	if err := syncDir(archive); err != nil {
+		return fmt.Errorf("sync carry markers: %w", err)
+	}
+	return nil
 }
 
 const trialsSuffix = "-trials"

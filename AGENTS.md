@@ -89,6 +89,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/machine` | Shared vocabulary and the seam interfaces the run loop consumes |
 | `internal/defect` | Known decision-changing bugs and pure matching against the journal |
 | `internal/journal` | Journal, replay, state file, log lines |
+| `internal/carry` | Transitions: archiving an older session and deriving the edges and failed marks it carries |
 | `internal/tuner` | Pure decision engine: search, confirmation, guard, regain, tiers |
 | `internal/sim` | Simulator implementing every hardware seam, and resuming it after a journal |
 | `internal/session` | The run loop: session start, resume, crash attribution, trials, dead ends |

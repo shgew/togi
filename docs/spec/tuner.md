@@ -4,7 +4,7 @@ Normative rules for how togi moves offsets. Terms are defined in `CONTEXT.md`. R
 
 ## Ruleset
 
-The ruleset is the hardcoded strategy: steps, offset range, phases, which workloads each regime runs, the confirmation set, tiers and backoff rules. A change to any of these bumps `tuner.Ruleset` and is breaking for an active session. Fixes that record facts more accurately or change decisions, and changes to configurable defaults, do not bump it.
+The ruleset is the hardcoded strategy: steps, offset range, phases, which workloads each regime runs, the confirmation set, tiers and backoff rules. A change to any of these bumps `tuner.Ruleset` and is breaking for an active session: the next `run` archives it and starts a new session seeded from it ([ADR 0019](../adr/0019-a-ruleset-change-starts-a-seeded-session.md)). Fixes that record facts more accurately or change decisions, and changes to configurable defaults, do not bump it.
 
 ## Invariants
 
@@ -20,6 +20,8 @@ The ruleset is the hardcoded strategy: steps, offset range, phases, which worklo
 1. Preflight (`runtime.md`) passes, or togi stops at a dead end.
 2. The first `run` of a session reads every core's offset from the SMU as the baseline and records the BIOS context.
 3. Each core's start offset is the configured override if one exists, else its baseline, clamped to [-50, 0]. A core with a configured candidate edge starts in confirmation at that offset instead, with no pass and no failed mark, and confirmation runs as for an edge found by search ([ADR 0013](../adr/0013-candidate-edges-for-a-new-session.md)).
+
+   A session a transition started (`journal.md`, Transitions) seeds each core from its `session.carried` entry, citing that event after the baseline. Precedence: a configured candidate edge, then a configured start offset, then the carried candidate edge, then the baseline. A carried candidate edge starts the core in confirmation at that offset with the reason `candidate edge <edge> carried from session <id>`. A carried failed mark becomes the core's failed mark in its first `core.phase`, with no pass, and a start at or deeper than it is clamped to one count shallower, whatever the start's source; the reason then ends `; clamped to <offset>, one count shallower than the failed mark <mark> carried from session <id>`. A carried mark at 0 leaves the start alone and dead-ends the core as a failure at CO 0 (Dead ends), citing the `core.phase`. A core with a mark and no edge searches from its baseline, bounded by the mark.
 4. A nonzero baseline produces a notice recommending BIOS CO 0 for tuning. togi still starts from it.
 5. A later `run` whose BIOS context differs from the session's is a dead end until `reset --all` starts a new session.
 
@@ -144,7 +146,7 @@ Known defects identify decisions made under earlier builds whose decisions canno
 ## Reset
 
 - `reset --core N`: records `command.reset` and queues the reset. The next `run`, before any other decision except a pending attribution, records `core.phase` to `search` at the baseline clamped to [-50, 0], with failed mark, pass, unproven depth, confirmation, spent retries and settled steps cleared. A failed mark at 0 is cleared too, so reset is the way out of that dead end. The profile changes when the core is confirmed again.
-- `reset --all`: archives the session (`journal.md`). The next `run` starts a new session with a fresh baseline and BIOS context.
+- `reset --all`: archives the session (`journal.md`). The next `run` starts a new session with a fresh baseline and BIOS context, carrying nothing from the archived one.
 
 `reset` writes to the journal, so it refuses while a `run` holds it (`journal.md`).
 

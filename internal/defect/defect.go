@@ -66,8 +66,44 @@ func Find(events []journal.Event) []Finding { return FindWith(events, entries) }
 
 // FindWith uses a supplied list for scenarios where an entry is not yet in the binary.
 func FindWith(events []journal.Event, list []Entry) []Finding {
+	findings := make([]Finding, len(list))
+	scan(events, list, true, func(i int, decision, _ journal.Event) {
+		core := decision.Data.(*journal.TunerDecision).Core
+		findings[i].Decisions = append(findings[i].Decisions, decision.Seq)
+		if !slices.Contains(findings[i].Cores, core) {
+			findings[i].Cores = append(findings[i].Cores, core)
+		}
+	})
+	found := make([]Finding, 0, len(list))
+	for i, f := range findings {
+		if len(f.Decisions) > 0 {
+			f.Entry = list[i]
+			slices.Sort(f.Cores)
+			found = append(found, f)
+		}
+	}
+	return found
+}
+
+// FailuresWith returns, ascending, the seqs of failure events behind decisions a listed defect matches, whether or not a
+// finding was recorded.
+func FailuresWith(events []journal.Event, list []Entry) []int {
+	var seqs []int
+	scan(events, list, false, func(_ int, _, cause journal.Event) {
+		if cause.Kind == journal.KindFailure && !slices.Contains(seqs, cause.Seq) {
+			seqs = append(seqs, cause.Seq)
+		}
+	})
+	slices.Sort(seqs)
+	return seqs
+}
+
+// scan visits each decision a listed defect matches, with the cause it matched, skipping decisions made by a build that
+// fixed the defect and, when skipFound is set, every defect a finding was recorded for.
+func scan(events []journal.Event, list []Entry, skipFound bool, visit func(i int, decision, cause journal.Event)) {
 	bySeq := make(map[int]journal.Event, len(events))
 	ev := Evidence{Events: events, trialEnds: make(map[trialKey]journal.Event), trialProgress: make(map[trialKey][]journal.Event), stops: make(map[string][]journal.Event)}
+	recorded := make(map[int]bool)
 	for _, e := range events {
 		bySeq[e.Seq] = e
 		switch p := e.Data.(type) {
@@ -81,52 +117,44 @@ func FindWith(events []journal.Event, list []Entry) []Finding {
 			if p.Reason == journal.ShutdownSignal {
 				ev.stops[e.Boot] = append(ev.stops[e.Boot], e)
 			}
+		case *journal.DefectFound:
+			recorded[p.ID] = true
 		}
 	}
-	findings := make([]Finding, 0, len(list))
-	for _, entry := range list {
-		finding := Finding{Entry: entry}
-		fixed, found := 0, false
+	for i, entry := range list {
+		if skipFound && recorded[entry.ID] {
+			continue
+		}
+		fixed := 0
 		for _, e := range events {
 			switch p := e.Data.(type) {
 			case *journal.SessionStart:
 				fixed = p.Fixes
 			case *journal.ConfigLoaded:
 				fixed = p.Fixes
-			case *journal.DefectFound:
-				if p.ID == entry.ID {
-					found = true
-				}
 			case *journal.TunerDecision:
-				if fixed >= entry.ID || found {
+				if fixed >= entry.ID {
 					continue
 				}
-				for _, match := range entry.Decisions {
-					if e.Kind != match.Kind || p.Decision != match.Decision {
-						continue
-					}
-					for _, seq := range e.Cause {
-						cause, ok := bySeq[seq]
-						if ok && cause.Kind == match.Cause && (match.Predicate == nil || match.Predicate(ev, e, cause)) {
-							finding.Decisions = append(finding.Decisions, e.Seq)
-							if !slices.Contains(finding.Cores, p.Core) {
-								finding.Cores = append(finding.Cores, p.Core)
-							}
-							break
-						}
-					}
-					if slices.Contains(finding.Decisions, e.Seq) {
-						break
-					}
-				}
+				visitMatch(ev, bySeq, entry, e, p.Decision, func(cause journal.Event) { visit(i, e, cause) })
 			}
 		}
-		if !found && len(finding.Decisions) > 0 {
-			slices.Sort(finding.Cores)
-			findings = append(findings, finding)
+	}
+}
+
+func visitMatch(ev Evidence, bySeq map[int]journal.Event, entry Entry, e journal.Event, decision journal.Decision, visit func(cause journal.Event)) {
+	for _, match := range entry.Decisions {
+		if e.Kind != match.Kind || decision != match.Decision {
+			continue
+		}
+		for _, seq := range e.Cause {
+			cause, ok := bySeq[seq]
+			if ok && cause.Kind == match.Cause && (match.Predicate == nil || match.Predicate(ev, e, cause)) {
+				visit(cause)
+				return
+			}
 		}
 	}
-	return findings
 }
 
 func powerOffFailure(ev Evidence, decision, cause journal.Event) bool {
