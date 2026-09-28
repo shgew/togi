@@ -119,7 +119,7 @@ func TestCompatibilityRefusalClearsGRUBAndUsesErrPriority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(data); !strings.Contains(got, "<3>\x1b[1;31mtogi run: this journal was written by togi 0.2.1+def5678") || !strings.Contains(got, "cleared GRUB saved entry") {
+	if got := string(data); !strings.Contains(got, "<3>\x1b[1;31mtogi run: this journal was written by shycler 0.2.1+def5678") || !strings.Contains(got, "cleared GRUB saved entry") {
 		t.Fatalf("refusal line and clear report: %q", got)
 	}
 }

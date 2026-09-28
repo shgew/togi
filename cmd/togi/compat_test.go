@@ -34,7 +34,7 @@ func TestReadCommandsHandleIncompatibleJournal(t *testing.T) {
 		t.Run(command+" warns ruleset", func(t *testing.T) {
 			dir, _ := incompatibleFixture(t, "ruleset")
 			var stdout, stderr bytes.Buffer
-			if code := cli([]string{"--state-dir", dir, command}, &stdout, &stderr); code != exitOK || !strings.Contains(stderr.String(), "warning: journal written by togi 0.2.1+def5678") || stdout.Len() == 0 {
+			if code := cli([]string{"--state-dir", dir, command}, &stdout, &stderr); code != exitOK || !strings.Contains(stderr.String(), "warning: journal written by shycler 0.2.1+def5678") || stdout.Len() == 0 {
 				t.Fatalf("%s exit %d, stdout %q, stderr %q", command, code, stdout.String(), stderr.String())
 			}
 		})

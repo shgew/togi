@@ -60,7 +60,7 @@ func runCert(g *globals, args []string, stdout, stderr io.Writer) int {
 
 func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 	rule := "+" + strings.Repeat("-", certWidth-2) + "+"
-	title := "S H Y C L E R   C E R T I F I C A T E"
+	title := "T O G I   C E R T I F I C A T E"
 	left := (certWidth - 2 - len(title)) / 2
 	fmt.Fprintf(w, "%s\n|%s%s%s|\n%s\n\n", rule, strings.Repeat(" ", left), title, strings.Repeat(" ", certWidth-2-left-len(title)), rule)
 

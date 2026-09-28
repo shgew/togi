@@ -43,6 +43,23 @@ func TestCompatible(t *testing.T) {
 	}
 }
 
+func TestRefusalNamesTheProductABuildWasReleasedAs(t *testing.T) {
+	binary := Build{Version: "0.4.0", Schema: 2, Ruleset: 4}
+	for _, tc := range []struct{ version, want string }{
+		{"", "Install the shycler build that wrote it"},
+		{"0.3.1", "Install shycler 0.3.1"},
+		{"0.1.0+dev", "Install shycler 0.1.0+dev"},
+		{"0.4.0", "Install togi 0.4.0"},
+		{"0.10.2", "Install togi 0.10.2"},
+		{"1.0.0", "Install togi 1.0.0"},
+	} {
+		err := Compatible(Build{Version: tc.version, Schema: 2, Ruleset: 3}, binary)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "this build, togi 0.4.0,") {
+			t.Errorf("version %q: %v, want %q", tc.version, err, tc.want)
+		}
+	}
+}
+
 func TestScanBuildSkipsUnknownSchemaPayloads(t *testing.T) {
 	data := []byte(`{"kind":"session.start","session":"old","schema":42,"ruleset":99,"version":"0.1.0","rev":"old"}` + "\n" +
 		`{"kind":"later.unknown","schema":43,"version":"ignored"}` + "\n" +

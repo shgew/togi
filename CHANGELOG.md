@@ -6,7 +6,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ### Changed
 
-- **BREAKING** shycler is now togi, at `github.com/shgew/togi`: the command, the flake input `github:shgew/togi`, the NixOS options `services.togi`, the `togi*.service` units, `/var/lib/togi`, `/etc/togi/config.toml`, the GRUB entry "NixOS - togi" and the `TOGI_*` variables. The old option names have no alias. The journal format and tuning rules are unchanged: after clearing any pending tuning boot, renaming the options and running `sudo mv /var/lib/shycler /var/lib/togi`, the session continues ([how-to](docs/howto.md#8-moving-from-shycler), [#58]).
+- **BREAKING** shycler is now togi, at `github.com/shgew/togi`: the command, the flake input `github:shgew/togi`, the NixOS options `services.togi`, the `togi*.service` units, `/var/lib/togi`, `/etc/togi/config.toml`, the GRUB entry "NixOS - togi" and the `TOGI_*` variables. The old option names have no alias. The journal format and tuning rules are unchanged: after clearing any pending tuning boot, renaming the options and running `sudo mv /var/lib/shycler /var/lib/togi`, the session continues ([how-to](https://github.com/shgew/togi/blob/main/docs/howto.md#8-moving-from-shycler), [#58]).
 
 ## [0.3.1] - 2026-09-27
 
@@ -147,11 +147,11 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#37]: https://github.com/shgew/togi/issues/37
 [#38]: https://github.com/shgew/togi/issues/38
 [#39]: https://github.com/shgew/togi/issues/39
-[#40]: https://github.com/shgew/togi/pull/40
-[#44]: https://github.com/shgew/togi/pull/44
-[#46]: https://github.com/shgew/togi/pull/46
-[#47]: https://github.com/shgew/togi/pull/47
-[#48]: https://github.com/shgew/togi/pull/48
-[#49]: https://github.com/shgew/togi/pull/49
-[#50]: https://github.com/shgew/togi/pull/50
+[#40]: https://github.com/shgew/togi/issues/40
+[#44]: https://github.com/shgew/togi/issues/44
+[#46]: https://github.com/shgew/togi/issues/46
+[#47]: https://github.com/shgew/togi/issues/47
+[#48]: https://github.com/shgew/togi/issues/48
+[#49]: https://github.com/shgew/togi/issues/49
+[#50]: https://github.com/shgew/togi/issues/50
 [#58]: https://github.com/shgew/togi/pull/58
