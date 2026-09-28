@@ -6,7 +6,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ### Added
 
-- togi is open source under the MIT license. Bug reports are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) says what else is accepted before 1.0 ([#59]).
+- togi is open source under the MIT license. Bug reports are welcome; [CONTRIBUTING.md](https://github.com/shgew/togi/blob/main/CONTRIBUTING.md) says what else is accepted before 1.0 ([#59]).
 
 ### Changed
 
