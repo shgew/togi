@@ -59,6 +59,6 @@ shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 
 ## Development
 
-Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, and `just gate` runs lint, the formatting check and tests. `just check` runs every flake check: the package with its tests, lint, formatting, the tests under the race detector and the NixOS VM test; CI runs them on every pull request. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the rest.
+Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, and `just gate` runs lint, the formatting check and tests. `just check` runs every flake check: the package with its tests, lint, formatting and the NixOS VM test; CI runs them on every pull request. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the rest.
 
 shycler runs on NixOS. Development also works on macOS (aarch64-darwin): the dev shell, the tests, `just sim`, and `status`, `cert`, `events` and `reset` against a copied state directory. `just check` there skips the VM test, and `shycler run` exits with an error.

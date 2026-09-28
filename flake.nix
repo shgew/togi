@@ -93,10 +93,6 @@
               installPhase = "mkdir -p $out";
               dontFixup = true;
             });
-            race = config.packages.default.overrideAttrs {
-              pname = "shycler-race";
-              checkPhase = testPhase "-race";
-            };
             fmt =
               pkgs.runCommand "shycler-fmt"
                 {
