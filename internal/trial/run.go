@@ -178,7 +178,7 @@ func (t *running) classify(inst *instance, line string, stderr bool, result *mac
 			result.Signal = machine.ComputationError
 			result.Core = inst.Core
 			result.Inconclusive = ""
-			report.Progress(fmt.Sprintf("core %02d computation error: %s", inst.Core, line))
+			report.Signal(inst.Core, machine.ComputationError, line)
 		}
 		return true
 	case backend.SetupError:
