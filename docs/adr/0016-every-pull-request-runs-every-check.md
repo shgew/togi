@@ -16,6 +16,7 @@ Pull requests ran only `just ci`: lint, the formatting check and the Go tests. T
 - **The race detector as a flake check on every pull request:** rejected because its job took 8m00s on the first run, against 3m41s for the VM test, the next slowest, and so doubled every run.
 - **Fast checks on pull requests, slow ones on push to `main`:** rejected because breakage could still land on `main`.
 - **A single `nix flake check` job:** rejected because the checks share the runner's 2–4 vCPUs, where separate jobs each get their own.
+- **A Nix store cache per check (`nix-community/cache-nix-action`):** rejected because restoring it took about a minute and the `vm` job was no faster: 4m07s with it on a changed source, against 3m41s and 4m05s without.
 - **`govulncheck` in CI:** rejected because it fails on advisories unrelated to the change. Dependabot alerts cover the modules, and standard library fixes arrive with the Go toolchain through `flake.lock`.
 - **A scheduled tier:** rejected because the inputs are pinned; nothing changes between pushes.
 - **Go build caching:** rejected because the Nix sandbox keeps no build cache between builds.
