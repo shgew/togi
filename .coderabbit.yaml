@@ -1,0 +1,128 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  poem: false
+  in_progress_fortune: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  enable_prompt_for_ai_agents: true
+  slop_detection:
+    enabled: true
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 5
+    ignore_usernames:
+      - dependabot[bot]
+  path_filters:
+    - "!go.sum"
+    - "!flake.lock"
+    - "!**/testdata/**"
+  path_instructions:
+    - path: internal/smu/**
+      instructions: >-
+        The only package that writes Curve Optimizer offsets. Every write is clamped to [-50, 0],
+        preceded by an intent journal event and followed by a readback.
+    - path: internal/tuner/**
+      instructions: >-
+        Pure decision engine: no I/O, clock or randomness except through injected seams.
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "off"
+    description:
+      mode: warning
+    issue_assessment:
+      mode: warning
+    custom_checks:
+      - name: Changelog
+        mode: warning
+        instructions: >-
+          If the pull request changes anything a user of togi would notice (commands, flags,
+          behavior, output, configuration), CHANGELOG.md gains a line under `## [Unreleased]`
+          in Added, Changed, Fixed or Removed that states the effect and links the pull request.
+          Refactors, tests and documentation edits that leave the tool unchanged need no line.
+      - name: Specs kept current
+        mode: warning
+        instructions: >-
+          If the pull request changes behavior described in docs/spec/ (tuner.md, workloads.md,
+          journal.md, runtime.md), the matching spec file changes in the same pull request.
+      - name: Breaking marked
+        mode: warning
+        instructions: >-
+          If the pull request changes the value of `journal.Schema` or `tuner.Ruleset`, its title
+          starts with `[BREAKING]`, it carries the `breaking` label, and its CHANGELOG.md line
+          starts with `**BREAKING**`. Otherwise, none of these markers is present.
+  tools:
+    gitleaks:
+      enabled: true
+    actionlint:
+      enabled: true
+    zizmor:
+      enabled: true
+    osvScanner:
+      enabled: true
+    github-checks:
+      enabled: true
+    golangci-lint:
+      enabled: false
+    markdownlint:
+      enabled: false
+    languagetool:
+      enabled: false
+    yamllint:
+      enabled: false
+    vale:
+      enabled: false
+    trufflehog:
+      enabled: false
+    semgrep:
+      enabled: false
+    opengrep:
+      enabled: false
+    ast-grep:
+      enabled: false
+    trivy:
+      enabled: false
+    presidio:
+      enabled: false
+chat:
+  art: false
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - CONTEXT.md
+      - docs/spec/**
+  learnings:
+    scope: local
+issue_enrichment:
+  auto_enrich:
+    enabled: false
+  planning:
+    enabled: false
+    auto_planning:
+      enabled: false
+  labeling:
+    auto_apply_labels: false
