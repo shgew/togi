@@ -78,7 +78,7 @@ togi stops by itself only at a dead end: a core fails at offset 0, the SMU misbe
 
 An update whose changelog line starts with **BREAKING** changes the tuning rules or the journal format, so it cannot continue a session written by an earlier build. Nothing needs doing by hand: rebuild, then run `sudo togi run` or pick "NixOS - togi". The first run archives the old session to `/var/lib/togi/archive/` and starts a new one that carries what the old one found:
 - each core's deepest offset that passed an isolated trial becomes a candidate edge, and the core starts in confirmation there;
-- each core's shallowest attributed failure becomes a carried failed mark, and the core never runs at or deeper than it;
+- each core's shallowest attributed failure becomes a carried failed mark, and the new session never runs the core at or deeper than it until `reset --core`; failures a `reset --core` or a known defect already cleared are not carried;
 - a candidate edge at or deeper than the core's carried mark is clamped to one count shallower than the mark.
 
 When the old session was started by hand after an earlier breaking update, with `reset --all`, the carry also reads the sessions archived before it, as long as they ran under the same BIOS and each under a different ruleset from the one after it.
@@ -89,7 +89,7 @@ If the BIOS changed since the old session (another BIOS version, microcode, boar
 
 A configured `candidate_edges` or `start_offsets` value for a core wins over what is carried, but a carried failed mark still clamps it. A core with a carried mark at 0 failed at CO 0: the new session stops at a dead end for it, as the old one did, until you fix the cause and run `sudo togi reset --core N`.
 
-To start over with nothing carried, run `sudo togi reset --all` instead of `togi run`. A session written by a newer build than the one installed is still refused: install that build again, or archive the session with `sudo togi reset --all`.
+To start over with nothing carried, run `sudo togi reset --all` instead of `togi run`. A session written by a newer ruleset or journal schema than the installed build's is still refused: install that build again, or archive the session with `sudo togi reset --all`.
 
 ## 8. Moving from shycler
 

@@ -47,8 +47,12 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	if all {
-		if err := journal.ClearPendingCarry(g.stateDir); err != nil {
-			fmt.Fprintf(stderr, "togi reset: %v\n", err)
+		dropped, dropErr := journal.DropPendingCarry(g.stateDir)
+		if dropErr != nil {
+			fmt.Fprintf(stderr, "togi reset: %v\n", dropErr)
+			if errors.Is(dropErr, journal.ErrLocked) {
+				return exitLocked
+			}
 			return exitError
 		}
 		stamp, id, err := journal.Scan(g.stateDir)
@@ -63,6 +67,10 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 			}
 			if recovered != "" {
 				fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next togi run starts a new session\n", recovered, filepath.Join("archive", recovered+".jsonl"))
+				return exitOK
+			}
+			if dropped != "" {
+				fmt.Fprintf(stdout, "carry from session %s dropped; the next togi run starts a new session with nothing carried\n", dropped)
 				return exitOK
 			}
 		}

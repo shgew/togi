@@ -54,7 +54,8 @@ func Open(dir string, opts Options) (*Journal, error) {
 	return j, nil
 }
 
-// OpenForArchive holds the writer lock without decoding a journal with another schema.
+// OpenForArchive holds the writer lock without decoding a journal with another schema, and leaves a torn tail in place
+// so that archiving never writes to the old journal.
 func OpenForArchive(dir string, opts Options) (*Journal, error) {
 	j, err := open(dir, opts, true)
 	if err != nil {
@@ -126,7 +127,7 @@ func open(dir string, opts Options, allowIncompatible bool) (*Journal, error) {
 		}
 	}
 	j := &Journal{dir: dir, opts: opts, lock: lock, f: f, events: events}
-	if end == len(data) {
+	if end == len(data) || allowIncompatible {
 		return j, nil
 	}
 	if err := f.Truncate(int64(end)); err != nil {
@@ -155,18 +156,45 @@ func RecoverPendingArchive(dir string) (string, error) {
 	if err != nil || id == "" {
 		return id, err
 	}
-	lock, err := os.OpenFile(filepath.Join(dir, lockFile), os.O_CREATE|os.O_RDWR, 0o644)
+	lock, err := lockOnly(dir)
 	if err != nil {
-		return "", fmt.Errorf("open journal lock: %w", err)
+		return "", err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return "", ErrLocked
-		}
-		return "", fmt.Errorf("lock: %w", err)
-	}
 	return finishPendingArchive(dir)
+}
+
+// DropPendingCarry takes the writer lock and drops every pending carry, returning the newest session it dropped.
+func DropPendingCarry(dir string) (string, error) {
+	id, err := PendingCarry(dir)
+	if err != nil || id == "" {
+		return id, err
+	}
+	lock, err := lockOnly(dir)
+	if err != nil {
+		return "", err
+	}
+	defer lock.Close()
+	if err := ClearPendingCarry(dir); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// lockOnly takes the writer lock without opening the journal; closing the file releases it.
+func lockOnly(dir string) (*os.File, error) {
+	lock, err := os.OpenFile(filepath.Join(dir, lockFile), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("open journal lock: %w", err)
+	}
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		lock.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, ErrLocked
+		}
+		return nil, fmt.Errorf("lock: %w", err)
+	}
+	return lock, nil
 }
 
 func pendingArchive(dir string) (string, error) {
@@ -318,6 +346,9 @@ func ReadForCarry(path string) ([]Event, error) {
 		var env envelope
 		if err := json.Unmarshal(line, &env); err != nil {
 			return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
+		}
+		if env.Kind == "" {
+			return nil, fmt.Errorf("read journal %s line %d: event has no kind", path, n)
 		}
 		if n == 1 && env.Kind != KindSessionStart {
 			return nil, fmt.Errorf("read journal %s line 1: first event is %s, want %s", path, env.Kind, KindSessionStart)

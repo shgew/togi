@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -354,18 +355,60 @@ func TestPrepareLeavesANewerJournal(t *testing.T) {
 }
 
 func TestPrepareCarriesNothingFromAnArchivedJournal(t *testing.T) {
+	for _, torn := range []bool{false, true} {
+		t.Run(fmt.Sprintf("torn tail %v", torn), func(t *testing.T) {
+			dir := t.TempDir()
+			w := newJournal(t, dir, "X", 3, &context)
+			w.fail(0, -30, machine.Isolated, journal.Attributed)
+			w.add(&journal.SessionArchived{Session: "X", Path: filepath.Join("archive", "X.jsonl")})
+			w.close()
+			if torn {
+				f, err := os.OpenFile(filepath.Join(dir, "events.jsonl"), os.O_APPEND|os.O_WRONLY, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := f.WriteString(`{"seq":9,"kind":"tri`); err != nil {
+					t.Fatal(err)
+				}
+				if err := f.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := prepare(t, dir, []defect.Entry{}); got != nil {
+				t.Fatalf("carry from an archived journal: %+v", got)
+			}
+			if after, err := os.ReadFile(filepath.Join(dir, "archive", "X.jsonl")); err != nil || !bytes.Equal(after, before) {
+				t.Fatalf("archived journal changed: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "archive", "X-carry-pending")); !errors.Is(err, fs.ErrNotExist) {
+				t.Fatalf("carry marker: %v", err)
+			}
+		})
+	}
+}
+
+func TestPrepareRefusesALineWithoutAKind(t *testing.T) {
 	dir := t.TempDir()
 	w := newJournal(t, dir, "X", 3, &context)
-	w.fail(0, -30, machine.Isolated, journal.Attributed)
-	w.add(&journal.SessionArchived{Session: "X", Path: filepath.Join("archive", "X.jsonl")})
-	w.close()
-	if got := prepare(t, dir, []defect.Entry{}); got != nil {
-		t.Fatalf("carry from an archived journal: %+v", got)
+	w.archive(dir)
+	if err := os.WriteFile(filepath.Join(dir, "archive", "X-carry-pending"), nil, 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "archive", "X.jsonl")); err != nil {
-		t.Fatalf("archive: %v", err)
+	f, err := os.OpenFile(filepath.Join(dir, "archive", "X.jsonl"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "archive", "X-carry-pending")); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("carry marker: %v", err)
+	if _, err := f.WriteString(`{"seq":3,"attribution":"attributed","core":0,"offset":-30}` + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Prepare(dir, opts(), binary, []defect.Entry{}); err == nil || !strings.Contains(err.Error(), "no kind") {
+		t.Fatalf("Prepare: %v, want a refusal of the line without a kind", err)
 	}
 }

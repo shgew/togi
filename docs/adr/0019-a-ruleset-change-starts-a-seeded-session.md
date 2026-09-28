@@ -6,8 +6,8 @@ Storage was not what made the change expensive. `togi status` replays the third 
 
 ## Decision
 
-- A journal whose ruleset or schema is older than the build's, and newer in neither, is no longer refused. `run`, also in a tuning boot, archives it without writing to it and starts a new session seeded from it. A journal from a newer build is still refused, and `reset --all` still starts over with nothing carried.
-- The new session records `session.carried` once, before any core's first `core.phase`: the sources read and, per core, a candidate edge (its deepest isolated pass) and a carried failed mark (its shallowest failure attributed to it at a known offset, CO 0 included), each naming the session and `seq` it came from. Unattributed failures, failures behind a decision a known defect matches, and values recorded before a `reset --core` of their core are not carried. An isolated trial left in flight when the old journal ends counts as a crash at its offset.
+- A journal whose ruleset or schema is older than the build's, and newer in neither, is no longer refused. `run`, also in a tuning boot, archives it without writing to it and starts a new session seeded from it. A journal whose ruleset or schema is newer is still refused, and `reset --all` still starts over with nothing carried.
+- The new session records `session.carried` once, before any core's first `core.phase`: the sources read and, per core, a candidate edge (its deepest isolated pass) and a carried failed mark (its shallowest failure attributed to it at a known offset, CO 0 included), each naming the session and `seq` it came from. Unattributed failures, failures behind a decision a known defect matches, and values recorded before a `reset --core` of their core are not carried. An isolated trial left in flight at a nonzero offset when the old journal ends counts as a crash at that offset.
 - A carried candidate edge starts the core in confirmation, as a configured one does. A configured `candidate_edges` or `start_offsets` value wins over it, but a carried mark clamps any start to one count shallower, and a mark at 0 dead-ends the core until `reset --core`.
 - A changed BIOS context carries edges only: a BIOS change can move an edge either way, and failed marks are permanent within a session.
 - Transitions chain: a session's `session.carried` is an event in its journal, so the next transition reads it and a later `reset --core` in that session clears it. A first transition whose source carried nothing also reads older archives recorded under the same BIOS context, for as long as each has a different ruleset from the source after it, which reaches the sessions archived only because of a ruleset change.
@@ -23,7 +23,7 @@ This supersedes the refusal in ADR 0009 for older journals and ADR 0013's rule t
 
 ## Consequences
 
-- A ruleset change no longer costs a session's confirmation and failures, and needs no action from the operator; `candidate_edges` is only for values the operator wants to impose.
+- A ruleset change no longer costs the search for each known edge or the rediscovery of carried failures, and needs no action from the operator; confirmation still runs under the new rules at each carried edge. `candidate_edges` is only for values the operator wants to impose.
 - A carried mark is evidence recorded under another ruleset. It only ever makes a core shallower, and `reset --core` clears it, so a mistaken mark costs depth, never stability.
 - The reader for archives must keep accepting every schema that shipped, decoding only the kinds it needs.
 - A BIOS change within one ruleset is still a preflight dead end until `reset --all`.
