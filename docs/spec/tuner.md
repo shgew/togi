@@ -95,6 +95,8 @@ Restoring offsets before `shutdown` (`runtime.md`) is not an application: its `s
 
 `crash.detected` carries the condition of the boot's last application.
 
+A crash with a trial in flight and an idle crash are failures like any other: no rule counts them against a search or guard, caps them, or pauses after a run of them ([ADR 0018](../adr/0018-crashes-are-not-a-cost.md)). Only stray crashes are counted, for the boot-loop dead end.
+
 ## Decision events
 
 Moves within a phase are `tuner.decision` events: `step_deeper` after a passed search step, `backoff` after an attributed failure, `suspect_backoff` after an unattributed one in guard, and `regain` after a clean rotation. Reaching a candidate edge (search to confirmation) and passing confirmation (confirmation to confirmed) are `core.phase` events. Both carry the resulting `pass`, `failed_mark` and `unproven_depth`, so replaying the journal never re-runs a rule. Guard decisions have phase `guard`; the core stays `confirmed`.
