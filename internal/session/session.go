@@ -431,7 +431,7 @@ func (r *runner) preflight() (*Stop, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read BIOS context: %w", err)
 		}
-		detail, ok := compareContext(*recorded, current)
+		detail, ok := machine.CompareContext(*recorded, current)
 		e, err := r.append(&journal.PreflightCheck{Check: "bios_context", Detail: detail, OK: ok})
 		if err != nil {
 			return nil, err
@@ -445,29 +445,6 @@ func (r *runner) preflight() (*Stop, error) {
 		return nil, nil
 	}
 	return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndPreflight, Detail: "failed checks: " + strings.Join(names, ", ")}, failed...)
-}
-
-func compareContext(recorded, current machine.BIOSContext) (string, bool) {
-	for _, f := range []struct {
-		name            string
-		recorded, found any
-	}{
-		{"bios_version", recorded.BIOSVersion, journalString(current.BIOSVersion)},
-		{"board", recorded.Board, journalString(current.Board)},
-		{"cpu_model", recorded.CPUModel, journalString(current.CPUModel)},
-		{"microcode", recorded.Microcode, journalString(current.Microcode)},
-		{"boost_limit_mhz", recorded.BoostLimitMHz, current.BoostLimitMHz},
-	} {
-		if f.recorded != f.found {
-			return fmt.Sprintf("%s is %v; the session recorded %v", f.name, f.found, f.recorded), false
-		}
-	}
-	return "matches the session", true
-}
-
-// journalString replaces each invalid UTF-8 byte with U+FFFD, as the journal's JSON encoding does to recorded values.
-func journalString(s string) string {
-	return string([]rune(s))
 }
 
 func (r *runner) startSession() error {
@@ -561,7 +538,7 @@ func (r *runner) recordCarry() error {
 	p := &journal.SessionCarried{Sources: c.Sources, Marks: true}
 	if c.Context == nil {
 		p.Marks, p.Detail = false, "the archived session recorded no BIOS context"
-	} else if detail, ok := compareContext(*c.Context, *r.fold.context); !ok {
+	} else if detail, ok := machine.CompareContext(*c.Context, *r.fold.context); !ok {
 		p.Marks, p.Detail = false, detail
 	}
 	for _, cc := range c.Cores {

@@ -994,8 +994,8 @@ func TestCompareContextAfterJournalRoundTrip(t *testing.T) {
 		{"changed microcode", machine.BIOSContext{BIOSVersion: host.BIOSVersion, Board: host.Board, CPUModel: host.CPUModel, Microcode: "0xb404035", BoostLimitMHz: 5700}, false},
 		{"changed invalid byte", machine.BIOSContext{BIOSVersion: "F3\xff", Board: host.Board, CPUModel: host.CPUModel, Microcode: host.Microcode, BoostLimitMHz: 5700}, false},
 	} {
-		if detail, ok := compareContext(recorded.BIOSContext, tt.current); ok != tt.ok {
-			t.Errorf("%s: compareContext = %q, %v; want ok %v", tt.name, detail, ok, tt.ok)
+		if detail, ok := machine.CompareContext(recorded.BIOSContext, tt.current); ok != tt.ok {
+			t.Errorf("%s: CompareContext = %q, %v; want ok %v", tt.name, detail, ok, tt.ok)
 		}
 	}
 }
