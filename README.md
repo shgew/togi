@@ -1,5 +1,8 @@
 # togi
 
+> [!WARNING]
+> togi is pre-1.0. It writes Curve Optimizer offsets to your CPU through `ryzen_smu`, and finding each core's edge means running it until it fails: expect crashes, reboots and lost work in anything else running. A new version can refuse to continue a session written by an older one. Run it at your own risk.
+
 Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them so the result earns a durability tier: Bronze, Silver, Gold, Platinum.
 
 - Tunes one core at a time, confirms each across several workload regimes, then guards all offsets together for as long as you let it.
@@ -57,7 +60,16 @@ togi --state-dir <dir> events --core 3 # everything that happened to core 3
 |[docs/adr/](docs/adr/)|Why each major decision was made|
 |[docs/prior-art.md](docs/prior-art.md)|What was taken from, and left out of, earlier tools|
 |[Issues](https://github.com/shgew/togi/issues)|The plan, ideas and bugs; the `1.0` milestone holds what ships in 1.0|
-|[AGENTS.md](AGENTS.md)|Contributing: workflow, commands and conventions|
+|[CONTRIBUTING.md](CONTRIBUTING.md)|What contributions are accepted before 1.0|
+|[AGENTS.md](AGENTS.md)|Working on togi: workflow, commands and conventions|
+
+## Contributing
+
+Bug reports are welcome as issues. Pull requests and feature requests are not taken before 1.0; [CONTRIBUTING.md](CONTRIBUTING.md) says why.
+
+## License
+
+[MIT](LICENSE).
 
 ## Development
 

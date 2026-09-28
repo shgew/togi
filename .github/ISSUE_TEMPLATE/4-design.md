@@ -1,6 +1,6 @@
 ---
-name: Design
-about: Decisions settled in a discussion, waiting to be scheduled.
+name: "Maintainer: Design"
+about: For the maintainer. Decisions settled in a discussion, waiting to be scheduled.
 labels: ["design"]
 ---
 

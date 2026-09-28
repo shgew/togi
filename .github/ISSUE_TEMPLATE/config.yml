@@ -1,1 +1,5 @@
 blank_issues_enabled: false
+contact_links:
+  - name: Contributing
+    url: https://github.com/shgew/togi/blob/main/CONTRIBUTING.md
+    about: Bug reports are welcome; pull requests and feature requests are not taken before 1.0.
