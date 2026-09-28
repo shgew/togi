@@ -61,6 +61,7 @@
             checkPhase = testPhase "";
             meta = {
               description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
+              license = lib.licenses.mit;
               mainProgram = "togi";
               platforms = [ system ];
             };

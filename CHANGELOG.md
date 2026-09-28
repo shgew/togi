@@ -4,6 +4,10 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Added
+
+- togi is open source under the MIT license. Bug reports are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) says what else is accepted before 1.0 ([#59]).
+
 ### Changed
 
 - **BREAKING** shycler is now togi, at `github.com/shgew/togi`: the command, the flake input `github:shgew/togi`, the NixOS options `services.togi`, the `togi*.service` units, `/var/lib/togi`, `/etc/togi/config.toml`, the GRUB entry "NixOS - togi" and the `TOGI_*` variables. The old option names have no alias. The journal format and tuning rules are unchanged: after clearing any pending tuning boot, renaming the options and running `sudo mv /var/lib/shycler /var/lib/togi`, the session continues ([how-to](https://github.com/shgew/togi/blob/main/docs/howto.md#8-moving-from-shycler), [#58]).
@@ -155,3 +159,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#49]: https://github.com/shgew/togi/issues/49
 [#50]: https://github.com/shgew/togi/issues/50
 [#58]: https://github.com/shgew/togi/pull/58
+[#59]: https://github.com/shgew/togi/pull/59
