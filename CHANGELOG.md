@@ -4,6 +4,8 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-28
+
 ### Added
 
 - togi is open source under the MIT license. Bug reports are welcome; [CONTRIBUTING.md](https://github.com/shgew/togi/blob/main/CONTRIBUTING.md) says what else is accepted before 1.0 ([#59]).
@@ -123,6 +125,8 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [0.3.0]: https://github.com/shgew/togi/releases/tag/v0.3.0
 
 [0.3.1]: https://github.com/shgew/togi/releases/tag/v0.3.1
+
+[0.4.0]: https://github.com/shgew/togi/releases/tag/v0.4.0
 
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
