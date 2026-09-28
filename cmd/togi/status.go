@@ -107,6 +107,11 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	if d := st.DeadEnd; d != nil {
 		fmt.Fprintf(w, "dead end: %s [#%d]\n", d.Condition, d.Seq)
 	}
+	for _, e := range events {
+		if e.Kind == journal.KindSessionCarried {
+			fmt.Fprintf(w, "carried: [#%d] %s\n", e.Seq, e.Msg)
+		}
+	}
 
 	fmt.Fprintln(w)
 	tw := newTable(w)

@@ -53,6 +53,8 @@ type fold struct {
 	baseline    []int
 	noticed     bool
 	phase       map[int]journal.Phase
+	carriedSeq  int
+	carried     map[int]journal.CarriedCore
 
 	boots       []string
 	lastKind    map[string]journal.Kind
@@ -81,6 +83,7 @@ type fold struct {
 func newFold() *fold {
 	return &fold{
 		phase:       map[int]journal.Phase{},
+		carried:     map[int]journal.CarriedCore{},
 		lastKind:    map[string]journal.Kind{},
 		applied:     map[string]int{},
 		appliedCond: map[string]machine.Condition{},
@@ -111,6 +114,11 @@ func (f *fold) Fold(e journal.Event) {
 		f.baselineSeq, f.baseline = e.Seq, p.Offsets
 	case *journal.SessionNotice:
 		f.noticed = true
+	case *journal.SessionCarried:
+		f.carriedSeq = e.Seq
+		for _, c := range p.Carried {
+			f.carried[c.Core] = c
+		}
 	case *journal.CorePhase:
 		f.phase[p.Core] = p.To
 	case *journal.ProfileApplied:

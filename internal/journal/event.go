@@ -22,6 +22,7 @@ const (
 	KindSessionBaseline Kind = "session.baseline"
 	KindSessionNotice   Kind = "session.notice"
 	KindSessionArchived Kind = "session.archived"
+	KindSessionCarried  Kind = "session.carried"
 	KindConfigLoaded    Kind = "config.loaded"
 	KindPreflightCheck  Kind = "preflight.check"
 	KindSMUIntent       Kind = "smu.intent"
@@ -163,6 +164,8 @@ func decodePayload(kind Kind, raw []byte) (Payload, error) {
 		p = &SessionNotice{}
 	case KindSessionArchived:
 		p = &SessionArchived{}
+	case KindSessionCarried:
+		p = &SessionCarried{}
 	case KindConfigLoaded:
 		p = &ConfigLoaded{}
 	case KindPreflightCheck:

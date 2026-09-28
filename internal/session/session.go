@@ -11,6 +11,7 @@ import (
 	"time"
 
 	togi "github.com/shgew/togi"
+	"github.com/shgew/togi/internal/carry"
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/journal"
@@ -38,6 +39,8 @@ type Input struct {
 	Prompt func(defect.Finding) (bool, error)
 	// Defects overrides the binary's entries in tests; nil uses the shipped list.
 	Defects []defect.Entry
+	// Carry is what a transition carries into a new session; nil otherwise.
+	Carry *carry.Carry
 }
 
 type Bootloader interface {
@@ -509,24 +512,72 @@ func (r *runner) startSession() error {
 			}
 		}
 	}
+	if r.in.Carry != nil && r.fold.carriedSeq == 0 && len(r.fold.phase) == 0 {
+		if err := r.recordCarry(); err != nil {
+			return err
+		}
+	}
 	for i, c := range r.cores {
 		if _, ok := r.fold.phase[c.Core]; ok {
 			continue
 		}
 		b := r.fold.baseline[i]
+		cc, has := r.fold.carried[c.Core]
 		phase, start, reason := journal.PhaseSearch, machine.ClampOffset(b), "baseline"
 		if o, ok := r.in.Config.CandidateEdges[c.Core]; ok {
 			phase, start, reason = journal.PhaseConfirmation, o, "configured candidate edge"
 		} else if o, ok := r.in.Config.StartOffsets[c.Core]; ok {
 			start, reason = o, "configured start offset"
+		} else if has && cc.Edge != nil {
+			phase, start, reason = journal.PhaseConfirmation, *cc.Edge, fmt.Sprintf("candidate edge %d carried from session %s", *cc.Edge, cc.EdgeSession)
 		} else if start != b {
 			reason = fmt.Sprintf("baseline %d clamped to %d", b, start)
 		}
-		if _, err := r.append(&journal.CorePhase{Core: c.Core, To: phase, Offset: start, Reason: reason}, r.fold.baselineSeq); err != nil {
+		p := &journal.CorePhase{Core: c.Core, To: phase}
+		cause := []int{r.fold.baselineSeq}
+		if has {
+			cause = append(cause, r.fold.carriedSeq)
+		}
+		if has && cc.FailedMark != nil {
+			m := *cc.FailedMark
+			p.FailedMark = new(m)
+			if m < 0 && start <= m {
+				start = m + 1
+				reason += fmt.Sprintf("; clamped to %d, one count shallower than the failed mark %d carried from session %s", start, m, cc.MarkSession)
+			}
+		}
+		p.Offset, p.Reason = start, reason
+		if _, err := r.append(p, cause...); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// recordCarry records what the transition carries into this session: the edges always, the failed marks only when the
+// BIOS context matches the archived session's.
+func (r *runner) recordCarry() error {
+	c := r.in.Carry
+	p := &journal.SessionCarried{Sources: c.Sources, Marks: true}
+	if c.Context == nil {
+		p.Marks, p.Detail = false, "the archived session recorded no BIOS context"
+	} else if detail, ok := compareContext(*c.Context, *r.fold.context); !ok {
+		p.Marks, p.Detail = false, detail
+	}
+	for _, cc := range c.Cores {
+		if r.coreInfo(cc.Core) == nil {
+			continue
+		}
+		if !p.Marks {
+			cc.FailedMark, cc.MarkSession, cc.MarkSeq, cc.MarkSignal = nil, "", 0, ""
+			if cc.Edge == nil {
+				continue
+			}
+		}
+		p.Carried = append(p.Carried, cc)
+	}
+	_, err := r.append(p)
+	return err
 }
 
 // ensureCondition writes every core for the trial's condition unless this process already did: all at 0 for isolated

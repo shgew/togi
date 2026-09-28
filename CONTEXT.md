@@ -40,7 +40,10 @@ The identity of the firmware and CPU a session is tuned under: BIOS version, boa
 ### Testing
 
 **Session**:
-One tuning effort under one BIOS context, from the first `run` until `reset --all`, spanning any number of reboots.
+One tuning effort under one BIOS context, from the first `run` until `reset --all` or a transition, spanning any number of reboots.
+
+**Transition**:
+The end of a session written by an older ruleset or schema: the next `run` archives it and starts a new session seeded from it.
 
 **Backend**:
 An external stress program togi drives: mprime or y-cruncher.
@@ -101,7 +104,10 @@ A failure whose evidence names one core.
 A failure whose evidence names no single core.
 
 **Failed mark**:
-The shallowest offset at which a core has had an attributed failure since its last reset.
+The shallowest offset at which a core has had an attributed failure since its last reset, or its carried mark if that is shallower.
+
+**Carried mark**:
+A failed mark a transition brings into the new session: the shallowest offset of an attributed failure of that core in the archived sessions, recorded in `session.carried` with the session and `seq` it came from. A BIOS change leaves it behind.
 
 **Edge**:
 A confirmed core's current offset; the value togi reports for entering into BIOS.

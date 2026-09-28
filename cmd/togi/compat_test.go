@@ -16,7 +16,7 @@ func incompatibleFixture(t *testing.T, field string) (string, []byte) {
 	}
 	stamp := `,"version":"0.2.1","rev":"def5678","ruleset":3,"schema":99`
 	if field == "ruleset" {
-		stamp = `,"version":"0.2.1","rev":"def5678","ruleset":2,"schema":2`
+		stamp = `,"version":"0.2.1","rev":"def5678","ruleset":99,"schema":2`
 	}
 	data := []byte(strings.Replace(string(fixture), `,"schema":2,"ruleset":3`, stamp, 1))
 	if bytes.Equal(fixture, data) {

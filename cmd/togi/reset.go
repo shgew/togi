@@ -19,7 +19,8 @@ import (
 const resetHelp = `Usage: togi reset --core <N> | --all
 
 Reset one core, so the next run restarts its search from the baseline, or archive
-the whole session, so the next run starts a new one. Give exactly one of the two.
+the whole session, so the next run starts a new one that carries nothing from it.
+Give exactly one of the two.
 Resetting a core also clears its spent regain retries and settled steps.
 --all warns if a configured candidate edge reached a failed mark in the archived
 session; missing or invalid configuration does not prevent archiving.
@@ -46,6 +47,14 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	if all {
+		dropped, dropErr := journal.DropPendingCarry(g.stateDir)
+		if dropErr != nil {
+			fmt.Fprintf(stderr, "togi reset: %v\n", dropErr)
+			if errors.Is(dropErr, journal.ErrLocked) {
+				return exitLocked
+			}
+			return exitError
+		}
 		stamp, id, err := journal.Scan(g.stateDir)
 		if errors.Is(err, fs.ErrNotExist) {
 			recovered, recoverErr := journal.RecoverPendingArchive(g.stateDir)
@@ -58,6 +67,10 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 			}
 			if recovered != "" {
 				fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next togi run starts a new session\n", recovered, filepath.Join("archive", recovered+".jsonl"))
+				return exitOK
+			}
+			if dropped != "" {
+				fmt.Fprintf(stdout, "carry from session %s dropped; the next togi run starts a new session with nothing carried\n", dropped)
 				return exitOK
 			}
 		}

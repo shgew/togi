@@ -64,7 +64,10 @@ func (e *IncompatibleError) Error() string {
 	} else {
 		value = e.Binary.Ruleset
 	}
-	return fmt.Sprintf("%s; this build, %s, uses %s %d. %s, or run togi reset --all to archive it and start over; candidate_edges in the configuration can start the new session in confirmation at the edges this one found.", written, e.Binary.name(), e.Field, value, advice)
+	if Older(e.Journal, e.Binary) {
+		return fmt.Sprintf("%s; this build, %s, uses %s %d. togi run archives it and starts a new session that carries its edges and failed marks; togi reset --all archives it and starts over.", written, e.Binary.name(), e.Field, value)
+	}
+	return fmt.Sprintf("%s; this build, %s, uses %s %d. %s, or run togi reset --all to archive it and start over.", written, e.Binary.name(), e.Field, value, advice)
 }
 
 // Compatible checks schema first, then strategy. A missing ruleset stamp means ruleset 1.
@@ -79,6 +82,15 @@ func Compatible(recorded, binary Build) error {
 		return &IncompatibleError{Field: "ruleset", Journal: recorded, Binary: binary}
 	}
 	return nil
+}
+
+// Older reports whether recorded comes from an earlier schema or ruleset than binary and from no later one.
+func Older(recorded, binary Build) bool {
+	if recorded.Ruleset == 0 {
+		recorded.Ruleset = 1
+	}
+	return recorded.Schema <= binary.Schema && recorded.Ruleset <= binary.Ruleset &&
+		(recorded.Schema < binary.Schema || recorded.Ruleset < binary.Ruleset)
 }
 
 // Scan reads only the build stamps, ignoring all other payloads and unknown event kinds.

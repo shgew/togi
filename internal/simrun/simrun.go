@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/shgew/togi/internal/carry"
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -46,11 +47,15 @@ func boot(ctx context.Context, in Input) (session.Stop, error) {
 	if err != nil {
 		return session.Stop{}, fmt.Errorf("read boot id: %w", err)
 	}
+	carried, err := carry.Prepare(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now}, session.Build(), nil)
+	if err != nil {
+		return session.Stop{}, err
+	}
 	j, err := journal.Open(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Log: in.Log, Renderer: in.Renderer, Build: session.Build()})
 	if err != nil {
 		return session.Stop{}, err
 	}
-	stop, err := session.Run(ctx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: j, Machine: seams, Rotations: in.Rotations})
+	stop, err := session.Run(ctx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: j, Machine: seams, Rotations: in.Rotations, Carry: carried})
 	if cerr := j.Close(); err == nil && cerr != nil {
 		return session.Stop{}, cerr
 	}

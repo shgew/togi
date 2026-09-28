@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,6 +160,56 @@ func TestResetAllSkipsUnavailableConfig(t *testing.T) {
 			}
 			if !strings.Contains(stdout.String(), "archived to archive/") {
 				t.Errorf("missing archive line: %q", stdout.String())
+			}
+		})
+	}
+}
+
+func TestResetAllDropsAPendingCarry(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/events.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		journal bool
+		locked  bool
+		code    int
+		dropped bool
+	}{
+		{"with a journal", true, false, exitOK, true},
+		{"before the new session's journal", false, false, exitOK, true},
+		{"while a run holds the lock", false, true, exitLocked, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			marker := filepath.Join(dir, "archive", "x-carry-pending")
+			if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			files := map[string][]byte{marker: nil}
+			if tc.journal {
+				files[filepath.Join(dir, "events.jsonl")] = fixture
+			}
+			for path, data := range files {
+				if err := os.WriteFile(path, data, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.locked {
+				j, err := journal.Open(dir, journal.Options{Boot: "run"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer j.Close()
+			}
+			var stdout, stderr bytes.Buffer
+			g := &globals{config: filepath.Join(t.TempDir(), "config.toml"), stateDir: dir}
+			if code := runReset(g, []string{"--all"}, &stdout, &stderr); code != tc.code {
+				t.Fatalf("reset exit %d, want %d: %s", code, tc.code, stderr.String())
+			}
+			if _, err := os.Stat(marker); errors.Is(err, fs.ErrNotExist) != tc.dropped {
+				t.Fatalf("carry marker after reset --all: %v, want dropped %v", err, tc.dropped)
 			}
 		})
 	}

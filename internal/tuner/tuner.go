@@ -212,6 +212,9 @@ func (s *State) Fold(e journal.Event) {
 	case *journal.CorePhase:
 		if c := s.core(p.Core); c != nil {
 			c.phase, c.offset, c.pass, c.fail, c.unproven = p.To, p.Offset, p.Pass, p.FailedMark, p.UnprovenDepth
+			if p.FailedMark != nil && *p.FailedMark == 0 {
+				c.zeroSeq = e.Seq
+			}
 			c.settled, c.spent = nil, nil
 			c.queued = ""
 			s.decided(c, e.Seq)
