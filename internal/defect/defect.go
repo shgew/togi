@@ -6,8 +6,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
 
 type Direction string
@@ -51,7 +51,7 @@ type Finding struct {
 
 var entries = []Entry{{
 	ID: 1, Title: "False failure at power-off", PR: 14, Direction: TooCautious,
-	Detail:    "At power-off, systemd stopped the trial scope before shycler received SIGTERM; the backend exited cleanly (<nil>) but was reported as a failure and caused a proven backoff.",
+	Detail:    "At power-off, systemd stopped the trial scope before togi received SIGTERM; the backend exited cleanly (<nil>) but was reported as a failure and caused a proven backoff.",
 	Decisions: []DecisionMatch{{Kind: journal.KindTunerDecision, Decision: journal.Backoff, Cause: journal.KindFailure, Predicate: powerOffFailure}},
 }}
 

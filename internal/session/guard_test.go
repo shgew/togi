@@ -7,10 +7,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
-	"github.com/shgew/shycler/internal/sim"
-	"github.com/shgew/shycler/internal/tuner"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 func TestResidentInstabilitiesConverge(t *testing.T) {

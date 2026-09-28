@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/machine"
 )
 
 type Config struct {
@@ -64,7 +64,7 @@ func DefaultModel() Model {
 
 var defaultBIOSContext = machine.BIOSContext{
 	BIOSVersion:   "SIM.1",
-	Board:         "shycler simulator",
+	Board:         "togi simulator",
 	CPUModel:      "Simulated Zen 5 16-Core Processor",
 	Microcode:     "0x0",
 	BoostLimitMHz: 5700,

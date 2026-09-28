@@ -1,7 +1,7 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set positional-arguments
 
-dev := if env("SHYCLER_DEV_SHELL", "") == "1" { "" } else { "nix develop --command" }
+dev := if env("TOGI_DEV_SHELL", "") == "1" { "" } else { "nix develop --command" }
 system := arch() + "-" + replace(os(), "macos", "darwin")
 
 # List recipes by group in file order

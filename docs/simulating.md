@@ -11,17 +11,17 @@ go run ./tools/sim [--seed N] [--rotations N] [--state-dir DIR]
 - `--rotations` (default 1) stops the session, recording `shutdown`, once the current profile has survived N clean guard rotations, before any automatic regain. Every regain changes the profile and restarts the count. One clean rotation earns Bronze only when nothing is left to regain.
 - `--state-dir` uses an existing state directory. Without it, `sim` creates a new temporary directory and prints its path to stderr.
 
-A crash reboots the simulated machine in-process and the next boot resumes the journal, as a real reboot would. Journal lines go to stderr as `shycler run` logs them, and nothing is fsynced. A state directory that already holds a journal or archives resumes the simulated machine after them: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot, and a session after `reset --all` gets a new id.
+A crash reboots the simulated machine in-process and the next boot resumes the journal, as a real reboot would. Journal lines go to stderr as `togi run` logs them, and nothing is fsynced. A state directory that already holds a journal or archives resumes the simulated machine after them: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot, and a session after `reset --all` gets a new id.
 
-The session uses the default configuration, never `/etc/shycler/config.toml`, and runs unattended: an unanswered too-aggressive defect is a dead end. `sim` exits 0 when the session stops cleanly, 1 at a dead end or on an error, and 2 on a flag error. A journal written under a different ruleset or schema is refused before another event is appended.
+The session uses the default configuration, never `/etc/togi/config.toml`, and runs unattended: an unanswered too-aggressive defect is a dead end. `sim` exits 0 when the session stops cleanly, 1 at a dead end or on an error, and 2 on a flag error. A journal written under a different ruleset or schema is refused before another event is appended.
 
 The read-only commands work on the result:
 
 ```sh
-go run ./cmd/shycler --state-dir <dir> status
-go run ./cmd/shycler --state-dir <dir> cert
-go run ./cmd/shycler --state-dir <dir> events --core 3
-go run ./cmd/shycler --state-dir <dir> watch
+go run ./cmd/togi --state-dir <dir> status
+go run ./cmd/togi --state-dir <dir> cert
+go run ./cmd/togi --state-dir <dir> events --core 3
+go run ./cmd/togi --state-dir <dir> watch
 ```
 
 Fault injection, explicit edges and the failure model are a Go API for tests (`sim.Config`, `sim.Edges`, `sim.Model` and the methods on `sim.Machine`); `internal/sim/doc.go` describes the model. `internal/simrun` drives a session on the simulator across its crashes for tests that need a simulated journal.

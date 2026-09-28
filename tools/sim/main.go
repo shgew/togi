@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/shgew/shycler/internal/config"
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/session"
-	"github.com/shgew/shycler/internal/sim"
-	"github.com/shgew/shycler/internal/simrun"
+	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/session"
+	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/simrun"
 )
 
 func main() {
@@ -44,7 +44,7 @@ func run(args []string, stderr io.Writer) int {
 	}
 	if *dir == "" {
 		var err error
-		if *dir, err = os.MkdirTemp("", "shycler-sim-"); err != nil {
+		if *dir, err = os.MkdirTemp("", "togi-sim-"); err != nil {
 			fmt.Fprintf(stderr, "sim: %v\n", err)
 			return 1
 		}

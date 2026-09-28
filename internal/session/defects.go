@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/shgew/shycler/internal/defect"
-	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/togi/internal/defect"
+	"github.com/shgew/togi/internal/journal"
 )
 
 func (r *runner) checkDefects() (*Stop, error) {

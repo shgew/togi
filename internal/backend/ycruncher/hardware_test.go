@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shgew/shycler/internal/backend"
-	"github.com/shgew/shycler/internal/backend/ycruncher"
-	"github.com/shgew/shycler/internal/config"
-	"github.com/shgew/shycler/internal/machine"
-	"github.com/shgew/shycler/internal/trial"
+	"github.com/shgew/togi/internal/backend"
+	"github.com/shgew/togi/internal/backend/ycruncher"
+	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/trial"
 )
 
 type logReporter struct{ t *testing.T }
@@ -23,14 +23,14 @@ func (r logReporter) Sample(s machine.Sample) { r.t.Logf("sample: %+v", s) }
 
 func packagePath(t *testing.T) string {
 	t.Helper()
-	if p := os.Getenv("SHYCLER_YCRUNCHER"); p != "" {
+	if p := os.Getenv("TOGI_YCRUNCHER"); p != "" {
 		return p
 	}
 	cfg, err := config.Load(config.DefaultPath)
 	if err == nil && cfg.Backends.Ycruncher != "" {
 		return cfg.Backends.Ycruncher
 	}
-	t.Fatalf("set SHYCLER_YCRUNCHER, or backends.ycruncher in %s (%v)", config.DefaultPath, err)
+	t.Fatalf("set TOGI_YCRUNCHER, or backends.ycruncher in %s (%v)", config.DefaultPath, err)
 	return ""
 }
 

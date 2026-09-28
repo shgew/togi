@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/shgew/shycler/internal/config"
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
-	"github.com/shgew/shycler/internal/session"
-	"github.com/shgew/shycler/internal/sim"
+	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/session"
+	"github.com/shgew/togi/internal/sim"
 )
 
 const maxBoots = 1000

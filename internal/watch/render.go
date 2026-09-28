@@ -9,7 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/shgew/shycler/internal/journal"
+	"github.com/shgew/togi/internal/journal"
 )
 
 var (
@@ -120,7 +120,7 @@ func Render(s Snapshot, w, h int, now time.Time) string {
 	pad := strings.Repeat(" ", l.margin)
 	var f frame
 	if !s.session {
-		f.add(spread(width, pad+bold.Reverse(true).Render(" shycler "), bold.Render(now.Format("15:04:05"))), "")
+		f.add(spread(width, pad+bold.Reverse(true).Render(" togi "), bold.Render(now.Format("15:04:05"))), "")
 		if s.problem != "" {
 			f.add(bannerStyle.Width(width).Render(pad + s.problem))
 		} else {
@@ -162,7 +162,7 @@ func (s Snapshot) top(f *frame, width int, pad string, now time.Time) {
 	if s.guard {
 		stage = "GUARD"
 	}
-	head := bold.Reverse(true).Render(" shycler ") + "  " + bold.Render(stage) + "   " +
+	head := bold.Reverse(true).Render(" togi ") + "  " + bold.Render(stage) + "   " +
 		dim.Render("session "+age(now.Sub(s.start))+"   last event "+age(now.Sub(s.last))+" ago")
 	f.add(spread(width, pad+head, bold.Render(now.Format("15:04:05"))))
 	f.add(pad + dim.Render(strings.Join(s.summary(), "   ")))

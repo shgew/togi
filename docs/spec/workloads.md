@@ -74,15 +74,15 @@ The confirmation estimate assumes no failures. Each confirmation failure below o
 
 ## Containment
 
-Each backend instance runs as a child of shycler inside a transient scope confined to its logical CPUs:
+Each backend instance runs as a child of togi inside a transient scope confined to its logical CPUs:
 
 ```
 systemd-run --scope --quiet --collect -p AllowedCPUs=<cpus> -p DefaultDependencies=no -- <argv>
 ```
 
-`DefaultDependencies=no` keeps a system shutdown from stopping the scope on its own. Otherwise systemd stops the scope and the unit running shycler at the same moment, the backend can exit before shycler sees its signal, and the trial would end as an unexpected exit on the target instead of interrupted. Without the default dependencies, shycler's teardown ends the scope after the signal reaches it.
+`DefaultDependencies=no` keeps a system shutdown from stopping the scope on its own. Otherwise systemd stops the scope and the unit running togi at the same moment, the backend can exit before togi sees its signal, and the trial would end as an unexpected exit on the target instead of interrupted. Without the default dependencies, togi's teardown ends the scope after the signal reaches it.
 
-The kernel enforces the cpuset whatever the backend does. shycler also samples the processor field of every backend thread in `/proc/<pid>/task/*/stat` once per second, from the moment the process is inside its scope. A thread seen outside its allowed logical CPUs is a dead end. Stopping a trial terminates the whole scope.
+The kernel enforces the cpuset whatever the backend does. togi also samples the processor field of every backend thread in `/proc/<pid>/task/*/stat` once per second, from the moment the process is inside its scope. A thread seen outside its allowed logical CPUs is a dead end. Stopping a trial terminates the whole scope.
 
 Teardown, per instance: SIGCONT then SIGTERM to the process group, and up to 3 s for it to exit; then SIGKILL to everything in the scope (`systemctl kill --kill-whom=all`) and to the process group, and up to 10 s more. A backend still running after that is a runner error. The output left in the pipes and watched files is read to the end before the outcome is decided, so an error printed during teardown still fails the trial.
 
@@ -106,7 +106,7 @@ Failure signals:
 | Computation error | Backend output | The instance's core |
 | Unexpected exit | Process exits before the trial ends, without a setup error | The instance's core |
 | Stall | Over a 10 s window of unsuspended time, backend CPU time advances less than half of thread count times that window, after a 30 s startup grace | The instance's core |
-| Corrected MCE | Kernel log, followed continuously while shycler runs | The core of the reporting logical CPU if the bank is core-local, else unattributed |
+| Corrected MCE | Kernel log, followed continuously while togi runs | The core of the reporting logical CPU if the bank is core-local, else unattributed |
 | Uncorrected MCE | Kernel log of the next boot, or of the crashed boot in the persistent system journal | Same rule |
 | Crash | Boot ID differs from the last one in the journal, with no clean-shutdown event | Unattributed, unless an MCE above names a core |
 
@@ -118,7 +118,7 @@ A trial still open when `run` starts, in a boot that did not crash (the same boo
 
 A trial closed this way, after a crash or an interruption, records as its `duration_s` the time from its `trial.start` to its last `trial.progress`, `trial.signal` or `trial.sample` in the journal, or 0 without a `trial.start`. Nothing is recorded between those events, so after a crash this is a lower bound.
 
-The `trial.end` message for a trial closed on resume says `last evidence Ns after start` instead of presenting `duration_s` as elapsed time. A trial that ends while shycler watches it, including an orderly stop by signal, reports its measured duration with `after Ns`.
+The `trial.end` message for a trial closed on resume says `last evidence Ns after start` instead of presenting `duration_s` as elapsed time. A trial that ends while togi watches it, including an orderly stop by signal, reports its measured duration with `after Ns`.
 
 MCE attribution rules:
 - Attribution uses the SMCA bank type decoded by the kernel (`edac_mce_amd`), never a hard-coded bank number.

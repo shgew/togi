@@ -1,4 +1,4 @@
-# shycler
+# togi
 
 Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them so the result earns a durability tier: Bronze, Silver, Gold, Platinum.
 
@@ -7,6 +7,8 @@ Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains,
 - Survives crashes: the next run reads its journal, attributes the crash and continues.
 - Records every action in a plain-text journal you can read to see what it did and why.
 - Reports the offsets; you enter them in BIOS.
+
+*togi* (研ぎ) is Japanese for polishing a blade: coarse stones first, then fine ones, until the edge shows. togi was called shycler up to 0.3.1.
 
 ## Status
 
@@ -28,22 +30,22 @@ Not yet:
 ## Usage
 
 ```sh
-shycler --version                         # version and git revision of this build
-sudo shycler run                          # tune this machine; Ctrl-C stops, the next run resumes
-shycler status                            # per-core offsets, tier and clean hours
-shycler watch                             # live dashboard of the session
-shycler --state-dir <dir> status          # per-core offsets, tier and clean hours
-shycler --state-dir <dir> cert            # the certificate: edges to enter in BIOS
-shycler --state-dir <dir> events --core 3 # everything that happened to core 3
+togi --version                         # version and git revision of this build
+sudo togi run                          # tune this machine; Ctrl-C stops, the next run resumes
+togi status                            # per-core offsets, tier and clean hours
+togi watch                             # live dashboard of the session
+togi --state-dir <dir> status          # per-core offsets, tier and clean hours
+togi --state-dir <dir> cert            # the certificate: edges to enter in BIOS
+togi --state-dir <dir> events --core 3 # everything that happened to core 3
 ```
 
-[docs/howto.md](docs/howto.md) walks through installing the NixOS module, a first in-session run and an overnight tuning boot. `shycler --help` lists every command, and `shycler <command> --help` gives its description, examples and flags. [Commands](docs/spec/runtime.md#commands) describes each one in full.
+[docs/howto.md](docs/howto.md) walks through installing the NixOS module, a first in-session run and an overnight tuning boot. `togi --help` lists every command, and `togi <command> --help` gives its description, examples and flags. [Commands](docs/spec/runtime.md#commands) describes each one in full.
 
 ## Documentation
 
 |Document|Read it for|
 |---|---|
-|[docs/howto.md](docs/howto.md)|Installing shycler and running a tuning session|
+|[docs/howto.md](docs/howto.md)|Installing togi and running a tuning session|
 |[docs/releasing.md](docs/releasing.md)|Versioning, the release workflow and tags|
 |[docs/simulating.md](docs/simulating.md)|Running a simulated session for development|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
@@ -54,11 +56,11 @@ shycler --state-dir <dir> events --core 3 # everything that happened to core 3
 |[docs/spec/runtime.md](docs/spec/runtime.md)|Commands, configuration, the tuning boot and the NixOS module|
 |[docs/adr/](docs/adr/)|Why each major decision was made|
 |[docs/prior-art.md](docs/prior-art.md)|What was taken from, and left out of, earlier tools|
-|[Issues](https://github.com/shgew/shycler/issues)|The plan, ideas and bugs; the `1.0` milestone holds what ships in 1.0|
+|[Issues](https://github.com/shgew/togi/issues)|The plan, ideas and bugs; the `1.0` milestone holds what ships in 1.0|
 |[AGENTS.md](AGENTS.md)|Contributing: workflow, commands and conventions|
 
 ## Development
 
 Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, and `just gate` runs lint, the formatting check and tests. `just check` runs every flake check: the package with its tests, lint, formatting and the NixOS VM test; CI runs them on every pull request. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the rest.
 
-shycler runs on NixOS. Development also works on macOS (aarch64-darwin): the dev shell, the tests, `just sim`, and `status`, `cert`, `events` and `reset` against a copied state directory. `just check` there skips the VM test, and `shycler run` exits with an error.
+togi runs on NixOS. Development also works on macOS (aarch64-darwin): the dev shell, the tests, `just sim`, and `status`, `cert`, `events` and `reset` against a copied state directory. `just check` there skips the VM test, and `togi run` exits with an error.

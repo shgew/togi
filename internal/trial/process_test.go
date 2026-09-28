@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/machine"
 )
 
 func TestProcessTrials(t *testing.T) {

@@ -118,7 +118,7 @@ func fieldInt(fields []string, number int) int64 {
 	return v
 }
 func CheckSystemdRun() (string, error) {
-	argv := scopeArgv(fmt.Sprintf("shycler-preflight-%d", os.Getpid()), []int{0}, "/bin/sh", "-c", "exit 0")
+	argv := scopeArgv(fmt.Sprintf("togi-preflight-%d", os.Getpid()), []int{0}, "/bin/sh", "-c", "exit 0")
 	out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("systemd-run: %w: %s", err, strings.TrimSpace(string(out)))

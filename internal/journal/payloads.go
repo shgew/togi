@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shgew/shycler/internal/config"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/machine"
 )
 
 type Phase string
@@ -405,8 +405,8 @@ func (p *TrialSample) Message() string {
 }
 
 const (
-	TrialReasonStoppedDuringTrial       = "shycler stopped during the trial"
-	TrialReasonStoppedAfterMachineCheck = "shycler stopped during the trial after a machine check"
+	TrialReasonStoppedDuringTrial       = "togi stopped during the trial"
+	TrialReasonStoppedAfterMachineCheck = "togi stopped during the trial after a machine check"
 )
 
 type TrialEnd struct {

@@ -6,9 +6,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
-	"github.com/shgew/shycler/internal/sim"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/sim"
 )
 
 type fakeBootloader struct {
@@ -19,9 +19,9 @@ type fakeBootloader struct {
 func (b *fakeBootloader) ClearSavedEntry() (string, string, error) {
 	b.calls++
 	if b.err != nil {
-		return "shycler", "shycler", b.err
+		return "togi", "togi", b.err
 	}
-	return "shycler", "", nil
+	return "togi", "", nil
 }
 
 func TestDeadEndClearsSavedEntry(t *testing.T) {

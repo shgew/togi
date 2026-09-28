@@ -1,4 +1,4 @@
-package shycler
+package togi
 
 import (
 	_ "embed"

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/shgew/shycler/internal/machine"
-	"github.com/shgew/shycler/internal/tuner"
+	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 type toggle struct {

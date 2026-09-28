@@ -4,9 +4,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/shgew/shycler/internal/defect"
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/defect"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
 
 func testDefect(direction defect.Direction) defect.Entry {

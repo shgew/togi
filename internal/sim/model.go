@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/machine"
 )
 
 var signalOrder = []machine.Signal{machine.ComputationError, machine.Stall, machine.UnexpectedExit, machine.CorrectedMCE, machine.Crash}
@@ -62,7 +62,7 @@ func (t trials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Runn
 		spec: spec,
 		started: machine.Started{
 			PID:      1000 + n,
-			Scope:    "shycler-trial-" + spec.ID,
+			Scope:    "togi-trial-" + spec.ID,
 			CPUs:     slices.Clone(spec.CPUs),
 			Argv:     []string{"sim", spec.Workload.ID},
 			Schedule: machine.ScheduleFor(spec),

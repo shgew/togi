@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/tuner"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 func fixture(t *testing.T) []journal.Event {

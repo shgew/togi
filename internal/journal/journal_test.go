@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/shgew/shycler/internal/config"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/machine"
 )
 
 func fixedClock() func() time.Time {
@@ -199,7 +199,7 @@ func TestRoundTrip(t *testing.T) {
 		&SessionBaseline{Offsets: []int{0, -5}},
 		&SessionNotice{Notice: NoticeNonzeroBaseline, Cores: []int{7}},
 		&SessionArchived{Session: "20261002T011407Z", Path: "archive/20261002T011407Z.jsonl"},
-		&ConfigLoaded{Path: "/etc/shycler/config.toml", File: true, Config: cfg},
+		&ConfigLoaded{Path: "/etc/togi/config.toml", File: true, Config: cfg},
 		&PreflightCheck{Check: "root", Detail: "uid 0", OK: true},
 		&SMUIntent{Op: SMUSetAll, Offset: 0},
 		&SMUWrite{Op: SMUSet, Core: new(7), Offset: -32},
@@ -211,7 +211,7 @@ func TestRoundTrip(t *testing.T) {
 		&ProfileRestored{Offsets: []int{0, -5}},
 		&TrialIntent{Trial: "0413", Core: new(7), Offset: new(-32), Regime: machine.R2, Workload: "mprime-avx2-36k-248k", DurationS: 90, Condition: machine.Isolated, Phase: PhaseSearch, Retry: true},
 		&TrialIntent{Trial: "0414", Cores: []int{0, 7}, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", DurationS: 1200, Condition: machine.Resident, Phase: PhaseGuard, Rotation: 3},
-		&TrialStart{Trial: "0413", Scope: "shycler-trial-0413", PID: 48211, CPUs: []int{7, 23}, Argv: []string{"mprime", "-t"}},
+		&TrialStart{Trial: "0413", Scope: "togi-trial-0413", PID: 48211, CPUs: []int{7, 23}, Argv: []string{"mprime", "-t"}},
 		&TrialProgress{Trial: "0413", Detail: "FFT 36K done"},
 		&TrialSignal{Trial: "0413", Schedule: "random on/off periods", Seed: 814},
 		&TrialSignal{Trial: "0413", Stops: 10, Conts: 9},
@@ -234,9 +234,9 @@ func TestRoundTrip(t *testing.T) {
 		&TierChange{From: TierNone, To: TierBronze, Reason: "r"},
 		&CommandReset{Core: new(7)},
 		&DeadEnd{Condition: DeadEndFailureAtZero, Core: new(7), Detail: "core 07 failed at CO 0", Action: "exit"},
-		&BootSavedEntry{Before: "shycler", After: ""},
-		&BootSavedEntry{Before: "shycler", After: "shycler", Error: "grub-editenv: exit status 1"},
-		&TrialStart{Trial: "0009", Scope: "shycler-trial-0009", PID: 10, CPUs: []int{0, 8}, Argv: []string{"mprime"}, Files: []string{"c00/prime.txt"}, Instances: []TrialInstance{{Core: 0, CPUs: []int{0}, PID: 10, Scope: "shycler-trial-0009-c00"}, {Core: 8, CPUs: []int{8}, PID: 11, Scope: "shycler-trial-0009-c08"}}},
+		&BootSavedEntry{Before: "togi", After: ""},
+		&BootSavedEntry{Before: "togi", After: "togi", Error: "grub-editenv: exit status 1"},
+		&TrialStart{Trial: "0009", Scope: "togi-trial-0009", PID: 10, CPUs: []int{0, 8}, Argv: []string{"mprime"}, Files: []string{"c00/prime.txt"}, Instances: []TrialInstance{{Core: 0, CPUs: []int{0}, PID: 10, Scope: "togi-trial-0009-c00"}, {Core: 8, CPUs: []int{8}, PID: 11, Scope: "togi-trial-0009-c08"}}},
 		&Shutdown{Reason: ShutdownRotations, Rotations: 3},
 		&JournalTorn{Offset: 120, BytesHex: "7b22"},
 		&StateRebuilt{Fields: []string{"cores", "last_seq"}},

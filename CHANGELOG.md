@@ -1,8 +1,12 @@
 # Changelog
 
-All notable changes to shycler are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to togi, called shycler up to 0.3.1, are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+### Changed
+
+- **BREAKING** shycler is now togi, at `github.com/shgew/togi`: the command, the flake input `github:shgew/togi`, the NixOS options `services.togi`, the `togi*.service` units, `/var/lib/togi`, `/etc/togi/config.toml`, the GRUB entry "NixOS - togi" and the `TOGI_*` variables. The old option names have no alias. The journal format and tuning rules are unchanged: after clearing any pending tuning boot, renaming the options and running `sudo mv /var/lib/shycler /var/lib/togi`, the session continues ([how-to](https://github.com/shgew/togi/blob/main/docs/howto.md#8-moving-from-shycler), [#58]).
 
 ## [0.3.1] - 2026-09-27
 
@@ -104,49 +108,50 @@ All notable changes to shycler are documented in this file. The format is based 
 - A trial the machine crashed during now records how long it is known to have run, up to its last recorded progress, instead of `after 0s` ([#15]).
 - Every journal event is fsynced, not only intents, so a crash no longer loses up to a minute of `events.jsonl`: the SMU write, readback and trial start before a crash stay recorded, and a crashed trial's duration runs to its last progress ([#35]).
 
-[0.1.0]: https://github.com/shgew/shycler/releases/tag/v0.1.0
+[0.1.0]: https://github.com/shgew/togi/releases/tag/v0.1.0
 
-[0.2.0]: https://github.com/shgew/shycler/releases/tag/v0.2.0
+[0.2.0]: https://github.com/shgew/togi/releases/tag/v0.2.0
 
-[0.2.1]: https://github.com/shgew/shycler/releases/tag/v0.2.1
+[0.2.1]: https://github.com/shgew/togi/releases/tag/v0.2.1
 
-[0.2.2]: https://github.com/shgew/shycler/releases/tag/v0.2.2
+[0.2.2]: https://github.com/shgew/togi/releases/tag/v0.2.2
 
-[0.3.0]: https://github.com/shgew/shycler/releases/tag/v0.3.0
+[0.3.0]: https://github.com/shgew/togi/releases/tag/v0.3.0
 
-[0.3.1]: https://github.com/shgew/shycler/releases/tag/v0.3.1
+[0.3.1]: https://github.com/shgew/togi/releases/tag/v0.3.1
 
-[#1]: https://github.com/shgew/shycler/issues/1
-[#2]: https://github.com/shgew/shycler/issues/2
-[#3]: https://github.com/shgew/shycler/issues/3
-[#4]: https://github.com/shgew/shycler/issues/4
-[#5]: https://github.com/shgew/shycler/issues/5
-[#6]: https://github.com/shgew/shycler/issues/6
-[#7]: https://github.com/shgew/shycler/issues/7
-[#8]: https://github.com/shgew/shycler/issues/8
-[#9]: https://github.com/shgew/shycler/issues/9
-[#10]: https://github.com/shgew/shycler/issues/10
-[#11]: https://github.com/shgew/shycler/issues/11
-[#12]: https://github.com/shgew/shycler/issues/12
-[#13]: https://github.com/shgew/shycler/issues/13
-[#14]: https://github.com/shgew/shycler/issues/14
-[#15]: https://github.com/shgew/shycler/issues/15
-[#22]: https://github.com/shgew/shycler/issues/22
-[#23]: https://github.com/shgew/shycler/issues/23
-[#26]: https://github.com/shgew/shycler/issues/26
-[#28]: https://github.com/shgew/shycler/issues/28
-[#31]: https://github.com/shgew/shycler/issues/31
-[#32]: https://github.com/shgew/shycler/issues/32
-[#34]: https://github.com/shgew/shycler/issues/34
-[#35]: https://github.com/shgew/shycler/issues/35
-[#36]: https://github.com/shgew/shycler/issues/36
-[#37]: https://github.com/shgew/shycler/issues/37
-[#38]: https://github.com/shgew/shycler/issues/38
-[#39]: https://github.com/shgew/shycler/issues/39
-[#40]: https://github.com/shgew/shycler/pull/40
-[#44]: https://github.com/shgew/shycler/pull/44
-[#46]: https://github.com/shgew/shycler/pull/46
-[#47]: https://github.com/shgew/shycler/pull/47
-[#48]: https://github.com/shgew/shycler/pull/48
-[#49]: https://github.com/shgew/shycler/pull/49
-[#50]: https://github.com/shgew/shycler/pull/50
+[#1]: https://github.com/shgew/togi/issues/1
+[#2]: https://github.com/shgew/togi/issues/2
+[#3]: https://github.com/shgew/togi/issues/3
+[#4]: https://github.com/shgew/togi/issues/4
+[#5]: https://github.com/shgew/togi/issues/5
+[#6]: https://github.com/shgew/togi/issues/6
+[#7]: https://github.com/shgew/togi/issues/7
+[#8]: https://github.com/shgew/togi/issues/8
+[#9]: https://github.com/shgew/togi/issues/9
+[#10]: https://github.com/shgew/togi/issues/10
+[#11]: https://github.com/shgew/togi/issues/11
+[#12]: https://github.com/shgew/togi/issues/12
+[#13]: https://github.com/shgew/togi/issues/13
+[#14]: https://github.com/shgew/togi/issues/14
+[#15]: https://github.com/shgew/togi/issues/15
+[#22]: https://github.com/shgew/togi/issues/22
+[#23]: https://github.com/shgew/togi/issues/23
+[#26]: https://github.com/shgew/togi/issues/26
+[#28]: https://github.com/shgew/togi/issues/28
+[#31]: https://github.com/shgew/togi/issues/31
+[#32]: https://github.com/shgew/togi/issues/32
+[#34]: https://github.com/shgew/togi/issues/34
+[#35]: https://github.com/shgew/togi/issues/35
+[#36]: https://github.com/shgew/togi/issues/36
+[#37]: https://github.com/shgew/togi/issues/37
+[#38]: https://github.com/shgew/togi/issues/38
+[#39]: https://github.com/shgew/togi/issues/39
+[#40]: https://github.com/shgew/togi/issues/40
+[#44]: https://github.com/shgew/togi/issues/44
+[#46]: https://github.com/shgew/togi/issues/46
+[#47]: https://github.com/shgew/togi/issues/47
+[#48]: https://github.com/shgew/togi/issues/48
+[#49]: https://github.com/shgew/togi/issues/49
+[#50]: https://github.com/shgew/togi/issues/50
+[#58]: https://github.com/shgew/togi/pull/58

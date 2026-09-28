@@ -1,6 +1,6 @@
 ---
 name: Bug
-about: Something shycler does wrong.
+about: Something togi does wrong.
 labels: ["bugfix"]
 ---
 
@@ -10,8 +10,8 @@ labels: ["bugfix"]
 
 ## Version
 
-<!-- The shycler version or git revision. -->
+<!-- The togi version or git revision. -->
 
 ## Journal
 
-<!-- The events around it, from `shycler events`. -->
+<!-- The events around it, from `togi events`. -->

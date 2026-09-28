@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/shgew/shycler/internal/backend"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/backend"
+	"github.com/shgew/togi/internal/machine"
 )
 
 type Mprime struct {

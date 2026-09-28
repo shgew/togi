@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/shgew/shycler/internal/backend"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/backend"
+	"github.com/shgew/togi/internal/machine"
 )
 
 func fakePackage(t *testing.T) string {

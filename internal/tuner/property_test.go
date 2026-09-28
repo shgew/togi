@@ -4,8 +4,8 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"github.com/shgew/shycler/internal/journal"
-	"github.com/shgew/shycler/internal/machine"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
 
 const (

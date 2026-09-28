@@ -6,16 +6,16 @@
   ...
 }:
 let
-  cfg = config.services.shycler;
+  cfg = config.services.togi;
   package = packages.${pkgs.stdenv.hostPlatform.system}.default;
   toml = pkgs.formats.toml { };
   grub = config.boot.loader.grub;
   grubenv = "${(lib.head grub.mirroredBoots).path}/grub/grubenv";
 in
 {
-  options.services.shycler = {
-    enable = lib.mkEnableOption "shycler, the per-core Curve Optimizer tuner";
-    tuning.enable = lib.mkEnableOption "the shycler tuning boot, a GRUB entry that tunes unattended";
+  options.services.togi = {
+    enable = lib.mkEnableOption "togi, the per-core Curve Optimizer tuner";
+    tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB entry that tunes unattended";
     tuning.leaveOnShutdown = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -32,7 +32,7 @@ in
     settings = lib.mkOption {
       type = toml.type;
       default = { };
-      description = "Configuration rendered to /etc/shycler/config.toml.";
+      description = "Configuration rendered to /etc/togi/config.toml.";
     };
   };
 
@@ -41,8 +41,8 @@ in
       {
         environment.systemPackages = [ package ];
         hardware.cpu.amd.ryzen-smu.enable = lib.mkDefault true;
-        environment.etc."shycler/config.toml".source = toml.generate "shycler-config.toml" cfg.settings;
-        services.shycler.settings.backends = {
+        environment.etc."togi/config.toml".source = toml.generate "togi-config.toml" cfg.settings;
+        services.togi.settings.backends = {
           mprime = lib.mkIf cfg.backends.mprime.enable (lib.mkDefault "${pkgs.mprime}");
           ycruncher = lib.mkIf cfg.backends.ycruncher.enable (lib.mkDefault "${pkgs.y-cruncher}");
         };
@@ -51,13 +51,13 @@ in
         assertions = [
           {
             assertion = grub.enable && grub.mirroredBoots != [ ];
-            message = "services.shycler.tuning.enable needs GRUB: the tuning boot relies on GRUB's saved entry";
+            message = "services.togi.tuning.enable needs GRUB: the tuning boot relies on GRUB's saved entry";
           }
         ];
         boot.loader.grub.default = "saved";
-        specialisation.shycler.configuration = {
-          system.nixos.tags = [ "shycler" ];
-          boot.loader.grub.configurationName = "shycler";
+        specialisation.togi.configuration = {
+          system.nixos.tags = [ "togi" ];
+          boot.loader.grub.configurationName = "togi";
           systemd.defaultUnit = lib.mkForce "multi-user.target";
           boot.kernel.sysctl = {
             "kernel.panic" = 10;
@@ -76,8 +76,8 @@ in
             AllowHybridSleep = false;
             AllowSuspendThenHibernate = false;
           };
-          systemd.services.shycler = {
-            description = "shycler tuning boot";
+          systemd.services.togi = {
+            description = "togi tuning boot";
             wantedBy = [ "multi-user.target" ];
             after = [
               "systemd-modules-load.service"
@@ -91,13 +91,13 @@ in
               Restart = "on-failure";
               RestartSec = 60;
               RestartPreventExitStatus = "10 11 12 13 14 15 16 17";
-              StateDirectory = "shycler";
+              StateDirectory = "togi";
             };
           };
-          systemd.services.shycler-leave-tuning-boot = lib.mkIf cfg.tuning.leaveOnShutdown {
+          systemd.services.togi-leave-tuning-boot = lib.mkIf cfg.tuning.leaveOnShutdown {
             description = "Return the next boot to the normal system after an orderly shutdown";
             wantedBy = [ "multi-user.target" ];
-            before = [ "shycler.service" ];
+            before = [ "togi.service" ];
             restartIfChanged = false;
             unitConfig.RequiresMountsFor = grubenv;
             serviceConfig = {
@@ -116,23 +116,23 @@ in
           systemd.services."autovt@tty1".enable = false;
           systemd.services."getty@tty3".enable = false;
           systemd.services."autovt@tty3".enable = false;
-          systemd.services.shycler-kernel-log = {
-            description = "Send kernel messages to tty3 in the shycler tuning boot";
+          systemd.services.togi-kernel-log = {
+            description = "Send kernel messages to tty3 in the togi tuning boot";
             wantedBy = [ "multi-user.target" ];
-            before = [ "shycler-watch.service" ];
+            before = [ "togi-watch.service" ];
             serviceConfig = {
               Type = "oneshot";
               RemainAfterExit = true;
               ExecStart = "${pkgs.kbd}/bin/setlogcons 3";
             };
           };
-          systemd.services.shycler-watch = {
-            description = "shycler dashboard on tty1";
+          systemd.services.togi-watch = {
+            description = "togi dashboard on tty1";
             after = [
               "systemd-user-sessions.service"
-              "shycler-kernel-log.service"
+              "togi-kernel-log.service"
             ];
-            wants = [ "shycler-kernel-log.service" ];
+            wants = [ "togi-kernel-log.service" ];
             wantedBy = [ "multi-user.target" ];
             unitConfig.ConditionPathExists = "/dev/tty1";
             environment.TERM = "linux";
@@ -149,13 +149,13 @@ in
               Nice = -10;
             };
           };
-          systemd.services.shycler-console = {
-            description = "shycler tuning boot log on tty3";
+          systemd.services.togi-console = {
+            description = "togi tuning boot log on tty3";
             after = [ "systemd-user-sessions.service" ];
             wantedBy = [ "multi-user.target" ];
             unitConfig.ConditionPathExists = "/dev/tty3";
             serviceConfig = {
-              ExecStart = "${lib.getExe' config.systemd.package "journalctl"} --follow --lines 100 --no-pager --unit shycler.service --output cat";
+              ExecStart = "${lib.getExe' config.systemd.package "journalctl"} --follow --lines 100 --no-pager --unit togi.service --output cat";
               StandardOutput = "tty";
               StandardError = "tty";
               TTYPath = "/dev/tty3";
