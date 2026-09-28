@@ -1,7 +1,9 @@
 package mprime
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,6 +24,9 @@ func (m *Mprime) Check() (string, error) {
 	bin := filepath.Join(m.pkg, "bin/mprime")
 	info, err := os.Stat(bin)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("stat mprime binary %s: %w: %w", bin, machine.ErrBackendMissing, err)
+		}
 		return "", fmt.Errorf("stat mprime binary %s: %w", bin, err)
 	}
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {

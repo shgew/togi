@@ -1,6 +1,7 @@
 package mprime
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,17 @@ func fakePackage(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return pkg
+}
+
+func TestMissingBinary(t *testing.T) {
+	pkg := fakePackage(t)
+	if err := os.Remove(filepath.Join(pkg, "bin/mprime")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := New(pkg).Check()
+	if diff := cmp.Diff(true, errors.Is(err, machine.ErrBackendMissing)); diff != "" {
+		t.Fatalf("missing backend (-want +got):\n%s", diff)
+	}
 }
 
 func TestPrepare(t *testing.T) {

@@ -51,10 +51,14 @@ func classifyHelper(line string) backend.Line {
 type recorder struct {
 	progress []string
 	samples  []machine.Sample
+	signals  []machine.Signal
 }
 
 func (r *recorder) Progress(s string)       { r.progress = append(r.progress, s) }
 func (r *recorder) Sample(s machine.Sample) { r.samples = append(r.samples, s) }
+func (r *recorder) Signal(core int, signal machine.Signal, detail string) {
+	r.signals = append(r.signals, signal)
+}
 
 func testSpec(id string, regime machine.Regime, d time.Duration) machine.TrialSpec {
 	return machine.TrialSpec{ID: id, Regime: regime, Workload: machine.Workload{Backend: machine.Mprime, DutyPct: 50}, Cores: []int{0}, CPUs: []int{0}, Duration: d}
@@ -133,6 +137,9 @@ func TestWait(t *testing.T) {
 				}
 				if result.Signal != tt.signal {
 					t.Fatalf("signal %s, want %s (result %+v)", result.Signal, tt.signal, result)
+				}
+				if tt.signal == machine.ComputationError && (len(rec.signals) != 1 || rec.signals[0] != machine.ComputationError) {
+					t.Fatalf("backend computation signals = %v", rec.signals)
 				}
 				if tt.name == "escape" {
 					if !slices.Equal(result.Escaped, []int{9}) || len(rec.samples) == 0 || rec.samples[0].Warning != "outside allowed cpus" {

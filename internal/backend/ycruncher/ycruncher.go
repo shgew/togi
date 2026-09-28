@@ -1,7 +1,9 @@
 package ycruncher
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,6 +27,9 @@ func (y *Ycruncher) binaries() (lowest, zen5 string, err error) {
 	root := filepath.Join(y.pkg, "lib/y-cruncher/Binaries")
 	entries, err := os.ReadDir(root)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", "", fmt.Errorf("read y-cruncher binaries %s: %w: %w", root, machine.ErrBackendMissing, err)
+		}
 		return "", "", fmt.Errorf("read y-cruncher binaries %s: %w", root, err)
 	}
 	var names []string
@@ -39,7 +44,7 @@ func (y *Ycruncher) binaries() (lowest, zen5 string, err error) {
 	}
 	sort.Strings(names)
 	if len(names) == 0 {
-		return "", "", fmt.Errorf("no y-cruncher binaries in %s", root)
+		return "", "", fmt.Errorf("no y-cruncher binaries in %s: %w", root, machine.ErrBackendMissing)
 	}
 	lowest = names[0]
 	for _, name := range names {
@@ -49,7 +54,7 @@ func (y *Ycruncher) binaries() (lowest, zen5 string, err error) {
 		}
 	}
 	if zen5 == "" {
-		return "", "", fmt.Errorf("no Zen 5 binary 24-ZN5 in %s", root)
+		return "", "", fmt.Errorf("no Zen 5 binary 24-ZN5 in %s: %w", root, machine.ErrBackendMissing)
 	}
 	return lowest, zen5, nil
 }

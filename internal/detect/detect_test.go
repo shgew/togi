@@ -159,7 +159,7 @@ func TestStatusAndBlockBoundaries(t *testing.T) {
 		{"raw deferred", "[Hardware Error]: CPU 12: Machine Check: 0 Bank 1: 0000100000000000", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			msgs := []Message{{at, "[Hardware Error]: Corrected error, no action required."}, {at.Add(time.Microsecond), tt.status}, {at.Add(2 * time.Microsecond), "[Hardware Error]: Load Store Unit Ext. Error Code: 13"}}
+			msgs := []Message{{Time: at, Text: "[Hardware Error]: Corrected error, no action required."}, {Time: at.Add(time.Microsecond), Text: tt.status}, {Time: at.Add(2 * time.Microsecond), Text: "[Hardware Error]: Load Store Unit Ext. Error Code: 13"}}
 			got := Parse(msgs, map[int]int{12: 6})
 			bank := machine.LoadStore
 			if strings.HasPrefix(tt.name, "raw") {
@@ -173,7 +173,7 @@ func TestStatusAndBlockBoundaries(t *testing.T) {
 			}
 		})
 	}
-	msgs := []Message{{at, "[Hardware Error]: CPU:99 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135"}, {at, "[Hardware Error]: Bank 1 is reserved."}, {at, "unrelated"}, {at, "[Hardware Error]: Decode Unit Ext. Error Code: 1"}, {at, "[Hardware Error]: Deferred error, no action required."}, {at, "[Hardware Error]: CPU:12 (1a:44:0) MC1_STATUS[Over|UE|-]: 0xbc00000000010135"}}
+	msgs := []Message{{Time: at, Text: "[Hardware Error]: CPU:99 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135"}, {Time: at, Text: "[Hardware Error]: Bank 1 is reserved."}, {Time: at, Text: "unrelated"}, {Time: at, Text: "[Hardware Error]: Decode Unit Ext. Error Code: 1"}, {Time: at, Text: "[Hardware Error]: Deferred error, no action required."}, {Time: at, Text: "[Hardware Error]: CPU:12 (1a:44:0) MC1_STATUS[Over|UE|-]: 0xbc00000000010135"}}
 	got := Parse(msgs, map[int]int{12: 6})
 	if len(got) != 2 || got[0].Core != -1 || got[0].BankType != machine.UnknownBank || len(got[0].Lines) != 2 || got[1].Core != 6 || got[1].Corrected || len(got[1].Lines) != 2 {
 		t.Fatalf("boundary/unknown CPU: %+v", got)
@@ -254,25 +254,25 @@ func TestJournalBootAndByteArray(t *testing.T) {
 		case "broken":
 			return nil, []byte("permission denied\n"), 2, nil
 		}
-		return []byte(`{"MESSAGE":[91,72,97,114,100,119,97,114,101,32,69,114,114,111,114,93,58,32,67,80,85,58,50,32,40,49,97,58,52,52,58,48,41,32,77,67,48,95,83,84,65,84,85,83,91,79,118,101,114,124,67,69,93,58,32,48,120,100,99,50,48,52,48,48,48,48,48,48,100,48,49,55,53],"__REALTIME_TIMESTAMP":"2000000"}` + "\n"), nil, 0, nil
+		return []byte(`{"MESSAGE":[91,72,97,114,100,119,97,114,101,32,69,114,114,111,114,93,58,32,67,80,85,58,50,32,40,49,97,58,52,52,58,48,41,32,77,67,48,95,83,84,65,84,85,83,91,79,118,101,114,124,67,69,93,58,32,48,120,100,99,50,48,52,48,48,48,48,48,48,100,48,49,55,53],"__REALTIME_TIMESTAMP":"2000000","__MONOTONIC_TIMESTAMP":"2000000"}` + "\n"), nil, 0, nil
 	}
-	mces, err := kernel.MCEs("1234-abcd", time.Unix(1, 0))
-	if err != nil || len(mces) != 1 || mces[0].Core != 1 || mces[0].Time != time.Unix(2, 0) {
+	mces, err := kernel.MCEs("1234-abcd", time.Second)
+	if err != nil || len(mces) != 1 || mces[0].Core != 1 || mces[0].Time != time.Unix(2, 0) || mces[0].Monotonic != 2*time.Second {
 		t.Fatalf("byte-array journal entry: %+v, %v", mces, err)
 	}
-	want := []string{"-k", "-b", "1234abcd", "-o", "json", "--output-fields=MESSAGE,__REALTIME_TIMESTAMP", "--grep", "Hardware Error", "--no-pager", "-q", "--since", "@1"}
+	want := []string{"-k", "-b", "1234abcd", "-o", "json", "--output-fields=MESSAGE,__REALTIME_TIMESTAMP,__MONOTONIC_TIMESTAMP", "--grep", "Hardware Error", "--no-pager", "-q"}
 	if diff := cmp.Diff(want, got[0]); diff != "" {
 		t.Fatalf("journalctl arguments mismatch (-want +got):\n%s", diff)
 	}
-	mces, err = kernel.MCEs("unknown", time.Time{})
+	mces, err = kernel.MCEs("unknown", 0)
 	if err != nil || mces != nil {
 		t.Fatalf("unknown boot: %+v, %v", mces, err)
 	}
-	mces, err = kernel.MCEs("empty", time.Time{})
+	mces, err = kernel.MCEs("empty", 0)
 	if err != nil || mces != nil {
 		t.Fatalf("no matches: %+v, %v", mces, err)
 	}
-	if _, err := kernel.MCEs("broken", time.Time{}); err == nil || err.Error() != "read kernel log of boot broken: exit status 2: permission denied" {
+	if _, err := kernel.MCEs("broken", 0); err == nil || err.Error() != "read kernel log of boot broken: exit status 2: permission denied" {
 		t.Fatalf("journal failure: %v", err)
 	}
 }
