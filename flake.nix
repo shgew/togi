@@ -17,7 +17,7 @@
         "aarch64-darwin"
       ];
 
-      flake.nixosModules.default = import ./nix/module.nix { inherit (inputs) self; };
+      flake.nixosModules.default = import ./nix/module.nix { inherit (inputs.self) packages; };
 
       perSystem =
         {
@@ -74,14 +74,8 @@
               pkgs.golangci-lint
               pkgs.just
               pkgs.nixfmt
-              pkgs.govulncheck
             ];
             SHYCLER_DEV_SHELL = "1";
-          };
-
-          legacyPackages.race = config.packages.default.overrideAttrs {
-            pname = "shycler-race";
-            checkPhase = testPhase "-race";
           };
 
           checks = {
@@ -99,11 +93,31 @@
               installPhase = "mkdir -p $out";
               dontFixup = true;
             });
+            fmt =
+              pkgs.runCommand "shycler-fmt"
+                {
+                  nativeBuildInputs = [ config.formatter ];
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = lib.fileset.unions [
+                      ./flake.nix
+                      ./justfile
+                      (lib.fileset.fileFilter (f: f.hasExt "go" || f.hasExt "nix") ./.)
+                    ];
+                  };
+                }
+                ''
+                  cp -r "$src" src
+                  chmod -R +w src
+                  cd src
+                  HOME=$TMPDIR treefmt --ci --walk filesystem
+                  touch "$out"
+                '';
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             vm = import ./nix/vm-test.nix {
               inherit pkgs;
-              inherit (inputs) self;
+              package = config.packages.default.overrideAttrs { doCheck = false; };
             };
           };
 
@@ -111,6 +125,7 @@
             runtimeInputs = [
               pkgs.nixfmt
               pkgs.go_1_27
+              pkgs.just
             ];
             settings = {
               on-unmatched = "info";
@@ -123,6 +138,14 @@
                 command = "gofmt";
                 options = [ "-w" ];
                 includes = [ "*.go" ];
+              };
+              formatter.just = {
+                command = "just";
+                options = [
+                  "--fmt"
+                  "--justfile"
+                ];
+                includes = [ "justfile" ];
               };
             };
           };

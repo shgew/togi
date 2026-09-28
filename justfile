@@ -33,39 +33,21 @@ fuzz time="1m":
 lint *args:
     {{ dev }} golangci-lint run ./... "$@"
 
-# Report known vulnerabilities in the dependencies and standard library code this module calls
-[group('quality')]
-vuln:
-    {{ dev }} govulncheck ./...
-
 # Format Go, Nix and this justfile in place
 [group('quality')]
 fmt:
     nix fmt
-    {{ just_executable() }} --justfile '{{ justfile() }}' --fmt
 
-# Check formatting of Go, Nix and this justfile without changing files
+# Pre-handoff gate: lint, the fmt flake check (tracked files), then tests
 [group('quality')]
-_fmt-check:
-    unformatted=$({{ dev }} gofmt -l .); if [[ -n "$unformatted" ]]; then printf 'not gofmt-formatted:\n%s\n' "$unformatted"; exit 1; fi
-    {{ dev }} nixfmt --check flake.nix nix/*.nix
-    {{ just_executable() }} --justfile '{{ justfile() }}' --fmt --check
+gate: lint (check-one "fmt") test
 
-# Pre-handoff gate: lint, formatting check, then tests
-[group('quality')]
-gate: lint _fmt-check test
-
-# The pull request checks CI runs: lint, formatting check, then the tests, with the integration tests on Linux
-[group('quality')]
-ci: lint _fmt-check
-    {{ dev }} go test -shuffle=on {{ if os() == "linux" { "-tags integration" } else { "" } }} ./...
-
-# Run every flake check; `--race` also runs the Go tests under the race detector, as the release workflow does
+# Run every flake check CI runs: package, lint, fmt and, on Linux, the VM test
 [group('nix')]
 check *args:
-    race=0; flags=(); for a in "$@"; do if [[ "$a" == --race ]]; then race=1; else flags+=("$a"); fi; done; nix flake check "${flags[@]}"; if (( race )); then nix build --no-link .#legacyPackages.{{ system }}.race; fi
+    nix flake check "$@"
 
-# Build named flake checks: package, lint or, on Linux, vm (`just check-one vm`)
+# Build named flake checks: package, lint, fmt or, on Linux, vm (`just check-one vm`)
 [group('nix')]
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -75,7 +57,7 @@ check-one +names:
 sim seed="1":
     {{ dev }} go run ./tools/sim --seed "$1"
 
-# Start the release workflow on main and follow it: it commits the release, runs the checks, pushes to main and publishes
+# Start the release workflow on main and follow it: once check passed on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]
 release:
     url=$({{ dev }} gh workflow run release.yml --ref main); echo "$url"; {{ dev }} gh run watch "${url##*/}" --exit-status

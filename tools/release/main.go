@@ -20,6 +20,7 @@ import (
 const (
 	remote        = "origin"
 	defaultBranch = "main"
+	checkWorkflow = "check.yml"
 )
 
 var repoPart = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
@@ -108,10 +109,11 @@ func (g github) request(method, path string, body any, result any, allowed ...in
 }
 
 type runner struct {
-	git    gitFunc
-	now    func() time.Time
-	out    io.Writer
-	commit bool
+	git          gitFunc
+	now          func() time.Time
+	out          io.Writer
+	commit       bool
+	requireGreen func(commit string) error
 }
 
 func (r runner) output(args ...string) (string, error) {
@@ -181,6 +183,9 @@ func (r runner) release() error {
 		notes, _ := sectionNamed(updated, next)
 		fmt.Fprintf(r.out, "Would release from %s:\n\n%s\n%s\n", base, message, releaseNotes(updated, notes))
 		return nil
+	}
+	if err := r.requireGreen(baseCommit); err != nil {
+		return fmt.Errorf("require a passing check on %s: %w", base, err)
 	}
 	commit, err := r.commitFiles(baseCommit, message, map[string]string{"version.txt": next + "\n", "CHANGELOG.md": updated})
 	if err != nil {
@@ -288,9 +293,35 @@ func (r runner) publish(api github, repo repository) error {
 	return nil
 }
 
+func requireGreenCheck(api github, repo repository, commit string) error {
+	path := "/repos/" + url.PathEscape(repo.owner) + "/" + url.PathEscape(repo.name) + "/actions/workflows/" + checkWorkflow + "/runs"
+	query := url.Values{"branch": {defaultBranch}, "event": {"push"}, "head_sha": {commit}, "per_page": {"1"}}
+	var result struct {
+		WorkflowRuns []struct {
+			HTMLURL    string `json:"html_url"`
+			Status     string `json:"status"`
+			Conclusion string `json:"conclusion"`
+		} `json:"workflow_runs"`
+	}
+	if _, err := api.request(http.MethodGet, path+"?"+query.Encode(), nil, &result); err != nil {
+		return fmt.Errorf("look up the %s run for %s: %w", checkWorkflow, commit, err)
+	}
+	if len(result.WorkflowRuns) == 0 {
+		return fmt.Errorf("no %s run on %s for %s", checkWorkflow, defaultBranch, commit)
+	}
+	run := result.WorkflowRuns[0]
+	if run.Status != "completed" {
+		return fmt.Errorf("check run %s for %s is %s; run just release again once it passes", run.HTMLURL, commit, run.Status)
+	}
+	if run.Conclusion != "success" {
+		return fmt.Errorf("check run %s for %s concluded %s", run.HTMLURL, commit, run.Conclusion)
+	}
+	return nil
+}
+
 func main() {
 	var commit, publish bool
-	flag.BoolVar(&commit, "commit", false, "commit the next release on top of origin/main and check it out (release workflow)")
+	flag.BoolVar(&commit, "commit", false, "commit the next release on top of origin/main and check it out, once the check workflow passed on origin/main (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
 	flag.BoolVar(&publish, "publish", false, "publish the release version.txt names at HEAD, if not yet published (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Usage: release [-commit | -publish]\n\nWithout flags, prints the release the release workflow would make from origin/main.")
@@ -302,28 +333,37 @@ func main() {
 		os.Exit(2)
 	}
 	r := runner{git: runGit, now: time.Now, out: os.Stdout, commit: commit}
-	var err error
-	if publish {
-		err = runPublish(r)
-	} else {
-		err = r.release()
-	}
-	if err != nil {
+	if err := run(r, publish); err != nil {
 		fmt.Fprintln(os.Stderr, "release:", err)
 		os.Exit(1)
 	}
 }
 
-func runPublish(r runner) error {
+func run(r runner, publish bool) error {
+	if !r.commit && !publish {
+		return r.release()
+	}
+	api, repo, err := githubFromEnv()
+	if err != nil {
+		return err
+	}
+	if publish {
+		return r.publish(api, repo)
+	}
+	r.requireGreen = func(commit string) error { return requireGreenCheck(api, repo, commit) }
+	return r.release()
+}
+
+func githubFromEnv() (github, repository, error) {
 	env := map[string]string{}
 	for _, key := range []string{"GITHUB_API_URL", "GITHUB_REPOSITORY", "GITHUB_TOKEN"} {
 		if env[key] = os.Getenv(key); env[key] == "" {
-			return fmt.Errorf("%s is unset", key)
+			return github{}, repository{}, fmt.Errorf("%s is unset", key)
 		}
 	}
 	repo, err := parseRepository(env["GITHUB_REPOSITORY"])
 	if err != nil {
-		return err
+		return github{}, repository{}, err
 	}
-	return r.publish(github{base: env["GITHUB_API_URL"], token: env["GITHUB_TOKEN"], client: http.DefaultClient}, repo)
+	return github{base: env["GITHUB_API_URL"], token: env["GITHUB_TOKEN"], client: http.DefaultClient}, repo, nil
 }

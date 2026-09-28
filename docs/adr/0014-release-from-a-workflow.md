@@ -1,3 +1,5 @@
+Checks at release superseded by [ADR 0016](0016-every-pull-request-runs-every-check.md); the release commit, push and publish remain.
+
 # Releases are made by a workflow started by hand
 
 The repository moved from Forgejo to GitHub. [ADR 0012](0012-release-by-push.md) opened the release pull request by pushing to Forgejo's `refs/for/main`, and GitHub has no push that opens a pull request. On GitHub, a pull request opened by a workflow with the automatic token gets no `check` run, and opening one from the owner's machine needs a client and its login.

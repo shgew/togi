@@ -8,11 +8,50 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  check:
+  eval:
     runs-on: ubuntu-latest
+    outputs:
+      checks: ${{ steps.list.outputs.checks }}
     steps:
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
-      - name: just ci
-        run: nix develop --command just ci
+      - name: nix flake check --no-build
+        run: nix flake check --no-build
+      - id: list
+        name: List the checks
+        run: echo "checks=$(nix eval --json .#checks.x86_64-linux --apply builtins.attrNames)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: eval
+    name: ${{ matrix.check }}
+    strategy:
+      fail-fast: false
+      matrix:
+        check: ${{ fromJSON(needs.eval.outputs.checks) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Give build users KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            system-features = nixos-test benchmark big-parallel kvm
+      - name: nix build .#checks.x86_64-linux.${{ matrix.check }}
+        run: nix build --no-link --print-build-logs .#checks.x86_64-linux.${{ matrix.check }}
+
+  check:
+    if: always()
+    needs: [eval, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every check passed
+        run: test "${{ needs.eval.result }}" = success && test "${{ needs.build.result }}" = success

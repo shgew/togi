@@ -1,11 +1,14 @@
-{ pkgs, self }:
+{ pkgs, package }:
+let
+  module = import ./module.nix { packages.${pkgs.stdenv.hostPlatform.system}.default = package; };
+in
 pkgs.testers.runNixOSTest {
   name = "shycler-tuning-boot";
 
   nodes.machine =
     { pkgs, ... }:
     {
-      imports = [ self.nixosModules.default ];
+      imports = [ module ];
       virtualisation.useBootLoader = true;
       boot.loader.grub.enable = true;
       boot.loader.timeout = 1;

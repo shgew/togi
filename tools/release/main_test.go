@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +23,8 @@ type fakeGit struct {
 	failures  map[string]error
 	stderr    map[string]string
 	calls     []gitCmd
+	checked   []string
+	checkErr  error
 }
 
 func (f *fakeGit) run(c gitCmd) (string, string, error) {
@@ -72,6 +75,10 @@ func releaseRunner(git *fakeGit, out *bytes.Buffer, commit bool) runner {
 		now:    func() time.Time { return time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC) },
 		out:    out,
 		commit: commit,
+		requireGreen: func(commit string) error {
+			git.checked = append(git.checked, commit)
+			return git.checkErr
+		},
 	}
 }
 
@@ -136,7 +143,24 @@ func TestRelease(t *testing.T) {
 			if got, want := out.String(), "Release "+tc.next+" committed as commit on top of origin/main\n"; got != want {
 				t.Fatalf("output = %q", got)
 			}
+			if diff := cmp.Diff([]string{"base"}, git.checked); diff != "" {
+				t.Fatalf("green check mismatch (-want +got):\n%s", diff)
+			}
 		})
+	}
+}
+
+func TestReleaseRefusesWithoutGreenCheck(t *testing.T) {
+	t.Parallel()
+	git := mainGit("0.1.0", unreleased, "sha\trefs/tags/v0.1.0\n")
+	git.checkErr = errors.New("check run u for base concluded failure")
+	var out bytes.Buffer
+	err := releaseRunner(git, &out, true).release()
+	if got, want := fmt.Sprint(err), "require a passing check on origin/main: check run u for base concluded failure"; got != want {
+		t.Fatalf("release error = %q, want %q", got, want)
+	}
+	if diff := cmp.Diff(append(append([]string{}, readMain...), "ls-remote --tags origin refs/tags/v*"), git.commands()); diff != "" {
+		t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -182,6 +206,9 @@ func TestReleaseResumesUnpublished(t *testing.T) {
 	if got, want := out.String(), "0.1.0 is released in CHANGELOG.md but not yet published; publishing origin/main as it is\n"; got != want {
 		t.Fatalf("output = %q", got)
 	}
+	if git.checked != nil {
+		t.Fatalf("resume required a green check for %v", git.checked)
+	}
 }
 
 func TestReleasePreview(t *testing.T) {
@@ -197,6 +224,40 @@ func TestReleasePreview(t *testing.T) {
 	want := "Would release from origin/main:\n\nRelease 0.1.1\n\nNo breaking changes (patch bump).\n\n### Fixed\n\n- A fix ([#35]).\n\n[#35]: https://forge.example/o/r/pulls/35\n"
 	if diff := cmp.Diff(want, out.String()); diff != "" {
 		t.Fatalf("output mismatch (-want +got):\n%s", diff)
+	}
+	if git.checked != nil {
+		t.Fatalf("preview required a green check for %v", git.checked)
+	}
+}
+
+func TestRequireGreenCheck(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, runs, err string
+	}{
+		{name: "success", runs: `[{"html_url":"u","status":"completed","conclusion":"success"}]`},
+		{name: "in progress", runs: `[{"html_url":"u","status":"in_progress","conclusion":null}]`, err: "check run u for base is in_progress; run just release again once it passes"},
+		{name: "failure", runs: `[{"html_url":"u","status":"completed","conclusion":"failure"}]`, err: "check run u for base concluded failure"},
+		{name: "cancelled", runs: `[{"html_url":"u","status":"completed","conclusion":"cancelled"}]`, err: "check run u for base concluded cancelled"},
+		{name: "no run", runs: `[]`, err: "no check.yml run on main for base"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var requests []string
+			handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				requests = append(requests, req.Method+" "+req.URL.RequestURI())
+				fmt.Fprint(w, `{"total_count":1,"workflow_runs":`+tc.runs+`}`)
+			})
+			api := github{base: "https://api.forge.example", token: "test-token", client: &http.Client{Transport: handlerTransport{handler}}}
+			err := requireGreenCheck(api, repository{"o", "r"}, "base")
+			if got := fmt.Sprint(err); tc.err != "" && got != tc.err || tc.err == "" && err != nil {
+				t.Fatalf("requireGreenCheck error = %v, want %q", err, tc.err)
+			}
+			want := []string{"GET /repos/o/r/actions/workflows/check.yml/runs?branch=main&event=push&head_sha=base&per_page=1"}
+			if diff := cmp.Diff(want, requests); diff != "" {
+				t.Fatalf("requests mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
