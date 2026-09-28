@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -21,17 +22,27 @@ type Config struct {
 	StartOffsets   map[int]int `json:"start_offsets"`
 	CandidateEdges map[int]int `json:"candidate_edges"`
 	Durations      Durations   `json:"durations"`
+	Evidence       Evidence    `json:"evidence"`
 	Guard          Guard       `json:"guard"`
 	DeadEnds       DeadEnds    `json:"dead_ends"`
 	Backends       Backends    `json:"backends"`
 }
 
 type Durations struct {
-	SearchTrialS       int `toml:"search_trial_s" json:"search_trial_s"`
-	ConfirmationTrialS int `toml:"confirmation_trial_s" json:"confirmation_trial_s"`
-	GuardTrialS        int `toml:"guard_trial_s" json:"guard_trial_s"`
-	GuardIdleS         int `toml:"guard_idle_s" json:"guard_idle_s"`
-	GuardAllCoreS      int `toml:"guard_all_core_s" json:"guard_all_core_s"`
+	SearchTrialS  int `toml:"search_trial_s" json:"search_trial_s"`
+	StartS        int `toml:"start_s" json:"start_s"`
+	GuardTrialS   int `toml:"guard_trial_s" json:"guard_trial_s"`
+	GuardIdleS    int `toml:"guard_idle_s" json:"guard_idle_s"`
+	GuardAllCoreS int `toml:"guard_all_core_s" json:"guard_all_core_s"`
+}
+
+type Evidence struct {
+	Miss float64 `toml:"miss" json:"miss"`
+	Rate float64 `toml:"rate" json:"rate"`
+}
+
+func (e Evidence) Starts() int {
+	return int(math.Ceil(math.Log(e.Miss) / math.Log1p(-e.Rate)))
 }
 
 type Guard struct {
@@ -53,14 +64,15 @@ func Default() Config {
 		StartOffsets:   map[int]int{},
 		CandidateEdges: map[int]int{},
 		Durations: Durations{
-			SearchTrialS:       90,
-			ConfirmationTrialS: 300,
-			GuardTrialS:        120,
-			GuardIdleS:         900,
-			GuardAllCoreS:      1200,
+			SearchTrialS:  90,
+			StartS:        120,
+			GuardTrialS:   120,
+			GuardIdleS:    900,
+			GuardAllCoreS: 1200,
 		},
+		Evidence: Evidence{Miss: 0.05, Rate: 0.5},
 		Guard: Guard{
-			Rotation: []machine.Regime{machine.R2, machine.R7, machine.R6, machine.R5, machine.R1, machine.R3, machine.R4, machine.R6},
+			Rotation: []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R4, machine.R6},
 		},
 		DeadEnds: DeadEnds{
 			InconclusiveInARow: 3,
@@ -73,6 +85,7 @@ type file struct {
 	StartOffsets   map[string]int `toml:"start_offsets"`
 	CandidateEdges map[string]int `toml:"candidate_edges"`
 	Durations      *Durations     `toml:"durations"`
+	Evidence       *Evidence      `toml:"evidence"`
 	Guard          *Guard         `toml:"guard"`
 	DeadEnds       *DeadEnds      `toml:"dead_ends"`
 	Backends       *Backends      `toml:"backends"`
@@ -88,10 +101,13 @@ func Load(path string) (Config, error) {
 
 func load(path string) (Config, error) {
 	c := Default()
-	f := file{Durations: &c.Durations, Guard: &c.Guard, DeadEnds: &c.DeadEnds, Backends: &c.Backends}
+	f := file{Durations: &c.Durations, Evidence: &c.Evidence, Guard: &c.Guard, DeadEnds: &c.DeadEnds, Backends: &c.Backends}
 	md, err := toml.DecodeFile(path, &f)
 	if err != nil {
 		return Config{}, err
+	}
+	if md.IsDefined("durations", "confirmation_trial_s") {
+		return Config{}, errors.New("durations.confirmation_trial_s was removed in togi 0.5.0: confirmation no longer exists; delete the key")
 	}
 	if undecoded := md.Undecoded(); len(undecoded) > 0 {
 		keys := make([]string, len(undecoded))
@@ -140,7 +156,7 @@ func validate(c Config) error {
 		value, min int
 	}{
 		{"search_trial_s", c.Durations.SearchTrialS, 1},
-		{"confirmation_trial_s", c.Durations.ConfirmationTrialS, 1},
+		{"start_s", c.Durations.StartS, 1},
 		{"guard_trial_s", c.Durations.GuardTrialS, 1},
 		{"guard_idle_s", c.Durations.GuardIdleS, 1},
 		{"guard_all_core_s", c.Durations.GuardAllCoreS, 4},
@@ -149,6 +165,16 @@ func validate(c Config) error {
 		if d.value < d.min || d.value > 86400 {
 			return fmt.Errorf("durations.%s = %d: must be within [%d, 86400]", d.key, d.value, d.min)
 		}
+	}
+	if math.IsNaN(c.Evidence.Miss) || math.IsInf(c.Evidence.Miss, 0) || c.Evidence.Miss <= 0 || c.Evidence.Miss >= 1 {
+		return fmt.Errorf("evidence.miss = %g: must be within (0, 1)", c.Evidence.Miss)
+	}
+	if math.IsNaN(c.Evidence.Rate) || math.IsInf(c.Evidence.Rate, 0) || c.Evidence.Rate <= 0 || c.Evidence.Rate >= 1 {
+		return fmt.Errorf("evidence.rate = %g: must be within (0, 1)", c.Evidence.Rate)
+	}
+	starts := math.Log(c.Evidence.Miss) / math.Log1p(-c.Evidence.Rate)
+	if math.IsNaN(starts) || math.IsInf(starts, 0) || starts > 1000 {
+		return fmt.Errorf("evidence: miss %g and rate %g need more than 1000 starts per step", c.Evidence.Miss, c.Evidence.Rate)
 	}
 	for _, core := range slices.Sorted(maps.Keys(c.CandidateEdges)) {
 		if _, ok := c.StartOffsets[core]; ok {
