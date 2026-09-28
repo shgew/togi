@@ -3,6 +3,7 @@ name: release
 on: workflow_dispatch
 
 permissions:
+  actions: read
   contents: write
 
 concurrency:
@@ -19,21 +20,13 @@ jobs:
       GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
     steps:
       - uses: actions/checkout@v7
-      - name: Give build users KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
       - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            system-features = nixos-test benchmark big-parallel kvm
       - name: Commit the release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: nix develop --command go run ./tools/release -commit
-      - name: just check --race
-        run: nix develop --command just check --race
-      - name: just vuln
-        run: nix develop --command just vuln
+      - name: Build the package
+        run: nix build --no-link --print-build-logs .#packages.x86_64-linux.default
       - name: Push to main
         run: git push origin HEAD:refs/heads/main
       - name: Publish

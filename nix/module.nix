@@ -1,4 +1,4 @@
-{ self }:
+{ packages }:
 {
   config,
   lib,
@@ -7,7 +7,7 @@
 }:
 let
   cfg = config.services.shycler;
-  package = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+  package = packages.${pkgs.stdenv.hostPlatform.system}.default;
   toml = pkgs.formats.toml { };
   grub = config.boot.loader.grub;
   grubenv = "${(lib.head grub.mirroredBoots).path}/grub/grubenv";

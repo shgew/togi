@@ -143,4 +143,4 @@ If a `run` starts after `deadend` but before `boot.saved_entry`, it completes th
 | `services.shycler.backends.mprime.enable` | Set `settings.backends.mprime` to the nixpkgs `mprime` package (unfree) |
 | `services.shycler.backends.ycruncher.enable` | Set `settings.backends.ycruncher` to the nixpkgs `y-cruncher` package (unfree) |
 
-The flake also exposes `packages.x86_64-linux.default` and a dev shell, and the same for `aarch64-darwin` for development, where the checks are `package` and `lint` without the VM test. The package builds only `cmd/shycler` and runs the tests of every package, so the installed package contains only the `shycler` executable. The release procedure and version bump rules are in [Releasing](../releasing.md).
+The flake also exposes `packages.x86_64-linux.default` and a dev shell, and the same for `aarch64-darwin` for development, where the checks are `package`, `lint`, `fmt` and `race`, without the VM test. The package builds only `cmd/shycler` and runs the tests of every package, so the installed package contains only the `shycler` executable. The release procedure and version bump rules are in [Releasing](../releasing.md).

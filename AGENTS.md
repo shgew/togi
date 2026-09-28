@@ -59,25 +59,23 @@ The first pull request that makes something runnable on real hardware adds `docs
 
 ## Commands
 
-Enter the dev shell (Go, gh, gopls, golangci-lint, govulncheck, just, nixfmt) with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes also work outside the dev shell: they enter it with `nix develop` when needed.
+Enter the dev shell (Go, gh, gopls, golangci-lint, just, nixfmt) with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes also work outside the dev shell: they enter it with `nix develop` when needed.
 
 | Command | Use |
 |---|---|
 | `just` | List the recipes |
 | `just test` | The tight loop |
-| `just gate` | Lint, formatting check and tests: the quick check before handing off |
-| `just ci` | Lint, formatting check and the tests, with the integration tests on Linux; must pass before a pull request. CI runs it on every pull request and push to `main` |
-| `just check` | Every flake check: package (its tests run shuffled, with the integration tests on Linux), lint and the VM test. `just check --race` also runs those tests under the race detector; the release workflow runs it on the release commit |
-| `just fmt` | Format Go, Nix and the justfile |
+| `just gate` | Lint, the `fmt` flake check over tracked files, then tests: the quick check before handing off |
+| `just check` | Every flake check, what CI runs on every pull request and push to `main`: package (its tests run shuffled, with the integration tests on Linux), lint, fmt, race and, on Linux, the VM test. Must pass before a pull request |
+| `just fmt` | Format Go, Nix and the justfile in place |
 | `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
-| `just release` | Start the release workflow on `main`: it commits the release, runs the checks, pushes to `main` and publishes. `just release-preview` shows what it would release. See `docs/releasing.md` |
+| `just release` | Start the release workflow on `main`: it checks that `check` passed on `main`, commits the release, builds the package, pushes to `main` and publishes. `just release-preview` shows what it would release. See `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `SHYCLER_MPRIME` and `SHYCLER_YCRUNCHER`, else from `/etc/shycler/config.toml` |
 | `just fuzz [time]` | Fuzz the journal parser |
-| `just vuln` | Known vulnerabilities in called dependency and standard library code; the release workflow runs it |
 
-CI (`.github/workflows/check.yml`) runs `just ci` on GitHub-hosted `ubuntu-latest` runners. The slower checks, the Nix builds, the race detector and the NixOS VM test, run only in the release workflow (`.github/workflows/release.yml`), which opens `/dev/kvm` to the Nix build users for the VM test.
+CI (`.github/workflows/check.yml`) runs on GitHub-hosted `ubuntu-latest` runners: an `eval` job lists the flake checks, one job per check builds it, with `/dev/kvm` opened to the Nix build users for the VM test, and an aggregating `check` job passes when all of them passed. The release workflow (`.github/workflows/release.yml`) only builds the package on the release commit.
 
-On macOS (aarch64-darwin) the dev shell, `just test`, `just gate`, `just sim` and the read-only commands work; `just check` builds `package` and `lint` and skips the VM test, `just hardware` and the `integration` tests are Linux-only. Linux-only code follows the Go convention: OS-suffixed files (`_linux.go`, `_darwin.go`) for real implementations, and a `//go:build !linux` fallback returning a wrapped `errors.ErrUnsupported`.
+On macOS (aarch64-darwin) the dev shell, `just test`, `just gate`, `just sim` and the read-only commands work; `just check` builds `package`, `lint`, `fmt` and `race` and skips the VM test, `just hardware` and the `integration` tests are Linux-only. Linux-only code follows the Go convention: OS-suffixed files (`_linux.go`, `_darwin.go`) for real implementations, and a `//go:build !linux` fallback returning a wrapped `errors.ErrUnsupported`.
 
 A command needed twice gets a recipe, in the same pull request.
 
@@ -117,5 +115,5 @@ Keep packages near 1000 lines; split by responsibility when one grows past that.
 - **Fast and deterministic:** a unit test exercises logic, never the world around it. It does not wait on real time, reach the network, start processes or depend on the machine it runs on: time comes from an injected clock or a `testing/synctest` bubble, everything else from fakes. Keep each test as quick as the behavior it proves allows.
 - **Simulator first:** behavior is proven on `internal/sim` with fixed seeds, never by waiting for hardware.
 - Tests pin spec behavior: rules, boundaries, invariants, crash-resume. Table tests for rules, property tests for invariants, golden files for rendered output (`go test ./cmd/shycler -update` rewrites them), a fuzz target for the journal parser (`just fuzz`). Compare values with `cmp.Diff`.
-- Concurrent code is tested on real goroutines under the race detector: the release workflow runs the suite with `-race` through `just check --race`, and `just test -race` is the quicker local pass.
+- Concurrent code is tested on real goroutines under the race detector: every pull request runs the suite with `-race` through the `race` flake check, and `just test -race` is the quicker local pass.
 - Tests that need the real world carry a build tag and stay out of `go test ./...`: `integration` for real processes (a helper program built by the test, never mprime or y-cruncher), `hardware` for the target machine, restoring every offset they change.

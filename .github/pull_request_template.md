@@ -5,6 +5,6 @@
 
 <!-- Output captured from a real invocation of the new behavior: a `just sim` session log, a journal excerpt or a command transcript. Write "Nothing runnable" when there is none. -->
 
-Verified: <!-- the commands that ran, such as `nix flake check` -->
+Verified: <!-- the commands that ran, such as `just check` -->
 
 </details>
