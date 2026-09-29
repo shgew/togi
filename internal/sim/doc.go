@@ -16,7 +16,8 @@
 // default model a 90 s trial one count past the edge fails 90% of the time, each further count quadruples the rate,
 // and nothing fails at or shallower than the edge. Flat adds an independent rate at any nonzero offset.
 // OnsetBoost increases the hazard for the first OnsetS seconds, and joints add hazards while all members are deep
-// enough, possibly after a delay. Idle edges can crash a trial through a core outside its loaded set without an MCE.
+// enough, possibly after a delay. Idle edges, and joints with no member in the loaded set, can crash a trial through a
+// core outside its loaded set without an MCE.
 // R3 and R4 follow their load-step schedules only to report SIGSTOP and SIGCONT counts, not to change failure rates.
 //
 // A failing core produces one signal, drawn by the Model.Signals weights:

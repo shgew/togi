@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"slices"
@@ -128,11 +129,15 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 					break
 				}
 			}
-			t := m.failureDraw(rate, joint.AfterS, spec, max(core, 0), fmt.Sprintf("joint-%d", j))
+			idle := core < 0
+			if idle {
+				core = slices.Min(slices.Collect(maps.Keys(joint.Members)))
+			}
+			t := m.failureDraw(rate, joint.AfterS, spec, core, fmt.Sprintf("joint-%d", j))
 			if t < failAt {
-				failCore, failAt, forcedSignal = max(core, 0), t, joint.Signal
-				idleFailure = false
-				if core < 0 || forcedSignal == "" {
+				failCore, failAt, forcedSignal = core, t, joint.Signal
+				idleFailure = idle
+				if idle || forcedSignal == "" {
 					forcedSignal = machine.Crash
 				}
 			}
