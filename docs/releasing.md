@@ -11,4 +11,4 @@ Releasing needs permission to start workflows in the repository ([ADR 0014](adr/
 
 If a run pushed the release commit but failed to publish, run `just release` again: it finds the dated version without a tag and publishes it without a new commit.
 
-Releases carry no binary artifacts. Flake users build from a tag. Dev builds report `x.y.z+rev` (or `x.y.z+rev-dirty` for dirty flakes); `go run` reports `x.y.z+dev`. `togi --version` prints the build version and revision.
+Releases carry no binary artifacts. Flake users build from a tag. Dev builds of `packages.default` report `x.y.z+rev` (or `x.y.z+rev-dirty` for dirty flakes); `go run` and the flake checks report `x.y.z+dev`. `togi --version` prints the build version and revision.
