@@ -25,6 +25,7 @@ that includes it. --all warns if a configured candidate edge reached a failed
 mark in the archived session; missing or invalid configuration does not prevent
 archiving.
 --core refuses a different journal ruleset or schema; --all archives either.
+Both forms refuse unknown event kinds; install the build that wrote them.
 
 Examples:
   sudo togi reset --core 3   Search core 3 again from its baseline
@@ -45,6 +46,12 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "togi reset: exactly one of --core or --all")
 		commandUsage(flags, resetHelp, stderr)
 		return exitUsage
+	}
+	if events, _, readErr := journal.Read(g.stateDir); readErr == nil {
+		if err := journal.KnownKinds(events, session.Build()); err != nil {
+			fmt.Fprintf(stderr, "togi reset: %v\n", err)
+			return exitError
+		}
 	}
 	if all {
 		dropped, dropErr := journal.DropPendingCarry(g.stateDir)

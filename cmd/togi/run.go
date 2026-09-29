@@ -40,7 +40,8 @@ a terminal run offers to reset them. An unanswered too-aggressive defect stops
 an unattended run. It needs root. A journal from an older ruleset or schema is
 archived, and the new session starts each core from the edges and failed marks
 it found. A newer one stops the run before another event is written; reset --all
-archives that session. Journal lines are colored on terminals and in the system
+archives that session. Unknown event kinds stop both run and reset; install the
+build that wrote them. Journal lines are colored on terminals and in the system
 journal unless NO_COLOR is set.
 
 When stdin and stderr are terminals, run shows the session as the watch
@@ -89,6 +90,14 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	} else if !errors.Is(scanErr, fs.ErrNotExist) {
 		fmt.Fprintf(stderr, "togi run: %v\n", scanErr)
 		return exitError
+	}
+	if events, _, readErr := journal.Read(g.stateDir); readErr == nil {
+		if err := journal.KnownKinds(events, session.Build()); err != nil {
+			if grubenv != "" {
+				return runResult(session.Stop{}, err, stderr, renderer, hardware.GRUB{Env: grubenv})
+			}
+			return runResult(session.Stop{}, err, stderr, renderer)
+		}
 	}
 	cfg, file, err := loadConfig(g)
 	if err != nil {
@@ -188,8 +197,10 @@ func printCleanStop(events []journal.Event, stderr io.Writer, renderer journal.R
 }
 
 func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.Renderer, bootloader ...session.Bootloader) int {
-	if incompatible, ok := errors.AsType[*journal.IncompatibleError](err); ok {
-		fmt.Fprintln(stderr, renderer.Styled(journal.RedBold, "togi run: "+incompatible.Error()))
+	_, incompatible := errors.AsType[*journal.IncompatibleError](err)
+	_, unknown := errors.AsType[*journal.UnknownKindError](err)
+	if incompatible || unknown {
+		fmt.Fprintln(stderr, renderer.Styled(journal.RedBold, "togi run: "+err.Error()))
 		if len(bootloader) > 0 && bootloader[0] != nil {
 			before, after, clearErr := bootloader[0].ClearSavedEntry()
 			if clearErr != nil {

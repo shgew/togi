@@ -52,6 +52,28 @@ type IncompatibleError struct {
 	Binary  Build
 }
 
+type UnknownKindError struct {
+	Kind    Kind
+	Journal Build
+	Binary  Build
+}
+
+func (e *UnknownKindError) Error() string {
+	return fmt.Sprintf("unknown kind %q in journal written by %s (schema %d, ruleset %d); this build, %s (schema %d, ruleset %d), cannot safely modify it; install the build that wrote it", e.Kind, e.Journal.name(), e.Journal.Schema, e.Journal.Ruleset, e.Binary.name(), e.Binary.Schema, e.Binary.Ruleset)
+}
+
+func KnownKinds(events []Event, binary Build) error {
+	for _, e := range events {
+		if _, ok := payloadConstructors[e.Kind]; !ok {
+			if binary.Schema == 0 {
+				binary = binarySchemaBuild()
+			}
+			return &UnknownKindError{Kind: e.Kind, Journal: BuildOf(events), Binary: binary}
+		}
+	}
+	return nil
+}
+
 func (e *IncompatibleError) Error() string {
 	written := fmt.Sprintf("this journal was written by %s (schema %d, ruleset %d)", e.Journal.name(), e.Journal.Schema, e.Journal.Ruleset)
 	advice := "Install the " + e.Journal.product() + " build that wrote it to continue this session"

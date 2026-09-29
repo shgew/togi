@@ -166,103 +166,60 @@ func decode(line []byte) (Event, error) {
 	}, nil
 }
 
+var payloadConstructors = map[Kind]func() Payload{
+	KindSessionStart:    func() Payload { return &SessionStart{} },
+	KindSessionContext:  func() Payload { return &SessionContext{} },
+	KindSessionBaseline: func() Payload { return &SessionBaseline{} },
+	KindSessionNotice:   func() Payload { return &SessionNotice{} },
+	KindSessionArchived: func() Payload { return &SessionArchived{} },
+	KindSessionCarried:  func() Payload { return &SessionCarried{} },
+	KindConfigLoaded:    func() Payload { return &ConfigLoaded{} },
+	KindPreflightCheck:  func() Payload { return &PreflightCheck{} },
+	KindSMUIntent:       func() Payload { return &SMUIntent{} },
+	KindSMUWrite:        func() Payload { return &SMUWrite{} },
+	KindSMUReadback:     func() Payload { return &SMUReadback{} },
+	KindSMUError:        func() Payload { return &SMUError{} },
+	KindProfileApplied:  func() Payload { return &ProfileApplied{} },
+	KindProfileChange:   func() Payload { return &ProfileChange{} },
+	KindProfileRestored: func() Payload { return &ProfileRestored{} },
+	KindTrialIntent:     func() Payload { return &TrialIntent{} },
+	KindTrialStart:      func() Payload { return &TrialStart{} },
+	KindTrialProgress:   func() Payload { return &TrialProgress{} },
+	KindTrialSignal:     func() Payload { return &TrialSignal{} },
+	KindTrialSample:     func() Payload { return &TrialSample{} },
+	KindTrialEnd:        func() Payload { return &TrialEnd{} },
+	KindFailure:         func() Payload { return &Failure{} },
+	KindMCE:             func() Payload { return &MCE{} },
+	KindCrashDetected:   func() Payload { return &CrashDetected{} },
+	KindTunerDecision:   func() Payload { return &TunerDecision{} },
+	KindCorePhase:       func() Payload { return &CorePhase{} },
+	KindGuardRotation:   func() Payload { return &GuardRotation{} },
+	KindHostRanking:     func() Payload { return &HostRanking{} },
+	KindHuntStart:       func() Payload { return &HuntStart{} },
+	KindHuntMask:        func() Payload { return &HuntMask{} },
+	KindHuntEnd:         func() Payload { return &HuntEnd{} },
+	KindHuntSkipped:     func() Payload { return &HuntSkipped{} },
+	KindMarkJoint:       func() Payload { return &MarkJoint{} },
+	KindRefineRound:     func() Payload { return &RefineRound{} },
+	KindTunerWarning:    func() Payload { return &TunerWarning{} },
+	KindBackendRetry:    func() Payload { return &BackendRetry{} },
+	KindTierChange:      func() Payload { return &TierChange{} },
+	KindCommandReset:    func() Payload { return &CommandReset{} },
+	KindDefectFound:     func() Payload { return &DefectFound{} },
+	KindDefectAnswered:  func() Payload { return &DefectAnswered{} },
+	KindDeadEnd:         func() Payload { return &DeadEnd{} },
+	KindBootSavedEntry:  func() Payload { return &BootSavedEntry{} },
+	KindShutdown:        func() Payload { return &Shutdown{} },
+	KindJournalTorn:     func() Payload { return &JournalTorn{} },
+	KindStateRebuilt:    func() Payload { return &StateRebuilt{} },
+}
+
 func decodePayload(kind Kind, raw []byte) (Payload, error) {
-	var p Payload
-	switch kind {
-	case KindSessionStart:
-		p = &SessionStart{}
-	case KindSessionContext:
-		p = &SessionContext{}
-	case KindSessionBaseline:
-		p = &SessionBaseline{}
-	case KindSessionNotice:
-		p = &SessionNotice{}
-	case KindSessionArchived:
-		p = &SessionArchived{}
-	case KindSessionCarried:
-		p = &SessionCarried{}
-	case KindConfigLoaded:
-		p = &ConfigLoaded{}
-	case KindPreflightCheck:
-		p = &PreflightCheck{}
-	case KindSMUIntent:
-		p = &SMUIntent{}
-	case KindSMUWrite:
-		p = &SMUWrite{}
-	case KindSMUReadback:
-		p = &SMUReadback{}
-	case KindSMUError:
-		p = &SMUError{}
-	case KindProfileApplied:
-		p = &ProfileApplied{}
-	case KindProfileChange:
-		p = &ProfileChange{}
-	case KindProfileRestored:
-		p = &ProfileRestored{}
-	case KindTrialIntent:
-		p = &TrialIntent{}
-	case KindTrialStart:
-		p = &TrialStart{}
-	case KindTrialProgress:
-		p = &TrialProgress{}
-	case KindTrialSignal:
-		p = &TrialSignal{}
-	case KindTrialSample:
-		p = &TrialSample{}
-	case KindTrialEnd:
-		p = &TrialEnd{}
-	case KindFailure:
-		p = &Failure{}
-	case KindMCE:
-		p = &MCE{}
-	case KindCrashDetected:
-		p = &CrashDetected{}
-	case KindTunerDecision:
-		p = &TunerDecision{}
-	case KindCorePhase:
-		p = &CorePhase{}
-	case KindGuardRotation:
-		p = &GuardRotation{}
-	case KindHostRanking:
-		p = &HostRanking{}
-	case KindHuntStart:
-		p = &HuntStart{}
-	case KindHuntMask:
-		p = &HuntMask{}
-	case KindHuntEnd:
-		p = &HuntEnd{}
-	case KindHuntSkipped:
-		p = &HuntSkipped{}
-	case KindMarkJoint:
-		p = &MarkJoint{}
-	case KindRefineRound:
-		p = &RefineRound{}
-	case KindTunerWarning:
-		p = &TunerWarning{}
-	case KindBackendRetry:
-		p = &BackendRetry{}
-	case KindTierChange:
-		p = &TierChange{}
-	case KindCommandReset:
-		p = &CommandReset{}
-	case KindDefectFound:
-		p = &DefectFound{}
-	case KindDefectAnswered:
-		p = &DefectAnswered{}
-	case KindDeadEnd:
-		p = &DeadEnd{}
-	case KindBootSavedEntry:
-		p = &BootSavedEntry{}
-	case KindShutdown:
-		p = &Shutdown{}
-	case KindJournalTorn:
-		p = &JournalTorn{}
-	case KindStateRebuilt:
-		p = &StateRebuilt{}
+	constructor, ok := payloadConstructors[kind]
+	if !ok {
+		return nil, nil
 	}
-	if p == nil {
-		return nil, fmt.Errorf("unknown kind %q", kind)
-	}
+	p := constructor()
 	if err := json.Unmarshal(raw, p); err != nil {
 		return nil, fmt.Errorf("decode %s: %w", kind, err)
 	}

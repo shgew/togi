@@ -6,6 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/session"
 )
 
 func incompatibleFixture(t *testing.T, field string) (string, []byte) {
@@ -258,5 +262,68 @@ func TestResetAllCompletesRecordedOldSchemaArchive(t *testing.T) {
 	archived, err := os.ReadFile(filepath.Join(dir, "archive", id+".jsonl"))
 	if err != nil || !bytes.Equal(archived, data) {
 		t.Fatalf("recorded archive changed: %v", err)
+	}
+}
+
+func TestCommandsWithFutureKind(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/events.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	future, err := os.ReadFile("testdata/future-kind.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := append(bytes.Clone(fixture), future...)
+	for _, tc := range []struct {
+		args []string
+		code int
+	}{
+		{[]string{"status"}, exitOK},
+		{[]string{"cert"}, exitOK},
+		{[]string{"events"}, exitOK},
+		{[]string{"events", "--json"}, exitOK},
+		{[]string{"watch", "--width", "120", "--height", "33"}, exitOK},
+		{[]string{"run"}, exitIncompatible},
+		{[]string{"reset", "--core", "3"}, exitError},
+		{[]string{"reset", "--all"}, exitError},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "events.jsonl")
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			code := cli(append([]string{"--state-dir", dir}, tc.args...), &stdout, &stderr)
+			if diff := cmp.Diff(tc.code, code); diff != "" {
+				t.Fatalf("exit (-want +got): %s; stderr %s", diff, stderr.String())
+			}
+			if tc.code != exitOK {
+				events, _, err := journal.Read(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := (&journal.UnknownKindError{Kind: "future.fact", Journal: journal.BuildOf(events), Binary: session.Build()}).Error()
+				if !strings.Contains(stderr.String(), want) {
+					t.Fatalf("missing refusal: %s", stderr.String())
+				}
+			} else if tc.args[0] == "events" {
+				want := "future fact remains visible"
+				if len(tc.args) > 1 {
+					want = string(future)
+				}
+				if !strings.Contains(stdout.String(), want) {
+					t.Fatalf("missing future event: %s", stdout.String())
+				}
+			}
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(data, after); diff != "" {
+				t.Fatalf("journal changed (-want +got): %s", diff)
+			}
+		})
 	}
 }
