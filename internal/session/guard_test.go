@@ -9,6 +9,66 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
+func TestIdleCrashInGuard(t *testing.T) {
+	t.Parallel()
+	_, ref := reference(t, small())
+	applied := slices.IndexFunc(ref, func(e journal.Event) bool {
+		p, ok := e.Data.(*journal.ProfileApplied)
+		return ok && p.Condition == machine.Resident
+	})
+	if applied < 0 {
+		t.Fatal("reference run never applied a resident profile")
+	}
+	firstWrite := -1
+	for i := applied - 1; i >= 0; i-- {
+		if p, ok := ref[i].Data.(*journal.SMUIntent); ok && p.Core != nil && p.Offset != 0 {
+			firstWrite = i
+			break
+		}
+	}
+	if firstWrite < 0 {
+		t.Fatal("no nonzero write before resident profile")
+	}
+	for _, tc := range []struct {
+		name string
+		at   journal.Event
+	}{
+		{"after profile applied", ref[applied]},
+		{"partway through application", ref[firstWrite]},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			in := simInput(t.TempDir(), newSim(t, small()))
+			stop := drive(t, in, crashAt(tc.at.Seq, in.Machine))
+			if stop.Reason != StopRotations {
+				t.Fatalf("stopped with %+v", stop)
+			}
+			events := readEvents(t, in.Dir)
+			crash, ok := crashDetectedFor(events, tc.at.Boot)
+			if !ok {
+				t.Fatal("no crash.detected")
+			}
+			failure := failureCiting(events, crash.Seq)
+			if failure == nil || failure.Signal != machine.Crash || failure.Regime != machine.R6 || failure.Condition != machine.Resident {
+				t.Fatalf("idle crash failure: %+v", failure)
+			}
+			failureSeq := 0
+			for _, e := range events {
+				if e.Kind == journal.KindFailure && slices.Contains(e.Cause, crash.Seq) {
+					failureSeq = e.Seq
+					break
+				}
+			}
+			if !slices.ContainsFunc(events, func(e journal.Event) bool {
+				p, ok := e.Data.(*journal.HuntStart)
+				return ok && p.Regime == machine.R6 && p.Trial == "" && p.Failure == failureSeq
+			}) {
+				t.Fatalf("idle crash failure #%d did not queue an R6 hunt", failureSeq)
+			}
+		})
+	}
+}
+
 func TestResumeContinuesBoots(t *testing.T) {
 	t.Parallel()
 	dir, first := reference(t, small())
