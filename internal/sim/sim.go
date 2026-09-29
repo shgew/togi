@@ -190,8 +190,15 @@ func New(cfg Config) (*Machine, error) {
 		}
 	}
 	for _, trial := range slices.Sorted(maps.Keys(cfg.Script)) {
-		if core := cfg.Script[trial].Core; core < 0 || core >= cfg.Cores {
-			return nil, fmt.Errorf("new simulator: script trial %s core %d outside [0, %d)", trial, core, cfg.Cores)
+		s := cfg.Script[trial]
+		if s.Core < 0 || s.Core >= cfg.Cores {
+			return nil, fmt.Errorf("new simulator: script trial %s core %d outside [0, %d)", trial, s.Core, cfg.Cores)
+		}
+		if s.Signal != "" && !slices.Contains(signalOrder, s.Signal) {
+			return nil, fmt.Errorf("new simulator: script trial %s signal %q is not supported", trial, s.Signal)
+		}
+		if s.Reset != "" && !slices.Contains(resetOrder, s.Reset) {
+			return nil, fmt.Errorf("new simulator: script trial %s reset %q is not supported", trial, s.Reset)
 		}
 	}
 	m := &Machine{
@@ -233,12 +240,26 @@ func New(cfg Config) (*Machine, error) {
 				return nil, fmt.Errorf("new simulator: workload %s edge %d of core %d outside [-50, 1]", workload, offset, c)
 			}
 		}
+		if e.Flat < 0 {
+			return nil, fmt.Errorf("new simulator: flat rate %g of core %d is negative", e.Flat, c)
+		}
 	}
 	for _, joint := range cfg.Joints {
 		for c, offset := range joint.Members {
 			if c < 0 || c >= cfg.Cores || offset < machine.MinOffset || offset > machine.MaxOffset {
 				return nil, fmt.Errorf("new simulator: joint member core %d offset %d invalid", c, offset)
 			}
+		}
+		for _, r := range joint.Regimes {
+			if !slices.Contains(machine.Regimes, r) {
+				return nil, fmt.Errorf("new simulator: joint regime %q is not supported", r)
+			}
+		}
+		if joint.Signal != "" && !slices.Contains(signalOrder, joint.Signal) {
+			return nil, fmt.Errorf("new simulator: joint signal %q is not supported", joint.Signal)
+		}
+		if joint.Rate < 0 || joint.AfterS < 0 {
+			return nil, fmt.Errorf("new simulator: joint rate %g or delay %g is negative", joint.Rate, joint.AfterS)
 		}
 	}
 	m.startBoot()

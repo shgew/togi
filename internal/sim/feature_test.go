@@ -88,6 +88,20 @@ func TestModelHazards(t *testing.T) {
 			t.Fatalf("default joint signal: %v", err)
 		}
 	})
+	t.Run("unloaded joint crashes as an idle member", func(t *testing.T) {
+		model := sharp(machine.ComputationError)
+		model.CrashMCE = 1
+		m := newMachine(t, Config{Cores: 4, BIOS: []int{0, -20, -20, 0}, Edges: flat(4, -30, -30), Model: model, Joints: []Joint{{Members: map[int]int{1: -20, 2: -20}, Rate: 1e6}}})
+		if _, err := runSpec(t, m, "0001", machine.R1, work, []int{0}, time.Second, nil); !errors.Is(err, machine.ErrCrashed) {
+			t.Fatalf("unloaded joint: %v", err)
+		}
+		m.Reboot()
+		boot, _ := m.Seams().Host.BootID()
+		mces, err := m.Seams().Kernel.MCEs(boot, 0)
+		if err != nil || len(mces) != 0 {
+			t.Fatalf("unloaded joint named cores through MCEs %+v %v", mces, err)
+		}
+	})
 	t.Run("idle and flat", func(t *testing.T) {
 		idle := -10
 		edges := flat(2, -30, -30)
@@ -427,6 +441,31 @@ func TestNewRejectsInvalidModelWeights(t *testing.T) {
 			}
 			_, err := New(Config{Cores: 2, Model: &model})
 			if err == nil || err.Error() != tc.want {
+				t.Fatalf("got %v, want %s", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestNewRejectsInvalidHazardsAndSignals(t *testing.T) {
+	t.Parallel()
+	negative := flat(2, -10, -10)
+	negative[1].Flat = -1
+	for _, tc := range []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{"negative flat", Config{Cores: 2, Edges: negative}, "new simulator: flat rate -1 of core 1 is negative"},
+		{"script signal", Config{Cores: 2, Script: map[string]Outcome{"0001": {Signal: "crsh"}}}, `new simulator: script trial 0001 signal "crsh" is not supported`},
+		{"script reset", Config{Cores: 2, Script: map[string]Outcome{"0001": {Reset: "brownout"}}}, `new simulator: script trial 0001 reset "brownout" is not supported`},
+		{"joint regime", Config{Cores: 2, Joints: []Joint{{Members: map[int]int{0: -5}, Regimes: []machine.Regime{"R9"}}}}, `new simulator: joint regime "R9" is not supported`},
+		{"joint signal", Config{Cores: 2, Joints: []Joint{{Members: map[int]int{0: -5}, Signal: "crsh"}}}, `new simulator: joint signal "crsh" is not supported`},
+		{"joint rate", Config{Cores: 2, Joints: []Joint{{Members: map[int]int{0: -5}, Rate: -1}}}, "new simulator: joint rate -1 or delay 0 is negative"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := New(tc.cfg); err == nil || err.Error() != tc.want {
 				t.Fatalf("got %v, want %s", err, tc.want)
 			}
 		})
