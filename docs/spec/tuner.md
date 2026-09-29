@@ -189,7 +189,7 @@ Each regime and workload with clean hours `T` since the tier clock shows its fai
 
 `togi status` and `togi cert` render from a replay of the journal (`runtime.md`). The certificate shows:
 - the tier with its `tier.change`, and progress towards the higher tiers;
-- the profile with its `profile.change`, as a per-core table of edges, failed marks, joint marks, done status and the deciding event, followed by any core decided after that `profile.change`;
+- the profile with its `profile.change`, as a per-core table of `OFFSET` values, recorded CCDs, physical slots (core number modulo 8), failed marks, joint marks, done status and the deciding event, followed by any core decided after that `profile.change`; the offsets are the resident profile values when guard exists, otherwise the current core values, and may differ from the checked isolated edges;
 - clean hours and failure-rate bounds by regime and workload, with valid start counts and the highest Tctl among counted trials with its `trial.end`;
 - the BIOS context and session start;
 - the SHA-256 of the journal's complete lines it rendered, and the last `seq` among them.
