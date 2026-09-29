@@ -2,6 +2,7 @@ package hardware
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -41,7 +42,7 @@ func TestRanking(t *testing.T) {
 func TestClockCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := (clock{}).Sleep(ctx, time.Hour); err != context.Canceled {
+	if err := (clock{}).Sleep(ctx, time.Hour); !errors.Is(err, context.Canceled) {
 		t.Fatalf("sleep cancellation = %v, want %v", err, context.Canceled)
 	}
 	if (clock{}).Monotonic() <= 0 {

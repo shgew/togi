@@ -149,6 +149,7 @@ func (t tile) word() string {
 		return "DONE"
 	case journal.PhaseResident:
 		return "resident"
+	case journal.PhaseSearch, journal.PhaseGuard, journal.PhaseHunt, journal.PhaseRefine:
 	}
 	return "searching"
 }

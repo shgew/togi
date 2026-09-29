@@ -43,6 +43,7 @@ func ClassifyCrash(f CrashFacts) CrashKind {
 		if f.Reason.Supported && f.Confirmed {
 			return CrashInconclusive
 		}
+	case machine.ResetWatchdog, machine.ResetSyncFlood, machine.ResetCPUShutdown, machine.ResetPowerLoss, machine.ResetUnknown:
 	}
 	return ordinary()
 }

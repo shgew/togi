@@ -140,6 +140,7 @@ func Project(events []journal.Event) Snapshot {
 			if c.Pass != nil {
 				tl.number, tl.hasNumber = *c.Pass, true
 			}
+		case journal.PhaseGuard, journal.PhaseHunt, journal.PhaseRefine:
 		}
 		s.tiles = append(s.tiles, tl)
 	}

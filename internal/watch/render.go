@@ -39,6 +39,7 @@ func phaseColor(p journal.Phase) lipgloss.Style {
 		return plain.Foreground(colDone)
 	case journal.PhaseResident:
 		return plain.Foreground(colJoint)
+	case journal.PhaseSearch, journal.PhaseGuard, journal.PhaseHunt, journal.PhaseRefine:
 	}
 	return searchStyle
 }

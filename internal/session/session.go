@@ -815,13 +815,14 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 				ranking[i] = c.Core
 			}
 			detail := ""
-			if err != nil {
+			switch {
+			case err != nil:
 				detail = err.Error()
-			} else if len(values) != len(r.cores) {
+			case len(values) != len(r.cores):
 				detail = fmt.Sprintf("ranking has %d values for %d cores", len(values), len(r.cores))
-			} else if len(values) > 0 && slices.Min(values) == slices.Max(values) {
+			case len(values) > 0 && slices.Min(values) == slices.Max(values):
 				detail = fmt.Sprintf("every core ranks %d", values[0])
-			} else {
+			default:
 				slices.SortFunc(ranking, func(a, b int) int {
 					if values[a] != values[b] {
 						return values[b] - values[a]

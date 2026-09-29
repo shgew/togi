@@ -668,11 +668,12 @@ func (s *State) QualifiedRotations() int {
 
 func (s *State) Project(st *journal.State) {
 	st.Phase = string(journal.PhaseGuard)
-	if s.anySearch() {
+	switch {
+	case s.anySearch():
 		st.Phase = string(journal.PhaseSearch)
-	} else if s.hunt != nil {
+	case s.hunt != nil:
 		st.Phase = string(journal.PhaseHunt)
-	} else if s.round != nil {
+	case s.round != nil:
 		st.Phase = string(journal.PhaseRefine)
 	}
 	for i := range st.Cores {

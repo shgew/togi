@@ -91,7 +91,7 @@ func TestTrialResetClassification(t *testing.T) {
 			if detected == nil || end == nil {
 				t.Fatalf("missing crash/end: detected %+v, end %+v", detected, end)
 			}
-			if detected.ResetReason != tc.reset && !(tc.reset == machine.ResetPowerLoss && detected.ResetReason == "") {
+			if detected.ResetReason != tc.reset && (tc.reset != machine.ResetPowerLoss || detected.ResetReason != "") {
 				t.Fatalf("reset reason %q, want %q", detected.ResetReason, tc.reset)
 			}
 			if end.Outcome != tc.outcome || end.Signal != tc.signal {

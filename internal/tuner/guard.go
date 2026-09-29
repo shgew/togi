@@ -94,7 +94,7 @@ func (s *State) requirements(step int) []requirement {
 	g := &s.guard
 	r := g.steps[step]
 	occurrence := 0
-	for i := 0; i < step; i++ {
+	for i := range step {
 		if g.steps[i] == r {
 			occurrence++
 		}
@@ -124,6 +124,10 @@ func (s *State) requirements(step int) []requirement {
 		req = append(req, requirement{k, slices.Clone(cores), total, core, offset})
 	}
 	switch r {
+	case machine.R1, machine.R2, machine.R3, machine.R4, machine.R5:
+		for _, c := range s.cores {
+			add([]int{c.id}, s.durations.GuardTrialS, 1, c.id, c.offset)
+		}
 	case machine.R6:
 		add(s.ids(), s.durations.GuardIdleS, 1, 0, 0)
 	case machine.R7:
@@ -131,13 +135,9 @@ func (s *State) requirements(step int) []requirement {
 			add(part, s.durations.StartS, 3, 0, 0)
 			add(part, s.longS(part), 1, 0, 0)
 		}
-	default:
-		for _, c := range s.cores {
-			add([]int{c.id}, s.durations.GuardTrialS, 1, c.id, c.offset)
-		}
 	}
 	for i := range req {
-		for j := 0; j < i; j++ {
+		for j := range i {
 			if req[j].class == req[i].class {
 				req[i].count += req[j].count
 				req[j].count = 0
