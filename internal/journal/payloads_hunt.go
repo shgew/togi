@@ -90,10 +90,17 @@ type HuntEnd struct {
 
 func (*HuntEnd) Kind() Kind { return KindHuntEnd }
 func (p *HuntEnd) Message() string {
-	if len(p.Cores) == 1 {
-		return fmt.Sprintf("hunt %d found core %s after %d masks", p.Hunt, coreID(p.Cores[0]), p.Masks)
+	masks := fmt.Sprintf("%d mask", p.Masks)
+	if p.Masks != 1 {
+		masks += "s"
 	}
-	return fmt.Sprintf("hunt %d %s: cores %s after %d masks (%s)", p.Hunt, p.Result, coreList(p.Cores), p.Masks, p.Reason)
+	switch {
+	case p.Result == "direct" && len(p.Cores) == 1:
+		return fmt.Sprintf("hunt %d ended after %s: core %s was attributed directly (%s)", p.Hunt, masks, coreID(p.Cores[0]), p.Reason)
+	case len(p.Cores) == 1:
+		return fmt.Sprintf("hunt %d found core %s after %s", p.Hunt, coreID(p.Cores[0]), masks)
+	}
+	return fmt.Sprintf("hunt %d %s: cores %s after %s (%s)", p.Hunt, p.Result, coreList(p.Cores), masks, p.Reason)
 }
 
 type HuntSkipped struct {
@@ -149,6 +156,9 @@ type RefineRound struct {
 func (*RefineRound) Kind() Kind { return KindRefineRound }
 func (p *RefineRound) Message() string {
 	if p.Event == RotationStart {
+		if len(p.Cores) == 1 {
+			return fmt.Sprintf("refine round %d start: core %s toward %v", p.Round, coreID(p.Cores[0]), p.Target)
+		}
 		return fmt.Sprintf("refine round %d start: %d cores toward %v", p.Round, len(p.Cores), p.Target)
 	}
 	if p.Passed {

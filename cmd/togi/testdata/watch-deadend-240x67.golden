@@ -62,5 +62,5 @@
  27h44m  trial 0911 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15 R6 y-cruncher BKT + SFTv4 idle then bursts 900s resident rotation 2
  27h59m  trial 0911 PASS 900s | Tctl max 69 C
  27h59m  guard rotation 2 end clean
- 27h59m  the profile survived the requested 2 clean rotation(s); stopping
+ 27h59m  every core is done and the profile passed the requested 2 clean qualifying rotations; stopping
  28h00m  dead end no_evidence: five trials in a row proved nothing
