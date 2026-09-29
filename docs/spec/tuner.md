@@ -69,10 +69,10 @@ Among safe profiles, choose the greatest total depth (most negative sum of count
 Between trials every core is at 0. Before its first isolated trial, a `run` writes every core to 0 with one set-all command and reads each back, then records `profile.applied` with condition `isolated`. Pending decisions, a failure at 0 among them, are made before that write. One isolated trial is then:
 
 1. `trial.intent`;
-2. SMU set target to its offset (skipped at 0);
+2. SMU set target to its offset and read it back (including at 0);
 3. `trial.start`, plus `trial.signal` with the load-step schedule for R3 and R4;
 4. the trial, then `trial.signal` with the SIGSTOP and SIGCONT counts for R3 and R4;
-5. SMU set target to 0 (skipped at 0);
+5. SMU set target to 0 and read it back (including when the target was 0);
 6. `mce` events for the trial window;
 7. `trial.end`;
 8. the tuner's `failure` when the trial failed.

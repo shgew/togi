@@ -258,8 +258,8 @@ func (p *trialReport) record(payload journal.Payload) {
 	_, p.err = p.tr.r.append(payload, p.tr.start)
 }
 
-// writesTarget reports whether the trial sets its target before and resets it after: isolated trials at a nonzero
-// offset. Resident trials run on the profile already applied.
+// writesTarget reports whether the trial sets and reads back its target before running and resets it afterward.
+// Isolated trials do so at every offset, including 0; resident trials run on the profile already applied.
 func (tr *trialRun) writesTarget() bool {
 	return tr.t.Condition == machine.Isolated
 }
