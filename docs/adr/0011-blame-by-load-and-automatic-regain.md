@@ -1,3 +1,5 @@
+Superseded by [ADR 0020](0020-hunt-and-refine.md).
+
 Confirmation order superseded by [ADR 0015](0015-avx-512-first-in-confirmation.md); the nine workloads and backoff rule remain.
 
 # Blame unattributed failures by load and regain depth automatically

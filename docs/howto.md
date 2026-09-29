@@ -44,7 +44,7 @@ Rebuild (`nixos-rebuild boot`, or your usual way), then reboot. In BIOS, every C
 sudo togi run
 ```
 
-It shows the session as a dashboard that redraws every second: the stage, the running trial and one tile per core. Watch a few trials, then press Ctrl-C. It writes each core back to its baseline, or to its current offset where that is shallower, records `shutdown` and exits 0; the next `sudo togi run` resumes where it stopped. `sudo togi run --no-tui` prints one line per event instead: the preflight checks, the BIOS context, the baseline, then each search trial's intent, start and end.
+It shows the session as a dashboard redrawn every second: search, a hunt or refinement when active, the running start and one tile per core. Watch a few trials, then press Ctrl-C. It restores each core to its baseline or its current offset when shallower, records `shutdown` and exits 0; the next run resumes. `sudo togi run --no-tui` prints one line per event instead.
 
 ```sh
 togi status
@@ -66,26 +66,26 @@ togi status
 togi cert
 ```
 
-`cert` lists each core's edge, the deepest offset tested stable, to enter in BIOS once you judge the tier sufficient. Picking "NixOS - togi" again continues the same session.
+`cert` lists checked edges, failed and joint marks, each core's done state and tier-clock evidence for deciding which profile to enter in BIOS. A clean qualifying rotation earns Bronze only when every core is done and refinement can reach no more total depth. Picking "NixOS - togi" again continues the session.
 
 ## 6. Dead ends
 
-togi stops by itself only at a dead end: a core fails at offset 0, the SMU misbehaves, trials prove nothing several times in a row, the machine keeps crashing before any trial, a backend escapes its cores, or a preflight check fails. In the tuning boot it records the dead end, clears GRUB's saved entry so the next boot selects your newest normal generation, and stops with the explanation on tty1's dashboard. After a boot loop it reboots into the normal system at once.
+togi stops by itself at a dead end: failure at offset 0, an untrusted SMU, repeated trials without evidence, a missing backend, repeated stray crashes, an escaped backend thread, a thermal-trip reset or failed preflight. In the tuning boot it records the dead end, clears GRUB's saved entry, and shows the explanation on tty1. After a boot-loop dead end it reboots into the normal system. If `togi.service` instead exhausts its restart limit, `togi-restart-limit.service` clears the entry and reboots into the normal system.
 
-`togi status` shows the dead end, and `togi events --kind deadend,boot.saved_entry` shows what happened. Fix the cause, then run `sudo togi run` or pick "NixOS - togi" again to resume. A core that failed at offset 0 stops every later run until `sudo togi reset --core <N>`, and a changed BIOS context until `sudo togi reset --all` starts a new session. [runtime.md](spec/runtime.md#dead-end-actions) and [tuner.md](spec/tuner.md) describe each condition.
+`togi status` shows the dead end, and `togi events --kind deadend,boot.saved_entry` shows its evidence. Fix the cause, then run `sudo togi run` or pick the tuning boot again. A core that failed at 0 stops later runs until `sudo togi reset --core <N>`. A BIOS-context change instead automatically archives the old session and starts a seeded one carrying candidate edges but not failed marks. [runtime.md](spec/runtime.md#dead-end-actions) and [tuner.md](spec/tuner.md) describe the conditions.
 
 ## 7. After a breaking update
 
 An update whose changelog line starts with **BREAKING** changes the tuning rules or the journal format, so it cannot continue a session written by an earlier build. Nothing needs doing by hand: rebuild, then run `sudo togi run` or pick "NixOS - togi". The first run archives the old session to `/var/lib/togi/archive/` and starts a new one that carries what the old one found:
-- each core's deepest offset that passed an isolated trial becomes a candidate edge, and the core starts in confirmation there;
-- each core's shallowest attributed failure becomes a carried failed mark, and the new session never runs the core at or deeper than it until `reset --core`; failures a `reset --core` or a known defect already cleared are not carried;
-- a candidate edge at or deeper than the core's carried mark is clamped to one count shallower than the mark.
+- each core's deepest offset passing an isolated trial becomes a candidate edge, and the new core checks it in search with the full R1 and R2 start count;
+- each core's shallowest attributed failure, including a single culprit found by a hunt, becomes a carried failed mark; joint marks do not carry, and reset or defect exclusions still apply;
+- a candidate edge at or deeper than its carried mark is clamped one count shallower.
 
 When the old session was started by hand after an earlier breaking update, with `reset --all`, the carry also reads the sessions archived before it, as long as they ran under the same BIOS and each under a different ruleset from the one after it.
 
 `togi status` shows the carry on its `carried:` line, and each core's first `core.phase` in `togi events --kind core.phase` names where its start came from. `togi events --kind session.carried` shows the whole event, with the session and `seq` behind every carried value.
 
-If the BIOS changed since the old session (another BIOS version, microcode, board, CPU or boost limit), only the candidate edges are carried: a BIOS change can move an edge either way, and the old failed marks no longer apply. The `carried:` line says which field changed.
+If the BIOS context changed (BIOS version, microcode, board, CPU or boost limit), the next run archives the old session even without a ruleset update and starts a seeded session. Only candidate edges carry: old failed marks do not apply under the changed BIOS. The `carried:` line explains the difference.
 
 A configured `candidate_edges` or `start_offsets` value for a core wins over what is carried, but a carried failed mark still clamps it. A core with a carried mark at 0 failed at CO 0: the new session stops at a dead end for it, as the old one did, until you fix the cause and run `sudo togi reset --core N`.
 

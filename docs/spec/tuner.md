@@ -4,59 +4,65 @@ Normative rules for how togi moves offsets. Terms are defined in `CONTEXT.md`. R
 
 ## Ruleset
 
-The ruleset is the hardcoded strategy: steps, offset range, phases, which workloads each regime runs, the confirmation set, tiers and backoff rules. A change to any of these bumps `tuner.Ruleset` and is breaking for an active session: the next `run` archives it and starts a new session seeded from it ([ADR 0019](../adr/0019-a-ruleset-change-starts-a-seeded-session.md)). Fixes that record facts more accurately or change decisions, and changes to configurable defaults, do not bump it.
+The ruleset is the hardcoded strategy: search strides, offset range, phases, evidence and mark rules, hunt and refinement, guard coverage and tiers. Changing these bumps `tuner.Ruleset` (now 4) and archives an active older session into a seeded new session ([ADR 0019](../adr/0019-a-ruleset-change-starts-a-seeded-session.md), [ADR 0020](../adr/0020-hunt-and-refine.md)). Changes to configurable defaults and fixes that record facts more accurately do not bump it.
 
 ## Invariants
 
 1. Every offset stays within [-50, 0]. togi never writes a positive offset.
 2. During an isolated trial only the target carries a nonzero offset. Every other core is written to 0 first, including at the start of each boot, when firmware has restored the BIOS values.
 3. Every SMU write is preceded by a durable intent event and followed by a readback. A readback that differs from the written value is a dead end.
-4. A core never runs at or deeper than its failed mark, except after `reset`.
-5. After confirmation, offsets only get shallower except through automatic regain at a clean rotation end; regain never crosses a settled step or the failed mark.
+4. No applied or restored profile reaches a recorded mark, except after reset.
+5. Offsets get deeper only in search and in refinement rounds.
 6. Every decision is an event that names its cause (`journal.md`).
 
 ## Session start
 
 1. Preflight (`runtime.md`) passes, or togi stops at a dead end.
 2. The first `run` of a session reads every core's offset from the SMU as the baseline and records the BIOS context.
-3. Each core's start offset is the configured override if one exists, else its baseline, clamped to [-50, 0]. A core with a configured candidate edge starts in confirmation at that offset instead, with no pass and no failed mark, and confirmation runs as for an edge found by search ([ADR 0013](../adr/0013-candidate-edges-for-a-new-session.md)).
+3. Each core's start offset is the configured override if one exists, else its baseline, clamped to [-50, 0]. A configured candidate edge starts the core in search at that offset with `check_edge` and frozen R1/R2 workloads; it still needs the full evidence rule.
 
-   A session a transition started (`journal.md`, Transitions) seeds each core from its `session.carried` entry, citing that event after the baseline. Precedence: a configured candidate edge, then a configured start offset, then the carried candidate edge, then the baseline. A carried candidate edge starts the core in confirmation at that offset with the reason `candidate edge <edge> carried from session <id>`. A carried failed mark becomes the core's failed mark in its first `core.phase`, with no pass, and a start at or deeper than it is clamped to one count shallower, whatever the start's source; the reason then ends `; clamped to <offset>, one count shallower than the failed mark <mark> carried from session <id>`. A carried mark at 0 leaves the start alone and dead-ends the core as a failure at CO 0 (Dead ends), citing the `core.phase`. A core with a mark and no edge searches from its baseline, bounded by the mark.
+   A session started by a transition (`journal.md`, Transitions) seeds cores from `session.carried`, citing that event after the baseline. Precedence: configured candidate edge, configured start offset, carried candidate edge, baseline. A carried candidate edge starts search with `check_edge` and reason `candidate edge <edge> carried from session <id>`. A carried failed mark is recorded in the first `core.phase`; a start at or deeper than it is clamped one count shallower, regardless of its source. A mark at 0 remains a dead end until reset.
 4. A nonzero baseline produces a notice recommending BIOS CO 0 for tuning. togi still starts from it.
-5. A later `run` whose BIOS context differs from the session's is a dead end until `reset --all` starts a new session.
+5. A later `run` whose BIOS context differs archives the old session and starts a new seeded session carrying edges but not marks (`journal.md`, Transitions).
 
 ## Scheduling
 
-Cores are visited in CCD-alternating order: 0, 8, 1, 9, ... 7, 15. Each turn goes to the next core in that order still in search or confirmation, and that core runs its next trial. Interleaving cores this way gives every core time to cool between its own trials.
-
-A search step runs R1 and then R2 if R1 passed. Confirmation has nine trial slots per core: R2 mprime AVX-512 36K-248K first, then each R1 workload, the remaining R2 workloads, R3, R4 and R5. An inconclusive trial is retried at once with the same workload in the same slot, unless a decision for its core comes first (a queued reset): the decision replaces the slot.
+Cores are visited in CCD-alternating order: 0, 8, 1, 9, ... 7, 15. Each turn goes to the next core still in search. Its R2 trial follows a passing R1 in the same turn; an inconclusive trial retries the same class unless a pending reset supersedes it. Interleaving cores lets each cool between its own starts.
 
 ## Search
 
-A search step is two isolated trials at the same offset: R1, then R2. The step passes when both pass. A step whose R1 fails ends without R2.
+A search step runs one isolated R1 start then one isolated R2 start at the same offset, 90 s each by default. Its first failure rejects it. The eventual candidate edge additionally needs `n` passes in each of its frozen R1 and R2 trial classes, using `durations.search_trial_s`.
 
 Each core tracks its current offset `o`, `pass` (the deepest offset with a passed step, or none) and `fail` (its failed mark, or none).
 
 After a passed step at `o`:
 - `pass = o`.
-- `o == -50`: `-50` is the candidate edge.
+- `o == -50`: check this candidate edge.
 - `fail` is none: next offset is `max(o - 5, -50)`.
-- Otherwise the next offset is `o - 1`. If that equals `fail`, `o` is the candidate edge.
+- Otherwise the next offset is `o - 1`. If that equals `fail`, check `o` as the candidate edge.
 
 After an attributed failure at `o`:
 - `fail = max(fail, o)`, keeping the shallowest failure.
 - If `pass` is at or deeper than `fail`, it is discarded, because the new failure contradicts it.
 - `o == 0`: dead end.
 - `pass` is none: next offset is `min(o + 5, 0)`.
-- Otherwise the next offset is `pass - 1`, or `pass` is the candidate edge if `pass - 1 == fail`.
+- Otherwise the next offset is `pass - 1`, or check `pass` as candidate edge if `pass - 1 == fail`.
 
 Any failure during an isolated trial is attributed to the target, crashes included: no other core carries an offset that could explain it.
 
-## Confirmation
+## Evidence
 
-At the candidate edge `e`, the core runs nine isolated trials: R2 mprime AVX-512 36K-248K first, then each R1 workload in catalog order, the remaining R2 workloads in catalog order, then R3, R4 and R5 (one workload each). Each trial gets a turn in the CCD-alternating order. The shared workload catalog is unchanged: search and guard still cycle workloads in catalog order.
-- All nine pass: the core is confirmed and `e` is its edge.
-- An attributed failure sets `fail = e` and moves the core to `e + 1`, where the entire set restarts from R2 mprime AVX-512. A failure at `e == 0` is a dead end. An inconclusive retry repeats the same workload.
+One start is one trial, with no internal relaunch. The pass rule is `n = ceil(ln(evidence.miss) / log1p(-evidence.rate))` consecutive passing starts, five at the defaults (0.05, 0.5). The first failure rejects a step. The full count applies to a candidate edge's R1 and R2 classes, every hunt mask and every refinement check.
+
+A trial class is `(regime, workload, sorted loaded cores, duration_s)`. The ledger records each conclusive trial's class, sequence, applied `trial.intent.profile` and outcome. A pass at profile Q counts toward P only when Q is at least as deep as P, and not before the latest failure of that class at a profile at least as shallow as P. A failure at Q rules out P when Q is at least as shallow as P. Requirements on the same class within a step add, so a start counts once. An idle crash has wildcard R6 class with all cores loaded and invalidates all such R6 classes. Passes at deeper profiles can survive backoff; deeper moves need new evidence.
+
+A failure contradicting `n` valid passes on a profile at least as deep in the same class records `tuner.warning` `monotonicity`, without changing the failure decision.
+
+## Marks
+
+A failed mark is reached when `P[c] <= fail[c]`; a joint mark is reached when every member `m` has `P[m] <= J[m]`. A core is done at -50 or if one count deeper would reach a mark. Re-evaluate done after every mark or offset change. Marks accumulate until reset.
+
+Among safe profiles, choose the greatest total depth (most negative sum of counts); preferred-core ranking breaks ties, then core-id order. A joint-mark backoff chooses the member leaving the most depth reachable, breaking ties toward the lowest-ranked member. Only single-core attributed and hunt-culprit marks carry to a new session, not joint marks.
 
 ## Isolated trial sequence
 
@@ -73,7 +79,7 @@ Between trials every core is at 0. Before its first isolated trial, a `run` writ
 
 ## Resident trial sequence
 
-Guard trials run on the profile of the last `profile.change`. Before the first resident trial of a `run`, and after every profile change, each core is set to its profile offset in core-id order, each write read back, then `profile.applied` is recorded with condition `resident`. One resident trial is then:
+Resident trials run on the profile of the last `profile.change`. Before the first resident trial of a `run`, and after every profile change, each core is set to its profile offset in core-id order, each write read back, then `profile.applied` is recorded with condition `resident`. Masked hunts apply their recorded mask profile instead. One resident trial is then:
 
 1. `trial.intent`, naming its loaded core for R1 to R5, or the loaded cores in `cores` for R6 and R7;
 2. `trial.start`, plus `trial.signal` for R3 and R4;
@@ -84,14 +90,14 @@ Guard trials run on the profile of the last `profile.change`. Before the first r
 
 No SMU write happens between resident trials: the profile stays applied.
 
-R6 loads every core. On two CCDs, an R7 guard step runs three separate resident trials: CCD0 alone, CCD1 alone, then every core. The step passes only after all three pass. On one CCD it runs one all-core trial. Each R7 trial has its own intent, instance set and teardown; all parts of one step share a workload, which advances on the next concluded R7 step. An inconclusive retry uses the same loaded cores and workload, and parts already passed remain passed across interruptions. Only loaded cores run backend instances; the resident offsets on all cores stay applied.
+R6 loads every core. On two CCDs, an R7 guard step has CCD0, CCD1 and all-core parts; on one CCD it has one all-core part. Every part needs three short starts at `start_s` and one long start at its allocated R7 duration (counts add when durations coincide). Each start has its own intent, instance set and teardown. Only loaded cores run backend instances; the resident offsets on all cores stay applied.
 
 ## Crashes
 
-A crash is classified by what its boot recorded. A resident application counts as applied from its first nonzero `smu.intent`, before its `profile.applied`: a crash part-way through it ran with resident offsets on some cores.
-- A trial in flight in the crashed boot: a failure of that trial. An isolated trial's failure is attributed to its target at its offset; a resident trial's is attributed by the resident rule in Guard.
-- The profile applied in that boot and no trial in flight: an idle crash. With the isolated profile last applied it is an unattributed failure that changes nothing, since every core was at 0. With the resident profile last applied, or partly applied, it counts as an unattributed failure of an R6 trial.
-- Nothing applied in that boot: a stray crash. Stray crashes count in a row until the next application; reaching `dead_ends.stray_crashes_in_a_row` is the boot-loop dead end.
+A crash is classified by what its boot recorded. A resident application counts as applied from its first nonzero `smu.intent`, before `profile.applied`. A backend signal recorded in `trial.progress`, a trial-window MCE selected by boot-local monotonic time or an uncorrected MCE in the next boot takes precedence over reset reason. Otherwise a thermal trip is a dead end; a power-button reset during a trial is its failure, but without an open trial is inconclusive. When reason reporting is supported and confirmed, no reason line means power loss and is inconclusive. An unknown or unsupported reset reason retains the usual classification:
+- A trial in flight: a failure of that trial. Isolated failures belong to the target; resident and masked attribution follows Guard.
+- An applied profile with no trial in flight: an idle crash, treated as an unattributed R6 failure with all cores loaded; an isolated all-zero profile changes nothing.
+- Nothing applied: a stray crash. Reaching `dead_ends.stray_crashes_in_a_row` is the boot-loop dead end.
 
 Restoring offsets before `shutdown` (`runtime.md`) is not an application: its `smu.intent` events cite `session.baseline` and leave the boot's last application as it was, so a crash part-way through is classified by what was applied before. After `profile.restored` the cores are back at togi-independent values, and a crash counts as if nothing was applied.
 
@@ -101,51 +107,39 @@ A crash with a trial in flight and an idle crash are failures like any other: no
 
 ## Decision events
 
-Moves within a phase are `tuner.decision` events: `step_deeper` after a passed search step, `backoff` after an attributed failure, `suspect_backoff` after an unattributed one in guard, and `regain` after a clean rotation. Reaching a candidate edge (search to confirmation) and passing confirmation (confirmation to confirmed) are `core.phase` events. Both carry the resulting `pass`, `failed_mark` and `unproven_depth`, so replaying the journal never re-runs a rule. Guard decisions have phase `guard`; the core stays `confirmed`.
+Moves are `tuner.decision`: `step_deeper`, `check_edge`, `deepen`, `yield` and `backoff`, with phases `search`, `guard`, `hunt` or `refine`. `check_edge` freezes the R1/R2 workloads; `core.phase` to `resident` or `done` records the checked edge, pass and failed mark. Each decision cites its cause and reason. A search backoff says `failed`; other backoffs say `backed off`. A phase change after an offset or mark update re-evaluates done.
 
 ## Guard
 
-Guard starts once every core is confirmed, with a `profile.change` whose `from` is null. The profile of all edges is applied and stays applied between trials (Resident trial sequence).
+Guard begins when no core remains in search. Its first `profile.change` has `from: null`. A profile change does not end an open rotation; passing steps on a deeper profile remain evidence after a backoff. Only `reset --core` ends a rotation unclean.
 
-A rotation runs the configured `guard.rotation` steps (`workloads.md`), captured in its `guard.rotation` start event. An open rotation continues with those recorded steps when the configuration changes; the changed order takes effect at the next rotation. A per-core step (R1 to R5) is one trial per core in scheduling order; R6 is one all-core trial and R7 is three trials (or one on a single-CCD machine), still one rotation step. The rotation ends clean when every step passed. A profile change ends the open rotation as not clean, and the next rotation starts from the first step, so a clean rotation always covers one unchanged profile. After a failure the order is: backoff, unclean rotation end, `profile.change`, next rotation start.
+A rotation captures the configured schedule in its start event. R1 and R2 occurrences select successive catalog workloads (three occurrences cover each catalog); R3, R4 and R5 run on each core; R6 runs all cores. Each R7 occurrence selects its next R2 workload and requires every part's three short and one long starts. Requirements sharing a trial class add, and trials passed on sufficiently deep profiles since the rotation start can fulfill them. The first unmet requirement of the first unmet step runs next. The rotation ends clean when all requirements pass, and qualifies when it has at least three R1, R2 and R7 steps and one each of R3, R4, R5 and R6. A non-qualifying end records the missing coverage. The newest qualifying profile, or an older eligible one, anchors hunts and refinement.
 
-Resident attribution: the backend instance whose signal ended the trial names its core. Without one, the core-local MCEs among the trial end's evidence name their cores. Exactly one named core makes the failure attributed to that core at its current offset; no named core, or more than one, makes it unattributed.
+Resident and masked attribution uses the backend instance's reported core first, then exactly one core named by core-local MCEs, then the single nonzero core in the applied profile. An attributed failure records the failed mark at the applied offset and backs off that core to at least one count shallower, including when it was held at an anchor offset; failure at 0 is a dead end. If the core was already shallower, its offset need not move. An unattributed resident or idle failure queues a hunt of the failing profile and trial class instead of backing off the loaded set. An unattributed masked failure is the mask outcome. Inconclusive starts retry the same class.
 
-Failure handling:
-- **Attributed** failure on core `c` at offset `o`: proven backoff, so `fail = o`, `c` moves to `o + 1`, and its unproven depth drops to 0, since every suspect step lay deeper than `o`. Isolated confirmation at `o` or deeper already covers `o + 1`, so no re-confirmation runs. Spent retries remain but the settled mark clears. `o == 0` is a dead end. A core-local MCE naming exactly one core remains attributed even if that core was outside the trial's loaded cores.
-- **Unattributed** resident failure: suspect backoff by one count on each nonzero core in the following scope, in scheduling order:
+When an attributed backoff or hunt commitment changes an offset, guard first reruns the failed class: `n` starts at `start_s`, then one at its original duration if different. These obligations are FIFO. `run --rotations N` stops only after N clean qualifying rotation ends since the last deepening, with every core done and no refinement able to improve total depth; without the flag guard continues indefinitely.
 
-  | Failure in flight | Initial scope |
-  |---|---|
-  | R1 to R5 trial | Its loaded core |
-  | Single-CCD R7 trial | The loaded CCD's cores |
-  | All-core R7 or R6 trial | Every core |
-  | No trial, resident profile applied or partly applied | Every core |
+## Hunt
 
-  If the initial scope is narrower than every core and all its cores are at 0, every nonzero core backs off instead. If no core has a nonzero offset, this is a dead end `failure_at_zero` without a core; it leaves no failed mark, so the next `run` continues guard. A suspect backoff adds one count of unproven depth and leaves the failed mark unchanged. Each failure is judged independently by the load of its own trial.
-- **Inconclusive** trials are retried with the same loaded cores and workload and change nothing.
+Every unattributed resident failure is hunted unless its failing profile already reaches a recorded mark; then `hunt.skipped` explains why. The hunt selects the newest clean qualifying profile that is elementwise at least as shallow as the failing profile, strictly shallower somewhere and reaches no mark, falling back to older qualifying profiles and finally all-zero. Candidates are precisely cores deeper at the failure than at the anchor. `hunt.start` records both profiles, trial class, ranking and pass rule.
 
-Every backoff changes the profile: clean hours reset and the rotation restarts.
+For each mask, candidates in the selected subset take their failing offsets and every other core takes its anchor offset. Delta debugging tests parts, then complements as granularity increases, retaining a failing subset. It initially uses `start_s`; if all initial parts and complements pass, it tests the full failing profile, and if that too passes `n` starts, repeats at the failed trial's duration. A mask passes after `n` starts; its first failure rejects it. Ledger evidence can infer an outcome, and a mask reaching a new mark is skipped. `hunt.mask` records the partition stage, subset, mask profile, duration and outcome so interrupted hunts resume without duplicating commitments. At most one duration escalation occurs.
 
-Clean hours are the durations of passed resident trials since the last `profile.change`, overall and per regime.
+A singleton ends `culprit` with a failed mark at that core's failing offset. A larger subset ends `joint` with a joint mark at every member's failing offset; if no tested mask failed it is a `fallback` over all remaining candidates. An attributed failure during a mask ends `direct` and marks its actual applied offset, even on a core held at the anchor. `hunt.end` precedes its `backoff` or `mark.joint`; a joint mark already broken by the resident profile needs no further backoff. Resume uses cause linkage to emit each missing commitment once. A reset cancels an open hunt and requeues its failure.
 
-`run` stops, recording `shutdown`, once the current profile has survived the requested number of clean rotations (`runtime.md`), before automatic regain; without that request guard is endless.
+## Refinement
 
-## Regain
+Refinement starts only after search, hunts, reruns and the open rotation finish, when a qualified profile exists and a core is not done or a globally deeper total is reachable. It targets the safe profile with greatest total depth over all cores, with preferred-core ranking and then core-id order breaking ties. `refine.round` snapshots target, anchor and proposed profile. Cores that must become shallower yield first; those moving deeper go halfway toward their target. Each move is a decision followed by done re-evaluation and `profile.change`.
 
-At a clean `guard.rotation` end, if neither `--rotations` nor a pending stop signal stops the run, each confirmed core with regainable depth moves one count deeper, in scheduling order. Each `tuner.decision` with `decision: regain` cites that clean end, records the resulting offset and unproven depth, and spends the retried step. The SMU writes follow the recorded decisions. Then `profile.change` resets clean hours and tier progress, and the next rotation tests the deeper profile under resident load. There is no isolated re-confirmation: the regained offsets already passed isolated confirmation.
-
-A step is one core at one numeric offset. Each step gets only one automatic-regain retry. A suspect backoff from a step whose retry was spent settles it; automatic regain never takes the core back to that offset or deeper until `reset --core`. The shallowest settled offset is the settled mark. Regainable depth is the unproven depth from the current offset down to, but not including, its nearest settled step, never past the confirmed edge or at/deeper than the failed mark. `status` and the certificate show regainable and settled depth separately; their sum is the total unproven depth. Spent retries persist across clean rotations and proven failures; a proven failure cancels unproven depth (including settled depth) and clears the settled mark, but does not unspend retries.
-
-An interrupted run replays recorded regain decisions; it does not retry a spent step or regain a core twice from one clean rotation end. A later `failure`, search step or reset after the clean end cancels any remaining regains due from that end, including a failure that ends in a dead end without a backoff. Proven failed marks are never retried within a session.
+Only deepened cores need checks: each runs `n` R1 starts and `n` R2 starts at `start_s`, then each R7 part containing a deepened core runs `n` starts. The round's index freezes the workload in each catalog. A failure ends the round, triggers its attribution or hunt, and a passed round records its end; resume completes missing moves and checks without duplicating decisions. A new mark that makes the proposed profile unsafe ends the round without applying it.
 
 ## Defect list
 
-Known defects identify decisions made under earlier builds whose decisions cannot safely be rerun. On resume, their journal causes and build fixes stamps are matched as specified in `journal.md`. A too-cautious finding leaves guard running and `status` names the affected cores' individual reset commands. A too-aggressive finding stops unattended tuning until an operator has answered a terminal reset prompt. Resetting a core queues the normal `reset --core` decision: it clears that core's failed mark and confirmation, then searches from its baseline; it does not reset the rest of the profile.
+Known defects identify decisions made under earlier builds whose decisions cannot safely be rerun. On resume, their journal causes and build fixes stamps are matched as specified in `journal.md`. A too-cautious finding leaves guard running and `status` names the affected cores' individual reset commands. A too-aggressive finding stops unattended tuning until an operator has answered a terminal reset prompt. Resetting a core clears its failed mark and the joint marks naming it, then searches from its baseline.
 
 ## Reset
 
-- `reset --core N`: records `command.reset` and queues the reset. The next `run`, before any other decision except a pending attribution, records `core.phase` to `search` at the baseline clamped to [-50, 0], with failed mark, pass, unproven depth, confirmation, spent retries and settled steps cleared. A failed mark at 0 is cleared too, so reset is the way out of that dead end. The profile changes when the core is confirmed again.
+- `reset --core N`: records `command.reset` and queues the reset. The next `run`, after pending attribution, cancels an open hunt or refinement round and ends an open rotation unclean, then records `core.phase` to `search` at the baseline clamped to [-50, 0]. It clears the core's failed mark and pass and every joint mark that includes it (listed in `cleared_joint`). A failed mark at 0 is cleared too.
 - `reset --all`: archives the session (`journal.md`). The next `run` starts a new session with a fresh baseline and BIOS context, carrying nothing from the archived one.
 
 `reset` writes to the journal, so it refuses while a `run` holds it (`journal.md`).
@@ -161,8 +155,9 @@ togi stops when it cannot make progress:
 | The same backend is inconclusive 3 times in a row, or is missing | No evidence can be produced. |
 | 3 stray crashes in a row | The machine crashes before togi acts: a boot loop. |
 | A backend thread observed outside its allowed logical CPUs | Attribution is broken. |
-| Preflight fails, including a changed BIOS context | The environment is not the one being tuned. |
+| Preflight fails | The environment is not the one being tuned. |
 | An unanswered too-aggressive defect without a terminal | Earlier decisions may have moved offsets deeper than proven; an operator must decide whether to reset the affected cores. |
+| Thermal-trip reset without higher-precedence failure evidence | Cooling must be checked before tuning again. |
 
 What a dead end does in each run mode is in `runtime.md`. Thresholds are configurable.
 
@@ -172,34 +167,29 @@ A dead end follows from evidence recorded in the journal, not from memory, so a 
 - a backend's streak of inconclusive `trial.end`s reaching the threshold, not counting trials interrupted by a stop or restart;
 - the stray-crash streak reaching the threshold.
 
-A `deadend` event consumes the evidence it reports: the SMU flag, the escape flag, every inconclusive streak or the stray streak. The other conditions are evaluated fresh by the following `run`. Preflight is not carried over: every `run` repeats it, and its dead end reflects only that run's checks. A failure at 0 is different: it leaves failed mark 0 on its core, so every later `run` stops again until `reset`, in every phase, guard included.
+A `deadend` consumes the evidence it reports: the SMU flag, escape flag, thermal trip, inconclusive streak or stray streak. Other conditions are evaluated fresh by the following `run`. Preflight repeats every run. A failure at 0 leaves failed mark 0 on its core, so every later run stops until reset.
 
 That fresh evaluation applies only after the dead end has recorded its boot action and `shutdown`. If a process stops between `deadend` and those events, the next `run` finishes that same dead-end action and exits without making a tuning decision.
 
 ## Tiers and certificate
 
-Tiers rank the current profile by durability, not proof. Any profile change drops the tier to none until Bronze is earned again.
+Tiers rank the current profile by durability, not proof. A shallow backoff need not erase valid exposure: the tier clock starts at the later of the last profile deepening and the latest failure on a profile at least as deep as the current one. Recompute it at each profile change.
 
 | Tier | Requirement |
 |---|---|
-| none | A core is not confirmed, regainable depth remains, or the current profile has not survived a clean rotation. |
-| Bronze | Every core confirmed, no regainable depth and one clean rotation since the last profile change. Settled depth alone does not block it. |
+| none | A core is not done, refinement can reach more total depth, or no clean qualifying rotation has ended since the last deepening. |
+| Bronze | Every core done, refinement cannot improve total depth, and a clean qualifying rotation after the last deepening. |
 | Silver | Bronze, and 24 clean hours. |
 | Gold | Bronze, and 100 clean hours. |
 | Platinum | Gold, and 200 field hours: real use observed by the future `observe` service with the BIOS offsets equal to the profile. Unavailable until `observe` exists; the tuner never computes it. |
 
-The tuner records every change as `tier.change` with the old and new tier and a reason, citing the event that caused it:
-- `core NN is in <phase>`: the first core in scheduling order that is not confirmed;
-- `the profile changed`: an offset changed since the last `profile.change`. It follows the unclean rotation end and precedes the new `profile.change`;
-- `core NN has depth left to regain`: the first regainable core in scheduling order, when no other condition blocks Bronze;
-- `every core is confirmed, nothing is left to regain and the profile survived a clean rotation`: cites the clean rotation end, and precedes the next rotation start. A `run` stopped by `--rotations` can finish without Bronze when depth remains.
-- `24 clean hours since the profile change` and `100 clean hours since the profile change`: cite the passed trial that crossed the threshold.
+The tuner records every change as `tier.change`, naming its cause. A core in search or not done, reachable refinement depth, a deepening, or missing qualifying coverage prevents Bronze. Bronze's reason is `every core is done and the profile passed a clean qualifying rotation`; Silver and Gold cite `24 clean hours since the tier clock started at #N` and `100 clean hours since the tier clock started at #N`.
 
-Each regime `r` with clean hours `T_r` shows its failure-rate bound: with zero failures, the rate is below `3 / T_r` per hour at 95% confidence (rule of three). The overall bound uses all clean hours. Without clean hours there is no bound. Recorded and displayed bounds round up, never understating it.
+Each regime and workload with clean hours `T` since the tier clock shows its failure-rate bound: with zero failures, the rate is below `3 / T` per hour at 95% confidence (rule of three). The overall bound uses all clean hours. Without clean hours there is no bound. Recorded and displayed bounds round up, never understating it.
 
 `togi status` and `togi cert` render from a replay of the journal (`runtime.md`). The certificate shows:
 - the tier with its `tier.change`, and progress towards the higher tiers;
-- the profile with its `profile.change`, as a per-core table of edges, failed marks, regainable and settled depth and the deciding event, followed by any core whose offset was decided after that `profile.change`;
-- clean hours and failure-rate bound per regime and overall, and the highest Tctl across counted trials with its `trial.end`;
+- the profile with its `profile.change`, as a per-core table of edges, failed marks, joint marks, done status and the deciding event, followed by any core decided after that `profile.change`;
+- clean hours and failure-rate bounds by regime and workload, with valid start counts and the highest Tctl among counted trials with its `trial.end`;
 - the BIOS context and session start;
 - the SHA-256 of the journal's complete lines it rendered, and the last `seq` among them.
