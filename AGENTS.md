@@ -7,8 +7,8 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `README.md`: what togi does, what works today, and the common commands. The first page a reader sees.
 - `CHANGELOG.md`: user-visible changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 - `CONTEXT.md`: the vocabulary. Name code, events and docs with its terms.
-- `docs/spec/`: normative behavior. Read the relevant spec before changing behavior, and change spec and code in the same pull request.
-  - `tuner.md`: offsets, phases, backoffs, regain, tiers, dead ends.
+- `docs/spec/`: normative behavior. Read the relevant spec before changing behavior, and change spec and code in the same pull request or in layers of one stack merged together.
+  - `tuner.md`: offsets, search, hunt, refinement, guard, tiers, dead ends.
   - `workloads.md`: regimes, backends, containment, failure detection.
   - `journal.md`: events, state, logging.
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
@@ -48,7 +48,7 @@ Planning lives in issues, filed from the templates in `.github/ISSUE_TEMPLATE/`.
 A pull request updates everything that describes the old state, in the same pull request:
 - `--help` text for every command or flag it adds or changes;
 - the README's Status when what works changes, and its Usage when the common commands change;
-- `CHANGELOG.md` under `## [Unreleased]`, for every change a user of togi would notice: commands, flags, behavior, output, configuration. One line per change under `Added`, `Changed`, `Fixed` or `Removed`, stating the effect and linking the pull request. Refactors, tests and doc edits that leave the tool unchanged get no entry;
+- `CHANGELOG.md` under `## [Unreleased]`, for every change a user of togi would notice: commands, flags, behavior, output, configuration. One line per change under `Added`, `Changed`, `Fixed` or `Removed`, stating the effect and linking the pull request. A `**BREAKING**` line starts with what the operator must do or will see, then the mechanism. Refactors, tests and doc edits that leave the tool unchanged get no entry;
 - the specs, and any comment the change makes wrong.
 
 The first pull request that makes something runnable on real hardware adds `docs/howto.md` with the operator's steps. Later pull requests that change those steps update it.
@@ -92,7 +92,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/defect` | Known decision-changing bugs and pure matching against the journal |
 | `internal/journal` | Journal, replay, state file, log lines |
 | `internal/carry` | Transitions: archiving an older session and deriving the edges and failed marks it carries |
-| `internal/tuner` | Pure decision engine: search, confirmation, guard, regain, tiers |
+| `internal/tuner` | Pure decision engine: search, hunt, refinement, guard, tiers |
 | `internal/sim` | Simulator implementing every hardware seam, and resuming it after a journal |
 | `internal/session` | The run loop: session start, resume, crash attribution, trials, dead ends |
 | `internal/simrun` | A session on the simulator, across its crash reboots |
@@ -105,7 +105,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `nix/` | NixOS module and VM tests |
 | `tools/*` | Development programs, never shipped: `release`, `sim`. Development and debugging behavior lives here, never in `cmd/togi` |
 
-Keep packages near 1000 lines; split by responsibility when one grows past that.
+A package owns one responsibility, and its exported API is the seam. Split a package when it holds two responsibilities that change for different reasons.
 
 ## Code
 
