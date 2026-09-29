@@ -11,7 +11,7 @@ Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains,
 - Records every action in a plain-text journal you can read to see what it did and why.
 - Reports the offsets; you enter them in BIOS.
 
-*togi* (研ぎ) is Japanese for polishing a blade: coarse stones first, then fine ones, until the edge shows. togi was called shycler up to 0.3.1.
+*togi* (研ぎ) is Japanese for polishing a blade: coarse stones first, then fine ones, until the edge shows.
 
 ## Status
 
