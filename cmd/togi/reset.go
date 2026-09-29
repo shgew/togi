@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/shgew/togi/internal/detect"
+	"github.com/shgew/togi/internal/hostlock"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/tuner"
@@ -26,6 +27,8 @@ mark in the archived session; missing or invalid configuration does not prevent
 archiving.
 --core refuses a different journal ruleset or schema; --all archives either.
 Both forms refuse unknown event kinds; install the build that wrote them.
+Only one run or reset can own this machine, even with different state directories.
+A busy /run/lock/togi.lock stops reset before it changes the session.
 
 Examples:
   sudo togi reset --core 3   Search core 3 again from its baseline
@@ -47,6 +50,15 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 		commandUsage(flags, resetHelp, stderr)
 		return exitUsage
 	}
+	lock, err := hostlock.Acquire(g.hostLockPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "togi reset: %v\n", err)
+		if errors.Is(err, hostlock.ErrLocked) {
+			return exitLocked
+		}
+		return exitError
+	}
+	defer lock.Close()
 	if events, _, readErr := journal.Read(g.stateDir); readErr == nil {
 		if err := journal.KnownKinds(events, session.Build()); err != nil {
 			fmt.Fprintf(stderr, "togi reset: %v\n", err)

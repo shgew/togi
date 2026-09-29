@@ -8,11 +8,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shgew/togi/internal/hostlock"
 	"github.com/shgew/togi/internal/machine"
 	"golang.org/x/sys/unix"
 )
 
 func TestHardwareKernelLog(t *testing.T) {
+	lock, err := hostlock.Acquire(hostlock.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := lock.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	out, err := exec.Command("journalctl", "--list-boots", "-o", "json").Output()
 	if err != nil {
 		t.Fatal(err)

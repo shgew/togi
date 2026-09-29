@@ -5,10 +5,20 @@ package smu
 import (
 	"testing"
 
+	"github.com/shgew/togi/internal/hostlock"
 	"github.com/shgew/togi/internal/machine"
 )
 
 func TestHardwareSMU(t *testing.T) {
+	lock, err := hostlock.Acquire(hostlock.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := lock.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	d, err := Open("/", Sysfs("/"))
 	if err != nil {
 		t.Fatal(err)

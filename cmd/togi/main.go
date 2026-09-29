@@ -12,6 +12,7 @@ import (
 
 	"github.com/shgew/togi"
 	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/hostlock"
 )
 
 const defaultStateDir = "/var/lib/togi"
@@ -27,10 +28,11 @@ const banner = "   __              _\n" +
 	"\n"
 
 type globals struct {
-	config      string
-	configSet   bool
-	stateDir    string
-	stateDirSet bool
+	config       string
+	configSet    bool
+	stateDir     string
+	stateDirSet  bool
+	hostLockPath string
 }
 
 type command struct {
@@ -53,7 +55,10 @@ func main() {
 }
 
 func cli(args []string, stdout, stderr io.Writer) int {
-	g := globals{config: config.DefaultPath, stateDir: defaultStateDir}
+	return cliWithGlobals(args, stdout, stderr, globals{config: config.DefaultPath, stateDir: defaultStateDir, hostLockPath: hostlock.Path})
+}
+
+func cliWithGlobals(args []string, stdout, stderr io.Writer, g globals) int {
 	var version bool
 	fs := flag.NewFlagSet("togi", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

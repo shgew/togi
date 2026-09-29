@@ -30,6 +30,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - Trials whose current boot is explicitly missing from the kernel log are now inconclusive unless higher-precedence failure evidence survives; valid empty results and recovery from vacuumed older boots are unchanged. If a session may have tuned through missing current-boot logs, run `togi reset --core N` for every tuned core; older journals cannot identify the affected trials ([#172]).
 - Backend early exits and stalls are now recorded immediately as typed failure evidence, so recovery preserves the affected core if the machine crashes before the trial ends ([#173]).
 - MCEs now record their boot-local monotonic time, so crash recovery cannot attribute a trial to a machine check from before its profile was applied; outside-window MCEs remain visible without becoming trial causes, and older MCE events retain their previous replay behavior ([#200]).
+- `run`, `reset` and hardware tests now share `/run/lock/togi.lock`, preventing concurrent togi processes with different state directories from interleaving SMU access or carry preparation; a busy lock stops the command before hardware access or another event ([#170]).
 
 ## [0.5.0] - 2026-09-29
 
@@ -240,3 +241,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#173]: https://github.com/shgew/togi/pull/173
 [#196]: https://github.com/shgew/togi/pull/196
 [#165]: https://github.com/shgew/togi/pull/165
+[#170]: https://github.com/shgew/togi/pull/170

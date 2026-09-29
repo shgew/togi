@@ -22,6 +22,7 @@ import (
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/detect"
 	"github.com/shgew/togi/internal/hardware"
+	"github.com/shgew/togi/internal/hostlock"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
@@ -43,6 +44,9 @@ it found. A newer one stops the run before another event is written; reset --all
 archives that session. Unknown event kinds stop both run and reset; install the
 build that wrote them. Journal lines are colored on terminals and in the system
 journal unless NO_COLOR is set.
+
+Only one run or reset can own this machine, even with different state directories.
+A busy /run/lock/togi.lock stops the command before any hardware access or event.
 
 When stdin and stderr are terminals, run shows the session as the watch
 dashboard instead of one line per event, and prints the outcome when it stops:
@@ -114,20 +118,29 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	if out, ok := stderr.(*os.File); ok && !noTUI && interactive(out) {
 		dash = &dashboard{dir: g.stateDir, out: out}
 	}
-	return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr, renderer, dash)
+	return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr, renderer, dash, hardware.New)
 }
 
-func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, rotations int, stderr io.Writer, renderer journal.Renderer, dash *dashboard) int {
+func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, rotations int, stderr io.Writer, renderer journal.Renderer, dash *dashboard, newMachine func(config.Config, string) (machine.Machine, error)) int {
 	if err := hardware.CheckPlatform(); err != nil {
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
 	}
+	lock, err := hostlock.Acquire(g.hostLockPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "togi run: %v\n", err)
+		if errors.Is(err, hostlock.ErrLocked) {
+			return exitLocked
+		}
+		return exitError
+	}
+	defer lock.Close()
 	boot, err := detect.BootID()
 	if err != nil {
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
 	}
-	m, err := hardware.New(cfg, g.stateDir)
+	m, err := newMachine(cfg, g.stateDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
