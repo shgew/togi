@@ -29,7 +29,7 @@ Every change, docs included, lands as a pull request against `main` on `github.c
 - Commit with short imperative messages.
 - The pull request body follows `.github/pull_request_template.md`: a short summary, and the demo in a collapsed block.
 - Address every review comment on the same branch.
-- CodeRabbit reviews only the pull requests the owner asks it to, with an `@coderabbitai review` comment, as configured in `.coderabbit.yaml`; do not request a review unless told to. Its review is advisory: address its comments like any other, then reply to and resolve its threads.
+- CodeRabbit reviews every pull request, stacked layers included, as configured in `.coderabbit.yaml`. Its review is advisory: address its comments like any other, then reply to and resolve its threads.
 - A pull request that finishes an issue says `Closes #N` in its body; one that only makes progress says `Refs #N`.
 - A pull request that bumps `journal.Schema` or `tuner.Ruleset` is breaking: its title starts with `[BREAKING]`, it carries the `breaking` label, and its changelog line starts with `**BREAKING**`.
 - A breaking pull request merges only after `[Unreleased]` has been released (see `docs/releasing.md`).
