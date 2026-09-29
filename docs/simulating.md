@@ -27,4 +27,17 @@ go run ./cmd/togi --state-dir <dir> watch
 
 Fault injection, explicit edges and the failure model are a Go API for tests (`sim.Config`, `sim.Edges`, `sim.Model` and the methods on `sim.Machine`); `internal/sim/doc.go` describes the model. `internal/simrun` drives a session on the simulator across its crashes for tests that need a simulated journal.
 
-For example, a machine file can model a pair that fails together under all-core load; run `go run ./tools/sim --machine <file> --state-dir <dir>` and inspect `events --kind hunt,mark,refine` along with `status`, `cert` and `watch`. `sim.Config` also models late-onset hazards (six minutes of R6 idle or four minutes of R7 heat soak), a flat rare hazard, a failure on an idle core, a backend error just before a crash, and watchdog, power-loss and thermal-trip resets. A scripted outcome pins a particular trial and time for deterministic interruption tests. The simulator has separate wall and boot-local monotonic clocks, so a wall-clock jump need not change which MCE belongs to a trial.
+A machine file sets any subset of `sim.Config`: the core count, BIOS context, ranking, model parameters, per-core edges, joints and scripted outcomes; unset keys keep the seeded defaults, and an unknown key is an error. This one adds a pair that crashes only when cores 03 and 11 are both at −30 or deeper under R7:
+
+```toml
+cores = 16
+
+[model.signals]
+crash = 1
+
+[[joint]]
+members = { "3" = -30, "11" = -30 }
+regimes = ["R7"]
+```
+
+Run it with `go run ./tools/sim --machine <file> --state-dir <dir>` and inspect `events --kind hunt,mark,refine` along with `status`, `cert` and `watch`. `sim.Config` also models late-onset hazards (six minutes of R6 idle or four minutes of R7 heat soak), a flat rare hazard, a failure on an idle core, a backend error just before a crash, and watchdog, power-loss and thermal-trip resets. A scripted outcome pins a particular trial and time for deterministic interruption tests. The simulator has separate wall and boot-local monotonic clocks, so a wall-clock jump need not change which MCE belongs to a trial.
