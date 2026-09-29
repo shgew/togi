@@ -4,6 +4,10 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Changed
+
+- Per-core offsets are refused on CCDs with fused-off slots: preflight names the CCD and fuse mask, and full 8-core CCDs remain supported ([#163]).
+
 ### Fixed
 
 - The tuning boot waits for an armed hardware watchdog before writing offsets or starting a workload, and loads its driver in the initrd. A freeze in the first seconds after boot can no longer bypass an unarmed watchdog; if none arms within 30 seconds, preflight stops without tuning ([#194]).
@@ -203,4 +207,5 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#59]: https://github.com/shgew/togi/pull/59
 [#65]: https://github.com/shgew/togi/pull/65
 [#69]: https://github.com/shgew/togi/pull/69
+[#163]: https://github.com/shgew/togi/pull/163
 [#194]: https://github.com/shgew/togi/pull/194

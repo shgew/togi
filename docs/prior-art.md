@@ -16,8 +16,9 @@ What togi takes from existing tools and research, and what it deliberately leave
 - **Argument encoding:** `(ccd << 28) | (slot << 20) | (offset & 0xFFFF)`, where `slot` is the physical core position within its CCD. Readback returns the offset as a 16-bit two's complement value in the low bits.
 - **Core-to-slot mapping:**
   - The SMU addresses physical slots, counting fused-off ones.
-  - On a full 8-core CCD, the kernel `core_id` modulo 8 is the slot. Harvested parts can renumber `core_id`, so the mapping is verified against the CCD's core-disable fuse, read over SMN at `0x304A03DC + (ccd << 25)`, where a set bit means a disabled slot.
-  - If the mapping cannot be verified, per-core writes are refused.
+  - On a full 8-core CCD, the kernel `core_id` modulo 8 is the slot. The CCD's core-disable fuse is read over SMN at `0x304A03DC + (ccd << 25)`, where a set bit means a disabled slot; only full CCDs with eight cores in the OS topology support per-core access.
+  - Harvested parts can renumber `core_id`. The fuse identifies enabled slots, not which kernel core occupies each slot: assigning sorted kernel cores to ascending enabled slots is unverified. Any fused-off slot refuses all per-core reads and writes until the mapping is confirmed on a harvested part.
+  - An independent identity probe would require experimental SMU writes to identify which core moved. It is deferred because the available hardware has only full CCDs.
   - On the 9950X3D2 both CCDs are full: logical CPUs N and N+16 are the two threads of core N.
 - **Volatility:** runtime CO values reset on reboot and are never written to BIOS or NVRAM.
 - **Backend quirks:** listed under Backends in `spec/workloads.md`.

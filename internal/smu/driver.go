@@ -2,7 +2,6 @@ package smu
 
 import (
 	"fmt"
-	"math/bits"
 	"os"
 	"path/filepath"
 	"slices"
@@ -136,19 +135,19 @@ func (d *Driver) mapSlots() {
 			return
 		}
 		disabled := uint8(fuse)
-		cores := byCCD[ccd]
-		if live := 8 - bits.OnesCount8(disabled); live != len(cores) {
-			d.mappingErr = fmt.Errorf("CCD%d fuse 0x%02x leaves %d live slots for %d cores", ccd, disabled, live, len(cores))
+		if disabled != 0 {
+			d.mappingErr = fmt.Errorf("CCD%d fuse 0x%02x: harvested CCDs are not yet supported", ccd, disabled)
 			return
 		}
-		var slots []int
-		for slot := range 8 {
-			if disabled&(1<<slot) == 0 {
-				d.slots[cores[len(slots)]] = location{uint32(ccd), uint32(slot)}
-				slots = append(slots, slot)
-			}
+		cores := byCCD[ccd]
+		if len(cores) != 8 {
+			d.mappingErr = fmt.Errorf("CCD%d fuse 0x%02x leaves 8 live slots for %d cores", ccd, disabled, len(cores))
+			return
 		}
-		details = append(details, fmt.Sprintf("CCD%d fuse 0x%02x: cores %02d-%02d on slots %d-%d", ccd, disabled, cores[0], cores[len(cores)-1], slots[0], slots[len(slots)-1]))
+		for slot, core := range cores {
+			d.slots[core] = location{uint32(ccd), uint32(slot)}
+		}
+		details = append(details, fmt.Sprintf("CCD%d fuse 0x%02x: cores %02d-%02d on slots 0-7", ccd, disabled, cores[0], cores[len(cores)-1]))
 	}
 	d.mappingDetail = strings.Join(details, "; ")
 }
