@@ -152,7 +152,7 @@ togi stops when it cannot make progress:
 |---|---|
 | Attributed failure at offset 0, or an unattributed resident failure with every core at 0 | The instability is not caused by Curve Optimizer. |
 | SMU readback differs from the written value, or an SMU command fails | Offsets can no longer be trusted. |
-| The same backend is inconclusive 3 times in a row, or is missing | No evidence can be produced. |
+| The same backend has `dead_ends.inconclusive_in_a_row` consecutive inconclusive trials (3 by default), then three more consecutive inconclusive trials after waits of 60, 300 and 1800 seconds before those trials, or is missing | No evidence can be produced; the `no_evidence` dead end fires at `dead_ends.inconclusive_in_a_row + 3` (6 by default). |
 | 3 stray crashes in a row | The machine crashes before togi acts: a boot loop. |
 | A backend thread observed outside its allowed logical CPUs | Attribution is broken. |
 | Preflight fails | The environment is not the one being tuned. |
@@ -164,7 +164,7 @@ What a dead end does in each run mode is in `runtime.md`. Thresholds are configu
 A dead end follows from evidence recorded in the journal, not from memory, so a kill between the evidence and the `deadend` event still stops the next `run` before any SMU write. The evidence:
 - an `smu.error`, or an `smu.readback` whose offset differs from `expected`;
 - a `trial.end` with `escaped` CPUs;
-- a backend's streak of inconclusive `trial.end`s reaching the threshold, not counting trials interrupted by a stop or restart;
+- a backend's streak of inconclusive `trial.end`s reaching `dead_ends.inconclusive_in_a_row + 3`, after waits of 60, 300 and 1800 seconds before the three trials following the initial `dead_ends.inconclusive_in_a_row` consecutive inconclusive trials; trials interrupted by a stop or restart do not count;
 - the stray-crash streak reaching the threshold.
 
 A `deadend` consumes the evidence it reports: the SMU flag, escape flag, thermal trip, inconclusive streak or stray streak. Other conditions are evaluated fresh by the following `run`. Preflight repeats every run. A failure at 0 leaves failed mark 0 on its core, so every later run stops until reset.
@@ -173,7 +173,7 @@ That fresh evaluation applies only after the dead end has recorded its boot acti
 
 ## Tiers and certificate
 
-Tiers rank the current profile by durability, not proof. A shallow backoff need not erase valid exposure: the tier clock starts at the later of the last profile deepening and the latest failure on a profile at least as deep as the current one. Recompute it at each profile change.
+Tiers rank the current profile by durability, not proof. A shallow backoff need not erase valid exposure: the tier clock starts at the first `profile.change` when nothing later applies, otherwise at the later of the last profile deepening and the latest failure on a profile at least as deep as the current one. Recompute it at each profile change.
 
 | Tier | Requirement |
 |---|---|
