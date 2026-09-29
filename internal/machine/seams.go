@@ -163,3 +163,6 @@ type Machine struct {
 var ErrCrashed = errors.New("the simulated machine crashed")
 
 var ErrBackendMissing = errors.New("backend binary missing")
+
+// ErrBootMissing means the system journal no longer holds the boot, for example after journald vacuumed it.
+var ErrBootMissing = errors.New("boot missing from the system journal")

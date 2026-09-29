@@ -2,6 +2,7 @@ package detect
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -67,11 +68,11 @@ func TestResetReason(t *testing.T) {
 	}
 }
 
-func TestResetReasonMissingLog(t *testing.T) {
+func TestResetReasonMissingBoot(t *testing.T) {
 	k := NewKernel(nil)
 	k.journalctl = func([]string) ([]byte, []byte, int, error) { return nil, []byte("No journal boot entry found"), 1, nil }
-	if _, err := k.ResetReason("missing"); err == nil {
-		t.Fatal("missing log must fail")
+	if _, err := k.ResetReason("missing"); !errors.Is(err, machine.ErrBootMissing) {
+		t.Fatalf("ResetReason of a vacuumed boot: %v, want ErrBootMissing", err)
 	}
 }
 

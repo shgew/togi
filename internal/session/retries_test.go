@@ -137,6 +137,37 @@ func TestRecoveryKernelLogRetriesAndDeadEnd(t *testing.T) {
 	}
 }
 
+type vacuumedKernel struct {
+	machine.Kernel
+	gone string
+}
+
+func (k vacuumedKernel) ResetReason(boot string) (machine.ResetReason, error) {
+	if boot == k.gone {
+		return machine.ResetReason{}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)
+	}
+	return k.Kernel.ResetReason(boot)
+}
+
+func TestRecoverySkipsAnOlderBootTheSystemJournalDropped(t *testing.T) {
+	t.Parallel()
+	in, events := firstCrash(t, machine.ResetWatchdog, machine.Crash, false)
+	seams := in.Machine.Seams()
+	seams.Kernel = vacuumedKernel{Kernel: seams.Kernel, gone: events[0].Boot}
+	stop, err := driveWithSeams(in, seams)
+	if err != nil {
+		t.Fatalf("recover: %v", err)
+	}
+	if stop.Reason != StopRotations {
+		t.Fatalf("stop %+v, want rotations", stop)
+	}
+	for _, e := range readEvents(t, in.Dir) {
+		if p, ok := e.Data.(*journal.BackendRetry); ok && p.Backend == "kernel_log" {
+			t.Fatalf("kernel log retried for a dropped older boot: %s", e.Msg)
+		}
+	}
+}
+
 func TestMissingBackendDeadEndsWithoutRetries(t *testing.T) {
 	t.Parallel()
 	in := simInput(t.TempDir(), newSim(t, small()))

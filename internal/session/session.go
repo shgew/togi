@@ -263,7 +263,7 @@ func (r *runner) recoverCrashes(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		reason, err := r.readResetReason(ctx, next)
+		reason, err := r.readResetReason(ctx, next, false)
 		if err != nil {
 			return err
 		}
@@ -275,7 +275,7 @@ func (r *runner) recoverCrashes(ctx context.Context) error {
 					}
 					continue
 				}
-				other, err := r.readResetReason(ctx, b)
+				other, err := r.readResetReason(ctx, b, true)
 				if err != nil {
 					return err
 				}
@@ -362,7 +362,7 @@ func (r *runner) readMCEs(ctx context.Context, boot string) ([]machine.MCE, erro
 	}
 }
 
-func (r *runner) readResetReason(ctx context.Context, boot string) (machine.ResetReason, error) {
+func (r *runner) readResetReason(ctx context.Context, boot string, mayBeVacuumed bool) (machine.ResetReason, error) {
 	if r.fold.kernelRetries > 0 && r.kernelWaited == 0 {
 		if err := r.waitKernelRetry(ctx); err != nil {
 			return machine.ResetReason{}, err
@@ -370,6 +370,9 @@ func (r *runner) readResetReason(ctx context.Context, boot string) (machine.Rese
 	}
 	for {
 		reason, err := r.in.Machine.Kernel.ResetReason(boot)
+		if mayBeVacuumed && errors.Is(err, machine.ErrBootMissing) {
+			return machine.ResetReason{}, nil
+		}
 		if err == nil || errors.Is(err, machine.ErrCrashed) {
 			return reason, err
 		}

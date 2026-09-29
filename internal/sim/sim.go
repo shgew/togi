@@ -503,7 +503,7 @@ func (k kernel) ResetReason(boot string) (machine.ResetReason, error) {
 	}
 	reason, ok := k.m.reasons[boot]
 	if !ok {
-		return machine.ResetReason{}, fmt.Errorf("read reset reason of boot %s: no kernel log", boot)
+		return machine.ResetReason{}, fmt.Errorf("read reset reason of boot %s: %w", boot, machine.ErrBootMissing)
 	}
 	return reason, nil
 }

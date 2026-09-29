@@ -53,7 +53,7 @@ func (k *Kernel) MCEs(boot string, since time.Duration) ([]machine.MCE, error) {
 		return nil, fmt.Errorf("read kernel log of boot %s: %w: %s", boot, err, bytes.TrimSpace(stderr))
 	}
 	if code != 0 {
-		if code == 1 && (bytes.Contains(stderr, []byte("No journal boot entry found")) || len(out) == 0 && len(stderr) == 0) {
+		if code == 1 && (bytes.Contains(stderr, noBootEntry) || len(out) == 0 && len(stderr) == 0) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("read kernel log of boot %s: exit status %d: %s", boot, code, bytes.TrimSpace(stderr))
@@ -95,6 +95,7 @@ func (k *Kernel) MCEs(boot string, since time.Duration) ([]machine.MCE, error) {
 	return Parse(msgs, k.cpuCore), nil
 }
 
+var noBootEntry = []byte("No journal boot entry found")
 var resetLine = regexp.MustCompile(`^x86/amd: Previous system reset reason \[0x[0-9a-f]{8}\]: (.+)$`)
 var versionLine = regexp.MustCompile(`^Linux version (\d+)\.(\d+)`)
 
@@ -105,6 +106,9 @@ func (k *Kernel) ResetReason(boot string) (machine.ResetReason, error) {
 		return machine.ResetReason{}, fmt.Errorf("read kernel log of boot %s: %w: %s", boot, err, bytes.TrimSpace(stderr))
 	}
 	if code != 0 {
+		if code == 1 && bytes.Contains(stderr, noBootEntry) {
+			return machine.ResetReason{}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)
+		}
 		return machine.ResetReason{}, fmt.Errorf("read kernel log of boot %s: exit status %d: %s", boot, code, bytes.TrimSpace(stderr))
 	}
 	var reason machine.ResetReason
