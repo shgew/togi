@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/shgew/togi/internal/machine"
+	"golang.org/x/sys/unix"
 )
 
 func TestHardwareKernelLog(t *testing.T) {
@@ -36,15 +37,19 @@ func TestHardwareKernelLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var ts unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts); err != nil {
+		t.Fatal(err)
+	}
 	k := NewKernel([]machine.CoreInfo{{Core: 0, CPUs: []int{0}}})
 	for _, c := range []struct {
 		name  string
 		boot  string
-		since time.Time
+		since time.Duration
 	}{
-		{"previous boot", prev, time.Time{}},
-		{"current boot, last hour", current, time.Now().Add(-time.Hour)},
-		{"unknown boot", "00000000000000000000000000000000", time.Time{}},
+		{"previous boot", prev, 0},
+		{"current boot, last hour", current, max(0, time.Duration(ts.Nano())-time.Hour)},
+		{"unknown boot", "00000000000000000000000000000000", 0},
 	} {
 		mces, err := k.MCEs(c.boot, c.since)
 		if err != nil {
@@ -55,4 +60,9 @@ func TestHardwareKernelLog(t *testing.T) {
 			t.Fatalf("unknown boot returned %d machine checks", len(mces))
 		}
 	}
+	reason, err := k.ResetReason(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("current boot's reset reason: %+v", reason)
 }

@@ -11,6 +11,7 @@ import (
 )
 
 func residentHarness(t *testing.T, offsets ...int) *harness {
+	t.Helper()
 	starts := make([]coreStart, len(offsets))
 	for i, x := range offsets {
 		starts[i] = coreStart{phase: journal.PhaseDone, offset: x, fail: new(x - 1), pass: new(x)}

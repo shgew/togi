@@ -44,6 +44,7 @@ func StyleOf(e Event) Style {
 			return Green
 		case Backoff, Yield:
 			return Yellow
+		case CheckEdge:
 		}
 	case *CorePhase:
 		if p.To == PhaseDone || p.To == PhaseResident && p.From == PhaseSearch {

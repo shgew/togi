@@ -316,6 +316,8 @@ func (p *ProfileApplied) Message() string {
 	switch p.Condition {
 	case machine.Isolated:
 		return "profile applied for isolated trials: every core at CO 0"
+	case machine.Masked:
+		return fmt.Sprintf("mask profile applied: %v", p.Offsets)
 	case machine.Resident:
 	}
 	return fmt.Sprintf("profile applied: %v", p.Offsets)

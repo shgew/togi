@@ -69,8 +69,7 @@ func (s *State) huntStartNext() Action {
 	}
 	anchor := make([]int, len(f.profile))
 	anchorSeq := 0
-	for i := len(s.qualified) - 1; i >= 0; i-- {
-		q := s.qualified[i]
+	for _, q := range slices.Backward(s.qualified) {
 		if len(q.profile) != len(f.profile) || slices.Equal(q.profile, f.profile) || !atLeastShallow(q.profile, f.profile) {
 			continue
 		}
@@ -117,10 +116,7 @@ func (s *State) split(h *hunt, set []int, g int) [][]int {
 	if len(set) == 0 {
 		return nil
 	}
-	g = min(g, len(set))
-	if g < 1 {
-		g = 1
-	}
+	g = max(1, min(g, len(set)))
 	parts := make([][]int, 0, g)
 	if g == 2 && slices.Equal(set, h.start.Candidates) {
 		var loaded, idle []int

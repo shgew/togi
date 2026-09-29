@@ -111,19 +111,6 @@ func (h *harness) next() Action {
 	return Action{}
 }
 
-func (h *harness) untilTrial() Action {
-	h.t.Helper()
-	for range 2000 {
-		a := h.next()
-		if a.Kind == RunTrial {
-			return a
-		}
-		h.decide(a)
-	}
-	h.t.Fatal("no trial")
-	return Action{}
-}
-
 func projected(h *harness) journal.State {
 	var st journal.State
 	journal.Replay(h.events, &st)

@@ -20,6 +20,9 @@ type logReporter struct{ t *testing.T }
 
 func (r logReporter) Progress(s string)       { r.t.Log("progress:", s) }
 func (r logReporter) Sample(s machine.Sample) { r.t.Logf("sample: %+v", s) }
+func (r logReporter) Signal(core int, signal machine.Signal, detail string) {
+	r.t.Logf("signal: core %02d %s: %s", core, signal, detail)
+}
 
 func packagePath(t *testing.T) string {
 	t.Helper()

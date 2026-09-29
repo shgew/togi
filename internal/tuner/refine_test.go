@@ -9,6 +9,7 @@ import (
 )
 
 func qualifiedHarness(t *testing.T, offsets []int, marks [][]int) *harness {
+	t.Helper()
 	starts := make([]coreStart, len(offsets))
 	for i, v := range offsets {
 		starts[i] = coreStart{phase: journal.PhaseDone, offset: v}

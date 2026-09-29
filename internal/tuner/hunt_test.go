@@ -10,6 +10,7 @@ import (
 )
 
 func huntHarness(t *testing.T, cores int, duration int) *harness {
+	t.Helper()
 	starts := make([]coreStart, cores)
 	for i := range starts {
 		starts[i] = coreStart{phase: journal.PhaseDone, offset: -30, fail: new(-31)}
