@@ -397,6 +397,9 @@ func (f *fold) trialEnded(e journal.Event, p *journal.TrialEnd) {
 		f.escapeSeq = e.Seq
 		f.escapeDetail = fmt.Sprintf("backend thread on cpu %s outside allowed cpus %s", cpus(p.Escaped), cpus(f.open.startCPUs))
 	}
+	if p.ContainmentError != "" {
+		f.escapeSeq, f.escapeDetail = e.Seq, p.ContainmentError
+	}
 }
 
 func cpus(list []int) string {

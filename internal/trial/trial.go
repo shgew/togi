@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shgew/togi/internal/backend"
@@ -40,7 +41,7 @@ func New(o Options) *Runner {
 	if o.StallWindow <= 0 {
 		o.StallWindow = 10 * time.Second
 	}
-	if o.StopGrace <= 0 {
+	if o.StopGrace <= 0 || o.StopGrace > 3*time.Second {
 		o.StopGrace = 3 * time.Second
 	}
 	if o.Hwmon == "" {
@@ -52,6 +53,10 @@ func New(o Options) *Runner {
 type instance struct {
 	machine.Instance
 	watch     []watchFile
+	process   process
+	partial   [2]string
+	reaped    chan struct{}
+	joined    chan struct{}
 	done      bool
 	ready     bool
 	setup     bool
@@ -68,10 +73,16 @@ type running struct {
 	host         processHost
 	started      machine.Started
 	instances    []*instance
+	scopes       []string
+	streamStop   chan struct{}
+	streams      sync.WaitGroup
+	outputErr    error
+	stopMu       sync.Mutex
+	stopped      bool
+	streamClosed bool
+	cleanupErr   error
 	events       chan streamEvent
 	initialStops int
-	stopped      bool
-	stopErr      error
 	cancel       context.CancelFunc
 }
 
@@ -96,7 +107,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return nil, fmt.Errorf("create trial directory %s: %w", root, err)
 	}
-	t := &running{spec: spec, backend: b, options: r.options, host: r.host, events: make(chan streamEvent, 1024)}
+	t := &running{spec: spec, backend: b, options: r.options, host: r.host, events: make(chan streamEvent, 1024), streamStop: make(chan struct{})}
 	t.started.Scope = "togi-trial-" + spec.ID
 	t.started.CPUs = slices.Clone(spec.CPUs)
 	t.started.Schedule = machine.ScheduleFor(spec)
@@ -117,13 +128,11 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 			scope += "-" + prefix
 		}
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.abort()
-			return nil, fmt.Errorf("create instance directory %s: %w", dir, err)
+			return nil, t.abort(fmt.Errorf("create instance directory %s: %w", dir, err))
 		}
 		launch, err := b.Prepare(spec.Workload, dir, cpus)
 		if err != nil {
-			t.abort()
-			return nil, fmt.Errorf("prepare %s on core %02d: %w", b.Name(), core, err)
+			return nil, t.abort(fmt.Errorf("prepare %s on core %02d: %w", b.Name(), core, err))
 		}
 		for _, f := range launch.Files {
 			if prefix != "" {
@@ -132,8 +141,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 			t.started.Files = append(t.started.Files, f)
 		}
 		if len(launch.Argv) == 0 {
-			t.abort()
-			return nil, fmt.Errorf("prepare %s on core %02d: empty argv", b.Name(), core)
+			return nil, t.abort(fmt.Errorf("prepare %s on core %02d: empty argv", b.Name(), core))
 		}
 		argv := launch.Argv
 		if !r.options.NoScope {
@@ -141,23 +149,23 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 		}
 		out, err := os.OpenFile(filepath.Join(dir, "stdout.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
-			t.abort()
-			return nil, fmt.Errorf("open stdout log: %w", err)
+			return nil, t.abort(fmt.Errorf("open stdout log: %w", err))
 		}
 		erlog, err := os.OpenFile(filepath.Join(dir, "stderr.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
 			out.Close()
-			t.abort()
-			return nil, fmt.Errorf("open stderr log: %w", err)
+			return nil, t.abort(fmt.Errorf("open stderr log: %w", err))
+		}
+		if !r.options.NoScope {
+			t.scopes = append(t.scopes, scope)
 		}
 		p, err := t.host.Start(ctx, argv, dir)
 		if err != nil {
 			out.Close()
 			erlog.Close()
-			t.abort()
-			return nil, fmt.Errorf("start %s: %w", scope, err)
+			return nil, t.abort(fmt.Errorf("start %s: %w", scope, err))
 		}
-		inst := &instance{Core: core, CPUs: slices.Clone(cpus), PID: p.PID(), Scope: scope, resumed: time.Now()}
+		inst := &instance{Core: core, CPUs: slices.Clone(cpus), PID: p.PID(), Scope: scope, process: p, resumed: time.Now(), reaped: make(chan struct{}), joined: make(chan struct{})}
 		for _, name := range launch.Watch {
 			inst.watch = append(inst.watch, watchFile{path: filepath.Join(dir, name)})
 		}
@@ -168,20 +176,23 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 			t.started.Argv = slices.Clone(launch.Argv)
 		}
 		done := make(chan struct{}, 2)
-		go t.readStream(i, p.Stdout(), out, false, done)
-		go t.readStream(i, p.Stderr(), erlog, true, done)
+		t.streams.Add(2)
+		go t.readStream(i, inst, p.Stdout(), out, false, done)
+		go t.readStream(i, inst, p.Stderr(), erlog, true, done)
 		go func(index int, p process) {
+			defer close(inst.joined)
+			err := p.Wait()
+			close(inst.reaped)
 			<-done
 			<-done
-			t.events <- streamEvent{index: index, exit: true, err: p.Wait()}
+			t.emit(streamEvent{index: index, exit: true, err: err})
 		}(i, p)
 		if spec.Regime == machine.R6 {
 			if !r.options.NoScope {
 				t.awaitScope(ctx, inst)
 			}
 			if err := t.toggle(inst, true, time.Now()); err != nil {
-				t.abort()
-				return nil, fmt.Errorf("stop initial R6 instance on core %02d: %w", core, err)
+				return nil, t.abort(fmt.Errorf("stop initial R6 instance on core %02d: %w", core, err))
 			}
 			inst.active = 0
 			t.initialStops++
@@ -272,15 +283,31 @@ func (r *Runner) Passed(id string) error {
 
 func (t *running) Started() machine.Started { return t.started }
 
-func (t *running) readStream(i int, src io.Reader, log *os.File, stderr bool, done chan<- struct{}) {
-	defer func() { log.Close(); done <- struct{}{} }()
-	buf := make([]byte, 4096)
+func (t *running) emit(e streamEvent) {
+	select {
+	case t.events <- e:
+	case <-t.streamStop:
+	}
+}
+
+func (t *running) readStream(i int, inst *instance, src io.Reader, log *os.File, stderr bool, done chan<- struct{}) {
 	var pending []byte
+	defer func() {
+		stream := 0
+		if stderr {
+			stream = 1
+		}
+		inst.partial[stream] = string(pending)
+		log.Close()
+		done <- struct{}{}
+		t.streams.Done()
+	}()
+	buf := make([]byte, 4096)
 	for {
 		n, err := src.Read(buf)
 		if n > 0 {
 			if _, werr := log.Write(buf[:n]); werr != nil {
-				t.events <- streamEvent{index: i, err: fmt.Errorf("write output log: %w", werr)}
+				t.emit(streamEvent{index: i, err: fmt.Errorf("write output log: %w", werr)})
 			}
 			pending = append(pending, buf[:n]...)
 			for {
@@ -288,18 +315,20 @@ func (t *running) readStream(i int, src io.Reader, log *os.File, stderr bool, do
 				if j < 0 {
 					break
 				}
-				t.events <- streamEvent{index: i, line: string(pending[:j]), stderr: stderr}
+				t.emit(streamEvent{index: i, line: string(pending[:j]), stderr: stderr})
 				pending = pending[j+1:]
+				select {
+				case <-t.streamStop:
+					return
+				default:
+				}
 			}
 		}
 		if err != nil {
-			if len(pending) > 0 {
-				t.events <- streamEvent{index: i, line: string(pending), stderr: stderr}
-			}
 			if !errors.Is(err, io.EOF) {
-				t.events <- streamEvent{index: i, err: fmt.Errorf("read backend output: %w", err)}
+				t.emit(streamEvent{index: i, err: fmt.Errorf("read backend output: %w", err)})
 			}
-			t.events <- streamEvent{index: i, stderr: stderr, eof: true}
+			t.emit(streamEvent{index: i, stderr: stderr, eof: true})
 			return
 		}
 	}

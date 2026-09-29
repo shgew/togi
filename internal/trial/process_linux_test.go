@@ -44,10 +44,7 @@ func TestScopeTimeoutUsesRemainingTeardownTime(t *testing.T) {
 		calls := 0
 		h := scopeCommandHost{fakeHost: &fakeHost{}, os: osHost{command: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			deadline, ok := ctx.Deadline()
-			want := started.Add(10 * time.Second)
-			if calls == 1 {
-				want = started.Add(13 * time.Second)
-			}
+			want := started.Add(2 * time.Second)
 			if !ok || !deadline.Equal(want) {
 				t.Fatalf("kill %d deadline = %v, want %v", calls, deadline, want)
 			}
@@ -55,9 +52,9 @@ func TestScopeTimeoutUsesRemainingTeardownTime(t *testing.T) {
 			<-ctx.Done()
 			return []byte("Unit not loaded; could not be found"), ctx.Err()
 		}}}
-		run := &running{host: h, options: Options{StopGrace: 3 * time.Second}, instances: []*instance{{Scope: "first", done: true}, {Scope: "second", done: true}}}
+		run := &running{host: h, options: Options{StopGrace: 3 * time.Second}, scopes: []string{"first", "second"}, instances: []*instance{{done: true}, {done: true}}}
 		err := run.teardown(&machine.Result{}, &recorder{})
-		if !errors.Is(err, context.DeadlineExceeded) {
+		if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, machine.ErrContainment) {
 			t.Fatalf("cleanup = %v", err)
 		}
 		if calls != 2 {

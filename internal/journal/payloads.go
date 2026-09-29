@@ -500,15 +500,16 @@ const (
 type TrialEnd struct {
 	Trial string `json:"trial"`
 	KernelBoundary
-	Outcome        Outcome        `json:"outcome"`
-	Signal         machine.Signal `json:"signal,omitempty"`
-	Core           *int           `json:"core,omitempty"`
-	DurationS      int            `json:"duration_s"`
-	TctlMaxC       *int           `json:"tctl_max_c,omitempty"`
-	Reason         string         `json:"reason,omitempty"`
-	Interrupted    bool           `json:"interrupted,omitempty"`
-	Escaped        []int          `json:"escaped,omitempty"`
-	BackendMissing bool           `json:"backend_missing,omitempty"`
+	Outcome          Outcome        `json:"outcome"`
+	Signal           machine.Signal `json:"signal,omitempty"`
+	Core             *int           `json:"core,omitempty"`
+	DurationS        int            `json:"duration_s"`
+	TctlMaxC         *int           `json:"tctl_max_c,omitempty"`
+	Reason           string         `json:"reason,omitempty"`
+	Interrupted      bool           `json:"interrupted,omitempty"`
+	Escaped          []int          `json:"escaped,omitempty"`
+	BackendMissing   bool           `json:"backend_missing,omitempty"`
+	ContainmentError string         `json:"containment_error,omitempty"`
 }
 
 func (*TrialEnd) Kind() Kind { return KindTrialEnd }

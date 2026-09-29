@@ -81,14 +81,20 @@ func TestHelperProcess(t *testing.T) {
 		fmt.Println("COMPUTE ERROR")
 		fmt.Println("AFFINITY:42")
 		os.Exit(0)
-	case "descendant":
+	case "descendant", "pipe-descendant":
 		cmd := exec.Command(os.Args[0], "-test.run=TestHelperProcess", "--", "--helper", "orphan")
+		if mode == "pipe-descendant" {
+			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		}
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 		if err := cmd.Start(); err != nil {
 			os.Exit(2)
 		}
 		if err := os.WriteFile("descendant.pid", []byte(strconv.Itoa(cmd.Process.Pid)), 0644); err != nil {
 			os.Exit(2)
+		}
+		if mode == "pipe-descendant" {
+			fmt.Print("COMPUTE ERROR")
 		}
 		os.Exit(0)
 	case "orphan":

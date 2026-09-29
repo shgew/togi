@@ -9,9 +9,8 @@ import (
 
 type process interface {
 	PID() int
-	Stdout() io.Reader
-	Stderr() io.Reader
-	// Wait may be called only after Stdout and Stderr reached EOF.
+	Stdout() io.ReadCloser
+	Stderr() io.ReadCloser
 	Wait() error
 }
 

@@ -31,27 +31,33 @@ func commandOutput(ctx context.Context, name string, args ...string) ([]byte, er
 
 type execProcess struct {
 	cmd            *exec.Cmd
-	stdout, stderr io.Reader
+	stdout, stderr *os.File
 }
 
-func (p execProcess) PID() int          { return p.cmd.Process.Pid }
-func (p execProcess) Stdout() io.Reader { return p.stdout }
-func (p execProcess) Stderr() io.Reader { return p.stderr }
-func (p execProcess) Wait() error       { return p.cmd.Wait() }
+func (p execProcess) PID() int              { return p.cmd.Process.Pid }
+func (p execProcess) Stdout() io.ReadCloser { return p.stdout }
+func (p execProcess) Stderr() io.ReadCloser { return p.stderr }
+func (p execProcess) Wait() error           { return p.cmd.Wait() }
 
 func (osHost) Start(ctx context.Context, argv []string, dir string) (process, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
-	stdout, err := cmd.StdoutPipe()
+	stdout, out, err := os.Pipe()
 	if err != nil {
 		return nil, fmt.Errorf("pipe stdout: %w", err)
 	}
-	stderr, err := cmd.StderrPipe()
+	defer out.Close()
+	stderr, erout, err := os.Pipe()
 	if err != nil {
+		stdout.Close()
 		return nil, fmt.Errorf("pipe stderr: %w", err)
 	}
+	defer erout.Close()
+	cmd.Stdout, cmd.Stderr = out, erout
 	if err := cmd.Start(); err != nil {
+		stdout.Close()
+		stderr.Close()
 		return nil, err
 	}
 	return execProcess{cmd: cmd, stdout: stdout, stderr: stderr}, nil

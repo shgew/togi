@@ -23,6 +23,7 @@ type fakeHost struct {
 	signals   []fakeSignal
 	inScope   bool
 	killScope func(string) ([]byte, error)
+	startFail int
 }
 
 type fakeProc struct {
@@ -38,22 +39,27 @@ type fakeProc struct {
 	cpu              time.Duration
 	since            time.Time
 	escapeCPU        int
+	holdOutput       bool
 }
 
 func (h *fakeHost) Start(_ context.Context, argv []string, dir string) (process, error) {
+	if h.startFail > 0 && len(h.procs)+1 == h.startFail {
+		return nil, errors.New("injected start failure")
+	}
 	stdoutR, stdoutW := io.Pipe()
 	stderrR, stderrW := io.Pipe()
 	h.mu.Lock()
 	p := &fakeProc{host: h, pid: 1000 + len(h.procs), stdoutR: stdoutR, stdoutW: stdoutW, stderrR: stderrR, stderrW: stderrW, exited: make(chan struct{})}
+	p.holdOutput = argv[len(argv)-1] == "held-output"
 	h.procs = append(h.procs, p)
 	h.mu.Unlock()
 	go p.script(argv[len(argv)-1], dir)
 	return p, nil
 }
 
-func (p *fakeProc) PID() int          { return p.pid }
-func (p *fakeProc) Stdout() io.Reader { return p.stdoutR }
-func (p *fakeProc) Stderr() io.Reader { return p.stderrR }
+func (p *fakeProc) PID() int              { return p.pid }
+func (p *fakeProc) Stdout() io.ReadCloser { return p.stdoutR }
+func (p *fakeProc) Stderr() io.ReadCloser { return p.stderrR }
 func (p *fakeProc) Wait() error {
 	<-p.exited
 	p.host.mu.Lock()
@@ -69,8 +75,10 @@ func (p *fakeProc) finish(err error) {
 		p.exitErr = err
 		close(p.exited)
 		p.host.mu.Unlock()
-		p.stdoutW.Close()
-		p.stderrW.Close()
+		if !p.holdOutput {
+			p.stdoutW.Close()
+			p.stderrW.Close()
+		}
 	})
 }
 
@@ -142,6 +150,8 @@ func (p *fakeProc) script(mode, dir string) {
 	case "sleep":
 		<-p.exited
 	case "exit":
+	case "held-output":
+		fmt.Fprint(p.stdoutW, "COMPUTE ERROR")
 	}
 }
 

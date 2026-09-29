@@ -81,9 +81,15 @@ systemd-run --scope --quiet --collect -p AllowedCPUs=<cpus> -p DefaultDependenci
 
 The kernel enforces the cpuset whatever the backend does. togi also samples the processor field of every backend thread in `/proc/<pid>/task/*/stat` once per second, from the moment the process is inside its scope. A thread seen outside its allowed logical CPUs is a dead end. Stopping a trial terminates the whole scope.
 
-Teardown, per instance: SIGCONT then SIGTERM to the process group, and up to 3 s for it to exit; then SIGKILL to everything in the scope (`systemctl kill --kill-whom=all`) and to the process group, and up to 10 s more. A backend still running after that is a runner error. The output left in the pipes and watched files is read to the end before the outcome is decided, so an error printed during teardown still fails the trial.
+Normal trial ends and partial-start rollbacks use the same teardown, with one absolute deadline shared across all instances:
+1. Send SIGCONT, then SIGTERM to each process group, and allow up to 3 s of grace shared by all groups.
+2. Send SIGKILL to every known scope with `systemctl kill --kill-whom=all`, including scopes whose launcher has exited and scopes attempted before a launch failed. The calls share a slot of at most 2 s and each gets only the remaining time.
+3. Send SIGKILL to every launched process group.
+4. Drain output for up to 10 s, without passing the absolute deadline. Close the output readers at the deadline and join their goroutines, releasing the log files even when a detached descendant holds the pipes open.
 
-Every systemd CLI invocation has a context deadline. The preflight `systemd-run` probe and `systemctl reboot` are bounded by 30 s; a trial's `systemd-run` process is bounded by its trial duration plus the startup and teardown allowances. Teardown `systemctl` calls share a deadline of the stop grace plus 10 s from teardown's start, so each kill has only the remaining time. A timed-out kill is failed cleanup even if its output says the scope is missing. Kernel-log reads with `journalctl` have a 30 s deadline; a timeout is a read failure, not an empty log, and follows the existing inconclusive handling.
+Teardown takes at most 15 s regardless of instance count. Cleanup succeeds only when every launched process has exited, output has drained, and every scope kill succeeded or confirmed that its scope no longer exists. A failed or timed-out scope kill, an unconfirmed process-group kill, or an undrained backend is a containment dead end: no next trial or tuning profile write follows. Offset restoration belongs to run-level cleanup, not partial-start rollback or trial outcome adjudication. Final output from the pipes and watched files is classified before the outcome, including unterminated computation errors printed during teardown.
+
+Every systemd CLI invocation has a context deadline. The preflight `systemd-run` probe and `systemctl reboot` are bounded by 30 s; a trial's `systemd-run` process is bounded by its trial duration plus the startup and teardown allowances. Teardown `systemctl` calls share the bounded slot within the absolute 15 s cleanup deadline, so each kill has only the remaining time. A timed-out kill is failed cleanup even if its output says the scope is missing. Kernel-log reads with `journalctl` have a 30 s deadline; a timeout is a read failure, not an empty log, and follows the existing inconclusive handling.
 
 ## Trial outcome
 

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
@@ -322,5 +323,84 @@ func assertOnlyRestorationWrites(t *testing.T, events []journal.Event, after int
 		if e.Kind == journal.KindTrialIntent {
 			t.Fatalf("trial after dead-end evidence: %+v", e)
 		}
+	}
+}
+
+type containmentTrials struct {
+	machine.Trials
+	atStart bool
+}
+
+func (t containmentTrials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Running, error) {
+	if t.atStart {
+		return nil, errors.Join(errors.New("second instance failed; output still open"), machine.ErrContainment)
+	}
+	r, err := t.Trials.Start(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	return containmentRunning{r}, nil
+}
+
+type containmentRunning struct{ machine.Running }
+
+func (r containmentRunning) Wait(ctx context.Context, report machine.Reporter) (machine.Result, error) {
+	result, err := r.Running.Wait(ctx, report)
+	result.Signal = machine.ComputationError
+	return result, errors.Join(err, context.Canceled, machine.ErrContainment)
+}
+
+func TestUnconfirmedCleanupDeadEnd(t *testing.T) {
+	for _, atStart := range []bool{false, true} {
+		name := "normal end"
+		if atStart {
+			name = "partial start"
+		}
+		t.Run(name, func(t *testing.T) {
+			run := func(in simRun, killed *trigger) (Stop, error) {
+				seams := in.Machine.Seams()
+				seams.Trials = containmentTrials{Trials: seams.Trials, atStart: atStart}
+				boot, _ := seams.Host.BootID()
+				j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer j.Close()
+				return Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapFor(in, killed)(j), Machine: seams})
+			}
+			in := simInput(t.TempDir(), newSim(t, small()))
+			stop, err := run(in, nil)
+			if err != nil || stop.Reason != StopDeadEnd || stop.DeadEnd.Condition != journal.DeadEndContainment {
+				t.Fatalf("cleanup session stop %+v, error %v", stop, err)
+			}
+			events := readEvents(t, in.Dir)
+			endIndex := slices.IndexFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindTrialEnd })
+			if endIndex < 0 {
+				t.Fatal("cleanup has no trial end evidence")
+			}
+			end := events[endIndex].Data.(*journal.TrialEnd)
+			if end.Outcome != journal.OutcomeInconclusive || end.ContainmentError == "" || end.Signal != "" {
+				t.Fatalf("cleanup was adjudicated as stability evidence: %+v", end)
+			}
+			if events[endIndex+1].Kind != journal.KindDeadEnd {
+				t.Fatalf("offset write or decision before containment dead end: %s", events[endIndex+1].Kind)
+			}
+			for _, e := range events[endIndex+1:] {
+				if slices.Contains([]journal.Kind{journal.KindTrialIntent, journal.KindProfileApplied, journal.KindProfileChange, journal.KindFailure}, e.Kind) {
+					t.Fatalf("tuning continued after failed cleanup: %s", e.Kind)
+				}
+			}
+			if diff := cmp.Diff([]int{events[endIndex].Seq}, events[endIndex+1].Cause); diff != "" {
+				t.Fatalf("containment dead end cause (-want +got):\n%s", diff)
+			}
+			resumed := simInput(t.TempDir(), newSim(t, small()))
+			if _, err := run(resumed, killAt(events[endIndex].Seq)); !errors.Is(err, errKilled) {
+				t.Fatalf("interrupt after cleanup evidence = %v", err)
+			}
+			if stop := simulate(t, resumed); stop.Reason != StopDeadEnd || stop.DeadEnd.Condition != journal.DeadEndContainment {
+				t.Fatalf("resume lost cleanup containment evidence: %+v", stop)
+			}
+			t.Logf("%s: containment dead end, no next trial/profile change; interrupted evidence resumes to the same dead end", name)
+		})
 	}
 }

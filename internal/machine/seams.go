@@ -176,6 +176,8 @@ var ErrCrashed = errors.New("the simulated machine crashed")
 
 var ErrBackendMissing = errors.New("backend binary missing")
 
+var ErrContainment = errors.New("trial cleanup could not be confirmed")
+
 // ErrBootMissing means the system journal no longer holds the boot, for example after journald vacuumed it.
 var ErrBootMissing = errors.New("boot missing from the system journal")
 
