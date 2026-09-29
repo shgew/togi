@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -296,6 +297,20 @@ func TestHuntJointAlreadyBroken(t *testing.T) {
 	h.decide(a)
 	if h.s.hunt != nil {
 		t.Fatal("joint commitment did not close when resident profile already breaks it")
+	}
+}
+
+func TestHuntCulpritDiscardsContradictedPass(t *testing.T) {
+	h := residentHarness(t, -29, -30)
+	h.add(&journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-29, -30}, Anchor: []int{0, 0}, Candidates: []int{0, 1}, Starts: 5, StartS: 120})
+	h.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{0}, Masks: 2})
+	a := h.next()
+	d, ok := a.Payload.(*journal.TunerDecision)
+	if !ok || d.Phase != journal.PhaseHunt || d.Core != 0 || d.Pass != nil || d.FailedMark == nil || *d.FailedMark != -29 {
+		t.Fatalf("culprit commitment kept contradicted pass: %+v", a)
+	}
+	if !strings.Contains(d.Reason, "passed step at -29 discarded, the failure contradicts it") {
+		t.Fatalf("culprit commitment reason: %q", d.Reason)
 	}
 }
 

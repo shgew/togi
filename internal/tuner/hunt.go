@@ -366,7 +366,8 @@ func (s *State) huntCommitment(h *hunt) (Action, bool) {
 			mark = max(mark, *c.fail)
 		}
 		to := max(c.offset, x+1)
-		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailedMark: new(mark), Reason: fmt.Sprintf("hunt %d found core %02d; failed mark %d", h.start.Hunt, c.id, mark)}, Cause: []int{h.endSeq}}, true
+		pass, discarded := keepPass(c.pass, mark)
+		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailedMark: new(mark), Reason: fmt.Sprintf("hunt %d found core %02d; failed mark %d%s", h.start.Hunt, c.id, mark, discarded)}, Cause: []int{h.endSeq}}, true
 	}
 	var marked *journal.JointMarkState
 	for i := range s.marks {
