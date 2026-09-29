@@ -148,6 +148,9 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 		return Stop{}, err
 	}
 	if err := r.recoverCrashes(ctx); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
+		}
 		return r.afterEvidence(err)
 	}
 	if stop, err := r.checkDefects(); stop != nil || err != nil {

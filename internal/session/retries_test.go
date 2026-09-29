@@ -146,6 +146,36 @@ func TestRecoveryKernelLogRetriesAndDeadEnd(t *testing.T) {
 	}
 }
 
+type cancelledClock struct{ machine.Clock }
+
+func (cancelledClock) Sleep(context.Context, time.Duration) error { return context.Canceled }
+
+func TestRecoveryKernelLogRetryStopsCleanlyOnSignal(t *testing.T) {
+	t.Parallel()
+	in, _ := firstCrash(t, machine.ResetWatchdog, machine.Crash, false)
+	seams := in.Machine.Seams()
+	readable := seams.Kernel
+	seams.Kernel = &unreadableKernel{Kernel: readable, failUntil: 1}
+	seams.Clock = cancelledClock{seams.Clock}
+	stop, err := runWithSeams(context.Background(), in, seams)
+	if err != nil || stop.Reason != StopSignal {
+		t.Fatalf("signal during kernel retry wait: %+v %v", stop, err)
+	}
+	events := readEvents(t, in.Dir)
+	if p, ok := events[len(events)-1].Data.(*journal.Shutdown); !ok || p.Reason != journal.ShutdownSignal {
+		t.Fatalf("last event %s, want signal shutdown", events[len(events)-1].Msg)
+	}
+	seams = in.Machine.Seams()
+	if stop, err := driveWithSeams(in, seams); err != nil || stop.Reason != StopRotations {
+		t.Fatalf("resume: %+v %v", stop, err)
+	}
+	for _, e := range readEvents(t, in.Dir) {
+		if p, ok := e.Data.(*journal.CrashDetected); ok && p.Stray {
+			t.Fatalf("interrupted recovery counted as a stray crash: %s", e.Msg)
+		}
+	}
+}
+
 type vacuumedKernel struct {
 	machine.Kernel
 	gone string
