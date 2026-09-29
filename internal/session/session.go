@@ -976,6 +976,11 @@ func (r *runner) close(restore bool, stop *Stop) (err error) {
 	if r.fatal != nil {
 		return err
 	}
+	if stop.Reason == StopSignal {
+		if drainErr := r.drain(stop); drainErr != nil {
+			return errors.Join(err, drainErr)
+		}
+	}
 	var restoreErr error
 	if stop.DeadEnd == nil || stop.DeadEnd.Condition != journal.DeadEndSMU {
 		restoreErr = r.restore()
@@ -1000,14 +1005,32 @@ func (r *runner) close(restore bool, stop *Stop) (err error) {
 	return err
 }
 
+func (r *runner) drain(stop *Stop) error {
+	for {
+		a, ok := r.tuner.Drain()
+		if !ok {
+			return nil
+		}
+		if d, ok := a.Payload.(*journal.DeadEnd); ok {
+			result, err := r.deadEnd(d, a.Cause...)
+			if result != nil {
+				*stop = *result
+			}
+			return err
+		}
+		if _, err := r.append(a.Payload, a.Cause...); err != nil {
+			return err
+		}
+	}
+}
+
 type cleanupReport struct{}
 
 func (cleanupReport) Progress(string)                    {}
 func (cleanupReport) Sample(machine.Sample)              {}
 func (cleanupReport) Signal(int, machine.Signal, string) {}
 
-// restore writes every core back to its baseline once this process has written offsets, so the machine keeps running
-// on the values it had before togi started, except that a core never goes deeper than its current offset.
+// restore keeps baseline offsets only where they are no deeper than the safe current profile.
 func (r *runner) restore() error {
 	if r.applied == nil {
 		return nil
@@ -1017,6 +1040,9 @@ func (r *runner) restore() error {
 		o := r.fold.baseline[i]
 		if s := slices.IndexFunc(r.state.Cores, func(s journal.CoreState) bool { return s.Core == c.Core }); s >= 0 {
 			o = max(o, r.state.Cores[s].Offset)
+			if failed := r.state.Cores[s].FailedMark; failed != nil {
+				o = max(o, *failed+1)
+			}
 		}
 		targets[i] = machine.ClampOffset(o)
 	}
