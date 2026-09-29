@@ -20,14 +20,16 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 
 ## Workflow
 
-Every change, docs included, lands as a pull request against `main` on `github.com/shgew/togi`. The owner reviews and merges. When a change is done, open its pull request without asking, unless told otherwise. The one commit that reaches `main` without a pull request is the release commit the release workflow pushes (`docs/releasing.md`).
+Every change, docs included, lands as a pull request against `main` on `github.com/shgew/togi`, or as a layer of a stack of pull requests that ends on `main`. The owner reviews and merges. When a change is done, open its pull request without asking, unless told otherwise. The one commit that reaches `main` without a pull request is the release commit the release workflow pushes (`docs/releasing.md`).
 
 - Branch from `main` with a short descriptive name.
 - One concern per pull request.
+- A pull request changes at most 100 files, counted as CodeRabbit counts them: every changed file except those its `path_filters` in `.coderabbit.yaml` exclude. CodeRabbit skips larger ones. Split larger work into a stack.
+- Stacked pull requests always use [`gh stack`](https://github.com/github/gh-stack) (`gh extension install github/gh-stack`): each layer is a branch with its own pull request based on the layer below, a lower layer holds what the ones above depend on, and every layer passes `just check` on its own. Open the stack with `gh stack submit`, keep it current with `gh stack sync`, and merge it with `gh stack merge`, never layer by layer by hand.
 - Commit with short imperative messages.
 - The pull request body follows `.github/pull_request_template.md`: a short summary, and the demo in a collapsed block.
 - Address every review comment on the same branch.
-- CodeRabbit reviews every pull request against `main`, as configured in `.coderabbit.yaml`. Its review is advisory: address its comments like any other, then reply to and resolve its threads.
+- CodeRabbit reviews every pull request against `main` and every stacked layer, as configured in `.coderabbit.yaml`. Its review is advisory: address its comments like any other, then reply to and resolve its threads.
 - A pull request that finishes an issue says `Closes #N` in its body; one that only makes progress says `Refs #N`.
 - A pull request that bumps `journal.Schema` or `tuner.Ruleset` is breaking: its title starts with `[BREAKING]`, it carries the `breaking` label, and its changelog line starts with `**BREAKING**`.
 - A breaking pull request merges only after `[Unreleased]` has been released (see `docs/releasing.md`).
