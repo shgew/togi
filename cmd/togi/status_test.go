@@ -82,6 +82,25 @@ func TestStatusAndCert(t *testing.T) {
 	if want := fmt.Sprintf("core 03 is at %d since", moved.Cores[3].Offset); !strings.Contains(out.String(), want) {
 		t.Fatalf("cert with core 03 moved lacks %q:\n%s", want, out.String())
 	}
+
+	first := 0
+	for _, e := range events {
+		if e.Kind == journal.KindProfileChange {
+			first = e.Seq
+			break
+		}
+	}
+	clocked := st
+	guard := *st.Guard
+	guard.TierClockSeq, guard.ProfileSeq, guard.CleanS = first, st.LastSeq, 24*3600-1
+	clocked.Guard = &guard
+	out.Reset()
+	writeCert(&out, events, clocked)
+	for _, want := range []string{fmt.Sprintf("Evidence since the profile change [#%d]\n", first), "Silver    23.9 of 24 clean hours"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("cert with an earlier profile change as tier clock lacks %q:\n%s", want, out.String())
+		}
+	}
 }
 
 func TestStatusJointMarkAndOpenHunt(t *testing.T) {

@@ -4,8 +4,8 @@
 
       .---.
      / * * \     BRONZE                    [tier.change #4835]
-    |   *   |    Silver    7.3 of 24 clean hours
-     \ * * /     Gold      7.3 of 100 clean hours
+    |   *   |    Silver    7.2 of 24 clean hours
+     \ * * /     Gold      7.2 of 100 clean hours
       '---'      Platinum  locked until togi observe exists
        | |
 
@@ -50,6 +50,7 @@ Evidence since [#3671]: the last failure on a profile at least as deep
   all     -                                -       7.3      < 0.42/h
   Tctl max 76°C                              [trial.end #4243]
   Rate bound = 3 / clean hours, 95% confidence (rule of three).
+  Starts = valid passes since each class last failed.
 
 Session 20260101T000000Z, started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0, boost limit 5700 MHz

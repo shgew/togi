@@ -114,10 +114,10 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 		fmt.Fprintln(w, "Evidence")
 		fmt.Fprintln(w, "  no guard evidence yet")
 	} else {
-		if gs.TierClockSeq == gs.ProfileSeq {
-			fmt.Fprintf(w, "Evidence since the profile change [#%d]\n", gs.TierClockSeq)
-		} else {
+		if clockIsFailure(events, gs.TierClockSeq) {
 			fmt.Fprintf(w, "Evidence since [#%d]: the last failure on a profile at least as deep\n", gs.TierClockSeq)
+		} else {
+			fmt.Fprintf(w, "Evidence since the profile change [#%d]\n", gs.TierClockSeq)
 		}
 		tw = newTable(w)
 		fmt.Fprintln(tw, "  REGIME\tWORKLOAD\tSTARTS\tCLEAN H\tRATE BOUND")
@@ -130,6 +130,7 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 			fmt.Fprintln(w, withRef(fmt.Sprintf("  Tctl max %d°C", *gs.TctlMaxC), certWidth, journal.KindTrialEnd, gs.TctlMaxSeq))
 		}
 		fmt.Fprintln(w, "  Rate bound = 3 / clean hours, 95% confidence (rule of three).")
+		fmt.Fprintln(w, "  Starts = valid passes since each class last failed.")
 	}
 	fmt.Fprintln(w)
 
@@ -145,6 +146,15 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 	}
 	fmt.Fprintf(w, "Journal SHA-256 %x through seq %d\n", sum.Sum(nil), events[len(events)-1].Seq)
 	fmt.Fprintln(w, "Durability is a bound, not proof.")
+}
+
+func clockIsFailure(events []journal.Event, seq int) bool {
+	for _, e := range events {
+		if e.Seq == seq {
+			return e.Kind == journal.KindFailure
+		}
+	}
+	return false
 }
 
 func tierLines(st journal.State) []string {
@@ -175,7 +185,7 @@ func tierLines(st journal.State) []string {
 		case l.tier == journal.TierBronze:
 			what = "every core done and one clean qualifying rotation since the last core went deeper"
 		default:
-			what = fmt.Sprintf("%s of %d clean hours", hours(clean), l.cleanH)
+			what = fmt.Sprintf("%.1f of %d clean hours", float64(clean/360)/10, l.cleanH)
 		}
 		lines = append(lines, fmt.Sprintf("%-10s%s", l.name, what))
 	}
