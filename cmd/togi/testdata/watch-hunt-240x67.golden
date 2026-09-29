@@ -1,5 +1,5 @@
   togi   HUNT   session 7h14m   last event 40s ago                                                                                                                                                                                     07:14:23
- hunt 1 mask 1 | 16/16 done | 33 failures | 33 crashes | Tctl last trial max 69 C
+ hunt 1 mask 1 | 16/16 done | tier -- | clean 0h00m since tier clock #3671 | 33 failures | 33 crashes | Tctl last trial max 69 C
 
  cores 00 01 02 03 04 05 06 07   masked   R7 mprime AVX2 36K-248K all-core   ██████████░░░░░░░░░░░░░░░░░░░░ 40/120s
  turn order 00 08 01 09 02 10 03 11 04 12 05 13 06 14 07 15

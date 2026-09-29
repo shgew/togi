@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
 
 func TestTileMarksAndMask(t *testing.T) {
@@ -31,6 +32,19 @@ func TestActivitySummary(t *testing.T) {
 	want := []string{"hunt 3 mask 4", "refine round 2", "1/2 done", "0 failures", "0 crashes"}
 	if diff := cmp.Diff(want, s.summary()); diff != "" {
 		t.Errorf("summary (-want +got):\n%s", diff)
+	}
+}
+
+func TestGuardExposureOutsideGuardPhase(t *testing.T) {
+	gs := &journal.GuardState{Rotation: 2, Steps: []machine.Regime{machine.R1}, StepsDone: 1, Missing: []string{"R2 needs 3 steps, has 0"}, TierClockSeq: 12, CleanS: 3600}
+	s := Snapshot{huntID: 3, tier: journal.TierBronze, guardState: gs, tiles: []tile{{phase: journal.PhaseDone}}}
+	want := []string{"hunt 3", "1/1 done", "tier bronze", "clean 1h00m since tier clock #12", "0 failures", "0 crashes"}
+	if diff := cmp.Diff(want, s.summary()); diff != "" {
+		t.Errorf("summary during a hunt (-want +got):\n%s", diff)
+	}
+	s.guard = true
+	if got := s.scheduleLine(); !strings.Contains(got, "not qualifying: R2 needs 3 steps, has 0") {
+		t.Errorf("schedule of a non-qualifying rotation %q lacks the missing coverage", got)
 	}
 }
 

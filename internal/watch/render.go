@@ -205,7 +205,7 @@ func (s Snapshot) summary() []string {
 		parts = append(parts, fmt.Sprintf("refine round %d", s.round))
 	}
 	parts = append(parts, fmt.Sprintf("%d/%d done", done, len(s.tiles)))
-	if s.guard {
+	if s.guardState != nil {
 		tier := string(s.tier)
 		if s.tier == journal.TierNone || s.tier == "" {
 			tier = "--"
@@ -286,6 +286,9 @@ func (s Snapshot) scheduleLine() string {
 		}
 	} else {
 		out = dim.Render(fmt.Sprintf("rotation %d done   ", gs.Rotation) + steps(names))
+	}
+	if !gs.Qualifying && len(gs.Missing) > 0 {
+		out += dim.Render("   not qualifying: " + strings.Join(gs.Missing, "; "))
 	}
 	return out
 }
