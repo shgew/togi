@@ -58,6 +58,59 @@ func TestMissingBinaries(t *testing.T) {
 	}
 }
 
+func TestCheckBinaries(t *testing.T) {
+	for _, tt := range []struct {
+		name, file string
+		mode       os.FileMode
+		directory  bool
+		wantError  bool
+	}{
+		{name: "regular executables"},
+		{name: "non-executable lowest", file: "05-A64 ~ Kasumi", mode: 0644, wantError: true},
+		{name: "non-executable Zen 5", file: "24-ZN5 ~ Komari", mode: 0644, wantError: true},
+		{name: "directory lowest", file: "05-A64 ~ Kasumi", directory: true, wantError: true},
+		{name: "directory Zen 5", file: "24-ZN5 ~ Komari", directory: true, wantError: true},
+		{name: "unrelated earlier file", file: "00-README", mode: 0644},
+		{name: "unrelated earlier executable", file: "00-README", mode: 0755},
+		{name: "misleading Zen 5 prefix", file: "24-ZN5", mode: 0755},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pkg := fakePackage(t, true)
+			if tt.file != "" {
+				file := filepath.Join(pkg, "lib/y-cruncher/Binaries", tt.file)
+				if tt.directory {
+					if err := os.Remove(file); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Mkdir(file, 0755); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					if err := os.WriteFile(file, []byte("binary"), tt.mode); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Chmod(file, tt.mode); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			detail, err := New(pkg).Check()
+			if tt.wantError {
+				if err == nil || !strings.Contains(err.Error(), filepath.Join(pkg, "lib/y-cruncher/Binaries", tt.file)) {
+					t.Fatalf("Check must reject and name %q: %v", tt.file, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(pkg+" (05-A64 ~ Kasumi, 24-ZN5 ~ Komari)", detail); diff != "" {
+				t.Fatalf("selected binaries (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestPrepare(t *testing.T) {
 	pkg := fakePackage(t, true)
 	y := New(pkg)

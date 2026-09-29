@@ -72,7 +72,7 @@ If appending an event fails while offsets may be applied, togi stops every backe
 4. `ryzen_smu` is loaded and reports a matching codename.
 5. Every core's offset reads back through the SMU.
 6. Per-core access is supported only on full 8-core CCDs (`../prior-art.md`): each CCD fuse is read twice with distinct RSMU register reads interleaved, and the OS topology must contain eight cores per CCD. Any fused-off slot fails this check with the CCD, its fuse mask and a message that harvested CCDs are not yet supported. Indistinguishable RSMU probes, inconsistent fuse reads, or a live-core count mismatch also refuse all per-core access.
-7. Both backends are configured and present.
+7. Both backends are configured and present. mprime's `bin/mprime` and both selected y-cruncher binaries must be regular executable files; otherwise preflight fails naming the file. y-cruncher selects the lexically first name matching `<two-digit ISA index>-<alphanumeric ISA> ~ <name>` in `lib/y-cruncher/Binaries` for the lowest ISA and the first matching `24-ZN5 ~ <name>` for Zen 5, ignoring unrelated files.
 8. `systemd-run` can create a scope confined to CPU 0.
 9. The BIOS context matches the session, when resuming and all required checks passed.
 
