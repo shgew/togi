@@ -81,7 +81,7 @@ type fold struct {
 	thermalSeq       int
 	thermalDetail    string
 	kernelRetries    int
-	kernelDeadSeq    int
+	kernelRetrySeqs  []int
 	kernelDeadDetail string
 
 	unmatched   []openIntent
@@ -235,6 +235,7 @@ func (f *fold) Fold(e journal.Event) {
 		}
 	case *journal.CrashDetected:
 		f.kernelRetries = 0
+		f.kernelRetrySeqs = nil
 		f.crashSeq[p.PreviousBoot] = e.Seq
 		if p.ResetReason == machine.ResetThermalTrip && p.Inconclusive {
 			f.thermalSeq = e.Seq
@@ -268,6 +269,7 @@ func (f *fold) Fold(e journal.Event) {
 	case *journal.BackendRetry:
 		if p.Backend == "kernel_log" {
 			f.kernelRetries++
+			f.kernelRetrySeqs = append(f.kernelRetrySeqs, e.Seq)
 		} else {
 			b := machine.Backend(p.Backend)
 			f.retries[b] = p
@@ -282,7 +284,7 @@ func (f *fold) Fold(e journal.Event) {
 		case journal.DeadEndNoEvidence:
 			f.streaks = map[machine.Backend][]int{}
 			f.missingSeq = 0
-			f.kernelDeadSeq = 0
+			f.kernelDeadDetail = ""
 		case journal.DeadEndThermalTrip:
 			f.thermalSeq = 0
 		case journal.DeadEndBootLoop:

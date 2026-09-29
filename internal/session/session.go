@@ -384,7 +384,6 @@ func (r *runner) readResetReason(ctx context.Context, boot string, mayBeVacuumed
 
 func (r *runner) retryKernel(ctx context.Context, boot string, err error) error {
 	if r.fold.kernelRetries >= 3 {
-		r.fold.kernelDeadSeq = r.fold.kernelRetries
 		r.fold.kernelDeadDetail = fmt.Sprintf("kernel log of boot %s unreadable after retries at 1, 5 and 30 min: %v", boot, err)
 		return errDeadEndEvidence
 	}
@@ -454,8 +453,8 @@ func (r *runner) checkDeadEnd() (*Stop, error) {
 	if f.thermalSeq != 0 {
 		return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndThermalTrip, Detail: f.thermalDetail}, f.thermalSeq)
 	}
-	if f.kernelDeadSeq != 0 {
-		return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Detail: f.kernelDeadDetail})
+	if f.kernelDeadDetail != "" {
+		return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Detail: f.kernelDeadDetail}, f.kernelRetrySeqs...)
 	}
 	if f.missingSeq != 0 {
 		return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Detail: f.missingDetail}, f.missingSeq)

@@ -121,14 +121,23 @@ func TestRecoveryKernelLogRetriesAndDeadEnd(t *testing.T) {
 			if !tc.deadEnd && stop.Reason != StopRotations {
 				t.Fatalf("stop %+v", stop)
 			}
-			var got []int
+			var got, retrySeqs, deadEndCause []int
 			for _, e := range readEvents(t, in.Dir) {
 				if p, ok := e.Data.(*journal.BackendRetry); ok && p.Backend == "kernel_log" {
 					got = append(got, p.WaitS)
+					retrySeqs = append(retrySeqs, e.Seq)
+				}
+				if p, ok := e.Data.(*journal.DeadEnd); ok && p.Condition == journal.DeadEndNoEvidence {
+					deadEndCause = e.Cause
 				}
 			}
 			if diff := cmp.Diff([]int{60, 300, 1800}, got); diff != "" {
 				t.Fatalf("kernel retry waits (-want +got):\n%s", diff)
+			}
+			if tc.deadEnd {
+				if diff := cmp.Diff(retrySeqs, deadEndCause); diff != "" {
+					t.Fatalf("kernel dead end cause (-want +got):\n%s", diff)
+				}
 			}
 			if diff := cmp.Diff([]time.Duration{time.Minute, 5 * time.Minute, 30 * time.Minute}, clock.waits); diff != "" {
 				t.Fatalf("sleep waits (-want +got):\n%s", diff)
