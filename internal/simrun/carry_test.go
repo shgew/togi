@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,15 +18,48 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
+var (
+	ruleset3Once  sync.Once
+	ruleset3Files map[string][]byte
+	ruleset3Err   error
+)
+
 func ruleset3Session(t *testing.T) (dir, id string) {
 	t.Helper()
-	dir = t.TempDir()
-	m, err := sim.New(sim.Config{Seed: 1})
-	if err != nil {
-		t.Fatal(err)
+	ruleset3Once.Do(func() {
+		src := t.TempDir()
+		m, err := sim.New(sim.Config{Seed: 1})
+		if err != nil {
+			ruleset3Err = err
+			return
+		}
+		if _, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Rotations: 1}); err != nil {
+			ruleset3Err = err
+			return
+		}
+		entries, err := os.ReadDir(src)
+		if err != nil {
+			ruleset3Err = err
+			return
+		}
+		ruleset3Files = make(map[string][]byte, len(entries))
+		for _, e := range entries {
+			data, err := os.ReadFile(filepath.Join(src, e.Name()))
+			if err != nil {
+				ruleset3Err = err
+				return
+			}
+			ruleset3Files[e.Name()] = data
+		}
+	})
+	if ruleset3Err != nil {
+		t.Fatal(ruleset3Err)
 	}
-	if _, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}); err != nil {
-		t.Fatal(err)
+	dir = t.TempDir()
+	for name, data := range ruleset3Files {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return dir, stampRuleset3(t, dir)
 }
