@@ -264,9 +264,7 @@ func (f *fold) Fold(e journal.Event) {
 		}
 		f.open = nil
 	case *journal.Failure:
-		if p.Attribution == journal.Unattributed {
-			f.pendingIdle = slices.DeleteFunc(f.pendingIdle, func(seq int) bool { return slices.Contains(e.Cause, seq) })
-		}
+		f.pendingIdle = slices.DeleteFunc(f.pendingIdle, func(seq int) bool { return slices.Contains(e.Cause, seq) })
 	case *journal.BackendRetry:
 		if p.Backend == "kernel_log" {
 			f.kernelRetries++

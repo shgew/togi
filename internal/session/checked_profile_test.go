@@ -209,3 +209,18 @@ func TestFoldTracksRegistersBySparseCoreID(t *testing.T) {
 		t.Fatalf("uncertain after readback (-want +got):\n%s", diff)
 	}
 }
+
+func TestFoldConsumesAttributedIdleFailure(t *testing.T) {
+	t.Parallel()
+	f := newFold()
+	crash := &journal.CrashDetected{PreviousBoot: "previous", Condition: machine.Resident}
+	f.Fold(journal.Event{Seq: 1, Kind: crash.Kind(), Boot: "current", Data: crash})
+	if diff := cmp.Diff([]int{1}, f.pendingIdle); diff != "" {
+		t.Fatalf("pending idle crash (-want +got):\n%s", diff)
+	}
+	failure := &journal.Failure{Signal: machine.Crash, Attribution: journal.Attributed, Core: new(0), Offset: new(-12)}
+	f.Fold(journal.Event{Seq: 2, Kind: failure.Kind(), Boot: "current", Cause: []int{1}, Data: failure})
+	if diff := cmp.Diff([]int{}, f.pendingIdle); diff != "" {
+		t.Fatalf("pending idle crashes after attributed failure (-want +got):\n%s", diff)
+	}
+}
