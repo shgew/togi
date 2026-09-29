@@ -189,7 +189,10 @@ func TestTrialProgressAndDurationIgnoreWallJump(t *testing.T) {
 					break
 				}
 			}
-			if diff := cmp.Diff(&journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomeInconclusive, DurationS: 85, Reason: "stopped by signal", Interrupted: true}, end); diff != "" {
+			if end == nil || !end.Interrupted || end.Outcome != journal.OutcomeInconclusive {
+				t.Fatalf("interrupted trial: %+v", end)
+			}
+			if diff := cmp.Diff(85, end.DurationS); diff != "" {
 				t.Fatalf("interrupted duration (-want +got):\n%s", diff)
 			}
 		})

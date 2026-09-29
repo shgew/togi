@@ -167,7 +167,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	defer func() { r.cancelTrial = nil; cancel() }()
 	running, err := r.in.Machine.Trials.Start(trialCtx, spec)
 	if err != nil {
-		return tr.failedToRun(trialCtx, since, 0, "setup failed", err)
+		return tr.finish(trialCtx, since, machine.Result{}, "setup failed", err)
 	}
 	s := running.Started()
 	ts := &journal.TrialStart{Trial: tr.id, Scope: s.Scope, PID: s.PID, CPUs: s.CPUs, Argv: s.Argv, Files: s.Files}
@@ -193,35 +193,90 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	if report.err != nil {
 		return report.err
 	}
-	if err != nil {
-		return tr.failedToRun(trialCtx, since, res.Ran, "trial runner failed", err)
-	}
-	if s.Schedule != nil {
+	if s.Schedule != nil && err == nil {
 		if _, err := r.append(&journal.TrialSignal{Trial: tr.id, Stops: res.Stops, Conts: res.Conts}, started.Seq); err != nil {
 			return err
 		}
 	}
-	mces, readErr, err := tr.teardown(since)
-	if err != nil {
-		return err
-	}
-	end := &journal.TrialEnd{Trial: tr.id, DurationS: int(res.Ran.Seconds()), TctlMaxC: res.TctlMaxC}
+	return tr.finish(trialCtx, since, res, "trial runner failed", err)
+}
+
+type trialEvidence struct {
+	result   machine.Result
+	mces     []recordedMCE
+	reset    *journal.TrialEnd
+	missing  string
+	duration time.Duration
+}
+
+func adjudicateTrial(e trialEvidence) *journal.TrialEnd {
+	end := &journal.TrialEnd{DurationS: int(e.result.Ran.Seconds()), TctlMaxC: e.result.TctlMaxC, Reason: e.missing}
 	switch {
-	case len(res.Escaped) > 0:
-		end.Outcome, end.Escaped, end.Reason = journal.OutcomeInconclusive, res.Escaped, "backend thread outside allowed cpus"
-	case res.Signal != "":
-		end.Outcome, end.Signal = journal.OutcomeFailure, res.Signal
-		if t.Condition != machine.Isolated {
-			end.Core = new(res.Core)
-		}
-	case len(mces) > 0:
-		end.Outcome, end.Signal = journal.OutcomeFailure, mceSignal(mces)
-	case readErr != nil:
-		end.Outcome, end.Reason = journal.OutcomeInconclusive, "kernel log unreadable: "+readErr.Error()
-	case res.Inconclusive != "":
-		end.Outcome, end.Reason = journal.OutcomeInconclusive, res.Inconclusive
+	case len(e.result.Escaped) > 0:
+		end.Outcome, end.Escaped = journal.OutcomeInconclusive, e.result.Escaped
+		end.Reason = joinDiagnostic("backend thread outside allowed cpus", e.missing)
+	case e.result.Signal != "":
+		end.Outcome, end.Signal, end.Core = journal.OutcomeFailure, e.result.Signal, new(e.result.Core)
+	case len(e.mces) > 0:
+		end.Outcome, end.Signal = journal.OutcomeFailure, mceSignal(e.mces)
+	case e.reset != nil:
+		end.Outcome, end.Signal = e.reset.Outcome, e.reset.Signal
+		end.Reason = joinDiagnostic(e.reset.Reason, e.missing)
+	case e.missing != "" || e.result.Inconclusive != "":
+		end.Outcome = journal.OutcomeInconclusive
+		end.Reason = joinDiagnostic(e.result.Inconclusive, e.missing)
+	case e.result.Ran < e.duration:
+		end.Outcome, end.Reason = journal.OutcomeInconclusive, "trial ended before its full duration"
 	default:
 		end.Outcome = journal.OutcomePass
+	}
+	return end
+}
+
+func joinDiagnostic(reason, diagnostic string) string {
+	if reason == "" {
+		return diagnostic
+	}
+	if diagnostic == "" {
+		return reason
+	}
+	return reason + "; " + diagnostic
+}
+
+func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine.Result, what string, runnerErr error) error {
+	r := tr.r
+	crashed := errors.Is(runnerErr, machine.ErrCrashed)
+	if crashed && len(res.Escaped) == 0 && res.Signal == "" {
+		return runnerErr
+	}
+	var mces []recordedMCE
+	var readErr error
+	if !crashed {
+		var err error
+		mces, readErr, err = tr.teardown(since)
+		if err != nil {
+			if !errors.Is(err, machine.ErrCrashed) || len(res.Escaped) == 0 && res.Signal == "" {
+				return err
+			}
+			runnerErr, crashed = errors.Join(runnerErr, err), true
+		}
+	}
+	diagnostic := ""
+	if runnerErr != nil {
+		diagnostic = fmt.Sprintf("%s: %v", what, runnerErr)
+	}
+	if readErr != nil {
+		diagnostic = joinDiagnostic(diagnostic, "kernel log unreadable: "+readErr.Error())
+	}
+	end := adjudicateTrial(trialEvidence{result: res, mces: mces, missing: diagnostic, duration: time.Duration(tr.t.DurationS) * time.Second})
+	end.Trial = tr.id
+	end.BackendMissing = errors.Is(runnerErr, machine.ErrBackendMissing)
+	end.Interrupted = ctx.Err() != nil || crashed
+	if ctx.Err() != nil {
+		end.Reason = joinDiagnostic(end.Reason, "stopped by signal")
+	}
+	if tr.t.Condition == machine.Isolated {
+		end.Core = nil
 	}
 	if _, err := r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...); err != nil {
 		return err
@@ -230,6 +285,13 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 		if err := r.in.Machine.Trials.Passed(tr.id); err != nil {
 			return fmt.Errorf("mark trial %s passed: %w", tr.id, err)
 		}
+	}
+	return runnerErrIfCrashed(runnerErr)
+}
+
+func runnerErrIfCrashed(err error) error {
+	if errors.Is(err, machine.ErrCrashed) {
+		return err
 	}
 	return nil
 }
@@ -264,27 +326,6 @@ func (tr *trialRun) writesTarget() bool {
 	return tr.t.Condition == machine.Isolated
 }
 
-func (tr *trialRun) failedToRun(ctx context.Context, since time.Duration, ran time.Duration, what string, err error) error {
-	r := tr.r
-	if errors.Is(err, machine.ErrCrashed) {
-		return err
-	}
-	interrupted := ctx.Err() != nil
-	mces, _, terr := tr.teardown(since)
-	if terr != nil {
-		return terr
-	}
-	end := &journal.TrialEnd{Trial: tr.id, Outcome: journal.OutcomeInconclusive, DurationS: int(ran.Seconds()), Reason: fmt.Sprintf("%s: %v", what, err), BackendMissing: errors.Is(err, machine.ErrBackendMissing)}
-	if interrupted {
-		end.Interrupted, end.Reason = true, "stopped by signal"
-	}
-	if len(mces) > 0 {
-		end.Outcome, end.Signal = journal.OutcomeFailure, mceSignal(mces)
-	}
-	_, err = r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...)
-	return err
-}
-
 type recordedMCE struct {
 	seq       int
 	corrected bool
@@ -307,11 +348,8 @@ func (tr *trialRun) teardown(since time.Duration) (mces []recordedMCE, readErr, 
 		}
 	}
 	found, readErr := r.in.Machine.Kernel.MCEs(r.in.Boot, since)
-	if readErr != nil {
-		if errors.Is(readErr, machine.ErrCrashed) {
-			return nil, nil, readErr
-		}
-		return nil, readErr, nil
+	if errors.Is(readErr, machine.ErrCrashed) {
+		return nil, nil, readErr
 	}
 	for _, m := range found {
 		if r.fold.mceKeys[mceKey(r.in.Boot, m.Lines)] {
@@ -323,7 +361,7 @@ func (tr *trialRun) teardown(since time.Duration) (mces []recordedMCE, readErr, 
 		}
 		mces = append(mces, recordedMCE{seq: e.Seq, corrected: m.Corrected})
 	}
-	return mces, nil, nil
+	return mces, readErr, nil
 }
 
 func (tr *trialRun) mceSeqs(mces []recordedMCE) []int {

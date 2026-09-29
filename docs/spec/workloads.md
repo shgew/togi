@@ -92,7 +92,18 @@ A trial passes when all of these hold:
 - no failure signal named a core;
 - every sampled thread was on an allowed logical CPU.
 
-When evidence conflicts, containment violation wins (dead end), then a backend computation error or MCE in the trial window, then the reset reason, then inconclusive, then pass. A kernel log read failure makes a trial inconclusive after its retries, unless already-recorded higher-precedence failure evidence survives it.
+Both successful waits and runner errors use the same evidence precedence, including recovery after a crash:
+
+| Evidence (first applicable row wins) | Result |
+|---|---|
+| Containment escape | Dead end |
+| Backend computation error, stall or early exit | Failure, even with cleanup errors, cancellation or a crash |
+| MCE inside the trial's window | Failure |
+| Reset reason | Applies only without higher-precedence evidence |
+| Required sampling, current-boot kernel log or setup observation missing | Inconclusive |
+| Full duration, every required observation valid and no failure | Pass |
+
+Runner errors remain diagnostics in the trial's reason; they never replace a classified failure. A kernel log read failure makes a trial inconclusive after its retries unless higher-precedence evidence survives it. MCEs returned with a read error remain evidence.
 
 A scoped instance that never entered its scope by the trial deadline is a setup error and makes the trial inconclusive unless higher-precedence evidence was found. A process exit queued before teardown begins is an unexpected exit; exits caused by teardown are not.
 

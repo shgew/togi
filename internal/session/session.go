@@ -426,30 +426,48 @@ func (r *runner) closeOpenTrial() error {
 	if open == nil {
 		return nil
 	}
-	end := &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeInconclusive, Interrupted: true, Reason: journal.TrialReasonStoppedDuringTrial}
+	evidence := trialEvidence{
+		result:  machine.Result{Ran: open.ran(), Signal: open.signal},
+		missing: journal.TrialReasonStoppedDuringTrial,
+	}
 	cause := []int{open.seq}
+	if open.core != nil {
+		evidence.result.Core = *open.core
+	}
 	if open.signal != "" {
-		end = &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeFailure, Signal: open.signal, Core: open.core, Interrupted: true, Reason: "backend reported a computation error before the reset"}
-	} else if len(open.mces) > 0 {
-		signal := machine.UncorrectedMCE
-		if open.corrected {
-			signal = machine.CorrectedMCE
-		}
-		end = &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeFailure, Signal: signal, Interrupted: true, Reason: journal.TrialReasonStoppedAfterMachineCheck}
+		evidence.missing = "backend reported a failure before the reset"
+	}
+	if len(open.mces) > 0 {
+		evidence.mces = []recordedMCE{{corrected: open.corrected}}
 		cause = append(cause, open.mces...)
-	} else if seq, crashed := r.fold.crashSeq[open.boot]; crashed {
-		crash := r.eventAt(seq).Data.(*journal.CrashDetected)
-		cause = append([]int{seq}, r.fold.recordedFor(open.boot, r.in.Boot)...)
-		switch {
-		case crash.ResetReason == machine.ResetThermalTrip && crash.Inconclusive:
-			end.Reason = "thermal trip during the trial"
-		case crash.Inconclusive:
-			end.Reason = "the machine lost power during the trial"
-		default:
-			end = &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Reason: "machine crashed during the trial"}
+		if open.signal == "" {
+			evidence.missing = journal.TrialReasonStoppedAfterMachineCheck
 		}
 	}
-	end.DurationS = int(open.ran().Seconds())
+	interrupted := true
+	if seq, crashed := r.fold.crashSeq[open.boot]; crashed {
+		crash := r.eventAt(seq).Data.(*journal.CrashDetected)
+		reset := &journal.TrialEnd{Outcome: journal.OutcomeInconclusive}
+		switch {
+		case crash.ResetReason == machine.ResetThermalTrip && crash.Inconclusive:
+			reset.Reason = "thermal trip during the trial"
+		case crash.Inconclusive:
+			reset.Reason = "the machine lost power during the trial"
+		default:
+			reset.Outcome, reset.Signal, reset.Reason = journal.OutcomeFailure, machine.Crash, "machine crashed during the trial"
+		}
+		evidence.reset = reset
+		if open.signal == "" && len(open.mces) == 0 {
+			cause = append([]int{seq}, r.fold.recordedFor(open.boot, r.in.Boot)...)
+			evidence.missing = ""
+			interrupted = reset.Outcome != journal.OutcomeFailure
+		}
+	}
+	end := adjudicateTrial(evidence)
+	end.Trial, end.Interrupted = open.intent.Trial, interrupted
+	if open.core == nil {
+		end.Core = nil
+	}
 	_, err := r.append(end, cause...)
 	return err
 }

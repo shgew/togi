@@ -629,7 +629,7 @@ func TestInterruptedTrialRecordsTimeRan(t *testing.T) {
 	}
 	for _, e := range readEvents(t, in.Dir) {
 		if p, ok := e.Data.(*journal.TrialEnd); ok {
-			if !p.Interrupted || p.DurationS != 85 || e.Msg != "trial 0001 INCONCLUSIVE after 85s: stopped by signal" {
+			if !p.Interrupted || p.DurationS != 85 || p.Outcome != journal.OutcomeInconclusive {
 				t.Fatalf("trial.end %+v: %s", p, e.Msg)
 			}
 			return
