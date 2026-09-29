@@ -21,6 +21,10 @@ type processHost interface {
 	Usage(pid int) (usage, error)
 	Threads(pid int) ([]thread, error)
 	KillScope(ctx context.Context, scope string) ([]byte, error)
+	ListScopes(ctx context.Context) ([]string, error)
+	ScopeProcesses(ctx context.Context) ([]scopeProcess, error)
+	ProcessAlive(scopeProcess) (bool, error)
+	StopScope(ctx context.Context, scope string) ([]byte, error)
 }
 
 type usage struct {
@@ -29,3 +33,9 @@ type usage struct {
 }
 
 type thread struct{ TID, CPU int }
+
+type scopeProcess struct {
+	Scope      string
+	PID, Group int
+	Start      int64
+}

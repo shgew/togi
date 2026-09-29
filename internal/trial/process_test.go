@@ -180,3 +180,98 @@ func TestProcessPartialStartRollback(t *testing.T) {
 	}
 	t.Logf("second launch failed; %d known scope-kill calls; detached pipe holder forced closed; containment error after %.3fs", len(h.scopes), elapsed.Seconds())
 }
+
+type orphanSweepHost struct {
+	osHost
+	unit         string
+	orphan       scopeProcess
+	kills, stops int
+}
+
+func (h *orphanSweepHost) ListScopes(ctx context.Context) ([]string, error) {
+	if h.unit == "" {
+		return nil, ctx.Err()
+	}
+	return []string{h.unit}, ctx.Err()
+}
+
+func (h *orphanSweepHost) ScopeProcesses(ctx context.Context) ([]scopeProcess, error) {
+	alive, err := h.ProcessAlive(h.orphan)
+	if err != nil || !alive {
+		return nil, err
+	}
+	return []scopeProcess{h.orphan}, ctx.Err()
+}
+
+func (h *orphanSweepHost) KillScope(ctx context.Context, _ string) ([]byte, error) {
+	h.kills++
+	return nil, ctx.Err()
+}
+
+func (h *orphanSweepHost) StopScope(ctx context.Context, _ string) ([]byte, error) {
+	h.stops++
+	h.unit = ""
+	return nil, ctx.Err()
+}
+
+func TestProcessSweepAfterKilledOwner(t *testing.T) {
+	o := testOptions(t, "scope-owner")
+	launch, err := o.Backends[machine.Mprime].Prepare(machine.Workload{}, o.Dir, o.Cores[0].CPUs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &orphanSweepHost{unit: "togi-trial-leftover.scope"}
+	owner, err := h.Start(context.Background(), launch.Argv, o.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = h.SignalGroup(owner.PID(), syscall.SIGKILL)
+		if h.orphan.PID != 0 {
+			_ = syscall.Kill(h.orphan.PID, syscall.SIGKILL)
+		}
+		owner.Stdout().Close()
+		owner.Stderr().Close()
+	})
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		data, err := os.ReadFile(filepath.Join(o.Dir, "descendant.pid"))
+		if err == nil {
+			h.orphan.PID, err = strconv.Atoi(string(data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("wait for owner's descendant: %v", err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	fields, err := procStat(fmt.Sprintf("/proc/%d/stat", h.orphan.PID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.orphan.Scope, h.orphan.Group, h.orphan.Start = h.unit, int(fieldInt(fields, 5)), fieldInt(fields, 22)
+	if err := h.SignalGroup(owner.PID(), syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	_ = owner.Wait()
+	if alive, err := h.ProcessAlive(h.orphan); err != nil || !alive {
+		t.Fatalf("detached descendant did not survive killed owner: alive=%t err=%v", alive, err)
+	}
+	r := New(o)
+	r.host = h
+	started := time.Now()
+	detail, err := r.Sweep(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alive, err := h.ProcessAlive(h.orphan); err != nil || alive || h.unit != "" || h.kills != 1 || h.stops != 1 {
+		t.Fatalf("leftover cleanup: alive=%t unit=%q kills=%d stops=%d err=%v", alive, h.unit, h.kills, h.stops, err)
+	}
+	if elapsed := time.Since(started); elapsed > teardownLimit {
+		t.Fatalf("sweep exceeded deadline: %s", elapsed)
+	}
+	t.Logf("killed helper owner; detached real process removed; %s; systemd unit operations faked, no host scopes touched", detail)
+}

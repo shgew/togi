@@ -116,6 +116,8 @@ A failed same-boot preflight records its checks and returns the preflight failur
 
 A different boot ID retains the firmware-reset assumption: no special reconciliation reads or writes occur. An interrupted dead end on a different boot completes its recorded action without preflight or tuning.
 
+After every successful nonwriting preflight, on fresh start and resume in either run mode, `run` sweeps leftover `togi-trial-*.scope` units before the first SMU profile write, including any resume-time reconciliation writes. The sweep stops only concrete unit names with the exact `togi-trial-` prefix and `.scope` suffix; it never touches preflight scopes or names embedding that prefix. Listing, bounded teardown and final unit/process verification share one 15 s deadline regardless of scope count. A `preflight.check` named `trial_scopes` records the result. If listing, teardown or verification fails, `containment` is a dead end; no profile write or trial follows.
+
 ## Configuration
 
 TOML at the `--config` path, produced by the NixOS module from `services.togi.settings`:

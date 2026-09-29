@@ -323,34 +323,10 @@ func (t *running) teardown(result *machine.Result, report machine.Reporter) erro
 	if t.cancel != nil {
 		defer t.cancel()
 	}
-	deadline := time.Now().Add(15 * time.Second)
-	for _, inst := range t.instances {
-		_ = t.host.SignalGroup(inst.PID, syscall.SIGCONT)
-		_ = t.host.SignalGroup(inst.PID, syscall.SIGTERM)
-	}
-	t.collect(time.Now().Add(t.options.StopGrace), result, report)
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(2*time.Second))
-	defer cancel()
-	var cleanupErr error
-	for _, scope := range t.scopes {
-		out, err := t.host.KillScope(ctx, scope)
-		timedOut := errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
-		if err != nil && (timedOut || !strings.Contains(string(out), "not loaded") && !strings.Contains(string(out), "could not be found")) {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("kill scope %s: %w: %s", scope, err, strings.TrimSpace(string(out))))
-		}
-	}
-	for _, inst := range t.instances {
-		if err := t.host.SignalGroup(inst.PID, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("kill process group on core %02d: %w", inst.Core, err))
-		}
-	}
-	drainDeadline := time.Now().Add(10 * time.Second)
-	if deadline.Before(drainDeadline) {
-		drainDeadline = deadline
-	}
-	if !t.collect(drainDeadline, result, report) {
-		cleanupErr = errors.Join(cleanupErr, errors.New("backend exit and output drain not confirmed before teardown deadline"))
-	}
+	deadline := time.Now().Add(teardownLimit)
+	cleanupErr := terminate(t.host, t.instances, t.scopes, deadline, t.options.StopGrace, func(until time.Time) bool {
+		return t.collect(until, result, report)
+	})
 	if t.streamStop != nil && !t.streamClosed {
 		t.streamClosed = true
 		close(t.streamStop)

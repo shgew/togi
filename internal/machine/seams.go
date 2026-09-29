@@ -111,6 +111,8 @@ type Running interface {
 }
 
 type Trials interface {
+	// Sweep confirms leftover trial scopes and their processes are gone before any profile write.
+	Sweep(ctx context.Context) (detail string, err error)
 	Start(ctx context.Context, spec TrialSpec) (Running, error)
 	// Passed marks a passed trial's work directory so retention may prune it.
 	Passed(id string) error

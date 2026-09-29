@@ -174,6 +174,9 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 	if stop, err := r.preflight(ctx); stop != nil || err != nil {
 		return deref(stop), err
 	}
+	if stop, err := r.sweep(); stop != nil || err != nil {
+		return deref(stop), err
+	}
 	if sameBoot {
 		if stop, err := r.resumeSameBoot(events); stop != nil || err != nil {
 			return deref(stop), err
@@ -764,6 +767,21 @@ func (r *runner) preflight(ctx context.Context) (*Stop, error) {
 		return nil, nil
 	}
 	return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndPreflight, Detail: "failed checks: " + strings.Join(names, ", ")}, failed...)
+}
+
+func (r *runner) sweep() (*Stop, error) {
+	detail, sweepErr := r.in.Machine.Trials.Sweep(context.Background())
+	if sweepErr != nil {
+		detail = sweepErr.Error()
+	}
+	e, err := r.append(&journal.PreflightCheck{Check: "trial_scopes", Detail: detail, OK: sweepErr == nil})
+	if err != nil {
+		return nil, err
+	}
+	if sweepErr != nil {
+		return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndContainment, Detail: detail}, e.Seq)
+	}
+	return nil, nil
 }
 
 func (r *runner) startSession() error {

@@ -17,6 +17,7 @@ import (
 
 type osHost struct {
 	command func(context.Context, string, ...string) ([]byte, error)
+	procDir string
 }
 
 func newOSHost() processHost { return osHost{command: commandOutput} }

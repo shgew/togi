@@ -37,6 +37,10 @@ type running struct {
 
 func (trials) Passed(string) error { return nil }
 
+func (trials) Sweep(ctx context.Context) (string, error) {
+	return "simulated machine has no leftover trial scopes", ctx.Err()
+}
+
 func (t trials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Running, error) {
 	m := t.m
 	if m.crashed {

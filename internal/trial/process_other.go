@@ -29,3 +29,15 @@ func (osHost) Threads(int) ([]thread, error) {
 func (osHost) KillScope(context.Context, string) ([]byte, error) {
 	return nil, fmt.Errorf("kill trial scope: %w", errors.ErrUnsupported)
 }
+func (osHost) ListScopes(context.Context) ([]string, error) {
+	return nil, fmt.Errorf("list trial scopes: %w", errors.ErrUnsupported)
+}
+func (osHost) ScopeProcesses(context.Context) ([]scopeProcess, error) {
+	return nil, fmt.Errorf("list trial scope processes: %w", errors.ErrUnsupported)
+}
+func (osHost) ProcessAlive(scopeProcess) (bool, error) {
+	return false, fmt.Errorf("verify trial process exit: %w", errors.ErrUnsupported)
+}
+func (osHost) StopScope(context.Context, string) ([]byte, error) {
+	return nil, fmt.Errorf("stop trial scope: %w", errors.ErrUnsupported)
+}

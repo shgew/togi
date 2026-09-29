@@ -239,3 +239,14 @@ func (h *fakeHost) recordedSignals() []fakeSignal {
 	defer h.mu.Unlock()
 	return append([]fakeSignal(nil), h.signals...)
 }
+
+func (*fakeHost) ListScopes(ctx context.Context) ([]string, error) {
+	return nil, ctx.Err()
+}
+func (*fakeHost) ScopeProcesses(ctx context.Context) ([]scopeProcess, error) {
+	return nil, ctx.Err()
+}
+func (*fakeHost) ProcessAlive(scopeProcess) (bool, error) { return false, nil }
+func (*fakeHost) StopScope(ctx context.Context, _ string) ([]byte, error) {
+	return nil, ctx.Err()
+}

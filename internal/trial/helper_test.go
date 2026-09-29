@@ -81,9 +81,9 @@ func TestHelperProcess(t *testing.T) {
 		fmt.Println("COMPUTE ERROR")
 		fmt.Println("AFFINITY:42")
 		os.Exit(0)
-	case "descendant", "pipe-descendant":
+	case "descendant", "pipe-descendant", "scope-owner":
 		cmd := exec.Command(os.Args[0], "-test.run=TestHelperProcess", "--", "--helper", "orphan")
-		if mode == "pipe-descendant" {
+		if mode != "descendant" {
 			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		}
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -95,6 +95,9 @@ func TestHelperProcess(t *testing.T) {
 		}
 		if mode == "pipe-descendant" {
 			fmt.Print("COMPUTE ERROR")
+		}
+		if mode == "scope-owner" {
+			time.Sleep(time.Hour)
 		}
 		os.Exit(0)
 	case "orphan":

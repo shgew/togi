@@ -79,6 +79,10 @@ systemd-run --scope --quiet --collect -p AllowedCPUs=<cpus> -p DefaultDependenci
 
 `DefaultDependencies=no` keeps a system shutdown from stopping the scope on its own. Otherwise systemd stops the scope and the unit running togi at the same moment, the backend can exit before togi sees its signal, and the trial would end as an unexpected exit on the target instead of interrupted. Without the default dependencies, togi's teardown ends the scope after the signal reaches it.
 
+If togi dies before teardown, the scope can outlive it and keep its descendants running. The next fresh start or resume sweeps concrete `togi-trial-*.scope` units after nonwriting preflight and before any SMU profile write, whether in a tuning boot or an in-session run. The sweep shares normal teardown's process-group signals and bounded scope-kill slot, stops the scopes, and verifies both that no matching unit remains and that their processes exited, including a captured process that moved out of its scope. Discovery and verification consume the same absolute 15 s budget as teardown, not a fresh budget per scope. Unconfirmed cleanup is a containment dead end.
+
+The safe real-process integration test kills a helper owner and sweeps its detached descendant, with systemd unit discovery and operations replaced by a deterministic seam. It proves real process cleanup without touching host scopes; deterministic fake-time tests prove unit filtering and deadlines. This does not prove systemd transient-scope collection on a real tuning boot; that requires the VM trial infrastructure.
+
 The kernel enforces the cpuset whatever the backend does. togi also samples the processor field of every backend thread in `/proc/<pid>/task/*/stat` once per second, from the moment the process is inside its scope. A thread seen outside its allowed logical CPUs is a dead end. Stopping a trial terminates the whole scope.
 
 Normal trial ends and partial-start rollbacks use the same teardown, with one absolute deadline shared across all instances:
