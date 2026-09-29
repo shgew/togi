@@ -528,22 +528,27 @@ type Failure struct {
 
 func (*Failure) Kind() Kind { return KindFailure }
 func (p *Failure) Message() string {
-	resident := p.Condition == machine.Resident
+	loaded := p.Condition == machine.Resident || p.Condition == machine.Masked
 	switch p.Attribution {
 	case Attributed:
 		if p.Core == nil || p.Offset == nil {
 			break
 		}
-		if resident {
-			return fmt.Sprintf("core %s failure at CO %d: %s in resident %s trial %s", coreID(*p.Core), *p.Offset, p.Signal, p.Regime, p.Trial)
+		switch {
+		case loaded && p.Trial == "":
+			return fmt.Sprintf("core %s failure at CO %d: %s with the %s profile applied and no trial in flight, the only nonzero core", coreID(*p.Core), *p.Offset, p.Signal, p.Condition)
+		case loaded:
+			return fmt.Sprintf("core %s failure at CO %d: %s in %s %s trial %s", coreID(*p.Core), *p.Offset, p.Signal, p.Condition, p.Regime, p.Trial)
 		}
 		return fmt.Sprintf("core %s failure at CO %d: %s in trial %s (isolated: attributed to the target)", coreID(*p.Core), *p.Offset, p.Signal, p.Trial)
 	case Unattributed:
 		switch {
-		case resident && p.Trial != "":
+		case p.Condition == machine.Masked && p.Trial != "":
+			return fmt.Sprintf("unattributed %s failure in masked %s trial %s: the mask fails, no evidence names a single core", p.Signal, p.Regime, p.Trial)
+		case loaded && p.Trial != "":
 			return fmt.Sprintf("unattributed %s failure in resident %s trial %s: no evidence names a single core", p.Signal, p.Regime, p.Trial)
-		case resident:
-			return fmt.Sprintf("unattributed %s failure with the profile applied and no trial in flight: counted as an %s failure", p.Signal, p.Regime)
+		case loaded:
+			return fmt.Sprintf("unattributed %s failure with the %s profile applied and no trial in flight: counted as an %s failure", p.Signal, p.Condition, p.Regime)
 		}
 		return fmt.Sprintf("unattributed %s failure: no trial was in flight", p.Signal)
 	}

@@ -32,6 +32,9 @@ func TestNewPayloadMessagesAndStyles(t *testing.T) {
 		{&TunerWarning{Warning: "monotonicity", Trial: "0520", Passes: []int{1, 2}}, "monotonicity: trial 0520 failed on a profile at least as shallow as 2 passes in its class", Yellow},
 		{&BackendRetry{Backend: "mprime", Attempt: 2, WaitS: 300, Reason: "setup failed"}, "backend mprime: retry 2 of 3 after 300s: setup failed", Dim},
 		{&GuardRotation{Event: RotationEnd, Clean: true}, "guard rotation 0 end clean", Plain},
+		{&Failure{Signal: machine.Crash, Attribution: Attributed, Core: new(1), Offset: new(-38), Trial: "0385", Regime: machine.R7, Condition: machine.Masked}, "core 01 failure at CO -38: crash in masked R7 trial 0385", Red},
+		{&Failure{Signal: machine.Crash, Attribution: Attributed, Core: new(2), Offset: new(-12), Regime: machine.R6, Condition: machine.Resident}, "core 02 failure at CO -12: crash with the resident profile applied and no trial in flight, the only nonzero core", Red},
+		{&Failure{Signal: machine.Crash, Attribution: Unattributed, Trial: "0310", Regime: machine.R7, Condition: machine.Masked}, "unattributed crash failure in masked R7 trial 0310: the mask fails, no evidence names a single core", Red},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.p.Kind()), func(t *testing.T) {
