@@ -12,7 +12,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - Crashes are classified by the kernel's `Previous system reset reason` line, shown on `crash.detected`: a power-button reset during a trial is a crash failure, power loss and a power-button reset between trials are inconclusive, and a thermal trip is a new `thermal_trip` dead end with exit code 18 ([#69]).
 - A backend that fails to start and an unreadable kernel log are retried after 1, 5 and 30 minutes, recorded as `backend.retry`, before the `no_evidence` dead end; a missing backend binary stops at once ([#69]).
 - A journal write failure sets every core to CO 0 without an intent, reads each back, reports on stderr and stops ([#69]).
-- The tuning boot leaves for the normal system when `togi.service` hits its systemd restart limit, through a new `togi-restart-limit.service` ([#69]).
+- When `togi.service` keeps failing without a dead end, the tuning boot clears GRUB's saved entry and reboots into the normal system after the third failure within 30 minutes, through a new `togi-restart-limit.service`; earlier failures are retried after a minute ([#69]).
 - Every event records `mono_ms`, the boot-local monotonic time: the machine checks that belong to a trial, and the duration of a trial interrupted within one boot, no longer depend on the wall clock ([#69]).
 
 ### Changed

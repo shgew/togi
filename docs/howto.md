@@ -70,7 +70,7 @@ togi cert
 
 ## 6. Dead ends
 
-togi stops by itself at a dead end: failure at offset 0, an untrusted SMU, repeated trials without evidence, a missing backend, repeated stray crashes, an escaped backend thread, a thermal-trip reset or failed preflight. In the tuning boot it records the dead end, clears GRUB's saved entry, and shows the explanation on tty1. After a boot-loop dead end it reboots into the normal system. If `togi.service` instead exhausts its restart limit, `togi-restart-limit.service` clears the entry and reboots into the normal system.
+togi stops by itself at a dead end: failure at offset 0, an untrusted SMU, repeated trials without evidence, a missing backend, repeated stray crashes, an escaped backend thread, a thermal-trip reset or failed preflight. In the tuning boot it records the dead end, clears GRUB's saved entry, and shows the explanation on tty1. After a boot-loop dead end it reboots into the normal system. If `togi.service` instead fails without a dead end, systemd starts it again after a minute; once it has failed three times within 30 minutes, `togi-restart-limit.service` clears the entry and reboots into the normal system, with `leaveOnShutdown` on or off.
 
 `togi status` shows the dead end, and `togi events --kind deadend,boot.saved_entry` shows its evidence. Fix the cause, then run `sudo togi run` or pick the tuning boot again. A core that failed at 0 stops later runs until `sudo togi reset --core <N>`. A BIOS-context change instead automatically archives the old session and starts a seeded one carrying candidate edges but not failed marks. [runtime.md](spec/runtime.md#dead-end-actions) and [tuner.md](spec/tuner.md) describe the conditions.
 
