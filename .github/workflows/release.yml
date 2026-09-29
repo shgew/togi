@@ -28,7 +28,15 @@ jobs:
       - name: Build the package
         run: nix build --no-link --print-build-logs .#packages.x86_64-linux.default
       - name: Push to main
-        run: git push origin HEAD:refs/heads/main
+        env:
+          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
+        run: |
+          dir=$(mktemp -d)
+          trap 'rm -rf "$dir"' EXIT
+          (umask 077 && printf '%s\n' "$RELEASE_DEPLOY_KEY" > "$dir/key")
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$dir/known_hosts"
+          GIT_SSH_COMMAND="ssh -i $dir/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$dir/known_hosts -o StrictHostKeyChecking=yes" \
+            git -c core.hooksPath=/dev/null push "git@github.com:$GITHUB_REPOSITORY.git" HEAD:refs/heads/main
       - name: Publish
         env:
           GITHUB_TOKEN: ${{ github.token }}
