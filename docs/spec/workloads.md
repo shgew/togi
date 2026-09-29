@@ -33,7 +33,7 @@ Known quirks the integrations handle:
 | R4 medium load | Partial duty cycles | An R1 workload at 25%, 50% or 75% duty with a 100 ms period, cycling per trial |
 | R5 SMT pair | Both threads of one core | R1 and R2 workloads with 2 threads on both logical CPUs of the core |
 | R6 idle | Normal power management with the profile applied | One confined 1-thread R1 instance per core, each stopped with SIGSTOP as soon as it enters its scope, before the next instance launches. Trial timing begins only after all instances are stopped. First half: no load at all. Second half: short bursts (SIGCONT, then SIGSTOP 100 ms later, every 2 s) on one core at a time in scheduling order |
-| R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance on each loaded core. A guard step runs CCD0 alone, CCD1 alone, then every core as three separate trials on two CCDs; on one CCD, one all-core trial |
+| R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance on each loaded core. A guard step has three loaded parts on two CCDs, CCD0 alone, CCD1 alone and every core, and one all-core part on one CCD; each part runs as separate trials (Durations and guard schedule) |
 
 Within a regime, search cycles listed workloads; candidate-edge checks freeze one R1 and one R2 workload. Guard's repeated R1, R2 and R7 steps cycle their catalogs, so three occurrences cover each workload. All parts of one R7 step share its selected R2 workload; inconclusive starts retry the same class.
 

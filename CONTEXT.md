@@ -122,7 +122,7 @@ A failure whose evidence names one core.
 A failure whose evidence names no single core.
 
 **Failed mark**:
-The shallowest offset at which a core has had an attributed failure since its last reset, or its carried mark if that is shallower.
+The shallowest offset at which a core has had an attributed failure or been named the culprit of a hunt since its last reset, or its carried mark if that is shallower.
 
 **Joint mark**:
 A failed combination of offsets on multiple cores; profiles at least as deep on every member reach the mark.
@@ -131,7 +131,7 @@ A failed combination of offsets on multiple cores; profiles at least as deep on 
 A core at -50, or one for which taking one more count deeper would reach a failed or joint mark. Re-evaluated when offsets or marks change.
 
 **Carried mark**:
-A failed mark a transition brings into the new session: the shallowest offset of an attributed failure of that core in the archived sessions, recorded in `session.carried` with the session and `seq` it came from. A BIOS change leaves it behind.
+A failed mark a transition brings into the new session: the shallowest offset of an attributed failure or hunt culprit of that core in the archived sessions, recorded in `session.carried` with the session and `seq` it came from. A BIOS change leaves it behind.
 
 **Edge**:
 A core's checked isolated candidate edge; resident refinement may move its offset.
