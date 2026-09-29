@@ -1,0 +1,11 @@
+refine round 2, checks 1/2 | tier none
+session 20260101T000000Z started 2026-01-01T00:00:00Z
+in flight: none
+
+CORE  CCD  OFFSET  PHASE  FAILED  JOINT  QUEUED  LAST DECISION
+03    0    -9      done   -       -      -       -
+
+refine round 2 [#42]: target [-10]; proposed [-9]
+CHECK                    CORES  PASSES
+R1 mprime-sse-4k-21k     03     5/5
+R2 mprime-avx2-36k-248k  03     2/5

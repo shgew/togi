@@ -1,0 +1,66 @@
+  togi   HUNT   session 7h14m   last event 40s ago                                                                                                                                                                                     07:14:23
+ hunt 1 mask 1 | 16/16 done | 33 failures | 33 crashes | Tctl last trial max 69 C
+
+ cores 00 01 02 03 04 05 06 07   masked   R7 mprime AVX2 36K-248K all-core   ██████████░░░░░░░░░░░░░░░░░░░░ 40/120s
+ turn order 00 08 01 09 02 10 03 11 04 12 05 13 06 14 07 15
+ last failure 40s ago   unattributed crash failure in resident R7 trial 0289: no evidence names a single core
+
+
+ CCD 0
+
+ ┌─ 00 > TESTING HUNT MASK ──────────────────────── DONE ─┐  ┌─ 01 > TESTING HUNT MASK ──────────────────────── DONE ─┐  ┌─ 02 > TESTING HUNT MASK ──────────────────────── DONE ─┐  ┌─ 03 > TESTING HUNT MASK ──────────────────────── DONE ─┐
+ │                          ▀█  █▀█                       │  │                          ▀█  █▀█                       │  │                          ▀█  █▀█                       │  │                          ▀█  █▀█                       │
+ │                      ▀▀▀  █  █ █                       │  │                      ▀▀▀  █  █ █                       │  │                      ▀▀▀  █  █ █                       │  │                      ▀▀▀  █  █ █                       │
+ │                          ▀▀▀ ▀▀▀                       │  │                          ▀▀▀ ▀▀▀                       │  │                          ▀▀▀ ▀▀▀                       │  │                          ▀▀▀ ▀▀▀                       │
+ │ ███████████x.......................................... │  │ ███████████x.......................................... │  │ ███████████x.......................................... │  │ ███████████x.......................................... │
+ │ 0 0      -10                                       -50 │  │ 0 0      -10                                       -50 │  │ 0 0      -10                                       -50 │  │ 0 0      -10                                       -50 │
+ └────────────────────────────────────────────────────────┘  └────────────────────────────────────────────────────────┘  └────────────────────────────────────────────────────────┘  └────────────────────────────────────────────────────────┘
+
+ ┌─ 04 > TESTING HUNT MASK ──────────────────────── DONE ─┐  ┌─ 05 > TESTING HUNT MASK ──────────────────────── DONE ─┐  ┌─ 06 > TESTING HUNT MASK ──────────────────────── DONE ─┐  ┌─ 07 > TESTING HUNT MASK ──────────────────────── DONE ─┐
+ │                          ▀█  █▀█                       │  │                          ▀█  █▀█                       │  │                          ▀█  █▀█                       │  │                          ▀█  █▀█                       │
+ │                      ▀▀▀  █  █ █                       │  │                      ▀▀▀  █  █ █                       │  │                      ▀▀▀  █  █ █                       │  │                      ▀▀▀  █  █ █                       │
+ │                          ▀▀▀ ▀▀▀                       │  │                          ▀▀▀ ▀▀▀                       │  │                          ▀▀▀ ▀▀▀                       │  │                          ▀▀▀ ▀▀▀                       │
+ │ ███████████x.......................................... │  │ ███████████x.......................................... │  │ ███████████x.......................................... │  │ ███████████x.......................................... │
+ │ 0 0      -10                                       -50 │  │ 0 0      -10                                       -50 │  │ 0 0      -10                                       -50 │  │ 0 0      -10                                       -50 │
+ └────────────────────────────────────────────────────────┘  └────────────────────────────────────────────────────────┘  └────────────────────────────────────────────────────────┘  └────────────────────────────────────────────────────────┘
+
+
+ CCD 1
+
+ ┌─ 08 HUNT MASK ────────────────────────────────── DONE ─┐  ┌─ 09 HUNT MASK ────────────────────────────────── DONE ─┐  ┌─ 10 HUNT MASK ────────────────────────────────── DONE ─┐  ┌─ 11 HUNT MASK ────────────────────────────────── DONE ─┐
+ │                          ▀█  █▀█                       │  │                          ▀█  █▀█                       │  │                          ▀█  █▀█                       │  │                          ▀█  █▀█                       │
+ │                      ▀▀▀  █  █ █                       │  │                      ▀▀▀  █  █ █                       │  │                      ▀▀▀  █  █ █                       │  │                      ▀▀▀  █  █ █                       │
+ │                          ▀▀▀ ▀▀▀                       │  │                          ▀▀▀ ▀▀▀                       │  │                          ▀▀▀ ▀▀▀                       │  │                          ▀▀▀ ▀▀▀                       │
+ │ ██████████>x.......................................... │  │ ██████████>x.......................................... │  │ ██████████>x.......................................... │  │ ██████████>x.......................................... │
+ │ 0        -10                                       -50 │  │ 0        -10                                       -50 │  │ 0        -10                                       -50 │  │ 0        -10                                       -50 │
+ └────────────────────────────────────────────────────────┘  └────────────────────────────────────────────────────────┘  └────────────────────────────────────────────────────────┘  └────────────────────────────────────────────────────────┘
+
+ ┌─ 12 HUNT MASK ────────────────────────────────── DONE ─┐  ┌─ 13 HUNT MASK ────────────────────────────────── DONE ─┐  ┌─ 14 HUNT MASK ────────────────────────────────── DONE ─┐  ┌─ 15 HUNT MASK ────────────────────────────────── DONE ─┐
+ │                          ▀█  █▀█                       │  │                          ▀█  █▀█                       │  │                          ▀█  █▀█                       │  │                          ▀█  █▀█                       │
+ │                      ▀▀▀  █  █ █                       │  │                      ▀▀▀  █  █ █                       │  │                      ▀▀▀  █  █ █                       │  │                      ▀▀▀  █  █ █                       │
+ │                          ▀▀▀ ▀▀▀                       │  │                          ▀▀▀ ▀▀▀                       │  │                          ▀▀▀ ▀▀▀                       │  │                          ▀▀▀ ▀▀▀                       │
+ │ ██████████>x.......................................... │  │ ██████████>x.......................................... │  │ ██████████>x.......................................... │  │ ██████████>x.......................................... │
+ │ 0        -10                                       -50 │  │ 0        -10                                       -50 │  │ 0        -10                                       -50 │  │ 0        -10                                       -50 │
+ └────────────────────────────────────────────────────────┘  └────────────────────────────────────────────────────────┘  └────────────────────────────────────────────────────────┘  └────────────────────────────────────────────────────────┘
+
+
+ CO 0 -> -50     > trial     x failed mark     j joint mark     · mask anchor     ░ unexplored
+
+
+ Recent
+ 7h12m  core 05 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 05)
+ 7h12m  core 13 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 13)
+ 7h12m  core 06 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 06)
+ 7h12m  core 14 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 14)
+ 7h12m  core 07 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 07)
+ 7h12m  core 15 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 15)
+ 7h12m  profile for guard: [-10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10]
+ 7h12m  guard rotation 1 start: R7 R7 R7 R2 R2 R2 R6 R5 R1 R1 R1 R3 R4 R6
+ 7h12m  trial 0289 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime AVX2 36K-248K all-core 120s resident rotation 1
+ 7h13m  crash: boot fc156219 ended without a clean shutdown; in flight: seq 3666; the resident profile was applied; reset reason: x86/amd: Previous system reset reason [0x00000001]: hardware watchdog timer expired
+ 7h13m  trial 0289 FAIL crash, last evidence 0s after start
+ 7h13m  unattributed crash failure in resident R7 trial 0289: no evidence names a single core
+ 7h13m  preferred-core ranking unavailable (simulated preferred-core ranking unavailable); core-id order
+ 7h13m  hunt 1: unattributed crash in resident R7 trial 0289; anchor from all-zero; candidates 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15; masks of 5 × 120s
+ 7h13m  hunt 1 mask 1: cores 08, 09, 10, 11, 12, 13, 14, 15 at failing offsets, the rest at the anchor; 120s starts
+ 7h13m  trial 0290 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime AVX2 36K-248K all-core 120s masked hunt 1 mask 1

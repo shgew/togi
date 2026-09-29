@@ -20,10 +20,10 @@ const resetHelp = `Usage: togi reset --core <N> | --all
 
 Reset one core, so the next run restarts its search from the baseline, or archive
 the whole session, so the next run starts a new one that carries nothing from it.
-Give exactly one of the two.
-Resetting a core also clears its spent regain retries and settled steps.
---all warns if a configured candidate edge reached a failed mark in the archived
-session; missing or invalid configuration does not prevent archiving.
+Give exactly one of the two. --core clears its failed mark and every joint mark
+that includes it. --all warns if a configured candidate edge reached a failed
+mark in the archived session; missing or invalid configuration does not prevent
+archiving.
 --core refuses a different journal ruleset or schema; --all archives either.
 
 Examples:
@@ -36,7 +36,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 		all  bool
 	)
 	flags := newFlagSet("reset", g)
-	flags.Func("core", "reset core `N`: its search restarts from the baseline", coreFlag(&core))
+	flags.Func("core", "reset core `N`: clear its failed mark and every joint mark that includes it; restart its search from the baseline", coreFlag(&core))
 	flags.BoolVar(&all, "all", false, "archive the session; the next run starts a new one")
 	if code, ok := parseFlags(flags, args, resetHelp, stdout, stderr); !ok {
 		return code

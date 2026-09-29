@@ -112,7 +112,7 @@ func TestResetAllArchivesUnrecognizedSchema(t *testing.T) {
 func TestResetCoreRefusesDifferentRuleset(t *testing.T) {
 	dir, original := incompatibleFixture(t, "ruleset")
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "reset", "--core", "3"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "uses ruleset 3") {
+	if code := cli([]string{"--state-dir", dir, "reset", "--core", "3"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "uses ruleset 4") {
 		t.Fatalf("reset --core exit %d, stderr %q", code, stderr.String())
 	}
 	after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))

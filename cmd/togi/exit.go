@@ -15,6 +15,7 @@ const (
 	exitPreflight     = 15
 	exitIncompatible  = 16
 	exitDefect        = 17
+	exitThermalTrip   = 18
 )
 
 func deadEndExit(c journal.DeadEndCondition) int {
@@ -33,6 +34,8 @@ func deadEndExit(c journal.DeadEndCondition) int {
 		return exitPreflight
 	case journal.DeadEndDefect:
 		return exitDefect
+	case journal.DeadEndThermalTrip:
+		return exitThermalTrip
 	}
 	return exitError
 }

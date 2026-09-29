@@ -52,6 +52,14 @@ func TestDefectDeadEndExit(t *testing.T) {
 	}
 }
 
+func TestThermalTripDeadEndExit(t *testing.T) {
+	var stderr bytes.Buffer
+	stop := session.Stop{Reason: session.StopDeadEnd, DeadEnd: &journal.DeadEnd{Condition: journal.DeadEndThermalTrip, Detail: "hardware thermal trip"}}
+	if code := runResult(stop, nil, &stderr, journal.Renderer{}); code != exitThermalTrip || !strings.Contains(stderr.String(), "dead end thermal_trip") {
+		t.Fatalf("exit %d, stderr %q", code, stderr.String())
+	}
+}
+
 func TestParseDefectAnswer(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

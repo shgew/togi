@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -22,10 +23,13 @@ import (
 
 const statusHelp = `Usage: togi status
 
-Show the session at a glance: phase, tier and guard progress, then one row per
-core with its offset, regainable and settled depth and last decision. Lists
-reset commands for unanswered too-cautious defects. Read-only; rendered from
-the journal. A different ruleset warns before rendering; a different schema is
+Show the session at a glance: search, hunt, refinement or guard activity, tier
+and qualifying rotation progress, then each core's offset, failed and joint
+marks, done phase, queued work and last decision. An open hunt shows masks and
+starts; an open refinement round shows checks and passes. Evidence includes
+workloads, starts, clean hours and bounds since the tier clock. Lists reset
+commands for unanswered too-cautious defects. Read-only; rendered from the
+journal. A different ruleset warns before rendering; a different schema is
 refused.
 
 Examples:
@@ -92,13 +96,45 @@ func warnRuleset(events []journal.Event, stderr io.Writer) {
 }
 
 func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
+	activity := "guard not started"
+	switch st.Phase {
+	case string(journal.PhaseSearch):
+		left := 0
+		for _, c := range st.Cores {
+			if c.Phase == journal.PhaseSearch {
+				left++
+			}
+		}
+		activity = fmt.Sprintf("search: %d cores left", left)
+	case string(journal.PhaseHunt):
+		if h := st.Hunt; h != nil {
+			mask := 0
+			if len(h.Masks) != 0 {
+				mask = h.Masks[len(h.Masks)-1].Mask
+			}
+			activity = fmt.Sprintf("hunt %d, mask %d", h.Hunt, mask)
+		}
+	case string(journal.PhaseRefine):
+		if r := st.Refine; r != nil {
+			done := 0
+			for _, check := range r.Checks {
+				if check.Passes >= check.Needed {
+					done++
+				}
+			}
+			activity = fmt.Sprintf("refine round %d, checks %d/%d", r.Round, done, len(r.Checks))
+		}
+	case string(journal.PhaseGuard):
+		if gs := st.Guard; gs != nil {
+			activity = fmt.Sprintf("guard rotation %d, steps %d/%d", gs.Rotation, gs.StepsDone, len(gs.Steps))
+			if !gs.Qualifying && len(gs.Missing) > 0 {
+				activity += ", not qualifying: " + strings.Join(gs.Missing, "; ")
+			}
+		}
+	}
+	fmt.Fprintf(w, "%s | tier %s\n", activity, tierRef(st))
 	fmt.Fprintf(w, "session %s started %s\n", st.Session.ID, st.Session.Start.UTC().Format(time.RFC3339))
 	writeBIOSLine(w, st.Session)
-	guardPart := "guard not started"
-	if gs := st.Guard; gs != nil {
-		guardPart = fmt.Sprintf("rotation %d, %d of %d steps", gs.Rotation, gs.StepsDone, len(gs.Steps))
-	}
-	fmt.Fprintf(w, "phase %s | tier %s | %s\n", st.Phase, tierRef(st), guardPart)
 	if f := st.InFlight; f != nil {
 		fmt.Fprintf(w, "in flight: [#%d] %s\n", f.Seq, f.Msg)
 	} else {
@@ -115,16 +151,49 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 
 	fmt.Fprintln(w)
 	tw := newTable(w)
-	fmt.Fprintln(tw, "CORE\tCCD\tOFFSET\tPHASE\tFAILED\tREGAINABLE\tSETTLED\tQUEUED\tLAST DECISION")
+	fmt.Fprintln(tw, "CORE\tCCD\tOFFSET\tPHASE\tFAILED\tJOINT\tQUEUED\tLAST DECISION")
 	for _, c := range st.Cores {
 		last := "-"
 		if d := c.LastDecision; d != nil {
 			last = fmt.Sprintf("[#%d] %s", d.Seq, d.Msg)
 		}
 		queued := cmp.Or(c.Queued, "-")
-		fmt.Fprintf(tw, "%02d\t%d\t%d\t%s\t%s\t%d\t%d\t%s\t%s\n", c.Core, c.CCD, c.Offset, c.Phase, mark(c.FailedMark), c.UnprovenDepth-c.SettledDepth, c.SettledDepth, queued, last)
+		fmt.Fprintf(tw, "%02d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n", c.Core, c.CCD, c.Offset, c.Phase, mark(c.FailedMark), jointIDs(c.JointMarks), queued, last)
 	}
 	_ = tw.Flush()
+	writeJointMarks(w, st.JointMarks)
+	if h := st.Hunt; h != nil {
+		anchor := "all-zero"
+		if h.AnchorSeq != 0 {
+			anchor = fmt.Sprintf("rotation end #%d", h.AnchorSeq)
+		}
+		signal := "failure"
+		for _, e := range events {
+			if e.Seq == h.Failure {
+				if p, ok := e.Data.(*journal.Failure); ok {
+					signal = string(p.Signal)
+				}
+				break
+			}
+		}
+		fmt.Fprintf(w, "\nhunt %d [#%d]: unattributed %s in %s trial %s; anchor %s\n", h.Hunt, h.Seq, signal, h.Regime, cmp.Or(h.Trial, "-"), anchor)
+		fmt.Fprintf(w, "  candidates %s\n", coreIDs(h.Candidates))
+		tw := newTable(w)
+		fmt.Fprintln(tw, "MASK\tCORES\tOUTCOME\tSTARTS")
+		for _, m := range h.Masks {
+			fmt.Fprintf(tw, "M%d\t%s\t%s\t%d/%d\n", m.Mask, coreIDs(m.Cores), m.Outcome, m.Passes, m.Needed)
+		}
+		_ = tw.Flush()
+	}
+	if r := st.Refine; r != nil {
+		fmt.Fprintf(w, "\nrefine round %d [#%d]: target %v; proposed %v\n", r.Round, r.Seq, r.Target, r.Profile)
+		tw := newTable(w)
+		fmt.Fprintln(tw, "CHECK\tCORES\tPASSES")
+		for _, check := range r.Checks {
+			fmt.Fprintf(tw, "%s %s\t%s\t%d/%d\n", check.Regime, check.Workload, coreIDs(check.Cores), check.Passes, check.Needed)
+		}
+		_ = tw.Flush()
+	}
 	var findings []journal.DefectFound
 	for _, event := range events {
 		switch p := event.Data.(type) {
@@ -163,15 +232,55 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	if gs.RateBoundPerH != nil {
 		overall = fmt.Sprintf("failure rate %s at 95%%", rate(gs.RateBoundPerH))
 	}
-	fmt.Fprintf(w, "clean hours since profile.change [#%d]: %s h, %s\n", gs.ProfileSeq, hours(gs.CleanS), overall)
+	fmt.Fprintf(w, "clean hours since the tier clock [#%d]: %s h, %s\n", gs.TierClockSeq, hours(gs.CleanS), overall)
 	tw = newTable(w)
-	fmt.Fprintln(tw, "REGIME\tCLEAN H\tRATE BOUND")
-	for _, r := range gs.Regimes {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", r.Regime, hours(r.CleanS), rate(r.RateBoundPerH))
+	fmt.Fprintln(tw, "REGIME\tWORKLOAD\tSTARTS\tCLEAN H\tRATE BOUND")
+	for _, r := range gs.Exposure {
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", r.Regime, r.Workload, r.Starts, hours(r.CleanS), rate(r.RateBoundPerH))
 	}
 	_ = tw.Flush()
 	if gs.TctlMaxC != nil {
 		fmt.Fprintf(w, "Tctl max on this profile %d°C [#%d]\n", *gs.TctlMaxC, gs.TctlMaxSeq)
+	}
+}
+
+func jointIDs(ids []int) string {
+	if len(ids) == 0 {
+		return "-"
+	}
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = fmt.Sprintf("J%d", id)
+	}
+	return strings.Join(parts, ",")
+}
+
+func coreIDs(cores []int) string {
+	if len(cores) == 0 {
+		return "-"
+	}
+	parts := make([]string, len(cores))
+	for i, core := range cores {
+		parts[i] = fmt.Sprintf("%02d", core)
+	}
+	return strings.Join(parts, " ")
+}
+
+func writeJointMarks(w io.Writer, marks []journal.JointMarkState) {
+	if len(marks) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "\njoint marks:")
+	for _, mark := range marks {
+		members := make([]string, len(mark.Members))
+		for i, member := range mark.Members {
+			members[i] = fmt.Sprintf("core %02d %d", member.Core, member.Offset)
+		}
+		source := fmt.Sprintf("observed in hunt %d", mark.Hunt)
+		if mark.Fallback {
+			source = fmt.Sprintf("fallback over every candidate of hunt %d", mark.Hunt)
+		}
+		fmt.Fprintf(w, "  J%d %s, %s [#%d]\n", mark.Mark, strings.Join(members, " + "), source, mark.Seq)
 	}
 }
 
