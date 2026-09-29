@@ -58,6 +58,20 @@ func runMask(h *harness, a Action, fail bool) {
 	}
 }
 
+
+func TestAllZeroHuntAnchorOmitsZeroCause(t *testing.T) {
+	h := huntHarness(t, 4, 120)
+	for _, e := range h.events {
+		p, ok := e.Data.(*journal.HuntStart)
+		if !ok { continue }
+		if p.AnchorSeq != 0 { t.Fatalf("anchor seq %d, want all-zero anchor", p.AnchorSeq) }
+		if diff := cmp.Diff([]int{p.Failure}, e.Cause); diff != "" {
+			t.Fatalf("hunt cause (-want +got):\n%s", diff)
+		}
+		return
+	}
+	t.Fatal("no hunt.start")
+}
 func TestHuntPairAndCommitmentResume(t *testing.T) {
 	h := huntHarness(t, 4, 120)
 	for range 200 {

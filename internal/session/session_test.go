@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/fs"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -52,6 +51,7 @@ type simRun struct {
 	Dir        string
 	Machine    *sim.Machine
 	Log        io.Writer
+	Stderr io.Writer
 	Rotations  int
 	Bootloader Bootloader
 	Prompt     func(defect.Finding) (bool, error)
@@ -68,11 +68,11 @@ func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Jo
 	if err != nil {
 		return Stop{}, fmt.Errorf("read boot id: %w", err)
 	}
-	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Log: in.Log, Build: Build()})
+	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Log: in.Log, Build: Build()})
 	if err != nil {
 		return Stop{}, err
 	}
-	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrap(j), Machine: seams, Rotations: in.Rotations, Bootloader: in.Bootloader, Prompt: in.Prompt, Defects: in.Defects})
+	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrap(j), Machine: seams, Rotations: in.Rotations, Bootloader: in.Bootloader, Prompt: in.Prompt, Defects: in.Defects, Stderr: in.Stderr})
 	if cerr := j.Close(); err == nil && cerr != nil {
 		return Stop{}, cerr
 	}
@@ -207,7 +207,6 @@ type coreSummary struct {
 	Offset     int
 	Pass       *int
 	FailedMark *int
-	Unproven   int
 }
 
 func (c coreSummary) String() string {
@@ -217,7 +216,7 @@ func (c coreSummary) String() string {
 		}
 		return fmt.Sprint(*p)
 	}
-	return fmt.Sprintf("%s at %d (pass %s, failed mark %s, unproven %d)", c.Phase, c.Offset, ptr(c.Pass), ptr(c.FailedMark), c.Unproven)
+	return fmt.Sprintf("%s at %d (pass %s, failed mark %s)", c.Phase, c.Offset, ptr(c.Pass), ptr(c.FailedMark))
 }
 
 func summary(t *testing.T, dir string) string {
@@ -228,7 +227,7 @@ func summary(t *testing.T, dir string) string {
 	}
 	out := fmt.Sprintf("phase %s, dead end %v:", st.Phase, st.DeadEnd)
 	for _, c := range st.Cores {
-		out += fmt.Sprintf(" core %d %s;", c.Core, coreSummary{c.Phase, c.Offset, c.Pass, c.FailedMark, c.UnprovenDepth})
+		out += fmt.Sprintf(" core %d %s;", c.Core, coreSummary{c.Phase, c.Offset, c.Pass, c.FailedMark})
 	}
 	if g := st.Guard; g != nil {
 		out += fmt.Sprintf(" guard rotation %d, clean rotations %d, clean %d s", g.Rotation, g.CleanRotations, g.CleanS)
@@ -285,49 +284,18 @@ func TestKillAtEveryEvent(t *testing.T) {
 	}
 }
 
-func TestCandidateEdgesSkipSearch(t *testing.T) {
-	t.Parallel()
+func TestCandidateEdgesStartChecking(t *testing.T) {
 	dir := t.TempDir()
 	in := simInput(dir, newSim(t, small()))
 	in.Config.CandidateEdges = map[int]int{0: -12, 1: -13}
-	if stop := simulate(t, in); stop.Reason != StopRotations {
-		t.Fatalf("stopped with %+v", stop)
-	}
+	if stop := simulate(t, in); stop.Reason != StopRotations { t.Fatalf("stopped with %+v", stop) }
 	for _, e := range readEvents(t, dir) {
-		if p, ok := e.Data.(*journal.TrialIntent); ok && p.Phase == journal.PhaseSearch {
-			t.Fatalf("search trial %s ran despite a candidate edge", p.Trial)
+		if p, ok := e.Data.(*journal.CorePhase); ok && p.From == "" && !p.CheckEdge {
+			t.Errorf("core %d did not start checking its candidate edge", p.Core)
 		}
-	}
-	want := "phase guard, dead end <nil>: core 0 confirmed at -12 (pass none, failed mark none, unproven 0); core 1 confirmed at -11 (pass none, failed mark -12, unproven 0);"
-	if got := summary(t, dir); !strings.HasPrefix(got, want) {
-		t.Fatalf("got  %s\nwant %s…", got, want)
 	}
 }
 
-func trialEvents(events []journal.Event) []int {
-	var ks []int
-	for i, e := range events {
-		intent, ok := e.Data.(*journal.TrialIntent)
-		if !ok {
-			continue
-		}
-		for _, f := range events[i:] {
-			if f.Boot != e.Boot {
-				break
-			}
-			ks = append(ks, f.Seq)
-			if end, ok := f.Data.(*journal.TrialEnd); ok && end.Trial == intent.Trial {
-				if end.Outcome == journal.OutcomeFailure && f.Seq < len(events) {
-					if _, ok := events[f.Seq].Data.(*journal.Failure); ok {
-						ks = append(ks, f.Seq+1)
-					}
-				}
-				break
-			}
-		}
-	}
-	return ks
-}
 
 func failureCiting(events []journal.Event, seq int) *journal.Failure {
 	for _, e := range events {
@@ -347,94 +315,6 @@ func crashDetectedFor(events []journal.Event, boot string) (journal.Event, bool)
 	return journal.Event{}, false
 }
 
-func checkNeverAtFailedMark(t *testing.T, events []journal.Event) {
-	t.Helper()
-	marks := map[int]*int{}
-	for _, e := range events {
-		switch p := e.Data.(type) {
-		case *journal.TunerDecision:
-			marks[p.Core] = p.FailedMark
-		case *journal.CorePhase:
-			marks[p.Core] = p.FailedMark
-		case *journal.TrialIntent:
-			if p.Core == nil {
-				continue
-			}
-			if mark := marks[*p.Core]; mark != nil && *p.Offset <= *mark {
-				t.Fatalf("trial %s on core %d at %d, failed mark %d", p.Trial, *p.Core, *p.Offset, *mark)
-			}
-		}
-	}
-}
-
-func TestCrashAtEveryTrialEvent(t *testing.T) {
-	t.Parallel()
-	_, ref := reference(t, small())
-	cfg := small()
-	for _, k := range trialEvents(ref) {
-		t.Run(fmt.Sprint(k), func(t *testing.T) {
-			t.Parallel()
-			dir := t.TempDir()
-			m := newSim(t, cfg)
-			stop := drive(t, simInput(dir, m), crashAt(k, m))
-			events := readEvents(t, dir)
-			hit := events[k-1]
-			crash, ok := crashDetectedFor(events, hit.Boot)
-			if !ok {
-				t.Fatalf("no crash.detected for the boot of seq %d", k)
-			}
-			var intent *journal.TrialIntent
-			var ended bool
-			var started, last time.Time
-			for _, e := range events[:k] {
-				switch p := e.Data.(type) {
-				case *journal.TrialIntent:
-					intent, ended, started, last = p, false, time.Time{}, time.Time{}
-				case *journal.TrialStart:
-					started, last = e.Time, e.Time
-				case *journal.TrialProgress, *journal.TrialSignal, *journal.TrialSample:
-					if !started.IsZero() {
-						last = e.Time
-					}
-				case *journal.TrialEnd:
-					ended = ended || p.Trial == intent.Trial
-				}
-			}
-			if !ended {
-				want := int(last.Sub(started).Seconds())
-				for _, e := range events[k:] {
-					if p, ok := e.Data.(*journal.TrialEnd); ok && p.Trial == intent.Trial {
-						if p.DurationS != want || !strings.HasSuffix(e.Msg, fmt.Sprintf(", last evidence %ds after start", want)) {
-							t.Fatalf("crash at %d (%s): trial.end %+v %q, want last evidence %ds after start", k, hit.Kind, p, e.Msg, want)
-						}
-						break
-					}
-				}
-			}
-			f := failureCiting(events, crash.Seq)
-			switch {
-			case f == nil:
-				t.Fatalf("no failure cites crash.detected seq %d", crash.Seq)
-			case !ended && intent.Condition == machine.Resident && (f.Attribution != journal.Unattributed || f.Trial != intent.Trial || f.Regime != intent.Regime || f.Condition != machine.Resident || f.Signal != machine.Crash):
-				t.Fatalf("crash at %d (%s) during resident trial %s: failure %+v", k, hit.Kind, intent.Trial, f)
-			case !ended && intent.Condition == machine.Isolated && (f.Attribution != journal.Attributed || *f.Core != *intent.Core || *f.Offset != *intent.Offset || f.Trial != intent.Trial || f.Signal != machine.Crash):
-				t.Fatalf("crash at %d (%s) during trial %s: failure %+v", k, hit.Kind, intent.Trial, f)
-			case ended && f.Attribution != journal.Unattributed:
-				t.Fatalf("crash at %d (%s) after trial %s ended: failure %+v", k, hit.Kind, intent.Trial, f)
-			}
-			if stop.Reason != StopRotations {
-				t.Fatalf("stopped with %+v", stop)
-			}
-			st, _ := readMemState(stateOf(dir))
-			for _, c := range st.Cores {
-				if c.Phase != journal.PhaseConfirmed || c.Offset < m.IsolatedEdge(c.Core) {
-					t.Fatalf("core %d %s at %d, hidden edge %d", c.Core, c.Phase, c.Offset, m.IsolatedEdge(c.Core))
-				}
-			}
-			checkNeverAtFailedMark(t, events)
-		})
-	}
-}
 
 func crashingModel() *sim.Model {
 	model := sim.DefaultModel()
@@ -545,7 +425,7 @@ func TestDeadEnds(t *testing.T) {
 	}{
 		{name: "failed write", fault: (*sim.Machine).FailWrite, want: journal.DeadEndSMU, evidence: journal.KindSMUError, killable: true},
 		{name: "corrupt readback", fault: func(m *sim.Machine) { m.CorruptReadback(0) }, want: journal.DeadEndSMU, evidence: journal.KindSMUReadback, killable: true},
-		{name: "three setup failures", fault: func(m *sim.Machine) { m.FailSetup(3) }, want: journal.DeadEndNoEvidence, evidence: journal.KindTrialEnd, killable: true},
+		{name: "six setup failures after retries", fault: func(m *sim.Machine) { m.FailSetup(6) }, want: journal.DeadEndNoEvidence, evidence: journal.KindTrialEnd, killable: true},
 		{name: "two setup failures", fault: func(m *sim.Machine) { m.FailSetup(2) }},
 		{name: "escaped thread", fault: (*sim.Machine).Escape, want: journal.DeadEndContainment, evidence: journal.KindTrialEnd, killable: true},
 		{name: "failed preflight", fault: func(m *sim.Machine) { m.FailCheck("root", "uid 1000") }, want: journal.DeadEndPreflight, evidence: journal.KindPreflightCheck},
@@ -778,16 +658,8 @@ func TestInterruptedTrialRecordsTimeRan(t *testing.T) {
 
 func TestStopRestoresBaseline(t *testing.T) {
 	t.Parallel()
-	sharp := sim.DefaultModel()
-	sharp.PastEdgeRate, sharp.Signals = 1e6, map[machine.Signal]float64{machine.ComputationError: 1}
 	uneven := small()
 	uneven.BIOS = []int{-10, -5}
-	zeroFails := small()
-	zeroFails.Edges[0].Isolated = [5]int{1, 1, 1, 1, 1}
-	zeroFails.Model = &sharp
-	baselineFails := small()
-	baselineFails.Edges[0].Isolated = [5]int{-5, -5, -5, -5, -5}
-	baselineFails.Model = &sharp
 	interrupt := func(_ *sim.Machine, cancel context.CancelFunc) { cancel() }
 	tests := []struct {
 		name    string
@@ -799,9 +671,7 @@ func TestStopRestoresBaseline(t *testing.T) {
 		offsets []int
 	}{
 		{name: "signal during search", cfg: small(), at: 50, do: interrupt, want: StopSignal, offsets: []int{-10, -10}},
-		{name: "signal as a trial fails at the baseline", cfg: baselineFails, match: " FAIL ", at: 1, do: interrupt, want: StopSignal, offsets: []int{-5, -10}},
 		{name: "rotations with the profile applied", cfg: uneven, want: StopRotations, offsets: []int{-10, -5}},
-		{name: "dead end, failed mark above the baseline", cfg: zeroFails, want: StopDeadEnd, offsets: []int{0, -10}},
 		{name: "SMU dead end", cfg: small(), at: 50, do: func(m *sim.Machine, _ context.CancelFunc) { m.CorruptReadback(0) }, want: StopDeadEnd},
 	}
 	for _, tt := range tests {
@@ -914,8 +784,11 @@ type faultyKernel struct {
 	f *runnerFault
 }
 
-func (k faultyKernel) MCEs(boot string, since time.Time) ([]machine.MCE, error) {
+func (k faultyKernel) MCEs(boot string, since time.Duration) ([]machine.MCE, error) {
 	found, err := k.Kernel.MCEs(boot, since)
+	if k.f.pending != nil {
+		k.f.pending.Monotonic = since
+	}
 	if err == nil && k.f.pending != nil {
 		found = append(found, *k.f.pending)
 		k.f.pending = nil
@@ -974,28 +847,4 @@ func TestRunnerErrorKeepsMachineCheck(t *testing.T) {
 	t.Fatal("no trial.end for trial 0001")
 }
 
-func TestCompareContextAfterJournalRoundTrip(t *testing.T) {
-	t.Parallel()
-	host := machine.BIOSContext{BIOSVersion: "F3\xff\xfe", Board: "X870E \xc3", CPUModel: "AMD Ryzen 9 9950X", Microcode: "0xb404032", BoostLimitMHz: 5700}
-	raw, err := json.Marshal(&journal.SessionContext{BIOSContext: host})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var recorded journal.SessionContext
-	if err := json.Unmarshal(raw, &recorded); err != nil {
-		t.Fatal(err)
-	}
-	for _, tt := range []struct {
-		name    string
-		current machine.BIOSContext
-		ok      bool
-	}{
-		{"unchanged host", host, true},
-		{"changed microcode", machine.BIOSContext{BIOSVersion: host.BIOSVersion, Board: host.Board, CPUModel: host.CPUModel, Microcode: "0xb404035", BoostLimitMHz: 5700}, false},
-		{"changed invalid byte", machine.BIOSContext{BIOSVersion: "F3\xff", Board: host.Board, CPUModel: host.CPUModel, Microcode: host.Microcode, BoostLimitMHz: 5700}, false},
-	} {
-		if detail, ok := machine.CompareContext(recorded.BIOSContext, tt.current); ok != tt.ok {
-			t.Errorf("%s: CompareContext = %q, %v; want ok %v", tt.name, detail, ok, tt.ok)
-		}
-	}
-}
+

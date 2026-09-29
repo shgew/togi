@@ -17,8 +17,7 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
-// ruleset2Session runs a first session, then restamps its journal as ruleset 2 so the next run is a transition.
-func ruleset2Session(t *testing.T) (dir, id string) {
+func ruleset3Session(t *testing.T) (dir, id string) {
 	t.Helper()
 	dir = t.TempDir()
 	m, err := sim.New(sim.Config{Seed: 1})
@@ -34,15 +33,15 @@ func ruleset2Session(t *testing.T) (dir, id string) {
 		t.Fatal(err)
 	}
 	first, rest, _ := bytes.Cut(data, []byte{'\n'})
-	restamped := bytes.Replace(first, []byte(`"ruleset":3,`), []byte(`"ruleset":2,`), 1)
+	restamped := bytes.Replace(first, []byte(`"ruleset":4,`), []byte(`"ruleset":3,`), 1)
 	if bytes.Equal(restamped, first) {
-		t.Fatalf("session.start carries no ruleset 3 stamp: %s", first)
+		t.Fatalf("session.start carries no ruleset 4 stamp: %s", first)
 	}
 	if err := os.WriteFile(path, append(append(restamped, '\n'), rest...), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	stamp, id, err := journal.Scan(dir)
-	if err != nil || stamp.Ruleset != 2 {
+	if err != nil || stamp.Ruleset != 3 {
 		t.Fatalf("scan: %+v, %v", stamp, err)
 	}
 	return dir, id
@@ -95,7 +94,7 @@ func firstPhases(events []journal.Event) map[int]*journal.CorePhase {
 
 func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 	t.Parallel()
-	dir, id := ruleset2Session(t)
+	dir, id := ruleset3Session(t)
 	stop, events := simulateAgain(t, dir, sim.Config{Seed: 1}, config.Default())
 	if stop.Reason != session.StopRotations {
 		t.Fatalf("stopped with %+v", stop)
@@ -125,8 +124,8 @@ func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 			if cc.FailedMark != nil {
 				want = max(want, *cc.FailedMark+1)
 			}
-			if p.To != journal.PhaseConfirmation || p.Offset != want {
-				t.Errorf("core %02d starts %s at %d, want confirmation at %d", cc.Core, p.To, p.Offset, want)
+			if p.To != journal.PhaseSearch || !p.CheckEdge || p.Offset != want {
+				t.Errorf("core %02d starts %s at %d (check_edge %v), want checking search at %d", cc.Core, p.To, p.Offset, p.CheckEdge, want)
 			}
 		}
 	}
@@ -144,7 +143,7 @@ func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 
 func TestARulesetTransitionAfterABIOSChangeCarriesOnlyEdges(t *testing.T) {
 	t.Parallel()
-	dir, _ := ruleset2Session(t)
+	dir, _ := ruleset3Session(t)
 	bios := machine.BIOSContext{BIOSVersion: "changed", Board: "board", CPUModel: "cpu", Microcode: "0x1", BoostLimitMHz: 5000}
 	_, events := simulateAgain(t, dir, sim.Config{Seed: 1, BIOSContext: bios}, config.Default())
 	carried := carriedEvent(t, events)
@@ -163,7 +162,7 @@ func TestARulesetTransitionAfterABIOSChangeCarriesOnlyEdges(t *testing.T) {
 
 func TestAConfiguredCandidateEdgeStopsShortOfACarriedMark(t *testing.T) {
 	t.Parallel()
-	dir, _ := ruleset2Session(t)
+	dir, _ := ruleset3Session(t)
 	c := config.Default()
 	c.CandidateEdges = map[int]int{0: -50}
 	_, events := simulateAgain(t, dir, sim.Config{Seed: 1}, c)
@@ -177,8 +176,8 @@ func TestAConfiguredCandidateEdgeStopsShortOfACarriedMark(t *testing.T) {
 		t.Fatalf("core 00 carried mark %v, want one shallower than -50", mark)
 	}
 	p := firstPhases(events)[0]
-	if p.To != journal.PhaseConfirmation || p.Offset != *mark+1 || !strings.HasPrefix(p.Reason, fmt.Sprintf("configured candidate edge; clamped to %d", *mark+1)) {
-		t.Fatalf("core 00 starts %+v, want confirmation at %d", p, *mark+1)
+	if p.To != journal.PhaseSearch || !p.CheckEdge || p.Offset != *mark+1 || !strings.HasPrefix(p.Reason, fmt.Sprintf("configured candidate edge; clamped to %d", *mark+1)) {
+		t.Fatalf("core 00 starts %+v, want checking search at %d", p, *mark+1)
 	}
 }
 
