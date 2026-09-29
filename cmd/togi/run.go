@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -157,9 +158,15 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 			}
 		}
 	}
-	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: os.Stderr})
+	sessionStderr := stderr
+	var hidden bytes.Buffer
+	if dash != nil {
+		sessionStderr = &hidden
+	}
+	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr})
 	if dash != nil {
 		dash.hide()
+		_, _ = hidden.WriteTo(stderr)
 		if err == nil && stop.Reason != session.StopDeadEnd {
 			printCleanStop(j.Events(), stderr, renderer)
 		}
