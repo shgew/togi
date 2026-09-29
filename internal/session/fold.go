@@ -70,6 +70,7 @@ type fold struct {
 	appliedCond      map[string]machine.Condition
 	crashSeq         map[string]int
 	appliedMono      map[string]int64
+	applying         map[string]bool
 	registers        map[string][]int
 	uncertain        map[string][]bool
 	baselineBoot     map[string]bool
@@ -111,6 +112,7 @@ func newFold() *fold {
 		appliedCond:   map[string]machine.Condition{},
 		crashSeq:      map[string]int{},
 		appliedMono:   map[string]int64{},
+		applying:      map[string]bool{},
 		registers:     map[string][]int{},
 		uncertain:     map[string][]bool{},
 		baselineBoot:  map[string]bool{},
@@ -162,11 +164,15 @@ func (f *fold) Fold(e journal.Event) {
 	case *journal.ProfileApplied:
 		f.applied[e.Boot] = e.Seq
 		f.appliedCond[e.Boot] = p.Condition
-		f.appliedMono[e.Boot] = e.Mono
+		if !f.applying[e.Boot] {
+			f.appliedMono[e.Boot] = e.Mono
+		}
+		delete(f.applying, e.Boot)
 		f.stray = nil
 	case *journal.ProfileRestored:
 		delete(f.applied, e.Boot)
 		delete(f.appliedCond, e.Boot)
+		delete(f.applying, e.Boot)
 	case *journal.SMUIntent:
 		f.dropSMUIntent()
 		f.unmatched = append(f.unmatched, openIntent{seq: e.Seq, kind: e.Kind, boot: e.Boot})
@@ -184,7 +190,10 @@ func (f *fold) Fold(e journal.Event) {
 		if p.Offset != 0 && f.open == nil && !slices.Contains(e.Cause, f.baselineSeq) {
 			f.applied[e.Boot] = e.Seq
 			f.appliedCond[e.Boot] = machine.Resident
-			f.appliedMono[e.Boot] = e.Mono
+			if !f.applying[e.Boot] {
+				f.appliedMono[e.Boot] = e.Mono
+				f.applying[e.Boot] = true
+			}
 			f.stray = nil
 		}
 	case *journal.SMUWrite:

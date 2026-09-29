@@ -210,6 +210,32 @@ func TestFoldTracksRegistersBySparseCoreID(t *testing.T) {
 	}
 }
 
+func TestIdleEvidenceWindowStartsAtApplicationsFirstWrite(t *testing.T) {
+	t.Parallel()
+	f := newFold()
+	var windows []int64
+	for i, e := range []struct {
+		p    journal.Payload
+		mono int64
+	}{
+		{&journal.SessionStart{Session: "test", Cores: []machine.CoreInfo{{Core: 0, CPUs: []int{0}}, {Core: 8, CPUs: []int{8}}}}, 0},
+		{&journal.SessionBaseline{Offsets: []int{0, 0}}, 0},
+		{&journal.SMUIntent{Op: journal.SMUSet, Core: new(0), Offset: -10}, 1000},
+		{&journal.SMUIntent{Op: journal.SMUSet, Core: new(8), Offset: -12}, 2000},
+		{&journal.ProfileApplied{Condition: machine.Resident}, 3000},
+		{&journal.SMUIntent{Op: journal.SMUSet, Core: new(8), Offset: -11}, 5000},
+		{&journal.ProfileApplied{Condition: machine.Resident}, 6000},
+	} {
+		f.Fold(journal.Event{Seq: i + 1, Kind: e.p.Kind(), Boot: "b", Mono: e.mono, Data: e.p})
+		if _, ok := e.p.(*journal.ProfileApplied); ok {
+			windows = append(windows, f.appliedMono["b"])
+		}
+	}
+	if diff := cmp.Diff([]int64{1000, 5000}, windows); diff != "" {
+		t.Fatalf("idle evidence window starts (-want +got):\n%s", diff)
+	}
+}
+
 func TestFoldConsumesAttributedIdleFailure(t *testing.T) {
 	t.Parallel()
 	f := newFold()
