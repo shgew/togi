@@ -39,7 +39,7 @@ func (o *openTrial) ran() time.Duration {
 	if o.startSeq == 0 {
 		return 0
 	}
-	if o.startMono != 0 && o.lastMono != 0 {
+	if o.lastMono != 0 && o.lastMono >= o.startMono {
 		return time.Duration(o.lastMono-o.startMono) * time.Millisecond
 	}
 	return o.last.Sub(o.started)

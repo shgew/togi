@@ -84,10 +84,11 @@ type runner struct {
 	tuner *tuner.State
 
 	// condition and applied describe what this process last wrote to every core; empty until then.
-	condition   machine.Condition
-	applied     []int
-	fatal       error
-	cancelTrial context.CancelFunc
+	condition    machine.Condition
+	applied      []int
+	fatal        error
+	cancelTrial  context.CancelFunc
+	kernelWaited int
 }
 
 func Run(ctx context.Context, in Input) (Stop, error) {
@@ -314,6 +315,7 @@ func (r *runner) recoverCrashes(ctx context.Context) error {
 		if _, err := r.append(detected, r.fold.recordedFor(crashed, boot)...); err != nil {
 			return err
 		}
+		r.kernelWaited = 0
 	}
 	if err := r.closeOpenTrial(); err != nil {
 		return err
@@ -344,6 +346,11 @@ func (r *runner) recoverCrashes(ctx context.Context) error {
 }
 
 func (r *runner) readMCEs(ctx context.Context, boot string) ([]machine.MCE, error) {
+	if r.fold.kernelRetries > 0 && r.kernelWaited == 0 {
+		if err := r.waitKernelRetry(ctx); err != nil {
+			return nil, err
+		}
+	}
 	for {
 		mces, err := r.in.Machine.Kernel.MCEs(boot, 0)
 		if err == nil || errors.Is(err, machine.ErrCrashed) {
@@ -356,6 +363,11 @@ func (r *runner) readMCEs(ctx context.Context, boot string) ([]machine.MCE, erro
 }
 
 func (r *runner) readResetReason(ctx context.Context, boot string) (machine.ResetReason, error) {
+	if r.fold.kernelRetries > 0 && r.kernelWaited == 0 {
+		if err := r.waitKernelRetry(ctx); err != nil {
+			return machine.ResetReason{}, err
+		}
+	}
 	for {
 		reason, err := r.in.Machine.Kernel.ResetReason(boot)
 		if err == nil || errors.Is(err, machine.ErrCrashed) {
@@ -377,9 +389,15 @@ func (r *runner) retryKernel(ctx context.Context, boot string, err error) error 
 	if _, appendErr := r.append(&journal.BackendRetry{Backend: "kernel_log", Attempt: r.fold.kernelRetries + 1, WaitS: wait, Reason: err.Error()}); appendErr != nil {
 		return appendErr
 	}
+	return r.waitKernelRetry(ctx)
+}
+
+func (r *runner) waitKernelRetry(ctx context.Context) error {
+	wait := []int{60, 300, 1800}[r.fold.kernelRetries-1]
 	if sleepErr := r.in.Machine.Clock.Sleep(ctx, time.Duration(wait)*time.Second); sleepErr != nil {
 		return fmt.Errorf("wait for kernel log retry: %w", sleepErr)
 	}
+	r.kernelWaited = r.fold.kernelRetries
 	return nil
 }
 
