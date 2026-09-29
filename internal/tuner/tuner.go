@@ -253,6 +253,9 @@ func (s *State) Fold(e journal.Event) {
 		}
 	case *journal.CorePhase:
 		if c := s.core(p.Core); c != nil {
+			if c.queued == queuedReset && s.hunt != nil && s.hunt.end != nil && slices.Contains(s.hunt.end.Cores, c.id) {
+				s.hunt = nil
+			}
 			if len(p.ClearedJoint) > 0 {
 				s.marks = slices.DeleteFunc(s.marks, func(m journal.JointMarkState) bool { return slices.Contains(p.ClearedJoint, m.Mark) })
 			}
