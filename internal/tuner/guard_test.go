@@ -151,3 +151,18 @@ func TestResidentSingleNonzeroAttribution(t *testing.T) {
 		t.Fatalf("single-nonzero attribution %+v", a)
 	}
 }
+
+func TestRotationStartInvalidatesProjectedGuard(t *testing.T) {
+	h := residentHarness(t, -10)
+	h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: h.s.steps})
+	h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true})
+	closed := projected(h)
+	if closed.Guard == nil || closed.Guard.RotationOpen {
+		t.Fatalf("expected closed rotation: %+v", closed.Guard)
+	}
+	h.add(&journal.GuardRotation{Rotation: 2, Event: journal.RotationStart, Steps: h.s.steps})
+	open := projected(h)
+	if open.Guard == nil || open.Guard.Rotation != 2 || !open.Guard.RotationOpen {
+		t.Fatalf("new rotation absent from projection: %+v", open.Guard)
+	}
+}

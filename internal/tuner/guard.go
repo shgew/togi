@@ -53,6 +53,7 @@ func (s *State) foldRotation(e journal.Event, p *journal.GuardRotation) {
 		g.rotation, g.open, g.startSeq = p.Rotation, true, e.Seq
 		g.steps = slices.Clone(p.Steps)
 		g.stepsDone = 0
+		s.projectionDirty = true
 		return
 	}
 	g.open = false
