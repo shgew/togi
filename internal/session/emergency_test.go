@@ -69,6 +69,60 @@ func TestJournalFailureZerosMachineAndStopsAppending(t *testing.T) {
 	}
 }
 
+type failEmergencyZero struct {
+	machine.SMU
+	journal *failAppendJournal
+	failed  bool
+}
+
+func (s *failEmergencyZero) SetAllOffsets(offset int) error {
+	if s.journal.failed && !s.failed {
+		s.failed = true
+		return errors.New("simulated emergency zeroing failure")
+	}
+	return s.SMU.SetAllOffsets(offset)
+}
+
+func TestJournalFailureReportsFailedEmergencyZeroAndReadbacks(t *testing.T) {
+	t.Parallel()
+	cfg := small()
+	cfg.BIOS = []int{-10, -20}
+	m := newSim(t, cfg)
+	in := simInput(t.TempDir(), m)
+	var stderr bytes.Buffer
+	seams := m.Seams()
+	boot, err := seams.Host.BootID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: m.Now, Monotonic: m.Monotonic, Build: Build()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	faulty := &failAppendJournal{Journal: wrapFor(in, nil)(j), kind: journal.KindSessionStart}
+	smu := &failEmergencyZero{SMU: seams.SMU, journal: faulty}
+	seams.SMU = smu
+	_, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: faulty, Machine: seams, Rotations: 1, Stderr: &stderr})
+	if closeErr := j.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if !faulty.failed || !smu.failed || !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("journal failure: journal failed %v, emergency zero failed %v, err %v", faulty.failed, smu.failed, err)
+	}
+	var readbacks []string
+	for core := range cfg.BIOS {
+		offset, readErr := m.Seams().SMU.Offset(core)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		readbacks = append(readbacks, fmt.Sprintf("core %02d reads %d", core, offset))
+	}
+	want := "togi: journal write failed: io: read/write on closed pipe; setting every core to CO 0 without an intent failed: simulated emergency zeroing failure (readback: " + strings.Join(readbacks, ", ") + ")\n"
+	if diff := cmp.Diff(want, stderr.String()); diff != "" {
+		t.Fatalf("stderr (-want +got):\n%s", diff)
+	}
+}
+
 type trackedTrials struct {
 	machine.Trials
 	active *int

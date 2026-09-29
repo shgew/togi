@@ -207,29 +207,29 @@ func (r *runner) latch(err error) error {
 		return r.fatal
 	}
 	r.fatal = fmt.Errorf("journal write: %w", err)
-	zeroErr := r.in.Machine.SMU.SetAllOffsets(0)
 	if r.cancelTrial != nil {
 		r.cancelTrial()
 	}
+	zeroErr := r.in.Machine.SMU.SetAllOffsets(0)
 	status := "readback all 0"
-	if zeroErr != nil {
-		status = fmt.Sprintf("zeroing failed: %v", zeroErr)
-	} else {
-		var problems []string
-		for _, c := range r.cores {
-			o, readErr := r.in.Machine.SMU.Offset(c.Core)
-			if readErr != nil {
-				problems = append(problems, fmt.Sprintf("core %02d unreadable: %v", c.Core, readErr))
-			} else if o != 0 {
-				problems = append(problems, fmt.Sprintf("core %02d reads %d", c.Core, o))
-			}
-		}
-		if len(problems) > 0 {
-			status = "readback: " + strings.Join(problems, ", ")
+	var problems []string
+	for _, c := range r.cores {
+		o, readErr := r.in.Machine.SMU.Offset(c.Core)
+		if readErr != nil {
+			problems = append(problems, fmt.Sprintf("core %02d unreadable: %v", c.Core, readErr))
+		} else if o != 0 {
+			problems = append(problems, fmt.Sprintf("core %02d reads %d", c.Core, o))
 		}
 	}
+	if len(problems) > 0 {
+		status = "readback: " + strings.Join(problems, ", ")
+	}
 	if r.in.Stderr != nil {
-		fmt.Fprintf(r.in.Stderr, "togi: journal write failed: %v; every core set to CO 0 without an intent (%s)\n", err, status)
+		if zeroErr != nil {
+			fmt.Fprintf(r.in.Stderr, "togi: journal write failed: %v; setting every core to CO 0 without an intent failed: %v (%s)\n", err, zeroErr, status)
+		} else {
+			fmt.Fprintf(r.in.Stderr, "togi: journal write failed: %v; every core set to CO 0 without an intent (%s)\n", err, status)
+		}
 	}
 	return r.fatal
 }
