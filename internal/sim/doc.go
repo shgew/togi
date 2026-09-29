@@ -2,26 +2,22 @@
 //
 // # Edges
 //
-// Each core has a hidden edge per regime and condition: the deepest offset at which it is stable. Isolated edges
-// cover R1-R5; resident edges cover R1-R7 and are never deeper than the isolated ones, so some instability only shows
-// when every core carries its offset. Unless Config.Edges gives them, edges are drawn from the seed: a base B uniform
+// Each core has a hidden isolated edge for R1-R5 and resident edge for R1-R7. The isolated edge applies when
+// all other cores' registers are zero; otherwise the resident edge applies, regardless of trial condition.
+// Workload-specific edges override both. Unless Config.Edges gives them, edges are drawn from the seed: a base B uniform
 // in [-40, -5] per core, isolated R1-R5 at B+u with u uniform in {0, 1, 2}, resident R1-R5 at isolated+v, and
 // resident R6 and R7 at the deepest isolated edge plus v, where v is 0 with probability 0.75 and otherwise uniform in
 // {1, 2, 3}. Edges are clamped to [-50, 0]; an explicit edge of 1 makes even offset 0 fail.
 //
 // # Failures
 //
-// A target core at offset o, whose edge for the trial's regime and condition is E, is d = E - o counts past the
-// edge. It fails at rate PastEdgeRate * Growth^(d-1) per second when d >= 1, and at NearEdgeRate otherwise. With the
+// A loaded core at offset o, with edge E for the workload or regime, is d = E - o counts past the edge.
+// It fails at rate PastEdgeRate * Growth^(d-1) per second when d >= 1, and at NearEdgeRate otherwise. With the
 // default model a 90 s trial one count past the edge fails 90% of the time, each further count quadruples the rate,
-// and nothing fails at or shallower than the edge. The failure time is exponential; a trial passes when no target
-// fails within its duration. R3 and R4 fail by their edges alone: the simulator follows the load-step schedule of
-// package machine only to report SIGSTOP and SIGCONT counts, not to change failure rates.
-//
-// Resident trials fail by each target's resident edge at the offset in its register, so every other core's offset
-// only matters when it is a target too. R6 trials and R7 trials load the cores in TrialSpec.Cores for their whole
-// duration: each loaded core fails by its own R6 or R7 edge, and the first to fail produces the signal. R6's idle half
-// is not modelled.
+// and nothing fails at or shallower than the edge. Flat adds an independent rate at any nonzero offset.
+// OnsetBoost increases the hazard for the first OnsetS seconds, and joints add hazards while all members are deep
+// enough, possibly after a delay. Idle edges can crash a trial through a core outside its loaded set without an MCE.
+// R3 and R4 follow their load-step schedules only to report SIGSTOP and SIGCONT counts, not to change failure rates.
 //
 // A failing core produces one signal, drawn by the Model.Signals weights:
 //   - computation_error, stall, unexpected_exit: the trial ends at the failure time with that signal;
@@ -40,10 +36,11 @@
 //
 // # Machine lifecycle
 //
-// The clock starts at 2026-01-01T00:00:00Z, or at Config.Start, and advances only by trial time and 90 s per reboot.
+// The clock starts at 2026-01-01T00:00:00Z, or at Config.Start. Trial time and Sleep advance boot-local monotonic
+// time; JumpWall moves only wall time, and reboot advances 90 seconds before starting a fresh monotonic clock.
 // Config.Boots continues boot numbering; Resume sets both from a state directory's journal and archives, so a machine
 // built to resume a journal gets boot IDs the journal has not seen. Crash stops the machine: every seam call returns
 // machine.ErrCrashed until Reboot starts the next boot with a new boot ID and the BIOS offsets in every register.
-// Faults (failed SMU writes, corrupt readbacks, setup failures, escaped threads, failed preflight checks, crashes
-// before the first write of a boot) are injected by the methods on Machine.
+// Faults (partial writes, missing backends, corrupt readbacks, setup failures, escaped threads, failed preflight
+// checks, crashes before the first write of a boot) are injected by the methods on Machine.
 package sim
