@@ -66,13 +66,13 @@ func TestResetCore(t *testing.T) {
 	}
 	restart := slices.IndexFunc(events, func(e journal.Event) bool {
 		p, ok := e.Data.(*journal.CorePhase)
-		return ok && p.Core == 1 && p.From == journal.PhaseConfirmed && p.To == journal.PhaseSearch && slices.Equal(e.Cause, []int{events[reset].Seq})
+		return ok && p.Core == 1 && p.From == journal.PhaseDone && p.To == journal.PhaseSearch && slices.Equal(e.Cause, []int{events[reset].Seq})
 	})
 	if restart < 0 {
-		t.Fatal("no confirmed -> search for core 1 citing command.reset")
+		t.Fatal("no done -> search for core 1 citing command.reset")
 	}
-	if c := coreState(t, dir, 1); c.Phase != journal.PhaseConfirmed || c.Offset != m.IsolatedEdge(1) {
-		t.Fatalf("core 1 %+v, want confirmed again at its edge %d", c, m.IsolatedEdge(1))
+	if c := coreState(t, dir, 1); c.Phase != journal.PhaseDone || c.Offset != m.IsolatedEdge(1) {
+		t.Fatalf("core 1 %+v, want done again at its edge %d", c, m.IsolatedEdge(1))
 	}
 	if st, _ := readMemState(stateOf(dir)); st.Tier != journal.TierBronze {
 		t.Fatalf("tier %s, want bronze again", st.Tier)

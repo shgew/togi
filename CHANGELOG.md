@@ -4,6 +4,27 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Added
+
+- An unattributed failure is now hunted: masked trials keep the failed trial's load and workload, put some cores at their failing offsets and the rest at an anchor profile, and delta debugging finds the core or cores behind it. The result is a failed mark on one core or a joint mark over several; before a joint is marked, edge probes move each member shallower in turn until the combination passes, so the mark sits at the shallowest offsets seen to fail. These are recorded in new `hunt.start`, `hunt.mask`, `hunt.end`, `hunt.skipped` and `mark.joint` events ([#69]).
+- Refinement moves every core that is not done toward the profile with the most total depth that reaches no mark, and may move a core shallower (`yield`) so others can go deeper; each round is a `refine.round` and checks the deepened cores with n starts per class. The firmware's preferred-core ranking, recorded as `host.ranking`, breaks ties ([#69]).
+- `evidence.miss` and `evidence.rate` (defaults 0.05 and 0.5) set how many passing starts a step needs, 5 at the defaults, and `durations.start_s` (default 120) sets the length of one start ([#69]).
+- Crashes are classified by the kernel's `Previous system reset reason` line, shown on `crash.detected`: a power-button reset during a trial is a crash failure, a power-button reset between trials is inconclusive, and so is power loss once the kernel has been seen to report reasons; a thermal trip is a new `thermal_trip` dead end with exit code 18 ([#69]).
+- An unreadable kernel log is retried after 1, 5 and 30 minutes, and a backend that keeps failing to start waits 1, 5 and 30 minutes before its last three tries, recorded as `backend.retry`, before the `no_evidence` dead end; a missing backend binary stops at once ([#69]).
+- A journal write failure sets every core to CO 0 without an intent, reads each back, reports on stderr and stops ([#69]).
+- When `togi.service` keeps failing without a dead end, the tuning boot clears GRUB's saved entry and reboots into the normal system after the third failure within 30 minutes, through a new `togi-restart-limit.service`; earlier failures are retried after a minute ([#69]).
+- Every event `togi run` writes records `mono_ms`, the boot-local monotonic time: the machine checks that belong to a trial, and the duration of a trial interrupted within one boot, no longer depend on the wall clock ([#69]).
+
+### Changed
+
+- **BREAKING** Ruleset 4: confirmation, suspect backoffs and automatic regain are removed. A core's candidate edge must pass n starts each of R1 and R2 before it leaves search; guard runs qualifying rotations of starts, and Bronze needs every core done, no depth left for refinement and a clean qualifying rotation since the profile last went deeper. A ruleset-3 session is archived and seeds a new one ([#69]).
+- **BREAKING** `durations.confirmation_trial_s` is removed; a configuration file still setting it is refused with a message naming the key ([#69]).
+- The default `guard.rotation` is `R7 R7 R7 R2 R2 R2 R6 R5 R1 R1 R1 R3 R4 R6`, which covers every R1, R2 and R7 workload; a custom rotation that misses part of that coverage keeps guarding but never earns Bronze, and `togi status` names what it misses ([#69]).
+- Silver and Gold count clean hours since the tier clock, which restarts at a failure on a profile at least as deep as the current one rather than at every profile change ([#69]).
+- A BIOS change no longer stops at a preflight dead end: `togi run` archives the session and starts a new one that carries each core's edge ([#69]).
+- `togi status` shows the activity (search, hunt and mask, refinement round and checks, guard rotation and steps), a JOINT column, joint marks, the open hunt and round, and exposure per regime and workload; `togi cert` shows joint marks, done cores, and starts per workload; `togi watch` shows joint-mark and anchor offsets and marks done, hunted and masked cores ([#69]).
+- `run --rotations N` stops after N clean qualifying rotations once every core is done and refinement can reach no more depth, and `reset --core N` also clears every joint mark that includes core N ([#69]).
+
 ## [0.4.1] - 2026-09-29
 
 ### Changed
@@ -173,3 +194,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#58]: https://github.com/shgew/togi/pull/58
 [#59]: https://github.com/shgew/togi/pull/59
 [#65]: https://github.com/shgew/togi/pull/65
+[#69]: https://github.com/shgew/togi/pull/69

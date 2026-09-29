@@ -15,9 +15,11 @@ const (
 	certHelp = `Usage: togi cert
 
 Render the certificate: the tier the current profile earned, each core's edge,
-clean hours and failure-rate bounds per regime, and the SHA-256 of the journal
-lines it was rendered from. The edges are the values to enter in BIOS. A
-different ruleset warns before rendering; a different schema is refused.
+failed and joint marks and done state, qualifying rotation evidence since the
+tier clock with workload starts, clean hours and failure-rate bounds, and the
+SHA-256 of the journal lines it was rendered from. The edges are the values to
+enter in BIOS. A different ruleset warns before rendering; a different schema
+is refused.
 
 Examples:
   togi cert   The certificate of the session in the default state directory`
@@ -85,7 +87,7 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 		fmt.Fprintln(w, withRef("Profile", certWidth, journal.KindProfileChange, gs.ProfileSeq))
 	}
 	tw := newTable(w)
-	fmt.Fprintln(tw, "  CORE\tEDGE\tFAILED\tREGAINABLE\tSETTLED\tDECIDED")
+	fmt.Fprintln(tw, "  CORE\tEDGE\tFAILED\tJOINT\tDONE\tDECIDED")
 	var moved []string
 	for i, c := range st.Cores {
 		decided := "-"
@@ -99,9 +101,10 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 		if edge != c.Offset {
 			moved = append(moved, fmt.Sprintf("  core %02d is at %d since %s; the next profile.change restarts guard", c.Core, c.Offset, decided))
 		}
-		fmt.Fprintf(tw, "  %02d\t%d\t%s\t%d\t%d\t%s\n", c.Core, edge, mark(c.FailedMark), c.UnprovenDepth-c.SettledDepth, c.SettledDepth, decided)
+		fmt.Fprintf(tw, "  %02d\t%d\t%s\t%s\t%t\t%s\n", c.Core, edge, mark(c.FailedMark), jointIDs(c.JointMarks), c.Phase == journal.PhaseDone, decided)
 	}
 	_ = tw.Flush()
+	writeJointMarks(w, st.JointMarks)
 	for _, m := range moved {
 		fmt.Fprintln(w, m)
 	}
@@ -111,18 +114,23 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 		fmt.Fprintln(w, "Evidence")
 		fmt.Fprintln(w, "  no guard evidence yet")
 	} else {
-		fmt.Fprintln(w, "Evidence since the profile change")
-		tw = newTable(w)
-		fmt.Fprintln(tw, "  REGIME\tCLEAN H\tRATE BOUND")
-		for _, r := range gs.Regimes {
-			fmt.Fprintf(tw, "  %s\t%s\t%s\n", r.Regime, hours(r.CleanS), rate(r.RateBoundPerH))
+		if clockIsFailure(events, gs.TierClockSeq) {
+			fmt.Fprintf(w, "Evidence since [#%d]: the last failure on a profile at least as deep\n", gs.TierClockSeq)
+		} else {
+			fmt.Fprintf(w, "Evidence since the profile change [#%d]\n", gs.TierClockSeq)
 		}
-		fmt.Fprintf(tw, "  all\t%s\t%s\n", hours(gs.CleanS), rate(gs.RateBoundPerH))
+		tw = newTable(w)
+		fmt.Fprintln(tw, "  REGIME\tWORKLOAD\tSTARTS\tCLEAN H\tRATE BOUND")
+		for _, r := range gs.Exposure {
+			fmt.Fprintf(tw, "  %s\t%s\t%d\t%s\t%s\n", r.Regime, r.Workload, r.Starts, hours(r.CleanS), rate(r.RateBoundPerH))
+		}
+		fmt.Fprintf(tw, "  all\t-\t-\t%s\t%s\n", hours(gs.CleanS), rate(gs.RateBoundPerH))
 		_ = tw.Flush()
 		if gs.TctlMaxC != nil {
 			fmt.Fprintln(w, withRef(fmt.Sprintf("  Tctl max %d°C", *gs.TctlMaxC), certWidth, journal.KindTrialEnd, gs.TctlMaxSeq))
 		}
 		fmt.Fprintln(w, "  Rate bound = 3 / clean hours, 95% confidence (rule of three).")
+		fmt.Fprintln(w, "  Starts = valid passes since each class last failed.")
 	}
 	fmt.Fprintln(w)
 
@@ -138,6 +146,15 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 	}
 	fmt.Fprintf(w, "Journal SHA-256 %x through seq %d\n", sum.Sum(nil), events[len(events)-1].Seq)
 	fmt.Fprintln(w, "Durability is a bound, not proof.")
+}
+
+func clockIsFailure(events []journal.Event, seq int) bool {
+	for _, e := range events {
+		if e.Seq == seq {
+			return e.Kind == journal.KindFailure
+		}
+	}
+	return false
 }
 
 func tierLines(st journal.State) []string {
@@ -166,9 +183,9 @@ func tierLines(st journal.State) []string {
 		case i < reached:
 			what = "earned"
 		case l.tier == journal.TierBronze:
-			what = "every core confirmed, nothing to regain, one clean rotation"
+			what = "every core done and one clean qualifying rotation since the last core went deeper"
 		default:
-			what = fmt.Sprintf("%s of %d clean hours", hours(clean), l.cleanH)
+			what = fmt.Sprintf("%.1f of %d clean hours", float64(clean/360)/10, l.cleanH)
 		}
 		lines = append(lines, fmt.Sprintf("%-10s%s", l.name, what))
 	}

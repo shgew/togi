@@ -61,8 +61,9 @@ func trial(m *Machine, core, offset int, r machine.Regime, cond machine.Conditio
 
 type progressRecorder struct{ details []string }
 
-func (r *progressRecorder) Progress(detail string) { r.details = append(r.details, detail) }
-func (*progressRecorder) Sample(machine.Sample)    {}
+func (r *progressRecorder) Progress(detail string)           { r.details = append(r.details, detail) }
+func (*progressRecorder) Sample(machine.Sample)              {}
+func (*progressRecorder) Signal(int, machine.Signal, string) {}
 
 func TestR6ProgressRespectsTrialDuration(t *testing.T) {
 	t.Parallel()
@@ -141,7 +142,7 @@ func transcript(t *testing.T, seed uint64) []string {
 	m.Reboot()
 	second, _ := s.Host.BootID()
 	for _, b := range []string{boot, first, second} {
-		mces, err := s.Kernel.MCEs(b, time.Time{})
+		mces, err := s.Kernel.MCEs(b, 0)
 		log("boot %s mces %+v %v", b, mces, err)
 	}
 	return out
@@ -174,7 +175,7 @@ func TestEachSignal(t *testing.T) {
 					t.Fatalf("result %+v, %v; want %s on core 0", res, err, signal)
 				}
 			case machine.CorrectedMCE:
-				mces, _ := s.Kernel.MCEs(boot, time.Time{})
+				mces, _ := s.Kernel.MCEs(boot, 0)
 				if err != nil || res.Signal != "" || res.Ran != 90*time.Second || len(mces) != 1 || !mces[0].Corrected || mces[0].Core != 0 {
 					t.Fatalf("result %+v, %v, mces %+v; want a pass-shaped result and one corrected MCE", res, err, mces)
 				}
@@ -187,7 +188,7 @@ func TestEachSignal(t *testing.T) {
 				}
 				m.Reboot()
 				next, _ := s.Host.BootID()
-				mces, _ := s.Kernel.MCEs(next, time.Time{})
+				mces, _ := s.Kernel.MCEs(next, 0)
 				if len(mces) != 1 || mces[0].Corrected || mces[0].Core != 0 || !mces[0].Time.Equal(m.Now()) {
 					t.Fatalf("next boot mces %+v, want one uncorrected MCE on core 0 at boot", mces)
 				}
@@ -218,7 +219,15 @@ func TestResidentOnlyEdge(t *testing.T) {
 	if res, err := trial(m, 0, -18, machine.R1, machine.Isolated, 0); err != nil || res.Signal != "" {
 		t.Fatalf("isolated at -18: %+v %v, want pass", res, err)
 	}
-	if res, err := trial(m, 0, -18, machine.R1, machine.Resident, 0); err != nil || res.Signal != machine.ComputationError {
+	if err := m.Seams().SMU.SetOffset(1, -1); err != nil {
+		t.Fatal(err)
+	}
+	spec := machine.TrialSpec{ID: "0001", Regime: machine.R1, Condition: machine.Resident, Workload: machine.PickWorkload(machine.R1, 0), Cores: []int{0}, CPUs: []int{0}, Duration: 90 * time.Second}
+	run, err := m.Seams().Trials.Start(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res, err := run.Wait(context.Background(), nil); err != nil || res.Signal != machine.ComputationError {
 		t.Fatalf("resident at -18: %+v %v, want failure", res, err)
 	}
 }
@@ -235,7 +244,7 @@ func TestBankTypes(t *testing.T) {
 			}
 		}
 		boot, _ := m.Seams().Host.BootID()
-		mces, _ := m.Seams().Kernel.MCEs(boot, time.Time{})
+		mces, _ := m.Seams().Kernel.MCEs(boot, 0)
 		if len(mces) != 20 {
 			t.Fatalf("%d MCEs, want 20", len(mces))
 		}

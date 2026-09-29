@@ -15,8 +15,9 @@ import (
 )
 
 type Message struct {
-	Time time.Time
-	Text string
+	Time      time.Time
+	Text      string
+	Monotonic time.Duration
 }
 
 type Kernel struct {
@@ -45,17 +46,14 @@ func runJournalctl(args []string) (stdout, stderr []byte, exitCode int, err erro
 	return out, errOut.Bytes(), 0, err
 }
 
-func (k *Kernel) MCEs(boot string, since time.Time) ([]machine.MCE, error) {
-	args := []string{"-k", "-b", strings.ReplaceAll(boot, "-", ""), "-o", "json", "--output-fields=MESSAGE,__REALTIME_TIMESTAMP", "--grep", "Hardware Error", "--no-pager", "-q"}
-	if !since.IsZero() {
-		args = append(args, "--since", fmt.Sprintf("@%d", since.Unix()))
-	}
+func (k *Kernel) MCEs(boot string, since time.Duration) ([]machine.MCE, error) {
+	args := []string{"-k", "-b", strings.ReplaceAll(boot, "-", ""), "-o", "json", "--output-fields=MESSAGE,__REALTIME_TIMESTAMP,__MONOTONIC_TIMESTAMP", "--grep", "Hardware Error", "--no-pager", "-q"}
 	out, stderr, code, err := k.journalctl(args)
 	if err != nil {
 		return nil, fmt.Errorf("read kernel log of boot %s: %w: %s", boot, err, bytes.TrimSpace(stderr))
 	}
 	if code != 0 {
-		if code == 1 && (bytes.Contains(stderr, []byte("No journal boot entry found")) || len(out) == 0 && len(stderr) == 0) {
+		if code == 1 && (bytes.Contains(stderr, noBootEntry) || len(out) == 0 && len(stderr) == 0) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("read kernel log of boot %s: exit status %d: %s", boot, code, bytes.TrimSpace(stderr))
@@ -69,6 +67,7 @@ func (k *Kernel) MCEs(boot string, since time.Time) ([]machine.MCE, error) {
 		var entry struct {
 			Message   json.RawMessage `json:"MESSAGE"`
 			Timestamp string          `json:"__REALTIME_TIMESTAMP"`
+			Monotonic string          `json:"__MONOTONIC_TIMESTAMP"`
 		}
 		if err := json.Unmarshal(line, &entry); err != nil {
 			return nil, fmt.Errorf("decode kernel log of boot %s: %w", boot, err)
@@ -85,12 +84,89 @@ func (k *Kernel) MCEs(boot string, since time.Time) ([]machine.MCE, error) {
 		if err != nil {
 			return nil, fmt.Errorf("decode kernel timestamp of boot %s: %w", boot, err)
 		}
-		at := time.UnixMicro(micros)
-		if !at.Before(since) {
-			msgs = append(msgs, Message{Time: at, Text: text})
+		mono, err := strconv.ParseInt(entry.Monotonic, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("decode kernel monotonic timestamp of boot %s: %w", boot, err)
+		}
+		if at := time.Duration(mono) * time.Microsecond; at >= since {
+			msgs = append(msgs, Message{Time: time.UnixMicro(micros), Text: text, Monotonic: at})
 		}
 	}
 	return Parse(msgs, k.cpuCore), nil
+}
+
+var noBootEntry = []byte("No journal boot entry found")
+var resetLine = regexp.MustCompile(`^x86/amd: Previous system reset reason \[0x[0-9a-f]{8}\]: (.+)$`)
+var versionLine = regexp.MustCompile(`^Linux version (\d+)\.(\d+)`)
+
+func (k *Kernel) ResetReason(boot string) (machine.ResetReason, error) {
+	args := []string{"-k", "-b", strings.ReplaceAll(boot, "-", ""), "-o", "json", "--output-fields=MESSAGE", "--grep", "Linux version|Previous system reset reason", "--no-pager", "-q"}
+	out, stderr, code, err := k.journalctl(args)
+	if err != nil {
+		return machine.ResetReason{}, fmt.Errorf("read kernel log of boot %s: %w: %s", boot, err, bytes.TrimSpace(stderr))
+	}
+	if code != 0 {
+		if code == 1 && bytes.Contains(stderr, noBootEntry) {
+			return machine.ResetReason{}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)
+		}
+		if code == 1 && len(out) == 0 && len(stderr) == 0 {
+			return machine.ResetReason{}, nil
+		}
+		return machine.ResetReason{}, fmt.Errorf("read kernel log of boot %s: exit status %d: %s", boot, code, bytes.TrimSpace(stderr))
+	}
+	var reason machine.ResetReason
+	var raw []string
+	priority := map[machine.ResetKind]int{machine.ResetUnknown: 1, machine.ResetPowerButton: 2, machine.ResetCPUShutdown: 3, machine.ResetSyncFlood: 4, machine.ResetWatchdog: 5, machine.ResetThermalTrip: 6}
+	for line := range bytes.SplitSeq(out, []byte{'\n'}) {
+		if len(line) == 0 {
+			continue
+		}
+		var entry struct {
+			Message json.RawMessage `json:"MESSAGE"`
+		}
+		if err := json.Unmarshal(line, &entry); err != nil {
+			return machine.ResetReason{}, fmt.Errorf("decode kernel log of boot %s: %w", boot, err)
+		}
+		var text string
+		if err := json.Unmarshal(entry.Message, &text); err != nil {
+			var data []byte
+			if err := json.Unmarshal(entry.Message, &data); err != nil {
+				return machine.ResetReason{}, fmt.Errorf("decode kernel message of boot %s: %w", boot, err)
+			}
+			text = string(data)
+		}
+		if match := versionLine.FindStringSubmatch(text); match != nil {
+			major, _ := strconv.Atoi(match[1])
+			minor, _ := strconv.Atoi(match[2])
+			reason.Supported = reason.Supported || major > 6 || major == 6 && minor >= 16
+		}
+		if match := resetLine.FindStringSubmatch(text); match != nil {
+			raw = append(raw, match[1])
+			kind := resetKind(match[1])
+			if priority[kind] > priority[reason.Kind] {
+				reason.Kind = kind
+			}
+		}
+	}
+	reason.Raw = strings.Join(raw, "\n")
+	return reason, nil
+}
+
+func resetKind(text string) machine.ResetKind {
+	switch text {
+	case "hardware watchdog timer expired":
+		return machine.ResetWatchdog
+	case "an uncorrected error caused a data fabric sync flood event", "a software sync flood event occurred":
+		return machine.ResetSyncFlood
+	case "internal CPU shutdown event occurred":
+		return machine.ResetCPUShutdown
+	case "power button was pressed for 4 seconds":
+		return machine.ResetPowerButton
+	case "thermal pin BP_THERMTRIP_L was tripped", "internal CPU thermal limit was tripped":
+		return machine.ResetThermalTrip
+	default:
+		return machine.ResetUnknown
+	}
 }
 
 var (
@@ -178,7 +254,7 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 				ambiguous = pending != 0
 				pending++
 			}
-			mce := machine.MCE{CPU: cpu, Core: core, Bank: bank, BankType: machine.UnknownBank, Corrected: corrected, Time: msg.Time}
+			mce := machine.MCE{CPU: cpu, Core: core, Bank: bank, BankType: machine.UnknownBank, Corrected: corrected, Time: msg.Time, Monotonic: msg.Monotonic}
 			if preceding != nil {
 				mce.Lines = append(mce.Lines, stamped(*preceding))
 			}

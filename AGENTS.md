@@ -20,14 +20,16 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 
 ## Workflow
 
-Every change, docs included, lands as a pull request against `main` on `github.com/shgew/togi`. The owner reviews and merges. When a change is done, open its pull request without asking, unless told otherwise. The one commit that reaches `main` without a pull request is the release commit the release workflow pushes (`docs/releasing.md`).
+Every change, docs included, lands as a pull request against `main` on `github.com/shgew/togi`, or as a layer of a stack of pull requests that ends on `main`. The owner reviews and merges. When a change is done, open its pull request without asking, unless told otherwise. The one commit that reaches `main` without a pull request is the release commit the release workflow pushes (`docs/releasing.md`).
 
-- Branch from `main` with a short descriptive name.
+- Branch from `main` with a short descriptive name; in a stack, each layer above the bottom branches from the layer below.
 - One concern per pull request.
+- A pull request changes at most 100 files, counting only the files CodeRabbit would review: every changed file except those its default ignores and the `path_filters` in `.coderabbit.yaml` exclude. The cap is this project's rule; CodeRabbit's own limit depends on its plan. Split larger work into a stack.
+- Stacked pull requests always use [`gh stack`](https://github.com/github/gh-stack) (`gh extension install github/gh-stack`): each layer is a branch with its own pull request based on the layer below, a lower layer holds what the ones above depend on, and every layer passes `just check` on its own. Open the stack with `gh stack submit`, keep it current with `gh stack sync`, and merge it with `gh stack merge`, never layer by layer by hand.
 - Commit with short imperative messages.
 - The pull request body follows `.github/pull_request_template.md`: a short summary, and the demo in a collapsed block.
 - Address every review comment on the same branch.
-- CodeRabbit reviews every pull request against `main`, as configured in `.coderabbit.yaml`. Its review is advisory: address its comments like any other, then reply to and resolve its threads.
+- CodeRabbit reviews every eligible pull request, including stacked layers. It skips draft pull requests and pull requests from `dependabot[bot]`, as configured in `.coderabbit.yaml`. Its review is advisory: address its comments like any other, then reply to and resolve its threads.
 - A pull request that finishes an issue says `Closes #N` in its body; one that only makes progress says `Refs #N`.
 - A pull request that bumps `journal.Schema` or `tuner.Ruleset` is breaking: its title starts with `[BREAKING]`, it carries the `breaking` label, and its changelog line starts with `**BREAKING**`.
 - A breaking pull request merges only after `[Unreleased]` has been released (see `docs/releasing.md`).
@@ -67,16 +69,16 @@ Enter the dev shell (Go, gh, gopls, golangci-lint, just, nixfmt) with `nix devel
 | `just` | List the recipes |
 | `just test` | The tight loop |
 | `just gate` | Lint, the `fmt` flake check over tracked files, then tests: the quick check before handing off |
-| `just check` | Every flake check, what CI runs on every pull request and push to `main`: package (its tests run shuffled, with the integration tests on Linux), lint, fmt and, on Linux, the VM test. Must pass before a pull request |
+| `just check` | Every flake check, what CI runs on every pull request and push to `main`: package (its tests run shuffled, with the integration tests on Linux), lint, fmt and, on Linux, the VM tests `vm` (the tuning boot) and `vm-restart-limit`. Must pass before a pull request |
 | `just fmt` | Format Go, Nix and the justfile in place |
 | `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just release` | Start the release workflow on `main`: it checks that `check` passed on `main`, commits the release, builds the package, pushes to `main` and publishes. `just release-preview` shows what it would release. See `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `TOGI_MPRIME` and `TOGI_YCRUNCHER`, else from `/etc/togi/config.toml` |
 | `just fuzz [time]` | Fuzz the journal parser |
 
-CI (`.github/workflows/check.yml`) runs on GitHub-hosted `ubuntu-latest` runners: an `eval` job lists the flake checks, one job per check builds it, with `/dev/kvm` opened to the Nix build users for the VM test, and an aggregating `check` job passes when all of them passed. The build jobs substitute from the public Cachix cache `togi` and push each check's output when the `CACHIX_AUTH_TOKEN` secret is available, so a check whose inputs are unchanged passes without running; the checks build the package with the revision `dev` so that a new commit alone changes none of them (ADR 0021). The release workflow (`.github/workflows/release.yml`) only builds the package on the release commit.
+CI (`.github/workflows/check.yml`) runs on GitHub-hosted `ubuntu-latest` runners: an `eval` job lists the flake checks, one job per check builds it, with `/dev/kvm` opened to the Nix build users for the VM tests, and an aggregating `check` job passes when all of them passed. Each VM test is its own check so the jobs boot their machines in parallel. The build jobs substitute from the public Cachix cache `togi` and push each check's output when the `CACHIX_AUTH_TOKEN` secret is available, so a check whose inputs are unchanged passes without running; the checks build the package with the revision `dev` so that a new commit alone changes none of them (ADR 0021). The release workflow (`.github/workflows/release.yml`) only builds the package on the release commit.
 
-On macOS (aarch64-darwin) the dev shell, `just test`, `just gate`, `just sim` and the read-only commands work; `just check` builds `package`, `lint` and `fmt` and skips the VM test, `just hardware` and the `integration` tests are Linux-only. Linux-only code follows the Go convention: OS-suffixed files (`_linux.go`, `_darwin.go`) for real implementations, and a `//go:build !linux` fallback returning a wrapped `errors.ErrUnsupported`.
+On macOS (aarch64-darwin) the dev shell, `just test`, `just gate`, `just sim` and the read-only commands work; `just check` builds `package`, `lint` and `fmt` and skips the VM tests, `just hardware` and the `integration` tests are Linux-only. Linux-only code follows the Go convention: OS-suffixed files (`_linux.go`, `_darwin.go`) for real implementations, and a `//go:build !linux` fallback returning a wrapped `errors.ErrUnsupported`.
 
 A command needed twice gets a recipe, in the same pull request.
 

@@ -1,3 +1,5 @@
+Superseded by [ADR 0020](0020-hunt-and-refine.md).
+
 # Run mprime AVX-512 first in confirmation
 
 In the first ruleset-2 hardware session on a 16-core Zen 5 part, 14 of 17 confirmation failures were R2 mprime AVX-512 in slot five. Four passing slots ahead of each failure were repeated one count shallower: 14 × 4 × 5 minutes = 4 hours 40 minutes of 18.6 hours of confirmation trials. The other failures were R5 in slot nine twice and R1 y-cruncher SNT + SVT in slot three once.

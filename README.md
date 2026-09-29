@@ -5,7 +5,7 @@
 
 Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them so the result earns a durability tier: Bronze, Silver, Gold, Platinum.
 
-- Tunes one core at a time, confirms each across several workload regimes, then guards all offsets together for as long as you let it.
+- Searches each core in isolation, hunts the cores behind unattributed failures, then refines the resident profile to the most total depth its marks allow before continuing guard.
 - Tests with self-checking workloads (mprime, y-cruncher) across light, heavy, load-step, medium, SMT, idle and all-core regimes.
 - Survives crashes: the next run reads its journal, attributes the crash and continues.
 - Records every action in a plain-text journal you can read to see what it did and why.
@@ -16,9 +16,9 @@ Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains,
 ## Status
 
 Works today, on a simulated 16-core machine:
-- the full tuning lifecycle: per-core search and confirmation, the endless guard, crash resume, tiers, automatic regain and reset;
-- a new session seeded with the edges and failed marks of one an earlier ruleset wrote, after a breaking update;
-- reading a session with `status`, `cert`, `events` and the live `watch` dashboard.
+- the full simulated tuning lifecycle: per-core search, failure hunts, joint marks, resident refinement, qualifying guard rotations, crash resume, tiers and reset;
+- a seeded session after a ruleset update or BIOS change (a BIOS change carries edges but not failed marks);
+- reading a session's hunt, joint marks and per-workload exposure with `status`, `cert`, `events` and the live `watch` dashboard.
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:
 - the `ryzen_smu` driver with its verified core-to-slot mapping;
@@ -36,10 +36,10 @@ Not yet:
 ```sh
 togi --version                         # version and git revision of this build
 sudo togi run                          # tune this machine; Ctrl-C stops, the next run resumes
-togi status                            # per-core offsets, tier and clean hours
-togi watch                             # live dashboard of the session
-togi --state-dir <dir> status          # per-core offsets, tier and clean hours
-togi --state-dir <dir> cert            # the certificate: edges to enter in BIOS
+togi status                            # activity, marks, per-core offsets and evidence
+togi watch                             # live hunt, refinement and guard dashboard
+togi --state-dir <dir> status          # inspect a copied journal
+togi --state-dir <dir> cert            # profile and tier evidence for BIOS decisions
 togi --state-dir <dir> events --core 3 # everything that happened to core 3
 ```
 
@@ -54,7 +54,7 @@ togi --state-dir <dir> events --core 3 # everything that happened to core 3
 |[docs/simulating.md](docs/simulating.md)|Running a simulated session for development|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
 |[CONTEXT.md](CONTEXT.md)|The vocabulary: offsets, phases, regimes, tiers|
-|[docs/spec/tuner.md](docs/spec/tuner.md)|How offsets are searched, confirmed, guarded and certified|
+|[docs/spec/tuner.md](docs/spec/tuner.md)|How offsets are searched, hunted, refined, guarded and certified|
 |[docs/spec/workloads.md](docs/spec/workloads.md)|The workload regimes and how failures are detected|
 |[docs/spec/journal.md](docs/spec/journal.md)|The journal, its events and the state file|
 |[docs/spec/runtime.md](docs/spec/runtime.md)|Commands, configuration, the tuning boot and the NixOS module|
@@ -74,6 +74,6 @@ Bug reports are welcome as issues. Pull requests and feature requests are not ta
 
 ## Development
 
-Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, and `just gate` runs lint, the formatting check and tests. `just check` runs every flake check: the package with its tests, lint, formatting and the NixOS VM test; CI runs them on every pull request. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the rest.
+Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, and `just gate` runs lint, the formatting check and tests. `just check` runs every flake check: the package with its tests, lint, formatting and the NixOS VM tests; CI runs them on every pull request. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the rest.
 
-togi runs on NixOS. Development also works on macOS (aarch64-darwin): the dev shell, the tests, `just sim`, and `status`, `cert`, `events` and `reset` against a copied state directory. `just check` there skips the VM test, and `togi run` exits with an error.
+togi runs on NixOS. Development also works on macOS (aarch64-darwin): the dev shell, the tests, `just sim`, and `status`, `cert`, `events` and `reset` against a copied state directory. `just check` there skips the VM tests, and `togi run` exits with an error.

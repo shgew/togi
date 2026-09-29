@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -22,36 +23,37 @@ import (
 	"github.com/shgew/togi/internal/detect"
 	"github.com/shgew/togi/internal/hardware"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
 )
 
 const runHelp = `Usage: togi run [--rotations <N>] [--tuning-boot <grubenv>] [--no-tui]
 
 Start or resume the tuning session in the foreground: search each core's deepest
-stable offset, confirm it, then keep guarding all offsets together. After each
-clean guard rotation it regains one count of suspect depth per core, then guards
-the deeper profile. After a crash, the next run attributes it from the journal
-and continues. On resume, known defects affecting past decisions name the cores;
-in a terminal run offers to reset them. An unanswered too-aggressive defect
-stops an unattended run. It needs root. A journal from an older ruleset or schema
-is archived, and the new session starts each core from the edges and failed
-marks it found. A newer one stops the run before another event is written;
-reset --all archives that session. Journal lines are colored on terminals and
-in the system journal unless NO_COLOR is set.
+stable offset, hunt the core behind unattributed failures with masked starts,
+refine the resident profile to the most total depth its failed and joint
+marks allow, then guard it with qualifying rotations. A clean qualifying
+rotation earns Bronze once every core is done and refinement can reach no
+more depth. After a crash, the next run attributes it from the journal and
+continues. On resume, known defects affecting past decisions name the cores; in
+a terminal run offers to reset them. An unanswered too-aggressive defect stops
+an unattended run. It needs root. A journal from an older ruleset or schema is
+archived, and the new session starts each core from the edges and failed marks
+it found. A newer one stops the run before another event is written; reset --all
+archives that session. Journal lines are colored on terminals and in the system
+journal unless NO_COLOR is set.
 
 When stdin and stderr are terminals, run shows the session as the watch
 dashboard instead of one line per event, and prints the outcome when it stops:
 the restored offsets and why it stopped, or the dead end or error;
 events.jsonl still records every event. --no-tui prints the lines instead.
 
---rotations N stops once the current profile has survived N clean rotations,
-counted across runs, before any regain. Every regain changes the profile and
-restarts the count, so with depth left to regain --rotations 1 stops without
-Bronze.
+--rotations N stops after N clean qualifying rotations once every core is done
+and refinement can reach no more depth.
 
 Examples:
   sudo togi run                     Tune this machine until a signal or a dead end
-  sudo togi run --rotations 1       Stop after the first clean guard rotation
+  sudo togi run --rotations 1       Stop after the search is done and one qualifying rotation passed
   sudo togi run --no-tui            Print one line per event instead of the dashboard`
 
 func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
@@ -61,7 +63,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		noTUI     bool
 	)
 	flags := newFlagSet("run", g)
-	flags.Func("rotations", "stop after `N` clean guard rotations of one profile (default endless)", func(s string) error {
+	flags.Func("rotations", "stop after `N` clean qualifying rotations once every core is done and refinement can reach no more depth (default endless)", func(s string) error {
 		v, err := strconv.Atoi(s)
 		if err != nil || v < 1 {
 			return errors.New("must be a positive integer")
@@ -116,7 +118,16 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
 	}
-	carried, err := carry.Prepare(g.stateDir, journal.Options{Boot: boot, Sync: true}, session.Build(), nil)
+	m, err := hardware.New(cfg, g.stateDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "togi run: %v\n", err)
+		return exitError
+	}
+	var current *machine.BIOSContext
+	if bios, err := m.Host.BIOSContext(); err == nil {
+		current = &bios
+	}
+	carried, err := carry.Prepare(g.stateDir, journal.Options{Boot: boot, Sync: true}, session.Build(), nil, current)
 	if err != nil {
 		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 	}
@@ -124,7 +135,7 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	if dash != nil {
 		log = dash
 	}
-	j, err := journal.Open(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: log, Renderer: renderer, Build: session.Build()})
+	j, err := journal.Open(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: log, Renderer: renderer, Build: session.Build(), Monotonic: m.Clock.Monotonic})
 	if err != nil {
 		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 	}
@@ -135,12 +146,6 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 			}
 			return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 		}
-	}
-	m, err := hardware.New(cfg, g.stateDir)
-	if err != nil {
-		_ = j.Close()
-		fmt.Fprintf(stderr, "togi run: %v\n", err)
-		return exitError
 	}
 	prompt := defectPrompt(stderr)
 	if dash != nil {
@@ -153,9 +158,15 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 			}
 		}
 	}
-	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried})
+	sessionStderr := stderr
+	var hidden bytes.Buffer
+	if dash != nil {
+		sessionStderr = &hidden
+	}
+	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr})
 	if dash != nil {
 		dash.hide()
+		_, _ = hidden.WriteTo(stderr)
 		if err == nil && stop.Reason != session.StopDeadEnd {
 			printCleanStop(j.Events(), stderr, renderer)
 		}

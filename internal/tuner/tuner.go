@@ -12,14 +12,15 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-// Ruleset must be bumped for changes to steps, offset range, phases, regimes, confirmation, tiers or backoffs; this is breaking.
-const Ruleset = 3
+// Ruleset must be bumped for changes to steps, offset range, phases, regimes, evidence, hunts, refinement, tiers or backoffs; this is breaking.
+const Ruleset = 4
 
 type ActionKind int
 
 const (
 	Decide ActionKind = iota
 	RunTrial
+	ReadRanking
 )
 
 type Action struct {
@@ -29,50 +30,19 @@ type Action struct {
 	Cause   []int
 }
 
-// Trial is one trial to run. Multi-core trials (R6, R7) list their loaded cores in Cores, in core-id order, and leave
-// Core and Offset zero; per-core trials leave Cores empty.
 type Trial struct {
-	Core      int
-	Offset    int
-	Regime    machine.Regime
-	Phase     journal.Phase
-	Condition machine.Condition
-	Cores     []int
-	Rotation  int
-	Retry     bool
-	// Workload is empty when the run loop picks it by its per-regime index.
-	Workload string
-}
-
-// slot is one trial a core must pass; an empty workload accepts any workload of the regime.
-type slot struct {
-	regime   machine.Regime
-	workload string
-}
-
-var confirmationSet = func() []slot {
-	set := []slot{{regime: machine.R2, workload: machine.MprimeAVX512ID}}
-	found := false
-	for _, r := range []machine.Regime{machine.R1, machine.R2} {
-		for _, w := range machine.Workloads(r) {
-			if r == machine.R2 && w.ID == machine.MprimeAVX512ID {
-				found = true
-				continue
-			}
-			set = append(set, slot{r, w.ID})
-		}
-	}
-	if !found {
-		panic("confirmation workload mprime AVX-512 missing from R2 catalog")
-	}
-	return append(set, slot{regime: machine.R3}, slot{regime: machine.R4}, slot{regime: machine.R5})
-}()
-
-func passedSlot(intent *journal.TrialIntent) slot {
-	if intent.Phase == journal.PhaseConfirmation && (intent.Regime == machine.R1 || intent.Regime == machine.R2) {
-		return slot{intent.Regime, intent.Workload}
-	}
-	return slot{regime: intent.Regime}
+	Core, Offset      int
+	Regime            machine.Regime
+	Phase             journal.Phase
+	Condition         machine.Condition
+	Cores             []int
+	Rotation          int
+	Retry             bool
+	Workload          string
+	DurationS         int
+	Profile           []int
+	Hunt, Mask, Round int
+	Rerun             bool
 }
 
 type awaiting struct {
@@ -83,56 +53,96 @@ type awaiting struct {
 }
 
 type core struct {
-	id          int
-	phase       journal.Phase
-	offset      int
-	pass        *int
-	fail        *int
-	unproven    int
-	passed      []slot
-	passedSeqs  []int
-	pending     int
-	lastSeq     int
-	zeroSeq     int
-	decisionSeq int
-	baseline    int
-	queued      string
-	queueSeq    int
-	// settled is the shallowest offset whose regain retry was spent and backed off from again.
-	settled *int
-	// spent lists, ascending, the offsets whose one regain retry is used.
-	spent []int
+	id             int
+	phase          journal.Phase
+	offset         int
+	baseline       int
+	pass, fail     *int
+	check          bool
+	checkWorkloads [2]string
+	phaseSeq       int
+	checks         int
+	queued         string
+	queueSeq       int
+	pending        int
+	zeroSeq        int
+	lastSeq        int
+	decisionSeq    int
+	stepR1         bool
+	stepSeqs       []int
+}
+
+type pendingFailure struct {
+	seq     int
+	failure *journal.Failure
+	profile []int
+	class   trialClass
+}
+
+type rerun struct {
+	class trialClass
+	seq   int
+}
+
+type qualified struct {
+	profile []int
+	seq     int
+	allDone bool
 }
 
 type State struct {
-	cores    []*core
-	cursor   int
-	retry    *Trial
-	intents  map[string]*journal.TrialIntent
-	awaiting *awaiting
-	mces     map[int]*journal.MCE
-	steps    []machine.Regime
-	// ccd maps each core to its CCD.
-	ccd map[int]int
-	// parts are the R7 trials of one step: each CCD's cores, then every core when there is more than one CCD.
-	parts   [][]int
-	guard   guard
-	suspect *suspect
-	tier    journal.Tier
-	tierSeq int
-	// tierCause is the latest decision, profile change, rotation event or resident pass: what a tier change cites.
-	tierCause int
+	cores                       []*core
+	sortedCores                 []*core
+	indexByID                   map[int]int
+	cursor                      int
+	retry                       *Trial
+	intents                     map[string]*journal.TrialIntent
+	intentSeq                   map[int]string
+	signalled                   map[string]bool
+	awaiting                    *awaiting
+	mces                        map[int]*journal.MCE
+	steps                       []machine.Regime
+	durations                   config.Durations
+	evidence                    config.Evidence
+	n                           int
+	ccd                         map[int]int
+	parts                       [][]int
+	guard                       guard
+	ledger                      map[trialClass][]entry
+	idle                        []entry
+	failures                    []entry
+	marks                       []journal.JointMarkState
+	nextMark                    int
+	recent                      []int
+	queue                       []pendingFailure
+	pendingFailures             []pendingFailure
+	failureIndex                map[int]int
+	obligations                 []rerun
+	hunt                        *hunt
+	nextHunt                    int
+	round                       *round
+	nextRound                   int
+	ranking                     []int
+	rankingSeq, lastPlanSeq     int
+	qualified                   []qualified
+	firstProfileSeq             int
+	lastDeepenSeq, tierClockSeq int
+	tierClockDirty              bool
+	bestProfile                 []int
+	bestDirty                   bool
+	warning                     *journal.TunerWarning
+	warningSeq                  int
+	thermal                     *journal.DeadEnd
+	thermalSeq                  int
+	tier                        journal.Tier
+	tierSeq, tierCause          int
+	projectionDirty             bool
+	projectedGuard              *journal.GuardState
 }
 
 func New() *State {
-	return &State{
-		cursor:  -1,
-		intents: map[string]*journal.TrialIntent{},
-		mces:    map[int]*journal.MCE{},
-		steps:   config.Default().Guard.Rotation,
-		guard:   guard{dirty: true, cleanByRegime: map[machine.Regime]int{}},
-		tier:    journal.TierNone,
-	}
+	c := config.Default()
+	return &State{cursor: -1, intents: map[string]*journal.TrialIntent{}, intentSeq: map[int]string{}, signalled: map[string]bool{}, mces: map[int]*journal.MCE{}, ledger: map[trialClass][]entry{}, failureIndex: map[int]int{}, steps: c.Guard.Rotation, durations: c.Durations, evidence: c.Evidence, n: c.Evidence.Starts(), tier: journal.TierNone, projectionDirty: true, bestDirty: true}
 }
 
 func Order(cores []machine.CoreInfo) []int {
@@ -140,50 +150,73 @@ func Order(cores []machine.CoreInfo) []int {
 	for _, c := range cores {
 		byCCD[c.CCD] = append(byCCD[c.CCD], c.Core)
 	}
-	var ccds []int
-	for ccd, ids := range byCCD {
-		slices.Sort(ids)
-		ccds = append(ccds, ccd)
+	ccds := slices.Sorted(maps.Keys(byCCD))
+	for _, id := range ccds {
+		slices.Sort(byCCD[id])
 	}
-	slices.Sort(ccds)
 	order := make([]int, 0, len(cores))
 	for i := 0; len(order) < len(cores); i++ {
 		for _, ccd := range ccds {
-			if ids := byCCD[ccd]; i < len(ids) {
-				order = append(order, ids[i])
+			if i < len(byCCD[ccd]) {
+				order = append(order, byCCD[ccd][i])
 			}
 		}
 	}
 	return order
 }
 
+func partition(cores []machine.CoreInfo) (map[int]int, [][]int) {
+	ccd := map[int]int{}
+	groups := map[int][]int{}
+	all := make([]int, 0, len(cores))
+	for _, c := range cores {
+		ccd[c.Core] = c.CCD
+		groups[c.CCD] = append(groups[c.CCD], c.Core)
+		all = append(all, c.Core)
+	}
+	slices.Sort(all)
+	if len(groups) == 1 {
+		return ccd, [][]int{all}
+	}
+	var parts [][]int
+	for _, id := range slices.Sorted(maps.Keys(groups)) {
+		parts = append(parts, slices.Sorted(slices.Values(groups[id])))
+	}
+	return ccd, append(parts, all)
+}
+
 func (s *State) core(id int) *core {
-	for _, c := range s.cores {
-		if c.id == id {
-			return c
-		}
+	if i, ok := s.indexByID[id]; ok {
+		return s.sortedCores[i]
 	}
 	return nil
 }
 
-func partition(cores []machine.CoreInfo) (map[int]int, [][]int) {
-	ccd := map[int]int{}
-	byCCD := map[int][]int{}
-	var all []int
-	for _, c := range cores {
-		ccd[c.Core] = c.CCD
-		byCCD[c.CCD] = append(byCCD[c.CCD], c.Core)
-		all = append(all, c.Core)
+func (s *State) byID() []*core {
+	return s.sortedCores
+}
+
+func (s *State) offsets() []int {
+	out := make([]int, len(s.cores))
+	for i, c := range s.byID() {
+		out[i] = c.offset
 	}
-	slices.Sort(all)
-	if len(byCCD) == 1 {
-		return ccd, [][]int{all}
+	return out
+}
+
+func (s *State) ids() []int {
+	out := make([]int, len(s.cores))
+	for i, c := range s.byID() {
+		out[i] = c.id
 	}
-	var parts [][]int
-	for _, id := range slices.Sorted(maps.Keys(byCCD)) {
-		parts = append(parts, slices.Sorted(slices.Values(byCCD[id])))
+	return out
+}
+
+func (s *State) index(id int) int {
+	if i, ok := s.indexByID[id]; ok {
+		return i
 	}
-	return ccd, append(parts, all)
+	return -1
 }
 
 func (s *State) Fold(e journal.Event) {
@@ -194,8 +227,19 @@ func (s *State) Fold(e journal.Event) {
 			s.cores = append(s.cores, &core{id: id})
 		}
 		s.ccd, s.parts = partition(p.Cores)
+		s.sortedCores = slices.Clone(s.cores)
+		slices.SortFunc(s.sortedCores, func(a, b *core) int { return cmp.Compare(a.id, b.id) })
+		s.indexByID = make(map[int]int, len(s.cores))
+		for i, c := range s.sortedCores {
+			s.indexByID[c.id] = i
+		}
+		s.bestDirty = true
 	case *journal.ConfigLoaded:
 		s.steps = slices.Clone(p.Config.Guard.Rotation)
+		s.durations = p.Config.Durations
+		s.evidence = p.Config.Evidence
+		s.n = s.evidence.Starts()
+		s.projectionDirty = true
 	case *journal.SessionBaseline:
 		for i, c := range s.byID() {
 			if i < len(p.Offsets) {
@@ -203,43 +247,70 @@ func (s *State) Fold(e journal.Event) {
 			}
 		}
 	case *journal.CommandReset:
-		if p.Core == nil {
-			return
-		}
-		if c := s.core(*p.Core); c != nil {
-			c.queued, c.queueSeq = queuedReset, e.Seq
+		if p.Core != nil {
+			if c := s.core(*p.Core); c != nil {
+				c.queued, c.queueSeq = queuedReset, e.Seq
+			}
 		}
 	case *journal.CorePhase:
 		if c := s.core(p.Core); c != nil {
-			c.phase, c.offset, c.pass, c.fail, c.unproven = p.To, p.Offset, p.Pass, p.FailedMark, p.UnprovenDepth
+			if c.queued == queuedReset && s.hunt != nil && s.hunt.end != nil && slices.Contains(s.hunt.end.Cores, c.id) {
+				s.hunt = nil
+			}
+			if len(p.ClearedJoint) > 0 {
+				s.marks = slices.DeleteFunc(s.marks, func(m journal.JointMarkState) bool { return slices.Contains(p.ClearedJoint, m.Mark) })
+			}
+			if p.FailedMark != nil && (c.fail == nil || *p.FailedMark > *c.fail) {
+				s.recent = []int{c.id}
+			}
+			c.phase, c.offset, c.pass, c.fail = p.To, p.Offset, p.Pass, p.FailedMark
+			c.check = p.CheckEdge
+			c.checkWorkloads = [2]string{}
+			if len(p.Workloads) == 2 {
+				copy(c.checkWorkloads[:], p.Workloads)
+			}
+			if p.CheckEdge {
+				c.checks++
+			}
+			c.phaseSeq = e.Seq
+			c.queued = ""
 			if p.FailedMark != nil && *p.FailedMark == 0 {
 				c.zeroSeq = e.Seq
 			}
-			c.settled, c.spent = nil, nil
-			c.queued = ""
 			s.decided(c, e.Seq)
-			s.guard.regainFrom = 0
 		}
 	case *journal.TunerDecision:
 		if c := s.core(p.Core); c != nil {
-			c.offset, c.pass, c.fail, c.unproven = p.ToOffset, p.Pass, p.FailedMark, p.UnprovenDepth
-			c.settled, c.spent = p.SettledMark, slices.Clone(p.SpentSteps)
+			if p.FailedMark != nil && (c.fail == nil || *p.FailedMark > *c.fail) {
+				s.recent = []int{c.id}
+			}
+			c.offset, c.pass, c.fail = p.ToOffset, p.Pass, p.FailedMark
+			c.check = p.Decision == journal.CheckEdge
+			if c.check {
+				c.checks++
+				c.phaseSeq = e.Seq
+				if len(p.Workloads) == 2 {
+					copy(c.checkWorkloads[:], p.Workloads)
+				}
+			}
 			s.decided(c, e.Seq)
-			switch p.Decision {
-			case journal.Regain:
-				s.guard.regained = append(s.guard.regained, c.id)
-			case journal.SuspectBackoff:
-				s.suspectBackedOff(c.id)
-			case journal.StepDeeper:
-				s.guard.regainFrom = 0
-			case journal.Backoff:
+			if p.Decision == journal.Backoff && p.Phase != journal.PhaseSearch && p.ToOffset != p.FromOffset {
+				s.queueRerun(e)
+			}
+			if s.hunt != nil && s.hunt.end != nil && p.Phase == journal.PhaseHunt && len(e.Cause) > 0 && (e.Cause[0] == s.hunt.endSeq || e.Cause[0] == s.hunt.markSeq) {
+				s.hunt = nil
 			}
 		}
 	case *journal.TrialIntent:
 		s.intents[p.Trial] = p
+		s.intentSeq[e.Seq] = p.Trial
 		s.retry = nil
 		if p.Condition == machine.Isolated && p.Core != nil {
 			s.cursor = slices.IndexFunc(s.cores, func(c *core) bool { return c.id == *p.Core })
+		}
+	case *journal.TrialProgress:
+		if p.Signal != "" {
+			s.signalled[p.Trial] = true
 		}
 	case *journal.TrialEnd:
 		s.foldTrialEnd(e, p)
@@ -248,35 +319,106 @@ func (s *State) Fold(e journal.Event) {
 	case *journal.Failure:
 		s.foldFailure(e, p)
 	case *journal.DeadEnd:
-		if p.Condition != journal.DeadEndFailureAtZero {
-			return
+		if p.Condition == journal.DeadEndThermalTrip {
+			s.thermal = nil
 		}
-		if p.Core == nil {
-			s.suspect = nil
-			return
+		if p.Condition == journal.DeadEndFailureAtZero && p.Core != nil {
+			if c := s.core(*p.Core); c != nil {
+				c.fail = new(0)
+				c.zeroSeq = e.Seq
+				c.pending = 0
+			}
 		}
-		if c := s.core(*p.Core); c != nil {
-			c.fail = new(0)
-			c.zeroSeq = e.Seq
-			c.pending = 0
+	case *journal.CrashDetected:
+		if p.ResetReason == machine.ResetThermalTrip && !p.Inconclusive {
+			evidence := false
+			if p.InFlight != nil {
+				evidence = s.signalled[s.intentSeq[*p.InFlight]]
+			}
+			for _, cause := range e.Cause {
+				if s.mces[cause] != nil {
+					evidence = true
+					break
+				}
+			}
+			if !evidence {
+				s.thermal = &journal.DeadEnd{Condition: journal.DeadEndThermalTrip, Detail: fmt.Sprintf("the machine reset on a thermal trip (%s); check cooling before tuning again", p.ResetReasonRaw)}
+				s.thermalSeq = e.Seq
+			}
 		}
 	case *journal.ProfileChange:
-		s.guard.changed(e.Seq, p.To)
+		if s.firstProfileSeq == 0 {
+			s.firstProfileSeq = e.Seq
+		}
+		if len(s.guard.profile) == len(p.To) {
+			for i, x := range p.To {
+				if x < s.guard.profile[i] {
+					s.lastDeepenSeq = e.Seq
+					break
+				}
+			}
+		}
+		s.guard.profile = slices.Clone(p.To)
+		s.guard.profileSeq = e.Seq
+		s.guard.lastSeq = e.Seq
+		s.guard.tctlMax = nil
+		s.guard.tctlSeq = 0
 		s.tierCause = e.Seq
+		s.projectionDirty = true
+		s.recomputeTierClock()
 	case *journal.GuardRotation:
-		s.guard.rotated(e.Seq, p)
-		s.tierCause = e.Seq
+		s.foldRotation(e, p)
 	case *journal.TierChange:
 		s.tier, s.tierSeq = p.To, e.Seq
+	case *journal.HostRanking:
+		s.ranking = slices.Clone(p.Ranking)
+		s.rankingSeq = e.Seq
+		s.bestDirty = true
+	case *journal.HuntStart:
+		s.openHunt(e, p)
+	case *journal.HuntMask:
+		s.recordMask(e, p)
+	case *journal.HuntEnd:
+		s.endHunt(e, p)
+	case *journal.HuntSkipped:
+		if len(s.queue) > 0 && s.queue[0].seq == p.Failure {
+			s.queue = s.queue[1:]
+		}
+	case *journal.MarkJoint:
+		s.marks = append(s.marks, journal.JointMarkState{Mark: p.Mark, Members: slices.Clone(p.Members), Fallback: p.Fallback, Hunt: p.Hunt, Seq: e.Seq})
+		s.bestDirty = true
+		s.nextMark = max(s.nextMark, p.Mark)
+		s.recent = nil
+		for _, m := range p.Members {
+			s.recent = append(s.recent, m.Core)
+		}
+		if s.hunt != nil && s.hunt.end != nil && s.hunt.start.Hunt == p.Hunt {
+			s.hunt.markSeq = e.Seq
+			if len(s.guard.profile) == len(s.cores) {
+				for _, m := range p.Members {
+					if s.guard.profile[s.index(m.Core)] > m.Offset {
+						s.hunt = nil
+						break
+					}
+				}
+			}
+		}
+	case *journal.RefineRound:
+		s.foldRound(e, p)
+	case *journal.TunerWarning:
+		s.warning = nil
 	}
 }
 
 func (s *State) decided(c *core, seq int) {
-	c.passed, c.passedSeqs, c.pending = nil, nil, 0
+	c.stepR1 = false
+	c.stepSeqs = nil
+	c.pending = 0
 	c.lastSeq = seq
 	c.decisionSeq = seq
-	s.guard.dirty, s.guard.dirtySeq = true, seq
 	s.tierCause = seq
+	s.projectionDirty = true
+	s.bestDirty = true
 	if s.retry != nil && s.retry.Condition == machine.Isolated && s.retry.Core == c.id {
 		s.retry = nil
 	}
@@ -287,8 +429,27 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 	if intent == nil {
 		return
 	}
-	if intent.Condition == machine.Resident {
-		s.foldResidentEnd(e, p, intent)
+	if s.thermal != nil && p.Outcome == journal.OutcomeFailure && p.Signal != machine.Crash {
+		s.thermal = nil
+	}
+	s.recordEvidence(e, intent, p)
+	if intent.Condition != machine.Isolated {
+		if p.Outcome == journal.OutcomePass && intent.Condition == machine.Resident {
+			s.guard.lastSeq = e.Seq
+			s.tierCause = e.Seq
+			if p.TctlMaxC != nil && (s.guard.tctlMax == nil || *p.TctlMaxC > *s.guard.tctlMax) {
+				s.guard.tctlMax = new(*p.TctlMaxC)
+				s.guard.tctlSeq = e.Seq
+			}
+		}
+		if p.Outcome == journal.OutcomeInconclusive {
+			t := trialFromIntent(intent)
+			t.Retry = true
+			s.retry = &t
+		}
+		if p.Outcome == journal.OutcomeFailure {
+			s.awaiting = &awaiting{intent, p, e.Seq, e.Cause}
+		}
 		return
 	}
 	if intent.Core == nil || intent.Offset == nil {
@@ -301,30 +462,67 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 	c.lastSeq = e.Seq
 	switch p.Outcome {
 	case journal.OutcomePass:
-		if intent.Phase == c.phase && *intent.Offset == c.offset {
-			c.passed = append(c.passed, passedSlot(intent))
-			c.passedSeqs = append(c.passedSeqs, e.Seq)
+		if c.phase == journal.PhaseSearch && *intent.Offset == c.offset && intent.Phase == journal.PhaseSearch && !c.check {
+			if intent.Regime == machine.R1 {
+				c.stepR1 = true
+			}
+			c.stepSeqs = append(c.stepSeqs, e.Seq)
 		}
 	case journal.OutcomeInconclusive:
-		s.retry = &Trial{Core: c.id, Offset: *intent.Offset, Regime: intent.Regime, Phase: intent.Phase, Condition: machine.Isolated, Retry: true, Workload: intent.Workload}
+		t := trialFromIntent(intent)
+		t.Retry = true
+		s.retry = &t
 	case journal.OutcomeFailure:
-		s.awaiting = &awaiting{intent: intent, end: p, seq: e.Seq, cause: e.Cause}
+		s.awaiting = &awaiting{intent, p, e.Seq, e.Cause}
 	}
+}
+
+func trialFromIntent(p *journal.TrialIntent) Trial {
+	t := Trial{Regime: p.Regime, Phase: p.Phase, Condition: p.Condition, Cores: slices.Clone(p.Cores), Workload: p.Workload, DurationS: p.DurationS, Profile: slices.Clone(p.Profile), Rotation: p.Rotation, Hunt: p.Hunt, Mask: p.Mask, Round: p.Round, Rerun: p.Rerun}
+	if p.Core != nil {
+		t.Core = *p.Core
+	}
+	if p.Offset != nil {
+		t.Offset = *p.Offset
+	}
+	return t
 }
 
 func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 	if a := s.awaiting; a != nil && a.intent.Trial == p.Trial {
 		s.awaiting = nil
 	}
-	s.guard.regainFrom = 0
-	switch {
-	case p.Attribution == journal.Attributed && p.Trial != "" && p.Core != nil:
+	profile := slices.Clone(p.Profile)
+	if len(profile) != len(s.cores) {
+		if intent := s.intents[p.Trial]; intent != nil {
+			profile = slices.Clone(intent.Profile)
+		}
+	}
+	failure := pendingFailure{seq: e.Seq, failure: p, profile: profile}
+	if intent := s.intents[p.Trial]; intent != nil {
+		failure.class = classOf(intent)
+	} else if p.Trial == "" && (p.Condition == machine.Resident || p.Condition == machine.Masked) {
+		failure.class = trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, fmt.Sprint(s.ids()), s.durations.GuardIdleS}
+	}
+	s.failureIndex[e.Seq] = len(s.pendingFailures)
+	s.pendingFailures = append(s.pendingFailures, failure)
+	if atLeastDeep(profile, s.guard.profile) {
+		s.tierClockSeq = max(s.tierClockSeq, e.Seq)
+	}
+	if p.Attribution == journal.Attributed && p.Core != nil {
 		if c := s.core(*p.Core); c != nil {
 			c.pending = e.Seq
 		}
-	case p.Attribution == journal.Unattributed && p.Condition == machine.Resident:
-		s.suspect = s.newSuspect(e.Seq, p)
 	}
+	if p.Attribution == journal.Unattributed && (p.Condition == machine.Resident || p.Condition == machine.Masked) {
+		if p.Condition != machine.Masked || s.intents[p.Trial] == nil || p.Trial == "" {
+			s.queue = append(s.queue, failure)
+		}
+	}
+	if p.Trial == "" && (p.Condition == machine.Resident || p.Condition == machine.Masked) && p.Attribution == journal.Unattributed {
+		s.recordIdle(e, p)
+	}
+	s.projectionDirty = true
 }
 
 func (s *State) Attribution() (Action, bool) {
@@ -334,10 +532,13 @@ func (s *State) Attribution() (Action, bool) {
 	}
 	var f *journal.Failure
 	switch a.intent.Condition {
-	case machine.Resident:
-		f = s.attributeResident(a)
 	case machine.Isolated:
 		f = attributeIsolated(a.intent, a.end.Signal)
+	case machine.Resident, machine.Masked:
+		f = s.attributeResident(a)
+	}
+	if f == nil {
+		return Action{}, false
 	}
 	return Action{Kind: Decide, Payload: f, Cause: append([]int{a.seq}, a.cause...)}, true
 }
@@ -354,160 +555,157 @@ func (s *State) Next() Action {
 	if a, ok := s.Attribution(); ok {
 		return a
 	}
+	if s.warning != nil {
+		return Action{Kind: Decide, Payload: s.warning, Cause: []int{s.warningSeq}}
+	}
+	if s.thermal != nil {
+		return Action{Kind: Decide, Payload: s.thermal, Cause: []int{s.thermalSeq}}
+	}
 	if a, ok := s.queuedReset(); ok {
 		return a
 	}
 	for _, c := range s.cores {
 		if c.fail != nil && *c.fail == 0 {
-			return Action{
-				Kind:    Decide,
-				Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Core: new(c.id), Detail: fmt.Sprintf("core %02d has a failed mark at CO 0; only reset can clear it", c.id)},
-				Cause:   []int{c.zeroSeq},
-			}
+			return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Core: new(c.id), Detail: fmt.Sprintf("core %02d has a failed mark at CO 0; only reset can clear it", c.id)}, Cause: []int{c.zeroSeq}}
 		}
 	}
-	for _, c := range s.cores {
-		if c.pending != 0 {
-			return Action{Kind: Decide, Payload: failureRule(c.snapshot()), Cause: []int{c.pending}}
+	if len(s.queue) > 0 && allZero(s.queue[0].profile) {
+		return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Detail: "unattributed failure with every core at CO 0; the instability is not caused by Curve Optimizer"}, Cause: []int{s.queue[0].seq}}
+	}
+	if a, ok := s.pendingDecision(); ok {
+		return a
+	}
+	if s.hunt != nil {
+		if a, ok := s.huntNext(); ok {
+			return a
 		}
 	}
-	if a, ok := s.suspectNext(); ok {
+	if len(s.queue) > 0 && s.round != nil {
+		return Action{Kind: Decide, Payload: &journal.RefineRound{Round: s.round.start.Round, Event: journal.RotationEnd, Reason: "a failure needs a hunt"}, Cause: []int{s.queue[0].seq}}
+	}
+	if s.round != nil {
+		if a, ok := s.roundMoves(); ok {
+			return a
+		}
+	}
+	if a, ok := s.phaseNext(); ok {
 		return a
 	}
-	if g := &s.guard; g.open && g.dirty {
-		return Action{Kind: Decide, Payload: &journal.GuardRotation{Rotation: g.rotation, Event: journal.RotationEnd, Reason: "the profile changed"}, Cause: []int{g.dirtySeq}}
-	}
-	if a, ok := s.regainNext(); ok {
-		return a
+	if !s.anySearch() && !slices.Equal(s.guard.profile, s.offsets()) {
+		return s.profileNext()
 	}
 	if a, ok := s.tierNext(); ok {
 		return a
 	}
-	if s.anyActive() {
+	if s.anySearch() {
 		if a, ok := s.perCore(); ok {
 			return a
 		}
 	}
-	return s.guardNext()
+	if len(s.queue) > 0 {
+		if s.rankingSeq <= s.lastPlanSeq {
+			return Action{Kind: ReadRanking}
+		}
+		return s.huntStartNext()
+	}
+	if a, ok := s.rerunNext(); ok {
+		return a
+	}
+	if s.round != nil {
+		return s.roundCheck()
+	}
+	if s.guard.open {
+		return s.rotationNext()
+	}
+	if s.refineDue() {
+		if s.rankingSeq <= s.lastPlanSeq {
+			return Action{Kind: ReadRanking}
+		}
+		return s.roundStart()
+	}
+	return Action{Kind: Decide, Payload: &journal.GuardRotation{Rotation: s.guard.rotation + 1, Event: journal.RotationStart, Steps: slices.Clone(s.steps)}, Cause: []int{s.guard.lastSeq}}
 }
 
-func (s *State) perCore() (Action, bool) {
-	if s.cursor >= 0 {
-		c := s.cores[s.cursor]
-		switch c.phase {
-		case journal.PhaseSearch:
-			if c.hasPassed(slot{regime: machine.R1}, slot{regime: machine.R2}) {
-				return Action{Kind: Decide, Payload: searchPass(c.snapshot()), Cause: slices.Clone(c.passedSeqs)}, true
-			}
-		case journal.PhaseConfirmation:
-			if c.hasPassed(confirmationSet...) {
-				return Action{Kind: Decide, Payload: confirmed(c.snapshot()), Cause: slices.Clone(c.passedSeqs)}, true
-			}
-		case journal.PhaseConfirmed, journal.PhaseGuard:
+func (s *State) anySearch() bool {
+	return slices.ContainsFunc(s.cores, func(c *core) bool { return c.phase == journal.PhaseSearch })
+}
+
+func (s *State) profileNext() Action {
+	var causes []int
+	for _, c := range s.cores {
+		if c.decisionSeq > s.guard.profileSeq {
+			causes = append(causes, c.decisionSeq)
 		}
 	}
-	if s.retry != nil && s.retry.Condition == machine.Isolated {
-		return s.runTrial(*s.retry), true
-	}
-	if s.cursor >= 0 {
-		c := s.cores[s.cursor]
-		if c.phase == journal.PhaseSearch && slices.Equal(c.passed, []slot{{regime: machine.R1}}) {
-			return s.runTrial(c.isolated(machine.R2)), true
+	slices.Sort(causes)
+	return Action{Kind: Decide, Payload: &journal.ProfileChange{From: slices.Clone(s.guard.profile), To: s.offsets()}, Cause: causes}
+}
+
+func (s *State) phaseNext() (Action, bool) {
+	p := s.offsets()
+	for _, c := range s.cores {
+		if c.phase == journal.PhaseSearch {
+			continue
 		}
-	}
-	for i := range s.cores {
-		c := s.cores[(s.cursor+1+i)%len(s.cores)]
-		switch c.phase {
-		case journal.PhaseSearch:
-			return s.runTrial(c.isolated(machine.R1)), true
-		case journal.PhaseConfirmation:
-			for _, sl := range confirmationSet {
-				if !slices.Contains(c.passed, sl) {
-					t := c.isolated(sl.regime)
-					t.Workload = sl.workload
-					return s.runTrial(t), true
-				}
-			}
-		case journal.PhaseConfirmed, journal.PhaseGuard:
+		reason, done := s.done(c, p)
+		want := journal.PhaseResident
+		if done {
+			want = journal.PhaseDone
+		} else {
+			reason = "one count deeper reaches no mark"
+		}
+		if c.phase != want {
+			return Action{Kind: Decide, Payload: &journal.CorePhase{Core: c.id, From: c.phase, To: want, Offset: c.offset, Pass: c.pass, FailedMark: c.fail, Reason: reason}, Cause: []int{c.decisionSeq}}, true
 		}
 	}
 	return Action{}, false
 }
 
-func (c *core) isolated(r machine.Regime) Trial {
-	return Trial{Core: c.id, Offset: c.offset, Regime: r, Phase: c.phase, Condition: machine.Isolated}
-}
-
-func (s *State) runTrial(t Trial) Action {
-	return Action{Kind: RunTrial, Trial: t, Cause: []int{s.core(t.Core).lastSeq}}
-}
-
-func (s *State) anyActive() bool {
-	return slices.ContainsFunc(s.cores, (*core).active)
-}
-
-func (c *core) active() bool {
-	return c.phase == journal.PhaseSearch || c.phase == journal.PhaseConfirmation
-}
-
-func (c *core) hasPassed(slots ...slot) bool {
-	for _, sl := range slots {
-		if !slices.Contains(c.passed, sl) {
-			return false
-		}
-	}
-	return true
-}
-
-func (c *core) snapshot() coreState {
-	return coreState{core: c.id, phase: c.phase, offset: c.offset, pass: c.pass, fail: c.fail, unproven: c.unproven, settled: c.settled, spent: c.spent}
-}
-
-func (s *State) byID() []*core {
-	return slices.SortedFunc(slices.Values(s.cores), func(a, b *core) int { return cmp.Compare(a.id, b.id) })
-}
-
-// Profile is the profile of the last profile.change, in core-id order.
-func (s *State) Profile() []int { return slices.Clone(s.guard.profile) }
-
+func (s *State) Profile() []int  { return slices.Clone(s.guard.profile) }
 func (s *State) ProfileSeq() int { return s.guard.profileSeq }
-
-// Confirmation counts the confirmation slots core id has passed at its current offset, out of all it needs.
-func (s *State) Confirmation(id int) (passed, total int) {
-	total = len(confirmationSet)
-	c := s.core(id)
-	if c == nil || c.phase != journal.PhaseConfirmation {
-		return 0, total
-	}
-	for _, sl := range confirmationSet {
-		if slices.Contains(c.passed, sl) {
-			passed++
+func (s *State) QualifiedRotations() int {
+	n := 0
+	for _, q := range s.qualified {
+		if q.seq > s.lastDeepenSeq && q.allDone {
+			n++
 		}
 	}
-	return passed, total
+	return n
 }
-
-// CleanRotations counts the clean rotations since the last profile.change.
-func (s *State) CleanRotations() int { return s.guard.cleanRotations }
 
 func (s *State) Project(st *journal.State) {
-	st.Phase = "guard"
-	if len(s.cores) == 0 || s.anyActive() {
-		st.Phase = "per_core"
+	st.Phase = string(journal.PhaseGuard)
+	switch {
+	case s.anySearch():
+		st.Phase = string(journal.PhaseSearch)
+	case s.hunt != nil:
+		st.Phase = string(journal.PhaseHunt)
+	case s.round != nil:
+		st.Phase = string(journal.PhaseRefine)
 	}
 	for i := range st.Cores {
 		c := s.core(st.Cores[i].Core)
 		if c == nil {
 			continue
 		}
-		st.Cores[i].Offset = c.offset
-		st.Cores[i].Phase = c.phase
-		st.Cores[i].Pass = c.pass
-		st.Cores[i].FailedMark = c.fail
-		st.Cores[i].UnprovenDepth = c.unproven
-		st.Cores[i].SettledDepth = c.unproven - c.regainable()
-		st.Cores[i].Queued = c.queued
+		x := &st.Cores[i]
+		x.Offset = c.offset
+		x.Phase = c.phase
+		x.Pass = c.pass
+		x.FailedMark = c.fail
+		x.Queued = c.queued
+		x.JointMarks = nil
+		for _, m := range s.marks {
+			for _, member := range m.Members {
+				if member.Core == c.id {
+					x.JointMarks = append(x.JointMarks, m.Mark)
+				}
+			}
+		}
 	}
-	st.Guard = s.guard.project()
+	st.JointMarks = slices.Clone(s.marks)
+	st.Hunt = s.projectHunt()
+	st.Refine = s.projectRound()
+	st.Guard = s.projectGuard()
 	st.Tier, st.TierSeq = s.tier, s.tierSeq
 }

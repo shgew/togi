@@ -1,3 +1,5 @@
+Starting in confirmation is superseded by [ADR 0020](0020-hunt-and-refine.md).
+
 Carrying nothing from the archived journal superseded by [ADR 0019](0019-a-ruleset-change-starts-a-seeded-session.md); configured candidate edges remain.
 
 # Candidate edges start a new session in confirmation

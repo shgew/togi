@@ -1,9 +1,11 @@
 package sim
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"slices"
@@ -27,13 +29,36 @@ type Config struct {
 	// Boots counts the boots before the first; boot numbering and boot IDs continue from it.
 	Boots int
 	// Start is the clock at the first boot; zero means 2026-01-01T00:00:00Z.
-	Start time.Time
+	Start     time.Time
+	Joints    []Joint
+	Ranking   []int
+	Script    map[string]Outcome
+	OldKernel bool
 }
 
 // Edges index 0 is R1; Resident[5] and Resident[6] are R6 and R7.
 type Edges struct {
 	Isolated [5]int
 	Resident [7]int
+	Idle     *int
+	Workload map[string]int
+	Flat     float64
+}
+
+type Joint struct {
+	Members map[int]int
+	Regimes []machine.Regime
+	Rate    float64
+	AfterS  float64
+	Signal  machine.Signal
+}
+
+type Outcome struct {
+	Signal    machine.Signal
+	AtS       float64
+	Core      int
+	Reset     machine.ResetKind
+	ThenCrash bool
 }
 
 type Model struct {
@@ -43,6 +68,9 @@ type Model struct {
 	Signals       map[machine.Signal]float64
 	CrashMCE      float64
 	CoreLocalBank float64
+	OnsetS        float64
+	OnsetBoost    float64
+	Reset         map[machine.ResetKind]float64
 }
 
 func DefaultModel() Model {
@@ -59,6 +87,8 @@ func DefaultModel() Model {
 		},
 		CrashMCE:      0.5,
 		CoreLocalBank: 0.8,
+		OnsetS:        100,
+		Reset:         map[machine.ResetKind]float64{machine.ResetWatchdog: 1},
 	}
 }
 
@@ -82,13 +112,20 @@ type Machine struct {
 	boot       int
 	bootID     string
 	now        time.Time
+	bootAt     time.Time
+	wallOffset time.Duration
 	crashed    bool
 	logs       map[string][]machine.MCE
 	queued     []machine.MCE
 	violations []string
 	bios       machine.BIOSContext
+	reasons    map[string]machine.ResetReason
+	nextReset  machine.ResetKind
 
 	failWrite        bool
+	failWriteAt      int
+	crashAtWrite     int
+	missingBackends  map[machine.Backend]bool
 	corruptArmed     map[int]bool
 	corruptPending   map[int]bool
 	failSetup        int
@@ -98,12 +135,19 @@ type Machine struct {
 	wroteThisBoot    bool
 }
 
+func validateCores(cores int) error {
+	if cores < 2 || cores%2 != 0 {
+		return fmt.Errorf("%d cores: must be even and at least 2", cores)
+	}
+	return nil
+}
+
 func New(cfg Config) (*Machine, error) {
 	if cfg.Cores == 0 {
 		cfg.Cores = 16
 	}
-	if cfg.Cores < 2 || cfg.Cores%2 != 0 {
-		return nil, fmt.Errorf("new simulator: %d cores: must be even and at least 2", cfg.Cores)
+	if err := validateCores(cfg.Cores); err != nil {
+		return nil, fmt.Errorf("new simulator: %w", err)
 	}
 	if cfg.BIOS == nil {
 		cfg.BIOS = make([]int, cfg.Cores)
@@ -127,17 +171,49 @@ func New(cfg Config) (*Machine, error) {
 	if !cfg.Start.IsZero() {
 		start = cfg.Start
 	}
+	for _, signal := range slices.Sorted(maps.Keys(model.Signals)) {
+		weight := model.Signals[signal]
+		if !slices.Contains(signalOrder, signal) {
+			return nil, fmt.Errorf("new simulator: signal %q is not supported", signal)
+		}
+		if weight < 0 {
+			return nil, fmt.Errorf("new simulator: signal %q weight %g is negative", signal, weight)
+		}
+	}
+	for _, kind := range slices.Sorted(maps.Keys(model.Reset)) {
+		weight := model.Reset[kind]
+		if !slices.Contains(resetOrder, kind) {
+			return nil, fmt.Errorf("new simulator: reset %q is not supported", kind)
+		}
+		if weight < 0 {
+			return nil, fmt.Errorf("new simulator: reset %q weight %g is negative", kind, weight)
+		}
+	}
+	for _, trial := range slices.Sorted(maps.Keys(cfg.Script)) {
+		s := cfg.Script[trial]
+		if s.Core < 0 || s.Core >= cfg.Cores {
+			return nil, fmt.Errorf("new simulator: script trial %s core %d outside [0, %d)", trial, s.Core, cfg.Cores)
+		}
+		if s.Signal != "" && !slices.Contains(signalOrder, s.Signal) {
+			return nil, fmt.Errorf("new simulator: script trial %s signal %q is not supported", trial, s.Signal)
+		}
+		if s.Reset != "" && !slices.Contains(resetOrder, s.Reset) {
+			return nil, fmt.Errorf("new simulator: script trial %s reset %q is not supported", trial, s.Reset)
+		}
+	}
 	m := &Machine{
-		cfg:            cfg,
-		model:          model,
-		edges:          cfg.Edges,
-		boot:           cfg.Boots,
-		now:            start,
-		logs:           map[string][]machine.MCE{},
-		bios:           cfg.BIOSContext,
-		corruptArmed:   map[int]bool{},
-		corruptPending: map[int]bool{},
-		failedChecks:   map[string]string{},
+		cfg:             cfg,
+		model:           model,
+		edges:           cfg.Edges,
+		boot:            cfg.Boots,
+		now:             start,
+		logs:            map[string][]machine.MCE{},
+		bios:            cfg.BIOSContext,
+		corruptArmed:    map[int]bool{},
+		corruptPending:  map[int]bool{},
+		reasons:         map[string]machine.ResetReason{},
+		missingBackends: map[machine.Backend]bool{},
+		failedChecks:    map[string]string{},
 	}
 	if m.edges == nil {
 		m.edges = m.drawEdges()
@@ -150,6 +226,40 @@ func New(cfg Config) (*Machine, error) {
 			if v < machine.MinOffset || v > 1 {
 				return nil, fmt.Errorf("new simulator: edge %d of core %d outside [-50, 1]", v, c)
 			}
+		}
+	}
+	if cfg.Ranking != nil && len(cfg.Ranking) != cfg.Cores {
+		return nil, fmt.Errorf("new simulator: %d ranking values for %d cores", len(cfg.Ranking), cfg.Cores)
+	}
+	for c, e := range m.edges {
+		if e.Idle != nil && (*e.Idle < machine.MinOffset || *e.Idle > 1) {
+			return nil, fmt.Errorf("new simulator: idle edge %d of core %d outside [-50, 1]", *e.Idle, c)
+		}
+		for workload, offset := range e.Workload {
+			if offset < machine.MinOffset || offset > 1 {
+				return nil, fmt.Errorf("new simulator: workload %s edge %d of core %d outside [-50, 1]", workload, offset, c)
+			}
+		}
+		if e.Flat < 0 {
+			return nil, fmt.Errorf("new simulator: flat rate %g of core %d is negative", e.Flat, c)
+		}
+	}
+	for _, joint := range cfg.Joints {
+		for c, offset := range joint.Members {
+			if c < 0 || c >= cfg.Cores || offset < machine.MinOffset || offset > machine.MaxOffset {
+				return nil, fmt.Errorf("new simulator: joint member core %d offset %d invalid", c, offset)
+			}
+		}
+		for _, r := range joint.Regimes {
+			if !slices.Contains(machine.Regimes, r) {
+				return nil, fmt.Errorf("new simulator: joint regime %q is not supported", r)
+			}
+		}
+		if joint.Signal != "" && !slices.Contains(signalOrder, joint.Signal) {
+			return nil, fmt.Errorf("new simulator: joint signal %q is not supported", joint.Signal)
+		}
+		if joint.Rate < 0 || joint.AfterS < 0 {
+			return nil, fmt.Errorf("new simulator: joint rate %g or delay %g is negative", joint.Rate, joint.AfterS)
 		}
 	}
 	m.startBoot()
@@ -197,6 +307,7 @@ func (m *Machine) rng(parts ...any) *rand.Rand {
 
 func (m *Machine) startBoot() {
 	m.boot++
+	m.bootAt = m.now
 	r := m.rng("boot", m.boot)
 	hex := fmt.Sprintf("%016x%016x", r.Uint64(), r.Uint64())
 	m.bootID = fmt.Sprintf("%s-%s-%s-%s-%s", hex[:8], hex[8:12], hex[12:16], hex[16:20], hex[20:])
@@ -208,19 +319,50 @@ func (m *Machine) startBoot() {
 		m.logMCE(m.bootID, mce, m.now)
 	}
 	m.queued = nil
+	kind := m.nextReset
+	m.reasons[m.bootID] = resetReason(kind, !m.cfg.OldKernel)
+	m.nextReset = ""
 }
 
 func (m *Machine) Seams() machine.Machine {
 	return machine.Machine{Clock: m, SMU: smu{m}, Host: host{m}, Trials: trials{m}, Kernel: kernel{m}}
 }
 
-func (m *Machine) Now() time.Time { return m.now }
+func (m *Machine) Now() time.Time { return m.now.Add(m.wallOffset) }
+
+func (m *Machine) Monotonic() time.Duration { return m.now.Sub(m.bootAt) }
+
+func (m *Machine) JumpWall(d time.Duration) { m.wallOffset += d }
+
+func (m *Machine) Sleep(ctx context.Context, d time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.crashed {
+		return machine.ErrCrashed
+	}
+	if d > 0 {
+		m.now = m.now.Add(d)
+	}
+	return nil
+}
 
 func (m *Machine) IsolatedEdge(core int) int { return slices.Max(m.edges[core].Isolated[:]) }
 
 func (m *Machine) ResidentEdge(core int) int { return slices.Max(m.edges[core].Resident[:]) }
 
-func (m *Machine) Crash() { m.crashed = true }
+func (m *Machine) Crash() {
+	if m.nextReset == "" {
+		m.nextReset = machine.ResetWatchdog
+	}
+	m.crashed = true
+}
+
+func (m *Machine) NextReset(kind machine.ResetKind) { m.nextReset = kind }
+
+func (m *Machine) PowerLoss() { m.NextReset(machine.ResetPowerLoss); m.Crash() }
+
+func (m *Machine) HoldPowerButton() { m.NextReset(machine.ResetPowerButton); m.Crash() }
 
 func (m *Machine) Reboot() {
 	m.now = m.now.Add(RebootTime)
@@ -229,7 +371,12 @@ func (m *Machine) Reboot() {
 
 func (m *Machine) Violations() []string { return m.violations }
 
-func (m *Machine) FailWrite() { m.failWrite = true }
+func (m *Machine) FailWrite()        { m.failWrite = true }
+func (m *Machine) FailWriteAt(k int) { m.failWriteAt = k }
+
+func (m *Machine) CrashAtWrite(k int) { m.crashAtWrite = k }
+
+func (m *Machine) MissBackend(b machine.Backend) { m.missingBackends[b] = true }
 
 func (m *Machine) CorruptReadback(core int) { m.corruptArmed[core] = true }
 
@@ -303,6 +450,19 @@ func (m *Machine) write(offset int) error {
 		return fmt.Errorf("simulated SMU: offset %d outside [-50, 0]", offset)
 	}
 	first := !m.wroteThisBoot
+	if m.crashAtWrite > 0 {
+		m.crashAtWrite--
+		if m.crashAtWrite == 0 {
+			m.Crash()
+			return machine.ErrCrashed
+		}
+	}
+	if m.failWriteAt > 0 {
+		m.failWriteAt--
+		if m.failWriteAt == 0 {
+			return errors.New("simulated SMU command failure")
+		}
+	}
 	m.wroteThisBoot = true
 	if first && m.crashBeforeApply > 0 {
 		m.crashBeforeApply--
@@ -344,6 +504,16 @@ func (h host) Topology() ([]machine.CoreInfo, error) {
 	return cores, nil
 }
 
+func (h host) Ranking() ([]int, error) {
+	if h.m.crashed {
+		return nil, machine.ErrCrashed
+	}
+	if h.m.cfg.Ranking == nil {
+		return nil, errors.New("simulated preferred-core ranking unavailable")
+	}
+	return slices.Clone(h.m.cfg.Ranking), nil
+}
+
 func (h host) BIOSContext() (machine.BIOSContext, error) {
 	if h.m.crashed {
 		return machine.BIOSContext{}, machine.ErrCrashed
@@ -366,15 +536,55 @@ func (h host) Preflight() []machine.Check {
 
 type kernel struct{ m *Machine }
 
-func (k kernel) MCEs(boot string, since time.Time) ([]machine.MCE, error) {
+func (k kernel) MCEs(boot string, since time.Duration) ([]machine.MCE, error) {
 	if k.m.crashed {
 		return nil, machine.ErrCrashed
 	}
 	var out []machine.MCE
 	for _, mce := range k.m.logs[boot] {
-		if !mce.Time.Before(since) {
+		if mce.Monotonic >= since {
 			out = append(out, mce)
 		}
 	}
 	return out, nil
+}
+
+func (k kernel) ResetReason(boot string) (machine.ResetReason, error) {
+	if k.m.crashed {
+		return machine.ResetReason{}, machine.ErrCrashed
+	}
+	reason, ok := k.m.reasons[boot]
+	if !ok {
+		return machine.ResetReason{}, fmt.Errorf("read reset reason of boot %s: %w", boot, machine.ErrBootMissing)
+	}
+	return reason, nil
+}
+
+func resetReason(kind machine.ResetKind, supported bool) machine.ResetReason {
+	if !supported {
+		return machine.ResetReason{}
+	}
+	reason := machine.ResetReason{Kind: kind, Supported: true}
+	var text string
+	var code uint32
+	switch kind {
+	case machine.ResetWatchdog:
+		code, text = 1, "hardware watchdog timer expired"
+	case machine.ResetSyncFlood:
+		code, text = 2, "an uncorrected error caused a data fabric sync flood event"
+	case machine.ResetCPUShutdown:
+		code, text = 3, "internal CPU shutdown event occurred"
+	case machine.ResetPowerButton:
+		code, text = 4, "power button was pressed for 4 seconds"
+	case machine.ResetThermalTrip:
+		code, text = 5, "thermal pin BP_THERMTRIP_L was tripped"
+	case machine.ResetUnknown:
+		code, text = 6, "unrecognized reset reason"
+	case machine.ResetPowerLoss:
+		reason.Kind = ""
+	}
+	if text != "" {
+		reason.Raw = fmt.Sprintf("x86/amd: Previous system reset reason [0x%08x]: %s", code, text)
+	}
+	return reason
 }

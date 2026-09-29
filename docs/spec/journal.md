@@ -31,7 +31,7 @@ Retention: trial directories of failed and inconclusive trials are kept forever.
    A `deadend` without its `boot.saved_entry` (for a GRUB action) or without `shutdown` is an interrupted dead-end action, not permission to resume tuning: the next `run` completes the missing action and records `shutdown` before doing other work; a `run` without `--tuning-boot` cannot clear GRUB's saved entry and only records `shutdown`. A `boot.saved_entry` tied to that dead end is not cleared again. Once `shutdown` is present, the next `run` starts normally and re-evaluates dead-end conditions.
 3. **Decisions name their cause.** A decision event carries `cause`: the `seq` numbers of the events it was derived from, plus a `reason` in plain words.
 4. **The journal wins.** On start, togi rebuilds the state by replaying the journal. If `state.json` disagrees with the rebuild, it is rewritten and a `state.rebuilt` event records the difference.
-5. **One writer.** `run` and `reset` take `lock` before appending; `reset` refuses while a `run` holds it. `status`, `cert`, `events` and `watch` only read. `watch` projects `session.start`, `trial.intent`, `trial.start` and `trial.end` (the in-flight trial, its progress and the last Tctl), `failure`, `crash.detected` and `deadend`, and logs `session.start`, `session.carried`, `trial.intent`, `trial.end`, `failure`, `crash.detected`, `tuner.decision`, `core.phase`, `guard.rotation`, `profile.change`, `tier.change`, `deadend`, `defect.found`, `command.reset` and `shutdown`; the per-core state comes from the replay. `reset --core` ends with `shutdown` (reason `command`), so the next `run` never reads its boot as a crash. `reset --all` appends `command.reset` and `session.archived`, fsyncs, removes `state.json`, moves `trials/` to `archive/<session-id>-trials/`, then moves `events.jsonl` to `archive/<session-id>.jsonl`; it refuses before appending anything when either archive path already exists. Opening a journal whose last event is `session.archived` finishes that move first and continues with an empty journal. For an incompatible schema, `reset --all` cannot append: with the lock held it writes and fsyncs a temporary archive marker, removes the state file, moves `trials/` and then `events.jsonl` without writing to the old journal, fsyncing both directories after the renames, and removes the marker. A following `reset --all` resumes an interrupted move only if that marker exists; an archive path collision without the marker is refused. If the archive exists but `events.jsonl` is already gone, the next `reset --all` or journal open removes the marker and fsyncs the archive directory under the writer lock.
+5. **One writer.** `run` and `reset` take `lock` before appending; `reset` refuses while a `run` holds it. `status`, `cert`, `events` and `watch` only read. `watch` projects the trial, progress, hunt masks, refinement checks and per-core replay, and logs `session.start`, `session.carried`, `host.ranking`, `trial.intent`, `trial.end`, `failure`, `crash.detected`, `tuner.decision`, `tuner.warning`, `core.phase`, `hunt.start`, `hunt.mask`, `hunt.end`, `hunt.skipped`, `mark.joint`, `refine.round`, `backend.retry`, `guard.rotation`, `profile.change`, `tier.change`, `deadend`, `defect.found`, `command.reset` and `shutdown`. `reset --core` ends with `shutdown` (reason `command`), so the next `run` never reads its boot as a crash. `reset --all` appends `command.reset` and `session.archived`, fsyncs, removes `state.json`, moves `trials/` to `archive/<session-id>-trials/`, then moves `events.jsonl` to `archive/<session-id>.jsonl`; it refuses before appending anything when either archive path already exists. Opening a journal whose last event is `session.archived` finishes that move first and continues with an empty journal. For an incompatible schema, `reset --all` cannot append: with the lock held it writes and fsyncs a temporary archive marker, removes the state file, moves `trials/` and then `events.jsonl` without writing to the old journal, fsyncing both directories after the renames, and removes the marker. A following `reset --all` resumes an interrupted move only if that marker exists; an archive path collision without the marker is refused. If the archive exists but `events.jsonl` is already gone, the next `reset --all` or journal open removes the marker and fsyncs the archive directory under the writer lock.
    If the old schema already recorded `session.archived` before the update, `reset --all` completes that recorded move without creating a marker, including when `trials/` was moved before the interruption.
 6. **Torn tails are expected.** A crash can leave a partial last line. Replay drops it and appends a `journal.torn` event with the discarded bytes, hex-encoded. A torn first line leaves an empty journal: nothing happened before `session.start`, so nothing is recorded.
 
@@ -45,12 +45,13 @@ One JSON object per line. Common fields:
 | `time` | RFC 3339 UTC with nanoseconds, always nine fractional digits |
 | `boot` | Kernel boot ID (`/proc/sys/kernel/random/boot_id`) |
 | `kind` | Event kind from the catalog below |
+| `mono_ms` | Boot-local CLOCK_MONOTONIC milliseconds, on every event `run` appends; used to match evidence to trials despite wall-clock jumps. Absent in events `reset` appends, which are no trial evidence, and in events written by older builds |
 | `msg` | One human-readable line, the exact text togi logs |
 | `cause` | Optional array of `seq` this event follows from |
 
 Kind-specific fields are flat, snake_case and carry units in their names (`duration_s`, `period_ms`, `tctl_max_c`). Values use the vocabulary in `CONTEXT.md`. Cores are always `core` (the kernel `core_id`); logical CPUs are always `cpu`. The one exception to flat fields: `config.loaded` carries the effective configuration nested under `config`.
 
-The first event of a session is `session.start` with a flat build stamp: `version`, `rev`, `ruleset`, `schema` and `fixes` (the last three are integers). `config.loaded` carries the same fields at every start or resume. The starting stamp determines the session's ruleset and schema; the last stamped `config.loaded` identifies the build and fixes used most recently. This build uses ruleset 3 and schema 2. Missing ruleset means ruleset 1; an absent version means the writing build is unknown, and absent fixes means 0. Only bump `journal.Schema` when this build cannot read an older journal the same way: adding fields or kinds does not bump it. A session written by an older ruleset or schema, and by no newer one, is archived by the next `run`, which seeds the new session from it (Transitions, below). A session written by a newer ruleset or schema is refused and can be archived with `reset --all`.
+The first event is `session.start` with a flat build stamp: `version`, `rev`, `ruleset`, `schema` and `fixes`. `config.loaded` carries that stamp at every start or resume. This build uses ruleset 4 and journal schema 2. Missing ruleset means 1; absent fixes means 0. Added kinds and fields do not bump schema. Older journals are archived by transition, and newer journals are refused.
 
 Example trial, abbreviated:
 
@@ -72,28 +73,44 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Session | `session.start` (session ID, cores and build stamp), `session.context` (BIOS context), `session.baseline` (baseline profile), `session.notice`, `session.archived`, `session.carried` (what a transition carries in, Transitions below) |
 | Config and preflight | `config.loaded` (effective config and build stamp), `preflight.check` (one per check, with result) |
 | SMU | `smu.intent`, `smu.write`, `smu.readback`, `smu.error` |
-| Profile | `profile.applied` (every application of every core's offset, with its condition), `profile.change` (the profile under guard: on entering guard, with `from` null, and after every guard decision), `profile.restored` (the offsets written back before `shutdown`, `runtime.md`) |
-| Trials | `trial.intent`, `trial.start` (pid, scope, cpus and argv; the config `files` written; `instances` with core, cpus, pid and scope when the trial runs more than one), `trial.progress` (backend milestones such as a finished FFT size), `trial.signal` (load-step schedule), `trial.sample` (containment or stall warnings only), `trial.end` |
-| Evidence | `failure` (kind, attribution, evidence `seq`), `mce` (raw and decoded lines, cpu, core, bank type), `crash.detected` (previous boot ID, in-flight action) |
-| Tuner | `tuner.decision` (including `decision: regain` at a clean rotation end), `core.phase`, `guard.rotation` (start and end), `tier.change` (from, to, reason) |
+| Profile | `profile.applied` (applied condition), `profile.change` (resident profile, `from` null on entering guard), `profile.restored` (before shutdown) |
+| Trials | `trial.intent` (applied `profile` in core-id order, optional `hunt`, `mask`, `round`, `rerun`; message suffixes ` hunt H mask M`, ` round R`, ` rerun`), `trial.start` (pid, scope, cpus, argv, files, instances), `trial.progress` (optional backend `signal` and `core`), `trial.signal`, `trial.sample`, `trial.end` (optional `backend_missing`; `core` on backend-ended resident and masked trials) |
+| Evidence | `failure` (kind, attribution, evidence seq, optional applied `profile`), `mce`, `crash.detected` (previous boot, in-flight action, optional `reset_reason`, `reset_reason_raw`, `inconclusive`; message suffix `; reset reason: <raw or kind>` and `; inconclusive: <why>`) |
+| Tuner | `tuner.decision` (`step_deeper`, `backoff`, `check_edge`, `deepen`, `yield`; `workloads` on edge check), `core.phase` (`check_edge`, `workloads`, `cleared_joint`), `guard.rotation` (start/end, end `qualifying` and `missing`), `tier.change` |
+| Plans and marks | `host.ranking`, `hunt.start`, `hunt.mask`, `hunt.end`, `hunt.skipped`, `mark.joint`, `refine.round`, `tuner.warning` |
+| Recovery | `backend.retry` |
 | Defects | `defect.found` (known defect, direction, affected cores and decision sequences), `defect.answered` (reset answer and cores) |
 | Commands | `command.reset` (a core, or all) |
 | Stop | `deadend` (condition, evidence, action taken), `boot.saved_entry` (GRUB change), `shutdown` (clean stop) |
 | Journal | `journal.torn`, `state.rebuilt` |
 
-`trial.intent.cores` lists exactly the loaded cores for R6 and R7: R6 lists all cores; a single-CCD R7 trial lists that CCD's cores, and its final trial lists all cores. `tuner.decision` with `decision: regain` has phase `guard`, cites the clean `guard.rotation` end, moves from `from_offset` to `to_offset` one count deeper, and records the resulting `unproven_depth`. Guard decisions also record optional `settled_mark` (the shallowest settled offset) and `spent_steps` (sorted numeric offsets whose single retry has been used). An absent settled mark means none. The decision spends the retry before subsequent SMU writes, so replay follows the recorded state without re-deciding it. `core.phase` does not use a `regain` phase or a `backoff` field.
+`trial.intent.cores` lists exactly the loaded cores for R6 and R7. `profile` always lists applied offsets for every core in core-id order. `tuner.decision` with `decision: check_edge` has the frozen two `workloads`; its message says `checks its edge`. `deepen` says `deepened`, `yield` says `yielded`, search `backoff` says `failed`, and guard, hunt and refine `backoff` say `backed off`. `core.phase` uses `search`, `resident` or `done`, while intent and decisions may use activities `guard`, `hunt` and `refine`. An equal `profile.change` message does not say guard restarts.
+
+Plan kinds and their payloads (optional fields are omitted when empty):
+
+| Kind | Fields | `msg` shape |
+|---|---|---|
+| `host.ranking` | `ranking` (preferred cores), `values` (raw per core), `detail` (fallback) | `preferred cores 03 11 …` or `preferred-core ranking unavailable (<detail>); core-id order` |
+| `hunt.start` | `hunt`, `failure` seq, optional `trial`, `regime`, `workload`, loaded `cores`, `duration_s`, `failing`, `anchor`, `anchor_seq` (0 for all-zero), `candidates`, `starts`, `start_s`, `miss`, `rate`, `ranking` | `hunt 3: unattributed crash in resident R7 trial 0412; anchor from rotation end #811; candidates 00 01 …; masks of 5 × 120s` |
+| `hunt.mask` | `hunt`, `mask`, `cores`, `profile`, `set`, `granularity`, `stage` (`part`, `complement`, `full`, `edge`), `index`, `duration_s`, optional `escalated`, `full_checked`, `any_failed`, `edge` (probed `core` and `offset`) and `held` (the other members' `core` and `offset`, also listed in `cores`), `inferred` (`pass` or `failure`), `skipped`, `reason` | `hunt 3 mask 4: cores 08-11 at failing offsets, the rest at the anchor; 5 × 120s R7 starts` or `hunt 3 mask 9: core 11 at -22 with core 03 -40, the rest at the anchor; …` |
+| `hunt.end` | `hunt`, `result` (`culprit`, `joint`, `fallback`, `direct`, `cancelled`), optional `cores`, `members` (each member's shallowest failing `core` and `offset`, on a probed `joint`), `masks`, `reason` | `hunt 3 found core 13 after 4 masks` |
+| `hunt.skipped` | `failure` seq, `reason` | `failure #904 is not hunted: <reason>` |
+| `mark.joint` | `mark`, `members` (`core`, `offset` pairs), optional `fallback`, `hunt`, `reason` | `joint mark J2: core 03 -40 + core 11 -30, observed in hunt 4` (or `…, fallback over every candidate of hunt 4`) |
+| `refine.round` | `round`, `event` (`start`, `end`); start: `anchor`, `anchor_seq`, `target`, proposed `profile`, changed `cores`, `ranking`, `starts`, `start_s`; end: optional `passed`, `reason` | `refine round 2 start: 5 cores toward …` / `refine round 2 end: passed` |
+| `tuner.warning` | `warning` (`monotonicity`), `trial`, `passes` (contradicted trial-end seqs), `detail` | `monotonicity: trial 0520 failed on a profile at least as shallow as 5 passes in its class` |
+| `backend.retry` | `backend` (or `kernel_log`), `attempt` (1–3), `wait_s` (60, 300, 1800), `reason` | `backend mprime: retry 2 of 3 after 300s: setup failed: …` |
 
 ## Transitions
 
-A transition replaces the refusal of a journal whose ruleset or schema is older than this build's, and newer in neither. Before opening the journal, `run` (in a tuning boot too) and the simulator archive it the way `reset --all` archives another schema: with the lock held and without writing to the old journal, so a torn tail moves with it unrepaired. Before the move they write and fsync `archive/<session-id>-carry-pending`, removing any other carry marker. A journal whose last complete line is already `session.archived` was archived before the update: its move is finished and nothing is carried. `reset --all` takes the lock and removes every carry marker, so it always starts over. A complete line without a `kind` in an archive stops the carry with an error rather than being skipped.
+A transition archives an older ruleset or schema journal before opening it; it also archives a compatible journal when the recorded BIOS context differs from the current one. The same carry marker, lock and crash-recovery protocol apply. A BIOS change carries candidate edges only, not failed or joint marks. A newer journal remains a refusal. Before the move, `run` writes and fsyncs `archive/<session-id>-carry-pending` without appending to the old journal. A previously archived last `session.archived` move is completed without carry. `reset --all` removes carry markers. A malformed complete archived line without `kind` stops carry with an error.
 
 While a carry marker exists and the current journal holds neither a `session.carried` whose first source is the marked session nor any `core.phase`, the next `run` computes the carry from the archives and records it once, after `session.context`, the baseline and its notice, and before the first `core.phase`. Afterwards the marker is removed. A crash between `session.carried` and the phases resumes from the recorded event, never from the archives.
 
-The archives are read with a lenient reader that accepts every schema that shipped. It decodes only `session.start`, `session.context`, `session.carried`, `trial.intent`, `trial.end`, `trial.progress`, `failure`, `command.reset`, `shutdown`, `tuner.decision`, `defect.found` and the build stamp of `config.loaded`, and skips every other kind, such as schema 1's `escalation.window`. A torn tail is ignored.
+Archives use a lenient reader accepting every shipped schema. It decodes `session.start`, `session.context`, `session.carried`, `trial.intent`, `trial.end`, `trial.progress`, `failure`, `hunt.start`, `hunt.end`, `command.reset`, `shutdown`, `tuner.decision`, `defect.found` and the `config.loaded` build stamp, skipping unrelated kinds and torn tails.
 
 Sources, newest first: the archived session, then, when it holds no `session.carried` and recorded a BIOS context, each older archive in turn, for as long as the archive recorded the same BIOS context and a ruleset different from the source read before it. A walked archive that holds a `session.carried` is the last source. Per source, a value recorded before a `reset --core` of its core in that source is dropped:
 - **Candidate edge:** the deepest offset of a passing `trial.end` whose `trial.intent` is isolated with one core and an offset.
-- **Carried mark:** the shallowest offset of a `failure` attributed to one core at a known offset, 0 included, unless a defect in the binary's list matches a decision that cites it, whether or not its `defect.found` was recorded. A trial left in flight, the last `trial.intent` after the last `shutdown` with no `trial.end`, counts as a failure with signal `crash` when it is isolated with one core at a nonzero offset.
+- **Carried mark:** the shallowest offset of an attributed `failure` of one core at a known offset (including 0), or a `hunt.end` `culprit` for core c at the `hunt.start` failing profile's offset c, with the cited `failure` signal and hunt-end sequence. Both follow the same reset epoch and defect exclusions; direct hunt failures already appear as attributed `failure` events. Joint marks are not carried. An isolated nonzero trial left in flight after the last shutdown also counts as a crash failure.
 - **Carried values:** the edges and marks of a `session.carried` in the source, dropped by a later `reset --core` of their core in that source.
 
 Across sources the deepest edge and the shallowest mark win; on a tie, the first found. Passes, resident offsets and unattributed failures are never carried.
@@ -113,12 +130,15 @@ The first entry, ID 1, is the false failure on power-off fixed in [#14](https://
 `state.json` is rewritten atomically after every event that changes it: temp file, fsync, rename, directory fsync. It is shaped for one-glance reading:
 
 - `schema` (2), `session` (id, start time, BIOS context, baseline), `last_seq`;
-- `phase`: `per_core` while any core is in search or confirmation, else `guard`;
-- `cores[]`: `core`, `ccd`, `cpus`, `offset`, `baseline`, `phase`, `pass`, `failed_mark`, `unproven_depth`, `settled_depth`, `queued` (`reset` while a command waits for the next `run`, else omitted), and `last_decision` (its `seq` and `msg`). `unproven_depth` includes settled depth; regainable depth is `unproven_depth - settled_depth`;
-- `in_flight`: the most recent intent without a result yet, or null;
-- `dead_end`: the condition and its `seq`, or null. It clears when the next `run` starts (`config.loaded`);
-- `guard`: null before the first `profile.change`, then `rotation` and `rotation_open`, the rotation's `steps` and `steps_done`, the `profile` and its `profile_seq`, `clean_rotations` and `clean_s` since that `profile.change`, `regimes[]` with each regime's `clean_s` and `rate_bound_per_h` (R1 to R7 in order), the overall `rate_bound_per_h`, and `tctl_max_c` with its `tctl_max_seq`, the highest Tctl among the passed resident trials since that `profile.change`. A rate bound is `3 / clean hours` per hour, rounded up to 4 decimals so it never understates the bound, and null without clean hours;
-- `tier` and `tier_seq`: the tier of the last `tier.change` and its `seq`; `none` and 0 before the first.
+- `phase`: activity `search`, `hunt`, `refine` or `guard`;
+- `cores[]`: core identity, offset, baseline, phase (`search`, `resident`, `done`), pass, failed mark, `joint_marks` IDs, queued reset and last decision;
+- `in_flight`: most recent intent without a result, or null;
+- `dead_end`: condition and sequence, or null (cleared on the next `config.loaded`);
+- `joint_marks[]`: `mark`, `members` (core/offset pairs), `fallback`, `hunt`, `seq`;
+- `hunt`: null or `hunt`, `seq`, `failure`, `regime`, `trial`, `anchor`, `anchor_seq`, `candidates`, `escalated`, `masks[]` (`mask`, `seq`, `cores`, optional `edge` and `held`, `outcome` running/pass/failure/skipped, `passes`, `needed`);
+- `refine`: null or `round`, `seq`, `target`, `profile`, `cores`, `checks[]` (`regime`, `workload`, `cores`, `passes`, `needed`);
+- `guard`: null before the first `profile.change`; then rotation progress, profile, `qualifying`, `missing`, `tier_clock_seq`, `clean_rotations`, `clean_s`, regime exposure and bound, `exposure[]` (`regime`, `workload`, `starts`, `clean_s`, `rate_bound_per_h`), and highest counted Tctl. Bounds are `3 / clean hours`, rounded up to 4 decimals, null without hours;
+- `tier` and `tier_seq`, or `none` and 0 before the first change.
 
 ## Human-readable log
 
@@ -136,7 +156,7 @@ Each event's `msg` goes to stderr, prefixed by local time and kind padded to 14 
 togi events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--until <time>] [--json]
 ```
 
-- `--core N`: events whose `core` is N or whose `cores` include N.
+- `--core N`: events whose `core` is N, whose `cores` or `candidates` include N, or whose `members[].core` is N.
 - `--kind`: exact kinds, or a group when the entry has no `.` (`trial` matches every `trial.*` kind).
 - `--trial ID`: events whose `trial` is ID.
 - `--since` (inclusive) and `--until` (exclusive): a time window.
@@ -152,14 +172,11 @@ The run log and `togi events` color the whole human-readable line according to i
 |---|---|
 | Trial ends with failure (`trial.end` outcome `failure`), `failure`, `crash.detected` | Red |
 | Dead end (`deadend` event and `run` summary), incompatible-session refusal line (not an event) | Red, bold |
-| Search step passed (`tuner.decision` with `decision: step_deeper`), automatic regain (`tuner.decision` with `decision: regain`) | Green |
-| Core confirmed, edge reported (`core.phase` from `confirmation` to `confirmed`, or `search` to `confirmation` for a candidate edge) | Green, bold |
-| Clean guard rotation (`guard.rotation` end with `clean: true`), tier earned (`tier.change` to a higher tier) | Green, bold |
-| Proven or suspect backoff (`tuner.decision` with `decision: backoff` or `suspect_backoff`) | Yellow |
-| A known defect found (`defect.found`) | Yellow |
-| Ruleset mismatch warning on read-only commands (not an event) | Yellow |
-| Inconclusive trial (`trial.end` outcome `inconclusive`) | Dim |
-| Everything else, including `defect.answered` and a single trial passing | Plain |
+| Search step passed (`step_deeper`), refinement `deepen`, or `hunt.end` result `culprit`, `joint` or `direct` | Green |
+| Core becomes done, search becomes resident, passed `refine.round` end, clean qualifying `guard.rotation` end, or tier earned | Green, bold |
+| `mark.joint`, `hunt.start`, `tuner.warning`, `backoff` or `yield`; known defect or ruleset mismatch warning | Yellow |
+| Inconclusive trial or `backend.retry` | Dim |
+| `hunt.mask`, `refine.round` start, `hunt.skipped`, `host.ranking`, clean non-qualifying rotation, and everything else | Plain |
 
 ANSI SGR is used when that output stream is a terminal (character device) or `JOURNAL_STREAM` names that stream (its device and inode match). A non-empty `NO_COLOR` disables ANSI even in the system journal. `events.jsonl`, `state.json` and `togi events --json` stay uncolored. When `JOURNAL_STREAM` names that stream, red and red-bold lines start with `<3>` so systemd stores them at priority err (`SyslogLevelPrefix=` is on by default), including with `NO_COLOR`; no other line gets a priority prefix, and terminals outside the system journal never get one. `togi events` uses the same rules on stdout.
 

@@ -2,6 +2,7 @@ package watch
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -16,9 +17,9 @@ const (
 	emptyCell cellKind = iota
 	filledCell
 	unexploredCell
+	anchorCell
 	tryingCell
-	settledCell
-	regainCell
+	jointCell
 	failCell
 )
 
@@ -26,23 +27,18 @@ func (t tile) searching() bool {
 	return t.phase == journal.PhaseSearch || t.phase == ""
 }
 
-func (t tile) confirmed() bool {
-	return t.phase == journal.PhaseConfirmed || t.phase == journal.PhaseGuard
-}
-
-// kindAt is what depth d shows; markers is false in the cells after a depth's first, where the failed mark and the
-// trial marker are not repeated.
+// kindAt is what depth d shows; markers is false in the cells after a depth's first, where marks are not repeated.
 func (t tile) kindAt(d int, markers bool) cellKind {
 	e := -t.number
 	switch {
 	case markers && t.fail != nil && d == -*t.fail:
 		return failCell
+	case markers && slices.Contains(t.joint, -d):
+		return jointCell
 	case markers && t.trying != nil && d == -*t.trying:
 		return tryingCell
-	case t.confirmed() && d > e && d <= e+t.regain:
-		return regainCell
-	case t.confirmed() && d > e+t.regain && d <= e+t.regain+t.settled:
-		return settledCell
+	case markers && t.anchor != nil && d == -*t.anchor:
+		return anchorCell
 	case t.hasNumber && d <= e:
 		return filledCell
 	case t.searching() && t.hasNumber && t.fail != nil && d > e && d < -*t.fail:
@@ -92,12 +88,12 @@ func (t tile) cellLook(k cellKind) (lipgloss.Style, string) {
 	switch k {
 	case failCell:
 		return failStyle, "x"
-	case regainCell:
-		return regainStyle, "▒"
-	case settledCell:
-		return dim, ":"
+	case jointCell:
+		return jointStyle, "j"
 	case tryingCell:
 		return trialStyle, ">"
+	case anchorCell:
+		return dim, "·"
 	case unexploredCell:
 		return searchStyle, "░"
 	case filledCell:
@@ -149,11 +145,11 @@ func axis(labels []label, inner int) string {
 
 func (t tile) word() string {
 	switch t.phase {
-	case journal.PhaseConfirmation:
-		return fmt.Sprintf("confirming %d/%d", t.slots, t.total)
-	case journal.PhaseConfirmed, journal.PhaseGuard:
-		return "confirmed"
-	case journal.PhaseSearch:
+	case journal.PhaseDone:
+		return "DONE"
+	case journal.PhaseResident:
+		return "resident"
+	case journal.PhaseSearch, journal.PhaseGuard, journal.PhaseHunt, journal.PhaseRefine:
 	}
 	return "searching"
 }
@@ -166,10 +162,11 @@ func (t tile) topEdge(width int, border lipgloss.Style) string {
 		if t.loaded {
 			left += " " + trialMark.Render(pick(short, "> TESTING", ">"))
 		}
-		if t.regain > 0 {
-			left += " " + regainStyle.Bold(true).Render(pick(short, "~ BACKOFF", "~"))
-		} else if t.settled > 0 {
-			left += " " + dim.Render(pick(short, "SETTLED", ":"))
+		if t.hunt {
+			left += " " + jointStyle.Bold(true).Render(pick(short, "HUNT", "H"))
+		}
+		if t.masked {
+			left += " " + dim.Render(pick(short, "MASK", "M"))
 		}
 		if width-lipgloss.Width(left)-lipgloss.Width(right)-1 >= 1 {
 			break
@@ -192,9 +189,6 @@ func pick(short bool, long, brief string) string {
 
 func (t tile) render(width int, m mode) []string {
 	border := phaseColor(t.phase)
-	if t.regain > 0 {
-		border = regainStyle
-	}
 	inner := width - 4
 	num := "--"
 	if t.hasNumber {
@@ -204,8 +198,14 @@ func (t tile) render(width int, m mode) []string {
 	if t.trying != nil {
 		labels = append(labels, label{-*t.trying, fmt.Sprint(*t.trying), trialStyle})
 	}
-	if t.hasNumber && (t.regain > 0 || t.settled > 0) {
+	if t.hasNumber && t.phase != journal.PhaseSearch {
 		labels = append(labels, label{-t.number, num, phaseColor(t.phase).Bold(true)})
+	}
+	if t.anchor != nil {
+		labels = append(labels, label{-*t.anchor, fmt.Sprint(*t.anchor), dim})
+	}
+	for _, offset := range t.joint {
+		labels = append(labels, label{-offset, fmt.Sprint(offset), jointStyle})
 	}
 	if t.fail != nil {
 		labels = append(labels, label{-*t.fail, fmt.Sprint(*t.fail), failStyle})

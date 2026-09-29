@@ -13,19 +13,18 @@ import (
 )
 
 var (
-	colSearch  = lipgloss.Color("12")
-	colConfirm = lipgloss.Color("13")
-	colDone    = lipgloss.Color("10")
-	colRegain  = lipgloss.Color("11")
-	colFail    = lipgloss.Color("9")
-	colTrial   = lipgloss.Color("15")
-	colDim     = lipgloss.Color("8")
+	colSearch = lipgloss.Color("12")
+	colDone   = lipgloss.Color("10")
+	colJoint  = lipgloss.Color("11")
+	colFail   = lipgloss.Color("9")
+	colTrial  = lipgloss.Color("15")
+	colDim    = lipgloss.Color("8")
 
 	plain       = lipgloss.NewStyle()
 	bold        = plain.Bold(true)
 	dim         = plain.Foreground(colDim)
 	searchStyle = plain.Foreground(colSearch)
-	regainStyle = plain.Foreground(colRegain)
+	jointStyle  = plain.Foreground(colJoint)
 	failStyle   = plain.Foreground(colFail)
 	trialStyle  = plain.Foreground(colTrial).Bold(true)
 	digitStyle  = trialStyle
@@ -36,11 +35,11 @@ var (
 
 func phaseColor(p journal.Phase) lipgloss.Style {
 	switch p {
-	case journal.PhaseConfirmation:
-		return plain.Foreground(colConfirm)
-	case journal.PhaseConfirmed, journal.PhaseGuard:
+	case journal.PhaseDone:
 		return plain.Foreground(colDone)
-	case journal.PhaseSearch:
+	case journal.PhaseResident:
+		return plain.Foreground(colJoint)
+	case journal.PhaseSearch, journal.PhaseGuard, journal.PhaseHunt, journal.PhaseRefine:
 	}
 	return searchStyle
 }
@@ -159,13 +158,18 @@ func fit(lines []string, width, h int) string {
 
 func (s Snapshot) top(f *frame, width int, pad string, now time.Time) {
 	stage := "SEARCH"
-	if s.guard {
+	switch {
+	case s.huntID != 0:
+		stage = "HUNT"
+	case s.round != 0:
+		stage = "REFINE"
+	case s.guard:
 		stage = "GUARD"
 	}
 	head := bold.Reverse(true).Render(" togi ") + "  " + bold.Render(stage) + "   " +
 		dim.Render("session "+age(now.Sub(s.start))+"   last event "+age(now.Sub(s.last))+" ago")
 	f.add(spread(width, pad+head, bold.Render(now.Format("15:04:05"))))
-	f.add(pad + dim.Render(strings.Join(s.summary(), "   ")))
+	f.add(pad + dim.Render(strings.Join(s.summary(), " | ")))
 	f.air(1, 0)
 	f.add(pad + s.trialLine(now))
 	if f.mode == roomy {
@@ -183,51 +187,40 @@ func (s Snapshot) top(f *frame, width int, pad string, now time.Time) {
 }
 
 func (s Snapshot) summary() []string {
-	var searching, confirming, confirmed, regain, regainCores, settled, settledCores int
+	done := 0
 	for _, t := range s.tiles {
-		switch t.phase {
-		case journal.PhaseSearch:
-			searching++
-		case journal.PhaseConfirmation:
-			confirming++
-		case journal.PhaseConfirmed, journal.PhaseGuard:
-			confirmed++
-		}
-		if t.regain > 0 {
-			regain += t.regain
-			regainCores++
-		}
-		if t.settled > 0 {
-			settled += t.settled
-			settledCores++
+		if t.phase == journal.PhaseDone {
+			done++
 		}
 	}
-	done := fmt.Sprintf("confirmed %d/%d", confirmed, len(s.tiles))
-	if !s.guard {
-		parts := []string{fmt.Sprintf("searching %d", searching), fmt.Sprintf("confirming %d", confirming), done,
-			plural(s.failures, "failure"), plural(s.crashes, "crash")}
-		if s.tctlTrial != nil {
-			parts = append(parts, fmt.Sprintf("Tctl last trial max %d C", *s.tctlTrial))
+	var parts []string
+	if s.huntID != 0 {
+		hunt := fmt.Sprintf("hunt %d", s.huntID)
+		if s.maskID != 0 {
+			hunt += fmt.Sprintf(" mask %d", s.maskID)
 		}
-		return parts
+		parts = append(parts, hunt)
 	}
-	tier := string(s.tier)
-	if s.tier == journal.TierNone || s.tier == "" {
-		tier = "--"
+	if s.round != 0 {
+		parts = append(parts, fmt.Sprintf("refine round %d", s.round))
 	}
-	parts := []string{done, "tier " + tier}
-	gs := s.guardState
-	if gs != nil {
-		parts = append(parts, fmt.Sprintf("clean %s since profile #%d", hm(time.Duration(gs.CleanS)*time.Second), gs.ProfileSeq))
+	parts = append(parts, fmt.Sprintf("%d/%d done", done, len(s.tiles)))
+	if s.guardState != nil {
+		tier := string(s.tier)
+		if s.tier == journal.TierNone || s.tier == "" {
+			tier = "--"
+		}
+		parts = append(parts, "tier "+tier)
+		if gs := s.guardState; gs != nil {
+			parts = append(parts, fmt.Sprintf("clean %s since tier clock #%d", hm(time.Duration(gs.CleanS)*time.Second), gs.TierClockSeq))
+			if gs.TctlMaxC != nil {
+				parts = append(parts, fmt.Sprintf("Tctl profile max %d C", *gs.TctlMaxC))
+			}
+		}
 	}
-	if regain > 0 {
-		parts = append(parts, fmt.Sprintf("regainable %d on %s", regain, plural(regainCores, "core")))
-	}
-	if settled > 0 {
-		parts = append(parts, fmt.Sprintf("settled %d on %s", settled, plural(settledCores, "core")))
-	}
-	if gs != nil && gs.TctlMaxC != nil {
-		parts = append(parts, fmt.Sprintf("Tctl profile max %d C", *gs.TctlMaxC))
+	parts = append(parts, plural(s.failures, "failure"), plural(s.crashes, "crash"))
+	if s.tctlTrial != nil && !s.guard {
+		parts = append(parts, fmt.Sprintf("Tctl last trial max %d C", *s.tctlTrial))
 	}
 	return parts
 }
@@ -294,8 +287,8 @@ func (s Snapshot) scheduleLine() string {
 	} else {
 		out = dim.Render(fmt.Sprintf("rotation %d done   ", gs.Rotation) + steps(names))
 	}
-	if slices.ContainsFunc(s.tiles, func(t tile) bool { return t.regain > 0 }) {
-		out += dim.Render("   regain after a clean rotation")
+	if !gs.Qualifying && len(gs.Missing) > 0 {
+		out += dim.Render("   not qualifying: " + strings.Join(gs.Missing, "; "))
 	}
 	return out
 }
@@ -321,7 +314,7 @@ func (s Snapshot) turnOrder() string {
 			continue
 		}
 		if i := slices.IndexFunc(s.tiles, func(t tile) bool { return t.id == id }); i >= 0 {
-			if p := s.tiles[i].phase; p == journal.PhaseSearch || p == journal.PhaseConfirmation {
+			if p := s.tiles[i].phase; p == journal.PhaseSearch {
 				next = append(next, fmt.Sprintf("%02d", id))
 			}
 		}
@@ -376,13 +369,14 @@ func (s Snapshot) board(f *frame, l layout) {
 }
 
 func (s Snapshot) legend() string {
-	parts := []string{"CO 0 -> -50", trialStyle.Render(">") + " trial", failStyle.Render("x") + " failed mark"}
-	if s.guard {
-		parts = append(parts, regainStyle.Render("▒")+" regainable", dim.Render(":")+" settled")
-	} else {
-		parts = append(parts, searchStyle.Render("░")+" unexplored")
-	}
-	return dim.Render(strings.Join(parts, "     "))
+	return dim.Render(strings.Join([]string{
+		"CO 0 -> -50",
+		trialStyle.Render(">") + " trial",
+		failStyle.Render("x") + " failed mark",
+		jointStyle.Render("j") + " joint mark",
+		dim.Render("·") + " mask anchor",
+		searchStyle.Render("░") + " unexplored",
+	}, "     "))
 }
 
 func spread(width int, left, right string) string {

@@ -44,6 +44,15 @@ const (
 	KindTunerDecision   Kind = "tuner.decision"
 	KindCorePhase       Kind = "core.phase"
 	KindGuardRotation   Kind = "guard.rotation"
+	KindHostRanking     Kind = "host.ranking"
+	KindHuntStart       Kind = "hunt.start"
+	KindHuntMask        Kind = "hunt.mask"
+	KindHuntEnd         Kind = "hunt.end"
+	KindHuntSkipped     Kind = "hunt.skipped"
+	KindMarkJoint       Kind = "mark.joint"
+	KindRefineRound     Kind = "refine.round"
+	KindTunerWarning    Kind = "tuner.warning"
+	KindBackendRetry    Kind = "backend.retry"
 	KindTierChange      Kind = "tier.change"
 	KindCommandReset    Kind = "command.reset"
 	KindDefectFound     Kind = "defect.found"
@@ -63,6 +72,7 @@ type Payload interface {
 type Event struct {
 	Seq   int
 	Time  time.Time
+	Mono  int64
 	Boot  string
 	Kind  Kind
 	Msg   string
@@ -71,7 +81,7 @@ type Event struct {
 	Raw   []byte
 }
 
-func encode(e Event) ([]byte, error) {
+func encode(e Event, stamp ...bool) ([]byte, error) {
 	payload, err := marshal(e.Data)
 	if err != nil {
 		return nil, fmt.Errorf("encode %s payload: %w", e.Kind, err)
@@ -79,6 +89,9 @@ func encode(e Event) ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteString(`{"seq":`)
 	b.WriteString(strconv.Itoa(e.Seq))
+	if e.Mono != 0 || len(stamp) > 0 && stamp[0] {
+		fmt.Fprintf(&b, `,"mono_ms":%d`, e.Mono)
+	}
 	for _, f := range []struct{ key, value string }{
 		{"time", e.Time.UTC().Format(timeLayout)},
 		{"boot", e.Boot},
@@ -122,6 +135,7 @@ type envelope struct {
 	Seq   int       `json:"seq"`
 	Time  time.Time `json:"time"`
 	Boot  string    `json:"boot"`
+	Mono  int64     `json:"mono_ms,omitempty"`
 	Kind  Kind      `json:"kind"`
 	Msg   string    `json:"msg"`
 	Cause []int     `json:"cause"`
@@ -142,6 +156,7 @@ func decode(line []byte) (Event, error) {
 	return Event{
 		Seq:   env.Seq,
 		Time:  env.Time,
+		Mono:  env.Mono,
 		Boot:  env.Boot,
 		Kind:  env.Kind,
 		Msg:   env.Msg,
@@ -208,6 +223,24 @@ func decodePayload(kind Kind, raw []byte) (Payload, error) {
 		p = &CorePhase{}
 	case KindGuardRotation:
 		p = &GuardRotation{}
+	case KindHostRanking:
+		p = &HostRanking{}
+	case KindHuntStart:
+		p = &HuntStart{}
+	case KindHuntMask:
+		p = &HuntMask{}
+	case KindHuntEnd:
+		p = &HuntEnd{}
+	case KindHuntSkipped:
+		p = &HuntSkipped{}
+	case KindMarkJoint:
+		p = &MarkJoint{}
+	case KindRefineRound:
+		p = &RefineRound{}
+	case KindTunerWarning:
+		p = &TunerWarning{}
+	case KindBackendRetry:
+		p = &BackendRetry{}
 	case KindTierChange:
 		p = &TierChange{}
 	case KindCommandReset:

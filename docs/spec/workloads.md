@@ -33,11 +33,11 @@ Known quirks the integrations handle:
 | R4 medium load | Partial duty cycles | An R1 workload at 25%, 50% or 75% duty with a 100 ms period, cycling per trial |
 | R5 SMT pair | Both threads of one core | R1 and R2 workloads with 2 threads on both logical CPUs of the core |
 | R6 idle | Normal power management with the profile applied | One confined 1-thread R1 instance per core, each stopped with SIGSTOP as soon as it enters its scope, before the next instance launches. Trial timing begins only after all instances are stopped. First half: no load at all. Second half: short bursts (SIGCONT, then SIGSTOP 100 ms later, every 2 s) on one core at a time in scheduling order |
-| R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance on each loaded core. A guard step runs CCD0 alone, CCD1 alone, then every core as three separate trials on two CCDs; on one CCD, one all-core trial |
+| R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance on each loaded core. A guard step has three loaded parts on two CCDs, CCD0 alone, CCD1 alone and every core, and one all-core part on one CCD; each part runs as separate trials (Durations and guard schedule) |
 
-Within a regime, search and guard cycle through the listed workloads trial by trial, so backends alternate on the same core. Confirmation selects each R1 and R2 workload by ID at the candidate edge. The three R7 trials of a step share one R2 workload, which advances when the step concludes (pass or failure); inconclusive retries use the same workload.
+Within a regime, search cycles listed workloads; candidate-edge checks freeze one R1 and one R2 workload. Guard's repeated R1, R2 and R7 steps cycle their catalogs, so three occurrences cover each workload. All parts of one R7 step share its selected R2 workload; inconclusive starts retry the same class.
 
-R6 and R7 exist only in guard. R6 targets every core; an R7 trial targets the cores of one CCD or every core. `trial.intent.cores` lists exactly the loaded cores, and the trial runs on each loaded core's first logical CPU. They run one instance per loaded core, each in its own scope and work directory, so a computation error or stall stays attributed to that instance's core.
+R6 and R7 run on the resident profile and in masked hunt trials; R7 also checks refinement rounds. R6 targets every core; an R7 trial targets one CCD or every core. `trial.intent.cores` lists exactly the loaded cores; the applied profile also includes idle cores. Each loaded core runs one instance on its first logical CPU, in its own scope and work directory, so a computation error or stall names that instance's core.
 
 ### Load-step schedules
 
@@ -49,28 +49,25 @@ Defaults, all configurable:
 
 | Use | Duration |
 |---|---|
-| Search trial (R1, then R2) | 90 s each |
-| Confirmation trial (three R1 workloads, three R2 workloads, R3, R4, R5) | 5 min each; nine trials per core |
+| Search trial (R1, then R2) | 90 s each; a candidate-edge class needs `n` passing starts |
+| Short start for R7, hunt masks, refinement checks and backoff reruns | 120 s (`durations.start_s`) |
 | Guard per-core trial (R1 to R5) | 2 min each |
 | Guard R6 | 15 min |
-| Guard R7 | 20 min total on two CCDs: 5 min CCD0, 5 min CCD1, 10 min all cores; 20 min on one CCD |
+| Guard R7 long starts | 20 min total on two CCDs: 5 min CCD0, 5 min CCD1, 10 min all cores; 20 min on one CCD |
 
-For `D = durations.guard_all_core_s` and `n` CCDs, R7 runs for `D` on one CCD; on multiple CCDs, each single-CCD trial runs `floor(D / 4)` seconds and the all-core trial runs `D - n*floor(D / 4)` seconds. `guard_all_core_s` must be in [4, 86400]. A trial is torn down before the next part starts, with no in-trial CCD phases or phase-change progress events. An inconclusive retry repeats that part's loaded cores and workload. Parts already passed survive interruption.
+For `D = durations.guard_all_core_s` and `n` CCDs, an R7 long start runs for `D` on one CCD; on multiple CCDs, each single-CCD part runs `floor(D / 4)` seconds and the all-core part runs `D - n*floor(D / 4)` seconds. Each part also runs three short `start_s` starts and one long start; when short and long durations match their required pass counts add. `guard_all_core_s` must be in [4, 86400]. A trial is torn down before the next start. Inconclusive starts repeat their part's loaded cores and workload; passing starts survive interruption. A hunt mask or refinement check instead needs `n` passing starts from `evidence.*`.
 
-Default guard rotation, about 3.5 h:
-1. R2 on every core
-2. R7
-3. R6
-4. R5 on every core
-5. R1 on every core
-6. R3 on every core
-7. R4 on every core
-8. R6
+Default guard rotation, about 7.2 h on 16 cores:
+1. R7, R7, R7: every R2 workload, each on CCD0, CCD1 and all cores, with three short starts and one long start per part.
+2. R2, R2, R2: every R2 workload on every core.
+3. R6.
+4. R5 on every core.
+5. R1, R1, R1: every R1 workload on every core.
+6. R3 on every core.
+7. R4 on every core.
+8. R6.
 
-Per-core steps follow the scheduling order in `tuner.md`.
-
-Rough times to the first clean rotation on 16 cores: search 6-9 h depending on how far edges lie from the baseline, confirmation 45 min per core (nine × 5 min, about 12 h total), first rotation about 3.5 h. Bronze follows that rotation only if nothing is left to regain.
-The confirmation estimate assumes no failures. Each confirmation failure below offset 0 restarts that core's nine trials one count shallower, adding up to nine trials (45 min at the default duration); a failure at 0 is a dead end.
+A clean rotation qualifies only with at least three R1, three R2 and three R7 steps, and one each of R3, R4, R5 and R6. Custom schedules can end clean without qualifying; the end event lists missing coverage. Per-core steps follow `tuner.md`'s scheduling order. Search time depends on edge distance and failed steps; candidate checks take five starts of each frozen R1 and R2 class by default. Qualification is breadth coverage, not a guarantee against rare hourly failures.
 
 ## Containment
 
@@ -95,7 +92,7 @@ A trial passes when all of these hold:
 - no failure signal named a core;
 - every sampled thread was on an allowed logical CPU.
 
-When evidence conflicts, it is weighed in this order: a containment violation first (a dead end), then a failure signal from the backend or any MCE in the trial window, then inconclusive, then pass. A kernel log that cannot be read makes the trial inconclusive.
+When evidence conflicts, containment violation wins (dead end), then a backend computation error or MCE in the trial window, then the reset reason, then inconclusive, then pass. A kernel log read failure makes a trial inconclusive after its retries, unless already-recorded higher-precedence failure evidence survives it.
 
 A scoped instance that never entered its scope by the trial deadline is a setup error and makes the trial inconclusive unless higher-precedence evidence was found. A process exit queued before teardown begins is an unexpected exit; exits caused by teardown are not.
 
@@ -108,11 +105,13 @@ Failure signals:
 | Stall | Over a 10 s window of unsuspended time, backend CPU time advances less than half of thread count times that window, after a 30 s startup grace | The instance's core |
 | Corrected MCE | Kernel log, followed continuously while togi runs | The core of the reporting logical CPU if the bank is core-local, else unattributed |
 | Uncorrected MCE | Kernel log of the next boot, or of the crashed boot in the persistent system journal | Same rule |
-| Crash | Boot ID differs from the last one in the journal, with no clean-shutdown event | Unattributed, unless an MCE above names a core |
+| Crash | Boot ID differs from the last journal boot with no clean shutdown; reset reason refines its classification | Unattributed unless a backend signal, MCE, or one nonzero applied offset names a core |
 
-In isolated trials every failure is attributed to the target, including an MCE that names another core: only the target carries an offset (`tuner.md`). In resident trials, evidence naming more than one core is unattributed.
+In isolated trials every failure belongs to the target. Resident and masked trials use the backend instance's signal, then exactly one core-local MCE, then the sole nonzero offset in the applied profile. Evidence naming more than one core without a higher-precedence backend signal remains unattributed.
 
 Crash detection and evidence: every boot in the journal other than the current one, whose last event is not `shutdown` and that no `crash.detected` names, has crashed. Its evidence is every MCE in its own kernel log plus the uncorrected MCEs logged by the boot after it (the next boot in the journal, or the current boot), each recorded once as an `mce` event with `from_boot`. An MCE that an earlier `crash.detected` already cites is evidence of that crash only: a boot's own log starts with the MCEs its predecessor's crash left in the banks. Recovery is idempotent: detection, closing the crashed trial and its failure are each redone by the next `run` if a further crash or kill interrupts them, so a crash during recovery is detected on its own, normally as stray, without losing the first.
+
+Kernel reset reasons are read from the preceding boot's `Previous system reset reason` line. Watchdog expiry, sync flood and CPU shutdown are crash failures. Power-button reset during a trial is a crash failure; outside a trial it is inconclusive. Thermal trip is a dead end unless earlier backend or MCE evidence established a failure. No reason line on a kernel supporting this log (6.16+) is treated as power loss, and is inconclusive only after reason reporting has been confirmed in another boot. A boot whose kernel log holds neither its `Linux version` line nor a reason line, because its start was rotated out, reads as unsupported. An older boot the system journal no longer holds confirms nothing and is skipped without a retry; only the boot after the crash must be readable. Unknown or unsupported reasons keep ordinary crash handling. A recorded backend signal or relevant MCE always takes precedence over reset reason.
 
 A trial still open when `run` starts, in a boot that did not crash (the same boot, or one that ended in `shutdown`), ends as `interrupted`: a failure (`corrected_mce`, or `uncorrected_mce` when none is corrected) when `mce` events were already recorded for it, else inconclusive. Interrupted trials do not count toward the inconclusive dead end.
 

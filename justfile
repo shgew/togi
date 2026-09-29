@@ -42,17 +42,17 @@ fmt:
 [group('quality')]
 gate: lint (check-one "fmt") test
 
-# Run every flake check CI runs: package, lint, fmt and, on Linux, the VM test
+# Run every flake check CI runs: package, lint, fmt and, on Linux, the VM tests
 [group('nix')]
 check *args:
     nix flake check "$@"
 
-# Build named flake checks: package, lint, fmt or, on Linux, vm (`just check-one vm`)
+# Build named flake checks: package, lint, fmt or, on Linux, vm and vm-restart-limit (`just check-one vm`)
 [group('nix')]
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")
 
-# Run a simulated session through its first clean guard rotation in temporary state; Bronze needs no depth left to regain
+# Run a simulated session through the search and its first clean qualifying rotation
 [group('run')]
 sim seed="1":
     {{ dev }} go run ./tools/sim --seed "$1"

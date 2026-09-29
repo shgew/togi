@@ -8,6 +8,10 @@ import (
 
 type Clock interface {
 	Now() time.Time
+	// Monotonic is CLOCK_MONOTONIC: the time since this boot started, unaffected by wall-clock jumps.
+	Monotonic() time.Duration
+	// Sleep returns ctx.Err() when ctx is cancelled first.
+	Sleep(ctx context.Context, d time.Duration) error
 }
 
 type SMU interface {
@@ -20,6 +24,8 @@ type Host interface {
 	BootID() (string, error)
 	Topology() ([]CoreInfo, error)
 	BIOSContext() (BIOSContext, error)
+	// Ranking returns the raw preferred-core ranking value of each core, in core-id order.
+	Ranking() ([]int, error)
 	// Preflight runs checks 1-7 of runtime.md; check 8, the BIOS context, belongs to the run loop.
 	Preflight() []Check
 }
@@ -91,6 +97,8 @@ type Sample struct {
 type Reporter interface {
 	Progress(detail string)
 	Sample(s Sample)
+	// Signal reports a backend computation error the moment it is classified, before the trial ends.
+	Signal(core int, signal Signal, detail string)
 }
 
 type Running interface {
@@ -111,13 +119,36 @@ type MCE struct {
 	BankType  BankType
 	Corrected bool
 	Time      time.Time
+	Monotonic time.Duration
 	Lines     []string
 }
 
+type ResetKind string
+
+const (
+	ResetWatchdog    ResetKind = "watchdog"
+	ResetSyncFlood   ResetKind = "sync_flood"
+	ResetCPUShutdown ResetKind = "cpu_shutdown"
+	ResetPowerButton ResetKind = "power_button"
+	ResetThermalTrip ResetKind = "thermal_trip"
+	ResetPowerLoss   ResetKind = "power_loss"
+	ResetUnknown     ResetKind = "unknown"
+)
+
+type ResetReason struct {
+	// Kind is empty when the boot logged no reason line.
+	Kind ResetKind
+	Raw  string
+	// Supported is true when the kernel is recent enough (6.16 or later) to log reset reasons.
+	Supported bool
+}
+
 type Kernel interface {
-	// MCEs returns the machine checks in the kernel log of boot `boot` at or after `since`.
+	// MCEs returns the machine checks in the kernel log of boot `boot` at or after the boot-local monotonic time `since`; 0 is the whole boot.
 	// Earlier boots come from the persistent system journal; an unknown boot has none.
-	MCEs(boot string, since time.Time) ([]MCE, error)
+	MCEs(boot string, since time.Duration) ([]MCE, error)
+	// ResetReason reads what boot `boot`'s kernel logged about the reset before it.
+	ResetReason(boot string) (ResetReason, error)
 }
 
 type Machine struct {
@@ -130,3 +161,8 @@ type Machine struct {
 
 // ErrCrashed is returned only by simulated seams.
 var ErrCrashed = errors.New("the simulated machine crashed")
+
+var ErrBackendMissing = errors.New("backend binary missing")
+
+// ErrBootMissing means the system journal no longer holds the boot, for example after journald vacuumed it.
+var ErrBootMissing = errors.New("boot missing from the system journal")

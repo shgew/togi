@@ -20,6 +20,7 @@ func TestCommandsRefuseWhileLocked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fixture = bytes.Replace(fixture, []byte(`"schema":2,"ruleset":3`), []byte(`"schema":2,"ruleset":4`), 1)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o644); err != nil {
 		t.Fatal(err)
@@ -120,11 +121,6 @@ func resetCandidateFixture(t *testing.T, mark int) string {
 		Core: 3, Phase: journal.PhaseSearch, Decision: journal.Backoff,
 		FromOffset: mark, ToOffset: min(mark+1, 0), FailedMark: new(mark), Reason: "attributed failure",
 	}, fail.Seq)
-	appendEvent(&journal.CorePhase{Core: 7, To: journal.PhaseGuard, Offset: -10, Reason: "confirmed"})
-	appendEvent(&journal.TunerDecision{
-		Core: 7, Phase: journal.PhaseGuard, Decision: journal.SuspectBackoff,
-		FromOffset: -10, ToOffset: -9, UnprovenDepth: 1, Reason: "unattributed failure",
-	})
 	if err := j.Close(); err != nil {
 		t.Fatal(err)
 	}

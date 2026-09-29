@@ -1,6 +1,7 @@
 package ycruncher
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,29 @@ func fakePackage(t *testing.T, zen5 bool) string {
 		t.Fatal(err)
 	}
 	return pkg
+}
+
+func TestMissingBinaries(t *testing.T) {
+	for _, tt := range []struct {
+		name, remove string
+		zen5         bool
+	}{
+		{"directory", "lib/y-cruncher/Binaries", true},
+		{"zen5", "", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pkg := fakePackage(t, tt.zen5)
+			if tt.remove != "" {
+				if err := os.RemoveAll(filepath.Join(pkg, tt.remove)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := New(pkg).Check()
+			if diff := cmp.Diff(true, errors.Is(err, machine.ErrBackendMissing)); diff != "" {
+				t.Fatalf("missing backend (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
 
 func TestPrepare(t *testing.T) {

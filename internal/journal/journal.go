@@ -24,12 +24,13 @@ const (
 )
 
 type Options struct {
-	Boot     string
-	Now      func() time.Time
-	Sync     bool
-	Log      io.Writer
-	Renderer Renderer
-	Build    Build
+	Boot      string
+	Now       func() time.Time
+	Monotonic func() time.Duration
+	Sync      bool
+	Log       io.Writer
+	Renderer  Renderer
+	Build     Build
 }
 
 var ErrLocked = errors.New("another togi process holds the journal lock")
@@ -324,6 +325,8 @@ var carryKinds = map[Kind]bool{
 	KindTrialEnd:       true,
 	KindTrialProgress:  true,
 	KindFailure:        true,
+	KindHuntStart:      true,
+	KindHuntEnd:        true,
 	KindCommandReset:   true,
 	KindShutdown:       true,
 	KindTunerDecision:  true,
@@ -368,7 +371,7 @@ func ReadForCarry(path string) ([]Event, error) {
 		default:
 			continue
 		}
-		events = append(events, Event{Seq: env.Seq, Time: env.Time, Boot: env.Boot, Kind: env.Kind, Msg: env.Msg, Cause: env.Cause, Data: p, Raw: line})
+		events = append(events, Event{Seq: env.Seq, Time: env.Time, Mono: env.Mono, Boot: env.Boot, Kind: env.Kind, Msg: env.Msg, Cause: env.Cause, Data: p, Raw: line})
 	}
 	if len(events) == 0 {
 		return nil, fmt.Errorf("read journal %s: no session.start", path)
@@ -649,10 +652,13 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 		Msg:  p.Message(),
 		Data: p,
 	}
+	if j.opts.Monotonic != nil {
+		e.Mono = j.opts.Monotonic().Milliseconds()
+	}
 	if len(cause) > 0 {
 		e.Cause = slices.Clone(cause)
 	}
-	raw, err := encode(e)
+	raw, err := encode(e, j.opts.Monotonic != nil)
 	if err != nil {
 		return Event{}, fmt.Errorf("append %s: %w", kind, err)
 	}

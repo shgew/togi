@@ -3,46 +3,54 @@
 +------------------------------------------------------------+
 
       .---.
-     / * * \     BRONZE                    [tier.change #9369]
-    |   *   |    Silver    7.0 of 24 clean hours
-     \ * * /     Gold      7.0 of 100 clean hours
+     / * * \     BRONZE                    [tier.change #6615]
+    |   *   |    Silver    7.6 of 24 clean hours
+     \ * * /     Gold      7.6 of 100 clean hours
       '---'      Platinum  locked until togi observe exists
        | |
 
-Profile                                 [profile.change #8994]
-  CORE  EDGE  FAILED  REGAINABLE  SETTLED  DECIDED
-  00    -37   -38     0           0        [#4125]
-  01    -31   -32     0           0        [#8381]
-  02    -35   -36     0           0        [#3957]
-  03    -17   -18     0           0        [#3718]
-  04    -32   -33     0           0        [#4065]
-  05    -7    -8      0           0        [#5141]
-  06    -27   -28     0           0        [#4920]
-  07    -30   -31     0           0        [#8992]
-  08    -24   -25     0           0        [#5832]
-  09    -16   -17     0           0        [#8044]
-  10    -15   -16     0           0        [#8624]
-  11    -4    -5      0           0        [#5602]
-  12    -7    -8      0           0        [#6548]
-  13    -22   -23     0           0        [#8154]
-  14    0     -1      0           0        [#5710]
-  15    -35   -36     0           0        [#6160]
+Profile                                 [profile.change #6541]
+  CORE  EDGE  FAILED  JOINT  DONE  DECIDED
+  00    -37   -38     -      true  [#4254]
+  01    -31   -32     -      true  [#6043]
+  02    -35   -36     -      true  [#4196]
+  03    -17   -18     -      true  [#4057]
+  04    -32   -33     -      true  [#4243]
+  05    -7    -8      -      true  [#4520]
+  06    -27   -28     -      true  [#4498]
+  07    -30   -31     -      true  [#6540]
+  08    -24   -25     -      true  [#5525]
+  09    -16   -17     -      true  [#4818]
+  10    -15   -16     -      true  [#6091]
+  11    -4    -5      -      true  [#4787]
+  12    -7    -8      -      true  [#5878]
+  13    -22   -23     -      true  [#4840]
+  14    0     -1      -      true  [#4829]
+  15    -35   -36     -      true  [#5815]
 
-Evidence since the profile change
-  REGIME  CLEAN H  RATE BOUND
-  R1      1.1      < 2.82/h
-  R2      1.1      < 2.82/h
-  R3      1.1      < 2.82/h
-  R4      1.1      < 2.82/h
-  R5      1.1      < 2.82/h
-  R6      1.0      < 3.00/h
-  R7      0.7      < 4.50/h
-  all     7.0      < 0.43/h
-  Tctl max 76°C                              [trial.end #9095]
+Evidence since [#6350]: the last failure on a profile at least as deep
+  REGIME  WORKLOAD                         STARTS  CLEAN H  RATE BOUND
+  R1      mprime-sse-4k-21k                36      0.5      < 5.63/h
+  R1      ycruncher-bkt-sftv4              32      0.5      < 5.63/h
+  R1      ycruncher-snt-svt                32      0.5      < 5.63/h
+  R2      mprime-avx2-36k-248k             36      0.5      < 5.63/h
+  R2      mprime-avx512-36k-248k           32      0.5      < 5.63/h
+  R2      ycruncher-fftv4-n63-vt3          32      0.5      < 5.63/h
+  R3      mprime-sse-4k-21k-steps          44      0.5      < 5.63/h
+  R4      mprime-sse-4k-21k-duty25         36      0.7      < 4.10/h
+  R5      mprime-sse-4k-21k-smt            40      0.5      < 5.63/h
+  R6      mprime-sse-4k-21k-idle           7       0.2      < 12.00/h
+  R6      ycruncher-bkt-sftv4-idle         2       0.5      < 6.00/h
+  R7      mprime-avx2-36k-248k-allcore     28      0.6      < 4.74/h
+  R7      mprime-avx512-36k-248k-allcore   24      0.6      < 4.74/h
+  R7      ycruncher-fftv4-n63-vt3-allcore  24      0.6      < 4.74/h
+  all     -                                -       7.7      < 0.40/h
+  Tctl max 76°C                              [trial.end #6588]
   Rate bound = 3 / clean hours, 95% confidence (rule of three).
+  Starts = valid passes since each class last failed.
 
 Session 20260101T000000Z, started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0, boost limit 5700 MHz
 
-Journal SHA-256 <journal sha256> through seq 9714
+Journal SHA-256 <journal sha256> through seq 7278
 Durability is a bound, not proof.

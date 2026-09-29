@@ -19,16 +19,19 @@ const (
 )
 
 type State struct {
-	Schema   int          `json:"schema"`
-	Session  *SessionInfo `json:"session"`
-	LastSeq  int          `json:"last_seq"`
-	Phase    string       `json:"phase"`
-	Cores    []CoreState  `json:"cores"`
-	InFlight *InFlight    `json:"in_flight"`
-	DeadEnd  *DeadEndRef  `json:"dead_end"`
-	Guard    *GuardState  `json:"guard"`
-	Tier     Tier         `json:"tier"`
-	TierSeq  int          `json:"tier_seq"`
+	Schema     int              `json:"schema"`
+	Session    *SessionInfo     `json:"session"`
+	LastSeq    int              `json:"last_seq"`
+	Phase      string           `json:"phase"`
+	Cores      []CoreState      `json:"cores"`
+	InFlight   *InFlight        `json:"in_flight"`
+	DeadEnd    *DeadEndRef      `json:"dead_end"`
+	Guard      *GuardState      `json:"guard"`
+	JointMarks []JointMarkState `json:"joint_marks"`
+	Hunt       *HuntState       `json:"hunt"`
+	Refine     *RefineState     `json:"refine"`
+	Tier       Tier             `json:"tier"`
+	TierSeq    int              `json:"tier_seq"`
 
 	open []openIntent
 }
@@ -41,18 +44,17 @@ type SessionInfo struct {
 }
 
 type CoreState struct {
-	Core          int          `json:"core"`
-	CCD           int          `json:"ccd"`
-	CPUs          []int        `json:"cpus"`
-	Baseline      *int         `json:"baseline"`
-	Offset        int          `json:"offset"`
-	Phase         Phase        `json:"phase"`
-	Pass          *int         `json:"pass"`
-	FailedMark    *int         `json:"failed_mark"`
-	UnprovenDepth int          `json:"unproven_depth"`
-	SettledDepth  int          `json:"settled_depth"`
-	Queued        string       `json:"queued,omitempty"`
-	LastDecision  *DecisionRef `json:"last_decision"`
+	Core         int          `json:"core"`
+	CCD          int          `json:"ccd"`
+	CPUs         []int        `json:"cpus"`
+	Baseline     *int         `json:"baseline"`
+	Offset       int          `json:"offset"`
+	Phase        Phase        `json:"phase"`
+	Pass         *int         `json:"pass"`
+	FailedMark   *int         `json:"failed_mark"`
+	JointMarks   []int        `json:"joint_marks,omitempty"`
+	Queued       string       `json:"queued,omitempty"`
+	LastDecision *DecisionRef `json:"last_decision"`
 }
 
 type GuardState struct {
@@ -62,12 +64,73 @@ type GuardState struct {
 	StepsDone      int              `json:"steps_done"`
 	Profile        []int            `json:"profile"`
 	ProfileSeq     int              `json:"profile_seq"`
+	Qualifying     bool             `json:"qualifying"`
+	Missing        []string         `json:"missing"`
+	TierClockSeq   int              `json:"tier_clock_seq"`
+	Exposure       []ExposureRow    `json:"exposure"`
 	CleanRotations int              `json:"clean_rotations"`
 	CleanS         int              `json:"clean_s"`
 	Regimes        []RegimeClean    `json:"regimes"`
 	RateBoundPerH  *float64         `json:"rate_bound_per_h"`
 	TctlMaxC       *int             `json:"tctl_max_c"`
 	TctlMaxSeq     int              `json:"tctl_max_seq"`
+}
+
+type JointMarkState struct {
+	Mark     int           `json:"mark"`
+	Members  []JointMember `json:"members"`
+	Fallback bool          `json:"fallback"`
+	Hunt     int           `json:"hunt"`
+	Seq      int           `json:"seq"`
+}
+
+type HuntState struct {
+	Hunt       int            `json:"hunt"`
+	Seq        int            `json:"seq"`
+	Failure    int            `json:"failure"`
+	Regime     machine.Regime `json:"regime"`
+	Trial      string         `json:"trial"`
+	Anchor     []int          `json:"anchor"`
+	AnchorSeq  int            `json:"anchor_seq"`
+	Candidates []int          `json:"candidates"`
+	Escalated  bool           `json:"escalated"`
+	Masks      []MaskState    `json:"masks"`
+}
+
+type MaskState struct {
+	Mask    int           `json:"mask"`
+	Seq     int           `json:"seq"`
+	Cores   []int         `json:"cores"`
+	Edge    *JointMember  `json:"edge,omitempty"`
+	Held    []JointMember `json:"held,omitempty"`
+	Outcome string        `json:"outcome"`
+	Passes  int           `json:"passes"`
+	Needed  int           `json:"needed"`
+}
+
+type RefineState struct {
+	Round   int          `json:"round"`
+	Seq     int          `json:"seq"`
+	Target  []int        `json:"target"`
+	Profile []int        `json:"profile"`
+	Cores   []int        `json:"cores"`
+	Checks  []CheckState `json:"checks"`
+}
+
+type CheckState struct {
+	Regime   machine.Regime `json:"regime"`
+	Workload string         `json:"workload"`
+	Cores    []int          `json:"cores"`
+	Passes   int            `json:"passes"`
+	Needed   int            `json:"needed"`
+}
+
+type ExposureRow struct {
+	Regime        machine.Regime `json:"regime"`
+	Workload      string         `json:"workload"`
+	Starts        int            `json:"starts"`
+	CleanS        int            `json:"clean_s"`
+	RateBoundPerH *float64       `json:"rate_bound_per_h"`
 }
 
 type RegimeClean struct {

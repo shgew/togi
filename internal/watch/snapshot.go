@@ -20,6 +20,9 @@ type Snapshot struct {
 	problem     string
 	session     bool
 	guard       bool
+	huntID      int
+	maskID      int
+	round       int
 	start, last time.Time
 	tiles       []tile
 	trial       *trial
@@ -47,9 +50,9 @@ type tile struct {
 	number       int
 	hasNumber    bool
 	fail, trying *int
-	slots, total int
-	regain       int
-	settled      int
+	joint        []int
+	hunt, masked bool
+	anchor       *int
 	loaded       bool
 }
 
@@ -65,8 +68,11 @@ type trial struct {
 }
 
 var logged = []journal.Kind{
-	journal.KindSessionStart, journal.KindSessionCarried, journal.KindTrialIntent, journal.KindTrialEnd, journal.KindFailure, journal.KindCrashDetected,
+	journal.KindSessionStart, journal.KindSessionCarried, journal.KindHostRanking,
+	journal.KindTrialIntent, journal.KindTrialEnd, journal.KindFailure, journal.KindCrashDetected,
 	journal.KindTunerDecision, journal.KindCorePhase, journal.KindGuardRotation, journal.KindProfileChange,
+	journal.KindHuntStart, journal.KindHuntMask, journal.KindHuntEnd, journal.KindHuntSkipped,
+	journal.KindMarkJoint, journal.KindRefineRound, journal.KindTunerWarning, journal.KindBackendRetry,
 	journal.KindTierChange, journal.KindDeadEnd, journal.KindDefectFound, journal.KindCommandReset, journal.KindShutdown,
 }
 
@@ -97,29 +103,44 @@ func Project(events []journal.Event) Snapshot {
 	}
 	s := Snapshot{
 		session:    true,
-		guard:      st.Phase == "guard",
+		guard:      st.Phase == string(journal.PhaseGuard),
 		start:      st.Session.Start,
 		current:    -1,
 		guardState: st.Guard,
 		tier:       st.Tier,
+	}
+	if st.Hunt != nil {
+		s.huntID = st.Hunt.Hunt
+		if len(st.Hunt.Masks) > 0 {
+			s.maskID = st.Hunt.Masks[len(st.Hunt.Masks)-1].Mask
+		}
+	}
+	if st.Refine != nil {
+		s.round = st.Refine.Round
 	}
 	if n := len(events); n > 0 {
 		s.last = events[n-1].Time
 	}
 	for _, c := range st.Cores {
 		tl := tile{id: c.Core, ccd: c.CCD, phase: c.Phase, fail: c.FailedMark}
-		tl.slots, tl.total = t.Confirmation(c.Core)
+		for _, mark := range st.JointMarks {
+			for _, member := range mark.Members {
+				if member.Core == c.Core {
+					tl.joint = append(tl.joint, member.Offset)
+				}
+			}
+		}
+		if st.Hunt != nil {
+			tl.hunt = slices.Contains(st.Hunt.Candidates, c.Core)
+		}
 		switch c.Phase {
-		case journal.PhaseConfirmed, journal.PhaseGuard:
-			tl.number, tl.hasNumber = c.Offset, true
-			tl.regain = c.UnprovenDepth - c.SettledDepth
-			tl.settled = c.SettledDepth
-		case journal.PhaseConfirmation:
+		case journal.PhaseResident, journal.PhaseDone:
 			tl.number, tl.hasNumber = c.Offset, true
 		case journal.PhaseSearch:
 			if c.Pass != nil {
 				tl.number, tl.hasNumber = *c.Pass, true
 			}
+		case journal.PhaseGuard, journal.PhaseHunt, journal.PhaseRefine:
 		}
 		s.tiles = append(s.tiles, tl)
 	}
@@ -165,11 +186,17 @@ func Project(events []journal.Event) Snapshot {
 		s.trial = inFlightTrial(intent, starts, len(st.Cores))
 		for i := range s.tiles {
 			tl := &s.tiles[i]
-			if !slices.Contains(s.trial.cores, tl.id) {
-				continue
-			}
-			tl.loaded = true
-			if intent.Condition == machine.Isolated && intent.Offset != nil {
+			tl.loaded = slices.Contains(s.trial.cores, tl.id)
+			if intent.Condition == machine.Masked {
+				tl.masked = tl.hunt
+				if i < len(intent.Profile) {
+					if st.Hunt != nil && i < len(st.Hunt.Anchor) && intent.Profile[i] == st.Hunt.Anchor[i] {
+						tl.anchor = &st.Hunt.Anchor[i]
+					} else {
+						tl.trying = &intent.Profile[i]
+					}
+				}
+			} else if tl.loaded && intent.Condition == machine.Isolated && intent.Offset != nil {
 				tl.trying = intent.Offset
 			}
 		}

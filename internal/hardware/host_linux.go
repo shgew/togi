@@ -1,9 +1,11 @@
 package hardware
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/smu"
 	"github.com/shgew/togi/internal/trial"
+	"golang.org/x/sys/unix"
 )
 
 // CheckPlatform reports whether this platform can run on real hardware.
@@ -47,6 +50,25 @@ type clock struct{}
 
 func (clock) Now() time.Time { return time.Now() }
 
+func (clock) Monotonic() time.Duration {
+	var ts unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts); err != nil {
+		panic(fmt.Errorf("read monotonic clock: %w", err))
+	}
+	return time.Duration(ts.Nano())
+}
+
+func (clock) Sleep(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 type host struct {
 	drv      *smu.Driver
 	cfg      config.Config
@@ -58,6 +80,25 @@ func (h *host) BootID() (string, error) { return detect.BootID() }
 func (h *host) Topology() ([]machine.CoreInfo, error) { return h.drv.Topology(), nil }
 
 func (h *host) BIOSContext() (machine.BIOSContext, error) { return h.drv.BIOSContext() }
+
+func (h *host) Ranking() ([]int, error) { return ranking("/", h.drv.Topology()) }
+
+func ranking(root string, cores []machine.CoreInfo) ([]int, error) {
+	values := make([]int, len(cores))
+	for i, core := range cores {
+		path := filepath.Join(root, "sys/devices/system/cpu/cpufreq", fmt.Sprintf("policy%d", core.CPUs[0]), "amd_pstate_prefcore_ranking")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read preferred-core ranking of cpu %d: %w", core.CPUs[0], err)
+		}
+		value, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+		if err != nil {
+			return nil, fmt.Errorf("read preferred-core ranking of cpu %d: %w", core.CPUs[0], err)
+		}
+		values[i] = value
+	}
+	return values, nil
+}
 
 func (h *host) Preflight() []machine.Check {
 	root := machine.Check{Name: "root", Detail: "uid 0", OK: true}

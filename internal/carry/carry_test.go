@@ -36,7 +36,7 @@ type writer struct {
 }
 
 // newJournal starts events.jsonl in dir for session, stamped with ruleset, recording ctx when it is not nil.
-func newJournal(t *testing.T, dir, session string, ruleset int, ctx *machine.BIOSContext) *writer {
+func newJournal(t *testing.T, dir, session string, ruleset int, ctx *machine.BIOSContext, cores ...machine.CoreInfo) *writer {
 	t.Helper()
 	j, err := journal.Open(dir, opts())
 	if err != nil {
@@ -44,7 +44,7 @@ func newJournal(t *testing.T, dir, session string, ruleset int, ctx *machine.BIO
 	}
 	t.Cleanup(func() { _ = j.Close() })
 	w := &writer{t: t, j: j, session: session}
-	w.add(&journal.SessionStart{Schema: 2, Ruleset: ruleset, Session: session})
+	w.add(&journal.SessionStart{Schema: 2, Ruleset: ruleset, Session: session, Cores: cores})
 	if ctx != nil {
 		w.add(&journal.SessionContext{BIOSContext: *ctx})
 	}
@@ -105,7 +105,7 @@ func src(session string, ruleset int) journal.CarriedSource {
 
 func prepare(t *testing.T, dir string, entries []defect.Entry) *Carry {
 	t.Helper()
-	c, err := Prepare(dir, opts(), binary, entries)
+	c, err := Prepare(dir, opts(), binary, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,6 +137,118 @@ func TestPrepareSeedsEdgesAndMarks(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("carry (-want +got):\n%s", diff)
+	}
+}
+
+func TestPrepareBIOSChange(t *testing.T) {
+	changed := context
+	changed.BIOSVersion = "3.20"
+	for _, tc := range []struct {
+		name     string
+		recorded *machine.BIOSContext
+		current  *machine.BIOSContext
+		archive  bool
+	}{
+		{"changed", &context, &changed, true},
+		{"unchanged", &context, &context, false},
+		{"no current context", &context, nil, false},
+		{"no recorded context", nil, &changed, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			w := newJournal(t, dir, "X", 4, tc.recorded)
+			mark := w.fail(0, -30, machine.Isolated, journal.Attributed)
+			w.close()
+			got, err := Prepare(dir, opts(), binary, []defect.Entry{}, tc.current)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want *Carry
+			if tc.archive {
+				want = &Carry{Sources: []journal.CarriedSource{src("X", 4)}, Context: tc.recorded, Cores: []journal.CarriedCore{
+					{Core: 0, FailedMark: new(-30), MarkSession: "X", MarkSeq: mark, MarkSignal: machine.UnexpectedExit},
+				}}
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("carry (-want +got):\n%s", diff)
+			}
+			_, err = os.Stat(filepath.Join(dir, "events.jsonl"))
+			if tc.archive && !errors.Is(err, fs.ErrNotExist) || !tc.archive && err != nil {
+				t.Fatalf("journal after Prepare: %v", err)
+			}
+		})
+	}
+}
+
+func TestPrepareResumesInterruptedBIOSArchive(t *testing.T) {
+	dir := t.TempDir()
+	w := newJournal(t, dir, "X", 4, &context)
+	mark := w.fail(0, -30, machine.Isolated, journal.Attributed)
+	if err := os.MkdirAll(filepath.Join(dir, "archive"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "archive", "X-carry-pending"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.add(&journal.SessionArchived{Session: "X", Path: filepath.Join("archive", "X.jsonl")})
+	w.close()
+	changed := context
+	changed.BIOSVersion = "3.20"
+	got, err := Prepare(dir, opts(), binary, []defect.Entry{}, &changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &Carry{Sources: []journal.CarriedSource{src("X", 4)}, Context: &context, Cores: []journal.CarriedCore{
+		{Core: 0, FailedMark: new(-30), MarkSession: "X", MarkSeq: mark, MarkSignal: machine.UnexpectedExit},
+	}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("carry (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(got, prepare(t, dir, []defect.Entry{})); diff != "" {
+		t.Fatalf("resumed carry (-want +got):\n%s", diff)
+	}
+}
+
+func TestPrepareCarriesHuntCulprit(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		reset      bool
+		attributed int
+		wantOffset int
+	}{
+		{"culprit", false, 0, -35},
+		{"reset culprit", true, 0, 0},
+		{"attributed failure is shallower", false, -28, -28},
+		{"culprit is shallower", false, -40, -35},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			sparse := []machine.CoreInfo{{Core: 0, CPUs: []int{0}}, {Core: 2, CPUs: []int{2}}, {Core: 5, CPUs: []int{5}}}
+			w := newJournal(t, dir, "X", 3, &context, sparse...)
+			failure := w.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R7, Condition: machine.Resident})
+			w.add(&journal.HuntStart{Hunt: 1, Failure: failure, Failing: []int{-10, -35, -20}, Candidates: []int{2}})
+			end := w.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{2}})
+			if tc.reset {
+				w.add(&journal.CommandReset{Core: new(2)})
+			}
+			attributedSeq := 0
+			if tc.attributed != 0 {
+				attributedSeq = w.fail(2, tc.attributed, machine.Resident, journal.Attributed)
+			}
+			w.close()
+			got := prepare(t, dir, []defect.Entry{})
+			var want []journal.CarriedCore
+			if tc.wantOffset != 0 {
+				seq, signal := end, machine.Crash
+				if tc.attributed != 0 && (tc.reset || tc.attributed > -35) {
+					seq, signal = attributedSeq, machine.UnexpectedExit
+				}
+				want = []journal.CarriedCore{{Core: 2, FailedMark: new(tc.wantOffset), MarkSession: "X", MarkSeq: seq, MarkSignal: signal}}
+			}
+			if diff := cmp.Diff(want, got.Cores); diff != "" {
+				t.Fatalf("cores (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -408,7 +520,7 @@ func TestPrepareRefusesALineWithoutAKind(t *testing.T) {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Prepare(dir, opts(), binary, []defect.Entry{}); err == nil || !strings.Contains(err.Error(), "no kind") {
+	if _, err := Prepare(dir, opts(), binary, []defect.Entry{}, nil); err == nil || !strings.Contains(err.Error(), "no kind") {
 		t.Fatalf("Prepare: %v, want a refusal of the line without a kind", err)
 	}
 }

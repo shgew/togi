@@ -1,4 +1,4 @@
-Confirmation order superseded by [ADR 0015](0015-avx-512-first-in-confirmation.md); the nine workloads and backoff rule remain.
+The blame and depth-retry strategy and confirmation phase are superseded by [ADR 0020](0020-hunt-and-refine.md); the R7 guard step comprising CCD0, CCD1 and all-core trials remains in force. Its confirmation order had earlier been superseded by [ADR 0015](0015-avx-512-first-in-confirmation.md).
 
 # Blame unattributed failures by load and regain depth automatically
 

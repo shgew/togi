@@ -23,9 +23,9 @@ type Carry struct {
 	Cores   []journal.CarriedCore // ascending core; each has an Edge, a FailedMark, or both
 }
 
-// Prepare readies dir for a session of binary: a journal an older ruleset or schema wrote is archived, and the carry of
-// the session a transition archived is returned until a journal records it. A nil entries uses defect.Entries().
-func Prepare(dir string, opts journal.Options, binary journal.Build, entries []defect.Entry) (*Carry, error) {
+// Prepare readies dir for a session of binary: a journal from an older ruleset or schema, or one with a changed BIOS
+// context, is archived. The carry of the archived session is returned until a journal records it.
+func Prepare(dir string, opts journal.Options, binary journal.Build, entries []defect.Entry, current *machine.BIOSContext) (*Carry, error) {
 	stamp, id, err := journal.Scan(dir)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -33,16 +33,20 @@ func Prepare(dir string, opts journal.Options, binary journal.Build, entries []d
 		return nil, fmt.Errorf("carry: %w", err)
 	case stamp.Schema == 0:
 	case journal.Older(stamp, binary):
-		j, err := journal.OpenForArchive(dir, journal.Options{Boot: opts.Boot, Now: opts.Now, Sync: opts.Sync})
-		if err != nil {
-			return nil, fmt.Errorf("carry: archive session %s: %w", id, err)
+		if err := archive(dir, id, opts); err != nil {
+			return nil, err
 		}
-		_, err = j.ArchiveForCarry(id)
-		if closeErr := j.Close(); err == nil {
-			err = closeErr
-		}
+	case journal.Compatible(stamp, binary) == nil && current != nil:
+		recorded, err := journal.RecordedContext(dir)
 		if err != nil {
-			return nil, fmt.Errorf("carry: archive session %s: %w", id, err)
+			return nil, fmt.Errorf("carry: read recorded BIOS context: %w", err)
+		}
+		if recorded != nil {
+			if _, same := machine.CompareContext(*recorded, *current); !same {
+				if err := archive(dir, id, opts); err != nil {
+					return nil, err
+				}
+			}
 		}
 	case journal.Compatible(stamp, binary) != nil:
 		return nil, nil
@@ -68,6 +72,21 @@ func Prepare(dir string, opts journal.Options, binary journal.Build, entries []d
 		entries = defect.Entries()
 	}
 	return compute(dir, pending, entries)
+}
+
+func archive(dir, id string, opts journal.Options) error {
+	j, err := journal.OpenForArchive(dir, journal.Options{Boot: opts.Boot, Now: opts.Now, Sync: opts.Sync})
+	if err != nil {
+		return fmt.Errorf("carry: archive session %s: %w", id, err)
+	}
+	_, err = j.ArchiveForCarry(id)
+	if closeErr := j.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return fmt.Errorf("carry: archive session %s: %w", id, err)
+	}
+	return nil
 }
 
 // recorded reports whether the current journal has recorded the carry of session id, or is past the point where one
@@ -205,9 +224,18 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 	excluded := defect.FailuresWith(s.events, entries)
 	intents := make(map[string]*journal.TrialIntent)
 	ended := make(map[string]bool)
+	hunts := make(map[int]*journal.HuntStart)
+	signals := make(map[int]machine.Signal)
+	var ids []int
 	lastShutdown := 0
 	for _, e := range s.events {
 		switch p := e.Data.(type) {
+		case *journal.SessionStart:
+			ids = ids[:0]
+			for _, c := range p.Cores {
+				ids = append(ids, c.Core)
+			}
+			slices.Sort(ids)
 		case *journal.CommandReset:
 			if p.Core != nil {
 				resetAt[*p.Core] = e.Seq
@@ -218,6 +246,10 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 			ended[p.Trial] = true
 		case *journal.Shutdown:
 			lastShutdown = e.Seq
+		case *journal.HuntStart:
+			hunts[p.Hunt] = p
+		case *journal.Failure:
+			signals[e.Seq] = p.Signal
 		}
 	}
 	var all []candidate
@@ -232,6 +264,17 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 		case *journal.Failure:
 			if p.Attribution == journal.Attributed && p.Core != nil && p.Offset != nil && !slices.Contains(excluded, e.Seq) {
 				all = append(all, candidate{core: *p.Core, offset: *p.Offset, session: s.Session, seq: e.Seq, signal: p.Signal, at: e.Seq})
+			}
+		case *journal.HuntEnd:
+			if p.Result == "culprit" && len(p.Cores) == 1 {
+				start := hunts[p.Hunt]
+				core := p.Cores[0]
+				i := slices.Index(ids, core)
+				if start != nil && i >= 0 && i < len(start.Failing) {
+					if signal, ok := signals[start.Failure]; ok {
+						all = append(all, candidate{core: core, offset: start.Failing[i], session: s.Session, seq: e.Seq, signal: signal, at: e.Seq})
+					}
+				}
 			}
 		case *journal.SessionCarried:
 			for _, cc := range p.Carried {

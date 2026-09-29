@@ -58,8 +58,14 @@ A concrete backend configuration within a regime, such as mprime SSE with FFT si
 _Avoid_: test
 
 **Trial**:
-One run of one workload on its target under a fixed profile, ending as a pass, a failure or inconclusive.
+One run of one workload on its target under a fixed profile, ending as a pass, a failure or inconclusive. One trial is one start.
 _Avoid_: test, iteration, run
+
+**Start**:
+One launch of a trial's workload, the unit of pass evidence because failures can cluster at onset.
+
+**Trial class**:
+The regime, workload, sorted loaded cores and duration of a trial. Pass evidence transfers only within this class.
 
 **Target**:
 The core or cores a trial loads.
@@ -70,17 +76,32 @@ A trial condition where only the target carries its offset and every other core 
 **Resident**:
 A trial condition where the whole profile is applied.
 
-**Search**:
-The phase that finds a core's candidate edge with short isolated trials.
+**Masked**:
+A trial condition retaining the failed trial's workload and load, with selected cores at failing offsets and all others at an anchor.
 
-**Confirmation**:
-The phase that checks a candidate edge with longer isolated trials covering every R1 and R2 workload and one trial each of R3 to R5.
+**Anchor**:
+The latest clean qualifying profile at least as shallow as the failing profile, different from it and reaching no mark; otherwise the next older eligible profile, or all-zero.
+
+**Search**:
+The phase that finds and checks a core's candidate edge with isolated R1 and R2 starts.
+
+**Hunt**:
+Masked trials that identify the core or combination behind an unattributed failure.
+
+**Edge probe**:
+A hunt's masked trial after it finds a combination: one member moves between its failing and anchor offsets, members probed before it stay at their shallowest failing offsets and the rest at their failing offsets, to find how shallow that member must be for the combination to pass. Each member is probed in turn.
+
+**Refinement**:
+Rounds that move the resident profile toward the greatest total depth permitted by its marks.
 
 **Guard**:
-The endless phase that runs resident trials across all regimes once every core is confirmed.
+Resident testing across all regimes; it continues after search and refinement finish.
 
 **Rotation**:
-One complete pass through the guard schedule.
+One pass through the configured guard schedule, whose requirements are starts.
+
+**Qualifying rotation**:
+A clean rotation covering every R1 and R2 workload on every core, every R7 workload in every part, and R3, R4, R5 and R6.
 
 **Inconclusive**:
 A trial outcome that says nothing about stability, such as a backend that failed to start.
@@ -104,54 +125,45 @@ A failure whose evidence names one core.
 A failure whose evidence names no single core.
 
 **Failed mark**:
-The shallowest offset at which a core has had an attributed failure since its last reset, or its carried mark if that is shallower.
+The shallowest offset at which a core has had an attributed failure or been named the culprit of a hunt since its last reset, or its carried mark if that is shallower.
+
+**Joint mark**:
+A failed combination of offsets on multiple cores; profiles at least as deep on every member reach the mark.
+
+**Done**:
+A core at -50, or one for which taking one more count deeper would reach a failed or joint mark. Re-evaluated when offsets or marks change.
 
 **Carried mark**:
-A failed mark a transition brings into the new session: the shallowest offset of an attributed failure of that core in the archived sessions, recorded in `session.carried` with the session and `seq` it came from. A BIOS change leaves it behind.
+A failed mark a transition brings into the new session: the shallowest offset of an attributed failure or hunt culprit of that core in the archived sessions, recorded in `session.carried` with the session and `seq` it came from. A BIOS change leaves it behind.
 
 **Edge**:
-A confirmed core's current offset; the value togi reports for entering into BIOS.
+A core's checked isolated candidate edge; resident refinement may move its offset.
 _Avoid_: stable value, optimal offset, result
 
 **Backoff**:
 Moving a core shallower after a failure.
 
 **Proven backoff**:
-A backoff caused by an attributed failure; it sets the failed mark.
+A backoff after attribution or a hunt identifies a failed offset or combination, recording its mark.
 
-**Suspect backoff**:
-A precautionary backoff caused by an unattributed failure.
-
-**Step**:
-One core at one numeric offset when measuring lost depth and retries.
-
-**Spent retry**:
-A step's single automatic-regain retry has been used; it stays spent until that core is reset.
-
-**Settled step**:
-A spent step from which the core was suspect-backed-off again; automatic regain cannot return that core to this step or deeper until reset.
-
-**Settled mark**:
-The shallowest settled offset of a core.
-
-**Unproven depth**:
-The total counts a core gave up through suspect backoffs and has not regained, including settled depth that automatic regain cannot recover.
-
-**Regain**:
-Moving a confirmed core one count deeper after a clean rotation, to retry a lost step under the resident profile.
+**Yield**:
+A refinement move to a shallower offset that allows other cores to move deeper and improve total depth.
 
 **Clean hours**:
-The duration of passed resident trials since the last profile change.
+The durations of passed resident trials after the tier clock, overall and by regime and workload.
+
+**Tier clock**:
+The later of the last profile deepening and the latest failure on a profile at least as deep as the current one. Shallower backoffs need not restart it.
 
 **Tier**:
-The durability rank of the current profile: Bronze, Silver, Gold or Platinum, or none until Bronze is earned.
+The durability rank of a done profile after a clean qualifying rotation: Bronze, Silver, Gold or Platinum; otherwise none.
 _Avoid_: score, level, stable
 
 **Certificate**:
 The rendering of a profile's tier with the evidence behind it.
 
 **Ruleset**:
-The hardcoded strategy that decides how offsets are searched, confirmed, guarded, backed off and ranked.
+The hardcoded strategy for search, hunts, refinement, guard, backoffs and tiers.
 
 **Dead end**:
 A condition under which togi cannot make progress and stops itself.

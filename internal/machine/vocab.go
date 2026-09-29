@@ -1,10 +1,13 @@
 package machine
 
+import "fmt"
+
 type Condition string
 
 const (
 	Isolated Condition = "isolated"
 	Resident Condition = "resident"
+	Masked   Condition = "masked"
 )
 
 type Signal string
@@ -58,4 +61,27 @@ type BIOSContext struct {
 	CPUModel      string `json:"cpu_model"`
 	Microcode     string `json:"microcode"`
 	BoostLimitMHz int    `json:"boost_limit_mhz"`
+}
+
+func CompareContext(recorded, current BIOSContext) (detail string, same bool) {
+	for _, f := range []struct {
+		name            string
+		recorded, found any
+	}{
+		{"bios_version", recorded.BIOSVersion, journalString(current.BIOSVersion)},
+		{"board", recorded.Board, journalString(current.Board)},
+		{"cpu_model", recorded.CPUModel, journalString(current.CPUModel)},
+		{"microcode", recorded.Microcode, journalString(current.Microcode)},
+		{"boost_limit_mhz", recorded.BoostLimitMHz, current.BoostLimitMHz},
+	} {
+		if f.recorded != f.found {
+			return fmt.Sprintf("%s is %v; the session recorded %v", f.name, f.found, f.recorded), false
+		}
+	}
+	return "matches the session", true
+}
+
+// journalString replaces each invalid UTF-8 byte with U+FFFD, as the journal's JSON encoding does to recorded values.
+func journalString(s string) string {
+	return string([]rune(s))
 }

@@ -13,15 +13,21 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/simrun"
+	"github.com/shgew/togi/internal/watch"
 )
 
 func TestStatusAndCert(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
 	simulated(t, dir)
@@ -77,9 +83,130 @@ func TestStatusAndCert(t *testing.T) {
 	if want := fmt.Sprintf("core 03 is at %d since", moved.Cores[3].Offset); !strings.Contains(out.String(), want) {
 		t.Fatalf("cert with core 03 moved lacks %q:\n%s", want, out.String())
 	}
+
+	first := 0
+	for _, e := range events {
+		if e.Kind == journal.KindProfileChange {
+			first = e.Seq
+			break
+		}
+	}
+	clocked := st
+	guard := *st.Guard
+	guard.TierClockSeq, guard.ProfileSeq, guard.CleanS = first, st.LastSeq, 24*3600-1
+	clocked.Guard = &guard
+	out.Reset()
+	writeCert(&out, events, clocked)
+	for _, want := range []string{fmt.Sprintf("Evidence since the profile change [#%d]\n", first), "Silver    23.9 of 24 clean hours"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("cert with an earlier profile change as tier clock lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestStatusJointMarkAndOpenHunt(t *testing.T) {
+	t.Parallel()
+	model := sim.DefaultModel()
+	model.PastEdgeRate = 1
+	model.Signals = map[machine.Signal]float64{machine.Crash: 1}
+	model.CrashMCE = 0
+	edges := make([]sim.Edges, 16)
+	for i := range edges {
+		edges[i].Isolated = [5]int{-10, -10, -10, -10, -10}
+		edges[i].Resident = [7]int{-10, -10, -10, -10, -10, -10, -10}
+	}
+	cfg := sim.Config{Seed: 1, Cores: 16, Edges: edges, Model: &model, Joints: []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}}
+	for _, tc := range []struct {
+		name  string
+		until journal.Kind
+	}{
+		{name: "hunt", until: journal.KindHuntMask},
+		{name: "mark"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			m, err := sim.New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			in := simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}
+			if tc.until != "" {
+				maskStarted := false
+				in.Until = func(e journal.Event) bool {
+					if e.Kind == tc.until {
+						maskStarted = true
+					}
+					return maskStarted && e.Kind == journal.KindTrialStart
+				}
+			}
+			if _, err := simrun.Simulate(context.Background(), in); err != nil {
+				t.Fatal(err)
+			}
+			events, st, _, err := replayDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.until == journal.KindHuntMask && (st.Hunt == nil || len(st.Hunt.Masks) == 0) {
+				t.Fatal("hunt fixture has no open mask")
+			}
+			if tc.until == "" && len(st.JointMarks) == 0 {
+				t.Fatal("joint fixture has no joint mark")
+			}
+			var out bytes.Buffer
+			writeStatus(&out, st, events)
+			golden(t, "status-"+tc.name, out.String())
+			frameEvents := events
+			if tc.until != "" {
+				maskStarted := false
+				for i, e := range events {
+					if e.Kind == journal.KindHuntMask {
+						maskStarted = true
+					}
+					if maskStarted && e.Kind == journal.KindTrialStart {
+						frameEvents = events[:i+1]
+						break
+					}
+				}
+			}
+			frame := watch.Render(watch.Project(frameEvents), 240, 67, frameEvents[len(frameEvents)-1].Time.Add(40*time.Second))
+			golden(t, "watch-"+tc.name+"-240x67", ansi.Strip(frame)+"\n")
+			if tc.until == "" {
+				out.Reset()
+				writeCert(&out, events, st)
+				cert := out.String()
+				raw, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				golden(t, "cert-mark", strings.ReplaceAll(cert, fmt.Sprintf("%x", sha256.Sum256(raw)), "<journal sha256>"))
+			}
+		})
+	}
+}
+
+func TestStatusOpenRefinement(t *testing.T) {
+	t.Parallel()
+	st := journal.State{
+		Session: &journal.SessionInfo{ID: "20260101T000000Z", Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)},
+		Phase:   string(journal.PhaseRefine),
+		Tier:    journal.TierNone,
+		Cores:   []journal.CoreState{{Core: 3, CCD: 0, Offset: -9, Phase: journal.PhaseDone}},
+		Refine: &journal.RefineState{
+			Round: 2, Seq: 42, Target: []int{-10}, Profile: []int{-9}, Cores: []int{3},
+			Checks: []journal.CheckState{
+				{Regime: machine.R1, Workload: "mprime-sse-4k-21k", Cores: []int{3}, Passes: 5, Needed: 5},
+				{Regime: machine.R2, Workload: "mprime-avx2-36k-248k", Cores: []int{3}, Passes: 2, Needed: 5},
+			},
+		},
+	}
+	var out bytes.Buffer
+	writeStatus(&out, st, nil)
+	golden(t, "status-refine", out.String())
 }
 
 func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
 	simulated(t, dir)

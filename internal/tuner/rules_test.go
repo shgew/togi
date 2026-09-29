@@ -1,86 +1,174 @@
 package tuner
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
 
-func search(offset int, pass, fail *int) coreState {
-	return coreState{core: 7, phase: journal.PhaseSearch, offset: offset, pass: pass, fail: fail}
-}
-
-func confirming(offset int, pass, fail *int) coreState {
-	return coreState{core: 7, phase: journal.PhaseConfirmation, offset: offset, pass: pass, fail: fail}
-}
-
-func step(from, to int, pass, fail *int, reason string) *journal.TunerDecision {
-	return &journal.TunerDecision{Core: 7, Phase: journal.PhaseSearch, Decision: journal.StepDeeper, FromOffset: from, ToOffset: to, Pass: pass, FailedMark: fail, Reason: reason}
-}
-
-func backoff(phase journal.Phase, from, to int, pass, fail *int, reason string) *journal.TunerDecision {
-	return &journal.TunerDecision{Core: 7, Phase: phase, Decision: journal.Backoff, FromOffset: from, ToOffset: to, Pass: pass, FailedMark: fail, Reason: reason}
-}
-
-func toConfirmation(offset int, pass, fail *int, reason string) *journal.CorePhase {
-	return &journal.CorePhase{Core: 7, From: journal.PhaseSearch, To: journal.PhaseConfirmation, Offset: offset, Pass: pass, FailedMark: fail, Reason: reason}
-}
-
-var deadAtZero = &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Core: new(7), Detail: "core 07 failed at CO 0; the instability is not caused by Curve Optimizer"}
-
-func TestRules(t *testing.T) {
-	t.Parallel()
+func TestMarks(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -49, fail: new(-50)}, coreStart{phase: journal.PhaseDone, offset: -49})
+	h.add(&journal.MarkJoint{Mark: 1, Hunt: 1, Members: []journal.JointMember{{Core: 0, Offset: -49}, {Core: 1, Offset: -50}}})
 	tests := []struct {
-		name string
-		rule func(coreState) journal.Payload
-		in   coreState
-		want journal.Payload
+		profile []int
+		name    string
+		marked  bool
+	}{{[]int{-49, -49}, "failed mark -50 of core 00", false}, {[]int{-50, -49}, "failed mark -50 of core 00", true}, {[]int{-49, -50}, "joint mark J1", true}}
+	for _, tt := range tests {
+		got, yes := h.s.Reaches(tt.profile)
+		if yes != tt.marked || tt.marked && got != tt.name {
+			t.Errorf("Reaches(%v) = %q,%v, want %q,%v", tt.profile, got, yes, tt.name, tt.marked)
+		}
+	}
+	if i, ok := SoleNonzero([]int{0, -10, 0}); !ok || i != 1 {
+		t.Errorf("SoleNonzero singleton = %d,%v", i, ok)
+	}
+	if _, ok := SoleNonzero([]int{-1, -1}); ok {
+		t.Fatal("joint profile has a sole nonzero offset")
+	}
+	if _, ok := h.s.done(h.s.core(0), []int{-49, -49}); !ok {
+		t.Fatal("failed mark does not make core done")
+	}
+}
+
+func TestResidentCrashNamesTheSoleNonzeroCoreByID(t *testing.T) {
+	h := &harness{t: t, s: New()}
+	infos := []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 16}}, {Core: 8, CCD: 1, CPUs: []int{8, 24}}}
+	begin := h.add(&journal.SessionStart{Schema: journal.Schema, Session: "s", Cores: infos})
+	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: config.Default()})
+	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseDone, Reason: "test"}, begin.Seq)
+	h.add(&journal.CorePhase{Core: 8, To: journal.PhaseDone, Offset: -12, Reason: "test"}, begin.Seq)
+	intent := h.add(&journal.TrialIntent{Trial: "0001", Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Cores: []int{0, 8}, Profile: []int{0, -12}})
+	h.add(&journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomeFailure, Signal: machine.Crash}, intent.Seq)
+	a, ok := h.s.Attribution()
+	if !ok {
+		t.Fatal("no attribution for the failed resident trial")
+	}
+	f := a.Payload.(*journal.Failure)
+	if diff := cmp.Diff([]any{journal.Attributed, new(8), new(-12)}, []any{f.Attribution, f.Core, f.Offset}); diff != "" {
+		t.Fatalf("attribution, core, offset (-want +got):\n%s", diff)
+	}
+}
+
+func TestOptimum(t *testing.T) {
+	tests := []struct {
+		name                       string
+		marks                      [][]int
+		profile, hi, ranking, want []int
 	}{
-		{"coarse step without failed mark", searchPass, search(-10, nil, nil), step(-10, -15, new(-10), nil, "coarse, no failed mark yet")},
-		{"coarse step clamped at the floor", searchPass, search(-47, new(-42), nil), step(-47, -50, new(-47), nil, "coarse, no failed mark yet")},
-		{"pass at the floor is the candidate", searchPass, search(-50, new(-45), nil), toConfirmation(-50, new(-50), nil, "candidate edge: -50 is the floor")},
-		{"fine step", searchPass, search(-12, new(-11), new(-15)), step(-12, -13, new(-12), new(-15), "fine, failed mark -15")},
-		{"fine step reaching the failed mark", searchPass, search(-14, new(-13), new(-15)), toConfirmation(-14, new(-14), new(-15), "candidate edge: -15 is the failed mark")},
-		{"failure without pass backs off coarse", failureRule, search(-20, nil, nil), backoff(journal.PhaseSearch, -20, -15, nil, new(-20), "coarse, no passed step")},
-		{"coarse backoff clamped at 0", failureRule, search(-3, nil, nil), backoff(journal.PhaseSearch, -3, 0, nil, new(-3), "coarse, no passed step")},
-		{"a shallower failure replaces the mark", failureRule, search(-12, nil, new(-15)), backoff(journal.PhaseSearch, -12, -7, nil, new(-12), "coarse, no passed step")},
-		{"failure with pass backs off to pass-1", failureRule, search(-15, new(-10), nil), backoff(journal.PhaseSearch, -15, -11, new(-10), new(-15), "fine, deepest pass -10")},
-		{"failure next to pass makes it the candidate", failureRule, search(-11, new(-10), new(-15)), toConfirmation(-10, new(-10), new(-11), "candidate edge: -11 is the failed mark")},
-		{"contradicted pass is discarded", failureRule, search(-18, new(-20), nil), backoff(journal.PhaseSearch, -18, -13, nil, new(-18), "coarse, no passed step; passed step at -20 discarded, the failure contradicts it")},
-		{"search failure at 0 is a dead end", failureRule, search(0, nil, nil), deadAtZero},
-		{"confirmation passes", confirmed, confirming(-14, new(-14), new(-15)),
-			&journal.CorePhase{Core: 7, From: journal.PhaseConfirmation, To: journal.PhaseConfirmed, Offset: -14, Pass: new(-14), FailedMark: new(-15), Reason: "every R1 and R2 workload, R3, R4 and R5 passed"}},
-		{"confirmation failure moves to e+1", failureRule, confirming(-14, new(-14), new(-15)),
-			backoff(journal.PhaseConfirmation, -14, -13, nil, new(-14), "confirmation restarts from R2 mprime AVX-512; passed step at -14 discarded, the failure contradicts it")},
-		{"confirmation failure keeps a shallower pass", failureRule, confirming(-14, new(-13), new(-15)),
-			backoff(journal.PhaseConfirmation, -14, -13, new(-13), new(-14), "confirmation restarts from R2 mprime AVX-512")},
-		{"confirmation failure at 0 is a dead end", failureRule, confirming(0, new(0), new(-1)), deadAtZero},
+		{"two individually legal deepenings form a joint", [][]int{{0, 1}}, []int{-49, -49}, []int{0, 0}, []int{0, 1}, []int{-50, -49}},
+		{"three-core backoff counterexample", [][]int{{0, 1}, {0, 2}}, []int{-49, -50, -50}, []int{-49, -49, -50}, []int{0, 1, 2}, []int{-49, -50, -50}},
+		{"four-core cycle global", [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}}, []int{-49, -50, -49, -50}, []int{0, 0, 0, 0}, []int{0, 1, 2, 3}, []int{-50, -49, -50, -49}},
+		{"better-ranked equal-sum later", [][]int{{0, 1}}, []int{-49, -49}, []int{0, 0}, []int{1, 0}, []int{-49, -50}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if diff := cmp.Diff(tt.want, tt.rule(tt.in)); diff != "" {
-				t.Fatalf("decision mismatch (-want +got):\n%s", diff)
+			starts := make([]coreStart, len(tt.profile))
+			for i, x := range tt.profile {
+				starts[i] = coreStart{phase: journal.PhaseDone, offset: x}
+			}
+			h := newHarness(t, starts...)
+			for i, pair := range tt.marks {
+				h.add(&journal.MarkJoint{Mark: i + 1, Hunt: i + 1, Members: []journal.JointMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
+			}
+			if got := h.s.optimum(tt.profile, tt.hi, tt.ranking); cmp.Diff(tt.want, got) != "" {
+				t.Fatalf("optimum (-want +got):\n%s", cmp.Diff(tt.want, got))
 			}
 		})
 	}
 }
 
+func TestOptimumWithStaircaseJointMarks(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -20, fail: new(-27)}, coreStart{phase: journal.PhaseDone, offset: -20, fail: new(-39)}, coreStart{phase: journal.PhaseDone, offset: -20, fail: new(-30)})
+	step := []int{-26, -38, -29}
+	for k := range 39 {
+		h.add(&journal.MarkJoint{Mark: k + 1, Hunt: k + 1, Members: []journal.JointMember{{Core: 0, Offset: step[0]}, {Core: 1, Offset: step[1]}, {Core: 2, Offset: step[2]}}})
+		step[2-k%3]++
+	}
+	var want []int
+	for a := -26; a <= 0; a++ {
+		for b := -38; b <= 0; b++ {
+			for c := -29; c <= 0; c++ {
+				p := []int{a, b, c}
+				if _, reached := h.s.reaches(p); reached || want != nil && (totalDepth(p) > totalDepth(want) || totalDepth(p) == totalDepth(want) && slices.Compare(p, want) >= 0) {
+					continue
+				}
+				want = p
+			}
+		}
+	}
+	if diff := cmp.Diff(want, h.s.optimum(h.s.offsets(), []int{0, 0, 0}, []int{0, 1, 2})); diff != "" {
+		t.Fatalf("optimum against exhaustive search (-want +got):\n%s", diff)
+	}
+}
+
+func TestFourCoreCycleNeedsGlobalYield(t *testing.T) {
+	h := newHarness(t,
+		coreStart{phase: journal.PhaseDone, offset: -49},
+		coreStart{phase: journal.PhaseDone, offset: -50},
+		coreStart{phase: journal.PhaseDone, offset: -49},
+		coreStart{phase: journal.PhaseDone, offset: -50},
+	)
+	for i, pair := range [][2]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}} {
+		h.add(&journal.MarkJoint{Mark: i + 1, Members: []journal.JointMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
+	}
+	p := h.s.offsets()
+	global := h.s.optimum(p, []int{0, 0, 0, 0}, h.s.ids())
+	if got := totalDepth(global); got != -198 {
+		t.Fatalf("global optimum %v totals %d, want -198", global, got)
+	}
+	for _, breaker := range []int{1, 3} {
+		bounded := append([]int(nil), p...)
+		bounded[breaker] = -49
+		target := h.s.optimum(bounded, bounded, h.s.ids())
+		if got := totalDepth(target); got != -197 {
+			t.Fatalf("backoff of core %d yields %v totaling %d, want -197", breaker, target, got)
+		}
+	}
+}
+
 func TestClassifyCrash(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
-		trial, applied bool
-		want           CrashKind
+		name  string
+		facts CrashFacts
+		want  CrashKind
 	}{
-		{true, true, CrashInTrial},
-		{true, false, CrashInTrial},
-		{false, true, CrashIdle},
-		{false, false, CrashStray},
+		{"trial", CrashFacts{InTrial: true}, CrashInTrial}, {"idle", CrashFacts{Applied: true}, CrashIdle}, {"stray", CrashFacts{}, CrashStray},
+		{"evidence before thermal", CrashFacts{Applied: true, Evidence: true, Reason: machine.ResetReason{Kind: machine.ResetThermalTrip}}, CrashIdle},
+		{"thermal", CrashFacts{InTrial: true, Reason: machine.ResetReason{Kind: machine.ResetThermalTrip}}, CrashThermal},
+		{"power button trial", CrashFacts{InTrial: true, Reason: machine.ResetReason{Kind: machine.ResetPowerButton}}, CrashInTrial},
+		{"power button idle", CrashFacts{Applied: true, Reason: machine.ResetReason{Kind: machine.ResetPowerButton}}, CrashInconclusive},
+		{"confirmed absent reason", CrashFacts{Applied: true, Reason: machine.ResetReason{Supported: true}, Confirmed: true}, CrashInconclusive},
+		{"unsupported absent reason", CrashFacts{Applied: true, Confirmed: true}, CrashIdle},
+		{"unconfirmed absent reason", CrashFacts{Applied: true, Reason: machine.ResetReason{Supported: true}}, CrashIdle},
+		{"unknown", CrashFacts{Reason: machine.ResetReason{Kind: machine.ResetUnknown}}, CrashStray},
 	}
 	for _, tt := range tests {
-		if got := ClassifyCrash(tt.trial, tt.applied); got != tt.want {
-			t.Errorf("ClassifyCrash(%v, %v) = %v, want %v", tt.trial, tt.applied, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ClassifyCrash(tt.facts); got != tt.want {
+				t.Fatalf("ClassifyCrash(%+v) = %d, want %d", tt.facts, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestThermalDeadEndNeedsNoEvidence(t *testing.T) {
+	h := newHarness(t, searchAt(-10)...)
+	intent := h.start(h.next())
+	h.add(&journal.TrialProgress{Trial: intent.Data.(*journal.TrialIntent).Trial, Signal: machine.ComputationError})
+	h.add(&journal.CrashDetected{PreviousBoot: "b", InFlight: new(intent.Seq), ResetReason: machine.ResetThermalTrip, ResetReasonRaw: "internal CPU thermal limit was tripped"})
+	if h.s.thermal != nil {
+		t.Fatal("recorded computation error was overridden by thermal reason")
+	}
+	h2 := newHarness(t, searchAt(-10)...)
+	h2.add(&journal.CrashDetected{PreviousBoot: "b", ResetReason: machine.ResetThermalTrip, ResetReasonRaw: "internal CPU thermal limit was tripped"})
+	a := h2.next()
+	p, ok := a.Payload.(*journal.DeadEnd)
+	if !ok || p.Condition != journal.DeadEndThermalTrip {
+		t.Fatalf("thermal dead end %+v", a)
 	}
 }
