@@ -3,6 +3,7 @@ package sim
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,6 +180,34 @@ func TestScriptsAndClocks(t *testing.T) {
 	}
 }
 
+func TestScriptThenCrashReportsOnlyBackendSignals(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		signal machine.Signal
+		want   []machine.Signal
+	}{
+		{"crash", machine.Crash, nil},
+		{"computation error", machine.ComputationError, []machine.Signal{machine.ComputationError}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m := newMachine(t, Config{Cores: 2, Script: map[string]Outcome{"0001": {Signal: tc.signal, Core: 0, ThenCrash: true}}})
+			report := &signalRecorder{}
+			_, err := runSpec(t, m, "0001", machine.R7, machine.PickWorkload(machine.R7, 0), []int{0}, time.Second, report)
+			if !errors.Is(err, machine.ErrCrashed) {
+				t.Fatalf("scripted crash: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, report.signals); diff != "" {
+				t.Fatalf("reported signals (-want +got): %s", diff)
+			}
+			if _, err := m.Seams().Host.BootID(); !errors.Is(err, machine.ErrCrashed) {
+				t.Fatalf("host after crash: %v", err)
+			}
+		})
+	}
+}
+
 type signalRecorder struct{ signals []machine.Signal }
 
 func (*signalRecorder) Progress(string)       {}
@@ -231,8 +260,27 @@ func TestFaultsAndRanking(t *testing.T) {
 	m.Reboot()
 	boot, _ = m.Seams().Host.BootID()
 	reason, _ = m.Seams().Kernel.ResetReason(boot)
-	if reason.Kind != machine.ResetPowerButton || reason.Supported {
+	if reason.Kind != "" || reason.Supported || reason.Raw != "" {
 		t.Fatalf("old kernel power button: %+v", reason)
+	}
+}
+
+func TestOldKernelDoesNotReportResetKind(t *testing.T) {
+	t.Parallel()
+	m := newMachine(t, Config{Cores: 2, OldKernel: true})
+	m.NextReset(machine.ResetThermalTrip)
+	m.Crash()
+	m.Reboot()
+	boot, err := m.Seams().Host.BootID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reason, err := m.Seams().Kernel.ResetReason(boot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(machine.ResetReason{}, reason); diff != "" {
+		t.Fatalf("unsupported reset reason (-want +got): %s", diff)
 	}
 }
 
@@ -341,5 +389,98 @@ then_crash = true
 	}
 	if _, err := LoadMachine(path); err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "unknown") {
 		t.Fatalf("unknown key error: %v", err)
+	}
+}
+
+func TestNewRejectsInvalidScriptCore(t *testing.T) {
+	t.Parallel()
+	for _, core := range []int{-1, 2} {
+		_, err := New(Config{Cores: 2, Script: map[string]Outcome{"0001": {Signal: machine.Crash, Core: core}}})
+		want := fmt.Sprintf("new simulator: script trial 0001 core %d outside [0, 2)", core)
+		if err == nil || err.Error() != want {
+			t.Fatalf("core %d: got %v, want %s", core, err, want)
+		}
+	}
+}
+
+func TestNewRejectsInvalidModelWeights(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		signals map[machine.Signal]float64
+		reset   map[machine.ResetKind]float64
+		want    string
+	}{
+		{"signal unknown sorted", map[machine.Signal]float64{"z": 1, "a": 1}, nil, `new simulator: signal "a" is not supported`},
+		{"signal negative sorted", map[machine.Signal]float64{machine.Stall: -1, machine.ComputationError: -2}, nil, `new simulator: signal "computation_error" weight -2 is negative`},
+		{"reset unknown sorted", nil, map[machine.ResetKind]float64{"z": 1, "a": 1}, `new simulator: reset "a" is not supported`},
+		{"reset negative sorted", nil, map[machine.ResetKind]float64{machine.ResetWatchdog: -1, machine.ResetThermalTrip: -2}, `new simulator: reset "thermal_trip" weight -2 is negative`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			model := DefaultModel()
+			if tc.signals != nil {
+				model.Signals = tc.signals
+			}
+			if tc.reset != nil {
+				model.Reset = tc.reset
+			}
+			_, err := New(Config{Cores: 2, Model: &model})
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("got %v, want %s", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadMachineRejectsInvalidCoreCountBeforeEdges(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "machine.toml")
+	if err := os.WriteFile(path, []byte("cores = -2\n[[core]]\nid = 0\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadMachine(path)
+	want := fmt.Sprintf("load simulator machine %s: new simulator: -2 cores: must be even and at least 2", path)
+	if err == nil || err.Error() != want {
+		t.Fatalf("got %v, want %s", err, want)
+	}
+}
+
+func TestLoadMachineBIOSContext(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		content string
+		want    machine.BIOSContext
+	}{
+		{"unset", "cores = 2\n", machine.BIOSContext{}},
+		{"present", "cores = 2\n[bios_context]\nbios_version = \"B.2\"\nboard = \"X670\"\ncpu_model = \"Zen 5\"\nmicrocode = \"0x123\"\nboost_limit_mhz = 5900\n", machine.BIOSContext{BIOSVersion: "B.2", Board: "X670", CPUModel: "Zen 5", Microcode: "0x123", BoostLimitMHz: 5900}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "machine.toml")
+			if err := os.WriteFile(path, []byte(tc.content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadMachine(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tc.want, cfg.BIOSContext); diff != "" {
+				t.Fatalf("BIOS context (-want +got): %s", diff)
+			}
+			m := newMachine(t, cfg)
+			context, err := m.Seams().Host.BIOSContext()
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected := tc.want
+			if expected == (machine.BIOSContext{}) {
+				expected = defaultBIOSContext
+			}
+			if diff := cmp.Diff(expected, context); diff != "" {
+				t.Fatalf("host BIOS context (-want +got): %s", diff)
+			}
+		})
 	}
 }

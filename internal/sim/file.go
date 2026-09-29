@@ -10,11 +10,18 @@ import (
 
 func LoadMachine(path string) (Config, error) {
 	var f struct {
-		Cores     int   `toml:"cores"`
-		BIOS      []int `toml:"bios"`
-		Ranking   []int `toml:"ranking"`
-		OldKernel bool  `toml:"old_kernel"`
-		Model     struct {
+		Cores       int   `toml:"cores"`
+		BIOS        []int `toml:"bios"`
+		Ranking     []int `toml:"ranking"`
+		OldKernel   bool  `toml:"old_kernel"`
+		BIOSContext *struct {
+			BIOSVersion   string `toml:"bios_version"`
+			Board         string `toml:"board"`
+			CPUModel      string `toml:"cpu_model"`
+			Microcode     string `toml:"microcode"`
+			BoostLimitMHz int    `toml:"boost_limit_mhz"`
+		} `toml:"bios_context"`
+		Model struct {
 			PastEdgeRate  *float64                      `toml:"past_edge_rate"`
 			Growth        *float64                      `toml:"growth"`
 			NearEdgeRate  *float64                      `toml:"near_edge_rate"`
@@ -57,6 +64,15 @@ func LoadMachine(path string) (Config, error) {
 		return Config{}, fmt.Errorf("load simulator machine %s: unknown key %s", path, keys[0])
 	}
 	cfg := Config{Cores: f.Cores, BIOS: f.BIOS, Ranking: f.Ranking, OldKernel: f.OldKernel}
+	if f.BIOSContext != nil {
+		cfg.BIOSContext = machine.BIOSContext{
+			BIOSVersion:   f.BIOSContext.BIOSVersion,
+			Board:         f.BIOSContext.Board,
+			CPUModel:      f.BIOSContext.CPUModel,
+			Microcode:     f.BIOSContext.Microcode,
+			BoostLimitMHz: f.BIOSContext.BoostLimitMHz,
+		}
+	}
 	model := DefaultModel()
 	set := func(dst *float64, src *float64) {
 		if src != nil {
@@ -80,6 +96,9 @@ func LoadMachine(path string) (Config, error) {
 	if f.Core != nil {
 		if cfg.Cores == 0 {
 			cfg.Cores = 16
+		}
+		if err := validateCores(cfg.Cores); err != nil {
+			return Config{}, fmt.Errorf("load simulator machine %s: new simulator: %w", path, err)
 		}
 		cfg.Edges = make([]Edges, cfg.Cores)
 		seen := make([]bool, cfg.Cores)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"slices"
@@ -134,12 +135,19 @@ type Machine struct {
 	wroteThisBoot    bool
 }
 
+func validateCores(cores int) error {
+	if cores < 2 || cores%2 != 0 {
+		return fmt.Errorf("%d cores: must be even and at least 2", cores)
+	}
+	return nil
+}
+
 func New(cfg Config) (*Machine, error) {
 	if cfg.Cores == 0 {
 		cfg.Cores = 16
 	}
-	if cfg.Cores < 2 || cfg.Cores%2 != 0 {
-		return nil, fmt.Errorf("new simulator: %d cores: must be even and at least 2", cfg.Cores)
+	if err := validateCores(cfg.Cores); err != nil {
+		return nil, fmt.Errorf("new simulator: %w", err)
 	}
 	if cfg.BIOS == nil {
 		cfg.BIOS = make([]int, cfg.Cores)
@@ -162,6 +170,29 @@ func New(cfg Config) (*Machine, error) {
 	start := epoch
 	if !cfg.Start.IsZero() {
 		start = cfg.Start
+	}
+	for _, signal := range slices.Sorted(maps.Keys(model.Signals)) {
+		weight := model.Signals[signal]
+		if !slices.Contains(signalOrder, signal) {
+			return nil, fmt.Errorf("new simulator: signal %q is not supported", signal)
+		}
+		if weight < 0 {
+			return nil, fmt.Errorf("new simulator: signal %q weight %g is negative", signal, weight)
+		}
+	}
+	for _, kind := range slices.Sorted(maps.Keys(model.Reset)) {
+		weight := model.Reset[kind]
+		if !slices.Contains(resetOrder, kind) {
+			return nil, fmt.Errorf("new simulator: reset %q is not supported", kind)
+		}
+		if weight < 0 {
+			return nil, fmt.Errorf("new simulator: reset %q weight %g is negative", kind, weight)
+		}
+	}
+	for _, trial := range slices.Sorted(maps.Keys(cfg.Script)) {
+		if core := cfg.Script[trial].Core; core < 0 || core >= cfg.Cores {
+			return nil, fmt.Errorf("new simulator: script trial %s core %d outside [0, %d)", trial, core, cfg.Cores)
+		}
 	}
 	m := &Machine{
 		cfg:             cfg,
@@ -509,7 +540,10 @@ func (k kernel) ResetReason(boot string) (machine.ResetReason, error) {
 }
 
 func resetReason(kind machine.ResetKind, supported bool) machine.ResetReason {
-	reason := machine.ResetReason{Kind: kind, Supported: supported}
+	if !supported {
+		return machine.ResetReason{}
+	}
+	reason := machine.ResetReason{Kind: kind, Supported: true}
 	var text string
 	var code uint32
 	switch kind {
@@ -528,7 +562,7 @@ func resetReason(kind machine.ResetKind, supported bool) machine.ResetReason {
 	case machine.ResetPowerLoss:
 		reason.Kind = ""
 	}
-	if supported && text != "" {
+	if text != "" {
 		reason.Raw = fmt.Sprintf("x86/amd: Previous system reset reason [0x%08x]: %s", code, text)
 	}
 	return reason

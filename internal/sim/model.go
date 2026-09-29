@@ -161,7 +161,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 	}
 	if scripted && script.ThenCrash {
 		m.now = start.Add(failAt)
-		if report != nil {
+		if report != nil && signal != machine.Crash {
 			report.Signal(failCore, signal, fmt.Sprintf("simulated %s on core %d", signal, failCore))
 		}
 		if script.Reset != "" {

@@ -27,7 +27,7 @@ go run ./cmd/togi --state-dir <dir> watch
 
 Fault injection, explicit edges and the failure model are a Go API for tests (`sim.Config`, `sim.Edges`, `sim.Model` and the methods on `sim.Machine`); `internal/sim/doc.go` describes the model. `internal/simrun` drives a session on the simulator across its crashes for tests that need a simulated journal.
 
-A machine file sets any subset of `sim.Config`: the core count, BIOS context, ranking, model parameters, per-core edges, joints and scripted outcomes; unset keys keep the seeded defaults, and an unknown key is an error. This one adds a pair that crashes only when cores 03 and 11 are both at −30 or deeper under R7:
+A machine file sets the core count, BIOS context, ranking, model parameters, per-core edges, joints and scripted outcomes; unset keys keep the seeded defaults, and an unknown key is an error. If it specifies any per-core edges, it must provide a `[[core]]` table for every core. Set `[bios_context]` with `bios_version`, `board`, `cpu_model`, `microcode` and `boost_limit_mhz` to override the simulator's BIOS context. This one adds a pair that crashes only when cores 03 and 11 are both at −30 or deeper under R7:
 
 ```toml
 cores = 16
