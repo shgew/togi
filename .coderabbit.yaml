@@ -17,14 +17,7 @@ reviews:
   slop_detection:
     enabled: true
   auto_review:
-    enabled: true
-    drafts: false
-    base_branches:
-      - ".*"
-    auto_incremental_review: true
-    auto_pause_after_reviewed_commits: 5
-    ignore_usernames:
-      - dependabot[bot]
+    enabled: false
   path_filters:
     - "!go.sum"
     - "!flake.lock"
