@@ -123,6 +123,46 @@ func TestJournalFailureReportsFailedEmergencyZeroAndReadbacks(t *testing.T) {
 	}
 }
 
+type unwritableState struct{ Journal }
+
+func (unwritableState) ReadState() (journal.State, error) {
+	return journal.State{}, errors.New("no state file")
+}
+func (unwritableState) WriteState(journal.State) error { return errors.New("simulated full disk") }
+
+type unzeroable struct{ machine.SMU }
+
+func (unzeroable) SetAllOffsets(int) error { return errors.New("simulated emergency zeroing failure") }
+
+func TestStateRewriteFailureOnResumeReadsEveryCoreBack(t *testing.T) {
+	t.Parallel()
+	cfg := small()
+	cfg.BIOS = []int{-10, -20}
+	m := newSim(t, cfg)
+	in := simInput(t.TempDir(), m)
+	simulate(t, in)
+	m.Reboot()
+	seams := m.Seams()
+	boot, err := seams.Host.BootID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: m.Now, Monotonic: m.Monotonic, Build: Build()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.Close()
+	seams.SMU = unzeroable{seams.SMU}
+	var stderr bytes.Buffer
+	if _, err := Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: unwritableState{wrapFor(in, nil)(j)}, Machine: seams, Rotations: 1, Stderr: &stderr}); err == nil {
+		t.Fatal("run succeeded without a writable state file")
+	}
+	want := "togi: journal write failed: simulated full disk; setting every core to CO 0 without an intent failed: simulated emergency zeroing failure (readback: core 00 reads -10, core 01 reads -20)\n"
+	if diff := cmp.Diff(want, stderr.String()); diff != "" {
+		t.Fatalf("stderr (-want +got):\n%s", diff)
+	}
+}
+
 type trackedTrials struct {
 	machine.Trials
 	active *int

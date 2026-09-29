@@ -216,12 +216,19 @@ func (r *runner) latch(err error) error {
 	zeroErr := r.in.Machine.SMU.SetAllOffsets(0)
 	status := "readback all 0"
 	var problems []string
-	for _, c := range r.cores {
-		o, readErr := r.in.Machine.SMU.Offset(c.Core)
+	ids := r.fold.ids
+	if len(r.cores) > 0 {
+		ids = make([]int, len(r.cores))
+		for i, c := range r.cores {
+			ids[i] = c.Core
+		}
+	}
+	for _, core := range ids {
+		o, readErr := r.in.Machine.SMU.Offset(core)
 		if readErr != nil {
-			problems = append(problems, fmt.Sprintf("core %02d unreadable: %v", c.Core, readErr))
+			problems = append(problems, fmt.Sprintf("core %02d unreadable: %v", core, readErr))
 		} else if o != 0 {
-			problems = append(problems, fmt.Sprintf("core %02d reads %d", c.Core, o))
+			problems = append(problems, fmt.Sprintf("core %02d reads %d", core, o))
 		}
 	}
 	if len(problems) > 0 {
