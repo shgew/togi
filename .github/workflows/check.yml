@@ -11,29 +11,14 @@ permissions:
 concurrency:
   group: check-${{ github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   eval:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
     outputs:
       checks: ${{ steps.list.outputs.checks }}
     steps:
-      - name: Cancel superseded runs
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}
-          runs=$(gh run list --workflow check.yml --branch "$branch" --event "$GITHUB_EVENT_NAME" --status in_progress --limit 100 \
-            --json databaseId,headSha,number | jq -r --arg head "$HEAD_SHA" --argjson number "$GITHUB_RUN_NUMBER" \
-            '.[] | select(.headSha != $head and .number < $number) | .databaseId')
-          for run in $runs; do
-            gh run cancel "$run"
-          done
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
       - name: nix flake check --no-build
