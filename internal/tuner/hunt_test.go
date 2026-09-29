@@ -79,6 +79,8 @@ func TestAllZeroHuntAnchorOmitsZeroCause(t *testing.T) {
 }
 func TestHuntPairAndCommitmentResume(t *testing.T) {
 	h := huntHarness(t, 4, 120)
+	var probes []journal.JointMember
+	var end *journal.HuntEnd
 	for range 200 {
 		replay := New()
 		for _, e := range h.events {
@@ -93,25 +95,39 @@ func TestHuntPairAndCommitmentResume(t *testing.T) {
 			if mask.Mask == 1 && !slices.Equal(mask.Cores, []int{2, 3}) {
 				t.Fatalf("recent mark did not move its part first: %v", mask.Cores)
 			}
+			if mask.Edge != nil {
+				probes = append(probes, *mask.Edge)
+			}
 			continue
 		}
 		if a.Kind == RunTrial {
-			fail := slices.Equal(a.Trial.Profile, []int{-30, -30, 0, 0})
-			runMask(h, a, fail)
+			p := a.Trial.Profile
+			runMask(h, a, p[0] <= -30 && p[1] <= -20 && p[2] == 0 && p[3] == 0)
 			continue
 		}
-		if end, ok := a.Payload.(*journal.HuntEnd); ok {
-			if end.Result != "joint" || cmp.Diff([]int{0, 1}, end.Cores) != "" {
-				t.Fatalf("hunt result %+v", end)
-			}
+		if e, ok := a.Payload.(*journal.HuntEnd); ok {
+			end = e
 			h.decide(a)
 			break
 		}
 		t.Fatalf("unexpected action %+v", a)
 	}
+	if end == nil || end.Result != "joint" || cmp.Diff([]int{0, 1}, end.Cores) != "" {
+		t.Fatalf("hunt result %+v", end)
+	}
+	if diff := cmp.Diff([]journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -20}}, end.Members); diff != "" {
+		t.Errorf("probed members (-want +got):\n%s", diff)
+	}
+	want := []journal.JointMember{{Core: 0, Offset: -29}}
+	for _, offset := range []int{-29, -28, -26, -22, -14, -18, -20, -19} {
+		want = append(want, journal.JointMember{Core: 1, Offset: offset})
+	}
+	if diff := cmp.Diff(want, probes); diff != "" {
+		t.Errorf("edge probes (-want +got):\n%s", diff)
+	}
 	mark := h.next()
 	p, ok := mark.Payload.(*journal.MarkJoint)
-	if !ok || cmp.Diff([]journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}, p.Members) != "" {
+	if !ok || cmp.Diff([]journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -20}}, p.Members) != "" {
 		t.Fatalf("mark %+v", mark)
 	}
 	h.decide(mark)
@@ -124,8 +140,8 @@ func TestHuntPairAndCommitmentResume(t *testing.T) {
 	}
 	back := h.next()
 	d, ok := back.Payload.(*journal.TunerDecision)
-	if !ok || d.Decision != journal.Backoff || d.Phase != journal.PhaseHunt {
-		t.Fatalf("commitment %+v", back)
+	if !ok || d.Decision != journal.Backoff || d.Phase != journal.PhaseHunt || d.Core != 0 || d.ToOffset != -29 {
+		t.Fatalf("commitment %+v", d)
 	}
 	h.decide(back)
 	if h.s.hunt != nil {
@@ -145,7 +161,7 @@ func TestHuntFallbackAndFullCheck(t *testing.T) {
 		reason    string
 	}{
 		{"fallback", 120, false, "fallback", "no tested mask failed, so the remaining candidates stay unresolved and are marked together"},
-		{"full failure", 600, true, "joint", "masked trial outcomes isolated the minimal failing set"},
+		{"full failure", 600, true, "joint", "masked trial outcomes isolated the minimal failing set; edge probes found it still failing at core 00 -30 + core 01 -30 and passing with any one member a count shallower"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := huntHarness(t, 2, tc.duration)

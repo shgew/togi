@@ -92,8 +92,8 @@ Plan kinds and their payloads (optional fields are omitted when empty):
 |---|---|---|
 | `host.ranking` | `ranking` (preferred cores), `values` (raw per core), `detail` (fallback) | `preferred cores 03 11 …` or `preferred-core ranking unavailable (<detail>); core-id order` |
 | `hunt.start` | `hunt`, `failure` seq, optional `trial`, `regime`, `workload`, loaded `cores`, `duration_s`, `failing`, `anchor`, `anchor_seq` (0 for all-zero), `candidates`, `starts`, `start_s`, `miss`, `rate`, `ranking` | `hunt 3: unattributed crash in resident R7 trial 0412; anchor from rotation end #811; candidates 00 01 …; masks of 5 × 120s` |
-| `hunt.mask` | `hunt`, `mask`, `cores`, `profile`, `set`, `granularity`, `stage` (`part`, `complement`, `full`), `index`, `duration_s`, optional `escalated`, `full_checked`, `any_failed`, `inferred` (`pass` or `failure`), `skipped`, `reason` | `hunt 3 mask 4: cores 08-11 at failing offsets, the rest at the anchor; 5 × 120s R7 starts` |
-| `hunt.end` | `hunt`, `result` (`culprit`, `joint`, `fallback`, `direct`, `cancelled`), optional `cores`, `masks`, `reason` | `hunt 3 found core 13 after 4 masks` |
+| `hunt.mask` | `hunt`, `mask`, `cores`, `profile`, `set`, `granularity`, `stage` (`part`, `complement`, `full`, `edge`), `index`, `duration_s`, optional `escalated`, `full_checked`, `any_failed`, `edge` (probed `core` and `offset`) and `held` (the other members' `core` and `offset`, also listed in `cores`), `inferred` (`pass` or `failure`), `skipped`, `reason` | `hunt 3 mask 4: cores 08-11 at failing offsets, the rest at the anchor; 5 × 120s R7 starts` or `hunt 3 mask 9: core 11 at -22 with core 03 -40, the rest at the anchor; …` |
+| `hunt.end` | `hunt`, `result` (`culprit`, `joint`, `fallback`, `direct`, `cancelled`), optional `cores`, `members` (each member's shallowest failing `core` and `offset`, on a probed `joint`), `masks`, `reason` | `hunt 3 found core 13 after 4 masks` |
 | `hunt.skipped` | `failure` seq, `reason` | `failure #904 is not hunted: <reason>` |
 | `mark.joint` | `mark`, `members` (`core`, `offset` pairs), optional `fallback`, `hunt`, `reason` | `joint mark J2: core 03 -40 + core 11 -30, observed in hunt 4` (or `…, fallback over every candidate of hunt 4`) |
 | `refine.round` | `round`, `event` (`start`, `end`); start: `anchor`, `anchor_seq`, `target`, proposed `profile`, changed `cores`, `ranking`, `starts`, `start_s`; end: optional `passed`, `reason` | `refine round 2 start: 5 cores toward …` / `refine round 2 end: passed` |
@@ -135,7 +135,7 @@ The first entry, ID 1, is the false failure on power-off fixed in [#14](https://
 - `in_flight`: most recent intent without a result, or null;
 - `dead_end`: condition and sequence, or null (cleared on the next `config.loaded`);
 - `joint_marks[]`: `mark`, `members` (core/offset pairs), `fallback`, `hunt`, `seq`;
-- `hunt`: null or `hunt`, `seq`, `failure`, `regime`, `trial`, `anchor`, `anchor_seq`, `candidates`, `escalated`, `masks[]` (`mask`, `seq`, `cores`, `outcome` running/pass/failure/skipped, `passes`, `needed`);
+- `hunt`: null or `hunt`, `seq`, `failure`, `regime`, `trial`, `anchor`, `anchor_seq`, `candidates`, `escalated`, `masks[]` (`mask`, `seq`, `cores`, optional `edge` and `held`, `outcome` running/pass/failure/skipped, `passes`, `needed`);
 - `refine`: null or `round`, `seq`, `target`, `profile`, `cores`, `checks[]` (`regime`, `workload`, `cores`, `passes`, `needed`);
 - `guard`: null before the first `profile.change`; then rotation progress, profile, `qualifying`, `missing`, `tier_clock_seq`, `clean_rotations`, `clean_s`, regime exposure and bound, `exposure[]` (`regime`, `workload`, `starts`, `clean_s`, `rate_bound_per_h`), and highest counted Tctl. Bounds are `3 / clean hours`, rounded up to 4 decimals, null without hours;
 - `tier` and `tier_seq`, or `none` and 0 before the first change.

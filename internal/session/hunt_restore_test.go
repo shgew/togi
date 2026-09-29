@@ -89,9 +89,6 @@ func TestRestoreAfterJointHuntCommitmentNeverReachesMark(t *testing.T) {
 	if !slices.Equal(mark.Members, []journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}) {
 		t.Fatalf("joint members %+v", mark.Members)
 	}
-	if !slices.ContainsFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindProfileRestored }) {
-		t.Fatal("stop after hunt commitment did not restore the nonzero baseline")
-	}
 	regs := slices.Clone(cfg.BIOS)
 	sawMark := false
 	for _, e := range events {
@@ -112,6 +109,9 @@ func TestRestoreAfterJointHuntCommitmentNeverReachesMark(t *testing.T) {
 		if sawMark && regs[0] <= -30 && regs[1] <= -30 {
 			t.Fatalf("readback after joint mark reaches mark: %v (event %d)", regs, e.Seq)
 		}
+	}
+	if want := []int{-30, -29, 0, 0}; !slices.Equal(regs, want) {
+		t.Fatalf("registers after stop %v, want each core's baseline or its shallower resident offset %v", regs, want)
 	}
 	for core := range cfg.BIOS {
 		got, err := in.Machine.Seams().SMU.Offset(core)

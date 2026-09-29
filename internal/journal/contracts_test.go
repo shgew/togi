@@ -25,6 +25,7 @@ func TestNewPayloadMessagesAndStyles(t *testing.T) {
 		{&HuntMask{Hunt: 4, Mask: 2, Cores: []int{3}, Inferred: "pass", Reason: "complement failed"}, "hunt 4 mask 2: cores 03 pass inferred: complement failed", Plain},
 		{&HuntMask{Hunt: 4, Mask: 3, Cores: []int{11}, Inferred: "failure", Reason: "complement passed"}, "hunt 4 mask 3: cores 11 failure inferred: complement passed", Plain},
 		{&HuntMask{Hunt: 4, Mask: 4, Cores: []int{3, 11}, DurationS: 120}, "hunt 4 mask 4: cores 03, 11 at failing offsets, the rest at the anchor; starts of 120s", Plain},
+		{&HuntMask{Hunt: 4, Mask: 5, Cores: []int{3}, Edge: &JointMember{Core: 11, Offset: -22}, Held: []JointMember{{Core: 3, Offset: -40}}, DurationS: 120}, "hunt 4 mask 5: core 11 at -22 with core 03 -40, the rest at the anchor; starts of 120s", Plain},
 		{&HuntSkipped{Failure: 904, Reason: "already marked"}, "failure #904 is not hunted: already marked", Plain},
 		{&HuntEnd{Hunt: 3, Result: "culprit", Cores: []int{13}, Masks: 4}, "hunt 3 found core 13 after 4 masks", Green},
 		{&MarkJoint{Mark: 2, Members: []JointMember{{Core: 3, Offset: -40}, {Core: 11, Offset: -30}}, Hunt: 4}, "joint mark J2: core 03 -40 + core 11 -30, observed in hunt 4", Yellow},

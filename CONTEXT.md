@@ -88,6 +88,9 @@ The phase that finds and checks a core's candidate edge with isolated R1 and R2 
 **Hunt**:
 Masked trials that identify the core or combination behind an unattributed failure.
 
+**Edge probe**:
+A hunt's masked trial after it finds a combination: one member moves between its failing and anchor offsets while the other members stay failing, to find how shallow that member must be for the combination to pass. Each member is probed in turn.
+
 **Refinement**:
 Rounds that move the resident profile toward the greatest total depth permitted by its marks.
 

@@ -98,12 +98,14 @@ type HuntState struct {
 }
 
 type MaskState struct {
-	Mask    int    `json:"mask"`
-	Seq     int    `json:"seq"`
-	Cores   []int  `json:"cores"`
-	Outcome string `json:"outcome"`
-	Passes  int    `json:"passes"`
-	Needed  int    `json:"needed"`
+	Mask    int           `json:"mask"`
+	Seq     int           `json:"seq"`
+	Cores   []int         `json:"cores"`
+	Edge    *JointMember  `json:"edge,omitempty"`
+	Held    []JointMember `json:"held,omitempty"`
+	Outcome string        `json:"outcome"`
+	Passes  int           `json:"passes"`
+	Needed  int           `json:"needed"`
 }
 
 type RefineState struct {

@@ -2,7 +2,9 @@ package tuner
 
 import (
 	"fmt"
+	"math"
 	"slices"
+	"strings"
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -168,7 +170,13 @@ type maskPlan struct {
 	stage                             string
 	index, duration                   int
 	escalated, fullChecked, anyFailed bool
+	edge                              *journal.JointMember
+	held                              []journal.JointMember
 	result                            bool
+}
+
+func planOf(m *journal.HuntMask) maskPlan {
+	return maskPlan{set: m.Set, cores: m.Cores, g: m.Granularity, stage: m.Stage, index: m.Index, duration: m.DurationS, escalated: m.Escalated, fullChecked: m.FullChecked, anyFailed: m.AnyFailed, edge: m.Edge, held: m.Held}
 }
 
 func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
@@ -176,7 +184,11 @@ func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
 	if len(p.set) == 0 {
 		return p, false
 	}
-	if len(h.masks) == 0 {
+	split := slices.IndexFunc(h.masks, func(m maskRecord) bool { return m.payload.Edge != nil })
+	if split < 0 {
+		split = len(h.masks)
+	}
+	if split == 0 {
 		if len(p.set) == 1 {
 			p.result = true
 			return p, false
@@ -184,7 +196,7 @@ func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
 		p.cores = s.split(h, p.set, p.g)[0]
 		return p, true
 	}
-	last := h.masks[len(h.masks)-1]
+	last := h.masks[split-1]
 	m := last.payload
 	p = maskPlan{set: slices.Clone(m.Set), g: m.Granularity, stage: m.Stage, index: m.Index, duration: m.DurationS, escalated: m.Escalated, fullChecked: m.FullChecked, anyFailed: m.AnyFailed}
 	outcome := s.maskOutcome(h, last)
@@ -300,7 +312,7 @@ func (s *State) huntNext() (Action, bool) {
 		m := h.masks[len(h.masks)-1]
 		if s.maskOutcome(h, m) == "running" {
 			if mark, ok := s.reaches(m.payload.Profile); ok {
-				return Action{Kind: Decide, Payload: s.makeMask(h, maskPlan{set: m.payload.Set, cores: m.payload.Cores, g: m.payload.Granularity, stage: m.payload.Stage, index: m.payload.Index, duration: m.payload.DurationS, escalated: m.payload.Escalated, fullChecked: m.payload.FullChecked, anyFailed: m.payload.AnyFailed}, m.payload.Mask, "", true, "its profile reaches "+mark), Cause: []int{m.seq}}, true
+				return Action{Kind: Decide, Payload: s.makeMask(h, planOf(m.payload), m.payload.Mask, "", true, "its profile reaches "+mark), Cause: []int{m.seq}}, true
 			}
 			if s.retry != nil && s.retry.Hunt == h.start.Hunt && s.retry.Mask == m.payload.Mask {
 				return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{m.seq}}, true
@@ -310,36 +322,37 @@ func (s *State) huntNext() (Action, bool) {
 		}
 	}
 	next, has := s.nextMaskPlan(h)
-	if !has {
-		result, reason := "joint", "masked trial outcomes isolated the minimal failing set"
-		if len(next.set) == 1 {
-			result = "culprit"
-		} else if !next.anyFailed {
-			result, reason = "fallback", "no tested mask failed, so the remaining candidates stay unresolved and are marked together"
+	if has {
+		return s.planMask(h, next, "testing the part of the failing profile"), true
+	}
+	result, reason := "joint", "masked trial outcomes isolated the minimal failing set"
+	var members []journal.JointMember
+	switch {
+	case len(next.set) == 1:
+		result = "culprit"
+	case !next.anyFailed:
+		result, reason = "fallback", "no tested mask failed, so the remaining candidates stay unresolved and are marked together"
+	default:
+		probe, found, clause, probing := s.nextEdge(h, next)
+		if probing {
+			return s.planMask(h, probe, fmt.Sprintf("probing how shallow core %02d must be for the combination to pass", probe.edge.Core)), true
 		}
-		return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: result, Cores: slices.Clone(next.set), Masks: len(h.masks), Reason: reason}, Cause: []int{h.seq}}, true
+		members, reason = found, reason+clause
 	}
-	profile := slices.Clone(h.start.Anchor)
-	for _, id := range next.cores {
-		profile[s.index(id)] = h.start.Failing[s.index(id)]
+	return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: result, Cores: slices.Clone(next.set), Members: members, Masks: len(h.masks), Reason: reason}, Cause: []int{h.seq}}, true
+}
+
+func (s *State) planMask(h *hunt, p maskPlan, reason string) Action {
+	payload := s.makeMask(h, p, len(h.masks)+1, "", false, reason)
+	k := h.class.withDuration(p.duration)
+	if s.passes(k, payload.Profile, h.seq) >= h.start.Starts {
+		payload.Inferred, payload.Reason = "pass", "passing starts already establish the mask"
+	} else if s.fails(k, payload.Profile, h.seq) {
+		payload.Inferred, payload.Reason = "failure", "a known failure establishes the mask"
+	} else if mark, ok := s.reaches(payload.Profile); ok {
+		payload.Skipped, payload.Reason = true, "its profile reaches "+mark
 	}
-	k := h.class.withDuration(next.duration)
-	inferred := ""
-	skipped := false
-	reason := "testing the part of the failing profile"
-	if s.passes(k, profile, h.seq) >= h.start.Starts {
-		inferred = "pass"
-		reason = "passing starts already establish the mask"
-	} else if s.fails(k, profile, h.seq) {
-		inferred = "failure"
-		reason = "a known failure establishes the mask"
-	} else if mark, ok := s.reaches(profile); ok {
-		skipped = true
-		reason = "its profile reaches " + mark
-	}
-	payload := s.makeMask(h, next, len(h.masks)+1, inferred, skipped, reason)
-	payload.Profile = profile
-	return Action{Kind: Decide, Payload: payload, Cause: []int{h.seq}}, true
+	return Action{Kind: Decide, Payload: payload, Cause: []int{h.seq}}
 }
 
 func (s *State) makeMask(h *hunt, p maskPlan, number int, inferred string, skipped bool, reason string) *journal.HuntMask {
@@ -347,7 +360,104 @@ func (s *State) makeMask(h *hunt, p maskPlan, number int, inferred string, skipp
 	for _, id := range p.cores {
 		profile[s.index(id)] = h.start.Failing[s.index(id)]
 	}
-	return &journal.HuntMask{Hunt: h.start.Hunt, Mask: number, Cores: slices.Clone(p.cores), Profile: profile, Set: slices.Clone(p.set), Granularity: p.g, Stage: p.stage, Index: p.index, DurationS: p.duration, Escalated: p.escalated, FullChecked: p.fullChecked, AnyFailed: p.anyFailed, Inferred: inferred, Skipped: skipped, Reason: reason}
+	var edge *journal.JointMember
+	if p.edge != nil {
+		edge = new(*p.edge)
+		for _, m := range p.held {
+			profile[s.index(m.Core)] = m.Offset
+		}
+		profile[s.index(edge.Core)] = edge.Offset
+	}
+	return &journal.HuntMask{Hunt: h.start.Hunt, Mask: number, Cores: slices.Clone(p.cores), Profile: profile, Set: slices.Clone(p.set), Granularity: p.g, Stage: p.stage, Index: p.index, DurationS: p.duration, Escalated: p.escalated, FullChecked: p.fullChecked, AnyFailed: p.anyFailed, Edge: edge, Held: slices.Clone(p.held), Inferred: inferred, Skipped: skipped, Reason: reason}
+}
+
+func (s *State) nextEdge(h *hunt, joint maskPlan) (maskPlan, []journal.JointMember, string, bool) {
+	members := make([]journal.JointMember, 0, len(joint.set))
+	for _, id := range joint.set {
+		i := s.index(id)
+		if s.guard.profile[i] > h.start.Failing[i] {
+			return maskPlan{}, nil, "", false
+		}
+		members = append(members, journal.JointMember{Core: id, Offset: h.start.Failing[i]})
+	}
+	probes := 0
+	for k := range members {
+		core := members[k].Core
+		i := s.index(core)
+		lo, hi := h.start.Failing[i], h.start.Anchor[i]
+		failed, passed := 0, false
+		for _, m := range h.masks {
+			if m.payload.Edge == nil || m.payload.Edge.Core != core {
+				continue
+			}
+			probes++
+			switch s.maskOutcome(h, m) {
+			case "failure":
+				lo = max(lo, m.payload.Edge.Offset)
+				failed++
+			case "pass":
+				hi = min(hi, m.payload.Edge.Offset)
+				passed = true
+			default:
+				members[k].Offset = lo
+				return maskPlan{}, members, "; edge probes stopped at a skipped mask with it failing at " + jointOffsets(members), false
+			}
+		}
+		members[k].Offset = lo
+		if hi-lo <= 1 {
+			continue
+		}
+		probe := lo + (hi-lo)/2
+		if gallop := h.start.Failing[i] + 1<<failed; !passed && gallop < hi {
+			probe = gallop
+		}
+		held := slices.Delete(slices.Clone(members), k, k+1)
+		cores := make([]int, len(held))
+		for j, m := range held {
+			cores[j] = m.Core
+		}
+		return maskPlan{set: slices.Clone(joint.set), cores: cores, g: joint.g, stage: "edge", index: probes, duration: joint.duration, escalated: joint.escalated, fullChecked: joint.fullChecked, anyFailed: true, edge: &journal.JointMember{Core: core, Offset: probe}, held: held}, nil, "", true
+	}
+	return maskPlan{}, members, "; edge probes found it still failing at " + jointOffsets(members) + " and passing with any one member a count shallower", false
+}
+
+func jointOffsets(members []journal.JointMember) string {
+	parts := make([]string, len(members))
+	for i, m := range members {
+		parts[i] = fmt.Sprintf("core %02d %d", m.Core, m.Offset)
+	}
+	return strings.Join(parts, " + ")
+}
+
+func (s *State) huntRanking(h *hunt) []int {
+	if len(h.start.Ranking) != len(s.cores) {
+		return s.ids()
+	}
+	return h.start.Ranking
+}
+
+func (s *State) jointBackoff(members []journal.JointMember, rank []int) (journal.JointMember, int, bool) {
+	p := s.offsets()
+	var chosen journal.JointMember
+	bestSum, bestRank, found := math.MaxInt, -1, false
+	for _, m := range members {
+		candidate := slices.Clone(p)
+		i := s.index(m.Core)
+		candidate[i] = max(candidate[i], m.Offset+1)
+		target := s.optimum(candidate, candidate, rank)
+		if target == nil {
+			continue
+		}
+		total := 0
+		for _, v := range target {
+			total += v
+		}
+		order := slices.Index(rank, m.Core)
+		if total < bestSum || total == bestSum && order > bestRank {
+			bestSum, chosen, bestRank, found = total, m, order, true
+		}
+	}
+	return chosen, -bestSum, found
 }
 
 func (s *State) huntCommitment(h *hunt) (Action, bool) {
@@ -377,9 +487,11 @@ func (s *State) huntCommitment(h *hunt) (Action, bool) {
 		}
 	}
 	if marked == nil {
-		members := make([]journal.JointMember, 0, len(end.Cores))
-		for _, id := range end.Cores {
-			members = append(members, journal.JointMember{Core: id, Offset: h.start.Failing[s.index(id)]})
+		members := slices.Clone(end.Members)
+		if members == nil {
+			for _, id := range end.Cores {
+				members = append(members, journal.JointMember{Core: id, Offset: h.start.Failing[s.index(id)]})
+			}
 		}
 		reason := fmt.Sprintf("hunt %d found a combined failure", h.start.Hunt)
 		for _, m := range members {
@@ -396,39 +508,13 @@ func (s *State) huntCommitment(h *hunt) (Action, bool) {
 			return Action{}, false
 		}
 	}
-	rank := h.start.Ranking
-	if len(rank) != len(s.cores) {
-		rank = s.ids()
-	}
-	p := s.offsets()
-	chosen := -1
-	bestSum := int(^uint(0) >> 1)
-	bestRank := -1
-	for _, m := range marked.Members {
-		c := s.core(m.Core)
-		candidate := slices.Clone(p)
-		i := s.index(m.Core)
-		candidate[i] = max(candidate[i], m.Offset+1)
-		target := s.optimum(candidate, candidate, rank)
-		if target == nil {
-			continue
-		}
-		total := 0
-		for _, v := range target {
-			total += v
-		}
-		order := slices.Index(rank, c.id)
-		if total < bestSum || total == bestSum && order > bestRank {
-			bestSum, chosen, bestRank = total, c.id, order
-		}
-	}
-	if chosen < 0 {
+	chosen, reach, ok := s.jointBackoff(marked.Members, s.huntRanking(h))
+	if !ok {
 		return Action{}, false
 	}
-	c := s.core(chosen)
-	x := h.start.Failing[s.index(chosen)]
-	to := max(c.offset, x+1)
-	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: chosen, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailedMark: c.fail, Reason: fmt.Sprintf("joint mark J%d: backing off core %02d leaves %d counts reachable", marked.Mark, chosen, -bestSum)}, Cause: []int{marked.Seq}}, true
+	c := s.core(chosen.Core)
+	to := max(c.offset, chosen.Offset+1)
+	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailedMark: c.fail, Reason: fmt.Sprintf("joint mark J%d: backing off core %02d leaves %d counts reachable", marked.Mark, c.id, reach)}, Cause: []int{marked.Seq}}, true
 }
 
 func (s *State) projectHunt() *journal.HuntState {
@@ -440,6 +526,10 @@ func (s *State) projectHunt() *journal.HuntState {
 	out := &journal.HuntState{Hunt: p.Hunt, Seq: h.seq, Failure: p.Failure, Regime: p.Regime, Trial: p.Trial, Anchor: slices.Clone(p.Anchor), AnchorSeq: p.AnchorSeq, Candidates: slices.Clone(p.Candidates)}
 	for _, m := range h.masks {
 		state := journal.MaskState{Mask: m.payload.Mask, Seq: m.seq, Cores: slices.Clone(m.payload.Cores), Outcome: s.maskOutcome(h, m), Needed: p.Starts}
+		if m.payload.Edge != nil {
+			state.Edge = new(*m.payload.Edge)
+			state.Held = slices.Clone(m.payload.Held)
+		}
 		since := m.seq
 		if m.payload.Inferred != "" {
 			since = h.seq

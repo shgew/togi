@@ -181,7 +181,15 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		tw := newTable(w)
 		fmt.Fprintln(tw, "MASK\tCORES\tOUTCOME\tSTARTS")
 		for _, m := range h.Masks {
-			fmt.Fprintf(tw, "M%d\t%s\t%s\t%d/%d\n", m.Mask, coreIDs(m.Cores), m.Outcome, m.Passes, m.Needed)
+			cores := coreIDs(m.Cores)
+			if m.Edge != nil {
+				held := make([]string, len(m.Held))
+				for i, h := range m.Held {
+					held[i] = fmt.Sprintf("%02d at %d", h.Core, h.Offset)
+				}
+				cores = fmt.Sprintf("%02d at %d with %s", m.Edge.Core, m.Edge.Offset, strings.Join(held, ", "))
+			}
+			fmt.Fprintf(tw, "M%d\t%s\t%s\t%d/%d\n", m.Mask, cores, m.Outcome, m.Passes, m.Needed)
 		}
 		_ = tw.Flush()
 	}
