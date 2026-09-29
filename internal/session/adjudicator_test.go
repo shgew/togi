@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -161,4 +162,52 @@ func TestInterruptedBackendFailureWithoutReset(t *testing.T) {
 		t.Fatalf("interrupted backend failure without a reset: %+v", end)
 	}
 	t.Logf("same-boot interruption: outcome=%s signal=%s reason=%q", end.Outcome, end.Signal, end.Reason)
+}
+
+type missingBootKernel struct {
+	machine.Kernel
+	mces []machine.MCE
+}
+
+func (k missingBootKernel) MCEs(boot string, _ time.Duration) ([]machine.MCE, error) {
+	return k.mces, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)
+}
+
+func TestRunnerMissingCurrentBoot(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		signal  machine.Signal
+		mces    []machine.MCE
+		outcome journal.Outcome
+		want    machine.Signal
+	}{
+		{"missing", "", nil, journal.OutcomeInconclusive, ""},
+		{"computation error", machine.ComputationError, nil, journal.OutcomeFailure, machine.ComputationError},
+		{"stall", machine.Stall, nil, journal.OutcomeFailure, machine.Stall},
+		{"early exit", machine.UnexpectedExit, nil, journal.OutcomeFailure, machine.UnexpectedExit},
+		{"mce", "", []machine.MCE{{Core: 0, Corrected: true, Lines: []string{"test machine check"}}}, journal.OutcomeFailure, machine.CorrectedMCE},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := simInput(t.TempDir(), newSim(t, small()))
+			seams := in.Machine.Seams()
+			seams.Trials = evidenceTrials{Trials: seams.Trials, result: machine.Result{Ran: 24 * time.Hour, Signal: tc.signal}}
+			seams.Kernel = missingBootKernel{Kernel: seams.Kernel, mces: tc.mces}
+			if _, err := runWithSeams(context.Background(), in, seams); err != nil {
+				t.Fatal(err)
+			}
+			for _, ev := range readEvents(t, in.Dir) {
+				if end, ok := ev.Data.(*journal.TrialEnd); ok {
+					if diff := cmp.Diff(tc.outcome, end.Outcome); diff != "" {
+						t.Fatal(diff)
+					}
+					if diff := cmp.Diff(tc.want, end.Signal); diff != "" {
+						t.Fatal(diff)
+					}
+					t.Logf("current boot missing: outcome=%s signal=%q", end.Outcome, end.Signal)
+					return
+				}
+			}
+			t.Fatal("no trial end")
+		})
+	}
 }

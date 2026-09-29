@@ -181,6 +181,13 @@ type vacuumedKernel struct {
 	gone string
 }
 
+func (k vacuumedKernel) MCEs(boot string, since time.Duration) ([]machine.MCE, error) {
+	if boot == k.gone {
+		return nil, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)
+	}
+	return k.Kernel.MCEs(boot, since)
+}
+
 func (k vacuumedKernel) ResetReason(boot string) (machine.ResetReason, error) {
 	if boot == k.gone {
 		return machine.ResetReason{}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)

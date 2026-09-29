@@ -363,6 +363,9 @@ func (r *runner) readMCEs(ctx context.Context, boot string) ([]machine.MCE, erro
 	}
 	for {
 		mces, err := r.in.Machine.Kernel.MCEs(boot, 0)
+		if boot != r.in.Boot && errors.Is(err, machine.ErrBootMissing) {
+			return mces, nil
+		}
 		if err == nil || errors.Is(err, machine.ErrCrashed) {
 			return mces, err
 		}

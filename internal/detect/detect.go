@@ -53,7 +53,10 @@ func (k *Kernel) MCEs(boot string, since time.Duration) ([]machine.MCE, error) {
 		return nil, fmt.Errorf("read kernel log of boot %s: %w: %s", boot, err, bytes.TrimSpace(stderr))
 	}
 	if code != 0 {
-		if code == 1 && (bytes.Contains(stderr, noBootEntry) || len(out) == 0 && len(stderr) == 0) {
+		if code == 1 && bytes.Contains(stderr, noBootEntry) {
+			return nil, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)
+		}
+		if code == 1 && len(out) == 0 && len(stderr) == 0 {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("read kernel log of boot %s: exit status %d: %s", boot, code, bytes.TrimSpace(stderr))
