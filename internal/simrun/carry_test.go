@@ -27,6 +27,11 @@ func ruleset3Session(t *testing.T) (dir, id string) {
 	if _, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}); err != nil {
 		t.Fatal(err)
 	}
+	return dir, stampRuleset3(t, dir)
+}
+
+func stampRuleset3(t *testing.T, dir string) string {
+	t.Helper()
 	path := filepath.Join(dir, "events.jsonl")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -44,7 +49,7 @@ func ruleset3Session(t *testing.T) (dir, id string) {
 	if err != nil || stamp.Ruleset != 3 {
 		t.Fatalf("scan: %+v, %v", stamp, err)
 	}
-	return dir, id
+	return id
 }
 
 func simulateAgain(t *testing.T, dir string, cfg sim.Config, c config.Config) (session.Stop, []journal.Event) {
@@ -214,5 +219,153 @@ func TestACarriedMarkAtZeroDeadEndsTheCore(t *testing.T) {
 	stop, _ := simulateAgain(t, dir, sim.Config{Seed: 1}, config.Default())
 	if stop.Reason != session.StopDeadEnd || stop.DeadEnd.Condition != journal.DeadEndFailureAtZero || stop.DeadEnd.Core == nil || *stop.DeadEnd.Core != 0 {
 		t.Fatalf("stopped with %+v, want core 00 dead-ended at CO 0", stop)
+	}
+}
+
+func TestBIOSArchiveInterruptedBeforeMoveResumesCarry(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(4)
+	m, err := sim.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	c := quickMatrixConfig()
+	c.CandidateEdges = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
+	in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}
+	stopAfterIsolatedPasses(&in, 4)
+	if _, err := Simulate(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	_, id, err := journal.Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.SetBIOSContext(machine.BIOSContext{BIOSVersion: "changed", Board: "sim", CPUModel: "sim", Microcode: "0x2", BoostLimitMHz: 5500})
+	m.Reboot()
+	j, err := journal.OpenForArchive(dir, journal.Options{Boot: "interrupted", Now: m.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, archiveErr := j.ArchiveForCarry(id)
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if archiveErr != nil {
+		t.Fatal(archiveErr)
+	}
+	if err := os.Rename(filepath.Join(dir, rel), filepath.Join(dir, "events.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	in.Until = func(e journal.Event) bool { return e.Kind == journal.KindSessionCarried }
+	if _, err := Simulate(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || torn != nil {
+		t.Fatalf("read new session: %v, torn %q", err, torn)
+	}
+	carried := carriedEvent(t, events)
+	if carried.Marks || len(carried.Carried) == 0 || carried.Sources[0].Session != id {
+		t.Fatalf("interrupted BIOS archive carry %+v", carried)
+	}
+	if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
+		t.Fatalf("interrupted archive was not finished: %v", err)
+	}
+}
+
+func TestRulesetTransitionCarriesCulpritAndDirectHuntMarks(t *testing.T) {
+	t.Parallel()
+	for _, result := range []string{"culprit", "direct"} {
+		t.Run(result, func(t *testing.T) {
+			t.Parallel()
+			cfg := huntConfig(4)
+			c := config.Default()
+			if result == "culprit" {
+				for i := range cfg.Edges {
+					cfg.Edges[i].Isolated = [5]int{-50, -50, -50, -50, -50}
+					cfg.Edges[i].Resident = [7]int{-50, -50, -50, -50, -50, -50, -50}
+				}
+				cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
+				c.CandidateEdges = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
+			} else {
+				cfg.Edges[1].Resident[6] = -5
+			}
+			finished := false
+			_, source, dir := runHunt(t, cfg, nil, func(in *Input) {
+				in.Config = c
+				in.Until = func(e journal.Event) bool {
+					if p, ok := e.Data.(*journal.HuntEnd); ok && p.Result == result && len(p.Cores) == 1 && p.Cores[0] == 1 {
+						finished = true
+						return result == "direct"
+					}
+					if p, ok := e.Data.(*journal.TunerDecision); ok && finished && result == "culprit" && p.Phase == journal.PhaseHunt && p.Decision == journal.Backoff && p.Core == 1 {
+						return true
+					}
+					return false
+				}
+			})
+			end, ok := findPayload(source, func(p *journal.HuntEnd) bool {
+				return p.Result == result && len(p.Cores) == 1 && p.Cores[0] == 1
+			})
+			if !ok {
+				t.Fatalf("no %s hunt on core 1", result)
+			}
+			start, ok := findPayload(source, func(p *journal.HuntStart) bool { return p.Hunt == end.Hunt })
+			if !ok {
+				t.Fatal("missing hunt start")
+			}
+			wantOffset := start.Failing[1]
+			markSeq := 0
+			signal := machine.Crash
+			if result == "culprit" {
+				for _, e := range source {
+					if p, ok := e.Data.(*journal.HuntEnd); ok && p.Hunt == end.Hunt {
+						markSeq = e.Seq
+					}
+				}
+			} else {
+				for _, e := range source {
+					if p, ok := e.Data.(*journal.Failure); ok && p.Core != nil && *p.Core == 1 && p.Offset != nil && *p.Offset == wantOffset {
+						markSeq, signal = e.Seq, p.Signal
+					}
+				}
+			}
+			if markSeq == 0 {
+				t.Fatalf("%s hunt has no mark source", result)
+			}
+			id := stampRuleset3(t, dir)
+			resumed, err := sim.Resume(dir, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m, err := sim.New(resumed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Simulate(context.Background(), Input{
+				Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m,
+				Until: func(e journal.Event) bool { return e.Kind == journal.KindSessionCarried },
+			}); err != nil {
+				t.Fatal(err)
+			}
+			events, _, err := journal.Read(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			carried := carriedEvent(t, events)
+			if !carried.Marks || carried.Sources[0].Session != id {
+				t.Fatalf("%s carry %+v", result, carried)
+			}
+			var mark *journal.CarriedCore
+			for i := range carried.Carried {
+				if carried.Carried[i].Core == 1 {
+					mark = &carried.Carried[i]
+				}
+			}
+			if mark == nil || mark.FailedMark == nil || *mark.FailedMark != wantOffset || mark.MarkSeq != markSeq || mark.MarkSignal != signal {
+				t.Fatalf("%s carried core 1 %+v, want offset %d from #%d (%s)", result, mark, wantOffset, markSeq, signal)
+			}
+		})
 	}
 }

@@ -13,6 +13,7 @@ import (
 )
 
 func TestSixteenCoresReachBronze(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, err := sim.New(sim.Config{Seed: 1})
 	if err != nil {

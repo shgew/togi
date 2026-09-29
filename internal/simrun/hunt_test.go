@@ -1,8 +1,9 @@
 package simrun
 
 import (
+	"bytes"
 	"context"
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -55,6 +56,26 @@ func runHunt(t *testing.T, cfg sim.Config, setup func(*sim.Machine), tweak func(
 	return stop, events, dir
 }
 
+func stopAfterIsolatedPasses(in *Input, cores int) {
+	trials := map[string]int{}
+	passed := map[int]bool{}
+	in.Until = func(e journal.Event) bool {
+		switch p := e.Data.(type) {
+		case *journal.TrialIntent:
+			if p.Condition == machine.Isolated && p.Core != nil {
+				trials[p.Trial] = *p.Core
+			}
+		case *journal.TrialEnd:
+			if p.Outcome == journal.OutcomePass {
+				if core, ok := trials[p.Trial]; ok {
+					passed[core] = true
+				}
+			}
+		}
+		return len(passed) == cores
+	}
+}
+
 func findPayload[P journal.Payload](events []journal.Event, accept func(P) bool) (P, bool) {
 	var zero P
 	for _, e := range events {
@@ -67,6 +88,7 @@ func findPayload[P journal.Payload](events []journal.Event, accept func(P) bool)
 }
 
 func TestHuntAllZeroAnchor(t *testing.T) {
+	t.Parallel()
 	cfg := huntConfig(16)
 	cfg.Edges[11].Resident[6] = -5
 	stop, events, _ := runHunt(t, cfg, nil, nil)
@@ -93,6 +115,7 @@ func TestHuntAllZeroAnchor(t *testing.T) {
 }
 
 func TestHuntCulpritAfterQualifiedAnchor(t *testing.T) {
+	t.Parallel()
 	cfg := huntConfig(4)
 	for i := range cfg.Edges {
 		cfg.Edges[i].Isolated = [5]int{-50, -50, -50, -50, -50}
@@ -120,7 +143,73 @@ func TestHuntCulpritAfterQualifiedAnchor(t *testing.T) {
 	}
 }
 
+func TestAnchorOffsetBackendFailureChoosesOlderAnchor(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(4)
+	for i := range cfg.Edges {
+		cfg.Edges[i].Isolated = [5]int{-50, -50, -50, -50, -50}
+		cfg.Edges[i].Resident = [7]int{-50, -50, -50, -50, -50, -50, -50}
+	}
+	cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
+	candidates := func(in *Input) {
+		in.Config.CandidateEdges = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
+	}
+	_, probe, _ := runHunt(t, cfg, nil, candidates)
+	first, ok := findPayload(probe, func(p *journal.HuntStart) bool { return p.AnchorSeq > 0 })
+	if !ok {
+		t.Fatal("no qualified anchor")
+	}
+	var mask *journal.HuntMask
+	var trial string
+	for _, e := range probe {
+		switch p := e.Data.(type) {
+		case *journal.HuntMask:
+			if p.Hunt == first.Hunt && mask == nil && len(p.Cores) < len(first.Candidates) {
+				mask = p
+			}
+		case *journal.TrialIntent:
+			if mask != nil && p.Hunt == first.Hunt && p.Mask == mask.Mask {
+				trial = p.Trial
+			}
+		}
+		if trial != "" {
+			break
+		}
+	}
+	if mask == nil || trial == "" {
+		t.Fatal("no partially masked trial")
+	}
+	held := -1
+	for _, core := range first.Candidates {
+		if !slices.Contains(mask.Cores, core) && first.Anchor[core] != 0 {
+			held = core
+			break
+		}
+	}
+	if held < 0 {
+		t.Fatalf("no held core at a nonzero anchor: %+v", mask)
+	}
+	cfg.Script = map[string]sim.Outcome{trial: {Signal: machine.ComputationError, Core: held, AtS: 1}}
+	_, events, _ := runHunt(t, cfg, nil, candidates)
+	end, ok := findPayload(events, func(p *journal.HuntEnd) bool {
+		return p.Hunt == first.Hunt && p.Result == "direct" && cmp.Diff([]int{held}, p.Cores) == ""
+	})
+	if !ok {
+		t.Fatalf("hunt did not directly attribute held core %d, end %+v", held, end)
+	}
+	if _, ok := findPayload(events, func(p *journal.TunerDecision) bool {
+		return p.Core == held && p.Decision == journal.Backoff && p.FailedMark != nil && *p.FailedMark == first.Anchor[held]
+	}); !ok {
+		t.Fatalf("no failed mark at core %d anchor %d", held, first.Anchor[held])
+	}
+	next, ok := findPayload(events, func(p *journal.HuntStart) bool { return p.Hunt > first.Hunt })
+	if !ok || next.AnchorSeq >= first.AnchorSeq {
+		t.Fatalf("next hunt %+v, want an anchor older than #%d", next, first.AnchorSeq)
+	}
+}
+
 func TestHuntJointMark(t *testing.T) {
+	t.Parallel()
 	cfg := huntConfig(16)
 	cfg.Joints = []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
 	_, events, _ := runHunt(t, cfg, nil, nil)
@@ -151,6 +240,7 @@ func TestHuntJointMark(t *testing.T) {
 }
 
 func TestDelayedHuntEscalates(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		regime machine.Regime
@@ -164,15 +254,25 @@ func TestDelayedHuntEscalates(t *testing.T) {
 			cfg := huntConfig(4)
 			cfg.Joints = []sim.Joint{{Members: map[int]int{1: -10}, Regimes: []machine.Regime{tc.regime}, AfterS: tc.after, Rate: 10}}
 			_, events, _ := runHunt(t, cfg, nil, nil)
-			escalated, full, resolved := false, false, false
+			fullPasses, escalated, resolved := 0, false, false
+			fullTrials := map[string]bool{}
+			fullMask := map[[2]int]bool{}
 			for _, e := range events {
 				switch p := e.Data.(type) {
 				case *journal.HuntMask:
-					if p.Stage == "full" {
-						full = true
+					if p.Stage == "full" && !p.Escalated {
+						fullMask[[2]int{p.Hunt, p.Mask}] = true
 					}
-					if p.Escalated && p.DurationS >= tc.long {
+					if p.Escalated && p.DurationS == tc.long {
 						escalated = true
+					}
+				case *journal.TrialIntent:
+					if p.Hunt > 0 && fullMask[[2]int{p.Hunt, p.Mask}] {
+						fullTrials[p.Trial] = true
+					}
+				case *journal.TrialEnd:
+					if fullTrials[p.Trial] && p.Outcome == journal.OutcomePass {
+						fullPasses++
 					}
 				case *journal.HuntEnd:
 					if (p.Result == "culprit" || p.Result == "direct") && cmp.Diff([]int{1}, p.Cores) == "" {
@@ -180,10 +280,68 @@ func TestDelayedHuntEscalates(t *testing.T) {
 					}
 				}
 			}
-			if !full || !escalated || !resolved {
-				t.Fatalf("full mask %t, escalation %t, resolved core 1 %t", full, escalated, resolved)
+			if fullPasses != 5 || !escalated || !resolved {
+				t.Fatalf("full passes %d, escalation %t, resolved core 1 %t", fullPasses, escalated, resolved)
 			}
 		})
+	}
+}
+
+func TestFlatFailureRestartsSilverTierClock(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(4)
+	cfg.Edges[2].Flat = 1 / (30 * 3600.0)
+	c := config.Default()
+	c.Durations.GuardTrialS = 3600
+	c.Durations.GuardIdleS = 3600
+	c.Durations.GuardAllCoreS = 3600
+	silver := false
+	failed := false
+	_, events, dir := runHunt(t, cfg, nil, func(in *Input) {
+		in.Config = c
+		in.Rotations = 0
+		in.Until = func(e journal.Event) bool {
+			switch p := e.Data.(type) {
+			case *journal.TierChange:
+				silver = silver || p.To == journal.TierSilver
+			case *journal.Failure:
+				failed = failed || silver && p.Attribution == journal.Unattributed
+			case *journal.ProfileChange:
+				return failed
+			}
+			return false
+		}
+	})
+	if !silver || !failed {
+		t.Fatalf("silver tier %t, subsequent failure %t", silver, failed)
+	}
+	var failureSeq int
+	seenSilver := false
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.TierChange:
+			if failureSeq > 0 && (p.To == journal.TierSilver || p.To == journal.TierGold) {
+				t.Errorf("tier %s at #%d reuses pre-failure exposure", p.To, e.Seq)
+			}
+			seenSilver = seenSilver || p.To == journal.TierSilver
+		case *journal.Failure:
+			if seenSilver && failureSeq == 0 {
+				failureSeq = e.Seq
+			}
+		}
+	}
+	if failureSeq == 0 {
+		t.Fatal("no failure after silver")
+	}
+	state, err := journal.ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(failureSeq, state.Guard.TierClockSeq); diff != "" {
+		t.Errorf("tier clock (-want +got):\n%s", diff)
+	}
+	if state.Guard.CleanS >= 24*3600 || state.Guard.RateBoundPerH != nil && *state.Guard.RateBoundPerH <= 3.0/24 {
+		t.Errorf("post-failure exposure includes old hours: %+v", state.Guard)
 	}
 }
 
@@ -224,14 +382,136 @@ func TestResetReasonPowerButtonAndThermal(t *testing.T) {
 	}
 }
 
+type resetAtEvent struct {
+	session.Journal
+	machine *sim.Machine
+	kind    journal.Kind
+	reset   machine.ResetKind
+	fired   *bool
+}
+
+func (j *resetAtEvent) Append(p journal.Payload, cause ...int) (journal.Event, error) {
+	e, err := j.Journal.Append(p, cause...)
+	if err == nil && !*j.fired && e.Kind == j.kind {
+		*j.fired = true
+		j.machine.NextReset(j.reset)
+		j.machine.Crash()
+		return e, machine.ErrCrashed
+	}
+	return e, err
+}
+
+func TestThermalTripWhileTrialRunningDeadEnds(t *testing.T) {
+	t.Parallel()
+	fired := false
+	var m *sim.Machine
+	stop, events, _ := runHunt(t, huntConfig(4), func(machine *sim.Machine) { m = machine }, func(in *Input) {
+		in.Wrap = func(j session.Journal) session.Journal {
+			return &resetAtEvent{Journal: j, machine: m, kind: journal.KindTrialStart, reset: machine.ResetThermalTrip, fired: &fired}
+		}
+	})
+	if !fired || stop.Reason != session.StopDeadEnd || stop.DeadEnd == nil || stop.DeadEnd.Condition != journal.DeadEndThermalTrip {
+		t.Fatalf("thermal trip fired %t, stop %+v", fired, stop)
+	}
+	if p, ok := findPayload(events, func(p *journal.CrashDetected) bool {
+		return p.ResetReason == machine.ResetThermalTrip && p.Inconclusive
+	}); !ok || p.InFlight == nil {
+		t.Fatalf("missing in-flight thermal crash: %+v", p)
+	}
+	if _, ok := findPayload(events, func(p *journal.Failure) bool { return true }); ok {
+		t.Fatal("thermal trip recorded as tuning failure")
+	}
+}
+
+func TestPowerButtonBetweenTrialsIsInconclusive(t *testing.T) {
+	t.Parallel()
+	fired := false
+	var m *sim.Machine
+	_, events, _ := runHunt(t, huntConfig(4), func(machine *sim.Machine) { m = machine }, func(in *Input) {
+		in.Wrap = func(j session.Journal) session.Journal {
+			return &resetAtEvent{Journal: j, machine: m, kind: journal.KindTrialEnd, reset: machine.ResetPowerButton, fired: &fired}
+		}
+		in.Until = func(e journal.Event) bool {
+			p, ok := e.Data.(*journal.CrashDetected)
+			return ok && p.ResetReason == machine.ResetPowerButton
+		}
+	})
+	if !fired {
+		t.Fatal("no between-trials power-button crash")
+	}
+	crash, ok := findPayload(events, func(p *journal.CrashDetected) bool { return p.ResetReason == machine.ResetPowerButton })
+	if !ok || !crash.Inconclusive {
+		t.Fatalf("power-button crash %+v, want inconclusive", crash)
+	}
+	if _, ok := findPayload(events, func(p *journal.Failure) bool { return true }); ok {
+		t.Fatal("power-button crash between trials recorded a tuning failure")
+	}
+}
+
+type jumpAtTrialStart struct {
+	session.Journal
+	machine *sim.Machine
+	jumped  bool
+}
+
+func (j *jumpAtTrialStart) Append(p journal.Payload, cause ...int) (journal.Event, error) {
+	e, err := j.Journal.Append(p, cause...)
+	if err == nil && !j.jumped && e.Kind == journal.KindTrialStart {
+		j.machine.JumpWall(-2 * time.Hour)
+		j.jumped = true
+	}
+	return e, err
+}
+
+func TestClockJumpDoesNotLoseTrialMCE(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(4)
+	cfg.Script = map[string]sim.Outcome{"0001": {Signal: machine.CorrectedMCE, AtS: 2, Core: 0}}
+	m, err := sim.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	jump := &jumpAtTrialStart{machine: m}
+	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1,
+		Wrap:  func(j session.Journal) session.Journal { jump.Journal = j; return jump },
+		Until: func(e journal.Event) bool { return e.Kind == journal.KindTrialEnd },
+	}
+	if _, err := Simulate(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	events, _, err := journal.Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !jump.jumped {
+		t.Fatal("wall clock was not moved after trial start")
+	}
+	start, ok := findPayload(events, func(p *journal.TrialIntent) bool { return p.Trial == "0001" })
+	if !ok {
+		t.Fatal("missing scripted trial")
+	}
+	end, ok := findPayload(events, func(p *journal.TrialEnd) bool { return p.Trial == start.Trial })
+	if !ok || end.Outcome != journal.OutcomeFailure || end.Signal != machine.CorrectedMCE {
+		t.Fatalf("trial end %+v, want corrected MCE failure", end)
+	}
+	if _, ok := findPayload(events, func(p *journal.MCE) bool { return p.Corrected }); !ok {
+		t.Fatal("corrected machine check was lost after the wall clock jump")
+	}
+}
+
 func TestBIOSChangeArchivesAndChecksEdges(t *testing.T) {
+	t.Parallel()
 	cfg := huntConfig(4)
 	m, err := sim.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}
+	c := quickMatrixConfig()
+	c.CandidateEdges = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
+	in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}
+	stopAfterIsolatedPasses(&in, 4)
 	if _, err := Simulate(context.Background(), in); err != nil {
 		t.Fatal(err)
 	}
@@ -242,6 +522,13 @@ func TestBIOSChangeArchivesAndChecksEdges(t *testing.T) {
 	id := old[0].Data.(*journal.SessionStart).Session
 	m.SetBIOSContext(machine.BIOSContext{BIOSVersion: "new", Board: "sim", CPUModel: "sim", Microcode: "0x2", BoostLimitMHz: 5500})
 	m.Reboot()
+	phases := 0
+	in.Until = func(e journal.Event) bool {
+		if p, ok := e.Data.(*journal.CorePhase); ok && p.From == "" {
+			phases++
+		}
+		return phases == 4
+	}
 	if _, err := Simulate(context.Background(), in); err != nil {
 		t.Fatal(err)
 	}
@@ -289,18 +576,188 @@ func TestJournalUntilCancelsAfterFirstMatchingAppend(t *testing.T) {
 	}
 }
 
-type crashOnAppend struct {
+func TestPowerLossDuringHuntResume(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(4)
+	cfg.Joints = []sim.Joint{{Members: map[int]int{1: -10, 3: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
+	runInterruptionMatrix(t, "hunt", cfg, quickMatrixConfig(),
+		func(e journal.Event) bool { return e.Kind == journal.KindHuntStart },
+		func(e journal.Event, closing *bool) bool {
+			if e.Kind == journal.KindHuntEnd {
+				*closing = true
+			}
+			return *closing && e.Kind == journal.KindProfileChange
+		})
+}
+
+func TestPowerLossDuringRefineResume(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(4)
+	for i := range cfg.Edges {
+		cfg.Edges[i].Isolated = [5]int{-50, -50, -50, -50, -50}
+		cfg.Edges[i].Resident = [7]int{-50, -50, -50, -50, -50, -50, -50}
+	}
+	c := quickMatrixConfig()
+	runInterruptionMatrix(t, "refine", cfg, c,
+		func(e journal.Event) bool {
+			p, ok := e.Data.(*journal.RefineRound)
+			return ok && p.Event == journal.RotationStart
+		},
+		func(e journal.Event, _ *bool) bool {
+			p, ok := e.Data.(*journal.RefineRound)
+			return ok && p.Event == journal.RotationEnd
+		})
+}
+
+func quickMatrixConfig() config.Config {
+	c := config.Default()
+	c.CandidateEdges = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
+	c.Evidence.Miss = .5
+	c.Durations.SearchTrialS = 1
+	c.Durations.StartS = 1
+	c.Durations.GuardTrialS = 1
+	c.Durations.GuardIdleS = 1
+	c.Durations.GuardAllCoreS = 1
+	return c
+}
+
+func runInterruptionMatrix(t *testing.T, name string, cfg sim.Config, c config.Config, open func(journal.Event) bool, closeWindow func(journal.Event, *bool) bool) {
+	t.Helper()
+	started := time.Now()
+	_, prefix, _ := runHunt(t, cfg, nil, func(in *Input) {
+		in.Config = c
+		in.Rotations = 0
+		in.Until = open
+	})
+	openIndex := slices.IndexFunc(prefix, open)
+	if openIndex < 0 {
+		t.Fatalf("%s prefix missing opening event", name)
+	}
+	prefix = prefix[:openIndex+1]
+	lines := make([][]byte, len(prefix))
+	for i, e := range prefix {
+		lines[i] = e.Raw
+	}
+	snapshot := map[string][]byte{"events.jsonl": append(bytes.Join(lines, []byte{'\n'}), '\n')}
+	var boots []string
+	reasons := map[string]machine.ResetKind{}
+	for _, e := range prefix {
+		if !slices.Contains(boots, e.Boot) {
+			boots = append(boots, e.Boot)
+		}
+		if p, ok := e.Data.(*journal.CrashDetected); ok {
+			reasons[e.Boot] = p.ResetReason
+		}
+	}
+	run := func(at int) []journal.Event {
+		t.Helper()
+		dir := t.TempDir()
+		for path, data := range snapshot {
+			if err := os.WriteFile(filepath.Join(dir, path), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		resumed, err := sim.Resume(dir, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resumed.Boots = 0
+		m, err := sim.New(resumed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range boots {
+			kind := machine.ResetPowerLoss
+			if i+1 < len(boots) {
+				kind = reasons[boots[i+1]]
+			}
+			m.NextReset(kind)
+			m.Reboot()
+		}
+		closing, closed := false, false
+		crashed := false
+		in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m,
+			Until: func(e journal.Event) bool {
+				if closed {
+					return at < 0 || crashed
+				}
+				closed = closeWindow(e, &closing)
+				return closed && at < 0
+			},
+		}
+		if at >= 0 {
+			in.Wrap = func(j session.Journal) session.Journal {
+				if crashed {
+					return j
+				}
+				if at == 0 {
+					crashed = true
+					m.NextReset(machine.ResetPowerLoss)
+					m.Crash()
+					return j
+				}
+				return &matrixCrash{Journal: j, machine: m, at: at, crashed: &crashed}
+			}
+		}
+		stop, err := Simulate(context.Background(), in)
+		if err != nil {
+			t.Fatalf("%s append %d: %v", name, at, err)
+		}
+		if stop.Reason != session.StopSignal || !closed {
+			t.Fatalf("%s append %d: stop %+v deadend %+v, closing %t", name, at, stop, stop.DeadEnd, closed)
+		}
+		if at >= 0 && !crashed {
+			t.Fatalf("%s append %d did not crash", name, at)
+		}
+		events, torn, err := journal.Read(dir)
+		if err != nil || torn != nil {
+			t.Fatalf("%s append %d: journal read %v, torn %q", name, at, err, torn)
+		}
+		return events[len(prefix):]
+	}
+	reference := run(-1)
+	if len(reference) == 0 {
+		t.Fatal("empty reference window")
+	}
+	want := matrixCommitments(reference)
+	for at := 0; at <= len(reference)+1; at++ {
+		events := run(at)
+		got := matrixCommitments(events)
+		if diff := cmp.Diff(want, got); diff != "" {
+			if at == 0 {
+				t.Fatalf("%s before first append commitments (-want +got):\n%s", name, diff)
+			}
+			t.Fatalf("%s append %d/%d at %s commitments (-want +got):\n%s", name, at, len(reference), reference[min(at-1, len(reference)-1)].Kind, diff)
+		}
+		seen := map[[2]int]bool{}
+		for _, e := range events {
+			if p, ok := e.Data.(*journal.HuntMask); ok {
+				key := [2]int{p.Hunt, p.Mask}
+				if seen[key] {
+					t.Fatalf("%s append %d: duplicated hunt.mask %v", name, at, key)
+				}
+				seen[key] = true
+			}
+		}
+	}
+	elapsed := time.Since(started)
+	t.Logf("%s interruption matrix: %d crash points in %s", name, len(reference)+2, elapsed)
+}
+
+type matrixCrash struct {
 	session.Journal
 	machine *sim.Machine
 	at      int
 	count   int
+	crashed *bool
 }
 
-func (j *crashOnAppend) Append(p journal.Payload, cause ...int) (journal.Event, error) {
+func (j *matrixCrash) Append(p journal.Payload, cause ...int) (journal.Event, error) {
 	e, err := j.Journal.Append(p, cause...)
 	if err == nil {
 		j.count++
 		if j.count == j.at {
+			*j.crashed = true
 			j.machine.NextReset(machine.ResetPowerLoss)
 			j.machine.Crash()
 			return e, machine.ErrCrashed
@@ -309,53 +766,33 @@ func (j *crashOnAppend) Append(p journal.Payload, cause ...int) (journal.Event, 
 	return e, err
 }
 
-func TestPowerLossDuringHuntResume(t *testing.T) {
-	cfg := huntConfig(4)
-	cfg.Joints = []sim.Joint{{Members: map[int]int{1: -10, 3: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
-	start := time.Now()
-	_, reference, _ := runHunt(t, cfg, nil, nil)
-	at := slices.IndexFunc(reference, func(e journal.Event) bool { return e.Kind == journal.KindHuntStart })
-	if at < 0 {
-		t.Fatal("no hunt start")
-	}
-	for _, delta := range []int{1, 3, 10} {
-		m, err := sim.New(cfg)
-		if err != nil {
-			t.Fatal(err)
-		}
-		dir := t.TempDir()
-		wrapped := false
-		in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1, Wrap: func(j session.Journal) session.Journal {
-			if wrapped {
-				return j
+type matrixResult struct {
+	Marks    [][]journal.JointMember
+	Backoffs [][3]int
+	Profile  []int
+	Ends     []string
+	Rounds   []string
+}
+
+func matrixCommitments(events []journal.Event) matrixResult {
+	var out matrixResult
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.MarkJoint:
+			out.Marks = append(out.Marks, p.Members)
+		case *journal.TunerDecision:
+			if p.Decision == journal.Backoff && p.Phase == journal.PhaseHunt {
+				out.Backoffs = append(out.Backoffs, [3]int{p.Core, p.FromOffset, p.ToOffset})
 			}
-			wrapped = true
-			return &crashOnAppend{Journal: j, machine: m, at: at + delta}
-		}}
-		if _, err := Simulate(context.Background(), in); err != nil && !errors.Is(err, machine.ErrCrashed) {
-			t.Fatal(err)
-		}
-		events, _, err := journal.Read(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got, ok := findPayload(events, func(p *journal.MarkJoint) bool { return p.Mark == 1 })
-		want, have := findPayload(reference, func(p *journal.MarkJoint) bool { return p.Mark == 1 })
-		if !ok || !have || cmp.Diff(want.Members, got.Members) != "" {
-			t.Errorf("append offset %d mark %+v, want %+v", delta, got, want)
-		}
-		seen := make(map[int]bool)
-		for _, e := range events {
-			if p, ok := e.Data.(*journal.HuntEnd); ok && p.Hunt == 1 {
-				if seen[p.Hunt] {
-					t.Error("duplicated hunt.end")
-				}
-				seen[p.Hunt] = true
+		case *journal.HuntEnd:
+			out.Ends = append(out.Ends, fmt.Sprintf("%d:%s:%v", p.Hunt, p.Result, p.Cores))
+		case *journal.RefineRound:
+			if p.Event == journal.RotationEnd {
+				out.Rounds = append(out.Rounds, fmt.Sprintf("%d:%t", p.Round, p.Passed))
 			}
+		case *journal.ProfileChange:
+			out.Profile = p.To
 		}
 	}
-	t.Logf("hunt interruption matrix wall time: %s", time.Since(start))
-	if time.Since(start) >= 5*time.Second {
-		t.Error("hunt interruption matrix exceeded five seconds")
-	}
+	return out
 }
