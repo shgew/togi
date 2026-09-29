@@ -4,6 +4,8 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-29
+
 ### Changed
 
 - `togi run` no longer refuses a session written by an older ruleset or journal schema: it archives it and starts a new session in which each core starts confirmation at its deepest isolated pass and never runs at or past its shallowest attributed failure, recorded in a new `session.carried` event and shown by `togi status`. After a BIOS change only the edges carry; `reset --all` still starts over with nothing carried, and a session from a newer build is still refused ([how-to](https://github.com/shgew/togi/blob/main/docs/howto.md#7-after-a-breaking-update), [#65]).
@@ -131,6 +133,8 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [0.3.1]: https://github.com/shgew/togi/releases/tag/v0.3.1
 
 [0.4.0]: https://github.com/shgew/togi/releases/tag/v0.4.0
+
+[0.4.1]: https://github.com/shgew/togi/releases/tag/v0.4.1
 
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
