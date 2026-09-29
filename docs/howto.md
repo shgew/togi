@@ -123,10 +123,10 @@ Pick "NixOS - togi" to continue tuning.
 
 The recovery in [section 6](#6-dead-ends) runs in `togi.service` and `togi-restart-limit.service`, so it cannot help when the tuning boot fails before userspace: GRUB keeps choosing "NixOS - togi" on every boot. When the tuning boot does reach a console, tty1 shows `togi watch` and tty3 togi's log.
 
-togi uses the GRUB environment of the first `boot.loader.grub.mirroredBoots` entry, which is `/boot/grub/grubenv` on an ordinary install.
+togi uses the GRUB environment of the first `boot.loader.grub.mirroredBoots` entry: `<grubenv>` below stands for `<path>/grub/grubenv`, where `<path>` is that entry's `path`. On an ordinary install it is `/boot/grub/grubenv`.
 
-1. At the GRUB menu, pick one of your normal generations. Once it is up, run `sudo grub-editenv /boot/grub/grubenv list`; if `saved_entry` still names the tuning entry, run `sudo grub-editenv /boot/grub/grubenv unset saved_entry`.
-2. If that does not get you a working system, boot rescue media that has `grub-editenv` (on a NixOS installer, `nix-shell -p grub2`) and mount the partition holding `/boot`. With `<boot>` standing for the installed system's `/boot` under the mount point (the mount point itself when `/boot` is its own partition, `<mount point>/boot` when it is part of the root file system), run:
+1. At the GRUB menu, pick one of your normal generations. Once it is up, run `sudo grub-editenv <grubenv> list`; if `saved_entry` still names the tuning entry, run `sudo grub-editenv <grubenv> unset saved_entry`.
+2. If that does not get you a working system, boot rescue media that has `grub-editenv` (on a NixOS installer, `nix-shell -p grub2`) and mount the partition holding `<path>`. With `<boot>` standing for the installed system's `<path>` under the mount point (the mount point itself when `<path>` is its own partition, `<mount point><path>` when it is part of the root file system), run:
 
    ```sh
    grub-editenv <boot>/grub/grubenv unset saved_entry
@@ -141,7 +141,7 @@ togi uses the GRUB environment of the first `boot.loader.grub.mirroredBoots` ent
 Do this from the normal system:
 
 1. Set `services.togi.tuning.enable = false`, or remove the module and the `togi` input, and rebuild.
-2. Run `sudo grub-editenv /boot/grub/grubenv list`: `saved_entry` must not name the tuning entry. If it does, run `sudo grub-editenv /boot/grub/grubenv unset saved_entry`.
+2. Run `sudo grub-editenv <grubenv> list`: `saved_entry` must not name the tuning entry. If it does, run `sudo grub-editenv <grubenv> unset saved_entry`.
 3. If you entered togi's offsets in BIOS and want them gone, set Curve Optimizer back to 0.
 
 Removing togi leaves `/var/lib/togi` in place. Keeping it lets a later install continue or carry the session; archiving or deleting it is a separate choice.
