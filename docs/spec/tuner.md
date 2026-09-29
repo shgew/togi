@@ -129,7 +129,7 @@ A singleton ends `culprit` with a failed mark at that core's failing offset. A l
 
 ## Refinement
 
-Refinement starts only after search, hunts, reruns and the open rotation finish, when a qualified profile exists and a core is not done or a globally deeper total is reachable. It targets the safe profile with greatest total depth over all cores, with preferred-core ranking and then core-id order breaking ties. `refine.round` snapshots target, anchor and proposed profile. Cores that must become shallower yield first; those moving deeper go halfway toward their target. Each move is a decision followed by done re-evaluation and `profile.change`.
+Refinement starts only after search, hunts, reruns and the open rotation finish, when a qualified profile exists and a core is not done or a globally deeper total is reachable. It targets the safe profile with greatest total depth over all cores, with preferred-core ranking and then core-id order breaking ties. `refine.round` snapshots target, anchor and proposed profile. Cores that must become shallower yield first; those moving deeper go halfway toward their target. Each move is a decision; after the round's last move, done is re-evaluated and one `profile.change` applies them all.
 
 Only deepened cores need checks: each runs `n` R1 starts and `n` R2 starts at `start_s`, then each R7 part containing a deepened core runs `n` starts. The round's index freezes the workload in each catalog. A failure ends the round, triggers its attribution or hunt, and a passed round records its end; resume completes missing moves and checks without duplicating decisions. A new mark that makes the proposed profile unsafe ends the round without applying it.
 

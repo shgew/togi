@@ -142,7 +142,11 @@ func TestHuntFallbackAndFullCheck(t *testing.T) {
 		duration  int
 		fullFails bool
 		result    string
-	}{{"fallback", 120, false, "fallback"}, {"full failure", 600, true, "joint"}} {
+		reason    string
+	}{
+		{"fallback", 120, false, "fallback", "no tested mask failed, so the remaining candidates stay unresolved and are marked together"},
+		{"full failure", 600, true, "joint", "masked trial outcomes isolated the minimal failing set"},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := huntHarness(t, 2, tc.duration)
 			full := 0
@@ -161,8 +165,8 @@ func TestHuntFallbackAndFullCheck(t *testing.T) {
 					continue
 				}
 				if end, ok := a.Payload.(*journal.HuntEnd); ok {
-					if end.Result != tc.result {
-						t.Fatalf("result %s, want %s", end.Result, tc.result)
+					if end.Result != tc.result || end.Reason != tc.reason {
+						t.Fatalf("result %s (%s), want %s (%s)", end.Result, end.Reason, tc.result, tc.reason)
 					}
 					if tc.fullFails && full != 1 {
 						t.Fatalf("full mask recorded %d times", full)

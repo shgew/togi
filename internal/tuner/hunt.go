@@ -311,13 +311,13 @@ func (s *State) huntNext() (Action, bool) {
 	}
 	next, has := s.nextMaskPlan(h)
 	if !has {
-		result := "joint"
+		result, reason := "joint", "masked trial outcomes isolated the minimal failing set"
 		if len(next.set) == 1 {
 			result = "culprit"
 		} else if !next.anyFailed {
-			result = "fallback"
+			result, reason = "fallback", "no tested mask failed, so the remaining candidates stay unresolved and are marked together"
 		}
-		return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: result, Cores: slices.Clone(next.set), Masks: len(h.masks), Reason: "masked trial outcomes isolated the minimal failing set"}, Cause: []int{h.seq}}, true
+		return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: result, Cores: slices.Clone(next.set), Masks: len(h.masks), Reason: reason}, Cause: []int{h.seq}}, true
 	}
 	profile := slices.Clone(h.start.Anchor)
 	for _, id := range next.cores {
