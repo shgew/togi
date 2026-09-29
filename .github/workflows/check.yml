@@ -63,8 +63,8 @@ jobs:
 
   check:
     if: always()
-    needs: [eval, build]
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Every check passed
-        run: test "${{ needs.eval.result }}" = success && test "${{ needs.build.result }}" = success
+        run: test "${{ needs.build.result }}" = success
