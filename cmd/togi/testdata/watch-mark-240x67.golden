@@ -63,4 +63,4 @@
  15h08m  trial 0494 PASS 900s | Tctl max 62 C
  15h08m  guard rotation 1 end clean
  15h08m  tier none -> bronze: every core is done and the profile passed a clean qualifying rotation
- 15h08m  the profile survived the requested 1 clean rotation(s); stopping
+ 15h08m  every core is done and the profile passed the requested clean qualifying rotation; stopping

@@ -819,7 +819,10 @@ func (p *Shutdown) Message() string {
 	case ShutdownDeadEnd:
 		return "stopped at a dead end"
 	case ShutdownRotations:
-		return fmt.Sprintf("the profile survived the requested %d clean rotation(s); stopping", p.Rotations)
+		if p.Rotations == 1 {
+			return "every core is done and the profile passed the requested clean qualifying rotation; stopping"
+		}
+		return fmt.Sprintf("every core is done and the profile passed the requested %d clean qualifying rotations; stopping", p.Rotations)
 	case ShutdownCommand:
 		return "command finished"
 	}
