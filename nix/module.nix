@@ -85,7 +85,7 @@ in
             ];
             serviceConfig.Type = "oneshot";
             script = ''
-              case "''${MONITOR_EXIT_STATUS:-}" in 10|11|12|13|14|15|16|17|18) exit 0 ;; esac
+              [ "''${MONITOR_SERVICE_RESULT:-}" = start-limit-hit ] || exit 0
               grub-editenv ${grubenv} unset saved_entry
               systemctl reboot
             '';

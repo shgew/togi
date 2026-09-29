@@ -30,6 +30,7 @@ pkgs.testers.runNixOSTest {
       services.togi = {
         enable = true;
         tuning.enable = true;
+        tuning.leaveOnShutdown = false;
       };
       specialisation.togi.configuration = {
         services.togi.settings.bogus = 1;
@@ -120,5 +121,10 @@ pkgs.testers.runNixOSTest {
     assert normal_restart_system != tuning_restart_system
     grubenv = restartLimit.succeed("grub-editenv /boot/grub/grubenv list")
     assert "saved_entry=NixOS - togi" not in grubenv, f"restart limit left the tuning boot saved: {grubenv}"
+    togi = [json.loads(line) for line in restartLimit.succeed("journalctl -b -1 -u togi.service -o json").splitlines()]
+    exits = [e["EXIT_STATUS"] for e in togi if "EXIT_STATUS" in e]
+    results = [e["UNIT_RESULT"] for e in togi if "UNIT_RESULT" in e]
+    assert exits == ["2", "2", "2"], f"togi.service exits before the reboot: {exits}"
+    assert results == ["exit-code", "exit-code", "exit-code", "start-limit-hit"], f"togi.service results: {results}"
   '';
 }
