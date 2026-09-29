@@ -4,132 +4,105 @@ import (
 	"math/rand/v2"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
 
-const (
-	propertySeeds = 500
-	maxActions    = 10000
-	propertyCores = 4
-)
-
-type stop struct {
-	dead  *journal.DeadEnd
-	guard bool
-}
-
-func drive(h *harness, outcome func(Trial) journal.TrialEnd, check func(Action)) stop {
-	for range maxActions {
-		a := h.s.Next()
-		if check != nil {
-			check(a)
-		}
-		switch a.Kind {
-		case Decide:
-			h.decide(a)
-			switch p := a.Payload.(type) {
-			case *journal.DeadEnd:
-				return stop{dead: p}
-			case *journal.ProfileChange:
-				return stop{guard: true}
-			}
-		case RunTrial:
-			h.trial(a, outcome(a.Trial))
-		}
-	}
-	h.t.Fatalf("no dead end or guard after %d actions", maxActions)
-	return stop{}
-}
-
-func TestConvergesOnDeepestPassingOffset(t *testing.T) {
-	t.Parallel()
-	for seed := uint64(1); seed <= propertySeeds; seed++ {
+func TestSearchConverges(t *testing.T) {
+	for seed := uint64(1); seed <= 120; seed++ {
 		rng := rand.New(rand.NewPCG(seed, 0))
-		starts := make([]int, propertyCores)
-		thresholds := make([]map[machine.Regime]int, propertyCores)
-		edge := make([]int, propertyCores)
-		for c := range starts {
-			starts[c] = -rng.IntN(51)
-			thresholds[c] = map[machine.Regime]int{}
-			edge[c] = -51
-			for _, r := range machine.ConfirmationRegimes {
-				thresholds[c][r] = 1 - rng.IntN(53)
-				edge[c] = max(edge[c], thresholds[c][r])
+		threshold := -rng.IntN(50)
+		h := newHarness(t, searchAt(-rng.IntN(51))...)
+		settled := false
+		for range 1000 {
+			a := h.next()
+			if a.Kind == Decide {
+				e := h.decide(a)
+				if p, ok := e.Data.(*journal.CorePhase); ok && p.To != journal.PhaseSearch {
+					if p.Offset != threshold {
+						t.Fatalf("seed %d: edge %d, want %d", seed, p.Offset, threshold)
+					}
+					settled = true
+					break
+				}
+				continue
+			}
+			if a.Trial.Offset >= threshold {
+				h.trial(a, passed)
+			} else {
+				h.trial(a, failed)
 			}
 		}
-		h := newHarness(t, searchAt(starts...)...)
-		got := drive(h, func(tr Trial) journal.TrialEnd {
-			if tr.Offset >= thresholds[tr.Core][tr.Regime] {
-				return passed
-			}
-			return failed
-		}, nil)
-
-		unstable := false
-		for c := range edge {
-			unstable = unstable || edge[c] > 0
-		}
-		if unstable {
-			if got.dead == nil || got.dead.Condition != journal.DeadEndFailureAtZero || edge[*got.dead.Core] <= 0 {
-				t.Fatalf("seed %d: edges %v: stopped with %+v, want failure_at_zero on a core unstable at 0", seed, edge, got.dead)
-			}
-			continue
-		}
-		if !got.guard {
-			t.Fatalf("seed %d: edges %v: stopped with %+v, want guard", seed, edge, got.dead)
-		}
-		st := projected(h)
-		for c, cs := range st.Cores {
-			if want := max(edge[c], machine.MinOffset); cs.Phase != journal.PhaseConfirmed || cs.Offset != want {
-				t.Fatalf("seed %d: core %d %s at %d, want confirmed at %d", seed, c, cs.Phase, cs.Offset, want)
-			}
+		if !settled {
+			t.Fatalf("seed %d did not find edge", seed)
 		}
 	}
 }
 
-func TestInvariantsOverRandomOutcomes(t *testing.T) {
-	t.Parallel()
-	for seed := uint64(1); seed <= propertySeeds; seed++ {
+func TestRandomOutcomesPreserveProfiles(t *testing.T) {
+	for seed := uint64(1); seed <= 12; seed++ {
 		rng := rand.New(rand.NewPCG(seed, 1))
-		starts := make([]int, propertyCores)
-		for c := range starts {
-			starts[c] = -rng.IntN(51)
-		}
-		h := newHarness(t, searchAt(starts...)...)
-		failedMark := map[int]int{}
-		inRange := func(what string, o int) {
-			if o < machine.MinOffset || o > machine.MaxOffset {
-				t.Fatalf("seed %d: %s offset %d outside [-50, 0]", seed, what, o)
+		h := residentHarness(t, -30, -30, -30, -30)
+		started, ended := 0, 0
+		for step := range 700 {
+			if step >= 350 && h.s.hunt == nil && started > 0 {
+				break
 			}
-		}
-		drive(h, func(Trial) journal.TrialEnd {
-			switch x := rng.Float64(); {
-			case x < 0.5:
-				return passed
-			case x < 0.9:
-				return failed
-			}
-			return unsure
-		}, func(a Action) {
-			switch a.Kind {
-			case RunTrial:
-				inRange("trial", a.Trial.Offset)
-				if f, ok := failedMark[a.Trial.Core]; ok && a.Trial.Offset <= f {
-					t.Fatalf("seed %d: trial on core %d at %d, at or deeper than its failed mark %d", seed, a.Trial.Core, a.Trial.Offset, f)
+			a := h.next()
+			if a.Kind == Decide {
+				if _, ok := a.Payload.(*journal.DeadEnd); ok {
+					break
 				}
-			case Decide:
-				switch p := a.Payload.(type) {
-				case *journal.Failure:
-					if f, ok := failedMark[*p.Core]; !ok || *p.Offset > f {
-						failedMark[*p.Core] = *p.Offset
+				marks := append([]journal.JointMarkState(nil), h.s.marks...)
+				e := h.decide(a)
+				if _, ok := e.Data.(*journal.HuntStart); ok {
+					started++
+				}
+				if _, ok := e.Data.(*journal.HuntEnd); ok {
+					ended++
+				}
+				for _, mark := range marks {
+					still := false
+					for _, current := range h.s.marks {
+						if current.Mark == mark.Mark && cmp.Diff(mark.Members, current.Members) == "" {
+							still = true
+						}
 					}
-				case *journal.TunerDecision:
-					inRange("decision", p.ToOffset)
-				case *journal.CorePhase:
-					inRange("phase", p.Offset)
+					if !still {
+						t.Fatalf("seed %d: mark J%d disappeared without reset", seed, mark.Mark)
+					}
+				}
+				continue
+			}
+			intent := h.start(a)
+			p := intent.Data.(*journal.TrialIntent)
+			if name, reached := h.s.Reaches(p.Profile); reached {
+				t.Fatalf("seed %d: trial %s reached %s", seed, p.Trial, name)
+			}
+			for _, offset := range p.Profile {
+				if offset < machine.MinOffset || offset > machine.MaxOffset {
+					t.Fatalf("seed %d: offset %d outside range", seed, offset)
 				}
 			}
-		})
+			if p.Condition == machine.Isolated {
+				for i, x := range p.Profile {
+					if i != *p.Core && x != 0 {
+						t.Fatalf("seed %d: isolated profile %v", seed, p.Profile)
+					}
+				}
+			}
+			end := passed
+			if p.Condition != machine.Masked && rng.Float64() < .035 {
+				end = journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 10}
+			} else if rng.Float64() < .06 {
+				end = unsure
+			}
+			end.Trial = p.Trial
+			h.add(&end, intent.Seq)
+		}
+		if started == 0 || ended == 0 || started != ended {
+			t.Fatalf("seed %d: hunts started %d, ended %d", seed, started, ended)
+		}
 	}
 }

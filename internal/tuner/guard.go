@@ -11,134 +11,170 @@ import (
 type guard struct {
 	profile    []int
 	profileSeq int
-	// dirty means an offset changed since the last profile.change; it starts true so guard begins with one.
-	dirty    bool
-	dirtySeq int
-
-	rotation  int
-	open      bool
-	startSeq  int
-	steps     []machine.Regime
-	stepsDone int
-	// passed holds the cores that passed the current per-core step.
-	passed []int
-	// partsPassed holds the indexes into State.parts that passed the current R7 step.
-	partsPassed []int
-	// r7Index counts the R7 steps concluded this session; it picks the R7 workload.
-	r7Index int
-	lastSeq int
-
-	cleanRotations int
-	cleanS         int
-	cleanByRegime  map[machine.Regime]int
-
-	tctlMax *int
-	tctlSeq int
-
-	// regainFrom is the seq of the clean rotation end whose regains are due, 0 when none are.
-	regainFrom int
-	// regained holds the cores that regained since regainFrom.
-	regained []int
+	rotation   int
+	open       bool
+	startSeq   int
+	steps      []machine.Regime
+	stepsDone  int
+	lastSeq    int
+	tctlMax    *int
+	tctlSeq    int
 }
 
-// suspect is an unattributed resident failure whose suspect backoffs are still due.
-type suspect struct {
-	seq     int
-	failure *journal.Failure
-	scope   string
-	pending []int
+type requirement struct {
+	class  trialClass
+	cores  []int
+	count  int
+	core   int
+	offset int
 }
 
-func (g *guard) changed(seq int, to []int) {
-	g.profile, g.profileSeq, g.lastSeq = slices.Clone(to), seq, seq
-	g.dirty = false
-	g.cleanRotations, g.cleanS = 0, 0
-	g.cleanByRegime = map[machine.Regime]int{}
-	g.tctlMax, g.tctlSeq = nil, 0
-	g.regainFrom, g.regained = 0, nil
-}
-
-func (g *guard) rotated(seq int, p *journal.GuardRotation) {
-	g.lastSeq = seq
-	switch p.Event {
-	case journal.RotationStart:
-		g.rotation, g.open, g.startSeq = p.Rotation, true, seq
-		g.steps, g.stepsDone, g.passed, g.partsPassed = slices.Clone(p.Steps), 0, nil, nil
-		g.regainFrom, g.regained = 0, nil
-	case journal.RotationEnd:
-		g.open = false
-		if p.Clean {
-			g.cleanRotations++
-			g.regainFrom, g.regained = seq, nil
+func (s *State) qualifying(steps []machine.Regime) (bool, []string) {
+	want := map[machine.Regime]int{machine.R1: 3, machine.R2: 3, machine.R3: 1, machine.R4: 1, machine.R5: 1, machine.R6: 1, machine.R7: 3}
+	var missing []string
+	for _, r := range machine.Regimes {
+		got := 0
+		for _, step := range steps {
+			if step == r {
+				got++
+			}
+		}
+		if need := want[r] - got; need > 0 {
+			missing = append(missing, fmt.Sprintf("%s: %d more steps", r, need))
 		}
 	}
+	return len(missing) == 0, missing
 }
 
-func (s *State) foldResidentEnd(e journal.Event, p *journal.TrialEnd, intent *journal.TrialIntent) {
+func (s *State) foldRotation(e journal.Event, p *journal.GuardRotation) {
 	g := &s.guard
-	switch p.Outcome {
-	case journal.OutcomePass:
-		g.lastSeq = e.Seq
-		g.cleanS += p.DurationS
-		g.cleanByRegime[intent.Regime] += p.DurationS
-		s.tierCause = e.Seq
-		if p.TctlMaxC != nil && (g.tctlMax == nil || *p.TctlMaxC > *g.tctlMax) {
-			g.tctlMax, g.tctlSeq = new(*p.TctlMaxC), e.Seq
-		}
-		if !g.open || intent.Rotation != g.rotation || g.stepsDone >= len(g.steps) || intent.Regime != g.steps[g.stepsDone] {
-			return
-		}
-		if intent.Regime == machine.R7 {
-			i := slices.IndexFunc(s.parts, func(part []int) bool { return slices.Equal(part, intent.Cores) })
-			if i >= 0 && !slices.Contains(g.partsPassed, i) {
-				g.partsPassed = append(g.partsPassed, i)
-			}
-			if len(g.partsPassed) == len(s.parts) {
-				g.stepsDone++
-				g.partsPassed = nil
-				g.r7Index++
-			}
-			return
-		}
-		if intent.Core == nil {
-			g.stepsDone++
-			return
-		}
-		if !slices.Contains(g.passed, *intent.Core) {
-			g.passed = append(g.passed, *intent.Core)
-		}
-		if len(g.passed) == len(s.cores) {
-			g.stepsDone++
-			g.passed = nil
-		}
-	case journal.OutcomeInconclusive:
-		g.lastSeq = e.Seq
-		t := residentTrial(intent)
-		t.Retry = true
-		s.retry = &t
-	case journal.OutcomeFailure:
-		if intent.Regime == machine.R7 {
-			g.r7Index++
-		}
-		s.awaiting = &awaiting{intent: intent, end: p, seq: e.Seq, cause: e.Cause}
+	g.lastSeq = e.Seq
+	if p.Event == journal.RotationStart {
+		g.rotation, g.open, g.startSeq = p.Rotation, true, e.Seq
+		g.steps = slices.Clone(p.Steps)
+		g.stepsDone = 0
+		return
 	}
+	g.open = false
+	if p.Clean && p.Qualifying {
+		s.qualified = append(s.qualified, qualified{slices.Clone(g.profile), e.Seq, s.allDone()})
+	}
+	s.projectionDirty = true
+	s.tierCause = e.Seq
 }
 
-func residentTrial(intent *journal.TrialIntent) Trial {
-	t := Trial{Regime: intent.Regime, Phase: intent.Phase, Condition: machine.Resident, Rotation: intent.Rotation, Cores: slices.Clone(intent.Cores), Workload: intent.Workload}
-	if intent.Core != nil {
-		t.Core = *intent.Core
+func (s *State) allDone() bool {
+	for _, c := range s.cores {
+		if c.phase != journal.PhaseDone {
+			return false
+		}
 	}
-	if intent.Offset != nil {
-		t.Offset = *intent.Offset
-	}
-	return t
+	return true
 }
 
-// attributeResident names the backend instance's core, else the one core that core-local MCEs among the trial end's
-// causes name; any other evidence is unattributed.
+func (s *State) longS(part []int) int {
+	d := s.durations.GuardAllCoreS
+	groups := map[int]bool{}
+	for _, c := range s.cores {
+		groups[s.ccd[c.id]] = true
+	}
+	if len(groups) == 1 {
+		return d
+	}
+	if len(part) < len(s.cores) {
+		return d / 4
+	}
+	return d - len(groups)*(d/4)
+}
+
+func (s *State) requirements(step int) []requirement {
+	g := &s.guard
+	r := g.steps[step]
+	occurrence := 0
+	for i := 0; i < step; i++ {
+		if g.steps[i] == r {
+			occurrence++
+		}
+	}
+	w := machine.Workloads(r)[occurrence%len(machine.Workloads(r))].ID
+	var req []requirement
+	add := func(cores []int, d, count int, core, offset int) {
+		k := trialClass{r, w, fmt.Sprint(cores), d}
+		total := count
+		for i := 0; i <= step; i++ {
+			if i == step {
+				break
+			}
+			if g.steps[i] != r {
+				continue
+			}
+			previous := 0
+			for j := 0; j < i; j++ {
+				if g.steps[j] == r {
+					previous++
+				}
+			}
+			if machine.Workloads(r)[previous%len(machine.Workloads(r))].ID == w {
+				total += count
+			}
+		}
+		req = append(req, requirement{k, slices.Clone(cores), total, core, offset})
+	}
+	switch r {
+	case machine.R6:
+		add(s.ids(), s.durations.GuardIdleS, 1, 0, 0)
+	case machine.R7:
+		for _, part := range s.parts {
+			add(part, s.durations.StartS, 3, 0, 0)
+			add(part, s.longS(part), 1, 0, 0)
+		}
+	default:
+		for _, c := range s.cores {
+			add([]int{c.id}, s.durations.GuardTrialS, 1, c.id, c.offset)
+		}
+	}
+	for i := range req {
+		for j := 0; j < i; j++ {
+			if req[j].class == req[i].class {
+				req[i].count += req[j].count
+				req[j].count = 0
+			}
+		}
+	}
+	return req
+}
+
+func (s *State) rotationNext() Action {
+	g := &s.guard
+	for i := 0; i < len(g.steps); i++ {
+		for _, q := range s.requirements(i) {
+			if q.count == 0 {
+				continue
+			}
+			if s.passes(q.class, g.profile, g.startSeq) >= q.count {
+				continue
+			}
+			g.stepsDone = i
+			if s.retry != nil && s.retry.Rotation == g.rotation && s.retry.Condition == machine.Resident {
+				return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{g.lastSeq}}
+			}
+			t := Trial{Regime: q.class.regime, Workload: q.class.workload, DurationS: q.class.duration, Phase: journal.PhaseGuard, Condition: machine.Resident, Rotation: g.rotation}
+			if q.class.regime == machine.R6 || q.class.regime == machine.R7 {
+				t.Cores = q.cores
+			} else {
+				t.Core, t.Offset = q.core, q.offset
+			}
+			return Action{Kind: RunTrial, Trial: t, Cause: []int{g.lastSeq}}
+		}
+	}
+	g.stepsDone = len(g.steps)
+	qualifying, missing := s.qualifying(g.steps)
+	return Action{Kind: Decide, Payload: &journal.GuardRotation{Rotation: g.rotation, Event: journal.RotationEnd, Clean: true, Qualifying: qualifying, Missing: missing}, Cause: []int{g.startSeq, g.lastSeq}}
+}
+
 func (s *State) attributeResident(a *awaiting) *journal.Failure {
-	f := &journal.Failure{Signal: a.end.Signal, Attribution: journal.Unattributed, Trial: a.intent.Trial, Regime: a.intent.Regime, Condition: machine.Resident}
+	intent := a.intent
+	f := &journal.Failure{Signal: a.end.Signal, Attribution: journal.Unattributed, Trial: intent.Trial, Regime: intent.Regime, Condition: intent.Condition, Profile: slices.Clone(intent.Profile)}
 	var named []int
 	if a.end.Core != nil {
 		named = []int{*a.end.Core}
@@ -150,150 +186,106 @@ func (s *State) attributeResident(a *awaiting) *journal.Failure {
 		}
 	}
 	if len(named) != 1 {
-		return f
+		if c, ok := AttributeProfile(intent.Profile); ok {
+			named = []int{c}
+		}
 	}
-	if c := s.core(named[0]); c != nil {
-		f.Attribution, f.Core, f.Offset = journal.Attributed, new(c.id), new(c.offset)
+	if len(named) == 1 {
+		if i := s.index(named[0]); i >= 0 && i < len(intent.Profile) {
+			f.Attribution = journal.Attributed
+			f.Core = new(named[0])
+			f.Offset = new(intent.Profile[i])
+		}
 	}
 	return f
 }
 
-func (s *State) newSuspect(seq int, p *journal.Failure) *suspect {
-	sp := &suspect{seq: seq, failure: p}
-	var intent *journal.TrialIntent
-	if p.Trial != "" {
-		intent = s.intents[p.Trial]
-	}
-	var scope []int
-	var narrowed string
-	switch {
-	case intent == nil:
-		sp.scope = "no trial was in flight: every core backs off"
-	case intent.Core != nil:
-		scope = []int{*intent.Core}
-		sp.scope = "the only loaded core"
-		narrowed = fmt.Sprintf("the only loaded core %02d is at CO 0: every core backs off", *intent.Core)
-	case len(intent.Cores) > 0 && len(intent.Cores) < len(s.cores):
-		scope = intent.Cores
-		ccd := s.ccd[intent.Cores[0]]
-		sp.scope = fmt.Sprintf("%s loaded only CCD %d: its cores back off", p.Regime, ccd)
-		narrowed = fmt.Sprintf("every core %s loaded on CCD %d is at CO 0: every core backs off", p.Regime, ccd)
-	default:
-		sp.scope = fmt.Sprintf("%s loaded every core", p.Regime)
-	}
-	sp.pending = s.nonzero(scope)
-	if len(sp.pending) == 0 && scope != nil {
-		sp.pending, sp.scope = s.nonzero(nil), narrowed
-	}
-	return sp
-}
-
-// nonzero lists, in scheduling order, the cores below CO 0, only those in scope unless scope is nil.
-func (s *State) nonzero(scope []int) []int {
-	var out []int
+func (s *State) pendingDecision() (Action, bool) {
 	for _, c := range s.cores {
-		if c.offset < 0 && (scope == nil || slices.Contains(scope, c.id)) {
-			out = append(out, c.id)
+		if c.pending == 0 {
+			continue
 		}
-	}
-	return out
-}
-
-func (s *State) suspectBackedOff(core int) {
-	sp := s.suspect
-	if sp == nil {
-		return
-	}
-	sp.pending = slices.DeleteFunc(sp.pending, func(c int) bool { return c == core })
-	if len(sp.pending) == 0 {
-		s.suspect = nil
-	}
-}
-
-func (s *State) suspectNext() (Action, bool) {
-	sp := s.suspect
-	if sp == nil {
-		return Action{}, false
-	}
-	cause := []int{sp.seq}
-	if len(sp.pending) > 0 {
-		return Action{Kind: Decide, Payload: suspectBackoff(s.core(sp.pending[0]).snapshot(), sp), Cause: cause}, true
-	}
-	detail := fmt.Sprintf("unattributed %s failure with every core at CO 0; the instability is not caused by Curve Optimizer", sp.failure.Signal)
-	return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Detail: detail}, Cause: cause}, true
-}
-
-func (s *State) guardNext() Action {
-	g := &s.guard
-	decide := func(p journal.Payload, cause ...int) Action { return Action{Kind: Decide, Payload: p, Cause: cause} }
-	switch {
-	case g.dirty:
-		var to []int
-		var cause []int
-		for _, c := range s.byID() {
-			to = append(to, c.offset)
-			if c.decisionSeq > g.profileSeq {
-				cause = append(cause, c.decisionSeq)
+		seq := c.pending
+		failure := s.failureBySeq(seq)
+		if failure == nil {
+			return Action{}, false
+		}
+		f := failure.failure
+		if c.phase == journal.PhaseSearch {
+			return Action{Kind: Decide, Payload: s.searchFailure(c.snapshot()), Cause: []int{seq}}, true
+		}
+		if f.Offset == nil {
+			return Action{}, false
+		}
+		if *f.Offset == 0 {
+			return Action{Kind: Decide, Payload: failedAtZero(c.id), Cause: []int{seq}}, true
+		}
+		if s.hunt != nil && f.Condition == machine.Masked && s.hunt.end == nil {
+			return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: s.hunt.start.Hunt, Result: "direct", Cores: []int{c.id}, Masks: len(s.hunt.masks), Reason: fmt.Sprintf("attributed failure #%d", seq)}, Cause: []int{seq}}, true
+		}
+		if s.round != nil && f.Trial != "" {
+			if intent := s.intents[f.Trial]; intent != nil && intent.Round > 0 {
+				return Action{Kind: Decide, Payload: &journal.RefineRound{Round: s.round.start.Round, Event: journal.RotationEnd, Reason: fmt.Sprintf("attributed failure #%d", seq)}, Cause: []int{seq}}, true
 			}
 		}
-		slices.Sort(cause)
-		return decide(&journal.ProfileChange{From: slices.Clone(g.profile), To: to}, cause...)
-	case g.open && g.stepsDone == len(g.steps):
-		return decide(&journal.GuardRotation{Rotation: g.rotation, Event: journal.RotationEnd, Clean: true}, g.startSeq, g.lastSeq)
-	case !g.open:
-		return decide(&journal.GuardRotation{Rotation: g.rotation + 1, Event: journal.RotationStart, Steps: slices.Clone(s.steps)}, g.lastSeq)
-	}
-	cause := []int{g.lastSeq}
-	if s.retry != nil && s.retry.Condition == machine.Resident && s.retry.Rotation == g.rotation {
-		return Action{Kind: RunTrial, Trial: *s.retry, Cause: cause}
-	}
-	t := Trial{Regime: g.steps[g.stepsDone], Phase: journal.PhaseGuard, Condition: machine.Resident, Rotation: g.rotation}
-	switch t.Regime {
-	case machine.R7:
-		for i, part := range s.parts {
-			if !slices.Contains(g.partsPassed, i) {
-				t.Cores = slices.Clone(part)
-				break
-			}
+		phase := journal.PhaseGuard
+		if f.Condition == machine.Masked {
+			phase = journal.PhaseHunt
+		} else if intent := s.intents[f.Trial]; intent != nil && intent.Round > 0 {
+			phase = journal.PhaseRefine
 		}
-		t.Workload = machine.PickWorkload(machine.R7, g.r7Index).ID
-		return Action{Kind: RunTrial, Trial: t, Cause: cause}
-	case machine.R6:
-		for _, c := range s.byID() {
-			t.Cores = append(t.Cores, c.id)
+		fail := *f.Offset
+		if c.fail != nil {
+			fail = max(fail, *c.fail)
 		}
-		return Action{Kind: RunTrial, Trial: t, Cause: cause}
-	case machine.R1, machine.R2, machine.R3, machine.R4, machine.R5:
+		to := max(c.offset, *f.Offset+1)
+		pass, _ := keepPass(c.pass, fail)
+		reason := fmt.Sprintf("attributed %s in %s %s trial %s; failed mark %d", f.Signal, f.Condition, f.Regime, f.Trial, fail)
+		if to == c.offset {
+			reason += "; already shallower"
+		}
+		cause := seq
+		if s.hunt != nil && s.hunt.end != nil && s.hunt.end.Result == "direct" {
+			cause = s.hunt.endSeq
+		}
+		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: phase, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailedMark: new(fail), Reason: reason}, Cause: []int{cause}}, true
 	}
-	for _, c := range s.cores {
-		if !slices.Contains(g.passed, c.id) {
-			t.Core, t.Offset = c.id, c.offset
+	return Action{}, false
+}
+
+func (s *State) rerunNext() (Action, bool) {
+	for len(s.obligations) > 0 {
+		r := s.obligations[0]
+		start := r.class.withDuration(s.durations.StartS)
+		if s.passes(start, s.guard.profile, r.seq) < s.n {
+			return s.rerunTrial(start), true
+		}
+		if r.class.duration != s.durations.StartS && s.passes(r.class, s.guard.profile, r.seq) < 1 {
+			return s.rerunTrial(r.class), true
+		}
+		s.obligations = s.obligations[1:]
+	}
+	return Action{}, false
+}
+
+func (s *State) rerunTrial(k trialClass) Action {
+	t := Trial{Regime: k.regime, Workload: k.workload, Phase: journal.PhaseGuard, Condition: machine.Resident, DurationS: k.duration, Rerun: true}
+	for _, part := range append(s.parts, []int{}) {
+		if fmt.Sprint(part) == k.cores {
+			t.Cores = slices.Clone(part)
 			break
 		}
 	}
-	return Action{Kind: RunTrial, Trial: t, Cause: cause}
-}
-
-func (g *guard) project() *journal.GuardState {
-	if g.profileSeq == 0 {
-		return nil
+	if len(t.Cores) == 0 {
+		for _, c := range s.cores {
+			if fmt.Sprint([]int{c.id}) == k.cores {
+				t.Core, t.Offset = c.id, c.offset
+				break
+			}
+		}
 	}
-	regimes := make([]journal.RegimeClean, len(machine.Regimes))
-	for i, r := range machine.Regimes {
-		regimes[i] = journal.RegimeClean{Regime: r, CleanS: g.cleanByRegime[r], RateBoundPerH: rateBound(g.cleanByRegime[r])}
+	if s.retry != nil && s.retry.Rerun {
+		t = *s.retry
 	}
-	return &journal.GuardState{
-		Rotation:       g.rotation,
-		RotationOpen:   g.open,
-		Steps:          slices.Clone(g.steps),
-		StepsDone:      g.stepsDone,
-		Profile:        slices.Clone(g.profile),
-		ProfileSeq:     g.profileSeq,
-		CleanRotations: g.cleanRotations,
-		CleanS:         g.cleanS,
-		Regimes:        regimes,
-		RateBoundPerH:  rateBound(g.cleanS),
-		TctlMaxC:       g.tctlMax,
-		TctlMaxSeq:     g.tctlSeq,
-	}
+	return Action{Kind: RunTrial, Trial: t, Cause: []int{s.obligations[0].seq}}
 }
