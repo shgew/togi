@@ -37,8 +37,8 @@ What togi takes from existing tools and research, and what it deliberately leave
 | Qt GUI, desktop entry, notifications | CLI first; a TUI later reads the journal |
 | Monitoring subsystem (hwmon, SPD, RAPL, APERF/MPERF, Super I/O) | Not needed to judge a trial; togi reads Tctl only |
 | SQLite history | [ADR 0003](adr/0003-journal-is-source-of-truth.md) |
-| Seven validation stages, endurance banks, annealing | Replaced by confirmation plus an endless guard with tiers |
-| Multi-boot crash hunt and bisection | [ADR 0007](adr/0007-suspect-backoffs.md) |
+| Seven validation stages, endurance banks, annealing | Replaced by isolated search, masked hunts, refinement and continuing guard with tiers ([ADR 0020](adr/0020-hunt-and-refine.md)) |
+| Multi-boot crash hunt and bisection | Adopted: journaled masked delta debugging with complements, fixed loaded cores and workload, and cautious fallback marks ([ADR 0020](adr/0020-hunt-and-refine.md)); not simple load-splitting bisection |
 | Zen 1-5 command table, APU dialects | Zen 5 desktop only; other generations are [#20](https://github.com/shgew/togi/issues/20) |
 | stress-ng and stressapptest backends | [ADR 0008](adr/0008-self-checking-workloads.md) |
 | PBO limit, scalar and frequency control | togi tunes CO only; the rest is BIOS context |
