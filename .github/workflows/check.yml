@@ -58,6 +58,7 @@ jobs:
         run: nix build --no-link --print-build-logs --print-out-paths ".#checks.x86_64-linux.$CHECK" > "$RUNNER_TEMP/out-paths"
       - name: Push the check's output to Cachix
         if: env.CACHIX_AUTH_TOKEN != ''
+        continue-on-error: true
         run: cachix push togi < "$RUNNER_TEMP/out-paths"
 
   check:
