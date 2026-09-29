@@ -116,12 +116,18 @@
                   touch "$out"
                 '';
           }
-          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-            vm = import ./nix/vm-test.nix {
-              inherit pkgs;
-              package = config.checks.package.overrideAttrs { doCheck = false; };
-            };
-          };
+          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
+            let
+              vm = import ./nix/vm-test.nix {
+                inherit pkgs;
+                package = config.checks.package.overrideAttrs { doCheck = false; };
+              };
+            in
+            {
+              vm = vm.tuning-boot;
+              vm-restart-limit = vm.restart-limit;
+            }
+          );
 
           formatter = pkgs.treefmt.withConfig {
             runtimeInputs = [
