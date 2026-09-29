@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"cmp"
 	"fmt"
 	"strconv"
 
@@ -64,13 +65,13 @@ func LoadMachine(path string) (Config, error) {
 		return Config{}, fmt.Errorf("load simulator machine %s: unknown key %s", path, keys[0])
 	}
 	cfg := Config{Cores: f.Cores, BIOS: f.BIOS, Ranking: f.Ranking, OldKernel: f.OldKernel}
-	if f.BIOSContext != nil {
+	if b := f.BIOSContext; b != nil {
 		cfg.BIOSContext = machine.BIOSContext{
-			BIOSVersion:   f.BIOSContext.BIOSVersion,
-			Board:         f.BIOSContext.Board,
-			CPUModel:      f.BIOSContext.CPUModel,
-			Microcode:     f.BIOSContext.Microcode,
-			BoostLimitMHz: f.BIOSContext.BoostLimitMHz,
+			BIOSVersion:   cmp.Or(b.BIOSVersion, defaultBIOSContext.BIOSVersion),
+			Board:         cmp.Or(b.Board, defaultBIOSContext.Board),
+			CPUModel:      cmp.Or(b.CPUModel, defaultBIOSContext.CPUModel),
+			Microcode:     cmp.Or(b.Microcode, defaultBIOSContext.Microcode),
+			BoostLimitMHz: cmp.Or(b.BoostLimitMHz, defaultBIOSContext.BoostLimitMHz),
 		}
 	}
 	model := DefaultModel()

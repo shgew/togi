@@ -455,6 +455,7 @@ func TestLoadMachineBIOSContext(t *testing.T) {
 	}{
 		{"unset", "cores = 2\n", machine.BIOSContext{}},
 		{"present", "cores = 2\n[bios_context]\nbios_version = \"B.2\"\nboard = \"X670\"\ncpu_model = \"Zen 5\"\nmicrocode = \"0x123\"\nboost_limit_mhz = 5900\n", machine.BIOSContext{BIOSVersion: "B.2", Board: "X670", CPUModel: "Zen 5", Microcode: "0x123", BoostLimitMHz: 5900}},
+		{"partial", "cores = 2\n[bios_context]\nbios_version = \"SIM.2\"\n", machine.BIOSContext{BIOSVersion: "SIM.2", Board: defaultBIOSContext.Board, CPUModel: defaultBIOSContext.CPUModel, Microcode: defaultBIOSContext.Microcode, BoostLimitMHz: defaultBIOSContext.BoostLimitMHz}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
