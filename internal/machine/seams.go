@@ -99,7 +99,7 @@ type Sample struct {
 type Reporter interface {
 	Progress(detail string)
 	Sample(s Sample)
-	// Signal reports a backend computation error the moment it is classified, before the trial ends.
+	// Signal reports a backend computation error, early exit or stall when classified, before the trial ends.
 	Signal(core int, signal Signal, detail string)
 }
 

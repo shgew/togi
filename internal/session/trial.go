@@ -306,7 +306,17 @@ func (p *trialReport) Progress(detail string) {
 }
 
 func (p *trialReport) Signal(core int, signal machine.Signal, detail string) {
-	p.record(&journal.TrialProgress{Trial: p.tr.id, Signal: signal, Core: new(core), Detail: fmt.Sprintf("core %02d computation error: %s", core, detail)})
+	label := string(signal)
+	switch signal {
+	case machine.ComputationError:
+		label = "computation error"
+	case machine.UnexpectedExit:
+		label = "backend exited early"
+	case machine.Stall:
+		label = "backend stalled"
+	case machine.CorrectedMCE, machine.UncorrectedMCE, machine.Crash:
+	}
+	p.record(&journal.TrialProgress{Trial: p.tr.id, Signal: signal, Core: new(core), Detail: fmt.Sprintf("core %02d %s: %s", core, label, detail)})
 }
 
 func (p *trialReport) Sample(s machine.Sample) {

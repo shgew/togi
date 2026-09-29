@@ -116,30 +116,54 @@ func TestTrialResetClassification(t *testing.T) {
 
 func TestSignalBeforePowerLossSurvivesCrash(t *testing.T) {
 	t.Parallel()
-	in, _ := firstCrash(t, machine.ResetPowerLoss, machine.ComputationError, true)
-	stop := simulate(t, in)
-	if stop.Reason != StopRotations {
-		t.Fatalf("stopped with %+v", stop)
-	}
-	var progress *journal.TrialProgress
-	var end *journal.TrialEnd
-	for _, e := range readEvents(t, in.Dir) {
-		switch p := e.Data.(type) {
-		case *journal.TrialProgress:
-			if p.Trial == "0001" && p.Signal != "" {
-				progress = p
+	for _, signal := range []machine.Signal{machine.ComputationError, machine.UnexpectedExit, machine.Stall} {
+		t.Run(string(signal), func(t *testing.T) {
+			t.Parallel()
+			in, before := firstCrash(t, machine.ResetPowerLoss, signal, true)
+			var progress *journal.TrialProgress
+			for _, e := range before {
+				switch p := e.Data.(type) {
+				case *journal.TrialProgress:
+					if p.Trial == "0001" && p.Signal != "" {
+						progress = p
+					}
+				case *journal.TrialEnd:
+					if p.Trial == "0001" {
+						t.Fatal("trial ended before crash")
+					}
+				}
 			}
-		case *journal.TrialEnd:
-			if p.Trial == "0001" {
-				end = p
+			if progress == nil || progress.Signal != signal || progress.Core == nil || *progress.Core != 0 {
+				t.Fatalf("durable backend evidence %+v, want %s on core 0", progress, signal)
 			}
-		}
-	}
-	if progress == nil || progress.Signal != machine.ComputationError || progress.Core == nil || *progress.Core != 0 {
-		t.Fatalf("computation-error evidence %+v", progress)
-	}
-	if end == nil || end.Outcome != journal.OutcomeFailure || end.Signal != machine.ComputationError {
-		t.Fatalf("power loss after signal: %+v", end)
+			stop := simulate(t, in)
+			if stop.Reason != StopRotations {
+				t.Fatalf("stopped with %+v", stop)
+			}
+			var end *journal.TrialEnd
+			var failure *journal.Failure
+			for _, e := range readEvents(t, in.Dir) {
+				switch p := e.Data.(type) {
+				case *journal.TrialEnd:
+					if p.Trial == "0001" {
+						end = p
+					}
+				case *journal.Failure:
+					if p.Trial == "0001" {
+						failure = p
+					}
+				}
+			}
+			if end == nil || end.Outcome != journal.OutcomeFailure || end.Signal != signal {
+				t.Fatalf("power loss after signal: %+v", end)
+			}
+			if failure == nil || failure.Signal != signal {
+				t.Fatalf("recovered failure: %+v", failure)
+			}
+			if failure.Attribution != journal.Attributed || failure.Core == nil || *failure.Core != 0 {
+				t.Fatalf("failed core: %+v, want attributed core 0", failure)
+			}
+		})
 	}
 }
 

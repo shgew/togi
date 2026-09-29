@@ -84,6 +84,8 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Stop | `deadend` (condition, evidence, action taken), `boot.saved_entry` (GRUB change), `shutdown` (clean stop) |
 | Journal | `journal.torn`, `state.rebuilt` |
 
+Backend computation errors, early exits and stalls are recorded as `trial.progress` with their typed `signal`, affected `core` and signal-specific human detail as soon as they are classified, before `trial.end`. Recovery retains this durable evidence if the machine crashes before the trial ends; a recorded backend failure outranks the reset reason. `trial.signal` records load-step signalling, not backend failures.
+
 `trial.intent.cores` lists exactly the loaded cores for R6 and R7. `profile` always lists applied offsets for every core in core-id order. `tuner.decision` with `decision: check_edge` has the frozen two `workloads`; its message says `checks its edge`. `deepen` says `deepened`, `yield` says `yielded`, search `backoff` says `failed`, and guard, hunt and refine `backoff` say `backed off`. `core.phase` uses `search`, `resident` or `done`, while intent and decisions may use activities `guard`, `hunt` and `refine`. An equal `profile.change` message does not say guard restarts.
 
 Plan kinds and their payloads (optional fields are omitted when empty):

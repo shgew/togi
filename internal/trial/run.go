@@ -289,7 +289,7 @@ func (t *running) handleEvent(e streamEvent, result *machine.Result, report mach
 			if e.err != nil {
 				status = e.err.Error()
 			}
-			report.Progress(fmt.Sprintf("core %02d backend exited early: %s", inst.Core, status))
+			report.Signal(inst.Core, machine.UnexpectedExit, status)
 			return true
 		}
 		return found
@@ -443,7 +443,9 @@ func (t *running) sample(inst *instance, now time.Time, result *machine.Result, 
 		used := cpu - earlier.cpu
 		result.Signal = machine.Stall
 		result.Core = inst.Core
-		report.Sample(machine.Sample{Warning: fmt.Sprintf("stalled: %.1fs cpu in %.1fs running", used.Seconds(), span.Seconds()), PID: inst.PID, TID: inst.PID, CPU: reading.CPU})
+		detail := fmt.Sprintf("%.1fs cpu in %.1fs running", used.Seconds(), span.Seconds())
+		report.Signal(inst.Core, machine.Stall, detail)
+		report.Sample(machine.Sample{Warning: "stalled: " + detail, PID: inst.PID, TID: inst.PID, CPU: reading.CPU})
 		return true
 	}
 	return false
