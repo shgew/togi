@@ -56,6 +56,9 @@ func (s *State) foldRotation(e journal.Event, p *journal.GuardRotation) {
 		return
 	}
 	g.open = false
+	if p.Clean {
+		g.stepsDone = len(g.steps)
+	}
 	if p.Clean && p.Qualifying {
 		s.qualified = append(s.qualified, qualified{slices.Clone(g.profile), e.Seq, s.allDone()})
 	}
@@ -154,7 +157,6 @@ func (s *State) rotationNext() Action {
 			if s.passes(q.class, g.profile, g.startSeq) >= q.count {
 				continue
 			}
-			g.stepsDone = i
 			if s.retry != nil && s.retry.Rotation == g.rotation && s.retry.Condition == machine.Resident {
 				return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{g.lastSeq}}
 			}
@@ -167,7 +169,6 @@ func (s *State) rotationNext() Action {
 			return Action{Kind: RunTrial, Trial: t, Cause: []int{g.lastSeq}}
 		}
 	}
-	g.stepsDone = len(g.steps)
 	qualifying, missing := s.qualifying(g.steps)
 	return Action{Kind: Decide, Payload: &journal.GuardRotation{Rotation: g.rotation, Event: journal.RotationEnd, Clean: true, Qualifying: qualifying, Missing: missing}, Cause: []int{g.startSeq, g.lastSeq}}
 }
