@@ -4,6 +4,8 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-29
+
 ### Added
 
 - An unattributed failure is now hunted: masked trials keep the failed trial's load and workload, put some cores at their failing offsets and the rest at an anchor profile, and delta debugging finds the core or cores behind it. The result is a failed mark on one core or a joint mark over several; before a joint is marked, edge probes move each member shallower in turn until the combination passes, so the mark sits at the shallowest offsets seen to fail. These are recorded in new `hunt.start`, `hunt.mask`, `hunt.end`, `hunt.skipped` and `mark.joint` events ([#69]).
@@ -156,6 +158,8 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [0.4.0]: https://github.com/shgew/togi/releases/tag/v0.4.0
 
 [0.4.1]: https://github.com/shgew/togi/releases/tag/v0.4.1
+
+[0.5.0]: https://github.com/shgew/togi/releases/tag/v0.5.0
 
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
