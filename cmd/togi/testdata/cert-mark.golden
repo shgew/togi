@@ -3,13 +3,13 @@
 +------------------------------------------------------------+
 
       .---.
-     / * * \     BRONZE                    [tier.change #4836]
+     / * * \     BRONZE                    [tier.change #4835]
     |   *   |    Silver    7.3 of 24 clean hours
      \ * * /     Gold      7.3 of 100 clean hours
       '---'      Platinum  locked until togi observe exists
        | |
 
-Profile                                 [profile.change #4147]
+Profile                                 [profile.change #4146]
   CORE  EDGE  FAILED  JOINT  DONE  DECIDED
   00    -10   -11     -      true  [#3599]
   01    -10   -11     -      true  [#3601]
@@ -22,16 +22,16 @@ Profile                                 [profile.change #4147]
   08    -10   -11     -      true  [#3600]
   09    -10   -11     -      true  [#3602]
   10    -10   -11     -      true  [#3604]
-  11    -9    -11     J1     true  [#4146]
+  11    -9    -11     J1     true  [#4145]
   12    -10   -11     -      true  [#3608]
   13    -10   -11     -      true  [#3610]
   14    -10   -11     -      true  [#3612]
   15    -10   -11     -      true  [#3614]
 
 joint marks:
-  J1 core 03 -10 + core 11 -10, observed in hunt 1 [#4145]
+  J1 core 03 -10 + core 11 -10, observed in hunt 1 [#4144]
 
-Evidence since [#3672]: the last failure on a profile at least as deep
+Evidence since [#3671]: the last failure on a profile at least as deep
   REGIME  WORKLOAD                         STARTS  CLEAN H  RATE BOUND
   R1      mprime-sse-4k-21k                16      0.5      < 5.63/h
   R1      ycruncher-bkt-sftv4              16      0.5      < 5.63/h
@@ -48,11 +48,11 @@ Evidence since [#3672]: the last failure on a profile at least as deep
   R7      mprime-avx512-36k-248k-allcore   12      0.6      < 4.74/h
   R7      ycruncher-fftv4-n63-vt3-allcore  12      0.6      < 4.74/h
   all     -                                -       7.3      < 0.42/h
-  Tctl max 76°C                              [trial.end #4244]
+  Tctl max 76°C                              [trial.end #4243]
   Rate bound = 3 / clean hours, 95% confidence (rule of three).
 
 Session 20260101T000000Z, started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0, boost limit 5700 MHz
 
-Journal SHA-256 <journal sha256> through seq 4886
+Journal SHA-256 <journal sha256> through seq 4885
 Durability is a bound, not proof.

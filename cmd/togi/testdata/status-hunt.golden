@@ -21,10 +21,10 @@ CORE  CCD  OFFSET  PHASE  FAILED  JOINT  QUEUED  LAST DECISION
 14    1    -10     done   -11     -      -       [#3612] core 14 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 14)
 15    1    -10     done   -11     -      -       [#3614] core 15 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 15)
 
-hunt 1 [#3682]: unattributed crash in R7 trial 0289; anchor all-zero
+hunt 1 [#3681]: unattributed crash in R7 trial 0289; anchor all-zero
   candidates 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
 MASK  CORES                    OUTCOME  STARTS
 M1    08 09 10 11 12 13 14 15  running  0/5
 
-clean hours since the tier clock [#3672]: 0.0 h, no failure-rate bound yet
+clean hours since the tier clock [#3671]: 0.0 h, no failure-rate bound yet
 REGIME  WORKLOAD  STARTS  CLEAN H  RATE BOUND

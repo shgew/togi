@@ -61,6 +61,6 @@
  7h13m  trial 0289 FAIL crash, last evidence 0s after start
  7h13m  unattributed crash failure in resident R7 trial 0289: no evidence names a single core
  7h13m  preferred-core ranking unavailable (simulated preferred-core ranking unavailable); core-id order
- 7h13m  hunt 1: unattributed crash in resident R7 trial 0289; anchor from all-zero; candidates 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15; masks of 5 × 120s
- 7h13m  hunt 1 mask 1: cores 08, 09, 10, 11, 12, 13, 14, 15 at failing offsets, the rest at the anchor; 120s starts
+ 7h13m  hunt 1: unattributed failure in resident R7 trial 0289; anchor from all-zero; candidates 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15; masks of 5 × 120s
+ 7h13m  hunt 1 mask 1: cores 08, 09, 10, 11, 12, 13, 14, 15 at failing offsets, the rest at the anchor; starts of 120s
  7h13m  trial 0290 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime AVX2 36K-248K all-core 120s masked hunt 1 mask 1
