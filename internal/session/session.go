@@ -43,6 +43,7 @@ type Input struct {
 	// Carry is what a transition carries into a new session; nil otherwise.
 	Carry  *carry.Carry
 	Stderr io.Writer
+	Close  func() error
 }
 
 type Bootloader interface {
@@ -84,16 +85,21 @@ type runner struct {
 	tuner *tuner.State
 
 	// condition and applied describe what this process last wrote to every core; empty until then.
-	condition    machine.Condition
-	applied      []int
-	fatal        error
-	cancelTrial  context.CancelFunc
-	kernelWaited int
+	condition     machine.Condition
+	applied       []int
+	fatal         error
+	cancelTrial   context.CancelFunc
+	kernelWaited  int
+	running       machine.Running
+	shutdownEvent *journal.Shutdown
 }
 
-func Run(ctx context.Context, in Input) (Stop, error) {
+func Run(ctx context.Context, in Input) (stop Stop, err error) {
 	r := &runner{in: in, fold: newFold(), tuner: tuner.New()}
-	stop, err := r.run(ctx)
+	defer func() {
+		err = errors.Join(err, r.close(!errors.Is(err, machine.ErrCrashed), &stop))
+	}()
+	stop, err = r.run(ctx)
 	if errors.Is(err, errDeadEndEvidence) {
 		return Stop{}, errors.New("dead-end evidence recorded without a dead end")
 	}
@@ -217,9 +223,14 @@ func (r *runner) latch(err error) error {
 	if r.cancelTrial != nil {
 		r.cancelTrial()
 	}
+	return r.fatal
+}
+
+func (r *runner) emergencyRestore(err error) error {
 	zeroErr := r.in.Machine.SMU.SetAllOffsets(0)
 	status := "readback all 0"
 	var problems []string
+	var cleanupErrors []error
 	ids := r.fold.ids
 	if len(r.cores) > 0 {
 		ids = make([]int, len(r.cores))
@@ -231,8 +242,10 @@ func (r *runner) latch(err error) error {
 		o, readErr := r.in.Machine.SMU.Offset(core)
 		if readErr != nil {
 			problems = append(problems, fmt.Sprintf("core %02d unreadable: %v", core, readErr))
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("emergency read core %02d: %w", core, readErr))
 		} else if o != 0 {
 			problems = append(problems, fmt.Sprintf("core %02d reads %d", core, o))
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("emergency read core %02d: got %d, want 0", core, o))
 		}
 	}
 	if len(problems) > 0 {
@@ -245,7 +258,7 @@ func (r *runner) latch(err error) error {
 			fmt.Fprintf(r.in.Stderr, "togi: journal write failed: %v; every core set to CO 0 without an intent (%s)\n", err, status)
 		}
 	}
-	return r.fatal
+	return errors.Join(append(cleanupErrors, zeroErr)...)
 }
 
 func (r *runner) checkState() error {
@@ -580,18 +593,7 @@ func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 			}
 		}
 	}
-	if d.Condition != journal.DeadEndSMU {
-		if err := r.restore(); err != nil && !errors.Is(err, errDeadEndEvidence) {
-			return nil, err
-		}
-	}
-	boundary, err := r.kernelBoundary("", 0, false)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := r.append(&journal.Shutdown{Reason: journal.ShutdownDeadEnd, KernelBoundary: boundary}); err != nil {
-		return nil, err
-	}
+	r.shutdownEvent = &journal.Shutdown{Reason: journal.ShutdownDeadEnd}
 	stop := &Stop{Reason: StopDeadEnd, DeadEnd: d, Reboot: d.Action == journal.ActionClearSavedEntryAndReboot && cleared}
 	for _, seq := range e.Cause {
 		stop.Evidence = append(stop.Evidence, r.eventAt(seq))
@@ -936,19 +938,70 @@ func (r *runner) reachedRotations() bool {
 }
 
 func (r *runner) shutdown(p *journal.Shutdown, stop StopReason) (Stop, error) {
-	if err := r.restore(); err != nil {
-		return r.afterEvidence(err)
-	}
-	boundary, err := r.kernelBoundary("", 0, false)
-	if err != nil {
-		return Stop{}, err
-	}
-	p.KernelBoundary = boundary
-	if _, err := r.append(p); err != nil {
-		return Stop{}, err
-	}
+	r.shutdownEvent = p
 	return Stop{Reason: stop}, nil
 }
+
+func (r *runner) close(restore bool, stop *Stop) (err error) {
+	if r.in.Close != nil {
+		defer func() { err = errors.Join(err, r.in.Close()) }()
+	}
+	if r.cancelTrial != nil {
+		r.cancelTrial()
+	}
+	if r.running != nil {
+		if stop, ok := r.running.(interface{ Stop() error }); ok {
+			err = errors.Join(err, stop.Stop())
+		} else {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			_, waitErr := r.running.Wait(ctx, cleanupReport{})
+			if !errors.Is(waitErr, context.Canceled) {
+				err = errors.Join(err, waitErr)
+			}
+		}
+		r.running = nil
+	}
+	if !restore {
+		return err
+	}
+	defer func() {
+		if r.fatal != nil {
+			err = errors.Join(err, r.emergencyRestore(errors.Unwrap(r.fatal)))
+		}
+	}()
+	if r.fatal != nil {
+		return err
+	}
+	var restoreErr error
+	if stop.DeadEnd == nil || stop.DeadEnd.Condition != journal.DeadEndSMU {
+		restoreErr = r.restore()
+	}
+	if errors.Is(restoreErr, errDeadEndEvidence) {
+		cleanupStop, cleanupErr := r.afterEvidence(restoreErr)
+		if stop.Reason != StopDeadEnd {
+			*stop = cleanupStop
+		}
+		restoreErr = cleanupErr
+	}
+	err = errors.Join(err, restoreErr)
+	if restoreErr == nil && r.shutdownEvent != nil {
+		boundary, boundaryErr := r.kernelBoundary("", 0, false)
+		if boundaryErr != nil {
+			return errors.Join(err, boundaryErr)
+		}
+		r.shutdownEvent.KernelBoundary = boundary
+		_, appendErr := r.append(r.shutdownEvent)
+		err = errors.Join(err, appendErr)
+	}
+	return err
+}
+
+type cleanupReport struct{}
+
+func (cleanupReport) Progress(string)                    {}
+func (cleanupReport) Sample(machine.Sample)              {}
+func (cleanupReport) Signal(int, machine.Signal, string) {}
 
 // restore writes every core back to its baseline once this process has written offsets, so the machine keeps running
 // on the values it had before togi started, except that a core never goes deeper than its current offset.

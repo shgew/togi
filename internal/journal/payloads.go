@@ -107,6 +107,17 @@ func cpuList(cpus []int) string {
 
 func shortBoot(b string) string { return b[:min(8, len(b))] }
 
+type SessionWarning struct {
+	Operation string `json:"operation"`
+	Trial     string `json:"trial,omitempty"`
+	Error     string `json:"error"`
+}
+
+func (*SessionWarning) Kind() Kind { return KindSessionWarning }
+func (p *SessionWarning) Message() string {
+	return fmt.Sprintf("%s: %s; continuing the session", p.Operation, p.Error)
+}
+
 type SessionStart struct {
 	Build
 	Session string             `json:"session"`

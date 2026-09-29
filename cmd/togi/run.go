@@ -157,18 +157,6 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	if dash != nil {
 		log = dash
 	}
-	j, err := journal.Open(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: log, Renderer: renderer, Build: session.Build(), Monotonic: m.Clock.Monotonic})
-	if err != nil {
-		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
-	}
-	if len(j.Events()) > 0 {
-		if err := journal.Compatible(journal.BuildOf(j.Events()), session.Build()); err != nil {
-			if cerr := j.Close(); cerr != nil {
-				err = errors.Join(err, cerr)
-			}
-			return runResult(session.Stop{}, err, stderr, renderer, bootloader)
-		}
-	}
 	prompt := defectPrompt(stderr)
 	if dash != nil {
 		dash.show()
@@ -185,16 +173,17 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	if dash != nil {
 		sessionStderr = &hidden
 	}
-	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr})
+	j, err := journal.Open(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: log, Renderer: renderer, Build: session.Build(), Monotonic: m.Clock.Monotonic})
+	if err != nil {
+		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
+	}
+	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr, Close: j.Close})
 	if dash != nil {
 		dash.hide()
 		_, _ = hidden.WriteTo(stderr)
 		if err == nil && stop.Reason != session.StopDeadEnd {
 			printCleanStop(j.Events(), stderr, renderer)
 		}
-	}
-	if cerr := j.Close(); err == nil && cerr != nil {
-		err = cerr
 	}
 	return runResult(stop, err, stderr, renderer, bootloader)
 }

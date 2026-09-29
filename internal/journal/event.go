@@ -21,6 +21,7 @@ const (
 	KindSessionContext  Kind = "session.context"
 	KindSessionBaseline Kind = "session.baseline"
 	KindSessionNotice   Kind = "session.notice"
+	KindSessionWarning  Kind = "session.warning"
 	KindSessionArchived Kind = "session.archived"
 	KindSessionCarried  Kind = "session.carried"
 	KindConfigLoaded    Kind = "config.loaded"
@@ -171,6 +172,7 @@ var payloadConstructors = map[Kind]func() Payload{
 	KindSessionContext:  func() Payload { return &SessionContext{} },
 	KindSessionBaseline: func() Payload { return &SessionBaseline{} },
 	KindSessionNotice:   func() Payload { return &SessionNotice{} },
+	KindSessionWarning:  func() Payload { return &SessionWarning{} },
 	KindSessionArchived: func() Payload { return &SessionArchived{} },
 	KindSessionCarried:  func() Payload { return &SessionCarried{} },
 	KindConfigLoaded:    func() Payload { return &ConfigLoaded{} },

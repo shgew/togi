@@ -73,6 +73,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Group | Kinds |
 |---|---|
 | Session | `session.start` (session ID, cores and build stamp), `session.context` (BIOS context), `session.baseline` (baseline profile), `session.notice`, `session.archived`, `session.carried` (what a transition carries in, Transitions below) |
+| Session warnings | `session.warning` (`operation`, optional `trial`, `error`): nonfatal session maintenance failure; passed-trial marker or prune failures cite the durable passing `trial.end` |
 | Config and preflight | `config.loaded` (effective config and build stamp), `preflight.check` (one per check, with result) |
 | SMU | `smu.intent`, `smu.write`, `smu.readback`, `smu.error` |
 | Profile | `profile.applied` (applied condition), `profile.change` (resident profile, `from` null on entering guard), `profile.restored` (before shutdown) |
@@ -186,7 +187,7 @@ The run log and `togi events` color the whole human-readable line according to i
 | Dead end (`deadend` event and `run` summary), incompatible-session refusal line (not an event) | Red, bold |
 | Search step passed (`step_deeper`), refinement `deepen`, or `hunt.end` result `culprit`, `joint` or `direct` | Green |
 | Core becomes done, search becomes resident, passed `refine.round` end, clean qualifying `guard.rotation` end, or tier earned | Green, bold |
-| `mark.joint`, `hunt.start`, `tuner.warning`, `backoff` or `yield`; known defect or ruleset mismatch warning | Yellow |
+| `mark.joint`, `hunt.start`, `tuner.warning`, `session.warning`, `backoff` or `yield`; known defect or ruleset mismatch warning | Yellow |
 | Inconclusive trial or `backend.retry` | Dim |
 | `hunt.mask`, `refine.round` start, `hunt.skipped`, `host.ranking`, clean non-qualifying rotation, and everything else | Plain |
 
