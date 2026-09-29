@@ -123,11 +123,22 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	if !multi {
 		cores, cpus = []int{t.Core}, info.CPUs[:min(w.Threads, len(info.CPUs))]
 	}
-	duration := r.durationS(t)
+	duration := t.DurationS
 	tr := &trialRun{r: r, t: t, id: fmt.Sprintf("%04d", r.fold.trials+1)}
+	profile := slices.Clone(r.applied)
+	if t.Condition == machine.Isolated {
+		profile = make([]int, len(r.cores))
+		for i, c := range r.cores {
+			if c.Core == t.Core {
+				profile[i] = t.Offset
+				break
+			}
+		}
+	}
 	p := &journal.TrialIntent{
 		Trial: tr.id, Regime: t.Regime, Workload: w.ID, DurationS: duration,
 		Condition: t.Condition, Phase: t.Phase, Retry: t.Retry, Rotation: t.Rotation,
+		Profile: profile, Hunt: t.Hunt, Mask: t.Mask, Round: t.Round, Rerun: t.Rerun,
 	}
 	if multi {
 		p.Cores = cores
@@ -145,15 +156,18 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 		}
 	}
 
-	since := r.in.Machine.Clock.Now()
+	since := r.in.Machine.Clock.Monotonic()
 	spec := machine.TrialSpec{
 		ID: tr.id, Regime: t.Regime, Workload: w, Condition: t.Condition,
 		Cores: cores, CPUs: cpus, Duration: time.Duration(duration) * time.Second,
 		Index: index, Seed: uint64(intent.Seq),
 	}
-	running, err := r.in.Machine.Trials.Start(ctx, spec)
+	trialCtx, cancel := context.WithCancel(ctx)
+	r.cancelTrial = cancel
+	defer func() { r.cancelTrial = nil; cancel() }()
+	running, err := r.in.Machine.Trials.Start(trialCtx, spec)
 	if err != nil {
-		return tr.failedToRun(ctx, since, 0, "setup failed", err)
+		return tr.failedToRun(trialCtx, since, 0, "setup failed", err)
 	}
 	s := running.Started()
 	ts := &journal.TrialStart{Trial: tr.id, Scope: s.Scope, PID: s.PID, CPUs: s.CPUs, Argv: s.Argv, Files: s.Files}
@@ -164,21 +178,23 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	}
 	started, err := r.append(ts, intent.Seq)
 	if err != nil {
+		_, _ = running.Wait(trialCtx, &trialReport{tr: tr})
 		return err
 	}
 	tr.start = started.Seq
 	if s.Schedule != nil {
 		if _, err := r.append(&journal.TrialSignal{Trial: tr.id, Schedule: s.Schedule.String(), Seed: s.Schedule.Seed}, started.Seq); err != nil {
+			_, _ = running.Wait(trialCtx, &trialReport{tr: tr})
 			return err
 		}
 	}
 	report := &trialReport{tr: tr}
-	res, err := running.Wait(ctx, report)
+	res, err := running.Wait(trialCtx, report)
 	if report.err != nil {
 		return report.err
 	}
 	if err != nil {
-		return tr.failedToRun(ctx, since, res.Ran, "trial runner failed", err)
+		return tr.failedToRun(trialCtx, since, res.Ran, "trial runner failed", err)
 	}
 	if s.Schedule != nil {
 		if _, err := r.append(&journal.TrialSignal{Trial: tr.id, Stops: res.Stops, Conts: res.Conts}, started.Seq); err != nil {
@@ -195,7 +211,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 		end.Outcome, end.Escaped, end.Reason = journal.OutcomeInconclusive, res.Escaped, "backend thread outside allowed cpus"
 	case res.Signal != "":
 		end.Outcome, end.Signal = journal.OutcomeFailure, res.Signal
-		if t.Condition == machine.Resident {
+		if t.Condition != machine.Isolated {
 			end.Core = new(res.Core)
 		}
 	case len(mces) > 0:
@@ -218,7 +234,6 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	return nil
 }
 
-// trialReport records what the runner reports during Wait; the first append error ends the trial after Wait returns.
 type trialReport struct {
 	tr  *trialRun
 	err error
@@ -226,6 +241,10 @@ type trialReport struct {
 
 func (p *trialReport) Progress(detail string) {
 	p.record(&journal.TrialProgress{Trial: p.tr.id, Detail: detail})
+}
+
+func (p *trialReport) Signal(core int, signal machine.Signal, detail string) {
+	p.record(&journal.TrialProgress{Trial: p.tr.id, Signal: signal, Core: new(core), Detail: fmt.Sprintf("core %02d computation error: %s", core, detail)})
 }
 
 func (p *trialReport) Sample(s machine.Sample) {
@@ -239,50 +258,14 @@ func (p *trialReport) record(payload journal.Payload) {
 	_, p.err = p.tr.r.append(payload, p.tr.start)
 }
 
-func (r *runner) durationS(t tuner.Trial) int {
-	d := r.in.Config.Durations
-	switch t.Phase {
-	case journal.PhaseConfirmation:
-		return d.ConfirmationTrialS
-	case journal.PhaseGuard:
-		switch t.Regime {
-		case machine.R6:
-			return d.GuardIdleS
-		case machine.R7:
-			return r.r7DurationS(t)
-		case machine.R1, machine.R2, machine.R3, machine.R4, machine.R5:
-		}
-		return d.GuardTrialS
-	case journal.PhaseSearch, journal.PhaseConfirmed:
-	}
-	return d.SearchTrialS
-}
-
-// r7DurationS splits guard_all_core_s over one R7 step: each single-CCD trial gets a quarter, the all-core trial the
-// rest.
-func (r *runner) r7DurationS(t tuner.Trial) int {
-	d := r.in.Config.Durations.GuardAllCoreS
-	ccds := map[int]bool{}
-	for _, c := range r.cores {
-		ccds[c.CCD] = true
-	}
-	n := len(ccds)
-	switch {
-	case n == 1:
-		return d
-	case len(t.Cores) < len(r.cores):
-		return d / 4
-	}
-	return d - n*(d/4)
-}
 
 // writesTarget reports whether the trial sets its target before and resets it after: isolated trials at a nonzero
 // offset. Resident trials run on the profile already applied.
 func (tr *trialRun) writesTarget() bool {
-	return tr.t.Condition == machine.Isolated && tr.t.Offset != 0
+	return tr.t.Condition == machine.Isolated
 }
 
-func (tr *trialRun) failedToRun(ctx context.Context, since time.Time, ran time.Duration, what string, err error) error {
+func (tr *trialRun) failedToRun(ctx context.Context, since time.Duration, ran time.Duration, what string, err error) error {
 	r := tr.r
 	if errors.Is(err, machine.ErrCrashed) {
 		return err
@@ -292,7 +275,7 @@ func (tr *trialRun) failedToRun(ctx context.Context, since time.Time, ran time.D
 	if terr != nil {
 		return terr
 	}
-	end := &journal.TrialEnd{Trial: tr.id, Outcome: journal.OutcomeInconclusive, DurationS: int(ran.Seconds()), Reason: fmt.Sprintf("%s: %v", what, err)}
+	end := &journal.TrialEnd{Trial: tr.id, Outcome: journal.OutcomeInconclusive, DurationS: int(ran.Seconds()), Reason: fmt.Sprintf("%s: %v", what, err), BackendMissing: errors.Is(err, machine.ErrBackendMissing)}
 	if interrupted {
 		end.Interrupted, end.Reason = true, "stopped by signal"
 	}
@@ -317,7 +300,7 @@ func mceSignal(mces []recordedMCE) machine.Signal {
 	return machine.UncorrectedMCE
 }
 
-func (tr *trialRun) teardown(since time.Time) (mces []recordedMCE, readErr, err error) {
+func (tr *trialRun) teardown(since time.Duration) (mces []recordedMCE, readErr, err error) {
 	r := tr.r
 	if tr.writesTarget() {
 		if _, err := r.set(tr.t.Core, 0, tr.start); err != nil {

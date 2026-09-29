@@ -27,7 +27,8 @@ func run(args []string, stderr io.Writer) int {
 	flags := flag.NewFlagSet("sim", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	seed := flags.Uint64("seed", 1, "draw the simulated machine's edges and failures from this `seed`")
-	rotations := flags.Int("rotations", 1, "stop after `N` clean guard rotations of one profile")
+	rotations := flags.Int("rotations", 1, "stop after `N` clean qualifying rotations once every core is done and refinement can reach no more depth")
+	machineFile := flags.String("machine", "", "load the simulated machine from this TOML `file`")
 	dir := flags.String("state-dir", "", "use this state `directory`, resuming a journal it holds; default a new temporary one")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
 		return 0
@@ -50,7 +51,17 @@ func run(args []string, stderr io.Writer) int {
 		}
 		fmt.Fprintf(stderr, "sim: state directory %s\n", *dir)
 	}
-	cfg, err := sim.Resume(*dir, sim.Config{Seed: *seed})
+	machineConfig := sim.Config{Seed: *seed}
+	var err error
+	if *machineFile != "" {
+		machineConfig, err = sim.LoadMachine(*machineFile)
+		if err != nil {
+			fmt.Fprintf(stderr, "sim: load machine: %v\n", err)
+			return 1
+		}
+		machineConfig.Seed = *seed
+	}
+	cfg, err := sim.Resume(*dir, machineConfig)
 	if err != nil {
 		fmt.Fprintf(stderr, "sim: %v\n", err)
 		return 1
