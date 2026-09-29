@@ -14,12 +14,13 @@ import (
 const (
 	certHelp = `Usage: togi cert
 
-Render the certificate: the tier the current profile earned, each core's edge,
-failed and joint marks and done state, qualifying rotation evidence since the
-tier clock with workload starts, clean hours and failure-rate bounds, and the
-SHA-256 of the journal lines it was rendered from. The edges are the values to
-enter in BIOS. A different ruleset warns before rendering; a different schema
-is refused.
+Render the certificate: the tier the current profile earned, each core's offset,
+CCD and slot, failed and joint marks and done state, qualifying rotation evidence
+since the tier clock with workload starts, clean hours and failure-rate bounds,
+and the SHA-256 of the journal lines it was rendered from. Match the offsets to
+the BIOS per-core Curve Optimizer controls by CCD and slot. Board labels vary;
+stop if they cannot be reconciled. A different ruleset warns before rendering;
+a different schema is refused.
 
 Examples:
   togi cert   The certificate of the session in the default state directory`
@@ -87,21 +88,21 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 		fmt.Fprintln(w, withRef("Profile", certWidth, journal.KindProfileChange, gs.ProfileSeq))
 	}
 	tw := newTable(w)
-	fmt.Fprintln(tw, "  CORE\tEDGE\tFAILED\tJOINT\tDONE\tDECIDED")
+	fmt.Fprintln(tw, "  CORE\tCCD\tSLOT\tOFFSET\tFAILED\tJOINT\tDONE\tDECIDED")
 	var moved []string
 	for i, c := range st.Cores {
 		decided := "-"
 		if d := c.LastDecision; d != nil {
 			decided = fmt.Sprintf("[#%d]", d.Seq)
 		}
-		edge := c.Offset
+		offset := c.Offset
 		if gs != nil && i < len(gs.Profile) {
-			edge = gs.Profile[i]
+			offset = gs.Profile[i]
 		}
-		if edge != c.Offset {
+		if offset != c.Offset {
 			moved = append(moved, fmt.Sprintf("  core %02d is at %d since %s; the next profile.change restarts guard", c.Core, c.Offset, decided))
 		}
-		fmt.Fprintf(tw, "  %02d\t%d\t%s\t%s\t%t\t%s\n", c.Core, edge, mark(c.FailedMark), jointIDs(c.JointMarks), c.Phase == journal.PhaseDone, decided)
+		fmt.Fprintf(tw, "  %02d\t%d\t%d\t%d\t%s\t%s\t%t\t%s\n", c.Core, c.CCD, c.Core%8, offset, mark(c.FailedMark), jointIDs(c.JointMarks), c.Phase == journal.PhaseDone, decided)
 	}
 	_ = tw.Flush()
 	writeJointMarks(w, st.JointMarks)
