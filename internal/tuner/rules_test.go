@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -78,6 +79,30 @@ func TestOptimum(t *testing.T) {
 				t.Fatalf("optimum (-want +got):\n%s", cmp.Diff(tt.want, got))
 			}
 		})
+	}
+}
+
+func TestOptimumWithStaircaseJointMarks(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -20, fail: new(-27)}, coreStart{phase: journal.PhaseDone, offset: -20, fail: new(-39)}, coreStart{phase: journal.PhaseDone, offset: -20, fail: new(-30)})
+	step := []int{-26, -38, -29}
+	for k := range 39 {
+		h.add(&journal.MarkJoint{Mark: k + 1, Hunt: k + 1, Members: []journal.JointMember{{Core: 0, Offset: step[0]}, {Core: 1, Offset: step[1]}, {Core: 2, Offset: step[2]}}})
+		step[2-k%3]++
+	}
+	var want []int
+	for a := -26; a <= 0; a++ {
+		for b := -38; b <= 0; b++ {
+			for c := -29; c <= 0; c++ {
+				p := []int{a, b, c}
+				if _, reached := h.s.reaches(p); reached || want != nil && (totalDepth(p) > totalDepth(want) || totalDepth(p) == totalDepth(want) && slices.Compare(p, want) >= 0) {
+					continue
+				}
+				want = p
+			}
+		}
+	}
+	if diff := cmp.Diff(want, h.s.optimum(h.s.offsets(), []int{0, 0, 0}, []int{0, 1, 2})); diff != "" {
+		t.Fatalf("optimum against exhaustive search (-want +got):\n%s", diff)
 	}
 }
 

@@ -127,6 +127,12 @@ func (s *State) optimum(p, hi, ranking []int) []int {
 			return
 		}
 		mark := active[at]
+		for _, m := range mark.Members {
+			if i := s.index(m.Core); i >= 0 && max(lo[i], caps[i]) > m.Offset {
+				visit(at + 1)
+				return
+			}
+		}
 		members := slices.Clone(mark.Members)
 		slices.SortFunc(members, func(a, b journal.JointMember) int {
 			ia, ib := s.index(a.Core), s.index(b.Core)
