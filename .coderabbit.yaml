@@ -18,6 +18,7 @@ reviews:
     enabled: true
   auto_review:
     enabled: false
+  review_status: false
   path_filters:
     - "!go.sum"
     - "!flake.lock"
