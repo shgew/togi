@@ -9,7 +9,6 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
-
 func TestResumeContinuesBoots(t *testing.T) {
 	t.Parallel()
 	dir, first := reference(t, small())

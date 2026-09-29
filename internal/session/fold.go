@@ -25,7 +25,7 @@ type openTrial struct {
 	startCPUs []int
 	started   time.Time
 	startMono int64
-	lastMono int64
+	lastMono  int64
 	signal    machine.Signal
 	core      *int
 	last      time.Time
@@ -63,24 +63,24 @@ type fold struct {
 	carriedSeq  int
 	carried     map[int]journal.CarriedCore
 
-	boots       []string
-	lastKind    map[string]journal.Kind
-	applied     map[string]int
-	appliedCond map[string]machine.Condition
-	crashSeq    map[string]int
-	appliedMono map[string]int64
-	registers map[string][]int
-	uncertain map[string][]bool
-	baselineBoot map[string]bool
-	retries map[machine.Backend]*journal.BackendRetry
-	retryFollowed map[machine.Backend]bool
-	lastReason map[machine.Backend]string
-	missingSeq int
-	missingDetail string
-	thermalSeq int
-	thermalDetail string
-	kernelRetries int
-	kernelDeadSeq int
+	boots            []string
+	lastKind         map[string]journal.Kind
+	applied          map[string]int
+	appliedCond      map[string]machine.Condition
+	crashSeq         map[string]int
+	appliedMono      map[string]int64
+	registers        map[string][]int
+	uncertain        map[string][]bool
+	baselineBoot     map[string]bool
+	retries          map[machine.Backend]*journal.BackendRetry
+	retryFollowed    map[machine.Backend]bool
+	lastReason       map[machine.Backend]string
+	missingSeq       int
+	missingDetail    string
+	thermalSeq       int
+	thermalDetail    string
+	kernelRetries    int
+	kernelDeadSeq    int
 	kernelDeadDetail string
 
 	unmatched   []openIntent
@@ -103,23 +103,23 @@ type fold struct {
 
 func newFold() *fold {
 	return &fold{
-		phase:       map[int]journal.Phase{},
-		carried:     map[int]journal.CarriedCore{},
-		lastKind:    map[string]journal.Kind{},
-		applied:     map[string]int{},
-		appliedCond: map[string]machine.Condition{},
-		crashSeq:    map[string]int{},
-		appliedMono: map[string]int64{},
-		registers: map[string][]int{},
-		uncertain: map[string][]bool{},
-		baselineBoot: map[string]bool{},
-		retries: map[machine.Backend]*journal.BackendRetry{},
+		phase:         map[int]journal.Phase{},
+		carried:       map[int]journal.CarriedCore{},
+		lastKind:      map[string]journal.Kind{},
+		applied:       map[string]int{},
+		appliedCond:   map[string]machine.Condition{},
+		crashSeq:      map[string]int{},
+		appliedMono:   map[string]int64{},
+		registers:     map[string][]int{},
+		uncertain:     map[string][]bool{},
+		baselineBoot:  map[string]bool{},
+		retries:       map[machine.Backend]*journal.BackendRetry{},
 		retryFollowed: map[machine.Backend]bool{},
-		lastReason: map[machine.Backend]string{},
-		mceKeys:     map[string]bool{},
-		streaks:     map[machine.Backend][]int{},
-		index:       map[int]map[machine.Regime]int{},
-		allIndex:    map[machine.Regime]int{},
+		lastReason:    map[machine.Backend]string{},
+		mceKeys:       map[string]bool{},
+		streaks:       map[machine.Backend][]int{},
+		index:         map[int]map[machine.Regime]int{},
+		allIndex:      map[machine.Regime]int{},
 	}
 }
 
