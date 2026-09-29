@@ -27,6 +27,7 @@ import (
 )
 
 func TestStatusAndCert(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
 	simulated(t, dir)
@@ -104,6 +105,7 @@ func TestStatusAndCert(t *testing.T) {
 }
 
 func TestStatusJointMarkAndOpenHunt(t *testing.T) {
+	t.Parallel()
 	model := sim.DefaultModel()
 	model.PastEdgeRate = 1
 	model.Signals = map[machine.Signal]float64{machine.Crash: 1}
@@ -122,6 +124,7 @@ func TestStatusJointMarkAndOpenHunt(t *testing.T) {
 		{name: "mark"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			m, err := sim.New(cfg)
 			if err != nil {
@@ -183,6 +186,7 @@ func TestStatusJointMarkAndOpenHunt(t *testing.T) {
 }
 
 func TestStatusOpenRefinement(t *testing.T) {
+	t.Parallel()
 	st := journal.State{
 		Session: &journal.SessionInfo{ID: "20260101T000000Z", Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)},
 		Phase:   string(journal.PhaseRefine),
@@ -202,6 +206,7 @@ func TestStatusOpenRefinement(t *testing.T) {
 }
 
 func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
 	simulated(t, dir)

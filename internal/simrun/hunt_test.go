@@ -623,7 +623,6 @@ func quickMatrixConfig() config.Config {
 
 func runInterruptionMatrix(t *testing.T, name string, cfg sim.Config, c config.Config, open func(journal.Event) bool, closeWindow func(journal.Event, *bool) bool) {
 	t.Helper()
-	started := time.Now()
 	_, prefix, _ := runHunt(t, cfg, nil, func(in *Input) {
 		in.Config = c
 		in.Rotations = 0
@@ -649,7 +648,7 @@ func runInterruptionMatrix(t *testing.T, name string, cfg sim.Config, c config.C
 			reasons[e.Boot] = p.ResetReason
 		}
 	}
-	run := func(at int) []journal.Event {
+	run := func(t *testing.T, at int) []journal.Event {
 		t.Helper()
 		dir := t.TempDir()
 		for path, data := range snapshot {
@@ -715,33 +714,35 @@ func runInterruptionMatrix(t *testing.T, name string, cfg sim.Config, c config.C
 		}
 		return events[len(prefix):]
 	}
-	reference := run(-1)
+	reference := run(t, -1)
 	if len(reference) == 0 {
 		t.Fatal("empty reference window")
 	}
 	want := matrixCommitments(reference)
+	t.Logf("%s interruption matrix: %d crash points", name, len(reference)+2)
 	for at := 0; at <= len(reference)+1; at++ {
-		events := run(at)
-		got := matrixCommitments(events)
-		if diff := cmp.Diff(want, got); diff != "" {
-			if at == 0 {
-				t.Fatalf("%s before first append commitments (-want +got):\n%s", name, diff)
-			}
-			t.Fatalf("%s append %d/%d at %s commitments (-want +got):\n%s", name, at, len(reference), reference[min(at-1, len(reference)-1)].Kind, diff)
-		}
-		seen := map[[2]int]bool{}
-		for _, e := range events {
-			if p, ok := e.Data.(*journal.HuntMask); ok {
-				key := [2]int{p.Hunt, p.Mask}
-				if seen[key] {
-					t.Fatalf("%s append %d: duplicated hunt.mask %v", name, at, key)
+		t.Run(fmt.Sprint(at), func(t *testing.T) {
+			t.Parallel()
+			events := run(t, at)
+			got := matrixCommitments(events)
+			if diff := cmp.Diff(want, got); diff != "" {
+				if at == 0 {
+					t.Fatalf("%s before first append commitments (-want +got):\n%s", name, diff)
 				}
-				seen[key] = true
+				t.Fatalf("%s append %d/%d at %s commitments (-want +got):\n%s", name, at, len(reference), reference[min(at-1, len(reference)-1)].Kind, diff)
 			}
-		}
+			seen := map[[2]int]bool{}
+			for _, e := range events {
+				if p, ok := e.Data.(*journal.HuntMask); ok {
+					key := [2]int{p.Hunt, p.Mask}
+					if seen[key] {
+						t.Fatalf("%s append %d: duplicated hunt.mask %v", name, at, key)
+					}
+					seen[key] = true
+				}
+			}
+		})
 	}
-	elapsed := time.Since(started)
-	t.Logf("%s interruption matrix: %d crash points in %s", name, len(reference)+2, elapsed)
 }
 
 type matrixCrash struct {
