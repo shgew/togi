@@ -30,17 +30,17 @@ const runHelp = `Usage: togi run [--rotations <N>] [--tuning-boot <grubenv>] [--
 
 Start or resume the tuning session in the foreground: search each core's deepest
 stable offset, hunt the core behind unattributed failures with masked starts,
-refine the resident profile to the most total depth its failed and joint marks
-allow, then guard it with qualifying rotations. A clean rotation earns Bronze
-once every core is done and refinement can reach no more depth. After a crash,
-the next run attributes it from the journal and continues. On resume, known
-defects affecting past decisions name the cores; in a terminal run offers to
-reset them. An unanswered too-aggressive defect stops an unattended run.
-It needs root. A journal from an older ruleset or schema is archived, and the
-new session starts each core from the edges and failed marks it found. A newer
-one stops the run before another event is written; reset --all archives that
-session. Journal lines are colored on terminals and in the system journal
-unless NO_COLOR is set.
+refine the resident profile to the most total depth its failed and joint
+marks allow, then guard it with qualifying rotations. A clean qualifying
+rotation earns Bronze once every core is done and refinement can reach no
+more depth. After a crash, the next run attributes it from the journal and
+continues. On resume, known defects affecting past decisions name the cores; in
+a terminal run offers to reset them. An unanswered too-aggressive defect stops
+an unattended run. It needs root. A journal from an older ruleset or schema is
+archived, and the new session starts each core from the edges and failed marks
+it found. A newer one stops the run before another event is written; reset --all
+archives that session. Journal lines are colored on terminals and in the system
+journal unless NO_COLOR is set.
 
 When stdin and stderr are terminals, run shows the session as the watch
 dashboard instead of one line per event, and prints the outcome when it stops:
