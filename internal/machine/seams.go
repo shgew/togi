@@ -70,7 +70,8 @@ type Result struct {
 	Signal Signal
 	// Core is the core of the instance that produced Signal.
 	Core int
-	// Inconclusive, when not empty, says why the trial proves nothing.
+	// Inconclusive records setup or required sampling loss; later valid samples cannot clear it.
+	// Higher-precedence failure evidence can still decide the trial.
 	Inconclusive string
 	// Escaped lists logical CPUs a backend thread was seen on outside the trial's CPUs.
 	Escaped []int

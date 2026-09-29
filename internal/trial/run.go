@@ -79,7 +79,7 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				if !inst.ready || (inst.suspended && t.options.NoScope) {
 					continue
 				}
-				if cpu, tid, escaped := t.outsideCPU(inst); escaped {
+				if cpu, tid, escaped := t.outsideCPU(inst, &result); escaped {
 					result.Escaped = []int{cpu}
 					report.Sample(machine.Sample{Warning: "outside allowed cpus", PID: inst.PID, TID: tid, CPU: cpu})
 					decision = true
@@ -389,10 +389,10 @@ func (t *running) inScope(inst *instance) bool {
 	return t.options.NoScope || t.host.InScope(inst.PID, inst.Scope)
 }
 
-func (t *running) outsideCPU(inst *instance) (cpu, tid int, escaped bool) {
+func (t *running) outsideCPU(inst *instance, result *machine.Result) (cpu, tid int, escaped bool) {
 	threads, err := t.host.Threads(inst.PID)
-	if err != nil {
-		return 0, 0, false
+	if err != nil && !errors.Is(err, os.ErrNotExist) && result.Inconclusive == "" {
+		result.Inconclusive = fmt.Sprintf("core %02d thread sampling lost: %v", inst.Core, err)
 	}
 	for _, task := range threads {
 		if !slices.Contains(inst.CPUs, task.CPU) {
@@ -404,6 +404,9 @@ func (t *running) outsideCPU(inst *instance) (cpu, tid int, escaped bool) {
 func (t *running) sample(inst *instance, now time.Time, result *machine.Result, report machine.Reporter) bool {
 	reading, err := t.host.Usage(inst.PID)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) && result.Inconclusive == "" {
+			result.Inconclusive = fmt.Sprintf("core %02d usage sampling lost: %v", inst.Core, err)
+		}
 		return false
 	}
 	active := inst.active
