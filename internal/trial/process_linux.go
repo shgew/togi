@@ -15,9 +15,19 @@ import (
 	"time"
 )
 
-type osHost struct{}
+type osHost struct {
+	command func(context.Context, string, ...string) ([]byte, error)
+}
 
-func newOSHost() processHost { return osHost{} }
+func newOSHost() processHost { return osHost{command: commandOutput} }
+
+func commandOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	return out, err
+}
 
 type execProcess struct {
 	cmd            *exec.Cmd
@@ -121,13 +131,15 @@ func procThreads(path string) ([]thread, error) {
 	return threads, lost
 }
 
-func (osHost) KillScope(scope string) ([]byte, error) {
+func (h osHost) KillScope(ctx context.Context, scope string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	args := []string{}
 	if os.Geteuid() != 0 {
 		args = append(args, "--user")
 	}
 	args = append(args, "kill", "--signal=SIGKILL", "--kill-whom=all", scope+".scope")
-	return exec.Command("systemctl", args...).CombinedOutput()
+	return h.command(ctx, "systemctl", args...)
 }
 
 func procStat(path string) (fields []string, err error) {
@@ -156,8 +168,14 @@ func fieldInt(fields []string, number int) (int64, error) {
 	return v, nil
 }
 func CheckSystemdRun() (string, error) {
+	return checkSystemdRun(commandOutput)
+}
+
+func checkSystemdRun(command func(context.Context, string, ...string) ([]byte, error)) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	argv := scopeArgv(fmt.Sprintf("togi-preflight-%d", os.Getpid()), []int{0}, "/bin/sh", "-c", "exit 0")
-	out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput()
+	out, err := command(ctx, argv[0], argv[1:]...)
 	if err != nil {
 		return "", fmt.Errorf("systemd-run: %w: %s", err, strings.TrimSpace(string(out)))
 	}

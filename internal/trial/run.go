@@ -326,6 +326,11 @@ func (t *running) drainEvents(result *machine.Result, report machine.Reporter, u
 }
 
 func (t *running) teardown(result *machine.Result, report machine.Reporter) error {
+	if t.cancel != nil {
+		defer t.cancel()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), t.options.StopGrace+10*time.Second)
+	defer cancel()
 	for _, inst := range t.instances {
 		_ = t.host.SignalGroup(inst.PID, syscall.SIGCONT)
 		_ = t.host.SignalGroup(inst.PID, syscall.SIGTERM)
@@ -334,8 +339,9 @@ func (t *running) teardown(result *machine.Result, report machine.Reporter) erro
 	t.collect(t.options.StopGrace, result, report)
 	for _, inst := range t.instances {
 		if !t.options.NoScope {
-			out, err := t.host.KillScope(inst.Scope)
-			if err != nil && !strings.Contains(string(out), "not loaded") && !strings.Contains(string(out), "could not be found") && cleanupErr == nil {
+			out, err := t.host.KillScope(ctx, inst.Scope)
+			timedOut := errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
+			if err != nil && (timedOut || !strings.Contains(string(out), "not loaded") && !strings.Contains(string(out), "could not be found")) && cleanupErr == nil {
 				cleanupErr = fmt.Errorf("kill scope %s: %w: %s", inst.Scope, err, strings.TrimSpace(string(out)))
 			}
 		}
@@ -385,6 +391,9 @@ func (t *running) collect(timeout time.Duration, result *machine.Result, report 
 	return true
 }
 func (t *running) abort() {
+	if t.cancel != nil {
+		defer t.cancel()
+	}
 	for _, inst := range t.instances {
 		_ = t.host.SignalGroup(inst.PID, syscall.SIGCONT)
 		_ = t.host.SignalGroup(inst.PID, syscall.SIGKILL)

@@ -26,6 +26,6 @@ func (osHost) Usage(int) (usage, error) {
 func (osHost) Threads(int) ([]thread, error) {
 	return nil, fmt.Errorf("list trial threads: %w", errors.ErrUnsupported)
 }
-func (osHost) KillScope(string) ([]byte, error) {
+func (osHost) KillScope(context.Context, string) ([]byte, error) {
 	return nil, fmt.Errorf("kill trial scope: %w", errors.ErrUnsupported)
 }

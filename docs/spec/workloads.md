@@ -83,6 +83,8 @@ The kernel enforces the cpuset whatever the backend does. togi also samples the 
 
 Teardown, per instance: SIGCONT then SIGTERM to the process group, and up to 3 s for it to exit; then SIGKILL to everything in the scope (`systemctl kill --kill-whom=all`) and to the process group, and up to 10 s more. A backend still running after that is a runner error. The output left in the pipes and watched files is read to the end before the outcome is decided, so an error printed during teardown still fails the trial.
 
+Every systemd CLI invocation has a context deadline. The preflight `systemd-run` probe and `systemctl reboot` are bounded by 30 s; a trial's `systemd-run` process is bounded by its trial duration plus the startup and teardown allowances. Teardown `systemctl` calls share a deadline of the stop grace plus 10 s from teardown's start, so each kill has only the remaining time. A timed-out kill is failed cleanup even if its output says the scope is missing. Kernel-log reads with `journalctl` have a 30 s deadline; a timeout is a read failure, not an empty log, and follows the existing inconclusive handling.
+
 ## Trial outcome
 
 A trial passes when all of these hold:

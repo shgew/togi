@@ -72,6 +72,7 @@ type running struct {
 	initialStops int
 	stopped      bool
 	stopErr      error
+	cancel       context.CancelFunc
 }
 
 type streamEvent struct {
@@ -103,6 +104,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 	if !spec.Regime.AllCores() {
 		cores = []int{spec.Cores[0]}
 	}
+	ctx, t.cancel = context.WithTimeout(ctx, spec.Duration+time.Duration(len(cores))*30*time.Second+r.options.StopGrace+20*time.Second)
 	for i, core := range cores {
 		cpus := spec.CPUs
 		dir := root

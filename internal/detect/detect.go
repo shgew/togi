@@ -2,6 +2,7 @@ package detect
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,10 +37,27 @@ func NewKernel(cores []machine.CoreInfo) *Kernel {
 }
 
 func runJournalctl(args []string) (stdout, stderr []byte, exitCode int, err error) {
-	cmd := exec.Command("journalctl", args...)
+	return journalctlWithDeadline(args, journalctlOutput)
+}
+
+func journalctlWithDeadline(args []string, command func(context.Context, []string) ([]byte, []byte, int, error)) ([]byte, []byte, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, stderr, code, err := command(ctx, args)
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	return out, stderr, code, err
+}
+
+func journalctlOutput(ctx context.Context, args []string) (stdout, stderr []byte, exitCode int, err error) {
+	cmd := exec.CommandContext(ctx, "journalctl", args...)
 	var errOut bytes.Buffer
 	cmd.Stderr = &errOut
 	out, err := cmd.Output()
+	if ctx.Err() != nil {
+		return out, errOut.Bytes(), 0, ctx.Err()
+	}
 	if exit, ok := errors.AsType[*exec.ExitError](err); ok && exit.Exited() {
 		return out, errOut.Bytes(), exit.ExitCode(), nil
 	}

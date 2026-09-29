@@ -21,7 +21,7 @@ type processHost interface {
 	InScope(pid int, scope string) bool
 	Usage(pid int) (usage, error)
 	Threads(pid int) ([]thread, error)
-	KillScope(scope string) ([]byte, error)
+	KillScope(ctx context.Context, scope string) ([]byte, error)
 }
 
 type usage struct {

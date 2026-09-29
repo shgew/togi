@@ -208,7 +208,10 @@ func (h *fakeHost) Threads(pid int) ([]thread, error) {
 	}
 	return nil, nil
 }
-func (h *fakeHost) KillScope(scope string) ([]byte, error) {
+func (h *fakeHost) KillScope(ctx context.Context, scope string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	h.mu.Lock()
 	kill := h.killScope
 	h.mu.Unlock()
