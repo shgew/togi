@@ -109,6 +109,9 @@ func (k *Kernel) ResetReason(boot string) (machine.ResetReason, error) {
 		if code == 1 && bytes.Contains(stderr, noBootEntry) {
 			return machine.ResetReason{}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)
 		}
+		if code == 1 && len(out) == 0 && len(stderr) == 0 {
+			return machine.ResetReason{}, nil
+		}
 		return machine.ResetReason{}, fmt.Errorf("read kernel log of boot %s: exit status %d: %s", boot, code, bytes.TrimSpace(stderr))
 	}
 	var reason machine.ResetReason

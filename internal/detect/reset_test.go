@@ -76,6 +76,18 @@ func TestResetReasonMissingBoot(t *testing.T) {
 	}
 }
 
+func TestResetReasonWithoutMatchingLines(t *testing.T) {
+	k := NewKernel(nil)
+	k.journalctl = func([]string) ([]byte, []byte, int, error) { return nil, nil, 1, nil }
+	got, err := k.ResetReason("partial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(machine.ResetReason{}, got); diff != "" {
+		t.Fatalf("reason (-want +got):\n%s", diff)
+	}
+}
+
 func TestMCEsMonotonic(t *testing.T) {
 	k := NewKernel([]machine.CoreInfo{{Core: 3, CPUs: []int{2}}})
 	const status = "[Hardware Error]: CPU:2 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135"
