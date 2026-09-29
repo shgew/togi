@@ -46,16 +46,12 @@ func watchCuts(t *testing.T) []watchCut {
 		return nil
 	}
 	search := through(func(e journal.Event) bool {
-		p, ok := e.Data.(*journal.CorePhase)
-		return ok && p.To == journal.PhaseConfirmation
-	})
-	confirm := through(func(e journal.Event) bool {
-		p, ok := e.Data.(*journal.CorePhase)
-		return ok && p.To == journal.PhaseConfirmed
+		p, ok := e.Data.(*journal.TunerDecision)
+		return ok && p.Phase == journal.PhaseSearch && p.Decision == journal.Backoff
 	})
 	guard := through(func(e journal.Event) bool {
-		p, ok := e.Data.(*journal.TunerDecision)
-		return ok && p.Decision == journal.SuspectBackoff
+		p, ok := e.Data.(*journal.GuardRotation)
+		return ok && p.Event == journal.RotationStart
 	})
 	last := events[len(events)-1]
 	p := &journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Detail: "five trials in a row proved nothing"}
@@ -65,7 +61,6 @@ func watchCuts(t *testing.T) []watchCut {
 	all := [][2]int{{240, 67}, {160, 45}, {120, 33}}
 	return []watchCut{
 		{name: "search", events: search, sizes: all, color: true},
-		{name: "confirm", events: confirm, sizes: all[:1]},
 		{name: "guard", events: guard, sizes: all, color: true},
 		{name: "deadend", events: deadEnd, sizes: all[:1]},
 	}

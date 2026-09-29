@@ -1,0 +1,43 @@
+guard rotation 1, steps 0/14 | tier bronze [#4836]
+session 20260101T000000Z started 2026-01-01T00:00:00Z
+BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0, boost limit 5700 MHz
+in flight: none
+
+CORE  CCD  OFFSET  PHASE  FAILED  JOINT  QUEUED  LAST DECISION
+00    0    -10     done   -11     -      -       [#3599] core 00 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 00)
+01    0    -10     done   -11     -      -       [#3601] core 01 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 01)
+02    0    -10     done   -11     -      -       [#3603] core 02 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 02)
+03    0    -10     done   -11     J1     -       [#3605] core 03 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 03)
+04    0    -10     done   -11     -      -       [#3607] core 04 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 04)
+05    0    -10     done   -11     -      -       [#3609] core 05 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 05)
+06    0    -10     done   -11     -      -       [#3611] core 06 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 06)
+07    0    -10     done   -11     -      -       [#3613] core 07 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 07)
+08    1    -10     done   -11     -      -       [#3600] core 08 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 08)
+09    1    -10     done   -11     -      -       [#3602] core 09 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 09)
+10    1    -10     done   -11     -      -       [#3604] core 10 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 10)
+11    1    -9      done   -11     J1     -       [#4146] core 11 backed off at -10; next -9 (joint mark J1: backing off core 11 leaves 159 counts reachable)
+12    1    -10     done   -11     -      -       [#3608] core 12 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 12)
+13    1    -10     done   -11     -      -       [#3610] core 13 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 13)
+14    1    -10     done   -11     -      -       [#3612] core 14 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 14)
+15    1    -10     done   -11     -      -       [#3614] core 15 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 15)
+
+joint marks:
+  J1 core 03 -10 + core 11 -10, observed in hunt 1 [#4145]
+
+clean hours since the tier clock [#3672]: 7.3 h, failure rate < 0.42/h at 95%
+REGIME  WORKLOAD                         STARTS  CLEAN H  RATE BOUND
+R1      mprime-sse-4k-21k                16      0.5      < 5.63/h
+R1      ycruncher-bkt-sftv4              16      0.5      < 5.63/h
+R1      ycruncher-snt-svt                16      0.5      < 5.63/h
+R2      mprime-avx2-36k-248k             16      0.5      < 5.63/h
+R2      mprime-avx512-36k-248k           16      0.5      < 5.63/h
+R2      ycruncher-fftv4-n63-vt3          16      0.5      < 5.63/h
+R3      mprime-sse-4k-21k-steps          16      0.5      < 5.63/h
+R4      mprime-sse-4k-21k-duty25         16      0.5      < 5.63/h
+R5      mprime-sse-4k-21k-smt            16      0.5      < 5.63/h
+R6      mprime-sse-4k-21k-idle           1       0.2      < 12.00/h
+R6      ycruncher-bkt-sftv4-idle         1       0.2      < 12.00/h
+R7      mprime-avx2-36k-248k-allcore     14      0.7      < 4.29/h
+R7      mprime-avx512-36k-248k-allcore   12      0.6      < 4.74/h
+R7      ycruncher-fftv4-n63-vt3-allcore  12      0.6      < 4.74/h
+Tctl max on this profile 76°C [#4244]

@@ -17,13 +17,14 @@ import (
 
 const watchHelp = `Usage: togi watch [--width <columns>] [--height <rows>]
 
-Show the session as a dashboard that redraws every second: the stage, the
-running trial, one tile per core with its offset, failed mark and regainable or
-settled depth, and the latest events. Read-only; rendered from the journal,
-which it reloads when it changes. On a terminal it fills the screen until
-interrupted; otherwise it prints one frame of --width by --height and exits.
-The tuning boot shows it on tty1. A different schema shows the refusal instead
-of the session. NO_COLOR turns colour off.
+Show the session as a dashboard that redraws every second: search, hunt,
+refinement or guard activity, the running trial, one tile per core with its
+offset, failed and joint marks, and the latest events. Masked trials show their
+anchor offsets; DONE, HUNT and MASK distinguish the current activity. Read-only;
+rendered from the journal, which it reloads when it changes. On a terminal it
+fills the screen until interrupted; otherwise it prints one frame of --width
+by --height and exits. The tuning boot shows it on tty1. A different schema
+shows the refusal instead of the session. NO_COLOR turns colour off.
 
 Examples:
   togi watch                                  The session in the default state directory, full screen
