@@ -22,6 +22,7 @@ import (
 	"github.com/shgew/togi/internal/detect"
 	"github.com/shgew/togi/internal/hardware"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
 )
 
@@ -121,12 +122,11 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
 	}
-	bios, err := m.Host.BIOSContext()
-	if err != nil {
-		fmt.Fprintf(stderr, "togi run: read BIOS context: %v\n", err)
-		return exitError
+	var current *machine.BIOSContext
+	if bios, err := m.Host.BIOSContext(); err == nil {
+		current = &bios
 	}
-	carried, err := carry.Prepare(g.stateDir, journal.Options{Boot: boot, Sync: true}, session.Build(), nil, &bios)
+	carried, err := carry.Prepare(g.stateDir, journal.Options{Boot: boot, Sync: true}, session.Build(), nil, current)
 	if err != nil {
 		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 	}
