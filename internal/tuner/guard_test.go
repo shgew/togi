@@ -166,3 +166,21 @@ func TestRotationStartInvalidatesProjectedGuard(t *testing.T) {
 		t.Fatalf("new rotation absent from projection: %+v", open.Guard)
 	}
 }
+
+func TestResidentMultipleMCECoresRemainUnattributed(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: 0}, coreStart{phase: journal.PhaseResident, offset: -12})
+	h.add(&journal.ProfileChange{To: []int{0, -12}})
+	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[0].ID, Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 120}
+	intent := h.start(Action{Kind: RunTrial, Trial: tr})
+	left := h.add(&journal.MCE{Core: 0, BankType: machine.LoadStore})
+	right := h.add(&journal.MCE{Core: 1, BankType: machine.LoadStore})
+	h.add(&journal.TrialEnd{Trial: intent.Data.(*journal.TrialIntent).Trial, Outcome: journal.OutcomeFailure, Signal: machine.Crash}, intent.Seq, left.Seq, right.Seq)
+	a, ok := h.s.Attribution()
+	if !ok {
+		t.Fatal("no failure attribution")
+	}
+	f, ok := a.Payload.(*journal.Failure)
+	if !ok || f.Attribution != journal.Unattributed || f.Core != nil || f.Offset != nil {
+		t.Fatalf("multiple named MCE cores became attributed: %+v", a)
+	}
+}
