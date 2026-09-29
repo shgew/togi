@@ -20,6 +20,24 @@ pkgs.testers.runNixOSTest {
       console.font = "Lat2-Terminus16";
       environment.systemPackages = [ pkgs.grub2 ];
     };
+  nodes.restartLimit =
+    { pkgs, lib, ... }:
+    {
+      imports = [ module ];
+      virtualisation.useBootLoader = true;
+      boot.loader.grub.enable = true;
+      boot.loader.timeout = 1;
+      services.togi = {
+        enable = true;
+        tuning.enable = true;
+      };
+      specialisation.togi.configuration = {
+        services.togi.settings.bogus = 1;
+        systemd.services.togi.serviceConfig.RestartSec = lib.mkForce 1;
+      };
+      hardware.cpu.amd.ryzen-smu.enable = false;
+      environment.systemPackages = [ pkgs.grub2 ];
+    };
 
   testScript = ''
     import json
@@ -83,5 +101,24 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("multi-user.target")
     assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
     machine.succeed("! systemctl is-active --quiet togi.service")
+
+    restartLimit.start(allow_reboot=True)
+    restartLimit.wait_for_unit("multi-user.target")
+    normal_restart_system = restartLimit.succeed("readlink -f /run/current-system").strip()
+    tuning_restart_system = restartLimit.succeed(
+        "readlink -f /run/current-system/specialisation/togi"
+    ).strip()
+    restartLimit.succeed("grub-set-default 'NixOS - togi'")
+    restartLimit.reboot()
+    restartLimit.wait_until_succeeds(
+        "systemctl show togi.service -p Result --value | grep -qx start-limit-hit"
+    )
+    restartLimit.wait_for_unit("multi-user.target")
+    restartLimit.wait_until_succeeds(
+        f"test \"$(readlink -f /run/current-system)\" = {normal_restart_system}"
+    )
+    assert normal_restart_system != tuning_restart_system
+    grubenv = restartLimit.succeed("grub-editenv /boot/grub/grubenv list")
+    assert "saved_entry" not in grubenv, f"restart limit left saved_entry in grubenv: {grubenv}"
   '';
 }

@@ -76,8 +76,23 @@ in
             AllowHybridSleep = false;
             AllowSuspendThenHibernate = false;
           };
+          systemd.services.togi-restart-limit = {
+            description = "Return to the normal boot when togi reaches its restart limit";
+            unitConfig.RequiresMountsFor = grubenv;
+            path = [
+              pkgs.grub2
+              pkgs.systemd
+            ];
+            serviceConfig.Type = "oneshot";
+            script = ''
+              case "''${MONITOR_EXIT_STATUS:-}" in 10|11|12|13|14|15|16|17|18) exit 0 ;; esac
+              grub-editenv ${grubenv} unset saved_entry
+              systemctl reboot
+            '';
+          };
           systemd.services.togi = {
             description = "togi tuning boot";
+            onFailure = [ "togi-restart-limit.service" ];
             wantedBy = [ "multi-user.target" ];
             after = [
               "systemd-modules-load.service"
@@ -90,7 +105,7 @@ in
               ExecStart = "${lib.getExe package} run --tuning-boot ${grubenv}";
               Restart = "on-failure";
               RestartSec = 60;
-              RestartPreventExitStatus = "10 11 12 13 14 15 16 17";
+              RestartPreventExitStatus = "10 11 12 13 14 15 16 17 18";
               StateDirectory = "togi";
             };
           };
