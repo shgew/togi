@@ -47,3 +47,15 @@ func TestTierClockResetsOnDeepFailure(t *testing.T) {
 		t.Fatalf("tier clock (-want +got):\n%s", diff)
 	}
 }
+
+func TestFirstProfileStartsTierClock(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -10})
+	profile := h.add(&journal.ProfileChange{To: []int{-10}})
+	st := projected(h)
+	if st.Guard == nil {
+		t.Fatal("no projected guard")
+	}
+	if diff := cmp.Diff(profile.Seq, st.Guard.TierClockSeq); diff != "" {
+		t.Fatalf("first profile tier clock (-want +got):\n%s", diff)
+	}
+}

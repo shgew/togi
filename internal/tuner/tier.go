@@ -18,7 +18,7 @@ func (s *State) ensureTierClock() {
 	if !s.tierClockDirty {
 		return
 	}
-	s.tierClockSeq = s.lastDeepenSeq
+	s.tierClockSeq = max(s.lastDeepenSeq, s.firstProfileSeq)
 	for _, f := range s.pendingFailures {
 		if atLeastDeep(f.profile, s.guard.profile) {
 			s.tierClockSeq = max(s.tierClockSeq, f.seq)

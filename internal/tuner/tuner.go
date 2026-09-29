@@ -125,6 +125,7 @@ type State struct {
 	ranking                     []int
 	rankingSeq, lastPlanSeq     int
 	qualified                   []qualified
+	firstProfileSeq             int
 	lastDeepenSeq, tierClockSeq int
 	tierClockDirty              bool
 	bestProfile                 []int
@@ -346,6 +347,9 @@ func (s *State) Fold(e journal.Event) {
 			}
 		}
 	case *journal.ProfileChange:
+		if s.firstProfileSeq == 0 {
+			s.firstProfileSeq = e.Seq
+		}
 		if len(s.guard.profile) == len(p.To) {
 			for i, x := range p.To {
 				if x < s.guard.profile[i] {
