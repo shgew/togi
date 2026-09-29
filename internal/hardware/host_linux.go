@@ -85,7 +85,7 @@ func (h *host) Ranking() ([]int, error) { return ranking("/", h.drv.Topology()) 
 
 func ranking(root string, cores []machine.CoreInfo) ([]int, error) {
 	values := make([]int, len(cores))
-	for _, core := range cores {
+	for i, core := range cores {
 		path := filepath.Join(root, "sys/devices/system/cpu/cpufreq", fmt.Sprintf("policy%d", core.CPUs[0]), "amd_pstate_prefcore_ranking")
 		raw, err := os.ReadFile(path)
 		if err != nil {
@@ -95,7 +95,7 @@ func ranking(root string, cores []machine.CoreInfo) ([]int, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read preferred-core ranking of cpu %d: %w", core.CPUs[0], err)
 		}
-		values[core.Core] = value
+		values[i] = value
 	}
 	return values, nil
 }

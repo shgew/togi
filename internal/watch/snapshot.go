@@ -189,11 +189,11 @@ func Project(events []journal.Event) Snapshot {
 			tl.loaded = slices.Contains(s.trial.cores, tl.id)
 			if intent.Condition == machine.Masked {
 				tl.masked = tl.hunt
-				if tl.id >= 0 && tl.id < len(intent.Profile) {
-					if st.Hunt != nil && tl.id < len(st.Hunt.Anchor) && intent.Profile[tl.id] == st.Hunt.Anchor[tl.id] {
-						tl.anchor = &st.Hunt.Anchor[tl.id]
+				if i < len(intent.Profile) {
+					if st.Hunt != nil && i < len(st.Hunt.Anchor) && intent.Profile[i] == st.Hunt.Anchor[i] {
+						tl.anchor = &st.Hunt.Anchor[i]
 					} else {
-						tl.trying = &intent.Profile[tl.id]
+						tl.trying = &intent.Profile[i]
 					}
 				}
 			} else if tl.loaded && intent.Condition == machine.Isolated && intent.Offset != nil {

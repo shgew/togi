@@ -14,7 +14,7 @@ import (
 
 func TestRanking(t *testing.T) {
 	root := t.TempDir()
-	cores := []machine.CoreInfo{{Core: 0, CPUs: []int{4, 20}}, {Core: 1, CPUs: []int{8, 24}}}
+	cores := []machine.CoreInfo{{Core: 0, CPUs: []int{4, 20}}, {Core: 8, CPUs: []int{8, 24}}}
 	for _, row := range []struct{ cpu, value string }{{"4", "125\n"}, {"8", "174\n"}} {
 		path := filepath.Join(root, "sys/devices/system/cpu/cpufreq/policy"+row.cpu)
 		if err := os.MkdirAll(path, 0755); err != nil {

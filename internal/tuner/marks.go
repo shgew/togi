@@ -33,13 +33,13 @@ func (s *State) reaches(p []int) (string, bool) {
 }
 
 func (s *State) Reaches(profile []int) (string, bool) { return s.reaches(profile) }
-func AttributeProfile(profile []int) (core int, ok bool) {
+func SoleNonzero(profile []int) (index int, ok bool) {
 	for i, v := range profile {
 		if v != 0 {
 			if ok {
 				return 0, false
 			}
-			core, ok = i, true
+			index, ok = i, true
 		}
 	}
 	return

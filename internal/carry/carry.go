@@ -226,9 +226,16 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 	ended := make(map[string]bool)
 	hunts := make(map[int]*journal.HuntStart)
 	signals := make(map[int]machine.Signal)
+	var ids []int
 	lastShutdown := 0
 	for _, e := range s.events {
 		switch p := e.Data.(type) {
+		case *journal.SessionStart:
+			ids = ids[:0]
+			for _, c := range p.Cores {
+				ids = append(ids, c.Core)
+			}
+			slices.Sort(ids)
 		case *journal.CommandReset:
 			if p.Core != nil {
 				resetAt[*p.Core] = e.Seq
@@ -262,9 +269,10 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 			if p.Result == "culprit" && len(p.Cores) == 1 {
 				start := hunts[p.Hunt]
 				core := p.Cores[0]
-				if start != nil && core >= 0 && core < len(start.Failing) {
+				i := slices.Index(ids, core)
+				if start != nil && i >= 0 && i < len(start.Failing) {
 					if signal, ok := signals[start.Failure]; ok {
-						all = append(all, candidate{core: core, offset: start.Failing[core], session: s.Session, seq: e.Seq, signal: signal, at: e.Seq})
+						all = append(all, candidate{core: core, offset: start.Failing[i], session: s.Session, seq: e.Seq, signal: signal, at: e.Seq})
 					}
 				}
 			}

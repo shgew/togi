@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -22,14 +23,33 @@ func TestMarks(t *testing.T) {
 			t.Errorf("Reaches(%v) = %q,%v, want %q,%v", tt.profile, got, yes, tt.name, tt.marked)
 		}
 	}
-	if core, ok := AttributeProfile([]int{0, -10, 0}); !ok || core != 1 {
-		t.Errorf("AttributeProfile singleton = %d,%v", core, ok)
+	if i, ok := SoleNonzero([]int{0, -10, 0}); !ok || i != 1 {
+		t.Errorf("SoleNonzero singleton = %d,%v", i, ok)
 	}
-	if _, ok := AttributeProfile([]int{-1, -1}); ok {
-		t.Fatal("joint profile attributed to one core")
+	if _, ok := SoleNonzero([]int{-1, -1}); ok {
+		t.Fatal("joint profile has a sole nonzero offset")
 	}
 	if _, ok := h.s.done(h.s.core(0), []int{-49, -49}); !ok {
 		t.Fatal("failed mark does not make core done")
+	}
+}
+
+func TestResidentCrashNamesTheSoleNonzeroCoreByID(t *testing.T) {
+	h := &harness{t: t, s: New()}
+	infos := []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 16}}, {Core: 8, CCD: 1, CPUs: []int{8, 24}}}
+	begin := h.add(&journal.SessionStart{Schema: journal.Schema, Session: "s", Cores: infos})
+	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: config.Default()})
+	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseDone, Reason: "test"}, begin.Seq)
+	h.add(&journal.CorePhase{Core: 8, To: journal.PhaseDone, Offset: -12, Reason: "test"}, begin.Seq)
+	intent := h.add(&journal.TrialIntent{Trial: "0001", Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Cores: []int{0, 8}, Profile: []int{0, -12}})
+	h.add(&journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomeFailure, Signal: machine.Crash}, intent.Seq)
+	a, ok := h.s.Attribution()
+	if !ok {
+		t.Fatal("no attribution for the failed resident trial")
+	}
+	f := a.Payload.(*journal.Failure)
+	if diff := cmp.Diff([]any{journal.Attributed, new(8), new(-12)}, []any{f.Attribution, f.Core, f.Offset}); diff != "" {
+		t.Fatalf("attribution, core, offset (-want +got):\n%s", diff)
 	}
 }
 

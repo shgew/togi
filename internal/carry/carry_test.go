@@ -36,7 +36,7 @@ type writer struct {
 }
 
 // newJournal starts events.jsonl in dir for session, stamped with ruleset, recording ctx when it is not nil.
-func newJournal(t *testing.T, dir, session string, ruleset int, ctx *machine.BIOSContext) *writer {
+func newJournal(t *testing.T, dir, session string, ruleset int, ctx *machine.BIOSContext, cores ...machine.CoreInfo) *writer {
 	t.Helper()
 	j, err := journal.Open(dir, opts())
 	if err != nil {
@@ -44,7 +44,7 @@ func newJournal(t *testing.T, dir, session string, ruleset int, ctx *machine.BIO
 	}
 	t.Cleanup(func() { _ = j.Close() })
 	w := &writer{t: t, j: j, session: session}
-	w.add(&journal.SessionStart{Schema: 2, Ruleset: ruleset, Session: session})
+	w.add(&journal.SessionStart{Schema: 2, Ruleset: ruleset, Session: session, Cores: cores})
 	if ctx != nil {
 		w.add(&journal.SessionContext{BIOSContext: *ctx})
 	}
@@ -223,16 +223,17 @@ func TestPrepareCarriesHuntCulprit(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			w := newJournal(t, dir, "X", 3, &context)
+			sparse := []machine.CoreInfo{{Core: 0, CPUs: []int{0}}, {Core: 2, CPUs: []int{2}}, {Core: 5, CPUs: []int{5}}}
+			w := newJournal(t, dir, "X", 3, &context, sparse...)
 			failure := w.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R7, Condition: machine.Resident})
-			w.add(&journal.HuntStart{Hunt: 1, Failure: failure, Failing: []int{-10, -35, -20}, Candidates: []int{1}})
-			end := w.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{1}})
+			w.add(&journal.HuntStart{Hunt: 1, Failure: failure, Failing: []int{-10, -35, -20}, Candidates: []int{2}})
+			end := w.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{2}})
 			if tc.reset {
-				w.add(&journal.CommandReset{Core: new(1)})
+				w.add(&journal.CommandReset{Core: new(2)})
 			}
 			attributedSeq := 0
 			if tc.attributed != 0 {
-				attributedSeq = w.fail(1, tc.attributed, machine.Resident, journal.Attributed)
+				attributedSeq = w.fail(2, tc.attributed, machine.Resident, journal.Attributed)
 			}
 			w.close()
 			got := prepare(t, dir, []defect.Entry{})
@@ -242,7 +243,7 @@ func TestPrepareCarriesHuntCulprit(t *testing.T) {
 				if tc.attributed != 0 && (tc.reset || tc.attributed > -35) {
 					seq, signal = attributedSeq, machine.UnexpectedExit
 				}
-				want = []journal.CarriedCore{{Core: 1, FailedMark: new(tc.wantOffset), MarkSession: "X", MarkSeq: seq, MarkSignal: signal}}
+				want = []journal.CarriedCore{{Core: 2, FailedMark: new(tc.wantOffset), MarkSession: "X", MarkSeq: seq, MarkSignal: signal}}
 			}
 			if diff := cmp.Diff(want, got.Cores); diff != "" {
 				t.Fatalf("cores (-want +got):\n%s", diff)

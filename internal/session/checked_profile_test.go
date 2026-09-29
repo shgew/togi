@@ -187,3 +187,25 @@ func TestApplyRefusesFailedMark(t *testing.T) {
 		t.Fatalf("unexpected crash: %v", err)
 	}
 }
+
+func TestFoldTracksRegistersBySparseCoreID(t *testing.T) {
+	t.Parallel()
+	f := newFold()
+	for i, p := range []journal.Payload{
+		&journal.SessionStart{Session: "test", Cores: []machine.CoreInfo{{Core: 0, CPUs: []int{0}}, {Core: 8, CPUs: []int{8}}}},
+		&journal.SessionBaseline{Offsets: []int{0, 0}},
+		&journal.SMUIntent{Op: journal.SMUSet, Core: new(8), Offset: -12},
+	} {
+		f.Fold(journal.Event{Seq: i + 1, Kind: p.Kind(), Boot: "b", Data: p})
+	}
+	if diff := cmp.Diff([]bool{false, true}, f.uncertain["b"]); diff != "" {
+		t.Fatalf("uncertain after intent (-want +got):\n%s", diff)
+	}
+	f.Fold(journal.Event{Seq: 4, Kind: journal.KindSMUReadback, Boot: "b", Data: &journal.SMUReadback{Core: 8, Offset: -12, Expected: new(-12)}})
+	if diff := cmp.Diff([]int{0, -12}, f.registers["b"]); diff != "" {
+		t.Fatalf("registers (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]bool{false, false}, f.uncertain["b"]); diff != "" {
+		t.Fatalf("uncertain after readback (-want +got):\n%s", diff)
+	}
+}

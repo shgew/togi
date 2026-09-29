@@ -187,8 +187,8 @@ func (s *State) attributeResident(a *awaiting) *journal.Failure {
 		}
 	}
 	if len(named) != 1 {
-		if c, ok := AttributeProfile(intent.Profile); ok {
-			named = []int{c}
+		if i, ok := SoleNonzero(intent.Profile); ok && i < len(s.cores) {
+			named = []int{s.byID()[i].id}
 		}
 	}
 	if len(named) == 1 {

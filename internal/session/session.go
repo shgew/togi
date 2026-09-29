@@ -326,8 +326,8 @@ func (r *runner) recoverCrashes(ctx context.Context) error {
 		profile := slices.Clone(r.fold.registers[crash.PreviousBoot])
 		failure := &journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R6, Condition: crash.Condition, Profile: profile}
 		if !slices.Contains(r.fold.uncertain[crash.PreviousBoot], true) {
-			if core, ok := tuner.AttributeProfile(profile); ok {
-				failure.Attribution, failure.Core, failure.Offset = journal.Attributed, new(core), new(profile[core])
+			if i, ok := tuner.SoleNonzero(profile); ok && i < len(r.cores) {
+				failure.Attribution, failure.Core, failure.Offset = journal.Attributed, new(r.cores[i].Core), new(profile[i])
 			}
 		}
 		if _, err := r.append(failure, cause...); err != nil {
@@ -823,9 +823,13 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 			case len(values) > 0 && slices.Min(values) == slices.Max(values):
 				detail = fmt.Sprintf("every core ranks %d", values[0])
 			default:
+				value := make(map[int]int, len(r.cores))
+				for i, c := range r.cores {
+					value[c.Core] = values[i]
+				}
 				slices.SortFunc(ranking, func(a, b int) int {
-					if values[a] != values[b] {
-						return values[b] - values[a]
+					if value[a] != value[b] {
+						return value[b] - value[a]
 					}
 					return a - b
 				})

@@ -58,6 +58,7 @@ type fold struct {
 	context     *machine.BIOSContext
 	baselineSeq int
 	baseline    []int
+	ids         []int
 	noticed     bool
 	phase       map[int]journal.Phase
 	carriedSeq  int
@@ -135,6 +136,11 @@ func (f *fold) Fold(e journal.Event) {
 	switch p := e.Data.(type) {
 	case *journal.SessionStart:
 		f.started = true
+		f.ids = make([]int, len(p.Cores))
+		for i, c := range p.Cores {
+			f.ids[i] = c.Core
+		}
+		slices.Sort(f.ids)
 	case *journal.SessionContext:
 		ctx := p.BIOSContext
 		f.context = &ctx
@@ -169,7 +175,7 @@ func (f *fold) Fold(e journal.Event) {
 			f.uncertain[e.Boot] = make([]bool, len(f.baseline))
 		}
 		for i := range f.registers[e.Boot] {
-			if p.Core != nil && *p.Core != i {
+			if p.Core != nil && (i >= len(f.ids) || *p.Core != f.ids[i]) {
 				continue
 			}
 			f.registers[e.Boot][i] = min(f.registers[e.Boot][i], p.Offset)
@@ -190,9 +196,9 @@ func (f *fold) Fold(e journal.Event) {
 		if p.Expected != nil && *p.Expected != p.Offset {
 			f.smuSeq, f.smuDetail = e.Seq, fmt.Sprintf("core %02d reads CO %d after writing %d", p.Core, p.Offset, *p.Expected)
 		}
-		if p.Core >= 0 && p.Core < len(f.registers[e.Boot]) {
-			f.registers[e.Boot][p.Core] = p.Offset
-			f.uncertain[e.Boot][p.Core] = false
+		if i := slices.Index(f.ids, p.Core); i >= 0 && i < len(f.registers[e.Boot]) {
+			f.registers[e.Boot][i] = p.Offset
+			f.uncertain[e.Boot][i] = false
 		}
 	case *journal.TrialIntent:
 		f.unmatched = append(f.unmatched, openIntent{seq: e.Seq, kind: e.Kind, boot: e.Boot, trial: p.Trial})
