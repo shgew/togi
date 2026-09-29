@@ -20,6 +20,8 @@ jobs:
       GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
     steps:
       - uses: actions/checkout@v7
+        with:
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
       - uses: cachix/install-nix-action@v31
       - name: Commit the release
         env:

@@ -25,4 +25,4 @@ The release commit lands on `main` without a pull request: starting the workflow
 
 ## Consequences
 
-Releasing needs permission to start workflows. Release commits are authored by `github-actions[bot]` and are the only commits pushed to `main` without a pull request. A branch rule that requires pull requests on `main` must let the workflow push.
+Releasing needs permission to start workflows. Release commits are authored by `github-actions[bot]` and are the only commits pushed to `main` without a pull request. A branch rule that requires pull requests on `main` must let the workflow push. On a personal-account repository the automatic token cannot bypass a ruleset, so the workflow pushes with a write deploy key, stored as the `RELEASE_DEPLOY_KEY` secret, and the `main` ruleset lets deploy keys bypass it.
