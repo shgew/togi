@@ -13,7 +13,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - An unreadable kernel log is retried after 1, 5 and 30 minutes, and a backend that keeps failing to start waits 1, 5 and 30 minutes before its last three tries, recorded as `backend.retry`, before the `no_evidence` dead end; a missing backend binary stops at once ([#69]).
 - A journal write failure sets every core to CO 0 without an intent, reads each back, reports on stderr and stops ([#69]).
 - When `togi.service` keeps failing without a dead end, the tuning boot clears GRUB's saved entry and reboots into the normal system after the third failure within 30 minutes, through a new `togi-restart-limit.service`; earlier failures are retried after a minute ([#69]).
-- Every event records `mono_ms`, the boot-local monotonic time: the machine checks that belong to a trial, and the duration of a trial interrupted within one boot, no longer depend on the wall clock ([#69]).
+- Every event `togi run` writes records `mono_ms`, the boot-local monotonic time: the machine checks that belong to a trial, and the duration of a trial interrupted within one boot, no longer depend on the wall clock ([#69]).
 
 ### Changed
 

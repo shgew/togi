@@ -45,7 +45,7 @@ One JSON object per line. Common fields:
 | `time` | RFC 3339 UTC with nanoseconds, always nine fractional digits |
 | `boot` | Kernel boot ID (`/proc/sys/kernel/random/boot_id`) |
 | `kind` | Event kind from the catalog below |
-| `mono_ms` | Boot-local CLOCK_MONOTONIC milliseconds, on every event this build appends; used to match evidence to trials despite wall-clock jumps. Absent only in events written by older builds |
+| `mono_ms` | Boot-local CLOCK_MONOTONIC milliseconds, on every event `run` appends; used to match evidence to trials despite wall-clock jumps. Absent in events `reset` appends, which are no trial evidence, and in events written by older builds |
 | `msg` | One human-readable line, the exact text togi logs |
 | `cause` | Optional array of `seq` this event follows from |
 
