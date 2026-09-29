@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
 
 func qualifiedHarness(t *testing.T, offsets []int, marks [][]int) *harness {
@@ -39,6 +40,20 @@ func nextRound(h *harness) *journal.RefineRound {
 	}
 	h.t.Fatal("no refinement round")
 	return nil
+}
+
+func TestIdleFailureEndsRefineBeforeMoves(t *testing.T) {
+	h := qualifiedHarness(t, []int{-49, -49, -49, -50}, [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}})
+	round := nextRound(h)
+	failure := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R6, Condition: machine.Resident, Profile: h.s.Profile()})
+	a := h.next()
+	end, ok := a.Payload.(*journal.RefineRound)
+	if !ok || end.Round != round.Round || end.Event != journal.RotationEnd || end.Reason != "a failure needs a hunt" {
+		t.Fatalf("idle failure did not end refine round: %+v", a)
+	}
+	if diff := cmp.Diff([]int{failure.Seq}, a.Cause); diff != "" {
+		t.Fatalf("round end cause (-want +got):\n%s", diff)
+	}
 }
 
 func TestRefineGlobalOptimumAndResume(t *testing.T) {

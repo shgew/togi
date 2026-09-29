@@ -576,6 +576,9 @@ func (s *State) Next() Action {
 			return a
 		}
 	}
+	if len(s.queue) > 0 && s.round != nil {
+		return Action{Kind: Decide, Payload: &journal.RefineRound{Round: s.round.start.Round, Event: journal.RotationEnd, Reason: "a failure needs a hunt"}, Cause: []int{s.queue[0].seq}}
+	}
 	if s.round != nil {
 		if a, ok := s.roundMoves(); ok {
 			return a
@@ -596,9 +599,6 @@ func (s *State) Next() Action {
 		}
 	}
 	if len(s.queue) > 0 {
-		if s.round != nil {
-			return Action{Kind: Decide, Payload: &journal.RefineRound{Round: s.round.start.Round, Event: journal.RotationEnd, Reason: "a failure needs a hunt"}, Cause: []int{s.queue[0].seq}}
-		}
 		if s.rankingSeq <= s.lastPlanSeq {
 			return Action{Kind: ReadRanking}
 		}
