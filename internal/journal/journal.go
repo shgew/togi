@@ -325,6 +325,8 @@ var carryKinds = map[Kind]bool{
 	KindTrialEnd:       true,
 	KindTrialProgress:  true,
 	KindFailure:        true,
+	KindHuntStart:      true,
+	KindHuntEnd:        true,
 	KindCommandReset:   true,
 	KindShutdown:       true,
 	KindTunerDecision:  true,
