@@ -53,7 +53,9 @@ jobs:
           authToken: ${{ env.CACHIX_AUTH_TOKEN }}
           skipPush: true
       - name: nix build .#checks.x86_64-linux.${{ matrix.check }}
-        run: nix build --no-link --print-build-logs --print-out-paths .#checks.x86_64-linux.${{ matrix.check }} > "$RUNNER_TEMP/out-paths"
+        env:
+          CHECK: ${{ matrix.check }}
+        run: nix build --no-link --print-build-logs --print-out-paths ".#checks.x86_64-linux.$CHECK" > "$RUNNER_TEMP/out-paths"
       - name: Push the check's output to Cachix
         if: env.CACHIX_AUTH_TOKEN != ''
         run: cachix push togi < "$RUNNER_TEMP/out-paths"
