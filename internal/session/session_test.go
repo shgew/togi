@@ -51,7 +51,7 @@ type simRun struct {
 	Dir        string
 	Machine    *sim.Machine
 	Log        io.Writer
-	Stderr io.Writer
+	Stderr     io.Writer
 	Rotations  int
 	Bootloader Bootloader
 	Prompt     func(defect.Finding) (bool, error)
@@ -288,14 +288,15 @@ func TestCandidateEdgesStartChecking(t *testing.T) {
 	dir := t.TempDir()
 	in := simInput(dir, newSim(t, small()))
 	in.Config.CandidateEdges = map[int]int{0: -12, 1: -13}
-	if stop := simulate(t, in); stop.Reason != StopRotations { t.Fatalf("stopped with %+v", stop) }
+	if stop := simulate(t, in); stop.Reason != StopRotations {
+		t.Fatalf("stopped with %+v", stop)
+	}
 	for _, e := range readEvents(t, dir) {
 		if p, ok := e.Data.(*journal.CorePhase); ok && p.From == "" && !p.CheckEdge {
 			t.Errorf("core %d did not start checking its candidate edge", p.Core)
 		}
 	}
 }
-
 
 func failureCiting(events []journal.Event, seq int) *journal.Failure {
 	for _, e := range events {
@@ -314,7 +315,6 @@ func crashDetectedFor(events []journal.Event, boot string) (journal.Event, bool)
 	}
 	return journal.Event{}, false
 }
-
 
 func crashingModel() *sim.Model {
 	model := sim.DefaultModel()
@@ -846,5 +846,3 @@ func TestRunnerErrorKeepsMachineCheck(t *testing.T) {
 	}
 	t.Fatal("no trial.end for trial 0001")
 }
-
-

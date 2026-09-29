@@ -4,8 +4,8 @@ package session
 import (
 	"context"
 	"errors"
-	"io"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"strings"
@@ -41,7 +41,7 @@ type Input struct {
 	// Defects overrides the binary's entries in tests; nil uses the shipped list.
 	Defects []defect.Entry
 	// Carry is what a transition carries into a new session; nil otherwise.
-	Carry *carry.Carry
+	Carry  *carry.Carry
 	Stderr io.Writer
 }
 
@@ -84,9 +84,9 @@ type runner struct {
 	tuner *tuner.State
 
 	// condition and applied describe what this process last wrote to every core; empty until then.
-	condition machine.Condition
-	applied   []int
-	fatal error
+	condition   machine.Condition
+	applied     []int
+	fatal       error
 	cancelTrial context.CancelFunc
 }
 
@@ -269,20 +269,31 @@ func (r *runner) recoverCrashes(ctx context.Context) error {
 		if !confirmed {
 			for _, b := range r.fold.boots {
 				if b == next {
-					if reason.Kind != "" { confirmed = true }
+					if reason.Kind != "" {
+						confirmed = true
+					}
 					continue
 				}
 				other, err := r.readResetReason(ctx, b)
-				if err != nil { return err }
-				if other.Kind != "" { confirmed = true; break }
+				if err != nil {
+					return err
+				}
+				if other.Kind != "" {
+					confirmed = true
+					break
+				}
 			}
 		}
 		inTrial := r.fold.open != nil && r.fold.open.boot == crashed
 		since := r.fold.appliedMono[crashed]
 		evidence := inTrial && r.fold.open.signal != ""
-		if inTrial && r.fold.open.startMono > 0 { since = r.fold.open.startMono }
+		if inTrial && r.fold.open.startMono > 0 {
+			since = r.fold.open.startMono
+		}
 		for _, m := range own {
-			if m.Monotonic.Milliseconds() >= since { evidence = true }
+			if m.Monotonic.Milliseconds() >= since {
+				evidence = true
+			}
 			if err := r.recordMCE(m, crashed); err != nil {
 				return err
 			}
@@ -335,16 +346,24 @@ func (r *runner) recoverCrashes(ctx context.Context) error {
 func (r *runner) readMCEs(ctx context.Context, boot string) ([]machine.MCE, error) {
 	for {
 		mces, err := r.in.Machine.Kernel.MCEs(boot, 0)
-		if err == nil || errors.Is(err, machine.ErrCrashed) { return mces, err }
-		if retryErr := r.retryKernel(ctx, boot, err); retryErr != nil { return nil, retryErr }
+		if err == nil || errors.Is(err, machine.ErrCrashed) {
+			return mces, err
+		}
+		if retryErr := r.retryKernel(ctx, boot, err); retryErr != nil {
+			return nil, retryErr
+		}
 	}
 }
 
 func (r *runner) readResetReason(ctx context.Context, boot string) (machine.ResetReason, error) {
 	for {
 		reason, err := r.in.Machine.Kernel.ResetReason(boot)
-		if err == nil || errors.Is(err, machine.ErrCrashed) { return reason, err }
-		if retryErr := r.retryKernel(ctx, boot, err); retryErr != nil { return machine.ResetReason{}, retryErr }
+		if err == nil || errors.Is(err, machine.ErrCrashed) {
+			return reason, err
+		}
+		if retryErr := r.retryKernel(ctx, boot, err); retryErr != nil {
+			return machine.ResetReason{}, retryErr
+		}
 	}
 }
 
@@ -355,8 +374,12 @@ func (r *runner) retryKernel(ctx context.Context, boot string, err error) error 
 		return errDeadEndEvidence
 	}
 	wait := []int{60, 300, 1800}[r.fold.kernelRetries]
-	if _, appendErr := r.append(&journal.BackendRetry{Backend: "kernel_log", Attempt: r.fold.kernelRetries + 1, WaitS: wait, Reason: err.Error()}); appendErr != nil { return appendErr }
-	if sleepErr := r.in.Machine.Clock.Sleep(ctx, time.Duration(wait)*time.Second); sleepErr != nil { return fmt.Errorf("wait for kernel log retry: %w", sleepErr) }
+	if _, appendErr := r.append(&journal.BackendRetry{Backend: "kernel_log", Attempt: r.fold.kernelRetries + 1, WaitS: wait, Reason: err.Error()}); appendErr != nil {
+		return appendErr
+	}
+	if sleepErr := r.in.Machine.Clock.Sleep(ctx, time.Duration(wait)*time.Second); sleepErr != nil {
+		return fmt.Errorf("wait for kernel log retry: %w", sleepErr)
+	}
 	return nil
 }
 
@@ -697,7 +720,9 @@ func (r *runner) ensureCondition(t tuner.Trial) error {
 func (r *runner) apply(target []int, record journal.Payload, cause int) error {
 	var reads []int
 	var causes []int
-	if cause != 0 { causes = []int{cause} }
+	if cause != 0 {
+		causes = []int{cause}
+	}
 	if r.applied == nil {
 		seqs, err := r.setAll(0, causes...)
 		if err != nil {
@@ -768,7 +793,9 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 			}
 			values, err := r.in.Machine.Host.Ranking()
 			ranking := make([]int, len(r.cores))
-			for i, c := range r.cores { ranking[i] = c.Core }
+			for i, c := range r.cores {
+				ranking[i] = c.Core
+			}
 			detail := ""
 			if err != nil {
 				detail = err.Error()
@@ -778,11 +805,15 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 				detail = fmt.Sprintf("every core ranks %d", values[0])
 			} else {
 				slices.SortFunc(ranking, func(a, b int) int {
-					if values[a] != values[b] { return values[b] - values[a] }
+					if values[a] != values[b] {
+						return values[b] - values[a]
+					}
 					return a - b
 				})
 			}
-			if _, err := r.append(&journal.HostRanking{Ranking: ranking, Values: values, Detail: detail}); err != nil { return Stop{}, err }
+			if _, err := r.append(&journal.HostRanking{Ranking: ranking, Values: values, Detail: detail}); err != nil {
+				return Stop{}, err
+			}
 		case tuner.RunTrial:
 			if ctx.Err() != nil {
 				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
@@ -809,19 +840,31 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 
 func (r *runner) retryBackend(ctx context.Context, t tuner.Trial) error {
 	id := t.Workload
-	if id == "" { id = machine.PickWorkload(t.Regime, r.fold.index[t.Core][t.Regime]).ID }
+	if id == "" {
+		id = machine.PickWorkload(t.Regime, r.fold.index[t.Core][t.Regime]).ID
+	}
 	w, ok := machine.WorkloadByID(id)
-	if !ok { return fmt.Errorf("retry backend of unknown workload %s", id) }
+	if !ok {
+		return fmt.Errorf("retry backend of unknown workload %s", id)
+	}
 	n := len(r.fold.streaks[w.Backend])
 	k := r.in.Config.DeadEnds.InconclusiveInARow
-	if n < k { return nil }
-	attempt := n-k+1
-	if attempt > 3 { return nil }
+	if n < k {
+		return nil
+	}
+	attempt := n - k + 1
+	if attempt > 3 {
+		return nil
+	}
 	wait := []int{60, 300, 1800}[attempt-1]
 	if previous := r.fold.retries[w.Backend]; previous == nil || previous.Attempt != attempt || r.fold.retryFollowed[w.Backend] {
-		if _, err := r.append(&journal.BackendRetry{Backend: string(w.Backend), Attempt: attempt, WaitS: wait, Reason: r.fold.lastReason[w.Backend]}); err != nil { return err }
+		if _, err := r.append(&journal.BackendRetry{Backend: string(w.Backend), Attempt: attempt, WaitS: wait, Reason: r.fold.lastReason[w.Backend]}); err != nil {
+			return err
+		}
 	}
-	if err := r.in.Machine.Clock.Sleep(ctx, time.Duration(wait)*time.Second); err != nil { return fmt.Errorf("wait for backend %s retry: %w", w.Backend, err) }
+	if err := r.in.Machine.Clock.Sleep(ctx, time.Duration(wait)*time.Second); err != nil {
+		return fmt.Errorf("wait for backend %s retry: %w", w.Backend, err)
+	}
 	return nil
 }
 

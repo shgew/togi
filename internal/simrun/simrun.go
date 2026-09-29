@@ -27,8 +27,8 @@ type Input struct {
 	Renderer   journal.Renderer
 	// Rotations is the number of clean rotations of one profile after which the run stops; 0 runs guard endlessly.
 	Rotations int
-	Wrap       func(session.Journal) session.Journal
-	Until      func(journal.Event) bool
+	Wrap      func(session.Journal) session.Journal
+	Until     func(journal.Event) bool
 }
 
 func Simulate(ctx context.Context, in Input) (session.Stop, error) {

@@ -16,7 +16,7 @@ import (
 
 type failAppendJournal struct {
 	Journal
-	kind journal.Kind
+	kind   journal.Kind
 	failed bool
 }
 
@@ -51,7 +51,9 @@ func TestJournalFailureZerosMachineAndStopsAppending(t *testing.T) {
 			}
 			for core := range cfg.BIOS {
 				got, err := m.Seams().SMU.Offset(core)
-				if err != nil || got != 0 { t.Errorf("core %d reads %d (%v), want 0", core, got, err) }
+				if err != nil || got != 0 {
+					t.Errorf("core %d reads %d (%v), want 0", core, got, err)
+				}
 			}
 			events := readEvents(t, in.Dir)
 			for _, e := range events {
