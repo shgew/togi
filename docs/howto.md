@@ -4,18 +4,31 @@ For a Zen 5 (Granite Ridge) desktop running NixOS with GRUB. Every command below
 
 ## 1. Install the module
 
-Add togi to your flake inputs and import its module in the host's configuration:
+Add togi to your flake's inputs, pinned to a release, and pass the inputs to the host's configuration:
 
 ```nix
 # flake.nix
-inputs.togi = {
-  url = "github:shgew/togi";
-  inputs.nixpkgs.follows = "nixpkgs";
-};
+{
+  inputs.togi = {
+    url = "github:shgew/togi/v0.5.0";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
+
+  outputs = { nixpkgs, ... }@inputs: {
+    nixosConfigurations.example = nixpkgs.lib.nixosSystem {
+      specialArgs = { inherit inputs; };
+      modules = [ ./configuration.nix ];
+    };
+  };
+}
 ```
 
+Keep your existing `nixpkgs` input and host name. `v0.5.0` is an example; the [releases page](https://github.com/shgew/togi/releases) lists the current tags. `specialArgs` is what gives the host's configuration its `inputs` argument; a flake that already passes its inputs another way keeps doing that.
+
+Then import the module in the host's configuration:
+
 ```nix
-# the host's NixOS configuration
+# configuration.nix, the host's NixOS configuration
 { inputs, ... }:
 {
   imports = [ inputs.togi.nixosModules.default ];
@@ -33,6 +46,10 @@ mprime and y-cruncher are unfree: allow them with `nixpkgs.config.allowUnfree = 
 The module loads `ryzen_smu` through `hardware.cpu.amd.ryzen-smu.enable`. A host that already loads its own `ryzen_smu` build sets `hardware.cpu.amd.ryzen-smu.enable = false`.
 
 Other settings go in `services.togi.settings`, rendered to `/etc/togi/config.toml`; [runtime.md](spec/runtime.md#configuration) lists the keys.
+
+To move to a newer release, change the tag in `url`, run `nix flake update togi` and rebuild. An update whose changelog line starts with **BREAKING** starts a seeded session on the next run ([section 7](#7-after-a-breaking-update)).
+
+mprime and y-cruncher come from the host's `nixpkgs`. Do not update them during a session, for example with `nix flake update nixpkgs`: togi does not yet tell a new backend build's passes from the old one's, so passes earned by the old binaries would keep counting for the new ones.
 
 ## 2. Rebuild, then boot fresh
 
@@ -66,7 +83,7 @@ togi status
 togi cert
 ```
 
-`cert` lists the profile to enter in BIOS, one offset per core, with each core's failed and joint marks, its done state and the tier-clock evidence. After refinement those offsets can differ from the checked edges search found. A clean qualifying rotation earns Bronze only when every core is done and refinement can reach no more total depth. Picking "NixOS - togi" again continues the session.
+`cert` lists the profile to enter in BIOS, one offset per core, with each core's failed and joint marks, its done state and the tier-clock evidence. Do not enter it in BIOS before it reaches Silver: Bronze can rest on a single two-minute R4 start, and under the simulator's edge model one such start misses a failure one count past a core's edge about 4.6% of the time. After refinement those offsets can differ from the checked edges search found. A clean qualifying rotation earns Bronze only when every core is done and refinement can reach no more total depth. Picking "NixOS - togi" again continues the session.
 
 ## 6. Dead ends
 
@@ -101,3 +118,30 @@ togi was called shycler up to 0.3.1. The journal format and the tuning rules did
 4. Rebuild. `/etc/togi/config.toml` replaces `/etc/shycler/config.toml`, and `togi status` shows the session where shycler left it.
 
 Pick "NixOS - togi" to continue tuning.
+
+## 9. When the tuning boot does not reach togi
+
+The recovery in [section 6](#6-dead-ends) runs in `togi.service` and `togi-restart-limit.service`, so it cannot help when the tuning boot fails before userspace: GRUB keeps choosing "NixOS - togi" on every boot. When the tuning boot does reach a console, tty1 shows `togi watch` and tty3 togi's log.
+
+togi uses the GRUB environment of the first `boot.loader.grub.mirroredBoots` entry: `<grubenv>` below stands for `<path>/grub/grubenv`, where `<path>` is that entry's `path`. On an ordinary install it is `/boot/grub/grubenv`.
+
+1. At the GRUB menu, pick one of your normal generations. Once it is up, run `sudo grub-editenv <grubenv> list`; if `saved_entry` still names the tuning entry, run `sudo grub-editenv <grubenv> unset saved_entry`.
+2. If that does not get you a working system, boot rescue media that has `grub-editenv` (on a NixOS installer, `nix-shell -p grub2`) and mount the partition holding `<path>`. With `<boot>` standing for the installed system's `<path>` under the mount point (the mount point itself when `<path>` is its own partition, `<mount point><path>` when it is part of the root file system), run:
+
+   ```sh
+   grub-editenv <boot>/grub/grubenv unset saved_entry
+   grub-editenv <boot>/grub/grubenv list
+   ```
+
+   The second command must not show `saved_entry`. Reboot.
+3. If you entered offsets in BIOS, set Curve Optimizer back to 0 there.
+
+## 10. Removing togi
+
+Do this from the normal system:
+
+1. Set `services.togi.tuning.enable = false`, or remove the module and the `togi` input, and rebuild.
+2. Run `sudo grub-editenv <grubenv> list`: `saved_entry` must not name the tuning entry. If it does, run `sudo grub-editenv <grubenv> unset saved_entry`.
+3. If you entered togi's offsets in BIOS and want them gone, set Curve Optimizer back to 0.
+
+Removing togi leaves `/var/lib/togi` in place. Keeping it lets a later install continue or carry the session; archiving or deleting it is a separate choice.
