@@ -54,7 +54,7 @@ func (p *HuntStart) Message() string {
 	if p.AnchorSeq != 0 {
 		anchor = fmt.Sprintf("rotation end #%d", p.AnchorSeq)
 	}
-	return fmt.Sprintf("hunt %d: unattributed crash in %s; anchor from %s; candidates %s; masks of %d × %ds", p.Hunt, source, anchor, coreList(p.Candidates), p.Starts, p.StartS)
+	return fmt.Sprintf("hunt %d: unattributed failure in %s; anchor from %s; candidates %s; masks of %d × %ds", p.Hunt, source, anchor, coreList(p.Candidates), p.Starts, p.StartS)
 }
 
 type HuntMask struct {
@@ -77,7 +77,14 @@ type HuntMask struct {
 
 func (*HuntMask) Kind() Kind { return KindHuntMask }
 func (p *HuntMask) Message() string {
-	return fmt.Sprintf("hunt %d mask %d: cores %s at failing offsets, the rest at the anchor; %ds starts", p.Hunt, p.Mask, coreList(p.Cores), p.DurationS)
+	prefix := fmt.Sprintf("hunt %d mask %d: cores %s", p.Hunt, p.Mask, coreList(p.Cores))
+	if p.Skipped {
+		return fmt.Sprintf("%s skipped: %s", prefix, p.Reason)
+	}
+	if p.Inferred != "" {
+		return fmt.Sprintf("%s %s inferred: %s", prefix, p.Inferred, p.Reason)
+	}
+	return fmt.Sprintf("%s at failing offsets, the rest at the anchor; starts of %ds", prefix, p.DurationS)
 }
 
 type HuntEnd struct {

@@ -20,6 +20,11 @@ func TestNewPayloadMessagesAndStyles(t *testing.T) {
 	}{
 		{&HostRanking{Ranking: []int{3, 11}}, "preferred cores 03 11", Plain},
 		{&HostRanking{Detail: "missing"}, "preferred-core ranking unavailable (missing); core-id order", Plain},
+		{&HuntStart{Hunt: 4, Regime: machine.R7, Trial: "0007", Candidates: []int{3, 11}, Starts: 5, StartS: 120}, "hunt 4: unattributed failure in resident R7 trial 0007; anchor from all-zero; candidates 03, 11; masks of 5 × 120s", Yellow},
+		{&HuntMask{Hunt: 4, Mask: 1, Cores: []int{3, 11}, Skipped: true, Reason: "already checked"}, "hunt 4 mask 1: cores 03, 11 skipped: already checked", Plain},
+		{&HuntMask{Hunt: 4, Mask: 2, Cores: []int{3}, Inferred: "pass", Reason: "complement failed"}, "hunt 4 mask 2: cores 03 pass inferred: complement failed", Plain},
+		{&HuntMask{Hunt: 4, Mask: 3, Cores: []int{11}, Inferred: "failure", Reason: "complement passed"}, "hunt 4 mask 3: cores 11 failure inferred: complement passed", Plain},
+		{&HuntMask{Hunt: 4, Mask: 4, Cores: []int{3, 11}, DurationS: 120}, "hunt 4 mask 4: cores 03, 11 at failing offsets, the rest at the anchor; starts of 120s", Plain},
 		{&HuntSkipped{Failure: 904, Reason: "already marked"}, "failure #904 is not hunted: already marked", Plain},
 		{&HuntEnd{Hunt: 3, Result: "culprit", Cores: []int{13}, Masks: 4}, "hunt 3 found core 13 after 4 masks", Green},
 		{&MarkJoint{Mark: 2, Members: []JointMember{{Core: 3, Offset: -40}, {Core: 11, Offset: -30}}, Hunt: 4}, "joint mark J2: core 03 -40 + core 11 -30, observed in hunt 4", Yellow},
