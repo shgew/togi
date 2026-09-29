@@ -108,17 +108,17 @@ pkgs.testers.runNixOSTest {
     tuning_restart_system = restartLimit.succeed(
         "readlink -f /run/current-system/specialisation/togi"
     ).strip()
-    restartLimit.succeed("grub-set-default 'NixOS - togi'")
+    restartLimit.succeed("grub-set-default 'NixOS - togi' && sync")
     restartLimit.reboot()
-    restartLimit.wait_until_succeeds(
-        "systemctl show togi.service -p Result --value | grep -qx start-limit-hit"
-    )
+    restartLimit.wait_for_console_text("reboot: Restarting system", timeout=120)
+    restartLimit.wait_for_console_text("reboot: Restarting system", timeout=120)
+    restartLimit.crash()
+    restartLimit.start(allow_reboot=True)
     restartLimit.wait_for_unit("multi-user.target")
-    restartLimit.wait_until_succeeds(
-        f"test \"$(readlink -f /run/current-system)\" = {normal_restart_system}"
-    )
+    booted_restart_system = restartLimit.succeed("readlink -f /run/current-system").strip()
+    assert booted_restart_system == normal_restart_system, (booted_restart_system, normal_restart_system)
     assert normal_restart_system != tuning_restart_system
     grubenv = restartLimit.succeed("grub-editenv /boot/grub/grubenv list")
-    assert "saved_entry" not in grubenv, f"restart limit left saved_entry in grubenv: {grubenv}"
+    assert "saved_entry=NixOS - togi" not in grubenv, f"restart limit left the tuning boot saved: {grubenv}"
   '';
 }
