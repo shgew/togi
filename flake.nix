@@ -34,38 +34,39 @@
             go test -p $NIX_BUILD_CORES ${flags} -shuffle=on ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "-tags integration"} ./...
             runHook postCheck
           '';
+          togi =
+            rev:
+            pkgs.buildGo127Module {
+              pname = "togi";
+              version = lib.fileContents ./version.txt;
+              src = lib.fileset.toSource {
+                root = ./.;
+                fileset = lib.fileset.unions [
+                  ./go.mod
+                  ./go.sum
+                  ./.golangci.yml
+                  ./version.txt
+                  ./version.go
+                  ./cmd
+                  ./internal
+                  ./tools
+                ];
+              };
+              vendorHash = "sha256-OGYOqVtPseV1QvWhbVlQfXPcuTGIWne3Fk7JYtee1ak=";
+              nativeCheckInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
+              ldflags = [ "-X github.com/shgew/togi.rev=${rev}" ];
+              subPackages = [ "cmd/togi" ];
+              checkPhase = testPhase "";
+              meta = {
+                description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
+                license = lib.licenses.mit;
+                mainProgram = "togi";
+                platforms = [ system ];
+              };
+            };
         in
         {
-          packages.default = pkgs.buildGo127Module {
-            pname = "togi";
-            version = lib.fileContents ./version.txt;
-            src = lib.fileset.toSource {
-              root = ./.;
-              fileset = lib.fileset.unions [
-                ./go.mod
-                ./go.sum
-                ./.golangci.yml
-                ./version.txt
-                ./version.go
-                ./cmd
-                ./internal
-                ./tools
-              ];
-            };
-            vendorHash = "sha256-OGYOqVtPseV1QvWhbVlQfXPcuTGIWne3Fk7JYtee1ak=";
-            nativeCheckInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
-            ldflags = [
-              "-X github.com/shgew/togi.rev=${inputs.self.shortRev or inputs.self.dirtyShortRev or "dev"}"
-            ];
-            subPackages = [ "cmd/togi" ];
-            checkPhase = testPhase "";
-            meta = {
-              description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
-              license = lib.licenses.mit;
-              mainProgram = "togi";
-              platforms = [ system ];
-            };
-          };
+          packages.default = togi (inputs.self.shortRev or inputs.self.dirtyShortRev or "dev");
 
           devShells.default = pkgs.mkShell {
             packages = [
@@ -80,8 +81,8 @@
           };
 
           checks = {
-            package = config.packages.default;
-            lint = config.packages.default.overrideAttrs (old: {
+            package = togi "dev";
+            lint = config.checks.package.overrideAttrs (old: {
               pname = "togi-lint";
               nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.golangci-lint ];
               buildPhase = ''
@@ -118,7 +119,7 @@
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             vm = import ./nix/vm-test.nix {
               inherit pkgs;
-              package = config.packages.default.overrideAttrs { doCheck = false; };
+              package = config.checks.package.overrideAttrs { doCheck = false; };
             };
           };
 
