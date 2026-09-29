@@ -22,9 +22,9 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 
 Every change, docs included, lands as a pull request against `main` on `github.com/shgew/togi`, or as a layer of a stack of pull requests that ends on `main`. The owner reviews and merges. When a change is done, open its pull request without asking, unless told otherwise. The one commit that reaches `main` without a pull request is the release commit the release workflow pushes (`docs/releasing.md`).
 
-- Branch from `main` with a short descriptive name.
+- Branch from `main` with a short descriptive name; in a stack, each layer above the bottom branches from the layer below.
 - One concern per pull request.
-- A pull request changes at most 100 files, counted as CodeRabbit counts them: every changed file except those its `path_filters` in `.coderabbit.yaml` exclude. CodeRabbit skips larger ones. Split larger work into a stack.
+- A pull request changes at most 100 files, counting only the files CodeRabbit would review: every changed file except those its default ignores and the `path_filters` in `.coderabbit.yaml` exclude. The cap is this project's rule; CodeRabbit's own limit depends on its plan. Split larger work into a stack.
 - Stacked pull requests always use [`gh stack`](https://github.com/github/gh-stack) (`gh extension install github/gh-stack`): each layer is a branch with its own pull request based on the layer below, a lower layer holds what the ones above depend on, and every layer passes `just check` on its own. Open the stack with `gh stack submit`, keep it current with `gh stack sync`, and merge it with `gh stack merge`, never layer by layer by hand.
 - Commit with short imperative messages.
 - The pull request body follows `.github/pull_request_template.md`: a short summary, and the demo in a collapsed block.
