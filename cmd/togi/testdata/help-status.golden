@@ -1,0 +1,17 @@
+Usage: togi status
+
+Show the session at a glance: search, hunt, refinement or guard activity, tier
+and qualifying rotation progress, then each core's offset, failed and joint
+marks, done phase, queued work and last decision. An open hunt shows masks and
+starts; an open refinement round shows checks and passes. Evidence includes
+workloads, starts, clean hours and bounds since the tier clock. Lists reset
+commands for unanswered too-cautious defects. Read-only; rendered from the
+journal. A different ruleset warns before rendering; a different schema is
+refused.
+
+Examples:
+  togi status                     The session in the default state directory
+  togi --state-dir <dir> status   The session in <dir>, such as a copied state directory
+
+Global flags:
+  --state-dir <path>   state directory path (default /var/lib/togi)

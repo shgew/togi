@@ -79,8 +79,8 @@ func TestVersionInTopLevelUsageOnly(t *testing.T) {
 			if got := strings.Contains(stdout.String(), "  --version"); got != tt.want {
 				t.Fatalf("version flag in usage: %v, want %v; stdout %s", got, tt.want, stdout.String())
 			}
-			if !strings.Contains(stdout.String(), "--config <path>") || !strings.Contains(stdout.String(), "--state-dir <path>") {
-				t.Fatalf("usage omits shared flags: %s", stdout.String())
+			if !strings.Contains(stdout.String(), "--state-dir <path>") {
+				t.Fatalf("usage omits shared state-dir flag: %s", stdout.String())
 			}
 		})
 	}

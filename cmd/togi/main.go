@@ -84,14 +84,19 @@ func cli(args []string, stdout, stderr io.Writer) int {
 		usage(stderr)
 		return exitUsage
 	}
+	if g.configSet && name != "run" && name != "reset" {
+		return commands[i].run(&g, []string{"--config"}, stdout, stderr)
+	}
 	return commands[i].run(&g, fs.Args()[1:], stdout, stderr)
 }
 
 func registerGlobals(fs *flag.FlagSet, g *globals) {
-	fs.Func("config", "configuration file `path` (default "+config.DefaultPath+")", func(s string) error {
-		g.config, g.configSet = s, true
-		return nil
-	})
+	if fs.Name() == "togi" || fs.Name() == "run" || fs.Name() == "reset" {
+		fs.Func("config", "configuration file `path` for run and reset (default "+config.DefaultPath+")", func(s string) error {
+			g.config, g.configSet = s, true
+			return nil
+		})
+	}
 	fs.Func("state-dir", "state directory `path` (default "+defaultStateDir+")", func(s string) error {
 		g.stateDir, g.stateDirSet = s, true
 		return nil
@@ -99,7 +104,7 @@ func registerGlobals(fs *flag.FlagSet, g *globals) {
 }
 
 func isGlobal(f *flag.Flag) bool {
-	return f.Name == "config" || f.Name == "state-dir" || f.Name == "version"
+	return f.Name == "state-dir" || f.Name == "version"
 }
 
 func writeFlags(b *strings.Builder, title string, flags *flag.FlagSet, include func(*flag.Flag) bool) {
@@ -137,7 +142,7 @@ func usage(w io.Writer) {
 	fs := flag.NewFlagSet("togi", flag.ContinueOnError)
 	registerGlobals(fs, &globals{})
 	fs.Bool("version", false, "print the build version and git revision")
-	writeFlags(&b, "Flags", fs, isGlobal)
+	writeFlags(&b, "Flags", fs, func(*flag.Flag) bool { return true })
 	b.WriteString("\nRun 'togi <command> --help' for its description, examples and flags.\n")
 	_, _ = io.WriteString(w, b.String())
 }

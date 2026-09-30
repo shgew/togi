@@ -1,0 +1,21 @@
+Usage: togi watch [--width <columns>] [--height <rows>]
+
+Show the session as a dashboard that redraws every second: search, hunt,
+refinement or guard activity, the running trial, one tile per core with its
+offset, failed and joint marks, and the latest events. Masked trials show their
+anchor offsets; DONE, HUNT and MASK distinguish the current activity. Read-only;
+rendered from the journal, which it reloads when it changes. On a terminal it
+fills the screen until interrupted; otherwise it prints one frame of --width
+by --height and exits. The tuning boot shows it on tty1. A different schema
+shows the refusal instead of the session. NO_COLOR turns colour off.
+
+Examples:
+  togi watch                                  The session in the default state directory, full screen
+  togi --state-dir <dir> watch > frame.txt    One 240x67 frame of the session in <dir>
+
+Flags:
+  --height <rows>      frame height in rows when stdout is not a terminal
+  --width <columns>    frame width in columns when stdout is not a terminal
+
+Global flags:
+  --state-dir <path>   state directory path (default /var/lib/togi)
