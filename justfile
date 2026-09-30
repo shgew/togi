@@ -42,12 +42,12 @@ fmt:
 [group('quality')]
 gate: lint (check-one "fmt") test
 
-# Run every flake check CI runs: package, lint, fmt and, on Linux, the VM tests
+# Run every flake check CI runs: package, race, lint, fmt and, on Linux, the VM tests
 [group('nix')]
 check *args:
     nix flake check "$@"
 
-# Build named flake checks: package, lint, fmt or, on Linux, vm and vm-restart-limit (`just check-one vm`)
+# Build named flake checks: package, race, lint, fmt or, on Linux, vm and vm-restart-limit (`just check-one race`)
 [group('nix')]
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")
