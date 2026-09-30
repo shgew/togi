@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/backend/ycruncher"
 	"github.com/shgew/togi/internal/machine"
 )
 
@@ -96,6 +98,72 @@ func TestProcessOversizedOutput(t *testing.T) {
 				t.Fatalf("diagnostic prefix = %d bytes, want %d", prefixSize, outputLineLimit)
 			}
 			t.Logf("%s: inconclusive (%v); retained %d-byte prefix; process exited and output readers joined in %.3fs; no sudo or host scopes", mode, err, prefixSize, elapsed.Seconds())
+		})
+	}
+}
+
+func TestProcessOutputLimitEvidencePrecedence(t *testing.T) {
+	for _, tt := range []struct {
+		mode    string
+		signal  machine.Signal
+		escaped []int
+	}{
+		{"oversized-affinity", "", []int{42}},
+		{"oversized-computation", machine.ComputationError, nil},
+	} {
+		t.Run(tt.mode, func(t *testing.T) {
+			o := testOptions(t, tt.mode)
+			spec := testSpec(tt.mode, machine.R1, time.Minute)
+			spec.CPUs = []int{o.Cores[0].CPUs[0]}
+			started, err := New(o).Start(context.Background(), spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			trial := started.(*running)
+			trial.backend = ycruncher.New("")
+			t.Cleanup(func() { _ = trial.Stop() })
+			var queued []streamEvent
+			timeout := time.NewTimer(5 * time.Second)
+			defer timeout.Stop()
+			capped := false
+			for !capped {
+				select {
+				case event := <-trial.events:
+					queued = append(queued, event)
+					capped = errors.Is(event.err, errOutputLineTooLong)
+				case <-timeout.C:
+					t.Fatal("helper did not exceed the output line cap")
+				}
+			}
+			for _, event := range queued {
+				trial.events <- event
+			}
+			begin := time.Now()
+			result, err := trial.Wait(context.Background(), &recorder{})
+			elapsed := time.Since(begin)
+			if err != nil || result.Signal != tt.signal || result.Inconclusive != "" {
+				t.Fatalf("conflicting helper result=%+v err=%v", result, err)
+			}
+			if diff := cmp.Diff(tt.escaped, result.Escaped); diff != "" {
+				t.Fatalf("escaped CPUs (-want +got):\n%s", diff)
+			}
+			if elapsed > teardownLimit {
+				t.Fatalf("conflicting helper teardown exceeded deadline: %s", elapsed)
+			}
+			inst := trial.instances[0]
+			select {
+			case <-inst.joined:
+			default:
+				t.Fatal("helper process or output readers remain")
+			}
+			if alive, err := trial.host.ProcessAlive(scopeProcess{PID: inst.PID, Start: inst.process.(*execProcess).start}); err != nil || alive {
+				t.Fatalf("helper remains: alive=%t err=%v", alive, err)
+			}
+			info, err := os.Stat(filepath.Join(o.Dir, spec.ID, "stdout.log"))
+			if err != nil || info.Size() != outputLineLimit {
+				t.Fatalf("diagnostic prefix info=%v err=%v", info, err)
+			}
+			t.Logf("%s: escaped=%v signal=%s; no cap error; retained %d-byte prefix; helper exited and readers joined in %.3fs; no sudo or host scopes", tt.mode, result.Escaped, result.Signal, info.Size(), elapsed.Seconds())
 		})
 	}
 }

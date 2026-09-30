@@ -63,10 +63,16 @@ func TestHelperProcess(t *testing.T) {
 		time.Sleep(300 * time.Millisecond)
 		fmt.Println("COMPUTE ERROR")
 		os.Exit(0)
-	case "oversized-stdout", "oversized-stderr", "watched-oversized":
+	case "oversized-stdout", "oversized-stderr", "watched-oversized", "oversized-affinity", "oversized-computation":
 		text := strings.Repeat("x", 1024*1024)
 		switch mode {
-		case "oversized-stdout":
+		case "oversized-affinity":
+			fmt.Fprintln(os.Stderr, "Failed to set core affinity to core: 42")
+		case "oversized-computation":
+			fmt.Fprintln(os.Stderr, "Checksum mismatch")
+		}
+		switch mode {
+		case "oversized-stdout", "oversized-affinity", "oversized-computation":
 			fmt.Print(text)
 		case "oversized-stderr":
 			fmt.Fprint(os.Stderr, text)

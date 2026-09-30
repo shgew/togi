@@ -221,7 +221,11 @@ func (t *running) classifyWatch(inst *instance, line string, result *machine.Res
 }
 
 func (t *running) outputError(err error, result *machine.Result) {
-	t.outputErr = errors.Join(t.outputErr, err)
+	if errors.Is(err, errOutputLineTooLong) {
+		t.outputCapErr = errors.Join(t.outputCapErr, err)
+	} else {
+		t.outputErr = errors.Join(t.outputErr, err)
+	}
 	if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
 		result.Inconclusive = err.Error()
 	}
@@ -252,7 +256,7 @@ func (t *running) handleEvent(e streamEvent, result *machine.Result, report mach
 		inst.done = true
 		t.classifyPartial(inst, result, report)
 		found := t.tail(inst, result, report)
-		if unexpected && t.outputErr == nil && !inst.setup && len(result.Escaped) == 0 && result.Signal == "" {
+		if unexpected && t.outputErr == nil && t.outputCapErr == nil && !inst.setup && len(result.Escaped) == 0 && result.Signal == "" {
 			result.Signal = machine.UnexpectedExit
 			result.Core = inst.Core
 			result.Inconclusive = ""
@@ -337,6 +341,9 @@ func (t *running) teardown(result *machine.Result, report machine.Reporter) erro
 		cleanupErr = errors.Join(machine.ErrContainment, cleanupErr)
 	}
 	t.cleanupErr = errors.Join(cleanupErr, t.outputErr)
+	if len(result.Escaped) == 0 && result.Signal == "" {
+		t.cleanupErr = errors.Join(t.cleanupErr, t.outputCapErr)
+	}
 	t.stopped = true
 	return t.cleanupErr
 }

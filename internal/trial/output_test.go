@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/backend/ycruncher"
 	"github.com/shgew/togi/internal/machine"
 )
 
@@ -202,4 +203,123 @@ func TestExactOutputLineLimitWait(t *testing.T) {
 			})
 		}
 	}
+}
+
+func queueOutputConflict(t *testing.T, trial *running, line string, capFirst bool) {
+	t.Helper()
+	p := trial.instances[0].process.(*fakeProc)
+	writes := []struct {
+		out  io.Writer
+		text string
+	}{{p.stderrW, line + "\n"}, {p.stdoutW, strings.Repeat("x", outputLineLimit+1)}}
+	if capFirst {
+		writes[0], writes[1] = writes[1], writes[0]
+	}
+	for _, write := range writes {
+		if _, err := io.WriteString(write.out, write.text); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+	}
+}
+
+func TestOutputLimitEvidencePrecedence(t *testing.T) {
+	for _, evidence := range []struct {
+		name, line string
+		signal     machine.Signal
+		escaped    []int
+	}{
+		{"affinity", "Failed to set core affinity to core: 42", "", []int{42}},
+		{"computation", "Checksum mismatch", machine.ComputationError, nil},
+	} {
+		for _, order := range []string{"cap first", "evidence first"} {
+			t.Run(evidence.name+"/"+order, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					o := fakeOptions(t, "sleep")
+					r := New(o)
+					r.host = &fakeHost{}
+					started, err := r.Start(context.Background(), testSpec("conflicting-output", machine.R1, time.Minute))
+					if err != nil {
+						t.Fatal(err)
+					}
+					trial := started.(*running)
+					trial.backend = ycruncher.New("")
+					queueOutputConflict(t, trial, evidence.line, order == "cap first")
+					begin := time.Now()
+					result, err := trial.Wait(context.Background(), &recorder{})
+					if err != nil || result.Signal != evidence.signal || result.Inconclusive != "" {
+						t.Fatalf("conflicting output result=%+v err=%v", result, err)
+					}
+					if diff := cmp.Diff(evidence.escaped, result.Escaped); diff != "" {
+						t.Fatalf("escaped CPUs (-want +got):\n%s", diff)
+					}
+					if elapsed := time.Since(begin); elapsed > teardownLimit {
+						t.Fatalf("conflicting output teardown exceeded deadline: %s", elapsed)
+					}
+					t.Logf("%s: escaped=%v signal=%s; no generic cap error; bounded teardown", order, result.Escaped, result.Signal)
+				})
+			})
+		}
+	}
+}
+
+func TestOutputLimitRetainsCleanupAndIOErrors(t *testing.T) {
+	for _, failure := range []string{"scope cleanup", "output IO"} {
+		t.Run(failure, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				o := fakeOptions(t, "sleep")
+				o.NoScope = false
+				h := &fakeHost{inScope: true}
+				if failure == "scope cleanup" {
+					h.killScope = func(string) ([]byte, error) { return nil, io.ErrClosedPipe }
+				}
+				r := New(o)
+				r.host = h
+				started, err := r.Start(context.Background(), testSpec("output-cleanup", machine.R1, time.Minute))
+				if err != nil {
+					t.Fatal(err)
+				}
+				trial := started.(*running)
+				trial.backend = ycruncher.New("")
+				queueOutputConflict(t, trial, "Failed to set core affinity to core: 42", true)
+				if failure == "output IO" {
+					trial.events <- streamEvent{err: io.ErrClosedPipe}
+				}
+				result, err := trial.Wait(context.Background(), &recorder{})
+				if !errors.Is(err, io.ErrClosedPipe) {
+					t.Fatalf("lost %s error: result=%+v err=%v", failure, result, err)
+				}
+				if failure == "scope cleanup" && !errors.Is(err, machine.ErrContainment) {
+					t.Fatalf("cleanup lost containment error: %v", err)
+				}
+				if diff := cmp.Diff([]int{42}, result.Escaped); diff != "" {
+					t.Fatalf("escaped CPUs (-want +got):\n%s", diff)
+				}
+			})
+		})
+	}
+}
+
+func TestOutputLimitPrecedesQueuedExit(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := fakeOptions(t, "sleep")
+		r := New(o)
+		r.host = &fakeHost{}
+		started, err := r.Start(context.Background(), testSpec("oversized-exit", machine.R1, time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		trial := started.(*running)
+		p := trial.instances[0].process.(*fakeProc)
+		if _, err := io.WriteString(p.stdoutW, strings.Repeat("x", outputLineLimit+1)); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		p.finish(nil)
+		synctest.Wait()
+		result, err := trial.Wait(context.Background(), &recorder{})
+		if !errors.Is(err, errOutputLineTooLong) || result.Inconclusive == "" || result.Signal != "" {
+			t.Fatalf("oversized queued exit result=%+v err=%v", result, err)
+		}
+	})
 }

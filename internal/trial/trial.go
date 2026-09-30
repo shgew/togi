@@ -77,6 +77,7 @@ type running struct {
 	streamStop   chan struct{}
 	streams      sync.WaitGroup
 	outputErr    error
+	outputCapErr error
 	stopMu       sync.Mutex
 	stopped      bool
 	streamClosed bool
