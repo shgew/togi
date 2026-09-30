@@ -54,7 +54,7 @@ func StyleOf(e Event) Style {
 		if p.Event == RotationEnd && p.Clean && p.Qualifying {
 			return GreenBold
 		}
-	case *HuntStart, *MarkJoint, *TunerWarning:
+	case *HuntStart, *MarkJoint, *TunerWarning, *SessionWarning:
 		return Yellow
 	case *HuntEnd:
 		if p.Result == "culprit" || p.Result == "joint" || p.Result == "direct" {

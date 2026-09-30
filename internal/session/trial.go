@@ -20,6 +20,12 @@ func (r *runner) set(core, offset int, cause ...int) (int, error) {
 	if err := r.in.Machine.SMU.SetOffset(core, offset); err != nil {
 		return 0, r.smuFailed(journal.SMUSet, new(core), offset, intent.Seq, err)
 	}
+	for i, c := range r.cores {
+		if c.Core == core && r.applied != nil {
+			r.applied[i] = offset
+			break
+		}
+	}
 	written, err := r.append(&journal.SMUWrite{Op: journal.SMUSet, Core: new(core), Offset: offset}, intent.Seq)
 	if err != nil {
 		return 0, err
@@ -169,11 +175,13 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	}
 	trialCtx, cancel := context.WithCancel(ctx)
 	r.cancelTrial = cancel
-	defer func() { r.cancelTrial = nil; cancel() }()
 	running, err := r.in.Machine.Trials.Start(trialCtx, spec)
 	if err != nil {
+		defer cancel()
+		r.cancelTrial = nil
 		return tr.finish(trialCtx, since, machine.Result{}, "setup failed", err)
 	}
+	r.running = running
 	s := running.Started()
 	ts := &journal.TrialStart{Trial: tr.id, WindowStartNS: new(since.Nanoseconds()), Scope: s.Scope, PID: s.PID, CPUs: s.CPUs, Argv: s.Argv, Files: s.Files}
 	if len(s.Instances) > 1 {
@@ -183,18 +191,19 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	}
 	started, err := r.append(ts, intent.Seq)
 	if err != nil {
-		_, _ = running.Wait(trialCtx, &trialReport{tr: tr})
 		return err
 	}
 	tr.start = started.Seq
 	if s.Schedule != nil {
 		if _, err := r.append(&journal.TrialSignal{Trial: tr.id, Schedule: s.Schedule.String(), Seed: s.Schedule.Seed}, started.Seq); err != nil {
-			_, _ = running.Wait(trialCtx, &trialReport{tr: tr})
 			return err
 		}
 	}
 	report := &trialReport{tr: tr}
 	res, err := running.Wait(trialCtx, report)
+	r.running = nil
+	r.cancelTrial = nil
+	defer cancel()
 	if report.err != nil {
 		return report.err
 	}
@@ -286,12 +295,14 @@ func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine
 	if tr.t.Condition == machine.Isolated {
 		end.Core = nil
 	}
-	if _, err := r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...); err != nil {
+	ended, err := r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...)
+	if err != nil {
 		return err
 	}
 	if end.Outcome == journal.OutcomePass {
 		if err := r.in.Machine.Trials.Passed(tr.id); err != nil {
-			return fmt.Errorf("mark trial %s passed: %w", tr.id, err)
+			_, warningErr := r.append(&journal.SessionWarning{Operation: "retain passed trial", Trial: tr.id, Error: err.Error()}, ended.Seq)
+			return warningErr
 		}
 	}
 	return runnerErrIfCrashed(runnerErr)

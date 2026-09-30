@@ -83,6 +83,41 @@ func (s *failEmergencyZero) SetAllOffsets(offset int) error {
 	return s.SMU.SetAllOffsets(offset)
 }
 
+type forbiddenSMU struct{ t *testing.T }
+
+func (s forbiddenSMU) Offset(int) (int, error) {
+	s.t.Fatal("SMU read before validation")
+	return 0, nil
+}
+
+func (s forbiddenSMU) SetOffset(int, int) error {
+	s.t.Fatal("SMU write before validation")
+	return nil
+}
+
+func (s forbiddenSMU) SetAllOffsets(int) error {
+	s.t.Fatal("SMU all-core write before validation")
+	return nil
+}
+
+func TestEarlyJournalFailureDoesNotAccessUnvalidatedSMU(t *testing.T) {
+	t.Parallel()
+	m := newSim(t, small())
+	in := simInput(t.TempDir(), m)
+	seams := m.Seams()
+	seams.SMU = forbiddenSMU{t}
+	j, err := journal.Open(in.Dir, journal.Options{Boot: "test", Build: Build()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.Close()
+	faulty := &failAppendJournal{Journal: j, kind: journal.KindSessionStart}
+	_, err = Run(context.Background(), Input{Config: in.Config, Boot: "test", Journal: faulty, Machine: seams})
+	if !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("journal failure lost: %v", err)
+	}
+}
+
 func TestJournalFailureReportsFailedEmergencyZeroAndReadbacks(t *testing.T) {
 	t.Parallel()
 	cfg := small()
@@ -99,7 +134,7 @@ func TestJournalFailureReportsFailedEmergencyZeroAndReadbacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	faulty := &failAppendJournal{Journal: wrapFor(in, nil)(j), kind: journal.KindSessionStart}
+	faulty := &failAppendJournal{Journal: wrapFor(in, nil)(j), kind: journal.KindPreflightCheck}
 	smu := &failEmergencyZero{SMU: seams.SMU, journal: faulty}
 	seams.SMU = smu
 	_, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: faulty, Machine: seams, Rotations: 1, Stderr: &stderr})
@@ -130,36 +165,37 @@ func (unwritableState) ReadState() (journal.State, error) {
 }
 func (unwritableState) WriteState(journal.State) error { return errors.New("simulated full disk") }
 
-type unzeroable struct{ machine.SMU }
-
-func (unzeroable) SetAllOffsets(int) error { return errors.New("simulated emergency zeroing failure") }
-
-func TestStateRewriteFailureOnResumeReadsEveryCoreBack(t *testing.T) {
+func TestStateRewriteFailureOnResumeRestoresSafeOffsets(t *testing.T) {
 	t.Parallel()
 	cfg := small()
 	cfg.BIOS = []int{-10, -20}
+	cfg.Model = quietModel()
 	m := newSim(t, cfg)
 	in := simInput(t.TempDir(), m)
+	in.Config.CandidateEdges = map[int]int{0: -50, 1: -50}
 	simulate(t, in)
+	before := len(readEvents(t, in.Dir))
 	m.Reboot()
-	seams := m.Seams()
-	boot, err := seams.Host.BootID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: m.Now, Monotonic: m.Monotonic, Build: Build()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer j.Close()
-	seams.SMU = unzeroable{seams.SMU}
 	var stderr bytes.Buffer
-	if _, err := Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: unwritableState{wrapFor(in, nil)(j)}, Machine: seams, Rotations: 1, Stderr: &stderr}); err == nil {
-		t.Fatal("run succeeded without a writable state file")
+	in.Stderr = &stderr
+	stop, err := simulateBoot(context.Background(), in, func(j *journal.Journal) Journal {
+		return unwritableState{wrapFor(in, nil)(j)}
+	})
+	if err != nil || stop.Reason != StopRotations {
+		t.Fatalf("projection failure stopped resumed tuning: stop %+v, error %v", stop, err)
 	}
-	want := "togi: journal write failed: simulated full disk; setting every core to CO 0 without an intent failed: simulated emergency zeroing failure (readback: core 00 reads -10, core 01 reads -20)\n"
-	if diff := cmp.Diff(want, stderr.String()); diff != "" {
-		t.Fatalf("stderr (-want +got):\n%s", diff)
+	if diff := cmp.Diff("", stderr.String()); diff != "" {
+		t.Fatalf("projection failure invoked emergency zeroing (-want +got):\n%s", diff)
+	}
+	warning := readEvents(t, in.Dir)[before]
+	if diff := cmp.Diff(&journal.SessionWarning{Operation: "write state projection", Error: "simulated full disk"}, warning.Data); diff != "" {
+		t.Fatalf("resume did not warn about the failed projection: %s", diff)
+	}
+	for core, want := range cfg.BIOS {
+		got, err := m.Seams().SMU.Offset(core)
+		if err != nil || got != want {
+			t.Fatalf("core %d reads %d (%v), want ordinary restore %d", core, got, err, want)
+		}
 	}
 }
 
@@ -187,7 +223,7 @@ func (r trackedRunning) Wait(ctx context.Context, report machine.Reporter) (mach
 	return r.Running.Wait(ctx, report)
 }
 
-func TestEveryEarlyJournalAppendFailureZerosMachine(t *testing.T) {
+func TestEveryEarlyJournalAppendFailureRespectsValidation(t *testing.T) {
 	t.Parallel()
 	cfg := small()
 	cfg.BIOS = []int{-10, -10}
@@ -233,16 +269,24 @@ func TestEveryEarlyJournalAppendFailureZerosMachine(t *testing.T) {
 				t.Fatalf("k-th append failure: fired %v, err %v", faulty.failed, err)
 			}
 			wantStderr := "togi: journal write failed: io: read/write on closed pipe; every core set to CO 0 without an intent (readback all 0)\n"
+			validated := events[k-1].Kind != journal.KindSessionStart && events[k-1].Kind != journal.KindConfigLoaded
+			if !validated {
+				wantStderr = ""
+			}
 			if diff := cmp.Diff(wantStderr, stderr.String()); diff != "" {
 				t.Fatalf("stderr (-want +got):\n%s", diff)
 			}
 			if active != 0 {
 				t.Fatalf("%d trial backends still running", active)
 			}
-			for core := range cfg.BIOS {
+			for core, baseline := range cfg.BIOS {
+				want := 0
+				if !validated {
+					want = baseline
+				}
 				got, err := m.Seams().SMU.Offset(core)
-				if err != nil || got != 0 {
-					t.Fatalf("core %d after append failure: %d, %v", core, got, err)
+				if err != nil || got != want {
+					t.Fatalf("core %d after append failure: %d, %v; want %d", core, got, err, want)
 				}
 			}
 			written := readEvents(t, in.Dir)

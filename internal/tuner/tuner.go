@@ -523,6 +523,34 @@ func (s *State) Attribution() (Action, bool) {
 	return Action{Kind: Decide, Payload: f, Cause: append([]int{a.seq}, a.cause...)}, true
 }
 
+func (s *State) Drain() (Action, bool) {
+	if a, ok := s.Attribution(); ok {
+		return a, true
+	}
+	if s.warning != nil {
+		return Action{Kind: Decide, Payload: s.warning, Cause: []int{s.warningSeq}}, true
+	}
+	if len(s.queue) > 0 && allZero(s.queue[0].profile) {
+		return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Detail: "unattributed failure with every core at CO 0; the instability is not caused by Curve Optimizer"}, Cause: []int{s.queue[0].seq}}, true
+	}
+	if a, ok := s.pendingDecision(); ok {
+		return a, true
+	}
+	if s.hunt != nil {
+		if a, ok := s.huntNext(); ok && a.Kind == Decide {
+			switch p := a.Payload.(type) {
+			case *journal.HuntEnd, *journal.MarkJoint:
+				return a, true
+			case *journal.TunerDecision:
+				if p.Decision == journal.Backoff {
+					return a, true
+				}
+			}
+		}
+	}
+	return Action{}, false
+}
+
 func (s *State) Next() Action {
 	if len(s.cores) == 0 {
 		panic("tuner: no session")

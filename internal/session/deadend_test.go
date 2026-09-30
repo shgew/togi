@@ -106,15 +106,7 @@ func TestResumeInterruptedDeadEnd(t *testing.T) {
 			if dead < 0 {
 				t.Fatal("no deadend")
 			}
-			var resumed []journal.Kind
-			for _, e := range events[dead+1:] {
-				if e.Kind == journal.KindSMUIntent || e.Kind == journal.KindTrialIntent || e.Kind == journal.KindDeadEnd {
-					t.Fatalf("resumed tuning after dead end: %s", e.Kind)
-				}
-				if e.Kind != journal.KindStateRebuilt {
-					resumed = append(resumed, e.Kind)
-				}
-			}
+			resumed := deadEndResumeKinds(t, events, events[dead].Seq)
 			if !slices.Equal(resumed, []journal.Kind{journal.KindBootSavedEntry, journal.KindShutdown}) {
 				t.Fatalf("resume events after dead end: %v", resumed)
 			}
@@ -147,9 +139,9 @@ func TestResumeAfterSavedEntryRecorded(t *testing.T) {
 	if events[len(events)-1].Kind != journal.KindShutdown {
 		t.Fatalf("last event %s, want shutdown", events[len(events)-1].Kind)
 	}
-	for _, e := range events[entry.Seq:] {
-		if e.Kind == journal.KindSMUIntent || e.Kind == journal.KindTrialIntent || e.Kind == journal.KindBootSavedEntry {
-			t.Fatalf("repeated tuning or GRUB action after saved entry: %s", e.Kind)
+	for _, kind := range deadEndResumeKinds(t, events, entry.Seq) {
+		if kind != journal.KindShutdown {
+			t.Fatalf("repeated tuning or GRUB action after saved entry: %s", kind)
 		}
 	}
 }
@@ -176,12 +168,7 @@ func TestResumeInterruptedDeadEndOutsideTuningBoot(t *testing.T) {
 		t.Fatalf("resumed stop %+v after %d clears", stop, bl.calls)
 	}
 	events := readEvents(t, in.Dir)
-	var resumed []journal.Kind
-	for _, e := range events[deadSeq:] {
-		if e.Kind != journal.KindStateRebuilt {
-			resumed = append(resumed, e.Kind)
-		}
-	}
+	resumed := deadEndResumeKinds(t, events, deadSeq)
 	if !slices.Equal(resumed, []journal.Kind{journal.KindShutdown}) {
 		t.Fatalf("resume events after dead end: %v", resumed)
 	}
@@ -286,4 +273,54 @@ func (j *progressCancel) Append(p journal.Payload, cause ...int) (journal.Event,
 		j.cancel()
 	}
 	return e, err
+}
+
+func deadEndResumeKinds(t *testing.T, events []journal.Event, after int) []journal.Kind {
+	t.Helper()
+	baseline := 0
+	for _, e := range events {
+		if e.Kind == journal.KindSessionBaseline {
+			baseline = e.Seq
+		}
+	}
+	var kinds []journal.Kind
+	preflight := false
+	finished := false
+	for _, e := range events[after:] {
+		switch e.Data.(type) {
+		case *journal.StateRebuilt:
+		case *journal.PreflightCheck:
+			preflight = true
+		case *journal.SMUReadback, *journal.SMUWrite, *journal.ProfileRestored:
+			if !preflight || finished {
+				t.Fatalf("reconciliation outside the preflight/completion boundary: %s", e.Kind)
+			}
+		case *journal.SMUIntent:
+			if !preflight || finished || baseline == 0 || !slices.Contains(e.Cause, baseline) {
+				t.Fatalf("non-restoration write after dead end: %+v", e)
+			}
+		default:
+			finished = true
+			kinds = append(kinds, e.Kind)
+		}
+	}
+	return kinds
+}
+
+func assertOnlyRestorationWrites(t *testing.T, events []journal.Event, after int) {
+	t.Helper()
+	baseline := 0
+	for _, e := range events {
+		if e.Kind == journal.KindSessionBaseline {
+			baseline = e.Seq
+		}
+	}
+	for _, e := range events[after:] {
+		if e.Kind == journal.KindSMUIntent && (baseline == 0 || !slices.Contains(e.Cause, baseline)) {
+			t.Fatalf("non-restoration write after dead-end evidence: %+v", e)
+		}
+		if e.Kind == journal.KindTrialIntent {
+			t.Fatalf("trial after dead-end evidence: %+v", e)
+		}
+	}
 }

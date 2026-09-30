@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/session"
 )
@@ -129,5 +130,45 @@ func TestCompatibilityRefusalClearsGRUBAndUsesErrPriority(t *testing.T) {
 	}
 	if got := string(data); !strings.Contains(got, "<3>\x1b[1;31mtogi run: this journal was written by shycler 0.2.1+def5678") || !strings.Contains(got, "cleared GRUB saved entry") {
 		t.Fatalf("refusal line and clear report: %q", got)
+	}
+}
+
+func TestPrintCleanStop(t *testing.T) {
+	t.Parallel()
+	const restoredLine = "01:14:07 profile.restored restored offsets [-10 -20]\n"
+	const shutdownLine = "01:14:07 shutdown       clean shutdown\n"
+	for _, tc := range []struct {
+		name  string
+		kinds []journal.Kind
+		want  string
+	}{
+		{name: "ordinary restore", kinds: []journal.Kind{journal.KindSMUReadback, journal.KindProfileRestored, journal.KindShutdown}, want: restoredLine + shutdownLine},
+		{name: "interleaved and trailing warnings", kinds: []journal.Kind{journal.KindSMUReadback, journal.KindProfileRestored, journal.KindSessionWarning, journal.KindShutdown, journal.KindSessionWarning, journal.KindSessionWarning}, want: restoredLine + shutdownLine},
+		{name: "later work excludes earlier restore", kinds: []journal.Kind{journal.KindProfileRestored, journal.KindSessionWarning, journal.KindProfileChange, journal.KindShutdown, journal.KindSessionWarning}, want: shutdownLine},
+		{name: "new run excludes previous closing lines", kinds: []journal.Kind{journal.KindProfileRestored, journal.KindShutdown, journal.KindConfigLoaded, journal.KindSessionWarning}},
+		{name: "previous shutdown bounds the closing suffix", kinds: []journal.Kind{journal.KindProfileRestored, journal.KindShutdown, journal.KindSessionWarning, journal.KindShutdown, journal.KindSessionWarning}, want: shutdownLine},
+		{name: "shutdown without restore", kinds: []journal.Kind{journal.KindShutdown, journal.KindSessionWarning}, want: shutdownLine},
+		{name: "restore without shutdown", kinds: []journal.Kind{journal.KindProfileRestored, journal.KindSessionWarning}, want: restoredLine},
+		{name: "warnings only", kinds: []journal.Kind{journal.KindSessionWarning, journal.KindSessionWarning}},
+		{name: "empty"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var events []journal.Event
+			for _, kind := range tc.kinds {
+				msg := "not a closing summary"
+				if kind == journal.KindProfileRestored {
+					msg = "restored offsets [-10 -20]"
+				}
+				if kind == journal.KindShutdown {
+					msg = "clean shutdown"
+				}
+				events = append(events, journal.Event{Kind: kind, Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.Local), Msg: msg})
+			}
+			var stderr bytes.Buffer
+			printCleanStop(events, &stderr, journal.Renderer{})
+			if diff := cmp.Diff(tc.want, stderr.String()); diff != "" {
+				t.Fatalf("closing summary (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

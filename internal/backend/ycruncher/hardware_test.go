@@ -12,6 +12,7 @@ import (
 	"github.com/shgew/togi/internal/backend"
 	"github.com/shgew/togi/internal/backend/ycruncher"
 	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/hostlock"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/trial"
 )
@@ -38,6 +39,15 @@ func packagePath(t *testing.T) string {
 }
 
 func TestHardwareWorkloads(t *testing.T) {
+	lock, err := hostlock.Acquire(hostlock.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := lock.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	b := ycruncher.New(packagePath(t))
 	detail, err := b.Check()
 	if err != nil {

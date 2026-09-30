@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,6 +23,7 @@ import (
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/detect"
 	"github.com/shgew/togi/internal/hardware"
+	"github.com/shgew/togi/internal/hostlock"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
@@ -40,8 +42,12 @@ a terminal run offers to reset them. An unanswered too-aggressive defect stops
 an unattended run. It needs root. A journal from an older ruleset or schema is
 archived, and the new session starts each core from the edges and failed marks
 it found. A newer one stops the run before another event is written; reset --all
-archives that session. Journal lines are colored on terminals and in the system
+archives that session. Unknown event kinds stop both run and reset; install the
+build that wrote them. Journal lines are colored on terminals and in the system
 journal unless NO_COLOR is set.
+
+Only one run or reset can own this machine, even with different state directories.
+A busy /run/lock/togi.lock stops the command before any hardware access or event.
 
 When stdin and stderr are terminals, run shows the session as the watch
 dashboard instead of one line per event, and prints the outcome when it stops:
@@ -90,6 +96,14 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "togi run: %v\n", scanErr)
 		return exitError
 	}
+	if events, _, readErr := journal.Read(g.stateDir); readErr == nil {
+		if err := journal.KnownKinds(events, session.Build()); err != nil {
+			if grubenv != "" {
+				return runResult(session.Stop{}, err, stderr, renderer, hardware.GRUB{Env: grubenv})
+			}
+			return runResult(session.Stop{}, err, stderr, renderer)
+		}
+	}
 	cfg, file, err := loadConfig(g)
 	if err != nil {
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
@@ -105,27 +119,38 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	if out, ok := stderr.(*os.File); ok && !noTUI && interactive(out) {
 		dash = &dashboard{dir: g.stateDir, out: out}
 	}
-	return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr, renderer, dash)
+	return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr, renderer, dash, hardware.New)
 }
 
-func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, rotations int, stderr io.Writer, renderer journal.Renderer, dash *dashboard) int {
+func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, rotations int, stderr io.Writer, renderer journal.Renderer, dash *dashboard, newMachine func(config.Config, string) (machine.Machine, error)) int {
 	if err := hardware.CheckPlatform(); err != nil {
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
 	}
+	lock, err := hostlock.Acquire(g.hostLockPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "togi run: %v\n", err)
+		if errors.Is(err, hostlock.ErrLocked) {
+			return exitLocked
+		}
+		return exitError
+	}
+	defer lock.Close()
 	boot, err := detect.BootID()
 	if err != nil {
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
 	}
-	m, err := hardware.New(cfg, g.stateDir)
+	m, err := newMachine(cfg, g.stateDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
 	}
 	var current *machine.BIOSContext
-	if bios, err := m.Host.BIOSContext(); err == nil {
-		current = &bios
+	if m.Host.ValidateSMU() == nil {
+		if bios, err := m.Host.BIOSContext(); err == nil {
+			current = &bios
+		}
 	}
 	carried, err := carry.Prepare(g.stateDir, journal.Options{Boot: boot, Sync: true}, session.Build(), nil, current)
 	if err != nil {
@@ -134,18 +159,6 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	log := stderr
 	if dash != nil {
 		log = dash
-	}
-	j, err := journal.Open(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: log, Renderer: renderer, Build: session.Build(), Monotonic: m.Clock.Monotonic})
-	if err != nil {
-		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
-	}
-	if len(j.Events()) > 0 {
-		if err := journal.Compatible(journal.BuildOf(j.Events()), session.Build()); err != nil {
-			if cerr := j.Close(); cerr != nil {
-				err = errors.Join(err, cerr)
-			}
-			return runResult(session.Stop{}, err, stderr, renderer, bootloader)
-		}
 	}
 	prompt := defectPrompt(stderr)
 	if dash != nil {
@@ -163,7 +176,11 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	if dash != nil {
 		sessionStderr = &hidden
 	}
-	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr})
+	j, err := journal.Open(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: log, Renderer: renderer, Build: session.Build(), Monotonic: m.Clock.Monotonic})
+	if err != nil {
+		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
+	}
+	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr, Close: j.Close})
 	if dash != nil {
 		dash.hide()
 		_, _ = hidden.WriteTo(stderr)
@@ -171,25 +188,38 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 			printCleanStop(j.Events(), stderr, renderer)
 		}
 	}
-	if cerr := j.Close(); err == nil && cerr != nil {
-		err = cerr
-	}
 	return runResult(stop, err, stderr, renderer, bootloader)
 }
 
 // printCleanStop repeats the closing profile.restored and shutdown lines the dashboard kept off the screen.
 func printCleanStop(events []journal.Event, stderr io.Writer, renderer journal.Renderer) {
-	tail := events[max(0, len(events)-2):]
-	for _, e := range tail {
-		if e.Kind == journal.KindProfileRestored || e.Kind == journal.KindShutdown {
+	restored, shutdown := -1, -1
+	for i, e := range slices.Backward(events) {
+		if e.Kind == journal.KindSessionWarning {
+			continue
+		}
+		if e.Kind == journal.KindProfileRestored {
+			restored = i
+			break
+		}
+		if e.Kind != journal.KindShutdown || shutdown >= 0 {
+			break
+		}
+		shutdown = i
+	}
+	for _, i := range [2]int{restored, shutdown} {
+		if i >= 0 {
+			e := events[i]
 			fmt.Fprintln(stderr, renderer.Text(e, journal.FormatLine(e, time.Local)))
 		}
 	}
 }
 
 func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.Renderer, bootloader ...session.Bootloader) int {
-	if incompatible, ok := errors.AsType[*journal.IncompatibleError](err); ok {
-		fmt.Fprintln(stderr, renderer.Styled(journal.RedBold, "togi run: "+incompatible.Error()))
+	_, incompatible := errors.AsType[*journal.IncompatibleError](err)
+	_, unknown := errors.AsType[*journal.UnknownKindError](err)
+	if incompatible || unknown {
+		fmt.Fprintln(stderr, renderer.Styled(journal.RedBold, "togi run: "+err.Error()))
 		if len(bootloader) > 0 && bootloader[0] != nil {
 			before, after, clearErr := bootloader[0].ClearSavedEntry()
 			if clearErr != nil {

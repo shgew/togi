@@ -70,6 +70,8 @@ type running struct {
 	instances    []*instance
 	events       chan streamEvent
 	initialStops int
+	stopped      bool
+	stopErr      error
 }
 
 type streamEvent struct {

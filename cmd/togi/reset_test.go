@@ -32,13 +32,13 @@ func TestCommandsRefuseWhileLocked(t *testing.T) {
 	defer j.Close()
 	for _, args := range [][]string{{"reset", "--core", "3"}, {"reset", "--all"}} {
 		var stdout, stderr bytes.Buffer
-		if code := cli(append([]string{"--state-dir", dir}, args...), &stdout, &stderr); code != exitLocked {
+		if code := testCLI(t, append([]string{"--state-dir", dir}, args...), &stdout, &stderr); code != exitLocked {
 			t.Errorf("%v: exit %d, want %d; stderr %q", args, code, exitLocked, stderr.String())
 		}
 	}
 	for _, args := range [][]string{{"reset"}, {"reset", "--core", "3", "--all"}} {
 		var stdout, stderr bytes.Buffer
-		if code := cli(append([]string{"--state-dir", dir}, args...), &stdout, &stderr); code != exitUsage {
+		if code := testCLI(t, append([]string{"--state-dir", dir}, args...), &stdout, &stderr); code != exitUsage {
 			t.Errorf("%v: exit %d, want %d", args, code, exitUsage)
 		}
 	}
@@ -71,7 +71,7 @@ func TestResetAllCandidateEdges(t *testing.T) {
 				t.Fatal(err)
 			}
 			var stdout, stderr bytes.Buffer
-			if code := cli([]string{"reset", "--all", "--state-dir", dir, "--config", cfg}, &stdout, &stderr); code != exitOK {
+			if code := testCLI(t, []string{"reset", "--all", "--state-dir", dir, "--config", cfg}, &stdout, &stderr); code != exitOK {
 				t.Fatalf("reset exit %d: %s", code, stderr.String())
 			}
 			got := strings.Contains(stderr.String(), fmt.Sprintf("candidate edge %d for core %02d", tt.edge, tt.core))
@@ -147,7 +147,7 @@ func TestResetAllSkipsUnavailableConfig(t *testing.T) {
 				}
 			}
 			var stdout, stderr bytes.Buffer
-			g := &globals{config: cfg, stateDir: dir, configSet: tt.explicit}
+			g := &globals{config: cfg, stateDir: dir, configSet: tt.explicit, hostLockPath: filepath.Join(t.TempDir(), "togi.lock")}
 			if code := runReset(g, []string{"--all"}, &stdout, &stderr); code != exitOK {
 				t.Fatalf("reset exit %d: %s", code, stderr.String())
 			}
@@ -200,7 +200,7 @@ func TestResetAllDropsAPendingCarry(t *testing.T) {
 				defer j.Close()
 			}
 			var stdout, stderr bytes.Buffer
-			g := &globals{config: filepath.Join(t.TempDir(), "config.toml"), stateDir: dir}
+			g := &globals{config: filepath.Join(t.TempDir(), "config.toml"), stateDir: dir, hostLockPath: filepath.Join(t.TempDir(), "togi.lock")}
 			if code := runReset(g, []string{"--all"}, &stdout, &stderr); code != tc.code {
 				t.Fatalf("reset exit %d, want %d: %s", code, tc.code, stderr.String())
 			}
@@ -230,7 +230,7 @@ func TestResetAllWarnsAcrossRulesets(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "--config", cfg, "reset", "--all"}, &stdout, &stderr); code != exitOK {
+	if code := testCLI(t, []string{"--state-dir", dir, "--config", cfg, "reset", "--all"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("reset exit %d: %s", code, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "candidate edge -10 for core 03") || !strings.Contains(stdout.String(), "archived to archive/") {

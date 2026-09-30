@@ -330,3 +330,87 @@ func TestBackendRetriesAfterInconclusiveTrials(t *testing.T) {
 		t.Fatalf("%d inconclusive trials, want four backend setup failures", failures)
 	}
 }
+
+type waitErrorTrials struct {
+	machine.Trials
+	cancel context.CancelFunc
+}
+
+func (t waitErrorTrials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Running, error) {
+	running, err := t.Trials.Start(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	return waitErrorRunning{Running: running, cancel: t.cancel}, nil
+}
+
+type waitErrorRunning struct {
+	machine.Running
+	cancel context.CancelFunc
+}
+
+func (r waitErrorRunning) Wait(ctx context.Context, report machine.Reporter) (machine.Result, error) {
+	stopCtx, stop := context.WithCancel(ctx)
+	stop()
+	result, _ := r.Running.Wait(stopCtx, report)
+	if r.cancel != nil {
+		r.cancel()
+		return result, context.Canceled
+	}
+	return result, errors.New("injected runner failure")
+}
+
+func TestRunnerWaitErrorsCountTowardBackendDeadEnd(t *testing.T) {
+	t.Parallel()
+	r, _, closeJournal := checkedRunner(t, []int{0, 0})
+	defer closeJournal()
+	r.in.Config.DeadEnds.InconclusiveInARow = 1
+	clock := &retryClock{Clock: r.in.Machine.Clock}
+	r.in.Machine.Clock = clock
+	r.in.Machine.Trials = waitErrorTrials{Trials: r.in.Machine.Trials}
+	trial := tuner.Trial{Core: 0, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Condition: machine.Isolated, DurationS: 90}
+	for attempt := range 4 {
+		if err := r.retryBackend(context.Background(), trial); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.trial(context.Background(), tuner.Action{Trial: trial}); err != nil {
+			t.Fatal(err)
+		}
+		e := r.in.Journal.Events()[len(r.in.Journal.Events())-1]
+		end, ok := e.Data.(*journal.TrialEnd)
+		if !ok || end.Outcome != journal.OutcomeInconclusive || end.Interrupted || end.Reason != "trial runner failed: injected runner failure" {
+			t.Fatalf("ordinary Wait error: %+v", e.Data)
+		}
+		if got := len(r.fold.streaks[machine.Mprime]); got != attempt+1 {
+			t.Fatalf("backend streak %d, want %d", got, attempt+1)
+		}
+	}
+	if diff := cmp.Diff([]time.Duration{time.Minute, 5 * time.Minute, 30 * time.Minute}, clock.waits); diff != "" {
+		t.Fatal(diff)
+	}
+	stop, err := r.checkDeadEnd()
+	if err != nil || stop == nil || stop.DeadEnd.Condition != journal.DeadEndNoEvidence {
+		t.Fatalf("backend dead end: %+v, %v", stop, err)
+	}
+}
+
+func TestRunnerWaitCancellationRemainsInterrupted(t *testing.T) {
+	t.Parallel()
+	r, _, closeJournal := checkedRunner(t, []int{0, 0})
+	defer closeJournal()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r.in.Machine.Trials = waitErrorTrials{Trials: r.in.Machine.Trials, cancel: cancel}
+	trial := tuner.Trial{Core: 0, Regime: machine.R1, Condition: machine.Isolated, DurationS: 90}
+	if err := r.trial(ctx, tuner.Action{Trial: trial}); err != nil {
+		t.Fatal(err)
+	}
+	e := r.in.Journal.Events()[len(r.in.Journal.Events())-1]
+	end, ok := e.Data.(*journal.TrialEnd)
+	if !ok || end.Outcome != journal.OutcomeInconclusive || !end.Interrupted || end.Reason != "trial runner failed: context canceled; stopped by signal" {
+		t.Fatalf("cancelled Wait: %+v", e.Data)
+	}
+	if got := r.fold.streaks[machine.Mprime]; len(got) != 0 {
+		t.Fatalf("cancelled trial counted toward backend streak: %v", got)
+	}
+}

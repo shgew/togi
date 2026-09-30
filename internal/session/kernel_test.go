@@ -447,7 +447,11 @@ func TestDeadEndShutdownCapturesRestorationTail(t *testing.T) {
 					k.add(r.in.Boot, r.in.Machine.Clock.Monotonic(), "restoration")
 				}
 			}}
-			if _, err := r.finishDeadEnd(d, false); err != nil {
+			stop, err := r.finishDeadEnd(d, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := r.close(true, stop); err != nil {
 				t.Fatal(err)
 			}
 			events := r.in.Journal.Events()

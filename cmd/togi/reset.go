@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/shgew/togi/internal/detect"
+	"github.com/shgew/togi/internal/hostlock"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/tuner"
@@ -25,6 +26,9 @@ that includes it. --all warns if a configured candidate edge reached a failed
 mark in the archived session; missing or invalid configuration does not prevent
 archiving.
 --core refuses a different journal ruleset or schema; --all archives either.
+Both forms refuse unknown event kinds; install the build that wrote them.
+Only one run or reset can own this machine, even with different state directories.
+A busy /run/lock/togi.lock stops reset before it changes the session.
 
 Examples:
   sudo togi reset --core 3   Search core 3 again from its baseline
@@ -46,24 +50,27 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 		commandUsage(flags, resetHelp, stderr)
 		return exitUsage
 	}
+	lock, err := hostlock.Acquire(g.hostLockPath)
+	if err != nil {
+		return resetError(err, hostlock.ErrLocked, stderr)
+	}
+	defer lock.Close()
+	if events, _, readErr := journal.Read(g.stateDir); readErr == nil {
+		if err := journal.KnownKinds(events, session.Build()); err != nil {
+			fmt.Fprintf(stderr, "togi reset: %v\n", err)
+			return exitError
+		}
+	}
 	if all {
 		dropped, dropErr := journal.DropPendingCarry(g.stateDir)
 		if dropErr != nil {
-			fmt.Fprintf(stderr, "togi reset: %v\n", dropErr)
-			if errors.Is(dropErr, journal.ErrLocked) {
-				return exitLocked
-			}
-			return exitError
+			return resetError(dropErr, journal.ErrLocked, stderr)
 		}
 		stamp, id, err := journal.Scan(g.stateDir)
 		if errors.Is(err, fs.ErrNotExist) {
 			recovered, recoverErr := journal.RecoverPendingArchive(g.stateDir)
 			if recoverErr != nil {
-				fmt.Fprintf(stderr, "togi reset: %v\n", recoverErr)
-				if errors.Is(recoverErr, journal.ErrLocked) {
-					return exitLocked
-				}
-				return exitError
+				return resetError(recoverErr, journal.ErrLocked, stderr)
 			}
 			if recovered != "" {
 				fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next togi run starts a new session\n", recovered, filepath.Join("archive", recovered+".jsonl"))
@@ -82,11 +89,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 			}
 			j, openErr := journal.OpenForArchive(g.stateDir, journal.Options{Boot: boot, Sync: true})
 			if openErr != nil {
-				fmt.Fprintf(stderr, "togi reset: %v\n", openErr)
-				if errors.Is(openErr, journal.ErrLocked) {
-					return exitLocked
-				}
-				return exitError
+				return resetError(openErr, journal.ErrLocked, stderr)
 			}
 			path, archiveErr := j.ArchiveUnreadable(id)
 			if code, ok := closeCommand("reset", j, archiveErr, stderr); !ok {
@@ -118,6 +121,14 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, warning)
 	}
 	return exitOK
+}
+
+func resetError(err, locked error, stderr io.Writer) int {
+	fmt.Fprintf(stderr, "togi reset: %v\n", err)
+	if errors.Is(err, locked) {
+		return exitLocked
+	}
+	return exitError
 }
 
 func resetWarnings(events []journal.Event, g *globals) []string {

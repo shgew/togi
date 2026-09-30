@@ -76,7 +76,7 @@ var logged = []journal.Kind{
 	journal.KindTrialIntent, journal.KindTrialEnd, journal.KindFailure, journal.KindCrashDetected, journal.KindMCE,
 	journal.KindTunerDecision, journal.KindCorePhase, journal.KindGuardRotation, journal.KindProfileChange,
 	journal.KindHuntStart, journal.KindHuntMask, journal.KindHuntEnd, journal.KindHuntSkipped,
-	journal.KindMarkJoint, journal.KindRefineRound, journal.KindTunerWarning, journal.KindBackendRetry,
+	journal.KindMarkJoint, journal.KindRefineRound, journal.KindTunerWarning, journal.KindSessionWarning, journal.KindBackendRetry,
 	journal.KindTierChange, journal.KindDeadEnd, journal.KindDefectFound, journal.KindCommandReset, journal.KindShutdown,
 }
 

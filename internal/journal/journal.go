@@ -104,6 +104,10 @@ func open(dir string, opts Options, allowIncompatible bool) (*Journal, error) {
 		}
 		events, end = nil, len(data)
 	}
+	if err := KnownKinds(events, opts.Build); err != nil {
+		lock.Close()
+		return nil, err
+	}
 	if n := len(events); n > 0 && end == len(data) {
 		if a, ok := events[n-1].Data.(*SessionArchived); ok {
 			if err := finishArchive(dir, a.Path, opts.Sync); err != nil {
@@ -636,6 +640,9 @@ func (j *Journal) Events() []Event {
 func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 	seq := len(j.events) + 1
 	kind := p.Kind()
+	if _, ok := payloadConstructors[kind]; !ok {
+		return Event{}, fmt.Errorf("append %s: unregistered kind", kind)
+	}
 	if seq == 1 && kind != KindSessionStart {
 		return Event{}, fmt.Errorf("append %s: the first event must be %s", kind, KindSessionStart)
 	}

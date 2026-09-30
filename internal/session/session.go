@@ -43,6 +43,7 @@ type Input struct {
 	// Carry is what a transition carries into a new session; nil otherwise.
 	Carry  *carry.Carry
 	Stderr io.Writer
+	Close  func() error
 }
 
 type Bootloader interface {
@@ -83,17 +84,24 @@ type runner struct {
 	state journal.State
 	tuner *tuner.State
 
-	// condition and applied describe what this process last wrote to every core; empty until then.
-	condition    machine.Condition
-	applied      []int
-	fatal        error
-	cancelTrial  context.CancelFunc
-	kernelWaited int
+	// condition and applied describe this process's last writes or same-boot readbacks.
+	condition            machine.Condition
+	applied              []int
+	fatal                error
+	smuValidated         bool
+	sameBootUnreconciled bool
+	cancelTrial          context.CancelFunc
+	kernelWaited         int
+	running              machine.Running
+	shutdownEvent        *journal.Shutdown
 }
 
-func Run(ctx context.Context, in Input) (Stop, error) {
+func Run(ctx context.Context, in Input) (stop Stop, err error) {
 	r := &runner{in: in, fold: newFold(), tuner: tuner.New()}
-	stop, err := r.run(ctx)
+	defer func() {
+		err = errors.Join(err, r.close(!errors.Is(err, machine.ErrCrashed), &stop))
+	}()
+	stop, err = r.run(ctx)
 	if errors.Is(err, errDeadEndEvidence) {
 		return Stop{}, errors.New("dead-end evidence recorded without a dead end")
 	}
@@ -102,25 +110,23 @@ func Run(ctx context.Context, in Input) (Stop, error) {
 
 func (r *runner) run(ctx context.Context) (Stop, error) {
 	events := r.in.Journal.Events()
-	if len(events) > 0 {
-		if err := journal.Compatible(journal.BuildOf(events), Build()); err != nil {
-			if r.in.Bootloader != nil {
-				if _, _, clearErr := r.in.Bootloader.ClearSavedEntry(); clearErr != nil {
-					return Stop{}, fmt.Errorf("clear GRUB saved entry after incompatible journal: %w: %w", err, clearErr)
-				}
-			}
-			return Stop{}, err
-		}
+	if err := r.checkCompatibility(events); err != nil {
+		return Stop{}, err
 	}
 	journal.Replay(events, r.fold, &r.state, r.tuner)
 	r.tuner.Project(&r.state)
+	sameBoot := slices.Contains(r.fold.boots, r.in.Boot)
+	r.sameBootUnreconciled = sameBoot && r.fold.baselineSeq != 0
 	if len(events) > 0 {
 		if err := r.checkState(); err != nil {
 			return Stop{}, err
 		}
 	}
-	if stop, err := r.resumeDeadEnd(events); stop != nil || err != nil {
-		return deref(stop), err
+	pending, _ := pendingDeadEnd(events)
+	if !sameBoot {
+		if stop, err := r.resumeDeadEnd(events); stop != nil || err != nil {
+			return deref(stop), err
+		}
 	}
 	cores, err := r.in.Machine.Host.Topology()
 	if err != nil {
@@ -128,48 +134,73 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 	}
 	slices.SortFunc(cores, func(a, b machine.CoreInfo) int { return a.Core - b.Core })
 	r.cores = cores
-	for _, core := range slices.Sorted(maps.Keys(r.in.Config.StartOffsets)) {
-		if r.coreInfo(core) == nil {
-			return Stop{}, fmt.Errorf("start offset for core %d: %w", core, ErrNoSuchCore)
-		}
-	}
-	for _, core := range slices.Sorted(maps.Keys(r.in.Config.CandidateEdges)) {
-		if r.coreInfo(core) == nil {
-			return Stop{}, fmt.Errorf("candidate edge for core %d: %w", core, ErrNoSuchCore)
-		}
+	if err := r.validateConfiguredCores(); err != nil {
+		return Stop{}, err
 	}
 
-	if !r.fold.started {
-		if _, err := r.append(&journal.SessionStart{Build: Build(), Session: r.in.Machine.Clock.Now().UTC().Format("20060102T150405Z"), Cores: cores}); err != nil {
+	recoveryCanceled := false
+	if pending == nil {
+		if !r.fold.started {
+			if _, err := r.append(&journal.SessionStart{Build: Build(), Session: r.in.Machine.Clock.Now().UTC().Format("20060102T150405Z"), Cores: cores}); err != nil {
+				return Stop{}, err
+			}
+		}
+		boundary, err := r.startupBoundary()
+		if err != nil {
 			return Stop{}, err
 		}
-	}
-	boundary, err := r.startupBoundary()
-	if err != nil {
-		return Stop{}, err
-	}
-	if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: boundary, Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: r.in.Config}); err != nil {
-		return Stop{}, err
-	}
-	if err := r.recoverCrashes(ctx); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
+		if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: boundary, Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: r.in.Config}); err != nil {
+			return Stop{}, err
 		}
-		return r.afterEvidence(err)
-	}
-	if stop, err := r.checkDefects(); stop != nil || err != nil {
-		return deref(stop), err
-	}
-	if stop, err := r.checkDeadEnd(); stop != nil || err != nil {
-		return deref(stop), err
+		if err := r.recoverCrashes(ctx); err != nil {
+			if !errors.Is(err, context.Canceled) {
+				return r.afterEvidence(err)
+			}
+			if !r.sameBootUnreconciled {
+				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
+			}
+			recoveryCanceled = true
+		}
+		if !sameBoot {
+			if stop, err := r.checkDefects(); stop != nil || err != nil {
+				return deref(stop), err
+			}
+			if stop, err := r.checkDeadEnd(); stop != nil || err != nil {
+				return deref(stop), err
+			}
+		}
 	}
 	if stop, err := r.preflight(ctx); stop != nil || err != nil {
 		return deref(stop), err
+	}
+	if sameBoot {
+		if stop, err := r.resumeSameBoot(events); stop != nil || err != nil {
+			return deref(stop), err
+		}
+	}
+	if recoveryCanceled {
+		return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
 	}
 	if err := r.startSession(); err != nil {
 		return r.afterEvidence(err)
 	}
 	return r.loop(ctx)
+}
+
+func (r *runner) checkCompatibility(events []journal.Event) error {
+	if len(events) == 0 {
+		return nil
+	}
+	err := journal.Compatible(journal.BuildOf(events), Build())
+	if err == nil {
+		return nil
+	}
+	if r.in.Bootloader != nil {
+		if _, _, clearErr := r.in.Bootloader.ClearSavedEntry(); clearErr != nil {
+			return fmt.Errorf("clear GRUB saved entry after incompatible journal: %w: %w", err, clearErr)
+		}
+	}
+	return err
 }
 
 func deref(s *Stop) Stop {
@@ -188,7 +219,34 @@ func (r *runner) coreInfo(core int) *machine.CoreInfo {
 	return nil
 }
 
+func (r *runner) validateConfiguredCores() error {
+	for _, core := range slices.Sorted(maps.Keys(r.in.Config.StartOffsets)) {
+		if r.coreInfo(core) == nil {
+			return fmt.Errorf("start offset for core %d: %w", core, ErrNoSuchCore)
+		}
+	}
+	for _, core := range slices.Sorted(maps.Keys(r.in.Config.CandidateEdges)) {
+		if r.coreInfo(core) == nil {
+			return fmt.Errorf("candidate edge for core %d: %w", core, ErrNoSuchCore)
+		}
+	}
+	return nil
+}
+
 func (r *runner) append(p journal.Payload, cause ...int) (journal.Event, error) {
+	e, err := r.appendJournal(p, cause...)
+	if err != nil {
+		return journal.Event{}, err
+	}
+	if err := r.in.Journal.WriteState(r.state); err != nil {
+		if _, err := r.appendJournal(&journal.SessionWarning{Operation: "write state projection", Error: err.Error()}, e.Seq); err != nil {
+			return journal.Event{}, err
+		}
+	}
+	return e, nil
+}
+
+func (r *runner) appendJournal(p journal.Payload, cause ...int) (journal.Event, error) {
 	if r.fatal != nil {
 		return journal.Event{}, r.fatal
 	}
@@ -200,9 +258,6 @@ func (r *runner) append(p journal.Payload, cause ...int) (journal.Event, error) 
 	r.state.Fold(e)
 	r.tuner.Fold(e)
 	r.tuner.Project(&r.state)
-	if err := r.in.Journal.WriteState(r.state); err != nil {
-		return journal.Event{}, r.latch(err)
-	}
 	return e, nil
 }
 
@@ -217,9 +272,17 @@ func (r *runner) latch(err error) error {
 	if r.cancelTrial != nil {
 		r.cancelTrial()
 	}
+	return r.fatal
+}
+
+func (r *runner) emergencyRestore(err error) error {
+	if !r.smuValidated {
+		return nil
+	}
 	zeroErr := r.in.Machine.SMU.SetAllOffsets(0)
 	status := "readback all 0"
 	var problems []string
+	var cleanupErrors []error
 	ids := r.fold.ids
 	if len(r.cores) > 0 {
 		ids = make([]int, len(r.cores))
@@ -231,8 +294,10 @@ func (r *runner) latch(err error) error {
 		o, readErr := r.in.Machine.SMU.Offset(core)
 		if readErr != nil {
 			problems = append(problems, fmt.Sprintf("core %02d unreadable: %v", core, readErr))
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("emergency read core %02d: %w", core, readErr))
 		} else if o != 0 {
 			problems = append(problems, fmt.Sprintf("core %02d reads %d", core, o))
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("emergency read core %02d: got %d, want 0", core, o))
 		}
 	}
 	if len(problems) > 0 {
@@ -245,7 +310,7 @@ func (r *runner) latch(err error) error {
 			fmt.Fprintf(r.in.Stderr, "togi: journal write failed: %v; every core set to CO 0 without an intent (%s)\n", err, status)
 		}
 	}
-	return r.fatal
+	return errors.Join(append(cleanupErrors, zeroErr)...)
 }
 
 func (r *runner) checkState() error {
@@ -258,7 +323,8 @@ func (r *runner) checkState() error {
 		return nil
 	}
 	if err := r.in.Journal.WriteState(r.state); err != nil {
-		return r.latch(err)
+		_, warningErr := r.appendJournal(&journal.SessionWarning{Operation: "write state projection", Error: err.Error()})
+		return warningErr
 	}
 	_, err = r.append(&journal.StateRebuilt{Fields: fields})
 	return err
@@ -519,7 +585,7 @@ func (r *runner) afterEvidence(err error) (Stop, error) {
 	return *stop, nil
 }
 
-func (r *runner) resumeDeadEnd(events []journal.Event) (*Stop, error) {
+func pendingDeadEnd(events []journal.Event) (*journal.Event, bool) {
 	for i, e := range slices.Backward(events) {
 		if _, ok := e.Data.(*journal.DeadEnd); !ok {
 			continue
@@ -534,11 +600,64 @@ func (r *runner) resumeDeadEnd(events []journal.Event) (*Stop, error) {
 			}
 		}
 		if shutdown {
-			return nil, nil
+			return nil, false
 		}
-		return r.finishDeadEnd(e, !entry)
+		return &events[i], !entry
 	}
-	return nil, nil
+	return nil, false
+}
+
+func (r *runner) resumeDeadEnd(events []journal.Event) (*Stop, error) {
+	e, clear := pendingDeadEnd(events)
+	if e == nil {
+		return nil, nil
+	}
+	return r.finishDeadEnd(*e, clear)
+}
+
+func (r *runner) resumeSameBoot(events []journal.Event) (*Stop, error) {
+	a, pending, err := r.drainDecisions()
+	if err != nil {
+		return nil, err
+	}
+	if err := r.reconcileSameBoot(); err != nil {
+		result, err := r.afterEvidence(err)
+		return &result, err
+	}
+	if pending {
+		return r.deadEnd(a.Payload.(*journal.DeadEnd), a.Cause...)
+	}
+	if stop, err := r.resumeDeadEnd(events); stop != nil || err != nil {
+		return stop, err
+	}
+	if stop, err := r.checkDefects(); stop != nil || err != nil {
+		return stop, err
+	}
+	return r.checkDeadEnd()
+}
+
+func (r *runner) reconcileSameBoot() error {
+	if r.fold.baselineSeq == 0 {
+		return nil
+	}
+	offsets := make([]int, len(r.cores))
+	for i, c := range r.cores {
+		o, err := r.in.Machine.SMU.Offset(c.Core)
+		if err != nil {
+			return r.smuFailed(journal.SMURead, new(c.Core), 0, 0, err)
+		}
+		if _, err := r.append(&journal.SMUReadback{Core: c.Core, Offset: o}); err != nil {
+			return err
+		}
+		offsets[i] = o
+	}
+	r.applied = offsets
+	r.condition = ""
+	if err := r.restore(); err != nil {
+		return err
+	}
+	r.sameBootUnreconciled = false
+	return nil
 }
 
 func (r *runner) deadEnd(d *journal.DeadEnd, cause ...int) (*Stop, error) {
@@ -550,6 +669,11 @@ func (r *runner) deadEnd(d *journal.DeadEnd, cause ...int) (*Stop, error) {
 	default:
 		d.Action = journal.ActionClearSavedEntry
 	}
+	if r.sameBootUnreconciled {
+		if pending, _ := pendingDeadEnd(r.in.Journal.Events()); pending != nil {
+			return r.deadEndStop(d, cause, false), nil
+		}
+	}
 	cause = slices.Clone(cause)
 	e, err := r.append(d, cause...)
 	if err != nil {
@@ -560,6 +684,9 @@ func (r *runner) deadEnd(d *journal.DeadEnd, cause ...int) (*Stop, error) {
 
 func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 	d := e.Data.(*journal.DeadEnd)
+	if r.sameBootUnreconciled {
+		return r.deadEndStop(d, e.Cause, false), nil
+	}
 	cleared := d.Action == journal.ActionExit
 	switch {
 	case d.Action == journal.ActionExit || (clear && r.in.Bootloader == nil):
@@ -580,26 +707,22 @@ func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 			}
 		}
 	}
-	if d.Condition != journal.DeadEndSMU {
-		if err := r.restore(); err != nil && !errors.Is(err, errDeadEndEvidence) {
-			return nil, err
-		}
-	}
-	boundary, err := r.kernelBoundary("", 0, false)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := r.append(&journal.Shutdown{Reason: journal.ShutdownDeadEnd, KernelBoundary: boundary}); err != nil {
-		return nil, err
-	}
-	stop := &Stop{Reason: StopDeadEnd, DeadEnd: d, Reboot: d.Action == journal.ActionClearSavedEntryAndReboot && cleared}
-	for _, seq := range e.Cause {
+	r.shutdownEvent = &journal.Shutdown{Reason: journal.ShutdownDeadEnd}
+	return r.deadEndStop(d, e.Cause, d.Action == journal.ActionClearSavedEntryAndReboot && cleared), nil
+}
+
+func (r *runner) deadEndStop(d *journal.DeadEnd, cause []int, reboot bool) *Stop {
+	stop := &Stop{Reason: StopDeadEnd, DeadEnd: d, Reboot: reboot}
+	for _, seq := range cause {
 		stop.Evidence = append(stop.Evidence, r.eventAt(seq))
 	}
-	return stop, nil
+	return stop
 }
 
 func (r *runner) preflight(ctx context.Context) (*Stop, error) {
+	if r.sameBootUnreconciled {
+		ctx = context.WithoutCancel(ctx)
+	}
 	if r.in.Bootloader != nil {
 		if stop, err := r.waitWatchdog(ctx); stop != nil || err != nil {
 			return stop, err
@@ -609,6 +732,7 @@ func (r *runner) preflight(ctx context.Context) (*Stop, error) {
 		failed []int
 		names  []string
 	)
+	r.smuValidated = r.in.Machine.Host.ValidateSMU() == nil
 	for _, c := range r.in.Machine.Host.Preflight() {
 		e, err := r.append(&journal.PreflightCheck{Check: c.Name, Detail: c.Detail, OK: c.OK})
 		if err != nil {
@@ -936,22 +1060,107 @@ func (r *runner) reachedRotations() bool {
 }
 
 func (r *runner) shutdown(p *journal.Shutdown, stop StopReason) (Stop, error) {
-	if err := r.restore(); err != nil {
-		return r.afterEvidence(err)
-	}
-	boundary, err := r.kernelBoundary("", 0, false)
-	if err != nil {
-		return Stop{}, err
-	}
-	p.KernelBoundary = boundary
-	if _, err := r.append(p); err != nil {
-		return Stop{}, err
-	}
+	r.shutdownEvent = p
 	return Stop{Reason: stop}, nil
 }
 
-// restore writes every core back to its baseline once this process has written offsets, so the machine keeps running
-// on the values it had before togi started, except that a core never goes deeper than its current offset.
+func (r *runner) close(restore bool, stop *Stop) (err error) {
+	if r.in.Close != nil {
+		defer func() { err = errors.Join(err, r.in.Close()) }()
+	}
+	if r.cancelTrial != nil {
+		r.cancelTrial()
+	}
+	if r.running != nil {
+		if stop, ok := r.running.(interface{ Stop() error }); ok {
+			err = errors.Join(err, stop.Stop())
+		} else {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			_, waitErr := r.running.Wait(ctx, cleanupReport{})
+			if !errors.Is(waitErr, context.Canceled) {
+				err = errors.Join(err, waitErr)
+			}
+		}
+		r.running = nil
+	}
+	if !restore {
+		return err
+	}
+	defer func() {
+		if r.fatal != nil {
+			err = errors.Join(err, r.emergencyRestore(errors.Unwrap(r.fatal)))
+		}
+	}()
+	if err != nil {
+		return err
+	}
+	if r.fatal != nil {
+		return err
+	}
+	if stop.Reason == StopSignal {
+		if drainErr := r.drain(stop); drainErr != nil {
+			return errors.Join(err, drainErr)
+		}
+	}
+	var restoreErr error
+	if stop.DeadEnd == nil || stop.DeadEnd.Condition != journal.DeadEndSMU {
+		restoreErr = r.restore()
+	}
+	if errors.Is(restoreErr, errDeadEndEvidence) {
+		cleanupStop, cleanupErr := r.afterEvidence(restoreErr)
+		if stop.Reason != StopDeadEnd {
+			*stop = cleanupStop
+		}
+		restoreErr = cleanupErr
+	}
+	err = errors.Join(err, restoreErr)
+	if restoreErr == nil && !r.sameBootUnreconciled && r.shutdownEvent != nil {
+		boundary, boundaryErr := r.kernelBoundary("", 0, false)
+		if boundaryErr != nil {
+			return errors.Join(err, boundaryErr)
+		}
+		r.shutdownEvent.KernelBoundary = boundary
+		_, appendErr := r.append(r.shutdownEvent)
+		err = errors.Join(err, appendErr)
+	}
+	return err
+}
+
+func (r *runner) drain(stop *Stop) error {
+	a, pending, err := r.drainDecisions()
+	if err != nil || !pending {
+		return err
+	}
+	result, err := r.deadEnd(a.Payload.(*journal.DeadEnd), a.Cause...)
+	if result != nil {
+		*stop = *result
+	}
+	return err
+}
+
+func (r *runner) drainDecisions() (tuner.Action, bool, error) {
+	for {
+		a, ok := r.tuner.Drain()
+		if !ok {
+			return tuner.Action{}, false, nil
+		}
+		if _, ok := a.Payload.(*journal.DeadEnd); ok {
+			return a, true, nil
+		}
+		if _, err := r.append(a.Payload, a.Cause...); err != nil {
+			return tuner.Action{}, false, err
+		}
+	}
+}
+
+type cleanupReport struct{}
+
+func (cleanupReport) Progress(string)                    {}
+func (cleanupReport) Sample(machine.Sample)              {}
+func (cleanupReport) Signal(int, machine.Signal, string) {}
+
+// restore keeps baseline offsets only where they are no deeper than the safe current profile.
 func (r *runner) restore() error {
 	if r.applied == nil {
 		return nil
@@ -961,6 +1170,9 @@ func (r *runner) restore() error {
 		o := r.fold.baseline[i]
 		if s := slices.IndexFunc(r.state.Cores, func(s journal.CoreState) bool { return s.Core == c.Core }); s >= 0 {
 			o = max(o, r.state.Cores[s].Offset)
+			if failed := r.state.Cores[s].FailedMark; failed != nil {
+				o = max(o, *failed+1)
+			}
 		}
 		targets[i] = machine.ClampOffset(o)
 	}

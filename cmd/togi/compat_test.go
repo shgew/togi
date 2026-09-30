@@ -6,6 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/session"
 )
 
 func incompatibleFixture(t *testing.T, field string) (string, []byte) {
@@ -96,7 +100,7 @@ func TestResetAllArchivesUnrecognizedSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "reset", "--all"}, &stdout, &stderr); code != exitOK || !strings.Contains(stdout.String(), "without appending") {
+	if code := testCLI(t, []string{"--state-dir", dir, "reset", "--all"}, &stdout, &stderr); code != exitOK || !strings.Contains(stdout.String(), "without appending") {
 		t.Fatalf("reset exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 	}
 	id := "20261002T011000Z"
@@ -112,7 +116,7 @@ func TestResetAllArchivesUnrecognizedSchema(t *testing.T) {
 func TestResetCoreRefusesDifferentRuleset(t *testing.T) {
 	dir, original := incompatibleFixture(t, "ruleset")
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "reset", "--core", "3"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "uses ruleset 4") {
+	if code := testCLI(t, []string{"--state-dir", dir, "reset", "--core", "3"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "uses ruleset 4") {
 		t.Fatalf("reset --core exit %d, stderr %q", code, stderr.String())
 	}
 	after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
@@ -171,7 +175,7 @@ func TestIncompatibleArchiveRefusesCollisionAndResumesPendingMove(t *testing.T) 
 	}
 	var stdout, stderr bytes.Buffer
 	args := []string{"--state-dir", dir, "reset", "--all"}
-	if code := cli(args, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "already exists") {
+	if code := testCLI(t, args, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "already exists") {
 		t.Fatalf("collision exit %d: %s", code, stderr.String())
 	}
 	after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
@@ -183,7 +187,7 @@ func TestIncompatibleArchiveRefusesCollisionAndResumesPendingMove(t *testing.T) 
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := cli(args, &stdout, &stderr); code != exitOK {
+	if code := testCLI(t, args, &stdout, &stderr); code != exitOK {
 		t.Fatalf("resume archive exit %d: %s", code, stderr.String())
 	}
 	archived, err := os.ReadFile(filepath.Join(archive, id+".jsonl"))
@@ -211,7 +215,7 @@ func TestResetAllCompletesRenamedIncompatibleArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "reset", "--all"}, &stdout, &stderr); code != exitOK || !strings.Contains(stdout.String(), "session "+id+" archived to archive/") {
+	if code := testCLI(t, []string{"--state-dir", dir, "reset", "--all"}, &stdout, &stderr); code != exitOK || !strings.Contains(stdout.String(), "session "+id+" archived to archive/") {
 		t.Fatalf("resume archive exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
@@ -229,7 +233,7 @@ func TestResetAllCompletesRenamedIncompatibleArchive(t *testing.T) {
 func TestResetAllArchivesDifferentRulesetNormally(t *testing.T) {
 	dir, original := incompatibleFixture(t, "ruleset")
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "reset", "--all"}, &stdout, &stderr); code != exitOK {
+	if code := testCLI(t, []string{"--state-dir", dir, "reset", "--all"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("reset exit %d: %s", code, stderr.String())
 	}
 	path := filepath.Join(dir, "archive", "20261002T011000Z.jsonl")
@@ -252,11 +256,74 @@ func TestResetAllCompletesRecordedOldSchemaArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	if code := cli([]string{"--state-dir", dir, "reset", "--all"}, &stdout, &stderr); code != exitOK {
+	if code := testCLI(t, []string{"--state-dir", dir, "reset", "--all"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("finish archive exit %d: %s", code, stderr.String())
 	}
 	archived, err := os.ReadFile(filepath.Join(dir, "archive", id+".jsonl"))
 	if err != nil || !bytes.Equal(archived, data) {
 		t.Fatalf("recorded archive changed: %v", err)
+	}
+}
+
+func TestCommandsWithFutureKind(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/events.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	future, err := os.ReadFile("testdata/future-kind.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := append(bytes.Clone(fixture), future...)
+	for _, tc := range []struct {
+		args []string
+		code int
+	}{
+		{[]string{"status"}, exitOK},
+		{[]string{"cert"}, exitOK},
+		{[]string{"events"}, exitOK},
+		{[]string{"events", "--json"}, exitOK},
+		{[]string{"watch", "--width", "120", "--height", "33"}, exitOK},
+		{[]string{"run"}, exitIncompatible},
+		{[]string{"reset", "--core", "3"}, exitError},
+		{[]string{"reset", "--all"}, exitError},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "events.jsonl")
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			code := testCLI(t, append([]string{"--state-dir", dir}, tc.args...), &stdout, &stderr)
+			if diff := cmp.Diff(tc.code, code); diff != "" {
+				t.Fatalf("exit (-want +got): %s; stderr %s", diff, stderr.String())
+			}
+			if tc.code != exitOK {
+				events, _, err := journal.Read(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := (&journal.UnknownKindError{Kind: "future.fact", Journal: journal.BuildOf(events), Binary: session.Build()}).Error()
+				if !strings.Contains(stderr.String(), want) {
+					t.Fatalf("missing refusal: %s", stderr.String())
+				}
+			} else if tc.args[0] == "events" {
+				want := "future fact remains visible"
+				if len(tc.args) > 1 {
+					want = string(future)
+				}
+				if !strings.Contains(stdout.String(), want) {
+					t.Fatalf("missing future event: %s", stdout.String())
+				}
+			}
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(data, after); diff != "" {
+				t.Fatalf("journal changed (-want +got): %s", diff)
+			}
+		})
 	}
 }

@@ -150,14 +150,28 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	if t.spec.Regime == machine.R6 {
 		report.Progress(fmt.Sprintf("bursts: %d continues, %d stops", result.Conts, result.Stops))
 	}
-	if cleanupErr := t.teardown(&result, report); cleanupErr != nil && err == nil {
-		err = cleanupErr
-	}
+	t.stopErr = t.teardown(&result, report)
+	t.stopped = true
+	err = errors.Join(err, t.stopErr)
 	if fatal != nil && err == nil {
 		err = fatal
 	}
 	return result, err
 }
+
+func (t *running) Stop() error {
+	if !t.stopped {
+		t.stopErr = t.teardown(&machine.Result{}, stopReport{})
+		t.stopped = true
+	}
+	return t.stopErr
+}
+
+type stopReport struct{}
+
+func (stopReport) Progress(string)                    {}
+func (stopReport) Sample(machine.Sample)              {}
+func (stopReport) Signal(int, machine.Signal, string) {}
 
 func (t *running) classify(inst *instance, line string, stderr bool, result *machine.Result, report machine.Reporter) bool {
 	classified := t.backend.Classify(line)

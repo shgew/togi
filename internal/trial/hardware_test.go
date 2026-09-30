@@ -14,10 +14,20 @@ import (
 	"time"
 
 	"github.com/shgew/togi/internal/backend"
+	"github.com/shgew/togi/internal/hostlock"
 	"github.com/shgew/togi/internal/machine"
 )
 
 func TestHardwareScope(t *testing.T) {
+	lock, err := hostlock.Acquire(hostlock.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := lock.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	detail, err := CheckSystemdRun()
 	if err != nil {
 		t.Fatal(err)
@@ -67,6 +77,15 @@ func TestHardwareScope(t *testing.T) {
 }
 
 func TestHardwareScopeKillsDetachedDescendant(t *testing.T) {
+	lock, err := hostlock.Acquire(hostlock.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := lock.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	if _, err := CheckSystemdRun(); err != nil {
 		t.Fatal(err)
 	}

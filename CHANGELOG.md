@@ -16,6 +16,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - `--config` is accepted only by `run` and `reset`; read-only commands no longer advertise it and reject it with exit 2 ([#187]).
 - The tuning boot now requires exactly one GRUB mirror, refusing configurations with several GRUB environments ([#189]).
 - Kernel logs are now read from a persisted, boot-local cursor at every trial boundary and clean shutdown, including dead ends, covering profile writes and retry waits; interrupted setup recovers the successful target readback boundary, between-trial MCEs are recorded and shown without feeding trial decisions, and a lost read interval keeps an intersecting trial inconclusive below stronger evidence, including valid MCEs returned before a cursor metadata error. If a session may have tuned through kernel-log gaps, run `togi reset --core N` for every tuned core; older journals cannot identify the affected trials ([#196]).
+- Read-only commands can inspect same-schema journals containing future event kinds, including their original lines in `events`; `run` and `reset` refuse them with the kind and build stamps instead of replaying incomplete facts. Builds through 0.5.0 still reject unknown kinds ([#165]).
 
 ### Fixed
 
@@ -29,6 +30,12 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - Trials whose current boot is explicitly missing from the kernel log are now inconclusive unless higher-precedence failure evidence survives; valid empty results and recovery from vacuumed older boots are unchanged. If a session may have tuned through missing current-boot logs, run `togi reset --core N` for every tuned core; older journals cannot identify the affected trials ([#172]).
 - Backend early exits and stalls are now recorded immediately as typed failure evidence, so recovery preserves the affected core if the machine crashes before the trial ends ([#173]).
 - MCEs now record their boot-local monotonic time, so crash recovery cannot attribute a trial to a machine check from before its profile was applied; outside-window MCEs remain visible without becoming trial causes, and older MCE events retain their previous replay behavior ([#200]).
+- `run`, `reset` and hardware tests now share `/run/lock/togi.lock` on Linux (`/tmp/togi.lock` for copied-journal reset on Darwin), preventing concurrent togi processes with different state directories from interleaving SMU access or carry preparation; a busy lock stops the command before hardware access or another event, and delegated hardware-test users can acquire an existing readable lock without write permission ([#170]).
+- `run` now stops and joins workloads, restores offsets and closes the journal on ordinary errors and panics as well as clean exits; unconfirmed workload teardown prevents ordinary restoration and a false clean shutdown, ordinary trial-runner errors count toward backend retries and `no_evidence`, and passed-trial marker and retention failures warn visibly in the dashboard without interrupting tuning ([#176]).
+- Stopping after a failed trial now records its pending attribution, marks and backoffs before restoring a safe profile, including with nonzero BIOS offsets, without starting more tuning work; an unattributed failure with every core at CO 0 retains its dead-end outcome and tuning-boot cleanup ([#177]).
+- Failed `state.json` projection writes now warn and continue tuning instead of emergency zeroing; the journal remains authoritative, the next start rebuilds stale state, and intervening warnings do not hide the clean-stop restoration summary ([#197]).
+- Hardware startup now validates CPU family/model and the `ryzen_smu` codename before any mailbox command or SMN access, including BIOS context and slot mapping; unsupported identities follow the recorded preflight refusal and tuning-boot cleanup, and journal failures before session validation stop without emergency SMU writes ([#198]).
+- Same-boot restarts now read every core and restore the journal's mark-aware safe offsets after preflight, including when signaled to stop during crash recovery, before completing an interrupted dead end or resuming tuning; failed preflight preserves pending actions and defers saved-entry clearing until reconciliation, and repeated restoration interruptions cannot leave tuned offsets behind a clean shutdown ([#203]).
 
 ## [0.5.0] - 2026-09-29
 
@@ -238,3 +245,10 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#172]: https://github.com/shgew/togi/pull/172
 [#173]: https://github.com/shgew/togi/pull/173
 [#196]: https://github.com/shgew/togi/pull/196
+[#165]: https://github.com/shgew/togi/pull/165
+[#170]: https://github.com/shgew/togi/pull/170
+[#176]: https://github.com/shgew/togi/pull/176
+[#177]: https://github.com/shgew/togi/pull/177
+[#197]: https://github.com/shgew/togi/pull/197
+[#198]: https://github.com/shgew/togi/pull/198
+[#203]: https://github.com/shgew/togi/pull/203

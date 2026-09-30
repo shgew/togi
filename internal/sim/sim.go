@@ -538,6 +538,15 @@ func (h host) Ranking() ([]int, error) {
 	return slices.Clone(h.m.cfg.Ranking), nil
 }
 
+func (h host) ValidateSMU() error {
+	for _, name := range []string{"cpu", "ryzen_smu"} {
+		if detail, failed := h.m.failedChecks[name]; failed {
+			return fmt.Errorf("validate %s: %s", name, detail)
+		}
+	}
+	return nil
+}
+
 func (h host) BIOSContext() (machine.BIOSContext, error) {
 	if h.m.crashed {
 		return machine.BIOSContext{}, machine.ErrCrashed
