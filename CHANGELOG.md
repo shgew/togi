@@ -4,12 +4,17 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Added
+
+- `services.togi.package` selects the togi package installed and run by the NixOS module ([#190]).
+
 ### Changed
 
 - Per-core offsets are refused on CCDs with fused-off slots: preflight names the CCD and fuse mask, and full 8-core CCDs remain supported ([#163]).
 - `togi cert` labels the profile values `OFFSET` instead of `EDGE` and shows each core's CCD and slot to match the BIOS per-core Curve Optimizer controls ([#161]).
 - Binaries built with `go build` report the seven-character Git revision and `-dirty` for modified checkouts, unless an explicit build revision is supplied; builds without VCS information still report `+dev` ([#183]).
 - `--config` is accepted only by `run` and `reset`; read-only commands no longer advertise it and reject it with exit 2 ([#187]).
+- The tuning boot now requires exactly one GRUB mirror, refusing configurations with several GRUB environments ([#189]).
 
 ### Fixed
 
@@ -17,6 +22,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - A truncated machine-check record no longer prevents the next independent record's decoded bank type from naming its core; genuinely interleaved records remain unattributed. To discard decisions based on a previously unattributed record, run `togi reset --core N` for each affected core ([#186]).
 - y-cruncher preflight rejects non-executable binaries and ignores unrelated files when selecting its lowest-ISA and Zen 5 binaries ([#162]).
 - One-frame `togi watch` now prints journal read or compatibility errors on stderr and exits 1 while retaining the problem frame on stdout; a missing journal remains a successful `no session yet` frame ([#193]).
+- The tuning service requires the mount holding GRUB's environment, including a separate `noauto` boot mount ([#189]).
 
 ## [0.5.0] - 2026-09-29
 
