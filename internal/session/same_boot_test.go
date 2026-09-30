@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
@@ -281,5 +282,28 @@ func TestSameBootResumeRejectsUnvalidatedSMU(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCanceledSameBootResumeStillRequiresArmedWatchdog(t *testing.T) {
+	t.Parallel()
+	in := sameBootFixture(t, true)
+	in.Machine.FailCheck("watchdog", "unarmed")
+	before := len(readEvents(t, in.Dir))
+	start := in.Machine.Monotonic()
+	stop, err := resumeStoppedProcess(t, in, 0)
+	if err != nil || stop.Reason != StopDeadEnd || stop.DeadEnd.Condition != journal.DeadEndPreflight {
+		t.Fatalf("canceled resume with unarmed watchdog: %+v, %v", stop, err)
+	}
+	if diff := cmp.Diff(30*time.Second, in.Machine.Monotonic()-start); diff != "" {
+		t.Fatalf("bounded watchdog wait (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]int{-45, -45, -25, -12}, actualOffsets(t, in)); diff != "" {
+		t.Fatalf("unarmed watchdog changed offsets (-want +got):\n%s", diff)
+	}
+	for _, e := range readEvents(t, in.Dir)[before:] {
+		if e.Kind == journal.KindSMUIntent || e.Kind == journal.KindSMUReadback || e.Kind == journal.KindProfileRestored || e.Kind == journal.KindTrialIntent || e.Kind == journal.KindShutdown {
+			t.Fatalf("unsafe action before watchdog readiness: %+v", e)
+		}
 	}
 }

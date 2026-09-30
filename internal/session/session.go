@@ -701,6 +701,9 @@ func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 }
 
 func (r *runner) preflight(ctx context.Context) (*Stop, error) {
+	if r.sameBootUnreconciled {
+		ctx = context.WithoutCancel(ctx)
+	}
 	if r.in.Bootloader != nil {
 		if stop, err := r.waitWatchdog(ctx); stop != nil || err != nil {
 			return stop, err
