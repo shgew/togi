@@ -69,7 +69,7 @@ Enter the dev shell (Go, gh, gopls, golangci-lint, just, nixfmt) with `nix devel
 | `just` | List the recipes |
 | `just test` | The tight loop |
 | `just gate` | Lint, the `fmt` flake check over tracked files, then tests: the quick check before handing off |
-| `just check` | Every flake check, what CI runs on every pull request and push to `main`: package (its tests run shuffled, with the integration tests on Linux), lint, fmt and, on Linux, the VM tests `vm` (the tuning boot) and `vm-restart-limit`. Must pass before a pull request |
+| `just check` | Every flake check, what CI runs on every pull request and push to `main`: package (its tests run shuffled, with the integration tests on Linux), race (the same suite under the race detector), lint, fmt and, on Linux, the VM tests `vm` (the tuning boot) and `vm-restart-limit`. Must pass before a pull request |
 | `just fmt` | Format Go, Nix and the justfile in place |
 | `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just release` | Start the release workflow on `main`: it checks that `check` passed on `main`, commits the release, builds the package, pushes to `main` and publishes. `just release-preview` shows what it would release. See `docs/releasing.md` |
@@ -78,7 +78,7 @@ Enter the dev shell (Go, gh, gopls, golangci-lint, just, nixfmt) with `nix devel
 
 CI (`.github/workflows/check.yml`) runs on GitHub-hosted `ubuntu-latest` runners: an `eval` job lists the flake checks, one job per check builds it, with `/dev/kvm` opened to the Nix build users for the VM tests, and an aggregating `check` job passes when all of them passed. Each VM test is its own check so the jobs boot their machines in parallel. The build jobs substitute from the public Cachix cache `togi` and push each check's output when the `CACHIX_AUTH_TOKEN` secret is available, so a check whose inputs are unchanged passes without running; the checks build the package with the revision `dev` so that a new commit alone changes none of them (ADR 0021). The release workflow (`.github/workflows/release.yml`) only builds the package on the release commit.
 
-On macOS (aarch64-darwin) the dev shell, `just test`, `just gate`, `just sim` and the read-only commands work; `just check` builds `package`, `lint` and `fmt` and skips the VM tests, `just hardware` and the `integration` tests are Linux-only. Linux-only code follows the Go convention: OS-suffixed files (`_linux.go`, `_darwin.go`) for real implementations, and a `//go:build !linux` fallback returning a wrapped `errors.ErrUnsupported`.
+On macOS (aarch64-darwin) the dev shell, `just test`, `just gate`, `just sim` and the read-only commands work; `just check` builds `package`, `race`, `lint` and `fmt` and skips the VM tests, `just hardware` and the `integration` tests are Linux-only. Linux-only code follows the Go convention: OS-suffixed files (`_linux.go`, `_darwin.go`) for real implementations, and a `//go:build !linux` fallback returning a wrapped `errors.ErrUnsupported`.
 
 A command needed twice gets a recipe, in the same pull request.
 
@@ -119,5 +119,5 @@ Keep packages near 1000 lines; split by responsibility when one grows past that.
 - **Fast and deterministic:** a unit test exercises logic, never the world around it. It does not wait on real time, reach the network, start processes or depend on the machine it runs on: time comes from an injected clock or a `testing/synctest` bubble, everything else from fakes. Keep each test as quick as the behavior it proves allows.
 - **Simulator first:** behavior is proven on `internal/sim` with fixed seeds, never by waiting for hardware.
 - Tests pin spec behavior: rules, boundaries, invariants, crash-resume. Table tests for rules, property tests for invariants, golden files for rendered output (`go test ./cmd/togi -update` rewrites them), a fuzz target for the journal parser (`just fuzz`). Compare values with `cmp.Diff`.
-- Concurrent code is tested on real goroutines. `just test -race` runs the suite under the race detector; no automated check runs it.
+- Concurrent code is tested on real goroutines. The `race` flake check runs the suite under the race detector on every pull request and push to `main`; `just test -race` runs it locally.
 - Tests that need the real world carry a build tag and stay out of `go test ./...`: `integration` for real processes (a helper program built by the test, never mprime or y-cruncher), `hardware` for the target machine, restoring every offset they change.

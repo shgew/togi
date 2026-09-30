@@ -82,6 +82,16 @@
 
           checks = {
             package = togi "dev";
+            race = config.checks.package.overrideAttrs {
+              pname = "togi-race";
+              buildPhase = ''
+                runHook preBuild
+                runHook postBuild
+              '';
+              checkPhase = testPhase "-race";
+              installPhase = "mkdir -p $out";
+              dontFixup = true;
+            };
             lint = config.checks.package.overrideAttrs (old: {
               pname = "togi-lint";
               nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.golangci-lint ];
