@@ -165,6 +165,7 @@ func TestProjectionWarningAppendFailureIsFatal(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			cfg := small()
+			cfg.BIOS = []int{-10, -20}
 			cfg.Model = quietModel()
 			m := newSim(t, cfg)
 			in := simInput(t.TempDir(), m)
@@ -190,13 +191,20 @@ func TestProjectionWarningAppendFailureIsFatal(t *testing.T) {
 				t.Fatalf("warning append failure was not fatal: stop %+v, error %v", stop, err)
 			}
 			want := "togi: journal write failed: io: read/write on closed pipe; every core set to CO 0 without an intent (readback all 0)\n"
+			if startup {
+				want = ""
+			}
 			if diff := cmp.Diff(want, stderr.String()); diff != "" {
 				t.Fatalf("fatal journal failure report (-want +got):\n%s", diff)
 			}
-			for core := range cfg.BIOS {
+			for core, baseline := range cfg.BIOS {
+				wantOffset := 0
+				if startup {
+					wantOffset = baseline
+				}
 				offset, readErr := m.Seams().SMU.Offset(core)
-				if readErr != nil || offset != 0 {
-					t.Fatalf("core %d reads %d (%v), want emergency zero", core, offset, readErr)
+				if readErr != nil || offset != wantOffset {
+					t.Fatalf("core %d reads %d (%v), want %d", core, offset, readErr, wantOffset)
 				}
 			}
 			events := readEvents(t, in.Dir)

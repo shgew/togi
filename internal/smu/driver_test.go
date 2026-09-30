@@ -59,6 +59,10 @@ func cpu(t *testing.T, root string, cpuID, coreID, ccd int, cache bool) {
 func fixture(t *testing.T, coresPerCCD int, cache bool) (string, *fakeMailbox) {
 	t.Helper()
 	root := t.TempDir()
+	put(t, root, "proc/cpuinfo", "cpu family : 26\nmodel : 68\nmodel name : Zen Test\n")
+	put(t, root, "sys/kernel/ryzen_smu_drv/codename", "23\n")
+	put(t, root, "sys/kernel/ryzen_smu_drv/drv_version", "0.1\n")
+	put(t, root, "sys/kernel/ryzen_smu_drv/version", "57.13\n")
 	mb := &fakeMailbox{fuses: map[uint32]uint32{0x03b10570: 1, 0x03b10524: 0x6e}, responses: map[uint32][6]uint32{}}
 	for ccd := range 2 {
 		for index := range coresPerCCD {
@@ -260,24 +264,64 @@ func TestFuseEqualToProbeAcceptedWhenFresh(t *testing.T) {
 
 func TestNoDriverAndTopologyError(t *testing.T) {
 	root, _ := fixture(t, 8, true)
-	d, err := Open(root, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if check := d.CheckDriver(); check.OK || check.Detail != "/sys/kernel/ryzen_smu_drv not found: ryzen_smu is not loaded" {
-		t.Fatalf("driver: %+v", check)
-	}
-	if check := d.CheckSlotMapping(); check.OK || check.Detail != "ryzen_smu is not loaded" {
-		t.Fatalf("mapping: %+v", check)
-	}
-	if _, err := d.Offset(0); err == nil {
-		t.Fatal("per-core read with no driver accepted")
-	}
-	if err := d.SetAllOffsets(-10); err == nil {
-		t.Fatal("set all with no driver accepted")
+	if _, err := Open(root, nil); err == nil || !strings.Contains(err.Error(), "ryzen_smu is not loaded") {
+		t.Fatalf("missing driver accepted: %v", err)
 	}
 	if _, err := Open(t.TempDir(), nil); err == nil {
 		t.Fatal("missing topology accepted")
+	}
+}
+
+func TestConstructionRefusesUnsupportedIdentityWithoutAccess(t *testing.T) {
+	for _, tc := range []struct {
+		name, path, value string
+	}{
+		{"family", "proc/cpuinfo", "cpu family : 25\nmodel : 68\n"},
+		{"model", "proc/cpuinfo", "cpu family : 26\nmodel : 80\n"},
+		{"codename", "sys/kernel/ryzen_smu_drv/codename", "22\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, mb := fixture(t, 8, true)
+			put(t, root, tc.path, tc.value)
+			mb.smnRead = func(uint32) (uint32, error) {
+				t.Fatal("SMN read before identity validation")
+				return 0, nil
+			}
+			if _, err := Open(root, mb); err == nil {
+				t.Fatal("unsupported identity accepted")
+			}
+			if len(mb.commands) != 0 {
+				t.Fatalf("mailbox commands before validation: %v", mb.commands)
+			}
+		})
+	}
+}
+
+func TestUnvalidatedDriverRefusesEveryAccess(t *testing.T) {
+	mb := &fakeMailbox{}
+	mb.smnRead = func(uint32) (uint32, error) {
+		t.Fatal("unvalidated SMN read")
+		return 0, nil
+	}
+	d := &Driver{mb: mb}
+	d.mapSlots()
+	if d.CheckSlotMapping().OK {
+		t.Fatal("unvalidated slot mapping accepted")
+	}
+	if _, err := d.Offset(0); err == nil {
+		t.Fatal("unvalidated offset read accepted")
+	}
+	if err := d.SetOffset(0, -10); err == nil {
+		t.Fatal("unvalidated per-core write accepted")
+	}
+	if err := d.SetAllOffsets(0); err == nil {
+		t.Fatal("unvalidated all-core zero accepted")
+	}
+	if _, err := d.BIOSContext(); err == nil {
+		t.Fatal("unvalidated BIOS context read accepted")
+	}
+	if len(mb.commands) != 0 {
+		t.Fatalf("unvalidated mailbox commands: %v", mb.commands)
 	}
 }
 

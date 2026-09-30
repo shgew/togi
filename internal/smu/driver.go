@@ -20,6 +20,7 @@ type Driver struct {
 	slots         map[int]location
 	mappingDetail string
 	mappingErr    error
+	validated     bool
 }
 
 func Open(root string, mb Mailbox) (*Driver, error) {
@@ -28,6 +29,9 @@ func Open(root string, mb Mailbox) (*Driver, error) {
 		return nil, fmt.Errorf("read CPU topology: %w", err)
 	}
 	d := &Driver{root: root, mb: mb, cores: cores, slots: make(map[int]location, len(cores))}
+	if err := d.ValidateSMU(); err != nil {
+		return nil, err
+	}
 	d.mapSlots()
 	return d, nil
 }
@@ -66,6 +70,9 @@ func (d *Driver) SetOffset(core, offset int) error {
 }
 
 func (d *Driver) SetAllOffsets(offset int) error {
+	if !d.validated {
+		return fmt.Errorf("set all offsets: CPU and driver not validated")
+	}
 	if d.mb == nil {
 		return fmt.Errorf("set all offsets: ryzen_smu is not loaded")
 	}
@@ -77,6 +84,9 @@ func (d *Driver) SetAllOffsets(offset int) error {
 }
 
 func (d *Driver) location(core int) (location, error) {
+	if !d.validated {
+		return location{}, fmt.Errorf("per-core access refused: CPU and driver not validated")
+	}
 	if d.mappingErr != nil {
 		return location{}, fmt.Errorf("per-core access refused: %w", d.mappingErr)
 	}
@@ -88,6 +98,10 @@ func (d *Driver) location(core int) (location, error) {
 }
 
 func (d *Driver) mapSlots() {
+	if !d.validated {
+		d.mappingErr = fmt.Errorf("CPU and driver not validated")
+		return
+	}
 	if d.mb == nil {
 		d.mappingErr = fmt.Errorf("ryzen_smu is not loaded")
 		return

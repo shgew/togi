@@ -23,6 +23,8 @@ type SMU interface {
 type Host interface {
 	BootID() (string, error)
 	Topology() ([]CoreInfo, error)
+	// ValidateSMU checks CPU family/model and driver codename without mailbox or SMN access.
+	ValidateSMU() error
 	BIOSContext() (BIOSContext, error)
 	// Ranking returns the raw preferred-core ranking value of each core, in core-id order.
 	Ranking() ([]int, error)

@@ -106,6 +106,37 @@ func TestRunRefusesHostLockBeforeHardwareAndCarry(t *testing.T) {
 	}
 }
 
+type refusedStartupHost struct {
+	machine.Host
+	detail string
+}
+
+func (h refusedStartupHost) ValidateSMU() error { return errors.New(h.detail) }
+
+func TestRunRefusesIdentityBeforeBIOSOrSMUAccess(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("hardware runs need Linux")
+	}
+	for _, detail := range []string{"unsupported CPU family", "unsupported CPU model", "unsupported driver codename"} {
+		t.Run(detail, func(t *testing.T) {
+			g := testGlobals(t)
+			before := directoryFiles(t, g.stateDir)
+			newMachine := func(config.Config, string) (machine.Machine, error) {
+				// Nil embedded seams panic on any BIOS, SMU or preflight access.
+				return machine.Machine{Host: refusedStartupHost{detail: detail}}, nil
+			}
+			var stderr bytes.Buffer
+			code := runHardware(context.Background(), &g, config.Default(), false, nil, 0, &stderr, journal.Renderer{}, nil, newMachine)
+			if code != exitPreflight || !strings.Contains(stderr.String(), detail) {
+				t.Fatalf("identity refusal: exit %d, stderr %s", code, stderr.String())
+			}
+			if diff := cmp.Diff(before, directoryFiles(t, g.stateDir)); diff != "" {
+				t.Fatalf("identity refusal changed state: %s", diff)
+			}
+		})
+	}
+}
+
 func TestReadOnlyCommandsDoNotTakeHostLock(t *testing.T) {
 	for _, args := range [][]string{{"status"}, {"cert"}, {"events"}, {"watch", "--width", "120", "--height", "33"}} {
 		t.Run(args[0], func(t *testing.T) {

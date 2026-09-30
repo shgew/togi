@@ -79,6 +79,8 @@ func (h *host) BootID() (string, error) { return detect.BootID() }
 
 func (h *host) Topology() ([]machine.CoreInfo, error) { return h.drv.Topology(), nil }
 
+func (h *host) ValidateSMU() error { return h.drv.ValidateSMU() }
+
 func (h *host) BIOSContext() (machine.BIOSContext, error) { return h.drv.BIOSContext() }
 
 func (h *host) Ranking() ([]int, error) { return ranking("/", h.drv.Topology()) }
@@ -104,6 +106,10 @@ func (h *host) Preflight() []machine.Check {
 	root := machine.Check{Name: "root", Detail: "uid 0", OK: true}
 	if uid := os.Geteuid(); uid != 0 {
 		root = machine.Check{Name: "root", Detail: fmt.Sprintf("running as uid %d; run needs root", uid)}
+	}
+	identity := []machine.Check{root, h.drv.CheckCPU(), h.drv.CheckDriver()}
+	if !identity[1].OK || !identity[2].OK {
+		return identity
 	}
 	systemdRun := machine.Check{Name: "systemd_run", OK: true}
 	detail, err := trial.CheckSystemdRun()

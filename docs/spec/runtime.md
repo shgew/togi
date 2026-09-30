@@ -71,7 +71,7 @@ A run that has written offsets restores each core to its baseline, or to its cur
 
 A durable passing `trial.end` is authoritative. Failure to write the trial directory's `passed` marker or prune older passing directories appends `session.warning`, caused by that trial end, and does not stop tuning. A missing marker only retains that directory on disk. A failure to append the warning still follows the journal-write emergency.
 
-If appending an event fails while offsets may be applied, togi stops every backend, writes every core to 0 without an intent, reads each back, reports the original `journal write` error and emergency outcome on stderr/system journal, and stops without further journal events. On the next run the SMU read reconciles hardware with the surviving journal. This narrow emergency is the exception to intent-before-write; failure to restore or read back must also be reported.
+If appending an event fails after CPU family/model and driver codename validation has established that SMU commands are safe, togi stops every backend, writes every core to 0 without an intent, reads each back, reports the original `journal write` error and emergency outcome on stderr/system journal, and stops without further journal events. Before that validation boundary, a journal failure remains fatal but performs no mailbox command or SMN access: this process cannot have written an offset. On the next run the SMU read reconciles hardware with the surviving journal. This narrow emergency is the exception to intent-before-write; failure to restore or read back must also be reported. Projection-write failures remain warnings; failure to append their warning follows the same validation boundary.
 
 ## Host lock
 
@@ -86,6 +86,10 @@ The state-directory writer lock remains: it protects journal integrity, not the 
 `run` and `reset` require root: they change core voltage and the boot entry, and create cgroup scopes. The read-only commands work for any user who can read the state directory.
 
 ## Preflight
+
+Hardware construction checks CPU family/model from `/proc/cpuinfo` and the driver codename from its sysfs metadata before reading any SMN register, including the slot-mapping fuses. An unsupported identity refuses construction without a mailbox command or SMN access. CLI startup repeats this non-command validation before reading BIOS context for transition preparation. Session preflight establishes its own validation boundary before command-bearing checks; failures while writing earlier startup events must not emergency-zero the hardware.
+
+Completed session preflight is the startup boundary for stale-scope containment and subsequent same-boot reconciliation, before `startSession` and the first offset write. An interrupted dead-end completion returns without starting tuning or writing offsets; it does not bypass this boundary to reconcile hardware.
 
 `run` checks, each recorded as a `preflight.check` event:
 1. In a tuning boot (`--tuning-boot`), a hardware watchdog is armed: at least one `/sys/class/watchdog/watchdog*/state` is `active`, with a readable, nonempty `identity` other than `Software Watchdog`. The software watchdog cannot recover a hardware freeze. This check runs before the other checks: it checks immediately, then polls every 1 second for at most 30 seconds, recording one final `preflight.check` named `watchdog`, not one event per poll. Normal/manual `run` without `--tuning-boot` neither requires nor waits for a watchdog.

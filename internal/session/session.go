@@ -88,6 +88,7 @@ type runner struct {
 	condition     machine.Condition
 	applied       []int
 	fatal         error
+	smuValidated  bool
 	cancelTrial   context.CancelFunc
 	kernelWaited  int
 	running       machine.Running
@@ -237,6 +238,9 @@ func (r *runner) latch(err error) error {
 }
 
 func (r *runner) emergencyRestore(err error) error {
+	if !r.smuValidated {
+		return nil
+	}
 	zeroErr := r.in.Machine.SMU.SetAllOffsets(0)
 	status := "readback all 0"
 	var problems []string
@@ -622,6 +626,7 @@ func (r *runner) preflight(ctx context.Context) (*Stop, error) {
 		failed []int
 		names  []string
 	)
+	r.smuValidated = r.in.Machine.Host.ValidateSMU() == nil
 	for _, c := range r.in.Machine.Host.Preflight() {
 		e, err := r.append(&journal.PreflightCheck{Check: c.Name, Detail: c.Detail, OK: c.OK})
 		if err != nil {

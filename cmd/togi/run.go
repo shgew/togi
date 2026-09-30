@@ -146,6 +146,10 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
 	}
+	if err := m.Host.ValidateSMU(); err != nil {
+		fmt.Fprintf(stderr, "togi run: %v\n", err)
+		return exitPreflight
+	}
 	var current *machine.BIOSContext
 	if bios, err := m.Host.BIOSContext(); err == nil {
 		current = &bios

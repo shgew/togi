@@ -10,6 +10,17 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
+func (d *Driver) ValidateSMU() error {
+	d.validated = false
+	for _, check := range []machine.Check{d.CheckCPU(), d.CheckDriver()} {
+		if !check.OK {
+			return fmt.Errorf("validate %s: %s", check.Name, check.Detail)
+		}
+	}
+	d.validated = true
+	return nil
+}
+
 func (d *Driver) CheckCPU() machine.Check {
 	check := machine.Check{Name: "cpu"}
 	info, err := d.cpuInfo()
@@ -89,6 +100,9 @@ func (d *Driver) CheckSlotMapping() machine.Check {
 }
 
 func (d *Driver) BIOSContext() (machine.BIOSContext, error) {
+	if !d.validated {
+		return machine.BIOSContext{}, fmt.Errorf("read BIOS context: CPU and driver not validated")
+	}
 	var context machine.BIOSContext
 	var err error
 	if context.BIOSVersion, err = d.trimmed("sys/class/dmi/id/bios_version"); err != nil {
