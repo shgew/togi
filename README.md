@@ -3,7 +3,7 @@
 > [!WARNING]
 > togi is pre-1.0. It writes Curve Optimizer offsets to your CPU through `ryzen_smu`, and finding each core's edge means running it until it fails: expect crashes, reboots and lost work in anything else running. A new version can refuse to continue a session written by an older one. Run it at your own risk.
 
-Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them so the result earns a durability tier: Bronze, Silver, Gold, Platinum.
+Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them so the result earns a durability tier: Bronze, Silver or Gold today. Platinum requires the planned `observe` service and cannot be earned yet.
 
 - Searches each core in isolation, hunts the cores behind unattributed failures, then refines the resident profile to the most total depth its marks allow before continuing guard.
 - Tests with self-checking workloads (mprime, y-cruncher) across light, heavy, load-step, medium, SMT, idle and all-core regimes.
