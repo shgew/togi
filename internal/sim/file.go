@@ -42,11 +42,12 @@ func LoadMachine(path string) (Config, error) {
 			Flat     float64        `toml:"flat"`
 		} `toml:"core"`
 		Joint []struct {
-			Members map[string]int   `toml:"members"`
-			Regimes []machine.Regime `toml:"regimes"`
-			Rate    float64          `toml:"rate"`
-			AfterS  float64          `toml:"after_s"`
-			Signal  machine.Signal   `toml:"signal"`
+			Members      map[string]int   `toml:"members"`
+			Regimes      []machine.Regime `toml:"regimes"`
+			Rate         float64          `toml:"rate"`
+			AfterS       float64          `toml:"after_s"`
+			Signal       machine.Signal   `toml:"signal"`
+			CrashMCECore *int             `toml:"crash_mce_core"`
 		} `toml:"joint"`
 		Script []struct {
 			Trial     string            `toml:"trial"`
@@ -132,7 +133,7 @@ func LoadMachine(path string) (Config, error) {
 			}
 			members[c] = offset
 		}
-		cfg.Joints = append(cfg.Joints, Joint{Members: members, Regimes: j.Regimes, Rate: j.Rate, AfterS: j.AfterS, Signal: j.Signal})
+		cfg.Joints = append(cfg.Joints, Joint{Members: members, Regimes: j.Regimes, Rate: j.Rate, AfterS: j.AfterS, Signal: j.Signal, CrashMCECore: j.CrashMCECore})
 	}
 	if f.Script != nil {
 		cfg.Script = make(map[string]Outcome, len(f.Script))

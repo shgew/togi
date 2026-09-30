@@ -211,8 +211,18 @@ func TestAnchorOffsetBackendFailureChoosesOlderAnchor(t *testing.T) {
 func TestHuntJointMark(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(16)
+	model := sim.DefaultModel()
+	model.PastEdgeRate = 1
+	cfg.Model = &model
+	for i := range cfg.Edges {
+		cfg.Edges[i].Isolated = [5]int{-50, -50, -50, -50, -50}
+		cfg.Edges[i].Resident = [7]int{-50, -50, -50, -50, -50, -50, -50}
+	}
 	cfg.Joints = []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
-	_, events, _ := runHunt(t, cfg, nil, nil)
+	stop, events, _ := runHunt(t, cfg, nil, nil)
+	if stop.Reason != session.StopRotations {
+		t.Fatalf("stop %+v", stop)
+	}
 	mark, ok := findPayload(events, func(p *journal.MarkJoint) bool { return !p.Fallback && len(p.Members) == 2 })
 	if !ok || cmp.Diff([]journal.JointMember{{Core: 3, Offset: -10}, {Core: 11, Offset: -10}}, mark.Members) != "" {
 		t.Fatalf("joint mark %+v", mark)
@@ -225,6 +235,9 @@ func TestHuntJointMark(t *testing.T) {
 				marks++
 			}
 		case *journal.TunerDecision:
+			if p.FailedMark != nil {
+				t.Errorf("joint crash produced single-core mark: %+v", p)
+			}
 			if p.Decision == journal.Backoff && p.Phase == journal.PhaseHunt {
 				backoffs++
 			}
@@ -236,6 +249,32 @@ func TestHuntJointMark(t *testing.T) {
 	}
 	if marks != 1 || backoffs != 1 {
 		t.Errorf("mark count %d, hunt backoffs %d, want one each", marks, backoffs)
+	}
+}
+
+func TestHuntJointMisleadingMCE(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(16)
+	model := sim.DefaultModel()
+	model.PastEdgeRate = 1
+	cfg.Model = &model
+	cfg.Joints = []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10, CrashMCECore: new(3)}}
+	stop, events, _ := runHunt(t, cfg, nil, func(in *Input) {
+		in.Until = func(e journal.Event) bool {
+			p, ok := e.Data.(*journal.TunerDecision)
+			return ok && p.Core == 3 && p.FailedMark != nil && *p.FailedMark == -10
+		}
+	})
+	if stop.Reason != session.StopSignal {
+		t.Fatalf("stop %+v", stop)
+	}
+	if _, ok := findPayload(events, func(p *journal.TunerDecision) bool {
+		return p.Core == 3 && p.FailedMark != nil && *p.FailedMark == -10
+	}); !ok {
+		t.Fatal("misleading joint MCE did not attribute core 3 at -10")
+	}
+	if mark, ok := findPayload[*journal.MarkJoint](events, nil); ok {
+		t.Fatalf("misleading core-local evidence produced joint mark: %+v", mark)
 	}
 }
 
