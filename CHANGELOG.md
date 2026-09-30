@@ -6,7 +6,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ### Added
 
-- `services.togi.package` selects the togi package installed and run by the NixOS module ([#190](https://github.com/shgew/togi/pull/190)).
+- `services.togi.package` selects the togi package installed and run by the NixOS module ([#190]).
 
 ### Changed
 
