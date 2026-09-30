@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
@@ -368,7 +369,9 @@ func TestUnconfirmedCleanupDeadEnd(t *testing.T) {
 				defer j.Close()
 				return Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapFor(in, killed)(j), Machine: seams})
 			}
-			in := simInput(t.TempDir(), newSim(t, small()))
+			cfg := small()
+			cfg.BIOS = []int{-10, -20}
+			in := simInput(t.TempDir(), newSim(t, cfg))
 			stop, err := run(in, nil)
 			if err != nil || stop.Reason != StopDeadEnd || stop.DeadEnd.Condition != journal.DeadEndContainment {
 				t.Fatalf("cleanup session stop %+v, error %v", stop, err)
@@ -386,7 +389,7 @@ func TestUnconfirmedCleanupDeadEnd(t *testing.T) {
 				t.Fatalf("offset write or decision before containment dead end: %s", events[endIndex+1].Kind)
 			}
 			for _, e := range events[endIndex+1:] {
-				if slices.Contains([]journal.Kind{journal.KindTrialIntent, journal.KindProfileApplied, journal.KindProfileChange, journal.KindFailure}, e.Kind) {
+				if slices.Contains([]journal.Kind{journal.KindTrialIntent, journal.KindProfileApplied, journal.KindProfileChange, journal.KindFailure, journal.KindSMUIntent, journal.KindSMUWrite, journal.KindProfileRestored, journal.KindShutdown}, e.Kind) {
 					t.Fatalf("tuning continued after failed cleanup: %s", e.Kind)
 				}
 			}
@@ -402,5 +405,29 @@ func TestUnconfirmedCleanupDeadEnd(t *testing.T) {
 			}
 			t.Logf("%s: containment dead end, no next trial/profile change; interrupted evidence resumes to the same dead end", name)
 		})
+	}
+}
+
+func TestDeferredContainmentCleanupDoesNotEmergencyRestore(t *testing.T) {
+	cfg := small()
+	cfg.BIOS = []int{-10, -20}
+	m := newSim(t, cfg)
+	seams := m.Seams()
+	running, err := seams.Trials.Start(context.Background(), machine.TrialSpec{
+		ID: "deferred", Regime: machine.R1, Workload: machine.PickWorkload(machine.R1, 0),
+		Cores: []int{0}, CPUs: []int{0}, Duration: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &runner{in: Input{Machine: seams}, running: containmentRunning{running}, fatal: errors.New("journal write failed")}
+	if err := r.close(true, &Stop{}); !errors.Is(err, machine.ErrContainment) {
+		t.Fatalf("canceled deferred cleanup lost containment error: %v", err)
+	}
+	for core, want := range cfg.BIOS {
+		got, err := seams.SMU.Offset(core)
+		if err != nil || got != want {
+			t.Fatalf("unconfirmed deferred cleanup restored core %d: got %d want %d err %v", core, got, want, err)
+		}
 	}
 }

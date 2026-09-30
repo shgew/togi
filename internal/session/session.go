@@ -94,6 +94,7 @@ type runner struct {
 	kernelWaited         int
 	running              machine.Running
 	shutdownEvent        *journal.Shutdown
+	containmentFailed    bool
 }
 
 func Run(ctx context.Context, in Input) (stop Stop, err error) {
@@ -1078,13 +1079,13 @@ func (r *runner) close(restore bool, stop *Stop) (err error) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 			_, waitErr := r.running.Wait(ctx, cleanupReport{})
-			if !errors.Is(waitErr, context.Canceled) {
+			if errors.Is(waitErr, machine.ErrContainment) || !errors.Is(waitErr, context.Canceled) {
 				err = errors.Join(err, waitErr)
 			}
 		}
 		r.running = nil
 	}
-	if !restore {
+	if !restore || r.containmentFailed || errors.Is(err, machine.ErrContainment) {
 		return err
 	}
 	defer func() {

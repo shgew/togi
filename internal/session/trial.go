@@ -266,6 +266,7 @@ func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine
 	containment := ""
 	if errors.Is(runnerErr, machine.ErrContainment) {
 		containment = runnerErr.Error()
+		r.containmentFailed = true
 	}
 	if crashed && containment == "" && len(res.Escaped) == 0 && res.Signal == "" {
 		return runnerErr
