@@ -28,6 +28,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - Trials with unreadable or malformed thread or CPU-usage samples are now inconclusive, even if later samples succeed, unless higher-precedence failure evidence survives. If a session may have tuned through sampling errors, run `togi reset --core N` for every tuned core; older journals cannot identify the affected trials ([#168]).
 - Trials whose current boot is explicitly missing from the kernel log are now inconclusive unless higher-precedence failure evidence survives; valid empty results and recovery from vacuumed older boots are unchanged. If a session may have tuned through missing current-boot logs, run `togi reset --core N` for every tuned core; older journals cannot identify the affected trials ([#172]).
 - Backend early exits and stalls are now recorded immediately as typed failure evidence, so recovery preserves the affected core if the machine crashes before the trial ends ([#173]).
+- MCEs now record their boot-local monotonic time, so crash recovery cannot attribute a trial to a machine check from before its profile was applied; outside-window MCEs remain visible without becoming trial causes, and older MCE events retain their previous replay behavior ([#200]).
 
 ## [0.5.0] - 2026-09-29
 
