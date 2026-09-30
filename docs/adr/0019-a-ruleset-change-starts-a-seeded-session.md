@@ -1,4 +1,4 @@
-The same-ruleset BIOS dead end is superseded by [ADR 0020](0020-hunt-and-refine.md).
+The candidate-edge checking phase and the same-ruleset BIOS dead end are superseded by [ADR 0020](0020-hunt-and-refine.md).
 
 # A ruleset change starts a seeded session
 
