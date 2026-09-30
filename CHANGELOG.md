@@ -23,6 +23,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - y-cruncher preflight rejects non-executable binaries and ignores unrelated files when selecting its lowest-ISA and Zen 5 binaries ([#162]).
 - One-frame `togi watch` now prints journal read or compatibility errors on stderr and exits 1 while retaining the problem frame on stdout; a missing journal remains a successful `no session yet` frame ([#193]).
 - The tuning service requires the mount holding GRUB's environment, including a separate `noauto` boot mount ([#189]).
+- Trial outcome precedence now preserves backend failures and containment escapes when the runner also reports cleanup or cancellation errors, and preserves MCE evidence when kernel-log reading fails ([#167]).
 
 ## [0.5.0] - 2026-09-29
 
@@ -227,3 +228,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#183]: https://github.com/shgew/togi/pull/183
 [#187]: https://github.com/shgew/togi/pull/187
 [#193]: https://github.com/shgew/togi/pull/193
+[#167]: https://github.com/shgew/togi/pull/167
