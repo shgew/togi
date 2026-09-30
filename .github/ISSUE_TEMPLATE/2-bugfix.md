@@ -10,7 +10,7 @@ labels: ["bugfix"]
 
 ## Version
 
-<!-- Output of `togi --version`. -->
+<!-- If available, share the output of `togi --version` (optional). -->
 
 ## Environment
 
@@ -18,4 +18,4 @@ labels: ["bugfix"]
 
 ## Journal
 
-<!-- An excerpt from `togi events` around the problem. Keep the full journal available on request. -->
+<!-- If available, share an excerpt from `togi events` around the problem (optional), with the full journal on request. -->
