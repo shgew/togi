@@ -416,7 +416,7 @@ func (r *runner) recordMCE(m machine.MCE, fromBoot string, between bool) error {
 	if r.fold.mceKeys[mceKey(fromBoot, m.Lines)] {
 		return nil
 	}
-	_, err := r.append(&journal.MCE{CPU: m.CPU, Core: m.Core, Bank: m.Bank, BankType: m.BankType, Corrected: m.Corrected, FromBoot: fromBoot, BetweenTrials: between, Lines: m.Lines})
+	_, err := r.append(&journal.MCE{CPU: m.CPU, Core: m.Core, Bank: m.Bank, BankType: m.BankType, Corrected: m.Corrected, MonotonicNS: new(int64(m.Monotonic)), FromBoot: fromBoot, BetweenTrials: between, Lines: m.Lines})
 	return err
 }
 

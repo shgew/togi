@@ -570,6 +570,7 @@ type MCE struct {
 	Bank          int              `json:"bank"`
 	BankType      machine.BankType `json:"bank_type"`
 	Corrected     bool             `json:"corrected"`
+	MonotonicNS   *int64           `json:"monotonic_ns,omitempty"`
 	FromBoot      string           `json:"from_boot,omitempty"`
 	Trial         string           `json:"trial,omitempty"`
 	BetweenTrials bool             `json:"between_trials,omitempty"`

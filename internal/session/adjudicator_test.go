@@ -97,6 +97,7 @@ func (r evidenceRunning) Wait(context.Context, machine.Reporter) (machine.Result
 
 type evidenceKernel struct {
 	machine.Kernel
+	clock machine.Clock
 	calls int
 }
 
@@ -105,7 +106,7 @@ func (k *evidenceKernel) ReadMCEs(boot, cursor string) (machine.KernelRead, erro
 	if k.calls < 3 {
 		return k.Kernel.ReadMCEs(boot, cursor)
 	}
-	return machine.KernelRead{MCEs: []machine.MCE{{Core: 0, Corrected: true, Monotonic: 24 * time.Hour, Lines: []string{"test machine check"}}}}, errors.New("kernel read failed")
+	return machine.KernelRead{MCEs: []machine.MCE{{Core: 0, Corrected: true, Monotonic: k.clock.Monotonic(), Lines: []string{"test machine check"}}}}, errors.New("kernel read failed")
 }
 
 func TestRunnerEvidenceSurvivesErrors(t *testing.T) {
@@ -125,7 +126,7 @@ func TestRunnerEvidenceSurvivesErrors(t *testing.T) {
 			seams := in.Machine.Seams()
 			seams.Trials = evidenceTrials{Trials: seams.Trials, result: tc.result, err: errors.New("cleanup failed")}
 			if tc.kernel {
-				seams.Kernel = &evidenceKernel{Kernel: seams.Kernel}
+				seams.Kernel = &evidenceKernel{Kernel: seams.Kernel, clock: seams.Clock}
 			}
 			_, err := runWithSeams(context.Background(), in, seams)
 			if err != nil {
@@ -174,6 +175,7 @@ func TestInterruptedBackendFailureWithoutReset(t *testing.T) {
 
 type missingBootKernel struct {
 	machine.Kernel
+	clock machine.Clock
 	mces  []machine.MCE
 	calls int
 }
@@ -188,7 +190,7 @@ func (k *missingBootKernel) ReadMCEs(boot, cursor string) (machine.KernelRead, e
 		mces = nil
 	}
 	for i := range mces {
-		mces[i].Monotonic = 24 * time.Hour
+		mces[i].Monotonic = k.clock.Monotonic()
 	}
 	return machine.KernelRead{MCEs: mces}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)
 }
@@ -211,7 +213,7 @@ func TestRunnerMissingCurrentBoot(t *testing.T) {
 			in := simInput(t.TempDir(), newSim(t, small()))
 			seams := in.Machine.Seams()
 			seams.Trials = evidenceTrials{Trials: seams.Trials, result: machine.Result{Ran: 24 * time.Hour, Signal: tc.signal}}
-			seams.Kernel = &missingBootKernel{Kernel: seams.Kernel, mces: tc.mces}
+			seams.Kernel = &missingBootKernel{Kernel: seams.Kernel, clock: seams.Clock, mces: tc.mces}
 			if _, err := runWithSeams(context.Background(), in, seams); err != nil {
 				t.Fatal(err)
 			}

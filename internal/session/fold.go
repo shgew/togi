@@ -49,10 +49,22 @@ func (o *openTrial) ran() time.Duration {
 	return o.last.Sub(o.started)
 }
 
+func (o *openTrial) includesMCE(mono *int64) bool {
+	if mono == nil {
+		return true
+	}
+	since := o.startMono * int64(time.Millisecond)
+	if o.windowStartNS != nil {
+		since = *o.windowStartNS
+	}
+	return *mono >= since
+}
+
 type recoveredMCE struct {
-	seq       int
-	fromBoot  string
-	corrected bool
+	seq         int
+	fromBoot    string
+	corrected   bool
+	monotonicNS *int64
 	// claimed is the boot whose crash.detected first cited this MCE; it is no evidence of any other crash.
 	claimed string
 }
@@ -254,17 +266,7 @@ func (f *fold) Fold(e journal.Event) {
 	case *journal.TrialSample:
 		f.trialActivity(p.Trial, e.Time, e.Mono)
 	case *journal.MCE:
-		boot := p.FromBoot
-		if boot == "" {
-			boot = e.Boot
-		}
-		f.mceKeys[mceKey(boot, p.Lines)] = true
-		if p.FromBoot != "" && !p.BetweenTrials {
-			f.recovered = append(f.recovered, recoveredMCE{seq: e.Seq, fromBoot: p.FromBoot, corrected: p.Corrected})
-		} else if f.open != nil && !p.BetweenTrials && (p.Trial == "" || p.Trial == f.open.intent.Trial) {
-			f.open.mces = append(f.open.mces, e.Seq)
-			f.open.corrected = f.open.corrected || p.Corrected
-		}
+		f.recordMCE(e, p)
 	case *journal.CrashDetected:
 		f.kernelRetries = 0
 		f.kernelRetrySeqs = nil
@@ -325,6 +327,29 @@ func (f *fold) Fold(e journal.Event) {
 		case journal.DeadEndFailureAtZero, journal.DeadEndPreflight, journal.DeadEndDefect:
 		}
 	}
+}
+
+func (f *fold) recordMCE(e journal.Event, p *journal.MCE) {
+	boot := p.FromBoot
+	if boot == "" {
+		boot = e.Boot
+	}
+	f.mceKeys[mceKey(boot, p.Lines)] = true
+	if p.BetweenTrials {
+		return
+	}
+	if p.FromBoot != "" {
+		f.recovered = append(f.recovered, recoveredMCE{seq: e.Seq, fromBoot: p.FromBoot, corrected: p.Corrected, monotonicNS: p.MonotonicNS})
+		return
+	}
+	if f.open == nil || p.Trial != "" && p.Trial != f.open.intent.Trial {
+		return
+	}
+	if p.MonotonicNS != nil && (boot != f.open.boot || !f.open.includesMCE(p.MonotonicNS)) {
+		return
+	}
+	f.open.mces = append(f.open.mces, e.Seq)
+	f.open.corrected = f.open.corrected || p.Corrected
 }
 
 func (f *fold) kernelBoundary(e journal.Event, b journal.KernelBoundary) {
@@ -407,6 +432,9 @@ func (f *fold) recordedFor(boot, current string) []int {
 	var seqs []int
 	for _, m := range f.recovered {
 		if m.claimed != "" && m.claimed != boot {
+			continue
+		}
+		if m.fromBoot == boot && f.open != nil && f.open.boot == boot && !f.open.includesMCE(m.monotonicNS) {
 			continue
 		}
 		if m.fromBoot == boot || (m.fromBoot == next && !m.corrected) {

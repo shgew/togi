@@ -32,12 +32,13 @@ func (r *runner) kernelBoundary(trial string, since time.Duration, recovering bo
 	if readErr != nil {
 		boundary.KernelError = "kernel log unreadable: " + readErr.Error()
 	}
+	until := r.in.Machine.Clock.Monotonic()
 	for _, m := range read.MCEs {
 		if r.fold.mceKeys[mceKey(r.in.Boot, m.Lines)] {
 			continue
 		}
-		p := &journal.MCE{CPU: m.CPU, Core: m.Core, Bank: m.Bank, BankType: m.BankType, Corrected: m.Corrected, Lines: m.Lines}
-		if trial != "" && m.Monotonic >= since {
+		p := &journal.MCE{CPU: m.CPU, Core: m.Core, Bank: m.Bank, BankType: m.BankType, Corrected: m.Corrected, MonotonicNS: new(int64(m.Monotonic)), Lines: m.Lines}
+		if trial != "" && m.Monotonic >= since && m.Monotonic <= until {
 			p.Trial = trial
 		} else {
 			if recovering && !m.Corrected && len(r.fold.crashedBoots(r.in.Boot)) > 0 {
@@ -77,6 +78,8 @@ func (r *runner) recoveryBootMCEs(boot string, mces []machine.MCE) (bool, error)
 	var since time.Duration
 	if inTrial && open.windowStartNS != nil {
 		since = time.Duration(*open.windowStartNS)
+	} else if inTrial {
+		since = time.Duration(open.startMono) * time.Millisecond
 	}
 	evidence := false
 	for _, m := range mces {
