@@ -63,6 +63,20 @@ func TestHelperProcess(t *testing.T) {
 		time.Sleep(300 * time.Millisecond)
 		fmt.Println("COMPUTE ERROR")
 		os.Exit(0)
+	case "oversized-stdout", "oversized-stderr", "watched-oversized":
+		text := strings.Repeat("x", 1024*1024)
+		switch mode {
+		case "oversized-stdout":
+			fmt.Print(text)
+		case "oversized-stderr":
+			fmt.Fprint(os.Stderr, text)
+		case "watched-oversized":
+			if err := os.WriteFile("results.txt", []byte(text), 0644); err != nil {
+				os.Exit(2)
+			}
+		}
+		time.Sleep(5 * time.Second)
+		os.Exit(0)
 	case "watched":
 		if err := os.WriteFile("results.txt", []byte("COMPUTE ERROR\n"), 0644); err != nil {
 			os.Exit(2)

@@ -291,13 +291,15 @@ func (t *running) emit(e streamEvent) {
 }
 
 func (t *running) readStream(i int, inst *instance, src io.Reader, log *os.File, stderr bool, done chan<- struct{}) {
-	var pending []byte
+	var lines outputLines
 	defer func() {
 		stream := 0
 		if stderr {
 			stream = 1
 		}
-		inst.partial[stream] = string(pending)
+		if !lines.exceeded {
+			inst.partial[stream] = string(lines.pending)
+		}
 		log.Close()
 		done <- struct{}{}
 		t.streams.Done()
@@ -306,23 +308,21 @@ func (t *running) readStream(i int, inst *instance, src io.Reader, log *os.File,
 	for {
 		n, err := src.Read(buf)
 		if n > 0 {
-			if _, werr := log.Write(buf[:n]); werr != nil {
+			used, lineErr := lines.consume(buf[:n], func(line string) {
+				t.emit(streamEvent{index: i, line: line, stderr: stderr})
+			})
+			if _, werr := log.Write(buf[:used]); werr != nil {
 				t.emit(streamEvent{index: i, err: fmt.Errorf("write output log: %w", werr)})
 			}
-			pending = append(pending, buf[:n]...)
-			for {
-				j := bytesIndexDelimiter(pending)
-				if j < 0 {
-					break
-				}
-				t.emit(streamEvent{index: i, line: string(pending[:j]), stderr: stderr})
-				pending = pending[j+1:]
-				select {
-				case <-t.streamStop:
-					return
-				default:
-				}
+			if lineErr != nil {
+				t.emit(streamEvent{index: i, err: fmt.Errorf("read %s: %w", filepath.Base(log.Name()), lineErr)})
+				return
 			}
+		}
+		select {
+		case <-t.streamStop:
+			return
+		default:
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
@@ -332,12 +332,4 @@ func (t *running) readStream(i int, inst *instance, src io.Reader, log *os.File,
 			return
 		}
 	}
-}
-func bytesIndexDelimiter(b []byte) int {
-	for i, c := range b {
-		if c == '\n' || c == '\r' {
-			return i
-		}
-	}
-	return -1
 }

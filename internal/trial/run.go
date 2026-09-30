@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"iter"
 	"os"
 	"path/filepath"
@@ -19,9 +18,9 @@ import (
 )
 
 type watchFile struct {
-	path    string
-	offset  int64
-	pending string
+	path   string
+	offset int64
+	lines  outputLines
 }
 type cpuSample struct {
 	active time.Duration
@@ -125,11 +124,6 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				}
 				break
 			}
-			if e.err != nil && !e.exit {
-				fatal = e.err
-				decision = true
-				break
-			}
 			if t.handleEvent(e, &result, report, true) {
 				decision = true
 			}
@@ -199,47 +193,21 @@ func (t *running) tail(inst *instance, result *machine.Result, report machine.Re
 	var found bool
 	for i := range inst.watch {
 		w := &inst.watch[i]
-		f, err := os.Open(w.path)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
-				result.Inconclusive = fmt.Sprintf("read watched file %s: %v", w.path, err)
-			}
-			found = true
-			continue
-		}
-		if _, err = f.Seek(w.offset, io.SeekStart); err != nil {
-			f.Close()
-			if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
-				result.Inconclusive = fmt.Sprintf("seek watched file %s: %v", w.path, err)
-			}
-			found = true
-			continue
-		}
-		data, err := io.ReadAll(f)
-		f.Close()
-		if err != nil {
-			if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
-				result.Inconclusive = fmt.Sprintf("read watched file %s: %v", w.path, err)
-			}
-			found = true
-			continue
-		}
-		w.offset += int64(len(data))
-		w.pending += string(data)
-		for {
-			j := strings.IndexAny(w.pending, "\r\n")
-			if j < 0 {
-				break
-			}
-			line := w.pending[:j]
-			w.pending = w.pending[j+1:]
+		err := w.read(func(line string) {
 			if t.classifyWatch(inst, line, result, report) {
 				found = true
 			}
+		})
+		if err == nil || os.IsNotExist(err) {
+			continue
 		}
+		err = fmt.Errorf("read watched file %s: %w", w.path, err)
+		if errors.Is(err, errOutputLineTooLong) {
+			t.outputError(err, result)
+		} else if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
+			result.Inconclusive = err.Error()
+		}
+		found = true
 	}
 	return found
 }
@@ -250,6 +218,13 @@ func (t *running) classifyWatch(inst *instance, line string, result *machine.Res
 	case backend.Other, backend.Progress:
 	}
 	return false
+}
+
+func (t *running) outputError(err error, result *machine.Result) {
+	t.outputErr = errors.Join(t.outputErr, err)
+	if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
+		result.Inconclusive = err.Error()
+	}
 }
 
 func (t *running) toggle(inst *instance, stop bool, now time.Time) error {
@@ -277,7 +252,7 @@ func (t *running) handleEvent(e streamEvent, result *machine.Result, report mach
 		inst.done = true
 		t.classifyPartial(inst, result, report)
 		found := t.tail(inst, result, report)
-		if unexpected && !inst.setup && len(result.Escaped) == 0 && result.Signal == "" {
+		if unexpected && t.outputErr == nil && !inst.setup && len(result.Escaped) == 0 && result.Signal == "" {
 			result.Signal = machine.UnexpectedExit
 			result.Core = inst.Core
 			result.Inconclusive = ""
@@ -291,7 +266,8 @@ func (t *running) handleEvent(e streamEvent, result *machine.Result, report mach
 		return found
 	}
 	if e.err != nil {
-		t.outputErr = errors.Join(t.outputErr, e.err)
+		t.outputError(e.err, result)
+		return true
 	}
 	if !e.eof && e.err == nil {
 		return t.classify(inst, e.line, e.stderr, result, report)
@@ -351,9 +327,9 @@ func (t *running) teardown(result *machine.Result, report machine.Reporter) erro
 		t.tail(inst, result, report)
 		for i := range inst.watch {
 			w := &inst.watch[i]
-			if w.pending != "" {
-				t.classifyWatch(inst, w.pending, result, report)
-				w.pending = ""
+			if !w.lines.exceeded && len(w.lines.pending) > 0 {
+				t.classifyWatch(inst, string(w.lines.pending), result, report)
+				w.lines.pending = nil
 			}
 		}
 	}

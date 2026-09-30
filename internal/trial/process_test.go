@@ -50,6 +50,56 @@ func TestProcessTrials(t *testing.T) {
 	}
 }
 
+func TestProcessOversizedOutput(t *testing.T) {
+	for _, mode := range []string{"oversized-stdout", "oversized-stderr", "watched-oversized"} {
+		t.Run(mode, func(t *testing.T) {
+			o := testOptions(t, mode)
+			spec := testSpec(mode, machine.R1, time.Minute)
+			spec.CPUs = []int{o.Cores[0].CPUs[0]}
+			started, err := New(o).Start(context.Background(), spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			trial := started.(*running)
+			t.Cleanup(func() { _ = trial.Stop() })
+			begin := time.Now()
+			result, err := trial.Wait(context.Background(), &recorder{})
+			elapsed := time.Since(begin)
+			if !errors.Is(err, errOutputLineTooLong) || errors.Is(err, machine.ErrContainment) || result.Inconclusive == "" || result.Signal != "" {
+				t.Fatalf("oversized helper result=%+v err=%v", result, err)
+			}
+			if elapsed > teardownLimit {
+				t.Fatalf("oversized helper teardown exceeded deadline: %s", elapsed)
+			}
+			for _, inst := range trial.instances {
+				select {
+				case <-inst.joined:
+				default:
+					t.Fatal("helper process or output readers remain")
+				}
+				if alive, err := trial.host.ProcessAlive(scopeProcess{PID: inst.PID, Start: inst.process.(*execProcess).start}); err != nil || alive {
+					t.Fatalf("helper remains: alive=%t err=%v", alive, err)
+				}
+			}
+			var prefixSize int
+			if mode == "watched-oversized" {
+				prefixSize = len(trial.instances[0].watch[0].lines.pending)
+			} else {
+				name := strings.TrimPrefix(mode, "oversized-") + ".log"
+				info, err := os.Stat(filepath.Join(o.Dir, spec.ID, name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				prefixSize = int(info.Size())
+			}
+			if prefixSize != outputLineLimit {
+				t.Fatalf("diagnostic prefix = %d bytes, want %d", prefixSize, outputLineLimit)
+			}
+			t.Logf("%s: inconclusive (%v); retained %d-byte prefix; process exited and output readers joined in %.3fs; no sudo or host scopes", mode, err, prefixSize, elapsed.Seconds())
+		})
+	}
+}
+
 func TestProcessEscape(t *testing.T) {
 	o := testOptions(t, "")
 	o.Backends[machine.Mprime] = helperBackend{mode: fmt.Sprintf("escape:%d", o.Cores[1].CPUs[0])}
