@@ -134,6 +134,7 @@
             let
               vm = import ./nix/vm-test.nix {
                 inherit pkgs;
+                trialTests = config.checks.trial-scope-tests;
                 package = config.checks.package.overrideAttrs { doCheck = false; };
               };
             in
@@ -141,6 +142,21 @@
               module = import ./nix/module-test.nix {
                 inherit pkgs;
                 package = config.checks.package;
+              };
+              trial-scope-tests = config.checks.package.overrideAttrs {
+                pname = "togi-trial-scope-tests";
+                buildPhase = ''
+                  runHook preBuild
+                  go test -c -tags hardware -o togi-trial-tests ./internal/trial
+                  runHook postBuild
+                '';
+                doCheck = false;
+                installPhase = ''
+                  runHook preInstall
+                  mkdir -p "$out/bin"
+                  cp togi-trial-tests "$out/bin/"
+                  runHook postInstall
+                '';
               };
               vm = vm.tuning-boot;
               vm-restart-limit = vm.restart-limit;

@@ -1,4 +1,8 @@
-{ pkgs, package }:
+{
+  pkgs,
+  package,
+  trialTests,
+}:
 let
   module = import ./module.nix { packages.${pkgs.stdenv.hostPlatform.system}.default = package; };
   tuningBoot =
@@ -28,6 +32,11 @@ in
     nodes.machine = {
       imports = [ tuningBoot ];
       console.font = "Lat2-Terminus16";
+      virtualisation.cores = 4;
+      environment.systemPackages = [
+        trialTests
+        pkgs.util-linux
+      ];
     };
 
     testScript = ''
@@ -36,6 +45,7 @@ in
 
       machine.start(allow_reboot=True)
       machine.wait_for_unit("multi-user.target")
+      machine.succeed("togi-trial-tests -test.run '^TestHardwareScope' -test.v -test.timeout 60s")
       normal_system = machine.succeed("readlink -f /run/current-system").strip()
       tuning_system = machine.succeed("readlink -f /run/current-system/specialisation/togi").strip()
       assert tuning_system != normal_system, (normal_system, tuning_system)
