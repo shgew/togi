@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -85,6 +86,190 @@ func TestResetReasonWithoutMatchingLines(t *testing.T) {
 	}
 	if diff := cmp.Diff(machine.ResetReason{}, got); diff != "" {
 		t.Fatalf("reason (-want +got):\n%s", diff)
+	}
+}
+
+func TestResetReasonAfter(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		boots   string
+		missing bool
+		want    machine.ResetReason
+	}{
+		{"immediate non-togi boot", `[{"boot_id":"aabb"},{"boot_id":"desktop"},{"boot_id":"current"}]`, false, machine.ResetReason{Kind: machine.ResetWatchdog, Raw: "hardware watchdog timer expired", Supported: true}},
+		{"crashed boot missing", `[{"boot_id":"desktop"},{"boot_id":"current"}]`, true, machine.ResetReason{}},
+		{"no successor", `[{"boot_id":"aabb"}]`, true, machine.ResetReason{}},
+		{"no retained boots", `[]`, true, machine.ResetReason{}},
+		{"successor log vacuumed", `[{"boot_id":"aabb"},{"boot_id":"vacuumed"},{"boot_id":"current"}]`, true, machine.ResetReason{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k := NewKernel(nil)
+			k.journalctl = func(args []string) ([]byte, []byte, int, error) {
+				if args[0] == "--list-boots" {
+					return []byte(tc.boots), nil, 0, nil
+				}
+				if args[0] == "-b" {
+					if args[1] == "aabb" {
+						return bootBoundary("aabb", "series", "100"), nil, 0, nil
+					}
+					return bootBoundary(args[1], "series", "101"), nil, 0, nil
+				}
+				switch args[2] {
+				case "desktop":
+					return kernelLines("Linux version 7.2.8", "x86/amd: Previous system reset reason [0x00000001]: hardware watchdog timer expired"), nil, 0, nil
+				case "vacuumed":
+					return nil, []byte("No journal boot entry found"), 1, nil
+				default:
+					return kernelLines("Linux version 7.2.8", "x86/amd: Previous system reset reason [0x00000001]: internal CPU thermal limit was tripped"), nil, 0, nil
+				}
+			}
+			got, err := k.ResetReasonAfter("aa-bb")
+			if tc.missing {
+				if !errors.Is(err, machine.ErrBootMissing) {
+					t.Fatalf("missing successor: %v, want ErrBootMissing", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("reason (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func bootBoundary(boot, sequenceID, sequence string) []byte {
+	data, _ := json.Marshal(map[string]string{"_BOOT_ID": boot, "__SEQNUM_ID": sequenceID, "__SEQNUM": sequence})
+	return data
+}
+
+func TestResetReasonAfterRequiresContinuousJournal(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		last, first []byte
+		missing     bool
+	}{
+		{"continuous boundary", bootBoundary("old", "series", "100"), bootBoundary("later", "series", "101"), false},
+		{"omitted intermediate boot", bootBoundary("old", "series", "100"), bootBoundary("later", "series", "200"), true},
+		{"changed sequence identity", bootBoundary("old", "series", "100"), bootBoundary("later", "other", "101"), true},
+		{"missing predecessor metadata", []byte(`{"_BOOT_ID":"old"}`), bootBoundary("later", "series", "101"), true},
+		{"missing successor metadata", bootBoundary("old", "series", "100"), []byte(`{"_BOOT_ID":"later"}`), true},
+		{"missing predecessor tail", nil, bootBoundary("later", "series", "101"), true},
+		{"missing successor start", bootBoundary("old", "series", "100"), nil, true},
+		{"wrong boundary boot", bootBoundary("other", "series", "100"), bootBoundary("later", "series", "101"), true},
+		{"sequence wraparound", bootBoundary("old", "series", "18446744073709551615"), bootBoundary("later", "series", "0"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k := NewKernel(nil)
+			k.journalctl = func(args []string) ([]byte, []byte, int, error) {
+				switch args[0] {
+				case "--list-boots":
+					return []byte(`[{"boot_id":"old"},{"boot_id":"later"}]`), nil, 0, nil
+				case "-b":
+					if args[1] == "old" {
+						return tc.last, nil, 0, nil
+					}
+					return tc.first, nil, 0, nil
+				default:
+					return kernelLines("Linux version 7.2.8", "x86/amd: Previous system reset reason [0x00000001]: internal CPU thermal limit was tripped"), nil, 0, nil
+				}
+			}
+			got, err := k.ResetReasonAfter("old")
+			if tc.missing {
+				if !errors.Is(err, machine.ErrBootMissing) {
+					t.Fatalf("unproven successor: %+v, %v, want ErrBootMissing", got, err)
+				}
+				if diff := cmp.Diff(machine.ResetReason{}, got); diff != "" {
+					t.Fatalf("unproven successor supplied a reason (-want +got):\n%s", diff)
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := machine.ResetReason{Kind: machine.ResetThermalTrip, Raw: "internal CPU thermal limit was tripped", Supported: true}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Fatalf("continuous successor reason (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+}
+
+func TestResetReasonAfterBoundaryErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		out    string
+		stderr string
+		code   int
+		err    error
+		want   error
+	}{
+		{"vacuumed boundary", "", "No journal boot entry found", 1, nil, machine.ErrBootMissing},
+		{"empty boundary", "", "", 1, nil, machine.ErrBootMissing},
+		{"command error", "", "", 0, context.Canceled, context.Canceled},
+		{"permission error", "", "permission denied", 1, nil, nil},
+		{"malformed boundary", "{", "", 0, nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k := NewKernel(nil)
+			k.journalctl = func(args []string) ([]byte, []byte, int, error) {
+				if args[0] == "--list-boots" {
+					return []byte(`[{"boot_id":"old"},{"boot_id":"later"}]`), nil, 0, nil
+				}
+				return []byte(tc.out), []byte(tc.stderr), tc.code, tc.err
+			}
+			got, err := k.ResetReasonAfter("old")
+			if tc.want != nil {
+				if !errors.Is(err, tc.want) {
+					t.Fatalf("boundary error: %v, want %v", err, tc.want)
+				}
+			} else if err == nil || errors.Is(err, machine.ErrBootMissing) {
+				t.Fatalf("unreadable boundary: %v", err)
+			}
+			if diff := cmp.Diff(machine.ResetReason{}, got); diff != "" {
+				t.Fatalf("boundary error supplied a reason (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestResetReasonAfterWithoutSystemJournal(t *testing.T) {
+	k := NewKernel(nil)
+	k.journalctl = func([]string) ([]byte, []byte, int, error) { return nil, nil, 1, nil }
+	got, err := k.ResetReasonAfter("crashed")
+	if !errors.Is(err, machine.ErrBootMissing) {
+		t.Fatalf("empty system journal: %v, want ErrBootMissing", err)
+	}
+	if diff := cmp.Diff(machine.ResetReason{}, got); diff != "" {
+		t.Fatalf("reason (-want +got):\n%s", diff)
+	}
+}
+
+func TestResetReasonAfterBootListErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output string
+		stderr string
+		code   int
+		err    error
+	}{
+		{"command error", "", "", 0, errors.New("journal unavailable")},
+		{"nonzero exit", "", "permission denied", 1, nil},
+		{"malformed list", "[", "", 0, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k := NewKernel(nil)
+			k.journalctl = func([]string) ([]byte, []byte, int, error) {
+				return []byte(tc.output), []byte(tc.stderr), tc.code, tc.err
+			}
+			_, err := k.ResetReasonAfter("crashed")
+			if err == nil || errors.Is(err, machine.ErrBootMissing) {
+				t.Fatalf("unreadable boot list: %v", err)
+			}
+			if tc.err != nil && !errors.Is(err, tc.err) {
+				t.Fatalf("command error lost: %v", err)
+			}
+		})
 	}
 }
 

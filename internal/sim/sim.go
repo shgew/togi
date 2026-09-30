@@ -113,6 +113,7 @@ type Machine struct {
 	regs       []int
 	boot       int
 	bootID     string
+	boots      []string
 	now        time.Time
 	bootAt     time.Time
 	wallOffset time.Duration
@@ -335,6 +336,7 @@ func (m *Machine) startBoot() {
 	r := m.rng("boot", m.boot)
 	hex := fmt.Sprintf("%016x%016x", r.Uint64(), r.Uint64())
 	m.bootID = fmt.Sprintf("%s-%s-%s-%s-%s", hex[:8], hex[8:12], hex[12:16], hex[16:20], hex[20:])
+	m.boots = append(m.boots, m.bootID)
 	m.regs = slices.Clone(m.cfg.BIOS)
 	m.crashed = false
 	m.wroteThisBoot = false
@@ -624,6 +626,17 @@ func (k kernel) ResetReason(boot string) (machine.ResetReason, error) {
 		return machine.ResetReason{}, fmt.Errorf("read reset reason of boot %s: %w", boot, machine.ErrBootMissing)
 	}
 	return reason, nil
+}
+
+func (k kernel) ResetReasonAfter(boot string) (machine.ResetReason, error) {
+	if k.m.crashed {
+		return machine.ResetReason{}, machine.ErrCrashed
+	}
+	i := slices.Index(k.m.boots, boot)
+	if i < 0 || i+1 >= len(k.m.boots) {
+		return machine.ResetReason{}, fmt.Errorf("find system boot after %s: %w", boot, machine.ErrBootMissing)
+	}
+	return k.ResetReason(k.m.boots[i+1])
 }
 
 func resetReason(kind machine.ResetKind, supported bool) machine.ResetReason {

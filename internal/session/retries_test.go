@@ -214,6 +214,39 @@ func TestRecoverySkipsAnOlderBootTheSystemJournalDropped(t *testing.T) {
 	}
 }
 
+type missingSuccessorKernel struct{ machine.Kernel }
+
+func (k missingSuccessorKernel) ResetReasonAfter(boot string) (machine.ResetReason, error) {
+	return machine.ResetReason{}, fmt.Errorf("find system boot after %s: %w", boot, machine.ErrBootMissing)
+}
+
+func TestRecoveryWithoutSuccessorDoesNotBorrowCurrentResetReason(t *testing.T) {
+	t.Parallel()
+	in, before := firstCrash(t, machine.ResetWatchdog, machine.Crash, false)
+	in.Machine.NextReset(machine.ResetThermalTrip)
+	in.Machine.Reboot()
+	seams := in.Machine.Seams()
+	seams.Kernel = missingSuccessorKernel{Kernel: seams.Kernel}
+	stop, err := driveWithSeams(in, seams)
+	if err != nil || stop.Reason != StopRotations {
+		t.Fatalf("recover: %+v, %v", stop, err)
+	}
+	events := readEvents(t, in.Dir)
+	crash, ok := crashDetectedFor(events, before[0].Boot)
+	if !ok {
+		t.Fatal("missing crash detection")
+	}
+	p := crash.Data.(*journal.CrashDetected)
+	if p.ResetReason != "" || p.ResetReasonRaw != "" || p.Inconclusive {
+		t.Fatalf("unidentified successor must leave ordinary crash handling: %+v", p)
+	}
+	for _, e := range events {
+		if p, ok := e.Data.(*journal.BackendRetry); ok && p.Backend == "kernel_log" {
+			t.Fatalf("missing successor retried: %s", e.Msg)
+		}
+	}
+}
+
 func TestMissingBackendDeadEndsWithoutRetries(t *testing.T) {
 	t.Parallel()
 	in := simInput(t.TempDir(), newSim(t, small()))

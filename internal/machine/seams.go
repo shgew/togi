@@ -162,6 +162,9 @@ type Kernel interface {
 	ReadMCEs(boot, cursor string) (KernelRead, error)
 	// ResetReason reads what boot `boot`'s kernel logged about the reset before it.
 	ResetReason(boot string) (ResetReason, error)
+	// ResetReasonAfter reads the immediate system successor, including boots without togi.
+	// An unidentified successor or an unproven journal boundary returns ErrBootMissing.
+	ResetReasonAfter(boot string) (ResetReason, error)
 }
 
 type Machine struct {

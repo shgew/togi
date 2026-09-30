@@ -354,19 +354,14 @@ func (r *runner) recoverCrashes(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		reason, err := r.readResetReason(ctx, next, false)
+		reason, err := r.readResetReason(ctx, crashed, true)
 		if err != nil {
 			return err
 		}
+		confirmed = confirmed || reason.Kind != ""
 		if !confirmed {
 			for _, b := range r.fold.boots {
-				if b == next {
-					if reason.Kind != "" {
-						confirmed = true
-					}
-					continue
-				}
-				other, err := r.readResetReason(ctx, b, true)
+				other, err := r.readResetReason(ctx, b, false)
 				if err != nil {
 					return err
 				}
@@ -448,15 +443,21 @@ func (r *runner) readMCEs(ctx context.Context, boot string) ([]machine.MCE, erro
 	}
 }
 
-func (r *runner) readResetReason(ctx context.Context, boot string, mayBeVacuumed bool) (machine.ResetReason, error) {
+func (r *runner) readResetReason(ctx context.Context, boot string, after bool) (machine.ResetReason, error) {
 	if r.fold.kernelRetries > 0 && r.kernelWaited == 0 {
 		if err := r.waitKernelRetry(ctx); err != nil {
 			return machine.ResetReason{}, err
 		}
 	}
 	for {
-		reason, err := r.in.Machine.Kernel.ResetReason(boot)
-		if mayBeVacuumed && errors.Is(err, machine.ErrBootMissing) {
+		var reason machine.ResetReason
+		var err error
+		if after {
+			reason, err = r.in.Machine.Kernel.ResetReasonAfter(boot)
+		} else {
+			reason, err = r.in.Machine.Kernel.ResetReason(boot)
+		}
+		if errors.Is(err, machine.ErrBootMissing) {
 			return machine.ResetReason{}, nil
 		}
 		if err == nil || errors.Is(err, machine.ErrCrashed) {
