@@ -7,6 +7,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 ### Changed
 
 - Per-core offsets are refused on CCDs with fused-off slots: preflight names the CCD and fuse mask, and full 8-core CCDs remain supported ([#163]).
+- `togi cert` labels the profile values `OFFSET` instead of `EDGE` and shows each core's CCD and slot to match the BIOS per-core Curve Optimizer controls ([#161]).
 
 ### Fixed
 
@@ -211,3 +212,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#163]: https://github.com/shgew/togi/pull/163
 [#194]: https://github.com/shgew/togi/pull/194
 [#186]: https://github.com/shgew/togi/pull/186
+[#161]: https://github.com/shgew/togi/pull/161

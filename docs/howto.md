@@ -87,6 +87,8 @@ togi cert
 
 `cert` lists the profile to enter in BIOS, one offset per core, with each core's failed and joint marks, its done state and the tier-clock evidence. Do not enter it in BIOS before it reaches Silver: Bronze can rest on a single two-minute R4 start, and under the simulator's edge model one such start misses a failure one count past a core's edge about 4.6% of the time. After refinement those offsets can differ from the checked edges search found. A clean qualifying rotation earns Bronze only when every core is done and refinement can reach no more total depth. Picking "NixOS - togi" again continues the session.
 
+The table labels those values `OFFSET` and shows each core's `CCD` and `SLOT` (0-7 within that CCD). Match every row to the BIOS per-core Curve Optimizer controls by CCD and slot, not by Linux core number alone. BIOS labels vary by board; confirm every row before saving. Stop if the labels cannot be reconciled with the recorded CCD and slot.
+
 ## 6. Dead ends
 
 togi stops by itself at a dead end: failure at offset 0, an untrusted SMU, repeated trials without evidence, a missing backend, repeated stray crashes, an escaped backend thread, a thermal-trip reset or failed preflight. In the tuning boot it records the dead end, clears GRUB's saved entry, and shows the explanation on tty1. After a boot-loop dead end it reboots into the normal system. If `togi.service` instead fails without a dead end, systemd starts it again after a minute; once it has failed three times within 30 minutes, `togi-restart-limit.service` clears the entry and reboots into the normal system, with `leaveOnShutdown` on or off.

@@ -67,7 +67,7 @@ func TestStatusAndCert(t *testing.T) {
 			t.Fatalf("cert lacks %q:\n%s", want, cert)
 		}
 	}
-	checkRows(t, "cert", cert, regexp.MustCompile(`(?m)^  (\d\d)  +(-?\d+)  `), st)
+	checkRows(t, "cert", cert, regexp.MustCompile(`(?m)^  (\d\d)  +\d  +\d  +(-?\d+)  `), st)
 	golden(t, "cert", strings.ReplaceAll(cert, fmt.Sprintf("%x", sha256.Sum256(raw)), "<journal sha256>"))
 
 	events, _, err := journal.Read(dir)
@@ -79,7 +79,7 @@ func TestStatusAndCert(t *testing.T) {
 	moved.Cores[3].Offset++
 	var out bytes.Buffer
 	writeCert(&out, events, moved)
-	checkRows(t, "cert with core 03 moved", out.String(), regexp.MustCompile(`(?m)^  (\d\d)  +(-?\d+)  `), st)
+	checkRows(t, "cert with core 03 moved", out.String(), regexp.MustCompile(`(?m)^  (\d\d)  +\d  +\d  +(-?\d+)  `), st)
 	if want := fmt.Sprintf("core 03 is at %d since", moved.Cores[3].Offset); !strings.Contains(out.String(), want) {
 		t.Fatalf("cert with core 03 moved lacks %q:\n%s", want, out.String())
 	}
@@ -102,6 +102,23 @@ func TestStatusAndCert(t *testing.T) {
 			t.Fatalf("cert with an earlier profile change as tier clock lacks %q:\n%s", want, out.String())
 		}
 	}
+}
+
+func TestCertResidentOffsets(t *testing.T) {
+	t.Parallel()
+	st := journal.State{
+		Session: &journal.SessionInfo{ID: "20260101T000000Z", Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)},
+		Cores: []journal.CoreState{
+			{Core: 0, CCD: 0, Offset: -35, Pass: new(-37), Phase: journal.PhaseDone},
+			{Core: 7, CCD: 0, Offset: -30, Pass: new(-32), Phase: journal.PhaseDone},
+			{Core: 8, CCD: 1, Offset: -25, Pass: new(-27), Phase: journal.PhaseDone},
+			{Core: 15, CCD: 1, Offset: -20, Pass: new(-22), Phase: journal.PhaseDone},
+		},
+		Guard: &journal.GuardState{Profile: []int{-35, -30, -25, -20}, ProfileSeq: 42, TierClockSeq: 42},
+	}
+	var out bytes.Buffer
+	writeCert(&out, []journal.Event{{Seq: 42, Kind: journal.KindProfileChange}}, st)
+	golden(t, "cert-offsets", out.String())
 }
 
 func TestStatusJointMarkAndOpenHunt(t *testing.T) {

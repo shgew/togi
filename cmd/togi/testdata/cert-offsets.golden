@@ -1,0 +1,28 @@
++------------------------------------------------------------+
+|              T O G I   C E R T I F I C A T E               |
++------------------------------------------------------------+
+
+      .---.
+     / * * \     NO TIER YET
+    |   *   |    Bronze    every core done and one clean qualifying rotation since the last core went deeper
+     \ * * /     Silver    0.0 of 24 clean hours
+      '---'      Gold      0.0 of 100 clean hours
+       | |       Platinum  locked until togi observe exists
+
+Profile                                   [profile.change #42]
+  CORE  CCD  SLOT  OFFSET  FAILED  JOINT  DONE  DECIDED
+  00    0    0     -35     -       -      true  -
+  07    0    7     -30     -       -      true  -
+  08    1    0     -25     -       -      true  -
+  15    1    7     -20     -       -      true  -
+
+Evidence since the profile change [#42]
+  REGIME  WORKLOAD  STARTS  CLEAN H  RATE BOUND
+  all     -         -       0.0      -
+  Rate bound = 3 / clean hours, 95% confidence (rule of three).
+  Starts = valid passes since each class last failed.
+
+Session 20260101T000000Z, started 2026-01-01T00:00:00Z
+
+Journal SHA-256 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b through seq 42
+Durability is a bound, not proof.
