@@ -62,10 +62,32 @@ jobs:
         continue-on-error: true
         run: cachix push togi < "$RUNNER_TEMP/out-paths"
 
+  macos:
+    name: package (macOS arm64)
+    runs-on: macos-15
+    env:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: togi
+          authToken: ${{ env.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+      - name: nix build .#checks.aarch64-darwin.package
+        run: nix build --no-link --print-build-logs --print-out-paths .#checks.aarch64-darwin.package > "$RUNNER_TEMP/out-paths"
+      - name: Push the check's output to Cachix
+        if: env.CACHIX_AUTH_TOKEN != ''
+        continue-on-error: true
+        run: cachix push togi < "$RUNNER_TEMP/out-paths"
+
   check:
     if: always()
-    needs: build
+    needs: [build, macos]
     runs-on: ubuntu-latest
     steps:
       - name: Every check passed
-        run: test "${{ needs.build.result }}" = success
+        run: |
+          test "${{ needs.build.result }}" = success
+          test "${{ needs.macos.result }}" = success
