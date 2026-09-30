@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -120,7 +122,50 @@ func TestWatchWithoutJournal(t *testing.T) {
 	if !strings.Contains(stdout.String(), "no session yet") {
 		t.Errorf("stdout %q, want it to say no session yet", stdout.String())
 	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr %q, want empty", stderr.String())
+	}
+	golden(t, "watch-missing-120x33", ansi.Strip(watch.Render(watch.Load(dir), 120, 33, time.Unix(0, 0).UTC()))+"\n")
 	if code := cli([]string{"--state-dir", dir, "watch", "--width", "0"}, &stdout, &stderr); code != exitUsage {
 		t.Errorf("--width 0: exit %d, want %d", code, exitUsage)
+	}
+}
+
+func TestWatchProblemFrame(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		fixture string
+		problem string
+	}{
+		{name: "malformed", problem: "invalid character"},
+		{name: "incompatible-schema", fixture: "schema", problem: "uses schema 2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var dir string
+			if tc.fixture != "" {
+				dir, _ = incompatibleFixture(t, tc.fixture)
+			} else {
+				dir = t.TempDir()
+				if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte("not json\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var stdout, stderr bytes.Buffer
+			code := cli([]string{"--state-dir", dir, "watch", "--width", "120", "--height", "33"}, &stdout, &stderr)
+			if code != exitError {
+				t.Errorf("exit %d, want %d", code, exitError)
+			}
+			if !strings.Contains(stdout.String(), tc.problem) {
+				t.Errorf("stdout %q, want problem %q", stdout.String(), tc.problem)
+			}
+			if !strings.Contains(stderr.String(), "togi watch: ") || !strings.Contains(stderr.String(), tc.problem) {
+				t.Errorf("stderr %q, want watch error %q", stderr.String(), tc.problem)
+			}
+			if tc.fixture != "" {
+				golden(t, "watch-"+tc.name+"-120x33", ansi.Strip(watch.Render(watch.Load(dir), 120, 33, time.Unix(0, 0).UTC()))+"\n")
+			}
+		})
 	}
 }

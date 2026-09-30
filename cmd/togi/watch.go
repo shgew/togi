@@ -23,8 +23,10 @@ offset, failed and joint marks, and the latest events. Masked trials show their
 anchor offsets; DONE, HUNT and MASK distinguish the current activity. Read-only;
 rendered from the journal, which it reloads when it changes. On a terminal it
 fills the screen until interrupted; otherwise it prints one frame of --width
-by --height and exits. The tuning boot shows it on tty1. A different schema
-shows the refusal instead of the session. NO_COLOR turns colour off.
+by --height and exits. An unreadable or incompatible journal appears in the
+frame and on stderr, and one-frame watch exits 1; live watch keeps showing the
+problem. No session yet is not an error. The tuning boot shows it on tty1.
+NO_COLOR turns colour off.
 
 Examples:
   togi watch                                  The session in the default state directory, full screen
@@ -51,6 +53,11 @@ func runWatch(g *globals, args []string, stdout, stderr io.Writer) int {
 		}
 		return exitOK
 	}
-	_, _ = io.WriteString(stdout, ansi.Strip(watch.Render(watch.Load(g.stateDir), *width, *height, time.Now()))+"\n")
+	snapshot := watch.Load(g.stateDir)
+	_, _ = io.WriteString(stdout, ansi.Strip(watch.Render(snapshot, *width, *height, time.Now()))+"\n")
+	if err := snapshot.Err(); err != nil {
+		fmt.Fprintf(stderr, "togi watch: %v\n", err)
+		return exitError
+	}
 	return exitOK
 }
