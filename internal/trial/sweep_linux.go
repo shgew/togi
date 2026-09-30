@@ -4,6 +4,7 @@ package trial
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -76,7 +77,7 @@ func (h osHost) ScopeProcesses(ctx context.Context) ([]scopeProcess, error) {
 			continue
 		}
 		data, err := os.ReadFile(h.procPath(pid, "cgroup"))
-		if os.IsNotExist(err) {
+		if processDisappeared(err) {
 			continue
 		}
 		if err != nil {
@@ -98,7 +99,7 @@ func (h osHost) ScopeProcesses(ctx context.Context) ([]scopeProcess, error) {
 			continue
 		}
 		fields, err := procStat(h.procPath(pid, "stat"))
-		if os.IsNotExist(err) {
+		if processDisappeared(err) {
 			continue
 		}
 		if err != nil {
@@ -118,7 +119,7 @@ func (h osHost) ScopeProcesses(ctx context.Context) ([]scopeProcess, error) {
 
 func (h osHost) ProcessAlive(p scopeProcess) (bool, error) {
 	fields, err := procStat(h.procPath(p.PID, "stat"))
-	if os.IsNotExist(err) {
+	if processDisappeared(err) {
 		return false, nil
 	}
 	if err != nil {
@@ -129,4 +130,8 @@ func (h osHost) ProcessAlive(p scopeProcess) (bool, error) {
 		return false, fmt.Errorf("read process %d start time: %w", p.PID, err)
 	}
 	return fields[0] != "Z" && fields[0] != "X" && start == p.Start, nil
+}
+
+func processDisappeared(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH)
 }

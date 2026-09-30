@@ -83,6 +83,8 @@ If togi dies before teardown, the scope can outlive it and keep its descendants 
 
 The safe real-process integration test kills a helper owner and sweeps its detached descendant, with systemd unit discovery and operations replaced by a deterministic seam. It proves real process cleanup without touching host scopes; deterministic fake-time tests prove unit filtering and deadlines. This does not prove systemd transient-scope collection on a real tuning boot; that requires the VM trial infrastructure.
 
+Processes that disappear while `/proc` is scanned are no longer leftover workloads; missing-process errors do not fail the sweep, but permission and other read failures still do.
+
 The kernel enforces the cpuset whatever the backend does. togi also samples the processor field of every backend thread in `/proc/<pid>/task/*/stat` once per second, from the moment the process is inside its scope. A thread seen outside its allowed logical CPUs is a dead end. Stopping a trial terminates the whole scope.
 
 Normal trial ends and partial-start rollbacks use the same teardown, with one absolute deadline shared across all instances:
