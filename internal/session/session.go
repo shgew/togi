@@ -585,7 +585,11 @@ func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 			return nil, err
 		}
 	}
-	if _, err := r.append(&journal.Shutdown{Reason: journal.ShutdownDeadEnd}); err != nil {
+	boundary, err := r.kernelBoundary("", 0, false)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := r.append(&journal.Shutdown{Reason: journal.ShutdownDeadEnd, KernelBoundary: boundary}); err != nil {
 		return nil, err
 	}
 	stop := &Stop{Reason: StopDeadEnd, DeadEnd: d, Reboot: d.Action == journal.ActionClearSavedEntryAndReboot && cleared}

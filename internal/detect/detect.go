@@ -123,7 +123,8 @@ func (k *Kernel) ReadMCEs(boot, cursor string) (machine.KernelRead, error) {
 			return result, fmt.Errorf("decode kernel log of boot %s: %w", boot, err)
 		}
 		if entry.Cursor == "" || entry.Boot != bootID {
-			return machine.KernelRead{}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrCursorMissing)
+			result.MCEs = Parse(msgs, k.cpuCore)
+			return result, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrCursorMissing)
 		}
 		if result.Cursor == "" && cursor != "" {
 			if entry.Cursor != cursor {

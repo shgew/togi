@@ -17,7 +17,7 @@ func (r *runner) kernelBoundary(trial string, since time.Duration, recovering bo
 	}
 	if errors.Is(readErr, machine.ErrCursorMissing) && cursor != "" {
 		fresh, err := r.in.Machine.Kernel.ReadMCEs(r.in.Boot, "")
-		read = fresh
+		read.MCEs = append(read.MCEs, fresh.MCEs...)
 		if errors.Is(err, machine.ErrCrashed) {
 			return journal.KernelBoundary{}, err
 		}

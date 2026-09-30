@@ -91,3 +91,26 @@ func TestCursorReadErrorRetainsMCEEvidencedBeforeMalformedEntry(t *testing.T) {
 		t.Fatalf("lost stronger evidence before read error: %+v", read)
 	}
 }
+
+func TestCursorMetadataLossRetainsOnlyValidatedMCEs(t *testing.T) {
+	for _, boot := range []string{"abcd", "other"} {
+		t.Run(boot, func(t *testing.T) {
+			k := NewKernel([]machine.CoreInfo{{Core: 1, CPUs: []int{2}}})
+			message := "[Hardware Error]: CPU:2 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135"
+			out := cursorEntry("valid", "abcd", message, 1000000)
+			cursor := ""
+			if boot != "abcd" {
+				cursor = "wrong-boot"
+			}
+			out = append(out, cursorEntry(cursor, boot, message, 2000000)...)
+			k.journalctl = func([]string) ([]byte, []byte, int, error) { return out, nil, 0, nil }
+			read, err := k.ReadMCEs("abcd", "")
+			if !errors.Is(err, machine.ErrCursorMissing) {
+				t.Fatalf("metadata loss: %v", err)
+			}
+			if read.Cursor != "valid" || len(read.MCEs) != 1 || read.MCEs[0].Monotonic != time.Second || read.MCEs[0].Core != 1 {
+				t.Fatalf("lost validated evidence or accepted invalid row: %+v", read)
+			}
+		})
+	}
+}

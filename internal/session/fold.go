@@ -32,6 +32,8 @@ type openTrial struct {
 	mces          []int
 	corrected     bool
 	windowStartNS *int64
+	targetIntent  int
+	targetWrite   int
 	kernelError   string
 }
 
@@ -183,6 +185,9 @@ func (f *fold) Fold(e journal.Event) {
 		delete(f.applying, e.Boot)
 	case *journal.SMUIntent:
 		f.dropSMUIntent()
+		if f.open != nil && f.open.boot == e.Boot && f.open.startSeq == 0 && slices.Contains(e.Cause, f.open.seq) && p.Core != nil && f.open.intent.Core != nil && *p.Core == *f.open.intent.Core && f.open.intent.Offset != nil && p.Offset == *f.open.intent.Offset {
+			f.open.targetIntent = e.Seq
+		}
 		f.unmatched = append(f.unmatched, openIntent{seq: e.Seq, kind: e.Kind, boot: e.Boot})
 		if len(f.registers[e.Boot]) == 0 {
 			f.registers[e.Boot] = slices.Clone(f.baseline)
@@ -206,6 +211,9 @@ func (f *fold) Fold(e journal.Event) {
 		}
 	case *journal.SMUWrite:
 		f.dropSMUIntent()
+		if f.open != nil && f.open.boot == e.Boot && f.open.targetIntent != 0 && slices.Contains(e.Cause, f.open.targetIntent) {
+			f.open.targetWrite = e.Seq
+		}
 	case *journal.SMUError:
 		f.dropSMUIntent()
 		f.smuSeq, f.smuDetail = e.Seq, "SMU command failed: "+p.Error
@@ -217,7 +225,7 @@ func (f *fold) Fold(e journal.Event) {
 			f.registers[e.Boot][i] = p.Offset
 			f.uncertain[e.Boot][i] = false
 		}
-		if f.open != nil && f.open.boot == e.Boot && f.open.startSeq == 0 && p.Expected != nil && slices.Contains(e.Cause, f.open.seq) {
+		if f.open != nil && f.open.boot == e.Boot && f.open.startSeq == 0 && f.open.targetWrite != 0 && slices.Contains(e.Cause, f.open.targetWrite) && f.open.intent.Core != nil && p.Core == *f.open.intent.Core && p.Expected != nil && f.open.intent.Offset != nil && *p.Expected == *f.open.intent.Offset && p.Offset == *p.Expected {
 			f.open.windowStartNS = new(e.Mono * int64(time.Millisecond))
 		}
 	case *journal.TrialIntent:

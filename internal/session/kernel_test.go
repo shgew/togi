@@ -358,3 +358,139 @@ func reopenBoundaryRunner(t *testing.T, r *runner, k *boundaryKernel) *runner {
 	journal.Replay(j.Events(), resumed.fold, &resumed.state, resumed.tuner)
 	return resumed
 }
+
+func TestInterruptedSetupReplaysReadbackWindow(t *testing.T) {
+	for _, setup := range []string{"isolated", "resident", "masked", "mismatch", "wrong target", "wrong cause"} {
+		t.Run(setup, func(t *testing.T) {
+			r, k, advance := boundaryRunner(t)
+			advance(time.Second)
+			p := &journal.TrialIntent{Trial: "interrupted", Core: new(0), Offset: new(-1), Profile: []int{-1}, Condition: machine.Isolated}
+			if setup == "resident" || setup == "masked" {
+				p.Condition = machine.Resident
+			}
+			if setup == "masked" {
+				p.Condition = machine.Masked
+				p.Core, p.Offset, p.Cores = nil, nil, []int{0}
+			}
+			intent, err := r.append(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			advance(time.Second)
+			k.add(r.in.Boot, r.in.Machine.Clock.Monotonic(), "before readback")
+			advance(time.Second)
+			if setup != "resident" && setup != "masked" {
+				offset, core, cause := -1, 0, intent.Seq
+				if setup == "wrong target" {
+					core = 1
+				}
+				if setup == "wrong cause" {
+					cause = r.fold.baselineSeq
+				}
+				si, err := r.append(&journal.SMUIntent{Core: new(core), Offset: offset}, cause)
+				if err != nil {
+					t.Fatal(err)
+				}
+				sw, err := r.append(&journal.SMUWrite{Core: new(core), Offset: offset}, si.Seq)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if setup == "mismatch" {
+					offset = 0
+				}
+				if _, err := r.append(&journal.SMUReadback{Core: core, Offset: offset, Expected: new(-1)}, sw.Seq); err != nil {
+					t.Fatal(err)
+				}
+			}
+			advance(time.Second)
+			k.add(r.in.Boot, r.in.Machine.Clock.Monotonic(), "after readback")
+			r = reopenBoundaryRunner(t, r, k)
+			if _, err := r.startupBoundary(); err != nil {
+				t.Fatal(err)
+			}
+			var between []bool
+			for _, e := range r.in.Journal.Events() {
+				if m, ok := e.Data.(*journal.MCE); ok {
+					between = append(between, m.BetweenTrials)
+				}
+			}
+			if diff := cmp.Diff([]bool{setup == "isolated", false}, between); diff != "" {
+				t.Fatal(diff)
+			}
+			t.Logf("setup=%s: before/after-readback between-trial=%v", setup, between)
+		})
+	}
+}
+
+func TestDeadEndShutdownCapturesRestorationTail(t *testing.T) {
+	for _, resume := range []bool{false, true} {
+		t.Run(fmt.Sprint(resume), func(t *testing.T) {
+			r, k, advance := boundaryRunner(t)
+			profile := slices.Clone(r.fold.baseline)
+			profile[0]--
+			if err := r.apply(profile, &journal.ProfileApplied{Offsets: profile, Condition: machine.Resident}, r.fold.baselineSeq); err != nil {
+				t.Fatal(err)
+			}
+			d, err := r.append(&journal.DeadEnd{Condition: journal.DeadEndPreflight, Action: journal.ActionExit})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resume {
+				r = reopenBoundaryRunner(t, r, k)
+				r.applied = slices.Clone(profile)
+			}
+			recorded := false
+			r.in.Machine.SMU = boundarySMU{SMU: r.in.Machine.SMU, write: func(int) {
+				if !recorded {
+					recorded = true
+					advance(time.Second)
+					k.add(r.in.Boot, r.in.Machine.Clock.Monotonic(), "restoration")
+				}
+			}}
+			if _, err := r.finishDeadEnd(d, false); err != nil {
+				t.Fatal(err)
+			}
+			events := r.in.Journal.Events()
+			shutdown := events[len(events)-1].Data.(*journal.Shutdown)
+			if shutdown.KernelCursor != r.in.Boot+"/1" {
+				t.Fatalf("shutdown lost restoration tail: %+v", shutdown)
+			}
+			mce := events[len(events)-2].Data.(*journal.MCE)
+			if !mce.BetweenTrials || mce.Trial != "" || !slices.Equal(mce.Lines, []string{"restoration"}) {
+				t.Fatalf("restoration fed trial evidence: %+v", mce)
+			}
+			t.Logf("resumed=%t: restoration recorded between trials; final cursor=%s", resume, shutdown.KernelCursor)
+		})
+	}
+}
+
+type partialBoundaryKernel struct {
+	machine.Kernel
+	calls int
+	loss  error
+}
+
+func (k *partialBoundaryKernel) ReadMCEs(string, string) (machine.KernelRead, error) {
+	k.calls++
+	if k.calls == 2 {
+		return machine.KernelRead{MCEs: []machine.MCE{{Core: 0, CPU: 0, Corrected: true, Monotonic: time.Hour, Lines: []string{"partial evidence"}}}}, machine.ErrCursorMissing
+	}
+	if k.calls == 3 {
+		return machine.KernelRead{}, k.loss
+	}
+	return machine.KernelRead{Cursor: "saved"}, nil
+}
+
+func TestPartialCursorEvidenceOutranksFailedReanchor(t *testing.T) {
+	for _, loss := range []error{nil, errors.New("reanchor failed")} {
+		t.Run(fmt.Sprint(loss), func(t *testing.T) {
+			r, _, _ := boundaryRunner(t)
+			r.in.Machine.Kernel = &partialBoundaryKernel{Kernel: r.in.Machine.Kernel, loss: loss}
+			end := runBoundaryTrial(t, r)
+			if end.Outcome != journal.OutcomeFailure || end.Signal != machine.CorrectedMCE || end.KernelError == "" {
+				t.Fatalf("partial MCE lost to observation error: %+v", end)
+			}
+			t.Logf("reanchor=%v: outcome=%s signal=%s with observation loss", loss, end.Outcome, end.Signal)
+		})
+	}
+}
