@@ -159,6 +159,7 @@ If a `run` starts after `deadend` but before `boot.saved_entry`, it completes th
 | Option | Meaning |
 |---|---|
 | `services.togi.enable` | Install togi and load `ryzen_smu` (`hardware.cpu.amd.ryzen-smu.enable`, set with `mkDefault`, so a host that loads its own build can turn it off) |
+| `services.togi.package` | Package to install and use for `togi.service` and `togi-watch.service`; defaults to the flake's togi package for the host platform |
 | `services.togi.tuning.enable` | Add the tuning boot specialisation above |
 | `services.togi.tuning.leaveOnShutdown` | Default `true`: an orderly shutdown or reboot of the tuning boot clears GRUB's saved entry, so the next boot is the normal system. `false` keeps the tuning boot selected until a dead end, `togi.service`'s restart limit, or you pick another entry |
 | `services.togi.tuning.consoleFont` | The tuning boot's console font, as `console.font` takes it, whatever the system sets. Default `null`: the kernel's built-in font, 8x16 below 2560x1080 and Terminus 16x32 bold from there. Both give the 240x67 frame the dashboard is laid out for at 1080p and 4K, and both cover IBM437, whose block and box glyphs the dashboard draws with; a system font such as `Lat2-Terminus16` lacks `▀` and breaks the big digits. A font set here must cover IBM437 as well: Terminus' `ter-i` fonts, such as `"${pkgs.terminus_font}/share/consolefonts/ter-i32b.psf.gz"`, do, while `ter-v` and `Lat2-Terminus` fonts do not |

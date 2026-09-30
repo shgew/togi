@@ -4,6 +4,10 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Added
+
+- `services.togi.package` selects the togi package installed and run by the NixOS module ([#190](https://github.com/shgew/togi/pull/190)).
+
 ### Changed
 
 - Per-core offsets are refused on CCDs with fused-off slots: preflight names the CCD and fuse mask, and full 8-core CCDs remain supported ([#163]).

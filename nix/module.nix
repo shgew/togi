@@ -7,7 +7,6 @@
 }:
 let
   cfg = config.services.togi;
-  package = packages.${pkgs.stdenv.hostPlatform.system}.default;
   toml = pkgs.formats.toml { };
   grub = config.boot.loader.grub;
   grubenv = "${(lib.head grub.mirroredBoots).path}/grub/grubenv";
@@ -15,6 +14,12 @@ in
 {
   options.services.togi = {
     enable = lib.mkEnableOption "togi, the per-core Curve Optimizer tuner";
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = packages.${pkgs.stdenv.hostPlatform.system}.default;
+      defaultText = lib.literalExpression "togi.packages.\${pkgs.stdenv.hostPlatform.system}.default";
+      description = "The togi package to install and run in the tuning boot.";
+    };
     tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB entry that tunes unattended";
     tuning.leaveOnShutdown = lib.mkOption {
       type = lib.types.bool;
@@ -39,7 +44,7 @@ in
   config = lib.mkIf cfg.enable (
     lib.mkMerge [
       {
-        environment.systemPackages = [ package ];
+        environment.systemPackages = [ cfg.package ];
         hardware.cpu.amd.ryzen-smu.enable = lib.mkDefault true;
         environment.etc."togi/config.toml".source = toml.generate "togi-config.toml" cfg.settings;
         services.togi.settings.backends = {
@@ -104,7 +109,7 @@ in
             startLimitIntervalSec = 1800;
             startLimitBurst = 3;
             serviceConfig = {
-              ExecStart = "${lib.getExe package} run --tuning-boot ${grubenv}";
+              ExecStart = "${lib.getExe cfg.package} run --tuning-boot ${grubenv}";
               Restart = "on-failure";
               RestartSec = 60;
               RestartPreventExitStatus = "10 11 12 13 14 15 16 17 18";
@@ -154,7 +159,7 @@ in
             unitConfig.ConditionPathExists = "/dev/tty1";
             environment.TERM = "linux";
             serviceConfig = {
-              ExecStart = "${lib.getExe package} watch";
+              ExecStart = "${lib.getExe cfg.package} watch";
               StandardOutput = "tty";
               StandardError = "journal";
               TTYPath = "/dev/tty1";
