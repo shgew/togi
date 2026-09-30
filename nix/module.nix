@@ -17,7 +17,7 @@ in
     package = lib.mkOption {
       type = lib.types.package;
       default = packages.${pkgs.stdenv.hostPlatform.system}.default;
-      defaultText = lib.literalExpression "togi.packages.\${pkgs.stdenv.hostPlatform.system}.default";
+      defaultText = lib.literalExpression "inputs.togi.packages.\${pkgs.stdenv.hostPlatform.system}.default";
       description = "The togi package to install and run in the tuning boot.";
     };
     tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB entry that tunes unattended";
