@@ -3,6 +3,7 @@ package watch
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
@@ -61,5 +62,18 @@ func TestLoggedKinds(t *testing.T) {
 		if !found {
 			t.Errorf("%s absent from recent events", kind)
 		}
+	}
+}
+
+func TestSessionWarningVisibleInDashboard(t *testing.T) {
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	warning := "trial 0001 passed, but retain passed trial failed: permission denied"
+	events := []journal.Event{
+		{Seq: 1, Time: now, Kind: journal.KindSessionStart, Data: &journal.SessionStart{Session: "warning", Cores: []machine.CoreInfo{{Core: 0, CPUs: []int{0, 1}}}}},
+		{Seq: 2, Time: now, Kind: journal.KindSessionWarning, Msg: warning, Data: &journal.SessionWarning{Operation: "retain passed trial", Trial: "0001", Error: "permission denied"}},
+	}
+	frame := Render(Project(events), 160, 40, now)
+	if !strings.Contains(frame, warning) {
+		t.Fatalf("session maintenance warning absent from dashboard:\n%s", frame)
 	}
 }

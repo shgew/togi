@@ -31,7 +31,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - Backend early exits and stalls are now recorded immediately as typed failure evidence, so recovery preserves the affected core if the machine crashes before the trial ends ([#173]).
 - MCEs now record their boot-local monotonic time, so crash recovery cannot attribute a trial to a machine check from before its profile was applied; outside-window MCEs remain visible without becoming trial causes, and older MCE events retain their previous replay behavior ([#200]).
 - `run`, `reset` and hardware tests now share `/run/lock/togi.lock` on Linux (`/tmp/togi.lock` for copied-journal reset on Darwin), preventing concurrent togi processes with different state directories from interleaving SMU access or carry preparation; a busy lock stops the command before hardware access or another event, and delegated hardware-test users can acquire an existing readable lock without write permission ([#170]).
-- `run` now stops and joins workloads, restores offsets and closes the journal on ordinary errors and panics as well as clean exits; passed-trial marker and retention failures warn without interrupting tuning ([#176]).
+- `run` now stops and joins workloads, restores offsets and closes the journal on ordinary errors and panics as well as clean exits; ordinary trial-runner errors count toward backend retries and `no_evidence`, while passed-trial marker and retention failures warn visibly in the dashboard without interrupting tuning ([#176]).
 
 ## [0.5.0] - 2026-09-29
 

@@ -203,7 +203,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	res, err := running.Wait(trialCtx, report)
 	r.running = nil
 	r.cancelTrial = nil
-	cancel()
+	defer cancel()
 	if report.err != nil {
 		return report.err
 	}
