@@ -6,7 +6,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ### Fixed
 
-- Crash recovery reads the reset reason from the immediate following system boot, including boots without togi, and records no reason when that boot cannot be identified or its log is missing instead of borrowing a later reset. If a session recovered crashes after intervening non-togi boots, run `togi reset --core N` for every tuned core; older journals cannot identify which reset reasons came from the wrong boot.
+- Crash recovery reads the reset reason from the immediate following system boot, including boots without togi, and records no reason when that boot cannot be identified or its log is missing instead of borrowing a later reset. If a session recovered crashes after intervening non-togi boots, run `togi reset --core N` for every tuned core; older journals cannot identify which reset reasons came from the wrong boot ([#209]).
 
 ## [0.5.1] - 2026-09-30
 
@@ -275,3 +275,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#199]: https://github.com/shgew/togi/pull/199
 [#202]: https://github.com/shgew/togi/pull/202
 [#204]: https://github.com/shgew/togi/pull/204
+[#209]: https://github.com/shgew/togi/pull/209
