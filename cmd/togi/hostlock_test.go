@@ -17,6 +17,7 @@ import (
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/sim"
 )
 
 func TestResetRefusesHostLock(t *testing.T) {
@@ -108,10 +109,13 @@ func TestRunRefusesHostLockBeforeHardwareAndCarry(t *testing.T) {
 
 type refusedStartupHost struct {
 	machine.Host
-	detail string
+	t *testing.T
 }
 
-func (h refusedStartupHost) ValidateSMU() error { return errors.New(h.detail) }
+func (h refusedStartupHost) BIOSContext() (machine.BIOSContext, error) {
+	h.t.Fatal("BIOS access before supported identity")
+	return machine.BIOSContext{}, nil
+}
 
 func TestRunRefusesIdentityBeforeBIOSOrSMUAccess(t *testing.T) {
 	if runtime.GOOS != "linux" {
@@ -120,20 +124,76 @@ func TestRunRefusesIdentityBeforeBIOSOrSMUAccess(t *testing.T) {
 	for _, detail := range []string{"unsupported CPU family", "unsupported CPU model", "unsupported driver codename"} {
 		t.Run(detail, func(t *testing.T) {
 			g := testGlobals(t)
-			before := directoryFiles(t, g.stateDir)
-			newMachine := func(config.Config, string) (machine.Machine, error) {
-				// Nil embedded seams panic on any BIOS, SMU or preflight access.
-				return machine.Machine{Host: refusedStartupHost{detail: detail}}, nil
+			m, err := sim.New(sim.Config{Seed: 82})
+			if err != nil {
+				t.Fatal(err)
 			}
+			if detail == "unsupported driver codename" {
+				m.FailCheck("ryzen_smu", detail)
+			} else {
+				m.FailCheck("cpu", detail)
+			}
+			seams := m.Seams()
+			seams.Host = refusedStartupHost{Host: seams.Host, t: t}
+			seams.SMU = nil
+			newMachine := func(config.Config, string) (machine.Machine, error) {
+				return seams, nil
+			}
+			bootloader := &clearingBootloader{}
 			var stderr bytes.Buffer
-			code := runHardware(context.Background(), &g, config.Default(), false, nil, 0, &stderr, journal.Renderer{}, nil, newMachine)
+			code := runHardware(context.Background(), &g, config.Default(), false, bootloader, 0, &stderr, journal.Renderer{}, nil, newMachine)
 			if code != exitPreflight || !strings.Contains(stderr.String(), detail) {
 				t.Fatalf("identity refusal: exit %d, stderr %s", code, stderr.String())
 			}
-			if diff := cmp.Diff(before, directoryFiles(t, g.stateDir)); diff != "" {
-				t.Fatalf("identity refusal changed state: %s", diff)
+			if bootloader.calls != 1 {
+				t.Fatalf("saved entry cleared %d times, want once", bootloader.calls)
 			}
+			events, _, err := journal.Read(g.stateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var checks []journal.PreflightCheck
+			var deadEnd *journal.DeadEnd
+			var entry *journal.BootSavedEntry
+			for _, e := range events {
+				switch p := e.Data.(type) {
+				case *journal.PreflightCheck:
+					checks = append(checks, *p)
+				case *journal.DeadEnd:
+					deadEnd = p
+				case *journal.BootSavedEntry:
+					entry = p
+				}
+			}
+			if len(checks) == 0 || checks[0].Check != "watchdog" || !checks[0].OK {
+				t.Fatalf("first preflight check is not successful watchdog: %+v", checks)
+			}
+			if deadEnd == nil || deadEnd.Condition != journal.DeadEndPreflight || deadEnd.Action != journal.ActionClearSavedEntry {
+				t.Fatalf("missing normal preflight refusal: %+v", deadEnd)
+			}
+			if entry == nil || entry.Before != "togi" || entry.After != "" || entry.Error != "" {
+				t.Fatalf("missing saved-entry event: %+v", entry)
+			}
+			if events[len(events)-1].Kind != journal.KindShutdown {
+				t.Fatal("preflight refusal did not finish cleanly")
+			}
+			t.Logf("exit %d; first preflight %s ok; deadend %s; saved entry %q -> %q; no BIOS/SMU accesses", code, checks[0].Check, deadEnd.Condition, entry.Before, entry.After)
 		})
+	}
+}
+
+func TestRunReportsConstructionError(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("hardware runs need Linux")
+	}
+	g := testGlobals(t)
+	newMachine := func(config.Config, string) (machine.Machine, error) {
+		return machine.Machine{}, errors.New("read CPU topology: unavailable")
+	}
+	var stderr bytes.Buffer
+	code := runHardware(context.Background(), &g, config.Default(), false, nil, 0, &stderr, journal.Renderer{}, nil, newMachine)
+	if code != exitError || !strings.Contains(stderr.String(), "read CPU topology: unavailable") {
+		t.Fatalf("construction error: exit %d, stderr %s", code, stderr.String())
 	}
 }
 

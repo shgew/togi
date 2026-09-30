@@ -264,8 +264,15 @@ func TestFuseEqualToProbeAcceptedWhenFresh(t *testing.T) {
 
 func TestNoDriverAndTopologyError(t *testing.T) {
 	root, _ := fixture(t, 8, true)
-	if _, err := Open(root, nil); err == nil || !strings.Contains(err.Error(), "ryzen_smu is not loaded") {
-		t.Fatalf("missing driver accepted: %v", err)
+	d, err := Open(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check := d.CheckDriver(); check.OK || !strings.Contains(check.Detail, "ryzen_smu is not loaded") {
+		t.Fatalf("missing driver check: %+v", check)
+	}
+	if err := d.SetAllOffsets(0); err == nil {
+		t.Fatal("missing driver accepted all-core command")
 	}
 	if _, err := Open(t.TempDir(), nil); err == nil {
 		t.Fatal("missing topology accepted")
@@ -287,8 +294,27 @@ func TestConstructionRefusesUnsupportedIdentityWithoutAccess(t *testing.T) {
 				t.Fatal("SMN read before identity validation")
 				return 0, nil
 			}
-			if _, err := Open(root, mb); err == nil {
+			d, err := Open(root, mb)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := d.ValidateSMU(); err == nil {
 				t.Fatal("unsupported identity accepted")
+			}
+			if len(d.Topology()) != 16 {
+				t.Fatal("unsupported identity lost topology introspection")
+			}
+			if _, err := d.Offset(0); err == nil {
+				t.Fatal("unsupported offset read accepted")
+			}
+			if err := d.SetOffset(0, -10); err == nil {
+				t.Fatal("unsupported per-core write accepted")
+			}
+			if err := d.SetAllOffsets(0); err == nil {
+				t.Fatal("unsupported emergency zero accepted")
+			}
+			if _, err := d.BIOSContext(); err == nil {
+				t.Fatal("unsupported BIOS read accepted")
 			}
 			if len(mb.commands) != 0 {
 				t.Fatalf("mailbox commands before validation: %v", mb.commands)

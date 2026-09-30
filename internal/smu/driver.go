@@ -30,7 +30,8 @@ func Open(root string, mb Mailbox) (*Driver, error) {
 	}
 	d := &Driver{root: root, mb: mb, cores: cores, slots: make(map[int]location, len(cores))}
 	if err := d.ValidateSMU(); err != nil {
-		return nil, err
+		d.mappingErr = err
+		return d, nil
 	}
 	d.mapSlots()
 	return d, nil

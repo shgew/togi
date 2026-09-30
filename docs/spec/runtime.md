@@ -87,7 +87,7 @@ The state-directory writer lock remains: it protects journal integrity, not the 
 
 ## Preflight
 
-Hardware construction checks CPU family/model from `/proc/cpuinfo` and the driver codename from its sysfs metadata before reading any SMN register, including the slot-mapping fuses. An unsupported identity refuses construction without a mailbox command or SMN access. CLI startup repeats this non-command validation before reading BIOS context for transition preparation. Session preflight establishes its own validation boundary before command-bearing checks; failures while writing earlier startup events must not emergency-zero the hardware.
+Hardware construction checks CPU family/model from `/proc/cpuinfo` and the driver codename from its sysfs metadata before reading any SMN register, including the slot-mapping fuses. An unsupported identity leaves the driver available for topology and preflight introspection but refuses every mailbox command and SMN access. CLI startup repeats this non-command validation and skips BIOS context reads when validation fails, then lets session preflight record the refusal and take the normal dead-end path (exit 15, including the watchdog check and saved-entry clear in a tuning boot). Session preflight establishes its own validation boundary before command-bearing checks; failures while writing earlier startup events must not emergency-zero the hardware.
 
 Completed session preflight is the startup boundary for stale-scope containment and subsequent same-boot reconciliation, before `startSession` and the first offset write. An interrupted dead-end completion returns without starting tuning or writing offsets; it does not bypass this boundary to reconcile hardware.
 
