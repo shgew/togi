@@ -466,6 +466,7 @@ func TestDeadEndShutdownCapturesRestorationTail(t *testing.T) {
 
 type partialBoundaryKernel struct {
 	machine.Kernel
+	clock machine.Clock
 	calls int
 	loss  error
 }
@@ -473,7 +474,7 @@ type partialBoundaryKernel struct {
 func (k *partialBoundaryKernel) ReadMCEs(string, string) (machine.KernelRead, error) {
 	k.calls++
 	if k.calls == 2 {
-		return machine.KernelRead{MCEs: []machine.MCE{{Core: 0, CPU: 0, Corrected: true, Monotonic: time.Hour, Lines: []string{"partial evidence"}}}}, machine.ErrCursorMissing
+		return machine.KernelRead{MCEs: []machine.MCE{{Core: 0, CPU: 0, Corrected: true, Monotonic: k.clock.Monotonic(), Lines: []string{"partial evidence"}}}}, machine.ErrCursorMissing
 	}
 	if k.calls == 3 {
 		return machine.KernelRead{}, k.loss
@@ -485,7 +486,7 @@ func TestPartialCursorEvidenceOutranksFailedReanchor(t *testing.T) {
 	for _, loss := range []error{nil, errors.New("reanchor failed")} {
 		t.Run(fmt.Sprint(loss), func(t *testing.T) {
 			r, _, _ := boundaryRunner(t)
-			r.in.Machine.Kernel = &partialBoundaryKernel{Kernel: r.in.Machine.Kernel, loss: loss}
+			r.in.Machine.Kernel = &partialBoundaryKernel{Kernel: r.in.Machine.Kernel, clock: r.in.Machine.Clock, loss: loss}
 			end := runBoundaryTrial(t, r)
 			if end.Outcome != journal.OutcomeFailure || end.Signal != machine.CorrectedMCE || end.KernelError == "" {
 				t.Fatalf("partial MCE lost to observation error: %+v", end)
