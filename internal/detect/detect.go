@@ -220,6 +220,7 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 	var result []machine.MCE
 	var preceding *Message
 	current := -1
+	statusLines := 0
 	rawBlock := false
 	pending := 0
 	ambiguous := false
@@ -228,6 +229,9 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 		if description(text) {
 			preceding = &msg
 			current = -1
+			rawBlock = false
+			pending = 0
+			ambiguous = false
 			continue
 		}
 		decoded := decodedStatus.FindStringSubmatch(text)
@@ -259,6 +263,7 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 				mce.Lines = append(mce.Lines, stamped(*preceding))
 			}
 			mce.Lines = append(mce.Lines, stamped(msg))
+			statusLines = len(mce.Lines)
 			result = append(result, mce)
 			current = len(result) - 1
 			rawBlock = raw != nil
@@ -276,24 +281,29 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 		mce := &result[current]
 		match := bankLine.FindStringSubmatch(text)
 		reserved := strings.HasPrefix(text, "[Hardware Error]: Bank ") && strings.HasSuffix(text, " is reserved.")
-		if match != nil || reserved {
-			if !ambiguous && (rawBlock || pending == 1) {
-				if mce.Core != -1 && !rawBlock {
-					if match != nil {
-						mce.BankType = bankType(match[1])
-					} else {
-						mce.BankType = machine.OtherBank
-					}
-				}
+		if match == nil && !reserved {
+			if !ambiguous {
 				mce.Lines = append(mce.Lines, stamped(msg))
-			}
-			if pending > 0 {
-				pending--
 			}
 			continue
 		}
-		if !ambiguous {
+		if !rawBlock && pending == 0 {
+			ambiguous = true
+			mce.BankType = machine.UnknownBank
+			mce.Lines = mce.Lines[:statusLines]
+		}
+		if !ambiguous && (rawBlock || pending == 1) {
+			if mce.Core != -1 && !rawBlock {
+				if match != nil {
+					mce.BankType = bankType(match[1])
+				} else {
+					mce.BankType = machine.OtherBank
+				}
+			}
 			mce.Lines = append(mce.Lines, stamped(msg))
+		}
+		if pending > 0 {
+			pending--
 		}
 	}
 	return result

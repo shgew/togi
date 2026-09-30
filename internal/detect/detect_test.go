@@ -185,6 +185,27 @@ func TestStatusAndBlockBoundaries(t *testing.T) {
 	}
 }
 
+func TestRecordContinuationBoundaries(t *testing.T) {
+	for _, tt := range []struct {
+		fixture string
+		want    []machine.BankType
+	}{
+		{"truncated-record.jsonl", []machine.BankType{machine.UnknownBank, machine.LoadStore}},
+		{"interleaved-records.jsonl", []machine.BankType{machine.UnknownBank, machine.UnknownBank, machine.DecodeUnit}},
+	} {
+		t.Run(tt.fixture, func(t *testing.T) {
+			mces := Parse(loadFixture(t, tt.fixture), map[int]int{0: 0, 9: 9})
+			var got []machine.BankType
+			for _, mce := range mces {
+				got = append(got, mce.BankType)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Fatalf("bank attribution mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestInterleavedBankAttribution(t *testing.T) {
 	statuses := map[int]string{
 		0: "[Hardware Error]: CPU:0 (1a:44:0) MC3_STATUS[Over|CE|-]: 0xbc00000000010135",

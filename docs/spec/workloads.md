@@ -122,6 +122,7 @@ The `trial.end` message for a trial closed on resume says `last evidence Ns afte
 MCE attribution rules:
 - Attribution uses the SMCA bank type decoded by the kernel (`edac_mce_amd`), never a hard-coded bank number.
 - A decoded bank continuation is assigned only when exactly one MCE could own it. If multiple status records arrive before their bank lines, those records keep an unknown bank type and are unattributed; journal message order alone cannot identify the owner.
+- A new error-description boundary closes orphaned continuation state, so a truncated record does not prevent attribution of the next independent record. Multiple bank continuations within one decoded record leave its bank type unknown.
 - Core-local types (load-store, instruction fetch, L2, decode, execution, floating point) name a core.
 - Shared types (L3, memory controller, data fabric and others) name none.
 - In resident trials, a core-local MCE on a core whose offset is 0 is an attributed failure at 0, which is a dead end.
