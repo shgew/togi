@@ -11,6 +11,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 ### Fixed
 
 - The tuning boot waits for an armed hardware watchdog before writing offsets or starting a workload, and loads its driver in the initrd. A freeze in the first seconds after boot can no longer bypass an unarmed watchdog; if none arms within 30 seconds, preflight stops without tuning ([#194]).
+- A truncated machine-check record no longer prevents the next independent record's decoded bank type from naming its core; genuinely interleaved records remain unattributed. To discard decisions based on a previously unattributed record, run `togi reset --core N` for each affected core ([#186]).
 
 ## [0.5.0] - 2026-09-29
 
@@ -209,3 +210,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#69]: https://github.com/shgew/togi/pull/69
 [#163]: https://github.com/shgew/togi/pull/163
 [#194]: https://github.com/shgew/togi/pull/194
+[#186]: https://github.com/shgew/togi/pull/186

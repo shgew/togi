@@ -1,0 +1,9 @@
+{"MESSAGE":"[Hardware Error]: Corrected error, no action required.","__REALTIME_TIMESTAMP":"1000000"}
+{"MESSAGE":"[Hardware Error]: CPU:0 (1a:44:0) MC3_STATUS[Over|CE|-]: 0xbc00000000010135","__REALTIME_TIMESTAMP":"1000001"}
+{"MESSAGE":"[Hardware Error]: Corrected error, no action required.","__REALTIME_TIMESTAMP":"1000002"}
+{"MESSAGE":"[Hardware Error]: CPU:9 (1a:44:0) MC0_STATUS[Over|CE|-]: 0xbc00000000010135","__REALTIME_TIMESTAMP":"1000003"}
+{"MESSAGE":"[Hardware Error]: Decode Unit Ext. Error Code: 1","__REALTIME_TIMESTAMP":"1000004"}
+{"MESSAGE":"[Hardware Error]: Load Store Unit Ext. Error Code: 13","__REALTIME_TIMESTAMP":"1000005"}
+{"MESSAGE":"[Hardware Error]: Corrected error, no action required.","__REALTIME_TIMESTAMP":"2000000"}
+{"MESSAGE":"[Hardware Error]: CPU:0 (1a:44:0) MC3_STATUS[Over|CE|-]: 0xbc00000000010135","__REALTIME_TIMESTAMP":"2000001"}
+{"MESSAGE":"[Hardware Error]: Decode Unit Ext. Error Code: 1","__REALTIME_TIMESTAMP":"2000002"}

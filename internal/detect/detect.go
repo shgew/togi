@@ -220,6 +220,7 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 	var result []machine.MCE
 	var preceding *Message
 	current := -1
+	var ownership mceOwnership
 	rawBlock := false
 	pending := 0
 	ambiguous := false
@@ -228,6 +229,9 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 		if description(text) {
 			preceding = &msg
 			current = -1
+			rawBlock = false
+			pending = 0
+			ambiguous = false
 			continue
 		}
 		decoded := decodedStatus.FindStringSubmatch(text)
@@ -253,6 +257,7 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 			if decoded != nil {
 				ambiguous = pending != 0
 				pending++
+				ownership.start(len(result))
 			}
 			mce := machine.MCE{CPU: cpu, Core: core, Bank: bank, BankType: machine.UnknownBank, Corrected: corrected, Time: msg.Time, Monotonic: msg.Monotonic}
 			if preceding != nil {
@@ -276,25 +281,72 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 		mce := &result[current]
 		match := bankLine.FindStringSubmatch(text)
 		reserved := strings.HasPrefix(text, "[Hardware Error]: Bank ") && strings.HasSuffix(text, " is reserved.")
-		if match != nil || reserved {
-			if !ambiguous && (rawBlock || pending == 1) {
-				if mce.Core != -1 && !rawBlock {
-					if match != nil {
-						mce.BankType = bankType(match[1])
-					} else {
-						mce.BankType = machine.OtherBank
-					}
-				}
+		if match == nil && !reserved {
+			if !ambiguous {
 				mce.Lines = append(mce.Lines, stamped(msg))
-			}
-			if pending > 0 {
-				pending--
 			}
 			continue
 		}
-		if !ambiguous {
+		if !ownership.bank(result, current, pending, rawBlock) {
+			ambiguous = true
+		}
+		if !ambiguous && (rawBlock || pending == 1) {
+			if mce.Core != -1 && !rawBlock {
+				if match != nil {
+					mce.BankType = bankType(match[1])
+				} else {
+					mce.BankType = machine.OtherBank
+				}
+			}
 			mce.Lines = append(mce.Lines, stamped(msg))
+		}
+		if pending > 0 {
+			pending--
 		}
 	}
 	return result
+}
+
+type mceOwnership struct {
+	first     int
+	pending   int
+	ambiguous bool
+	cleared   bool
+}
+
+func (o *mceOwnership) start(index int) {
+	if o.pending == 0 {
+		o.first = index
+		o.ambiguous = false
+		o.cleared = false
+	}
+	o.pending++
+}
+
+func (o *mceOwnership) bank(mces []machine.MCE, current, pending int, raw bool) bool {
+	if raw {
+		return true
+	}
+	o.ambiguous = o.ambiguous || pending == 0
+	if o.ambiguous && !o.cleared {
+		clearBankAttribution(mces[o.first : current+1])
+		o.cleared = true
+	}
+	if o.pending > 0 {
+		o.pending--
+	}
+	return !o.ambiguous
+}
+
+func clearBankAttribution(mces []machine.MCE) {
+	for i := range mces {
+		mce := &mces[i]
+		mce.BankType = machine.UnknownBank
+		statusLines := 1
+		_, text, _ := strings.Cut(mce.Lines[0], " ")
+		if description(text) {
+			statusLines++
+		}
+		mce.Lines = mce.Lines[:statusLines]
+	}
 }
