@@ -59,6 +59,7 @@ in
           system.nixos.tags = [ "togi" ];
           boot.loader.grub.configurationName = "togi";
           systemd.defaultUnit = lib.mkForce "multi-user.target";
+          boot.initrd.kernelModules = [ "sp5100_tco" ];
           boot.kernel.sysctl = {
             "kernel.panic" = 10;
             "kernel.panic_on_oops" = 1;

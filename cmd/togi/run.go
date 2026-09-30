@@ -71,7 +71,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		rotations = v
 		return nil
 	})
-	flags.StringVar(&grubenv, "tuning-boot", "", "run as the tuning boot service: at a dead end clear saved_entry in this GRUB environment `file`, and reboot after a boot loop")
+	flags.StringVar(&grubenv, "tuning-boot", "", "run as the tuning boot service: require an armed hardware watchdog within 30s; at a dead end clear saved_entry in this GRUB environment `file`, and reboot after a boot loop")
 	flags.BoolVar(&noTUI, "no-tui", false, "print one line per event instead of the dashboard on a terminal")
 	if code, ok := parseFlags(flags, args, runHelp, stdout, stderr); !ok {
 		return code

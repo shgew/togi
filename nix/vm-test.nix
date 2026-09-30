@@ -8,6 +8,11 @@ let
       virtualisation.useBootLoader = true;
       boot.loader.grub.enable = true;
       boot.loader.timeout = 1;
+      virtualisation.qemu.options = [
+        "-device i6300esb"
+        "-watchdog-action reset"
+      ];
+      specialisation.togi.configuration.boot.initrd.kernelModules = [ "i6300esb" ];
       services.togi = {
         enable = true;
         tuning.enable = true;
@@ -27,6 +32,7 @@ in
 
     testScript = ''
       import json
+      import time
 
       machine.start(allow_reboot=True)
       machine.wait_for_unit("multi-user.target")
@@ -34,6 +40,10 @@ in
       tuning_system = machine.succeed("readlink -f /run/current-system/specialisation/togi").strip()
       assert tuning_system != normal_system, (normal_system, tuning_system)
       machine.succeed("! systemctl is-active --quiet togi.service")
+      machine.succeed(
+          "test ! -e /sys/class/watchdog/watchdog0/state || "
+          "grep -qx inactive /sys/class/watchdog/watchdog0/state"
+      )
       machine.succeed("grep -q '^FONT=Lat2-Terminus16' /etc/vconsole.conf")
       machine.succeed("test -f /boot/grub/grub.cfg")
       machine.succeed("grep -Fq 'menuentry \"NixOS - togi\"' /boot/grub/grub.cfg")
@@ -44,6 +54,9 @@ in
       machine.wait_for_unit("multi-user.target")
       booted_system = machine.succeed("readlink -f /run/current-system").strip()
       assert booted_system == tuning_system, (booted_system, tuning_system)
+      machine.wait_until_succeeds("grep -qx active /sys/class/watchdog/watchdog0/state")
+      machine.succeed("grep -qx 'i6300ESB timer' /sys/class/watchdog/watchdog0/identity")
+      machine.succeed("ls -l /proc/1/fd | grep -q /dev/watchdog")
       machine.wait_until_succeeds("systemctl is-failed togi.service")
       status = machine.succeed("systemctl show togi.service -p ExecMainStatus --value").strip()
       assert status == "15", f"togi.service exited {status}, want 15 (dead end preflight)"
@@ -63,6 +76,15 @@ in
           e["kind"] == "boot.saved_entry" and e["before"] == "NixOS - togi" and e["after"] == ""
           for e in events
       ), events
+      preflight = [
+          json.loads(line)
+          for line in machine.succeed("togi events --json --kind preflight.check").splitlines()
+      ]
+      watchdog = [e for e in preflight if e["check"] == "watchdog"]
+      assert len(watchdog) == 1 and watchdog[0]["ok"], preflight
+      assert preflight[0]["check"] == "watchdog", preflight
+      machine.log(f"armed watchdog preflight: {watchdog[0]}")
+      machine.succeed("test -z \"$(togi events --json --kind smu.intent,trial.intent)\"")
       machine.wait_for_unit("togi-watch.service")
       machine.fail("grep -q '^FONT=' /etc/vconsole.conf")
       machine.wait_until_succeeds("grep -aq 'dead end preflight' /dev/vcs1")
@@ -76,9 +98,32 @@ in
           state = machine.succeed(f"systemctl show {unit} -p ActiveState -p NRestarts").split()
           assert state == ["ActiveState=active", "NRestarts=0"], f"{unit}: {state}"
       machine.succeed("grub-set-default 'NixOS - togi' && sync")
-      machine.crash()
-      machine.start(allow_reboot=True)
+      frozen_boot = machine.succeed("cat /proc/sys/kernel/random/boot_id").strip()
+      # Freeze only PID 1, not QEMU's clock or the driver's shell. The armed
+      # hardware watchdog must reset the guest without an orderly shutdown.
+      machine.succeed("grep -qx 1 /sys/fs/cgroup/init.scope/cgroup.procs")
+      assert machine.qmp_client is not None
+      machine.qmp_client.send("query-status")
+      list(machine.qmp_client.events())
+      machine.succeed("echo 1 > /sys/fs/cgroup/init.scope/cgroup.freeze")
+      machine.wait_until_succeeds(
+          "grep -qx 'frozen 1' /sys/fs/cgroup/init.scope/cgroup.events", timeout=10
+      )
+      watchdog_event = None
+      deadline = time.monotonic() + 90
+      while time.monotonic() < deadline and watchdog_event is None:
+          machine.qmp_client.send("query-status")
+          for event in machine.qmp_client.events():
+              if event["event"] == "WATCHDOG":
+                  watchdog_event = event
+          time.sleep(0.1)
+      assert watchdog_event is not None, "freezing PID 1 did not trip the hardware watchdog"
+      assert watchdog_event["data"]["action"] == "reset", watchdog_event
+      machine.log(f"hardware watchdog reset: {watchdog_event}")
+      machine.connected = False
       machine.wait_for_unit("multi-user.target")
+      reset_boot = machine.succeed("cat /proc/sys/kernel/random/boot_id").strip()
+      assert reset_boot != frozen_boot, (frozen_boot, reset_boot)
       booted_system = machine.succeed("readlink -f /run/current-system").strip()
       assert booted_system == tuning_system, f"crash left the tuning boot: {booted_system}"
       machine.wait_until_succeeds("systemctl is-failed togi.service")

@@ -534,6 +534,13 @@ func (h host) Preflight() []machine.Check {
 	return checks
 }
 
+func (h host) Watchdog() machine.Check {
+	if detail, failed := h.m.failedChecks["watchdog"]; failed {
+		return machine.Check{Name: "watchdog", Detail: detail}
+	}
+	return machine.Check{Name: "watchdog", Detail: "simulated hardware watchdog active", OK: true}
+}
+
 type kernel struct{ m *Machine }
 
 func (k kernel) MCEs(boot string, since time.Duration) ([]machine.MCE, error) {
