@@ -85,9 +85,6 @@ func TestTopologyAndEncoding(t *testing.T) {
 	if diff := cmp.Diff([]int{9, 25}, got[9].CPUs); diff != "" {
 		t.Fatalf("core 9 cpus mismatch (-want +got):\n%s", diff)
 	}
-	if check := d.CheckSlotMapping(); !check.OK || check.Detail != "CCD0 fuse 0x00: cores 00-07 on slots 0-7; CCD1 fuse 0x00: cores 08-15 on slots 0-7" {
-		t.Fatalf("mapping: %+v", check)
-	}
 	for _, tc := range []struct {
 		core, offset int
 		want         uint32
@@ -131,47 +128,68 @@ func TestTopologyAndEncoding(t *testing.T) {
 
 func TestMappingAndFallback(t *testing.T) {
 	for _, tc := range []struct {
-		name, want string
-		cores      int
-		fuse       uint32
-		cache      bool
-		valid      bool
-		wantSlot   uint32
+		name  string
+		cores int
+		fuse  uint32
+		ccd   int
+		cache bool
+		valid bool
 	}{
-		{"full-fuse-mismatch", "CCD0 fuse 0x01 leaves 7 live slots for 8 cores", 8, 0x01, true, false, 0},
-		{"harvested-die-fallback", "CCD0 fuse 0x81: cores 00-05 on slots 1-6", 6, 0x81, false, true, 1},
+		{"full-cache-topology", 8, 0x00, 0, true, true},
+		{"full-die-fallback", 8, 0x00, 0, false, true},
+		{"full-fuse-upper-bits", 8, 0x100, 0, true, true},
+		{"first-slot-disabled", 7, 0x01, 0, true, false},
+		{"last-slot-disabled", 7, 0x80, 0, true, false},
+		{"harvested-die-fallback", 6, 0x81, 0, false, false},
+		{"interior-slots-disabled", 6, 0x42, 0, true, false},
+		{"all-slots-disabled", 8, 0xff, 0, true, false},
+		{"second-ccd-disabled", 8, 0x81, 1, true, false},
+		{"fuse-topology-mismatch", 8, 0x01, 0, true, false},
+		{"full-fuse-missing-cores", 6, 0x00, 0, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root, mb := fixture(t, tc.cores, tc.cache)
-			mb.fuses[0x304a03dc] = tc.fuse
-			if tc.cores == 6 {
-				mb.fuses[0x304a03dc+(1<<25)] = 0x81
+			mb.fuses[0x304a03dc+uint32(tc.ccd)<<25] = tc.fuse
+			if tc.cores != 8 {
+				mb.fuses[0x304a03dc+1<<25] = tc.fuse
 			}
 			d, err := Open(root, mb)
 			if err != nil {
 				t.Fatal(err)
 			}
 			check := d.CheckSlotMapping()
-			if check.OK != tc.valid || !strings.Contains(check.Detail, tc.want) {
+			if check.OK != tc.valid {
 				t.Fatalf("slot mapping: %+v", check)
 			}
 			if !tc.valid {
-				if _, err := d.Offset(0); err == nil || !strings.Contains(err.Error(), "per-core access refused: "+tc.want) {
-					t.Fatalf("get refused: %v", err)
+				if uint8(tc.fuse) != 0 {
+					if !strings.Contains(check.Detail, fmt.Sprintf("CCD%d", tc.ccd)) ||
+						!strings.Contains(check.Detail, fmt.Sprintf("0x%02x", uint8(tc.fuse))) ||
+						!strings.Contains(check.Detail, "harvested CCDs are not yet supported") {
+						t.Fatalf("refusal omits CCD, fuse or support limit: %+v", check)
+					}
 				}
-				if err := d.SetOffset(0, -10); err == nil || !strings.Contains(err.Error(), "per-core access refused: "+tc.want) {
-					t.Fatalf("set refused: %v", err)
+				for _, core := range d.Topology() {
+					if _, err := d.Offset(core.Core); err == nil {
+						t.Fatalf("per-core read accepted for core %d", core.Core)
+					}
+					if err := d.SetOffset(core.Core, -10); err == nil {
+						t.Fatalf("per-core write accepted for core %d", core.Core)
+					}
+				}
+				if diff := cmp.Diff([]call(nil), mb.commands, cmp.AllowUnexported(call{})); diff != "" {
+					t.Fatalf("commands issued with unsupported slot mapping (-want +got):\n%s", diff)
 				}
 				return
 			}
-			if got := d.Topology()[6].CCD; got != 1 {
-				t.Fatalf("die id CCD rank: %d", got)
-			}
-			if err := d.SetOffset(0, -10); err != nil || mb.commands[0].arg>>20&7 != tc.wantSlot {
-				t.Fatalf("harvested slot 1: %+v, %v", mb.commands, err)
-			}
-			if err := d.SetOffset(5, -10); err != nil || mb.commands[1].arg>>20&7 != 6 {
-				t.Fatalf("harvested slot 6: %+v, %v", mb.commands, err)
+			for _, core := range d.Topology() {
+				if err := d.SetOffset(core.Core, -10); err != nil {
+					t.Fatal(err)
+				}
+				want := call{0x06, uint32(core.CCD)<<28 | uint32(core.Core%8)<<20 | 0xfff6}
+				if diff := cmp.Diff(want, mb.commands[len(mb.commands)-1], cmp.AllowUnexported(call{})); diff != "" {
+					t.Fatalf("core %d encoding (-want +got):\n%s", core.Core, diff)
+				}
 			}
 		})
 	}
@@ -180,11 +198,9 @@ func TestMappingAndFallback(t *testing.T) {
 func TestStaleCCDFuseRefusesPerCoreAccess(t *testing.T) {
 	for _, failRead := range [][]int{{1}, {2}, {1, 2}} {
 		t.Run(fmt.Sprint(failRead), func(t *testing.T) {
-			root, mb := fixture(t, 6, true)
+			root, mb := fixture(t, 8, true)
 			const ccd0 = 0x304a03dc
 			const ccd1 = ccd0 + 1<<25
-			mb.fuses[ccd0] = 0x81
-			mb.fuses[ccd1] = 0x42
 			var previous uint32
 			var ccd1Reads int
 			mb.smnRead = func(addr uint32) (uint32, error) {
@@ -223,14 +239,12 @@ func TestFuseEqualToProbeAcceptedWhenFresh(t *testing.T) {
 		response, cmd uint32
 		valid         bool
 	}{
-		{"response", 0x03, 0x6e, true},
-		{"command", 0x01, 0x03, true},
-		{"indistinguishable", 0x03, 0x03, false},
+		{"response", 0x00, 0x6e, true},
+		{"command", 0x01, 0x00, true},
+		{"indistinguishable", 0x00, 0x00, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			root, mb := fixture(t, 6, true)
-			mb.fuses[0x304a03dc] = 0x03
-			mb.fuses[0x304a03dc+1<<25] = 0x81
+			root, mb := fixture(t, 8, true)
 			mb.fuses[0x03b10570] = tc.response
 			mb.fuses[0x03b10524] = tc.cmd
 			d, err := Open(root, mb)

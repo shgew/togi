@@ -21,7 +21,7 @@ Works today, on a simulated 16-core machine:
 - reading a session's hunt, joint marks and per-workload exposure with `status`, `cert`, `events` and the live `watch` dashboard.
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:
-- the `ryzen_smu` driver with its verified core-to-slot mapping;
+- the `ryzen_smu` driver on full 8-core CCDs only; CCDs with fused-off slots are not yet supported;
 - mprime and y-cruncher trials, each confined to its cores in a systemd scope;
 - machine-check detection from the kernel log;
 - the NixOS module and the unattended tuning boot, checked in a NixOS VM.
