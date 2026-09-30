@@ -153,6 +153,7 @@ func TestScopeInstanceOwnership(t *testing.T) {
 func TestScopeRefusesInaccessibleAncestor(t *testing.T) {
 	o := fakeOptions(t, "exit")
 	o.NoScope = false
+	o.User.UID++
 	private := filepath.Join(o.Dir, "private")
 	if err := os.Mkdir(private, 0700); err != nil {
 		t.Fatal(err)

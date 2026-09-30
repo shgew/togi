@@ -73,12 +73,19 @@ func fakeOptions(t *testing.T, mode string) Options {
 	}
 	return Options{
 		Dir: dir, NoScope: true,
-		User:           Identity{UID: 1001, GID: 1001},
+		User:           testIdentity(),
 		Backends:       map[machine.Backend]backend.Backend{machine.Mprime: fakeBackend{mode}},
 		SampleInterval: 50 * time.Millisecond, StallGrace: time.Hour,
 		Hwmon: t.TempDir(),
 		Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0}}, {Core: 1, CCD: 1, CPUs: []int{1}}},
 	}
+}
+
+func testIdentity() Identity {
+	if os.Geteuid() == 0 || os.Getegid() == 0 {
+		return Identity{UID: 1001, GID: 1001}
+	}
+	return Identity{UID: uint32(os.Geteuid()), GID: uint32(os.Getegid())}
 }
 
 func TestWait(t *testing.T) {

@@ -273,7 +273,7 @@ func (h *rollbackProcessHost) KillScope(ctx context.Context, scope string) ([]by
 func TestProcessPartialStartRollback(t *testing.T) {
 	o := testOptions(t, "pipe-descendant")
 	o.NoScope = false
-	o.User = Identity{UID: 1001, GID: 1001}
+	o.User = testIdentity()
 	h := &rollbackProcessHost{}
 	t.Cleanup(func() {
 		if h.orphan != 0 {

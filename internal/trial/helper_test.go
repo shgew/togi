@@ -52,7 +52,11 @@ func stageHelper(t *testing.T) string {
 	if err := os.Chmod(filepath.Dir(dir), 0755); err != nil {
 		t.Fatal(err)
 	}
-	source, err := os.Open(os.Args[0])
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.Open(executable)
 	if err != nil {
 		t.Fatal(err)
 	}
