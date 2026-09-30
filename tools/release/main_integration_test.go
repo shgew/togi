@@ -221,3 +221,33 @@ func TestReleaseResumesTagOnlyRepository(t *testing.T) {
 	}
 	t.Log(strings.TrimSpace(out.String()))
 }
+
+func TestPublishTagOnlyFromShallowLaterCommit(t *testing.T) {
+	repo := temporaryReleaseRepository(t, released)
+	commit := repo.command(t, "rev-parse", "HEAD")
+	repo.command(t, "tag", "v0.1.0")
+	repo.command(t, "push", "origin", "refs/tags/v0.1.0:refs/tags/v0.1.0")
+	repo.write(t, "later.txt", "later\n")
+	repo.command(t, "add", "later.txt")
+	repo.command(t, "commit", "-m", "Later work")
+	repo.command(t, "push", "origin", "HEAD:refs/heads/main")
+	clone := filepath.Join(t.TempDir(), "shallow")
+	repo.command(t, "clone", "--depth=1", "file://"+repo.remote, clone)
+	baseGit := repo.git
+	repo.git = func(c gitCmd) (string, string, error) {
+		c.args = append([]string{"-C", clone}, c.args...)
+		return baseGit(c)
+	}
+	if got := repo.command(t, "rev-parse", "--is-shallow-repository"); got != "true" {
+		t.Fatalf("fixture shallow = %s", got)
+	}
+	_, api, _, posted := publishFixture(t, "0.1.0", released, http.StatusNotFound)
+	var out bytes.Buffer
+	if err := repo.runner(&out, false).publish(api, repository{"o", "r"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := (*posted)["target_commitish"]; got != commit {
+		t.Fatalf("published target = %s, want original release commit %s", got, commit)
+	}
+	t.Log(strings.TrimSpace(out.String()))
+}

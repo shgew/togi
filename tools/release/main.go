@@ -265,6 +265,9 @@ func (r runner) publish(api github, repo repository) error {
 		fmt.Fprintf(r.out, "nothing to publish: CHANGELOG.md has no released [%s] section\n", version)
 		return nil
 	}
+	if err := r.completeHistory(); err != nil {
+		return err
+	}
 	commit, err := r.output("log", "--first-parent", "-1", "--format=%H", "HEAD", "--", "version.txt")
 	if err != nil {
 		return fmt.Errorf("find the commit that set version.txt to %s: %w", version, err)
@@ -294,6 +297,19 @@ func (r runner) publish(api github, repo repository) error {
 		return fmt.Errorf("create release %s: %w", tag, err)
 	}
 	fmt.Fprintln(r.out, result.HTMLURL)
+	return nil
+}
+
+func (r runner) completeHistory() error {
+	shallow, err := r.output("rev-parse", "--is-shallow-repository")
+	if err != nil {
+		return fmt.Errorf("check release history: %w", err)
+	}
+	if strings.TrimSpace(shallow) == "true" {
+		if _, err := r.output("fetch", "--quiet", "--unshallow", "--no-tags", remote, defaultBranch); err != nil {
+			return fmt.Errorf("fetch complete release history: %w", err)
+		}
+	}
 	return nil
 }
 
