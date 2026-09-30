@@ -138,6 +138,7 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 		return Stop{}, err
 	}
 
+	recoveryCanceled := false
 	if pending == nil {
 		if !r.fold.started {
 			if _, err := r.append(&journal.SessionStart{Build: Build(), Session: r.in.Machine.Clock.Now().UTC().Format("20060102T150405Z"), Cores: cores}); err != nil {
@@ -152,10 +153,13 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 			return Stop{}, err
 		}
 		if err := r.recoverCrashes(ctx); err != nil {
-			if errors.Is(err, context.Canceled) {
+			if !errors.Is(err, context.Canceled) {
+				return r.afterEvidence(err)
+			}
+			if !r.sameBootUnreconciled {
 				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
 			}
-			return r.afterEvidence(err)
+			recoveryCanceled = true
 		}
 		if !sameBoot {
 			if stop, err := r.checkDefects(); stop != nil || err != nil {
@@ -173,6 +177,9 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 		if stop, err := r.resumeSameBoot(events); stop != nil || err != nil {
 			return deref(stop), err
 		}
+	}
+	if recoveryCanceled {
+		return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
 	}
 	if err := r.startSession(); err != nil {
 		return r.afterEvidence(err)
@@ -662,6 +669,11 @@ func (r *runner) deadEnd(d *journal.DeadEnd, cause ...int) (*Stop, error) {
 	default:
 		d.Action = journal.ActionClearSavedEntry
 	}
+	if r.sameBootUnreconciled {
+		if pending, _ := pendingDeadEnd(r.in.Journal.Events()); pending != nil {
+			return r.deadEndStop(d, cause, false), nil
+		}
+	}
 	cause = slices.Clone(cause)
 	e, err := r.append(d, cause...)
 	if err != nil {
@@ -672,6 +684,9 @@ func (r *runner) deadEnd(d *journal.DeadEnd, cause ...int) (*Stop, error) {
 
 func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 	d := e.Data.(*journal.DeadEnd)
+	if r.sameBootUnreconciled {
+		return r.deadEndStop(d, e.Cause, false), nil
+	}
 	cleared := d.Action == journal.ActionExit
 	switch {
 	case d.Action == journal.ActionExit || (clear && r.in.Bootloader == nil):
@@ -693,11 +708,15 @@ func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 		}
 	}
 	r.shutdownEvent = &journal.Shutdown{Reason: journal.ShutdownDeadEnd}
-	stop := &Stop{Reason: StopDeadEnd, DeadEnd: d, Reboot: d.Action == journal.ActionClearSavedEntryAndReboot && cleared}
-	for _, seq := range e.Cause {
+	return r.deadEndStop(d, e.Cause, d.Action == journal.ActionClearSavedEntryAndReboot && cleared), nil
+}
+
+func (r *runner) deadEndStop(d *journal.DeadEnd, cause []int, reboot bool) *Stop {
+	stop := &Stop{Reason: StopDeadEnd, DeadEnd: d, Reboot: reboot}
+	for _, seq := range cause {
 		stop.Evidence = append(stop.Evidence, r.eventAt(seq))
 	}
-	return stop, nil
+	return stop
 }
 
 func (r *runner) preflight(ctx context.Context) (*Stop, error) {

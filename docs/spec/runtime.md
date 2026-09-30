@@ -102,7 +102,7 @@ Completed session preflight is the startup boundary for stale-scope containment 
 8. `systemd-run` can create a scope confined to CPU 0.
 9. The BIOS context matches the session, when resuming and all required checks passed.
 
-Any failed check is a dead end. An unarmed watchdog after the bounded wait is dead end `preflight` (exit 15), with the tuning boot's usual saved-entry clear; no SMU offset write or trial can happen before the watchdog check succeeds. When no same-boot reconciliation is required, a stop signal during the wait records `shutdown` and exits 0, rather than recording a watchdog failure.
+Any failed check is a dead end. An unarmed watchdog after the bounded wait is dead end `preflight` (exit 15), with the tuning boot's usual saved-entry clear deferred until any required same-boot reconciliation succeeds; no SMU offset write or trial can happen before the watchdog check succeeds. When no same-boot reconciliation is required, a stop signal during the wait records `shutdown` and exits 0, rather than recording a watchdog failure.
 
 ## Same-boot resume
 
@@ -110,7 +110,9 @@ Before appending startup events, `run` compares the current boot ID with the boo
 
 It then restores the journal's mark-aware safe target using the same intent, write, readback and `profile.restored` sequence as exit restoration. Cores already at their safe targets need no writes. Repeated interruptions of these reads or restoration resume by reading every core again; a pending dead end cannot record `shutdown` before reconciliation succeeds. A failed preflight performs no reconciliation and leaves that completion pending.
 
-Required same-boot reconciliation is bounded cleanup even after a stop signal. Cancellation does not short-circuit its startup preflight: the tuning boot still requires watchdog readiness and retains the 30-second watchdog deadline. An unarmed watchdog leaves the inherited offsets untouched and records no clean shutdown. After successful preflight and restoration, the stop signal still prevents starting tuning work.
+Required same-boot reconciliation is bounded cleanup even after a stop signal. Cancellation does not short-circuit its startup preflight: the tuning boot still requires watchdog readiness and retains the 30-second watchdog deadline. Long kernel-log retry waits remain cancelable; cancellation during recovery still passes through this bounded preflight and restoration before a signal shutdown. An unarmed watchdog leaves the inherited offsets untouched and records no clean shutdown. After successful preflight and restoration, the stop signal still prevents starting tuning work.
+
+A failed same-boot preflight records its checks and returns the preflight failure without completing a saved-entry action or recording `shutdown`. An existing pending dead end retains its original event, action and evidence; the failed preflight does not replace it. With no pending dead end, the new preflight dead end is recorded but its action remains pending. Once preflight and reconciliation succeed, the next run completes the original pending action, including any reboot request.
 
 A different boot ID retains the firmware-reset assumption: no special reconciliation reads or writes occur. An interrupted dead end on a different boot completes its recorded action without preflight or tuning.
 
