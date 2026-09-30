@@ -3,9 +3,11 @@ package trial
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"syscall"
 )
 
 type Identity struct {
@@ -57,4 +59,35 @@ func ownDirectory(dir string, files []string, id Identity, chown func(string, in
 		return fmt.Errorf("own backend directory %s: %w", dir, err)
 	}
 	return nil
+}
+
+func checkTraversal(dir string, id Identity) error {
+	path, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return fmt.Errorf("resolve backend directory %s: %w", dir, err)
+	}
+	for {
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("stat backend ancestor %s: %w", path, err)
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return fmt.Errorf("read backend ancestor ownership %s", path)
+		}
+		permission := os.FileMode(0001)
+		if stat.Uid == id.UID {
+			permission = 0100
+		} else if stat.Gid == id.GID {
+			permission = 0010
+		}
+		if !info.IsDir() || info.Mode().Perm()&permission == 0 {
+			return fmt.Errorf("backend uid %d gid %d cannot traverse %s", id.UID, id.GID, path)
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return nil
+		}
+		path = parent
+	}
 }

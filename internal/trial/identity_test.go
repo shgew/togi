@@ -142,11 +142,32 @@ func TestScopeInstanceOwnership(t *testing.T) {
 					t.Fatalf("input paths = %v, want %v", started.Started().Files, files)
 				}
 				info, err := os.Stat(filepath.Join(o.Dir, spec.ID))
-				if err != nil || info.Mode().Perm() != 0755 {
+				if err != nil || info.Mode().Perm() != 0711 {
 					t.Fatalf("trial parent must remain nonwritable by workload: %v, %v", info, err)
 				}
 			})
 		})
+	}
+}
+
+func TestScopeRefusesInaccessibleAncestor(t *testing.T) {
+	o := fakeOptions(t, "exit")
+	o.NoScope = false
+	private := filepath.Join(o.Dir, "private")
+	if err := os.Mkdir(private, 0700); err != nil {
+		t.Fatal(err)
+	}
+	o.Dir = filepath.Join(private, "trials")
+	h := &fakeHost{inScope: true}
+	r := New(o)
+	r.host = h
+	started, err := r.Start(context.Background(), testSpec("private", machine.R1, time.Second))
+	if started != nil || err == nil || !strings.Contains(err.Error(), private) || len(h.procs) != 0 {
+		t.Fatalf("inaccessible ancestor launched a backend: started=%v err=%v processes=%d", started, err, len(h.procs))
+	}
+	info, err := os.Stat(private)
+	if err != nil || info.Mode().Perm() != 0700 {
+		t.Fatalf("external ancestor permissions changed: info=%v err=%v", info, err)
 	}
 }
 
@@ -323,7 +344,13 @@ func (h scopeDirectoryHost) Start(ctx context.Context, argv []string, dir string
 }
 
 func TestRelativeTrialDirectory(t *testing.T) {
-	t.Chdir(t.TempDir())
+	dir := t.TempDir()
+	for _, path := range []string{filepath.Dir(dir), dir} {
+		if err := os.Chmod(path, 0711); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(dir)
 	synctest.Test(t, func(t *testing.T) {
 		o := fakeOptions(t, "exit")
 		o.Dir, o.NoScope = "trials", false

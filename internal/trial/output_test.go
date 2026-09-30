@@ -96,6 +96,36 @@ func TestWatchedOutputLargeAppend(t *testing.T) {
 	}
 }
 
+func TestWatchedRejectsNonRegularFiles(t *testing.T) {
+	for _, kind := range []string{"symlink", "directory", "fifo"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "results.txt")
+			if kind == "symlink" {
+				target := filepath.Join(dir, "secret")
+				if err := os.WriteFile(target, []byte("protected contents\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, path); err != nil {
+					t.Fatal(err)
+				}
+			} else if kind == "fifo" {
+				if err := syscall.Mkfifo(path, 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Mkdir(path, 0755); err != nil {
+				t.Fatal(err)
+			}
+			w := watchFile{path: path}
+			var lines []string
+			err := w.read(func(line string) { lines = append(lines, line) })
+			if err == nil || len(lines) != 0 || w.offset != 0 {
+				t.Fatalf("unsafe watched file read: err=%v lines=%q offset=%d", err, lines, w.offset)
+			}
+		})
+	}
+}
+
 type outputHost struct {
 	*fakeHost
 	text   string

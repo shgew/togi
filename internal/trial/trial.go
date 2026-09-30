@@ -117,6 +117,16 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return nil, fmt.Errorf("create trial directory %s: %w", root, err)
 	}
+	if !r.options.NoScope {
+		for _, dir := range []string{filepath.Dir(root), root} {
+			if err := os.Chmod(dir, 0711); err != nil {
+				return nil, fmt.Errorf("set backend directory traversal %s: %w", dir, err)
+			}
+		}
+		if err := checkTraversal(root, r.options.User); err != nil {
+			return nil, err
+		}
+	}
 	t := &running{spec: spec, backend: b, options: r.options, host: r.host, events: make(chan streamEvent, 1024), streamStop: make(chan struct{})}
 	t.started.Scope = "togi-trial-" + spec.ID
 	t.started.CPUs = slices.Clone(spec.CPUs)
@@ -202,6 +212,9 @@ func (p preparedInstance) closeLogs() {
 func (t *running) prepareInstance(core int, dir string, cpus []int, prefix string) (preparedInstance, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return preparedInstance{}, fmt.Errorf("create instance directory %s: %w", dir, err)
+	}
+	if err := os.Chmod(dir, 0755); err != nil {
+		return preparedInstance{}, fmt.Errorf("set instance directory permissions %s: %w", dir, err)
 	}
 	launch, err := t.backend.Prepare(t.spec.Workload, dir, cpus)
 	if err != nil {

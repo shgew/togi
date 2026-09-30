@@ -67,8 +67,12 @@ func testSpec(id string, regime machine.Regime, d time.Duration) machine.TrialSp
 
 func fakeOptions(t *testing.T, mode string) Options {
 	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(filepath.Dir(dir), 0711); err != nil {
+		t.Fatal(err)
+	}
 	return Options{
-		Dir: t.TempDir(), NoScope: true,
+		Dir: dir, NoScope: true,
 		User:           Identity{UID: 1001, GID: 1001},
 		Backends:       map[machine.Backend]backend.Backend{machine.Mprime: fakeBackend{mode}},
 		SampleInterval: 50 * time.Millisecond, StallGrace: time.Hour,

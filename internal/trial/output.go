@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"syscall"
 )
 
 const outputLineLimit = 64 * 1024
@@ -65,7 +66,7 @@ func (w *watchFile) read(line func(string)) error {
 	if w.lines.exceeded {
 		return nil
 	}
-	f, err := os.Open(w.path)
+	f, err := os.OpenFile(w.path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return err
 	}
@@ -73,6 +74,9 @@ func (w *watchFile) read(line func(string)) error {
 	info, err := f.Stat()
 	if err != nil {
 		return fmt.Errorf("stat: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("watched file is not regular: %s", w.path)
 	}
 	if _, err := f.Seek(w.offset, io.SeekStart); err != nil {
 		return fmt.Errorf("seek: %w", err)

@@ -66,6 +66,9 @@ func stageHelper(t *testing.T) string {
 	if _, err := io.Copy(target, source); err != nil {
 		t.Fatal(err)
 	}
+	if err := target.Chmod(0555); err != nil {
+		t.Fatal(err)
+	}
 	if err := target.Close(); err != nil {
 		t.Fatal(err)
 	}
