@@ -30,12 +30,16 @@ func (j *cancelAtDrainBoundary) Append(p journal.Payload, cause ...int) (journal
 
 func TestStopDrainsDurableFailureBoundaries(t *testing.T) {
 	t.Parallel()
-	for _, boundary := range []string{"search_trial_end", "search_failure", "resident_trial_end", "resident_failure", "unattributed_trial_end", "unattributed_failure", "hunt_end", "joint_mark"} {
+	for _, boundary := range []string{"search_trial_end", "search_failure", "resident_trial_end", "resident_failure", "unattributed_trial_end", "unattributed_failure", "zero_trial_end", "zero_failure", "hunt_end", "joint_mark"} {
 		t.Run(boundary, func(t *testing.T) {
 			t.Parallel()
-			unattributed := boundary == "unattributed_trial_end" || boundary == "unattributed_failure"
+			zero := boundary == "zero_trial_end" || boundary == "zero_failure"
+			unattributed := boundary == "unattributed_trial_end" || boundary == "unattributed_failure" || zero
 			joint := boundary == "hunt_end" || boundary == "joint_mark"
 			cfg := sim.Config{Seed: 4, Cores: 4, BIOS: []int{-40, -40, 0, 0}, Edges: make([]sim.Edges, 4), Ranking: []int{4, 3, 2, 1}}
+			if zero {
+				cfg.BIOS = make([]int, cfg.Cores)
+			}
 			for core := range cfg.Edges {
 				for i := range cfg.Edges[core].Isolated {
 					cfg.Edges[core].Isolated[i] = -31
@@ -46,6 +50,9 @@ func TestStopDrainsDurableFailureBoundaries(t *testing.T) {
 			}
 			if joint || unattributed {
 				cfg.Joints = []sim.Joint{{Members: map[int]int{0: -30, 1: -30}, Regimes: []machine.Regime{machine.R7}, Rate: 1e6, Signal: machine.CorrectedMCE}}
+				if zero {
+					cfg.Joints[0].Members = map[int]int{0: 0, 1: 0}
+				}
 				model := sim.DefaultModel()
 				model.CoreLocalBank = 0
 				cfg.Model = &model
@@ -56,6 +63,13 @@ func TestStopDrainsDurableFailureBoundaries(t *testing.T) {
 			}
 			in := simInput(t.TempDir(), newSim(t, cfg))
 			in.Config.CandidateEdges = map[int]int{0: -30, 1: -30, 2: -30, 3: -30}
+			bootloader := &fakeBootloader{}
+			if zero {
+				in.Bootloader = bootloader
+				for core := range in.Config.CandidateEdges {
+					in.Config.CandidateEdges[core] = 0
+				}
+			}
 			if boundary == "search_trial_end" || boundary == "search_failure" {
 				in.Config.CandidateEdges[0] = -40
 			}
@@ -71,9 +85,9 @@ func TestStopDrainsDurableFailureBoundaries(t *testing.T) {
 			match := func(p journal.Payload) bool {
 				switch p := p.(type) {
 				case *journal.TrialEnd:
-					return p.Outcome == journal.OutcomeFailure && (boundary == "search_trial_end" || boundary == "resident_trial_end" || boundary == "unattributed_trial_end")
+					return p.Outcome == journal.OutcomeFailure && (boundary == "search_trial_end" || boundary == "resident_trial_end" || boundary == "unattributed_trial_end" || boundary == "zero_trial_end")
 				case *journal.Failure:
-					return (p.Attribution == journal.Attributed && (boundary == "search_failure" || boundary == "resident_failure")) || (p.Attribution == journal.Unattributed && boundary == "unattributed_failure")
+					return (p.Attribution == journal.Attributed && (boundary == "search_failure" || boundary == "resident_failure")) || (p.Attribution == journal.Unattributed && (boundary == "unattributed_failure" || boundary == "zero_failure"))
 				case *journal.HuntEnd:
 					return boundary == "hunt_end" && p.Result == "joint"
 				case *journal.MarkJoint:
@@ -96,8 +110,15 @@ func TestStopDrainsDurableFailureBoundaries(t *testing.T) {
 				stop = result
 				break
 			}
-			if seq == 0 || stop.Reason != StopSignal {
+			wantStop := StopSignal
+			if zero {
+				wantStop = StopDeadEnd
+			}
+			if seq == 0 || stop.Reason != wantStop {
 				t.Fatalf("boundary %d, stop %+v", seq, stop)
+			}
+			if zero && (stop.DeadEnd == nil || stop.DeadEnd.Condition != journal.DeadEndFailureAtZero || bootloader.calls != 1) {
+				t.Fatalf("all-zero failure lost its dead end or boot cleanup: stop %+v, clears %d", stop, bootloader.calls)
 			}
 			events := readEvents(t, in.Dir)
 			var restored []int
@@ -127,6 +148,9 @@ func TestStopDrainsDurableFailureBoundaries(t *testing.T) {
 			}
 			if joint && restored == nil {
 				restored = []int{-30, -29, 0, 0}
+			}
+			if zero && restored == nil {
+				restored = make([]int, cfg.Cores)
 			}
 			if len(restored) != cfg.Cores {
 				t.Fatalf("restored profile %v", restored)

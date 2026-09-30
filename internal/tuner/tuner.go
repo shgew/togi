@@ -530,6 +530,9 @@ func (s *State) Drain() (Action, bool) {
 	if s.warning != nil {
 		return Action{Kind: Decide, Payload: s.warning, Cause: []int{s.warningSeq}}, true
 	}
+	if len(s.queue) > 0 && allZero(s.queue[0].profile) {
+		return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Detail: "unattributed failure with every core at CO 0; the instability is not caused by Curve Optimizer"}, Cause: []int{s.queue[0].seq}}, true
+	}
 	if a, ok := s.pendingDecision(); ok {
 		return a, true
 	}
