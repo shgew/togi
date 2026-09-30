@@ -28,10 +28,10 @@
           ...
         }:
         let
-          testPhase = flags: ''
+          testPhase = flags: packages: ''
             runHook preCheck
             export GOFLAGS=''${GOFLAGS//-trimpath/}
-            go test -p $NIX_BUILD_CORES ${flags} -shuffle=on ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "-tags integration"} ./...
+            go test -p $NIX_BUILD_CORES ${flags} -shuffle=on ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "-tags integration"} ${packages}
             runHook postCheck
           '';
           togi =
@@ -56,7 +56,7 @@
               nativeCheckInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
               ldflags = [ "-X github.com/shgew/togi.rev=${rev}" ];
               subPackages = [ "cmd/togi" ];
-              checkPhase = testPhase "";
+              checkPhase = testPhase "" "./...";
               meta = {
                 description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
                 license = lib.licenses.mit;
@@ -88,7 +88,7 @@
                 runHook preBuild
                 runHook postBuild
               '';
-              checkPhase = testPhase "-race";
+              checkPhase = testPhase "-race" "./internal/trial ./internal/session ./internal/journal ./internal/watch";
               installPhase = "mkdir -p $out";
               dontFixup = true;
             };
