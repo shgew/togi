@@ -3,11 +3,55 @@ run:
   build-tags: [integration, hardware]
 linters:
   default: standard
-  enable: [exhaustive, misspell, unconvert, nolintlint, errorlint, gocritic, modernize, usetesting, thelper]
+  enable: [exhaustive, misspell, unconvert, nolintlint, errorlint, gocritic, modernize, usetesting, thelper, gocognit]
   settings:
     exhaustive:
       default-signifies-exhaustive: false
+    gocognit:
+      min-complexity: 50
   exclusions:
     presets: [std-error-handling]
+    rules:
+      - path: '_test\.go$'
+        linters: [gocognit]
+      - path: '^cmd/togi/status\.go$'
+        text: '^cognitive complexity [0-9]+ of func `writeStatus` is high'
+        linters: [gocognit]
+      - path: '^internal/carry/carry\.go$'
+        text: '^cognitive complexity [0-9]+ of func `\(source\)\.candidates` is high'
+        linters: [gocognit]
+      - path: '^internal/session/fold\.go$'
+        text: '^cognitive complexity [0-9]+ of func `\(\*fold\)\.Fold` is high'
+        linters: [gocognit]
+      - path: '^internal/session/session\.go$'
+        text: '^cognitive complexity [0-9]+ of func `\(\*runner\)\.recoverCrashes` is high'
+        linters: [gocognit]
+      - path: '^internal/session/session\.go$'
+        text: '^cognitive complexity [0-9]+ of func `\(\*runner\)\.startSession` is high'
+        linters: [gocognit]
+      - path: '^internal/session/session\.go$'
+        text: '^cognitive complexity [0-9]+ of func `\(\*runner\)\.loop` is high'
+        linters: [gocognit]
+      - path: '^internal/sim/model\.go$'
+        text: '^cognitive complexity [0-9]+ of func `\(\*running\)\.Wait` is high'
+        linters: [gocognit]
+      - path: '^internal/sim/sim\.go$'
+        text: '^cognitive complexity [0-9]+ of func `New` is high'
+        linters: [gocognit]
+      - path: '^internal/trial/run\.go$'
+        text: '^cognitive complexity [0-9]+ of func `\(\*running\)\.Wait` is high'
+        linters: [gocognit]
+      - path: '^internal/tuner/marks\.go$'
+        text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.optimum` is high'
+        linters: [gocognit]
+      - path: '^internal/tuner/tier\.go$'
+        text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.projectGuard` is high'
+        linters: [gocognit]
+      - path: '^internal/tuner/tuner\.go$'
+        text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.Fold` is high'
+        linters: [gocognit]
+      - path: '^internal/watch/snapshot\.go$'
+        text: '^cognitive complexity [0-9]+ of func `Project` is high'
+        linters: [gocognit]
 formatters:
   enable: [gofmt]
