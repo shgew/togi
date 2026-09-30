@@ -50,8 +50,8 @@ in
       (lib.mkIf cfg.tuning.enable {
         assertions = [
           {
-            assertion = grub.enable && grub.mirroredBoots != [ ];
-            message = "services.togi.tuning.enable needs GRUB: the tuning boot relies on GRUB's saved entry";
+            assertion = grub.enable && builtins.length grub.mirroredBoots == 1;
+            message = "services.togi.tuning.enable requires GRUB with exactly one mirroredBoots entry: togi's tuning boot supports a single GRUB environment";
           }
         ];
         boot.loader.grub.default = "saved";
@@ -94,6 +94,7 @@ in
           systemd.services.togi = {
             description = "togi tuning boot";
             onFailure = [ "togi-restart-limit.service" ];
+            unitConfig.RequiresMountsFor = grubenv;
             wantedBy = [ "multi-user.target" ];
             after = [
               "systemd-modules-load.service"

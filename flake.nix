@@ -138,6 +138,10 @@
               };
             in
             {
+              module = import ./nix/module-test.nix {
+                inherit pkgs;
+                package = config.checks.package;
+              };
               vm = vm.tuning-boot;
               vm-restart-limit = vm.restart-limit;
             }
