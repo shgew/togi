@@ -104,7 +104,7 @@ func procThreads(path string) ([]thread, error) {
 			continue
 		}
 		stat, err := procStat(path + "/" + task.Name() + "/stat")
-		if errors.Is(err, os.ErrNotExist) {
+		if processDisappeared(err) {
 			continue
 		}
 		if err != nil {

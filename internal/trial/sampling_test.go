@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -87,14 +88,22 @@ func TestSamplingLoss(t *testing.T) {
 }
 
 func TestSamplingDisappearance(t *testing.T) {
-	for _, read := range []string{"threads", "usage"} {
-		t.Run(read, func(t *testing.T) {
+	for _, tc := range []struct {
+		name, read string
+		err        error
+	}{
+		{"threads", "threads", os.ErrNotExist},
+		{"usage", "usage", os.ErrNotExist},
+		{"threads/ESRCH", "threads", syscall.ESRCH},
+		{"usage/ESRCH", "usage", syscall.ESRCH},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			synctest.Test(t, func(t *testing.T) {
 				h := samplingHost{fakeHost: &fakeHost{}}
-				if read == "threads" {
+				if tc.read == "threads" {
 					h.threads = func(int) ([]thread, error) {
-						return nil, fmt.Errorf("thread exited: %w", os.ErrNotExist)
+						return nil, fmt.Errorf("thread exited: %w", tc.err)
 					}
 				} else {
 					h.usage = func(int) (usage, error) {
@@ -102,7 +111,7 @@ func TestSamplingDisappearance(t *testing.T) {
 						p := h.procs[0]
 						h.mu.Unlock()
 						p.finish(nil)
-						return usage{}, fmt.Errorf("process exited: %w", os.ErrNotExist)
+						return usage{}, fmt.Errorf("process exited: %w", tc.err)
 					}
 				}
 				r := New(fakeOptions(t, "work"))
@@ -116,7 +125,7 @@ func TestSamplingDisappearance(t *testing.T) {
 					t.Fatal(err)
 				}
 				want := machine.Signal("")
-				if read == "usage" {
+				if tc.read == "usage" {
 					want = machine.UnexpectedExit
 				}
 				if diff := cmp.Diff(want, result.Signal); diff != "" {

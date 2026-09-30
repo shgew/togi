@@ -389,9 +389,13 @@ func (t *running) inScope(inst *instance) bool {
 	return t.options.NoScope || t.host.InScope(inst.PID, inst.Scope)
 }
 
+func processDisappeared(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH)
+}
+
 func (t *running) outsideCPU(inst *instance, result *machine.Result) (cpu, tid int, escaped bool) {
 	threads, err := t.host.Threads(inst.PID)
-	if err != nil && !errors.Is(err, os.ErrNotExist) && result.Inconclusive == "" {
+	if err != nil && !processDisappeared(err) && result.Inconclusive == "" {
 		result.Inconclusive = fmt.Sprintf("core %02d thread sampling lost: %v", inst.Core, err)
 	}
 	for _, task := range threads {
@@ -404,7 +408,7 @@ func (t *running) outsideCPU(inst *instance, result *machine.Result) (cpu, tid i
 func (t *running) sample(inst *instance, now time.Time, result *machine.Result, report machine.Reporter) bool {
 	reading, err := t.host.Usage(inst.PID)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) && result.Inconclusive == "" {
+		if !processDisappeared(err) && result.Inconclusive == "" {
 			result.Inconclusive = fmt.Sprintf("core %02d usage sampling lost: %v", inst.Core, err)
 		}
 		return false
