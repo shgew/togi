@@ -4,7 +4,6 @@ package trial
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -130,8 +129,4 @@ func (h osHost) ProcessAlive(p scopeProcess) (bool, error) {
 		return false, fmt.Errorf("read process %d start time: %w", p.PID, err)
 	}
 	return fields[0] != "Z" && fields[0] != "X" && start == p.Start, nil
-}
-
-func processDisappeared(err error) bool {
-	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH)
 }
