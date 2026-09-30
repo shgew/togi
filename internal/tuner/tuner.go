@@ -145,26 +145,6 @@ func New() *State {
 	return &State{cursor: -1, intents: map[string]*journal.TrialIntent{}, intentSeq: map[int]string{}, signalled: map[string]bool{}, mces: map[int]*journal.MCE{}, ledger: map[trialClass][]entry{}, failureIndex: map[int]int{}, steps: c.Guard.Rotation, durations: c.Durations, evidence: c.Evidence, n: c.Evidence.Starts(), tier: journal.TierNone, projectionDirty: true, bestDirty: true}
 }
 
-func Order(cores []machine.CoreInfo) []int {
-	byCCD := map[int][]int{}
-	for _, c := range cores {
-		byCCD[c.CCD] = append(byCCD[c.CCD], c.Core)
-	}
-	ccds := slices.Sorted(maps.Keys(byCCD))
-	for _, id := range ccds {
-		slices.Sort(byCCD[id])
-	}
-	order := make([]int, 0, len(cores))
-	for i := 0; len(order) < len(cores); i++ {
-		for _, ccd := range ccds {
-			if i < len(byCCD[ccd]) {
-				order = append(order, byCCD[ccd][i])
-			}
-		}
-	}
-	return order
-}
-
 func partition(cores []machine.CoreInfo) (map[int]int, [][]int) {
 	ccd := map[int]int{}
 	groups := map[int][]int{}
@@ -223,7 +203,7 @@ func (s *State) Fold(e journal.Event) {
 	switch p := e.Data.(type) {
 	case *journal.SessionStart:
 		s.cores = nil
-		for _, id := range Order(p.Cores) {
+		for _, id := range machine.Order(p.Cores) {
 			s.cores = append(s.cores, &core{id: id})
 		}
 		s.ccd, s.parts = partition(p.Cores)
