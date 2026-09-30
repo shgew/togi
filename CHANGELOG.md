@@ -35,6 +35,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - Stopping after a failed trial now records its pending attribution, marks and backoffs before restoring a safe profile, including with nonzero BIOS offsets, without starting more tuning work; an unattributed failure with every core at CO 0 retains its dead-end outcome and tuning-boot cleanup ([#177]).
 - Failed `state.json` projection writes now warn and continue tuning instead of emergency zeroing; the journal remains authoritative, the next start rebuilds stale state, and intervening warnings do not hide the clean-stop restoration summary ([#197]).
 - Hardware startup now validates CPU family/model and the `ryzen_smu` codename before any mailbox command or SMN access, including BIOS context and slot mapping; unsupported identities follow the recorded preflight refusal and tuning-boot cleanup, and journal failures before session validation stop without emergency SMU writes ([#198]).
+- Same-boot restarts now read every core and restore the journal's mark-aware safe offsets after preflight, before completing an interrupted dead end or resuming tuning; repeated restoration interruptions cannot leave tuned offsets behind a clean shutdown ([#203]).
 
 ## [0.5.0] - 2026-09-29
 
@@ -250,3 +251,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#177]: https://github.com/shgew/togi/pull/177
 [#197]: https://github.com/shgew/togi/pull/197
 [#198]: https://github.com/shgew/togi/pull/198
+[#203]: https://github.com/shgew/togi/pull/203

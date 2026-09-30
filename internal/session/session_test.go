@@ -465,11 +465,7 @@ func TestDeadEnds(t *testing.T) {
 				if again := simulate(t, in); again.Reason != StopDeadEnd || again.DeadEnd.Condition != tt.want {
 					t.Fatalf("second run stopped with %+v", again)
 				}
-				for _, e := range readEvents(t, in.Dir)[before:] {
-					if e.Kind == journal.KindSMUIntent {
-						t.Fatalf("seq %d: %s in the run after the dead end", e.Seq, e.Msg)
-					}
-				}
+				assertOnlyRestorationWrites(t, readEvents(t, in.Dir), before)
 			}
 			if !tt.killable {
 				return
@@ -480,11 +476,7 @@ func TestDeadEnds(t *testing.T) {
 				if stop.Reason != StopDeadEnd || stop.DeadEnd.Condition != tt.want {
 					t.Fatalf("resumed run stopped with %+v", stop)
 				}
-				for _, e := range readEvents(t, in.Dir)[last.Seq:] {
-					if e.Kind == journal.KindSMUIntent {
-						t.Fatalf("seq %d: %s after the evidence", e.Seq, e.Msg)
-					}
-				}
+				assertOnlyRestorationWrites(t, readEvents(t, in.Dir), last.Seq)
 			})
 		})
 	}
