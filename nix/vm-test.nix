@@ -56,7 +56,7 @@ in
       assert booted_system == tuning_system, (booted_system, tuning_system)
       machine.wait_until_succeeds("grep -qx active /sys/class/watchdog/watchdog0/state")
       machine.succeed("grep -qx 'i6300ESB timer' /sys/class/watchdog/watchdog0/identity")
-      machine.succeed("ls -l /proc/1/fd | grep -q /dev/watchdog")
+      machine.succeed("ls -l /proc/1/fd | grep /dev/watchdog > /dev/null")
       machine.wait_until_succeeds("systemctl is-failed togi.service")
       status = machine.succeed("systemctl show togi.service -p ExecMainStatus --value").strip()
       assert status == "15", f"togi.service exited {status}, want 15 (dead end preflight)"
