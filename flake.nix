@@ -47,6 +47,7 @@
                   ./.golangci.yml
                   ./version.txt
                   ./version.go
+                  ./version_test.go
                   ./cmd
                   ./internal
                   ./tools
