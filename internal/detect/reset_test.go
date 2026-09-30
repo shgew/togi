@@ -88,6 +88,89 @@ func TestResetReasonWithoutMatchingLines(t *testing.T) {
 	}
 }
 
+func TestResetReasonAfter(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		boots   string
+		missing bool
+		want    machine.ResetReason
+	}{
+		{"immediate non-togi boot", `[{"boot_id":"aabb"},{"boot_id":"desktop"},{"boot_id":"current"}]`, false, machine.ResetReason{Kind: machine.ResetWatchdog, Raw: "hardware watchdog timer expired", Supported: true}},
+		{"crashed boot missing", `[{"boot_id":"desktop"},{"boot_id":"current"}]`, true, machine.ResetReason{}},
+		{"no successor", `[{"boot_id":"aabb"}]`, true, machine.ResetReason{}},
+		{"no retained boots", `[]`, true, machine.ResetReason{}},
+		{"successor log vacuumed", `[{"boot_id":"aabb"},{"boot_id":"vacuumed"},{"boot_id":"current"}]`, true, machine.ResetReason{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k := NewKernel(nil)
+			k.journalctl = func(args []string) ([]byte, []byte, int, error) {
+				if args[0] == "--list-boots" {
+					return []byte(tc.boots), nil, 0, nil
+				}
+				switch args[2] {
+				case "desktop":
+					return kernelLines("Linux version 7.2.8", "x86/amd: Previous system reset reason [0x00000001]: hardware watchdog timer expired"), nil, 0, nil
+				case "vacuumed":
+					return nil, []byte("No journal boot entry found"), 1, nil
+				default:
+					return kernelLines("Linux version 7.2.8", "x86/amd: Previous system reset reason [0x00000001]: internal CPU thermal limit was tripped"), nil, 0, nil
+				}
+			}
+			got, err := k.ResetReasonAfter("aa-bb")
+			if tc.missing {
+				if !errors.Is(err, machine.ErrBootMissing) {
+					t.Fatalf("missing successor: %v, want ErrBootMissing", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("reason (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestResetReasonAfterWithoutSystemJournal(t *testing.T) {
+	k := NewKernel(nil)
+	k.journalctl = func([]string) ([]byte, []byte, int, error) { return nil, nil, 1, nil }
+	got, err := k.ResetReasonAfter("crashed")
+	if !errors.Is(err, machine.ErrBootMissing) {
+		t.Fatalf("empty system journal: %v, want ErrBootMissing", err)
+	}
+	if diff := cmp.Diff(machine.ResetReason{}, got); diff != "" {
+		t.Fatalf("reason (-want +got):\n%s", diff)
+	}
+}
+
+func TestResetReasonAfterBootListErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output string
+		stderr string
+		code   int
+		err    error
+	}{
+		{"command error", "", "", 0, errors.New("journal unavailable")},
+		{"nonzero exit", "", "permission denied", 1, nil},
+		{"malformed list", "[", "", 0, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k := NewKernel(nil)
+			k.journalctl = func([]string) ([]byte, []byte, int, error) {
+				return []byte(tc.output), []byte(tc.stderr), tc.code, tc.err
+			}
+			_, err := k.ResetReasonAfter("crashed")
+			if err == nil || errors.Is(err, machine.ErrBootMissing) {
+				t.Fatalf("unreadable boot list: %v", err)
+			}
+			if tc.err != nil && !errors.Is(err, tc.err) {
+				t.Fatalf("command error lost: %v", err)
+			}
+		})
+	}
+}
+
 func TestMCEsMonotonic(t *testing.T) {
 	k := NewKernel([]machine.CoreInfo{{Core: 3, CPUs: []int{2}}})
 	const status = "[Hardware Error]: CPU:2 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135"

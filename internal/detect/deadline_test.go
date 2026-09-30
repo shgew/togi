@@ -9,7 +9,7 @@ import (
 )
 
 func TestKernelReadTimeout(t *testing.T) {
-	for _, operation := range []string{"mces", "reset"} {
+	for _, operation := range []string{"mces", "reset", "boot list"} {
 		t.Run(operation, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				started := time.Now()
@@ -25,10 +25,13 @@ func TestKernelReadTimeout(t *testing.T) {
 					})
 				}
 				var err error
-				if operation == "mces" {
+				switch operation {
+				case "mces":
 					_, err = k.MCEs("boot", 0)
-				} else {
+				case "reset":
 					_, err = k.ResetReason("boot")
+				case "boot list":
+					_, err = k.ResetReasonAfter("boot")
 				}
 				if !errors.Is(err, context.DeadlineExceeded) {
 					t.Fatalf("kernel read = %v", err)

@@ -114,6 +114,91 @@ func TestTrialResetClassification(t *testing.T) {
 	}
 }
 
+func TestTrialResetReasonAcrossNonTogiBoot(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		crash   machine.ResetKind
+		later   machine.ResetKind
+		outcome journal.Outcome
+		deadEnd journal.DeadEndCondition
+	}{
+		{"later thermal trip cannot replace watchdog", machine.ResetWatchdog, machine.ResetThermalTrip, journal.OutcomeFailure, ""},
+		{"later clean reboot cannot hide thermal trip", machine.ResetThermalTrip, machine.ResetUnknown, journal.OutcomeInconclusive, journal.DeadEndThermalTrip},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			in, before := firstCrash(t, tc.crash, machine.Crash, false)
+			in.Machine.NextReset(tc.later)
+			in.Machine.Reboot()
+			stop := simulate(t, in)
+			if tc.deadEnd != "" && (stop.Reason != StopDeadEnd || stop.DeadEnd.Condition != tc.deadEnd) {
+				t.Fatalf("stop %+v, want %s", stop, tc.deadEnd)
+			}
+			events := readEvents(t, in.Dir)
+			crash, ok := crashDetectedFor(events, before[0].Boot)
+			if !ok {
+				t.Fatal("missing crash detection")
+			}
+			if got := crash.Data.(*journal.CrashDetected).ResetReason; got != tc.crash {
+				t.Fatalf("reset reason %q, want %q", got, tc.crash)
+			}
+			for _, e := range events {
+				if end, ok := e.Data.(*journal.TrialEnd); ok && end.Trial == "0001" {
+					if end.Outcome != tc.outcome {
+						t.Fatalf("outcome %s, want %s", end.Outcome, tc.outcome)
+					}
+					return
+				}
+			}
+			t.Fatal("missing recovered trial end")
+		})
+	}
+}
+
+func TestIdleResetReasonAcrossNonTogiBoot(t *testing.T) {
+	t.Parallel()
+	_, ref := reference(t, small())
+	index := slices.IndexFunc(ref, func(e journal.Event) bool { return e.Kind == journal.KindTrialEnd })
+	if index < 0 {
+		t.Fatal("missing first trial end")
+	}
+	for _, tc := range []struct {
+		name         string
+		crash, later machine.ResetKind
+		inconclusive bool
+	}{
+		{"later power button cannot excuse watchdog", machine.ResetWatchdog, machine.ResetPowerButton, false},
+		{"later watchdog cannot blame power button", machine.ResetPowerButton, machine.ResetWatchdog, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			in := simInput(t.TempDir(), newSim(t, small()))
+			in.Machine.NextReset(tc.crash)
+			_, err := simulateBoot(context.Background(), in, wrapFor(in, crashAt(ref[index].Seq, in.Machine)))
+			if !errors.Is(err, machine.ErrCrashed) {
+				t.Fatalf("between-trial crash: %v", err)
+			}
+			in.Machine.Reboot()
+			in.Machine.NextReset(tc.later)
+			in.Machine.Reboot()
+			simulate(t, in)
+			events := readEvents(t, in.Dir)
+			crash, ok := crashDetectedFor(events, ref[index].Boot)
+			if !ok {
+				t.Fatal("missing crash detection")
+			}
+			p := crash.Data.(*journal.CrashDetected)
+			if p.ResetReason != tc.crash || p.Inconclusive != tc.inconclusive {
+				t.Fatalf("idle crash: %+v, want %s, inconclusive %v", p, tc.crash, tc.inconclusive)
+			}
+			if got := failureCiting(events, crash.Seq) != nil; got == tc.inconclusive {
+				t.Fatalf("idle failure %v, want %v", got, !tc.inconclusive)
+			}
+		})
+	}
+}
+
 func TestSignalBeforePowerLossSurvivesCrash(t *testing.T) {
 	t.Parallel()
 	for _, signal := range []machine.Signal{machine.ComputationError, machine.UnexpectedExit, machine.Stall} {

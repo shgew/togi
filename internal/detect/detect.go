@@ -193,6 +193,36 @@ var noBootEntry = []byte("No journal boot entry found")
 var resetLine = regexp.MustCompile(`^x86/amd: Previous system reset reason \[0x[0-9a-f]{8}\]: (.+)$`)
 var versionLine = regexp.MustCompile(`^Linux version (\d+)\.(\d+)`)
 
+func (k *Kernel) ResetReasonAfter(boot string) (machine.ResetReason, error) {
+	out, stderr, code, err := k.journalctl([]string{"--list-boots", "-o", "json", "--no-pager", "-q"})
+	if err != nil {
+		return machine.ResetReason{}, fmt.Errorf("list system boots after %s: %w: %s", boot, err, bytes.TrimSpace(stderr))
+	}
+	if code == 1 && len(out) == 0 && len(stderr) == 0 {
+		return machine.ResetReason{}, fmt.Errorf("list system boots after %s: %w", boot, machine.ErrBootMissing)
+	}
+	if code != 0 {
+		return machine.ResetReason{}, fmt.Errorf("list system boots after %s: exit status %d: %s", boot, code, bytes.TrimSpace(stderr))
+	}
+	var boots []struct {
+		ID string `json:"boot_id"`
+	}
+	if err := json.Unmarshal(out, &boots); err != nil {
+		return machine.ResetReason{}, fmt.Errorf("decode system boots after %s: %w", boot, err)
+	}
+	id := strings.ReplaceAll(boot, "-", "")
+	for i, b := range boots {
+		if b.ID != id {
+			continue
+		}
+		if i+1 < len(boots) && boots[i+1].ID != "" {
+			return k.ResetReason(boots[i+1].ID)
+		}
+		break
+	}
+	return machine.ResetReason{}, fmt.Errorf("find system boot after %s: %w", boot, machine.ErrBootMissing)
+}
+
 func (k *Kernel) ResetReason(boot string) (machine.ResetReason, error) {
 	args := []string{"-k", "-b", strings.ReplaceAll(boot, "-", ""), "-o", "json", "--output-fields=MESSAGE", "--grep", "Linux version|Previous system reset reason", "--no-pager", "-q"}
 	out, stderr, code, err := k.journalctl(args)
