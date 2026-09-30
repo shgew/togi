@@ -159,7 +159,7 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 	if stop, err := r.checkDeadEnd(); stop != nil || err != nil {
 		return deref(stop), err
 	}
-	if stop, err := r.preflight(); stop != nil || err != nil {
+	if stop, err := r.preflight(ctx); stop != nil || err != nil {
 		return deref(stop), err
 	}
 	if err := r.startSession(); err != nil {
@@ -576,7 +576,12 @@ func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 	return stop, nil
 }
 
-func (r *runner) preflight() (*Stop, error) {
+func (r *runner) preflight(ctx context.Context) (*Stop, error) {
+	if r.in.Bootloader != nil {
+		if stop, err := r.waitWatchdog(ctx); stop != nil || err != nil {
+			return stop, err
+		}
+	}
 	var (
 		failed []int
 		names  []string
@@ -591,7 +596,7 @@ func (r *runner) preflight() (*Stop, error) {
 			names = append(names, fmt.Sprintf("%s (%s)", c.Name, c.Detail))
 		}
 	}
-	// Check 8 reads the BIOS context through the SMU, which a failed check may make unreachable.
+	// The BIOS context reads through the SMU, which a failed check may make unreachable.
 	if recorded := r.fold.context; recorded != nil && len(failed) == 0 {
 		current, err := r.in.Machine.Host.BIOSContext()
 		if err != nil {

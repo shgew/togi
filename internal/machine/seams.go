@@ -26,11 +26,12 @@ type Host interface {
 	BIOSContext() (BIOSContext, error)
 	// Ranking returns the raw preferred-core ranking value of each core, in core-id order.
 	Ranking() ([]int, error)
-	// Preflight runs checks 1-7 of runtime.md; check 8, the BIOS context, belongs to the run loop.
+	// Preflight runs the common checks; BIOS context and tuning-boot watchdog readiness belong to the run loop.
 	Preflight() []Check
+	Watchdog() Check
 }
 
-// Check names: root, cpu, ryzen_smu, readback, slot_mapping, backends, systemd_run.
+// Check names: root, cpu, ryzen_smu, readback, slot_mapping, backends, systemd_run, watchdog.
 type Check struct {
 	Name   string
 	Detail string

@@ -6,7 +6,7 @@ Normative rules for how togi is invoked, configured and deployed.
 
 | Command | Writes journal | Purpose |
 |---|---|---|
-| `togi run [--rotations <N>] [--tuning-boot <grubenv>] [--no-tui]` | yes | Start or resume in the foreground. `--rotations N` (N >= 1) stops after N clean qualifying rotations since the last deepening, only when every core is done and refinement can reach no more depth; without the flag guard runs indefinitely. In a tuning boot the service passes `--tuning-boot`; on a terminal a dashboard replaces event lines unless `--no-tui` is given. |
+| `togi run [--rotations <N>] [--tuning-boot <grubenv>] [--no-tui]` | yes | Start or resume in the foreground. `--rotations N` (N >= 1) stops after N clean qualifying rotations since the last deepening, only when every core is done and refinement can reach no more depth; without the flag guard runs indefinitely. In a tuning boot the service passes `--tuning-boot`, which requires an armed hardware watchdog before tuning; on a terminal a dashboard replaces event lines unless `--no-tui` is given. |
 | `togi status` | no | Replay the journal to show session and BIOS context, activity (`search: N cores left`, `hunt H, mask M`, `refine round R, checks d/t`, `guard rotation N, steps d/t`, or `guard not started`), tier, and missing qualifying coverage; a core table `CORE CCD OFFSET PHASE FAILED JOINT QUEUED LAST DECISION`; joint marks, an open hunt's `MASK CORES OUTCOME STARTS`, an open round's `CHECK CORES PASSES`, and per-workload STARTS (passes valid for the current profile since each trial class's latest relevant failure), CLEAN H and bounds (since the tier clock). Also show in-flight action, dead end, carried values, defects and Tctl. |
 | `togi cert` | no | Replay the journal for the certificate (`tuner.md`), with SHA-256, a `CORE EDGE FAILED JOINT DONE DECIDED` table and joint marks, evidence since the last failure on a profile at least as deep (or the profile change), and WORKLOAD/STARTS in its evidence table; Silver and Gold use tier-clock hours |
 | `togi events` | no | Render the journal with filters (`journal.md`) |
@@ -64,16 +64,17 @@ If appending an event fails while offsets may be applied, togi stops every backe
 ## Preflight
 
 `run` checks, each recorded as a `preflight.check` event:
-1. Running as root.
-2. The CPU is family `0x1A`, model `0x40`-`0x4F` (Granite Ridge desktop).
-3. `ryzen_smu` is loaded and reports a matching codename.
-4. Every core's offset reads back through the SMU.
-5. The core-to-SMU slot mapping is verified (`../prior-art.md`): each CCD fuse is read twice with distinct RSMU register reads interleaved, and the disabled-slot count must match the OS topology. Indistinguishable RSMU probes, inconsistent fuse reads, or a live-core count mismatch refuse all per-core access.
-6. Both backends are configured and present.
-7. `systemd-run` can create a scope confined to CPU 0.
-8. The BIOS context matches the session, when resuming and checks 1-7 passed.
+1. In a tuning boot (`--tuning-boot`), a hardware watchdog is armed: at least one `/sys/class/watchdog/watchdog*/state` is `active`, with a readable, nonempty `identity` other than `Software Watchdog`. The software watchdog cannot recover a hardware freeze. This check runs before the other checks: it checks immediately, then polls every 1 second for at most 30 seconds, recording one final `preflight.check` named `watchdog`, not one event per poll. Normal/manual `run` without `--tuning-boot` neither requires nor waits for a watchdog.
+2. Running as root.
+3. The CPU is family `0x1A`, model `0x40`-`0x4F` (Granite Ridge desktop).
+4. `ryzen_smu` is loaded and reports a matching codename.
+5. Every core's offset reads back through the SMU.
+6. The core-to-SMU slot mapping is verified (`../prior-art.md`): each CCD fuse is read twice with distinct RSMU register reads interleaved, and the disabled-slot count must match the OS topology. Indistinguishable RSMU probes, inconsistent fuse reads, or a live-core count mismatch refuse all per-core access.
+7. Both backends are configured and present.
+8. `systemd-run` can create a scope confined to CPU 0.
+9. The BIOS context matches the session, when resuming and all required checks passed.
 
-Any failed check is a dead end.
+Any failed check is a dead end. An unarmed watchdog after the bounded wait is dead end `preflight` (exit 15), with the tuning boot's usual saved-entry clear; no SMU offset write or trial can happen before the watchdog check succeeds. A stop signal during the wait records `shutdown` and exits 0, rather than recording a watchdog failure.
 
 ## Configuration
 
@@ -124,7 +125,8 @@ Inside the specialisation:
 - nothing else writes to tty1. The kernel command line is the system's, without its `console=ttyN` entries, plus `console=tty3`; it replaces kernel parameters defined for the specialisation alone, since a module cannot remove entries from a list option otherwise, so `/dev/console` output (early boot, systemd status, the emergency shell, panic text) goes to tty3; serial consoles stay. `console=` only picks the terminal behind `/dev/console`: the kernel prints its messages on the foreground terminal unless redirected, so `togi-kernel-log.service`, a oneshot ordered before the dashboard, runs `setlogcons 3` to send them to tty3 as well. Alt+F3 shows the boot log and kernel messages;
 - `console.font` forced to `tuning.consoleFont`, by default `null`, the kernel's built-in font, so a system font without IBM437's block glyphs never reaches the dashboard;
 - sysctls `kernel.panic=10`, `kernel.panic_on_oops=1`, `kernel.hardlockup_panic=1`, `kernel.softlockup_panic=1`;
-- `systemd.settings.Manager.RuntimeWatchdogSec = "30s"`, so the SP5100 TCO hardware watchdog resets a frozen machine;
+- `boot.initrd.kernelModules = [ "sp5100_tco" ]`, loading the SP5100 TCO hardware watchdog driver in the initrd, before `togi.service` can start; this is tuning-only and does not change the normal boot's initrd module list;
+- `systemd.settings.Manager.RuntimeWatchdogSec = "30s"`, so PID 1 arms and feeds the hardware watchdog to reset a frozen machine. The preflight gate waits for the kernel's active watchdog state rather than assuming that this setting or a loaded driver means it is already armed;
 - journald `Storage=persistent` and `SyncIntervalSec=1s`;
 - suspend and hibernate disabled.
 

@@ -122,6 +122,8 @@ func (h *host) Preflight() []machine.Check {
 	}
 }
 
+func (h *host) Watchdog() machine.Check { return watchdog("/") }
+
 func (h *host) checkBackends() machine.Check {
 	c := machine.Check{Name: "backends", OK: true}
 	var details []string
