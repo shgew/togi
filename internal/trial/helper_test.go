@@ -160,7 +160,10 @@ func TestHelperProcess(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			os.Exit(2)
 		}
-		if err := os.WriteFile("descendant.pid", []byte(strconv.Itoa(cmd.Process.Pid)), 0644); err != nil {
+		if err := os.WriteFile("descendant.pid.tmp", []byte(strconv.Itoa(cmd.Process.Pid)), 0644); err != nil {
+			os.Exit(2)
+		}
+		if err := os.Rename("descendant.pid.tmp", "descendant.pid"); err != nil {
 			os.Exit(2)
 		}
 		if mode == "pipe-descendant" {
