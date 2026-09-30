@@ -7,6 +7,7 @@ that includes it. --all warns if a configured candidate edge reached a failed
 mark in the archived session; missing or invalid configuration does not prevent
 archiving.
 --core refuses a different journal ruleset or schema; --all archives either.
+Both forms refuse unknown event kinds; install the build that wrote them.
 
 Examples:
   sudo togi reset --core 3   Search core 3 again from its baseline
