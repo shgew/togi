@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/shgew/togi/internal/machine"
-	"github.com/shgew/togi/internal/tuner"
 )
 
 type toggle struct {
@@ -38,7 +37,7 @@ func plan(spec machine.TrialSpec, cores []machine.CoreInfo) iter.Seq[toggle] {
 					selected = append(selected, c)
 				}
 			}
-			order := tuner.Order(selected)
+			order := machine.Order(selected)
 			if len(order) == 0 {
 				return
 			}

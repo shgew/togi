@@ -150,7 +150,7 @@ func Project(events []journal.Event) Snapshot {
 	for _, e := range events {
 		switch p := e.Data.(type) {
 		case *journal.SessionStart:
-			s.order = tuner.Order(p.Cores)
+			s.order = machine.Order(p.Cores)
 		case *journal.TrialIntent:
 			if p.Condition == machine.Isolated && p.Core != nil {
 				s.current = *p.Core
