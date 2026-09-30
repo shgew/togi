@@ -216,11 +216,60 @@ func (k *Kernel) ResetReasonAfter(boot string) (machine.ResetReason, error) {
 			continue
 		}
 		if i+1 < len(boots) && boots[i+1].ID != "" {
+			last, err := k.bootBoundary(id, false)
+			if err != nil {
+				return machine.ResetReason{}, err
+			}
+			first, err := k.bootBoundary(boots[i+1].ID, true)
+			if err != nil {
+				return machine.ResetReason{}, err
+			}
+			if first.SequenceID != last.SequenceID || first.Sequence <= last.Sequence || first.Sequence-last.Sequence != 1 {
+				return machine.ResetReason{}, fmt.Errorf("verify system boot after %s: %w", boot, machine.ErrBootMissing)
+			}
 			return k.ResetReason(boots[i+1].ID)
 		}
 		break
 	}
 	return machine.ResetReason{}, fmt.Errorf("find system boot after %s: %w", boot, machine.ErrBootMissing)
+}
+
+type journalPosition struct {
+	Boot       string `json:"_BOOT_ID"`
+	SequenceID string `json:"__SEQNUM_ID"`
+	Sequence   uint64 `json:"__SEQNUM,string"`
+}
+
+func (k *Kernel) bootBoundary(boot string, first bool) (journalPosition, error) {
+	count := "1"
+	if first {
+		count = "+1"
+	}
+	args := []string{"-b", boot, "-n", count, "-o", "json", "--output-fields=_BOOT_ID,__SEQNUM,__SEQNUM_ID", "--no-pager", "-q"}
+	if !first {
+		args = append(args, "-r")
+	}
+	out, stderr, code, err := k.journalctl(args)
+	if err != nil {
+		return journalPosition{}, fmt.Errorf("read journal boundary of boot %s: %w: %s", boot, err, bytes.TrimSpace(stderr))
+	}
+	if code == 1 && (bytes.Contains(stderr, noBootEntry) || len(out) == 0 && len(stderr) == 0) {
+		return journalPosition{}, fmt.Errorf("read journal boundary of boot %s: %w", boot, machine.ErrBootMissing)
+	}
+	if code != 0 {
+		return journalPosition{}, fmt.Errorf("read journal boundary of boot %s: exit status %d: %s", boot, code, bytes.TrimSpace(stderr))
+	}
+	if len(bytes.TrimSpace(out)) == 0 {
+		return journalPosition{}, fmt.Errorf("read journal boundary of boot %s: %w", boot, machine.ErrBootMissing)
+	}
+	var position journalPosition
+	if err := json.Unmarshal(out, &position); err != nil {
+		return journalPosition{}, fmt.Errorf("decode journal boundary of boot %s: %w", boot, err)
+	}
+	if position.Boot != boot || position.SequenceID == "" || position.Sequence == 0 {
+		return journalPosition{}, fmt.Errorf("read journal boundary of boot %s: %w", boot, machine.ErrBootMissing)
+	}
+	return position, nil
 }
 
 func (k *Kernel) ResetReason(boot string) (machine.ResetReason, error) {
