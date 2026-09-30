@@ -169,3 +169,21 @@ func TestWatchProblemFrame(t *testing.T) {
 		})
 	}
 }
+
+func TestWatchStripsJournalANSI(t *testing.T) {
+	t.Parallel()
+	dir, original := incompatibleFixture(t, "schema")
+	data := bytes.ReplaceAll(original, []byte("0.2.1"), []byte(`\u001b[31m0.2.1\u001b[0m`))
+	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := cli([]string{"--state-dir", dir, "watch"}, &stdout, &stderr); code != exitError {
+		t.Fatalf("exit %d, want %d", code, exitError)
+	}
+	for name, text := range map[string]string{"stdout": stdout.String(), "stderr": stderr.String()} {
+		if strings.Contains(text, "\x1b") || !strings.Contains(text, "0.2.1+def5678") {
+			t.Errorf("%s %q, want version without ANSI sequences", name, text)
+		}
+	}
+}
