@@ -61,9 +61,6 @@ func Entries() []Entry { return slices.Clone(entries) }
 // Fixed is the highest defect ID fixed by this build.
 func Fixed() int { return entries[len(entries)-1].ID }
 
-// Find identifies each defect once per session, collecting all affected decisions and cores.
-func Find(events []journal.Event) []Finding { return FindWith(events, entries) }
-
 // FindWith uses a supplied list for scenarios where an entry is not yet in the binary.
 func FindWith(events []journal.Event, list []Entry) []Finding {
 	findings := make([]Finding, len(list))

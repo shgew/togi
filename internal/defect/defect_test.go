@@ -49,7 +49,7 @@ func TestPowerOffDefect(t *testing.T) {
 			if tc.edit != nil {
 				tc.edit(events)
 			}
-			got := Find(events)
+			got := FindWith(events, Entries())
 			if !tc.want {
 				if len(got) != 0 {
 					t.Fatalf("unexpected findings: %+v", got)
@@ -60,7 +60,7 @@ func TestPowerOffDefect(t *testing.T) {
 				t.Fatalf("findings %+v; want defect 1, only core 10 and decision #13", got)
 			}
 			events = append(events, journal.Event{Seq: 22, Kind: journal.KindDefectFound, Data: &journal.DefectFound{ID: 1}})
-			if got := Find(events); len(got) != 0 {
+			if got := FindWith(events, Entries()); len(got) != 0 {
 				t.Fatalf("second resume repeated finding: %+v", got)
 			}
 		})
