@@ -7,6 +7,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 ### Added
 
 - `services.togi.package` selects the togi package installed and run by the NixOS module ([#190]).
+- `backend_user` names the unprivileged account for backend workloads; the NixOS module declares the `togi-trial` system user and group and sets the key.
 
 ### Changed
 
@@ -17,6 +18,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - The tuning boot now requires exactly one GRUB mirror, refusing configurations with several GRUB environments ([#189]).
 - Kernel logs are now read from a persisted, boot-local cursor at every trial boundary and clean shutdown, including dead ends, covering profile writes and retry waits; interrupted setup recovers the successful target readback boundary, between-trial MCEs are recorded and shown without feeding trial decisions, and a lost read interval keeps an intersecting trial inconclusive below stronger evidence, including valid MCEs returned before a cursor metadata error. If a session may have tuned through kernel-log gaps, run `togi reset --core N` for every tuned core; older journals cannot identify the affected trials ([#196]).
 - Read-only commands can inspect same-schema journals containing future event kinds, including their original lines in `events`; `run` and `reset` refuse them with the kind and build stamps instead of replaying incomplete facts. Builds through 0.5.0 still reject unknown kinds ([#165]).
+- mprime and y-cruncher now run with the configured account's UID and primary GID and no inherited supplementary groups, with writable instance directories and inputs while togi and its surrounding state remain root-owned. Missing, invalid or root backend credentials refuse hardware preflight instead of falling back to root.
 
 ### Fixed
 

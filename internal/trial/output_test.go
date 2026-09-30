@@ -164,7 +164,7 @@ func TestOversizedOutputWait(t *testing.T) {
 						t.Fatalf("watched diagnostic prefix (-want +got):\n%s", diff)
 					}
 				} else {
-					data, err := os.ReadFile(filepath.Join(o.Dir, "oversized", source+".log"))
+					data, err := os.ReadFile(filepath.Join(o.Dir, "oversized", "work", source+".log"))
 					if err != nil {
 						t.Fatal(err)
 					}

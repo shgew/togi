@@ -21,6 +21,7 @@ type Options struct {
 	Dir                                                string
 	Backends                                           map[machine.Backend]backend.Backend
 	Cores                                              []machine.CoreInfo
+	User                                               Identity
 	NoScope                                            bool
 	SampleInterval, StallGrace, StallWindow, StopGrace time.Duration
 	Hwmon                                              string
@@ -101,6 +102,11 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 	if b == nil {
 		return nil, fmt.Errorf("start trial %s: backend %s not configured", spec.ID, spec.Workload.Backend)
 	}
+	if !r.options.NoScope {
+		if err := r.options.User.validate(); err != nil {
+			return nil, fmt.Errorf("start trial %s: backend_user: %w", spec.ID, err)
+		}
+	}
 	root := filepath.Join(r.options.Dir, spec.ID)
 	if err := os.RemoveAll(root); err != nil {
 		return nil, fmt.Errorf("remove trial directory %s: %w", root, err)
@@ -119,34 +125,22 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 	ctx, t.cancel = context.WithTimeout(ctx, spec.Duration+time.Duration(len(cores))*30*time.Second+r.options.StopGrace+20*time.Second)
 	for i, core := range cores {
 		cpus := spec.CPUs
-		dir := root
+		prefix := "work"
+		dir := filepath.Join(root, prefix)
 		scope := t.started.Scope
-		prefix := ""
 		if spec.Regime.AllCores() {
 			cpus = []int{spec.CPUs[i]}
 			prefix = fmt.Sprintf("c%02d", core)
 			dir = filepath.Join(root, prefix)
 			scope += "-" + prefix
 		}
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, t.abort(fmt.Errorf("create instance directory %s: %w", dir, err))
-		}
-		launch, err := b.Prepare(spec.Workload, dir, cpus)
+		launch, err := t.prepareInstance(core, dir, cpus, prefix)
 		if err != nil {
-			return nil, t.abort(fmt.Errorf("prepare %s on core %02d: %w", b.Name(), core, err))
-		}
-		for _, f := range launch.Files {
-			if prefix != "" {
-				f = filepath.Join(prefix, f)
-			}
-			t.started.Files = append(t.started.Files, f)
-		}
-		if len(launch.Argv) == 0 {
-			return nil, t.abort(fmt.Errorf("prepare %s on core %02d: empty argv", b.Name(), core))
+			return nil, t.abort(err)
 		}
 		argv := launch.Argv
 		if !r.options.NoScope {
-			argv = scopeArgv(scope, cpus, launch.Argv...)
+			argv = scopeArgv(scope, cpus, r.options.User, dir, launch.Argv...)
 		}
 		out, err := os.OpenFile(filepath.Join(dir, "stdout.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
@@ -202,6 +196,28 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 	return t, nil
 }
 
+func (t *running) prepareInstance(core int, dir string, cpus []int, prefix string) (backend.Launch, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return backend.Launch{}, fmt.Errorf("create instance directory %s: %w", dir, err)
+	}
+	launch, err := t.backend.Prepare(t.spec.Workload, dir, cpus)
+	if err != nil {
+		return backend.Launch{}, fmt.Errorf("prepare %s on core %02d: %w", t.backend.Name(), core, err)
+	}
+	if !t.options.NoScope {
+		if err := ownDirectory(dir, launch.Files, t.options.User, t.host.Chown); err != nil {
+			return backend.Launch{}, err
+		}
+	}
+	for _, f := range launch.Files {
+		t.started.Files = append(t.started.Files, filepath.Join(prefix, f))
+	}
+	if len(launch.Argv) == 0 {
+		return backend.Launch{}, fmt.Errorf("prepare %s on core %02d: empty argv", t.backend.Name(), core)
+	}
+	return launch, nil
+}
+
 func (t *running) awaitScope(ctx context.Context, inst *instance) {
 	timer := time.NewTimer(min(t.options.StallGrace, 30*time.Second))
 	defer timer.Stop()
@@ -232,12 +248,12 @@ func joinCPUs(cpus []int) string {
 
 // scopeArgv wraps argv in a transient scope confined to cpus. DefaultDependencies=no keeps a system shutdown from
 // stopping the scope before togi: togi's own teardown ends the trial, so it ends interrupted, not failed.
-func scopeArgv(unit string, cpus []int, argv ...string) []string {
+func scopeArgv(unit string, cpus []int, user Identity, dir string, argv ...string) []string {
 	a := []string{"systemd-run"}
 	if os.Geteuid() != 0 {
 		a = append(a, "--user")
 	}
-	a = append(a, "--scope", "--quiet", "--collect", "--unit", unit, "-p", "AllowedCPUs="+joinCPUs(cpus), "-p", "DefaultDependencies=no", "--")
+	a = append(a, "--scope", "--quiet", "--collect", "--unit", unit, "--uid", strconv.FormatUint(uint64(user.UID), 10), "--gid", strconv.FormatUint(uint64(user.GID), 10), "--working-directory", dir, "-p", "AllowedCPUs="+joinCPUs(cpus), "-p", "DefaultDependencies=no", "--")
 	return append(a, argv...)
 }
 

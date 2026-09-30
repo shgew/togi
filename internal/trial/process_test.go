@@ -88,7 +88,7 @@ func TestProcessOversizedOutput(t *testing.T) {
 				prefixSize = len(trial.instances[0].watch[0].lines.pending)
 			} else {
 				name := strings.TrimPrefix(mode, "oversized-") + ".log"
-				info, err := os.Stat(filepath.Join(o.Dir, spec.ID, name))
+				info, err := os.Stat(filepath.Join(o.Dir, spec.ID, "work", name))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -263,6 +263,8 @@ func (h *rollbackProcessHost) Start(ctx context.Context, argv []string, dir stri
 
 func (*rollbackProcessHost) InScope(int, string) bool { return true }
 
+func (*rollbackProcessHost) Chown(string, int, int) error { return nil }
+
 func (h *rollbackProcessHost) KillScope(ctx context.Context, scope string) ([]byte, error) {
 	h.scopes = append(h.scopes, scope)
 	return nil, ctx.Err()
@@ -271,6 +273,7 @@ func (h *rollbackProcessHost) KillScope(ctx context.Context, scope string) ([]by
 func TestProcessPartialStartRollback(t *testing.T) {
 	o := testOptions(t, "pipe-descendant")
 	o.NoScope = false
+	o.User = Identity{UID: 1001, GID: 1001}
 	h := &rollbackProcessHost{}
 	t.Cleanup(func() {
 		if h.orphan != 0 {

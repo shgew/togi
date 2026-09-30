@@ -87,6 +87,8 @@ Before a successful leftover-scope sweep, a journal write failure reports the er
 
 `run` and `reset` require root: they change core voltage and the boot entry, and create cgroup scopes. The read-only commands work for any user who can read the state directory.
 
+Togi stays root. Backend workloads run as the unprivileged account named by `backend_user`, using that account's UID and primary GID with no inherited supplementary groups. The NixOS module declares the `togi-trial` system user and group and writes its name into the configuration. A missing account setting, nonexistent account, invalid UID or GID, UID 0 or primary GID 0 refuses preflight; workloads never fall back to root.
+
 ## Preflight
 
 Hardware construction checks CPU family/model from `/proc/cpuinfo` and the driver codename from its sysfs metadata before reading any SMN register, including the slot-mapping fuses. An unsupported identity leaves the driver available for topology and preflight introspection but refuses every mailbox command and SMN access. CLI startup repeats this non-command validation and skips BIOS context reads when validation fails, then lets session preflight record the refusal and take the normal dead-end path (exit 15, including the watchdog check and saved-entry clear in a tuning boot). Session preflight establishes its own validation boundary before command-bearing checks; failures while writing earlier startup events must not emergency-zero the hardware.
@@ -101,8 +103,9 @@ Completed session preflight is the startup boundary for stale-scope containment 
 5. Every core's offset reads back through the SMU.
 6. Per-core access is supported only on full 8-core CCDs (`../prior-art.md`): each CCD fuse is read twice with distinct RSMU register reads interleaved, and the OS topology must contain eight cores per CCD. Any fused-off slot fails this check with the CCD, its fuse mask and a message that harvested CCDs are not yet supported. Indistinguishable RSMU probes, inconsistent fuse reads, or a live-core count mismatch also refuse all per-core access.
 7. Both backends are configured and present. mprime's `bin/mprime` and both selected y-cruncher binaries must be regular executable files; otherwise preflight fails naming the file. y-cruncher selects the lexically first name matching `<two-digit ISA index>-<alphanumeric ISA> ~ <name>` in `lib/y-cruncher/Binaries` for the lowest ISA and the first matching `24-ZN5 ~ <name>` for Zen 5, ignoring unrelated files.
-8. `systemd-run` can create a scope confined to CPU 0.
-9. The BIOS context matches the session, when resuming and all required checks passed.
+8. `backend_user` resolves to a non-root UID and primary GID.
+9. `systemd-run` can create a scope confined to CPU 0 with those credentials.
+10. The BIOS context matches the session, when resuming and all required checks passed.
 
 Any failed check is a dead end. An unarmed watchdog after the bounded wait is dead end `preflight` (exit 15), with the tuning boot's usual saved-entry clear deferred until any required same-boot reconciliation succeeds; no SMU offset write or trial can happen before the watchdog check succeeds. When no same-boot reconciliation is required, a stop signal during the wait records `shutdown` and exits 0, rather than recording a watchdog failure.
 
@@ -140,6 +143,7 @@ TOML at the `--config` path, produced by the NixOS module from `services.togi.se
 | `dead_ends.stray_crashes_in_a_row` | 3 | [1, 100] |
 | `backends.mprime` | not configured | Absolute path of the package (`bin/mprime` inside it) |
 | `backends.ycruncher` | not configured | Absolute path of the package (`lib/y-cruncher/Binaries` inside it) |
+| `backend_user` | not configured; module sets `"togi-trial"` | Existing account with non-root UID and primary GID; checked by hardware preflight |
 
 Unknown keys and out-of-range values are errors. When `--config` is not given and no file exists at the default path, the defaults apply.
 
@@ -199,7 +203,7 @@ If a `run` starts after `deadend` but before `boot.saved_entry`, it completes th
 | `services.togi.tuning.enable` | Add the tuning boot specialisation above |
 | `services.togi.tuning.leaveOnShutdown` | Default `true`: an orderly shutdown or reboot of the tuning boot clears GRUB's saved entry, so the next boot is the normal system. `false` keeps the tuning boot selected until a dead end, `togi.service`'s restart limit, or you pick another entry |
 | `services.togi.tuning.consoleFont` | The tuning boot's console font, as `console.font` takes it, whatever the system sets. Default `null`: the kernel's built-in font, 8x16 below 2560x1080 and Terminus 16x32 bold from there. Both give the 240x67 frame the dashboard is laid out for at 1080p and 4K, and both cover IBM437, whose block and box glyphs the dashboard draws with; a system font such as `Lat2-Terminus16` lacks `▀` and breaks the big digits. A font set here must cover IBM437 as well: Terminus' `ter-i` fonts, such as `"${pkgs.terminus_font}/share/consolefonts/ter-i32b.psf.gz"`, do, while `ter-v` and `Lat2-Terminus` fonts do not |
-| `services.togi.settings` | Freeform attrset rendered to `/etc/togi/config.toml` |
+| `services.togi.settings` | Freeform attrset rendered to `/etc/togi/config.toml`; `backend_user` defaults to the module-declared `togi-trial` system user. An override must name an existing unprivileged account |
 | `services.togi.backends.mprime.enable` | Set `settings.backends.mprime` to the nixpkgs `mprime` package (unfree) |
 | `services.togi.backends.ycruncher.enable` | Set `settings.backends.ycruncher` to the nixpkgs `y-cruncher` package (unfree) |
 

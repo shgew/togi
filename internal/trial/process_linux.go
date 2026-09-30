@@ -26,7 +26,11 @@ type osHost struct {
 func newOSHost() processHost { return osHost{command: commandOutput} }
 
 func commandOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
-	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, name, args...)
+	if os.Geteuid() == 0 {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 0, Gid: uint32(os.Getegid())}}
+	}
+	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
 		err = ctx.Err()
 	}
@@ -65,7 +69,7 @@ func (p *execProcess) Wait() error {
 func (osHost) Start(ctx context.Context, argv []string, dir string) (process, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
+	cmd.SysProcAttr = launcherAttributes(os.Geteuid(), os.Getegid())
 	stdout, out, err := os.Pipe()
 	if err != nil {
 		return nil, fmt.Errorf("pipe stdout: %w", err)
@@ -99,6 +103,14 @@ func (osHost) Start(ctx context.Context, argv []string, dir string) (process, er
 		return nil, errors.Join(fmt.Errorf("capture owned process identity: %w", err), killErr, waitErr)
 	}
 	return &execProcess{cmd: cmd, stdout: stdout, stderr: stderr, start: start}, nil
+}
+
+func launcherAttributes(uid, gid int) *syscall.SysProcAttr {
+	attr := &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
+	if uid == 0 {
+		attr.Credential = &syscall.Credential{Uid: 0, Gid: uint32(gid)}
+	}
+	return attr
 }
 
 func (h osHost) SignalGroup(owned process, sig syscall.Signal) error {
@@ -240,14 +252,17 @@ func fieldInt(fields []string, number int) (int64, error) {
 	}
 	return v, nil
 }
-func CheckSystemdRun() (string, error) {
-	return checkSystemdRun(commandOutput)
+func CheckSystemdRun(user Identity) (string, error) {
+	return checkSystemdRun(user, commandOutput)
 }
 
-func checkSystemdRun(command func(context.Context, string, ...string) ([]byte, error)) (string, error) {
+func checkSystemdRun(user Identity, command func(context.Context, string, ...string) ([]byte, error)) (string, error) {
+	if err := user.validate(); err != nil {
+		return "", fmt.Errorf("systemd-run backend_user: %w", err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	argv := scopeArgv(fmt.Sprintf("togi-preflight-%d", os.Getpid()), []int{0}, "/bin/sh", "-c", "exit 0")
+	argv := scopeArgv(fmt.Sprintf("togi-preflight-%d", os.Getpid()), []int{0}, user, "/", "/bin/sh", "-c", "exit 0")
 	out, err := command(ctx, argv[0], argv[1:]...)
 	if err != nil {
 		return "", fmt.Errorf("systemd-run: %w: %s", err, strings.TrimSpace(string(out)))

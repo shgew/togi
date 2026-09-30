@@ -3,6 +3,7 @@ package trial
 import (
 	"context"
 	"io"
+	"os"
 	"syscall"
 	"time"
 )
@@ -16,6 +17,7 @@ type process interface {
 
 type processHost interface {
 	Start(ctx context.Context, argv []string, dir string) (process, error)
+	Chown(path string, uid, gid int) error
 	SignalGroup(process, syscall.Signal) error
 	InScope(pid int, scope string) bool
 	Usage(pid int) (usage, error)
@@ -27,6 +29,8 @@ type processHost interface {
 	ProcessAlive(scopeProcess) (bool, error)
 	StopScope(ctx context.Context, scope string) ([]byte, error)
 }
+
+func (osHost) Chown(path string, uid, gid int) error { return os.Chown(path, uid, gid) }
 
 type usage struct {
 	CPUTime time.Duration

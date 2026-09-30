@@ -37,7 +37,7 @@ in
     settings = lib.mkOption {
       type = toml.type;
       default = { };
-      description = "Configuration rendered to /etc/togi/config.toml.";
+      description = "Configuration rendered to /etc/togi/config.toml. backend_user defaults to the module-declared togi-trial system user; togi stays root while workloads run as that user with no supplementary groups.";
     };
   };
 
@@ -47,6 +47,12 @@ in
         environment.systemPackages = [ cfg.package ];
         hardware.cpu.amd.ryzen-smu.enable = lib.mkDefault true;
         environment.etc."togi/config.toml".source = toml.generate "togi-config.toml" cfg.settings;
+        users.groups.togi-trial = { };
+        users.users.togi-trial = {
+          isSystemUser = true;
+          group = "togi-trial";
+        };
+        services.togi.settings.backend_user = lib.mkDefault "togi-trial";
         services.togi.settings.backends = {
           mprime = lib.mkIf cfg.backends.mprime.enable (lib.mkDefault "${pkgs.mprime}");
           ycruncher = lib.mkIf cfg.backends.ycruncher.enable (lib.mkDefault "${pkgs.y-cruncher}");

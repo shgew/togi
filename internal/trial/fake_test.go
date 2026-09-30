@@ -57,6 +57,8 @@ func (h *fakeHost) Start(_ context.Context, argv []string, dir string) (process,
 	return p, nil
 }
 
+func (h *fakeHost) Chown(string, int, int) error { return nil }
+
 func (p *fakeProc) PID() int              { return p.pid }
 func (p *fakeProc) Stdout() io.ReadCloser { return p.stdoutR }
 func (p *fakeProc) Stderr() io.ReadCloser { return p.stderrR }

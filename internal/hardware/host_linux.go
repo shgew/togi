@@ -36,12 +36,13 @@ func New(cfg config.Config, stateDir string) (machine.Machine, error) {
 		backends[machine.Ycruncher] = ycruncher.New(cfg.Backends.Ycruncher)
 	}
 	cores := drv.Topology()
-	h := &host{drv: drv, cfg: cfg, backends: backends}
+	user, userErr := trial.LookupIdentity(cfg.BackendUser)
+	h := &host{drv: drv, cfg: cfg, backends: backends, user: user, userErr: userErr}
 	return machine.Machine{
 		Clock:  clock{},
 		SMU:    drv,
 		Host:   h,
-		Trials: trial.New(trial.Options{Dir: filepath.Join(stateDir, "trials"), Backends: backends, Cores: cores}),
+		Trials: trial.New(trial.Options{Dir: filepath.Join(stateDir, "trials"), Backends: backends, Cores: cores, User: user}),
 		Kernel: detect.NewKernel(cores),
 	}, nil
 }
@@ -73,6 +74,8 @@ type host struct {
 	drv      *smu.Driver
 	cfg      config.Config
 	backends map[machine.Backend]backend.Backend
+	user     trial.Identity
+	userErr  error
 }
 
 func (h *host) BootID() (string, error) { return detect.BootID() }
@@ -112,7 +115,7 @@ func (h *host) Preflight() []machine.Check {
 		return identity
 	}
 	systemdRun := machine.Check{Name: "systemd_run", OK: true}
-	detail, err := trial.CheckSystemdRun()
+	detail, err := trial.CheckSystemdRun(h.user)
 	systemdRun.Detail = detail
 	if err != nil {
 		systemdRun.Detail, systemdRun.OK = err.Error(), false
@@ -124,11 +127,22 @@ func (h *host) Preflight() []machine.Check {
 		h.drv.CheckReadback(),
 		h.drv.CheckSlotMapping(),
 		h.checkBackends(),
+		h.checkBackendUser(),
 		systemdRun,
 	}
 }
 
 func (h *host) Watchdog() machine.Check { return watchdog("/") }
+
+func (h *host) checkBackendUser() machine.Check {
+	c := machine.Check{Name: "backend_user", OK: h.userErr == nil}
+	if h.userErr != nil {
+		c.Detail = h.userErr.Error()
+	} else {
+		c.Detail = fmt.Sprintf("%s: uid %d gid %d", h.cfg.BackendUser, h.user.UID, h.user.GID)
+	}
+	return c
+}
 
 func (h *host) checkBackends() machine.Check {
 	c := machine.Check{Name: "backends", OK: true}

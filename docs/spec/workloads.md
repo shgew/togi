@@ -17,6 +17,8 @@ A backend integration:
 - parses output as it arrives into progress, computation error and fatal setup error;
 - reports setup problems as inconclusive, never as failures.
 
+Togi creates a root-owned `trials/<trial>/` container. Each backend instance has its own writable directory: `work/` for a single instance, or `cNN/` for an all-core trial. Before launching, togi gives the configured backend account ownership of that directory and every generated input file, so mprime can update `prime.txt` and `local.txt`, create `results.txt`, and y-cruncher can access `stress.cfg`. The surrounding trial and state directories, retention markers, journal and control files remain root-owned and nonwritable by that account. Backend binaries remain read-only in the Nix store; no package file changes ownership. This is a privilege drop, not a filesystem sandbox: ordinary system permissions still apply outside togi's state.
+
 Known quirks the integrations handle:
 - **mprime:** needs `NumCPUs`, `CoresPerTest`, the `CpuSupports*` switches for the instruction set and the FFT range in `local.txt`/`prime.txt`. `TortureTime=1` keeps each FFT size to one minute, so a trial covers several sizes. Errors land in `results.txt`, which the runner tails once per second, and mprime can keep running after one.
 - **y-cruncher:** command-line thread options do not confine it; only a config file names the CPUs. It prints `Failed to set core affinity` when confinement and config disagree, which counts as a containment violation. Its startup is slow and needs the stall grace period.
@@ -76,10 +78,12 @@ A clean rotation qualifies only with at least three R1, three R2 and three R7 st
 Each backend instance runs as a child of togi inside a transient scope confined to its logical CPUs:
 
 ```
-systemd-run --scope --quiet --collect -p AllowedCPUs=<cpus> -p DefaultDependencies=no -- <argv>
+systemd-run --scope --quiet --collect --uid=<uid> --gid=<gid> --working-directory=<instance-dir> -p AllowedCPUs=<cpus> -p DefaultDependencies=no -- <argv>
 ```
 
 `DefaultDependencies=no` keeps a system shutdown from stopping the scope on its own. Otherwise systemd stops the scope and the unit running togi at the same moment, the backend can exit before togi sees its signal, and the trial would end as an unexpected exit on the target instead of interrupted. Without the default dependencies, togi's teardown ends the scope after the signal reaches it.
+
+The root launcher clears all supplementary groups before starting `systemd-run`, retaining UID 0 for system-bus access and scope creation. The scope launch then drops to the configured backend UID and primary GID. Its working directory is explicit: with `--uid` alone, `systemd-run --scope` defaults to the account's home instead of the prepared instance directory.
 
 If togi dies before teardown, the scope can outlive it and keep its descendants running. The next fresh start or resume sweeps concrete `togi-trial-*.scope` units after nonwriting preflight and before any SMU profile write, whether in a tuning boot or an in-session run. The sweep sends SIGCONT and SIGTERM through bounded `systemctl kill --kill-whom=all` calls on each exact scope during the shared grace period, then uses normal teardown's bounded scope-kill slot to send SIGKILL and stop the scopes. A recovered PID and its start time are used only to verify exit, never to signal a PID or process group that may now belong to somebody else. Cleanup verifies that no matching unit or process remains and that every captured process exited, including one that moved out of its scope. A moved process that survives scope signaling is a containment dead end, not a reason to signal its recovered PID. Discovery and verification consume the same absolute 15 s budget as teardown, not a fresh budget per scope.
 

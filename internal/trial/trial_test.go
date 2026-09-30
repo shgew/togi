@@ -69,6 +69,7 @@ func fakeOptions(t *testing.T, mode string) Options {
 	t.Helper()
 	return Options{
 		Dir: t.TempDir(), NoScope: true,
+		User:           Identity{UID: 1001, GID: 1001},
 		Backends:       map[machine.Backend]backend.Backend{machine.Mprime: fakeBackend{mode}},
 		SampleInterval: 50 * time.Millisecond, StallGrace: time.Hour,
 		Hwmon: t.TempDir(),

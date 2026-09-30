@@ -5,6 +5,7 @@ package trial
 import (
 	"context"
 	"errors"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -15,7 +16,7 @@ import (
 func TestSystemdPreflightTimeout(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		started := time.Now()
-		_, err := checkSystemdRun(func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		_, err := checkSystemdRun(Identity{UID: 1001, GID: 1001}, func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			deadline, ok := ctx.Deadline()
 			if !ok || deadline.Sub(started) != 30*time.Second {
 				t.Fatalf("deadline = %v, present %v", deadline, ok)
@@ -89,4 +90,26 @@ func TestTrialLaunchTimeout(t *testing.T) {
 			t.Fatalf("launch = %v", err)
 		}
 	})
+}
+
+func TestRootLauncherClearsSupplementaryGroups(t *testing.T) {
+	t.Parallel()
+	attr := launcherAttributes(0, 42)
+	if attr.Credential == nil {
+		t.Fatal("root launcher inherits supplementary groups")
+	}
+	cred := attr.Credential
+	if cred.Uid != 0 || cred.Gid != 42 || len(cred.Groups) != 0 || cred.NoSetGroups {
+		t.Fatalf("launcher credentials = %+v; must retain root for the system bus and clear all supplementary groups", cred)
+	}
+	if !attr.Setpgid || attr.Pdeathsig != syscall.SIGKILL {
+		t.Fatalf("launcher lost process ownership: %+v", attr)
+	}
+}
+
+func TestUnprivilegedLauncherPreservesCredentials(t *testing.T) {
+	t.Parallel()
+	if attr := launcherAttributes(1001, 1002); attr.Credential != nil {
+		t.Fatalf("unprivileged launcher tries privileged setgroups: %+v", attr.Credential)
+	}
 }
