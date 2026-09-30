@@ -65,7 +65,7 @@ func TestHardwareScope(t *testing.T) {
 	r := New(Options{
 		Dir:      hardwareDir(t),
 		User:     user,
-		Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{"escape:3"}},
+		Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{mode: "escape:3", executable: stageHelper(t)}},
 		Cores:    []machine.CoreInfo{{Core: 2, CPUs: []int{2}}},
 	})
 	spec := machine.TrialSpec{ID: "hw01", Regime: machine.R1, Workload: machine.Workload{Backend: machine.Mprime}, Cores: []int{2}, CPUs: []int{2}, Duration: 3 * time.Second}
@@ -124,7 +124,7 @@ func TestHardwareScopeKillsDetachedDescendant(t *testing.T) {
 	o := Options{
 		Dir:      hardwareDir(t),
 		User:     user,
-		Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{"descendant"}},
+		Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{mode: "descendant", executable: stageHelper(t)}},
 		Cores:    []machine.CoreInfo{{Core: 0, CPUs: []int{cpu}}},
 	}
 	spec := machine.TrialSpec{ID: "hw-descendant", Regime: machine.R1, Workload: machine.Workload{Backend: machine.Mprime}, Cores: []int{0}, CPUs: []int{cpu}, Duration: time.Second}

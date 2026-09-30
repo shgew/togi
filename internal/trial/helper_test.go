@@ -4,8 +4,10 @@ package trial
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -19,18 +21,59 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-type helperBackend struct{ mode string }
+type helperBackend struct {
+	mode       string
+	executable string
+}
 
 func (h helperBackend) Name() string           { return "helper" }
 func (h helperBackend) Check() (string, error) { return "ok", nil }
 func (h helperBackend) Prepare(_ machine.Workload, _ string, cpus []int) (backend.Launch, error) {
-	launch := backend.Launch{Argv: []string{"env", "GORACE=atexit_sleep_ms=0", "taskset", "-c", strconv.Itoa(cpus[0]), os.Args[0], "-test.run=TestHelperProcess", "--", "--helper", h.mode}}
+	executable := h.executable
+	if executable == "" {
+		executable = os.Args[0]
+	}
+	launch := backend.Launch{Argv: []string{"env", "GORACE=atexit_sleep_ms=0", "taskset", "-c", strconv.Itoa(cpus[0]), executable, "-test.run=TestHelperProcess", "--", "--helper", h.mode}}
 	if strings.HasPrefix(h.mode, "watched") {
 		launch.Watch = []string{"results.txt"}
 	}
 	return launch, nil
 }
 func (h helperBackend) Classify(line string) backend.Line { return classifyHelper(line) }
+
+func stageHelper(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0755); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := os.Chmod(filepath.Dir(dir), 0755); err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.Open(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	path := filepath.Join(dir, "helper")
+	target, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0555)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer target.Close()
+	if _, err := io.Copy(target, source); err != nil {
+		t.Fatal(err)
+	}
+	if err := target.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
 
 func TestHelperProcess(t *testing.T) {
 	idx := slices.Index(os.Args, "--helper")
@@ -182,5 +225,5 @@ func testCPUs(t *testing.T) []int {
 func testOptions(t *testing.T, mode string) Options {
 	t.Helper()
 	cpus := testCPUs(t)
-	return Options{Dir: t.TempDir(), NoScope: true, Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{mode}}, SampleInterval: 50 * time.Millisecond, StallGrace: time.Hour, Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{cpus[0]}}, {Core: 1, CCD: 1, CPUs: []int{cpus[1]}}}}
+	return Options{Dir: t.TempDir(), NoScope: true, Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{mode: mode}}, SampleInterval: 50 * time.Millisecond, StallGrace: time.Hour, Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{cpus[0]}}, {Core: 1, CCD: 1, CPUs: []int{cpus[1]}}}}
 }

@@ -42,6 +42,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - Trial ends and partial-start rollbacks now share a 15-second teardown across all instances, kill every known scope, and stop at a containment dead end if cleanup cannot be confirmed, instead of hanging on inherited output pipes or continuing tuning; unconfirmed cleanup also prevents offset restoration and a false clean shutdown ([#174]).
 - Fresh starts and resumes now sweep leftover trial scopes after preflight and before any profile write, signal recovered workloads only through their exact systemd scope, and stop at a containment dead end without writing offsets if no-unit/no-process cleanup cannot be verified ([#199]).
 - Backend stdout, stderr and watched-file lines over 64 KiB now make the trial inconclusive and trigger bounded teardown, retaining a diagnostic prefix instead of allowing unfinished lines or large file appends to grow runner memory without bound ([#202]).
+- Backend log files are opened before handing instance directories to the workload account, preventing another instance from redirecting privileged log writes through symlinks. Relative trial directories also resolve correctly when a scope starts ([#204]).
 
 ## [0.5.0] - 2026-09-29
 

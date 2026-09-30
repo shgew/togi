@@ -159,7 +159,7 @@ func TestProcessOutputLimitEvidencePrecedence(t *testing.T) {
 			if alive, err := trial.host.ProcessAlive(scopeProcess{PID: inst.PID, Start: inst.process.(*execProcess).start}); err != nil || alive {
 				t.Fatalf("helper remains: alive=%t err=%v", alive, err)
 			}
-			info, err := os.Stat(filepath.Join(o.Dir, spec.ID, "stdout.log"))
+			info, err := os.Stat(filepath.Join(o.Dir, spec.ID, "work", "stdout.log"))
 			if err != nil || info.Size() != outputLineLimit {
 				t.Fatalf("diagnostic prefix info=%v err=%v", info, err)
 			}
@@ -457,4 +457,26 @@ func TestProcessOwnedGroupIdentity(t *testing.T) {
 		t.Fatalf("reaped process group was signaled: %v", err)
 	}
 	t.Log("stale launch identity left real helper alive; verified owner terminated it; reaped PID refused a later group signal")
+}
+
+func TestProcessRelativeTrialDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	o := testOptions(t, "watched")
+	o.Dir = "trials"
+	o.Backends[machine.Mprime] = helperBackend{mode: "watched", executable: stageHelper(t)}
+	spec := testSpec("relative", machine.R1, time.Second)
+	spec.CPUs = []int{o.Cores[0].CPUs[0]}
+	started, err := New(o).Start(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := started.Wait(context.Background(), &recorder{})
+	if err != nil || result.Signal != machine.ComputationError || result.Inconclusive != "" {
+		t.Fatalf("staged helper result = %+v, err = %v", result, err)
+	}
+	data, err := os.ReadFile(filepath.Join(o.Dir, spec.ID, "work", "results.txt"))
+	if err != nil || string(data) != "COMPUTE ERROR\n" {
+		t.Fatalf("helper working-directory output = %q, err = %v", data, err)
+	}
+	t.Log("read-only staged helper executed and wrote watched output in a relative trial directory; no host scopes")
 }

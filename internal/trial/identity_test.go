@@ -180,3 +180,163 @@ func TestOwnershipFailureDoesNotLaunch(t *testing.T) {
 		t.Fatalf("ownership error = %v, processes = %d", err, len(h.procs))
 	}
 }
+
+type logSymlinkHost struct {
+	*fakeHost
+	test    *testing.T
+	victims map[string]string
+}
+
+func (h *logSymlinkHost) Chown(path string, _, _ int) error {
+	if filepath.Base(path) != "c01" {
+		return nil
+	}
+	h.mu.Lock()
+	started := len(h.procs)
+	h.mu.Unlock()
+	if started != 1 {
+		h.test.Fatalf("symlink attack must run after c00 launched, got %d processes", started)
+	}
+	for name, victim := range h.victims {
+		log := filepath.Join(path, name)
+		if err := os.Rename(log, log+".retained"); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.Symlink(victim, log); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestScopeLogSymlinkRace(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		o := fakeOptions(t, "work")
+		o.NoScope = false
+		victims := map[string]string{}
+		for _, name := range []string{"stdout.log", "stderr.log"} {
+			victims[name] = filepath.Join(t.TempDir(), "events.jsonl")
+			if err := os.WriteFile(victims[name], []byte("protected journal\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		h := &logSymlinkHost{fakeHost: &fakeHost{inScope: true}, test: t, victims: victims}
+		r := New(o)
+		r.host = h
+		spec := testSpec("log-race", machine.R7, 500*time.Millisecond)
+		spec.Cores, spec.CPUs = []int{0, 1}, []int{0, 1}
+		started, err := r.Start(context.Background(), spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := started.Wait(context.Background(), &recorder{})
+		if err != nil || result.Signal != "" || result.Inconclusive != "" {
+			t.Fatalf("trial result = %+v, err = %v", result, err)
+		}
+		for name, victim := range victims {
+			data, err := os.ReadFile(victim)
+			if err != nil || string(data) != "protected journal\n" {
+				t.Errorf("%s symlink changed victim: %q, %v", name, data, err)
+			}
+		}
+		data, err := os.ReadFile(filepath.Join(o.Dir, spec.ID, "c01", "stdout.log.retained"))
+		if err != nil || !strings.Contains(string(data), "progress 1\n") {
+			t.Fatalf("captured stdout descriptor was not retained: %q, %v", data, err)
+		}
+		t.Log("c00 launched before c01 replaced both log paths with symlinks; victims unchanged and stdout captured through its original descriptor")
+	})
+}
+
+func TestReusedTrialDirectoryDoesNotFollowSymlinks(t *testing.T) {
+	t.Parallel()
+	for _, child := range []string{"directory", "symlink"} {
+		t.Run(child, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				o := fakeOptions(t, "exit")
+				o.NoScope = false
+				o.Backends[machine.Mprime] = inputBackend{fakeBackend{"exit"}}
+				spec := testSpec("0001", machine.R1, time.Second)
+				root := filepath.Join(o.Dir, spec.ID)
+				dir := filepath.Join(root, "work")
+				if err := os.MkdirAll(root, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if child == "symlink" {
+					target := t.TempDir()
+					if err := os.Symlink(target, dir); err != nil {
+						t.Fatal(err)
+					}
+					dir = target
+				} else if err := os.Mkdir(dir, 0777); err != nil {
+					t.Fatal(err)
+				}
+				victim := filepath.Join(t.TempDir(), "control")
+				if err := os.WriteFile(victim, []byte("protected control\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				for _, name := range []string{"prime.txt", "local.txt", "stdout.log", "stderr.log"} {
+					if err := os.Symlink(victim, filepath.Join(dir, name)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				r := New(o)
+				r.host = &fakeHost{inScope: true}
+				started, err := r.Start(context.Background(), spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := started.(*running).Stop(); err != nil {
+					t.Fatal(err)
+				}
+				data, err := os.ReadFile(victim)
+				if err != nil || string(data) != "protected control\n" {
+					t.Fatalf("reused %s changed victim: %q, %v", child, data, err)
+				}
+				for _, name := range []string{"prime.txt", "local.txt"} {
+					data, err := os.ReadFile(filepath.Join(root, "work", name))
+					if err != nil || string(data) != "input" {
+						t.Fatalf("fresh %s = %q, %v", name, data, err)
+					}
+				}
+				t.Logf("reused trial with attacker-controlled %s and input/log symlinks prepared fresh inputs; victim unchanged", child)
+			})
+		})
+	}
+}
+
+type scopeDirectoryHost struct{ *fakeHost }
+
+func (h scopeDirectoryHost) Start(ctx context.Context, argv []string, dir string) (process, error) {
+	scopeDir := argv[slices.Index(argv, "--working-directory")+1]
+	if !filepath.IsAbs(scopeDir) {
+		scopeDir = filepath.Join(dir, scopeDir)
+	}
+	data, err := os.ReadFile(filepath.Join(scopeDir, "prime.txt"))
+	if err != nil {
+		return nil, err
+	}
+	if string(data) != "input" {
+		return nil, errors.New("scope did not reach prepared input")
+	}
+	return h.fakeHost.Start(ctx, argv, dir)
+}
+
+func TestRelativeTrialDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	synctest.Test(t, func(t *testing.T) {
+		o := fakeOptions(t, "exit")
+		o.Dir, o.NoScope = "trials", false
+		o.Backends[machine.Mprime] = inputBackend{fakeBackend{"exit"}}
+		r := New(o)
+		r.host = scopeDirectoryHost{&fakeHost{inScope: true}}
+		started, err := r.Start(context.Background(), testSpec("relative", machine.R1, time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := started.(*running).Stop(); err != nil {
+			t.Fatal(err)
+		}
+		t.Log("relative trials directory reached prepared inputs after launcher and scope working-directory resolution")
+	})
+}

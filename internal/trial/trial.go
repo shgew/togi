@@ -107,7 +107,10 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 			return nil, fmt.Errorf("start trial %s: backend_user: %w", spec.ID, err)
 		}
 	}
-	root := filepath.Join(r.options.Dir, spec.ID)
+	root, err := filepath.Abs(filepath.Join(r.options.Dir, spec.ID))
+	if err != nil {
+		return nil, fmt.Errorf("resolve trial directory: %w", err)
+	}
 	if err := os.RemoveAll(root); err != nil {
 		return nil, fmt.Errorf("remove trial directory %s: %w", root, err)
 	}
@@ -134,46 +137,36 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 			dir = filepath.Join(root, prefix)
 			scope += "-" + prefix
 		}
-		launch, err := t.prepareInstance(core, dir, cpus, prefix)
+		prepared, err := t.prepareInstance(core, dir, cpus, prefix)
 		if err != nil {
 			return nil, t.abort(err)
 		}
-		argv := launch.Argv
+		argv := prepared.launch.Argv
 		if !r.options.NoScope {
-			argv = scopeArgv(scope, cpus, r.options.User, dir, launch.Argv...)
-		}
-		out, err := os.OpenFile(filepath.Join(dir, "stdout.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		if err != nil {
-			return nil, t.abort(fmt.Errorf("open stdout log: %w", err))
-		}
-		erlog, err := os.OpenFile(filepath.Join(dir, "stderr.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		if err != nil {
-			out.Close()
-			return nil, t.abort(fmt.Errorf("open stderr log: %w", err))
+			argv = scopeArgv(scope, cpus, r.options.User, dir, argv...)
 		}
 		if !r.options.NoScope {
 			t.scopes = append(t.scopes, scope)
 		}
 		p, err := t.host.Start(ctx, argv, dir)
 		if err != nil {
-			out.Close()
-			erlog.Close()
+			prepared.closeLogs()
 			return nil, t.abort(fmt.Errorf("start %s: %w", scope, err))
 		}
 		inst := &instance{Core: core, CPUs: slices.Clone(cpus), PID: p.PID(), Scope: scope, process: p, resumed: time.Now(), reaped: make(chan struct{}), joined: make(chan struct{})}
-		for _, name := range launch.Watch {
+		for _, name := range prepared.launch.Watch {
 			inst.watch = append(inst.watch, watchFile{path: filepath.Join(dir, name)})
 		}
 		t.instances = append(t.instances, inst)
 		t.started.Instances = append(t.started.Instances, inst.Instance)
 		if i == 0 {
 			t.started.PID = p.PID()
-			t.started.Argv = slices.Clone(launch.Argv)
+			t.started.Argv = slices.Clone(prepared.launch.Argv)
 		}
 		done := make(chan struct{}, 2)
 		t.streams.Add(2)
-		go t.readStream(i, inst, p.Stdout(), out, false, done)
-		go t.readStream(i, inst, p.Stderr(), erlog, true, done)
+		go t.readStream(i, inst, p.Stdout(), prepared.stdout, false, done)
+		go t.readStream(i, inst, p.Stderr(), prepared.stderr, true, done)
 		go func(index int, p process) {
 			defer close(inst.joined)
 			err := p.Wait()
@@ -196,26 +189,47 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 	return t, nil
 }
 
-func (t *running) prepareInstance(core int, dir string, cpus []int, prefix string) (backend.Launch, error) {
+type preparedInstance struct {
+	launch         backend.Launch
+	stdout, stderr *os.File
+}
+
+func (p preparedInstance) closeLogs() {
+	p.stdout.Close()
+	p.stderr.Close()
+}
+
+func (t *running) prepareInstance(core int, dir string, cpus []int, prefix string) (preparedInstance, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return backend.Launch{}, fmt.Errorf("create instance directory %s: %w", dir, err)
+		return preparedInstance{}, fmt.Errorf("create instance directory %s: %w", dir, err)
 	}
 	launch, err := t.backend.Prepare(t.spec.Workload, dir, cpus)
 	if err != nil {
-		return backend.Launch{}, fmt.Errorf("prepare %s on core %02d: %w", t.backend.Name(), core, err)
+		return preparedInstance{}, fmt.Errorf("prepare %s on core %02d: %w", t.backend.Name(), core, err)
 	}
+	if len(launch.Argv) == 0 {
+		return preparedInstance{}, fmt.Errorf("prepare %s on core %02d: empty argv", t.backend.Name(), core)
+	}
+	out, err := os.OpenFile(filepath.Join(dir, "stdout.log"), os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0644)
+	if err != nil {
+		return preparedInstance{}, fmt.Errorf("open stdout log: %w", err)
+	}
+	erlog, err := os.OpenFile(filepath.Join(dir, "stderr.log"), os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0644)
+	if err != nil {
+		out.Close()
+		return preparedInstance{}, fmt.Errorf("open stderr log: %w", err)
+	}
+	prepared := preparedInstance{launch: launch, stdout: out, stderr: erlog}
 	if !t.options.NoScope {
 		if err := ownDirectory(dir, launch.Files, t.options.User, t.host.Chown); err != nil {
-			return backend.Launch{}, err
+			prepared.closeLogs()
+			return preparedInstance{}, err
 		}
 	}
 	for _, f := range launch.Files {
 		t.started.Files = append(t.started.Files, filepath.Join(prefix, f))
 	}
-	if len(launch.Argv) == 0 {
-		return backend.Launch{}, fmt.Errorf("prepare %s on core %02d: empty argv", t.backend.Name(), core)
-	}
-	return launch, nil
+	return prepared, nil
 }
 
 func (t *running) awaitScope(ctx context.Context, inst *instance) {
