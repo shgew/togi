@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -23,6 +22,8 @@ func New(pkg string) *Ycruncher { return &Ycruncher{pkg: pkg} }
 
 func (y *Ycruncher) Name() string { return "y-cruncher" }
 
+var binaryName = regexp.MustCompile(`^[0-9]{2}-[A-Za-z0-9]+ ~ .+$`)
+
 func (y *Ycruncher) binaries() (lowest, zen5 string, err error) {
 	root := filepath.Join(y.pkg, "lib/y-cruncher/Binaries")
 	entries, err := os.ReadDir(root)
@@ -32,29 +33,36 @@ func (y *Ycruncher) binaries() (lowest, zen5 string, err error) {
 		}
 		return "", "", fmt.Errorf("read y-cruncher binaries %s: %w", root, err)
 	}
-	var names []string
 	for _, entry := range entries {
-		info, err := entry.Info()
-		if err != nil {
-			return "", "", fmt.Errorf("stat y-cruncher binary %s: %w", filepath.Join(root, entry.Name()), err)
+		name := entry.Name()
+		if !binaryName.MatchString(name) {
+			continue
 		}
-		if info.Mode().IsRegular() {
-			names = append(names, entry.Name())
+		if lowest == "" {
+			lowest = name
 		}
-	}
-	sort.Strings(names)
-	if len(names) == 0 {
-		return "", "", fmt.Errorf("no y-cruncher binaries in %s: %w", root, machine.ErrBackendMissing)
-	}
-	lowest = names[0]
-	for _, name := range names {
-		if strings.HasPrefix(name, "24-ZN5") {
+		if zen5 == "" && strings.HasPrefix(name, "24-ZN5 ~ ") {
 			zen5 = name
-			break
 		}
+	}
+	if lowest == "" {
+		return "", "", fmt.Errorf("no y-cruncher binaries in %s: %w", root, machine.ErrBackendMissing)
 	}
 	if zen5 == "" {
 		return "", "", fmt.Errorf("no Zen 5 binary 24-ZN5 in %s: %w", root, machine.ErrBackendMissing)
+	}
+	for _, name := range []string{lowest, zen5} {
+		bin := filepath.Join(root, name)
+		info, err := os.Stat(bin)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return "", "", fmt.Errorf("stat y-cruncher binary %s: %w: %w", bin, machine.ErrBackendMissing, err)
+			}
+			return "", "", fmt.Errorf("stat y-cruncher binary %s: %w", bin, err)
+		}
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
+			return "", "", fmt.Errorf("y-cruncher binary %s is not executable", bin)
+		}
 	}
 	return lowest, zen5, nil
 }
