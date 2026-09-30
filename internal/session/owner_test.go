@@ -36,6 +36,7 @@ type ownerTrials struct {
 	stopped    int
 	panicStart bool
 	passedErr  error
+	stopErr    error
 	cancel     context.CancelFunc
 	smu        machine.SMU
 	tuned      bool
@@ -76,6 +77,9 @@ func (r *ownerRunning) Wait(ctx context.Context, report machine.Reporter) (machi
 	return result, err
 }
 func (r *ownerRunning) Stop() error {
+	if r.owner.stopErr != nil {
+		return r.owner.stopErr
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := r.Wait(ctx, cleanupReport{})
@@ -176,5 +180,50 @@ func TestRunOwnerEveryExit(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRunOwnerSkipsRestoreUntilWorkloadJoined(t *testing.T) {
+	t.Parallel()
+	r, m, closeJournal := checkedRunner(t, []int{0, 0})
+	for core := range 2 {
+		if err := m.Seams().SMU.SetOffset(core, -5); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.applied = []int{-5, -5}
+	stopErr := errors.New("workload did not exit after SIGKILL")
+	trials := &ownerTrials{active: true, stopErr: stopErr}
+	r.in.Machine.SMU = ownerSMU{SMU: r.in.Machine.SMU, trials: trials, t: t}
+	r.running = &ownerRunning{owner: trials}
+	r.shutdownEvent = &journal.Shutdown{Reason: "stopped by signal"}
+	closed := false
+	r.in.Close = func() error {
+		closed = true
+		closeJournal()
+		return nil
+	}
+	stop := Stop{Reason: StopSignal}
+	if err := r.close(true, &stop); !errors.Is(err, stopErr) {
+		t.Fatalf("cleanup error lost: %v", err)
+	}
+	var actual []int
+	for core := range 2 {
+		offset, err := m.Seams().SMU.Offset(core)
+		if err != nil {
+			t.Fatal(err)
+		}
+		actual = append(actual, offset)
+	}
+	if diff := cmp.Diff([]int{-5, -5}, actual); diff != "" {
+		t.Fatalf("offsets changed while workload unjoined (-want +got):\n%s", diff)
+	}
+	for _, e := range r.in.Journal.Events() {
+		if e.Kind == journal.KindShutdown || e.Kind == journal.KindProfileRestored || e.Kind == journal.KindSMUIntent {
+			t.Fatalf("cleanup event recorded while workload unjoined: %s", e.Kind)
+		}
+	}
+	if !closed || !trials.active {
+		t.Fatalf("closed=%v active=%v", closed, trials.active)
 	}
 }

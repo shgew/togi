@@ -970,6 +970,9 @@ func (r *runner) close(restore bool, stop *Stop) (err error) {
 			err = errors.Join(err, r.emergencyRestore(errors.Unwrap(r.fatal)))
 		}
 	}()
+	if err != nil {
+		return err
+	}
 	if r.fatal != nil {
 		return err
 	}
