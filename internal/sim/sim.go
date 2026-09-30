@@ -142,6 +142,24 @@ func validateCores(cores int) error {
 	return nil
 }
 
+func validateSignals(signals map[machine.Signal]float64) error {
+	var total float64
+	for _, signal := range slices.Sorted(maps.Keys(signals)) {
+		weight := signals[signal]
+		if !slices.Contains(signalOrder, signal) {
+			return fmt.Errorf("signal %q is not supported", signal)
+		}
+		if weight < 0 {
+			return fmt.Errorf("signal %q weight %g is negative", signal, weight)
+		}
+		total += weight
+	}
+	if !(total > 0) {
+		return errors.New("model.signals weights must sum to a positive total")
+	}
+	return nil
+}
+
 func New(cfg Config) (*Machine, error) {
 	if cfg.Cores == 0 {
 		cfg.Cores = 16
@@ -171,14 +189,8 @@ func New(cfg Config) (*Machine, error) {
 	if !cfg.Start.IsZero() {
 		start = cfg.Start
 	}
-	for _, signal := range slices.Sorted(maps.Keys(model.Signals)) {
-		weight := model.Signals[signal]
-		if !slices.Contains(signalOrder, signal) {
-			return nil, fmt.Errorf("new simulator: signal %q is not supported", signal)
-		}
-		if weight < 0 {
-			return nil, fmt.Errorf("new simulator: signal %q weight %g is negative", signal, weight)
-		}
+	if err := validateSignals(model.Signals); err != nil {
+		return nil, fmt.Errorf("new simulator: %w", err)
 	}
 	for _, kind := range slices.Sorted(maps.Keys(model.Reset)) {
 		weight := model.Reset[kind]

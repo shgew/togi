@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -418,5 +419,40 @@ func TestNewRejects(t *testing.T) {
 		if _, err := New(cfg); err == nil {
 			t.Errorf("New(%+v) accepted", cfg)
 		}
+	}
+}
+
+func TestNewSignalWeights(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		signals map[machine.Signal]float64
+		want    machine.Signal
+	}{
+		{name: "nil"},
+		{name: "empty", signals: map[machine.Signal]float64{}},
+		{name: "one zero", signals: map[machine.Signal]float64{machine.Crash: 0}},
+		{name: "all zero", signals: map[machine.Signal]float64{machine.Crash: 0, machine.Stall: 0}},
+		{name: "positive", signals: map[machine.Signal]float64{machine.Crash: 0.25}, want: machine.Crash},
+		{name: "zero and positive", signals: map[machine.Signal]float64{machine.Crash: 0, machine.Stall: 0.25}, want: machine.Stall},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			model := DefaultModel()
+			model.Signals = tc.signals
+			m, err := New(Config{Cores: 2, Model: &model})
+			if tc.want == "" {
+				if err == nil || !strings.Contains(err.Error(), "model.signals") || !strings.Contains(err.Error(), "positive") {
+					t.Fatalf("New error = %v; want model.signals positive-total error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := m.drawSignal(0.5); got != tc.want {
+				t.Fatalf("drawSignal = %s; want %s", got, tc.want)
+			}
+		})
 	}
 }
