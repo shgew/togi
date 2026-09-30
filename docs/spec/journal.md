@@ -73,7 +73,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Group | Kinds |
 |---|---|
 | Session | `session.start` (session ID, cores and build stamp), `session.context` (BIOS context), `session.baseline` (baseline profile), `session.notice`, `session.archived`, `session.carried` (what a transition carries in, Transitions below) |
-| Session warnings | `session.warning` (`operation`, optional `trial`, `error`): nonfatal session maintenance failure; passed-trial marker or prune failures cite the durable passing `trial.end` |
+| Session warnings | `session.warning` (`operation`, optional `trial`, `error`): nonfatal session maintenance failure; passed-trial marker or prune failures cite the durable passing `trial.end`; state projection write failures cite the durable event when there is one |
 | Config and preflight | `config.loaded` (effective config and build stamp), `preflight.check` (one per check, with result) |
 | SMU | `smu.intent`, `smu.write`, `smu.readback`, `smu.error` |
 | Profile | `profile.applied` (applied condition), `profile.change` (resident profile, `from` null on entering guard), `profile.restored` (before shutdown) |
@@ -140,7 +140,11 @@ The first entry, ID 1, is the false failure on power-off fixed in [#14](https://
 
 ## State file
 
-`state.json` is rewritten atomically after every event that changes it: temp file, fsync, rename, directory fsync. It is shaped for one-glance reading:
+`state.json` is rewritten atomically after every event that changes it: temp file, fsync, rename, directory fsync.
+
+A failed projection write appends `session.warning` with `operation: "write state projection"` and the error, then continues the session; it never triggers emergency zeroing by itself. The authoritative event is already durable. Persisting that warning does not attempt another projection write, so an unwritable state file cannot recursively generate warnings. A journal append failure, including failure to append the warning, remains fatal and takes the emergency-zeroing path. Readers see either the previous complete state or the new complete state, never a torn file. On the next start, replay rebuilds a stale or missing projection and records `state.rebuilt` after a successful rewrite; if that rewrite fails, it warns and continues instead. A warning after a durable `shutdown` does not make the stopped boot a crash.
+
+It is shaped for one-glance reading:
 
 - `schema` (2), `session` (id, start time, BIOS context, baseline), `last_seq`;
 - `phase`: activity `search`, `hunt`, `refine` or `guard`;
@@ -187,7 +191,7 @@ The run log and `togi events` color the whole human-readable line according to i
 | Dead end (`deadend` event and `run` summary), incompatible-session refusal line (not an event) | Red, bold |
 | Search step passed (`step_deeper`), refinement `deepen`, or `hunt.end` result `culprit`, `joint` or `direct` | Green |
 | Core becomes done, search becomes resident, passed `refine.round` end, clean qualifying `guard.rotation` end, or tier earned | Green, bold |
-| `mark.joint`, `hunt.start`, `tuner.warning`, `session.warning`, `backoff` or `yield`; known defect or ruleset mismatch warning | Yellow |
+| `mark.joint`, `hunt.start`, `tuner.warning`, `session.warning` (including state projection write failures), `backoff` or `yield`; known defect or ruleset mismatch warning | Yellow |
 | Inconclusive trial or `backend.retry` | Dim |
 | `hunt.mask`, `refine.round` start, `hunt.skipped`, `host.ranking`, clean non-qualifying rotation, and everything else | Plain |
 

@@ -130,36 +130,37 @@ func (unwritableState) ReadState() (journal.State, error) {
 }
 func (unwritableState) WriteState(journal.State) error { return errors.New("simulated full disk") }
 
-type unzeroable struct{ machine.SMU }
-
-func (unzeroable) SetAllOffsets(int) error { return errors.New("simulated emergency zeroing failure") }
-
-func TestStateRewriteFailureOnResumeReadsEveryCoreBack(t *testing.T) {
+func TestStateRewriteFailureOnResumeRestoresSafeOffsets(t *testing.T) {
 	t.Parallel()
 	cfg := small()
 	cfg.BIOS = []int{-10, -20}
+	cfg.Model = &sim.Model{}
 	m := newSim(t, cfg)
 	in := simInput(t.TempDir(), m)
+	in.Config.CandidateEdges = map[int]int{0: -50, 1: -50}
 	simulate(t, in)
+	before := len(readEvents(t, in.Dir))
 	m.Reboot()
-	seams := m.Seams()
-	boot, err := seams.Host.BootID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: m.Now, Monotonic: m.Monotonic, Build: Build()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer j.Close()
-	seams.SMU = unzeroable{seams.SMU}
 	var stderr bytes.Buffer
-	if _, err := Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: unwritableState{wrapFor(in, nil)(j)}, Machine: seams, Rotations: 1, Stderr: &stderr}); err == nil {
-		t.Fatal("run succeeded without a writable state file")
+	in.Stderr = &stderr
+	stop, err := simulateBoot(context.Background(), in, func(j *journal.Journal) Journal {
+		return unwritableState{wrapFor(in, nil)(j)}
+	})
+	if err != nil || stop.Reason != StopRotations {
+		t.Fatalf("projection failure stopped resumed tuning: stop %+v, error %v", stop, err)
 	}
-	want := "togi: journal write failed: simulated full disk; setting every core to CO 0 without an intent failed: simulated emergency zeroing failure (readback: core 00 reads -10, core 01 reads -20)\n"
-	if diff := cmp.Diff(want, stderr.String()); diff != "" {
-		t.Fatalf("stderr (-want +got):\n%s", diff)
+	if diff := cmp.Diff("", stderr.String()); diff != "" {
+		t.Fatalf("projection failure invoked emergency zeroing (-want +got):\n%s", diff)
+	}
+	warning := readEvents(t, in.Dir)[before]
+	if diff := cmp.Diff(&journal.SessionWarning{Operation: "write state projection", Error: "simulated full disk"}, warning.Data); diff != "" {
+		t.Fatalf("resume did not warn about the failed projection: %s", diff)
+	}
+	for core, want := range cfg.BIOS {
+		got, err := m.Seams().SMU.Offset(core)
+		if err != nil || got != want {
+			t.Fatalf("core %d reads %d (%v), want ordinary restore %d", core, got, err, want)
+		}
 	}
 }
 

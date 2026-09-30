@@ -195,6 +195,19 @@ func (r *runner) coreInfo(core int) *machine.CoreInfo {
 }
 
 func (r *runner) append(p journal.Payload, cause ...int) (journal.Event, error) {
+	e, err := r.appendJournal(p, cause...)
+	if err != nil {
+		return journal.Event{}, err
+	}
+	if err := r.in.Journal.WriteState(r.state); err != nil {
+		if _, err := r.appendJournal(&journal.SessionWarning{Operation: "write state projection", Error: err.Error()}, e.Seq); err != nil {
+			return journal.Event{}, err
+		}
+	}
+	return e, nil
+}
+
+func (r *runner) appendJournal(p journal.Payload, cause ...int) (journal.Event, error) {
 	if r.fatal != nil {
 		return journal.Event{}, r.fatal
 	}
@@ -206,9 +219,6 @@ func (r *runner) append(p journal.Payload, cause ...int) (journal.Event, error) 
 	r.state.Fold(e)
 	r.tuner.Fold(e)
 	r.tuner.Project(&r.state)
-	if err := r.in.Journal.WriteState(r.state); err != nil {
-		return journal.Event{}, r.latch(err)
-	}
 	return e, nil
 }
 
@@ -271,7 +281,8 @@ func (r *runner) checkState() error {
 		return nil
 	}
 	if err := r.in.Journal.WriteState(r.state); err != nil {
-		return r.latch(err)
+		_, warningErr := r.appendJournal(&journal.SessionWarning{Operation: "write state projection", Error: err.Error()})
+		return warningErr
 	}
 	_, err = r.append(&journal.StateRebuilt{Fields: fields})
 	return err
