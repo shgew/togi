@@ -138,8 +138,8 @@ func TestWait(t *testing.T) {
 				if result.Signal != tt.signal {
 					t.Fatalf("signal %s, want %s (result %+v)", result.Signal, tt.signal, result)
 				}
-				if tt.signal == machine.ComputationError && (len(rec.signals) != 1 || rec.signals[0] != machine.ComputationError) {
-					t.Fatalf("backend computation signals = %v", rec.signals)
+				if tt.signal != "" && (len(rec.signals) != 1 || rec.signals[0] != tt.signal) {
+					t.Fatalf("backend failure signals = %v, want %s", rec.signals, tt.signal)
 				}
 				if tt.name == "escape" {
 					if !slices.Equal(result.Escaped, []int{9}) || len(rec.samples) == 0 || rec.samples[0].Warning != "outside allowed cpus" {

@@ -144,7 +144,11 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 			return Stop{}, err
 		}
 	}
-	if _, err := r.append(&journal.ConfigLoaded{Build: Build(), Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: r.in.Config}); err != nil {
+	boundary, err := r.startupBoundary()
+	if err != nil {
+		return Stop{}, err
+	}
+	if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: boundary, Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: r.in.Config}); err != nil {
 		return Stop{}, err
 	}
 	if err := r.recoverCrashes(ctx); err != nil {
@@ -296,23 +300,15 @@ func (r *runner) recoverCrashes(ctx context.Context) error {
 			}
 		}
 		inTrial := r.fold.open != nil && r.fold.open.boot == crashed
-		since := r.fold.appliedMono[crashed]
-		evidence := inTrial && r.fold.open.signal != ""
-		if inTrial && r.fold.open.startMono > 0 {
-			since = r.fold.open.startMono
+		evidence, err := r.recoveryBootMCEs(crashed, own)
+		if err != nil {
+			return err
 		}
-		for _, m := range own {
-			if m.Monotonic.Milliseconds() >= since {
-				evidence = true
-			}
-			if err := r.recordMCE(m, crashed); err != nil {
-				return err
-			}
-		}
+		evidence = evidence || inTrial && r.fold.open.signal != ""
 		for _, m := range after {
 			if !m.Corrected {
 				evidence = true
-				if err := r.recordMCE(m, next); err != nil {
+				if err := r.recordMCE(m, next, false); err != nil {
 					return err
 				}
 			}
@@ -363,6 +359,9 @@ func (r *runner) readMCEs(ctx context.Context, boot string) ([]machine.MCE, erro
 	}
 	for {
 		mces, err := r.in.Machine.Kernel.MCEs(boot, 0)
+		if boot != r.in.Boot && errors.Is(err, machine.ErrBootMissing) {
+			return mces, nil
+		}
 		if err == nil || errors.Is(err, machine.ErrCrashed) {
 			return mces, err
 		}
@@ -413,11 +412,11 @@ func (r *runner) waitKernelRetry(ctx context.Context) error {
 	return nil
 }
 
-func (r *runner) recordMCE(m machine.MCE, fromBoot string) error {
+func (r *runner) recordMCE(m machine.MCE, fromBoot string, between bool) error {
 	if r.fold.mceKeys[mceKey(fromBoot, m.Lines)] {
 		return nil
 	}
-	_, err := r.append(&journal.MCE{CPU: m.CPU, Core: m.Core, Bank: m.Bank, BankType: m.BankType, Corrected: m.Corrected, FromBoot: fromBoot, Lines: m.Lines})
+	_, err := r.append(&journal.MCE{CPU: m.CPU, Core: m.Core, Bank: m.Bank, BankType: m.BankType, Corrected: m.Corrected, MonotonicNS: new(int64(m.Monotonic)), FromBoot: fromBoot, BetweenTrials: between, Lines: m.Lines})
 	return err
 }
 
@@ -426,30 +425,50 @@ func (r *runner) closeOpenTrial() error {
 	if open == nil {
 		return nil
 	}
-	end := &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeInconclusive, Interrupted: true, Reason: journal.TrialReasonStoppedDuringTrial}
+	evidence := trialEvidence{
+		result:  machine.Result{Ran: open.ran(), Signal: open.signal},
+		missing: journal.TrialReasonStoppedDuringTrial,
+	}
 	cause := []int{open.seq}
-	if open.signal != "" {
-		end = &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeFailure, Signal: open.signal, Core: open.core, Interrupted: true, Reason: "backend reported a computation error before the reset"}
-	} else if len(open.mces) > 0 {
-		signal := machine.UncorrectedMCE
-		if open.corrected {
-			signal = machine.CorrectedMCE
-		}
-		end = &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeFailure, Signal: signal, Interrupted: true, Reason: journal.TrialReasonStoppedAfterMachineCheck}
+	if open.core != nil {
+		evidence.result.Core = *open.core
+	}
+	if len(open.mces) > 0 {
+		evidence.mces = []recordedMCE{{corrected: open.corrected}}
 		cause = append(cause, open.mces...)
-	} else if seq, crashed := r.fold.crashSeq[open.boot]; crashed {
-		crash := r.eventAt(seq).Data.(*journal.CrashDetected)
-		cause = append([]int{seq}, r.fold.recordedFor(open.boot, r.in.Boot)...)
-		switch {
-		case crash.ResetReason == machine.ResetThermalTrip && crash.Inconclusive:
-			end.Reason = "thermal trip during the trial"
-		case crash.Inconclusive:
-			end.Reason = "the machine lost power during the trial"
-		default:
-			end = &journal.TrialEnd{Trial: open.intent.Trial, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Reason: "machine crashed during the trial"}
+		if open.signal == "" {
+			evidence.missing = journal.TrialReasonStoppedAfterMachineCheck
 		}
 	}
-	end.DurationS = int(open.ran().Seconds())
+	interrupted := true
+	if seq, crashed := r.fold.crashSeq[open.boot]; crashed {
+		if open.signal != "" {
+			evidence.missing = "backend reported a failure before the reset"
+		}
+		crash := r.eventAt(seq).Data.(*journal.CrashDetected)
+		reset := &journal.TrialEnd{Outcome: journal.OutcomeInconclusive}
+		switch {
+		case crash.ResetReason == machine.ResetThermalTrip && crash.Inconclusive:
+			reset.Reason = "thermal trip during the trial"
+		case crash.Inconclusive:
+			reset.Reason = "the machine lost power during the trial"
+		default:
+			reset.Outcome, reset.Signal, reset.Reason = journal.OutcomeFailure, machine.Crash, "machine crashed during the trial"
+		}
+		evidence.reset = reset
+		if open.signal == "" && len(open.mces) == 0 {
+			cause = append([]int{seq}, r.fold.recordedFor(open.boot, r.in.Boot)...)
+			evidence.missing = ""
+			interrupted = reset.Outcome != journal.OutcomeFailure
+		}
+	}
+	evidence.missing = joinDiagnostic(evidence.missing, open.kernelError)
+	end := adjudicateTrial(evidence)
+	end.Trial, end.Interrupted = open.intent.Trial, interrupted
+	end.KernelBoundary = journal.KernelBoundary{KernelCursor: r.fold.kernelCursors[r.in.Boot], KernelError: open.kernelError}
+	if open.core == nil {
+		end.Core = nil
+	}
 	_, err := r.append(end, cause...)
 	return err
 }
@@ -566,7 +585,11 @@ func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 			return nil, err
 		}
 	}
-	if _, err := r.append(&journal.Shutdown{Reason: journal.ShutdownDeadEnd}); err != nil {
+	boundary, err := r.kernelBoundary("", 0, false)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := r.append(&journal.Shutdown{Reason: journal.ShutdownDeadEnd, KernelBoundary: boundary}); err != nil {
 		return nil, err
 	}
 	stop := &Stop{Reason: StopDeadEnd, DeadEnd: d, Reboot: d.Action == journal.ActionClearSavedEntryAndReboot && cleared}
@@ -916,6 +939,11 @@ func (r *runner) shutdown(p *journal.Shutdown, stop StopReason) (Stop, error) {
 	if err := r.restore(); err != nil {
 		return r.afterEvidence(err)
 	}
+	boundary, err := r.kernelBoundary("", 0, false)
+	if err != nil {
+		return Stop{}, err
+	}
+	p.KernelBoundary = boundary
 	if _, err := r.append(p); err != nil {
 		return Stop{}, err
 	}

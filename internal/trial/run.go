@@ -79,7 +79,7 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				if !inst.ready || (inst.suspended && t.options.NoScope) {
 					continue
 				}
-				if cpu, tid, escaped := t.outsideCPU(inst); escaped {
+				if cpu, tid, escaped := t.outsideCPU(inst, &result); escaped {
 					result.Escaped = []int{cpu}
 					report.Sample(machine.Sample{Warning: "outside allowed cpus", PID: inst.PID, TID: tid, CPU: cpu})
 					decision = true
@@ -289,7 +289,7 @@ func (t *running) handleEvent(e streamEvent, result *machine.Result, report mach
 			if e.err != nil {
 				status = e.err.Error()
 			}
-			report.Progress(fmt.Sprintf("core %02d backend exited early: %s", inst.Core, status))
+			report.Signal(inst.Core, machine.UnexpectedExit, status)
 			return true
 		}
 		return found
@@ -389,10 +389,14 @@ func (t *running) inScope(inst *instance) bool {
 	return t.options.NoScope || t.host.InScope(inst.PID, inst.Scope)
 }
 
-func (t *running) outsideCPU(inst *instance) (cpu, tid int, escaped bool) {
+func processDisappeared(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH)
+}
+
+func (t *running) outsideCPU(inst *instance, result *machine.Result) (cpu, tid int, escaped bool) {
 	threads, err := t.host.Threads(inst.PID)
-	if err != nil {
-		return 0, 0, false
+	if err != nil && !processDisappeared(err) && result.Inconclusive == "" {
+		result.Inconclusive = fmt.Sprintf("core %02d thread sampling lost: %v", inst.Core, err)
 	}
 	for _, task := range threads {
 		if !slices.Contains(inst.CPUs, task.CPU) {
@@ -404,6 +408,9 @@ func (t *running) outsideCPU(inst *instance) (cpu, tid int, escaped bool) {
 func (t *running) sample(inst *instance, now time.Time, result *machine.Result, report machine.Reporter) bool {
 	reading, err := t.host.Usage(inst.PID)
 	if err != nil {
+		if !processDisappeared(err) && result.Inconclusive == "" {
+			result.Inconclusive = fmt.Sprintf("core %02d usage sampling lost: %v", inst.Core, err)
+		}
 		return false
 	}
 	active := inst.active
@@ -436,7 +443,9 @@ func (t *running) sample(inst *instance, now time.Time, result *machine.Result, 
 		used := cpu - earlier.cpu
 		result.Signal = machine.Stall
 		result.Core = inst.Core
-		report.Sample(machine.Sample{Warning: fmt.Sprintf("stalled: %.1fs cpu in %.1fs running", used.Seconds(), span.Seconds()), PID: inst.PID, TID: inst.PID, CPU: reading.CPU})
+		detail := fmt.Sprintf("%.1fs cpu in %.1fs running", used.Seconds(), span.Seconds())
+		report.Signal(inst.Core, machine.Stall, detail)
+		report.Sample(machine.Sample{Warning: "stalled: " + detail, PID: inst.PID, TID: inst.PID, CPU: reading.CPU})
 		return true
 	}
 	return false

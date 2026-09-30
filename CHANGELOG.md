@@ -15,6 +15,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - Binaries built with `go build` report the seven-character Git revision and `-dirty` for modified checkouts, unless an explicit build revision is supplied; builds without VCS information still report `+dev` ([#183]).
 - `--config` is accepted only by `run` and `reset`; read-only commands no longer advertise it and reject it with exit 2 ([#187]).
 - The tuning boot now requires exactly one GRUB mirror, refusing configurations with several GRUB environments ([#189]).
+- Kernel logs are now read from a persisted, boot-local cursor at every trial boundary and clean shutdown, including dead ends, covering profile writes and retry waits; interrupted setup recovers the successful target readback boundary, between-trial MCEs are recorded and shown without feeding trial decisions, and a lost read interval keeps an intersecting trial inconclusive below stronger evidence, including valid MCEs returned before a cursor metadata error. If a session may have tuned through kernel-log gaps, run `togi reset --core N` for every tuned core; older journals cannot identify the affected trials ([#196]).
 
 ### Fixed
 
@@ -23,6 +24,11 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - y-cruncher preflight rejects non-executable binaries and ignores unrelated files when selecting its lowest-ISA and Zen 5 binaries ([#162]).
 - One-frame `togi watch` now prints journal read or compatibility errors on stderr and exits 1 while retaining the problem frame on stdout; a missing journal remains a successful `no session yet` frame ([#193]).
 - The tuning service requires the mount holding GRUB's environment, including a separate `noauto` boot mount ([#189]).
+- Trial outcome precedence now preserves backend failures and containment escapes when the runner also reports cleanup or cancellation errors, and preserves MCE evidence when kernel-log reading fails ([#167]).
+- Trials with unreadable or malformed thread or CPU-usage samples are now inconclusive, even if later samples succeed, unless higher-precedence failure evidence survives. If a session may have tuned through sampling errors, run `togi reset --core N` for every tuned core; older journals cannot identify the affected trials ([#168]).
+- Trials whose current boot is explicitly missing from the kernel log are now inconclusive unless higher-precedence failure evidence survives; valid empty results and recovery from vacuumed older boots are unchanged. If a session may have tuned through missing current-boot logs, run `togi reset --core N` for every tuned core; older journals cannot identify the affected trials ([#172]).
+- Backend early exits and stalls are now recorded immediately as typed failure evidence, so recovery preserves the affected core if the machine crashes before the trial ends ([#173]).
+- MCEs now record their boot-local monotonic time, so crash recovery cannot attribute a trial to a machine check from before its profile was applied; outside-window MCEs remain visible without becoming trial causes, and older MCE events retain their previous replay behavior ([#200]).
 
 ## [0.5.0] - 2026-09-29
 
@@ -227,3 +233,8 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#183]: https://github.com/shgew/togi/pull/183
 [#187]: https://github.com/shgew/togi/pull/187
 [#193]: https://github.com/shgew/togi/pull/193
+[#167]: https://github.com/shgew/togi/pull/167
+[#168]: https://github.com/shgew/togi/pull/168
+[#172]: https://github.com/shgew/togi/pull/172
+[#173]: https://github.com/shgew/togi/pull/173
+[#196]: https://github.com/shgew/togi/pull/196

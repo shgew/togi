@@ -4,6 +4,7 @@ package trial
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -62,31 +63,62 @@ func (osHost) InScope(pid int, scope string) bool {
 }
 
 func (osHost) Usage(pid int) (usage, error) {
-	fields, err := procStat(fmt.Sprintf("/proc/%d/stat", pid))
+	return procUsage(fmt.Sprintf("/proc/%d/stat", pid))
+}
+
+func procUsage(path string) (usage, error) {
+	fields, err := procStat(path)
 	if err != nil {
-		return usage{}, fmt.Errorf("read process %d usage: %w", pid, err)
+		return usage{}, fmt.Errorf("read usage %s: %w", path, err)
 	}
-	return usage{CPUTime: time.Duration(fieldInt(fields, 14)+fieldInt(fields, 15)) * time.Second / 100, CPU: int(fieldInt(fields, 39))}, nil
+	user, err := fieldInt(fields, 14)
+	if err != nil {
+		return usage{}, fmt.Errorf("read usage %s: %w", path, err)
+	}
+	system, err := fieldInt(fields, 15)
+	if err != nil {
+		return usage{}, fmt.Errorf("read usage %s: %w", path, err)
+	}
+	cpu, err := fieldInt(fields, 39)
+	if err != nil {
+		return usage{}, fmt.Errorf("read usage %s: %w", path, err)
+	}
+	return usage{CPUTime: time.Duration(user+system) * time.Second / 100, CPU: int(cpu)}, nil
 }
 
 func (osHost) Threads(pid int) ([]thread, error) {
-	tasks, err := os.ReadDir(fmt.Sprintf("/proc/%d/task", pid))
+	return procThreads(fmt.Sprintf("/proc/%d/task", pid))
+}
+
+func procThreads(path string) ([]thread, error) {
+	tasks, err := os.ReadDir(path)
 	if err != nil {
-		return nil, fmt.Errorf("list process %d threads: %w", pid, err)
+		return nil, fmt.Errorf("list threads %s: %w", path, err)
 	}
 	var threads []thread
+	var lost error
 	for _, task := range tasks {
 		tid, err := strconv.Atoi(task.Name())
-		if err != nil {
+		if err != nil || tid <= 0 {
+			lost = errors.Join(lost, fmt.Errorf("malformed thread id %s in %s", task.Name(), path))
 			continue
 		}
-		stat, err := procStat(fmt.Sprintf("/proc/%d/task/%s/stat", pid, task.Name()))
-		if err != nil {
+		stat, err := procStat(path + "/" + task.Name() + "/stat")
+		if processDisappeared(err) {
 			continue
 		}
-		threads = append(threads, thread{TID: tid, CPU: int(fieldInt(stat, 39))})
+		if err != nil {
+			lost = errors.Join(lost, fmt.Errorf("read thread %d: %w", tid, err))
+			continue
+		}
+		cpu, err := fieldInt(stat, 39)
+		if err != nil {
+			lost = errors.Join(lost, fmt.Errorf("read thread %d: %w", tid, err))
+			continue
+		}
+		threads = append(threads, thread{TID: tid, CPU: int(cpu)})
 	}
-	return threads, nil
+	return threads, lost
 }
 
 func (osHost) KillScope(scope string) ([]byte, error) {
@@ -113,9 +145,15 @@ func procStat(path string) (fields []string, err error) {
 	}
 	return fields, nil
 }
-func fieldInt(fields []string, number int) int64 {
-	v, _ := strconv.ParseInt(fields[number-3], 10, 64)
-	return v
+func fieldInt(fields []string, number int) (int64, error) {
+	v, err := strconv.ParseInt(fields[number-3], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("malformed proc stat field %d: %w", number, err)
+	}
+	if v < 0 {
+		return 0, fmt.Errorf("negative proc stat field %d: %d", number, v)
+	}
+	return v, nil
 }
 func CheckSystemdRun() (string, error) {
 	argv := scopeArgv(fmt.Sprintf("togi-preflight-%d", os.Getpid()), []int{0}, "/bin/sh", "-c", "exit 0")

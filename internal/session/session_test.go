@@ -629,7 +629,7 @@ func TestInterruptedTrialRecordsTimeRan(t *testing.T) {
 	}
 	for _, e := range readEvents(t, in.Dir) {
 		if p, ok := e.Data.(*journal.TrialEnd); ok {
-			if !p.Interrupted || p.DurationS != 85 || e.Msg != "trial 0001 INCONCLUSIVE after 85s: stopped by signal" {
+			if !p.Interrupted || p.DurationS != 85 || p.Outcome != journal.OutcomeInconclusive {
 				t.Fatalf("trial.end %+v: %s", p, e.Msg)
 			}
 			return
@@ -745,6 +745,7 @@ type runnerFault struct {
 	fired   bool
 	pending *machine.MCE
 	now     func() time.Time
+	mono    func() time.Duration
 }
 
 type faultyTrials struct {
@@ -757,7 +758,7 @@ func (t faultyTrials) Start(ctx context.Context, spec machine.TrialSpec) (machin
 		return t.Trials.Start(ctx, spec)
 	}
 	t.f.fired = true
-	t.f.pending = &machine.MCE{CPU: spec.CPUs[0], Core: spec.Cores[0], BankType: machine.LoadStore, Corrected: true, Time: t.f.now(), Lines: []string{"[Hardware Error]: Corrected error (test)"}}
+	t.f.pending = &machine.MCE{CPU: spec.CPUs[0], Core: spec.Cores[0], BankType: machine.LoadStore, Corrected: true, Time: t.f.now(), Monotonic: t.f.mono(), Lines: []string{"[Hardware Error]: Corrected error (test)"}}
 	return nil, errors.New("backend exited during setup")
 }
 
@@ -766,13 +767,10 @@ type faultyKernel struct {
 	f *runnerFault
 }
 
-func (k faultyKernel) MCEs(boot string, since time.Duration) ([]machine.MCE, error) {
-	found, err := k.Kernel.MCEs(boot, since)
-	if k.f.pending != nil {
-		k.f.pending.Monotonic = since
-	}
+func (k faultyKernel) ReadMCEs(boot, cursor string) (machine.KernelRead, error) {
+	found, err := k.Kernel.ReadMCEs(boot, cursor)
 	if err == nil && k.f.pending != nil {
-		found = append(found, *k.f.pending)
+		found.MCEs = append(found.MCEs, *k.f.pending)
 		k.f.pending = nil
 	}
 	return found, err
@@ -782,7 +780,7 @@ func TestRunnerErrorKeepsMachineCheck(t *testing.T) {
 	t.Parallel()
 	in := simInput(t.TempDir(), newSim(t, small()))
 	seams := in.Machine.Seams()
-	f := &runnerFault{now: in.Machine.Now}
+	f := &runnerFault{now: in.Machine.Now, mono: in.Machine.Monotonic}
 	seams.Trials = faultyTrials{Trials: seams.Trials, f: f}
 	seams.Kernel = faultyKernel{Kernel: seams.Kernel, f: f}
 	var stop Stop

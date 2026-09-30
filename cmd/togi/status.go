@@ -27,7 +27,8 @@ Show the session at a glance: search, hunt, refinement or guard activity, tier
 and qualifying rotation progress, then each core's offset, failed and joint
 marks, done phase, queued work and last decision. An open hunt shows masks and
 starts; an open refinement round shows checks and passes. Evidence includes
-workloads, starts, clean hours and bounds since the tier clock. Lists reset
+workloads, starts, clean hours and bounds since the tier clock, and lists
+between-trial MCEs without treating them as failures. Lists reset
 commands for unanswered too-cautious defects. Read-only; rendered from the
 journal. A different ruleset warns before rendering; a different schema is
 refused.
@@ -162,6 +163,11 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	}
 	_ = tw.Flush()
 	writeJointMarks(w, st.JointMarks)
+	for _, e := range events {
+		if p, ok := e.Data.(*journal.MCE); ok && p.BetweenTrials {
+			fmt.Fprintf(w, "\nbetween-trial evidence [#%d]: %s\n", e.Seq, e.Msg)
+		}
+	}
 	if h := st.Hunt; h != nil {
 		anchor := "all-zero"
 		if h.AnchorSeq != 0 {

@@ -70,7 +70,8 @@ type Result struct {
 	Signal Signal
 	// Core is the core of the instance that produced Signal.
 	Core int
-	// Inconclusive, when not empty, says why the trial proves nothing.
+	// Inconclusive records setup or required sampling loss; later valid samples cannot clear it.
+	// Higher-precedence failure evidence can still decide the trial.
 	Inconclusive string
 	// Escaped lists logical CPUs a backend thread was seen on outside the trial's CPUs.
 	Escaped []int
@@ -98,7 +99,7 @@ type Sample struct {
 type Reporter interface {
 	Progress(detail string)
 	Sample(s Sample)
-	// Signal reports a backend computation error the moment it is classified, before the trial ends.
+	// Signal reports a backend computation error, early exit or stall when classified, before the trial ends.
 	Signal(core int, signal Signal, detail string)
 }
 
@@ -144,10 +145,18 @@ type ResetReason struct {
 	Supported bool
 }
 
+type KernelRead struct {
+	MCEs   []MCE
+	Cursor string
+}
+
 type Kernel interface {
 	// MCEs returns the machine checks in the kernel log of boot `boot` at or after the boot-local monotonic time `since`; 0 is the whole boot.
 	// Earlier boots come from the persistent system journal; an unknown boot has none.
 	MCEs(boot string, since time.Duration) ([]MCE, error)
+	// ReadMCEs reads after an exact boot-local cursor, or the whole boot when cursor is empty.
+	// An unavailable cursor returns ErrCursorMissing, never a silently shortened interval.
+	ReadMCEs(boot, cursor string) (KernelRead, error)
 	// ResetReason reads what boot `boot`'s kernel logged about the reset before it.
 	ResetReason(boot string) (ResetReason, error)
 }
@@ -167,3 +176,5 @@ var ErrBackendMissing = errors.New("backend binary missing")
 
 // ErrBootMissing means the system journal no longer holds the boot, for example after journald vacuumed it.
 var ErrBootMissing = errors.New("boot missing from the system journal")
+
+var ErrCursorMissing = errors.New("kernel log cursor cannot be resumed")
