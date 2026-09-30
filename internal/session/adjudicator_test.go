@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -94,10 +95,17 @@ func (r evidenceRunning) Wait(context.Context, machine.Reporter) (machine.Result
 	return r.result, r.err
 }
 
-type evidenceKernel struct{ machine.Kernel }
+type evidenceKernel struct {
+	machine.Kernel
+	calls int
+}
 
-func (k evidenceKernel) MCEs(string, time.Duration) ([]machine.MCE, error) {
-	return []machine.MCE{{Core: 0, Corrected: true, Lines: []string{"test machine check"}}}, errors.New("kernel read failed")
+func (k *evidenceKernel) ReadMCEs(boot, cursor string) (machine.KernelRead, error) {
+	k.calls++
+	if k.calls < 3 {
+		return k.Kernel.ReadMCEs(boot, cursor)
+	}
+	return machine.KernelRead{MCEs: []machine.MCE{{Core: 0, Corrected: true, Monotonic: 24 * time.Hour, Lines: []string{"test machine check"}}}}, errors.New("kernel read failed")
 }
 
 func TestRunnerEvidenceSurvivesErrors(t *testing.T) {
@@ -117,7 +125,7 @@ func TestRunnerEvidenceSurvivesErrors(t *testing.T) {
 			seams := in.Machine.Seams()
 			seams.Trials = evidenceTrials{Trials: seams.Trials, result: tc.result, err: errors.New("cleanup failed")}
 			if tc.kernel {
-				seams.Kernel = evidenceKernel{seams.Kernel}
+				seams.Kernel = &evidenceKernel{Kernel: seams.Kernel}
 			}
 			_, err := runWithSeams(context.Background(), in, seams)
 			if err != nil {
@@ -166,11 +174,23 @@ func TestInterruptedBackendFailureWithoutReset(t *testing.T) {
 
 type missingBootKernel struct {
 	machine.Kernel
-	mces []machine.MCE
+	mces  []machine.MCE
+	calls int
 }
 
-func (k missingBootKernel) MCEs(boot string, _ time.Duration) ([]machine.MCE, error) {
-	return k.mces, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)
+func (k *missingBootKernel) ReadMCEs(boot, cursor string) (machine.KernelRead, error) {
+	k.calls++
+	if cursor == "" {
+		return k.Kernel.ReadMCEs(boot, cursor)
+	}
+	mces := slices.Clone(k.mces)
+	if k.calls < 3 {
+		mces = nil
+	}
+	for i := range mces {
+		mces[i].Monotonic = 24 * time.Hour
+	}
+	return machine.KernelRead{MCEs: mces}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)
 }
 
 func TestRunnerMissingCurrentBoot(t *testing.T) {
@@ -191,7 +211,7 @@ func TestRunnerMissingCurrentBoot(t *testing.T) {
 			in := simInput(t.TempDir(), newSim(t, small()))
 			seams := in.Machine.Seams()
 			seams.Trials = evidenceTrials{Trials: seams.Trials, result: machine.Result{Ran: 24 * time.Hour, Signal: tc.signal}}
-			seams.Kernel = missingBootKernel{Kernel: seams.Kernel, mces: tc.mces}
+			seams.Kernel = &missingBootKernel{Kernel: seams.Kernel, mces: tc.mces}
 			if _, err := runWithSeams(context.Background(), in, seams); err != nil {
 				t.Fatal(err)
 			}

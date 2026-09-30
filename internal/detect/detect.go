@@ -75,27 +75,99 @@ func (k *Kernel) MCEs(boot string, since time.Duration) ([]machine.MCE, error) {
 		if err := json.Unmarshal(line, &entry); err != nil {
 			return nil, fmt.Errorf("decode kernel log of boot %s: %w", boot, err)
 		}
-		var text string
-		if err := json.Unmarshal(entry.Message, &text); err != nil {
-			var raw []byte
-			if err := json.Unmarshal(entry.Message, &raw); err != nil {
-				return nil, fmt.Errorf("decode kernel message of boot %s: %w", boot, err)
-			}
-			text = string(raw)
-		}
-		micros, err := strconv.ParseInt(entry.Timestamp, 10, 64)
+		msg, err := decodeMessage(entry.Message, entry.Timestamp, entry.Monotonic)
 		if err != nil {
-			return nil, fmt.Errorf("decode kernel timestamp of boot %s: %w", boot, err)
+			return nil, fmt.Errorf("decode kernel message of boot %s: %w", boot, err)
 		}
-		mono, err := strconv.ParseInt(entry.Monotonic, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("decode kernel monotonic timestamp of boot %s: %w", boot, err)
-		}
-		if at := time.Duration(mono) * time.Microsecond; at >= since {
-			msgs = append(msgs, Message{Time: time.UnixMicro(micros), Text: text, Monotonic: at})
+		if msg.Monotonic >= since {
+			msgs = append(msgs, msg)
 		}
 	}
 	return Parse(msgs, k.cpuCore), nil
+}
+
+func (k *Kernel) ReadMCEs(boot, cursor string) (machine.KernelRead, error) {
+	bootID := strings.ReplaceAll(boot, "-", "")
+	args := []string{"-k", "-b", bootID, "-o", "json", "--output-fields=MESSAGE,__REALTIME_TIMESTAMP,__MONOTONIC_TIMESTAMP,__CURSOR,_BOOT_ID", "--no-pager", "-q"}
+	if cursor != "" {
+		args = append(args, "--cursor="+cursor)
+	}
+	out, stderr, code, err := k.journalctl(args)
+	if err != nil {
+		return machine.KernelRead{}, fmt.Errorf("read kernel log of boot %s: %w: %s", boot, err, bytes.TrimSpace(stderr))
+	}
+	if code != 0 {
+		if code == 1 && bytes.Contains(stderr, noBootEntry) {
+			return machine.KernelRead{}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)
+		}
+		if cursor != "" && bytes.Contains(stderr, []byte("Failed to seek to cursor")) {
+			return machine.KernelRead{}, fmt.Errorf("read kernel log of boot %s: %w: %s", boot, machine.ErrCursorMissing, bytes.TrimSpace(stderr))
+		}
+		return machine.KernelRead{}, fmt.Errorf("read kernel log of boot %s: exit status %d: %s", boot, code, bytes.TrimSpace(stderr))
+	}
+	var result machine.KernelRead
+	var msgs []Message
+	for line := range bytes.SplitSeq(out, []byte{'\n'}) {
+		if len(line) == 0 {
+			continue
+		}
+		var entry struct {
+			Message   json.RawMessage `json:"MESSAGE"`
+			Timestamp string          `json:"__REALTIME_TIMESTAMP"`
+			Monotonic string          `json:"__MONOTONIC_TIMESTAMP"`
+			Cursor    string          `json:"__CURSOR"`
+			Boot      string          `json:"_BOOT_ID"`
+		}
+		if err := json.Unmarshal(line, &entry); err != nil {
+			result.MCEs = Parse(msgs, k.cpuCore)
+			return result, fmt.Errorf("decode kernel log of boot %s: %w", boot, err)
+		}
+		if entry.Cursor == "" || entry.Boot != bootID {
+			return machine.KernelRead{}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrCursorMissing)
+		}
+		if result.Cursor == "" && cursor != "" {
+			if entry.Cursor != cursor {
+				return machine.KernelRead{}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrCursorMissing)
+			}
+			result.Cursor = entry.Cursor
+			continue
+		}
+		result.Cursor = entry.Cursor
+		msg, err := decodeMessage(entry.Message, entry.Timestamp, entry.Monotonic)
+		if err != nil {
+			result.MCEs = Parse(msgs, k.cpuCore)
+			return result, fmt.Errorf("decode kernel message of boot %s: %w", boot, err)
+		}
+		if !strings.Contains(msg.Text, "Hardware Error") {
+			continue
+		}
+		msgs = append(msgs, msg)
+	}
+	if result.Cursor == "" {
+		return machine.KernelRead{}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrCursorMissing)
+	}
+	result.MCEs = Parse(msgs, k.cpuCore)
+	return result, nil
+}
+
+func decodeMessage(raw json.RawMessage, timestamp, monotonic string) (Message, error) {
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		var data []byte
+		if err := json.Unmarshal(raw, &data); err != nil {
+			return Message{}, err
+		}
+		text = string(data)
+	}
+	micros, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return Message{}, err
+	}
+	mono, err := strconv.ParseInt(monotonic, 10, 64)
+	if err != nil {
+		return Message{}, err
+	}
+	return Message{Time: time.UnixMicro(micros), Text: text, Monotonic: time.Duration(mono) * time.Microsecond}, nil
 }
 
 var noBootEntry = []byte("No journal boot entry found")

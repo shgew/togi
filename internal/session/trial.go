@@ -145,6 +145,11 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	} else {
 		p.Core, p.Offset = new(t.Core), new(t.Offset)
 	}
+	boundary, err := r.kernelBoundary("", 0, false)
+	if err != nil {
+		return err
+	}
+	p.KernelBoundary = boundary
 	intent, err := r.append(p, a.Cause...)
 	if err != nil {
 		return err
@@ -170,7 +175,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 		return tr.finish(trialCtx, since, machine.Result{}, "setup failed", err)
 	}
 	s := running.Started()
-	ts := &journal.TrialStart{Trial: tr.id, Scope: s.Scope, PID: s.PID, CPUs: s.CPUs, Argv: s.Argv, Files: s.Files}
+	ts := &journal.TrialStart{Trial: tr.id, WindowStartNS: new(since.Nanoseconds()), Scope: s.Scope, PID: s.PID, CPUs: s.CPUs, Argv: s.Argv, Files: s.Files}
 	if len(s.Instances) > 1 {
 		for _, in := range s.Instances {
 			ts.Instances = append(ts.Instances, journal.TrialInstance{Core: in.Core, CPUs: in.CPUs, PID: in.PID, Scope: in.Scope})
@@ -249,11 +254,10 @@ func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine
 	if crashed && len(res.Escaped) == 0 && res.Signal == "" {
 		return runnerErr
 	}
-	var mces []recordedMCE
-	var readErr error
+	var boundary journal.KernelBoundary
 	if !crashed {
 		var err error
-		mces, readErr, err = tr.teardown(since)
+		boundary, err = tr.teardown(since)
 		if err != nil {
 			if !errors.Is(err, machine.ErrCrashed) || len(res.Escaped) == 0 && res.Signal == "" {
 				return err
@@ -261,15 +265,19 @@ func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine
 			runnerErr, crashed = errors.Join(runnerErr, err), true
 		}
 	}
-	diagnostic := ""
-	if runnerErr != nil {
-		diagnostic = fmt.Sprintf("%s: %v", what, runnerErr)
+	mces := make([]recordedMCE, 0, len(r.fold.open.mces))
+	for _, seq := range r.fold.open.mces {
+		p := r.eventAt(seq).Data.(*journal.MCE)
+		mces = append(mces, recordedMCE{seq: seq, corrected: p.Corrected})
 	}
-	if readErr != nil {
-		diagnostic = joinDiagnostic(diagnostic, "kernel log unreadable: "+readErr.Error())
+	diagnostic := joinDiagnostic(r.fold.open.kernelError, boundary.KernelError)
+	if runnerErr != nil {
+		diagnostic = joinDiagnostic(diagnostic, fmt.Sprintf("%s: %v", what, runnerErr))
 	}
 	end := adjudicateTrial(trialEvidence{result: res, mces: mces, missing: diagnostic, duration: time.Duration(tr.t.DurationS) * time.Second})
 	end.Trial = tr.id
+	end.KernelBoundary = boundary
+	end.KernelError = joinDiagnostic(r.fold.open.kernelError, boundary.KernelError)
 	end.BackendMissing = errors.Is(runnerErr, machine.ErrBackendMissing)
 	end.Interrupted = ctx.Err() != nil || crashed
 	if ctx.Err() != nil {
@@ -350,28 +358,14 @@ func mceSignal(mces []recordedMCE) machine.Signal {
 	return machine.UncorrectedMCE
 }
 
-func (tr *trialRun) teardown(since time.Duration) (mces []recordedMCE, readErr, err error) {
+func (tr *trialRun) teardown(since time.Duration) (journal.KernelBoundary, error) {
 	r := tr.r
 	if tr.writesTarget() {
 		if _, err := r.set(tr.t.Core, 0, tr.start); err != nil {
-			return nil, nil, err
+			return journal.KernelBoundary{}, err
 		}
 	}
-	found, readErr := r.in.Machine.Kernel.MCEs(r.in.Boot, since)
-	if errors.Is(readErr, machine.ErrCrashed) {
-		return nil, nil, readErr
-	}
-	for _, m := range found {
-		if r.fold.mceKeys[mceKey(r.in.Boot, m.Lines)] {
-			continue
-		}
-		e, err := r.append(&journal.MCE{CPU: m.CPU, Core: m.Core, Bank: m.Bank, BankType: m.BankType, Corrected: m.Corrected, Lines: m.Lines}, tr.start)
-		if err != nil {
-			return nil, nil, err
-		}
-		mces = append(mces, recordedMCE{seq: e.Seq, corrected: m.Corrected})
-	}
-	return mces, readErr, nil
+	return r.kernelBoundary(tr.id, since, false, tr.start)
 }
 
 func (tr *trialRun) mceSeqs(mces []recordedMCE) []int {

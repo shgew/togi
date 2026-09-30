@@ -144,7 +144,11 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 			return Stop{}, err
 		}
 	}
-	if _, err := r.append(&journal.ConfigLoaded{Build: Build(), Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: r.in.Config}); err != nil {
+	boundary, err := r.startupBoundary()
+	if err != nil {
+		return Stop{}, err
+	}
+	if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: boundary, Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: r.in.Config}); err != nil {
 		return Stop{}, err
 	}
 	if err := r.recoverCrashes(ctx); err != nil {
@@ -296,23 +300,15 @@ func (r *runner) recoverCrashes(ctx context.Context) error {
 			}
 		}
 		inTrial := r.fold.open != nil && r.fold.open.boot == crashed
-		since := r.fold.appliedMono[crashed]
-		evidence := inTrial && r.fold.open.signal != ""
-		if inTrial && r.fold.open.startMono > 0 {
-			since = r.fold.open.startMono
+		evidence, err := r.recoveryBootMCEs(crashed, own)
+		if err != nil {
+			return err
 		}
-		for _, m := range own {
-			if m.Monotonic.Milliseconds() >= since {
-				evidence = true
-			}
-			if err := r.recordMCE(m, crashed); err != nil {
-				return err
-			}
-		}
+		evidence = evidence || inTrial && r.fold.open.signal != ""
 		for _, m := range after {
 			if !m.Corrected {
 				evidence = true
-				if err := r.recordMCE(m, next); err != nil {
+				if err := r.recordMCE(m, next, false); err != nil {
 					return err
 				}
 			}
@@ -416,11 +412,11 @@ func (r *runner) waitKernelRetry(ctx context.Context) error {
 	return nil
 }
 
-func (r *runner) recordMCE(m machine.MCE, fromBoot string) error {
+func (r *runner) recordMCE(m machine.MCE, fromBoot string, between bool) error {
 	if r.fold.mceKeys[mceKey(fromBoot, m.Lines)] {
 		return nil
 	}
-	_, err := r.append(&journal.MCE{CPU: m.CPU, Core: m.Core, Bank: m.Bank, BankType: m.BankType, Corrected: m.Corrected, FromBoot: fromBoot, Lines: m.Lines})
+	_, err := r.append(&journal.MCE{CPU: m.CPU, Core: m.Core, Bank: m.Bank, BankType: m.BankType, Corrected: m.Corrected, FromBoot: fromBoot, BetweenTrials: between, Lines: m.Lines})
 	return err
 }
 
@@ -466,8 +462,10 @@ func (r *runner) closeOpenTrial() error {
 			interrupted = reset.Outcome != journal.OutcomeFailure
 		}
 	}
+	evidence.missing = joinDiagnostic(evidence.missing, open.kernelError)
 	end := adjudicateTrial(evidence)
 	end.Trial, end.Interrupted = open.intent.Trial, interrupted
+	end.KernelBoundary = journal.KernelBoundary{KernelCursor: r.fold.kernelCursors[r.in.Boot], KernelError: open.kernelError}
 	if open.core == nil {
 		end.Core = nil
 	}
@@ -937,6 +935,11 @@ func (r *runner) shutdown(p *journal.Shutdown, stop StopReason) (Stop, error) {
 	if err := r.restore(); err != nil {
 		return r.afterEvidence(err)
 	}
+	boundary, err := r.kernelBoundary("", 0, false)
+	if err != nil {
+		return Stop{}, err
+	}
+	p.KernelBoundary = boundary
 	if _, err := r.append(p); err != nil {
 		return Stop{}, err
 	}

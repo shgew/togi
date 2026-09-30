@@ -145,10 +145,18 @@ type ResetReason struct {
 	Supported bool
 }
 
+type KernelRead struct {
+	MCEs   []MCE
+	Cursor string
+}
+
 type Kernel interface {
 	// MCEs returns the machine checks in the kernel log of boot `boot` at or after the boot-local monotonic time `since`; 0 is the whole boot.
 	// Earlier boots come from the persistent system journal; an unknown boot has none.
 	MCEs(boot string, since time.Duration) ([]MCE, error)
+	// ReadMCEs reads after an exact boot-local cursor, or the whole boot when cursor is empty.
+	// An unavailable cursor returns ErrCursorMissing, never a silently shortened interval.
+	ReadMCEs(boot, cursor string) (KernelRead, error)
 	// ResetReason reads what boot `boot`'s kernel logged about the reset before it.
 	ResetReason(boot string) (ResetReason, error)
 }
@@ -168,3 +176,5 @@ var ErrBackendMissing = errors.New("backend binary missing")
 
 // ErrBootMissing means the system journal no longer holds the boot, for example after journald vacuumed it.
 var ErrBootMissing = errors.New("boot missing from the system journal")
+
+var ErrCursorMissing = errors.New("kernel log cursor cannot be resumed")

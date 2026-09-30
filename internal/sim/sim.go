@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -577,6 +578,32 @@ func (k kernel) MCEs(boot string, since time.Duration) ([]machine.MCE, error) {
 		}
 	}
 	return out, nil
+}
+
+func (k kernel) ReadMCEs(boot, cursor string) (machine.KernelRead, error) {
+	if k.m.crashed {
+		return machine.KernelRead{}, machine.ErrCrashed
+	}
+	if _, ok := k.m.reasons[boot]; !ok {
+		return machine.KernelRead{}, fmt.Errorf("read kernel log of boot %s: %w", boot, machine.ErrBootMissing)
+	}
+	start := 0
+	if cursor != "" {
+		prefix := boot + ":"
+		if !strings.HasPrefix(cursor, prefix) {
+			return machine.KernelRead{}, machine.ErrCursorMissing
+		}
+		var err error
+		start, err = strconv.Atoi(strings.TrimPrefix(cursor, prefix))
+		if err != nil || start < 0 || start > len(k.m.logs[boot]) {
+			return machine.KernelRead{}, machine.ErrCursorMissing
+		}
+	}
+	mces := k.m.logs[boot][start:]
+	if len(mces) == 0 {
+		mces = nil
+	}
+	return machine.KernelRead{MCEs: slices.Clone(mces), Cursor: boot + ":" + strconv.Itoa(len(k.m.logs[boot]))}, nil
 }
 
 func (k kernel) ResetReason(boot string) (machine.ResetReason, error) {

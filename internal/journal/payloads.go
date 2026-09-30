@@ -206,8 +206,14 @@ func (p *SessionCarried) Message() string {
 	return fmt.Sprintf("carried %d candidate edges from %s; failed marks stay behind: %s", edges, from, p.Detail)
 }
 
+type KernelBoundary struct {
+	KernelCursor string `json:"kernel_cursor,omitempty"`
+	KernelError  string `json:"kernel_error,omitempty"`
+}
+
 type ConfigLoaded struct {
 	Build
+	KernelBoundary
 	Path   string        `json:"path"`
 	File   bool          `json:"file"`
 	Config config.Config `json:"config"`
@@ -349,7 +355,8 @@ func (p *ProfileRestored) Message() string {
 }
 
 type TrialIntent struct {
-	Trial     string            `json:"trial"`
+	Trial string `json:"trial"`
+	KernelBoundary
 	Profile   []int             `json:"profile"`
 	Core      *int              `json:"core,omitempty"`
 	Cores     []int             `json:"cores,omitempty"`
@@ -403,13 +410,14 @@ func (p *TrialIntent) Message() string {
 }
 
 type TrialStart struct {
-	Trial     string          `json:"trial"`
-	Scope     string          `json:"scope"`
-	PID       int             `json:"pid"`
-	CPUs      []int           `json:"cpus"`
-	Argv      []string        `json:"argv"`
-	Files     []string        `json:"files,omitempty"`
-	Instances []TrialInstance `json:"instances,omitempty"`
+	Trial         string          `json:"trial"`
+	WindowStartNS *int64          `json:"window_start_ns,omitempty"`
+	Scope         string          `json:"scope"`
+	PID           int             `json:"pid"`
+	CPUs          []int           `json:"cpus"`
+	Argv          []string        `json:"argv"`
+	Files         []string        `json:"files,omitempty"`
+	Instances     []TrialInstance `json:"instances,omitempty"`
 }
 
 type TrialInstance struct {
@@ -479,7 +487,8 @@ const (
 )
 
 type TrialEnd struct {
-	Trial          string         `json:"trial"`
+	Trial string `json:"trial"`
+	KernelBoundary
 	Outcome        Outcome        `json:"outcome"`
 	Signal         machine.Signal `json:"signal,omitempty"`
 	Core           *int           `json:"core,omitempty"`
@@ -556,13 +565,15 @@ func (p *Failure) Message() string {
 }
 
 type MCE struct {
-	CPU       int              `json:"cpu"`
-	Core      int              `json:"core"`
-	Bank      int              `json:"bank"`
-	BankType  machine.BankType `json:"bank_type"`
-	Corrected bool             `json:"corrected"`
-	FromBoot  string           `json:"from_boot,omitempty"`
-	Lines     []string         `json:"lines"`
+	CPU           int              `json:"cpu"`
+	Core          int              `json:"core"`
+	Bank          int              `json:"bank"`
+	BankType      machine.BankType `json:"bank_type"`
+	Corrected     bool             `json:"corrected"`
+	FromBoot      string           `json:"from_boot,omitempty"`
+	Trial         string           `json:"trial,omitempty"`
+	BetweenTrials bool             `json:"between_trials,omitempty"`
+	Lines         []string         `json:"lines"`
 }
 
 func (*MCE) Kind() Kind { return KindMCE }
@@ -578,6 +589,9 @@ func (p *MCE) Message() string {
 	msg := fmt.Sprintf("%s MCE on cpu %d (core %s), bank %d %s (%s)", kind, p.CPU, coreID(p.Core), p.Bank, p.BankType, scope)
 	if p.FromBoot != "" {
 		msg += " from boot " + shortBoot(p.FromBoot)
+	}
+	if p.BetweenTrials {
+		msg += " between trials (recorded only)"
 	}
 	return msg
 }
@@ -814,8 +828,9 @@ func (p *BootSavedEntry) Message() string {
 }
 
 type Shutdown struct {
-	Reason    ShutdownReason `json:"reason"`
-	Rotations int            `json:"rotations,omitempty"`
+	Reason ShutdownReason `json:"reason"`
+	KernelBoundary
+	Rotations int `json:"rotations,omitempty"`
 }
 
 func (*Shutdown) Kind() Kind { return KindShutdown }

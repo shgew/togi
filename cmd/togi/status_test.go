@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
@@ -119,6 +120,47 @@ func TestCertResidentOffsets(t *testing.T) {
 	var out bytes.Buffer
 	writeCert(&out, []journal.Event{{Seq: 42, Kind: journal.KindProfileChange}}, st)
 	golden(t, "cert-offsets", out.String())
+}
+
+func TestBetweenTrialMCEReadOnlyViews(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	simulated(t, dir)
+	before, err := journal.ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j, err := journal.Open(dir, journal.Options{Boot: "between-trials", Build: session.Build()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := j.Append(&journal.MCE{CPU: 0, Core: 0, Corrected: true, BetweenTrials: true, Lines: []string{"between-trial hardware error"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"status", "events"} {
+		var out, diagnostics bytes.Buffer
+		if code := cli([]string{"--state-dir", dir, command}, &out, &diagnostics); code != exitOK {
+			t.Fatalf("%s: exit %d: %s", command, code, diagnostics.String())
+		}
+		if !strings.Contains(out.String(), "between trials (recorded only)") {
+			t.Fatalf("%s hides between-trial MCE: %s", command, out.String())
+		}
+	}
+	events, after, _, err := replayDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(before.Cores, after.Cores); diff != "" {
+		t.Fatalf("between-trial MCE changed tuning state: %s", diff)
+	}
+	frame := ansi.Strip(watch.Render(watch.Project(events), 240, 67, e.Time))
+	if !strings.Contains(frame, "between trials (recorded only)") {
+		t.Fatalf("watch hides between-trial MCE: %s", frame)
+	}
 }
 
 func TestStatusJointMarkAndOpenHunt(t *testing.T) {

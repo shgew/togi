@@ -18,19 +18,21 @@ type openIntent struct {
 }
 
 type openTrial struct {
-	seq       int
-	intent    *journal.TrialIntent
-	boot      string
-	startSeq  int
-	startCPUs []int
-	started   time.Time
-	startMono int64
-	lastMono  int64
-	signal    machine.Signal
-	core      *int
-	last      time.Time
-	mces      []int
-	corrected bool
+	seq           int
+	intent        *journal.TrialIntent
+	boot          string
+	startSeq      int
+	startCPUs     []int
+	started       time.Time
+	startMono     int64
+	lastMono      int64
+	signal        machine.Signal
+	core          *int
+	last          time.Time
+	mces          []int
+	corrected     bool
+	windowStartNS *int64
+	kernelError   string
 }
 
 // ran is how long the trial is known to have run: from its start to its last recorded event. Nothing is recorded
@@ -84,6 +86,7 @@ type fold struct {
 	kernelRetries    int
 	kernelRetrySeqs  []int
 	kernelDeadDetail string
+	kernelCursors    map[string]string
 
 	unmatched   []openIntent
 	open        *openTrial
@@ -119,6 +122,7 @@ func newFold() *fold {
 		retries:       map[machine.Backend]*journal.BackendRetry{},
 		retryFollowed: map[machine.Backend]bool{},
 		lastReason:    map[machine.Backend]string{},
+		kernelCursors: map[string]string{},
 		mceKeys:       map[string]bool{},
 		streaks:       map[machine.Backend][]int{},
 		index:         map[int]map[machine.Regime]int{},
@@ -143,6 +147,10 @@ func (f *fold) Fold(e journal.Event) {
 			f.ids[i] = c.Core
 		}
 		slices.Sort(f.ids)
+	case *journal.ConfigLoaded:
+		f.kernelBoundary(e, p.KernelBoundary)
+	case *journal.Shutdown:
+		f.kernelBoundary(e, p.KernelBoundary)
 	case *journal.SessionContext:
 		ctx := p.BIOSContext
 		f.context = &ctx
@@ -209,10 +217,14 @@ func (f *fold) Fold(e journal.Event) {
 			f.registers[e.Boot][i] = p.Offset
 			f.uncertain[e.Boot][i] = false
 		}
+		if f.open != nil && f.open.boot == e.Boot && f.open.startSeq == 0 && p.Expected != nil && slices.Contains(e.Cause, f.open.seq) {
+			f.open.windowStartNS = new(e.Mono * int64(time.Millisecond))
+		}
 	case *journal.TrialIntent:
 		f.unmatched = append(f.unmatched, openIntent{seq: e.Seq, kind: e.Kind, boot: e.Boot, trial: p.Trial})
 		f.trials++
-		f.open = &openTrial{seq: e.Seq, intent: p, boot: e.Boot}
+		f.open = &openTrial{seq: e.Seq, intent: p, boot: e.Boot, windowStartNS: new(e.Mono * int64(time.Millisecond))}
+		f.kernelBoundary(e, p.KernelBoundary)
 		w, _ := machine.WorkloadByID(p.Workload)
 		f.retryFollowed[w.Backend] = true
 	case *journal.TrialStart:
@@ -220,6 +232,9 @@ func (f *fold) Fold(e journal.Event) {
 			f.open.startSeq, f.open.startCPUs = e.Seq, p.CPUs
 			f.open.started, f.open.last = e.Time, e.Time
 			f.open.startMono, f.open.lastMono = e.Mono, e.Mono
+			if p.WindowStartNS != nil {
+				f.open.windowStartNS = p.WindowStartNS
+			}
 		}
 	case *journal.TrialProgress:
 		f.trialActivity(p.Trial, e.Time, e.Mono)
@@ -236,9 +251,9 @@ func (f *fold) Fold(e journal.Event) {
 			boot = e.Boot
 		}
 		f.mceKeys[mceKey(boot, p.Lines)] = true
-		if p.FromBoot != "" {
+		if p.FromBoot != "" && !p.BetweenTrials {
 			f.recovered = append(f.recovered, recoveredMCE{seq: e.Seq, fromBoot: p.FromBoot, corrected: p.Corrected})
-		} else if f.open != nil {
+		} else if f.open != nil && !p.BetweenTrials && (p.Trial == "" || p.Trial == f.open.intent.Trial) {
 			f.open.mces = append(f.open.mces, e.Seq)
 			f.open.corrected = f.open.corrected || p.Corrected
 		}
@@ -263,6 +278,7 @@ func (f *fold) Fold(e journal.Event) {
 			f.pendingIdle = append(f.pendingIdle, e.Seq)
 		}
 	case *journal.TrialEnd:
+		f.kernelBoundary(e, p.KernelBoundary)
 		f.unmatched = slices.DeleteFunc(f.unmatched, func(o openIntent) bool { return o.kind == journal.KindTrialIntent && o.trial == p.Trial })
 		if f.open == nil || f.open.intent.Trial != p.Trial {
 			return
@@ -300,6 +316,15 @@ func (f *fold) Fold(e journal.Event) {
 			f.stray = nil
 		case journal.DeadEndFailureAtZero, journal.DeadEndPreflight, journal.DeadEndDefect:
 		}
+	}
+}
+
+func (f *fold) kernelBoundary(e journal.Event, b journal.KernelBoundary) {
+	if b.KernelCursor != "" {
+		f.kernelCursors[e.Boot] = b.KernelCursor
+	}
+	if f.open != nil && f.open.boot == e.Boot && b.KernelError != "" {
+		f.open.kernelError = joinDiagnostic(f.open.kernelError, b.KernelError)
 	}
 }
 

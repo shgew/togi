@@ -593,3 +593,40 @@ rate = 1000000
 		})
 	}
 }
+
+func TestKernelCursorAcrossEmptyBoundariesAndReboot(t *testing.T) {
+	m := newMachine(t, Config{Cores: 2, Edges: flat(2, -50, -50), Script: map[string]Outcome{"0001": {Signal: machine.CorrectedMCE, AtS: 7, Core: 0}}})
+	k := m.Seams().Kernel
+	boot, _ := m.Seams().Host.BootID()
+	first, err := k.ReadMCEs(boot, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runSpec(t, m, "0001", machine.R1, machine.PickWorkload(machine.R1, 0), []int{0}, 10*time.Second, nil); err != nil {
+		t.Fatal(err)
+	}
+	read, err := k.ReadMCEs(boot, first.Cursor)
+	if err != nil || len(read.MCEs) != 1 || read.MCEs[0].Monotonic != 7*time.Second {
+		t.Fatalf("MCE after empty boundary: %+v %v", read, err)
+	}
+	empty, err := k.ReadMCEs(boot, read.Cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(machine.KernelRead{Cursor: read.Cursor}, empty); diff != "" {
+		t.Fatal(diff)
+	}
+	m.Reboot()
+	nextBoot, _ := m.Seams().Host.BootID()
+	if _, err := k.ReadMCEs(nextBoot, read.Cursor); !errors.Is(err, machine.ErrCursorMissing) {
+		t.Fatalf("accepted previous boot's cursor: %v", err)
+	}
+	next, err := k.ReadMCEs(nextBoot, "")
+	if err != nil || next.Cursor == read.Cursor || len(next.MCEs) != 0 {
+		t.Fatalf("new boot boundary: %+v %v", next, err)
+	}
+	tail, err := k.ReadMCEs(boot, first.Cursor)
+	if err != nil || len(tail.MCEs) != 1 {
+		t.Fatalf("persistent previous boot tail: %+v %v", tail, err)
+	}
+}
