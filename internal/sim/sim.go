@@ -46,11 +46,12 @@ type Edges struct {
 }
 
 type Joint struct {
-	Members map[int]int
-	Regimes []machine.Regime
-	Rate    float64
-	AfterS  float64
-	Signal  machine.Signal
+	Members      map[int]int
+	Regimes      []machine.Regime
+	Rate         float64
+	AfterS       float64
+	Signal       machine.Signal
+	CrashMCECore *int
 }
 
 type Outcome struct {
@@ -244,26 +245,36 @@ func New(cfg Config) (*Machine, error) {
 			return nil, fmt.Errorf("new simulator: flat rate %g of core %d is negative", e.Flat, c)
 		}
 	}
-	for _, joint := range cfg.Joints {
+	if err := validateJoints(cfg.Joints, cfg.Cores); err != nil {
+		return nil, fmt.Errorf("new simulator: %w", err)
+	}
+	m.startBoot()
+	return m, nil
+}
+
+func validateJoints(joints []Joint, cores int) error {
+	for _, joint := range joints {
 		for c, offset := range joint.Members {
-			if c < 0 || c >= cfg.Cores || offset < machine.MinOffset || offset > machine.MaxOffset {
-				return nil, fmt.Errorf("new simulator: joint member core %d offset %d invalid", c, offset)
+			if c < 0 || c >= cores || offset < machine.MinOffset || offset > machine.MaxOffset {
+				return fmt.Errorf("joint member core %d offset %d invalid", c, offset)
 			}
 		}
 		for _, r := range joint.Regimes {
 			if !slices.Contains(machine.Regimes, r) {
-				return nil, fmt.Errorf("new simulator: joint regime %q is not supported", r)
+				return fmt.Errorf("joint regime %q is not supported", r)
 			}
 		}
 		if joint.Signal != "" && !slices.Contains(signalOrder, joint.Signal) {
-			return nil, fmt.Errorf("new simulator: joint signal %q is not supported", joint.Signal)
+			return fmt.Errorf("joint signal %q is not supported", joint.Signal)
 		}
 		if joint.Rate < 0 || joint.AfterS < 0 {
-			return nil, fmt.Errorf("new simulator: joint rate %g or delay %g is negative", joint.Rate, joint.AfterS)
+			return fmt.Errorf("joint rate %g or delay %g is negative", joint.Rate, joint.AfterS)
+		}
+		if core := joint.CrashMCECore; core != nil && (*core < 0 || *core >= cores) {
+			return fmt.Errorf("joint crash MCE core %d outside [0, %d)", *core, cores)
 		}
 	}
-	m.startBoot()
-	return m, nil
+	return nil
 }
 
 func (m *Machine) drawEdges() []Edges {

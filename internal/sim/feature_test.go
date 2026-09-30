@@ -524,3 +524,72 @@ func TestLoadMachineBIOSContext(t *testing.T) {
 		})
 	}
 }
+
+func TestJointCrashMachineEvidence(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		key  string
+		core *int
+	}{
+		{name: "default"},
+		{name: "misleading core zero", key: "crash_mce_core = 0", core: new(0)},
+		{name: "misleading core one", key: "crash_mce_core = 1", core: new(1)},
+		{name: "negative core", key: "crash_mce_core = -1"},
+		{name: "outside topology", key: "crash_mce_core = 2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "machine.toml")
+			content := fmt.Sprintf(`cores = 2
+bios = [-20, -20]
+[model]
+crash_mce = 1
+core_local_bank = 0
+[[core]]
+id = 0
+isolated = [-30, -30, -30, -30, -30]
+resident = [-30, -30, -30, -30, -30, -30, -30]
+[[core]]
+id = 1
+isolated = [-30, -30, -30, -30, -30]
+resident = [-30, -30, -30, -30, -30, -30, -30]
+[[joint]]
+members = { "0" = -20, "1" = -20 }
+rate = 1000000
+%s
+`, tc.key)
+			if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadMachine(path)
+			if tc.key != "" && tc.core == nil {
+				if err == nil || !strings.Contains(err.Error(), "joint crash MCE core") {
+					t.Fatalf("invalid MCE core error: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := newMachine(t, cfg)
+			if _, err := runSpec(t, m, "0001", machine.R7, machine.PickWorkload(machine.R7, 0), []int{1, 0}, time.Second, nil); !errors.Is(err, machine.ErrCrashed) {
+				t.Fatalf("joint crash: %v", err)
+			}
+			m.Reboot()
+			boot, _ := m.Seams().Host.BootID()
+			mces, err := m.Seams().Kernel.MCEs(boot, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.core == nil {
+				if len(mces) != 0 {
+					t.Fatalf("default joint crash invented evidence: %+v", mces)
+				}
+				return
+			}
+			if len(mces) != 1 || mces[0].Core != *tc.core || mces[0].CPU != *tc.core || mces[0].BankType != machine.LoadStore || mces[0].Corrected {
+				t.Fatalf("misleading core %d MCE: %+v", *tc.core, mces)
+			}
+		})
+	}
+}

@@ -91,6 +91,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 	start := m.now
 	failCore, failAt, forcedSignal := -1, spec.Duration, machine.Signal("")
 	idleFailure := false
+	var jointCrash *Joint
 	script, scripted := m.cfg.Script[spec.ID]
 	if scripted {
 		if script.Signal != "" {
@@ -137,6 +138,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 			if t < failAt {
 				failCore, failAt, forcedSignal = core, t, joint.Signal
 				idleFailure = idle
+				jointCrash = &m.cfg.Joints[j]
 				if idle || forcedSignal == "" {
 					forcedSignal = machine.Crash
 				}
@@ -199,14 +201,24 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 			m.NextReset(m.drawReset(rng.Float64()))
 		}
 		r.progress(report, r.counted(machine.Result{Ran: failAt}))
-		if !idleFailure && rng.Float64() < m.model.CrashMCE {
-			m.queued = append(m.queued, m.mce(rng.Float64(), failCore, false))
-		}
+		m.queueCrashMCE(rng, failCore, idleFailure, jointCrash)
 		m.Crash()
 		return machine.Result{}, machine.ErrCrashed
 	case machine.UncorrectedMCE:
 	}
 	return machine.Result{}, fmt.Errorf("simulated trial: no signal to draw from %v", m.model.Signals)
+}
+
+func (m *Machine) queueCrashMCE(rng *rand.Rand, core int, idle bool, joint *Joint) {
+	if joint != nil {
+		if joint.CrashMCECore != nil {
+			m.queued = append(m.queued, machine.MCE{CPU: *joint.CrashMCECore, Core: *joint.CrashMCECore, Bank: 0, BankType: machine.LoadStore})
+		}
+		return
+	}
+	if !idle && rng.Float64() < m.model.CrashMCE {
+		m.queued = append(m.queued, m.mce(rng.Float64(), core, false))
+	}
 }
 
 func (r *running) counted(res machine.Result) machine.Result {
