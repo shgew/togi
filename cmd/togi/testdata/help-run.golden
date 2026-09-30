@@ -15,6 +15,9 @@ archives that session. Unknown event kinds stop both run and reset; install the
 build that wrote them. Journal lines are colored on terminals and in the system
 journal unless NO_COLOR is set.
 
+Only one run or reset can own this machine, even with different state directories.
+A busy /run/lock/togi.lock stops the command before any hardware access or event.
+
 When stdin and stderr are terminals, run shows the session as the watch
 dashboard instead of one line per event, and prints the outcome when it stops:
 the restored offsets and why it stopped, or the dead end or error;
