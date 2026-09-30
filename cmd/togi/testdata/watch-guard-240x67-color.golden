@@ -1,5 +1,5 @@
  [1;7m togi [m  [1mGUARD[m   [90msession 10h15m   last event 40s ago[m                                                                                                                                                                                   [1m10:15:17[m
- [90m16/16 done | tier -- | clean 0h00m since tier clock #4266 | 28 failures | 7 crashes[m
+ [90m16/16 done | tier -- | clean 0h00m since tier clock #4274 | 28 failures | 7 crashes[m
 
  [1mcores 00 01 02 03 04 05 06 07[m   resident   R7 mprime AVX2 36K-248K all-core   [97m██████████[m[90m░░░░░░░░░░░░░░░░░░░░[m 40/120s
  [90mrotation 1   step 1/14   [m[1mR7[m[90m | [m[90mR7 R7 R2 R2 R2 R6 R5 R1 R1 R1 R3 R4 R6[m

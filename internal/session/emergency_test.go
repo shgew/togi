@@ -19,13 +19,19 @@ type failAppendJournal struct {
 	Journal
 	kind   journal.Kind
 	at     int
+	check  string
 	calls  int
 	failed bool
 }
 
 func (j *failAppendJournal) Append(p journal.Payload, cause ...int) (journal.Event, error) {
 	j.calls++
-	if !j.failed && ((j.at != 0 && j.calls == j.at) || (j.at == 0 && p.Kind() == j.kind)) {
+	matches := p.Kind() == j.kind
+	if j.check != "" {
+		check, ok := p.(*journal.PreflightCheck)
+		matches = ok && check.Check == j.check
+	}
+	if !j.failed && ((j.at != 0 && j.calls == j.at) || (j.at == 0 && matches)) {
 		j.failed = true
 		return journal.Event{}, io.ErrClosedPipe
 	}
@@ -134,7 +140,7 @@ func TestJournalFailureReportsFailedEmergencyZeroAndReadbacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	faulty := &failAppendJournal{Journal: wrapFor(in, nil)(j), kind: journal.KindPreflightCheck}
+	faulty := &failAppendJournal{Journal: wrapFor(in, nil)(j), kind: journal.KindTrialStart}
 	smu := &failEmergencyZero{SMU: seams.SMU, journal: faulty}
 	seams.SMU = smu
 	_, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: faulty, Machine: seams, Rotations: 1, Stderr: &stderr})
@@ -150,7 +156,9 @@ func TestJournalFailureReportsFailedEmergencyZeroAndReadbacks(t *testing.T) {
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
-		readbacks = append(readbacks, fmt.Sprintf("core %02d reads %d", core, offset))
+		if offset != 0 {
+			readbacks = append(readbacks, fmt.Sprintf("core %02d reads %d", core, offset))
+		}
 	}
 	want := "togi: journal write failed: io: read/write on closed pipe; setting every core to CO 0 without an intent failed: simulated emergency zeroing failure (readback: " + strings.Join(readbacks, ", ") + ")\n"
 	if diff := cmp.Diff(want, stderr.String()); diff != "" {
@@ -176,6 +184,7 @@ func TestStateRewriteFailureOnResumeRestoresSafeOffsets(t *testing.T) {
 	simulate(t, in)
 	before := len(readEvents(t, in.Dir))
 	m.Reboot()
+
 	var stderr bytes.Buffer
 	in.Stderr = &stderr
 	stop, err := simulateBoot(context.Background(), in, func(j *journal.Journal) Journal {
@@ -202,6 +211,15 @@ func TestStateRewriteFailureOnResumeRestoresSafeOffsets(t *testing.T) {
 type trackedTrials struct {
 	machine.Trials
 	active *int
+	swept  *bool
+}
+
+func (t trackedTrials) Sweep(ctx context.Context) (string, error) {
+	detail, err := t.Trials.Sweep(ctx)
+	if t.swept != nil {
+		*t.swept = err == nil
+	}
+	return detail, err
 }
 
 func (t trackedTrials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Running, error) {
@@ -223,7 +241,7 @@ func (r trackedRunning) Wait(ctx context.Context, report machine.Reporter) (mach
 	return r.Running.Wait(ctx, report)
 }
 
-func TestEveryEarlyJournalAppendFailureRespectsValidation(t *testing.T) {
+func TestEveryEarlyJournalAppendFailureRespectsSweepGate(t *testing.T) {
 	t.Parallel()
 	cfg := small()
 	cfg.BIOS = []int{-10, -10}
@@ -234,14 +252,18 @@ func TestEveryEarlyJournalAppendFailureRespectsValidation(t *testing.T) {
 	}
 	events := readEvents(t, ref.Dir)
 	progress := -1
+	sweepSeq := 0
 	for i, e := range events {
+		if p, ok := e.Data.(*journal.PreflightCheck); ok && p.Check == "trial_scopes" {
+			sweepSeq = e.Seq
+		}
 		if p, ok := e.Data.(*journal.TrialProgress); ok && p.Signal == machine.ComputationError {
 			progress = i
 			break
 		}
 	}
-	if progress < 0 {
-		t.Fatal("reference run lacks in-Wait progress")
+	if progress < 0 || sweepSeq == 0 {
+		t.Fatal("reference run lacks sweep or in-Wait progress")
 	}
 	for k := 1; k <= progress+1; k++ {
 		t.Run(fmt.Sprint(k), func(t *testing.T) {
@@ -251,7 +273,9 @@ func TestEveryEarlyJournalAppendFailureRespectsValidation(t *testing.T) {
 			var stderr bytes.Buffer
 			seams := m.Seams()
 			active := 0
-			seams.Trials = trackedTrials{Trials: seams.Trials, active: &active}
+			o := &sweepObservation{t: t}
+			seams.SMU = sweepSMU{SMU: seams.SMU, o: o}
+			seams.Trials = trackedTrials{Trials: seams.Trials, active: &active, swept: &o.swept}
 			boot, err := seams.Host.BootID()
 			if err != nil {
 				t.Fatal(err)
@@ -269,9 +293,8 @@ func TestEveryEarlyJournalAppendFailureRespectsValidation(t *testing.T) {
 				t.Fatalf("k-th append failure: fired %v, err %v", faulty.failed, err)
 			}
 			wantStderr := "togi: journal write failed: io: read/write on closed pipe; every core set to CO 0 without an intent (readback all 0)\n"
-			validated := events[k-1].Kind != journal.KindSessionStart && events[k-1].Kind != journal.KindConfigLoaded
-			if !validated {
-				wantStderr = ""
+			if k < sweepSeq {
+				wantStderr = "togi: journal write failed: io: read/write on closed pipe; offsets unchanged before successful trial-scope sweep\n"
 			}
 			if diff := cmp.Diff(wantStderr, stderr.String()); diff != "" {
 				t.Fatalf("stderr (-want +got):\n%s", diff)
@@ -281,10 +304,11 @@ func TestEveryEarlyJournalAppendFailureRespectsValidation(t *testing.T) {
 			}
 			for core, baseline := range cfg.BIOS {
 				want := 0
-				if !validated {
+				if k < sweepSeq {
 					want = baseline
 				}
 				got, err := m.Seams().SMU.Offset(core)
+
 				if err != nil || got != want {
 					t.Fatalf("core %d after append failure: %d, %v; want %d", core, got, err, want)
 				}

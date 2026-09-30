@@ -47,6 +47,8 @@ The module loads `ryzen_smu` through `hardware.cpu.amd.ryzen-smu.enable`. A host
 
 Other settings go in `services.togi.settings`, rendered to `/etc/togi/config.toml`; [runtime.md](spec/runtime.md#configuration) lists the keys.
 
+The module also creates the unprivileged `togi-trial` system user and group and sets `backend_user = "togi-trial"` in the configuration. Togi itself still runs as root; mprime and y-cruncher use that account without supplementary groups. They can update their generated inputs and results in their own trial instance directory, but cannot modify togi's surrounding state, journal or control files. Rebuild after upgrading to this behavior so the account exists before the next run. A hand-written configuration must set `backend_user` to an existing account with non-root UID and primary GID: missing, nonexistent or root credentials refuse preflight, never run a backend as root.
+
 To move to a newer release, change the tag in `url`, run `nix flake update togi` and rebuild. An update whose changelog line starts with **BREAKING** starts a seeded session on the next run ([section 7](#7-after-a-breaking-update)).
 
 mprime and y-cruncher come from the host's `nixpkgs`. Do not update them during a session, for example with `nix flake update nixpkgs`: togi does not yet tell a new backend build's passes from the old one's, so passes earned by the old binaries would keep counting for the new ones.

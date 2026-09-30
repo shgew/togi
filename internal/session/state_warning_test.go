@@ -192,7 +192,7 @@ func TestProjectionWarningAppendFailureIsFatal(t *testing.T) {
 			}
 			want := "togi: journal write failed: io: read/write on closed pipe; every core set to CO 0 without an intent (readback all 0)\n"
 			if startup {
-				want = ""
+				want = "togi: journal write failed: io: read/write on closed pipe; offsets unchanged before successful trial-scope sweep\n"
 			}
 			if diff := cmp.Diff(want, stderr.String()); diff != "" {
 				t.Fatalf("fatal journal failure report (-want +got):\n%s", diff)

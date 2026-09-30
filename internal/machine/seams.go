@@ -111,6 +111,7 @@ type Running interface {
 }
 
 type Trials interface {
+	Sweep(ctx context.Context) (detail string, err error)
 	Start(ctx context.Context, spec TrialSpec) (Running, error)
 	// Passed marks a passed trial's work directory so retention may prune it.
 	Passed(id string) error
@@ -175,6 +176,8 @@ type Machine struct {
 var ErrCrashed = errors.New("the simulated machine crashed")
 
 var ErrBackendMissing = errors.New("backend binary missing")
+
+var ErrContainment = errors.New("trial cleanup could not be confirmed")
 
 // ErrBootMissing means the system journal no longer holds the boot, for example after journald vacuumed it.
 var ErrBootMissing = errors.New("boot missing from the system journal")

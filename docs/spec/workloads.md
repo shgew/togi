@@ -17,9 +17,17 @@ A backend integration:
 - parses output as it arrives into progress, computation error and fatal setup error;
 - reports setup problems as inconclusive, never as failures.
 
+Togi creates a root-owned `trials/<trial>/` container. Each backend instance has its own writable directory: `work/` for a single instance, or `cNN/` for an all-core trial. Before launching, togi gives the configured backend account ownership of that directory and every generated input file, so mprime can update `prime.txt` and `local.txt`, create `results.txt`, and y-cruncher can access `stress.cfg`. The surrounding trial and state directories, retention markers, journal and control files remain root-owned and nonwritable by that account. Backend binaries remain read-only in the Nix store; no package file changes ownership. This is a privilege drop, not a filesystem sandbox: ordinary system permissions still apply outside togi's state.
+
+The runner recreates a reused trial container before preparing inputs, without following old instance or file symlinks. It exclusively creates and retains both log descriptors before transferring instance ownership, so another workload sharing the backend UID cannot redirect privileged log opens. Relative trial-directory paths are resolved to absolute paths before preparation and passed unchanged to both the launcher and the scope's working-directory option.
+
+The state directory, trials root and trial containers have mode `0711` independent of the process umask; instance directories have mode `0755` before ownership transfer. Other ancestors are never chmodded: before launching, the runner checks each resolved ancestor's search permission for the backend UID and primary GID and refuses an inaccessible path by name. A directory that only an ACL makes traversable must also grant the applicable mode-bit search permission. Watched outputs are opened without following symlinks and without blocking on special files, and only regular files are read; a rejection makes the trial inconclusive unless stronger failure or containment evidence survives.
+
 Known quirks the integrations handle:
 - **mprime:** needs `NumCPUs`, `CoresPerTest`, the `CpuSupports*` switches for the instruction set and the FFT range in `local.txt`/`prime.txt`. `TortureTime=1` keeps each FFT size to one minute, so a trial covers several sizes. Errors land in `results.txt`, which the runner tails once per second, and mprime can keep running after one.
 - **y-cruncher:** command-line thread options do not confine it; only a config file names the CPUs. It prints `Failed to set core affinity` when confinement and config disagree, which counts as a containment violation. Its startup is slow and needs the stall grace period.
+
+Backend output lines on stdout, stderr and watched files may contain at most 64 KiB before a newline or carriage return; an unterminated line has the same byte limit. Exactly 64 KiB is permitted. A longer line is a runner error and uses the shared bounded teardown: the trial is inconclusive unless a containment violation or backend failure signal collected before or during teardown takes precedence. Other output I/O errors and unconfirmed cleanup remain runner errors regardless of captured backend evidence. Reading and retaining output is bounded even for an unfinished line or a large watched-file append. The runner keeps the first 64 KiB of the offending line for diagnosis (in the stream log or watched-file buffer), stops reading that stream or file, and never classifies its truncated prefix as a complete line. It does not silently truncate output and continue the trial.
 
 ## Regimes
 
@@ -74,14 +82,32 @@ A clean rotation qualifies only with at least three R1, three R2 and three R7 st
 Each backend instance runs as a child of togi inside a transient scope confined to its logical CPUs:
 
 ```
-systemd-run --scope --quiet --collect -p AllowedCPUs=<cpus> -p DefaultDependencies=no -- <argv>
+systemd-run --scope --quiet --collect --uid=<uid> --gid=<gid> --working-directory=<instance-dir> -p AllowedCPUs=<cpus> -p DefaultDependencies=no -- <argv>
 ```
 
 `DefaultDependencies=no` keeps a system shutdown from stopping the scope on its own. Otherwise systemd stops the scope and the unit running togi at the same moment, the backend can exit before togi sees its signal, and the trial would end as an unexpected exit on the target instead of interrupted. Without the default dependencies, togi's teardown ends the scope after the signal reaches it.
 
+The root launcher clears all supplementary groups before starting `systemd-run`, retaining UID 0 for system-bus access and scope creation. The scope launch then drops to the configured backend UID and primary GID. Its working directory is explicit: with `--uid` alone, `systemd-run --scope` defaults to the account's home instead of the prepared instance directory.
+
+If togi dies before teardown, the scope can outlive it and keep its descendants running. The next fresh start or resume sweeps concrete `togi-trial-*.scope` units after nonwriting preflight and before any SMU profile write, whether in a tuning boot or an in-session run. The sweep sends SIGCONT and SIGTERM through bounded `systemctl kill --kill-whom=all` calls on each exact scope during the shared grace period, then uses normal teardown's bounded scope-kill slot to send SIGKILL and stop the scopes. A recovered PID and its start time are used only to verify exit, never to signal a PID or process group that may now belong to somebody else. Cleanup verifies that no matching unit or process remains and that every captured process exited, including one that moved out of its scope. A moved process that survives scope signaling is a containment dead end, not a reason to signal its recovered PID. Discovery and verification consume the same absolute 15 s budget as teardown, not a fresh budget per scope.
+
+The safe real-process integration test kills a helper owner and sweeps its detached descendant, with systemd unit discovery and operations replaced by a deterministic seam. It proves real process cleanup without touching host scopes; deterministic fake-time tests prove unit filtering and deadlines. This does not prove systemd transient-scope collection on a real tuning boot; that requires the VM trial infrastructure.
+
+Processes that disappear while `/proc` is scanned are no longer leftover workloads; missing-process errors do not fail the sweep, but permission and other read failures still do.
+
 The kernel enforces the cpuset whatever the backend does. togi also samples the processor field of every backend thread in `/proc/<pid>/task/*/stat` once per second, from the moment the process is inside its scope. A thread seen outside its allowed logical CPUs is a dead end. Stopping a trial terminates the whole scope.
 
-Teardown, per instance: SIGCONT then SIGTERM to the process group, and up to 3 s for it to exit; then SIGKILL to everything in the scope (`systemctl kill --kill-whom=all`) and to the process group, and up to 10 s more. A backend still running after that is a runner error. The output left in the pipes and watched files is read to the end before the outcome is decided, so an error printed during teardown still fails the trial.
+Normal trial ends and partial-start rollbacks use the same teardown, with one absolute deadline shared across all instances:
+1. Send SIGCONT, then SIGTERM to each identity-verified process group owned by the current run, and allow up to 3 s of grace shared by all groups. Owned groups are verified against the captured launcher PID and start time before each signal; reaping and signaling are serialized so the PID cannot be reused between verification and signaling.
+2. Send SIGKILL to every known scope with `systemctl kill --kill-whom=all`, including scopes whose launcher has exited and scopes attempted before a launch failed. The calls share a slot of at most 2 s and each gets only the remaining time.
+3. Send SIGKILL to every still identity-verified owned process group. An exited or reused launcher PID receives no process-group signal; its scope remains the cleanup target.
+4. Drain output for up to 10 s, without passing the absolute deadline. Close the output readers at the deadline and join their goroutines, releasing the log files even when a detached descendant holds the pipes open.
+
+Teardown takes at most 15 s regardless of instance count. Cleanup succeeds only when every launched process has exited, output has drained, and every scope kill succeeded or confirmed that its scope no longer exists. A failed or timed-out scope kill, an unconfirmed process-group kill, or an undrained backend is a containment dead end: no next trial or tuning profile write follows. Offset restoration belongs to run-level cleanup, not partial-start rollback or trial outcome adjudication, and runs only after confirmed workload teardown; unconfirmed cleanup prevents restoration and a clean `shutdown` even if the journal also fails. Final output from the pipes and watched files is classified before the outcome, including unterminated computation errors printed during teardown.
+
+A non-EOF backend-pipe read failure cannot confirm output draining and is a containment failure, even if the process exit and scope kill otherwise succeed.
+
+Every systemd CLI invocation has a context deadline. The preflight `systemd-run` probe and `systemctl reboot` are bounded by 30 s; a trial's `systemd-run` process is bounded by its trial duration plus the startup and teardown allowances. Teardown `systemctl` calls share the bounded slot within the absolute 15 s cleanup deadline, so each kill has only the remaining time. A timed-out kill is failed cleanup even if its output says the scope is missing. Kernel-log reads with `journalctl` have a 30 s deadline; a timeout is a read failure, not an empty log, and follows the existing inconclusive handling.
 
 ## Trial outcome
 

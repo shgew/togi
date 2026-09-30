@@ -14,9 +14,37 @@ import (
 	"time"
 
 	"github.com/shgew/togi/internal/backend"
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/hostlock"
 	"github.com/shgew/togi/internal/machine"
 )
+
+func hardwareUser(t *testing.T) Identity {
+	t.Helper()
+	if os.Geteuid() != 0 {
+		return Identity{UID: uint32(os.Geteuid()), GID: uint32(os.Getegid())}
+	}
+	cfg, err := config.Load(config.DefaultPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := LookupIdentity(cfg.BackendUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func hardwareDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, path := range []string{filepath.Dir(dir), dir} {
+		if err := os.Chmod(path, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
 
 func TestHardwareScope(t *testing.T) {
 	lock, err := hostlock.Acquire(hostlock.Path)
@@ -28,14 +56,16 @@ func TestHardwareScope(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	detail, err := CheckSystemdRun()
+	user := hardwareUser(t)
+	detail, err := CheckSystemdRun(user)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Log(detail)
 	r := New(Options{
-		Dir:      t.TempDir(),
-		Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{"escape:3"}},
+		Dir:      hardwareDir(t),
+		User:     user,
+		Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{mode: "escape:3", executable: stageHelper(t)}},
 		Cores:    []machine.CoreInfo{{Core: 2, CPUs: []int{2}}},
 	})
 	spec := machine.TrialSpec{ID: "hw01", Regime: machine.R1, Workload: machine.Workload{Backend: machine.Mprime}, Cores: []int{2}, CPUs: []int{2}, Duration: 3 * time.Second}
@@ -86,13 +116,15 @@ func TestHardwareScopeKillsDetachedDescendant(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if _, err := CheckSystemdRun(); err != nil {
+	user := hardwareUser(t)
+	if _, err := CheckSystemdRun(user); err != nil {
 		t.Fatal(err)
 	}
 	cpu := testCPUs(t)[0]
 	o := Options{
-		Dir:      t.TempDir(),
-		Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{"descendant"}},
+		Dir:      hardwareDir(t),
+		User:     user,
+		Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{mode: "descendant", executable: stageHelper(t)}},
 		Cores:    []machine.CoreInfo{{Core: 0, CPUs: []int{cpu}}},
 	}
 	spec := machine.TrialSpec{ID: "hw-descendant", Regime: machine.R1, Workload: machine.Workload{Backend: machine.Mprime}, Cores: []int{0}, CPUs: []int{cpu}, Duration: time.Second}
@@ -105,7 +137,7 @@ func TestHardwareScopeKillsDetachedDescendant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pidText, err := os.ReadFile(filepath.Join(o.Dir, spec.ID, "descendant.pid"))
+	pidText, err := os.ReadFile(filepath.Join(o.Dir, spec.ID, "work", "descendant.pid"))
 	if err != nil {
 		t.Fatal(err)
 	}

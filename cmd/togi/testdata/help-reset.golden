@@ -9,7 +9,7 @@ archiving.
 --core refuses a different journal ruleset or schema; --all archives either.
 Both forms refuse unknown event kinds; install the build that wrote them.
 Only one run or reset can own this machine, even with different state directories.
-A busy /run/lock/togi.lock stops reset before it changes the session.
+A busy host lock stops reset before it changes the session.
 
 Examples:
   sudo togi reset --core 3   Search core 3 again from its baseline

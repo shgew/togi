@@ -216,19 +216,22 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 }
 
 type trialEvidence struct {
-	result   machine.Result
-	mces     []recordedMCE
-	reset    *journal.TrialEnd
-	missing  string
-	duration time.Duration
+	result      machine.Result
+	mces        []recordedMCE
+	reset       *journal.TrialEnd
+	missing     string
+	duration    time.Duration
+	containment string
 }
 
 func adjudicateTrial(e trialEvidence) *journal.TrialEnd {
-	end := &journal.TrialEnd{DurationS: int(e.result.Ran.Seconds()), TctlMaxC: e.result.TctlMaxC, Reason: e.missing}
+	end := &journal.TrialEnd{DurationS: int(e.result.Ran.Seconds()), TctlMaxC: e.result.TctlMaxC, Reason: e.missing, ContainmentError: e.containment}
 	switch {
 	case len(e.result.Escaped) > 0:
 		end.Outcome, end.Escaped = journal.OutcomeInconclusive, e.result.Escaped
 		end.Reason = joinDiagnostic("backend thread outside allowed cpus", e.missing)
+	case e.containment != "":
+		end.Outcome = journal.OutcomeInconclusive
 	case e.result.Signal != "":
 		end.Outcome, end.Signal, end.Core = journal.OutcomeFailure, e.result.Signal, new(e.result.Core)
 	case len(e.mces) > 0:
@@ -260,11 +263,16 @@ func joinDiagnostic(reason, diagnostic string) string {
 func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine.Result, what string, runnerErr error) error {
 	r := tr.r
 	crashed := errors.Is(runnerErr, machine.ErrCrashed)
-	if crashed && len(res.Escaped) == 0 && res.Signal == "" {
+	containment := ""
+	if errors.Is(runnerErr, machine.ErrContainment) {
+		containment = runnerErr.Error()
+		r.containmentFailed = true
+	}
+	if crashed && containment == "" && len(res.Escaped) == 0 && res.Signal == "" {
 		return runnerErr
 	}
 	var boundary journal.KernelBoundary
-	if !crashed {
+	if !crashed && containment == "" {
 		var err error
 		boundary, err = tr.teardown(since)
 		if err != nil {
@@ -283,7 +291,7 @@ func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine
 	if runnerErr != nil {
 		diagnostic = joinDiagnostic(diagnostic, fmt.Sprintf("%s: %v", what, runnerErr))
 	}
-	end := adjudicateTrial(trialEvidence{result: res, mces: mces, missing: diagnostic, duration: time.Duration(tr.t.DurationS) * time.Second})
+	end := adjudicateTrial(trialEvidence{result: res, mces: mces, missing: diagnostic, duration: time.Duration(tr.t.DurationS) * time.Second, containment: containment})
 	end.Trial = tr.id
 	end.KernelBoundary = boundary
 	end.KernelError = joinDiagnostic(r.fold.open.kernelError, boundary.KernelError)

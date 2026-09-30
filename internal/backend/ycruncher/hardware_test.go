@@ -5,6 +5,7 @@ package ycruncher_test
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -38,6 +39,33 @@ func packagePath(t *testing.T) string {
 	return ""
 }
 
+func hardwareUser(t *testing.T) trial.Identity {
+	t.Helper()
+	if os.Geteuid() != 0 {
+		return trial.Identity{UID: uint32(os.Geteuid()), GID: uint32(os.Getegid())}
+	}
+	cfg, err := config.Load(config.DefaultPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := trial.LookupIdentity(cfg.BackendUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func hardwareDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, path := range []string{filepath.Dir(dir), dir} {
+		if err := os.Chmod(path, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
 func TestHardwareWorkloads(t *testing.T) {
 	lock, err := hostlock.Acquire(hostlock.Path)
 	if err != nil {
@@ -55,7 +83,8 @@ func TestHardwareWorkloads(t *testing.T) {
 	}
 	t.Log(detail)
 	r := trial.New(trial.Options{
-		Dir:      t.TempDir(),
+		Dir:      hardwareDir(t),
+		User:     hardwareUser(t),
 		Backends: map[machine.Backend]backend.Backend{machine.Ycruncher: b},
 		Cores:    []machine.CoreInfo{{Core: 2, CPUs: []int{2}}},
 	})

@@ -252,13 +252,27 @@ func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.
 		}
 		if stop.Reboot {
 			fmt.Fprintln(stderr, "togi: rebooting into the normal system")
-			if out, err := exec.Command("systemctl", "reboot").CombinedOutput(); err != nil {
+			if out, err := rebootSystem(commandOutput); err != nil {
 				fmt.Fprintf(stderr, "togi: systemctl reboot: %v: %s\n", err, strings.TrimSpace(string(out)))
 			}
 		}
 		return deadEndExit(stop.DeadEnd.Condition)
 	}
 	return exitError
+}
+
+func rebootSystem(command func(context.Context, string, ...string) ([]byte, error)) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return command(ctx, "systemctl", "reboot")
+}
+
+func commandOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	return out, err
 }
 
 func defectPrompt(stderr io.Writer) func(defect.Finding) (bool, error) {

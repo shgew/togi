@@ -29,6 +29,8 @@ func TestLoad(t *testing.T) {
 	allCore := Default()
 	allCore.Durations.GuardAllCoreS = 4
 	rotation.Guard.Rotation = []machine.Regime{machine.R7}
+	user := Default()
+	user.BackendUser = "togi-trial"
 
 	tests := []struct {
 		name    string
@@ -37,6 +39,8 @@ func TestLoad(t *testing.T) {
 		wantErr string
 	}{
 		{name: "empty file", content: "", want: Default()},
+		{name: "backend user", content: "backend_user = \"togi-trial\"\n", want: user},
+		{name: "backend user wrong type", content: "backend_user = 1001\n", wantErr: "backend_user"},
 		{name: "partial file", content: "[durations]\nsearch_trial_s = 60\n", want: partial},
 		{name: "start offset", content: "[start_offsets]\n3 = -10\n", want: offsets},
 		{name: "candidate edge beside another core's start offset", content: "[start_offsets]\n2 = -5\n[candidate_edges]\n3 = -36\n", want: edges},

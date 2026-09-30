@@ -26,6 +26,7 @@ type Config struct {
 	Guard          Guard       `json:"guard"`
 	DeadEnds       DeadEnds    `json:"dead_ends"`
 	Backends       Backends    `json:"backends"`
+	BackendUser    string      `json:"backend_user"`
 }
 
 type Durations struct {
@@ -89,6 +90,7 @@ type file struct {
 	Guard          *Guard         `toml:"guard"`
 	DeadEnds       *DeadEnds      `toml:"dead_ends"`
 	Backends       *Backends      `toml:"backends"`
+	BackendUser    *string        `toml:"backend_user"`
 }
 
 func Load(path string) (Config, error) {
@@ -101,7 +103,7 @@ func Load(path string) (Config, error) {
 
 func load(path string) (Config, error) {
 	c := Default()
-	f := file{Durations: &c.Durations, Evidence: &c.Evidence, Guard: &c.Guard, DeadEnds: &c.DeadEnds, Backends: &c.Backends}
+	f := file{Durations: &c.Durations, Evidence: &c.Evidence, Guard: &c.Guard, DeadEnds: &c.DeadEnds, Backends: &c.Backends, BackendUser: &c.BackendUser}
 	md, err := toml.DecodeFile(path, &f)
 	if err != nil {
 		return Config{}, err

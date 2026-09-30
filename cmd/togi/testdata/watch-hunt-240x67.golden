@@ -1,5 +1,5 @@
   togi   HUNT   session 7h14m   last event 40s ago                                                                                                                                                                                     07:14:23
- hunt 1 mask 1 | 16/16 done | tier -- | clean 0h00m since tier clock #3671 | 33 failures | 33 crashes | Tctl last trial max 69 C
+ hunt 1 mask 1 | 16/16 done | tier -- | clean 0h00m since tier clock #3704 | 33 failures | 33 crashes | Tctl last trial max 69 C
 
  cores 00 01 02 03 04 05 06 07   masked   R7 mprime AVX2 36K-248K all-core   ██████████░░░░░░░░░░░░░░░░░░░░ 40/120s
  turn order 00 08 01 09 02 10 03 11 04 12 05 13 06 14 07 15
@@ -57,7 +57,7 @@
  7h12m  profile for guard: [-10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10 -10]
  7h12m  guard rotation 1 start: R7 R7 R7 R2 R2 R2 R6 R5 R1 R1 R1 R3 R4 R6
  7h12m  trial 0289 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime AVX2 36K-248K all-core 120s resident rotation 1
- 7h13m  crash: boot fc156219 ended without a clean shutdown; in flight: seq 3666; the resident profile was applied; reset reason: x86/amd: Previous system reset reason [0x00000001]: hardware watchdog timer expired
+ 7h13m  crash: boot fc156219 ended without a clean shutdown; in flight: seq 3699; the resident profile was applied; reset reason: x86/amd: Previous system reset reason [0x00000001]: hardware watchdog timer expired
  7h13m  trial 0289 FAIL crash, last evidence 0s after start
  7h13m  unattributed crash failure in resident R7 trial 0289: no evidence names a single core
  7h13m  preferred-core ranking unavailable (simulated preferred-core ranking unavailable); core-id order

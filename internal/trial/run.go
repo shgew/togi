@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"iter"
 	"os"
 	"path/filepath"
@@ -19,9 +18,9 @@ import (
 )
 
 type watchFile struct {
-	path    string
-	offset  int64
-	pending string
+	path   string
+	offset int64
+	lines  outputLines
 }
 type cpuSample struct {
 	active time.Duration
@@ -125,11 +124,6 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				}
 				break
 			}
-			if e.err != nil && !e.exit {
-				fatal = e.err
-				decision = true
-				break
-			}
 			if t.handleEvent(e, &result, report, true) {
 				decision = true
 			}
@@ -150,28 +144,9 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	if t.spec.Regime == machine.R6 {
 		report.Progress(fmt.Sprintf("bursts: %d continues, %d stops", result.Conts, result.Stops))
 	}
-	t.stopErr = t.teardown(&result, report)
-	t.stopped = true
-	err = errors.Join(err, t.stopErr)
-	if fatal != nil && err == nil {
-		err = fatal
-	}
+	err = errors.Join(err, t.teardown(&result, report), fatal)
 	return result, err
 }
-
-func (t *running) Stop() error {
-	if !t.stopped {
-		t.stopErr = t.teardown(&machine.Result{}, stopReport{})
-		t.stopped = true
-	}
-	return t.stopErr
-}
-
-type stopReport struct{}
-
-func (stopReport) Progress(string)                    {}
-func (stopReport) Sample(machine.Sample)              {}
-func (stopReport) Signal(int, machine.Signal, string) {}
 
 func (t *running) classify(inst *instance, line string, stderr bool, result *machine.Result, report machine.Reporter) bool {
 	classified := t.backend.Classify(line)
@@ -218,47 +193,21 @@ func (t *running) tail(inst *instance, result *machine.Result, report machine.Re
 	var found bool
 	for i := range inst.watch {
 		w := &inst.watch[i]
-		f, err := os.Open(w.path)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
-				result.Inconclusive = fmt.Sprintf("read watched file %s: %v", w.path, err)
-			}
-			found = true
-			continue
-		}
-		if _, err = f.Seek(w.offset, io.SeekStart); err != nil {
-			f.Close()
-			if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
-				result.Inconclusive = fmt.Sprintf("seek watched file %s: %v", w.path, err)
-			}
-			found = true
-			continue
-		}
-		data, err := io.ReadAll(f)
-		f.Close()
-		if err != nil {
-			if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
-				result.Inconclusive = fmt.Sprintf("read watched file %s: %v", w.path, err)
-			}
-			found = true
-			continue
-		}
-		w.offset += int64(len(data))
-		w.pending += string(data)
-		for {
-			j := strings.IndexAny(w.pending, "\r\n")
-			if j < 0 {
-				break
-			}
-			line := w.pending[:j]
-			w.pending = w.pending[j+1:]
+		err := w.read(func(line string) {
 			if t.classifyWatch(inst, line, result, report) {
 				found = true
 			}
+		})
+		if err == nil || os.IsNotExist(err) {
+			continue
 		}
+		err = fmt.Errorf("read watched file %s: %w", w.path, err)
+		if errors.Is(err, errOutputLineTooLong) {
+			t.outputError(err, result)
+		} else if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
+			result.Inconclusive = err.Error()
+		}
+		found = true
 	}
 	return found
 }
@@ -271,12 +220,23 @@ func (t *running) classifyWatch(inst *instance, line string, result *machine.Res
 	return false
 }
 
+func (t *running) outputError(err error, result *machine.Result) {
+	if errors.Is(err, errOutputLineTooLong) {
+		t.outputCapErr = errors.Join(t.outputCapErr, err)
+	} else {
+		t.outputErr = errors.Join(t.outputErr, err)
+	}
+	if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
+		result.Inconclusive = err.Error()
+	}
+}
+
 func (t *running) toggle(inst *instance, stop bool, now time.Time) error {
 	sig := syscall.SIGCONT
 	if stop {
 		sig = syscall.SIGSTOP
 	}
-	if err := t.host.SignalGroup(inst.PID, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
+	if err := t.host.SignalGroup(inst.process, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return fmt.Errorf("signal core %02d: %w", inst.Core, err)
 	}
 	if stop && !inst.suspended {
@@ -294,8 +254,9 @@ func (t *running) handleEvent(e streamEvent, result *machine.Result, report mach
 	inst := t.instances[e.index]
 	if e.exit {
 		inst.done = true
+		t.classifyPartial(inst, result, report)
 		found := t.tail(inst, result, report)
-		if unexpected && !inst.setup && len(result.Escaped) == 0 && result.Signal == "" {
+		if unexpected && t.outputErr == nil && t.outputCapErr == nil && !inst.setup && len(result.Escaped) == 0 && result.Signal == "" {
 			result.Signal = machine.UnexpectedExit
 			result.Core = inst.Core
 			result.Inconclusive = ""
@@ -307,6 +268,10 @@ func (t *running) handleEvent(e streamEvent, result *machine.Result, report mach
 			return true
 		}
 		return found
+	}
+	if e.err != nil {
+		t.outputError(e.err, result)
+		return true
 	}
 	if !e.eof && e.err == nil {
 		return t.classify(inst, e.line, e.stderr, result, report)
@@ -325,53 +290,85 @@ func (t *running) drainEvents(result *machine.Result, report machine.Reporter, u
 	}
 }
 
+func (t *running) Stop() error {
+	return t.teardown(&machine.Result{}, discardReport{})
+}
+
 func (t *running) teardown(result *machine.Result, report machine.Reporter) error {
-	for _, inst := range t.instances {
-		_ = t.host.SignalGroup(inst.PID, syscall.SIGCONT)
-		_ = t.host.SignalGroup(inst.PID, syscall.SIGTERM)
+	t.stopMu.Lock()
+	defer t.stopMu.Unlock()
+	if t.stopped {
+		return t.cleanupErr
 	}
-	var cleanupErr error
-	t.collect(t.options.StopGrace, result, report)
-	for _, inst := range t.instances {
-		if !t.options.NoScope {
-			out, err := t.host.KillScope(inst.Scope)
-			if err != nil && !strings.Contains(string(out), "not loaded") && !strings.Contains(string(out), "could not be found") && cleanupErr == nil {
-				cleanupErr = fmt.Errorf("kill scope %s: %w: %s", inst.Scope, err, strings.TrimSpace(string(out)))
-			}
-		}
-		if !inst.done {
-			_ = t.host.SignalGroup(inst.PID, syscall.SIGKILL)
-		}
+	if t.cancel != nil {
+		defer t.cancel()
 	}
-	if !t.collect(10*time.Second, result, report) {
-		for _, inst := range t.instances {
-			if !inst.done {
-				return fmt.Errorf("backend on core %02d did not exit after SIGKILL", inst.Core)
-			}
-		}
+	deadline := time.Now().Add(teardownLimit)
+	cleanupErr := terminate(t.host, t.instances, t.scopes, deadline, t.options.StopGrace, false, func(until time.Time) bool {
+		return t.collect(until, result, report)
+	})
+	if t.streamStop != nil && !t.streamClosed {
+		t.streamClosed = true
+		close(t.streamStop)
 	}
 	for _, inst := range t.instances {
+		if inst.process != nil {
+			inst.process.Stdout().Close()
+			inst.process.Stderr().Close()
+		}
+	}
+	t.streams.Wait()
+	for _, inst := range t.instances {
+		select {
+		case <-inst.reaped:
+			<-inst.joined
+		default:
+		}
+	}
+	t.drainEvents(result, report, false)
+	for _, inst := range t.instances {
+		t.classifyPartial(inst, result, report)
 		t.tail(inst, result, report)
 		for i := range inst.watch {
 			w := &inst.watch[i]
-			if w.pending != "" {
-				t.classifyWatch(inst, w.pending, result, report)
-				w.pending = ""
+			if !w.lines.exceeded && len(w.lines.pending) > 0 {
+				t.classifyWatch(inst, string(w.lines.pending), result, report)
+				w.lines.pending = nil
 			}
 		}
 	}
-	return cleanupErr
+	if cleanupErr != nil {
+		cleanupErr = errors.Join(machine.ErrContainment, cleanupErr)
+	}
+	t.cleanupErr = errors.Join(cleanupErr, t.outputErr)
+	if len(result.Escaped) == 0 && result.Signal == "" {
+		t.cleanupErr = errors.Join(t.cleanupErr, t.outputCapErr)
+	}
+	t.stopped = true
+	return t.cleanupErr
 }
-func (t *running) collect(timeout time.Duration, result *machine.Result, report machine.Reporter) bool {
+
+func (t *running) classifyPartial(inst *instance, result *machine.Result, report machine.Reporter) {
+	for stream, line := range inst.partial {
+		if line != "" {
+			t.classify(inst, line, stream == 1, result, report)
+			inst.partial[stream] = ""
+		}
+	}
+}
+func (t *running) collect(deadline time.Time, result *machine.Result, report machine.Reporter) bool {
 	remaining := 0
 	for _, inst := range t.instances {
 		if !inst.done {
 			remaining++
 		}
 	}
-	timer := time.NewTimer(timeout)
+	timer := time.NewTimer(max(0, time.Until(deadline)))
 	defer timer.Stop()
 	for remaining > 0 {
+		if !time.Now().Before(deadline) {
+			return false
+		}
 		select {
 		case e := <-t.events:
 			if e.exit && !t.instances[e.index].done {
@@ -384,20 +381,15 @@ func (t *running) collect(timeout time.Duration, result *machine.Result, report 
 	}
 	return true
 }
-func (t *running) abort() {
-	for _, inst := range t.instances {
-		_ = t.host.SignalGroup(inst.PID, syscall.SIGCONT)
-		_ = t.host.SignalGroup(inst.PID, syscall.SIGKILL)
-	}
-	for _, inst := range t.instances {
-		for !inst.done {
-			e := <-t.events
-			if e.exit {
-				t.instances[e.index].done = true
-			}
-		}
-	}
+func (t *running) abort(err error) error {
+	return errors.Join(err, t.teardown(&machine.Result{}, discardReport{}))
 }
+
+type discardReport struct{}
+
+func (discardReport) Progress(string)                    {}
+func (discardReport) Sample(machine.Sample)              {}
+func (discardReport) Signal(int, machine.Signal, string) {}
 
 func (t *running) inScope(inst *instance) bool {
 	return t.options.NoScope || t.host.InScope(inst.PID, inst.Scope)

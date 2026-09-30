@@ -11,43 +11,138 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
-type osHost struct{}
+type osHost struct {
+	command func(context.Context, string, ...string) ([]byte, error)
+	procDir string
+}
 
-func newOSHost() processHost { return osHost{} }
+func newOSHost() processHost { return osHost{command: commandOutput} }
+
+func commandOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	if os.Geteuid() == 0 {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 0, Gid: uint32(os.Getegid())}}
+	}
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	return out, err
+}
 
 type execProcess struct {
 	cmd            *exec.Cmd
-	stdout, stderr io.Reader
+	stdout, stderr *os.File
+	start          int64
+	mu             sync.Mutex
+	reaped         bool
 }
 
-func (p execProcess) PID() int          { return p.cmd.Process.Pid }
-func (p execProcess) Stdout() io.Reader { return p.stdout }
-func (p execProcess) Stderr() io.Reader { return p.stderr }
-func (p execProcess) Wait() error       { return p.cmd.Wait() }
+func (p *execProcess) PID() int              { return p.cmd.Process.Pid }
+func (p *execProcess) Stdout() io.ReadCloser { return p.stdout }
+func (p *execProcess) Stderr() io.ReadCloser { return p.stderr }
+func (p *execProcess) Wait() error {
+	var info unix.Siginfo
+	var waitErr error
+	for {
+		waitErr = unix.Waitid(unix.P_PID, p.PID(), &info, unix.WEXITED|unix.WNOWAIT, nil)
+		if !errors.Is(waitErr, syscall.EINTR) {
+			break
+		}
+	}
+	p.mu.Lock()
+	p.reaped = true
+	p.mu.Unlock()
+	if waitErr != nil {
+		waitErr = errors.Join(fmt.Errorf("wait for owned process %d: %w", p.PID(), waitErr), p.cmd.Process.Kill())
+	}
+	return errors.Join(waitErr, p.cmd.Wait())
+}
 
 func (osHost) Start(ctx context.Context, argv []string, dir string) (process, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
-	stdout, err := cmd.StdoutPipe()
+	cmd.SysProcAttr = launcherAttributes(os.Geteuid(), os.Getegid())
+	stdout, out, err := os.Pipe()
 	if err != nil {
 		return nil, fmt.Errorf("pipe stdout: %w", err)
 	}
-	stderr, err := cmd.StderrPipe()
+	defer out.Close()
+	stderr, erout, err := os.Pipe()
 	if err != nil {
+		stdout.Close()
 		return nil, fmt.Errorf("pipe stderr: %w", err)
 	}
+	defer erout.Close()
+	cmd.Stdout, cmd.Stderr = out, erout
 	if err := cmd.Start(); err != nil {
+		stdout.Close()
+		stderr.Close()
 		return nil, err
 	}
-	return execProcess{cmd: cmd, stdout: stdout, stderr: stderr}, nil
+	fields, err := procStat(fmt.Sprintf("/proc/%d/stat", cmd.Process.Pid))
+	var start int64
+	if err == nil {
+		start, err = strconv.ParseInt(fields[19], 10, 64)
+	}
+	if err == nil && start < 0 {
+		err = fmt.Errorf("invalid start time %d", start)
+	}
+	if err != nil || start < 0 {
+		killErr := cmd.Process.Kill()
+		waitErr := cmd.Wait()
+		stdout.Close()
+		stderr.Close()
+		return nil, errors.Join(fmt.Errorf("capture owned process identity: %w", err), killErr, waitErr)
+	}
+	return &execProcess{cmd: cmd, stdout: stdout, stderr: stderr, start: start}, nil
 }
 
-func (osHost) SignalGroup(pid int, sig syscall.Signal) error { return syscall.Kill(-pid, sig) }
+func launcherAttributes(uid, gid int) *syscall.SysProcAttr {
+	attr := &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
+	if uid == 0 {
+		attr.Credential = &syscall.Credential{Uid: 0, Gid: uint32(gid)}
+	}
+	return attr
+}
+
+func (h osHost) SignalGroup(owned process, sig syscall.Signal) error {
+	p, ok := owned.(*execProcess)
+	if !ok {
+		return errors.New("signal process group: process was not launched by osHost")
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.reaped {
+		return syscall.ESRCH
+	}
+	fields, err := procStat(h.procPath(p.PID(), "stat"))
+	if os.IsNotExist(err) {
+		return syscall.ESRCH
+	}
+	if err != nil {
+		return fmt.Errorf("verify owned process %d identity: %w", p.PID(), err)
+	}
+	start, err := strconv.ParseInt(fields[19], 10, 64)
+	if err != nil {
+		return fmt.Errorf("verify owned process %d start time: %w", p.PID(), err)
+	}
+	if start != p.start || fields[0] == "Z" || fields[0] == "X" {
+		return syscall.ESRCH
+	}
+	group, err := strconv.Atoi(fields[2])
+	if err != nil || group != p.PID() || group <= 0 {
+		return fmt.Errorf("owned process %d no longer leads its process group", p.PID())
+	}
+	return syscall.Kill(-group, sig)
+}
 
 func (osHost) InScope(pid int, scope string) bool {
 	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))
@@ -121,13 +216,15 @@ func procThreads(path string) ([]thread, error) {
 	return threads, lost
 }
 
-func (osHost) KillScope(scope string) ([]byte, error) {
+func (h osHost) KillScope(ctx context.Context, scope string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	args := []string{}
 	if os.Geteuid() != 0 {
 		args = append(args, "--user")
 	}
 	args = append(args, "kill", "--signal=SIGKILL", "--kill-whom=all", scope+".scope")
-	return exec.Command("systemctl", args...).CombinedOutput()
+	return h.command(ctx, "systemctl", args...)
 }
 
 func procStat(path string) (fields []string, err error) {
@@ -155,9 +252,18 @@ func fieldInt(fields []string, number int) (int64, error) {
 	}
 	return v, nil
 }
-func CheckSystemdRun() (string, error) {
-	argv := scopeArgv(fmt.Sprintf("togi-preflight-%d", os.Getpid()), []int{0}, "/bin/sh", "-c", "exit 0")
-	out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput()
+func CheckSystemdRun(user Identity) (string, error) {
+	return checkSystemdRun(user, commandOutput)
+}
+
+func checkSystemdRun(user Identity, command func(context.Context, string, ...string) ([]byte, error)) (string, error) {
+	if err := user.validate(); err != nil {
+		return "", fmt.Errorf("systemd-run backend_user: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	argv := scopeArgv(fmt.Sprintf("togi-preflight-%d", os.Getpid()), []int{0}, user, "/", "/bin/sh", "-c", "exit 0")
+	out, err := command(ctx, argv[0], argv[1:]...)
 	if err != nil {
 		return "", fmt.Errorf("systemd-run: %w: %s", err, strings.TrimSpace(string(out)))
 	}

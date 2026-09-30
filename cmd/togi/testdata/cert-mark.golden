@@ -3,35 +3,35 @@
 +------------------------------------------------------------+
 
       .---.
-     / * * \     BRONZE                    [tier.change #4875]
+     / * * \     BRONZE                    [tier.change #4915]
     |   *   |    Silver    7.2 of 24 clean hours
      \ * * /     Gold      7.2 of 100 clean hours
       '---'      Platinum  locked until togi observe exists
        | |
 
-Profile                                 [profile.change #4210]
+Profile                                 [profile.change #4250]
   CORE  CCD  SLOT  OFFSET  FAILED  JOINT  DONE  DECIDED
-  00    0    0     -10     -11     -      true  [#3599]
-  01    0    1     -10     -11     -      true  [#3601]
-  02    0    2     -10     -11     -      true  [#3603]
-  03    0    3     -10     -11     J1     true  [#3605]
-  04    0    4     -10     -11     -      true  [#3607]
-  05    0    5     -10     -11     -      true  [#3609]
-  06    0    6     -10     -11     -      true  [#3611]
-  07    0    7     -10     -11     -      true  [#3613]
-  08    1    0     -10     -11     -      true  [#3600]
-  09    1    1     -10     -11     -      true  [#3602]
-  10    1    2     -10     -11     -      true  [#3604]
-  11    1    3     -9      -11     J1     true  [#4209]
-  12    1    4     -10     -11     -      true  [#3608]
-  13    1    5     -10     -11     -      true  [#3610]
-  14    1    6     -10     -11     -      true  [#3612]
-  15    1    7     -10     -11     -      true  [#3614]
+  00    0    0     -10     -11     -      true  [#3632]
+  01    0    1     -10     -11     -      true  [#3634]
+  02    0    2     -10     -11     -      true  [#3636]
+  03    0    3     -10     -11     J1     true  [#3638]
+  04    0    4     -10     -11     -      true  [#3640]
+  05    0    5     -10     -11     -      true  [#3642]
+  06    0    6     -10     -11     -      true  [#3644]
+  07    0    7     -10     -11     -      true  [#3646]
+  08    1    0     -10     -11     -      true  [#3633]
+  09    1    1     -10     -11     -      true  [#3635]
+  10    1    2     -10     -11     -      true  [#3637]
+  11    1    3     -9      -11     J1     true  [#4249]
+  12    1    4     -10     -11     -      true  [#3641]
+  13    1    5     -10     -11     -      true  [#3643]
+  14    1    6     -10     -11     -      true  [#3645]
+  15    1    7     -10     -11     -      true  [#3647]
 
 joint marks:
-  J1 core 03 -10 + core 11 -10, observed in hunt 1 [#4208]
+  J1 core 03 -10 + core 11 -10, observed in hunt 1 [#4248]
 
-Evidence since [#3671]: the last failure on a profile at least as deep
+Evidence since [#3704]: the last failure on a profile at least as deep
   REGIME  WORKLOAD                         STARTS  CLEAN H  RATE BOUND
   R1      mprime-sse-4k-21k                16      0.5      < 5.63/h
   R1      ycruncher-bkt-sftv4              16      0.5      < 5.63/h
@@ -48,12 +48,12 @@ Evidence since [#3671]: the last failure on a profile at least as deep
   R7      mprime-avx512-36k-248k-allcore   12      0.6      < 4.74/h
   R7      ycruncher-fftv4-n63-vt3-allcore  12      0.6      < 4.74/h
   all     -                                -       7.3      < 0.42/h
-  Tctl max 76°C                              [trial.end #4304]
+  Tctl max 76°C                              [trial.end #4344]
   Rate bound = 3 / clean hours, 95% confidence (rule of three).
   Starts = valid passes since each class last failed.
 
 Session 20260101T000000Z, started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0, boost limit 5700 MHz
 
-Journal SHA-256 <journal sha256> through seq 4925
+Journal SHA-256 <journal sha256> through seq 4965
 Durability is a bound, not proof.

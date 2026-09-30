@@ -14,6 +14,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/backend"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -66,13 +67,25 @@ func testSpec(id string, regime machine.Regime, d time.Duration) machine.TrialSp
 
 func fakeOptions(t *testing.T, mode string) Options {
 	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(filepath.Dir(dir), 0711); err != nil {
+		t.Fatal(err)
+	}
 	return Options{
-		Dir: t.TempDir(), NoScope: true,
+		Dir: dir, NoScope: true,
+		User:           testIdentity(),
 		Backends:       map[machine.Backend]backend.Backend{machine.Mprime: fakeBackend{mode}},
 		SampleInterval: 50 * time.Millisecond, StallGrace: time.Hour,
 		Hwmon: t.TempDir(),
 		Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0}}, {Core: 1, CCD: 1, CPUs: []int{1}}},
 	}
+}
+
+func testIdentity() Identity {
+	if os.Geteuid() == 0 || os.Getegid() == 0 {
+		return Identity{UID: 1001, GID: 1001}
+	}
+	return Identity{UID: uint32(os.Geteuid()), GID: uint32(os.Getegid())}
 }
 
 func TestWait(t *testing.T) {
@@ -235,6 +248,190 @@ func TestTeardownEvidencePrecedence(t *testing.T) {
 				result, err := running.Wait(context.Background(), &rec)
 				if err != nil || result.Signal != tt.signal || !slices.Equal(result.Escaped, tt.escaped) {
 					t.Fatalf("conflicting evidence result %+v, err %v", result, err)
+				}
+			})
+		})
+	}
+}
+
+func TestPartialStartRollbackBound(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := fakeOptions(t, "held-output")
+		o.NoScope = false
+		var scopes []string
+		h := &fakeHost{startFail: 2, killScope: func(scope string) ([]byte, error) {
+			scopes = append(scopes, scope)
+			return nil, nil
+		}}
+		r := New(o)
+		r.host = h
+		spec := testSpec("rollback", machine.R7, time.Second)
+		spec.Cores, spec.CPUs = []int{0, 1}, []int{0, 1}
+		started := time.Now()
+		_, err := r.Start(context.Background(), spec)
+		if !errors.Is(err, machine.ErrContainment) || !strings.Contains(err.Error(), "injected start failure") || time.Since(started) > 15*time.Second {
+			t.Fatalf("rollback = %v after %s", err, time.Since(started))
+		}
+		if !slices.Equal(scopes, []string{"togi-trial-rollback-c00", "togi-trial-rollback-c01"}) {
+			t.Fatalf("rollback scopes = %v", scopes)
+		}
+	})
+}
+
+type deadlineScopeHost struct {
+	*fakeHost
+	scopes []string
+}
+
+func (h *deadlineScopeHost) KillScope(ctx context.Context, scope string) ([]byte, error) {
+	h.scopes = append(h.scopes, scope)
+	<-ctx.Done()
+	return []byte("Unit not loaded"), ctx.Err()
+}
+
+func TestTeardownSharedDeadline(t *testing.T) {
+	for _, count := range []int{1, 8, 32} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				o := fakeOptions(t, "held-output")
+				o.NoScope = false
+				h := &deadlineScopeHost{fakeHost: &fakeHost{inScope: true}}
+				r := New(o)
+				r.host = h
+				spec := testSpec("shared", machine.R7, time.Second)
+				spec.Cores, spec.CPUs = make([]int, count), make([]int, count)
+				for i := range count {
+					spec.Cores[i], spec.CPUs[i] = i, i
+				}
+				trial, err := r.Start(context.Background(), spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				started := time.Now()
+				_, err = trial.Wait(context.Background(), &recorder{})
+				if !errors.Is(err, machine.ErrContainment) || !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("unconfirmed cleanup = %v", err)
+				}
+				if elapsed := time.Since(started) - spec.Duration; elapsed != 15*time.Second {
+					t.Fatalf("%d instances teardown = %s, want 15s", count, elapsed)
+				}
+				var wantScopes []string
+				var wantSignals []fakeSignal
+				for i := range count {
+					wantScopes = append(wantScopes, fmt.Sprintf("togi-trial-shared-c%02d", i))
+					wantSignals = append(wantSignals, fakeSignal{1000 + i, syscall.SIGCONT}, fakeSignal{1000 + i, syscall.SIGTERM})
+				}
+				for i := range count {
+					wantSignals = append(wantSignals, fakeSignal{1000 + i, syscall.SIGKILL})
+				}
+				if diff := cmp.Diff(wantScopes, h.scopes); diff != "" {
+					t.Fatalf("scope kills (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(wantSignals, h.recordedSignals(), cmp.AllowUnexported(fakeSignal{})); diff != "" {
+					t.Fatalf("group signals (-want +got):\n%s", diff)
+				}
+			})
+		})
+	}
+}
+
+func TestTeardownFinalOutput(t *testing.T) {
+	for _, confirmed := range []bool{false, true} {
+		t.Run(strconv.FormatBool(confirmed), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				o := fakeOptions(t, "held-output")
+				o.NoScope = false
+				h := &fakeHost{inScope: true}
+				h.killScope = func(string) ([]byte, error) {
+					if confirmed {
+						h.procs[0].stdoutW.Close()
+						h.procs[0].stderrW.Close()
+					}
+					return nil, nil
+				}
+				r := New(o)
+				r.host = h
+				trial, err := r.Start(context.Background(), testSpec("final-output", machine.R1, time.Second))
+				if err != nil {
+					t.Fatal(err)
+				}
+				result, err := trial.Wait(context.Background(), &recorder{})
+				if confirmed && err != nil || !confirmed && !errors.Is(err, machine.ErrContainment) {
+					t.Fatalf("confirmed %v cleanup = %v", confirmed, err)
+				}
+				if result.Signal != machine.ComputationError {
+					t.Fatalf("final unterminated error was lost: %+v", result)
+				}
+			})
+		})
+	}
+}
+
+func TestPipeReadFailureIsContainment(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := fakeOptions(t, "read-error")
+		o.NoScope = false
+		r := New(o)
+		r.host = &fakeHost{inScope: true}
+		trial, err := r.Start(context.Background(), testSpec("read-error", machine.R1, time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := trial.Wait(context.Background(), &recorder{})
+		if !errors.Is(err, syscall.EIO) || !errors.Is(err, machine.ErrContainment) {
+			t.Fatalf("unconfirmed pipe drain: result=%+v err=%v", result, err)
+		}
+		t.Logf("non-EOF pipe read: %v; cleanup is containment failure", err)
+	})
+}
+
+func TestPartialStartConfirmedRollback(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := fakeOptions(t, "work")
+		o.NoScope = false
+		h := &fakeHost{startFail: 2}
+		r := New(o)
+		r.host = h
+		spec := testSpec("confirmed-rollback", machine.R7, time.Second)
+		spec.Cores, spec.CPUs = []int{0, 1}, []int{0, 1}
+		_, err := r.Start(context.Background(), spec)
+		if err == nil || errors.Is(err, machine.ErrContainment) || !strings.Contains(err.Error(), "injected start failure") {
+			t.Fatalf("confirmed rollback = %v", err)
+		}
+	})
+}
+
+func TestStopIsIdempotent(t *testing.T) {
+	for _, mode := range []string{"work", "held-output"} {
+		t.Run(mode, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				h := &fakeHost{}
+				r := New(fakeOptions(t, mode))
+				r.host = h
+				trial, err := r.Start(context.Background(), testSpec("stop", machine.R1, time.Second))
+				if err != nil {
+					t.Fatal(err)
+				}
+				run := trial.(*running)
+				err = run.Stop()
+				if (mode == "held-output") != errors.Is(err, machine.ErrContainment) {
+					t.Fatalf("stop %s = %v", mode, err)
+				}
+				signals := h.recordedSignals()
+				stopped := time.Now()
+				again := run.Stop()
+				if !errors.Is(again, err) || time.Now() != stopped {
+					t.Fatalf("repeated stop retried or lost cleanup failure: %v, %v", err, again)
+				}
+				if diff := cmp.Diff(signals, h.recordedSignals(), cmp.AllowUnexported(fakeSignal{})); diff != "" {
+					t.Fatalf("repeated stop signaled groups again (-want +got):\n%s", diff)
+				}
+				for _, inst := range run.instances {
+					select {
+					case <-inst.joined:
+					default:
+						t.Fatal("stop returned before the process waiter joined")
+					}
 				}
 			})
 		})

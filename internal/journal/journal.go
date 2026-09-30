@@ -72,6 +72,9 @@ func open(dir string, opts Options, allowIncompatible bool) (*Journal, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
+	if err := os.Chmod(dir, 0o711); err != nil {
+		return nil, fmt.Errorf("set state directory traversal: %w", err)
+	}
 	lock, err := os.OpenFile(filepath.Join(dir, lockFile), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, err

@@ -94,6 +94,8 @@ type runner struct {
 	kernelWaited         int
 	running              machine.Running
 	shutdownEvent        *journal.Shutdown
+	containmentFailed    bool
+	swept                bool
 }
 
 func Run(ctx context.Context, in Input) (stop Stop, err error) {
@@ -171,6 +173,9 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 		}
 	}
 	if stop, err := r.preflight(ctx); stop != nil || err != nil {
+		return deref(stop), err
+	}
+	if stop, err := r.sweep(); stop != nil || err != nil {
 		return deref(stop), err
 	}
 	if sameBoot {
@@ -276,6 +281,12 @@ func (r *runner) latch(err error) error {
 }
 
 func (r *runner) emergencyRestore(err error) error {
+	if !r.swept {
+		if r.in.Stderr != nil {
+			fmt.Fprintf(r.in.Stderr, "togi: journal write failed: %v; offsets unchanged before successful trial-scope sweep\n", err)
+		}
+		return nil
+	}
 	if !r.smuValidated {
 		return nil
 	}
@@ -765,6 +776,22 @@ func (r *runner) preflight(ctx context.Context) (*Stop, error) {
 	return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndPreflight, Detail: "failed checks: " + strings.Join(names, ", ")}, failed...)
 }
 
+func (r *runner) sweep() (*Stop, error) {
+	detail, sweepErr := r.in.Machine.Trials.Sweep(context.Background())
+	r.swept = sweepErr == nil
+	if sweepErr != nil {
+		detail = sweepErr.Error()
+	}
+	e, err := r.append(&journal.PreflightCheck{Check: "trial_scopes", Detail: detail, OK: sweepErr == nil})
+	if err != nil {
+		return nil, err
+	}
+	if sweepErr != nil {
+		return r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndContainment, Detail: detail}, e.Seq)
+	}
+	return nil, nil
+}
+
 func (r *runner) startSession() error {
 	if r.fold.context == nil {
 		ctx, err := r.in.Machine.Host.BIOSContext()
@@ -1078,13 +1105,13 @@ func (r *runner) close(restore bool, stop *Stop) (err error) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 			_, waitErr := r.running.Wait(ctx, cleanupReport{})
-			if !errors.Is(waitErr, context.Canceled) {
+			if errors.Is(waitErr, machine.ErrContainment) || !errors.Is(waitErr, context.Canceled) {
 				err = errors.Join(err, waitErr)
 			}
 		}
 		r.running = nil
 	}
-	if !restore {
+	if !restore || r.containmentFailed || errors.Is(err, machine.ErrContainment) {
 		return err
 	}
 	defer func() {
