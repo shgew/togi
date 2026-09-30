@@ -158,9 +158,12 @@ func (r runner) release() error {
 	}
 	current, released := sectionNamed(changelog, version)
 	if len(entries(s.body)) == 0 {
-		if released && current.date != "" && !hasTag(tags, "v"+version) {
-			fmt.Fprintf(r.out, "%s is released in CHANGELOG.md but not yet published; publishing %s as it is\n", version, base)
-			return r.checkout(baseCommit)
+		if released && current.date != "" && (!hasTag(tags, "v"+version) || r.commit) {
+			fmt.Fprintf(r.out, "%s is released in CHANGELOG.md; would publish %s if its GitHub Release is missing\n", version, base)
+			if r.commit {
+				return r.checkout(baseCommit)
+			}
+			return nil
 		}
 		if r.commit {
 			return errors.New("nothing to release: [Unreleased] in CHANGELOG.md is empty")
@@ -168,11 +171,9 @@ func (r runner) release() error {
 		fmt.Fprintln(r.out, "nothing to release")
 		return nil
 	}
-	next, reason := version, "First release; version.txt sets the initial version."
-	if released || strings.TrimSpace(tags) != "" {
-		if next, reason, err = bump(version, s.body); err != nil {
-			return fmt.Errorf("bump version: %w", err)
-		}
+	next, reason, err := bump(version, s.body)
+	if err != nil {
+		return fmt.Errorf("bump version: %w", err)
 	}
 	updated, err := rewriteChangelog(changelog, next, "https://"+module[1], r.now())
 	if err != nil {
@@ -264,15 +265,8 @@ func (r runner) publish(api github, repo repository) error {
 		fmt.Fprintf(r.out, "nothing to publish: CHANGELOG.md has no released [%s] section\n", version)
 		return nil
 	}
-	prefix := "/repos/" + url.PathEscape(repo.owner) + "/" + url.PathEscape(repo.name)
-	tag := "v" + version
-	status, err := api.request(http.MethodGet, prefix+"/git/ref/tags/"+url.PathEscape(tag), nil, nil, http.StatusNotFound)
-	if err != nil {
-		return fmt.Errorf("check tag %s: %w", tag, err)
-	}
-	if status != http.StatusNotFound {
-		fmt.Fprintf(r.out, "nothing to publish: %s already exists\n", tag)
-		return nil
+	if err := r.completeHistory(); err != nil {
+		return err
 	}
 	commit, err := r.output("log", "--first-parent", "-1", "--format=%H", "HEAD", "--", "version.txt")
 	if err != nil {
@@ -282,6 +276,19 @@ func (r runner) publish(api github, repo repository) error {
 	if commit == "" {
 		return fmt.Errorf("find the commit that set version.txt to %s: no commit changed version.txt", version)
 	}
+	tag := "v" + version
+	if err := r.checkTag(tag, commit); err != nil {
+		return err
+	}
+	prefix := "/repos/" + url.PathEscape(repo.owner) + "/" + url.PathEscape(repo.name)
+	status, err := api.request(http.MethodGet, prefix+"/releases/tags/"+url.PathEscape(tag), nil, nil, http.StatusNotFound)
+	if err != nil {
+		return fmt.Errorf("check release %s: %w", tag, err)
+	}
+	if status != http.StatusNotFound {
+		fmt.Fprintf(r.out, "nothing to publish: GitHub Release %s already exists\n", tag)
+		return nil
+	}
 	var result struct {
 		HTMLURL string `json:"html_url"`
 	}
@@ -290,6 +297,45 @@ func (r runner) publish(api github, repo repository) error {
 		return fmt.Errorf("create release %s: %w", tag, err)
 	}
 	fmt.Fprintln(r.out, result.HTMLURL)
+	return nil
+}
+
+func (r runner) completeHistory() error {
+	shallow, err := r.output("rev-parse", "--is-shallow-repository")
+	if err != nil {
+		return fmt.Errorf("check release history: %w", err)
+	}
+	if strings.TrimSpace(shallow) == "true" {
+		if _, err := r.output("fetch", "--quiet", "--unshallow", "--no-tags", remote, defaultBranch); err != nil {
+			return fmt.Errorf("fetch complete release history: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r runner) checkTag(tag, commit string) error {
+	ref := "refs/tags/" + tag
+	tags, err := r.output("ls-remote", "--tags", remote, ref, ref+"^{}")
+	if err != nil {
+		return fmt.Errorf("check tag %s: %w", tag, err)
+	}
+	var target string
+	for line := range strings.SplitSeq(tags, "\n") {
+		sha, name, ok := strings.Cut(line, "\t")
+		if !ok {
+			continue
+		}
+		if name == ref+"^{}" {
+			target = sha
+			break
+		}
+		if name == ref {
+			target = sha
+		}
+	}
+	if target != "" && target != commit {
+		return fmt.Errorf("tag %s points at %s, but the release commit is %s", tag, target, commit)
+	}
 	return nil
 }
 

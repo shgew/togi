@@ -53,7 +53,10 @@
                 ];
               };
               vendorHash = "sha256-OGYOqVtPseV1QvWhbVlQfXPcuTGIWne3Fk7JYtee1ak=";
-              nativeCheckInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
+              nativeCheckInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+                pkgs.util-linux
+                pkgs.gitMinimal
+              ];
               ldflags = [ "-X github.com/shgew/togi.rev=${rev}" ];
               subPackages = [ "cmd/togi" ];
               checkPhase = testPhase "" "./...";
