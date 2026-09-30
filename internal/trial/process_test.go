@@ -267,7 +267,11 @@ func TestProcessSweepAfterKilledOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.orphan.Scope, h.orphan.Start = h.unit, fieldInt(fields, 22)
+	h.orphan.Scope = h.unit
+	h.orphan.Start, err = fieldInt(fields, 22)
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.descendant, err = os.FindProcess(h.orphan.PID)
 	if err != nil {
 		t.Fatal(err)
