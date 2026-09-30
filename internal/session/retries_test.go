@@ -407,7 +407,7 @@ func TestRunnerWaitCancellationRemainsInterrupted(t *testing.T) {
 	}
 	e := r.in.Journal.Events()[len(r.in.Journal.Events())-1]
 	end, ok := e.Data.(*journal.TrialEnd)
-	if !ok || end.Outcome != journal.OutcomeInconclusive || !end.Interrupted || end.Reason != "stopped by signal" {
+	if !ok || end.Outcome != journal.OutcomeInconclusive || !end.Interrupted || end.Reason != "trial runner failed: context canceled; stopped by signal" {
 		t.Fatalf("cancelled Wait: %+v", e.Data)
 	}
 	if got := r.fold.streaks[machine.Mprime]; len(got) != 0 {
