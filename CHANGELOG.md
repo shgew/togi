@@ -247,11 +247,14 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#183]: https://github.com/shgew/togi/pull/183
 [#187]: https://github.com/shgew/togi/pull/187
 [#193]: https://github.com/shgew/togi/pull/193
+[#189]: https://github.com/shgew/togi/pull/189
+[#190]: https://github.com/shgew/togi/pull/190
 [#167]: https://github.com/shgew/togi/pull/167
 [#168]: https://github.com/shgew/togi/pull/168
 [#172]: https://github.com/shgew/togi/pull/172
 [#173]: https://github.com/shgew/togi/pull/173
 [#196]: https://github.com/shgew/togi/pull/196
+[#200]: https://github.com/shgew/togi/pull/200
 [#165]: https://github.com/shgew/togi/pull/165
 [#170]: https://github.com/shgew/togi/pull/170
 [#176]: https://github.com/shgew/togi/pull/176
