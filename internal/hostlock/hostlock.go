@@ -7,12 +7,10 @@ import (
 	"syscall"
 )
 
-const Path = "/run/lock/togi.lock"
-
 var ErrLocked = errors.New("another togi process holds the host lock")
 
 func Acquire(path string) (*os.File, error) {
-	lock, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	lock, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("open host lock %s: %w", path, err)
 	}
