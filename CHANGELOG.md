@@ -33,7 +33,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - `run`, `reset` and hardware tests now share `/run/lock/togi.lock` on Linux (`/tmp/togi.lock` for copied-journal reset on Darwin), preventing concurrent togi processes with different state directories from interleaving SMU access or carry preparation; a busy lock stops the command before hardware access or another event, and delegated hardware-test users can acquire an existing readable lock without write permission ([#170]).
 - `run` now stops and joins workloads, restores offsets and closes the journal on ordinary errors and panics as well as clean exits; unconfirmed workload teardown prevents ordinary restoration and a false clean shutdown, ordinary trial-runner errors count toward backend retries and `no_evidence`, and passed-trial marker and retention failures warn visibly in the dashboard without interrupting tuning ([#176]).
 - Stopping after a failed trial now records its pending attribution, marks and backoffs before restoring a safe profile, including with nonzero BIOS offsets, without starting more tuning work; an unattributed failure with every core at CO 0 retains its dead-end outcome and tuning-boot cleanup ([#177]).
-- Failed `state.json` projection writes now warn and continue tuning instead of emergency zeroing; the journal remains authoritative and the next start rebuilds stale state ([#197]).
+- Failed `state.json` projection writes now warn and continue tuning instead of emergency zeroing; the journal remains authoritative, the next start rebuilds stale state, and intervening warnings do not hide the clean-stop restoration summary ([#197]).
 
 ## [0.5.0] - 2026-09-29
 

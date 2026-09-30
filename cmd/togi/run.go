@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -190,9 +191,23 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 
 // printCleanStop repeats the closing profile.restored and shutdown lines the dashboard kept off the screen.
 func printCleanStop(events []journal.Event, stderr io.Writer, renderer journal.Renderer) {
-	tail := events[max(0, len(events)-2):]
-	for _, e := range tail {
-		if e.Kind == journal.KindProfileRestored || e.Kind == journal.KindShutdown {
+	restored, shutdown := -1, -1
+	for i, e := range slices.Backward(events) {
+		if e.Kind == journal.KindSessionWarning {
+			continue
+		}
+		if e.Kind == journal.KindProfileRestored {
+			restored = i
+			break
+		}
+		if e.Kind != journal.KindShutdown || shutdown >= 0 {
+			break
+		}
+		shutdown = i
+	}
+	for _, i := range [2]int{restored, shutdown} {
+		if i >= 0 {
+			e := events[i]
 			fmt.Fprintln(stderr, renderer.Text(e, journal.FormatLine(e, time.Local)))
 		}
 	}
