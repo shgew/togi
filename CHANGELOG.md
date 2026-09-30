@@ -15,6 +15,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - Binaries built with `go build` report the seven-character Git revision and `-dirty` for modified checkouts, unless an explicit build revision is supplied; builds without VCS information still report `+dev` ([#183]).
 - `--config` is accepted only by `run` and `reset`; read-only commands no longer advertise it and reject it with exit 2 ([#187]).
 - The tuning boot now requires exactly one GRUB mirror, refusing configurations with several GRUB environments ([#189]).
+- Kernel logs are now read from a persisted, boot-local cursor at every trial boundary and clean shutdown, including dead ends, covering profile writes and retry waits; interrupted setup recovers the successful target readback boundary, between-trial MCEs are recorded and shown without feeding trial decisions, and a lost read interval keeps an intersecting trial inconclusive below stronger evidence, including valid MCEs returned before a cursor metadata error. If a session may have tuned through kernel-log gaps, run `togi reset --core N` for every tuned core; older journals cannot identify the affected trials ([#196]).
 
 ### Fixed
 
@@ -235,3 +236,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#168]: https://github.com/shgew/togi/pull/168
 [#172]: https://github.com/shgew/togi/pull/172
 [#173]: https://github.com/shgew/togi/pull/173
+[#196]: https://github.com/shgew/togi/pull/196
