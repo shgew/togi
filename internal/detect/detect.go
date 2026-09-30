@@ -220,7 +220,7 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 	var result []machine.MCE
 	var preceding *Message
 	current := -1
-	statusLines := 0
+	var ownership mceOwnership
 	rawBlock := false
 	pending := 0
 	ambiguous := false
@@ -257,13 +257,13 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 			if decoded != nil {
 				ambiguous = pending != 0
 				pending++
+				ownership.start(len(result))
 			}
 			mce := machine.MCE{CPU: cpu, Core: core, Bank: bank, BankType: machine.UnknownBank, Corrected: corrected, Time: msg.Time, Monotonic: msg.Monotonic}
 			if preceding != nil {
 				mce.Lines = append(mce.Lines, stamped(*preceding))
 			}
 			mce.Lines = append(mce.Lines, stamped(msg))
-			statusLines = len(mce.Lines)
 			result = append(result, mce)
 			current = len(result) - 1
 			rawBlock = raw != nil
@@ -287,10 +287,8 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 			}
 			continue
 		}
-		if !rawBlock && pending == 0 {
+		if !ownership.bank(result, current, pending, rawBlock) {
 			ambiguous = true
-			mce.BankType = machine.UnknownBank
-			mce.Lines = mce.Lines[:statusLines]
 		}
 		if !ambiguous && (rawBlock || pending == 1) {
 			if mce.Core != -1 && !rawBlock {
@@ -307,4 +305,48 @@ func Parse(msgs []Message, cpuCore map[int]int) []machine.MCE {
 		}
 	}
 	return result
+}
+
+type mceOwnership struct {
+	first     int
+	pending   int
+	ambiguous bool
+	cleared   bool
+}
+
+func (o *mceOwnership) start(index int) {
+	if o.pending == 0 {
+		o.first = index
+		o.ambiguous = false
+		o.cleared = false
+	}
+	o.pending++
+}
+
+func (o *mceOwnership) bank(mces []machine.MCE, current, pending int, raw bool) bool {
+	if raw {
+		return true
+	}
+	o.ambiguous = o.ambiguous || pending == 0
+	if o.ambiguous && !o.cleared {
+		clearBankAttribution(mces[o.first : current+1])
+		o.cleared = true
+	}
+	if o.pending > 0 {
+		o.pending--
+	}
+	return !o.ambiguous
+}
+
+func clearBankAttribution(mces []machine.MCE) {
+	for i := range mces {
+		mce := &mces[i]
+		mce.BankType = machine.UnknownBank
+		statusLines := 1
+		_, text, _ := strings.Cut(mce.Lines[0], " ")
+		if description(text) {
+			statusLines++
+		}
+		mce.Lines = mce.Lines[:statusLines]
+	}
 }
