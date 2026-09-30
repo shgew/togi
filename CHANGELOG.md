@@ -25,6 +25,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - The tuning service requires the mount holding GRUB's environment, including a separate `noauto` boot mount ([#189]).
 - Trial outcome precedence now preserves backend failures and containment escapes when the runner also reports cleanup or cancellation errors, and preserves MCE evidence when kernel-log reading fails ([#167]).
 - Trials with unreadable or malformed thread or CPU-usage samples are now inconclusive, even if later samples succeed, unless higher-precedence failure evidence survives. If a session may have tuned through sampling errors, run `togi reset --core N` for every tuned core; older journals cannot identify the affected trials ([#168]).
+- Trials whose current boot is explicitly missing from the kernel log are now inconclusive unless higher-precedence failure evidence survives; valid empty results and recovery from vacuumed older boots are unchanged. If a session may have tuned through missing current-boot logs, run `togi reset --core N` for every tuned core; older journals cannot identify the affected trials ([#172]).
 
 ## [0.5.0] - 2026-09-29
 
@@ -231,3 +232,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#193]: https://github.com/shgew/togi/pull/193
 [#167]: https://github.com/shgew/togi/pull/167
 [#168]: https://github.com/shgew/togi/pull/168
+[#172]: https://github.com/shgew/togi/pull/172
