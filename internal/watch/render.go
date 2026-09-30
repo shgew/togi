@@ -120,8 +120,8 @@ func Render(s Snapshot, w, h int, now time.Time) string {
 	var f frame
 	if !s.session {
 		f.add(spread(width, pad+bold.Reverse(true).Render(" togi "), bold.Render(now.Format("15:04:05"))), "")
-		if s.problem != "" {
-			f.add(bannerStyle.Width(width).Render(pad + s.problem))
+		if s.problem != nil {
+			f.add(bannerStyle.Width(width).Render(pad + s.problem.Error()))
 		} else {
 			f.add(pad + dim.Render("no session yet"))
 		}

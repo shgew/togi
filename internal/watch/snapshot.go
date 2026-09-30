@@ -17,7 +17,7 @@ const recentLimit = 100
 
 // Snapshot is everything one frame shows, projected from the journal.
 type Snapshot struct {
-	problem     string
+	problem     error
 	session     bool
 	guard       bool
 	huntID      int
@@ -37,6 +37,10 @@ type Snapshot struct {
 	lastFailure *line
 	deadEnd     string
 	recent      []line
+}
+
+func (s Snapshot) Err() error {
+	return s.problem
 }
 
 type line struct {
@@ -85,9 +89,9 @@ func Load(dir string) Snapshot {
 	case errors.Is(err, fs.ErrNotExist):
 		return Snapshot{}
 	case errors.As(err, &incompatible):
-		return Snapshot{problem: incompatible.Error()}
+		return Snapshot{problem: incompatible}
 	case err != nil:
-		return Snapshot{problem: err.Error()}
+		return Snapshot{problem: err}
 	}
 	return Project(events)
 }
