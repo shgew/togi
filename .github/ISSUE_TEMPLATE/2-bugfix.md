@@ -10,8 +10,12 @@ labels: ["bugfix"]
 
 ## Version
 
-<!-- The togi version or git revision. -->
+<!-- Output of `togi --version`. -->
+
+## Environment
+
+<!-- Kernel (`uname -r`), CPU model, board with BIOS and AGESA version, and ryzen_smu version. Share what you know; these details are optional. -->
 
 ## Journal
 
-<!-- The events around it, from `togi events`. -->
+<!-- An excerpt from `togi events` around the problem. Keep the full journal available on request. -->
