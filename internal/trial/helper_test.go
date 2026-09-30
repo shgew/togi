@@ -228,5 +228,9 @@ func testCPUs(t *testing.T) []int {
 func testOptions(t *testing.T, mode string) Options {
 	t.Helper()
 	cpus := testCPUs(t)
-	return Options{Dir: t.TempDir(), NoScope: true, Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{mode: mode}}, SampleInterval: 50 * time.Millisecond, StallGrace: time.Hour, Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{cpus[0]}}, {Core: 1, CCD: 1, CPUs: []int{cpus[1]}}}}
+	dir := t.TempDir()
+	if err := os.Chmod(filepath.Dir(dir), 0711); err != nil {
+		t.Fatal(err)
+	}
+	return Options{Dir: dir, NoScope: true, Backends: map[machine.Backend]backend.Backend{machine.Mprime: helperBackend{mode: mode}}, SampleInterval: 50 * time.Millisecond, StallGrace: time.Hour, Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{cpus[0]}}, {Core: 1, CCD: 1, CPUs: []int{cpus[1]}}}}
 }
