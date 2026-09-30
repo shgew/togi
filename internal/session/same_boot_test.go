@@ -35,7 +35,7 @@ func (j *killedProcessJournal) Append(p journal.Payload, cause ...int) (journal.
 
 func sameBootFixture(t *testing.T, pending bool) simRun {
 	t.Helper()
-	cfg := sim.Config{Seed: 84, Cores: 4, BIOS: []int{-40, -40, -20, -5}, Model: &sim.Model{}}
+	cfg := sim.Config{Seed: 84, Cores: 4, BIOS: []int{-40, -40, -20, -5}, Model: quietModel()}
 	in := simInput(t.TempDir(), newSim(t, cfg))
 	seams := in.Machine.Seams()
 	boot, err := seams.Host.BootID()
