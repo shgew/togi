@@ -24,6 +24,13 @@ type staleHost struct {
 	list                         func(context.Context) ([]string, error)
 	kill                         func(context.Context, string) ([]byte, error)
 	stop                         func(context.Context, string) ([]byte, error)
+	scopeSignals                 []scopeSignal
+	signal                       func(context.Context, string, syscall.Signal) ([]byte, error)
+}
+
+type scopeSignal struct {
+	scope string
+	sig   syscall.Signal
 }
 
 func (h *staleHost) ListScopes(ctx context.Context) ([]string, error) {
@@ -42,21 +49,28 @@ func (h *staleHost) ScopeProcesses(ctx context.Context) ([]scopeProcess, error) 
 	return out, ctx.Err()
 }
 func (h *staleHost) ProcessAlive(p scopeProcess) (bool, error) { return h.alive[p.PID], nil }
-func (h *staleHost) SignalGroup(pid int, sig syscall.Signal) error {
-	h.signals = append(h.signals, fakeSignal{pid, sig})
-	if sig == syscall.SIGKILL && !h.keepProcess {
-		for _, p := range h.processes {
-			if p.Group == pid {
-				h.alive[p.PID] = false
-			}
-		}
+func (h *staleHost) SignalGroup(p process, sig syscall.Signal) error {
+	h.signals = append(h.signals, fakeSignal{p.PID(), sig})
+	return errors.New("recovered process must not receive process-group signals")
+}
+func (h *staleHost) SignalScope(ctx context.Context, scope string, sig syscall.Signal) ([]byte, error) {
+	h.scopeSignals = append(h.scopeSignals, scopeSignal{scope, sig})
+	if h.signal != nil {
+		return h.signal(ctx, scope, sig)
 	}
-	return nil
+	return nil, ctx.Err()
 }
 func (h *staleHost) KillScope(ctx context.Context, scope string) ([]byte, error) {
 	h.killed = append(h.killed, scope)
 	if h.kill != nil {
 		return h.kill(ctx, scope)
+	}
+	if !h.keepProcess {
+		for _, p := range h.processes {
+			if p.Scope == scope+".scope" {
+				h.alive[p.PID] = false
+			}
+		}
 	}
 	return nil, ctx.Err()
 }
@@ -74,7 +88,7 @@ func (h *staleHost) StopScope(ctx context.Context, scope string) ([]byte, error)
 
 func TestSweepExactScopes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		h := &staleHost{units: []string{"togi-trial-0001.scope", "togi-trial-0001-c00.scope", "togi-trial-0001.scope", "togi-preflight-1.scope", "other-togi-trial-1.scope", "togi-trial-*.scope", "togi-trial-?.scope", "togi-trial-[1].scope", "togi-trial-1.scope.extra", "togi-trial-.scope", "togi-trial-/1.scope"}, processes: []scopeProcess{{Scope: "togi-trial-0001-c00.scope", PID: 42, Group: 40}, {Scope: "togi-trial-orphan.scope", PID: 43, Group: 40}}, alive: map[int]bool{42: true, 43: true}}
+		h := &staleHost{units: []string{"togi-trial-0001.scope", "togi-trial-0001-c00.scope", "togi-trial-0001.scope", "togi-preflight-1.scope", "other-togi-trial-1.scope", "togi-trial-*.scope", "togi-trial-?.scope", "togi-trial-[1].scope", "togi-trial-1.scope.extra", "togi-trial-.scope", "togi-trial-/1.scope"}, processes: []scopeProcess{{Scope: "togi-trial-0001-c00.scope", PID: 42}, {Scope: "togi-trial-orphan.scope", PID: 43}}, alive: map[int]bool{42: true, 43: true}}
 		r := New(Options{})
 		r.host = h
 		start := time.Now()
@@ -89,8 +103,17 @@ func TestSweepExactScopes(t *testing.T) {
 		if diff := cmp.Diff(want, h.stopped); diff != "" {
 			t.Fatalf("stopped scopes (-want +got):\n%s", diff)
 		}
-		if diff := cmp.Diff([]fakeSignal{{40, syscall.SIGCONT}, {40, syscall.SIGTERM}, {40, syscall.SIGKILL}}, h.signals, cmp.AllowUnexported(fakeSignal{})); diff != "" {
-			t.Fatalf("groups (-want +got):\n%s", diff)
+		if len(h.signals) != 0 {
+			t.Fatalf("recovered PIDs received process-group signals: %v", h.signals)
+		}
+		var wantSignals []scopeSignal
+		for _, sig := range []syscall.Signal{syscall.SIGCONT, syscall.SIGTERM} {
+			for _, scope := range want {
+				wantSignals = append(wantSignals, scopeSignal{scope, sig})
+			}
+		}
+		if diff := cmp.Diff(wantSignals, h.scopeSignals, cmp.AllowUnexported(scopeSignal{})); diff != "" {
+			t.Fatalf("exact scope signals (-want +got):\n%s", diff)
 		}
 		if time.Since(start) != 3*time.Second {
 			t.Fatalf("grace = %s", time.Since(start))
@@ -106,7 +129,7 @@ func TestSweepCannotConfirmCleanup(t *testing.T) {
 	}{{"unit remains", true, false}, {"process survives outside scope", false, true}} {
 		t.Run(tt.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				h := &staleHost{units: []string{"togi-trial-1.scope"}, processes: []scopeProcess{{Scope: "togi-trial-1.scope", PID: 42, Group: 40}}, alive: map[int]bool{42: true}, keepUnit: tt.unit, keepProcess: tt.process}
+				h := &staleHost{units: []string{"togi-trial-1.scope"}, processes: []scopeProcess{{Scope: "togi-trial-1.scope", PID: 42}}, alive: map[int]bool{42: true}, keepUnit: tt.unit, keepProcess: tt.process}
 				r := New(Options{})
 				r.host = h
 				start := time.Now()
@@ -196,6 +219,51 @@ func TestSweepVerificationError(t *testing.T) {
 		_, err := r.Sweep(context.Background())
 		if !errors.Is(err, machine.ErrContainment) {
 			t.Fatalf("verification error = %v", err)
+		}
+	})
+}
+
+func TestSweepScopeSignalDeadline(t *testing.T) {
+	for _, sig := range []syscall.Signal{syscall.SIGCONT, syscall.SIGTERM} {
+		t.Run(sig.String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				h := &staleHost{units: []string{"togi-trial-1.scope", "togi-trial-2.scope", "togi-trial-3.scope"}}
+				h.signal = func(ctx context.Context, _ string, sent syscall.Signal) ([]byte, error) {
+					if sent == sig {
+						<-ctx.Done()
+					}
+					return []byte("Unit not loaded"), ctx.Err()
+				}
+				r := New(Options{})
+				r.host = h
+				start := time.Now()
+				_, err := r.Sweep(context.Background())
+				if !errors.Is(err, machine.ErrContainment) || !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("signal timeout accepted as missing scope: %v", err)
+				}
+				if elapsed := time.Since(start); elapsed != 3*time.Second {
+					t.Fatalf("shared scope-signaling grace = %s", elapsed)
+				}
+				if len(h.scopeSignals) != 6 || len(h.killed) != 3 || len(h.stopped) != 3 || len(h.signals) != 0 {
+					t.Fatalf("scope cleanup attempts signals=%v kills=%v stops=%v groups=%v", h.scopeSignals, h.killed, h.stopped, h.signals)
+				}
+				t.Logf("scope %s timeout: containment; six exact scope signals, three kills and stops, shared 3s grace; zero recovered group signals", sig)
+			})
+		})
+	}
+}
+
+func TestSweepScopeSignalFailure(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := &staleHost{units: []string{"togi-trial-1.scope"}}
+		h.signal = func(context.Context, string, syscall.Signal) ([]byte, error) {
+			return nil, errors.New("systemd signal failed")
+		}
+		r := New(Options{})
+		r.host = h
+		_, err := r.Sweep(context.Background())
+		if !errors.Is(err, machine.ErrContainment) || len(h.units) != 0 || len(h.killed) != 1 || len(h.stopped) != 1 {
+			t.Fatalf("uncertain signaling must fail despite final cleanup: err=%v units=%v kills=%v stops=%v", err, h.units, h.killed, h.stopped)
 		}
 	})
 }

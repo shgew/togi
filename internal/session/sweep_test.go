@@ -1,9 +1,11 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -155,5 +157,41 @@ func TestFailedPreflightSkipsSweep(t *testing.T) {
 	stop, o := sweepRun(t, in, false)
 	if stop.Reason != StopDeadEnd || stop.DeadEnd.Condition != journal.DeadEndPreflight || o.swept || o.writes != 0 || o.trials != 0 {
 		t.Fatalf("preflight stop %+v; observation %+v", stop, o)
+	}
+}
+
+func TestFailedSweepJournalFailureDoesNotWrite(t *testing.T) {
+	for _, resume := range []bool{false, true} {
+		t.Run(fmt.Sprintf("resume=%t", resume), func(t *testing.T) {
+			cfg := small()
+			cfg.BIOS = []int{-10, -20}
+			in := simInput(t.TempDir(), newSim(t, cfg))
+			if resume {
+				sweepRun(t, in, false)
+			}
+			seams := in.Machine.Seams()
+			boot, _ := seams.Host.BootID()
+			j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer j.Close()
+			faulty := &failAppendJournal{Journal: wrapFor(in, nil)(j), check: "trial_scopes"}
+			o := &sweepObservation{t: t, journal: faulty, start: len(faulty.Events()), fail: true}
+			seams.SMU = sweepSMU{SMU: seams.SMU, o: o}
+			seams.Trials = observedSweepTrials{Trials: seams.Trials, o: o}
+			var stderr bytes.Buffer
+			_, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: faulty, Machine: seams, Stderr: &stderr})
+			if !faulty.failed || !errors.Is(err, io.ErrClosedPipe) || o.swept || o.writes != 0 || o.trials != 0 {
+				t.Fatalf("failed sweep record wrote offsets: journal failed=%t err=%v swept=%t writes=%d trials=%d", faulty.failed, err, o.swept, o.writes, o.trials)
+			}
+			for core, want := range cfg.BIOS {
+				got, err := in.Machine.Seams().SMU.Offset(core)
+				if err != nil || got != want {
+					t.Fatalf("core %d changed after failed sweep: got=%d want=%d err=%v", core, got, want, err)
+				}
+			}
+			t.Logf("failed sweep and failed result append: zero actual SMU writes and zero trials; %s", stderr.String())
+		})
 	}
 }

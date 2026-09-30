@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 func (h osHost) ListScopes(ctx context.Context) ([]string, error) {
@@ -37,6 +38,15 @@ func (h osHost) StopScope(ctx context.Context, scope string) ([]byte, error) {
 		args = append(args, "--user")
 	}
 	args = append(args, "stop", scope+".scope")
+	return h.command(ctx, "systemctl", args...)
+}
+
+func (h osHost) SignalScope(ctx context.Context, scope string, sig syscall.Signal) ([]byte, error) {
+	args := []string{}
+	if os.Geteuid() != 0 {
+		args = append(args, "--user")
+	}
+	args = append(args, "kill", "--signal="+strconv.Itoa(int(sig)), "--kill-whom=all", scope+".scope")
 	return h.command(ctx, "systemctl", args...)
 }
 
@@ -97,11 +107,11 @@ func (h osHost) ScopeProcesses(ctx context.Context) ([]scopeProcess, error) {
 		if fields[0] == "Z" || fields[0] == "X" {
 			continue
 		}
-		group, start := int(fieldInt(fields, 5)), fieldInt(fields, 22)
-		if group <= 0 || start < 0 {
-			return nil, fmt.Errorf("invalid leftover process %d identity", pid)
+		start, err := strconv.ParseInt(fields[19], 10, 64)
+		if err != nil || start < 0 {
+			return nil, fmt.Errorf("invalid leftover process %d start time %q", pid, fields[19])
 		}
-		processes = append(processes, scopeProcess{Scope: unit, PID: pid, Group: group, Start: start})
+		processes = append(processes, scopeProcess{Scope: unit, PID: pid, Start: start})
 	}
 	return processes, ctx.Err()
 }
@@ -114,5 +124,9 @@ func (h osHost) ProcessAlive(p scopeProcess) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return fields[0] != "Z" && fields[0] != "X" && fieldInt(fields, 22) == p.Start, nil
+	start, err := strconv.ParseInt(fields[19], 10, 64)
+	if err != nil {
+		return false, fmt.Errorf("read process %d start time: %w", p.PID, err)
+	}
+	return fields[0] != "Z" && fields[0] != "X" && start == p.Start, nil
 }

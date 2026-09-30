@@ -3,7 +3,7 @@
 +------------------------------------------------------------+
 
       .---.
-     / * * \     BRONZE                    [tier.change #4875]
+     / * * \     BRONZE                    [tier.change #4915]
     |   *   |    Silver    7.2 of 24 clean hours
      \ * * /     Gold      7.2 of 100 clean hours
       '---'      Platinum  locked until togi observe exists
@@ -29,9 +29,9 @@ Profile                                 [profile.change #4210]
   15    1    7     -10     -11     -      true  [#3614]
 
 joint marks:
-  J1 core 03 -10 + core 11 -10, observed in hunt 1 [#4208]
+  J1 core 03 -10 + core 11 -10, observed in hunt 1 [#4248]
 
-Evidence since [#3671]: the last failure on a profile at least as deep
+Evidence since [#3704]: the last failure on a profile at least as deep
   REGIME  WORKLOAD                         STARTS  CLEAN H  RATE BOUND
   R1      mprime-sse-4k-21k                16      0.5      < 5.63/h
   R1      ycruncher-bkt-sftv4              16      0.5      < 5.63/h
@@ -48,12 +48,12 @@ Evidence since [#3671]: the last failure on a profile at least as deep
   R7      mprime-avx512-36k-248k-allcore   12      0.6      < 4.74/h
   R7      ycruncher-fftv4-n63-vt3-allcore  12      0.6      < 4.74/h
   all     -                                -       7.3      < 0.42/h
-  Tctl max 76°C                              [trial.end #4304]
+  Tctl max 76°C                              [trial.end #4344]
   Rate bound = 3 / clean hours, 95% confidence (rule of three).
   Starts = valid passes since each class last failed.
 
 Session 20260101T000000Z, started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0, boost limit 5700 MHz
 
-Journal SHA-256 <journal sha256> through seq 4925
+Journal SHA-256 <journal sha256> through seq 4965
 Durability is a bound, not proof.

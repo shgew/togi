@@ -95,6 +95,7 @@ type runner struct {
 	running              machine.Running
 	shutdownEvent        *journal.Shutdown
 	containmentFailed    bool
+	swept                bool
 }
 
 func Run(ctx context.Context, in Input) (stop Stop, err error) {
@@ -280,6 +281,12 @@ func (r *runner) latch(err error) error {
 }
 
 func (r *runner) emergencyRestore(err error) error {
+	if !r.swept {
+		if r.in.Stderr != nil {
+			fmt.Fprintf(r.in.Stderr, "togi: journal write failed: %v; offsets unchanged before successful trial-scope sweep\n", err)
+		}
+		return nil
+	}
 	if !r.smuValidated {
 		return nil
 	}
@@ -771,6 +778,7 @@ func (r *runner) preflight(ctx context.Context) (*Stop, error) {
 
 func (r *runner) sweep() (*Stop, error) {
 	detail, sweepErr := r.in.Machine.Trials.Sweep(context.Background())
+	r.swept = sweepErr == nil
 	if sweepErr != nil {
 		detail = sweepErr.Error()
 	}

@@ -133,7 +133,7 @@ func (h *rollbackProcessHost) Start(ctx context.Context, argv []string, dir stri
 			return p, nil
 		}
 		if time.Now().After(deadline) {
-			_ = h.SignalGroup(p.PID(), syscall.SIGKILL)
+			_ = h.SignalGroup(p, syscall.SIGKILL)
 			p.Stdout().Close()
 			p.Stderr().Close()
 			_ = p.Wait()
@@ -185,6 +185,7 @@ type orphanSweepHost struct {
 	osHost
 	unit         string
 	orphan       scopeProcess
+	descendant   *os.Process
 	kills, stops int
 }
 
@@ -203,15 +204,29 @@ func (h *orphanSweepHost) ScopeProcesses(ctx context.Context) ([]scopeProcess, e
 	return []scopeProcess{h.orphan}, ctx.Err()
 }
 
-func (h *orphanSweepHost) KillScope(ctx context.Context, _ string) ([]byte, error) {
+func (h *orphanSweepHost) KillScope(ctx context.Context, scope string) ([]byte, error) {
 	h.kills++
-	return nil, ctx.Err()
+	return h.SignalScope(ctx, scope, syscall.SIGKILL)
 }
 
 func (h *orphanSweepHost) StopScope(ctx context.Context, _ string) ([]byte, error) {
 	h.stops++
 	h.unit = ""
 	return nil, ctx.Err()
+}
+
+func (h *orphanSweepHost) SignalScope(ctx context.Context, scope string, sig syscall.Signal) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if h.orphan.Scope != scope+".scope" {
+		return nil, errors.New("unowned helper scope")
+	}
+	alive, err := h.ProcessAlive(h.orphan)
+	if err != nil || !alive {
+		return nil, err
+	}
+	return nil, h.descendant.Signal(sig)
 }
 
 func TestProcessSweepAfterKilledOwner(t *testing.T) {
@@ -226,9 +241,9 @@ func TestProcessSweepAfterKilledOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = h.SignalGroup(owner.PID(), syscall.SIGKILL)
-		if h.orphan.PID != 0 {
-			_ = syscall.Kill(h.orphan.PID, syscall.SIGKILL)
+		_ = h.SignalGroup(owner, syscall.SIGKILL)
+		if h.descendant != nil {
+			_ = h.descendant.Kill()
 		}
 		owner.Stdout().Close()
 		owner.Stderr().Close()
@@ -252,8 +267,12 @@ func TestProcessSweepAfterKilledOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.orphan.Scope, h.orphan.Group, h.orphan.Start = h.unit, int(fieldInt(fields, 5)), fieldInt(fields, 22)
-	if err := h.SignalGroup(owner.PID(), syscall.SIGKILL); err != nil {
+	h.orphan.Scope, h.orphan.Start = h.unit, fieldInt(fields, 22)
+	h.descendant, err = os.FindProcess(h.orphan.PID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.SignalGroup(owner, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
 	_ = owner.Wait()
@@ -274,4 +293,43 @@ func TestProcessSweepAfterKilledOwner(t *testing.T) {
 		t.Fatalf("sweep exceeded deadline: %s", elapsed)
 	}
 	t.Logf("killed helper owner; detached real process removed; %s; systemd unit operations faked, no host scopes touched", detail)
+}
+
+func TestProcessOwnedGroupIdentity(t *testing.T) {
+	o := testOptions(t, "sleep")
+	launch, err := o.Backends[machine.Mprime].Prepare(machine.Workload{}, o.Dir, o.Cores[0].CPUs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := osHost{}
+	owned, err := h.Start(context.Background(), launch.Argv, o.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := owned.(*execProcess)
+	waited := false
+	t.Cleanup(func() {
+		_ = p.cmd.Process.Kill()
+		if !waited {
+			_ = p.Wait()
+		}
+		p.Stdout().Close()
+		p.Stderr().Close()
+	})
+	stale := &execProcess{cmd: p.cmd, start: p.start + 1}
+	if err := h.SignalGroup(stale, syscall.SIGKILL); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("stale launch identity signaled a live helper: %v", err)
+	}
+	if alive, err := h.ProcessAlive(scopeProcess{PID: p.PID(), Start: p.start}); err != nil || !alive {
+		t.Fatalf("unrelated identity did not survive: alive=%t err=%v", alive, err)
+	}
+	if err := h.SignalGroup(p, syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	_ = p.Wait()
+	waited = true
+	if err := h.SignalGroup(p, syscall.SIGKILL); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("reaped process group was signaled: %v", err)
+	}
+	t.Log("stale launch identity left real helper alive; verified owner terminated it; reaped PID refused a later group signal")
 }

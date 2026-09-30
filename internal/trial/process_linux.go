@@ -11,8 +11,11 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 type osHost struct {
@@ -33,12 +36,31 @@ func commandOutput(ctx context.Context, name string, args ...string) ([]byte, er
 type execProcess struct {
 	cmd            *exec.Cmd
 	stdout, stderr *os.File
+	start          int64
+	mu             sync.Mutex
+	reaped         bool
 }
 
-func (p execProcess) PID() int              { return p.cmd.Process.Pid }
-func (p execProcess) Stdout() io.ReadCloser { return p.stdout }
-func (p execProcess) Stderr() io.ReadCloser { return p.stderr }
-func (p execProcess) Wait() error           { return p.cmd.Wait() }
+func (p *execProcess) PID() int              { return p.cmd.Process.Pid }
+func (p *execProcess) Stdout() io.ReadCloser { return p.stdout }
+func (p *execProcess) Stderr() io.ReadCloser { return p.stderr }
+func (p *execProcess) Wait() error {
+	var info unix.Siginfo
+	var waitErr error
+	for {
+		waitErr = unix.Waitid(unix.P_PID, p.PID(), &info, unix.WEXITED|unix.WNOWAIT, nil)
+		if !errors.Is(waitErr, syscall.EINTR) {
+			break
+		}
+	}
+	p.mu.Lock()
+	p.reaped = true
+	p.mu.Unlock()
+	if waitErr != nil {
+		waitErr = errors.Join(fmt.Errorf("wait for owned process %d: %w", p.PID(), waitErr), p.cmd.Process.Kill())
+	}
+	return errors.Join(waitErr, p.cmd.Wait())
+}
 
 func (osHost) Start(ctx context.Context, argv []string, dir string) (process, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
@@ -61,10 +83,54 @@ func (osHost) Start(ctx context.Context, argv []string, dir string) (process, er
 		stderr.Close()
 		return nil, err
 	}
-	return execProcess{cmd: cmd, stdout: stdout, stderr: stderr}, nil
+	fields, err := procStat(fmt.Sprintf("/proc/%d/stat", cmd.Process.Pid))
+	var start int64
+	if err == nil {
+		start, err = strconv.ParseInt(fields[19], 10, 64)
+	}
+	if err == nil && start < 0 {
+		err = fmt.Errorf("invalid start time %d", start)
+	}
+	if err != nil || start < 0 {
+		killErr := cmd.Process.Kill()
+		waitErr := cmd.Wait()
+		stdout.Close()
+		stderr.Close()
+		return nil, errors.Join(fmt.Errorf("capture owned process identity: %w", err), killErr, waitErr)
+	}
+	return &execProcess{cmd: cmd, stdout: stdout, stderr: stderr, start: start}, nil
 }
 
-func (osHost) SignalGroup(pid int, sig syscall.Signal) error { return syscall.Kill(-pid, sig) }
+func (h osHost) SignalGroup(owned process, sig syscall.Signal) error {
+	p, ok := owned.(*execProcess)
+	if !ok {
+		return errors.New("signal process group: process was not launched by osHost")
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.reaped {
+		return syscall.ESRCH
+	}
+	fields, err := procStat(h.procPath(p.PID(), "stat"))
+	if os.IsNotExist(err) {
+		return syscall.ESRCH
+	}
+	if err != nil {
+		return fmt.Errorf("verify owned process %d identity: %w", p.PID(), err)
+	}
+	start, err := strconv.ParseInt(fields[19], 10, 64)
+	if err != nil {
+		return fmt.Errorf("verify owned process %d start time: %w", p.PID(), err)
+	}
+	if start != p.start || fields[0] == "Z" || fields[0] == "X" {
+		return syscall.ESRCH
+	}
+	group, err := strconv.Atoi(fields[2])
+	if err != nil || group != p.PID() || group <= 0 {
+		return fmt.Errorf("owned process %d no longer leads its process group", p.PID())
+	}
+	return syscall.Kill(-group, sig)
+}
 
 func (osHost) InScope(pid int, scope string) bool {
 	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))

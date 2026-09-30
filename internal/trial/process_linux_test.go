@@ -52,7 +52,15 @@ func TestScopeTimeoutUsesRemainingTeardownTime(t *testing.T) {
 			<-ctx.Done()
 			return []byte("Unit not loaded; could not be found"), ctx.Err()
 		}}}
-		run := &running{host: h, options: Options{StopGrace: 3 * time.Second}, scopes: []string{"first", "second"}, instances: []*instance{{done: true}, {done: true}}}
+		run := &running{host: h, options: Options{StopGrace: 3 * time.Second}, scopes: []string{"first", "second"}}
+		for range 2 {
+			p, err := h.Start(context.Background(), []string{"exit"}, t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			run.instances = append(run.instances, &instance{PID: p.PID(), process: p, done: true})
+		}
+		synctest.Wait()
 		err := run.teardown(&machine.Result{}, &recorder{})
 		if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, machine.ErrContainment) {
 			t.Fatalf("cleanup = %v", err)

@@ -4,11 +4,14 @@ package trial
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"testing/synctest"
 
@@ -45,13 +48,18 @@ func TestScopeProcessDiscoveryAndIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []scopeProcess{{Scope: "togi-trial-1.scope", PID: 42, Group: 40, Start: 100}}
+	want := []scopeProcess{{Scope: "togi-trial-1.scope", PID: 42, Start: 100}}
 	if diff := cmp.Diff(want, processes); diff != "" {
 		t.Fatalf("scoped descendants (-want +got):\n%s", diff)
 	}
 	alive, err := h.ProcessAlive(want[0])
 	if err != nil || !alive {
 		t.Fatalf("live identity = %t, %v", alive, err)
+	}
+	procFixture(t, root, 42, "0::/elsewhere\n", "S", 40, 100)
+	alive, err = h.ProcessAlive(want[0])
+	if err != nil || !alive {
+		t.Fatalf("escaped captured process was not retained = %t, %v", alive, err)
 	}
 	procFixture(t, root, 42, "0::/elsewhere\n", "S", 40, 101)
 	alive, err = h.ProcessAlive(want[0])
@@ -78,4 +86,33 @@ func TestSystemdScopeListFiltersNames(t *testing.T) {
 			t.Fatalf("units (-want +got):\n%s", diff)
 		}
 	})
+}
+
+func TestOwnedProcessGroupRejectsUnverifiedIdentity(t *testing.T) {
+	for _, tt := range []struct {
+		name, state     string
+		start, group    int
+		reaped, missing bool
+		want            error
+	}{
+		{name: "PID reused", state: "S", start: 101, group: 42, want: syscall.ESRCH},
+		{name: "zombie", state: "Z", start: 100, group: 42, want: syscall.ESRCH},
+		{name: "dead", state: "X", start: 100, group: 42, want: syscall.ESRCH},
+		{name: "reaped", state: "S", start: 100, group: 42, reaped: true, want: syscall.ESRCH},
+		{name: "disappeared", missing: true, want: syscall.ESRCH},
+		{name: "group changed", state: "S", start: 100, group: 40},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if !tt.missing {
+				procFixture(t, root, 42, "0::/unrelated.scope\n", tt.state, tt.group, tt.start)
+			}
+			h := osHost{procDir: root}
+			p := &execProcess{cmd: &exec.Cmd{Process: &os.Process{Pid: 42}}, start: 100, reaped: tt.reaped}
+			err := h.SignalGroup(p, syscall.SIGKILL)
+			if err == nil || tt.want != nil && !errors.Is(err, tt.want) {
+				t.Fatalf("unverified process-group signal = %v, want %v", err, tt.want)
+			}
+		})
+	}
 }

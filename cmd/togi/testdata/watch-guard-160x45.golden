@@ -1,5 +1,5 @@
   togi   GUARD   session 10h15m   last event 40s ago                                                                                                   10:15:17
- 16/16 done | tier -- | clean 0h00m since tier clock #4266 | 28 failures | 7 crashes
+ 16/16 done | tier -- | clean 0h00m since tier clock #4274 | 28 failures | 7 crashes
  cores 00 01 02 03 04 05 06 07   resident   R7 mprime AVX2 36K-248K all-core   ██████████░░░░░░░░░░░░░░░░░░░░ 40/120s
  last failure 3h15m ago   core 00 failure at CO -38: crash in trial 0294 (isolated: attributed to the target)
 

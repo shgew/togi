@@ -158,11 +158,12 @@ func (p *fakeProc) script(mode, dir string) {
 	}
 }
 
-func (h *fakeHost) SignalGroup(pid int, sig syscall.Signal) error {
+func (h *fakeHost) SignalGroup(owned process, sig syscall.Signal) error {
+	pid := owned.PID()
 	h.mu.Lock()
 	var p *fakeProc
 	for _, candidate := range h.procs {
-		if candidate.pid == pid {
+		if candidate == owned {
 			p = candidate
 			break
 		}
@@ -248,5 +249,8 @@ func (*fakeHost) ScopeProcesses(ctx context.Context) ([]scopeProcess, error) {
 }
 func (*fakeHost) ProcessAlive(scopeProcess) (bool, error) { return false, nil }
 func (*fakeHost) StopScope(ctx context.Context, _ string) ([]byte, error) {
+	return nil, ctx.Err()
+}
+func (*fakeHost) SignalScope(ctx context.Context, _ string, _ syscall.Signal) ([]byte, error) {
 	return nil, ctx.Err()
 }

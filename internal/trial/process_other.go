@@ -16,7 +16,7 @@ func newOSHost() processHost { return osHost{} }
 func (osHost) Start(context.Context, []string, string) (process, error) {
 	return nil, fmt.Errorf("start trial process: %w", errors.ErrUnsupported)
 }
-func (osHost) SignalGroup(int, syscall.Signal) error {
+func (osHost) SignalGroup(process, syscall.Signal) error {
 	return fmt.Errorf("signal trial process: %w", errors.ErrUnsupported)
 }
 func (osHost) InScope(int, string) bool { return false }
@@ -40,4 +40,7 @@ func (osHost) ProcessAlive(scopeProcess) (bool, error) {
 }
 func (osHost) StopScope(context.Context, string) ([]byte, error) {
 	return nil, fmt.Errorf("stop trial scope: %w", errors.ErrUnsupported)
+}
+func (osHost) SignalScope(context.Context, string, syscall.Signal) ([]byte, error) {
+	return nil, fmt.Errorf("signal trial scope: %w", errors.ErrUnsupported)
 }

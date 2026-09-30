@@ -50,71 +50,73 @@ func (r *Runner) Sweep(parent context.Context) (string, error) {
 			scopes = append(scopes, strings.TrimSuffix(unit, ".scope"))
 		}
 	}
-	var instances []*instance
 	for _, p := range processes {
 		if !trialScope(p.Scope) {
 			continue
 		}
 		scopes = append(scopes, strings.TrimSuffix(p.Scope, ".scope"))
-		if !slices.ContainsFunc(instances, func(inst *instance) bool { return inst.PID == p.Group }) {
-			instances = append(instances, &instance{PID: p.Group})
-		}
 	}
 	slices.Sort(scopes)
 	scopes = slices.Compact(scopes)
 	var verificationErr error
-	phase := 0
+	verifyUnits := false
 	collect := func(until time.Time) bool {
-		phase++
-		if phase == 2 {
-			verificationErr = nil
-		}
-		checkCtx, checkCancel := context.WithDeadline(ctx, until)
-		defer checkCancel()
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			clear := true
-			for _, p := range processes {
-				if !trialScope(p.Scope) {
-					continue
-				}
-				alive, err := r.host.ProcessAlive(p)
-				if err != nil {
-					verificationErr = fmt.Errorf("verify process %d exited: %w", p.PID, err)
-					return false
-				}
-				clear = clear && !alive
-			}
-			if phase == 2 {
-				units, err := r.host.ListScopes(checkCtx)
-				if err != nil {
-					verificationErr = fmt.Errorf("verify leftover trial units removed: %w", err)
-					return false
-				}
-				remaining, err := r.host.ScopeProcesses(checkCtx)
-				if err != nil {
-					verificationErr = fmt.Errorf("verify leftover trial processes removed: %w", err)
-					return false
-				}
-				clear = clear && !slices.ContainsFunc(units, trialScope) && !slices.ContainsFunc(remaining, func(p scopeProcess) bool { return trialScope(p.Scope) })
-			}
-			if clear {
-				return true
-			}
-			select {
-			case <-checkCtx.Done():
-				verificationErr = errors.New("leftover trial unit or process remains at sweep deadline")
-				return false
-			case <-ticker.C:
-			}
-		}
+		verificationErr = r.waitSweep(ctx, until, processes, verifyUnits)
+		verifyUnits = true
+		return verificationErr == nil
 	}
-	err = terminate(sweepHost{r.host}, instances, scopes, deadline, r.options.StopGrace, collect)
+	err = terminate(sweepHost{r.host}, nil, scopes, deadline, r.options.StopGrace, true, collect)
 	if err != nil || verificationErr != nil || ctx.Err() != nil {
 		return "", errors.Join(machine.ErrContainment, err, verificationErr, ctx.Err())
 	}
 	return fmt.Sprintf("removed %d leftover trial scopes; no trial unit or process remains", len(scopes)), nil
+}
+
+func (r *Runner) waitSweep(parent context.Context, until time.Time, processes []scopeProcess, verifyUnits bool) error {
+	ctx, cancel := context.WithDeadline(parent, until)
+	defer cancel()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		clear, err := r.sweepClear(ctx, processes, verifyUnits)
+		if err != nil {
+			return err
+		}
+		if clear {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return errors.New("leftover trial unit or process remains at sweep deadline")
+		case <-ticker.C:
+		}
+	}
+}
+
+func (r *Runner) sweepClear(ctx context.Context, processes []scopeProcess, verifyUnits bool) (bool, error) {
+	clear := true
+	for _, p := range processes {
+		if !trialScope(p.Scope) {
+			continue
+		}
+		alive, err := r.host.ProcessAlive(p)
+		if err != nil {
+			return false, fmt.Errorf("verify process %d exited: %w", p.PID, err)
+		}
+		clear = clear && !alive
+	}
+	if !verifyUnits {
+		return clear, nil
+	}
+	units, err := r.host.ListScopes(ctx)
+	if err != nil {
+		return false, fmt.Errorf("verify leftover trial units removed: %w", err)
+	}
+	remaining, err := r.host.ScopeProcesses(ctx)
+	if err != nil {
+		return false, fmt.Errorf("verify leftover trial processes removed: %w", err)
+	}
+	return clear && !slices.ContainsFunc(units, trialScope) && !slices.ContainsFunc(remaining, func(p scopeProcess) bool { return trialScope(p.Scope) }), nil
 }
 
 type sweepHost struct{ processHost }

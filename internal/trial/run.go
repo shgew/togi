@@ -257,7 +257,7 @@ func (t *running) toggle(inst *instance, stop bool, now time.Time) error {
 	if stop {
 		sig = syscall.SIGSTOP
 	}
-	if err := t.host.SignalGroup(inst.PID, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
+	if err := t.host.SignalGroup(inst.process, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return fmt.Errorf("signal core %02d: %w", inst.Core, err)
 	}
 	if stop && !inst.suspended {
@@ -324,7 +324,7 @@ func (t *running) teardown(result *machine.Result, report machine.Reporter) erro
 		defer t.cancel()
 	}
 	deadline := time.Now().Add(teardownLimit)
-	cleanupErr := terminate(t.host, t.instances, t.scopes, deadline, t.options.StopGrace, func(until time.Time) bool {
+	cleanupErr := terminate(t.host, t.instances, t.scopes, deadline, t.options.StopGrace, false, func(until time.Time) bool {
 		return t.collect(until, result, report)
 	})
 	if t.streamStop != nil && !t.streamClosed {
