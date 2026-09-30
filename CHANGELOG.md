@@ -6,7 +6,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ### Fixed
 
-- The tuning boot waits for an armed hardware watchdog before writing offsets or starting a workload, and loads its driver in the initrd. A freeze in the first seconds after boot can no longer bypass an unarmed watchdog; if none arms within 30 seconds, preflight stops without tuning.
+- The tuning boot waits for an armed hardware watchdog before writing offsets or starting a workload, and loads its driver in the initrd. A freeze in the first seconds after boot can no longer bypass an unarmed watchdog; if none arms within 30 seconds, preflight stops without tuning ([#194]).
 
 ## [0.5.0] - 2026-09-29
 
@@ -203,3 +203,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#59]: https://github.com/shgew/togi/pull/59
 [#65]: https://github.com/shgew/togi/pull/65
 [#69]: https://github.com/shgew/togi/pull/69
+[#194]: https://github.com/shgew/togi/pull/194
