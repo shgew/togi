@@ -89,6 +89,8 @@ Normal trial ends and partial-start rollbacks use the same teardown, with one ab
 
 Teardown takes at most 15 s regardless of instance count. Cleanup succeeds only when every launched process has exited, output has drained, and every scope kill succeeded or confirmed that its scope no longer exists. A failed or timed-out scope kill, an unconfirmed process-group kill, or an undrained backend is a containment dead end: no next trial or tuning profile write follows. Offset restoration belongs to run-level cleanup, not partial-start rollback or trial outcome adjudication. Final output from the pipes and watched files is classified before the outcome, including unterminated computation errors printed during teardown.
 
+A non-EOF backend-pipe read failure cannot confirm output draining and is a containment failure, even if the process exit and scope kill otherwise succeed.
+
 Every systemd CLI invocation has a context deadline. The preflight `systemd-run` probe and `systemctl reboot` are bounded by 30 s; a trial's `systemd-run` process is bounded by its trial duration plus the startup and teardown allowances. Teardown `systemctl` calls share the bounded slot within the absolute 15 s cleanup deadline, so each kill has only the remaining time. A timed-out kill is failed cleanup even if its output says the scope is missing. Kernel-log reads with `journalctl` have a 30 s deadline; a timeout is a read failure, not an empty log, and follows the existing inconclusive handling.
 
 ## Trial outcome

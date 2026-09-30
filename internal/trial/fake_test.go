@@ -149,6 +149,9 @@ func (p *fakeProc) script(mode, dir string) {
 		fmt.Fprint(p.stdoutW, "COMPUTE ERROR\nAFFINITY:42\n")
 	case "sleep":
 		<-p.exited
+	case "read-error":
+		p.stdoutW.CloseWithError(syscall.EIO)
+		<-p.exited
 	case "exit":
 	case "held-output":
 		fmt.Fprint(p.stdoutW, "COMPUTE ERROR")

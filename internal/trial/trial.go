@@ -326,7 +326,7 @@ func (t *running) readStream(i int, inst *instance, src io.Reader, log *os.File,
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				t.emit(streamEvent{index: i, err: fmt.Errorf("read backend output: %w", err)})
+				t.emit(streamEvent{index: i, err: errors.Join(machine.ErrContainment, fmt.Errorf("read backend output: %w", err))})
 			}
 			t.emit(streamEvent{index: i, stderr: stderr, eof: true})
 			return

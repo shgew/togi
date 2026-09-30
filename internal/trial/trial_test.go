@@ -355,6 +355,24 @@ func TestTeardownFinalOutput(t *testing.T) {
 	}
 }
 
+func TestPipeReadFailureIsContainment(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := fakeOptions(t, "read-error")
+		o.NoScope = false
+		r := New(o)
+		r.host = &fakeHost{inScope: true}
+		trial, err := r.Start(context.Background(), testSpec("read-error", machine.R1, time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := trial.Wait(context.Background(), &recorder{})
+		if !errors.Is(err, syscall.EIO) || !errors.Is(err, machine.ErrContainment) {
+			t.Fatalf("unconfirmed pipe drain: result=%+v err=%v", result, err)
+		}
+		t.Logf("non-EOF pipe read: %v; cleanup is containment failure", err)
+	})
+}
+
 func TestPartialStartConfirmedRollback(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		o := fakeOptions(t, "work")
