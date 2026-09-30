@@ -134,7 +134,7 @@ func TestStateRewriteFailureOnResumeRestoresSafeOffsets(t *testing.T) {
 	t.Parallel()
 	cfg := small()
 	cfg.BIOS = []int{-10, -20}
-	cfg.Model = &sim.Model{}
+	cfg.Model = quietModel()
 	m := newSim(t, cfg)
 	in := simInput(t.TempDir(), m)
 	in.Config.CandidateEdges = map[int]int{0: -50, 1: -50}

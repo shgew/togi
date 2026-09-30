@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/tuner"
 )
@@ -67,7 +68,7 @@ func stateBoot(in simRun, wrap func(*journal.Journal) Journal) (stop Stop, err e
 func TestStateWriteFailureWarnsContinuesAndRebuilds(t *testing.T) {
 	t.Parallel()
 	cfg := small()
-	cfg.Model = &sim.Model{}
+	cfg.Model = quietModel()
 	m := newSim(t, cfg)
 	dir := t.TempDir()
 	in := simInput(dir, m)
@@ -164,7 +165,7 @@ func TestProjectionWarningAppendFailureIsFatal(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			cfg := small()
-			cfg.Model = &sim.Model{}
+			cfg.Model = quietModel()
 			m := newSim(t, cfg)
 			in := simInput(t.TempDir(), m)
 			in.Config.CandidateEdges = map[int]int{0: -50, 1: -50}
@@ -213,7 +214,7 @@ func TestProjectionWarningAppendFailureIsFatal(t *testing.T) {
 func TestStateRebuildWriteFailureWarnsAndContinues(t *testing.T) {
 	t.Parallel()
 	cfg := small()
-	cfg.Model = &sim.Model{}
+	cfg.Model = quietModel()
 	m := newSim(t, cfg)
 	in := simInput(t.TempDir(), m)
 	in.Config.CandidateEdges = map[int]int{0: -50, 1: -50}
@@ -252,4 +253,8 @@ func TestStateRebuildWriteFailureWarnsAndContinues(t *testing.T) {
 		t.Fatalf("startup projection failure invoked emergency cleanup: %s", got)
 	}
 	t.Log("failed startup rebuild warned and continued through clean shutdown")
+}
+
+func quietModel() *sim.Model {
+	return &sim.Model{Signals: map[machine.Signal]float64{machine.ComputationError: 1}}
 }
