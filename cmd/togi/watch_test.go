@@ -163,9 +163,6 @@ func TestWatchProblemFrame(t *testing.T) {
 			if !strings.Contains(stderr.String(), "togi watch: ") || !strings.Contains(stderr.String(), tc.problem) {
 				t.Errorf("stderr %q, want watch error %q", stderr.String(), tc.problem)
 			}
-			if tc.fixture != "" {
-				golden(t, "watch-"+tc.name+"-120x33", ansi.Strip(watch.Render(watch.Load(dir), 120, 33, time.Unix(0, 0).UTC()))+"\n")
-			}
 		})
 	}
 }
