@@ -140,3 +140,25 @@ func TestRunnerEvidenceSurvivesErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestInterruptedBackendFailureWithoutReset(t *testing.T) {
+	r, _, closeJournal := checkedRunner(t, []int{0, 0})
+	defer closeJournal()
+	for _, p := range []journal.Payload{
+		&journal.TrialIntent{Trial: "0001", Core: new(0), Profile: []int{-10, 0}},
+		&journal.TrialProgress{Trial: "0001", Signal: machine.ComputationError, Core: new(0)},
+	} {
+		if _, err := r.append(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := r.closeOpenTrial(); err != nil {
+		t.Fatal(err)
+	}
+	events := r.in.Journal.Events()
+	end := events[len(events)-1].Data.(*journal.TrialEnd)
+	if end.Outcome != journal.OutcomeFailure || end.Signal != machine.ComputationError || !end.Interrupted || end.Reason != journal.TrialReasonStoppedDuringTrial {
+		t.Fatalf("interrupted backend failure without a reset: %+v", end)
+	}
+	t.Logf("same-boot interruption: outcome=%s signal=%s reason=%q", end.Outcome, end.Signal, end.Reason)
+}

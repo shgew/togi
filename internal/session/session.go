@@ -434,9 +434,6 @@ func (r *runner) closeOpenTrial() error {
 	if open.core != nil {
 		evidence.result.Core = *open.core
 	}
-	if open.signal != "" {
-		evidence.missing = "backend reported a failure before the reset"
-	}
 	if len(open.mces) > 0 {
 		evidence.mces = []recordedMCE{{corrected: open.corrected}}
 		cause = append(cause, open.mces...)
@@ -446,6 +443,9 @@ func (r *runner) closeOpenTrial() error {
 	}
 	interrupted := true
 	if seq, crashed := r.fold.crashSeq[open.boot]; crashed {
+		if open.signal != "" {
+			evidence.missing = "backend reported a failure before the reset"
+		}
 		crash := r.eventAt(seq).Data.(*journal.CrashDetected)
 		reset := &journal.TrialEnd{Outcome: journal.OutcomeInconclusive}
 		switch {
