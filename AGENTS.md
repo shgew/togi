@@ -14,6 +14,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
 - `docs/releasing.md`: versioning rules, the release workflow and publishing.
 - `docs/simulating.md`: running a simulated session with `tools/sim`.
+- `docs/reviewing.md`: reviewing an unattended run or archived journal with `just stats`.
 - `docs/adr/`: decisions and the alternatives rejected. Reversing one needs a new ADR.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
 - Issues on `github.com/shgew/togi`: the plan, ideas and bugs (Issues, below).
@@ -105,7 +106,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
 | `nix/` | NixOS module and VM tests |
-| `tools/*` | Development programs, never shipped: `release`, `sim`. Development and debugging behavior lives here, never in `cmd/togi` |
+| `tools/*` | Development programs, never shipped: `release`, `sim`, `stats`. Development and debugging behavior lives here, never in `cmd/togi` |
 
 A package owns one responsibility, and its exported API is the seam. Split a package when it holds two responsibilities that change for different reasons.
 

@@ -4,8 +4,13 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Changed
+
+- Inconclusive trials caused by malformed or short process-stat samples include the quoted content read, truncated to 256 bytes for diagnosis ([#218]).
+
 ### Fixed
 
+- A rerun's journal cause names the newest queued failure of its class, without changing which trials run or how passes are counted ([#217]).
 - The host lock is private by default, with explicit hardware-test group access instead of public-readable delegation. Legacy locks retain their inode during migration; quiesce old lock openers or reboot to revoke existing descriptors. Lock contention no longer restarts the tuning service or triggers restart-limit boot recovery ([#213]).
 
 ## [0.5.2] - 2026-09-30
@@ -285,3 +290,5 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#204]: https://github.com/shgew/togi/pull/204
 [#209]: https://github.com/shgew/togi/pull/209
 [#213]: https://github.com/shgew/togi/pull/213
+[#217]: https://github.com/shgew/togi/pull/217
+[#218]: https://github.com/shgew/togi/pull/218

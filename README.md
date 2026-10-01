@@ -52,6 +52,7 @@ togi --state-dir <dir> events --core 3 # everything that happened to core 3
 |[docs/howto.md](docs/howto.md)|Installing togi and running a tuning session|
 |[docs/releasing.md](docs/releasing.md)|Versioning, the release workflow and tags|
 |[docs/simulating.md](docs/simulating.md)|Running a simulated session for development|
+|[docs/reviewing.md](docs/reviewing.md)|Reviewing current and archived runs with `just stats`|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
 |[CONTEXT.md](CONTEXT.md)|The vocabulary: offsets, phases, regimes, tiers|
 |[docs/spec/tuner.md](docs/spec/tuner.md)|How offsets are searched, hunted, refined, guarded and certified|

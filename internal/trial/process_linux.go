@@ -234,13 +234,23 @@ func procStat(path string) (fields []string, err error) {
 	}
 	end := strings.LastIndexByte(string(b), ')')
 	if end < 0 {
-		return nil, fmt.Errorf("malformed proc stat %s", path)
+		return nil, procStatError("malformed", path, b)
 	}
 	fields = strings.Fields(string(b[end+1:]))
 	if len(fields) < 37 {
-		return nil, fmt.Errorf("short proc stat %s", path)
+		return nil, procStatError("short", path, b)
 	}
 	return fields, nil
+}
+
+func procStatError(kind, path string, content []byte) error {
+	const limit = 256
+	marker := ""
+	if len(content) > limit {
+		content = content[:limit]
+		marker = " (truncated)"
+	}
+	return fmt.Errorf("%s proc stat %s: %q%s", kind, path, content, marker)
 }
 func fieldInt(fields []string, number int) (int64, error) {
 	v, err := strconv.ParseInt(fields[number-3], 10, 64)

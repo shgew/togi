@@ -116,9 +116,68 @@ func TestRerunLongFailedPart(t *testing.T) {
 	if a.Kind != RunTrial || a.Trial.DurationS != 600 {
 		t.Fatalf("long rerun %+v", a)
 	}
+	h.trial(a, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)})
+	failure := h.decide(h.next())
+	h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: -10, ToOffset: -9, FailedMark: new(-10)}, failure.Seq)
+	h.add(&journal.ProfileChange{From: []int{-10, -11}, To: []int{-9, -11}})
+	a, ok := h.s.rerunNext()
+	if !ok || a.Trial.DurationS != 600 {
+		t.Fatalf("passing starts lost after repeated long-class commitment: %+v", a)
+	}
+	if diff := cmp.Diff([]int{failure.Seq}, a.Cause); diff != "" {
+		t.Fatalf("long rerun cause (-want +got):\n%s", diff)
+	}
 	h.trial(a, passed)
-	if a = h.next(); a.Kind == RunTrial && a.Trial.Rerun {
-		t.Fatal("rerun repeated after completion")
+	for range h.s.n {
+		a, ok = h.s.rerunNext()
+		if !ok || a.Trial.DurationS != 120 {
+			t.Fatalf("new obligation did not demand its passing starts: %+v", a)
+		}
+		h.trial(a, passed)
+	}
+	if a, ok = h.s.rerunNext(); ok {
+		t.Fatalf("rerun repeated after both obligations completed: %+v", a)
+	}
+}
+
+func TestRerunRepeatedCommitmentCitesLatestFailure(t *testing.T) {
+	h := residentHarness(t, -10)
+	tr := Trial{Core: 0, Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Phase: journal.PhaseGuard, Condition: machine.Resident, DurationS: 120}
+	failed := journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)}
+	commit := func(a Action, from, to int) int {
+		h.trial(a, failed)
+		failure := h.decide(h.next())
+		h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: from, ToOffset: to, FailedMark: new(from)}, failure.Seq)
+		h.add(&journal.ProfileChange{From: []int{from}, To: []int{to}})
+		return failure.Seq
+	}
+	first := commit(Action{Kind: RunTrial, Trial: tr}, -10, -9)
+	a, ok := h.s.rerunNext()
+	if !ok || !a.Trial.Rerun {
+		t.Fatalf("missing first rerun: %+v", a)
+	}
+	if diff := cmp.Diff([]int{first}, a.Cause); diff != "" {
+		t.Fatalf("first cause (-want +got):\n%s", diff)
+	}
+	second := commit(a, -9, -8)
+	k := classOf(h.s.intents["0001"])
+	want := []rerun{{class: k, seq: first}, {class: k, seq: second}}
+	if diff := cmp.Diff(want, h.s.obligations, cmp.AllowUnexported(rerun{}, trialClass{})); diff != "" {
+		t.Fatalf("obligations (-want +got):\n%s", diff)
+	}
+	a, ok = h.s.rerunNext()
+	if !ok || !a.Trial.Rerun {
+		t.Fatalf("missing second rerun: %+v", a)
+	}
+	if diff := cmp.Diff([]int{second}, a.Cause); diff != "" {
+		t.Fatalf("second cause (-want +got):\n%s", diff)
+	}
+	for range h.s.n {
+		h.trial(a, passed)
+		a, ok = h.s.rerunNext()
+	}
+	if ok {
+		t.Fatalf("rerun repeated after the same number of passes: %+v", a)
 	}
 }
 
