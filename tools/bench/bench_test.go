@@ -6,11 +6,12 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
 )
+
+var approx = cmp.Comparer(func(a, b float64) bool { return math.Abs(a-b) <= 1e-12 })
 
 func TestMetrics(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -43,7 +44,7 @@ func TestMetrics(t *testing.T) {
 		hazards[regime] = 0
 	}
 	want := result{SimHours: 2, FirstCleanRotationH: new(1.0), BronzeH: new(1.2), Crashes: 1, Trials: 2, TrialHours: 120.0 / 3600, Hunts: 1, JointMarks: 1, FinalProfile: []int{-10, -11}, Depth: -21, HazardPerH: hazards}
-	if diff := cmp.Diff(want, got, cmpopts.EquateApprox(0, 1e-12)); diff != "" {
+	if diff := cmp.Diff(want, got, approx); diff != "" {
 		t.Fatalf("metrics (-want +got):\n%s", diff)
 	}
 	got = metrics(events[:6], m, 2)
@@ -122,7 +123,7 @@ func TestScenarioWeightedBootstrap(t *testing.T) {
 	}
 	pairs = append(pairs, pair{result{Scenario: "shared-rail", Status: "concluded", SimHours: 20}, result{Scenario: "shared-rail", Status: "concluded", SimHours: 10}})
 	c := compare(pairs)
-	if diff := cmp.Diff([]float64{1, 1, 1}, []float64{c.Ratio, c.Lo, c.Hi}, cmpopts.EquateApprox(0, 1e-12)); diff != "" {
+	if diff := cmp.Diff([]float64{1, 1, 1}, []float64{c.Ratio, c.Lo, c.Hi}, approx); diff != "" {
 		t.Fatal(diff)
 	}
 	if diff := cmp.Diff(1, c.V4); diff != "" {
