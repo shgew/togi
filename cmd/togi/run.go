@@ -83,13 +83,14 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 	renderer := journal.NewRenderer(stderr, os.Getenv)
+	var bootloader session.Bootloader
+	if grubenv != "" {
+		bootloader = hardware.GRUB{Env: grubenv}
+	}
 	if stamp, _, scanErr := journal.Scan(g.stateDir); scanErr == nil {
 		if stamp.Schema != 0 && !journal.Older(stamp, session.Build()) {
 			if err := journal.Compatible(stamp, session.Build()); err != nil {
-				if grubenv != "" {
-					return runResult(session.Stop{}, err, stderr, renderer, hardware.GRUB{Env: grubenv})
-				}
-				return runResult(session.Stop{}, err, stderr, renderer)
+				return runStartupRefusal(g, err, stderr, renderer, bootloader)
 			}
 		}
 	} else if !errors.Is(scanErr, fs.ErrNotExist) {
@@ -98,10 +99,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	}
 	if events, _, readErr := journal.Read(g.stateDir); readErr == nil {
 		if err := journal.KnownKinds(events, session.Build()); err != nil {
-			if grubenv != "" {
-				return runResult(session.Stop{}, err, stderr, renderer, hardware.GRUB{Env: grubenv})
-			}
-			return runResult(session.Stop{}, err, stderr, renderer)
+			return runStartupRefusal(g, err, stderr, renderer, bootloader)
 		}
 	}
 	cfg, file, err := loadConfig(g)
@@ -111,15 +109,26 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
-	var bootloader session.Bootloader
-	if grubenv != "" {
-		bootloader = hardware.GRUB{Env: grubenv}
-	}
 	var dash *dashboard
 	if out, ok := stderr.(*os.File); ok && !noTUI && interactive(out) {
 		dash = &dashboard{dir: g.stateDir, out: out}
 	}
 	return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr, renderer, dash, hardware.New)
+}
+
+func runStartupRefusal(g *globals, err error, stderr io.Writer, renderer journal.Renderer, bootloader session.Bootloader) int {
+	if bootloader != nil {
+		lock, lockErr := hostlock.Acquire(g.hostLockPath)
+		if lockErr != nil {
+			fmt.Fprintf(stderr, "togi run: %v\n", lockErr)
+			if errors.Is(lockErr, hostlock.ErrLocked) {
+				return exitLocked
+			}
+			return exitError
+		}
+		defer lock.Close()
+	}
+	return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 }
 
 func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, rotations int, stderr io.Writer, renderer journal.Renderer, dash *dashboard, newMachine func(config.Config, string) (machine.Machine, error)) int {

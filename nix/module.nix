@@ -20,6 +20,12 @@ in
       defaultText = lib.literalExpression "inputs.togi.packages.\${pkgs.stdenv.hostPlatform.system}.default";
       description = "The togi package to install and run in the tuning boot.";
     };
+    hardwareTestGroup = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "togi-hardware";
+      description = "An explicitly authorized existing group whose members may acquire the root-owned host lock for delegated hardware tests. The default permits root only. This does not grant access to hardware or a delegated cpuset controller.";
+    };
     tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB entry that tunes unattended";
     tuning.leaveOnShutdown = lib.mkOption {
       type = lib.types.bool;
@@ -53,6 +59,11 @@ in
           group = "togi-trial";
         };
         services.togi.settings.backend_user = lib.mkDefault "togi-trial";
+        systemd.tmpfiles.rules = [
+          "f /run/lock/togi.lock :${if cfg.hardwareTestGroup == null then "0600" else "0660"} :root :${
+            if cfg.hardwareTestGroup == null then "root" else cfg.hardwareTestGroup
+          } - -"
+        ];
         services.togi.settings.backends = {
           mprime = lib.mkIf cfg.backends.mprime.enable (lib.mkDefault "${pkgs.mprime}");
           ycruncher = lib.mkIf cfg.backends.ycruncher.enable (lib.mkDefault "${pkgs.y-cruncher}");
@@ -118,7 +129,7 @@ in
               ExecStart = "${lib.getExe cfg.package} run --tuning-boot ${grubenv}";
               Restart = "on-failure";
               RestartSec = 60;
-              RestartPreventExitStatus = "10 11 12 13 14 15 16 17 18";
+              RestartPreventExitStatus = "3 10 11 12 13 14 15 16 17 18";
               StateDirectory = "togi";
             };
           };

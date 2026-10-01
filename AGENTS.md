@@ -14,6 +14,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
 - `docs/releasing.md`: versioning rules, the release workflow and publishing.
 - `docs/simulating.md`: running a simulated session with `tools/sim`.
+- `docs/reviewing.md`: reviewing an unattended run or archived journal with `just stats`.
 - `docs/adr/`: decisions and the alternatives rejected. Reversing one needs a new ADR.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
 - Issues on `github.com/shgew/togi`: the plan, ideas and bugs (Issues, below).
@@ -73,7 +74,7 @@ Enter the dev shell (Go, gh, gopls, golangci-lint, just, nixfmt) with `nix devel
 | `just fmt` | Format Go, Nix and the justfile in place |
 | `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just release` | Start the release workflow on `main`: it checks that `check` passed on `main`, commits the release, builds the package, pushes to `main` and publishes. `just release-preview` shows what it would release. See `docs/releasing.md` |
-| `just hardware` | Hardware tests, on the target machine only: as root, or as a user with read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `TOGI_MPRIME` and `TOGI_YCRUNCHER`, else from `/etc/togi/config.toml` |
+| `just hardware` | Hardware tests, on the target machine only: as root, or as a user with an explicitly delegated host lock ([provisioning](docs/howto.md#host-lock-and-delegated-hardware-tests)), read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `TOGI_MPRIME` and `TOGI_YCRUNCHER`, else from `/etc/togi/config.toml` |
 | `just fuzz [time]` | Fuzz the journal parser |
 
 CI (`.github/workflows/check.yml`) runs the Linux flake checks on GitHub-hosted `ubuntu-latest` runners: an `eval` job lists the checks, one job per check builds it, with `/dev/kvm` opened to the Nix build users for the VM tests. A native `macos-15` arm64 job builds `checks.aarch64-darwin.package`, running the Darwin tests without VM, integration or hardware checks. The aggregating `check` job requires both the Linux checks and the macOS job to pass. Each VM test is its own check so the jobs boot their machines in parallel. The build jobs substitute from the public Cachix cache `togi` and push each check's output when the `CACHIX_AUTH_TOKEN` secret is available, so a check whose inputs are unchanged passes without running; the checks build the package with the revision `dev` so that a new commit alone changes none of them (ADR 0021). The release workflow (`.github/workflows/release.yml`) only builds the package on the release commit.
@@ -105,7 +106,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
 | `nix/` | NixOS module and VM tests |
-| `tools/*` | Development programs, never shipped: `release`, `sim`. Development and debugging behavior lives here, never in `cmd/togi` |
+| `tools/*` | Development programs, never shipped: `release`, `sim`, `stats`. Development and debugging behavior lives here, never in `cmd/togi` |
 
 A package owns one responsibility, and its exported API is the seam. Split a package when it holds two responsibilities that change for different reasons.
 
