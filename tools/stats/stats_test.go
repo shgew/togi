@@ -123,7 +123,7 @@ func TestPriorPasses(t *testing.T) {
 		{"inconclusive does not invalidate", []*trial{makeTrial(1, []int{-10, -10}, journal.OutcomePass, nil), makeTrial(2, []int{-9, -9}, journal.OutcomeInconclusive, nil)}, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if diff := cmp.Diff(tc.want, priorPasses(tc.history, &target, 10, nil)); diff != "" {
+			if diff := cmp.Diff(tc.want, priorPasses(tc.history, &target, 10, nil, nil)); diff != "" {
 				t.Fatal(diff)
 			}
 		})

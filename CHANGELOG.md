@@ -4,6 +4,10 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Fixed
+
+- `just stats` measures crash recovery from actual trial evidence timestamps, recognizes interrupted trials even when stronger failure signals survive, groups short and long rerun starts by their obligation, links hunt commitments through journal causes, and invalidates all-core R6 prior passes after idle failures ([#216]).
+
 ## [0.5.2] - 2026-09-30
 
 ### Fixed
@@ -280,3 +284,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#202]: https://github.com/shgew/togi/pull/202
 [#204]: https://github.com/shgew/togi/pull/204
 [#209]: https://github.com/shgew/togi/pull/209
+[#216]: https://github.com/shgew/togi/pull/216
