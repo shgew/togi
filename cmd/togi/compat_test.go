@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,7 +117,7 @@ func TestResetAllArchivesUnrecognizedSchema(t *testing.T) {
 func TestResetCoreRefusesDifferentRuleset(t *testing.T) {
 	dir, original := incompatibleFixture(t, "ruleset")
 	var stdout, stderr bytes.Buffer
-	if code := testCLI(t, []string{"--state-dir", dir, "reset", "--core", "3"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), "uses ruleset 4") {
+	if code := testCLI(t, []string{"--state-dir", dir, "reset", "--core", "3"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), fmt.Sprintf("uses ruleset %d", session.Build().Ruleset)) {
 		t.Fatalf("reset --core exit %d, stderr %q", code, stderr.String())
 	}
 	after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))

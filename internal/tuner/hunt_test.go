@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -57,6 +58,48 @@ func runMask(h *harness, a Action, fail bool) {
 			h.t.Fatalf("unexpected mask attribution %+v", attribution)
 		}
 		h.decide(attribution)
+	}
+}
+
+func TestHuntAnchorRaisesTheQualifiedProfile(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		qualified, failing []int
+		anchor             []int
+		anchorSeq          int
+		candidates         []int
+	}{
+		{"shallower everywhere", []int{-10, -10, -10, -10}, []int{-12, -10, -10, -10}, []int{-10, -10, -10, -10}, 7, []int{0}},
+		{"a yielded core takes its failing offset", []int{-10, -10, -10, -10}, []int{-12, -8, -10, -10}, []int{-10, -8, -10, -10}, 7, []int{0}},
+		{"deeper everywhere falls back to all-zero", []int{-12, -12, -12, -12}, []int{-10, -10, -10, -10}, []int{0, 0, 0, 0}, 0, []int{0, 1, 2, 3}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			starts := make([]coreStart, 4)
+			for i := range starts {
+				starts[i] = coreStart{phase: journal.PhaseDone, offset: tt.failing[i]}
+			}
+			h := newHarness(t, starts...)
+			h.s.qualified = []qualified{{profile: tt.qualified, seq: 7}}
+			class := trialClass{machine.R7, machine.Workloads(machine.R7)[0].ID, fmt.Sprint(h.s.ids()), 120}
+			h.s.queue = []pendingFailure{{seq: 9, failure: &journal.Failure{Trial: "0001"}, profile: tt.failing, class: class}}
+			p, ok := h.s.huntStartNext().Payload.(*journal.HuntStart)
+			if !ok {
+				t.Fatal("no hunt.start")
+			}
+			got := struct {
+				Anchor     []int
+				AnchorSeq  int
+				Candidates []int
+			}{p.Anchor, p.AnchorSeq, p.Candidates}
+			want := struct {
+				Anchor     []int
+				AnchorSeq  int
+				Candidates []int
+			}{tt.anchor, tt.anchorSeq, tt.candidates}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("hunt.start (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

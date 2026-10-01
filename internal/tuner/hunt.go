@@ -72,13 +72,17 @@ func (s *State) huntStartNext() Action {
 	anchor := make([]int, len(f.profile))
 	anchorSeq := 0
 	for _, q := range slices.Backward(s.qualified) {
-		if len(q.profile) != len(f.profile) || slices.Equal(q.profile, f.profile) || !atLeastShallow(q.profile, f.profile) {
+		if len(q.profile) != len(f.profile) {
 			continue
 		}
-		if _, marked := s.reaches(q.profile); marked {
+		raised := make([]int, len(q.profile))
+		for i := range raised {
+			raised[i] = max(q.profile[i], f.profile[i])
+		}
+		if slices.Equal(raised, f.profile) {
 			continue
 		}
-		anchor = slices.Clone(q.profile)
+		anchor = raised
 		anchorSeq = q.seq
 		break
 	}
