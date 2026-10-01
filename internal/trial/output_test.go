@@ -455,7 +455,7 @@ func TestWatchedFloodKeepsSupervision(t *testing.T) {
 					},
 					usage: func(pid int) (usage, error) {
 						cpuSamples++
-						return h.fakeHost.Usage(pid)
+						return h.Usage(pid)
 					},
 				}
 				result, err := trial.Wait(context.Background(), &recorder{})
@@ -516,7 +516,7 @@ func TestWatchedFloodSamplesEveryReadyInstance(t *testing.T) {
 				if cpuSamples[trial.instances[0].PID] == 3 && cpuSamples[trial.instances[1].PID] == 3 {
 					cancel()
 				}
-				return h.fakeHost.Usage(pid)
+				return h.Usage(pid)
 			},
 		}
 		result, err := trial.Wait(ctx, &recorder{})
