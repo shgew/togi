@@ -17,6 +17,7 @@ import (
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 )
 
@@ -57,6 +58,58 @@ func TestResetRefusesHostLock(t *testing.T) {
 	}
 }
 
+func TestResetBelowProtectedSharedAncestorHonorsHostLock(t *testing.T) {
+	for _, mode := range []os.FileMode{0o555, 0o777 | os.ModeSticky} {
+		t.Run(mode.String(), func(t *testing.T) {
+			g := testGlobals(t)
+			ancestor := t.TempDir()
+			private := filepath.Join(ancestor, "private")
+			if err := os.Mkdir(private, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(ancestor, mode); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(ancestor, 0o700) })
+			g.hostLockPath = filepath.Join(private, "togi.lock")
+			marker := filepath.Join(g.stateDir, "archive", "session-carry-pending")
+			if err := os.MkdirAll(filepath.Dir(marker), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(marker, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before := directoryFiles(t, g.stateDir)
+			holder, err := os.OpenFile(g.hostLockPath, os.O_CREATE|os.O_RDWR, 0o600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = holder.Close() })
+			if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			if code := runReset(&g, []string{"--all"}, &stdout, &stderr); code != exitLocked {
+				t.Fatalf("held lock: exit %d, stderr %s", code, stderr.String())
+			}
+			if diff := cmp.Diff(before, directoryFiles(t, g.stateDir)); diff != "" {
+				t.Fatalf("contended reset changed state (-want +got): %s", diff)
+			}
+			if err := holder.Close(); err != nil {
+				t.Fatal(err)
+			}
+			stdout.Reset()
+			stderr.Reset()
+			if code := runReset(&g, []string{"--all"}, &stdout, &stderr); code != exitOK {
+				t.Fatalf("released lock: exit %d, stderr %s", code, stderr.String())
+			}
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("authorized reset did not remove pending carry: %v", err)
+			}
+		})
+	}
+}
+
 func testGlobals(t *testing.T) globals {
 	t.Helper()
 	return globals{
@@ -92,18 +145,110 @@ func TestRunRefusesHostLockBeforeHardwareAndCarry(t *testing.T) {
 		return machine.Machine{}, errors.New("hardware construction must not run")
 	}
 	var stderr bytes.Buffer
-	code := runHardware(context.Background(), &g, config.Default(), false, nil, 0, &stderr, journal.Renderer{}, nil, newMachine)
+	bootloader := &clearingBootloader{}
+	code := runHardware(context.Background(), &g, config.Default(), false, bootloader, 0, &stderr, journal.Renderer{}, nil, newMachine)
 	if diff := cmp.Diff(exitLocked, code); diff != "" {
 		t.Errorf("contention exit (-want +got): %s; stderr %s", diff, stderr.String())
 	}
 	if constructed {
 		t.Error("contended run constructed hardware")
 	}
+	if bootloader.calls != 0 {
+		t.Fatalf("contention cleared the saved boot entry %d times", bootloader.calls)
+	}
 	if !strings.Contains(stderr.String(), g.hostLockPath) {
 		t.Errorf("contention did not name lock %s: %s", g.hostLockPath, stderr.String())
 	}
 	if diff := cmp.Diff(before, directoryFiles(t, g.stateDir)); diff != "" {
 		t.Errorf("contended run changed state (-want +got): %s", diff)
+	}
+}
+
+func TestRunRefusesUnsafeHostLockBeforeHardwareAndCarry(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("hardware runs need Linux")
+	}
+	for _, kind := range []string{"symlink", "writable-parent"} {
+		t.Run(kind, func(t *testing.T) {
+			g := testGlobals(t)
+			g.stateDir = resetCandidateFixture(t, -10)
+			before := directoryFiles(t, g.stateDir)
+			if kind == "symlink" {
+				target := filepath.Join(t.TempDir(), "target")
+				if err := os.WriteFile(target, nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, g.hostLockPath); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Chmod(filepath.Dir(g.hostLockPath), 0o777); err != nil {
+				t.Fatal(err)
+			}
+			newMachine := func(config.Config, string) (machine.Machine, error) {
+				t.Fatal("unsafe host lock reached hardware construction")
+				return machine.Machine{}, nil
+			}
+			bootloader := &clearingBootloader{}
+			var stderr bytes.Buffer
+			code := runHardware(context.Background(), &g, config.Default(), false, bootloader, 0, &stderr, journal.Renderer{}, nil, newMachine)
+			if code != exitError || !strings.Contains(stderr.String(), g.hostLockPath) {
+				t.Fatalf("unsafe lock: exit %d, stderr %s", code, stderr.String())
+			}
+			if bootloader.calls != 0 {
+				t.Fatal("unsafe lock refusal cleared the saved boot entry")
+			}
+			if diff := cmp.Diff(before, directoryFiles(t, g.stateDir)); diff != "" {
+				t.Errorf("unsafe lock refusal changed state (-want +got): %s", diff)
+			}
+		})
+	}
+}
+
+func TestStartupRefusalDoesNotClearGRUBWithoutHostLock(t *testing.T) {
+	for _, kind := range []string{"held", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			g := testGlobals(t)
+			g.stateDir = resetCandidateFixture(t, -10)
+			before := directoryFiles(t, g.stateDir)
+			wantCode := exitError
+			var holder *os.File
+			if kind == "held" {
+				var err error
+				holder, err = os.OpenFile(g.hostLockPath, os.O_CREATE|os.O_RDONLY, 0o644)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = holder.Close() })
+				if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+					t.Fatal(err)
+				}
+				wantCode = exitLocked
+			} else {
+				target := filepath.Join(t.TempDir(), "target")
+				if err := os.WriteFile(target, nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, g.hostLockPath); err != nil {
+					t.Fatal(err)
+				}
+			}
+			mismatch := &journal.IncompatibleError{Field: "ruleset", Journal: journal.Build{Ruleset: 99}, Binary: session.Build()}
+			bootloader := &clearingBootloader{}
+			var stderr bytes.Buffer
+			code := runStartupRefusal(&g, mismatch, &stderr, journal.Renderer{}, bootloader)
+			if code != wantCode || bootloader.calls != 0 {
+				t.Fatalf("startup refusal: exit %d, clear calls %d; stderr %s", code, bootloader.calls, stderr.String())
+			}
+			if diff := cmp.Diff(before, directoryFiles(t, g.stateDir)); diff != "" {
+				t.Errorf("startup refusal changed state (-want +got): %s", diff)
+			}
+			if holder != nil {
+				_ = holder.Close()
+				if code := runStartupRefusal(&g, mismatch, &stderr, journal.Renderer{}, bootloader); code != exitIncompatible || bootloader.calls != 1 {
+					t.Fatalf("released lock refusal: exit %d, clear calls %d", code, bootloader.calls)
+				}
+			}
+		})
 	}
 }
 
