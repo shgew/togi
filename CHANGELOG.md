@@ -4,6 +4,10 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Added
+
+- Every trial keeps fsynced per-second CPU temperatures, loaded-core frequencies and available package power in `samples.jsonl`; slow sample-file setup or writes do not delay load steps, cancellation or the deadline. Excess samples are dropped, and the runner waits for storage work before returning. After a crash, the journal reports the last sample's time, Tctl and frequency range alongside the last backend evidence, including when stronger failure evidence or an inconclusive reset cause decides the outcome. Sample-file creation failures retain the trial's measured duration ([#219]).
+
 ### Changed
 
 - Inconclusive trials caused by malformed or short process-stat samples include the quoted content read, truncated to 256 bytes for diagnosis ([#218]).
@@ -292,3 +296,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#213]: https://github.com/shgew/togi/pull/213
 [#217]: https://github.com/shgew/togi/pull/217
 [#218]: https://github.com/shgew/togi/pull/218
+[#219]: https://github.com/shgew/togi/pull/219

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,6 +45,35 @@ func TestNewPayloadMessagesAndStyles(t *testing.T) {
 			}
 			if d := cmp.Diff(tt.style, StyleOf(Event{Data: tt.p})); d != "" {
 				t.Errorf("style (-want +got): %s", d)
+			}
+		})
+	}
+}
+
+func TestRecoveredTrialMessagesIncludeConditions(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		signal  machine.Signal
+		outcome Outcome
+	}{
+		{"crash", machine.Crash, OutcomeFailure},
+		{"computation error", machine.ComputationError, OutcomeFailure},
+		{"corrected MCE", machine.CorrectedMCE, OutcomeFailure},
+		{"uncorrected MCE", machine.UncorrectedMCE, OutcomeFailure},
+		{"thermal trip", "", OutcomeInconclusive},
+		{"power loss", "", OutcomeInconclusive},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &TrialEnd{
+				Trial: "0001", Signal: tc.signal, Outcome: tc.outcome, Reason: tc.name,
+				LastSampleS: new(987), LastSampleTctlC: new(73),
+				LastSampleMinMHz: new(4321), LastSampleMaxMHz: new(5432),
+			}
+			for _, value := range []string{"987", "73", "4321", "5432"} {
+				if diff := cmp.Diff(true, strings.Contains(p.Message(), value)); diff != "" {
+					t.Errorf("sample value %s absent: %s", value, diff)
+				}
 			}
 		})
 	}

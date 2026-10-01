@@ -11,6 +11,7 @@ All files live in the state directory, default `/var/lib/togi`:
 | `events.jsonl` | The journal of the current session: one JSON event per line, append-only, source of truth |
 | `state.json` | The current state, a projection of the journal for readers |
 | `trials/<trial-id>/` | Per-trial work directory: backend config files, raw stdout/stderr, backend result files |
+| `trials/<trial-id>/samples.jsonl` | Fsynced per-second conditions: milliseconds since trial timing began (`elapsed_ms`), optional `tctl_c`, CCD temperatures by label (`tccd_c`), loaded-core frequencies in MHz by core ID (`core_mhz`), and package power in watts (`package_power_w`) |
 | `archive/<session-id>.jsonl` | Journals of sessions ended by `reset --all` or by a transition |
 | `archive/<session-id>-trials/` | The `trials/` directory of an archived session |
 | `archive/<session-id>-compat-pending` | Crash-recovery marker while `reset --all` or a transition archives a journal with another schema; removed on completion |
@@ -64,7 +65,7 @@ Example trial, abbreviated:
 {"seq":820,"time":"2026-10-02T01:15:37.461000000Z","boot":"e8f9...","kind":"tuner.decision","msg":"core 07 passed R1+R2 at -32; next -37 (coarse, no failed mark yet)","core":7,"phase":"search","decision":"step_deeper","from_offset":-32,"to_offset":-37,"pass":-32,"failed_mark":null,"reason":"coarse, no failed mark yet","cause":[811,819]}
 ```
 
-When a trial is closed on resume, its `trial.end` message names the last evidence rather than implying its `duration_s` measured the full run. For example, a crashed trial says `trial 0330 FAIL crash, last evidence 0s after start`; an interrupted trial without a failure says `trial 0331 INCONCLUSIVE, last evidence 0s after start: togi stopped during the trial`. A trial ended while togi watches it, including an orderly stop by signal, keeps `after Ns` for its measured duration.
+When a trial is closed on resume, its `trial.end` message names the last evidence rather than implying its `duration_s` measured the full run. After a crash, the last complete line of its `samples.jsonl` adds optional `last_sample_s` (elapsed milliseconds rounded down to seconds), `last_sample_tctl_c`, `last_sample_min_mhz` and `last_sample_max_mhz` (minimum and maximum of the available loaded-core frequencies). A torn last line is skipped. Missing files or sensors leave their fields absent. For example, a crashed trial says `trial 0889 FAIL crash, last evidence 0s after start, last sample 3s: Tctl 71°C, 5420-5610 MHz`; without samples it retains `trial 0330 FAIL crash, last evidence 0s after start`. An interrupted trial without a failure says `trial 0331 INCONCLUSIVE, last evidence 0s after start: togi stopped during the trial`. A trial ended while togi watches it, including an orderly stop by signal, keeps its existing message and measured duration.
 
 ## Event catalog
 

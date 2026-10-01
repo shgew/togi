@@ -110,11 +110,22 @@ type Running interface {
 	Wait(ctx context.Context, report Reporter) (Result, error)
 }
 
+// TrialConditions is an optional diagnostic sample, not stability evidence.
+type TrialConditions struct {
+	ElapsedMS     int64          `json:"elapsed_ms"`
+	TctlC         *int           `json:"tctl_c,omitempty"`
+	TccdC         map[string]int `json:"tccd_c,omitempty"`
+	CoreMHz       map[int]int    `json:"core_mhz,omitempty"`
+	PackagePowerW *float64       `json:"package_power_w,omitempty"`
+}
+
 type Trials interface {
 	Sweep(ctx context.Context) (detail string, err error)
 	Start(ctx context.Context, spec TrialSpec) (Running, error)
 	// Passed marks a passed trial's work directory so retention may prune it.
 	Passed(id string) error
+	// LastSample returns the last complete persisted conditions sample, or nil.
+	LastSample(id string) *TrialConditions
 }
 
 type MCE struct {

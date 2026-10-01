@@ -3,6 +3,8 @@ package session
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/trial"
 )
 
 func firstCrash(t *testing.T, reset machine.ResetKind, signal machine.Signal, thenCrash bool) (simRun, []journal.Event) {
@@ -475,6 +478,62 @@ func TestInterruptedTrialDurationUsesMonotonicTimeAfterWallJump(t *testing.T) {
 			if start.Seq == 0 || progress.Seq == 0 || !ok || p.Outcome != journal.OutcomeFailure || p.Signal != machine.Crash || p.DurationS != 85 {
 				t.Fatalf("start mono %d, progress mono %d, end %+v; want 85s crash failure", start.Mono, progress.Mono, end.Data)
 			}
+		})
+	}
+}
+
+type sampledTrials struct {
+	machine.Trials
+	reader *trial.Runner
+}
+
+func (t sampledTrials) LastSample(id string) *machine.TrialConditions {
+	return t.reader.LastSample(id)
+}
+
+func TestCrashRecoveryLastSample(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, contents                string
+		seconds, tctl, minMHz, maxMHz *int
+		message                       string
+	}{
+		{"complete", "{\"elapsed_ms\":3700,\"tctl_c\":71,\"core_mhz\":{\"0\":5420,\"1\":5610}}\n", new(3), new(71), new(5420), new(5610), "trial 0001 FAIL crash, last evidence 0s after start, last sample 3s: Tctl 71°C, 5420-5610 MHz"},
+		{"torn", "{\"elapsed_ms\":3700,\"tctl_c\":71,\"core_mhz\":{\"0\":5420,\"1\":5610}}\n{\"elapsed_ms\":4800,\"tctl_c\":99}", new(3), new(71), new(5420), new(5610), "trial 0001 FAIL crash, last evidence 0s after start, last sample 3s: Tctl 71°C, 5420-5610 MHz"},
+		{"missing sensors", "{\"elapsed_ms\":900}\n", new(0), nil, nil, nil, "trial 0001 FAIL crash, last evidence 0s after start, last sample 0s"},
+		{"missing file", "", nil, nil, nil, nil, "trial 0001 FAIL crash, last evidence 0s after start"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			in, _ := firstCrash(t, machine.ResetWatchdog, machine.Crash, false)
+			dir := filepath.Join(in.Dir, "trials")
+			if tc.contents != "" {
+				if err := os.MkdirAll(filepath.Join(dir, "0001"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "0001", "samples.jsonl"), []byte(tc.contents), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			seams := in.Machine.Seams()
+			seams.Trials = sampledTrials{Trials: seams.Trials, reader: trial.New(trial.Options{Dir: dir})}
+			if _, err := driveWithSeams(in, seams); err != nil {
+				t.Fatal(err)
+			}
+			for _, e := range readEvents(t, in.Dir) {
+				if p, ok := e.Data.(*journal.TrialEnd); ok && p.Trial == "0001" {
+					want := journal.TrialEnd{LastSampleS: tc.seconds, LastSampleTctlC: tc.tctl, LastSampleMinMHz: tc.minMHz, LastSampleMaxMHz: tc.maxMHz}
+					got := journal.TrialEnd{LastSampleS: p.LastSampleS, LastSampleTctlC: p.LastSampleTctlC, LastSampleMinMHz: p.LastSampleMinMHz, LastSampleMaxMHz: p.LastSampleMaxMHz}
+					if diff := cmp.Diff(want, got); diff != "" {
+						t.Fatal(diff)
+					}
+					if diff := cmp.Diff(tc.message, e.Msg); diff != "" {
+						t.Fatal(diff)
+					}
+					return
+				}
+			}
+			t.Fatal("missing recovered trial")
 		})
 	}
 }

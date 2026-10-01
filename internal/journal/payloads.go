@@ -505,6 +505,10 @@ type TrialEnd struct {
 	Core             *int           `json:"core,omitempty"`
 	DurationS        int            `json:"duration_s"`
 	TctlMaxC         *int           `json:"tctl_max_c,omitempty"`
+	LastSampleS      *int           `json:"last_sample_s,omitempty"`
+	LastSampleTctlC  *int           `json:"last_sample_tctl_c,omitempty"`
+	LastSampleMinMHz *int           `json:"last_sample_min_mhz,omitempty"`
+	LastSampleMaxMHz *int           `json:"last_sample_max_mhz,omitempty"`
 	Reason           string         `json:"reason,omitempty"`
 	Interrupted      bool           `json:"interrupted,omitempty"`
 	Escaped          []int          `json:"escaped,omitempty"`
@@ -521,6 +525,19 @@ func (p *TrialEnd) Message() string {
 	duration := fmt.Sprintf(" after %ds", p.DurationS)
 	if p.Signal == machine.Crash || p.Interrupted && (p.Reason == TrialReasonStoppedDuringTrial || p.Reason == TrialReasonStoppedAfterMachineCheck) {
 		duration = fmt.Sprintf(", last evidence %ds after start", p.DurationS)
+	}
+	if p.LastSampleS != nil {
+		duration += fmt.Sprintf(", last sample %ds", *p.LastSampleS)
+		var conditions []string
+		if p.LastSampleTctlC != nil {
+			conditions = append(conditions, fmt.Sprintf("Tctl %d°C", *p.LastSampleTctlC))
+		}
+		if p.LastSampleMinMHz != nil && p.LastSampleMaxMHz != nil {
+			conditions = append(conditions, fmt.Sprintf("%d-%d MHz", *p.LastSampleMinMHz, *p.LastSampleMaxMHz))
+		}
+		if len(conditions) > 0 {
+			duration += ": " + strings.Join(conditions, ", ")
+		}
 	}
 	switch p.Outcome {
 	case OutcomePass:

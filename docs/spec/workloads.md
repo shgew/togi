@@ -162,7 +162,7 @@ Kernel reset reasons are read from the immediate system boot after the crashed b
 
 A trial still open when `run` starts, in a boot that did not crash (the same boot, or one that ended in `shutdown`), ends as `interrupted`: a failure (`corrected_mce`, or `uncorrected_mce` when none is corrected) when `mce` events were already recorded for it, else inconclusive. Interrupted trials do not count toward the inconclusive dead end.
 
-A trial closed this way, after a crash or an interruption, records as its `duration_s` the time from its `trial.start` to its last `trial.progress`, `trial.signal` or `trial.sample` in the journal, or 0 without a `trial.start`. Nothing is recorded between those events, so after a crash this is a lower bound.
+A trial closed this way, after a crash or an interruption, records as its `duration_s` the time from its `trial.start` to its last `trial.progress`, `trial.signal` or `trial.sample` in the journal, or 0 without a `trial.start`. The separate conditions samples do not change this lower bound or supply stability evidence. After a crash, recovery also records the last complete conditions sample's elapsed seconds, Tctl and available loaded-core frequency range in optional `trial.end` fields (`journal.md`).
 
 The `trial.end` message for a trial closed on resume says `last evidence Ns after start` instead of presenting `duration_s` as elapsed time. A trial that ends while togi watches it, including an orderly stop by signal, reports its measured duration with `after Ns`.
 
@@ -176,6 +176,12 @@ MCE attribution rules:
 
 MCA bank contents survive a warm reset and the kernel logs them early in the next boot. The tuning boot keeps the system journal persistent, so the crashed boot's last kernel messages stay readable.
 
-## Temperature
+## Conditions sampling
 
-Tctl comes from the first hwmon whose `name` is `k10temp` or `zenpower`, using the `temp*_input` whose `temp*_label` is `Tctl`. It is sampled once per second during each trial. Without such a sensor the trial end has no Tctl. The maximum goes into the trial's end event. Temperature never decides an outcome.
+At each sampling tick (once per second by default), the runner hands one conditions sample to a writer without waiting for storage. The writer creates the root-owned `trials/<trial>/samples.jsonl` and syncs its containing directories, then appends each accepted sample in order as one JSON line and fsyncs it before writing the next. One sample may wait while file setup or a write is in progress; if that slot is full, the new sample is dropped instead of delaying load-step transitions or the trial deadline. File setup also does not delay scheduled load steps, cancellation or teardown. A crash can lose the unfinished write and queued sample; completed writes remain durable. Trial teardown does not wait for storage, but the runner waits for the writer and file close before returning, draining accepted samples unless setup or persistence fails. Samples use milliseconds since trial timing began, including idle and suspended periods; they are diagnostic, not observations that decide an outcome. Missing or unreadable sensors are omitted, never fatal. A failure to create, write, sync or close the samples file is a runner error, with the existing teardown and outcome precedence.
+
+Tctl and Tccd temperatures come from the first hwmon whose `name` is `k10temp` or `zenpower`, using the `temp*_input` with labels `Tctl` or `Tccd1`, `Tccd2`, and so on. Temperatures are whole degrees Celsius. The maximum Tctl still goes into normally ended trials' end events.
+
+For each loaded core, the runner reads its first logical CPU's `cpufreq/scaling_cur_freq` under `/sys/devices/system/cpu`, converts kHz to whole MHz, and records it by core ID. This includes loaded cores that are temporarily suspended; idle cores outside the trial's target set are not sampled.
+
+When `/sys/class/powercap/intel-rapl:0/energy_uj` is readable, successive energy readings produce package watts as the microjoule delta divided by elapsed seconds and one million. The initial reading is taken when trial timing begins. `max_energy_range_uj` handles counter wrap; a missing reading or an unexplained counter decrease omits power for that interval. The hwmon, CPU and powercap roots are injectable runner options.
