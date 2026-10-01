@@ -58,7 +58,7 @@ in
 
       machine.start(allow_reboot=True)
       machine.wait_for_unit("multi-user.target")
-      machine.succeed("togi-trial-tests -test.run '^TestHardwareScope' -test.v -test.timeout 60s")
+      machine.succeed("togi-trial-tests -test.run '^TestHardwareScope' -test.v -test.timeout 180s")
       lock_identity = machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip()
       assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
       provision = "python3 /etc/togi-test-lock-provision.py"

@@ -108,6 +108,19 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(0)
 	}
 	switch mode {
+	case "hung-systemctl", "hung-journalctl":
+		fields, err := procStat("/proc/self/stat")
+		if err != nil {
+			os.Exit(2)
+		}
+		if err := os.WriteFile(os.Getenv("TOGI_HELPER_COMMAND_PID"), []byte(strconv.Itoa(os.Getpid())+" "+fields[19]), 0644); err != nil {
+			os.Exit(2)
+		}
+		if mode == "hung-systemctl" {
+			fmt.Fprintln(os.Stderr, "Unit togi-trial-hung.scope not loaded.")
+		}
+		time.Sleep(time.Hour)
+		os.Exit(0)
 	case "exit":
 		os.Exit(0)
 	case "error":
