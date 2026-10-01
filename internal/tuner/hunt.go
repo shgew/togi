@@ -349,14 +349,22 @@ func (s *State) huntNext() (Action, bool) {
 func (s *State) planMask(h *hunt, p maskPlan, reason string) Action {
 	payload := s.makeMask(h, p, len(h.masks)+1, "", false, reason)
 	k := h.class.withDuration(p.duration)
-	if s.passes(k, payload.Profile, h.seq) >= h.start.Starts {
+	since := inferenceSince(h, payload)
+	if s.passes(k, payload.Profile, since) >= h.start.Starts {
 		payload.Inferred, payload.Reason = "pass", "passing starts already establish the mask"
-	} else if s.fails(k, payload.Profile, h.seq) {
+	} else if s.fails(k, payload.Profile, since) {
 		payload.Inferred, payload.Reason = "failure", "a known failure establishes the mask"
 	} else if mark, ok := s.reaches(payload.Profile); ok {
 		payload.Skipped, payload.Reason = true, "its profile reaches "+mark
 	}
 	return Action{Kind: Decide, Payload: payload, Cause: []int{h.seq}}
+}
+
+func inferenceSince(h *hunt, m *journal.HuntMask) int {
+	if m.Stage == "part" || m.Stage == "complement" {
+		return 0
+	}
+	return h.seq
 }
 
 func (s *State) makeMask(h *hunt, p maskPlan, number int, inferred string, skipped bool, reason string) *journal.HuntMask {
@@ -574,7 +582,7 @@ func (s *State) projectHunt() *journal.HuntState {
 		}
 		since := m.seq
 		if m.payload.Inferred != "" {
-			since = h.seq
+			since = inferenceSince(h, m.payload)
 		}
 		state.Passes = s.passes(h.class.withDuration(m.payload.DurationS), m.payload.Profile, since)
 		out.Masks = append(out.Masks, state)

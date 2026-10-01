@@ -240,6 +240,55 @@ func TestJointBackoffMovesToATestedProbe(t *testing.T) {
 	}
 }
 
+func TestNextHuntReusesEstablishedPartMasks(t *testing.T) {
+	h := huntHarness(t, 4, 120)
+	fails := func(p []int) bool { return p[0] <= -28 && p[1] <= -28 }
+	var first []*journal.HuntMask
+	var second []*journal.HuntMask
+	hunts := 1
+	for range 400 {
+		a := h.next()
+		switch p := a.Payload.(type) {
+		case *journal.HuntStart:
+			hunts++
+			h.decide(a)
+			continue
+		case *journal.HuntMask:
+			if hunts == 1 {
+				first = append(first, p)
+			} else {
+				second = append(second, p)
+			}
+			h.decide(a)
+			continue
+		}
+		if a.Kind == RunTrial && a.Trial.Rerun {
+			h.trial(a, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 5})
+			continue
+		}
+		if a.Kind == RunTrial {
+			if hunts == 2 {
+				break
+			}
+			runMask(h, a, fails(a.Trial.Profile))
+			continue
+		}
+		h.decide(a)
+	}
+	if hunts != 2 {
+		t.Fatalf("hunts %d, want a second hunt after the failed rerun", hunts)
+	}
+	ran := func(m *journal.HuntMask) bool { return m.Inferred == "" && !m.Skipped }
+	idle := slices.IndexFunc(first, func(m *journal.HuntMask) bool { return slices.Equal(m.Cores, []int{2, 3}) && ran(m) })
+	if idle < 0 {
+		t.Fatalf("first hunt never ran the part of cores 02 and 03: %+v", first)
+	}
+	again := slices.IndexFunc(second, func(m *journal.HuntMask) bool { return slices.Equal(m.Cores, []int{2, 3}) })
+	if again < 0 || second[again].Inferred != "pass" || !slices.Equal(second[again].Profile, first[idle].Profile) {
+		t.Fatalf("second hunt masks %+v, want the part of cores 02 and 03 inferred from the first hunt's passes", second)
+	}
+}
+
 func TestHuntFallbackAndFullCheck(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
