@@ -197,11 +197,11 @@ func olderArchives(dir, id string) ([]string, error) {
 	}
 	var names []string
 	for _, p := range paths {
-		if name := strings.TrimSuffix(filepath.Base(p), ".jsonl"); name < id {
+		if name := strings.TrimSuffix(filepath.Base(p), ".jsonl"); journal.CompareSessionIDs(name, id) < 0 {
 			names = append(names, name)
 		}
 	}
-	slices.Sort(names)
+	slices.SortFunc(names, journal.CompareSessionIDs)
 	slices.Reverse(names)
 	return names, nil
 }

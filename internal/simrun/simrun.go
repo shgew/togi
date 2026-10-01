@@ -74,7 +74,7 @@ func boot(ctx context.Context, in Input) (session.Stop, error) {
 	if in.Wrap != nil {
 		wrapped = in.Wrap(wrapped)
 	}
-	stop, err := session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Rotations: in.Rotations, Carry: carried, Stderr: in.Log})
+	stop, err := session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Rotations: in.Rotations, Carry: carried, Stderr: in.Log, SessionID: j.SessionID})
 	if cerr := j.Close(); err == nil && cerr != nil {
 		return session.Stop{}, cerr
 	}

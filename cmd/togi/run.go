@@ -196,7 +196,7 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	if err := j.Open(); err != nil {
 		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 	}
-	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr, Close: j.Close})
+	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr, Close: j.Close, SessionID: j.SessionID})
 	if dash != nil {
 		dash.hide()
 		_, _ = hidden.WriteTo(stderr)

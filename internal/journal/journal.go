@@ -546,7 +546,7 @@ func PendingCarry(dir string) (string, error) {
 	}
 	var pending string
 	for _, entry := range entries {
-		if id, found := strings.CutSuffix(entry.Name(), carrySuffix); found && id > pending {
+		if id, found := strings.CutSuffix(entry.Name(), carrySuffix); found && CompareSessionIDs(id, pending) > 0 {
 			pending = id
 		}
 	}

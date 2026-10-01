@@ -72,7 +72,7 @@ func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Jo
 	if err != nil {
 		return Stop{}, err
 	}
-	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrap(j), Machine: seams, Rotations: in.Rotations, Bootloader: in.Bootloader, Prompt: in.Prompt, Defects: in.Defects, Stderr: in.Stderr})
+	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrap(j), Machine: seams, Rotations: in.Rotations, Bootloader: in.Bootloader, Prompt: in.Prompt, Defects: in.Defects, Stderr: in.Stderr, SessionID: j.SessionID})
 	if cerr := j.Close(); err == nil && cerr != nil {
 		return Stop{}, cerr
 	}

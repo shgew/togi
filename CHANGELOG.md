@@ -14,6 +14,7 @@ All notable changes to togi are documented in this file. The format is based on 
 - Idle failures record a monotonicity warning when eligible all-core R6 passes in one class contradict the failed profile, citing those trial ends without changing the ensuing hunt ([#236]).
 - Competing starts or resets can no longer alter an upgrade's archives or pending carry before acquiring the state-directory writer lock; the lock now covers carry preparation and the complete session or reset ([#245]).
 - An upgrade interrupted before recording its carried evidence retains the original source through a subsequent upgrade, instead of replacing it with the incomplete intervening session ([#246]).
+- Sessions started in the same second receive readable numeric suffixes when an archived journal or trial directory already uses the timestamp; carry traversal orders those suffixes numerically ([#247]).
 
 ## [0.7.0] - 2026-10-02
 
@@ -359,3 +360,4 @@ All notable changes to togi are documented in this file. The format is based on 
 [#243]: https://github.com/shgew/togi/pull/243
 [#245]: https://github.com/shgew/togi/pull/245
 [#246]: https://github.com/shgew/togi/pull/246
+[#247]: https://github.com/shgew/togi/pull/247
