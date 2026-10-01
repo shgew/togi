@@ -66,6 +66,7 @@ stats *args:
 [group('run')]
 bench *args:
     {{ dev }} go run ./tools/bench "$@"
+
 # Start the release workflow on main and follow it: once check passed on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]
 release:
