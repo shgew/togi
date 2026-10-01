@@ -19,7 +19,6 @@ import (
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
-	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/watch"
 )
 
@@ -121,12 +120,12 @@ func TestCertResidentOffsets(t *testing.T) {
 func TestBetweenTrialMCEReadOnlyViews(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	renderFixture(t, dir, "concluded")
+	build := renderFixture(t, dir, "concluded")
 	_, before, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	j, err := journal.Open(dir, journal.Options{Boot: "between-trials", Build: session.Build()})
+	j, err := journal.Open(dir, journal.Options{Boot: "between-trials", Build: build})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,10 +237,10 @@ func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	renderFixture(t, dir, "concluded")
+	build := renderFixture(t, dir, "concluded")
 	record := func(payload journal.Payload) {
 		t.Helper()
-		j, err := journal.Open(dir, journal.Options{Boot: "status-test", Build: session.Build()})
+		j, err := journal.Open(dir, journal.Options{Boot: "status-test", Build: build})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -299,7 +298,7 @@ func TestRateRoundsUp(t *testing.T) {
 	}
 }
 
-func renderFixture(t *testing.T, dir, name string) {
+func renderFixture(t *testing.T, dir, name string) journal.Build {
 	t.Helper()
 	f, err := os.Open(filepath.Join("testdata", "render-"+name+".jsonl.gz"))
 	if err != nil {
@@ -319,6 +318,11 @@ func renderFixture(t *testing.T, dir, name string) {
 	if _, err := io.Copy(out, r); err != nil {
 		t.Fatal(err)
 	}
+	build, _, err := journal.Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return build
 }
 
 func checkRows(t *testing.T, name, out string, row *regexp.Regexp, st journal.State) {
