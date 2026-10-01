@@ -512,6 +512,10 @@ func (s *State) huntCommitment(h *hunt) (Action, bool) {
 			return Action{}, false
 		}
 	}
+	if c, probe, ok := s.testedBackoff(h); ok {
+		to := probe.payload.Edge.Offset
+		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailedMark: c.fail, Reason: fmt.Sprintf("joint mark J%d: backing off core %02d to %d, where hunt %d mask %d passed with the rest of the joint at its failing offsets", marked.Mark, c.id, to, h.start.Hunt, probe.payload.Mask)}, Cause: []int{marked.Seq, probe.seq}}, true
+	}
 	chosen, reach, ok := s.jointBackoff(marked.Members, s.huntRanking(h))
 	if !ok {
 		return Action{}, false
@@ -519,6 +523,40 @@ func (s *State) huntCommitment(h *hunt) (Action, bool) {
 	c := s.core(chosen.Core)
 	to := max(c.offset, chosen.Offset+1)
 	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailedMark: c.fail, Reason: fmt.Sprintf("joint mark J%d: backing off core %02d leaves %d counts reachable", marked.Mark, c.id, reach)}, Cause: []int{marked.Seq}}, true
+}
+
+func (s *State) testedBackoff(h *hunt) (*core, maskRecord, bool) {
+	rank := s.huntRanking(h)
+	var best *core
+	var bestProbe maskRecord
+	bestMove, bestOrder := 0, -1
+	for _, m := range h.masks {
+		edge := m.payload.Edge
+		if edge == nil || s.maskOutcome(h, m) != "pass" {
+			continue
+		}
+		alone := true
+		for _, held := range m.payload.Held {
+			if held.Offset != h.start.Failing[s.index(held.Core)] {
+				alone = false
+				break
+			}
+		}
+		c := s.core(edge.Core)
+		if !alone || c == nil || edge.Offset <= c.offset {
+			continue
+		}
+		moved := s.offsets()
+		moved[s.index(c.id)] = edge.Offset
+		if _, reached := s.reaches(moved); reached {
+			continue
+		}
+		move, order := edge.Offset-c.offset, slices.Index(rank, c.id)
+		if best == nil || move < bestMove || move == bestMove && order > bestOrder {
+			best, bestProbe, bestMove, bestOrder = c, m, move, order
+		}
+	}
+	return best, bestProbe, best != nil
 }
 
 func (s *State) projectHunt() *journal.HuntState {
