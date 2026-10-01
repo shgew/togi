@@ -75,3 +75,91 @@ func TestMonotonicityWarning(t *testing.T) {
 	}
 	h.decide(a)
 }
+
+func TestIdleMonotonicityWarning(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		passProfile []int
+		durations   []int
+		cores       []int
+		warn        bool
+	}{
+		{"equal profile", []int{-10, -12}, []int{120}, []int{0, 1}, true},
+		{"deeper passing profile", []int{-11, -13}, []int{900}, []int{0, 1}, true},
+		{"shallower passing profile", []int{-9, -11}, []int{120}, []int{0, 1}, false},
+		{"durations cannot pool", []int{-10, -12}, []int{120, 900}, []int{0, 1}, false},
+		{"partial load cannot qualify", []int{-10, -12}, []int{120}, []int{0}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := residentHarness(t, -10, -12)
+			var seqs []int
+			for i := range h.s.n {
+				tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: tc.cores, DurationS: tc.durations[i%len(tc.durations)], Condition: machine.Resident, Profile: tc.passProfile}
+				_, end := h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
+				seqs = append(seqs, end.Seq)
+			}
+			failure := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Regime: machine.R6, Profile: []int{-10, -12}})
+			a := h.next()
+			warning, ok := a.Payload.(*journal.TunerWarning)
+			if ok != tc.warn {
+				t.Fatalf("idle warning %t, want %t: %+v", ok, tc.warn, a)
+			}
+			if tc.warn {
+				if diff := cmp.Diff(seqs, warning.Passes); diff != "" {
+					t.Fatalf("contradicted ends (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff([]int{failure.Seq}, a.Cause); diff != "" {
+					t.Fatalf("warning cause (-want +got):\n%s", diff)
+				}
+				h.decide(a)
+			}
+			for range 20 {
+				a = h.next()
+				if start, ok := a.Payload.(*journal.HuntStart); ok {
+					if start.Failure != failure.Seq {
+						t.Fatalf("warning changed failure to hunt: %+v", start)
+					}
+					return
+				}
+				if a.Kind != Decide {
+					t.Fatalf("idle failure stopped hunting: %+v", a)
+				}
+				h.decide(a)
+			}
+			t.Fatal("idle failure never hunted")
+		})
+	}
+}
+
+func TestIdleMonotonicityChoosesEarliestQualifiedClass(t *testing.T) {
+	h := residentHarness(t, -10, -12)
+	var expected []int
+	for _, duration := range []int{900, 120} {
+		tr := Trial{Regime: machine.R6, Cores: []int{0, 1}, DurationS: duration, Condition: machine.Resident, Profile: []int{-10, -12}}
+		for i := range h.s.n + 1 {
+			_, end := h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
+			if duration == 900 && i < h.s.n {
+				expected = append(expected, end.Seq)
+			}
+		}
+	}
+	for range 20 {
+		s := New()
+		for _, e := range h.events {
+			s.Fold(e)
+		}
+		failure := journal.Event{Seq: len(h.events) + 1, Data: &journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Profile: []int{-10, -12}}}
+		s.Fold(failure)
+		a := s.Next()
+		warning, ok := a.Payload.(*journal.TunerWarning)
+		if !ok {
+			t.Fatalf("no warning: %+v", a)
+		}
+		if diff := cmp.Diff(expected, warning.Passes); diff != "" {
+			t.Fatalf("warning must cite exactly n earliest-class ends (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff([]int{failure.Seq}, a.Cause); diff != "" {
+			t.Fatalf("warning cause (-want +got):\n%s", diff)
+		}
+	}
+}

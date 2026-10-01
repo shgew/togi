@@ -7,6 +7,7 @@ All notable changes to togi are documented in this file. The format is based on 
 ### Fixed
 
 - `status` and `cert` derive the guard's Tctl peak and source from the same post-clock resident passes as clean hours, preserving the peak across shallow backoffs and clearing it when a qualifying failure restarts the clock ([#235]).
+- Idle failures record a monotonicity warning when eligible all-core R6 passes in one class contradict the failed profile, citing those trial ends without changing the ensuing hunt ([#236]).
 
 ## [0.7.0] - 2026-10-02
 
@@ -347,4 +348,5 @@ All notable changes to togi are documented in this file. The format is based on 
 [#227]: https://github.com/shgew/togi/pull/227
 [#228]: https://github.com/shgew/togi/pull/228
 [#235]: https://github.com/shgew/togi/pull/235
+[#236]: https://github.com/shgew/togi/pull/236
 [#243]: https://github.com/shgew/togi/pull/243

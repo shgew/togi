@@ -198,6 +198,9 @@ type TunerWarning struct {
 
 func (*TunerWarning) Kind() Kind { return KindTunerWarning }
 func (p *TunerWarning) Message() string {
+	if p.Trial == "" {
+		return fmt.Sprintf("%s: idle failure on a profile at least as shallow as %d passes in an all-core R6 class", p.Warning, len(p.Passes))
+	}
 	return fmt.Sprintf("%s: trial %s failed on a profile at least as shallow as %d passes in its class", p.Warning, p.Trial, len(p.Passes))
 }
 

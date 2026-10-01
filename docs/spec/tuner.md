@@ -56,7 +56,7 @@ One start is one trial, with no internal relaunch. The pass rule is `n = ceil(ln
 
 A trial class is `(regime, workload, sorted loaded cores, duration_s)`. The ledger records each conclusive trial's class, sequence, applied `trial.intent.profile` and outcome. A pass at profile Q counts toward P only when Q is at least as deep as P, and not before the latest failure of that class at a profile at least as shallow as P. A failure at Q rules out P when Q is at least as shallow as P. Requirements on the same class within a step add, so a start counts once. An idle crash has wildcard R6 class with all cores loaded and invalidates all such R6 classes. Passes at deeper profiles can survive backoff; deeper moves need new evidence.
 
-A failure contradicting `n` valid passes on a profile at least as deep in the same class records `tuner.warning` `monotonicity`, without changing the failure decision.
+A failure contradicting `n` valid passes on a profile at least as deep in the same class records `tuner.warning` `monotonicity`, without changing the failure decision. An idle failure checks all-core R6 classes individually before its wildcard invalidation; if several qualify, the warning cites exactly `n` passes from the class with the earliest valid pass.
 
 ## Marks
 

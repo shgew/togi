@@ -127,6 +127,24 @@ func (s *State) recordIdle(ev journal.Event, p *journal.Failure) {
 	if len(p.Profile) != len(s.cores) {
 		return
 	}
+	var contradicted []int
+	var class trialClass
+	if s.n > 0 {
+		all := fmt.Sprint(s.ids())
+		for k := range s.ledger {
+			if k.regime != machine.R6 || k.cores != all {
+				continue
+			}
+			seqs := s.passSeqs(k, p.Profile, 0)
+			if len(seqs) >= s.n && (contradicted == nil || seqs[0] < contradicted[0]) {
+				contradicted, class = seqs[:s.n], k
+			}
+		}
+	}
+	if contradicted != nil {
+		s.warning = &journal.TunerWarning{Warning: "monotonicity", Passes: contradicted, Detail: fmt.Sprintf("idle failure at profile %v contradicts %d valid passes in %s %s at %ds", p.Profile, s.n, class.regime, class.workload, class.duration)}
+		s.warningSeq = ev.Seq
+	}
 	e := entry{seq: ev.Seq, profile: slices.Clone(p.Profile), class: trialClass{regime: machine.R6, cores: fmt.Sprint(s.ids())}}
 	s.idle = append(s.idle, e)
 	s.failures = append(s.failures, e)
