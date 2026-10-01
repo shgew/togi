@@ -205,9 +205,10 @@ in
       machine.succeed("grub-set-default 'NixOS - togi'; chmod 0644 /run/lock/togi.lock")
       machine.succeed(
           "systemd-run --unit=togi-test-holder --property=Type=exec /bin/sh -c "
-          "'exec 9</run/lock/togi.lock; flock --exclusive 9; touch /run/togi-test-held; exec sleep infinity'"
+          "'set -e; exec 9</run/lock/togi.lock; ${pkgs.util-linux}/bin/flock --exclusive 9; "
+          "${pkgs.coreutils}/bin/touch /run/togi-test-held; exec ${pkgs.coreutils}/bin/sleep infinity'"
       )
-      machine.wait_until_succeeds("test -f /run/togi-test-held")
+      machine.wait_until_succeeds("test -f /run/togi-test-held", timeout=10)
       machine.succeed("systemd-tmpfiles --create --prefix=/run/lock/togi.lock")
       assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == contention_inode
       assert machine.succeed("stat -c '%a' /run/lock/togi.lock").strip() == "644"
