@@ -21,7 +21,9 @@ func EscapeText(text string) string {
 	for i := 0; i < len(text); {
 		r, size := utf8.DecodeRuneInString(text[i:])
 		invalid := r == utf8.RuneError && size == 1
-		if invalid || r < 0x20 || r >= 0x7f && r <= 0x9f || r == '\u2028' || r == '\u2029' {
+		if invalid || r < 0x20 || r >= 0x7f && r <= 0x9f ||
+			r == '\u061c' || r == '\u200e' || r == '\u200f' ||
+			r >= '\u2028' && r <= '\u202e' || r >= '\u2066' && r <= '\u2069' {
 			if out.Len() == 0 {
 				out.Grow(len(text))
 			}

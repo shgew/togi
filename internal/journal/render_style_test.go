@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestStyleOf(t *testing.T) {
@@ -188,6 +190,9 @@ func TestFormatLineEscapesTerminalControls(t *testing.T) {
 		{"Unicode C1", "\u0080\u0085\u009b2J\u009d52;c;text\u009c\u009f", `\u0080\u0085\u009b2J\u009d52;c;text\u009c\u009f`},
 		{"raw C1 bytes", "\x9b2J\x9d52;c;text\x9c", `\x9b2J\x9d52;c;text\x9c`},
 		{"Unicode separators", "before\u2028middle\u2029after", `before\u2028middle\u2029after`},
+		{"bidi embeddings and overrides", "\u202a\u202b\u202c\u202d\u202e", `\u202a\u202b\u202c\u202d\u202e`},
+		{"bidi isolates", "\u2066\u2067\u2068\u2069", `\u2066\u2067\u2068\u2069`},
+		{"bidi marks", "\u061c\u200e\u200f", `\u061c\u200e\u200f`},
 		{"readable Unicode", "71°C 日本語 café 🧪", "71°C 日本語 café 🧪"},
 		{"visible escapes", `literal \n \x1b \u009b`, `literal \n \x1b \u009b`},
 	}
@@ -195,8 +200,8 @@ func TestFormatLineEscapesTerminalControls(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			event := Event{Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC), Kind: KindTrialProgress, Msg: tt.msg}
 			want := "01:14:07 trial.progress " + tt.want
-			if got := FormatLine(event, time.UTC); got != want {
-				t.Fatalf("line = %q, want %q", got, want)
+			if d := cmp.Diff(want, FormatLine(event, time.UTC)); d != "" {
+				t.Fatalf("line (-want +got): %s", d)
 			}
 		})
 	}

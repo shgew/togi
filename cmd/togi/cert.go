@@ -123,7 +123,7 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 		tw = newTable(w)
 		fmt.Fprintln(tw, "  REGIME\tWORKLOAD\tSTARTS\tCLEAN H\tRATE BOUND")
 		for _, r := range gs.Exposure {
-			fmt.Fprintf(tw, "  %s\t%s\t%d\t%s\t%s\n", r.Regime, r.Workload, r.Starts, hours(r.CleanS), rate(r.RateBoundPerH))
+			fmt.Fprintf(tw, "  %s\t%s\t%d\t%s\t%s\n", journal.EscapeText(string(r.Regime)), journal.EscapeText(r.Workload), r.Starts, hours(r.CleanS), rate(r.RateBoundPerH))
 		}
 		fmt.Fprintf(tw, "  all\t-\t-\t%s\t%s\n", hours(gs.CleanS), rate(gs.RateBoundPerH))
 		_ = tw.Flush()
@@ -136,7 +136,7 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 	fmt.Fprintln(w)
 
 	s := st.Session
-	fmt.Fprintf(w, "Session %s, started %s\n", s.ID, s.Start.UTC().Format(time.RFC3339))
+	fmt.Fprintf(w, "Session %s, started %s\n", journal.EscapeText(s.ID), s.Start.UTC().Format(time.RFC3339))
 	writeBIOSLine(w, s)
 	fmt.Fprintln(w)
 
