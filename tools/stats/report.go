@@ -51,7 +51,7 @@ func outcome(t *trial) string {
 	return string(t.end.Outcome)
 }
 func crash(t *trial) bool {
-	return t.end != nil && t.end.Outcome == journal.OutcomeFailure && t.end.Signal == machine.Crash
+	return t.crashed || t.end != nil && t.end.Outcome == journal.OutcomeFailure && t.end.Signal == machine.Crash
 }
 
 func report(out io.Writer, events []journal.Event, since time.Time) error {
@@ -120,8 +120,8 @@ func renderTime(tab *table, p *projection, since time.Time) []float64 {
 		}
 		if next, ok := p.nextBoot[t.boot]; ok {
 			boot := p.boots[next]
-			gaps = append(gaps, boot.firstEvent.Sub(t.start).Seconds()-float64(seconds(t)))
-			downtime += boot.start.Sub(t.start).Seconds() - float64(seconds(t))
+			gaps = append(gaps, boot.firstEvent.Sub(t.lastEvidence).Seconds())
+			downtime += boot.start.Sub(t.lastEvidence).Seconds()
 		}
 	}
 	tab.row("crash downtime (last evidence to next boot)\t%.3f\t%.3f", downtime, downtime/3600)

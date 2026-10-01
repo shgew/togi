@@ -11,13 +11,16 @@ import (
 )
 
 type trial struct {
-	intent      *journal.TrialIntent
-	seq, endSeq int
-	time, start time.Time
-	boot        string
-	started     bool
-	end         *journal.TrialEnd
-	key         string
+	intent       *journal.TrialIntent
+	seq, endSeq  int
+	time         time.Time
+	lastEvidence time.Time
+	cause        []int
+	crashed      bool
+	boot         string
+	started      bool
+	end          *journal.TrialEnd
+	key          string
 }
 type runInfo struct {
 	start, end      time.Time
@@ -42,6 +45,8 @@ type maskInfo struct {
 type projection struct {
 	trials   []*trial
 	byID     map[string]*trial
+	bySeq    map[int]*trial
+	idle     []journal.Event
 	runs     []*runInfo
 	hunts    []*huntInfo
 	huntByID map[int]*huntInfo
@@ -56,9 +61,9 @@ type bootTime struct {
 }
 
 func project(events []journal.Event) *projection {
-	p := &projection{byID: map[string]*trial{}, huntByID: map[int]*huntInfo{}, boots: map[string]bootTime{}, nextBoot: map[string]string{}}
+	p := &projection{byID: map[string]*trial{}, bySeq: map[int]*trial{}, huntByID: map[int]*huntInfo{}, boots: map[string]bootTime{}, nextBoot: map[string]string{}}
 	var active *runInfo
-	var pending *huntInfo
+	commitments := map[int]*huntInfo{}
 	var previousBoot string
 	var applied []int
 	masks := map[[2]int]*maskInfo{}
@@ -100,9 +105,15 @@ func project(events []journal.Event) *projection {
 			p.addTrial(e, v, applied, active, masks)
 		case *journal.TrialStart:
 			if t := p.byID[v.Trial]; t != nil {
-				t.start = e.Time
 				t.started = true
+				t.lastEvidence = e.Time
 			}
+		case *journal.TrialProgress:
+			p.trialEvidence(v.Trial, e)
+		case *journal.TrialSignal:
+			p.trialEvidence(v.Trial, e)
+		case *journal.TrialSample:
+			p.trialEvidence(v.Trial, e)
 		case *journal.TrialEnd:
 			if t := p.byID[v.Trial]; t != nil {
 				t.end = v
@@ -112,11 +123,15 @@ func project(events []journal.Event) *projection {
 			if active != nil {
 				active.crashes++
 			}
+			p.recordCrash(v)
+		case *journal.Failure:
+			if v.Trial == "" {
+				p.idle = append(p.idle, e)
+			}
 		case *journal.HuntStart:
 			h := &huntInfo{start: v, time: e.Time, seq: e.Seq, commitment: "none"}
 			p.hunts = append(p.hunts, h)
 			p.huntByID[v.Hunt] = h
-			pending = nil
 		case *journal.HuntMask:
 			m := &maskInfo{plan: v}
 			masks[[2]int{v.Hunt, v.Mask}] = m
@@ -127,23 +142,55 @@ func project(events []journal.Event) *projection {
 			if h := p.huntByID[v.Hunt]; h != nil {
 				h.end = e.Time
 				h.result = v
-				pending = h
+				commitments[e.Seq] = h
+			}
+		case *journal.MarkJoint:
+			if h := p.huntByID[v.Hunt]; h != nil {
+				commitments[e.Seq] = h
 			}
 		case *journal.TunerDecision:
-			if pending != nil && v.Decision == journal.Backoff {
-				pending.commitment = fmt.Sprintf("%02d %d->%d", v.Core, v.FromOffset, v.ToOffset)
-				pending = nil
-			}
+			recordCommitment(e, v, commitments)
 		}
 	}
 	if len(events) > 0 {
-		for _, h := range p.hunts {
-			if h.end.IsZero() {
-				h.end = events[len(events)-1].Time
-			}
-		}
+		p.finishHunts(events[len(events)-1].Time)
 	}
 	return p
+}
+
+func (p *projection) recordCrash(v *journal.CrashDetected) {
+	if v.InFlight == nil {
+		return
+	}
+	if t := p.bySeq[*v.InFlight]; t != nil && t.boot == v.PreviousBoot {
+		t.crashed = true
+	}
+}
+
+func recordCommitment(e journal.Event, v *journal.TunerDecision, commitments map[int]*huntInfo) {
+	if v.Decision != journal.Backoff {
+		return
+	}
+	for _, cause := range e.Cause {
+		if h := commitments[cause]; h != nil {
+			h.commitment = fmt.Sprintf("%02d %d->%d", v.Core, v.FromOffset, v.ToOffset)
+			return
+		}
+	}
+}
+
+func (p *projection) finishHunts(last time.Time) {
+	for _, h := range p.hunts {
+		if h.end.IsZero() {
+			h.end = last
+		}
+	}
+}
+
+func (p *projection) trialEvidence(id string, e journal.Event) {
+	if t := p.byID[id]; t != nil && t.started && t.boot == e.Boot && t.end == nil {
+		t.lastEvidence = e.Time
+	}
 }
 
 func (p *projection) addTrial(e journal.Event, v *journal.TrialIntent, applied []int, active *runInfo, masks map[[2]int]*maskInfo) {
@@ -155,9 +202,10 @@ func (p *projection) addTrial(e journal.Event, v *journal.TrialIntent, applied [
 		}
 		v = &copyIntent
 	}
-	t := &trial{intent: v, key: class(v, p.cores), seq: e.Seq, time: e.Time, start: e.Time, boot: e.Boot}
+	t := &trial{intent: v, key: class(v, p.cores), seq: e.Seq, time: e.Time, lastEvidence: e.Time, cause: e.Cause, boot: e.Boot}
 	p.trials = append(p.trials, t)
 	p.byID[v.Trial] = t
+	p.bySeq[e.Seq] = t
 	if active != nil {
 		active.trials++
 	}
@@ -215,7 +263,7 @@ func compareProfile(a, b []int, deeper bool) bool {
 	}
 	return true
 }
-func priorPasses(history []*trial, target *journal.TrialIntent, before int, cores []machine.CoreInfo) int {
+func priorPasses(history []*trial, target *journal.TrialIntent, before int, cores []machine.CoreInfo, idle []journal.Event) int {
 	k := class(target, cores)
 	cutoff := 0
 	for _, t := range history {
@@ -224,6 +272,21 @@ func priorPasses(history []*trial, target *journal.TrialIntent, before int, core
 		}
 		if t.end.Outcome == journal.OutcomeFailure && compareProfile(t.intent.Profile, target.Profile, false) {
 			cutoff = max(cutoff, t.endSeq)
+		}
+	}
+	if target.Regime == machine.R6 {
+		allCores := loaded(target, cores)
+		all := len(cores) > 0 && len(allCores) == len(cores)
+		for _, c := range cores {
+			all = all && slices.Contains(allCores, c.Core)
+		}
+		if all {
+			for _, e := range idle {
+				f := e.Data.(*journal.Failure)
+				if e.Seq < before && compareProfile(f.Profile, target.Profile, false) {
+					cutoff = max(cutoff, e.Seq)
+				}
+			}
 		}
 	}
 	n := 0

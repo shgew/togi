@@ -78,29 +78,25 @@ func renderGuard(tab *table, p *projection, events []journal.Event, since time.T
 	tab.row("rotations ended\t%d", ends)
 	tab.row("rotations qualifying\t%d", qualifying)
 	reruns, failed := 0, 0
-	inRerun := false
-	previousClass := ""
-	previousOutcome := ""
+	seen := map[int]bool{}
 	for _, t := range p.trials {
-		if t.intent.Phase == journal.PhaseHunt {
-			inRerun = false
-		}
 		if !t.intent.Rerun {
 			continue
 		}
-		k := class(t.intent, p.cores)
-		// Consecutive passes are starts in one obligation. A failed rerun, hunt,
-		// different class or completed pass sequence begins the next obligation.
-		first := !inRerun || k != previousClass || previousOutcome != "pass"
-		if first && selected(t.time, since) {
+		k := t.seq
+		if len(t.cause) > 0 {
+			k = t.cause[0]
+		}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		if selected(t.time, since) {
 			reruns++
 			if t.end != nil && t.end.Outcome == journal.OutcomeFailure {
 				failed++
 			}
 		}
-		inRerun = true
-		previousClass = k
-		previousOutcome = outcome(t)
 	}
 	tab.row("reruns\t%d", reruns)
 	tab.row("reruns failing first start\t%d", failed)
@@ -134,7 +130,7 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 	tab.section("Failures after prior passes", "trial class\tfailures with prior passes")
 	contradictions := map[string]int{}
 	for _, t := range p.trials {
-		if selected(t.time, since) && t.end != nil && t.end.Outcome == journal.OutcomeFailure && priorPasses(p.trials, t.intent, t.seq, p.cores) > 0 {
+		if selected(t.time, since) && t.end != nil && t.end.Outcome == journal.OutcomeFailure && priorPasses(p.trials, t.intent, t.seq, p.cores, p.idle) > 0 {
 			contradictions[class(t.intent, p.cores)]++
 		}
 	}
@@ -151,7 +147,7 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 			if len(m.trials) == 0 {
 				continue
 			}
-			prior := priorPasses(p.trials, m.trials[0].intent, h.seq, p.cores)
+			prior := priorPasses(p.trials, m.trials[0].intent, h.seq, p.cores, p.idle)
 			established := prior >= h.start.Starts
 			passes, failures, cost := 0, 0, 0
 			for _, t := range m.trials {
