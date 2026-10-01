@@ -82,6 +82,7 @@ type running struct {
 	backend      backend.Backend
 	options      Options
 	host         processHost
+	openSamples  func(string) (sampleFile, error)
 	started      machine.Started
 	instances    []*instance
 	scopes       []string
@@ -138,6 +139,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 		}
 	}
 	t := &running{spec: spec, backend: b, options: r.options, host: r.host, events: make(chan streamEvent, 1024), streamStop: make(chan struct{})}
+	t.openSamples = openSamples
 	t.started.Scope = "togi-trial-" + spec.ID
 	t.started.CPUs = slices.Clone(spec.CPUs)
 	t.started.Schedule = machine.ScheduleFor(spec)

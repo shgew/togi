@@ -113,7 +113,13 @@ func readTemperatures(root string) (*int, map[string]int) {
 	return nil, nil
 }
 
-func openSamples(dir string) (*os.File, error) {
+type sampleFile interface {
+	Write([]byte) (int, error)
+	Sync() error
+	Close() error
+}
+
+func openSamples(dir string) (sampleFile, error) {
 	f, err := os.OpenFile(filepath.Join(dir, "samples.jsonl"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("create trial samples: %w", err)
@@ -135,7 +141,7 @@ func openSamples(dir string) (*os.File, error) {
 	return f, nil
 }
 
-func appendSample(f *os.File, p machine.TrialConditions) error {
+func appendSample(f sampleFile, p machine.TrialConditions) error {
 	line, err := json.Marshal(p)
 	if err == nil {
 		_, err = f.Write(append(line, '\n'))
