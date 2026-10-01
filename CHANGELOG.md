@@ -4,6 +4,10 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Fixed
+
+- Backend diagnostics render terminal controls as visible escapes in human event lines, status and dashboards, preventing cursor manipulation and forged output lines while preserving readable Unicode and raw journal evidence ([#214]).
+
 ## [0.5.2] - 2026-09-30
 
 ### Fixed
@@ -280,3 +284,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#202]: https://github.com/shgew/togi/pull/202
 [#204]: https://github.com/shgew/togi/pull/204
 [#209]: https://github.com/shgew/togi/pull/209
+[#214]: https://github.com/shgew/togi/pull/214
