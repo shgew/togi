@@ -59,6 +59,8 @@ Simulation is not part of `togi`: development programs live in `tools/` and are 
 
 Read-only commands (`status`, `cert`, `events` and one-frame `watch`) exit 2 for usage errors and 1 for an unreadable or incompatible journal, with the error on stderr. A valid query with no results exits 0 with empty stdout. `watch` is the dashboard exception: without a terminal it still prints a problem frame on stdout before exiting 1, and a missing journal prints `no session yet` and exits 0 with empty stderr. Live `watch` keeps displaying journal problems in the dashboard without exiting. A readable journal with a different ruleset remains a warning for `status`, `cert` and `events`, as described above.
 
+`events --kind` accepts comma-separated known exact kinds and known undotted groups from the binary's kind registry. Each explicit occurrence must contain at least one name after trimming whitespace and ignoring empty entries. An unknown name or an explicitly empty list is a usage error (exit 2), with the error and valid names on stderr, before reading the journal. Omitted `--kind` applies no kind filter, including to opaque same-schema events unknown to this binary. A valid filter with no matches exits 0 with empty stdout.
+
 One-frame `watch` strips application-owned ANSI styling from its frame and visibly escapes untrusted control characters in the frame and its journal-error diagnostic.
 
 `run` records `shutdown` only for clean stops (exit 0) and journaled dead ends (10-15, 17-18), and only after required same-boot reconciliation succeeds. A compatibility refusal (16) appends nothing. Other exits may record restoration but no `shutdown`, so a later boot treats the gap as a crash, except the journal-write emergency below.

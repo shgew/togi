@@ -19,8 +19,10 @@ const eventsHelp = `Usage: togi events [--core <N>] [--kind <kinds>] [--trial <I
 Print the journal, one readable line per event, oldest first. Filters combine,
 so you can narrow it to one core, one trial or a time window. A different
 ruleset warns before rendering, including --json; a different schema is
-refused. Readable lines are colored on terminals and in the system journal
-unless NO_COLOR is set.
+refused. Kind selectors must name a known exact kind or group; unknown names
+and explicitly empty lists are usage errors (exit 2). Valid filters with no
+matches print nothing and exit 0. Readable lines are colored on terminals and
+in the system journal unless NO_COLOR is set.
 
 Examples:
   togi events --core 3                   Everything that happened to core 3
@@ -34,11 +36,18 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 	)
 	flags := newFlagSet("events", g)
 	flags.Func("core", "only events naming core `N`", coreFlag(&filter.Core))
-	flags.Func("kind", "only these comma-separated `kinds`, or groups such as trial for every trial.* kind", func(s string) error {
+	flags.Func("kind", "only these comma-separated known `kinds`, or groups such as trial for every trial.* kind", func(s string) error {
+		start := len(filter.Kinds)
 		for k := range strings.SplitSeq(s, ",") {
 			if k = strings.TrimSpace(k); k != "" {
+				if err := journal.ValidateKindSelector(k); err != nil {
+					return err
+				}
 				filter.Kinds = append(filter.Kinds, k)
 			}
+		}
+		if len(filter.Kinds) == start {
+			return journal.ValidateKindSelector("")
 		}
 		return nil
 	})
