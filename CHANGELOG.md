@@ -4,6 +4,10 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Fixed
+
+- A rerun's journal cause names the newest queued failure of its class, without changing which trials run or how passes are counted ([#PR](#TBD)).
+
 ## [0.5.2] - 2026-09-30
 
 ### Fixed
