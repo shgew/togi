@@ -167,10 +167,10 @@ func TestWatchProblemFrame(t *testing.T) {
 	}
 }
 
-func TestWatchStripsJournalANSI(t *testing.T) {
+func TestWatchEscapesJournalControls(t *testing.T) {
 	t.Parallel()
 	dir, original := incompatibleFixture(t, "schema")
-	data := bytes.ReplaceAll(original, []byte("0.2.1"), []byte(`\u001b[31m0.2.1\u001b[0m`))
+	data := bytes.ReplaceAll(original, []byte("0.2.1"), []byte(`\u001b[31m0.2.1\u001b[0m\u001b]52;c;data\u0007\r\n\u009b2J\u2028`))
 	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -179,8 +179,87 @@ func TestWatchStripsJournalANSI(t *testing.T) {
 		t.Fatalf("exit %d, want %d", code, exitError)
 	}
 	for name, text := range map[string]string{"stdout": stdout.String(), "stderr": stderr.String()} {
-		if strings.Contains(text, "\x1b") || !strings.Contains(text, "0.2.1+def5678") {
-			t.Errorf("%s %q, want version without ANSI sequences", name, text)
+		if strings.ContainsAny(text, "\x1b\r\u009b\u2028") || !strings.Contains(text, `\x1b[31m0.2.1\x1b[0m\x1b]52;c;data\x07\r\n\u009b2J\u2028+def5678`) {
+			t.Errorf("%s %q, want visibly escaped diagnostic controls", name, text)
 		}
+	}
+}
+
+func TestDashboardEscapesDiagnosticControls(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	msg := "日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u009d0;title\u009c\u2028\u2029"
+	escaped := `日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u009d0;title\u009c\u2028\u2029`
+	start := journal.Event{Seq: 1, Time: now, Kind: journal.KindSessionStart, Data: &journal.SessionStart{Session: "diagnostics"}}
+	for _, tt := range []struct {
+		name string
+		data journal.Payload
+	}{
+		{"recent backend retry", &journal.BackendRetry{}},
+		{"last failure", &journal.Failure{}},
+		{"dead end", &journal.DeadEnd{Condition: journal.DeadEndContainment}},
+		{"in flight", &journal.SMUIntent{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			events := []journal.Event{start, {Seq: 2, Time: now, Kind: tt.data.Kind(), Msg: msg, Data: tt.data}}
+			frame := watch.Render(watch.Project(events), 300, 40, now)
+			if !strings.Contains(frame, escaped) {
+				t.Fatalf("diagnostic not visibly escaped:\n%q", frame)
+			}
+			for _, control := range []string{"\x1b[2J", "\x1b]52;", "\r", "\u009b", "\u009d", "\u009c", "\u2028", "\u2029"} {
+				if strings.Contains(frame, control) {
+					t.Fatalf("untrusted control %q in dashboard: %q", control, frame)
+				}
+			}
+			if got := strings.Count(frame, "\n"); got != 38 {
+				t.Fatalf("diagnostic changed frame line count: %d, want 38", got)
+			}
+			if events[1].Msg != msg {
+				t.Fatalf("projection sanitized raw message: %q", events[1].Msg)
+			}
+		})
+	}
+}
+
+func TestStatusEscapesJournalMessages(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	msg := "日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u2028"
+	escaped := `日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u2028`
+	st := journal.State{
+		Session:  &journal.SessionInfo{ID: "diagnostics", Start: now},
+		InFlight: &journal.InFlight{Seq: 2, Msg: msg},
+		Cores:    []journal.CoreState{{Core: 0, LastDecision: &journal.DecisionRef{Seq: 5, Msg: msg}}},
+	}
+	var out bytes.Buffer
+	writeStatus(&out, st, []journal.Event{
+		{Seq: 3, Kind: journal.KindSessionCarried, Msg: msg},
+		{Seq: 4, Kind: journal.KindMCE, Msg: msg, Data: &journal.MCE{BetweenTrials: true}},
+	})
+	for _, prefix := range []string{"in flight: [#2] ", "carried: [#3] ", "between-trial evidence [#4]: ", "[#5] "} {
+		if !strings.Contains(out.String(), prefix+escaped) {
+			t.Fatalf("status diagnostic %q not visibly escaped: %q", prefix, out.String())
+		}
+	}
+	if strings.ContainsAny(out.String(), "\x1b\r\u009b\u2028") {
+		t.Fatalf("status contains executable controls: %q", out.String())
+	}
+}
+
+func TestDashboardEscapesTrialDetails(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	events := []journal.Event{
+		{Seq: 1, Time: now, Kind: journal.KindSessionStart, Data: &journal.SessionStart{Session: "diagnostics"}},
+		{Seq: 2, Time: now, Kind: journal.KindTrialIntent, Msg: "trial running", Data: &journal.TrialIntent{
+			Trial: "0001", Workload: "日本語\x1b]0;title\x07\r\n\u009b2J", DurationS: 60,
+		}},
+	}
+	frame := watch.Render(watch.Project(events), 300, 40, now)
+	if !strings.Contains(frame, `日本語\x1b]0;title\x07\r\n\u009b2J`) {
+		t.Fatalf("trial workload not visibly escaped: %q", frame)
+	}
+	if strings.Contains(frame, "\x1b]0;") || strings.ContainsAny(frame, "\r\u009b") {
+		t.Fatalf("trial workload controls in dashboard: %q", frame)
 	}
 }

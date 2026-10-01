@@ -123,8 +123,9 @@ func (r Renderer) Text(e Event, line string) string {
 	return r.Styled(StyleOf(e), line)
 }
 
-// Styled applies the same terminal and journald style to a non-event line.
+// Styled escapes untrusted text before applying terminal and journald style.
 func (r Renderer) Styled(style Style, line string) string {
+	line = EscapeText(line)
 	if r.color {
 		var sgr string
 		switch style {
