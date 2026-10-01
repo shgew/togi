@@ -159,6 +159,19 @@ func printComparison(w io.Writer, label string, c comparison) {
 func reportComparison(w io.Writer, candidate, baseline []result) {
 	fmt.Fprintln(w, "comparison: overall ratio weights scenarios equally; CI resamples pairs within each scenario (10000, fixed seed). V1=lost conclusion; V2=hazard increase >0.01/h; V3=mean depth increase >1 or pair >5; V4=shared-rail ratio >1. Positive depth delta is shallower.")
 	pairs := pairing(candidate, baseline)
+	splits := make(map[string]bool)
+	for _, r := range candidate {
+		splits[r.Split] = true
+	}
+	comparable := 0
+	for _, r := range baseline {
+		if splits[r.Split] {
+			comparable++
+		}
+	}
+	if len(pairs) != len(candidate) || len(pairs) != comparable {
+		fmt.Fprintf(w, "comparison: WARNING %d candidate and %d baseline runs in the same splits unmatched; %d paired\n", len(candidate)-len(pairs), comparable-len(pairs), len(pairs))
+	}
 	groups := make(map[string][]pair)
 	for _, p := range pairs {
 		groups[p.candidate.Scenario] = append(groups[p.candidate.Scenario], p)
