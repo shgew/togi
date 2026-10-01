@@ -483,6 +483,13 @@ func (j *Journal) ArchiveForCarry(session string) (string, error) {
 			return "", nil
 		}
 	}
+	pending, err := PendingCarry(j.dir)
+	if err != nil {
+		return "", err
+	}
+	if pending != "" && !carryEstablished(data) {
+		return j.ArchiveUnreadable(session)
+	}
 	if err := j.ClearPendingCarry(); err != nil {
 		return "", err
 	}
@@ -509,6 +516,23 @@ func (j *Journal) ArchiveForCarry(session string) (string, error) {
 		}
 	}
 	return j.ArchiveUnreadable(session)
+}
+
+func carryEstablished(data []byte) bool {
+	for len(data) > 0 {
+		end := bytes.IndexByte(data, '\n')
+		if end < 0 {
+			break
+		}
+		var event struct {
+			Kind Kind `json:"kind"`
+		}
+		if json.Unmarshal(data[:end], &event) == nil && (event.Kind == KindSessionContext || event.Kind == KindSessionCarried) {
+			return true
+		}
+		data = data[end+1:]
+	}
+	return false
 }
 
 // PendingCarry returns the session whose carry no journal has recorded yet, or "" when there is none.

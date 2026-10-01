@@ -123,6 +123,8 @@ A transition archives an older ruleset or schema journal before opening it; it a
 
 While a carry marker exists and the current journal holds neither a `session.carried` whose first source is the marked session nor any `core.phase`, the next `run` computes the carry from the archives and records it once, after `session.context`, the baseline and its notice, and before the first `core.phase`. Afterwards the marker is removed. A crash between `session.carried` and the phases resumes from the recorded event, never from the archives.
 
+If a further transition archives an interrupted new session that recorded neither `session.context` nor `session.carried`, the earlier pending source is retained instead of being replaced by that incomplete session. Its edges, marks, BIOS context and original provenance seed the eventual session. Once context or carry is recorded, normal source chaining and per-core reset epochs apply. An explicit `reset --all` still drops every pending source.
+
 Archives use a lenient reader accepting every shipped schema. It decodes `session.start`, `session.context`, `session.carried`, `trial.intent`, `trial.end`, `trial.progress`, `failure`, `hunt.start`, `hunt.end`, `command.reset`, `shutdown`, `tuner.decision`, `defect.found` and the `config.loaded` build stamp, skipping unrelated kinds and torn tails.
 
 Sources, newest first: the archived session, then, when it holds no `session.carried` and recorded a BIOS context, each older archive in turn, for as long as the archive recorded the same BIOS context and a ruleset different from the source read before it. A walked archive that holds a `session.carried` is the last source. Per source, a value recorded before a `reset --core` of its core in that source is dropped:
