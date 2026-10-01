@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"math"
 	"math/rand/v2"
 	"slices"
 	"strconv"
@@ -112,22 +111,9 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 			}
 		}
 		for j, joint := range m.cfg.Joints {
-			if len(joint.Regimes) > 0 && !slices.Contains(joint.Regimes, spec.Regime) {
+			rate := m.jointRate(m.regs, spec.Regime, joint)
+			if rate <= 0 {
 				continue
-			}
-			active := len(joint.Members) > 0
-			for c, offset := range joint.Members {
-				if m.regs[c] > offset {
-					active = false
-					break
-				}
-			}
-			if !active {
-				continue
-			}
-			rate := joint.Rate
-			if rate == 0 {
-				rate = m.model.PastEdgeRate
 			}
 			core := -1
 			for _, c := range spec.Cores {
@@ -263,27 +249,7 @@ func (m *Machine) trialRNG(purpose string, spec machine.TrialSpec, core int) *ra
 
 func (m *Machine) failureTime(spec machine.TrialSpec, core int) (time.Duration, machine.Signal, bool) {
 	loaded := slices.Contains(spec.Cores, core)
-	edge := m.edge(core, spec.Regime, spec.Workload.ID)
-	if !loaded {
-		if m.edges[core].Idle == nil && m.edges[core].Flat <= 0 {
-			return 0, "", false
-		}
-		if m.edges[core].Idle != nil {
-			edge = *m.edges[core].Idle
-		}
-	}
-	rate := m.edges[core].Flat
-	if loaded || m.edges[core].Idle != nil {
-		d := edge - m.regs[core]
-		if d >= 1 {
-			rate += m.model.PastEdgeRate * math.Pow(m.model.Growth, float64(d-1))
-		} else if loaded {
-			rate += m.model.NearEdgeRate
-		}
-	}
-	if m.regs[core] == 0 {
-		rate -= m.edges[core].Flat
-	}
+	rate := m.coreRate(m.regs, spec, core)
 	t := m.failureDraw(rate, 0, spec, core, "trial")
 	if t >= spec.Duration {
 		return 0, "", false
@@ -315,7 +281,7 @@ func (m *Machine) failureDraw(rate, afterS float64, spec machine.TrialSpec, core
 	return time.Duration((afterS + seconds) * float64(time.Second))
 }
 
-func (m *Machine) edge(core int, r machine.Regime, workload string) int {
+func (m *Machine) edge(profile []int, core int, r machine.Regime, workload string) int {
 	if edge, ok := m.edges[core].Workload[workload]; ok {
 		return edge
 	}
@@ -325,7 +291,7 @@ func (m *Machine) edge(core int, r machine.Regime, workload string) int {
 	}
 	if i < len(m.edges[core].Isolated) {
 		only := true
-		for c, offset := range m.regs {
+		for c, offset := range profile {
 			if c != core && offset != 0 {
 				only = false
 				break
