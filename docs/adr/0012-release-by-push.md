@@ -14,7 +14,7 @@ Merging publishes. The final step of the CI `check` job, run only on a push to `
 
 ## Considered Options
 
-- **GoReleaser:** rejected because shycler ships no binaries (flake users build from a tag), and GoReleaser neither creates tags, bumps versions nor opens pull requests; it would only replace the single call that creates the release.
+- **GoReleaser:** rejected because togi ships no binaries (flake users build from a tag), and GoReleaser neither creates tags, bumps versions nor opens pull requests; it would only replace the single call that creates the release.
 - **Opening the pull request from a workflow started by hand:** rejected because changes made with the automatic token trigger no workflows, so the release pull request would get no `check` run.
 - **Opening the pull request with a Forgejo client (`fj`) or the API and a personal token:** rejected because a push needs neither a token nor another tool in the dev shell, and a client from a fork would be built from source on every CI run.
 - **A standing release pull request refreshed on every push to `main`:** rejected because the owner decides when to release.

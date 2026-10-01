@@ -43,23 +43,6 @@ func TestCompatible(t *testing.T) {
 	}
 }
 
-func TestRefusalNamesTheProductABuildWasReleasedAs(t *testing.T) {
-	binary := Build{Version: "0.4.0", Schema: 2, Ruleset: 4}
-	for _, tc := range []struct{ version, want string }{
-		{"", "Install the shycler build that wrote it"},
-		{"0.3.1", "Install shycler 0.3.1"},
-		{"0.1.0+dev", "Install shycler 0.1.0+dev"},
-		{"0.4.0", "Install togi 0.4.0"},
-		{"0.10.2", "Install togi 0.10.2"},
-		{"1.0.0", "Install togi 1.0.0"},
-	} {
-		err := Compatible(Build{Version: tc.version, Schema: 2, Ruleset: 5}, binary)
-		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "this build, togi 0.4.0,") {
-			t.Errorf("version %q: %v, want %q", tc.version, err, tc.want)
-		}
-	}
-}
-
 func TestRefusalOfAnOlderJournalNamesTheCarry(t *testing.T) {
 	err := Compatible(Build{Version: "0.4.0", Schema: 2, Ruleset: 3}, Build{Version: "0.5.0", Schema: 2, Ruleset: 4})
 	want := "this journal was written by togi 0.4.0 (schema 2, ruleset 3); this build, togi 0.5.0, uses ruleset 4. togi run archives it and starts a new session that carries its edges and failed marks; togi reset --all archives it and starts over."

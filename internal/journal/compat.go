@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	togi "github.com/shgew/togi"
 )
@@ -25,24 +23,14 @@ func binarySchemaBuild() Build {
 	return Build{Version: togi.Version(), Rev: togi.Rev(), Schema: Schema}
 }
 
-// product names the program a build was released as: builds before 0.4.0 were called shycler.
-func (b Build) product() string {
-	major, rest, _ := strings.Cut(b.Version, ".")
-	minor, _, _ := strings.Cut(rest, ".")
-	if n, err := strconv.Atoi(minor); b.Version == "" || major == "0" && err == nil && n < 4 {
-		return "shycler"
-	}
-	return "togi"
-}
-
 func (b Build) name() string {
 	if b.Version == "" {
-		return "a shycler build from before version stamps"
+		return "a togi build from before version stamps"
 	}
 	if b.Rev == "" {
-		return b.product() + " " + b.Version
+		return "togi " + b.Version
 	}
-	return b.product() + " " + b.Version + "+" + b.Rev
+	return "togi " + b.Version + "+" + b.Rev
 }
 
 // IncompatibleError describes a journal that this binary cannot safely modify.
@@ -76,9 +64,9 @@ func KnownKinds(events []Event, binary Build) error {
 
 func (e *IncompatibleError) Error() string {
 	written := fmt.Sprintf("this journal was written by %s (schema %d, ruleset %d)", e.Journal.name(), e.Journal.Schema, e.Journal.Ruleset)
-	advice := "Install the " + e.Journal.product() + " build that wrote it to continue this session"
+	advice := "Install the togi build that wrote it to continue this session"
 	if e.Journal.Version != "" {
-		advice = "Install " + e.Journal.product() + " " + e.Journal.Version + " to continue this session"
+		advice = "Install togi " + e.Journal.Version + " to continue this session"
 	}
 	var value int
 	if e.Field == "schema" {

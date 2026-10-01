@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/shgew/togi/internal/journal"
@@ -33,7 +32,7 @@ func TestRunRefusesDifferentRulesetWithoutAppending(t *testing.T) {
 	}
 	_, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: j, Machine: seams, Bootloader: bootloader})
 	var incompatible *journal.IncompatibleError
-	if !errors.As(err, &incompatible) || incompatible.Field != "ruleset" || !strings.Contains(err.Error(), "Install shycler 0.2.1") {
+	if !errors.As(err, &incompatible) || incompatible.Field != "ruleset" || incompatible.Journal.Version != "0.2.1" {
 		t.Fatalf("Run: %v", err)
 	}
 	if bootloader.calls != 1 {

@@ -2,7 +2,7 @@ Superseded by [ADR 0011](0011-blame-by-load-and-automatic-regain.md).
 
 # Unattributed failures back off as suspects; depth is regained only on request
 
-With the whole profile resident, a crash without a core-naming MCE cannot be pinned on one core. shycler backs off the loaded core first and escalates to every core if another unattributed failure follows before a clean rotation. These backoffs are recorded as suspect, so the lost depth is visible as unproven depth. `shycler regain` retries it only when the owner asks, typically once the profile holds Silver or better. This converges quickly without silently giving up depth.
+With the whole profile resident, a crash without a core-naming MCE cannot be pinned on one core. togi backs off the loaded core first and escalates to every core if another unattributed failure follows before a clean rotation. These backoffs are recorded as suspect, so the lost depth is visible as unproven depth. `togi regain` retries it only when the owner asks, typically once the profile holds Silver or better. This converges quickly without silently giving up depth.
 
 ## Considered Options
 
