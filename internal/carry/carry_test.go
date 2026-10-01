@@ -105,11 +105,20 @@ func src(session string, ruleset int) journal.CarriedSource {
 
 func prepare(t *testing.T, dir string, entries []defect.Entry) *Carry {
 	t.Helper()
-	c, err := Prepare(dir, opts(), binary, entries, nil)
+	c, err := prepareWithContext(dir, entries, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return c
+}
+
+func prepareWithContext(dir string, entries []defect.Entry, current *machine.BIOSContext) (*Carry, error) {
+	j, err := journal.Lock(dir, opts())
+	if err != nil {
+		return nil, err
+	}
+	defer j.Close()
+	return Prepare(j, binary, entries, current)
 }
 
 func TestPrepareSeedsEdgesAndMarks(t *testing.T) {
@@ -159,7 +168,7 @@ func TestPrepareBIOSChange(t *testing.T) {
 			w := newJournal(t, dir, "X", 4, tc.recorded)
 			mark := w.fail(0, -30, machine.Isolated, journal.Attributed)
 			w.close()
-			got, err := Prepare(dir, opts(), binary, []defect.Entry{}, tc.current)
+			got, err := prepareWithContext(dir, []defect.Entry{}, tc.current)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -194,7 +203,7 @@ func TestPrepareResumesInterruptedBIOSArchive(t *testing.T) {
 	w.close()
 	changed := context
 	changed.BIOSVersion = "3.20"
-	got, err := Prepare(dir, opts(), binary, []defect.Entry{}, &changed)
+	got, err := prepareWithContext(dir, []defect.Entry{}, &changed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -520,7 +529,7 @@ func TestPrepareRefusesALineWithoutAKind(t *testing.T) {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Prepare(dir, opts(), binary, []defect.Entry{}, nil); err == nil || !strings.Contains(err.Error(), "no kind") {
+	if _, err := prepareWithContext(dir, []defect.Entry{}, nil); err == nil || !strings.Contains(err.Error(), "no kind") {
 		t.Fatalf("Prepare: %v, want a refusal of the line without a kind", err)
 	}
 }

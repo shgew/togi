@@ -53,12 +53,16 @@ func boot(ctx context.Context, in Input) (session.Stop, error) {
 	if err != nil {
 		return session.Stop{}, fmt.Errorf("read BIOS context: %w", err)
 	}
-	carried, err := carry.Prepare(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now}, session.Build(), nil, &current)
+	j, err := journal.Lock(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Log: in.Log, Renderer: in.Renderer, Build: session.Build()})
 	if err != nil {
 		return session.Stop{}, err
 	}
-	j, err := journal.Open(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Log: in.Log, Renderer: in.Renderer, Build: session.Build()})
+	defer j.Close()
+	carried, err := carry.Prepare(j, session.Build(), nil, &current)
 	if err != nil {
+		return session.Stop{}, err
+	}
+	if err := j.Open(); err != nil {
 		return session.Stop{}, err
 	}
 	runCtx, cancel := context.WithCancel(ctx)

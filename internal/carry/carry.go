@@ -23,9 +23,13 @@ type Carry struct {
 	Cores   []journal.CarriedCore // ascending core; each has an Edge, a FailedMark, or both
 }
 
-// Prepare readies dir for a session of binary: a journal from an older ruleset or schema, or one with a changed BIOS
-// context, is archived. The carry of the archived session is returned until a journal records it.
-func Prepare(dir string, opts journal.Options, binary journal.Build, entries []defect.Entry, current *machine.BIOSContext) (*Carry, error) {
+func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, current *machine.BIOSContext) (*Carry, error) {
+	dir := j.Dir()
+	if events, _, err := journal.Read(dir); err == nil {
+		if err := journal.KnownKinds(events, binary); err != nil {
+			return nil, err
+		}
+	}
 	stamp, id, err := journal.Scan(dir)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -33,7 +37,7 @@ func Prepare(dir string, opts journal.Options, binary journal.Build, entries []d
 		return nil, fmt.Errorf("carry: %w", err)
 	case stamp.Schema == 0:
 	case journal.Older(stamp, binary):
-		if err := archive(dir, id, opts); err != nil {
+		if err := archive(j, id); err != nil {
 			return nil, err
 		}
 	case journal.Compatible(stamp, binary) == nil && current != nil:
@@ -43,7 +47,7 @@ func Prepare(dir string, opts journal.Options, binary journal.Build, entries []d
 		}
 		if recorded != nil {
 			if _, same := machine.CompareContext(*recorded, *current); !same {
-				if err := archive(dir, id, opts); err != nil {
+				if err := archive(j, id); err != nil {
 					return nil, err
 				}
 			}
@@ -63,7 +67,7 @@ func Prepare(dir string, opts journal.Options, binary journal.Build, entries []d
 		return nil, fmt.Errorf("carry: %w", err)
 	}
 	if settled {
-		if err := journal.ClearPendingCarry(dir); err != nil {
+		if err := j.ClearPendingCarry(); err != nil {
 			return nil, fmt.Errorf("carry: %w", err)
 		}
 		return nil, nil
@@ -74,16 +78,8 @@ func Prepare(dir string, opts journal.Options, binary journal.Build, entries []d
 	return compute(dir, pending, entries)
 }
 
-func archive(dir, id string, opts journal.Options) error {
-	j, err := journal.OpenForArchive(dir, journal.Options{Boot: opts.Boot, Now: opts.Now, Sync: opts.Sync})
-	if err != nil {
-		return fmt.Errorf("carry: archive session %s: %w", id, err)
-	}
-	_, err = j.ArchiveForCarry(id)
-	if closeErr := j.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
+func archive(j *journal.Journal, id string) error {
+	if _, err := j.ArchiveForCarry(id); err != nil {
 		return fmt.Errorf("carry: archive session %s: %w", id, err)
 	}
 	return nil
