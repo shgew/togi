@@ -138,7 +138,7 @@ func boundaryRunner(t *testing.T) (*runner, *boundaryKernel, func(time.Duration)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: b, Config: r.in.Config}); err != nil {
+	if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: b, Config: configSnapshot(r.in.Config)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.startSession(); err != nil {
@@ -316,7 +316,7 @@ func TestRebootRecordsBetweenTrialMCEWithoutDecisionEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: b, Config: r.in.Config}); err != nil {
+	if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: b, Config: configSnapshot(r.in.Config)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.recoverCrashes(context.Background()); err != nil {

@@ -150,7 +150,7 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 		if err != nil {
 			return Stop{}, err
 		}
-		if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: boundary, Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: r.in.Config}); err != nil {
+		if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: boundary, Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: configSnapshot(r.in.Config)}); err != nil {
 			return Stop{}, err
 		}
 		if err := r.recoverCrashes(ctx); err != nil {

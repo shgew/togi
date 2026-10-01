@@ -35,7 +35,7 @@ func newHarness(t *testing.T, starts ...coreStart) *harness {
 		infos[i] = machine.CoreInfo{Core: i, CCD: i / half, CPUs: []int{i, i + len(starts)}}
 	}
 	begin := h.add(&journal.SessionStart{Schema: journal.Schema, Session: "s", Cores: infos})
-	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: config.Default()})
+	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: snapshotConfig(config.Default())})
 	for i, c := range starts {
 		p := &journal.CorePhase{Core: i, To: c.phase, Offset: c.offset, Pass: c.pass, FailedMark: c.fail, CheckEdge: c.check, Reason: "test"}
 		if c.check {
@@ -44,6 +44,19 @@ func newHarness(t *testing.T, starts ...coreStart) *harness {
 		h.add(p, begin.Seq)
 	}
 	return h
+}
+
+func snapshotConfig(c config.Config) journal.ConfigSnapshot {
+	return journal.ConfigSnapshot{
+		StartOffsets:   c.StartOffsets,
+		CandidateEdges: c.CandidateEdges,
+		Durations:      journal.ConfigDurations(c.Durations),
+		Evidence:       journal.ConfigEvidence(c.Evidence),
+		Guard:          journal.ConfigGuard(c.Guard),
+		DeadEnds:       journal.ConfigDeadEnds(c.DeadEnds),
+		Backends:       journal.ConfigBackends(c.Backends),
+		BackendUser:    c.BackendUser,
+	}
 }
 
 func searchAt(offsets ...int) []coreStart {
