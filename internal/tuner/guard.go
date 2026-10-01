@@ -289,5 +289,11 @@ func (s *State) rerunTrial(k trialClass) Action {
 	if s.retry != nil && s.retry.Rerun {
 		t = *s.retry
 	}
-	return Action{Kind: RunTrial, Trial: t, Cause: []int{s.obligations[0].seq}}
+	failure := s.obligations[0].seq
+	for _, r := range s.obligations[1:] {
+		if r.class == s.obligations[0].class && r.seq > failure {
+			failure = r.seq
+		}
+	}
+	return Action{Kind: RunTrial, Trial: t, Cause: []int{failure}}
 }
