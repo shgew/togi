@@ -172,3 +172,66 @@ func TestThermalDeadEndNeedsNoEvidence(t *testing.T) {
 		t.Fatalf("thermal dead end %+v", a)
 	}
 }
+
+func TestDirectFailureAtZero(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		condition machine.Condition
+		profile   []int
+		core      *int
+		idle      bool
+	}{
+		{"isolated search", machine.Isolated, []int{0, 0}, new(0), false},
+		{"attributed resident", machine.Resident, []int{0, -10}, new(0), false},
+		{"attributed masked anchor", machine.Masked, []int{0, -10}, new(0), false},
+		{"unattributed resident", machine.Resident, []int{0, 0}, nil, false},
+		{"unattributed idle", machine.Resident, []int{0, 0}, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := residentHarness(t, tc.profile...)
+			if tc.condition == machine.Isolated {
+				h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: 0})
+			}
+			if tc.condition == machine.Masked {
+				h.add(&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -10})
+				h.add(&journal.ProfileChange{From: tc.profile, To: []int{-10, -10}})
+				h.add(&journal.HuntStart{Hunt: 1, Failing: []int{-10, -10}, Anchor: []int{0, 0}, Candidates: []int{0, 1}, Starts: 5, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120})
+			}
+			var failure journal.Event
+			if tc.idle {
+				failure = h.add(&journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Resident, Profile: tc.profile})
+			} else {
+				tr := Trial{Core: 0, Offset: 0, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Phase: journal.PhaseGuard, Condition: tc.condition, DurationS: 120, Profile: tc.profile, Cores: []int{0, 1}}
+				if tc.condition == machine.Isolated {
+					tr.Cores, tr.Regime, tr.Phase = nil, machine.R1, journal.PhaseSearch
+					tr.Workload = machine.Workloads(machine.R1)[0].ID
+				}
+				if tc.condition == machine.Masked {
+					tr.Hunt, tr.Mask = 1, 1
+				}
+				h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, Core: tc.core})
+				failure = h.decide(h.next())
+				p, ok := failure.Data.(*journal.Failure)
+				if !ok || cmp.Diff(tc.core, p.Core) != "" {
+					t.Fatalf("zero attribution: %+v", failure)
+				}
+			}
+			a := h.next()
+			dead, ok := a.Payload.(*journal.DeadEnd)
+			if !ok || dead.Condition != journal.DeadEndFailureAtZero || cmp.Diff(tc.core, dead.Core) != "" || !slices.Equal(a.Cause, []int{failure.Seq}) {
+				t.Fatalf("failure-at-zero transition: %+v", a)
+			}
+			before := h.s.Profile()
+			offsets := h.s.offsets()
+			h.decide(a)
+			assertProjectionReplay(h)
+			for range 3 {
+				a = h.next()
+				dead, ok = a.Payload.(*journal.DeadEnd)
+				if !ok || dead.Condition != journal.DeadEndFailureAtZero || !slices.Equal(before, h.s.Profile()) || !slices.Equal(offsets, h.s.offsets()) {
+					t.Fatalf("zero failure allowed tuning: %+v", a)
+				}
+			}
+		})
+	}
+}

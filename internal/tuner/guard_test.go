@@ -103,10 +103,13 @@ func TestAttributionAtMaskAnchorAndAlreadyShallower(t *testing.T) {
 
 func TestRerunLongFailedPart(t *testing.T) {
 	h := residentHarness(t, -10, -11)
-	k := trialClass{machine.R7, machine.Workloads(machine.R7)[0].ID, "[0 1]", 600}
-	h.s.obligations = []rerun{{class: k, seq: 1}}
+	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[0].ID, Condition: machine.Resident, DurationS: 600}
+	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)})
+	first := h.decide(h.next())
+	h.decide(h.next())
+	h.add(&journal.ProfileChange{From: []int{-10, -11}, To: []int{-9, -11}})
 	a := h.next()
-	if a.Kind != RunTrial || !a.Trial.Rerun || a.Trial.DurationS != 120 {
+	if a.Kind != RunTrial || !a.Trial.Rerun || a.Trial.DurationS != 120 || !slices.Equal(a.Cause, []int{first.Seq}) {
 		t.Fatalf("rerun starts %+v", a)
 	}
 	for range h.s.n {
@@ -118,8 +121,8 @@ func TestRerunLongFailedPart(t *testing.T) {
 	}
 	h.trial(a, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)})
 	failure := h.decide(h.next())
-	h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: -10, ToOffset: -9, FailedMark: new(-10)}, failure.Seq)
-	h.add(&journal.ProfileChange{From: []int{-10, -11}, To: []int{-9, -11}})
+	h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: -9, ToOffset: -8, FailedMark: new(-9)}, failure.Seq)
+	h.add(&journal.ProfileChange{From: []int{-9, -11}, To: []int{-8, -11}})
 	a, ok := h.s.rerunNext()
 	if !ok || a.Trial.DurationS != 600 {
 		t.Fatalf("passing starts lost after repeated long-class commitment: %+v", a)
@@ -241,5 +244,117 @@ func TestResidentMultipleMCECoresRemainUnattributed(t *testing.T) {
 	f, ok := a.Payload.(*journal.Failure)
 	if !ok || f.Attribution != journal.Unattributed || f.Core != nil || f.Offset != nil {
 		t.Fatalf("multiple named MCE cores became attributed: %+v", a)
+	}
+}
+
+func commitRerunSource(h *harness, kind string) (Trial, journal.Event) {
+	h.t.Helper()
+	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[1].ID, Condition: machine.Resident, DurationS: 600}
+	var source journal.Event
+	if kind == "idle" {
+		source = h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Profile: h.s.Profile()})
+		tr.Regime, tr.Workload, tr.Cores, tr.DurationS = machine.R6, machine.Workloads(machine.R6)[0].ID, h.s.ids(), h.s.durations.GuardIdleS
+	} else {
+		end := journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 5}
+		if kind == "attributed" {
+			end.Core = new(0)
+		}
+		h.trial(Action{Kind: RunTrial, Trial: tr}, end)
+		source = h.decide(h.next())
+	}
+	if kind != "attributed" {
+		start := h.decide(h.s.huntStartNext()).Data.(*journal.HuntStart)
+		if kind == "direct" {
+			tr.Workload, tr.Cores, tr.DurationS, tr.Condition = machine.Workloads(machine.R7)[2].ID, h.s.ids(), 240, machine.Masked
+			tr.Hunt, tr.Mask = start.Hunt, 1
+			h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(1)})
+			source = h.decide(h.next())
+			h.decide(h.next())
+		} else {
+			result, cores := "culprit", []int{0}
+			if kind == "joint" {
+				result, cores = "joint", []int{0, 1}
+			}
+			h.add(&journal.HuntEnd{Hunt: start.Hunt, Result: result, Cores: cores}, start.Failure)
+			if kind == "joint" {
+				h.decide(h.next())
+			}
+		}
+	}
+	move := h.decide(h.next())
+	if p, ok := move.Data.(*journal.TunerDecision); !ok || p.Decision != journal.Backoff {
+		h.t.Fatalf("missing commitment: %+v", move)
+	}
+	h.add(&journal.ProfileChange{From: h.s.Profile(), To: h.s.offsets()}, move.Seq)
+	if projected(h).Hunt != nil {
+		h.t.Fatal("committed hunt remains active")
+	}
+	assertProjectionReplay(h)
+	return tr, source
+}
+
+func TestRerunDerivedCommitments(t *testing.T) {
+	for _, kind := range []string{"attributed", "idle", "culprit", "joint", "direct"} {
+		t.Run(kind, func(t *testing.T) {
+			h := residentHarness(t, -10, -11, -12, -13)
+			tr, source := commitRerunSource(h, kind)
+			durations := make([]int, h.s.n)
+			for i := range durations {
+				durations[i] = h.s.durations.StartS
+			}
+			if tr.DurationS != h.s.durations.StartS {
+				durations = append(durations, tr.DurationS)
+			}
+			for _, duration := range durations {
+				a, ok := h.s.rerunNext()
+				if !ok || !a.Trial.Rerun || a.Trial.Condition != machine.Resident || a.Trial.Regime != tr.Regime || a.Trial.Workload != tr.Workload || !slices.Equal(a.Trial.Cores, tr.Cores) || a.Trial.DurationS != duration {
+					t.Fatalf("derived %s rerun: %+v", kind, a)
+				}
+				if diff := cmp.Diff([]int{source.Seq}, a.Cause); diff != "" {
+					t.Fatalf("rerun cause (-want +got):\n%s", diff)
+				}
+				h.trial(a, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: duration})
+			}
+			if a, ok := h.s.rerunNext(); ok {
+				t.Fatalf("completed obligation repeats: %+v", a)
+			}
+		})
+	}
+}
+
+func TestRerunFIFOAndSharedDuration(t *testing.T) {
+	h := residentHarness(t, -10, -11, -12, -13)
+	var causes []int
+	for _, tc := range []struct {
+		core     int
+		regime   machine.Regime
+		duration int
+	}{{0, machine.R1, 120}, {1, machine.R2, 600}} {
+		tr := Trial{Core: tc.core, Regime: tc.regime, Workload: machine.Workloads(tc.regime)[1].ID, Condition: machine.Resident, DurationS: tc.duration}
+		h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(tc.core)})
+		failure := h.decide(h.next())
+		causes = append(causes, failure.Seq)
+		move := h.decide(h.next())
+		h.add(&journal.ProfileChange{From: h.s.Profile(), To: h.s.offsets()}, move.Seq)
+	}
+	for i, regime := range []machine.Regime{machine.R1, machine.R2} {
+		count := h.s.n
+		if i == 1 {
+			count++
+		}
+		for start := range count {
+			a, ok := h.s.rerunNext()
+			duration := 120
+			if start == h.s.n {
+				duration = 600
+			}
+			if !ok || a.Trial.Core != i || a.Trial.Regime != regime || a.Trial.Workload != machine.Workloads(regime)[1].ID || a.Trial.DurationS != duration || !slices.Equal(a.Cause, []int{causes[i]}) {
+				t.Fatalf("FIFO obligation %d start %d: %+v", i, start, a)
+			}
+			h.trial(a, passed)
+		}
+	}
+	if a, ok := h.s.rerunNext(); ok {
+		t.Fatalf("shared duration added redundant long start: %+v", a)
 	}
 }

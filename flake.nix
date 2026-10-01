@@ -53,7 +53,7 @@
                   ./tools
                 ];
               };
-              vendorHash = "sha256-OGYOqVtPseV1QvWhbVlQfXPcuTGIWne3Fk7JYtee1ak=";
+              vendorHash = "sha256-EHuetMPWkpLwwXxTzjDYlfHkyLEg51WaSKI74Aorpvc=";
               nativeCheckInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [
                 pkgs.util-linux
                 pkgs.gitMinimal

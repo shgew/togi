@@ -844,3 +844,70 @@ func TestRepeatedMaskedCoreProbeRequiresMatchingAdjacentFailuresSinceReset(t *te
 		})
 	}
 }
+
+func TestActiveHuntProjection(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		stage     string
+		prior     int
+		newPasses int
+		fail      bool
+		inferred  string
+		skipped   bool
+		reset     bool
+		escalated bool
+		edge      *journal.JointMember
+		held      []journal.JointMember
+		passes    int
+		outcome   string
+	}{
+		{name: "running reuses earlier valid passes", stage: "part", prior: 2, newPasses: 1, passes: 3, outcome: "running"},
+		{name: "passing complement accumulates starts", stage: "complement", prior: 4, newPasses: 1, passes: 5, outcome: "pass"},
+		{name: "failure invalidates earlier passes", stage: "part", prior: 2, fail: true, outcome: "failure"},
+		{name: "inferred pass", stage: "part", prior: 5, inferred: "pass", passes: 5, outcome: "pass"},
+		{name: "inferred failure", stage: "complement", inferred: "failure", outcome: "failure"},
+		{name: "skipped", stage: "part", skipped: true, outcome: "skipped"},
+		{name: "reset excludes reused evidence", stage: "part", prior: 4, reset: true, newPasses: 1, passes: 1, outcome: "running"},
+		{name: "escalated full uses only new starts", stage: "full", prior: 4, newPasses: 1, escalated: true, passes: 1, outcome: "running"},
+		{name: "edge preserves held members", stage: "edge", prior: 4, newPasses: 1, edge: &journal.JointMember{Core: 0, Offset: -30}, held: []journal.JointMember{{Core: 1, Offset: -30}}, passes: 1, outcome: "running"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := huntHarness(t, 4, 600)
+			old := h.s.hunt.start
+			duration := 120
+			if tc.escalated {
+				duration = 600
+			}
+			tr := Trial{Regime: old.Regime, Workload: old.Workload, Cores: old.Cores, Condition: machine.Masked, DurationS: duration, Profile: []int{-30, -30, 0, 0}, Hunt: 2, Mask: 1}
+			for range tc.prior {
+				h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
+			}
+			if tc.reset {
+				h.add(&journal.CommandReset{Core: new(0)})
+			}
+			start := &journal.HuntStart{Hunt: 2, Failure: old.Failure, Trial: old.Trial, Regime: old.Regime, Workload: old.Workload, Cores: old.Cores, DurationS: 600, Starts: 5, StartS: 120, Anchor: []int{0, 0, 0, 0}, Failing: []int{-30, -30, -30, -30}, Candidates: h.s.ids()}
+			begin := h.add(start)
+			mask := h.add(&journal.HuntMask{Hunt: 2, Mask: 1, Cores: []int{0, 1}, Profile: tr.Profile, Stage: tc.stage, DurationS: duration, Inferred: tc.inferred, Skipped: tc.skipped, Escalated: tc.escalated, Edge: tc.edge, Held: tc.held})
+			for range tc.newPasses {
+				h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
+			}
+			if tc.fail {
+				h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
+			}
+			want := &journal.HuntState{Hunt: 2, Seq: begin.Seq, Failure: start.Failure, Regime: start.Regime, Trial: start.Trial, Anchor: start.Anchor, Candidates: start.Candidates, Escalated: tc.escalated, Masks: []journal.MaskState{{Mask: 1, Seq: mask.Seq, Cores: []int{0, 1}, Edge: tc.edge, Held: tc.held, Outcome: tc.outcome, Passes: tc.passes, Needed: 5}}}
+			st := projected(h)
+			if st.Phase != string(journal.PhaseHunt) {
+				t.Fatalf("active hunt phase %s", st.Phase)
+			}
+			if diff := cmp.Diff(want, st.Hunt); diff != "" {
+				t.Fatalf("hunt projection (-want +got):\n%s", diff)
+			}
+			assertProjectionReplay(h)
+			h.add(&journal.HuntEnd{Hunt: 2, Result: "cancelled"}, begin.Seq)
+			if projected(h).Hunt != nil {
+				t.Fatal("cancelled hunt remains active")
+			}
+			assertProjectionReplay(h)
+		})
+	}
+}
