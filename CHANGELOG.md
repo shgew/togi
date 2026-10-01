@@ -4,6 +4,10 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Fixed
+
+- Watched-output floods yield to cancellation and supervision deadlines; teardown shares one bounded drain across instances, preserving final computation-error evidence while unconfirmed output prevents a pass or further tuning ([#215]).
+
 ## [0.5.2] - 2026-09-30
 
 ### Fixed
@@ -280,3 +284,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#202]: https://github.com/shgew/togi/pull/202
 [#204]: https://github.com/shgew/togi/pull/204
 [#209]: https://github.com/shgew/togi/pull/209
+[#215]: https://github.com/shgew/togi/pull/215
