@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestStyleOf(t *testing.T) {
@@ -170,5 +172,124 @@ func TestColoredLogDoesNotColorJournal(t *testing.T) {
 	}
 	if bytes.ContainsRune(data, '\x1b') || bytes.Contains(data, []byte("<3>")) {
 		t.Fatalf("journal contains log decoration: %q", data)
+	}
+}
+
+func TestFormatLineEscapesTerminalControls(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		msg  string
+		want string
+	}{
+		{"CSI", "\x1b[2J\x1b[31merror\x1b[0m", `\x1b[2J\x1b[31merror\x1b[0m`},
+		{"OSC BEL", "\x1b]52;c;c2VjcmV0\x07", `\x1b]52;c;c2VjcmV0\x07`},
+		{"OSC ST", "\x1b]0;fake title\x1b\\", `\x1b]0;fake title\x1b\`},
+		{"line controls", "first\rsecond\nthird\tfourth", `first\rsecond\nthird\tfourth`},
+		{"C0 and DEL", "\x00\x01\x08\x0b\x0c\x1f\x7f", `\x00\x01\x08\x0b\x0c\x1f\x7f`},
+		{"Unicode C1", "\u0080\u0085\u009b2J\u009d52;c;text\u009c\u009f", `\u0080\u0085\u009b2J\u009d52;c;text\u009c\u009f`},
+		{"raw C1 bytes", "\x9b2J\x9d52;c;text\x9c", `\x9b2J\x9d52;c;text\x9c`},
+		{"Unicode separators", "before\u2028middle\u2029after", `before\u2028middle\u2029after`},
+		{"bidi embeddings and overrides", "\u202a\u202b\u202c\u202d\u202e", `\u202a\u202b\u202c\u202d\u202e`},
+		{"bidi isolates", "\u2066\u2067\u2068\u2069", `\u2066\u2067\u2068\u2069`},
+		{"bidi marks", "\u061c\u200e\u200f", `\u061c\u200e\u200f`},
+		{"readable Unicode", "71°C 日本語 café 🧪", "71°C 日本語 café 🧪"},
+		{"visible escapes", `literal \n \x1b \u009b`, `literal \n \x1b \u009b`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event := Event{Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC), Kind: KindTrialProgress, Msg: tt.msg}
+			want := "01:14:07 trial.progress " + tt.want
+			if d := cmp.Diff(want, FormatLine(event, time.UTC)); d != "" {
+				t.Fatalf("line (-want +got): %s", d)
+			}
+		})
+	}
+}
+
+func TestOpaqueEventHumanLinePreservesRawEvidence(t *testing.T) {
+	t.Parallel()
+	raw := []byte(`{"seq":2,"time":"2026-10-02T01:14:07Z","kind":"future.\u001b[2J","msg":"日本語\u001b]52;c;data\u0007\r\n","nested":{"value":42}}`)
+	event, err := decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `01:14:07 future.\x1b[2J 日本語\x1b]52;c;data\x07\r\n`
+	if got := (Renderer{color: true}).Line(event, time.UTC); got != want {
+		t.Fatalf("opaque line = %q, want %q", got, want)
+	}
+	if event.Kind != "future.\x1b[2J" || event.Msg != "日本語\x1b]52;c;data\x07\r\n" || !bytes.Equal(event.Raw, raw) {
+		t.Fatalf("human rendering changed raw evidence: %+v", event)
+	}
+}
+
+func TestRendererEscapesBeforeApplicationStyle(t *testing.T) {
+	t.Parallel()
+	event := Event{
+		Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC),
+		Kind: KindFailure, Data: &Failure{}, Msg: "bad\x1b[0m\r\n日本語",
+	}
+	plain := `01:14:07 failure        bad\x1b[0m\r\n日本語`
+	for _, tt := range []struct {
+		name     string
+		renderer Renderer
+		want     string
+	}{
+		{"plain", Renderer{}, plain},
+		{"color", Renderer{color: true}, "\x1b[31m" + plain + "\x1b[0m"},
+		{"journald color", Renderer{color: true, journald: true}, "<3>\x1b[31m" + plain + "\x1b[0m"},
+		{"journald NO_COLOR", Renderer{journald: true}, "<3>" + plain},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.renderer.Line(event, time.UTC); got != tt.want {
+				t.Fatalf("line = %q, want %q", got, tt.want)
+			}
+		})
+	}
+	renderer := Renderer{color: true}
+	if got, want := renderer.Text(event, "evidence: "+FormatLine(event, time.UTC)), "\x1b[31mevidence: "+plain+"\x1b[0m"; got != want {
+		t.Fatalf("shared evidence double escaped: %q, want %q", got, want)
+	}
+	if got, want := renderer.Text(event, "dead end: "+event.Msg), "\x1b[31m"+`dead end: bad\x1b[0m\r\n日本語`+"\x1b[0m"; got != want {
+		t.Fatalf("summary = %q, want %q", got, want)
+	}
+	if got, want := renderer.Styled(RedBold, "refusal\x1b]0;title\x07"), "\x1b[1;31m"+`refusal\x1b]0;title\x07`+"\x1b[0m"; got != want {
+		t.Fatalf("styled diagnostic = %q, want %q", got, want)
+	}
+}
+
+func TestDiagnosticLogEscapesWithoutSanitizingJournal(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	var log bytes.Buffer
+	j, err := Open(dir, Options{Boot: "boot", Now: fixedClock(), Log: &log})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.Close()
+	if _, err := j.Append(sessionStart()); err != nil {
+		t.Fatal(err)
+	}
+	detail := "日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u2028"
+	event, err := j.Append(&TrialProgress{Trial: "0001", Detail: detail})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log.String(), `trial 0001 日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u2028`+"\n") {
+		t.Fatalf("diagnostic not visibly escaped: %q", log.String())
+	}
+	events, torn, err := Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(torn) != 0 {
+		t.Fatalf("unexpected torn journal: %q", torn)
+	}
+	recorded := events[len(events)-1]
+	if recorded.Msg != "trial 0001 "+detail || recorded.Data.(*TrialProgress).Detail != detail {
+		t.Fatalf("raw diagnostic changed: %+v", recorded)
+	}
+	if !bytes.Equal(recorded.Raw, event.Raw) {
+		t.Fatalf("raw event changed: %q, want %q", recorded.Raw, event.Raw)
 	}
 }

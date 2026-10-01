@@ -60,7 +60,7 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "togi events: %v\n", err)
+		fmt.Fprintf(stderr, "togi events: %s\n", journal.EscapeText(err.Error()))
 		return exitError
 	}
 	if len(events) > 0 {

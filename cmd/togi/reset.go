@@ -57,7 +57,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	defer lock.Close()
 	if events, _, readErr := journal.Read(g.stateDir); readErr == nil {
 		if err := journal.KnownKinds(events, session.Build()); err != nil {
-			fmt.Fprintf(stderr, "togi reset: %v\n", err)
+			fmt.Fprintf(stderr, "togi reset: %s\n", journal.EscapeText(err.Error()))
 			return exitError
 		}
 	}
@@ -73,11 +73,11 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 				return resetError(recoverErr, journal.ErrLocked, stderr)
 			}
 			if recovered != "" {
-				fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next togi run starts a new session\n", recovered, filepath.Join("archive", recovered+".jsonl"))
+				fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next togi run starts a new session\n", journal.EscapeText(recovered), journal.EscapeText(filepath.Join("archive", recovered+".jsonl")))
 				return exitOK
 			}
 			if dropped != "" {
-				fmt.Fprintf(stdout, "carry from session %s dropped; the next togi run starts a new session with nothing carried\n", dropped)
+				fmt.Fprintf(stdout, "carry from session %s dropped; the next togi run starts a new session with nothing carried\n", journal.EscapeText(dropped))
 				return exitOK
 			}
 		}
@@ -95,7 +95,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 			if code, ok := closeCommand("reset", j, archiveErr, stderr); !ok {
 				return code
 			}
-			fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next togi run starts a new session\n", id, path)
+			fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next togi run starts a new session\n", journal.EscapeText(id), journal.EscapeText(path))
 			return exitOK
 		}
 	}
@@ -116,7 +116,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	if code, ok := closeCommand("reset", j, err, stderr); !ok {
 		return code
 	}
-	fmt.Fprintf(stdout, "session %s archived to %s; the next togi run starts a new session\n", id, path)
+	fmt.Fprintf(stdout, "session %s archived to %s; the next togi run starts a new session\n", journal.EscapeText(id), journal.EscapeText(path))
 	for _, warning := range warnings {
 		fmt.Fprintln(stderr, warning)
 	}
@@ -124,7 +124,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 }
 
 func resetError(err, locked error, stderr io.Writer) int {
-	fmt.Fprintf(stderr, "togi reset: %v\n", err)
+	fmt.Fprintf(stderr, "togi reset: %s\n", journal.EscapeText(err.Error()))
 	if errors.Is(err, locked) {
 		return exitLocked
 	}
@@ -171,7 +171,7 @@ func openForCommand(name, dir string, stderr io.Writer, allowRuleset bool) (*jou
 	if !allowRuleset {
 		if stamp, _, scanErr := journal.Scan(dir); scanErr == nil && stamp.Schema != 0 {
 			if err := journal.Compatible(stamp, session.Build()); err != nil {
-				fmt.Fprintf(stderr, "togi %s: %v\n", name, err)
+				fmt.Fprintf(stderr, "togi %s: %s\n", name, journal.EscapeText(err.Error()))
 				return nil, "", exitError, false
 			}
 		}
@@ -182,7 +182,7 @@ func openForCommand(name, dir string, stderr io.Writer, allowRuleset bool) (*jou
 		fmt.Fprintf(stderr, "togi %s: no journal at %s\n", name, filepath.Join(dir, "events.jsonl"))
 		return nil, "", exitError, false
 	case err != nil:
-		fmt.Fprintf(stderr, "togi %s: %v\n", name, err)
+		fmt.Fprintf(stderr, "togi %s: %s\n", name, journal.EscapeText(err.Error()))
 		return nil, "", exitError, false
 	case len(events) == 0:
 		fmt.Fprintf(stderr, "togi %s: no session in %s\n", name, dir)
@@ -190,7 +190,7 @@ func openForCommand(name, dir string, stderr io.Writer, allowRuleset bool) (*jou
 	}
 	if !allowRuleset {
 		if err := journal.Compatible(journal.BuildOf(events), session.Build()); err != nil {
-			fmt.Fprintf(stderr, "togi %s: %v\n", name, err)
+			fmt.Fprintf(stderr, "togi %s: %s\n", name, journal.EscapeText(err.Error()))
 			return nil, "", exitError, false
 		}
 	}
@@ -205,7 +205,7 @@ func openForCommand(name, dir string, stderr io.Writer, allowRuleset bool) (*jou
 	}
 	j, err := journal.Open(dir, journal.Options{Boot: boot, Sync: true, Log: stderr, Build: build})
 	if err != nil {
-		fmt.Fprintf(stderr, "togi %s: %v\n", name, err)
+		fmt.Fprintf(stderr, "togi %s: %s\n", name, journal.EscapeText(err.Error()))
 		if errors.Is(err, journal.ErrLocked) {
 			return nil, "", exitLocked, false
 		}
@@ -219,7 +219,7 @@ func closeCommand(name string, j *journal.Journal, err error, stderr io.Writer) 
 	if err == nil {
 		return exitOK, true
 	}
-	fmt.Fprintf(stderr, "togi %s: %v\n", name, err)
+	fmt.Fprintf(stderr, "togi %s: %s\n", name, journal.EscapeText(err.Error()))
 	if errors.Is(err, session.ErrNoSuchCore) {
 		return exitUsage, false
 	}
