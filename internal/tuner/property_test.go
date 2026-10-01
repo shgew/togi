@@ -41,6 +41,7 @@ func TestSearchConverges(t *testing.T) {
 }
 
 func TestRandomOutcomesPreserveProfiles(t *testing.T) {
+	maskedFailures := 0
 	for seed := uint64(1); seed <= 12; seed++ {
 		rng := rand.New(rand.NewPCG(seed, 1))
 		h := residentHarness(t, -30, -30, -30, -30)
@@ -53,6 +54,11 @@ func TestRandomOutcomesPreserveProfiles(t *testing.T) {
 			if a.Kind == Decide {
 				if _, ok := a.Payload.(*journal.DeadEnd); ok {
 					break
+				}
+				if p, ok := a.Payload.(*journal.ProfileChange); ok {
+					if name, reached := h.s.Reaches(p.To); reached {
+						t.Fatalf("seed %d: profile change reached %s", seed, name)
+					}
 				}
 				marks := append([]journal.JointMarkState(nil), h.s.marks...)
 				e := h.decide(a)
@@ -93,8 +99,11 @@ func TestRandomOutcomesPreserveProfiles(t *testing.T) {
 				}
 			}
 			end := passed
-			if p.Condition != machine.Masked && rng.Float64() < .035 {
+			if rng.Float64() < .035 {
 				end = journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 10}
+				if p.Condition == machine.Masked {
+					maskedFailures++
+				}
 			} else if rng.Float64() < .06 {
 				end = unsure
 			}
@@ -104,5 +113,8 @@ func TestRandomOutcomesPreserveProfiles(t *testing.T) {
 		if started == 0 || ended == 0 || started != ended {
 			t.Fatalf("seed %d: hunts started %d, ended %d", seed, started, ended)
 		}
+	}
+	if maskedFailures == 0 {
+		t.Fatal("fixed seeds did not exercise a failed masked trial")
 	}
 }
