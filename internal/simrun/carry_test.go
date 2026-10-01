@@ -72,9 +72,10 @@ func stampRuleset3(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	first, rest, _ := bytes.Cut(data, []byte{'\n'})
-	restamped := bytes.Replace(first, []byte(`"ruleset":4,`), []byte(`"ruleset":3,`), 1)
+	current := session.Build().Ruleset
+	restamped := bytes.Replace(first, fmt.Appendf(nil, `"ruleset":%d,`, current), []byte(`"ruleset":3,`), 1)
 	if bytes.Equal(restamped, first) {
-		t.Fatalf("session.start carries no ruleset 4 stamp: %s", first)
+		t.Fatalf("session.start carries no ruleset %d stamp: %s", current, first)
 	}
 	if err := os.WriteFile(path, append(append(restamped, '\n'), rest...), 0o644); err != nil {
 		t.Fatal(err)

@@ -143,7 +143,7 @@ func TestHuntCulpritAfterQualifiedAnchor(t *testing.T) {
 	}
 }
 
-func TestAnchorOffsetBackendFailureChoosesOlderAnchor(t *testing.T) {
+func TestAnchorOffsetBackendFailureRaisesTheAnchor(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(4)
 	for i := range cfg.Edges {
@@ -203,8 +203,14 @@ func TestAnchorOffsetBackendFailureChoosesOlderAnchor(t *testing.T) {
 		t.Fatalf("no failed mark at core %d anchor %d", held, first.Anchor[held])
 	}
 	next, ok := findPayload(events, func(p *journal.HuntStart) bool { return p.Hunt > first.Hunt })
-	if !ok || next.AnchorSeq >= first.AnchorSeq {
-		t.Fatalf("next hunt %+v, want an anchor older than #%d", next, first.AnchorSeq)
+	if !ok || next.AnchorSeq != first.AnchorSeq {
+		t.Fatalf("next hunt %+v, want the anchor of #%d raised", next, first.AnchorSeq)
+	}
+	if next.Anchor[held] <= first.Anchor[held] || next.Anchor[held] != next.Failing[held] {
+		t.Fatalf("next anchor %v, want core %d raised past its mark %d to the failing offset %d", next.Anchor, held, first.Anchor[held], next.Failing[held])
+	}
+	if slices.Contains(next.Candidates, held) {
+		t.Fatalf("next candidates %v include core %d, which is no deeper than the raised anchor", next.Candidates, held)
 	}
 }
 
