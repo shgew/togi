@@ -72,13 +72,17 @@ func (s *State) huntStartNext() Action {
 	anchor := make([]int, len(f.profile))
 	anchorSeq := 0
 	for _, q := range slices.Backward(s.qualified) {
-		if len(q.profile) != len(f.profile) || slices.Equal(q.profile, f.profile) || !atLeastShallow(q.profile, f.profile) {
+		if len(q.profile) != len(f.profile) {
 			continue
 		}
-		if _, marked := s.reaches(q.profile); marked {
+		raised := make([]int, len(q.profile))
+		for i := range raised {
+			raised[i] = max(q.profile[i], f.profile[i])
+		}
+		if slices.Equal(raised, f.profile) {
 			continue
 		}
-		anchor = slices.Clone(q.profile)
+		anchor = raised
 		anchorSeq = q.seq
 		break
 	}
@@ -345,14 +349,22 @@ func (s *State) huntNext() (Action, bool) {
 func (s *State) planMask(h *hunt, p maskPlan, reason string) Action {
 	payload := s.makeMask(h, p, len(h.masks)+1, "", false, reason)
 	k := h.class.withDuration(p.duration)
-	if s.passes(k, payload.Profile, h.seq) >= h.start.Starts {
+	since := inferenceSince(h, payload)
+	if s.passes(k, payload.Profile, since) >= h.start.Starts {
 		payload.Inferred, payload.Reason = "pass", "passing starts already establish the mask"
-	} else if s.fails(k, payload.Profile, h.seq) {
+	} else if s.fails(k, payload.Profile, since) {
 		payload.Inferred, payload.Reason = "failure", "a known failure establishes the mask"
 	} else if mark, ok := s.reaches(payload.Profile); ok {
 		payload.Skipped, payload.Reason = true, "its profile reaches "+mark
 	}
 	return Action{Kind: Decide, Payload: payload, Cause: []int{h.seq}}
+}
+
+func inferenceSince(h *hunt, m *journal.HuntMask) int {
+	if m.Stage == "part" || m.Stage == "complement" {
+		return 0
+	}
+	return h.seq
 }
 
 func (s *State) makeMask(h *hunt, p maskPlan, number int, inferred string, skipped bool, reason string) *journal.HuntMask {
@@ -508,6 +520,10 @@ func (s *State) huntCommitment(h *hunt) (Action, bool) {
 			return Action{}, false
 		}
 	}
+	if c, probe, ok := s.testedBackoff(h); ok {
+		to := probe.payload.Edge.Offset
+		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailedMark: c.fail, Reason: fmt.Sprintf("joint mark J%d: backing off core %02d to %d, where hunt %d mask %d passed with the rest of the joint at its failing offsets", marked.Mark, c.id, to, h.start.Hunt, probe.payload.Mask)}, Cause: []int{marked.Seq, probe.seq}}, true
+	}
 	chosen, reach, ok := s.jointBackoff(marked.Members, s.huntRanking(h))
 	if !ok {
 		return Action{}, false
@@ -515,6 +531,40 @@ func (s *State) huntCommitment(h *hunt) (Action, bool) {
 	c := s.core(chosen.Core)
 	to := max(c.offset, chosen.Offset+1)
 	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailedMark: c.fail, Reason: fmt.Sprintf("joint mark J%d: backing off core %02d leaves %d counts reachable", marked.Mark, c.id, reach)}, Cause: []int{marked.Seq}}, true
+}
+
+func (s *State) testedBackoff(h *hunt) (*core, maskRecord, bool) {
+	rank := s.huntRanking(h)
+	var best *core
+	var bestProbe maskRecord
+	bestMove, bestOrder := 0, -1
+	for _, m := range h.masks {
+		edge := m.payload.Edge
+		if edge == nil || s.maskOutcome(h, m) != "pass" {
+			continue
+		}
+		alone := true
+		for _, held := range m.payload.Held {
+			if held.Offset != h.start.Failing[s.index(held.Core)] {
+				alone = false
+				break
+			}
+		}
+		c := s.core(edge.Core)
+		if !alone || c == nil || edge.Offset <= c.offset {
+			continue
+		}
+		moved := s.offsets()
+		moved[s.index(c.id)] = edge.Offset
+		if _, reached := s.reaches(moved); reached {
+			continue
+		}
+		move, order := edge.Offset-c.offset, slices.Index(rank, c.id)
+		if best == nil || move < bestMove || move == bestMove && order > bestOrder {
+			best, bestProbe, bestMove, bestOrder = c, m, move, order
+		}
+	}
+	return best, bestProbe, best != nil
 }
 
 func (s *State) projectHunt() *journal.HuntState {
@@ -532,7 +582,7 @@ func (s *State) projectHunt() *journal.HuntState {
 		}
 		since := m.seq
 		if m.payload.Inferred != "" {
-			since = h.seq
+			since = inferenceSince(h, m.payload)
 		}
 		state.Passes = s.passes(h.class.withDuration(m.payload.DurationS), m.payload.Profile, since)
 		out.Masks = append(out.Masks, state)
