@@ -403,10 +403,8 @@ func TestWatchedShortLineFloodCancellation(t *testing.T) {
 		t.Fatalf("classified after cancellation (-want +got):\n%s", diff)
 	}
 	lines = nil
-	resumeCtx, stopResume := context.WithTimeout(context.Background(), time.Second)
-	defer stopResume()
 	for !drained {
-		drained, err = w.read(resumeCtx, func(line string) { lines = append(lines, line) })
+		drained, err = w.read(context.Background(), func(line string) { lines = append(lines, line) })
 		if err != nil {
 			t.Fatalf("resumed flood: drained=%t offset=%d err=%v", drained, w.offset, err)
 		}
@@ -419,6 +417,123 @@ func TestWatchedShortLineFloodCancellation(t *testing.T) {
 	if want := strings.Count(text, "\n") - 1; len(lines) != want {
 		t.Fatalf("lost or duplicated output after cancellation: lines=%d, want %d", len(lines), want)
 	}
+}
+
+func TestWatchedFloodKeepsSupervision(t *testing.T) {
+	for _, escape := range []bool{false, true} {
+		t.Run(fmt.Sprintf("escape=%t", escape), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				supervising := true
+				o := fakeOptions(t, "watched")
+				o.NoScope = false
+				h := &outputHost{fakeHost: &fakeHost{inScope: true, killScope: func(string) ([]byte, error) {
+					supervising = false
+					return nil, nil
+				}}, text: strings.Repeat("ok\n", 100), watch: true}
+				r := New(o)
+				r.host = h
+				spec := testSpec("watch-supervision", machine.R1, 500*time.Millisecond)
+				started, err := r.Start(context.Background(), spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				trial := started.(*running)
+				trial.backend = watchClassifyingBackend{Backend: trial.backend, classify: func(line string) backend.Line {
+					if supervising {
+						time.Sleep(o.SampleInterval)
+					}
+					return classifyHelper(line)
+				}}
+				threadSamples, cpuSamples := 0, 0
+				trial.host = samplingHost{fakeHost: h.fakeHost,
+					threads: func(pid int) ([]thread, error) {
+						threadSamples++
+						if escape && threadSamples == 2 {
+							return []thread{{TID: pid, CPU: 9}}, nil
+						}
+						return nil, nil
+					},
+					usage: func(pid int) (usage, error) {
+						cpuSamples++
+						return h.Usage(pid)
+					},
+				}
+				result, err := trial.Wait(context.Background(), &recorder{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantEscaped := []int(nil)
+				wantThreadSamples, wantCPUSamples := 8, 8
+				if escape {
+					wantEscaped = []int{9}
+					wantThreadSamples, wantCPUSamples = 2, 1
+				}
+				if diff := cmp.Diff(wantEscaped, result.Escaped); diff != "" {
+					t.Errorf("escaped CPUs (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff([]int{wantThreadSamples, wantCPUSamples}, []int{threadSamples, cpuSamples}); diff != "" {
+					t.Errorf("thread and CPU samples (-want +got):\n%s", diff)
+				}
+			})
+		})
+	}
+}
+
+func TestWatchedFloodSamplesEveryReadyInstance(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		supervising := true
+		o := fakeOptions(t, "watched")
+		o.NoScope = false
+		h := &outputHost{fakeHost: &fakeHost{inScope: true, killScope: func(string) ([]byte, error) {
+			supervising = false
+			return nil, nil
+		}}, text: strings.Repeat("ok\n", 100), watch: true}
+		r := New(o)
+		r.host = h
+		spec := testSpec("watch-all-supervision", machine.R7, 500*time.Millisecond)
+		spec.Cores, spec.CPUs = []int{0, 1}, []int{0, 1}
+		started, err := r.Start(context.Background(), spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		trial := started.(*running)
+		trial.backend = watchClassifyingBackend{Backend: trial.backend, classify: func(line string) backend.Line {
+			if supervising {
+				time.Sleep(o.SampleInterval)
+			}
+			return classifyHelper(line)
+		}}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		threadSamples, cpuSamples := map[int]int{}, map[int]int{}
+		trial.host = samplingHost{fakeHost: h.fakeHost,
+			threads: func(pid int) ([]thread, error) {
+				threadSamples[pid]++
+				return nil, nil
+			},
+			usage: func(pid int) (usage, error) {
+				cpuSamples[pid]++
+				if cpuSamples[trial.instances[0].PID] == 3 && cpuSamples[trial.instances[1].PID] == 3 {
+					cancel()
+				}
+				return h.Usage(pid)
+			},
+		}
+		result, err := trial.Wait(ctx, &recorder{})
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("flood prevented timely cancellation: result=%+v err=%v", result, err)
+		}
+		want := map[int]int{trial.instances[0].PID: 3, trial.instances[1].PID: 3}
+		if diff := cmp.Diff(want, threadSamples); diff != "" {
+			t.Errorf("per-instance thread samples (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(want, cpuSamples); diff != "" {
+			t.Errorf("per-instance CPU samples (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(200*time.Millisecond, result.Ran); diff != "" {
+			t.Errorf("supervision duration (-want +got):\n%s", diff)
+		}
+	})
 }
 
 func TestWatchedPollFairness(t *testing.T) {

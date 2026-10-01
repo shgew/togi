@@ -117,18 +117,23 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 			decision = true
 		case <-ticker.C:
 			pollCtx, cancelPoll := pollContext()
-			for range len(t.instances) {
-				inst := t.instances[nextInstance]
-				nextInstance = (nextInstance + 1) % len(t.instances)
+			firstInstance := nextInstance
+			for i := range len(t.instances) {
+				index := (firstInstance + i) % len(t.instances)
+				inst := t.instances[index]
 				if contextError(watchCtx) != nil {
 					decision = true
 					break
 				}
-				if errorLine, _, _ := t.tail(pollCtx, inst, &result, report, false); errorLine {
-					decision = true
-					break
+				if contextError(pollCtx) == nil {
+					nextInstance = (index + 1) % len(t.instances)
+					if errorLine, _, _ := t.tail(pollCtx, inst, &result, report, false); errorLine {
+						decision = true
+						break
+					}
 				}
-				if contextError(pollCtx) != nil {
+				if contextError(watchCtx) != nil {
+					decision = true
 					break
 				}
 				if !inst.ready && t.inScope(inst) {
