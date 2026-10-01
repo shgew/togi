@@ -3,6 +3,7 @@
 package trial
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -41,6 +42,55 @@ func (h helperBackend) Prepare(_ machine.Workload, _ string, cpus []int) (backen
 	return launch, nil
 }
 func (h helperBackend) Classify(line string) backend.Line { return classifyHelper(line) }
+
+type helperIdentityReport struct {
+	UID, GID int
+	Groups   []int
+	Dir      string
+	Writes   map[string]string
+}
+
+func reportHelperIdentity() {
+	dir, err := os.Getwd()
+	if err != nil {
+		os.Exit(2)
+	}
+	groups, err := os.Getgroups()
+	if err != nil {
+		os.Exit(2)
+	}
+	report := helperIdentityReport{UID: os.Getuid(), GID: os.Getgid(), Groups: groups, Dir: dir, Writes: map[string]string{}}
+	for _, path := range []string{"created.txt", "input.txt", "stdout.log", "stderr.log", "../passed", "../retained", "../../control", "../../events.jsonl", "../../outside"} {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err == nil {
+			_, err = file.WriteString("backend write\n")
+			if closeErr := file.Close(); err == nil {
+				err = closeErr
+			}
+		}
+		switch {
+		case err == nil:
+			report.Writes[path] = "written"
+		case os.IsPermission(err):
+			report.Writes[path] = "denied"
+		default:
+			report.Writes[path] = err.Error()
+		}
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		os.Exit(2)
+	}
+	if err := os.WriteFile("identity.json.tmp", data, 0644); err != nil {
+		os.Exit(2)
+	}
+	if err := os.Rename("identity.json.tmp", "identity.json"); err != nil {
+		os.Exit(2)
+	}
+	fmt.Println("IDENTITY READY")
+	time.Sleep(time.Hour)
+	os.Exit(0)
+}
 
 func stageHelper(t *testing.T) string {
 	t.Helper()
@@ -108,6 +158,8 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(0)
 	}
 	switch mode {
+	case "backend-identity":
+		reportHelperIdentity()
 	case "hung-systemctl", "hung-journalctl":
 		fields, err := procStat("/proc/self/stat")
 		if err != nil {
