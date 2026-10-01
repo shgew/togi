@@ -1,7 +1,6 @@
 package simrun
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -775,115 +774,30 @@ func runInterruptionMatrix(t *testing.T, name string, cfg sim.Config, c config.C
 	if openIndex < 0 {
 		t.Fatalf("%s prefix missing opening event", name)
 	}
-	prefix = prefix[:openIndex+1]
-	lines := make([][]byte, len(prefix))
-	for i, e := range prefix {
-		lines[i] = e.Raw
-	}
-	snapshot := map[string][]byte{"events.jsonl": append(bytes.Join(lines, []byte{'\n'}), '\n')}
-	var boots []string
-	reasons := map[string]machine.ResetKind{}
-	for _, e := range prefix {
-		if !slices.Contains(boots, e.Boot) {
-			boots = append(boots, e.Boot)
-		}
-		if p, ok := e.Data.(*journal.CrashDetected); ok {
-			reasons[e.Boot] = p.ResetReason
-		}
-	}
-	run := func(t *testing.T, at int) []journal.Event {
-		t.Helper()
-		dir := t.TempDir()
-		for path, data := range snapshot {
-			if err := os.WriteFile(filepath.Join(dir, path), data, 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
-		resumed, err := sim.Resume(dir, cfg)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resumed.Boots = 0
-		m, err := sim.New(resumed)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for i := range boots {
-			kind := machine.ResetPowerLoss
-			if i+1 < len(boots) {
-				kind = reasons[boots[i+1]]
-			}
-			m.NextReset(kind)
-			m.Reboot()
-		}
-		closing, closed := false, false
-		crashed := false
-		in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m,
-			Until: func(e journal.Event) bool {
-				if closed {
-					return at < 0 || crashed
-				}
-				closed = closeWindow(e, &closing)
-				return closed && at < 0
-			},
-		}
-		if at >= 0 {
-			in.Wrap = func(j session.Journal) session.Journal {
-				if crashed {
-					return j
-				}
-				if at == 0 {
-					crashed = true
-					m.NextReset(machine.ResetPowerLoss)
-					m.Crash()
-					return j
-				}
-				return &matrixCrash{Journal: j, machine: m, at: at, crashed: &crashed}
-			}
-		}
-		stop, err := Simulate(context.Background(), in)
-		if err != nil {
-			t.Fatalf("%s append %d: %v", name, at, err)
-		}
-		if stop.Reason != session.StopSignal || !closed {
-			t.Fatalf("%s append %d: stop %+v deadend %+v, closing %t", name, at, stop, stop.DeadEnd, closed)
-		}
-		if at >= 0 && !crashed {
-			t.Fatalf("%s append %d did not crash", name, at)
-		}
-		events, torn, err := journal.Read(dir)
-		if err != nil || torn != nil {
-			t.Fatalf("%s append %d: journal read %v, torn %q", name, at, err, torn)
-		}
-		return events[len(prefix):]
-	}
-	reference := run(t, -1)
-	if len(reference) == 0 {
-		t.Fatal("empty reference window")
-	}
+	matrix := interruptionMatrix{name: name, cfg: cfg, config: c, prefix: prefix[:openIndex+1], closeWindow: closeWindow}
+	reference, accesses := matrix.run(t, -1, -1)
+	window := reference[len(matrix.prefix):]
 	want := matrixCommitments(reference)
-	t.Logf("%s interruption matrix: %d crash points", name, len(reference)+2)
-	for at := 0; at <= len(reference)+1; at++ {
-		t.Run(fmt.Sprint(at), func(t *testing.T) {
+	closing := false
+	closeAt := slices.IndexFunc(window, func(e journal.Event) bool { return closeWindow(e, &closing) }) + 1
+	if closeAt == 0 {
+		t.Fatalf("%s reference missing closing event", name)
+	}
+	for at := 0; at <= closeAt; at++ {
+		t.Run(fmt.Sprintf("append %d", at), func(t *testing.T) {
 			t.Parallel()
-			events := run(t, at)
-			got := matrixCommitments(events)
-			if diff := cmp.Diff(want, got); diff != "" {
-				if at == 0 {
-					t.Fatalf("%s before first append commitments (-want +got):\n%s", name, diff)
-				}
-				t.Fatalf("%s append %d/%d at %s commitments (-want +got):\n%s", name, at, len(reference), reference[min(at-1, len(reference)-1)].Kind, diff)
+			events, _ := matrix.run(t, at, -1)
+			assertMatrixDecisions(t, want, events)
+		})
+	}
+	for i, access := range accesses {
+		t.Run(fmt.Sprintf("smu %d %s core %d after %v", i+1, access.Op, access.Core, access.After), func(t *testing.T) {
+			t.Parallel()
+			events, observed := matrix.run(t, -1, i+1)
+			if diff := cmp.Diff(access, observed[i]); diff != "" {
+				t.Fatalf("interrupted another SMU window (-want +got):\n%s", diff)
 			}
-			seen := map[[2]int]bool{}
-			for _, e := range events {
-				if p, ok := e.Data.(*journal.HuntMask); ok {
-					key := [2]int{p.Hunt, p.Mask}
-					if seen[key] {
-						t.Fatalf("%s append %d: duplicated hunt.mask %v", name, at, key)
-					}
-					seen[key] = true
-				}
-			}
+			assertMatrixDecisions(t, want, events)
 		})
 	}
 }
@@ -892,15 +806,15 @@ type matrixCrash struct {
 	session.Journal
 	machine *sim.Machine
 	at      int
-	count   int
+	count   *int
 	crashed *bool
 }
 
 func (j *matrixCrash) Append(p journal.Payload, cause ...int) (journal.Event, error) {
 	e, err := j.Journal.Append(p, cause...)
 	if err == nil {
-		j.count++
-		if j.count == j.at {
+		*j.count++
+		if *j.count == j.at {
 			*j.crashed = true
 			j.machine.NextReset(machine.ResetPowerLoss)
 			j.machine.Crash()
@@ -908,37 +822,6 @@ func (j *matrixCrash) Append(p journal.Payload, cause ...int) (journal.Event, er
 		}
 	}
 	return e, err
-}
-
-type matrixResult struct {
-	Marks    [][]journal.JointMember
-	Backoffs [][3]int
-	Profile  []int
-	Ends     []string
-	Rounds   []string
-}
-
-func matrixCommitments(events []journal.Event) matrixResult {
-	var out matrixResult
-	for _, e := range events {
-		switch p := e.Data.(type) {
-		case *journal.MarkJoint:
-			out.Marks = append(out.Marks, p.Members)
-		case *journal.TunerDecision:
-			if p.Decision == journal.Backoff && p.Phase == journal.PhaseHunt {
-				out.Backoffs = append(out.Backoffs, [3]int{p.Core, p.FromOffset, p.ToOffset})
-			}
-		case *journal.HuntEnd:
-			out.Ends = append(out.Ends, fmt.Sprintf("%d:%s:%v", p.Hunt, p.Result, p.Cores))
-		case *journal.RefineRound:
-			if p.Event == journal.RotationEnd {
-				out.Rounds = append(out.Rounds, fmt.Sprintf("%d:%t", p.Round, p.Passed))
-			}
-		case *journal.ProfileChange:
-			out.Profile = p.To
-		}
-	}
-	return out
 }
 
 func TestScriptedJointAndIdleEdges(t *testing.T) {
