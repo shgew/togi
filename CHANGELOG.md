@@ -20,6 +20,9 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - The host lock is private by default, with explicit hardware-test group access instead of public-readable delegation. Legacy locks retain their inode during migration; quiesce old lock openers or reboot to revoke existing descriptors. Lock contention no longer restarts the tuning service or triggers restart-limit boot recovery ([#213]).
 - Journal-derived diagnostics and fields render terminal and bidi controls as visible escapes in human event lines, status, certificates, archive notices and dashboards, preventing cursor manipulation and forged output while preserving readable Unicode and raw journal evidence ([#214]).
 - Watched-output floods yield to cancellation and supervision deadlines; teardown shares one bounded drain across instances, preserving final computation-error evidence while unconfirmed output prevents a pass or further tuning ([#215]).
+### Changed
+
+- **BREAKING** The next `togi run` archives a ruleset-4 session and starts a ruleset-5 session seeded with its candidate edges and failed marks; its joint marks stay behind. In ruleset 5 a hunt anchors on the newest qualifying profile raised to the failing profile, so the hunt after a refinement round tests only the cores that round deepened instead of every core from all-zero ([#220]).
 
 ## [0.5.2] - 2026-09-30
 
@@ -305,3 +308,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#217]: https://github.com/shgew/togi/pull/217
 [#218]: https://github.com/shgew/togi/pull/218
 [#219]: https://github.com/shgew/togi/pull/219
+[#220]: https://github.com/shgew/togi/pull/220
