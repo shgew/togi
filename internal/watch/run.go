@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -47,23 +48,28 @@ func profile(out *os.File) colorprofile.Profile {
 
 // Run redraws the dashboard for the journal in dir on out once a second until ctx ends.
 func Run(ctx context.Context, dir string, out *os.File) error {
-	if _, err := fmt.Fprint(out, "\x1b[?25l\x1b[2J"); err != nil {
-		return fmt.Errorf("clear terminal: %w", err)
-	}
-	defer fmt.Fprint(out, "\x1b[0m\x1b[2J\x1b[H\x1b[?25h")
-
 	winch := make(chan os.Signal, 1)
 	signal.Notify(winch, syscall.SIGWINCH)
 	defer signal.Stop(winch)
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
+	return run(ctx, dir, out, func() (int, int, error) {
+		return term.GetSize(int(out.Fd()))
+	}, tick.C, winch, profile(out))
+}
+
+func run(ctx context.Context, dir string, out io.Writer, size func() (int, int, error), tick <-chan time.Time, winch <-chan os.Signal, p colorprofile.Profile) error {
+	if _, err := fmt.Fprint(out, "\x1b[?25l\x1b[2J"); err != nil {
+		return fmt.Errorf("clear terminal: %w", err)
+	}
+	defer fmt.Fprint(out, "\x1b[0m\x1b[2J\x1b[H\x1b[?25h")
 
 	src := source{dir: dir}
 	var buf bytes.Buffer
-	styled := &colorprofile.Writer{Forward: &buf, Profile: profile(out)}
+	styled := &colorprofile.Writer{Forward: &buf, Profile: p}
 	var lastW, lastH int
 	for {
-		w, h, err := term.GetSize(int(out.Fd()))
+		w, h, err := size()
 		if err != nil {
 			return fmt.Errorf("read terminal size: %w", err)
 		}
@@ -87,7 +93,7 @@ func Run(ctx context.Context, dir string, out *os.File) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-tick.C:
+		case <-tick:
 		case <-winch:
 		}
 	}
