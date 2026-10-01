@@ -9,7 +9,10 @@ import (
 )
 
 // GRUB clears the saved entry in the GRUB environment file Env with grub-editenv.
-type GRUB struct{ Env string }
+type GRUB struct {
+	Env string
+	run func(env string, args ...string) (string, error)
+}
 
 func (g GRUB) ClearSavedEntry() (before, after string, err error) {
 	if before, err = g.savedEntry(); err != nil {
@@ -41,15 +44,22 @@ func (g GRUB) savedEntry() (string, error) {
 }
 
 func (g GRUB) editenv(args ...string) (string, error) {
-	cmd := exec.Command("grub-editenv", append([]string{g.Env}, args...)...)
+	if g.run != nil {
+		return g.run(g.Env, args...)
+	}
+	return runGRUB(g.Env, args...)
+}
+
+func runGRUB(env string, args ...string) (string, error) {
+	cmd := exec.Command("grub-editenv", append([]string{env}, args...)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
-			return "", fmt.Errorf("grub-editenv %s %s: %w", g.Env, args[0], err)
+			return "", fmt.Errorf("grub-editenv %s %s: %w", env, args[0], err)
 		}
-		return "", fmt.Errorf("grub-editenv %s %s: %w: %s", g.Env, args[0], err, msg)
+		return "", fmt.Errorf("grub-editenv %s %s: %w: %s", env, args[0], err, msg)
 	}
 	return stdout.String(), nil
 }
