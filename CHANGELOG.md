@@ -16,6 +16,7 @@ All notable changes to togi are documented in this file. The format is based on 
 - An upgrade interrupted before recording its carried evidence retains the original source through a subsequent upgrade, instead of replacing it with the incomplete intervening session ([#246]).
 - Sessions started in the same second receive readable numeric suffixes when an archived journal or trial directory already uses the timestamp; carry traversal orders those suffixes numerically ([#247]).
 - A confirmed defect reset survives interruption: resume completes only the missing resets tied to the recorded answer, without asking again or resetting a core twice ([#249]).
+- Partial journal or state writes are rejected instead of committing incomplete records; after a journal write or fsync error, tuning stops and the next open rebuilds its sequence from surviving complete lines ([#251]).
 
 ## [0.7.0] - 2026-10-02
 
@@ -363,3 +364,4 @@ All notable changes to togi are documented in this file. The format is based on 
 [#246]: https://github.com/shgew/togi/pull/246
 [#247]: https://github.com/shgew/togi/pull/247
 [#249]: https://github.com/shgew/togi/pull/249
+[#251]: https://github.com/shgew/togi/pull/251
