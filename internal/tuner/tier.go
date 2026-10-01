@@ -27,19 +27,23 @@ func (s *State) ensureTierClock() {
 	s.tierClockDirty = false
 }
 
-func (s *State) clean() (int, map[machine.Regime]int) {
+func (s *State) clean() (int, map[machine.Regime]int, int, int) {
 	s.ensureTierClock()
 	total := 0
 	regimes := map[machine.Regime]int{}
+	peak, peakSeq := 0, 0
 	for _, entries := range s.ledger {
 		for _, e := range entries {
 			if e.seq > s.tierClockSeq && e.pass && e.condition == machine.Resident {
 				total += e.duration
 				regimes[e.class.regime] += e.duration
+				if e.hasTctl && (peakSeq == 0 || e.tctlMax > peak || e.tctlMax == peak && e.seq < peakSeq) {
+					peak, peakSeq = e.tctlMax, e.seq
+				}
 			}
 		}
 	}
-	return total, regimes
+	return total, regimes, peak, peakSeq
 }
 
 func (s *State) tierNext() (Action, bool) {
@@ -71,7 +75,7 @@ func (s *State) tierNext() (Action, bool) {
 	}
 	cause := []int{s.tierCause}
 	if reason == "" {
-		clean, _ := s.clean()
+		clean, _, _, _ := s.clean()
 		target = journal.TierBronze
 		reason = "every core is done and the profile passed a clean qualifying rotation"
 		if seq := s.creditedRotation(); seq > 0 {
@@ -108,7 +112,7 @@ func (s *State) projectGuard() *journal.GuardState {
 	if !s.projectionDirty && s.projectedGuard != nil {
 		return s.projectedGuard
 	}
-	clean, byRegime := s.clean()
+	clean, byRegime, peak, peakSeq := s.clean()
 	regimes := make([]journal.RegimeClean, len(machine.Regimes))
 	for i, r := range machine.Regimes {
 		regimes[i] = journal.RegimeClean{Regime: r, CleanS: byRegime[r], RateBoundPerH: rateBound(byRegime[r])}
@@ -133,7 +137,10 @@ func (s *State) projectGuard() *journal.GuardState {
 			}
 		}
 	}
-	out := &journal.GuardState{Rotation: g.rotation, RotationOpen: g.open, Steps: slices.Clone(g.steps), StepsDone: g.stepsDone, Profile: slices.Clone(g.profile), ProfileSeq: g.profileSeq, Qualifying: qualifying, Missing: missing, TierClockSeq: s.tierClockSeq, CleanRotations: s.QualifiedRotations(), CleanS: clean, Regimes: regimes, RateBoundPerH: rateBound(clean), TctlMaxC: g.tctlMax, TctlMaxSeq: g.tctlSeq}
+	out := &journal.GuardState{Rotation: g.rotation, RotationOpen: g.open, Steps: slices.Clone(g.steps), StepsDone: g.stepsDone, Profile: slices.Clone(g.profile), ProfileSeq: g.profileSeq, Qualifying: qualifying, Missing: missing, TierClockSeq: s.tierClockSeq, CleanRotations: s.QualifiedRotations(), CleanS: clean, Regimes: regimes, RateBoundPerH: rateBound(clean), TctlMaxSeq: peakSeq}
+	if peakSeq != 0 {
+		out.TctlMaxC = new(peak)
+	}
 	valid := map[trialClass]int{}
 	for k := range s.ledger {
 		valid[k] = s.latestFailure(k, g.profile, 0)

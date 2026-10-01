@@ -31,7 +31,7 @@ func TestTierClockResetsOnDeepFailure(t *testing.T) {
 	k := machine.Workloads(machine.R1)[0].ID
 	tr := Trial{Regime: machine.R1, Core: 0, Offset: -10, Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 86400, Workload: k}
 	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: 86400})
-	if total, _ := h.s.clean(); total != 86400 {
+	if total, _, _, _ := h.s.clean(); total != 86400 {
 		t.Fatalf("clean %d, want 86400", total)
 	}
 	failure := h.add(&journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Resident, Regime: machine.R6, Profile: []int{-10}})
@@ -39,7 +39,7 @@ func TestTierClockResetsOnDeepFailure(t *testing.T) {
 	if h.s.tierClockSeq != failure.Seq || h.s.tierClockSeq == prior {
 		t.Fatalf("tier clock #%d, want failure #%d", h.s.tierClockSeq, failure.Seq)
 	}
-	if total, _ := h.s.clean(); total != 0 {
+	if total, _, _, _ := h.s.clean(); total != 0 {
 		t.Fatalf("clean since failure %d", total)
 	}
 	st := projected(h)
@@ -149,5 +149,62 @@ func TestFirstProfileStartsTierClock(t *testing.T) {
 	}
 	if diff := cmp.Diff(profile.Seq, st.Guard.TierClockSeq); diff != "" {
 		t.Fatalf("first profile tier clock (-want +got):\n%s", diff)
+	}
+}
+
+func TestTemperatureFollowsCleanExposure(t *testing.T) {
+	h := residentHarness(t, -10, -12)
+	tr := Trial{Regime: machine.R6, Cores: []int{0, 1}, Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 120}
+	_, peak := h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: 120, TctlMaxC: new(92)})
+	before := projected(h).Guard
+	h.add(&journal.ProfileChange{From: []int{-10, -12}, To: []int{-9, -12}})
+	after := projected(h).Guard
+	if after.CleanS != before.CleanS || after.TierClockSeq != before.TierClockSeq || after.TctlMaxC == nil || *after.TctlMaxC != 92 || after.TctlMaxSeq != peak.Seq {
+		t.Fatalf("shallow change lost counted peak: before %+v, after %+v", before, after)
+	}
+	failure := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Profile: []int{-9, -12}})
+	after = projected(h).Guard
+	if after.TierClockSeq != failure.Seq || after.CleanS != 0 || after.TctlMaxC != nil || after.TctlMaxSeq != 0 {
+		t.Fatalf("clock failure retained old exposure or peak: %+v", after)
+	}
+	_, next := h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: 120, TctlMaxC: new(81)})
+	after = projected(h).Guard
+	if after.CleanS != 120 || after.TctlMaxC == nil || *after.TctlMaxC != 81 || after.TctlMaxSeq != next.Seq {
+		t.Fatalf("new counted peak: %+v", after)
+	}
+}
+
+func TestTemperatureCountsOnlyCleanResidentPasses(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -10}, coreStart{phase: journal.PhaseDone, offset: -12})
+	tr := Trial{Regime: machine.R6, Cores: []int{0, 1}, Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 120, Profile: []int{-10, -12}}
+	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: 120, TctlMaxC: new(99)})
+	h.add(&journal.ProfileChange{To: []int{-10, -12}})
+	for _, tc := range []struct {
+		condition machine.Condition
+		outcome   journal.Outcome
+	}{{machine.Masked, journal.OutcomePass}, {machine.Isolated, journal.OutcomePass}, {machine.Resident, journal.OutcomeFailure}, {machine.Resident, journal.OutcomeInconclusive}} {
+		tr.Condition = tc.condition
+		h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: tc.outcome, DurationS: 120, TctlMaxC: new(98)})
+	}
+	tr.Condition = machine.Resident
+	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: 120})
+	g := projected(h).Guard
+	if g.CleanS != 120 || g.TctlMaxC != nil || g.TctlMaxSeq != 0 {
+		t.Fatalf("uncounted or absent temperature supplied peak: %+v", g)
+	}
+	var first int
+	for _, r := range []machine.Regime{machine.R1, machine.R2} {
+		tr.Regime = r
+		_, end := h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: 120, TctlMaxC: new(84)})
+		if first == 0 {
+			first = end.Seq
+		}
+	}
+	for range 20 {
+		h.s.projectionDirty = true
+		g = projected(h).Guard
+		if g.TctlMaxC == nil || *g.TctlMaxC != 84 || g.TctlMaxSeq != first || g.CleanS != 360 {
+			t.Fatalf("equal peak must cite earliest counted pass: %+v", g)
+		}
 	}
 }

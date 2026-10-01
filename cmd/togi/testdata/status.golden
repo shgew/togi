@@ -37,4 +37,4 @@ R6      ycruncher-bkt-sftv4-idle         2       0.5      < 6.00/h
 R7      mprime-avx2-36k-248k-allcore     28      0.6      < 4.74/h
 R7      mprime-avx512-36k-248k-allcore   24      0.6      < 4.74/h
 R7      ycruncher-fftv4-n63-vt3-allcore  24      0.6      < 4.74/h
-Tctl max on this profile 76°C [#6602]
+Tctl max among counted trials 76°C [#6602]

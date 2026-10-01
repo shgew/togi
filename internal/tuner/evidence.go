@@ -22,6 +22,8 @@ type entry struct {
 	duration  int
 	condition machine.Condition
 	class     trialClass
+	tctlMax   int
+	hasTctl   bool
 }
 
 func classOf(p *journal.TrialIntent) trialClass {
@@ -111,6 +113,9 @@ func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *jo
 		}
 	}
 	e := entry{seq: ev.Seq, profile: profile, pass: end.Outcome == journal.OutcomePass, duration: end.DurationS, condition: p.Condition, class: k}
+	if end.TctlMaxC != nil {
+		e.tctlMax, e.hasTctl = *end.TctlMaxC, true
+	}
 	s.ledger[k] = append(s.ledger[k], e)
 	if !e.pass {
 		s.failures = append(s.failures, e)

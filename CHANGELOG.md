@@ -4,6 +4,10 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ## [Unreleased]
 
+### Fixed
+
+- `status` and `cert` derive the guard's Tctl peak and source from the same post-clock resident passes as clean hours, preserving the peak across shallow backoffs and clearing it when a qualifying failure restarts the clock ([#235]).
+
 ## [0.7.0] - 2026-10-02
 
 ### Changed
@@ -342,4 +346,5 @@ All notable changes to togi are documented in this file. The format is based on 
 [#222]: https://github.com/shgew/togi/pull/222
 [#227]: https://github.com/shgew/togi/pull/227
 [#228]: https://github.com/shgew/togi/pull/228
+[#235]: https://github.com/shgew/togi/pull/235
 [#243]: https://github.com/shgew/togi/pull/243
