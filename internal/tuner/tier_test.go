@@ -208,3 +208,100 @@ func TestTemperatureCountsOnlyCleanResidentPasses(t *testing.T) {
 		}
 	}
 }
+
+func TestTierExactBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		seconds int
+		from    journal.Tier
+		want    journal.Tier
+	}{
+		{"Bronze without exposure", 0, journal.TierNone, journal.TierBronze},
+		{"Silver minus one second", 24*3600 - 1, journal.TierNone, journal.TierBronze},
+		{"Silver exactly", 24 * 3600, journal.TierBronze, journal.TierSilver},
+		{"Silver plus one second", 24*3600 + 1, journal.TierBronze, journal.TierSilver},
+		{"Gold minus one second", 100*3600 - 1, journal.TierSilver, journal.TierSilver},
+		{"Gold exactly", 100 * 3600, journal.TierSilver, journal.TierGold},
+		{"Gold plus one second", 100*3600 + 1, journal.TierSilver, journal.TierGold},
+		{"already Bronze", 3600, journal.TierBronze, journal.TierBronze},
+		{"already Silver", 24 * 3600, journal.TierSilver, journal.TierSilver},
+		{"already Gold", 100 * 3600, journal.TierGold, journal.TierGold},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := qualifiedHarness(t, []int{-50}, nil)
+			h.add(&journal.TierChange{To: tc.from})
+			tr := Trial{Regime: machine.R6, Cores: []int{0}, Condition: machine.Resident, DurationS: tc.seconds}
+			_, end := h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: tc.seconds})
+			a, ok := h.s.tierNext()
+			if ok != (tc.from != tc.want) {
+				t.Fatalf("transition %+v, changed %t, want %s -> %s", a, ok, tc.from, tc.want)
+			}
+			if !ok {
+				return
+			}
+			change, ok := a.Payload.(*journal.TierChange)
+			if !ok || change.From != tc.from || change.To != tc.want {
+				t.Fatalf("tier %+v, want %s -> %s", a, tc.from, tc.want)
+			}
+			if diff := cmp.Diff([]int{end.Seq}, a.Cause); diff != "" {
+				t.Fatalf("tier cause (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestTierGatesPrecedeExposure(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(*testing.T) *harness
+	}{
+		{"search", func(t *testing.T) *harness {
+			t.Helper()
+			h := qualifiedHarness(t, []int{-50}, nil)
+			h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -50})
+			return h
+		}},
+		{"not done", func(t *testing.T) *harness {
+			t.Helper()
+			h := qualifiedHarness(t, []int{-50}, nil)
+			h.add(&journal.CorePhase{Core: 0, To: journal.PhaseResident, Offset: -49})
+			h.add(&journal.ProfileChange{From: []int{-50}, To: []int{-49}})
+			return h
+		}},
+		{"reachable refinement despite local done", func(t *testing.T) *harness {
+			t.Helper()
+			return qualifiedHarness(t, []int{-49, -49, -49, -50}, [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}})
+		}},
+		{"no qualifying rotation", func(t *testing.T) *harness {
+			t.Helper()
+			h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -50})
+			h.add(&journal.ProfileChange{To: []int{-50}})
+			h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: []machine.Regime{machine.R1}})
+			h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: false})
+			return h
+		}},
+		{"qualifying rotation predates deepening", func(t *testing.T) *harness {
+			t.Helper()
+			h := qualifiedHarness(t, []int{-49}, nil)
+			h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseRefine, Decision: journal.Deepen, FromOffset: -49, ToOffset: -50})
+			h.add(&journal.ProfileChange{From: []int{-49}, To: []int{-50}})
+			return h
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := tc.setup(t)
+			h.add(&journal.TierChange{To: journal.TierGold})
+			tr := Trial{Regime: machine.R6, Cores: h.s.ids(), Condition: machine.Resident, DurationS: 100*3600 + 1}
+			h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: tr.DurationS})
+			a, ok := h.s.tierNext()
+			change, typed := a.Payload.(*journal.TierChange)
+			if !ok || !typed || change.From != journal.TierGold || change.To != journal.TierNone {
+				t.Fatalf("high exposure bypassed %s: %+v", tc.name, a)
+			}
+			h.decide(a)
+			if a, ok := h.s.tierNext(); ok {
+				t.Fatalf("already none still changes: %+v", a)
+			}
+		})
+	}
+}
