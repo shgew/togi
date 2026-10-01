@@ -195,6 +195,51 @@ func TestHuntPairAndCommitmentResume(t *testing.T) {
 	}
 }
 
+func TestJointBackoffMovesToATestedProbe(t *testing.T) {
+	h := huntHarness(t, 4, 120)
+	fails := func(p []int) bool {
+		return p[0] <= -27 && p[1] <= -27 || p[0] == -26 && p[1] == -30
+	}
+	probes := map[int]int{}
+	for range 200 {
+		a := h.next()
+		if mask, ok := a.Payload.(*journal.HuntMask); ok {
+			e := h.decide(a)
+			if mask.Edge != nil {
+				probes[e.Seq] = mask.Edge.Offset
+			}
+			continue
+		}
+		if a.Kind == RunTrial {
+			runMask(h, a, fails(a.Trial.Profile))
+			continue
+		}
+		if _, ok := a.Payload.(*journal.HuntEnd); ok {
+			h.decide(a)
+			break
+		}
+		t.Fatalf("unexpected action %+v", a)
+	}
+	mark := h.next()
+	p, ok := mark.Payload.(*journal.MarkJoint)
+	if !ok || cmp.Diff([]journal.JointMember{{Core: 0, Offset: -26}, {Core: 1, Offset: -30}}, p.Members) != "" {
+		t.Fatalf("mark %+v", mark)
+	}
+	h.decide(mark)
+	back := h.next()
+	d, ok := back.Payload.(*journal.TunerDecision)
+	if !ok || d.Decision != journal.Backoff || d.Core != 0 || d.ToOffset != -25 {
+		t.Fatalf("commitment %+v, want core 00 to -25, where its probe passed with core 01 at -30", back)
+	}
+	if len(back.Cause) != 2 || probes[back.Cause[1]] != -25 {
+		t.Fatalf("commitment cause %v, want the joint mark and the passing probe", back.Cause)
+	}
+	h.decide(back)
+	if fails(h.s.offsets()) {
+		t.Fatalf("resident %v still fails; one count on core 01 would have left it failing", h.s.offsets())
+	}
+}
+
 func TestHuntFallbackAndFullCheck(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
