@@ -4,6 +4,10 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Changed
+
+- Inconclusive trials caused by malformed or short process-stat samples include the quoted content read, truncated to 256 bytes for diagnosis ([#PR](#TBD)).
+
 ## [0.5.2] - 2026-09-30
 
 ### Fixed
