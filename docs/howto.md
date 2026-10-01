@@ -53,6 +53,54 @@ To move to a newer release, change the tag in `url`, run `nix flake update togi`
 
 mprime and y-cruncher come from the host's `nixpkgs`. Do not update them during a session, for example with `nix flake update nixpkgs`: togi does not yet tell a new backend build's passes from the old one's, so passes earned by the old binaries would keep counting for the new ones.
 
+### Host lock and delegated hardware tests
+
+`run`, `reset` and hardware tests share one host lock across all state directories. A busy lock exits 3 before hardware, journal or boot-entry changes. Do not delete `/run/lock/togi.lock` to unblock it: replacing an inode while another process holds it would allow two owners. In a tuning boot, contention is not automatically restarted and never drives restart-limit GRUB clearing or reboot.
+
+The module provisions a root-owned mode-0600 lock during boot, before user logins, in NixOS's root-owned mode-0755 `/run/lock`. It leaves an existing lock's inode, owner and mode alone. On an upgrade from the public-readable lock, a root acquisition restricts legacy permissions in place, even if an old read-only holder is still running; it still exits 3 until that holder closes the lock. Changing permissions cannot revoke descriptors opened earlier. Stop all tuning and hardware-test processes and close their lock descriptors, or rebuild and reboot, to complete the security migration. A foreign-owned, symlink, special or multiply linked lock is refused, not deleted or repaired blindly; on Linux, rebooting into the rebuilt normal system recreates `/run` and provisions the trusted lock before users can create one.
+
+Delegated hardware tests need an explicitly authorized dedicated group, as well as their existing SMU/SMN permissions and delegated cpuset controller. Do not give this access to the unprivileged backend account. For example:
+
+```nix
+users.groups.togi-hardware = { };
+users.users.operator.extraGroups = [ "togi-hardware" ];
+services.togi.hardwareTestGroup = "togi-hardware";
+```
+
+Rebuild, then reboot to provision the root-owned mode-0660 lock for that group; log in again for group membership to take effect. The module's creation-only rule deliberately does not change an existing lock when this option changes, including when set back to `null`. A fresh boot applies the new authorization. Run `just hardware` sequentially as before; ordinary users without this group cannot open the lock, even if they can read togi's state.
+
+For a manual Linux install, protect the lock's parent from unprivileged writes, or provision it during trusted early boot before users can precreate its name in a sticky shared directory. After quiescing all lock users, this descriptor-based procedure provisions or migrates a single root-owned regular inode without following a lock symlink. The example requires an existing `togi-hardware` group; replace the final argument with `-` for root-only mode 0600. An existing foreign or multiply linked inode is refused without changing it, and a held lock makes the procedure fail rather than replacing it.
+
+```sh
+nix-shell -p python3 --run 'sudo "$(command -v python3)" - /run/lock/togi.lock togi-hardware' <<'PY'
+import fcntl
+import grp
+import os
+import stat
+import sys
+
+path, group = sys.argv[1:]
+parent = os.stat(os.path.dirname(path))
+if parent.st_uid != 0 or parent.st_mode & 0o022:
+    raise SystemExit("lock parent must be root-owned and not writable by other users")
+gid = 0 if group == "-" else grp.getgrnam(group).gr_gid
+fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+try:
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1:
+        raise SystemExit("refusing an unsafe or foreign lock inode")
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    os.fchmod(fd, 0o600)
+    os.fchown(fd, 0, gid)
+    if group != "-":
+        os.fchmod(fd, 0o660)
+finally:
+    os.close(fd)
+PY
+```
+
+On Darwin, only copied-journal `reset` uses `/tmp/togi.lock`: the first operator may create a private mode-0600 lock and reuse it without `sudo`. A different operator cannot rely on the old public-readable file; use the owning operator or explicitly provision root-owned group access after quiescing all old descriptors. Hardware tuning remains Linux-only.
+
 ## 2. Rebuild, then boot fresh
 
 Rebuild (`nixos-rebuild boot`, or your usual way), then reboot. In BIOS, every Curve Optimizer offset must be 0. Do not run another tool that writes Curve Optimizer offsets in the boot you tune from: togi reads the offsets it finds at the start of a session as the baseline.
@@ -93,7 +141,7 @@ The table labels those values `OFFSET` and shows each core's `CCD` and `SLOT` (0
 
 ## 6. Dead ends
 
-togi stops by itself at a dead end: failure at offset 0, an untrusted SMU, repeated trials without evidence, a missing backend, repeated stray crashes, an escaped backend thread, a thermal-trip reset or failed preflight. In the tuning boot it records the dead end, clears GRUB's saved entry, and shows the explanation on tty1. After a boot-loop dead end it reboots into the normal system. If `togi.service` instead fails without a dead end, systemd starts it again after a minute; once it has failed three times within 30 minutes, `togi-restart-limit.service` clears the entry and reboots into the normal system, with `leaveOnShutdown` on or off.
+togi stops by itself at a dead end: failure at offset 0, an untrusted SMU, repeated trials without evidence, a missing backend, repeated stray crashes, an escaped backend thread, a thermal-trip reset or failed preflight. In the tuning boot it records the dead end, clears GRUB's saved entry, and shows the explanation on tty1. After a boot-loop dead end it reboots into the normal system. If `togi.service` instead fails without a dead end or lock contention, systemd starts it again after a minute; once it has failed three times within 30 minutes, `togi-restart-limit.service` clears the entry and reboots into the normal system, with `leaveOnShutdown` on or off. Lock contention exits 3 without an automatic restart or recovery action: let the current owner finish, then start the service again.
 
 `togi status` shows the dead end, and the end of `togi events` shows it after the trial, failure, crash or SMU events it cites as evidence. Fix the cause, then run `sudo togi run` or pick the tuning boot again. A core that failed at 0 stops later runs until `sudo togi reset --core <N>`. A BIOS-context change instead automatically archives the old session and starts a seeded one carrying candidate edges but not failed marks. [runtime.md](spec/runtime.md#dead-end-actions) and [tuner.md](spec/tuner.md) describe the conditions.
 
