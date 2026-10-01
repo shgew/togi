@@ -164,18 +164,7 @@ A configured `candidate_edges` or `start_offsets` value for a core wins over wha
 
 To start over with nothing carried, run `sudo togi reset --all` instead of `togi run`. A session written by a newer ruleset or journal schema than the installed build's is still refused: install that build again, or archive the session with `sudo togi reset --all`.
 
-## 8. Moving from shycler
-
-togi was called shycler up to 0.3.1. The journal format and the tuning rules did not change, so a shycler session continues under togi, but every installed name did. Do this from the normal system, not the tuning boot:
-
-1. Make sure no tuning boot is pending: `sudo grub-editenv /boot/grub/grubenv list` must not show `saved_entry` naming the shycler entry. If it does, run `sudo grub-editenv /boot/grub/grubenv unset saved_entry`. With mirrored boot directories, use the GRUB environment of the first one. Stop any `shycler run` still going.
-2. Point the flake input at `github:shgew/togi`, import `inputs.togi.nixosModules.default`, and rename `services.shycler` to `services.togi`; the options under it keep their names.
-3. Move the state: `sudo mv /var/lib/shycler /var/lib/togi`.
-4. Rebuild. `/etc/togi/config.toml` replaces `/etc/shycler/config.toml`, and `togi status` shows the session where shycler left it.
-
-Pick "NixOS - togi" to continue tuning.
-
-## 9. When the tuning boot does not reach togi
+## 8. When the tuning boot does not reach togi
 
 The recovery in [section 6](#6-dead-ends) runs in `togi.service` and `togi-restart-limit.service`, so it cannot help when the tuning boot fails before userspace: GRUB keeps choosing "NixOS - togi" on every boot. When the tuning boot does reach a console, tty1 shows `togi watch` and tty3 togi's log.
 

@@ -1,8 +1,12 @@
 # Changelog
 
-All notable changes to togi, called shycler up to 0.3.1, are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+### Changed
+
+- Compatibility diagnostics consistently name togi in version comparisons and recovery commands ([#227]).
 
 ## [0.6.0] - 2026-10-01
 
@@ -114,7 +118,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ### Changed
 
-- **BREAKING** shycler is now togi, at `github.com/shgew/togi`: the command, the flake input `github:shgew/togi`, the NixOS options `services.togi`, the `togi*.service` units, `/var/lib/togi`, `/etc/togi/config.toml`, the GRUB entry "NixOS - togi" and the `TOGI_*` variables. The old option names have no alias. The journal format and tuning rules are unchanged: after clearing any pending tuning boot, renaming the options and running `sudo mv /var/lib/shycler /var/lib/togi`, the session continues ([how-to](https://github.com/shgew/togi/blob/main/docs/howto.md#8-moving-from-shycler), [#58]).
+- **BREAKING** Published as togi at `github.com/shgew/togi`, replacing the former installed names: the command, the flake input `github:shgew/togi`, the NixOS options `services.togi`, the `togi*.service` units, `/var/lib/togi`, `/etc/togi/config.toml`, the GRUB entry "NixOS - togi" and the `TOGI_*` variables. The former option names have no aliases. The journal format and tuning rules are unchanged ([#58]).
 
 ## [0.3.1] - 2026-09-27
 
@@ -126,7 +130,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ### Changed
 
-- **BREAKING** Confirmation runs mprime AVX-512 first, then the other eight trials in their previous order, so the workload most likely to fail no longer waits behind four passes; a ruleset-2 session must be archived with `shycler reset --all` ([#47]).
+- **BREAKING** Confirmation runs mprime AVX-512 first, then the other eight trials in their previous order, so the workload most likely to fail no longer waits behind four passes; a ruleset-2 session must be archived with `togi reset --all` ([#47]).
 
 ## [0.2.2] - 2026-09-27
 
@@ -138,21 +142,21 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 - `status` labels its Tctl line as the current profile's maximum ([#44]).
 - A trial closed after a crash or an interrupted run says how long after its start the last evidence was recorded, instead of a duration that read as measured ([#46]).
-- `shycler run` on a terminal shows the `watch` dashboard instead of one line per event, and prints the outcome when it stops, including the restored offsets and the reason after Ctrl-C; `--no-tui` keeps the lines ([#39]).
-- shycler moved to GitHub: the flake is now `github:shgew/shycler`, and the issue and pull request numbers in this changelog, the docs and defect messages refer to `github.com/shgew/shycler` ([#40]).
+- `togi run` on a terminal shows the `watch` dashboard instead of one line per event, and prints the outcome when it stops, including the restored offsets and the reason after Ctrl-C; `--no-tui` keeps the lines ([#39]).
+- togi moved to GitHub: the flake is now `github:shgew/togi`, and the issue and pull request numbers in this changelog, the docs and defect messages refer to `github.com/shgew/togi` ([#40]).
 - The default guard rotation runs R2, R7, R6 and R5 before R1, R3 and R4, so regimes that failed in guard or were never reached before a failure restarted the rotation run first; a rotation already open keeps its order ([#49]).
 
 ## [0.2.1] - 2026-09-26
 
 ### Added
 
-- `shycler watch` shows the session as a dashboard that redraws every second: stage, running trial, one tile per core with its offset, failed mark and regainable or settled depth, and the latest events. Off a terminal it prints one frame and exits ([#37]).
-- `services.shycler.tuning.consoleFont` sets the tuning boot's console font; by default the tuning boot uses the kernel's built-in font, whatever font the system sets, because the dashboard's digits need IBM437 block glyphs that fonts such as `Lat2-Terminus16` lack ([#37]).
+- `togi watch` shows the session as a dashboard that redraws every second: stage, running trial, one tile per core with its offset, failed mark and regainable or settled depth, and the latest events. Off a terminal it prints one frame and exits ([#37]).
+- `services.togi.tuning.consoleFont` sets the tuning boot's console font; by default the tuning boot uses the kernel's built-in font, whatever font the system sets, because the dashboard's digits need IBM437 block glyphs that fonts such as `Lat2-Terminus16` lack ([#37]).
 - `candidate_edges.<core>` starts a core of a new session in confirmation at the given offset instead of searching, so a session started again after `reset --all` can skip re-finding known edges ([#38]).
 
 ### Changed
 
-- The tuning boot shows `shycler watch` on tty1 instead of the service log, which moves to tty3 along with kernel messages and `/dev/console` output, so nothing else writes over the dashboard ([#37]).
+- The tuning boot shows `togi watch` on tty1 instead of the service log, which moves to tty3 along with kernel messages and `/dev/console` output, so nothing else writes over the dashboard ([#37]).
 
 ## [0.2.0] - 2026-09-26
 
@@ -165,49 +169,49 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 - **BREAKING** Bronze waits until every core is confirmed, no regainable depth remains and the current profile survives one clean rotation; settled depth alone does not block a tier ([#36]).
 - `status` and `cert` now show REGAINABLE and SETTLED depth separately rather than total unproven depth ([#36]).
 - `durations.guard_all_core_s` now requires at least 4 seconds so the separate R7 trials have time to run ([#36]).
-- **BREAKING** Tuning ruleset and journal schema are now 2: archive a ruleset-1 session with `sudo shycler reset --all` before starting again. Setting `start_offsets.<core>` to an archived failed mark plus one can skip early search steps, but is a hint, not evidence ([#36]).
+- **BREAKING** Tuning ruleset and journal schema are now 2: archive a ruleset-1 session with `sudo togi reset --all` before starting again. Setting `start_offsets.<core>` to an archived failed mark plus one can skip early search steps, but is a hint, not evidence ([#36]).
 
 ### Removed
 
-- **BREAKING** Removed `shycler regain` and its isolated re-confirmation; guard regains eligible depth automatically after clean rotations ([#36]).
+- **BREAKING** Removed `togi regain` and its isolated re-confirmation; guard regains eligible depth automatically after clean rotations ([#36]).
 - **BREAKING** Removed the escalation window and its journal event; each unattributed failure is blamed by its own trial's loaded cores ([#36]).
 
 ## [0.1.0] - 2026-09-26
 
 ### Added
 
-- Shutting down or rebooting the tuning boot on purpose clears GRUB's saved entry, so the next boot is the normal system; crash reboots still return to the tuning boot. `services.shycler.tuning.leaveOnShutdown = false` turns it off ([#34]).
-- The flake provides the package, dev shell and checks on aarch64-darwin for development; the VM test and hardware runs stay Linux-only, and `shycler run` there exits with an error ([#31]).
+- Shutting down or rebooting the tuning boot on purpose clears GRUB's saved entry, so the next boot is the normal system; crash reboots still return to the tuning boot. `services.togi.tuning.leaveOnShutdown = false` turns it off ([#34]).
+- The flake provides the package, dev shell and checks on aarch64-darwin for development; the VM test and hardware runs stay Linux-only, and `togi run` there exits with an error ([#31]).
 - On resume, `run` finds decisions made by a known, since-fixed bug and names the affected cores; `status` shows the reset command, and in a terminal `run` offers to reset them. The first entry is the false failure at power-off fixed in [#14] ([#28]).
 - Every session start and resume records the build's version, revision, ruleset and schema, and `run` refuses to resume a session written under a different ruleset or schema, naming the version that wrote it; in a tuning boot this is a dead end ([#26]).
 - `status`, `cert` and `events` warn when a journal was written under a different ruleset, and refuse one with a different schema ([#26]).
-- The run log and `shycler events` color failures and dead ends red, passed steps, confirmations and tiers green, backoffs yellow and inconclusive trials dim, on a terminal or in the system journal, where failures are logged at priority err; `NO_COLOR` turns it off ([#23]).
-- `shycler --version` prints the version and the git revision of the build ([#22]).
-- `sudo shycler run` tunes the real machine: offsets through `ryzen_smu` with a fuse-verified core-to-slot mapping, mprime and y-cruncher trials confined to their cores in systemd scopes, and machine checks read from the kernel log ([#11]).
+- The run log and `togi events` color failures and dead ends red, passed steps, confirmations and tiers green, backoffs yellow and inconclusive trials dim, on a terminal or in the system journal, where failures are logged at priority err; `NO_COLOR` turns it off ([#23]).
+- `togi --version` prints the version and the git revision of the build ([#22]).
+- `sudo togi run` tunes the real machine: offsets through `ryzen_smu` with a fuse-verified core-to-slot mapping, mprime and y-cruncher trials confined to their cores in systemd scopes, and machine checks read from the kernel log ([#11]).
 - Preflight checks the CPU, `ryzen_smu`, SMU readback, the slot mapping, both backends and `systemd-run` before a hardware run ([#11]).
-- `shycler run --tuning-boot <grubenv>` clears GRUB's saved entry at a dead end, and reboots into the normal system after a boot loop ([#11]).
-- The NixOS module `nixosModules.default` (`services.shycler`) and the GRUB tuning boot entry "shycler" that tunes unattended ([#11]).
+- `togi run --tuning-boot <grubenv>` clears GRUB's saved entry at a dead end, and reboots into the normal system after a boot loop ([#11]).
+- The NixOS module `nixosModules.default` (`services.togi`) and the GRUB tuning boot entry "togi" that tunes unattended ([#11]).
 - `run` records a clean stop when its terminal closes (SIGHUP) ([#11]).
-- The wordmark and tagline print above the usage when `shycler` runs without a command ([#9]).
-- `shycler regain` queues one count of regain on cores with unproven depth, and `shycler reset` restarts one core's search or archives the whole session ([#8]).
-- Durability tiers, `shycler status` for the session at a glance, and `shycler cert` for the certificate with the edges to enter in BIOS ([#7]).
+- The wordmark and tagline print above the usage when `togi` runs without a command ([#9]).
+- `togi regain` queues one count of regain on cores with unproven depth, and `togi reset` restarts one core's search or archives the whole session ([#8]).
+- Durability tiers, `togi status` for the session at a glance, and `togi cert` for the certificate with the edges to enter in BIOS ([#7]).
 - The guard: after every core is confirmed, all offsets are tested together in endless rotations through R1 to R7, backing off a core that fails and counting clean hours ([#6]).
-- `shycler run --sim <seed>` runs a whole session on a simulated machine, and a run after a crash attributes it to the action in flight and continues ([#5]).
+- `togi run --sim <seed>` runs a whole session on a simulated machine, and a run after a crash attributes it to the action in flight and continues ([#5]).
 - A seeded simulator of a 16-core Zen 5 machine, with hidden per-core edges, random failures and crashes ([#4]).
 - Per-core search, in steps of 5 and then 1 from the starting offset towards -50, and confirmation across regimes R1 to R5 at the candidate edge ([#3]).
-- The journal: every action and decision is recorded crash-safely in `events.jsonl`, and `shycler events` prints it, filtered by core, kind, trial or time ([#2]).
-- The `shycler` command, its TOML configuration, which rejects unknown keys and out-of-range values, and a Nix flake with the package and a dev shell ([#1]).
+- The journal: every action and decision is recorded crash-safely in `events.jsonl`, and `togi events` prints it, filtered by core, kind, trial or time ([#2]).
+- The `togi` command, its TOML configuration, which rejects unknown keys and out-of-range values, and a Nix flake with the package and a dev shell ([#1]).
 
 ### Changed
 
-- `shycler reset --all` also moves the trial work directories to `archive/<session-id>-trials/` ([#11]).
+- `togi reset --all` also moves the trial work directories to `archive/<session-id>-trials/` ([#11]).
 - Every command's `--help` gives a description and examples, lists its own flags before the global ones, and shows every flag in `--long` form ([#10]).
 - `run` writes every core back to its baseline, or to its current offset where that is shallower, before stopping cleanly or at a dead end, instead of leaving the tested offsets applied until the next reboot ([#12]).
 - A signal still interrupts the running trial, but `run` now records the decisions from that trial before stopping instead of leaving them to the next run ([#12]).
 
 ### Removed
 
-- `shycler run --sim`: simulate from a source checkout with `just sim` (`go run ./tools/sim`) ([#32]).
+- `togi run --sim`: simulate from a source checkout with `just sim` (`go run ./tools/sim`) ([#32]).
 
 ### Fixed
 
@@ -318,3 +322,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#220]: https://github.com/shgew/togi/pull/220
 [#221]: https://github.com/shgew/togi/pull/221
 [#222]: https://github.com/shgew/togi/pull/222
+[#227]: https://github.com/shgew/togi/pull/227

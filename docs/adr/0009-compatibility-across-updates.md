@@ -2,7 +2,7 @@ Refusal of older journals superseded by [ADR 0019](0019-a-ruleset-change-starts-
 
 # Compatibility across updates
 
-An unattended tuning session spans reboots, and the installed shycler build can change between them. Before 1.0 a changed tuning strategy or journal format may break an existing session, but the operator must see a clear refusal naming the build that wrote it and the way to archive it.
+An unattended tuning session spans reboots, and the installed togi build can change between them. Before 1.0 a changed tuning strategy or journal format may break an existing session, but the operator must see a clear refusal naming the build that wrote it and the way to archive it.
 
 ## Decision
 

@@ -16,4 +16,4 @@ At a candidate edge, each core runs R2 mprime AVX-512 36K-248K first, then the R
 
 ## Consequences
 
-The confirmation set changes, so the tuning ruleset becomes 3 while the journal schema remains 2: recorded event shapes and their interpretation have not changed. An active ruleset-2 session must be archived with `shycler reset --all` before tuning with this build. `candidate_edges` can start the new session in confirmation at known candidate offsets. R5 remains last, and the nine-trial cost when every workload passes is unchanged.
+The confirmation set changes, so the tuning ruleset becomes 3 while the journal schema remains 2: recorded event shapes and their interpretation have not changed. An active ruleset-2 session must be archived with `togi reset --all` before tuning with this build. `candidate_edges` can start the new session in confirmation at known candidate offsets. R5 remains last, and the nine-trial cost when every workload passes is unchanged.

@@ -54,6 +54,8 @@ Kind-specific fields are flat, snake_case and carry units in their names (`durat
 
 The first event is `session.start` with a flat build stamp: `version`, `rev`, `ruleset`, `schema` and `fixes`. `config.loaded` carries that stamp at every start or resume. This build uses ruleset 5 and journal schema 2. Missing ruleset means 1; absent fixes means 0. Added kinds and fields do not bump schema. Older journals are archived by transition, and newer journals are refused.
 
+Build compatibility diagnostics consistently identify the program as togi, regardless of the recorded version.
+
 One kind-to-payload constructor registry drives decoding and validates appends; an unregistered kind cannot be written. Within the same schema, `status`, `cert`, `events` and `watch` preserve unknown kinds as opaque events and skip facts they do not understand. `events` still displays their message and preserves their complete line with `--json`. `run` and both forms of `reset` refuse unknown kinds before modifying the journal, naming the kind and the journal and binary build stamps. This policy applies to builds from this change onward: 0.5.0 still rejects unknown kinds even for read-only commands.
 
 Example trial, abbreviated:

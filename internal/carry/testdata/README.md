@@ -4,11 +4,11 @@ These three journals come from one 16-core Zen 5 desktop: AMD Ryzen 9 9950X3D2, 
 
 | Journal | Schema | Ruleset | JSON records | Uncompressed SHA-256 |
 |---|---|---|---|---|
-| `20260924T204352Z.jsonl.gz` | 1 | 1 (implicit) | 11589 | `80ba0e2292f5a6cd4bc69e0feecee431dea5932bbacfd7d41207f6ed2c28b785` |
-| `20260926T151414Z.jsonl.gz` | 2 | 2 | 8124 | `edbd98ab6fba3eec1679e3b5b78e31352176ce503c4f0b51d455b47356979061` |
-| `20260927T221954Z.jsonl.gz` | 2 | 3 | 7083 | `28b085acb3f2bd2b2e662f6cd9726a6631e321738f813da94166fb3e39c68ade` |
+| `20260924T204352Z.jsonl.gz` | 1 | 1 (implicit) | 11589 | `63a97557b2a3dca1f4f865952008c82f551dea6b4cce021c29e024ec17bb2244` |
+| `20260926T151414Z.jsonl.gz` | 2 | 2 | 8124 | `71ef967da7515179e171f26e3e364cb631b69b210c4089d2cff43c281f9ae188` |
+| `20260927T221954Z.jsonl.gz` | 2 | 3 | 7083 | `e4392953e7b8cae8d49bbd20691acae08fdae18d1f0a6ade524e465452d0b4b7` |
 
-Copied from the three matching archived `.jsonl` files and gzip-compressed with a zero modification timestamp. Decompression reproduces the original bytes; nothing was redacted. Boot IDs and event times are retained because they affect replay and crash detection. The journals include public Nix store paths and the former `/etc/shycler/config.toml` configuration path.
+Copied from the three matching archived `.jsonl` files, with case-insensitive normalization of the former application name to `togi`, and gzip-compressed with a zero modification timestamp. The hashes above describe the normalized, decompressed bytes, not the original archive bytes. Only branding strings changed, including messages, scope names and configuration paths; all decision and event evidence, schema and ruleset values, boot IDs and event times are retained. The journals include public Nix store paths and the normalized `/etc/togi/config.toml` configuration path.
 
 Before committing, a scripted scan of every decompressed record checked hostname, user-name and serial-number fields and labels; the source machine's local hostnames and user names; DNS hostnames; home paths; email addresses and `@`; IPv4 and IPv6 addresses; and MAC addresses. All three journals had zero matches. The pull request demo includes the scan script and captured result. This pattern scan is not a guarantee that arbitrary unlabelled identifiers would be detected.
 
