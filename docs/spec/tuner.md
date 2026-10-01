@@ -62,7 +62,7 @@ A failure contradicting `n` valid passes on a profile at least as deep in the sa
 
 A failed mark is reached when `P[c] <= fail[c]`; a joint mark is reached when every member `m` has `P[m] <= J[m]`. A core is done at -50 or if one count deeper would reach a mark. Re-evaluate done after every mark or offset change. Marks accumulate until reset.
 
-Among safe profiles, choose the greatest total depth (most negative sum of counts); preferred-core ranking breaks ties, then core-id order. A joint-mark backoff chooses the member leaving the most depth reachable, breaking ties toward the lowest-ranked member. Only single-core attributed and hunt-culprit marks carry to a new session, not joint marks.
+Among safe profiles, choose the greatest total depth (most negative sum of counts); preferred-core ranking breaks ties, then core-id order. A joint-mark backoff first looks for a tested move: a passing edge probe of the hunt that moved one member with every other member at its failing offset. Of those whose move leaves the resident profile reaching no mark, it takes the one moving its member the fewest counts, breaking ties toward the lowest-ranked member, and moves that member to the probe offset, citing the mark and the probe. Without one, it chooses the member leaving the most depth reachable, breaking ties toward the lowest-ranked member, and moves it one count past the mark. Only single-core attributed and hunt-culprit marks carry to a new session, not joint marks.
 
 ## Isolated trial sequence
 
