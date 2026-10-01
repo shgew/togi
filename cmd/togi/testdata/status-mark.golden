@@ -24,7 +24,7 @@ CORE  CCD  OFFSET  PHASE  FAILED  JOINT  QUEUED  LAST DECISION
 joint marks:
   J1 core 03 -10 + core 11 -10, observed in hunt 1 [#4248]
 
-clean hours since the tier clock [#3704]: 7.3 h, failure rate < 0.42/h at 95%
+clean hours since the tier clock [#3704]: 7.3 h, failure rate < 0.42/h at 95%, if failures on the tested workloads occur at a constant rate
 REGIME  WORKLOAD                         STARTS  CLEAN H  RATE BOUND
 R1      mprime-sse-4k-21k                16      0.5      < 5.63/h
 R1      ycruncher-bkt-sftv4              16      0.5      < 5.63/h

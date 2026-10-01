@@ -21,7 +21,7 @@ CORE  CCD  OFFSET  PHASE  FAILED  JOINT  QUEUED  LAST DECISION
 14    1    0       done   -1      -      -       [#4840] core 14 backed off at -1; next 0 (attributed corrected_mce in resident R7 trial 0452; failed mark -1)
 15    1    -35     done   -36     -      -       [#5828] core 15 backed off at -36; next -35 (attributed computation_error in resident R5 trial 0605; failed mark -36)
 
-clean hours since the tier clock [#6364]: 7.7 h, failure rate < 0.40/h at 95%
+clean hours since the tier clock [#6364]: 7.7 h, failure rate < 0.40/h at 95%, if failures on the tested workloads occur at a constant rate
 REGIME  WORKLOAD                         STARTS  CLEAN H  RATE BOUND
 R1      mprime-sse-4k-21k                36      0.5      < 5.63/h
 R1      ycruncher-bkt-sftv4              32      0.5      < 5.63/h

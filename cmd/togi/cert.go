@@ -130,7 +130,9 @@ func writeCert(w io.Writer, events []journal.Event, st journal.State) {
 		if gs.TctlMaxC != nil {
 			fmt.Fprintln(w, withRef(fmt.Sprintf("  Tctl max %d°C", *gs.TctlMaxC), certWidth, journal.KindTrialEnd, gs.TctlMaxSeq))
 		}
-		fmt.Fprintln(w, "  Rate bound = 3 / clean hours, 95% confidence (rule of three).")
+		fmt.Fprintln(w, "  Rate bound = 3 / clean hours (rule of three).")
+		fmt.Fprintln(w, "  Fewer failures/hour than shown at 95%, if failures on the tested workloads")
+		fmt.Fprintln(w, "  occur at a constant rate.")
 		fmt.Fprintln(w, "  Starts = valid passes since each class last failed.")
 	}
 	fmt.Fprintln(w)

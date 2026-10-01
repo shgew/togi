@@ -244,7 +244,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	fmt.Fprintln(w)
 	overall := "no failure-rate bound yet"
 	if gs.RateBoundPerH != nil {
-		overall = fmt.Sprintf("failure rate %s at 95%%", rate(gs.RateBoundPerH))
+		overall = fmt.Sprintf("failure rate %s at 95%%, if failures on the tested workloads occur at a constant rate", rate(gs.RateBoundPerH))
 	}
 	fmt.Fprintf(w, "clean hours since the tier clock [#%d]: %s h, %s\n", gs.TierClockSeq, hours(gs.CleanS), overall)
 	tw = newTable(w)
