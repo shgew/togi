@@ -137,7 +137,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	fmt.Fprintf(w, "session %s started %s\n", st.Session.ID, st.Session.Start.UTC().Format(time.RFC3339))
 	writeBIOSLine(w, st.Session)
 	if f := st.InFlight; f != nil {
-		fmt.Fprintf(w, "in flight: [#%d] %s\n", f.Seq, f.Msg)
+		fmt.Fprintf(w, "in flight: [#%d] %s\n", f.Seq, journal.EscapeText(f.Msg))
 	} else {
 		fmt.Fprintln(w, "in flight: none")
 	}
@@ -146,7 +146,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	}
 	for _, e := range events {
 		if e.Kind == journal.KindSessionCarried {
-			fmt.Fprintf(w, "carried: [#%d] %s\n", e.Seq, e.Msg)
+			fmt.Fprintf(w, "carried: [#%d] %s\n", e.Seq, journal.EscapeText(e.Msg))
 		}
 	}
 
@@ -156,7 +156,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	for _, c := range st.Cores {
 		last := "-"
 		if d := c.LastDecision; d != nil {
-			last = fmt.Sprintf("[#%d] %s", d.Seq, d.Msg)
+			last = fmt.Sprintf("[#%d] %s", d.Seq, journal.EscapeText(d.Msg))
 		}
 		queued := cmp.Or(c.Queued, "-")
 		fmt.Fprintf(tw, "%02d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n", c.Core, c.CCD, c.Offset, c.Phase, mark(c.FailedMark), jointIDs(c.JointMarks), queued, last)
@@ -165,7 +165,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	writeJointMarks(w, st.JointMarks)
 	for _, e := range events {
 		if p, ok := e.Data.(*journal.MCE); ok && p.BetweenTrials {
-			fmt.Fprintf(w, "\nbetween-trial evidence [#%d]: %s\n", e.Seq, e.Msg)
+			fmt.Fprintf(w, "\nbetween-trial evidence [#%d]: %s\n", e.Seq, journal.EscapeText(e.Msg))
 		}
 	}
 	if h := st.Hunt; h != nil {
