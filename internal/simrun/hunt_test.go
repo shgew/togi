@@ -258,6 +258,45 @@ func TestHuntJointMark(t *testing.T) {
 	}
 }
 
+func TestSharedVoltageJointBacksOffOnlyTheShallowestCore(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(8)
+	edges := []int{-31, -38, -37, -34, -40, -40, -40, -40}
+	for i, edge := range edges {
+		cfg.Edges[i].Isolated = [5]int{edge, edge, edge, edge, edge}
+		cfg.Edges[i].Resident = [7]int{edge, edge, edge, edge, edge, edge, edge}
+	}
+	ccd0 := func(offset int) map[int]int { return map[int]int{0: offset, 1: offset, 2: offset, 3: offset} }
+	cfg.Joints = []sim.Joint{
+		{Members: ccd0(-27), Regimes: []machine.Regime{machine.R7}, Rate: 0.05},
+		{Members: ccd0(-23), Regimes: []machine.Regime{machine.R7}, Rate: 0.0009},
+	}
+	stop, events, _ := runHunt(t, cfg, nil, nil)
+	if stop.Reason != session.StopRotations {
+		t.Fatalf("stop %+v", stop)
+	}
+	hunts, crashes := 0, 0
+	var final []int
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.HuntStart:
+			hunts++
+		case *journal.CrashDetected:
+			crashes++
+		case *journal.ProfileChange:
+			final = p.To
+		}
+	}
+	if hunts > 8 || crashes > 40 {
+		t.Errorf("%d hunts and %d crashes, want at most 8 and 40", hunts, crashes)
+	}
+	want := slices.Clone(edges)
+	want[0] = -22
+	if diff := cmp.Diff(want, final); diff != "" {
+		t.Errorf("final profile (-want +got):\n%s", diff)
+	}
+}
+
 func TestHuntJointMisleadingMCE(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(16)
