@@ -193,6 +193,11 @@ func TestSamplesOpenFailureDuration(t *testing.T) {
 					time.Sleep(delay)
 					return nil, openErr
 				}
+				terminated := make(chan bool, 1)
+				check := time.AfterFunc(3500*time.Millisecond, func() {
+					terminated <- slices.Contains(h.recordedSignals(), fakeSignal{1000, syscall.SIGTERM})
+				})
+				defer check.Stop()
 				result, err := run.Wait(context.Background(), &recorder{})
 				if !errors.Is(err, openErr) {
 					t.Fatalf("open failure lost: %v", err)
@@ -202,6 +207,9 @@ func TestSamplesOpenFailureDuration(t *testing.T) {
 				}
 				if !slices.Contains(h.recordedSignals(), fakeSignal{1000, syscall.SIGTERM}) {
 					t.Fatal("backend was not terminated")
+				}
+				if delay > 3*time.Second && !<-terminated {
+					t.Fatal("sample setup delayed trial teardown past its deadline")
 				}
 			})
 		})
@@ -245,6 +253,81 @@ func TestSamplesPersistenceFailureEndsTrial(t *testing.T) {
 }
 
 func TestSlowSamplesPreserveScheduleAndJoinWriter(t *testing.T) {
+	for _, phase := range []string{"open", "sync"} {
+		t.Run(phase, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				o := fakeOptions(t, "work")
+				o.SampleInterval = 100 * time.Millisecond
+				r := New(o)
+				h := &fakeHost{}
+				r.host = h
+				run, err := r.Start(context.Background(), testSpec("slow-samples", machine.R6, 600*time.Millisecond))
+				if err != nil {
+					t.Fatal(err)
+				}
+				release := make(chan struct{})
+				f := &fakeSampleFile{}
+				run.(*running).openSamples = func(string) (sampleFile, error) {
+					if phase == "open" {
+						<-release
+					}
+					return f, nil
+				}
+				if phase == "sync" {
+					f.syncFn = func() error { <-release; return nil }
+				}
+				done := make(chan struct{})
+				var result machine.Result
+				go func() {
+					result, err = run.Wait(context.Background(), &recorder{})
+					close(done)
+				}()
+				time.Sleep(700 * time.Millisecond)
+				synctest.Wait()
+				wantSignals := []fakeSignal{
+					{1000, syscall.SIGSTOP},
+					{1000, syscall.SIGCONT},
+					{1000, syscall.SIGSTOP},
+					{1000, syscall.SIGCONT},
+					{1000, syscall.SIGTERM},
+					{1000, syscall.SIGKILL},
+				}
+				if diff := cmp.Diff(wantSignals, h.recordedSignals(), cmp.AllowUnexported(fakeSignal{})); diff != "" {
+					t.Error(diff)
+				}
+				select {
+				case <-done:
+					t.Error("Wait returned before the pending sample was durable")
+				default:
+				}
+				close(release)
+				<-done
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := cmp.Diff(600*time.Millisecond, result.Ran); diff != "" {
+					t.Fatal(diff)
+				}
+				want := []machine.TrialConditions{{ElapsedMS: 100}}
+				if phase == "sync" {
+					want = append(want, machine.TrialConditions{ElapsedMS: 200})
+				}
+				if diff := cmp.Diff(want, f.samples); diff != "" {
+					t.Fatal(diff)
+				}
+				if diff := cmp.Diff(len(want), f.syncs); diff != "" {
+					t.Fatal(diff)
+				}
+				if !f.closed {
+					t.Fatal("samples file remained open")
+				}
+			})
+		})
+	}
+}
+
+func TestSamplesSetupCancellation(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		o := fakeOptions(t, "work")
@@ -252,50 +335,41 @@ func TestSlowSamplesPreserveScheduleAndJoinWriter(t *testing.T) {
 		r := New(o)
 		h := &fakeHost{}
 		r.host = h
-		run, err := r.Start(context.Background(), testSpec("slow-samples", machine.R6, 600*time.Millisecond))
+		run, err := r.Start(context.Background(), testSpec("cancel-setup", machine.R1, time.Second))
 		if err != nil {
 			t.Fatal(err)
 		}
 		release := make(chan struct{})
-		f := &fakeSampleFile{syncFn: func() error { <-release; return nil }}
-		run.(*running).openSamples = func(string) (sampleFile, error) { return f, nil }
+		f := &fakeSampleFile{}
+		run.(*running).openSamples = func(string) (sampleFile, error) { <-release; return f, nil }
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		done := make(chan struct{})
 		var result machine.Result
 		go func() {
-			result, err = run.Wait(context.Background(), &recorder{})
+			result, err = run.Wait(ctx, &recorder{})
 			close(done)
 		}()
-		time.Sleep(700 * time.Millisecond)
+		time.Sleep(150 * time.Millisecond)
+		cancel()
 		synctest.Wait()
-		wantSignals := []fakeSignal{
-			{1000, syscall.SIGSTOP},
-			{1000, syscall.SIGCONT},
-			{1000, syscall.SIGSTOP},
-			{1000, syscall.SIGCONT},
-			{1000, syscall.SIGTERM},
-			{1000, syscall.SIGKILL},
-		}
-		if diff := cmp.Diff(wantSignals, h.recordedSignals(), cmp.AllowUnexported(fakeSignal{})); diff != "" {
-			t.Error(diff)
+		if !slices.Contains(h.recordedSignals(), fakeSignal{1000, syscall.SIGTERM}) {
+			t.Error("cancellation waited for sample setup before terminating the backend")
 		}
 		select {
 		case <-done:
-			t.Error("Wait returned before the pending sample was durable")
+			t.Error("Wait returned before sample setup completed")
 		default:
 		}
 		close(release)
 		<-done
-		if err != nil {
-			t.Fatal(err)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancellation lost: %v", err)
 		}
-		if diff := cmp.Diff(600*time.Millisecond, result.Ran); diff != "" {
+		if diff := cmp.Diff(150*time.Millisecond, result.Ran); diff != "" {
 			t.Fatal(diff)
 		}
-		want := []machine.TrialConditions{{ElapsedMS: 100}, {ElapsedMS: 200}}
-		if diff := cmp.Diff(want, f.samples); diff != "" {
-			t.Fatal(diff)
-		}
-		if diff := cmp.Diff(len(want), f.syncs); diff != "" {
+		if diff := cmp.Diff([]machine.TrialConditions{{ElapsedMS: 100}}, f.samples); diff != "" {
 			t.Fatal(diff)
 		}
 		if !f.closed {

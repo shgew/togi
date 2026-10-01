@@ -30,30 +30,30 @@ type cpuSample struct {
 
 func (t *running) Wait(ctx context.Context, report machine.Reporter) (result machine.Result, err error) {
 	started := time.Now()
-	samples, sampleErr := t.openSamples(filepath.Join(t.options.Dir, t.spec.ID))
-	if sampleErr != nil {
-		result.Ran = min(time.Since(started), t.spec.Duration)
-		return result, errors.Join(sampleErr, t.teardown(&result, report))
-	}
 	pendingSamples := make(chan machine.TrialConditions, 1)
 	sampleErrors := make(chan error, 1)
 	samplesDone := make(chan error, 1)
 	go func() {
-		var writeErr error
+		samples, writeErr := t.openSamples(filepath.Join(t.options.Dir, t.spec.ID))
+		if writeErr != nil {
+			sampleErrors <- writeErr
+			samplesDone <- writeErr
+			return
+		}
 		for sample := range pendingSamples {
 			if writeErr = appendSample(samples, sample); writeErr != nil {
 				sampleErrors <- writeErr
 				break
 			}
 		}
+		if closeErr := samples.Close(); closeErr != nil {
+			writeErr = errors.Join(writeErr, fmt.Errorf("close trial samples: %w", closeErr))
+		}
 		samplesDone <- writeErr
 	}()
 	defer func() {
 		close(pendingSamples)
 		err = errors.Join(err, <-samplesDone)
-		if closeErr := samples.Close(); closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("close trial samples: %w", closeErr))
-		}
 	}()
 	conditions := newConditionsSampler(t.options, t.spec, started)
 	watchCtx, cancelWatch := context.WithDeadline(ctx, started.Add(t.spec.Duration))
