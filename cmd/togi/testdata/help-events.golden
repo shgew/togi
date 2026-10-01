@@ -3,8 +3,10 @@ Usage: togi events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>]
 Print the journal, one readable line per event, oldest first. Filters combine,
 so you can narrow it to one core, one trial or a time window. A different
 ruleset warns before rendering, including --json; a different schema is
-refused. Readable lines are colored on terminals and in the system journal
-unless NO_COLOR is set.
+refused. Kind selectors must name a known exact kind or group; unknown names
+and explicitly empty lists are usage errors (exit 2). Valid filters with no
+matches print nothing and exit 0. Readable lines are colored on terminals and
+in the system journal unless NO_COLOR is set.
 
 Examples:
   togi events --core 3                   Everything that happened to core 3
@@ -14,7 +16,7 @@ Examples:
 Flags:
   --core <N>           only events naming core N
   --json               print raw, uncolored JSON events
-  --kind <kinds>       only these comma-separated kinds, or groups such as trial for every trial.* kind
+  --kind <kinds>       only these comma-separated known kinds, or groups such as trial for every trial.* kind
   --since <time>       only events at or after this RFC 3339 time
   --trial <ID>         only events of trial ID
   --until <time>       only events before this RFC 3339 time

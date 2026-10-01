@@ -182,7 +182,7 @@ togi events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--unt
 ```
 
 - `--core N`: events whose `core` is N, whose `cores` or `candidates` include N, or whose `members[].core` is N.
-- `--kind`: exact kinds, or a group when the entry has no `.` (`trial` matches every `trial.*` kind).
+- `--kind`: comma-separated known exact kinds, or a known group when the entry has no `.` (`trial` matches every `trial.*` kind). Names come from the binary's kind registry. An unknown name or explicitly empty list exits 2 with the error and valid names on stderr before reading the journal; a valid filter with no matches exits 0 with empty stdout.
 - `--trial ID`: events whose `trial` is ID.
 - `--since` (inclusive) and `--until` (exclusive): a time window.
 - `--json`: print the raw event lines instead.

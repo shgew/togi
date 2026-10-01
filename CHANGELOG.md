@@ -8,6 +8,10 @@ All notable changes to togi are documented in this file. The format is based on 
 
 - Compatibility diagnostics consistently name togi in version comparisons and recovery commands ([#227]).
 
+### Fixed
+
+- `events --kind` rejects unknown kind or group names and explicitly empty lists with a usage error and valid names on stderr, instead of silently returning an empty success ([#228]).
+
 ## [0.6.0] - 2026-10-01
 
 ### Changed
@@ -323,3 +327,4 @@ All notable changes to togi are documented in this file. The format is based on 
 [#221]: https://github.com/shgew/togi/pull/221
 [#222]: https://github.com/shgew/togi/pull/222
 [#227]: https://github.com/shgew/togi/pull/227
+[#228]: https://github.com/shgew/togi/pull/228

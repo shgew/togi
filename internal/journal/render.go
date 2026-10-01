@@ -114,3 +114,28 @@ func kindMatches(entry string, kind Kind) bool {
 	group, _, _ := strings.Cut(string(kind), ".")
 	return group == entry
 }
+
+func ValidateKindSelector(name string) error {
+	if _, ok := payloadConstructors[Kind(name)]; ok {
+		return nil
+	}
+	if name != "" && !strings.Contains(name, ".") {
+		for kind := range payloadConstructors {
+			if kindMatches(name, kind) {
+				return nil
+			}
+		}
+	}
+	names := make([]string, 0, 2*len(payloadConstructors))
+	for kind := range payloadConstructors {
+		names = append(names, string(kind))
+		group, _, _ := strings.Cut(string(kind), ".")
+		names = append(names, group)
+	}
+	slices.Sort(names)
+	names = slices.Compact(names)
+	if name == "" {
+		return fmt.Errorf("empty kind list; valid names: %s", strings.Join(names, ", "))
+	}
+	return fmt.Errorf("unknown kind or group %q; valid names: %s", name, strings.Join(names, ", "))
+}
