@@ -17,15 +17,15 @@ Ruleset 5 changes three hunt rules.
 - **A joint mark first backs off to a tested probe.** Among the hunt's passing edge probes that moved one member with every other member at its failing offset, the backoff takes the one moving its member the fewest counts, provided the resulting resident profile reaches no mark, and moves that member to the probe offset. The decision cites the mark and the probe. Without such a probe, the ADR 0020 rule applies: the member leaving the most depth reachable moves one count past the mark.
 - **Part and complement masks reuse earlier hunts' evidence.** They count every pass and failure of their class recorded after the newest `command.reset` of any core in the session under the ledger's usual profile rules. This boundary applies both when inferring a mask and while counting its new starts, including the projected count. A reset conservatively discards earlier reuse for every mask: one session-wide sequence boundary avoids tracking which loaded or nonzero cores each old profile depends on, and cannot restore evidence the operator reset to discard. Full and edge masks still infer only from evidence since their hunt started and count new starts since their mask started, because edge probes run near the edge, where 19 of 47 later probes failed although earlier evidence predicted a pass.
 
-On a simulated 16-core machine shaped after the session, with a CCD0 joint at -27 that fails within about 20 seconds and one at -23 that fails about one start in ten, five seeds of ruleset 5 and four of ruleset 4:
+On a simulated 16-core machine shaped after the session, with a CCD0 joint at -27 that fails within about 20 seconds and one at -23 that fails about one start in ten, sixteen seeds of ruleset 5 and four of ruleset 4:
 
 | | ruleset 4 | ruleset 5 |
 |---|---|---|
-| first qualifying rotation | 155–200 h | 24–38 h |
-| session through Bronze | 189–250 h | 40–46 h |
-| hunts | 38–52 | 6–8 |
-| crash reboots | 402–467 | 35–54 |
-| final profile | core 00 at -22, every other core at its edge | the same on four seeds; on one, core 00 at -23 and core 04 at -35, the same total, inside the rare -23 joint its starts did not catch |
+| first qualifying rotation | 155–200 h | 24–40 h |
+| session through Bronze | 189–250 h | 40–57 h, 13 of 16 seeds within 40–42 h |
+| hunts | 38–52 | 6–10 |
+| crash reboots | 402–467 | 35–64 |
+| final profile | core 00 at -22, every other core at its edge | the same on every seed |
 
 On the 25 default simulator seeds, the hunts, crashes and final profiles are unchanged, except for one extra crash on one seed, and six seeds finish 0.2 to 0.4 simulated hours sooner.
 
