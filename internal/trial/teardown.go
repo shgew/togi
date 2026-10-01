@@ -11,7 +11,11 @@ import (
 
 const teardownLimit = 15 * time.Second
 
-func terminate(host processHost, instances []*instance, scopes []string, deadline time.Time, grace time.Duration, recovered bool, collect func(time.Time) bool) error {
+var errOutputDrainUnconfirmed = errors.New("backend exit and output drain not confirmed before teardown deadline")
+
+// Collection runs during grace and after kill attempts. Watched partial lines
+// become final evidence only for instances whose owned writers were stopped.
+func terminate(host processHost, instances []*instance, scopes []string, deadline time.Time, grace time.Duration, recovered bool, collect func(until time.Time, final bool) bool) error {
 	graceDeadline := minTime(deadline, time.Now().Add(grace))
 	var cleanupErr error
 	if recovered {
@@ -22,22 +26,35 @@ func terminate(host processHost, instances []*instance, scopes []string, deadlin
 			_ = host.SignalGroup(inst.process, syscall.SIGTERM)
 		}
 	}
-	collect(graceDeadline)
+	collect(graceDeadline, false)
 	ctx, cancel := context.WithDeadline(context.Background(), minTime(deadline, time.Now().Add(2*time.Second)))
 	defer cancel()
 	for _, scope := range scopes {
 		out, err := host.KillScope(ctx, scope)
 		if err != nil && !scopeMissing(out, err) {
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("kill scope %s: %w: %s", scope, err, strings.TrimSpace(string(out))))
+			continue
+		}
+		for _, inst := range instances {
+			if inst.Scope == scope {
+				inst.writersStopped = true
+			}
 		}
 	}
 	for _, inst := range instances {
-		if err := host.SignalGroup(inst.process, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		err := host.SignalGroup(inst.process, syscall.SIGKILL)
+		if len(scopes) == 0 {
+			// NoScope helpers require a verified group kill. ESRCH may mean
+			// only the launcher exited, not that descendant writers stopped.
+			inst.writersStopped = err == nil
+		}
+		if err != nil && !errors.Is(err, syscall.ESRCH) {
+			inst.writersStopped = false
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("kill process group %d: %w", inst.PID, err))
 		}
 	}
-	if !collect(minTime(deadline, time.Now().Add(10*time.Second))) {
-		cleanupErr = errors.Join(cleanupErr, errors.New("backend exit and output drain not confirmed before teardown deadline"))
+	if !collect(minTime(deadline, time.Now().Add(10*time.Second)), true) {
+		cleanupErr = errors.Join(cleanupErr, errOutputDrainUnconfirmed)
 	}
 	return cleanupErr
 }

@@ -213,7 +213,7 @@ func TestQueuedExitBeforeTeardown(t *testing.T) {
 		trial.events <- exit
 		var rec recorder
 		var result machine.Result
-		trial.drainEvents(&result, &rec, true)
+		trial.drainEvents(context.Background(), &result, &rec, true)
 		if err := trial.teardown(&result, &rec); err != nil {
 			t.Fatal(err)
 		}

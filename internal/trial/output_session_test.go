@@ -2,10 +2,13 @@ package trial
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/backend"
 	"github.com/shgew/togi/internal/backend/ycruncher"
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
@@ -19,6 +22,7 @@ type outputSessionTrials struct {
 	t           *testing.T
 	runner      *Runner
 	capFirst    bool
+	configure   func(*running)
 	starts      int
 	trialEnded  bool
 	writesAfter int
@@ -31,6 +35,10 @@ func (s *outputSessionTrials) Start(ctx context.Context, spec machine.TrialSpec)
 		return nil, err
 	}
 	trial := started.(*running)
+	if s.configure != nil {
+		s.configure(trial)
+		return trial, nil
+	}
 	trial.backend = ycruncher.New("")
 	queueOutputConflict(s.t, trial, "Failed to set core affinity to core: 42", s.capFirst)
 	return trial, nil
@@ -115,4 +123,50 @@ func TestOutputLimitSessionContainmentDeadEnd(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestWatchedBacklogSessionContainmentDeadEnd(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		m, err := sim.New(sim.Config{Seed: 3, Cores: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		seams := m.Seams()
+		o := fakeOptions(t, "watched")
+		r := New(o)
+		r.host = &outputHost{fakeHost: &fakeHost{}, text: strings.Repeat("ok\n", 1000), watch: true}
+		trials := &outputSessionTrials{Trials: seams.Trials, t: t, runner: r, configure: func(trial *running) {
+			trial.backend = watchClassifyingBackend{Backend: trial.backend, classify: func(line string) backend.Line {
+				time.Sleep(time.Second)
+				return classifyHelper(line)
+			}}
+		}}
+		seams.Trials = trials
+		seams.SMU = outputSessionSMU{SMU: seams.SMU, trials: trials}
+		boot, err := seams.Host.BootID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		j, err := journal.Open(t.TempDir(), journal.Options{Boot: boot, Now: m.Now, Monotonic: m.Monotonic, Build: session.Build()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer j.Close()
+		stop, err := session.Run(context.Background(), session.Input{Config: config.Default(), Boot: boot, Journal: outputSessionJournal{Journal: j, trials: trials}, Machine: seams, Rotations: 1})
+		if err != nil || stop.Reason != session.StopDeadEnd || stop.DeadEnd == nil || stop.DeadEnd.Condition != journal.DeadEndContainment {
+			t.Fatalf("undrained watched output: stop=%s dead end=%+v err=%v", stop.Reason, stop.DeadEnd, err)
+		}
+		if trials.starts != 1 || trials.writesAfter != 0 {
+			t.Fatalf("continued after watched drain deadline: starts=%d profile writes=%d", trials.starts, trials.writesAfter)
+		}
+		var ends []*journal.TrialEnd
+		for _, event := range j.Events() {
+			if end, ok := event.Data.(*journal.TrialEnd); ok {
+				ends = append(ends, end)
+			}
+		}
+		if len(ends) != 1 || ends[0].Outcome != journal.OutcomeInconclusive || ends[0].ContainmentError == "" {
+			t.Fatalf("undrained watched output could pass: ends=%+v", ends)
+		}
+	})
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -132,6 +133,16 @@ func TestHelperProcess(t *testing.T) {
 			}
 		}
 		time.Sleep(5 * time.Second)
+		os.Exit(0)
+	case "watched-flood":
+		// Keep the owned process group alive until verified SIGKILL confirms EOF.
+		signal.Ignore(syscall.SIGTERM)
+		text := strings.Repeat("ok\n", 4*1024*1024/len("ok\n")) + "COMPUTE ERROR"
+		if err := os.WriteFile("results.txt", []byte(text), 0644); err != nil {
+			os.Exit(2)
+		}
+		fmt.Println("WATCHED READY")
+		time.Sleep(time.Hour)
 		os.Exit(0)
 	case "watched":
 		if err := os.WriteFile("results.txt", []byte("COMPUTE ERROR\n"), 0644); err != nil {

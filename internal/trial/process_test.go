@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/backend"
 	"github.com/shgew/togi/internal/backend/ycruncher"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -479,4 +480,76 @@ func TestProcessRelativeTrialDirectory(t *testing.T) {
 		t.Fatalf("helper working-directory output = %q, err = %v", data, err)
 	}
 	t.Log("read-only staged helper executed and wrote watched output in a relative trial directory; no host scopes")
+}
+
+func TestProcessWatchedFloodCancellation(t *testing.T) {
+	o := testOptions(t, "watched-flood")
+	o.SampleInterval = 0
+	spec := testSpec("watched-flood", machine.R1, time.Minute)
+	spec.CPUs = []int{o.Cores[0].CPUs[0]}
+	started, err := New(o).Start(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trial := started.(*running)
+	t.Cleanup(func() { _ = trial.Stop() })
+	timeout := time.NewTimer(5 * time.Second)
+	defer timeout.Stop()
+	ready := false
+	for !ready {
+		select {
+		case event := <-trial.events:
+			if event.exit || event.err != nil {
+				t.Fatalf("helper failed before watched flood was ready: %+v", event)
+			}
+			ready = event.line == "WATCHED READY"
+		case <-timeout.C:
+			t.Fatal("helper did not prepare disposable watched output")
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cancelled := false
+	trial.backend = watchClassifyingBackend{Backend: trial.backend, classify: func(line string) backend.Line {
+		if line == "ok" && !cancelled {
+			cancelled = true
+			cancel()
+		}
+		return classifyHelper(line)
+	}}
+	begin := time.Now()
+	var rec outputEvidenceRecorder
+	result, err := trial.Wait(ctx, &rec)
+	elapsed := time.Since(begin)
+	if !cancelled || !errors.Is(err, context.Canceled) || errors.Is(err, machine.ErrContainment) || result.Signal != machine.ComputationError || result.Inconclusive != "" {
+		t.Fatalf("watched flood cancellation: result=%+v err=%v", result, err)
+	}
+	supervisionLimit := trial.options.SampleInterval + time.Second
+	if result.Ran > supervisionLimit || elapsed > teardownLimit+supervisionLimit {
+		t.Fatalf("watched flood delayed supervision: ran=%s total=%s", result.Ran, elapsed)
+	}
+	want := []reportedOutputSignal{{spec.Cores[0], machine.ComputationError, "COMPUTE ERROR"}}
+	if diff := cmp.Diff(want, rec.diagnostics); diff != "" {
+		t.Fatalf("final watched computation diagnostic (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]machine.Signal{machine.ComputationError}, rec.signals); diff != "" {
+		t.Fatalf("final watched signal (-want +got):\n%s", diff)
+	}
+	inst := trial.instances[0]
+	info, err := os.Stat(inst.watch[0].path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inst.watch[0].offset != info.Size() || len(inst.watch[0].lines.pending) != 0 {
+		t.Fatalf("watched flood not fully drained: offset=%d size=%d pending=%q", inst.watch[0].offset, info.Size(), inst.watch[0].lines.pending)
+	}
+	select {
+	case <-inst.joined:
+	default:
+		t.Fatal("helper process or output readers remain")
+	}
+	if alive, err := trial.host.ProcessAlive(scopeProcess{PID: inst.PID, Start: inst.process.(*execProcess).start}); err != nil || alive {
+		t.Fatalf("helper remains: alive=%t err=%v", alive, err)
+	}
+	t.Logf("disposable %d-byte short-line flood: production sample interval %s, cancellation after %.3fs, final unterminated computation error exactly once, complete drain and joined helper in %.3fs; no sudo or host scopes", info.Size(), trial.options.SampleInterval, result.Ran.Seconds(), elapsed.Seconds())
 }
