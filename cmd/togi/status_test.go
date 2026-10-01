@@ -2,28 +2,24 @@ package main
 
 import (
 	"bytes"
-	"context"
+	"compress/gzip"
 	"crypto/sha256"
 	"fmt"
-	"io/fs"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
-	"github.com/shgew/togi/internal/sim"
-	"github.com/shgew/togi/internal/simrun"
 	"github.com/shgew/togi/internal/watch"
 )
 
@@ -31,8 +27,8 @@ func TestStatusAndCert(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	simulated(t, dir)
-	st, err := journal.ReadState(dir)
+	renderFixture(t, dir, "concluded")
+	_, st, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,8 +121,8 @@ func TestCertResidentOffsets(t *testing.T) {
 func TestBetweenTrialMCEReadOnlyViews(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	simulated(t, dir)
-	before, err := journal.ReadState(dir)
+	renderFixture(t, dir, "concluded")
+	_, before, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,16 +161,6 @@ func TestBetweenTrialMCEReadOnlyViews(t *testing.T) {
 
 func TestStatusJointMarkAndOpenHunt(t *testing.T) {
 	t.Parallel()
-	model := sim.DefaultModel()
-	model.PastEdgeRate = 1
-	model.Signals = map[machine.Signal]float64{machine.Crash: 1}
-	model.CrashMCE = 0
-	edges := make([]sim.Edges, 16)
-	for i := range edges {
-		edges[i].Isolated = [5]int{-10, -10, -10, -10, -10}
-		edges[i].Resident = [7]int{-10, -10, -10, -10, -10, -10, -10}
-	}
-	cfg := sim.Config{Seed: 1, Cores: 16, Edges: edges, Model: &model, Joints: []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}}
 	for _, tc := range []struct {
 		name  string
 		until journal.Kind
@@ -185,23 +171,7 @@ func TestStatusJointMarkAndOpenHunt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
-			m, err := sim.New(cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			in := simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}
-			if tc.until != "" {
-				maskStarted := false
-				in.Until = func(e journal.Event) bool {
-					if e.Kind == tc.until {
-						maskStarted = true
-					}
-					return maskStarted && e.Kind == journal.KindTrialStart
-				}
-			}
-			if _, err := simrun.Simulate(context.Background(), in); err != nil {
-				t.Fatal(err)
-			}
+			renderFixture(t, dir, tc.name)
 			events, st, _, err := replayDir(dir)
 			if err != nil {
 				t.Fatal(err)
@@ -268,7 +238,7 @@ func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	simulated(t, dir)
+	renderFixture(t, dir, "concluded")
 	record := func(payload journal.Payload) {
 		t.Helper()
 		j, err := journal.Open(dir, journal.Options{Boot: "status-test", Build: session.Build()})
@@ -329,54 +299,25 @@ func TestRateRoundsUp(t *testing.T) {
 	}
 }
 
-var (
-	simulatedOnce  sync.Once
-	simulatedFiles map[string][]byte
-	simulatedErr   error
-)
-
-func simulated(t *testing.T, dir string) {
+func renderFixture(t *testing.T, dir, name string) {
 	t.Helper()
-	simulatedOnce.Do(func() {
-		src := t.TempDir()
-		m, err := sim.New(sim.Config{Seed: 1})
-		if err != nil {
-			simulatedErr = err
-			return
-		}
-		stop, err := simrun.Simulate(context.Background(), simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Rotations: 2})
-		if err != nil || stop.Reason != session.StopRotations {
-			simulatedErr = fmt.Errorf("simulate: %+v, %w", stop, err)
-			return
-		}
-		simulatedFiles = make(map[string][]byte)
-		simulatedErr = filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || !d.Type().IsRegular() {
-				return err
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			rel, err := filepath.Rel(src, path)
-			if err != nil {
-				return err
-			}
-			simulatedFiles[rel] = data
-			return nil
-		})
-	})
-	if simulatedErr != nil {
-		t.Fatal(simulatedErr)
+	f, err := os.Open(filepath.Join("testdata", "render-"+name+".jsonl.gz"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for rel, data := range simulatedFiles {
-		path := filepath.Join(dir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, data, 0o644); err != nil {
-			t.Fatal(err)
-		}
+	defer f.Close()
+	r, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	out, err := os.Create(filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, r); err != nil {
+		t.Fatal(err)
 	}
 }
 
