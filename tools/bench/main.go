@@ -1,0 +1,347 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/BurntSushi/toml"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/tuner"
+)
+
+type scenario struct {
+	Name    string   `toml:"name"`
+	Machine string   `toml:"machine"`
+	Dev     []uint64 `toml:"dev"`
+	Holdout []uint64 `toml:"holdout"`
+}
+type runSpec struct {
+	scenario scenario
+	seed     uint64
+	split    string
+	cfg      sim.Config
+}
+type options struct {
+	suite, split, out, baseline, keep string
+	jobs                              int
+	timeout                           time.Duration
+}
+
+func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+
+func run(args []string, stdout, stderr io.Writer) int {
+	var o options
+	flags := flag.NewFlagSet("bench", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.StringVar(&o.suite, "suite", "tools/bench/suite.toml", "scenario TOML file; machine paths are relative to this file")
+	flags.StringVar(&o.split, "split", "dev", "seed split: dev, holdout, or all")
+	flags.StringVar(&o.out, "out", "", "write one JSON object per run to this file")
+	flags.StringVar(&o.baseline, "baseline", "", "compare against a JSON Lines baseline")
+	flags.StringVar(&o.keep, "keep", "", "keep run directories under this directory")
+	flags.IntVar(&o.jobs, "jobs", runtime.NumCPU(), "maximum parallel simulator subprocesses")
+	flags.DurationVar(&o.timeout, "timeout", 180*time.Second, "wall timeout for each simulator subprocess")
+	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return 0
+	} else if err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 || o.jobs < 1 || o.timeout <= 0 || (o.split != "dev" && o.split != "holdout" && o.split != "all") {
+		fmt.Fprintln(stderr, "bench: require no positional arguments, positive --jobs and --timeout, and --split dev|holdout|all")
+		return 2
+	}
+	if err := execute(o, stdout, stderr); err != nil {
+		fmt.Fprintf(stderr, "bench: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func loadRuns(path, split string) ([]runSpec, error) {
+	var suite struct {
+		Scenarios []scenario `toml:"scenario"`
+	}
+	md, err := toml.DecodeFile(path, &suite)
+	if err != nil {
+		return nil, fmt.Errorf("load suite: %w", err)
+	}
+	if len(md.Undecoded()) > 0 {
+		return nil, fmt.Errorf("unknown suite key %s", md.Undecoded()[0])
+	}
+	seen := make(map[string]bool)
+	var runs []runSpec
+	for _, s := range suite.Scenarios {
+		if s.Name == "" || seen[s.Name] || filepath.Base(s.Name) != s.Name || s.Name == "." || s.Name == ".." {
+			return nil, fmt.Errorf("invalid or duplicate scenario %q", s.Name)
+		}
+		seen[s.Name] = true
+		cfg := sim.Config{}
+		if s.Machine != "" {
+			if !filepath.IsAbs(s.Machine) {
+				s.Machine = filepath.Join(filepath.Dir(path), s.Machine)
+			}
+			cfg, err = sim.LoadMachine(s.Machine)
+			if err != nil {
+				return nil, fmt.Errorf("load scenario %s: %w", s.Name, err)
+			}
+		}
+		seeds := make(map[uint64]bool)
+		for _, group := range []struct {
+			name  string
+			seeds []uint64
+		}{{"dev", s.Dev}, {"holdout", s.Holdout}} {
+			for _, seed := range group.seeds {
+				if seeds[seed] {
+					return nil, fmt.Errorf("scenario %s repeats seed %d", s.Name, seed)
+				}
+				seeds[seed] = true
+				if split == "all" || split == group.name {
+					runs = append(runs, runSpec{s, seed, group.name, cfg})
+				}
+			}
+		}
+	}
+	if len(runs) == 0 {
+		return nil, errors.New("suite has no selected runs")
+	}
+	return runs, nil
+}
+
+func gitOutput(args ...string) (string, error) {
+	b, err := exec.Command("git", args...).Output()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+func treeDirty(out string) (bool, error) {
+	root, err := gitOutput("rev-parse", "--show-toplevel")
+	if err != nil {
+		return false, err
+	}
+	abs := ""
+	if out != "" {
+		abs, err = filepath.Abs(out)
+		if err != nil {
+			return false, fmt.Errorf("resolve output: %w", err)
+		}
+	}
+	b, err := exec.Command("git", "status", "--porcelain", "-z", "--untracked-files=all").Output()
+	if err != nil {
+		return false, fmt.Errorf("git status: %w", err)
+	}
+	entries := strings.Split(string(b), "\x00")
+	for i := 0; i < len(entries); i++ {
+		e := entries[i]
+		if len(e) < 4 {
+			continue
+		}
+		if filepath.Join(root, e[3:]) != abs {
+			return true, nil
+		}
+		if strings.ContainsAny(e[:2], "RC") {
+			i++
+			if i < len(entries) && filepath.Join(root, entries[i]) != abs {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func execute(o options, stdout, stderr io.Writer) error {
+	started := time.Now()
+	runs, err := loadRuns(o.suite, o.split)
+	if err != nil {
+		return err
+	}
+	var baseline []result
+	if o.baseline != "" {
+		baseline, err = readResults(o.baseline)
+		if err != nil {
+			return err
+		}
+	}
+	commit, err := gitOutput("rev-parse", "--short", "HEAD")
+	if err != nil {
+		return err
+	}
+	dirty, err := treeDirty(o.out)
+	if err != nil {
+		return err
+	}
+	buildDir, err := os.MkdirTemp("", "togi-bench-build-")
+	if err != nil {
+		return fmt.Errorf("create build directory: %w", err)
+	}
+	defer os.RemoveAll(buildDir)
+	binary := filepath.Join(buildDir, "sim")
+	build := exec.Command("go", "build", "-o", binary, "./tools/sim")
+	build.Stdout, build.Stderr = stderr, stderr
+	if err := build.Run(); err != nil {
+		return fmt.Errorf("build simulator: %w", err)
+	}
+	var runRoot string
+	if o.keep == "" {
+		runRoot, err = os.MkdirTemp("", "togi-bench-runs-")
+	} else {
+		err = os.MkdirAll(o.keep, 0755)
+		if err == nil {
+			runRoot, err = os.MkdirTemp(o.keep, "bench-")
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("create run directory: %w", err)
+	}
+	if o.keep == "" {
+		defer os.RemoveAll(runRoot)
+	} else {
+		fmt.Fprintf(stderr, "bench: keeping runs in %s\n", runRoot)
+	}
+	results := make([]result, len(runs))
+	errs := make([]error, len(runs))
+	queue := make(chan int)
+	var wg sync.WaitGroup
+	for range min(o.jobs, len(runs)) {
+		wg.Go(func() {
+			for i := range queue {
+				r, err := simulate(binary, runRoot, runs[i], o.timeout)
+				r.Commit, r.Dirty, r.Ruleset = commit, dirty, tuner.Ruleset
+				results[i], errs[i] = r, err
+			}
+		})
+	}
+	for i := range runs {
+		queue <- i
+	}
+	close(queue)
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	if o.out != "" {
+		f, err := os.Create(o.out)
+		if err != nil {
+			return fmt.Errorf("create output: %w", err)
+		}
+		encoder := json.NewEncoder(f)
+		for _, r := range results {
+			if err := encoder.Encode(r); err != nil {
+				f.Close()
+				return fmt.Errorf("write output: %w", err)
+			}
+		}
+		if err := f.Close(); err != nil {
+			return fmt.Errorf("close output: %w", err)
+		}
+	}
+	reportSummary(stdout, results)
+	if o.baseline != "" {
+		reportComparison(stdout, results, baseline)
+	}
+	fmt.Fprintf(stdout, "harness_wall_s=%.3f\n", time.Since(started).Seconds())
+	return nil
+}
+
+func simulate(binary, root string, spec runSpec, timeout time.Duration) (result, error) {
+	dir := filepath.Join(root, spec.scenario.Name, fmt.Sprintf("%s-%d", spec.split, spec.seed))
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return result{}, fmt.Errorf("create run %s: %w", dir, err)
+	}
+	log, err := os.Create(filepath.Join(dir, "sim.log"))
+	if err != nil {
+		return result{}, fmt.Errorf("create run log: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	args := []string{"--seed", fmt.Sprint(spec.seed), "--state-dir", dir}
+	if spec.scenario.Machine != "" {
+		args = append(args, "--machine", spec.scenario.Machine)
+	}
+	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Stdout, cmd.Stderr = log, log
+	started := time.Now()
+	err = cmd.Run()
+	wall := time.Since(started).Seconds()
+	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
+	if closeErr := log.Close(); closeErr != nil {
+		return result{}, fmt.Errorf("close run log: %w", closeErr)
+	}
+	exit := 0
+	if err != nil {
+		var exited *exec.ExitError
+		switch {
+		case errors.As(err, &exited):
+			exit = exited.ExitCode()
+		case timedOut:
+			exit = -1
+		default:
+			return result{}, fmt.Errorf("start simulator: %w", err)
+		}
+	}
+	events, _, err := journal.Read(dir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return result{}, fmt.Errorf("read run journal: %w", err)
+	}
+	cfg := spec.cfg
+	cfg.Seed = spec.seed
+	m, err := sim.New(cfg)
+	if err != nil {
+		return result{}, fmt.Errorf("create metric machine: %w", err)
+	}
+	cores := cfg.Cores
+	if cores == 0 {
+		cores = 16
+	}
+	r := metrics(events, m, cores)
+	text, err := os.ReadFile(filepath.Join(dir, "sim.log"))
+	if err != nil {
+		return result{}, fmt.Errorf("read run log: %w", err)
+	}
+	r.Scenario, r.Seed, r.Split = spec.scenario.Name, spec.seed, spec.split
+	r.ExitCode, r.WallS = exit, wall
+	r.Status = runStatus(exit, timedOut, events, string(text))
+	return r, nil
+}
+
+func containsDeadEnd(log string) bool { return strings.Contains(log, "sim: dead end ") }
+
+func readResults(path string) ([]result, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open baseline: %w", err)
+	}
+	defer f.Close()
+	decoder := json.NewDecoder(f)
+	seen := make(map[key]bool)
+	var results []result
+	for {
+		var r result
+		if err := decoder.Decode(&r); errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			return nil, fmt.Errorf("decode baseline: %w", err)
+		}
+		k := key{r.Scenario, r.Seed}
+		if seen[k] {
+			return nil, fmt.Errorf("duplicate baseline run %s/%d", r.Scenario, r.Seed)
+		}
+		seen[k] = true
+		results = append(results, r)
+	}
+	return results, nil
+}
