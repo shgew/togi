@@ -59,18 +59,22 @@ func New(o Options) *Runner {
 
 type instance struct {
 	machine.Instance
-	watch     []watchFile
-	process   process
-	partial   [2]string
-	reaped    chan struct{}
-	joined    chan struct{}
-	done      bool
-	ready     bool
-	setup     bool
-	suspended bool
-	resumed   time.Time
-	active    time.Duration
-	samples   []cpuSample
+	watch          []watchFile
+	watchNext      int
+	process        process
+	partial        [2]string
+	reaped         chan struct{}
+	joined         chan struct{}
+	done           bool
+	writersStopped bool
+	unexpected     bool
+	exitErr        error
+	ready          bool
+	setup          bool
+	suspended      bool
+	resumed        time.Time
+	active         time.Duration
+	samples        []cpuSample
 }
 
 type running struct {
@@ -360,7 +364,7 @@ func (t *running) readStream(i int, inst *instance, src io.Reader, log *os.File,
 	for {
 		n, err := src.Read(buf)
 		if n > 0 {
-			used, lineErr := lines.consume(buf[:n], func(line string) {
+			used, lineErr := lines.consume(context.Background(), buf[:n], func(line string) {
 				t.emit(streamEvent{index: i, line: line, stderr: stderr})
 			})
 			if _, werr := log.Write(buf[:used]); werr != nil {
