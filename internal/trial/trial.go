@@ -24,7 +24,7 @@ type Options struct {
 	User                                               Identity
 	NoScope                                            bool
 	SampleInterval, StallGrace, StallWindow, StopGrace time.Duration
-	Hwmon                                              string
+	Hwmon, CPUFreq, Powercap                           string
 }
 
 type Runner struct {
@@ -47,6 +47,12 @@ func New(o Options) *Runner {
 	}
 	if o.Hwmon == "" {
 		o.Hwmon = "/sys/class/hwmon"
+	}
+	if o.CPUFreq == "" {
+		o.CPUFreq = "/sys/devices/system/cpu"
+	}
+	if o.Powercap == "" {
+		o.Powercap = "/sys/class/powercap"
 	}
 	return &Runner{options: o, host: newOSHost()}
 }

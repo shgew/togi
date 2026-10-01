@@ -4,6 +4,10 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Added
+
+- Every trial keeps fsynced per-second CPU temperatures, loaded-core frequencies and available package power in `samples.jsonl`; after a crash, the journal reports the last sample's time, Tctl and frequency range alongside the last backend evidence.
+
 ## [0.5.2] - 2026-09-30
 
 ### Fixed
