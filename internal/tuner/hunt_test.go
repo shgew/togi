@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -57,6 +58,48 @@ func runMask(h *harness, a Action, fail bool) {
 			h.t.Fatalf("unexpected mask attribution %+v", attribution)
 		}
 		h.decide(attribution)
+	}
+}
+
+func TestHuntAnchorRaisesTheQualifiedProfile(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		qualified, failing []int
+		anchor             []int
+		anchorSeq          int
+		candidates         []int
+	}{
+		{"shallower everywhere", []int{-10, -10, -10, -10}, []int{-12, -10, -10, -10}, []int{-10, -10, -10, -10}, 7, []int{0}},
+		{"a yielded core takes its failing offset", []int{-10, -10, -10, -10}, []int{-12, -8, -10, -10}, []int{-10, -8, -10, -10}, 7, []int{0}},
+		{"deeper everywhere falls back to all-zero", []int{-12, -12, -12, -12}, []int{-10, -10, -10, -10}, []int{0, 0, 0, 0}, 0, []int{0, 1, 2, 3}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			starts := make([]coreStart, 4)
+			for i := range starts {
+				starts[i] = coreStart{phase: journal.PhaseDone, offset: tt.failing[i]}
+			}
+			h := newHarness(t, starts...)
+			h.s.qualified = []qualified{{profile: tt.qualified, seq: 7}}
+			class := trialClass{machine.R7, machine.Workloads(machine.R7)[0].ID, fmt.Sprint(h.s.ids()), 120}
+			h.s.queue = []pendingFailure{{seq: 9, failure: &journal.Failure{Trial: "0001"}, profile: tt.failing, class: class}}
+			p, ok := h.s.huntStartNext().Payload.(*journal.HuntStart)
+			if !ok {
+				t.Fatal("no hunt.start")
+			}
+			got := struct {
+				Anchor     []int
+				AnchorSeq  int
+				Candidates []int
+			}{p.Anchor, p.AnchorSeq, p.Candidates}
+			want := struct {
+				Anchor     []int
+				AnchorSeq  int
+				Candidates []int
+			}{tt.anchor, tt.anchorSeq, tt.candidates}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("hunt.start (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -149,6 +192,232 @@ func TestHuntPairAndCommitmentResume(t *testing.T) {
 	}
 	if _, reached := h.s.Reaches(h.s.offsets()); reached {
 		t.Fatalf("commitment reached mark: %v", h.s.offsets())
+	}
+}
+
+func TestJointBackoffMovesToATestedProbe(t *testing.T) {
+	h := huntHarness(t, 4, 120)
+	fails := func(p []int) bool {
+		return p[0] <= -27 && p[1] <= -27 || p[0] == -26 && p[1] == -30
+	}
+	probes := map[int]int{}
+	for range 200 {
+		a := h.next()
+		if mask, ok := a.Payload.(*journal.HuntMask); ok {
+			e := h.decide(a)
+			if mask.Edge != nil {
+				probes[e.Seq] = mask.Edge.Offset
+			}
+			continue
+		}
+		if a.Kind == RunTrial {
+			runMask(h, a, fails(a.Trial.Profile))
+			continue
+		}
+		if _, ok := a.Payload.(*journal.HuntEnd); ok {
+			h.decide(a)
+			break
+		}
+		t.Fatalf("unexpected action %+v", a)
+	}
+	mark := h.next()
+	p, ok := mark.Payload.(*journal.MarkJoint)
+	if !ok || cmp.Diff([]journal.JointMember{{Core: 0, Offset: -26}, {Core: 1, Offset: -30}}, p.Members) != "" {
+		t.Fatalf("mark %+v", mark)
+	}
+	h.decide(mark)
+	back := h.next()
+	d, ok := back.Payload.(*journal.TunerDecision)
+	if !ok || d.Decision != journal.Backoff || d.Core != 0 || d.ToOffset != -25 {
+		t.Fatalf("commitment %+v, want core 00 to -25, where its probe passed with core 01 at -30", back)
+	}
+	if len(back.Cause) != 2 || probes[back.Cause[1]] != -25 {
+		t.Fatalf("commitment cause %v, want the joint mark and the passing probe", back.Cause)
+	}
+	h.decide(back)
+	if fails(h.s.offsets()) {
+		t.Fatalf("resident %v still fails; one count on core 01 would have left it failing", h.s.offsets())
+	}
+}
+
+func TestNextHuntReusesEstablishedPartMasks(t *testing.T) {
+	h := huntHarness(t, 4, 120)
+	fails := func(p []int) bool { return p[0] <= -28 && p[1] <= -28 }
+	var first []*journal.HuntMask
+	var second []*journal.HuntMask
+	hunts := 1
+	for range 400 {
+		a := h.next()
+		switch p := a.Payload.(type) {
+		case *journal.HuntStart:
+			hunts++
+			h.decide(a)
+			continue
+		case *journal.HuntMask:
+			if hunts == 1 {
+				first = append(first, p)
+			} else {
+				second = append(second, p)
+			}
+			h.decide(a)
+			continue
+		}
+		if a.Kind == RunTrial && a.Trial.Rerun {
+			h.trial(a, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 5})
+			continue
+		}
+		if a.Kind == RunTrial {
+			if hunts == 2 {
+				break
+			}
+			runMask(h, a, fails(a.Trial.Profile))
+			continue
+		}
+		h.decide(a)
+	}
+	if hunts != 2 {
+		t.Fatalf("hunts %d, want a second hunt after the failed rerun", hunts)
+	}
+	ran := func(m *journal.HuntMask) bool { return m.Inferred == "" && !m.Skipped }
+	idle := slices.IndexFunc(first, func(m *journal.HuntMask) bool { return slices.Equal(m.Cores, []int{2, 3}) && ran(m) })
+	if idle < 0 {
+		t.Fatalf("first hunt never ran the part of cores 02 and 03: %+v", first)
+	}
+	again := slices.IndexFunc(second, func(m *journal.HuntMask) bool { return slices.Equal(m.Cores, []int{2, 3}) })
+	if again < 0 || second[again].Inferred != "pass" || !slices.Equal(second[again].Profile, first[idle].Profile) {
+		t.Fatalf("second hunt masks %+v, want the part of cores 02 and 03 inferred from the first hunt's passes", second)
+	}
+}
+
+func TestHuntMaskReuseAfterReset(t *testing.T) {
+	for _, stage := range []string{"part", "complement"} {
+		for _, tt := range []struct {
+			name       string
+			pass       bool
+			afterReset bool
+			inferred   string
+		}{
+			{"old failure", false, false, ""},
+			{"old pass", true, false, ""},
+			{"new failure", false, true, "failure"},
+			{"new pass", true, true, "pass"},
+		} {
+			t.Run(stage+"/"+tt.name, func(t *testing.T) {
+				h := newHarness(t, searchAt(-30, -30, -30, -30)...)
+				profile := []int{-30, -30, 0, 0}
+				tr := Trial{Regime: machine.R7, Cores: h.s.ids(), Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Masked, Profile: profile}
+				reset := func() {
+					h.add(&journal.MarkJoint{Mark: 1, Hunt: 1, Members: []journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}})
+					h.add(&journal.CommandReset{Core: new(0)})
+					h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -10, ClearedJoint: []int{1}})
+				}
+				if tt.afterReset {
+					reset()
+				}
+				end, starts := passed, 5
+				if !tt.pass {
+					end, starts = journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash}, 1
+				}
+				for range starts {
+					h.trial(Action{Kind: RunTrial, Trial: tr}, end)
+				}
+				if !tt.afterReset {
+					reset()
+				}
+				h.add(&journal.HuntStart{Hunt: 2, Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: 120, StartS: 120, Starts: 5, Failing: []int{-30, -30, -30, -30}, Anchor: []int{0, 0, 0, 0}, Candidates: h.s.ids()})
+				a := h.s.planMask(h.s.hunt, maskPlan{set: h.s.ids(), cores: []int{0, 1}, g: 2, stage: stage, duration: 120}, "testing")
+				m := a.Payload.(*journal.HuntMask)
+				got := struct {
+					Inferred string
+					Skipped  bool
+				}{m.Inferred, m.Skipped}
+				want := struct {
+					Inferred string
+					Skipped  bool
+				}{tt.inferred, false}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Fatalf("mask after reset (-want +got):\n%s", diff)
+				}
+			})
+		}
+	}
+}
+
+func TestRunningHuntMaskReusesEarlierPasses(t *testing.T) {
+	for _, stage := range []string{"part", "complement"} {
+		t.Run(stage, func(t *testing.T) {
+			h := newHarness(t, searchAt(-30, -30, -30, -30)...)
+			tr := Trial{Regime: machine.R7, Cores: h.s.ids(), Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Masked, Profile: []int{-30, -30, 0, 0}}
+			for range 4 {
+				h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
+			}
+			h.add(&journal.HuntStart{Hunt: 2, Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: 120, StartS: 120, Starts: 5, Failing: []int{-30, -30, -30, -30}, Anchor: []int{0, 0, 0, 0}, Candidates: h.s.ids()})
+			a := h.s.planMask(h.s.hunt, maskPlan{set: h.s.ids(), cores: []int{0, 1}, g: 2, stage: stage, duration: 120}, "testing")
+			h.decide(a)
+			for _, tt := range []struct {
+				name    string
+				passes  int
+				outcome string
+				advance bool
+			}{
+				{"before new start", 4, "running", false},
+				{"after new start", 5, "pass", true},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					if tt.advance {
+						tr.Hunt, tr.Mask = 2, 1
+						h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
+					}
+					p := h.s.projectHunt()
+					_, advance := h.s.nextMaskPlan(h.s.hunt)
+					got := struct {
+						Passes  int
+						Outcome string
+						Advance bool
+					}{p.Masks[0].Passes, p.Masks[0].Outcome, advance}
+					want := struct {
+						Passes  int
+						Outcome string
+						Advance bool
+					}{tt.passes, tt.outcome, tt.advance}
+					if diff := cmp.Diff(want, got); diff != "" {
+						t.Fatalf("running mask (-want +got):\n%s", diff)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestHuntMaskDoesNotReuseShallowerOrIncomparablePasses(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		profile []int
+	}{
+		{"shallower", []int{-29, -30, 0, 0}},
+		{"incomparable", []int{-31, -29, 0, 0}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t, searchAt(-30, -30, -30, -30)...)
+			tr := Trial{Regime: machine.R7, Cores: h.s.ids(), Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Masked, Profile: tt.profile}
+			for range 5 {
+				h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
+			}
+			h.add(&journal.HuntStart{Hunt: 2, Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: 120, StartS: 120, Starts: 5, Failing: []int{-30, -30, -30, -30}, Anchor: []int{0, 0, 0, 0}, Candidates: h.s.ids()})
+			h.decide(h.s.planMask(h.s.hunt, maskPlan{set: h.s.ids(), cores: []int{0, 1}, g: 2, stage: "part", duration: 120}, "testing"))
+			p := h.s.projectHunt()
+			got := struct {
+				Passes  int
+				Outcome string
+			}{p.Masks[0].Passes, p.Masks[0].Outcome}
+			want := struct {
+				Passes  int
+				Outcome string
+			}{0, "running"}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("mismatched profile (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

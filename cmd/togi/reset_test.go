@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/session"
 )
 
 func TestCommandsRefuseWhileLocked(t *testing.T) {
@@ -20,7 +21,7 @@ func TestCommandsRefuseWhileLocked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture = bytes.Replace(fixture, []byte(`"schema":2,"ruleset":3`), []byte(`"schema":2,"ruleset":4`), 1)
+	fixture = bytes.Replace(fixture, []byte(`"schema":2,"ruleset":3`), fmt.Appendf(nil, `"schema":2,"ruleset":%d`, session.Build().Ruleset), 1)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o644); err != nil {
 		t.Fatal(err)

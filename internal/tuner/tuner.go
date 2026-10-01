@@ -13,7 +13,7 @@ import (
 )
 
 // Ruleset must be bumped for changes to steps, offset range, phases, regimes, evidence, hunts, refinement, tiers or backoffs; this is breaking.
-const Ruleset = 4
+const Ruleset = 5
 
 type ActionKind int
 
@@ -120,6 +120,7 @@ type State struct {
 	obligations                 []rerun
 	hunt                        *hunt
 	nextHunt                    int
+	resetSeq                    int
 	round                       *round
 	nextRound                   int
 	ranking                     []int
@@ -229,6 +230,7 @@ func (s *State) Fold(e journal.Event) {
 	case *journal.CommandReset:
 		if p.Core != nil {
 			if c := s.core(*p.Core); c != nil {
+				s.resetSeq = e.Seq
 				c.queued, c.queueSeq = queuedReset, e.Seq
 			}
 		}

@@ -80,7 +80,7 @@ A trial condition where the whole profile is applied.
 A trial condition retaining the failed trial's workload and load, with selected cores at failing offsets and all others at an anchor.
 
 **Anchor**:
-The latest clean qualifying profile at least as shallow as the failing profile, different from it and reaching no mark; otherwise the next older eligible profile, or all-zero.
+The newest clean qualifying profile raised to the failing profile, each core at the shallower of its two offsets, when that differs from the failing profile; otherwise the next older qualifying profile raised the same way, or all-zero.
 
 **Search**:
 The phase that finds and checks a core's candidate edge with isolated R1 and R2 starts.

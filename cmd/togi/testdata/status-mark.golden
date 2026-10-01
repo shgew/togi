@@ -15,7 +15,7 @@ CORE  CCD  OFFSET  PHASE  FAILED  JOINT  QUEUED  LAST DECISION
 08    1    -10     done   -11     -      -       [#3633] core 08 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 08)
 09    1    -10     done   -11     -      -       [#3635] core 09 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 09)
 10    1    -10     done   -11     -      -       [#3637] core 10 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 10)
-11    1    -9      done   -11     J1     -       [#4249] core 11 backed off at -10; next -9 (joint mark J1: backing off core 11 leaves 159 counts reachable)
+11    1    -9      done   -11     J1     -       [#4249] core 11 backed off at -10; next -9 (joint mark J1: backing off core 11 to -9, where hunt 1 mask 40 passed with the rest of the joint at its failing offsets)
 12    1    -10     done   -11     -      -       [#3641] core 12 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 12)
 13    1    -10     done   -11     -      -       [#3643] core 13 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 13)
 14    1    -10     done   -11     -      -       [#3645] core 14 search -> done at -10 (edge -10 passed 5 starts of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k; failed mark -11 of core 14)
