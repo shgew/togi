@@ -20,7 +20,9 @@ import (
 type watchFile struct {
 	path   string
 	offset int64
+	size   int64
 	lines  outputLines
+	err    error
 }
 type cpuSample struct {
 	active time.Duration
@@ -29,8 +31,12 @@ type cpuSample struct {
 
 func (t *running) Wait(ctx context.Context, report machine.Reporter) (result machine.Result, err error) {
 	started := time.Now()
+	watchCtx, cancelWatch := context.WithDeadline(ctx, started.Add(t.spec.Duration))
+	defer cancelWatch()
 	result.Stops = t.initialStops
+	watching := false
 	for _, inst := range t.instances {
+		watching = watching || len(inst.watch) > 0
 		if !inst.suspended {
 			inst.resumed = started
 		}
@@ -56,10 +62,28 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 		}
 	}
 	setTimer()
+	pollContext := func() (context.Context, context.CancelFunc) {
+		if !watching {
+			return watchCtx, func() {}
+		}
+		until := time.Now().Add(t.options.SampleInterval)
+		if ok {
+			until = minTime(until, started.Add(step.At))
+		}
+		return context.WithDeadline(watchCtx, until)
+	}
+	nextInstance := 0
 	var decision bool
 	var fatal error
 	var r6start bool
 	for !decision {
+		if cause := contextError(ctx); cause != nil {
+			err = cause
+			break
+		}
+		if contextError(watchCtx) != nil {
+			break
+		}
 		select {
 		case <-ctx.Done():
 			err = ctx.Err()
@@ -67,9 +91,19 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 		case <-deadline.C:
 			decision = true
 		case <-ticker.C:
-			for _, inst := range t.instances {
-				if errorLine := t.tail(inst, &result, report); errorLine {
+			pollCtx, cancelPoll := pollContext()
+			for range len(t.instances) {
+				inst := t.instances[nextInstance]
+				nextInstance = (nextInstance + 1) % len(t.instances)
+				if contextError(watchCtx) != nil {
 					decision = true
+					break
+				}
+				if errorLine, _, _ := t.tail(pollCtx, inst, &result, report, false); errorLine {
+					decision = true
+					break
+				}
+				if contextError(pollCtx) != nil {
 					break
 				}
 				if !inst.ready && t.inScope(inst) {
@@ -89,6 +123,7 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 					break
 				}
 			}
+			cancelPoll()
 			if temp := readTctl(t.options.Hwmon); temp != nil && (result.TctlMaxC == nil || *temp > *result.TctlMaxC) {
 				result.TctlMaxC = temp
 			}
@@ -116,7 +151,7 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				setTimer()
 			}
 		case e := <-t.events:
-			if cause := ctx.Err(); cause != nil {
+			if cause := contextError(ctx); cause != nil {
 				err = cause
 				decision = true
 				if e.exit {
@@ -124,12 +159,19 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				}
 				break
 			}
-			if t.handleEvent(e, &result, report, true) {
+			if e.exit {
+				pollCtx, cancelPoll := pollContext()
+				decision = t.handleEvent(pollCtx, e, &result, report, true)
+				cancelPoll()
+			} else if t.handleEvent(watchCtx, e, &result, report, true) {
 				decision = true
 			}
 		}
 	}
-	t.drainEvents(&result, report, ctx.Err() == nil)
+	if err == nil {
+		err = contextError(ctx)
+	}
+	t.drainEvents(watchCtx, &result, report, contextError(ctx) == nil)
 	if !t.options.NoScope {
 		for _, inst := range t.instances {
 			if !inst.ready && !t.inScope(inst) && result.Signal == "" && len(result.Escaped) == 0 && result.Inconclusive == "" {
@@ -153,6 +195,10 @@ func (t *running) classify(inst *instance, line string, stderr bool, result *mac
 	if stderr && (strings.HasPrefix(line, "Failed to start transient scope unit") || strings.HasPrefix(line, "Failed to execute")) {
 		classified = backend.Line{Kind: backend.SetupError, Detail: "systemd-run: " + line}
 	}
+	return t.classifyLine(inst, line, classified, stderr, result, report)
+}
+
+func (t *running) classifyLine(inst *instance, line string, classified backend.Line, stderr bool, result *machine.Result, report machine.Reporter) bool {
 	switch classified.Kind {
 	case backend.Progress:
 		if !stderr {
@@ -189,32 +235,68 @@ func (t *running) classify(inst *instance, line string, stderr bool, result *mac
 	return false
 }
 
-func (t *running) tail(inst *instance, result *machine.Result, report machine.Reporter) bool {
-	var found bool
-	for i := range inst.watch {
-		w := &inst.watch[i]
-		err := w.read(func(line string) {
+func (t *running) tail(ctx context.Context, inst *instance, result *machine.Result, report machine.Reporter, finalize bool) (found, drained, backlogProgress bool) {
+	drained = true
+	exitReady := true
+	for range len(inst.watch) {
+		if contextError(ctx) != nil {
+			return found, false, backlogProgress
+		}
+		w := &inst.watch[inst.watchNext]
+		inst.watchNext = (inst.watchNext + 1) % len(inst.watch)
+		if w.err != nil {
+			drained = drained && w.lines.exceeded
+			continue
+		}
+		offset := w.offset
+		complete, err := w.read(ctx, func(line string) {
 			if t.classifyWatch(inst, line, result, report) {
 				found = true
 			}
 		})
-		if err == nil || os.IsNotExist(err) {
-			continue
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return found, false, backlogProgress
 		}
-		err = fmt.Errorf("read watched file %s: %w", w.path, err)
-		if errors.Is(err, errOutputLineTooLong) {
-			t.outputError(err, result)
-		} else if result.Inconclusive == "" && result.Signal == "" && len(result.Escaped) == 0 {
-			result.Inconclusive = err.Error()
+		if errors.Is(err, os.ErrNotExist) && w.offset >= w.size {
+			complete = true
+			err = nil
 		}
+		if err != nil {
+			w.err = fmt.Errorf("read watched file %s: %w", w.path, err)
+			t.outputError(w.err, result)
+			if errors.Is(err, errOutputLineTooLong) {
+				complete = true
+			}
+			found = true
+		}
+		drained = drained && complete
+		backlogProgress = backlogProgress || (!complete && err == nil && w.offset > offset)
+		if finalize && complete && inst.done && !w.lines.exceeded && len(w.lines.pending) > 0 {
+			if contextError(ctx) != nil {
+				return found, false, backlogProgress
+			}
+			if t.classifyWatch(inst, string(w.lines.pending), result, report) {
+				found = true
+			}
+			w.lines.pending = nil
+		}
+		if !w.lines.exceeded && len(w.lines.pending) > 0 {
+			exitReady = false
+		}
+	}
+	if contextError(ctx) != nil {
+		return found, false, backlogProgress
+	}
+	if drained && inst.done && exitReady && t.classifyExit(inst, result, report) {
 		found = true
 	}
-	return found
+	return found, drained, backlogProgress
 }
 func (t *running) classifyWatch(inst *instance, line string, result *machine.Result, report machine.Reporter) bool {
-	switch t.backend.Classify(line).Kind {
+	classified := t.backend.Classify(line)
+	switch classified.Kind {
 	case backend.ComputationError, backend.SetupError, backend.AffinityError:
-		return t.classify(inst, line, false, result, report)
+		return t.classifyLine(inst, line, classified, false, result, report)
 	case backend.Other, backend.Progress:
 	}
 	return false
@@ -250,24 +332,15 @@ func (t *running) toggle(inst *instance, stop bool, now time.Time) error {
 	return nil
 }
 
-func (t *running) handleEvent(e streamEvent, result *machine.Result, report machine.Reporter, unexpected bool) bool {
+func (t *running) handleEvent(ctx context.Context, e streamEvent, result *machine.Result, report machine.Reporter, unexpected bool) bool {
 	inst := t.instances[e.index]
 	if e.exit {
 		inst.done = true
+		inst.unexpected = unexpected
+		inst.exitErr = e.err
 		t.classifyPartial(inst, result, report)
-		found := t.tail(inst, result, report)
-		if unexpected && t.outputErr == nil && t.outputCapErr == nil && !inst.setup && len(result.Escaped) == 0 && result.Signal == "" {
-			result.Signal = machine.UnexpectedExit
-			result.Core = inst.Core
-			result.Inconclusive = ""
-			status := "exit status 0"
-			if e.err != nil {
-				status = e.err.Error()
-			}
-			report.Signal(inst.Core, machine.UnexpectedExit, status)
-			return true
-		}
-		return found
+		found, _, _ := t.tail(ctx, inst, result, report, false)
+		return found || unexpected
 	}
 	if e.err != nil {
 		t.outputError(e.err, result)
@@ -279,14 +352,29 @@ func (t *running) handleEvent(e streamEvent, result *machine.Result, report mach
 	return false
 }
 
-func (t *running) drainEvents(result *machine.Result, report machine.Reporter, unexpected bool) {
-	for {
-		select {
-		case e := <-t.events:
-			t.handleEvent(e, result, report, unexpected)
-		default:
-			return
-		}
+func (t *running) classifyExit(inst *instance, result *machine.Result, report machine.Reporter) bool {
+	if !inst.unexpected {
+		return false
+	}
+	inst.unexpected = false
+	if t.outputErr != nil || t.outputCapErr != nil || inst.setup || len(result.Escaped) != 0 || result.Signal != "" {
+		return false
+	}
+	result.Signal = machine.UnexpectedExit
+	result.Core = inst.Core
+	result.Inconclusive = ""
+	status := "exit status 0"
+	if inst.exitErr != nil {
+		status = inst.exitErr.Error()
+	}
+	report.Signal(inst.Core, machine.UnexpectedExit, status)
+	return true
+}
+
+func (t *running) drainEvents(ctx context.Context, result *machine.Result, report machine.Reporter, unexpected bool) {
+	for range len(t.events) {
+		e := <-t.events
+		t.handleEvent(ctx, e, result, report, unexpected)
 	}
 }
 
@@ -304,8 +392,10 @@ func (t *running) teardown(result *machine.Result, report machine.Reporter) erro
 		defer t.cancel()
 	}
 	deadline := time.Now().Add(teardownLimit)
-	cleanupErr := terminate(t.host, t.instances, t.scopes, deadline, t.options.StopGrace, false, func(until time.Time) bool {
-		return t.collect(until, result, report)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	cleanupErr := terminate(t.host, t.instances, t.scopes, deadline, t.options.StopGrace, false, func(until time.Time, final bool) bool {
+		return t.collect(until, result, report, final)
 	})
 	if t.streamStop != nil && !t.streamClosed {
 		t.streamClosed = true
@@ -325,17 +415,9 @@ func (t *running) teardown(result *machine.Result, report machine.Reporter) erro
 		default:
 		}
 	}
-	t.drainEvents(result, report, false)
+	t.drainEvents(ctx, result, report, false)
 	for _, inst := range t.instances {
 		t.classifyPartial(inst, result, report)
-		t.tail(inst, result, report)
-		for i := range inst.watch {
-			w := &inst.watch[i]
-			if !w.lines.exceeded && len(w.lines.pending) > 0 {
-				t.classifyWatch(inst, string(w.lines.pending), result, report)
-				w.lines.pending = nil
-			}
-		}
 	}
 	if cleanupErr != nil {
 		cleanupErr = errors.Join(machine.ErrContainment, cleanupErr)
@@ -356,30 +438,51 @@ func (t *running) classifyPartial(inst *instance, result *machine.Result, report
 		}
 	}
 }
-func (t *running) collect(deadline time.Time, result *machine.Result, report machine.Reporter) bool {
-	remaining := 0
-	for _, inst := range t.instances {
-		if !inst.done {
-			remaining++
-		}
-	}
-	timer := time.NewTimer(max(0, time.Until(deadline)))
-	defer timer.Stop()
-	for remaining > 0 {
-		if !time.Now().Before(deadline) {
+func (t *running) collect(deadline time.Time, result *machine.Result, report machine.Reporter, final bool) bool {
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	ticker := time.NewTicker(t.options.SampleInterval)
+	defer ticker.Stop()
+	for {
+		if ctx.Err() != nil || !time.Now().Before(deadline) {
 			return false
+		}
+		t.drainEvents(ctx, result, report, false)
+		complete := true
+		watchFinalized := true
+		backlogProgress := false
+		for _, inst := range t.instances {
+			_, drained, progressed := t.tail(ctx, inst, result, report, final && inst.writersStopped)
+			backlogProgress = backlogProgress || progressed
+			if !inst.done || !drained {
+				complete = false
+			}
+			if final && !inst.writersStopped {
+				for i := range inst.watch {
+					w := &inst.watch[i]
+					if !w.lines.exceeded && len(w.lines.pending) > 0 {
+						watchFinalized = false
+					}
+				}
+			}
+		}
+		if ctx.Err() != nil || !time.Now().Before(deadline) {
+			return false
+		}
+		if complete {
+			return watchFinalized
+		}
+		if backlogProgress {
+			continue
 		}
 		select {
-		case e := <-t.events:
-			if e.exit && !t.instances[e.index].done {
-				remaining--
-			}
-			t.handleEvent(e, result, report, false)
-		case <-timer.C:
+		case <-ctx.Done():
 			return false
+		case <-ticker.C:
+		case e := <-t.events:
+			t.handleEvent(ctx, e, result, report, false)
 		}
 	}
-	return true
 }
 func (t *running) abort(err error) error {
 	return errors.Join(err, t.teardown(&machine.Result{}, discardReport{}))

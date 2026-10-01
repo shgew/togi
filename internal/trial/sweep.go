@@ -59,10 +59,8 @@ func (r *Runner) Sweep(parent context.Context) (string, error) {
 	slices.Sort(scopes)
 	scopes = slices.Compact(scopes)
 	var verificationErr error
-	verifyUnits := false
-	collect := func(until time.Time) bool {
-		verificationErr = r.waitSweep(ctx, until, processes, verifyUnits)
-		verifyUnits = true
+	collect := func(until time.Time, final bool) bool {
+		verificationErr = r.waitSweep(ctx, until, processes, final)
 		return verificationErr == nil
 	}
 	err = terminate(sweepHost{r.host}, nil, scopes, deadline, r.options.StopGrace, true, collect)
