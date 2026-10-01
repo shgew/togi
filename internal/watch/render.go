@@ -121,7 +121,7 @@ func Render(s Snapshot, w, h int, now time.Time) string {
 	if !s.session {
 		f.add(spread(width, pad+bold.Reverse(true).Render(" togi "), bold.Render(now.Format("15:04:05"))), "")
 		if s.problem != nil {
-			f.add(bannerStyle.Width(width).Render(pad + s.problem.Error()))
+			f.add(bannerStyle.Width(width).Render(pad + journal.EscapeText(s.problem.Error())))
 		} else {
 			f.add(pad + dim.Render("no session yet"))
 		}
@@ -140,7 +140,7 @@ func Render(s Snapshot, w, h int, now time.Time) string {
 	f.add(pad + bold.Render("Recent"))
 	room := max(0, h-1-len(f.lines))
 	for _, e := range s.recent[max(0, len(s.recent)-room):] {
-		f.add(pad + dim.Render(hm(e.at.Sub(s.start))) + "  " + e.msg)
+		f.add(pad + dim.Render(hm(e.at.Sub(s.start))) + "  " + journal.EscapeText(e.msg))
 	}
 	return fit(f.lines, screen, h)
 }
@@ -177,9 +177,9 @@ func (s Snapshot) top(f *frame, width int, pad string, now time.Time) {
 	}
 	switch {
 	case s.deadEnd != "":
-		f.add(bannerStyle.Width(width).Render(pad + s.deadEnd))
+		f.add(bannerStyle.Width(width).Render(pad + journal.EscapeText(s.deadEnd)))
 	case s.lastFailure != nil:
-		f.add(pad + dim.Render("last failure "+age(now.Sub(s.lastFailure.at))+" ago   "+s.lastFailure.msg))
+		f.add(pad + dim.Render("last failure "+age(now.Sub(s.lastFailure.at))+" ago   "+journal.EscapeText(s.lastFailure.msg)))
 	default:
 		f.add(pad + dim.Render("no failures yet"))
 	}
@@ -206,7 +206,7 @@ func (s Snapshot) summary() []string {
 	}
 	parts = append(parts, fmt.Sprintf("%d/%d done", done, len(s.tiles)))
 	if s.guardState != nil {
-		tier := string(s.tier)
+		tier := journal.EscapeText(string(s.tier))
 		if s.tier == journal.TierNone || s.tier == "" {
 			tier = "--"
 		}
@@ -229,7 +229,7 @@ func (s Snapshot) trialLine(now time.Time) string {
 	t := s.trial
 	if t == nil {
 		if s.inFlight != "" {
-			return dim.Render(s.inFlight)
+			return dim.Render(journal.EscapeText(s.inFlight))
 		}
 		return dim.Render("no trial running")
 	}
@@ -257,7 +257,7 @@ func (s Snapshot) trialLine(now time.Time) string {
 	}
 	bar := barStyle.Render(strings.Repeat("█", n)) + dim.Render(strings.Repeat("░", cells-n)) +
 		fmt.Sprintf(" %d/%ds", int(elapsed.Seconds()), int(t.duration.Seconds()))
-	return bold.Render(target) + "   " + string(t.condition) + "   " + string(t.regime) + " " + t.workload + "   " + bar
+	return bold.Render(target) + "   " + journal.EscapeText(string(t.condition)) + "   " + journal.EscapeText(string(t.regime)) + " " + journal.EscapeText(t.workload) + "   " + bar
 }
 
 func (s Snapshot) scheduleLine() string {
@@ -271,7 +271,7 @@ func (s Snapshot) scheduleLine() string {
 	steps := func(rs []string) string { return strings.Join(rs, " ") }
 	names := make([]string, len(gs.Steps))
 	for i, r := range gs.Steps {
-		names[i] = string(r)
+		names[i] = journal.EscapeText(string(r))
 	}
 	var out string
 	if m := len(names); gs.RotationOpen && gs.StepsDone < m {
@@ -288,7 +288,7 @@ func (s Snapshot) scheduleLine() string {
 		out = dim.Render(fmt.Sprintf("rotation %d done   ", gs.Rotation) + steps(names))
 	}
 	if !gs.Qualifying && len(gs.Missing) > 0 {
-		out += dim.Render("   not qualifying: " + strings.Join(gs.Missing, "; "))
+		out += dim.Render("   not qualifying: " + journal.EscapeText(strings.Join(gs.Missing, "; ")))
 	}
 	return out
 }

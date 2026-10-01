@@ -47,7 +47,7 @@ One JSON object per line. Common fields:
 | `boot` | Kernel boot ID (`/proc/sys/kernel/random/boot_id`) |
 | `kind` | Event kind from the catalog below |
 | `mono_ms` | Boot-local CLOCK_MONOTONIC milliseconds, on every event `run` appends; used to match evidence to trials despite wall-clock jumps. Absent in events `reset` appends, which are no trial evidence, and in events written by older builds |
-| `msg` | One human-readable line, the exact text togi logs |
+| `msg` | Human-readable description, retaining raw diagnostic text as evidence; human output escapes controls |
 | `cause` | Optional array of `seq` this event follows from |
 
 Kind-specific fields are flat, snake_case and carry units in their names (`duration_s`, `period_ms`, `tctl_max_c`). Values use the vocabulary in `CONTEXT.md`. Cores are always `core` (the kernel `core_id`); logical CPUs are always `cpu`. The one exception to flat fields: `config.loaded` carries the effective configuration nested under `config`.
@@ -161,13 +161,17 @@ It is shaped for one-glance reading:
 
 ## Human-readable log
 
-Each event's `msg` goes to stderr, prefixed by local time and kind padded to 14 characters, so the system journal of a tuning boot reads as a narrative:
+Each event's `msg` goes to stderr in an escaped representation, prefixed by local time and kind padded to 14 characters, so the system journal of a tuning boot reads as a narrative:
 
 ```
 01:14:07 trial.intent   trial 0413 core 07 CO -32 R2 mprime AVX2 36K-248K 90s isolated
 01:15:37 trial.end      trial 0413 PASS 90s | Tctl max 71°C
 01:15:37 tuner.decision core 07 passed R1+R2 at -32; next -37 (coarse, no failed mark yet)
 ```
+
+Human rendering escapes untrusted controls before adding application-owned styling. C0 controls and DEL use visible `\xNN` escapes, except tab, newline and carriage return use `\t`, `\n` and `\r`. C1 controls (including U+009B CSI and U+009D OSC), Unicode line and paragraph separators, and bidi formatting controls and marks (U+061C, U+200E–U+200F, U+202A–U+202E and U+2066–U+2069) use `\uNNNN`; raw ESC is `\x1b`. Invalid UTF-8 bytes use `\xNN`. Other Unicode and already-visible escape text remain readable and unchanged. The same rule covers event kinds, including unknown kinds in read errors, journal-derived status and certificate fields (including BIOS context), archive notices, and dashboard messages and diagnostics, so one event cannot insert a terminal command, another rendered line or a bidi override. Application-owned ANSI styling and dashboard cursor controls remain active.
+
+The journal's `msg`, other evidence fields, and raw `togi events --json` lines are never sanitized or restyled: the escaped text exists only at human rendering boundaries.
 
 `togi events` renders the journal the same way:
 

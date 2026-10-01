@@ -4,9 +4,6 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
-### Fixed
-
-- Watched-output floods yield to cancellation and supervision deadlines; teardown shares one bounded drain across instances, preserving final computation-error evidence while unconfirmed output prevents a pass or further tuning ([#215]).
 ### Added
 
 - Every trial keeps fsynced per-second CPU temperatures, loaded-core frequencies and available package power in `samples.jsonl`; slow sample-file setup or writes do not delay load steps, cancellation or the deadline. Excess samples are dropped, and the runner waits for storage work before returning. After a crash, the journal reports the last sample's time, Tctl and frequency range alongside the last backend evidence, including when stronger failure evidence or an inconclusive reset cause decides the outcome. Sample-file creation failures retain the trial's measured duration ([#219]).
@@ -19,6 +16,8 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 - A rerun's journal cause names the newest queued failure of its class, without changing which trials run or how passes are counted ([#217]).
 - The host lock is private by default, with explicit hardware-test group access instead of public-readable delegation. Legacy locks retain their inode during migration; quiesce old lock openers or reboot to revoke existing descriptors. Lock contention no longer restarts the tuning service or triggers restart-limit boot recovery ([#213]).
+- Journal-derived diagnostics and fields render terminal and bidi controls as visible escapes in human event lines, status, certificates, archive notices and dashboards, preventing cursor manipulation and forged output while preserving readable Unicode and raw journal evidence ([#214]).
+- Watched-output floods yield to cancellation and supervision deadlines; teardown shares one bounded drain across instances, preserving final computation-error evidence while unconfirmed output prevents a pass or further tuning ([#215]).
 
 ## [0.5.2] - 2026-09-30
 
@@ -296,8 +295,9 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#202]: https://github.com/shgew/togi/pull/202
 [#204]: https://github.com/shgew/togi/pull/204
 [#209]: https://github.com/shgew/togi/pull/209
-[#215]: https://github.com/shgew/togi/pull/215
 [#213]: https://github.com/shgew/togi/pull/213
+[#214]: https://github.com/shgew/togi/pull/214
+[#215]: https://github.com/shgew/togi/pull/215
 [#217]: https://github.com/shgew/togi/pull/217
 [#218]: https://github.com/shgew/togi/pull/218
 [#219]: https://github.com/shgew/togi/pull/219
