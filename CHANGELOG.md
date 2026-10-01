@@ -4,6 +4,8 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-01
+
 ### Changed
 
 - **BREAKING** The next `togi run` archives a ruleset-4 session and starts a ruleset-5 session seeded with its candidate edges, and with its failed marks when the archived session recorded the same BIOS context; its joint marks stay behind. In ruleset 5 a hunt anchors on the newest qualifying profile raised to the failing profile, so the hunt after a refinement round tests only the cores that round deepened instead of every core from all-zero ([#220]).
@@ -237,6 +239,8 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [0.5.2]: https://github.com/shgew/togi/releases/tag/v0.5.2
 
 [0.5.3]: https://github.com/shgew/togi/releases/tag/v0.5.3
+
+[0.6.0]: https://github.com/shgew/togi/releases/tag/v0.6.0
 
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
