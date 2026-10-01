@@ -58,6 +58,58 @@ func TestResetRefusesHostLock(t *testing.T) {
 	}
 }
 
+func TestResetBelowProtectedSharedAncestorHonorsHostLock(t *testing.T) {
+	for _, mode := range []os.FileMode{0o555, 0o777 | os.ModeSticky} {
+		t.Run(mode.String(), func(t *testing.T) {
+			g := testGlobals(t)
+			ancestor := t.TempDir()
+			private := filepath.Join(ancestor, "private")
+			if err := os.Mkdir(private, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(ancestor, mode); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(ancestor, 0o700) })
+			g.hostLockPath = filepath.Join(private, "togi.lock")
+			marker := filepath.Join(g.stateDir, "archive", "session-carry-pending")
+			if err := os.MkdirAll(filepath.Dir(marker), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(marker, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before := directoryFiles(t, g.stateDir)
+			holder, err := os.OpenFile(g.hostLockPath, os.O_CREATE|os.O_RDWR, 0o600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = holder.Close() })
+			if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			if code := runReset(&g, []string{"--all"}, &stdout, &stderr); code != exitLocked {
+				t.Fatalf("held lock: exit %d, stderr %s", code, stderr.String())
+			}
+			if diff := cmp.Diff(before, directoryFiles(t, g.stateDir)); diff != "" {
+				t.Fatalf("contended reset changed state (-want +got): %s", diff)
+			}
+			if err := holder.Close(); err != nil {
+				t.Fatal(err)
+			}
+			stdout.Reset()
+			stderr.Reset()
+			if code := runReset(&g, []string{"--all"}, &stdout, &stderr); code != exitOK {
+				t.Fatalf("released lock: exit %d, stderr %s", code, stderr.String())
+			}
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("authorized reset did not remove pending carry: %v", err)
+			}
+		})
+	}
+}
+
 func testGlobals(t *testing.T) globals {
 	t.Helper()
 	return globals{

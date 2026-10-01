@@ -70,14 +70,14 @@ func openParent(path string) (*os.File, error) {
 		return nil, err
 	}
 	remaining := strings.TrimPrefix(resolved, "/")
+	caller := uint32(os.Geteuid())
 	for {
 		info, err := parent.Stat()
 		if err == nil {
 			stat := info.Sys().(*syscall.Stat_t)
-			if stat.Uid != 0 && stat.Uid != uint32(os.Geteuid()) {
-				err = errors.New("directory is owned by another user")
-			} else if info.Mode().Perm()&0o022 != 0 && info.Mode()&os.ModeSticky == 0 {
-				err = errors.New("writable directory lacks the sticky bit")
+			err = validateDirectory(info.Mode(), stat.Uid, caller, remaining == "", parent.Name() == "/")
+			if err != nil {
+				err = fmt.Errorf("directory %s (uid %d, mode %s): %w", parent.Name(), stat.Uid, info.Mode(), err)
 			}
 		}
 		if err != nil {
@@ -93,9 +93,23 @@ func openParent(path string) (*os.File, error) {
 		if err != nil {
 			return nil, err
 		}
-		parent = os.NewFile(uintptr(fd), resolved)
+		componentPath := resolved[:len(resolved)-len(remaining)+len(component)]
+		parent = os.NewFile(uintptr(fd), componentPath)
 		remaining = rest
 	}
+}
+
+func validateDirectory(mode os.FileMode, uid, caller uint32, containing, namespaceRoot bool) error {
+	if mode.Perm()&0o022 != 0 && mode&os.ModeSticky == 0 {
+		return errors.New("writable directory lacks the sticky bit")
+	}
+	// The namespace root's authority does not depend on how its owner is
+	// mapped into the caller's namespace. The lock's containing directory
+	// still requires an authorized owner, even when it is the namespace root.
+	if uid != 0 && uid != caller && (containing || (!namespaceRoot && mode.Perm()&0o222 != 0)) {
+		return errors.New("directory is owned by another user")
+	}
+	return nil
 }
 
 func secureLock(lock *os.File, requireRoot, writable bool) error {

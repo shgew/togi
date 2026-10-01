@@ -308,6 +308,46 @@ func TestWritableParentNeedsStickyBit(t *testing.T) {
 	}
 }
 
+func TestDirectoryAuthorization(t *testing.T) {
+	t.Parallel()
+	const caller, foreign = uint32(1001), uint32(2002)
+	for _, tt := range []struct {
+		name          string
+		mode          os.FileMode
+		owner         uint32
+		containing    bool
+		namespaceRoot bool
+		wantError     bool
+	}{
+		{name: "mapped foreign namespace root", mode: 0o750, owner: foreign, namespaceRoot: true},
+		{name: "foreign namespace root is not a containing directory", mode: 0o750, owner: foreign, namespaceRoot: true, containing: true, wantError: true},
+		{name: "foreign writable nonsticky namespace root", mode: 0o777, owner: foreign, namespaceRoot: true, wantError: true},
+		{name: "foreign read-only ancestor", mode: 0o555, owner: foreign},
+		{name: "foreign owner-writable ancestor", mode: 0o755, owner: foreign, wantError: true},
+		{name: "foreign sticky ancestor", mode: 0o777 | os.ModeSticky, owner: foreign, wantError: true},
+		{name: "caller sticky ancestor", mode: 0o777 | os.ModeSticky, owner: caller},
+		{name: "root sticky ancestor", mode: 0o777 | os.ModeSticky, owner: 0},
+		{name: "caller private containing directory", mode: 0o700, owner: caller, containing: true},
+		{name: "root controlled containing directory", mode: 0o755, owner: 0, containing: true},
+		{name: "foreign read-only containing directory", mode: 0o555, owner: foreign, containing: true, wantError: true},
+		{name: "foreign private containing directory", mode: 0o700, owner: foreign, containing: true, wantError: true},
+		{name: "foreign sticky containing directory", mode: 0o777 | os.ModeSticky, owner: foreign, containing: true, wantError: true},
+		{name: "foreign group-writable nonsticky ancestor", mode: 0o575, owner: foreign, wantError: true},
+		{name: "foreign other-writable nonsticky ancestor", mode: 0o557, owner: foreign, wantError: true},
+		{name: "caller writable nonsticky ancestor", mode: 0o777, owner: caller, wantError: true},
+		{name: "root writable nonsticky ancestor", mode: 0o777, owner: 0, wantError: true},
+		{name: "caller writable nonsticky containing directory", mode: 0o777, owner: caller, containing: true, wantError: true},
+		{name: "root writable nonsticky containing directory", mode: 0o777, owner: 0, containing: true, wantError: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDirectory(os.ModeDir|tt.mode, tt.owner, caller, tt.containing, tt.namespaceRoot)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("directory authorization error %v, want refusal %t", err, tt.wantError)
+			}
+		})
+	}
+}
+
 func TestLockOpenFailureCreatesNoDirectory(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "missing")
