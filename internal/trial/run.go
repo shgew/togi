@@ -30,6 +30,8 @@ type cpuSample struct {
 
 func (t *running) Wait(ctx context.Context, report machine.Reporter) (result machine.Result, err error) {
 	started := time.Now()
+	watchCtx, cancelWatch := context.WithDeadline(ctx, started.Add(t.spec.Duration))
+	defer cancelWatch()
 	pendingSamples := make(chan machine.TrialConditions, 1)
 	sampleErrors := make(chan error, 1)
 	samplesDone := make(chan error, 1)
@@ -56,8 +58,6 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 		err = errors.Join(err, <-samplesDone)
 	}()
 	conditions := newConditionsSampler(t.options, t.spec, started)
-	watchCtx, cancelWatch := context.WithDeadline(ctx, started.Add(t.spec.Duration))
-	defer cancelWatch()
 	result.Stops = t.initialStops
 	watching := false
 	for _, inst := range t.instances {
