@@ -73,7 +73,7 @@ func loadSession(name, dir string, stderr io.Writer) ([]journal.Event, journal.S
 		fmt.Fprintln(stderr, journal.NewRenderer(stderr, os.Getenv).Styled(journal.RedBold, "togi "+name+": "+incompatible.Error()))
 		return nil, st, exitError, false
 	case err != nil:
-		fmt.Fprintf(stderr, "togi %s: %v\n", name, err)
+		fmt.Fprintf(stderr, "togi %s: %s\n", name, journal.EscapeText(err.Error()))
 		return nil, st, exitError, false
 	case st.Session == nil:
 		fmt.Fprintf(stderr, "togi %s: no session in %s\n", name, dir)
@@ -133,8 +133,8 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 			}
 		}
 	}
-	fmt.Fprintf(w, "%s | tier %s\n", activity, tierRef(st))
-	fmt.Fprintf(w, "session %s started %s\n", st.Session.ID, st.Session.Start.UTC().Format(time.RFC3339))
+	fmt.Fprintf(w, "%s | tier %s\n", journal.EscapeText(activity), journal.EscapeText(tierRef(st)))
+	fmt.Fprintf(w, "session %s started %s\n", journal.EscapeText(st.Session.ID), st.Session.Start.UTC().Format(time.RFC3339))
 	writeBIOSLine(w, st.Session)
 	if f := st.InFlight; f != nil {
 		fmt.Fprintf(w, "in flight: [#%d] %s\n", f.Seq, journal.EscapeText(f.Msg))
@@ -142,7 +142,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		fmt.Fprintln(w, "in flight: none")
 	}
 	if d := st.DeadEnd; d != nil {
-		fmt.Fprintf(w, "dead end: %s [#%d]\n", d.Condition, d.Seq)
+		fmt.Fprintf(w, "dead end: %s [#%d]\n", journal.EscapeText(string(d.Condition)), d.Seq)
 	}
 	for _, e := range events {
 		if e.Kind == journal.KindSessionCarried {
@@ -159,7 +159,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 			last = fmt.Sprintf("[#%d] %s", d.Seq, journal.EscapeText(d.Msg))
 		}
 		queued := cmp.Or(c.Queued, "-")
-		fmt.Fprintf(tw, "%02d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n", c.Core, c.CCD, c.Offset, c.Phase, mark(c.FailedMark), jointIDs(c.JointMarks), queued, last)
+		fmt.Fprintf(tw, "%02d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n", c.Core, c.CCD, c.Offset, journal.EscapeText(string(c.Phase)), mark(c.FailedMark), jointIDs(c.JointMarks), journal.EscapeText(queued), last)
 	}
 	_ = tw.Flush()
 	writeJointMarks(w, st.JointMarks)
@@ -182,7 +182,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 				break
 			}
 		}
-		fmt.Fprintf(w, "\nhunt %d [#%d]: unattributed %s in %s trial %s; anchor %s\n", h.Hunt, h.Seq, signal, h.Regime, cmp.Or(h.Trial, "-"), anchor)
+		fmt.Fprintf(w, "\nhunt %d [#%d]: unattributed %s in %s trial %s; anchor %s\n", h.Hunt, h.Seq, journal.EscapeText(signal), journal.EscapeText(string(h.Regime)), journal.EscapeText(cmp.Or(h.Trial, "-")), anchor)
 		fmt.Fprintf(w, "  candidates %s\n", coreIDs(h.Candidates))
 		tw := newTable(w)
 		fmt.Fprintln(tw, "MASK\tCORES\tOUTCOME\tSTARTS")
@@ -195,7 +195,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 				}
 				cores = fmt.Sprintf("%02d at %d with %s", m.Edge.Core, m.Edge.Offset, strings.Join(held, ", "))
 			}
-			fmt.Fprintf(tw, "M%d\t%s\t%s\t%d/%d\n", m.Mask, cores, m.Outcome, m.Passes, m.Needed)
+			fmt.Fprintf(tw, "M%d\t%s\t%s\t%d/%d\n", m.Mask, cores, journal.EscapeText(m.Outcome), m.Passes, m.Needed)
 		}
 		_ = tw.Flush()
 	}
@@ -204,7 +204,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		tw := newTable(w)
 		fmt.Fprintln(tw, "CHECK\tCORES\tPASSES")
 		for _, check := range r.Checks {
-			fmt.Fprintf(tw, "%s %s\t%s\t%d/%d\n", check.Regime, check.Workload, coreIDs(check.Cores), check.Passes, check.Needed)
+			fmt.Fprintf(tw, "%s %s\t%s\t%d/%d\n", journal.EscapeText(string(check.Regime)), journal.EscapeText(check.Workload), coreIDs(check.Cores), check.Passes, check.Needed)
 		}
 		_ = tw.Flush()
 	}
@@ -231,7 +231,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		if len(finding.Cores) == 0 {
 			continue
 		}
-		fmt.Fprintf(w, "\ndefect %d: %s (fixed by pull request #%d); decisions %v affected cores %v\n", finding.ID, finding.Title, finding.PR, finding.Decisions, finding.Cores)
+		fmt.Fprintf(w, "\ndefect %d: %s (fixed by pull request #%d); decisions %v affected cores %v\n", finding.ID, journal.EscapeText(finding.Title), finding.PR, finding.Decisions, finding.Cores)
 		for _, core := range finding.Cores {
 			fmt.Fprintf(w, "  togi reset --core %d\n", core)
 		}
@@ -250,7 +250,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	tw = newTable(w)
 	fmt.Fprintln(tw, "REGIME\tWORKLOAD\tSTARTS\tCLEAN H\tRATE BOUND")
 	for _, r := range gs.Exposure {
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", r.Regime, r.Workload, r.Starts, hours(r.CleanS), rate(r.RateBoundPerH))
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", journal.EscapeText(string(r.Regime)), journal.EscapeText(r.Workload), r.Starts, hours(r.CleanS), rate(r.RateBoundPerH))
 	}
 	_ = tw.Flush()
 	if gs.TctlMaxC != nil {
@@ -300,7 +300,7 @@ func writeJointMarks(w io.Writer, marks []journal.JointMarkState) {
 
 func writeBIOSLine(w io.Writer, s *journal.SessionInfo) {
 	if b := s.BIOSContext; b != nil {
-		fmt.Fprintf(w, "BIOS %s on %s, %s, microcode %s, boost limit %d MHz\n", b.BIOSVersion, b.Board, b.CPUModel, b.Microcode, b.BoostLimitMHz)
+		fmt.Fprintf(w, "BIOS %s on %s, %s, microcode %s, boost limit %d MHz\n", journal.EscapeText(b.BIOSVersion), journal.EscapeText(b.Board), journal.EscapeText(b.CPUModel), journal.EscapeText(b.Microcode), b.BoostLimitMHz)
 	}
 }
 

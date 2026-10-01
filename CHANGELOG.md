@@ -19,7 +19,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 - A rerun's journal cause names the newest queued failure of its class, without changing which trials run or how passes are counted ([#217]).
 - The host lock is private by default, with explicit hardware-test group access instead of public-readable delegation. Legacy locks retain their inode during migration; quiesce old lock openers or reboot to revoke existing descriptors. Lock contention no longer restarts the tuning service or triggers restart-limit boot recovery ([#213]).
-- Backend diagnostics render terminal controls as visible escapes in human event lines, status and dashboards, preventing cursor manipulation and forged output lines while preserving readable Unicode and raw journal evidence ([#214]).
+- Journal-derived diagnostics and fields render terminal and bidi controls as visible escapes in human event lines, status, certificates, archive notices and dashboards, preventing cursor manipulation and forged output while preserving readable Unicode and raw journal evidence ([#214]).
 - Watched-output floods yield to cancellation and supervision deadlines; teardown shares one bounded drain across instances, preserving final computation-error evidence while unconfirmed output prevents a pass or further tuning ([#215]).
 
 ## [0.5.2] - 2026-09-30

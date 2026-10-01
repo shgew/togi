@@ -94,7 +94,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 			}
 		}
 	} else if !errors.Is(scanErr, fs.ErrNotExist) {
-		fmt.Fprintf(stderr, "togi run: %v\n", scanErr)
+		fmt.Fprintf(stderr, "togi run: %s\n", journal.EscapeText(scanErr.Error()))
 		return exitError
 	}
 	if events, _, readErr := journal.Read(g.stateDir); readErr == nil {
@@ -247,7 +247,7 @@ func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitLocked
 	case err != nil:
-		fmt.Fprintf(stderr, "togi run: %v\n", err)
+		fmt.Fprintf(stderr, "togi run: %s\n", journal.EscapeText(err.Error()))
 		return exitError
 	}
 	switch stop.Reason {
