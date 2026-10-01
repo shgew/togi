@@ -28,11 +28,31 @@ type cpuSample struct {
 
 func (t *running) Wait(ctx context.Context, report machine.Reporter) (result machine.Result, err error) {
 	started := time.Now()
-	samples, sampleErr := openSamples(filepath.Join(t.options.Dir, t.spec.ID))
+	samples, sampleErr := t.openSamples(filepath.Join(t.options.Dir, t.spec.ID))
 	if sampleErr != nil {
+		result.Ran = min(time.Since(started), t.spec.Duration)
 		return result, errors.Join(sampleErr, t.teardown(&result, report))
 	}
-	defer func() { err = errors.Join(err, samples.Close()) }()
+	pendingSamples := make(chan machine.TrialConditions, 1)
+	sampleErrors := make(chan error, 1)
+	samplesDone := make(chan error, 1)
+	go func() {
+		var writeErr error
+		for sample := range pendingSamples {
+			if writeErr = appendSample(samples, sample); writeErr != nil {
+				sampleErrors <- writeErr
+				break
+			}
+		}
+		samplesDone <- writeErr
+	}()
+	defer func() {
+		close(pendingSamples)
+		err = errors.Join(err, <-samplesDone)
+		if closeErr := samples.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close trial samples: %w", closeErr))
+		}
+	}()
 	conditions := newConditionsSampler(t.options, t.spec, started)
 	result.Stops = t.initialStops
 	for _, inst := range t.instances {
@@ -98,10 +118,12 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 			if temp := sample.TctlC; temp != nil && (result.TctlMaxC == nil || *temp > *result.TctlMaxC) {
 				result.TctlMaxC = temp
 			}
-			if sampleErr := appendSample(samples, sample); sampleErr != nil {
-				fatal = sampleErr
-				decision = true
+			select {
+			case pendingSamples <- sample:
+			default:
 			}
+		case <-sampleErrors:
+			decision = true
 		case <-signal:
 			now := time.Now()
 			if t.spec.Regime == machine.R6 && !r6start && step.At >= t.spec.Duration/2 {

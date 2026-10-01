@@ -3,9 +3,13 @@ package trial
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -129,6 +133,173 @@ func TestConditionsMissingAndPowerWrap(t *testing.T) {
 		time.Sleep(time.Second)
 		if diff := cmp.Diff((*float64)(nil), s.sample(started).PackagePowerW); diff != "" {
 			t.Fatal(diff)
+		}
+	})
+}
+
+type fakeSampleFile struct {
+	mu       sync.Mutex
+	samples  []machine.TrialConditions
+	syncs    int
+	writeErr error
+	syncFn   func() error
+	closeErr error
+	closed   bool
+}
+
+func (f *fakeSampleFile) Write(b []byte) (int, error) {
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	var sample machine.TrialConditions
+	if err := json.Unmarshal(b, &sample); err != nil {
+		return 0, err
+	}
+	f.mu.Lock()
+	f.samples = append(f.samples, sample)
+	f.mu.Unlock()
+	return len(b), nil
+}
+
+func (f *fakeSampleFile) Sync() error {
+	f.mu.Lock()
+	f.syncs++
+	f.mu.Unlock()
+	if f.syncFn != nil {
+		return f.syncFn()
+	}
+	return nil
+}
+
+func (f *fakeSampleFile) Close() error {
+	f.closed = true
+	return f.closeErr
+}
+
+func TestSamplesOpenFailureDuration(t *testing.T) {
+	for _, delay := range []time.Duration{2 * time.Second, 5 * time.Second} {
+		t.Run(delay.String(), func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				r := New(fakeOptions(t, "work"))
+				h := &fakeHost{}
+				r.host = h
+				run, err := r.Start(context.Background(), testSpec("open-failure", machine.R1, 3*time.Second))
+				if err != nil {
+					t.Fatal(err)
+				}
+				openErr := errors.New("injected open failure")
+				run.(*running).openSamples = func(string) (sampleFile, error) {
+					time.Sleep(delay)
+					return nil, openErr
+				}
+				result, err := run.Wait(context.Background(), &recorder{})
+				if !errors.Is(err, openErr) {
+					t.Fatalf("open failure lost: %v", err)
+				}
+				if diff := cmp.Diff(min(delay, 3*time.Second), result.Ran); diff != "" {
+					t.Fatal(diff)
+				}
+				if !slices.Contains(h.recordedSignals(), fakeSignal{1000, syscall.SIGTERM}) {
+					t.Fatal("backend was not terminated")
+				}
+			})
+		})
+	}
+}
+
+func TestSamplesPersistenceFailureEndsTrial(t *testing.T) {
+	for _, operation := range []string{"write", "sync"} {
+		t.Run(operation, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				o := fakeOptions(t, "work")
+				o.SampleInterval = 100 * time.Millisecond
+				r := New(o)
+				r.host = &fakeHost{}
+				run, err := r.Start(context.Background(), testSpec("persist-failure", machine.R1, time.Second))
+				if err != nil {
+					t.Fatal(err)
+				}
+				persistErr, closeErr := errors.New("injected persistence failure"), errors.New("injected close failure")
+				f := &fakeSampleFile{closeErr: closeErr}
+				if operation == "write" {
+					f.writeErr = persistErr
+				} else {
+					f.syncFn = func() error { return persistErr }
+				}
+				run.(*running).openSamples = func(string) (sampleFile, error) { return f, nil }
+				result, err := run.Wait(context.Background(), &recorder{})
+				if !errors.Is(err, persistErr) || !errors.Is(err, closeErr) {
+					t.Fatalf("persistence or close failure lost: %v", err)
+				}
+				if diff := cmp.Diff(100*time.Millisecond, result.Ran); diff != "" {
+					t.Fatal(diff)
+				}
+				if !f.closed {
+					t.Fatal("samples file remained open")
+				}
+			})
+		})
+	}
+}
+
+func TestSlowSamplesPreserveScheduleAndJoinWriter(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		o := fakeOptions(t, "work")
+		o.SampleInterval = 100 * time.Millisecond
+		r := New(o)
+		h := &fakeHost{}
+		r.host = h
+		run, err := r.Start(context.Background(), testSpec("slow-samples", machine.R6, 600*time.Millisecond))
+		if err != nil {
+			t.Fatal(err)
+		}
+		release := make(chan struct{})
+		f := &fakeSampleFile{syncFn: func() error { <-release; return nil }}
+		run.(*running).openSamples = func(string) (sampleFile, error) { return f, nil }
+		done := make(chan struct{})
+		var result machine.Result
+		go func() {
+			result, err = run.Wait(context.Background(), &recorder{})
+			close(done)
+		}()
+		time.Sleep(700 * time.Millisecond)
+		synctest.Wait()
+		wantSignals := []fakeSignal{
+			{1000, syscall.SIGSTOP},
+			{1000, syscall.SIGCONT},
+			{1000, syscall.SIGSTOP},
+			{1000, syscall.SIGCONT},
+			{1000, syscall.SIGTERM},
+			{1000, syscall.SIGKILL},
+		}
+		if diff := cmp.Diff(wantSignals, h.recordedSignals(), cmp.AllowUnexported(fakeSignal{})); diff != "" {
+			t.Error(diff)
+		}
+		select {
+		case <-done:
+			t.Error("Wait returned before the pending sample was durable")
+		default:
+		}
+		close(release)
+		<-done
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := cmp.Diff(600*time.Millisecond, result.Ran); diff != "" {
+			t.Fatal(diff)
+		}
+		want := []machine.TrialConditions{{ElapsedMS: 100}, {ElapsedMS: 200}}
+		if diff := cmp.Diff(want, f.samples); diff != "" {
+			t.Fatal(diff)
+		}
+		if diff := cmp.Diff(len(want), f.syncs); diff != "" {
+			t.Fatal(diff)
+		}
+		if !f.closed {
+			t.Fatal("samples file remained open")
 		}
 	})
 }

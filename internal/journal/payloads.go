@@ -526,7 +526,7 @@ func (p *TrialEnd) Message() string {
 	if p.Signal == machine.Crash || p.Interrupted && (p.Reason == TrialReasonStoppedDuringTrial || p.Reason == TrialReasonStoppedAfterMachineCheck) {
 		duration = fmt.Sprintf(", last evidence %ds after start", p.DurationS)
 	}
-	if p.Signal == machine.Crash && p.LastSampleS != nil {
+	if p.LastSampleS != nil {
 		duration += fmt.Sprintf(", last sample %ds", *p.LastSampleS)
 		var conditions []string
 		if p.LastSampleTctlC != nil {
