@@ -16,8 +16,9 @@ const (
 )
 
 var (
-	errOutputLineTooLong = errors.New("backend output line exceeds 64 KiB")
-	errWatchedOutputLost = errors.New("watched output lost before draining")
+	errOutputLineTooLong     = errors.New("backend output line exceeds 64 KiB")
+	errWatchedOutputLost     = errors.New("watched output lost before draining")
+	errWatchedOutputRejected = errors.New("unsupported watched output file")
 )
 
 // contextError checks the clock as well as cancellation: a deadline timer may
@@ -102,8 +103,10 @@ func (w *watchFile) read(ctx context.Context, line func(string)) (bool, error) {
 	}
 	f, err := os.OpenFile(w.path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) && w.offset < w.size {
+		if w.offset < w.size && (errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ELOOP)) {
 			err = fmt.Errorf("%w: %w", errWatchedOutputLost, err)
+		} else if errors.Is(err, syscall.ELOOP) {
+			err = fmt.Errorf("%w: %w", errWatchedOutputRejected, err)
 		}
 		return false, err
 	}
@@ -113,7 +116,10 @@ func (w *watchFile) read(ctx context.Context, line func(string)) (bool, error) {
 		return false, fmt.Errorf("stat: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return false, fmt.Errorf("watched file is not regular: %s", w.path)
+		if w.offset < w.size {
+			return false, fmt.Errorf("%w: watched file is not regular: %s", errWatchedOutputLost, w.path)
+		}
+		return false, fmt.Errorf("%w: watched file is not regular: %s", errWatchedOutputRejected, w.path)
 	}
 	if info.Size() < w.size && w.offset < w.size {
 		return false, fmt.Errorf("%w: file truncated from %d to %d bytes with %d unread", errWatchedOutputLost, w.size, info.Size(), w.size-w.offset)

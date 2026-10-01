@@ -244,30 +244,32 @@ func (t *running) tail(ctx context.Context, inst *instance, result *machine.Resu
 		}
 		w := &inst.watch[inst.watchNext]
 		inst.watchNext = (inst.watchNext + 1) % len(inst.watch)
-		if w.err != nil {
-			drained = drained && w.lines.exceeded
-			continue
-		}
 		offset := w.offset
-		complete, err := w.read(ctx, func(line string) {
-			if t.classifyWatch(inst, line, result, report) {
+		complete := false
+		var err error
+		if w.err != nil {
+			complete = w.lines.exceeded || errors.Is(w.err, errWatchedOutputRejected)
+		} else {
+			complete, err = w.read(ctx, func(line string) {
+				if t.classifyWatch(inst, line, result, report) {
+					found = true
+				}
+			})
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return found, false, backlogProgress
+			}
+			if errors.Is(err, os.ErrNotExist) && w.offset >= w.size {
+				complete = true
+				err = nil
+			}
+			if err != nil {
+				w.err = fmt.Errorf("read watched file %s: %w", w.path, err)
+				t.outputError(w.err, result)
+				if errors.Is(err, errOutputLineTooLong) || errors.Is(err, errWatchedOutputRejected) {
+					complete = true
+				}
 				found = true
 			}
-		})
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return found, false, backlogProgress
-		}
-		if errors.Is(err, os.ErrNotExist) && w.offset >= w.size {
-			complete = true
-			err = nil
-		}
-		if err != nil {
-			w.err = fmt.Errorf("read watched file %s: %w", w.path, err)
-			t.outputError(w.err, result)
-			if errors.Is(err, errOutputLineTooLong) {
-				complete = true
-			}
-			found = true
 		}
 		drained = drained && complete
 		backlogProgress = backlogProgress || (!complete && err == nil && w.offset > offset)

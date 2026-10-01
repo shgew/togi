@@ -674,7 +674,7 @@ func TestWatchedTeardownMultiInstanceDeadline(t *testing.T) {
 }
 
 func TestWatchedLostBacklogCannotPass(t *testing.T) {
-	for _, loss := range []string{"removed", "truncated"} {
+	for _, loss := range []string{"removed", "truncated", "symlink", "fifo"} {
 		t.Run(loss, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				o := fakeOptions(t, "watched")
@@ -695,10 +695,24 @@ func TestWatchedLostBacklogCannotPass(t *testing.T) {
 						classified++
 						if classified == prefixLines {
 							var err error
-							if loss == "removed" {
+							switch loss {
+							case "removed":
 								err = os.Remove(path)
-							} else {
+							case "truncated":
 								err = os.Truncate(path, 0)
+							case "symlink", "fifo":
+								err = os.Remove(path)
+								if err == nil {
+									if loss == "symlink" {
+										target := filepath.Join(filepath.Dir(path), "replacement.txt")
+										err = os.WriteFile(target, []byte("COMPUTE ERROR\n"), 0600)
+										if err == nil {
+											err = os.Symlink(target, path)
+										}
+									} else {
+										err = syscall.Mkfifo(path, 0600)
+									}
+								}
 							}
 							if err != nil {
 								t.Fatal(err)
@@ -715,6 +729,46 @@ func TestWatchedLostBacklogCannotPass(t *testing.T) {
 				}
 				if elapsed := time.Since(begin) - spec.Duration; elapsed > teardownLimit {
 					t.Fatalf("lost backlog exceeded shared cleanup deadline: %s", elapsed)
+				}
+			})
+		})
+	}
+}
+
+func TestWatchedRejectedOutputIsInconclusive(t *testing.T) {
+	for _, kind := range []string{"symlink", "fifo"} {
+		t.Run(kind, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				o := fakeOptions(t, "watched")
+				r := New(o)
+				r.host = &outputHost{fakeHost: &fakeHost{}}
+				started, err := r.Start(context.Background(), testSpec("rejected-output", machine.R1, 20*time.Millisecond))
+				if err != nil {
+					t.Fatal(err)
+				}
+				trial := started.(*running)
+				path := trial.instances[0].watch[0].path
+				if kind == "symlink" {
+					target := filepath.Join(filepath.Dir(path), "protected.txt")
+					if err := os.WriteFile(target, []byte("COMPUTE ERROR\n"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(target, path); err != nil {
+						t.Fatal(err)
+					}
+				} else if err := syscall.Mkfifo(path, 0600); err != nil {
+					t.Fatal(err)
+				}
+				var rec recorder
+				result, err := trial.Wait(context.Background(), &rec)
+				if err == nil || result.Inconclusive == "" || result.Signal != "" || len(rec.signals) != 0 || errors.Is(err, machine.ErrContainment) || errors.Is(err, errOutputDrainUnconfirmed) {
+					t.Fatalf("rejected watched output: result=%+v signals=%v err=%v", result, rec.signals, err)
+				}
+				if kind == "symlink" && !errors.Is(err, syscall.ELOOP) {
+					t.Fatalf("symlink rejection lost underlying error: %v", err)
+				}
+				if kind == "fifo" && !strings.Contains(err.Error(), "watched file is not regular") {
+					t.Fatalf("nonregular rejection lost underlying error: %v", err)
 				}
 			})
 		})
