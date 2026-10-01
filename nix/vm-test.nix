@@ -113,13 +113,19 @@ in
       machine.succeed("chown unrelated /run/lock/togi.lock")
       foreign_identity = machine.succeed("stat -c '%d:%i:%u:%g:%a' /run/lock/togi.lock").strip()
       machine.succeed("systemd-tmpfiles --create --prefix=/run/lock/togi.lock")
-      machine.succeed("togi --state-dir /tmp/foreign-lock-state reset --all; test $? -eq 1")
+      foreign_status, foreign_output = machine.execute(
+          "togi --state-dir /tmp/foreign-lock-state reset --all 2>&1"
+      )
+      assert foreign_status == 1, foreign_output
+      assert "lock is owned by another user" in foreign_output, foreign_output
       assert machine.succeed("stat -c '%d:%i:%u:%g:%a' /run/lock/togi.lock").strip() == foreign_identity
       machine.succeed("test ! -e /tmp/foreign-lock-state; chown root /run/lock/togi.lock")
       machine.succeed("chmod 0640 /run/lock/togi.lock")
-      machine.succeed(
-          "runuser -u togi-hardware -- togi --state-dir /tmp/readonly-lock-state reset --all; test $? -eq 1"
+      readonly_status, readonly_output = machine.execute(
+          "runuser -u togi-hardware -- togi --state-dir /tmp/readonly-lock-state reset --all 2>&1"
       )
+      assert readonly_status == 1, readonly_output
+      assert "lock owner must restrict legacy permissions" in readonly_output, readonly_output
       assert machine.succeed("stat -c '%a' /run/lock/togi.lock").strip() == "640"
       machine.succeed("test ! -e /tmp/readonly-lock-state; chmod 0660 /run/lock/togi.lock")
       machine.succeed("loginctl enable-linger togi-hardware")
@@ -206,7 +212,11 @@ in
       assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == contention_inode
       assert machine.succeed("stat -c '%a' /run/lock/togi.lock").strip() == "644"
       for state_dir in ["/tmp/host-lock-state-a", "/tmp/host-lock-state-b"]:
-          machine.succeed(f"togi --state-dir {state_dir} reset --all; test $? -eq 3")
+          contention_status, contention_output = machine.execute(
+              f"togi --state-dir {state_dir} reset --all 2>&1"
+          )
+          assert contention_status == 3, contention_output
+          assert "another togi process holds the host lock" in contention_output, contention_output
           machine.succeed(f"test ! -e {state_dir}")
       machine.succeed(
           "mkdir -p /run/systemd/system/togi.service.d; "

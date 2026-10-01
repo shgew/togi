@@ -106,7 +106,8 @@ func validateDirectory(mode os.FileMode, uid, caller uint32, containing, namespa
 	// The namespace root's authority does not depend on how its owner is
 	// mapped into the caller's namespace. The lock's containing directory
 	// still requires an authorized owner, even when it is the namespace root.
-	if uid != 0 && uid != caller && (containing || (!namespaceRoot && mode.Perm()&0o222 != 0)) {
+	// Mode bits cannot constrain a foreign owner, who can chmod the directory.
+	if uid != 0 && uid != caller && (containing || !namespaceRoot) {
 		return errors.New("directory is owned by another user")
 	}
 	return nil
