@@ -18,12 +18,13 @@ func FuzzParse(f *testing.F) {
 	if err != nil {
 		f.Fatal(err)
 	}
-	f.Add(data, Schema)
-	f.Add(data[:len(data)-5], Schema)
-	f.Add([]byte{}, Schema)
-	f.Fuzz(func(t *testing.T, data []byte, schema int) {
-		if schema != 1 && schema != Schema {
-			return
+	f.Add(data, false)
+	f.Add(data[:len(data)-5], false)
+	f.Add([]byte{}, false)
+	f.Fuzz(func(t *testing.T, data []byte, legacy bool) {
+		schema := Schema
+		if legacy {
+			schema = 1
 		}
 		events, end, err := parse(data, Build{Schema: schema})
 		if err != nil {
