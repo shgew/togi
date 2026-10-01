@@ -5,11 +5,15 @@ package trial
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/machine"
 )
 
@@ -111,5 +115,35 @@ func TestUnprivilegedLauncherPreservesCredentials(t *testing.T) {
 	t.Parallel()
 	if attr := launcherAttributes(1001, 1002); attr.Credential != nil {
 		t.Fatalf("unprivileged launcher tries privileged setgroups: %+v", attr.Credential)
+	}
+}
+
+func TestProcStatDiagnostic(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{"missing delimiter", "123 (worker\n", `malformed proc stat PATH: "123 (worker\n"`},
+		{"short", "123 (worker) R 1\n", `short proc stat PATH: "123 (worker) R 1\n"`},
+		{"long malformed", strings.Repeat("x", 300), `malformed proc stat PATH: "` + strings.Repeat("x", 256) + `" (truncated)`},
+		{"long short", "1 (w)" + strings.Repeat("x", 300), `short proc stat PATH: "1 (w)` + strings.Repeat("x", 251) + `" (truncated)`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "stat")
+			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := procStat(path)
+			if err == nil {
+				t.Fatal("invalid proc stat accepted")
+			}
+			if diff := cmp.Diff(strings.ReplaceAll(tc.want, "PATH", path), err.Error()); diff != "" {
+				t.Fatalf("diagnostic (-want +got):\n%s", diff)
+			}
+			if processDisappeared(err) {
+				t.Fatal("malformed content reported as a disappeared process")
+			}
+		})
 	}
 }

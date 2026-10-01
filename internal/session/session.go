@@ -547,6 +547,20 @@ func (r *runner) closeOpenTrial() error {
 	if open.core == nil {
 		end.Core = nil
 	}
+	if _, crashed := r.fold.crashSeq[open.boot]; crashed {
+		if sample := r.in.Machine.Trials.LastSample(open.intent.Trial); sample != nil {
+			end.LastSampleS = new(int(sample.ElapsedMS / 1000))
+			end.LastSampleTctlC = sample.TctlC
+			for _, mhz := range sample.CoreMHz {
+				if end.LastSampleMinMHz == nil || mhz < *end.LastSampleMinMHz {
+					end.LastSampleMinMHz = new(mhz)
+				}
+				if end.LastSampleMaxMHz == nil || mhz > *end.LastSampleMaxMHz {
+					end.LastSampleMaxMHz = new(mhz)
+				}
+			}
+		}
+	}
 	_, err := r.append(end, cause...)
 	return err
 }

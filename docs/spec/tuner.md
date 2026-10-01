@@ -117,7 +117,7 @@ A rotation captures the configured schedule in its start event. R1 and R2 occurr
 
 Resident and masked attribution uses the backend instance's reported core first, then exactly one core named by core-local MCEs, then the single nonzero core in the applied profile. An attributed failure records the failed mark at the applied offset and backs off that core to at least one count shallower, including when it was held at an anchor offset; failure at 0 is a dead end. If the core was already shallower, its offset need not move. An unattributed resident or idle failure queues a hunt of the failing profile and trial class instead of backing off the loaded set. An unattributed masked failure is the mask outcome. Inconclusive starts retry the same class.
 
-When an attributed backoff or hunt commitment changes an offset, guard first reruns the failed class: `n` starts at `start_s`, then one at its original duration if different. These obligations are FIFO. `run --rotations N` stops only after N clean qualifying rotation ends since the last deepening, with every core done and no refinement able to improve total depth; without the flag guard continues indefinitely.
+When an attributed backoff or hunt commitment changes an offset, guard first reruns the failed class: `n` starts at `start_s`, then one at its original duration if different. These obligations are FIFO. A rerun cites the newest queued failure of its class; this does not change the obligations or their evidence windows. `run --rotations N` stops only after N clean qualifying rotation ends since the last deepening, with every core done and no refinement able to improve total depth; without the flag guard continues indefinitely.
 
 ## Hunt
 

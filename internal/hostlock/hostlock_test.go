@@ -2,10 +2,12 @@ package hostlock
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -19,6 +21,13 @@ func TestExclusiveUntilClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = lock.Close() })
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Mode().Perm() != 0o600 {
+		t.Fatalf("new lock permissions %o, want 600", before.Mode().Perm())
+	}
 	const contenders = 8
 	var wg sync.WaitGroup
 	for range contenders {
@@ -46,64 +55,298 @@ func TestExclusiveUntilClosed(t *testing.T) {
 	if err := other.Close(); err != nil {
 		t.Fatal(err)
 	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("release replaced or removed the lock inode")
+	}
 }
 
-func TestReadOnlyExistingLock(t *testing.T) {
+func TestLegacyLockMigrationPreservesInodeAndContents(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []os.FileMode{0o644, 0o444, 0o640} {
+		t.Run(mode.String(), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "togi.lock")
+			const contents = "persistent host lock\n"
+			if err := os.WriteFile(path, []byte(contents), mode); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, mode); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lock, err := Acquire(path)
+			if err != nil {
+				t.Fatalf("acquire legacy lock: %v", err)
+			}
+			if err := lock.Close(); err != nil {
+				t.Fatal(err)
+			}
+			after, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !os.SameFile(before, after) || after.Mode().Perm() != 0o600 {
+				t.Fatal("migration replaced the inode or left legacy permissions")
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(contents, string(got)); diff != "" {
+				t.Errorf("lock contents changed (-want +got): %s", diff)
+			}
+		})
+	}
+}
+
+func TestLegacyReadOnlyHolderRemainsExclusiveDuringMigration(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "togi.lock")
-	const contents = "persistent host lock\n"
-	if err := os.WriteFile(path, []byte(contents), 0o444); err != nil {
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.Stat(path)
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if os.Geteuid() != 0 {
-		writable, err := os.OpenFile(path, os.O_RDWR, 0)
-		if writable != nil {
-			_ = writable.Close()
+	t.Cleanup(func() { _ = holder.Close() })
+	before, err := holder.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		lock, err := Acquire(path)
+		if lock != nil {
+			_ = lock.Close()
+			t.Fatal("migration bypassed a read-only legacy holder")
 		}
-		if !errors.Is(err, os.ErrPermission) {
-			t.Fatalf("writable open error %v, want permission denied", err)
+		if !errors.Is(err, ErrLocked) {
+			t.Fatalf("migration error %v, want ErrLocked", err)
 		}
-	}
-	lock, err := Acquire(path)
-	if err != nil {
-		t.Fatalf("acquire read-only lock: %v", err)
-	}
-	t.Cleanup(func() { _ = lock.Close() })
-	other, err := Acquire(path)
-	if other != nil {
-		_ = other.Close()
-		t.Fatal("contender acquired read-only lock")
-	}
-	if !errors.Is(err, ErrLocked) {
-		t.Fatalf("contention error %v, want ErrLocked", err)
-	}
-	if err := lock.Close(); err != nil {
-		t.Fatal(err)
-	}
-	other, err = Acquire(path)
-	if err != nil {
-		t.Fatalf("acquire released read-only lock: %v", err)
-	}
-	if err := other.Close(); err != nil {
-		t.Fatal(err)
 	}
 	after, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !os.SameFile(before, after) || before.Mode() != after.Mode() {
-		t.Fatal("acquisition replaced the lock or changed its permissions")
+	if !os.SameFile(before, after) || after.Mode().Perm() != 0o600 {
+		t.Fatal("held legacy inode was replaced or not restricted")
 	}
-	got, err := os.ReadFile(path)
+	if err := holder.Close(); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := Acquire(path)
+	if err != nil {
+		t.Fatalf("acquire after legacy holder exits: %v", err)
+	}
+	_ = lock.Close()
+}
+
+func TestProvisionedGroupLockPreservesPermissions(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "togi.lock")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o660); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := Acquire(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diff := cmp.Diff(contents, string(got)); diff != "" {
-		t.Errorf("lock contents changed (-want +got): %s", diff)
+	_ = lock.Close()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o660 {
+		t.Fatalf("authorized group permissions changed to %o", info.Mode().Perm())
+	}
+}
+
+func TestConcurrentCreationHasOneOwner(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "togi.lock")
+	const contenders = 8
+	results := make(chan *os.File, contenders)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range contenders {
+		wg.Go(func() {
+			<-start
+			lock, err := Acquire(path)
+			if err != nil && !errors.Is(err, ErrLocked) {
+				t.Errorf("concurrent acquisition: %v", err)
+			}
+			results <- lock
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	owners := 0
+	for lock := range results {
+		if lock != nil {
+			owners++
+			_ = lock.Close()
+		}
+	}
+	if owners != 1 {
+		t.Fatalf("%d concurrent owners, want one", owners)
+	}
+}
+
+func TestUnsafeLockObjectsAreNotModified(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"symlink", "hardlink", "directory", "fifo"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(dir, "target")
+			if err := os.WriteFile(target, []byte("unchanged"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(target, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "togi.lock")
+			var err error
+			switch kind {
+			case "symlink":
+				err = os.Symlink(target, path)
+			case "hardlink":
+				err = os.Link(target, path)
+			case "directory":
+				err = os.Mkdir(path, 0o700)
+			case "fifo":
+				err = syscall.Mkfifo(path, 0o600)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.Lstat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lock, err := Acquire(path)
+			if lock != nil {
+				_ = lock.Close()
+				t.Fatal("acquired an unsafe lock object")
+			}
+			if err == nil || errors.Is(err, ErrLocked) {
+				t.Fatalf("unsafe object error: %v", err)
+			}
+			after, err := os.Lstat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !os.SameFile(before, after) || before.Mode() != after.Mode() {
+				t.Fatal("unsafe object was replaced or chmodded")
+			}
+			info, err := os.Stat(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.Mode().Perm() != 0o644 || string(data) != "unchanged" {
+				t.Fatal("unsafe object's target was modified")
+			}
+		})
+	}
+}
+
+func TestWritableParentNeedsStickyBit(t *testing.T) {
+	t.Parallel()
+	for _, sticky := range []bool{false, true} {
+		t.Run(fmt.Sprint(sticky), func(t *testing.T) {
+			dir := t.TempDir()
+			mode := os.FileMode(0o777)
+			if sticky {
+				mode |= os.ModeSticky
+			}
+			if err := os.Chmod(dir, mode); err != nil {
+				t.Fatal(err)
+			}
+			child := filepath.Join(dir, "child")
+			if err := os.Mkdir(child, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(child, "togi.lock")
+			lock, err := Acquire(path)
+			if sticky {
+				if err != nil {
+					t.Fatal(err)
+				}
+				_ = lock.Close()
+			} else {
+				if lock != nil {
+					_ = lock.Close()
+					t.Fatal("acquired lock below a writable nonsticky ancestor")
+				}
+				if err == nil {
+					t.Fatal("unsafe parent was accepted")
+				}
+				if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("unsafe parent created a lock: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestDirectoryAuthorization(t *testing.T) {
+	t.Parallel()
+	const caller, foreign = uint32(1001), uint32(2002)
+	for _, tt := range []struct {
+		name          string
+		mode          os.FileMode
+		owner         uint32
+		containing    bool
+		namespaceRoot bool
+		wantError     bool
+	}{
+		{name: "mapped foreign namespace root", mode: 0o750, owner: foreign, namespaceRoot: true},
+		{name: "foreign namespace root is not a containing directory", mode: 0o750, owner: foreign, namespaceRoot: true, containing: true, wantError: true},
+		{name: "foreign writable nonsticky namespace root", mode: 0o777, owner: foreign, namespaceRoot: true, wantError: true},
+		{name: "foreign read-only ancestor", mode: 0o555, owner: foreign, wantError: true},
+		{name: "foreign owner-writable ancestor", mode: 0o755, owner: foreign, wantError: true},
+		{name: "foreign sticky ancestor", mode: 0o777 | os.ModeSticky, owner: foreign, wantError: true},
+		{name: "caller sticky ancestor", mode: 0o777 | os.ModeSticky, owner: caller},
+		{name: "root sticky ancestor", mode: 0o777 | os.ModeSticky, owner: 0},
+		{name: "caller read-only ancestor", mode: 0o555, owner: caller},
+		{name: "root read-only ancestor", mode: 0o555, owner: 0},
+		{name: "caller private containing directory", mode: 0o700, owner: caller, containing: true},
+		{name: "root controlled containing directory", mode: 0o755, owner: 0, containing: true},
+		{name: "foreign read-only containing directory", mode: 0o555, owner: foreign, containing: true, wantError: true},
+		{name: "foreign private containing directory", mode: 0o700, owner: foreign, containing: true, wantError: true},
+		{name: "foreign sticky containing directory", mode: 0o777 | os.ModeSticky, owner: foreign, containing: true, wantError: true},
+		{name: "foreign group-writable nonsticky ancestor", mode: 0o575, owner: foreign, wantError: true},
+		{name: "foreign other-writable nonsticky ancestor", mode: 0o557, owner: foreign, wantError: true},
+		{name: "caller writable nonsticky ancestor", mode: 0o777, owner: caller, wantError: true},
+		{name: "root writable nonsticky ancestor", mode: 0o777, owner: 0, wantError: true},
+		{name: "caller writable nonsticky containing directory", mode: 0o777, owner: caller, containing: true, wantError: true},
+		{name: "root writable nonsticky containing directory", mode: 0o777, owner: 0, containing: true, wantError: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDirectory(os.ModeDir|tt.mode, tt.owner, caller, tt.containing, tt.namespaceRoot)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("directory authorization error %v, want refusal %t", err, tt.wantError)
+			}
+		})
 	}
 }
 

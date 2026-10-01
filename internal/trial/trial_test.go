@@ -76,7 +76,7 @@ func fakeOptions(t *testing.T, mode string) Options {
 		User:           testIdentity(),
 		Backends:       map[machine.Backend]backend.Backend{machine.Mprime: fakeBackend{mode}},
 		SampleInterval: 50 * time.Millisecond, StallGrace: time.Hour,
-		Hwmon: t.TempDir(),
+		Hwmon: t.TempDir(), CPUFreq: t.TempDir(), Powercap: t.TempDir(),
 		Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0}}, {Core: 1, CCD: 1, CPUs: []int{1}}},
 	}
 }
@@ -558,7 +558,8 @@ func TestTctl(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if value := readTctl(dir); value == nil || *value != 61 {
-		t.Fatalf("Tctl %v", value)
+	value, _ := readTemperatures(dir)
+	if diff := cmp.Diff(new(61), value); diff != "" {
+		t.Fatal(diff)
 	}
 }

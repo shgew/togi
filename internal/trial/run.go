@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -33,6 +32,32 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	started := time.Now()
 	watchCtx, cancelWatch := context.WithDeadline(ctx, started.Add(t.spec.Duration))
 	defer cancelWatch()
+	pendingSamples := make(chan machine.TrialConditions, 1)
+	sampleErrors := make(chan error, 1)
+	samplesDone := make(chan error, 1)
+	go func() {
+		samples, writeErr := t.openSamples(filepath.Join(t.options.Dir, t.spec.ID))
+		if writeErr != nil {
+			sampleErrors <- writeErr
+			samplesDone <- writeErr
+			return
+		}
+		for sample := range pendingSamples {
+			if writeErr = appendSample(samples, sample); writeErr != nil {
+				sampleErrors <- writeErr
+				break
+			}
+		}
+		if closeErr := samples.Close(); closeErr != nil {
+			writeErr = errors.Join(writeErr, fmt.Errorf("close trial samples: %w", closeErr))
+		}
+		samplesDone <- writeErr
+	}()
+	defer func() {
+		close(pendingSamples)
+		err = errors.Join(err, <-samplesDone)
+	}()
+	conditions := newConditionsSampler(t.options, t.spec, started)
 	result.Stops = t.initialStops
 	watching := false
 	for _, inst := range t.instances {
@@ -129,9 +154,16 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				}
 			}
 			cancelPoll()
-			if temp := readTctl(t.options.Hwmon); temp != nil && (result.TctlMaxC == nil || *temp > *result.TctlMaxC) {
+			sample := conditions.sample(started)
+			if temp := sample.TctlC; temp != nil && (result.TctlMaxC == nil || *temp > *result.TctlMaxC) {
 				result.TctlMaxC = temp
 			}
+			select {
+			case pendingSamples <- sample:
+			default:
+			}
+		case <-sampleErrors:
+			decision = true
 		case <-signal:
 			now := time.Now()
 			if t.spec.Regime == machine.R6 && !r6start && step.At >= t.spec.Duration/2 {
@@ -569,41 +601,4 @@ func (t *running) sample(inst *instance, now time.Time, result *machine.Result, 
 func stalled(a, b cpuSample, threads int) bool {
 	span := b.active - a.active
 	return span > 0 && b.cpu-a.cpu < time.Duration(float64(span)*0.5*float64(threads))
-}
-
-func readTctl(root string) *int {
-	dirs, err := os.ReadDir(root)
-	if err != nil {
-		return nil
-	}
-	for _, d := range dirs {
-		dir := filepath.Join(root, d.Name())
-		name, err := os.ReadFile(filepath.Join(dir, "name"))
-		if err != nil || (strings.TrimSpace(string(name)) != "k10temp" && strings.TrimSpace(string(name)) != "zenpower") {
-			continue
-		}
-		labels, err := filepath.Glob(filepath.Join(dir, "temp*_label"))
-		if err != nil {
-			return nil
-		}
-		for _, label := range labels {
-			b, err := os.ReadFile(label)
-			if err != nil || strings.TrimSpace(string(b)) != "Tctl" {
-				continue
-			}
-			input := strings.TrimSuffix(label, "_label") + "_input"
-			b, err = os.ReadFile(input)
-			if err != nil {
-				return nil
-			}
-			value, err := strconv.Atoi(strings.TrimSpace(string(b)))
-			if err != nil {
-				return nil
-			}
-			degrees := value / 1000
-			return &degrees
-		}
-		return nil
-	}
-	return nil
 }

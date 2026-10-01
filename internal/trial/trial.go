@@ -24,7 +24,7 @@ type Options struct {
 	User                                               Identity
 	NoScope                                            bool
 	SampleInterval, StallGrace, StallWindow, StopGrace time.Duration
-	Hwmon                                              string
+	Hwmon, CPUFreq, Powercap                           string
 }
 
 type Runner struct {
@@ -47,6 +47,12 @@ func New(o Options) *Runner {
 	}
 	if o.Hwmon == "" {
 		o.Hwmon = "/sys/class/hwmon"
+	}
+	if o.CPUFreq == "" {
+		o.CPUFreq = "/sys/devices/system/cpu"
+	}
+	if o.Powercap == "" {
+		o.Powercap = "/sys/class/powercap"
 	}
 	return &Runner{options: o, host: newOSHost()}
 }
@@ -76,6 +82,7 @@ type running struct {
 	backend      backend.Backend
 	options      Options
 	host         processHost
+	openSamples  func(string) (sampleFile, error)
 	started      machine.Started
 	instances    []*instance
 	scopes       []string
@@ -132,6 +139,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 		}
 	}
 	t := &running{spec: spec, backend: b, options: r.options, host: r.host, events: make(chan streamEvent, 1024), streamStop: make(chan struct{})}
+	t.openSamples = openSamples
 	t.started.Scope = "togi-trial-" + spec.ID
 	t.started.CPUs = slices.Clone(spec.CPUs)
 	t.started.Schedule = machine.ScheduleFor(spec)
