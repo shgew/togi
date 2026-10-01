@@ -4,6 +4,10 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ## [Unreleased]
 
+### Changed
+
+- Compatibility diagnostics consistently name togi in version comparisons and recovery commands ([#227]).
+
 ## [0.6.0] - 2026-10-01
 
 ### Changed
@@ -21,7 +25,6 @@ All notable changes to togi are documented in this file. The format is based on 
 ### Changed
 
 - Inconclusive trials caused by malformed or short process-stat samples include the quoted content read, truncated to 256 bytes for diagnosis ([#218]).
-- Compatibility diagnostics consistently name togi in version comparisons and recovery commands ([#227]).
 
 ### Fixed
 
