@@ -45,3 +45,35 @@ regimes = ["R7"]
 A joint-triggered crash produces no MCE by default, even when `[model] crash_mce` enables MCEs for per-core crashes. To deliberately mislead attribution, add `crash_mce_core = 3` to the `[[joint]]` table: each crash from that joint leaves an uncorrected load-store MCE naming core 03 in the next boot. The named core must exist, but need not be a joint member or loaded. This explicit evidence takes precedence over an unattributed crash and can produce a single-core failed mark instead of a joint mark; scenarios using it must state that expected attribution.
 
 Run it with `go run ./tools/sim --machine <file> --state-dir <dir>` and inspect `events --kind hunt,mark,refine` along with `status`, `cert` and `watch`. `sim.Config` also models late-onset hazards (six minutes of R6 idle or four minutes of R7 heat soak), a flat rare hazard, a failure on an idle core, a backend error just before a crash, and watchdog, power-loss and thermal-trip resets. A scripted outcome pins a particular trial and time for deterministic interruption tests. The simulator has separate wall and boot-local monotonic clocks, so a wall-clock jump need not change which MCE belongs to a trial.
+
+## Measured reference journals
+
+[`just stats`](reviewing.md) reports exposure and failures from real journals; it does not fit simulator defaults. These three archived sessions came from one Ryzen 9 9950X3D2 under one BIOS context. The session IDs identify the unmodified compressed fixtures in `internal/carry/testdata/`.
+
+|Session (ruleset)|Regime|Starts|Trial hours|Crashes|Computation errors|Unexpected exits|
+|---|---|---:|---:|---:|---:|---:|
+|20260924T204352Z (1)|R1|388|12.854|15|0|1|
+|20260924T204352Z (1)|R2|271|8.109|13|14|0|
+|20260924T204352Z (1)|R3|54|2.900|0|0|0|
+|20260924T204352Z (1)|R4|54|2.900|0|0|0|
+|20260924T204352Z (1)|R5|22|1.572|4|1|1|
+|20260924T204352Z (1)|R6|2|0.500|0|0|0|
+|20260924T204352Z (1)|R7|2|0.008|2|0|0|
+|20260926T151414Z (2)|R1|197|11.394|1|0|0|
+|20260926T151414Z (2)|R2|155|8.395|9|8|0|
+|20260926T151414Z (2)|R3|57|2.776|0|0|0|
+|20260926T151414Z (2)|R4|50|2.567|0|0|0|
+|20260926T151414Z (2)|R5|18|1.415|2|0|0|
+|20260926T151414Z (2)|R6|3|0.750|0|0|0|
+|20260926T151414Z (2)|R7|2|0.000|1|1|0|
+|20260927T221954Z (3)|R1|51|4.250|0|0|0|
+|20260927T221954Z (3)|R2|282|11.838|1|3|0|
+|20260927T221954Z (3)|R3|17|1.417|0|0|0|
+|20260927T221954Z (3)|R4|17|1.417|0|0|0|
+|20260927T221954Z (3)|R5|17|1.378|0|1|0|
+|20260927T221954Z (3)|R6|0|0.000|0|0|0|
+|20260927T221954Z (3)|R7|20|0.701|9|4|0|
+
+R2's failures concentrate in mprime AVX-512 (16, 15 and 4 respectively), with y-cruncher FFTv4/N63/VT3 contributing 11, 2 and 0. R7 mprime AVX2 contributes 1, 1 and 5, mprime AVX-512 1, 1 and 4, and y-cruncher 0, 0 and 4. Unattributed crashes load CCD0 alone 3, 1 and 7 times, both CCDs 2, 0 and 1 times, and CCD1 alone 0, 0 and 1 times. Failures contradicting earlier passes of the same class at equal-or-deeper profiles number 0, 1 and 4.
+
+These are observed starts and last-evidence trial hours, not wall-clock session duration. A crash can have zero recorded exposure, and older journals can record a failure before `trial.start`. Rulesets, offsets, workloads and intended durations changed between sessions, so pooled rates are not per-offset failure probabilities. The simulator's fast seeded default remains unchanged; machine files inspired by these measurements are adversarial scenarios, not calibrated models. The tables provide no evidence for adding R3 or R4 schedule-dependent hazards.
