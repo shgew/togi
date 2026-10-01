@@ -4,6 +4,10 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 ## [Unreleased]
 
+### Fixed
+
+- The host lock is private by default, with explicit hardware-test group access instead of public-readable delegation. Legacy locks retain their inode during migration; quiesce old lock openers or reboot to revoke existing descriptors. Lock contention no longer restarts the tuning service or triggers restart-limit boot recovery ([#213]).
+
 ## [0.5.2] - 2026-09-30
 
 ### Fixed
@@ -280,3 +284,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#202]: https://github.com/shgew/togi/pull/202
 [#204]: https://github.com/shgew/togi/pull/204
 [#209]: https://github.com/shgew/togi/pull/209
+[#213]: https://github.com/shgew/togi/pull/213
