@@ -8,6 +8,7 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 
 - **BREAKING** The next `togi run` archives a ruleset-4 session and starts a ruleset-5 session seeded with its candidate edges, and with its failed marks when the archived session recorded the same BIOS context; its joint marks stay behind. In ruleset 5 a hunt anchors on the newest qualifying profile raised to the failing profile, so the hunt after a refinement round tests only the cores that round deepened instead of every core from all-zero ([#220]).
 - A joint mark backs a member off to the offset where its edge probe passed with the rest of the joint at its failing offsets, instead of moving another member one count to a profile no trial had passed; on the target machine that rule moved a member one count after each of six hunts and the resident start crashed again every time ([#221]).
+- Hunt parts and complements count the passes and failures of earlier hunts, so a later hunt no longer reruns masks an earlier one already established; on the target machine each of five hunts reran 14 such masks, about 2.3 hours each time ([#222]).
 
 ## [0.5.2] - 2026-09-30
 
@@ -287,3 +288,4 @@ All notable changes to togi, called shycler up to 0.3.1, are documented in this 
 [#209]: https://github.com/shgew/togi/pull/209
 [#220]: https://github.com/shgew/togi/pull/220
 [#221]: https://github.com/shgew/togi/pull/221
+[#222]: https://github.com/shgew/togi/pull/222
