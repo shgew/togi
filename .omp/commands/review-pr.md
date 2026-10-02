@@ -3,7 +3,7 @@ description: Review pull requests in parallel and record their merge gates
 argument-hint: "[PR numbers or URLs… | all]"
 ---
 
-Review `$ARGUMENTS` in this repository. Read `AGENTS.md` and `REVIEW.md` first. Use `just bot` for GitHub actions. Keep temporary payloads outside the repository. Never merge; the owner merges.
+Review `$ARGUMENTS` in this repository. Read `AGENTS.md` and `REVIEW.md` first. Use `gh` for GitHub actions, which act as the owner; only the review record and the `review` check go through `just bot`, which acts as robotogi. Keep temporary payloads outside the repository. Never merge; the owner merges.
 
 ## Resolve and fan out
 
@@ -13,11 +13,11 @@ Find each PR's latest robotogi record: the last comment ending in a `togi-review
 
 Identify stack membership from `gh stack` and the PR base/head relationships. Dispatch ONE task coordinator per independent PR in ONE parallel task call, never a serial loop. Exception: send all layers of the same stack to ONE coordinator. Before spawning, check `read history://` for a resumable coordinator this session already ran for that PR or stack; idle and parked agents count, aborted agents do not. Send it the PR numbers and new heads with `write agent://<id>` instead of spawning another: it already holds the diff, its reviewers and the record. Spawn for PRs without a resumable coordinator. Supply each new coordinator its PRs, repository, worktree instructions, criteria and the entire workflow below. It must be able to spawn `reviewer` agents; ensure the available recursion depth permits that before dispatch. If it does not, report the configuration blocker instead of substituting self-review.
 
-Each independent coordinator fixes its PR in its own worktree of the PR branch, never the main checkout. Reuse a worktree only if it belongs to that branch and has no unrelated edits; otherwise fetch the head and create a dedicated worktree. Stack coordinators use one worktree per layer, review layers in parallel, then apply fixes bottom-up. Restack once with `gh stack`, push the stack once through the App identity, and review fix commits. This ownership prevents parallel pushes racing on the same stack. Every layer the restack moved gets the re-review below, which reviews only that layer's own changes.
+Each independent coordinator fixes its PR in its own worktree of the PR branch, never the main checkout. Reuse a worktree only if it belongs to that branch and has no unrelated edits; otherwise fetch the head and create a dedicated worktree. Stack coordinators use one worktree per layer, review layers in parallel, then apply fixes bottom-up. Restack once with `gh stack`, push the stack once, and review fix commits. This ownership prevents parallel pushes racing on the same stack. Every layer the restack moved gets the re-review below, which reviews only that layer's own changes.
 
 ## Coordinator: freeze and split
 
-For each assigned PR, fetch its title, body, head SHA, base SHA and changed files with added/removed counts. Read the linked issues, including `Refs #N`, and their Acceptance. Identify this layer's criteria and account for each. Save `just bot pr diff <N>` ONCE for that head. If the head changed while fetching, discard the snapshot and fetch a coherent one. Review remote context at the frozen SHA, or a checkout whose HEAD equals it.
+For each assigned PR, fetch its title, body, head SHA, base SHA and changed files with added/removed counts. Read the linked issues, including `Refs #N`, and their Acceptance. Identify this layer's criteria and account for each. Save `gh pr diff <N>` ONCE for that head. If the head changed while fetching, discard the snapshot and fetch a coherent one. Review remote context at the frozen SHA, or a checkout whose HEAD equals it.
 
 List changed files and their +/- counts. Exclude `go.sum`, `flake.lock`, `**/testdata/**` and generated/binary files. List each exclusion and reason separately; records distinguish covered paths from exclusions. Tests not excluded stay with their implementation.
 
@@ -29,7 +29,7 @@ Group by locality: same directory/module, related functionality, tests beside im
 
 ## Coordinator: findings
 
-Triage every agent finding by `AGENTS.md`. Fix real defects on the same branch in one push, with relevant proof. Reply with a reason to the rest. A deferred finding needs an issue and reason; it stays open if P0/P1. Reply to review threads through `just bot api repos/{owner}/{repo}/pulls/<N>/comments/{comment_id}/replies`; resolve them with the GraphQL `resolveReviewThread` mutation through `just bot api graphql`. Record each source, priority and outcome, including rejected or deferred findings.
+Triage every agent finding by `AGENTS.md`. Fix real defects on the same branch in one push, with relevant proof. Reply with a reason to the rest. A deferred finding needs an issue and reason; it stays open if P0/P1. Reply to review threads through `gh api repos/{owner}/{repo}/pulls/<N>/comments/{comment_id}/replies`; resolve them with the GraphQL `resolveReviewThread` mutation through `gh api graphql`. Record each source, priority and outcome, including rejected or deferred findings.
 
 After fixes, freeze the new head and fix diff once, with the same exclusions and file +/- listing. Send each fix hunk with `write agent://<id>` to the resumable reviewer that covered its file, all in parallel, telling it the new frozen SHA. Spawn reviewers, sized and grouped as above, only for files no earlier reviewer covered, or when the earlier reviewers are missing or terminal (including aborted agents still registered). Collect new findings. Repeat until every finding has an outcome, all threads are resolved and no P0/P1 is open. Recheck Acceptance. A finding repeated in two PRs adds a lesson to `REVIEW.md` in the second fix.
 

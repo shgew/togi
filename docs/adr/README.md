@@ -28,9 +28,10 @@ A new ADR adds its line here and updates the status of any ADR it supersedes.
 - [0022: Run the race detector in CI](0022-run-the-race-detector-in-ci.md) — **in force**.
 - [0023: Hunts that converge on shared voltage](0023-hunts-that-converge-on-shared-voltage.md) — **in force**.
 - [0024: Schedule from uncontradicted evidence](0024-schedule-from-uncontradicted-evidence.md) — **partly superseded** by [0027](0027-carry-trial-facts.md): after-reset hunt-planning windows admit eligible carried evidence across their local sequence boundary; by [0028](0028-remove-tiers.md): Bronze credit, tier-change citation and the tier clock; earlier qualified-rotation credit for `run --rotations` remains.
-- [0025: Recorded agent review](0025-recorded-agent-review.md) — **partly superseded** by [0026](0026-review-only-what-changed.md): a whole record for every reviewed head, version-1 JSON and fresh reviewers for fix diffs.
+- [0025: Recorded agent review](0025-recorded-agent-review.md) — **partly superseded** by [0026](0026-review-only-what-changed.md): a whole record for every reviewed head, version-1 JSON and fresh reviewers for fix diffs; by [0031](0031-pull-requests-under-the-owners-account.md): the App as the agents' identity for every GitHub action; the App still posts review records and `review` checks.
 - [0026: Review only what changed](0026-review-only-what-changed.md) — **in force**.
 - [0027: Carry trial facts across ruleset changes](0027-carry-trial-facts.md) — **in force**.
 - [0028: Report qualified rotations instead of durability tiers](0028-remove-tiers.md) — **in force**.
 - [0029: Bench verdicts rest on fitted machines](0029-bench-verdicts-rest-on-fitted-machines.md) — **in force**.
 - [0030: Coverage is a review signal, not a target](0030-coverage-is-a-review-signal.md) — **in force**.
+- [0031: Pull requests under the owner's account](0031-pull-requests-under-the-owners-account.md) — **in force**.
