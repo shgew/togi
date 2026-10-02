@@ -659,3 +659,188 @@ func TestSixteenCoreCulpritAndPair(t *testing.T) {
 		})
 	}
 }
+
+func TestHuntDurationPriorRespectsEvidenceAndShortFailures(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		count, workload    int
+		profile            []int
+		shortFailed, reset bool
+		want               int
+	}{
+		{"valid deeper passes", 5, 0, []int{-32, -32}, false, false, 600},
+		{"short failure in another workload", 5, 0, []int{-32, -32}, true, false, 120},
+		{"insufficient starts", 4, 0, []int{-32, -32}, false, false, 120},
+		{"different workload", 5, 1, []int{-32, -32}, false, false, 120},
+		{"incomparable profile", 5, 0, []int{-32, -29}, false, false, 120},
+		{"reset evidence boundary", 5, 0, []int{-32, -32}, false, true, 120},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -30}, coreStart{phase: journal.PhaseDone, offset: -30})
+			h.decide(h.next())
+			tr := Trial{Regime: machine.R7, Cores: h.s.ids(), Workload: machine.Workloads(machine.R7)[tt.workload].ID, Condition: machine.Masked, Phase: journal.PhaseHunt, DurationS: 120, Profile: tt.profile}
+			if tt.shortFailed {
+				bad := tr
+				bad.Workload, bad.Profile = machine.Workloads(machine.R7)[1].ID, []int{-40, 0}
+				h.trial(Action{Kind: RunTrial, Trial: bad}, failed)
+				h.decide(h.next())
+				h.decide(h.next())
+			}
+			var seqs []int
+			for range tt.count {
+				_, end := h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
+				seqs = append(seqs, end.Seq)
+			}
+			if tt.reset {
+				h.add(&journal.CommandReset{Core: new(0)})
+			}
+			tr.Workload = machine.Workloads(machine.R7)[0].ID
+			tr.DurationS, tr.Profile, tr.Condition, tr.Phase = 600, []int{-30, -30}, machine.Resident, journal.PhaseGuard
+			h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
+			h.decide(h.next())
+			h.decide(h.s.huntStartNext())
+			plan, ok := h.s.nextMaskPlan(h.s.hunt)
+			if !ok || plan.duration != tt.want {
+				t.Fatalf("initial hunt duration: %+v, want %d", plan, tt.want)
+			}
+			a := h.s.planMask(h.s.hunt, plan, "partition")
+			if tt.want == 600 {
+				if diff := cmp.Diff(append([]int{h.s.hunt.seq}, seqs...), a.Cause); diff != "" {
+					t.Fatalf("duration evidence cause (-want +got):\n%s", diff)
+				}
+			}
+			h.decide(a)
+			next, _ := h.s.huntNext()
+			if a.Payload.(*journal.HuntMask).Inferred == "" && (next.Kind != RunTrial || next.Trial.DurationS != tt.want) {
+				t.Fatalf("masked trial duration: %+v", next)
+			}
+			replayed := New()
+			var state journal.State
+			journal.Replay(h.events, &state, replayed)
+			replayNext, _ := replayed.huntNext()
+			if diff := cmp.Diff(next, replayNext); diff != "" {
+				t.Fatalf("duration resume (-live +replayed):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestRepeatedMaskedCoreProbeReturnsToBinaryPartsAfterPass(t *testing.T) {
+	starts := make([]coreStart, 16)
+	for i := range starts {
+		starts[i] = coreStart{phase: journal.PhaseDone, offset: -10, fail: new(-11)}
+	}
+	h := newHarness(t, starts...)
+	var prior []int
+	for range 1000 {
+		a := h.next()
+		if m, ok := a.Payload.(*journal.HuntMask); ok && m.Hunt == 3 && m.Mask == 1 {
+			if diff := cmp.Diff([]int{3}, m.Cores); diff != "" {
+				t.Fatalf("corroborated core was not probed first (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(append([]int{h.s.hunt.seq}, prior...), a.Cause); diff != "" {
+				t.Fatalf("probe lost its evidence (-want +got):\n%s", diff)
+			}
+			h.decide(a)
+			for range h.s.n {
+				trial := h.next()
+				h.trial(trial, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: trial.Trial.DurationS})
+			}
+			normal := h.next()
+			p, ok := normal.Payload.(*journal.HuntMask)
+			if !ok || p.Granularity != 2 || p.Index != 0 || p.Inferred != "" || p.Profile[3] != -8 || p.Profile[4] != -10 {
+				t.Fatalf("a passing singleton must not establish its untested binary group: %+v", normal)
+			}
+			replayed := New()
+			for _, e := range h.events {
+				replayed.Fold(e)
+			}
+			if diff := cmp.Diff(normal, replayed.Next()); diff != "" {
+				t.Fatalf("resumed probe fallback changed (-want +got):\n%s", diff)
+			}
+			return
+		}
+		if a.Kind == Decide {
+			e := h.decide(a)
+			if f, ok := e.Data.(*journal.Failure); ok && f.Condition == machine.Masked && f.Attribution == journal.Attributed && f.Core != nil && *f.Core == 3 {
+				prior = append(prior, e.Seq)
+			}
+			continue
+		}
+		if a.Kind != RunTrial {
+			t.Fatalf("unexpected action: %+v", a)
+		}
+		intent := h.start(a)
+		p := intent.Data.(*journal.TrialIntent)
+		end := &journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomePass, DurationS: p.DurationS}
+		if p.Profile[3] < -8 || p.Profile[3] < 0 && p.Profile[4] < -9 {
+			end.Outcome, end.Signal = journal.OutcomeFailure, machine.Crash
+		}
+		h.add(end, intent.Seq)
+	}
+	t.Fatal("corroborated singleton probe was never scheduled")
+}
+
+func TestRepeatedMaskedCoreProbeRequiresMatchingAdjacentFailuresSinceReset(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		change func(*Trial, *journal.Failure)
+		reset  bool
+		probe  bool
+	}{
+		{name: "matching adjacent failures", probe: true},
+		{name: "different workload", change: func(tr *Trial, _ *journal.Failure) { tr.Workload = machine.Workloads(machine.R7)[1].ID }},
+		{name: "different duration", change: func(tr *Trial, _ *journal.Failure) { tr.DurationS = 600 }},
+		{name: "different loaded cores", change: func(tr *Trial, _ *journal.Failure) { tr.Cores = []int{0, 1} }},
+		{name: "resident failure", change: func(tr *Trial, f *journal.Failure) { tr.Condition, f.Condition = machine.Resident, machine.Resident }},
+		{name: "unattributed failure", change: func(_ *Trial, f *journal.Failure) { f.Attribution, f.Core, f.Offset = journal.Unattributed, nil, nil }},
+		{name: "different culprit", change: func(_ *Trial, f *journal.Failure) { f.Core = new(0) }},
+		{name: "nonadjacent offsets", change: func(_ *Trial, f *journal.Failure) { f.Offset = new(-8) }},
+		{name: "reset between failures", reset: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			starts := make([]coreStart, 4)
+			for i, offset := range []int{-20, -8, -20, -20} {
+				starts[i] = coreStart{phase: journal.PhaseDone, offset: offset}
+			}
+			h := newHarness(t, starts...)
+			h.decide(h.next())
+			var prior []int
+			for i, offset := range []int{-10, -9} {
+				if i == 1 && tt.reset {
+					h.add(&journal.CommandReset{Core: new(1)})
+				}
+				tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: h.s.ids(), Condition: machine.Masked, Phase: journal.PhaseHunt, DurationS: 120, Profile: []int{0, offset, 0, 0}}
+				failure := &journal.Failure{Attribution: journal.Attributed, Core: new(1), Offset: new(offset), Condition: machine.Masked, Regime: machine.R7, Profile: tr.Profile}
+				if i == 1 && tt.change != nil {
+					tt.change(&tr, failure)
+				}
+				intent, end := h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
+				failure.Trial = intent.Data.(*journal.TrialIntent).Trial
+				prior = append(prior, h.add(failure, end.Seq).Seq)
+			}
+			h.add(&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -8, FailedMark: new(-9)})
+			tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: h.s.ids(), Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 120, Profile: []int{-20, -8, -20, -20}}
+			intent, end := h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
+			failure := h.add(&journal.Failure{Trial: intent.Data.(*journal.TrialIntent).Trial, Attribution: journal.Unattributed, Condition: machine.Resident, Regime: machine.R7, Profile: tr.Profile}, end.Seq)
+			h.decide(h.s.huntStartNext())
+			plan, ok := h.s.nextMaskPlan(h.s.hunt)
+			if !ok {
+				t.Fatal("hunt did not schedule a mask")
+			}
+			want := []int{0, 1}
+			if tt.probe {
+				want = []int{1}
+			}
+			if diff := cmp.Diff(want, plan.cores); diff != "" {
+				t.Fatalf("initial mask for failure #%d (-want +got):\n%s", failure.Seq, diff)
+			}
+			if tt.probe {
+				action := h.s.planMask(h.s.hunt, plan, "partition")
+				if diff := cmp.Diff(append([]int{h.s.hunt.seq}, prior...), action.Cause); diff != "" {
+					t.Fatalf("probe cause (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+}

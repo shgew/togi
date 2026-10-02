@@ -23,8 +23,11 @@ dashboard instead of one line per event, and prints the outcome when it stops:
 the restored offsets and why it stopped, or the dead end or error;
 events.jsonl still records every event. --no-tui prints the lines instead.
 
---rotations N stops after N clean qualifying rotations once every core is done
-and refinement can reach no more depth.
+--rotations N stops after N clean qualifying rotations valid for the current
+profile once every core is done and refinement can reach no more depth. An
+earlier rotation can count after a deepening if its profile was at least as deep
+and no failure since the last reset contradicted it. Silver and Gold still need
+clean hours since the tier clock restarted.
 
 Examples:
   sudo togi run                     Tune this machine until a signal or a dead end
@@ -34,7 +37,7 @@ Examples:
 Flags:
   --config <path>      configuration file path for run and reset (default /etc/togi/config.toml)
   --no-tui             print one line per event instead of the dashboard on a terminal
-  --rotations <N>      stop after N clean qualifying rotations once every core is done and refinement can reach no more depth (default endless)
+  --rotations <N>      stop after N clean qualifying rotations valid for the current profile once every core is done and refinement can reach no more depth (default endless)
   --tuning-boot <file> run as the tuning boot service: require an armed hardware watchdog within 30s; at a dead end clear saved_entry in this GRUB environment file, and reboot after a boot loop
 
 Global flags:

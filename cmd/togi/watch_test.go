@@ -27,7 +27,7 @@ type watchCut struct {
 func watchCuts(t *testing.T) []watchCut {
 	t.Helper()
 	dir := t.TempDir()
-	simulated(t, dir)
+	renderFixture(t, dir, "concluded")
 	events, _, err := journal.Read(dir)
 	if err != nil {
 		t.Fatal(err)

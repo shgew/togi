@@ -168,6 +168,39 @@ func (s *State) split(h *hunt, set []int, g int) [][]int {
 	return parts
 }
 
+func (s *State) repeatedMaskedCore(h *hunt, duration int) (int, [2]int, bool) {
+	if len(s.recent) != 1 || len(h.start.Candidates) <= 2 {
+		return 0, [2]int{}, false
+	}
+	id := s.recent[0]
+	if !slices.Contains(h.start.Candidates, id) {
+		return 0, [2]int{}, false
+	}
+	k := h.class.withDuration(duration)
+	var newer *pendingFailure
+	for i := len(s.pendingFailures) - 1; i >= 0; i-- {
+		f := &s.pendingFailures[i]
+		if f.seq <= s.resetSeq {
+			break
+		}
+		if f.seq >= h.start.Failure || f.class != k || f.failure.Condition != machine.Masked || f.failure.Attribution != journal.Attributed || f.failure.Core == nil || f.failure.Offset == nil {
+			continue
+		}
+		if *f.failure.Core != id {
+			return 0, [2]int{}, false
+		}
+		if newer == nil {
+			newer = f
+			continue
+		}
+		if *newer.failure.Offset == *f.failure.Offset+1 && h.start.Failing[s.index(id)] == *newer.failure.Offset+1 {
+			return id, [2]int{f.seq, newer.seq}, true
+		}
+		return 0, [2]int{}, false
+	}
+	return 0, [2]int{}, false
+}
+
 type maskPlan struct {
 	set, cores                        []int
 	g                                 int
@@ -176,6 +209,8 @@ type maskPlan struct {
 	escalated, fullChecked, anyFailed bool
 	edge                              *journal.JointMember
 	held                              []journal.JointMember
+	priority                          []int
+	singleCorePrior                   [2]int
 	result                            bool
 }
 
@@ -185,6 +220,19 @@ func planOf(m *journal.HuntMask) maskPlan {
 
 func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
 	p := maskPlan{set: slices.Clone(h.start.Candidates), g: 2, stage: "part", duration: h.start.StartS}
+	if len(h.masks) == 0 && h.start.Trial != "" && h.start.DurationS > h.start.StartS {
+		shortFailed := slices.ContainsFunc(s.failures, func(e entry) bool {
+			return e.seq > s.resetSeq && e.seq < h.start.Failure && e.class.regime == h.class.regime && e.class.duration <= h.start.StartS
+		})
+		if !shortFailed {
+			seqs := s.passSeqs(h.class.withDuration(h.start.StartS), h.start.Failing, s.resetSeq)
+			seqs = slices.DeleteFunc(seqs, func(seq int) bool { return seq >= h.start.Failure })
+			if len(seqs) >= h.start.Starts {
+				p.duration, p.escalated = h.start.DurationS, true
+				p.priority = seqs[:h.start.Starts]
+			}
+		}
+	}
 	if len(p.set) == 0 {
 		return p, false
 	}
@@ -196,6 +244,12 @@ func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
 		if len(p.set) == 1 {
 			p.result = true
 			return p, false
+		}
+		if len(h.masks) == 0 {
+			if id, prior, ok := s.repeatedMaskedCore(h, p.duration); ok {
+				p.g, p.cores, p.singleCorePrior = len(p.set), []int{id}, prior
+				return p, true
+			}
 		}
 		p.cores = s.split(h, p.set, p.g)[0]
 		return p, true
@@ -226,6 +280,11 @@ func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
 			return p, true
 		}
 		p.fullChecked = true
+	}
+	if len(h.masks) == 1 && m.Stage == "part" && len(m.Cores) == 1 && m.Granularity > 2 && m.Granularity == len(h.start.Candidates) {
+		p.g, p.index = 2, 0
+		p.cores = s.split(h, p.set, p.g)[0]
+		return p, true
 	}
 	if p.stage == "full" {
 		p.fullChecked = true
@@ -358,7 +417,16 @@ func (s *State) planMask(h *hunt, p maskPlan, reason string) Action {
 	} else if mark, ok := s.reaches(payload.Profile); ok {
 		payload.Skipped, payload.Reason = true, "its profile reaches "+mark
 	}
-	return Action{Kind: Decide, Payload: payload, Cause: []int{h.seq}}
+	cause := []int{h.seq}
+	if len(p.priority) > 0 {
+		payload.Reason += fmt.Sprintf("; %d valid short starts preceded the longer failure, with no failure in this regime at the short duration or less since reset, so test the failed duration", len(p.priority))
+		cause = append(cause, p.priority...)
+	}
+	if p.singleCorePrior[0] > 0 {
+		payload.Reason += fmt.Sprintf("; two masked failures in this class followed one-count backoffs on core %02d, so probe that core first", p.cores[0])
+		cause = append(cause, p.singleCorePrior[:]...)
+	}
+	return Action{Kind: Decide, Payload: payload, Cause: cause}
 }
 
 func (s *State) inferenceSince(m *journal.HuntMask, since int) int {

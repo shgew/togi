@@ -52,7 +52,7 @@ One JSON object per line. Common fields:
 
 Kind-specific fields are flat, snake_case and carry units in their names (`duration_s`, `period_ms`, `tctl_max_c`). Values use the vocabulary in `CONTEXT.md`. Cores are always `core` (the kernel `core_id`); logical CPUs are always `cpu`. The one exception to flat fields: `config.loaded` carries the effective configuration nested under `config`.
 
-The first event is `session.start` with a flat build stamp: `version`, `rev`, `ruleset`, `schema` and `fixes`. `config.loaded` carries that stamp at every start or resume. This build uses ruleset 5 and journal schema 2. Missing ruleset means 1; absent fixes means 0. Added kinds and fields do not bump schema. Older journals are archived by transition, and newer journals are refused.
+The first event is `session.start` with a flat build stamp: `version`, `rev`, `ruleset`, `schema` and `fixes`. `config.loaded` carries that stamp at every start or resume. This build uses ruleset 6 and journal schema 2. Missing ruleset means 1; absent fixes means 0. Added kinds and fields do not bump schema. Older journals are archived by transition, and newer journals are refused.
 
 Build compatibility diagnostics consistently identify the program as togi, regardless of the recorded version.
 

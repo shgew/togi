@@ -69,10 +69,15 @@ func (s *State) tierNext() (Action, bool) {
 			reason = "no clean qualifying rotation since the profile last went deeper"
 		}
 	}
+	cause := []int{s.tierCause}
 	if reason == "" {
 		clean, _ := s.clean()
 		target = journal.TierBronze
 		reason = "every core is done and the profile passed a clean qualifying rotation"
+		if seq := s.creditedRotation(); seq > 0 {
+			reason = fmt.Sprintf("every core is done and clean qualifying rotation #%d passed a profile at least as deep that no failure has contradicted", seq)
+			cause = []int{seq, s.tierCause}
+		}
 		if clean >= silverCleanS {
 			target = journal.TierSilver
 			reason = fmt.Sprintf("24 clean hours since the tier clock started at #%d", s.tierClockSeq)
@@ -85,7 +90,7 @@ func (s *State) tierNext() (Action, bool) {
 	if target == s.tier {
 		return Action{}, false
 	}
-	return Action{Kind: Decide, Payload: &journal.TierChange{From: s.tier, To: target, Reason: reason}, Cause: []int{s.tierCause}}, true
+	return Action{Kind: Decide, Payload: &journal.TierChange{From: s.tier, To: target, Reason: reason}, Cause: cause}, true
 }
 
 func rateBound(cleanS int) *float64 {
