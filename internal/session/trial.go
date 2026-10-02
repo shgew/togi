@@ -204,8 +204,11 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	r.running = nil
 	r.cancelTrial = nil
 	defer cancel()
+	if errors.Is(err, machine.ErrContainment) {
+		r.containmentFailed = true
+	}
 	if report.err != nil {
-		return report.err
+		return errors.Join(report.err, err)
 	}
 	if s.Schedule != nil && err == nil {
 		if _, err := r.append(&journal.TrialSignal{Trial: tr.id, Stops: res.Stops, Conts: res.Conts}, started.Seq); err != nil {
@@ -305,6 +308,9 @@ func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine
 	}
 	ended, err := r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...)
 	if err != nil {
+		if containment != "" {
+			return errors.Join(err, runnerErr)
+		}
 		return err
 	}
 	if end.Outcome == journal.OutcomePass {
