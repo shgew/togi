@@ -18,6 +18,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `docs/simulating.md`: running a simulated session with `tools/sim`.
 - `docs/reviewing.md`: reviewing an unattended run or archived journal with `just stats`.
 - `docs/benchmarking.md`: measuring a tuner change's time to conclusion, depth and hazard across simulated machines with `tools/bench`; run it before and after any change to how the tuner decides.
+- `tools/bench/program.md`: autonomous tuner research; follow it when planning experiments, keeping bench wins and turning them into pull requests.
 - `docs/adr/`: decisions and the alternatives rejected, with statuses in [the index](docs/adr/README.md). The specs describe current behavior; where they disagree with an ADR, the spec wins and the index is out of date. Reversing a decision needs a new ADR, which updates the index in the same pull request.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
 - Issues on `github.com/shgew/togi`: the plan, ideas and bugs (Issues, below).
