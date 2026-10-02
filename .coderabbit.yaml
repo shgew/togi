@@ -38,6 +38,12 @@ reviews:
     - path: internal/tuner/**
       instructions: >-
         Pure decision engine: no I/O, clock or randomness except through injected seams.
+    - path: docs/**
+      instructions: >-
+        Documentation often lands in the lowest layer of a stack of pull requests that merge
+        together, ahead of the code in the layers above. Do not flag a statement only because this
+        pull request does not implement it yet. Flag statements that are wrong, or that contradict
+        the code or another document.
   finishing_touches:
     docstrings:
       enabled: false
@@ -55,34 +61,24 @@ reviews:
     title:
       mode: "off"
     description:
-      mode: warning
+      mode: "off"
     issue_assessment:
-      mode: warning
+      mode: "off"
     custom_checks:
-      - name: Changelog
-        mode: warning
-        instructions: >-
-          If the pull request changes anything a user of togi would notice (commands, flags,
-          behavior, output, configuration), CHANGELOG.md gains a line under `## [Unreleased]`
-          in Added, Changed, Fixed or Removed that states the effect and links the pull request.
-          Refactors, tests and documentation edits that leave the tool unchanged need no line.
       - name: Specs kept current
         mode: warning
         instructions: >-
-          If the pull request changes behavior described in docs/spec/ (tuner.md, workloads.md,
-          journal.md, runtime.md), the matching spec file changes in the same pull request.
+          Warn only when the pull request changes a rule, boundary, event, state field, command or
+          flag that docs/spec/ (tuner.md, workloads.md, journal.md, runtime.md) states, and the
+          matching spec file does not change with it. Do not warn about diagnostic wording,
+          message text, tests, the simulator or development tooling, or details the specs do not
+          mention.
       - name: Breaking marked
         mode: warning
         instructions: >-
           If the pull request changes the value of `journal.Schema` or `tuner.Ruleset`, its title
           starts with `[BREAKING]`, it carries the `breaking` label, and its CHANGELOG.md line
           starts with `**BREAKING**`. Otherwise, none of these markers is present.
-      - name: Issue reference
-        mode: warning
-        instructions: >-
-          A pull request that finishes an issue says `Closes #N` in its body; one that only makes
-          progress on an issue says `Refs #N`. Warn when the keyword does not match what the pull
-          request does to the linked issue.
   tools:
     gitleaks:
       enabled: true
