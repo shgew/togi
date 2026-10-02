@@ -76,3 +76,14 @@ release:
 [group('release')]
 release-preview:
     {{ dev }} go run ./tools/release
+
+# Run GitHub commands as robotogi
+[group('github')]
+bot +args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "${TOGI_DEV_SHELL:-}" != "1" ]]; then
+        exec {{ dev }} just --justfile '{{ justfile() }}' bot "$@"
+    fi
+    token=$(gh-token generate --app-id 5162510 --key "${ROBOTOGI_KEY_FILE:?ROBOTOGI_KEY_FILE must name the robotogi private key file}" --token-only)
+    GH_TOKEN=$token exec gh "$@"
