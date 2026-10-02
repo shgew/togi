@@ -86,6 +86,7 @@ func matrixCommitments(events []journal.Event) matrixResult {
 				out.Checks = append(out.Checks, trial)
 			}
 			if intent.Rerun {
+				trial.Intent.Retry = false
 				out.Reruns = append(out.Reruns, trial)
 			}
 		}

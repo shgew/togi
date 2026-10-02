@@ -122,6 +122,7 @@ func assertMatrixDecisions(t *testing.T, want matrixResult, events []journal.Eve
 	if diff := cmp.Diff(want, matrixCommitments(events)); diff != "" {
 		t.Fatalf("resumed decisions (-uninterrupted +resumed):\n%s", diff)
 	}
+	assertMatrixRerunRetries(t, events)
 	seen := map[[2]int]bool{}
 	for _, e := range events {
 		if p, ok := e.Data.(*journal.HuntMask); ok {
@@ -130,6 +131,50 @@ func assertMatrixDecisions(t *testing.T, want matrixResult, events []journal.Eve
 				t.Fatalf("duplicated hunt.mask %v", key)
 			}
 			seen[key] = true
+		}
+	}
+}
+
+func assertMatrixRerunRetries(t *testing.T, events []journal.Event) {
+	t.Helper()
+	intents := map[string]journal.Event{}
+	pending := map[int]journal.Event{}
+	completed := map[string]bool{}
+	normalize := func(p journal.TrialIntent) journal.TrialIntent {
+		p.Trial, p.KernelBoundary, p.Retry = "", journal.KernelBoundary{}, false
+		return p
+	}
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.TrialIntent:
+			if p.Rerun {
+				intents[p.Trial] = e
+			}
+		case *journal.TrialEnd:
+			intentEvent, ok := intents[p.Trial]
+			if !ok {
+				continue
+			}
+			if len(intentEvent.Cause) == 0 {
+				t.Fatalf("rerun %s has no obligation cause", p.Trial)
+			}
+			obligation := intentEvent.Cause[0]
+			if p.Outcome == journal.OutcomeInconclusive {
+				pending[obligation] = intentEvent
+				continue
+			}
+			if completed[p.Trial] {
+				t.Fatalf("rerun %s completed twice", p.Trial)
+			}
+			completed[p.Trial] = true
+			intent := intentEvent.Data.(*journal.TrialIntent)
+			if intent.Retry {
+				previous, ok := pending[obligation]
+				if !ok || !slices.Equal(previous.Cause, intentEvent.Cause) || !cmp.Equal(normalize(*previous.Data.(*journal.TrialIntent)), normalize(*intent)) {
+					t.Fatalf("rerun retry %s changed its interrupted obligation", p.Trial)
+				}
+			}
+			delete(pending, obligation)
 		}
 	}
 }

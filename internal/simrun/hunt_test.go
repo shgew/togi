@@ -728,7 +728,8 @@ func TestPowerLossDuringHuntResume(t *testing.T) {
 			if e.Kind == journal.KindHuntEnd {
 				*closing = true
 			}
-			return *closing && e.Kind == journal.KindProfileChange
+			p, ok := e.Data.(*journal.TrialIntent)
+			return *closing && ok && !p.Rerun
 		})
 }
 
@@ -778,6 +779,16 @@ func runInterruptionMatrix(t *testing.T, name string, cfg sim.Config, c config.C
 	reference, accesses := matrix.run(t, -1, -1)
 	window := reference[len(matrix.prefix):]
 	want := matrixCommitments(reference)
+	if name == "hunt" && len(want.Reruns) == 0 {
+		t.Fatal("hunt reference has no completed rerun evidence")
+	}
+	if name == "hunt" {
+		for _, rerun := range want.Reruns {
+			if rerun.Outcome != journal.OutcomePass {
+				t.Fatalf("hunt reference rerun did not pass: %+v", rerun)
+			}
+		}
+	}
 	closing := false
 	closeAt := slices.IndexFunc(window, func(e journal.Event) bool { return closeWindow(e, &closing) }) + 1
 	if closeAt == 0 {
