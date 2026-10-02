@@ -75,7 +75,7 @@ func TestScanBuildSkipsUnknownSchemaPayloads(t *testing.T) {
 	data := []byte(`{"kind":"session.start","session":"old","schema":42,"ruleset":99,"version":"0.1.0","rev":"old"}` + "\n" +
 		`{"kind":"later.unknown","schema":43,"version":"ignored"}` + "\n" +
 		`{"kind":"config.loaded","schema":55,"version":"0.2.1","rev":"def5678","fixes":3,"unreadable_payload":true}` + "\n" +
-		`{"kind":"config.loaded","schema":66,"version":"0.3.0","rev":"abc1234","fixes":4}` + "\n")
+		`{"kind":"config\u002eloaded","schema":66,"version":"0.3.0","rev":"abc1234","fixes":4}` + "\n")
 	stamp, id, err := scanBuild(data)
 	if err != nil || id != "old" || stamp.Schema != 42 || stamp.Ruleset != 99 || stamp.Version != "0.3.0" || stamp.Rev != "abc1234" || stamp.Fixes != 4 {
 		t.Fatalf("scan: %+v, id %q, error %v", stamp, id, err)

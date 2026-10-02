@@ -214,12 +214,12 @@ Older builds recorded all finding-caused resets immediately before the yes answe
 
 ## State file
 
-`state.json` is rewritten atomically after every event that changes it: temp file, fsync, rename, directory fsync.
+`state.json` is rewritten atomically after every event that changes it: temp file, fsync, rename, directory fsync. It holds one compact JSON object followed by a newline; `jq . state.json` shows it indented.
 The temp write must consume the complete projection before it can be renamed; a short write leaves the previous complete state in place.
 
 A failed projection write appends `session.warning` with `operation: "write state projection"` and the error, then continues the session; it never triggers emergency zeroing by itself. The authoritative event is already durable. Persisting that warning does not attempt another projection write, so an unwritable state file cannot recursively generate warnings. A journal append failure, including failure to append the warning, remains fatal: after CPU family/model and driver codename validation it takes the emergency-zeroing path; before that boundary it exits without mailbox commands or SMN access (`runtime.md`, Preflight). Readers see either the previous complete state or the new complete state, never a torn file. On the next start, replay rebuilds a stale or missing projection and records `state.rebuilt` after a successful rewrite; if that rewrite fails, it warns and continues instead. A warning after a durable `shutdown` does not make the stopped boot a crash.
 
-It is shaped for one-glance reading:
+It is shaped so a reader finds each part under one key:
 
 - `schema` (2), `session` (id, start time, BIOS context, baseline), `last_seq`;
 - `phase`: activity `search`, `hunt`, `refine` or `guard`;

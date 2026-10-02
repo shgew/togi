@@ -26,6 +26,7 @@ type Options struct {
 	SampleInterval, StallGrace, StallWindow, StopGrace time.Duration
 	Hwmon, CPUFreq, Powercap                           string
 	Conditions                                         machine.ConditionsReader
+	teardown                                           time.Duration
 }
 
 type Runner struct {
@@ -45,6 +46,9 @@ func New(o Options) *Runner {
 	}
 	if o.StopGrace <= 0 || o.StopGrace > 3*time.Second {
 		o.StopGrace = 3 * time.Second
+	}
+	if o.teardown <= 0 {
+		o.teardown = teardownLimit
 	}
 	if o.Hwmon == "" {
 		o.Hwmon = "/sys/class/hwmon"

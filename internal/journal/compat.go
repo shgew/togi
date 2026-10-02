@@ -69,7 +69,7 @@ func (e *UnknownKindError) Error() string {
 
 func KnownKinds(events []Event, binary Build) error {
 	for _, e := range events {
-		if _, ok := payloadConstructors[e.Kind]; !ok {
+		if _, ok := payloadTypes[e.Kind]; !ok {
 			if binary.Schema == 0 {
 				binary = binarySchemaBuild()
 			}
@@ -168,6 +168,9 @@ func scanBuild(data []byte) (Build, string, error) {
 		}
 		line := rest[:next]
 		rest = rest[next+1:]
+		if !bytes.Contains(line, []byte(KindConfigLoaded)) && !bytes.ContainsRune(line, '\\') {
+			continue
+		}
 		var stamp struct {
 			Kind Kind `json:"kind"`
 			Build

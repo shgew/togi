@@ -38,6 +38,7 @@ type Input struct {
 
 func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 	var cached *memoryJournal
+	prefix := &journal.Prefix{}
 	defer func() {
 		if cached != nil {
 			err = errors.Join(err, cached.flush(), cached.Close())
@@ -45,7 +46,7 @@ func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 	}()
 	in.Machine.SetSamplesDir(filepath.Join(in.Dir, "trials"))
 	for range maxBoots {
-		stop, err = boot(ctx, in, &cached)
+		stop, err = boot(ctx, in, &cached, prefix)
 		if errors.Is(err, machine.ErrCrashed) {
 			in.Machine.Reboot()
 			continue
@@ -55,7 +56,7 @@ func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 	return session.Stop{}, fmt.Errorf("simulated machine rebooted %d times without stopping", maxBoots)
 }
 
-func boot(ctx context.Context, in Input, cached **memoryJournal) (session.Stop, error) {
+func boot(ctx context.Context, in Input, cached **memoryJournal, prefix *journal.Prefix) (session.Stop, error) {
 	seams := in.Machine.Seams()
 	id, err := seams.Host.BootID()
 	if err != nil {
@@ -72,7 +73,7 @@ func boot(ctx context.Context, in Input, cached **memoryJournal) (session.Stop, 
 		j.SetBoot(id)
 		carried = (*cached).carried
 	} else {
-		j, err = journal.Lock(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Log: in.Log, Renderer: in.Renderer, Build: session.Build()})
+		j, err = journal.Lock(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Log: in.Log, Renderer: in.Renderer, Build: session.Build(), Prefix: prefix})
 		if err != nil {
 			return session.Stop{}, err
 		}

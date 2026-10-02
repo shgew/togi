@@ -42,7 +42,7 @@ func runHunt(t *testing.T, cfg sim.Config, setup func(*sim.Machine), tweak func(
 		setup(m)
 	}
 	dir := t.TempDir()
-	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}
+	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1, InMemoryJournal: true}
 	if tweak != nil {
 		tweak(&in)
 	}

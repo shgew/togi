@@ -75,7 +75,7 @@ func TestResetArchiveFilesystemFailureReopenMatrix(t *testing.T) {
 
 func (f resetArchiveFixture) resume(t *testing.T) {
 	t.Helper()
-	j, err := Open(f.dir, Options{Build: Build{Schema: Schema}, Sync: true})
+	j, err := Open(f.dir, Options{Build: Build{Schema: Schema}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func (f resetArchiveFixture) resume(t *testing.T) {
 		if err := j.Close(); err != nil {
 			t.Fatal(err)
 		}
-		j, err = Open(f.dir, Options{Build: Build{Schema: Schema}, Sync: true})
+		j, err = Open(f.dir, Options{Build: Build{Schema: Schema}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -121,7 +121,7 @@ func (f resetArchiveFixture) resume(t *testing.T) {
 	if err := j.Close(); err != nil {
 		t.Fatal(err)
 	}
-	j, err = Open(f.dir, Options{Build: Build{Schema: Schema}, Sync: true})
+	j, err = Open(f.dir, Options{Build: Build{Schema: Schema}})
 	if err != nil {
 		t.Fatal(err)
 	}

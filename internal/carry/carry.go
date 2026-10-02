@@ -45,7 +45,7 @@ func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, c
 		}
 		return nil, nil
 	}
-	events, _, readErr := journal.Read(dir)
+	events, _, readErr := j.Read()
 	if readErr == nil && !journal.Older(journal.BuildOf(events), binary) {
 		if err := journal.KnownKinds(events, binary); err != nil {
 			return nil, err
@@ -90,7 +90,7 @@ func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, c
 		}
 		return nil, nil
 	}
-	settled, err := recorded(dir, pending)
+	settled, err := recorded(j, pending)
 	if err != nil {
 		return nil, fmt.Errorf("carry: %w", err)
 	}
@@ -144,11 +144,11 @@ func archive(j *journal.Journal, id string) error {
 
 // recorded reports whether the current journal has recorded the carry of session id, or is past the point where one
 // can apply.
-func recorded(dir, id string) (bool, error) {
-	if _, err := os.Stat(filepath.Join(dir, "events.jsonl")); errors.Is(err, fs.ErrNotExist) {
+func recorded(j *journal.Journal, id string) (bool, error) {
+	if _, err := os.Stat(filepath.Join(j.Dir(), "events.jsonl")); errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
-	events, _, err := journal.Read(dir)
+	events, _, err := j.Read()
 	if err != nil {
 		return false, err
 	}

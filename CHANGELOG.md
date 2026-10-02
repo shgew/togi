@@ -4,6 +4,10 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ## [Unreleased]
 
+### Changed
+
+- `state.json` is written as one compact JSON line instead of indented JSON, so every per-event rewrite marshals and fsyncs about half the bytes; the fields are unchanged, and `jq . state.json` shows it indented ([#296]).
+
 ## [0.8.0] - 2026-10-02
 
 ### Added
@@ -398,3 +402,4 @@ All notable changes to togi are documented in this file. The format is based on 
 [#284]: https://github.com/shgew/togi/pull/284
 [#285]: https://github.com/shgew/togi/pull/285
 [#290]: https://github.com/shgew/togi/pull/290
+[#296]: https://github.com/shgew/togi/pull/296

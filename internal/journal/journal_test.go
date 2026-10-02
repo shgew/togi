@@ -23,7 +23,7 @@ func fixedClock() func() time.Time {
 
 func openTest(tb testing.TB, dir string) *Journal {
 	tb.Helper()
-	j, err := Open(dir, Options{Boot: "e8f9a0b1-0000-0000-0000-000000000000", Now: fixedClock(), Sync: true})
+	j, err := Open(dir, Options{Boot: "e8f9a0b1-0000-0000-0000-000000000000", Now: fixedClock()})
 	if err != nil {
 		tb.Fatalf("Open: %v", err)
 	}

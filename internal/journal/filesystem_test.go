@@ -63,7 +63,7 @@ func (f *faultJournalFilesystem) Remove(path string) error {
 }
 
 func (f *faultJournalFilesystem) SyncDir(path string) error {
-	return f.operation(journalFSCall{op: "directory sync", path: path}, func() error { return f.journalFilesystem.SyncDir(path) })
+	return f.operation(journalFSCall{op: "directory sync", path: path}, func() error { return nil })
 }
 
 type faultJournalFile struct {
@@ -89,7 +89,7 @@ func (f faultJournalFile) Write(data []byte) (int, error) {
 }
 
 func (f faultJournalFile) Sync() error {
-	return f.fs.operation(journalFSCall{op: "file sync", path: f.path}, f.journalFile.Sync)
+	return f.fs.operation(journalFSCall{op: "file sync", path: f.path}, func() error { return nil })
 }
 
 func openFaultJournal(t *testing.T, dir string) (*Journal, *faultJournalFilesystem) {

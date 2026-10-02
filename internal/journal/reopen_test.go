@@ -33,7 +33,7 @@ func TestAppendFilesystemFailureReopenMatrix(t *testing.T) {
 				if err := j.Close(); err != nil {
 					t.Fatal(err)
 				}
-				j, err = Open(dir, Options{Build: Build{Schema: Schema}, Sync: true})
+				j, err = Open(dir, Options{Build: Build{Schema: Schema}})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -133,7 +133,7 @@ func testStateFailureReopen(t *testing.T, at int, after bool) {
 	if err := j.Close(); err != nil {
 		t.Fatal(err)
 	}
-	j, err = Open(dir, Options{Build: Build{Schema: Schema}, Sync: true})
+	j, err = Open(dir, Options{Build: Build{Schema: Schema}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,10 +1,12 @@
 package simrun
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -33,42 +35,46 @@ func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 					}
 					cfg.Seed = seed
 				}
-				// Use the same path because backend argv in the journal names the state directory.
-				dir := t.TempDir()
-				var wantEvents, wantState []byte
-				for _, inMemory := range []bool{false, true} {
-					m, err := sim.New(cfg)
-					if err != nil {
-						t.Fatal(err)
-					}
-					stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1, InMemoryJournal: inMemory})
-					if err != nil {
-						t.Fatal(err)
-					}
-					if stop.Reason != session.StopRotations {
-						t.Fatalf("in-memory %t: stopped with %+v", inMemory, stop)
-					}
-					events, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
-					if err != nil {
-						t.Fatal(err)
-					}
-					state, err := os.ReadFile(filepath.Join(dir, "state.json"))
-					if err != nil {
-						t.Fatal(err)
-					}
-					if inMemory {
-						if diff := cmp.Diff(string(wantEvents), string(events)); diff != "" {
-							t.Errorf("events.jsonl (-file-backed +in-memory):\n%s", diff)
+				// Backend argv in the journal names the state directory, so both runs replace it with one placeholder.
+				var events, states [2][]byte
+				var wg sync.WaitGroup
+				for i, inMemory := range []bool{false, true} {
+					dir := t.TempDir()
+					wg.Go(func() {
+						m, err := sim.New(cfg)
+						if err != nil {
+							t.Error(err)
+							return
 						}
-						if diff := cmp.Diff(string(wantState), string(state)); diff != "" {
-							t.Errorf("state.json (-file-backed +in-memory):\n%s", diff)
+						stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1, InMemoryJournal: inMemory})
+						if err != nil {
+							t.Error(err)
+							return
 						}
-					} else {
-						wantEvents, wantState = events, state
-						if err := os.RemoveAll(dir); err != nil {
-							t.Fatal(err)
+						if stop.Reason != session.StopRotations {
+							t.Errorf("in-memory %t: stopped with %+v", inMemory, stop)
+							return
 						}
-					}
+						if events[i], err = os.ReadFile(filepath.Join(dir, "events.jsonl")); err != nil {
+							t.Error(err)
+						}
+						if states[i], err = os.ReadFile(filepath.Join(dir, "state.json")); err != nil {
+							t.Error(err)
+						}
+						for _, b := range []*[]byte{&events[i], &states[i]} {
+							*b = bytes.ReplaceAll(*b, []byte(dir), []byte("STATE-DIR"))
+						}
+					})
+				}
+				wg.Wait()
+				if t.Failed() {
+					return
+				}
+				if diff := cmp.Diff(string(events[0]), string(events[1])); diff != "" {
+					t.Errorf("events.jsonl (-file-backed +in-memory):\n%s", diff)
+				}
+				if diff := cmp.Diff(string(states[0]), string(states[1])); diff != "" {
+					t.Errorf("state.json (-file-backed +in-memory):\n%s", diff)
 				}
 			})
 		}

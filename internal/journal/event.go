@@ -4,6 +4,8 @@ package journal
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"strconv"
@@ -88,49 +90,42 @@ func encode(e Event, stamp ...bool) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode %s payload: %w", e.Kind, err)
 	}
-	var b bytes.Buffer
-	b.WriteString(`{"seq":`)
-	b.WriteString(strconv.Itoa(e.Seq))
+	header, err := marshal(struct {
+		Time string `json:"time"`
+		Boot string `json:"boot"`
+		Kind Kind   `json:"kind"`
+		Msg  string `json:"msg"`
+	}{e.Time.UTC().Format(timeLayout), e.Boot, e.Kind, e.Msg})
+	if err != nil {
+		return nil, fmt.Errorf("encode %s envelope: %w", e.Kind, err)
+	}
+	b := make([]byte, 0, len(header)+len(payload)+64)
+	b = append(b, `{"seq":`...)
+	b = strconv.AppendInt(b, int64(e.Seq), 10)
 	if e.Mono != 0 || len(stamp) > 0 && stamp[0] {
-		fmt.Fprintf(&b, `,"mono_ms":%d`, e.Mono)
+		b = append(b, `,"mono_ms":`...)
+		b = strconv.AppendInt(b, e.Mono, 10)
 	}
-	for _, f := range []struct{ key, value string }{
-		{"time", e.Time.UTC().Format(timeLayout)},
-		{"boot", e.Boot},
-		{"kind", string(e.Kind)},
-		{"msg", e.Msg},
-	} {
-		v, err := marshal(f.value)
-		if err != nil {
-			return nil, fmt.Errorf("encode %s %s: %w", e.Kind, f.key, err)
-		}
-		fmt.Fprintf(&b, `,%q:`, f.key)
-		b.Write(v)
-	}
+	b = append(b, ',')
+	b = append(b, header[1:len(header)-1]...)
 	if len(payload) > 2 {
-		b.WriteByte(',')
-		b.Write(payload[1 : len(payload)-1])
+		b = append(b, ',')
+		b = append(b, payload[1:len(payload)-1]...)
 	}
 	if len(e.Cause) > 0 {
 		c, err := marshal(e.Cause)
 		if err != nil {
 			return nil, fmt.Errorf("encode %s cause: %w", e.Kind, err)
 		}
-		b.WriteString(`,"cause":`)
-		b.Write(c)
+		b = append(b, `,"cause":`...)
+		b = append(b, c...)
 	}
-	b.WriteByte('}')
-	return b.Bytes(), nil
+	b = append(b, '}')
+	return b, nil
 }
 
 func marshal(v any) ([]byte, error) {
-	var b bytes.Buffer
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
-		return nil, err
-	}
-	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
+	return jsonv2.Marshal(v, json.DefaultOptionsV1(), jsontext.EscapeForHTML(false))
 }
 
 type envelope struct {
@@ -148,6 +143,13 @@ func decode(line []byte) (Event, error) {
 }
 
 func decodeEvent(line []byte, history bool) (Event, error) {
+	if kind, ok := leadingKind(line); ok && (!history || kind != KindConfigLoaded) {
+		if t, ok := payloadTypes[kind]; ok {
+			if env, p, err := t.decode(line); err == nil && env.Kind == kind {
+				return event(env, p, line), nil
+			}
+		}
+	}
 	var env envelope
 	if err := json.Unmarshal(line, &env); err != nil {
 		return Event{}, err
@@ -168,6 +170,10 @@ func decodeEvent(line []byte, history bool) (Event, error) {
 	if err != nil {
 		return Event{}, err
 	}
+	return event(env, p, line), nil
+}
+
+func event(env envelope, p Payload, line []byte) Event {
 	return Event{
 		Seq:   env.Seq,
 		Time:  env.Time,
@@ -178,67 +184,109 @@ func decodeEvent(line []byte, history bool) (Event, error) {
 		Cause: env.Cause,
 		Data:  p,
 		Raw:   line,
-	}, nil
+	}
 }
 
-var payloadConstructors = map[Kind]func() Payload{
-	KindSessionStart:    func() Payload { return &SessionStart{} },
-	KindSessionContext:  func() Payload { return &SessionContext{} },
-	KindSessionBaseline: func() Payload { return &SessionBaseline{} },
-	KindSessionNotice:   func() Payload { return &SessionNotice{} },
-	KindSessionWarning:  func() Payload { return &SessionWarning{} },
-	KindSessionArchived: func() Payload { return &SessionArchived{} },
-	KindSessionCarried:  func() Payload { return &SessionCarried{} },
-	KindConfigLoaded:    func() Payload { return &ConfigLoaded{} },
-	KindPreflightCheck:  func() Payload { return &PreflightCheck{} },
-	KindSMUIntent:       func() Payload { return &SMUIntent{} },
-	KindSMUWrite:        func() Payload { return &SMUWrite{} },
-	KindSMUReadback:     func() Payload { return &SMUReadback{} },
-	KindSMUError:        func() Payload { return &SMUError{} },
-	KindProfileApplied:  func() Payload { return &ProfileApplied{} },
-	KindProfileChange:   func() Payload { return &ProfileChange{} },
-	KindProfileRestored: func() Payload { return &ProfileRestored{} },
-	KindTrialIntent:     func() Payload { return &TrialIntent{} },
-	KindTrialStart:      func() Payload { return &TrialStart{} },
-	KindTrialProgress:   func() Payload { return &TrialProgress{} },
-	KindTrialSignal:     func() Payload { return &TrialSignal{} },
-	KindTrialSample:     func() Payload { return &TrialSample{} },
-	KindTrialEnd:        func() Payload { return &TrialEnd{} },
-	KindTrialCarried:    func() Payload { return &TrialCarried{} },
-	KindFailure:         func() Payload { return &Failure{} },
-	KindFailureCarried:  func() Payload { return &FailureCarried{} },
-	KindMCE:             func() Payload { return &MCE{} },
-	KindCrashDetected:   func() Payload { return &CrashDetected{} },
-	KindTunerDecision:   func() Payload { return &TunerDecision{} },
-	KindCorePhase:       func() Payload { return &CorePhase{} },
-	KindGuardRotation:   func() Payload { return &GuardRotation{} },
-	KindHostRanking:     func() Payload { return &HostRanking{} },
-	KindHuntStart:       func() Payload { return &HuntStart{} },
-	KindHuntMask:        func() Payload { return &HuntMask{} },
-	KindHuntEnd:         func() Payload { return &HuntEnd{} },
-	KindHuntSkipped:     func() Payload { return &HuntSkipped{} },
-	KindMarkJoint:       func() Payload { return &MarkJoint{} },
-	KindRefineRound:     func() Payload { return &RefineRound{} },
-	KindTunerWarning:    func() Payload { return &TunerWarning{} },
-	KindBackendRetry:    func() Payload { return &BackendRetry{} },
-	KindCommandReset:    func() Payload { return &CommandReset{} },
-	KindDefectFound:     func() Payload { return &DefectFound{} },
-	KindDefectAnswered:  func() Payload { return &DefectAnswered{} },
-	KindDeadEnd:         func() Payload { return &DeadEnd{} },
-	KindBootSavedEntry:  func() Payload { return &BootSavedEntry{} },
-	KindShutdown:        func() Payload { return &Shutdown{} },
-	KindJournalTorn:     func() Payload { return &JournalTorn{} },
-	KindStateRebuilt:    func() Payload { return &StateRebuilt{} },
+type payloadType struct {
+	new    func() Payload
+	decode func(line []byte) (envelope, Payload, error)
+}
+
+// framed decodes an event's envelope and its payload in one pass, matching json.Unmarshal of each.
+type framed[P any] struct {
+	envelope
+	Payload *P `json:",embed"`
+}
+
+// strictDecode accepts only exact-case, unique, known names and valid UTF-8, where v2 and v1 decode alike;
+// any other line errors and decodeEvent falls back to v1.
+var strictDecode = jsonv2.RejectUnknownMembers(true)
+
+func typeOf[P any, PP interface {
+	*P
+	Payload
+}]() payloadType {
+	return payloadType{
+		new: func() Payload { return PP(new(P)) },
+		decode: func(line []byte) (envelope, Payload, error) {
+			f := framed[P]{Payload: new(P)}
+			err := jsonv2.Unmarshal(line, &f, strictDecode)
+			return f.envelope, PP(f.Payload), err
+		},
+	}
+}
+
+var payloadTypes = map[Kind]payloadType{
+	KindSessionStart:    typeOf[SessionStart](),
+	KindSessionContext:  typeOf[SessionContext](),
+	KindSessionBaseline: typeOf[SessionBaseline](),
+	KindSessionNotice:   typeOf[SessionNotice](),
+	KindSessionWarning:  typeOf[SessionWarning](),
+	KindSessionArchived: typeOf[SessionArchived](),
+	KindSessionCarried:  typeOf[SessionCarried](),
+	KindConfigLoaded:    typeOf[ConfigLoaded](),
+	KindPreflightCheck:  typeOf[PreflightCheck](),
+	KindSMUIntent:       typeOf[SMUIntent](),
+	KindSMUWrite:        typeOf[SMUWrite](),
+	KindSMUReadback:     typeOf[SMUReadback](),
+	KindSMUError:        typeOf[SMUError](),
+	KindProfileApplied:  typeOf[ProfileApplied](),
+	KindProfileChange:   typeOf[ProfileChange](),
+	KindProfileRestored: typeOf[ProfileRestored](),
+	KindTrialIntent:     typeOf[TrialIntent](),
+	KindTrialStart:      typeOf[TrialStart](),
+	KindTrialProgress:   typeOf[TrialProgress](),
+	KindTrialSignal:     typeOf[TrialSignal](),
+	KindTrialSample:     typeOf[TrialSample](),
+	KindTrialEnd:        typeOf[TrialEnd](),
+	KindTrialCarried:    typeOf[TrialCarried](),
+	KindFailure:         typeOf[Failure](),
+	KindFailureCarried:  typeOf[FailureCarried](),
+	KindMCE:             typeOf[MCE](),
+	KindCrashDetected:   typeOf[CrashDetected](),
+	KindTunerDecision:   typeOf[TunerDecision](),
+	KindCorePhase:       typeOf[CorePhase](),
+	KindGuardRotation:   typeOf[GuardRotation](),
+	KindHostRanking:     typeOf[HostRanking](),
+	KindHuntStart:       typeOf[HuntStart](),
+	KindHuntMask:        typeOf[HuntMask](),
+	KindHuntEnd:         typeOf[HuntEnd](),
+	KindHuntSkipped:     typeOf[HuntSkipped](),
+	KindMarkJoint:       typeOf[MarkJoint](),
+	KindRefineRound:     typeOf[RefineRound](),
+	KindTunerWarning:    typeOf[TunerWarning](),
+	KindBackendRetry:    typeOf[BackendRetry](),
+	KindCommandReset:    typeOf[CommandReset](),
+	KindDefectFound:     typeOf[DefectFound](),
+	KindDefectAnswered:  typeOf[DefectAnswered](),
+	KindDeadEnd:         typeOf[DeadEnd](),
+	KindBootSavedEntry:  typeOf[BootSavedEntry](),
+	KindShutdown:        typeOf[Shutdown](),
+	KindJournalTorn:     typeOf[JournalTorn](),
+	KindStateRebuilt:    typeOf[StateRebuilt](),
 }
 
 func decodePayload(kind Kind, raw []byte) (Payload, error) {
-	constructor, ok := payloadConstructors[kind]
+	t, ok := payloadTypes[kind]
 	if !ok {
 		return nil, nil
 	}
-	p := constructor()
+	p := t.new()
 	if err := json.Unmarshal(raw, p); err != nil {
 		return nil, fmt.Errorf("decode %s: %w", kind, err)
 	}
 	return p, nil
+}
+
+// leadingKind finds the kind encode writes before any payload field; decodeEvent confirms it against the decoded envelope.
+func leadingKind(line []byte) (Kind, bool) {
+	_, rest, ok := bytes.Cut(line, []byte(`"kind":"`))
+	if !ok {
+		return "", false
+	}
+	kind, _, ok := bytes.Cut(rest, []byte{'"'})
+	if !ok || bytes.IndexByte(kind, '\\') >= 0 {
+		return "", false
+	}
+	return Kind(kind), true
 }
