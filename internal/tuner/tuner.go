@@ -675,10 +675,13 @@ func (s *State) next() Action {
 		return s.afterReruns(s.roundCheck())
 	}
 	if s.guard.open {
-		if a, ok := s.coveredEnd(); ok {
-			return s.afterReruns(a)
+		a := s.rotationNext()
+		if a.Kind == RunTrial {
+			if end, ok := s.coveredEnd(); ok {
+				a = end
+			}
 		}
-		return s.afterReruns(s.rotationNext())
+		return s.afterReruns(a)
 	}
 	if s.refineDue() {
 		if s.rankingSeq <= s.lastPlanSeq {

@@ -27,10 +27,12 @@ func TestCoveredOpenRotationYieldsToRefinement(t *testing.T) {
 		name      string
 		qualified []int
 		covered   bool
+		complete  bool
 	}{
-		{"same profile", offsets, true},
-		{"deeper qualified profile", []int{-50, -49, -49, -50}, true},
-		{"shallower qualified profile", []int{-48, -49, -49, -50}, false},
+		{"same profile", offsets, true, false},
+		{"deeper qualified profile", []int{-50, -49, -49, -50}, true, false},
+		{"shallower qualified profile", []int{-48, -49, -49, -50}, false, false},
+		{"completed same profile", offsets, true, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			starts := make([]coreStart, len(offsets))
@@ -46,12 +48,30 @@ func TestCoveredOpenRotationYieldsToRefinement(t *testing.T) {
 			rotation := h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true}).Seq
 			h.add(&journal.ProfileChange{From: tt.qualified, To: offsets})
 			h.add(&journal.GuardRotation{Rotation: 2, Event: journal.RotationStart, Steps: h.s.steps})
+			if tt.complete {
+				// Replay a fully executed rotation before asking Next to close it.
+				// The covered shortcut must only replace work still left to run.
+				for a := h.s.rotationNext(); a.Kind == RunTrial; a = h.s.rotationNext() {
+					h.trial(a, passed)
+				}
+			}
 			a := h.next()
 			end, ok := a.Payload.(*journal.GuardRotation)
+			if tt.complete {
+				if a.Kind != Decide || !ok || end.Event != journal.RotationEnd || !end.Clean || !end.Qualifying || end.Rotation != 2 {
+					t.Fatalf("completed rotation must close clean and qualifying: %+v", a)
+				}
+				h.decide(a)
+				nextRound(h)
+				return
+			}
 			if got := ok && end.Event == journal.RotationEnd && !end.Clean; got != tt.covered {
 				t.Fatalf("covered end %t, want %t: %+v", got, tt.covered, a)
 			}
 			if !tt.covered {
+				if a.Kind != RunTrial {
+					t.Fatalf("uncovered incomplete rotation must continue testing: %+v", a)
+				}
 				return
 			}
 			if a.Cause[0] != rotation {
