@@ -3,6 +3,7 @@
 package trial
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/shgew/togi/internal/backend"
 	"github.com/shgew/togi/internal/machine"
+	"golang.org/x/sys/unix"
 )
 
 type helperBackend struct {
@@ -42,6 +44,43 @@ func (h helperBackend) Prepare(_ machine.Workload, _ string, cpus []int) (backen
 	return launch, nil
 }
 func (h helperBackend) Classify(line string) backend.Line { return classifyHelper(line) }
+
+// newHelperRunner launches each NoScope helper from a thread pinned to the CPU its taskset names,
+// so the child inherits the mask at fork and sampling never sees env or taskset on another CPU.
+func newHelperRunner(o Options) *Runner {
+	r := New(o)
+	r.host = pinnedLaunchHost{r.host}
+	return r
+}
+
+type pinnedLaunchHost struct{ processHost }
+
+func (h pinnedLaunchHost) Start(ctx context.Context, argv []string, dir string) (process, error) {
+	i := slices.Index(argv, "taskset")
+	if i < 0 || i+2 >= len(argv) || argv[i+1] != "-c" {
+		return nil, fmt.Errorf("pinned launch: no taskset -c in %q", argv)
+	}
+	cpu, err := strconv.Atoi(argv[i+2])
+	if err != nil {
+		return nil, fmt.Errorf("pinned launch: %w", err)
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	var original, pinned unix.CPUSet
+	if err := unix.SchedGetaffinity(0, &original); err != nil {
+		return nil, fmt.Errorf("pinned launch: read thread affinity: %w", err)
+	}
+	pinned.Set(cpu)
+	if err := unix.SchedSetaffinity(0, &pinned); err != nil {
+		return nil, fmt.Errorf("pinned launch: pin thread to cpu %d: %w", cpu, err)
+	}
+	defer func() {
+		if err := unix.SchedSetaffinity(0, &original); err != nil {
+			panic(fmt.Sprintf("pinned launch: restore thread affinity: %v", err))
+		}
+	}()
+	return h.processHost.Start(ctx, argv, dir)
+}
 
 type helperIdentityReport struct {
 	UID, GID int

@@ -37,7 +37,7 @@ func TestProcessTrials(t *testing.T) {
 			o := testOptions(t, tt.mode)
 			spec := testSpec(tt.name, machine.R1, tt.duration)
 			spec.CPUs = []int{o.Cores[0].CPUs[0]}
-			running, err := New(o).Start(context.Background(), spec)
+			running, err := newHelperRunner(o).Start(context.Background(), spec)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -59,7 +59,7 @@ func TestProcessOversizedOutput(t *testing.T) {
 			o := testOptions(t, mode)
 			spec := testSpec(mode, machine.R1, time.Minute)
 			spec.CPUs = []int{o.Cores[0].CPUs[0]}
-			started, err := New(o).Start(context.Background(), spec)
+			started, err := newHelperRunner(o).Start(context.Background(), spec)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -116,7 +116,7 @@ func TestProcessOutputLimitEvidencePrecedence(t *testing.T) {
 			o := testOptions(t, tt.mode)
 			spec := testSpec(tt.mode, machine.R1, time.Minute)
 			spec.CPUs = []int{o.Cores[0].CPUs[0]}
-			started, err := New(o).Start(context.Background(), spec)
+			started, err := newHelperRunner(o).Start(context.Background(), spec)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -174,7 +174,7 @@ func TestProcessEscape(t *testing.T) {
 	o.Backends[machine.Mprime] = helperBackend{mode: fmt.Sprintf("escape:%d", o.Cores[1].CPUs[0])}
 	spec := testSpec("escape", machine.R1, time.Second)
 	spec.CPUs = []int{o.Cores[0].CPUs[0]}
-	running, err := New(o).Start(context.Background(), spec)
+	running, err := newHelperRunner(o).Start(context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestProcessR6StartsStopped(t *testing.T) {
 	spec := testSpec("r6-idle", machine.R6, 600*time.Millisecond)
 	spec.Cores = []int{0, 1}
 	spec.CPUs = []int{o.Cores[0].CPUs[0], o.Cores[1].CPUs[0]}
-	r, err := New(o).Start(context.Background(), spec)
+	r, err := newHelperRunner(o).Start(context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +469,7 @@ func TestProcessRelativeTrialDirectory(t *testing.T) {
 	o.Backends[machine.Mprime] = helperBackend{mode: "watched", executable: stageHelper(t)}
 	spec := testSpec("relative", machine.R1, time.Second)
 	spec.CPUs = []int{o.Cores[0].CPUs[0]}
-	started, err := New(o).Start(context.Background(), spec)
+	started, err := newHelperRunner(o).Start(context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,7 +490,7 @@ func TestProcessWatchedFloodCancellation(t *testing.T) {
 	o.StopGrace = 100 * time.Millisecond
 	spec := testSpec("watched-flood", machine.R1, time.Minute)
 	spec.CPUs = []int{o.Cores[0].CPUs[0]}
-	started, err := New(o).Start(context.Background(), spec)
+	started, err := newHelperRunner(o).Start(context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
