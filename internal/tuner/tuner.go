@@ -226,6 +226,7 @@ func (s *State) Fold(e journal.Event) {
 		s.durations = p.Config.Durations
 		s.evidence = p.Config.Evidence
 		s.n = int(math.Ceil(math.Log(s.evidence.Miss) / math.Log1p(-s.evidence.Rate)))
+		s.pendingRerun()
 		s.projectionDirty = true
 	case *journal.SessionBaseline:
 		for i, c := range s.byID() {
