@@ -28,3 +28,4 @@ A new ADR adds its line here and updates the status of any ADR it supersedes.
 - [0022: Run the race detector in CI](0022-run-the-race-detector-in-ci.md) — **in force**.
 - [0023: Hunts that converge on shared voltage](0023-hunts-that-converge-on-shared-voltage.md) — **in force**.
 - [0024: Schedule from uncontradicted evidence](0024-schedule-from-uncontradicted-evidence.md) — **in force**.
+- [0025: Recorded agent review](0025-recorded-agent-review.md) — **in force**.
