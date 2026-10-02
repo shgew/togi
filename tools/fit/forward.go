@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,7 +40,7 @@ type forwardRow struct {
 // starts contains only the decisive starts validated by decisive.
 func forwardCheck(starts []trialfacts.Record) ([]forwardRow, forwardScore, error) {
 	ordered := slices.Clone(starts)
-	slices.SortStableFunc(ordered, func(a, b trialfacts.Record) int { return cmp.Compare(a.Session, b.Session) })
+	slices.SortStableFunc(ordered, func(a, b trialfacts.Record) int { return journal.CompareSessionIDs(a.Session, b.Session) })
 	seen := make(map[string]bool)
 	trainingFailures, trainingSessions := 0, 0
 	var rows []forwardRow

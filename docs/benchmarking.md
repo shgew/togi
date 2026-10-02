@@ -126,7 +126,7 @@ Generation prints likelihoods, CCD joint parameters, model checks against the **
 
 ### Forward-chained check
 
-After the ensemble's model check, `just fit` orders sessions with decisive starts by their UTC session IDs. For each session after the first, it fits all earlier sessions' decisive starts once, without bootstrap resampling or model-check constraints, then predicts only the held-out session. These fits stay in memory and do not change the generated machine files.
+After the ensemble's model check, `just fit` orders sessions with decisive starts by their UTC session IDs, comparing equal-second numeric suffixes numerically (`-2` before `-10`). For each session after the first, it fits all earlier sessions' decisive starts once, without bootstrap resampling or model-check constraints, then predicts only the held-out session. These fits stay in memory and do not change the generated machine files.
 
 Each session row names the session ID, ruleset and `training_sessions` count. `starts` and `failures` count held-out decisive starts and observed failures; `predicted` sums the fit's failure probabilities over their intended durations. `log_loss/start` is the mean Bernoulli log loss, with probabilities clamped to `[1e-4, 1-1e-4]`. It compares the `fit` to a `constant` predictor whose probability, shown in parentheses, is the earlier training starts' failure rate. Lower loss is better: fit loss above the constant means the fit predicts that later session worse than a single average failure rate.
 

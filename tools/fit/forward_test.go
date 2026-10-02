@@ -73,6 +73,34 @@ func TestForwardCheck(t *testing.T) {
 			t.Fatalf("held-out outcomes changed their own prediction (-want +got):\n%s", diff)
 		}
 	})
+	t.Run("numeric session suffixes", func(t *testing.T) {
+		sessions := []string{"20260101T000000Z", "20260101T000000Z-2", "20260101T000000Z-9", "20260101T000000Z-10"}
+		var starts []trialfacts.Record
+		for _, session := range slices.Backward(sessions) {
+			r := record
+			r.Session, r.Seq = session, 1
+			starts = append(starts, r)
+		}
+		rows, _, err := forwardCheck(starts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, row := range rows {
+			got = append(got, row.session)
+		}
+		if diff := cmp.Diff(sessions[1:], got); diff != "" {
+			t.Fatalf("held-out sessions out of chronological order (-want +got):\n%s", diff)
+		}
+		starts[0].Outcome = journal.OutcomeFailure
+		changed, _, err := forwardCheck(starts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := cmp.Diff(rows[:2], changed[:2], cmp.AllowUnexported(forwardRow{}, forwardScore{}, forwardCounts{})); diff != "" {
+			t.Fatalf("later suffixed session changed earlier rows (-want +got):\n%s", diff)
+		}
+	})
 	t.Run("log loss and constant", func(t *testing.T) {
 		model := sim.DefaultModel()
 		model.PastEdgeRate, model.NearEdgeRate, model.OnsetBoost = 0, 0, 0
