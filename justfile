@@ -85,14 +85,5 @@ bot +args:
     if [[ "${TOGI_DEV_SHELL:-}" != "1" ]]; then
         exec {{ dev }} just --justfile '{{ justfile() }}' bot "$@"
     fi
-    if [[ -z "${ROBOTOGI_KEY:-}" ]]; then
-        echo "ROBOTOGI_KEY must contain robotogi's PEM private key" >&2
-        exit 1
-    fi
-    key=$(printf '%s' "$ROBOTOGI_KEY" | base64 | tr -d '\n')
-    remote=$(git remote get-url origin)
-    namespace=${remote%/*}
-    owner=${namespace##*[/:]}
-    installation=$(gh-token installations --app-id 5162510 --base64-key "$key" | jq -er --arg owner "$owner" '.[] | select(.account.login == $owner and .suspended_at == null) | .id')
-    token=$(gh-token generate --app-id 5162510 --base64-key "$key" --installation-id "$installation" | jq -er '.token')
-    exec env GH_TOKEN="$token" gh "$@"
+    token=$(gh-token generate --app-id 5162510 --key "${ROBOTOGI_KEY_FILE:?ROBOTOGI_KEY_FILE must name the robotogi private key file}" --token-only)
+    GH_TOKEN=$token exec gh "$@"
