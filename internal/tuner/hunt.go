@@ -118,6 +118,7 @@ func (s *State) huntStartNext() Action {
 		cores = s.ids()
 	}
 	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: cores, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Anchor: anchor, AnchorSeq: anchorSeq, Candidates: candidates, Starts: s.n, StartS: s.durations.StartS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
+	p.Reason = f.failure.Reason
 	cause := []int{f.seq}
 	if anchorSeq != 0 {
 		cause = append(cause, anchorSeq)

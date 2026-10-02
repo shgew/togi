@@ -73,6 +73,7 @@ type core struct {
 	decisionSeq    int
 	stepR1         bool
 	stepSeqs       []int
+	workloadIndex  map[machine.Regime]int
 }
 
 type pendingFailure struct {
@@ -434,6 +435,14 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 		s.thermal = nil
 	}
 	s.recordEvidence(e, intent, p)
+	if intent.Core != nil && (p.Outcome == journal.OutcomePass || p.Outcome == journal.OutcomeFailure) {
+		if c := s.core(*intent.Core); c != nil {
+			if c.workloadIndex == nil {
+				c.workloadIndex = map[machine.Regime]int{}
+			}
+			c.workloadIndex[intent.Regime]++
+		}
+	}
 	if intent.Condition != machine.Isolated {
 		if p.Outcome == journal.OutcomePass && intent.Condition == machine.Resident {
 			s.guard.lastSeq = e.Seq
@@ -487,6 +496,7 @@ func trialFromIntent(p *journal.TrialIntent) Trial {
 
 func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 	if a := s.awaiting; a != nil && a.intent.Trial == p.Trial {
+		s.failureIndex[a.seq] = len(s.pendingFailures)
 		s.awaiting = nil
 	}
 	profile := slices.Clone(p.Profile)
@@ -496,7 +506,16 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 		}
 	}
 	failure := pendingFailure{seq: e.Seq, failure: p, profile: profile}
-	if intent := s.intents[p.Trial]; intent != nil {
+	if p.KnownFailure != 0 {
+		s.retry = nil
+		if known := s.failureBySeq(p.KnownFailure); known != nil {
+			failure = *known
+			failure.seq, failure.failure = p.KnownFailure, p
+		}
+	}
+	if p.KnownFailure != 0 {
+		s.failureIndex[p.KnownFailure] = len(s.pendingFailures)
+	} else if intent := s.intents[p.Trial]; intent != nil {
 		failure.class = classOf(intent)
 	} else if p.Trial == "" && (p.Condition == machine.Resident || p.Condition == machine.Masked) {
 		failure.class = trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, fmt.Sprint(s.ids()), s.durations.GuardIdleS}
@@ -508,7 +527,7 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 	}
 	if p.Attribution == journal.Attributed && p.Core != nil {
 		if c := s.core(*p.Core); c != nil {
-			c.pending = e.Seq
+			c.pending = failure.seq
 		}
 	}
 	if p.Attribution == journal.Unattributed && (p.Condition == machine.Resident || p.Condition == machine.Masked) {
@@ -516,7 +535,7 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 			s.queue = append(s.queue, failure)
 		}
 	}
-	if p.Trial == "" && (p.Condition == machine.Resident || p.Condition == machine.Masked) && p.Attribution == journal.Unattributed {
+	if p.KnownFailure == 0 && p.Trial == "" && (p.Condition == machine.Resident || p.Condition == machine.Masked) && p.Attribution == journal.Unattributed {
 		s.recordIdle(e, p)
 	}
 	s.projectionDirty = true
@@ -581,6 +600,10 @@ func (s *State) Drain() (Action, bool) {
 }
 
 func (s *State) Next() Action {
+	return s.skipKnownFailure(s.next())
+}
+
+func (s *State) next() Action {
 	if len(s.cores) == 0 {
 		panic("tuner: no session")
 	}

@@ -651,3 +651,78 @@ func firstRotationLivePasses(t *testing.T, events []journal.Event) map[string]in
 	t.Fatal("no first qualifying rotation")
 	return nil
 }
+
+func TestRuleset7StartsHuntFromCarriedResidentFailure(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(4)
+	cfg.Edges[1].Resident[6] = -5
+	c := config.Default()
+	c.CandidateEdges = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
+	_, source, dir := runHunt(t, cfg, nil, func(in *Input) {
+		in.Config = c
+		in.Until = func(e journal.Event) bool {
+			p, ok := e.Data.(*journal.Failure)
+			return ok && p.Condition == machine.Resident && p.Regime == machine.R7 && p.Attribution == journal.Unattributed
+		}
+	})
+	failure, ok := findPayload(source, func(p *journal.Failure) bool {
+		return p.Condition == machine.Resident && p.Regime == machine.R7 && p.Attribution == journal.Unattributed
+	})
+	if !ok {
+		t.Fatal("source session has no resident guard failure")
+	}
+	intent, ok := findPayload(source, func(p *journal.TrialIntent) bool { return p.Trial == failure.Trial })
+	if !ok || intent.Phase != journal.PhaseGuard {
+		t.Fatal("source failure is not a guard step")
+	}
+	id := stampRuleset(t, dir, 6)
+	resumed, err := sim.Resume(dir, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := sim.New(resumed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Simulate(context.Background(), Input{
+		Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m,
+		Until: func(e journal.Event) bool { return e.Kind == journal.KindHuntStart },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || torn != nil {
+		t.Fatalf("read transitioned session: %v, torn %q", err, torn)
+	}
+	if start := events[0].Data.(*journal.SessionStart); start.Ruleset != 7 {
+		t.Fatalf("transition ruleset %d, want 7", start.Ruleset)
+	}
+	carriedSeq := 0
+	found := false
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.TrialCarried:
+			if p.Source.Session == id && p.Source.Trial == failure.Trial && p.Outcome == journal.OutcomeFailure {
+				carriedSeq = e.Seq
+			}
+		case *journal.TrialIntent:
+			if p.Condition == machine.Resident && p.Regime == intent.Regime && p.Workload == intent.Workload && p.DurationS == intent.DurationS && cmp.Diff(p.Cores, intent.Cores) == "" && cmp.Diff(p.Profile, intent.Profile) == "" {
+				t.Fatalf("carried resident guard failure was rerun: %+v", p)
+			}
+		case *journal.HuntStart:
+			if carriedSeq == 0 || p.Failure != carriedSeq || p.Trial != failure.Trial || !strings.Contains(p.Message(), "skipped") {
+				t.Fatalf("hunt lost carried failure origin: %+v, carried #%d", p, carriedSeq)
+			}
+			if diff := cmp.Diff(intent.Profile, p.Failing); diff != "" {
+				t.Fatalf("hunt full failing profile (-want +got):\n%s", diff)
+			}
+			if p.Regime != intent.Regime || p.Workload != intent.Workload || p.DurationS != intent.DurationS || cmp.Diff(intent.Cores, p.Cores) != "" {
+				t.Fatalf("hunt changed the failing class: %+v", p)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("transition did not start a hunt")
+	}
+}

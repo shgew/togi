@@ -558,18 +558,24 @@ func (p *TrialEnd) Message() string {
 }
 
 type Failure struct {
-	Signal      machine.Signal    `json:"signal"`
-	Attribution Attribution       `json:"attribution"`
-	Core        *int              `json:"core,omitempty"`
-	Offset      *int              `json:"offset,omitempty"`
-	Trial       string            `json:"trial,omitempty"`
-	Regime      machine.Regime    `json:"regime,omitempty"`
-	Condition   machine.Condition `json:"condition,omitempty"`
-	Profile     []int             `json:"profile,omitempty"`
+	Signal       machine.Signal    `json:"signal"`
+	Attribution  Attribution       `json:"attribution"`
+	Core         *int              `json:"core,omitempty"`
+	Offset       *int              `json:"offset,omitempty"`
+	Trial        string            `json:"trial,omitempty"`
+	Regime       machine.Regime    `json:"regime,omitempty"`
+	Condition    machine.Condition `json:"condition,omitempty"`
+	Profile      []int             `json:"profile,omitempty"`
+	KnownFailure int               `json:"known_failure,omitempty"`
+	Reason       string            `json:"reason,omitempty"`
+	Round        int               `json:"round,omitempty"`
 }
 
 func (*Failure) Kind() Kind { return KindFailure }
 func (p *Failure) Message() string {
+	if p.KnownFailure != 0 {
+		return p.Reason
+	}
 	loaded := p.Condition == machine.Resident || p.Condition == machine.Masked
 	switch p.Attribution {
 	case Attributed:

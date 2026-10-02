@@ -210,47 +210,55 @@ func (s *State) pendingDecision() (Action, bool) {
 		if failure == nil {
 			return Action{}, false
 		}
-		f := failure.failure
-		if c.phase == journal.PhaseSearch {
-			return Action{Kind: Decide, Payload: s.searchFailure(c.snapshot()), Cause: []int{seq}}, true
-		}
-		if f.Offset == nil {
-			return Action{}, false
-		}
-		if *f.Offset == 0 {
-			return Action{Kind: Decide, Payload: failedAtZero(c.id), Cause: []int{seq}}, true
-		}
-		if s.hunt != nil && f.Condition == machine.Masked && s.hunt.end == nil {
-			return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: s.hunt.start.Hunt, Result: "direct", Cores: []int{c.id}, Masks: len(s.hunt.masks), Reason: fmt.Sprintf("attributed failure #%d", seq)}, Cause: []int{seq}}, true
-		}
-		if s.round != nil && f.Trial != "" {
-			if intent := s.intents[f.Trial]; intent != nil && intent.Round > 0 {
-				return Action{Kind: Decide, Payload: &journal.RefineRound{Round: s.round.start.Round, Event: journal.RotationEnd, Reason: fmt.Sprintf("attributed failure #%d", seq)}, Cause: []int{seq}}, true
-			}
-		}
-		phase := journal.PhaseGuard
-		if f.Condition == machine.Masked {
-			phase = journal.PhaseHunt
-		} else if intent := s.intents[f.Trial]; intent != nil && intent.Round > 0 {
-			phase = journal.PhaseRefine
-		}
-		fail := *f.Offset
-		if c.fail != nil {
-			fail = max(fail, *c.fail)
-		}
-		to := max(c.offset, *f.Offset+1)
-		pass, _ := keepPass(c.pass, fail)
-		reason := fmt.Sprintf("attributed %s in %s %s trial %s; failed mark %d", f.Signal, f.Condition, f.Regime, f.Trial, fail)
-		if to == c.offset {
-			reason += "; already shallower"
-		}
-		cause := seq
-		if s.hunt != nil && s.hunt.end != nil && s.hunt.end.Result == "direct" {
-			cause = s.hunt.endSeq
-		}
-		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: phase, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailedMark: new(fail), Reason: reason}, Cause: []int{cause}}, true
+		return s.attributedDecision(c, failure.failure, seq)
 	}
 	return Action{}, false
+}
+
+func (s *State) attributedDecision(c *core, f *journal.Failure, seq int) (Action, bool) {
+	if c.phase == journal.PhaseSearch {
+		return Action{Kind: Decide, Payload: s.searchFailure(c.snapshot()), Cause: []int{seq}}, true
+	}
+	if f.Offset == nil {
+		return Action{}, false
+	}
+	if *f.Offset == 0 {
+		return Action{Kind: Decide, Payload: failedAtZero(c.id), Cause: []int{seq}}, true
+	}
+	if s.hunt != nil && f.Condition == machine.Masked && s.hunt.end == nil {
+		return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: s.hunt.start.Hunt, Result: "direct", Cores: []int{c.id}, Masks: len(s.hunt.masks), Reason: fmt.Sprintf("attributed failure #%d", seq)}, Cause: []int{seq}}, true
+	}
+	refining := f.Round > 0
+	if intent := s.intents[f.Trial]; f.KnownFailure == 0 && intent != nil && intent.Round > 0 {
+		refining = true
+	}
+	if s.round != nil && refining {
+		return Action{Kind: Decide, Payload: &journal.RefineRound{Round: s.round.start.Round, Event: journal.RotationEnd, Reason: fmt.Sprintf("attributed failure #%d", seq)}, Cause: []int{seq}}, true
+	}
+	phase := journal.PhaseGuard
+	if f.Condition == machine.Masked {
+		phase = journal.PhaseHunt
+	} else if refining {
+		phase = journal.PhaseRefine
+	}
+	fail := *f.Offset
+	if c.fail != nil {
+		fail = max(fail, *c.fail)
+	}
+	to := max(c.offset, *f.Offset+1)
+	pass, _ := keepPass(c.pass, fail)
+	reason := fmt.Sprintf("attributed %s in %s %s trial %s; failed mark %d", f.Signal, f.Condition, f.Regime, f.Trial, fail)
+	if f.KnownFailure != 0 {
+		reason += "; " + f.Reason
+	}
+	if to == c.offset {
+		reason += "; already shallower"
+	}
+	cause := seq
+	if s.hunt != nil && s.hunt.end != nil && s.hunt.end.Result == "direct" {
+		cause = s.hunt.endSeq
+	}
+	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: phase, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailedMark: new(fail), Reason: reason}, Cause: []int{cause}}, true
 }
 
 // pendingRerun retires completed checks and retains their carried citations until

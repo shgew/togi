@@ -106,7 +106,7 @@ func project(session facts.Session) *projection {
 				active.crashes++
 			}
 		case *journal.Failure:
-			if v.Trial == "" {
+			if v.KnownFailure == 0 && v.Trial == "" {
 				p.idle = append(p.idle, e)
 			}
 		case *journal.HuntStart:

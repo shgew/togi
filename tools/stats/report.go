@@ -146,6 +146,9 @@ func renderFailures(tab *table, p *projection, events []journal.Event, since tim
 		}
 		switch v := e.Data.(type) {
 		case *journal.Failure:
+			if v.KnownFailure != 0 {
+				continue
+			}
 			workload := "-"
 			regime := v.Regime
 			tr := p.byID[v.Trial]

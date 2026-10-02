@@ -171,6 +171,9 @@ type transitionDemo struct {
 	firstTrials    []journal.Event
 	decisions      []journal.Event
 	firstRotation  *journal.Event
+	skips          []journal.Event
+	hunts          []journal.Event
+	inferredMasks  []journal.Event
 }
 
 func summarizeTransition(events []journal.Event) transitionDemo {
@@ -181,6 +184,7 @@ func summarizeTransition(events []journal.Event) transitionDemo {
 	var firstTrials []journal.Event
 	var decisions []journal.Event
 	var firstRotation *journal.Event
+	var skips, hunts, inferredMasks []journal.Event
 	for _, e := range events {
 		switch p := e.Data.(type) {
 		case *journal.TrialCarried:
@@ -193,17 +197,27 @@ func summarizeTransition(events []journal.Event) transitionDemo {
 			case journal.OutcomeInconclusive:
 			}
 		case *journal.FailureCarried:
+			carried[e.Seq] = true
 			failures++
+		case *journal.Failure:
+			if p.KnownFailure != 0 {
+				skips = append(skips, e)
+			}
+		case *journal.HuntStart:
+			if carried[p.Failure] {
+				hunts = append(hunts, e)
+			}
+		case *journal.HuntMask:
+			if p.Inferred != "" && citesCarriedFact(e.Cause, carried) {
+				inferredMasks = append(inferredMasks, e)
+			}
 		case *journal.TunerDecision:
 			checking[p.Core] = p.Decision == journal.CheckEdge
 		case *journal.CorePhase:
 			if !p.CheckEdge && p.From == journal.PhaseSearch && p.To != journal.PhaseSearch && checking[p.Core] {
-				for _, seq := range e.Cause {
-					if carried[seq] {
-						answered++
-						decisions = append(decisions, e)
-						break
-					}
+				if citesCarriedFact(e.Cause, carried) {
+					answered++
+					decisions = append(decisions, e)
 				}
 			}
 			checking[p.Core] = p.CheckEdge
@@ -233,7 +247,17 @@ func summarizeTransition(events []journal.Event) transitionDemo {
 		passes: passes, failures: failures, answered: answered, edgeStarts: edgeStarts,
 		rotationStarts: rotationStarts, rotationPasses: rotationPasses,
 		firstTrials: firstTrials, decisions: decisions, firstRotation: firstRotation,
+		skips: skips, hunts: hunts, inferredMasks: inferredMasks,
 	}
+}
+
+func citesCarriedFact(cause []int, carried map[int]bool) bool {
+	for _, seq := range cause {
+		if carried[seq] {
+			return true
+		}
+	}
+	return false
 }
 
 func renderTransition(out io.Writer, demo transitionDemo) error {
@@ -247,6 +271,22 @@ func renderTransition(out io.Writer, demo transitionDemo) error {
 	}
 	for _, e := range demo.firstTrials {
 		if _, err := fmt.Fprintf(out, "first live trial #%d: %s\n", e.Seq, e.Msg); err != nil {
+			return err
+		}
+	}
+	for _, e := range demo.skips {
+		if _, err := fmt.Fprintf(out, "known-failure skip #%d cause=%v: %s\n", e.Seq, e.Cause, e.Msg); err != nil {
+			return err
+		}
+	}
+	for _, e := range demo.hunts {
+		p := e.Data.(*journal.HuntStart)
+		if _, err := fmt.Fprintf(out, "carried-failure hunt #%d cause=%v: source failure #%d trial %s; class %s %s cores=%v duration=%ds; failing=%v; %s\n", e.Seq, e.Cause, p.Failure, p.Trial, p.Regime, p.Workload, p.Cores, p.DurationS, p.Failing, e.Msg); err != nil {
+			return err
+		}
+	}
+	for _, e := range demo.inferredMasks {
+		if _, err := fmt.Fprintf(out, "carried mask inference #%d cause=%v: %s\n", e.Seq, e.Cause, e.Msg); err != nil {
 			return err
 		}
 	}

@@ -42,6 +42,7 @@ type HuntStart struct {
 	Miss       float64        `json:"miss"`
 	Rate       float64        `json:"rate"`
 	Ranking    []int          `json:"ranking"`
+	Reason     string         `json:"reason,omitempty"`
 }
 
 func (*HuntStart) Kind() Kind { return KindHuntStart }
@@ -54,7 +55,11 @@ func (p *HuntStart) Message() string {
 	if p.AnchorSeq != 0 {
 		anchor = fmt.Sprintf("rotation end #%d", p.AnchorSeq)
 	}
-	return fmt.Sprintf("hunt %d: unattributed failure in %s; anchor from %s; candidates %s; masks of %d × %ds", p.Hunt, source, anchor, coreList(p.Candidates), p.Starts, p.StartS)
+	msg := fmt.Sprintf("hunt %d: unattributed failure in %s; anchor from %s; candidates %s; masks of %d × %ds", p.Hunt, source, anchor, coreList(p.Candidates), p.Starts, p.StartS)
+	if p.Reason != "" {
+		msg += "; " + p.Reason
+	}
+	return msg
 }
 
 type HuntMask struct {

@@ -327,7 +327,7 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 				all = append(all, candidate{core: *in.Core, offset: *in.Offset, edge: true, session: s.Session, seq: e.Seq, at: e.Seq})
 			}
 		case *journal.Failure:
-			if p.Attribution == journal.Attributed && p.Core != nil && p.Offset != nil && !slices.Contains(excluded, e.Seq) {
+			if p.KnownFailure == 0 && p.Attribution == journal.Attributed && p.Core != nil && p.Offset != nil && !slices.Contains(excluded, e.Seq) {
 				all = append(all, candidate{core: *p.Core, offset: *p.Offset, session: s.Session, seq: e.Seq, signal: p.Signal, at: e.Seq})
 			}
 		case *journal.HuntEnd:

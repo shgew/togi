@@ -11,6 +11,7 @@ All notable changes to togi are documented in this file. The format is based on 
 ### Changed
 
 - **BREAKING** The next `togi run` archives a ruleset-6 session and starts a ruleset-7 session that carries trial facts from earlier same-BIOS sessions: candidate-edge checks, hunt masks, reruns and refinement checks can be answered by carried passes, carried failures count everywhere, and decisions cite their evidence consistently across configuration reloads, replay and shutdown. Rotations still qualify only on live passes, and `status` counts only live passes as this session's exposure ([#282]).
+- Trials whose class has a valid live or carried failure at an equal-or-shallower profile are skipped; guard failures go directly to their hunt or attributed backoff, citing the known failure instead of running it again ([#283]).
 - Failure-rate bounds in `status` state that their 95% claim assumes a constant failure rate on the tested workloads; the numbers and rounding are unchanged ([#237]).
 - `run` archives older-ruleset or older-schema journals containing unknown event kinds and derives carry from known events; current-session writes still refuse unknown kinds, while `reset --all` permits them only for its non-appending different-schema archive ([#270]).
 
@@ -383,3 +384,4 @@ All notable changes to togi are documented in this file. The format is based on 
 [#279]: https://github.com/shgew/togi/pull/279
 [#281]: https://github.com/shgew/togi/pull/281
 [#282]: https://github.com/shgew/togi/pull/282
+[#283]: https://github.com/shgew/togi/pull/283
