@@ -18,7 +18,7 @@ func TestStatusHuntShowsDecisiveFailureSignal(t *testing.T) {
 		{"live failure", &journal.Failure{Signal: machine.Crash}},
 		{"live trial", &journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash}},
 		{"carried trial", &journal.TrialCarried{Outcome: journal.OutcomeFailure, Signal: machine.Crash}},
-		{"carried idle", &journal.FailureCarried{Failure: journal.Failure{Signal: machine.Crash}}},
+		{"carried idle", &journal.FailureCarried{Signal: machine.Crash}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := journal.State{
