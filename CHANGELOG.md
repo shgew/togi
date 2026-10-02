@@ -4,6 +4,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-02
+
 ### Changed
 
 - Compatibility diagnostics consistently name togi in version comparisons and recovery commands ([#227]).
@@ -249,6 +251,8 @@ All notable changes to togi are documented in this file. The format is based on 
 [0.5.3]: https://github.com/shgew/togi/releases/tag/v0.5.3
 
 [0.6.0]: https://github.com/shgew/togi/releases/tag/v0.6.0
+
+[0.6.1]: https://github.com/shgew/togi/releases/tag/v0.6.1
 
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
