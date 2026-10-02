@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 type effectfulBootloader struct {
@@ -90,6 +91,7 @@ func TestBootHandoffResumesEveryCleanupBoundary(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			in, deadSeq := bootCleanupFixture(t)
+			want := bootDecisionFacts(t, in)
 			bl := &effectfulBootloader{saved: "togi"}
 			if tc.beforeUnset {
 				bl.err = errKilled
@@ -130,6 +132,9 @@ func TestBootHandoffResumesEveryCleanupBoundary(t *testing.T) {
 			if diff := cmp.Diff([]int{-30, -29, -19, -5}, actualOffsets(t, in)); diff != "" {
 				t.Fatalf("same-boot restoration bypassed:\n%s", diff)
 			}
+			if diff := cmp.Diff(want, bootDecisionFacts(t, in)); diff != "" {
+				t.Fatalf("GRUB cleanup resume changed decision facts (-before +after):\n%s", diff)
+			}
 		})
 	}
 }
@@ -138,6 +143,7 @@ func TestFailedBootCleanupNeverAuthorizesRebootOnResume(t *testing.T) {
 	for _, effectBeforeError := range []bool{false, true} {
 		t.Run(map[bool]string{false: "before unset", true: "after unset"}[effectBeforeError], func(t *testing.T) {
 			in, deadSeq := bootCleanupFixture(t)
+			want := bootDecisionFacts(t, in)
 			cleanupErr := errors.New("grub-editenv unset failed")
 			bl := &effectfulBootloader{saved: "togi", err: cleanupErr, effectBeforeError: effectBeforeError}
 			in.Bootloader = bl
@@ -162,8 +168,41 @@ func TestFailedBootCleanupNeverAuthorizesRebootOnResume(t *testing.T) {
 			if (bl.saved == "") != effectBeforeError {
 				t.Fatalf("failed cleanup actual state changed on resume: %q", bl.saved)
 			}
+			if diff := cmp.Diff(want, bootDecisionFacts(t, in)); diff != "" {
+				t.Fatalf("failed GRUB cleanup resume changed decision facts (-before +after):\n%s", diff)
+			}
 		})
 	}
+}
+
+type bootFacts struct {
+	Cores      []journal.CoreState
+	JointMarks []journal.JointMarkState
+	Guard      *journal.GuardState
+	Hunt       *journal.HuntState
+	Refine     *journal.RefineState
+	Tier       journal.Tier
+	Evidence   []string
+}
+
+func bootDecisionFacts(t *testing.T, in simRun) bootFacts {
+	t.Helper()
+	events := readEvents(t, in.Dir)
+	var state journal.State
+	engine := tuner.New()
+	journal.Replay(events, &state, engine)
+	engine.Project(&state)
+	facts := bootFacts{Cores: state.Cores, JointMarks: state.JointMarks, Guard: state.Guard, Hunt: state.Hunt, Refine: state.Refine, Tier: state.Tier}
+	decisive := []journal.Kind{journal.KindFailure, journal.KindCrashDetected, journal.KindMCE, journal.KindTrialIntent, journal.KindTunerDecision, journal.KindMarkJoint}
+	for _, e := range events {
+		if slices.Contains(decisive, e.Kind) {
+			facts.Evidence = append(facts.Evidence, e.Msg)
+		}
+	}
+	if len(facts.Cores) == 0 || len(facts.JointMarks) == 0 || len(facts.Evidence) == 0 {
+		t.Fatalf("decision facts missing from fixture: %+v", facts)
+	}
+	return facts
 }
 
 func assertBootCleanupEvents(t *testing.T, in simRun, deadSeq int) *journal.BootSavedEntry {
