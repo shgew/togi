@@ -9,6 +9,9 @@ All notable changes to togi are documented in this file. The format is based on 
 ### Changed
 
 - Compatibility diagnostics consistently name togi in version comparisons and recovery commands ([#227]).
+- **BREAKING** The next `togi run` archives a ruleset-5 session and starts a ruleset-6 session with carried candidate edges and eligible same-BIOS failed marks, but no joint marks or passed rotations. Hunts can start at the longer failed duration when sufficient valid short starts cover the failing profile and no short-or-shorter failure in that regime has occurred since reset.
+- Hunts can probe a repeatedly attributed masked core before binary parts when two same-class failures at adjacent offsets corroborate it; a passing singleton returns to the ordinary split without crediting an untested group.
+- Bronze and `run --rotations` can credit an earlier clean qualifying rotation after a later deepening when it ended with every core done, followed the latest reset, covered an equal or deeper profile, and no failure since reset contradicted it. Silver and Gold still require clean hours since the unchanged tier clock.
 
 ### Fixed
 

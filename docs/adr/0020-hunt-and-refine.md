@@ -1,4 +1,5 @@
 The hunt anchor and the joint-mark backoff choice are superseded by [ADR 0023](0023-hunts-that-converge-on-shared-voltage.md).
+The hunt's initial duration and partition ordering, and the requirement for a new qualifying rotation after every deepening, are superseded by [ADR 0024](0024-schedule-from-uncontradicted-evidence.md). The tier-clock rule stands.
 
 # Hunt the core behind every failure and refine every core to its mark
 

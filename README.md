@@ -18,6 +18,7 @@ Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains,
 Works today, on a simulated 16-core machine:
 - the full simulated tuning lifecycle: per-core search, failure hunts, joint marks, resident refinement, qualifying guard rotations, crash resume, tiers and reset;
 - a seeded session after a ruleset update or BIOS change (a BIOS change carries edges but not failed marks);
+- evidence-based hunt duration and singleton-probe scheduling, and credit for an earlier uncontradicted qualifying rotation at an equal or deeper profile, without carrying earlier clean hours into Silver or Gold;
 - reading a session's hunt, joint marks and per-workload exposure with `status`, `cert`, `events` and the live `watch` dashboard.
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:

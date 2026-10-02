@@ -54,8 +54,11 @@ dashboard instead of one line per event, and prints the outcome when it stops:
 the restored offsets and why it stopped, or the dead end or error;
 events.jsonl still records every event. --no-tui prints the lines instead.
 
---rotations N stops after N clean qualifying rotations once every core is done
-and refinement can reach no more depth.
+--rotations N stops after N clean qualifying rotations valid for the current
+profile once every core is done and refinement can reach no more depth. An
+earlier rotation can count after a deepening if its profile was at least as deep
+and no failure since the last reset contradicted it. Silver and Gold still need
+clean hours since the tier clock restarted.
 
 Examples:
   sudo togi run                     Tune this machine until a signal or a dead end
@@ -69,7 +72,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		noTUI     bool
 	)
 	flags := newFlagSet("run", g)
-	flags.Func("rotations", "stop after `N` clean qualifying rotations once every core is done and refinement can reach no more depth (default endless)", func(s string) error {
+	flags.Func("rotations", "stop after `N` clean qualifying rotations valid for the current profile once every core is done and refinement can reach no more depth (default endless)", func(s string) error {
 		v, err := strconv.Atoi(s)
 		if err != nil || v < 1 {
 			return errors.New("must be a positive integer")

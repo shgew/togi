@@ -13,7 +13,7 @@ import (
 )
 
 // Ruleset must be bumped for changes to steps, offset range, phases, regimes, evidence, hunts, refinement, tiers or backoffs; this is breaking.
-const Ruleset = 5
+const Ruleset = 6
 
 type ActionKind int
 
@@ -676,11 +676,36 @@ func (s *State) ProfileSeq() int { return s.guard.profileSeq }
 func (s *State) QualifiedRotations() int {
 	n := 0
 	for _, q := range s.qualified {
-		if q.seq > s.lastDeepenSeq && q.allDone {
+		if q.allDone && (q.seq > s.lastDeepenSeq || s.uncontradicted(q)) {
 			n++
 		}
 	}
 	return n
+}
+
+func (s *State) uncontradicted(q qualified) bool {
+	if q.seq <= s.resetSeq || !atLeastDeep(q.profile, s.guard.profile) {
+		return false
+	}
+	return !slices.ContainsFunc(s.pendingFailures, func(f pendingFailure) bool {
+		return f.seq > s.resetSeq && (len(f.profile) != len(q.profile) || atLeastShallow(f.profile, q.profile))
+	})
+}
+
+func (s *State) creditedRotation() int {
+	seq := 0
+	for _, q := range s.qualified {
+		if !q.allDone {
+			continue
+		}
+		if q.seq > s.lastDeepenSeq {
+			return 0
+		}
+		if s.uncontradicted(q) {
+			seq = q.seq
+		}
+	}
+	return seq
 }
 
 func (s *State) Project(st *journal.State) {
