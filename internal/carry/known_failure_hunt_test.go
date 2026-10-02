@@ -33,7 +33,7 @@ func TestPrepareCarriesHuntCulpritFromKnownFailure(t *testing.T) {
 				case "carried idle":
 					trial, signal = "", machine.Crash
 					class.Regime, class.Workload, class.DurationS = machine.R6, "", 0
-					failure = w.add(&journal.FailureCarried{Source: journal.FactSource{Session: "Y", Seq: 4}, Class: class, Failure: journal.Failure{Signal: signal, Attribution: journal.Unattributed, Regime: class.Regime, Condition: machine.Resident, Profile: profile}})
+					failure = w.add(&journal.FailureCarried{Source: journal.FactSource{Session: "Y", Seq: 4}, Class: class, Signal: signal, Attribution: journal.Unattributed, Regime: class.Regime, Condition: machine.Resident, Profile: profile})
 				}
 				skip := w.add(&journal.Failure{KnownFailure: failure, Trial: trial, Signal: signal, Attribution: journal.Unattributed, Regime: class.Regime, Condition: machine.Resident, Profile: profile}, failure)
 				w.add(&journal.HuntStart{Hunt: 1, Failure: failure, Trial: trial, Regime: class.Regime, Workload: class.Workload, Cores: class.Cores, DurationS: class.DurationS, Failing: profile, Candidates: []int{2}}, failure, skip)
