@@ -310,7 +310,9 @@ func TestHelperProcess(t *testing.T) {
 
 func testCPUs(t *testing.T) []int {
 	t.Helper()
-	// Another goroutine may temporarily pin the process leader while launching a helper.
+	// Keep the queried thread out of the launch pool until its affinity has been read.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	b, err := os.ReadFile("/proc/thread-self/status")
 	if err != nil {
 		t.Fatal(err)
