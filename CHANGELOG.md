@@ -15,6 +15,7 @@ All notable changes to togi are documented in this file. The format is based on 
 - Trials whose class has a valid live or carried failure at an equal-or-shallower profile are skipped; guard failures go directly to their hunt or attributed backoff, citing the known failure instead of running it again; completed edge masks replace their pending state, and hunt status and carried culprit marks retain the original decisive signal ([#283]).
 - When refinement is due and an earlier clean qualifying rotation, run with every core done on a profile at least as deep as the current one, has no contradicting failure, guard ends an incomplete open rotation instead of running its remaining work and starts refinement; a fully executed rotation still closes clean and qualifies normally; the rotation end names the covering rotation ([#284]).
 - `run` archives older-ruleset or older-schema journals containing unknown event kinds and derives carry from known events; current-session writes still refuse unknown kinds, while `reset --all` permits them only for its non-appending different-schema archive ([#270]).
+- Simulated sessions and benchmarks retain parsed journals across simulated reboots and write the state projection once at stop, reducing persistence overhead without changing successful journal or final-state output ([#273]).
 
 ### Fixed
 
@@ -25,6 +26,7 @@ All notable changes to togi are documented in this file. The format is based on 
 - Sessions started in the same second receive readable numeric suffixes when an archived journal or trial directory already uses the timestamp; carry traversal orders those suffixes numerically ([#247]).
 - A confirmed defect reset survives interruption: resume completes only the missing resets tied to the recorded answer, without asking again or resetting a core twice ([#249]).
 - Partial journal or state writes are rejected instead of committing incomplete records; after a journal write or fsync error, tuning stops and the next open rebuilds its sequence from surviving complete lines ([#251]).
+- A simulated session whose final state projection cannot be written records a journal warning instead of failing an otherwise concluded run ([#273]).
 - Preflight refuses full CCDs whose core IDs disagree with their modulo-eight slots before per-core access; if a previously tuned CCD is now refused, run `togi reset --core N` for each of its cores before tuning it with a supported topology ([#278]).
 
 ### Removed
@@ -379,6 +381,7 @@ All notable changes to togi are documented in this file. The format is based on 
 [#251]: https://github.com/shgew/togi/pull/251
 [#269]: https://github.com/shgew/togi/pull/269
 [#270]: https://github.com/shgew/togi/pull/270
+[#273]: https://github.com/shgew/togi/pull/273
 [#278]: https://github.com/shgew/togi/pull/278
 [#279]: https://github.com/shgew/togi/pull/279
 [#281]: https://github.com/shgew/togi/pull/281
