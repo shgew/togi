@@ -159,9 +159,6 @@ The later of the last profile deepening and the latest failure on a profile at l
 The durability rank of a done profile after a clean qualifying rotation: Bronze, Silver, Gold or Platinum; otherwise none.
 _Avoid_: score, level, stable
 
-**Certificate**:
-The rendering of a profile's tier with the evidence behind it.
-
 **Ruleset**:
 The hardcoded strategy for search, hunts, refinement, guard, backoffs and tiers.
 

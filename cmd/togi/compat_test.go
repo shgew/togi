@@ -35,7 +35,7 @@ func incompatibleFixture(t *testing.T, field string) (string, []byte) {
 }
 
 func TestReadCommandsHandleIncompatibleJournal(t *testing.T) {
-	for _, command := range []string{"status", "cert", "events"} {
+	for _, command := range []string{"status", "events"} {
 		t.Run(command+" warns ruleset", func(t *testing.T) {
 			dir, _ := incompatibleFixture(t, "ruleset")
 			var stdout, stderr bytes.Buffer
@@ -63,7 +63,7 @@ func TestReadCommandsHandleIncompatibleJournal(t *testing.T) {
 
 func TestReadCommandsStyleSchemaRefusalInJournal(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
-	for _, command := range []string{"status", "cert", "events"} {
+	for _, command := range []string{"status", "events"} {
 		t.Run(command, func(t *testing.T) {
 			dir, original := incompatibleFixture(t, "schema")
 			stderr, err := os.CreateTemp(t.TempDir(), "refusal")
@@ -281,7 +281,6 @@ func TestCommandsWithFutureKind(t *testing.T) {
 		code int
 	}{
 		{[]string{"status"}, exitOK},
-		{[]string{"cert"}, exitOK},
 		{[]string{"events"}, exitOK},
 		{[]string{"events", "--json"}, exitOK},
 		{[]string{"watch", "--width", "120", "--height", "33"}, exitOK},

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -22,16 +21,12 @@ import (
 	"github.com/shgew/togi/internal/watch"
 )
 
-func TestStatusAndCert(t *testing.T) {
+func TestStatus(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
 	renderFixture(t, dir, "concluded")
 	_, st, _, err := replayDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,77 +39,8 @@ func TestStatusAndCert(t *testing.T) {
 	if want := fmt.Sprintf("tier bronze [#%d]", st.TierSeq); !strings.Contains(status, want) {
 		t.Fatalf("status lacks %q:\n%s", want, status)
 	}
-	checkRows(t, "status", status, regexp.MustCompile(`(?m)^(\d\d)  +\d  +(-?\d+)  `), st)
+	checkRows(t, "status", status, regexp.MustCompile(`(?m)^(\d\d)  +\d  +\d  +(-?\d+)  `), st)
 	golden(t, "status", status)
-
-	stdout.Reset()
-	if code := cli([]string{"--state-dir", dir, "cert"}, &stdout, &stderr); code != exitOK {
-		t.Fatalf("cert: exit %d, stderr %s", code, stderr.String())
-	}
-	cert := stdout.String()
-	if want := regexp.MustCompile(fmt.Sprintf(`BRONZE +\[tier\.change #%d\]`, st.TierSeq)); !want.MatchString(cert) {
-		t.Fatalf("cert lacks %s:\n%s", want, cert)
-	}
-	for _, want := range []string{
-		"Platinum  locked until togi observe exists",
-		fmt.Sprintf("Journal SHA-256 %x through seq %d", sha256.Sum256(raw), st.LastSeq),
-	} {
-		if !strings.Contains(cert, want) {
-			t.Fatalf("cert lacks %q:\n%s", want, cert)
-		}
-	}
-	checkRows(t, "cert", cert, regexp.MustCompile(`(?m)^  (\d\d)  +\d  +\d  +(-?\d+)  `), st)
-	golden(t, "cert", strings.ReplaceAll(cert, fmt.Sprintf("%x", sha256.Sum256(raw)), "<journal sha256>"))
-
-	events, _, err := journal.Read(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	moved := st
-	moved.Cores = append([]journal.CoreState(nil), st.Cores...)
-	moved.Cores[3].Offset++
-	var out bytes.Buffer
-	writeCert(&out, events, moved)
-	checkRows(t, "cert with core 03 moved", out.String(), regexp.MustCompile(`(?m)^  (\d\d)  +\d  +\d  +(-?\d+)  `), st)
-	if want := fmt.Sprintf("core 03 is at %d since", moved.Cores[3].Offset); !strings.Contains(out.String(), want) {
-		t.Fatalf("cert with core 03 moved lacks %q:\n%s", want, out.String())
-	}
-
-	first := 0
-	for _, e := range events {
-		if e.Kind == journal.KindProfileChange {
-			first = e.Seq
-			break
-		}
-	}
-	clocked := st
-	guard := *st.Guard
-	guard.TierClockSeq, guard.ProfileSeq, guard.CleanS = first, st.LastSeq, 24*3600-1
-	clocked.Guard = &guard
-	out.Reset()
-	writeCert(&out, events, clocked)
-	for _, want := range []string{fmt.Sprintf("Evidence since the profile change [#%d]\n", first), "Silver    23.9 of 24 clean hours"} {
-		if !strings.Contains(out.String(), want) {
-			t.Fatalf("cert with an earlier profile change as tier clock lacks %q:\n%s", want, out.String())
-		}
-	}
-}
-
-func TestCertResidentOffsets(t *testing.T) {
-	t.Parallel()
-	st := journal.State{
-		Session: &journal.SessionInfo{ID: "20260101T000000Z", Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)},
-		Cores: []journal.CoreState{
-			{Core: 0, CCD: 0, Offset: -35, Pass: new(-37), Phase: journal.PhaseDone},
-			{Core: 7, CCD: 0, Offset: -30, Pass: new(-32), Phase: journal.PhaseDone},
-			{Core: 8, CCD: 1, Offset: -25, Pass: new(-27), Phase: journal.PhaseDone},
-			{Core: 15, CCD: 1, Offset: -20, Pass: new(-22), Phase: journal.PhaseDone},
-		},
-		Guard: &journal.GuardState{Profile: []int{-35, -30, -25, -20}, ProfileSeq: 42, TierClockSeq: 42},
-	}
-	var out bytes.Buffer
-	writeCert(&out, []journal.Event{{Seq: 42, Kind: journal.KindProfileChange}}, st)
-	golden(t, "cert-offsets", out.String())
 }
 
 func TestBetweenTrialMCEReadOnlyViews(t *testing.T) {
@@ -199,16 +125,6 @@ func TestStatusJointMarkAndOpenHunt(t *testing.T) {
 			}
 			frame := watch.Render(watch.Project(frameEvents), 240, 67, frameEvents[len(frameEvents)-1].Time.Add(40*time.Second))
 			golden(t, "watch-"+tc.name+"-240x67", ansi.Strip(frame)+"\n")
-			if tc.until == "" {
-				out.Reset()
-				writeCert(&out, events, st)
-				cert := out.String()
-				raw, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
-				if err != nil {
-					t.Fatal(err)
-				}
-				golden(t, "cert-mark", strings.ReplaceAll(cert, fmt.Sprintf("%x", sha256.Sum256(raw)), "<journal sha256>"))
-			}
 		})
 	}
 }

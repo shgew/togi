@@ -179,7 +179,7 @@ A `deadend` consumes the evidence it reports: the SMU flag, escape flag, thermal
 
 That fresh evaluation applies only after the dead end has recorded its boot action and `shutdown`. If a process stops between `deadend` and those events, the next `run` finishes that same dead-end action and exits without making a tuning decision.
 
-## Tiers and certificate
+## Tiers
 
 Tiers rank the current profile by durability, not proof. A shallow backoff need not erase valid exposure: the tier clock starts at the first `profile.change` when nothing later applies, otherwise at the later of the last profile deepening and the latest failure on a profile at least as deep as the current one. Recompute it at each profile change.
 
@@ -195,9 +195,4 @@ The tuner records every change as `tier.change`, naming its cause. A core in sea
 
 Each regime and workload with clean hours `T` since the tier clock shows its failure-rate bound: with zero failures, fewer than `3 / T` failures per hour at 95%, if failures on the tested workloads occur at a constant rate (rule of three). The overall bound uses all clean hours. Without clean hours there is no bound. Recorded and displayed bounds round up, never understating it. Exposure is selected after failures and the bound is inspected repeatedly; it is not an unconditional guarantee or a sequentially valid assurance. It applies only to the workloads tested, not untested workloads or real use.
 
-`togi status` and `togi cert` render from a replay of the journal (`runtime.md`). The certificate shows:
-- the tier with its `tier.change`, and progress towards the higher tiers;
-- the profile with its `profile.change`, as a per-core table of `OFFSET` values, recorded CCDs, physical slots (core number modulo 8), failed marks, joint marks, done status and the deciding event, followed by any core decided after that `profile.change`; the offsets are the resident profile values when guard exists, otherwise the current core values, and may differ from the checked isolated edges;
-- clean hours and failure-rate bounds by regime and workload, with valid start counts and the highest Tctl among counted trials with its `trial.end`;
-- the BIOS context and session start;
-- the SHA-256 of the journal's complete lines it rendered, and the last `seq` among them.
+`togi status` renders the profile, tier and qualifying rotation evidence from a replay of the journal (`runtime.md`).

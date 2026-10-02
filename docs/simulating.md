@@ -20,7 +20,6 @@ The read-only commands work on the result:
 
 ```sh
 go run ./cmd/togi --state-dir <dir> status
-go run ./cmd/togi --state-dir <dir> cert
 go run ./cmd/togi --state-dir <dir> events --core 3
 go run ./cmd/togi --state-dir <dir> watch
 ```
@@ -44,7 +43,7 @@ regimes = ["R7"]
 
 A joint-triggered crash produces no MCE by default, even when `[model] crash_mce` enables MCEs for per-core crashes. To deliberately mislead attribution, add `crash_mce_core = 3` to the `[[joint]]` table: each crash from that joint leaves an uncorrected load-store MCE naming core 03 in the next boot. The named core must exist, but need not be a joint member or loaded. This explicit evidence takes precedence over an unattributed crash and can produce a single-core failed mark instead of a joint mark; scenarios using it must state that expected attribution.
 
-Run it with `go run ./tools/sim --machine <file> --state-dir <dir>` and inspect `events --kind hunt,mark,refine` along with `status`, `cert` and `watch`. `sim.Config` also models late-onset hazards (six minutes of R6 idle or four minutes of R7 heat soak), a flat rare hazard, a failure on an idle core, a backend error just before a crash, and watchdog, power-loss and thermal-trip resets. A scripted outcome pins a particular trial and time for deterministic interruption tests. The simulator has separate wall and boot-local monotonic clocks, so a wall-clock jump need not change which MCE belongs to a trial.
+Run it with `go run ./tools/sim --machine <file> --state-dir <dir>` and inspect `events --kind hunt,mark,refine` along with `status` and `watch`. `sim.Config` also models late-onset hazards (six minutes of R6 idle or four minutes of R7 heat soak), a flat rare hazard, a failure on an idle core, a backend error just before a crash, and watchdog, power-loss and thermal-trip resets. A scripted outcome pins a particular trial and time for deterministic interruption tests. The simulator has separate wall and boot-local monotonic clocks, so a wall-clock jump need not change which MCE belongs to a trial.
 
 ## Measured reference journals
 

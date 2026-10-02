@@ -134,10 +134,9 @@ Shut down or reboot. The next boot is your normal system; with `leaveOnShutdown`
 
 ```sh
 togi status
-togi cert
 ```
 
-`cert` lists the profile to enter in BIOS, one offset per core, with each core's failed and joint marks, its done state and the tier-clock evidence. Do not enter it in BIOS before it reaches Silver: Bronze can rest on a single two-minute R4 start, and under the simulator's edge model one such start misses a failure one count past a core's edge about 4.6% of the time. After refinement those offsets can differ from the checked edges search found. A clean qualifying rotation earns Bronze only when every core is done and refinement can reach no more total depth. Picking "NixOS - togi" again continues the session.
+`status` lists the profile to enter in BIOS, one offset per core, with each core's failed and joint marks, its phase and the tier-clock evidence. Do not enter it in BIOS before it reaches Silver: Bronze can rest on a single two-minute R4 start, and under the simulator's edge model one such start misses a failure one count past a core's edge about 4.6% of the time. After refinement those offsets can differ from the checked edges search found. A clean qualifying rotation earns Bronze only when every core is done and refinement can reach no more total depth. Picking "NixOS - togi" again continues the session.
 
 An earlier clean qualifying rotation can still count for Bronze and `run --rotations` after refinement returns to an equal or shallower profile, if every core was done when it ended and no failure since the last reset contradicted that profile. Its `tier.change` names the credited rotation. This does not restore earlier clean hours: Silver and Gold still use exposure since the tier clock.
 

@@ -152,14 +152,14 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 
 	fmt.Fprintln(w)
 	tw := newTable(w)
-	fmt.Fprintln(tw, "CORE\tCCD\tOFFSET\tPHASE\tFAILED\tJOINT\tQUEUED\tLAST DECISION")
+	fmt.Fprintln(tw, "CORE\tCCD\tSLOT\tOFFSET\tPHASE\tFAILED\tJOINT\tQUEUED\tLAST DECISION")
 	for _, c := range st.Cores {
 		last := "-"
 		if d := c.LastDecision; d != nil {
 			last = fmt.Sprintf("[#%d] %s", d.Seq, journal.EscapeText(d.Msg))
 		}
 		queued := cmp.Or(c.Queued, "-")
-		fmt.Fprintf(tw, "%02d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n", c.Core, c.CCD, c.Offset, journal.EscapeText(string(c.Phase)), mark(c.FailedMark), jointIDs(c.JointMarks), journal.EscapeText(queued), last)
+		fmt.Fprintf(tw, "%02d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n", c.Core, c.CCD, c.Core%8, c.Offset, journal.EscapeText(string(c.Phase)), mark(c.FailedMark), jointIDs(c.JointMarks), journal.EscapeText(queued), last)
 	}
 	_ = tw.Flush()
 	writeJointMarks(w, st.JointMarks)

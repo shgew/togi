@@ -20,6 +20,10 @@ All notable changes to togi are documented in this file. The format is based on 
 - Partial journal or state writes are rejected instead of committing incomplete records; after a journal write or fsync error, tuning stops and the next open rebuilds its sequence from surviving complete lines ([#251]).
 - Preflight refuses full CCDs whose core IDs disagree with their modulo-eight slots before per-core access; if a previously tuned CCD is now refused, run `togi reset --core N` for each of its cores before tuning it with a supported topology ([#278]).
 
+### Removed
+
+- `togi cert` is gone; use `togi status`, which reports the same profile and qualified rotations and now shows each core's `SLOT` for matching BIOS controls ([#269]).
+
 ## [0.7.0] - 2026-10-02
 
 ### Changed
@@ -367,5 +371,6 @@ All notable changes to togi are documented in this file. The format is based on 
 [#247]: https://github.com/shgew/togi/pull/247
 [#249]: https://github.com/shgew/togi/pull/249
 [#251]: https://github.com/shgew/togi/pull/251
+[#269]: https://github.com/shgew/togi/pull/269
 [#278]: https://github.com/shgew/togi/pull/278
 [#279]: https://github.com/shgew/togi/pull/279
