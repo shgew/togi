@@ -253,19 +253,22 @@ func (s *State) pendingDecision() (Action, bool) {
 	return Action{}, false
 }
 
-func (s *State) rerunNext() (Action, bool) {
+// pendingRerun retires completed checks and retains their carried citations until
+// a rotation or refinement decision consumes them. Fold calls it as evidence,
+// profiles and commitments change, so replay does not depend on calls to Next.
+func (s *State) pendingRerun() (trialClass, bool) {
 	for len(s.obligations) > 0 {
 		r := s.obligations[0]
 		start := r.class.withDuration(s.durations.StartS)
 		seqs := s.passSeqs(start, s.guard.profile, r.seq, rerunEvidence)
 		if len(seqs) < s.n {
-			return s.rerunTrial(start), true
+			return start, true
 		}
 		seqs = seqs[:s.n]
 		if r.class.duration != s.durations.StartS {
 			long := s.passSeqs(r.class, s.guard.profile, r.seq, rerunEvidence)
 			if len(long) < 1 {
-				return s.rerunTrial(r.class), true
+				return r.class, true
 			}
 			seqs = append(seqs, long[0])
 		}
@@ -276,7 +279,15 @@ func (s *State) rerunNext() (Action, bool) {
 		}
 		s.obligations = s.obligations[1:]
 	}
-	return Action{}, false
+	return trialClass{}, false
+}
+
+func (s *State) rerunNext() (Action, bool) {
+	k, pending := s.pendingRerun()
+	if !pending {
+		return Action{}, false
+	}
+	return s.rerunTrial(k), true
 }
 
 func (s *State) afterReruns(a Action) Action {

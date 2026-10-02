@@ -374,6 +374,23 @@ func (s *State) maskOutcome(h *hunt, m maskRecord) string {
 	return "running"
 }
 
+func (s *State) citeMaskCarried(cause []int, h *hunt, m maskRecord) []int {
+	cause = s.citeCarried(cause, m.cause...)
+	if m.payload.Skipped || m.payload.Inferred != "" {
+		return cause
+	}
+	k := h.class.withDuration(m.payload.DurationS)
+	since := s.inferenceSince(m.payload, m.seq)
+	if failure := s.failingSeq(k, m.payload.Profile, since); failure != 0 {
+		return s.citeCarried(cause, failure)
+	}
+	seqs := s.passSeqs(k, m.payload.Profile, since, huntEvidence)
+	if len(seqs) >= h.start.Starts {
+		cause = s.citeCarried(cause, seqs[:h.start.Starts]...)
+	}
+	return cause
+}
+
 func (s *State) huntNext() (Action, bool) {
 	h := s.hunt
 	if h.end != nil {
@@ -412,7 +429,7 @@ func (s *State) huntNext() (Action, bool) {
 	}
 	cause := []int{h.seq}
 	for _, m := range h.masks {
-		cause = s.citeCarried(cause, m.cause...)
+		cause = s.citeMaskCarried(cause, h, m)
 	}
 	reason += s.carriedReason(cause)
 	return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: result, Cores: slices.Clone(next.set), Members: members, Masks: len(h.masks), Reason: reason}, Cause: cause}, true
@@ -426,22 +443,26 @@ func (s *State) planMask(h *hunt, p maskPlan, reason string) Action {
 	seqs := s.passSeqs(k, payload.Profile, since, huntEvidence)
 	if len(seqs) >= h.start.Starts {
 		seqs = seqs[:h.start.Starts]
-		payload.Inferred, payload.Reason = "pass", "passing starts already establish the mask"+s.carriedReason(seqs)
+		payload.Inferred, payload.Reason = "pass", "passing starts already establish the mask"
 		cause = s.citeCarried(cause, seqs...)
 	} else if failure := s.failingSeq(k, payload.Profile, since); failure != 0 {
-		payload.Inferred, payload.Reason = "failure", "a known failure establishes the mask"+s.carriedReason([]int{failure})
+		payload.Inferred, payload.Reason = "failure", "a known failure establishes the mask"
 		cause = s.citeCarried(cause, failure)
 	} else if mark, ok := s.reaches(payload.Profile); ok {
 		payload.Skipped, payload.Reason = true, "its profile reaches "+mark
 	}
 	if len(p.priority) > 0 {
-		payload.Reason += fmt.Sprintf("; %d valid short starts preceded the longer failure, with no failure in this regime at the short duration or less since reset, so test the failed duration", len(p.priority)) + s.carriedReason(p.priority)
+		payload.Reason += fmt.Sprintf("; %d valid short starts preceded the longer failure, with no failure in this regime at the short duration or less since reset, so test the failed duration", len(p.priority))
 		cause = append(cause, p.priority...)
 	}
 	if p.singleCorePrior[0] > 0 {
-		payload.Reason += fmt.Sprintf("; two masked failures in this class followed one-count backoffs on core %02d, so probe that core first", p.cores[0]) + s.carriedReason(p.singleCorePrior[:])
+		payload.Reason += fmt.Sprintf("; two masked failures in this class followed one-count backoffs on core %02d, so probe that core first", p.cores[0])
 		cause = append(cause, p.singleCorePrior[:]...)
 	}
+	for _, m := range h.masks {
+		cause = s.citeMaskCarried(cause, h, m)
+	}
+	payload.Reason += s.carriedReason(cause)
 	return Action{Kind: Decide, Payload: payload, Cause: cause}
 }
 

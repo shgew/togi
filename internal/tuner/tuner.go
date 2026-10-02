@@ -285,6 +285,7 @@ func (s *State) Fold(e journal.Event) {
 			s.decided(c, e.Seq)
 			if p.Decision == journal.Backoff && p.Phase != journal.PhaseSearch && p.ToOffset != p.FromOffset {
 				s.queueRerun(e)
+				s.pendingRerun()
 			}
 			if s.hunt != nil && s.hunt.end != nil && p.Phase == journal.PhaseHunt && len(e.Cause) > 0 && (e.Cause[0] == s.hunt.endSeq || e.Cause[0] == s.hunt.markSeq) {
 				s.hunt = nil
@@ -303,12 +304,14 @@ func (s *State) Fold(e journal.Event) {
 		}
 	case *journal.TrialEnd:
 		s.foldTrialEnd(e, p)
+		s.pendingRerun()
 	case *journal.MCE:
 		s.mces[e.Seq] = p
 	case *journal.Failure:
 		s.foldFailure(e, p)
 	case *journal.TrialCarried:
 		s.recordCarried(e, p)
+		s.pendingRerun()
 	case *journal.FailureCarried:
 		s.recordIdle(e, &p.Failure)
 		if _, recorded := s.carriedSources[e.Seq]; recorded {
@@ -355,6 +358,7 @@ func (s *State) Fold(e journal.Event) {
 			}
 		}
 		s.guard.profile = slices.Clone(p.To)
+		s.pendingRerun()
 		s.guard.profileSeq = e.Seq
 		s.guard.lastSeq = e.Seq
 		s.tierCause = e.Seq
@@ -535,12 +539,24 @@ func (s *State) Attribution() (Action, bool) {
 	return Action{Kind: Decide, Payload: f, Cause: append([]int{a.seq}, a.cause...)}, true
 }
 
+func (s *State) warningAction() Action {
+	cause := []int{s.warningSeq}
+	for _, seq := range s.warning.Passes {
+		if _, carried := s.carriedSources[seq]; carried {
+			cause = append(cause, seq)
+		}
+	}
+	warning := *s.warning
+	warning.Detail += s.carriedReason(cause)
+	return Action{Kind: Decide, Payload: &warning, Cause: cause}
+}
+
 func (s *State) Drain() (Action, bool) {
 	if a, ok := s.Attribution(); ok {
 		return a, true
 	}
 	if s.warning != nil {
-		return Action{Kind: Decide, Payload: s.warning, Cause: []int{s.warningSeq}}, true
+		return s.warningAction(), true
 	}
 	if len(s.queue) > 0 && allZero(s.queue[0].profile) {
 		return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Detail: "unattributed failure with every core at CO 0; the instability is not caused by Curve Optimizer"}, Cause: []int{s.queue[0].seq}}, true
@@ -576,15 +592,7 @@ func (s *State) Next() Action {
 		return a
 	}
 	if s.warning != nil {
-		cause := []int{s.warningSeq}
-		for _, seq := range s.warning.Passes {
-			if _, carried := s.carriedSources[seq]; carried {
-				cause = append(cause, seq)
-			}
-		}
-		warning := *s.warning
-		warning.Detail += s.carriedReason(cause)
-		return Action{Kind: Decide, Payload: &warning, Cause: cause}
+		return s.warningAction()
 	}
 	if s.thermal != nil {
 		return Action{Kind: Decide, Payload: s.thermal, Cause: []int{s.thermalSeq}}

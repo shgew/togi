@@ -195,13 +195,9 @@ func summarizeTransition(events []journal.Event) transitionDemo {
 		case *journal.FailureCarried:
 			failures++
 		case *journal.TunerDecision:
-			if p.Decision == journal.CheckEdge {
-				checking[p.Core] = true
-			}
+			checking[p.Core] = p.Decision == journal.CheckEdge
 		case *journal.CorePhase:
-			if p.CheckEdge {
-				checking[p.Core] = true
-			} else if p.From == journal.PhaseSearch && p.To != journal.PhaseSearch && checking[p.Core] {
+			if !p.CheckEdge && p.From == journal.PhaseSearch && p.To != journal.PhaseSearch && checking[p.Core] {
 				for _, seq := range e.Cause {
 					if carried[seq] {
 						answered++
@@ -209,8 +205,8 @@ func summarizeTransition(events []journal.Event) transitionDemo {
 						break
 					}
 				}
-				checking[p.Core] = false
 			}
+			checking[p.Core] = p.CheckEdge
 		case *journal.TrialIntent:
 			if len(firstTrials) < 5 {
 				firstTrials = append(firstTrials, e)

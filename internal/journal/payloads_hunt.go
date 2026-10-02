@@ -94,7 +94,11 @@ func (p *HuntMask) Message() string {
 	if p.Edge != nil {
 		prefix += ","
 	}
-	return fmt.Sprintf("%s %s; starts of %ds", prefix, running, p.DurationS)
+	message := fmt.Sprintf("%s %s; starts of %ds", prefix, running, p.DurationS)
+	if p.Reason != "" {
+		message += "; " + p.Reason
+	}
+	return message
 }
 
 type HuntEnd struct {

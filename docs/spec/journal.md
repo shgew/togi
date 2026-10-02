@@ -130,7 +130,7 @@ Plan kinds and their payloads (optional fields are omitted when empty):
 | `hunt.skipped` | `failure` seq, `reason` | `failure #904 is not hunted: <reason>` |
 | `mark.joint` | `mark`, `members` (`core`, `offset` pairs), optional `fallback`, `hunt`, `reason` | `joint mark J2: core 03 -40 + core 11 -30, observed in hunt 4` (or `…, fallback over every candidate of hunt 4`) |
 | `refine.round` | `round`, `event` (`start`, `end`); start: `anchor`, `anchor_seq`, `target`, proposed `profile`, changed `cores`, `ranking`, `starts`, `start_s`; end: optional `passed`, `reason` | `refine round 2 start: 5 cores toward …` / `refine round 2 end: passed` |
-| `tuner.warning` | `warning` (`monotonicity`), `trial`, `passes` (contradicted trial-end seqs), `detail` | `monotonicity: trial 0520 failed on a profile at least as shallow as 5 passes in its class` |
+| `tuner.warning` | `warning` (`monotonicity`), `trial`, `passes` (contradicted live or carried pass seqs), `detail` (failed profile, class and valid-pass count, plus carried source sessions when present) | `monotonicity: <detail>` |
 | `backend.retry` | `backend` (or `kernel_log`), `attempt` (1–3), `wait_s` (60, 300, 1800), `reason` | `backend mprime: retry 2 of 3 after 300s: setup failed: …` |
 
 ## Transitions
@@ -175,7 +175,7 @@ Ruleset 7 can answer candidate-edge checks in their frozen R1/R2 classes, hunt m
 
 ### Inspecting a transition on recorded state
 
-`tools/carry-facts` is a development-only preparation inspector, not a simulator or hardware runner. Its required `--state-dir` must name a copy beneath the system temporary directory; it rejects the real state path and symlinked archive, live journal or lock paths. It locks the copy through the existing journal API, reads the live journal's recorded BIOS context with `internal/facts`, and calls carry preparation at the current evidence epoch with the current schema and ruleset + 1 to force a transition. It mutates only the copy and prints carried pass/failure counts grouped by original source session. No `cmd/togi` flag is added.
+`tools/carry-facts` is a development-only transition inspector and simulator, never a hardware runner. Its required `--state-dir` must name a copy beneath the system temporary directory; it rejects the real state path and symlinked archive, live journal or lock paths. Without `--simulate`, it locks the copy through the existing journal API, reads the live journal's recorded BIOS context with `internal/facts`, and prepares carry at the current evidence epoch with the current schema and ruleset + 1 to force a transition, printing carried pass/failure counts by original source session. With `--simulate`, it resumes the copy on the simulator under the current build using that recorded BIOS context; `--seed` selects simulated outcomes (default 1). It runs until the first clean qualifying rotation and reports carried counts, candidate-edge answers, live edge-check starts and live rotation work. Both modes mutate only the copy. No `cmd/togi` flag is added.
 
 From a checkout on the target machine, copy only the journals (the sources are read-only):
 
@@ -188,7 +188,7 @@ sudo chown -R "$(id -u):$(id -g)" "$copy"
 go run ./tools/carry-facts --state-dir "$copy"
 ```
 
-For the recorded target history, expect passes only from session `20261002T004254Z` (the latest session, epoch 1). Eligible failures can come from that session and earlier same-BIOS sessions after `reset --all` in `20260926T151414Z`; facts in that reset session must follow its reset, and no earlier session contributes. Older epochs contribute failures but zero passes. Counts reflect any core-reset and defect exclusions. Numeric counts must come from running the command, not from this specification. The simulator is not used because the inspection needs the real BIOS context already recorded in these journals.
+For the recorded target history, expect passes only from session `20261002T004254Z` (the latest session, epoch 1). Eligible failures can come from that session and earlier same-BIOS sessions after `reset --all` in `20260926T151414Z`; facts in that reset session must follow its reset, and no earlier session contributes. Older epochs contribute failures but zero passes. Counts reflect any core-reset and defect exclusions. Numeric counts must come from running the command, not from this specification. Simulation reuses the recorded BIOS context but draws outcomes from the simulator, not from hardware measurements. Use a fresh copy for each mode because preparation archives its live journal.
 
 ## Defects
 

@@ -22,12 +22,12 @@ A new ADR adds its line here and updates the status of any ADR it supersedes.
 - [0016: Every pull request runs every flake check; the release trusts `main`](0016-every-pull-request-runs-every-check.md) — **partly superseded** by [0022](0022-run-the-race-detector-in-ci.md): race-detector decision and consequences.
 - [0017: Publish as togi from a fresh repository](0017-publish-as-togi-from-a-fresh-repository.md) — **in force**.
 - [0018: Crashes are not a cost](0018-crashes-are-not-a-cost.md) — **in force**.
-- [0019: A ruleset change starts a seeded session](0019-a-ruleset-change-starts-a-seeded-session.md) — **partly superseded** by [0020](0020-hunt-and-refine.md): candidate-edge checking and same-ruleset BIOS dead end; by [0026](0026-carry-trial-facts.md): excluding carried passes and trial-less failures, the ruleset-based archive walk for them and live rechecking of carried edges.
+- [0019: A ruleset change starts a seeded session](0019-a-ruleset-change-starts-a-seeded-session.md) — **partly superseded** by [0020](0020-hunt-and-refine.md): candidate-edge checking and same-ruleset BIOS dead end; by [0026](0026-carry-trial-facts.md): excluding carried passes and unattributed failure facts, the ruleset-based archive walk for them and live rechecking of carried edges.
 - [0020: Hunt the core behind every failure and refine every core to its mark](0020-hunt-and-refine.md) — **partly superseded** by [0023](0023-hunts-that-converge-on-shared-voltage.md): hunt anchor and joint backoff; by [0024](0024-schedule-from-uncontradicted-evidence.md): initial hunt duration, partition order and qualifying rotation after every deepening; the tier clock stands.
 - [0021: Cache check outputs on Cachix](0021-cache-check-outputs-on-cachix.md) — **in force**.
 - [0022: Run the race detector in CI](0022-run-the-race-detector-in-ci.md) — **in force**.
 - [0023: Hunts that converge on shared voltage](0023-hunts-that-converge-on-shared-voltage.md) — **in force**.
-- [0024: Schedule from uncontradicted evidence](0024-schedule-from-uncontradicted-evidence.md) — **in force**.
+- [0024: Schedule from uncontradicted evidence](0024-schedule-from-uncontradicted-evidence.md) — **partly superseded** by [0027](0027-carry-trial-facts.md): after-reset hunt-planning windows admit eligible carried evidence across their local sequence boundary.
 - [0025: Recorded agent review](0025-recorded-agent-review.md) — **partly superseded** by [0026](0026-review-only-what-changed.md): a whole record for every reviewed head, version-1 JSON and fresh reviewers for fix diffs.
 - [0026: Review only what changed](0026-review-only-what-changed.md) — **in force**.
 - [0027: Carry trial facts across ruleset changes](0027-carry-trial-facts.md) — **in force**.

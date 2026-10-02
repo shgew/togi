@@ -271,20 +271,31 @@ func TestCarriedFailureEstablishesLaterHuntMask(t *testing.T) {
 func TestCarriedPassMonotonicityWarning(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -20})
 	facts := carryTrials(h, machine.R1, []int{0}, []int{-20}, h.s.durations.StartS, h.s.n, journal.OutcomePass)
-	h.trial(Action{Kind: RunTrial, Trial: Trial{Core: 0, Offset: -19, Profile: []int{-19}, Condition: machine.Resident, Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, DurationS: h.s.durations.StartS}}, failed)
+	_, failure := h.trial(Action{Kind: RunTrial, Trial: Trial{Core: 0, Offset: -19, Profile: []int{-19}, Condition: machine.Resident, Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, DurationS: h.s.durations.StartS}}, failed)
 	h.decide(h.next())
-	a := h.next()
+	a := h.s.Next()
 	p, ok := a.Payload.(*journal.TunerWarning)
 	if !ok {
 		t.Fatalf("failure did not contradict carried starts: %+v", a)
 	}
-	for _, seq := range facts {
-		if !slices.Contains(a.Cause, seq) {
-			t.Fatalf("warning omits carried pass #%d: %v", seq, a.Cause)
-		}
+	if diff := cmp.Diff(append([]int{failure.Seq}, facts...), a.Cause); diff != "" {
+		t.Fatalf("warning evidence (-want +got):\n%s", diff)
 	}
-	if !strings.Contains(p.Message(), "20261002T004254Z") {
-		t.Fatalf("warning source missing: %s", p.Message())
+	if diff := cmp.Diff(facts, p.Passes); diff != "" {
+		t.Fatalf("contradicted carried passes (-want +got):\n%s", diff)
+	}
+	if !strings.Contains(p.Detail, "20261002T004254Z") {
+		t.Fatalf("warning source missing: %s", p.Detail)
+	}
+	drained, ok := h.s.Drain()
+	if !ok {
+		t.Fatal("shutdown drain omitted the pending monotonicity warning")
+	}
+	if diff := cmp.Diff(a, drained); diff != "" {
+		t.Fatalf("shutdown warning differs from Next (-Next +Drain):\n%s", diff)
+	}
+	if diff := cmp.Diff(a, h.s.Next()); diff != "" {
+		t.Fatalf("reading warning actions changed the pending warning (-first +again):\n%s", diff)
 	}
 }
 
