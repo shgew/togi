@@ -7,6 +7,7 @@ All notable changes to togi are documented in this file. The format is based on 
 ### Added
 
 - A ruleset, schema or evidence-epoch transition records eligible trial facts from earlier same-BIOS sessions as `trial.carried`/`failure.carried` and stamps `session.start` with the evidence epoch; newer evidence epochs are refused, older epochs retain failures but drop incompatible passes. Carry waits for a validated current BIOS context, respects every `reset --all` boundary even after an interrupted reset, preserves edge and failed-mark provenance across interrupted evidence-epoch transitions, resumes incomplete fact prefixes and re-checks copied failures against newly known defects in their original journals ([#281]).
+- The bench target scenario replays matching same-BIOS real trial outcomes over the nine fitted machines, reports the real-answer share, and preserves recorded crash exposure and uncorrected-machine-check signals through simulated reboot; `just bench-baseline` records both splits ([#290]).
 
 ### Changed
 
@@ -385,3 +386,4 @@ All notable changes to togi are documented in this file. The format is based on 
 [#283]: https://github.com/shgew/togi/pull/283
 [#284]: https://github.com/shgew/togi/pull/284
 [#285]: https://github.com/shgew/togi/pull/285
+[#290]: https://github.com/shgew/togi/pull/290

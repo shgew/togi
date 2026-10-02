@@ -200,9 +200,15 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 		return res, nil
 	case machine.Crash:
 		m.now = start.Add(failAt)
-		if scripted && script.Reset != "" {
+		switch {
+		case replayed:
+			m.NextReset(machine.ResetWatchdog)
+			if report != nil {
+				report.Progress("simulated replayed crash at recorded exposure")
+			}
+		case scripted && script.Reset != "":
 			m.NextReset(script.Reset)
-		} else if m.nextReset == "" {
+		case m.nextReset == "":
 			m.NextReset(m.drawReset(rng.Float64()))
 		}
 		r.progress(report, r.counted(machine.Result{Ran: failAt}))
@@ -213,6 +219,9 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 		return machine.Result{}, machine.ErrCrashed
 	case machine.UncorrectedMCE:
 		m.now = start.Add(failAt)
+		if replayed && report != nil {
+			report.Signal(failCore, machine.UncorrectedMCE, "simulated replayed uncorrected machine check")
+		}
 		m.queued = append(m.queued, m.mce(0, failCore, false))
 		m.NextReset(machine.ResetSyncFlood)
 		m.Crash()

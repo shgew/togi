@@ -101,7 +101,8 @@ type Sample struct {
 type Reporter interface {
 	Progress(detail string)
 	Sample(s Sample)
-	// Signal reports a backend computation error, early exit or stall when classified, before the trial ends.
+	// Signal reports a classified failure before the trial ends. Core identifies a backend instance;
+	// machine-check attribution instead comes from kernel bank evidence.
 	Signal(core int, signal Signal, detail string)
 }
 

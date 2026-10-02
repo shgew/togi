@@ -58,6 +58,8 @@ The extract path in `facts` is relative to the machine file, and replay requires
 
 Non-matching trials and trial-less failures still come from the fitted machine underneath. The privacy-safe extract does not record the failing core or MCE bank: replayed backend failures name the first sorted loaded core, replayed crashes stay unattributed, and MCE signals use simulated bank evidence. These attribution details are not replayed hardware facts. The tuner receives ordinary journal evidence only; it cannot inspect the oracle. `Machine.Hazard` and `Machine.FailureProbability` continue to describe the fitted fallback. The [bench target scenario](benchmarking.md#the-suite) runs this oracle over the fitted ensemble and reports the share of trial outcomes supplied by real facts.
 
+Replayed crashes record progress at their recorded exposure and use a simulated watchdog reset, independent of the fallback reset distribution, so recovery keeps their decisive failure. Replayed uncorrected machine checks record the signal before a simulated sync-flood reset; their core attribution still comes from simulated MCE bank evidence, not a backend-instance core.
+
 ## Measured reference journals
 
 [`just stats`](reviewing.md) reports exposure and failures from real journals; it does not fit simulator defaults. These three archived sessions came from one Ryzen 9 9950X3D2 under one BIOS context. The session IDs identify the unmodified compressed fixtures in `internal/carry/testdata/`.
