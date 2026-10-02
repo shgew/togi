@@ -136,6 +136,13 @@ func generate(extract, out string, seed uint64, refits int, stdout io.Writer) er
 		}
 	}
 	modelcheck.Report(stdout, checks)
+	forwardStarted := time.Now()
+	rows, pooled, err := forwardCheck(starts)
+	if err != nil {
+		return err
+	}
+	reportForward(stdout, rows, pooled)
+	fmt.Fprintf(stdout, "Forward-chained elapsed: %s\n", time.Since(forwardStarted).Round(time.Millisecond))
 	fmt.Fprintf(stdout, "Fit elapsed: %s\n", time.Since(started).Round(time.Millisecond))
 	return nil
 }
