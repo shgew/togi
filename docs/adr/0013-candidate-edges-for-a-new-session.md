@@ -2,7 +2,7 @@ Starting in confirmation is superseded by [ADR 0020](0020-hunt-and-refine.md).
 
 Carrying nothing from the archived journal superseded by [ADR 0019](0019-a-ruleset-change-starts-a-seeded-session.md); configured candidate edges remain.
 
-The requirement to prove each candidate edge only with new-session starts and the rejection of carried passes are amended by [ADR 0026](0026-carry-trial-facts.md); configured values still are claims, not evidence.
+The requirement to prove each candidate edge only with new-session starts and the rejection of carried passes are amended by [ADR 0027](0027-carry-trial-facts.md); configured values still are claims, not evidence.
 
 # Candidate edges start a new session in confirmation
 
