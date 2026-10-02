@@ -6,7 +6,7 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ### Added
 
-- A ruleset or schema transition now records eligible trial facts from earlier same-BIOS sessions as `trial.carried`/`failure.carried` and stamps `session.start` with the evidence epoch. Carry waits for a validated current BIOS context and re-checks copied failures against newly known defects in their original journals ([#281]).
+- A ruleset, schema or evidence-epoch transition records eligible trial facts from earlier same-BIOS sessions as `trial.carried`/`failure.carried` and stamps `session.start` with the evidence epoch; newer evidence epochs are refused, older epochs retain failures but drop incompatible passes. Carry waits for a validated current BIOS context, respects every `reset --all` boundary, resumes incomplete fact prefixes and re-checks copied failures against newly known defects in their original journals ([#281]).
 
 ### Changed
 

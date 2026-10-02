@@ -96,6 +96,9 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 		}
 		stamp, id, err := journal.Scan(g.stateDir)
 		if errors.Is(err, fs.ErrNotExist) {
+			if boundaryErr := j.MarkResetAll(); boundaryErr != nil {
+				return resetError(boundaryErr, journal.ErrLocked, stderr)
+			}
 			recovered, recoverErr := j.RecoverPendingArchive()
 			if recoverErr != nil {
 				return resetError(recoverErr, journal.ErrLocked, stderr)
@@ -110,6 +113,9 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		if err == nil && stamp.Schema != journal.Schema {
+			if boundaryErr := j.MarkResetAll(); boundaryErr != nil {
+				return resetError(boundaryErr, journal.ErrLocked, stderr)
+			}
 			path, archiveErr := j.ArchiveUnreadable(id)
 			if code, ok := closeCommand("reset", j, archiveErr, stderr); !ok {
 				return code

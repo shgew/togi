@@ -1,5 +1,5 @@
 // Package carry derives the candidate edges, failed marks and trial facts a
-// session written by an older ruleset or schema carries into the next one.
+// session written by an older ruleset, schema or evidence epoch carries into the next one.
 package carry
 
 import (
@@ -16,7 +16,6 @@ import (
 	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
-	"github.com/shgew/togi/internal/tuner"
 )
 
 type Carry struct {
@@ -27,6 +26,7 @@ type Carry struct {
 
 	factDir     string
 	factEntries []defect.Entry
+	factEpoch   int
 }
 
 func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, current *machine.BIOSContext) (*Carry, error) {
@@ -71,6 +71,16 @@ func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, c
 	if pending == "" {
 		return nil, nil
 	}
+	boundary, err := journal.ResetBoundary(dir)
+	if err != nil {
+		return nil, fmt.Errorf("carry: %w", err)
+	}
+	if boundary != "" && journal.CompareSessionIDs(pending, boundary) <= 0 {
+		if err := j.ClearPendingCarry(); err != nil {
+			return nil, fmt.Errorf("carry: %w", err)
+		}
+		return nil, nil
+	}
 	settled, err := recorded(dir, pending)
 	if err != nil {
 		return nil, fmt.Errorf("carry: %w", err)
@@ -89,9 +99,9 @@ func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, c
 		return nil, err
 	}
 	if current == nil {
-		c.factDir, c.factEntries = dir, entries
+		c.factDir, c.factEntries, c.factEpoch = dir, entries, binary.Epoch()
 	} else {
-		c.Facts, err = prepareFacts(dir, pending, entries, current, tuner.EvidenceEpoch)
+		c.Facts, err = prepareFacts(dir, pending, entries, current, binary.Epoch())
 		if err != nil {
 			return nil, err
 		}
@@ -107,7 +117,7 @@ func (c *Carry) ResolveFacts(current *machine.BIOSContext) error {
 	if c.factDir == "" {
 		return nil
 	}
-	fs, err := prepareFacts(c.factDir, c.Sources[0].Session, c.factEntries, current, tuner.EvidenceEpoch)
+	fs, err := prepareFacts(c.factDir, c.Sources[0].Session, c.factEntries, current, c.factEpoch)
 	if err != nil {
 		return err
 	}
@@ -173,6 +183,10 @@ func read(dir, id string) (source, error) {
 }
 
 func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
+	boundary, err := journal.ResetBoundary(dir)
+	if err != nil {
+		return nil, err
+	}
 	first, err := read(dir, id)
 	if err != nil {
 		return nil, err
@@ -184,6 +198,9 @@ func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
 			return nil, err
 		}
 		for _, name := range older {
+			if boundary != "" && journal.CompareSessionIDs(name, boundary) <= 0 {
+				break
+			}
 			s, err := read(dir, name)
 			if err != nil {
 				return nil, err
@@ -202,6 +219,9 @@ func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
 	for _, s := range sources {
 		c.Sources = append(c.Sources, s.CarriedSource)
 		for _, v := range s.candidates(entries) {
+			if boundary != "" && journal.CompareSessionIDs(v.session, boundary) <= 0 {
+				continue
+			}
 			cc, ok := cores[v.core]
 			if !ok {
 				cc = &journal.CarriedCore{Core: v.core}

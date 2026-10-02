@@ -165,6 +165,7 @@ func TestFactCopyForwardPreservesProvenanceAndStopsWalk(t *testing.T) {
 			for _, f := range first {
 				b.add(f.Payload())
 			}
+			b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 6)}, Marks: true})
 			bOwn, _ := factTrial(b, 0, journal.OutcomeFailure)
 			b.archive(dir)
 			// A missing original archive retains copied facts without restarting collection.
@@ -238,6 +239,7 @@ func TestCopiedFailuresRecheckedAgainstOriginalDefects(t *testing.T) {
 					b.add(f.Payload())
 				}
 			}
+			b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 6)}, Marks: true})
 			bOwn, _ := factTrial(b, 0, journal.OutcomeFailure)
 			b.archive(dir)
 			original := filepath.Join(dir, "archive", "A.jsonl")

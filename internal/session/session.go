@@ -22,7 +22,7 @@ import (
 
 // Build is the build that stamps each session start and resume.
 func Build() journal.Build {
-	return journal.Build{Version: togi.Version(), Rev: togi.Rev(), Ruleset: tuner.Ruleset, Schema: journal.Schema, Fixes: defect.Fixed()}
+	return journal.Build{Version: togi.Version(), Rev: togi.Rev(), Ruleset: tuner.Ruleset, Schema: journal.Schema, Fixes: defect.Fixed(), EvidenceEpoch: tuner.EvidenceEpoch}
 }
 
 type Input struct {

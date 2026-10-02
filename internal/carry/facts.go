@@ -56,6 +56,13 @@ func (d *factDefects) excludes(f facts.Fact) (bool, error) {
 }
 
 func prepareFacts(dir, id string, entries []defect.Entry, current *machine.BIOSContext, epoch int) ([]facts.Fact, error) {
+	boundary, err := journal.ResetBoundary(dir)
+	if err != nil {
+		return nil, err
+	}
+	if boundary != "" && journal.CompareSessionIDs(id, boundary) <= 0 {
+		return nil, nil
+	}
 	first, err := read(dir, id)
 	if err != nil {
 		return nil, err
@@ -75,15 +82,18 @@ func prepareFacts(dir, id string, entries []defect.Entry, current *machine.BIOSC
 	for i := 0; ; i++ {
 		s := factSession(source.events)
 		defects.sources[s.session.ID] = excludeFacts(source.events, entries)
-		carried, err = s.appendEligible(carried, seen, cleared, epoch, &defects)
+		carried, err = s.appendEligible(carried, seen, cleared, epoch, boundary, &defects)
 		if err != nil {
 			return nil, err
 		}
-		if s.allReset != 0 || len(s.session.Carried) != 0 || i == len(older) {
+		if s.allReset != 0 || len(s.session.Carried) != 0 && source.seeded || i == len(older) {
 			break
 		}
 		for core := range s.coreResets {
 			cleared[core] = true
+		}
+		if boundary != "" && journal.CompareSessionIDs(older[i], boundary) <= 0 {
+			break
 		}
 		source, err = read(dir, older[i])
 		if err != nil {
@@ -153,9 +163,12 @@ func (s sessionFacts) eligible(f facts.Fact, cleared map[int]bool, epoch int) bo
 	return !slices.ContainsFunc(f.Class.Cores, func(core int) bool { return cleared[core] || at <= s.coreResets[core] })
 }
 
-func (s sessionFacts) appendEligible(carried []facts.Fact, seen map[factID]bool, cleared map[int]bool, epoch int, defects *factDefects) ([]facts.Fact, error) {
+func (s sessionFacts) appendEligible(carried []facts.Fact, seen map[factID]bool, cleared map[int]bool, epoch int, boundary string, defects *factDefects) ([]facts.Fact, error) {
 	for _, group := range [][]facts.Fact{s.session.Facts, s.session.Carried} {
 		for _, f := range group {
+			if boundary != "" && journal.CompareSessionIDs(f.Session, boundary) <= 0 {
+				continue
+			}
 			key := factID{f.Session, f.Seq}
 			if seen[key] || !s.eligible(f, cleared, epoch) {
 				continue

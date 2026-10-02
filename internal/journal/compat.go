@@ -10,13 +10,30 @@ import (
 	togi "github.com/shgew/togi"
 )
 
-// Build identifies the rules and journal format used by a togi binary.
+// Build identifies the rules, evidence comparability and journal format used by a togi binary.
 type Build struct {
 	Version string `json:"version"`
 	Rev     string `json:"rev"`
 	Ruleset int    `json:"ruleset"`
 	Schema  int    `json:"schema"`
 	Fixes   int    `json:"fixes"`
+	// EvidenceEpoch is compatibility metadata; only session.start.evidence persists it.
+	EvidenceEpoch int `json:"-"`
+}
+
+// Epoch defaults unstamped ruleset-six and later builds to evidence epoch one.
+func (b Build) Epoch() int {
+	return evidenceEpoch(b.Ruleset, b.EvidenceEpoch)
+}
+
+func evidenceEpoch(ruleset, evidence int) int {
+	if evidence != 0 {
+		return evidence
+	}
+	if ruleset >= 6 {
+		return 1
+	}
+	return 0
 }
 
 func binarySchemaBuild() Build {
@@ -64,14 +81,20 @@ func KnownKinds(events []Event, binary Build) error {
 
 func (e *IncompatibleError) Error() string {
 	written := fmt.Sprintf("this journal was written by %s (schema %d, ruleset %d)", e.Journal.name(), e.Journal.Schema, e.Journal.Ruleset)
+	if e.Field == "evidence epoch" {
+		written = fmt.Sprintf("this journal was written by %s (schema %d, ruleset %d, evidence epoch %d)", e.Journal.name(), e.Journal.Schema, e.Journal.Ruleset, e.Journal.Epoch())
+	}
 	advice := "Install the togi build that wrote it to continue this session"
 	if e.Journal.Version != "" {
 		advice = "Install togi " + e.Journal.Version + " to continue this session"
 	}
 	var value int
-	if e.Field == "schema" {
+	switch e.Field {
+	case "schema":
 		value = e.Binary.Schema
-	} else {
+	case "evidence epoch":
+		value = e.Binary.Epoch()
+	default:
 		value = e.Binary.Ruleset
 	}
 	if Older(e.Journal, e.Binary) {
@@ -80,7 +103,7 @@ func (e *IncompatibleError) Error() string {
 	return fmt.Sprintf("%s; this build, %s, uses %s %d. %s, or run togi reset --all to archive it and start over.", written, e.Binary.name(), e.Field, value, advice)
 }
 
-// Compatible checks schema first, then strategy. A missing ruleset stamp means ruleset 1.
+// Compatible checks schema, ruleset, then evidence epoch. A missing ruleset stamp means ruleset 1.
 func Compatible(recorded, binary Build) error {
 	if recorded.Ruleset == 0 {
 		recorded.Ruleset = 1
@@ -91,16 +114,19 @@ func Compatible(recorded, binary Build) error {
 	if recorded.Ruleset != binary.Ruleset {
 		return &IncompatibleError{Field: "ruleset", Journal: recorded, Binary: binary}
 	}
+	if recorded.Epoch() != binary.Epoch() {
+		return &IncompatibleError{Field: "evidence epoch", Journal: recorded, Binary: binary}
+	}
 	return nil
 }
 
-// Older reports whether recorded comes from an earlier schema or ruleset than binary and from no later one.
+// Older reports whether recorded has an earlier schema, ruleset or evidence epoch and no later dimension.
 func Older(recorded, binary Build) bool {
 	if recorded.Ruleset == 0 {
 		recorded.Ruleset = 1
 	}
-	return recorded.Schema <= binary.Schema && recorded.Ruleset <= binary.Ruleset &&
-		(recorded.Schema < binary.Schema || recorded.Ruleset < binary.Ruleset)
+	return recorded.Schema <= binary.Schema && recorded.Ruleset <= binary.Ruleset && recorded.Epoch() <= binary.Epoch() &&
+		(recorded.Schema < binary.Schema || recorded.Ruleset < binary.Ruleset || recorded.Epoch() < binary.Epoch())
 }
 
 // Scan reads only the build stamps, ignoring all other payloads and unknown event kinds.
@@ -117,7 +143,8 @@ func scanBuild(data []byte) (Build, string, error) {
 	var start struct {
 		Kind Kind `json:"kind"`
 		Build
-		Session string `json:"session"`
+		Session  string `json:"session"`
+		Evidence int    `json:"evidence"`
 	}
 	first, rest, ok := bytes.Cut(data, []byte{'\n'})
 	if !ok {
@@ -133,6 +160,7 @@ func scanBuild(data []byte) (Build, string, error) {
 	if build.Ruleset == 0 {
 		build.Ruleset = 1
 	}
+	build.EvidenceEpoch = evidenceEpoch(build.Ruleset, start.Evidence)
 	for len(rest) > 0 {
 		next := bytes.IndexByte(rest, '\n')
 		if next < 0 {
@@ -165,6 +193,7 @@ func BuildOf(events []Event) Build {
 	if build.Ruleset == 0 {
 		build.Ruleset = 1
 	}
+	build.EvidenceEpoch = start.Epoch()
 	for _, e := range events[1:] {
 		if p, ok := e.Data.(*ConfigLoaded); ok && p.Version != "" {
 			build.Version, build.Rev, build.Fixes = p.Version, p.Rev, p.Fixes

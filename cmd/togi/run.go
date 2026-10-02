@@ -39,14 +39,15 @@ rotation earns Bronze once every core is done and refinement can reach no
 more depth. After a crash, the next run attributes it from the journal and
 continues. On resume, known defects affecting past decisions name the cores; in
 a terminal run offers to reset them. An unanswered too-aggressive defect stops
-an unattended run. It needs root. A journal from an older ruleset or schema is
-archived, and the new session starts each core from the edges and failed marks
-it found. A newer one stops the run before another event is written; reset --all
-archives that session. An older ruleset or schema is archived even with unknown
-event kinds; carry uses only known events. Unknown kinds in a current-ruleset,
-current-schema journal stop both run and reset; install the build that wrote
-them. Journal lines are colored on terminals and in the system journal unless
-NO_COLOR is set.
+an unattended run. It needs root. A journal from an older ruleset, schema or
+evidence epoch, and no newer one, is archived. The new session starts each core
+from its edges and failed marks, keeps eligible failures, and keeps passes only
+from the current evidence epoch. A newer ruleset, schema or evidence epoch stops
+the run before another event is written; reset --all archives that session. An
+older journal is archived even with unknown event kinds; carry uses only known
+events. Unknown kinds in a current-ruleset, current-schema, current-epoch journal
+stop both run and reset; install the build that wrote them. Journal lines are
+colored on terminals and in the system journal unless NO_COLOR is set.
 
 Only one run or reset can own this machine, even with different state directories.
 A busy /run/lock/togi.lock stops the command before any hardware access or event.

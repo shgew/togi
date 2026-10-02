@@ -130,13 +130,7 @@ func (p *SessionStart) Message() string {
 }
 
 func (p *SessionStart) Epoch() int {
-	if p.Evidence != 0 {
-		return p.Evidence
-	}
-	if p.Ruleset >= 6 {
-		return 1
-	}
-	return 0
+	return evidenceEpoch(p.Ruleset, p.Evidence)
 }
 
 type SessionContext struct {

@@ -151,6 +151,9 @@ func (j *Journal) DropPendingCarry() (string, error) {
 	if err != nil || id == "" {
 		return id, err
 	}
+	if err := j.MarkResetAll(); err != nil {
+		return "", err
+	}
 	if err := j.ClearPendingCarry(); err != nil {
 		return "", err
 	}

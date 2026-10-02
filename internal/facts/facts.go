@@ -269,6 +269,8 @@ func normalizedBuild(b journal.Build) journal.Build {
 	if b.Ruleset == 0 {
 		b.Ruleset = 1
 	}
+	// Epoch belongs to the session and Fact.Epoch, not the persisted binary stamp.
+	b.EvidenceEpoch = 0
 	return b
 }
 
