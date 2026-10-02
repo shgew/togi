@@ -31,13 +31,26 @@ type Carry struct {
 
 func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, current *machine.BIOSContext) (*Carry, error) {
 	dir := j.Dir()
+	boundary, boundaryErr := journal.ResetBoundary(dir)
+	if boundaryErr != nil {
+		return nil, fmt.Errorf("carry: %w", boundaryErr)
+	}
+	stamp, id, err := journal.Scan(dir)
+	if err == nil && id != "" && boundary != "" && journal.CompareSessionIDs(id, boundary) <= 0 {
+		if _, archiveErr := j.ArchiveUnreadable(id); archiveErr != nil {
+			return nil, fmt.Errorf("carry: finish reset archive: %w", archiveErr)
+		}
+		if clearErr := j.ClearPendingCarry(); clearErr != nil {
+			return nil, fmt.Errorf("carry: finish reset carry removal: %w", clearErr)
+		}
+		return nil, nil
+	}
 	events, _, readErr := journal.Read(dir)
 	if readErr == nil && !journal.Older(journal.BuildOf(events), binary) {
 		if err := journal.KnownKinds(events, binary); err != nil {
 			return nil, err
 		}
 	}
-	stamp, id, err := journal.Scan(dir)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
@@ -70,10 +83,6 @@ func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, c
 	}
 	if pending == "" {
 		return nil, nil
-	}
-	boundary, err := journal.ResetBoundary(dir)
-	if err != nil {
-		return nil, fmt.Errorf("carry: %w", err)
 	}
 	if boundary != "" && journal.CompareSessionIDs(pending, boundary) <= 0 {
 		if err := j.ClearPendingCarry(); err != nil {
@@ -160,6 +169,7 @@ type source struct {
 	journal.CarriedSource
 	context *machine.BIOSContext
 	seeded  bool
+	epoch   int
 	events  []journal.Event
 }
 
@@ -170,7 +180,7 @@ func read(dir, id string) (source, error) {
 		return source{}, fmt.Errorf("carry: read archived session %s: %w", id, err)
 	}
 	start := events[0].Data.(*journal.SessionStart)
-	s := source{Session: start.Session, Path: path, Schema: start.Schema, Ruleset: max(start.Ruleset, 1), events: events}
+	s := source{Session: start.Session, Path: path, Schema: start.Schema, Ruleset: max(start.Ruleset, 1), epoch: start.Epoch(), events: events}
 	for _, e := range events {
 		switch p := e.Data.(type) {
 		case *journal.SessionContext:
@@ -205,7 +215,8 @@ func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
 			if err != nil {
 				return nil, err
 			}
-			if s.context == nil || *s.context != *first.context || s.Ruleset == sources[len(sources)-1].Ruleset {
+			previous := sources[len(sources)-1]
+			if s.context == nil || *s.context != *first.context || s.Ruleset == previous.Ruleset && s.epoch == previous.epoch {
 				break
 			}
 			sources = append(sources, s)

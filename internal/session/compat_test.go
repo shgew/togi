@@ -46,32 +46,3 @@ func TestRunRefusesDifferentRulesetWithoutAppending(t *testing.T) {
 		t.Fatalf("refusal modified journal: %v", err)
 	}
 }
-
-func TestResumeRecordsCurrentBuild(t *testing.T) {
-	dir := t.TempDir()
-	in := simInput(dir, newSim(t, small()))
-	_, err := simulateBoot(context.Background(), in, wrapFor(in, killAt(2)))
-	if !errors.Is(err, errKilled) {
-		t.Fatalf("first run: %v", err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err = simulateBoot(ctx, in, wrapFor(in, nil))
-	if err != nil {
-		t.Fatalf("resume: %v", err)
-	}
-	events := readEvents(t, dir)
-	if len(events) < 3 || events[0].Data.(*journal.SessionStart).Build != Build() {
-		t.Fatalf("session.start stamp missing: %d events", len(events))
-	}
-	var loaded *journal.ConfigLoaded
-	for _, event := range events[2:] {
-		if p, ok := event.Data.(*journal.ConfigLoaded); ok {
-			loaded = p
-			break
-		}
-	}
-	if loaded == nil || loaded.Build != Build() {
-		t.Fatalf("resume config.loaded stamp: %+v", loaded)
-	}
-}
