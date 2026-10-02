@@ -21,3 +21,14 @@ just stats --since 2026-09-30T00:00:00Z
 - **Inconclusive trials** lists trials excluded from pass/failure evidence. **Tctl** gives the distribution of maximum temperatures recorded by passing trials only; crashes do not provide a comparable maximum.
 
 Golden output is generated from a seeded joint-failure simulation. Regenerate it with `go test ./tools/stats -update` in the dev shell.
+
+## Retros
+
+After an unattended run on the target machine, write a retro as a new comment on the pinned [Target-machine runs](https://github.com/shgew/togi/issues/260) issue. Build it from `just stats` and `togi events`, not from memory:
+
+- **Session:** session ID, togi version and ruleset, machine and BIOS context, wall time, trials, crashes and how they recovered.
+- **What happened:** the phases in order with their hours, each hunt with masks run and inferred, and the resident profile at the end.
+- **What went well** and **what went badly**, each with the numbers that show it.
+- **Actions:** one line each, linking the issue or pull request that carries it; file the issue first if none exists.
+
+A finding that holds beyond one run moves to where the next change reads it: how the machine fails goes into its bench machine files under `tools/bench/machines/`, and what simulated runs should show goes into `docs/simulating.md`. The retro links to the pull request that moved it.
