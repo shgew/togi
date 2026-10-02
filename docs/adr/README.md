@@ -33,5 +33,6 @@ A new ADR adds its line here and updates the status of any ADR it supersedes.
 - [0027: Carry trial facts across ruleset changes](0027-carry-trial-facts.md) — **in force**.
 - [0028: Report qualified rotations instead of durability tiers](0028-remove-tiers.md) — **in force**.
 - [0029: Bench verdicts rest on fitted machines](0029-bench-verdicts-rest-on-fitted-machines.md) — **in force**.
-- [0030: Coverage is a review signal, not a target](0030-coverage-is-a-review-signal.md) — **in force**.
+- [0030: Coverage is a review signal, not a target](0030-coverage-is-a-review-signal.md) — **partly superseded** by [0032](0032-coverage-lists-uncovered-changed-lines.md): whole-file blocks and reviewers matching them to hunks; coverage as a review signal, never a target, remains.
 - [0031: Pull requests under the owner's account](0031-pull-requests-under-the-owners-account.md) — **in force**.
+- [0032: Coverage lists uncovered changed lines](0032-coverage-lists-uncovered-changed-lines.md) — **in force**.

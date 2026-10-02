@@ -85,7 +85,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just release` | Start the release workflow on `main`: it checks that `check` passed on `main`, commits the release, builds the package, pushes to `main` and publishes. `just release-preview` shows what it would release. See `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with an explicitly delegated host lock ([provisioning](docs/howto.md#host-lock-and-delegated-hardware-tests)), read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `TOGI_MPRIME` and `TOGI_YCRUNCHER`, else from `/etc/togi/config.toml` |
 | `just fuzz [time]` | Fuzz the journal parser |
-| `just cover [base]` | Blocks no test reaches in Go files changed since `base`, for review; without a base, coverage per function for the whole repository. Evidence for reviewers, never a target |
+| `just cover [base]` | Changed lines since `base` that no test reaches, as `path:first-last` ranges, for review; without a base, coverage per function for the whole repository. Evidence for reviewers, never a target |
 
 CI (`.github/workflows/check.yml`) runs the Linux flake checks on GitHub-hosted `ubuntu-latest` runners: an `eval` job lists the checks, one job per check builds it, with `/dev/kvm` opened to the Nix build users for the VM tests. A native `macos-15` arm64 job builds `checks.aarch64-darwin.package`, running the Darwin tests without VM, integration or hardware checks. The aggregating `check` job requires both the Linux checks and the macOS job to pass. Each VM test is its own check so the jobs boot their machines in parallel. The build jobs substitute from the public Cachix cache `togi` and push each check's output when the `CACHIX_AUTH_TOKEN` secret is available, so a check whose inputs are unchanged passes without running; the checks build the package with the revision `dev` so that a new commit alone changes none of them (ADR 0021). The release workflow (`.github/workflows/release.yml`) only builds the package on the release commit.
 
@@ -117,7 +117,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
 | `nix/` | NixOS module and VM tests |
-| `tools/*` | Development programs, never shipped: `bench`, `carry-facts`, `facts`, `fit`, `release`, `sim`, `stats`; shared evaluation packages `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
+| `tools/*` | Development programs, never shipped: `bench`, `carry-facts`, `cover`, `facts`, `fit`, `release`, `sim`, `stats`; shared evaluation packages `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
 
 A package owns one responsibility, and its exported API is the seam. Split a package when it holds two responsibilities that change for different reasons.
 
@@ -135,4 +135,4 @@ A package owns one responsibility, and its exported API is the seam. Split a pac
 - Tests pin spec behavior: rules, boundaries, invariants, crash-resume. Table tests for rules, property tests for invariants, golden files for rendered output (`go test ./cmd/togi -update` rewrites them), a fuzz target for the journal parser (`just fuzz`). Compare values with `cmp.Diff`.
 - Concurrent code is tested on real goroutines. The `race` flake check runs trial, session, journal and watch under the race detector on every pull request and push to `main`; `just test -race` runs the whole suite locally.
 - Tests that need the real world carry a build tag and stay out of `go test ./...`: `integration` for real processes (a helper program built by the test, never mprime or y-cruncher), `hardware` for the target machine, restoring every offset they change.
-- **Coverage is evidence, not a target** (ADR 0030): no threshold, ratchet or tracked percentage. `just cover BASE` shows reviewers changed code no test reaches. A test exists to pin behavior, never only to reach a line.
+- **Coverage is evidence, not a target** (ADRs 0030, 0032): no threshold, ratchet or tracked percentage. `just cover BASE` shows reviewers changed lines no test reaches. A test exists to pin behavior, never only to reach a line.

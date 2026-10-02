@@ -28,7 +28,7 @@ hardware *args:
 fuzz time="1m":
     {{ dev }} go test -run '^$' -fuzz '^FuzzParse$' -fuzztime "$1" ./internal/journal
 
-# Print code no test reaches: per function for the whole repo, or blocks in Go files changed since a base (`just cover origin/main`)
+# Print code no test reaches: per function for the whole repo, or changed lines since a base (`just cover origin/main`)
 [group('test')]
 cover base="":
     #!/usr/bin/env bash
@@ -40,25 +40,7 @@ cover base="":
         {{ dev }} go tool cover -func="$profile"
         exit
     fi
-    changed=$(git diff --name-only --diff-filter=d --merge-base "$1" -- '*.go')
-    if [[ -z "$changed" ]]; then
-        echo "No Go files changed since $1."
-        exit
-    fi
-    module=$(awk '$1 == "module" { print $2 }' go.mod)
-    awk -v prefix="$module/" '
-        NR == FNR { changed[$0] = 1; next }
-        FNR == 1 || $3 != 0 { next }
-        {
-            split($1, location, ":")
-            file = substr(location[1], length(prefix) + 1)
-            if (!(file in changed)) next
-            split(location[2], span, ",")
-            split(span[1], first, ".")
-            split(span[2], last, ".")
-            print file ":" (first[1] == last[1] ? first[1] : first[1] "-" last[1])
-        }
-    ' <(printf '%s\n' "$changed") "$profile" | LC_ALL=C sort -t: -k1,1 -k2,2n -k2,2 -u
+    {{ dev }} go run ./tools/cover --profile "$profile" --base "$1"
 
 # Lint all Go packages with optional lint flags
 [group('quality')]
