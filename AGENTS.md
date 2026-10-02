@@ -39,7 +39,6 @@ Every change, docs included, lands as a pull request against `main` on `github.c
   Push one review's fixes together, and reply to and resolve each thread.
 - A pull request that finishes an issue says `Closes #N` in its body; one that only makes progress says `Refs #N`.
 - A pull request that bumps `journal.Schema` or `tuner.Ruleset` is breaking: its title starts with `[BREAKING]`, it carries the `breaking` label, and its changelog line starts with `**BREAKING**`.
-- A breaking pull request merges only after `[Unreleased]` has been released (see `docs/releasing.md`).
 - A pull request that fixes a bug that changed decisions adds a defect entry, with a test replaying a fixture journal from before the fix, when the affected decisions can be matched. Otherwise its changelog line tells the operator which `togi reset --core` to run.
 
 ## Issues
