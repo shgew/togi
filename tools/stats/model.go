@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -45,7 +46,6 @@ type maskInfo struct {
 type projection struct {
 	trials   []*trial
 	byID     map[string]*trial
-	bySeq    map[int]*trial
 	idle     []journal.Event
 	runs     []*runInfo
 	hunts    []*huntInfo
@@ -60,12 +60,16 @@ type bootTime struct {
 	firstEvent time.Time
 }
 
-func project(events []journal.Event) *projection {
-	p := &projection{byID: map[string]*trial{}, bySeq: map[int]*trial{}, huntByID: map[int]*huntInfo{}, boots: map[string]bootTime{}, nextBoot: map[string]string{}}
+func project(session facts.Session) *projection {
+	events := session.Events
+	trials := make(map[int]*facts.Trial, len(session.Trials))
+	for _, t := range session.Trials {
+		trials[t.Seq] = t
+	}
+	p := &projection{byID: map[string]*trial{}, huntByID: map[int]*huntInfo{}, boots: map[string]bootTime{}, nextBoot: map[string]string{}}
 	var active *runInfo
 	commitments := map[int]*huntInfo{}
 	var previousBoot string
-	var applied []int
 	masks := map[[2]int]*maskInfo{}
 	for _, e := range events {
 		if _, ok := p.boots[e.Boot]; !ok {
@@ -81,12 +85,6 @@ func project(events []journal.Event) *projection {
 		switch v := e.Data.(type) {
 		case *journal.SessionStart:
 			p.cores = v.Cores
-		case *journal.ProfileApplied:
-			applied = slices.Clone(v.Offsets)
-		case *journal.SMUReadback:
-			if v.Core >= 0 && v.Core < len(applied) {
-				applied[v.Core] = v.Offset
-			}
 		case *journal.ConfigLoaded:
 			// A new boot without shutdown is the continuation of the interrupted run.
 			if active == nil || active.boot == e.Boot {
@@ -102,28 +100,11 @@ func project(events []journal.Event) *projection {
 				active = nil
 			}
 		case *journal.TrialIntent:
-			p.addTrial(e, v, applied, active, masks)
-		case *journal.TrialStart:
-			if t := p.byID[v.Trial]; t != nil {
-				t.started = true
-				t.lastEvidence = e.Time
-			}
-		case *journal.TrialProgress:
-			p.trialEvidence(v.Trial, e)
-		case *journal.TrialSignal:
-			p.trialEvidence(v.Trial, e)
-		case *journal.TrialSample:
-			p.trialEvidence(v.Trial, e)
-		case *journal.TrialEnd:
-			if t := p.byID[v.Trial]; t != nil {
-				t.end = v
-				t.endSeq = e.Seq
-			}
+			p.addTrial(trials[e.Seq], active, masks)
 		case *journal.CrashDetected:
 			if active != nil {
 				active.crashes++
 			}
-			p.recordCrash(v)
 		case *journal.Failure:
 			if v.Trial == "" {
 				p.idle = append(p.idle, e)
@@ -158,15 +139,6 @@ func project(events []journal.Event) *projection {
 	return p
 }
 
-func (p *projection) recordCrash(v *journal.CrashDetected) {
-	if v.InFlight == nil {
-		return
-	}
-	if t := p.bySeq[*v.InFlight]; t != nil && t.boot == v.PreviousBoot {
-		t.crashed = true
-	}
-}
-
 func recordCommitment(e journal.Event, v *journal.TunerDecision, commitments map[int]*huntInfo) {
 	if v.Decision != journal.Backoff {
 		return
@@ -187,25 +159,11 @@ func (p *projection) finishHunts(last time.Time) {
 	}
 }
 
-func (p *projection) trialEvidence(id string, e journal.Event) {
-	if t := p.byID[id]; t != nil && t.started && t.boot == e.Boot && t.end == nil {
-		t.lastEvidence = e.Time
-	}
-}
-
-func (p *projection) addTrial(e journal.Event, v *journal.TrialIntent, applied []int, active *runInfo, masks map[[2]int]*maskInfo) {
-	if len(v.Profile) == 0 && len(applied) > 0 {
-		copyIntent := *v
-		copyIntent.Profile = slices.Clone(applied)
-		if v.Condition == machine.Isolated && v.Core != nil && v.Offset != nil && *v.Core >= 0 && *v.Core < len(applied) {
-			copyIntent.Profile[*v.Core] = *v.Offset
-		}
-		v = &copyIntent
-	}
-	t := &trial{intent: v, key: class(v, p.cores), seq: e.Seq, time: e.Time, lastEvidence: e.Time, cause: e.Cause, boot: e.Boot}
+func (p *projection) addTrial(record *facts.Trial, active *runInfo, masks map[[2]int]*maskInfo) {
+	v := record.Intent
+	t := &trial{intent: v, key: class(v, p.cores), seq: record.Seq, endSeq: record.EndSeq, time: record.Time, lastEvidence: record.LastEvidence, cause: record.Cause, boot: record.Boot, started: record.Started, crashed: record.Crashed, end: record.End}
 	p.trials = append(p.trials, t)
 	p.byID[v.Trial] = t
-	p.bySeq[e.Seq] = t
 	if active != nil {
 		active.trials++
 	}

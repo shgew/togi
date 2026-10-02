@@ -1,0 +1,269 @@
+package facts
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
+)
+
+func writeJournal(t *testing.T, path string, events []journal.Event, tail string) {
+	t.Helper()
+	var lines strings.Builder
+	for i, e := range events {
+		var fields map[string]any
+		if e.Data != nil {
+			data, err := json.Marshal(e.Data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(data, &fields); err != nil {
+				t.Fatal(err)
+			}
+			e.Kind = e.Data.Kind()
+		} else {
+			fields = map[string]any{}
+		}
+		fields["seq"], fields["kind"] = i+1, e.Kind
+		fields["time"], fields["boot"] = e.Time, e.Boot
+		if len(e.Cause) > 0 {
+			fields["cause"] = e.Cause
+		}
+		data, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines.Write(data)
+		lines.WriteByte('\n')
+	}
+	lines.WriteString(tail)
+	if err := os.WriteFile(path, []byte(lines.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadJournalDecisiveFacts(t *testing.T) {
+	for _, schema := range []int{1, 2} {
+		t.Run(fmt.Sprint(schema), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "events.jsonl")
+			build := journal.Build{Version: "old", Rev: "aaaa", Schema: schema, Ruleset: 1}
+			context := machine.BIOSContext{BIOSVersion: "1.2", Board: "board", CPUModel: "cpu"}
+			var events []journal.Event
+			add := func(p journal.Payload) {
+				events = append(events, journal.Event{Time: time.Unix(int64(len(events)), 0).UTC(), Boot: "a", Data: p})
+			}
+			add(&journal.SessionStart{Build: build, Session: "20261001T000000Z", Cores: []machine.CoreInfo{{Core: 4}, {Core: 2}}})
+			add(&journal.SessionContext{BIOSContext: context})
+			add(&journal.ProfileApplied{Offsets: []int{-20, -30}, Condition: machine.Resident})
+			add(&journal.TrialIntent{Trial: "isolated", Core: new(4), Offset: new(-10), Regime: machine.R1, Workload: "one", DurationS: 90, Condition: machine.Isolated, Phase: journal.PhaseSearch})
+			add(&journal.TrialEnd{Trial: "isolated", Outcome: journal.OutcomePass, DurationS: 89})
+			add(&journal.TrialIntent{Trial: "resident", Cores: []int{4, 2}, Regime: machine.R7, Workload: "all", DurationS: 900, Condition: machine.Resident, Phase: journal.PhaseGuard})
+			add(&journal.SMUReadback{Core: 2, Offset: -19})
+			add(&journal.ConfigLoaded{Version: "new", Rev: "bbbb", Schema: schema, Ruleset: 6})
+			add(&journal.TrialEnd{Trial: "resident", Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 12})
+			add(&journal.ProfileApplied{Offsets: []int{-9, -30}, Condition: machine.Masked})
+			add(&journal.TrialIntent{Trial: "masked", Cores: []int{4, 2}, Regime: machine.R7, Workload: "all", DurationS: 120, Condition: machine.Masked, Phase: journal.PhaseHunt})
+			add(&journal.TrialEnd{Trial: "masked", Outcome: journal.OutcomePass, DurationS: 120})
+			add(&journal.TrialIntent{Trial: "refine", Cores: []int{2, 4}, Profile: []int{-25, -35}, Regime: machine.R7, Workload: "all", DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseRefine})
+			add(&journal.TrialEnd{Trial: "refine", Outcome: journal.OutcomePass, DurationS: 120})
+			add(&journal.TrialIntent{Trial: "rerun", Core: new(2), Regime: machine.R2, Workload: "one", DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Rerun: true})
+			add(&journal.TrialEnd{Trial: "rerun", Outcome: journal.OutcomeFailure, Signal: machine.Stall, DurationS: 7})
+			add(&journal.TrialIntent{Trial: "inconclusive", Core: new(2), Regime: machine.R2, Condition: machine.Isolated})
+			add(&journal.TrialEnd{Trial: "inconclusive", Outcome: journal.OutcomeInconclusive, DurationS: 1})
+			add(&journal.TrialIntent{Trial: "open", Core: new(2), Regime: machine.R2, Condition: machine.Isolated})
+			events = append(events, journal.Event{Kind: "future.trial", Boot: "a"})
+			events[7].Boot, events[8].Boot = "b", "b"
+			writeJournal(t, path, events, `{"seq":21`)
+			s, err := ReadJournal(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(&context, s.Context); diff != "" {
+				t.Fatal(diff)
+			}
+			if s.ID != "20261001T000000Z" || s.Schema != schema || s.Ruleset != 1 || s.Archived || s.Path != path {
+				t.Fatalf("session identity: %+v", s)
+			}
+			want := []Fact{
+				{Kind: TrialFact, Session: s.ID, Seq: 5, Time: time.Unix(4, 0).UTC(), Build: build, Ruleset: 1, Trial: "isolated", Boot: "a", Class: Class{Regime: machine.R1, Workload: "one", Cores: []int{4}, DurationS: 90}, Condition: machine.Isolated, Phase: journal.PhaseSearch, Profile: []int{0, -10}, Outcome: journal.OutcomePass, DurationS: 89},
+				{Kind: TrialFact, Session: s.ID, Seq: 9, Time: time.Unix(8, 0).UTC(), Build: build, Ruleset: 1, Trial: "resident", Boot: "a", Class: Class{Regime: machine.R7, Workload: "all", Cores: []int{2, 4}, DurationS: 900}, Condition: machine.Resident, Phase: journal.PhaseGuard, Profile: []int{-20, -30}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 12},
+			}
+			newBuild := journal.Build{Version: "new", Rev: "bbbb", Schema: schema, Ruleset: 6}
+			for _, tc := range []struct {
+				id        string
+				seq       int
+				condition machine.Condition
+				phase     journal.Phase
+				profile   []int
+				outcome   journal.Outcome
+				signal    machine.Signal
+				duration  int
+				rerun     bool
+			}{
+				{"masked", 12, machine.Masked, journal.PhaseHunt, []int{-9, -30}, journal.OutcomePass, "", 120, false},
+				{"refine", 14, machine.Resident, journal.PhaseRefine, []int{-25, -35}, journal.OutcomePass, "", 120, false},
+				{"rerun", 16, machine.Resident, journal.PhaseGuard, []int{-9, -30}, journal.OutcomeFailure, machine.Stall, 7, true},
+			} {
+				class := Class{Regime: machine.R7, Workload: "all", Cores: []int{2, 4}, DurationS: 120}
+				if tc.rerun {
+					class.Regime, class.Workload, class.Cores = machine.R2, "one", []int{2}
+				}
+				want = append(want, Fact{Kind: TrialFact, Session: s.ID, Seq: tc.seq, Time: time.Unix(int64(tc.seq-1), 0).UTC(), Build: newBuild, Ruleset: 6, Trial: tc.id, Boot: "a", Class: class, Condition: tc.condition, Phase: tc.phase, Rerun: tc.rerun, Profile: tc.profile, Outcome: tc.outcome, Signal: tc.signal, DurationS: tc.duration})
+			}
+			if diff := cmp.Diff(want, s.Facts); diff != "" {
+				t.Fatal(diff)
+			}
+			if diff := cmp.Diff([]journal.Build{build, newBuild}, s.Builds); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestIdleFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		condition   machine.Condition
+		attribution journal.Attribution
+		trial       string
+		profile     []int
+		want        bool
+	}{
+		{"resident", machine.Resident, journal.Unattributed, "", []int{-10, -20}, true},
+		{"masked", machine.Masked, journal.Unattributed, "", []int{-10, 0}, true},
+		{"attributed", machine.Resident, journal.Attributed, "", []int{-10, 0}, false},
+		{"isolated", machine.Isolated, journal.Unattributed, "", []int{-10, 0}, false},
+		{"stray", "", journal.Unattributed, "", nil, false},
+		{"partial profile", machine.Resident, journal.Unattributed, "", []int{-10}, false},
+		{"trial failure is not idle", machine.Resident, journal.Unattributed, "one", []int{-10, -20}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "events.jsonl")
+			build := journal.Build{Schema: 2, Ruleset: 6}
+			at := time.Unix(10, 0).UTC()
+			writeJournal(t, path, []journal.Event{
+				{Data: &journal.SessionStart{Build: build, Session: "session", Cores: []machine.CoreInfo{{Core: 1}, {Core: 0}}}},
+				{Time: at, Boot: "boot", Data: &journal.Failure{Signal: machine.Crash, Condition: tc.condition, Attribution: tc.attribution, Trial: tc.trial, Profile: tc.profile}},
+			}, "")
+			s, err := ReadJournal(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want []Fact
+			if tc.want {
+				want = []Fact{{Kind: IdleFact, Session: "session", Seq: 2, Time: at, Build: build, Ruleset: 6, Boot: "boot", Class: Class{Regime: machine.R6, Cores: []int{0, 1}}, Condition: tc.condition, Profile: tc.profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash}}
+			}
+			if diff := cmp.Diff(want, s.Facts); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestResetHistoryPreservesFacts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	events := []journal.Event{
+		{Data: &journal.SessionStart{Schema: 1, Session: "session", Cores: []machine.CoreInfo{{Core: 0}}}},
+		{Data: &journal.TrialIntent{Trial: "before", Core: new(0), Offset: new(-10), Condition: machine.Isolated}},
+		{Data: &journal.TrialEnd{Trial: "before", Outcome: journal.OutcomePass}},
+		{Data: &journal.CommandReset{Core: new(0)}},
+		{Cause: []int{4}, Data: &journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: 0}},
+		{Data: &journal.TrialIntent{Trial: "after", Core: new(0), Offset: new(-5), Condition: machine.Isolated}},
+		{Data: &journal.TrialEnd{Trial: "after", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError}},
+		{Data: &journal.CommandReset{All: true}},
+		{Data: &journal.SessionArchived{Session: "session", Path: "archive/session.jsonl"}},
+	}
+	writeJournal(t, path, events, "")
+	s, err := ReadJournal(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Reset{{Seq: 4, Core: new(0), AppliedSeq: 5, Effects: []journal.Event{s.Events[4]}}, {Seq: 8, All: true, AppliedSeq: 9, Effects: []journal.Event{s.Events[8]}}}
+	if diff := cmp.Diff(want, s.Resets); diff != "" {
+		t.Fatal(diff)
+	}
+	var got []string
+	for _, f := range s.Facts {
+		got = append(got, fmt.Sprintf("%s/%d/%v/%s", f.Trial, f.Ruleset, f.Profile, f.Outcome))
+	}
+	if diff := cmp.Diff([]string{"before/1/[-10]/pass", "after/1/[-5]/failure"}, got); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestReadDirNumericSessionOrder(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "archive")
+	if err := os.Mkdir(archive, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"20261001T000000Z-10", "20261001T000000Z-2", "20261001T000000Z", "20260930T235959Z"} {
+		writeJournal(t, filepath.Join(archive, id+".jsonl"), []journal.Event{{Data: &journal.SessionStart{Schema: 1, Session: id}}}, "")
+	}
+	if err := os.Mkdir(filepath.Join(archive, "20260901T000000Z-trials"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(archive, "20260901T000000Z-carry-pending"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeJournal(t, filepath.Join(dir, "events.jsonl"), []journal.Event{{Data: &journal.SessionStart{Schema: 2, Ruleset: 6, Session: "20261001T000000Z-11"}}}, "")
+	sessions, err := ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, s := range sessions {
+		got = append(got, fmt.Sprintf("%s/%t", s.ID, s.Archived))
+	}
+	want := []string{"20260930T235959Z/true", "20261001T000000Z/true", "20261001T000000Z-2/true", "20261001T000000Z-10/true", "20261001T000000Z-11/false"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestHistoricalConfigurationAndReadErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name, lines string
+		wantError   bool
+	}{
+		{"old config", `{"seq":1,"kind":"session.start","schema":1,"session":"old"}
+{"seq":2,"kind":"config.loaded","version":"v1","rev":"abc","config":{"durations":{"search_trial_s":"90s"},"guard":{"rotation":[{"regime":"R1"}]}}}
+`, false},
+		{"unknown kind", `{"seq":1,"kind":"session.start","schema":2}
+{"seq":2,"kind":"future.fact","trial":false,"outcome":42}
+`, false},
+		{"malformed complete line", `{"seq":1,"kind":"session.start","schema":2}
+not-json
+`, true},
+		{"missing kind", `{"seq":1,"schema":2}
+`, true},
+		{"newer schema", `{"seq":1,"kind":"session.start","schema":3}
+`, true},
+		{"bad sequence", `{"seq":1,"kind":"session.start","schema":2}
+{"seq":3,"kind":"future.fact"}
+`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "events.jsonl")
+			if err := os.WriteFile(path, []byte(tc.lines), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			s, err := ReadJournal(path)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("ReadJournal error = %v, want error %t", err, tc.wantError)
+			}
+			if tc.name == "old config" {
+				if diff := cmp.Diff([]journal.Build{{Schema: 1, Ruleset: 1}, {Version: "v1", Rev: "abc", Ruleset: 1}}, s.Builds); diff != "" {
+					t.Fatal(diff)
+				}
+			}
+		})
+	}
+}

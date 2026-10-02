@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -15,7 +16,7 @@ import (
 func reportRows(t *testing.T, events []journal.Event, section string) [][]string {
 	t.Helper()
 	var out bytes.Buffer
-	if err := report(&out, events, time.Time{}); err != nil {
+	if err := report(&out, facts.FromEvents(events), time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	for block := range strings.SplitSeq(out.String(), "\n\n") {
@@ -134,7 +135,7 @@ func TestHuntCommitmentRequiresRecordedCause(t *testing.T) {
 				events = append(events, journal.Event{Seq: 3, Boot: "a", Cause: []int{2}, Data: &journal.MarkJoint{Hunt: 1, Mark: 1}})
 			}
 			events = append(events, journal.Event{Seq: 4, Boot: "a", Cause: []int{tc.cause}, Data: &journal.TunerDecision{Phase: journal.PhaseSearch, Decision: journal.Backoff, Core: 0, FromOffset: -10, ToOffset: -9}})
-			if diff := cmp.Diff(tc.want, project(events).hunts[0].commitment); diff != "" {
+			if diff := cmp.Diff(tc.want, project(facts.FromEvents(events)).hunts[0].commitment); diff != "" {
 				t.Fatal(diff)
 			}
 		})

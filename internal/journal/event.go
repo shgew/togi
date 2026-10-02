@@ -143,6 +143,10 @@ type envelope struct {
 }
 
 func decode(line []byte) (Event, error) {
+	return decodeEvent(line, false)
+}
+
+func decodeEvent(line []byte, history bool) (Event, error) {
 	var env envelope
 	if err := json.Unmarshal(line, &env); err != nil {
 		return Event{}, err
@@ -150,7 +154,16 @@ func decode(line []byte) (Event, error) {
 	if env.Kind == "" {
 		return Event{}, errors.New("event has no kind")
 	}
-	p, err := decodePayload(env.Kind, line)
+	var p Payload
+	var err error
+	if history && env.Kind == KindConfigLoaded {
+		// Historical configurations changed shape; fact readers need only their build stamp.
+		var build Build
+		err = json.Unmarshal(line, &build)
+		p = &ConfigLoaded{Build: build}
+	} else {
+		p, err = decodePayload(env.Kind, line)
+	}
 	if err != nil {
 		return Event{}, err
 	}
