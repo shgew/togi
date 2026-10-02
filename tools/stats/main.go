@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/facts"
 )
 
 func main() {
@@ -43,19 +43,9 @@ func run(args []string, out, errOut io.Writer) error {
 	if path == "" {
 		path = filepath.Join(*dir, "events.jsonl")
 	}
-	events, err := readJournal(path)
+	session, err := facts.ReadJournal(path)
 	if err != nil {
 		return err
 	}
-	return report(out, events, since)
-}
-
-func readJournal(path string) ([]journal.Event, error) {
-	events, _, err := journal.ReadFile(path)
-	if err == nil {
-		return events, nil
-	}
-	// Carry's reader accepts older schemas and configuration layouts. Supplement
-	// the kinds carry deliberately ignores; the statistics use no old config fields.
-	return readOlder(path, err)
+	return report(out, session, since)
 }

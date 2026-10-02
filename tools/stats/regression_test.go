@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -15,7 +16,7 @@ import (
 func reportRows(t *testing.T, events []journal.Event, section string) [][]string {
 	t.Helper()
 	var out bytes.Buffer
-	if err := report(&out, events, time.Time{}); err != nil {
+	if err := report(&out, facts.FromEvents(events), time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	for block := range strings.SplitSeq(out.String(), "\n\n") {
@@ -134,7 +135,7 @@ func TestHuntCommitmentRequiresRecordedCause(t *testing.T) {
 				events = append(events, journal.Event{Seq: 3, Boot: "a", Cause: []int{2}, Data: &journal.MarkJoint{Hunt: 1, Mark: 1}})
 			}
 			events = append(events, journal.Event{Seq: 4, Boot: "a", Cause: []int{tc.cause}, Data: &journal.TunerDecision{Phase: journal.PhaseSearch, Decision: journal.Backoff, Core: 0, FromOffset: -10, ToOffset: -9}})
-			if diff := cmp.Diff(tc.want, project(events).hunts[0].commitment); diff != "" {
+			if diff := cmp.Diff(tc.want, project(facts.FromEvents(events)).hunts[0].commitment); diff != "" {
 				t.Fatal(diff)
 			}
 		})
@@ -167,6 +168,44 @@ func TestIdleCrashInvalidatesAllCoreR6PriorPasses(t *testing.T) {
 			}
 			rows := reportRows(t, events, "Prior evidence per hunt mask")
 			if diff := cmp.Diff(tc.want, rows[0][3]); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestSingleCarriedFailureDecisions(t *testing.T) {
+	at := time.Unix(100, 0)
+	for _, tc := range []struct {
+		name    string
+		payload journal.Payload
+		cause   []int
+		since   time.Time
+		want    int
+	}{
+		{"inferred failure with hunt context", &journal.HuntMask{Inferred: "failure"}, []int{5, 1}, time.Time{}, 1},
+		{"carried idle failure backoff", &journal.TunerDecision{Decision: journal.Backoff}, []int{2}, time.Time{}, 1},
+		{"repeated cause is one observation", &journal.HuntMask{Inferred: "failure"}, []int{1, 1}, time.Time{}, 1},
+		{"two carried failures", &journal.HuntMask{Inferred: "failure"}, []int{1, 2}, time.Time{}, 0},
+		{"carried and live failures", &journal.TunerDecision{Decision: journal.Backoff}, []int{1, 3}, time.Time{}, 0},
+		{"live failure only", &journal.TunerDecision{Decision: journal.Backoff}, []int{3}, time.Time{}, 0},
+		{"passing inference with context failure", &journal.HuntMask{Inferred: "pass"}, []int{1, 4, 5}, time.Time{}, 0},
+		{"hunt start context citation", &journal.HuntStart{}, []int{1}, time.Time{}, 0},
+		{"non-backoff decision", &journal.TunerDecision{Decision: journal.CheckEdge}, []int{1}, time.Time{}, 0},
+		{"carried pass is not a failure", &journal.HuntMask{Inferred: "failure"}, []int{4}, time.Time{}, 0},
+		{"decision before cutoff", &journal.HuntMask{Inferred: "failure"}, []int{1}, at.Add(time.Second), 0},
+		{"decision at cutoff uses earlier evidence", &journal.HuntMask{Inferred: "failure"}, []int{1}, at, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			events := []journal.Event{
+				{Seq: 1, Time: at.Add(-time.Hour), Data: &journal.TrialCarried{Outcome: journal.OutcomeFailure}},
+				{Seq: 2, Time: at.Add(-time.Hour), Data: &journal.FailureCarried{}},
+				{Seq: 3, Time: at.Add(-time.Hour), Data: &journal.Failure{}},
+				{Seq: 4, Time: at.Add(-time.Hour), Data: &journal.TrialCarried{Outcome: journal.OutcomePass}},
+				{Seq: 5, Time: at.Add(-time.Hour), Data: &journal.HuntStart{}},
+				{Seq: 6, Time: at, Data: tc.payload, Cause: tc.cause},
+			}
+			if diff := cmp.Diff(tc.want, singleCarriedFailureDecisions(events, tc.since)); diff != "" {
 				t.Fatal(diff)
 			}
 		})

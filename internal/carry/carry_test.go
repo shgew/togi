@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/journal"
@@ -144,7 +145,7 @@ func TestPrepareSeedsEdgesAndMarks(t *testing.T) {
 			{Core: 6, FailedMark: new(0), MarkSession: "X", MarkSeq: mark6, MarkSignal: machine.UnexpectedExit},
 		},
 	}
-	if diff := cmp.Diff(want, got); diff != "" {
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(Carry{})); diff != "" {
 		t.Fatalf("carry (-want +got):\n%s", diff)
 	}
 }
@@ -178,7 +179,7 @@ func TestPrepareBIOSChange(t *testing.T) {
 					{Core: 0, FailedMark: new(-30), MarkSession: "X", MarkSeq: mark, MarkSignal: machine.UnexpectedExit},
 				}}
 			}
-			if diff := cmp.Diff(want, got); diff != "" {
+			if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(Carry{})); diff != "" {
 				t.Fatalf("carry (-want +got):\n%s", diff)
 			}
 			_, err = os.Stat(filepath.Join(dir, "events.jsonl"))
@@ -210,10 +211,10 @@ func TestPrepareResumesInterruptedBIOSArchive(t *testing.T) {
 	want := &Carry{Sources: []journal.CarriedSource{src("X", 4)}, Context: &context, Cores: []journal.CarriedCore{
 		{Core: 0, FailedMark: new(-30), MarkSession: "X", MarkSeq: mark, MarkSignal: machine.UnexpectedExit},
 	}}
-	if diff := cmp.Diff(want, got); diff != "" {
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(Carry{})); diff != "" {
 		t.Fatalf("carry (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(got, prepare(t, dir, []defect.Entry{})); diff != "" {
+	if diff := cmp.Diff(got, prepare(t, dir, []defect.Entry{}), cmpopts.IgnoreUnexported(Carry{})); diff != "" {
 		t.Fatalf("resumed carry (-want +got):\n%s", diff)
 	}
 }
@@ -353,7 +354,7 @@ func TestPrepareChainsACarryAndWalksNoFurther(t *testing.T) {
 			if !reset {
 				want.Cores = []journal.CarriedCore{{Core: 5, FailedMark: new(-12), MarkSession: "A", MarkSeq: 7, MarkSignal: machine.Crash}}
 			}
-			if diff := cmp.Diff(want, got); diff != "" {
+			if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(Carry{})); diff != "" {
 				t.Fatalf("carry (-want +got):\n%s", diff)
 			}
 		})
@@ -443,7 +444,7 @@ func TestPrepareLifecycle(t *testing.T) {
 		t.Fatalf("archived journal changed: %v", err)
 	}
 
-	if diff := cmp.Diff(first, prepare(t, dir, []defect.Entry{})); diff != "" {
+	if diff := cmp.Diff(first, prepare(t, dir, []defect.Entry{}), cmpopts.IgnoreUnexported(Carry{})); diff != "" {
 		t.Fatalf("second Prepare (-first +second):\n%s", diff)
 	}
 

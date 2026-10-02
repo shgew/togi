@@ -242,7 +242,6 @@ func TestRoundTrip(t *testing.T) {
 		&GuardRotation{Rotation: 2, Event: RotationStart, Steps: []machine.Regime{machine.R1, machine.R6}},
 		&GuardRotation{Rotation: 2, Event: RotationEnd, Clean: true},
 		&GuardRotation{Rotation: 2, Event: RotationEnd, Reason: "the profile changed"},
-		&TierChange{From: TierNone, To: TierBronze, Reason: "r"},
 		&CommandReset{Core: new(7)},
 		&DeadEnd{Condition: DeadEndFailureAtZero, Core: new(7), Detail: "core 07 failed at CO 0", Action: "exit"},
 		&BootSavedEntry{Before: "togi", After: ""},

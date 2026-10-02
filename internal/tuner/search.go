@@ -101,11 +101,14 @@ func (s *State) perCore() (Action, bool) {
 		}
 		p := make([]int, len(s.cores))
 		p[s.index(c.id)] = c.offset
+		cause := []int{c.phaseSeq}
 		for j, r := range []machine.Regime{machine.R1, machine.R2} {
 			k := trialClass{regime: r, workload: c.checkWorkloads[j], cores: fmt.Sprint([]int{c.id}), duration: s.durations.SearchTrialS}
-			if s.passes(k, p, c.phaseSeq) < s.n {
+			seqs := s.passSeqs(k, p, c.phaseSeq, edgeEvidence)
+			if len(seqs) < s.n {
 				return s.searchTrial(c, r, c.checkWorkloads[j]), true
 			}
+			cause = s.citeCarried(cause, seqs[:s.n]...)
 		}
 		reason, done := s.done(c, s.offsets())
 		phase := journal.PhaseResident
@@ -114,7 +117,7 @@ func (s *State) perCore() (Action, bool) {
 		} else {
 			reason = "one count deeper reaches no mark"
 		}
-		return Action{Kind: Decide, Payload: &journal.CorePhase{Core: c.id, From: journal.PhaseSearch, To: phase, Offset: c.offset, Pass: new(c.offset), FailedMark: c.fail, Reason: fmt.Sprintf("edge %d passed %d starts of R1 %s and R2 %s; %s", c.offset, s.n, c.checkWorkloads[0], c.checkWorkloads[1], reason)}, Cause: []int{c.phaseSeq}}, true
+		return Action{Kind: Decide, Payload: &journal.CorePhase{Core: c.id, From: journal.PhaseSearch, To: phase, Offset: c.offset, Pass: new(c.offset), FailedMark: c.fail, Reason: fmt.Sprintf("edge %d passed %d starts of R1 %s and R2 %s%s; %s", c.offset, s.n, c.checkWorkloads[0], c.checkWorkloads[1], s.carriedReason(cause), reason)}, Cause: cause}, true
 	}
 	return Action{}, false
 }

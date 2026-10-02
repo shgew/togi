@@ -67,6 +67,20 @@ stats *args:
 bench *args:
     {{ dev }} go run ./tools/bench "$@"
 
+[group('run')]
+bench-baseline:
+    {{ dev }} go run ./tools/bench --split all --out tools/bench/baseline.jsonl
+
+# Regenerate privacy-safe real facts from a copied state directory
+[group('run')]
+facts state_dir:
+    {{ dev }} go run ./tools/facts "$1" tools/bench/facts/target.jsonl.gz
+
+# Fit the target-machine bootstrap ensemble from the committed evidence
+[group('run')]
+fit *args:
+    {{ dev }} go run ./tools/fit "$@"
+
 # Start the release workflow on main and follow it: once check passed on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]
 release:

@@ -352,7 +352,11 @@ func (p *trialReport) Signal(core int, signal machine.Signal, detail string) {
 		label = "backend stalled"
 	case machine.CorrectedMCE, machine.UncorrectedMCE, machine.Crash:
 	}
-	p.record(&journal.TrialProgress{Trial: p.tr.id, Signal: signal, Core: new(core), Detail: fmt.Sprintf("core %02d %s: %s", core, label, detail)})
+	progress := &journal.TrialProgress{Trial: p.tr.id, Signal: signal, Detail: fmt.Sprintf("core %02d %s: %s", core, label, detail)}
+	if signal != machine.CorrectedMCE && signal != machine.UncorrectedMCE {
+		progress.Core = new(core)
+	}
+	p.record(progress)
 }
 
 func (p *trialReport) Sample(s machine.Sample) {

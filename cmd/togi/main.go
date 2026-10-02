@@ -42,11 +42,10 @@ type command struct {
 }
 
 var commands = []command{
-	{name: "cert", summary: "Render the certificate", run: runCert},
 	{name: "events", summary: "Render the journal", run: runEvents},
 	{name: "reset", summary: "Reset one core or archive the session", run: runReset},
 	{name: "run", summary: "Start or resume the session in the foreground", run: runRun},
-	{name: "status", summary: "Show core marks, hunt or refine activity, tier and exposure", run: runStatus},
+	{name: "status", summary: "Show core marks, activity and qualified rotations", run: runStatus},
 	{name: "watch", summary: "Show the session as a live dashboard", run: runWatch},
 }
 
@@ -138,7 +137,7 @@ func usage(w io.Writer) {
 	b.WriteString("Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs.\n\n")
 	b.WriteString("Examples:\n")
 	b.WriteString("  sudo togi run --rotations 1   Stop after search and one qualifying rotation\n")
-	b.WriteString("  togi status                   Show core marks, activity, tier and exposure\n\n")
+	b.WriteString("  togi status                   Show core marks, activity and qualified rotations\n\n")
 	b.WriteString("Commands:\n")
 	sorted := slices.SortedFunc(slices.Values(commands), func(a, b command) int { return strings.Compare(a.name, b.name) })
 	for _, c := range sorted {

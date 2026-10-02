@@ -30,13 +30,13 @@ func TestEvidenceValidity(t *testing.T) {
 			h.decide(h.next())
 		}
 	}
-	if got := h.s.passes(k, []int{-19, -10}, 0); got != 4 {
+	if got := h.s.passes(k, []int{-19, -10}, 0, allEvidence); got != 4 {
 		t.Errorf("valid passes at shallow profile = %d, want 4", got)
 	}
-	if got := h.s.passes(k, []int{-21, -10}, 0); got != 1 {
+	if got := h.s.passes(k, []int{-21, -10}, 0, allEvidence); got != 1 {
 		t.Errorf("deep profile passes after invalidation = %d, want 1", got)
 	}
-	if got := h.s.passes(k, []int{-20, -11}, 0); got != 1 {
+	if got := h.s.passes(k, []int{-20, -11}, 0, allEvidence); got != 1 {
 		t.Errorf("mask deep only on second core = %d, want 1", got)
 	}
 	if !h.s.fails(k, []int{-20, -10}, seqs[1]) {

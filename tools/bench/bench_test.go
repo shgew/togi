@@ -29,8 +29,6 @@ func TestMetrics(t *testing.T) {
 	add(0.5, &journal.TrialEnd{Trial: "2", DurationS: 30, Outcome: journal.OutcomeFailure})
 	add(1, &journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true})
 	add(1.1, &journal.GuardRotation{Rotation: 2, Event: journal.RotationEnd, Clean: true})
-	add(1.2, &journal.TierChange{To: journal.TierBronze})
-	add(1.3, &journal.TierChange{To: journal.TierBronze})
 	add(1.4, &journal.HuntStart{Hunt: 1, Anchor: []int{-10, -11}, Candidates: []int{0, 1}})
 	add(1.5, &journal.MarkJoint{Mark: 1, Members: []journal.JointMember{{Core: 0, Offset: -12}, {Core: 1, Offset: -12}}})
 	add(2, &journal.ProfileApplied{Offsets: []int{0, 0}, Condition: machine.Masked})
@@ -43,12 +41,12 @@ func TestMetrics(t *testing.T) {
 	for _, regime := range machine.Regimes {
 		hazards[regime] = 0
 	}
-	want := result{SimHours: 2, FirstCleanRotationH: new(1.0), BronzeH: new(1.2), Crashes: 1, Trials: 2, TrialHours: 120.0 / 3600, Hunts: 1, JointMarks: 1, FinalProfile: []int{-10, -11}, Depth: -21, HazardPerH: hazards}
+	want := result{SimHours: 2, FirstCleanRotationH: new(1.0), Crashes: 1, Trials: 2, TrialHours: 120.0 / 3600, Hunts: 1, JointMarks: 1, FinalProfile: []int{-10, -11}, Depth: -21, HazardPerH: hazards}
 	if diff := cmp.Diff(want, got, approx); diff != "" {
 		t.Fatalf("metrics (-want +got):\n%s", diff)
 	}
 	got = metrics(events[:6], m, 2)
-	if diff := cmp.Diff([]*float64{nil, nil}, []*float64{got.FirstCleanRotationH, got.BronzeH}); diff != "" {
+	if diff := cmp.Diff((*float64)(nil), got.FirstCleanRotationH); diff != "" {
 		t.Fatal(diff)
 	}
 }
@@ -90,7 +88,7 @@ func TestVerdict(t *testing.T) {
 		})
 	}
 	a, b := base, base
-	a.Scenario, b.Scenario = "shared-rail", "shared-rail"
+	a.Scenario, b.Scenario = "target", "target"
 	a.SimHours = 11
 	c := compare([]pair{{a, b}})
 	if diff := cmp.Diff([4]int{0, 0, 0, 1}, [4]int{c.V1, c.V2, c.V3, c.V4}); diff != "" {
@@ -121,7 +119,7 @@ func TestScenarioWeightedBootstrap(t *testing.T) {
 	for seed := range 24 {
 		pairs = append(pairs, pair{result{Scenario: "default", Seed: uint64(seed), Status: "concluded", SimHours: 5}, result{Scenario: "default", Seed: uint64(seed), Status: "concluded", SimHours: 10}})
 	}
-	pairs = append(pairs, pair{result{Scenario: "shared-rail", Status: "concluded", SimHours: 20}, result{Scenario: "shared-rail", Status: "concluded", SimHours: 10}})
+	pairs = append(pairs, pair{result{Scenario: "target", Status: "concluded", SimHours: 20}, result{Scenario: "target", Status: "concluded", SimHours: 10}})
 	c := compare(pairs)
 	if diff := cmp.Diff([]float64{1, 1, 1}, []float64{c.Ratio, c.Lo, c.Hi}, approx); diff != "" {
 		t.Fatal(diff)

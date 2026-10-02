@@ -35,7 +35,7 @@ func incompatibleFixture(t *testing.T, field string) (string, []byte) {
 }
 
 func TestReadCommandsHandleIncompatibleJournal(t *testing.T) {
-	for _, command := range []string{"status", "cert", "events"} {
+	for _, command := range []string{"status", "events"} {
 		t.Run(command+" warns ruleset", func(t *testing.T) {
 			dir, _ := incompatibleFixture(t, "ruleset")
 			var stdout, stderr bytes.Buffer
@@ -63,7 +63,7 @@ func TestReadCommandsHandleIncompatibleJournal(t *testing.T) {
 
 func TestReadCommandsStyleSchemaRefusalInJournal(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
-	for _, command := range []string{"status", "cert", "events"} {
+	for _, command := range []string{"status", "events"} {
 		t.Run(command, func(t *testing.T) {
 			dir, original := incompatibleFixture(t, "schema")
 			stderr, err := os.CreateTemp(t.TempDir(), "refusal")
@@ -266,6 +266,65 @@ func TestResetAllCompletesRecordedOldSchemaArchive(t *testing.T) {
 	}
 }
 
+func TestUnknownKindsBeforeRunConfigAndReset(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		ruleset int
+		schema  int
+	}{
+		{"older ruleset", session.Build().Ruleset - 1, journal.Schema},
+		{"older schema", session.Build().Ruleset, journal.Schema - 1},
+		{"current build", session.Build().Ruleset, journal.Schema},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "events.jsonl")
+			original := fmt.Appendf(nil, "{\"seq\":1,\"time\":\"2026-09-01T00:00:00Z\",\"boot\":\"old\",\"kind\":\"session.start\",\"session\":\"20260901T000000Z\",\"ruleset\":%d,\"schema\":%d}\n{\"seq\":2,\"time\":\"2026-09-01T00:00:01Z\",\"boot\":\"old\",\"kind\":\"retired.fact\",\"msg\":\"unknown fact\"}\n", tc.ruleset, tc.schema)
+			if err := os.WriteFile(path, original, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			configPath := filepath.Join(dir, "invalid.toml")
+			if err := os.WriteFile(configPath, []byte("removed_key = true\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			wantCode := exitUsage
+			wantError := "removed_key"
+			if tc.ruleset == session.Build().Ruleset && tc.schema == journal.Schema {
+				wantCode = exitIncompatible
+				wantError = `unknown kind "retired.fact"`
+			}
+			if code := testCLI(t, []string{"--state-dir", dir, "--config", configPath, "run"}, &stdout, &stderr); code != wantCode || !strings.Contains(stderr.String(), wantError) {
+				t.Fatalf("run exit %d, want %d; stderr %q", code, wantCode, stderr.String())
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(original, after) {
+				t.Fatalf("run refusal changed journal: %v", err)
+			}
+			stdout.Reset()
+			stderr.Reset()
+			code := testCLI(t, []string{"--state-dir", dir, "reset", "--all"}, &stdout, &stderr)
+			if tc.schema != journal.Schema {
+				if code != exitOK {
+					t.Fatalf("schema reset exit %d: %s", code, &stderr)
+				}
+				archived, err := os.ReadFile(filepath.Join(dir, "archive", "20260901T000000Z.jsonl"))
+				if err != nil || !bytes.Equal(original, archived) {
+					t.Fatalf("schema reset changed archive: %v", err)
+				}
+			} else {
+				if code != exitError || !strings.Contains(stderr.String(), `unknown kind "retired.fact"`) {
+					t.Fatalf("same-schema reset exit %d: %s", code, &stderr)
+				}
+				after, err := os.ReadFile(path)
+				if err != nil || !bytes.Equal(original, after) {
+					t.Fatalf("same-schema reset changed journal: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestCommandsWithFutureKind(t *testing.T) {
 	fixture, err := os.ReadFile("testdata/events.jsonl")
 	if err != nil {
@@ -276,12 +335,12 @@ func TestCommandsWithFutureKind(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := append(bytes.Clone(fixture), future...)
+	data = bytes.Replace(data, []byte(`"ruleset":3`), fmt.Appendf(nil, `"ruleset":%d`, session.Build().Ruleset), 1)
 	for _, tc := range []struct {
 		args []string
 		code int
 	}{
 		{[]string{"status"}, exitOK},
-		{[]string{"cert"}, exitOK},
 		{[]string{"events"}, exitOK},
 		{[]string{"events", "--json"}, exitOK},
 		{[]string{"watch", "--width", "120", "--height", "33"}, exitOK},

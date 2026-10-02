@@ -39,7 +39,9 @@ const (
 	KindTrialSignal     Kind = "trial.signal"
 	KindTrialSample     Kind = "trial.sample"
 	KindTrialEnd        Kind = "trial.end"
+	KindTrialCarried    Kind = "trial.carried"
 	KindFailure         Kind = "failure"
+	KindFailureCarried  Kind = "failure.carried"
 	KindMCE             Kind = "mce"
 	KindCrashDetected   Kind = "crash.detected"
 	KindTunerDecision   Kind = "tuner.decision"
@@ -54,7 +56,6 @@ const (
 	KindRefineRound     Kind = "refine.round"
 	KindTunerWarning    Kind = "tuner.warning"
 	KindBackendRetry    Kind = "backend.retry"
-	KindTierChange      Kind = "tier.change"
 	KindCommandReset    Kind = "command.reset"
 	KindDefectFound     Kind = "defect.found"
 	KindDefectAnswered  Kind = "defect.answered"
@@ -143,6 +144,10 @@ type envelope struct {
 }
 
 func decode(line []byte) (Event, error) {
+	return decodeEvent(line, false)
+}
+
+func decodeEvent(line []byte, history bool) (Event, error) {
 	var env envelope
 	if err := json.Unmarshal(line, &env); err != nil {
 		return Event{}, err
@@ -150,7 +155,16 @@ func decode(line []byte) (Event, error) {
 	if env.Kind == "" {
 		return Event{}, errors.New("event has no kind")
 	}
-	p, err := decodePayload(env.Kind, line)
+	var p Payload
+	var err error
+	if history && env.Kind == KindConfigLoaded {
+		// Historical configurations changed shape; fact readers need only their build stamp.
+		var build Build
+		err = json.Unmarshal(line, &build)
+		p = &ConfigLoaded{Build: build}
+	} else {
+		p, err = decodePayload(env.Kind, line)
+	}
 	if err != nil {
 		return Event{}, err
 	}
@@ -190,7 +204,9 @@ var payloadConstructors = map[Kind]func() Payload{
 	KindTrialSignal:     func() Payload { return &TrialSignal{} },
 	KindTrialSample:     func() Payload { return &TrialSample{} },
 	KindTrialEnd:        func() Payload { return &TrialEnd{} },
+	KindTrialCarried:    func() Payload { return &TrialCarried{} },
 	KindFailure:         func() Payload { return &Failure{} },
+	KindFailureCarried:  func() Payload { return &FailureCarried{} },
 	KindMCE:             func() Payload { return &MCE{} },
 	KindCrashDetected:   func() Payload { return &CrashDetected{} },
 	KindTunerDecision:   func() Payload { return &TunerDecision{} },
@@ -205,7 +221,6 @@ var payloadConstructors = map[Kind]func() Payload{
 	KindRefineRound:     func() Payload { return &RefineRound{} },
 	KindTunerWarning:    func() Payload { return &TunerWarning{} },
 	KindBackendRetry:    func() Payload { return &BackendRetry{} },
-	KindTierChange:      func() Payload { return &TierChange{} },
 	KindCommandReset:    func() Payload { return &CommandReset{} },
 	KindDefectFound:     func() Payload { return &DefectFound{} },
 	KindDefectAnswered:  func() Payload { return &DefectAnswered{} },

@@ -136,7 +136,8 @@ rotation  regime  loaded cores  outcome  trials
 0002      R7      02,03         pass     12
 
 Evidence quality
-warning  count
+warning                                        count
+decisions resting on a single carried failure  0
 
 Failures after prior passes
 trial class  failures with prior passes

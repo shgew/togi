@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -74,7 +75,7 @@ func TestPrepareRealArchiveChain(t *testing.T) {
 			{Core: 15, Edge: new(-50), EdgeSession: "20260927T221954Z", EdgeSeq: 510},
 		},
 	}
-	if diff := cmp.Diff(want, got); diff != "" {
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(Carry{})); diff != "" {
 		t.Fatalf("real archive carry (-want +got):\n%s", diff)
 	}
 }
