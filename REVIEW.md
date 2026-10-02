@@ -14,6 +14,7 @@ These criteria apply to every reviewer. Report concrete defects with their conse
 - **Contracts:** specs describe current behavior, and the linked issue's Acceptance is met for this pull request's scope. Docs may land in the lowest layer of a stack ahead of their code. Flag statements that are wrong or contradict code or other docs, not ones this layer does not implement yet.
 - **Breaking changes:** a value change to `journal.Schema` or `tuner.Ruleset` carries a `[BREAKING]` title, `breaking` label and `**BREAKING**` changelog line. Nothing else carries these markers.
 - **Tests:** tests pin consumer-visible behavior, boundaries, invariants and transitions. A bug fix has a test that fails before the fix and passes after it, or states why that proof is impractical and provides a scoped reproduction.
+- **Untested changed code:** the coordinator gives each reviewer the blocks `just cover` reports in its Go files. A reported block inside the diff is a finding only when a consumer could see it break unnoticed: behavior, a boundary, an error the operator sees. Defensive paths that cannot occur are not findings, and neither is a missing test that would only reach a line. Code that only the VM checks, the `hardware` tests or the target machine reach shows as uncovered; judge it as such.
 
 Style, wording, naming taste and optional refactors are not findings. Handle findings by the rule in `AGENTS.md`.
 
@@ -32,14 +33,14 @@ The author posts one robotogi comment for each reviewed head commit, after fix c
 
 Exception: when a version-1 record's historical base cannot be recovered, the next record links it but covers the whole current layer conservatively, and states why a minimal delta could not be established. It may repeat files and reviewers for that coverage; prior findings are still inherited through the chain.
 
-1. Header: `## Review record`, reviewed full commit SHA, base SHA, and for a later record the previous record's URL and the reviewed range. Then files covered, excluded files with reasons and reviewers (names and agent models when available), all limited to this record's diff.
+1. Header: `## Review record`, reviewed full commit SHA, base SHA, and for a later record the previous record's URL and the reviewed range. Then files covered, excluded files with reasons and reviewers (names and agent models when available), all limited to this record's diff. When the diff changes Go code, one coverage line: how many blocks `just cover` reported inside the diff and how they were judged.
 2. Table: `Source | Priority | Finding | Outcome`. Include every agent finding from this record's rounds, and any earlier finding whose outcome changed. Outcomes are `fixed in <full sha>`, `rejected: <reason>` or `deferred: #<issue number>`. With no findings, leave the table empty and say so outside it.
 3. Verdict: `success` only when every finding in the chain has an outcome and no P0/P1 remains open. Deferring a P0/P1 does not close it for this gate. Otherwise use `blocked` and do not post a successful check.
 4. End with exactly one hidden block: `<!-- togi-review {json} -->`. Serialize compact JSON on one line; escape `<`, `>` and `&` as Unicode escapes so finding text cannot end the HTML comment.
 
-JSON version 2 has these fields, all required:
+JSON version 3 has these fields, all required:
 
-- `version`: integer `2`.
+- `version`: integer `3`.
 - `repository`: `owner/repo`.
 - `pull_request`: integer pull request number.
 - `head_sha`: full reviewed commit SHA.
@@ -49,6 +50,7 @@ JSON version 2 has these fields, all required:
 - `files`: array of paths covered by this record.
 - `reviewers`: array of objects with `name` (string), `model` (string or null) and `files` (covered paths).
 - `findings`: this record's findings, as in the table: objects with `source` (reviewer name), `priority` (`P0` through `P3`), `finding` (description), `location` (path and line, or null), `url` (source comment URL or null), and `outcome` (object). An outcome has exactly one of these forms: `{"status":"fixed","sha":"<full sha>"}`, `{"status":"rejected","reason":"<reason>"}`, `{"status":"deferred","issue":123}`.
+- `coverage`: `null` when this record's diff changes no Go code; otherwise an object with `uncovered` (integer: blocks `just cover` reported inside this record's diff) and `judgment` (string: how they were judged, naming any that became findings).
 - `verdict`: `success` or `blocked`.
 
-Human text and JSON carry the same data. Version 1 lacked `base_sha` and `previous`; read a version-1 record as a first record. A successful check named `review` from robotogi points to this record on exactly `head_sha`. A pure rebase can carry it forward only after `git range-diff` proves the layer's own changes unchanged; the new head gets a new check linking the earlier record, not a new record claiming a fresh review.
+Human text and JSON carry the same data. Version 1 lacked `base_sha` and `previous`; read a version-1 record as a first record. Version 2 lacked `coverage`; read it as unknown. A successful check named `review` from robotogi points to this record on exactly `head_sha`. A pure rebase can carry it forward only after `git range-diff` proves the layer's own changes unchanged; the new head gets a new check linking the earlier record, not a new record claiming a fresh review.

@@ -33,3 +33,4 @@ A new ADR adds its line here and updates the status of any ADR it supersedes.
 - [0027: Carry trial facts across ruleset changes](0027-carry-trial-facts.md) — **in force**.
 - [0028: Report qualified rotations instead of durability tiers](0028-remove-tiers.md) — **in force**.
 - [0029: Bench verdicts rest on fitted machines](0029-bench-verdicts-rest-on-fitted-machines.md) — **in force**.
+- [0030: Coverage is a review signal, not a target](0030-coverage-is-a-review-signal.md) — **in force**.

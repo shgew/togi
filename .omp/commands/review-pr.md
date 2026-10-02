@@ -21,6 +21,8 @@ For each assigned PR, fetch its title, body, head SHA, base SHA and changed file
 
 List changed files and their +/- counts. Exclude `go.sum`, `flake.lock`, `**/testdata/**` and generated/binary files. List each exclusion and reason separately; records distinguish covered paths from exclusions. Tests not excluded stay with their implementation.
 
+When the included files change Go code, run `just cover <base>` ONCE in the worktree at the frozen head, with the record's base: the PR's base SHA for a first record, the previous record's `head_sha` for a later one. Each reviewer gets the reported blocks in its files with its hunks and judges them by `REVIEW.md`; reviewers do not rerun it. Collect from each reviewer how many reported blocks fell inside its hunks and how it judged them, for the record's coverage line. Each later frozen head of a fix round that changes Go code gets one rerun with the same base.
+
 Use omp's bundled `/review` sizing on INCLUDED files: let L be added plus removed lines and F the file count. No included files means no reviewer tasks and explicit exclusion evidence, not an invented review. Otherwise use one reviewer if L < 100 or F <= 2; min(2, F) for L < 500; min(4, ceil(F / 3)) for L < 2000; min(8, ceil(F / 2)) for L < 5000; and min(16, F) beyond that.
 
 Group by locality: same directory/module, related functionality, tests beside implementation. Spawn ALL `agent: "reviewer"` tasks for the PR in ONE parallel task call. Each gets only its assigned files and their frozen hunks, the PR title/body, linked issue Acceptance and the root `REVIEW.md`. Reviewers must use those hunks, not rerun `git diff` or fetch a newer PR diff. They may read surrounding context at the frozen SHA. Collect findings, priorities, files covered and verdicts from every reviewer. Keep each reviewer's agent id and files: later rounds send it the changes to those files. Do not define a project agent named `reviewer`, which replaces the bundled reviewer whole.
@@ -33,7 +35,7 @@ After fixes, freeze the new head and fix diff once, with the same exclusions and
 
 ## Coordinator: record and check
 
-Fetch the head again. If it changed outside reviewed fixes, review the new changes before proceeding. Prepare the record exactly as defined in `REVIEW.md`, with human text and version-2 JSON carrying the same data. A first record covers the latest reviewed SHA, all covered files, exclusions and all findings across review rounds; a later record covers only its delta. Post ONE record for that reviewed head with `just bot pr comment <N> --body-file <record-file>`; keep its returned URL. Reuse an existing record for the head rather than posting another.
+Fetch the head again. If it changed outside reviewed fixes, review the new changes before proceeding. Prepare the record exactly as defined in `REVIEW.md`, with human text and JSON carrying the same data. A first record covers the latest reviewed SHA, all covered files, exclusions and all findings across review rounds; a later record covers only its delta. Post ONE record for that reviewed head with `just bot pr comment <N> --body-file <record-file>`; keep its returned URL. Reuse an existing record for the head rather than posting another.
 
 Only when every finding has an outcome and no P0/P1 is open, prepare this payload with the reviewed SHA and record URL:
 
