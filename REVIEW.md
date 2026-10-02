@@ -27,23 +27,25 @@ When the same kind of finding occurs in two pull requests, add a lesson in the p
 
 ## Review record
 
-The author posts one robotogi comment for each reviewed head commit, after fix commits have also been reviewed. Nothing per pull request is committed to the repository. Use this order:
+The author posts one robotogi comment for each reviewed head commit, after fix commits have also been reviewed. A pull request's first record covers its whole diff. Each later record covers only what changed since the previous record, as `.omp/commands/review-pr.md` defines that delta, and links it; it does not repeat earlier files, reviewers or findings. A pull request's review is the chain of its records. Nothing per pull request is committed to the repository. Use this order:
 
-1. Header: `## Review record`, reviewed full commit SHA, files covered, excluded files with reasons and reviewers (names and agent models when available).
-2. Table: `Source | Priority | Finding | Outcome`. Include every agent finding. Outcomes are `fixed in <full sha>`, `rejected: <reason>` or `deferred: #<issue number>`. With no findings, leave the table empty and say so outside it.
-3. Verdict: `success` only when every finding has an outcome and no P0/P1 remains open. Deferring a P0/P1 does not close it for this gate. Otherwise use `blocked` and do not post a successful check.
+1. Header: `## Review record`, reviewed full commit SHA, base SHA, and for a later record the previous record's URL and the reviewed range. Then files covered, excluded files with reasons and reviewers (names and agent models when available), all limited to this record's diff.
+2. Table: `Source | Priority | Finding | Outcome`. Include every agent finding from this record's rounds, and any earlier finding whose outcome changed. Outcomes are `fixed in <full sha>`, `rejected: <reason>` or `deferred: #<issue number>`. With no findings, leave the table empty and say so outside it.
+3. Verdict: `success` only when every finding in the chain has an outcome and no P0/P1 remains open. Deferring a P0/P1 does not close it for this gate. Otherwise use `blocked` and do not post a successful check.
 4. End with exactly one hidden block: `<!-- togi-review {json} -->`. Serialize compact JSON on one line; escape `<`, `>` and `&` as Unicode escapes so finding text cannot end the HTML comment.
 
-JSON version 1 has these fields, all required:
+JSON version 2 has these fields, all required:
 
-- `version`: integer `1`.
+- `version`: integer `2`.
 - `repository`: `owner/repo`.
 - `pull_request`: integer pull request number.
 - `head_sha`: full reviewed commit SHA.
+- `base_sha`: full SHA of the pull request's base when `head_sha` was reviewed.
+- `previous`: `null` in a first record; otherwise an object with the previous record's `url` and `head_sha`.
 - `excluded_files`: array of objects with `path` (repository-relative path) and `reason` (string). Empty when all changed files were covered.
-- `files`: array of covered repository-relative paths.
+- `files`: array of paths covered by this record.
 - `reviewers`: array of objects with `name` (string), `model` (string or null) and `files` (covered paths).
-- `findings`: array of objects with `source` (reviewer name), `priority` (`P0` through `P3`), `finding` (description), `location` (path and line, or null), `url` (source comment URL or null), and `outcome` (object). An outcome has exactly one of these forms: `{"status":"fixed","sha":"<full sha>"}`, `{"status":"rejected","reason":"<reason>"}`, `{"status":"deferred","issue":123}`.
+- `findings`: this record's findings, as in the table: objects with `source` (reviewer name), `priority` (`P0` through `P3`), `finding` (description), `location` (path and line, or null), `url` (source comment URL or null), and `outcome` (object). An outcome has exactly one of these forms: `{"status":"fixed","sha":"<full sha>"}`, `{"status":"rejected","reason":"<reason>"}`, `{"status":"deferred","issue":123}`.
 - `verdict`: `success` or `blocked`.
 
-Human text and JSON carry the same data. A successful check named `review` from robotogi points to this record on exactly `head_sha`. A pure rebase can carry it forward only after `git range-diff` proves the layer's own changes unchanged; the new head gets a new check linking the earlier record, not a new record claiming a fresh review.
+Human text and JSON carry the same data. Version 1 lacked `base_sha` and `previous`; read a version-1 record as a first record. A successful check named `review` from robotogi points to this record on exactly `head_sha`. A pure rebase can carry it forward only after `git range-diff` proves the layer's own changes unchanged; the new head gets a new check linking the earlier record, not a new record claiming a fresh review.
