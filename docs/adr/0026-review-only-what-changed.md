@@ -4,9 +4,9 @@
 
 ## Decision
 
-A pull request's first record covers its whole diff. After that, only changes are reviewed: fix commits, later pushes and the layer's own patches that a restack changed, found with `git range-diff` against the previous record's base and head. A pure rebase still carries the record forward with a check and no comment.
+A pull request's first record covers its whole diff. After that, only changes are reviewed: fix commits, later pushes, removed patches' effects, and the layer's own patches that a restack changed, found with `git range-diff` against the previous record's base and head. A pure rebase still carries the record forward with a check and no comment. If a version-1 record's historical base cannot be recovered, review the whole current layer conservatively, link the previous record and explain the broader coverage; missing evidence never permits carry-forward.
 
-Changes go back to the agents that reviewed them. `/review-pr` sends a changed pull request or stack to the coordinator that reviewed it in the same session, with `write agent://<id>`, instead of spawning another. The coordinator sends each changed hunk to the reviewer that covered its file and spawns reviewers only for files none covered, or when the earlier reviewers are gone, such as in a new session; new reviewers also get the previous record.
+Changes go back to resumable agents that reviewed them. `/review-pr` sends a changed pull request or stack to the coordinator that reviewed it in the same session, with `write agent://<id>`, instead of spawning another. Idle and parked agents can resume; aborted agents are terminal even if registered. The coordinator sends each changed hunk to the resumable reviewer that covered its file and spawns reviewers only for files none covered, or when the earlier reviewers are missing or terminal; new reviewers also get the previous record.
 
 Each later record covers only its delta: the reviewed range, its files, reviewers and findings, and earlier findings whose outcome changed. It links the previous record, so a pull request's review is the chain of its records. JSON version 2 adds `base_sha` and `previous` so tools can follow the chain; a version-1 record reads as a first record. The `review` check on each head links that head's record, and success still requires every finding in the chain to have an outcome and no open P0/P1.
 
@@ -14,7 +14,7 @@ Each later record covers only its delta: the reviewed range, its files, reviewer
 
 - **Restate the whole review on every head:** rejected. It is what #275 and #276 show: long records that bury the change.
 - **Edit the previous record in place:** rejected. The check on the earlier head links that record, which must keep describing that head.
-- **Spawn fresh reviewers for each delta:** rejected while the earlier ones exist. They hold the surrounding code and their own findings; a fresh agent reloads both.
+- **Spawn fresh reviewers for each delta:** rejected while the earlier ones can resume. They hold the surrounding code and their own findings; a fresh agent reloads both.
 
 ## Consequences
 

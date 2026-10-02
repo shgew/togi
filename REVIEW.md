@@ -29,6 +29,8 @@ When the same kind of finding occurs in two pull requests, add a lesson in the p
 
 The author posts one robotogi comment for each reviewed head commit, after fix commits have also been reviewed. A pull request's first record covers its whole diff. Each later record covers only what changed since the previous record, as `.omp/commands/review-pr.md` defines that delta, and links it; it does not repeat earlier files, reviewers or findings. A pull request's review is the chain of its records. Nothing per pull request is committed to the repository. Use this order:
 
+Exception: when a version-1 record's historical base cannot be recovered, the next record links it but covers the whole current layer conservatively, and states why a minimal delta could not be established. It may repeat files and reviewers for that coverage; prior findings are still inherited through the chain.
+
 1. Header: `## Review record`, reviewed full commit SHA, base SHA, and for a later record the previous record's URL and the reviewed range. Then files covered, excluded files with reasons and reviewers (names and agent models when available), all limited to this record's diff.
 2. Table: `Source | Priority | Finding | Outcome`. Include every agent finding from this record's rounds, and any earlier finding whose outcome changed. Outcomes are `fixed in <full sha>`, `rejected: <reason>` or `deferred: #<issue number>`. With no findings, leave the table empty and say so outside it.
 3. Verdict: `success` only when every finding in the chain has an outcome and no P0/P1 remains open. Deferring a P0/P1 does not close it for this gate. Otherwise use `blocked` and do not post a successful check.
