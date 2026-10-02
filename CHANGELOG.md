@@ -8,6 +8,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 - A ruleset, schema or evidence-epoch transition records eligible trial facts from earlier same-BIOS sessions as `trial.carried`/`failure.carried` and stamps `session.start` with the evidence epoch; newer evidence epochs are refused, older epochs retain failures but drop incompatible passes. Carry waits for a validated current BIOS context, respects every `reset --all` boundary even after an interrupted reset, preserves edge and failed-mark provenance across interrupted evidence-epoch transitions, resumes incomplete fact prefixes and re-checks copied failures against newly known defects in their original journals ([#281]).
 - The bench target scenario replays matching same-BIOS real trial outcomes over the nine fitted machines, reports the real-answer share, and preserves recorded crash exposure and uncorrected-machine-check signals through simulated reboot; `just bench-baseline` records both splits ([#290]).
+- Per-trial samples record each loaded core's worker CPU time; failed multi-core trials outside the deliberately suspended R6 regime report the first worker that stopped advancing when persisted samples distinguish it, as evidence without changing tuning decisions. Simulated samples stream without retaining a duration-sized series ([#275]).
+- Per-trial samples optionally record all 16 cores' power, voltage requests, temperatures and C-state residency from SMU table version `0x620205` at the existing 1 Hz tick; bounded single-flight reads never delay supervision, omit overdue lanes and require core IDs 0–15 in CCD/slot order. Each run records decoding availability without making unsupported tables a failure ([#276]).
 
 ### Changed
 
@@ -382,6 +384,8 @@ All notable changes to togi are documented in this file. The format is based on 
 [#269]: https://github.com/shgew/togi/pull/269
 [#270]: https://github.com/shgew/togi/pull/270
 [#273]: https://github.com/shgew/togi/pull/273
+[#275]: https://github.com/shgew/togi/pull/275
+[#276]: https://github.com/shgew/togi/pull/276
 [#278]: https://github.com/shgew/togi/pull/278
 [#279]: https://github.com/shgew/togi/pull/279
 [#281]: https://github.com/shgew/togi/pull/281

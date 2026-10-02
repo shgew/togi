@@ -37,8 +37,6 @@ type running struct {
 
 func (trials) Passed(string) error { return nil }
 
-func (trials) LastSample(string) *machine.TrialConditions { return nil }
-
 func (trials) Sweep(ctx context.Context) (string, error) {
 	return "simulated machine has no leftover trial scopes", ctx.Err()
 }
@@ -85,7 +83,7 @@ func (t trials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Runn
 
 func (r *running) Started() machine.Started { return r.started }
 
-func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Result, error) {
+func (r *running) Wait(ctx context.Context, report machine.Reporter) (result machine.Result, err error) {
 	m := r.m
 	if m.crashed || r.boot != m.boot {
 		return machine.Result{}, machine.ErrCrashed
@@ -95,6 +93,8 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 	}
 	spec := r.spec
 	start := m.now
+	stallCore := -1
+	defer func() { err = errors.Join(err, r.sampleConditions(m.now.Sub(start), stallCore)) }()
 	failCore, failAt, forcedSignal := -1, spec.Duration, machine.Signal("")
 	idleFailure := false
 	var jointCrash *Joint
@@ -169,6 +169,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 		signal = script.Signal
 	}
 	if scripted && script.ThenCrash {
+		stallCore = failCore
 		m.now = start.Add(failAt)
 		if report != nil && signal != machine.Crash {
 			report.Signal(failCore, signal, fmt.Sprintf("simulated %s on core %d", signal, failCore))
@@ -199,6 +200,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 		r.progress(report, res)
 		return res, nil
 	case machine.Crash:
+		stallCore = failCore
 		m.now = start.Add(failAt)
 		switch {
 		case replayed:

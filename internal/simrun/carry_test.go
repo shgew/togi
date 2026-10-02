@@ -47,6 +47,9 @@ func ruleset3Session(t *testing.T) (dir, id string) {
 		}
 		ruleset3Files = make(map[string][]byte, len(entries))
 		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
 			data, err := os.ReadFile(filepath.Join(src, e.Name()))
 			if err != nil {
 				ruleset3Err = err
@@ -411,6 +414,9 @@ func TestBIOSArchiveInterruptedBeforeMoveResumesCarry(t *testing.T) {
 		t.Fatal(archiveErr)
 	}
 	if err := os.Rename(filepath.Join(dir, rel), filepath.Join(dir, "events.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(dir, "archive", id+"-trials"), filepath.Join(dir, "trials")); err != nil {
 		t.Fatal(err)
 	}
 	in.Until = func(e journal.Event) bool { return e.Kind == journal.KindSessionCarried }

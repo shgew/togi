@@ -25,6 +25,7 @@ type Options struct {
 	NoScope                                            bool
 	SampleInterval, StallGrace, StallWindow, StopGrace time.Duration
 	Hwmon, CPUFreq, Powercap                           string
+	Conditions                                         machine.ConditionsReader
 }
 
 type Runner struct {

@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"iter"
 	"os"
 	"path/filepath"
 	"slices"
@@ -487,8 +488,8 @@ type sampledTrials struct {
 	reader *trial.Runner
 }
 
-func (t sampledTrials) LastSample(id string) *machine.TrialConditions {
-	return t.reader.LastSample(id)
+func (t sampledTrials) Samples(id string) iter.Seq[machine.TrialConditions] {
+	return t.reader.Samples(id)
 }
 
 func TestCrashRecoveryLastSample(t *testing.T) {

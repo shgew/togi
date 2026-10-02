@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/shgew/togi/internal/carry"
 	"github.com/shgew/togi/internal/config"
@@ -42,6 +43,7 @@ func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 			err = errors.Join(err, cached.flush(), cached.Close())
 		}
 	}()
+	in.Machine.SetSamplesDir(filepath.Join(in.Dir, "trials"))
 	for range maxBoots {
 		stop, err = boot(ctx, in, &cached)
 		if errors.Is(err, machine.ErrCrashed) {

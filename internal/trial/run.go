@@ -118,6 +118,7 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 		case <-ticker.C:
 			pollCtx, cancelPoll := pollContext()
 			firstInstance := nextInstance
+			workerCPU := make(map[int]int64, len(t.instances))
 			for i := range len(t.instances) {
 				index := (firstInstance + i) % len(t.instances)
 				inst := t.instances[index]
@@ -148,13 +149,14 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 					decision = true
 					break
 				}
-				if t.sample(inst, time.Now(), &result, report) {
+				if t.sample(inst, time.Now(), &result, report, workerCPU) {
 					decision = true
 					break
 				}
 			}
 			cancelPoll()
 			sample := conditions.sample(started)
+			sample.WorkerCPUMS = workerCPU
 			if temp := sample.TctlC; temp != nil && (result.TctlMaxC == nil || *temp > *result.TctlMaxC) {
 				result.TctlMaxC = temp
 			}
@@ -553,7 +555,7 @@ func (t *running) outsideCPU(inst *instance, result *machine.Result) (cpu, tid i
 	}
 	return 0, 0, false
 }
-func (t *running) sample(inst *instance, now time.Time, result *machine.Result, report machine.Reporter) bool {
+func (t *running) sample(inst *instance, now time.Time, result *machine.Result, report machine.Reporter, workerCPU map[int]int64) bool {
 	reading, err := t.host.Usage(inst.PID)
 	if err != nil {
 		if !processDisappeared(err) && result.Inconclusive == "" {
@@ -561,6 +563,7 @@ func (t *running) sample(inst *instance, now time.Time, result *machine.Result, 
 		}
 		return false
 	}
+	workerCPU[inst.Core] = reading.CPUTime.Milliseconds()
 	active := inst.active
 	if !inst.suspended {
 		active += now.Sub(inst.resumed)
