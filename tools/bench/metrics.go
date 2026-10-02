@@ -8,6 +8,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/tuner"
+	"github.com/shgew/togi/tools/modelcheck"
 )
 
 type result struct {
@@ -18,7 +19,7 @@ type result struct {
 	Dirty               bool                       `json:"dirty"`
 	Ruleset             int                        `json:"ruleset"`
 	Status              string                     `json:"status"`
-	ModelCheck          *modelCheck                `json:"model_check,omitempty"`
+	ModelCheck          *modelcheck.Result         `json:"model_check,omitempty"`
 	ExitCode            int                        `json:"exit_code"`
 	WallS               float64                    `json:"wall_s"`
 	SimHours            float64                    `json:"sim_hours"`

@@ -19,6 +19,7 @@ import (
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/tuner"
+	"github.com/shgew/togi/tools/modelcheck"
 )
 
 type scenario struct {
@@ -167,13 +168,13 @@ func execute(o options, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	checksByMachine := make(map[string]*modelCheck)
-	var checks []*modelCheck
+	checksByMachine := make(map[string]*modelcheck.Result)
+	var checks []*modelcheck.Result
 	for _, spec := range runs {
 		if spec.cfg.Facts == "" || checksByMachine[spec.scenario.Machine] != nil {
 			continue
 		}
-		check, err := checkModel(spec.scenario.Machine, spec.cfg)
+		check, err := modelcheck.Check(spec.scenario.Machine, spec.cfg)
 		if err != nil {
 			return fmt.Errorf("check model %s: %w", spec.scenario.Machine, err)
 		}
@@ -264,7 +265,7 @@ func execute(o options, stdout, stderr io.Writer) error {
 		}
 	}
 	reportSummary(stdout, results)
-	reportModelChecks(stdout, checks)
+	modelcheck.Report(stdout, checks)
 	if o.baseline != "" {
 		reportComparison(stdout, results, baseline)
 	}

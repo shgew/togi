@@ -1,4 +1,4 @@
-package main
+package modelcheck
 
 import (
 	"compress/gzip"
@@ -23,13 +23,13 @@ func TestModelCheckResetWeights(t *testing.T) {
 			{"positive", 1},
 		} {
 			t.Run(string(kind)+"/"+tc.name, func(t *testing.T) {
-				const path = "testdata/model-ok.toml"
+				const path = "../bench/testdata/model-ok.toml"
 				cfg, err := sim.LoadMachine(path)
 				if err != nil {
 					t.Fatal(err)
 				}
 				cfg.Model.Reset = map[machine.ResetKind]float64{machine.ResetWatchdog: 1, kind: tc.weight}
-				check, err := checkModel(path, cfg)
+				check, err := Check(path, cfg)
 				if tc.weight > 0 {
 					if err == nil || check != nil {
 						t.Fatalf("nondecisive reset weight accepted: check=%+v err=%v", check, err)
@@ -48,7 +48,7 @@ func TestModelCheckResetWeights(t *testing.T) {
 }
 
 func TestModelCheckEligibility(t *testing.T) {
-	const machinePath = "testdata/model-ok.toml"
+	const machinePath = "../bench/testdata/model-ok.toml"
 	cfg, err := sim.LoadMachine(machinePath)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestModelCheckEligibility(t *testing.T) {
 			}
 			config := cfg
 			config.Facts, config.BIOSContext = path, tc.machine
-			check, err := checkModel(machinePath, config)
+			check, err := Check(machinePath, config)
 			if err != nil {
 				t.Fatal(err)
 			}

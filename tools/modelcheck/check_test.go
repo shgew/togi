@@ -1,11 +1,13 @@
-package main
+package modelcheck
 
 import (
 	"bytes"
+	"math"
 	"strings"
 	"testing"
 
 	"github.com/shgew/togi/internal/facts"
+	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/tools/trialfacts"
@@ -55,15 +57,15 @@ func TestFixtureModelCheck(t *testing.T) {
 		path, status string
 		interval     [2]int
 	}{
-		{"testdata/model-ok.toml", "ok", [2]int{0, 0}},
-		{"testdata/model-flagged.toml", "flagged", [2]int{10, 10}},
+		{"../bench/testdata/model-ok.toml", "ok", [2]int{0, 0}},
+		{"../bench/testdata/model-flagged.toml", "flagged", [2]int{10, 10}},
 	} {
 		t.Run(tc.status, func(t *testing.T) {
 			cfg, err := sim.LoadMachine(tc.path)
 			if err != nil {
 				t.Fatal(err)
 			}
-			check, err := checkModel(tc.path, cfg)
+			check, err := Check(tc.path, cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -75,10 +77,43 @@ func TestFixtureModelCheck(t *testing.T) {
 				t.Fatalf("got %+v", g)
 			}
 			var output bytes.Buffer
-			reportModelChecks(&output, []*modelCheck{check})
+			Report(&output, []*Result{check})
 			if !strings.Contains(output.String(), tc.path+": "+tc.status) {
 				t.Fatal(output.String())
 			}
 		})
+	}
+}
+
+func TestCheckerConstraintsPreserveBinomialCheck(t *testing.T) {
+	cfg := sim.Config{Cores: 2, Edges: []sim.Edges{
+		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+	}}
+	var records []trialfacts.Record
+	for i := range 20 {
+		r := trialfacts.Record{Kind: facts.TrialFact, Profile: []int{-10, 0}, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 90}, Outcome: journal.OutcomePass}
+		if i < 2 {
+			r.Outcome = journal.OutcomeFailure
+		}
+		records = append(records, r)
+	}
+	checker, err := NewChecker(cfg, records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		p    float64
+		want bool
+	}{{0, false}, {0.001, false}, {0.1, true}, {0.9, false}} {
+		cfg.Edges[0].Flat = -math.Log1p(-tc.p) / 90
+		m, err := sim.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result := checker.Check("synthetic", "synthetic", m)
+		if checker.Accepts(m) != tc.want || (result.Status == "ok") != tc.want {
+			t.Errorf("p=%g: acceptance=%v report=%+v want %v", tc.p, checker.Accepts(m), result, tc.want)
+		}
 	}
 }
