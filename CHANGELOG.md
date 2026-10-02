@@ -4,6 +4,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-02
+
 ### Added
 
 - A ruleset, schema or evidence-epoch transition records eligible trial facts from earlier same-BIOS sessions as `trial.carried`/`failure.carried` and stamps `session.start` with the evidence epoch; newer evidence epochs are refused, older epochs retain failures but drop incompatible passes. Carry waits for a validated current BIOS context, respects every `reset --all` boundary even after an interrupted reset, preserves edge and failed-mark provenance across interrupted evidence-epoch transitions, resumes incomplete fact prefixes and re-checks copied failures against newly known defects in their original journals ([#281]).
@@ -295,6 +297,8 @@ All notable changes to togi are documented in this file. The format is based on 
 [0.6.1]: https://github.com/shgew/togi/releases/tag/v0.6.1
 
 [0.7.0]: https://github.com/shgew/togi/releases/tag/v0.7.0
+
+[0.8.0]: https://github.com/shgew/togi/releases/tag/v0.8.0
 
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
