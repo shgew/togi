@@ -20,6 +20,23 @@ func (m *Machine) Hazard(profile []int, spec machine.TrialSpec) float64 {
 	return rate
 }
 
+// FailureProbability integrates the same hazards as a simulated start, including
+// onset boosts, unloaded-core hazards and delayed joints, without drawing RNG.
+func (m *Machine) FailureProbability(profile []int, spec machine.TrialSpec) float64 {
+	exposure := func(after float64) float64 {
+		duration := spec.Duration.Seconds()
+		return max(0, duration-after) + max(0, m.model.OnsetBoost)*max(0, min(duration, m.model.OnsetS)-after)
+	}
+	var hazard float64
+	for core := range m.edges {
+		hazard += m.coreRate(profile, spec, core) * exposure(0)
+	}
+	for _, joint := range m.cfg.Joints {
+		hazard += m.jointRate(profile, spec.Regime, joint) * exposure(joint.AfterS)
+	}
+	return -math.Expm1(-hazard)
+}
+
 func (m *Machine) coreRate(profile []int, spec machine.TrialSpec, core int) float64 {
 	loaded := slices.Contains(spec.Cores, core)
 	edge := m.edge(profile, core, spec.Regime, spec.Workload.ID)

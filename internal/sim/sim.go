@@ -20,6 +20,7 @@ type Config struct {
 	Seed uint64
 	// Cores defaults to 16; it must be even and at least 2. Core c is on CCD c/(Cores/2) with CPUs c and c+Cores.
 	Cores int
+	Facts string
 	// BIOS holds the offsets restored at every boot; default all 0.
 	BIOS        []int
 	BIOSContext machine.BIOSContext

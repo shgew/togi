@@ -81,6 +81,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just fmt` | Format Go, Nix and the justfile in place |
 | `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just bench [flags]` | The bench suite of simulated sessions, optionally compared against a baseline run (`go run ./tools/bench`, `docs/benchmarking.md`) |
+| `just facts STATE-DIR` | Regenerate the committed privacy-safe target evidence from a copied state directory (`docs/benchmarking.md`) |
 | `just release` | Start the release workflow on `main`: it checks that `check` passed on `main`, commits the release, builds the package, pushes to `main` and publishes. `just release-preview` shows what it would release. See `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with an explicitly delegated host lock ([provisioning](docs/howto.md#host-lock-and-delegated-hardware-tests)), read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `TOGI_MPRIME` and `TOGI_YCRUNCHER`, else from `/etc/togi/config.toml` |
 | `just fuzz [time]` | Fuzz the journal parser |

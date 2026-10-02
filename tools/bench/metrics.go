@@ -18,6 +18,7 @@ type result struct {
 	Dirty               bool                       `json:"dirty"`
 	Ruleset             int                        `json:"ruleset"`
 	Status              string                     `json:"status"`
+	ModelCheck          *modelCheck                `json:"model_check,omitempty"`
 	ExitCode            int                        `json:"exit_code"`
 	WallS               float64                    `json:"wall_s"`
 	SimHours            float64                    `json:"sim_hours"`

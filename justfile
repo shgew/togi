@@ -67,6 +67,11 @@ stats *args:
 bench *args:
     {{ dev }} go run ./tools/bench "$@"
 
+# Regenerate privacy-safe real facts from a copied state directory
+[group('run')]
+facts state_dir:
+    {{ dev }} go run ./tools/facts "$1" tools/bench/facts/target.jsonl.gz
+
 # Start the release workflow on main and follow it: once check passed on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]
 release:

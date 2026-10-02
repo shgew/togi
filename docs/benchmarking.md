@@ -54,3 +54,21 @@ Violations:
 Seeds are deterministic: the same commit always produces the same runs, so rerunning cannot change a result. A change to how the tuner decides moves later sessions onto different random paths, so compare whole scenarios, not single seeds.
 
 Sessions stuck in joint hunts cost wall time as well as simulated time. Under ruleset 4, three of the eight `shared-rail` dev runs exceed the default 180 s timeout and count as not concluding. Raise `--timeout` when the base is that slow.
+
+## Checking a machine against real evidence
+
+A machine file may declare `facts = "../facts/target.jsonl.gz"`, resolved relative to the machine TOML. `shared-rail.toml` declares the committed target-machine extract. Files without `facts` are not checked.
+
+Regenerate the extract from a temporary copy of the state directory, never the live state:
+
+```sh
+just facts COPY-OF-STATE-DIR
+```
+
+The generator reads every archived and live session through `internal/facts`, including sessions before `reset --all` and older builds. Its gzip JSON Lines output is byte-stable for fixed inputs. Records retain session, build, ruleset, BIOS context, sequence, trial ID, kind, class, condition, phase, full profile, outcome, signal and measured duration. They omit journal timestamps, paths, hostnames and boot IDs. `tools/trialfacts` is the shared reader for evaluation tools.
+
+The model check groups decisive starts by BIOS context, trial class (regime, workload, sorted loaded cores and intended duration), and the shallowest loaded-core offset in the applied profile. Any loaded core at 0 puts the start at depth 0. If the machine declares a BIOS context, only matching facts are checked; otherwise contexts are checked separately.
+
+For each group with at least 10 starts, the simulator computes each start's exact failure probability over its intended duration, including onset boosts, unloaded-core hazards and delayed joints. The check averages these probabilities and compares observed failures against quantiles 0.005 and 0.995 of Binomial(n, mean_p). A count outside that inclusive interval flags the machine. Idle failures are retained as their own fact class but have no start duration or exposure denominator, so the report counts them separately rather than inventing a per-start prediction.
+
+`just bench` prints `ok` or `flagged` for each checked file, and every offending class, depth, n, k, interval and mean_p. JSON run records carry the same information in `model_check`, including all eligible groups. A flag says the file does not explain that part of the real evidence; it does not change the comparison verdict or exit status. Investigate the group before using improvements on that file as evidence about the target machine. This is a model diagnostic, not a claim that adaptive journal starts are independent or that all groups jointly have a 99% coverage guarantee.

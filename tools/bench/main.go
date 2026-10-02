@@ -167,6 +167,19 @@ func execute(o options, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	checksByMachine := make(map[string]*modelCheck)
+	var checks []*modelCheck
+	for _, spec := range runs {
+		if spec.cfg.Facts == "" || checksByMachine[spec.scenario.Machine] != nil {
+			continue
+		}
+		check, err := checkModel(spec.scenario.Machine, spec.cfg)
+		if err != nil {
+			return fmt.Errorf("check model %s: %w", spec.scenario.Machine, err)
+		}
+		checksByMachine[spec.scenario.Machine] = check
+		checks = append(checks, check)
+	}
 	var baseline []result
 	if o.baseline != "" {
 		baseline, err = readResults(o.baseline)
@@ -219,6 +232,7 @@ func execute(o options, stdout, stderr io.Writer) error {
 			for i := range queue {
 				r, err := simulate(binary, runRoot, runs[i], o.timeout)
 				r.Commit, r.Dirty, r.Ruleset = commit, dirty, tuner.Ruleset
+				r.ModelCheck = checksByMachine[runs[i].scenario.Machine]
 				results[i], errs[i] = r, err
 			}
 		})
@@ -250,6 +264,7 @@ func execute(o options, stdout, stderr io.Writer) error {
 		}
 	}
 	reportSummary(stdout, results)
+	reportModelChecks(stdout, checks)
 	if o.baseline != "" {
 		reportComparison(stdout, results, baseline)
 	}

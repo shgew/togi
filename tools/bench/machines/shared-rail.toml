@@ -1,5 +1,6 @@
 # Shared rail interactions reproduce the target machine’s last run.
 cores = 16
+facts = "../facts/target.jsonl.gz"
 
 [model.signals]
 crash = 1
