@@ -56,7 +56,6 @@ const (
 	KindRefineRound     Kind = "refine.round"
 	KindTunerWarning    Kind = "tuner.warning"
 	KindBackendRetry    Kind = "backend.retry"
-	KindTierChange      Kind = "tier.change"
 	KindCommandReset    Kind = "command.reset"
 	KindDefectFound     Kind = "defect.found"
 	KindDefectAnswered  Kind = "defect.answered"
@@ -222,7 +221,6 @@ var payloadConstructors = map[Kind]func() Payload{
 	KindRefineRound:     func() Payload { return &RefineRound{} },
 	KindTunerWarning:    func() Payload { return &TunerWarning{} },
 	KindBackendRetry:    func() Payload { return &BackendRetry{} },
-	KindTierChange:      func() Payload { return &TierChange{} },
 	KindCommandReset:    func() Payload { return &CommandReset{} },
 	KindDefectFound:     func() Payload { return &DefectFound{} },
 	KindDefectAnswered:  func() Payload { return &DefectAnswered{} },

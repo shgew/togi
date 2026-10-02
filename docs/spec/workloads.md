@@ -83,7 +83,7 @@ Default guard rotation, about 7.2 h on 16 cores:
 7. R4 on every core.
 8. R6.
 
-A clean rotation qualifies only with at least three R1, three R2 and three R7 steps, and one each of R3, R4, R5 and R6. Custom schedules can end clean without qualifying; the end event lists missing coverage. After a later deepening, an earlier qualifying rotation that ended with every core done can still count toward `run --rotations` and Bronze when its ending profile was at least as deep as the current one and no failure since the latest reset contradicts it (`tuner.md`, Guard); this credit does not change the tier clock or clean hours. Per-core steps follow `tuner.md`'s scheduling order. Search time depends on edge distance and failed steps; candidate checks take five starts of each frozen R1 and R2 class by default. Qualification is breadth coverage, not a guarantee against rare hourly failures.
+A clean rotation qualifies only with at least three R1, three R2 and three R7 steps, and one each of R3, R4, R5 and R6. Custom schedules can end clean without qualifying; the end event lists missing coverage. After a later deepening, an earlier qualifying rotation that ended with every core done can still count toward `run --rotations` when its ending profile was at least as deep as the current one and no failure since the latest reset contradicts it (`tuner.md`, Guard). Per-core steps follow `tuner.md`'s scheduling order. Search time depends on edge distance and failed steps; candidate checks take five starts of each frozen R1 and R2 class by default. Qualification is breadth coverage, not a guarantee against rare hourly failures.
 
 ## Containment
 

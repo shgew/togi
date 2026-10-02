@@ -103,6 +103,9 @@ One pass through the configured guard schedule, whose requirements are starts.
 **Qualifying rotation**:
 A clean rotation covering every R1 and R2 workload on every core, every R7 workload in every part, and R3, R4, R5 and R6.
 
+**Qualified rotation**:
+A clean qualifying rotation that ended with every core done and remains valid for the current profile under the guard's evidence rules.
+
 **Inconclusive**:
 A trial outcome that says nothing about stability, such as a backend that failed to start.
 
@@ -155,18 +158,8 @@ A backoff after attribution or a hunt identifies a failed offset or combination,
 **Yield**:
 A refinement move to a shallower offset that allows other cores to move deeper and improve total depth.
 
-**Clean hours**:
-The durations of passed resident trials after the tier clock, overall and by regime and workload.
-
-**Tier clock**:
-The later of the last profile deepening and the latest failure on a profile at least as deep as the current one. Shallower backoffs need not restart it.
-
-**Tier**:
-The durability rank of a done profile after a clean qualifying rotation: Bronze, Silver, Gold or Platinum; otherwise none.
-_Avoid_: score, level, stable
-
 **Ruleset**:
-The hardcoded strategy for search, hunts, refinement, guard, backoffs and tiers.
+The hardcoded strategy for search, hunts, refinement, guard and backoffs.
 
 **Dead end**:
 A condition under which togi cannot make progress and stops itself.

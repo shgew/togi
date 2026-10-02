@@ -1,3 +1,5 @@
+The Bronze credit, tier-change citation and retention of the tier clock and clean-hour thresholds are superseded by [ADR 0027](0027-remove-tiers.md); earlier qualified-rotation credit for `run --rotations` remains.
+
 # Schedule from uncontradicted evidence
 
 Supersedes the initial hunt duration and partition ordering, and the requirement for a new qualifying rotation after every deepening, in [ADR 0020](0020-hunt-and-refine.md). The hunt anchors, mask evidence windows and tested joint backoffs in [ADR 0023](0023-hunts-that-converge-on-shared-voltage.md), and ADR 0020's tier clock, stand.

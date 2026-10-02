@@ -22,7 +22,6 @@ type result struct {
 	WallS               float64                    `json:"wall_s"`
 	SimHours            float64                    `json:"sim_hours"`
 	FirstCleanRotationH *float64                   `json:"first_clean_rotation_h"`
-	BronzeH             *float64                   `json:"bronze_h"`
 	Crashes             int                        `json:"crashes"`
 	Trials              int                        `json:"trials"`
 	TrialHours          float64                    `json:"trial_hours"`
@@ -64,10 +63,6 @@ func metrics(events []journal.Event, m *sim.Machine, cores int) result {
 		case *journal.GuardRotation:
 			if p.Clean && r.FirstCleanRotationH == nil {
 				r.FirstCleanRotationH = new(h)
-			}
-		case *journal.TierChange:
-			if p.To == journal.TierBronze && r.BronzeH == nil {
-				r.BronzeH = new(h)
 			}
 		case *journal.CrashDetected:
 			r.Crashes++

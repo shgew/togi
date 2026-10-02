@@ -10,7 +10,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `REVIEW.md`: defect criteria and recurring lessons. Read it before reviewing a pull request.
 - `.omp/`: reviewer rules and `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates.
 - `docs/spec/`: normative behavior. Read the relevant spec before changing behavior, and change spec and code in the same pull request or in layers of one stack merged together.
-  - `tuner.md`: offsets, search, hunt, refinement, guard, tiers, dead ends.
+  - `tuner.md`: offsets, search, hunt, refinement, guard, qualified rotations, dead ends.
   - `workloads.md`: regimes, backends, containment, failure detection.
   - `journal.md`: events, state, logging.
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
@@ -104,7 +104,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/journal` | Journal, replay, state file, log lines |
 | `internal/facts` | Decisive trial and idle-failure evidence with journal provenance |
 | `internal/carry` | Transitions: archiving an older session and deriving the edges and failed marks it carries |
-| `internal/tuner` | Pure decision engine: search, hunt, refinement, guard, tiers |
+| `internal/tuner` | Pure decision engine: search, hunt, refinement, guard |
 | `internal/sim` | Simulator implementing every hardware seam, and resuming it after a journal |
 | `internal/session` | The run loop: session start, resume, crash attribution, trials, dead ends |
 | `internal/simrun` | A session on the simulator, across its crash reboots |

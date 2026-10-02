@@ -29,7 +29,7 @@ Every run is a `tools/sim` subprocess with its own state directory, in parallel 
 
 - `status`: `concluded` (the session stopped after its clean qualifying rotation), `deadend`, `error` or `timeout`;
 - `sim_hours`: simulated time from `session.start` to the last event, including the 90 s each crash reboot costs. This is the time to conclusion;
-- `first_clean_rotation_h` and `bronze_h`: simulated time to those milestones;
+- `first_clean_rotation_h`: simulated time to the first clean qualifying rotation;
 - `crashes`, `trials`, `trial_hours`, `hunts` and `joint_marks`;
 - `final_profile` and `depth`, its sum;
 - `hazard_per_h` and `hazard_max_per_h`: failures per hour at the final profile with every core loaded, per regime, from the simulator's own failure model. A profile that passed by luck shows up here, and no journal can show it.

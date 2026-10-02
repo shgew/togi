@@ -20,7 +20,6 @@ type entry struct {
 	seq       int
 	profile   []int
 	pass      bool
-	duration  int
 	condition machine.Condition
 	class     trialClass
 	tctlMax   int
@@ -190,7 +189,7 @@ func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *jo
 			s.warningSeq = ev.Seq
 		}
 	}
-	e := entry{seq: ev.Seq, profile: profile, pass: end.Outcome == journal.OutcomePass, duration: end.DurationS, condition: p.Condition, class: k, cores: p.Cores}
+	e := entry{seq: ev.Seq, profile: profile, pass: end.Outcome == journal.OutcomePass, condition: p.Condition, class: k, cores: p.Cores}
 	if p.Core != nil {
 		e.cores = []int{*p.Core}
 	}

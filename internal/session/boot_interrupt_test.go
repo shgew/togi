@@ -181,7 +181,6 @@ type bootFacts struct {
 	Guard      *journal.GuardState
 	Hunt       *journal.HuntState
 	Refine     *journal.RefineState
-	Tier       journal.Tier
 	Evidence   []string
 }
 
@@ -192,7 +191,7 @@ func bootDecisionFacts(t *testing.T, in simRun) bootFacts {
 	engine := tuner.New()
 	journal.Replay(events, &state, engine)
 	engine.Project(&state)
-	facts := bootFacts{Cores: state.Cores, JointMarks: state.JointMarks, Guard: state.Guard, Hunt: state.Hunt, Refine: state.Refine, Tier: state.Tier}
+	facts := bootFacts{Cores: state.Cores, JointMarks: state.JointMarks, Guard: state.Guard, Hunt: state.Hunt, Refine: state.Refine}
 	decisive := []journal.Kind{journal.KindFailure, journal.KindCrashDetected, journal.KindMCE, journal.KindTrialIntent, journal.KindTunerDecision, journal.KindMarkJoint}
 	for _, e := range events {
 		if slices.Contains(decisive, e.Kind) {

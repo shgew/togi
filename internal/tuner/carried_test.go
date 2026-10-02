@@ -329,11 +329,7 @@ func TestCarriedPassesDoNotAddSessionExposure(t *testing.T) {
 				t.Fatalf("archived observation counted as session exposure: %+v", got)
 			}
 			h.trial(Action{Kind: RunTrial, Trial: Trial{Core: 0, Offset: -10, Regime: r, Workload: w, DurationS: d, Condition: condition, Profile: []int{-10}}}, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: d})
-			clean := 0
-			if condition == machine.Resident {
-				clean = d
-			}
-			want := []journal.ExposureRow{{Regime: r, Workload: w, Starts: 1, CleanS: clean, RateBoundPerH: rateBound(clean)}}
+			want := []journal.ExposureRow{{Regime: r, Workload: w, Starts: 1}}
 			if diff := cmp.Diff(want, h.s.projectGuard().Exposure); diff != "" {
 				t.Fatalf("live-only exposure (-want +got):\n%s", diff)
 			}

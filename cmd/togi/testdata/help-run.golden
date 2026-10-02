@@ -3,22 +3,20 @@ Usage: togi run [--rotations <N>] [--tuning-boot <grubenv>] [--no-tui]
 Start or resume the tuning session in the foreground: search each core's deepest
 stable offset, hunt the core behind unattributed failures with masked starts,
 refine the resident profile to the most total depth its failed and joint
-marks allow, then guard it with qualifying rotations. A clean qualifying
-rotation earns Bronze once every core is done and refinement can reach no
-more depth. After a crash, the next run attributes it from the journal and
-continues. On resume, known defects affecting past decisions name the cores; in
-a terminal run offers to reset them. An unanswered too-aggressive defect stops
-an unattended run. It needs root. A journal from an older ruleset, schema or
-evidence epoch, and no newer one, is archived. The new session starts each core
-from its edges and failed marks, carrying eligible same-BIOS trial facts for
-edge checks, hunts, reruns and refinement. Passes carry only from the current
-evidence epoch; rotations still require live passes. A newer ruleset, schema or
-evidence epoch stops the run before another event is written; reset --all archives
-that session. An older journal is archived even with unknown event kinds; carry
-uses only known events. Unknown kinds in a current-ruleset, current-schema,
-current-epoch journal stop both run and reset; install the build that wrote them.
-Journal lines are colored on terminals and in the system journal unless NO_COLOR
-is set.
+marks allow, then guard it with qualifying rotations. After a crash, the next
+run attributes it from the journal and continues. On resume, known defects
+affecting past decisions name the cores; in a terminal run offers to reset them.
+An unanswered too-aggressive defect stops an unattended run. It needs root.
+A journal from an older ruleset, schema or evidence epoch, and no newer one,
+is archived. The new session starts each core from its edges and failed marks,
+carrying eligible same-BIOS trial facts for edge checks, hunts, reruns and
+refinement. Passes carry only from the current evidence epoch; rotations still
+require live passes. A newer ruleset, schema or evidence epoch stops the run
+before another event is written; reset --all archives that session. An older
+journal is archived even with unknown event kinds; carry uses only known events.
+Unknown kinds in a current-ruleset, current-schema, current-epoch journal stop
+both run and reset; install the build that wrote them. Journal lines are colored
+on terminals and in the system journal unless NO_COLOR is set.
 
 Only one run or reset can own this machine, even with different state directories.
 A busy /run/lock/togi.lock stops the command before any hardware access or event.
@@ -31,8 +29,7 @@ events.jsonl still records every event. --no-tui prints the lines instead.
 --rotations N stops after N clean qualifying rotations valid for the current
 profile once every core is done and refinement can reach no more depth. An
 earlier rotation can count after a deepening if its profile was at least as deep
-and no failure since the last reset contradicted it. Silver and Gold still need
-clean hours since the tier clock restarted.
+and no failure since the last reset contradicted it.
 
 Examples:
   sudo togi run                     Tune this machine until a signal or a dead end

@@ -756,27 +756,6 @@ func (p *GuardRotation) Message() string {
 	return fmt.Sprintf("guard rotation %d %s", p.Rotation, p.Event)
 }
 
-type Tier string
-
-const (
-	TierNone     Tier = "none"
-	TierBronze   Tier = "bronze"
-	TierSilver   Tier = "silver"
-	TierGold     Tier = "gold"
-	TierPlatinum Tier = "platinum"
-)
-
-type TierChange struct {
-	From   Tier   `json:"from"`
-	To     Tier   `json:"to"`
-	Reason string `json:"reason"`
-}
-
-func (*TierChange) Kind() Kind { return KindTierChange }
-func (p *TierChange) Message() string {
-	return fmt.Sprintf("tier %s -> %s: %s", p.From, p.To, p.Reason)
-}
-
 type CommandReset struct {
 	Core *int `json:"core,omitempty"`
 	All  bool `json:"all,omitempty"`

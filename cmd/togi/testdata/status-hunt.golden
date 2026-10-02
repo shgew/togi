@@ -1,4 +1,4 @@
-hunt 1, mask 1 | tier none
+hunt 1, mask 1 | qualified rotations since last deepening: 0, latest rotation 0
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0, boost limit 5700 MHz
 in flight: none
@@ -26,5 +26,4 @@ hunt 1 [#3715]: unattributed crash in R7 trial 0289; anchor all-zero
 MASK  CORES                    OUTCOME  STARTS
 M1    08 09 10 11 12 13 14 15  running  0/5
 
-clean hours since the tier clock [#3704]: 0.0 h, no failure-rate bound yet
-REGIME  WORKLOAD  STARTS  CLEAN H  RATE BOUND
+REGIME  WORKLOAD  STARTS

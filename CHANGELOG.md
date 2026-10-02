@@ -31,6 +31,7 @@ All notable changes to togi are documented in this file. The format is based on 
 ### Removed
 
 - `togi cert` is gone; use `togi status`, which reports the same profile and qualified rotations and now shows each core's `SLOT` for matching BIOS controls ([#269]).
+- Bronze, Silver, Gold, the tier clock, clean hours and failure-rate bounds are removed; `status` reports qualified rotations since the last deepening and the Tctl peak since the last profile change; `run --rotations N` decides how long to keep testing ([#285]).
 
 ## [0.7.0] - 2026-10-02
 
@@ -387,3 +388,4 @@ All notable changes to togi are documented in this file. The format is based on 
 [#282]: https://github.com/shgew/togi/pull/282
 [#283]: https://github.com/shgew/togi/pull/283
 [#284]: https://github.com/shgew/togi/pull/284
+[#285]: https://github.com/shgew/togi/pull/285

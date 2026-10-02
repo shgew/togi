@@ -36,11 +36,57 @@ func TestStatus(t *testing.T) {
 		t.Fatalf("status: exit %d, stderr %s", code, stderr.String())
 	}
 	status := stdout.String()
-	if want := fmt.Sprintf("tier bronze [#%d]", st.TierSeq); !strings.Contains(status, want) {
+	if want := fmt.Sprintf("qualified rotations since last deepening: %d, latest rotation %d", st.Guard.CleanRotations, st.Guard.LastQualifiedRotation); !strings.Contains(status, want) {
 		t.Fatalf("status lacks %q:\n%s", want, status)
 	}
 	checkRows(t, "status", status, regexp.MustCompile(`(?m)^(\d\d)  +\d  +\d  +(-?\d+)  `), st)
 	golden(t, "status", status)
+}
+
+func TestHistoricalTierChangeReadOnlyViews(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	renderFixture(t, dir, "concluded")
+	events, st, _, err := replayDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before bytes.Buffer
+	writeStatus(&before, st, events)
+	raw := fmt.Sprintf(`{"seq":%d,"time":"2026-10-02T02:00:00Z","boot":"historical","kind":"tier.change","msg":"historical tier earned","tier":"bronze","clean_s":3600}`, events[len(events)-1].Seq+1)
+	f, err := os.OpenFile(filepath.Join(dir, "events.jsonl"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Fprintln(f, raw); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		command []string
+		want    string
+		exact   bool
+	}{
+		{command: []string{"status"}, want: before.String(), exact: true},
+		{command: []string{"events"}, want: "historical tier earned"},
+		{command: []string{"events", "--json"}, want: raw + "\n"},
+	} {
+		var out, diagnostics bytes.Buffer
+		args := append([]string{"--state-dir", dir}, tc.command...)
+		if code := cli(args, &out, &diagnostics); code != exitOK {
+			t.Fatalf("%v: exit %d: %s", tc.command, code, diagnostics.String())
+		}
+		if tc.exact {
+			if diff := cmp.Diff(tc.want, out.String()); diff != "" {
+				t.Fatalf("historical tier changed status (-want +got):\n%s", diff)
+			}
+		} else if !strings.Contains(out.String(), tc.want) {
+			t.Fatalf("%v hides historical event %q:\n%s", tc.command, tc.want, out.String())
+		}
+	}
 }
 
 func TestBetweenTrialMCEReadOnlyViews(t *testing.T) {
@@ -134,7 +180,6 @@ func TestStatusOpenRefinement(t *testing.T) {
 	st := journal.State{
 		Session: &journal.SessionInfo{ID: "20260101T000000Z", Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)},
 		Phase:   string(journal.PhaseRefine),
-		Tier:    journal.TierNone,
 		Cores:   []journal.CoreState{{Core: 3, CCD: 0, Offset: -9, Phase: journal.PhaseDone}},
 		Refine: &journal.RefineState{
 			Round: 2, Seq: 42, Target: []int{-10}, Profile: []int{-9}, Cores: []int{3},
@@ -203,15 +248,6 @@ func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
 	record(&journal.DefectFound{ID: 1, Title: "False failure at power-off", PR: 16, Direction: "too_cautious", Cores: []int{3, 7}, Decisions: []int{42}})
 	record(&journal.CommandReset{All: true})
 	check(nil, []string{title, core3, core7})
-}
-
-func TestRateRoundsUp(t *testing.T) {
-	t.Parallel()
-	for bound, want := range map[float64]string{0.1241: "< 0.13/h", 0.12: "< 0.12/h", 3: "< 3.00/h"} {
-		if got := rate(&bound); got != want {
-			t.Errorf("rate(%v) = %q, want %q", bound, got, want)
-		}
-	}
 }
 
 func renderFixture(t *testing.T, dir, name string) journal.Build {

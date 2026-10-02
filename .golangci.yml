@@ -44,7 +44,7 @@ linters:
       - path: '^internal/tuner/marks\.go$'
         text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.optimum` is high'
         linters: [gocognit]
-      - path: '^internal/tuner/tier\.go$'
+      - path: '^internal/tuner/guard_state\.go$'
         text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.projectGuard` is high'
         linters: [gocognit]
       - path: '^internal/tuner/tuner\.go$'

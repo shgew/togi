@@ -13,7 +13,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-// Ruleset must be bumped for changes to steps, offset range, phases, regimes, evidence, hunts, refinement, tiers or backoffs; this is breaking.
+// Ruleset must be bumped for changes to steps, offset range, phases, regimes, evidence, hunts, refinement or backoffs; this is breaking.
 const Ruleset = 7
 
 const EvidenceEpoch = 1
@@ -90,67 +90,64 @@ type rerun struct {
 }
 
 type qualified struct {
-	profile []int
-	seq     int
-	allDone bool
+	profile  []int
+	seq      int
+	rotation int
+	allDone  bool
 }
 
 type State struct {
-	cores                       []*core
-	sortedCores                 []*core
-	indexByID                   map[int]int
-	cursor                      int
-	retry                       *Trial
-	intents                     map[string]*journal.TrialIntent
-	intentSeq                   map[int]string
-	signalled                   map[string]bool
-	awaiting                    *awaiting
-	mces                        map[int]*journal.MCE
-	steps                       []machine.Regime
-	durations                   journal.ConfigDurations
-	evidence                    journal.ConfigEvidence
-	n                           int
-	ccd                         map[int]int
-	parts                       [][]int
-	guard                       guard
-	ledger                      map[trialClass][]entry
-	idle                        []entry
-	carriedSources              map[int]string
-	failures                    []entry
-	marks                       []journal.JointMarkState
-	nextMark                    int
-	recent                      []int
-	queue                       []pendingFailure
-	pendingFailures             []pendingFailure
-	failureIndex                map[int]int
-	obligations                 []rerun
-	rerunCauses                 []int
-	hunt                        *hunt
-	nextHunt                    int
-	resetSeq                    int
-	round                       *round
-	nextRound                   int
-	ranking                     []int
-	rankingSeq, lastPlanSeq     int
-	qualified                   []qualified
-	firstProfileSeq             int
-	lastDeepenSeq, tierClockSeq int
-	tierClockDirty              bool
-	bestProfile                 []int
-	bestDirty                   bool
-	warning                     *journal.TunerWarning
-	warningSeq                  int
-	thermal                     *journal.DeadEnd
-	thermalSeq                  int
-	tier                        journal.Tier
-	tierSeq, tierCause          int
-	projectionDirty             bool
-	projectedGuard              *journal.GuardState
+	cores                   []*core
+	sortedCores             []*core
+	indexByID               map[int]int
+	cursor                  int
+	retry                   *Trial
+	intents                 map[string]*journal.TrialIntent
+	intentSeq               map[int]string
+	signalled               map[string]bool
+	awaiting                *awaiting
+	mces                    map[int]*journal.MCE
+	steps                   []machine.Regime
+	durations               journal.ConfigDurations
+	evidence                journal.ConfigEvidence
+	n                       int
+	ccd                     map[int]int
+	parts                   [][]int
+	guard                   guard
+	ledger                  map[trialClass][]entry
+	idle                    []entry
+	carriedSources          map[int]string
+	failures                []entry
+	marks                   []journal.JointMarkState
+	nextMark                int
+	recent                  []int
+	queue                   []pendingFailure
+	pendingFailures         []pendingFailure
+	failureIndex            map[int]int
+	obligations             []rerun
+	rerunCauses             []int
+	hunt                    *hunt
+	nextHunt                int
+	resetSeq                int
+	round                   *round
+	nextRound               int
+	ranking                 []int
+	rankingSeq, lastPlanSeq int
+	qualified               []qualified
+	lastDeepenSeq           int
+	bestProfile             []int
+	bestDirty               bool
+	warning                 *journal.TunerWarning
+	warningSeq              int
+	thermal                 *journal.DeadEnd
+	thermalSeq              int
+	projectionDirty         bool
+	projectedGuard          *journal.GuardState
 }
 
 func New() *State {
 	c := config.Default()
-	return &State{cursor: -1, intents: map[string]*journal.TrialIntent{}, intentSeq: map[int]string{}, signalled: map[string]bool{}, mces: map[int]*journal.MCE{}, ledger: map[trialClass][]entry{}, carriedSources: map[int]string{}, failureIndex: map[int]int{}, steps: c.Guard.Rotation, durations: journal.ConfigDurations(c.Durations), evidence: journal.ConfigEvidence(c.Evidence), n: c.Evidence.Starts(), tier: journal.TierNone, projectionDirty: true, bestDirty: true}
+	return &State{cursor: -1, intents: map[string]*journal.TrialIntent{}, intentSeq: map[int]string{}, signalled: map[string]bool{}, mces: map[int]*journal.MCE{}, ledger: map[trialClass][]entry{}, carriedSources: map[int]string{}, failureIndex: map[int]int{}, steps: c.Guard.Rotation, durations: journal.ConfigDurations(c.Durations), evidence: journal.ConfigEvidence(c.Evidence), n: c.Evidence.Starts(), projectionDirty: true, bestDirty: true}
 }
 
 func partition(cores []machine.CoreInfo) (map[int]int, [][]int) {
@@ -348,9 +345,6 @@ func (s *State) Fold(e journal.Event) {
 			}
 		}
 	case *journal.ProfileChange:
-		if s.firstProfileSeq == 0 {
-			s.firstProfileSeq = e.Seq
-		}
 		if len(s.guard.profile) == len(p.To) {
 			for i, x := range p.To {
 				if x < s.guard.profile[i] {
@@ -363,14 +357,10 @@ func (s *State) Fold(e journal.Event) {
 		s.pendingRerun()
 		s.guard.profileSeq = e.Seq
 		s.guard.lastSeq = e.Seq
-		s.tierCause = e.Seq
 		s.projectionDirty = true
-		s.recomputeTierClock()
 	case *journal.GuardRotation:
 		s.foldRotation(e, p)
 		s.rerunCauses = nil
-	case *journal.TierChange:
-		s.tier, s.tierSeq = p.To, e.Seq
 	case *journal.HostRanking:
 		s.ranking = slices.Clone(p.Ranking)
 		s.rankingSeq = e.Seq
@@ -418,7 +408,6 @@ func (s *State) decided(c *core, seq int) {
 	c.pending = 0
 	c.lastSeq = seq
 	c.decisionSeq = seq
-	s.tierCause = seq
 	s.projectionDirty = true
 	s.bestDirty = true
 	if s.retry != nil && s.retry.Condition == machine.Isolated && s.retry.Core == c.id {
@@ -446,7 +435,6 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 	if intent.Condition != machine.Isolated {
 		if p.Outcome == journal.OutcomePass && intent.Condition == machine.Resident {
 			s.guard.lastSeq = e.Seq
-			s.tierCause = e.Seq
 		}
 		if p.Outcome == journal.OutcomeInconclusive {
 			t := trialFromIntent(intent)
@@ -522,9 +510,6 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 	}
 	s.failureIndex[e.Seq] = len(s.pendingFailures)
 	s.pendingFailures = append(s.pendingFailures, failure)
-	if atLeastDeep(profile, s.guard.profile) {
-		s.tierClockSeq = max(s.tierClockSeq, e.Seq)
-	}
 	if p.Attribution == journal.Attributed && p.Core != nil {
 		if c := s.core(*p.Core); c != nil {
 			c.pending = failure.seq
@@ -654,9 +639,6 @@ func (s *State) next() Action {
 	if !s.anySearch() && !slices.Equal(s.guard.profile, s.offsets()) {
 		return s.profileNext()
 	}
-	if a, ok := s.tierNext(); ok {
-		return a
-	}
 	if s.anySearch() {
 		if a, ok := s.perCore(); ok {
 			return a
@@ -748,22 +730,6 @@ func (s *State) uncontradicted(q qualified) bool {
 	})
 }
 
-func (s *State) creditedRotation() int {
-	seq := 0
-	for _, q := range s.qualified {
-		if !q.allDone {
-			continue
-		}
-		if q.seq > s.lastDeepenSeq {
-			return 0
-		}
-		if s.uncontradicted(q) {
-			seq = q.seq
-		}
-	}
-	return seq
-}
-
 func (s *State) Project(st *journal.State) {
 	st.Phase = string(journal.PhaseGuard)
 	switch {
@@ -798,5 +764,4 @@ func (s *State) Project(st *journal.State) {
 	st.Hunt = s.projectHunt()
 	st.Refine = s.projectRound()
 	st.Guard = s.projectGuard()
-	st.Tier, st.TierSeq = s.tier, s.tierSeq
 }

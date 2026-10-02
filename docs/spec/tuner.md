@@ -4,7 +4,7 @@ Normative rules for how togi moves offsets. Terms are defined in `CONTEXT.md`. R
 
 ## Ruleset
 
-The ruleset is the hardcoded strategy: search strides, offset range, phases, evidence and mark rules, hunt and refinement, guard coverage and tiers. Changing these bumps `tuner.Ruleset` (now 7) and archives an active older session into a seeded new session ([ADR 0019](../adr/0019-a-ruleset-change-starts-a-seeded-session.md), [ADR 0020](../adr/0020-hunt-and-refine.md), [ADR 0023](../adr/0023-hunts-that-converge-on-shared-voltage.md), [ADR 0024](../adr/0024-schedule-from-uncontradicted-evidence.md), [ADR 0027](../adr/0027-carry-trial-facts.md)). Changes to configurable defaults and fixes that record facts more accurately do not bump it.
+The ruleset is the hardcoded strategy: search strides, offset range, phases, evidence and mark rules, hunt and refinement, and guard coverage. Changing these bumps `tuner.Ruleset` (now 7) and archives an active older session into a seeded new session ([ADR 0019](../adr/0019-a-ruleset-change-starts-a-seeded-session.md), [ADR 0020](../adr/0020-hunt-and-refine.md), [ADR 0023](../adr/0023-hunts-that-converge-on-shared-voltage.md), [ADR 0024](../adr/0024-schedule-from-uncontradicted-evidence.md), [ADR 0027](../adr/0027-carry-trial-facts.md)). Changes to configurable defaults and fixes that record facts more accurately do not bump it.
 
 The evidence epoch (`tuner.EvidenceEpoch`, now 1) separately versions compatibility of trial outcomes: workload content, backend binary or configuration, intended durations, and pass/failure detection (`workloads.md`). `session.start.evidence` records it. Without that field, a session with ruleset ≥ 6 has epoch 1; an older session has epoch 0. A transition drops passes from other epochs but keeps eligible failures. An epoch change is not a ruleset or journal-schema bump.
 
@@ -137,7 +137,9 @@ When an attributed backoff or hunt commitment changes an offset, guard first rer
 
 Carried passes can satisfy a rerun's class requirements despite preceding its obligation boundary; failures, including carried ones, retain their normal invalidation effect. When carried passes answer the rerun, the following guard-rotation or refinement-round decision cites those facts and names their source sessions. A rerun does not supply carried passes to rotation qualification.
 
-A rotation counts only if every core was done when it ended. Ends after the last deepening count as before. An earlier end can also count if it followed the latest `command.reset`, its ending profile was at least as deep as the current profile on every core, and no failure of any trial class since that reset occurred at a profile equal to or shallower than its ending profile on every core. An incomparable failure does not contradict it; a failure with an incomplete profile conservatively prevents this credit. This credit does not change the rotation-start evidence window, tier clock or clean hours.
+A rotation counts only if every core was done when it ended. Ends after the last deepening count as before. An earlier end can also count if it followed the latest `command.reset`, its ending profile was at least as deep as the current profile on every core, and no failure of any trial class since that reset occurred at a profile equal to or shallower than its ending profile on every core. An incomparable failure does not contradict it; a failure with an incomplete profile conservatively prevents this credit. This credit does not change the rotation-start evidence window.
+
+`status` reports qualified rotations since the last deepening: the count valid for the current profile, including eligible earlier credit, and the latest qualified rotation's number. `run --rotations N` checks its stop rule before starting the next rotation. A qualified rotation establishes workload breadth, not a guarantee against rare failures or untested real use.
 
 ## Hunt
 
@@ -203,20 +205,3 @@ A `deadend` consumes the evidence it reports: the SMU flag, escape flag, thermal
 
 That fresh evaluation applies only after the dead end has recorded its boot action and `shutdown`. If a process stops between `deadend` and those events, the next `run` finishes that same dead-end action and exits without making a tuning decision.
 
-## Tiers
-
-Tiers rank the current profile by durability, not proof. A shallow backoff need not erase valid exposure: the tier clock starts at the first `profile.change` when nothing later applies, otherwise at the later of the last profile deepening and the latest failure on a profile at least as deep as the current one. Recompute it at each profile change.
-
-| Tier | Requirement |
-|---|---|
-| none | A core is not done, refinement can reach more total depth, or no clean qualifying rotation counts for the current profile under the Guard rules. |
-| Bronze | Every core done, refinement cannot improve total depth, and a clean qualifying rotation counts for the current profile under the Guard rules. |
-| Silver | Bronze, and 24 clean hours. |
-| Gold | Bronze, and 100 clean hours. |
-| Platinum | Gold, and 200 field hours: real use observed by the future `observe` service with the BIOS offsets equal to the profile. Unavailable until `observe` exists; the tuner never computes it. |
-
-The tuner records every change as `tier.change`, naming its cause. A core in search or not done, reachable refinement depth, or missing valid qualifying coverage prevents Bronze. Bronze's usual reason is `every core is done and the profile passed a clean qualifying rotation`. When an earlier rotation supplies the credit, the reason names its end sequence and explains that its profile was at least as deep and uncontradicted; the cause cites that end and the current tier cause. Silver and Gold still cite `24 clean hours since the tier clock started at #N` and `100 clean hours since the tier clock started at #N`.
-
-Each regime and workload with clean hours `T` since the tier clock shows its failure-rate bound: with zero failures, fewer than `3 / T` failures per hour at 95%, if failures on the tested workloads occur at a constant rate (rule of three). The overall bound uses all clean hours. Without clean hours there is no bound. Recorded and displayed bounds round up, never understating it. Exposure is selected after failures and the bound is inspected repeatedly; it is not an unconditional guarantee or a sequentially valid assurance. It applies only to the workloads tested, not untested workloads or real use.
-
-`togi status` renders the profile, tier and qualifying rotation evidence from a replay of the journal (`runtime.md`).

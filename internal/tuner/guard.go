@@ -59,10 +59,9 @@ func (s *State) foldRotation(e journal.Event, p *journal.GuardRotation) {
 		g.stepsDone = len(g.steps)
 	}
 	if p.Clean && p.Qualifying {
-		s.qualified = append(s.qualified, qualified{slices.Clone(g.profile), e.Seq, s.allDone()})
+		s.qualified = append(s.qualified, qualified{profile: slices.Clone(g.profile), seq: e.Seq, rotation: p.Rotation, allDone: s.allDone()})
 	}
 	s.projectionDirty = true
-	s.tierCause = e.Seq
 }
 
 func (s *State) allDone() bool {

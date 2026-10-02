@@ -1,4 +1,4 @@
-guard rotation 2, steps 14/14 | tier bronze [#6629]
+guard rotation 2, steps 14/14 | qualified rotations since last deepening: 2, latest rotation 2
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0, boost limit 5700 MHz
 in flight: none
@@ -21,20 +21,19 @@ CORE  CCD  SLOT  OFFSET  PHASE  FAILED  JOINT  QUEUED  LAST DECISION
 14    1    6     0       done   -1      -      -       [#4840] core 14 backed off at -1; next 0 (attributed corrected_mce in resident R7 trial 0452; failed mark -1)
 15    1    7     -35     done   -36     -      -       [#5828] core 15 backed off at -36; next -35 (attributed computation_error in resident R5 trial 0605; failed mark -36)
 
-clean hours since the tier clock [#6364]: 7.7 h, failure rate < 0.40/h at 95%, if failures on the tested workloads occur at a constant rate
-REGIME  WORKLOAD                         STARTS  CLEAN H  RATE BOUND
-R1      mprime-sse-4k-21k                36      0.5      < 5.63/h
-R1      ycruncher-bkt-sftv4              32      0.5      < 5.63/h
-R1      ycruncher-snt-svt                32      0.5      < 5.63/h
-R2      mprime-avx2-36k-248k             36      0.5      < 5.63/h
-R2      mprime-avx512-36k-248k           32      0.5      < 5.63/h
-R2      ycruncher-fftv4-n63-vt3          32      0.5      < 5.63/h
-R3      mprime-sse-4k-21k-steps          44      0.5      < 5.63/h
-R4      mprime-sse-4k-21k-duty25         36      0.7      < 4.10/h
-R5      mprime-sse-4k-21k-smt            40      0.5      < 5.63/h
-R6      mprime-sse-4k-21k-idle           7       0.2      < 12.00/h
-R6      ycruncher-bkt-sftv4-idle         2       0.5      < 6.00/h
-R7      mprime-avx2-36k-248k-allcore     28      0.6      < 4.74/h
-R7      mprime-avx512-36k-248k-allcore   24      0.6      < 4.74/h
-R7      ycruncher-fftv4-n63-vt3-allcore  24      0.6      < 4.74/h
-Tctl max among counted trials 76°C [#6602]
+REGIME  WORKLOAD                         STARTS
+R1      mprime-sse-4k-21k                36
+R1      ycruncher-bkt-sftv4              32
+R1      ycruncher-snt-svt                32
+R2      mprime-avx2-36k-248k             36
+R2      mprime-avx512-36k-248k           32
+R2      ycruncher-fftv4-n63-vt3          32
+R3      mprime-sse-4k-21k-steps          44
+R4      mprime-sse-4k-21k-duty25         36
+R5      mprime-sse-4k-21k-smt            40
+R6      mprime-sse-4k-21k-idle           7
+R6      ycruncher-bkt-sftv4-idle         2
+R7      mprime-avx2-36k-248k-allcore     28
+R7      mprime-avx512-36k-248k-allcore   24
+R7      ycruncher-fftv4-n63-vt3-allcore  24
+Tctl max since last profile change 76°C [#6602]

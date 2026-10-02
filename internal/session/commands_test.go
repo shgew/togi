@@ -74,8 +74,8 @@ func TestResetCore(t *testing.T) {
 	if c := coreState(t, dir, 1); c.Phase != journal.PhaseDone || c.Offset != m.IsolatedEdge(1) {
 		t.Fatalf("core 1 %+v, want done again at its edge %d", c, m.IsolatedEdge(1))
 	}
-	if st, _ := readMemState(stateOf(dir)); st.Tier != journal.TierBronze {
-		t.Fatalf("tier %s, want bronze again", st.Tier)
+	if st, _ := readMemState(stateOf(dir)); st.Guard == nil || st.Guard.CleanRotations == 0 {
+		t.Fatalf("guard %+v, want a qualified rotation again", st.Guard)
 	}
 }
 

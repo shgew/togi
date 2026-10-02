@@ -9,7 +9,7 @@ go run ./tools/sim [--seed N] [--machine FILE] [--rotations N] [--state-dir DIR]
 
 - `--seed` (default 1) selects deterministic edges and failures; the same seed and history reproduce the journal.
 - `--machine FILE` loads an explicit simulator machine TOML, including edges, joints, ranking, outcome scripts and reset reasons; `--seed` still sets its seed.
-- `--rotations` (default 1) stops after N clean qualifying rotations valid for the current profile once every core is done and refinement can reach no more depth. An earlier rotation can count after a deepening under the uncontradicted-profile rules in [the tuner spec](spec/tuner.md#guard); clean-hour accounting is unchanged.
+- `--rotations` (default 1) stops after N clean qualifying rotations valid for the current profile once every core is done and refinement can reach no more depth. An earlier rotation can count after a deepening under the uncontradicted-profile rules in [the tuner spec](spec/tuner.md#guard).
 - `--state-dir` uses an existing directory; without it, `sim` creates a temporary one and prints its path to stderr.
 
 A crash reboots the simulated machine in-process and the next boot resumes the journal, as a real reboot would. Journal lines go to stderr as `togi run` logs them, and nothing is fsynced. A state directory that already holds a journal or archives resumes the simulated machine after them: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot, and a session after `reset --all` gets a new id.
@@ -23,6 +23,8 @@ go run ./cmd/togi --state-dir <dir> status
 go run ./cmd/togi --state-dir <dir> events --core 3
 go run ./cmd/togi --state-dir <dir> watch
 ```
+
+`status` reports qualified rotations since the last deepening (the count and latest rotation number), valid per-workload starts and missing qualifying coverage. Its Tctl peak comes from resident passes since the last profile change and names the source trial.
 
 Fault injection, explicit edges and the failure model are a Go API for tests (`sim.Config`, `sim.Edges`, `sim.Model` and the methods on `sim.Machine`); `internal/sim/doc.go` describes the model. `Machine.Hazard` returns the steady-state failure rate a trial would see at a given profile, from the same rules that draw trial failures, so a tool can judge a final profile against the model's truth. `internal/simrun` drives a session on the simulator across its crashes for tests that need a simulated journal.
 
