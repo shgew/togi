@@ -99,16 +99,27 @@ func (r *runner) queueDefectResets(answer journal.Event) error {
 
 func legacyDefectResetsComplete(answer journal.Event, events []journal.Event) bool {
 	cores := answer.Data.(*journal.DefectAnswered).Cores
-	start := answer.Seq - len(cores) - 1
-	if start < 0 || answer.Seq > len(events) || len(answer.Cause) != 1 {
+	if answer.Seq < 1 || answer.Seq > len(events) || len(answer.Cause) != 1 {
 		return false
 	}
-	for i, core := range cores {
-		event := events[start+i]
+	at := answer.Seq - 2
+	for _, core := range slices.Backward(cores) {
+		if at < 0 {
+			return false
+		}
+		event := events[at]
+		if warning, ok := event.Data.(*journal.SessionWarning); ok {
+			if at == 0 || warning.Operation != "write state projection" || !slices.Equal(event.Cause, []int{events[at-1].Seq}) {
+				return false
+			}
+			at--
+			event = events[at]
+		}
 		reset, ok := event.Data.(*journal.CommandReset)
 		if !ok || reset.Core == nil || *reset.Core != core || !slices.Equal(event.Cause, answer.Cause) {
 			return false
 		}
+		at--
 	}
 	return true
 }

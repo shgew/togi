@@ -185,31 +185,41 @@ func defectRecoveryOutcome(t *testing.T, dir string) []journal.CoreState {
 }
 
 func TestLegacyDefectAnswerPreservesLaterCoreProgress(t *testing.T) {
-	j, foundSeq := defectRecoveryFixture(t, t.TempDir())
-	defer j.Close()
-	for _, core := range []int{0, 1} {
-		if _, err := j.Append(&journal.CommandReset{Core: new(core)}, foundSeq); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := j.Append(&journal.DefectAnswered{ID: 2, Cores: []int{0, 1}, Answer: "yes"}, foundSeq); err != nil {
-		t.Fatal(err)
-	}
-	for _, core := range []int{0, 1} {
-		if _, err := j.Append(&journal.CorePhase{Core: core, To: journal.PhaseDone, Offset: -30, FailedMark: new(-31)}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	r := defectRecoveryRunner(j, func(defect.Finding) (bool, error) {
-		t.Fatal("completed legacy answer prompted again")
-		return false, nil
-	})
-	want := slices.Clone(r.state.Cores)
-	if stop, err := r.checkDefects(); err != nil || stop != nil {
-		t.Fatalf("legacy answer resume: %+v, %v", stop, err)
-	}
-	if diff := cmp.Diff(want, r.state.Cores); diff != "" {
-		t.Fatalf("legacy answer queued resets over later progress (-want +got):\n%s", diff)
+	for warnings := range 4 {
+		t.Run(fmt.Sprintf("projection warnings %d", warnings), func(t *testing.T) {
+			j, foundSeq := defectRecoveryFixture(t, t.TempDir())
+			defer j.Close()
+			for _, core := range []int{0, 1} {
+				reset, err := j.Append(&journal.CommandReset{Core: new(core)}, foundSeq)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if warnings&(1<<core) != 0 {
+					if _, err := j.Append(&journal.SessionWarning{Operation: "write state projection", Error: "disk full"}, reset.Seq); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if _, err := j.Append(&journal.DefectAnswered{ID: 2, Cores: []int{0, 1}, Answer: "yes"}, foundSeq); err != nil {
+				t.Fatal(err)
+			}
+			for _, core := range []int{0, 1} {
+				if _, err := j.Append(&journal.CorePhase{Core: core, To: journal.PhaseDone, Offset: -30, FailedMark: new(-31)}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			r := defectRecoveryRunner(j, func(defect.Finding) (bool, error) {
+				t.Fatal("completed legacy answer prompted again")
+				return false, nil
+			})
+			want := slices.Clone(r.state.Cores)
+			if stop, err := r.checkDefects(); err != nil || stop != nil {
+				t.Fatalf("legacy answer resume: %+v, %v", stop, err)
+			}
+			if diff := cmp.Diff(want, r.state.Cores); diff != "" {
+				t.Fatalf("legacy answer queued resets over later progress (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

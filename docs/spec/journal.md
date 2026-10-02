@@ -148,7 +148,7 @@ The first entry, ID 1, is the false failure on power-off fixed in [#14](https://
 
 `defect.found` carries `id`, `title`, `detail` (why), `pr`, `direction`, `cores` and `decisions`. `defect.answered` carries `id`, `cores` and `answer` (`yes` or `no`), with `cause` citing the finding. The answer is appended and fsynced first. A yes then appends one `command.reset` per affected core, each citing the durable answer, not the finding; a no records only the answer. On resume, a recorded yes queues only cores still lacking a reset caused by that answer, before queued resets or tuning decisions are consumed. Manual resets and resets caused by another finding or answer do not satisfy that missing work. Either answer prevents another prompt for that ID; an answer does not hide a too-cautious finding from `status`. `status` keeps showing the finding's reset command for each affected core until a later `command.reset` for that core or `reset --all`. The original decisions and every journal line remain unchanged.
 
-Older builds recorded all finding-caused resets immediately before the yes answer. A complete preceding block with the answer's cores and finding cause is already finished; resume preserves any progress learned afterward. Earlier consumed resets outside that block do not satisfy a new answer.
+Older builds recorded all finding-caused resets immediately before the yes answer. A complete preceding block with the answer's cores and finding cause is already finished; resume preserves any progress learned afterward. A reset's nonfatal state-projection warning may follow that reset within the block only when it cites that reset. Earlier consumed resets outside that block do not satisfy a new answer.
 
 ## State file
 
