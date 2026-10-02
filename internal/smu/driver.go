@@ -159,6 +159,16 @@ func (d *Driver) mapSlots() {
 			d.mappingErr = fmt.Errorf("CCD%d fuse 0x%02x leaves 8 live slots for %d cores", ccd, disabled, len(cores))
 			return
 		}
+		var mismatches []string
+		for slot, core := range cores {
+			if core%8 != slot {
+				mismatches = append(mismatches, fmt.Sprintf("core %02d at slot %d, want slot %d", core, slot, core%8))
+			}
+		}
+		if len(mismatches) != 0 {
+			d.mappingErr = fmt.Errorf("CCD%d core IDs disagree with modulo-eight slots: %s", ccd, strings.Join(mismatches, "; "))
+			return
+		}
 		for slot, core := range cores {
 			d.slots[core] = location{uint32(ccd), uint32(slot)}
 		}
