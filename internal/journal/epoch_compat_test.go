@@ -62,8 +62,8 @@ func TestSessionEvidenceEpochSurvivesResumeStamps(t *testing.T) {
 				t.Fatal(err)
 			}
 			decoded := BuildOf([]Event{
-				{Data: &SessionStart{Build: Build{Schema: 2, Ruleset: tc.ruleset, Version: "old"}, Evidence: tc.evidence}},
-				{Data: &ConfigLoaded{Build: Build{Version: "new", EvidenceEpoch: 99}}},
+				{Data: &SessionStart{Schema: 2, Ruleset: tc.ruleset, Version: "old", Evidence: tc.evidence}},
+				{Data: &ConfigLoaded{Version: "new", EvidenceEpoch: 99}},
 			})
 			if stamp.Epoch() != tc.want || decoded.Epoch() != tc.want || stamp.Version != "new" || decoded.Version != "new" {
 				t.Fatalf("resume must retain session epoch %d: scan %+v, decoded %+v", tc.want, stamp, decoded)
