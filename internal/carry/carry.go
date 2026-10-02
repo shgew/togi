@@ -309,11 +309,20 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 			intents[p.Trial] = p
 		case *journal.TrialEnd:
 			ended[p.Trial] = true
+			if p.Outcome == journal.OutcomeFailure {
+				signals[e.Seq] = p.Signal
+			}
 		case *journal.Shutdown:
 			lastShutdown = e.Seq
 		case *journal.HuntStart:
 			hunts[p.Hunt] = p
 		case *journal.Failure:
+			signals[e.Seq] = p.Signal
+		case *journal.TrialCarried:
+			if p.Outcome == journal.OutcomeFailure {
+				signals[e.Seq] = p.Signal
+			}
+		case *journal.FailureCarried:
 			signals[e.Seq] = p.Signal
 		}
 	}

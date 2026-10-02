@@ -657,7 +657,7 @@ func TestRuleset7StartsHuntFromCarriedResidentFailure(t *testing.T) {
 	cfg := huntConfig(4)
 	cfg.Edges[1].Resident[6] = -5
 	c := config.Default()
-	c.CandidateEdges = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
+	c.CandidateEdges = map[int]int{0: -9, 1: -9, 2: -9, 3: -9}
 	_, source, dir := runHunt(t, cfg, nil, func(in *Input) {
 		in.Config = c
 		in.Until = func(e journal.Event) bool {
@@ -675,6 +675,10 @@ func TestRuleset7StartsHuntFromCarriedResidentFailure(t *testing.T) {
 	if !ok || intent.Phase != journal.PhaseGuard {
 		t.Fatal("source failure is not a guard step")
 	}
+	if diff := cmp.Diff([]int{-9, -9, -9, -9}, intent.Profile); diff != "" {
+		t.Fatalf("source failing profile (-want +got):\n%s", diff)
+	}
+	c.CandidateEdges = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 	id := stampRuleset(t, dir, 6)
 	resumed, err := sim.Resume(dir, cfg)
 	if err != nil {
@@ -699,8 +703,11 @@ func TestRuleset7StartsHuntFromCarriedResidentFailure(t *testing.T) {
 	}
 	carriedSeq := 0
 	found := false
+	var currentProfile []int
 	for _, e := range events {
 		switch p := e.Data.(type) {
+		case *journal.ProfileChange:
+			currentProfile = p.To
 		case *journal.TrialCarried:
 			if p.Source.Session == id && p.Source.Trial == failure.Trial && p.Outcome == journal.OutcomeFailure {
 				carriedSeq = e.Seq
@@ -710,6 +717,9 @@ func TestRuleset7StartsHuntFromCarriedResidentFailure(t *testing.T) {
 				t.Fatalf("carried resident guard failure was rerun: %+v", p)
 			}
 		case *journal.HuntStart:
+			if diff := cmp.Diff([]int{-10, -10, -10, -10}, currentProfile); diff != "" {
+				t.Fatalf("skipped scheduled profile (-want +got):\n%s", diff)
+			}
 			if carriedSeq == 0 || p.Failure != carriedSeq || p.Trial != failure.Trial || !strings.Contains(p.Message(), "skipped") {
 				t.Fatalf("hunt lost carried failure origin: %+v, carried #%d", p, carriedSeq)
 			}

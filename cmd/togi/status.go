@@ -176,7 +176,18 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		signal := "failure"
 		for _, e := range events {
 			if e.Seq == h.Failure {
-				if p, ok := e.Data.(*journal.Failure); ok {
+				switch p := e.Data.(type) {
+				case *journal.Failure:
+					signal = string(p.Signal)
+				case *journal.TrialEnd:
+					if p.Outcome == journal.OutcomeFailure {
+						signal = string(p.Signal)
+					}
+				case *journal.TrialCarried:
+					if p.Outcome == journal.OutcomeFailure {
+						signal = string(p.Signal)
+					}
+				case *journal.FailureCarried:
 					signal = string(p.Signal)
 				}
 				break

@@ -36,7 +36,12 @@ func (s *State) openHunt(e journal.Event, p *journal.HuntStart) {
 
 func (s *State) recordMask(e journal.Event, p *journal.HuntMask) {
 	if h := s.hunt; h != nil && p.Hunt == h.start.Hunt {
-		h.masks = append(h.masks, maskRecord{p, e.Seq, e.Cause})
+		m := maskRecord{p, e.Seq, e.Cause}
+		if n := len(h.masks); n > 0 && h.masks[n-1].payload.Mask == p.Mask {
+			h.masks[n-1] = m
+		} else {
+			h.masks = append(h.masks, m)
+		}
 	}
 }
 
