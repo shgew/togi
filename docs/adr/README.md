@@ -1,0 +1,30 @@
+# Architecture decisions
+
+The specs describe current behavior; ADRs record why and the alternatives rejected; where they disagree, the spec wins and this index is out of date.
+
+A new ADR adds its line here and updates the status of any ADR it supersedes.
+
+- [0001: Go as the implementation language](0001-go.md) — **in force**.
+- [0002: Clean-room rewrite, not a port of linux-corecycler](0002-clean-room-rewrite.md) — **in force**.
+- [0003: The journal is the source of truth; no database](0003-journal-is-source-of-truth.md) — **in force**.
+- [0004: togi finds offsets; BIOS applies them](0004-find-only.md) — **in force**.
+- [0005: Unattended tuning is a GRUB boot entry](0005-grub-tuning-boot.md) — **in force**.
+- [0006: Search starts from the BIOS values](0006-start-from-bios-values.md) — **in force**.
+- [0007: Unattributed failures back off as suspects; depth is regained only on request](0007-suspect-backoffs.md) — **superseded** by [0011](0011-blame-by-load-and-automatic-regain.md).
+- [0008: Every workload checks its own results](0008-self-checking-workloads.md) — **in force**.
+- [0009: Compatibility across updates](0009-compatibility-across-updates.md) — **partly superseded** by [0019](0019-a-ruleset-change-starts-a-seeded-session.md): refusal of older journals.
+- [0010: Development programs live in tools/](0010-development-programs-in-tools.md) — **in force**.
+- [0011: Blame unattributed failures by load and regain depth automatically](0011-blame-by-load-and-automatic-regain.md) — **partly superseded** by [0015](0015-avx-512-first-in-confirmation.md): confirmation order; by [0020](0020-hunt-and-refine.md): blame, depth retry and confirmation; the R7 CCD and all-core guard step remains.
+- [0012: Releases open with a push and publish from CI](0012-release-by-push.md) — **superseded** by [0014](0014-release-from-a-workflow.md).
+- [0013: Candidate edges start a new session in confirmation](0013-candidate-edges-for-a-new-session.md) — **partly superseded** by [0019](0019-a-ruleset-change-starts-a-seeded-session.md): carrying nothing from archives; by [0020](0020-hunt-and-refine.md): candidate-edge confirmation; [0018](0018-crashes-are-not-a-cost.md) counts crash cost as reboot time; configured candidate edges remain.
+- [0014: Releases are made by a workflow started by hand](0014-release-from-a-workflow.md) — **partly superseded** by [0016](0016-every-pull-request-runs-every-check.md): release checks.
+- [0015: Run mprime AVX-512 first in confirmation](0015-avx-512-first-in-confirmation.md) — **superseded** by [0020](0020-hunt-and-refine.md).
+- [0016: Every pull request runs every flake check; the release trusts `main`](0016-every-pull-request-runs-every-check.md) — **partly superseded** by [0022](0022-run-the-race-detector-in-ci.md): race-detector decision and consequences.
+- [0017: Publish as togi from a fresh repository](0017-publish-as-togi-from-a-fresh-repository.md) — **in force**.
+- [0018: Crashes are not a cost](0018-crashes-are-not-a-cost.md) — **in force**.
+- [0019: A ruleset change starts a seeded session](0019-a-ruleset-change-starts-a-seeded-session.md) — **partly superseded** by [0020](0020-hunt-and-refine.md): candidate-edge checking and same-ruleset BIOS dead end.
+- [0020: Hunt the core behind every failure and refine every core to its mark](0020-hunt-and-refine.md) — **partly superseded** by [0023](0023-hunts-that-converge-on-shared-voltage.md): hunt anchor and joint backoff; by [0024](0024-schedule-from-uncontradicted-evidence.md): initial hunt duration, partition order and qualifying rotation after every deepening; the tier clock stands.
+- [0021: Cache check outputs on Cachix](0021-cache-check-outputs-on-cachix.md) — **in force**.
+- [0022: Run the race detector in CI](0022-run-the-race-detector-in-ci.md) — **in force**.
+- [0023: Hunts that converge on shared voltage](0023-hunts-that-converge-on-shared-voltage.md) — **in force**.
+- [0024: Schedule from uncontradicted evidence](0024-schedule-from-uncontradicted-evidence.md) — **in force**.
