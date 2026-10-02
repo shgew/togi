@@ -67,6 +67,10 @@ stats *args:
 bench *args:
     {{ dev }} go run ./tools/bench "$@"
 
+[group('run')]
+bench-baseline:
+    {{ dev }} go run ./tools/bench --split all --out tools/bench/baseline.jsonl
+
 # Regenerate privacy-safe real facts from a copied state directory
 [group('run')]
 facts state_dir:

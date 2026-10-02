@@ -8,19 +8,20 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 
 ## The suite
 
-`tools/bench/suite.toml` lists scenarios. Each scenario names a simulator machine file in `tools/bench/machines/` (none means the seeded default machine) and two sets of seeds, `dev` and `holdout`:
+`tools/bench/suite.toml` lists scenarios. Each scenario names a simulator `machine` file in `tools/bench/machines/` (none means the seeded default machine), or an ensemble in `machines`, and two sets of seeds, `dev` and `holdout`. Ensemble seeds select successive members round-robin by their position within each split, not by the seed value. `replay = true` enables the same-BIOS replay oracle over the selected fitted member:
 
 |Scenario|Models|
 |---|---|
 |`default`|the seeded default machine|
-|`shared-rail`|the target machine's first ruleset-4 run: CCD0's eight cores crash R7 together when the shallowest is deep|
+|`target`|real-fact replay over the all-facts target fit and eight checked bootstrap refits, including CCD0 and CCD1 R7 joints|
 |`flat-hazard`|rare failures at any nonzero offset on two cores (issue #105)|
 |`late-onset`|R7 failures that start only after four minutes of load|
 |`idle-edge`|cores that fail idle at shallower offsets than under load (issue #106)|
-|`misleading-mce`|shared-rail crashes that leave an MCE naming one core (issue #114)|
-|`target-fit-0` … `target-fit-8`|the all-facts target fit and eight whole-trial bootstrap refits, including CCD0 and CCD1 R7 joints|
+|`misleading-mce`|joint crashes that leave an MCE naming one core (issue #114)|
 
 Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds stay unseen by the change being tuned.
+
+The target scenario has 18 dev and 18 holdout seeds: two seeds per ensemble member in each split. Its oracle draws uniformly from decisive facts matching the entire applied profile and trial class (regime, workload, sorted loaded cores and intended duration). Draws are deterministic per seed and trial ID/index. Condition, phase, source ruleset and evidence epoch do not restrict a class match; BIOS context does. The oracle never uses facts from another BIOS context or records without one. Non-matching trials and trial-less failures use the fitted machine. The tuner sees only the resulting journal evidence, not the oracle or its extract.
 
 Every run is a `tools/sim` subprocess with its own state directory, in parallel up to `--jobs`. A run that exceeds `--timeout` of wall time is killed and recorded as `timeout`. `--keep DIR` keeps the state directories under a new `DIR/bench-*/<scenario>/<split>-<seed>` (the path is printed), so the read-only commands can inspect a run with `--state-dir`.
 
@@ -32,10 +33,15 @@ Every run is a `tools/sim` subprocess with its own state directory, in parallel 
 - `sim_hours`: simulated time from `session.start` to the last event, including the 90 s each crash reboot costs. This is the time to conclusion;
 - `first_clean_rotation_h`: simulated time to the first clean qualifying rotation;
 - `crashes`, `trials`, `trial_hours`, `hunts` and `joint_marks`;
+- `real_answers` and `real_answer_share`: the number and fraction of completed trials answered by matching real facts; inconclusive trials and failures before workload startup count in `trials` but not as real answers;
+- `scenario_real_answer_share`: real answers divided by completed trials across the scenario's selected runs, not an average of per-run fractions;
+- `machine`: the fitted ensemble member selected for the seed.
 - `final_profile` and `depth`, its sum;
 - `hazard_per_h` and `hazard_max_per_h`: failures per hour at the final profile with every core loaded, per regime, from the simulator's own failure model. A profile that passed by luck shows up here, and no journal can show it.
 
 The commit, a dirty flag and the ruleset are recorded with every run.
+
+The summary prints each scenario's `real_answer_share` and a pooled total. Comparison scenario rows and the verdict line print the candidate and baseline shares over paired runs. These fractions describe how much of the observed path has direct real evidence, not a confidence score. Unfinished trials in a timed-out subprocess have no recorded outcome and are not counted. Hazard metrics and model checks still describe the fitted fallback, not an empirical oracle hazard.
 
 ## Comparing two versions
 
@@ -50,15 +56,30 @@ Violations:
 - **V1:** a run the base concluded no longer concludes.
 - **V2:** a run's `hazard_max_per_h` rises by more than 0.01.
 - **V3:** depth gets shallower: by more than 1 count averaged over a scenario, or by more than 5 in one run.
-- **V4:** `shared-rail` gets slower overall.
+- **V4:** `target`, the target machine's replay-oracle ensemble, gets slower overall.
 
 Seeds are deterministic: the same commit always produces the same runs, so rerunning cannot change a result. A change to how the tuner decides moves later sessions onto different random paths, so compare whole scenarios, not single seeds.
 
-Sessions stuck in joint hunts cost wall time as well as simulated time. Under ruleset 4, three of the eight `shared-rail` dev runs exceed the default 180 s timeout and count as not concluding. Raise `--timeout` when the base is that slow.
+Record the baseline again whenever the tuner on `main`, the suite, the facts or the fitted machines change:
+
+```sh
+just bench --split all --out tools/bench/baseline.jsonl
+# Equivalent recipe:
+just bench-baseline
+```
+
+The recorded run lives at `tools/bench/baseline.jsonl`, the path the research program compares against. It includes both dev and holdout seeds. Baselines recorded before the oracle ensemble do not cover `target`; do not reuse them for V4.
+
+Compare a candidate with the recorded baseline:
+
+```sh
+just bench --baseline tools/bench/baseline.jsonl
+just bench --split holdout --baseline tools/bench/baseline.jsonl
+```
 
 ## Checking a machine against real evidence
 
-A machine file may declare `facts = "../facts/target.jsonl.gz"`, resolved relative to the machine TOML. `shared-rail.toml` declares the committed target-machine extract. Files without `facts` are not checked.
+A machine file may declare `facts = "../facts/target.jsonl.gz"`, resolved relative to the machine TOML. Every `target-fit-*.toml` declares the committed target-machine extract. Files without `facts` are not checked.
 
 Regenerate the extract from a temporary copy of the state directory, never the live state:
 
@@ -83,7 +104,7 @@ just fit
 # Optional: --facts EXTRACT.jsonl.gz --out DIRECTORY --seed 263 --bootstrap 8
 ```
 
-`tools/fit` reads the same privacy-safe extract as the model check. It writes `target-fit-0.toml` from all decisive starts and `target-fit-1.toml` through `target-fit-8.toml` from whole-trial bootstrap samples drawn with replacement. The default seed is 263; refit `n` uses seed `263+n`. Every file declares its extract relative to the output directory and its BIOS context. Mixed-context extracts are refused: split them before fitting. The suite includes all nine files with separate dev and holdout seeds.
+`tools/fit` reads the same privacy-safe extract as the model check. It writes `target-fit-0.toml` from all decisive starts and `target-fit-1.toml` through `target-fit-8.toml` from whole-trial bootstrap samples drawn with replacement. The default seed is 263; refit `n` uses seed `263+n`. Every file declares its extract relative to the output directory and its BIOS context. Mixed-context extracts are refused: split them before fitting. The `target` scenario spreads separate dev and holdout seeds across all nine files, with the replay oracle above each.
 
 Each bootstrap sample is fitted without constraints first. If its model check against the original extract flags a group, the fitter restarts from the passing all-facts fit and maximizes that **same resampled likelihood**, accepting only parameter moves that remain inside every original group's unchanged 99% interval. It does not redraw the sample, tune the seed, change the interval or repair the observed counts. This is a **checked, constrained bootstrap ensemble**: its spread is truncated to what the real facts admit, not an unconstrained bootstrap confidence interval. The fit output identifies each constrained refit and its flagged groups, including the unconstrained interval and mean probability. Each generated header records the bootstrap index and constrained groups' class, depth and observed counts; the usual final model-check report still checks the serialized machine files.
 

@@ -5,10 +5,11 @@ dev = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21
 holdout = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124]
 
 [[scenario]]
-name = "shared-rail"
-machine = "machines/shared-rail.toml"
-dev = [1, 2, 3, 4, 5, 6, 7, 8]
-holdout = [101, 102, 103, 104, 105, 106, 107, 108]
+name = "target"
+machines = ["machines/target-fit-0.toml", "machines/target-fit-1.toml", "machines/target-fit-2.toml", "machines/target-fit-3.toml", "machines/target-fit-4.toml", "machines/target-fit-5.toml", "machines/target-fit-6.toml", "machines/target-fit-7.toml", "machines/target-fit-8.toml"]
+replay = true
+dev = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+holdout = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118]
 
 [[scenario]]
 name = "flat-hazard"
@@ -33,57 +34,3 @@ name = "misleading-mce"
 machine = "machines/misleading-mce.toml"
 dev = [1, 2, 3, 4]
 holdout = [101, 102, 103, 104]
-
-[[scenario]]
-name = "target-fit-0"
-machine = "machines/target-fit-0.toml"
-dev = [1, 2]
-holdout = [101, 102]
-
-[[scenario]]
-name = "target-fit-1"
-machine = "machines/target-fit-1.toml"
-dev = [1, 2]
-holdout = [101, 102]
-
-[[scenario]]
-name = "target-fit-2"
-machine = "machines/target-fit-2.toml"
-dev = [1, 2]
-holdout = [101, 102]
-
-[[scenario]]
-name = "target-fit-3"
-machine = "machines/target-fit-3.toml"
-dev = [1, 2]
-holdout = [101, 102]
-
-[[scenario]]
-name = "target-fit-4"
-machine = "machines/target-fit-4.toml"
-dev = [1, 2]
-holdout = [101, 102]
-
-[[scenario]]
-name = "target-fit-5"
-machine = "machines/target-fit-5.toml"
-dev = [1, 2]
-holdout = [101, 102]
-
-[[scenario]]
-name = "target-fit-6"
-machine = "machines/target-fit-6.toml"
-dev = [1, 2]
-holdout = [101, 102]
-
-[[scenario]]
-name = "target-fit-7"
-machine = "machines/target-fit-7.toml"
-dev = [1, 2]
-holdout = [101, 102]
-
-[[scenario]]
-name = "target-fit-8"
-machine = "machines/target-fit-8.toml"
-dev = [1, 2]
-holdout = [101, 102]

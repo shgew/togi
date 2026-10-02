@@ -4,11 +4,12 @@
 
 ```sh
 just sim [seed]                                             # search, refinement and one clean qualifying rotation in a new temporary state directory
-go run ./tools/sim [--seed N] [--machine FILE] [--rotations N] [--state-dir DIR]
+go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--rotations N] [--state-dir DIR]
 ```
 
 - `--seed` (default 1) selects deterministic edges and failures; the same seed and history reproduce the journal.
 - `--machine FILE` loads an explicit simulator machine TOML, including edges, joints, ranking, outcome scripts and reset reasons; `--seed` still sets its seed.
+- `--replay-facts` answers exact trial-class/full-profile matches from the machine file's `facts` extract, under its declared BIOS context. Without this flag the file remains a fitted simulator alone.
 - `--rotations` (default 1) stops after N clean qualifying rotations valid for the current profile once every core is done and refinement can reach no more depth. An earlier rotation can count after a deepening under the uncontradicted-profile rules in [the tuner spec](spec/tuner.md#guard).
 - `--state-dir` uses an existing directory; without it, `sim` creates a temporary one and prints its path to stderr.
 
@@ -47,6 +48,16 @@ A joint-triggered crash produces no MCE by default, even when `[model] crash_mce
 
 Run it with `go run ./tools/sim --machine <file> --state-dir <dir>` and inspect `events --kind hunt,mark,refine` along with `status` and `watch`. `sim.Config` also models late-onset hazards (six minutes of R6 idle or four minutes of R7 heat soak), a flat rare hazard, a failure on an idle core, a backend error just before a crash, and watchdog, power-loss and thermal-trip resets. A scripted outcome pins a particular trial and time for deterministic interruption tests. The simulator has separate wall and boot-local monotonic clocks, so a wall-clock jump need not change which MCE belongs to a trial.
 
+## Replaying real answers
+
+```sh
+go run ./tools/sim --seed 1 --machine tools/bench/machines/target-fit-0.toml --replay-facts --state-dir <dir>
+```
+
+The extract path in `facts` is relative to the machine file, and replay requires a declared BIOS context. `sim.NewReplay` and `sim.Config.Replay` are the simulator seam; the shared evaluation reader supplies decisive trial records, never idle facts. Matching uses regime, workload, sorted loaded cores, intended duration and every applied offset, including unloaded cores. It deliberately ignores condition and phase. Only facts from the declared BIOS context participate. A match draws uniformly from all matching records, deterministically from seed and trial ID/index, preserving the recorded outcome, failure signal and measured time to failure. A pass runs to the intended duration.
+
+Non-matching trials and trial-less failures still come from the fitted machine underneath. The privacy-safe extract does not record the failing core or MCE bank: replayed backend failures name the first sorted loaded core, replayed crashes stay unattributed, and MCE signals use simulated bank evidence. These attribution details are not replayed hardware facts. The tuner receives ordinary journal evidence only; it cannot inspect the oracle. `Machine.Hazard` and `Machine.FailureProbability` continue to describe the fitted fallback. The [bench target scenario](benchmarking.md#the-suite) runs this oracle over the fitted ensemble and reports the share of trial outcomes supplied by real facts.
+
 ## Measured reference journals
 
 [`just stats`](reviewing.md) reports exposure and failures from real journals; it does not fit simulator defaults. These three archived sessions came from one Ryzen 9 9950X3D2 under one BIOS context. The session IDs identify the unmodified compressed fixtures in `internal/carry/testdata/`.
@@ -77,4 +88,4 @@ Run it with `go run ./tools/sim --machine <file> --state-dir <dir>` and inspect 
 
 R2's failures concentrate in mprime AVX-512 (16, 15 and 4 respectively), with y-cruncher FFTv4/N63/VT3 contributing 11, 2 and 0. R7 mprime AVX2 contributes 1, 1 and 5, mprime AVX-512 1, 1 and 4, and y-cruncher 0, 0 and 4. Unattributed crashes load CCD0 alone 3, 1 and 7 times, both CCDs 2, 0 and 1 times, and CCD1 alone 0, 0 and 1 times. Failures contradicting earlier passes of the same class at equal-or-deeper profiles number 0, 1 and 4.
 
-These are observed starts and last-evidence trial hours, not wall-clock session duration. A crash can have zero recorded exposure, and older journals can record a failure before `trial.start`. Rulesets, offsets, workloads and intended durations changed between sessions, so pooled rates are not per-offset failure probabilities. The simulator's fast seeded default remains unchanged; machine files inspired by these measurements are adversarial scenarios, not calibrated models. The tables provide no evidence for adding R3 or R4 schedule-dependent hazards.
+These are observed starts and last-evidence trial hours, not wall-clock session duration. A crash can have zero recorded exposure, and older journals can record a failure before `trial.start`. Rulesets, offsets, workloads and intended durations changed between sessions, so pooled rates are not per-offset failure probabilities. The simulator's fast seeded default remains unchanged. The synthetic bench machines are adversarial scenarios; the `target-fit-*` ensemble instead fits the committed extract and is checked against its eligible groups, with the limits described in [benchmarking](benchmarking.md#fitting-the-target-machine). The tables provide no evidence for adding R3 or R4 schedule-dependent hazards.

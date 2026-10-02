@@ -20,13 +20,16 @@ import (
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/tuner"
 	"github.com/shgew/togi/tools/modelcheck"
+	"github.com/shgew/togi/tools/trialfacts"
 )
 
 type scenario struct {
-	Name    string   `toml:"name"`
-	Machine string   `toml:"machine"`
-	Dev     []uint64 `toml:"dev"`
-	Holdout []uint64 `toml:"holdout"`
+	Name     string   `toml:"name"`
+	Machine  string   `toml:"machine"`
+	Machines []string `toml:"machines"`
+	Replay   bool     `toml:"replay"`
+	Dev      []uint64 `toml:"dev"`
+	Holdout  []uint64 `toml:"holdout"`
 }
 type runSpec struct {
 	scenario scenario
@@ -87,14 +90,31 @@ func loadRuns(path, split string) ([]runSpec, error) {
 			return nil, fmt.Errorf("invalid or duplicate scenario %q", s.Name)
 		}
 		seen[s.Name] = true
-		cfg := sim.Config{}
-		if s.Machine != "" {
-			if !filepath.IsAbs(s.Machine) {
-				s.Machine = filepath.Join(filepath.Dir(path), s.Machine)
+		paths := s.Machines
+		if s.Machine != "" && len(paths) > 0 {
+			return nil, fmt.Errorf("load scenario %s: machine and machines are mutually exclusive", s.Name)
+		}
+		if len(paths) == 0 {
+			paths = []string{s.Machine}
+		}
+		configs := make([]sim.Config, len(paths))
+		resolved := make([]string, len(paths))
+		for i, machinePath := range paths {
+			if machinePath != "" {
+				if !filepath.IsAbs(machinePath) {
+					machinePath = filepath.Join(filepath.Dir(path), machinePath)
+				}
+				configs[i], err = sim.LoadMachine(machinePath)
+				if err != nil {
+					return nil, fmt.Errorf("load scenario %s: %w", s.Name, err)
+				}
 			}
-			cfg, err = sim.LoadMachine(s.Machine)
-			if err != nil {
-				return nil, fmt.Errorf("load scenario %s: %w", s.Name, err)
+			resolved[i] = machinePath
+			if s.Replay {
+				configs[i].Replay, err = trialfacts.LoadReplay(machinePath, configs[i])
+				if err != nil {
+					return nil, fmt.Errorf("load scenario %s: %w", s.Name, err)
+				}
 			}
 		}
 		seeds := make(map[uint64]bool)
@@ -102,13 +122,16 @@ func loadRuns(path, split string) ([]runSpec, error) {
 			name  string
 			seeds []uint64
 		}{{"dev", s.Dev}, {"holdout", s.Holdout}} {
-			for _, seed := range group.seeds {
+			for index, seed := range group.seeds {
 				if seeds[seed] {
 					return nil, fmt.Errorf("scenario %s repeats seed %d", s.Name, seed)
 				}
 				seeds[seed] = true
 				if split == "all" || split == group.name {
-					runs = append(runs, runSpec{s, seed, group.name, cfg})
+					member := index % len(configs)
+					selected := s
+					selected.Machine = resolved[member]
+					runs = append(runs, runSpec{selected, seed, group.name, configs[member]})
 				}
 			}
 		}
@@ -248,6 +271,7 @@ func execute(o options, stdout, stderr io.Writer) error {
 			return err
 		}
 	}
+	setScenarioShares(results)
 	if o.out != "" {
 		f, err := os.Create(o.out)
 		if err != nil {
@@ -287,6 +311,9 @@ func simulate(binary, root string, spec runSpec, timeout time.Duration) (result,
 	args := []string{"--seed", fmt.Sprint(spec.seed), "--state-dir", dir}
 	if spec.scenario.Machine != "" {
 		args = append(args, "--machine", spec.scenario.Machine)
+	}
+	if spec.scenario.Replay {
+		args = append(args, "--replay-facts")
 	}
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Stdout, cmd.Stderr = log, log
@@ -329,6 +356,7 @@ func simulate(binary, root string, spec runSpec, timeout time.Duration) (result,
 		return result{}, fmt.Errorf("read run log: %w", err)
 	}
 	r.Scenario, r.Seed, r.Split = spec.scenario.Name, spec.seed, spec.split
+	r.Machine = spec.scenario.Machine
 	r.ExitCode, r.WallS = exit, wall
 	r.Status = runStatus(exit, timedOut, events, string(text))
 	return r, nil

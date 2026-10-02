@@ -17,6 +17,7 @@ import (
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/simrun"
+	"github.com/shgew/togi/tools/trialfacts"
 )
 
 func main() {
@@ -29,6 +30,7 @@ func run(args []string, stderr io.Writer) int {
 	seed := flags.Uint64("seed", 1, "draw the simulated machine's edges and failures from this `seed`")
 	rotations := flags.Int("rotations", 1, "stop after `N` clean qualifying rotations once every core is done and refinement can reach no more depth")
 	machineFile := flags.String("machine", "", "load the simulated machine from this TOML `file`")
+	replay := flags.Bool("replay-facts", false, "answer exact class/profile matches from the machine's same-BIOS facts extract")
 	dir := flags.String("state-dir", "", "use this state `directory`, resuming a journal it holds; default a new temporary one")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
 		return 0
@@ -60,6 +62,13 @@ func run(args []string, stderr io.Writer) int {
 			return 1
 		}
 		machineConfig.Seed = *seed
+	}
+	if *replay {
+		machineConfig.Replay, err = trialfacts.LoadReplay(*machineFile, machineConfig)
+		if err != nil {
+			fmt.Fprintf(stderr, "sim: %v\n", err)
+			return 1
+		}
 	}
 	cfg, err := sim.Resume(*dir, machineConfig)
 	if err != nil {
