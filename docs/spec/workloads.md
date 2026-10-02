@@ -67,6 +67,8 @@ Defaults, all configurable:
 
 For `D = durations.guard_all_core_s` and `n` CCDs, an R7 long start runs for `D` on one CCD; on multiple CCDs, each single-CCD part runs `floor(D / 4)` seconds and the all-core part runs `D - n*floor(D / 4)` seconds. Each part also runs three short `start_s` starts and one long start; when short and long durations match their required pass counts add. `guard_all_core_s` must be in [4, 86400]. A trial is torn down before the next start. Inconclusive starts repeat their part's loaded cores and workload; passing starts survive interruption. A hunt mask or refinement check instead needs `n` passing starts from `evidence.*`.
 
+Hunt masks start at `start_s`. A hunt instead starts at its failed trial's longer duration when, since the latest reset and before that failure, `n` valid `start_s` passes of the same regime, workload and loaded cores cover the failing profile, and no failure in that regime at `start_s` or shorter has occurred. Idle failures without a trial always start at `start_s`. `tuner.md` (Hunt) has the full rules.
+
 Default guard rotation, about 7.2 h on 16 cores:
 1. R7, R7, R7: every R2 workload, each on CCD0, CCD1 and all cores, with three short starts and one long start per part.
 2. R2, R2, R2: every R2 workload on every core.
@@ -77,7 +79,7 @@ Default guard rotation, about 7.2 h on 16 cores:
 7. R4 on every core.
 8. R6.
 
-A clean rotation qualifies only with at least three R1, three R2 and three R7 steps, and one each of R3, R4, R5 and R6. Custom schedules can end clean without qualifying; the end event lists missing coverage. Per-core steps follow `tuner.md`'s scheduling order. Search time depends on edge distance and failed steps; candidate checks take five starts of each frozen R1 and R2 class by default. Qualification is breadth coverage, not a guarantee against rare hourly failures.
+A clean rotation qualifies only with at least three R1, three R2 and three R7 steps, and one each of R3, R4, R5 and R6. Custom schedules can end clean without qualifying; the end event lists missing coverage. After a later deepening, an earlier qualifying rotation that ended with every core done can still count toward `run --rotations` and Bronze when its ending profile was at least as deep as the current one and no failure since the latest reset contradicts it (`tuner.md`, Guard); this credit does not change the tier clock or clean hours. Per-core steps follow `tuner.md`'s scheduling order. Search time depends on edge distance and failed steps; candidate checks take five starts of each frozen R1 and R2 class by default. Qualification is breadth coverage, not a guarantee against rare hourly failures.
 
 ## Containment
 
