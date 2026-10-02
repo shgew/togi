@@ -27,7 +27,7 @@ When the same kind of finding occurs in two pull requests, add a lesson in the p
 
 The author posts one robotogi comment for each reviewed head commit, after fix commits have also been reviewed. Nothing per pull request is committed to the repository. Use this order:
 
-1. Header: `## Review record`, reviewed full commit SHA, files covered and reviewers (names and agent models when available). State CodeRabbit's status and evidence.
+1. Header: `## Review record`, reviewed full commit SHA, files covered, excluded files with reasons and reviewers (names and agent models when available). State CodeRabbit's status and evidence.
 2. Table: `Source | Priority | Finding | Outcome`. Include agent findings, CodeRabbit inline findings and findings in its review body. Outcomes are `fixed in <full sha>`, `rejected: <reason>` or `deferred: #<issue number>`. With no findings, leave the table empty and say so outside it.
 3. Verdict: `success` only when every finding has an outcome and no P0/P1 remains open. Deferring a P0/P1 does not close it for this gate. Otherwise use `blocked` and do not post a successful check.
 4. End with exactly one hidden block: `<!-- togi-review {json} -->`. Serialize compact JSON on one line; escape `<`, `>` and `&` as Unicode escapes so finding text cannot end the HTML comment.
@@ -38,6 +38,7 @@ JSON version 1 has these fields, all required:
 - `repository`: `owner/repo`.
 - `pull_request`: integer pull request number.
 - `head_sha`: full reviewed commit SHA.
+- `excluded_files`: array of objects with `path` (repository-relative path) and `reason` (string). Empty when all changed files were covered.
 - `files`: array of covered repository-relative paths.
 - `reviewers`: array of objects with `name` (string), `kind` (`agent` or `coderabbit`), `model` (string or null) and `files` (covered paths).
 - `coderabbit`: object with `status` (`reviewed`, `rate_limited`, `paused` or `not_installed`), `head_sha` (full reviewed SHA or null for a skipped review) and `evidence` (review/comment URL, or the installation absence evidence).

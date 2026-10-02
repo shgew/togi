@@ -8,7 +8,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `CHANGELOG.md`: user-visible changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 - `CONTEXT.md`: the vocabulary. Name code, events and docs with its terms.
 - `REVIEW.md`: defect criteria and recurring lessons. Read it before reviewing a pull request.
-- `.omp/`: reviewer rules and `/review-pr`, the omp command for recording a pull request review.
+- `.omp/`: reviewer rules and `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates.
 - `docs/spec/`: normative behavior. Read the relevant spec before changing behavior, and change spec and code in the same pull request or in layers of one stack merged together.
   - `tuner.md`: offsets, search, hunt, refinement, guard, tiers, dead ends.
   - `workloads.md`: regimes, backends, containment, failure detection.
@@ -33,7 +33,7 @@ Every change, docs included, lands as a pull request against `main` on `github.c
 - Stacked pull requests always use [`gh stack`](https://github.com/github/gh-stack) (`gh extension install github/gh-stack`): each layer is a branch with its own pull request based on the layer below, a lower layer holds what the ones above depend on, and every layer passes `just check` on its own. Open the stack with `gh stack submit`, keep it current with `gh stack sync`, and merge it with `gh stack merge`, never layer by layer by hand.
 - Commit with short imperative messages.
 - The pull request body follows `.github/pull_request_template.md`: a short summary, and the demo in a collapsed block.
-- After opening a pull request, its author gets independent agent reviewers over the diff and checks the linked issue's Acceptance. Follow `.omp/commands/review-pr.md` (the omp command is `/review-pr <number>`). Review fixes again, record every finding and its outcome in one App comment for the reviewed commit, then post the `review` check on that head. The merge requires that check from robotogi and resolved review threads, together with CI.
+- After opening a pull request, its author gets independent agent reviewers over the diff and checks the linked issue's Acceptance. Follow `.omp/commands/review-pr.md` (the omp command is `/review-pr [PR numbers or URLs… | all]`; no argument means all open non-draft pull requests). PR coordinators run in parallel and split each diff among parallel reviewers; one coordinator owns each stack's fixes and restack. Review fixes again, record every finding and its outcome in one App comment for the reviewed commit, then post the `review` check on that head. The merge requires that check from robotogi and resolved review threads, together with CI.
 - Fix real defects: behavior, safety, unmet Acceptance, tests that fail to pin behavior, and docs that contradict behavior or other docs. Reply with a reason to every other finding; style, wording, naming taste and optional refactors are not defects.
 - While CodeRabbit is installed, wait for its review of the head commit, unless it reports a rate limit or pause. Handle both its inline and review-body findings, reply to and resolve its threads, and record skipped reviews with the reason. Its own status is advisory, not a merge requirement.
 - A pull request that finishes an issue says `Closes #N` in its body; one that only makes progress says `Refs #N`.
