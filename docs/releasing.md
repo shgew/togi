@@ -2,8 +2,6 @@
 
 The owner decides when to release. `version.txt` is the single source of the package version. togi uses Semantic Versioning: before 1.0, a breaking change bumps MINOR and every other release bumps PATCH. From 1.0 onward, a breaking change bumps MAJOR, otherwise entries under `### Added` bump MINOR and other releases bump PATCH. A changelog line beginning `- **BREAKING**` makes the release breaking.
 
-A pull request marked breaking merges only after the current `[Unreleased]` changes have been released. This ensures every downgrade target has a version.
-
 Releasing needs permission to start workflows in the repository ([ADR 0014](adr/0014-release-from-a-workflow.md)). The workflow pushes the release commit with a deploy key that has write access: its private key is the repository secret `RELEASE_DEPLOY_KEY`, and the `main` ruleset lists deploy keys as a bypass actor, since it otherwise requires a pull request and a passing `check`.
 
 1. Run `just release-preview` to see the version, the reason for the bump and the release notes the release would get from `origin/main`. Preview leaves the checkout's branch, HEAD, index and worktree unchanged, including when a release needs publishing again.
