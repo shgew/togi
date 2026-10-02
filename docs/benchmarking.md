@@ -123,3 +123,45 @@ The positive-rate search covers past-edge rates from `1e-8` to `0.5` failures/s,
 The extract cannot identify every simulator parameter. Unsupported or all-passing edge boundaries stay at -50; absence of failures does not prove that boundary. The fit shares the hazard shape across cores and regimes because sparse failures cannot resolve a separate shape for each. Unsupported workload overrides stay absent; flat rates stay zero without supporting failures. Onset boost and joint delays stay at zero: decisive binary starts do not identify failure-time shapes. Signal weights, crash-MCE probability, bank attribution and reset kinds retain simulator defaults; these are not parameters of the binary likelihood. Idle facts without starts are counted by the check but provide no idle exposure denominator. Idle edges can be fitted only through decisive starts with nonzero offsets on unloaded cores; otherwise they stay disabled. Offset-zero unloaded starts also constrain idle-edge candidates, since an edge of 1 adds a hazard at stock offsets. Failure-only joint activation sets identify a lower bound, not an upper bound on the rate; a saturated fitted rate is a deterministic representative on that likelihood plateau, not a precise physical measurement. Generated headers summarize the fitted parameter families, unsupported-edge and unobserved-idle limits, and the fixed onset, delay, signal, MCE and reset settings.
 
 Generation prints likelihoods, CCD joint parameters, model checks against the **original** extract (also for bootstrap fits), and elapsed wall time. Files contain no timestamps and use stable ordering and full-precision parameters, so fixed inputs and seed reproduce them byte for byte. A model-check flag is not silently repaired or excluded: inspect the named class, depth and interval before using that ensemble member as target evidence. A flag may reflect a poor local optimum, the current model's shared-shape/joint assumptions, or a sparse failure absent from a bootstrap sample; it is not by itself proof of an impossible fit. The shared `tools/modelcheck` implementation is used by both `just fit` and `just bench`, with the same 99% intervals.
+
+### Forward-chained check
+
+After the ensemble's model check, `just fit` orders sessions with decisive starts by their UTC session IDs. For each session after the first, it fits all earlier sessions' decisive starts once, without bootstrap resampling or model-check constraints, then predicts only the held-out session. These fits stay in memory and do not change the generated machine files.
+
+Each session row names the session ID, ruleset and `training_sessions` count. `starts` and `failures` count held-out decisive starts and observed failures; `predicted` sums the fit's failure probabilities over their intended durations. `log_loss/start` is the mean Bernoulli log loss, with probabilities clamped to `[1e-4, 1-1e-4]`. It compares the `fit` to a `constant` predictor whose probability, shown in parentheses, is the earlier training starts' failure rate. Lower loss is better: fit loss above the constant means the fit predicts that later session worse than a single average failure rate.
+
+`failures_p<0.01` counts observed failures assigned less than 1% probability: outcomes the model treated as nearly impossible. `exact_matches` is the number and share of held-out starts whose trial class and full profile occur in the earlier training starts. That share bounds what replay could answer from earlier evidence; it does not establish that replay's answers would be correct. `flagged/eligible` counts held-out groups flagged by the unchanged model check, with at least 10 starts and the same 99% binomial intervals. The indented regime rows break down held-out starts and observed versus predicted failures.
+
+`Pooled` sums all held-out sessions' counts and predictions and divides summed log losses by their total starts. Its constant uses each session's own earlier prefix, not one failure rate fitted to the pooled outcomes; its group counts sum the separate held-out checks. `Forward-chained elapsed` reports the added wall time. This is evidence about extrapolation to later sessions, not a gate or a guarantee about unseen profiles or other machines.
+
+The committed extract produced these rows with the default `just fit` arguments:
+
+```text
+Forward-chained check
+20260926T151414Z ruleset=2 training_sessions=1: starts=479 failures=22 predicted=2.5 log_loss/start fit=0.3478 constant(0.064)=0.1892 failures_p<0.01=20 exact_matches=44/479 (9.2%) flagged/eligible=0/0
+  R1 starts=195 observed=1 predicted=0.4
+  R2 starts=155 observed=17 predicted=0.3
+  R3 starts=56 observed=0 predicted=0.1
+  R4 starts=50 observed=0 predicted=0.1
+  R5 starts=18 observed=2 predicted=0.0
+  R6 starts=3 observed=0 predicted=0.1
+  R7 starts=2 observed=2 predicted=1.6
+20260927T221954Z ruleset=3 training_sessions=2: starts=403 failures=18 predicted=9.0 log_loss/start fit=0.1841 constant(0.057)=0.1840 failures_p<0.01=10 exact_matches=89/403 (22.1%) flagged/eligible=0/0
+  R1 starts=51 observed=0 predicted=0.0
+  R2 starts=281 observed=4 predicted=0.4
+  R3 starts=17 observed=0 predicted=0.0
+  R4 starts=17 observed=0 predicted=0.0
+  R5 starts=17 observed=1 predicted=0.0
+  R7 starts=20 observed=13 predicted=8.6
+20260929T180308Z ruleset=4 training_sessions=3: starts=894 failures=59 predicted=13.9 log_loss/start fit=0.4597 constant(0.054)=0.2445 failures_p<0.01=44 exact_matches=10/894 (1.1%) flagged/eligible=6/8
+  R1 starts=80 observed=0 predicted=0.0
+  R2 starts=80 observed=0 predicted=0.0
+  R7 starts=734 observed=59 predicted=13.9
+20261002T004254Z ruleset=6 training_sessions=4: starts=317 failures=8 predicted=18.9 log_loss/start fit=0.0666 constant(0.058)=0.1302 failures_p<0.01=0 exact_matches=246/317 (77.6%) flagged/eligible=1/4
+  R1 starts=80 observed=0 predicted=0.0
+  R2 starts=80 observed=0 predicted=0.0
+  R7 starts=157 observed=8 predicted=18.9
+Pooled: starts=2093 failures=107 predicted=44.4 log_loss/start fit=0.3215 constant(per-prefix)=0.2029 failures_p<0.01=74 exact_matches=389/2093 (18.6%) flagged/eligible=7/12
+```
+
+In one development run, the four added prefix fits and held-out checks took about 43 s. This is an observed wall time, not a runtime benchmark.
