@@ -143,6 +143,7 @@ type State struct {
 	thermalSeq              int
 	projectionDirty         bool
 	projectedGuard          *journal.GuardState
+	projectedHunt           *journal.HuntState
 }
 
 func New() *State {
@@ -219,6 +220,7 @@ func (s *State) Fold(e journal.Event) {
 			s.indexByID[c.id] = i
 		}
 		s.bestDirty = true
+		s.projectionDirty = true
 	case *journal.ConfigLoaded:
 		s.steps = slices.Clone(p.Config.Guard.Rotation)
 		s.durations = p.Config.Durations
@@ -236,6 +238,7 @@ func (s *State) Fold(e journal.Event) {
 		if p.Core != nil {
 			if c := s.core(*p.Core); c != nil {
 				s.resetSeq = e.Seq
+				s.projectionDirty = true
 				s.resetEvidence(*p.Core)
 				c.queued, c.queueSeq = queuedReset, e.Seq
 			}
@@ -314,7 +317,7 @@ func (s *State) Fold(e journal.Event) {
 	case *journal.FailureCarried:
 		s.recordIdle(e, &p.Failure)
 		if _, recorded := s.carriedSources[e.Seq]; recorded {
-			s.rememberCarriedFailure(e.Seq, &p.Failure, trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, fmt.Sprint(s.ids()), s.durations.GuardIdleS})
+			s.rememberCarriedFailure(e.Seq, &p.Failure, trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, coresKey(s.ids()), s.durations.GuardIdleS})
 		}
 	case *journal.DeadEnd:
 		if p.Condition == journal.DeadEndThermalTrip {
@@ -506,7 +509,7 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 	} else if intent := s.intents[p.Trial]; intent != nil {
 		failure.class = classOf(intent)
 	} else if p.Trial == "" && (p.Condition == machine.Resident || p.Condition == machine.Masked) {
-		failure.class = trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, fmt.Sprint(s.ids()), s.durations.GuardIdleS}
+		failure.class = trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, coresKey(s.ids()), s.durations.GuardIdleS}
 	}
 	s.failureIndex[e.Seq] = len(s.pendingFailures)
 	s.pendingFailures = append(s.pendingFailures, failure)
@@ -764,4 +767,5 @@ func (s *State) Project(st *journal.State) {
 	st.Hunt = s.projectHunt()
 	st.Refine = s.projectRound()
 	st.Guard = s.projectGuard()
+	s.projectionDirty = false
 }

@@ -54,32 +54,32 @@ func (s *State) projectGuard() *journal.GuardState {
 	if peakSeq != 0 {
 		out.TctlMaxC = new(peak)
 	}
-	valid := map[trialClass]int{}
-	for k := range s.ledger {
-		valid[k] = s.latestFailure(k, g.profile, 0)
+	type exposureKey struct {
+		regime   machine.Regime
+		workload string
+	}
+	starts := map[exposureKey]int{}
+	for k, entries := range s.ledger {
+		valid, checked := 0, false
+		for _, e := range entries {
+			if !e.pass || e.carried || e.condition == machine.Isolated || !atLeastDeep(e.profile, g.profile) {
+				continue
+			}
+			if !checked {
+				valid, checked = s.latestFailure(k, g.profile, 0), true
+			}
+			if e.seq > valid {
+				starts[exposureKey{k.regime, k.workload}]++
+			}
+		}
 	}
 	for _, r := range machine.Regimes {
 		for _, w := range machine.Workloads(r) {
-			row := journal.ExposureRow{Regime: r, Workload: w.ID}
-			for k, entries := range s.ledger {
-				if k.regime != r || k.workload != w.ID {
-					continue
-				}
-				for _, e := range entries {
-					if !e.pass || e.carried {
-						continue
-					}
-					if e.condition != machine.Isolated && e.seq > valid[k] && atLeastDeep(e.profile, g.profile) {
-						row.Starts++
-					}
-				}
-			}
-			if row.Starts > 0 {
-				out.Exposure = append(out.Exposure, row)
+			if n := starts[exposureKey{r, w.ID}]; n > 0 {
+				out.Exposure = append(out.Exposure, journal.ExposureRow{Regime: r, Workload: w.ID, Starts: n})
 			}
 		}
 	}
 	s.projectedGuard = out
-	s.projectionDirty = false
 	return out
 }
