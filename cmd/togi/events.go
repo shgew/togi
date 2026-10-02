@@ -25,9 +25,9 @@ matches print nothing and exit 0. Readable lines are colored on terminals and
 in the system journal unless NO_COLOR is set.
 
 Examples:
-  togi events --core 3                   Everything that happened to core 3
-  togi events --kind trial,tier.change   Every trial event and tier change
-  togi events --json --trial 0413        The raw events of trial 0413`
+  togi events --core 3                     Everything that happened to core 3
+  togi events --kind trial,guard.rotation   Every trial event and guard rotation
+  togi events --json --trial 0413          The raw events of trial 0413`
 
 func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 	var (

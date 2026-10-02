@@ -205,17 +205,10 @@ func (s Snapshot) summary() []string {
 		parts = append(parts, fmt.Sprintf("refine round %d", s.round))
 	}
 	parts = append(parts, fmt.Sprintf("%d/%d done", done, len(s.tiles)))
-	if s.guardState != nil {
-		tier := journal.EscapeText(string(s.tier))
-		if s.tier == journal.TierNone || s.tier == "" {
-			tier = "--"
-		}
-		parts = append(parts, "tier "+tier)
-		if gs := s.guardState; gs != nil {
-			parts = append(parts, fmt.Sprintf("clean %s since tier clock #%d", hm(time.Duration(gs.CleanS)*time.Second), gs.TierClockSeq))
-			if gs.TctlMaxC != nil {
-				parts = append(parts, fmt.Sprintf("Tctl profile max %d C", *gs.TctlMaxC))
-			}
+	if gs := s.guardState; gs != nil {
+		parts = append(parts, fmt.Sprintf("qualified rotations %d since last deepening, latest %d", gs.CleanRotations, gs.LastQualifiedRotation))
+		if gs.TctlMaxC != nil {
+			parts = append(parts, fmt.Sprintf("Tctl profile max %d C", *gs.TctlMaxC))
 		}
 	}
 	parts = append(parts, plural(s.failures, "failure"), plural(s.crashes, "crash"))

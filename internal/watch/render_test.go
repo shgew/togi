@@ -36,10 +36,10 @@ func TestActivitySummary(t *testing.T) {
 	}
 }
 
-func TestGuardExposureOutsideGuardPhase(t *testing.T) {
-	gs := &journal.GuardState{Rotation: 2, Steps: []machine.Regime{machine.R1}, StepsDone: 1, Missing: []string{"R2 needs 3 steps, has 0"}, TierClockSeq: 12, CleanS: 3600}
-	s := Snapshot{huntID: 3, tier: journal.TierBronze, guardState: gs, tiles: []tile{{phase: journal.PhaseDone}}}
-	want := []string{"hunt 3", "1/1 done", "tier bronze", "clean 1h00m since tier clock #12", "0 failures", "0 crashes"}
+func TestGuardQualificationOutsideGuardPhase(t *testing.T) {
+	gs := &journal.GuardState{Rotation: 2, Steps: []machine.Regime{machine.R1}, StepsDone: 1, Missing: []string{"R2 needs 3 steps, has 0"}, CleanRotations: 1, LastQualifiedRotation: 1}
+	s := Snapshot{huntID: 3, guardState: gs, tiles: []tile{{phase: journal.PhaseDone}}}
+	want := []string{"hunt 3", "1/1 done", "qualified rotations 1 since last deepening, latest 1", "0 failures", "0 crashes"}
 	if diff := cmp.Diff(want, s.summary()); diff != "" {
 		t.Errorf("summary during a hunt (-want +got):\n%s", diff)
 	}

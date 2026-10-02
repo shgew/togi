@@ -43,7 +43,7 @@ The identity of the firmware and CPU a session is tuned under: BIOS version, boa
 One tuning effort under one BIOS context, from the first `run` until `reset --all` or a transition, spanning any number of reboots.
 
 **Transition**:
-The end of a session written by an older ruleset or schema: the next `run` archives it and starts a new session seeded from it.
+The end of a session written by an older ruleset, schema or evidence epoch, with no newer dimension: the next `run` archives it and starts a new session seeded from it.
 
 **Backend**:
 An external stress program togi drives: mprime or y-cruncher.
@@ -103,6 +103,9 @@ One pass through the configured guard schedule, whose requirements are starts.
 **Qualifying rotation**:
 A clean rotation covering every R1 and R2 workload on every core, every R7 workload in every part, and R3, R4, R5 and R6.
 
+**Qualified rotation**:
+A clean qualifying rotation that ended with every core done and remains valid for the current profile under the guard's evidence rules.
+
 **Inconclusive**:
 A trial outcome that says nothing about stability, such as a backend that failed to start.
 
@@ -136,6 +139,12 @@ A core at -50, or one for which taking one more count deeper would reach a faile
 **Carried mark**:
 A failed mark a transition brings into the new session: the shallowest offset of an attributed failure or hunt culprit of that core in the archived sessions, recorded in `session.carried` with the session and `seq` it came from. A BIOS change leaves it behind.
 
+**Carried fact**:
+A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original session, sequence, build, evidence epoch and recorded context. Carried passes can answer candidate-edge checks, hunt masks, reruns and refinement checks, but never qualify a guard rotation; carried failures count everywhere. Copying it again does not make it new evidence.
+
+**Evidence epoch**:
+The compatibility version of trial outcomes: workload content, backend binary and configuration, intended durations, and pass/failure detection. Passes carry only within the current epoch; eligible failures survive an epoch change.
+
 **Edge**:
 A core's checked isolated candidate edge; resident refinement may move its offset.
 _Avoid_: stable value, optimal offset, result
@@ -149,21 +158,8 @@ A backoff after attribution or a hunt identifies a failed offset or combination,
 **Yield**:
 A refinement move to a shallower offset that allows other cores to move deeper and improve total depth.
 
-**Clean hours**:
-The durations of passed resident trials after the tier clock, overall and by regime and workload.
-
-**Tier clock**:
-The later of the last profile deepening and the latest failure on a profile at least as deep as the current one. Shallower backoffs need not restart it.
-
-**Tier**:
-The durability rank of a done profile after a clean qualifying rotation: Bronze, Silver, Gold or Platinum; otherwise none.
-_Avoid_: score, level, stable
-
-**Certificate**:
-The rendering of a profile's tier with the evidence behind it.
-
 **Ruleset**:
-The hardcoded strategy for search, hunts, refinement, guard, backoffs and tiers.
+The hardcoded strategy for search, hunts, refinement, guard and backoffs.
 
 **Dead end**:
 A condition under which togi cannot make progress and stops itself.

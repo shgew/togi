@@ -13,7 +13,16 @@ import (
 
 func (j *Journal) SessionID(now time.Time) (string, error) {
 	base := now.UTC().Format("20060102T150405Z")
-	for suffix := 1; ; suffix++ {
+	boundary, err := ResetBoundary(j.dir)
+	if err != nil {
+		return "", err
+	}
+	suffix := 1
+	if boundary != "" && CompareSessionIDs(base, boundary) <= 0 {
+		base, suffix = sessionSuffix(boundary)
+		suffix++
+	}
+	for ; ; suffix++ {
 		id := base
 		if suffix > 1 {
 			id += "-" + strconv.Itoa(suffix)

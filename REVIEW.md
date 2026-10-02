@@ -24,6 +24,7 @@ When the same kind of finding occurs in two pull requests, add a lesson in the p
 - **Unhappy-path containment:** follow every exit from workload startup through teardown, including a cleanup failure after another failure. Successful stop tests do not prove failed startup, timeout or cancellation contains the workload. Sources: [#174](https://github.com/shgew/togi/pull/174), [#176](https://github.com/shgew/togi/pull/176), [#215](https://github.com/shgew/togi/pull/215), [#255](https://github.com/shgew/togi/pull/255).
 - **Root opens workload-writable files:** a workload can replace an expected regular file with a symlink or FIFO before root opens it. Check the open itself, ownership and modes; trace both data and log paths. Source: [#204](https://github.com/shgew/togi/pull/204).
 - **Unvalidated core-to-slot mapping:** logical cores and SMU slots are separate identities. Reject unsupported topology rather than writing to an assumed slot. Sources: [#69](https://github.com/shgew/togi/issues/69), [#256](https://github.com/shgew/togi/pull/256).
+- **Net release behavior:** Unreleased notes describe the behavior that will ship, not each intermediate commit. Remove notes for features superseded or removed by a later layer of the same release. Sources: [#269](https://github.com/shgew/togi/pull/269), [#285](https://github.com/shgew/togi/pull/285).
 
 ## Review record
 

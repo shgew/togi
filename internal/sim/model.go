@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
 
@@ -98,12 +99,21 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 	idleFailure := false
 	var jointCrash *Joint
 	script, scripted := m.cfg.Script[spec.ID]
-	if scripted {
+	fact, replayed := m.replayDraw(spec)
+	switch {
+	case replayed:
+		scripted = false
+		if fact.Outcome == journal.OutcomeFailure {
+			failCore = fact.Class.Cores[0]
+			failAt = time.Duration(fact.DurationS) * time.Second
+			forcedSignal = fact.Signal
+		}
+	case scripted:
 		if script.Signal != "" {
 			failCore, failAt = script.Core, time.Duration(script.AtS*float64(time.Second))
 			failAt = max(0, min(failAt, spec.Duration))
 		}
-	} else {
+	default:
 		for c := range m.regs {
 			if t, signal, ok := m.failureTime(spec, c); ok && t < failAt {
 				failCore, failAt, forcedSignal = c, t, signal
@@ -181,22 +191,41 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (machine.Re
 		return res, nil
 	case machine.CorrectedMCE:
 		m.logMCE(m.bootID, m.mce(rng.Float64(), failCore, true), start.Add(failAt))
-		m.now = start.Add(spec.Duration)
+		if replayed {
+			res.Ran = failAt
+		}
+		m.now = start.Add(res.Ran)
 		res = r.counted(res)
 		r.progress(report, res)
 		return res, nil
 	case machine.Crash:
 		m.now = start.Add(failAt)
-		if scripted && script.Reset != "" {
+		switch {
+		case replayed:
+			m.NextReset(machine.ResetWatchdog)
+			if report != nil {
+				report.Progress("simulated replayed crash at recorded exposure")
+			}
+		case scripted && script.Reset != "":
 			m.NextReset(script.Reset)
-		} else if m.nextReset == "" {
+		case m.nextReset == "":
 			m.NextReset(m.drawReset(rng.Float64()))
 		}
 		r.progress(report, r.counted(machine.Result{Ran: failAt}))
-		m.queueCrashMCE(rng, failCore, idleFailure, jointCrash)
+		if !replayed {
+			m.queueCrashMCE(rng, failCore, idleFailure, jointCrash)
+		}
 		m.Crash()
 		return machine.Result{}, machine.ErrCrashed
 	case machine.UncorrectedMCE:
+		m.now = start.Add(failAt)
+		if replayed && report != nil {
+			report.Signal(failCore, machine.UncorrectedMCE, "simulated replayed uncorrected machine check")
+		}
+		m.queued = append(m.queued, m.mce(0, failCore, false))
+		m.NextReset(machine.ResetSyncFlood)
+		m.Crash()
+		return machine.Result{}, machine.ErrCrashed
 	}
 	return machine.Result{}, fmt.Errorf("simulated trial: no signal to draw from %v", m.model.Signals)
 }

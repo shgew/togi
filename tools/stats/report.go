@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -54,8 +55,9 @@ func crash(t *trial) bool {
 	return t.crashed || t.end != nil && t.end.Outcome == journal.OutcomeFailure && t.end.Signal == machine.Crash
 }
 
-func report(out io.Writer, events []journal.Event, since time.Time) error {
-	p := project(events)
+func report(out io.Writer, session facts.Session, since time.Time) error {
+	events := session.Events
+	p := project(session)
 	tab := &table{out: out}
 	renderSession(tab, p, events, since)
 	gaps := renderTime(tab, p, since)
@@ -144,6 +146,9 @@ func renderFailures(tab *table, p *projection, events []journal.Event, since tim
 		}
 		switch v := e.Data.(type) {
 		case *journal.Failure:
+			if v.KnownFailure != 0 {
+				continue
+			}
 			workload := "-"
 			regime := v.Regime
 			tr := p.byID[v.Trial]

@@ -31,8 +31,6 @@ type State struct {
 	JointMarks []JointMarkState `json:"joint_marks"`
 	Hunt       *HuntState       `json:"hunt"`
 	Refine     *RefineState     `json:"refine"`
-	Tier       Tier             `json:"tier"`
-	TierSeq    int              `json:"tier_seq"`
 
 	open []openIntent
 }
@@ -59,22 +57,19 @@ type CoreState struct {
 }
 
 type GuardState struct {
-	Rotation       int              `json:"rotation"`
-	RotationOpen   bool             `json:"rotation_open"`
-	Steps          []machine.Regime `json:"steps"`
-	StepsDone      int              `json:"steps_done"`
-	Profile        []int            `json:"profile"`
-	ProfileSeq     int              `json:"profile_seq"`
-	Qualifying     bool             `json:"qualifying"`
-	Missing        []string         `json:"missing"`
-	TierClockSeq   int              `json:"tier_clock_seq"`
-	Exposure       []ExposureRow    `json:"exposure"`
-	CleanRotations int              `json:"clean_rotations"`
-	CleanS         int              `json:"clean_s"`
-	Regimes        []RegimeClean    `json:"regimes"`
-	RateBoundPerH  *float64         `json:"rate_bound_per_h"`
-	TctlMaxC       *int             `json:"tctl_max_c"`
-	TctlMaxSeq     int              `json:"tctl_max_seq"`
+	Rotation              int              `json:"rotation"`
+	RotationOpen          bool             `json:"rotation_open"`
+	Steps                 []machine.Regime `json:"steps"`
+	StepsDone             int              `json:"steps_done"`
+	Profile               []int            `json:"profile"`
+	ProfileSeq            int              `json:"profile_seq"`
+	Qualifying            bool             `json:"qualifying"`
+	Missing               []string         `json:"missing"`
+	Exposure              []ExposureRow    `json:"exposure"`
+	CleanRotations        int              `json:"clean_rotations"`
+	LastQualifiedRotation int              `json:"last_qualified_rotation"`
+	TctlMaxC              *int             `json:"tctl_max_c"`
+	TctlMaxSeq            int              `json:"tctl_max_seq"`
 }
 
 type JointMarkState struct {
@@ -127,17 +122,9 @@ type CheckState struct {
 }
 
 type ExposureRow struct {
-	Regime        machine.Regime `json:"regime"`
-	Workload      string         `json:"workload"`
-	Starts        int            `json:"starts"`
-	CleanS        int            `json:"clean_s"`
-	RateBoundPerH *float64       `json:"rate_bound_per_h"`
-}
-
-type RegimeClean struct {
-	Regime        machine.Regime `json:"regime"`
-	CleanS        int            `json:"clean_s"`
-	RateBoundPerH *float64       `json:"rate_bound_per_h"`
+	Regime   machine.Regime `json:"regime"`
+	Workload string         `json:"workload"`
+	Starts   int            `json:"starts"`
 }
 
 type DecisionRef struct {

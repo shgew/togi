@@ -1,3 +1,5 @@
+The Bronze credit, tier-change citation and retention of the tier clock and clean-hour thresholds are superseded by [ADR 0028](0028-remove-tiers.md); earlier qualified-rotation credit for `run --rotations` remains.
+
 # Schedule from uncontradicted evidence
 
 Supersedes the initial hunt duration and partition ordering, and the requirement for a new qualifying rotation after every deepening, in [ADR 0020](0020-hunt-and-refine.md). The hunt anchors, mask evidence windows and tested joint backoffs in [ADR 0023](0023-hunts-that-converge-on-shared-voltage.md), and ADR 0020's tier clock, stand.
@@ -24,20 +26,20 @@ All choices derive from recorded evidence, without core, CCD or scenario special
 
 ## Measurement
 
-The promoted implementation was compared with ruleset 5 from `main` at `b7b7af4`, using the unchanged `tools/bench/suite.toml`, both seed splits and 16 workers. All 96 baseline and candidate runs concluded.
+The promoted implementation was compared with ruleset 5 from `main` at `b7b7af4`, using the then-current `tools/bench/suite.toml`, both seed splits and 16 workers. All 96 baseline and candidate runs concluded. The synthetic CCD-rail scenario below was later retired in favor of the target replay-oracle ensemble; these measurements describe the earlier suite.
 
 | Scenario | Candidate/base time ratio | Mean crash delta |
 |---|---:|---:|
 | default | 1.001 | 0.000 |
-| shared-rail | 0.848 | 0.000 |
+| synthetic CCD rail (retired) | 0.848 | 0.000 |
 | flat-hazard | 0.998 | -0.625 |
 | late-onset | 0.903 | -16.875 |
 | idle-edge | 0.958 | -36.000 |
 | misleading-mce | 1.000 | 0.000 |
 
-The equally weighted overall ratio was 0.949, with a 95% bootstrap interval of [0.944, 0.956]: ACCEPT, with no conclusion, hazard, depth or shared-rail guardrail violation. The development and holdout geometric ratios were 0.945362 and 0.953271. Final profiles matched in 95 of 96 pairs; flat-hazard development seed 3 ended four counts deeper. Maximum hazard did not increase in any pair. Three default runs and one flat-hazard run were slower.
+The equally weighted overall ratio was 0.949, with a 95% bootstrap interval of [0.944, 0.956]: ACCEPT, with no conclusion, hazard, depth or synthetic CCD-rail guardrail violation. The development and holdout geometric ratios were 0.945362 and 0.953271. Final profiles matched in 95 of 96 pairs; flat-hazard development seed 3 ended four counts deeper. Maximum hazard did not increase in any pair. Three default runs and one flat-hazard run were slower.
 
-The kept journals show each mechanism: late-onset development seed 1's hunt 2 begins with a 300 s mask citing five earlier short passes; idle-edge development seed 1's hunt 3 begins with core 12 alone, citing its two attributed masked failures; shared-rail development seed 1 earns Bronze at event 12791 by citing rotation 1's end at event 11587 after refinement restores its profile, then shuts down for the requested rotations without running rotation 3.
+The kept journals show each mechanism: late-onset development seed 1's hunt 2 begins with a 300 s mask citing five earlier short passes; idle-edge development seed 1's hunt 3 begins with core 12 alone, citing its two attributed masked failures; synthetic CCD-rail development seed 1 earns Bronze at event 12791 by citing rotation 1's end at event 11587 after refinement restores its profile, then shuts down for the requested rotations without running rotation 3.
 
 ## Consequences
 

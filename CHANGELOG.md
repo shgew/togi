@@ -4,14 +4,21 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ## [Unreleased]
 
+### Added
+
+- A ruleset, schema or evidence-epoch transition records eligible trial facts from earlier same-BIOS sessions as `trial.carried`/`failure.carried` and stamps `session.start` with the evidence epoch; newer evidence epochs are refused, older epochs retain failures but drop incompatible passes. Carry waits for a validated current BIOS context, respects every `reset --all` boundary even after an interrupted reset, preserves edge and failed-mark provenance across interrupted evidence-epoch transitions, resumes incomplete fact prefixes and re-checks copied failures against newly known defects in their original journals ([#281]).
+- The bench target scenario replays matching same-BIOS real trial outcomes over the nine fitted machines, reports the real-answer share, and preserves recorded crash exposure and uncorrected-machine-check signals through simulated reboot; `just bench-baseline` records both splits ([#290]).
+
 ### Changed
 
-- Failure-rate bounds in `status` and `cert` state that their 95% claim assumes a constant failure rate on the tested workloads; the numbers and rounding are unchanged ([#237]).
+- **BREAKING** The next `togi run` archives a ruleset-6 session and starts a ruleset-7 session that carries trial facts from earlier same-BIOS sessions: candidate-edge checks, hunt masks, reruns and refinement checks can be answered by carried passes, carried failures count everywhere, and decisions cite their evidence consistently across configuration reloads, replay and shutdown. Rotations still qualify only on live passes, and `status` counts only live passes as this session's exposure ([#282]).
+- Trials whose class has a valid live or carried failure at an equal-or-shallower profile are skipped; guard failures go directly to their hunt or attributed backoff, citing the known failure instead of running it again; completed edge masks replace their pending state, and hunt status and carried culprit marks retain the original decisive signal ([#283]).
+- When refinement is due and an earlier clean qualifying rotation, run with every core done on a profile at least as deep as the current one, has no contradicting failure, guard ends an incomplete open rotation instead of running its remaining work and starts refinement; a fully executed rotation still closes clean and qualifies normally; the rotation end names the covering rotation ([#284]).
+- `run` archives older-ruleset or older-schema journals containing unknown event kinds and derives carry from known events; current-session writes still refuse unknown kinds, while `reset --all` permits them only for its non-appending different-schema archive ([#270]).
 
 ### Fixed
 
 - A journal write failure followed by unconfirmed workload teardown reports both errors and withholds all offset restoration, including emergency zeroing, while the backend may still be running ([#279]).
-- `status` and `cert` derive the guard's Tctl peak and source from the same post-clock resident passes as clean hours, preserving the peak across shallow backoffs and clearing it when a qualifying failure restarts the clock ([#235]).
 - Idle failures record a monotonicity warning when eligible all-core R6 passes in one class contradict the failed profile, citing those trial ends without changing the ensuing hunt ([#236]).
 - Competing starts or resets can no longer alter an upgrade's archives or pending carry before acquiring the state-directory writer lock; the lock now covers carry preparation and the complete session or reset ([#245]).
 - An upgrade interrupted before recording its carried evidence retains the original source through a subsequent upgrade, instead of replacing it with the incomplete intervening session ([#246]).
@@ -19,6 +26,11 @@ All notable changes to togi are documented in this file. The format is based on 
 - A confirmed defect reset survives interruption: resume completes only the missing resets tied to the recorded answer, without asking again or resetting a core twice ([#249]).
 - Partial journal or state writes are rejected instead of committing incomplete records; after a journal write or fsync error, tuning stops and the next open rebuilds its sequence from surviving complete lines ([#251]).
 - Preflight refuses full CCDs whose core IDs disagree with their modulo-eight slots before per-core access; if a previously tuned CCD is now refused, run `togi reset --core N` for each of its cores before tuning it with a supported topology ([#278]).
+
+### Removed
+
+- `togi cert` is gone; use `togi status`, which reports the same profile and qualified rotations and now shows each core's `SLOT` for matching BIOS controls ([#269]).
+- Bronze, Silver, Gold, the tier clock, clean hours and failure-rate bounds are removed; `status` reports qualified rotations since the last deepening and the Tctl peak since the last profile change; `run --rotations N` decides how long to keep testing ([#285]).
 
 ## [0.7.0] - 2026-10-02
 
@@ -358,14 +370,20 @@ All notable changes to togi are documented in this file. The format is based on 
 [#222]: https://github.com/shgew/togi/pull/222
 [#227]: https://github.com/shgew/togi/pull/227
 [#228]: https://github.com/shgew/togi/pull/228
-[#235]: https://github.com/shgew/togi/pull/235
 [#236]: https://github.com/shgew/togi/pull/236
-[#237]: https://github.com/shgew/togi/pull/237
 [#243]: https://github.com/shgew/togi/pull/243
 [#245]: https://github.com/shgew/togi/pull/245
 [#246]: https://github.com/shgew/togi/pull/246
 [#247]: https://github.com/shgew/togi/pull/247
 [#249]: https://github.com/shgew/togi/pull/249
 [#251]: https://github.com/shgew/togi/pull/251
+[#269]: https://github.com/shgew/togi/pull/269
+[#270]: https://github.com/shgew/togi/pull/270
 [#278]: https://github.com/shgew/togi/pull/278
 [#279]: https://github.com/shgew/togi/pull/279
+[#281]: https://github.com/shgew/togi/pull/281
+[#282]: https://github.com/shgew/togi/pull/282
+[#283]: https://github.com/shgew/togi/pull/283
+[#284]: https://github.com/shgew/togi/pull/284
+[#285]: https://github.com/shgew/togi/pull/285
+[#290]: https://github.com/shgew/togi/pull/290
