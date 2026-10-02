@@ -1,5 +1,7 @@
 The candidate-edge checking phase and the same-ruleset BIOS dead end are superseded by [ADR 0020](0020-hunt-and-refine.md).
 
+The exclusion of carried passes and unattributed failure facts, the ruleset-based archive walk for those facts, and mandatory live rechecking of carried edges are amended by [ADR 0026](0026-carry-trial-facts.md). Resident offsets and passed rotations still do not carry.
+
 # A ruleset change starts a seeded session
 
 Every change to `tuner.Ruleset` ended the session: the new build refused the journal ([ADR 0009](0009-compatibility-across-updates.md)), and the operator noted each core's failed mark and confirmed offset, wrote them into `candidate_edges`, ran `reset --all`, and removed the values again once every core had a phase ([ADR 0013](0013-candidate-edges-for-a-new-session.md)). Because only candidate edges carried over, the new session repeated about 12.8 hours of confirmation on the target machine and found every failure again: in its third session core 13 failed resident trials at −49, −48, −47, −45 and −43, each count costing about two hours of rotations.

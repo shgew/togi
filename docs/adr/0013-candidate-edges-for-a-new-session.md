@@ -2,6 +2,8 @@ Starting in confirmation is superseded by [ADR 0020](0020-hunt-and-refine.md).
 
 Carrying nothing from the archived journal superseded by [ADR 0019](0019-a-ruleset-change-starts-a-seeded-session.md); configured candidate edges remain.
 
+The requirement to prove each candidate edge only with new-session starts and the rejection of carried passes are amended by [ADR 0026](0026-carry-trial-facts.md); configured values still are claims, not evidence.
+
 # Candidate edges start a new session in confirmation
 
 A breaking update ends a session: it must be archived with `reset --all` before tuning again ([ADR 0009](0009-compatibility-across-updates.md)). The new session then searches every core from its baseline. Searching again costs most of a night: every core's first crash past its edge is repeated, and on a machine whose edges sit near -40 that is a crash reboot per core, several for cores that fail at more than one step. The operator usually knows from the archived session where each edge lies. `start_offsets` shortens the easy steps down from the baseline, but search still steps deeper from there until it fails.

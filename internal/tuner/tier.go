@@ -126,7 +126,7 @@ func (s *State) projectGuard() *journal.GuardState {
 		for i := range g.steps {
 			unmet := false
 			for _, q := range s.requirements(i) {
-				if q.count > 0 && s.passes(q.class, g.profile, g.startSeq) < q.count {
+				if q.count > 0 && s.passes(q.class, g.profile, g.startSeq, rotationEvidence) < q.count {
 					unmet = true
 					break
 				}
@@ -153,7 +153,7 @@ func (s *State) projectGuard() *journal.GuardState {
 					continue
 				}
 				for _, e := range entries {
-					if !e.pass {
+					if !e.pass || e.carried {
 						continue
 					}
 					if e.condition != machine.Isolated && e.seq > valid[k] && atLeastDeep(e.profile, g.profile) {

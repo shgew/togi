@@ -41,13 +41,15 @@ continues. On resume, known defects affecting past decisions name the cores; in
 a terminal run offers to reset them. An unanswered too-aggressive defect stops
 an unattended run. It needs root. A journal from an older ruleset, schema or
 evidence epoch, and no newer one, is archived. The new session starts each core
-from its edges and failed marks, keeps eligible failures, and keeps passes only
-from the current evidence epoch. A newer ruleset, schema or evidence epoch stops
-the run before another event is written; reset --all archives that session. An
-older journal is archived even with unknown event kinds; carry uses only known
-events. Unknown kinds in a current-ruleset, current-schema, current-epoch journal
-stop both run and reset; install the build that wrote them. Journal lines are
-colored on terminals and in the system journal unless NO_COLOR is set.
+from its edges and failed marks, carrying eligible same-BIOS trial facts for
+edge checks, hunts, reruns and refinement. Passes carry only from the current
+evidence epoch; rotations still require live passes. A newer ruleset, schema or
+evidence epoch stops the run before another event is written; reset --all archives
+that session. An older journal is archived even with unknown event kinds; carry
+uses only known events. Unknown kinds in a current-ruleset, current-schema,
+current-epoch journal stop both run and reset; install the build that wrote them.
+Journal lines are colored on terminals and in the system journal unless NO_COLOR
+is set.
 
 Only one run or reset can own this machine, even with different state directories.
 A busy /run/lock/togi.lock stops the command before any hardware access or event.

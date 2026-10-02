@@ -137,7 +137,7 @@ A core at -50, or one for which taking one more count deeper would reach a faile
 A failed mark a transition brings into the new session: the shallowest offset of an attributed failure or hunt culprit of that core in the archived sessions, recorded in `session.carried` with the session and `seq` it came from. A BIOS change leaves it behind.
 
 **Carried fact**:
-A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original session, sequence, build, evidence epoch and recorded context. Copying it again does not make it new evidence.
+A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original session, sequence, build, evidence epoch and recorded context. Carried passes can answer candidate-edge checks, hunt masks, reruns and refinement checks, but never qualify a guard rotation; carried failures count everywhere. Copying it again does not make it new evidence.
 
 **Evidence epoch**:
 The compatibility version of trial outcomes: workload content, backend binary and configuration, intended durations, and pass/failure detection. Passes carry only within the current epoch; eligible failures survive an epoch change.

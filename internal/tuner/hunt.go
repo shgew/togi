@@ -13,6 +13,7 @@ import (
 type maskRecord struct {
 	payload *journal.HuntMask
 	seq     int
+	cause   []int
 }
 
 type hunt struct {
@@ -35,7 +36,7 @@ func (s *State) openHunt(e journal.Event, p *journal.HuntStart) {
 
 func (s *State) recordMask(e journal.Event, p *journal.HuntMask) {
 	if h := s.hunt; h != nil && p.Hunt == h.start.Hunt {
-		h.masks = append(h.masks, maskRecord{p, e.Seq})
+		h.masks = append(h.masks, maskRecord{p, e.Seq, e.Cause})
 	}
 }
 
@@ -59,7 +60,13 @@ func (s *State) endHunt(e journal.Event, p *journal.HuntEnd) {
 
 func (s *State) failureBySeq(seq int) *pendingFailure {
 	if i, ok := s.failureIndex[seq]; ok {
-		return &s.pendingFailures[i]
+		f := &s.pendingFailures[i]
+		if f.carried {
+			if _, valid := s.carriedSources[seq]; !valid {
+				return nil
+			}
+		}
+		return f
 	}
 	return nil
 }
@@ -180,8 +187,8 @@ func (s *State) repeatedMaskedCore(h *hunt, duration int) (int, [2]int, bool) {
 	var newer *pendingFailure
 	for i := len(s.pendingFailures) - 1; i >= 0; i-- {
 		f := &s.pendingFailures[i]
-		if f.seq <= s.resetSeq {
-			break
+		if !s.failureAfter(*f, s.resetSeq) {
+			continue
 		}
 		if f.seq >= h.start.Failure || f.class != k || f.failure.Condition != machine.Masked || f.failure.Attribution != journal.Attributed || f.failure.Core == nil || f.failure.Offset == nil {
 			continue
@@ -222,10 +229,10 @@ func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
 	p := maskPlan{set: slices.Clone(h.start.Candidates), g: 2, stage: "part", duration: h.start.StartS}
 	if len(h.masks) == 0 && h.start.Trial != "" && h.start.DurationS > h.start.StartS {
 		shortFailed := slices.ContainsFunc(s.failures, func(e entry) bool {
-			return e.seq > s.resetSeq && e.seq < h.start.Failure && e.class.regime == h.class.regime && e.class.duration <= h.start.StartS
+			return (e.carried || e.seq > s.resetSeq) && e.seq < h.start.Failure && e.class.regime == h.class.regime && e.class.duration <= h.start.StartS
 		})
 		if !shortFailed {
-			seqs := s.passSeqs(h.class.withDuration(h.start.StartS), h.start.Failing, s.resetSeq)
+			seqs := s.passSeqs(h.class.withDuration(h.start.StartS), h.start.Failing, s.resetSeq, huntEvidence)
 			seqs = slices.DeleteFunc(seqs, func(seq int) bool { return seq >= h.start.Failure })
 			if len(seqs) >= h.start.Starts {
 				p.duration, p.escalated = h.start.DurationS, true
@@ -361,7 +368,7 @@ func (s *State) maskOutcome(h *hunt, m maskRecord) string {
 	if s.fails(k, m.payload.Profile, since) {
 		return "failure"
 	}
-	if s.passes(k, m.payload.Profile, since) >= h.start.Starts {
+	if s.passes(k, m.payload.Profile, since, huntEvidence) >= h.start.Starts {
 		return "pass"
 	}
 	return "running"
@@ -403,27 +410,36 @@ func (s *State) huntNext() (Action, bool) {
 		}
 		members, reason = found, reason+clause
 	}
-	return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: result, Cores: slices.Clone(next.set), Members: members, Masks: len(h.masks), Reason: reason}, Cause: []int{h.seq}}, true
+	cause := []int{h.seq}
+	for _, m := range h.masks {
+		cause = s.citeCarried(cause, m.cause...)
+	}
+	reason += s.carriedReason(cause)
+	return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: result, Cores: slices.Clone(next.set), Members: members, Masks: len(h.masks), Reason: reason}, Cause: cause}, true
 }
 
 func (s *State) planMask(h *hunt, p maskPlan, reason string) Action {
 	payload := s.makeMask(h, p, len(h.masks)+1, "", false, reason)
 	k := h.class.withDuration(p.duration)
 	since := s.inferenceSince(payload, h.seq)
-	if s.passes(k, payload.Profile, since) >= h.start.Starts {
-		payload.Inferred, payload.Reason = "pass", "passing starts already establish the mask"
-	} else if s.fails(k, payload.Profile, since) {
-		payload.Inferred, payload.Reason = "failure", "a known failure establishes the mask"
+	cause := []int{h.seq}
+	seqs := s.passSeqs(k, payload.Profile, since, huntEvidence)
+	if len(seqs) >= h.start.Starts {
+		seqs = seqs[:h.start.Starts]
+		payload.Inferred, payload.Reason = "pass", "passing starts already establish the mask"+s.carriedReason(seqs)
+		cause = s.citeCarried(cause, seqs...)
+	} else if failure := s.failingSeq(k, payload.Profile, since); failure != 0 {
+		payload.Inferred, payload.Reason = "failure", "a known failure establishes the mask"+s.carriedReason([]int{failure})
+		cause = s.citeCarried(cause, failure)
 	} else if mark, ok := s.reaches(payload.Profile); ok {
 		payload.Skipped, payload.Reason = true, "its profile reaches "+mark
 	}
-	cause := []int{h.seq}
 	if len(p.priority) > 0 {
-		payload.Reason += fmt.Sprintf("; %d valid short starts preceded the longer failure, with no failure in this regime at the short duration or less since reset, so test the failed duration", len(p.priority))
+		payload.Reason += fmt.Sprintf("; %d valid short starts preceded the longer failure, with no failure in this regime at the short duration or less since reset, so test the failed duration", len(p.priority)) + s.carriedReason(p.priority)
 		cause = append(cause, p.priority...)
 	}
 	if p.singleCorePrior[0] > 0 {
-		payload.Reason += fmt.Sprintf("; two masked failures in this class followed one-count backoffs on core %02d, so probe that core first", p.cores[0])
+		payload.Reason += fmt.Sprintf("; two masked failures in this class followed one-count backoffs on core %02d, so probe that core first", p.cores[0]) + s.carriedReason(p.singleCorePrior[:])
 		cause = append(cause, p.singleCorePrior[:]...)
 	}
 	return Action{Kind: Decide, Payload: payload, Cause: cause}
@@ -653,7 +669,7 @@ func (s *State) projectHunt() *journal.HuntState {
 		if m.payload.Inferred != "" {
 			since = h.seq
 		}
-		state.Passes = s.passes(h.class.withDuration(m.payload.DurationS), m.payload.Profile, s.inferenceSince(m.payload, since))
+		state.Passes = s.passes(h.class.withDuration(m.payload.DurationS), m.payload.Profile, s.inferenceSince(m.payload, since), huntEvidence)
 		out.Masks = append(out.Masks, state)
 		out.Escalated = m.payload.Escalated
 	}

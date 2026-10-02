@@ -1,7 +1,8 @@
-// carry-facts prepares a transition in a temporary copy of recorded state, without hardware.
+// carry-facts prepares or simulates a transition in a temporary copy of recorded state, without hardware.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -11,8 +12,12 @@ import (
 	"strings"
 
 	"github.com/shgew/togi/internal/carry"
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/session"
+	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/simrun"
 	"github.com/shgew/togi/internal/tuner"
 )
 
@@ -27,6 +32,8 @@ func run(args []string, out, errOut io.Writer) (err error) {
 	flags := flag.NewFlagSet("carry-facts", flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	dirArg := flags.String("state-dir", "", "required temporary copy of the state directory; preparation mutates this copy")
+	simulate := flags.Bool("simulate", false, "run the current ruleset through its first qualifying rotation using the recorded BIOS context")
+	seed := flags.Uint64("seed", 1, "draw simulated edges and outcomes from this seed")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -64,6 +71,16 @@ func run(args []string, out, errOut io.Writer) (err error) {
 			return fmt.Errorf("carry-facts: state copy must not symlink %s", name)
 		}
 	}
+	live, err := facts.ReadJournal(filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		return fmt.Errorf("carry-facts: read live recorded facts: %w", err)
+	}
+	if live.Context == nil {
+		return fmt.Errorf("carry-facts: live journal has no recorded BIOS context")
+	}
+	if *simulate {
+		return simulateRecorded(dir, live, *seed, out)
+	}
 	build := journal.Build{Schema: journal.Schema, Ruleset: tuner.Ruleset + 1}
 	j, err := journal.Lock(dir, journal.Options{Build: build})
 	if err != nil {
@@ -74,13 +91,6 @@ func run(args []string, out, errOut io.Writer) (err error) {
 			err = fmt.Errorf("carry-facts: close state copy: %w", closeErr)
 		}
 	}()
-	live, err := facts.ReadJournal(filepath.Join(dir, "events.jsonl"))
-	if err != nil {
-		return fmt.Errorf("carry-facts: read live recorded facts: %w", err)
-	}
-	if live.Context == nil {
-		return fmt.Errorf("carry-facts: live journal has no recorded BIOS context")
-	}
 	prepared, err := carry.Prepare(j, build, nil, live.Context)
 	if err != nil {
 		return fmt.Errorf("carry-facts: prepare transition: %w", err)
@@ -117,4 +127,136 @@ func run(args []string, out, errOut io.Writer) (err error) {
 		}
 	}
 	return nil
+}
+
+func simulateRecorded(dir string, live facts.Session, seed uint64, out io.Writer) error {
+	cfg, err := sim.Resume(dir, sim.Config{Seed: seed, Cores: len(live.Cores), BIOSContext: *live.Context})
+	if err != nil {
+		return fmt.Errorf("carry-facts: resume recorded state on simulator: %w", err)
+	}
+	m, err := sim.New(cfg)
+	if err != nil {
+		return fmt.Errorf("carry-facts: create simulator: %w", err)
+	}
+	stop, err := simrun.Simulate(context.Background(), simrun.Input{
+		Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m,
+		Until: func(e journal.Event) bool {
+			p, ok := e.Data.(*journal.GuardRotation)
+			return ok && p.Event == journal.RotationEnd && p.Clean && p.Qualifying
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("carry-facts: simulate recorded transition: %w", err)
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil {
+		return fmt.Errorf("carry-facts: read simulated journal: %w", err)
+	}
+	if torn != nil {
+		return fmt.Errorf("carry-facts: simulated journal has a torn tail")
+	}
+	if stop.Reason == session.StopDeadEnd {
+		return fmt.Errorf("carry-facts: simulator dead end %s: %s", stop.DeadEnd.Condition, stop.DeadEnd.Detail)
+	}
+	return renderTransition(out, summarizeTransition(events))
+}
+
+type transitionDemo struct {
+	passes         int
+	failures       int
+	answered       int
+	edgeStarts     int
+	rotationStarts int
+	rotationPasses int
+	firstTrials    []journal.Event
+	decisions      []journal.Event
+	firstRotation  *journal.Event
+}
+
+func summarizeTransition(events []journal.Event) transitionDemo {
+	var passes, failures, answered, edgeStarts, rotationStarts, rotationPasses int
+	checking := map[int]bool{}
+	carried := map[int]bool{}
+	rotationTrials := map[string]bool{}
+	var firstTrials []journal.Event
+	var decisions []journal.Event
+	var firstRotation *journal.Event
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.TrialCarried:
+			carried[e.Seq] = true
+			switch p.Outcome {
+			case journal.OutcomePass:
+				passes++
+			case journal.OutcomeFailure:
+				failures++
+			case journal.OutcomeInconclusive:
+			}
+		case *journal.FailureCarried:
+			failures++
+		case *journal.TunerDecision:
+			if p.Decision == journal.CheckEdge {
+				checking[p.Core] = true
+			}
+		case *journal.CorePhase:
+			if p.CheckEdge {
+				checking[p.Core] = true
+			} else if p.From == journal.PhaseSearch && p.To != journal.PhaseSearch && checking[p.Core] {
+				for _, seq := range e.Cause {
+					if carried[seq] {
+						answered++
+						decisions = append(decisions, e)
+						break
+					}
+				}
+				checking[p.Core] = false
+			}
+		case *journal.TrialIntent:
+			if len(firstTrials) < 5 {
+				firstTrials = append(firstTrials, e)
+			}
+			if p.Phase == journal.PhaseSearch && p.Core != nil && checking[*p.Core] {
+				edgeStarts++
+			}
+			if p.Phase == journal.PhaseGuard && p.Rotation == 1 {
+				rotationTrials[p.Trial] = true
+				rotationStarts++
+			}
+		case *journal.TrialEnd:
+			if rotationTrials[p.Trial] && p.Outcome == journal.OutcomePass {
+				rotationPasses++
+			}
+		case *journal.GuardRotation:
+			if p.Event == journal.RotationEnd && p.Clean && p.Qualifying && firstRotation == nil {
+				copy := e
+				firstRotation = &copy
+			}
+		}
+	}
+	return transitionDemo{
+		passes: passes, failures: failures, answered: answered, edgeStarts: edgeStarts,
+		rotationStarts: rotationStarts, rotationPasses: rotationPasses,
+		firstTrials: firstTrials, decisions: decisions, firstRotation: firstRotation,
+	}
+}
+
+func renderTransition(out io.Writer, demo transitionDemo) error {
+	if _, err := fmt.Fprintf(out, "ruleset %d simulated with recorded BIOS context; evidence epoch %d\ncarried facts: %d passes, %d failures\ncandidate-edge completions citing carried passes: %d\nlive edge-check starts: %d\nfirst rotation live starts: %d; live passes: %d\n", session.Build().Ruleset, tuner.EvidenceEpoch, demo.passes, demo.failures, demo.answered, demo.edgeStarts, demo.rotationStarts, demo.rotationPasses); err != nil {
+		return err
+	}
+	for _, e := range demo.decisions {
+		if _, err := fmt.Fprintf(out, "carried edge decision #%d cause=%v: %s\n", e.Seq, e.Cause, e.Msg); err != nil {
+			return err
+		}
+	}
+	for _, e := range demo.firstTrials {
+		if _, err := fmt.Fprintf(out, "first live trial #%d: %s\n", e.Seq, e.Msg); err != nil {
+			return err
+		}
+	}
+	if demo.firstRotation == nil {
+		return fmt.Errorf("carry-facts: simulator stopped before a qualifying rotation")
+	}
+	_, err := fmt.Fprintf(out, "first qualifying rotation #%d: %s\n", demo.firstRotation.Seq, demo.firstRotation.Msg)
+	return err
 }

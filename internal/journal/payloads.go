@@ -740,10 +740,10 @@ func (p *GuardRotation) Message() string {
 		for i, r := range p.Steps {
 			steps[i] = string(r)
 		}
-		return fmt.Sprintf("guard rotation %d start: %s", p.Rotation, strings.Join(steps, " "))
+		return fmt.Sprintf("guard rotation %d start: %s%s", p.Rotation, strings.Join(steps, " "), p.Reason)
 	case RotationEnd:
 		if p.Clean {
-			return fmt.Sprintf("guard rotation %d end clean", p.Rotation)
+			return fmt.Sprintf("guard rotation %d end clean%s", p.Rotation, p.Reason)
 		}
 		return fmt.Sprintf("guard rotation %d end, not clean: %s", p.Rotation, p.Reason)
 	}

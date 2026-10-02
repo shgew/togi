@@ -14,7 +14,7 @@ import (
 )
 
 // Ruleset must be bumped for changes to steps, offset range, phases, regimes, evidence, hunts, refinement, tiers or backoffs; this is breaking.
-const Ruleset = 6
+const Ruleset = 7
 
 const EvidenceEpoch = 1
 
@@ -80,6 +80,7 @@ type pendingFailure struct {
 	failure *journal.Failure
 	profile []int
 	class   trialClass
+	carried bool
 }
 
 type rerun struct {
@@ -113,6 +114,7 @@ type State struct {
 	guard                       guard
 	ledger                      map[trialClass][]entry
 	idle                        []entry
+	carriedSources              map[int]string
 	failures                    []entry
 	marks                       []journal.JointMarkState
 	nextMark                    int
@@ -121,6 +123,7 @@ type State struct {
 	pendingFailures             []pendingFailure
 	failureIndex                map[int]int
 	obligations                 []rerun
+	rerunCauses                 []int
 	hunt                        *hunt
 	nextHunt                    int
 	resetSeq                    int
@@ -146,7 +149,7 @@ type State struct {
 
 func New() *State {
 	c := config.Default()
-	return &State{cursor: -1, intents: map[string]*journal.TrialIntent{}, intentSeq: map[int]string{}, signalled: map[string]bool{}, mces: map[int]*journal.MCE{}, ledger: map[trialClass][]entry{}, failureIndex: map[int]int{}, steps: c.Guard.Rotation, durations: journal.ConfigDurations(c.Durations), evidence: journal.ConfigEvidence(c.Evidence), n: c.Evidence.Starts(), tier: journal.TierNone, projectionDirty: true, bestDirty: true}
+	return &State{cursor: -1, intents: map[string]*journal.TrialIntent{}, intentSeq: map[int]string{}, signalled: map[string]bool{}, mces: map[int]*journal.MCE{}, ledger: map[trialClass][]entry{}, carriedSources: map[int]string{}, failureIndex: map[int]int{}, steps: c.Guard.Rotation, durations: journal.ConfigDurations(c.Durations), evidence: journal.ConfigEvidence(c.Evidence), n: c.Evidence.Starts(), tier: journal.TierNone, projectionDirty: true, bestDirty: true}
 }
 
 func partition(cores []machine.CoreInfo) (map[int]int, [][]int) {
@@ -234,6 +237,7 @@ func (s *State) Fold(e journal.Event) {
 		if p.Core != nil {
 			if c := s.core(*p.Core); c != nil {
 				s.resetSeq = e.Seq
+				s.resetEvidence(*p.Core)
 				c.queued, c.queueSeq = queuedReset, e.Seq
 			}
 		}
@@ -303,6 +307,13 @@ func (s *State) Fold(e journal.Event) {
 		s.mces[e.Seq] = p
 	case *journal.Failure:
 		s.foldFailure(e, p)
+	case *journal.TrialCarried:
+		s.recordCarried(e, p)
+	case *journal.FailureCarried:
+		s.recordIdle(e, &p.Failure)
+		if _, recorded := s.carriedSources[e.Seq]; recorded {
+			s.rememberCarriedFailure(e.Seq, &p.Failure, trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, fmt.Sprint(s.ids()), s.durations.GuardIdleS})
+		}
 	case *journal.DeadEnd:
 		if p.Condition == journal.DeadEndThermalTrip {
 			s.thermal = nil
@@ -351,6 +362,7 @@ func (s *State) Fold(e journal.Event) {
 		s.recomputeTierClock()
 	case *journal.GuardRotation:
 		s.foldRotation(e, p)
+		s.rerunCauses = nil
 	case *journal.TierChange:
 		s.tier, s.tierSeq = p.To, e.Seq
 	case *journal.HostRanking:
@@ -388,6 +400,7 @@ func (s *State) Fold(e journal.Event) {
 		}
 	case *journal.RefineRound:
 		s.foldRound(e, p)
+		s.rerunCauses = nil
 	case *journal.TunerWarning:
 		s.warning = nil
 	}
@@ -563,7 +576,15 @@ func (s *State) Next() Action {
 		return a
 	}
 	if s.warning != nil {
-		return Action{Kind: Decide, Payload: s.warning, Cause: []int{s.warningSeq}}
+		cause := []int{s.warningSeq}
+		for _, seq := range s.warning.Passes {
+			if _, carried := s.carriedSources[seq]; carried {
+				cause = append(cause, seq)
+			}
+		}
+		warning := *s.warning
+		warning.Detail += s.carriedReason(cause)
+		return Action{Kind: Decide, Payload: &warning, Cause: cause}
 	}
 	if s.thermal != nil {
 		return Action{Kind: Decide, Payload: s.thermal, Cause: []int{s.thermalSeq}}
@@ -619,18 +640,18 @@ func (s *State) Next() Action {
 		return a
 	}
 	if s.round != nil {
-		return s.roundCheck()
+		return s.afterReruns(s.roundCheck())
 	}
 	if s.guard.open {
-		return s.rotationNext()
+		return s.afterReruns(s.rotationNext())
 	}
 	if s.refineDue() {
 		if s.rankingSeq <= s.lastPlanSeq {
 			return Action{Kind: ReadRanking}
 		}
-		return s.roundStart()
+		return s.afterReruns(s.roundStart())
 	}
-	return Action{Kind: Decide, Payload: &journal.GuardRotation{Rotation: s.guard.rotation + 1, Event: journal.RotationStart, Steps: slices.Clone(s.steps)}, Cause: []int{s.guard.lastSeq}}
+	return s.afterReruns(Action{Kind: Decide, Payload: &journal.GuardRotation{Rotation: s.guard.rotation + 1, Event: journal.RotationStart, Steps: slices.Clone(s.steps)}, Cause: []int{s.guard.lastSeq}})
 }
 
 func (s *State) anySearch() bool {
@@ -685,7 +706,7 @@ func (s *State) uncontradicted(q qualified) bool {
 		return false
 	}
 	return !slices.ContainsFunc(s.pendingFailures, func(f pendingFailure) bool {
-		return f.seq > s.resetSeq && (len(f.profile) != len(q.profile) || atLeastShallow(f.profile, q.profile))
+		return s.failureAfter(f, s.resetSeq) && (len(f.profile) != len(q.profile) || atLeastShallow(f.profile, q.profile))
 	})
 }
 

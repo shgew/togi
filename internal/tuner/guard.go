@@ -153,7 +153,7 @@ func (s *State) rotationNext() Action {
 			if q.count == 0 {
 				continue
 			}
-			if s.passes(q.class, g.profile, g.startSeq) >= q.count {
+			if s.passes(q.class, g.profile, g.startSeq, rotationEvidence) >= q.count {
 				continue
 			}
 			if s.retry != nil && s.retry.Rotation == g.rotation && s.retry.Condition == machine.Resident {
@@ -257,15 +257,43 @@ func (s *State) rerunNext() (Action, bool) {
 	for len(s.obligations) > 0 {
 		r := s.obligations[0]
 		start := r.class.withDuration(s.durations.StartS)
-		if s.passes(start, s.guard.profile, r.seq) < s.n {
+		seqs := s.passSeqs(start, s.guard.profile, r.seq, rerunEvidence)
+		if len(seqs) < s.n {
 			return s.rerunTrial(start), true
 		}
-		if r.class.duration != s.durations.StartS && s.passes(r.class, s.guard.profile, r.seq) < 1 {
-			return s.rerunTrial(r.class), true
+		seqs = seqs[:s.n]
+		if r.class.duration != s.durations.StartS {
+			long := s.passSeqs(r.class, s.guard.profile, r.seq, rerunEvidence)
+			if len(long) < 1 {
+				return s.rerunTrial(r.class), true
+			}
+			seqs = append(seqs, long[0])
+		}
+		for _, seq := range seqs {
+			if _, carried := s.carriedSources[seq]; carried && !slices.Contains(s.rerunCauses, seq) {
+				s.rerunCauses = append(s.rerunCauses, seq)
+			}
 		}
 		s.obligations = s.obligations[1:]
 	}
 	return Action{}, false
+}
+
+func (s *State) afterReruns(a Action) Action {
+	if a.Kind != Decide || len(s.rerunCauses) == 0 {
+		return a
+	}
+	reason := "; rerun checks passed" + s.carriedReason(s.rerunCauses)
+	switch p := a.Payload.(type) {
+	case *journal.GuardRotation:
+		p.Reason += reason
+	case *journal.RefineRound:
+		p.Reason += reason
+	default:
+		return a
+	}
+	a.Cause = append(a.Cause, s.rerunCauses...)
+	return a
 }
 
 func (s *State) rerunTrial(k trialClass) Action {

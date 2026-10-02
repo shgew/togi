@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
@@ -67,6 +69,11 @@ func ruleset3Session(t *testing.T) (dir, id string) {
 
 func stampRuleset3(t *testing.T, dir string) string {
 	t.Helper()
+	return stampRuleset(t, dir, 3)
+}
+
+func stampRuleset(t *testing.T, dir string, ruleset int) string {
+	t.Helper()
 	path := filepath.Join(dir, "events.jsonl")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -74,7 +81,7 @@ func stampRuleset3(t *testing.T, dir string) string {
 	}
 	first, rest, _ := bytes.Cut(data, []byte{'\n'})
 	current := session.Build().Ruleset
-	restamped := bytes.Replace(first, fmt.Appendf(nil, `"ruleset":%d,`, current), []byte(`"ruleset":3,`), 1)
+	restamped := bytes.Replace(first, fmt.Appendf(nil, `"ruleset":%d,`, current), fmt.Appendf(nil, `"ruleset":%d,`, ruleset), 1)
 	if bytes.Equal(restamped, first) {
 		t.Fatalf("session.start carries no ruleset %d stamp: %s", current, first)
 	}
@@ -82,7 +89,7 @@ func stampRuleset3(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	stamp, id, err := journal.Scan(dir)
-	if err != nil || stamp.Ruleset != 3 {
+	if err != nil || stamp.Ruleset != ruleset {
 		t.Fatalf("scan: %+v, %v", stamp, err)
 	}
 	return id
@@ -517,4 +524,130 @@ func TestRulesetTransitionCarriesCulpritAndDirectHuntMarks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRuleset7ChecksCarriedEdgesButQualifiesWithLivePasses(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(2)
+	c := config.Default()
+	c.CandidateEdges = map[int]int{0: -10, 1: -10}
+	firstRotation := func(e journal.Event) bool {
+		p, ok := e.Data.(*journal.GuardRotation)
+		return ok && p.Event == journal.RotationEnd && p.Clean && p.Qualifying
+	}
+	_, source, dir := runHunt(t, cfg, nil, func(in *Input) {
+		in.Config = c
+		in.Until = firstRotation
+	})
+	id := stampRuleset(t, dir, 6)
+	resumed, err := sim.Resume(dir, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := sim.New(resumed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Simulate(context.Background(), Input{
+		Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Until: firstRotation,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || torn != nil {
+		t.Fatalf("read transitioned session: %v, torn %q", err, torn)
+	}
+	if start := events[0].Data.(*journal.SessionStart); start.Ruleset != 7 {
+		t.Fatalf("transition ruleset %d, want 7", start.Ruleset)
+	}
+	archived, err := facts.ReadJournal(filepath.Join(dir, "archive", id+".jsonl"))
+	if err != nil || archived.Ruleset != 6 {
+		t.Fatalf("archived source: %+v, %v", archived, err)
+	}
+	carried := map[int]*journal.TrialCarried{}
+	residentCarried := map[string]int{}
+	checked := map[int]bool{}
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.TrialCarried:
+			carried[e.Seq] = p
+			if p.Source.Session == id && p.Condition == machine.Resident && p.Outcome == journal.OutcomePass {
+				key := fmt.Sprintf("%s/%s/%v/%d", p.Class.Regime, p.Class.Workload, p.Class.Cores, p.Class.DurationS)
+				residentCarried[key]++
+			}
+		case *journal.TrialIntent:
+			if p.Phase == journal.PhaseSearch {
+				t.Errorf("live candidate-edge trial at seq %d: %+v", e.Seq, p)
+			}
+		case *journal.CorePhase:
+			if p.From != journal.PhaseSearch || p.To == journal.PhaseSearch {
+				continue
+			}
+			if !strings.Contains(p.Reason, "carried") || !strings.Contains(p.Reason, id) {
+				t.Errorf("edge completion does not explain its carried source: %+v", p)
+			}
+			counts := map[machine.Regime]int{}
+			for _, seq := range e.Cause {
+				if fact := carried[seq]; fact != nil && fact.Source.Session == id && fact.Outcome == journal.OutcomePass && len(fact.Class.Cores) == 1 && fact.Class.Cores[0] == p.Core {
+					counts[fact.Class.Regime]++
+				}
+			}
+			for _, regime := range []machine.Regime{machine.R1, machine.R2} {
+				if counts[regime] != c.Evidence.Starts() {
+					t.Errorf("core %d cites %d carried %s passes, want %d", p.Core, counts[regime], regime, c.Evidence.Starts())
+				}
+			}
+			checked[p.Core] = true
+		}
+	}
+	if !checked[0] || !checked[1] {
+		t.Fatalf("candidate edges completed: %v", checked)
+	}
+	if diff := cmp.Diff(firstRotationLivePasses(t, source), residentCarried); diff != "" {
+		t.Fatalf("source's complete resident qualification evidence was not carried (-source +carried):\n%s", diff)
+	}
+	if diff := cmp.Diff(firstRotationLivePasses(t, source), firstRotationLivePasses(t, events)); diff != "" {
+		t.Fatalf("first rotation must repeat every live qualification class despite carried resident passes (-source +new):\n%s", diff)
+	}
+}
+
+func firstRotationLivePasses(t *testing.T, events []journal.Event) map[string]int {
+	t.Helper()
+	intents := map[string]*journal.TrialIntent{}
+	counts := map[string]int{}
+	open := false
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.GuardRotation:
+			if p.Event == journal.RotationStart {
+				if open {
+					t.Fatal("first rotation restarted before qualifying")
+				}
+				open = true
+			} else if open {
+				if !p.Clean || !p.Qualifying {
+					t.Fatalf("first rotation did not qualify: %+v", p)
+				}
+				return counts
+			}
+		case *journal.TrialIntent:
+			if open {
+				intents[p.Trial] = p
+			}
+		case *journal.TrialEnd:
+			if intent := intents[p.Trial]; intent != nil {
+				if p.Outcome != journal.OutcomePass {
+					t.Fatalf("first rotation trial did not pass: %+v", p)
+				}
+				cores := intent.Cores
+				if intent.Core != nil {
+					cores = []int{*intent.Core}
+				}
+				key := fmt.Sprintf("%s/%s/%v/%d", intent.Regime, intent.Workload, cores, intent.DurationS)
+				counts[key]++
+			}
+		}
+	}
+	t.Fatal("no first qualifying rotation")
+	return nil
 }

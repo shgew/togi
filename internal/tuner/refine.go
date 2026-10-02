@@ -131,8 +131,11 @@ func (s *State) roundChecks() []requirement {
 
 func (s *State) roundCheck() Action {
 	r := s.round
+	cause := []int{r.seq}
 	for _, q := range s.roundChecks() {
-		if s.passes(q.class, r.start.Profile, r.seq) >= q.count {
+		seqs := s.passSeqs(q.class, r.start.Profile, r.seq, refinementEvidence)
+		if len(seqs) >= q.count {
+			cause = s.citeCarried(cause, seqs[:q.count]...)
 			continue
 		}
 		if s.retry != nil && s.retry.Round == r.start.Round {
@@ -146,7 +149,7 @@ func (s *State) roundCheck() Action {
 		}
 		return Action{Kind: RunTrial, Trial: t, Cause: []int{r.seq}}
 	}
-	return Action{Kind: Decide, Payload: &journal.RefineRound{Round: r.start.Round, Event: journal.RotationEnd, Passed: true}, Cause: []int{r.seq}}
+	return Action{Kind: Decide, Payload: &journal.RefineRound{Round: r.start.Round, Event: journal.RotationEnd, Passed: true, Reason: s.carriedReason(cause)}, Cause: cause}
 }
 
 func (s *State) projectRound() *journal.RefineState {
@@ -156,7 +159,7 @@ func (s *State) projectRound() *journal.RefineState {
 	}
 	st := &journal.RefineState{Round: r.start.Round, Seq: r.seq, Target: slices.Clone(r.start.Target), Profile: slices.Clone(r.start.Profile), Cores: slices.Clone(r.start.Cores)}
 	for _, q := range s.roundChecks() {
-		st.Checks = append(st.Checks, journal.CheckState{Regime: q.class.regime, Workload: q.class.workload, Cores: slices.Clone(q.cores), Passes: s.passes(q.class, r.start.Profile, r.seq), Needed: q.count})
+		st.Checks = append(st.Checks, journal.CheckState{Regime: q.class.regime, Workload: q.class.workload, Cores: slices.Clone(q.cores), Passes: s.passes(q.class, r.start.Profile, r.seq, refinementEvidence), Needed: q.count})
 	}
 	return st
 }

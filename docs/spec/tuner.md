@@ -4,11 +4,11 @@ Normative rules for how togi moves offsets. Terms are defined in `CONTEXT.md`. R
 
 ## Ruleset
 
-The ruleset is the hardcoded strategy: search strides, offset range, phases, evidence and mark rules, hunt and refinement, guard coverage and tiers. Changing these bumps `tuner.Ruleset` (now 6) and archives an active older session into a seeded new session ([ADR 0019](../adr/0019-a-ruleset-change-starts-a-seeded-session.md), [ADR 0020](../adr/0020-hunt-and-refine.md), [ADR 0023](../adr/0023-hunts-that-converge-on-shared-voltage.md), [ADR 0024](../adr/0024-schedule-from-uncontradicted-evidence.md)). Changes to configurable defaults and fixes that record facts more accurately do not bump it.
+The ruleset is the hardcoded strategy: search strides, offset range, phases, evidence and mark rules, hunt and refinement, guard coverage and tiers. Changing these bumps `tuner.Ruleset` (now 7) and archives an active older session into a seeded new session ([ADR 0019](../adr/0019-a-ruleset-change-starts-a-seeded-session.md), [ADR 0020](../adr/0020-hunt-and-refine.md), [ADR 0023](../adr/0023-hunts-that-converge-on-shared-voltage.md), [ADR 0024](../adr/0024-schedule-from-uncontradicted-evidence.md), [ADR 0026](../adr/0026-carry-trial-facts.md)). Changes to configurable defaults and fixes that record facts more accurately do not bump it.
 
 The evidence epoch (`tuner.EvidenceEpoch`, now 1) separately versions compatibility of trial outcomes: workload content, backend binary or configuration, intended durations, and pass/failure detection (`workloads.md`). `session.start.evidence` records it. Without that field, a session with ruleset ≥ 6 has epoch 1; an older session has epoch 0. A transition drops passes from other epochs but keeps eligible failures. An epoch change is not a ruleset or journal-schema bump.
 
-Transitions record eligible same-BIOS trial and idle-failure facts before `session.carried` (`journal.md`, Transitions). In this layer those events are evidence only: they do not change tuner decisions, replayed offsets, or qualified rotations.
+Transitions record eligible same-BIOS trial and idle-failure facts before `session.carried` (`journal.md`, Transitions). Ruleset 7 decides from these carried facts under the Evidence rules below; it does not carry resident offsets or qualified rotations.
 
 ## Invariants
 
@@ -37,6 +37,8 @@ Cores are visited in CCD-alternating order: 0, 8, 1, 9, ... 7, 15. Each turn goe
 
 A search step runs one isolated R1 start then one isolated R2 start at the same offset, 90 s each by default. Its first failure rejects it. The eventual candidate edge additionally needs `n` passes in each of its frozen R1 and R2 trial classes, using `durations.search_trial_s`.
 
+Carried passes can satisfy `check_edge` in its frozen R1/R2 classes at `durations.search_trial_s`, even though they precede the edge-check phase boundary. Ordinary search steps still require live starts.
+
 Each core tracks its current offset `o`, `pass` (the deepest offset with a passed step, or none) and `fail` (its failed mark, or none).
 
 After a passed step at `o`:
@@ -59,6 +61,10 @@ Any failure during an isolated trial is attributed to the target, crashes includ
 One start is one trial, with no internal relaunch. The pass rule is `n = ceil(ln(evidence.miss) / log1p(-evidence.rate))` consecutive passing starts, five at the defaults (0.05, 0.5). The first failure rejects a step. The full count applies to a candidate edge's R1 and R2 classes, every hunt mask and every refinement check.
 
 A trial class is `(regime, workload, sorted loaded cores, duration_s)`. The ledger records each conclusive trial's class, sequence, applied `trial.intent.profile` and outcome. A pass at profile Q counts toward P only when Q is at least as deep as P, and not before the latest failure of that class at a profile at least as shallow as P. A failure at Q rules out P when Q is at least as shallow as P. Requirements on the same class within a step add, so a start counts once. An idle crash has wildcard R6 class with all cores loaded and invalidates all such R6 classes. Passes at deeper profiles can survive backoff; deeper moves need new evidence.
+
+The ledger folds `trial.carried` and `failure.carried` before live evidence, ordered by their sequence in the new journal and marked as carried. Carried passes count across the local sequence boundaries for candidate-edge checks, hunt planning and outcomes (including projected pass counts), rerun obligations and refinement checks. Rotation qualification uses only live passes since its rotation start. Carried failures count everywhere failures count, regardless of those local boundaries: they invalidate earlier covered passes, keep a class failing until `n` newer covering passes, and participate in monotonicity warnings. A core reset discards carried evidence under the same loaded-core rules as live evidence.
+
+An evidence-backed decision cites the accepted carried events' sequences in the new journal, not their old sequences, and its reason names the original source sessions. Copying a fact does not create another start or live exposure.
 
 A failure contradicting `n` valid passes on a profile at least as deep in the same class records `tuner.warning` `monotonicity`, without changing the failure decision. An idle failure checks all-core R6 classes individually before its wildcard invalidation; if several qualify, the warning cites exactly `n` passes from the class with the earliest valid pass.
 
@@ -119,9 +125,13 @@ Guard begins when no core remains in search. Its first `profile.change` has `fro
 
 A rotation captures the configured schedule in its start event. R1 and R2 occurrences select successive catalog workloads (three occurrences cover each catalog); R3, R4 and R5 run on each core; R6 runs all cores. Each R7 occurrence selects its next R2 workload and requires every part's three short and one long starts. Requirements sharing a trial class add, and trials passed on sufficiently deep profiles since the rotation start can fulfill them. The first unmet requirement of the first unmet step runs next. The rotation ends clean when all requirements pass, and qualifies when it has at least three R1, R2 and R7 steps and one each of R3, R4, R5 and R6. A non-qualifying end records the missing coverage. The newest qualifying profile, or an older eligible one, anchors hunts and refinement.
 
+Only live passes since the rotation start fulfill rotation requirements; carried passes never qualify it. Failure invalidation is global, including carried failures before that start, so the live-pass boundary does not restore contradicted evidence.
+
 Resident and masked attribution uses the backend instance's reported core first, then exactly one core named by core-local MCEs, then the single nonzero core in the applied profile. An attributed failure records the failed mark at the applied offset and backs off that core to at least one count shallower, including when it was held at an anchor offset; failure at 0 is a dead end. If the core was already shallower, its offset need not move. An unattributed resident or idle failure queues a hunt of the failing profile and trial class instead of backing off the loaded set. An unattributed masked failure is the mask outcome. Inconclusive starts retry the same class.
 
 When an attributed backoff or hunt commitment changes an offset, guard first reruns the failed class: `n` starts at `start_s`, then one at its original duration if different. These obligations are FIFO. A rerun cites the newest queued failure of its class; this does not change the obligations or their evidence windows. `run --rotations N` stops only after N clean qualifying rotation ends valid for the current profile, with every core done and no refinement able to improve total depth; without the flag guard continues indefinitely.
+
+Carried passes can satisfy a rerun's class requirements despite preceding its obligation boundary; failures, including carried ones, retain their normal invalidation effect. When carried passes answer the rerun, the following guard-rotation or refinement-round decision cites those facts and names their source sessions. A rerun does not supply carried passes to rotation qualification.
 
 A rotation counts only if every core was done when it ended. Ends after the last deepening count as before. An earlier end can also count if it followed the latest `command.reset`, its ending profile was at least as deep as the current profile on every core, and no failure of any trial class since that reset occurred at a profile equal to or shallower than its ending profile on every core. An incomparable failure does not contradict it; a failure with an incomplete profile conservatively prevents this credit. This credit does not change the rotation-start evidence window, tier clock or clean hours.
 
@@ -137,6 +147,8 @@ With more than two candidates, a hunt can probe the most recently marked core al
 
 A mask passes after `n` starts; its first failure rejects it. Ledger evidence can infer an outcome: a part or complement counts the session's evidence of its class recorded after the newest `command.reset` of any core, including earlier hunts'. The same boundary applies while the mask runs and to its projected pass count, so earlier valid passes combine with new starts. Passes must be at an equal or deeper profile, and failures at an equal or shallower one, under the ledger's usual rules. Full and edge masks infer only from evidence recorded since their hunt started and count new starts since their mask started. A mask reaching a new mark is skipped. `hunt.mask` records the partition stage, subset, mask profile, duration and outcome so interrupted hunts resume without duplicating commitments.
 
+Carried passes and failures are admitted across these reset, hunt-start and mask-start inference boundaries for every mask stage, subject to reset invalidation and the usual class and profile rules. This applies both when planning an inferred mask and when evaluating or projecting its running outcome.
+
 A singleton ends `culprit` with a failed mark at that core's failing offset. A larger subset that failed a mask is a joint; if no tested mask failed it ends `fallback` with a joint mark over all remaining candidates at their failing offsets. Before a joint ends, unless the resident profile already breaks it, edge probes find how shallow each member must be, one member at a time in core-id order. A probe is a mask of stage `edge` with the probed member at the probe offset, members already probed held at their shallowest failing offsets, the rest of the joint at their failing offsets and every other core at its anchor offset, run at the duration of the hunt's last mask. For the probed member, its failing offset is the deepest known failure and its anchor offset the shallowest known pass. Probes go 1, 2, 4, … counts shallower than the failing offset until one passes or would reach the known pass, then bisect between the shallowest failure and the deepest pass until they are one count apart; a skipped probe stops probing. The hunt then ends `joint`, recording each member's shallowest failing offset as the `hunt.end` `members`; the joint mark sits at those offsets and the joint-mark backoff rule picks the member to move. An attributed failure during a mask ends `direct` and marks its actual applied offset, even on a core held at the anchor. `hunt.end` precedes its `backoff` or `mark.joint`; a joint mark already broken by the resident profile needs no further backoff. Resume uses cause linkage to emit each missing commitment once. A reset cancels an open hunt and requeues its failure.
 
 ## Refinement
@@ -144,6 +156,8 @@ A singleton ends `culprit` with a failed mark at that core's failing offset. A l
 Refinement starts only after search, hunts, reruns and the open rotation finish, when a qualified profile exists and a core is not done or a globally deeper total is reachable. It targets the safe profile with greatest total depth over all cores, with preferred-core ranking and then core-id order breaking ties. `refine.round` snapshots target, anchor and proposed profile. Cores that must become shallower yield first; those moving deeper go halfway toward their target. Each move is a decision; after the round's last move, done is re-evaluated and one `profile.change` applies them all.
 
 Only deepened cores need checks: each runs `n` R1 starts and `n` R2 starts at `start_s`, then each R7 part containing a deepened core runs `n` starts. The round's index freezes the workload in each catalog. A failure ends the round, triggers its attribution or hunt, and a passed round records its end; resume completes missing moves and checks without duplicating decisions. A new mark that makes the proposed profile unsafe ends the round without applying it.
+
+Carried passes and failures count across the refinement-round boundary for these checks, under the same class, profile and invalidation rules. A round accepted using carried evidence cites its carried sequences and source sessions.
 
 ## Defect list
 

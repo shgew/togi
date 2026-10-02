@@ -1,0 +1,33 @@
+# Carry trial facts across ruleset changes
+
+## Context
+
+On the night of 2026-10-02, a ruleset-6 session spent 4.0 of its 9.2 hours rechecking candidate edges already passed in the preceding same-BIOS session: 160 starts, 160 passes. It then spent 4.44 hours in its first hunt (43 masks, 31 run, 12 inferred). The recorded-history counterfactual found that all 16 candidate edges already had five archived passes in both classes; 24 of the first hunt's 26 passing masks had at least five archived passes, and four of its five failing masks had archived failures. These counts describe available evidence, not a measured ruleset-7 runtime or a promise that every live trial can be removed.
+
+The counterfactual's trial rows separate starts covered by prior passes from starts covered by prior failures: search 160/0, guard 0/1, hunt parts 15/1, complements 60/0 and edges 45/14. The two tested archive scopes gave the same answers. The second hunt remained open when the recording stopped.
+
+[ADR 0013](0013-candidate-edges-for-a-new-session.md) treated a configured candidate edge as a claim to prove anew. [ADR 0019](0019-a-ruleset-change-starts-a-seeded-session.md) automated carrying edges and attributed failed marks, but deliberately excluded passes. Decision strategy and evidence compatibility were conflated: changing search or hunt rules does not necessarily change what a recorded trial observed.
+
+## Decision
+
+- Ruleset 7 archives an active ruleset-6 session on the next `run` and starts a new seeded session. A transition records one `trial.carried` per decisive trial and one `failure.carried` per trial-less idle failure, before `session.carried` and before tuning decisions. Each fact retains original session, decisive sequence, build, trial identity where applicable, evidence epoch, class, condition, phase, full applied profile, outcome, signal and measured duration. Its message explains the observation and source. Journal schema remains 2.
+- The evidence epoch separately versions workload content, backend binary and configuration, intended durations and pass/failure detection. The current epoch is 1. A missing stamp means epoch 1 for ruleset 6 or later, otherwise 0. An epoch change drops passes, not eligible failures.
+- Carry walks same-BIOS sessions back to the newest `reset --all`, stopping after the first archive already carrying facts and copying its own facts and carried copies. Passes must belong to the current epoch; failures may come from older epochs. Core resets drop earlier facts loading that core, including carried copies. Defect-matched failures do not carry. Across a BIOS change only candidate edges carry. Copy-forward preserves original provenance and chronology without duplicating an observation.
+- Carried passes can answer a candidate edge's frozen R1/R2 classes at `durations.search_trial_s`, hunt masks (planning, outcomes and projected counts), reruns and refinement checks across their local sequence boundaries. Ordinary search steps still need live starts. Guard rotation qualification requires live passes since the rotation start. Carried failures count everywhere failures count, including invalidation and monotonicity warnings. Reset invalidation applies equally to live and carried evidence.
+- When a scheduled class has a known valid failure at an equal-or-shallower profile, not covered by `n` newer passes, the intended policy is to skip that trial, cite the failure and start a hunt directly from a failed guard step. This scheduling policy is a separate layer of the ruleset-7 cutover; admitting carried failures to the ledger does not by itself implement the skip.
+- Candidate edges and failed marks continue to seed search as before. Resident offsets, joint marks and qualifying rotations are not carried. A decision accepting carried evidence cites its sequence in the new journal and names its original source sessions in its reason, so the new journal is sufficient to explain the decision.
+- The ruleset-7 build migrates itself: the operator need not reset or transcribe evidence before running it. The covered-open-rotation refinement change ships in the same ruleset bump, without treating carried passes as rotation qualification.
+
+This amends ADR 0013's requirement for new-session proof and its rejection of carried passes; configured candidate edges remain claims rather than evidence. It amends ADR 0019's exclusion of passes and unattributed failure facts, its ruleset-boundary archive walk for facts, and its mandatory live rechecking of carried edges. Its archive immutability, source attribution, candidate-edge and failed-mark seeding, newer-journal refusal and exclusions of resident offsets and rotations remain.
+
+## Considered Options
+
+- **Carry only decisions and seed values as before:** rejected. Edges and marks say where search starts, not which classes have already passed or failed, so the new session repeats hours of compatible evidence.
+- **Read archives in place at decision time:** rejected. Every evidence consumer would need archive access and transition eligibility rules; a reader of the new journal alone could not reconstruct why a decision was accepted. Copying eligible observations once gives the ledger a local, ordered evidence stream.
+- **Carry passes across evidence epochs:** rejected. Changed workloads or failure detection may no longer support the old pass. Failures remain conservative constraints, but passes require compatibility.
+
+## Consequences
+
+The failure ledger only ratchets shallower: a failure cancels earlier covered passes and reads as failing until `n` newer covering passes establish the class. The tuner does not schedule trials it can infer will fail under the subsequent known-failure-skip policy. This can sacrifice depth on a single noisy old failure; it is accepted rather than hidden by a retry policy. `just stats` counts decisions resting on a single carried failure so reviewers can see that evidence quality.
+
+A new session can avoid compatible candidate-edge, hunt, rerun and refinement rechecks, but must still earn its own live qualifying rotation. Carried facts are not new starts, exposure or clean hours. Evidence-backed decisions keep the carried sequences and source sessions visible. The ledger and every sequence-boundary consumer must distinguish carried observations from live starts, and core resets must invalidate both consistently.

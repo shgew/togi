@@ -129,34 +129,6 @@ func TestCarryFactsResumeWithoutDuplicates(t *testing.T) {
 	}
 }
 
-func TestCarryFactsLeaveDecisionsUnchanged(t *testing.T) {
-	var baseline []*journal.TunerDecision
-	for _, withFacts := range []bool{false, true} {
-		m := newSim(t, small())
-		c := carriedFixture(t, m)
-		if !withFacts {
-			c.Facts = nil
-		}
-		events, stop := runCarriedSession(t, t.TempDir(), m, c, 0)
-		if stop.Reason != StopRotations {
-			t.Fatalf("stop = %s, want rotations", stop.Reason)
-		}
-		var decisions []*journal.TunerDecision
-		for _, e := range events {
-			if p, ok := e.Data.(*journal.TunerDecision); ok {
-				copy := *p
-				copy.Reason = ""
-				decisions = append(decisions, &copy)
-			}
-		}
-		if !withFacts {
-			baseline = decisions
-		} else if diff := cmp.Diff(baseline, decisions); diff != "" {
-			t.Fatalf("carried fact events changed tuner decisions (-want +got):\n%s", diff)
-		}
-	}
-}
-
 func TestCarryFactsRequireSameBIOS(t *testing.T) {
 	for _, missing := range []bool{false, true} {
 		m := newSim(t, small())
