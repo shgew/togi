@@ -119,6 +119,7 @@ type TrialConditions struct {
 	CoreMHz       map[int]int    `json:"core_mhz,omitempty"`
 	WorkerCPUMS   map[int]int64  `json:"worker_cpu_ms,omitempty"`
 	PackagePowerW *float64       `json:"package_power_w,omitempty"`
+	PMTable       *PMTable       `json:"pm_table,omitempty"`
 }
 
 type Trials interface {

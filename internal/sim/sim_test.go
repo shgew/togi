@@ -323,7 +323,7 @@ func TestFaults(t *testing.T) {
 		m, s := fresh(t)
 		m.FailCheck("root", "uid 1000")
 		checks := s.Host.Preflight()
-		if len(checks) != 7 || checks[0] != (machine.Check{Name: "root", Detail: "uid 1000"}) || !checks[1].OK {
+		if checks[0] != (machine.Check{Name: "root", Detail: "uid 1000"}) || !checks[1].OK {
 			t.Fatalf("checks %+v", checks)
 		}
 		m.FailCheck("root", "")

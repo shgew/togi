@@ -7,6 +7,7 @@ All notable changes to togi are documented in this file. The format is based on 
 ### Added
 
 - Per-trial samples record each loaded core's worker CPU time; failed multi-core trials outside the deliberately suspended R6 regime report the first worker that stopped advancing when persisted samples distinguish it, as evidence without changing tuning decisions. Simulated samples stream without retaining a duration-sized series ([#275]).
+- Per-trial samples optionally record all 16 cores' power, voltage requests, temperatures and C-state residency from SMU table version `0x620205` at the existing 1 Hz tick; bounded single-flight reads never delay supervision, omit overdue lanes and require core IDs 0–15 in CCD/slot order. Each run records decoding availability without making unsupported tables a failure ([#276]).
 
 ### Changed
 
@@ -372,5 +373,6 @@ All notable changes to togi are documented in this file. The format is based on 
 [#249]: https://github.com/shgew/togi/pull/249
 [#251]: https://github.com/shgew/togi/pull/251
 [#275]: https://github.com/shgew/togi/pull/275
+[#276]: https://github.com/shgew/togi/pull/276
 [#278]: https://github.com/shgew/togi/pull/278
 [#279]: https://github.com/shgew/togi/pull/279

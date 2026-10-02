@@ -11,12 +11,16 @@ All files live in the state directory, default `/var/lib/togi`:
 | `events.jsonl` | The journal of the current session: one JSON event per line, append-only, source of truth |
 | `state.json` | The current state, a projection of the journal for readers |
 | `trials/<trial-id>/` | Per-trial work directory: backend config files, raw stdout/stderr, backend result files |
-| `trials/<trial-id>/samples.jsonl` | Fsynced per-second conditions: milliseconds since trial timing began (`elapsed_ms`), optional `tctl_c`, CCD temperatures by label (`tccd_c`), loaded-core frequencies in MHz by core ID (`core_mhz`), cumulative worker CPU milliseconds by loaded core ID (`worker_cpu_ms`), and package power in watts (`package_power_w`) |
+| `trials/<trial-id>/samples.jsonl` | Fsynced per-second conditions: milliseconds since trial timing began (`elapsed_ms`), optional `tctl_c`, CCD temperatures by label (`tccd_c`), loaded-core frequencies in MHz by core ID (`core_mhz`), cumulative worker CPU milliseconds by loaded core ID (`worker_cpu_ms`), package power in watts (`package_power_w`), and decoded per-core SMU lanes (`pm_table`) |
 | `archive/<session-id>.jsonl` | Journals of sessions ended by `reset --all` or by a transition |
 | `archive/<session-id>-trials/` | The `trials/` directory of an archived session |
 | `archive/<session-id>-compat-pending` | Crash-recovery marker while `reset --all` or a transition archives a journal with another schema; removed on completion |
 | `archive/<session-id>-carry-pending` | Marker that the session a transition archived has not yet seeded a new session; removed once a journal records its `session.carried` or passes the point where one applies |
 | `lock` | Held with `flock` by the one process allowed to write the journal |
+
+Optional `pm_table` contains six 16-element arrays indexed by physical core ID (0–15): `power_w`, `voltage_request_v`, `temperature_c`, `c0_pct`, `cc1_pct`, and `cc6_pct`. Residency units are percent. Voltage requests do not describe separate rails: both CCDs share VDDCR and the highest request wins. Only table version `0x620205` with the exact supported size and core IDs 0–15 in CCD/slot order (0–7 on CCD0, 8–15 on CCD1) is decoded (`workloads.md`, Conditions sampling). The sampler never waits for the single-flight background reader: a completed reading can be reused within two seconds of its read's start. Unavailable, unsupported, failed or overdue reads omit the entire field, never insert zero lanes; a read taking 100 ms or longer is discarded and readings older than two seconds are omitted.
+
+Once per run, `preflight.check` with `check: "pm_table"` records in `detail` and `msg` the table version seen and whether per-core lanes decode. If no version can be read it says the version is unavailable; the simulator says it reports no lanes. The check uses the same single-flight reader with at most the remaining 100 ms read budget and explains pending/overdue reads or an unsupported topology. This informational check always has `ok: true`: unsupported or failed diagnostic reads are not preflight failures.
 
 Retention: trial directories of failed and inconclusive trials are kept forever. Passing ones are pruned beyond the newest 200.
 
