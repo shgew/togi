@@ -359,13 +359,23 @@ func (l *likelihood) fitFlat(cfg *sim.Config) {
 
 func (l *likelihood) fitIdle(cfg *sim.Config) {
 	for core := range cfg.Edges {
-		indices := l.selectObs(func(o observation) bool { return o.profile[core] < 0 && !slices.Contains(o.spec.Cores, core) })
+		hasExposure := false
+		indices := l.selectObs(func(o observation) bool {
+			if slices.Contains(o.spec.Cores, core) {
+				return false
+			}
+			hasExposure = hasExposure || o.profile[core] < 0
+			return true
+		})
 		idle := -50
 		if cfg.Edges[core].Idle != nil {
 			idle = *cfg.Edges[core].Idle
 		}
 		cfg.Edges[core].Idle = &idle
-		l.discrete(&idle, indices)
+		// Zero-offset starts constrain Idle=1, but cannot alone identify an idle edge.
+		if hasExposure {
+			l.discrete(&idle, indices)
+		}
 		if idle == -50 {
 			cfg.Edges[core].Idle = nil
 		}
