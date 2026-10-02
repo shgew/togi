@@ -37,6 +37,8 @@ Retention: trial directories of failed and inconclusive trials are kept forever.
    If the old schema already recorded `session.archived` before the update, `reset --all` completes that recorded move without creating a marker, including when `trials/` was moved before the interruption.
 6. **Torn tails are expected.** A crash can leave a partial last line. Replay drops it and appends a `journal.torn` event with the discarded bytes, hex-encoded. A torn first line leaves an empty journal: nothing happened before `session.start`, so nothing is recorded.
 
+Development-tool exception: `tools/sim` (also used by `tools/bench`) holds the writer lock across simulated reboots, retains parsed events within the invocation, and writes `state.json` only at stop. It still appends the journal on every event. A new invocation reads the journal from disk; real sessions and simulator recovery/interruption tests use the file-backed rules above.
+
 ## Event format
 
 One JSON object per line. Common fields:

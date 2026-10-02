@@ -74,7 +74,7 @@ func run(args []string, stderr io.Writer) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	renderer := journal.NewRenderer(stderr, os.Getenv)
-	stop, err := simrun.Simulate(ctx, simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: stderr, Renderer: renderer, Rotations: *rotations})
+	stop, err := simrun.Simulate(ctx, simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: stderr, Renderer: renderer, Rotations: *rotations, InMemoryJournal: true})
 	if err != nil {
 		fmt.Fprintf(stderr, "sim: %v\n", err)
 		return 1

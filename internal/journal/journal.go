@@ -83,6 +83,10 @@ func (j *Journal) Dir() string {
 	return j.dir
 }
 
+func (j *Journal) SetBoot(boot string) {
+	j.opts.Boot = boot
+}
+
 func (j *Journal) Open() error {
 	dir, opts := j.dir, j.opts
 	path := filepath.Join(dir, eventsFile)
