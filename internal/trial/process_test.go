@@ -275,6 +275,8 @@ func TestProcessPartialStartRollback(t *testing.T) {
 	o := testOptions(t, "pipe-descendant")
 	o.NoScope = false
 	o.User = testIdentity()
+	o.StopGrace = 100 * time.Millisecond
+	o.teardown = time.Second
 	h := &rollbackProcessHost{}
 	t.Cleanup(func() {
 		if h.orphan != 0 {
@@ -291,7 +293,7 @@ func TestProcessPartialStartRollback(t *testing.T) {
 	if !errors.Is(err, machine.ErrContainment) || !strings.Contains(err.Error(), "injected second-instance start failure") {
 		t.Fatalf("rollback = %v", err)
 	}
-	if h.failureAt.IsZero() || elapsed > 15*time.Second+500*time.Millisecond {
+	if h.failureAt.IsZero() || elapsed > o.teardown+500*time.Millisecond {
 		t.Fatalf("rollback exceeded deadline: %s", elapsed)
 	}
 	if !slices.Equal(h.scopes, []string{"togi-trial-pipe-rollback-c00", "togi-trial-pipe-rollback-c01"}) {
@@ -485,6 +487,7 @@ func TestProcessRelativeTrialDirectory(t *testing.T) {
 func TestProcessWatchedFloodCancellation(t *testing.T) {
 	o := testOptions(t, "watched-flood")
 	o.SampleInterval = 0
+	o.StopGrace = 100 * time.Millisecond
 	spec := testSpec("watched-flood", machine.R1, time.Minute)
 	spec.CPUs = []int{o.Cores[0].CPUs[0]}
 	started, err := New(o).Start(context.Background(), spec)

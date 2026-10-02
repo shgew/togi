@@ -57,7 +57,7 @@ func TestScopeTimeoutUsesRemainingTeardownTime(t *testing.T) {
 			<-ctx.Done()
 			return []byte("Unit not loaded; could not be found"), ctx.Err()
 		}}}
-		run := &running{host: h, options: Options{StopGrace: 3 * time.Second, SampleInterval: time.Second}, scopes: []string{"first", "second"}}
+		run := &running{host: h, options: Options{StopGrace: 3 * time.Second, SampleInterval: time.Second, teardown: teardownLimit}, scopes: []string{"first", "second"}}
 		for range 2 {
 			p, err := h.Start(context.Background(), []string{"exit"}, t.TempDir())
 			if err != nil {

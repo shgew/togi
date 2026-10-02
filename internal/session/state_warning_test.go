@@ -57,7 +57,7 @@ func stateBoot(in simRun, wrap func(*journal.Journal) Journal) (stop Stop, err e
 	if err != nil {
 		return Stop{}, err
 	}
-	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Sync: true, Build: Build()})
+	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Build: Build()})
 	if err != nil {
 		return Stop{}, err
 	}

@@ -33,7 +33,7 @@ func trialScope(unit string) bool {
 }
 
 func (r *Runner) Sweep(parent context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(parent, teardownLimit)
+	ctx, cancel := context.WithTimeout(parent, r.options.teardown)
 	defer cancel()
 	deadline, _ := ctx.Deadline()
 	units, err := r.host.ListScopes(ctx)

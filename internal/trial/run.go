@@ -432,7 +432,7 @@ func (t *running) teardown(result *machine.Result, report machine.Reporter) erro
 	if t.cancel != nil {
 		defer t.cancel()
 	}
-	deadline := time.Now().Add(teardownLimit)
+	deadline := time.Now().Add(t.options.teardown)
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 	cleanupErr := terminate(t.host, t.instances, t.scopes, deadline, t.options.StopGrace, false, func(until time.Time, final bool) bool {

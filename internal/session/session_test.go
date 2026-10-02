@@ -81,9 +81,12 @@ func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Jo
 
 // memState stands in for state.json: rewriting a file after every event dominates these tests on
 // copy-on-write filesystems, and the file itself is covered by the journal package and simrun's TestSixteenCoresReachQualifiedRotation.
+// It keeps the last written state and encodes it when read: a boot ends right after a write or at a trigger
+// inside Append, before the runner folds anything into the state it last wrote.
 type memState struct {
-	mu   sync.Mutex
-	data []byte
+	mu      sync.Mutex
+	data    []byte
+	pending *journal.State
 }
 
 var states sync.Map
@@ -126,13 +129,9 @@ func (j *testJournal) Append(p journal.Payload, cause ...int) (journal.Event, er
 }
 
 func (j *testJournal) WriteState(s journal.State) error {
-	data, err := json.Marshal(s)
-	if err != nil {
-		return err
-	}
 	j.state.mu.Lock()
 	defer j.state.mu.Unlock()
-	j.state.data = data
+	j.state.pending = &s
 	return nil
 }
 
@@ -144,6 +143,13 @@ func readMemState(m *memState) (journal.State, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var s journal.State
+	if m.pending != nil {
+		data, err := json.Marshal(*m.pending)
+		if err != nil {
+			return s, err
+		}
+		m.data, m.pending = data, nil
+	}
 	if m.data == nil {
 		return s, fs.ErrNotExist
 	}
