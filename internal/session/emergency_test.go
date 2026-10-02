@@ -13,6 +13,7 @@ import (
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 type failAppendJournal struct {
@@ -322,6 +323,86 @@ func TestEveryEarlyJournalAppendFailureRespectsSweepGate(t *testing.T) {
 					t.Fatalf("event #%d: seq %d kind %s, want seq %d kind %s", i+1, e.Seq, e.Kind, i+1, events[i].Kind)
 				}
 			}
+		})
+	}
+}
+
+type liveContainmentTrials struct {
+	machine.Trials
+	live *bool
+}
+
+func (t liveContainmentTrials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Running, error) {
+	running, err := t.Trials.Start(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	*t.live = true
+	return liveContainmentRunning{Running: running}, nil
+}
+
+type liveContainmentRunning struct{ machine.Running }
+
+func (r liveContainmentRunning) Wait(_ context.Context, report machine.Reporter) (machine.Result, error) {
+	report.Progress("backend still running")
+	return machine.Result{}, fmt.Errorf("backend still running after teardown: %w", machine.ErrContainment)
+}
+
+type liveWriteSMU struct {
+	machine.SMU
+	live   *bool
+	writes int
+}
+
+func (s *liveWriteSMU) SetOffset(core, offset int) error {
+	if *s.live {
+		s.writes++
+	}
+	return s.SMU.SetOffset(core, offset)
+}
+
+func (s *liveWriteSMU) SetAllOffsets(offset int) error {
+	if *s.live {
+		s.writes++
+	}
+	return s.SMU.SetAllOffsets(offset)
+}
+
+func TestJournalFailureWithUnconfirmedTeardownWithholdsAllWrites(t *testing.T) {
+	for _, kind := range []journal.Kind{journal.KindTrialProgress, journal.KindTrialEnd} {
+		t.Run(string(kind), func(t *testing.T) {
+			t.Parallel()
+			m := newSim(t, small())
+			in := simInput(t.TempDir(), m)
+			seams := m.Seams()
+			live := false
+			smu := &liveWriteSMU{SMU: seams.SMU, live: &live}
+			seams.SMU = smu
+			seams.Trials = liveContainmentTrials{Trials: seams.Trials, live: &live}
+			boot, err := seams.Host.BootID()
+			if err != nil {
+				t.Fatal(err)
+			}
+			j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: m.Now, Monotonic: m.Monotonic, Build: Build()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer j.Close()
+			faulty := &failAppendJournal{Journal: wrapFor(in, nil)(j), kind: kind}
+			var stderr bytes.Buffer
+			r := &runner{in: Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: faulty, Machine: seams, Stderr: &stderr}, fold: newFold(), tuner: tuner.New()}
+			stop, runErr := r.run(context.Background())
+			err = errors.Join(runErr, r.close(true, &stop))
+			type observation struct {
+				JournalFailed, BackendLive, ContainmentLatched, JournalError, ContainmentError bool
+				LiveWrites                                                                     int
+			}
+			got := observation{faulty.failed, live, r.containmentFailed, errors.Is(err, io.ErrClosedPipe), errors.Is(err, machine.ErrContainment), smu.writes}
+			want := observation{true, true, true, true, true, 0}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("failed journal and teardown (-want +got):\n%s", diff)
+			}
+			t.Logf("live SMU writes=%d; containment latched=%v; error=%v", smu.writes, r.containmentFailed, err)
 		})
 	}
 }
