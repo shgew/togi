@@ -2,53 +2,43 @@ package main
 
 import (
 	"bytes"
-	"context"
+	"compress/gzip"
 	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
-	"github.com/shgew/togi/internal/sim"
-	"github.com/shgew/togi/internal/simrun"
 )
 
 var update = flag.Bool("update", false, "rewrite testdata/*.golden from the current output")
 
 func TestSimulatedJointReport(t *testing.T) {
-	model := sim.DefaultModel()
-	model.PastEdgeRate = 1
-	model.Signals = map[machine.Signal]float64{machine.Crash: 1}
-	model.CrashMCE = 0
-	edges := make([]sim.Edges, 4)
-	for i := range edges {
-		edges[i].Isolated = [5]int{-50, -50, -50, -50, -50}
-		edges[i].Resident = [7]int{-50, -50, -50, -50, -50, -50, -50}
-	}
-	m, err := sim.New(sim.Config{Seed: 1, Cores: 4, Edges: edges, Model: &model, Joints: []sim.Joint{{Members: map[int]int{1: -10, 3: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}})
+	f, err := os.Open(filepath.Join("testdata", "joint.jsonl.gz"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Default()
-	cfg.CandidateEdges = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
-	dir := t.TempDir()
-	if _, err := simrun.Simulate(context.Background(), simrun.Input{Config: cfg, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}); err != nil {
-		t.Fatal(err)
-	}
-	events, err := readJournal(filepath.Join(dir, "events.jsonl"))
+	defer f.Close()
+	r, err := gzip.NewReader(f)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Test binaries can carry local version stamps; these are not simulation behavior.
-	for _, e := range events {
-		if v, ok := e.Data.(*journal.ConfigLoaded); ok {
-			v.Version = "test"
-			v.Rev = "fixed"
-		}
+	defer r.Close()
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journalPath := filepath.Join(t.TempDir(), "events.jsonl")
+	if err := os.WriteFile(journalPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	events, err := readJournal(journalPath)
+	if err != nil {
+		t.Fatal(err)
 	}
 	var got bytes.Buffer
 	if err := report(&got, events, time.Time{}); err != nil {
