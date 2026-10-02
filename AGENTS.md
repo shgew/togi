@@ -7,6 +7,8 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `README.md`: what togi does, what works today, and the common commands. The first page a reader sees.
 - `CHANGELOG.md`: user-visible changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 - `CONTEXT.md`: the vocabulary. Name code, events and docs with its terms.
+- `REVIEW.md`: defect criteria and recurring lessons. Read it before reviewing a pull request.
+- `.omp/`: reviewer rules and `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates.
 - `docs/spec/`: normative behavior. Read the relevant spec before changing behavior, and change spec and code in the same pull request or in layers of one stack merged together.
   - `tuner.md`: offsets, search, hunt, refinement, guard, tiers, dead ends.
   - `workloads.md`: regimes, backends, containment, failure detection.
@@ -16,22 +18,24 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `docs/simulating.md`: running a simulated session with `tools/sim`.
 - `docs/reviewing.md`: reviewing an unattended run or archived journal with `just stats`, and writing its retro on the pinned "Target-machine runs" issue.
 - `docs/benchmarking.md`: measuring a tuner change's time to conclusion, depth and hazard across simulated machines with `tools/bench`; run it before and after any change to how the tuner decides.
-- `docs/adr/`: decisions and the alternatives rejected. Reversing one needs a new ADR.
+- `docs/adr/`: decisions and the alternatives rejected, with statuses in [the index](docs/adr/README.md). The specs describe current behavior; where they disagree with an ADR, the spec wins and the index is out of date. Reversing a decision needs a new ADR, which updates the index in the same pull request.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
 - Issues on `github.com/shgew/togi`: the plan, ideas and bugs (Issues, below).
 
 ## Workflow
 
-Every change, docs included, lands as a pull request against `main` on `github.com/shgew/togi`, or as a layer of a stack of pull requests that ends on `main`. The owner reviews and merges. When a change is done, open its pull request without asking, unless told otherwise. The one commit that reaches `main` without a pull request is the release commit the release workflow pushes (`docs/releasing.md`).
+Every change, docs included, lands as a pull request against `main` on `github.com/shgew/togi`, or as a layer of a stack of pull requests that ends on `main`. The owner merges; agents merge only when the owner asks. When a change is done, open its pull request without asking, unless told otherwise. The one commit that reaches `main` without a pull request is the release commit the release workflow pushes (`docs/releasing.md`).
 
 - Branch from `main` with a short descriptive name; in a stack, each layer above the bottom branches from the layer below.
+- Agents act on GitHub as `robotogi[bot]` through `just bot`: open pull requests, comment, reply, resolve threads, post check runs and perform merges the owner asked for. Set `ROBOTOGI_KEY_FILE` to the App's PEM private key file path in the environment.
 - Plan the pull requests while designing the implementation, before writing code. Divide the work into logical pull requests, each one concern that a reviewer can read in one sitting: a behavior-preserving refactor apart from the change it enables, a new seam apart from the behavior built on it. Big pull requests slow review down far more than their size suggests; the 100-file cap below is a ceiling, not a target. Pull requests that depend on each other land as a stack.
-- A pull request changes at most 100 files, counting only the files CodeRabbit would review: every changed file except those its default ignores and the `path_filters` in `.coderabbit.yaml` exclude. The cap is this project's rule; CodeRabbit's own limit depends on its plan.
+- A pull request changes at most 100 files, not counting `go.sum`, `flake.lock` and files under `testdata/`.
 - Stacked pull requests always use [`gh stack`](https://github.com/github/gh-stack) (`gh extension install github/gh-stack`): each layer is a branch with its own pull request based on the layer below, a lower layer holds what the ones above depend on, and every layer passes `just check` on its own. Open the stack with `gh stack submit`, keep it current with `gh stack sync`, and merge it with `gh stack merge`, never layer by layer by hand.
 - Commit with short imperative messages.
 - The pull request body follows `.github/pull_request_template.md`: a short summary, and the demo in a collapsed block.
-- Address every review comment on the same branch.
-- CodeRabbit reviews every eligible pull request, including stacked layers. It skips draft pull requests and pull requests from `dependabot[bot]`, as configured in `.coderabbit.yaml`. Its review is advisory: address its comments like any other, then reply to and resolve its threads.
+- Opening a pull request starts its independent agent review before its author reports done. Follow `.omp/commands/review-pr.md` (the omp command is `/review-pr [PR numbers or URLs… | all]`; no argument means all open non-draft pull requests). omp's `.omp/rules/review-after-open.md` sends a reminder after each PR-opening command. PR coordinators run in parallel and split each diff among parallel reviewers; one coordinator owns each stack's fixes and restack. Review fixes again, record every finding and its outcome in one App comment for the reviewed commit, then post the `review` check on that head. The merge requires that check from robotogi and resolved review threads, together with CI.
+- Address every finding on the same branch. Fix real defects: behavior, safety, security, journal integrity, concurrency, unmet Acceptance, tests that fail to pin behavior, and docs that contradict behavior or other docs. Reply with a reason to the rest and change nothing; style, wording, optional tests, naming taste, optional refactors and findings another layer handles are not reasons to change this layer.
+  Push one review's fixes together, and reply to and resolve each thread.
 - A pull request that finishes an issue says `Closes #N` in its body; one that only makes progress says `Refs #N`.
 - A pull request that bumps `journal.Schema` or `tuner.Ruleset` is breaking: its title starts with `[BREAKING]`, it carries the `breaking` label, and its changelog line starts with `**BREAKING**`.
 - A breaking pull request merges only after `[Unreleased]` has been released (see `docs/releasing.md`).
@@ -43,7 +47,7 @@ Planning lives in issues, filed from the templates in `.github/ISSUE_TEMPLATE/`.
 
 - Labels name the kind: `idea` (a thought, not yet discussed), `design` (decided, waiting to be scheduled), `feature` (ready to build), `bugfix`, and `breaking` on issues and pull requests alike.
 - The `1.0` milestone holds what ships in 1.0.
-- Lifecycle: an idea is discussed until decided, then its issue becomes a design with Why, Decided, Open, Pull requests and Links; Pull requests lists the planned pull requests in landing order. When a discussion settles decisions, file or update the issue before it ends. Each pull request that implements part of a design moves its decisions into the spec or an ADR; the last one closes the issue. The spec and ADRs stay the lasting record.
+- Lifecycle: an idea is discussed until decided, then its issue becomes a design with Why, Decided, Acceptance, Open, Pull requests and Links; Pull requests lists the planned pull requests in landing order. When a discussion settles decisions, file or update the issue before it ends. Each pull request that implements part of a design moves its decisions into the spec or an ADR; the last one closes the issue. The spec and ADRs stay the lasting record.
 
 ## Keeping docs current
 
@@ -64,11 +68,12 @@ The first pull request that makes something runnable on real hardware adds `docs
 
 ## Commands
 
-Enter the dev shell (Go, gh, gopls, golangci-lint, just, nixfmt) with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes also work outside the dev shell: they enter it with `nix develop` when needed.
+Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes also work outside the dev shell: they enter it with `nix develop` when needed.
 
 | Command | Use |
 |---|---|
 | `just` | List the recipes |
+| `just bot <gh args>` | Run GitHub commands as robotogi, using the private key file named by `ROBOTOGI_KEY_FILE` |
 | `just test` | The tight loop |
 | `just gate` | Lint, the `fmt` flake check over tracked files, then tests: the quick check before handing off |
 | `just check` | Every flake check, what CI runs on every pull request and push to `main`: package (its tests run shuffled, with the integration tests on Linux), race (trial, session, journal and watch under the race detector), lint, fmt and, on Linux, the VM tests `vm` (the tuning boot) and `vm-restart-limit`. Must pass before a pull request |

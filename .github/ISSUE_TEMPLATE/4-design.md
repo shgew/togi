@@ -8,6 +8,10 @@ labels: ["design"]
 
 ## Decided
 
+## Acceptance
+
+<!-- List the commands to run and what they should show, so a reviewer can check the pull request against them. -->
+
 ## Open
 
 ## Pull requests
