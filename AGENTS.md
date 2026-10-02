@@ -16,7 +16,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `docs/simulating.md`: running a simulated session with `tools/sim`.
 - `docs/reviewing.md`: reviewing an unattended run or archived journal with `just stats`.
 - `docs/benchmarking.md`: measuring a tuner change's time to conclusion, depth and hazard across simulated machines with `tools/bench`; run it before and after any change to how the tuner decides.
-- `docs/adr/`: decisions and the alternatives rejected. Reversing one needs a new ADR.
+- `docs/adr/`: decisions and the alternatives rejected, with statuses in [the index](docs/adr/README.md). The specs describe current behavior; where they disagree with an ADR, the spec wins and the index is out of date. Reversing a decision needs a new ADR, which updates the index in the same pull request.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
 - Issues on `github.com/shgew/togi`: the plan, ideas and bugs (Issues, below).
 
@@ -43,7 +43,7 @@ Planning lives in issues, filed from the templates in `.github/ISSUE_TEMPLATE/`.
 
 - Labels name the kind: `idea` (a thought, not yet discussed), `design` (decided, waiting to be scheduled), `feature` (ready to build), `bugfix`, and `breaking` on issues and pull requests alike.
 - The `1.0` milestone holds what ships in 1.0.
-- Lifecycle: an idea is discussed until decided, then its issue becomes a design with Why, Decided, Open, Pull requests and Links; Pull requests lists the planned pull requests in landing order. When a discussion settles decisions, file or update the issue before it ends. Each pull request that implements part of a design moves its decisions into the spec or an ADR; the last one closes the issue. The spec and ADRs stay the lasting record.
+- Lifecycle: an idea is discussed until decided, then its issue becomes a design with Why, Decided, Acceptance, Open, Pull requests and Links; Pull requests lists the planned pull requests in landing order. When a discussion settles decisions, file or update the issue before it ends. Each pull request that implements part of a design moves its decisions into the spec or an ADR; the last one closes the issue. The spec and ADRs stay the lasting record.
 
 ## Keeping docs current
 
