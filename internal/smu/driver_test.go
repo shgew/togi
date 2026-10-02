@@ -199,6 +199,94 @@ func TestMappingAndFallback(t *testing.T) {
 	}
 }
 
+func TestSlotIdentityPreflight(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		cores  [2][8]int
+		cache  bool
+		detail string
+	}{
+		{
+			name:  "full-topology",
+			cores: [2][8]int{{0, 1, 2, 3, 4, 5, 6, 7}, {8, 9, 10, 11, 12, 13, 14, 15}},
+			cache: true,
+		},
+		{
+			name:   "cross-ccd-ids",
+			cores:  [2][8]int{{0, 1, 2, 3, 4, 5, 6, 8}, {7, 9, 10, 11, 12, 13, 14, 15}},
+			cache:  true,
+			detail: "CCD0 core IDs disagree with modulo-eight slots: core 08 at slot 7, want slot 0",
+		},
+		{
+			name:   "multiple-offending-ids",
+			cores:  [2][8]int{{0, 1, 2, 3, 4, 5, 8, 9}, {6, 7, 10, 11, 12, 13, 14, 15}},
+			cache:  true,
+			detail: "CCD0 core IDs disagree with modulo-eight slots: core 08 at slot 6, want slot 0; core 09 at slot 7, want slot 1",
+		},
+		{
+			name:   "second-ccd-id",
+			cores:  [2][8]int{{0, 1, 2, 3, 4, 5, 6, 7}, {8, 9, 10, 11, 12, 13, 14, 16}},
+			cache:  true,
+			detail: "CCD1 core IDs disagree with modulo-eight slots: core 16 at slot 7, want slot 0",
+		},
+		{
+			name:   "cross-ccd-die-fallback",
+			cores:  [2][8]int{{0, 1, 2, 3, 4, 5, 6, 8}, {7, 9, 10, 11, 12, 13, 14, 15}},
+			detail: "CCD0 core IDs disagree with modulo-eight slots: core 08 at slot 7, want slot 0",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, mb := fixture(t, 8, tc.cache)
+			for ccd, cores := range tc.cores {
+				for slot, core := range cores {
+					cpuID := ccd*8 + slot
+					cpu(t, root, cpuID, core, ccd, tc.cache)
+					cpu(t, root, cpuID+16, core, ccd, tc.cache)
+				}
+			}
+			d, err := Open(root, mb)
+			if err != nil {
+				t.Fatal(err)
+			}
+			valid := tc.detail == ""
+			if diff := cmp.Diff(valid, d.CheckSlotMapping().OK); diff != "" {
+				t.Fatalf("slot mapping accepted mismatched identity (-want +got):\n%s", diff)
+			}
+			if valid {
+				if check := d.CheckReadback(); !check.OK {
+					t.Fatalf("correct full topology refused: %+v", check)
+				}
+				want := make([]call, 0, 16)
+				for _, core := range d.Topology() {
+					want = append(want, call{0xd5, uint32(core.CCD)<<28 | uint32(core.Core%8)<<20})
+				}
+				if diff := cmp.Diff(want, mb.commands, cmp.AllowUnexported(call{})); diff != "" {
+					t.Fatalf("readback slots (-want +got):\n%s", diff)
+				}
+				return
+			}
+			if diff := cmp.Diff(tc.detail, d.CheckSlotMapping().Detail); diff != "" {
+				t.Fatalf("slot refusal detail (-want +got):\n%s", diff)
+			}
+			if check := d.CheckReadback(); check.OK || !strings.Contains(check.Detail, tc.detail) {
+				t.Fatalf("readback bypassed slot refusal: %+v", check)
+			}
+			for _, core := range d.Topology() {
+				if _, err := d.Offset(core.Core); err == nil {
+					t.Fatalf("per-core read accepted for core %d", core.Core)
+				}
+				if err := d.SetOffset(core.Core, -10); err == nil {
+					t.Fatalf("per-core write accepted for core %d", core.Core)
+				}
+			}
+			if diff := cmp.Diff([]call(nil), mb.commands, cmp.AllowUnexported(call{})); diff != "" {
+				t.Fatalf("commands issued with mismatched slot identity (-want +got):\n%s", diff)
+			}
+			t.Logf("slot mapping preflight: OK=false detail=%s; no per-core commands", d.CheckSlotMapping().Detail)
+		})
+	}
+}
+
 func TestStaleCCDFuseRefusesPerCoreAccess(t *testing.T) {
 	for _, failRead := range [][]int{{1}, {2}, {1, 2}} {
 		t.Run(fmt.Sprint(failRead), func(t *testing.T) {
