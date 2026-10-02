@@ -153,13 +153,33 @@ func TestBackendPreflight(t *testing.T) {
 	}
 }
 
+type preflightMailbox struct{}
+
+func (preflightMailbox) Command(uint32, [6]uint32) ([6]uint32, error) {
+	return [6]uint32{}, errors.New("mailbox unavailable")
+}
+
+func (preflightMailbox) ReadSMN(uint32) (uint32, error) {
+	return 0, errors.New("mailbox unavailable")
+}
+
 func TestPreflightRefusesUnvalidatedHardware(t *testing.T) {
-	for _, family := range []int{25, 26} {
-		t.Run(fmt.Sprintf("family %d", family), func(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		family        int
+		driverPresent bool
+		missingCPU    bool
+	}{
+		{"unsupported CPU and missing driver", 25, false, false},
+		{"supported CPU and missing driver", 26, false, false},
+		{"missing CPU and present driver", 26, true, true},
+		{"valid identity and refused backend user", 26, true, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				root := t.TempDir()
 				for rel, text := range map[string]string{
-					"proc/cpuinfo": fmt.Sprintf("cpu family : %d\nmodel : 68\nmodel name : Test CPU\n", family),
+					"proc/cpuinfo": fmt.Sprintf("cpu family : %d\nmodel : 68\nmodel name : Test CPU\n", tt.family),
 					"sys/devices/system/cpu/cpu0/topology/core_id": "0",
 					"sys/devices/system/cpu/cpu0/topology/die_id":  "0",
 				} {
@@ -171,27 +191,63 @@ func TestPreflightRefusesUnvalidatedHardware(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				drv, err := smu.Open(root, nil)
+				var mb smu.Mailbox
+				if tt.driverPresent {
+					mb = preflightMailbox{}
+					dir := filepath.Join(root, "sys/kernel/ryzen_smu_drv")
+					if err := os.MkdirAll(dir, 0755); err != nil {
+						t.Fatal(err)
+					}
+					for name, text := range map[string]string{"codename": "23", "drv_version": "0.1", "version": "57.13"} {
+						if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0644); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				if tt.missingCPU {
+					if err := os.Remove(filepath.Join(root, "proc/cpuinfo")); err != nil {
+						t.Fatal(err)
+					}
+				}
+				drv, err := smu.Open(root, mb)
 				if err != nil {
 					t.Fatal(err)
 				}
-				h := host{drv: drv, conditions: smu.NewConditions(root, drv.Topology(), os.ReadFile)}
+				h := host{drv: drv, conditions: smu.NewConditions(root, drv.Topology(), os.ReadFile), userErr: errors.New("backend_user not configured")}
 				checks := h.Preflight()
 				var names []string
 				for _, check := range checks {
 					names = append(names, check.Name)
 				}
-				if diff := cmp.Diff([]string{"root", "cpu", "ryzen_smu", "pm_table"}, names); diff != "" {
-					t.Fatalf("unsafe command checks ran (-want +got):\n%s", diff)
+				wantNames := []string{"root", "cpu", "ryzen_smu", "pm_table"}
+				if tt.driverPresent && !tt.missingCPU {
+					wantNames = append(wantNames, "readback", "slot_mapping", "backends", "backend_user", "systemd_run")
 				}
-				if diff := cmp.Diff(family == 26, checks[1].OK); diff != "" {
+				if diff := cmp.Diff(wantNames, names); diff != "" {
+					t.Fatalf("preflight checks (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(tt.family == 26 && !tt.missingCPU, checks[1].OK); diff != "" {
 					t.Fatalf("CPU validation (-want +got): %s", diff)
 				}
-				if checks[2].OK || !strings.Contains(checks[2].Detail, "ryzen_smu is not loaded") {
+				if diff := cmp.Diff(tt.driverPresent, checks[2].OK); diff != "" {
+					t.Fatalf("driver readiness (-want +got): %s", diff)
+				}
+				if !tt.driverPresent && !strings.Contains(checks[2].Detail, "ryzen_smu is not loaded") {
 					t.Fatalf("missing driver refusal hidden: %+v", checks[2])
 				}
-				if family == 25 && !strings.Contains(checks[1].Detail, "not Granite Ridge") {
+				if tt.family == 25 && !strings.Contains(checks[1].Detail, "not Granite Ridge") {
 					t.Fatalf("unsupported CPU refusal hidden: %+v", checks[1])
+				}
+				if tt.missingCPU && !strings.Contains(checks[1].Detail, "cpuinfo") {
+					t.Fatalf("missing CPU refusal hidden: %+v", checks[1])
+				}
+				if len(checks) == 9 {
+					if checks[7].OK || checks[7].Detail != "backend_user not configured" {
+						t.Fatalf("backend user refusal hidden: %+v", checks[7])
+					}
+					if checks[8].OK || !strings.HasPrefix(checks[8].Detail, "systemd-run backend_user:") {
+						t.Fatalf("systemd refusal hidden: %+v", checks[8])
+					}
 				}
 			})
 		})

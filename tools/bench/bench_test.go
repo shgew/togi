@@ -52,9 +52,9 @@ func TestMetrics(t *testing.T) {
 }
 
 func TestPairing(t *testing.T) {
-	a := []result{{Scenario: "b", Seed: 2}, {Scenario: "a", Seed: 1}, {Scenario: "a", Seed: 9}, {Scenario: "a", Seed: 8}}
-	b := []result{{Scenario: "a", Seed: 1}, {Scenario: "b", Seed: 2}, {Scenario: "c", Seed: 1}, {Scenario: "a", Seed: 9}}
-	want := []pair{{a[1], b[0]}, {a[2], b[3]}, {a[0], b[1]}}
+	a := []result{{Scenario: "b", Seed: 2}, {Scenario: "a", Seed: 9}, {Scenario: "a", Seed: 1}, {Scenario: "a", Seed: 8}}
+	b := []result{{Scenario: "a", Seed: 9}, {Scenario: "b", Seed: 2}, {Scenario: "c", Seed: 1}, {Scenario: "a", Seed: 1}}
+	want := []pair{{a[2], b[3]}, {a[1], b[0]}, {a[0], b[1]}}
 	if diff := cmp.Diff(want, pairing(a, b), cmp.AllowUnexported(pair{})); diff != "" {
 		t.Fatal(diff)
 	}

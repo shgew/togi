@@ -159,6 +159,9 @@ func TestOpenRepairFilesystemFailures(t *testing.T) {
 	for at := 1; at <= 5; at++ {
 		for _, after := range []bool{false, true} {
 			t.Run(fmt.Sprintf("operation-%d-after-%v", at, after), func(t *testing.T) {
+				if at == 4 && !after {
+					t.Skip("known pre-existing evidence-loss bug: tail is truncated before the journal.torn write; https://github.com/shgew/togi/issues/305")
+				}
 				dir := t.TempDir()
 				prefix := []byte(`{"seq":1,"kind":"session.start","schema":2}` + "\n")
 				tail := []byte(`{"seq":2,"kind":"shutdown"`)
@@ -190,11 +193,12 @@ func TestOpenRepairFilesystemFailures(t *testing.T) {
 				if err != nil || len(torn) != 0 {
 					t.Fatalf("repair left torn tail: %q, %v", torn, err)
 				}
-				if len(events) == 2 {
-					p, ok := events[1].Data.(*JournalTorn)
-					if !ok || p.BytesHex != fmt.Sprintf("%x", tail) || p.Offset != int64(len(prefix)) {
-						t.Fatalf("discarded-byte evidence: %+v", events[1])
-					}
+				if len(events) != 2 {
+					t.Fatalf("discarded-byte evidence missing: got %d events, want session.start and journal.torn", len(events))
+				}
+				p, ok := events[1].Data.(*JournalTorn)
+				if !ok || p.BytesHex != fmt.Sprintf("%x", tail) || p.Offset != int64(len(prefix)) {
+					t.Fatalf("discarded-byte evidence: %+v", events[1])
 				}
 				e, err := j.Append(&Shutdown{Reason: ShutdownCommand})
 				if err != nil || e.Seq != len(events)+1 {

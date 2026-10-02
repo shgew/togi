@@ -1,6 +1,10 @@
 package machine
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
+)
 
 func TestWorkloadRegimeContracts(t *testing.T) {
 	t.Parallel()
@@ -22,8 +26,15 @@ func TestWorkloadRegimeContracts(t *testing.T) {
 					t.Fatalf("duplicate workload or wrong thread count: %+v", w)
 				}
 				seen[w.ID] = true
+				got, ok := WorkloadByID(w.ID)
+				if !ok {
+					t.Fatalf("catalog workload %q not found", w.ID)
+				}
+				if diff := cmp.Diff(w, got); diff != "" {
+					t.Fatalf("catalog lookup (-want +got):\n%s", diff)
+				}
 				base, ok := WorkloadByID(w.Base)
-				if !ok || base.Base != base.ID || base.Backend != w.Backend {
+				if !ok || base.ID != w.Base || base.Base != base.ID || base.Backend != w.Backend {
 					t.Fatalf("derived workload lost base identity: %+v", w)
 				}
 				allowed := false

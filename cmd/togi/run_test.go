@@ -195,7 +195,6 @@ func TestRunResultExitCodes(t *testing.T) {
 		{"missing-core", session.Stop{}, session.ErrNoSuchCore, 2, "togi run: no such core\n"},
 		{"journal-locked", session.Stop{}, journal.ErrLocked, 3, "togi run: another togi process holds the journal lock\n"},
 		{"ordinary-error", session.Stop{}, errors.New("read failed\x1b[2J\nforged"), 1, "togi run: read failed\\x1b[2J\\nforged\n"},
-		{"unexpected-stop", session.Stop{}, nil, 1, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer

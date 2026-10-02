@@ -24,13 +24,23 @@ func TestFilterIntersectsKindAndTime(t *testing.T) {
 		{"until exclusive", Filter{Until: at}, "", false},
 		{"before until", Filter{Until: at.Add(time.Second)}, "", true},
 		{"intersection", Filter{Kinds: []string{"failure"}, Since: at}, "", false},
-		{"malformed filtered evidence", Filter{Core: new(7)}, "{", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if diff := cmp.Diff(tc.want, tc.filter.Match(Event{Kind: KindTrialEnd, Time: at, Raw: []byte(tc.raw)})); diff != "" {
 				t.Fatal(diff)
 			}
 		})
+	}
+}
+
+func TestFilterRejectsOpaqueIncompatibleCore(t *testing.T) {
+	t.Parallel()
+	event, err := decode([]byte(`{"seq":1,"kind":"future.additive","core":"not-a-number","trial":"one"}`))
+	if err != nil {
+		t.Fatalf("valid opaque event was rejected by the reader: %v", err)
+	}
+	if (Filter{Core: new(7), Trial: "one"}).Match(event) {
+		t.Fatal("opaque event with incompatible core matched the filter")
 	}
 }
 

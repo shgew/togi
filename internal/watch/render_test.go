@@ -95,6 +95,14 @@ func TestDashboardActivityFrames(t *testing.T) {
 	}
 }
 
+func TestResidentPhaseStyle(t *testing.T) {
+	t.Parallel()
+	got := phaseColor(journal.PhaseResident).Render("resident")
+	if !strings.HasPrefix(got, "\x1b[93m") || ansi.Strip(got) != "resident" {
+		t.Fatalf("resident label lacks its yellow ANSI style: %q", got)
+	}
+}
+
 func TestTrialProgressBoundaries(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(1100, 0).UTC()
@@ -108,6 +116,7 @@ func TestTrialProgressBoundaries(t *testing.T) {
 		{"intent only", now.Add(-time.Minute), 90 * time.Second, false, 0},
 		{"future start", now.Add(time.Second), 90 * time.Second, true, 0},
 		{"past deadline", now.Add(-100 * time.Second), 90 * time.Second, true, 90},
+		{"partial progress", now.Add(-30 * time.Second), 90 * time.Second, true, 30},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := Snapshot{trial: &trial{cores: []int{0}, condition: machine.Isolated, regime: machine.R1, workload: "test", started: tc.started, hasStarted: tc.hasStarted, duration: tc.duration}}

@@ -311,12 +311,11 @@ func TestStatusExceptionalActivity(t *testing.T) {
 				st.DeadEnd = &journal.DeadEndRef{Condition: journal.DeadEndNoEvidence, Seq: 42}
 			case "anchored-edge-mask":
 				st.Phase = string(journal.PhaseHunt)
-				st.Cores[0].Phase = journal.PhaseHunt
 				st.Cores[0].Offset = -10
 				st.Hunt = &journal.HuntState{
 					Hunt: 2, Seq: 40, Failure: 30, AnchorSeq: 20, Anchor: []int{0, 0},
 					Regime: machine.R7, Trial: "0001", Candidates: []int{3, 7},
-					Masks: []journal.MaskState{{Mask: 3, Edge: &journal.JointMember{Core: 3, Offset: -10}, Held: []journal.JointMember{{Core: 7, Offset: -8}}, Passes: 2, Needed: 5}},
+					Masks: []journal.MaskState{{Mask: 3, Edge: &journal.JointMember{Core: 3, Offset: -10}, Held: []journal.JointMember{{Core: 7, Offset: -8}}, Passes: 2, Needed: 5, Outcome: "running"}},
 				}
 			case "fallback-joint-mark":
 				st.JointMarks = []journal.JointMarkState{{Mark: 2, Hunt: 3, Seq: 42, Fallback: true, Members: []journal.JointMember{{Core: 3, Offset: -10}, {Core: 7, Offset: -8}}}}

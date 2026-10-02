@@ -101,10 +101,12 @@ func TestFailuresWithKeepsDefectEvidenceAfterFinding(t *testing.T) {
 	if diff := cmp.Diff([]int{12}, FailuresWith(events, Entries())); diff != "" {
 		t.Fatalf("defect failure exclusion (-want +got):\n%s", diff)
 	}
-	match := DecisionMatch{Kind: journal.KindTunerDecision, Decision: journal.Backoff, Cause: journal.KindFailure}
+	later := DecisionMatch{Kind: journal.KindTunerDecision, Decision: journal.Backoff, Cause: journal.KindFailure, Predicate: func(_ Evidence, _, cause journal.Event) bool { return cause.Seq == 19 }}
+	earlier := DecisionMatch{Kind: journal.KindTunerDecision, Decision: journal.Backoff, Cause: journal.KindFailure, Predicate: func(_ Evidence, _, cause journal.Event) bool { return cause.Seq == 12 }}
 	list := []Entry{
-		{ID: 1, Decisions: []DecisionMatch{{Kind: journal.KindTunerDecision, Decision: journal.StepDeeper, Cause: journal.KindTrialEnd}, match}},
-		{ID: 2, Decisions: []DecisionMatch{match}},
+		{ID: 1, Decisions: []DecisionMatch{{Kind: journal.KindTunerDecision, Decision: journal.StepDeeper, Cause: journal.KindTrialEnd}, later}},
+		{ID: 2, Decisions: []DecisionMatch{earlier}},
+		{ID: 3, Decisions: []DecisionMatch{later}},
 	}
 	if diff := cmp.Diff([]int{12, 19}, FailuresWith(events, list)); diff != "" {
 		t.Fatalf("unique sorted failure causes (-want +got):\n%s", diff)

@@ -94,6 +94,14 @@ func (k *unreadableKernel) ResetReason(boot string) (machine.ResetReason, error)
 	return k.Kernel.ResetReason(boot)
 }
 
+func (k *unreadableKernel) ResetReasonAfter(boot string) (machine.ResetReason, error) {
+	k.calls++
+	if k.calls <= k.failUntil {
+		return machine.ResetReason{}, fmt.Errorf("simulated unreadable kernel log")
+	}
+	return k.Kernel.ResetReasonAfter(boot)
+}
+
 func TestRecoveryKernelLogRetriesAndDeadEnd(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

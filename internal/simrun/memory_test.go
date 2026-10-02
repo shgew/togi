@@ -187,6 +187,50 @@ func TestInMemoryCrashBeforeFirstProjectionReplaysDurableStart(t *testing.T) {
 	}
 }
 
+func TestInMemoryResumeReadsMatchingDiskProjection(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	m, err := sim.New(huntConfig(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := Input{
+		Config: config.Default(), Dir: dir, Machine: m, InMemoryJournal: true,
+		Until: func(e journal.Event) bool { return e.Kind == journal.KindTrialEnd },
+	}
+	stop, err := Simulate(context.Background(), in)
+	if err != nil || stop.Reason != session.StopSignal {
+		t.Fatalf("initial simulation: %+v, %v", stop, err)
+	}
+	state, err := journal.ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop, err = Simulate(context.Background(), in)
+	if err != nil || stop.Reason != session.StopSignal {
+		t.Fatalf("resumed simulation: %+v, %v", stop, err)
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || len(torn) != 0 {
+		t.Fatalf("resumed journal: %v, torn %q", err, torn)
+	}
+	trials := 0
+	for _, e := range events {
+		if e.Seq <= state.LastSeq {
+			continue
+		}
+		if e.Kind == journal.KindStateRebuilt {
+			t.Fatalf("matching disk projection was spuriously rebuilt: %+v", e)
+		}
+		if e.Kind == journal.KindTrialEnd {
+			trials++
+		}
+	}
+	if diff := cmp.Diff(1, trials); diff != "" {
+		t.Fatalf("resumed trials (-want +got):\n%s", diff)
+	}
+}
+
 func TestInMemoryInvalidConfigLeavesNoProjection(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

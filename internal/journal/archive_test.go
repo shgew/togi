@@ -197,3 +197,42 @@ func TestRecordedIncompatibleArchiveCompletesWithoutCarry(t *testing.T) {
 		}
 	}
 }
+
+func TestArchiveForCarryKeepsPendingSourceAfterTornEstablishment(t *testing.T) {
+	for _, kind := range []Kind{KindSessionContext, KindSessionCarried} {
+		t.Run(string(kind), func(t *testing.T) {
+			dir := t.TempDir()
+			archive := filepath.Join(dir, archiveDir)
+			if err := os.Mkdir(archive, 0755); err != nil {
+				t.Fatal(err)
+			}
+			source := []byte(`{"seq":1,"kind":"session.start","session":"earlier","schema":2}` + "\n")
+			if err := os.WriteFile(filepath.Join(archive, "earlier.jsonl"), source, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(archive, "earlier"+carrySuffix), nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+			live := []byte(`{"seq":1,"kind":"session.start","session":"interrupted","schema":2}` + "\n" + fmt.Sprintf(`{"seq":2,"kind":%q`, kind))
+			if err := os.WriteFile(filepath.Join(dir, eventsFile), live, 0600); err != nil {
+				t.Fatal(err)
+			}
+			j, err := Lock(dir, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer j.Close()
+			if _, err := j.ArchiveForCarry("interrupted"); err != nil {
+				t.Fatal(err)
+			}
+			pending, err := PendingCarry(dir)
+			if err != nil || pending != "earlier" {
+				t.Fatalf("interrupted establishment replaced pending source: %q, %v", pending, err)
+			}
+			preserved, err := os.ReadFile(filepath.Join(archive, "earlier.jsonl"))
+			if err != nil || !bytes.Equal(source, preserved) {
+				t.Fatalf("pending evidence changed: %q, %v", preserved, err)
+			}
+		})
+	}
+}

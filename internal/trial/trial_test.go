@@ -108,7 +108,7 @@ func TestWait(t *testing.T) {
 			t.Parallel()
 			synctest.Test(t, func(t *testing.T) {
 				o := fakeOptions(t, tt.mode)
-				if tt.name == "stall" {
+				if tt.name == "stall" || tt.name == "pass" {
 					o.StallGrace = 200 * time.Millisecond
 					o.StallWindow = 300 * time.Millisecond
 				}
@@ -168,6 +168,9 @@ func TestWait(t *testing.T) {
 				}
 				if tt.name == "pass" && len(rec.progress) == 0 {
 					t.Fatal("no progress captured")
+				}
+				if tt.name == "pass" && result.Ran != tt.duration {
+					t.Fatalf("healthy trial ended at %s, want %s", result.Ran, tt.duration)
 				}
 			})
 		})
@@ -473,8 +476,15 @@ func TestRetention(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	r := New(Options{Dir: dir})
+	failed := filepath.Join(dir, "9898")
+	if err := os.Mkdir(failed, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(failed, "stderr"), []byte("failure evidence"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	for i := range 202 {
-		id := fmt.Sprintf("%04d", i)
+		id := fmt.Sprintf("%04d", 9899+i)
 		if err := os.Mkdir(filepath.Join(dir, id), 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -482,18 +492,18 @@ func TestRetention(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.Mkdir(filepath.Join(dir, "failed"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	for _, id := range []string{"0000", "0001"} {
+	for _, id := range []string{"9899", "9900"} {
 		if _, err := os.Stat(filepath.Join(dir, id)); !os.IsNotExist(err) {
 			t.Fatalf("%s retained: %v", id, err)
 		}
 	}
-	for _, id := range []string{"0002", "0201", "failed"} {
+	for _, id := range []string{"9901", "10100", "9898"} {
 		if _, err := os.Stat(filepath.Join(dir, id)); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if data, err := os.ReadFile(filepath.Join(failed, "stderr")); err != nil || string(data) != "failure evidence" {
+		t.Fatalf("retention lost failed-trial evidence: %q, %v", data, err)
 	}
 }
 func TestPlans(t *testing.T) {
@@ -721,6 +731,23 @@ func TestSystemdStartupDiagnosticsAreInconclusive(t *testing.T) {
 	}
 }
 
+type scopeStopHost struct {
+	*fakeHost
+	began     time.Time
+	stoppedAt []time.Duration
+	wasReady  []bool
+}
+
+func (h *scopeStopHost) SignalGroup(p process, sig syscall.Signal) error {
+	if sig == syscall.SIGSTOP {
+		h.mu.Lock()
+		h.stoppedAt = append(h.stoppedAt, time.Since(h.began))
+		h.wasReady = append(h.wasReady, h.inScope)
+		h.mu.Unlock()
+	}
+	return h.fakeHost.SignalGroup(p, sig)
+}
+
 func TestR6ScopeReadinessBeforeInitialStop(t *testing.T) {
 	for _, ending := range []string{"ready", "timeout", "cancel"} {
 		t.Run(ending, func(t *testing.T) {
@@ -728,7 +755,7 @@ func TestR6ScopeReadinessBeforeInitialStop(t *testing.T) {
 				o := fakeOptions(t, "sleep")
 				o.NoScope = false
 				o.StallGrace = 100 * time.Millisecond
-				h := &fakeHost{}
+				h := &scopeStopHost{fakeHost: &fakeHost{}}
 				r := New(o)
 				r.host = h
 				ctx, cancel := context.WithCancel(context.Background())
@@ -745,6 +772,7 @@ func TestR6ScopeReadinessBeforeInitialStop(t *testing.T) {
 					})
 				}
 				begin := time.Now()
+				h.began = begin
 				trial, err := r.Start(ctx, testSpec("readiness", machine.R6, time.Second))
 				if err != nil {
 					t.Fatal(err)
@@ -765,6 +793,12 @@ func TestR6ScopeReadinessBeforeInitialStop(t *testing.T) {
 				}
 				if diff := cmp.Diff([]fakeSignal{{1000, syscall.SIGSTOP}}, h.recordedSignals(), cmp.AllowUnexported(fakeSignal{})); diff != "" {
 					t.Fatal(diff)
+				}
+				if diff := cmp.Diff([]time.Duration{wantElapsed}, h.stoppedAt); diff != "" {
+					t.Fatalf("initial stop preceded readiness boundary (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff([]bool{ending == "ready"}, h.wasReady); diff != "" {
+					t.Fatalf("readiness at initial stop (-want +got):\n%s", diff)
 				}
 				if err := run.Stop(); err != nil {
 					t.Fatal(err)

@@ -122,3 +122,25 @@ func TestSeededCandidateEdgeFreezesWorkloads(t *testing.T) {
 		t.Fatalf("seeded edge did not qualify: %+v", a)
 	}
 }
+
+func TestSeededCandidateEdgeAdvancesNextWorkloadPair(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseSearch, offset: -20})
+	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -20, CheckEdge: true, Workloads: []string{machine.Workloads(machine.R1)[0].ID, machine.Workloads(machine.R2)[0].ID}})
+	h.trial(h.next(), failed)
+	for range 100 {
+		a := h.next()
+		if p, ok := a.Payload.(*journal.TunerDecision); ok && p.Decision == journal.CheckEdge {
+			want := []string{machine.Workloads(machine.R1)[1].ID, machine.Workloads(machine.R2)[1].ID}
+			if diff := cmp.Diff(want, p.Workloads); diff != "" {
+				t.Fatalf("next candidate edge workloads (-want +got):\n%s", diff)
+			}
+			return
+		}
+		if a.Kind == RunTrial {
+			h.trial(a, passed)
+		} else {
+			h.decide(a)
+		}
+	}
+	t.Fatal("search never scheduled the next candidate edge")
+}

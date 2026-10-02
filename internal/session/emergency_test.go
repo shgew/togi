@@ -445,7 +445,7 @@ func TestBaselineReadFailureDeadEndsBeforeAnyWrite(t *testing.T) {
 func TestRestoreSMUFailureChangesOnlyCleanStopOutcome(t *testing.T) {
 	t.Parallel()
 	for _, alreadyDead := range []bool{false, true} {
-		t.Run(map[bool]string{false: "signal", true: "preflight dead end"}[alreadyDead], func(t *testing.T) {
+		t.Run(map[bool]string{false: "signal", true: "backend evidence dead end"}[alreadyDead], func(t *testing.T) {
 			t.Parallel()
 			r, m, closeJournal := checkedRunner(t, []int{0, 0})
 			defer closeJournal()
@@ -455,19 +455,28 @@ func TestRestoreSMUFailureChangesOnlyCleanStopOutcome(t *testing.T) {
 			stop := Stop{Reason: StopSignal}
 			r.shutdownEvent = &journal.Shutdown{Reason: journal.ShutdownSignal}
 			if alreadyDead {
-				stop = Stop{Reason: StopDeadEnd, DeadEnd: &journal.DeadEnd{Condition: journal.DeadEndPreflight, Detail: "original preflight failure"}}
-				r.shutdownEvent = &journal.Shutdown{Reason: journal.ShutdownDeadEnd}
+				dead, err := r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Detail: "backend mprime exhausted retries"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				stop = *dead
 			}
+			original := stop
 			m.FailWrite()
 			if err := r.close(true, &stop); err != nil {
 				t.Fatal(err)
 			}
 			want := journal.DeadEndSMU
 			if alreadyDead {
-				want = journal.DeadEndPreflight
+				want = journal.DeadEndNoEvidence
 			}
 			if stop.Reason != StopDeadEnd || stop.DeadEnd == nil || stop.DeadEnd.Condition != want {
 				t.Fatalf("restoration overwrote the wrong outcome: %+v, want %s", stop, want)
+			}
+			if alreadyDead {
+				if diff := cmp.Diff(original, stop); diff != "" {
+					t.Fatalf("restoration replaced the original dead end (-want +got):\n%s", diff)
+				}
 			}
 			events := r.in.Journal.Events()
 			failed := false

@@ -34,7 +34,7 @@ func dashboardHuntEvents() []journal.Event {
 		&journal.Failure{Trial: "previous", Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Regime: machine.R7, Profile: []int{-20, -30, -10}},
 		&journal.HuntStart{Hunt: 3, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Anchor: []int{-10, -30, -5}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Starts: 5, StartS: 120, DurationS: 120},
 		&journal.HuntMask{Hunt: 3, Mask: 4, Cores: []int{2}, Profile: []int{-10, -30, -10}, DurationS: 120},
-		&journal.TrialIntent{Trial: "mask", Condition: machine.Masked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{2}, Profile: []int{-10, -30, -10}, DurationS: 120, Hunt: 3, Mask: 4})
+		&journal.TrialIntent{Trial: "mask", Condition: machine.Masked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Profile: []int{-10, -30, -10}, DurationS: 120, Hunt: 3, Mask: 4})
 }
 
 func dashboardRefineEvents() []journal.Event {
@@ -82,8 +82,8 @@ func TestProjectMaskedHunt(t *testing.T) {
 	events := dashboardHuntEvents()
 	s := Project(events)
 	want := []tile{
-		{id: 0, phase: journal.PhaseResident, number: -20, hasNumber: true, joint: []int{-25}, hunt: true, masked: true, anchor: new(-10)},
-		{id: 1, phase: journal.PhaseDone, number: -30, hasNumber: true, fail: new(-31), anchor: new(-30)},
+		{id: 0, phase: journal.PhaseResident, number: -20, hasNumber: true, joint: []int{-25}, hunt: true, masked: true, anchor: new(-10), loaded: true},
+		{id: 1, phase: journal.PhaseDone, number: -30, hasNumber: true, fail: new(-31), anchor: new(-30), loaded: true},
 		{id: 2, ccd: 1, phase: journal.PhaseResident, number: -10, hasNumber: true, joint: []int{-15}, hunt: true, masked: true, trying: new(-10), loaded: true},
 	}
 	if diff := cmp.Diff(want, s.tiles, cmp.AllowUnexported(tile{})); diff != "" {

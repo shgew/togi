@@ -555,6 +555,17 @@ func TestInvalidIdentityFilesPreventHardwareAccess(t *testing.T) {
 			if err := d.ValidateSMU(); err == nil {
 				t.Fatal("invalid identity validated")
 			}
+			check := d.CheckCPU()
+			if tc.path != "proc/cpuinfo" {
+				check = d.CheckDriver()
+			}
+			wantDetail := "parse cpu family"
+			if tc.missing {
+				wantDetail = "read " + filepath.Join(root, tc.path) + ":"
+			}
+			if check.OK || !strings.HasPrefix(check.Detail, wantDetail) {
+				t.Fatalf("identity refusal diagnostic = %+v, want %q", check, wantDetail)
+			}
 			if err := d.SetOffset(0, -10); err == nil {
 				t.Fatal("invalid identity allowed write")
 			}
@@ -706,8 +717,18 @@ func TestSysfsRejectsUnavailableMailboxFiles(t *testing.T) {
 			} else {
 				_, err = mb.Command(1, [6]uint32{})
 			}
-			if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), name) {
-				t.Fatalf("mailbox file failure: %v", err)
+			want := "open " + filepath.Join(root, "sys/kernel/ryzen_smu_drv", name) + ":"
+			if !errors.Is(err, os.ErrNotExist) || !strings.HasPrefix(err.Error(), want) {
+				t.Fatalf("mailbox file failure: %v, want write-stage %q", err, want)
+			}
+			if name == "smu_args" {
+				command, err := os.ReadFile(filepath.Join(root, "sys/kernel/ryzen_smu_drv/rsmu_cmd"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := cmp.Diff(make([]byte, 4), command); diff != "" {
+					t.Fatalf("command issued after failed argument write (-want +got):\n%s", diff)
+				}
 			}
 		})
 	}
