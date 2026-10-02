@@ -136,6 +136,7 @@ type Machine struct {
 	failedChecks     map[string]string
 	crashBeforeApply int
 	wroteThisBoot    bool
+	smuHook          func(SMUOperation) error
 }
 
 func validateCores(cores int) error {
@@ -422,6 +423,24 @@ func (m *Machine) SetBIOSContext(c machine.BIOSContext) { m.bios = c }
 
 func (m *Machine) CrashBeforeApply(boots int) { m.crashBeforeApply = boots }
 
+type SMUOperation struct {
+	Op     string
+	Core   int
+	Offset int
+	After  bool
+}
+
+func (m *Machine) InterruptSMU(hook func(SMUOperation) error) {
+	m.smuHook = hook
+}
+
+func (m *Machine) interruptSMU(op string, core, offset int, after bool) error {
+	if m.smuHook == nil {
+		return nil
+	}
+	return m.smuHook(SMUOperation{Op: op, Core: core, Offset: offset, After: after})
+}
+
 type smu struct{ m *Machine }
 
 func (s smu) Offset(core int) (int, error) {
@@ -432,15 +451,19 @@ func (s smu) Offset(core int) (int, error) {
 	if core < 0 || core >= len(m.regs) {
 		return 0, fmt.Errorf("simulated SMU: no core %d", core)
 	}
+	if err := m.interruptSMU("read", core, m.regs[core], false); err != nil {
+		return 0, err
+	}
 	o := m.regs[core]
 	if m.corruptPending[core] {
 		delete(m.corruptPending, core)
 		if o == machine.MinOffset {
-			return o + 1, nil
+			o++
+		} else {
+			o--
 		}
-		return o - 1, nil
 	}
-	return o, nil
+	return o, m.interruptSMU("read", core, o, true)
 }
 
 func (s smu) SetOffset(core, offset int) error {
@@ -451,9 +474,12 @@ func (s smu) SetOffset(core, offset int) error {
 	if err := m.write(offset); err != nil {
 		return err
 	}
+	if err := m.interruptSMU("set", core, offset, false); err != nil {
+		return err
+	}
 	m.regs[core] = offset
 	m.written(core)
-	return nil
+	return m.interruptSMU("set", core, offset, true)
 }
 
 func (s smu) SetAllOffsets(offset int) error {
@@ -461,11 +487,14 @@ func (s smu) SetAllOffsets(offset int) error {
 	if err := m.write(offset); err != nil {
 		return err
 	}
+	if err := m.interruptSMU("set_all", -1, offset, false); err != nil {
+		return err
+	}
 	for c := range m.regs {
 		m.regs[c] = offset
 		m.written(c)
 	}
-	return nil
+	return m.interruptSMU("set_all", -1, offset, true)
 }
 
 func (m *Machine) write(offset int) error {

@@ -278,7 +278,7 @@ func TestBIOSArchiveInterruptedBeforeMoveResumesCarry(t *testing.T) {
 	}
 	m.SetBIOSContext(machine.BIOSContext{BIOSVersion: "changed", Board: "sim", CPUModel: "sim", Microcode: "0x2", BoostLimitMHz: 5500})
 	m.Reboot()
-	j, err := journal.OpenForArchive(dir, journal.Options{Boot: "interrupted", Now: m.Now})
+	j, err := journal.Lock(dir, journal.Options{Boot: "interrupted", Now: m.Now})
 	if err != nil {
 		t.Fatal(err)
 	}

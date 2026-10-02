@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 
 	"github.com/shgew/togi/internal/config"
@@ -102,8 +103,8 @@ type State struct {
 	awaiting                    *awaiting
 	mces                        map[int]*journal.MCE
 	steps                       []machine.Regime
-	durations                   config.Durations
-	evidence                    config.Evidence
+	durations                   journal.ConfigDurations
+	evidence                    journal.ConfigEvidence
 	n                           int
 	ccd                         map[int]int
 	parts                       [][]int
@@ -143,7 +144,7 @@ type State struct {
 
 func New() *State {
 	c := config.Default()
-	return &State{cursor: -1, intents: map[string]*journal.TrialIntent{}, intentSeq: map[int]string{}, signalled: map[string]bool{}, mces: map[int]*journal.MCE{}, ledger: map[trialClass][]entry{}, failureIndex: map[int]int{}, steps: c.Guard.Rotation, durations: c.Durations, evidence: c.Evidence, n: c.Evidence.Starts(), tier: journal.TierNone, projectionDirty: true, bestDirty: true}
+	return &State{cursor: -1, intents: map[string]*journal.TrialIntent{}, intentSeq: map[int]string{}, signalled: map[string]bool{}, mces: map[int]*journal.MCE{}, ledger: map[trialClass][]entry{}, failureIndex: map[int]int{}, steps: c.Guard.Rotation, durations: journal.ConfigDurations(c.Durations), evidence: journal.ConfigEvidence(c.Evidence), n: c.Evidence.Starts(), tier: journal.TierNone, projectionDirty: true, bestDirty: true}
 }
 
 func partition(cores []machine.CoreInfo) (map[int]int, [][]int) {
@@ -219,7 +220,7 @@ func (s *State) Fold(e journal.Event) {
 		s.steps = slices.Clone(p.Config.Guard.Rotation)
 		s.durations = p.Config.Durations
 		s.evidence = p.Config.Evidence
-		s.n = s.evidence.Starts()
+		s.n = int(math.Ceil(math.Log(s.evidence.Miss) / math.Log1p(-s.evidence.Rate)))
 		s.projectionDirty = true
 	case *journal.SessionBaseline:
 		for i, c := range s.byID() {

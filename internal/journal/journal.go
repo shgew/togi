@@ -36,11 +36,13 @@ type Options struct {
 var ErrLocked = errors.New("another togi process holds the journal lock")
 
 type Journal struct {
-	dir    string
-	opts   Options
-	lock   *os.File
-	f      *os.File
-	events []Event
+	dir       string
+	opts      Options
+	lock      *os.File
+	f         journalFile
+	events    []Event
+	fs        journalFilesystem
+	appendErr error
 }
 
 type Folder interface {
@@ -48,142 +50,108 @@ type Folder interface {
 }
 
 func Open(dir string, opts Options) (*Journal, error) {
-	j, err := open(dir, opts, false)
+	j, err := Lock(dir, opts)
 	if err != nil {
+		return nil, err
+	}
+	if err := j.Open(); err != nil {
+		_ = j.Close()
 		return nil, fmt.Errorf("open journal %s: %w", dir, err)
 	}
 	return j, nil
 }
 
-// OpenForArchive holds the writer lock without decoding a journal with another schema, and leaves a torn tail in place
-// so that archiving never writes to the old journal.
-func OpenForArchive(dir string, opts Options) (*Journal, error) {
-	j, err := open(dir, opts, true)
-	if err != nil {
-		return nil, fmt.Errorf("open journal for archive %s: %w", dir, err)
-	}
-	return j, nil
-}
-
-func open(dir string, opts Options, allowIncompatible bool) (*Journal, error) {
+func Lock(dir string, opts Options) (*Journal, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(dir, 0o711); err != nil {
-		return nil, fmt.Errorf("set state directory traversal: %w", err)
-	}
-	lock, err := os.OpenFile(filepath.Join(dir, lockFile), os.O_CREATE|os.O_RDWR, 0o644)
+	lock, err := lockOnly(dir)
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		lock.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, ErrLocked
-		}
-		return nil, fmt.Errorf("lock: %w", err)
+	if err := os.Chmod(dir, 0o711); err != nil {
+		_ = lock.Close()
+		return nil, fmt.Errorf("set state directory traversal: %w", err)
 	}
+	return &Journal{dir: dir, opts: opts, lock: lock, fs: diskJournalFilesystem{}}, nil
+}
+
+func (j *Journal) Dir() string {
+	return j.dir
+}
+
+func (j *Journal) Open() error {
+	dir, opts := j.dir, j.opts
 	path := filepath.Join(dir, eventsFile)
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		lock.Close()
-		return nil, err
+		return err
 	}
 	if errors.Is(err, fs.ErrNotExist) {
-		if _, err := finishPendingArchive(dir); err != nil {
-			lock.Close()
-			return nil, err
+		if _, err := j.finishPendingArchive(); err != nil {
+			return err
 		}
 	}
 	events, end, err := parse(data, opts.Build)
 	if err != nil {
-		var mismatch *IncompatibleError
-		if !allowIncompatible || !errors.As(err, &mismatch) || mismatch.Field != "schema" {
-			lock.Close()
-			return nil, err
-		}
-		events, end = nil, len(data)
+		return err
 	}
 	if err := KnownKinds(events, opts.Build); err != nil {
-		lock.Close()
-		return nil, err
+		return err
 	}
 	if n := len(events); n > 0 && end == len(data) {
 		if a, ok := events[n-1].Data.(*SessionArchived); ok {
-			if err := finishArchive(dir, a.Path, opts.Sync); err != nil {
-				lock.Close()
-				return nil, fmt.Errorf("finish archive: %w", err)
+			if err := j.finishArchive(a.Path); err != nil {
+				return fmt.Errorf("finish archive: %w", err)
 			}
 			events, data, end = nil, nil, 0
 		}
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := j.fs.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		lock.Close()
-		return nil, err
+		return err
 	}
 	if opts.Sync {
 		for _, d := range []string{dir, filepath.Dir(dir)} {
-			if err := syncDir(d); err != nil {
+			if err := j.fs.SyncDir(d); err != nil {
 				f.Close()
-				lock.Close()
-				return nil, fmt.Errorf("sync directory %s: %w", d, err)
+				return fmt.Errorf("sync directory %s: %w", d, err)
 			}
 		}
 	}
-	j := &Journal{dir: dir, opts: opts, lock: lock, f: f, events: events}
-	if end == len(data) || allowIncompatible {
-		return j, nil
+	j.f, j.events = f, events
+	if end == len(data) {
+		return nil
 	}
 	if err := f.Truncate(int64(end)); err != nil {
-		j.Close()
-		return nil, fmt.Errorf("truncate torn tail: %w", err)
+		return fmt.Errorf("truncate torn tail: %w", err)
 	}
 	if len(events) > 0 {
 		torn := &JournalTorn{Offset: int64(end), BytesHex: hex.EncodeToString(data[end:])}
 		if _, err := j.Append(torn); err != nil {
-			j.Close()
-			return nil, err
+			return err
 		}
 	} else if opts.Sync {
 		if err := f.Sync(); err != nil {
-			j.Close()
-			return nil, err
+			return err
 		}
 	}
-	return j, nil
+	return nil
 }
 
-// RecoverPendingArchive completes a moved incompatible journal without creating a new one.
-// It returns the archived session ID only when a pending marker was removed.
-func RecoverPendingArchive(dir string) (string, error) {
-	id, err := pendingArchive(dir)
+func (j *Journal) RecoverPendingArchive() (string, error) {
+	return j.finishPendingArchive()
+}
+
+func (j *Journal) DropPendingCarry() (string, error) {
+	id, err := PendingCarry(j.dir)
 	if err != nil || id == "" {
 		return id, err
 	}
-	lock, err := lockOnly(dir)
-	if err != nil {
-		return "", err
-	}
-	defer lock.Close()
-	return finishPendingArchive(dir)
-}
-
-// DropPendingCarry takes the writer lock and drops every pending carry, returning the newest session it dropped.
-func DropPendingCarry(dir string) (string, error) {
-	id, err := PendingCarry(dir)
-	if err != nil || id == "" {
-		return id, err
-	}
-	lock, err := lockOnly(dir)
-	if err != nil {
-		return "", err
-	}
-	defer lock.Close()
-	if err := ClearPendingCarry(dir); err != nil {
+	if err := j.ClearPendingCarry(); err != nil {
 		return "", err
 	}
 	return id, nil
@@ -232,21 +200,22 @@ func pendingArchive(dir string) (string, error) {
 	return "", nil
 }
 
-func finishPendingArchive(dir string) (string, error) {
+func (j *Journal) finishPendingArchive() (string, error) {
+	dir := j.dir
 	id, err := pendingArchive(dir)
 	if err != nil || id == "" {
 		return id, err
 	}
 	archive := filepath.Join(dir, archiveDir)
 	for _, d := range []string{archive, dir} {
-		if err := syncDir(d); err != nil {
+		if err := j.fs.SyncDir(d); err != nil {
 			return "", fmt.Errorf("sync pending archive directory %s: %w", d, err)
 		}
 	}
-	if err := os.Remove(filepath.Join(archive, id+"-compat-pending")); err != nil {
+	if err := j.fs.Remove(filepath.Join(archive, id+"-compat-pending")); err != nil {
 		return "", fmt.Errorf("remove incompatible archive marker: %w", err)
 	}
-	if err := syncDir(archive); err != nil {
+	if err := j.fs.SyncDir(archive); err != nil {
 		return "", fmt.Errorf("sync incompatible archive completion: %w", err)
 	}
 	return id, nil
@@ -416,14 +385,12 @@ func (j *Journal) Archive(session string) (string, error) {
 			return "", fmt.Errorf("sync %s: %w", KindSessionArchived, err)
 		}
 	}
-	if err := finishArchive(j.dir, rel, j.opts.Sync); err != nil {
+	if err := j.finishArchive(rel); err != nil {
 		return "", fmt.Errorf("archive: %w", err)
 	}
 	return rel, nil
 }
 
-// ArchiveUnreadable moves an old-schema session without writing in its format.
-// OpenForArchive must hold the lock before this is called.
 func (j *Journal) ArchiveUnreadable(session string) (string, error) {
 	rel := filepath.Join(archiveDir, session+".jsonl")
 	// A previous build may already have recorded session.archived before the update.
@@ -440,7 +407,7 @@ func (j *Journal) ArchiveUnreadable(session string) (string, error) {
 			Session string `json:"session"`
 		}
 		if json.Unmarshal(data[start:end], &last) == nil && last.Kind == KindSessionArchived && last.Session == session && last.Path == rel {
-			if err := finishArchive(j.dir, rel, j.opts.Sync); err != nil {
+			if err := j.finishArchive(rel); err != nil {
 				return "", fmt.Errorf("finish recorded incompatible archive: %w", err)
 			}
 			return rel, nil
@@ -457,7 +424,7 @@ func (j *Journal) ArchiveUnreadable(session string) (string, error) {
 		if err := os.MkdirAll(archive, 0o755); err != nil {
 			return "", fmt.Errorf("create archive directory: %w", err)
 		}
-		marker, err := os.OpenFile(pending, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		marker, err := j.fs.OpenFile(pending, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err != nil {
 			return "", fmt.Errorf("mark incompatible archive pending: %w", err)
 		}
@@ -471,7 +438,7 @@ func (j *Journal) ArchiveUnreadable(session string) (string, error) {
 			return "", fmt.Errorf("close incompatible archive marker: %w", err)
 		}
 		if j.opts.Sync {
-			if err := syncDir(archive); err != nil {
+			if err := j.fs.SyncDir(archive); err != nil {
 				return "", fmt.Errorf("sync incompatible archive marker: %w", err)
 			}
 		}
@@ -483,14 +450,14 @@ func (j *Journal) ArchiveUnreadable(session string) (string, error) {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return "", fmt.Errorf("check archive: %w", err)
 	}
-	if err := finishArchive(j.dir, rel, j.opts.Sync); err != nil {
+	if err := j.finishArchive(rel); err != nil {
 		return "", fmt.Errorf("archive incompatible journal: %w", err)
 	}
-	if err := os.Remove(pending); err != nil {
+	if err := j.fs.Remove(pending); err != nil {
 		return "", fmt.Errorf("remove incompatible archive marker: %w", err)
 	}
 	if j.opts.Sync {
-		if err := syncDir(archive); err != nil {
+		if err := j.fs.SyncDir(archive); err != nil {
 			return "", fmt.Errorf("sync incompatible archive completion: %w", err)
 		}
 	}
@@ -499,9 +466,6 @@ func (j *Journal) ArchiveUnreadable(session string) (string, error) {
 
 const carrySuffix = "-carry-pending"
 
-// ArchiveForCarry archives an older session like ArchiveUnreadable, leaving a marker that its carry is pending until
-// a new session records it. A journal already archived before the update carries nothing.
-// OpenForArchive must hold the lock before this is called.
 func (j *Journal) ArchiveForCarry(session string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(j.dir, eventsFile))
 	if err != nil {
@@ -522,14 +486,21 @@ func (j *Journal) ArchiveForCarry(session string) (string, error) {
 			return "", nil
 		}
 	}
-	if err := ClearPendingCarry(j.dir); err != nil {
+	pending, err := PendingCarry(j.dir)
+	if err != nil {
+		return "", err
+	}
+	if pending != "" && !carryEstablished(data) {
+		return j.ArchiveUnreadable(session)
+	}
+	if err := j.ClearPendingCarry(); err != nil {
 		return "", err
 	}
 	archive := filepath.Join(j.dir, archiveDir)
 	if err := os.MkdirAll(archive, 0o755); err != nil {
 		return "", fmt.Errorf("create archive directory: %w", err)
 	}
-	marker, err := os.OpenFile(filepath.Join(archive, session+carrySuffix), os.O_CREATE|os.O_WRONLY, 0o644)
+	marker, err := j.fs.OpenFile(filepath.Join(archive, session+carrySuffix), os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return "", fmt.Errorf("mark carry pending: %w", err)
 	}
@@ -543,11 +514,28 @@ func (j *Journal) ArchiveForCarry(session string) (string, error) {
 		return "", fmt.Errorf("close carry marker: %w", err)
 	}
 	if j.opts.Sync {
-		if err := syncDir(archive); err != nil {
+		if err := j.fs.SyncDir(archive); err != nil {
 			return "", fmt.Errorf("sync carry marker: %w", err)
 		}
 	}
 	return j.ArchiveUnreadable(session)
+}
+
+func carryEstablished(data []byte) bool {
+	for len(data) > 0 {
+		end := bytes.IndexByte(data, '\n')
+		if end < 0 {
+			break
+		}
+		var event struct {
+			Kind Kind `json:"kind"`
+		}
+		if json.Unmarshal(data[:end], &event) == nil && (event.Kind == KindSessionContext || event.Kind == KindSessionCarried) {
+			return true
+		}
+		data = data[end+1:]
+	}
+	return false
 }
 
 // PendingCarry returns the session whose carry no journal has recorded yet, or "" when there is none.
@@ -561,16 +549,15 @@ func PendingCarry(dir string) (string, error) {
 	}
 	var pending string
 	for _, entry := range entries {
-		if id, found := strings.CutSuffix(entry.Name(), carrySuffix); found && id > pending {
+		if id, found := strings.CutSuffix(entry.Name(), carrySuffix); found && CompareSessionIDs(id, pending) > 0 {
 			pending = id
 		}
 	}
 	return pending, nil
 }
 
-// ClearPendingCarry drops every pending carry.
-func ClearPendingCarry(dir string) error {
-	archive := filepath.Join(dir, archiveDir)
+func (j *Journal) ClearPendingCarry() error {
+	archive := filepath.Join(j.dir, archiveDir)
 	entries, err := os.ReadDir(archive)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -582,11 +569,11 @@ func ClearPendingCarry(dir string) error {
 		if !strings.HasSuffix(entry.Name(), carrySuffix) {
 			continue
 		}
-		if err := os.Remove(filepath.Join(archive, entry.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := j.fs.Remove(filepath.Join(archive, entry.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("remove carry marker: %w", err)
 		}
 	}
-	if err := syncDir(archive); err != nil {
+	if err := j.fs.SyncDir(archive); err != nil {
 		return fmt.Errorf("sync carry markers: %w", err)
 	}
 	return nil
@@ -594,33 +581,32 @@ func ClearPendingCarry(dir string) error {
 
 const trialsSuffix = "-trials"
 
-// finishArchive removes the state file and moves the trial directories before moving the journal: once the journal is
-// gone nothing would finish the rest, while a journal still in place ends with session.archived and Open retries.
-func finishArchive(dir, rel string, sync bool) error {
+func (j *Journal) finishArchive(rel string) error {
+	dir := j.dir
 	archive := filepath.Join(dir, archiveDir)
 	if err := os.MkdirAll(archive, 0o755); err != nil {
 		return err
 	}
-	if err := os.Remove(filepath.Join(dir, stateFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := j.fs.Remove(filepath.Join(dir, stateFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	session := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
-	if err := os.Rename(filepath.Join(dir, trialsDir), filepath.Join(archive, session+trialsSuffix)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := j.fs.Rename(filepath.Join(dir, trialsDir), filepath.Join(archive, session+trialsSuffix)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if sync {
+	if j.opts.Sync {
 		for _, d := range []string{archive, dir} {
-			if err := syncDir(d); err != nil {
+			if err := j.fs.SyncDir(d); err != nil {
 				return fmt.Errorf("sync trial archive directory %s: %w", d, err)
 			}
 		}
 	}
-	if err := os.Rename(filepath.Join(dir, eventsFile), filepath.Join(dir, rel)); err != nil {
+	if err := j.fs.Rename(filepath.Join(dir, eventsFile), filepath.Join(dir, rel)); err != nil {
 		return err
 	}
-	if sync {
+	if j.opts.Sync {
 		for _, d := range []string{archive, dir} {
-			if err := syncDir(d); err != nil {
+			if err := j.fs.SyncDir(d); err != nil {
 				return fmt.Errorf("sync directory %s: %w", d, err)
 			}
 		}
@@ -641,6 +627,9 @@ func (j *Journal) Events() []Event {
 }
 
 func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
+	if j.appendErr != nil {
+		return Event{}, j.appendErr
+	}
 	seq := len(j.events) + 1
 	kind := p.Kind()
 	if _, ok := payloadConstructors[kind]; !ok {
@@ -674,12 +663,18 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 	}
 	raw = append(raw, '\n')
 	e.Raw = raw[:len(raw)-1]
-	if _, err := j.f.Write(raw); err != nil {
-		return Event{}, fmt.Errorf("append %s: %w", kind, err)
+	n, err := j.f.Write(raw)
+	if err == nil && n != len(raw) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		j.appendErr = fmt.Errorf("append %s: %w", kind, err)
+		return Event{}, j.appendErr
 	}
 	if j.opts.Sync {
 		if err := j.f.Sync(); err != nil {
-			return Event{}, fmt.Errorf("sync %s: %w", kind, err)
+			j.appendErr = fmt.Errorf("sync %s: %w", kind, err)
+			return Event{}, j.appendErr
 		}
 	}
 	j.events = append(j.events, e)
@@ -691,11 +686,17 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 
 func (j *Journal) Close() error {
 	var errs []error
-	if j.opts.Sync {
-		errs = append(errs, j.f.Sync())
+	if j.f != nil {
+		if j.opts.Sync {
+			errs = append(errs, j.f.Sync())
+		}
+		errs = append(errs, j.f.Close())
+		j.f = nil
 	}
-	errs = append(errs, j.f.Close())
-	errs = append(errs, syscall.Flock(int(j.lock.Fd()), syscall.LOCK_UN), j.lock.Close())
+	if j.lock != nil {
+		errs = append(errs, syscall.Flock(int(j.lock.Fd()), syscall.LOCK_UN), j.lock.Close())
+		j.lock = nil
+	}
 	if err := errors.Join(errs...); err != nil {
 		return fmt.Errorf("close journal %s: %w", j.dir, err)
 	}

@@ -238,3 +238,49 @@ func TestResetAllWarnsAcrossRulesets(t *testing.T) {
 		t.Errorf("ruleset-2 archive: stdout %q, stderr %q", stdout.String(), stderr.String())
 	}
 }
+
+func TestResetAllCannotInterruptLockedTransition(t *testing.T) {
+	dir := resetCandidateFixture(t, -10)
+	marker := filepath.Join(dir, "archive", "original-carry-pending")
+	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		j, err := journal.Lock(dir, journal.Options{})
+		if err != nil {
+			done <- err
+			close(locked)
+			return
+		}
+		close(locked)
+		<-release
+		done <- j.Close()
+	}()
+	<-locked
+	var stdout, stderr bytes.Buffer
+	g := &globals{stateDir: dir, hostLockPath: filepath.Join(t.TempDir(), "host.lock")}
+	code := runReset(g, []string{"--all"}, &stdout, &stderr)
+	close(release)
+	lockErr := <-done
+	if lockErr != nil {
+		t.Fatal(lockErr)
+	}
+	if code != exitLocked {
+		t.Fatalf("reset exit %d: %s", code, stderr.String())
+	}
+	after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("reset changed winning transition journal: %v", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("reset removed winning transition marker: %v", err)
+	}
+}

@@ -39,7 +39,7 @@ func TestResidentCrashNamesTheSoleNonzeroCoreByID(t *testing.T) {
 	h := &harness{t: t, s: New()}
 	infos := []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 16}}, {Core: 8, CCD: 1, CPUs: []int{8, 24}}}
 	begin := h.add(&journal.SessionStart{Schema: journal.Schema, Session: "s", Cores: infos})
-	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: config.Default()})
+	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: snapshotConfig(config.Default())})
 	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseDone, Reason: "test"}, begin.Seq)
 	h.add(&journal.CorePhase{Core: 8, To: journal.PhaseDone, Offset: -12, Reason: "test"}, begin.Seq)
 	intent := h.add(&journal.TrialIntent{Trial: "0001", Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Cores: []int{0, 8}, Profile: []int{0, -12}})

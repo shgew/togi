@@ -106,7 +106,7 @@ func TestRealPowerOffDefectFoundOnceOnResume(t *testing.T) {
 	}
 	old := Build()
 	old.Fixes = 0
-	if _, err := j.Append(&journal.ConfigLoaded{Build: old, Path: in.ConfigPath, Config: in.Config}); err != nil {
+	if _, err := j.Append(&journal.ConfigLoaded{Build: old, Path: in.ConfigPath, Config: configSnapshot(in.Config)}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := j.Append(&journal.TrialProgress{Trial: "legacy-poweroff", Detail: "core 00 backend exited early: <nil>"}); err != nil {

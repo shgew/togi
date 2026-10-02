@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/machine"
 )
 
@@ -87,13 +86,24 @@ func TestOpenFinishesRenamedIncompatibleArchive(t *testing.T) {
 func samplePayloads() []Payload {
 	return []Payload{
 		sessionStart(),
-		&ConfigLoaded{Path: config.DefaultPath, Config: config.Default()},
+		&ConfigLoaded{Path: "/etc/togi/config.toml", Config: sampleConfig()},
 		&SMUIntent{Op: SMUSet, Core: new(7), Offset: -32},
 		&SMUWrite{Op: SMUSet, Core: new(7), Offset: -32},
 		&TrialIntent{Trial: "0001", Regime: machine.R6, Workload: "idle", DurationS: 900, Condition: machine.Resident},
 		&TrialEnd{Trial: "0001", Outcome: OutcomePass, DurationS: 900},
 		&TunerDecision{Core: 7, Phase: PhaseSearch, Decision: StepDeeper, FromOffset: -32, ToOffset: -37, Reason: "coarse, no failed mark yet"},
 		&DeadEnd{Condition: DeadEndSMU, Detail: "SMU command failed: timeout", Action: "exit"},
+	}
+}
+
+func sampleConfig() ConfigSnapshot {
+	return ConfigSnapshot{
+		StartOffsets:   map[int]int{},
+		CandidateEdges: map[int]int{},
+		Durations:      ConfigDurations{SearchTrialS: 90, StartS: 120, GuardTrialS: 120, GuardIdleS: 900, GuardAllCoreS: 1200},
+		Evidence:       ConfigEvidence{Miss: 0.05, Rate: 0.5},
+		Guard:          ConfigGuard{Rotation: []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R4, machine.R6}},
+		DeadEnds:       ConfigDeadEnds{InconclusiveInARow: 3, StrayCrashesInARow: 3},
 	}
 }
 
@@ -191,7 +201,7 @@ func TestSecondWriterRefused(t *testing.T) {
 
 func TestRoundTrip(t *testing.T) {
 	t.Parallel()
-	cfg := config.Default()
+	cfg := sampleConfig()
 	cfg.StartOffsets[3] = -10
 	payloads := []Payload{
 		sessionStart(),

@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/machine"
 )
 
@@ -225,9 +224,9 @@ type KernelBoundary struct {
 type ConfigLoaded struct {
 	Build
 	KernelBoundary
-	Path   string        `json:"path"`
-	File   bool          `json:"file"`
-	Config config.Config `json:"config"`
+	Path   string         `json:"path"`
+	File   bool           `json:"file"`
+	Config ConfigSnapshot `json:"config"`
 }
 
 func (*ConfigLoaded) Kind() Kind { return KindConfigLoaded }

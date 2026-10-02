@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -221,24 +222,29 @@ func (s *State) decided(core int, e Event) {
 }
 
 func (j *Journal) WriteState(s State) error {
-	if err := writeState(j.dir, s, j.opts.Sync); err != nil {
+	if err := j.writeState(s); err != nil {
 		return fmt.Errorf("write state %s: %w", j.dir, err)
 	}
 	return nil
 }
 
-func writeState(dir string, s State, sync bool) error {
+func (j *Journal) writeState(s State) error {
+	dir, sync := j.dir, j.opts.Sync
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
 	data = append(data, '\n')
 	tmp := filepath.Join(dir, stateTmpFile)
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	f, err := j.fs.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
-	if _, err := f.Write(data); err != nil {
+	n, err := f.Write(data)
+	if err == nil && n != len(data) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
 		f.Close()
 		return err
 	}
@@ -251,13 +257,13 @@ func writeState(dir string, s State, sync bool) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, filepath.Join(dir, stateFile)); err != nil {
+	if err := j.fs.Rename(tmp, filepath.Join(dir, stateFile)); err != nil {
 		return err
 	}
 	if !sync {
 		return nil
 	}
-	return syncDir(dir)
+	return j.fs.SyncDir(dir)
 }
 
 func syncDir(dir string) error {

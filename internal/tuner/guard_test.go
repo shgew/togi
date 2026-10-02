@@ -43,7 +43,7 @@ func TestR7StartsAndSharedDuration(t *testing.T) {
 	cfg := config.Default()
 	cfg.Guard.Rotation = []machine.Regime{machine.R7}
 	cfg.Durations.GuardAllCoreS = 480
-	h.add(&journal.ConfigLoaded{Config: cfg})
+	h.add(&journal.ConfigLoaded{Config: snapshotConfig(cfg)})
 	h.decide(h.next())
 	for i := range 4 {
 		a := h.next()
@@ -188,7 +188,7 @@ func TestGuardCarriesDeeperPassAcrossBackoff(t *testing.T) {
 	h := residentHarness(t, -20)
 	cfg := config.Default()
 	cfg.Guard.Rotation = []machine.Regime{machine.R1}
-	h.add(&journal.ConfigLoaded{Config: cfg})
+	h.add(&journal.ConfigLoaded{Config: snapshotConfig(cfg)})
 	h.decide(h.next())
 	first := h.next()
 	if first.Kind != RunTrial || first.Trial.Regime != machine.R1 {

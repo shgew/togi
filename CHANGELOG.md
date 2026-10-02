@@ -12,6 +12,11 @@ All notable changes to togi are documented in this file. The format is based on 
 
 - `status` and `cert` derive the guard's Tctl peak and source from the same post-clock resident passes as clean hours, preserving the peak across shallow backoffs and clearing it when a qualifying failure restarts the clock ([#235]).
 - Idle failures record a monotonicity warning when eligible all-core R6 passes in one class contradict the failed profile, citing those trial ends without changing the ensuing hunt ([#236]).
+- Competing starts or resets can no longer alter an upgrade's archives or pending carry before acquiring the state-directory writer lock; the lock now covers carry preparation and the complete session or reset ([#245]).
+- An upgrade interrupted before recording its carried evidence retains the original source through a subsequent upgrade, instead of replacing it with the incomplete intervening session ([#246]).
+- Sessions started in the same second receive readable numeric suffixes when an archived journal or trial directory already uses the timestamp; carry traversal orders those suffixes numerically ([#247]).
+- A confirmed defect reset survives interruption: resume completes only the missing resets tied to the recorded answer, without asking again or resetting a core twice ([#249]).
+- Partial journal or state writes are rejected instead of committing incomplete records; after a journal write or fsync error, tuning stops and the next open rebuilds its sequence from surviving complete lines ([#251]).
 
 ## [0.7.0] - 2026-10-02
 
@@ -355,3 +360,8 @@ All notable changes to togi are documented in this file. The format is based on 
 [#236]: https://github.com/shgew/togi/pull/236
 [#237]: https://github.com/shgew/togi/pull/237
 [#243]: https://github.com/shgew/togi/pull/243
+[#245]: https://github.com/shgew/togi/pull/245
+[#246]: https://github.com/shgew/togi/pull/246
+[#247]: https://github.com/shgew/togi/pull/247
+[#249]: https://github.com/shgew/togi/pull/249
+[#251]: https://github.com/shgew/togi/pull/251

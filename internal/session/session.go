@@ -41,9 +41,10 @@ type Input struct {
 	// Defects overrides the binary's entries in tests; nil uses the shipped list.
 	Defects []defect.Entry
 	// Carry is what a transition carries into a new session; nil otherwise.
-	Carry  *carry.Carry
-	Stderr io.Writer
-	Close  func() error
+	Carry     *carry.Carry
+	Stderr    io.Writer
+	Close     func() error
+	SessionID func(time.Time) (string, error)
 }
 
 type Bootloader interface {
@@ -142,16 +143,14 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 
 	recoveryCanceled := false
 	if pending == nil {
-		if !r.fold.started {
-			if _, err := r.append(&journal.SessionStart{Build: Build(), Session: r.in.Machine.Clock.Now().UTC().Format("20060102T150405Z"), Cores: cores}); err != nil {
-				return Stop{}, err
-			}
+		if err := r.startJournal(); err != nil {
+			return Stop{}, err
 		}
 		boundary, err := r.startupBoundary()
 		if err != nil {
 			return Stop{}, err
 		}
-		if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: boundary, Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: r.in.Config}); err != nil {
+		if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: boundary, Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: configSnapshot(r.in.Config)}); err != nil {
 			return Stop{}, err
 		}
 		if err := r.recoverCrashes(ctx); err != nil {
@@ -190,6 +189,23 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 		return r.afterEvidence(err)
 	}
 	return r.loop(ctx)
+}
+
+func (r *runner) startJournal() error {
+	if r.fold.started {
+		return nil
+	}
+	now := r.in.Machine.Clock.Now()
+	id := now.UTC().Format("20060102T150405Z")
+	if r.in.SessionID != nil {
+		var err error
+		id, err = r.in.SessionID(now)
+		if err != nil {
+			return err
+		}
+	}
+	_, err := r.append(&journal.SessionStart{Build: Build(), Session: id, Cores: r.cores})
+	return err
 }
 
 func (r *runner) checkCompatibility(events []journal.Event) error {

@@ -323,7 +323,7 @@ func TestCanceledRecoveryReconcilesInheritedOffsetsBeforeSignalShutdown(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := j.Append(&journal.ConfigLoaded{Build: Build(), Config: in.Config}); err != nil {
+	if _, err := j.Append(&journal.ConfigLoaded{Build: Build(), Config: configSnapshot(in.Config)}); err != nil {
 		t.Fatal(err)
 	}
 	for core, offset := range []int{-30, -20} {

@@ -1,10 +1,16 @@
 package sim
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
+
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
 
 func TestResumeAfterIncompatibleArchive(t *testing.T) {
@@ -22,5 +28,77 @@ func TestResumeAfterIncompatibleArchive(t *testing.T) {
 	want := time.Date(2026, 10, 2, 1, 14, 8, 0, time.UTC).Add(RebootTime)
 	if err != nil || got.Boots != 1 || !got.Start.Equal(want) {
 		t.Fatalf("resume archived schema: %+v, %v; want one boot and start %s", got, err, want)
+	}
+}
+
+func TestResumeContextPrecedence(t *testing.T) {
+	for _, schema := range []int{journal.Schema, 99} {
+		for _, tc := range []struct {
+			name       string
+			current    string
+			configured string
+			want       string
+		}{
+			{name: "latest numeric archive", want: "latest"},
+			{name: "current journal", current: "current", want: "current"},
+			{name: "configured context", configured: "configured", want: "configured"},
+			{name: "configured over current", current: "current", configured: "configured", want: "configured"},
+		} {
+			t.Run(fmt.Sprintf("schema-%d/%s", schema, tc.name), func(t *testing.T) {
+				dir := t.TempDir()
+				archive := filepath.Join(dir, "archive")
+				if err := os.Mkdir(archive, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				now := time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC)
+				writeContext := func(path, id, version string, schema int) {
+					t.Helper()
+					scratch := t.TempDir()
+					j, err := journal.Open(scratch, journal.Options{Boot: id, Now: func() time.Time { return now }})
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, payload := range []journal.Payload{
+						&journal.SessionStart{Schema: schema, Session: id},
+						&journal.SessionContext{BIOSVersion: version},
+					} {
+						if _, err := j.Append(payload); err != nil {
+							_ = j.Close()
+							t.Fatal(err)
+						}
+					}
+					if err := j.Close(); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Rename(filepath.Join(scratch, "events.jsonl"), path); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, archived := range []struct {
+					id      string
+					version string
+				}{
+					{"20261002T011407Z", "oldest"},
+					{"20261002T011407Z-2", "middle"},
+					{"20261002T011407Z-10", "latest"},
+				} {
+					writeContext(filepath.Join(archive, archived.id+".jsonl"), archived.id, archived.version, schema)
+				}
+				if tc.current != "" {
+					writeContext(filepath.Join(dir, "events.jsonl"), "current", tc.current, journal.Schema)
+				}
+				cfg := Config{}
+				if tc.configured != "" {
+					cfg.BIOSContext = machine.BIOSContext{BIOSVersion: tc.configured}
+				}
+				got, err := Resume(dir, cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := cmp.Diff(machine.BIOSContext{BIOSVersion: tc.want}, got.BIOSContext); diff != "" {
+					t.Fatalf("resumed BIOS context (-want +got):\n%s", diff)
+				}
+			})
+		}
 	}
 }
