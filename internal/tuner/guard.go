@@ -17,8 +17,6 @@ type guard struct {
 	steps      []machine.Regime
 	stepsDone  int
 	lastSeq    int
-	tctlMax    *int
-	tctlSeq    int
 }
 
 type requirement struct {

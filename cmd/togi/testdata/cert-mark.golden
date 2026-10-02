@@ -49,7 +49,9 @@ Evidence since [#3704]: the last failure on a profile at least as deep
   R7      ycruncher-fftv4-n63-vt3-allcore  12      0.6      < 4.74/h
   all     -                                -       7.3      < 0.42/h
   Tctl max 76°C                              [trial.end #4344]
-  Rate bound = 3 / clean hours, 95% confidence (rule of three).
+  Rate bound = 3 / clean hours (rule of three).
+  Fewer failures/hour than shown at 95%, if failures on the tested workloads
+  occur at a constant rate.
   Starts = valid passes since each class last failed.
 
 Session 20260101T000000Z, started 2026-01-01T00:00:00Z

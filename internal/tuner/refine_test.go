@@ -152,3 +152,71 @@ func TestRefineHalfwayTowardFailedMark(t *testing.T) {
 		t.Fatalf("second halfway (-want +got):\n%s", diff)
 	}
 }
+
+func TestActiveRefineProjection(t *testing.T) {
+	for _, close := range []string{"passed", "cancelled"} {
+		t.Run(close, func(t *testing.T) {
+			h := newHarness(t, coreStart{phase: journal.PhaseResident, offset: -10}, coreStart{phase: journal.PhaseResident, offset: -10}, coreStart{phase: journal.PhaseResident, offset: -10}, coreStart{phase: journal.PhaseResident, offset: -10})
+			h.add(&journal.ProfileChange{To: []int{-10, -10, -10, -10}})
+			round := &journal.RefineRound{Round: 2, Event: journal.RotationStart, Target: []int{-20, -9, -10, -10}, Profile: []int{-15, -9, -10, -10}, Cores: []int{0, 1}, Starts: 2, StartS: 120}
+			begin := h.add(round)
+			want := &journal.RefineState{Round: 2, Seq: begin.Seq, Target: round.Target, Profile: round.Profile, Cores: round.Cores, Checks: []journal.CheckState{
+				{Regime: machine.R1, Workload: machine.Workloads(machine.R1)[1].ID, Cores: []int{0}, Needed: 2},
+				{Regime: machine.R2, Workload: machine.Workloads(machine.R2)[1].ID, Cores: []int{0}, Needed: 2},
+				{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[1].ID, Cores: []int{0, 1}, Needed: 2},
+				{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[1].ID, Cores: []int{0, 1, 2, 3}, Needed: 2},
+			}}
+			assert := func() {
+				t.Helper()
+				st := projected(h)
+				if st.Phase != string(journal.PhaseRefine) {
+					t.Fatalf("active round phase %s", st.Phase)
+				}
+				if diff := cmp.Diff(want, st.Refine); diff != "" {
+					t.Fatalf("round projection (-want +got):\n%s", diff)
+				}
+				assertProjectionReplay(h)
+			}
+			assert()
+			for {
+				a, ok := h.s.roundMoves()
+				if !ok {
+					break
+				}
+				h.decide(a)
+				assert()
+			}
+			h.add(&journal.ProfileChange{From: h.s.Profile(), To: round.Profile}, begin.Seq)
+			for i := range want.Checks {
+				for range 2 {
+					a := h.s.roundCheck()
+					q := want.Checks[i]
+					if a.Kind != RunTrial || a.Trial.Regime != q.Regime || a.Trial.Workload != q.Workload || a.Trial.Round != 2 || a.Trial.DurationS != 120 {
+						t.Fatalf("check %d: %+v", i, a)
+					}
+					h.trial(a, passed)
+					want.Checks[i].Passes++
+					assert()
+					if close == "cancelled" {
+						h.add(&journal.RefineRound{Round: 2, Event: journal.RotationEnd, Reason: "a failure needs a hunt"}, begin.Seq)
+						if projected(h).Refine != nil {
+							t.Fatal("cancelled round remains active")
+						}
+						assertProjectionReplay(h)
+						return
+					}
+				}
+			}
+			end := h.s.roundCheck()
+			p, ok := end.Payload.(*journal.RefineRound)
+			if !ok || p.Event != journal.RotationEnd || !p.Passed || !slices.Equal(end.Cause, []int{begin.Seq}) {
+				t.Fatalf("completed round: %+v", end)
+			}
+			h.decide(end)
+			if projected(h).Refine != nil {
+				t.Fatal("completed round remains active")
+			}
+			assertProjectionReplay(h)
+		})
+	}
+}

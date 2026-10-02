@@ -343,8 +343,6 @@ func (s *State) Fold(e journal.Event) {
 		s.guard.profile = slices.Clone(p.To)
 		s.guard.profileSeq = e.Seq
 		s.guard.lastSeq = e.Seq
-		s.guard.tctlMax = nil
-		s.guard.tctlSeq = 0
 		s.tierCause = e.Seq
 		s.projectionDirty = true
 		s.recomputeTierClock()
@@ -419,10 +417,6 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 		if p.Outcome == journal.OutcomePass && intent.Condition == machine.Resident {
 			s.guard.lastSeq = e.Seq
 			s.tierCause = e.Seq
-			if p.TctlMaxC != nil && (s.guard.tctlMax == nil || *p.TctlMaxC > *s.guard.tctlMax) {
-				s.guard.tctlMax = new(*p.TctlMaxC)
-				s.guard.tctlSeq = e.Seq
-			}
 		}
 		if p.Outcome == journal.OutcomeInconclusive {
 			t := trialFromIntent(intent)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 func huntConfig(cores int) sim.Config {
@@ -85,6 +87,37 @@ func findPayload[P journal.Payload](events []journal.Event, accept func(P) bool)
 		}
 	}
 	return zero, false
+}
+
+func assertAdversarialEvidence(t *testing.T, events []journal.Event, huntBudget, crashBudget int) []int {
+	t.Helper()
+	s := tuner.New()
+	hunts, crashes := 0, 0
+	var final []int
+	for _, e := range events {
+		var profile []int
+		switch p := e.Data.(type) {
+		case *journal.TrialIntent:
+			profile = p.Profile
+		case *journal.ProfileChange:
+			profile, final = p.To, p.To
+		case *journal.HuntStart:
+			hunts++
+		case *journal.CrashDetected:
+			crashes++
+		}
+		if profile != nil {
+			if name, reached := s.Reaches(profile); reached {
+				t.Fatalf("%s #%d reaches %s: %v", e.Kind, e.Seq, name, profile)
+			}
+		}
+		s.Fold(e)
+	}
+	if hunts > huntBudget || crashes > crashBudget {
+		t.Fatalf("session used %d hunts and %d crashes, budget %d and %d", hunts, crashes, huntBudget, crashBudget)
+	}
+	t.Logf("session concluded after %d hunts and %d crashes", hunts, crashes)
+	return final
 }
 
 func TestHuntAllZeroAnchor(t *testing.T) {
@@ -217,6 +250,7 @@ func TestAnchorOffsetBackendFailureRaisesTheAnchor(t *testing.T) {
 func TestHuntJointMark(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(16)
+	cfg.Ranking = []int{0, 1, 2, 11, 4, 5, 6, 7, 8, 9, 10, 3, 12, 13, 14, 15}
 	model := sim.DefaultModel()
 	model.PastEdgeRate = 1
 	cfg.Model = &model
@@ -256,6 +290,15 @@ func TestHuntJointMark(t *testing.T) {
 	if marks != 1 || backoffs != 1 {
 		t.Errorf("mark count %d, hunt backoffs %d, want one each", marks, backoffs)
 	}
+	want := make([]int, cfg.Cores)
+	for i := range want {
+		want[i] = -50
+	}
+	want[3] = -9
+	if diff := cmp.Diff(want, assertAdversarialEvidence(t, events, 1, 32)); diff != "" {
+		t.Errorf("sharp joint final profile (-want +got):\n%s", diff)
+	}
+	t.Log("joint miss risk per 120s failing start is exp(-1200), below 1e-500 but not zero; this fixed seed is not a universal accuracy guarantee")
 }
 
 func TestSharedVoltageJointBacksOffOnlyTheShallowestCore(t *testing.T) {
@@ -295,6 +338,8 @@ func TestSharedVoltageJointBacksOffOnlyTheShallowestCore(t *testing.T) {
 	if diff := cmp.Diff(want, final); diff != "" {
 		t.Errorf("final profile (-want +got):\n%s", diff)
 	}
+	assertAdversarialEvidence(t, events, 8, 40)
+	t.Logf("shared-voltage .0009/s hazard miss risk over eligible exposure T is exp(-.0009*T), %g for one 120s start; this fixed seed does not promise accuracy on every seed", math.Exp(-.0009*120))
 }
 
 func TestHuntJointMisleadingMCE(t *testing.T) {
@@ -304,13 +349,8 @@ func TestHuntJointMisleadingMCE(t *testing.T) {
 	model.PastEdgeRate = 1
 	cfg.Model = &model
 	cfg.Joints = []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10, CrashMCECore: new(3)}}
-	stop, events, _ := runHunt(t, cfg, nil, func(in *Input) {
-		in.Until = func(e journal.Event) bool {
-			p, ok := e.Data.(*journal.TunerDecision)
-			return ok && p.Core == 3 && p.FailedMark != nil && *p.FailedMark == -10
-		}
-	})
-	if stop.Reason != session.StopSignal {
+	stop, events, _ := runHunt(t, cfg, nil, nil)
+	if stop.Reason != session.StopRotations {
 		t.Fatalf("stop %+v", stop)
 	}
 	if _, ok := findPayload(events, func(p *journal.TunerDecision) bool {
@@ -320,6 +360,14 @@ func TestHuntJointMisleadingMCE(t *testing.T) {
 	}
 	if mark, ok := findPayload[*journal.MarkJoint](events, nil); ok {
 		t.Fatalf("misleading core-local evidence produced joint mark: %+v", mark)
+	}
+	want := make([]int, cfg.Cores)
+	for i := range want {
+		want[i] = -10
+	}
+	want[3] = -9
+	if diff := cmp.Diff(want, assertAdversarialEvidence(t, events, 1, 32)); diff != "" {
+		t.Fatalf("conservative MCE attribution final profile (-want +got):\n%s", diff)
 	}
 }
 
@@ -337,7 +385,13 @@ func TestDelayedHuntEscalates(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := huntConfig(4)
 			cfg.Joints = []sim.Joint{{Members: map[int]int{1: -10}, Regimes: []machine.Regime{tc.regime}, AfterS: tc.after, Rate: 10}}
-			_, events, _ := runHunt(t, cfg, nil, nil)
+			stop, events, _ := runHunt(t, cfg, nil, nil)
+			if stop.Reason != session.StopRotations {
+				t.Fatalf("delayed session stop %+v", stop)
+			}
+			if diff := cmp.Diff([]int{-10, -9, -10, -10}, assertAdversarialEvidence(t, events, 4, 32)); diff != "" {
+				t.Fatalf("delayed sharp edge final profile (-want +got):\n%s", diff)
+			}
 			fullPasses, escalated, resolved := 0, false, false
 			fullTrials := map[string]bool{}
 			fullMask := map[[2]int]bool{}
@@ -381,7 +435,7 @@ func TestFlatFailureRestartsSilverTierClock(t *testing.T) {
 	c.Durations.GuardAllCoreS = 3600
 	silver := false
 	failed := false
-	_, events, dir := runHunt(t, cfg, nil, func(in *Input) {
+	stop, events, dir := runHunt(t, cfg, nil, func(in *Input) {
 		in.Config = c
 		in.Rotations = 0
 		in.Until = func(e journal.Event) bool {
@@ -396,6 +450,11 @@ func TestFlatFailureRestartsSilverTierClock(t *testing.T) {
 			return false
 		}
 	})
+	if stop.Reason != session.StopSignal {
+		t.Fatalf("flat-hazard stop %+v", stop)
+	}
+	assertAdversarialEvidence(t, events, 8, 40)
+	t.Logf("flat hazard has no stable negative hidden edge; a prespecified 24h eligible nonzero window misses it with probability exp(-24/30) = %g, not assurance for selected exposure or repeated inspection", math.Exp(-24.0/30))
 	if !silver || !failed {
 		t.Fatalf("silver tier %t, subsequent failure %t", silver, failed)
 	}
@@ -880,4 +939,141 @@ func matrixCommitments(events []journal.Event) matrixResult {
 		}
 	}
 	return out
+}
+
+func TestScriptedJointAndIdleEdges(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		idle bool
+		want []int
+	}{
+		{"sharp joint", false, []int{-5, -10, -10, -10}},
+		{"idle-only outside loaded cores", true, []int{-10, -10, -10, -5}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := huntConfig(4)
+			cfg.Ranking = []int{2, 1, 0, 3}
+			cfg.Script = map[string]sim.Outcome{}
+			if tc.idle {
+				cfg.Edges[3].Idle = new(-5)
+			} else {
+				cfg.Joints = []sim.Joint{{Members: map[int]int{0: -6, 2: -6}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
+			}
+			stop, events, _ := runHunt(t, cfg, nil, func(in *Input) {
+				in.Until = func(e journal.Event) bool {
+					p, ok := e.Data.(*journal.TrialIntent)
+					if !ok {
+						return false
+					}
+					cfg.Script[p.Trial] = scriptedSharpOutcome(cfg, p)
+					return false
+				}
+			})
+			if stop.Reason != session.StopRotations {
+				t.Fatalf("scripted session stop %+v", stop)
+			}
+			huntBudget, crashBudget := 4, 32
+			if tc.idle {
+				huntBudget = *cfg.Edges[3].Idle - cfg.Edges[3].Resident[0]
+				crashBudget = 2*cfg.Cores + 3*huntBudget
+				t.Logf("idle bound: %d one-count repairs, at most one source and two failing bisections each, plus two isolated search failures per core", huntBudget)
+			}
+			if diff := cmp.Diff(tc.want, assertAdversarialEvidence(t, events, huntBudget, crashBudget)); diff != "" {
+				t.Fatalf("deterministic hidden edges (-want +got):\n%s", diff)
+			}
+			if tc.idle {
+				intents := map[string]*journal.TrialIntent{}
+				found := false
+				for _, e := range events {
+					switch p := e.Data.(type) {
+					case *journal.TrialIntent:
+						intents[p.Trial] = p
+					case *journal.Failure:
+						tr := intents[p.Trial]
+						if tr != nil && tr.Condition == machine.Resident && tr.Profile[3] < *cfg.Edges[3].Idle && !slices.Contains(tr.Cores, 3) && (tr.Core == nil || *tr.Core != 3) {
+							found = true
+						}
+					}
+				}
+				if !found {
+					t.Fatal("no idle-edge failure outside the loaded cores")
+				}
+			}
+		})
+	}
+}
+
+func scriptedSharpOutcome(cfg sim.Config, p *journal.TrialIntent) sim.Outcome {
+	loaded := p.Cores
+	if p.Core != nil {
+		loaded = []int{*p.Core}
+	}
+	for _, core := range loaded {
+		regime := slices.Index(machine.Regimes, p.Regime)
+		edge := cfg.Edges[core].Resident[regime]
+		if p.Condition == machine.Isolated {
+			edge = cfg.Edges[core].Isolated[regime]
+		}
+		if p.Profile[core] < edge {
+			return sim.Outcome{Signal: machine.Crash, AtS: 1, Core: core}
+		}
+	}
+	if p.Condition == machine.Isolated {
+		return sim.Outcome{}
+	}
+	for core, edge := range cfg.Edges {
+		if edge.Idle != nil && !slices.Contains(loaded, core) && p.Profile[core] < *edge.Idle {
+			return sim.Outcome{Signal: machine.Crash, AtS: 1, Core: core}
+		}
+	}
+	for _, joint := range cfg.Joints {
+		if !slices.Contains(joint.Regimes, p.Regime) {
+			continue
+		}
+		reached := true
+		for core, offset := range joint.Members {
+			reached = reached && p.Profile[core] <= offset
+		}
+		if reached {
+			return sim.Outcome{Signal: machine.Crash, AtS: 1}
+		}
+	}
+	return sim.Outcome{}
+}
+
+func TestIdleOnlyHazardReachesBronze(t *testing.T) {
+	for _, seed := range []uint64{1, 2} {
+		t.Run(fmt.Sprintf("seed-%d", seed), func(t *testing.T) {
+			cfg := huntConfig(4)
+			cfg.Seed = seed
+			cfg.Edges[3].Idle = new(-5)
+			stop, events, _ := runHunt(t, cfg, nil, nil)
+			if stop.Reason != session.StopRotations {
+				t.Fatalf("idle-only stop %+v", stop)
+			}
+			huntBudget := *cfg.Edges[3].Idle - cfg.Edges[3].Resident[0]
+			crashBudget := 2*cfg.Cores + 3*huntBudget
+			t.Logf("idle bound: %d one-count repairs, at most one source and two failing bisections each, plus two isolated search failures per core", huntBudget)
+			if diff := cmp.Diff([]int{-10, -10, -10, -5}, assertAdversarialEvidence(t, events, huntBudget, crashBudget)); diff != "" {
+				t.Fatalf("sharp idle edge at fixed seed (-want +got):\n%s", diff)
+			}
+			intents := map[string]*journal.TrialIntent{}
+			found := false
+			for _, e := range events {
+				switch p := e.Data.(type) {
+				case *journal.TrialIntent:
+					intents[p.Trial] = p
+				case *journal.Failure:
+					tr := intents[p.Trial]
+					if tr != nil && tr.Condition == machine.Resident && tr.Profile[3] < *cfg.Edges[3].Idle && !slices.Contains(tr.Cores, 3) && (tr.Core == nil || *tr.Core != 3) {
+						found = true
+					}
+				}
+			}
+			if !found {
+				t.Fatal("idle-only hazard never failed outside the loaded cores")
+			}
+			t.Logf("zero near-edge rate, eligible idle failing hazard at least 1/s: a 120s failing start misses with probability at most exp(-120) = %g; equality is a fixed-seed regression, not a universal guarantee", math.Exp(-120))
+		})
+	}
 }

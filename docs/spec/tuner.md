@@ -56,7 +56,7 @@ One start is one trial, with no internal relaunch. The pass rule is `n = ceil(ln
 
 A trial class is `(regime, workload, sorted loaded cores, duration_s)`. The ledger records each conclusive trial's class, sequence, applied `trial.intent.profile` and outcome. A pass at profile Q counts toward P only when Q is at least as deep as P, and not before the latest failure of that class at a profile at least as shallow as P. A failure at Q rules out P when Q is at least as shallow as P. Requirements on the same class within a step add, so a start counts once. An idle crash has wildcard R6 class with all cores loaded and invalidates all such R6 classes. Passes at deeper profiles can survive backoff; deeper moves need new evidence.
 
-A failure contradicting `n` valid passes on a profile at least as deep in the same class records `tuner.warning` `monotonicity`, without changing the failure decision.
+A failure contradicting `n` valid passes on a profile at least as deep in the same class records `tuner.warning` `monotonicity`, without changing the failure decision. An idle failure checks all-core R6 classes individually before its wildcard invalidation; if several qualify, the warning cites exactly `n` passes from the class with the earliest valid pass.
 
 ## Marks
 
@@ -193,7 +193,7 @@ Tiers rank the current profile by durability, not proof. A shallow backoff need 
 
 The tuner records every change as `tier.change`, naming its cause. A core in search or not done, reachable refinement depth, or missing valid qualifying coverage prevents Bronze. Bronze's usual reason is `every core is done and the profile passed a clean qualifying rotation`. When an earlier rotation supplies the credit, the reason names its end sequence and explains that its profile was at least as deep and uncontradicted; the cause cites that end and the current tier cause. Silver and Gold still cite `24 clean hours since the tier clock started at #N` and `100 clean hours since the tier clock started at #N`.
 
-Each regime and workload with clean hours `T` since the tier clock shows its failure-rate bound: with zero failures, the rate is below `3 / T` per hour at 95% confidence (rule of three). The overall bound uses all clean hours. Without clean hours there is no bound. Recorded and displayed bounds round up, never understating it.
+Each regime and workload with clean hours `T` since the tier clock shows its failure-rate bound: with zero failures, fewer than `3 / T` failures per hour at 95%, if failures on the tested workloads occur at a constant rate (rule of three). The overall bound uses all clean hours. Without clean hours there is no bound. Recorded and displayed bounds round up, never understating it. Exposure is selected after failures and the bound is inspected repeatedly; it is not an unconditional guarantee or a sequentially valid assurance. It applies only to the workloads tested, not untested workloads or real use.
 
 `togi status` and `togi cert` render from a replay of the journal (`runtime.md`). The certificate shows:
 - the tier with its `tier.change`, and progress towards the higher tiers;

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	gocmp "github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -116,6 +118,20 @@ func projected(h *harness) journal.State {
 	journal.Replay(h.events, &st)
 	h.s.Project(&st)
 	return st
+}
+
+func assertProjectionReplay(h *harness) {
+	h.t.Helper()
+	replayed := New()
+	for _, e := range h.events {
+		replayed.Fold(e)
+	}
+	var st journal.State
+	journal.Replay(h.events, &st)
+	replayed.Project(&st)
+	if diff := gocmp.Diff(projected(h), st, cmpopts.IgnoreUnexported(journal.State{})); diff != "" {
+		h.t.Fatalf("projection replay (-live +replayed):\n%s", diff)
+	}
 }
 
 var (
