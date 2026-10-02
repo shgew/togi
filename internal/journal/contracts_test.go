@@ -12,6 +12,26 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
+func TestEveryKindDecodesItsEnvelope(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC)
+	for kind, typ := range payloadTypes {
+		want := Event{Seq: 7, Time: at, Mono: 3, Boot: "b", Kind: kind, Msg: "m", Cause: []int{1}, Data: typ.new()}
+		line, err := encode(want)
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		want.Raw = line
+		got, err := decode(line)
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("%s (-want +got):\n%s", kind, diff)
+		}
+	}
+}
+
 func TestPayloadStyles(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

@@ -56,10 +56,12 @@ type simRun struct {
 	Bootloader Bootloader
 	Prompt     func(defect.Finding) (bool, error)
 	Defects    []defect.Entry
+	// prefix spares later boots decoding what earlier boots of this run already decoded.
+	prefix *journal.Prefix
 }
 
 func simInput(dir string, m *sim.Machine) simRun {
-	return simRun{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}
+	return simRun{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1, prefix: &journal.Prefix{}}
 }
 
 func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Journal) (Stop, error) {
@@ -68,7 +70,7 @@ func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Jo
 	if err != nil {
 		return Stop{}, fmt.Errorf("read boot id: %w", err)
 	}
-	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Log: in.Log, Build: Build()})
+	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Log: in.Log, Build: Build(), Prefix: in.prefix})
 	if err != nil {
 		return Stop{}, err
 	}

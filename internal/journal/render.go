@@ -121,18 +121,18 @@ func kindMatches(entry string, kind Kind) bool {
 }
 
 func ValidateKindSelector(name string) error {
-	if _, ok := payloadConstructors[Kind(name)]; ok {
+	if _, ok := payloadTypes[Kind(name)]; ok {
 		return nil
 	}
 	if name != "" && !strings.Contains(name, ".") {
-		for kind := range payloadConstructors {
+		for kind := range payloadTypes {
 			if kindMatches(name, kind) {
 				return nil
 			}
 		}
 	}
-	names := make([]string, 0, 2*len(payloadConstructors))
-	for kind := range payloadConstructors {
+	names := make([]string, 0, 2*len(payloadTypes))
+	for kind := range payloadTypes {
 		names = append(names, string(kind))
 		group, _, _ := strings.Cut(string(kind), ".")
 		names = append(names, group)

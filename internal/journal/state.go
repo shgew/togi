@@ -3,6 +3,8 @@ package journal
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"io"
 	"maps"
@@ -217,7 +219,7 @@ func (j *Journal) WriteState(s State) error {
 
 func (j *Journal) writeState(s State) error {
 	dir, sync := j.dir, j.opts.Sync
-	data, err := json.MarshalIndent(s, "", "  ")
+	data, err := jsonv2.Marshal(s, json.DefaultOptionsV1(), jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

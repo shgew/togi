@@ -10,8 +10,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -31,6 +33,14 @@ type Options struct {
 	Log       io.Writer
 	Renderer  Renderer
 	Build     Build
+	// Prefix, shared by every Lock of one journal, lets a simulation that reopens it each boot decode only the lines appended since.
+	Prefix *Prefix
+}
+
+// Prefix holds the bytes and events of the last decode of a journal; a file that no longer starts with those bytes is decoded whole.
+type Prefix struct {
+	data   []byte
+	events []Event
 }
 
 var ErrLocked = errors.New("another togi process holds the journal lock")
@@ -43,6 +53,13 @@ type Journal struct {
 	events    []Event
 	fs        journalFilesystem
 	appendErr error
+	decoded   *decodedFile
+}
+
+type decodedFile struct {
+	data   []byte
+	events []Event
+	end    int
 }
 
 type Folder interface {
@@ -87,6 +104,67 @@ func (j *Journal) SetBoot(boot string) {
 	j.opts.Boot = boot
 }
 
+// Read decodes the locked journal like Read(j.Dir()); Open reuses the decoded events while the file is unchanged.
+func (j *Journal) Read() (events []Event, torn []byte, err error) {
+	path := filepath.Join(j.dir, eventsFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read journal %s: %w", path, err)
+	}
+	events, end, err := j.decode(data, Build{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("read journal %s: %w", path, err)
+	}
+	j.decoded = &decodedFile{data: data, events: events, end: end}
+	return events, tornTail(data, end), nil
+}
+
+func (j *Journal) decode(data []byte, binary Build) ([]Event, int, error) {
+	if err := checkStart(data, binary, false); err != nil {
+		return nil, 0, err
+	}
+	p := j.opts.Prefix
+	if p == nil {
+		return decodeLines(data, false)
+	}
+	if len(p.data) == 0 || !bytes.HasPrefix(data, p.data) {
+		events, end, err := decodeLines(data, false)
+		if err != nil {
+			return nil, 0, err
+		}
+		p.data, p.events = data[:end], slices.Clip(events)
+		return events, end, nil
+	}
+	tail, end, err := decodeLinesAfter(data[len(p.data):], false, len(p.events))
+	if err != nil {
+		return nil, 0, err
+	}
+	// Point earlier events at this read's identical bytes so earlier reads' buffers can be freed.
+	events := make([]Event, len(p.events), len(p.events)+len(tail))
+	off := 0
+	for i, e := range p.events {
+		e.Raw = data[off : off+len(e.Raw)]
+		off += len(e.Raw) + 1
+		events[i] = e
+	}
+	events = append(events, tail...)
+	end += len(p.data)
+	p.data, p.events = data[:end], slices.Clip(events)
+	return events, end, nil
+}
+
+func (j *Journal) parse(data []byte) ([]Event, int, error) {
+	decoded := j.decoded
+	j.decoded = nil
+	if decoded != nil && bytes.Equal(decoded.data, data) {
+		if err := checkStart(data, j.opts.Build, false); err != nil {
+			return nil, 0, err
+		}
+		return slices.Clone(decoded.events), decoded.end, nil
+	}
+	return j.decode(data, j.opts.Build)
+}
+
 func (j *Journal) Open() error {
 	dir, opts := j.dir, j.opts
 	path := filepath.Join(dir, eventsFile)
@@ -99,7 +177,7 @@ func (j *Journal) Open() error {
 			return err
 		}
 	}
-	events, end, err := parse(data, opts.Build)
+	events, end, err := j.parse(data)
 	if err != nil {
 		return err
 	}
@@ -233,59 +311,144 @@ func parse(data []byte, binary Build) (events []Event, end int, err error) {
 }
 
 func parseEvents(data []byte, binary Build, history bool) (events []Event, end int, err error) {
-	for {
-		i := bytes.IndexByte(data[end:], '\n')
-		if i < 0 {
-			return events, end, nil
-		}
-		line := data[end : end+i]
-		n := len(events) + 1
-		if n == 1 {
-			var first struct {
-				Kind Kind `json:"kind"`
-				Build
-			}
-			if err := json.Unmarshal(line, &first); err != nil {
-				return nil, 0, fmt.Errorf("journal line 1: %w", err)
-			}
-			if history && (first.Schema < 1 || first.Schema > Schema) {
-				return nil, 0, fmt.Errorf("journal schema %d cannot be read by schema %d", first.Schema, Schema)
-			}
-			if first.Kind == KindSessionStart && !history {
-				if binary.Schema == 0 {
-					binary = binarySchemaBuild()
-				}
-				recordedRuleset := first.Ruleset
-				if recordedRuleset == 0 {
-					recordedRuleset = 1
-				}
-				if binary.Ruleset == 0 {
-					binary.Ruleset = recordedRuleset
-				}
-				if first.Schema != binary.Schema || recordedRuleset != binary.Ruleset {
-					stamp, _, err := scanBuild(data)
-					if err != nil {
-						return nil, 0, err
-					}
-					return nil, 0, Compatible(stamp, binary)
-				}
-			}
-		}
-		e, err := decodeEvent(line, history)
-		if err != nil {
-			return nil, 0, fmt.Errorf("journal line %d: %w", n, err)
-		}
-		if e.Seq != n {
-			return nil, 0, fmt.Errorf("journal line %d: seq %d, want %d", n, e.Seq, n)
-		}
-		if n == 1 {
-			if _, ok := e.Data.(*SessionStart); !ok {
-				return nil, 0, fmt.Errorf("journal line 1: first event is %s, want %s", e.Kind, KindSessionStart)
-			}
-		}
-		events = append(events, e)
-		end += i + 1
+	if err := checkStart(data, binary, history); err != nil {
+		return nil, 0, err
 	}
+	return decodeLines(data, history)
+}
+
+// checkStart refuses a journal whose session.start this binary cannot resume, before any other line is decoded.
+func checkStart(data []byte, binary Build, history bool) error {
+	line, _, ok := bytes.Cut(data, []byte{'\n'})
+	if !ok {
+		return nil
+	}
+	var first struct {
+		Kind Kind `json:"kind"`
+		Build
+	}
+	if err := json.Unmarshal(line, &first); err != nil {
+		return fmt.Errorf("journal line 1: %w", err)
+	}
+	if history && (first.Schema < 1 || first.Schema > Schema) {
+		return fmt.Errorf("journal schema %d cannot be read by schema %d", first.Schema, Schema)
+	}
+	if first.Kind != KindSessionStart || history {
+		return nil
+	}
+	if binary.Schema == 0 {
+		binary = binarySchemaBuild()
+	}
+	recordedRuleset := first.Ruleset
+	if recordedRuleset == 0 {
+		recordedRuleset = 1
+	}
+	if binary.Ruleset == 0 {
+		binary.Ruleset = recordedRuleset
+	}
+	if first.Schema != binary.Schema || recordedRuleset != binary.Ruleset {
+		stamp, _, err := scanBuild(data)
+		if err != nil {
+			return err
+		}
+		return Compatible(stamp, binary)
+	}
+	return nil
+}
+
+// minDecodePart keeps small journals on one goroutine, where splitting costs more than it saves.
+const minDecodePart = 256 << 10
+
+func decodeLines(data []byte, history bool) (events []Event, end int, err error) {
+	return decodeLinesAfter(data, history, 0)
+}
+
+// decodeLinesAfter decodes lines that follow the first `before` events of a journal.
+func decodeLinesAfter(data []byte, history bool, before int) (events []Event, end int, err error) {
+	end = bytes.LastIndexByte(data, '\n') + 1
+	if end == 0 {
+		return nil, 0, nil
+	}
+	events, err = decodeParts(lineParts(data[:end], runtime.GOMAXPROCS(0), minDecodePart), history, before)
+	if err != nil {
+		return nil, 0, err
+	}
+	return events, end, nil
+}
+
+// lineParts splits complete lines into about n parts of at least least bytes, each ending at a line end.
+func lineParts(data []byte, n, least int) [][]byte {
+	size := max(len(data)/n, least)
+	var parts [][]byte
+	for len(data) > size {
+		cut := size + bytes.IndexByte(data[size:], '\n') + 1
+		parts = append(parts, data[:cut])
+		data = data[cut:]
+	}
+	if len(data) > 0 {
+		parts = append(parts, data)
+	}
+	return parts
+}
+
+type decodedPart struct {
+	events []Event
+	err    error
+}
+
+// decodeParts decodes parts concurrently, then checks them in line order so the first bad line is the one reported.
+func decodeParts(parts [][]byte, history bool, before int) ([]Event, error) {
+	decoded := make([]decodedPart, len(parts))
+	if len(parts) == 1 {
+		decoded[0] = decodePart(parts[0], history)
+	} else {
+		var wg sync.WaitGroup
+		for i, part := range parts {
+			wg.Go(func() { decoded[i] = decodePart(part, history) })
+		}
+		wg.Wait()
+	}
+	n := before
+	for _, d := range decoded {
+		for _, e := range d.events {
+			n++
+			if e.Seq != n {
+				return nil, fmt.Errorf("journal line %d: seq %d, want %d", n, e.Seq, n)
+			}
+			if n == 1 {
+				if _, ok := e.Data.(*SessionStart); !ok {
+					return nil, fmt.Errorf("journal line 1: first event is %s, want %s", e.Kind, KindSessionStart)
+				}
+			}
+		}
+		if d.err != nil {
+			return nil, fmt.Errorf("journal line %d: %w", n+1, d.err)
+		}
+	}
+	if len(decoded) == 1 {
+		return decoded[0].events, nil
+	}
+	events := make([]Event, 0, n)
+	for _, d := range decoded {
+		events = append(events, d.events...)
+	}
+	return events, nil
+}
+
+// decodePart decodes lines until the first that fails.
+func decodePart(part []byte, history bool) decodedPart {
+	var d decodedPart
+	for len(part) > 0 {
+		i := bytes.IndexByte(part, '\n')
+		e, err := decodeEvent(part[:i], history)
+		if err != nil {
+			d.err = err
+			return d
+		}
+		d.events = append(d.events, e)
+		part = part[i+1:]
+	}
+	return d
 }
 
 func Read(dir string) (events []Event, torn []byte, err error) {
@@ -293,18 +456,30 @@ func Read(dir string) (events []Event, torn []byte, err error) {
 }
 
 func ReadFile(path string) (events []Event, torn []byte, err error) {
-	data, err := os.ReadFile(path)
+	data, events, end, err := decodeFile(path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read journal %s: %w", path, err)
+		return nil, nil, err
 	}
-	events, end, err := parse(data, Build{})
+	return events, tornTail(data, end), nil
+}
+
+func decodeFile(path string) (data []byte, events []Event, end int, err error) {
+	data, err = os.ReadFile(path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read journal %s: %w", path, err)
+		return nil, nil, 0, fmt.Errorf("read journal %s: %w", path, err)
 	}
-	if end < len(data) {
-		torn = data[end:]
+	events, end, err = parse(data, Build{})
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("read journal %s: %w", path, err)
 	}
-	return events, torn, nil
+	return data, events, end, nil
+}
+
+func tornTail(data []byte, end int) []byte {
+	if end == len(data) {
+		return nil
+	}
+	return data[end:]
 }
 
 // ReadHistory reads all understood events from shipped schemas without enforcing
@@ -666,7 +841,7 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 	}
 	seq := len(j.events) + 1
 	kind := p.Kind()
-	if _, ok := payloadConstructors[kind]; !ok {
+	if _, ok := payloadTypes[kind]; !ok {
 		return Event{}, fmt.Errorf("append %s: unregistered kind", kind)
 	}
 	if seq == 1 && kind != KindSessionStart {
