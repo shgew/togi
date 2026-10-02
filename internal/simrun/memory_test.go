@@ -16,10 +16,10 @@ import (
 
 func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 	t.Parallel()
-	for _, machineFile := range []string{"", "../../tools/bench/machines/shared-rail.toml"} {
+	for _, machineFile := range []string{"", "../../tools/bench/machines/target-fit-0.toml"} {
 		name := "default"
 		if machineFile != "" {
-			name = "shared-rail"
+			name = "target-fit-0"
 		}
 		for _, seed := range []uint64{1, 2, 3} {
 			t.Run(fmt.Sprintf("%s/%d", name, seed), func(t *testing.T) {
