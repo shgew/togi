@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 )
@@ -71,5 +72,39 @@ func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestInMemoryProjectionFailureWarnsAfterStop(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "state.json"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	m, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1, InMemoryJournal: true})
+	if err != nil {
+		t.Fatalf("projection failure must not fail a concluded session: %v", err)
+	}
+	if stop.Reason != session.StopRotations {
+		t.Fatalf("stopped with %+v, want requested rotations", stop)
+	}
+	events, _, err := journal.Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	warning, ok := last.Data.(*journal.SessionWarning)
+	if !ok || warning.Operation != "write state projection" || warning.Error == "" {
+		t.Fatalf("last event = %+v, want projection failure warning", last)
+	}
+	if events[len(events)-2].Kind != journal.KindShutdown {
+		t.Fatalf("event before warning = %s, want shutdown", events[len(events)-2].Kind)
+	}
+	if diff := cmp.Diff([]int{events[len(events)-2].Seq}, last.Cause); diff != "" {
+		t.Fatalf("warning cause (-want +got):\n%s", diff)
 	}
 }

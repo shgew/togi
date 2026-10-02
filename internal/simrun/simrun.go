@@ -156,7 +156,15 @@ func (j *memoryJournal) flush() error {
 	if !j.hasState {
 		return nil
 	}
-	return j.Journal.WriteState(j.state)
+	if err := j.Journal.WriteState(j.state); err != nil {
+		var cause []int
+		if j.state.LastSeq > 0 {
+			cause = []int{j.state.LastSeq}
+		}
+		_, warningErr := j.Append(&journal.SessionWarning{Operation: "write state projection", Error: err.Error()}, cause...)
+		return warningErr
+	}
+	return nil
 }
 
 type untilJournal struct {

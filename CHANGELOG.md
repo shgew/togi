@@ -6,6 +6,7 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ### Changed
 
+- Simulated sessions and benchmarks retain parsed journals across simulated reboots and write the state projection once at stop, reducing persistence overhead without changing successful journal or final-state output ([#273]).
 - Failure-rate bounds in `status` and `cert` state that their 95% claim assumes a constant failure rate on the tested workloads; the numbers and rounding are unchanged ([#237]).
 
 ### Fixed
@@ -17,6 +18,7 @@ All notable changes to togi are documented in this file. The format is based on 
 - Sessions started in the same second receive readable numeric suffixes when an archived journal or trial directory already uses the timestamp; carry traversal orders those suffixes numerically ([#247]).
 - A confirmed defect reset survives interruption: resume completes only the missing resets tied to the recorded answer, without asking again or resetting a core twice ([#249]).
 - Partial journal or state writes are rejected instead of committing incomplete records; after a journal write or fsync error, tuning stops and the next open rebuilds its sequence from surviving complete lines ([#251]).
+- A simulated session whose final state projection cannot be written records a journal warning instead of failing an otherwise concluded run ([#273]).
 
 ## [0.7.0] - 2026-10-02
 
@@ -365,3 +367,4 @@ All notable changes to togi are documented in this file. The format is based on 
 [#247]: https://github.com/shgew/togi/pull/247
 [#249]: https://github.com/shgew/togi/pull/249
 [#251]: https://github.com/shgew/togi/pull/251
+[#273]: https://github.com/shgew/togi/pull/273
