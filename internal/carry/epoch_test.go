@@ -37,7 +37,7 @@ func TestPrepareEvidenceEpochTransition(t *testing.T) {
 				t.Fatal(err)
 			}
 			w := &writer{t: t, j: old, session: "20261001T000000Z"}
-			w.add(&journal.SessionStart{Build: journal.Build{Schema: journal.Schema, Ruleset: 6}, Session: w.session, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}, Evidence: tc.evidence})
+			w.add(&journal.SessionStart{Schema: journal.Schema, Ruleset: 6, Session: w.session, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}, Evidence: tc.evidence})
 			w.add(&journal.SessionContext{BIOSContext: context})
 			factTrial(w, 0, journal.OutcomePass)
 			failure, mark := factTrial(w, 1, journal.OutcomeFailure)
@@ -70,8 +70,7 @@ func TestPrepareEvidenceEpochTransition(t *testing.T) {
 			}
 			c, err := Prepare(j, binary, []defect.Entry{}, current)
 			if tc.refuseUnknown {
-				var unknown *journal.UnknownKindError
-				if !errors.As(err, &unknown) {
+				if _, ok := errors.AsType[*journal.UnknownKindError](err); !ok {
 					t.Fatalf("Prepare = %v, want unknown-kind refusal", err)
 				}
 			} else if err != nil {

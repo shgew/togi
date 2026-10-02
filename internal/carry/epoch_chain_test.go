@@ -20,7 +20,7 @@ func TestInterruptedEpochTransitionRetainsOriginalEdgesAndMarks(t *testing.T) {
 			}
 			a := &writer{t: t, j: old, session: "20261001T000000Z"}
 			cores := []machine.CoreInfo{{Core: 0}, {Core: 1}}
-			a.add(&journal.SessionStart{Build: journal.Build{Schema: journal.Schema, Ruleset: 6}, Evidence: evidence, Session: a.session, Cores: cores})
+			a.add(&journal.SessionStart{Schema: journal.Schema, Ruleset: 6, Evidence: evidence, Session: a.session, Cores: cores})
 			a.add(&journal.SessionContext{BIOSContext: context})
 			factTrial(a, 0, journal.OutcomePass)
 			failure, _ := factTrial(a, 1, journal.OutcomeFailure)
