@@ -41,7 +41,7 @@ JSON version 1 has these fields, all required:
 - `excluded_files`: array of objects with `path` (repository-relative path) and `reason` (string). Empty when all changed files were covered.
 - `files`: array of covered repository-relative paths.
 - `reviewers`: array of objects with `name` (string), `kind` (`agent` or `coderabbit`), `model` (string or null) and `files` (covered paths).
-- `coderabbit`: object with `status` (`reviewed`, `rate_limited`, `paused` or `not_installed`), `head_sha` (full reviewed SHA or null for a skipped review) and `evidence` (review/comment URL, or the installation absence evidence).
+- `coderabbit`: object with `status` (`reviewed`, `rate_limited`, `paused`, `not_installed`, `not_run` or `pending`), `head_sha` (full reviewed SHA, requested SHA for pending, or null for a skipped review) and `evidence` (review/comment URL, owner-request URL for pending, or the installation/trigger evidence). `not_run` means `CodeRabbit: not run (robotogi-authored; runs on owner request)`; an acknowledged owner request instead waits for its head review. `pending` is a blocker, not a successful check.
 - `findings`: array of objects with `source` (reviewer name), `priority` (`P0` through `P3`), `finding` (description), `location` (path and line, or null), `url` (source comment URL or null), and `outcome` (object). An outcome has exactly one of these forms: `{"status":"fixed","sha":"<full sha>"}`, `{"status":"rejected","reason":"<reason>"}`, `{"status":"deferred","issue":123}`.
 - `verdict`: `success` or `blocked`.
 
