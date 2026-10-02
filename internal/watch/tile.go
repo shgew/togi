@@ -187,7 +187,7 @@ func pick(short bool, long, brief string) string {
 	return long
 }
 
-func (t tile) render(width int, m mode) []string {
+func (t tile) render(width int, compact bool) []string {
 	border := phaseColor(t.phase)
 	inner := width - 4
 	num := "--"
@@ -213,7 +213,7 @@ func (t tile) render(width int, m mode) []string {
 	labels = append(labels, label{1, "0", dim}, label{50, "-50", dim})
 
 	var rows []string
-	if m == compact {
+	if compact {
 		rows = append(rows, bold.Render(fmt.Sprintf("%3s", num)))
 	} else {
 		for _, d := range bigDigits(num) {

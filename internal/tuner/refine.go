@@ -111,7 +111,7 @@ func (s *State) roundChecks() []requirement {
 		}
 		for _, regime := range []machine.Regime{machine.R1, machine.R2} {
 			w := machine.Workloads(regime)[index].ID
-			out = append(out, requirement{class: trialClass{regime, w, fmt.Sprint([]int{c.id}), r.start.StartS}, cores: []int{c.id}, core: c.id, offset: p[i], count: r.start.Starts})
+			out = append(out, requirement{class: trialClass{regime, w, coresKey([]int{c.id}), r.start.StartS}, cores: []int{c.id}, core: c.id, offset: p[i], count: r.start.Starts})
 		}
 	}
 	for _, part := range s.parts {
@@ -125,7 +125,7 @@ func (s *State) roundChecks() []requirement {
 		}
 		if needed {
 			w := machine.Workloads(machine.R7)[index].ID
-			out = append(out, requirement{class: trialClass{machine.R7, w, fmt.Sprint(part), r.start.StartS}, cores: slices.Clone(part), count: r.start.Starts})
+			out = append(out, requirement{class: trialClass{machine.R7, w, coresKey(part), r.start.StartS}, cores: slices.Clone(part), count: r.start.Starts})
 		}
 	}
 	return out

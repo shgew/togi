@@ -3,6 +3,7 @@ package tuner
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/shgew/togi/internal/journal"
@@ -34,7 +35,20 @@ func classOf(p *journal.TrialIntent) trialClass {
 		cores = []int{*p.Core}
 	}
 	slices.Sort(cores)
-	return trialClass{p.Regime, p.Workload, fmt.Sprint(cores), p.DurationS}
+	return trialClass{p.Regime, p.Workload, coresKey(cores), p.DurationS}
+}
+
+// coresKey prints cores as fmt.Sprint does, without reflection: class keys are built on every projection.
+func coresKey(cores []int) string {
+	b := make([]byte, 0, 2+3*len(cores))
+	b = append(b, '[')
+	for i, c := range cores {
+		if i > 0 {
+			b = append(b, ' ')
+		}
+		b = strconv.AppendInt(b, int64(c), 10)
+	}
+	return string(append(b, ']'))
 }
 
 func (k trialClass) withDuration(d int) trialClass { k.duration = d; return k }
@@ -71,7 +85,7 @@ const (
 	rotationEvidence
 )
 
-func (r evidenceRule) admits(e entry, since int) bool {
+func (r evidenceRule) admits(e *entry, since int) bool {
 	if e.carried {
 		return r != rotationEvidence
 	}
@@ -80,13 +94,16 @@ func (r evidenceRule) admits(e entry, since int) bool {
 
 func (s *State) latestFailure(k trialClass, p []int, since int) int {
 	last := since
-	for _, e := range s.ledger[k] {
+	entries := s.ledger[k]
+	for i := range entries {
+		e := &entries[i]
 		if !e.pass && e.seq > last && atLeastShallow(e.profile, p) {
 			last = e.seq
 		}
 	}
-	if k.regime == machine.R6 && k.cores == fmt.Sprint(s.ids()) {
-		for _, e := range s.idle {
+	if k.regime == machine.R6 && len(s.idle) > 0 && k.cores == coresKey(s.ids()) {
+		for i := range s.idle {
+			e := &s.idle[i]
 			if e.seq > last && atLeastShallow(e.profile, p) {
 				last = e.seq
 			}
@@ -98,7 +115,9 @@ func (s *State) latestFailure(k trialClass, p []int, since int) int {
 func (s *State) passSeqs(k trialClass, p []int, since int, rule evidenceRule) []int {
 	last := s.latestFailure(k, p, 0)
 	var seqs []int
-	for _, e := range s.ledger[k] {
+	entries := s.ledger[k]
+	for i := range entries {
+		e := &entries[i]
 		if e.pass && rule.admits(e, since) && e.seq > last && atLeastDeep(e.profile, p) {
 			seqs = append(seqs, e.seq)
 		}
@@ -109,7 +128,9 @@ func (s *State) passSeqs(k trialClass, p []int, since int, rule evidenceRule) []
 func (s *State) passes(k trialClass, p []int, since int, rule evidenceRule) int {
 	last := s.latestFailure(k, p, 0)
 	count := 0
-	for _, e := range s.ledger[k] {
+	entries := s.ledger[k]
+	for i := range entries {
+		e := &entries[i]
 		if e.pass && rule.admits(e, since) && e.seq > last && atLeastDeep(e.profile, p) {
 			count++
 		}
@@ -122,14 +143,15 @@ func (s *State) failingSeq(k trialClass, p []int, since int) int {
 		return 0
 	}
 	last := admittedFailure(s.ledger[k], p, since, 0)
-	if k.regime == machine.R6 && k.cores == fmt.Sprint(s.ids()) {
+	if k.regime == machine.R6 && len(s.idle) > 0 && k.cores == coresKey(s.ids()) {
 		last = admittedFailure(s.idle, p, since, last)
 	}
 	return last
 }
 
 func admittedFailure(entries []entry, p []int, since, last int) int {
-	for _, e := range entries {
+	for i := range entries {
+		e := &entries[i]
 		if !e.pass && e.seq > last && allEvidence.admits(e, since) && atLeastShallow(e.profile, p) {
 			last = e.seq
 		}
@@ -214,7 +236,7 @@ func (s *State) recordIdle(ev journal.Event, p *journal.Failure) {
 	var contradicted []int
 	var class trialClass
 	if s.n > 0 {
-		all := fmt.Sprint(s.ids())
+		all := coresKey(s.ids())
 		for k := range s.ledger {
 			if k.regime != machine.R6 || k.cores != all {
 				continue
@@ -230,7 +252,7 @@ func (s *State) recordIdle(ev journal.Event, p *journal.Failure) {
 		s.warningSeq = ev.Seq
 	}
 	cores := s.ids()
-	e := entry{seq: ev.Seq, profile: slices.Clone(p.Profile), class: trialClass{regime: machine.R6, cores: fmt.Sprint(cores)}, cores: cores}
+	e := entry{seq: ev.Seq, profile: slices.Clone(p.Profile), class: trialClass{regime: machine.R6, cores: coresKey(cores)}, cores: cores}
 	if carried, ok := ev.Data.(*journal.FailureCarried); ok {
 		e.carried = true
 		s.carriedSources[ev.Seq] = carried.Source.Session
@@ -296,7 +318,7 @@ func (s *State) queueRerun(ev journal.Event) {
 				return
 			}
 			if f.failure.Trial == "" {
-				k := trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, fmt.Sprint(s.ids()), s.durations.GuardIdleS}
+				k := trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, coresKey(s.ids()), s.durations.GuardIdleS}
 				s.obligations = append(s.obligations, rerun{k, cause})
 				return
 			}

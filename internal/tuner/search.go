@@ -103,7 +103,7 @@ func (s *State) perCore() (Action, bool) {
 		p[s.index(c.id)] = c.offset
 		cause := []int{c.phaseSeq}
 		for j, r := range []machine.Regime{machine.R1, machine.R2} {
-			k := trialClass{regime: r, workload: c.checkWorkloads[j], cores: fmt.Sprint([]int{c.id}), duration: s.durations.SearchTrialS}
+			k := trialClass{regime: r, workload: c.checkWorkloads[j], cores: coresKey([]int{c.id}), duration: s.durations.SearchTrialS}
 			seqs := s.passSeqs(k, p, c.phaseSeq, edgeEvidence)
 			if len(seqs) < s.n {
 				return s.searchTrial(c, r, c.checkWorkloads[j]), true

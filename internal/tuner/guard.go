@@ -100,7 +100,7 @@ func (s *State) requirements(step int) []requirement {
 	w := machine.Workloads(r)[occurrence%len(machine.Workloads(r))].ID
 	var req []requirement
 	add := func(cores []int, d, count int, core, offset int) {
-		k := trialClass{r, w, fmt.Sprint(cores), d}
+		k := trialClass{r, w, coresKey(cores), d}
 		total := count
 		for i := 0; i <= step; i++ {
 			if i == step {
@@ -338,14 +338,14 @@ func (s *State) afterReruns(a Action) Action {
 func (s *State) rerunTrial(k trialClass) Action {
 	t := Trial{Regime: k.regime, Workload: k.workload, Phase: journal.PhaseGuard, Condition: machine.Resident, DurationS: k.duration, Rerun: true}
 	for _, part := range append(s.parts, []int{}) {
-		if fmt.Sprint(part) == k.cores {
+		if coresKey(part) == k.cores {
 			t.Cores = slices.Clone(part)
 			break
 		}
 	}
 	if len(t.Cores) == 0 {
 		for _, c := range s.cores {
-			if fmt.Sprint([]int{c.id}) == k.cores {
+			if coresKey([]int{c.id}) == k.cores {
 				t.Core, t.Offset = c.id, c.offset
 				break
 			}

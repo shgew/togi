@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/shgew/togi/internal/machine"
@@ -23,21 +25,53 @@ type trialSamples struct {
 
 func (s trialSamples) conditions() iter.Seq[machine.TrialConditions] {
 	return func(yield func(machine.TrialConditions) bool) {
-		stallAt := max(time.Second, s.ran-2*time.Second)
 		for at := time.Second; at < s.ran; at += time.Second {
 			p := machine.TrialConditions{ElapsedMS: at.Milliseconds(), WorkerCPUMS: make(map[int]int64, len(s.spec.Cores))}
 			for _, core := range s.spec.Cores {
-				cpu := at
-				if core == s.stalledCore {
-					cpu = min(cpu, stallAt)
-				}
-				p.WorkerCPUMS[core] = cpu.Milliseconds() * int64(s.spec.Workload.Threads)
+				p.WorkerCPUMS[core] = s.workerCPUMS(core, at)
 			}
 			if !yield(p) {
 				return
 			}
 		}
 	}
+}
+
+func (s trialSamples) workerCPUMS(core int, at time.Duration) int64 {
+	if core == s.stalledCore {
+		at = min(at, max(time.Second, s.ran-2*time.Second))
+	}
+	return at.Milliseconds() * int64(s.spec.Workload.Threads)
+}
+
+// appendLines writes what json.Encoder writes for conditions: the map keys sort as strings.
+func (s trialSamples) appendLines(w *bufio.Writer) error {
+	cores := slices.Clone(s.spec.Cores)
+	slices.SortFunc(cores, func(a, b int) int { return strings.Compare(strconv.Itoa(a), strconv.Itoa(b)) })
+	cores = slices.Compact(cores)
+	var b []byte
+	for at := time.Second; at < s.ran; at += time.Second {
+		b = append(b[:0], `{"elapsed_ms":`...)
+		b = strconv.AppendInt(b, at.Milliseconds(), 10)
+		if len(cores) > 0 {
+			b = append(b, `,"worker_cpu_ms":{`...)
+			for i, core := range cores {
+				if i > 0 {
+					b = append(b, ',')
+				}
+				b = append(b, '"')
+				b = strconv.AppendInt(b, int64(core), 10)
+				b = append(b, `":`...)
+				b = strconv.AppendInt(b, s.workerCPUMS(core, at), 10)
+			}
+			b = append(b, '}')
+		}
+		b = append(b, "}\n"...)
+		if _, err := w.Write(b); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m *Machine) PMTable() *machine.PMTable { return nil }
@@ -91,11 +125,10 @@ func (r *running) sampleConditions(ran time.Duration, stalledCore int) error {
 	if err != nil {
 		return fmt.Errorf("create simulated samples: %w", err)
 	}
-	encoder := json.NewEncoder(f)
-	for p := range samples.conditions() {
-		if err = encoder.Encode(p); err != nil {
-			break
-		}
+	w := bufio.NewWriter(f)
+	err = samples.appendLines(w)
+	if err == nil {
+		err = w.Flush()
 	}
 	closeErr := f.Close()
 	if err == nil {

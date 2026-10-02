@@ -127,10 +127,11 @@ func Render(s Snapshot, w, h int, now time.Time) string {
 		}
 		return fit(f.lines, screen, h)
 	}
+	drawn := map[drawnTile][]string{}
 	for _, m := range []mode{roomy, medium, compact} {
 		f = frame{mode: m}
 		s.top(&f, width, pad, now)
-		s.board(&f, l)
+		s.board(&f, l, drawn)
 		f.add(pad + s.legend())
 		if len(f.lines)+3 <= h-1 {
 			break
@@ -318,7 +319,13 @@ func (s Snapshot) turnOrder() string {
 	return out
 }
 
-func (s Snapshot) board(f *frame, l layout) {
+// drawnTile identifies a tile's rendered lines, which Render reuses across the modes it tries.
+type drawnTile struct {
+	tile, width int
+	compact     bool
+}
+
+func (s Snapshot) board(f *frame, l layout, drawn map[drawnTile][]string) {
 	pad := strings.Repeat(" ", l.margin)
 	var ccds []int
 	for _, t := range s.tiles {
@@ -331,16 +338,22 @@ func (s Snapshot) board(f *frame, l layout) {
 	for ci, ccd := range ccds {
 		f.add(pad + bold.Render(fmt.Sprintf("CCD %d", ccd)))
 		f.air(1, 0)
-		var group []tile
-		for _, t := range s.tiles {
+		var group []int
+		for i, t := range s.tiles {
 			if t.ccd == ccd {
-				group = append(group, t)
+				group = append(group, i)
 			}
 		}
 		for r := 0; r < len(group); r += cols {
 			var lines []string
-			for i, t := range group[r:min(r+cols, len(group))] {
-				for j, ln := range t.render(l.widths[i], f.mode) {
+			for i, ti := range group[r:min(r+cols, len(group))] {
+				key := drawnTile{tile: ti, width: l.widths[i], compact: f.mode == compact}
+				tl, ok := drawn[key]
+				if !ok {
+					tl = s.tiles[ti].render(key.width, key.compact)
+					drawn[key] = tl
+				}
+				for j, ln := range tl {
 					if i == 0 {
 						lines = append(lines, pad+ln)
 					} else {

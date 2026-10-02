@@ -26,9 +26,10 @@ type hunt struct {
 }
 
 func (s *State) openHunt(e journal.Event, p *journal.HuntStart) {
-	s.hunt = &hunt{start: p, seq: e.Seq, class: trialClass{p.Regime, p.Workload, fmt.Sprint(p.Cores), p.DurationS}}
+	s.hunt = &hunt{start: p, seq: e.Seq, class: trialClass{p.Regime, p.Workload, coresKey(p.Cores), p.DurationS}}
 	s.nextHunt = max(s.nextHunt, p.Hunt)
 	s.lastPlanSeq = e.Seq
+	s.projectionDirty = true
 	if len(s.queue) > 0 && s.queue[0].seq == p.Failure {
 		s.queue = s.queue[1:]
 	}
@@ -42,6 +43,7 @@ func (s *State) recordMask(e journal.Event, p *journal.HuntMask) {
 		} else {
 			h.masks = append(h.masks, m)
 		}
+		s.projectionDirty = true
 	}
 }
 
@@ -106,14 +108,14 @@ func (s *State) huntStartNext() Action {
 	}
 	var cores []int
 	for _, id := range s.ids() {
-		if f.class.cores == fmt.Sprint([]int{id}) {
+		if f.class.cores == coresKey([]int{id}) {
 			cores = []int{id}
 			break
 		}
 	}
 	if cores == nil {
 		for _, part := range s.parts {
-			if fmt.Sprint(part) == f.class.cores {
+			if coresKey(part) == f.class.cores {
 				cores = slices.Clone(part)
 				break
 			}
@@ -684,6 +686,9 @@ func (s *State) projectHunt() *journal.HuntState {
 	if h == nil {
 		return nil
 	}
+	if !s.projectionDirty && s.projectedHunt != nil {
+		return s.projectedHunt
+	}
 	p := h.start
 	out := &journal.HuntState{Hunt: p.Hunt, Seq: h.seq, Failure: p.Failure, Regime: p.Regime, Trial: p.Trial, Anchor: slices.Clone(p.Anchor), AnchorSeq: p.AnchorSeq, Candidates: slices.Clone(p.Candidates)}
 	for _, m := range h.masks {
@@ -700,5 +705,6 @@ func (s *State) projectHunt() *journal.HuntState {
 		out.Masks = append(out.Masks, state)
 		out.Escalated = m.payload.Escalated
 	}
+	s.projectedHunt = out
 	return out
 }
