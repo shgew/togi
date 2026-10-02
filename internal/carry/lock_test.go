@@ -3,9 +3,12 @@ package carry
 import (
 	"bytes"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/journal"
@@ -77,5 +80,78 @@ func TestTransitionLockPrecedesPreparation(t *testing.T) {
 	markers, err := filepath.Glob(filepath.Join(dir, "archive", "*-carry-pending"))
 	if err != nil || len(markers) != 1 {
 		t.Fatalf("carry markers: %v, %v", markers, err)
+	}
+}
+
+func TestTransitionRefusesCorruptCurrentSchemaWithoutMutation(t *testing.T) {
+	for _, corruption := range []string{"malformed complete line", "discontinuous sequence"} {
+		t.Run(corruption, func(t *testing.T) {
+			dir := t.TempDir()
+			old := newJournal(t, dir, "A", 3, &context)
+			old.fail(0, -20, "isolated", journal.Attributed)
+			old.close()
+			path := filepath.Join(dir, "events.jsonl")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch corruption {
+			case "malformed complete line":
+				data = append(data, "{\"seq\":6,\"kind\":\"trial.end\"\n"...)
+			case "discontinuous sequence":
+				data = bytes.Replace(data, []byte(`"seq":3`), []byte(`"seq":99`), 1)
+			}
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for _, file := range []string{"trials/0001/result", "state.json", "archive/previous.jsonl", "archive/previous-carry-pending"} {
+				path := filepath.Join(dir, file)
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(file), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			snapshot := func() map[string]string {
+				t.Helper()
+				files := map[string]string{}
+				for _, root := range []string{"events.jsonl", "trials", "state.json", "archive"} {
+					err := filepath.WalkDir(filepath.Join(dir, root), func(path string, entry fs.DirEntry, err error) error {
+						if errors.Is(err, fs.ErrNotExist) {
+							return nil
+						}
+						if err != nil {
+							return err
+						}
+						rel, err := filepath.Rel(dir, path)
+						if err != nil {
+							return err
+						}
+						if entry.IsDir() {
+							files[rel] = "<directory>"
+							return nil
+						}
+						data, err := os.ReadFile(path)
+						if err != nil {
+							return err
+						}
+						files[rel] = string(data)
+						return nil
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				return files
+			}
+			before := snapshot()
+			if carried, err := prepareWithContext(dir, []defect.Entry{}, nil); err == nil {
+				t.Errorf("corrupt current-schema transition accepted: %+v", carried)
+			}
+			if diff := cmp.Diff(before, snapshot()); diff != "" {
+				t.Errorf("corrupt transition mutated evidence (-before +after):\n%s", diff)
+			}
+		})
 	}
 }
