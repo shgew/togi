@@ -4,6 +4,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-02
+
 ### Changed
 
 - **BREAKING** The next `togi run` archives a ruleset-5 session and starts a ruleset-6 session with carried candidate edges and eligible same-BIOS failed marks, but no joint marks or passed rotations. Hunts can start at the longer failed duration when sufficient valid short starts cover the failing profile and no short-or-shorter failure in that regime has occurred since reset ([#243]).
@@ -259,6 +261,8 @@ All notable changes to togi are documented in this file. The format is based on 
 [0.6.0]: https://github.com/shgew/togi/releases/tag/v0.6.0
 
 [0.6.1]: https://github.com/shgew/togi/releases/tag/v0.6.1
+
+[0.7.0]: https://github.com/shgew/togi/releases/tag/v0.7.0
 
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
