@@ -267,3 +267,21 @@ not-json
 		})
 	}
 }
+
+func TestUnstampedConfigKeepsRecordedBuild(t *testing.T) {
+	t.Parallel()
+	build := journal.Build{Schema: 1, Ruleset: 1}
+	events := []journal.Event{
+		{Seq: 1, Data: &journal.SessionStart{Build: build, Session: "old", Cores: []machine.CoreInfo{{Core: 0}}}},
+		{Seq: 2, Data: &journal.ConfigLoaded{}},
+		{Seq: 3, Data: &journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-10), Regime: machine.R1, Workload: "one", DurationS: 90, Condition: machine.Isolated}},
+		{Seq: 4, Data: &journal.TrialEnd{Trial: "one", Outcome: journal.OutcomePass, DurationS: 90}},
+	}
+	s := FromEvents(events)
+	if diff := cmp.Diff([]journal.Build{build}, s.Builds); diff != "" {
+		t.Fatalf("recorded builds (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(build, s.Facts[0].Build); diff != "" {
+		t.Fatalf("trial provenance (-want +got):\n%s", diff)
+	}
+}

@@ -167,6 +167,9 @@ func FromEvents(events []journal.Event) Session {
 			context := p.BIOSContext
 			s.Context = &context
 		case *journal.ConfigLoaded:
+			if p.Version == "" {
+				continue
+			}
 			build = normalizedBuild(p.Build)
 			if !slices.Contains(s.Builds, build) {
 				s.Builds = append(s.Builds, build)
