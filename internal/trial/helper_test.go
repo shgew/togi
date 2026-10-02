@@ -310,7 +310,8 @@ func TestHelperProcess(t *testing.T) {
 
 func testCPUs(t *testing.T) []int {
 	t.Helper()
-	b, err := os.ReadFile("/proc/self/status")
+	// Another goroutine may temporarily pin the process leader while launching a helper.
+	b, err := os.ReadFile("/proc/thread-self/status")
 	if err != nil {
 		t.Fatal(err)
 	}
