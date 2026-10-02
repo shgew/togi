@@ -28,7 +28,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 Every change, docs included, lands as a pull request against `main` on `github.com/shgew/togi`, or as a layer of a stack of pull requests that ends on `main`. The owner merges; agents merge only when the owner asks. When a change is done, open its pull request without asking, unless told otherwise. The one commit that reaches `main` without a pull request is the release commit the release workflow pushes (`docs/releasing.md`).
 
 - Branch from `main` with a short descriptive name; in a stack, each layer above the bottom branches from the layer below.
-- Agents act on GitHub as `robotogi[bot]` through `just bot`: open pull requests, comment, reply, resolve threads, post check runs and perform merges the owner asked for. Set `ROBOTOGI_KEY_FILE` to the App's PEM private key file path in the environment.
+- Agents act on GitHub with the owner's account through `gh`: open pull requests, push, comment, reply, resolve threads and perform merges the owner asked for. `robotogi[bot]` only posts reviews: the review record and the `review` check, through `just bot`. Set `ROBOTOGI_KEY_FILE` to the App's PEM private key file path in the environment.
 - Plan the pull requests while designing the implementation, before writing code. Divide the work into logical pull requests, each one concern that a reviewer can read in one sitting: a behavior-preserving refactor apart from the change it enables, a new seam apart from the behavior built on it. Big pull requests slow review down far more than their size suggests; the 100-file cap below is a ceiling, not a target. Pull requests that depend on each other land as a stack.
 - A pull request changes at most 100 files, not counting `go.sum`, `flake.lock` and files under `testdata/`.
 - Stacked pull requests always use [`gh stack`](https://github.com/github/gh-stack) (`gh extension install github/gh-stack`): each layer is a branch with its own pull request based on the layer below, a lower layer holds what the ones above depend on, and every layer passes `just check` on its own. Open the stack with `gh stack submit`, keep it current with `gh stack sync`, and merge it with `gh stack merge`, never layer by layer by hand.
@@ -74,7 +74,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | Command | Use |
 |---|---|
 | `just` | List the recipes |
-| `just bot <gh args>` | Run GitHub commands as robotogi, using the private key file named by `ROBOTOGI_KEY_FILE` |
+| `just bot <gh args>` | Post review records and `review` checks as robotogi, using the private key file named by `ROBOTOGI_KEY_FILE` |
 | `just test` | The tight loop |
 | `just gate` | Lint, the `fmt` flake check over tracked files, then tests: the quick check before handing off |
 | `just check` | Every flake check, what CI runs on every pull request and push to `main`: package (its tests run shuffled, with the integration tests on Linux), race (trial, session, journal and watch under the race detector), lint, fmt and, on Linux, the VM tests `vm` (the tuning boot) and `vm-restart-limit`. Must pass before a pull request |
