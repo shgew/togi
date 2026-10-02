@@ -343,7 +343,7 @@ func TestRunReportsConstructionError(t *testing.T) {
 }
 
 func TestReadOnlyCommandsDoNotTakeHostLock(t *testing.T) {
-	for _, args := range [][]string{{"status"}, {"cert"}, {"events"}, {"watch", "--width", "120", "--height", "33"}} {
+	for _, args := range [][]string{{"status"}, {"events"}, {"watch", "--width", "120", "--height", "33"}} {
 		t.Run(args[0], func(t *testing.T) {
 			g := testGlobals(t)
 			g.stateDir = resetCandidateFixture(t, -10)

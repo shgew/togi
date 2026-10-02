@@ -66,25 +66,6 @@ func StyleOf(e Event) Style {
 		}
 	case *BackendRetry:
 		return Dim
-	case *TierChange:
-		order := func(t Tier) int {
-			switch t {
-			case TierNone:
-				return 0
-			case TierBronze:
-				return 1
-			case TierSilver:
-				return 2
-			case TierGold:
-				return 3
-			case TierPlatinum:
-				return 4
-			}
-			return 0
-		}
-		if order(p.To) > order(p.From) {
-			return GreenBold
-		}
 	}
 	return Plain
 }

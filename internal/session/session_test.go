@@ -80,7 +80,7 @@ func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Jo
 }
 
 // memState stands in for state.json: rewriting a file after every event dominates these tests on
-// copy-on-write filesystems, and the file itself is covered by the journal package and simrun's TestSixteenCoresReachBronze.
+// copy-on-write filesystems, and the file itself is covered by the journal package and simrun's TestSixteenCoresReachQualifiedRotation.
 type memState struct {
 	mu   sync.Mutex
 	data []byte
@@ -212,7 +212,7 @@ func summary(t *testing.T, dir string) string {
 		out += fmt.Sprintf(" core %d %s;", c.Core, coreSummary{c.Phase, c.Offset, c.Pass, c.FailedMark})
 	}
 	if g := st.Guard; g != nil {
-		out += fmt.Sprintf(" guard rotation %d, clean rotations %d, clean %d s", g.Rotation, g.CleanRotations, g.CleanS)
+		out += fmt.Sprintf(" guard rotation %d, qualified rotations %d, last qualified rotation %d, exposure %v", g.Rotation, g.CleanRotations, g.LastQualifiedRotation, g.Exposure)
 	}
 	return out
 }

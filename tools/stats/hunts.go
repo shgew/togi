@@ -127,6 +127,7 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 	for _, k := range keys(warnings) {
 		tab.row("%s\t%d", k, warnings[k])
 	}
+	tab.row("decisions resting on a single carried failure\t%d", singleCarriedFailureDecisions(events, since))
 	tab.section("Failures after prior passes", "trial class\tfailures with prior passes")
 	contradictions := map[string]int{}
 	for _, t := range p.trials {
@@ -187,6 +188,56 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 		s := summary[k]
 		tab.row("%s\t%d\t%d\t%d\t%d\t%d\t%.3f", k, s.masks, s.established, s.passed, s.failed, s.trials, float64(s.seconds)/3600)
 	}
+}
+
+func singleCarriedFailureDecisions(events []journal.Event, since time.Time) int {
+	failures := make(map[int]bool)
+	count := 0
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.TrialCarried:
+			if p.Outcome == journal.OutcomeFailure {
+				failures[e.Seq] = true
+			}
+		case *journal.FailureCarried:
+			failures[e.Seq] = true
+		case *journal.Failure:
+			failures[e.Seq] = false
+		case *journal.TrialEnd:
+			if p.Outcome == journal.OutcomeFailure {
+				failures[e.Seq] = false
+			}
+		}
+		if !selected(e.Time, since) {
+			continue
+		}
+		switch p := e.Data.(type) {
+		case *journal.TunerDecision:
+			if p.Decision != journal.Backoff {
+				continue
+			}
+		case *journal.HuntMask:
+			if p.Inferred != "failure" {
+				continue
+			}
+		default:
+			continue
+		}
+		n, carried := 0, false
+		for i, seq := range e.Cause {
+			if slices.Contains(e.Cause[:i], seq) {
+				continue
+			}
+			if sourceCarried, ok := failures[seq]; ok {
+				n++
+				carried = sourceCarried
+			}
+		}
+		if n == 1 && carried {
+			count++
+		}
+	}
+	return count
 }
 
 type depthCount struct{ starts, failures int }

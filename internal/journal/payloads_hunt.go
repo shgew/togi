@@ -42,6 +42,7 @@ type HuntStart struct {
 	Miss       float64        `json:"miss"`
 	Rate       float64        `json:"rate"`
 	Ranking    []int          `json:"ranking"`
+	Reason     string         `json:"reason,omitempty"`
 }
 
 func (*HuntStart) Kind() Kind { return KindHuntStart }
@@ -54,7 +55,11 @@ func (p *HuntStart) Message() string {
 	if p.AnchorSeq != 0 {
 		anchor = fmt.Sprintf("rotation end #%d", p.AnchorSeq)
 	}
-	return fmt.Sprintf("hunt %d: unattributed failure in %s; anchor from %s; candidates %s; masks of %d × %ds", p.Hunt, source, anchor, coreList(p.Candidates), p.Starts, p.StartS)
+	msg := fmt.Sprintf("hunt %d: unattributed failure in %s; anchor from %s; candidates %s; masks of %d × %ds", p.Hunt, source, anchor, coreList(p.Candidates), p.Starts, p.StartS)
+	if p.Reason != "" {
+		msg += "; " + p.Reason
+	}
+	return msg
 }
 
 type HuntMask struct {
@@ -94,7 +99,11 @@ func (p *HuntMask) Message() string {
 	if p.Edge != nil {
 		prefix += ","
 	}
-	return fmt.Sprintf("%s %s; starts of %ds", prefix, running, p.DurationS)
+	message := fmt.Sprintf("%s %s; starts of %ds", prefix, running, p.DurationS)
+	if p.Reason != "" {
+		message += "; " + p.Reason
+	}
+	return message
 }
 
 type HuntEnd struct {
@@ -116,6 +125,9 @@ func (p *HuntEnd) Message() string {
 	case p.Result == "direct" && len(p.Cores) == 1:
 		return fmt.Sprintf("hunt %d ended after %s: core %s was attributed directly (%s)", p.Hunt, masks, coreID(p.Cores[0]), p.Reason)
 	case len(p.Cores) == 1:
+		if p.Reason != "" {
+			return fmt.Sprintf("hunt %d found core %s after %s (%s)", p.Hunt, coreID(p.Cores[0]), masks, p.Reason)
+		}
 		return fmt.Sprintf("hunt %d found core %s after %s", p.Hunt, coreID(p.Cores[0]), masks)
 	}
 	return fmt.Sprintf("hunt %d %s: cores %s after %s (%s)", p.Hunt, p.Result, coreList(p.Cores), masks, p.Reason)
@@ -179,12 +191,12 @@ func (*RefineRound) Kind() Kind { return KindRefineRound }
 func (p *RefineRound) Message() string {
 	if p.Event == RotationStart {
 		if len(p.Cores) == 1 {
-			return fmt.Sprintf("refine round %d start: core %s toward %v", p.Round, coreID(p.Cores[0]), p.Target)
+			return fmt.Sprintf("refine round %d start: core %s toward %v%s", p.Round, coreID(p.Cores[0]), p.Target, p.Reason)
 		}
-		return fmt.Sprintf("refine round %d start: %d cores toward %v", p.Round, len(p.Cores), p.Target)
+		return fmt.Sprintf("refine round %d start: %d cores toward %v%s", p.Round, len(p.Cores), p.Target, p.Reason)
 	}
 	if p.Passed {
-		return fmt.Sprintf("refine round %d end: passed", p.Round)
+		return fmt.Sprintf("refine round %d end: passed%s", p.Round, p.Reason)
 	}
 	return fmt.Sprintf("refine round %d end: %s", p.Round, p.Reason)
 }
@@ -198,6 +210,9 @@ type TunerWarning struct {
 
 func (*TunerWarning) Kind() Kind { return KindTunerWarning }
 func (p *TunerWarning) Message() string {
+	if p.Detail != "" {
+		return fmt.Sprintf("%s: %s", p.Warning, p.Detail)
+	}
 	if p.Trial == "" {
 		return fmt.Sprintf("%s: idle failure on a profile at least as shallow as %d passes in an all-core R6 class", p.Warning, len(p.Passes))
 	}

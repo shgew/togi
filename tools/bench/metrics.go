@@ -4,34 +4,40 @@ import (
 	"slices"
 	"time"
 
+	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/tuner"
+	"github.com/shgew/togi/tools/modelcheck"
 )
 
 type result struct {
-	Scenario            string                     `json:"scenario"`
-	Seed                uint64                     `json:"seed"`
-	Split               string                     `json:"split"`
-	Commit              string                     `json:"commit"`
-	Dirty               bool                       `json:"dirty"`
-	Ruleset             int                        `json:"ruleset"`
-	Status              string                     `json:"status"`
-	ExitCode            int                        `json:"exit_code"`
-	WallS               float64                    `json:"wall_s"`
-	SimHours            float64                    `json:"sim_hours"`
-	FirstCleanRotationH *float64                   `json:"first_clean_rotation_h"`
-	BronzeH             *float64                   `json:"bronze_h"`
-	Crashes             int                        `json:"crashes"`
-	Trials              int                        `json:"trials"`
-	TrialHours          float64                    `json:"trial_hours"`
-	Hunts               int                        `json:"hunts"`
-	JointMarks          int                        `json:"joint_marks"`
-	FinalProfile        []int                      `json:"final_profile"`
-	Depth               int                        `json:"depth"`
-	HazardPerH          map[machine.Regime]float64 `json:"hazard_per_h"`
-	HazardMaxPerH       float64                    `json:"hazard_max_per_h"`
+	Scenario                string                     `json:"scenario"`
+	Machine                 string                     `json:"machine"`
+	Seed                    uint64                     `json:"seed"`
+	Split                   string                     `json:"split"`
+	Commit                  string                     `json:"commit"`
+	Dirty                   bool                       `json:"dirty"`
+	Ruleset                 int                        `json:"ruleset"`
+	Status                  string                     `json:"status"`
+	ModelCheck              *modelcheck.Result         `json:"model_check,omitempty"`
+	ExitCode                int                        `json:"exit_code"`
+	WallS                   float64                    `json:"wall_s"`
+	SimHours                float64                    `json:"sim_hours"`
+	FirstCleanRotationH     *float64                   `json:"first_clean_rotation_h"`
+	Crashes                 int                        `json:"crashes"`
+	Trials                  int                        `json:"trials"`
+	RealAnswers             int                        `json:"real_answers"`
+	RealAnswerShare         float64                    `json:"real_answer_share"`
+	ScenarioRealAnswerShare float64                    `json:"scenario_real_answer_share"`
+	TrialHours              float64                    `json:"trial_hours"`
+	Hunts                   int                        `json:"hunts"`
+	JointMarks              int                        `json:"joint_marks"`
+	FinalProfile            []int                      `json:"final_profile"`
+	Depth                   int                        `json:"depth"`
+	HazardPerH              map[machine.Regime]float64 `json:"hazard_per_h"`
+	HazardMaxPerH           float64                    `json:"hazard_max_per_h"`
 }
 
 func metrics(events []journal.Event, m *sim.Machine, cores int) result {
@@ -65,10 +71,6 @@ func metrics(events []journal.Event, m *sim.Machine, cores int) result {
 			if p.Clean && r.FirstCleanRotationH == nil {
 				r.FirstCleanRotationH = new(h)
 			}
-		case *journal.TierChange:
-			if p.To == journal.TierBronze && r.BronzeH == nil {
-				r.BronzeH = new(h)
-			}
 		case *journal.CrashDetected:
 			r.Crashes++
 		case *journal.TrialEnd:
@@ -80,6 +82,18 @@ func metrics(events []journal.Event, m *sim.Machine, cores int) result {
 			r.JointMarks++
 		}
 	}
+	for _, trial := range facts.FromEvents(events).Trials {
+		if !trial.Started || trial.End == nil || (trial.End.Outcome != journal.OutcomePass && trial.End.Outcome != journal.OutcomeFailure) {
+			continue
+		}
+		intent := trial.Intent
+		class := facts.ClassOf(intent)
+		spec := machine.TrialSpec{Regime: class.Regime, Workload: machine.Workload{ID: class.Workload}, Cores: class.Cores, Duration: time.Duration(class.DurationS) * time.Second}
+		if m.HasRealAnswer(intent.Profile, spec) {
+			r.RealAnswers++
+		}
+	}
+	r.RealAnswerShare = answerShare(r.RealAnswers, r.Trials)
 	loaded := make([]int, cores)
 	for i := range loaded {
 		loaded[i] = i
@@ -104,4 +118,26 @@ func runStatus(exit int, timedOut bool, events []journal.Event, log string) stri
 		return "deadend"
 	}
 	return "error"
+}
+
+func answerShare(real, trials int) float64 {
+	if trials == 0 {
+		return 0
+	}
+	return float64(real) / float64(trials)
+}
+
+func setScenarioShares(results []result) {
+	type counts struct{ real, trials int }
+	totals := make(map[string]counts)
+	for _, r := range results {
+		c := totals[r.Scenario]
+		c.real += r.RealAnswers
+		c.trials += r.Trials
+		totals[r.Scenario] = c
+	}
+	for i := range results {
+		c := totals[results[i].Scenario]
+		results[i].ScenarioRealAnswerShare = answerShare(c.real, c.trials)
+	}
 }

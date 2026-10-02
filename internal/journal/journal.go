@@ -155,6 +155,9 @@ func (j *Journal) DropPendingCarry() (string, error) {
 	if err != nil || id == "" {
 		return id, err
 	}
+	if err := j.MarkResetAll(); err != nil {
+		return "", err
+	}
 	if err := j.ClearPendingCarry(); err != nil {
 		return "", err
 	}
@@ -226,6 +229,10 @@ func (j *Journal) finishPendingArchive() (string, error) {
 }
 
 func parse(data []byte, binary Build) (events []Event, end int, err error) {
+	return parseEvents(data, binary, false)
+}
+
+func parseEvents(data []byte, binary Build, history bool) (events []Event, end int, err error) {
 	for {
 		i := bytes.IndexByte(data[end:], '\n')
 		if i < 0 {
@@ -241,7 +248,10 @@ func parse(data []byte, binary Build) (events []Event, end int, err error) {
 			if err := json.Unmarshal(line, &first); err != nil {
 				return nil, 0, fmt.Errorf("journal line 1: %w", err)
 			}
-			if first.Kind == KindSessionStart {
+			if history && (first.Schema < 1 || first.Schema > Schema) {
+				return nil, 0, fmt.Errorf("journal schema %d cannot be read by schema %d", first.Schema, Schema)
+			}
+			if first.Kind == KindSessionStart && !history {
 				if binary.Schema == 0 {
 					binary = binarySchemaBuild()
 				}
@@ -261,7 +271,7 @@ func parse(data []byte, binary Build) (events []Event, end int, err error) {
 				}
 			}
 		}
-		e, err := decode(line)
+		e, err := decodeEvent(line, history)
 		if err != nil {
 			return nil, 0, fmt.Errorf("journal line %d: %w", n, err)
 		}
@@ -297,10 +307,30 @@ func ReadFile(path string) (events []Event, torn []byte, err error) {
 	return events, torn, nil
 }
 
+// ReadHistory reads all understood events from shipped schemas without enforcing
+// resume compatibility. Unknown kinds remain opaque and a torn tail is ignored.
+// ConfigLoaded retains only its build stamp, not its historical configuration.
+func ReadHistory(path string) ([]Event, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read journal %s: %w", path, err)
+	}
+	events, _, err := parseEvents(data, Build{}, true)
+	if err != nil {
+		return nil, fmt.Errorf("read journal %s: %w", path, err)
+	}
+	return events, nil
+}
+
 var carryKinds = map[Kind]bool{
 	KindSessionStart:   true,
 	KindSessionContext: true,
 	KindSessionCarried: true,
+	KindTrialCarried:   true,
+	KindFailureCarried: true,
+	KindProfileApplied: true,
+	KindProfileChange:  true,
+	KindSMUReadback:    true,
 	KindTrialIntent:    true,
 	KindTrialEnd:       true,
 	KindTrialProgress:  true,

@@ -12,7 +12,7 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
-func TestSixteenCoresReachBronze(t *testing.T) {
+func TestSixteenCoresReachQualifiedRotation(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	m, err := sim.New(sim.Config{Seed: 1})
@@ -30,8 +30,8 @@ func TestSixteenCoresReachBronze(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(st.Cores) != 16 || st.Refine != nil || st.Tier != journal.TierBronze {
-		t.Fatalf("state has %d cores, refine %+v, tier %s", len(st.Cores), st.Refine, st.Tier)
+	if len(st.Cores) != 16 || st.Refine != nil || st.Guard == nil || st.Guard.CleanRotations == 0 {
+		t.Fatalf("state has %d cores, refine %+v, guard %+v", len(st.Cores), st.Refine, st.Guard)
 	}
 	for _, c := range st.Cores {
 		if c.Phase != journal.PhaseDone {

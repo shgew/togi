@@ -119,13 +119,18 @@ func (p *SessionWarning) Message() string {
 
 type SessionStart struct {
 	Build
-	Session string             `json:"session"`
-	Cores   []machine.CoreInfo `json:"cores"`
+	Session  string             `json:"session"`
+	Cores    []machine.CoreInfo `json:"cores"`
+	Evidence int                `json:"evidence,omitempty"`
 }
 
 func (*SessionStart) Kind() Kind { return KindSessionStart }
 func (p *SessionStart) Message() string {
 	return fmt.Sprintf("session %s started by %s (schema %d, ruleset %d, fixes %d, %d cores)", p.Session, p.name(), p.Schema, p.Ruleset, p.Fixes, len(p.Cores))
+}
+
+func (p *SessionStart) Epoch() int {
+	return evidenceEpoch(p.Ruleset, p.Evidence)
 }
 
 type SessionContext struct {
@@ -553,18 +558,24 @@ func (p *TrialEnd) Message() string {
 }
 
 type Failure struct {
-	Signal      machine.Signal    `json:"signal"`
-	Attribution Attribution       `json:"attribution"`
-	Core        *int              `json:"core,omitempty"`
-	Offset      *int              `json:"offset,omitempty"`
-	Trial       string            `json:"trial,omitempty"`
-	Regime      machine.Regime    `json:"regime,omitempty"`
-	Condition   machine.Condition `json:"condition,omitempty"`
-	Profile     []int             `json:"profile,omitempty"`
+	Signal       machine.Signal    `json:"signal"`
+	Attribution  Attribution       `json:"attribution"`
+	Core         *int              `json:"core,omitempty"`
+	Offset       *int              `json:"offset,omitempty"`
+	Trial        string            `json:"trial,omitempty"`
+	Regime       machine.Regime    `json:"regime,omitempty"`
+	Condition    machine.Condition `json:"condition,omitempty"`
+	Profile      []int             `json:"profile,omitempty"`
+	KnownFailure int               `json:"known_failure,omitempty"`
+	Reason       string            `json:"reason,omitempty"`
+	Round        int               `json:"round,omitempty"`
 }
 
 func (*Failure) Kind() Kind { return KindFailure }
 func (p *Failure) Message() string {
+	if p.KnownFailure != 0 {
+		return p.Reason
+	}
 	loaded := p.Condition == machine.Resident || p.Condition == machine.Masked
 	switch p.Attribution {
 	case Attributed:
@@ -735,35 +746,14 @@ func (p *GuardRotation) Message() string {
 		for i, r := range p.Steps {
 			steps[i] = string(r)
 		}
-		return fmt.Sprintf("guard rotation %d start: %s", p.Rotation, strings.Join(steps, " "))
+		return fmt.Sprintf("guard rotation %d start: %s%s", p.Rotation, strings.Join(steps, " "), p.Reason)
 	case RotationEnd:
 		if p.Clean {
-			return fmt.Sprintf("guard rotation %d end clean", p.Rotation)
+			return fmt.Sprintf("guard rotation %d end clean%s", p.Rotation, p.Reason)
 		}
 		return fmt.Sprintf("guard rotation %d end, not clean: %s", p.Rotation, p.Reason)
 	}
 	return fmt.Sprintf("guard rotation %d %s", p.Rotation, p.Event)
-}
-
-type Tier string
-
-const (
-	TierNone     Tier = "none"
-	TierBronze   Tier = "bronze"
-	TierSilver   Tier = "silver"
-	TierGold     Tier = "gold"
-	TierPlatinum Tier = "platinum"
-)
-
-type TierChange struct {
-	From   Tier   `json:"from"`
-	To     Tier   `json:"to"`
-	Reason string `json:"reason"`
-}
-
-func (*TierChange) Kind() Kind { return KindTierChange }
-func (p *TierChange) Message() string {
-	return fmt.Sprintf("tier %s -> %s: %s", p.From, p.To, p.Reason)
 }
 
 type CommandReset struct {

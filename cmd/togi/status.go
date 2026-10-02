@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -23,12 +22,12 @@ import (
 
 const statusHelp = `Usage: togi status
 
-Show the session at a glance: search, hunt, refinement or guard activity, tier
-and qualifying rotation progress, then each core's offset, failed and joint
-marks, done phase, queued work and last decision. An open hunt shows masks and
-starts; an open refinement round shows checks and passes. Evidence includes
-workloads, starts, clean hours and bounds since the tier clock, and lists
-between-trial MCEs without treating them as failures. Lists reset
+Show the session at a glance: search, hunt, refinement or guard activity and
+qualified rotations since the last deepening, then each core's offset, failed
+and joint marks, done phase, queued work and last decision. An open hunt shows
+masks and starts; an open refinement round shows checks and passes. Evidence
+includes workloads, valid starts and the Tctl peak since the last profile
+change, and lists between-trial MCEs without treating them as failures. Lists reset
 commands for unanswered too-cautious defects. Read-only; rendered from the
 journal. A different ruleset warns before rendering; a different schema is
 refused.
@@ -133,7 +132,11 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 			}
 		}
 	}
-	fmt.Fprintf(w, "%s | tier %s\n", journal.EscapeText(activity), journal.EscapeText(tierRef(st)))
+	qualified, latest := 0, 0
+	if gs := st.Guard; gs != nil {
+		qualified, latest = gs.CleanRotations, gs.LastQualifiedRotation
+	}
+	fmt.Fprintf(w, "%s | qualified rotations since last deepening: %d, latest rotation %d\n", journal.EscapeText(activity), qualified, latest)
 	fmt.Fprintf(w, "session %s started %s\n", journal.EscapeText(st.Session.ID), st.Session.Start.UTC().Format(time.RFC3339))
 	writeBIOSLine(w, st.Session)
 	if f := st.InFlight; f != nil {
@@ -152,14 +155,14 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 
 	fmt.Fprintln(w)
 	tw := newTable(w)
-	fmt.Fprintln(tw, "CORE\tCCD\tOFFSET\tPHASE\tFAILED\tJOINT\tQUEUED\tLAST DECISION")
+	fmt.Fprintln(tw, "CORE\tCCD\tSLOT\tOFFSET\tPHASE\tFAILED\tJOINT\tQUEUED\tLAST DECISION")
 	for _, c := range st.Cores {
 		last := "-"
 		if d := c.LastDecision; d != nil {
 			last = fmt.Sprintf("[#%d] %s", d.Seq, journal.EscapeText(d.Msg))
 		}
 		queued := cmp.Or(c.Queued, "-")
-		fmt.Fprintf(tw, "%02d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n", c.Core, c.CCD, c.Offset, journal.EscapeText(string(c.Phase)), mark(c.FailedMark), jointIDs(c.JointMarks), journal.EscapeText(queued), last)
+		fmt.Fprintf(tw, "%02d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n", c.Core, c.CCD, c.Core%8, c.Offset, journal.EscapeText(string(c.Phase)), mark(c.FailedMark), jointIDs(c.JointMarks), journal.EscapeText(queued), last)
 	}
 	_ = tw.Flush()
 	writeJointMarks(w, st.JointMarks)
@@ -176,7 +179,18 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		signal := "failure"
 		for _, e := range events {
 			if e.Seq == h.Failure {
-				if p, ok := e.Data.(*journal.Failure); ok {
+				switch p := e.Data.(type) {
+				case *journal.Failure:
+					signal = string(p.Signal)
+				case *journal.TrialEnd:
+					if p.Outcome == journal.OutcomeFailure {
+						signal = string(p.Signal)
+					}
+				case *journal.TrialCarried:
+					if p.Outcome == journal.OutcomeFailure {
+						signal = string(p.Signal)
+					}
+				case *journal.FailureCarried:
 					signal = string(p.Signal)
 				}
 				break
@@ -242,19 +256,14 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		return
 	}
 	fmt.Fprintln(w)
-	overall := "no failure-rate bound yet"
-	if gs.RateBoundPerH != nil {
-		overall = fmt.Sprintf("failure rate %s at 95%%, if failures on the tested workloads occur at a constant rate", rate(gs.RateBoundPerH))
-	}
-	fmt.Fprintf(w, "clean hours since the tier clock [#%d]: %s h, %s\n", gs.TierClockSeq, hours(gs.CleanS), overall)
 	tw = newTable(w)
-	fmt.Fprintln(tw, "REGIME\tWORKLOAD\tSTARTS\tCLEAN H\tRATE BOUND")
+	fmt.Fprintln(tw, "REGIME\tWORKLOAD\tSTARTS")
 	for _, r := range gs.Exposure {
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", journal.EscapeText(string(r.Regime)), journal.EscapeText(r.Workload), r.Starts, hours(r.CleanS), rate(r.RateBoundPerH))
+		fmt.Fprintf(tw, "%s\t%s\t%d\n", journal.EscapeText(string(r.Regime)), journal.EscapeText(r.Workload), r.Starts)
 	}
 	_ = tw.Flush()
 	if gs.TctlMaxC != nil {
-		fmt.Fprintf(w, "Tctl max among counted trials %d°C [#%d]\n", *gs.TctlMaxC, gs.TctlMaxSeq)
+		fmt.Fprintf(w, "Tctl max since last profile change %d°C [#%d]\n", *gs.TctlMaxC, gs.TctlMaxSeq)
 	}
 }
 
@@ -308,27 +317,9 @@ func newTable(w io.Writer) *tabwriter.Writer {
 	return tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 }
 
-func tierRef(st journal.State) string {
-	if st.TierSeq == 0 {
-		return string(st.Tier)
-	}
-	return fmt.Sprintf("%s [#%d]", st.Tier, st.TierSeq)
-}
-
 func mark(p *int) string {
 	if p == nil {
 		return "-"
 	}
 	return strconv.Itoa(*p)
-}
-
-func hours(s int) string {
-	return strconv.FormatFloat(float64(s)/3600, 'f', 1, 64)
-}
-
-func rate(bound *float64) string {
-	if bound == nil {
-		return "-"
-	}
-	return fmt.Sprintf("< %.2f/h", math.Ceil(*bound*100-1e-9)/100)
 }

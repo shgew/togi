@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -36,12 +37,12 @@ func TestSimulatedJointReport(t *testing.T) {
 	if err := os.WriteFile(journalPath, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	events, err := readJournal(journalPath)
+	session, err := facts.ReadJournal(journalPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var got bytes.Buffer
-	if err := report(&got, events, time.Time{}); err != nil {
+	if err := report(&got, session, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join("testdata", "joint.golden")
@@ -76,7 +77,7 @@ func TestRunGrouping(t *testing.T) {
 			for i, v := range tc.kinds {
 				events[i] = journal.Event{Seq: i + 1, Boot: tc.boots[i], Time: time.Unix(int64(i), 0), Data: v}
 			}
-			p := project(events)
+			p := project(facts.FromEvents(events))
 			got := make([]string, len(p.runs))
 			for i, r := range p.runs {
 				got[i] = r.ending

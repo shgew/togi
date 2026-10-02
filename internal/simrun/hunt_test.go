@@ -141,8 +141,8 @@ func TestHuntAllZeroAnchor(t *testing.T) {
 	if _, ok := findPayload(events, func(p *journal.TunerDecision) bool { return p.Decision == journal.Backoff && p.Core == 11 }); !ok {
 		t.Fatal("core 11 not backed off")
 	}
-	if _, ok := findPayload(events, func(p *journal.TierChange) bool { return p.To == journal.TierBronze }); !ok {
-		t.Fatal("no bronze tier")
+	if _, ok := findPayload(events, func(p *journal.GuardRotation) bool { return p.Event == journal.RotationEnd && p.Clean && p.Qualifying }); !ok {
+		t.Fatal("no qualifying rotation")
 	}
 }
 
@@ -421,69 +421,6 @@ func TestDelayedHuntEscalates(t *testing.T) {
 				t.Fatalf("full passes %d, escalation %t, resolved core 1 %t", fullPasses, escalated, resolved)
 			}
 		})
-	}
-}
-
-func TestFlatFailureRestartsSilverTierClock(t *testing.T) {
-	t.Parallel()
-	cfg := huntConfig(4)
-	cfg.Edges[2].Flat = 1 / (30 * 3600.0)
-	c := config.Default()
-	c.Durations.GuardTrialS = 3600
-	c.Durations.GuardIdleS = 3600
-	c.Durations.GuardAllCoreS = 3600
-	silver := false
-	failed := false
-	stop, events, dir := runHunt(t, cfg, nil, func(in *Input) {
-		in.Config = c
-		in.Rotations = 0
-		in.Until = func(e journal.Event) bool {
-			switch p := e.Data.(type) {
-			case *journal.TierChange:
-				silver = silver || p.To == journal.TierSilver
-			case *journal.Failure:
-				failed = failed || silver && p.Attribution == journal.Unattributed
-			case *journal.ProfileChange:
-				return failed
-			}
-			return false
-		}
-	})
-	if stop.Reason != session.StopSignal {
-		t.Fatalf("flat-hazard stop %+v", stop)
-	}
-	assertAdversarialEvidence(t, events, 8, 40)
-	t.Logf("flat hazard has no stable negative hidden edge; a prespecified 24h eligible nonzero window misses it with probability exp(-24/30) = %g, not assurance for selected exposure or repeated inspection", math.Exp(-24.0/30))
-	if !silver || !failed {
-		t.Fatalf("silver tier %t, subsequent failure %t", silver, failed)
-	}
-	var failureSeq int
-	seenSilver := false
-	for _, e := range events {
-		switch p := e.Data.(type) {
-		case *journal.TierChange:
-			if failureSeq > 0 && (p.To == journal.TierSilver || p.To == journal.TierGold) {
-				t.Errorf("tier %s at #%d reuses pre-failure exposure", p.To, e.Seq)
-			}
-			seenSilver = seenSilver || p.To == journal.TierSilver
-		case *journal.Failure:
-			if seenSilver && failureSeq == 0 {
-				failureSeq = e.Seq
-			}
-		}
-	}
-	if failureSeq == 0 {
-		t.Fatal("no failure after silver")
-	}
-	state, err := journal.ReadState(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diff := cmp.Diff(failureSeq, state.Guard.TierClockSeq); diff != "" {
-		t.Errorf("tier clock (-want +got):\n%s", diff)
-	}
-	if state.Guard.CleanS >= 24*3600 || state.Guard.RateBoundPerH != nil && *state.Guard.RateBoundPerH <= 3.0/24 {
-		t.Errorf("post-failure exposure includes old hours: %+v", state.Guard)
 	}
 }
 
@@ -935,7 +872,7 @@ func scriptedSharpOutcome(cfg sim.Config, p *journal.TrialIntent) sim.Outcome {
 	return sim.Outcome{}
 }
 
-func TestIdleOnlyHazardReachesBronze(t *testing.T) {
+func TestIdleOnlyHazardReachesQualifiedRotation(t *testing.T) {
 	for _, seed := range []uint64{1, 2} {
 		t.Run(fmt.Sprintf("seed-%d", seed), func(t *testing.T) {
 			cfg := huntConfig(4)

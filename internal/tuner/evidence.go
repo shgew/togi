@@ -3,6 +3,7 @@ package tuner
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -19,11 +20,12 @@ type entry struct {
 	seq       int
 	profile   []int
 	pass      bool
-	duration  int
 	condition machine.Condition
 	class     trialClass
 	tctlMax   int
 	hasTctl   bool
+	carried   bool
+	cores     []int
 }
 
 func classOf(p *journal.TrialIntent) trialClass {
@@ -58,6 +60,24 @@ func allZero(p []int) bool {
 	return true
 }
 
+type evidenceRule uint8
+
+const (
+	allEvidence evidenceRule = iota
+	edgeEvidence
+	huntEvidence
+	rerunEvidence
+	refinementEvidence
+	rotationEvidence
+)
+
+func (r evidenceRule) admits(e entry, since int) bool {
+	if e.carried {
+		return r != rotationEvidence
+	}
+	return e.seq > since
+}
+
 func (s *State) latestFailure(k trialClass, p []int, since int) int {
 	last := since
 	for _, e := range s.ledger[k] {
@@ -75,20 +95,77 @@ func (s *State) latestFailure(k trialClass, p []int, since int) int {
 	return last
 }
 
-func (s *State) passSeqs(k trialClass, p []int, since int) []int {
-	last := s.latestFailure(k, p, since)
+func (s *State) passSeqs(k trialClass, p []int, since int, rule evidenceRule) []int {
+	last := s.latestFailure(k, p, 0)
 	var seqs []int
 	for _, e := range s.ledger[k] {
-		if e.pass && e.seq > last && atLeastDeep(e.profile, p) {
+		if e.pass && rule.admits(e, since) && e.seq > last && atLeastDeep(e.profile, p) {
 			seqs = append(seqs, e.seq)
 		}
 	}
 	return seqs
 }
 
-func (s *State) passes(k trialClass, p []int, since int) int { return len(s.passSeqs(k, p, since)) }
+func (s *State) passes(k trialClass, p []int, since int, rule evidenceRule) int {
+	last := s.latestFailure(k, p, 0)
+	count := 0
+	for _, e := range s.ledger[k] {
+		if e.pass && rule.admits(e, since) && e.seq > last && atLeastDeep(e.profile, p) {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *State) failingSeq(k trialClass, p []int, since int) int {
+	if s.passes(k, p, 0, allEvidence) >= s.n {
+		return 0
+	}
+	last := admittedFailure(s.ledger[k], p, since, 0)
+	if k.regime == machine.R6 && k.cores == fmt.Sprint(s.ids()) {
+		last = admittedFailure(s.idle, p, since, last)
+	}
+	return last
+}
+
+func admittedFailure(entries []entry, p []int, since, last int) int {
+	for _, e := range entries {
+		if !e.pass && e.seq > last && allEvidence.admits(e, since) && atLeastShallow(e.profile, p) {
+			last = e.seq
+		}
+	}
+	return last
+}
+
 func (s *State) fails(k trialClass, p []int, since int) bool {
-	return s.latestFailure(k, p, since) > since
+	return s.failingSeq(k, p, since) != 0
+}
+
+func (s *State) citeCarried(cause []int, seqs ...int) []int {
+	for _, seq := range seqs {
+		if _, carried := s.carriedSources[seq]; carried && !slices.Contains(cause, seq) {
+			cause = append(cause, seq)
+		}
+	}
+	return cause
+}
+
+func (s *State) carriedReason(seqs []int) string {
+	var sessions []string
+	count := 0
+	for _, seq := range seqs {
+		if source, ok := s.carriedSources[seq]; ok {
+			count++
+			if !slices.Contains(sessions, source) {
+				sessions = append(sessions, source)
+			}
+		}
+	}
+	if count == 0 {
+		return ""
+	}
+	slices.Sort(sessions)
+	return fmt.Sprintf("; %d carried facts from session %s", count, strings.Join(sessions, ", "))
 }
 
 func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *journal.TrialEnd) {
@@ -106,13 +183,20 @@ func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *jo
 		}
 	}
 	if end.Outcome == journal.OutcomeFailure {
-		seqs := s.passSeqs(k, profile, 0)
+		seqs := s.passSeqs(k, profile, 0, allEvidence)
 		if len(seqs) >= s.n && s.n > 0 {
 			s.warning = &journal.TunerWarning{Warning: "monotonicity", Trial: p.Trial, Passes: slices.Clone(seqs[:s.n]), Detail: fmt.Sprintf("failure at profile %v contradicts %d valid passes in %s %s", profile, len(seqs), k.regime, k.workload)}
 			s.warningSeq = ev.Seq
 		}
 	}
-	e := entry{seq: ev.Seq, profile: profile, pass: end.Outcome == journal.OutcomePass, duration: end.DurationS, condition: p.Condition, class: k}
+	e := entry{seq: ev.Seq, profile: profile, pass: end.Outcome == journal.OutcomePass, condition: p.Condition, class: k, cores: p.Cores}
+	if p.Core != nil {
+		e.cores = []int{*p.Core}
+	}
+	if carried, ok := ev.Data.(*journal.TrialCarried); ok {
+		e.carried = true
+		s.carriedSources[ev.Seq] = carried.Source.Session
+	}
 	if end.TctlMaxC != nil {
 		e.tctlMax, e.hasTctl = *end.TctlMaxC, true
 	}
@@ -135,7 +219,7 @@ func (s *State) recordIdle(ev journal.Event, p *journal.Failure) {
 			if k.regime != machine.R6 || k.cores != all {
 				continue
 			}
-			seqs := s.passSeqs(k, p.Profile, 0)
+			seqs := s.passSeqs(k, p.Profile, 0, allEvidence)
 			if len(seqs) >= s.n && (contradicted == nil || seqs[0] < contradicted[0]) {
 				contradicted, class = seqs[:s.n], k
 			}
@@ -145,17 +229,70 @@ func (s *State) recordIdle(ev journal.Event, p *journal.Failure) {
 		s.warning = &journal.TunerWarning{Warning: "monotonicity", Passes: contradicted, Detail: fmt.Sprintf("idle failure at profile %v contradicts %d valid passes in %s %s at %ds", p.Profile, s.n, class.regime, class.workload, class.duration)}
 		s.warningSeq = ev.Seq
 	}
-	e := entry{seq: ev.Seq, profile: slices.Clone(p.Profile), class: trialClass{regime: machine.R6, cores: fmt.Sprint(s.ids())}}
+	cores := s.ids()
+	e := entry{seq: ev.Seq, profile: slices.Clone(p.Profile), class: trialClass{regime: machine.R6, cores: fmt.Sprint(cores)}, cores: cores}
+	if carried, ok := ev.Data.(*journal.FailureCarried); ok {
+		e.carried = true
+		s.carriedSources[ev.Seq] = carried.Source.Session
+	}
 	s.idle = append(s.idle, e)
 	s.failures = append(s.failures, e)
 	s.projectionDirty = true
 }
 
+func (s *State) recordCarried(ev journal.Event, p *journal.TrialCarried) {
+	intent := &journal.TrialIntent{Regime: p.Class.Regime, Workload: p.Class.Workload, Cores: p.Class.Cores, DurationS: p.Class.DurationS, Condition: p.Condition, Profile: p.Profile}
+	end := &journal.TrialEnd{Trial: p.Source.Trial, Outcome: p.Outcome, Signal: p.Signal, DurationS: p.DurationS}
+	s.recordEvidence(ev, intent, end)
+	if p.Outcome == journal.OutcomeFailure {
+		evidence := s.failures[len(s.failures)-1]
+		failure := &journal.Failure{Signal: p.Signal, Attribution: journal.Unattributed, Core: p.Core, Trial: p.Source.Trial, Regime: p.Class.Regime, Condition: p.Condition, Profile: evidence.profile}
+		if failure.Core == nil && p.Condition == machine.Isolated && len(p.Class.Cores) == 1 {
+			failure.Core = new(p.Class.Cores[0])
+		}
+		if failure.Core != nil {
+			if i := s.index(*failure.Core); i >= 0 && i < len(p.Profile) {
+				failure.Attribution, failure.Offset = journal.Attributed, new(p.Profile[i])
+			}
+		}
+		s.rememberCarriedFailure(ev.Seq, failure, evidence.class)
+	}
+}
+
+func (s *State) rememberCarriedFailure(seq int, p *journal.Failure, k trialClass) {
+	s.failureIndex[seq] = len(s.pendingFailures)
+	s.pendingFailures = append(s.pendingFailures, pendingFailure{seq: seq, failure: p, profile: p.Profile, class: k, carried: true})
+}
+
+func (s *State) failureAfter(f pendingFailure, since int) bool {
+	if f.carried {
+		return s.failureBySeq(f.seq) != nil
+	}
+	return f.seq > since
+}
+
+func (s *State) resetEvidence(core int) {
+	involves := func(e entry) bool {
+		if slices.Contains(e.cores, core) {
+			delete(s.carriedSources, e.seq)
+			return true
+		}
+		return false
+	}
+	for k, entries := range s.ledger {
+		s.ledger[k] = slices.DeleteFunc(entries, involves)
+	}
+	s.idle = slices.DeleteFunc(s.idle, involves)
+	s.failures = slices.DeleteFunc(s.failures, involves)
+	s.projectionDirty = true
+	s.rerunCauses = nil
+}
+
 func (s *State) queueRerun(ev journal.Event) {
 	for _, cause := range ev.Cause {
 		if f := s.failureBySeq(cause); f != nil {
-			if intent := s.intents[f.failure.Trial]; intent != nil {
-				s.obligations = append(s.obligations, rerun{classOf(intent), cause})
+			if f.class.workload != "" {
+				s.obligations = append(s.obligations, rerun{f.class, cause})
 				return
 			}
 			if f.failure.Trial == "" {
@@ -168,8 +305,8 @@ func (s *State) queueRerun(ev journal.Event) {
 	if s.hunt != nil {
 		if s.hunt.directFailure > 0 {
 			if f := s.failureBySeq(s.hunt.directFailure); f != nil {
-				if intent := s.intents[f.failure.Trial]; intent != nil {
-					s.obligations = append(s.obligations, rerun{classOf(intent), f.seq})
+				if f.class.workload != "" {
+					s.obligations = append(s.obligations, rerun{f.class, f.seq})
 					return
 				}
 			}
