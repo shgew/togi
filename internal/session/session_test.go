@@ -212,7 +212,7 @@ func summary(t *testing.T, dir string) string {
 		out += fmt.Sprintf(" core %d %s;", c.Core, coreSummary{c.Phase, c.Offset, c.Pass, c.FailedMark})
 	}
 	if g := st.Guard; g != nil {
-		out += fmt.Sprintf(" guard rotation %d, qualified rotations %d", g.Rotation, g.CleanRotations)
+		out += fmt.Sprintf(" guard rotation %d, qualified rotations %d, last qualified rotation %d, exposure %v", g.Rotation, g.CleanRotations, g.LastQualifiedRotation, g.Exposure)
 	}
 	return out
 }

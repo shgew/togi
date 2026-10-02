@@ -13,13 +13,11 @@ All notable changes to togi are documented in this file. The format is based on 
 - **BREAKING** The next `togi run` archives a ruleset-6 session and starts a ruleset-7 session that carries trial facts from earlier same-BIOS sessions: candidate-edge checks, hunt masks, reruns and refinement checks can be answered by carried passes, carried failures count everywhere, and decisions cite their evidence consistently across configuration reloads, replay and shutdown. Rotations still qualify only on live passes, and `status` counts only live passes as this session's exposure ([#282]).
 - Trials whose class has a valid live or carried failure at an equal-or-shallower profile are skipped; guard failures go directly to their hunt or attributed backoff, citing the known failure instead of running it again; completed edge masks replace their pending state, and hunt status and carried culprit marks retain the original decisive signal ([#283]).
 - When refinement is due and an earlier clean qualifying rotation, run with every core done on a profile at least as deep as the current one, has no contradicting failure, guard ends an incomplete open rotation instead of running its remaining work and starts refinement; a fully executed rotation still closes clean and qualifies normally; the rotation end names the covering rotation ([#284]).
-- Failure-rate bounds in `status` state that their 95% claim assumes a constant failure rate on the tested workloads; the numbers and rounding are unchanged ([#237]).
 - `run` archives older-ruleset or older-schema journals containing unknown event kinds and derives carry from known events; current-session writes still refuse unknown kinds, while `reset --all` permits them only for its non-appending different-schema archive ([#270]).
 
 ### Fixed
 
 - A journal write failure followed by unconfirmed workload teardown reports both errors and withholds all offset restoration, including emergency zeroing, while the backend may still be running ([#279]).
-- `status` derives the guard's Tctl peak and source from the same post-clock resident passes as clean hours, preserving the peak across shallow backoffs and clearing it when a qualifying failure restarts the clock ([#235]).
 - Idle failures record a monotonicity warning when eligible all-core R6 passes in one class contradict the failed profile, citing those trial ends without changing the ensuing hunt ([#236]).
 - Competing starts or resets can no longer alter an upgrade's archives or pending carry before acquiring the state-directory writer lock; the lock now covers carry preparation and the complete session or reset ([#245]).
 - An upgrade interrupted before recording its carried evidence retains the original source through a subsequent upgrade, instead of replacing it with the incomplete intervening session ([#246]).
@@ -371,9 +369,7 @@ All notable changes to togi are documented in this file. The format is based on 
 [#222]: https://github.com/shgew/togi/pull/222
 [#227]: https://github.com/shgew/togi/pull/227
 [#228]: https://github.com/shgew/togi/pull/228
-[#235]: https://github.com/shgew/togi/pull/235
 [#236]: https://github.com/shgew/togi/pull/236
-[#237]: https://github.com/shgew/togi/pull/237
 [#243]: https://github.com/shgew/togi/pull/243
 [#245]: https://github.com/shgew/togi/pull/245
 [#246]: https://github.com/shgew/togi/pull/246

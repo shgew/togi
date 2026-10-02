@@ -23,8 +23,8 @@ func TestStatusHuntShowsDecisiveFailureSignal(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			st := journal.State{
 				Session: &journal.SessionInfo{ID: "X"},
-				Phase:   string(journal.PhaseHunt), Tier: journal.TierNone,
-				Hunt: &journal.HuntState{Hunt: 1, Seq: 3, Failure: 2, Regime: machine.R7, Trial: "origin"},
+				Phase:   string(journal.PhaseHunt),
+				Hunt:    &journal.HuntState{Hunt: 1, Seq: 3, Failure: 2, Regime: machine.R7, Trial: "origin"},
 			}
 			var out bytes.Buffer
 			writeStatus(&out, st, []journal.Event{{Seq: 2, Data: tc.source}})

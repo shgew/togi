@@ -1,4 +1,4 @@
-The Bronze credit, tier-change citation and retention of the tier clock and clean-hour thresholds are superseded by [ADR 0027](0027-remove-tiers.md); earlier qualified-rotation credit for `run --rotations` remains.
+The Bronze credit, tier-change citation and retention of the tier clock and clean-hour thresholds are superseded by [ADR 0028](0028-remove-tiers.md); earlier qualified-rotation credit for `run --rotations` remains.
 
 # Schedule from uncontradicted evidence
 

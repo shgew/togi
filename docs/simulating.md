@@ -24,7 +24,7 @@ go run ./cmd/togi --state-dir <dir> events --core 3
 go run ./cmd/togi --state-dir <dir> watch
 ```
 
-`status` reports qualified rotations since the last deepening (the count and latest rotation number), valid per-workload starts and missing qualifying coverage. Its Tctl peak comes from resident passes since the last profile change and names the source trial.
+`status` reports qualified rotations since the last deepening (the count and latest rotation number), valid per-workload starts and missing qualifying coverage. Its Tctl peak comes from resident passes since the last profile change and names the source trial-end event.
 
 Fault injection, explicit edges and the failure model are a Go API for tests (`sim.Config`, `sim.Edges`, `sim.Model` and the methods on `sim.Machine`); `internal/sim/doc.go` describes the model. `Machine.Hazard` returns the steady-state failure rate a trial would see at a given profile, from the same rules that draw trial failures, so a tool can judge a final profile against the model's truth. `internal/simrun` drives a session on the simulator across its crashes for tests that need a simulated journal.
 

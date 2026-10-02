@@ -136,7 +136,7 @@ Shut down or reboot. The next boot is your normal system; with `leaveOnShutdown`
 togi status
 ```
 
-`status` lists the profile to enter in BIOS, one offset per core, with each core's failed and joint marks and its phase. It reports qualified rotations since the last deepening, their count and the latest rotation number, valid starts per workload, missing qualifying coverage, and the Tctl peak from resident passes since the last profile change with its source trial. After refinement those offsets can differ from the checked edges search found. Picking "NixOS - togi" again continues the session.
+`status` lists the profile to enter in BIOS, one offset per core, with each core's failed and joint marks and its phase. It reports qualified rotations since the last deepening, their count and the latest rotation number, valid starts per workload, missing qualifying coverage, and the Tctl peak from resident passes since the last profile change with its source trial-end event. After refinement those offsets can differ from the checked edges search found. Picking "NixOS - togi" again continues the session.
 
 Choose how long to keep testing with `sudo togi run --rotations N`, replacing N with a positive count. It stops after N clean qualifying rotations valid for the current profile, only when every core is done and refinement can reach no more total depth. Without the flag, guard continues indefinitely. An earlier clean qualifying rotation can still count after refinement returns to an equal or shallower profile, if every core was done when it ended, it followed the latest reset, and no failure since that reset contradicted its profile.
 
