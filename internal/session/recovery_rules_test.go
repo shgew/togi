@@ -606,59 +606,73 @@ func TestReplayCrashRecoveryPreservesFact(t *testing.T) {
 	}
 }
 
-func TestReplaySharedMachineCheckKeepsBankAttribution(t *testing.T) {
+func TestReplayMachineCheckKeepsBankAttribution(t *testing.T) {
 	t.Parallel()
-	cfg := small()
-	model := sim.DefaultModel()
-	model.CoreLocalBank, model.CrashMCE = 0, 0
-	cfg.Model = &model
-	probe := simInput(t.TempDir(), newSim(t, cfg))
-	simulate(t, probe)
-	bios, err := probe.Machine.Seams().Host.BIOSContext()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var intent *journal.TrialIntent
-	for _, e := range readEvents(t, probe.Dir) {
-		if p, ok := e.Data.(*journal.TrialIntent); ok && p.Regime == machine.R7 && len(p.Cores) == 2 && p.Profile[0] != 0 && p.Profile[1] != 0 {
-			intent = p
-			break
-		}
-	}
-	if intent == nil {
-		t.Fatal("missing two-core R7 trial")
-	}
-	cfg.Replay, err = sim.NewReplay(bios, []sim.ReplayFact{{
-		Context:   bios,
-		Class:     journal.TrialClass{Regime: intent.Regime, Workload: intent.Workload, Cores: intent.Cores, DurationS: intent.DurationS},
-		Profile:   intent.Profile,
-		Outcome:   journal.OutcomeFailure,
-		Signal:    machine.UncorrectedMCE,
-		DurationS: 7,
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	in := simInput(t.TempDir(), newSim(t, cfg))
-	simulate(t, in)
-	var end *journal.TrialEnd
-	var failure *journal.Failure
-	for _, e := range readEvents(t, in.Dir) {
-		switch p := e.Data.(type) {
-		case *journal.TrialEnd:
-			if p.Trial == intent.Trial {
-				end = p
+	for _, tc := range []struct {
+		name        string
+		local       float64
+		attribution journal.Attribution
+	}{
+		{"shared bank", 0, journal.Unattributed},
+		{"core-local bank", 1, journal.Attributed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := small()
+			model := sim.DefaultModel()
+			model.CoreLocalBank, model.CrashMCE = tc.local, 0
+			cfg.Model = &model
+			probe := simInput(t.TempDir(), newSim(t, cfg))
+			simulate(t, probe)
+			bios, err := probe.Machine.Seams().Host.BIOSContext()
+			if err != nil {
+				t.Fatal(err)
 			}
-		case *journal.Failure:
-			if p.Trial == intent.Trial {
-				failure = p
+			var intent *journal.TrialIntent
+			for _, e := range readEvents(t, probe.Dir) {
+				if p, ok := e.Data.(*journal.TrialIntent); ok && p.Regime == machine.R7 && len(p.Cores) == 2 && p.Profile[0] != 0 && p.Profile[1] != 0 {
+					intent = p
+					break
+				}
 			}
-		}
-	}
-	if end == nil || end.Signal != machine.UncorrectedMCE || end.DurationS != 7 || end.Core != nil {
-		t.Fatalf("shared-machine-check trial end %+v", end)
-	}
-	if failure == nil || failure.Signal != machine.UncorrectedMCE || failure.Attribution != journal.Unattributed || failure.Core != nil {
-		t.Fatalf("shared-machine-check failure %+v", failure)
+			if intent == nil {
+				t.Fatal("missing two-core R7 trial")
+			}
+			cfg.Replay, err = sim.NewReplay(bios, []sim.ReplayFact{{
+				Context:   bios,
+				Class:     journal.TrialClass{Regime: intent.Regime, Workload: intent.Workload, Cores: intent.Cores, DurationS: intent.DurationS},
+				Profile:   intent.Profile,
+				Outcome:   journal.OutcomeFailure,
+				Signal:    machine.UncorrectedMCE,
+				DurationS: 7,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			in := simInput(t.TempDir(), newSim(t, cfg))
+			simulate(t, in)
+			var end *journal.TrialEnd
+			var failure *journal.Failure
+			for _, e := range readEvents(t, in.Dir) {
+				switch p := e.Data.(type) {
+				case *journal.TrialEnd:
+					if p.Trial == intent.Trial {
+						end = p
+					}
+				case *journal.Failure:
+					if p.Trial == intent.Trial {
+						failure = p
+					}
+				}
+			}
+			if end == nil || end.Signal != machine.UncorrectedMCE || end.DurationS != 7 || end.Core != nil {
+				t.Fatalf("shared-machine-check trial end %+v", end)
+			}
+			if failure == nil || failure.Signal != machine.UncorrectedMCE || failure.Attribution != tc.attribution {
+				t.Fatalf("machine-check failure %+v, want %s", failure, tc.attribution)
+			}
+			if tc.local == 0 && failure.Core != nil || tc.local == 1 && (failure.Core == nil || *failure.Core != intent.Cores[0]) {
+				t.Fatalf("machine-check core %+v, bank locality %g", failure, tc.local)
+			}
+		})
 	}
 }

@@ -536,6 +536,9 @@ func (r *runner) closeOpenTrial() error {
 	}
 	interrupted := true
 	if seq, crashed := r.fold.crashSeq[open.boot]; crashed {
+		if open.signal == machine.CorrectedMCE || open.signal == machine.UncorrectedMCE {
+			cause = append(cause, r.fold.recordedFor(open.boot, r.in.Boot)...)
+		}
 		if open.signal != "" {
 			evidence.missing = "backend reported a failure before the reset"
 		}
