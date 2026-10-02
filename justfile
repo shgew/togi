@@ -76,3 +76,21 @@ release:
 [group('release')]
 release-preview:
     {{ dev }} go run ./tools/release
+
+# Run GitHub commands as robotogi
+[group('github')]
+bot +args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "${TOGI_DEV_SHELL:-}" != "1" ]]; then
+        exec {{ dev }} just --justfile '{{ justfile() }}' bot "$@"
+    fi
+    if [[ -z "${ROBOTOGI_KEY:-}" ]]; then
+        echo "ROBOTOGI_KEY must contain robotogi's PEM private key" >&2
+        exit 1
+    fi
+    key=$(printf '%s' "$ROBOTOGI_KEY" | base64 | tr -d '\n')
+    owner=$(gh repo view --json owner --jq '.owner.login')
+    installation=$(gh-token installations --app-id 5162510 --base64-key "$key" | jq -er --arg owner "$owner" '.[] | select(.account.login == $owner and .suspended_at == null) | .id')
+    token=$(gh-token generate --app-id 5162510 --base64-key "$key" --installation-id "$installation" | jq -er '.token')
+    exec env GH_TOKEN="$token" gh "$@"

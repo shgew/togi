@@ -76,6 +76,8 @@
             packages = [
               pkgs.go_1_27
               pkgs.gh
+              pkgs.gh-token
+              pkgs.jq
               pkgs.gopls
               pkgs.golangci-lint
               pkgs.just

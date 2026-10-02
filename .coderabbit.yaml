@@ -119,6 +119,7 @@ knowledge_base:
     enabled: true
     filePatterns:
       - CONTEXT.md
+      - REVIEW.md
       - files: docs/spec/**
         applyTo: cmd/**,internal/**,nix/**
   learnings:
