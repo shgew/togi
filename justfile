@@ -58,7 +58,7 @@ cover base="":
             split(span[2], last, ".")
             print file ":" (first[1] == last[1] ? first[1] : first[1] "-" last[1])
         }
-    ' <(printf '%s\n' "$changed") "$profile" | LC_ALL=C sort -t: -k1,1 -k2,2n -u
+    ' <(printf '%s\n' "$changed") "$profile" | LC_ALL=C sort -t: -k1,1 -k2,2n -k2,2 -u
 
 # Lint all Go packages with optional lint flags
 [group('quality')]
