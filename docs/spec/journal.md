@@ -11,7 +11,7 @@ All files live in the state directory, default `/var/lib/togi`:
 | `events.jsonl` | The journal of the current session: one JSON event per line, append-only, source of truth |
 | `state.json` | The current state, a projection of the journal for readers |
 | `trials/<trial-id>/` | Per-trial work directory: backend config files, raw stdout/stderr, backend result files |
-| `trials/<trial-id>/samples.jsonl` | Fsynced per-second conditions: milliseconds since trial timing began (`elapsed_ms`), optional `tctl_c`, CCD temperatures by label (`tccd_c`), loaded-core frequencies in MHz by core ID (`core_mhz`), and package power in watts (`package_power_w`) |
+| `trials/<trial-id>/samples.jsonl` | Fsynced per-second conditions: milliseconds since trial timing began (`elapsed_ms`), optional `tctl_c`, CCD temperatures by label (`tccd_c`), loaded-core frequencies in MHz by core ID (`core_mhz`), cumulative worker CPU milliseconds by loaded core ID (`worker_cpu_ms`), and package power in watts (`package_power_w`) |
 | `archive/<session-id>.jsonl` | Journals of sessions ended by `reset --all` or by a transition |
 | `archive/<session-id>-trials/` | The `trials/` directory of an archived session |
 | `archive/<session-id>-compat-pending` | Crash-recovery marker while `reset --all` or a transition archives a journal with another schema; removed on completion |
@@ -73,6 +73,8 @@ Example trial, abbreviated:
 ```
 
 When a trial is closed on resume, its `trial.end` message names the last evidence rather than implying its `duration_s` measured the full run. After a crash, the last complete line of its `samples.jsonl` adds optional `last_sample_s` (elapsed milliseconds rounded down to seconds), `last_sample_tctl_c`, `last_sample_min_mhz` and `last_sample_max_mhz` (minimum and maximum of the available loaded-core frequencies). A torn last line is skipped. Missing files or sensors leave their fields absent. For example, a crashed trial says `trial 0889 FAIL crash, last evidence 0s after start, last sample 3s: Tctl 71°C, 5420-5610 MHz`; without samples it retains `trial 0330 FAIL crash, last evidence 0s after start`. An interrupted trial without a failure says `trial 0331 INCONCLUSIVE, last evidence 0s after start: togi stopped during the trial`. A trial ended while togi watches it, including an orderly stop by signal, keeps its existing message and measured duration.
+
+Failed trials with two or more loaded cores also carry optional `stalled_core` and `worker_stalled_ms` when persisted worker CPU times distinguish a unique first terminal stall (`workloads.md`, Trial outcome). The latter is milliseconds since trial timing began at the first observed unchanged reading. Both fields are always absent for R6, whose workers are suspended by design. Both fields are also absent for missing or ambiguous evidence, including ties and workers that advanced until the final sample. The message adds `, core NN worker CPU time stopped advancing at Nms after start (evidence only)` only when both fields are present. This does not set the attribution field `core`, alter `duration_s`, or feed any tuner rule.
 
 ## Event catalog
 

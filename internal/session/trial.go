@@ -306,6 +306,9 @@ func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine
 	if tr.t.Condition == machine.Isolated {
 		end.Core = nil
 	}
+	if end.Outcome == journal.OutcomeFailure && len(tr.t.Cores) >= 2 {
+		_, end.StalledCore, end.WorkerStalledMS = sampleEvidence(r.in.Machine.Trials.Samples(tr.id), tr.t.Cores, tr.t.Regime)
+	}
 	ended, err := r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...)
 	if err != nil {
 		if containment != "" {

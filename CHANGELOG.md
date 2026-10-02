@@ -4,6 +4,10 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ## [Unreleased]
 
+### Added
+
+- Per-trial samples record each loaded core's worker CPU time; failed multi-core trials outside the deliberately suspended R6 regime report the first worker that stopped advancing when persisted samples distinguish it, as evidence without changing tuning decisions. Simulated samples stream without retaining a duration-sized series ([#275]).
+
 ### Changed
 
 - Failure-rate bounds in `status` and `cert` state that their 95% claim assumes a constant failure rate on the tested workloads; the numbers and rounding are unchanged ([#237]).
@@ -367,5 +371,6 @@ All notable changes to togi are documented in this file. The format is based on 
 [#247]: https://github.com/shgew/togi/pull/247
 [#249]: https://github.com/shgew/togi/pull/249
 [#251]: https://github.com/shgew/togi/pull/251
+[#275]: https://github.com/shgew/togi/pull/275
 [#278]: https://github.com/shgew/togi/pull/278
 [#279]: https://github.com/shgew/togi/pull/279

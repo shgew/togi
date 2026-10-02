@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -155,22 +156,23 @@ func appendSample(f sampleFile, p machine.TrialConditions) error {
 	return nil
 }
 
-func (r *Runner) LastSample(id string) *machine.TrialConditions {
-	f, err := os.Open(filepath.Join(r.options.Dir, id, "samples.jsonl"))
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	reader := bufio.NewReader(f)
-	var last *machine.TrialConditions
-	for {
-		line, err := reader.ReadBytes('\n')
+func (r *Runner) Samples(id string) iter.Seq[machine.TrialConditions] {
+	return func(yield func(machine.TrialConditions) bool) {
+		f, err := os.Open(filepath.Join(r.options.Dir, id, "samples.jsonl"))
 		if err != nil {
-			return last
+			return
 		}
-		var p machine.TrialConditions
-		if json.Unmarshal(line, &p) == nil {
-			last = &p
+		defer f.Close()
+		reader := bufio.NewReader(f)
+		for {
+			line, err := reader.ReadBytes('\n')
+			if err != nil {
+				return
+			}
+			var p machine.TrialConditions
+			if json.Unmarshal(line, &p) == nil && !yield(p) {
+				return
+			}
 		}
 	}
 }

@@ -3,6 +3,7 @@ package machine
 import (
 	"context"
 	"errors"
+	"iter"
 	"time"
 )
 
@@ -116,6 +117,7 @@ type TrialConditions struct {
 	TctlC         *int           `json:"tctl_c,omitempty"`
 	TccdC         map[string]int `json:"tccd_c,omitempty"`
 	CoreMHz       map[int]int    `json:"core_mhz,omitempty"`
+	WorkerCPUMS   map[int]int64  `json:"worker_cpu_ms,omitempty"`
 	PackagePowerW *float64       `json:"package_power_w,omitempty"`
 }
 
@@ -124,8 +126,8 @@ type Trials interface {
 	Start(ctx context.Context, spec TrialSpec) (Running, error)
 	// Passed marks a passed trial's work directory so retention may prune it.
 	Passed(id string) error
-	// LastSample returns the last complete persisted conditions sample, or nil.
-	LastSample(id string) *TrialConditions
+	// Samples yields complete persisted conditions samples in order.
+	Samples(id string) iter.Seq[TrialConditions]
 }
 
 type MCE struct {

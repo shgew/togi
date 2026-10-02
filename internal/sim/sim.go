@@ -124,6 +124,8 @@ type Machine struct {
 	bios       machine.BIOSContext
 	reasons    map[string]machine.ResetReason
 	nextReset  machine.ResetKind
+	samples    trialSamples
+	samplesDir string
 
 	failWrite        bool
 	failWriteAt      int

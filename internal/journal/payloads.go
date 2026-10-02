@@ -508,6 +508,8 @@ type TrialEnd struct {
 	LastSampleTctlC  *int           `json:"last_sample_tctl_c,omitempty"`
 	LastSampleMinMHz *int           `json:"last_sample_min_mhz,omitempty"`
 	LastSampleMaxMHz *int           `json:"last_sample_max_mhz,omitempty"`
+	StalledCore      *int           `json:"stalled_core,omitempty"`
+	WorkerStalledMS  *int64         `json:"worker_stalled_ms,omitempty"`
 	Reason           string         `json:"reason,omitempty"`
 	Interrupted      bool           `json:"interrupted,omitempty"`
 	Escaped          []int          `json:"escaped,omitempty"`
@@ -537,6 +539,9 @@ func (p *TrialEnd) Message() string {
 		if len(conditions) > 0 {
 			duration += ": " + strings.Join(conditions, ", ")
 		}
+	}
+	if p.StalledCore != nil && p.WorkerStalledMS != nil {
+		duration += fmt.Sprintf(", core %s worker CPU time stopped advancing at %dms after start (evidence only)", coreID(*p.StalledCore), *p.WorkerStalledMS)
 	}
 	switch p.Outcome {
 	case OutcomePass:
