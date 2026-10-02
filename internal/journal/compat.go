@@ -168,7 +168,7 @@ func scanBuild(data []byte) (Build, string, error) {
 		}
 		line := rest[:next]
 		rest = rest[next+1:]
-		if !bytes.Contains(line, []byte(KindConfigLoaded)) {
+		if !bytes.Contains(line, []byte(KindConfigLoaded)) && !bytes.ContainsRune(line, '\\') {
 			continue
 		}
 		var stamp struct {
