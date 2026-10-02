@@ -48,6 +48,13 @@ func groupOf(r trialfacts.Record) checkedGroup {
 }
 
 func checkModel(path string, cfg sim.Config) (*modelCheck, error) {
+	if cfg.Model != nil {
+		for _, kind := range []machine.ResetKind{machine.ResetThermalTrip, machine.ResetPowerLoss} {
+			if cfg.Model.Reset[kind] > 0 {
+				return nil, fmt.Errorf("model check requires decisive failures: reset %q has positive weight", kind)
+			}
+		}
+	}
 	extract := cfg.Facts
 	if !filepath.IsAbs(extract) {
 		extract = filepath.Join(filepath.Dir(path), extract)

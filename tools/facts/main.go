@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/shgew/togi/tools/trialfacts"
 )
@@ -19,10 +20,11 @@ func main() {
 }
 
 func generate(dir, path string) error {
-	f, err := os.Create(path)
+	f, err := os.CreateTemp(filepath.Dir(path), ".facts-*.jsonl.gz")
 	if err != nil {
 		return fmt.Errorf("create extract: %w", err)
 	}
+	defer os.Remove(f.Name())
 	n, err := trialfacts.Extract(dir, f)
 	closeErr := f.Close()
 	if err != nil {
@@ -30,6 +32,9 @@ func generate(dir, path string) error {
 	}
 	if closeErr != nil {
 		return fmt.Errorf("close extract file: %w", closeErr)
+	}
+	if err := os.Rename(f.Name(), path); err != nil {
+		return fmt.Errorf("replace extract: %w", err)
 	}
 	fmt.Printf("extracted %d facts\n", n)
 	return nil

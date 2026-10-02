@@ -37,6 +37,16 @@ func Extract(dir string, dst io.Writer) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	hasFacts := false
+	for _, session := range sessions {
+		if len(session.Facts) > 0 {
+			hasFacts = true
+			break
+		}
+	}
+	if !hasFacts {
+		return 0, fmt.Errorf("no facts to extract from %s", dir)
+	}
 	gz := gzip.NewWriter(dst)
 	encoder := json.NewEncoder(gz)
 	count := 0
