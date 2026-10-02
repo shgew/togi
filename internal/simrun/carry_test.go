@@ -3,6 +3,7 @@ package simrun
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -130,6 +131,119 @@ func firstPhases(events []journal.Event) map[int]*journal.CorePhase {
 		}
 	}
 	return phases
+}
+
+func TestTransitionWithUnknownKinds(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		ruleset     int
+		schema      int
+		refuse      bool
+		interrupted bool
+	}{
+		{"older ruleset", session.Build().Ruleset - 1, journal.Schema, false, false},
+		{"interrupted older ruleset", session.Build().Ruleset - 1, journal.Schema, false, true},
+		{"older schema", session.Build().Ruleset, journal.Schema - 1, false, false},
+		{"current build", session.Build().Ruleset, journal.Schema, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			m, err := sim.New(sim.Config{Seed: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			bios, err := m.Seams().Host.BIOSContext()
+			if err != nil {
+				t.Fatal(err)
+			}
+			const id = "20260901T000000Z"
+			j, err := journal.Open(dir, journal.Options{Boot: "old"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, p := range []journal.Payload{
+				&journal.SessionStart{Schema: journal.Schema, Ruleset: tc.ruleset, Session: id},
+				&journal.SessionContext{BIOSContext: bios},
+				&journal.TrialIntent{Trial: "0001", Core: new(0), Offset: new(-30), Regime: machine.R1, Condition: machine.Isolated},
+				&journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomePass},
+				&journal.TrialIntent{Trial: "0002", Core: new(0), Offset: new(-35), Regime: machine.R1, Condition: machine.Isolated},
+				&journal.TrialEnd{Trial: "0002", Outcome: journal.OutcomeFailure, Signal: machine.UnexpectedExit, Core: new(0)},
+				&journal.Failure{Signal: machine.UnexpectedExit, Attribution: journal.Attributed, Core: new(0), Offset: new(-35), Trial: "0002", Regime: machine.R1, Condition: machine.Isolated},
+			} {
+				if _, err := j.Append(p); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := j.Close(); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "events.jsonl")
+			original, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			original = bytes.Replace(original, fmt.Appendf(nil, `"schema":%d`, journal.Schema), fmt.Appendf(nil, `"schema":%d`, tc.schema), 1)
+			lines := bytes.SplitAfter(original, []byte{'\n'})
+			for n := 4; n < 7; n++ {
+				lines[n] = bytes.Replace(lines[n], fmt.Appendf(nil, `"seq":%d`, n+1), fmt.Appendf(nil, `"seq":%d`, n+2), 1)
+			}
+			unknown := []byte("{\"seq\":5,\"time\":\"2026-09-01T00:00:00Z\",\"boot\":\"old\",\"kind\":\"retired.fact\",\"msg\":\"unknown evidence\",\"core\":0,\"offset\":-50}\n")
+			original = bytes.Join([][]byte{bytes.Join(lines[:4], nil), unknown, bytes.Join(lines[4:], nil)}, nil)
+			if err := os.WriteFile(path, original, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if tc.interrupted {
+				archiveDir := filepath.Join(dir, "archive")
+				if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(archiveDir, id+"-carry-pending"), nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err = Simulate(context.Background(), Input{
+				Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m,
+				Until: func(e journal.Event) bool { return e.Kind == journal.KindSessionCarried },
+			})
+			if tc.refuse {
+				var unknown *journal.UnknownKindError
+				if !errors.As(err, &unknown) || unknown.Kind != "retired.fact" {
+					t.Fatalf("current journal refusal: %v", err)
+				}
+				after, readErr := os.ReadFile(path)
+				if readErr != nil || !bytes.Equal(original, after) {
+					t.Fatalf("refusal changed journal: %v", readErr)
+				}
+				if _, statErr := os.Stat(filepath.Join(dir, "archive", id+".jsonl")); !errors.Is(statErr, os.ErrNotExist) {
+					t.Fatalf("refusal archived journal: %v", statErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			archived, err := os.ReadFile(filepath.Join(dir, "archive", id+".jsonl"))
+			if err != nil || !bytes.Equal(original, archived) {
+				t.Fatalf("archive changed journal: %v", err)
+			}
+			events, _, err := journal.Read(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			start := events[0].Data.(*journal.SessionStart)
+			if start.Ruleset != session.Build().Ruleset || start.Schema != journal.Schema || start.Session == id {
+				t.Fatalf("new session stamp: %+v", start)
+			}
+			carried := carriedEvent(t, events)
+			if len(carried.Sources) != 1 || carried.Sources[0].Session != id || !carried.Marks || len(carried.Carried) != 1 {
+				t.Fatalf("carry: %+v", carried)
+			}
+			core := carried.Carried[0]
+			if core.Core != 0 || core.Edge == nil || *core.Edge != -30 || core.EdgeSeq != 4 || core.FailedMark == nil || *core.FailedMark != -35 || core.MarkSeq != 8 {
+				t.Fatalf("known-event carry: %+v", core)
+			}
+		})
+	}
 }
 
 func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {

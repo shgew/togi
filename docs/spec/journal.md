@@ -61,7 +61,7 @@ New session IDs are their start time in UTC to the second (`20060102T150405Z`). 
 
 Build compatibility diagnostics consistently identify the program as togi, regardless of the recorded version.
 
-One kind-to-payload constructor registry drives decoding and validates appends; an unregistered kind cannot be written. Within the same schema, `status`, `events` and `watch` preserve unknown kinds as opaque events and skip facts they do not understand. `events` still displays their message and preserves their complete line with `--json`. `run` and both forms of `reset` refuse unknown kinds before modifying the journal, naming the kind and the journal and binary build stamps. This policy applies to builds from this change onward: 0.5.0 still rejects unknown kinds even for read-only commands.
+One kind-to-payload constructor registry drives decoding and validates appends; an unregistered kind cannot be written. Within the same schema, `status`, `events` and `watch` preserve unknown kinds as opaque events and skip facts they do not understand. `events` still displays their message and preserves their complete line with `--json`. `run` refuses unknown kinds unless the journal has an older ruleset or schema and no newer one: that transition archives it without appending and derives carry only from known events. A current-ruleset, current-schema journal with unknown kinds is still refused, even after a BIOS change. `reset --all` accepts unknown kinds only when the schema differs, because that archive does not append; same-schema resets, including older-ruleset `reset --all`, still refuse them before modifying the journal. Refusals name the kind and the journal and binary build stamps. This policy applies to builds from this change onward: 0.5.0 still rejects unknown kinds even for read-only commands.
 
 Example trial, abbreviated:
 
@@ -125,6 +125,8 @@ Plan kinds and their payloads (optional fields are omitted when empty):
 ## Transitions
 
 A transition archives an older ruleset or schema journal before opening it; it also archives a compatible journal when the recorded BIOS context differs from the current one. The same carry marker, lock and crash-recovery protocol apply. A BIOS change carries candidate edges only, not failed or joint marks. A newer journal remains a refusal. Before the move, `run` writes and fsyncs `archive/<session-id>-carry-pending` without appending to the old journal. A previously archived last `session.archived` move is completed without carry. `reset --all` removes carry markers. A malformed complete archived line without `kind` stops carry with an error.
+
+An older-ruleset or older-schema journal may contain kinds this build does not know: the transition still archives it unchanged, and unknown kinds supply no carry evidence. A journal with this build's ruleset and schema must contain only known kinds before `run` can append to it or archive it for a BIOS change.
 
 While a carry marker exists and the current journal holds neither a `session.carried` whose first source is the marked session nor any `core.phase`, the next `run` computes the carry from the archives and records it once, after `session.context`, the baseline and its notice, and before the first `core.phase`. Afterwards the marker is removed. A crash between `session.carried` and the phases resumes from the recorded event, never from the archives.
 

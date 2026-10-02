@@ -7,6 +7,7 @@ All notable changes to togi are documented in this file. The format is based on 
 ### Changed
 
 - Failure-rate bounds in `status` state that their 95% claim assumes a constant failure rate on the tested workloads; the numbers and rounding are unchanged ([#237]).
+- `run` archives older-ruleset or older-schema journals containing unknown event kinds and derives carry from known events; current-session writes still refuse unknown kinds, while `reset --all` permits them only for its non-appending different-schema archive ([#270]).
 
 ### Fixed
 
@@ -372,5 +373,6 @@ All notable changes to togi are documented in this file. The format is based on 
 [#249]: https://github.com/shgew/togi/pull/249
 [#251]: https://github.com/shgew/togi/pull/251
 [#269]: https://github.com/shgew/togi/pull/269
+[#270]: https://github.com/shgew/togi/pull/270
 [#278]: https://github.com/shgew/togi/pull/278
 [#279]: https://github.com/shgew/togi/pull/279

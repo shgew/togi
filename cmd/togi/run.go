@@ -42,9 +42,11 @@ a terminal run offers to reset them. An unanswered too-aggressive defect stops
 an unattended run. It needs root. A journal from an older ruleset or schema is
 archived, and the new session starts each core from the edges and failed marks
 it found. A newer one stops the run before another event is written; reset --all
-archives that session. Unknown event kinds stop both run and reset; install the
-build that wrote them. Journal lines are colored on terminals and in the system
-journal unless NO_COLOR is set.
+archives that session. An older ruleset or schema is archived even with unknown
+event kinds; carry uses only known events. Unknown kinds in a current-ruleset,
+current-schema journal stop both run and reset; install the build that wrote
+them. Journal lines are colored on terminals and in the system journal unless
+NO_COLOR is set.
 
 Only one run or reset can own this machine, even with different state directories.
 A busy /run/lock/togi.lock stops the command before any hardware access or event.
@@ -100,7 +102,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "togi run: %s\n", journal.EscapeText(scanErr.Error()))
 		return exitError
 	}
-	if events, _, readErr := journal.Read(g.stateDir); readErr == nil {
+	if events, _, readErr := journal.Read(g.stateDir); readErr == nil && !journal.Older(journal.BuildOf(events), session.Build()) {
 		if err := journal.KnownKinds(events, session.Build()); err != nil {
 			return runStartupRefusal(g, err, stderr, renderer, bootloader)
 		}

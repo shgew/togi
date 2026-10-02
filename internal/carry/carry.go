@@ -26,7 +26,7 @@ type Carry struct {
 func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, current *machine.BIOSContext) (*Carry, error) {
 	dir := j.Dir()
 	events, _, readErr := journal.Read(dir)
-	if readErr == nil {
+	if readErr == nil && !journal.Older(journal.BuildOf(events), binary) {
 		if err := journal.KnownKinds(events, binary); err != nil {
 			return nil, err
 		}
