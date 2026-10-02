@@ -72,13 +72,14 @@ func TestFitIdleRequiresNegativeUnloadedExposure(t *testing.T) {
 			l.rebuild()
 			l.fitIdle(&cfg)
 			got := cfg.Edges[1].Idle
-			if !tc.wantEnabled {
+			switch {
+			case !tc.wantEnabled:
 				if got != nil {
 					t.Errorf("idle edge without negative unloaded exposure: got %d; want disabled", *got)
 				}
-			} else if got == nil {
+			case got == nil:
 				t.Errorf("existing idle edge disabled without negative unloaded exposure; want %d", tc.initial)
-			} else if *got != tc.initial {
+			case *got != tc.initial:
 				t.Errorf("existing idle edge without negative unloaded exposure: got %d; want %d", *got, tc.initial)
 			}
 		})
