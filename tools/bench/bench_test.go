@@ -32,16 +32,16 @@ func TestMetrics(t *testing.T) {
 	add(1.4, &journal.HuntStart{Hunt: 1, Anchor: []int{-10, -11}, Candidates: []int{0, 1}})
 	add(1.5, &journal.MarkJoint{Mark: 1, Members: []journal.JointMember{{Core: 0, Offset: -12}, {Core: 1, Offset: -12}}})
 	add(2, &journal.ProfileApplied{Offsets: []int{0, 0}, Condition: machine.Masked})
-	m, err := sim.New(sim.Config{Cores: 2, Edges: []sim.Edges{{Isolated: [5]int{-20, -20, -20, -20, -20}, Resident: [7]int{-20, -20, -20, -20, -20, -20, -20}}, {Isolated: [5]int{-20, -20, -20, -20, -20}, Resident: [7]int{-20, -20, -20, -20, -20, -20, -20}}}})
+	m, err := sim.New(sim.Config{Cores: 2, Edges: []sim.Edges{{Flat: 0.00001, Isolated: [5]int{-20, -20, -20, -20, -20}, Resident: [7]int{-20, -20, -20, -20, -20, -20, -20}}, {Flat: 0.00002, Isolated: [5]int{-20, -20, -20, -20, -20}, Resident: [7]int{-20, -20, -20, -20, -20, -20, -20}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := metrics(events, m, 2)
 	hazards := map[machine.Regime]float64{}
 	for _, regime := range machine.Regimes {
-		hazards[regime] = 0
+		hazards[regime] = 0.108
 	}
-	want := result{SimHours: 2, FirstCleanRotationH: new(1.0), Crashes: 1, Trials: 2, TrialHours: 120.0 / 3600, Hunts: 1, JointMarks: 1, FinalProfile: []int{-10, -11}, Depth: -21, HazardPerH: hazards}
+	want := result{SimHours: 2, FirstCleanRotationH: new(1.0), Crashes: 1, Trials: 2, TrialHours: 120.0 / 3600, Hunts: 1, JointMarks: 1, FinalProfile: []int{-10, -11}, Depth: -21, HazardPerH: hazards, HazardMaxPerH: 0.108}
 	if diff := cmp.Diff(want, got, approx); diff != "" {
 		t.Fatalf("metrics (-want +got):\n%s", diff)
 	}
@@ -52,9 +52,9 @@ func TestMetrics(t *testing.T) {
 }
 
 func TestPairing(t *testing.T) {
-	a := []result{{Scenario: "b", Seed: 2}, {Scenario: "a", Seed: 1}, {Scenario: "a", Seed: 9}}
-	b := []result{{Scenario: "a", Seed: 1}, {Scenario: "b", Seed: 2}, {Scenario: "c", Seed: 1}}
-	want := []pair{{a[1], b[0]}, {a[0], b[1]}}
+	a := []result{{Scenario: "b", Seed: 2}, {Scenario: "a", Seed: 9}, {Scenario: "a", Seed: 1}, {Scenario: "a", Seed: 8}}
+	b := []result{{Scenario: "a", Seed: 9}, {Scenario: "b", Seed: 2}, {Scenario: "c", Seed: 1}, {Scenario: "a", Seed: 1}}
+	want := []pair{{a[2], b[3]}, {a[1], b[0]}, {a[0], b[1]}}
 	if diff := cmp.Diff(want, pairing(a, b), cmp.AllowUnexported(pair{})); diff != "" {
 		t.Fatal(diff)
 	}

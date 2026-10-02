@@ -291,3 +291,44 @@ func checkRows(t *testing.T, name, out string, row *regexp.Regexp, st journal.St
 		}
 	}
 }
+
+func TestStatusExceptionalActivity(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"nonqualifying-guard", "dead-end", "anchored-edge-mask", "fallback-joint-mark"} {
+		t.Run(name, func(t *testing.T) {
+			st := journal.State{
+				Session: &journal.SessionInfo{ID: "s1", Start: time.Unix(100, 0).UTC()},
+				Cores: []journal.CoreState{
+					{Core: 3, CCD: 0, Offset: -9, Phase: journal.PhaseDone},
+					{Core: 7, CCD: 0, Offset: -8, Phase: journal.PhaseDone},
+				},
+			}
+			switch name {
+			case "nonqualifying-guard":
+				st.Phase = string(journal.PhaseGuard)
+				st.Guard = &journal.GuardState{Rotation: 4, Steps: []machine.Regime{machine.R1}, Profile: []int{-9, -8}, Missing: []string{"core 03 has no R1 pass"}}
+			case "dead-end":
+				st.DeadEnd = &journal.DeadEndRef{Condition: journal.DeadEndNoEvidence, Seq: 42}
+			case "anchored-edge-mask":
+				st.Phase = string(journal.PhaseHunt)
+				st.Cores[0].Offset = -10
+				st.Hunt = &journal.HuntState{
+					Hunt: 2, Seq: 40, Failure: 30, AnchorSeq: 20, Anchor: []int{0, 0},
+					Regime: machine.R7, Trial: "0001", Candidates: []int{3, 7},
+					Masks: []journal.MaskState{{Mask: 3, Edge: &journal.JointMember{Core: 3, Offset: -10}, Held: []journal.JointMember{{Core: 7, Offset: -8}}, Passes: 2, Needed: 5, Outcome: "running"}},
+				}
+			case "fallback-joint-mark":
+				st.JointMarks = []journal.JointMarkState{{Mark: 2, Hunt: 3, Seq: 42, Fallback: true, Members: []journal.JointMember{{Core: 3, Offset: -10}, {Core: 7, Offset: -8}}}}
+				st.Cores[0].JointMarks = []int{2}
+				st.Cores[1].JointMarks = []int{2}
+			}
+			var out bytes.Buffer
+			var events []journal.Event
+			if st.Hunt != nil {
+				events = []journal.Event{{Seq: 30, Kind: journal.KindFailure, Data: &journal.Failure{Signal: machine.ComputationError}}}
+			}
+			writeStatus(&out, st, events)
+			golden(t, "status-"+name, out.String())
+		})
+	}
+}

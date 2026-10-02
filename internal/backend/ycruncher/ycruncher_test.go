@@ -228,3 +228,60 @@ func TestClassify(t *testing.T) {
 		}
 	}
 }
+
+func TestBinaryDiscoveryErrors(t *testing.T) {
+	for _, kind := range []string{"no matching names", "dangling executable", "cyclic executable", "not a directory"} {
+		t.Run(kind, func(t *testing.T) {
+			pkg := fakePackage(t, true)
+			root := filepath.Join(pkg, "lib/y-cruncher/Binaries")
+			missing := kind == "no matching names" || kind == "dangling executable"
+			switch kind {
+			case "no matching names", "not a directory":
+				if err := os.RemoveAll(root); err != nil {
+					t.Fatal(err)
+				}
+				if kind == "no matching names" {
+					if err := os.Mkdir(root, 0755); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(root, "README"), nil, 0644); err != nil {
+						t.Fatal(err)
+					}
+				} else if err := os.WriteFile(root, nil, 0644); err != nil {
+					t.Fatal(err)
+				}
+			default:
+				bin := filepath.Join(root, "05-A64 ~ Kasumi")
+				if err := os.Remove(bin); err != nil {
+					t.Fatal(err)
+				}
+				target := "absent"
+				if kind == "cyclic executable" {
+					target = filepath.Base(bin)
+				}
+				if err := os.Symlink(target, bin); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := New(pkg).Check()
+			if err == nil || errors.Is(err, machine.ErrBackendMissing) != missing || !strings.Contains(err.Error(), root) {
+				t.Fatalf("discovery failure misclassified: %v", err)
+			}
+		})
+	}
+}
+
+func TestPrepareInputFailureProducesNoLaunch(t *testing.T) {
+	pkg, dir := fakePackage(t, true), t.TempDir()
+	path := filepath.Join(dir, "stress.cfg")
+	if err := os.Mkdir(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	launch, err := New(pkg).Prepare(machine.Workload{Base: "ycruncher-bkt-sftv4"}, dir, []int{2})
+	if err == nil || !strings.Contains(err.Error(), path) {
+		t.Fatalf("input failure lost: %v", err)
+	}
+	if diff := cmp.Diff(backend.Launch{}, launch); diff != "" {
+		t.Fatal(diff)
+	}
+}

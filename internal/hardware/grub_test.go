@@ -3,6 +3,7 @@ package hardware
 import (
 	"errors"
 	"fmt"
+	"github.com/google/go-cmp/cmp"
 	"strings"
 	"testing"
 )
@@ -89,5 +90,35 @@ func TestGRUBCleanupAlreadyUnset(t *testing.T) {
 	before, after, err := (GRUB{Env: "test grub environment", run: env.run}).ClearSavedEntry()
 	if err != nil || before != "" || after != "" || env.saved != "" {
 		t.Fatalf("already-cleared environment changed: %q %q %q, %v", before, after, env.saved, err)
+	}
+}
+
+func TestGRUBSavedEntryParsing(t *testing.T) {
+	for _, tt := range []struct {
+		name, listing, want string
+	}{
+		{"other keys", "next_entry=togi\nother_saved_entry=wrong\nsaved_entry_extra=wrong\n", ""},
+		{"whitespace", "next_entry=normal\n \tsaved_entry=togi-specialisation \t\n", "togi-specialisation"},
+		{"value contains equals", "saved_entry=menu=entry\n", "menu=entry"},
+		{"empty saved entry", "saved_entry=\n", ""},
+		{"no final newline", "next_entry=normal\nsaved_entry=togi", "togi"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			listed := false
+			grub := GRUB{Env: "test grub environment", run: func(_ string, args ...string) (string, error) {
+				if args[0] != "list" || listed {
+					return "", nil
+				}
+				listed = true
+				return tt.listing, nil
+			}}
+			before, after, err := grub.ClearSavedEntry()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff([]string{tt.want, ""}, []string{before, after}); diff != "" {
+				t.Fatalf("saved entry (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

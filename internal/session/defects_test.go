@@ -1,9 +1,12 @@
 package session
 
 import (
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -155,5 +158,78 @@ func TestRealPowerOffDefectFoundOnceOnResume(t *testing.T) {
 	}
 	if found != 1 {
 		t.Fatalf("finding repeated after second resume: %d findings", found)
+	}
+}
+
+func TestDefectPromptFailureLeavesAnswerUncommitted(t *testing.T) {
+	t.Parallel()
+	r, _, closeJournal := checkedRunner(t, []int{0, 0})
+	defer closeJournal()
+	r.in.Defects = []defect.Entry{testDefect(defect.TooAggressive)}
+	if _, err := r.append(&journal.DefectFound{ID: 2, Direction: string(defect.TooAggressive), Cores: []int{0}, Decisions: []int{1}}, 1); err != nil {
+		t.Fatal(err)
+	}
+	before := r.in.Journal.Events()
+	failure := errors.New("terminal input closed")
+	r.in.Prompt = func(defect.Finding) (bool, error) { return false, failure }
+	stop, err := r.checkDefects()
+	if stop != nil || !errors.Is(err, failure) || !strings.Contains(err.Error(), "ask whether to reset defect 2 cores") {
+		t.Fatalf("failed operator prompt: %+v, %v", stop, err)
+	}
+	if diff := cmp.Diff(before, r.in.Journal.Events()); diff != "" {
+		t.Fatalf("prompt failure recorded an answer or reset:\n%s", diff)
+	}
+}
+
+func TestLegacyDefectAnswerRejectsUnrelatedWarning(t *testing.T) {
+	t.Parallel()
+	for _, wrongOperation := range []bool{false, true} {
+		t.Run(map[bool]string{false: "wrong cause", true: "wrong operation"}[wrongOperation], func(t *testing.T) {
+			t.Parallel()
+			r, _, closeJournal := checkedRunner(t, []int{0, 0})
+			defer closeJournal()
+			r.in.Defects = []defect.Entry{testDefect(defect.TooAggressive)}
+			found, err := r.append(&journal.DefectFound{ID: 2, Direction: string(defect.TooAggressive), Cores: []int{0, 1}, Decisions: []int{1}}, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var reset journal.Event
+			for core := range 2 {
+				reset, err = r.append(&journal.CommandReset{Core: new(core)}, found.Seq)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			operation, cause := "write state projection", found.Seq
+			if wrongOperation {
+				operation, cause = "retain passed trial", reset.Seq
+			}
+			if _, err := r.append(&journal.SessionWarning{Operation: operation, Error: "unavailable"}, cause); err != nil {
+				t.Fatal(err)
+			}
+			answer, err := r.append(&journal.DefectAnswered{ID: 2, Cores: []int{0, 1}, Answer: "yes"}, found.Seq)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stop, err := r.checkDefects(); err != nil || stop != nil {
+				t.Fatalf("resume answer: %+v, %v", stop, err)
+			}
+			var cores []int
+			for _, e := range r.in.Journal.Events() {
+				if p, ok := e.Data.(*journal.CommandReset); ok && cmp.Equal([]int{answer.Seq}, e.Cause) {
+					cores = append(cores, *p.Core)
+				}
+			}
+			if diff := cmp.Diff([]int{0, 1}, cores); diff != "" {
+				t.Fatalf("unrelated warning falsely completed the legacy answer:\n%s", diff)
+			}
+			before := r.in.Journal.Events()
+			if stop, err := r.checkDefects(); err != nil || stop != nil {
+				t.Fatalf("repeat resume: %+v, %v", stop, err)
+			}
+			if diff := cmp.Diff(before, r.in.Journal.Events()); diff != "" {
+				t.Fatalf("resumed answer duplicated resets:\n%s", diff)
+			}
+		})
 	}
 }

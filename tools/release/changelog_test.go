@@ -17,6 +17,7 @@ func TestBump(t *testing.T) {
 		{"post-one-fixed", "1.2.3", "### Fixed\n\n- Repair", "1.2.4", "patch"},
 		{"post-one-breaking", "1.2.3", "### Fixed\n\n- **BREAKING** state reset", "2.0.0", "state reset"},
 		{"leading-zero", "01.2.3", "- Item", "", "invalid"},
+		{"overflow", strings.Repeat("9", 40) + ".2.3", "- Item", "", "parse version"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -84,6 +85,12 @@ func TestReleaseSections(t *testing.T) {
 			"1.2.2", "- See [the guide][guide] and [source].",
 			"- See [the guide][guide] and [source].\n\n[guide]: https://forge.example/guide\n\n[source]: https://forge.example/source",
 		},
+		{
+			"inline-link-is-not-reference",
+			"## [1.2.3] - 2026-09-25\n\n- See [guide](https://forge.example/guide).\n\n[guide]: https://forge.example/unrelated\n",
+			"1.2.3", "- See [guide](https://forge.example/guide).",
+			"- See [guide](https://forge.example/guide).",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -117,6 +124,21 @@ func TestRewriteFirstRelease(t *testing.T) {
 			got, err := rewriteChangelog(tc.input, "0.1.0", "https://forge.example/o/r", time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC))
 			if err != nil || got != tc.want {
 				t.Fatalf("rewrite = %q, %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestRewriteRefusesInvalidSections(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, input, want string }{
+		{"missing unreleased", "## [1.2.3] - 2026-09-25\n", "missing [Unreleased] section"},
+		{"duplicate version", "## [Unreleased]\n\n- Change\n\n## [1.2.3] - 2026-09-25\n", "version [1.2.3] already exists"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := rewriteChangelog(tc.input, "1.2.3", "https://forge.example/o/r", time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC))
+			if err == nil || err.Error() != tc.want || got != "" {
+				t.Fatalf("rewrite = %q, %v; want empty output and %q", got, err, tc.want)
 			}
 		})
 	}

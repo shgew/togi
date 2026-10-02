@@ -74,8 +74,6 @@ func (s trialSamples) appendLines(w *bufio.Writer) error {
 	return nil
 }
 
-func (m *Machine) PMTable() *machine.PMTable { return nil }
-
 func (t trials) Samples(id string) iter.Seq[machine.TrialConditions] {
 	return func(yield func(machine.TrialConditions) bool) {
 		if t.m.samplesDir == "" && id == t.m.samples.spec.ID {

@@ -380,8 +380,6 @@ func (m *Machine) Sleep(ctx context.Context, d time.Duration) error {
 
 func (m *Machine) IsolatedEdge(core int) int { return slices.Max(m.edges[core].Isolated[:]) }
 
-func (m *Machine) ResidentEdge(core int) int { return slices.Max(m.edges[core].Resident[:]) }
-
 func (m *Machine) Crash() {
 	if m.nextReset == "" {
 		m.nextReset = machine.ResetWatchdog

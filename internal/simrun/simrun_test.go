@@ -2,6 +2,9 @@ package simrun
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -99,5 +102,31 @@ func TestSixteenCoresReachQualifiedRotation(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("R7 parts did not run three starts of 120s and long 300/300/600s: %v", parts)
+	}
+}
+
+func TestSimulatorRefusesAnotherJournalWriter(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	m, err := sim.New(huntConfig(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	j, err := journal.Lock(dir, journal.Options{Now: m.Now, Build: session.Build()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.Close()
+	_, err = Simulate(context.Background(), Input{Config: config.Default(), Dir: dir, Machine: m, Rotations: 1})
+	if !errors.Is(err, journal.ErrLocked) {
+		t.Fatalf("second writer: %v, want locked journal", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "events.jsonl")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("refused simulator created a journal: %v", err)
+	}
+	for core := range 2 {
+		if offset, err := m.Seams().SMU.Offset(core); err != nil || offset != 0 {
+			t.Fatalf("refused simulator changed core %d: %d, %v", core, offset, err)
+		}
 	}
 }

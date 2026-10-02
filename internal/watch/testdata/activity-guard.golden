@@ -1,0 +1,59 @@
+  togi   GUARD   session 1m40s   last event 1m35s ago                                                                                                   00:18:20
+ 1/3 done | qualified rotations 0 since last deepening, latest 0 | 0 failures | 0 crashes
+
+ no trial running
+ rotation 1   step 1/3   R1 | R2 R7   not qualifying: R1: 2 more steps; R2: 2 more steps; R3: 1 more steps; R4: 1 more steps; R5: 1 more steps; R6: 1 more st...
+ no failures yet
+
+
+ CCD 0
+
+ ┌─ 00 ───────────────────── resident ─┐  ┌─ 01 ──────────────────────── DONE ─┐
+ │                 ▀▀█ █▀█             │  │                ▀▀█ █▀█             │
+ │             ▀▀▀ █▀▀ █ █             │  │            ▀▀▀  ▀█ █ █             │
+ │                 ▀▀▀ ▀▀▀             │  │                ▀▀▀ ▀▀▀             │
+ │ ██████████████..................... │  │ █████████████████████x............ │
+ │ 0           -20                 -50 │  │ 0                  -30         -50 │
+ └─────────────────────────────────────┘  └────────────────────────────────────┘
+
+
+ CCD 1
+
+ ┌─ 02 ───────────────────── resident ─┐
+ │                 ▀█  █▀█             │
+ │             ▀▀▀  █  █ █             │
+ │                 ▀▀▀ ▀▀▀             │
+ │ ███████............................ │
+ │ 0    -10                        -50 │
+ └─────────────────────────────────────┘
+
+
+ CO 0 -> -50     > trial     x failed mark     j joint mark     · mask anchor     ░ unexplored
+
+
+ Recent
+ 0h00m  session dashboard started by a togi build from before version stamps (schema 0, ruleset 0, fixes 0, 3 cores)
+ 0h00m  core 00 starts resident at -20 ()
+ 0h00m  core 01 starts done at -30 ()
+ 0h00m  core 02 starts resident at -10 ()
+ 0h00m  profile for guard: [-20 -30 -10]
+ 0h00m  guard rotation 1 start: R1 R2 R7
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

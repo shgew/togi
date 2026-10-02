@@ -420,3 +420,60 @@ func TestRerunFIFOAndSharedDuration(t *testing.T) {
 		t.Fatalf("shared duration added redundant long start: %+v", a)
 	}
 }
+
+func TestRepeatedRotationClassesAddStarts(t *testing.T) {
+	for _, regime := range machine.Regimes {
+		t.Run(string(regime), func(t *testing.T) {
+			h := residentHarness(t, -10)
+			catalog := len(machine.Workloads(regime))
+			steps := make([]machine.Regime, catalog+1)
+			for i := range steps {
+				steps[i] = regime
+			}
+			h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: steps})
+			first := h.s.requirements(0)
+			last := h.s.requirements(catalog)
+			for i, q := range last {
+				if q.count != 2*first[i].count || q.class != first[i].class {
+					t.Fatalf("repeated class did not add requirements: first %+v, last %+v", first, last)
+				}
+			}
+		})
+	}
+}
+
+func TestDrainStopsAtTrialBoundary(t *testing.T) {
+	h := newHarness(t, searchAt(-10)...)
+	h.trial(h.next(), failed)
+	a, ok := h.s.Drain()
+	if !ok {
+		t.Fatal("drain did not attribute completed failure")
+	}
+	f, yes := a.Payload.(*journal.Failure)
+	if !yes || f.Core == nil || *f.Core != 0 {
+		t.Fatalf("drain attribution: %+v", a)
+	}
+	h.decide(a)
+	a, ok = h.s.Drain()
+	back, yes := a.Payload.(*journal.TunerDecision)
+	if !ok || !yes || back.ToOffset != -5 || back.FailedMark == nil || *back.FailedMark != -10 {
+		t.Fatalf("drain backoff: %+v", a)
+	}
+	h.decide(a)
+	if a, ok := h.s.Drain(); ok {
+		t.Fatalf("drain scheduled new work: %+v", a)
+	}
+	if a := h.next(); a.Kind != RunTrial || a.Trial.Offset != -5 {
+		t.Fatalf("next lost search after drain: %+v", a)
+	}
+}
+
+func TestDrainRejectsUnattributedFailureAtZero(t *testing.T) {
+	h := residentHarness(t, 0, 0)
+	failure := h.add(&journal.Failure{Attribution: journal.Unattributed, Condition: machine.Resident, Profile: []int{0, 0}, Signal: machine.Crash})
+	a, ok := h.s.Drain()
+	p, yes := a.Payload.(*journal.DeadEnd)
+	if !ok || !yes || p.Condition != journal.DeadEndFailureAtZero || p.Core != nil || cmp.Diff([]int{failure.Seq}, a.Cause) != "" {
+		t.Fatalf("drain missed all-zero dead end: %+v", a)
+	}
+}

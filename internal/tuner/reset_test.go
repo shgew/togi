@@ -51,3 +51,39 @@ func TestResetAfterHuntEndDropsCommitment(t *testing.T) {
 		t.Fatalf("reset core received joint mark: %+v", a)
 	}
 }
+
+func TestResetClosesRoundAndRotationBeforeSearching(t *testing.T) {
+	for _, refining := range []bool{false, true} {
+		h := qualifiedHarness(t, []int{-10}, nil)
+		h.add(&journal.SessionBaseline{Offsets: []int{-7}})
+		if refining {
+			h.add(&journal.RefineRound{Round: 2, Event: journal.RotationStart, Profile: []int{-30}, Target: []int{-50}, Cores: []int{0}, Starts: h.s.n, StartS: h.s.durations.StartS})
+		} else {
+			h.add(&journal.GuardRotation{Rotation: 4, Event: journal.RotationStart, Steps: h.s.steps})
+		}
+		reset := h.add(&journal.CommandReset{Core: new(0)})
+		a := h.next()
+		if refining {
+			r, ok := a.Payload.(*journal.RefineRound)
+			if !ok || r.Round != 2 || r.Event != journal.RotationEnd || r.Passed {
+				t.Fatalf("reset must cancel refinement first: %+v", a)
+			}
+		} else {
+			g, ok := a.Payload.(*journal.GuardRotation)
+			if !ok || g.Rotation != 4 || g.Event != journal.RotationEnd || g.Clean || g.Qualifying {
+				t.Fatalf("reset must close rotation unclean: %+v", a)
+			}
+		}
+		if diff := cmp.Diff([]int{reset.Seq}, a.Cause); diff != "" {
+			t.Fatalf("reset cancellation cause (-want +got):\n%s", diff)
+		}
+		h.decide(a)
+		a = h.next()
+		p, ok := a.Payload.(*journal.CorePhase)
+		if !ok || p.To != journal.PhaseSearch || p.Offset != -7 || p.Pass != nil || p.FailedMark != nil {
+			t.Fatalf("reset must restart baseline search: %+v", a)
+		}
+		h.decide(a)
+		assertProjectionReplay(h)
+	}
+}

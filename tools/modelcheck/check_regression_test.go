@@ -3,10 +3,16 @@ package modelcheck
 import (
 	"compress/gzip"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/facts"
+	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/tools/trialfacts"
@@ -105,5 +111,64 @@ func TestModelCheckEligibility(t *testing.T) {
 				t.Fatalf("eligible group = %+v", check.Groups[0])
 			}
 		})
+	}
+}
+
+func TestCheckRefusesUnreadableExtract(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "machine.toml")
+	got, err := Check(path, sim.Config{Facts: "missing.jsonl.gz"})
+	if got != nil || !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), "missing.jsonl.gz") {
+		t.Fatalf("missing extract: result=%v err=%v", got, err)
+	}
+}
+
+func TestCheckRecordsRefusesInvalidMachine(t *testing.T) {
+	got, err := CheckRecords("machine.toml", "facts.jsonl.gz", sim.Config{Cores: 3}, nil)
+	if got != nil || err == nil || !strings.Contains(err.Error(), "must be even and at least 2") {
+		t.Fatalf("invalid machine: result=%v err=%v", got, err)
+	}
+}
+
+func TestCheckerRefusesMalformedStarts(t *testing.T) {
+	valid := trialfacts.Record{Session: "extract", Seq: 7, Kind: facts.TrialFact, Outcome: journal.OutcomePass, Profile: []int{0, 0}, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
+	for _, tc := range []struct {
+		name   string
+		change func(*trialfacts.Record)
+		want   string
+	}{
+		{"profile size", func(r *trialfacts.Record) { r.Profile = []int{0} }, "invalid trial fact extract:7"},
+		{"empty loaded", func(r *trialfacts.Record) { r.Class.Cores = nil }, "invalid trial fact extract:7"},
+		{"zero duration", func(r *trialfacts.Record) { r.Class.DurationS = 0 }, "invalid trial fact extract:7"},
+		{"negative duration", func(r *trialfacts.Record) { r.Class.DurationS = -1 }, "invalid trial fact extract:7"},
+		{"negative core", func(r *trialfacts.Record) { r.Class.Cores = []int{-1} }, "invalid loaded core in fact extract:7"},
+		{"core out of range", func(r *trialfacts.Record) { r.Class.Cores = []int{2} }, "invalid loaded core in fact extract:7"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := valid
+			tc.change(&r)
+			got, err := NewChecker(sim.Config{Cores: 2}, []trialfacts.Record{r})
+			if got != nil || err == nil || err.Error() != tc.want {
+				t.Fatalf("got %v %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestCheckerCountsIdleWithoutInventingExposure(t *testing.T) {
+	model := sim.DefaultModel()
+	model.NearEdgeRate = 0
+	cfg := sim.Config{Model: &model}
+	var records []trialfacts.Record
+	for range 10 {
+		records = append(records, trialfacts.Record{Kind: facts.TrialFact, Outcome: journal.OutcomePass, Profile: make([]int, 16), Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}})
+	}
+	records = append(records, trialfacts.Record{Kind: facts.IdleFact}, trialfacts.Record{Kind: facts.IdleFact}, trialfacts.Record{Kind: facts.TrialFact, Outcome: journal.Outcome("inconclusive")}, trialfacts.Record{Kind: facts.Kind("other")})
+	check, err := CheckRecords("machine", "extract", cfg, records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &Result{Machine: "machine", Extract: "extract", Status: "ok", IdleFailures: 2, Groups: []Group{{Kind: facts.TrialFact, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}, N: 10, Interval: [2]int{0, 0}}}}
+	if diff := cmp.Diff(want, check); diff != "" {
+		t.Fatal(diff)
 	}
 }

@@ -222,3 +222,35 @@ func TestEventsUnfilteredUnknownKind(t *testing.T) {
 		t.Fatalf("unfiltered events (-want +got):\n%s", diff)
 	}
 }
+
+func TestReadCommandsReportTornTail(t *testing.T) {
+	t.Parallel()
+	fixture, err := os.ReadFile("testdata/events.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"status", "events"} {
+		t.Run(command, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), append(bytes.Clone(fixture), []byte("{torn")...), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var out, diagnostics bytes.Buffer
+			code := testCLI(t, []string{"--state-dir", dir, command}, &out, &diagnostics)
+			if code != exitOK || out.Len() == 0 {
+				t.Fatalf("exit %d, stdout %q, stderr %q", code, out.String(), diagnostics.String())
+			}
+			if !strings.Contains(diagnostics.String(), "journal ends with 5 torn bytes; the next run records journal.torn\n") {
+				t.Fatalf("missing torn-tail warning: %q", diagnostics.String())
+			}
+			want := append(bytes.Clone(fixture), []byte("{torn")...)
+			got, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("read modified torn tail: %s", diff)
+			}
+		})
+	}
+}

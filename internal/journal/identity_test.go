@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestSessionIdentityReservesArchivedTrialDirectories(t *testing.T) {
@@ -29,5 +31,22 @@ func TestSessionIdentityReservesArchivedTrialDirectories(t *testing.T) {
 	}
 	if _, err := j.ArchivePath(id); err != nil {
 		t.Fatalf("allocated identity cannot archive: %v", err)
+	}
+}
+
+func TestSessionIDsOrderNumericSuffixes(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		want int
+	}{
+		{"20261002T000000Z-10", "20261002T000000Z-2", 1},
+		{"20261002T000000Z-2", "20261002T000000Z-10", -1},
+		{"20261002T000000Z", "20261002T000000Z-2", -1},
+		{"20261002T000000Z-10", "20261002T000000Z-10", 0},
+		{"20261001T000000Z-99", "20261002T000000Z", -1},
+	} {
+		if diff := cmp.Diff(tc.want, CompareSessionIDs(tc.a, tc.b)); diff != "" {
+			t.Fatalf("%s versus %s: %s", tc.a, tc.b, diff)
+		}
 	}
 }

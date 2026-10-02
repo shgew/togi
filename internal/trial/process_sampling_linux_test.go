@@ -127,3 +127,10 @@ func TestProcThreadsMalformedID(t *testing.T) {
 		t.Fatalf("malformed thread IDs not reported as loss: %v", err)
 	}
 }
+
+func TestMissingTaskDirectoryPreservesDisappearance(t *testing.T) {
+	threads, err := procThreads(filepath.Join(t.TempDir(), "missing"))
+	if len(threads) != 0 || !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing tasks: threads=%v err=%v", threads, err)
+	}
+}

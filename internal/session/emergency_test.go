@@ -406,3 +406,96 @@ func TestJournalFailureWithUnconfirmedTeardownWithholdsAllWrites(t *testing.T) {
 		})
 	}
 }
+
+func TestBaselineReadFailureDeadEndsBeforeAnyWrite(t *testing.T) {
+	t.Parallel()
+	in := simInput(t.TempDir(), newSim(t, small()))
+	failure := errors.New("baseline read unavailable")
+	fired := false
+	in.Machine.InterruptSMU(func(sim.SMUOperation) error {
+		if !fired {
+			fired = true
+			return failure
+		}
+		return nil
+	})
+	stop := simulate(t, in)
+	if stop.Reason != StopDeadEnd || stop.DeadEnd.Condition != journal.DeadEndSMU || !fired {
+		t.Fatalf("failed baseline read: %+v, fired %t", stop, fired)
+	}
+	events := readEvents(t, in.Dir)
+	var faults []*journal.SMUError
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.SMUError:
+			faults = append(faults, p)
+		case *journal.SMUIntent, *journal.TrialIntent, *journal.SessionBaseline, *journal.ProfileRestored:
+			t.Fatalf("failed baseline allowed writes or claimed a baseline: %+v", e)
+		}
+	}
+	if diff := cmp.Diff([]*journal.SMUError{{Op: journal.SMURead, Core: new(0), Error: failure.Error()}}, faults); diff != "" {
+		t.Fatalf("operator-visible baseline failure (-want +got):\n%s", diff)
+	}
+	in.Machine.InterruptSMU(nil)
+	if diff := cmp.Diff(small().BIOS, actualOffsets(t, in)); diff != "" {
+		t.Fatalf("baseline failure changed offsets:\n%s", diff)
+	}
+}
+
+func TestRestoreSMUFailureChangesOnlyCleanStopOutcome(t *testing.T) {
+	t.Parallel()
+	for _, alreadyDead := range []bool{false, true} {
+		t.Run(map[bool]string{false: "signal", true: "backend evidence dead end"}[alreadyDead], func(t *testing.T) {
+			t.Parallel()
+			r, m, closeJournal := checkedRunner(t, []int{0, 0})
+			defer closeJournal()
+			if err := r.apply([]int{-5, -5}, &journal.ProfileApplied{Offsets: []int{-5, -5}, Condition: machine.Resident}, 0); err != nil {
+				t.Fatal(err)
+			}
+			stop := Stop{Reason: StopSignal}
+			r.shutdownEvent = &journal.Shutdown{Reason: journal.ShutdownSignal}
+			if alreadyDead {
+				dead, err := r.deadEnd(&journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Detail: "backend mprime exhausted retries"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				stop = *dead
+			}
+			original := stop
+			m.FailWrite()
+			if err := r.close(true, &stop); err != nil {
+				t.Fatal(err)
+			}
+			want := journal.DeadEndSMU
+			if alreadyDead {
+				want = journal.DeadEndNoEvidence
+			}
+			if stop.Reason != StopDeadEnd || stop.DeadEnd == nil || stop.DeadEnd.Condition != want {
+				t.Fatalf("restoration overwrote the wrong outcome: %+v, want %s", stop, want)
+			}
+			if alreadyDead {
+				if diff := cmp.Diff(original, stop); diff != "" {
+					t.Fatalf("restoration replaced the original dead end (-want +got):\n%s", diff)
+				}
+			}
+			events := r.in.Journal.Events()
+			failed := false
+			for _, e := range events {
+				if e.Kind == journal.KindSMUError {
+					failed = true
+				}
+				if failed && (e.Kind == journal.KindSMUIntent || e.Kind == journal.KindProfileRestored) {
+					t.Fatalf("failed restoration continued or claimed success: %+v", e)
+				}
+			}
+			if !failed {
+				t.Fatal("restoration failure was not recorded")
+			}
+			for core := range 2 {
+				if offset, err := m.Seams().SMU.Offset(core); err != nil || offset != -5 {
+					t.Fatalf("failed restore changed core %d: %d, %v", core, offset, err)
+				}
+			}
+		})
+	}
+}

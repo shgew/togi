@@ -6,7 +6,10 @@ import (
 	"compress/gzip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func FuzzParse(f *testing.F) {
@@ -132,5 +135,98 @@ func TestParseShippedSchemas(t *testing.T) {
 				t.Fatalf("shipped configuration not decoded: %+v", events[1])
 			}
 		})
+	}
+}
+
+func TestDamagedJournalReaders(t *testing.T) {
+	header := `{"seq":1,"kind":"session.start","schema":2,"session":"source"}` + "\n"
+	for _, tc := range []struct{ name, data, diagnostic string }{
+		{"malformed first line", "{\n", "line 1"},
+		{"missing kind", header + `{"seq":2}` + "\n", "event has no kind"},
+		{"wrong first event", `{"seq":1,"kind":"shutdown","schema":2}` + "\n", "first event is shutdown"},
+		{"invalid payload", header + `{"seq":2,"kind":"trial.end","duration_s":"bad"}` + "\n", "decode trial.end"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			path := filepath.Join(dir, eventsFile)
+			data := []byte(tc.data)
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			for _, reader := range []func(string) ([]Event, error){ReadHistory, ReadForCarry} {
+				_, err := reader(path)
+				if err == nil || !strings.Contains(err.Error(), tc.diagnostic) {
+					t.Fatalf("reader error = %v, want %q", err, tc.diagnostic)
+				}
+			}
+			_, _, err := Read(dir)
+			if err == nil || !strings.Contains(err.Error(), tc.diagnostic) {
+				t.Fatalf("Read error = %v, want %q", err, tc.diagnostic)
+			}
+			j, err := Open(dir, Options{Now: fixedClock()})
+			if j != nil {
+				j.Close()
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.diagnostic) {
+				t.Fatalf("Open error = %v, want %q", err, tc.diagnostic)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(data, after); diff != "" {
+				t.Fatalf("corrupt complete line was repaired: %s", diff)
+			}
+		})
+	}
+}
+
+func TestHistoryRejectsUnshippedSchemas(t *testing.T) {
+	for _, schema := range []string{"0", "99"} {
+		t.Run(schema, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), eventsFile)
+			if err := os.WriteFile(path, []byte(`{"seq":1,"kind":"session.start","schema":`+schema+`}`+"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ReadHistory(path); err == nil || !strings.Contains(err.Error(), "cannot be read by schema") {
+				t.Fatalf("schema refusal: %v", err)
+			}
+		})
+	}
+}
+
+func TestCarryAndHistoryKeepHistoricalBuildStamp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), eventsFile)
+	data := `{"seq":1,"kind":"session.start","session":"source","schema":1}` + "\n" +
+		`{"seq":2,"kind":"unrelated.future","nested":{"value":42}}` + "\n" +
+		`{"seq":3,"kind":"config.loaded","version":"recorded","fixes":4,"config":"obsolete shape"}` + "\n" + `{"seq":4`
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, reader := range []func(string) ([]Event, error){ReadHistory, ReadForCarry} {
+		events, err := reader(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		last := events[len(events)-1]
+		if last.Seq != 3 {
+			t.Fatalf("historical sequence rewritten: %d", last.Seq)
+		}
+		if diff := cmp.Diff(&ConfigLoaded{Version: "recorded", Fixes: 4}, last.Data); diff != "" {
+			t.Fatal(diff)
+		}
+	}
+}
+
+func TestCarryRejectsEmptyOrInvalidStamp(t *testing.T) {
+	for _, data := range []string{"", `{"kind":"session.start"}`, `{"kind":"session.start"}` + "\n" + `{"kind":"config.loaded","version":17}` + "\n"} {
+		path := filepath.Join(t.TempDir(), eventsFile)
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReadForCarry(path); err == nil {
+			t.Fatalf("invalid carry journal accepted: %q", data)
+		}
 	}
 }

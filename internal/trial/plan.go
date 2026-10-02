@@ -43,9 +43,6 @@ func plan(spec machine.TrialSpec, cores []machine.CoreInfo) iter.Seq[toggle] {
 			}
 			for k, at := 0, spec.Duration/2; at < spec.Duration; k, at = k+1, at+2*time.Second {
 				index := slices.Index(spec.Cores, order[k%len(order)])
-				if index < 0 {
-					continue
-				}
 				if !yield(toggle{At: at, Instances: []int{index}}) {
 					return
 				}

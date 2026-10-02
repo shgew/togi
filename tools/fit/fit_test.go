@@ -5,6 +5,8 @@ import (
 	"math"
 	"math/rand/v2"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -255,5 +257,192 @@ func TestLikelihoodRejectsImpossibleOutcomes(t *testing.T) {
 		} else if loss != 0 {
 			t.Errorf("flat=%g failures=%d: certain outcome has loss %g", tc.flat, tc.failures, loss)
 		}
+	}
+}
+
+func TestDecisiveRefusesInvalidEvidence(t *testing.T) {
+	valid := trialfacts.Record{Session: "extract", Seq: 7, Kind: facts.TrialFact, Outcome: journal.OutcomePass, Profile: []int{-50, 0}, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
+	for _, tc := range []struct {
+		name   string
+		change func(*trialfacts.Record)
+		want   string
+	}{
+		{"one core", func(r *trialfacts.Record) { r.Profile = []int{0} }, "invalid trial fact extract:7"},
+		{"odd cores", func(r *trialfacts.Record) { r.Profile = []int{0, 0, 0} }, "invalid trial fact extract:7"},
+		{"no loaded cores", func(r *trialfacts.Record) { r.Class.Cores = nil }, "invalid trial fact extract:7"},
+		{"no exposure", func(r *trialfacts.Record) { r.Class.DurationS = 0 }, "invalid trial fact extract:7"},
+		{"negative exposure", func(r *trialfacts.Record) { r.Class.DurationS = -1 }, "invalid trial fact extract:7"},
+		{"unknown regime", func(r *trialfacts.Record) { r.Class.Regime = "unknown" }, "invalid trial fact extract:7"},
+		{"too deep", func(r *trialfacts.Record) { r.Profile = []int{-51, 0} }, "invalid profile in fact extract:7"},
+		{"positive offset", func(r *trialfacts.Record) { r.Profile = []int{1, 0} }, "invalid profile in fact extract:7"},
+		{"negative core", func(r *trialfacts.Record) { r.Class.Cores = []int{-1} }, "invalid loaded core in fact extract:7"},
+		{"past last core", func(r *trialfacts.Record) { r.Class.Cores = []int{2} }, "invalid loaded core in fact extract:7"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := valid
+			tc.change(&r)
+			got, err := decisive([]trialfacts.Record{r})
+			if err == nil || err.Error() != tc.want || got != nil {
+				t.Fatalf("got %v, %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+	mismatch := valid
+	mismatch.Profile = []int{0, 0, 0, 0}
+	if _, err := decisive([]trialfacts.Record{valid, mismatch}); err == nil || !strings.Contains(err.Error(), "invalid trial fact") {
+		t.Fatalf("inconsistent core count: %v", err)
+	}
+}
+
+func TestDecisiveFiltersNonStartsAndPreservesContext(t *testing.T) {
+	context := machine.BIOSContext{Board: "fixture", BIOSVersion: "A"}
+	valid := trialfacts.Record{Kind: facts.TrialFact, Outcome: journal.OutcomeFailure, Profile: []int{-50, 0}, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}, Context: &context}
+	idle := valid
+	idle.Kind = facts.IdleFact
+	other := valid
+	other.Outcome = journal.Outcome("inconclusive")
+	got, err := decisive([]trialfacts.Record{idle, other, valid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]trialfacts.Record{valid}, got); diff != "" {
+		t.Fatal(diff)
+	}
+	cfg := initialConfig(got)
+	if diff := cmp.Diff(context, cfg.BIOSContext); diff != "" {
+		t.Fatal(diff)
+	}
+	for _, records := range [][]trialfacts.Record{nil, {idle, other}} {
+		if got, err := decisive(records); err == nil || err.Error() != "extract has no decisive starts" || got != nil {
+			t.Fatalf("empty evidence: %v %v", got, err)
+		}
+	}
+	missing := valid
+	missing.Context = nil
+	for _, records := range [][]trialfacts.Record{{valid, missing}, {missing, valid}} {
+		if _, err := decisive(records); err == nil || !strings.Contains(err.Error(), "mixed BIOS contexts") {
+			t.Fatalf("missing context mixed with known: %v", err)
+		}
+	}
+}
+
+func TestCloneMachineIsolatesConstrainedParameters(t *testing.T) {
+	idle := -20
+	model := sim.DefaultModel()
+	cfg := sim.Config{Cores: 2, Model: &model, Edges: []sim.Edges{{Idle: &idle, Workload: map[string]int{"work": -25}}, {}}, Joints: []sim.Joint{{Members: map[int]int{0: -30}, Rate: 0.01}}}
+	wantModel := model
+	wantIdle := -20
+	want := sim.Config{Cores: 2, Model: &wantModel, Edges: []sim.Edges{{Idle: &wantIdle, Workload: map[string]int{"work": -25}}, {}}, Joints: []sim.Joint{{Members: map[int]int{0: -30}, Rate: 0.01}}}
+	got := cloneMachine(cfg)
+	got.Model.PastEdgeRate = 0.4
+	*got.Edges[0].Idle = -1
+	got.Edges[0].Workload["work"] = -1
+	got.Joints[0].Members[0] = -1
+	got.Joints[0].Rate = 0.2
+	if diff := cmp.Diff(want, cfg); diff != "" {
+		t.Fatalf("refit changed its seed: %s", diff)
+	}
+}
+
+func TestJointSearchSeparatesCleanBoundary(t *testing.T) {
+	cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
+	cfg.Model.NearEdgeRate = 0
+	cfg.Joints = []sim.Joint{{Members: map[int]int{0: -10, 1: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 0.01}}
+	spec := machine.TrialSpec{Regime: machine.R7, Cores: []int{0, 1}, Duration: 60 * time.Second}
+	l := likelihood{cfg: cfg, obs: []observation{{profile: []int{-20, -20}, spec: spec, n: 100}, {profile: []int{-30, -30}, spec: spec, n: 100, k: 50}}}
+	l.rebuild()
+	all := []int{0, 1}
+	before := l.score(all)
+	l.fitJoints(&cfg)
+	l.fitJoints(&cfg)
+	if after := l.score(all); !(after < before-1) {
+		t.Fatalf("joint did not improve likelihood: %g -> %g", before, after)
+	}
+	if p := l.m.FailureProbability([]int{-20, -20}, spec); p != 0 {
+		t.Fatalf("clean boundary retains joint hazard: %g", p)
+	}
+	if p := l.m.FailureProbability([]int{-30, -30}, spec); math.Abs(p-0.5) > 0.01 {
+		t.Fatalf("failure boundary p=%g; want 0.5", p)
+	}
+}
+
+func TestJointCandidateLimitPreservesModel(t *testing.T) {
+	var records []trialfacts.Record
+	for i := range 100 {
+		outcome := journal.OutcomePass
+		if i >= 10 {
+			outcome = journal.OutcomeFailure
+		}
+		records = append(records, trialfacts.Record{Kind: facts.TrialFact, Outcome: outcome, Profile: []int{-30, 0}, Class: facts.Class{Regime: machine.R7, Cores: []int{0, 1}, DurationS: 60}})
+	}
+	for _, count := range []int{7, 8} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			cfg := initialConfig(records)
+			cfg.Model.NearEdgeRate = 0
+			cfg.Joints = nil
+			for j := range count {
+				cfg.Joints = append(cfg.Joints, sim.Joint{Members: map[int]int{0: -20 - j}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001})
+			}
+			want := cloneMachine(cfg)
+			l := likelihood{cfg: cfg, obs: aggregate(records)}
+			l.rebuild()
+			before := l.score([]int{0})
+			l.addJoint(&cfg, records, 0)
+			if count == 8 {
+				if diff := cmp.Diff(want, cfg); diff != "" {
+					t.Fatalf("ninth joint admitted: %s", diff)
+				}
+			} else {
+				if len(cfg.Joints) != 8 || !(l.score([]int{0}) < before-0.5) {
+					t.Fatalf("otherwise admissible candidate was not fitted: joints=%d loss %g -> %g", len(cfg.Joints), before, l.score([]int{0}))
+				}
+				if diff := cmp.Diff(map[int]int{0: -30}, cfg.Joints[7].Members); diff != "" {
+					t.Fatalf("viable distinct candidate (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+}
+
+func TestWorkloadOverridesRequireSupportAndImproveLikelihood(t *testing.T) {
+	for _, n := range []int{9, 10} {
+		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
+			cfg.Model.NearEdgeRate = 0
+			spec := machine.TrialSpec{Regime: machine.R1, Workload: machine.Workload{ID: "supported"}, Cores: []int{0}, Duration: 60 * time.Second}
+			l := likelihood{cfg: cfg, obs: []observation{{profile: []int{-20, 0}, spec: spec, n: n, k: 1}}}
+			l.rebuild()
+			before := l.score([]int{0})
+			l.fitWorkloads(&cfg)
+			_, exists := cfg.Edges[0].Workload["supported"]
+			if exists != (n >= 10) {
+				t.Fatalf("%d starts: override=%v", n, exists)
+			}
+			if n >= 10 && !(l.score([]int{0}) < before) {
+				t.Fatal("supported override did not explain failure")
+			}
+		})
+	}
+}
+
+func TestCoupledShiftIncludesWorkloadAndPreservesUnsupportedEdges(t *testing.T) {
+	cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
+	cfg.Model.NearEdgeRate = 0
+	cfg.Model.PastEdgeRate = 0.01
+	cfg.Edges[0].Workload = map[string]int{"active": -20, "unsupported": -50}
+	spec := machine.TrialSpec{Regime: machine.R1, Workload: machine.Workload{ID: "active"}, Cores: []int{0}, Duration: 60 * time.Second}
+	l := likelihood{cfg: cfg, obs: []observation{{profile: []int{-21, 0}, spec: spec, n: 100}, {profile: []int{-24, 0}, spec: spec, n: 100, k: 99}}}
+	l.rebuild()
+	before := l.score([]int{0, 1})
+	deep := l.m.FailureProbability([]int{-24, 0}, spec)
+	l.fitEdgeRateShift(&cfg, []int{0, 1})
+	if !(l.score([]int{0, 1}) < before) || cfg.Edges[0].Workload["active"] >= -20 {
+		t.Fatal("coupled shift did not remove false boundary hazard")
+	}
+	if got := l.m.FailureProbability([]int{-24, 0}, spec); math.Abs(got-deep) > 1e-12 {
+		t.Fatalf("past-edge hazard changed: %g -> %g", deep, got)
+	}
+	if cfg.Edges[0].Workload["unsupported"] != -50 || cfg.Edges[0].Isolated[0] != -50 {
+		t.Fatal("unsupported edges moved")
 	}
 }

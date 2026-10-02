@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/journal"
@@ -281,10 +282,25 @@ func TestCandidateEdgesStartChecking(t *testing.T) {
 	if stop := simulate(t, in); stop.Reason != StopRotations {
 		t.Fatalf("stopped with %+v", stop)
 	}
+	phases := map[int]*journal.CorePhase{}
 	for _, e := range readEvents(t, dir) {
-		if p, ok := e.Data.(*journal.CorePhase); ok && p.From == "" && !p.CheckEdge {
-			t.Errorf("core %d did not start checking its candidate edge", p.Core)
+		if p, ok := e.Data.(*journal.CorePhase); ok && p.From == "" {
+			if phases[p.Core] != nil {
+				t.Fatalf("duplicate initial phase for core %d", p.Core)
+			}
+			phases[p.Core] = p
 		}
+	}
+	want := map[int]*journal.CorePhase{}
+	for core, offset := range in.Config.CandidateEdges {
+		want[core] = &journal.CorePhase{
+			Core: core, To: journal.PhaseSearch, Offset: offset,
+			CheckEdge: true, Reason: "configured candidate edge",
+			Workloads: []string{machine.Workloads(machine.R1)[0].ID, machine.Workloads(machine.R2)[0].ID},
+		}
+	}
+	if diff := cmp.Diff(want, phases); diff != "" {
+		t.Fatalf("initial edge checks (-want +got):\n%s", diff)
 	}
 }
 

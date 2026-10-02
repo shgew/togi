@@ -13,10 +13,14 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func reportRows(t *testing.T, events []journal.Event, section string) [][]string {
+func reportRows(t *testing.T, events []journal.Event, section string, cutoff ...time.Time) [][]string {
 	t.Helper()
 	var out bytes.Buffer
-	if err := report(&out, facts.FromEvents(events), time.Time{}); err != nil {
+	var since time.Time
+	if len(cutoff) > 0 {
+		since = cutoff[0]
+	}
+	if err := report(&out, facts.FromEvents(events), since); err != nil {
 		t.Fatal(err)
 	}
 	for block := range strings.SplitSeq(out.String(), "\n\n") {
@@ -151,6 +155,7 @@ func TestIdleCrashInvalidatesAllCoreR6PriorPasses(t *testing.T) {
 		profile []int
 		want    string
 	}{
+		{"legacy absent profile", machine.R6, []int{0, 1}, nil, "1"},
 		{"equal", machine.R6, []int{0, 1}, []int{-10, -10}, "0"},
 		{"shallower", machine.R6, []int{0, 1}, []int{-9, -10}, "0"},
 		{"deeper", machine.R6, []int{0, 1}, []int{-11, -10}, "1"},

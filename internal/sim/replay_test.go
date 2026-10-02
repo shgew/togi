@@ -3,6 +3,7 @@ package sim
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -126,7 +127,26 @@ func TestReplayCrashTime(t *testing.T) {
 				t.Fatal(err)
 			}
 			m := newMachine(t, Config{Seed: 3, Cores: 2, BIOSContext: bios, BIOS: []int{-20, -21}, Edges: flat(2, -50, -50), Replay: replay})
-			_, err = runSpec(t, m, "1", machine.R7, machine.Workload{ID: "work"}, []int{0, 1}, time.Minute, nil)
+			spec := machine.TrialSpec{Regime: machine.R7, Workload: machine.Workload{ID: "work"}, Cores: []int{0, 1}, Duration: time.Minute}
+			if diff := cmp.Diff(true, m.HasRealAnswer([]int{-20, -21}, spec)); diff != "" {
+				t.Fatal(diff)
+			}
+			progress := &progressRecorder{}
+			signals := &signalRecorder{}
+			var report machine.Reporter = progress
+			if signal == machine.UncorrectedMCE {
+				report = signals
+			}
+			_, err = runSpec(t, m, "1", spec.Regime, spec.Workload, spec.Cores, spec.Duration, report)
+			if signal == machine.Crash {
+				if diff := cmp.Diff([]string{"simulated replayed crash at recorded exposure"}, progress.details); diff != "" {
+					t.Fatal(diff)
+				}
+			} else {
+				if diff := cmp.Diff([]machine.Signal{machine.UncorrectedMCE}, signals.signals); diff != "" {
+					t.Fatal(diff)
+				}
+			}
 			if diff := cmp.Diff(true, errors.Is(err, machine.ErrCrashed)); diff != "" {
 				t.Fatal(diff)
 			}
@@ -193,5 +213,35 @@ func TestReplayCorrectedMCETime(t *testing.T) {
 	}
 	if diff := cmp.Diff(7*time.Second, mces[0].Monotonic); diff != "" {
 		t.Fatal(diff)
+	}
+}
+
+func TestReplayRejectsInvalidEvidence(t *testing.T) {
+	base := ReplayFact{Context: defaultBIOSContext, Class: journal.TrialClass{Regime: machine.R1, Workload: "work", Cores: []int{0}, DurationS: 60}, Profile: []int{-10, 0}, Outcome: journal.OutcomeFailure, Signal: machine.Stall, DurationS: 7}
+	for _, name := range []string{"no cores", "no duration", "negative exposure", "excess exposure", "unknown signal", "negative core", "outside core", "duplicate core"} {
+		t.Run(name, func(t *testing.T) {
+			f := base
+			switch name {
+			case "no cores":
+				f.Class.Cores = nil
+			case "no duration":
+				f.Class.DurationS = 0
+			case "negative exposure":
+				f.DurationS = -1
+			case "excess exposure":
+				f.DurationS = 61
+			case "unknown signal":
+				f.Signal = "invalid"
+			case "negative core":
+				f.Class.Cores = []int{-1}
+			case "outside core":
+				f.Class.Cores = []int{2}
+			case "duplicate core":
+				f.Class.Cores = []int{0, 0}
+			}
+			if _, err := NewReplay(defaultBIOSContext, []ReplayFact{f}); err == nil || !strings.Contains(err.Error(), "fact 0") {
+				t.Fatalf("invalid evidence = %v", err)
+			}
+		})
 	}
 }

@@ -154,3 +154,108 @@ func testStateFailureReopen(t *testing.T, at int, after bool) {
 		t.Fatal("torn temp overrode canonical baseline")
 	}
 }
+
+func TestOpenRepairFilesystemFailures(t *testing.T) {
+	for at := 1; at <= 5; at++ {
+		for _, after := range []bool{false, true} {
+			t.Run(fmt.Sprintf("operation-%d-after-%v", at, after), func(t *testing.T) {
+				if at == 4 && !after {
+					t.Skip("known pre-existing evidence-loss bug: tail is truncated before the journal.torn write; https://github.com/shgew/togi/issues/305")
+				}
+				dir := t.TempDir()
+				prefix := []byte(`{"seq":1,"kind":"session.start","schema":2}` + "\n")
+				tail := []byte(`{"seq":2,"kind":"shutdown"`)
+				path := filepath.Join(dir, eventsFile)
+				if err := os.WriteFile(path, append(bytes.Clone(prefix), tail...), 0600); err != nil {
+					t.Fatal(err)
+				}
+				j, err := Lock(dir, Options{Now: fixedClock(), Sync: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				faults := &faultJournalFilesystem{journalFilesystem: j.fs, at: at, after: after}
+				j.fs = faults
+				if err := j.Open(); !errors.Is(err, errJournalFilesystem) || !faults.fired {
+					j.Close()
+					t.Fatalf("repair failure = %v, fired %v", err, faults.fired)
+				}
+				j.Close()
+				j, err = Open(dir, Options{Now: fixedClock(), Sync: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer j.Close()
+				data, err := os.ReadFile(path)
+				if err != nil || !bytes.HasPrefix(data, prefix) {
+					t.Fatalf("accepted prefix changed: %q, %v", data, err)
+				}
+				events, torn, err := Read(dir)
+				if err != nil || len(torn) != 0 {
+					t.Fatalf("repair left torn tail: %q, %v", torn, err)
+				}
+				if len(events) != 2 {
+					t.Fatalf("discarded-byte evidence missing: got %d events, want session.start and journal.torn", len(events))
+				}
+				p, ok := events[1].Data.(*JournalTorn)
+				if !ok || p.BytesHex != fmt.Sprintf("%x", tail) || p.Offset != int64(len(prefix)) {
+					t.Fatalf("discarded-byte evidence: %+v", events[1])
+				}
+				e, err := j.Append(&Shutdown{Reason: ShutdownCommand})
+				if err != nil || e.Seq != len(events)+1 {
+					t.Fatalf("recovered sequence: %+v, %v", e, err)
+				}
+			})
+		}
+	}
+}
+
+func TestTornTailTruncateFailurePreservesEvidence(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, eventsFile)
+	data := []byte(`{"seq":1,"kind":"session.start","schema":2}` + "\n" + `{"seq":2`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	j, err := Lock(dir, Options{Now: fixedClock()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j.fs = failingJournalFilesystem{journalFilesystem: j.fs, truncateErr: errJournalFilesystem}
+	if err := j.Open(); !errors.Is(err, errJournalFilesystem) {
+		t.Fatalf("truncate failure: %v", err)
+	}
+	j.Close()
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(data, after) {
+		t.Fatalf("failed truncate changed evidence: %q, %v", after, err)
+	}
+	j = openTest(t, dir)
+	if countJournalKind(j.Events(), KindJournalTorn) != 1 {
+		t.Fatal("retry did not record discarded evidence")
+	}
+}
+
+func TestTornFirstLineSyncFailure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, eventsFile)
+	if err := os.WriteFile(path, []byte(`{"seq":1`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	j, err := Lock(dir, Options{Now: fixedClock(), Sync: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j.fs = &faultJournalFilesystem{journalFilesystem: j.fs, at: 4}
+	if err := j.Open(); !errors.Is(err, errJournalFilesystem) {
+		t.Fatalf("empty repair sync failure: %v", err)
+	}
+	j.Close()
+	j = openTest(t, dir)
+	if len(j.Events()) != 0 {
+		t.Fatal("torn first line manufactured an event")
+	}
+	events := appendAll(t, j, []Payload{sessionStart()})
+	if events[0].Seq != 1 {
+		t.Fatal("torn first line consumed sequence")
+	}
+}

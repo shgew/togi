@@ -50,19 +50,21 @@ func (j stopBeforeTrial) Append(p journal.Payload, cause ...int) (journal.Event,
 func TestWatchdogPreflight(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
-		name    string
-		readyAt time.Duration
-		tuning  bool
-		cancel  bool
-		wait    time.Duration
-		stop    StopReason
-		trial   bool
+		name               string
+		readyAt            time.Duration
+		tuning             bool
+		cancel             bool
+		canceledBeforePoll bool
+		wait               time.Duration
+		stop               StopReason
+		trial              bool
 	}{
 		{name: "already armed", tuning: true, trial: true},
 		{name: "late arm", readyAt: 3 * time.Second, tuning: true, wait: 3 * time.Second, trial: true},
 		{name: "deadline arm", readyAt: 30 * time.Second, tuning: true, wait: 30 * time.Second, trial: true},
 		{name: "too late", readyAt: 31 * time.Second, tuning: true, wait: 30 * time.Second, stop: StopDeadEnd},
 		{name: "cancel waiting", readyAt: time.Hour, tuning: true, cancel: true, wait: time.Second, stop: StopSignal},
+		{name: "cancel before polling", readyAt: time.Hour, tuning: true, cancel: true, canceledBeforePoll: true, stop: StopSignal},
 		{name: "manual run", readyAt: time.Hour, trial: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -94,6 +96,9 @@ func TestWatchdogPreflight(t *testing.T) {
 			bl := &fakeBootloader{}
 			if tt.tuning {
 				in.Bootloader = bl
+			}
+			if tt.canceledBeforePoll {
+				cancel()
 			}
 			stop, err := Run(ctx, in)
 			if tt.trial {

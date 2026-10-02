@@ -1,9 +1,12 @@
 package journal
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -72,5 +75,94 @@ func TestInFlightTracksUnmatchedIntents(t *testing.T) {
 	s.Fold(Event{Seq: 5, Kind: KindCrashDetected, Boot: "b", Data: &CrashDetected{PreviousBoot: "a"}})
 	if s.InFlight != nil {
 		t.Fatalf("in flight = %+v after crash.detected, want nil", s.InFlight)
+	}
+}
+
+func TestReadStateDamageAndMissing(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := ReadState(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing state error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, stateFile), []byte(`{"last_seq":`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadState(dir); err == nil || !strings.Contains(err.Error(), "read state") {
+		t.Fatalf("damaged state accepted: %v", err)
+	}
+}
+
+func TestStateDecisionsAndDeadEndResume(t *testing.T) {
+	var s State
+	s.Fold(Event{Seq: 1, Kind: KindSessionStart, Data: sessionStart()})
+	s.Fold(Event{Seq: 2, Kind: KindTunerDecision, Msg: "failed", Data: &TunerDecision{Core: 7, Phase: PhaseSearch, Decision: Backoff, FromOffset: -1, ToOffset: 0, FailedMark: new(-1), Reason: "failure"}})
+	if diff := cmp.Diff(&DecisionRef{Seq: 2, Msg: "failed"}, s.Cores[1].LastDecision); diff != "" {
+		t.Fatal(diff)
+	}
+	s.Fold(Event{Seq: 3, Kind: KindDeadEnd, Msg: "failed at zero", Data: &DeadEnd{Core: new(7), Condition: DeadEndFailureAtZero, Detail: "core 07 failed at CO 0", Action: ActionExit}})
+	if diff := cmp.Diff(&DecisionRef{Seq: 3, Msg: "failed at zero"}, s.Cores[1].LastDecision); diff != "" {
+		t.Fatal(diff)
+	}
+	if diff := cmp.Diff(&DeadEndRef{Condition: DeadEndFailureAtZero, Seq: 3}, s.DeadEnd); diff != "" {
+		t.Fatal(diff)
+	}
+	s.Fold(Event{Seq: 4, Kind: KindConfigLoaded, Data: &ConfigLoaded{Config: sampleConfig()}})
+	if s.DeadEnd != nil || s.LastSeq != 4 {
+		t.Fatalf("resume retained dead end: %+v", s)
+	}
+}
+
+func TestInvalidStateTimestampKeepsPreviousProjection(t *testing.T) {
+	dir := t.TempDir()
+	j := openTest(t, dir)
+	appendAll(t, j, []Payload{sessionStart()})
+	var previous State
+	Replay(j.Events(), &previous)
+	if err := j.WriteState(previous); err != nil {
+		t.Fatal(err)
+	}
+	bad := previous
+	session := *previous.Session
+	session.Start = time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
+	bad.Session = &session
+	if err := j.WriteState(bad); err == nil {
+		t.Fatal("invalid projection timestamp accepted")
+	}
+	got, err := ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(previous.LastSeq, got.LastSeq); diff != "" {
+		t.Fatalf("failed encoding replaced previous sequence: %s", diff)
+	}
+	if diff := cmp.Diff(previous.Session, got.Session); diff != "" {
+		t.Fatalf("failed encoding replaced previous session: %s", diff)
+	}
+}
+
+func TestStateCloseFailureKeepsPreviousProjection(t *testing.T) {
+	dir := t.TempDir()
+	j := openTest(t, dir)
+	appendAll(t, j, []Payload{sessionStart()})
+	var previous State
+	Replay(j.Events(), &previous)
+	if err := j.WriteState(previous); err != nil {
+		t.Fatal(err)
+	}
+	appendAll(t, j, []Payload{&SessionBaseline{Offsets: []int{-5, 0}}})
+	var canonical State
+	Replay(j.Events(), &canonical)
+	j.fs = failingJournalFilesystem{journalFilesystem: j.fs, closeErr: errJournalFilesystem}
+	if err := j.WriteState(canonical); !errors.Is(err, errJournalFilesystem) {
+		t.Fatalf("state close failure: %v", err)
+	}
+	stored, err := ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(previous.LastSeq, stored.LastSeq); diff != "" {
+		t.Fatalf("unconfirmed temp file replaced sequence: %s", diff)
+	}
+	if diff := cmp.Diff(previous.Session, stored.Session); diff != "" {
+		t.Fatalf("unconfirmed temp file replaced session: %s", diff)
 	}
 }

@@ -534,3 +534,92 @@ func TestPrepareRefusesALineWithoutAKind(t *testing.T) {
 		t.Fatalf("Prepare: %v, want a refusal of the line without a kind", err)
 	}
 }
+
+func TestPrepareDoesNotSeedAfterCorePhases(t *testing.T) {
+	dir := t.TempDir()
+	a := newJournal(t, dir, "A", 3, &context, machine.CoreInfo{Core: 0})
+	a.pass(0, -30, machine.Isolated)
+	a.close()
+	prepare(t, dir, []defect.Entry{})
+	b := newJournal(t, dir, "B", 4, &context, machine.CoreInfo{Core: 0})
+	if settled, err := recorded(b.j, "A"); err != nil || settled {
+		t.Fatalf("session metadata prematurely settled pending carry: %t, %v", settled, err)
+	}
+	b.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -5})
+	b.close()
+	if c := prepare(t, dir, []defect.Entry{}); c != nil {
+		t.Fatalf("late carry overwrote started search: %+v", c)
+	}
+	if pending, err := journal.PendingCarry(dir); err != nil || pending != "" {
+		t.Fatalf("late carry marker retained: %q, %v", pending, err)
+	}
+}
+
+func TestPrepareWalkStopsAtOlderCarryCommitment(t *testing.T) {
+	dir := t.TempDir()
+	a := newJournal(t, dir, "A", 1, &context, machine.CoreInfo{Core: 0}, machine.CoreInfo{Core: 7})
+	edge := a.pass(0, -30, machine.Isolated)
+	a.fail(7, -20, machine.Isolated, journal.Attributed)
+	a.archive(dir)
+	b := newJournal(t, dir, "B", 2, &context, machine.CoreInfo{Core: 0}, machine.CoreInfo{Core: 7})
+	b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 1)}, Marks: true, Carried: []journal.CarriedCore{
+		{Core: 0, Edge: new(-30), EdgeSession: "A", EdgeSeq: edge},
+	}})
+	b.archive(dir)
+	c := newJournal(t, dir, "C", 3, &context, machine.CoreInfo{Core: 0}, machine.CoreInfo{Core: 7})
+	c.close()
+	got := prepare(t, dir, []defect.Entry{})
+	if diff := cmp.Diff([]journal.CarriedSource{src("C", 3), src("B", 2)}, got.Sources); diff != "" {
+		t.Fatalf("committed source boundary (-want +got):\n%s", diff)
+	}
+	want := []journal.CarriedCore{{Core: 0, Edge: new(-30), EdgeSession: "A", EdgeSeq: edge}}
+	if diff := cmp.Diff(want, got.Cores); diff != "" {
+		t.Fatalf("walk revived omitted old mark (-want +got):\n%s", diff)
+	}
+}
+
+func TestPrepareRefusesBrokenArchiveLayoutWithoutChangingJournal(t *testing.T) {
+	for _, layout := range []string{"archive is file", "archive target is directory", "invalid session header"} {
+		t.Run(layout, func(t *testing.T) {
+			dir := t.TempDir()
+			w := newJournal(t, dir, "A", 3, &context, machine.CoreInfo{Core: 0})
+			w.pass(0, -30, machine.Isolated)
+			w.close()
+			path := filepath.Join(dir, "events.jsonl")
+			switch layout {
+			case "archive is file":
+				if err := os.WriteFile(filepath.Join(dir, "archive"), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if c, err := compute(dir, "A", nil); err == nil || c != nil {
+					t.Fatalf("broken reset-boundary scan accepted: carry %+v, error %v", c, err)
+				}
+				if fs, err := prepareFacts(dir, "A", nil, &context, 1); err == nil || fs != nil {
+					t.Fatalf("broken reset-boundary scan accepted: facts %+v, error %v", fs, err)
+				}
+			case "archive target is directory":
+				if err := os.MkdirAll(filepath.Join(dir, "archive", "A.jsonl"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "invalid session header":
+				if err := os.WriteFile(path, []byte("not JSON\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c, err := prepareWithContext(dir, []defect.Entry{}, nil); err == nil || c != nil {
+				t.Fatalf("broken archive preparation accepted: carry %+v, error %v", c, err)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(before, after); diff != "" {
+				t.Fatalf("failed preparation changed source journal (-before +after):\n%s", diff)
+			}
+		})
+	}
+}

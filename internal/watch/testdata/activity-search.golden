@@ -1,0 +1,59 @@
+  togi   SEARCH   session 1m40s   last event 1m37s ago                                                                                                  00:18:20
+ 0/3 done | 0 failures | 0 crashes
+
+ core 00   isolated   R1 mprime SSE 4K-21K   ██████████████████████████████ 90/90s
+ turn order 00 02 01
+ no failures yet
+
+
+ CCD 0
+
+ ┌─ 00 > TESTING ────────── searching ─┐  ┌─ 01 ─────────────────── searching ─┐
+ │                 ▀▀█ █▀█             │  │                                    │
+ │             ▀▀▀ █▀▀ █ █             │  │                ▀▀▀ ▀▀▀             │
+ │                 ▀▀▀ ▀▀▀             │  │                                    │
+ │ ██████████████░░░>░░░░░░░░░x....... │  │ .................................. │
+ │ 0               -25       -40   -50 │  │ 0                              -50 │
+ └─────────────────────────────────────┘  └────────────────────────────────────┘
+
+
+ CCD 1
+
+ ┌─ 02 ──────────────────── searching ─┐
+ │                                     │
+ │                 ▀▀▀ ▀▀▀             │
+ │                                     │
+ │ ................................... │
+ │ 0                               -50 │
+ └─────────────────────────────────────┘
+
+
+ CO 0 -> -50     > trial     x failed mark     j joint mark     · mask anchor     ░ unexplored
+
+
+ Recent
+ 0h00m  session dashboard started by a togi build from before version stamps (schema 0, ruleset 0, fixes 0, 3 cores)
+ 0h00m  core 00 starts search at -25 ()
+ 0h00m  trial search core 00 CO -25 R1 mprime SSE 4K-21K 90s isolated
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

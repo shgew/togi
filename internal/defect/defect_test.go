@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/tuner"
 )
@@ -26,6 +27,10 @@ func TestPowerOffDefect(t *testing.T) {
 	}{
 		{"pre-fix clean exit and unrelated crash", nil, true},
 		{"fixed before decision", func(e []journal.Event) { e[1].Data.(*journal.ConfigLoaded).Fixes = 1 }, false},
+		{"failure has different signal", func(e []journal.Event) {
+			e[10].Data.(*journal.TrialEnd).Signal = "crash"
+			e[11].Data.(*journal.Failure).Signal = "crash"
+		}, false},
 		{"shutdown outside five seconds", func(e []journal.Event) { e[13].Time = e[10].Time.Add(6 * time.Second) }, false},
 		{"shutdown from another boot", func(e []journal.Event) { e[13].Boot = "boot-c" }, false},
 		{"unrelated shutdown reason", func(e []journal.Event) { e[13].Data.(*journal.Shutdown).Reason = journal.ShutdownRotations }, false},
@@ -88,4 +93,44 @@ func TestPowerOffFixtureReplaysBackoff(t *testing.T) {
 		}
 	}
 	t.Fatal("replayed journal missing core 10")
+}
+
+func TestFailuresWithKeepsDefectEvidenceAfterFinding(t *testing.T) {
+	events := fixture(t)
+	events = append(events, journal.Event{Seq: 22, Boot: "boot-c", Kind: journal.KindDefectFound, Data: &journal.DefectFound{ID: 1}})
+	if diff := cmp.Diff([]int{12}, FailuresWith(events, Entries())); diff != "" {
+		t.Fatalf("defect failure exclusion (-want +got):\n%s", diff)
+	}
+	later := DecisionMatch{Kind: journal.KindTunerDecision, Decision: journal.Backoff, Cause: journal.KindFailure, Predicate: func(_ Evidence, _, cause journal.Event) bool { return cause.Seq == 19 }}
+	earlier := DecisionMatch{Kind: journal.KindTunerDecision, Decision: journal.Backoff, Cause: journal.KindFailure, Predicate: func(_ Evidence, _, cause journal.Event) bool { return cause.Seq == 12 }}
+	list := []Entry{
+		{ID: 1, Decisions: []DecisionMatch{{Kind: journal.KindTunerDecision, Decision: journal.StepDeeper, Cause: journal.KindTrialEnd}, later}},
+		{ID: 2, Decisions: []DecisionMatch{earlier}},
+		{ID: 3, Decisions: []DecisionMatch{later}},
+	}
+	if diff := cmp.Diff([]int{12, 19}, FailuresWith(events, list)); diff != "" {
+		t.Fatalf("unique sorted failure causes (-want +got):\n%s", diff)
+	}
+	events[1].Data.(*journal.ConfigLoaded).Fixes = 1
+	if got := FailuresWith(events, Entries()); len(got) != 0 {
+		t.Fatalf("fixed build failures excluded: %v", got)
+	}
+}
+
+func TestUnansweredMatchesAnswersByDefectID(t *testing.T) {
+	first := journal.DefectFound{ID: 1, Cores: []int{2}, Decisions: []int{10}}
+	second := journal.DefectFound{ID: 2, Cores: []int{3}, Decisions: []int{20}}
+	for _, answer := range []string{"yes", "no"} {
+		t.Run(answer, func(t *testing.T) {
+			events := []journal.Event{
+				{Data: &first},
+				{Data: &journal.DefectAnswered{ID: 1, Answer: answer}},
+				{Data: &second},
+				{Data: &journal.DefectAnswered{ID: 99, Answer: answer}},
+			}
+			if diff := cmp.Diff([]journal.DefectFound{second}, Unanswered(events)); diff != "" {
+				t.Fatalf("pending operator findings (-want +got):\n%s", diff)
+			}
+		})
+	}
 }

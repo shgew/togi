@@ -499,3 +499,73 @@ func TestPartialCursorEvidenceOutranksFailedReanchor(t *testing.T) {
 		})
 	}
 }
+
+func TestUncorrectedTrialMCERejectsFullDurationPass(t *testing.T) {
+	t.Parallel()
+	r, k, advance := boundaryRunner(t)
+	r.in.Machine.Trials = boundaryTrials{Trials: r.in.Machine.Trials, wait: func(spec machine.TrialSpec) machine.Result {
+		advance(spec.Duration)
+		k.logs[r.in.Boot] = append(k.logs[r.in.Boot], machine.MCE{
+			Core: 0, CPU: 0, Corrected: false, BankType: machine.LoadStore,
+			Monotonic: r.in.Machine.Clock.Monotonic(), Lines: []string{"uncorrected trial error"},
+		})
+		return machine.Result{Ran: spec.Duration}
+	}}
+	end := runBoundaryTrial(t, r)
+	if end.Outcome != journal.OutcomeFailure || end.Signal != machine.UncorrectedMCE || end.Core != nil {
+		t.Fatalf("uncorrected error became a passing isolated trial: %+v", end)
+	}
+	events := r.in.Journal.Events()
+	for _, seq := range events[len(events)-1].Cause {
+		if p, ok := r.eventAt(seq).Data.(*journal.MCE); ok && p.Trial == end.Trial && !p.Corrected && !p.BetweenTrials {
+			return
+		}
+	}
+	t.Fatal("uncorrected failure did not cite its trial-window evidence")
+}
+
+func TestTrialKernelCrashNeverInventsPass(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		at         int
+		lostCursor bool
+		signal     machine.Signal
+	}{
+		{name: "intent boundary", at: 1},
+		{name: "reanchor boundary", at: 2, lostCursor: true},
+		{name: "teardown boundary", at: 2},
+		{name: "backend failure before teardown crash", at: 2, signal: machine.ComputationError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r, k, advance := boundaryRunner(t)
+			before := len(r.in.Journal.Events())
+			k.failAt, k.failure = k.calls+tc.at, machine.ErrCrashed
+			if tc.lostCursor {
+				r.fold.kernelCursors[r.in.Boot] = "unavailable"
+			}
+			r.in.Machine.Trials = boundaryTrials{Trials: r.in.Machine.Trials, wait: func(spec machine.TrialSpec) machine.Result {
+				advance(spec.Duration)
+				return machine.Result{Ran: spec.Duration, Signal: tc.signal, Core: 0}
+			}}
+			err := r.trial(context.Background(), tuner.Action{Trial: tuner.Trial{Core: 0, Offset: -1, Regime: machine.R1, Condition: machine.Isolated, DurationS: 10}})
+			if !errors.Is(err, machine.ErrCrashed) {
+				t.Fatalf("boundary crash: %v", err)
+			}
+			var ends []*journal.TrialEnd
+			for _, e := range r.in.Journal.Events()[before:] {
+				if p, ok := e.Data.(*journal.TrialEnd); ok {
+					ends = append(ends, p)
+				}
+			}
+			if tc.signal == "" {
+				if len(ends) != 0 {
+					t.Fatalf("crash manufactured a trial outcome: %+v", ends)
+				}
+			} else if len(ends) != 1 || ends[0].Outcome != journal.OutcomeFailure || ends[0].Signal != tc.signal || !ends[0].Interrupted || !strings.Contains(ends[0].Reason, machine.ErrCrashed.Error()) {
+				t.Fatalf("teardown crash lost stronger failure: %+v", ends)
+			}
+		})
+	}
+}

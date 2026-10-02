@@ -525,3 +525,217 @@ func TestSysfsMailbox(t *testing.T) {
 		t.Fatalf("short SMN read: %v", err)
 	}
 }
+
+func TestInvalidIdentityFilesPreventHardwareAccess(t *testing.T) {
+	for _, tc := range []struct {
+		name, path, text string
+		missing          bool
+	}{
+		{"missing CPU", "proc/cpuinfo", "", true},
+		{"malformed family", "proc/cpuinfo", "cpu family: invalid\nmodel: 68\n", false},
+		{"malformed model", "proc/cpuinfo", "cpu family: 26\nmodel: invalid\n", false},
+		{"missing codename", "sys/kernel/ryzen_smu_drv/codename", "", true},
+		{"missing driver version", "sys/kernel/ryzen_smu_drv/drv_version", "", true},
+		{"missing SMU version", "sys/kernel/ryzen_smu_drv/version", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, mb := fixture(t, 8, true)
+			if tc.missing {
+				if err := os.Remove(filepath.Join(root, tc.path)); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				put(t, root, tc.path, tc.text)
+			}
+			mb.smnRead = func(uint32) (uint32, error) { t.Fatal("identity refusal accessed SMN"); return 0, nil }
+			d, err := Open(root, mb)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := d.ValidateSMU(); err == nil {
+				t.Fatal("invalid identity validated")
+			}
+			check := d.CheckCPU()
+			if tc.path != "proc/cpuinfo" {
+				check = d.CheckDriver()
+			}
+			wantDetail := "parse cpu family"
+			if tc.missing {
+				wantDetail = "read " + filepath.Join(root, tc.path) + ":"
+			}
+			if check.OK || !strings.HasPrefix(check.Detail, wantDetail) {
+				t.Fatalf("identity refusal diagnostic = %+v, want %q", check, wantDetail)
+			}
+			if err := d.SetOffset(0, -10); err == nil {
+				t.Fatal("invalid identity allowed write")
+			}
+			if err := d.SetAllOffsets(0); err == nil {
+				t.Fatal("invalid identity allowed emergency write")
+			}
+			if diff := cmp.Diff([]call(nil), mb.commands); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestMailboxWriteFailureIsReported(t *testing.T) {
+	root, mb := fixture(t, 8, true)
+	d, err := Open(root, mb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejected := errors.New("mailbox rejected write")
+	mb.err = rejected
+	for _, tc := range []struct {
+		name  string
+		write func() error
+		want  call
+	}{
+		{"per core", func() error { return d.SetOffset(9, -60) }, call{0x06, 0x1010ffce}},
+		{"all cores", func() error { return d.SetAllOffsets(10) }, call{0x07, 0}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.write()
+			if !errors.Is(err, rejected) || !strings.Contains(err.Error(), "set") {
+				t.Fatalf("write failure lost: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, mb.commands[len(mb.commands)-1], cmp.AllowUnexported(call{})); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestFuseReadFailureRefusesPerCoreAccess(t *testing.T) {
+	for failed := 1; failed <= 4; failed++ {
+		t.Run(fmt.Sprint(failed), func(t *testing.T) {
+			root, mb := fixture(t, 8, true)
+			reads := 0
+			unavailable := errors.New("SMN unavailable")
+			mb.smnRead = func(addr uint32) (uint32, error) {
+				reads++
+				if reads == failed {
+					return 0, unavailable
+				}
+				return mb.fuses[addr], nil
+			}
+			d, err := Open(root, mb)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if check := d.CheckSlotMapping(); check.OK || !strings.Contains(check.Detail, unavailable.Error()) {
+				t.Fatalf("mapping failure: %+v", check)
+			}
+			if _, err := d.Offset(0); !errors.Is(err, unavailable) {
+				t.Fatalf("read accepted or cause lost: %v", err)
+			}
+			if err := d.SetOffset(0, -10); !errors.Is(err, unavailable) {
+				t.Fatalf("write accepted or cause lost: %v", err)
+			}
+			if diff := cmp.Diff([]call(nil), mb.commands); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestTopologyRejectsMissingOrMalformedIdentity(t *testing.T) {
+	for _, path := range []string{"topology/core_id", "cache/index3/id", "topology/die_id", "online"} {
+		t.Run(path, func(t *testing.T) {
+			root, mb := fixture(t, 8, path != "topology/die_id")
+			full := filepath.Join(root, "sys/devices/system/cpu/cpu0", path)
+			if path == "online" {
+				if err := os.Mkdir(full, 0755); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				put(t, root, "sys/devices/system/cpu/cpu0/"+path, "invalid\n")
+			}
+			d, err := Open(root, mb)
+			if err == nil || d != nil || !strings.Contains(err.Error(), full) {
+				t.Fatalf("invalid topology accepted: %v, %v", d, err)
+			}
+			if diff := cmp.Diff([]call(nil), mb.commands); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+	root := t.TempDir()
+	put(t, root, "sys/devices/system/cpu/notcpu", "ignored")
+	put(t, root, "sys/devices/system/cpu/cpunotnumber/topology/core_id", "0")
+	if _, err := topology(root); err == nil || !strings.Contains(err.Error(), "no online CPU cores") {
+		t.Fatalf("empty topology: %v", err)
+	}
+}
+
+func TestBIOSContextReadFailures(t *testing.T) {
+	for _, path := range []string{"sys/class/dmi/id/bios_version", "sys/class/dmi/id/board_vendor", "sys/class/dmi/id/board_name", "proc/cpuinfo", "boost"} {
+		t.Run(path, func(t *testing.T) {
+			root, mb := fixture(t, 8, true)
+			for _, name := range []string{"bios_version", "board_vendor", "board_name"} {
+				put(t, root, "sys/class/dmi/id/"+name, name)
+			}
+			d, err := Open(root, mb)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cause := errors.New("boost unavailable")
+			if path == "boost" {
+				mb.err = cause
+			} else {
+				if err := os.Remove(filepath.Join(root, path)); err != nil {
+					t.Fatal(err)
+				}
+				cause = os.ErrNotExist
+			}
+			_, err = d.BIOSContext()
+			if !errors.Is(err, cause) {
+				t.Fatalf("BIOS read failure lost: %v", err)
+			}
+			if path != "boost" && len(mb.commands) != 0 {
+				t.Fatalf("boost read after missing context: %v", mb.commands)
+			}
+		})
+	}
+}
+
+func TestSysfsRejectsUnavailableMailboxFiles(t *testing.T) {
+	for _, name := range []string{"smu_args", "rsmu_cmd", "smn"} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			put(t, root, "sys/kernel/ryzen_smu_drv/smu_args", strings.Repeat("\x00", 24))
+			put(t, root, "sys/kernel/ryzen_smu_drv/rsmu_cmd", strings.Repeat("\x00", 4))
+			put(t, root, "sys/kernel/ryzen_smu_drv/smn", strings.Repeat("\x00", 4))
+			if err := os.Remove(filepath.Join(root, "sys/kernel/ryzen_smu_drv", name)); err != nil {
+				t.Fatal(err)
+			}
+			mb := Sysfs(root)
+			var err error
+			if name == "smn" {
+				_, err = mb.ReadSMN(0)
+			} else {
+				_, err = mb.Command(1, [6]uint32{})
+			}
+			want := "open " + filepath.Join(root, "sys/kernel/ryzen_smu_drv", name) + ":"
+			if !errors.Is(err, os.ErrNotExist) || !strings.HasPrefix(err.Error(), want) {
+				t.Fatalf("mailbox file failure: %v, want write-stage %q", err, want)
+			}
+			if name == "smu_args" {
+				command, err := os.ReadFile(filepath.Join(root, "sys/kernel/ryzen_smu_drv/rsmu_cmd"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := cmp.Diff(make([]byte, 4), command); diff != "" {
+					t.Fatalf("command issued after failed argument write (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+	root := t.TempDir()
+	put(t, root, "sys/kernel/ryzen_smu_drv/smu_args", strings.Repeat("\x00", 24))
+	put(t, root, "sys/kernel/ryzen_smu_drv/rsmu_cmd", "")
+	if _, err := Sysfs(root).Command(0x42, [6]uint32{}); !strings.Contains(fmt.Sprint(err), "0x42 (unknown status)") {
+		t.Fatalf("unknown status lost: %v", err)
+	}
+}

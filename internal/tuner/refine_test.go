@@ -220,3 +220,29 @@ func TestActiveRefineProjection(t *testing.T) {
 		})
 	}
 }
+
+func TestLiveRefinementFailureEndsRoundBeforeBackoff(t *testing.T) {
+	h := qualifiedHarness(t, []int{-10, -10}, nil)
+	r := nextRound(h)
+	for {
+		a, ok := h.s.roundMoves()
+		if !ok {
+			break
+		}
+		h.decide(a)
+	}
+	h.add(&journal.ProfileChange{From: h.s.Profile(), To: r.Profile})
+	h.trial(h.s.roundCheck(), journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)})
+	failure := h.decide(h.next())
+	a := h.next()
+	p, ok := a.Payload.(*journal.RefineRound)
+	if !ok || p.Round != r.Round || p.Event != journal.RotationEnd || p.Passed || cmp.Diff([]int{failure.Seq}, a.Cause) != "" {
+		t.Fatalf("live failure did not close round: %+v", a)
+	}
+	h.decide(a)
+	a = h.next()
+	back, ok := a.Payload.(*journal.TunerDecision)
+	if !ok || back.Phase != journal.PhaseRefine || back.ToOffset != r.Profile[0]+1 || back.FailedMark == nil || *back.FailedMark != r.Profile[0] {
+		t.Fatalf("live refine failure lost mark: %+v", a)
+	}
+}

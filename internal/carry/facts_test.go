@@ -259,6 +259,17 @@ func TestCopiedFailuresRecheckedAgainstOriginalDefects(t *testing.T) {
 				if err == nil {
 					t.Fatal("unreadable original journal must stop defect rechecking")
 				}
+				if err := os.WriteFile(filepath.Join(dir, "archive", "B-carry-pending"), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				j, err := journal.Lock(dir, opts())
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer j.Close()
+				if c, err := Prepare(j, journal.Build{Schema: 2, Ruleset: 7}, entries, &context); err == nil || c != nil {
+					t.Fatalf("Prepare committed carry despite unreadable original defect evidence: carry %+v, error %v", c, err)
+				}
 				return
 			}
 			if err != nil {
@@ -273,5 +284,63 @@ func TestCopiedFailuresRecheckedAgainstOriginalDefects(t *testing.T) {
 				t.Fatalf("second transition must recheck original decisions without collecting older facts (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestDeferredFactsRequireContextAndRetryFailedRead(t *testing.T) {
+	dir := t.TempDir()
+	w := newJournal(t, dir, "A", 3, &context, machine.CoreInfo{Core: 0}, machine.CoreInfo{Core: 1})
+	key, _ := factTrial(w, 0, journal.OutcomeFailure)
+	w.close()
+	c := prepare(t, dir, []defect.Entry{})
+	if err := c.ResolveFacts(nil); err == nil || len(c.Facts) != 0 {
+		t.Fatalf("unknown BIOS context accepted: facts %+v, error %v", c.Facts, err)
+	}
+	path := filepath.Join(dir, "archive", "A.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("not JSON\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ResolveFacts(&context); err == nil || len(c.Facts) != 0 {
+		t.Fatalf("broken deferred source accepted: facts %+v, error %v", c.Facts, err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ResolveFacts(&context); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]factID{key}, factKeys(c.Facts), cmp.AllowUnexported(factID{})); diff != "" {
+		t.Fatalf("retry lost original evidence (-want +got):\n%s", diff)
+	}
+	if err := os.WriteFile(path, []byte("not JSON\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ResolveFacts(&context); err != nil {
+		t.Fatalf("resolved carry reread its source: %v", err)
+	}
+	if diff := cmp.Diff([]factID{key}, factKeys(c.Facts), cmp.AllowUnexported(factID{})); diff != "" {
+		t.Fatalf("resolved evidence changed (-want +got):\n%s", diff)
+	}
+}
+
+func TestFactWalkRejectsCorruptOlderArchive(t *testing.T) {
+	dir := t.TempDir()
+	a := newJournal(t, dir, "A", 2, &context)
+	a.archive(dir)
+	b := newJournal(t, dir, "B", 3, &context)
+	b.archive(dir)
+	if err := os.WriteFile(filepath.Join(dir, "archive", "A.jsonl"), []byte("not JSON\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := prepareFacts(dir, "B", nil, &context, 1)
+	if err == nil || got != nil {
+		t.Fatalf("corrupt archive silently omitted: facts %+v, error %v", got, err)
+	}
+	if c, err := compute(dir, "B", nil); err == nil || c != nil {
+		t.Fatalf("corrupt mark source silently omitted: carry %+v, error %v", c, err)
 	}
 }

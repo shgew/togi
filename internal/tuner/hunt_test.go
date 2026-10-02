@@ -911,3 +911,86 @@ func TestActiveHuntProjection(t *testing.T) {
 		})
 	}
 }
+
+func TestHuntSkipsPreviouslyMarkedFailure(t *testing.T) {
+	h := huntHarness(t, 2, 120)
+	failure := h.add(&journal.Failure{Attribution: journal.Unattributed, Condition: machine.Resident, Signal: machine.Crash, Profile: h.s.Profile()})
+	for range 2 {
+		h.decide(h.next())
+		for range h.s.n {
+			runMask(h, h.next(), false)
+		}
+	}
+	h.decide(h.next())
+	h.decide(h.next())
+	h.decide(h.next())
+	h.add(&journal.ProfileChange{From: h.s.Profile(), To: h.s.offsets()})
+	a := h.s.huntStartNext()
+	p, ok := a.Payload.(*journal.HuntSkipped)
+	if !ok || p.Failure != failure.Seq || !strings.Contains(p.Reason, "joint mark J1") || cmp.Diff([]int{failure.Seq}, a.Cause) != "" {
+		t.Fatalf("marked source was hunted: %+v", a)
+	}
+	h.decide(a)
+	if len(h.s.queue) != 0 || h.s.hunt != nil {
+		t.Fatal("skipped source remains pending")
+	}
+}
+
+func TestDrainCommitsResolvedHuntWithoutStartingMasks(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -30, fail: new(-31)}, coreStart{phase: journal.PhaseDone, offset: -30, fail: new(-31)})
+	h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "source"}, Class: journal.TrialClass{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120}, Condition: machine.Masked, Core: new(1), Profile: []int{0, -30}, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+	h.decide(h.next())
+	h.trial(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 600}}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+	h.decide(h.next())
+	h.decide(h.next())
+	if a, ok := h.s.Drain(); ok {
+		t.Fatalf("drain planned new mask: %+v", a)
+	}
+	h.decide(h.next())
+	a, ok := h.s.Drain()
+	end, yes := a.Payload.(*journal.HuntEnd)
+	if !ok || !yes || end.Result != "culprit" || cmp.Diff([]int{1}, end.Cores) != "" {
+		t.Fatalf("drain did not resolve singleton: %+v", a)
+	}
+	h.decide(a)
+	a, ok = h.s.Drain()
+	back, yes := a.Payload.(*journal.TunerDecision)
+	if !ok || !yes || back.Decision != journal.Backoff || back.Core != 1 || back.ToOffset != -29 {
+		t.Fatalf("drain did not commit culprit: %+v", a)
+	}
+	h.decide(a)
+	if a, ok := h.s.Drain(); ok {
+		t.Fatalf("drain ran work after commitment: %+v", a)
+	}
+}
+
+func TestDrainRecordsFallbackJointBeforeBackoff(t *testing.T) {
+	h := huntHarness(t, 2, 120)
+	for range 2 {
+		h.decide(h.next())
+		for range h.s.n {
+			runMask(h, h.next(), false)
+		}
+	}
+	a, ok := h.s.Drain()
+	end, yes := a.Payload.(*journal.HuntEnd)
+	if !ok || !yes || end.Result != "fallback" {
+		t.Fatalf("drain did not close unresolved hunt: %+v", a)
+	}
+	h.decide(a)
+	a, ok = h.s.Drain()
+	mark, yes := a.Payload.(*journal.MarkJoint)
+	if !ok || !yes || !mark.Fallback || cmp.Diff([]journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}, mark.Members) != "" {
+		t.Fatalf("drain lost fallback mark: %+v", a)
+	}
+	h.decide(a)
+	a, ok = h.s.Drain()
+	back, yes := a.Payload.(*journal.TunerDecision)
+	if !ok || !yes || back.Decision != journal.Backoff || back.ToOffset != -29 {
+		t.Fatalf("drain did not break joint: %+v", a)
+	}
+	h.decide(a)
+	if _, reached := h.s.Reaches(h.s.offsets()); reached {
+		t.Fatal("drain left resident offsets reaching joint")
+	}
+}

@@ -297,3 +297,37 @@ func TestMCEsMonotonic(t *testing.T) {
 		t.Fatalf("monotonic (-want +got):\n%s", diff)
 	}
 }
+
+func TestResetReasonMalformedOutputDoesNotInventReason(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		out  []byte
+		code int
+	}{
+		{"command exit", nil, 2},
+		{"invalid JSON", []byte("{"), 0},
+		{"invalid message", []byte(`{"MESSAGE":{}}`), 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k := NewKernel(nil)
+			k.journalctl = func([]string) ([]byte, []byte, int, error) { return tc.out, nil, tc.code, nil }
+			got, err := k.ResetReason("boot")
+			if err == nil {
+				t.Fatal("unreadable reason accepted")
+			}
+			if diff := cmp.Diff(machine.ResetReason{}, got); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+	raw := []byte(`{"MESSAGE":[76,105,110,117,120,32,118,101,114,115,105,111,110,32,55,46,48]}`)
+	k := NewKernel(nil)
+	k.journalctl = func([]string) ([]byte, []byte, int, error) { return raw, nil, 0, nil }
+	got, err := k.ResetReason("boot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(machine.ResetReason{Supported: true}, got); diff != "" {
+		t.Fatal(diff)
+	}
+}

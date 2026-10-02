@@ -235,3 +235,40 @@ func TestDirectFailureAtZero(t *testing.T) {
 		})
 	}
 }
+
+func TestThermalReasonYieldsToMCEEvidence(t *testing.T) {
+	h := newHarness(t, searchAt(-10)...)
+	intent := h.start(h.next())
+	mce := h.add(&journal.MCE{Core: 0, BankType: machine.LoadStore})
+	h.add(&journal.CrashDetected{InFlight: new(intent.Seq), ResetReason: machine.ResetThermalTrip}, mce.Seq)
+	h.add(&journal.TrialEnd{Trial: intent.Data.(*journal.TrialIntent).Trial, Outcome: journal.OutcomeFailure, Signal: machine.Crash}, intent.Seq, mce.Seq)
+	if h.s.thermal != nil {
+		t.Fatal("higher precedence evidence left thermal dead end")
+	}
+	a := h.next()
+	if p, ok := a.Payload.(*journal.Failure); !ok || p.Core == nil || *p.Core != 0 {
+		t.Fatalf("failure attribution lost: %+v", a)
+	}
+}
+
+func TestOptimumKeepsFailedMarkOutsideSafeBounds(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -10, fail: new(-11)})
+	for _, tc := range []struct {
+		hi   int
+		want []int
+	}{{-10, []int{-10}}, {0, []int{-10}}} {
+		if diff := cmp.Diff(tc.want, h.s.optimum([]int{-10}, []int{tc.hi}, []int{0})); diff != "" {
+			t.Fatalf("upper bound %d (-want +got):\n%s", tc.hi, diff)
+		}
+	}
+}
+
+func TestCarriedZeroMarkStopsBeforeTrial(t *testing.T) {
+	h := newHarness(t, searchAt(0)...)
+	phase := h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: 0, FailedMark: new(0)})
+	a := h.next()
+	p, ok := a.Payload.(*journal.DeadEnd)
+	if !ok || p.Condition != journal.DeadEndFailureAtZero || p.Core == nil || *p.Core != 0 || cmp.Diff([]int{phase.Seq}, a.Cause) != "" {
+		t.Fatalf("zero mark did not stop tuning: %+v", a)
+	}
+}

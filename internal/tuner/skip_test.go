@@ -201,3 +201,30 @@ func TestSkippedRefinementAndRerunFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestKnownIsolatedFailureUsesRecordedOffset(t *testing.T) {
+	h := newHarness(t, searchAt(-20)...)
+	w := machine.Workloads(machine.R1)[0].ID
+	fact := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "source"}, Class: journal.TrialClass{Regime: machine.R1, Workload: w, Cores: []int{0}, DurationS: h.s.durations.SearchTrialS}, Condition: machine.Isolated, Profile: []int{-19}, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+	a := h.s.Next()
+	p, ok := a.Payload.(*journal.Failure)
+	if !ok || p.Attribution != journal.Attributed || p.Core == nil || *p.Core != 0 || p.Offset == nil || *p.Offset != -19 || p.KnownFailure != fact.Seq || cmp.Diff([]int{fact.Seq}, a.Cause) != "" {
+		t.Fatalf("isolated skip lost known failure: %+v", a)
+	}
+}
+
+func TestKnownResidentFailureInfersSoleNonzeroCore(t *testing.T) {
+	h := residentHarness(t, 0, -20)
+	w := machine.Workloads(machine.R6)[0].ID
+	fact := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old"}, Class: journal.TrialClass{Regime: machine.R6, Workload: w, Cores: []int{0, 1}, DurationS: 120}, Condition: machine.Resident, Profile: []int{0, -19}, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+	a := h.s.skipKnownFailure(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R6, Workload: w, Cores: []int{0, 1}, DurationS: 120, Condition: machine.Resident}})
+	p, ok := a.Payload.(*journal.Failure)
+	if !ok || p.Attribution != journal.Attributed || p.Core == nil || *p.Core != 1 || p.Offset == nil || *p.Offset != -19 || p.KnownFailure != fact.Seq {
+		t.Fatalf("single nonzero known profile was not attributed: %+v", a)
+	}
+	h.decide(a)
+	back := h.next().Payload.(*journal.TunerDecision)
+	if back.Core != 1 || back.ToOffset != -18 || back.FailedMark == nil || *back.FailedMark != -19 {
+		t.Fatalf("backoff did not break recorded mark: %+v", back)
+	}
+}

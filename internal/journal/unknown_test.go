@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -75,5 +76,26 @@ func TestOpaqueEventRefusesWriterBeforeTornTailRepair(t *testing.T) {
 	}
 	if diff := cmp.Diff(data, after); diff != "" {
 		t.Fatalf("writer changed journal: %s", diff)
+	}
+}
+
+func TestDefaultBuildRefusesOpaqueWriter(t *testing.T) {
+	dir := t.TempDir()
+	data := []byte(`{"seq":1,"kind":"session.start","schema":2}` + "\n" + `{"seq":2,"kind":"future.fact"}` + "\n")
+	path := filepath.Join(dir, eventsFile)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	j, err := Open(dir, Options{Now: fixedClock()})
+	if j != nil {
+		j.Close()
+	}
+	var unknown *UnknownKindError
+	if !errors.As(err, &unknown) || unknown.Binary.Schema != Schema || unknown.Kind != "future.fact" {
+		t.Fatalf("opaque writer refusal: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(data, after) {
+		t.Fatalf("opaque journal changed: %q, %v", after, err)
 	}
 }

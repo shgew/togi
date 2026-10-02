@@ -368,3 +368,19 @@ func TestRelativeTrialDirectory(t *testing.T) {
 		t.Log("relative trials directory reached prepared inputs after launcher and scope working-directory resolution")
 	})
 }
+
+func TestInputOwnershipFailureNamesInput(t *testing.T) {
+	failure := errors.New("input ownership refused")
+	dir := t.TempDir()
+	var paths []string
+	err := ownDirectory(dir, []string{"prime.txt", "local.txt"}, Identity{UID: 1, GID: 1}, func(path string, _, _ int) error {
+		paths = append(paths, path)
+		return failure
+	})
+	if !errors.Is(err, failure) || !strings.Contains(err.Error(), filepath.Join(dir, "prime.txt")) {
+		t.Fatalf("input ownership error: %v", err)
+	}
+	if diff := cmp.Diff([]string{filepath.Join(dir, "prime.txt")}, paths); diff != "" {
+		t.Fatal(diff)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,5 +101,43 @@ func TestResumeContextPrecedence(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestResumeEmptyAndCorruptHistory(t *testing.T) {
+	cfg := Config{Cores: 2, Seed: 42, Boots: 7, Start: epoch.Add(time.Hour)}
+	got, err := Resume(t.TempDir(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(cfg, got); diff != "" {
+		t.Fatal(diff)
+	}
+	for _, tc := range []struct{ name, data, want string }{
+		{"current corrupt", "not-json\n", "resume simulator"},
+		{"archive metadata corrupt", "{\"seq\":1,\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"old\",\"kind\":\"session.start\",\"schema\":99}\nnot-json\n", "metadata"},
+		{"archive context corrupt", "{\"seq\":1,\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"old\",\"kind\":\"session.start\",\"schema\":99}\n{\"seq\":2,\"time\":\"2026-01-01T00:00:01Z\",\"boot\":\"old\",\"kind\":\"session.context\",\"bios_version\":2}\n", "context"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(tc.data), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Resume(dir, Config{}); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("resume error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestResumeIgnoresTornIncompatibleTail(t *testing.T) {
+	dir := t.TempDir()
+	data := "{\"seq\":1,\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"old\",\"kind\":\"session.start\",\"schema\":99}\n{\"boot\":\"torn\",\"time\":\"2027-01-01T00:00:00Z\"}"
+	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Resume(dir, Config{})
+	if err != nil || got.Boots != 1 || !got.Start.Equal(epoch.Add(RebootTime)) {
+		t.Fatalf("torn resume = %+v, %v", got, err)
 	}
 }

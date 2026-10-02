@@ -117,3 +117,11 @@ func TestCheckerConstraintsPreserveBinomialCheck(t *testing.T) {
 		}
 	}
 }
+
+func TestReportOmitsAbsentChecks(t *testing.T) {
+	var output bytes.Buffer
+	Report(&output, nil)
+	if output.Len() != 0 {
+		t.Fatalf("absent checks printed a model diagnostic: %q", output.String())
+	}
+}

@@ -112,3 +112,57 @@ func TestResetBoundaryRejectsSymlinks(t *testing.T) {
 		t.Fatalf("reset changed symlink target: %q, error %v", got, err)
 	}
 }
+
+func TestMarkResetAllWithoutSource(t *testing.T) {
+	dir := t.TempDir()
+	j, err := Lock(dir, Options{Sync: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.Close()
+	if err := j.MarkResetAll(); err != nil {
+		t.Fatal(err)
+	}
+	if boundary, err := ResetBoundary(dir); err != nil || boundary != "" {
+		t.Fatalf("empty reset invented source: %q, %v", boundary, err)
+	}
+}
+
+func TestResetBoundaryDirectorySyncFailuresRetainCarry(t *testing.T) {
+	for _, at := range []int{3, 4} {
+		dir := t.TempDir()
+		j, err := Lock(dir, Options{Sync: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		archive := filepath.Join(dir, archiveDir)
+		if err := os.Mkdir(archive, 0755); err != nil {
+			j.Close()
+			t.Fatal(err)
+		}
+		marker := filepath.Join(archive, "source"+carrySuffix)
+		if err := os.WriteFile(marker, nil, 0600); err != nil {
+			j.Close()
+			t.Fatal(err)
+		}
+		faults := &faultJournalFilesystem{journalFilesystem: j.fs, at: at}
+		j.fs = faults
+		if _, err := j.DropPendingCarry(); !errors.Is(err, errJournalFilesystem) {
+			j.Close()
+			t.Fatalf("boundary sync failure: %v", err)
+		}
+		if _, err := os.Stat(marker); err != nil {
+			j.Close()
+			t.Fatalf("carry removed before boundary completion: %v", err)
+		}
+		faults.at = 0
+		id, err := j.DropPendingCarry()
+		j.Close()
+		if err != nil || id != "source" {
+			t.Fatalf("boundary retry: %q, %v", id, err)
+		}
+		if boundary, err := ResetBoundary(dir); err != nil || boundary != "source" {
+			t.Fatalf("durable reset boundary lost: %q, %v", boundary, err)
+		}
+	}
+}
