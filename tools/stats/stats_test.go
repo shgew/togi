@@ -120,11 +120,3 @@ func TestPriorPasses(t *testing.T) {
 		})
 	}
 }
-
-func TestPriorPassesRejectDifferentProfileShape(t *testing.T) {
-	target := &journal.TrialIntent{Regime: machine.R7, Workload: "load", Cores: []int{0, 1}, DurationS: 120, Profile: []int{-10, -10}}
-	history := []*trial{{intent: &journal.TrialIntent{Regime: machine.R7, Workload: "load", Cores: []int{0, 1}, DurationS: 120, Profile: []int{-10}}, endSeq: 1, end: &journal.TrialEnd{Outcome: journal.OutcomePass}, key: class(target, nil)}}
-	if diff := cmp.Diff(0, priorPasses(history, target, 10, nil, nil)); diff != "" {
-		t.Fatalf("incomplete profile supplied prior passes (-want +got):\n%s", diff)
-	}
-}

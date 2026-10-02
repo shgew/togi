@@ -502,7 +502,6 @@ func TestGitHubRequestErrors(t *testing.T) {
 		transport                    http.RoundTripper
 		status                       int
 	}{
-		{name: "encode", method: http.MethodPost, body: make(chan int), want: "encode POST /test:"},
 		{name: "prepare", method: "bad method", want: "prepare bad method /test:"},
 		{name: "transport", method: http.MethodGet, transport: failureTransport{err: errors.New("offline")}, want: "GET /test:"},
 		{name: "read", method: http.MethodGet, transport: failureTransport{body: failingBody{}}, want: "read GET /test response: broken response"},

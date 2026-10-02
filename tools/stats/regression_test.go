@@ -155,6 +155,7 @@ func TestIdleCrashInvalidatesAllCoreR6PriorPasses(t *testing.T) {
 		profile []int
 		want    string
 	}{
+		{"legacy absent profile", machine.R6, []int{0, 1}, nil, "1"},
 		{"equal", machine.R6, []int{0, 1}, []int{-10, -10}, "0"},
 		{"shallower", machine.R6, []int{0, 1}, []int{-9, -10}, "0"},
 		{"deeper", machine.R6, []int{0, 1}, []int{-11, -10}, "1"},

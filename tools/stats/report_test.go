@@ -74,6 +74,9 @@ func TestReviewBoundaryReport(t *testing.T) {
 			t.Fatal(diff)
 		}
 	}
+	if diff := cmp.Diff([][]string{{"0001", "R6", "00,01", "failure", "1"}, {"0001", "R6", "00,01", "pass", "1"}}, reportRows(t, events, "Guard steps and resident outcomes")); diff != "" {
+		t.Fatalf("legacy all-core expansion (-want +got):\n%s", diff)
+	}
 	rows := reportRows(t, events, "Hunts")
 	if diff := cmp.Diff("1/0/0/1", rows[0][6]); diff != "" {
 		t.Fatal(diff)

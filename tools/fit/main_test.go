@@ -5,6 +5,8 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"flag"
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -73,8 +75,12 @@ func TestGenerateWritesCheckedReproducibleEnsemble(t *testing.T) {
 		gz := gzip.NewWriter(&compressed)
 		encoder := json.NewEncoder(gz)
 		context := machine.BIOSContext{Board: "fixture", BIOSVersion: "A", CPUModel: "Zen 5 fixture", Microcode: "0x1", BoostLimitMHz: 5600}
-		for range 10 {
-			r := trialfacts.Record{Kind: facts.TrialFact, Outcome: journal.OutcomePass, Profile: []int{-10, 0}, Context: &context, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
+		for i := range 12 {
+			outcome := journal.OutcomePass
+			if i >= 6 {
+				outcome = journal.OutcomeFailure
+			}
+			r := trialfacts.Record{Kind: facts.TrialFact, Outcome: outcome, Profile: []int{-10, 0}, Context: &context, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
 			if err := encoder.Encode(r); err != nil {
 				t.Fatal(err)
 			}
@@ -112,15 +118,38 @@ func TestGenerateWritesCheckedReproducibleEnsemble(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if check.Status != "ok" || len(check.Groups) != 1 || check.Groups[0].N != 10 || check.Groups[0].K != 0 {
+				if check.Status != "ok" || len(check.Groups) != 1 || check.Groups[0].N != 12 || check.Groups[0].K != 6 {
 					t.Fatalf("fit lost original evidence: %+v", check)
+				}
+				// Seed 264 draws indices 7,11,11,8,8,10,4,5,7,2,1,0: seven failures.
+				failures := 6 + n
+				prediction := check.Groups[0].MeanP
+				if math.Abs(prediction-float64(failures)/12) > 0.02 {
+					t.Fatalf("member %d resampled prediction = %g, want %d/12", n, prediction, failures)
 				}
 				if dir == "first" {
 					first = append(first, content)
 				} else if diff := cmp.Diff(first[n], content); diff != "" {
 					t.Fatalf("nonreproducible member %d: %s", n, diff)
 				}
-				if !strings.Contains(report.String(), path+": 10 starts; negative log likelihood 0.000000") || !strings.Contains(report.String(), path+": ok (1 eligible groups; 0 idle failures without start exposure)") {
+				found := false
+				for line := range strings.SplitSeq(report.String(), "\n") {
+					evidence, ok := strings.CutPrefix(line, path+": ")
+					if !ok {
+						continue
+					}
+					var starts int
+					var loss float64
+					if fields, err := fmt.Sscanf(evidence, "%d starts; negative log likelihood %f", &starts, &loss); err != nil || fields != 2 {
+						continue
+					}
+					wantLoss := -float64(failures)*math.Log(prediction) - float64(12-failures)*math.Log1p(-prediction)
+					if starts != 12 || math.Abs(loss-wantLoss) > 0.0001 {
+						t.Fatalf("member %d resampled likelihood = %d starts, %g; want 12 starts, %g", n, starts, loss, wantLoss)
+					}
+					found = true
+				}
+				if !found || !strings.Contains(report.String(), path+": ok (1 eligible groups; 0 idle failures without start exposure)") {
 					t.Fatalf("missing fit evidence: %s", report.String())
 				}
 			}
@@ -158,4 +187,51 @@ func TestGenerateRefusesMissingOrNondecisiveEvidence(t *testing.T) {
 			t.Fatalf("refused evidence reported a fit: %q", output.String())
 		}
 	})
+}
+
+func TestGenerateRefusesConflictingDestinations(t *testing.T) {
+	for _, directory := range []bool{false, true} {
+		t.Run(map[bool]string{false: "output directory", true: "fitted file"}[directory], func(t *testing.T) {
+			root := t.TempDir()
+			extract := filepath.Join(root, "facts.jsonl.gz")
+			var compressed bytes.Buffer
+			gz := gzip.NewWriter(&compressed)
+			record := trialfacts.Record{Kind: facts.TrialFact, Outcome: journal.OutcomePass, Profile: []int{-10, 0}, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
+			if err := json.NewEncoder(gz).Encode(record); err != nil {
+				t.Fatal(err)
+			}
+			if err := gz.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(extract, compressed.Bytes(), 0600); err != nil {
+				t.Fatal(err)
+			}
+			out := filepath.Join(root, "machines")
+			conflict := out
+			want := "create output directory"
+			if directory {
+				conflict = filepath.Join(out, "target-fit-0.toml")
+				want = "write fitted machine"
+				if err := os.MkdirAll(conflict, 0700); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(conflict, []byte("preserve"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var report bytes.Buffer
+			if err := generate(extract, out, 263, 0, &report); err == nil || !strings.HasPrefix(err.Error(), want+":") || report.Len() != 0 {
+				t.Fatalf("conflicting destination: %v, report %q; want %s", err, report.String(), want)
+			}
+			info, err := os.Stat(conflict)
+			if err != nil || info.IsDir() != directory {
+				t.Fatalf("conflicting destination replaced: %v, %v", info, err)
+			}
+			if !directory {
+				data, err := os.ReadFile(conflict)
+				if err != nil || string(data) != "preserve" {
+					t.Fatalf("conflicting file changed: %q, %v", data, err)
+				}
+			}
+		})
+	}
 }

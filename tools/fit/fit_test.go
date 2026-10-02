@@ -367,16 +367,40 @@ func TestJointSearchSeparatesCleanBoundary(t *testing.T) {
 }
 
 func TestJointCandidateLimitPreservesModel(t *testing.T) {
-	cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
-	for j := range 8 {
-		cfg.Joints = append(cfg.Joints, sim.Joint{Members: map[int]int{0: -20 - j}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001})
+	var records []trialfacts.Record
+	for i := range 100 {
+		outcome := journal.OutcomePass
+		if i >= 10 {
+			outcome = journal.OutcomeFailure
+		}
+		records = append(records, trialfacts.Record{Kind: facts.TrialFact, Outcome: outcome, Profile: []int{-30, 0}, Class: facts.Class{Regime: machine.R7, Cores: []int{0, 1}, DurationS: 60}})
 	}
-	want := cloneMachine(cfg)
-	l := likelihood{cfg: cfg}
-	l.rebuild()
-	l.addJoint(&cfg, []trialfacts.Record{{Kind: facts.TrialFact, Outcome: journal.OutcomeFailure, Profile: []int{-30, 0}, Class: facts.Class{Regime: machine.R7, Cores: []int{0}, DurationS: 60}}}, 0)
-	if diff := cmp.Diff(want, cfg); diff != "" {
-		t.Fatalf("ninth joint admitted: %s", diff)
+	for _, count := range []int{7, 8} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			cfg := initialConfig(records)
+			cfg.Model.NearEdgeRate = 0
+			cfg.Joints = nil
+			for j := range count {
+				cfg.Joints = append(cfg.Joints, sim.Joint{Members: map[int]int{0: -20 - j}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001})
+			}
+			want := cloneMachine(cfg)
+			l := likelihood{cfg: cfg, obs: aggregate(records)}
+			l.rebuild()
+			before := l.score([]int{0})
+			l.addJoint(&cfg, records, 0)
+			if count == 8 {
+				if diff := cmp.Diff(want, cfg); diff != "" {
+					t.Fatalf("ninth joint admitted: %s", diff)
+				}
+			} else {
+				if len(cfg.Joints) != 8 || !(l.score([]int{0}) < before-0.5) {
+					t.Fatalf("otherwise admissible candidate was not fitted: joints=%d loss %g -> %g", len(cfg.Joints), before, l.score([]int{0}))
+				}
+				if diff := cmp.Diff(map[int]int{0: -30}, cfg.Joints[7].Members); diff != "" {
+					t.Fatalf("viable distinct candidate (-want +got):\n%s", diff)
+				}
+			}
+		})
 	}
 }
 

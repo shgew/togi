@@ -33,14 +33,14 @@ func TestFilterIntersectsKindAndTime(t *testing.T) {
 	}
 }
 
-func TestFilterRejectsOpaqueIncompatibleCore(t *testing.T) {
+func TestFilterRejectsOpaqueIncompatibleEvidence(t *testing.T) {
 	t.Parallel()
-	event, err := decode([]byte(`{"seq":1,"kind":"future.additive","core":"not-a-number","trial":"one"}`))
+	event, err := decode([]byte(`{"seq":1,"kind":"future.additive","core":7,"trial":"one","members":"incompatible"}`))
 	if err != nil {
 		t.Fatalf("valid opaque event was rejected by the reader: %v", err)
 	}
 	if (Filter{Core: new(7), Trial: "one"}).Match(event) {
-		t.Fatal("opaque event with incompatible core matched the filter")
+		t.Fatal("otherwise matching opaque event with incompatible evidence matched the filter")
 	}
 }
 
