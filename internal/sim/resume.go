@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/shgew/togi/internal/journal"
@@ -22,6 +24,12 @@ func Resume(dir string, cfg Config) (Config, error) {
 	if err != nil {
 		return cfg, fmt.Errorf("resume simulator: %w", err)
 	}
+	slices.SortFunc(archives, func(a, b string) int {
+		return journal.CompareSessionIDs(
+			strings.TrimSuffix(filepath.Base(a), ".jsonl"),
+			strings.TrimSuffix(filepath.Base(b), ".jsonl"),
+		)
+	})
 	boots := map[string]bool{}
 	var (
 		last time.Time
