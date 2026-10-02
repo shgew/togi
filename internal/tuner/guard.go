@@ -172,6 +172,27 @@ func (s *State) rotationNext() Action {
 	return Action{Kind: Decide, Payload: &journal.GuardRotation{Rotation: g.rotation, Event: journal.RotationEnd, Clean: true, Qualifying: qualifying, Missing: missing}, Cause: []int{g.startSeq, g.lastSeq}}
 }
 
+func (s *State) coveredEnd() (Action, bool) {
+	if s.retry != nil || !s.refinable() {
+		return Action{}, false
+	}
+	seq := s.covering()
+	if seq == 0 {
+		return Action{}, false
+	}
+	reason := fmt.Sprintf("clean qualifying rotation #%d already covers this profile with no contradicting failure, and refinement is due", seq)
+	return Action{Kind: Decide, Payload: &journal.GuardRotation{Rotation: s.guard.rotation, Event: journal.RotationEnd, Reason: reason}, Cause: []int{seq, s.guard.lastSeq}}, true
+}
+
+func (s *State) covering() int {
+	for _, q := range slices.Backward(s.qualified) {
+		if q.allDone && s.uncontradicted(q) {
+			return q.seq
+		}
+	}
+	return 0
+}
+
 func (s *State) attributeResident(a *awaiting) *journal.Failure {
 	intent := a.intent
 	f := &journal.Failure{Signal: a.end.Signal, Attribution: journal.Unattributed, Trial: intent.Trial, Regime: intent.Regime, Condition: intent.Condition, Profile: slices.Clone(intent.Profile)}

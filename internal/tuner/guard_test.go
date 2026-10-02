@@ -21,6 +21,48 @@ func residentHarness(t *testing.T, offsets ...int) *harness {
 	return h
 }
 
+func TestCoveredOpenRotationYieldsToRefinement(t *testing.T) {
+	offsets := []int{-49, -49, -49, -50}
+	for _, tt := range []struct {
+		name      string
+		qualified []int
+		covered   bool
+	}{
+		{"same profile", offsets, true},
+		{"deeper qualified profile", []int{-50, -49, -49, -50}, true},
+		{"shallower qualified profile", []int{-48, -49, -49, -50}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			starts := make([]coreStart, len(offsets))
+			for i, v := range offsets {
+				starts[i] = coreStart{phase: journal.PhaseDone, offset: v}
+			}
+			h := newHarness(t, starts...)
+			for i, pair := range [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}} {
+				h.add(&journal.MarkJoint{Mark: i + 1, Hunt: i + 1, Members: []journal.JointMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
+			}
+			h.add(&journal.ProfileChange{To: tt.qualified})
+			h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: h.s.steps})
+			rotation := h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true}).Seq
+			h.add(&journal.ProfileChange{From: tt.qualified, To: offsets})
+			h.add(&journal.GuardRotation{Rotation: 2, Event: journal.RotationStart, Steps: h.s.steps})
+			a := h.next()
+			end, ok := a.Payload.(*journal.GuardRotation)
+			if got := ok && end.Event == journal.RotationEnd && !end.Clean; got != tt.covered {
+				t.Fatalf("covered end %t, want %t: %+v", got, tt.covered, a)
+			}
+			if !tt.covered {
+				return
+			}
+			if a.Cause[0] != rotation {
+				t.Fatalf("cause %v, want rotation #%d first", a.Cause, rotation)
+			}
+			h.decide(a)
+			nextRound(h)
+		})
+	}
+}
+
 func TestRotationCoverage(t *testing.T) {
 	h := residentHarness(t, -10, -12, -13, -11)
 	cases := []struct {

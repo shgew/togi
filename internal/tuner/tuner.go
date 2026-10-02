@@ -675,6 +675,9 @@ func (s *State) next() Action {
 		return s.afterReruns(s.roundCheck())
 	}
 	if s.guard.open {
+		if a, ok := s.coveredEnd(); ok {
+			return s.afterReruns(a)
+		}
 		return s.afterReruns(s.rotationNext())
 	}
 	if s.refineDue() {
