@@ -6,12 +6,12 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ### Changed
 
-- Failure-rate bounds in `status` and `cert` state that their 95% claim assumes a constant failure rate on the tested workloads; the numbers and rounding are unchanged ([#237]).
+- Failure-rate bounds in `status` state that their 95% claim assumes a constant failure rate on the tested workloads; the numbers and rounding are unchanged ([#237]).
 
 ### Fixed
 
 - A journal write failure followed by unconfirmed workload teardown reports both errors and withholds all offset restoration, including emergency zeroing, while the backend may still be running ([#279]).
-- `status` and `cert` derive the guard's Tctl peak and source from the same post-clock resident passes as clean hours, preserving the peak across shallow backoffs and clearing it when a qualifying failure restarts the clock ([#235]).
+- `status` derives the guard's Tctl peak and source from the same post-clock resident passes as clean hours, preserving the peak across shallow backoffs and clearing it when a qualifying failure restarts the clock ([#235]).
 - Idle failures record a monotonicity warning when eligible all-core R6 passes in one class contradict the failed profile, citing those trial ends without changing the ensuing hunt ([#236]).
 - Competing starts or resets can no longer alter an upgrade's archives or pending carry before acquiring the state-directory writer lock; the lock now covers carry preparation and the complete session or reset ([#245]).
 - An upgrade interrupted before recording its carried evidence retains the original source through a subsequent upgrade, instead of replacing it with the incomplete intervening session ([#246]).
