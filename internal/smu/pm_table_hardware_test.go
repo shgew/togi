@@ -7,14 +7,33 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/shgew/togi/internal/hostlock"
 )
 
 func TestHardwarePMTable(t *testing.T) {
+	lock, err := hostlock.Acquire(hostlock.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := lock.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	cores, err := topology("/")
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := NewConditions("/", cores, os.ReadFile)
+	t.Cleanup(func() {
+		c.mu.Lock()
+		done := c.done
+		c.mu.Unlock()
+		if done != nil {
+			<-done
+		}
+	})
 	c.Check()
 	time.Sleep(5 * time.Millisecond)
 	check := c.Check()
