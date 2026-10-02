@@ -33,7 +33,6 @@ type Snapshot struct {
 	crashes     int
 	tctlTrial   *int
 	guardState  *journal.GuardState
-	tier        journal.Tier
 	lastFailure *line
 	deadEnd     string
 	recent      []line
@@ -77,7 +76,7 @@ var logged = []journal.Kind{
 	journal.KindTunerDecision, journal.KindCorePhase, journal.KindGuardRotation, journal.KindProfileChange,
 	journal.KindHuntStart, journal.KindHuntMask, journal.KindHuntEnd, journal.KindHuntSkipped,
 	journal.KindMarkJoint, journal.KindRefineRound, journal.KindTunerWarning, journal.KindSessionWarning, journal.KindBackendRetry,
-	journal.KindTierChange, journal.KindDeadEnd, journal.KindDefectFound, journal.KindCommandReset, journal.KindShutdown,
+	journal.KindDeadEnd, journal.KindDefectFound, journal.KindCommandReset, journal.KindShutdown,
 }
 
 // Load reads the journal in dir without locking it. A torn tail is ignored: the writer is mid-append and the next read
@@ -111,7 +110,6 @@ func Project(events []journal.Event) Snapshot {
 		start:      st.Session.Start,
 		current:    -1,
 		guardState: st.Guard,
-		tier:       st.Tier,
 	}
 	if st.Hunt != nil {
 		s.huntID = st.Hunt.Hunt

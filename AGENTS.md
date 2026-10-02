@@ -10,14 +10,15 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `REVIEW.md`: defect criteria and recurring lessons. Read it before reviewing a pull request.
 - `.omp/`: reviewer rules and `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates.
 - `docs/spec/`: normative behavior. Read the relevant spec before changing behavior, and change spec and code in the same pull request or in layers of one stack merged together.
-  - `tuner.md`: offsets, search, hunt, refinement, guard, tiers, dead ends.
+  - `tuner.md`: offsets, search, hunt, refinement, guard, qualified rotations, dead ends.
   - `workloads.md`: regimes, backends, containment, failure detection.
   - `journal.md`: events, state, logging.
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
 - `docs/releasing.md`: versioning rules, the release workflow and publishing.
 - `docs/simulating.md`: running a simulated session with `tools/sim`.
-- `docs/reviewing.md`: reviewing an unattended run or archived journal with `just stats`.
+- `docs/reviewing.md`: reviewing an unattended run or archived journal with `just stats`, and writing its retro on the pinned "Target-machine runs" issue.
 - `docs/benchmarking.md`: measuring a tuner change's time to conclusion, depth and hazard across simulated machines with `tools/bench`; run it before and after any change to how the tuner decides.
+- `tools/bench/program.md`: autonomous tuner research; follow it when planning experiments, keeping bench wins and turning them into pull requests.
 - `docs/adr/`: decisions and the alternatives rejected, with statuses in [the index](docs/adr/README.md). The specs describe current behavior; where they disagree with an ADR, the spec wins and the index is out of date. Reversing a decision needs a new ADR, which updates the index in the same pull request.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
 - Issues on `github.com/shgew/togi`: the plan, ideas and bugs (Issues, below).
@@ -33,12 +34,12 @@ Every change, docs included, lands as a pull request against `main` on `github.c
 - Stacked pull requests always use [`gh stack`](https://github.com/github/gh-stack) (`gh extension install github/gh-stack`): each layer is a branch with its own pull request based on the layer below, a lower layer holds what the ones above depend on, and every layer passes `just check` on its own. Open the stack with `gh stack submit`, keep it current with `gh stack sync`, and merge it with `gh stack merge`, never layer by layer by hand.
 - Commit with short imperative messages.
 - The pull request body follows `.github/pull_request_template.md`: a short summary, and the demo in a collapsed block.
-- Opening a pull request starts its independent agent review before its author reports done. Follow `.omp/commands/review-pr.md` (the omp command is `/review-pr [PR numbers or URLs… | all]`; no argument means all open non-draft pull requests). omp's `.omp/rules/review-after-open.md` sends a reminder after each PR-opening command. PR coordinators run in parallel and split each diff among parallel reviewers; one coordinator owns each stack's fixes and restack. Review fixes again, record every finding and its outcome in one App comment for the reviewed commit, then post the `review` check on that head. The merge requires that check from robotogi and resolved review threads, together with CI.
+- Opening a pull request starts its independent agent review before its author reports done. Follow `.omp/commands/review-pr.md` (the omp command is `/review-pr [PR numbers or URLs… | all]`; no argument means all open non-draft pull requests). omp's `.omp/rules/review-after-open.md` sends a reminder after each PR-opening command. PR coordinators run in parallel and split each diff among parallel reviewers; one coordinator owns each stack's fixes and restack. Fixes, later pushes and restacks are reviewed only where they change the pull request, by the agents that reviewed it when they are still available. Record every finding and its outcome in one App comment for the reviewed commit, covering the whole diff the first time and only the changes afterwards, then post the `review` check on that head. The merge requires that check from robotogi and resolved review threads, together with CI.
+  If a legacy version-1 record's historical base cannot be recovered, review the whole current layer conservatively and explain the exception in the linked record.
 - Address every finding on the same branch. Fix real defects: behavior, safety, security, journal integrity, concurrency, unmet Acceptance, tests that fail to pin behavior, and docs that contradict behavior or other docs. Reply with a reason to the rest and change nothing; style, wording, optional tests, naming taste, optional refactors and findings another layer handles are not reasons to change this layer.
   Push one review's fixes together, and reply to and resolve each thread.
 - A pull request that finishes an issue says `Closes #N` in its body; one that only makes progress says `Refs #N`.
 - A pull request that bumps `journal.Schema` or `tuner.Ruleset` is breaking: its title starts with `[BREAKING]`, it carries the `breaking` label, and its changelog line starts with `**BREAKING**`.
-- A breaking pull request merges only after `[Unreleased]` has been released (see `docs/releasing.md`).
 - A pull request that fixes a bug that changed decisions adds a defect entry, with a test replaying a fixture journal from before the fix, when the affected decisions can be matched. Otherwise its changelog line tells the operator which `togi reset --core` to run.
 
 ## Issues
@@ -80,6 +81,8 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just fmt` | Format Go, Nix and the justfile in place |
 | `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just bench [flags]` | The bench suite of simulated sessions, optionally compared against a baseline run (`go run ./tools/bench`, `docs/benchmarking.md`) |
+| `just facts STATE-DIR` | Regenerate the committed privacy-safe target evidence from a copied state directory (`docs/benchmarking.md`) |
+| `just fit [flags]` | Regenerate the target-machine fit and eight bootstrap refits from the committed extract (`docs/benchmarking.md`) |
 | `just release` | Start the release workflow on `main`: it checks that `check` passed on `main`, commits the release, builds the package, pushes to `main` and publishes. `just release-preview` shows what it would release. See `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with an explicitly delegated host lock ([provisioning](docs/howto.md#host-lock-and-delegated-hardware-tests)), read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `TOGI_MPRIME` and `TOGI_YCRUNCHER`, else from `/etc/togi/config.toml` |
 | `just fuzz [time]` | Fuzz the journal parser |
@@ -101,8 +104,9 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/machine` | Shared vocabulary and the seam interfaces the run loop consumes |
 | `internal/defect` | Known decision-changing bugs and pure matching against the journal |
 | `internal/journal` | Journal, replay, state file, log lines |
+| `internal/facts` | Decisive trial and idle-failure evidence with journal provenance |
 | `internal/carry` | Transitions: archiving an older session and deriving the edges and failed marks it carries |
-| `internal/tuner` | Pure decision engine: search, hunt, refinement, guard, tiers |
+| `internal/tuner` | Pure decision engine: search, hunt, refinement, guard |
 | `internal/sim` | Simulator implementing every hardware seam, and resuming it after a journal |
 | `internal/session` | The run loop: session start, resume, crash attribution, trials, dead ends |
 | `internal/simrun` | A session on the simulator, across its crash reboots |
@@ -113,7 +117,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
 | `nix/` | NixOS module and VM tests |
-| `tools/*` | Development programs, never shipped: `bench`, `release`, `sim`, `stats`. Development and debugging behavior lives here, never in `cmd/togi` |
+| `tools/*` | Development programs, never shipped: `bench`, `carry-facts`, `facts`, `fit`, `release`, `sim`, `stats`; shared evaluation packages `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
 
 A package owns one responsibility, and its exported API is the seam. Split a package when it holds two responsibilities that change for different reasons.
 

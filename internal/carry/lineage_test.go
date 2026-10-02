@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -31,7 +32,7 @@ func TestInterruptedTransitionRetainsOriginalPendingLineage(t *testing.T) {
 			}
 			interrupted.close()
 			got := prepare(t, dir, []defect.Entry{})
-			if diff := cmp.Diff(first, got); diff != "" {
+			if diff := cmp.Diff(first, got, cmpopts.IgnoreUnexported(Carry{})); diff != "" {
 				t.Fatalf("carry after second upgrade (-want +got):\n%s", diff)
 			}
 			if pending, err := journal.PendingCarry(dir); err != nil || pending != "A" {

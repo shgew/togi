@@ -29,7 +29,7 @@ func TestCommandHelpConfigScope(t *testing.T) {
 
 func TestReadOnlyCommandsRejectConfig(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"status", "cert", "events", "watch"} {
+	for _, name := range []string{"status", "events", "watch"} {
 		for _, placement := range []string{"before", "after"} {
 			t.Run(name+"/"+placement, func(t *testing.T) {
 				t.Parallel()

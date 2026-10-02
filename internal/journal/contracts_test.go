@@ -12,37 +12,33 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func TestNewPayloadMessagesAndStyles(t *testing.T) {
+func TestPayloadStyles(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		p       Payload
-		message string
-		style   Style
+		p     Payload
+		style Style
 	}{
-		{&HostRanking{Ranking: []int{3, 11}}, "preferred cores 03 11", Plain},
-		{&HostRanking{Detail: "missing"}, "preferred-core ranking unavailable (missing); core-id order", Plain},
-		{&HuntStart{Hunt: 4, Regime: machine.R7, Trial: "0007", Candidates: []int{3, 11}, Starts: 5, StartS: 120}, "hunt 4: unattributed failure in resident R7 trial 0007; anchor from all-zero; candidates 03, 11; masks of 5 × 120s", Yellow},
-		{&HuntMask{Hunt: 4, Mask: 1, Cores: []int{3, 11}, Skipped: true, Reason: "already checked"}, "hunt 4 mask 1: cores 03, 11 skipped: already checked", Plain},
-		{&HuntMask{Hunt: 4, Mask: 2, Cores: []int{3}, Inferred: "pass", Reason: "complement failed"}, "hunt 4 mask 2: cores 03 pass inferred: complement failed", Plain},
-		{&HuntMask{Hunt: 4, Mask: 3, Cores: []int{11}, Inferred: "failure", Reason: "complement passed"}, "hunt 4 mask 3: cores 11 failure inferred: complement passed", Plain},
-		{&HuntMask{Hunt: 4, Mask: 4, Cores: []int{3, 11}, DurationS: 120}, "hunt 4 mask 4: cores 03, 11 at failing offsets, the rest at the anchor; starts of 120s", Plain},
-		{&HuntMask{Hunt: 4, Mask: 5, Cores: []int{3}, Edge: &JointMember{Core: 11, Offset: -22}, Held: []JointMember{{Core: 3, Offset: -40}}, DurationS: 120}, "hunt 4 mask 5: core 11 at -22 with core 03 -40, the rest at the anchor; starts of 120s", Plain},
-		{&HuntSkipped{Failure: 904, Reason: "already marked"}, "failure #904 is not hunted: already marked", Plain},
-		{&HuntEnd{Hunt: 3, Result: "culprit", Cores: []int{13}, Masks: 4}, "hunt 3 found core 13 after 4 masks", Green},
-		{&MarkJoint{Mark: 2, Members: []JointMember{{Core: 3, Offset: -40}, {Core: 11, Offset: -30}}, Hunt: 4}, "joint mark J2: core 03 -40 + core 11 -30, observed in hunt 4", Yellow},
-		{&RefineRound{Round: 2, Event: RotationEnd, Passed: true}, "refine round 2 end: passed", GreenBold},
-		{&TunerWarning{Warning: "monotonicity", Trial: "0520", Passes: []int{1, 2}}, "monotonicity: trial 0520 failed on a profile at least as shallow as 2 passes in its class", Yellow},
-		{&BackendRetry{Backend: "mprime", Attempt: 2, WaitS: 300, Reason: "setup failed"}, "backend mprime: retry 2 of 3 after 300s: setup failed", Dim},
-		{&GuardRotation{Event: RotationEnd, Clean: true}, "guard rotation 0 end clean", Plain},
-		{&Failure{Signal: machine.Crash, Attribution: Attributed, Core: new(1), Offset: new(-38), Trial: "0385", Regime: machine.R7, Condition: machine.Masked}, "core 01 failure at CO -38: crash in masked R7 trial 0385", Red},
-		{&Failure{Signal: machine.Crash, Attribution: Attributed, Core: new(2), Offset: new(-12), Regime: machine.R6, Condition: machine.Resident}, "core 02 failure at CO -12: crash with the resident profile applied and no trial in flight, the only nonzero core", Red},
-		{&Failure{Signal: machine.Crash, Attribution: Unattributed, Trial: "0310", Regime: machine.R7, Condition: machine.Masked}, "unattributed crash failure in masked R7 trial 0310: the mask fails, no evidence names a single core", Red},
+		{&HostRanking{Ranking: []int{3, 11}}, Plain},
+		{&HostRanking{Detail: "missing"}, Plain},
+		{&HuntStart{Hunt: 4, Regime: machine.R7, Trial: "0007", Candidates: []int{3, 11}, Starts: 5, StartS: 120}, Yellow},
+		{&HuntMask{Hunt: 4, Mask: 1, Cores: []int{3, 11}, Skipped: true, Reason: "already checked"}, Plain},
+		{&HuntMask{Hunt: 4, Mask: 2, Cores: []int{3}, Inferred: "pass", Reason: "complement failed"}, Plain},
+		{&HuntMask{Hunt: 4, Mask: 3, Cores: []int{11}, Inferred: "failure", Reason: "complement passed"}, Plain},
+		{&HuntMask{Hunt: 4, Mask: 4, Cores: []int{3, 11}, DurationS: 120}, Plain},
+		{&HuntMask{Hunt: 4, Mask: 5, Cores: []int{3}, Edge: &JointMember{Core: 11, Offset: -22}, Held: []JointMember{{Core: 3, Offset: -40}}, DurationS: 120}, Plain},
+		{&HuntSkipped{Failure: 904, Reason: "already marked"}, Plain},
+		{&HuntEnd{Hunt: 3, Result: "culprit", Cores: []int{13}, Masks: 4}, Green},
+		{&MarkJoint{Mark: 2, Members: []JointMember{{Core: 3, Offset: -40}, {Core: 11, Offset: -30}}, Hunt: 4}, Yellow},
+		{&RefineRound{Round: 2, Event: RotationEnd, Passed: true}, GreenBold},
+		{&TunerWarning{Warning: "monotonicity", Trial: "0520", Passes: []int{1, 2}}, Yellow},
+		{&BackendRetry{Backend: "mprime", Attempt: 2, WaitS: 300, Reason: "setup failed"}, Dim},
+		{&GuardRotation{Event: RotationEnd, Clean: true}, Plain},
+		{&Failure{Signal: machine.Crash, Attribution: Attributed, Core: new(1), Offset: new(-38), Trial: "0385", Regime: machine.R7, Condition: machine.Masked}, Red},
+		{&Failure{Signal: machine.Crash, Attribution: Attributed, Core: new(2), Offset: new(-12), Regime: machine.R6, Condition: machine.Resident}, Red},
+		{&Failure{Signal: machine.Crash, Attribution: Unattributed, Trial: "0310", Regime: machine.R7, Condition: machine.Masked}, Red},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.p.Kind()), func(t *testing.T) {
-			if d := cmp.Diff(tt.message, tt.p.Message()); d != "" {
-				t.Errorf("message (-want +got): %s", d)
-			}
 			if d := cmp.Diff(tt.style, StyleOf(Event{Data: tt.p})); d != "" {
 				t.Errorf("style (-want +got): %s", d)
 			}

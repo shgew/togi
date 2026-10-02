@@ -538,3 +538,142 @@ func TestCrashRecoveryLastSample(t *testing.T) {
 		})
 	}
 }
+
+func TestReplayCrashRecoveryPreservesFact(t *testing.T) {
+	t.Parallel()
+	probe, events := firstCrash(t, machine.ResetWatchdog, machine.Crash, false)
+	bios, err := probe.Machine.Seams().Host.BIOSContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var intent *journal.TrialIntent
+	for _, e := range events {
+		if p, ok := e.Data.(*journal.TrialIntent); ok && p.Trial == "0001" {
+			intent = p
+			break
+		}
+	}
+	if intent == nil {
+		t.Fatal("missing first trial intent")
+	}
+	cores := intent.Cores
+	if len(cores) == 0 && intent.Core != nil {
+		cores = []int{*intent.Core}
+	}
+	for _, tc := range []struct {
+		name     string
+		signal   machine.Signal
+		reset    machine.ResetKind
+		duration int
+	}{
+		{"crash exposure", machine.Crash, machine.ResetWatchdog, 7},
+		{"crash overrides thermal fallback", machine.Crash, machine.ResetThermalTrip, 7},
+		{"uncorrected MCE", machine.UncorrectedMCE, machine.ResetThermalTrip, 7},
+		{"zero crash exposure", machine.Crash, machine.ResetWatchdog, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := small()
+			model := sim.DefaultModel()
+			model.Reset = map[machine.ResetKind]float64{tc.reset: 1}
+			cfg.Model = &model
+			cfg.Replay, err = sim.NewReplay(bios, []sim.ReplayFact{{
+				Context:   bios,
+				Class:     journal.TrialClass{Regime: intent.Regime, Workload: intent.Workload, Cores: cores, DurationS: intent.DurationS},
+				Profile:   intent.Profile,
+				Outcome:   journal.OutcomeFailure,
+				Signal:    tc.signal,
+				DurationS: tc.duration,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := newSim(t, cfg)
+			in := simInput(t.TempDir(), m)
+			if _, err := simulateBoot(context.Background(), in, wrapFor(in, nil)); !errors.Is(err, machine.ErrCrashed) {
+				t.Fatalf("replayed trial: %v, want crash", err)
+			}
+			m.Reboot()
+			simulate(t, in)
+			for _, e := range readEvents(t, in.Dir) {
+				if end, ok := e.Data.(*journal.TrialEnd); ok && end.Trial == "0001" {
+					if end.Outcome != journal.OutcomeFailure || end.Signal != tc.signal || end.DurationS != tc.duration {
+						t.Fatalf("recovered trial %+v, want failure/%s/%ds", end, tc.signal, tc.duration)
+					}
+					return
+				}
+			}
+			t.Fatal("missing recovered trial end")
+		})
+	}
+}
+
+func TestReplayMachineCheckKeepsBankAttribution(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name        string
+		local       float64
+		attribution journal.Attribution
+	}{
+		{"shared bank", 0, journal.Unattributed},
+		{"core-local bank", 1, journal.Attributed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := small()
+			model := sim.DefaultModel()
+			model.CoreLocalBank, model.CrashMCE = tc.local, 0
+			cfg.Model = &model
+			probe := simInput(t.TempDir(), newSim(t, cfg))
+			simulate(t, probe)
+			bios, err := probe.Machine.Seams().Host.BIOSContext()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var intent *journal.TrialIntent
+			for _, e := range readEvents(t, probe.Dir) {
+				if p, ok := e.Data.(*journal.TrialIntent); ok && p.Regime == machine.R7 && len(p.Cores) == 2 && p.Profile[0] != 0 && p.Profile[1] != 0 {
+					intent = p
+					break
+				}
+			}
+			if intent == nil {
+				t.Fatal("missing two-core R7 trial")
+			}
+			cfg.Replay, err = sim.NewReplay(bios, []sim.ReplayFact{{
+				Context:   bios,
+				Class:     journal.TrialClass{Regime: intent.Regime, Workload: intent.Workload, Cores: intent.Cores, DurationS: intent.DurationS},
+				Profile:   intent.Profile,
+				Outcome:   journal.OutcomeFailure,
+				Signal:    machine.UncorrectedMCE,
+				DurationS: 7,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			in := simInput(t.TempDir(), newSim(t, cfg))
+			simulate(t, in)
+			var end *journal.TrialEnd
+			var failure *journal.Failure
+			for _, e := range readEvents(t, in.Dir) {
+				switch p := e.Data.(type) {
+				case *journal.TrialEnd:
+					if p.Trial == intent.Trial {
+						end = p
+					}
+				case *journal.Failure:
+					if p.Trial == intent.Trial {
+						failure = p
+					}
+				}
+			}
+			if end == nil || end.Signal != machine.UncorrectedMCE || end.DurationS != 7 || end.Core != nil {
+				t.Fatalf("shared-machine-check trial end %+v", end)
+			}
+			if failure == nil || failure.Signal != machine.UncorrectedMCE || failure.Attribution != tc.attribution {
+				t.Fatalf("machine-check failure %+v, want %s", failure, tc.attribution)
+			}
+			if tc.local == 0 && failure.Core != nil || tc.local == 1 && (failure.Core == nil || *failure.Core != intent.Cores[0]) {
+				t.Fatalf("machine-check core %+v, bank locality %g", failure, tc.local)
+			}
+		})
+	}
+}

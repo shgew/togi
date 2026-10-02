@@ -11,10 +11,11 @@ import (
 
 func LoadMachine(path string) (Config, error) {
 	var f struct {
-		Cores       int   `toml:"cores"`
-		BIOS        []int `toml:"bios"`
-		Ranking     []int `toml:"ranking"`
-		OldKernel   bool  `toml:"old_kernel"`
+		Cores       int    `toml:"cores"`
+		Facts       string `toml:"facts"`
+		BIOS        []int  `toml:"bios"`
+		Ranking     []int  `toml:"ranking"`
+		OldKernel   bool   `toml:"old_kernel"`
 		BIOSContext *struct {
 			BIOSVersion   string `toml:"bios_version"`
 			Board         string `toml:"board"`
@@ -65,7 +66,7 @@ func LoadMachine(path string) (Config, error) {
 	if keys := md.Undecoded(); len(keys) != 0 {
 		return Config{}, fmt.Errorf("load simulator machine %s: unknown key %s", path, keys[0])
 	}
-	cfg := Config{Cores: f.Cores, BIOS: f.BIOS, Ranking: f.Ranking, OldKernel: f.OldKernel}
+	cfg := Config{Cores: f.Cores, BIOS: f.BIOS, Ranking: f.Ranking, OldKernel: f.OldKernel, Facts: f.Facts}
 	if b := f.BIOSContext; b != nil {
 		cfg.BIOSContext = machine.BIOSContext{
 			BIOSVersion:   cmp.Or(b.BIOSVersion, defaultBIOSContext.BIOSVersion),

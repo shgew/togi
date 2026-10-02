@@ -22,7 +22,7 @@ func TestHumanJournalBoundaries(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, command := range []string{"status", "cert"} {
+	for _, command := range []string{"status"} {
 		t.Run(command, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			if code := cli([]string{"--state-dir", dir, command}, &stdout, &stderr); code != exitOK {
@@ -54,7 +54,7 @@ func TestHumanJournalReadErrorEscapesUnknownKind(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, command := range []string{"events", "status", "cert", "reset"} {
+	for _, command := range []string{"events", "status", "reset"} {
 		t.Run(command, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			args := []string{"--state-dir", dir, command}
@@ -91,7 +91,6 @@ func TestHumanProjectedFieldsEscapeControls(t *testing.T) {
 		write func(*bytes.Buffer)
 	}{
 		{"status", func(out *bytes.Buffer) { writeStatus(out, st, nil) }},
-		{"cert", func(out *bytes.Buffer) { writeCert(out, []journal.Event{{Seq: 1}}, st) }},
 	} {
 		t.Run(render.name, func(t *testing.T) {
 			var out bytes.Buffer
