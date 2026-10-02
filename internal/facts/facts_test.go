@@ -158,7 +158,7 @@ func TestIdleFailures(t *testing.T) {
 			}
 			var want []Fact
 			if tc.want {
-				want = []Fact{{Kind: IdleFact, Session: "session", Seq: 2, Time: at, Build: build, Ruleset: 6, Boot: "boot", Class: Class{Regime: machine.R6, Cores: []int{0, 1}}, Condition: tc.condition, Profile: tc.profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash}}
+				want = []Fact{{Kind: IdleFact, Session: "session", Seq: 2, Time: at, Build: build, Ruleset: 6, Epoch: 1, Boot: "boot", Class: Class{Regime: machine.R6, Cores: []int{0, 1}}, Condition: tc.condition, Profile: tc.profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Idle: &journal.Failure{Signal: machine.Crash, Condition: tc.condition, Attribution: tc.attribution, Profile: tc.profile}}}
 			}
 			if diff := cmp.Diff(want, s.Facts); diff != "" {
 				t.Fatal(diff)

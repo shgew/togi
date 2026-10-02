@@ -204,7 +204,7 @@ func (r *runner) startJournal() error {
 			return err
 		}
 	}
-	_, err := r.append(&journal.SessionStart{Build: Build(), Session: id, Cores: r.cores})
+	_, err := r.append(&journal.SessionStart{Build: Build(), Session: id, Cores: r.cores, Evidence: tuner.EvidenceEpoch})
 	return err
 }
 
@@ -911,15 +911,46 @@ func (r *runner) startSession() error {
 	return nil
 }
 
-// recordCarry records what the transition carries into this session: the edges always, the failed marks only when the
-// BIOS context matches the archived session's.
+// recordCarry commits the transition after its same-BIOS facts have been recorded.
 func (r *runner) recordCarry() error {
 	c := r.in.Carry
+	if err := c.ResolveFacts(r.fold.context); err != nil {
+		return err
+	}
 	p := &journal.SessionCarried{Sources: c.Sources, Marks: true}
 	if c.Context == nil {
 		p.Marks, p.Detail = false, "the archived session recorded no BIOS context"
 	} else if detail, ok := machine.CompareContext(*c.Context, *r.fold.context); !ok {
 		p.Marks, p.Detail = false, detail
+	}
+	if p.Marks && len(c.Facts) > 0 {
+		type identity struct {
+			session string
+			seq     int
+		}
+		recorded := make(map[identity]struct{})
+		for _, e := range r.in.Journal.Events() {
+			var source journal.FactSource
+			switch v := e.Data.(type) {
+			case *journal.TrialCarried:
+				source = v.Source
+			case *journal.FailureCarried:
+				source = v.Source
+			default:
+				continue
+			}
+			recorded[identity{source.Session, source.Seq}] = struct{}{}
+		}
+		for _, f := range c.Facts {
+			key := identity{f.Session, f.Seq}
+			if _, ok := recorded[key]; ok {
+				continue
+			}
+			if _, err := r.append(f.Payload()); err != nil {
+				return err
+			}
+			recorded[key] = struct{}{}
+		}
 	}
 	for _, cc := range c.Cores {
 		if r.coreInfo(cc.Core) == nil {

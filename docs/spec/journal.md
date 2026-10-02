@@ -51,11 +51,11 @@ One JSON object per line. Common fields:
 | `msg` | Human-readable description, retaining raw diagnostic text as evidence; human output escapes controls |
 | `cause` | Optional array of `seq` this event follows from |
 
-Kind-specific fields are flat, snake_case and carry units in their names (`duration_s`, `period_ms`, `tctl_max_c`). Values use the vocabulary in `CONTEXT.md`. Cores are always `core` (the kernel `core_id`); logical CPUs are always `cpu`. The one exception to flat fields: `config.loaded` carries the effective configuration nested under `config`.
+Kind-specific fields are flat, snake_case and carry units in their names (`duration_s`, `period_ms`, `tctl_max_c`). Values use the vocabulary in `CONTEXT.md`. Cores are always `core` (the kernel `core_id`); logical CPUs are always `cpu`. Nested exceptions are `config.loaded.config` (effective configuration), and carried facts' `source` (original provenance) and `class` (trial-class identity).
 
 The `config.loaded.config` payload is a journal-owned snapshot, converted from effective configuration when the session records it. It preserves `start_offsets` and `candidate_edges` maps; `durations` with `search_trial_s`, `start_s`, `guard_trial_s`, `guard_idle_s`, `guard_all_core_s`; `evidence` with `miss` and `rate`; `guard.rotation`; `dead_ends.inconclusive_in_a_row` and `stray_crashes_in_a_row`; `backends.mprime` and `backends.ycruncher`; and `backend_user`. Null maps and rotations, empty maps and rotations, and zero values retain their representation. Changes to this persisted shape are journal schema decisions, independent of configuration implementation. Legacy `config.loaded` bodies remain decodable.
 
-The first event is `session.start` with a flat build stamp: `version`, `rev`, `ruleset`, `schema` and `fixes`. `config.loaded` carries that stamp at every start or resume. This build uses ruleset 6 and journal schema 2. Missing ruleset means 1; absent fixes means 0. Added kinds and fields do not bump schema. Older journals are archived by transition, and newer journals are refused.
+The first event is `session.start` with a flat build stamp: `version`, `rev`, `ruleset`, `schema` and `fixes`, plus `evidence` for the evidence epoch (now 1). `config.loaded` carries the build stamp at every start or resume. This build uses ruleset 6 and journal schema 2. Missing ruleset means 1; absent fixes means 0. An explicit nonzero `evidence` is the session's epoch; without it, ruleset ≥ 6 means epoch 1 and earlier rulesets mean epoch 0. Added kinds and fields do not bump schema. Older journals are archived by transition, and newer journals are refused.
 
 New session IDs are their start time in UTC to the second (`20060102T150405Z`). While holding the state-directory writer lock, a collision with either `archive/<id>.jsonl` or `archive/<id>-trials/` chooses the first free `-2`, `-3`, … suffix. Existing IDs are unchanged. Archive traversal orders equal-second suffixes numerically: the unsuffixed ID first, then `-2` through `-10` and beyond; different timestamps retain their order.
 
@@ -87,6 +87,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Profile | `profile.applied` (applied condition), `profile.change` (resident profile, `from` null on entering guard), `profile.restored` (before shutdown) |
 | Trials | `trial.intent` (applied `profile` in core-id order, optional `hunt`, `mask`, `round`, `rerun`; message suffixes ` hunt H mask M`, ` round R`, ` rerun`), `trial.start` (pid, scope, cpus, argv, files, instances), `trial.progress` (optional backend `signal` and `core`), `trial.signal`, `trial.sample`, `trial.end` (optional `backend_missing`, `containment_error`; `core` on backend-ended resident and masked trials) |
 | Evidence | `failure` (kind, attribution, evidence seq, optional applied `profile`), `mce`, `crash.detected` (previous boot, in-flight action, optional `reset_reason`, `reset_reason_raw`, `inconclusive`; message suffix `; reset reason: <raw or kind>` and `; inconclusive: <why>`) |
+| Carried evidence | `trial.carried` (decisive trial fact), `failure.carried` (idle failure fact); original provenance in `source`, fields below |
 | Tuner | `tuner.decision` (`step_deeper`, `backoff`, `check_edge`, `deepen`, `yield`; `workloads` on edge check), `core.phase` (`check_edge`, `workloads`, `cleared_joint`), `guard.rotation` (start/end, end `qualifying` and `missing`), `tier.change` |
 | Plans and marks | `host.ranking`, `hunt.start`, `hunt.mask`, `hunt.end`, `hunt.skipped`, `mark.joint`, `refine.round`, `tuner.warning` |
 | Recovery | `backend.retry` |
@@ -108,6 +109,15 @@ An MCE whose timestamp is inside the inclusive profile-applied through teardown 
 
 `trial.intent.cores` lists exactly the loaded cores for R6 and R7. `profile` always lists applied offsets for every core in core-id order. `tuner.decision` with `decision: check_edge` has the frozen two `workloads`; its message says `checks its edge`. `deepen` says `deepened`, `yield` says `yielded`, search `backoff` says `failed`, and guard, hunt and refine `backoff` say `backed off`. `core.phase` uses `search`, `resident` or `done`, while intent and decisions may use activities `guard`, `hunt` and `refine`. An equal `profile.change` message does not say guard restarts.
 
+Carried-fact payloads retain the original fact rather than deriving a new trial:
+
+| Kind | Fields |
+|---|---|
+| `trial.carried` | `source` (`session`, decisive `seq`, `build` with version, revision, ruleset, schema and fixes, `trial`, original `time`, `boot`, `evidence` epoch); `class` (`regime`, `workload`, sorted loaded `cores`, intended `duration_s`); `condition`, `phase`, full core-id-ordered `profile`, `outcome`, `signal`, measured `duration_s`, and optional `rerun` and attributed `core` |
+| `failure.carried` | `source` (same provenance; no source trial for an idle failure), `class` (R6, all cores, wildcard workload and intended duration), full `profile`, and the idle `failure`'s recorded context, including its signal, attribution, evidence sequence and other recorded diagnostic fields |
+
+For example, a `trial.carried` message is `carried failure of trial 0304 from session 20261002T004254Z (togi 0.7.0+aadc428): resident R7 <workload> on cores 08–15 failed after 11 s at [-22 … -50]`. These kinds are plain in human rendering. They record evidence without changing replayed tuning state or decisions. `internal/facts` returns a session's own facts separately from its carried copies so readers traversing every session do not double count.
+
 Plan kinds and their payloads (optional fields are omitted when empty):
 
 | Kind | Fields | `msg` shape |
@@ -128,7 +138,9 @@ A transition archives an older ruleset or schema journal before opening it; it a
 
 An older-ruleset or older-schema journal may contain kinds this build does not know: the transition still archives it unchanged, and unknown kinds supply no carry evidence. A journal with this build's ruleset and schema must contain only known kinds before `run` can append to it or archive it for a BIOS change.
 
-While a carry marker exists and the current journal holds neither a `session.carried` whose first source is the marked session nor any `core.phase`, the next `run` computes the carry from the archives and records it once, after `session.context`, the baseline and its notice, and before the first `core.phase`. Afterwards the marker is removed. A crash between `session.carried` and the phases resumes from the recorded event, never from the archives.
+While a carry marker exists and the current journal holds neither a `session.carried` whose first source is the marked session nor any `core.phase`, the next `run` computes the carry from the archives. After `session.start`, `session.context`, the baseline and its notice, and before any phase or decision, it appends each eligible fact as `trial.carried` or `failure.carried`, in original source-session order then source sequence, followed by the existing `session.carried` commitment. An interruption among these facts retains the marker; resume appends only missing original identities (`source.session`, `source.seq`), never duplicates. Afterwards the marker is removed. A crash between `session.carried` and the phases resumes from the recorded events, never from the archives.
+
+Fact eligibility must be evaluated against the new session's known current BIOS context before `session.carried` commits the transition. If the early BIOS lookup is unavailable, preparation is deferred until the session records its actual context or validates its recorded context during preflight. The archived context is never substituted for the current one. If that validation cannot complete, no carry commitment is written and the pending marker remains for resume.
 
 If a further transition archives an interrupted new session that recorded neither `session.context` nor `session.carried`, the earlier pending source is retained instead of being replaced by that incomplete session. Its edges, marks, BIOS context and original provenance seed the eventual session. Once context or carry is recorded, normal source chaining and per-core reset epochs apply. An explicit `reset --all` still drops every pending source.
 
@@ -139,9 +151,39 @@ Sources, newest first: the archived session, then, when it holds no `session.car
 - **Carried mark:** the shallowest offset of an attributed `failure` of one core at a known offset (including 0), or a `hunt.end` `culprit` for core c at the `hunt.start` failing profile's offset c, with the cited `failure` signal and hunt-end sequence. Both follow the same reset epoch and defect exclusions; direct hunt failures already appear as attributed `failure` events. Joint marks are not carried. An isolated nonzero trial left in flight after the last shutdown also counts as a crash failure.
 - **Carried values:** the edges and marks of a `session.carried` in the source, dropped by a later `reset --core` of their core in that source.
 
-Across sources the deepest edge and the shallowest mark win; on a tie, the first found. Passes, resident offsets and unattributed failures are never carried.
+Across sources the deepest edge and the shallowest mark win; on a tie, the first found. Resident offsets and passed rotations are never carried. Candidate-edge and failed-mark derivation remain unchanged by carried facts.
 
 `session.carried` has no cause and carries `sources` (each with `session`, `path`, `schema` and `ruleset`), `marks`, an optional `detail`, and `carried`: one entry per core of this machine that has an edge or a mark, with `core`, and `edge`, `edge_session` and `edge_seq` (the passing `trial.end`), and `failed_mark`, `mark_session`, `mark_seq` and `mark_signal` where present. `marks` is false, and `detail` says why, when the archived session recorded no BIOS context or a different one from this machine's; the marks then stay behind and only edges are carried. Its `msg` is `carried N candidate edges and M failed marks from session <id> (schema S, ruleset R), …`, or, without marks, `carried N candidate edges from …; failed marks stay behind: <detail>`. `status` prints it as `carried: [#seq] <msg>`. How the new session starts from these values is in `tuner.md`, Session start.
+
+### Fact eligibility
+
+The live journal being archived is the newest source. Facts have their own same-BIOS walk, independent of the legacy edge/mark ruleset boundary above:
+
+1. Walk archives newest first, stopping at a BIOS mismatch; across a BIOS change only candidate edges carry.
+2. Stop at the newest `reset --all`; in that session, only facts after the reset remain eligible, and no older session contributes.
+3. Stop after the first archive already holding carried facts. Copy its own eligible facts and eligible carried copies, preserving the original provenance; do not walk behind it.
+4. Keep failures from every visited session. Keep passes only when their original evidence epoch equals the current epoch.
+5. Drop any fact from before a `reset --core N` that loads core N, including carried copies discarded by a later reset.
+6. Drop failures behind a defect-matched decision using the existing `internal/defect` matching and the original source session's own fixes stamps, as with failed marks. Re-check carried copies against their original `archive/<source.session>.jsonl`, caching exclusions per source session; reading that journal for defect matching does not resume fact collection beyond the copy-forward boundary. If the original archive is missing, retain the copied failure without changing its carried-event message; other archive read errors stop preparation.
+
+The result is recorded chronologically, oldest original source session first and then source sequence. Copy-forward always keeps the first source session and sequence, including through consecutive transitions. An interrupted transition may already contain a prefix of these facts; that prefix is evidence, not the `session.carried` commitment.
+
+### Inspecting a transition on recorded state
+
+`tools/carry-facts` is a development-only preparation inspector, not a simulator or hardware runner. Its required `--state-dir` must name a copy beneath the system temporary directory; it rejects the real state path and symlinked archive, live journal or lock paths. It locks the copy through the existing journal API, reads the live journal's recorded BIOS context with `internal/facts`, and calls carry preparation at the current evidence epoch with the current schema and ruleset + 1 to force a transition. It mutates only the copy and prints carried pass/failure counts grouped by original source session. No `cmd/togi` flag is added.
+
+From a checkout on the target machine, copy only the journals (the sources are read-only):
+
+```sh
+copy=$(mktemp -d)
+trap 'rm -rf "$copy"' EXIT
+mkdir "$copy/archive"
+sudo sh -c 'cp /var/lib/togi/archive/*.jsonl "$1/archive/"; cp /var/lib/togi/events.jsonl "$1/events.jsonl"' sh "$copy"
+sudo chown -R "$(id -u):$(id -g)" "$copy"
+go run ./tools/carry-facts --state-dir "$copy"
+```
+
+For the recorded target history, expect passes only from session `20261002T004254Z` (the latest session, epoch 1). Eligible failures can come from that session and earlier same-BIOS sessions after `reset --all` in `20260926T151414Z`; facts in that reset session must follow its reset, and no earlier session contributes. Older epochs contribute failures but zero passes. Counts reflect any core-reset and defect exclusions. Numeric counts must come from running the command, not from this specification. The simulator is not used because the inspection needs the real BIOS context already recorded in these journals.
 
 ## Defects
 

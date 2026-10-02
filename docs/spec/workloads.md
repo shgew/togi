@@ -2,6 +2,10 @@
 
 Normative rules for what a trial runs, how it is contained, and how its outcome is judged. The research behind the regime choice is summarised in `../prior-art.md`.
 
+## Evidence compatibility
+
+The evidence epoch (`tuner.EvidenceEpoch`, now 1; `tuner.md`, Ruleset) versions whether recorded passes remain comparable with current trials. Changes to workload content, a backend binary or its configuration, intended trial durations, or pass/failure detection must bump it when they change the evidence contract. An epoch bump drops older carried passes while retaining eligible failures; it does not change the journal schema or the strategy ruleset.
+
 ## Backends
 
 | Backend | nixpkgs attribute | Result check |

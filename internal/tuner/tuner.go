@@ -16,6 +16,8 @@ import (
 // Ruleset must be bumped for changes to steps, offset range, phases, regimes, evidence, hunts, refinement, tiers or backoffs; this is breaking.
 const Ruleset = 6
 
+const EvidenceEpoch = 1
+
 type ActionKind int
 
 const (

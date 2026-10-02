@@ -6,6 +6,10 @@ Normative rules for how togi moves offsets. Terms are defined in `CONTEXT.md`. R
 
 The ruleset is the hardcoded strategy: search strides, offset range, phases, evidence and mark rules, hunt and refinement, guard coverage and tiers. Changing these bumps `tuner.Ruleset` (now 6) and archives an active older session into a seeded new session ([ADR 0019](../adr/0019-a-ruleset-change-starts-a-seeded-session.md), [ADR 0020](../adr/0020-hunt-and-refine.md), [ADR 0023](../adr/0023-hunts-that-converge-on-shared-voltage.md), [ADR 0024](../adr/0024-schedule-from-uncontradicted-evidence.md)). Changes to configurable defaults and fixes that record facts more accurately do not bump it.
 
+The evidence epoch (`tuner.EvidenceEpoch`, now 1) separately versions compatibility of trial outcomes: workload content, backend binary or configuration, intended durations, and pass/failure detection (`workloads.md`). `session.start.evidence` records it. Without that field, a session with ruleset ≥ 6 has epoch 1; an older session has epoch 0. A transition drops passes from other epochs but keeps eligible failures. An epoch change is not a ruleset or journal-schema bump.
+
+Transitions record eligible same-BIOS trial and idle-failure facts before `session.carried` (`journal.md`, Transitions). In this layer those events are evidence only: they do not change tuner decisions, replayed offsets, or qualified rotations.
+
 ## Invariants
 
 1. Every offset stays within [-50, 0]. togi never writes a positive offset.

@@ -39,7 +39,9 @@ const (
 	KindTrialSignal     Kind = "trial.signal"
 	KindTrialSample     Kind = "trial.sample"
 	KindTrialEnd        Kind = "trial.end"
+	KindTrialCarried    Kind = "trial.carried"
 	KindFailure         Kind = "failure"
+	KindFailureCarried  Kind = "failure.carried"
 	KindMCE             Kind = "mce"
 	KindCrashDetected   Kind = "crash.detected"
 	KindTunerDecision   Kind = "tuner.decision"
@@ -203,7 +205,9 @@ var payloadConstructors = map[Kind]func() Payload{
 	KindTrialSignal:     func() Payload { return &TrialSignal{} },
 	KindTrialSample:     func() Payload { return &TrialSample{} },
 	KindTrialEnd:        func() Payload { return &TrialEnd{} },
+	KindTrialCarried:    func() Payload { return &TrialCarried{} },
 	KindFailure:         func() Payload { return &Failure{} },
+	KindFailureCarried:  func() Payload { return &FailureCarried{} },
 	KindMCE:             func() Payload { return &MCE{} },
 	KindCrashDetected:   func() Payload { return &CrashDetected{} },
 	KindTunerDecision:   func() Payload { return &TunerDecision{} },

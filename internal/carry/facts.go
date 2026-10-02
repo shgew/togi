@@ -1,0 +1,175 @@
+package carry
+
+import (
+	"errors"
+	"io/fs"
+	"slices"
+
+	"github.com/shgew/togi/internal/defect"
+	"github.com/shgew/togi/internal/facts"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
+)
+
+type factID struct {
+	session string
+	seq     int
+}
+
+type factExclusions struct {
+	seqs   []int
+	trials map[string]bool
+}
+
+func excludeFacts(events []journal.Event, entries []defect.Entry) factExclusions {
+	excluded := factExclusions{seqs: defect.FailuresWith(events, entries), trials: make(map[string]bool)}
+	for _, e := range events {
+		if p, ok := e.Data.(*journal.Failure); ok && p.Trial != "" && slices.Contains(excluded.seqs, e.Seq) {
+			excluded.trials[p.Trial] = true
+		}
+	}
+	return excluded
+}
+
+type factDefects struct {
+	dir     string
+	entries []defect.Entry
+	sources map[string]factExclusions
+}
+
+func (d *factDefects) excludes(f facts.Fact) (bool, error) {
+	if f.Outcome != journal.OutcomeFailure {
+		return false, nil
+	}
+	excluded, ok := d.sources[f.Session]
+	if !ok {
+		source, err := read(d.dir, f.Session)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return false, err
+		}
+		if err == nil {
+			excluded = excludeFacts(source.events, d.entries)
+		}
+		d.sources[f.Session] = excluded
+	}
+	return slices.Contains(excluded.seqs, f.Seq) || excluded.trials[f.Trial], nil
+}
+
+func prepareFacts(dir, id string, entries []defect.Entry, current *machine.BIOSContext, epoch int) ([]facts.Fact, error) {
+	first, err := read(dir, id)
+	if err != nil {
+		return nil, err
+	}
+	if !sameFactContext(first.context, current) {
+		return nil, nil
+	}
+	older, err := olderArchives(dir, id)
+	if err != nil {
+		return nil, err
+	}
+	cleared := make(map[int]bool)
+	seen := make(map[factID]bool)
+	defects := factDefects{dir: dir, entries: entries, sources: make(map[string]factExclusions)}
+	var carried []facts.Fact
+	source := first
+	for i := 0; ; i++ {
+		s := factSession(source.events)
+		defects.sources[s.session.ID] = excludeFacts(source.events, entries)
+		carried, err = s.appendEligible(carried, seen, cleared, epoch, &defects)
+		if err != nil {
+			return nil, err
+		}
+		if s.allReset != 0 || len(s.session.Carried) != 0 || i == len(older) {
+			break
+		}
+		for core := range s.coreResets {
+			cleared[core] = true
+		}
+		source, err = read(dir, older[i])
+		if err != nil {
+			return nil, err
+		}
+		if !sameFactContext(source.context, first.context) {
+			break
+		}
+	}
+	slices.SortFunc(carried, func(a, b facts.Fact) int {
+		if order := journal.CompareSessionIDs(a.Session, b.Session); order != 0 {
+			return order
+		}
+		return a.Seq - b.Seq
+	})
+	return carried, nil
+}
+
+func sameFactContext(recorded, current *machine.BIOSContext) bool {
+	if recorded == nil || current == nil {
+		return false
+	}
+	_, same := machine.CompareContext(*recorded, *current)
+	return same
+}
+
+type sessionFacts struct {
+	session    facts.Session
+	allReset   int
+	coreResets map[int]int
+	positions  map[factID]int
+}
+
+func factSession(events []journal.Event) sessionFacts {
+	s := sessionFacts{
+		session:    facts.FromEvents(events),
+		coreResets: make(map[int]int),
+		positions:  make(map[factID]int),
+	}
+	for _, reset := range s.session.Resets {
+		if reset.All {
+			s.allReset = max(s.allReset, reset.Seq)
+		}
+		if reset.Core != nil {
+			s.coreResets[*reset.Core] = max(s.coreResets[*reset.Core], reset.Seq)
+		}
+	}
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.TrialCarried:
+			s.positions[factID{p.Source.Session, p.Source.Seq}] = e.Seq
+		case *journal.FailureCarried:
+			s.positions[factID{p.Source.Session, p.Source.Seq}] = e.Seq
+		}
+	}
+	return s
+}
+
+func (s sessionFacts) eligible(f facts.Fact, cleared map[int]bool, epoch int) bool {
+	at := f.Seq
+	if position, ok := s.positions[factID{f.Session, f.Seq}]; ok {
+		at = position
+	}
+	if at <= s.allReset || f.Outcome == journal.OutcomePass && f.Epoch != epoch {
+		return false
+	}
+	return !slices.ContainsFunc(f.Class.Cores, func(core int) bool { return cleared[core] || at <= s.coreResets[core] })
+}
+
+func (s sessionFacts) appendEligible(carried []facts.Fact, seen map[factID]bool, cleared map[int]bool, epoch int, defects *factDefects) ([]facts.Fact, error) {
+	for _, group := range [][]facts.Fact{s.session.Facts, s.session.Carried} {
+		for _, f := range group {
+			key := factID{f.Session, f.Seq}
+			if seen[key] || !s.eligible(f, cleared, epoch) {
+				continue
+			}
+			excluded, err := defects.excludes(f)
+			if err != nil {
+				return nil, err
+			}
+			if excluded {
+				continue
+			}
+			seen[key] = true
+			carried = append(carried, f)
+		}
+	}
+	return carried, nil
+}

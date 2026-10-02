@@ -1,5 +1,5 @@
-// Package carry derives what a session written by an older ruleset or schema carries into the next one: each core's
-// deepest isolated pass as a candidate edge, and its shallowest attributed failure as a failed mark.
+// Package carry derives the candidate edges, failed marks and trial facts a
+// session written by an older ruleset or schema carries into the next one.
 package carry
 
 import (
@@ -13,14 +13,20 @@ import (
 	"strings"
 
 	"github.com/shgew/togi/internal/defect"
+	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 type Carry struct {
 	Sources []journal.CarriedSource
 	Context *machine.BIOSContext  // the BIOS context Sources[0] recorded; nil if it recorded none
 	Cores   []journal.CarriedCore // ascending core; each has an Edge, a FailedMark, or both
+	Facts   []facts.Fact
+
+	factDir     string
+	factEntries []defect.Entry
 }
 
 func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, current *machine.BIOSContext) (*Carry, error) {
@@ -78,7 +84,36 @@ func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, c
 	if entries == nil {
 		entries = defect.Entries()
 	}
-	return compute(dir, pending, entries)
+	c, err := compute(dir, pending, entries)
+	if err != nil {
+		return nil, err
+	}
+	if current == nil {
+		c.factDir, c.factEntries = dir, entries
+	} else {
+		c.Facts, err = prepareFacts(dir, pending, entries, current, tuner.EvidenceEpoch)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return c, nil
+}
+
+// ResolveFacts completes deferred eligibility after the session validates its actual BIOS context.
+func (c *Carry) ResolveFacts(current *machine.BIOSContext) error {
+	if current == nil {
+		return errors.New("carry: cannot prepare facts without the current BIOS context")
+	}
+	if c.factDir == "" {
+		return nil
+	}
+	fs, err := prepareFacts(c.factDir, c.Sources[0].Session, c.factEntries, current, tuner.EvidenceEpoch)
+	if err != nil {
+		return err
+	}
+	c.Facts = fs
+	c.factDir, c.factEntries = "", nil
+	return nil
 }
 
 func archive(j *journal.Journal, id string) error {

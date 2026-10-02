@@ -119,13 +119,24 @@ func (p *SessionWarning) Message() string {
 
 type SessionStart struct {
 	Build
-	Session string             `json:"session"`
-	Cores   []machine.CoreInfo `json:"cores"`
+	Session  string             `json:"session"`
+	Cores    []machine.CoreInfo `json:"cores"`
+	Evidence int                `json:"evidence,omitempty"`
 }
 
 func (*SessionStart) Kind() Kind { return KindSessionStart }
 func (p *SessionStart) Message() string {
 	return fmt.Sprintf("session %s started by %s (schema %d, ruleset %d, fixes %d, %d cores)", p.Session, p.name(), p.Schema, p.Ruleset, p.Fixes, len(p.Cores))
+}
+
+func (p *SessionStart) Epoch() int {
+	if p.Evidence != 0 {
+		return p.Evidence
+	}
+	if p.Ruleset >= 6 {
+		return 1
+	}
+	return 0
 }
 
 type SessionContext struct {

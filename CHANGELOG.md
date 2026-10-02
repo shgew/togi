@@ -4,6 +4,10 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ## [Unreleased]
 
+### Added
+
+- A ruleset or schema transition now records eligible trial facts from earlier same-BIOS sessions as `trial.carried`/`failure.carried` and stamps `session.start` with the evidence epoch. Carry waits for a validated current BIOS context and re-checks copied failures against newly known defects in their original journals ([#281]).
+
 ### Changed
 
 - Failure-rate bounds in `status` state that their 95% claim assumes a constant failure rate on the tested workloads; the numbers and rounding are unchanged ([#237]).
@@ -376,3 +380,4 @@ All notable changes to togi are documented in this file. The format is based on 
 [#270]: https://github.com/shgew/togi/pull/270
 [#278]: https://github.com/shgew/togi/pull/278
 [#279]: https://github.com/shgew/togi/pull/279
+[#281]: https://github.com/shgew/togi/pull/281

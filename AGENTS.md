@@ -115,7 +115,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
 | `nix/` | NixOS module and VM tests |
-| `tools/*` | Development programs, never shipped: `bench`, `release`, `sim`, `stats`. Development and debugging behavior lives here, never in `cmd/togi` |
+| `tools/*` | Development programs, never shipped: `bench`, `carry-facts`, `release`, `sim`, `stats`. Development and debugging behavior lives here, never in `cmd/togi` |
 
 A package owns one responsibility, and its exported API is the seam. Split a package when it holds two responsibilities that change for different reasons.
 

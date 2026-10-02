@@ -26,12 +26,7 @@ const (
 
 // Class uses the tuner's ledger key: condition and phase are not part of it.
 // Idle facts have R6 and all cores, with wildcard workload and duration (zero).
-type Class struct {
-	Regime    machine.Regime
-	Workload  string
-	Cores     []int
-	DurationS int
-}
+type Class = journal.TrialClass
 
 // Fact.Seq and Time name the decisive end or idle failure. Build and Boot name
 // the trial intent (the idle failure itself for idle facts). DurationS is measured,
@@ -43,6 +38,7 @@ type Fact struct {
 	Time      time.Time
 	Build     journal.Build
 	Ruleset   int
+	Epoch     int
 	Trial     string
 	Boot      string
 	Class     Class
@@ -54,6 +50,7 @@ type Fact struct {
 	Signal    machine.Signal
 	DurationS int
 	Core      *int
+	Idle      *journal.Failure
 }
 
 // Trial retains nondecisive trials too, for readers reporting interrupted work.
@@ -92,9 +89,11 @@ type Session struct {
 	Context  *machine.BIOSContext
 	Schema   int
 	Ruleset  int
+	Epoch    int
 	Builds   []journal.Build
 	Resets   []Reset
 	Facts    []Fact
+	Carried  []Fact
 	Cores    []machine.CoreInfo
 	Trials   []*Trial
 	Events   []journal.Event
@@ -162,6 +161,7 @@ func FromEvents(events []journal.Event) Session {
 			slices.Sort(ids)
 			build = normalizedBuild(p.Build)
 			s.Ruleset = build.Ruleset
+			s.Epoch = p.Epoch()
 			s.Builds = append(s.Builds, build)
 		case *journal.SessionContext:
 			context := p.BIOSContext
@@ -208,6 +208,10 @@ func FromEvents(events []journal.Event) Session {
 			s.recordTrialEnd(e, p, byID[p.Trial])
 		case *journal.Failure:
 			s.recordIdleFailure(e, p, build, ids)
+		case *journal.TrialCarried:
+			s.Carried = append(s.Carried, carriedTrial(p))
+		case *journal.FailureCarried:
+			s.Carried = append(s.Carried, carriedFailure(p))
 		case *journal.CommandReset:
 			resetBySeq[e.Seq] = len(s.Resets)
 			s.Resets = append(s.Resets, Reset{Seq: e.Seq, Core: p.Core, All: p.All})
@@ -226,12 +230,14 @@ func (s *Session) recordTrialEnd(e journal.Event, end *journal.TrialEnd, t *Tria
 		return
 	}
 	in := t.Intent
-	s.Facts = append(s.Facts, Fact{Kind: TrialFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: t.Build, Ruleset: t.Build.Ruleset, Trial: end.Trial, Boot: t.Boot, Class: ClassOf(in), Condition: in.Condition, Phase: in.Phase, Rerun: in.Rerun, Profile: slices.Clone(in.Profile), Outcome: end.Outcome, Signal: end.Signal, DurationS: end.DurationS, Core: end.Core})
+	s.Facts = append(s.Facts, Fact{Kind: TrialFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: t.Build, Ruleset: t.Build.Ruleset, Epoch: s.Epoch, Trial: end.Trial, Boot: t.Boot, Class: ClassOf(in), Condition: in.Condition, Phase: in.Phase, Rerun: in.Rerun, Profile: slices.Clone(in.Profile), Outcome: end.Outcome, Signal: end.Signal, DurationS: end.DurationS, Core: end.Core})
 }
 
 func (s *Session) recordIdleFailure(e journal.Event, p *journal.Failure, build journal.Build, ids []int) {
 	if p.Trial == "" && (p.Condition == machine.Resident || p.Condition == machine.Masked) && p.Attribution == journal.Unattributed && len(p.Profile) == len(ids) {
-		s.Facts = append(s.Facts, Fact{Kind: IdleFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: build, Ruleset: build.Ruleset, Boot: e.Boot, Class: Class{Regime: machine.R6, Cores: slices.Clone(ids)}, Condition: p.Condition, Profile: slices.Clone(p.Profile), Outcome: journal.OutcomeFailure, Signal: p.Signal, Core: p.Core})
+		idle := *p
+		idle.Profile = slices.Clone(p.Profile)
+		s.Facts = append(s.Facts, Fact{Kind: IdleFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: build, Ruleset: build.Ruleset, Epoch: s.Epoch, Boot: e.Boot, Class: Class{Regime: machine.R6, Cores: slices.Clone(ids)}, Condition: p.Condition, Profile: slices.Clone(p.Profile), Outcome: journal.OutcomeFailure, Signal: p.Signal, Core: p.Core, Idle: &idle})
 	}
 }
 
@@ -294,4 +300,38 @@ func trialEvidence(t *Trial, e journal.Event) {
 	if t != nil && t.Started && t.Boot == e.Boot && t.End == nil {
 		t.LastEvidence = e.Time
 	}
+}
+
+func (f Fact) Payload() journal.Payload {
+	source := journal.FactSource{Session: f.Session, Seq: f.Seq, Build: f.Build, Trial: f.Trial, Time: f.Time, Boot: f.Boot, Evidence: f.Epoch}
+	class := f.Class
+	class.Cores = slices.Clone(class.Cores)
+	slices.Sort(class.Cores)
+	if f.Kind == IdleFact {
+		idle := *f.Idle
+		idle.Profile = slices.Clone(f.Profile)
+		return &journal.FailureCarried{Source: source, Class: class, Failure: idle}
+	}
+	return &journal.TrialCarried{Source: source, Class: class, Condition: f.Condition, Phase: f.Phase, Rerun: f.Rerun, Profile: slices.Clone(f.Profile), Outcome: f.Outcome, Signal: f.Signal, DurationS: f.DurationS, Core: f.Core}
+}
+
+func carriedTrial(p *journal.TrialCarried) Fact {
+	f := sourceFact(p.Source, p.Class)
+	f.Kind, f.Condition, f.Phase, f.Rerun = TrialFact, p.Condition, p.Phase, p.Rerun
+	f.Profile, f.Outcome, f.Signal, f.DurationS, f.Core = slices.Clone(p.Profile), p.Outcome, p.Signal, p.DurationS, p.Core
+	return f
+}
+
+func carriedFailure(p *journal.FailureCarried) Fact {
+	f := sourceFact(p.Source, p.Class)
+	idle := p.Failure
+	idle.Profile = slices.Clone(p.Profile)
+	f.Kind, f.Condition, f.Profile, f.Outcome, f.Signal, f.Core, f.Idle = IdleFact, p.Condition, slices.Clone(p.Profile), journal.OutcomeFailure, p.Signal, p.Core, &idle
+	return f
+}
+
+func sourceFact(source journal.FactSource, class Class) Fact {
+	class.Cores = slices.Clone(class.Cores)
+	slices.Sort(class.Cores)
+	return Fact{Session: source.Session, Seq: source.Seq, Time: source.Time, Build: source.Build, Ruleset: source.Build.Ruleset, Epoch: source.Evidence, Trial: source.Trial, Boot: source.Boot, Class: class}
 }
