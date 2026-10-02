@@ -203,35 +203,45 @@ func TestSlotIdentityPreflight(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		cores  [2][8]int
+		cache  bool
 		detail string
 	}{
 		{
 			name:  "full-topology",
 			cores: [2][8]int{{0, 1, 2, 3, 4, 5, 6, 7}, {8, 9, 10, 11, 12, 13, 14, 15}},
+			cache: true,
 		},
 		{
 			name:   "cross-ccd-ids",
 			cores:  [2][8]int{{0, 1, 2, 3, 4, 5, 6, 8}, {7, 9, 10, 11, 12, 13, 14, 15}},
+			cache:  true,
 			detail: "CCD0 core IDs disagree with modulo-eight slots: core 08 at slot 7, want slot 0",
 		},
 		{
 			name:   "multiple-offending-ids",
 			cores:  [2][8]int{{0, 1, 2, 3, 4, 5, 8, 9}, {6, 7, 10, 11, 12, 13, 14, 15}},
+			cache:  true,
 			detail: "CCD0 core IDs disagree with modulo-eight slots: core 08 at slot 6, want slot 0; core 09 at slot 7, want slot 1",
 		},
 		{
 			name:   "second-ccd-id",
 			cores:  [2][8]int{{0, 1, 2, 3, 4, 5, 6, 7}, {8, 9, 10, 11, 12, 13, 14, 16}},
+			cache:  true,
 			detail: "CCD1 core IDs disagree with modulo-eight slots: core 16 at slot 7, want slot 0",
+		},
+		{
+			name:   "cross-ccd-die-fallback",
+			cores:  [2][8]int{{0, 1, 2, 3, 4, 5, 6, 8}, {7, 9, 10, 11, 12, 13, 14, 15}},
+			detail: "CCD0 core IDs disagree with modulo-eight slots: core 08 at slot 7, want slot 0",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			root, mb := fixture(t, 8, true)
+			root, mb := fixture(t, 8, tc.cache)
 			for ccd, cores := range tc.cores {
 				for slot, core := range cores {
 					cpuID := ccd*8 + slot
-					cpu(t, root, cpuID, core, ccd, true)
-					cpu(t, root, cpuID+16, core, ccd, true)
+					cpu(t, root, cpuID, core, ccd, tc.cache)
+					cpu(t, root, cpuID+16, core, ccd, tc.cache)
 				}
 			}
 			d, err := Open(root, mb)
