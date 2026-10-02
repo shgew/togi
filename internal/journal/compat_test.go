@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestCompatible(t *testing.T) {
@@ -107,5 +109,55 @@ func TestBuildOfUsesLastStampedResume(t *testing.T) {
 	got := BuildOf([]Event{{Data: first}, {Data: latest}, {Data: old}})
 	if got.Version != latest.Version || got.Rev != latest.Rev || got.Fixes != 2 || got.Schema != 1 || got.Ruleset != 1 {
 		t.Fatalf("last stamp: %+v", got)
+	}
+}
+
+func TestScanDamagedOrTornStamp(t *testing.T) {
+	for _, data := range []string{"{\n", `{"kind":"shutdown"}` + "\n"} {
+		if _, _, err := scanBuild([]byte(data)); err == nil {
+			t.Fatalf("invalid stamp accepted: %q", data)
+		}
+	}
+	if stamp, id, err := scanBuild([]byte(`{"kind":"session.start"`)); err != nil || id != "" || stamp != (Build{}) {
+		t.Fatalf("torn first stamp: %+v, %q, %v", stamp, id, err)
+	}
+	stamp, id, err := scanBuild([]byte(`{"kind":"session.start","session":"source","schema":2}` + "\n" + `{"kind":"config.loaded","version":"torn"`))
+	if err != nil || id != "source" || stamp.Ruleset != 1 || stamp.Version != "" {
+		t.Fatalf("torn resume stamp changed identity: %+v, %q, %v", stamp, id, err)
+	}
+	got := BuildOf([]Event{{Data: &SessionStart{Schema: Schema}}})
+	if got.Ruleset != 1 {
+		t.Fatalf("unstamped ruleset = %d, want 1", got.Ruleset)
+	}
+}
+
+func TestEvidenceEpochCompatibilityDiagnostics(t *testing.T) {
+	t.Parallel()
+	binary := Build{Version: "new", Schema: Schema, Ruleset: 7, EvidenceEpoch: 2}
+	for _, tc := range []struct {
+		name     string
+		recorded Build
+		want     string
+	}{
+		{"older epoch", Build{Version: "old", Schema: Schema, Ruleset: 7, EvidenceEpoch: 1}, "this journal was written by togi old (schema 2, ruleset 7, evidence epoch 1); this build, togi new, uses evidence epoch 2. togi run archives it and starts a new session that carries its edges and failed marks; togi reset --all archives it and starts over."},
+		{"newer epoch", Build{Version: "future", Schema: Schema, Ruleset: 7, EvidenceEpoch: 3}, "this journal was written by togi future (schema 2, ruleset 7, evidence epoch 3); this build, togi new, uses evidence epoch 2. Install togi future to continue this session, or run togi reset --all to archive it and start over."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Compatible(tc.recorded, binary)
+			if err == nil {
+				t.Fatal("incompatible epoch accepted")
+			}
+			if diff := cmp.Diff(tc.want, err.Error()); diff != "" {
+				t.Fatalf("epoch diagnostic (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestRulesetWarningNamesBothStrategies(t *testing.T) {
+	want := "warning: journal written by togi old (ruleset 6); rendered with this build's rules (ruleset 7)"
+	got := RulesetWarning(Build{Version: "old", Ruleset: 6}, Build{Ruleset: 7})
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("ruleset warning (-want +got):\n%s", diff)
 	}
 }

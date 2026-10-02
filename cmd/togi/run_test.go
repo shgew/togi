@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -42,22 +44,6 @@ func TestRunDeadEndEvidencePriority(t *testing.T) {
 	}
 	if got := string(data); !strings.Contains(got, "\n<3>\x1b[31m  evidence: ") || !strings.Contains(got, "\x1b[0m\n") {
 		t.Fatalf("evidence not decorated as a whole line: %q", got)
-	}
-}
-
-func TestDefectDeadEndExit(t *testing.T) {
-	var stderr bytes.Buffer
-	stop := session.Stop{Reason: session.StopDeadEnd, DeadEnd: &journal.DeadEnd{Condition: journal.DeadEndDefect, Detail: "operator decision required"}}
-	if code := runResult(stop, nil, &stderr, journal.Renderer{}); code != 17 || !strings.Contains(stderr.String(), "dead end defect") {
-		t.Fatalf("exit %d, stderr %q", code, stderr.String())
-	}
-}
-
-func TestThermalTripDeadEndExit(t *testing.T) {
-	var stderr bytes.Buffer
-	stop := session.Stop{Reason: session.StopDeadEnd, DeadEnd: &journal.DeadEnd{Condition: journal.DeadEndThermalTrip, Detail: "hardware thermal trip"}}
-	if code := runResult(stop, nil, &stderr, journal.Renderer{}); code != exitThermalTrip || !strings.Contains(stderr.String(), "dead end thermal_trip") {
-		t.Fatalf("exit %d, stderr %q", code, stderr.String())
 	}
 }
 
@@ -170,5 +156,125 @@ func TestPrintCleanStop(t *testing.T) {
 				t.Fatalf("closing summary (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestRunRejectsInvalidRotations(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"0", "-1", "many"} {
+		t.Run(value, func(t *testing.T) {
+			g := testGlobals(t)
+			var out, diagnostics bytes.Buffer
+			code := runRun(&g, []string{"--rotations", value}, &out, &diagnostics)
+			if code != exitUsage || out.Len() != 0 {
+				t.Fatalf("exit %d, stdout %q", code, out.String())
+			}
+			firstLine, _, _ := strings.Cut(diagnostics.String(), "\n")
+			want := fmt.Sprintf("togi run: invalid value %q for flag -rotations: must be a positive integer", value)
+			if diff := cmp.Diff(want, firstLine); diff != "" {
+				t.Fatalf("rotation diagnostic (-want +got): %s", diff)
+			}
+			if diff := cmp.Diff(map[string]string{}, directoryFiles(t, g.stateDir)); diff != "" {
+				t.Fatalf("invalid rotations changed state: %s", diff)
+			}
+		})
+	}
+}
+
+func TestRunResultExitCodes(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		stop session.Stop
+		err  error
+		code int
+		want string
+	}{
+		{"signal", session.Stop{Reason: session.StopSignal}, nil, 0, ""},
+		{"rotations", session.Stop{Reason: session.StopRotations}, nil, 0, ""},
+		{"missing-core", session.Stop{}, session.ErrNoSuchCore, 2, "togi run: no such core\n"},
+		{"journal-locked", session.Stop{}, journal.ErrLocked, 3, "togi run: another togi process holds the journal lock\n"},
+		{"ordinary-error", session.Stop{}, errors.New("read failed\x1b[2J\nforged"), 1, "togi run: read failed\\x1b[2J\\nforged\n"},
+		{"unexpected-stop", session.Stop{}, nil, 1, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			if code := runResult(tc.stop, tc.err, &out, journal.Renderer{}); code != tc.code {
+				t.Fatalf("exit %d, want %d", code, tc.code)
+			}
+			if diff := cmp.Diff(tc.want, out.String()); diff != "" {
+				t.Fatalf("run outcome (-want +got): %s", diff)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		condition journal.DeadEndCondition
+		code      int
+	}{
+		{journal.DeadEndFailureAtZero, 10},
+		{journal.DeadEndSMU, 11},
+		{journal.DeadEndNoEvidence, 12},
+		{journal.DeadEndBootLoop, 13},
+		{journal.DeadEndContainment, 14},
+		{journal.DeadEndPreflight, 15},
+		{journal.DeadEndDefect, 17},
+		{journal.DeadEndThermalTrip, 18},
+		{"unknown", 1},
+	} {
+		t.Run(string(tc.condition), func(t *testing.T) {
+			var out bytes.Buffer
+			stop := session.Stop{Reason: session.StopDeadEnd, DeadEnd: &journal.DeadEnd{Condition: tc.condition, Detail: "operator intervention required"}}
+			if code := runResult(stop, nil, &out, journal.Renderer{}); code != tc.code {
+				t.Fatalf("exit %d, want %d", code, tc.code)
+			}
+			want := fmt.Sprintf("togi: dead end %s: operator intervention required\n", tc.condition)
+			if diff := cmp.Diff(want, out.String()); diff != "" {
+				t.Fatalf("dead-end diagnostic (-want +got): %s", diff)
+			}
+		})
+	}
+}
+
+func TestRunMalformedJournalRefusal(t *testing.T) {
+	t.Parallel()
+	g := testGlobals(t)
+	before := "not json\n"
+	if err := os.WriteFile(filepath.Join(g.stateDir, "events.jsonl"), []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out, diagnostics bytes.Buffer
+	code := runRun(&g, nil, &out, &diagnostics)
+	if code != exitError || out.Len() != 0 {
+		t.Fatalf("exit %d, stdout %q", code, out.String())
+	}
+	want := "togi run: read session.start stamp: invalid character 'o' in literal null (expecting 'u')\n"
+	if diff := cmp.Diff(want, diagnostics.String()); diff != "" {
+		t.Fatalf("journal refusal (-want +got): %s", diff)
+	}
+	got, err := os.ReadFile(filepath.Join(g.stateDir, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(before, string(got)); diff != "" {
+		t.Fatalf("refusal modified journal: %s", diff)
+	}
+}
+
+type failedClearBootloader struct{}
+
+func (failedClearBootloader) ClearSavedEntry() (string, string, error) {
+	return "togi", "togi", errors.New("saved entry is read-only")
+}
+
+func TestCompatibilityRefusalReportsFailedClear(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	err := &journal.IncompatibleError{Field: "ruleset", Journal: journal.Build{Ruleset: 99}, Binary: session.Build()}
+	if code := runResult(session.Stop{}, err, &out, journal.Renderer{}, failedClearBootloader{}); code != exitIncompatible {
+		t.Fatalf("exit %d", code)
+	}
+	want := "togi run: " + err.Error() + "\ntogi: clear GRUB saved entry: saved entry is read-only; no reboot requested\n"
+	if diff := cmp.Diff(want, out.String()); diff != "" {
+		t.Fatalf("failed clear refusal (-want +got): %s", diff)
 	}
 }

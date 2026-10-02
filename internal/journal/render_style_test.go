@@ -287,3 +287,18 @@ func TestDiagnosticLogEscapesWithoutSanitizingJournal(t *testing.T) {
 		t.Fatalf("raw event changed: %q, want %q", recorded.Raw, event.Raw)
 	}
 }
+
+func TestRendererClosedStreamFallsBackToPlain(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	renderer := NewRenderer(file, func(string) string { return "1" })
+	e := Event{Time: time.Unix(0, 0), Kind: KindFailure, Data: &Failure{}, Msg: "failure"}
+	if diff := cmp.Diff(FormatLine(e, time.UTC), renderer.Line(e, time.UTC)); diff != "" {
+		t.Fatal(diff)
+	}
+}

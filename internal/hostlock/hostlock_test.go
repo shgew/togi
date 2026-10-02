@@ -367,3 +367,34 @@ func TestLockOpenFailureCreatesNoDirectory(t *testing.T) {
 		t.Errorf("parent directory created (-want +got): %s", diff)
 	}
 }
+
+func TestReadOnlyDescriptorIsNotDelegation(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []os.FileMode{0o600, 0o660} {
+		t.Run(mode.String(), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "togi.lock")
+			if err := os.WriteFile(path, []byte("persistent"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, mode); err != nil {
+				t.Fatal(err)
+			}
+			lock, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer lock.Close()
+			err = secureLock(lock, false, false)
+			if !errors.Is(err, os.ErrPermission) || !strings.Contains(err.Error(), "read-write") {
+				t.Fatalf("read-only lock authorized: %v", err)
+			}
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(mode, info.Mode().Perm()); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}

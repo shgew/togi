@@ -377,3 +377,28 @@ func TestSamplesSetupCancellation(t *testing.T) {
 		}
 	})
 }
+
+func TestSamplesMissingAndEarlyStop(t *testing.T) {
+	r := New(Options{Dir: t.TempDir()})
+	if got := slices.Collect(r.Samples("missing")); len(got) != 0 {
+		t.Fatalf("missing samples: %v", got)
+	}
+	dir := filepath.Join(r.options.Dir, "trial")
+	if err := os.Mkdir(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "samples.jsonl"), []byte("{\"elapsed_ms\":10}\n{\"elapsed_ms\":20}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var got []machine.TrialConditions
+	for sample := range r.Samples("trial") {
+		got = append(got, sample)
+		break
+	}
+	if diff := cmp.Diff([]machine.TrialConditions{{ElapsedMS: 10}}, got); diff != "" {
+		t.Fatal(diff)
+	}
+	if _, err := openSamples(dir); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("sample file overwritten: %v", err)
+	}
+}

@@ -3,6 +3,7 @@ package simrun
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 )
@@ -112,5 +114,97 @@ func TestInMemoryProjectionFailureWarnsAfterStop(t *testing.T) {
 	}
 	if diff := cmp.Diff([]int{events[len(events)-2].Seq}, last.Cause); diff != "" {
 		t.Fatalf("warning cause (-want +got):\n%s", diff)
+	}
+}
+
+type crashBeforeProjection struct {
+	session.Journal
+	machine *sim.Machine
+	fired   *bool
+}
+
+func (j crashBeforeProjection) Append(p journal.Payload, cause ...int) (journal.Event, error) {
+	e, err := j.Journal.Append(p, cause...)
+	if err == nil && !*j.fired && p.Kind() == journal.KindSessionStart {
+		*j.fired = true
+		j.machine.Crash()
+		return e, machine.ErrCrashed
+	}
+	return e, err
+}
+
+func TestInMemoryCrashBeforeFirstProjectionReplaysDurableStart(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	m, err := sim.New(huntConfig(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fired := false
+	stop, err := Simulate(context.Background(), Input{
+		Config: config.Default(), Dir: dir, Machine: m, InMemoryJournal: true,
+		Wrap: func(j session.Journal) session.Journal {
+			return crashBeforeProjection{Journal: j, machine: m, fired: &fired}
+		},
+		Until: func(e journal.Event) bool { return e.Kind == journal.KindTrialEnd },
+	})
+	if err != nil || stop.Reason != session.StopSignal || !fired {
+		t.Fatalf("bootstrap crash: %+v, %v, fired %t", stop, err, fired)
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || len(torn) != 0 {
+		t.Fatalf("recovered journal: %v, torn %q", err, torn)
+	}
+	starts, crashes, trials := 0, 0, 0
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.SessionStart:
+			starts++
+		case *journal.CrashDetected:
+			crashes++
+			if !p.Stray || p.PreviousBoot != events[0].Boot || p.InFlight != nil {
+				t.Fatalf("bootstrap crash misclassified: %+v", p)
+			}
+		case *journal.TrialEnd:
+			trials++
+		}
+	}
+	if diff := cmp.Diff([]int{1, 1, 1}, []int{starts, crashes, trials}); diff != "" {
+		t.Fatalf("recovery duplicated work (-want +got):\n%s", diff)
+	}
+	if p, ok := events[len(events)-1].Data.(*journal.Shutdown); !ok || p.Reason != journal.ShutdownSignal {
+		t.Fatalf("bootstrap recovery did not stop cleanly: %+v", events[len(events)-1])
+	}
+	state, err := journal.ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.LastSeq != events[len(events)-1].Seq || state.Session.ID != events[0].Data.(*journal.SessionStart).Session || len(state.Cores) != 2 {
+		t.Fatalf("flushed state does not project recovered session: %+v", state)
+	}
+	if diff := cmp.Diff([]string(nil), m.Violations()); diff != "" {
+		t.Fatalf("recovery broke isolation:\n%s", diff)
+	}
+}
+
+func TestInMemoryInvalidConfigLeavesNoProjection(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	m, err := sim.New(huntConfig(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.StartOffsets = map[int]int{99: -10}
+	_, err = Simulate(context.Background(), Input{Config: cfg, Dir: dir, Machine: m, InMemoryJournal: true})
+	if !errors.Is(err, session.ErrNoSuchCore) {
+		t.Fatalf("invalid cached simulation: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "state.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("rejected simulation published a projection: %v", err)
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || len(events) != 0 || len(torn) != 0 {
+		t.Fatalf("rejected simulation began a session: %+v, torn %q, %v", events, torn, err)
 	}
 }

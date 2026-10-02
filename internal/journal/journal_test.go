@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -278,5 +280,90 @@ func TestAppendRejectsBadEvents(t *testing.T) {
 	appendAll(t, j, []Payload{sessionStart()})
 	if _, err := j.Append(&Shutdown{Reason: ShutdownSignal}, 2); err == nil {
 		t.Fatal("cause naming the event itself accepted")
+	}
+}
+
+func TestNonFinitePayloadCannotAdvanceJournal(t *testing.T) {
+	dir := t.TempDir()
+	j := openTest(t, dir)
+	appendAll(t, j, []Payload{sessionStart()})
+	before, err := os.ReadFile(filepath.Join(dir, eventsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := sampleConfig()
+	cfg.Evidence.Miss = math.NaN()
+	if _, err := j.Append(&ConfigLoaded{Config: cfg}); err == nil || !strings.Contains(err.Error(), "encode config.loaded payload") {
+		t.Fatalf("non-finite config accepted: %v", err)
+	}
+	after, err := os.ReadFile(filepath.Join(dir, eventsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) || len(j.Events()) != 1 {
+		t.Fatal("failed encoding altered journal")
+	}
+	e, err := j.Append(&Shutdown{Reason: ShutdownCommand}, 1)
+	if err != nil || e.Seq != 2 {
+		t.Fatalf("encoding failure poisoned writer: %+v, %v", e, err)
+	}
+}
+
+func TestSetBootPreservesEarlierBootEvidence(t *testing.T) {
+	dir := t.TempDir()
+	j := openTest(t, dir)
+	first := appendAll(t, j, []Payload{sessionStart()})[0]
+	j.SetBoot("next-boot")
+	second := appendAll(t, j, []Payload{&Shutdown{Reason: ShutdownCommand}})[0]
+	events, _, err := Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{first.Boot, "next-boot"}, []string{events[0].Boot, events[1].Boot}); diff != "" {
+		t.Fatal(diff)
+	}
+	if second.Boot != "next-boot" {
+		t.Fatal("new append retained previous boot")
+	}
+}
+
+func TestDefectEvidenceSurvivesReplay(t *testing.T) {
+	dir := t.TempDir()
+	j := openTest(t, dir)
+	prefix := samplePayloads()
+	appendAll(t, j, prefix)
+	payloads := []Payload{
+		&DefectFound{ID: 2, Title: "misattribution", PR: 12, Cores: []int{7}, Decisions: []int{7}, Direction: "too_cautious"},
+		&DefectAnswered{ID: 2, Cores: []int{7}, Answer: "yes"},
+	}
+	finding, err := j.Append(payloads[0], 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Append(payloads[1], finding.Seq); err != nil {
+		t.Fatal(err)
+	}
+	events, _, err := Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, p := range payloads {
+		if diff := cmp.Diff(p, events[len(prefix)+i].Data); diff != "" {
+			t.Fatalf("defect evidence lost: %s", diff)
+		}
+	}
+}
+
+func TestCloseFailureStillReleasesWriterLock(t *testing.T) {
+	dir := t.TempDir()
+	j := openTest(t, dir)
+	appendAll(t, j, []Payload{sessionStart()})
+	j.f = failingJournalFile{journalFile: j.f, closeErr: errJournalFilesystem}
+	if err := j.Close(); !errors.Is(err, errJournalFilesystem) {
+		t.Fatalf("close failure: %v", err)
+	}
+	j = openTest(t, dir)
+	if len(j.Events()) != 1 {
+		t.Fatal("close failure discarded durable event")
 	}
 }

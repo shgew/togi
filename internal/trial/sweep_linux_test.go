@@ -136,3 +136,97 @@ func TestOwnedProcessGroupRejectsUnverifiedIdentity(t *testing.T) {
 		})
 	}
 }
+
+func TestScopeDiscoveryReadFailures(t *testing.T) {
+	for _, failure := range []string{"root", "cancel", "cgroup", "stat", "start", "gone cgroup", "gone stat", "unrelated entry"} {
+		t.Run(failure, func(t *testing.T) {
+			root := t.TempDir()
+			h := osHost{procDir: root}
+			procFixture(t, root, 42, "0::/togi-trial-1.scope\n", "S", 42, 100)
+			ctx := context.Background()
+			wantErr := ""
+			switch failure {
+			case "root":
+				h.procDir = filepath.Join(root, "missing")
+				wantErr = "list processes"
+			case "cancel":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+				wantErr = "context canceled"
+			case "cgroup", "stat":
+				path := filepath.Join(root, "42", failure)
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(path, 0755); err != nil {
+					t.Fatal(err)
+				}
+				wantErr = map[string]string{"cgroup": "cgroup", "stat": "identity"}[failure]
+			case "start":
+				procFixture(t, root, 42, "0::/togi-trial-1.scope\n", "S", 42, -1)
+				wantErr = "invalid leftover process 42 start time"
+			case "gone cgroup", "gone stat":
+				name := strings.TrimPrefix(failure, "gone ")
+				if err := os.Remove(filepath.Join(root, "42", name)); err != nil {
+					t.Fatal(err)
+				}
+			case "unrelated entry":
+				if err := os.Mkdir(filepath.Join(root, "self"), 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := h.ScopeProcesses(ctx)
+			if wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), wantErr) || len(got) != 0 {
+					t.Fatalf("discovery lost error: processes=%v err=%v", got, err)
+				}
+				return
+			}
+			var want []scopeProcess
+			if failure == "unrelated entry" {
+				want = []scopeProcess{{Scope: "togi-trial-1.scope", PID: 42, Start: 100}}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestOwnedProcessIdentityReadFailures(t *testing.T) {
+	for _, failure := range []string{"stat", "start"} {
+		t.Run(failure, func(t *testing.T) {
+			root := t.TempDir()
+			procFixture(t, root, 42, "0::/togi-trial-1.scope\n", "S", 42, 100)
+			path := filepath.Join(root, "42", "stat")
+			if failure == "stat" {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(path, 0755); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(strings.Replace(string(data), "100", "bad", 1)), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h := osHost{procDir: root}
+			p := &execProcess{cmd: &exec.Cmd{Process: &os.Process{Pid: 42}}, start: 100}
+			if err := h.SignalGroup(p, syscall.SIGKILL); err == nil || errors.Is(err, syscall.ESRCH) {
+				t.Fatalf("unreadable identity accepted as vanished: %v", err)
+			}
+			if alive, err := h.ProcessAlive(scopeProcess{PID: 42, Start: 100}); alive || err == nil || processDisappeared(err) {
+				t.Fatalf("unreadable identity accepted as exit: alive=%t err=%v", alive, err)
+			}
+		})
+	}
+}

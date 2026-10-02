@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"testing"
 	"time"
@@ -445,5 +446,119 @@ func TestRunnerWaitCancellationRemainsInterrupted(t *testing.T) {
 	}
 	if got := r.fold.streaks[machine.Mprime]; len(got) != 0 {
 		t.Fatalf("cancelled trial counted toward backend streak: %v", got)
+	}
+}
+
+func TestBackendRetryCancellationStopsBeforeAnotherTrial(t *testing.T) {
+	t.Parallel()
+	r, m, closeJournal := checkedRunner(t, []int{0, 0})
+	defer closeJournal()
+	if err := r.startSession(); err != nil {
+		t.Fatal(err)
+	}
+	r.in.Machine.Trials = waitErrorTrials{Trials: r.in.Machine.Trials}
+	if err := r.trial(context.Background(), tuner.Action{Trial: tuner.Trial{Core: 0, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Condition: machine.Isolated, DurationS: 90}}); err != nil {
+		t.Fatal(err)
+	}
+	before := len(r.in.Journal.Events())
+	r.in.Config.DeadEnds.InconclusiveInARow = 1
+	r.in.Machine.Clock = cancelledClock{Clock: r.in.Machine.Clock}
+	stop, err := r.loop(context.Background())
+	if err != nil || stop.Reason != StopSignal {
+		t.Fatalf("retry cancellation: %+v, %v", stop, err)
+	}
+	if err := r.close(true, &stop); err != nil {
+		t.Fatal(err)
+	}
+	var retries []int
+	for _, e := range r.in.Journal.Events()[before:] {
+		if e.Kind == journal.KindTrialIntent {
+			t.Fatal("retry cancellation started another trial")
+		}
+		if p, ok := e.Data.(*journal.BackendRetry); ok {
+			retries = append(retries, p.WaitS)
+		}
+	}
+	if diff := cmp.Diff([]int{60}, retries); diff != "" {
+		t.Fatal(diff)
+	}
+	last := r.in.Journal.Events()[len(r.in.Journal.Events())-1].Data
+	if shutdown, ok := last.(*journal.Shutdown); !ok || shutdown.Reason != journal.ShutdownSignal {
+		t.Fatalf("retry cancellation did not shut down cleanly: %+v", last)
+	}
+	for core := range 2 {
+		if offset, err := m.Seams().SMU.Offset(core); err != nil || offset != 0 {
+			t.Fatalf("offset after retry cancellation: core %d, %d, %v", core, offset, err)
+		}
+	}
+}
+
+func TestRetryAppendFailurePreventsSleepAndTrial(t *testing.T) {
+	t.Parallel()
+	for _, kernel := range []bool{false, true} {
+		t.Run(map[bool]string{false: "backend", true: "kernel"}[kernel], func(t *testing.T) {
+			t.Parallel()
+			r, _, closeJournal := checkedRunner(t, []int{0, 0})
+			defer closeJournal()
+			if !kernel {
+				if err := r.startSession(); err != nil {
+					t.Fatal(err)
+				}
+				r.in.Machine.Trials = waitErrorTrials{Trials: r.in.Machine.Trials}
+				if err := r.trial(context.Background(), tuner.Action{Trial: tuner.Trial{Core: 0, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Condition: machine.Isolated, DurationS: 90}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			clock := &retryClock{Clock: r.in.Machine.Clock}
+			r.in.Machine.Clock = clock
+			r.in.Journal = &failAppendJournal{Journal: r.in.Journal, kind: journal.KindBackendRetry}
+			before := r.in.Journal.Events()
+			var err error
+			if kernel {
+				err = r.retryKernel(context.Background(), "older", errors.New("unreadable"))
+			} else {
+				r.in.Config.DeadEnds.InconclusiveInARow = 1
+				err = r.retryBackend(context.Background(), tuner.Trial{Core: 0, Regime: machine.R1})
+			}
+			if !errors.Is(err, io.ErrClosedPipe) {
+				t.Fatalf("retry journal failure: %v", err)
+			}
+			if diff := cmp.Diff([]time.Duration(nil), clock.waits); diff != "" {
+				t.Fatalf("wait without durable intent:\n%s", diff)
+			}
+			if diff := cmp.Diff(before, r.in.Journal.Events()); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestPendingKernelRetryCancellationKeepsObservationPending(t *testing.T) {
+	t.Parallel()
+	for _, reason := range []bool{false, true} {
+		t.Run(map[bool]string{false: "MCEs", true: "reset reason"}[reason], func(t *testing.T) {
+			t.Parallel()
+			r, _, closeJournal := checkedRunner(t, []int{0, 0})
+			defer closeJournal()
+			if _, err := r.append(&journal.BackendRetry{Backend: "kernel_log", Attempt: 1, WaitS: 60, Reason: "unavailable"}); err != nil {
+				t.Fatal(err)
+			}
+			before := r.in.Journal.Events()
+			kernel := &unreadableKernel{Kernel: r.in.Machine.Kernel, failUntil: 10}
+			r.in.Machine.Kernel = kernel
+			r.in.Machine.Clock = cancelledClock{Clock: r.in.Machine.Clock}
+			var err error
+			if reason {
+				_, err = r.readResetReason(context.Background(), "previous", true)
+			} else {
+				_, err = r.readMCEs(context.Background(), "previous")
+			}
+			if !errors.Is(err, context.Canceled) || kernel.calls != 0 {
+				t.Fatalf("canceled pending observation: %v, reads %d", err, kernel.calls)
+			}
+			if diff := cmp.Diff(before, r.in.Journal.Events()); diff != "" {
+				t.Fatalf("cancellation consumed or replaced pending retry:\n%s", diff)
+			}
+		})
 	}
 }

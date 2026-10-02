@@ -1,0 +1,12 @@
+ruleset 7 simulated with recorded BIOS context; evidence epoch 1
+carried facts: 0 passes, 2 failures
+candidate-edge completions citing carried passes: 0
+live edge-check starts: 0
+first rotation live starts: 2; live passes: 1
+first live trial #11: guard R1 trial at [-5 -5]
+first live trial #13: guard R2 trial at [-5 -5]
+first live trial #16: guard R1 trial at [-4 -5]
+known-failure skip #4 cause=[1]: skip carried failure
+carried-failure hunt #5 cause=[1]: source failure #1 trial 1; class R7 fixture cores=[0 1] duration=90s; failing=[-10 -10]; hunt carried failure
+carried mask inference #6 cause=[5 1]: infer carried failure
+first qualifying rotation #18: clean qualifying rotation

@@ -3,6 +3,8 @@ package watch
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,4 +124,18 @@ func TestSourceReloadTransitions(t *testing.T) {
 	watchSourceFrame(t, &src, "no session yet", "modified")
 	write(path, watchSessionLine(t, "restored"), stamp)
 	watchSourceFrame(t, &src, "restored", "no session yet")
+}
+
+func TestLoadIncompatibleJournal(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	data := bytes.ReplaceAll(watchSessionLine(t, "newer schema"), []byte(fmt.Sprintf(`"schema":%d`, journal.Schema)), []byte(fmt.Sprintf(`"schema":%d`, journal.Schema+1)))
+	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	s := Load(dir)
+	var incompatible *journal.IncompatibleError
+	if !errors.As(s.Err(), &incompatible) || s.session {
+		t.Fatalf("incompatible journal presented as a session: %+v", s)
+	}
 }

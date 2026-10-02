@@ -1,0 +1,5 @@
+summary: time, crashes and depth include all run statuses; hazard is steady-state failures/hour with all cores loaded.
+scenario          runs concluded median_h mean_h median_crashes mean_depth max_hazard/h real_answer_share
+zeta                 2         1    7.000    7.000            3.0     -15.00     0.015000          0.200000
+alpha                1         1    2.000    2.000            0.0     -40.00     0.000000          0.166667
+TOTAL                3         2    4.000    5.333            2.0     -23.33     0.015000          0.187500

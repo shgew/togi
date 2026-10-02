@@ -147,3 +147,13 @@ func TestProcStatDiagnostic(t *testing.T) {
 		})
 	}
 }
+
+func TestPreflightRejectsIdentityBeforeCommand(t *testing.T) {
+	_, err := checkSystemdRun(Identity{}, func(context.Context, string, ...string) ([]byte, error) {
+		t.Fatal("invalid identity reached systemd")
+		return nil, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "backend_user") {
+		t.Fatalf("invalid identity: %v", err)
+	}
+}

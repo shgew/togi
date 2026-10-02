@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -360,6 +361,206 @@ func TestPublishSkips(t *testing.T) {
 			}
 			if got := out.String(); got != tc.output {
 				t.Fatalf("output = %q", got)
+			}
+		})
+	}
+}
+
+func TestRepositoryValidation(t *testing.T) {
+	t.Parallel()
+	for _, input := range []string{"", "owner", "o/r/extra", "./r", "o/..", "o /r", "o/"} {
+		if _, err := parseRepository(input); err == nil || !strings.Contains(err.Error(), "invalid repository") {
+			t.Errorf("parseRepository(%q) = %v", input, err)
+		}
+	}
+	got, err := parseRepository("owner-name/repo.name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(repository{"owner-name", "repo.name"}, got, cmp.AllowUnexported(repository{})); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestReleaseFailuresDoNotCommit(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, command, version, changelog, module, want string }{
+		{name: "fetch", command: "fetch --quiet origin main", want: "fetch main: injected"},
+		{name: "resolve", command: "rev-parse --verify origin/main^{commit}", want: "resolve origin/main: injected"},
+		{name: "read", command: "show base:CHANGELOG.md", want: "read CHANGELOG.md from origin/main: injected"},
+		{name: "version", version: "bad", want: "read version.txt: invalid semantic version \"bad\""},
+		{name: "module", module: "not a module", want: "read go.mod: missing module path"},
+		{name: "unreleased", changelog: "# Changelog\n", want: "read CHANGELOG.md: missing [Unreleased] section"},
+		{name: "tags", command: "ls-remote --tags origin refs/tags/v*", want: "list release tags: injected"},
+		{name: "overflow", version: strings.Repeat("9", 40) + ".1.0", want: "bump version: parse version"},
+		{name: "duplicate", changelog: unreleased + "\n## [0.1.1] - 2026-09-25\n", want: "rewrite changelog: version [0.1.1] already exists"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			git := mainGit("0.1.0", unreleased, "")
+			if tc.command != "" {
+				git.failures[tc.command] = errors.New("injected")
+			}
+			if tc.version != "" {
+				git.responses["show base:version.txt"] = tc.version
+			}
+			if tc.changelog != "" {
+				git.responses["show base:CHANGELOG.md"] = tc.changelog
+			}
+			if tc.module != "" {
+				git.responses["show base:go.mod"] = tc.module
+			}
+			var out bytes.Buffer
+			err := releaseRunner(git, &out, true).release()
+			if err == nil || !strings.HasPrefix(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+			if len(git.stdin("hash-object -w --stdin")) != 0 || git.checked != nil || out.Len() != 0 {
+				t.Fatalf("failed release progressed: calls %v, checks %v, output %q", git.commands(), git.checked, out.String())
+			}
+		})
+	}
+}
+
+func TestReleaseCommitFailuresStopBeforeCheckout(t *testing.T) {
+	t.Parallel()
+	for _, command := range []string{"rev-parse --git-path togi-release-index", "read-tree base", "hash-object -w --stdin", "update-index --cacheinfo 100644,blob,version.txt", "write-tree", "commit-tree tree -p base -F -", "checkout --quiet --detach commit"} {
+		t.Run(command, func(t *testing.T) {
+			git := mainGit("0.1.0", unreleased, "")
+			git.failures[command] = errors.New("injected")
+			var out bytes.Buffer
+			err := releaseRunner(git, &out, true).release()
+			if err == nil || !strings.Contains(err.Error(), "injected") {
+				t.Fatalf("error = %v", err)
+			}
+			calls := git.commands()
+			if calls[len(calls)-1] != command {
+				t.Fatalf("continued after failure: %v", calls)
+			}
+			if command != "checkout --quiet --detach commit" && out.Len() != 0 {
+				t.Fatalf("claimed release: %s", &out)
+			}
+		})
+	}
+}
+
+func TestPublishFailuresDoNotCreateRelease(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, command, value, want string }{
+		{"read", "show HEAD:version.txt", "", "read version.txt: injected"},
+		{"version", "show HEAD:version.txt", "bad", "read version.txt: invalid semantic version"},
+		{"history", "rev-parse --is-shallow-repository", "", "check release history: injected"},
+		{"unshallow", "fetch --quiet --unshallow --no-tags origin main", "", "fetch complete release history: injected"},
+		{"log", "log --first-parent -1 --format=%H HEAD -- version.txt", "", "find the commit that set version.txt to 0.1.0: injected"},
+		{"empty history", "log --first-parent -1 --format=%H HEAD -- version.txt", "\n", "find the commit that set version.txt to 0.1.0: no commit changed version.txt"},
+		{"tag lookup", "ls-remote --tags origin refs/tags/v0.1.0 refs/tags/v0.1.0^{}", "", "check tag v0.1.0: injected"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			git, api, requests, posted := publishFixture(t, "0.1.0", released, http.StatusNotFound)
+			git.failures = map[string]error{}
+			if tc.value == "" {
+				git.failures[tc.command] = errors.New("injected")
+			} else {
+				git.responses[tc.command] = tc.value
+			}
+			if tc.name == "unshallow" {
+				git.responses["rev-parse --is-shallow-repository"] = "true\n"
+			}
+			var out bytes.Buffer
+			err := releaseRunner(git, &out, false).publish(api, repository{"o", "r"})
+			if err == nil || !strings.HasPrefix(fmt.Sprint(err), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+			if *posted != nil || len(*requests) != 0 || out.Len() != 0 {
+				t.Fatalf("publication progressed: %v %v %s", *requests, *posted, &out)
+			}
+		})
+	}
+}
+
+type failureTransport struct {
+	err  error
+	body io.ReadCloser
+}
+
+func (f failureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &http.Response{StatusCode: http.StatusOK, Body: f.body, Header: make(http.Header), Request: req}, nil
+}
+
+type failingBody struct{}
+
+func (failingBody) Read([]byte) (int, error) { return 0, errors.New("broken response") }
+func (failingBody) Close() error             { return nil }
+
+func TestGitHubRequestErrors(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, method, response, want string
+		body                         any
+		transport                    http.RoundTripper
+		status                       int
+	}{
+		{name: "encode", method: http.MethodPost, body: make(chan int), want: "encode POST /test:"},
+		{name: "prepare", method: "bad method", want: "prepare bad method /test:"},
+		{name: "transport", method: http.MethodGet, transport: failureTransport{err: errors.New("offline")}, want: "GET /test:"},
+		{name: "read", method: http.MethodGet, transport: failureTransport{body: failingBody{}}, want: "read GET /test response: broken response"},
+		{name: "http", method: http.MethodGet, status: http.StatusForbidden, response: "denied", want: "GET /test: HTTP 403: denied"},
+		{name: "decode", method: http.MethodGet, status: http.StatusOK, response: "not-json", want: "decode GET /test response:"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			transport := tc.transport
+			if transport == nil {
+				transport = handlerTransport{http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(tc.status); fmt.Fprint(w, tc.response) })}
+			}
+			api := github{base: "https://api.forge.example", token: "test-token", client: &http.Client{Transport: transport}}
+			var result map[string]string
+			_, err := api.request(tc.method, "/test", tc.body, &result)
+			if err == nil || !strings.HasPrefix(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+			if result != nil {
+				t.Fatalf("invalid response returned result %v", result)
+			}
+		})
+	}
+}
+
+func TestGitHubFailuresReachOperator(t *testing.T) {
+	t.Parallel()
+	api := github{base: "https://api.forge.example", token: "test-token", client: &http.Client{Transport: handlerTransport{http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, "denied")
+	})}}}
+	if err := requireGreenCheck(api, repository{"o", "r"}, "base"); err == nil || !strings.Contains(err.Error(), "look up the check.yml run for base:") || !strings.Contains(err.Error(), "HTTP 403: denied") {
+		t.Fatalf("green check error = %v", err)
+	}
+	for _, status := range []int{http.StatusForbidden, http.StatusNotFound} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			git, api, _, posted := publishFixture(t, "0.1.0", released, status)
+			if status == http.StatusNotFound {
+				api.client = &http.Client{Transport: handlerTransport{http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodGet {
+						w.WriteHeader(http.StatusNotFound)
+						fmt.Fprint(w, "{}")
+						return
+					}
+					w.WriteHeader(http.StatusForbidden)
+					fmt.Fprint(w, "denied")
+				})}}
+			}
+			var out bytes.Buffer
+			err := releaseRunner(git, &out, false).publish(api, repository{"o", "r"})
+			prefix := "check release v0.1.0:"
+			if status == http.StatusNotFound {
+				prefix = "create release v0.1.0:"
+			}
+			if err == nil || !strings.HasPrefix(err.Error(), prefix) || !strings.Contains(err.Error(), "HTTP 403:") {
+				t.Fatalf("publication error = %v", err)
+			}
+			if *posted != nil || out.Len() != 0 {
+				t.Fatalf("claimed publication: %v %s", *posted, &out)
 			}
 		})
 	}

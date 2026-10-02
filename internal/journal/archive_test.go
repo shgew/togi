@@ -1,7 +1,9 @@
 package journal
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -56,5 +58,142 @@ func TestOpenFinishesArchive(t *testing.T) {
 	}
 	if last := j.Events()[len(j.Events())-1]; last.Kind != KindSessionStart {
 		t.Fatalf("refused archive recorded %s", last.Kind)
+	}
+}
+
+func TestRecoverPendingArchiveFilesystemFailures(t *testing.T) {
+	for at := 1; at <= 4; at++ {
+		t.Run(fmt.Sprint(at), func(t *testing.T) {
+			dir := t.TempDir()
+			archive := filepath.Join(dir, archiveDir)
+			if err := os.Mkdir(archive, 0755); err != nil {
+				t.Fatal(err)
+			}
+			id := "source"
+			path := filepath.Join(archive, id+".jsonl")
+			data := []byte(`{"seq":1,"kind":"session.start","session":"source","schema":1,"ruleset":1}` + "\n")
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(archive, id+"-compat-pending")
+			if err := os.WriteFile(marker, nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+			j, err := Lock(dir, Options{Sync: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer j.Close()
+			faults := &faultJournalFilesystem{journalFilesystem: j.fs, at: at}
+			j.fs = faults
+			if _, err := j.RecoverPendingArchive(); !errors.Is(err, errJournalFilesystem) {
+				t.Fatalf("recovery failure: %v", err)
+			}
+			if at <= 3 {
+				if _, err := os.Stat(marker); err != nil {
+					t.Fatalf("pending marker lost before completion: %v", err)
+				}
+			}
+			faults.at = 0
+			got, err := j.RecoverPendingArchive()
+			want := id
+			if at == 4 {
+				want = ""
+			}
+			if err != nil || got != want {
+				t.Fatalf("recovery retry: %q, %v", got, err)
+			}
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("completed marker remains: %v", err)
+			}
+			preserved, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(data, preserved) {
+				t.Fatalf("archive changed: %q, %v", preserved, err)
+			}
+		})
+	}
+}
+
+func TestPendingArchiveRejectsMissingSource(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, archiveDir)
+	if err := os.Mkdir(archive, 0755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(archive, "source-compat-pending")
+	if err := os.WriteFile(marker, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	j, err := Open(dir, Options{Now: fixedClock()})
+	if j != nil {
+		j.Close()
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing archive accepted: %v", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("recovery evidence removed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, eventsFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("new journal created over missing archive: %v", err)
+	}
+}
+
+func TestRecordedIncompatibleArchiveCompletesWithoutCarry(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		for _, carry := range []bool{false, true} {
+			t.Run(fmt.Sprintf("failure-%v-carry-%v", fail, carry), func(t *testing.T) {
+				dir := t.TempDir()
+				data := []byte(`{"seq":1,"kind":"session.start","session":"source","schema":99}` + "\n" +
+					`{"seq":2,"kind":"session.archived","session":"source","path":"archive/source.jsonl"}` + "\n")
+				path := filepath.Join(dir, eventsFile)
+				if err := os.WriteFile(path, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				j, err := Lock(dir, Options{Sync: true})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer j.Close()
+				faults := &faultJournalFilesystem{journalFilesystem: j.fs}
+				if fail {
+					faults.at = 1
+				}
+				j.fs = faults
+				archive := func() (string, error) {
+					if carry {
+						return j.ArchiveForCarry("source")
+					}
+					return j.ArchiveUnreadable("source")
+				}
+				if fail {
+					if _, err := archive(); !errors.Is(err, errJournalFilesystem) {
+						t.Fatalf("recorded archive failure: %v", err)
+					}
+					if preserved, err := os.ReadFile(path); err != nil || !bytes.Equal(preserved, data) {
+						t.Fatalf("source lost before archive completion: %v", err)
+					}
+					faults.at = 0
+				}
+				rel, err := archive()
+				want := "archive/source.jsonl"
+				if carry {
+					want = ""
+				}
+				if err != nil || rel != want {
+					t.Fatalf("recorded archive completion: %q, %v", rel, err)
+				}
+				preserved, err := os.ReadFile(filepath.Join(dir, "archive", "source.jsonl"))
+				if err != nil || !bytes.Equal(preserved, data) {
+					t.Fatalf("incompatible source changed: %v", err)
+				}
+				if pending, err := PendingCarry(dir); err != nil || pending != "" {
+					t.Fatalf("reset archive created carry: %q, %v", pending, err)
+				}
+				if _, err := os.Stat(filepath.Join(dir, "archive", "source-compat-pending")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("already-recorded archive created compatibility marker: %v", err)
+				}
+			})
+		}
 	}
 }

@@ -211,3 +211,33 @@ func TestAppendSyncFailureRequiresReopen(t *testing.T) {
 		t.Fatalf("sequence after reopen: #%d, %v", event.Seq, err)
 	}
 }
+
+type failingJournalFile struct {
+	journalFile
+	truncateErr, closeErr error
+}
+
+func (f failingJournalFile) Truncate(n int64) error {
+	if f.truncateErr != nil {
+		return f.truncateErr
+	}
+	return f.journalFile.Truncate(n)
+}
+
+func (f failingJournalFile) Close() error {
+	err := f.journalFile.Close()
+	return errors.Join(err, f.closeErr)
+}
+
+type failingJournalFilesystem struct {
+	journalFilesystem
+	truncateErr, closeErr error
+}
+
+func (f failingJournalFilesystem) OpenFile(path string, flags int, mode fs.FileMode) (journalFile, error) {
+	file, err := f.journalFilesystem.OpenFile(path, flags, mode)
+	if err != nil {
+		return nil, err
+	}
+	return failingJournalFile{journalFile: file, truncateErr: f.truncateErr, closeErr: f.closeErr}, nil
+}

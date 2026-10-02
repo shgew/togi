@@ -1,6 +1,8 @@
 package session
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -8,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/sim"
 )
@@ -125,5 +128,93 @@ func TestResetAllRefusesAnExistingArchive(t *testing.T) {
 	}
 	if got := readEvents(t, dir); len(got) != len(ref) {
 		t.Fatalf("the refused reset left %d events, want the %d it found", len(got), len(ref))
+	}
+}
+
+func TestResetRefusalsLeaveJournalUnchanged(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"empty core", "empty all", "incompatible", "unknown core"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			m := newSim(t, small())
+			j, err := journal.Open(t.TempDir(), journal.Options{Boot: "command", Now: m.Now, Build: Build()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer j.Close()
+			if name == "incompatible" || name == "unknown core" {
+				build := Build()
+				if name == "incompatible" {
+					build.Ruleset++
+				}
+				cores, err := m.Seams().Host.Topology()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := j.Append(&journal.SessionStart{Build: build, Session: "reset", Cores: cores}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := j.Events()
+			if name == "empty all" {
+				_, err = ResetAll(j)
+			} else {
+				err = ResetCore(j, 99)
+			}
+			switch name {
+			case "empty core", "empty all":
+				if !errors.Is(err, ErrNoSession) {
+					t.Fatalf("reset: %v, want no session", err)
+				}
+			case "unknown core":
+				if !errors.Is(err, ErrNoSuchCore) || !strings.Contains(err.Error(), "reset core 99") {
+					t.Fatalf("reset: %v, want identified unknown core", err)
+				}
+			case "incompatible":
+				var incompatible *journal.IncompatibleError
+				if !errors.As(err, &incompatible) || incompatible.Field != "ruleset" {
+					t.Fatalf("reset: %v, want ruleset refusal", err)
+				}
+			}
+			if diff := cmp.Diff(before, j.Events()); diff != "" {
+				t.Fatalf("refused command changed journal (-before +after):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestResetCoreAppendFailurePreservesDurablePrefix(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []journal.Kind{journal.KindCommandReset, journal.KindShutdown} {
+		t.Run(string(kind), func(t *testing.T) {
+			t.Parallel()
+			r, _, closeJournal := checkedRunner(t, []int{0, 0})
+			defer closeJournal()
+			before := r.in.Journal.Events()
+			j := &failAppendJournal{Journal: r.in.Journal, kind: kind}
+			err := ResetCore(j, 1)
+			if !errors.Is(err, io.ErrClosedPipe) || !strings.Contains(err.Error(), "queue reset of core 1") {
+				t.Fatalf("reset append failure: %v", err)
+			}
+			events := j.Events()
+			if diff := cmp.Diff(before, events[:len(before)]); diff != "" {
+				t.Fatal(diff)
+			}
+			want := 0
+			if kind == journal.KindShutdown {
+				want = 1
+			}
+			if len(events)-len(before) != want {
+				t.Fatalf("durable suffix has %d events, want %d", len(events)-len(before), want)
+			}
+			if want == 1 {
+				if diff := cmp.Diff(&journal.CommandReset{Core: new(1)}, events[len(before)].Data); diff != "" {
+					t.Fatalf("durable reset (-want +got):\n%s", diff)
+				}
+				if replay, err := replayFor(r.in.Journal); err != nil || replay.state.Cores[1].Queued != "reset" {
+					t.Fatalf("durable reset lost on replay: %+v, %v", replay.state.Cores, err)
+				}
+			}
+		})
 	}
 }

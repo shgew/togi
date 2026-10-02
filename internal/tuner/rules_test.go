@@ -235,3 +235,58 @@ func TestDirectFailureAtZero(t *testing.T) {
 		})
 	}
 }
+
+func TestThermalReasonYieldsToMCEAndTrialEvidence(t *testing.T) {
+	for _, mce := range []bool{false, true} {
+		h := newHarness(t, searchAt(-10)...)
+		intent := h.start(h.next())
+		var causes []int
+		if mce {
+			causes = []int{h.add(&journal.MCE{Core: 0, BankType: machine.LoadStore}).Seq}
+		}
+		h.add(&journal.CrashDetected{InFlight: new(intent.Seq), ResetReason: machine.ResetThermalTrip}, causes...)
+		if !mce {
+			if h.s.thermal == nil {
+				t.Fatal("thermal trip was not retained")
+			}
+			h.add(&journal.TrialEnd{Trial: intent.Data.(*journal.TrialIntent).Trial, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError}, intent.Seq)
+		} else {
+			h.add(&journal.TrialEnd{Trial: intent.Data.(*journal.TrialIntent).Trial, Outcome: journal.OutcomeFailure, Signal: machine.Crash}, intent.Seq, causes[0])
+		}
+		if h.s.thermal != nil {
+			t.Fatal("higher precedence evidence left thermal dead end")
+		}
+		a := h.next()
+		if p, ok := a.Payload.(*journal.Failure); !ok || p.Core == nil || *p.Core != 0 {
+			t.Fatalf("failure attribution lost: %+v", a)
+		}
+	}
+	h := newHarness(t, searchAt(-10)...)
+	h.add(&journal.CrashDetected{ResetReason: machine.ResetThermalTrip})
+	h.decide(h.next())
+	if a := h.next(); a.Kind != RunTrial {
+		t.Fatalf("consumed thermal trip repeated: %+v", a)
+	}
+}
+
+func TestOptimumRejectsBoundsBeyondFailedMark(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -10, fail: new(-11)})
+	for _, tc := range []struct {
+		hi   int
+		want []int
+	}{{-11, nil}, {-10, []int{-10}}, {0, []int{-10}}} {
+		if diff := cmp.Diff(tc.want, h.s.optimum([]int{-10}, []int{tc.hi}, []int{0})); diff != "" {
+			t.Fatalf("upper bound %d (-want +got):\n%s", tc.hi, diff)
+		}
+	}
+}
+
+func TestCarriedZeroMarkStopsBeforeTrial(t *testing.T) {
+	h := newHarness(t, searchAt(0)...)
+	phase := h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: 0, FailedMark: new(0)})
+	a := h.next()
+	p, ok := a.Payload.(*journal.DeadEnd)
+	if !ok || p.Condition != journal.DeadEndFailureAtZero || p.Core == nil || *p.Core != 0 || cmp.Diff([]int{phase.Seq}, a.Cause) != "" {
+		t.Fatalf("zero mark did not stop tuning: %+v", a)
+	}
+}

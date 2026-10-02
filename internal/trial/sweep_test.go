@@ -267,3 +267,57 @@ func TestSweepScopeSignalFailure(t *testing.T) {
 		}
 	})
 }
+
+type observationFailureHost struct {
+	*staleHost
+	discoveryError error
+	aliveError     error
+	discoveries    int
+	failAfter      int
+}
+
+func (h *observationFailureHost) ScopeProcesses(ctx context.Context) ([]scopeProcess, error) {
+	h.discoveries++
+	if h.discoveryError != nil && h.discoveries >= h.failAfter {
+		return nil, h.discoveryError
+	}
+	return h.staleHost.ScopeProcesses(ctx)
+}
+
+func (h *observationFailureHost) ProcessAlive(p scopeProcess) (bool, error) {
+	if h.aliveError != nil {
+		return false, h.aliveError
+	}
+	return h.staleHost.ProcessAlive(p)
+}
+
+func TestSweepObservationFailureIsContainment(t *testing.T) {
+	for _, failure := range []string{"discovery", "verify discovery", "verify identity"} {
+		t.Run(failure, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				injected := errors.New("leftover observation lost")
+				h := &observationFailureHost{staleHost: &staleHost{processes: []scopeProcess{{Scope: "togi-trial-1.scope", PID: 42}, {Scope: "unrelated.scope", PID: 43}}, alive: map[int]bool{42: true, 43: true}}}
+				switch failure {
+				case "discovery":
+					h.discoveryError, h.failAfter = injected, 1
+				case "verify discovery":
+					h.discoveryError, h.failAfter = injected, 2
+				case "verify identity":
+					h.aliveError = injected
+				}
+				r := New(Options{})
+				r.host = h
+				_, err := r.Sweep(context.Background())
+				if !errors.Is(err, injected) || !errors.Is(err, machine.ErrContainment) {
+					t.Fatalf("lost sweep observation accepted: %v", err)
+				}
+				if failure != "discovery" && len(h.killed) != 1 {
+					t.Fatalf("observation loss skipped cleanup: %v", h.killed)
+				}
+				if !h.alive[43] {
+					t.Fatal("unrelated process was killed")
+				}
+			})
+		})
+	}
+}

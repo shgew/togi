@@ -178,7 +178,7 @@ func TestResetHistoryPreservesFacts(t *testing.T) {
 		{Data: &journal.TrialIntent{Trial: "after", Core: new(0), Offset: new(-5), Condition: machine.Isolated}},
 		{Data: &journal.TrialEnd{Trial: "after", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError}},
 		{Data: &journal.CommandReset{All: true}},
-		{Data: &journal.SessionArchived{Session: "session", Path: "archive/session.jsonl"}},
+		{Cause: []int{8}, Data: &journal.SessionArchived{Session: "session", Path: "archive/session.jsonl"}},
 	}
 	writeJournal(t, path, events, "")
 	s, err := ReadJournal(path)
@@ -264,6 +264,11 @@ not-json
 					t.Fatal(diff)
 				}
 			}
+			if tc.name == "unknown kind" {
+				if len(s.Events) != 2 || s.Events[1].Kind != "future.fact" || len(s.Facts) != 0 {
+					t.Fatalf("unknown event must remain available without inventing facts: %+v", s)
+				}
+			}
 		})
 	}
 }
@@ -283,5 +288,104 @@ func TestUnstampedConfigKeepsRecordedBuild(t *testing.T) {
 	}
 	if diff := cmp.Diff(build, s.Facts[0].Build); diff != "" {
 		t.Fatalf("trial provenance (-want +got):\n%s", diff)
+	}
+}
+
+func TestTrialEvidenceTracksOnlyOpenStartedTrialInItsBoot(t *testing.T) {
+	at := time.Unix(100, 0).UTC()
+	for _, kind := range []string{"progress", "signal", "sample"} {
+		for _, state := range []string{"running", "not started", "ended", "other boot", "unknown trial"} {
+			t.Run(kind+"/"+state, func(t *testing.T) {
+				events := []journal.Event{
+					{Seq: 1, Boot: "a", Data: &journal.SessionStart{Schema: 2, Ruleset: 6, Session: "session", Cores: []machine.CoreInfo{{Core: 0}}}},
+					{Seq: 2, Time: at, Boot: "a", Data: &journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-10), Regime: machine.R1, Condition: machine.Isolated, Profile: []int{-10}, DurationS: 90}},
+				}
+				want := at
+				if state != "not started" {
+					events = append(events, journal.Event{Seq: 3, Time: at.Add(time.Second), Boot: "a", Data: &journal.TrialStart{Trial: "one"}})
+					want = at.Add(time.Second)
+				}
+				if state == "ended" {
+					events = append(events, journal.Event{Seq: len(events) + 1, Boot: "a", Data: &journal.TrialEnd{Trial: "one", Outcome: journal.OutcomeInconclusive}})
+				}
+				id, boot := "one", "a"
+				if state == "unknown trial" {
+					id = "other"
+				}
+				if state == "other boot" {
+					boot = "b"
+				}
+				var payload journal.Payload
+				switch kind {
+				case "progress":
+					payload = &journal.TrialProgress{Trial: id}
+				case "signal":
+					payload = &journal.TrialSignal{Trial: id}
+				case "sample":
+					payload = &journal.TrialSample{Trial: id}
+				}
+				events = append(events, journal.Event{Seq: len(events) + 1, Time: at.Add(10 * time.Second), Boot: boot, Data: payload})
+				if state == "running" {
+					want = at.Add(10 * time.Second)
+				}
+				s := FromEvents(events)
+				if diff := cmp.Diff(want, s.Trials[0].LastEvidence); diff != "" {
+					t.Fatalf("last trial evidence (-want +got):\n%s", diff)
+				}
+				if s.Trials[0].Started != (state != "not started") || len(s.Facts) != 0 {
+					t.Fatalf("interrupted work became decisive evidence: %+v", s)
+				}
+			})
+		}
+	}
+}
+
+func TestCrashEvidenceMatchesIntentSequenceAndPreviousBoot(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		inFlight *int
+		previous string
+		want     bool
+	}{
+		{"matching", new(2), "a", true},
+		{"no in flight", nil, "a", false},
+		{"unknown intent", new(99), "a", false},
+		{"different boot", new(2), "b", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := FromEvents([]journal.Event{
+				{Seq: 1, Boot: "a", Data: &journal.SessionStart{Schema: 2, Ruleset: 6, Session: "session", Cores: []machine.CoreInfo{{Core: 0}}}},
+				{Seq: 2, Boot: "a", Data: &journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-10), Regime: machine.R1, Condition: machine.Isolated, Profile: []int{-10}, DurationS: 90}},
+				{Seq: 3, Boot: "c", Data: &journal.CrashDetected{InFlight: tc.inFlight, PreviousBoot: tc.previous}},
+			})
+			if s.Trials[0].Crashed != tc.want || len(s.Facts) != 0 {
+				t.Fatalf("crash association: crashed %t, facts %+v", s.Trials[0].Crashed, s.Facts)
+			}
+		})
+	}
+}
+
+func TestReadDirRejectsBrokenSources(t *testing.T) {
+	for _, source := range []string{"archive directory", "archive journal", "live journal"} {
+		t.Run(source, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "archive")
+			if source != "archive directory" {
+				if err := os.Mkdir(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				path = filepath.Join(path, "old.jsonl")
+				if source == "live journal" {
+					path = filepath.Join(dir, "events.jsonl")
+				}
+			}
+			if err := os.WriteFile(path, []byte("not JSON\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			sessions, err := ReadDir(dir)
+			if err == nil || sessions != nil {
+				t.Fatalf("broken source silently accepted: sessions %+v, error %v", sessions, err)
+			}
+		})
 	}
 }

@@ -55,3 +55,15 @@ func TestDecodePMTable(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodePMTableRejectsNonfiniteLanes(t *testing.T) {
+	for _, index := range []int{301, 317, 333, 381, 397, 413} {
+		for _, value := range []float32{float32(math.NaN()), float32(math.Inf(1)), float32(math.Inf(-1))} {
+			raw, _ := syntheticPMTable()
+			binary.LittleEndian.PutUint32(raw[index*4:], math.Float32bits(value))
+			if got := decodePMTable(pmTableVersion, 16, raw); got != nil {
+				t.Fatalf("nonfinite lane %d decoded: %+v", index, got)
+			}
+		}
+	}
+}

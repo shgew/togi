@@ -114,3 +114,67 @@ func TestCursorMetadataLossRetainsOnlyValidatedMCEs(t *testing.T) {
 		})
 	}
 }
+
+func TestKernelObservationFailuresDoNotBecomeCleanIntervals(t *testing.T) {
+	unavailable := errors.New("journal unavailable")
+	for _, tc := range []struct {
+		name, stderr, detail string
+		code                 int
+		err, want            error
+		cursor               string
+	}{
+		{name: "command", stderr: "read failed", detail: "read failed", err: unavailable, want: unavailable},
+		{name: "missing boot", stderr: "No journal boot entry found", detail: machine.ErrBootMissing.Error(), code: 1, want: machine.ErrBootMissing},
+		{name: "vacuumed cursor", stderr: "Failed to seek to cursor", detail: "Failed to seek to cursor", code: 1, want: machine.ErrCursorMissing, cursor: "saved"},
+		{name: "other exit", stderr: "permission denied", detail: "permission denied", code: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k := NewKernel(nil)
+			k.journalctl = func([]string) ([]byte, []byte, int, error) { return nil, []byte(tc.stderr), tc.code, tc.err }
+			read, err := k.ReadMCEs("boot", tc.cursor)
+			if err == nil || (tc.want != nil && !errors.Is(err, tc.want)) || !strings.Contains(err.Error(), tc.detail) {
+				t.Fatalf("observation failure lost: %v", err)
+			}
+			if diff := cmp.Diff(machine.KernelRead{}, read); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestMalformedKernelMessagesRetainOnlyEarlierEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		message    json.RawMessage
+		wall, mono string
+	}{
+		{"invalid message", json.RawMessage(`{}`), "2000000", "1000000"},
+		{"invalid wall clock", json.RawMessage(`"ordinary"`), "invalid", "1000000"},
+		{"invalid monotonic clock", json.RawMessage(`"ordinary"`), "2000000", "invalid"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k := NewKernel([]machine.CoreInfo{{Core: 1, CPUs: []int{2}}})
+			first := cursorEntry("valid", "boot", "[Hardware Error]: CPU:2 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135", 1000000)
+			bad, err := json.Marshal(map[string]any{"MESSAGE": tc.message, "__REALTIME_TIMESTAMP": tc.wall, "__MONOTONIC_TIMESTAMP": tc.mono, "__CURSOR": "bad", "_BOOT_ID": "boot"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			k.journalctl = func([]string) ([]byte, []byte, int, error) { return append(first, bad...), nil, 0, nil }
+			read, err := k.ReadMCEs("boot", "")
+			if err == nil || !strings.Contains(err.Error(), "decode kernel message") {
+				t.Fatalf("malformed message accepted: %v", err)
+			}
+			if len(read.MCEs) != 1 || read.MCEs[0].Core != 1 || !read.MCEs[0].Corrected {
+				t.Fatalf("earlier evidence lost: %+v", read)
+			}
+			if got, err := k.MCEs("boot", 0); err == nil || got != nil {
+				t.Fatalf("legacy read silently clean: %+v, %v", got, err)
+			}
+		})
+	}
+	k := NewKernel(nil)
+	k.journalctl = func([]string) ([]byte, []byte, int, error) { return []byte("{broken"), nil, 0, nil }
+	if got, err := k.MCEs("boot", 0); err == nil || got != nil {
+		t.Fatalf("invalid JSON accepted: %+v, %v", got, err)
+	}
+}

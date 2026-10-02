@@ -2,7 +2,10 @@ package sim
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,5 +135,31 @@ func TestInMemorySampleRetentionDoesNotGrowWithDuration(t *testing.T) {
 	want := &machine.TrialConditions{ElapsedMS: 1000, WorkerCPUMS: map[int]int64{0: 1000, 1: 1000}}
 	if diff := cmp.Diff(want, first); diff != "" {
 		t.Fatal(diff)
+	}
+}
+
+func TestSampleSetupFailuresRemainErrors(t *testing.T) {
+	for _, name := range []string{"directory", "file"} {
+		t.Run(name, func(t *testing.T) {
+			m := newMachine(t, Config{Cores: 2, Edges: flat(2, -50, -50)})
+			dir := t.TempDir()
+			want := "create simulated sample directory"
+			if name == "directory" {
+				dir = filepath.Join(dir, "not-directory")
+				if err := os.WriteFile(dir, nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				want = "create simulated samples"
+				if err := os.MkdirAll(filepath.Join(dir, "0001", "samples.jsonl"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			m.SetSamplesDir(dir)
+			res, err := runSpec(t, m, "0001", machine.R1, machine.PickWorkload(machine.R1, 0), []int{0}, 3*time.Second, nil)
+			if err == nil || !strings.Contains(err.Error(), want) || res.Ran != 3*time.Second {
+				t.Fatalf("sample failure result = %+v, %v", res, err)
+			}
+		})
 	}
 }

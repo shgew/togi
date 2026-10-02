@@ -220,3 +220,29 @@ func TestPMTableFreshness(t *testing.T) {
 		})
 	}
 }
+
+func TestPMTableCheckRefreshesCompletedRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		raw, _ := syntheticPMTable()
+		available := true
+		c := NewConditions("/", pmTableCores(), func(path string) ([]byte, error) {
+			if !available {
+				return nil, os.ErrNotExist
+			}
+			if filepath.Base(path) == "pm_table_version" {
+				return []byte{0x05, 0x02, 0x62, 0x00}, nil
+			}
+			return raw, nil
+		})
+		synctest.Wait()
+		available = false
+		check := c.Check()
+		if !check.OK || !strings.Contains(check.Detail, "version unavailable") || !strings.Contains(check.Detail, "per-core lanes absent") {
+			t.Fatalf("refresh kept stale preflight availability: %+v", check)
+		}
+		if c.PMTable() != nil {
+			t.Fatal("failed check refresh retained lanes")
+		}
+		synctest.Wait()
+	})
+}

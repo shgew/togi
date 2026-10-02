@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
@@ -282,5 +283,100 @@ func TestResetAllCannotInterruptLockedTransition(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatalf("reset removed winning transition marker: %v", err)
+	}
+}
+
+func TestMissingSessionRefusals(t *testing.T) {
+	t.Parallel()
+	for _, empty := range []bool{false, true} {
+		for _, command := range []string{"status", "reset"} {
+			t.Run(fmt.Sprintf("%s/empty=%t", command, empty), func(t *testing.T) {
+				g := testGlobals(t)
+				if empty {
+					if err := os.WriteFile(filepath.Join(g.stateDir, "events.jsonl"), nil, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				before := directoryFiles(t, g.stateDir)
+				var out, diagnostics bytes.Buffer
+				args := []string{command}
+				if command == "reset" {
+					args = append(args, "--all")
+				}
+				code := cliWithGlobals(args, &out, &diagnostics, g)
+				want := fmt.Sprintf("togi %s: no journal at %s\n", command, filepath.Join(g.stateDir, "events.jsonl"))
+				if empty {
+					want = fmt.Sprintf("togi %s: no session in %s\n", command, g.stateDir)
+				}
+				if code != exitError || out.Len() != 0 {
+					t.Fatalf("exit %d, stdout %q", code, out.String())
+				}
+				if diff := cmp.Diff(want, diagnostics.String()); diff != "" {
+					t.Fatalf("refusal: %s", diff)
+				}
+				if diff := cmp.Diff(before, directoryFiles(t, g.stateDir)); diff != "" {
+					t.Fatalf("refusal changed state: %s", diff)
+				}
+			})
+		}
+	}
+}
+
+func TestResetCoreCommandOutcome(t *testing.T) {
+	t.Parallel()
+	for _, core := range []int{3, 999} {
+		t.Run(fmt.Sprint(core), func(t *testing.T) {
+			dir := t.TempDir()
+			fixture, err := os.ReadFile("testdata/events.jsonl")
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture = bytes.Replace(fixture, []byte(`"schema":2,"ruleset":3`), fmt.Appendf(nil, `"schema":2,"ruleset":%d`, session.Build().Ruleset), 1)
+			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			j, err := journal.Lock(dir, journal.Options{Boot: "reset-boot", Now: func() time.Time { return time.Unix(100, 0).UTC() }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer j.Close()
+			var diagnostics bytes.Buffer
+			_, code, ok := openForCommand("reset", j, &diagnostics, true)
+			if !ok || code != exitOK {
+				t.Fatalf("open exit %d: %s", code, diagnostics.String())
+			}
+			code, ok = closeCommand("reset", j, session.ResetCore(j, core), &diagnostics)
+			if core == 999 {
+				if code != exitUsage || ok || !strings.Contains(diagnostics.String(), "core 999") {
+					t.Fatalf("exit %d, ok %t: %s", code, ok, diagnostics.String())
+				}
+				return
+			}
+			if code != exitOK || !ok {
+				t.Fatalf("exit %d: %s", code, diagnostics.String())
+			}
+			events, _, err := journal.Read(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, ok := events[len(events)-2].Data.(*journal.CommandReset)
+			if !ok || p.Core == nil || *p.Core != 3 || p.All {
+				t.Fatalf("missing queued core reset: %+v", events[len(events)-2])
+			}
+			if events[len(events)-1].Kind != journal.KindShutdown {
+				t.Fatal("reset did not finish with a command shutdown")
+			}
+		})
+	}
+}
+
+func TestResetErrorEscapesDiagnostic(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	if code := resetError(errors.New("read failed\x1b[2J\nforged"), journal.ErrLocked, &out); code != exitError {
+		t.Fatalf("exit %d", code)
+	}
+	if diff := cmp.Diff("togi reset: read failed\\x1b[2J\\nforged\n", out.String()); diff != "" {
+		t.Fatalf("reset diagnostic (-want +got): %s", diff)
 	}
 }

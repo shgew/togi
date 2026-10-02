@@ -133,3 +133,37 @@ func (f resetArchiveFixture) resume(t *testing.T) {
 		t.Fatalf("archive changed after next-session reset: %v", err)
 	}
 }
+
+func TestArchiveMarkerCloseFailuresPreserveSource(t *testing.T) {
+	for _, operation := range []string{"incompatible", "carry", "reset"} {
+		t.Run(operation, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, eventsFile)
+			data := []byte(`{"seq":1,"kind":"session.start","schema":2,"session":"source"}` + "\n")
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			j, err := Lock(dir, Options{Sync: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer j.Close()
+			j.fs = failingJournalFilesystem{journalFilesystem: j.fs, closeErr: errJournalFilesystem}
+			switch operation {
+			case "incompatible":
+				_, err = j.ArchiveUnreadable("source")
+			case "carry":
+				_, err = j.ArchiveForCarry("source")
+			case "reset":
+				err = j.MarkResetAll()
+			}
+			if !errors.Is(err, errJournalFilesystem) {
+				t.Fatalf("marker close failure: %v", err)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(data, after) {
+				t.Fatalf("unconfirmed marker changed source: %q, %v", after, err)
+			}
+		})
+	}
+}

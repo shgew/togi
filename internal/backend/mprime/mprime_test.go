@@ -139,3 +139,50 @@ func TestClassify(t *testing.T) {
 		}
 	}
 }
+
+func TestPrepareFailureProducesNoLaunch(t *testing.T) {
+	for _, file := range []string{"binary", "prime.txt", "local.txt"} {
+		t.Run(file, func(t *testing.T) {
+			pkg, dir := fakePackage(t), t.TempDir()
+			if file == "binary" {
+				if err := os.Remove(filepath.Join(pkg, "bin/mprime")); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Mkdir(filepath.Join(dir, file), 0755); err != nil {
+				t.Fatal(err)
+			}
+			launch, err := New(pkg).Prepare(machine.Workload{Base: "mprime-sse-4k-21k"}, dir, []int{2})
+			if err == nil {
+				t.Fatal("failed preparation yielded success")
+			}
+			if file == "binary" {
+				if !errors.Is(err, machine.ErrBackendMissing) {
+					t.Fatalf("missing binary cause lost: %v", err)
+				}
+				if _, err := os.Stat(filepath.Join(dir, "prime.txt")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("prepared inputs for missing binary")
+				}
+			} else if !strings.Contains(err.Error(), filepath.Join(dir, file)) {
+				t.Fatalf("input error did not name file: %v", err)
+			}
+			if diff := cmp.Diff(backend.Launch{}, launch); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestCheckStatErrorIsNotMissingBackend(t *testing.T) {
+	pkg := fakePackage(t)
+	bin := filepath.Join(pkg, "bin/mprime")
+	if err := os.Remove(bin); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("mprime", bin); err != nil {
+		t.Fatal(err)
+	}
+	_, err := New(pkg).Check()
+	if err == nil || errors.Is(err, machine.ErrBackendMissing) || !strings.Contains(err.Error(), bin) {
+		t.Fatalf("stat failure misclassified: %v", err)
+	}
+}

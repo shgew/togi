@@ -2,6 +2,7 @@ package journal
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,14 +83,20 @@ func TestRecoveredTrialMessagesIncludeConditions(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &TrialEnd{
-				Trial: "0001", Signal: tc.signal, Outcome: tc.outcome, Reason: tc.name,
+				Trial: "0001", Signal: tc.signal, Outcome: tc.outcome, Reason: tc.name, DurationS: 990,
 				LastSampleS: new(987), LastSampleTctlC: new(73),
 				LastSampleMinMHz: new(4321), LastSampleMaxMHz: new(5432),
 			}
-			for _, value := range []string{"987", "73", "4321", "5432"} {
-				if diff := cmp.Diff(true, strings.Contains(p.Message(), value)); diff != "" {
-					t.Errorf("sample value %s absent: %s", value, diff)
-				}
+			duration := " after 990s"
+			if tc.signal == machine.Crash {
+				duration = ", last evidence 990s after start"
+			}
+			want := fmt.Sprintf("trial 0001 FAIL %s%s, last sample 987s: Tctl 73°C, 4321-5432 MHz", tc.signal, duration)
+			if tc.outcome == OutcomeInconclusive {
+				want = fmt.Sprintf("trial 0001 INCONCLUSIVE after 990s, last sample 987s: Tctl 73°C, 4321-5432 MHz: %s", tc.name)
+			}
+			if diff := cmp.Diff(want, p.Message()); diff != "" {
+				t.Errorf("recovered trial narrative (-want +got): %s", diff)
 			}
 		})
 	}
@@ -186,5 +193,32 @@ func TestRecordedContext(t *testing.T) {
 	want := &machine.BIOSContext{BIOSVersion: "first"}
 	if d := cmp.Diff(want, got); d != "" {
 		t.Errorf("first context (-want +got): %s", d)
+	}
+}
+
+func TestRecordedContextRejectsDamage(t *testing.T) {
+	for _, tc := range []struct{ data, diagnostic string }{
+		{"{\n", "line 1"},
+		{"{}\n", "event has no kind"},
+		{`{"kind":"shutdown"}` + "\n", "first event is shutdown"},
+		{`{"kind":"session.start"}` + "\n" + `{"kind":"session.context","bios_version":17}` + "\n", "decode session.context"},
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, eventsFile), []byte(tc.data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := RecordedContext(dir); err == nil || !strings.Contains(err.Error(), tc.diagnostic) {
+			t.Fatalf("context error = %v, want %q", err, tc.diagnostic)
+		}
+	}
+	for _, data := range []string{"", `{"kind":"session.start"}` + "\n" + `{"kind":"session.context"`} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, eventsFile), []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := RecordedContext(dir)
+		if err != nil || got != nil {
+			t.Fatalf("torn context invented: %+v, %v", got, err)
+		}
 	}
 }
