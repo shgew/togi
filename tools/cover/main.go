@@ -56,7 +56,7 @@ func run(args []string, out, errOut io.Writer) error {
 		return fmt.Errorf("cover: open profile: %w", err)
 	}
 	defer profile.Close()
-	diff, err := exec.Command("git", "diff", "-U0", "--no-color", "--no-ext-diff", "--no-prefix", "--merge-base", *base, "--", "*.go").Output()
+	diff, err := exec.Command("git", "diff", "-U0", "--inter-hunk-context=0", "--no-color", "--no-ext-diff", "--no-prefix", "--merge-base", *base, "--", "*.go").Output()
 	if err != nil {
 		return fmt.Errorf("cover: diff against %s: %w", *base, err)
 	}
