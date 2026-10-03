@@ -1,7 +1,6 @@
 package main
 
 import (
-	"maps"
 	"math"
 	"math/rand/v2"
 	"slices"
@@ -23,10 +22,7 @@ func synthetic(t *testing.T) (sim.Config, []trialfacts.Record) {
 	t.Helper()
 	model := sim.DefaultModel()
 	model.PastEdgeRate, model.Growth = 0.008, 3
-	cfg := sim.Config{Cores: 4, Model: &model, Edges: make([]sim.Edges, 4), Joints: []sim.Joint{
-		{Members: map[int]int{0: -25, 1: -27}, Regimes: []machine.Regime{machine.R7}, Rate: 0.006},
-		{Members: map[int]int{2: -33, 3: -34}, Regimes: []machine.Regime{machine.R7}, Rate: 0.012},
-	}}
+	cfg := sim.Config{Cores: 4, Model: &model, Edges: make([]sim.Edges, 4), CCD: &sim.CCD{LogRate: math.Log(0.006), Slope: 0.15, Effect: [2]float64{0, 0.6}}}
 	for core := range cfg.Edges {
 		for r := range cfg.Edges[core].Isolated {
 			cfg.Edges[core].Isolated[r] = -20 - core
@@ -71,15 +67,12 @@ func synthetic(t *testing.T) (sim.Config, []trialfacts.Record) {
 			}
 		}
 	}
-	for _, joint := range cfg.Joints {
-		cores := slices.Sorted(maps.Keys(joint.Members))
-		for a := -1; a <= 1; a++ {
-			for b := -1; b <= 1; b++ {
-				profile := make([]int, 4)
-				profile[cores[0]] = joint.Members[cores[0]] + a
-				profile[cores[1]] = joint.Members[cores[1]] + b
-				add(profile, machine.R7, cores, 60)
-			}
+	for ccd := range 2 {
+		cores := []int{ccd * 2, ccd*2 + 1}
+		for depth := 15; depth <= 40; depth += 5 {
+			profile := make([]int, 4)
+			profile[cores[0]], profile[cores[1]] = -depth, -depth
+			add(profile, machine.R7, cores, 150)
 		}
 	}
 	return cfg, records
@@ -106,19 +99,13 @@ func TestFitRecoversMachine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, joint := range known.Joints {
-		cores := slices.Sorted(maps.Keys(joint.Members))
-		for a := -1; a <= 1; a++ {
-			for b := -1; b <= 1; b++ {
-				profile := make([]int, known.Cores)
-				profile[cores[0]] = joint.Members[cores[0]] + a
-				profile[cores[1]] = joint.Members[cores[1]] + b
-				spec := machine.TrialSpec{Regime: machine.R7, Workload: machine.Workload{ID: "synthetic"}, Cores: cores, Duration: 60 * time.Second}
-				want, actual := source.FailureProbability(profile, spec), fitted.FailureProbability(profile, spec)
-				if math.Abs(actual-want) > 0.12 {
-					t.Errorf("joint profile %v: p=%g want %g", profile, actual, want)
-				}
-			}
+	for _, o := range aggregate(records) {
+		if o.spec.Regime != machine.R7 {
+			continue
+		}
+		want, actual := source.FailureProbability(o.profile, o.spec), fitted.FailureProbability(o.profile, o.spec)
+		if math.Abs(actual-want) > 0.12 {
+			t.Errorf("CCD profile %v: p=%g want %g", o.profile, actual, want)
 		}
 	}
 }
@@ -236,6 +223,67 @@ func TestConstrainedFitUsesResampledLikelihood(t *testing.T) {
 	}
 }
 
+func TestConstrainedFitRefitsCCDWithoutChangingR7Structure(t *testing.T) {
+	model := sim.DefaultModel()
+	base := sim.Config{
+		Cores: 2, Model: &model,
+		CCD: &sim.CCD{LogRate: math.Log(-math.Log(0.8) / 60)},
+		Edges: []sim.Edges{
+			{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+			{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+		},
+		Joints: []sim.Joint{{Members: map[int]int{1: -40}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001}},
+	}
+	want := cloneMachine(base)
+	var original, sample []trialfacts.Record
+	for i := range 40 {
+		r := trialfacts.Record{
+			Kind: facts.TrialFact, Profile: []int{-20, -20},
+			Class:   facts.Class{Regime: machine.R7, Workload: "residual", Cores: []int{0}, DurationS: 60},
+			Outcome: journal.OutcomePass,
+		}
+		if i < 8 {
+			r.Outcome = journal.OutcomeFailure
+		}
+		original = append(original, r)
+		if i < 24 {
+			r.Outcome = journal.OutcomeFailure
+		}
+		sample = append(sample, r)
+	}
+	checker, err := modelcheck.NewChecker(base, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, loss := fitFrom(sample, &base, checker)
+	m, err := sim.New(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := checker.Check("synthetic", "synthetic", m)
+	if check.Status != "ok" || check.Groups[0].MeanP <= 0.25 {
+		t.Fatalf("CCD refit must follow resampled failures within original-evidence bounds: %+v", check)
+	}
+	if cmp.Equal(first.CCD, want.CCD) {
+		t.Fatal("residual CCD parameters did not refit")
+	}
+	if diff := cmp.Diff(want.Joints, first.Joints); diff != "" {
+		t.Fatalf("CCD refit changed frozen joints: %s", diff)
+	}
+	for core := range first.Edges {
+		if first.Edges[core].Resident[6] != want.Edges[core].Resident[6] || len(first.Edges[core].Workload) != 0 {
+			t.Fatalf("CCD refit added R7 edge/workload structure on core %d: %+v", core, first.Edges[core])
+		}
+	}
+	if diff := cmp.Diff(want, base); diff != "" {
+		t.Fatalf("CCD refit mutated its all-facts seed: %s", diff)
+	}
+	second, secondLoss := fitFrom(sample, &base, checker)
+	if diff := cmp.Diff(encodeMachine(first, 1, 263, len(sample), loss, nil), encodeMachine(second, 1, 263, len(sample), secondLoss, nil)); diff != "" {
+		t.Fatalf("CCD-seeded refit is not deterministic: %s", diff)
+	}
+}
+
 func TestLikelihoodRejectsImpossibleOutcomes(t *testing.T) {
 	cfg := sim.Config{Cores: 2, Edges: []sim.Edges{
 		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
@@ -346,6 +394,7 @@ func TestCloneMachineIsolatesConstrainedParameters(t *testing.T) {
 
 func TestJointSearchSeparatesCleanBoundary(t *testing.T) {
 	cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
+	cfg.CCD = nil
 	cfg.Model.NearEdgeRate = 0
 	cfg.Joints = []sim.Joint{{Members: map[int]int{0: -10, 1: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 0.01}}
 	spec := machine.TrialSpec{Regime: machine.R7, Cores: []int{0, 1}, Duration: 60 * time.Second}

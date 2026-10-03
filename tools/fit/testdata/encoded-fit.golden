@@ -2,6 +2,7 @@
 # Whole-trial bootstrap: index=2 (0=all facts), seed=263, starts=45, negative_log_likelihood=12.5
 # Fitted: isolated/resident regime edges, shared rate/growth/near hazard, per-core flat hazard,
 # supported workload overrides, idle edges, and layered R7 CCD joints.
+# Fitted CCD residual: joint-gated loaded hazard with shared depth slope and shrunk CCD effects.
 # Unsupported edges stay -50; unobserved idle exposure cannot identify idle hazards.
 # Fixed: onset boost=0, joint delay=0; default signals/MCE/reset.
 # Constrained bootstrap: R7 work cores=[0 1] duration=120s depth=-24 n=45 k=5
@@ -20,6 +21,11 @@ past_edge_rate = 0.014999999999999999
 growth = 2
 near_edge_rate = 9.9999999999999995e-08
 onset_boost = 0.0
+
+[ccd]
+log_rate = -9
+slope = 0.10000000000000001
+effect = [0.20000000000000001, -0.29999999999999999]
 
 [[core]]
 id = 0
