@@ -191,23 +191,12 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 }
 
 func singleCarriedFailureDecisions(events []journal.Event, since time.Time) int {
-	failures := make(map[int]bool)
+	bySeq := make(map[int]journal.Event, len(events))
+	for _, e := range events {
+		bySeq[e.Seq] = e
+	}
 	count := 0
 	for _, e := range events {
-		switch p := e.Data.(type) {
-		case *journal.TrialCarried:
-			if p.Outcome == journal.OutcomeFailure {
-				failures[e.Seq] = true
-			}
-		case *journal.FailureCarried:
-			failures[e.Seq] = true
-		case *journal.Failure:
-			failures[e.Seq] = false
-		case *journal.TrialEnd:
-			if p.Outcome == journal.OutcomeFailure {
-				failures[e.Seq] = false
-			}
-		}
 		if !selected(e.Time, since) {
 			continue
 		}
@@ -224,13 +213,38 @@ func singleCarriedFailureDecisions(events []journal.Event, since time.Time) int 
 			continue
 		}
 		n, carried := 0, false
-		for i, seq := range e.Cause {
-			if slices.Contains(e.Cause[:i], seq) {
+		seen := make(map[int]bool)
+		pending := slices.Clone(e.Cause)
+		for len(pending) > 0 {
+			seq := pending[len(pending)-1]
+			pending = pending[:len(pending)-1]
+			if seen[seq] {
 				continue
 			}
-			if sourceCarried, ok := failures[seq]; ok {
+			seen[seq] = true
+			source, ok := bySeq[seq]
+			if !ok {
+				continue
+			}
+			switch p := source.Data.(type) {
+			case *journal.TrialCarried:
+				if p.Outcome == journal.OutcomeFailure {
+					n++
+					carried = true
+				}
+			case *journal.FailureCarried:
 				n++
-				carried = sourceCarried
+				carried = true
+			case *journal.Failure:
+				n++
+				carried = false
+			case *journal.TrialEnd:
+				if p.Outcome == journal.OutcomeFailure {
+					n++
+					carried = false
+				}
+			default:
+				pending = append(pending, source.Cause...)
 			}
 		}
 		if n == 1 && carried {
