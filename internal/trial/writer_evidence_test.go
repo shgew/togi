@@ -15,21 +15,6 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-type writerEvidence struct {
-	Core   int
-	Signal machine.Signal
-	Detail string
-}
-
-type writerEvidenceReport struct {
-	recorder
-	evidence []writerEvidence
-}
-
-func (r *writerEvidenceReport) Signal(core int, signal machine.Signal, detail string) {
-	r.evidence = append(r.evidence, writerEvidence{core, signal, detail})
-}
-
 type writerEvidenceHost struct {
 	*outputHost
 	killGroup func(process) error
@@ -99,7 +84,7 @@ func TestTeardownPreservesIndependentWriterEvidence(t *testing.T) {
 						// disappearance, confirms the surviving descendant writers.
 						return syscall.ESRCH
 					}
-					var report writerEvidenceReport
+					var report recorder
 					begin := time.Now()
 					result, err := trial.Wait(context.Background(), &report)
 					if !errors.Is(err, machine.ErrContainment) || !errors.Is(err, killErr) {
@@ -108,8 +93,8 @@ func TestTeardownPreservesIndependentWriterEvidence(t *testing.T) {
 					if result.Signal != machine.ComputationError || result.Core != stopped.Core || result.Inconclusive != "" || len(result.Escaped) != 0 {
 						t.Fatalf("unrelated cleanup failure lost confirmed computation evidence: result=%+v err=%v", result, err)
 					}
-					want := []writerEvidence{{Core: stopped.Core, Signal: machine.ComputationError, Detail: "FATAL ERROR: confirmed descendant"}}
-					if diff := cmp.Diff(want, report.evidence); diff != "" {
+					want := []recordedSignal{{Core: stopped.Core, Signal: machine.ComputationError, Detail: "FATAL ERROR: confirmed descendant"}}
+					if diff := cmp.Diff(want, report.diagnostics); diff != "" {
 						t.Fatalf("independent final evidence (-want +got):\n%s", diff)
 					}
 					if elapsed := time.Since(begin); elapsed > spec.Duration+teardownLimit {
@@ -118,7 +103,7 @@ func TestTeardownPreservesIndependentWriterEvidence(t *testing.T) {
 					if again := trial.teardown(&result, &report); !errors.Is(again, machine.ErrContainment) || !errors.Is(again, killErr) {
 						t.Fatalf("repeated teardown lost containment failure: %v", again)
 					}
-					if diff := cmp.Diff(want, report.evidence); diff != "" {
+					if diff := cmp.Diff(want, report.diagnostics); diff != "" {
 						t.Fatalf("teardown reported final evidence more than once (-want +got):\n%s", diff)
 					}
 				})
@@ -154,14 +139,14 @@ func TestNoScopeWatchedPartialRequiresConfirmedGroupKill(t *testing.T) {
 					appendWriterEvidence(t, inst.watch[0].path, "ERROR: descendant after launcher exit")
 					return tt.err
 				}
-				var report writerEvidenceReport
+				var report recorder
 				result, err := trial.Wait(context.Background(), &report)
-				var want []writerEvidence
+				var want []recordedSignal
 				if tt.err == nil {
 					if err != nil || result.Signal != machine.ComputationError || result.Inconclusive != "" {
 						t.Fatalf("verified owned-group final evidence: result=%+v err=%v", result, err)
 					}
-					want = []writerEvidence{{Core: inst.Core, Signal: machine.ComputationError, Detail: "FATAL ERROR: descendant after launcher exit"}}
+					want = []recordedSignal{{Core: inst.Core, Signal: machine.ComputationError, Detail: "FATAL ERROR: descendant after launcher exit"}}
 				} else {
 					if !errors.Is(err, machine.ErrContainment) || !errors.Is(err, errOutputDrainUnconfirmed) || result.Signal != "" || result.Inconclusive != "" {
 						t.Fatalf("unconfirmed descendants became final evidence: result=%+v err=%v", result, err)
@@ -170,7 +155,7 @@ func TestNoScopeWatchedPartialRequiresConfirmedGroupKill(t *testing.T) {
 						t.Fatalf("owned-group cleanup failure lost: %v", err)
 					}
 				}
-				if diff := cmp.Diff(want, report.evidence); diff != "" {
+				if diff := cmp.Diff(want, report.diagnostics); diff != "" {
 					t.Fatalf("owned-group final evidence (-want +got):\n%s", diff)
 				}
 			})

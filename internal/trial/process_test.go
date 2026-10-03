@@ -521,7 +521,7 @@ func TestProcessWatchedFloodCancellation(t *testing.T) {
 		return classifyHelper(line)
 	}}
 	begin := time.Now()
-	var rec outputEvidenceRecorder
+	var rec recorder
 	result, err := trial.Wait(ctx, &rec)
 	elapsed := time.Since(begin)
 	if !cancelled || !errors.Is(err, context.Canceled) || errors.Is(err, machine.ErrContainment) || result.Signal != machine.ComputationError || result.Inconclusive != "" {
@@ -531,7 +531,7 @@ func TestProcessWatchedFloodCancellation(t *testing.T) {
 	if result.Ran > supervisionLimit || elapsed > teardownLimit+supervisionLimit {
 		t.Fatalf("watched flood delayed supervision: ran=%s total=%s", result.Ran, elapsed)
 	}
-	want := []reportedOutputSignal{{spec.Cores[0], machine.ComputationError, "COMPUTE ERROR"}}
+	want := []recordedSignal{{spec.Cores[0], machine.ComputationError, "COMPUTE ERROR"}}
 	if diff := cmp.Diff(want, rec.diagnostics); diff != "" {
 		t.Fatalf("final watched computation diagnostic (-want +got):\n%s", diff)
 	}
