@@ -1,6 +1,6 @@
 # Tuner
 
-Normative rules for how togi moves offsets. Terms are defined in `CONTEXT.md`. Regimes, workloads and failure detection are in `workloads.md`; how decisions are recorded is in `journal.md`.
+Normative rules for how togi moves offsets. Terms are defined in `GLOSSARY.md`. Regimes, workloads and failure detection are in `workloads.md`; how decisions are recorded is in `journal.md`.
 
 ## Ruleset
 

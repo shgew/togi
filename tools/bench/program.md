@@ -10,7 +10,7 @@ A session concludes when every core is done, refinement can reach no more total 
 
 1. Create a branch `autoresearch/<tag>` from `main`, with a short descriptive tag. Follow `AGENTS.md` for the repository workflow.
 2. Read, in this order:
-   - `README.md` and `CONTEXT.md`, for vocabulary;
+   - `README.md` and `GLOSSARY.md`, for vocabulary;
    - `docs/spec/tuner.md` and `docs/spec/journal.md`, for normative decisions and their evidence;
    - ADRs 0020, 0023, 0024, 0027, 0028 and 0029 in `docs/adr/`, for decisions and rejected alternatives;
    - `docs/prior-art.md`;
