@@ -58,7 +58,7 @@ One JSON object per line. Common fields:
 | `msg` | Human-readable description, retaining raw diagnostic text as evidence; human output escapes controls |
 | `cause` | Optional array of `seq` this event follows from |
 
-Kind-specific fields are flat, snake_case and carry units in their names (`duration_s`, `period_ms`, `tctl_max_c`). Values use the vocabulary in `GLOSSARY.md`. Cores are always `core` (the kernel `core_id`); logical CPUs are always `cpu`. Nested exceptions are `config.loaded.config` (effective configuration), and carried facts' `source` (original provenance) and `class` (trial-class identity).
+Kind-specific fields are flat, snake_case and carry units in their names (`duration_s`, `period_ms`, `tctl_max_c`). Values use the vocabulary in `GLOSSARY.md`. Cores are always `core` (the kernel `core_id`); logical CPUs are always `cpu`. Nested exceptions are `config.loaded.config` (effective configuration), carried facts' `source` (original provenance) and `class` (trial-class identity), `hunt.mask.edge` and `hunt.mask.held` (core/offset members), and the `members` of `hunt.end` and `mark.joint`.
 
 The `config.loaded.config` payload is a journal-owned snapshot, converted from effective configuration when the session records it. It preserves `start_offsets` and `candidate_edges` maps; `durations` with `search_trial_s`, `start_s`, `guard_trial_s`, `guard_idle_s`, `guard_all_core_s`; `evidence` with `miss` and `rate`; `guard.rotation`; `dead_ends.inconclusive_in_a_row` and `stray_crashes_in_a_row`; `backends.mprime` and `backends.ycruncher`; and `backend_user`. Null maps and rotations, empty maps and rotations, and zero values retain their representation. Changes to this persisted shape are journal schema decisions, independent of configuration implementation. Legacy `config.loaded` bodies remain decodable.
 
@@ -187,22 +187,7 @@ The result is recorded chronologically, oldest original source session first and
 
 Ruleset 7 can answer candidate-edge checks in their frozen R1/R2 classes, hunt masks (planning, outcome and projected pass count), reruns and refinement checks with carried passes across their local evidence boundaries. Ordinary search steps still need live starts. A guard rotation qualifies only on live passes since its start; rotations do not carry. Carried failures count everywhere a failure counts, including invalidation and monotonicity warnings, and a core reset invalidates carried evidence under the same rules as live evidence (`tuner.md`, Evidence). Candidate edges and failed marks still seed where search starts; facts answer whether a class has passed or failed.
 
-### Inspecting a transition on recorded state
-
-`tools/carry-facts` is a development-only transition inspector and simulator, never a hardware runner. Its required `--state-dir` must name a copy beneath the system temporary directory; it rejects the real state path and symlinked archive, live journal or lock paths. Without `--simulate`, it locks the copy through the existing journal API, reads the live journal's recorded BIOS context with `internal/facts`, and prepares carry at the current evidence epoch with the current schema and ruleset + 1 to force a transition, printing carried pass/failure counts by original source session. With `--simulate`, it resumes the copy on the simulator under the current build using that recorded BIOS context; `--seed` selects simulated outcomes (default 1). It runs until the first clean qualifying rotation and reports carried counts, candidate-edge answers, live edge-check starts and live rotation work. Both modes mutate only the copy. No `cmd/togi` flag is added.
-
-From a checkout on the target machine, copy only the journals (the sources are read-only):
-
-```sh
-copy=$(mktemp -d)
-trap 'rm -rf "$copy"' EXIT
-mkdir "$copy/archive"
-sudo sh -c 'cp /var/lib/togi/archive/*.jsonl "$1/archive/"; for marker in /var/lib/togi/archive/*-reset-all; do [ ! -f "$marker" ] || cp "$marker" "$1/archive/"; done; cp /var/lib/togi/events.jsonl "$1/events.jsonl"' sh "$copy"
-sudo chown -R "$(id -u):$(id -g)" "$copy"
-go run ./tools/carry-facts --state-dir "$copy"
-```
-
-For the recorded target history, expect passes only from session `20261002T004254Z` (the latest session, epoch 1). Eligible failures can come from that session and earlier same-BIOS sessions after `reset --all` in `20260926T151414Z`; facts in that reset session must follow its reset, and no earlier session contributes. Older epochs contribute failures but zero passes. Counts reflect any core-reset and defect exclusions. Numeric counts must come from running the command, not from this specification. Simulation reuses the recorded BIOS context but draws outcomes from the simulator, not from hardware measurements. Use a fresh copy for each mode because preparation archives its live journal.
+The [recorded-state transition inspection recipe](../reviewing.md#inspecting-a-transition-on-recorded-state) shows how to inspect eligible facts and simulate a transition on a temporary copy. The fact-eligibility rules above determine which sources contribute; inspection does not supply new hardware evidence.
 
 ## Defects
 

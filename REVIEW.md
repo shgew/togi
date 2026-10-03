@@ -7,9 +7,9 @@ These criteria apply to every reviewer. Report concrete defects with their conse
 - **Offset writes:** hardware writes go only through `internal/smu`, clamp to [-50, 0], record intent before the write and readback after it. Failure must not claim an offset was applied or verified.
 - **Pure decisions:** `internal/tuner` has no I/O, clock or randomness except through injected seams.
 - **Traceability:** the journal lets a reader reconstruct actions and decisions. Replay preserves their meaning, validates evidence and handles interrupted or incomplete writes without inventing state.
-- **Containment:** trace teardown, cancellation, timeout and startup failure paths, not just successful trials. Follow a second failure while handling the first. No workload escapes containment, survives teardown unnoticed or permits unsafe continuation.
-- **Root file opens:** inspect every file opened as root under a workload-writable path. Check symlinks, FIFOs, permissions, umask and relative paths. A path check alone does not secure a later open.
-- **Hardware identity:** core IDs, CCDs and hardware slots are validated and mapped explicitly. Enumeration order, contiguity and identity between different numbering systems are not evidence.
+- **Containment:** trace teardown, cancellation, timeout and startup failure paths, not just successful trials. Follow a second failure while handling the first. No workload escapes containment, survives teardown unnoticed or permits unsafe continuation. Sources: [#174](https://github.com/shgew/togi/pull/174), [#176](https://github.com/shgew/togi/pull/176), [#215](https://github.com/shgew/togi/pull/215), [#255](https://github.com/shgew/togi/pull/255).
+- **Root file opens:** inspect every file opened as root under a workload-writable path, including data and logs. Check symlinks, FIFOs, ownership, permissions, umask and relative paths. A path check alone does not secure a later open. Source: [#204](https://github.com/shgew/togi/pull/204).
+- **Hardware identity:** physical core IDs, logical CPUs, CCDs and SMU slots are validated and mapped explicitly. Enumeration order, contiguity and identity between different numbering systems are not evidence. Sources: [#69](https://github.com/shgew/togi/issues/69), [#256](https://github.com/shgew/togi/pull/256).
 - **Concurrency and deadlines:** shared state is synchronized; cancellation reaches blocked work; deadlines bound the whole operation and its failure paths. Cleanup must not wait forever or race continued use.
 - **Contracts:** specs describe current behavior, and the linked issue's Acceptance is met for this pull request's scope. Docs may land in the lowest layer of a stack ahead of their code. Flag statements that are wrong or contradict code or other docs, not ones this layer does not implement yet.
 - **Breaking changes:** a value change to `journal.Schema` or `tuner.Ruleset` carries a `[BREAKING]` title, `breaking` label and `**BREAKING**` changelog line. Nothing else carries these markers.
@@ -22,9 +22,6 @@ Style, wording, naming taste and optional refactors are not findings. Handle fin
 
 When the same kind of finding occurs in two pull requests, add a lesson in the pull request that fixes the second. Cite the source pull requests or issues.
 
-- **Unhappy-path containment:** follow every exit from workload startup through teardown, including a cleanup failure after another failure. Successful stop tests do not prove failed startup, timeout or cancellation contains the workload. Sources: [#174](https://github.com/shgew/togi/pull/174), [#176](https://github.com/shgew/togi/pull/176), [#215](https://github.com/shgew/togi/pull/215), [#255](https://github.com/shgew/togi/pull/255).
-- **Root opens workload-writable files:** a workload can replace an expected regular file with a symlink or FIFO before root opens it. Check the open itself, ownership and modes; trace both data and log paths. Source: [#204](https://github.com/shgew/togi/pull/204).
-- **Unvalidated core-to-slot mapping:** logical cores and SMU slots are separate identities. Reject unsupported topology rather than writing to an assumed slot. Sources: [#69](https://github.com/shgew/togi/issues/69), [#256](https://github.com/shgew/togi/pull/256).
 - **Net release behavior:** Unreleased notes describe the behavior that will ship, not each intermediate commit. Remove notes for features superseded or removed by a later layer of the same release. Sources: [#269](https://github.com/shgew/togi/pull/269), [#285](https://github.com/shgew/togi/pull/285).
 
 ## Review record
