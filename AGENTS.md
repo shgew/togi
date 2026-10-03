@@ -8,7 +8,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `CHANGELOG.md`: released user-visible changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Pending entries wait in `changes/`, one file per pull request; `changes/README.md` has the format.
 - `GLOSSARY.md`: the vocabulary. Name code, events and docs with its terms.
 - `REVIEW.md`: defect criteria and recurring lessons. Read it before reviewing a pull request.
-- `.omp/`: reviewer rules and `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates.
+- `.omp/`: reviewer rules, the `review-coordinator` agent and `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates.
 - `docs/spec/`: normative behavior. Read the relevant spec before changing behavior, and change spec and code in the same pull request or in layers of one stack merged together.
   - `tuner.md`: offsets, search, hunt, refinement, guard, qualified rotations, dead ends.
   - `workloads.md`: regimes, backends, containment, failure detection.
