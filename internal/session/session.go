@@ -18,6 +18,7 @@ import (
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/tuner"
+	"github.com/shgew/togi/internal/tuningboot"
 )
 
 // Build is the build that stamps each session start and resume.
@@ -48,11 +49,13 @@ type Input struct {
 }
 
 type Bootloader interface {
+	tuningboot.Environment
 	ClearSavedEntry() (before, after string, err error)
 }
 
 type Journal interface {
 	Events() []journal.Event
+	BootReasonRecorded(id string) (bool, error)
 	Append(p journal.Payload, cause ...int) (journal.Event, error)
 	WriteState(s journal.State) error
 	ReadState() (journal.State, error)
@@ -97,6 +100,8 @@ type runner struct {
 	shutdownEvent        *journal.Shutdown
 	containmentFailed    bool
 	swept                bool
+	bootReason           *tuningboot.Reason
+	bootProgress         bool
 }
 
 func Run(ctx context.Context, in Input) (stop Stop, err error) {
@@ -115,6 +120,13 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 	events := r.in.Journal.Events()
 	if err := r.checkCompatibility(events); err != nil {
 		return Stop{}, err
+	}
+	if r.in.Bootloader != nil {
+		var err error
+		r.bootReason, err = tuningboot.ReadReason(r.in.Bootloader)
+		if err != nil {
+			return Stop{}, fmt.Errorf("read previous tuning-boot reason: %w", err)
+		}
 	}
 	journal.Replay(events, r.fold, &r.state, r.tuner)
 	r.tuner.Project(&r.state)
@@ -217,9 +229,11 @@ func (r *runner) checkCompatibility(events []journal.Event) error {
 		return nil
 	}
 	if r.in.Bootloader != nil {
+		reasonErr := r.saveLeaveReason("journal incompatible")
 		if _, _, clearErr := r.in.Bootloader.ClearSavedEntry(); clearErr != nil {
-			return fmt.Errorf("clear GRUB saved entry after incompatible journal: %w: %w", err, clearErr)
+			return errors.Join(fmt.Errorf("clear GRUB saved entry after incompatible journal: %w: %w", err, clearErr), reasonErr)
 		}
+		return errors.Join(err, reasonErr)
 	}
 	return err
 }
@@ -279,7 +293,54 @@ func (r *runner) appendJournal(p journal.Payload, cause ...int) (journal.Event, 
 	r.state.Fold(e)
 	r.tuner.Fold(e)
 	r.tuner.Project(&r.state)
+	if !r.bootProgress && r.in.Bootloader != nil {
+		r.bootProgress = true
+		if err := r.recordBootProgress(); err != nil {
+			return journal.Event{}, err
+		}
+	}
 	return e, nil
+}
+
+func (r *runner) recordBootProgress() error {
+	if err := tuningboot.ResetCount(r.in.Bootloader); err != nil {
+		return fmt.Errorf("reset tuning-boot restart count after durable journal append: %w", err)
+	}
+	return r.importBootReason()
+}
+
+func (r *runner) importBootReason() error {
+	if r.bootReason == nil {
+		return nil
+	}
+	recorded, err := r.in.Journal.BootReasonRecorded(r.bootReason.ID)
+	if err != nil {
+		return fmt.Errorf("find journaled tuning-boot reason: %w", err)
+	}
+	if !recorded {
+		if _, err := r.appendJournal(&journal.BootLeaveReason{ReasonID: r.bootReason.ID, RestartLimitCount: r.bootReason.Count, Reason: r.bootReason.Reason}); err != nil {
+			return err
+		}
+		if r.bootReason == nil {
+			return nil
+		}
+	}
+	if err := tuningboot.ClearReason(r.in.Bootloader); err != nil {
+		return fmt.Errorf("clear journaled tuning-boot reason: %w", err)
+	}
+	r.bootReason = nil
+	return nil
+}
+
+func (r *runner) saveLeaveReason(reason string) error {
+	record, err := tuningboot.NewReason(reason, 0)
+	if err == nil {
+		err = tuningboot.WriteReason(r.in.Bootloader, record)
+	}
+	if err != nil {
+		return fmt.Errorf("save tuning-boot leave reason: %w", err)
+	}
+	return nil
 }
 
 func (r *runner) latch(err error) error {
@@ -753,8 +814,15 @@ func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 	switch {
 	case d.Action == journal.ActionExit || (clear && r.in.Bootloader == nil):
 	case clear:
+		if err := r.importBootReason(); err != nil {
+			return nil, err
+		}
+		reasonErr := r.saveLeaveReason(fmt.Sprintf("dead end %s: %s", d.Condition, d.Detail))
 		before, after, cerr := r.in.Bootloader.ClearSavedEntry()
 		entry := &journal.BootSavedEntry{Before: before, After: after}
+		if reasonErr != nil {
+			entry.ReasonError = reasonErr.Error()
+		}
 		if cerr != nil {
 			entry.Error = cerr.Error()
 		}

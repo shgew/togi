@@ -42,6 +42,8 @@ func TestOperatorRecoveryAndDecisionMessages(t *testing.T) {
 		{"clear saved entry", &DeadEnd{Condition: DeadEndFailureAtZero, Detail: "failed at zero", Action: ActionClearSavedEntry}, "dead end failure_at_zero: failed at zero; clearing GRUB's saved entry"},
 		{"clear and reboot", &DeadEnd{Condition: DeadEndFailureAtZero, Detail: "failed at zero", Action: ActionClearSavedEntryAndReboot}, "dead end failure_at_zero: failed at zero; clearing GRUB's saved entry and rebooting"},
 		{"already cleared", &BootSavedEntry{}, "GRUB saved entry was already unset"},
+		{"reason write failed", &BootSavedEntry{Before: "togi", ReasonError: "ESP is read-only"}, "GRUB saved entry togi cleared; the next boot selects the first menu entry; leave reason not saved: ESP is read-only"},
+		{"previous leave reason", &BootLeaveReason{ReasonID: "previous-boot", RestartLimitCount: 3, Reason: "service restart limit exhausted; returning to the normal system"}, "previous tuning boot ended: service restart limit exhausted; returning to the normal system (consecutive restart-limit boots: 3)"},
 		{"dead end shutdown", &Shutdown{Reason: ShutdownDeadEnd}, "stopped at a dead end"},
 		{"one rotation shutdown", &Shutdown{Reason: ShutdownRotations, Rotations: 1}, "every core is done and the profile passed the requested clean qualifying rotation; stopping"},
 		{"ranking unavailable", &HostRanking{Detail: "firmware unavailable"}, "preferred-core ranking unavailable (firmware unavailable); core-id order"},

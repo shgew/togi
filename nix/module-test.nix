@@ -58,6 +58,8 @@ let
       a: !a.assertion && lib.hasPrefix "services.togi.tuning.enable" a.message
     ) config.assertions;
   tuning = one.specialisation.togi.configuration;
+  restartLimitScript = tuning.systemd.services.togi-restart-limit.script;
+  leaveTuningBoot = tuning.systemd.services.togi-leave-tuning-boot;
 in
 assert rejectsMirrors zero;
 assert lib.all (a: a.assertion) one.assertions;
@@ -69,6 +71,28 @@ assert lib.hasInfix "RequiresMountsFor=/boot/grub/grubenv" tuning.systemd.units.
 assert builtins.elem "systemd-pstore.service" tuning.systemd.services.togi.after;
 assert builtins.elem "printk.always_kmsg_dump=1" tuning.boot.kernelParams;
 assert !(builtins.elem "printk.always_kmsg_dump=1" one.boot.kernelParams);
+assert
+  tuning.systemd.services.togi-restart-limit.unitConfig.RequiresMountsFor == "/boot/grub/grubenv";
+assert leaveTuningBoot.unitConfig.RequiresMountsFor == "/boot/grub/grubenv";
+assert lib.hasInfix ''[ "''${MONITOR_SERVICE_RESULT:-}" = start-limit-hit ] || exit 0''
+  restartLimitScript;
+assert lib.hasInfix
+  (builtins.unsafeDiscardStringContext "${lib.getExe package} restart-limit --tuning-boot /boot/grub/grubenv")
+  restartLimitScript;
+assert lib.hasInfix "rm -f /run/togi-retry-tuning-boot" restartLimitScript;
+assert lib.hasInfix "togi_leave_reason=" restartLimitScript;
+assert lib.hasInfix ''\"id\":\"fallback-$INVOCATION_ID\",\"count\":0'' restartLimitScript;
+assert lib.hasInfix "restart-limit command failed; returning to the normal system"
+  restartLimitScript;
+assert lib.hasInfix "grub-editenv /boot/grub/grubenv unset saved_entry\nsystemctl reboot"
+  restartLimitScript;
+assert !lib.hasInfix "--force" restartLimitScript;
+assert !lib.hasInfix "next_entry" restartLimitScript;
+assert builtins.elem pkgs.coreutils tuning.systemd.services.togi-restart-limit.path;
+assert lib.hasInfix "[ ! -e /run/togi-retry-tuning-boot ] || exit 0" leaveTuningBoot.preStop;
+assert lib.hasInfix
+  (builtins.unsafeDiscardStringContext "${pkgs.grub2}/bin/grub-editenv /boot/grub/grubenv unset saved_entry")
+  leaveTuningBoot.preStop;
 assert builtins.elem "f /run/lock/togi.lock :0600 :root :root - -" one.systemd.tmpfiles.rules;
 assert builtins.elem "f /run/lock/togi.lock :0660 :root :togi-hardware - -"
   delegated.systemd.tmpfiles.rules;
@@ -99,6 +123,9 @@ assert builtins.elem pkgs.hello overriddenTuning.environment.systemPackages;
 assert
   overriddenTuning.systemd.services.togi.serviceConfig.ExecStart
   == "${lib.getExe pkgs.hello} run --tuning-boot /boot/grub/grubenv";
+assert lib.hasInfix
+  (builtins.unsafeDiscardStringContext "${lib.getExe pkgs.hello} restart-limit --tuning-boot /boot/grub/grubenv")
+  overriddenTuning.systemd.services.togi-restart-limit.script;
 assert
   overriddenTuning.systemd.services.togi-watch.serviceConfig.ExecStart
   == "${lib.getExe pkgs.hello} watch";

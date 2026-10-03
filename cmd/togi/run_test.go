@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/session"
+	"github.com/shgew/togi/internal/tuningboot"
 )
 
 func TestRunDeadEndEvidencePriority(t *testing.T) {
@@ -85,10 +87,41 @@ func TestDefectPromptRejectsCharacterDevicesThatAreNotTerminals(t *testing.T) {
 	}
 }
 
-type clearingBootloader struct{ calls int }
+type clearingBootloader struct {
+	calls            int
+	values           map[string]string
+	environmentCalls []string
+	setErr           error
+}
+
+func (b *clearingBootloader) Get(name string) (string, error) {
+	b.environmentCalls = append(b.environmentCalls, "get "+name)
+	return b.values[name], nil
+}
+
+func (b *clearingBootloader) Set(values map[string]string) error {
+	b.environmentCalls = append(b.environmentCalls, "set")
+	if b.setErr != nil {
+		return b.setErr
+	}
+	if b.values == nil {
+		b.values = make(map[string]string)
+	}
+	maps.Copy(b.values, values)
+	return nil
+}
+
+func (b *clearingBootloader) Unset(names ...string) error {
+	b.environmentCalls = append(b.environmentCalls, "unset "+strings.Join(names, " "))
+	for _, name := range names {
+		delete(b.values, name)
+	}
+	return nil
+}
 
 func (b *clearingBootloader) ClearSavedEntry() (string, string, error) {
 	b.calls++
+	b.environmentCalls = append(b.environmentCalls, "clear saved_entry")
 	return "togi", "", nil
 }
 
@@ -259,9 +292,11 @@ func TestRunMalformedJournalRefusal(t *testing.T) {
 	}
 }
 
-type failedClearBootloader struct{}
+type failedClearBootloader struct{ clearingBootloader }
 
-func (failedClearBootloader) ClearSavedEntry() (string, string, error) {
+func (b *failedClearBootloader) ClearSavedEntry() (string, string, error) {
+	b.calls++
+	b.environmentCalls = append(b.environmentCalls, "clear saved_entry")
 	return "togi", "togi", errors.New("saved entry is read-only")
 }
 
@@ -269,11 +304,70 @@ func TestCompatibilityRefusalReportsFailedClear(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	err := &journal.IncompatibleError{Field: "ruleset", Journal: journal.Build{Ruleset: 99}, Binary: session.Build()}
-	if code := runResult(session.Stop{}, err, &out, journal.Renderer{}, failedClearBootloader{}); code != exitIncompatible {
+	if code := runResult(session.Stop{}, err, &out, journal.Renderer{}, &failedClearBootloader{}); code != exitIncompatible {
 		t.Fatalf("exit %d", code)
 	}
 	want := "togi run: " + err.Error() + "\ntogi: clear GRUB saved entry: saved entry is read-only; no reboot requested\n"
 	if diff := cmp.Diff(want, out.String()); diff != "" {
 		t.Fatalf("failed clear refusal (-want +got): %s", diff)
+	}
+}
+
+func TestRunRefusalPersistsFixedReasonBeforeClearing(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, reason string
+		err          error
+	}{
+		{"incompatible", "journal incompatible", &journal.IncompatibleError{Field: "ruleset", Journal: journal.Build{Ruleset: 99}, Binary: session.Build()}},
+		{"unknown kind", "unknown event kind", &journal.UnknownKindError{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			bootloader := &clearingBootloader{}
+			var diagnostics bytes.Buffer
+			code := runResult(session.Stop{}, tt.err, &diagnostics, journal.Renderer{}, bootloader)
+			if code != exitIncompatible {
+				t.Fatalf("refusal exit %d; diagnostics %s", code, diagnostics.String())
+			}
+			if diff := cmp.Diff([]string{"set", "clear saved_entry"}, bootloader.environmentCalls); diff != "" {
+				t.Fatalf("refusal order (-want +got): %s", diff)
+			}
+			reason, err := tuningboot.ReadReason(bootloader)
+			if err != nil || reason == nil || reason.Count != 0 || reason.Reason != tt.reason {
+				t.Fatalf("pending refusal reason %+v, %v", reason, err)
+			}
+		})
+	}
+}
+
+func TestRunRefusalStillClearsAfterReasonWriteFailure(t *testing.T) {
+	t.Parallel()
+	for _, failedClear := range []bool{false, true} {
+		t.Run(fmt.Sprintf("clear failure %v", failedClear), func(t *testing.T) {
+			fake := &clearingBootloader{setErr: errors.New("reason is read-only")}
+			var bootloader session.Bootloader = fake
+			if failedClear {
+				bootloader = &failedClearBootloader{clearingBootloader: *fake}
+				fake = &bootloader.(*failedClearBootloader).clearingBootloader
+			}
+			var diagnostics bytes.Buffer
+			refusal := &journal.UnknownKindError{}
+			if code := runResult(session.Stop{}, refusal, &diagnostics, journal.Renderer{}, bootloader); code != exitIncompatible {
+				t.Fatalf("changed refusal exit: %d", code)
+			}
+			if diff := cmp.Diff([]string{"set", "clear saved_entry"}, fake.environmentCalls); diff != "" {
+				t.Fatalf("failure skipped clear (-want +got): %s", diff)
+			}
+			if !strings.Contains(diagnostics.String(), "persist GRUB leave reason: write leave reason: reason is read-only") {
+				t.Fatalf("reason failure hidden: %s", diagnostics.String())
+			}
+			wantClear := "cleared GRUB saved entry"
+			if failedClear {
+				wantClear = "clear GRUB saved entry: saved entry is read-only"
+			}
+			if !strings.Contains(diagnostics.String(), wantClear) || strings.Contains(diagnostics.String(), "journal-write") {
+				t.Fatalf("clear result or error classification: %s", diagnostics.String())
+			}
+		})
 	}
 }

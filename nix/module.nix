@@ -30,7 +30,7 @@ in
     tuning.leaveOnShutdown = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Clear GRUB's saved entry on an orderly shutdown or reboot of the tuning boot, so the next boot is the normal system. Crash reboots return to the tuning boot either way.";
+      description = "Clear GRUB's saved entry on an orderly operator shutdown or reboot of the tuning boot, so the next boot is the normal system. Restart-limit retry reboots preserve the tuning entry; crash reboots return to it either way.";
     };
     backends.mprime.enable = lib.mkEnableOption "the mprime backend (unfree)";
     backends.ycruncher.enable = lib.mkEnableOption "the y-cruncher backend (unfree)";
@@ -100,15 +100,21 @@ in
             AllowSuspendThenHibernate = false;
           };
           systemd.services.togi-restart-limit = {
-            description = "Return to the normal boot when togi reaches its restart limit";
+            description = "Recover when togi reaches its service restart limit";
             unitConfig.RequiresMountsFor = grubenv;
             path = [
+              pkgs.coreutils
               pkgs.grub2
               pkgs.systemd
             ];
             serviceConfig.Type = "oneshot";
             script = ''
               [ "''${MONITOR_SERVICE_RESULT:-}" = start-limit-hit ] || exit 0
+              if ${lib.getExe cfg.package} restart-limit --tuning-boot ${grubenv}; then
+                exit 0
+              fi
+              rm -f /run/togi-retry-tuning-boot || true
+              grub-editenv ${grubenv} set "togi_leave_reason={\"id\":\"fallback-$INVOCATION_ID\",\"count\":0,\"reason\":\"restart-limit command failed; returning to the normal system\"}" || true
               grub-editenv ${grubenv} unset saved_entry
               systemctl reboot
             '';
@@ -140,11 +146,14 @@ in
             before = [ "togi.service" ];
             restartIfChanged = false;
             unitConfig.RequiresMountsFor = grubenv;
+            preStop = ''
+              [ ! -e /run/togi-retry-tuning-boot ] || exit 0
+              ${pkgs.grub2}/bin/grub-editenv ${grubenv} unset saved_entry
+            '';
             serviceConfig = {
               Type = "oneshot";
               RemainAfterExit = true;
               ExecStart = "${pkgs.coreutils}/bin/true";
-              ExecStop = "${pkgs.grub2}/bin/grub-editenv ${grubenv} unset saved_entry";
             };
           };
           console.font = lib.mkForce cfg.tuning.consoleFont;

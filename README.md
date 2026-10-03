@@ -25,7 +25,7 @@ Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and te
 - the `ryzen_smu` driver on full 8-core CCDs only; CCDs with fused-off slots are not yet supported;
 - mprime and y-cruncher trials, each confined to its cores in a systemd scope;
 - machine-check detection from the kernel log;
-- the NixOS module and the unattended tuning boot, checked in a NixOS VM.
+- the NixOS module and the unattended tuning boot, with two service restart-limit retry boots before returning to the normal system and durable leave reasons; a stubbed NixOS VM check covers the normal-boot fallback.
 
 Not yet:
 - a full tuning session on real hardware, from search through a qualified guard rotation.

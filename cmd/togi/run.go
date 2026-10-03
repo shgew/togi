@@ -27,6 +27,7 @@ import (
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
+	"github.com/shgew/togi/internal/tuningboot"
 )
 
 const runHelp = `Usage: togi run [--rotations <N>] [--tuning-boot <grubenv>] [--no-tui]
@@ -62,6 +63,11 @@ profile once every core is done and refinement can reach no more depth. An
 earlier rotation can count after a deepening if its profile was at least as deep
 and no failure since the last reset contradicted it.
 
+--tuning-boot runs the unattended service with an armed hardware watchdog.
+The first durable journal append resets its consecutive restart-limit count and
+records a pending leave reason once. Dead ends and incompatible or unknown-kind
+journals persist a short leave reason before clearing the saved GRUB entry.
+
 Examples:
   sudo togi run                     Tune this machine until a signal or a dead end
   sudo togi run --rotations 1       Stop after the search is done and one qualifying rotation passed
@@ -82,7 +88,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		rotations = v
 		return nil
 	})
-	flags.StringVar(&grubenv, "tuning-boot", "", "run as the tuning boot service: require an armed hardware watchdog within 30s; at a dead end clear saved_entry in this GRUB environment `file`, and reboot after a boot loop")
+	flags.StringVar(&grubenv, "tuning-boot", "", "run as the tuning boot service: require an armed hardware watchdog within 30s; reset retry count on the first durable journal append; persist a leave reason before clearing saved_entry in this GRUB environment `file`, and reboot after a boot loop")
 	flags.BoolVar(&noTUI, "no-tui", false, "print one line per event instead of the dashboard on a terminal")
 	if code, ok := parseFlags(flags, args, runHelp, stdout, stderr); !ok {
 		return code
@@ -242,6 +248,17 @@ func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.
 	if incompatible || unknown {
 		fmt.Fprintln(stderr, renderer.Styled(journal.RedBold, "togi run: "+err.Error()))
 		if len(bootloader) > 0 && bootloader[0] != nil {
+			reasonText := "journal incompatible"
+			if unknown {
+				reasonText = "unknown event kind"
+			}
+			reason, reasonErr := tuningboot.NewReason(reasonText, 0)
+			if reasonErr == nil {
+				reasonErr = tuningboot.WriteReason(bootloader[0], reason)
+			}
+			if reasonErr != nil {
+				fmt.Fprintf(stderr, "togi: persist GRUB leave reason: %v\n", reasonErr)
+			}
 			before, after, clearErr := bootloader[0].ClearSavedEntry()
 			if clearErr != nil {
 				fmt.Fprintf(stderr, "togi: clear GRUB saved entry: %v; no reboot requested\n", clearErr)

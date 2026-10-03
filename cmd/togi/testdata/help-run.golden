@@ -31,6 +31,11 @@ profile once every core is done and refinement can reach no more depth. An
 earlier rotation can count after a deepening if its profile was at least as deep
 and no failure since the last reset contradicted it.
 
+--tuning-boot runs the unattended service with an armed hardware watchdog.
+The first durable journal append resets its consecutive restart-limit count and
+records a pending leave reason once. Dead ends and incompatible or unknown-kind
+journals persist a short leave reason before clearing the saved GRUB entry.
+
 Examples:
   sudo togi run                     Tune this machine until a signal or a dead end
   sudo togi run --rotations 1       Stop after the search is done and one qualifying rotation passed
@@ -40,7 +45,7 @@ Flags:
   --config <path>      configuration file path for run and reset (default /etc/togi/config.toml)
   --no-tui             print one line per event instead of the dashboard on a terminal
   --rotations <N>      stop after N clean qualifying rotations valid for the current profile once every core is done and refinement can reach no more depth (default endless)
-  --tuning-boot <file> run as the tuning boot service: require an armed hardware watchdog within 30s; at a dead end clear saved_entry in this GRUB environment file, and reboot after a boot loop
+  --tuning-boot <file> run as the tuning boot service: require an armed hardware watchdog within 30s; reset retry count on the first durable journal append; persist a leave reason before clearing saved_entry in this GRUB environment file, and reboot after a boot loop
 
 Global flags:
   --state-dir <path>   state directory path (default /var/lib/togi)
