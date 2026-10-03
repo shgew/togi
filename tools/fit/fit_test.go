@@ -223,6 +223,67 @@ func TestConstrainedFitUsesResampledLikelihood(t *testing.T) {
 	}
 }
 
+func TestConstrainedFitRefitsCCDWithoutChangingR7Structure(t *testing.T) {
+	model := sim.DefaultModel()
+	base := sim.Config{
+		Cores: 2, Model: &model,
+		CCD: &sim.CCD{LogRate: math.Log(-math.Log(0.8) / 60)},
+		Edges: []sim.Edges{
+			{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+			{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+		},
+		Joints: []sim.Joint{{Members: map[int]int{1: -40}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001}},
+	}
+	want := cloneMachine(base)
+	var original, sample []trialfacts.Record
+	for i := range 40 {
+		r := trialfacts.Record{
+			Kind: facts.TrialFact, Profile: []int{-20, -20},
+			Class: facts.Class{Regime: machine.R7, Workload: "residual", Cores: []int{0}, DurationS: 60},
+			Outcome: journal.OutcomePass,
+		}
+		if i < 8 {
+			r.Outcome = journal.OutcomeFailure
+		}
+		original = append(original, r)
+		if i < 24 {
+			r.Outcome = journal.OutcomeFailure
+		}
+		sample = append(sample, r)
+	}
+	checker, err := modelcheck.NewChecker(base, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, loss := fitFrom(sample, &base, checker)
+	m, err := sim.New(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := checker.Check("synthetic", "synthetic", m)
+	if check.Status != "ok" || check.Groups[0].MeanP <= 0.25 {
+		t.Fatalf("CCD refit must follow resampled failures within original-evidence bounds: %+v", check)
+	}
+	if cmp.Equal(first.CCD, want.CCD) {
+		t.Fatal("residual CCD parameters did not refit")
+	}
+	if diff := cmp.Diff(want.Joints, first.Joints); diff != "" {
+		t.Fatalf("CCD refit changed frozen joints: %s", diff)
+	}
+	for core := range first.Edges {
+		if first.Edges[core].Resident[6] != want.Edges[core].Resident[6] || len(first.Edges[core].Workload) != 0 {
+			t.Fatalf("CCD refit added R7 edge/workload structure on core %d: %+v", core, first.Edges[core])
+		}
+	}
+	if diff := cmp.Diff(want, base); diff != "" {
+		t.Fatalf("CCD refit mutated its all-facts seed: %s", diff)
+	}
+	second, secondLoss := fitFrom(sample, &base, checker)
+	if diff := cmp.Diff(encodeMachine(first, 1, 263, len(sample), loss, nil), encodeMachine(second, 1, 263, len(sample), secondLoss, nil)); diff != "" {
+		t.Fatalf("CCD-seeded refit is not deterministic: %s", diff)
+	}
+}
+
 func TestLikelihoodRejectsImpossibleOutcomes(t *testing.T) {
 	cfg := sim.Config{Cores: 2, Edges: []sim.Edges{
 		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
