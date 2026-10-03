@@ -19,6 +19,7 @@ const (
 )
 
 var fragmentName = regexp.MustCompile(`^([1-9][0-9]*)\.md$`)
+var fragmentPullRequestLink = regexp.MustCompile(`(?i)\[#[0-9]+\]|https?://(?:www\.)?github\.com/[a-z0-9_.-]+/[a-z0-9_.-]+/pull/[0-9]+\b`)
 
 var fragmentSections = []string{"Added", "Changed", "Removed", "Fixed"}
 
@@ -68,7 +69,7 @@ func parseFragment(name, content string) ([]fragmentEntry, error) {
 				return nil, fmt.Errorf("%s:%d: entry before any ### section heading", name, n)
 			case !strings.HasSuffix(text, ".") || text == ".":
 				return nil, fmt.Errorf("%s:%d: entry must end with a period", name, n)
-			case strings.Contains(text, "[#"):
+			case fragmentPullRequestLink.MatchString(text):
 				return nil, fmt.Errorf("%s:%d: entry must not link a pull request; the release adds ([#%d])", name, n, pr)
 			}
 			result = append(result, fragmentEntry{pr: pr, section: section, text: text})

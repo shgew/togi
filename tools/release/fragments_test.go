@@ -25,6 +25,41 @@ func TestParseFragment(t *testing.T) {
 	}
 }
 
+func TestParseFragmentPullRequestLinks(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, text string
+		reject     bool
+	}{
+		{"reference", "A crash ([#42]).", true},
+		{"inline link", "A crash [PR 42](https://github.com/shgew/togi/pull/42).", true},
+		{"bare URL", "A crash https://github.com/shgew/togi/pull/42.", true},
+		{"other repository", "A crash https://github.com/other/project/pull/7#discussion_r1.", true},
+		{"normal entry", "A crash.", false},
+		{"docs link", "See [docs](https://github.com/shgew/togi/blob/main/README.md).", false},
+		{"issue link", "A crash [issue 42](https://github.com/shgew/togi/issues/42).", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := parseFragment("42.md", "### Fixed\n\n- "+tc.text+"\n")
+			if tc.reject {
+				want := "42.md:3: entry must not link a pull request; the release adds ([#42])"
+				if err == nil || err.Error() != want {
+					t.Fatalf("error = %v, want %q", err, want)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []fragmentEntry{{pr: 42, section: "Fixed", text: tc.text}}
+			if diff := cmp.Diff(want, got, cmp.AllowUnexported(fragmentEntry{})); diff != "" {
+				t.Fatalf("entries mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestParseFragmentRejects(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct{ name, file, content, want string }{
