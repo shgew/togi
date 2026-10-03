@@ -21,14 +21,6 @@ growth = 2
 near_edge_rate = 9.9999999999999995e-08
 onset_boost = 0.0
 
-[single_core]
-log_rate = -9
-slope = 0.14999999999999999
-max_rate = 0.01
-core = [0, 0]
-workload = {
-}
-
 [[core]]
 id = 0
 isolated = [-50, -50, -50, -50, -50]
