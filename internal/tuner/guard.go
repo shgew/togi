@@ -368,19 +368,11 @@ func (s *State) afterReruns(a Action) Action {
 
 func (s *State) rerunTrial(k trialClass) Action {
 	t := Trial{Regime: k.regime, Workload: k.workload, Phase: journal.PhaseGuard, Condition: machine.Resident, DurationS: k.duration, Rerun: true}
-	for _, part := range append(s.parts, []int{}) {
-		if coresKey(part) == k.cores {
-			t.Cores = slices.Clone(part)
-			break
-		}
-	}
-	if len(t.Cores) == 0 {
-		for _, c := range s.cores {
-			if coresKey([]int{c.id}) == k.cores {
-				t.Core, t.Offset = c.id, c.offset
-				break
-			}
-		}
+	target := s.classTargets[k.cores]
+	if target.multi || len(target.cores) == 0 {
+		t.Cores = slices.Clone(target.cores)
+	} else if c := s.core(target.cores[0]); c != nil {
+		t.Core, t.Offset = c.id, c.offset
 	}
 	if s.retry != nil && s.retry.Rerun {
 		t = *s.retry

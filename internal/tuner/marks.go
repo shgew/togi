@@ -54,7 +54,7 @@ func (s *State) done(c *core, p []int) (string, bool) {
 	return s.reaches(q)
 }
 
-func (s *State) optimum(p, hi, ranking []int) []int {
+func (s *State) optimum(hi, ranking []int) []int {
 	n := len(s.cores)
 	lo := make([]int, n)
 	for i, c := range s.byID() {
@@ -160,8 +160,7 @@ func (s *State) optimum(p, hi, ranking []int) []int {
 
 func (s *State) best() []int {
 	if s.bestDirty {
-		p := s.offsets()
-		s.bestProfile = s.optimum(p, make([]int, len(p)), s.ranking)
+		s.bestProfile = s.optimum(make([]int, len(s.cores)), s.ranking)
 		s.bestDirty = false
 	}
 	return s.bestProfile

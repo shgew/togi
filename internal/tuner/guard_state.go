@@ -26,7 +26,7 @@ func (s *State) projectGuard() *journal.GuardState {
 	}
 	lastQualified := 0
 	for _, q := range s.qualified {
-		if q.allDone && (q.seq > s.lastDeepenSeq || s.uncontradicted(q)) {
+		if s.eligibleQualifiedRotation(q) {
 			lastQualified = q.rotation
 		}
 	}

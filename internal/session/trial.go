@@ -118,19 +118,6 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 		}
 		index = r.fold.index[t.Core][t.Regime]
 	}
-	w := machine.PickWorkload(t.Regime, index)
-	if t.Workload != "" {
-		i := slices.IndexFunc(machine.Workloads(t.Regime), func(w machine.Workload) bool { return w.ID == t.Workload })
-		if i < 0 {
-			return fmt.Errorf("trial workload %s: not a %s workload", t.Workload, t.Regime)
-		}
-		w = machine.Workloads(t.Regime)[i]
-	}
-	if !multi {
-		cores, cpus = []int{t.Core}, info.CPUs[:min(w.Threads, len(info.CPUs))]
-	}
-	duration := t.DurationS
-	tr := &trialRun{r: r, t: t, id: fmt.Sprintf("%04d", r.fold.trials+1)}
 	profile := slices.Clone(r.applied)
 	if t.Condition == machine.Isolated {
 		profile = make([]int, len(r.cores))
@@ -141,16 +128,18 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 			}
 		}
 	}
-	p := &journal.TrialIntent{
-		Trial: tr.id, Regime: t.Regime, Workload: w.ID, DurationS: duration,
-		Condition: t.Condition, Phase: t.Phase, Retry: t.Retry, Rotation: t.Rotation, Step: t.Step,
-		Profile: profile, Hunt: t.Hunt, Mask: t.Mask, Round: t.Round, Rerun: t.Rerun, RecordOnly: t.RecordOnly,
+	p, w, err := t.Complete(index, profile)
+	if err != nil {
+		return err
 	}
 	if multi {
 		p.Cores = cores
 	} else {
-		p.Core, p.Offset = new(t.Core), new(t.Offset)
+		cores, cpus = []int{t.Core}, info.CPUs[:min(w.Threads, len(info.CPUs))]
 	}
+	duration := t.DurationS
+	tr := &trialRun{r: r, t: t, id: fmt.Sprintf("%04d", r.fold.trials+1)}
+	p.Trial = tr.id
 	boundary, err := r.kernelBoundary("", 0, false)
 	if err != nil {
 		return err

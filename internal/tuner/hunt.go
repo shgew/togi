@@ -65,6 +65,38 @@ func (s *State) endHunt(e journal.Event, p *journal.HuntEnd) {
 	}
 }
 
+func (s *State) resetHuntCore(c *core) {
+	if c.queued == queuedReset && s.hunt != nil && s.hunt.end != nil && slices.Contains(s.hunt.end.Cores, c.id) {
+		s.hunt = nil
+	}
+}
+
+func (s *State) commitHuntDecision(e journal.Event, p *journal.TunerDecision) {
+	if s.hunt != nil && s.hunt.end != nil && p.Phase == journal.PhaseHunt && len(e.Cause) > 0 && (e.Cause[0] == s.hunt.endSeq || e.Cause[0] == s.hunt.markSeq) {
+		s.hunt = nil
+	}
+}
+
+func (s *State) skipHunt(p *journal.HuntSkipped) {
+	if len(s.queue) > 0 && s.queue[0].seq == p.Failure {
+		s.queue = s.queue[1:]
+	}
+}
+
+func (s *State) markHunt(e journal.Event, p *journal.MarkJoint) {
+	if s.hunt != nil && s.hunt.end != nil && s.hunt.start.Hunt == p.Hunt {
+		s.hunt.markSeq = e.Seq
+		if len(s.guard.profile) == len(s.cores) {
+			for _, m := range p.Members {
+				if s.guard.profile[s.index(m.Core)] > m.Offset {
+					s.hunt = nil
+					break
+				}
+			}
+		}
+	}
+}
+
 func (s *State) failureBySeq(seq int) *pendingFailure {
 	if i, ok := s.failureIndex[seq]; ok {
 		f := &s.pendingFailures[i]
@@ -106,22 +138,8 @@ func (s *State) huntStartNext() Action {
 			candidates = append(candidates, c.id)
 		}
 	}
-	var cores []int
-	for _, id := range s.ids() {
-		if f.class.cores == coresKey([]int{id}) {
-			cores = []int{id}
-			break
-		}
-	}
-	if cores == nil {
-		for _, part := range s.parts {
-			if coresKey(part) == f.class.cores {
-				cores = slices.Clone(part)
-				break
-			}
-		}
-	}
-	if cores == nil {
+	cores := slices.Clone(s.classTargets[f.class.cores].cores)
+	if len(cores) == 0 {
 		cores = s.ids()
 	}
 	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: cores, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Anchor: anchor, AnchorSeq: anchorSeq, Candidates: candidates, Starts: s.n, StartS: s.durations.StartS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
@@ -364,39 +382,47 @@ func (s *State) maskPart(parts [][]int, stage string, index int, set []int) []in
 	return out
 }
 
-func (s *State) maskOutcome(h *hunt, m maskRecord) string {
+func (s *State) maskEvidence(h *hunt, m maskRecord, cite bool) (string, int, []int) {
 	if m.payload.Skipped {
-		return "skipped"
+		return "skipped", 0, nil
 	}
 	if m.payload.Inferred != "" {
-		return m.payload.Inferred
-	}
-	k := h.class.withDuration(m.payload.DurationS)
-	since := s.inferenceSince(m.payload, m.seq)
-	if s.fails(k, m.payload.Profile, since) {
-		return "failure"
-	}
-	if s.passes(k, m.payload.Profile, since, huntEvidence) >= h.start.Starts {
-		return "pass"
-	}
-	return "running"
-}
-
-func (s *State) citeMaskCarried(cause []int, h *hunt, m maskRecord) []int {
-	cause = s.citeCarried(cause, m.cause...)
-	if m.payload.Skipped || m.payload.Inferred != "" {
-		return cause
+		return m.payload.Inferred, 0, nil
 	}
 	k := h.class.withDuration(m.payload.DurationS)
 	since := s.inferenceSince(m.payload, m.seq)
 	if failure := s.failingSeq(k, m.payload.Profile, since); failure != 0 {
+		return "failure", failure, nil
+	}
+	var seqs []int
+	count := 0
+	if cite {
+		seqs = s.passSeqs(k, m.payload.Profile, since, huntEvidence)
+		count = len(seqs)
+	} else {
+		count = s.passes(k, m.payload.Profile, since, huntEvidence)
+	}
+	if count >= h.start.Starts {
+		if cite {
+			seqs = seqs[:h.start.Starts]
+		}
+		return "pass", 0, seqs
+	}
+	return "running", 0, nil
+}
+
+func (s *State) maskOutcome(h *hunt, m maskRecord) string {
+	outcome, _, _ := s.maskEvidence(h, m, false)
+	return outcome
+}
+
+func (s *State) citeMaskCarried(cause []int, h *hunt, m maskRecord) []int {
+	cause = s.citeCarried(cause, m.cause...)
+	_, failure, seqs := s.maskEvidence(h, m, true)
+	if failure != 0 {
 		return s.citeCarried(cause, failure)
 	}
-	seqs := s.passSeqs(k, m.payload.Profile, since, huntEvidence)
-	if len(seqs) >= h.start.Starts {
-		cause = s.citeCarried(cause, seqs[:h.start.Starts]...)
-	}
-	return cause
+	return s.citeCarried(cause, seqs...)
 }
 
 func (s *State) huntNext() (Action, bool) {
@@ -570,7 +596,7 @@ func (s *State) jointBackoff(members []journal.JointMember, rank []int) (journal
 		candidate := slices.Clone(p)
 		i := s.index(m.Core)
 		candidate[i] = max(candidate[i], m.Offset+1)
-		target := s.optimum(candidate, candidate, rank)
+		target := s.optimum(candidate, rank)
 		if target == nil {
 			continue
 		}

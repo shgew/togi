@@ -135,7 +135,7 @@ func TestIdleMonotonicityChoosesEarliestQualifiedClass(t *testing.T) {
 	h := residentHarness(t, -10, -12)
 	var expected []int
 	for _, duration := range []int{900, 120} {
-		tr := Trial{Regime: machine.R6, Cores: []int{0, 1}, DurationS: duration, Condition: machine.Resident, Profile: []int{-10, -12}}
+		tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: duration, Condition: machine.Resident, Profile: []int{-10, -12}}
 		for i := range h.s.n + 1 {
 			_, end := h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
 			if duration == 900 && i < h.s.n {

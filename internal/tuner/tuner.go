@@ -50,6 +50,28 @@ type Trial struct {
 	Step              int
 }
 
+func (t Trial) Complete(index int, profile []int) (*journal.TrialIntent, machine.Workload, error) {
+	w := machine.PickWorkload(t.Regime, index)
+	if t.Workload != "" {
+		i := slices.IndexFunc(machine.Workloads(t.Regime), func(w machine.Workload) bool { return w.ID == t.Workload })
+		if i < 0 {
+			return nil, machine.Workload{}, fmt.Errorf("trial workload %s: not a %s workload", t.Workload, t.Regime)
+		}
+		w = machine.Workloads(t.Regime)[i]
+	}
+	p := &journal.TrialIntent{
+		Regime: t.Regime, Workload: w.ID, DurationS: t.DurationS,
+		Condition: t.Condition, Phase: t.Phase, Retry: t.Retry, Rotation: t.Rotation, Step: t.Step,
+		Profile: profile, Hunt: t.Hunt, Mask: t.Mask, Round: t.Round, Rerun: t.Rerun, RecordOnly: t.RecordOnly,
+	}
+	if len(t.Cores) > 0 {
+		p.Cores = t.Cores
+	} else {
+		p.Core, p.Offset = new(t.Core), new(t.Offset)
+	}
+	return p, w, nil
+}
+
 type awaiting struct {
 	intent *journal.TrialIntent
 	end    *journal.TrialEnd
@@ -117,6 +139,7 @@ type State struct {
 	parts                   [][]int
 	guard                   guard
 	ledger                  map[trialClass][]entry
+	classTargets            map[string]classTarget
 	idle                    []entry
 	carriedSources          map[int]string
 	failures                []entry
@@ -221,6 +244,7 @@ func (s *State) Fold(e journal.Event) {
 		for i, c := range s.sortedCores {
 			s.indexByID[c.id] = i
 		}
+		s.indexClassTargets()
 		s.bestDirty = true
 		s.projectionDirty = true
 	case *journal.ConfigLoaded:
@@ -247,9 +271,7 @@ func (s *State) Fold(e journal.Event) {
 		}
 	case *journal.CorePhase:
 		if c := s.core(p.Core); c != nil {
-			if c.queued == queuedReset && s.hunt != nil && s.hunt.end != nil && slices.Contains(s.hunt.end.Cores, c.id) {
-				s.hunt = nil
-			}
+			s.resetHuntCore(c)
 			if len(p.ClearedJoint) > 0 {
 				s.marks = slices.DeleteFunc(s.marks, func(m journal.JointMarkState) bool { return slices.Contains(p.ClearedJoint, m.Mark) })
 			}
@@ -291,9 +313,7 @@ func (s *State) Fold(e journal.Event) {
 				s.queueRerun(e)
 				s.pendingRerun()
 			}
-			if s.hunt != nil && s.hunt.end != nil && p.Phase == journal.PhaseHunt && len(e.Cause) > 0 && (e.Cause[0] == s.hunt.endSeq || e.Cause[0] == s.hunt.markSeq) {
-				s.hunt = nil
-			}
+			s.commitHuntDecision(e, p)
 		}
 	case *journal.TrialIntent:
 		s.intents[p.Trial] = p
@@ -379,9 +399,7 @@ func (s *State) Fold(e journal.Event) {
 	case *journal.HuntEnd:
 		s.endHunt(e, p)
 	case *journal.HuntSkipped:
-		if len(s.queue) > 0 && s.queue[0].seq == p.Failure {
-			s.queue = s.queue[1:]
-		}
+		s.skipHunt(p)
 	case *journal.MarkJoint:
 		s.marks = append(s.marks, journal.JointMarkState{Mark: p.Mark, Members: slices.Clone(p.Members), Fallback: p.Fallback, Hunt: p.Hunt, Seq: e.Seq})
 		s.bestDirty = true
@@ -390,17 +408,7 @@ func (s *State) Fold(e journal.Event) {
 		for _, m := range p.Members {
 			s.recent = append(s.recent, m.Core)
 		}
-		if s.hunt != nil && s.hunt.end != nil && s.hunt.start.Hunt == p.Hunt {
-			s.hunt.markSeq = e.Seq
-			if len(s.guard.profile) == len(s.cores) {
-				for _, m := range p.Members {
-					if s.guard.profile[s.index(m.Core)] > m.Offset {
-						s.hunt = nil
-						break
-					}
-				}
-			}
-		}
+		s.markHunt(e, p)
 	case *journal.RefineRound:
 		s.foldRound(e, p)
 		s.rerunCauses = nil
@@ -575,6 +583,10 @@ func (s *State) warningAction() Action {
 	return Action{Kind: Decide, Payload: &warning, Cause: cause}
 }
 
+func unattributedFailureAtZero(seq int) Action {
+	return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Detail: "unattributed failure with every core at CO 0; the instability is not caused by Curve Optimizer"}, Cause: []int{seq}}
+}
+
 func (s *State) Drain() (Action, bool) {
 	if a, ok := s.Attribution(); ok {
 		return a, true
@@ -583,7 +595,7 @@ func (s *State) Drain() (Action, bool) {
 		return s.warningAction(), true
 	}
 	if len(s.queue) > 0 && allZero(s.queue[0].profile) {
-		return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Detail: "unattributed failure with every core at CO 0; the instability is not caused by Curve Optimizer"}, Cause: []int{s.queue[0].seq}}, true
+		return unattributedFailureAtZero(s.queue[0].seq), true
 	}
 	if a, ok := s.pendingDecision(); ok {
 		return a, true
@@ -634,7 +646,7 @@ func (s *State) next() Action {
 		}
 	}
 	if len(s.queue) > 0 && allZero(s.queue[0].profile) {
-		return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Detail: "unattributed failure with every core at CO 0; the instability is not caused by Curve Optimizer"}, Cause: []int{s.queue[0].seq}}
+		return unattributedFailureAtZero(s.queue[0].seq)
 	}
 	if a, ok := s.pendingDecision(); ok {
 		return a
@@ -734,11 +746,15 @@ func (s *State) ProfileSeq() int { return s.guard.profileSeq }
 func (s *State) QualifiedRotations() int {
 	n := 0
 	for _, q := range s.qualified {
-		if q.allDone && (q.seq > s.lastDeepenSeq || s.uncontradicted(q)) {
+		if s.eligibleQualifiedRotation(q) {
 			n++
 		}
 	}
 	return n
+}
+
+func (s *State) eligibleQualifiedRotation(q qualified) bool {
+	return q.allDone && (q.seq > s.lastDeepenSeq || s.uncontradicted(q))
 }
 
 func (s *State) uncontradicted(q qualified) bool {
