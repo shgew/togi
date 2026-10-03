@@ -175,11 +175,11 @@ func Project(events []journal.Event) Snapshot {
 	} else {
 		s.guardQualifying, s.guardMissing = t.GuardCoverage()
 	}
-	p := projector{s: &s, st: &st, intents: map[string]*journal.TrialIntent{}, starts: map[string]time.Time{}, applied: map[int]int{}, checking: map[int]bool{}, failures: map[int]*failureView{}}
+	p := projector{s: &s, st: &st, intents: map[string]*journal.TrialIntent{}, applied: map[int]int{}, checking: map[int]bool{}, failures: map[int]*failureView{}}
 	for _, e := range events {
 		p.fold(e)
 	}
-	p.finish()
+	p.finish(events)
 	return s
 }
 
@@ -187,7 +187,6 @@ type projector struct {
 	s           *Snapshot
 	st          *journal.State
 	intents     map[string]*journal.TrialIntent
-	starts      map[string]time.Time
 	applied     map[int]int
 	checking    map[int]bool
 	current     *journal.TrialIntent
@@ -230,8 +229,6 @@ func (p *projector) fold(e journal.Event) {
 		if p.current != nil && p.current.Trial == d.Trial {
 			p.current = nil
 		}
-	case *journal.TrialStart:
-		p.starts[d.Trial] = e.Time
 	case *journal.CorePhase:
 		p.checking[d.Core] = d.To == journal.PhaseSearch && d.CheckEdge
 	case *journal.TunerDecision:
@@ -279,7 +276,7 @@ func (p *projector) fold(e journal.Event) {
 	}
 }
 
-func (p *projector) finish() {
+func (p *projector) finish(events []journal.Event) {
 	s, st := p.s, p.st
 	if !p.stopped {
 		s.stopped = nil
@@ -295,7 +292,7 @@ func (p *projector) finish() {
 	}
 	switch {
 	case p.current != nil:
-		s.trial = newTrial(p.current, p.starts)
+		s.trial = newTrial(p.current, events)
 	case st.InFlight != nil && st.InFlight.Kind == journal.KindSMUIntent:
 		s.inFlight = "setting offsets on the CPU (" + vtText(st.InFlight.Msg) + ")."
 	case st.InFlight != nil:
@@ -362,12 +359,19 @@ func foldEntry(history []entry, line entry) []entry {
 	return append(history, line)
 }
 
-func newTrial(p *journal.TrialIntent, starts map[string]time.Time) *trial {
+// newTrial projects the open trial; its latest matching start, wherever it falls, says when it began.
+func newTrial(p *journal.TrialIntent, events []journal.Event) *trial {
 	cores := p.Cores
 	if p.Core != nil {
 		cores = []int{*p.Core}
 	}
-	started, ok := starts[p.Trial]
+	var started time.Time
+	ok := false
+	for i := len(events) - 1; i >= 0 && !ok; i-- {
+		if d, is := events[i].Data.(*journal.TrialStart); is && d.Trial == p.Trial {
+			started, ok = events[i].Time, true
+		}
+	}
 	return &trial{
 		cores:      cores,
 		condition:  p.Condition,
