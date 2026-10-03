@@ -20,6 +20,7 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 |`late-onset`|R7 failures that start only after four minutes of load|
 |`idle-edge`|cores that fail idle at shallower offsets than under load (issue #106)|
 |`misleading-mce`|joint crashes that leave an MCE naming one core (issue #114)|
+|`target-r4-edge`|target-fit-derived one-count resident R4 edge gap on core 15; a single medium-duty guard start can miss it (issue #107)|
 
 Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds stay unseen by the change being tuned.
 
