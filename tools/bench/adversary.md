@@ -19,13 +19,15 @@ holdout = [101, 102, 103, 104, 105, 106, 107, 108]
 
 ```sh
 just bench --suite runs/adv/<n>/suite.toml --split dev --out runs/adv/<n>/dev.jsonl --keep runs/adv/<n>/dirs
-jq -s '{unsafe: map(select(.status != "concluded" or .hazard_max_per_h >= 1)) | length, max_hazard: (map(.hazard_max_per_h) | max), median_h: (map(.sim_hours) | sort | .[length / 2 | floor])}' runs/adv/<n>/dev.jsonl
+jq -s '{unsafe: map(select(.status != "concluded" or .hazard_max_per_h >= 1)) | length, max_hazard: (map(.hazard_max_per_h) | max), median_h: (map(.sim_hours) | sort | (.[((length - 1) / 2 | floor)] + .[(length / 2 | floor)]) / 2)}' runs/adv/<n>/dev.jsonl
 ```
 
 - **Primary:** `unsafe`, the number of the eight dev runs that end without concluding, or conclude with a final profile whose `hazard_max_per_h` is at least 1: the machine's own failure model says that profile fails at least once an hour in some regime with every core loaded. Higher is better. Tie-break by `max_hazard`.
 - **Secondary:** a run that takes more than three times the unmodified machine's median `sim_hours` is a cost finding, scored separately.
 
-A finding must beat the unmodified starting machine by at least three unsafe dev runs. It is confirmed when the holdout split (`--split holdout`) also has at least two unsafe runs and at least half the dev share. Use holdout once per candidate, only to confirm.
+An unsafe-profile finding must beat the unmodified starting machine by at least three unsafe dev runs. It is confirmed when the holdout split (`--split holdout`) also has at least two unsafe runs and at least half the dev share.
+
+A cost finding needs at least one dev run above the secondary threshold. Confirm it with at least one holdout run taking more than three times the unmodified machine's holdout median `sim_hours`. Score and report cost findings separately; they do not need to increase the unsafe count. Use holdout once per candidate, only to confirm.
 
 ## Plausibility
 
@@ -56,7 +58,7 @@ The committed `tools/bench/baseline.jsonl` already has unsafe conclusions. They 
 
 - `default` seeds 21, 104, 106 and 114 conclude one count past a resident R3 or R4 edge with a hazard of 92 failures/h: the guard rotation runs a single start of each, and one start misses about 5% of the time (#107).
 - `target` dev seeds 6, 8 and 13 conclude with an R7 hazard of 1.5–1.8/h, and holdout seed 111 with an R2 hazard of 12/h. Their mechanism is not yet explained.
-- `misleading-mce` seeds 3 and 103 conclude with an R7 hazard of 3.24/h; that scenario's joint crashes leave an MCE naming one core (#114).
+- `misleading-mce` seeds 3 and 103 conclude with an R7 hazard of 3.24/h from its second, unattributed joint. Its first joint deliberately leaves an MCE naming one core (#114), but neither final profile triggers that joint.
 
 ## The loop
 
