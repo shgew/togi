@@ -51,8 +51,15 @@ func TestCoveredOpenRotationYieldsToRefinement(t *testing.T) {
 			if tt.complete {
 				// Replay a fully executed rotation before asking Next to close it.
 				// The covered shortcut must only replace work still left to run.
-				for a := h.s.rotationNext(); a.Kind == RunTrial; a = h.s.rotationNext() {
-					h.trial(a, passed)
+				for {
+					a := h.s.rotationNext()
+					if a.Kind == RunTrial {
+						h.trial(a, passed)
+					} else if _, step := a.Payload.(*journal.GuardStep); step {
+						h.decide(a)
+					} else {
+						break
+					}
 				}
 			}
 			a := h.next()
@@ -69,6 +76,10 @@ func TestCoveredOpenRotationYieldsToRefinement(t *testing.T) {
 				t.Fatalf("covered end %t, want %t: %+v", got, tt.covered, a)
 			}
 			if !tt.covered {
+				if _, step := a.Payload.(*journal.GuardStep); step {
+					h.decide(a)
+					a = h.next()
+				}
 				if a.Kind != RunTrial {
 					t.Fatalf("uncovered incomplete rotation must continue testing: %+v", a)
 				}
@@ -107,30 +118,29 @@ func TestR7StartsAndSharedDuration(t *testing.T) {
 	cfg.Durations.GuardAllCoreS = 480
 	h.add(&journal.ConfigLoaded{Config: snapshotConfig(cfg)})
 	h.decide(h.next())
-	for i := range 4 {
-		a := h.next()
-		if a.Kind != RunTrial || a.Trial.Regime != machine.R7 || a.Trial.DurationS != 120 || !slices.Equal(a.Trial.Cores, []int{0, 1}) {
-			t.Fatalf("start %d: %+v", i, a)
+	h.decide(h.next())
+	for _, part := range []struct {
+		cores      []int
+		recordOnly bool
+		long       int
+	}{
+		{[]int{1}, true, 120},
+		{[]int{0, 1}, false, 120},
+		{[]int{3}, true, 120},
+		{[]int{2, 3}, false, 120},
+		{[]int{0, 1, 2, 3}, false, 240},
+	} {
+		for start := range 4 {
+			a := h.next()
+			duration := 120
+			if start == 3 {
+				duration = part.long
+			}
+			if a.Kind != RunTrial || a.Trial.Regime != machine.R7 || a.Trial.DurationS != duration || a.Trial.RecordOnly != part.recordOnly || !slices.Equal(a.Trial.Cores, part.cores) {
+				t.Fatalf("part %v start %d: %+v", part.cores, start, a)
+			}
+			h.trial(a, passed)
 		}
-		h.trial(a, passed)
-	}
-	a := h.next()
-	if !slices.Equal(a.Trial.Cores, []int{2, 3}) {
-		t.Fatalf("second part %+v", a)
-	}
-	for range 4 {
-		h.trial(h.next(), passed)
-	}
-	for i := range 4 {
-		a = h.next()
-		want := 120
-		if i == 3 {
-			want = 240
-		}
-		if !slices.Equal(a.Trial.Cores, []int{0, 1, 2, 3}) || a.Trial.DurationS != want {
-			t.Fatalf("all cores %+v", a)
-		}
-		h.trial(a, passed)
 	}
 	if _, ok := h.next().Payload.(*journal.GuardRotation); !ok {
 		t.Fatal("rotation not complete")

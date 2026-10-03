@@ -191,7 +191,7 @@ func (s *State) carriedReason(seqs []int) string {
 }
 
 func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *journal.TrialEnd) {
-	if end.Outcome != journal.OutcomePass && end.Outcome != journal.OutcomeFailure {
+	if p.RecordOnly || end.Outcome != journal.OutcomePass && end.Outcome != journal.OutcomeFailure {
 		return
 	}
 	k := classOf(p)
@@ -263,6 +263,9 @@ func (s *State) recordIdle(ev journal.Event, p *journal.Failure) {
 }
 
 func (s *State) recordCarried(ev journal.Event, p *journal.TrialCarried) {
+	if p.RecordOnly {
+		return
+	}
 	intent := &journal.TrialIntent{Regime: p.Class.Regime, Workload: p.Class.Workload, Cores: p.Class.Cores, DurationS: p.Class.DurationS, Condition: p.Condition, Profile: p.Profile}
 	end := &journal.TrialEnd{Trial: p.Source.Trial, Outcome: p.Outcome, Signal: p.Signal, DurationS: p.DurationS}
 	s.recordEvidence(ev, intent, end)

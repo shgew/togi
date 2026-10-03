@@ -344,3 +344,132 @@ func TestFactWalkRejectsCorruptOlderArchive(t *testing.T) {
 		t.Fatalf("corrupt mark source silently omitted: carry %+v, error %v", c, err)
 	}
 }
+
+func TestRecordOnlyFactsSurviveTwoTransitionsWithoutMarks(t *testing.T) {
+	dir := t.TempDir()
+	cores := []machine.CoreInfo{{Core: 0}, {Core: 1}}
+	a := newJournal(t, dir, "A", 8, &context, cores...)
+	for _, outcome := range []journal.Outcome{journal.OutcomePass, journal.OutcomeFailure} {
+		id := string(outcome)
+		a.add(&journal.TrialIntent{Trial: id, Cores: []int{0}, Profile: []int{-30, -50}, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Rotation: 1, Step: 2, RecordOnly: true})
+		signal, duration := machine.Signal(""), 120
+		if outcome == journal.OutcomeFailure {
+			signal, duration = machine.ComputationError, 11
+		}
+		end := a.add(&journal.TrialEnd{Trial: id, Outcome: outcome, Signal: signal, DurationS: duration, Core: new(0)})
+		if outcome == journal.OutcomeFailure {
+			failure := a.add(&journal.Failure{Trial: id, Attribution: journal.Attributed, Core: new(0), Offset: new(-30), Condition: machine.Resident, Regime: machine.R7, Signal: signal})
+			for i, source := range []int{end, failure} {
+				a.add(&journal.HuntStart{Hunt: i + 1, Failure: source, Trial: id, Failing: []int{-30, -50}})
+				a.add(&journal.HuntEnd{Hunt: i + 1, Result: "culprit", Cores: []int{0}})
+			}
+		}
+	}
+	a.archive(dir)
+	first, err := prepareFacts(dir, "A", []defect.Entry{}, &context, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 2 || !first[0].RecordOnly || !first[1].RecordOnly {
+		t.Fatalf("partial decisive facts were dropped or unmarked: %+v", first)
+	}
+	derived, err := compute(dir, "A", []defect.Entry{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(derived.Cores) != 0 {
+		t.Fatalf("live record-only outcomes manufactured marks: %+v", derived.Cores)
+	}
+	b := newJournal(t, dir, "B", 9, &context, cores...)
+	for _, f := range first {
+		payload := f.Payload().(*journal.TrialCarried)
+		if !payload.RecordOnly {
+			t.Fatalf("carried trial lost record-only marker: %+v", payload)
+		}
+		seq := b.add(payload)
+		if f.Outcome == journal.OutcomeFailure {
+			b.add(&journal.HuntStart{Hunt: 1, Failure: seq, Trial: f.Trial, Failing: f.Profile})
+			b.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{0}})
+		}
+	}
+	b.add(&journal.SessionCarried{Sources: derived.Sources, Marks: true, Carried: derived.Cores})
+	b.archive(dir)
+	second, err := prepareFacts(dir, "B", []defect.Entry{}, &context, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(first, second); diff != "" {
+		t.Fatalf("two-hop partial provenance (-want +got):\n%s", diff)
+	}
+	derived, err = compute(dir, "B", []defect.Entry{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(derived.Cores) != 0 {
+		t.Fatalf("re-carried record-only failure manufactured marks: %+v", derived.Cores)
+	}
+	c := newJournal(t, dir, "C", 10, &context, cores...)
+	for _, f := range second {
+		c.add(f.Payload())
+	}
+	c.add(&journal.SessionCarried{Sources: derived.Sources, Marks: true, Carried: derived.Cores})
+	c.close()
+	copied, err := facts.ReadJournal(filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(copied.Facts) != 0 {
+		t.Fatalf("carried facts became new observations: %+v", copied.Facts)
+	}
+	if diff := cmp.Diff(first, copied.Carried); diff != "" {
+		t.Fatalf("second carried extraction (-want +got):\n%s", diff)
+	}
+}
+
+func TestRulesetSevenToEightRetainsSameBIOSEvidenceAndMarks(t *testing.T) {
+	dir := t.TempDir()
+	old := newJournal(t, dir, "ruleset-seven", 7, &context, machine.CoreInfo{Core: 0}, machine.CoreInfo{Core: 1})
+	pass, _ := factTrial(old, 0, journal.OutcomePass)
+	failure, mark := factTrial(old, 1, journal.OutcomeFailure)
+	old.close()
+	before, err := facts.ReadJournal(filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	j, err := journal.Lock(dir, opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.Close()
+	got, err := Prepare(j, journal.Build{Schema: journal.Schema, Ruleset: 8}, []defect.Entry{}, &context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("ruleset-7 to 8 did not prepare a transition")
+	}
+	if diff := cmp.Diff([]journal.CarriedSource{src("ruleset-seven", 7)}, got.Sources); diff != "" {
+		t.Fatalf("transition sources: %s", diff)
+	}
+	if diff := cmp.Diff([]journal.CarriedCore{
+		{Core: 0, Edge: new(-30), EdgeSession: pass.session, EdgeSeq: pass.seq},
+		{Core: 1, FailedMark: new(-30), MarkSession: failure.session, MarkSeq: mark, MarkSignal: machine.ComputationError},
+	}, got.Cores); diff != "" {
+		t.Fatalf("ordinary carried values (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(before.Facts, got.Facts); diff != "" {
+		t.Fatalf("ruleset-7 evidence changed (-want +got):\n%s", diff)
+	}
+	for _, f := range got.Facts {
+		if f.RecordOnly {
+			t.Fatalf("preexisting trial acquired record-only marker: %+v", f)
+		}
+	}
+	archived, err := facts.ReadJournal(filepath.Join(dir, "archive", "ruleset-seven.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(before.Events, archived.Events); diff != "" {
+		t.Fatalf("source journal changed during transition: %s", diff)
+	}
+}

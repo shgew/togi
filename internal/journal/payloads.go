@@ -372,21 +372,23 @@ func (p *ProfileRestored) Message() string {
 type TrialIntent struct {
 	Trial string `json:"trial"`
 	KernelBoundary
-	Profile   []int             `json:"profile"`
-	Core      *int              `json:"core,omitempty"`
-	Cores     []int             `json:"cores,omitempty"`
-	Offset    *int              `json:"offset,omitempty"`
-	Regime    machine.Regime    `json:"regime"`
-	Workload  string            `json:"workload"`
-	DurationS int               `json:"duration_s"`
-	Condition machine.Condition `json:"condition"`
-	Phase     Phase             `json:"phase,omitempty"`
-	Retry     bool              `json:"retry,omitempty"`
-	Rotation  int               `json:"rotation,omitempty"`
-	Hunt      int               `json:"hunt,omitempty"`
-	Mask      int               `json:"mask,omitempty"`
-	Round     int               `json:"round,omitempty"`
-	Rerun     bool              `json:"rerun,omitempty"`
+	Profile    []int             `json:"profile"`
+	Core       *int              `json:"core,omitempty"`
+	Cores      []int             `json:"cores,omitempty"`
+	Offset     *int              `json:"offset,omitempty"`
+	Regime     machine.Regime    `json:"regime"`
+	Workload   string            `json:"workload"`
+	DurationS  int               `json:"duration_s"`
+	Condition  machine.Condition `json:"condition"`
+	Phase      Phase             `json:"phase,omitempty"`
+	Retry      bool              `json:"retry,omitempty"`
+	Rotation   int               `json:"rotation,omitempty"`
+	Step       int               `json:"step,omitempty"`
+	Hunt       int               `json:"hunt,omitempty"`
+	Mask       int               `json:"mask,omitempty"`
+	Round      int               `json:"round,omitempty"`
+	Rerun      bool              `json:"rerun,omitempty"`
+	RecordOnly bool              `json:"record_only,omitempty"`
 }
 
 func (*TrialIntent) Kind() Kind { return KindTrialIntent }
@@ -412,6 +414,9 @@ func (p *TrialIntent) Message() string {
 	if p.Rotation > 0 {
 		fmt.Fprintf(&b, " rotation %d", p.Rotation)
 	}
+	if p.Step > 0 {
+		fmt.Fprintf(&b, " step %d", p.Step)
+	}
 	if p.Hunt > 0 {
 		fmt.Fprintf(&b, " hunt %d mask %d", p.Hunt, p.Mask)
 	}
@@ -420,6 +425,9 @@ func (p *TrialIntent) Message() string {
 	}
 	if p.Rerun {
 		b.WriteString(" rerun")
+	}
+	if p.RecordOnly {
+		b.WriteString(" record-only")
 	}
 	return b.String()
 }
@@ -770,6 +778,33 @@ func (p *GuardRotation) Message() string {
 		return fmt.Sprintf("guard rotation %d end, not clean: %s", p.Rotation, p.Reason)
 	}
 	return fmt.Sprintf("guard rotation %d %s", p.Rotation, p.Event)
+}
+
+type GuardPartial struct {
+	CCD    int    `json:"ccd"`
+	Cores  []int  `json:"cores"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type GuardStep struct {
+	Rotation int            `json:"rotation"`
+	Step     int            `json:"step"`
+	Profile  []int          `json:"profile"`
+	Partials []GuardPartial `json:"partials"`
+}
+
+func (*GuardStep) Kind() Kind { return KindGuardStep }
+func (p *GuardStep) Message() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "guard rotation %d R7 step %d starts at resident profile %v", p.Rotation, p.Step, p.Profile)
+	for _, partial := range p.Partials {
+		if len(partial.Cores) == 0 {
+			fmt.Fprintf(&b, "; CCD %d record-only partial skipped: %s", partial.CCD, partial.Reason)
+		} else {
+			fmt.Fprintf(&b, "; CCD %d record-only partial loads cores %s", partial.CCD, coreList(partial.Cores))
+		}
+	}
+	return b.String()
 }
 
 type CommandReset struct {

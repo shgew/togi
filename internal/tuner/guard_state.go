@@ -38,7 +38,17 @@ func (s *State) projectGuard() *journal.GuardState {
 		g.stepsDone = len(g.steps)
 		for i := range g.steps {
 			unmet := false
+			if g.steps[i] == machine.R7 && g.partial[i+1] == nil {
+				g.stepsDone = i
+				break
+			}
 			for _, q := range s.requirements(i) {
+				if q.class.regime == machine.R7 {
+					if _, _, pending := s.partialRequirement(i, q); pending {
+						unmet = true
+						break
+					}
+				}
 				if q.count > 0 && s.passes(q.class, g.profile, g.startSeq, rotationEvidence) < q.count {
 					unmet = true
 					break

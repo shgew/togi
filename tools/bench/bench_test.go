@@ -41,7 +41,7 @@ func TestMetrics(t *testing.T) {
 	for _, regime := range machine.Regimes {
 		hazards[regime] = 0.108
 	}
-	want := result{SimHours: 2, FirstCleanRotationH: new(1.0), Crashes: 1, Trials: 2, TrialHours: 120.0 / 3600, Hunts: 1, JointMarks: 1, FinalProfile: []int{-10, -11}, Depth: -21, HazardPerH: hazards, HazardMaxPerH: 0.108}
+	want := result{SimHours: 2, FirstCleanRotationH: new(1.0), CleanRotations: 2, Crashes: 1, Trials: 2, TrialHours: 120.0 / 3600, Hunts: 1, JointMarks: 1, FinalProfile: []int{-10, -11}, Depth: -21, HazardPerH: hazards, HazardMaxPerH: 0.108}
 	if diff := cmp.Diff(want, got, approx); diff != "" {
 		t.Fatalf("metrics (-want +got):\n%s", diff)
 	}

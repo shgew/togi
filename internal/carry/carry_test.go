@@ -296,19 +296,21 @@ func TestPrepareSkipsFailuresBehindADefect(t *testing.T) {
 
 func TestPrepareMarksATrialInFlight(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		offset    int
-		condition machine.Condition
-		mark      bool
+		name       string
+		offset     int
+		condition  machine.Condition
+		mark       bool
+		recordOnly bool
 	}{
-		{"isolated", -20, machine.Isolated, true},
-		{"at CO 0", 0, machine.Isolated, false},
-		{"resident", -20, machine.Resident, false},
+		{"isolated", -20, machine.Isolated, true, false},
+		{"at CO 0", 0, machine.Isolated, false, false},
+		{"resident", -20, machine.Resident, false, false},
+		{"record-only isolated", -20, machine.Isolated, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			w := newJournal(t, dir, "X", 3, &context)
-			w.intent(4, tc.offset, tc.condition)
+			w.add(&journal.TrialIntent{Trial: "0001", Core: new(4), Offset: new(tc.offset), Regime: machine.R6, Condition: tc.condition, RecordOnly: tc.recordOnly})
 			w.close()
 
 			var want []journal.CarriedCore

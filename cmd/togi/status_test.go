@@ -332,3 +332,19 @@ func TestStatusExceptionalActivity(t *testing.T) {
 		})
 	}
 }
+
+func TestStatusRecordOnlyPartial(t *testing.T) {
+	t.Parallel()
+	p := &journal.TrialIntent{Trial: "partial", Cores: []int{1, 2, 3, 4, 5, 6, 7}, RecordOnly: true, Step: 1, Rotation: 1, Regime: machine.R7, Workload: "AVX2", Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 120}
+	st := journal.State{
+		Session:  &journal.SessionInfo{ID: "s1", Start: time.Unix(100, 0).UTC()},
+		Phase:    string(journal.PhaseGuard),
+		Guard:    &journal.GuardState{Rotation: 1, RotationOpen: true, Steps: []machine.Regime{machine.R7}},
+		InFlight: &journal.InFlight{Seq: 20, Msg: p.Message()},
+	}
+	var out bytes.Buffer
+	writeStatus(&out, st, nil)
+	if !strings.Contains(out.String(), "record-only") || !strings.Contains(out.String(), "cores 01, 02, 03, 04, 05, 06, 07") {
+		t.Fatalf("status did not identify the partial: %s", out.String())
+	}
+}

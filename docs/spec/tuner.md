@@ -4,11 +4,11 @@ Normative rules for how togi moves offsets. Terms are defined in `GLOSSARY.md`. 
 
 ## Ruleset
 
-The ruleset is the hardcoded strategy: search strides, offset range, phases, evidence and mark rules, hunt and refinement, and guard coverage. Changing these bumps `tuner.Ruleset` (now 7) and archives an active older session into a seeded new session ([ADR 0019](../adr/0019-a-ruleset-change-starts-a-seeded-session.md), [ADR 0020](../adr/0020-hunt-and-refine.md), [ADR 0023](../adr/0023-hunts-that-converge-on-shared-voltage.md), [ADR 0024](../adr/0024-schedule-from-uncontradicted-evidence.md), [ADR 0027](../adr/0027-carry-trial-facts.md)). Changes to configurable defaults and fixes that record facts more accurately do not bump it.
+The ruleset is the hardcoded strategy: search strides, offset range, phases, evidence and mark rules, hunt and refinement, and guard coverage. Changing these bumps `tuner.Ruleset` (now 8) and archives an active older session into a seeded new session ([ADR 0019](../adr/0019-a-ruleset-change-starts-a-seeded-session.md), [ADR 0020](../adr/0020-hunt-and-refine.md), [ADR 0023](../adr/0023-hunts-that-converge-on-shared-voltage.md), [ADR 0024](../adr/0024-schedule-from-uncontradicted-evidence.md), [ADR 0027](../adr/0027-carry-trial-facts.md)). Changes to configurable defaults and fixes that record facts more accurately do not bump it.
 
 The evidence epoch (`tuner.EvidenceEpoch`, now 1) separately versions compatibility of trial outcomes: workload content, backend binary or configuration, intended durations, and pass/failure detection (`workloads.md`). `session.start.evidence` records it. Without that field, a session with ruleset ≥ 6 has epoch 1; an older session has epoch 0. A transition drops passes from other epochs but keeps eligible failures. An epoch change is not a ruleset or journal-schema bump.
 
-Transitions record eligible same-BIOS trial and idle-failure facts before `session.carried` (`journal.md`, Transitions). Ruleset 7 decides from these carried facts under the Evidence rules below; it does not carry resident offsets or qualified rotations.
+Transitions record eligible same-BIOS trial and idle-failure facts before `session.carried` (`journal.md`, Transitions). Ruleset 8 decides from ordinary carried facts under the Evidence rules below, preserving record-only facts without using them; it does not carry resident offsets or qualified rotations.
 
 ## Invariants
 
@@ -58,6 +58,8 @@ Any failure during an isolated trial is attributed to the target, crashes includ
 
 ## Evidence
 
+These decision rules apply only to ordinary trials and facts. `record_only` partial outcomes stay in the journal and facts extraction but never enter the ledger or any path below, and record-only starts bypass known-failure skips.
+
 One start is one trial, with no internal relaunch. The pass rule is `n = ceil(ln(evidence.miss) / log1p(-evidence.rate))` consecutive passing starts, five at the defaults (0.05, 0.5). The first failure rejects a step. The full count applies to a candidate edge's R1 and R2 classes, every hunt mask and every refinement check.
 
 A trial class is `(regime, workload, sorted loaded cores, duration_s)`. The ledger records each conclusive trial's class, sequence, applied `trial.intent.profile` and outcome. A pass at profile Q counts toward P only when Q is at least as deep as P, and not before the latest failure of that class at a profile at least as shallow as P. A failure at Q rules out P when Q is at least as shallow as P. Requirements on the same class within a step add, so a start counts once. An idle crash has wildcard R6 class with all cores loaded and invalidates all such R6 classes. Passes at deeper profiles can survive backoff; deeper moves need new evidence.
@@ -102,7 +104,9 @@ Resident trials run on the profile of the last `profile.change`. Before the firs
 
 No SMU write happens between resident trials: the profile stays applied.
 
-R6 loads every core. On two CCDs, an R7 guard step has CCD0, CCD1 and all-core parts; on one CCD it has one all-core part. Every part needs three short starts at `start_s` and one long start at its allocated R7 duration (counts add when durations coincide). Each start has its own intent, instance set and teardown. Only loaded cores run backend instances; the resident offsets on all cores stay applied.
+R6 loads every core. On two CCDs, an R7 guard step runs CCD0 partial, CCD0 full, CCD1 partial, CCD1 full and all-core parts; on one CCD it runs a partial before the all-core part. Each partial loads every core of its CCD except all cores tied at that CCD's shallowest offset in the resident profile when the step starts. `guard.step` freezes that starting profile and both masks across profile changes and resume. An empty mask is skipped with a journaled reason. Every nonempty part has three short starts at `start_s` and one long start at its CCD's full-part duration (counts add when durations coincide). Each start has its own intent, instance set and teardown. Only loaded cores run backend instances; the resident offsets on all cores stay applied.
+
+Partial starts carry `trial.intent.record_only: true`. Their normal trial events, signals, MCEs and outcomes remain evidence for inspection and facts extraction, and decisive outcomes carry forward as marked `trial.carried` facts. They never enter the decision ledger: neither passes nor failures can answer a candidate edge, hunt mask, rerun, known-failure skip or refinement check, invalidate passes or qualifying profiles, produce monotonicity warnings, or derive a failed mark. The marker is not part of the trial class; exclusion applies even when another phase loads the same cores with the same workload and duration. A failed partial continues to the next scheduled start with no rerun, attribution decision, hunt, backoff or stability dead end, even at CO 0. Inconclusive starts retain the ordinary backend retries and no-evidence safety stop; containment and thermal safety stops still apply.
 
 ## Crashes
 
@@ -115,6 +119,8 @@ Restoring offsets before `shutdown` (`runtime.md`) is not an application: its `s
 
 `crash.detected` carries the condition of the boot's last application.
 
+A crash interrupting a record-only partial still records `crash.detected` and `trial.end`. A decisive recovered failure completes that start and continues the guard without acting on it.
+
 A crash with a trial in flight and an idle crash are failures like any other: no rule counts them against a search or guard, caps them, or pauses after a run of them ([ADR 0018](../adr/0018-crashes-are-not-a-cost.md)). Only stray crashes are counted, for the boot-loop dead end.
 
 ## Decision events
@@ -125,7 +131,7 @@ Moves are `tuner.decision`: `step_deeper`, `check_edge`, `deepen`, `yield` and `
 
 Guard begins when no core remains in search. Its first `profile.change` has `from: null`. A profile change does not end an open rotation; passing steps on a deeper profile remain evidence after a backoff. Only `reset --core` and a covered rotation ending for refinement (Refinement) end a rotation unclean.
 
-A rotation captures the configured schedule in its start event. R1 and R2 occurrences select successive catalog workloads (three occurrences cover each catalog); R3, R4 and R5 run on each core; R6 runs all cores. Each R7 occurrence selects its next R2 workload and requires every part's three short and one long starts. Requirements sharing a trial class add, and trials passed on sufficiently deep profiles since the rotation start can fulfill them. The first unmet requirement of the first unmet step runs next. The rotation ends clean when all requirements pass, and qualifies when it has at least three R1, R2 and R7 steps and one each of R3, R4, R5 and R6. A non-qualifying end records the missing coverage. The newest qualifying profile, or an older eligible one, anchors hunts and refinement.
+A rotation captures the configured schedule in its start event. R1 and R2 occurrences select successive catalog workloads (three occurrences cover each catalog); R3, R4 and R5 run on each core; R6 runs all cores. Each R7 occurrence selects its next R2 workload and requires every full part's three short and one long passing starts, with record-only partials scheduled before their respective full parts. Only full-part requirements sharing a trial class add, and trials passed on sufficiently deep profiles since the rotation start can fulfill them. The first unmet requirement of the first unmet step runs next. The rotation ends clean when all requirements pass, and qualifies when it has at least three R1, R2 and R7 steps and one each of R3, R4, R5 and R6. A partial's failure or absence never makes the rotation unclean and supplies no qualifying coverage. A non-qualifying end records the missing coverage. The newest qualifying profile, or an older eligible one when it covers the failing profile and is nowhere shallower, anchors a hunt.
 
 Only live passes since the rotation start fulfill rotation requirements; carried passes never qualify it. Failure invalidation is global, including carried failures before that start, so the live-pass boundary does not restore contradicted evidence.
 

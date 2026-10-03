@@ -26,6 +26,8 @@ type result struct {
 	WallS                   float64                    `json:"wall_s"`
 	SimHours                float64                    `json:"sim_hours"`
 	FirstCleanRotationH     *float64                   `json:"first_clean_rotation_h"`
+	CleanRotations          int                        `json:"clean_rotations"`
+	PartialSeconds          float64                    `json:"partial_seconds"`
 	Crashes                 int                        `json:"crashes"`
 	Trials                  int                        `json:"trials"`
 	RealAnswers             int                        `json:"real_answers"`
@@ -44,6 +46,8 @@ func metrics(events []journal.Event, m *sim.Machine, cores int) result {
 	var r result
 	var start time.Time
 	var st journal.State
+	partialIntents := make(map[string]int)
+	partialSeconds := make(map[int]float64)
 	t := tuner.New()
 	journal.Replay(events, &st, t)
 	t.Project(&st)
@@ -68,14 +72,26 @@ func metrics(events []journal.Event, m *sim.Machine, cores int) result {
 		r.SimHours = h
 		switch p := e.Data.(type) {
 		case *journal.GuardRotation:
-			if p.Clean && r.FirstCleanRotationH == nil {
-				r.FirstCleanRotationH = new(h)
+			if p.Event == journal.RotationEnd && p.Clean {
+				r.CleanRotations++
+				r.PartialSeconds += partialSeconds[p.Rotation]
+				if r.FirstCleanRotationH == nil {
+					r.FirstCleanRotationH = new(h)
+				}
+			}
+		case *journal.TrialIntent:
+			if p.RecordOnly && p.Rotation > 0 {
+				partialIntents[p.Trial] = p.Rotation
 			}
 		case *journal.CrashDetected:
 			r.Crashes++
 		case *journal.TrialEnd:
 			r.Trials++
 			r.TrialHours += float64(p.DurationS) / 3600
+			if rotation, ok := partialIntents[p.Trial]; ok {
+				partialSeconds[rotation] += float64(p.DurationS)
+				delete(partialIntents, p.Trial)
+			}
 		case *journal.HuntStart:
 			r.Hunts++
 		case *journal.MarkJoint:
@@ -125,6 +141,13 @@ func answerShare(real, trials int) float64 {
 		return 0
 	}
 	return float64(real) / float64(trials)
+}
+
+func partialSecondsPerRotation(seconds float64, rotations int) float64 {
+	if rotations == 0 {
+		return 0
+	}
+	return seconds / float64(rotations)
 }
 
 func setScenarioShares(results []result) {

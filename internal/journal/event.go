@@ -49,6 +49,7 @@ const (
 	KindTunerDecision   Kind = "tuner.decision"
 	KindCorePhase       Kind = "core.phase"
 	KindGuardRotation   Kind = "guard.rotation"
+	KindGuardStep       Kind = "guard.step"
 	KindHostRanking     Kind = "host.ranking"
 	KindHuntStart       Kind = "hunt.start"
 	KindHuntMask        Kind = "hunt.mask"
@@ -248,6 +249,7 @@ var payloadTypes = map[Kind]payloadType{
 	KindTunerDecision:   typeOf[TunerDecision](),
 	KindCorePhase:       typeOf[CorePhase](),
 	KindGuardRotation:   typeOf[GuardRotation](),
+	KindGuardStep:       typeOf[GuardStep](),
 	KindHostRanking:     typeOf[HostRanking](),
 	KindHuntStart:       typeOf[HuntStart](),
 	KindHuntMask:        typeOf[HuntMask](),

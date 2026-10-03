@@ -8,7 +8,7 @@ import (
 )
 
 func (s *State) skipKnownFailure(a Action) Action {
-	if a.Kind != RunTrial {
+	if a.Kind != RunTrial || a.Trial.RecordOnly {
 		return a
 	}
 	t := a.Trial

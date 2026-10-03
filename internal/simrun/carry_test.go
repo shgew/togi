@@ -19,6 +19,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 var (
@@ -532,7 +533,7 @@ func TestRulesetTransitionCarriesCulpritAndDirectHuntMarks(t *testing.T) {
 	}
 }
 
-func TestRuleset7ChecksCarriedEdgesButQualifiesWithLivePasses(t *testing.T) {
+func TestCurrentRulesetChecksCarriedEdgesButQualifiesWithLivePasses(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(2)
 	c := config.Default()
@@ -563,8 +564,8 @@ func TestRuleset7ChecksCarriedEdgesButQualifiesWithLivePasses(t *testing.T) {
 	if err != nil || torn != nil {
 		t.Fatalf("read transitioned session: %v, torn %q", err, torn)
 	}
-	if start := events[0].Data.(*journal.SessionStart); start.Ruleset != 7 {
-		t.Fatalf("transition ruleset %d, want 7", start.Ruleset)
+	if start := events[0].Data.(*journal.SessionStart); start.Ruleset != tuner.Ruleset {
+		t.Fatalf("transition ruleset %d, want %d", start.Ruleset, tuner.Ruleset)
 	}
 	archived, err := facts.ReadJournal(filepath.Join(dir, "archive", id+".jsonl"))
 	if err != nil || archived.Ruleset != 6 {
@@ -658,7 +659,7 @@ func firstRotationLivePasses(t *testing.T, events []journal.Event) map[string]in
 	return nil
 }
 
-func TestRuleset7StartsHuntFromCarriedResidentFailure(t *testing.T) {
+func TestCurrentRulesetStartsHuntFromCarriedResidentFailure(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(4)
 	cfg.Edges[1].Resident[6] = -5
@@ -704,8 +705,8 @@ func TestRuleset7StartsHuntFromCarriedResidentFailure(t *testing.T) {
 	if err != nil || torn != nil {
 		t.Fatalf("read transitioned session: %v, torn %q", err, torn)
 	}
-	if start := events[0].Data.(*journal.SessionStart); start.Ruleset != 7 {
-		t.Fatalf("transition ruleset %d, want 7", start.Ruleset)
+	if start := events[0].Data.(*journal.SessionStart); start.Ruleset != tuner.Ruleset {
+		t.Fatalf("transition ruleset %d, want %d", start.Ruleset, tuner.Ruleset)
 	}
 	carriedSeq := 0
 	found := false

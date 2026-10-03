@@ -143,8 +143,8 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 	}
 	p := &journal.TrialIntent{
 		Trial: tr.id, Regime: t.Regime, Workload: w.ID, DurationS: duration,
-		Condition: t.Condition, Phase: t.Phase, Retry: t.Retry, Rotation: t.Rotation,
-		Profile: profile, Hunt: t.Hunt, Mask: t.Mask, Round: t.Round, Rerun: t.Rerun,
+		Condition: t.Condition, Phase: t.Phase, Retry: t.Retry, Rotation: t.Rotation, Step: t.Step,
+		Profile: profile, Hunt: t.Hunt, Mask: t.Mask, Round: t.Round, Rerun: t.Rerun, RecordOnly: t.RecordOnly,
 	}
 	if multi {
 		p.Cores = cores

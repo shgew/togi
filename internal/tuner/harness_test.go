@@ -81,7 +81,7 @@ func (h *harness) start(a Action) journal.Event {
 	}
 	h.trials++
 	tr := a.Trial
-	p := &journal.TrialIntent{Trial: fmt.Sprintf("%04d", h.trials), Regime: tr.Regime, Workload: cmp.Or(tr.Workload, machine.Workloads(tr.Regime)[0].ID), DurationS: tr.DurationS, Condition: tr.Condition, Phase: tr.Phase, Retry: tr.Retry, Rotation: tr.Rotation, Hunt: tr.Hunt, Mask: tr.Mask, Round: tr.Round, Rerun: tr.Rerun, Cores: tr.Cores, Profile: tr.Profile}
+	p := &journal.TrialIntent{Trial: fmt.Sprintf("%04d", h.trials), Regime: tr.Regime, Workload: cmp.Or(tr.Workload, machine.Workloads(tr.Regime)[0].ID), DurationS: tr.DurationS, Condition: tr.Condition, Phase: tr.Phase, Retry: tr.Retry, Rotation: tr.Rotation, Hunt: tr.Hunt, Mask: tr.Mask, Round: tr.Round, Rerun: tr.Rerun, RecordOnly: tr.RecordOnly, Step: tr.Step, Cores: tr.Cores, Profile: tr.Profile}
 	if len(tr.Cores) == 0 {
 		p.Core = new(tr.Core)
 		p.Offset = new(tr.Offset)

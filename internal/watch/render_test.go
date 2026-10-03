@@ -201,3 +201,13 @@ func TestTrialTargets(t *testing.T) {
 		t.Fatal(diff)
 	}
 }
+
+func TestRecordOnlyPartialTrial(t *testing.T) {
+	t.Parallel()
+	p := &journal.TrialIntent{Trial: "partial", Cores: []int{1, 2, 3, 4, 5, 6, 7}, RecordOnly: true, Regime: machine.R7, Workload: "AVX2", Condition: machine.Resident, DurationS: 120}
+	s := Snapshot{trial: inFlightTrial(p, nil, 16)}
+	line := ansi.Strip(s.trialLine(time.Unix(1000, 0)))
+	if !strings.HasPrefix(line, "record-only partial cores 01 02 03 04 05 06 07   resident   R7 AVX2") {
+		t.Fatalf("partial is not identifiable: %s", line)
+	}
+}

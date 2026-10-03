@@ -19,6 +19,7 @@ Works today, on a simulated 16-core machine:
 - the full simulated tuning lifecycle: per-core search, failure hunts, joint marks, resident refinement, qualifying guard rotations, crash resume and reset;
 - a seeded session after a ruleset update or BIOS change: a ruleset change carries eligible same-BIOS trial facts for candidate-edge checks, hunt masks, reruns and refinement, while rotations qualify only on live passes; a BIOS change carries edges but not failed marks or trial facts;
 - evidence-based hunt duration and singleton-probe scheduling, and credit for an earlier uncontradicted qualifying rotation at an equal or deeper profile;
+- record-only R7 guard parts that leave each CCD's shallowest cores idle, preserving partial-load outcomes as facts without changing offsets, marks or rotation qualification;
 - reading a session's hunt, joint marks, qualified rotations and valid per-workload starts with `status`, `events` and the live `watch` dashboard; `status` shows the Tctl peak from resident passes since the last profile change and its source trial.
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:
