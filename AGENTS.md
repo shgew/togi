@@ -82,6 +82,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just fmt` | Format Go, Nix and the justfile in place |
 | `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just bench [flags]` | The bench suite of simulated sessions, optionally compared against a baseline run (`go run ./tools/bench`, `docs/benchmarking.md`) |
+| `just same [base]` | Prove a shape-only change leaves all simulated session journals unchanged; base defaults to `origin/main` (`docs/benchmarking.md`) |
 | `just facts STATE-DIR` | Regenerate the committed privacy-safe target evidence from a copied state directory (`docs/benchmarking.md`) |
 | `just fit [flags]` | Regenerate the target-machine fit and eight bootstrap refits, then report the forward-chained check on later sessions (`docs/benchmarking.md`) |
 | `just forward [--seal N]` | Only the forward-chained check, writing no machine files; `--seal N` leaves the newest N sessions unscored (`docs/benchmarking.md`) |

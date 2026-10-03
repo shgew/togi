@@ -81,6 +81,11 @@ stats *args:
 bench *args:
     {{ dev }} go run ./tools/bench "$@"
 
+# Prove simulated session decisions are unchanged from a base revision
+[group('run')]
+same base="origin/main":
+    dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; {{ dev }} go run ./tools/bench --same "$dir"
+
 [group('run')]
 bench-baseline:
     {{ dev }} go run ./tools/bench --split all --out tools/bench/baseline.jsonl

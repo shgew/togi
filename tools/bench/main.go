@@ -38,9 +38,10 @@ type runSpec struct {
 	cfg      sim.Config
 }
 type options struct {
-	suite, split, out, baseline, keep string
-	jobs                              int
-	timeout                           time.Duration
+	suite, split, out, baseline, keep, same string
+
+	jobs    int
+	timeout time.Duration
 }
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
@@ -49,11 +50,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var o options
 	flags := flag.NewFlagSet("bench", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	flags.StringVar(&o.suite, "suite", "tools/bench/suite.toml", "scenario TOML file; machine paths are relative to this file")
-	flags.StringVar(&o.split, "split", "dev", "seed split: dev, holdout, or all")
-	flags.StringVar(&o.out, "out", "", "write one JSON object per run to this file")
-	flags.StringVar(&o.baseline, "baseline", "", "compare against a JSON Lines baseline")
-	flags.StringVar(&o.keep, "keep", "", "keep run directories under this directory")
+	flags.StringVar(&o.suite, "suite", "tools/bench/suite.toml", "scenario TOML file; relative paths resolve in each tree with --same; machine paths are relative to this file")
+	flags.StringVar(&o.split, "split", "dev", "seed split: dev, holdout, or all; incompatible with --same")
+	flags.StringVar(&o.out, "out", "", "write one JSON object per run to this file; incompatible with --same")
+	flags.StringVar(&o.baseline, "baseline", "", "compare against a JSON Lines baseline; incompatible with --same")
+	flags.StringVar(&o.keep, "keep", "", "keep run directories under this directory; --same separates base and head")
+	flags.StringVar(&o.same, "same", "", "compare all session journals against checkout DIR, ignoring only build version, revision and description; skip metrics and model checks")
 	flags.IntVar(&o.jobs, "jobs", runtime.NumCPU(), "maximum parallel simulator subprocesses")
 	flags.DurationVar(&o.timeout, "timeout", 180*time.Second, "wall timeout for each simulator subprocess")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
@@ -61,9 +63,32 @@ func run(args []string, stdout, stderr io.Writer) int {
 	} else if err != nil {
 		return 2
 	}
+	if o.same != "" {
+		conflict := ""
+		flags.Visit(func(f *flag.Flag) {
+			if f.Name == "split" || f.Name == "baseline" || f.Name == "out" {
+				conflict = f.Name
+			}
+		})
+		if conflict != "" {
+			fmt.Fprintf(stderr, "bench: --same cannot be combined with --%s\n", conflict)
+			return 2
+		}
+	}
 	if flags.NArg() != 0 || o.jobs < 1 || o.timeout <= 0 || (o.split != "dev" && o.split != "holdout" && o.split != "all") {
 		fmt.Fprintln(stderr, "bench: require no positional arguments, positive --jobs and --timeout, and --split dev|holdout|all")
 		return 2
+	}
+	if o.same != "" {
+		different, err := executeSame(o, stdout, stderr)
+		if err != nil {
+			fmt.Fprintf(stderr, "bench: %v\n", err)
+			return 1
+		}
+		if different {
+			return 1
+		}
+		return 0
 	}
 	if err := execute(o, stdout, stderr); err != nil {
 		fmt.Fprintf(stderr, "bench: %v\n", err)
