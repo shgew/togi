@@ -160,8 +160,12 @@ func (p *projector) trialEnd(line entry, d *journal.TrialEnd, cause []int) (entr
 		line.tag, line.text, line.tone = tagPass, what, goodTone
 		line.runs, line.each, line.peak = 1, time.Duration(d.DurationS)*time.Second, d.TctlMaxC
 	case journal.OutcomeFailure:
+		recorded := ""
+		if in != nil && in.RecordOnly {
+			recorded = ", recorded only"
+		}
 		if d.Signal == machine.Crash {
-			line.tag, line.text, line.tone = tagCrash, what+", rebooted", badTone
+			line.tag, line.text, line.tone = tagCrash, what+", rebooted"+recorded, badTone
 			// Recovery appends the trial outcome after the reboot; only an exact cause links their history.
 			for i := len(p.s.history) - 1; i >= 0; i-- {
 				previous := &p.s.history[i]
@@ -171,7 +175,11 @@ func (p *projector) trialEnd(line entry, d *journal.TrialEnd, cause []int) (entr
 				}
 			}
 		} else {
-			line.tag, line.text, line.tone = tagFail, what+", "+signalText(d.Signal), badTone
+			tone := badTone
+			if recorded != "" {
+				tone = warnTone
+			}
+			line.tag, line.text, line.tone = tagFail, what+", "+signalText(d.Signal)+recorded, tone
 		}
 	case journal.OutcomeInconclusive:
 		reason := "it could not run"
@@ -296,6 +304,9 @@ func (p *projector) trialWhat(in *journal.TrialIntent) string {
 		if i := slices.IndexFunc(p.st.Cores, func(c journal.CoreState) bool { return c.Core == cores[0] }); i >= 0 && i < len(in.Profile) {
 			where += fmt.Sprintf(" at %d", in.Profile[i])
 		}
+	}
+	if in.RecordOnly {
+		what = "partial " + what
 	}
 	return what + " " + where
 }

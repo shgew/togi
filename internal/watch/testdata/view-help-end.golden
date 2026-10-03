@@ -2,12 +2,6 @@
 
   TESTING TOGETHER  lap 1, step 1 of 3  ███████████████████░░░░░  0m27s left
 
-│   held back by others   Combination restrictions keep it shallower than its own
-│                         failure point, so it cannot go deeper at the other
-│                         cores' current offsets.
-│ 
-│   suspect               During a hunt: back at the offset it failed with, so
-│                         this test tells whether it is part of the cause.
 │ 
 │   parked                During a hunt: held at an offset that passed before,
 │                         usually 0, so it can't be the cause.
@@ -24,6 +18,12 @@
 │                         resulting offsets. Only a full lap covers every required
 │                         kind of load.
 │ 
+│   recorded only         A partial all-core part of a lap step, with the cores at
+│                         their CCD's shallowest offset left idle. Its result is
+│                         kept on record but moves no offset. The lap needs it to
+│                         finish, pass or fail, and it covers no required kind of
+│                         load.
+│ 
 │   run                   One launch of one test. Confirming a solo limit, a hunt
 │                         group or a deepening move needs several passes in a row.
 │                         Ordinary lap steps can advance after one pass, while
@@ -37,7 +37,7 @@
 │                            Like a game's main thread, opening apps or loading
 │                            web pages.
 │ 
-█   heavy vector load        One thread of heavy vector math, which draws the most
+│   heavy vector load        One thread of heavy vector math, which draws the most
 █                            current.
 █                            Like video encoding, 3D rendering or scientific math
 █                            on one thread.
@@ -66,4 +66,4 @@
 █ 
 █ Passing tests can't prove offsets will never fail. They show which tests passed, and more laps catch rarer failures.
 
-  ↑↓ PgUp PgDn  lines 76-138 of 138    ? or Esc back    L event log    q quit
+  ↑↓ PgUp PgDn  lines 82-144 of 144    ? or Esc back    L event log    q quit

@@ -315,6 +315,8 @@ func (s Snapshot) rerunStory() story {
 	return story{headline: s.headline(), tone: plainTone, paragraphs: []string{text}}
 }
 
+const recordOnlyNote = "This part only keeps a record: cores at their CCD's shallowest offset sit idle, and a pass or a failure, even a crash, moves no offset. The lap goes on either way."
+
 func (s Snapshot) lapStory(t *trial) story {
 	g := s.guard
 	if s.goal() {
@@ -323,6 +325,9 @@ func (s Snapshot) lapStory(t *trial) story {
 			"Passing tests can't prove a profile will never fail, so I keep running laps to catch rare failures. Stop me whenever you like. These offsets are the ones to carry into the BIOS.",
 		}}
 		st.paragraphs = append(st.paragraphs, "Right now: "+describeLoad(t, len(s.cores))+".")
+		if t.recordOnly {
+			st.paragraphs = append(st.paragraphs, recordOnlyNote)
+		}
 		return st
 	}
 	st := story{headline: "TESTING TOGETHER", tone: plainTone}
@@ -339,6 +344,9 @@ func (s Snapshot) lapStory(t *trial) story {
 	if why, ok := regimeExplained[t.regime]; ok {
 		st.paragraphs = append(st.paragraphs, fmt.Sprintf("This step is %s: %s. It runs %s.", regimeWords[t.regime], why, describeLoad(t, len(s.cores))))
 	}
+	if t.recordOnly {
+		st.paragraphs = append(st.paragraphs, recordOnlyNote)
+	}
 	if s.guardQualifying {
 		st.paragraphs = append(st.paragraphs, "The goal is a clean lap: every step passes with no failure, on offsets that can't go any deeper.")
 	} else {
@@ -352,8 +360,10 @@ func describeLoad(t *trial, total int) string {
 	switch {
 	case t.regime == machine.R6:
 		return "with every core mostly idle and short bursts on one core at a time"
-	case len(t.cores) == 1:
+	case len(t.cores) == 1 && t.regime != machine.R7:
 		return fmt.Sprintf("on one core at a time, now core %02d, while the others sit idle at their offsets", t.cores[0])
+	case len(t.cores) == 1:
+		return "on " + coresText(t.cores, total)
 	}
 	return "on " + coresText(t.cores, total) + " at once"
 }
@@ -379,6 +389,10 @@ func (s Snapshot) nowLine(t *trial, now time.Time) *nowLine {
 	}
 	if t.rerun {
 		n.what = "rerun after a fix"
+	}
+	if t.recordOnly {
+		n.what += ", recorded only"
+		n.detail = "partial " + n.detail
 	}
 	if !t.hasStarted {
 		n.what = "preparing " + n.what

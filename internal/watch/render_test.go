@@ -2,6 +2,7 @@ package watch
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -334,10 +335,34 @@ func TestScrollbarThumbTracksThePage(t *testing.T) {
 
 func TestRecordOnlyPartialTrial(t *testing.T) {
 	t.Parallel()
-	p := &journal.TrialIntent{Trial: "partial", Cores: []int{1, 2, 3, 4, 5, 6, 7}, RecordOnly: true, Regime: machine.R7, Workload: "AVX2", Condition: machine.Resident, DurationS: 120}
-	s := Snapshot{trial: inFlightTrial(p, 16)}
-	line := ansi.Strip(s.trialLine(time.Unix(1000, 0)))
-	if !strings.HasPrefix(line, "record-only partial cores 01 02 03 04 05 06 07   resident   R7 AVX2") {
-		t.Fatalf("partial is not identifiable: %s", line)
+	profile := []int{-20, -30, -50}
+	events := dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -20, FailedMark: new(-21)},
+		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -30, FailedMark: new(-31)},
+		&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -50},
+		&journal.ProfileChange{To: profile},
+		&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: []machine.Regime{machine.R7}},
+		&journal.GuardStep{Rotation: 1, Step: 1, Profile: profile, Partials: []journal.GuardPartial{{CCD: 0, Cores: []int{1}}, {CCD: 1, Reason: "all CCD cores are done"}}},
+		&journal.TrialIntent{Trial: "partial", Cores: []int{1}, RecordOnly: true, Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Profile: profile, DurationS: 120, Rotation: 1, Step: 1},
+		&journal.TrialStart{Trial: "partial"},
+		&journal.TrialEnd{Trial: "partial", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError})
+	live := events[:len(events)-1]
+	s := Project(live)
+	st := s.story(live[len(live)-1].Time.Add(time.Minute))
+	if st.now == nil || st.now.what != "lap 1, step 1 of 1, recorded only" || st.now.detail != "partial all-core load on core 01" {
+		t.Fatalf("a running partial must be named record-only with its loaded cores: %+v", st.now)
+	}
+	if text := strings.Join(st.paragraphs, "\n"); !strings.Contains(text, "moves no offset") || strings.Contains(text, "one core at a time") {
+		t.Fatalf("the narrator must say a partial changes nothing and not call it a per-core step:\n%s", text)
+	}
+	if !slices.ContainsFunc(s.log, func(l entry) bool {
+		return strings.Contains(l.text, "CCD 1 record-only partial skipped: all CCD cores are done")
+	}) {
+		t.Fatal("the log must show the guard step with its skipped partial's reason")
+	}
+	ended := Project(events)
+	last := ended.history[len(ended.history)-1]
+	if got := last.tag + ": " + last.sentence(); got != "fail: partial all-core load on core 01 at -30, wrong result, recorded only" || last.tone != warnTone {
+		t.Fatalf("a partial's failure must read as recorded only, not as a decisive failure: %q tone %v", got, last.tone)
 	}
 }

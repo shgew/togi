@@ -29,7 +29,7 @@
 █                      resulting offsets and no room left to deepen. Earlier
 █                      failures can lead to backing off and finishing this same
 █                      lap.
-█ 
+│ 
 │   Keep checking      After that I keep running laps to catch rarer failures
 │                      until you stop me.
 │ 
@@ -66,4 +66,4 @@
 │ 
 │ Words
 
-  ↑↓ PgUp PgDn  lines 1-63 of 138    ? or Esc back    L event log    q quit
+  ↑↓ PgUp PgDn  lines 1-63 of 144    ? or Esc back    L event log    q quit

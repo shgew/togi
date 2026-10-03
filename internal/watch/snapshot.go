@@ -78,6 +78,7 @@ type trial struct {
 	duration   time.Duration
 	round      int
 	rerun      bool
+	recordOnly bool
 }
 
 type failureView struct {
@@ -378,6 +379,7 @@ func newTrial(p *journal.TrialIntent, starts map[string]time.Time) *trial {
 		duration:   time.Duration(p.DurationS) * time.Second,
 		round:      p.Round,
 		rerun:      p.Rerun,
+		recordOnly: p.RecordOnly,
 	}
 }
 
