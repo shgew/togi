@@ -45,6 +45,16 @@ func (m *Machine) FailureProbability(profile []int, spec machine.TrialSpec) floa
 
 func (m *Machine) coreRate(profile []int, spec machine.TrialSpec, core int) float64 {
 	loaded := slices.Contains(spec.Cores, core)
+	if s := m.cfg.SingleCore; s != nil && loaded && len(spec.Cores) == 1 && (spec.Regime == machine.R1 || spec.Regime == machine.R2) {
+		logRate := s.LogRate + s.Core[core] + s.Workload[spec.Workload.ID] + s.Slope*float64(-profile[core]-25)
+		for other, offset := range profile {
+			if other != core && offset != 0 {
+				logRate += s.ResidentEffect
+				break
+			}
+		}
+		return math.Exp(logRate)
+	}
 	edge := m.edge(profile, core, spec.Regime, spec.Workload.ID)
 	if !loaded {
 		if m.edges[core].Idle == nil && m.edges[core].Flat <= 0 {
@@ -117,3 +127,5 @@ func (m *Machine) ccdRate(profile []int, spec machine.TrialSpec, ccd int) float6
 	}
 	return math.Exp(c.LogRate + c.Effect[ccd] + c.Slope*(float64(depth)/float64(size)-25))
 }
+
+func finite(x float64) bool { return !math.IsNaN(x) && !math.IsInf(x, 0) }
