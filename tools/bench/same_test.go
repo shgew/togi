@@ -240,6 +240,25 @@ func TestSameRejectsMissingJournals(t *testing.T) {
 	}
 }
 
+func TestSameRejectsEmptyJournals(t *testing.T) {
+	key := sessionKey{"s", "dev", 1}
+	dirs := [2]string{t.TempDir(), t.TempDir()}
+	for _, dir := range dirs {
+		if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := []sameSession{{key, simulation{dir: dirs[0], exit: 1}}}
+	head := []sameSession{{key, simulation{dir: dirs[1], exit: 1}}}
+	var report bytes.Buffer
+	if _, err := compareSessions(&report, base, head); err == nil || !strings.Contains(err.Error(), "journals contain no events") {
+		t.Fatalf("want empty-journal execution error, got %v", err)
+	}
+	if strings.Contains(report.String(), "0 of 1 sessions differ") {
+		t.Fatal("zero-event simulations must not report equality")
+	}
+}
+
 func TestSameRejectsExplicitBenchFlags(t *testing.T) {
 	for _, argument := range []string{"--split=dev", "--split=all", "--baseline=", "--out="} {
 		t.Run(argument, func(t *testing.T) {

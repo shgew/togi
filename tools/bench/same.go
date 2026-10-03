@@ -225,6 +225,19 @@ func compareJournals(base, head string) (*journalDifference, error) {
 	if len(a) == 0 || len(b) == 0 {
 		return nil, fmt.Errorf("missing journals: base has %d, head has %d", len(a), len(b))
 	}
+	for side, files := range [2]map[string]string{a, b} {
+		nonempty := false
+		for _, path := range files {
+			info, err := os.Stat(path)
+			if err != nil {
+				return nil, fmt.Errorf("inspect journal %s: %w", path, err)
+			}
+			nonempty = nonempty || info.Size() > 0
+		}
+		if !nonempty {
+			return nil, fmt.Errorf("%s journals contain no events", []string{"base", "head"}[side])
+		}
+	}
 	paths := make([]string, 0, len(a)+len(b))
 	for path := range a {
 		paths = append(paths, path)
