@@ -287,9 +287,14 @@ in
       { lib, ... }:
       {
         imports = [ tuningBoot ];
+        services.togi.package = pkgs.writeShellScriptBin "togi" ''
+          if [ "$1" = run ]; then
+            exit 2
+          fi
+          exec ${pkgs.coreutils}/bin/sleep infinity
+        '';
         services.togi.tuning.leaveOnShutdown = false;
         specialisation.togi.configuration = {
-          services.togi.settings.bogus = 1;
           systemd.services.togi.serviceConfig.RestartSec = lib.mkForce 1;
         };
       };
