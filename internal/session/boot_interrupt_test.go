@@ -31,26 +31,6 @@ func (b *effectfulBootloader) ClearSavedEntry() (string, string, error) {
 	return before, "", nil
 }
 
-type bootCleanupJournal struct {
-	Journal
-	kind         journal.Kind
-	after, fired bool
-}
-
-func (j *bootCleanupJournal) Append(payload journal.Payload, cause ...int) (journal.Event, error) {
-	fail := !j.fired && payload.Kind() == j.kind
-	if fail && !j.after {
-		j.fired = true
-		return journal.Event{}, errKilled
-	}
-	event, err := j.Journal.Append(payload, cause...)
-	if fail && err == nil {
-		j.fired = true
-		return event, errKilled
-	}
-	return event, err
-}
-
 func bootCleanupFixture(t *testing.T) (simRun, int) {
 	t.Helper()
 	in := sameBootFixture(t, false)
@@ -97,12 +77,12 @@ func TestBootHandoffResumesEveryCleanupBoundary(t *testing.T) {
 				bl.err = errKilled
 			}
 			in.Bootloader = bl
-			var gate *bootCleanupJournal
+			var gate *appendGate
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 			_, err := simulateBoot(ctx, in, func(j *journal.Journal) Journal {
-				gate = &bootCleanupJournal{Journal: j, kind: tc.kind, after: tc.after}
-				return gate
+				gate = &appendGate{match: eventKind(tc.kind), after: tc.after, do: func(journal.Event) error { return errKilled }}
+				return &interruptedJournal{Journal: j, gate: gate}
 			})
 			if !errors.Is(err, errKilled) || gate == nil || !gate.fired {
 				t.Fatalf("cleanup boundary not reached: %v", err)
@@ -147,12 +127,12 @@ func TestFailedBootCleanupNeverAuthorizesRebootOnResume(t *testing.T) {
 			cleanupErr := errors.New("grub-editenv unset failed")
 			bl := &effectfulBootloader{saved: "togi", err: cleanupErr, effectBeforeError: effectBeforeError}
 			in.Bootloader = bl
-			var gate *bootCleanupJournal
+			var gate *appendGate
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 			_, err := simulateBoot(ctx, in, func(j *journal.Journal) Journal {
-				gate = &bootCleanupJournal{Journal: j, kind: journal.KindShutdown}
-				return gate
+				gate = &appendGate{match: eventKind(journal.KindShutdown), do: func(journal.Event) error { return errKilled }}
+				return &interruptedJournal{Journal: j, gate: gate}
 			})
 			if !errors.Is(err, errKilled) || gate == nil || !gate.fired {
 				t.Fatalf("shutdown boundary not reached: %v", err)

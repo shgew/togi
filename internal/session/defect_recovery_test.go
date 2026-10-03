@@ -13,29 +13,6 @@ import (
 	"github.com/shgew/togi/internal/tuner"
 )
 
-type defectBoundaryJournal struct {
-	Journal
-	at, seen     int
-	after, fired bool
-}
-
-func (j *defectBoundaryJournal) Append(p journal.Payload, cause ...int) (journal.Event, error) {
-	if p.Kind() != journal.KindDefectAnswered && p.Kind() != journal.KindCommandReset {
-		return j.Journal.Append(p, cause...)
-	}
-	j.seen++
-	if !j.fired && j.seen == j.at && !j.after {
-		j.fired = true
-		return journal.Event{}, errKilled
-	}
-	e, err := j.Journal.Append(p, cause...)
-	if err == nil && !j.fired && j.seen == j.at && j.after {
-		j.fired = true
-		return e, errKilled
-	}
-	return e, err
-}
-
 func defectRecoveryRunner(j Journal, prompt func(defect.Finding) (bool, error)) *runner {
 	r := &runner{in: Input{Journal: j, Prompt: prompt, Defects: []defect.Entry{testDefect(defect.TooAggressive)}}, fold: newFold(), tuner: tuner.New()}
 	journal.Replay(j.Events(), r.fold, &r.state, r.tuner)
@@ -97,9 +74,16 @@ func testDefectAnswerBoundary(t *testing.T, at int, after bool, want []journal.C
 		}
 		return true, nil
 	}
-	cut := &defectBoundaryJournal{Journal: j, at: at, after: after}
-	if _, err := defectRecoveryRunner(cut, prompt).checkDefects(); !errors.Is(err, errKilled) || !cut.fired {
-		t.Fatalf("interruption: %v, fired %v", err, cut.fired)
+	gate := &appendGate{
+		at: at, after: after,
+		match: func(p journal.Payload, _ journal.Event) bool {
+			return p.Kind() == journal.KindDefectAnswered || p.Kind() == journal.KindCommandReset
+		},
+		do: func(journal.Event) error { return errKilled },
+	}
+	cut := &interruptedJournal{Journal: j, gate: gate}
+	if _, err := defectRecoveryRunner(cut, prompt).checkDefects(); !errors.Is(err, errKilled) || !gate.fired {
+		t.Fatalf("interruption: %v, fired %v", err, gate.fired)
 	}
 	if err := j.Close(); err != nil {
 		t.Fatal(err)

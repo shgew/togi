@@ -318,14 +318,8 @@ func TestRecoveryRetryResumeUsesSameAttempt(t *testing.T) {
 }
 
 func driveWithSeams(in simRun, seams machine.Machine) (Stop, error) {
-	for range maxSimulatedBoots {
-		stop, err := runWithSeams(context.Background(), in, seams)
-		if !errors.Is(err, machine.ErrCrashed) {
-			return stop, err
-		}
-		in.Machine.Reboot()
-	}
-	return Stop{}, errors.New("too many boots")
+	in.Seams = &seams
+	return runSim(context.Background(), in, nil)
 }
 
 type failingBackendTrials struct {

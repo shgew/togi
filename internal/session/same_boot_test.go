@@ -14,25 +14,6 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
-type killedProcessJournal struct {
-	Journal
-	at    int
-	fired bool
-	reads int
-}
-
-func (j *killedProcessJournal) Append(p journal.Payload, cause ...int) (journal.Event, error) {
-	e, err := j.Journal.Append(p, cause...)
-	if p, ok := p.(*journal.SMUReadback); ok && p.Expected == nil {
-		j.reads++
-	}
-	if err == nil && !j.fired && (e.Seq == j.at || (j.at == -1 && j.reads == 4)) {
-		j.fired = true
-		return e, machine.ErrCrashed
-	}
-	return e, err
-}
-
 func sameBootFixture(t *testing.T, pending bool) simRun {
 	t.Helper()
 	cfg := sim.Config{Seed: 84, Cores: 4, BIOS: []int{-40, -40, -20, -5}, Model: quietModel()}
@@ -105,9 +86,20 @@ func resumeStoppedProcess(t *testing.T, in simRun, at int) (Stop, error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	return simulateBoot(ctx, in, func(j *journal.Journal) Journal {
-		return &killedProcessJournal{Journal: wrapFor(in, nil)(j), at: at}
-	})
+	var gate *appendGate
+	if at != 0 {
+		gate = &appendGate{after: true, do: func(journal.Event) error { return machine.ErrCrashed }}
+		if at == -1 {
+			gate.at = 4
+			gate.match = func(p journal.Payload, _ journal.Event) bool {
+				read, ok := p.(*journal.SMUReadback)
+				return ok && read.Expected == nil
+			}
+		} else {
+			gate.match = func(_ journal.Payload, e journal.Event) bool { return e.Seq == at }
+		}
+	}
+	return simulateBoot(ctx, in, wrapFor(in, gate))
 }
 
 func TestSameBootRestoresBeforeDeadEndShutdown(t *testing.T) {

@@ -1,7 +1,6 @@
 package session
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/carry"
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/journal"
@@ -47,26 +47,33 @@ func newSim(t *testing.T, cfg sim.Config) *sim.Machine {
 const maxSimulatedBoots = 1000
 
 type simRun struct {
-	Config     config.Config
-	ConfigPath string
-	Dir        string
-	Machine    *sim.Machine
-	Log        io.Writer
-	Stderr     io.Writer
-	Rotations  int
-	Bootloader Bootloader
-	Prompt     func(defect.Finding) (bool, error)
-	Defects    []defect.Entry
+	Config      config.Config
+	ConfigPath  string
+	Dir         string
+	Machine     *sim.Machine
+	Log         io.Writer
+	Stderr      io.Writer
+	Rotations   int
+	Bootloader  Bootloader
+	Prompt      func(defect.Finding) (bool, error)
+	Defects     []defect.Entry
+	Seams       *machine.Machine
+	Carry       *carry.Carry
+	AfterAppend *appendGate
+	state       *memState
 	// prefix spares later boots decoding what earlier boots of this run already decoded.
 	prefix *journal.Prefix
 }
 
 func simInput(dir string, m *sim.Machine) simRun {
-	return simRun{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1, prefix: &journal.Prefix{}}
+	return simRun{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1, prefix: &journal.Prefix{}, state: &memState{}}
 }
 
 func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Journal) (Stop, error) {
 	seams := in.Machine.Seams()
+	if in.Seams != nil {
+		seams = *in.Seams
+	}
 	boot, err := seams.Host.BootID()
 	if err != nil {
 		return Stop{}, fmt.Errorf("read boot id: %w", err)
@@ -75,7 +82,11 @@ func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Jo
 	if err != nil {
 		return Stop{}, err
 	}
-	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrap(j), Machine: seams, Rotations: in.Rotations, Bootloader: in.Bootloader, Prompt: in.Prompt, Defects: in.Defects, Stderr: in.Stderr, SessionID: j.SessionID})
+	wrapped := wrap(j)
+	if in.AfterAppend != nil {
+		wrapped = &interruptedJournal{Journal: wrapped, gate: in.AfterAppend}
+	}
+	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapped, Machine: seams, Rotations: in.Rotations, Bootloader: in.Bootloader, Prompt: in.Prompt, Defects: in.Defects, Stderr: in.Stderr, SessionID: j.SessionID, Carry: in.Carry})
 	if cerr := j.Close(); err == nil && cerr != nil {
 		return Stop{}, cerr
 	}
@@ -92,43 +103,65 @@ type memState struct {
 	pending *journal.State
 }
 
-var states sync.Map
-
-func stateOf(dir string) *memState {
-	v, _ := states.LoadOrStore(dir, &memState{})
-	return v.(*memState)
-}
-
-type trigger struct {
-	k     int
-	crash *sim.Machine
+type appendGate struct {
+	match func(journal.Payload, journal.Event) bool
+	at    int
+	seen  int
+	after bool
 	fired bool
+	do    func(journal.Event) error
 }
 
-func killAt(k int) *trigger                  { return &trigger{k: k} }
-func crashAt(k int, m *sim.Machine) *trigger { return &trigger{k: k, crash: m} }
+func (g *appendGate) trip(p journal.Payload, e journal.Event) error {
+	if g.fired || !g.match(p, e) {
+		return nil
+	}
+	g.seen++
+	if g.seen != max(g.at, 1) {
+		return nil
+	}
+	g.fired = true
+	return g.do(e)
+}
+
+func eventKind(kind journal.Kind) func(journal.Payload, journal.Event) bool {
+	return func(p journal.Payload, _ journal.Event) bool { return p.Kind() == kind }
+}
+
+func killAt(k int) *appendGate {
+	return &appendGate{after: true, match: func(_ journal.Payload, e journal.Event) bool { return e.Seq == k }, do: func(journal.Event) error { return errKilled }}
+}
+
+func crashAt(k int, m *sim.Machine) *appendGate {
+	g := killAt(k)
+	g.do = func(journal.Event) error {
+		m.Crash()
+		return machine.ErrCrashed
+	}
+	return g
+}
+
+type interruptedJournal struct {
+	Journal
+	gate *appendGate
+}
+
+func (j *interruptedJournal) Append(p journal.Payload, cause ...int) (journal.Event, error) {
+	if !j.gate.after {
+		if err := j.gate.trip(p, journal.Event{}); err != nil {
+			return journal.Event{}, err
+		}
+	}
+	e, err := j.Journal.Append(p, cause...)
+	if err == nil && j.gate.after {
+		err = j.gate.trip(p, e)
+	}
+	return e, err
+}
 
 type testJournal struct {
 	*journal.Journal
 	state *memState
-	t     *trigger
-}
-
-func (j *testJournal) Append(p journal.Payload, cause ...int) (journal.Event, error) {
-	e, err := j.Journal.Append(p, cause...)
-	tr := j.t
-	if tr != nil && tr.fired {
-		return e, err
-	}
-	if err != nil || tr == nil || e.Seq != tr.k {
-		return e, err
-	}
-	tr.fired = true
-	if tr.crash != nil {
-		tr.crash.Crash()
-		return e, machine.ErrCrashed
-	}
-	return e, errKilled
 }
 
 func (j *testJournal) WriteState(s journal.State) error {
@@ -160,12 +193,17 @@ func readMemState(m *memState) (journal.State, error) {
 	return s, err
 }
 
-func wrapFor(in simRun, tr *trigger) func(*journal.Journal) Journal {
-	st := stateOf(in.Dir)
-	return func(j *journal.Journal) Journal { return &testJournal{Journal: j, state: st, t: tr} }
+func wrapFor(in simRun, tr *appendGate) func(*journal.Journal) Journal {
+	return func(j *journal.Journal) Journal {
+		var wrapped Journal = &testJournal{Journal: j, state: in.state}
+		if tr != nil {
+			wrapped = &interruptedJournal{Journal: wrapped, gate: tr}
+		}
+		return wrapped
+	}
 }
 
-func runSim(ctx context.Context, in simRun, tr *trigger) (Stop, error) {
+func runSim(ctx context.Context, in simRun, tr *appendGate) (Stop, error) {
 	for range maxSimulatedBoots {
 		stop, err := simulateBoot(ctx, in, wrapFor(in, tr))
 		switch {
@@ -179,7 +217,7 @@ func runSim(ctx context.Context, in simRun, tr *trigger) (Stop, error) {
 	return Stop{}, errors.New("too many boots")
 }
 
-func drive(t *testing.T, in simRun, tr *trigger) Stop {
+func drive(t *testing.T, in simRun, tr *appendGate) Stop {
 	t.Helper()
 	stop, err := runSim(context.Background(), in, tr)
 	if err != nil {
@@ -210,9 +248,9 @@ func (c coreSummary) String() string {
 	return fmt.Sprintf("%s at %d (pass %s, failed mark %s)", c.Phase, c.Offset, ptr(c.Pass), ptr(c.FailedMark))
 }
 
-func summary(t *testing.T, dir string) string {
+func summary(t *testing.T, in simRun) string {
 	t.Helper()
-	st, err := readMemState(stateOf(dir))
+	st, err := readMemState(in.state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,29 +273,36 @@ func readEvents(t *testing.T, dir string) []journal.Event {
 	return events
 }
 
-func reference(t *testing.T, cfg sim.Config) (dir string, events []journal.Event) {
+func referenceRun(t *testing.T, cfg sim.Config) (simRun, []journal.Event) {
 	t.Helper()
-	dir = t.TempDir()
-	if stop := simulate(t, simInput(dir, newSim(t, cfg))); stop.Reason != StopRotations {
+	in := simInput(t.TempDir(), newSim(t, cfg))
+	if stop := simulate(t, in); stop.Reason != StopRotations {
 		t.Fatalf("reference run stopped with %+v", stop)
 	}
-	return dir, readEvents(t, dir)
+	return in, readEvents(t, in.Dir)
+}
+
+func reference(t *testing.T, cfg sim.Config) (string, []journal.Event) {
+	t.Helper()
+	in, events := referenceRun(t, cfg)
+	return in.Dir, events
 }
 
 func TestKillAtEveryEvent(t *testing.T) {
 	t.Parallel()
-	refDir, events := reference(t, small())
-	want := summary(t, refDir)
+	ref, events := referenceRun(t, small())
+	want := summary(t, ref)
 	firstStart := slices.IndexFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindTrialStart }) + 1
 	for k := 1; k <= len(events); k++ {
 		t.Run(fmt.Sprint(k), func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			m := newSim(t, small())
-			if stop := drive(t, simInput(dir, m), killAt(k)); stop.Reason != StopRotations {
+			in := simInput(dir, m)
+			if stop := drive(t, in, killAt(k)); stop.Reason != StopRotations {
 				t.Fatalf("stopped with %+v", stop)
 			}
-			if got := summary(t, dir); got != want {
+			if got := summary(t, in); got != want {
 				t.Fatalf("killed at %d (%s):\n got %s\nwant %s", k, events[k-1].Kind, got, want)
 			}
 			if k == firstStart {
@@ -553,22 +598,6 @@ func TestCrashThenPreflightFailure(t *testing.T) {
 	}
 }
 
-type afterLines struct {
-	match string
-	n     int
-	do    func()
-}
-
-func (a *afterLines) Write(p []byte) (int, error) {
-	if !bytes.Contains(p, []byte(a.match)) {
-		return len(p), nil
-	}
-	if a.n--; a.n == 0 {
-		a.do()
-	}
-	return len(p), nil
-}
-
 func TestSignalStopsCleanly(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -576,7 +605,7 @@ func TestSignalStopsCleanly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	in := simInput(dir, m)
-	in.Log = &afterLines{n: 50, do: cancel}
+	in.AfterAppend = &appendGate{after: true, match: eventKind(journal.KindTrialStart), do: func(journal.Event) error { cancel(); return nil }}
 	stop, err := runSim(ctx, in, nil)
 	if err != nil || stop.Reason != StopSignal {
 		t.Fatalf("stopped with %+v, %v", stop, err)
@@ -586,7 +615,7 @@ func TestSignalStopsCleanly(t *testing.T) {
 		t.Fatal("last event is not shutdown{signal}")
 	}
 	m.Reboot()
-	in.Log = io.Discard
+	in.AfterAppend = nil
 	if stop := simulate(t, in); stop.Reason != StopRotations {
 		t.Fatalf("second run stopped with %+v", stop)
 	}
@@ -631,15 +660,8 @@ func TestInterruptedTrialRecordsTimeRan(t *testing.T) {
 	defer cancel()
 	seams := in.Machine.Seams()
 	seams.Trials = interruptedTrials{Trials: seams.Trials, cancel: cancel}
-	boot, _ := seams.Host.BootID()
-	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now})
-	if err != nil {
-		t.Fatal(err)
-	}
-	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapFor(in, nil)(j), Machine: seams})
-	if cerr := j.Close(); err == nil {
-		err = cerr
-	}
+	in.Seams = &seams
+	stop, err := simulateBoot(ctx, in, wrapFor(in, nil))
 	if err != nil || stop.Reason != StopSignal {
 		t.Fatalf("stopped with %+v, %v", stop, err)
 	}
@@ -662,15 +684,13 @@ func TestStopRestoresBaseline(t *testing.T) {
 	tests := []struct {
 		name    string
 		cfg     sim.Config
-		match   string
-		at      int
 		do      func(m *sim.Machine, cancel context.CancelFunc)
 		want    StopReason
 		offsets []int
 	}{
-		{name: "signal during search", cfg: small(), at: 50, do: interrupt, want: StopSignal, offsets: []int{-10, -10}},
+		{name: "signal during search", cfg: small(), do: interrupt, want: StopSignal, offsets: []int{-10, -10}},
 		{name: "rotations with the profile applied", cfg: uneven, want: StopRotations, offsets: []int{-10, -5}},
-		{name: "SMU dead end", cfg: small(), at: 50, do: func(m *sim.Machine, _ context.CancelFunc) { m.CorruptReadback(0) }, want: StopDeadEnd},
+		{name: "SMU dead end", cfg: small(), do: func(m *sim.Machine, _ context.CancelFunc) { m.CorruptReadback(0) }, want: StopDeadEnd},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -679,7 +699,7 @@ func TestStopRestoresBaseline(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			if tt.do != nil {
-				in.Log = &afterLines{match: tt.match, n: tt.at, do: func() { tt.do(in.Machine, cancel) }}
+				in.AfterAppend = &appendGate{after: true, match: eventKind(journal.KindTrialStart), do: func(journal.Event) error { tt.do(in.Machine, cancel); return nil }}
 			}
 			stop, err := runSim(ctx, in, nil)
 			if err != nil || stop.Reason != tt.want {
@@ -723,11 +743,11 @@ func TestStopRestoresBaseline(t *testing.T) {
 
 func TestCrashDuringRestoreKeepsTheAppliedCondition(t *testing.T) {
 	t.Parallel()
-	signalled := func(dir string, tr *trigger, m *sim.Machine) {
+	signalled := func(dir string, tr *appendGate, m *sim.Machine) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		in := simInput(dir, m)
-		in.Log = &afterLines{n: 50, do: cancel}
+		in.AfterAppend = &appendGate{after: true, match: eventKind(journal.KindTrialStart), do: func(journal.Event) error { cancel(); return nil }}
 		if _, err := runSim(ctx, in, tr); err != nil {
 			t.Fatal(err)
 		}

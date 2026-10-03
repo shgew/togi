@@ -30,8 +30,8 @@ func command(t *testing.T, dir string, f func(*journal.Journal) error) error {
 	return err
 }
 
-func memJournal(dir string, j *journal.Journal) Journal {
-	return wrapFor(simRun{Dir: dir}, nil)(j)
+func memJournal(in simRun, j *journal.Journal) Journal {
+	return wrapFor(in, nil)(j)
 }
 
 func resumed(t *testing.T, dir string, cfg sim.Config) *sim.Machine {
@@ -43,9 +43,9 @@ func resumed(t *testing.T, dir string, cfg sim.Config) *sim.Machine {
 	return newSim(t, cfg)
 }
 
-func coreState(t *testing.T, dir string, core int) journal.CoreState {
+func coreState(t *testing.T, in simRun, core int) journal.CoreState {
 	t.Helper()
-	st, err := readMemState(stateOf(dir))
+	st, err := readMemState(in.state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,12 +54,14 @@ func coreState(t *testing.T, dir string, core int) journal.CoreState {
 
 func TestResetCore(t *testing.T) {
 	t.Parallel()
-	dir, ref := reference(t, small())
-	if err := command(t, dir, func(j *journal.Journal) error { return ResetCore(memJournal(dir, j), 1) }); err != nil {
+	in, ref := referenceRun(t, small())
+	dir := in.Dir
+	if err := command(t, dir, func(j *journal.Journal) error { return ResetCore(memJournal(in, j), 1) }); err != nil {
 		t.Fatal(err)
 	}
 	m := resumed(t, dir, small())
-	if stop := simulate(t, simInput(dir, m)); stop.Reason != StopRotations {
+	in.Machine = m
+	if stop := simulate(t, in); stop.Reason != StopRotations {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	events := readEvents(t, dir)
@@ -74,10 +76,10 @@ func TestResetCore(t *testing.T) {
 	if restart < 0 {
 		t.Fatal("no done -> search for core 1 citing command.reset")
 	}
-	if c := coreState(t, dir, 1); c.Phase != journal.PhaseDone || c.Offset != m.IsolatedEdge(1) {
+	if c := coreState(t, in, 1); c.Phase != journal.PhaseDone || c.Offset != m.IsolatedEdge(1) {
 		t.Fatalf("core 1 %+v, want done again at its edge %d", c, m.IsolatedEdge(1))
 	}
-	if st, _ := readMemState(stateOf(dir)); st.Guard == nil || st.Guard.CleanRotations == 0 {
+	if st, _ := readMemState(in.state); st.Guard == nil || st.Guard.CleanRotations == 0 {
 		t.Fatalf("guard %+v, want a qualified rotation again", st.Guard)
 	}
 }
@@ -100,7 +102,6 @@ func TestResetAll(t *testing.T) {
 	if p, ok := archived[len(archived)-1].Data.(*journal.SessionArchived); !ok || p.Session != old || path != filepath.Join("archive", old+".jsonl") {
 		t.Fatalf("archive %s ends with %s", path, archived[len(archived)-1].Msg)
 	}
-	states.Delete(dir)
 	if stop := simulate(t, simInput(dir, resumed(t, dir, small()))); stop.Reason != StopRotations {
 		t.Fatalf("stopped with %+v", stop)
 	}
