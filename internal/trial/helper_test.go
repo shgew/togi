@@ -199,7 +199,7 @@ func TestHelperProcess(t *testing.T) {
 	switch mode {
 	case "backend-identity":
 		reportHelperIdentity()
-	case "hung-systemctl", "hung-journalctl":
+	case "hung-systemctl":
 		fields, err := procStat("/proc/self/stat")
 		if err != nil {
 			os.Exit(2)
@@ -207,9 +207,7 @@ func TestHelperProcess(t *testing.T) {
 		if err := os.WriteFile(os.Getenv("TOGI_HELPER_COMMAND_PID"), []byte(strconv.Itoa(os.Getpid())+" "+fields[19]), 0644); err != nil {
 			os.Exit(2)
 		}
-		if mode == "hung-systemctl" {
-			fmt.Fprintln(os.Stderr, "Unit togi-trial-hung.scope not loaded.")
-		}
+		fmt.Fprintln(os.Stderr, "Unit togi-trial-hung.scope not loaded.")
 		time.Sleep(time.Hour)
 		os.Exit(0)
 	case "exit":

@@ -366,22 +366,6 @@ func (b watchClassifyingBackend) Classify(line string) backend.Line {
 	return b.classify(line)
 }
 
-type reportedOutputSignal struct {
-	Core   int
-	Signal machine.Signal
-	Detail string
-}
-
-type outputEvidenceRecorder struct {
-	recorder
-	diagnostics []reportedOutputSignal
-}
-
-func (r *outputEvidenceRecorder) Signal(core int, signal machine.Signal, detail string) {
-	r.recorder.Signal(core, signal, detail)
-	r.diagnostics = append(r.diagnostics, reportedOutputSignal{core, signal, detail})
-}
-
 func TestWatchedShortLineFloodCancellation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "results.txt")
 	text := "first\n" + strings.Repeat("ok\n", watchReadLimit)
@@ -586,7 +570,7 @@ func TestWatchedPollFairness(t *testing.T) {
 						}
 						return nil, nil
 					}}
-					var rec outputEvidenceRecorder
+					var rec recorder
 					result, err := trial.Wait(ctx, &rec)
 					// The initial poll, one interval of flood classification, and
 					// the next quiet poll must not wait for context timer publication.
@@ -601,7 +585,7 @@ func TestWatchedPollFairness(t *testing.T) {
 						if err != nil || result.Signal != machine.ComputationError || result.Core != quiet.Core {
 							t.Fatalf("quiet instance computation evidence: result=%+v err=%v", result, err)
 						}
-						want := []reportedOutputSignal{{quiet.Core, machine.ComputationError, "COMPUTE ERROR"}}
+						want := []recordedSignal{{quiet.Core, machine.ComputationError, "COMPUTE ERROR"}}
 						if diff := cmp.Diff(want, rec.diagnostics); diff != "" {
 							t.Fatalf("starved computation diagnostic (-want +got):\n%s", diff)
 						}
@@ -659,12 +643,12 @@ func TestWatchedDeadlineBeforeCancellationPublication(t *testing.T) {
 				trial.host = samplingHost{fakeHost: h.fakeHost, threads: func(pid int) ([]thread, error) {
 					return []thread{{TID: pid, CPU: 9}}, nil
 				}}
-				var rec outputEvidenceRecorder
+				var rec recorder
 				result, err := trial.Wait(ctx, &rec)
 				if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, machine.ErrContainment) || result.Ran != budget || len(result.Escaped) != 0 || result.Inconclusive != "" || result.Signal != machine.ComputationError || result.Core != quiet.Core {
 					t.Fatalf("unpublished deadline bypassed: budget=%s result=%+v err=%v", budget, result, err)
 				}
-				want := []reportedOutputSignal{{quiet.Core, machine.ComputationError, "COMPUTE ERROR"}}
+				want := []recordedSignal{{quiet.Core, machine.ComputationError, "COMPUTE ERROR"}}
 				if diff := cmp.Diff(want, rec.diagnostics); diff != "" {
 					t.Fatalf("final computation diagnostic after elapsed deadline (-want +got):\n%s", diff)
 				}
@@ -722,7 +706,7 @@ func TestWatchedErrorBeyondReadBudget(t *testing.T) {
 					t.Fatal(err)
 				}
 				trial := started.(*running)
-				var rec outputEvidenceRecorder
+				var rec recorder
 				result, err := trial.Wait(context.Background(), &rec)
 				if err != nil || result.Signal != machine.ComputationError || result.Inconclusive != "" {
 					t.Fatalf("late watched evidence: result=%+v err=%v", result, err)
@@ -730,7 +714,7 @@ func TestWatchedErrorBeyondReadBudget(t *testing.T) {
 				if diff := cmp.Diff([]machine.Signal{machine.ComputationError}, rec.signals); diff != "" {
 					t.Fatalf("final reported evidence (-want +got):\n%s", diff)
 				}
-				want := []reportedOutputSignal{{0, machine.ComputationError, "COMPUTE ERROR"}}
+				want := []recordedSignal{{0, machine.ComputationError, "COMPUTE ERROR"}}
 				if diff := cmp.Diff(want, rec.diagnostics); diff != "" {
 					t.Fatalf("final computation diagnostic (-want +got):\n%s", diff)
 				}
@@ -943,7 +927,7 @@ func TestWatchedPartialSurvivesGraceUntilScopeKill(t *testing.T) {
 					}
 					return nil, tt.killErr
 				}
-				var rec outputEvidenceRecorder
+				var rec recorder
 				result, err := trial.Wait(context.Background(), &rec)
 				if result.Signal != tt.signal || result.Inconclusive != "" || errors.Is(err, machine.ErrContainment) != (tt.killErr != nil) || errors.Is(err, io.ErrClosedPipe) != (tt.killErr != nil) {
 					t.Fatalf("descendant final line: result=%+v signals=%v err=%v", result, rec.signals, err)
@@ -958,9 +942,9 @@ func TestWatchedPartialSurvivesGraceUntilScopeKill(t *testing.T) {
 				if diff := cmp.Diff(wantSignals, rec.signals); diff != "" {
 					t.Fatalf("descendant computation evidence (-want +got):\n%s", diff)
 				}
-				var wantDiagnostics []reportedOutputSignal
+				var wantDiagnostics []recordedSignal
 				if tt.signal != "" {
-					wantDiagnostics = []reportedOutputSignal{{0, tt.signal, "FATAL ERROR"}}
+					wantDiagnostics = []recordedSignal{{0, tt.signal, "FATAL ERROR"}}
 				}
 				if diff := cmp.Diff(wantDiagnostics, rec.diagnostics); diff != "" {
 					t.Fatalf("descendant final diagnostic (-want +got):\n%s", diff)
@@ -993,7 +977,7 @@ func TestWatchedQueuedExitBeyondReadBudget(t *testing.T) {
 				}
 				h.procs[0].finish(nil)
 				synctest.Wait()
-				var rec outputEvidenceRecorder
+				var rec recorder
 				result, err := started.Wait(context.Background(), &rec)
 				if err != nil || result.Signal != tt.signal || (result.Inconclusive != "") != tt.inconclusive {
 					t.Fatalf("queued exit with late evidence: result=%+v err=%v", result, err)
@@ -1006,9 +990,9 @@ func TestWatchedQueuedExitBeyondReadBudget(t *testing.T) {
 						t.Fatalf("exit classified before watched evidence: %v", rec.signals)
 					}
 				}
-				var wantDiagnostics []reportedOutputSignal
+				var wantDiagnostics []recordedSignal
 				if tt.signal != "" {
-					wantDiagnostics = []reportedOutputSignal{{0, tt.signal, tt.line}}
+					wantDiagnostics = []recordedSignal{{0, tt.signal, tt.line}}
 				}
 				if diff := cmp.Diff(wantDiagnostics, rec.diagnostics); diff != "" {
 					t.Fatalf("late final diagnostic (-want +got):\n%s", diff)

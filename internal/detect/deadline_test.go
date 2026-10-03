@@ -6,10 +6,12 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/shgew/togi/internal/machine"
 )
 
 func TestKernelReadTimeout(t *testing.T) {
-	for _, operation := range []string{"mces", "reset", "boot list"} {
+	for _, operation := range []string{"mces", "mce read", "reset", "boot list"} {
 		t.Run(operation, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				started := time.Now()
@@ -28,6 +30,12 @@ func TestKernelReadTimeout(t *testing.T) {
 				switch operation {
 				case "mces":
 					_, err = k.MCEs("boot", 0)
+				case "mce read":
+					var read machine.KernelRead
+					read, err = k.ReadMCEs("boot", "")
+					if read.Cursor != "" || len(read.MCEs) != 0 {
+						t.Fatalf("timed-out read became an observation: %+v", read)
+					}
 				case "reset":
 					_, err = k.ResetReason("boot")
 				case "boot list":

@@ -49,16 +49,24 @@ func classifyHelper(line string) backend.Line {
 	return backend.Line{}
 }
 
+type recordedSignal struct {
+	Core   int
+	Signal machine.Signal
+	Detail string
+}
+
 type recorder struct {
-	progress []string
-	samples  []machine.Sample
-	signals  []machine.Signal
+	progress    []string
+	samples     []machine.Sample
+	signals     []machine.Signal
+	diagnostics []recordedSignal
 }
 
 func (r *recorder) Progress(s string)       { r.progress = append(r.progress, s) }
 func (r *recorder) Sample(s machine.Sample) { r.samples = append(r.samples, s) }
 func (r *recorder) Signal(core int, signal machine.Signal, detail string) {
 	r.signals = append(r.signals, signal)
+	r.diagnostics = append(r.diagnostics, recordedSignal{core, signal, detail})
 }
 
 func testSpec(id string, regime machine.Regime, d time.Duration) machine.TrialSpec {
@@ -90,57 +98,98 @@ func testIdentity() Identity {
 
 func TestWait(t *testing.T) {
 	for _, tt := range []struct {
-		name, mode string
-		duration   time.Duration
-		signal     machine.Signal
+		name, mode    string
+		duration      time.Duration
+		regime        machine.Regime
+		cores, cpus   []int
+		stallGrace    time.Duration
+		stallWindow   time.Duration
+		cancelAfter   time.Duration
+		wantErr       error
+		signal        machine.Signal
+		wantInstances int
+		escaped       []int
+		sampleWarning string
+		minStops      int
+		wantProgress  bool
+		wantRan       time.Duration
 	}{
-		{"pass", "work", 600 * time.Millisecond, ""},
-		{"error", "error", time.Second, machine.ComputationError},
-		{"exit", "exit", time.Second, machine.UnexpectedExit},
-		{"watched", "watched", time.Second, machine.ComputationError},
-		{"stall", "sleep", 900 * time.Millisecond, machine.Stall},
-		{"cancel", "work", time.Second, ""},
-		{"R4", "work", 1500 * time.Millisecond, ""},
-		{"R7", "work", 800 * time.Millisecond, ""},
-		{"escape", "escape", time.Second, ""},
+		{
+			name: "pass", mode: "work", duration: 600 * time.Millisecond,
+			regime: machine.R1, cores: []int{0}, cpus: []int{0},
+			stallGrace: 200 * time.Millisecond, stallWindow: 300 * time.Millisecond,
+			wantProgress: true, wantRan: 600 * time.Millisecond,
+		},
+		{
+			name: "error", mode: "error", duration: time.Second,
+			regime: machine.R1, cores: []int{0}, cpus: []int{0},
+			stallGrace: time.Hour, signal: machine.ComputationError,
+		},
+		{
+			name: "exit", mode: "exit", duration: time.Second,
+			regime: machine.R1, cores: []int{0}, cpus: []int{0},
+			stallGrace: time.Hour, signal: machine.UnexpectedExit,
+		},
+		{
+			name: "watched", mode: "watched", duration: time.Second,
+			regime: machine.R1, cores: []int{0}, cpus: []int{0},
+			stallGrace: time.Hour, signal: machine.ComputationError,
+		},
+		{
+			name: "stall", mode: "sleep", duration: 900 * time.Millisecond,
+			regime: machine.R1, cores: []int{0}, cpus: []int{0},
+			stallGrace: 200 * time.Millisecond, stallWindow: 300 * time.Millisecond,
+			signal: machine.Stall,
+		},
+		{
+			name: "cancel", mode: "work", duration: time.Second,
+			regime: machine.R1, cores: []int{0}, cpus: []int{0}, stallGrace: time.Hour,
+			cancelAfter: 150 * time.Millisecond, wantErr: context.Canceled,
+		},
+		{
+			name: "R4", mode: "work", duration: 1500 * time.Millisecond,
+			regime: machine.R4, cores: []int{0}, cpus: []int{0},
+			stallGrace: time.Hour, minStops: 5,
+		},
+		{
+			name: "R7", mode: "work", duration: 800 * time.Millisecond,
+			regime: machine.R7, cores: []int{0, 1}, cpus: []int{0, 1},
+			stallGrace: time.Hour, wantInstances: 2,
+		},
+		{
+			name: "escape", mode: "escape", duration: time.Second,
+			regime: machine.R1, cores: []int{0}, cpus: []int{0}, stallGrace: time.Hour,
+			escaped: []int{9}, sampleWarning: "outside allowed cpus",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			synctest.Test(t, func(t *testing.T) {
 				o := fakeOptions(t, tt.mode)
-				if tt.name == "stall" || tt.name == "pass" {
-					o.StallGrace = 200 * time.Millisecond
-					o.StallWindow = 300 * time.Millisecond
-				}
+				o.StallGrace = tt.stallGrace
+				o.StallWindow = tt.stallWindow
 				h := &fakeHost{}
 				r := New(o)
 				r.host = h
-				spec := testSpec(tt.name, machine.R1, tt.duration)
-				if tt.name == "R4" {
-					spec.Regime = machine.R4
-				}
-				if tt.name == "R7" {
-					spec.Regime = machine.R7
-					spec.Cores = []int{0, 1}
-					spec.CPUs = []int{0, 1}
-				}
+				spec := testSpec(tt.name, tt.regime, tt.duration)
+				spec.Cores, spec.CPUs = tt.cores, tt.cpus
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 				running, err := r.Start(ctx, spec)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if tt.name == "R7" && len(running.Started().Instances) != 2 {
+				if tt.wantInstances != 0 && len(running.Started().Instances) != tt.wantInstances {
 					t.Fatal("missing instances")
 				}
-				if tt.name == "cancel" {
-					timer := time.AfterFunc(150*time.Millisecond, cancel)
+				if tt.cancelAfter != 0 {
+					timer := time.AfterFunc(tt.cancelAfter, cancel)
 					defer timer.Stop()
 				}
 				rec := &recorder{}
 				result, err := running.Wait(ctx, rec)
-				if tt.name == "cancel" {
-					if !errors.Is(err, context.Canceled) {
+				if tt.wantErr != nil {
+					if !errors.Is(err, tt.wantErr) {
 						t.Fatalf("cancel returned %v", err)
 					}
 					return
@@ -154,23 +203,20 @@ func TestWait(t *testing.T) {
 				if tt.signal != "" && (len(rec.signals) != 1 || rec.signals[0] != tt.signal) {
 					t.Fatalf("backend failure signals = %v, want %s", rec.signals, tt.signal)
 				}
-				if tt.name == "escape" {
-					if !slices.Equal(result.Escaped, []int{9}) || len(rec.samples) == 0 || rec.samples[0].Warning != "outside allowed cpus" {
-						t.Fatalf("escape result %+v samples %+v", result, rec.samples)
-					}
-					return
-				}
-				if len(result.Escaped) != 0 {
+				if !slices.Equal(result.Escaped, tt.escaped) {
 					t.Fatalf("escaped: %+v", result)
 				}
-				if tt.name == "R4" && (result.Stops < 5 || result.Stops-result.Conts < 0 || result.Stops-result.Conts > 1) {
+				if tt.sampleWarning != "" && (len(rec.samples) == 0 || rec.samples[0].Warning != tt.sampleWarning) {
+					t.Fatalf("escape result %+v samples %+v", result, rec.samples)
+				}
+				if tt.minStops != 0 && (result.Stops < tt.minStops || result.Stops-result.Conts < 0 || result.Stops-result.Conts > 1) {
 					t.Fatalf("toggle counts: %+v", result)
 				}
-				if tt.name == "pass" && len(rec.progress) == 0 {
+				if tt.wantProgress && len(rec.progress) == 0 {
 					t.Fatal("no progress captured")
 				}
-				if tt.name == "pass" && result.Ran != tt.duration {
-					t.Fatalf("healthy trial ended at %s, want %s", result.Ran, tt.duration)
+				if tt.wantRan != 0 && result.Ran != tt.wantRan {
+					t.Fatalf("healthy trial ended at %s, want %s", result.Ran, tt.wantRan)
 				}
 			})
 		})
