@@ -34,8 +34,8 @@ A cost finding needs at least one dev run above the secondary threshold. Confirm
 A machine the tuner cannot possibly handle teaches nothing. Every candidate must satisfy all of these:
 
 - **P1, consistent with real evidence.** Start from a committed target fit, `tools/bench/machines/target-fit-<k>.toml`. Keep its `[bios_context]` and point `facts` at `tools/bench/facts/target.jsonl.gz` relative to the new file. The bench's model check must report `ok`: the machine still explains every real group with at least 10 starts. Keep `replay = true`, so trials matching real facts get real answers and the perturbation acts only where the real machine was not measured.
-- **P2, existing mechanisms only.** Use the parameters `docs/simulating.md` and `internal/sim/doc.go` describe: per-core, regime and workload edges, idle edges, past-edge, near-edge and flat rates, growth, onset boost, joints, misleading MCEs and reset kinds. Keep rates and edges inside the fitter's ranges in [benchmarking](../../docs/benchmarking.md#fitting-the-target-machine).
-- **P3, a physical story.** State in one sentence what about a real CPU the change represents, such as a core whose AVX-512 edge is two counts shallower than its SSE edge, or a CCD that crashes only after ten minutes of heat soak.
+- **P2, existing mechanisms only.** Use the parameters `docs/simulating.md` and `internal/sim/doc.go` describe: per-core, regime and workload limits, idle limits, past-limit, near-limit and flat rates, growth, onset boost, combinations, misleading MCEs and reset kinds. Keep rates and limits inside the fitter's ranges in [benchmarking](../../docs/benchmarking.md#fitting-the-target-machine).
+- **P3, a physical story.** State in one sentence what about a real CPU the change represents, such as a core whose AVX-512 limit is two counts shallower than its SSE limit, or a CCD that crashes only after ten minutes of heat soak.
 
 A machine built from the seeded default machine instead of a target fit has no P1 evidence. Report such findings separately as unanchored.
 
@@ -56,13 +56,13 @@ A machine built from the seeded default machine instead of a target fit has no P
 
 The committed `tools/bench/baseline.jsonl` already has unsafe conclusions. They are not new findings, but explaining them is the cheapest first experiment:
 
-- `default` seeds 21, 104, 106 and 114 conclude one count past a resident R3 or R4 edge with a hazard of 92 failures/h: the guard rotation runs a single start of each, and one start misses about 5% of the time (#107).
+- `default` seeds 21, 104, 106 and 114 conclude one count past a together R3 or R4 limit with a hazard of 92 failures/h: checking lap runs a single start of each, and one start misses about 5% of the time (#107).
 - `target` dev seeds 6, 8 and 13 conclude with an R7 hazard of 1.5–1.8/h, and holdout seed 111 with an R2 hazard of 12/h. Their mechanism is not yet explained.
-- `misleading-mce` seeds 3 and 103 conclude with an R7 hazard of 3.24/h from its second, unattributed joint. Its first joint deliberately leaves an MCE naming one core (#114), but neither final profile triggers that joint.
+- `misleading-mce` seeds 3 and 103 conclude with an R7 hazard of 3.24/h from its second, unattributed combination. Its first combination deliberately leaves an MCE naming one core (#114), but neither final profile triggers that combination.
 
 ## The loop
 
-1. **Hypothesis.** Name the tuner rule you expect to fail, the mechanism that exploits it and the runs it should affect. Example: the guard qualifies R4 with one start, so an R4 edge one count shallower than the other regimes on several cores should make most runs conclude past it.
+1. **Hypothesis.** Name the tuner rule you expect to fail, the mechanism that exploits it and the runs it should affect. Example: checking covers R4 with one start, so an R4 limit one count shallower than the other regimes on several cores should make most runs conclude past it.
 2. **Build** `runs/adv/<n>/machine.toml` from a starting point with the smallest change that tests the hypothesis, and its `suite.toml` beside it.
 3. **Score** the dev split. Require P1's `ok`; a flagged model check disqualifies the candidate.
 4. **Climb.** Adjust the mechanism's parameters while P1–P3 hold and the score rises. Change one mechanism at a time.

@@ -47,33 +47,33 @@ Each watched-file polling read processes at most 64 KiB, including short complet
 | R4 medium load | Partial duty cycles | An R1 workload at 25%, 50% or 75% duty with a 100 ms period, cycling per trial |
 | R5 SMT pair | Both threads of one core | R1 and R2 workloads with 2 threads on both logical CPUs of the core |
 | R6 idle | Normal power management with the profile applied | One confined 1-thread R1 instance per core, each stopped with SIGSTOP as soon as it enters its scope, before the next instance launches. Trial timing begins only after all instances are stopped. First half: no load at all. Second half: short bursts (SIGCONT, then SIGSTOP 100 ms later, every 2 s) on one core at a time in scheduling order |
-| R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance on each loaded core. On two CCDs a guard step runs CCD0 partial, CCD0 full, CCD1 partial, CCD1 full and all-core parts; on one CCD it runs a partial then the all-core part. Partial parts are record-only and leave idle every core tied at that CCD's shallowest resident offset when the step starts |
+| R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance on each loaded core. On two CCDs a checking step runs CCD0 partial, CCD0 full, CCD1 partial, CCD1 full and all-core parts; on one CCD it runs a partial then the all-core part. Partial parts are record-only and leave idle every core tied at that CCD's shallowest profile offset when the step starts |
 
-Within a regime, search cycles listed workloads; candidate-edge checks freeze one R1 and one R2 workload. Guard's repeated R1, R2 and R7 steps cycle their catalogs, so three occurrences cover each workload. All parts of one R7 step share its selected R2 workload. Inconclusive starts retry the same class; a record-only failure is recorded once and the schedule continues without a rerun.
+Within a regime, search cycles listed workloads; candidate-solo-limit checks freeze one R1 and one R2 workload. Checking's repeated R1, R2 and R7 steps cycle their catalogs, so three occurrences cover each workload. All parts of one R7 step share its selected R2 workload. Inconclusive starts retry the same class; a record-only failure is recorded once and the schedule continues without a rerun.
 
-R6 and R7 run on the resident profile and in masked hunt trials; R7 also checks refinement rounds. R6 targets every core; an R7 trial can target part of a CCD, a full CCD or every core. `trial.intent.cores` lists exactly the loaded cores; the applied profile also includes idle cores. Each loaded core runs one instance on its first logical CPU, in its own scope and work directory, so a computation error or stall names that instance's core. A partial with no loaded cores is skipped with its reason in `guard.step`, not launched as an empty trial.
+R6 and R7 run on the profile and in parked hunt trials; R7 also checks deepening rounds. R6 targets every core; an R7 trial can target part of a CCD, a full CCD or every core. `trial.intent.cores` lists exactly the loaded cores; the applied profile also includes idle cores. Each loaded core runs one instance on its first logical CPU, in its own scope and work directory, so a computation error or stall names that instance's core. A partial with no loaded cores is skipped with its reason in `checking.step`, not launched as an empty trial.
 
 ### Load-step schedules
 
 An R3 or R4 workload starts running, then alternates on and off periods; each on period ends with SIGSTOP and each off period with SIGCONT. R3 draws each period independently and uniformly from {10 ms, 50 ms, 200 ms, 1 s, 5 s} with a PCG seeded by the recorded seed, so the seed reproduces the schedule. R4 runs for its duty share of every 100 ms period. The trial end records how many of each signal were sent.
 
-## Durations and guard schedule
+## Durations and checking schedule
 
 Defaults, all configurable:
 
 | Use | Duration |
 |---|---|
-| Search trial (R1, then R2) | 90 s each; a candidate-edge class needs `n` passing starts |
-| Short start for R7, hunt masks, refinement checks and backoff reruns | 120 s (`durations.start_s`) |
-| Guard per-core trial (R1 to R5) | 2 min each |
-| Guard R6 | 15 min |
-| Guard R7 long starts | 30 min total on two CCDs: 5 min each for CCD0 partial/full and CCD1 partial/full, 10 min all cores; 40 min on one CCD: 20 min partial and 20 min all cores |
+| Search trial (R1, then R2) | 90 s each; a candidate-solo-limit class needs `n` passing starts |
+| Short start for R7, hunt groups, deepening checks and backoff reruns | 120 s (`durations.start_s`) |
+| Checking per-core trial (R1 to R5) | 2 min each |
+| Checking R6 | 15 min |
+| Checking R7 long starts | 30 min total on two CCDs: 5 min each for CCD0 partial/full and CCD1 partial/full, 10 min all cores; 40 min on one CCD: 20 min partial and 20 min all cores |
 
-For `D = durations.guard_all_core_s` and `n` CCDs, a full R7 long start runs for `D` on one CCD; on multiple CCDs, each full single-CCD part runs `floor(D / 4)` seconds and the all-core part runs `D - n*floor(D / 4)` seconds. A partial receives its CCD's full-part long duration in addition to these allocations. Every nonempty part runs three short `start_s` starts and one long start. When short and long durations match, their counts add: four starts. Full parts require passes; record-only parts require completed decisive starts, whether pass or failure, and never supply qualifying coverage. `guard_all_core_s` must be in [4, 86400]. A trial is torn down before the next start. Inconclusive starts repeat their part's loaded cores and workload; passing full-part starts and completed partial starts survive interruption. A hunt mask or refinement check instead needs `n` passing starts from `evidence.*` and never gains a record-only partial.
+For `D = durations.checking_all_core_s` and `n` CCDs, a full R7 long start runs for `D` on one CCD; on multiple CCDs, each full single-CCD part runs `floor(D / 4)` seconds and the all-core part runs `D - n*floor(D / 4)` seconds. A partial receives its CCD's full-part long duration in addition to these allocations. Every nonempty part runs three short `start_s` starts and one long start. When short and long durations match, their counts add: four starts. Full parts require passes; record-only parts require completed decisive starts, whether pass or failure, and never supply full-lap coverage. `checking_all_core_s` must be in [4, 86400]. A trial is torn down before the next start. Inconclusive starts repeat their part's loaded cores and workload; passing full-part starts and completed partial starts survive interruption. A hunt group or deepening check instead needs `n` passing starts from `evidence.*` and never gains a record-only partial.
 
-Hunt-mask duration selection and its carried-evidence rules are defined in [tuner.md, Hunt](tuner.md#hunt).
+Hunt-group duration selection and its carried-evidence rules are defined in [tuner.md, Hunt](tuner.md#hunt).
 
-Default guard rotation, about 8.3 h on 16 cores with nonempty partials (about 7.2 h when all partials are skipped):
+Default checking lap, about 8.3 h on 16 cores with nonempty partials (about 7.2 h when all partials are skipped):
 1. R7, R7, R7: every R2 workload, each on CCD0 partial/full, CCD1 partial/full and all cores, with three short starts and one long start per nonempty part.
 2. R2, R2, R2: every R2 workload on every core.
 3. R6.
@@ -83,7 +83,7 @@ Default guard rotation, about 8.3 h on 16 cores with nonempty partials (about 7.
 7. R4 on every core.
 8. R6.
 
-Rotation qualification, earlier-rotation credit, carried-evidence boundaries and per-core scheduling order are defined in [tuner.md, Guard](tuner.md#guard). Search time depends on edge distance and failed steps; candidate checks require five passes of each frozen R1 and R2 class by default, including eligible carried passes.
+Full-lap coverage, earlier-lap credit, carried-evidence boundaries and per-core scheduling order are defined in [tuner.md, Checking](tuner.md#checking). Search time depends on solo limit distance and failed steps; candidate checks require five passes of each frozen R1 and R2 class by default, including eligible carried passes.
 
 ## Containment
 
@@ -164,9 +164,9 @@ Failure signals:
 | Stall | Over a 10 s window of unsuspended time, backend CPU time advances less than half of thread count times that window, after a 30 s startup grace | The instance's core |
 | Corrected MCE | Kernel log, read from a cursor at every trial boundary | The core of the reporting logical CPU if the bank is core-local, else unattributed |
 | Uncorrected MCE | Kernel log of the next boot, or of the crashed boot in the persistent system journal | Same rule |
-| Crash | Boot ID differs from the last journal boot with no clean shutdown; reset reason refines its classification | Unattributed unless a backend signal, MCE, or one nonzero applied offset names a core |
+| Crash | Boot ID differs from the last journal boot with no clean shutdown; reset reason narrows its classification | Unattributed unless a backend signal, MCE, or one nonzero applied offset names a core |
 
-In isolated trials every failure belongs to the target. Resident and masked trials use the backend instance's signal, then exactly one core-local MCE, then the sole nonzero offset in the applied profile. Evidence naming more than one core without a higher-precedence backend signal remains unattributed.
+In trials alone every failure belongs to the target. Together and parked trials use the backend instance's signal, then exactly one core-local MCE, then the sole nonzero offset in the applied profile. Evidence naming more than one core without a higher-precedence backend signal remains unattributed.
 
 Crash detection and evidence: every boot in the journal other than the current one, whose last event is not `shutdown` and that no `crash.detected` names, has crashed. Its evidence is the MCEs in its own kernel log that are not between trials, plus the uncorrected MCEs logged by the boot after it (the next boot in the journal, or the current boot), each recorded once as an `mce` event with `from_boot`. Recovery also records the previous boot's between-trial MCEs with `between_trials: true`, without using them as crash evidence or decision causes. An MCE that an earlier `crash.detected` already cites is evidence of that crash only: a boot's own log starts with the MCEs its predecessor's crash left in the banks. Recovery is idempotent: detection, closing the crashed trial and its failure are each redone by the next `run` if a further crash or kill interrupts them, so a crash during recovery is detected on its own, normally as stray, without losing the first.
 
@@ -190,7 +190,7 @@ MCE attribution rules:
 - A new error-description boundary closes orphaned continuation state, so a truncated record does not prevent attribution of the next independent record. A surplus bank continuation establishes interleaving and clears tentative attribution back to the earliest unresolved status; this can also clear independent records whose ownership the log cannot distinguish.
 - Core-local types (load-store, instruction fetch, L2, decode, execution, floating point) name a core.
 - Shared types (L3, memory controller, data fabric and others) name none.
-- In resident trials, a core-local MCE on a core whose offset is 0 is an attributed failure at 0, which is a dead end.
+- In together trials, a core-local MCE on a core whose offset is 0 is an attributed failure at 0, which is a dead end.
 
 MCA bank contents survive a warm reset and the kernel logs them early in the next boot. The tuning boot keeps the system journal persistent, so the crashed boot's last kernel messages stay readable.
 

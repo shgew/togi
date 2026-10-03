@@ -10,7 +10,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `REVIEW.md`: defect criteria and recurring lessons. Read it before reviewing a pull request.
 - `.omp/`: reviewer rules, the `review-coordinator` agent and `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates.
 - `docs/spec/`: normative behavior. Read the relevant spec before changing behavior, and change spec and code in the same pull request or in layers of one stack merged together.
-  - `tuner.md`: offsets, search, hunt, refinement, guard, qualified rotations, dead ends.
+  - `tuner.md`: offsets, search, hunt, deepening, checking, clean laps, dead ends.
   - `workloads.md`: regimes, backends, containment, failure detection.
   - `journal.md`: events, state, logging.
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
@@ -80,7 +80,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just gate` | Lint, the `fmt` flake check over tracked files, then tests: the quick check before handing off |
 | `just check` | Every flake check, what CI runs on every pull request and push to `main`: package (its tests run shuffled, with the integration tests on Linux), race (trial, session, journal and watch under the race detector), lint, fmt, changes (the changelog fragments) and, on Linux, the VM tests `vm` (the tuning boot) and `vm-restart-limit`. Must pass before a pull request |
 | `just fmt` | Format Go, Nix and the justfile in place |
-| `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
+| `just sim [seed]` | A simulated session through its first clean lap in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just replay --state-dir DIR` | Play a recorded journal through the dashboard on a fast-forward clock, or print one frame with `--at SEQ` (`go run ./tools/replay`, `docs/simulating.md`) |
 | `just bench [flags]` | The bench suite of simulated sessions, optionally compared against a baseline run (`go run ./tools/bench`, `docs/benchmarking.md`) |
 | `just same [base]` | Prove a shape-only change leaves all simulated session journals unchanged; base defaults to `origin/main` (`docs/benchmarking.md`) |
@@ -112,8 +112,8 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/defect` | Known decision-changing bugs and pure matching against the journal |
 | `internal/journal` | Journal, replay, state file, log lines |
 | `internal/facts` | Decisive trial and idle-failure evidence with journal provenance |
-| `internal/carry` | Transitions: archiving an older session and deriving the edges and failed marks it carries |
-| `internal/tuner` | Pure decision engine: search, hunt, refinement, guard |
+| `internal/carry` | Transitions: archiving an older session and deriving the solo limits and failure points it carries |
+| `internal/tuner` | Pure decision engine: search, hunt, deepening, checking |
 | `internal/sim` | Simulator implementing every hardware seam, and resuming it after a journal |
 | `internal/session` | The run loop: session start, resume, crash attribution, trials, dead ends |
 | `internal/simrun` | A session on the simulator, across its crash reboots |
