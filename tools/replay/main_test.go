@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -240,6 +243,105 @@ func TestRunFrameRetainsRecordedClock(t *testing.T) {
 			want, _ := watch.RenderView(watch.Project(events[:2]), sc, events[1].Time.Add(40*time.Second))
 			if diff := cmp.Diff(ansi.Strip(want)+"\n", string(got)); diff != "" {
 				t.Errorf("--at frame must use the selected event wall clock plus --after (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestRunFrameShippedSchemas(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		path    string
+		schema  int
+		ruleset int
+	}{
+		{"schema 1 ruleset 1", filepath.Join("..", "..", "internal", "carry", "testdata", "20260924T204352Z.jsonl.gz"), 1, 1},
+		{"schema 2 ruleset 2", filepath.Join("..", "..", "internal", "carry", "testdata", "20260926T151414Z.jsonl.gz"), 2, 2},
+		{"schema 2 ruleset 3", filepath.Join("..", "..", "internal", "carry", "testdata", "20260927T221954Z.jsonl.gz"), 2, 3},
+		{"schema 2 current ruleset", filepath.Join("testdata", "schema-2-ruleset-8.jsonl.gz"), 2, tuner.Ruleset},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := os.Open(tc.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			gz, err := gzip.NewReader(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer gz.Close()
+			data, err := io.ReadAll(gz)
+			if err != nil {
+				t.Fatal(err)
+			}
+			first, _, ok := bytes.Cut(data, []byte{'\n'})
+			if !ok {
+				t.Fatal("fixture has no complete first event")
+			}
+			var start journal.SessionStart
+			if err := json.Unmarshal(first, &start); err != nil {
+				t.Fatal(err)
+			}
+			if start.Schema != tc.schema {
+				t.Fatalf("schema %d, want %d", start.Schema, tc.schema)
+			}
+			recordedRuleset := start.Ruleset
+			if recordedRuleset == 0 {
+				recordedRuleset = 1
+			}
+			if recordedRuleset != tc.ruleset {
+				t.Fatalf("ruleset %d, want %d", recordedRuleset, tc.ruleset)
+			}
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(t.TempDir(), "frame")
+			out, err := os.Create(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = out.Close() })
+			var errOut bytes.Buffer
+			at := "5000"
+			if tc.ruleset == tuner.Ruleset {
+				at = "400"
+			}
+			err = run([]string{"--state-dir", dir, "--at", at, "--view", "log"}, out, &errOut)
+			if tc.ruleset != tuner.Ruleset {
+				want := fmt.Sprintf("journal ruleset %d cannot be replayed by ruleset %d; replay needs a journal from the current ruleset", tc.ruleset, tuner.Ruleset)
+				if err == nil || !strings.Contains(err.Error(), want) {
+					t.Fatalf("replay error = %v, want %q", err, want)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var trialMessage string
+			for line := range bytes.SplitSeq(bytes.TrimSpace(data), []byte{'\n'}) {
+				var event struct {
+					Kind journal.Kind `json:"kind"`
+					Msg  string       `json:"msg"`
+				}
+				if err := json.Unmarshal(line, &event); err != nil {
+					t.Fatal(err)
+				}
+				if event.Kind == journal.KindTrialIntent {
+					trialMessage = event.Msg
+				}
+			}
+			if trialMessage == "" {
+				t.Fatal("fixture has no trial")
+			}
+			frame, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(frame), trialMessage) {
+				t.Fatalf("replay frame omits recorded trial message %q:\n%s", trialMessage, frame)
 			}
 		})
 	}

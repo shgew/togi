@@ -71,12 +71,16 @@ func TestLegacyReadersPreserveRecordedLines(t *testing.T) {
 	for _, schema := range []int{1, 2} {
 		t.Run(fmt.Sprint(schema), func(t *testing.T) {
 			first := fmt.Sprintf(`{"seq":1,"kind":"session.start","schema":%d,"session":"old"}`, schema)
-			second := `{"seq":2,"kind":"trial.intent","trial":"0001","condition":"isolated","phase":"guard","rotation":3,"mask":4}`
-			path := filepath.Join(t.TempDir(), "old.jsonl")
+			second := `{"seq":2,"kind":"trial.intent","msg":"isolated trial under guard: raw diagnostic \u001b[31mfailed\u001b[0m\n","trial":"0001","condition":"isolated","phase":"guard","rotation":3,"mask":4}`
+			path := filepath.Join(t.TempDir(), "events.jsonl")
 			if err := os.WriteFile(path, []byte(first+"\n"+second+"\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			for _, read := range []func(string) ([]Event, error){ReadHistory, ReadForCarry} {
+			readReplay := func(path string) ([]Event, error) {
+				events, _, err := ReadReplay(filepath.Dir(path), 1)
+				return events, err
+			}
+			for _, read := range []func(string) ([]Event, error){ReadHistory, ReadForCarry, readReplay} {
 				events, err := read(path)
 				if err != nil {
 					t.Fatal(err)
@@ -87,6 +91,9 @@ func TestLegacyReadersPreserveRecordedLines(t *testing.T) {
 				}
 				if diff := cmp.Diff(second, string(events[1].Raw)); diff != "" {
 					t.Fatalf("recorded line (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff("isolated trial under guard: raw diagnostic \x1b[31mfailed\x1b[0m\n", events[1].Msg); diff != "" {
+					t.Fatalf("recorded message (-want +got):\n%s", diff)
 				}
 				if diff := cmp.Diff(schema, events[0].Data.(*SessionStart).Schema); diff != "" {
 					t.Fatalf("provenance schema (-want +got):\n%s", diff)
