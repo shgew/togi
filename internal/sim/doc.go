@@ -28,6 +28,10 @@
 // onset boosts apply as they do to per-core hazards. Files without [ccd] retain
 // the edge/joint model unchanged.
 //
+// Config.SingleCore replaces R1/R2 singleton loaded-core hazards with a smooth
+// exponential rate shared across cores and workloads. A shared resident log-rate
+// effect applies when any other applied register is nonzero; labels do not select it.
+//
 // A failing core produces one signal, drawn by the Model.Signals weights:
 //   - computation_error, stall, unexpected_exit: the trial ends at the failure time with that signal;
 //   - corrected_mce: a corrected MCE on the core's first logical CPU enters the current boot's kernel log and the
