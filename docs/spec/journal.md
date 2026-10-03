@@ -58,7 +58,7 @@ One JSON object per line. Common fields:
 | `msg` | Human-readable description, retaining raw diagnostic text as evidence; human output escapes controls |
 | `cause` | Optional array of `seq` this event follows from |
 
-Kind-specific fields are flat, snake_case and carry units in their names (`duration_s`, `period_ms`, `tctl_max_c`). Values use the vocabulary in `CONTEXT.md`. Cores are always `core` (the kernel `core_id`); logical CPUs are always `cpu`. Nested exceptions are `config.loaded.config` (effective configuration), and carried facts' `source` (original provenance) and `class` (trial-class identity).
+Kind-specific fields are flat, snake_case and carry units in their names (`duration_s`, `period_ms`, `tctl_max_c`). Values use the vocabulary in `GLOSSARY.md`. Cores are always `core` (the kernel `core_id`); logical CPUs are always `cpu`. Nested exceptions are `config.loaded.config` (effective configuration), and carried facts' `source` (original provenance) and `class` (trial-class identity).
 
 The `config.loaded.config` payload is a journal-owned snapshot, converted from effective configuration when the session records it. It preserves `start_offsets` and `candidate_edges` maps; `durations` with `search_trial_s`, `start_s`, `guard_trial_s`, `guard_idle_s`, `guard_all_core_s`; `evidence` with `miss` and `rate`; `guard.rotation`; `dead_ends.inconclusive_in_a_row` and `stray_crashes_in_a_row`; `backends.mprime` and `backends.ycruncher`; and `backend_user`. Null maps and rotations, empty maps and rotations, and zero values retain their representation. Changes to this persisted shape are journal schema decisions, independent of configuration implementation. Legacy `config.loaded` bodies remain decodable.
 

@@ -56,7 +56,7 @@ togi --state-dir <dir> events --core 3 # everything that happened to core 3
 |[docs/reviewing.md](docs/reviewing.md)|Reviewing current and archived runs with `just stats`, and writing a run's retro|
 |[docs/benchmarking.md](docs/benchmarking.md)|Comparing tuner changes across simulated machines|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
-|[CONTEXT.md](CONTEXT.md)|The vocabulary: offsets, phases, regimes, qualified rotations|
+|[GLOSSARY.md](GLOSSARY.md)|The vocabulary: offsets, phases, regimes, qualified rotations|
 |[docs/spec/tuner.md](docs/spec/tuner.md)|How offsets are searched, hunted, refined and guarded|
 |[docs/spec/workloads.md](docs/spec/workloads.md)|The workload regimes and how failures are detected|
 |[docs/spec/journal.md](docs/spec/journal.md)|The journal, its events and the state file|
