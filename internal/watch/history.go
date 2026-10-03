@@ -252,9 +252,9 @@ func lapText(d *journal.CheckingLap) (string, string, tone) {
 	case d.Event == journal.LapStart:
 		return tagLap, fmt.Sprintf("#%d started, %d steps", d.Lap, len(d.Steps)), plainTone
 	case d.Passed && d.Full:
-		return tagLap, fmt.Sprintf("#%d clean, every kind of test passed", d.Lap), goodTone
+		return tagLap, fmt.Sprintf("#%d passed, a full lap of every kind of test", d.Lap), goodTone
 	case d.Passed:
-		return tagLap, fmt.Sprintf("#%d clean but missing %s", d.Lap, vtText(strings.Join(d.Missing, ", "))), warnTone
+		return tagLap, fmt.Sprintf("#%d passed but missing %s", d.Lap, vtText(strings.Join(d.Missing, ", "))), warnTone
 	}
 	return tagLap, fmt.Sprintf("#%d ended early: %s", d.Lap, vtText(d.Reason)), warnTone
 }

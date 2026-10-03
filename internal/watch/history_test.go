@@ -177,6 +177,28 @@ func TestProjectFallbackHistory(t *testing.T) {
 	}
 }
 
+func TestProjectLapHistory(t *testing.T) {
+	t.Parallel()
+	s := Project(dashboardEvents(dashboardSession(),
+		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}},
+		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Missing: []string{"R2: 3 more steps"}},
+		&journal.CheckingLap{Lap: 2, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}},
+		&journal.CheckingLap{Lap: 2, Event: journal.LapEnd, Passed: true, Full: true},
+		&journal.CheckingLap{Lap: 3, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}},
+		&journal.CheckingLap{Lap: 3, Event: journal.LapEnd, Reason: "failure"}))
+	if diff := cmp.Diff([]string{
+		"start: session started on 3 cores",
+		"lap: #1 started, 1 steps",
+		"lap: #1 passed but missing R2: 3 more steps",
+		"lap: #2 started, 1 steps",
+		"lap: #2 passed, a full lap of every kind of test",
+		"lap: #3 started, 1 steps",
+		"lap: #3 ended early: failure",
+	}, historySentences(s)); diff != "" {
+		t.Fatalf("lap history must call a lap passed, never clean, which needs every core at its limit (-want +got):\n%s", diff)
+	}
+}
+
 func TestProjectOrphanTrialIDIsEscaped(t *testing.T) {
 	t.Parallel()
 	id := "orphan\x1b]52;c;payload\a\n\r\t\x7f\u009b2J\u009dtitle\u2028\u2029\u202e\xff"

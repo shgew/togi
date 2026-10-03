@@ -194,6 +194,9 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 				t.Fatal(err)
 			}
 			original = bytes.Replace(original, fmt.Appendf(nil, `"schema":%d`, journal.Schema), fmt.Appendf(nil, `"schema":%d`, tc.schema), 1)
+			if tc.schema < journal.Schema {
+				original = bytes.ReplaceAll(original, []byte(`"condition":"alone"`), []byte(`"condition":"isolated"`))
+			}
 			lines := bytes.SplitAfter(original, []byte{'\n'})
 			for n := 4; n < 7; n++ {
 				lines[n] = bytes.Replace(lines[n], fmt.Appendf(nil, `"seq":%d`, n+1), fmt.Appendf(nil, `"seq":%d`, n+2), 1)

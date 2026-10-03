@@ -40,7 +40,7 @@
 
   What happened
    15h28m  stop     stopped
-   15h28m  lap      #1 clean, every kind of test passed
+   15h28m  lap      #1 passed, a full lap of every kind of test
    15h28m  pass     idle with short bursts on all 16 cores, 15 min, peak 62 C
    15h13m  pass     partial load on core 15 at -10, 2 min, peak 74 C
    15h11m  pass     partial load on core 07 at -10, 2 min, peak 64 C
