@@ -4,11 +4,11 @@ Normative rules for how togi moves offsets. Terms are defined in `GLOSSARY.md`. 
 
 ## Ruleset
 
-The ruleset is the hardcoded strategy: search strides, offset range, phases, evidence and mark rules, hunt and refinement, and guard coverage. Changing these bumps `tuner.Ruleset` (now 7) and archives an active older session into a seeded new session ([ADR 0019](../adr/0019-a-ruleset-change-starts-a-seeded-session.md), [ADR 0020](../adr/0020-hunt-and-refine.md), [ADR 0023](../adr/0023-hunts-that-converge-on-shared-voltage.md), [ADR 0024](../adr/0024-schedule-from-uncontradicted-evidence.md), [ADR 0027](../adr/0027-carry-trial-facts.md)). Changes to configurable defaults and fixes that record facts more accurately do not bump it.
+The ruleset is the hardcoded strategy: search strides, offset range, phases, evidence and mark rules, hunt and refinement, and guard coverage. Changing these bumps `tuner.Ruleset` (now 8) and archives an active older session into a seeded new session ([ADR 0019](../adr/0019-a-ruleset-change-starts-a-seeded-session.md), [ADR 0020](../adr/0020-hunt-and-refine.md), [ADR 0023](../adr/0023-hunts-that-converge-on-shared-voltage.md), [ADR 0024](../adr/0024-schedule-from-uncontradicted-evidence.md), [ADR 0027](../adr/0027-carry-trial-facts.md)). Changes to configurable defaults and fixes that record facts more accurately do not bump it.
 
 The evidence epoch (`tuner.EvidenceEpoch`, now 1) separately versions compatibility of trial outcomes: workload content, backend binary or configuration, intended durations, and pass/failure detection (`workloads.md`). `session.start.evidence` records it. Without that field, a session with ruleset ≥ 6 has epoch 1; an older session has epoch 0. A transition drops passes from other epochs but keeps eligible failures. An epoch change is not a ruleset or journal-schema bump.
 
-Transitions record eligible same-BIOS trial and idle-failure facts before `session.carried` (`journal.md`, Transitions). Ruleset 7 decides from these carried facts under the Evidence rules below; it does not carry resident offsets or qualified rotations.
+Transitions record eligible same-BIOS trial and idle-failure facts before `session.carried` (`journal.md`, Transitions). Ruleset 8 decides from ordinary carried facts under the Evidence rules below, preserving record-only facts without using them; it does not carry resident offsets or qualified rotations.
 
 ## Invariants
 
@@ -57,6 +57,8 @@ After an attributed failure at `o`:
 Any failure during an isolated trial is attributed to the target, crashes included: no other core carries an offset that could explain it.
 
 ## Evidence
+
+These decision rules apply only to ordinary trials and facts. `record_only` partial outcomes stay in the journal and facts extraction but never enter the ledger or any path below, and record-only starts bypass known-failure skips.
 
 One start is one trial, with no internal relaunch. The pass rule is `n = ceil(ln(evidence.miss) / log1p(-evidence.rate))` consecutive passing starts, five at the defaults (0.05, 0.5). The first failure rejects a step. The full count applies to a candidate edge's R1 and R2 classes, every hunt mask and every refinement check.
 
