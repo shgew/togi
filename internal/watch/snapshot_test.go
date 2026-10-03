@@ -77,6 +77,74 @@ func TestProjectTrialLifecycle(t *testing.T) {
 	}
 }
 
+func TestProjectTrialStartSelection(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		payloads   []journal.Payload
+		startIndex int
+		zeroTime   bool
+	}{
+		{
+			name: "before intent",
+			payloads: []journal.Payload{
+				&journal.TrialStart{Trial: "one"},
+				&journal.TrialIntent{Trial: "one"},
+			},
+			startIndex: 1,
+		},
+		{
+			name: "latest matching start",
+			payloads: []journal.Payload{
+				&journal.TrialIntent{Trial: "one"},
+				&journal.TrialStart{Trial: "one"},
+				&journal.TrialStart{Trial: "one"},
+				&journal.TrialStart{Trial: "other"},
+			},
+			startIndex: 3,
+		},
+		{
+			name: "only unrelated start",
+			payloads: []journal.Payload{
+				&journal.TrialIntent{Trial: "one"},
+				&journal.TrialStart{Trial: "other"},
+			},
+			startIndex: -1,
+		},
+		{
+			name: "zero timestamp",
+			payloads: []journal.Payload{
+				&journal.TrialIntent{Trial: "one"},
+				&journal.TrialStart{Trial: "one"},
+			},
+			startIndex: 2,
+			zeroTime:   true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			events := dashboardEvents(append([]journal.Payload{dashboardSession()}, tc.payloads...)...)
+			var started time.Time
+			if tc.startIndex >= 0 {
+				if tc.zeroTime {
+					events[tc.startIndex].Time = time.Time{}
+				}
+				started = events[tc.startIndex].Time
+			}
+			s := Project(events)
+			if s.trial == nil {
+				t.Fatal("open trial not projected")
+			}
+			if diff := cmp.Diff(tc.startIndex >= 0, s.trial.hasStarted); diff != "" {
+				t.Fatalf("trial start presence (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(started, s.trial.started); diff != "" {
+				t.Fatalf("trial start time (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestProjectMaskedHunt(t *testing.T) {
 	t.Parallel()
 	events := dashboardHuntEvents()
