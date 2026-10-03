@@ -81,6 +81,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just check` | Every flake check, what CI runs on every pull request and push to `main`: package (its tests run shuffled, with the integration tests on Linux), race (trial, session, journal and watch under the race detector), lint, fmt, changes (the changelog fragments) and, on Linux, the VM tests `vm` (the tuning boot) and `vm-restart-limit`. Must pass before a pull request |
 | `just fmt` | Format Go, Nix and the justfile in place |
 | `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
+| `just replay --state-dir DIR` | Play a recorded journal through the dashboard on a fast-forward clock, or print one frame with `--at SEQ` (`go run ./tools/replay`, `docs/simulating.md`) |
 | `just bench [flags]` | The bench suite of simulated sessions, optionally compared against a baseline run (`go run ./tools/bench`, `docs/benchmarking.md`) |
 | `just same [base]` | Prove a shape-only change leaves all simulated session journals unchanged; base defaults to `origin/main` (`docs/benchmarking.md`) |
 | `just facts STATE-DIR` | Regenerate the committed privacy-safe target evidence from a copied state directory (`docs/benchmarking.md`) |
@@ -123,7 +124,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
 | `nix/` | NixOS module and VM tests |
-| `tools/*` | Development programs, never shipped: `bench`, `carry-facts`, `cover`, `facts`, `fit`, `release`, `sim`, `stats`; shared evaluation packages `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
+| `tools/*` | Development programs, never shipped: `bench`, `carry-facts`, `cover`, `facts`, `fit`, `release`, `replay`, `sim`, `stats`; shared evaluation packages `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
 
 A package owns one responsibility, and its exported API is the seam. Split a package when it holds two responsibilities that change for different reasons.
 
