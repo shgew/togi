@@ -23,7 +23,6 @@ func synthetic(t *testing.T) (sim.Config, []trialfacts.Record) {
 	model := sim.DefaultModel()
 	model.PastEdgeRate, model.Growth = 0.008, 3
 	cfg := sim.Config{Cores: 4, Model: &model, Edges: make([]sim.Edges, 4), CCD: &sim.CCD{LogRate: math.Log(0.006), Slope: 0.15, Effect: [2]float64{0, 0.6}}}
-	cfg.SingleCore = &sim.SingleCore{LogRate: math.Log(0.008) + 4*math.Log(3), Slope: math.Log(3), ResidentEffect: math.Log(0.3), Core: []float64{0, -math.Log(3), -2 * math.Log(3), -3 * math.Log(3)}, Workload: map[string]float64{"synthetic": 0}}
 	for core := range cfg.Edges {
 		for r := range cfg.Edges[core].Isolated {
 			cfg.Edges[core].Isolated[r] = -20 - core
@@ -82,8 +81,15 @@ func synthetic(t *testing.T) (sim.Config, []trialfacts.Record) {
 func TestFitRecoversMachine(t *testing.T) {
 	known, records := synthetic(t)
 	got, _ := fit(records)
-	if got.SingleCore == nil {
-		t.Fatal("singleton structure not fitted")
+	for core := range known.Edges {
+		for r := range 2 {
+			if got.Edges[core].Isolated[r] != known.Edges[core].Isolated[r] || got.Edges[core].Resident[r] != known.Edges[core].Resident[r] {
+				t.Errorf("core %d regime %d: edges %+v; want %+v", core, r, got.Edges[core], known.Edges[core])
+			}
+		}
+	}
+	if math.Abs(got.Model.PastEdgeRate/known.Model.PastEdgeRate-1) > 0.25 || math.Abs(got.Model.Growth-known.Model.Growth) > 0.6 {
+		t.Errorf("hazard shape: rate=%g growth=%g; want rate=%g growth=%g", got.Model.PastEdgeRate, got.Model.Growth, known.Model.PastEdgeRate, known.Model.Growth)
 	}
 	fitted, err := sim.New(got)
 	if err != nil {
@@ -92,14 +98,6 @@ func TestFitRecoversMachine(t *testing.T) {
 	source, err := sim.New(known)
 	if err != nil {
 		t.Fatal(err)
-	}
-	for _, o := range aggregate(records) {
-		if !singleCoreObservation(o) {
-			continue
-		}
-		if want, got := source.FailureProbability(o.profile, o.spec), fitted.FailureProbability(o.profile, o.spec); math.Abs(want-got) > 0.15 {
-			t.Errorf("singleton profile %v: p=%g want %g", o.profile, got, want)
-		}
 	}
 	for _, o := range aggregate(records) {
 		if o.spec.Regime != machine.R7 {
@@ -168,14 +166,14 @@ func TestFitRecoversFlatAndIdle(t *testing.T) {
 		{[]int{0, -33}, 0, 60},
 	} {
 		cores := []int{exposure.loaded}
-		spec := machine.TrialSpec{Regime: machine.R3, Cores: cores, Duration: time.Duration(exposure.duration) * time.Second}
+		spec := machine.TrialSpec{Regime: machine.R1, Cores: cores, Duration: time.Duration(exposure.duration) * time.Second}
 		p := source.FailureProbability(exposure.profile, spec)
 		for range 150 {
 			outcome := journal.OutcomePass
 			if rng.Float64() < p {
 				outcome = journal.OutcomeFailure
 			}
-			records = append(records, trialfacts.Record{Kind: facts.TrialFact, Profile: exposure.profile, Class: facts.Class{Regime: machine.R3, Cores: cores, DurationS: exposure.duration}, Outcome: outcome})
+			records = append(records, trialfacts.Record{Kind: facts.TrialFact, Profile: exposure.profile, Class: facts.Class{Regime: machine.R1, Cores: cores, DurationS: exposure.duration}, Outcome: outcome})
 		}
 	}
 	got, _ := fit(records)
@@ -398,7 +396,6 @@ func TestWorkloadOverridesRequireSupportAndImproveLikelihood(t *testing.T) {
 	for _, n := range []int{9, 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
-			cfg.SingleCore = nil
 			cfg.Model.NearEdgeRate = 0
 			spec := machine.TrialSpec{Regime: machine.R1, Workload: machine.Workload{ID: "supported"}, Cores: []int{0}, Duration: 60 * time.Second}
 			l := likelihood{cfg: cfg, obs: []observation{{profile: []int{-20, 0}, spec: spec, n: n, k: 1}}}
@@ -418,7 +415,6 @@ func TestWorkloadOverridesRequireSupportAndImproveLikelihood(t *testing.T) {
 
 func TestCoupledShiftIncludesWorkloadAndPreservesUnsupportedEdges(t *testing.T) {
 	cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
-	cfg.SingleCore = nil
 	cfg.Model.NearEdgeRate = 0
 	cfg.Model.PastEdgeRate = 0.01
 	cfg.Edges[0].Workload = map[string]int{"active": -20, "unsupported": -50}

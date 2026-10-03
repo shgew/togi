@@ -28,9 +28,8 @@ type Config struct {
 	// Edges are the hidden edges; nil draws them from Seed.
 	Edges []Edges
 	// Model nil means DefaultModel(); a non-nil model is used verbatim, zero fields included.
-	Model      *Model
-	CCD        *CCD
-	SingleCore *SingleCore
+	Model *Model
+	CCD   *CCD
 	// Boots counts the boots before the first; boot numbering and boot IDs continue from it.
 	Boots int
 	// Start is the clock at the first boot; zero means 2026-01-01T00:00:00Z.
@@ -55,15 +54,6 @@ type CCD struct {
 	LogRate float64    `toml:"log_rate"`
 	Slope   float64    `toml:"slope"`
 	Effect  [2]float64 `toml:"effect"`
-}
-
-// SingleCore replaces R1/R2 singleton loaded-core hazards with a shared smooth rate.
-type SingleCore struct {
-	LogRate        float64            `toml:"log_rate"`
-	Slope          float64            `toml:"slope"`
-	ResidentEffect float64            `toml:"resident_effect"`
-	Core           []float64          `toml:"core"`
-	Workload       map[string]float64 `toml:"workload"`
 }
 
 type Joint struct {
@@ -226,21 +216,6 @@ func New(cfg Config) (*Machine, error) {
 		}
 		if c.Slope < 0 {
 			return nil, errors.New("new simulator: ccd slope must be nonnegative")
-		}
-	}
-	if s := cfg.SingleCore; s != nil {
-		if len(s.Core) != cfg.Cores || !finite(s.LogRate) || !finite(s.Slope) || s.Slope < 0 || !finite(s.ResidentEffect) {
-			return nil, errors.New("new simulator: single_core needs finite effects, nonnegative slope and one effect per core")
-		}
-		for _, effect := range s.Core {
-			if !finite(effect) {
-				return nil, errors.New("new simulator: single_core core effect must be finite")
-			}
-		}
-		for _, effect := range s.Workload {
-			if !finite(effect) {
-				return nil, errors.New("new simulator: single_core workload effect must be finite")
-			}
 		}
 	}
 	for _, kind := range slices.Sorted(maps.Keys(model.Reset)) {
