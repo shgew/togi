@@ -237,6 +237,7 @@ func TestRoundTrip(t *testing.T) {
 		&MCE{CPU: 7, Core: 7, Bank: 5, BankType: machine.LoadStore, Corrected: true, FromBoot: "e8f9a0b1", Lines: []string{"[Hardware Error]: <x> & y"}},
 		&CrashDetected{PreviousBoot: "e8f9a0b1", InFlight: new(812), Stray: true},
 		&CrashDetected{PreviousBoot: "e8f9a0b1", Condition: machine.Resident},
+		&CrashDetected{PreviousBoot: "e8f9a0b1", Pstore: &machine.PstoreRecord{Path: "/var/lib/systemd/pstore/1791027456/001/dmesg.txt", Lines: []string{"kernel diagnostic\x1b[2J", "last line"}}},
 		&TunerDecision{Core: 7, Phase: PhaseSearch, Decision: CheckEdge, FromOffset: -33, ToOffset: -33, Pass: new(-30), FailedMark: new(-34), Workloads: []string{"r1", "r2"}, Reason: "candidate edge"},
 		&TunerDecision{Core: 7, Phase: PhaseGuard, Decision: Backoff, FromOffset: -32, ToOffset: -31, Pass: new(-33), FailedMark: new(-34), Reason: "r"},
 		&TunerDecision{Core: 3, Phase: PhaseRefine, Decision: Yield, FromOffset: -30, ToOffset: -29, Reason: "r"},

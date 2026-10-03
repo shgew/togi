@@ -120,6 +120,7 @@ in
             wantedBy = [ "multi-user.target" ];
             after = [
               "systemd-modules-load.service"
+              "systemd-pstore.service"
               "local-fs.target"
             ];
             path = [ pkgs.grub2 ];
@@ -149,7 +150,10 @@ in
           console.font = lib.mkForce cfg.tuning.consoleFont;
           boot.kernelParams = lib.mkForce (
             lib.filter (p: builtins.match "console=tty[0-9]+(,.*)?" p == null) config.boot.kernelParams
-            ++ [ "console=tty3" ]
+            ++ [
+              "console=tty3"
+              "printk.always_kmsg_dump=1"
+            ]
           );
           systemd.services."getty@tty1".enable = false;
           systemd.services."autovt@tty1".enable = false;

@@ -406,6 +406,14 @@ func (r *runner) recoverCrashes(ctx context.Context) error {
 		if !detected.Stray {
 			detected.Condition = r.fold.appliedCond[crashed]
 		}
+		record, readErr := r.in.Machine.Kernel.SavedPstore(crashed)
+		if readErr != nil {
+			if _, err := r.append(&journal.SessionWarning{Operation: "read saved pstore", Error: readErr.Error()}); err != nil {
+				return err
+			}
+		} else {
+			detected.Pstore = record
+		}
 		if _, err := r.append(detected, r.fold.recordedFor(crashed, boot)...); err != nil {
 			return err
 		}

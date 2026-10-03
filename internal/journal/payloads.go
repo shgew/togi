@@ -649,13 +649,14 @@ func (p *MCE) Message() string {
 }
 
 type CrashDetected struct {
-	PreviousBoot   string            `json:"previous_boot"`
-	InFlight       *int              `json:"in_flight,omitempty"`
-	Stray          bool              `json:"stray,omitempty"`
-	Condition      machine.Condition `json:"condition,omitempty"`
-	ResetReason    machine.ResetKind `json:"reset_reason,omitempty"`
-	ResetReasonRaw string            `json:"reset_reason_raw,omitempty"`
-	Inconclusive   bool              `json:"inconclusive,omitempty"`
+	PreviousBoot   string                `json:"previous_boot"`
+	InFlight       *int                  `json:"in_flight,omitempty"`
+	Stray          bool                  `json:"stray,omitempty"`
+	Condition      machine.Condition     `json:"condition,omitempty"`
+	ResetReason    machine.ResetKind     `json:"reset_reason,omitempty"`
+	ResetReasonRaw string                `json:"reset_reason_raw,omitempty"`
+	Inconclusive   bool                  `json:"inconclusive,omitempty"`
+	Pstore         *machine.PstoreRecord `json:"pstore,omitempty"`
 }
 
 func (*CrashDetected) Kind() Kind { return KindCrashDetected }
@@ -681,6 +682,9 @@ func (p *CrashDetected) Message() string {
 	}
 	if p.Inconclusive {
 		msg += "; inconclusive: reset does not establish a tuning failure"
+	}
+	if p.Pstore != nil {
+		msg += "; pstore: " + p.Pstore.Path
 	}
 	return msg
 }
