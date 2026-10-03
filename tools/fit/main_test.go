@@ -47,9 +47,6 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 	if diff := cmp.Diff(cfg.BIOSContext, got.BIOSContext); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff(cfg.CCD, got.CCD); diff != "" {
-		t.Fatal(diff)
-	}
 	if got.Facts != cfg.Facts || got.Model.PastEdgeRate != cfg.Model.PastEdgeRate || got.Model.Growth != cfg.Model.Growth || got.Model.NearEdgeRate != cfg.Model.NearEdgeRate {
 		t.Fatalf("encoded fit lost parameters: %+v", got)
 	}

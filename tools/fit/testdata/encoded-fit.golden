@@ -28,11 +28,6 @@ core = [0, 0]
 workload = {
 }
 
-[ccd]
-log_rate = -7
-slope = 0.10000000000000001
-effect = [0, 0]
-
 [[core]]
 id = 0
 isolated = [-50, -50, -50, -50, -50]
