@@ -16,7 +16,6 @@ func LoadMachine(path string) (Config, error) {
 		BIOS        []int  `toml:"bios"`
 		Ranking     []int  `toml:"ranking"`
 		OldKernel   bool   `toml:"old_kernel"`
-		CCD         *CCD   `toml:"ccd"`
 		BIOSContext *struct {
 			BIOSVersion   string `toml:"bios_version"`
 			Board         string `toml:"board"`
@@ -68,7 +67,6 @@ func LoadMachine(path string) (Config, error) {
 		return Config{}, fmt.Errorf("load simulator machine %s: unknown key %s", path, keys[0])
 	}
 	cfg := Config{Cores: f.Cores, BIOS: f.BIOS, Ranking: f.Ranking, OldKernel: f.OldKernel, Facts: f.Facts}
-	cfg.CCD = f.CCD
 	if b := f.BIOSContext; b != nil {
 		cfg.BIOSContext = machine.BIOSContext{
 			BIOSVersion:   cmp.Or(b.BIOSVersion, defaultBIOSContext.BIOSVersion),

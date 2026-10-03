@@ -21,11 +21,6 @@ growth = 2
 near_edge_rate = 9.9999999999999995e-08
 onset_boost = 0.0
 
-[ccd]
-log_rate = -7
-slope = 0.10000000000000001
-effect = [0, 0]
-
 [[core]]
 id = 0
 isolated = [-50, -50, -50, -50, -50]

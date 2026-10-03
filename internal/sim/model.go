@@ -120,25 +120,6 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				idleFailure = !slices.Contains(spec.Cores, c)
 			}
 		}
-		for ccd := range 2 {
-			rate := m.ccdRate(m.regs, spec, ccd)
-			if rate <= 0 {
-				continue
-			}
-			core := -1
-			for _, loaded := range spec.Cores {
-				if loaded/(m.cfg.Cores/2) == ccd {
-					core = loaded
-					break
-				}
-			}
-			t := m.failureDraw(rate, 0, spec, core, fmt.Sprintf("ccd-%d", ccd))
-			if t < failAt {
-				failCore, failAt, forcedSignal = core, t, machine.Crash
-				idleFailure = false
-				jointCrash = &Joint{}
-			}
-		}
 		for j, joint := range m.cfg.Joints {
 			rate := m.jointRate(m.regs, spec.Regime, joint)
 			if rate <= 0 {

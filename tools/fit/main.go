@@ -169,9 +169,6 @@ func encodeMachine(cfg sim.Config, index int, seed uint64, starts int, loss floa
 	}
 	m := cfg.Model
 	fmt.Fprintf(&b, "\n[model]\npast_edge_rate = %.17g\ngrowth = %.17g\nnear_edge_rate = %.17g\nonset_boost = 0.0\n", m.PastEdgeRate, m.Growth, m.NearEdgeRate)
-	if c := cfg.CCD; c != nil {
-		fmt.Fprintf(&b, "\n[ccd]\nlog_rate = %.17g\nslope = %.17g\neffect = [%.17g, %.17g]\n", c.LogRate, c.Slope, c.Effect[0], c.Effect[1])
-	}
 	for core, edge := range cfg.Edges {
 		fmt.Fprintf(&b, "\n[[core]]\nid = %d\nisolated = [%d, %d, %d, %d, %d]\nresident = [%d, %d, %d, %d, %d, %d, %d]\nflat = %.17g\n", core, edge.Isolated[0], edge.Isolated[1], edge.Isolated[2], edge.Isolated[3], edge.Isolated[4], edge.Resident[0], edge.Resident[1], edge.Resident[2], edge.Resident[3], edge.Resident[4], edge.Resident[5], edge.Resident[6], edge.Flat)
 		if edge.Idle != nil {

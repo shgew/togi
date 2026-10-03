@@ -21,12 +21,6 @@
 // core-local evidence; idle per-core crashes leave no MCE.
 // R3 and R4 follow their load-step schedules only to report SIGSTOP and SIGCONT counts, not to change failure rates.
 //
-// Config.CCD adds an R7 hazard only on each loaded CCD, at rate
-// exp(LogRate + Effect[ccd] + Slope*(mean applied CCD depth-25)).
-// CCD failures are unattributed crashes. The same rate drives draws and scores;
-// onset boosts apply as they do to per-core hazards. Files without [ccd] retain
-// the edge/joint model unchanged.
-//
 // A failing core produces one signal, drawn by the Model.Signals weights:
 //   - computation_error, stall, unexpected_exit: the trial ends at the failure time with that signal;
 //   - corrected_mce: a corrected MCE on the core's first logical CPU enters the current boot's kernel log and the

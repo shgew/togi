@@ -17,9 +17,6 @@ func (m *Machine) Hazard(profile []int, spec machine.TrialSpec) float64 {
 	for _, joint := range m.cfg.Joints {
 		rate += m.jointRate(profile, spec.Regime, joint)
 	}
-	for ccd := range 2 {
-		rate += m.ccdRate(profile, spec, ccd)
-	}
 	return rate
 }
 
@@ -36,9 +33,6 @@ func (m *Machine) FailureProbability(profile []int, spec machine.TrialSpec) floa
 	}
 	for _, joint := range m.cfg.Joints {
 		hazard += m.jointRate(profile, spec.Regime, joint) * exposure(joint.AfterS)
-	}
-	for ccd := range 2 {
-		hazard += m.ccdRate(profile, spec, ccd) * exposure(0)
 	}
 	return -math.Expm1(-hazard)
 }
@@ -85,24 +79,4 @@ func (m *Machine) jointRate(profile []int, regime machine.Regime, joint Joint) f
 		return m.model.PastEdgeRate
 	}
 	return joint.Rate
-}
-
-func (m *Machine) ccdRate(profile []int, spec machine.TrialSpec, ccd int) float64 {
-	c := m.cfg.CCD
-	if c == nil || spec.Regime != machine.R7 {
-		return 0
-	}
-	size := m.cfg.Cores / 2
-	loaded := false
-	for _, core := range spec.Cores {
-		loaded = loaded || core/size == ccd
-	}
-	if !loaded {
-		return 0
-	}
-	depth := 0
-	for core := ccd * size; core < (ccd+1)*size; core++ {
-		depth -= profile[core]
-	}
-	return math.Exp(c.LogRate + c.Effect[ccd] + c.Slope*(float64(depth)/float64(size)-25))
 }
