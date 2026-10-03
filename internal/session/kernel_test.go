@@ -100,6 +100,11 @@ func (r boundaryRunning) Wait(context.Context, machine.Reporter) (machine.Result
 	return r.wait(r.spec), nil
 }
 
+func (r boundaryRunning) Stop() error {
+	r.wait(r.spec)
+	return nil
+}
+
 func boundaryRunner(t *testing.T) (*runner, *boundaryKernel, func(time.Duration)) {
 	t.Helper()
 	m := newSim(t, small())

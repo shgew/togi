@@ -786,6 +786,47 @@ func TestCanceledStartDoesNotConsumeFault(t *testing.T) {
 	}
 }
 
+func TestStopMatchesCanceledWaitCleanup(t *testing.T) {
+	for _, state := range []string{"running", "crashed", "rebooted"} {
+		t.Run(state, func(t *testing.T) {
+			m := newMachine(t, Config{Cores: 2})
+			spec := machine.TrialSpec{ID: "0001", Regime: machine.R1, Workload: machine.PickWorkload(machine.R1, 0), Condition: machine.Isolated, Cores: []int{0}, CPUs: []int{0}, Duration: time.Minute}
+			run, err := m.Seams().Trials.Start(context.Background(), spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch state {
+			case "crashed":
+				m.Crash()
+			case "rebooted":
+				m.Reboot()
+			}
+			before := m.Now()
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			_, want := run.Wait(ctx, nil)
+			if errors.Is(want, context.Canceled) {
+				want = nil
+			}
+			got := run.Stop()
+			if !errors.Is(got, want) {
+				t.Fatalf("stop = %v, canceled wait cleanup = %v", got, want)
+			}
+			if diff := cmp.Diff(before, m.Now()); diff != "" {
+				t.Fatal(diff)
+			}
+			if state == "running" {
+				m.Crash()
+			} else {
+				m.Reboot()
+			}
+			if again := run.Stop(); !errors.Is(again, got) {
+				t.Fatalf("repeated stop = %v, first result = %v", again, got)
+			}
+		})
+	}
+}
+
 func TestHostValidationAndWatchdogFaults(t *testing.T) {
 	m := newMachine(t, Config{Cores: 2})
 	for _, name := range []string{"cpu", "ryzen_smu"} {

@@ -287,6 +287,10 @@ func (r containmentRunning) Wait(ctx context.Context, report machine.Reporter) (
 	return result, errors.Join(err, context.Canceled, machine.ErrContainment)
 }
 
+func (r containmentRunning) Stop() error {
+	return errors.Join(r.Running.Stop(), context.Canceled, machine.ErrContainment)
+}
+
 func TestUnconfirmedCleanupDeadEnd(t *testing.T) {
 	for _, atStart := range []bool{false, true} {
 		name := "normal end"

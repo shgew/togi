@@ -1249,16 +1249,7 @@ func (r *runner) close(restore bool, stop *Stop) (err error) {
 		r.cancelTrial()
 	}
 	if r.running != nil {
-		if stop, ok := r.running.(interface{ Stop() error }); ok {
-			err = errors.Join(err, stop.Stop())
-		} else {
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
-			_, waitErr := r.running.Wait(ctx, cleanupReport{})
-			if errors.Is(waitErr, machine.ErrContainment) || !errors.Is(waitErr, context.Canceled) {
-				err = errors.Join(err, waitErr)
-			}
-		}
+		err = errors.Join(err, r.running.Stop())
 		r.running = nil
 	}
 	if !restore || r.containmentFailed || errors.Is(err, machine.ErrContainment) {
@@ -1330,12 +1321,6 @@ func (r *runner) drainDecisions() (tuner.Action, bool, error) {
 		}
 	}
 }
-
-type cleanupReport struct{}
-
-func (cleanupReport) Progress(string)                    {}
-func (cleanupReport) Sample(machine.Sample)              {}
-func (cleanupReport) Signal(int, machine.Signal, string) {}
 
 // restore keeps baseline offsets only where they are no deeper than the safe current profile.
 func (r *runner) restore() error {

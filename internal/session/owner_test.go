@@ -80,12 +80,9 @@ func (r *ownerRunning) Stop() error {
 	if r.owner.stopErr != nil {
 		return r.owner.stopErr
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err := r.Wait(ctx, cleanupReport{})
-	if errors.Is(err, context.Canceled) {
-		return nil
-	}
+	err := r.Running.Stop()
+	r.owner.active = false
+	r.owner.stopped++
 	return err
 }
 

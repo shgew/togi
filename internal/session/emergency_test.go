@@ -242,6 +242,11 @@ func (r trackedRunning) Wait(ctx context.Context, report machine.Reporter) (mach
 	return r.Running.Wait(ctx, report)
 }
 
+func (r trackedRunning) Stop() error {
+	defer func() { *r.active-- }()
+	return r.Running.Stop()
+}
+
 func TestEveryEarlyJournalAppendFailureRespectsSweepGate(t *testing.T) {
 	t.Parallel()
 	cfg := small()
@@ -346,6 +351,10 @@ type liveContainmentRunning struct{ machine.Running }
 func (r liveContainmentRunning) Wait(_ context.Context, report machine.Reporter) (machine.Result, error) {
 	report.Progress("backend still running")
 	return machine.Result{}, fmt.Errorf("backend still running after teardown: %w", machine.ErrContainment)
+}
+
+func (r liveContainmentRunning) Stop() error {
+	return fmt.Errorf("backend still running after teardown: %w", machine.ErrContainment)
 }
 
 type liveWriteSMU struct {

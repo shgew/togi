@@ -105,6 +105,8 @@ Processes that disappear while `/proc` is scanned are no longer leftover workloa
 
 The kernel enforces the cpuset whatever the backend does. togi also samples the processor field of every backend thread in `/proc/<pid>/task/*/stat` once per second, from the moment the process is inside its scope. A thread seen outside its allowed logical CPUs is a dead end. Stopping a trial terminates the whole scope.
 
+Every running workload exposes `Started`, `Wait` and `Stop`. `Stop` cancels the workload and returns once its teardown has joined; repeated calls return the first result. The run owner calls it before any cleanup profile write and preserves containment errors.
+
 Normal trial ends and partial-start rollbacks use the same teardown, with one absolute deadline shared across all instances:
 1. Send SIGCONT, then SIGTERM to each identity-verified process group owned by the current run, and allow up to 3 s of grace shared by all groups. Owned groups are verified against the captured launcher PID and start time before each signal; reaping and signaling are serialized so the PID cannot be reused between verification and signaling.
 2. Send SIGKILL to every known scope with `systemctl kill --kill-whom=all`, including scopes whose launcher has exited and scopes attempted before a launch failed. The calls share a slot of at most 2 s and each gets only the remaining time.

@@ -89,7 +89,6 @@ type fold struct {
 	applying         map[string]bool
 	registers        map[string][]int
 	uncertain        map[string][]bool
-	baselineBoot     map[string]bool
 	retries          map[machine.Backend]*journal.BackendRetry
 	retryFollowed    map[machine.Backend]bool
 	lastReason       map[machine.Backend]string
@@ -132,7 +131,6 @@ func newFold() *fold {
 		applying:      map[string]bool{},
 		registers:     map[string][]int{},
 		uncertain:     map[string][]bool{},
-		baselineBoot:  map[string]bool{},
 		retries:       map[machine.Backend]*journal.BackendRetry{},
 		retryFollowed: map[machine.Backend]bool{},
 		lastReason:    map[machine.Backend]string{},

@@ -35,6 +35,11 @@ func (r windowCrashRunning) Wait(context.Context, machine.Reporter) (machine.Res
 	return machine.Result{}, machine.ErrCrashed
 }
 
+func (r windowCrashRunning) Stop() error {
+	r.advance(2 * time.Second)
+	return machine.ErrCrashed
+}
+
 func crashWindowTrial(t *testing.T, r *runner, advance func(time.Duration)) {
 	t.Helper()
 	r.in.Machine.Trials = windowCrashTrials{Trials: r.in.Machine.Trials, advance: advance}

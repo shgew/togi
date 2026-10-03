@@ -110,6 +110,8 @@ type Reporter interface {
 type Running interface {
 	Started() Started
 	Wait(ctx context.Context, report Reporter) (Result, error)
+	// Stop cancels the workload and returns once it is joined; repeated calls return the first result.
+	Stop() error
 }
 
 // TrialConditions is an optional diagnostic sample, not stability evidence.

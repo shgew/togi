@@ -653,6 +653,11 @@ func (r interruptedRunning) Wait(context.Context, machine.Reporter) (machine.Res
 	return machine.Result{Ran: 85 * time.Second}, context.Canceled
 }
 
+func (r interruptedRunning) Stop() error {
+	r.cancel()
+	return nil
+}
+
 func TestInterruptedTrialRecordsTimeRan(t *testing.T) {
 	t.Parallel()
 	in := simInput(t.TempDir(), newSim(t, small()))
