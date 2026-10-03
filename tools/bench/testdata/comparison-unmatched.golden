@@ -1,5 +1,9 @@
 comparison: overall ratio weights scenarios equally; CI resamples pairs within each scenario (10000, fixed seed). V1=lost conclusion; V2=hazard increase >0.01/h; V3=mean depth increase >1 or pair >5; V4=target ratio >1. Positive depth delta is shallower.
+comparison: partial seconds per clean rotation pool completed clean rotations over paired runs separately for candidate and baseline; missing baseline metrics are zero. Diagnostic only, not a verdict gate.
 comparison: WARNING 1 candidate and 1 baseline runs in the same splits unmatched; 2 paired
 alpha ratio=0.500 ci=[0.500,0.500] pairs=1 timed=1 faster=1 slower=0 equal=0 crash_delta=0.000 depth_delta=0.000 max_hazard_delta=0.000000 real_answer_share=0.166667 baseline_real_answer_share=0.500000 violations=V1:0,V2:0,V3:0,V4:0
+alpha partial_s_per_clean_rotation=120.000 baseline_partial_s_per_clean_rotation=5.000
 zeta ratio=0.500 ci=[0.500,0.500] pairs=1 timed=1 faster=1 slower=0 equal=0 crash_delta=1.000 depth_delta=0.000 max_hazard_delta=0.000000 real_answer_share=0.500000 baseline_real_answer_share=0.750000 violations=V1:0,V2:0,V3:0,V4:0
+zeta partial_s_per_clean_rotation=90.000 baseline_partial_s_per_clean_rotation=20.000
 verdict: ACCEPT ratio=0.500 ci=[0.500,0.500] pairs=2 timed=2 faster=2 slower=0 equal=0 crash_delta=0.500 depth_delta=0.000 max_hazard_delta=0.000000 real_answer_share=0.250000 baseline_real_answer_share=0.625000 violations=V1:0,V2:0,V3:0,V4:0
+verdict: ACCEPT partial_s_per_clean_rotation=100.000 baseline_partial_s_per_clean_rotation=10.000

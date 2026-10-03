@@ -101,7 +101,7 @@ Resident testing across all regimes; it continues after search and refinement fi
 One pass through the configured guard schedule, whose requirements are starts.
 
 **Qualifying rotation**:
-A clean rotation covering every R1 and R2 workload on every core, every R7 workload in every part, and R3, R4, R5 and R6.
+A clean rotation covering every R1 and R2 workload on every core, every R7 workload in every full part, and R3, R4, R5 and R6. Record-only partial R7 parts supply no qualifying coverage.
 
 **Qualified rotation**:
 A clean qualifying rotation that ended with every core done and remains valid for the current profile under the guard's evidence rules.
@@ -140,7 +140,7 @@ A core at -50, or one for which taking one more count deeper would reach a faile
 A failed mark a transition brings into the new session: the shallowest offset of an attributed failure or hunt culprit of that core in the archived sessions, recorded in `session.carried` with the session and `seq` it came from. A BIOS change leaves it behind.
 
 **Carried fact**:
-A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original session, sequence, build, evidence epoch and recorded context. Carried passes can answer candidate-edge checks, hunt masks, reruns and refinement checks, but never qualify a guard rotation; carried failures count everywhere. Copying it again does not make it new evidence.
+A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original session, sequence, build, evidence epoch and recorded context. Ordinary carried passes can answer candidate-edge checks, hunt masks, reruns and refinement checks, but never qualify a guard rotation; ordinary carried failures count everywhere. Record-only partial outcomes retain their marker but influence no tuner decision. Copying a fact again does not make it new evidence.
 
 **Evidence epoch**:
 The compatibility version of trial outcomes: workload content, backend binary and configuration, intended durations, and pass/failure detection. Passes carry only within the current epoch; eligible failures survive an epoch change.

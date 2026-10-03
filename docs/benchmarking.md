@@ -49,6 +49,8 @@ To control concurrency, timeouts or retention directly, use `go run ./tools/benc
 - `sim_hours`: simulated time from `session.start` to the last event, including the 90 s each crash reboot costs. This is the time to conclusion;
 - `first_clean_rotation_h`: simulated time to the first clean qualifying rotation;
 - `crashes`, `trials`, `trial_hours`, `hunts` and `joint_marks`;
+- `clean_rotations`: completed `guard.rotation` ends marked clean, whether qualifying or not;
+- `partial_seconds`: measured `trial.end.duration_s` summed for record-only trials belonging to those clean rotations, including passes, failures and inconclusive retries. Dirty or unfinished rotations, unfinished trials, and trial-less crashes contribute no partial seconds.
 - `real_answers` and `real_answer_share`: the number and fraction of completed trials answered by matching real facts; inconclusive trials and failures before workload startup count in `trials` but not as real answers;
 - `scenario_real_answer_share`: real answers divided by completed trials across the scenario's selected runs, not an average of per-run fractions;
 - `machine`: the fitted ensemble member selected for the seed.
@@ -58,6 +60,8 @@ To control concurrency, timeouts or retention directly, use `go run ./tools/benc
 The commit, a dirty flag and the ruleset are recorded with every run.
 
 The summary prints each scenario's `real_answer_share` and a pooled total. Comparison scenario rows and the verdict line print the candidate and baseline shares over paired runs. These fractions describe how much of the observed path has direct real evidence, not a confidence score. Unfinished trials in a timed-out subprocess have no recorded outcome and are not counted. Hazard metrics and model checks still describe the fitted fallback, not an empirical oracle hazard.
+
+The summary's `partial_s/clean_rotation` divides pooled `partial_seconds` by pooled `clean_rotations`, not by runs or qualifying rotations and not by an average of per-run ratios. It reports zero when no clean rotation completed. This is the elapsed load cost of record-only R7 partials per completed clean rotation: failed partials still cost their measured elapsed time, not their intended duration. It excludes reboot and other non-load overhead. Record-only outcomes remain normal trial ends and retained facts (including carried facts), but never tuner decision evidence; their marker does not change the trial class.
 
 ## Comparing two versions
 
@@ -73,6 +77,8 @@ Violations:
 - **V2:** a run's `hazard_max_per_h` rises by more than 0.01.
 - **V3:** depth gets shallower: by more than 1 count averaged over a scenario, or by more than 5 in one run.
 - **V4:** `target`, the target machine's replay-oracle ensemble, gets slower overall.
+
+Comparison rows and the verdict's diagnostic row report `partial_s_per_clean_rotation` and `baseline_partial_s_per_clean_rotation`. Each side pools partial seconds and clean rotations separately over the paired runs only. Older baseline records missing these fields contribute zero; a wholly older baseline therefore reports zero partial seconds per clean rotation. The candidate minus baseline value quantifies the added partial load time. This metric is informational and does not change the normal verdict or violations: issue #105's record-only layer is exempt from the benchmark gate.
 
 Seeds are deterministic: the same commit always produces the same runs, so rerunning cannot change a result. A change to how the tuner decides moves later sessions onto different random paths, so compare whole scenarios, not single seeds.
 

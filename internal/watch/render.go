@@ -240,6 +240,9 @@ func (s Snapshot) trialLine(now time.Time) string {
 		}
 		target = "cores " + strings.Join(ids, " ")
 	}
+	if t.recordOnly {
+		target = "record-only partial " + target
+	}
 	var elapsed time.Duration
 	if t.hasStarted {
 		elapsed = min(max(now.Sub(t.started), 0), t.duration)

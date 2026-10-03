@@ -17,6 +17,13 @@ type guard struct {
 	steps      []machine.Regime
 	stepsDone  int
 	lastSeq    int
+	partial    map[int]*guardStep
+}
+
+type guardStep struct {
+	start     *journal.GuardStep
+	seq       int
+	completed map[trialClass]int
 }
 
 type requirement struct {
@@ -51,6 +58,7 @@ func (s *State) foldRotation(e journal.Event, p *journal.GuardRotation) {
 		g.rotation, g.open, g.startSeq = p.Rotation, true, e.Seq
 		g.steps = slices.Clone(p.Steps)
 		g.stepsDone = 0
+		g.partial = map[int]*guardStep{}
 		s.projectionDirty = true
 		return
 	}
@@ -148,14 +156,22 @@ func (s *State) requirements(step int) []requirement {
 func (s *State) rotationNext() Action {
 	g := &s.guard
 	for i := 0; i < len(g.steps); i++ {
+		if g.steps[i] == machine.R7 && g.partial[i+1] == nil {
+			return Action{Kind: Decide, Payload: s.startGuardStep(i), Cause: []int{g.lastSeq}}
+		}
 		for _, q := range s.requirements(i) {
+			if q.class.regime == machine.R7 {
+				if a, pending := s.partialNext(i, q); pending {
+					return a
+				}
+			}
 			if q.count == 0 {
 				continue
 			}
 			if s.passes(q.class, g.profile, g.startSeq, rotationEvidence) >= q.count {
 				continue
 			}
-			if s.retry != nil && s.retry.Rotation == g.rotation && s.retry.Condition == machine.Resident {
+			if s.retry != nil && !s.retry.RecordOnly && s.retry.Rotation == g.rotation && s.retry.Condition == machine.Resident {
 				return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{g.lastSeq}}
 			}
 			t := Trial{Regime: q.class.regime, Workload: q.class.workload, DurationS: q.class.duration, Phase: journal.PhaseGuard, Condition: machine.Resident, Rotation: g.rotation}
@@ -173,6 +189,21 @@ func (s *State) rotationNext() Action {
 
 func (s *State) coveredEnd() (Action, bool) {
 	if s.retry != nil || !s.refinable() {
+		return Action{}, false
+	}
+	complete := true
+	for i := range s.guard.steps {
+		for _, q := range s.requirements(i) {
+			if q.count > 0 && s.passes(q.class, s.guard.profile, s.guard.startSeq, rotationEvidence) < q.count {
+				complete = false
+				break
+			}
+		}
+		if !complete {
+			break
+		}
+	}
+	if complete {
 		return Action{}, false
 	}
 	seq := s.covering()

@@ -62,6 +62,7 @@ type tile struct {
 type trial struct {
 	cores      []int
 	all        bool
+	recordOnly bool
 	condition  machine.Condition
 	regime     machine.Regime
 	workload   string
@@ -73,7 +74,7 @@ type trial struct {
 var logged = []journal.Kind{
 	journal.KindSessionStart, journal.KindSessionCarried, journal.KindHostRanking,
 	journal.KindTrialIntent, journal.KindTrialEnd, journal.KindFailure, journal.KindCrashDetected, journal.KindMCE,
-	journal.KindTunerDecision, journal.KindCorePhase, journal.KindGuardRotation, journal.KindProfileChange,
+	journal.KindTunerDecision, journal.KindCorePhase, journal.KindGuardRotation, journal.KindGuardStep, journal.KindProfileChange,
 	journal.KindHuntStart, journal.KindHuntMask, journal.KindHuntEnd, journal.KindHuntSkipped,
 	journal.KindMarkJoint, journal.KindRefineRound, journal.KindTunerWarning, journal.KindSessionWarning, journal.KindBackendRetry,
 	journal.KindDeadEnd, journal.KindDefectFound, journal.KindCommandReset, journal.KindShutdown,
@@ -221,6 +222,7 @@ func inFlightTrial(p *journal.TrialIntent, starts map[string]time.Time, sessionC
 	return &trial{
 		cores:      cores,
 		all:        len(cores) == sessionCores,
+		recordOnly: p.RecordOnly,
 		condition:  p.Condition,
 		regime:     p.Regime,
 		workload:   workload,

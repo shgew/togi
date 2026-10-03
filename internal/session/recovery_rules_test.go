@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
@@ -784,4 +785,187 @@ func TestCrashRecoveryRequestedVoltage(t *testing.T) {
 		}
 	}
 	t.Fatal("missing recovered trial")
+}
+
+type crashDuringRecordOnlyTrial struct {
+	Journal
+	machine *sim.Machine
+	signal  machine.Signal
+	intent  *journal.TrialIntent
+}
+
+func (j *crashDuringRecordOnlyTrial) Append(p journal.Payload, cause ...int) (journal.Event, error) {
+	e, err := j.Journal.Append(p, cause...)
+	if err != nil {
+		return e, err
+	}
+	if in, ok := p.(*journal.TrialIntent); ok && in.RecordOnly && j.intent == nil {
+		j.intent = in
+	}
+	if start, ok := p.(*journal.TrialStart); ok && j.intent != nil && start.Trial == j.intent.Trial {
+		if j.signal != "" {
+			if _, err := j.Journal.Append(&journal.TrialProgress{Trial: start.Trial, Signal: j.signal, Core: new(j.intent.Cores[0]), Detail: "backend reported a computation error before the crash"}, e.Seq); err != nil {
+				return e, err
+			}
+		}
+		j.machine.Crash()
+		return e, machine.ErrCrashed
+	}
+	return e, nil
+}
+
+type stopAfterRecordOnlyRecovery struct {
+	Journal
+	trial string
+	ended bool
+	next  *journal.TrialIntent
+}
+
+func (j *stopAfterRecordOnlyRecovery) Append(p journal.Payload, cause ...int) (journal.Event, error) {
+	e, err := j.Journal.Append(p, cause...)
+	if err != nil {
+		return e, err
+	}
+	if end, ok := p.(*journal.TrialEnd); ok && end.Trial == j.trial {
+		j.ended = true
+	}
+	if in, ok := p.(*journal.TrialIntent); ok && j.ended {
+		j.next = in
+		return e, errKilled
+	}
+	return e, nil
+}
+
+func TestRecordOnlyPartialCrashContinuesWithoutTuningFailure(t *testing.T) {
+	t.Parallel()
+	for _, signal := range []machine.Signal{"", machine.ComputationError} {
+		name := "unattributed crash"
+		if signal != "" {
+			name = "attributed backend signal before crash"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := sim.Config{Seed: 4, Cores: 4, BIOS: []int{0, 0, 0, 0}, Edges: make([]sim.Edges, 4)}
+			for core := range cfg.Edges {
+				for i := range cfg.Edges[core].Isolated {
+					cfg.Edges[core].Isolated[i] = -50
+				}
+				for i := range cfg.Edges[core].Resident {
+					cfg.Edges[core].Resident[i] = -50
+				}
+			}
+			model := sim.DefaultModel()
+			model.CrashMCE = 0
+			cfg.Model = &model
+			in := simInput(t.TempDir(), newSim(t, cfg))
+			in.Config.CandidateEdges = map[int]int{0: -20, 1: -40, 2: -25, 3: -45}
+			in.Config.Durations.StartS = 1
+			in.Config.Durations.GuardTrialS = 1
+			in.Config.Durations.GuardAllCoreS = 1
+			in.Config.Evidence.Rate = 0.95
+			in.Config.Evidence.Miss = 0.2
+			in.Machine.NextReset(machine.ResetWatchdog)
+			var interrupted *crashDuringRecordOnlyTrial
+			_, err := simulateBoot(context.Background(), in, func(j *journal.Journal) Journal {
+				interrupted = &crashDuringRecordOnlyTrial{Journal: wrapFor(in, nil)(j), machine: in.Machine, signal: signal}
+				return interrupted
+			})
+			if !errors.Is(err, machine.ErrCrashed) || interrupted.intent == nil {
+				t.Fatalf("partial crash: error %v, intent %+v", err, interrupted.intent)
+			}
+			partial := interrupted.intent
+			if partial.Regime != machine.R7 || partial.Step < 1 || partial.Rotation < 1 || len(partial.Cores) == 0 {
+				t.Fatalf("partial intent fields not forwarded: %+v", partial)
+			}
+			before := readEvents(t, in.Dir)
+			var frozen *journal.GuardStep
+			var intentSeq int
+			for _, e := range before {
+				switch p := e.Data.(type) {
+				case *journal.GuardStep:
+					if p.Rotation == partial.Rotation && p.Step == partial.Step {
+						frozen = p
+					}
+				case *journal.TrialIntent:
+					if p.Trial == partial.Trial {
+						intentSeq = e.Seq
+					}
+				}
+			}
+			if frozen == nil || intentSeq == 0 {
+				t.Fatalf("missing durable step snapshot or partial intent: snapshot %+v, intent #%d", frozen, intentSeq)
+			}
+			in.Machine.Reboot()
+			var resumed *stopAfterRecordOnlyRecovery
+			_, err = simulateBoot(context.Background(), in, func(j *journal.Journal) Journal {
+				resumed = &stopAfterRecordOnlyRecovery{Journal: wrapFor(in, nil)(j), trial: partial.Trial}
+				return resumed
+			})
+			if !errors.Is(err, errKilled) || resumed.next == nil {
+				t.Fatalf("partial continuation: error %v, next %+v", err, resumed.next)
+			}
+			if next := resumed.next; next.Trial == partial.Trial || next.Retry || next.Rerun || next.Hunt != 0 || next.Rotation != partial.Rotation || next.Step != partial.Step {
+				t.Fatalf("partial failure retried, hunted or left its step: partial %+v, next %+v", partial, next)
+			}
+			if diff := cmp.Diff(partial.Profile, resumed.next.Profile); diff != "" {
+				t.Fatalf("partial crash changed resident offsets: %s", diff)
+			}
+			events := readEvents(t, in.Dir)
+			var detected *journal.CrashDetected
+			var end *journal.TrialEnd
+			snapshots := 0
+			for _, e := range events {
+				if e.Seq < intentSeq {
+					continue
+				}
+				switch p := e.Data.(type) {
+				case *journal.CrashDetected:
+					if p.InFlight != nil && *p.InFlight == intentSeq {
+						detected = p
+					}
+				case *journal.TrialEnd:
+					if p.Trial == partial.Trial {
+						end = p
+					}
+				case *journal.GuardStep:
+					if p.Rotation == frozen.Rotation && p.Step == frozen.Step {
+						snapshots++
+					}
+				case *journal.Failure, *journal.HuntStart, *journal.HuntSkipped, *journal.MarkJoint:
+					t.Fatalf("partial crash manufactured a failure decision: %+v", e)
+				case *journal.TunerDecision:
+					if p.Decision == journal.Backoff {
+						t.Fatalf("partial crash caused backoff: %+v", p)
+					}
+				case *journal.CorePhase:
+					if p.FailedMark != nil {
+						t.Fatalf("partial crash manufactured a failed mark: %+v", p)
+					}
+				}
+			}
+			wantSignal := signal
+			if wantSignal == "" {
+				wantSignal = machine.Crash
+			}
+			if detected == nil || detected.Stray || detected.Inconclusive || end == nil || end.Outcome != journal.OutcomeFailure || end.Signal != wantSignal {
+				t.Fatalf("partial crash lost normal outcome events: crash %+v, end %+v", detected, end)
+			}
+			if signal != "" && (end.Core == nil || *end.Core != partial.Cores[0]) {
+				t.Fatalf("attributed backend signal was not retained: %+v", end)
+			}
+			if snapshots != 0 {
+				t.Fatal("resume re-derived an already frozen R7 step")
+			}
+			session := facts.FromEvents(events)
+			var partialFact *facts.Fact
+			for i := range session.Facts {
+				if session.Facts[i].Trial == partial.Trial {
+					partialFact = &session.Facts[i]
+				}
+			}
+			if partialFact == nil || !partialFact.RecordOnly || partialFact.Outcome != journal.OutcomeFailure || partialFact.Signal != wantSignal {
+				t.Fatalf("partial crash did not remain a record-only decisive fact: %+v", partialFact)
+			}
+		})
+	}
 }

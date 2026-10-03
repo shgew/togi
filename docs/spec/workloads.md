@@ -47,11 +47,11 @@ Each watched-file polling read processes at most 64 KiB, including short complet
 | R4 medium load | Partial duty cycles | An R1 workload at 25%, 50% or 75% duty with a 100 ms period, cycling per trial |
 | R5 SMT pair | Both threads of one core | R1 and R2 workloads with 2 threads on both logical CPUs of the core |
 | R6 idle | Normal power management with the profile applied | One confined 1-thread R1 instance per core, each stopped with SIGSTOP as soon as it enters its scope, before the next instance launches. Trial timing begins only after all instances are stopped. First half: no load at all. Second half: short bursts (SIGCONT, then SIGSTOP 100 ms later, every 2 s) on one core at a time in scheduling order |
-| R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance on each loaded core. A guard step has three loaded parts on two CCDs, CCD0 alone, CCD1 alone and every core, and one all-core part on one CCD; each part runs as separate trials (Durations and guard schedule) |
+| R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance on each loaded core. On two CCDs a guard step runs CCD0 partial, CCD0 full, CCD1 partial, CCD1 full and all-core parts; on one CCD it runs a partial then the all-core part. Partial parts are record-only and leave idle every core tied at that CCD's shallowest resident offset when the step starts |
 
-Within a regime, search cycles listed workloads; candidate-edge checks freeze one R1 and one R2 workload. Guard's repeated R1, R2 and R7 steps cycle their catalogs, so three occurrences cover each workload. All parts of one R7 step share its selected R2 workload; inconclusive starts retry the same class.
+Within a regime, search cycles listed workloads; candidate-edge checks freeze one R1 and one R2 workload. Guard's repeated R1, R2 and R7 steps cycle their catalogs, so three occurrences cover each workload. All parts of one R7 step share its selected R2 workload. Inconclusive starts retry the same class; a record-only failure is recorded once and the schedule continues without a rerun.
 
-R6 and R7 run on the resident profile and in masked hunt trials; R7 also checks refinement rounds. R6 targets every core; an R7 trial targets one CCD or every core. `trial.intent.cores` lists exactly the loaded cores; the applied profile also includes idle cores. Each loaded core runs one instance on its first logical CPU, in its own scope and work directory, so a computation error or stall names that instance's core.
+R6 and R7 run on the resident profile and in masked hunt trials; R7 also checks refinement rounds. R6 targets every core; an R7 trial can target part of a CCD, a full CCD or every core. `trial.intent.cores` lists exactly the loaded cores; the applied profile also includes idle cores. Each loaded core runs one instance on its first logical CPU, in its own scope and work directory, so a computation error or stall names that instance's core. A partial with no loaded cores is skipped with its reason in `guard.step`, not launched as an empty trial.
 
 ### Load-step schedules
 
@@ -67,14 +67,14 @@ Defaults, all configurable:
 | Short start for R7, hunt masks, refinement checks and backoff reruns | 120 s (`durations.start_s`) |
 | Guard per-core trial (R1 to R5) | 2 min each |
 | Guard R6 | 15 min |
-| Guard R7 long starts | 20 min total on two CCDs: 5 min CCD0, 5 min CCD1, 10 min all cores; 20 min on one CCD |
+| Guard R7 long starts | 30 min total on two CCDs: 5 min each for CCD0 partial/full and CCD1 partial/full, 10 min all cores; 40 min on one CCD: 20 min partial and 20 min all cores |
 
-For `D = durations.guard_all_core_s` and `n` CCDs, an R7 long start runs for `D` on one CCD; on multiple CCDs, each single-CCD part runs `floor(D / 4)` seconds and the all-core part runs `D - n*floor(D / 4)` seconds. Each part also runs three short `start_s` starts and one long start; when short and long durations match their required pass counts add. `guard_all_core_s` must be in [4, 86400]. A trial is torn down before the next start. Inconclusive starts repeat their part's loaded cores and workload; passing starts survive interruption. A hunt mask or refinement check instead needs `n` passing starts from `evidence.*`.
+For `D = durations.guard_all_core_s` and `n` CCDs, a full R7 long start runs for `D` on one CCD; on multiple CCDs, each full single-CCD part runs `floor(D / 4)` seconds and the all-core part runs `D - n*floor(D / 4)` seconds. A partial receives its CCD's full-part long duration in addition to these allocations. Every nonempty part runs three short `start_s` starts and one long start. When short and long durations match, their counts add: four starts. Full parts require passes; record-only parts require completed decisive starts, whether pass or failure, and never supply qualifying coverage. `guard_all_core_s` must be in [4, 86400]. A trial is torn down before the next start. Inconclusive starts repeat their part's loaded cores and workload; passing full-part starts and completed partial starts survive interruption. A hunt mask or refinement check instead needs `n` passing starts from `evidence.*` and never gains a record-only partial.
 
 Hunt-mask duration selection and its carried-evidence rules are defined in [tuner.md, Hunt](tuner.md#hunt).
 
-Default guard rotation, about 7.2 h on 16 cores:
-1. R7, R7, R7: every R2 workload, each on CCD0, CCD1 and all cores, with three short starts and one long start per part.
+Default guard rotation, about 8.3 h on 16 cores with nonempty partials (about 7.2 h when all partials are skipped):
+1. R7, R7, R7: every R2 workload, each on CCD0 partial/full, CCD1 partial/full and all cores, with three short starts and one long start per nonempty part.
 2. R2, R2, R2: every R2 workload on every core.
 3. R6.
 4. R5 on every core.

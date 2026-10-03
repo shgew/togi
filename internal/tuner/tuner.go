@@ -14,7 +14,7 @@ import (
 )
 
 // Ruleset must be bumped for changes to steps, offset range, phases, regimes, evidence, hunts, refinement or backoffs; this is breaking.
-const Ruleset = 7
+const Ruleset = 8
 
 const EvidenceEpoch = 1
 
@@ -46,6 +46,8 @@ type Trial struct {
 	Profile           []int
 	Hunt, Mask, Round int
 	Rerun             bool
+	RecordOnly        bool
+	Step              int
 }
 
 type awaiting struct {
@@ -364,6 +366,8 @@ func (s *State) Fold(e journal.Event) {
 	case *journal.GuardRotation:
 		s.foldRotation(e, p)
 		s.rerunCauses = nil
+	case *journal.GuardStep:
+		s.recordGuardStep(e, p)
 	case *journal.HostRanking:
 		s.ranking = slices.Clone(p.Ranking)
 		s.rankingSeq = e.Seq
@@ -427,6 +431,15 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 		s.thermal = nil
 	}
 	s.recordEvidence(e, intent, p)
+	if intent.RecordOnly {
+		s.recordPartialEnd(e, intent, p)
+		if p.Outcome == journal.OutcomeInconclusive {
+			t := trialFromIntent(intent)
+			t.Retry = true
+			s.retry = &t
+		}
+		return
+	}
 	if intent.Core != nil && (p.Outcome == journal.OutcomePass || p.Outcome == journal.OutcomeFailure) {
 		if c := s.core(*intent.Core); c != nil {
 			if c.workloadIndex == nil {
@@ -475,7 +488,7 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 }
 
 func trialFromIntent(p *journal.TrialIntent) Trial {
-	t := Trial{Regime: p.Regime, Phase: p.Phase, Condition: p.Condition, Cores: slices.Clone(p.Cores), Workload: p.Workload, DurationS: p.DurationS, Profile: slices.Clone(p.Profile), Rotation: p.Rotation, Hunt: p.Hunt, Mask: p.Mask, Round: p.Round, Rerun: p.Rerun}
+	t := Trial{Regime: p.Regime, Phase: p.Phase, Condition: p.Condition, Cores: slices.Clone(p.Cores), Workload: p.Workload, DurationS: p.DurationS, Profile: slices.Clone(p.Profile), Rotation: p.Rotation, Hunt: p.Hunt, Mask: p.Mask, Round: p.Round, Rerun: p.Rerun, RecordOnly: p.RecordOnly, Step: p.Step}
 	if p.Core != nil {
 		t.Core = *p.Core
 	}
@@ -486,6 +499,9 @@ func trialFromIntent(p *journal.TrialIntent) Trial {
 }
 
 func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
+	if intent := s.intents[p.Trial]; intent != nil && intent.RecordOnly {
+		return
+	}
 	if a := s.awaiting; a != nil && a.intent.Trial == p.Trial {
 		s.failureIndex[a.seq] = len(s.pendingFailures)
 		s.awaiting = nil
@@ -661,7 +677,8 @@ func (s *State) next() Action {
 	}
 	if s.guard.open {
 		a := s.rotationNext()
-		if a.Kind == RunTrial {
+		_, startsStep := a.Payload.(*journal.GuardStep)
+		if a.Kind == RunTrial || startsStep {
 			if end, ok := s.coveredEnd(); ok {
 				a = end
 			}
