@@ -22,7 +22,7 @@ Style, wording, naming taste and optional refactors are not findings. Handle fin
 
 When the same kind of finding occurs in two pull requests, add a lesson in the pull request that fixes the second. Cite the source pull requests or issues.
 
-- **Net release behavior:** Unreleased notes describe the behavior that will ship, not each intermediate commit. Remove notes for features superseded or removed by a later layer of the same release. Sources: [#269](https://github.com/shgew/togi/pull/269), [#285](https://github.com/shgew/togi/pull/285).
+- **Net release behavior:** pending changelog fragments in `changes/` describe the behavior that will ship, not each intermediate commit. A later layer of the same release edits or deletes the fragment of a feature it supersedes or removes. Sources: [#269](https://github.com/shgew/togi/pull/269), [#285](https://github.com/shgew/togi/pull/285).
 
 ## Review record
 

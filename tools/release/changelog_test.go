@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestBump(t *testing.T) {
@@ -37,31 +39,22 @@ func TestBump(t *testing.T) {
 
 func TestChangelogRewriteAndNotes(t *testing.T) {
 	t.Parallel()
-	const before = "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- New option ([#34]).\n\n## [0.1.0] - 2026-09-01\n\n### Fixed\n\n- Old behavior ([#2]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[#2]: https://forge.example/o/r/pulls/2\n[#34]: https://forge.example/o/r/pulls/34\n"
-	updated, err := rewriteChangelog(before, "0.1.1", "https://forge.example/o/r", time.Date(2026, 9, 25, 16, 0, 0, 0, time.FixedZone("ahead", 3600)))
+	const before = "# Changelog\n\n## [0.1.0] - 2026-09-01\n\n### Fixed\n\n- Old behavior ([#2]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[#2]: https://forge.example/o/r/pull/2\n[#40]: https://forge.example/o/r/pull/40\n"
+	updated, err := rewriteChangelog(before, "0.1.1", "### Added\n\n- New option ([#34]).\n- Old link ([#40]).", []int{34, 40}, "https://forge.example/o/r/", time.Date(2026, 9, 25, 16, 0, 0, 0, time.FixedZone("ahead", 3600)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(updated, "## [Unreleased]\n\n## [0.1.1] - 2026-09-25\n\n### Added\n\n- New option ([#34]).\n\n## [0.1.0]") {
-		t.Fatalf("unexpected section rewrite:\n%s", updated)
-	}
-	if !strings.Contains(updated, "[0.1.1]: https://forge.example/o/r/releases/tag/v0.1.1\n\n[#2]:") {
-		t.Fatalf("release link not before PR definitions:\n%s", updated)
-	}
-	if strings.Count(updated, "[#34]:") != 1 {
-		t.Fatalf("duplicated PR definition:\n%s", updated)
+	want := "# Changelog\n\n## [0.1.1] - 2026-09-25\n\n### Added\n\n- New option ([#34]).\n- Old link ([#40]).\n\n## [0.1.0] - 2026-09-01\n\n### Fixed\n\n- Old behavior ([#2]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[0.1.1]: https://forge.example/o/r/releases/tag/v0.1.1\n\n[#2]: https://forge.example/o/r/pull/2\n[#34]: https://forge.example/o/r/pull/34\n[#40]: https://forge.example/o/r/pull/40\n"
+	if diff := cmp.Diff(want, updated); diff != "" {
+		t.Fatalf("rewrite mismatch (-want +got):\n%s", diff)
 	}
 	s, ok := sectionNamed(updated, "0.1.1")
-	if !ok || s.date != "2026-09-25" || len(entries(s.body)) != 1 {
+	if !ok || s.date != "2026-09-25" || len(entries(s.body)) != 2 {
 		t.Fatalf("released section = %+v, found %v", s, ok)
 	}
 	notes := releaseNotes(updated, s)
-	if !strings.Contains(notes, "[#34]: https://forge.example/o/r/pulls/34") || strings.Contains(notes, "[#2]:") || strings.Contains(notes, "[0.1.1]:") {
+	if !strings.Contains(notes, "[#34]: https://forge.example/o/r/pull/34") || strings.Contains(notes, "[#2]:") || strings.Contains(notes, "[0.1.1]:") {
 		t.Fatalf("wrong release notes: %s", notes)
-	}
-	empty, ok := sectionNamed(updated, "Unreleased")
-	if !ok || len(entries(empty.body)) != 0 {
-		t.Fatalf("[Unreleased] not empty: %+v", empty)
 	}
 }
 
@@ -111,35 +104,31 @@ func TestRewriteFirstRelease(t *testing.T) {
 		name, input, want string
 	}{
 		{
-			"with-reference", "## [Unreleased]\n\n- New ([#4]).\n\n[#4]: https://forge.example/pulls/4\n",
-			"## [Unreleased]\n\n## [0.1.0] - 2026-09-25\n\n- New ([#4]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[#4]: https://forge.example/pulls/4\n",
+			"header only", "# Changelog\n",
+			"# Changelog\n\n## [0.1.0] - 2026-09-25\n\n- New ([#4]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[#4]: https://forge.example/o/r/pull/4\n",
 		},
 		{
-			"without-reference", "## [Unreleased]\n\n- New.\n",
-			"## [Unreleased]\n\n## [0.1.0] - 2026-09-25\n\n- New.\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n",
+			"existing definitions", "# Changelog\n\n[#1]: https://forge.example/o/r/issues/1\n",
+			"# Changelog\n\n## [0.1.0] - 2026-09-25\n\n- New ([#4]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[#1]: https://forge.example/o/r/issues/1\n[#4]: https://forge.example/o/r/pull/4\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := rewriteChangelog(tc.input, "0.1.0", "https://forge.example/o/r", time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC))
-			if err != nil || got != tc.want {
-				t.Fatalf("rewrite = %q, %v; want %q", got, err, tc.want)
+			got, err := rewriteChangelog(tc.input, "0.1.0", "- New ([#4]).", []int{4}, "https://forge.example/o/r", time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("rewrite mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
-func TestRewriteRefusesInvalidSections(t *testing.T) {
+func TestRewriteRefusesExistingVersion(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct{ name, input, want string }{
-		{"missing unreleased", "## [1.2.3] - 2026-09-25\n", "missing [Unreleased] section"},
-		{"duplicate version", "## [Unreleased]\n\n- Change\n\n## [1.2.3] - 2026-09-25\n", "version [1.2.3] already exists"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := rewriteChangelog(tc.input, "1.2.3", "https://forge.example/o/r", time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC))
-			if err == nil || err.Error() != tc.want || got != "" {
-				t.Fatalf("rewrite = %q, %v; want empty output and %q", got, err, tc.want)
-			}
-		})
+	got, err := rewriteChangelog("# Changelog\n\n## [1.2.3] - 2026-09-25\n", "1.2.3", "- Change.", nil, "https://forge.example/o/r", time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC))
+	if err == nil || err.Error() != "version [1.2.3] already exists" || got != "" {
+		t.Fatalf("rewrite = %q, %v; want empty output and an existing-version error", got, err)
 	}
 }

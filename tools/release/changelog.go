@@ -138,22 +138,49 @@ func releaseNotes(changelog string, s section) string {
 	return body
 }
 
-func rewriteChangelog(changelog, version, webURL string, today time.Time) (string, error) {
-	s, ok := sectionNamed(changelog, "Unreleased")
-	if !ok {
-		return "", fmt.Errorf("missing [Unreleased] section")
-	}
+func rewriteChangelog(changelog, version, body string, prs []int, webURL string, today time.Time) (string, error) {
 	if _, exists := sectionNamed(changelog, version); exists {
 		return "", fmt.Errorf("version [%s] already exists", version)
 	}
-	body := strings.TrimSpace(s.body)
-	replacement := "## [Unreleased]\n\n## [" + version + "] - " + today.UTC().Format("2006-01-02") + "\n\n" + body + "\n\n"
-	updated := changelog[:s.start] + replacement + changelog[s.end:]
-	link := "[" + version + "]: " + strings.TrimRight(webURL, "/") + "/releases/tag/v" + version + "\n"
+	webURL = strings.TrimRight(webURL, "/")
+	released := "## [" + version + "] - " + today.UTC().Format("2006-01-02") + "\n\n" + strings.TrimSpace(body) + "\n\n"
+	var at int
+	if m := sectionHeading.FindStringIndex(changelog); m != nil {
+		at = m[0]
+	} else if m := linkDefinition.FindStringIndex(changelog); m != nil {
+		at = m[0]
+	} else {
+		changelog = strings.TrimRight(changelog, "\n") + "\n\n"
+		at = len(changelog)
+	}
+	updated := changelog[:at] + released + changelog[at:]
+	for _, pr := range prs {
+		updated = addDefinition(updated, pr, fmt.Sprintf("[#%d]: %s/pull/%d", pr, webURL, pr))
+	}
+	link := "[" + version + "]: " + webURL + "/releases/tag/v" + version + "\n"
 	if at := definition.FindStringIndex(updated); at != nil {
 		updated = updated[:at[0]] + link + "\n" + updated[at[0]:]
 	} else {
 		updated = strings.TrimRight(updated, "\n") + "\n\n" + link
 	}
 	return updated, nil
+}
+
+func addDefinition(changelog string, pr int, line string) string {
+	matches := definition.FindAllStringSubmatchIndex(changelog, -1)
+	if len(matches) == 0 {
+		return strings.TrimRight(changelog, "\n") + "\n\n" + line + "\n"
+	}
+	for _, m := range matches {
+		n, err := strconv.Atoi(changelog[m[2]:m[3]])
+		if err != nil || n < pr {
+			continue
+		}
+		if n == pr {
+			return changelog
+		}
+		return changelog[:m[0]] + line + "\n" + changelog[m[0]:]
+	}
+	end := matches[len(matches)-1][1]
+	return changelog[:end] + "\n" + line + changelog[end:]
 }

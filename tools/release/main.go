@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -148,16 +149,20 @@ func (r runner) release() error {
 		return errors.New("read go.mod: missing module path")
 	}
 	changelog := files["CHANGELOG.md"]
-	s, ok := sectionNamed(changelog, "Unreleased")
-	if !ok {
-		return errors.New("read CHANGELOG.md: missing [Unreleased] section")
+	fragmentFiles, err := r.fragmentFiles(baseCommit)
+	if err != nil {
+		return fmt.Errorf("read %s/ from %s: %w", fragmentDir, base, err)
+	}
+	fragments, err := parseFragments(fragmentFiles)
+	if err != nil {
+		return fmt.Errorf("read %s/: %w", fragmentDir, err)
 	}
 	tags, err := r.output("ls-remote", "--tags", remote, "refs/tags/v*")
 	if err != nil {
 		return fmt.Errorf("list release tags: %w", err)
 	}
 	current, released := sectionNamed(changelog, version)
-	if len(entries(s.body)) == 0 {
+	if len(fragments) == 0 {
 		if released && current.date != "" && (!hasTag(tags, "v"+version) || r.commit) {
 			fmt.Fprintf(r.out, "%s is released in CHANGELOG.md; would publish %s if its GitHub Release is missing\n", version, base)
 			if r.commit {
@@ -166,16 +171,17 @@ func (r runner) release() error {
 			return nil
 		}
 		if r.commit {
-			return errors.New("nothing to release: [Unreleased] in CHANGELOG.md is empty")
+			return fmt.Errorf("nothing to release: %s/ has no fragments", fragmentDir)
 		}
 		fmt.Fprintln(r.out, "nothing to release")
 		return nil
 	}
-	next, reason, err := bump(version, s.body)
+	body, prs := assemble(fragments)
+	next, reason, err := bump(version, body)
 	if err != nil {
 		return fmt.Errorf("bump version: %w", err)
 	}
-	updated, err := rewriteChangelog(changelog, next, "https://"+module[1], r.now())
+	updated, err := rewriteChangelog(changelog, next, body, prs, "https://"+module[1], r.now())
 	if err != nil {
 		return fmt.Errorf("rewrite changelog: %w", err)
 	}
@@ -188,12 +194,41 @@ func (r runner) release() error {
 	if err := r.requireGreen(baseCommit); err != nil {
 		return fmt.Errorf("require a passing check on %s: %w", base, err)
 	}
-	commit, err := r.commitFiles(baseCommit, message, map[string]string{"version.txt": next + "\n", "CHANGELOG.md": updated})
+	var consumed []string
+	for name := range fragmentFiles {
+		if name != fragmentReadme {
+			consumed = append(consumed, fragmentDir+"/"+name)
+		}
+	}
+	slices.Sort(consumed)
+	commit, err := r.commitFiles(baseCommit, message, map[string]string{"version.txt": next + "\n", "CHANGELOG.md": updated}, consumed)
 	if err != nil {
 		return fmt.Errorf("commit release %s: %w", next, err)
 	}
 	fmt.Fprintf(r.out, "Release %s committed as %s on top of %s\n", next, commit, base)
 	return r.checkout(commit)
+}
+
+func (r runner) fragmentFiles(commit string) (map[string]string, error) {
+	listing, err := r.output("ls-tree", "--name-only", commit, fragmentDir+"/")
+	if err != nil {
+		return nil, fmt.Errorf("list: %w", err)
+	}
+	files := map[string]string{}
+	for path := range strings.Lines(listing) {
+		path = strings.TrimSuffix(path, "\n")
+		name := strings.TrimPrefix(path, fragmentDir+"/")
+		if name == fragmentReadme {
+			files[name] = ""
+			continue
+		}
+		text, err := r.output("show", commit+":"+path)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", name, err)
+		}
+		files[name] = text
+	}
+	return files, nil
 }
 
 func hasTag(lsRemote, tag string) bool {
@@ -212,7 +247,7 @@ func (r runner) checkout(commit string) error {
 	return nil
 }
 
-func (r runner) commitFiles(parent, message string, files map[string]string) (string, error) {
+func (r runner) commitFiles(parent, message string, files map[string]string, remove []string) (string, error) {
 	indexPath, err := r.output("rev-parse", "--git-path", "togi-release-index")
 	if err != nil {
 		return "", fmt.Errorf("locate temporary index: %w", err)
@@ -234,6 +269,11 @@ func (r runner) commitFiles(parent, message string, files map[string]string) (st
 		}
 		if _, err := indexed("", "update-index", "--cacheinfo", "100644,"+blob+","+path); err != nil {
 			return "", fmt.Errorf("stage %s: %w", path, err)
+		}
+	}
+	for _, path := range remove {
+		if _, err := indexed("", "update-index", "--force-remove", path); err != nil {
+			return "", fmt.Errorf("remove %s: %w", path, err)
 		}
 	}
 	tree, err := indexed("", "write-tree")
@@ -367,22 +407,42 @@ func requireGreenCheck(api github, repo repository, commit string) error {
 
 func main() {
 	var commit, publish bool
+	var check string
 	flag.BoolVar(&commit, "commit", false, "commit the next release on top of origin/main and check it out, once the check workflow passed on origin/main (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
 	flag.BoolVar(&publish, "publish", false, "publish the release version.txt names at HEAD, if not yet published (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
+	flag.StringVar(&check, "check", "", "validate the changelog fragments in `dir` and exit (the changes flake check)")
 	flag.Usage = func() {
-		fmt.Fprintln(flag.CommandLine.Output(), "Usage: release [-commit | -publish]\n\nWithout flags, prints the release the release workflow would make from origin/main.")
+		fmt.Fprintln(flag.CommandLine.Output(), "Usage: release [-commit | -publish | -check dir]\n\nWithout flags, prints the release the release workflow would make from origin/main.")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if flag.NArg() != 0 || commit && publish {
+	if flag.NArg() != 0 || commit && publish || check != "" && (commit || publish) {
 		flag.Usage()
 		os.Exit(2)
+	}
+	if check != "" {
+		if err := checkFragments(check); err != nil {
+			fmt.Fprintln(os.Stderr, "release:", err)
+			os.Exit(1)
+		}
+		return
 	}
 	r := runner{git: runGit, now: time.Now, out: os.Stdout, commit: commit}
 	if err := run(r, publish); err != nil {
 		fmt.Fprintln(os.Stderr, "release:", err)
 		os.Exit(1)
 	}
+}
+
+func checkFragments(dir string) error {
+	files, err := readFragmentDir(dir)
+	if err != nil {
+		return err
+	}
+	if _, err := parseFragments(files); err != nil {
+		return fmt.Errorf("check %s: %w", dir, err)
+	}
+	return nil
 }
 
 func run(r runner, publish bool) error {

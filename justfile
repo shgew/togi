@@ -115,6 +115,11 @@ release:
 release-preview:
     {{ dev }} go run ./tools/release
 
+# Check the changelog fragments in changes/ (the changes flake check)
+[group('release')]
+changes:
+    {{ dev }} go run ./tools/release -check changes
+
 # Run GitHub commands as robotogi
 [group('github')]
 bot +args:
