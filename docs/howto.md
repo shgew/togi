@@ -128,6 +128,8 @@ Reboot and pick "NixOS - togi" in the GRUB menu once. That entry boots to a cons
 
 The tuning boot loads `sp5100_tco` in the initrd and lets systemd arm and feed the hardware watchdog. Before writing any Curve Optimizer offsets or starting a workload, togi waits up to 30 seconds for an active hardware watchdog, checking once per second. If it never arms, togi stops with a preflight dead end and clears the saved entry; it does not start tuning without reset protection. `togi events --kind preflight.check` shows the final `watchdog` result. A normal `sudo togi run` does not require or wait for the watchdog.
 
+The tuning boot also enables kernel-message dumps on orderly reboot or shutdown, as well as panic. When the next `run` detects an unclean togi boot and finds its EFI pstore archive, `togi events --json --kind crash.detected` includes `pstore.path` and the last lines of the saved kernel messages. The ordinary event line and dashboard name the archive location. The archive stays under `/var/lib/systemd/pstore/`; missing records, such as a hard freeze without a dump, leave the field absent. Reading this optional diagnostic cannot stop recovery.
+
 ## 5. In the morning
 
 Shut down or reboot. The next boot is your normal system; with `leaveOnShutdown` off, pick your normal entry in the GRUB menu. Then:

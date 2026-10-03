@@ -670,6 +670,13 @@ func (k kernel) ResetReasonAfter(boot string) (machine.ResetReason, error) {
 	return k.ResetReason(k.m.boots[i+1])
 }
 
+func (k kernel) SavedPstore(string) (*machine.PstoreRecord, error) {
+	if k.m.crashed {
+		return nil, machine.ErrCrashed
+	}
+	return nil, nil
+}
+
 func resetReason(kind machine.ResetKind, supported bool) machine.ResetReason {
 	if !supported {
 		return machine.ResetReason{}

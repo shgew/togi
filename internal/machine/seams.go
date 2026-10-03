@@ -168,6 +168,11 @@ type KernelRead struct {
 	Cursor string
 }
 
+type PstoreRecord struct {
+	Path  string   `json:"path"`
+	Lines []string `json:"lines"`
+}
+
 type Kernel interface {
 	// MCEs returns the machine checks in the kernel log of boot `boot` at or after the boot-local monotonic time `since`; 0 is the whole boot.
 	// Earlier boots come from the persistent system journal; an unknown boot has none.
@@ -180,6 +185,7 @@ type Kernel interface {
 	// ResetReasonAfter reads the immediate system successor, including boots without togi.
 	// An unidentified successor or an unproven journal boundary returns ErrBootMissing.
 	ResetReasonAfter(boot string) (ResetReason, error)
+	SavedPstore(boot string) (*PstoreRecord, error)
 }
 
 type Machine struct {

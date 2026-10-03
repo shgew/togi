@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -24,6 +26,7 @@ type Message struct {
 type Kernel struct {
 	cpuCore    map[int]int
 	journalctl func(args []string) (stdout, stderr []byte, exitCode int, err error)
+	pstore     fs.FS
 }
 
 func NewKernel(cores []machine.CoreInfo) *Kernel {
@@ -33,7 +36,7 @@ func NewKernel(cores []machine.CoreInfo) *Kernel {
 			cpuCore[cpu] = core.Core
 		}
 	}
-	return &Kernel{cpuCore: cpuCore, journalctl: runJournalctl}
+	return &Kernel{cpuCore: cpuCore, journalctl: runJournalctl, pstore: os.DirFS(pstoreDir)}
 }
 
 func runJournalctl(args []string) (stdout, stderr []byte, exitCode int, err error) {

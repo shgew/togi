@@ -66,6 +66,9 @@ assert rejectsMirrors two;
 assert builtins.elem "noauto" tuning.fileSystems."/boot".options;
 assert tuning.systemd.services.togi.unitConfig.RequiresMountsFor == "/boot/grub/grubenv";
 assert lib.hasInfix "RequiresMountsFor=/boot/grub/grubenv" tuning.systemd.units."togi.service".text;
+assert builtins.elem "systemd-pstore.service" tuning.systemd.services.togi.after;
+assert builtins.elem "printk.always_kmsg_dump=1" tuning.boot.kernelParams;
+assert !(builtins.elem "printk.always_kmsg_dump=1" one.boot.kernelParams);
 assert builtins.elem "f /run/lock/togi.lock :0600 :root :root - -" one.systemd.tmpfiles.rules;
 assert builtins.elem "f /run/lock/togi.lock :0660 :root :togi-hardware - -"
   delegated.systemd.tmpfiles.rules;
