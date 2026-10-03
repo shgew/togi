@@ -172,6 +172,36 @@ func TestDashboardShortMainFramesRetainCoreOffsets(t *testing.T) {
 	}
 }
 
+func TestDashboardCompactStoppedOffsetsKeepDisclaimer(t *testing.T) {
+	t.Parallel()
+	start := &journal.SessionStart{Session: "stopped"}
+	for id := range 16 {
+		start.Cores = append(start.Cores, machine.CoreInfo{Core: id, CCD: id / 8, CPUs: []int{2 * id, 2*id + 1}})
+	}
+	payloads := []journal.Payload{start}
+	for id := range 16 {
+		payloads = append(payloads,
+			&journal.CorePhase{Core: id, To: journal.PhaseDone, Offset: -20, FailedMark: new(-21)},
+			&journal.SMUReadback{Core: id, Offset: 0})
+	}
+	payloads = append(payloads,
+		&journal.ProfileRestored{Offsets: make([]int, 16)},
+		&journal.Shutdown{Reason: journal.ShutdownSignal})
+	s := Project(dashboardEvents(payloads...))
+	if s.stopped == nil || s.cores[0].applied != -20 {
+		t.Fatal("fixture must show tuned offsets after restoring hardware to 0")
+	}
+	for _, width := range []int{20, 50, 90} {
+		for _, height := range []int{20, 24} {
+			frame, _ := RenderView(s, Screen{Width: width, Height: height, Keys: true}, time.Unix(1100, 0).UTC())
+			text := ansi.Strip(frame)
+			if !strings.Contains(text, "00  -20") || !strings.Contains(text, "Tuned offsets, not applied now.") && !strings.Contains(text, "Saved, not set") {
+				t.Errorf("%dx%d lost tuned-offset meaning:\n%s", width, height, text)
+			}
+		}
+	}
+}
+
 func TestDashboardCoreRowsGroupUniqueSortedCCDs(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

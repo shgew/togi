@@ -349,3 +349,42 @@ func TestStoryQueuedResetIsNotCompletedGoal(t *testing.T) {
 	}
 	assertStoryNotGoal(t, s)
 }
+
+func TestStoryGoalSurvivesPartialScheduleReload(t *testing.T) {
+	t.Parallel()
+	for _, stopped := range []bool{false, true} {
+		t.Run(fmt.Sprint(stopped), func(t *testing.T) {
+			t.Parallel()
+			events := dashboardEvents(dashboardSession(),
+				&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -50},
+				&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -50},
+				&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -50},
+				&journal.ProfileChange{To: []int{-50, -50, -50}},
+				&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: config.Default().Guard.Rotation},
+				&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true},
+				storyConfig([]machine.Regime{machine.R1}, 120))
+			if stopped {
+				events = appendStoryEvents(events, &journal.Shutdown{Reason: journal.ShutdownRotations, Rotations: 1})
+			}
+			s := Project(events)
+			if s.guard == nil || s.guard.CleanRotations != 1 || s.guard.Qualifying || s.refinable || s.rerunDuration != 0 {
+				t.Fatalf("fixture must retain qualifying credit while only the next schedule is partial: %+v", s)
+			}
+			if !s.goal() {
+				t.Fatalf("next schedule erased an already completed goal: %s", storyText(s))
+			}
+			if stopped && !strings.Contains(storyText(s), "carry into the BIOS") || !stopped && s.headline() != "KEEPING WATCH" {
+				t.Fatalf("completed-goal narration was lost after reload: %+v", s.story(time.Unix(1100, 0).UTC()))
+			}
+			for _, st := range s.stations() {
+				if st.label == "Clean lap" && st.state != reached {
+					t.Fatalf("completed goal was not retained: %+v", st)
+				}
+			}
+			next := strings.Join(s.lapNext(), "\n")
+			if !strings.Contains(next, "future laps don't add qualifying") || !strings.Contains(next, "goal is already reached") {
+				t.Fatalf("partial future schedule confused prior credit: %s", next)
+			}
+		})
+	}
+}

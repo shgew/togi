@@ -193,6 +193,13 @@ func (s Snapshot) mainLines(width, height int, now time.Time) []string {
 	} else {
 		// Prose and spacing must not push every applied offset below an unscrollable main view.
 		intro = narrator(width, st, true)
+		if (s.stopped != nil || s.deadEnd != nil) && (s.deadEnd == nil || s.deadEnd.condition != journal.DeadEndSMU) {
+			note := "Tuned offsets, not applied now."
+			if width-3 < len(note) {
+				note = "Saved, not set"
+			}
+			intro = append(intro, blue.Render("█")+"  "+textStyle.Render(note))
+		}
 		rows := max(height-len(stages)-len(cores)-2, 2)
 		add(intro[:min(len(intro), rows)]...)
 		add(stages...)

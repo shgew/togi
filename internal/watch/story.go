@@ -81,7 +81,7 @@ func (s Snapshot) story(now time.Time) story {
 }
 
 func (s Snapshot) goal() bool {
-	return s.guard != nil && s.guard.Qualifying && s.guard.CleanRotations > 0 && s.phase == journal.PhaseGuard &&
+	return s.guard != nil && s.guard.CleanRotations > 0 && s.phase == journal.PhaseGuard &&
 		!s.refinable && s.refine == nil && s.rerunDuration == 0 && len(s.cores) > 0 &&
 		!slices.ContainsFunc(s.cores, func(c coreView) bool { return c.phase != journal.PhaseDone || c.queued })
 }
@@ -496,6 +496,13 @@ func (s Snapshot) lapNext() []string {
 }
 
 func (s Snapshot) missingCoverage() string {
+	if s.goal() {
+		text := "This schedule doesn't cover every kind of test. Its future laps don't add qualifying clean-lap credit, but the goal is already reached."
+		if len(s.guardMissing) > 0 {
+			text += " Missing: " + strings.Join(s.guardMissing, "; ") + "."
+		}
+		return text
+	}
 	text := "This schedule doesn't cover every kind of test, so its laps can't qualify for the clean-lap goal."
 	if len(s.guardMissing) > 0 {
 		text += " Missing: " + strings.Join(s.guardMissing, ", ") + "."
