@@ -98,7 +98,7 @@ func (e *IncompatibleError) Error() string {
 		value = e.Binary.Ruleset
 	}
 	if Older(e.Journal, e.Binary) {
-		return fmt.Sprintf("%s; this build, %s, uses %s %d. togi run archives it and starts a new session that carries its solo limits and failure points; togi reset --all archives it and starts over.", written, e.Binary.name(), e.Field, value)
+		return fmt.Sprintf("%s; this build, %s, uses %s %d. togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over.", written, e.Binary.name(), e.Field, value)
 	}
 	return fmt.Sprintf("%s; this build, %s, uses %s %d. %s, or run togi reset --all to archive it and start over.", written, e.Binary.name(), e.Field, value, advice)
 }

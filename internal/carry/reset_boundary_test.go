@@ -110,7 +110,7 @@ func TestResetBoundaryFiltersCopiedCandidateValues(t *testing.T) {
 		Sources:       []journal.CarriedSource{src("A", 5)},
 		FailurePoints: true,
 		Carried: []journal.CarriedCore{
-			{Core: 0, SoloLimit: new(-30), SoloLimitSession: "A", SoloLimitSeq: 3},
+			{Core: 0, CandidateSoloLimit: new(-30), CandidateSoloLimitSession: "A", CandidateSoloLimitSeq: 3},
 			{Core: 1, FailurePoint: new(-5), FailurePointSession: "A", FailurePointSeq: 4, FailurePointSignal: machine.ComputationError},
 		},
 	})

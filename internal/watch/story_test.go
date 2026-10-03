@@ -81,7 +81,7 @@ func TestStoryDeepeningUsesTogetherScheduledChecks(t *testing.T) {
 		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
 		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
 		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -10, FailurePoint: new(-11)},
-		&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Parked: []int{-20, -30, -10}, Target: []int{-22, -29, -10}, Profile: []int{-21, -29, -10}, Cores: []int{0, 1}, Starts: 3, StartS: 120},
+		&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Base: []int{-20, -30, -10}, Target: []int{-22, -29, -10}, Profile: []int{-21, -29, -10}, Cores: []int{0, 1}, Starts: 3, StartS: 120},
 		&journal.TunerDecision{Core: 1, Phase: journal.PhaseDeepening, Decision: journal.Yield, FromOffset: -30, ToOffset: -29, FailurePoint: new(-31)},
 		&journal.TunerDecision{Core: 0, Phase: journal.PhaseDeepening, Decision: journal.Deepen, FromOffset: -20, ToOffset: -21},
 		&journal.TrialIntent{Trial: "deepening", Condition: machine.Together, Phase: journal.PhaseDeepening, Regime: machine.R1, Workload: "mprime-sse-24k-160k", Core: new(0), Offset: new(-21), Profile: []int{-21, -29, -10}, DurationS: 120, Round: 2},

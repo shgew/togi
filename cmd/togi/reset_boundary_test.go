@@ -12,7 +12,7 @@ import (
 	"github.com/shgew/togi/internal/session"
 )
 
-func resetBoundaryJournal(t *testing.T, dir, id string, build journal.Build, ctx machine.BIOSContext, soloLimit, failurePoint int) *journal.Journal {
+func resetBoundaryJournal(t *testing.T, dir, id string, build journal.Build, ctx machine.BIOSContext, candidateSoloLimit, failurePoint int) *journal.Journal {
 	t.Helper()
 	j, err := journal.Open(dir, journal.Options{Boot: "fixture"})
 	if err != nil {
@@ -21,7 +21,7 @@ func resetBoundaryJournal(t *testing.T, dir, id string, build journal.Build, ctx
 	for _, p := range []journal.Payload{
 		&journal.SessionStart{Build: build, Session: id, Evidence: 1, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}},
 		&journal.SessionContext{BIOSContext: ctx},
-		&journal.TrialIntent{Trial: "0001", Core: new(0), Offset: new(soloLimit), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Condition: machine.Alone, Phase: journal.PhaseSearch, DurationS: 90, Profile: []int{soloLimit, 0}},
+		&journal.TrialIntent{Trial: "0001", Core: new(0), Offset: new(candidateSoloLimit), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Condition: machine.Alone, Phase: journal.PhaseSearch, DurationS: 90, Profile: []int{candidateSoloLimit, 0}},
 		&journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomePass, DurationS: 90},
 		&journal.TrialIntent{Trial: "0002", Core: new(1), Offset: new(failurePoint), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Condition: machine.Alone, Phase: journal.PhaseSearch, DurationS: 90, Profile: []int{0, failurePoint}},
 		&journal.TrialEnd{Trial: "0002", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, DurationS: 11},
@@ -109,8 +109,8 @@ func TestResetAllPathsCannotReviveFactsSoloLimitsOrFailurePoints(t *testing.T) {
 				}
 			}
 			for _, core := range c.Cores {
-				if core.SoloLimit != nil && core.SoloLimitSession != newID || core.FailurePoint != nil && core.FailurePointSession != newID {
-					t.Fatalf("reset revived old solo limit/failure point: %+v", core)
+				if core.CandidateSoloLimit != nil && core.CandidateSoloLimitSession != newID || core.FailurePoint != nil && core.FailurePointSession != newID {
+					t.Fatalf("reset revived old candidate solo limit/failure point: %+v", core)
 				}
 			}
 		})

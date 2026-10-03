@@ -140,8 +140,8 @@ func TestPrepareSeedsSoloLimitsAndFailurePoints(t *testing.T) {
 		Sources: []journal.CarriedSource{src("X", 3)},
 		Context: &context,
 		Cores: []journal.CarriedCore{
-			{Core: 0, SoloLimit: new(-35), SoloLimitSession: "X", SoloLimitSeq: soloLimit0, FailurePoint: new(-36), FailurePointSession: "X", FailurePointSeq: failurePoint0, FailurePointSignal: machine.UnexpectedExit},
-			{Core: 1, SoloLimit: new(-40), SoloLimitSession: "X", SoloLimitSeq: soloLimit1, FailurePoint: new(-40), FailurePointSession: "X", FailurePointSeq: failurePoint1, FailurePointSignal: machine.UnexpectedExit},
+			{Core: 0, CandidateSoloLimit: new(-35), CandidateSoloLimitSession: "X", CandidateSoloLimitSeq: soloLimit0, FailurePoint: new(-36), FailurePointSession: "X", FailurePointSeq: failurePoint0, FailurePointSignal: machine.UnexpectedExit},
+			{Core: 1, CandidateSoloLimit: new(-40), CandidateSoloLimitSession: "X", CandidateSoloLimitSeq: soloLimit1, FailurePoint: new(-40), FailurePointSession: "X", FailurePointSeq: failurePoint1, FailurePointSignal: machine.UnexpectedExit},
 			{Core: 6, FailurePoint: new(0), FailurePointSession: "X", FailurePointSeq: failurePoint6, FailurePointSignal: machine.UnexpectedExit},
 		},
 	}
@@ -560,12 +560,12 @@ func TestPrepareDoesNotSeedAfterCorePhases(t *testing.T) {
 func TestPrepareWalkStopsAtOlderCarryCommitment(t *testing.T) {
 	dir := t.TempDir()
 	a := newJournal(t, dir, "A", 1, &context, machine.CoreInfo{Core: 0}, machine.CoreInfo{Core: 7})
-	soloLimit := a.pass(0, -30, machine.Alone)
+	candidateSoloLimit := a.pass(0, -30, machine.Alone)
 	a.fail(7, -20, machine.Alone, journal.Attributed)
 	a.archive(dir)
 	b := newJournal(t, dir, "B", 2, &context, machine.CoreInfo{Core: 0}, machine.CoreInfo{Core: 7})
 	b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 1)}, FailurePoints: true, Carried: []journal.CarriedCore{
-		{Core: 0, SoloLimit: new(-30), SoloLimitSession: "A", SoloLimitSeq: soloLimit},
+		{Core: 0, CandidateSoloLimit: new(-30), CandidateSoloLimitSession: "A", CandidateSoloLimitSeq: candidateSoloLimit},
 	}})
 	b.archive(dir)
 	c := newJournal(t, dir, "C", 3, &context, machine.CoreInfo{Core: 0}, machine.CoreInfo{Core: 7})
@@ -574,7 +574,7 @@ func TestPrepareWalkStopsAtOlderCarryCommitment(t *testing.T) {
 	if diff := cmp.Diff([]journal.CarriedSource{src("C", 3), src("B", 2)}, got.Sources); diff != "" {
 		t.Fatalf("committed source boundary (-want +got):\n%s", diff)
 	}
-	want := []journal.CarriedCore{{Core: 0, SoloLimit: new(-30), SoloLimitSession: "A", SoloLimitSeq: soloLimit}}
+	want := []journal.CarriedCore{{Core: 0, CandidateSoloLimit: new(-30), CandidateSoloLimitSession: "A", CandidateSoloLimitSeq: candidateSoloLimit}}
 	if diff := cmp.Diff(want, got.Cores); diff != "" {
 		t.Fatalf("walk revived omitted old failure point (-want +got):\n%s", diff)
 	}

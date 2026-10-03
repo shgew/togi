@@ -21,7 +21,7 @@ import (
 type Carry struct {
 	Sources []journal.CarriedSource
 	Context *machine.BIOSContext  // the BIOS context Sources[0] recorded; nil if it recorded none
-	Cores   []journal.CarriedCore // ascending core; each has a SoloLimit, a FailurePoint, or both
+	Cores   []journal.CarriedCore // ascending core; each has a CandidateSoloLimit, a FailurePoint, or both
 	Facts   []facts.Fact
 
 	factDir     string
@@ -238,9 +238,9 @@ func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
 				cc = &journal.CarriedCore{Core: v.core}
 				cores[v.core] = cc
 			}
-			if v.soloLimit {
-				if cc.SoloLimit == nil || v.offset < *cc.SoloLimit {
-					cc.SoloLimit, cc.SoloLimitSession, cc.SoloLimitSeq = new(v.offset), v.session, v.seq
+			if v.candidateSoloLimit {
+				if cc.CandidateSoloLimit == nil || v.offset < *cc.CandidateSoloLimit {
+					cc.CandidateSoloLimit, cc.CandidateSoloLimitSession, cc.CandidateSoloLimitSeq = new(v.offset), v.session, v.seq
 				}
 				continue
 			}
@@ -273,16 +273,16 @@ func olderArchives(dir, id string) ([]string, error) {
 }
 
 type candidate struct {
-	core, offset int
-	soloLimit    bool
-	session      string
-	seq          int
-	signal       machine.Signal
+	core, offset       int
+	candidateSoloLimit bool
+	session            string
+	seq                int
+	signal             machine.Signal
 	// at is the seq a reset of the core must precede for the candidate to count.
 	at int
 }
 
-// candidates lists, in seq order, the solo limits and failure points the source's events yield, dropping those a later reset of their
+// candidates lists, in seq order, the candidate solo limits and failure points the source's events yield, dropping those a later reset of their
 // core cleared.
 func (s source) candidates(entries []defect.Entry) []candidate {
 	resetAt := make(map[int]int)
@@ -335,7 +335,7 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 		case *journal.TrialEnd:
 			in := intents[p.Trial]
 			if p.Outcome == journal.OutcomePass && in != nil && !in.RecordOnly && in.Condition == machine.Alone && in.Core != nil && in.Offset != nil {
-				all = append(all, candidate{core: *in.Core, offset: *in.Offset, soloLimit: true, session: s.Session, seq: e.Seq, at: e.Seq})
+				all = append(all, candidate{core: *in.Core, offset: *in.Offset, candidateSoloLimit: true, session: s.Session, seq: e.Seq, at: e.Seq})
 			}
 		case *journal.Failure:
 			if in := intents[p.Trial]; in != nil && in.RecordOnly {
@@ -360,8 +360,8 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 				if cc.FailurePoint != nil {
 					all = append(all, candidate{core: cc.Core, offset: *cc.FailurePoint, session: cc.FailurePointSession, seq: cc.FailurePointSeq, signal: cc.FailurePointSignal, at: e.Seq})
 				}
-				if cc.SoloLimit != nil {
-					all = append(all, candidate{core: cc.Core, offset: *cc.SoloLimit, soloLimit: true, session: cc.SoloLimitSession, seq: cc.SoloLimitSeq, at: e.Seq})
+				if cc.CandidateSoloLimit != nil {
+					all = append(all, candidate{core: cc.Core, offset: *cc.CandidateSoloLimit, candidateSoloLimit: true, session: cc.CandidateSoloLimitSession, seq: cc.CandidateSoloLimitSeq, at: e.Seq})
 				}
 			}
 		case *journal.TrialIntent:

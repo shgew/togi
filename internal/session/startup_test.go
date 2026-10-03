@@ -52,9 +52,9 @@ func TestCarriedStartsRespectFailurePointsAndMachineTopology(t *testing.T) {
 			c := carriedFixture(t, m)
 			c.Facts = nil
 			c.Cores = []journal.CarriedCore{
-				{Core: 0, SoloLimit: new(-12), SoloLimitSession: "source", FailurePoint: new(-10), FailurePointSession: "source"},
+				{Core: 0, CandidateSoloLimit: new(-12), CandidateSoloLimitSession: "source", FailurePoint: new(-10), FailurePointSession: "source"},
 				{Core: 1, FailurePoint: new(-20), FailurePointSession: "source"},
-				{Core: 99, SoloLimit: new(-15), SoloLimitSession: "source"},
+				{Core: 99, CandidateSoloLimit: new(-15), CandidateSoloLimitSession: "source"},
 			}
 			if changed {
 				c.Context.BIOSVersion = "changed"
@@ -76,7 +76,7 @@ func TestCarriedStartsRespectFailurePointsAndMachineTopology(t *testing.T) {
 			}
 			want := []journal.CarriedCore{c.Cores[0], c.Cores[1]}
 			if changed {
-				want = []journal.CarriedCore{{Core: 0, SoloLimit: new(-12), SoloLimitSession: "source"}}
+				want = []journal.CarriedCore{{Core: 0, CandidateSoloLimit: new(-12), CandidateSoloLimitSession: "source"}}
 			}
 			if carried == nil || carried.FailurePoints == changed {
 				t.Fatalf("carry commitment: %+v", carried)

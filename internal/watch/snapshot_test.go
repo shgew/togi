@@ -44,7 +44,7 @@ func dashboardDeepeningEvents() []journal.Event {
 		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
 		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
 		&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -10},
-		&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Parked: []int{-20, -30, -10}, Target: []int{-22, -30, -10}, Profile: []int{-21, -30, -10}, Cores: []int{0}, Starts: 5, StartS: 120})
+		&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Base: []int{-20, -30, -10}, Target: []int{-22, -30, -10}, Profile: []int{-21, -30, -10}, Cores: []int{0}, Starts: 5, StartS: 120})
 }
 
 func TestProjectTrialLifecycle(t *testing.T) {

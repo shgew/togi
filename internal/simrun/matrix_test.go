@@ -26,8 +26,8 @@ type matrixHunt struct {
 }
 
 type matrixRound struct {
-	Round          journal.DeepeningRound
-	CleanLapParked bool
+	Round        journal.DeepeningRound
+	CleanLapBase bool
 }
 
 type matrixTrial struct {
@@ -67,8 +67,8 @@ func matrixCommitments(events []journal.Event) matrixResult {
 			out.Ends = append(out.Ends, *p)
 		case *journal.DeepeningRound:
 			round := *p
-			round.ParkedSeq = 0
-			out.Rounds = append(out.Rounds, matrixRound{Round: round, CleanLapParked: p.ParkedSeq != 0})
+			round.BaseSeq = 0
+			out.Rounds = append(out.Rounds, matrixRound{Round: round, CleanLapBase: p.BaseSeq != 0})
 		case *journal.TrialIntent:
 			intent := *p
 			intent.Trial, intent.KernelBoundary = "", journal.KernelBoundary{}

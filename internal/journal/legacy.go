@@ -28,7 +28,8 @@ var legacyKindFields = map[string]map[string]string{
 	"checking.lap":    {"clean": "passed", "qualifying": "full"},
 	"hunt.group":      {"edge": "probe"},
 	"combination":     {"mark": "combination"},
-	"session.carried": {"marks": "failure_points", "edge": "solo_limit", "edge_session": "solo_limit_session", "edge_seq": "solo_limit_seq", "mark_session": "failure_point_session", "mark_seq": "failure_point_seq", "mark_signal": "failure_point_signal"},
+	"session.carried": {"marks": "failure_points", "edge": "candidate_solo_limit", "edge_session": "candidate_solo_limit_session", "edge_seq": "candidate_solo_limit_seq", "mark_session": "failure_point_session", "mark_seq": "failure_point_seq", "mark_signal": "failure_point_signal"},
+	"deepening.round": {"anchor": "base", "anchor_seq": "base_seq"},
 }
 
 var legacyValues = map[string]map[string]string{

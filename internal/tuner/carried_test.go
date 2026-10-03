@@ -37,7 +37,7 @@ func TestCarriedEvidenceConsumers(t *testing.T) {
 			a, ok := h.s.perCore()
 			p, phase := a.Payload.(*journal.CorePhase)
 			if !ok || !phase || p.To != journal.PhaseHasRoom {
-				t.Fatalf("carried solo limit requires a live start: %+v", a)
+				t.Fatalf("carried candidate solo limit requires a live start: %+v", a)
 			}
 			if diff := cmp.Diff(append([]int{boundary.Seq}, facts...), a.Cause); diff != "" {
 				t.Fatalf("solo limit evidence (-want +got):\n%s", diff)
@@ -241,7 +241,7 @@ func TestCarriedSoloLimitEligibility(t *testing.T) {
 			h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseSearch, Decision: journal.CheckSoloLimit, ToOffset: -20, Workloads: []string{machine.Workloads(machine.R1)[0].ID, machine.Workloads(machine.R2)[0].ID}})
 			a, ok := h.s.perCore()
 			if !ok || a.Kind != RunTrial || a.Trial.Regime != machine.R1 {
-				t.Fatalf("ineligible carried solo limit was accepted: %+v", a)
+				t.Fatalf("ineligible carried candidate solo limit was accepted: %+v", a)
 			}
 		})
 	}

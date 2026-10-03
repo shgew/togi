@@ -189,14 +189,14 @@ type CarriedSource struct {
 }
 
 type CarriedCore struct {
-	Core                int            `json:"core"`
-	SoloLimit           *int           `json:"solo_limit,omitempty"`
-	SoloLimitSession    string         `json:"solo_limit_session,omitempty"`
-	SoloLimitSeq        int            `json:"solo_limit_seq,omitempty"`
-	FailurePoint        *int           `json:"failure_point,omitempty"`
-	FailurePointSession string         `json:"failure_point_session,omitempty"`
-	FailurePointSeq     int            `json:"failure_point_seq,omitempty"`
-	FailurePointSignal  machine.Signal `json:"failure_point_signal,omitempty"`
+	Core                      int            `json:"core"`
+	CandidateSoloLimit        *int           `json:"candidate_solo_limit,omitempty"`
+	CandidateSoloLimitSession string         `json:"candidate_solo_limit_session,omitempty"`
+	CandidateSoloLimitSeq     int            `json:"candidate_solo_limit_seq,omitempty"`
+	FailurePoint              *int           `json:"failure_point,omitempty"`
+	FailurePointSession       string         `json:"failure_point_session,omitempty"`
+	FailurePointSeq           int            `json:"failure_point_seq,omitempty"`
+	FailurePointSignal        machine.Signal `json:"failure_point_signal,omitempty"`
 }
 
 func (*SessionCarried) Kind() Kind { return KindSessionCarried }
@@ -206,19 +206,19 @@ func (p *SessionCarried) Message() string {
 		sources[i] = fmt.Sprintf("session %s (schema %d, ruleset %d)", s.Session, s.Schema, s.Ruleset)
 	}
 	from := strings.Join(sources, ", ")
-	var soloLimits, failurePoints int
+	var candidateSoloLimits, failurePoints int
 	for _, c := range p.Carried {
-		if c.SoloLimit != nil {
-			soloLimits++
+		if c.CandidateSoloLimit != nil {
+			candidateSoloLimits++
 		}
 		if c.FailurePoint != nil {
 			failurePoints++
 		}
 	}
 	if p.FailurePoints {
-		return fmt.Sprintf("carried %d candidate solo limits and %d failure points from %s", soloLimits, failurePoints, from)
+		return fmt.Sprintf("carried %d candidate solo limits and %d failure points from %s", candidateSoloLimits, failurePoints, from)
 	}
-	return fmt.Sprintf("carried %d candidate solo limits from %s; failure points stay behind: %s", soloLimits, from, p.Detail)
+	return fmt.Sprintf("carried %d candidate solo limits from %s; failure points stay behind: %s", candidateSoloLimits, from, p.Detail)
 }
 
 type KernelBoundary struct {
