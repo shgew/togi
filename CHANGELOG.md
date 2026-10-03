@@ -6,7 +6,7 @@ All notable changes to togi are documented in this file. The format is based on 
 
 ### Added
 
-- Trial ends record the median and minimum over sampled highest voltage requests among their loaded cores, excluding idle cores; crash and interruption recovery use the same persisted samples, and unsupported SMU tables and simulated trials omit the fields.
+- Trial ends record the median and minimum over sampled highest voltage requests among their loaded cores, excluding idle cores; crash and interruption recovery use the same persisted samples, and unsupported SMU tables and simulated trials omit the fields ([#328]).
 
 ### Changed
 
@@ -407,3 +407,4 @@ All notable changes to togi are documented in this file. The format is based on 
 [#285]: https://github.com/shgew/togi/pull/285
 [#290]: https://github.com/shgew/togi/pull/290
 [#296]: https://github.com/shgew/togi/pull/296
+[#328]: https://github.com/shgew/togi/pull/328
