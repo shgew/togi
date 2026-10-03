@@ -10,7 +10,7 @@ You are an autonomous researcher working on togi, a Go CLI that finds per-core C
 - **F1, surprises:** the pooled `failures_p<0.01` must not rise. These are failures the model called nearly impossible; a lower loss bought with more of them hides blind spots.
 - **F2, calibration:** the pooled `|ln(predicted / failures)|` must not rise. Log loss alone can improve while the model predicts several times too many failures.
 - **F3, breadth:** the fit loss must improve in a majority of the unsealed held-out sessions. The largest session holds about half of the unsealed starts and must not decide alone.
-- **F4, in-sample check:** `just fit --out runs/fit-<n>` reports `ok` for the all-facts fit and every bootstrap member. The bench's `target` scenario relies on that check.
+- **F4, in-sample check:** after the sealed confirmation, `just fit --out runs/fit-<n>` reports `ok` for the all-facts fit and every bootstrap member. This fits the full extract, so it is a finalization check, not feedback for dev experiments. The bench's `target` scenario relies on that check.
 - **F5, opt-in structure:** with the committed machine files, `just bench --split all --baseline tools/bench/baseline.jsonl` pairs every run `equal`. A machine file that does not set a new key behaves exactly as before, so the default machine, the hand-written scenarios and the committed fits keep their meaning until they are regenerated.
 
 Score the sealed session (`just forward`, no seal) once per dev winner, only for confirmation: its fit loss and its `failures_p<0.01` must not rise.
@@ -28,7 +28,7 @@ The seal moves forward by itself. When the owner refreshes the extract after a n
    - issue #306, for the measured structural problems, the planned model changes and what is still open;
    - `tools/bench/program.md`, for how the tuner research uses your machines.
 3. Create `runs/`. Add `runs/`, `results.tsv` and `REPORT.md` to the exclude file located by `git rev-parse --git-path info/exclude`. Create `results.tsv` with the header `commit\tdev_loss\tconstant_loss\tsurprises\tpredicted\tfailures\tsessions_improved\tsealed_loss\tverdict\tdescription` (tab-separated).
-4. On the unchanged branch, record the starting point: `just forward --seal 1 > runs/0000.txt`, `just forward > runs/0000-sealed.txt` and `just fit --out runs/fit-0000`. Require F4 to hold before the first experiment; if it does not, report that to the owner.
+4. On the unchanged branch, record the dev starting point: `just forward --seal 1 > runs/0000.txt`. Preserve the unchanged model with `git worktree add --detach runs/reference HEAD`; use the same extract in that checkout and the experiment checkout. Leave the unsealed reference and full-extract fit until confirmation.
 
 ## What you may change
 
@@ -46,10 +46,10 @@ Everything else is frozen, especially:
 
 Breaking any rule invalidates an experiment, however good its loss looks.
 
-- **Forward only.** Never fit on, tune against or inspect the sealed session's outcomes while iterating, and never edit the extract. No parameter may be keyed to a session, ruleset, date, sequence number or trial ID.
+- **Forward only.** Fit and score only the unsealed sessions during dev experiments. The unsealed reference, candidate confirmation and full-extract F4 check run only after selecting a dev winner; their sealed outcomes must not guide subsequent experiments. Never edit the extract. No parameter may be keyed to a session, ruleset, date, sequence number or trial ID.
 - **No memorized profiles.** Parameters describe cores, CCDs, regimes, workloads, offsets and durations, never one applied profile. The current R7 joints are memorized failing profiles; replacing them is in scope, adding more is not.
 - **One rule for draws and scores.** Simulated trials draw failures from the same rules that `Machine.FailureProbability` and `Machine.Hazard` report. A score computed from a model the simulator does not run measures nothing.
-- **Deterministic.** Fixed inputs reproduce the forward output and the machine files byte for byte.
+- **Deterministic.** Fixed inputs reproduce the forward scores and machine files byte for byte; elapsed wall-time lines are excluded.
 - **Fit time.** Report the `Forward-chained elapsed` line. A change that more than doubles it needs a reason in the report.
 - **Tests pass.** Run `go test ./internal/sim/ ./tools/fit/ ./tools/modelcheck/ ./tools/bench/` before scoring a candidate. Run `just gate` before keeping a commit and `just check` before opening a pull request.
 
@@ -59,7 +59,7 @@ Breaking any rule invalidates an experiment, however good its loss looks.
 2. **Bound it before building it.** Use the per-regime rows of `runs/<best>.txt` to see where predicted and observed failures diverge. If the starts the idea targets cannot move the pooled loss by more than 0.005 per start, pick another idea.
 3. **Implement the smallest change** that tests the hypothesis, in one commit. Run the required tests.
 4. **Score:** `just forward --seal 1 > runs/<n>.txt`.
-5. **Decide.** Keep only if the primary metric improves and F1–F3 hold. Then confirm with `just forward > runs/<n>-sealed.txt`, check F4 with `just fit --out runs/fit-<n>` and F5 with the bench. Discard a failed confirmation like a loss, restoring only the experiment's changes.
+5. **Decide.** Keep only if the primary metric improves and F1–F3 hold. At confirmation, obtain the unchanged reference with `(cd runs/reference && just forward) > runs/0000-sealed.txt`, then confirm with `just forward > runs/<n>-sealed.txt`. Check F4 with `just fit --out runs/fit-<n>` and F5 with the bench. These full-extract checks are permitted only at this stage. Discard a failed confirmation like a loss, restoring only the experiment's changes; do not tune against its sealed results.
 6. **Log** every experiment, kept or rejected, in `results.tsv`.
 7. **Every three kept commits, ablate.** Remove each kept change alone and rescore; drop changes that no longer contribute.
 
