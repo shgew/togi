@@ -36,7 +36,8 @@ func (k *Kernel) SavedPstore(boot string) (*machine.PstoreRecord, error) {
 		return nil, err
 	}
 	selected := ""
-	latest := int64(0)
+	firstStamp := int64(0)
+	latestCount := uint64(0)
 	for _, entry := range entries {
 		stamp, err := strconv.ParseInt(entry.Name(), 10, 64)
 		if err != nil || !entry.IsDir() || stamp <= 0 {
@@ -54,7 +55,8 @@ func (k *Kernel) SavedPstore(boot string) (*machine.PstoreRecord, error) {
 			if len(count.Name()) != 3 || !count.IsDir() {
 				continue
 			}
-			if _, err := strconv.ParseUint(count.Name(), 10, 16); err != nil {
+			number, err := strconv.ParseUint(count.Name(), 10, 16)
+			if err != nil {
 				continue
 			}
 			file := path.Join(entry.Name(), count.Name(), "dmesg.txt")
@@ -68,8 +70,9 @@ func (k *Kernel) SavedPstore(boot string) (*machine.PstoreRecord, error) {
 			if !info.Mode().IsRegular() {
 				return nil, fmt.Errorf("stat pstore record %s: not a regular file", file)
 			}
-			if stamp > latest || stamp == latest && file > selected {
-				selected, latest = file, stamp
+			// EFI timestamps each chunk separately; the earliest group holds the newest messages.
+			if selected == "" || number > latestCount || number == latestCount && stamp < firstStamp {
+				selected, firstStamp, latestCount = file, stamp, number
 			}
 		}
 	}

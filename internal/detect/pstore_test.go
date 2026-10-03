@@ -29,6 +29,7 @@ func TestSavedPstore(t *testing.T) {
 		{"unknown boot", fstest.MapFS{"150/001/dmesg.txt": {Data: []byte("data")}}, "missing", nil},
 		{"no successor", fstest.MapFS{"350/001/dmesg.txt": {Data: []byte("data")}}, "current", nil},
 		{"latest dump and count", fstest.MapFS{"150/001/dmesg.txt": {Data: []byte("older")}, "160/001/dmesg.txt": {Data: []byte("older count")}, "160/002/dmesg.txt": {Data: []byte("latest")}}, "old", &machine.PstoreRecord{Path: pstoreDir + "/160/002/dmesg.txt", Lines: []string{"latest"}}},
+		{"dump split across seconds retains newest messages", fstest.MapFS{"150/001/dmesg.txt": {Data: []byte("old dump")}, "160/002/dmesg.txt": {Data: []byte("newest messages")}, "161/002/dmesg.txt": {Data: []byte("older messages from later chunk")}}, "old", &machine.PstoreRecord{Path: pstoreDir + "/160/002/dmesg.txt", Lines: []string{"newest messages"}}},
 		{"unknown backend", fstest.MapFS{"150/dmesg.txt": {Data: []byte("ERST")}, "dmesg-ramoops-0": {Data: []byte("ramoops")}}, "old", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
