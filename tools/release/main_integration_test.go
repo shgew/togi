@@ -22,7 +22,7 @@ type releaseRepository struct {
 	git         gitFunc
 }
 
-func temporaryReleaseRepository(t *testing.T, changelog string) releaseRepository {
+func temporaryReleaseRepository(t *testing.T, changelog string, fragments map[string]string) releaseRepository {
 	t.Helper()
 	root := t.TempDir()
 	repo := releaseRepository{dir: filepath.Join(root, "checkout"), remote: filepath.Join(root, "remote.git")}
@@ -49,6 +49,13 @@ func temporaryReleaseRepository(t *testing.T, changelog string) releaseRepositor
 	repo.write(t, "version.txt", "0.0.9\n")
 	repo.write(t, "CHANGELOG.md", changelog)
 	repo.write(t, "go.mod", "module forge.example/o/r\n\ngo 1.27\n")
+	if err := os.Mkdir(filepath.Join(repo.dir, fragmentDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	repo.write(t, fragmentDir+"/"+fragmentReadme, "# Changes\n")
+	for name, content := range fragments {
+		repo.write(t, fragmentDir+"/"+name, content)
+	}
 	repo.command(t, "add", ".")
 	repo.command(t, "commit", "-m", "Previous version")
 	repo.write(t, "version.txt", "0.1.0\n")
@@ -92,7 +99,7 @@ func TestPublishTemporaryRepository(t *testing.T) {
 		{name: "wrong target with Release", tag: true, wrong: true, release: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			repo := temporaryReleaseRepository(t, released)
+			repo := temporaryReleaseRepository(t, released, nil)
 			commit := repo.command(t, "rev-parse", "HEAD")
 			target := commit
 			if tc.wrong {
@@ -145,7 +152,7 @@ func TestPublishTemporaryRepository(t *testing.T) {
 				}
 				return
 			}
-			want := map[string]string{"tag_name": "v0.1.0", "target_commitish": commit, "name": "0.1.0", "body": "### Added\n\n- New option ([#34]).\n\n[#34]: https://forge.example/o/r/pulls/34"}
+			want := map[string]string{"tag_name": "v0.1.0", "target_commitish": commit, "name": "0.1.0", "body": "### Added\n\n- New option ([#34]).\n\n[#34]: https://forge.example/o/r/pull/34"}
 			if diff := cmp.Diff(want, posted); diff != "" {
 				t.Fatalf("release mismatch (-want +got):\n%s", diff)
 			}
@@ -155,7 +162,7 @@ func TestPublishTemporaryRepository(t *testing.T) {
 }
 
 func TestRecoveryPreviewPreservesCheckout(t *testing.T) {
-	repo := temporaryReleaseRepository(t, released)
+	repo := temporaryReleaseRepository(t, released, aFix)
 	repo.command(t, "switch", "-c", "work")
 	repo.write(t, "staged.txt", "staged\n")
 	repo.command(t, "add", "staged.txt")
@@ -189,7 +196,7 @@ func TestRecoveryPreviewPreservesCheckout(t *testing.T) {
 }
 
 func TestReleaseWithoutTagsBumpsVersion(t *testing.T) {
-	repo := temporaryReleaseRepository(t, firstUnreleased)
+	repo := temporaryReleaseRepository(t, unreleasedOnly, map[string]string{"34.md": "### Added\n\n- New option.\n"})
 	var out bytes.Buffer
 	if err := repo.runner(&out, true).release(); err != nil {
 		t.Fatal(err)
@@ -200,11 +207,17 @@ func TestReleaseWithoutTagsBumpsVersion(t *testing.T) {
 	if got := repo.command(t, "log", "-1", "--format=%s"); got != "Release 0.1.1" {
 		t.Fatalf("release message = %s", got)
 	}
+	if got := repo.command(t, "show", "HEAD:CHANGELOG.md"); !strings.Contains(got, "## [0.1.1] - 2026-09-26\n\n### Added\n\n- New option ([#34]).") {
+		t.Fatalf("released changelog:\n%s", got)
+	}
+	if got := repo.command(t, "ls-tree", "--name-only", "HEAD", "changes/"); got != "changes/README.md" {
+		t.Fatalf("changes/ after release = %q, want only the README", got)
+	}
 	t.Log(strings.TrimSpace(out.String()))
 }
 
 func TestReleaseResumesTagOnlyRepository(t *testing.T) {
-	repo := temporaryReleaseRepository(t, released)
+	repo := temporaryReleaseRepository(t, released, nil)
 	commit := repo.command(t, "rev-parse", "HEAD")
 	repo.command(t, "tag", "v0.1.0")
 	repo.command(t, "push", "origin", "refs/tags/v0.1.0:refs/tags/v0.1.0")
@@ -223,7 +236,7 @@ func TestReleaseResumesTagOnlyRepository(t *testing.T) {
 }
 
 func TestPublishTagOnlyFromShallowLaterCommit(t *testing.T) {
-	repo := temporaryReleaseRepository(t, released)
+	repo := temporaryReleaseRepository(t, released, nil)
 	commit := repo.command(t, "rev-parse", "HEAD")
 	repo.command(t, "tag", "v0.1.0")
 	repo.command(t, "push", "origin", "refs/tags/v0.1.0:refs/tags/v0.1.0")

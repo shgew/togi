@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,9 +17,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-const unreleased = "## [Unreleased]\n\n### Fixed\n\n- A fix ([#35]).\n\n## [0.1.0] - 2026-09-25\n\n### Added\n\n- New option ([#34]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[#34]: https://forge.example/o/r/pulls/34\n[#35]: https://forge.example/o/r/pulls/35\n"
-const firstUnreleased = "## [Unreleased]\n\n### Added\n\n- New option ([#34]).\n\n[#34]: https://forge.example/o/r/pulls/34\n"
-const released = "## [Unreleased]\n\n## [0.1.0] - 2026-09-25\n\n### Added\n\n- New option ([#34]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[#34]: https://forge.example/o/r/pulls/34\n"
+const released = "# Changelog\n\n## [0.1.0] - 2026-09-25\n\n### Added\n\n- New option ([#34]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[#34]: https://forge.example/o/r/pull/34\n"
+const unreleasedOnly = "# Changelog\n"
+
+var aFix = map[string]string{"35.md": "### Fixed\n\n- A fix.\n"}
 
 type fakeGit struct {
 	responses map[string]string
@@ -52,8 +55,8 @@ func (f *fakeGit) stdin(command string) []string {
 	return got
 }
 
-func mainGit(version, changelog, tags string) *fakeGit {
-	return &fakeGit{
+func mainGit(version, changelog, tags string, fragments map[string]string) *fakeGit {
+	git := &fakeGit{
 		responses: map[string]string{
 			"rev-parse --verify origin/main^{commit}": "base\n",
 			"show base:version.txt":                   version + "\n",
@@ -68,6 +71,17 @@ func mainGit(version, changelog, tags string) *fakeGit {
 		failures: map[string]error{},
 		stderr:   map[string]string{},
 	}
+	var listing string
+	for _, name := range fragmentNames(fragments) {
+		listing += "changes/" + name + "\n"
+		git.responses["show base:changes/"+name] = fragments[name]
+	}
+	git.responses["ls-tree --name-only base changes/"] = listing + "changes/README.md\n"
+	return git
+}
+
+func fragmentNames(fragments map[string]string) []string {
+	return slices.Sorted(maps.Keys(fragments))
 }
 
 func releaseRunner(git *fakeGit, out *bytes.Buffer, commit bool) runner {
@@ -83,46 +97,60 @@ func releaseRunner(git *fakeGit, out *bytes.Buffer, commit bool) runner {
 	}
 }
 
-var readMain = []string{
-	"fetch --quiet origin main",
-	"rev-parse --verify origin/main^{commit}",
-	"show base:version.txt",
-	"show base:CHANGELOG.md",
-	"show base:go.mod",
+func readBase(fragments map[string]string) []string {
+	commands := []string{
+		"fetch --quiet origin main",
+		"rev-parse --verify origin/main^{commit}",
+		"show base:version.txt",
+		"show base:CHANGELOG.md",
+		"show base:go.mod",
+		"ls-tree --name-only base changes/",
+	}
+	for _, name := range fragmentNames(fragments) {
+		commands = append(commands, "show base:changes/"+name)
+	}
+	return append(commands, "ls-remote --tags origin refs/tags/v*")
 }
 
 func TestRelease(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name, version, changelog, tags string
+		fragments                      map[string]string
 		next, reason, changelogOut     string
 	}{
 		{
-			name: "bump", version: "0.1.0", changelog: unreleased, tags: "sha\trefs/tags/v0.1.0\n",
+			name: "bump", version: "0.1.0", changelog: released, tags: "sha\trefs/tags/v0.1.0\n", fragments: aFix,
 			next: "0.1.1", reason: "No breaking changes (patch bump).",
-			changelogOut: "## [Unreleased]\n\n## [0.1.1] - 2026-09-26\n\n### Fixed\n\n- A fix ([#35]).\n\n## [0.1.0] - 2026-09-25\n\n### Added\n\n- New option ([#34]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[0.1.1]: https://forge.example/o/r/releases/tag/v0.1.1\n\n[#34]: https://forge.example/o/r/pulls/34\n[#35]: https://forge.example/o/r/pulls/35\n",
+			changelogOut: "# Changelog\n\n## [0.1.1] - 2026-09-26\n\n### Fixed\n\n- A fix ([#35]).\n\n## [0.1.0] - 2026-09-25\n\n### Added\n\n- New option ([#34]).\n\n[0.1.0]: https://forge.example/o/r/releases/tag/v0.1.0\n\n[0.1.1]: https://forge.example/o/r/releases/tag/v0.1.1\n\n[#34]: https://forge.example/o/r/pull/34\n[#35]: https://forge.example/o/r/pull/35\n",
 		},
 		{
-			name: "bump without tags", version: "0.1.0", changelog: firstUnreleased,
-			next: "0.1.1", reason: "No breaking changes (patch bump).",
-			changelogOut: "## [Unreleased]\n\n## [0.1.1] - 2026-09-26\n\n### Added\n\n- New option ([#34]).\n\n[0.1.1]: https://forge.example/o/r/releases/tag/v0.1.1\n\n[#34]: https://forge.example/o/r/pulls/34\n",
+			name: "bump without tags", version: "0.1.0", changelog: unreleasedOnly,
+			fragments: map[string]string{"34.md": "### Added\n\n- New option.\n"},
+			next:      "0.1.1", reason: "No breaking changes (patch bump).",
+			changelogOut: "# Changelog\n\n## [0.1.1] - 2026-09-26\n\n### Added\n\n- New option ([#34]).\n\n[0.1.1]: https://forge.example/o/r/releases/tag/v0.1.1\n\n[#34]: https://forge.example/o/r/pull/34\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			git := mainGit(tc.version, tc.changelog, tc.tags)
+			git := mainGit(tc.version, tc.changelog, tc.tags, tc.fragments)
 			var out bytes.Buffer
 			if err := releaseRunner(git, &out, true).release(); err != nil {
 				t.Fatal(err)
 			}
-			want := append(append([]string{}, readMain...),
-				"ls-remote --tags origin refs/tags/v*",
+			read := readBase(tc.fragments)
+			want := slices.Concat(read, []string{
 				"rev-parse --git-path togi-release-index",
 				"read-tree base",
 				"hash-object -w --stdin",
 				"update-index --cacheinfo 100644,blob,version.txt",
 				"hash-object -w --stdin",
 				"update-index --cacheinfo 100644,blob,CHANGELOG.md",
+			})
+			for _, name := range fragmentNames(tc.fragments) {
+				want = append(want, "update-index --force-remove changes/"+name)
+			}
+			want = append(want,
 				"write-tree",
 				"commit-tree tree -p base -F -",
 				"checkout --quiet --detach commit",
@@ -136,7 +164,7 @@ func TestRelease(t *testing.T) {
 			if diff := cmp.Diff([]string{"Release " + tc.next + "\n\n" + tc.reason + "\n"}, git.stdin("commit-tree tree -p base -F -")); diff != "" {
 				t.Fatalf("commit message mismatch (-want +got):\n%s", diff)
 			}
-			for _, c := range git.calls[len(readMain)+2 : len(git.calls)-1] {
+			for _, c := range git.calls[len(read)+1 : len(git.calls)-1] {
 				if diff := cmp.Diff([]string{"GIT_INDEX_FILE=index"}, c.env); diff != "" {
 					t.Fatalf("%s env mismatch (-want +got):\n%s", strings.Join(c.args, " "), diff)
 				}
@@ -153,14 +181,14 @@ func TestRelease(t *testing.T) {
 
 func TestReleaseRefusesWithoutGreenCheck(t *testing.T) {
 	t.Parallel()
-	git := mainGit("0.1.0", unreleased, "sha\trefs/tags/v0.1.0\n")
+	git := mainGit("0.1.0", released, "sha\trefs/tags/v0.1.0\n", aFix)
 	git.checkErr = errors.New("check run u for base concluded failure")
 	var out bytes.Buffer
 	err := releaseRunner(git, &out, true).release()
 	if got, want := fmt.Sprint(err), "require a passing check on origin/main: check run u for base concluded failure"; got != want {
 		t.Fatalf("release error = %q, want %q", got, want)
 	}
-	if diff := cmp.Diff(append(append([]string{}, readMain...), "ls-remote --tags origin refs/tags/v*"), git.commands()); diff != "" {
+	if diff := cmp.Diff(readBase(aFix), git.commands()); diff != "" {
 		t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -174,21 +202,21 @@ func TestReleaseNothingToRelease(t *testing.T) {
 		output string
 	}{
 		{name: "preview", output: "nothing to release\n"},
-		{name: "commit", commit: true, err: "nothing to release: [Unreleased] in CHANGELOG.md is empty"},
+		{name: "commit", commit: true, err: "nothing to release: changes/ has no fragments"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			changelog := released
 			if tc.commit {
-				changelog = "## [Unreleased]\n"
+				changelog = unreleasedOnly
 			}
-			git := mainGit("0.1.0", changelog, "sha\trefs/tags/v0.1.0\n")
+			git := mainGit("0.1.0", changelog, "sha\trefs/tags/v0.1.0\n", nil)
 			var out bytes.Buffer
 			err := releaseRunner(git, &out, tc.commit).release()
 			if got := fmt.Sprint(err); tc.err != "" && got != tc.err || tc.err == "" && err != nil {
 				t.Fatalf("release error = %v, want %q", err, tc.err)
 			}
-			if diff := cmp.Diff(append(append([]string{}, readMain...), "ls-remote --tags origin refs/tags/v*"), git.commands()); diff != "" {
+			if diff := cmp.Diff(readBase(nil), git.commands()); diff != "" {
 				t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
 			}
 			if got := out.String(); got != tc.output {
@@ -200,12 +228,12 @@ func TestReleaseNothingToRelease(t *testing.T) {
 
 func TestReleaseResumesUnpublished(t *testing.T) {
 	t.Parallel()
-	git := mainGit("0.1.0", released, "sha\trefs/tags/v0.0.9\n")
+	git := mainGit("0.1.0", released, "sha\trefs/tags/v0.0.9\n", nil)
 	var out bytes.Buffer
 	if err := releaseRunner(git, &out, true).release(); err != nil {
 		t.Fatal(err)
 	}
-	if diff := cmp.Diff(append(append([]string{}, readMain...), "ls-remote --tags origin refs/tags/v*", "checkout --quiet --detach base"), git.commands()); diff != "" {
+	if diff := cmp.Diff(append(readBase(nil), "checkout --quiet --detach base"), git.commands()); diff != "" {
 		t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
 	}
 	if got, want := out.String(), "0.1.0 is released in CHANGELOG.md; would publish origin/main if its GitHub Release is missing\n"; got != want {
@@ -218,15 +246,15 @@ func TestReleaseResumesUnpublished(t *testing.T) {
 
 func TestReleasePreview(t *testing.T) {
 	t.Parallel()
-	git := mainGit("0.1.0", unreleased, "sha\trefs/tags/v0.1.0\n")
+	git := mainGit("0.1.0", released, "sha\trefs/tags/v0.1.0\n", aFix)
 	var out bytes.Buffer
 	if err := releaseRunner(git, &out, false).release(); err != nil {
 		t.Fatal(err)
 	}
-	if diff := cmp.Diff(append(append([]string{}, readMain...), "ls-remote --tags origin refs/tags/v*"), git.commands()); diff != "" {
+	if diff := cmp.Diff(readBase(aFix), git.commands()); diff != "" {
 		t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
 	}
-	want := "Would release from origin/main:\n\nRelease 0.1.1\n\nNo breaking changes (patch bump).\n\n### Fixed\n\n- A fix ([#35]).\n\n[#35]: https://forge.example/o/r/pulls/35\n"
+	want := "Would release from origin/main:\n\nRelease 0.1.1\n\nNo breaking changes (patch bump).\n\n### Fixed\n\n- A fix ([#35]).\n\n[#35]: https://forge.example/o/r/pull/35\n"
 	if diff := cmp.Diff(want, out.String()); diff != "" {
 		t.Fatalf("output mismatch (-want +got):\n%s", diff)
 	}
@@ -322,7 +350,7 @@ func TestPublish(t *testing.T) {
 	}
 	wantPost := map[string]string{
 		"tag_name": "v0.1.0", "target_commitish": "merge-sha", "name": "0.1.0",
-		"body": "### Added\n\n- New option ([#34]).\n\n[#34]: https://forge.example/o/r/pulls/34",
+		"body": "### Added\n\n- New option ([#34]).\n\n[#34]: https://forge.example/o/r/pull/34",
 	}
 	if diff := cmp.Diff(wantPost, *posted); diff != "" {
 		t.Fatalf("release payload mismatch (-want +got):\n%s", diff)
@@ -344,7 +372,7 @@ func TestPublishSkips(t *testing.T) {
 		output                   string
 	}{
 		{"already published", "0.1.0", released, http.StatusOK, []string{"GET /repos/o/r/releases/tags/v0.1.0"}, "nothing to publish: GitHub Release v0.1.0 already exists\n"},
-		{"not released yet", "0.1.0", firstUnreleased, http.StatusNotFound, nil, "nothing to publish: CHANGELOG.md has no released [0.1.0] section\n"},
+		{"not released yet", "0.1.0", unreleasedOnly, http.StatusNotFound, nil, "nothing to publish: CHANGELOG.md has no released [0.1.0] section\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -384,19 +412,24 @@ func TestRepositoryValidation(t *testing.T) {
 
 func TestReleaseFailuresDoNotCommit(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct{ name, command, version, changelog, module, want string }{
+	for _, tc := range []struct{ name, command, version, changelog, module, fragment, want string }{
 		{name: "fetch", command: "fetch --quiet origin main", want: "fetch main: injected"},
 		{name: "resolve", command: "rev-parse --verify origin/main^{commit}", want: "resolve origin/main: injected"},
 		{name: "read", command: "show base:CHANGELOG.md", want: "read CHANGELOG.md from origin/main: injected"},
 		{name: "version", version: "bad", want: "read version.txt: invalid semantic version \"bad\""},
 		{name: "module", module: "not a module", want: "read go.mod: missing module path"},
-		{name: "unreleased", changelog: "# Changelog\n", want: "read CHANGELOG.md: missing [Unreleased] section"},
+		{name: "list fragments", command: "ls-tree --name-only base changes/", want: "read changes/ from origin/main: list: injected"},
+		{name: "read fragment", command: "show base:changes/35.md", want: "read changes/ from origin/main: read 35.md: injected"},
+		{name: "invalid fragment", fragment: "- A fix.\n", want: "read changes/: 35.md:1: entry before any ### section heading"},
 		{name: "tags", command: "ls-remote --tags origin refs/tags/v*", want: "list release tags: injected"},
 		{name: "overflow", version: strings.Repeat("9", 40) + ".1.0", want: "bump version: parse version"},
-		{name: "duplicate", changelog: unreleased + "\n## [0.1.1] - 2026-09-25\n", want: "rewrite changelog: version [0.1.1] already exists"},
+		{name: "duplicate", changelog: released + "\n## [0.1.1] - 2026-09-25\n", want: "rewrite changelog: version [0.1.1] already exists"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			git := mainGit("0.1.0", unreleased, "")
+			git := mainGit("0.1.0", released, "", aFix)
+			if tc.fragment != "" {
+				git.responses["show base:changes/35.md"] = tc.fragment
+			}
 			if tc.command != "" {
 				git.failures[tc.command] = errors.New("injected")
 			}
@@ -423,9 +456,9 @@ func TestReleaseFailuresDoNotCommit(t *testing.T) {
 
 func TestReleaseCommitFailuresStopBeforeCheckout(t *testing.T) {
 	t.Parallel()
-	for _, command := range []string{"rev-parse --git-path togi-release-index", "read-tree base", "hash-object -w --stdin", "update-index --cacheinfo 100644,blob,version.txt", "write-tree", "commit-tree tree -p base -F -", "checkout --quiet --detach commit"} {
+	for _, command := range []string{"rev-parse --git-path togi-release-index", "read-tree base", "hash-object -w --stdin", "update-index --cacheinfo 100644,blob,version.txt", "update-index --force-remove changes/35.md", "write-tree", "commit-tree tree -p base -F -", "checkout --quiet --detach commit"} {
 		t.Run(command, func(t *testing.T) {
-			git := mainGit("0.1.0", unreleased, "")
+			git := mainGit("0.1.0", released, "", aFix)
 			git.failures[command] = errors.New("injected")
 			var out bytes.Buffer
 			err := releaseRunner(git, &out, true).release()

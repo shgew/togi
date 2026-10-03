@@ -130,6 +130,25 @@
                   HOME=$TMPDIR treefmt --ci --walk filesystem
                   touch "$out"
                 '';
+            changes =
+              pkgs.runCommand "togi-changes"
+                {
+                  nativeBuildInputs = [ pkgs.go_1_27 ];
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = lib.fileset.unions [
+                      ./go.mod
+                      ./go.sum
+                      ./tools/release
+                      ./changes
+                    ];
+                  };
+                }
+                ''
+                  cd "$src"
+                  HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0 go run ./tools/release -check changes
+                  touch "$out"
+                '';
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
             let

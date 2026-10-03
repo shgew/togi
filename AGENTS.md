@@ -5,7 +5,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 ## Docs
 
 - `README.md`: what togi does, what works today, and the common commands. The first page a reader sees.
-- `CHANGELOG.md`: user-visible changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+- `CHANGELOG.md`: released user-visible changes, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. Pending entries wait in `changes/`, one file per pull request; `changes/README.md` has the format.
 - `GLOSSARY.md`: the vocabulary. Name code, events and docs with its terms.
 - `REVIEW.md`: defect criteria and recurring lessons. Read it before reviewing a pull request.
 - `.omp/`: reviewer rules and `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates.
@@ -56,7 +56,7 @@ Planning lives in issues, filed from the templates in `.github/ISSUE_TEMPLATE/`.
 A pull request updates everything that describes the old state, in the same pull request:
 - `--help` text for every command or flag it adds or changes;
 - the README's Status when what works changes, and its Usage when the common commands change;
-- `CHANGELOG.md` under `## [Unreleased]`, for every change a user of togi would notice: commands, flags, behavior, output, configuration. One line per change under `Added`, `Changed`, `Fixed` or `Removed`, stating the effect and linking the pull request. A `**BREAKING**` line starts with what the operator must do or will see, then the mechanism. Refactors, tests and doc edits that leave the tool unchanged get no entry;
+- a changelog fragment, `changes/<N>.md` named by the pull request's number and added once it is opened, for every change a user of togi would notice: commands, flags, behavior, output, configuration. One line per change under `### Added`, `### Changed`, `### Removed` or `### Fixed`, stating the effect and ending with a period; the release adds the pull request link (ADR 0033). A `**BREAKING**` line starts with what the operator must do or will see, then the mechanism. A change to something not yet released edits that change's fragment instead. Refactors, tests and doc edits that leave the tool unchanged get no fragment;
 - the specs, and any comment the change makes wrong.
 
 Pull requests that change the operator's steps update `docs/howto.md`.
@@ -78,7 +78,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just bot <gh args>` | Post review records and `review` checks as robotogi, using the private key file named by `ROBOTOGI_KEY_FILE` |
 | `just test` | The tight loop |
 | `just gate` | Lint, the `fmt` flake check over tracked files, then tests: the quick check before handing off |
-| `just check` | Every flake check, what CI runs on every pull request and push to `main`: package (its tests run shuffled, with the integration tests on Linux), race (trial, session, journal and watch under the race detector), lint, fmt and, on Linux, the VM tests `vm` (the tuning boot) and `vm-restart-limit`. Must pass before a pull request |
+| `just check` | Every flake check, what CI runs on every pull request and push to `main`: package (its tests run shuffled, with the integration tests on Linux), race (trial, session, journal and watch under the race detector), lint, fmt, changes (the changelog fragments) and, on Linux, the VM tests `vm` (the tuning boot) and `vm-restart-limit`. Must pass before a pull request |
 | `just fmt` | Format Go, Nix and the justfile in place |
 | `just sim [seed]` | A simulated session through its first clean guard rotation in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just bench [flags]` | The bench suite of simulated sessions, optionally compared against a baseline run (`go run ./tools/bench`, `docs/benchmarking.md`) |
@@ -86,7 +86,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just facts STATE-DIR` | Regenerate the committed privacy-safe target evidence from a copied state directory (`docs/benchmarking.md`) |
 | `just fit [flags]` | Regenerate the target-machine fit and eight bootstrap refits, then report the forward-chained check on later sessions (`docs/benchmarking.md`) |
 | `just forward [--seal N]` | Only the forward-chained check, writing no machine files; `--seal N` leaves the newest N sessions unscored (`docs/benchmarking.md`) |
-| `just release` | Start the release workflow on `main`: it checks that `check` passed on `main`, commits the release, builds the package, pushes to `main` and publishes. `just release-preview` shows what it would release. See `docs/releasing.md` |
+| `just release` | Start the release workflow on `main`: it checks that `check` passed on `main`, commits the release, builds the package, pushes to `main` and publishes. `just release-preview` shows what it would release, and `just changes` checks the changelog fragments. See `docs/releasing.md` |
 | `just hardware` | Hardware tests, on the target machine only: as root, or as a user with an explicitly delegated host lock ([provisioning](docs/howto.md#host-lock-and-delegated-hardware-tests)), read-write access to `/sys/kernel/ryzen_smu_drv/{rsmu_cmd,smu_args,smn}` and a delegated cpuset controller. Backend package paths come from `TOGI_MPRIME` and `TOGI_YCRUNCHER`, else from `/etc/togi/config.toml` |
 | `just fuzz [time]` | Fuzz the journal parser |
 | `just cover [base]` | Changed lines since `base` that no test reaches, as `path:first-last` ranges, for review; without a base, coverage per function for the whole repository. Evidence for reviewers, never a target |

@@ -17,7 +17,7 @@ A new ADR adds its line here and updates the status of any ADR it supersedes.
 - [0011: Blame unattributed failures by load and regain depth automatically](0011-blame-by-load-and-automatic-regain.md) — **partly superseded** by [0015](0015-avx-512-first-in-confirmation.md): confirmation order; by [0020](0020-hunt-and-refine.md): blame, depth retry and confirmation; the R7 CCD and all-core guard step remains.
 - [0012: Releases open with a push and publish from CI](0012-release-by-push.md) — **superseded** by [0014](0014-release-from-a-workflow.md).
 - [0013: Candidate edges start a new session in confirmation](0013-candidate-edges-for-a-new-session.md) — **partly superseded** by [0019](0019-a-ruleset-change-starts-a-seeded-session.md): carrying nothing from archives; by [0020](0020-hunt-and-refine.md): candidate-edge confirmation; by [0027](0027-carry-trial-facts.md): proving candidate edges only with new-session starts and rejecting carried passes; [0018](0018-crashes-are-not-a-cost.md) counts crash cost as reboot time; configured candidate edges remain.
-- [0014: Releases are made by a workflow started by hand](0014-release-from-a-workflow.md) — **partly superseded** by [0016](0016-every-pull-request-runs-every-check.md): release checks.
+- [0014: Releases are made by a workflow started by hand](0014-release-from-a-workflow.md) — **partly superseded** by [0016](0016-every-pull-request-runs-every-check.md): release checks; by [0033](0033-changelog-fragments.md): reading entries from `[Unreleased]`.
 - [0015: Run mprime AVX-512 first in confirmation](0015-avx-512-first-in-confirmation.md) — **superseded** by [0020](0020-hunt-and-refine.md).
 - [0016: Every pull request runs every flake check; the release trusts `main`](0016-every-pull-request-runs-every-check.md) — **partly superseded** by [0022](0022-run-the-race-detector-in-ci.md): race-detector decision and consequences.
 - [0017: Publish as togi from a fresh repository](0017-publish-as-togi-from-a-fresh-repository.md) — **in force**.
@@ -36,3 +36,4 @@ A new ADR adds its line here and updates the status of any ADR it supersedes.
 - [0030: Coverage is a review signal, not a target](0030-coverage-is-a-review-signal.md) — **partly superseded** by [0032](0032-coverage-lists-uncovered-changed-lines.md): whole-file blocks and reviewers matching them to hunks; coverage as a review signal, never a target, remains.
 - [0031: Pull requests under the owner's account](0031-pull-requests-under-the-owners-account.md) — **in force**.
 - [0032: Coverage lists uncovered changed lines](0032-coverage-lists-uncovered-changed-lines.md) — **in force**.
+- [0033: Changelog entries are per-pull-request fragments](0033-changelog-fragments.md) — **in force**.
