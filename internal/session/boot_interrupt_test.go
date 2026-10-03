@@ -12,6 +12,7 @@ import (
 )
 
 type effectfulBootloader struct {
+	bootEnvironment
 	saved             string
 	calls             int
 	err               error

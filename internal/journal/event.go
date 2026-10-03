@@ -63,6 +63,7 @@ const (
 	KindDefectAnswered  Kind = "defect.answered"
 	KindDeadEnd         Kind = "deadend"
 	KindBootSavedEntry  Kind = "boot.saved_entry"
+	KindBootLeaveReason Kind = "boot.leave_reason"
 	KindShutdown        Kind = "shutdown"
 	KindJournalTorn     Kind = "journal.torn"
 	KindStateRebuilt    Kind = "state.rebuilt"
@@ -261,6 +262,7 @@ var payloadTypes = map[Kind]payloadType{
 	KindDefectAnswered:  typeOf[DefectAnswered](),
 	KindDeadEnd:         typeOf[DeadEnd](),
 	KindBootSavedEntry:  typeOf[BootSavedEntry](),
+	KindBootLeaveReason: typeOf[BootLeaveReason](),
 	KindShutdown:        typeOf[Shutdown](),
 	KindJournalTorn:     typeOf[JournalTorn](),
 	KindStateRebuilt:    typeOf[StateRebuilt](),

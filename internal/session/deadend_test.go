@@ -14,6 +14,7 @@ import (
 )
 
 type fakeBootloader struct {
+	bootEnvironment
 	calls int
 	err   error
 }
@@ -225,7 +226,7 @@ func deadEndResumeKinds(t *testing.T, events []journal.Event, after int) []journ
 	finished := false
 	for _, e := range events[after:] {
 		switch e.Data.(type) {
-		case *journal.StateRebuilt:
+		case *journal.StateRebuilt, *journal.BootLeaveReason:
 		case *journal.PreflightCheck:
 			preflight = true
 		case *journal.SMUReadback, *journal.SMUWrite, *journal.ProfileRestored:

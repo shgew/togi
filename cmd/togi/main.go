@@ -44,6 +44,7 @@ type command struct {
 var commands = []command{
 	{name: "events", summary: "Render the journal", run: runEvents},
 	{name: "reset", summary: "Reset one core or archive the session", run: runReset},
+	{name: "restart-limit", summary: "Recover after the tuning service reaches its restart limit", run: runRestartLimit},
 	{name: "run", summary: "Start or resume the session in the foreground", run: runRun},
 	{name: "status", summary: "Show core marks, activity and qualified rotations", run: runStatus},
 	{name: "watch", summary: "Show the session as a live dashboard", run: runWatch},
@@ -141,7 +142,7 @@ func usage(w io.Writer) {
 	b.WriteString("Commands:\n")
 	sorted := slices.SortedFunc(slices.Values(commands), func(a, b command) int { return strings.Compare(a.name, b.name) })
 	for _, c := range sorted {
-		fmt.Fprintf(&b, "  %-9s%s\n", c.name, c.summary)
+		fmt.Fprintf(&b, "  %-15s%s\n", c.name, c.summary)
 	}
 	fs := flag.NewFlagSet("togi", flag.ContinueOnError)
 	registerGlobals(fs, &globals{})

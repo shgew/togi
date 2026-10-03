@@ -844,22 +844,40 @@ func (p *DeadEnd) Message() string {
 }
 
 type BootSavedEntry struct {
-	Before string `json:"before"`
-	After  string `json:"after"`
-	Error  string `json:"error,omitempty"`
+	Before      string `json:"before"`
+	After       string `json:"after"`
+	Error       string `json:"error,omitempty"`
+	ReasonError string `json:"reason_error,omitempty"`
 }
 
 func (*BootSavedEntry) Kind() Kind { return KindBootSavedEntry }
 func (p *BootSavedEntry) Message() string {
+	var msg string
 	switch {
 	case p.Error != "":
-		return "GRUB saved entry not cleared: " + p.Error
+		msg = "GRUB saved entry not cleared: " + p.Error
 	case p.After == "" && p.Before == "":
-		return "GRUB saved entry was already unset"
+		msg = "GRUB saved entry was already unset"
 	case p.After == "":
-		return fmt.Sprintf("GRUB saved entry %s cleared; the next boot selects the first menu entry", p.Before)
+		msg = fmt.Sprintf("GRUB saved entry %s cleared; the next boot selects the first menu entry", p.Before)
+	default:
+		msg = fmt.Sprintf("GRUB saved entry %s -> %s", p.Before, p.After)
 	}
-	return fmt.Sprintf("GRUB saved entry %s -> %s", p.Before, p.After)
+	if p.ReasonError != "" {
+		msg += "; leave reason not saved: " + p.ReasonError
+	}
+	return msg
+}
+
+type BootLeaveReason struct {
+	ReasonID          string `json:"reason_id"`
+	RestartLimitCount int    `json:"restart_limit_count"`
+	Reason            string `json:"reason"`
+}
+
+func (*BootLeaveReason) Kind() Kind { return KindBootLeaveReason }
+func (p *BootLeaveReason) Message() string {
+	return fmt.Sprintf("previous tuning boot ended: %s (consecutive restart-limit boots: %d)", p.Reason, p.RestartLimitCount)
 }
 
 type Shutdown struct {

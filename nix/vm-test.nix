@@ -291,6 +291,9 @@ in
           if [ "$1" = run ]; then
             exit 2
           fi
+          if [ "$1" = restart-limit ]; then
+            exit 2
+          fi
           exec ${pkgs.coreutils}/bin/sleep infinity
         '';
         services.togi.tuning.leaveOnShutdown = false;
@@ -321,7 +324,16 @@ in
       assert normal_restart_system != tuning_restart_system
       grubenv = restartLimit.succeed("grub-editenv /boot/grub/grubenv list")
       assert "saved_entry=NixOS - togi" not in grubenv, f"restart limit left the tuning boot saved: {grubenv}"
+      leave_reason = json.loads(next(
+          line.split("=", 1)[1] for line in grubenv.splitlines() if line.startswith("togi_leave_reason=")
+      ))
+      assert leave_reason["count"] == 0, leave_reason
+      assert leave_reason["reason"] == "restart-limit command failed; returning to the normal system", leave_reason
+      restartLimit.succeed("test ! -e /run/togi-retry-tuning-boot")
       togi = [json.loads(line) for line in restartLimit.succeed("journalctl -b -1 -u togi.service -o json").splitlines()]
+      assert leave_reason["id"].startswith("fallback-"), leave_reason
+      invocation_id = leave_reason["id"].removeprefix("fallback-")
+      assert len(invocation_id) == 32 and all(c in "0123456789abcdef" for c in invocation_id), leave_reason
       exits = [e["EXIT_STATUS"] for e in togi if "EXIT_STATUS" in e]
       results = [e["UNIT_RESULT"] for e in togi if "UNIT_RESULT" in e]
       assert exits == ["2", "2", "2"], f"togi.service exits before the reboot: {exits}"
