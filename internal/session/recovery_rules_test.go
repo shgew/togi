@@ -2,7 +2,9 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"iter"
 	"os"
 	"path/filepath"
@@ -676,4 +678,121 @@ func TestReplayMachineCheckKeepsBankAttribution(t *testing.T) {
 			}
 		})
 	}
+}
+
+func voltageSamples() []machine.TrialConditions {
+	samples := []machine.TrialConditions{{ElapsedMS: 1000}, {ElapsedMS: 2000}, {ElapsedMS: 3000}, {ElapsedMS: 4000}}
+	for i, value := range []float32{1.5, 1, 1.25} {
+		table := &machine.PMTable{}
+		table.VoltageRequestV[0], table.VoltageRequestV[1] = value, value+0.125
+		table.VoltageRequestV[15] = 2
+		samples[i].PMTable = table
+	}
+	return samples
+}
+
+type voltageTrials struct {
+	machine.Trials
+	samples []machine.TrialConditions
+}
+
+func (t voltageTrials) Samples(string) iter.Seq[machine.TrialConditions] {
+	return slices.Values(t.samples)
+}
+
+func TestTrialRequestedVoltageAllRegimes(t *testing.T) {
+	t.Parallel()
+	for _, lanes := range []bool{true, false} {
+		t.Run(fmt.Sprintf("lanes=%t", lanes), func(t *testing.T) {
+			t.Parallel()
+			in := simInput(t.TempDir(), newSim(t, small()))
+			samples := voltageSamples()
+			if !lanes {
+				samples = []machine.TrialConditions{{ElapsedMS: 1000}}
+			}
+			seams := in.Machine.Seams()
+			seams.Trials = voltageTrials{Trials: seams.Trials, samples: samples}
+			if _, err := driveWithSeams(in, seams); err != nil {
+				t.Fatal(err)
+			}
+			intents := make(map[string]*journal.TrialIntent)
+			seen := make(map[machine.Regime]bool)
+			for _, e := range readEvents(t, in.Dir) {
+				switch p := e.Data.(type) {
+				case *journal.TrialIntent:
+					intents[p.Trial] = p
+				case *journal.TrialEnd:
+					intent := intents[p.Trial]
+					seen[intent.Regime] = true
+					var median, minimum *float64
+					if lanes {
+						shift := 0.0
+						if intent.Core != nil && *intent.Core == 1 || slices.Contains(intent.Cores, 1) {
+							shift = 0.125
+						}
+						median, minimum = new(1.25+shift), new(1.0+shift)
+					}
+					if diff := cmp.Diff([]*float64{median, minimum}, []*float64{p.VoltageRequestMedianV, p.VoltageRequestMinV}); diff != "" {
+						t.Fatalf("%s %s voltage (-want +got):\n%s", intent.Regime, p.Trial, diff)
+					}
+					var raw map[string]json.RawMessage
+					if err := json.Unmarshal(e.Raw, &raw); err != nil {
+						t.Fatal(err)
+					}
+					for _, field := range []string{"voltage_request_median_v", "voltage_request_min_v"} {
+						if diff := cmp.Diff(lanes, raw[field] != nil); diff != "" {
+							t.Fatalf("%s presence (-want +got):\n%s", field, diff)
+						}
+					}
+				}
+			}
+			want := map[machine.Regime]bool{machine.R1: true, machine.R2: true, machine.R3: true, machine.R4: true, machine.R5: true, machine.R6: true, machine.R7: true}
+			if diff := cmp.Diff(want, seen); diff != "" {
+				t.Fatalf("sampled regimes (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestCrashRecoveryRequestedVoltage(t *testing.T) {
+	t.Parallel()
+	in, _ := firstCrash(t, machine.ResetWatchdog, machine.Crash, false)
+	dir := filepath.Join(in.Dir, "trials")
+	trialDir := filepath.Join(dir, "0001")
+	if err := os.MkdirAll(trialDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	var contents []byte
+	for _, sample := range voltageSamples() {
+		line, err := json.Marshal(sample)
+		if err != nil {
+			t.Fatal(err)
+		}
+		contents = append(contents, append(line, '\n')...)
+	}
+	contents = append(contents, []byte(`{"elapsed_ms":5000,"pm_table":{"voltage_request_v":[2]}}`)...)
+	if err := os.WriteFile(filepath.Join(trialDir, "samples.jsonl"), contents, 0644); err != nil {
+		t.Fatal(err)
+	}
+	seams := in.Machine.Seams()
+	seams.Trials = sampledTrials{Trials: seams.Trials, reader: trial.New(trial.Options{Dir: dir})}
+	if _, err := driveWithSeams(in, seams); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range readEvents(t, in.Dir) {
+		if p, ok := e.Data.(*journal.TrialEnd); ok && p.Trial == "0001" {
+			if diff := cmp.Diff([]*float64{new(1.25), new(1.0)}, []*float64{p.VoltageRequestMedianV, p.VoltageRequestMinV}); diff != "" {
+				t.Fatalf("recovered voltage (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(journal.OutcomeFailure, p.Outcome); diff != "" {
+				t.Fatal(diff)
+			}
+			if diff := cmp.Diff("trial 0001 FAIL crash, last evidence 0s after start, last sample 4s | loaded voltage request median 1.250 V, min 1.000 V", e.Msg); diff != "" {
+				t.Fatal(diff)
+			}
+			t.Log(string(e.Raw))
+			return
+		}
+	}
+	t.Fatal("missing recovered trial")
 }

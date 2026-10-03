@@ -566,8 +566,13 @@ func (r *runner) closeOpenTrial() error {
 	if open.core == nil {
 		end.Core = nil
 	}
+	cores := open.intent.Cores
+	if len(cores) == 0 && open.intent.Core != nil {
+		cores = []int{*open.intent.Core}
+	}
+	summary := sampleEvidence(r.in.Machine.Trials.Samples(open.intent.Trial), cores, open.intent.Regime)
+	end.VoltageRequestMedianV, end.VoltageRequestMinV = summary.voltageMedianV, summary.voltageMinV
 	if _, crashed := r.fold.crashSeq[open.boot]; crashed || end.Outcome == journal.OutcomeFailure {
-		summary := sampleEvidence(r.in.Machine.Trials.Samples(open.intent.Trial), open.intent.Cores, open.intent.Regime)
 		if end.Outcome == journal.OutcomeFailure {
 			end.StalledCore, end.WorkerStalledMS = summary.stalledCore, summary.workerStalledMS
 		}

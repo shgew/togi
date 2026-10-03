@@ -306,8 +306,13 @@ func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine
 	if tr.t.Condition == machine.Isolated {
 		end.Core = nil
 	}
-	if end.Outcome == journal.OutcomeFailure && len(tr.t.Cores) >= 2 {
-		summary := sampleEvidence(r.in.Machine.Trials.Samples(tr.id), tr.t.Cores, tr.t.Regime)
+	cores := tr.t.Cores
+	if len(cores) == 0 {
+		cores = []int{tr.t.Core}
+	}
+	summary := sampleEvidence(r.in.Machine.Trials.Samples(tr.id), cores, tr.t.Regime)
+	end.VoltageRequestMedianV, end.VoltageRequestMinV = summary.voltageMedianV, summary.voltageMinV
+	if end.Outcome == journal.OutcomeFailure {
 		end.StalledCore, end.WorkerStalledMS = summary.stalledCore, summary.workerStalledMS
 	}
 	ended, err := r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...)

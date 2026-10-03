@@ -53,3 +53,39 @@ func TestSampleEvidenceStalledWorker(t *testing.T) {
 		})
 	}
 }
+
+func TestRequestedVoltage(t *testing.T) {
+	t.Parallel()
+	sample := func(a, b float32) machine.TrialConditions {
+		table := &machine.PMTable{}
+		table.VoltageRequestV[2], table.VoltageRequestV[7] = a, b
+		table.VoltageRequestV[0], table.VoltageRequestV[15] = 1.75, 2
+		return machine.TrialConditions{PMTable: table}
+	}
+	for _, tc := range []struct {
+		name    string
+		cores   []int
+		samples []machine.TrialConditions
+		median  *float64
+		minimum *float64
+	}{
+		{"loaded subset odd", []int{2, 7}, []machine.TrialConditions{sample(1, 1.125), sample(1.5, 1.25), sample(1.25, 1)}, new(1.25), new(1.125)},
+		{"loaded subset even", []int{2, 7}, []machine.TrialConditions{sample(1.5, 1.25), sample(1, 1.125), sample(1.25, 1), sample(1.375, 1.125)}, new(1.3125), new(1.125)},
+		{"missing lanes skipped", []int{2, 7}, []machine.TrialConditions{{}, sample(1, 1.125), {}, sample(1.5, 1.25), {}}, new(1.3125), new(1.125)},
+		{"single core", []int{7}, []machine.TrialConditions{sample(1.5, 1), sample(1.375, 1.25)}, new(1.125), new(1.0)},
+		{"all missing", []int{2, 7}, []machine.TrialConditions{{}, {}}, nil, nil},
+		{"no samples", []int{2, 7}, nil, nil, nil},
+		{"no loaded cores", nil, []machine.TrialConditions{sample(1, 1.25)}, nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			summary := sampleEvidence(slices.Values(tc.samples), tc.cores, machine.R7)
+			if diff := cmp.Diff(tc.median, summary.voltageMedianV); diff != "" {
+				t.Fatalf("median (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.minimum, summary.voltageMinV); diff != "" {
+				t.Fatalf("minimum (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

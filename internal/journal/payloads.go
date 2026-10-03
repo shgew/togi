@@ -504,22 +504,24 @@ const (
 type TrialEnd struct {
 	Trial string `json:"trial"`
 	KernelBoundary
-	Outcome          Outcome        `json:"outcome"`
-	Signal           machine.Signal `json:"signal,omitempty"`
-	Core             *int           `json:"core,omitempty"`
-	DurationS        int            `json:"duration_s"`
-	TctlMaxC         *int           `json:"tctl_max_c,omitempty"`
-	LastSampleS      *int           `json:"last_sample_s,omitempty"`
-	LastSampleTctlC  *int           `json:"last_sample_tctl_c,omitempty"`
-	LastSampleMinMHz *int           `json:"last_sample_min_mhz,omitempty"`
-	LastSampleMaxMHz *int           `json:"last_sample_max_mhz,omitempty"`
-	StalledCore      *int           `json:"stalled_core,omitempty"`
-	WorkerStalledMS  *int64         `json:"worker_stalled_ms,omitempty"`
-	Reason           string         `json:"reason,omitempty"`
-	Interrupted      bool           `json:"interrupted,omitempty"`
-	Escaped          []int          `json:"escaped,omitempty"`
-	BackendMissing   bool           `json:"backend_missing,omitempty"`
-	ContainmentError string         `json:"containment_error,omitempty"`
+	Outcome               Outcome        `json:"outcome"`
+	Signal                machine.Signal `json:"signal,omitempty"`
+	Core                  *int           `json:"core,omitempty"`
+	DurationS             int            `json:"duration_s"`
+	TctlMaxC              *int           `json:"tctl_max_c,omitempty"`
+	VoltageRequestMedianV *float64       `json:"voltage_request_median_v,omitempty"`
+	VoltageRequestMinV    *float64       `json:"voltage_request_min_v,omitempty"`
+	LastSampleS           *int           `json:"last_sample_s,omitempty"`
+	LastSampleTctlC       *int           `json:"last_sample_tctl_c,omitempty"`
+	LastSampleMinMHz      *int           `json:"last_sample_min_mhz,omitempty"`
+	LastSampleMaxMHz      *int           `json:"last_sample_max_mhz,omitempty"`
+	StalledCore           *int           `json:"stalled_core,omitempty"`
+	WorkerStalledMS       *int64         `json:"worker_stalled_ms,omitempty"`
+	Reason                string         `json:"reason,omitempty"`
+	Interrupted           bool           `json:"interrupted,omitempty"`
+	Escaped               []int          `json:"escaped,omitempty"`
+	BackendMissing        bool           `json:"backend_missing,omitempty"`
+	ContainmentError      string         `json:"containment_error,omitempty"`
 }
 
 func (*TrialEnd) Kind() Kind { return KindTrialEnd }
@@ -528,6 +530,11 @@ func (p *TrialEnd) Message() string {
 	if p.TctlMaxC != nil {
 		tctl = fmt.Sprintf(" | Tctl max %d°C", *p.TctlMaxC)
 	}
+	voltage := ""
+	if p.VoltageRequestMedianV != nil && p.VoltageRequestMinV != nil {
+		voltage = fmt.Sprintf(" | loaded voltage request median %.3f V, min %.3f V", *p.VoltageRequestMedianV, *p.VoltageRequestMinV)
+	}
+	tctl += voltage
 	duration := fmt.Sprintf(" after %ds", p.DurationS)
 	if p.Signal == machine.Crash || p.Interrupted && (p.Reason == TrialReasonStoppedDuringTrial || p.Reason == TrialReasonStoppedAfterMachineCheck) {
 		duration = fmt.Sprintf(", last evidence %ds after start", p.DurationS)
@@ -557,7 +564,7 @@ func (p *TrialEnd) Message() string {
 		}
 		return fmt.Sprintf("trial %s FAIL %s%s%s", p.Trial, p.Signal, duration, tctl)
 	case OutcomeInconclusive:
-		return fmt.Sprintf("trial %s INCONCLUSIVE%s: %s", p.Trial, duration, p.Reason)
+		return fmt.Sprintf("trial %s INCONCLUSIVE%s: %s%s", p.Trial, duration, p.Reason, voltage)
 	}
 	return fmt.Sprintf("trial %s %s%s", p.Trial, p.Outcome, duration)
 }
