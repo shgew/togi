@@ -152,7 +152,7 @@ func (f *fold) Fold(e journal.Event) {
 	if _, seen := f.lastKind[e.Boot]; !seen {
 		f.boots = append(f.boots, e.Boot)
 		f.lastKind[e.Boot] = e.Kind
-	} else if e.Kind != journal.KindSessionWarning {
+	} else if e.Kind != journal.KindSessionWarning && e.Kind != journal.KindBootLeaveReason {
 		f.lastKind[e.Boot] = e.Kind
 	}
 	switch p := e.Data.(type) {

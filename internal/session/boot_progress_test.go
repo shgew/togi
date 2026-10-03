@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/tuner"
 	"github.com/shgew/togi/internal/tuningboot"
 )
 
@@ -291,6 +292,133 @@ func TestDeadEndWritesBoundedReasonAndReportsWriteFailure(t *testing.T) {
 	}
 }
 
+func TestTuningBootReasonSurvivesResumedDeadEnd(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name          string
+		entryRecorded bool
+		priorRecorded bool
+		failEntry     bool
+	}{
+		{name: "before entry"},
+		{name: "after entry", entryRecorded: true},
+		{name: "already acknowledged", priorRecorded: true},
+		{name: "entry append interrupted", failEntry: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			in, deadSeq := bootCleanupFixture(t)
+			prior := tuningboot.Reason{ID: "prior-boot", Count: 2, Reason: "service restart limit hit"}
+			bl := &effectfulBootloader{saved: "togi"}
+			if err := tuningboot.WriteReason(bl, prior); err != nil {
+				t.Fatal(err)
+			}
+			in.Bootloader = bl
+			boot, err := in.Machine.Seams().Host.BootID()
+			if err != nil {
+				t.Fatal(err)
+			}
+			j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Build: Build()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.entryRecorded {
+				if _, err := j.Append(&journal.BootSavedEntry{Before: "togi", After: ""}, deadSeq); err != nil {
+					t.Fatal(err)
+				}
+				bl.saved = ""
+			}
+			if tc.priorRecorded {
+				if _, err := j.Append(&journal.BootLeaveReason{ReasonID: prior.ID, RestartLimitCount: prior.Count, Reason: prior.Reason}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var state journal.State
+			engine := tuner.New()
+			journal.Replay(j.Events(), &state, engine)
+			engine.Project(&state)
+			if err := errors.Join(j.WriteState(state), j.Close()); err != nil {
+				t.Fatal(err)
+			}
+			bl.onWrite = func(name string) {
+				if name != tuningboot.ReasonVariable {
+					return
+				}
+				acknowledged := slices.ContainsFunc(readEvents(t, in.Dir), func(e journal.Event) bool {
+					p, ok := e.Data.(*journal.BootLeaveReason)
+					return ok && p.ReasonID == prior.ID
+				})
+				if !acknowledged {
+					t.Fatal("GRUB reason changed before its prior ID was durably acknowledged")
+				}
+			}
+
+			in.Machine.Reboot()
+			completionBoot, err := in.Machine.Seams().Host.BootID()
+			if err != nil {
+				t.Fatal(err)
+			}
+			wrap := func(j *journal.Journal) Journal { return j }
+			if tc.failEntry {
+				wrap = func(j *journal.Journal) Journal {
+					return &bootCleanupJournal{Journal: j, kind: journal.KindBootSavedEntry}
+				}
+			}
+			stop, err := stoppedTuningBoot(t, in, wrap)
+			if tc.failEntry {
+				if !errors.Is(err, errKilled) {
+					t.Fatalf("entry append interruption: %v", err)
+				}
+			} else if err != nil || stop.Reason != StopDeadEnd || !stop.Reboot {
+				t.Fatalf("complete dead end: stop=%+v err=%v", stop, err)
+			}
+			var reasons []*journal.BootLeaveReason
+			for _, e := range readEvents(t, in.Dir) {
+				if p, ok := e.Data.(*journal.BootLeaveReason); ok {
+					reasons = append(reasons, p)
+				}
+			}
+			if diff := cmp.Diff([]*journal.BootLeaveReason{{ReasonID: prior.ID, RestartLimitCount: prior.Count, Reason: prior.Reason}}, reasons); diff != "" {
+				t.Fatalf("imported reason (-want +got):\n%s", diff)
+			}
+			pending, err := tuningboot.ReadReason(bl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.entryRecorded {
+				if pending != nil {
+					t.Fatalf("acknowledged reason remains: %+v", pending)
+				}
+			} else if pending == nil || pending.ID == prior.ID || pending.Reason != "dead end boot_loop: interrupted GRUB handoff" {
+				t.Fatalf("new dead-end reason lost: %+v", pending)
+			}
+			if tc.failEntry {
+				return
+			}
+			in.Machine.Reboot()
+			if _, err := stoppedTuningBoot(t, in, func(j *journal.Journal) Journal { return j }); err != nil {
+				t.Fatal(err)
+			}
+			for _, e := range readEvents(t, in.Dir) {
+				if p, ok := e.Data.(*journal.CrashDetected); ok && p.PreviousBoot == completionBoot {
+					t.Fatalf("clean dead-end completion recorded as crash: %+v", p)
+				}
+			}
+		})
+	}
+}
+
+func TestBootLeaveReasonPreservesShutdownCompletion(t *testing.T) {
+	t.Parallel()
+	f := newFold()
+	f.Fold(journal.Event{Boot: "completed", Kind: journal.KindShutdown, Data: &journal.Shutdown{Reason: journal.ShutdownDeadEnd}})
+	f.Fold(journal.Event{Boot: "completed", Kind: journal.KindBootLeaveReason, Data: &journal.BootLeaveReason{ReasonID: "prior", Reason: "dead end"}})
+	f.Fold(journal.Event{Boot: "unfinished", Kind: journal.KindBootLeaveReason, Data: &journal.BootLeaveReason{ReasonID: "other", Reason: "service restart limit hit"}})
+	if diff := cmp.Diff([]string{"unfinished"}, f.crashedBoots("next")); diff != "" {
+		t.Fatalf("crashed boots (-want +got):\n%s", diff)
+	}
+}
+
 func TestRestartLimitSequenceDemo(t *testing.T) {
 	in := simInput(t.TempDir(), newSim(t, small()))
 	bl := &effectfulBootloader{saved: "togi"}
@@ -316,4 +444,57 @@ func TestRestartLimitSequenceDemo(t *testing.T) {
 		}
 	}
 	t.Fatal("next run did not journal leave reason")
+}
+
+type bootReasonLookupFailure struct {
+	Journal
+	err error
+}
+
+func (j *bootReasonLookupFailure) BootReasonRecorded(string) (bool, error) {
+	return false, j.err
+}
+
+func TestResumedDeadEndReasonErrorsStopBeforeGRUBHandoff(t *testing.T) {
+	t.Parallel()
+	for _, operation := range []string{"lookup", "append", "reset", "clear"} {
+		t.Run(operation, func(t *testing.T) {
+			t.Parallel()
+			r, _, closeJournal := checkedRunner(t, []int{-20, -20})
+			defer closeJournal()
+			prior := tuningboot.Reason{ID: "pending", Count: 2, Reason: "service restart limit hit"}
+			bl := &fakeBootloader{}
+			if err := tuningboot.WriteReason(bl, prior); err != nil {
+				t.Fatal(err)
+			}
+			r.in.Bootloader, r.bootReason = bl, &prior
+			e, err := r.in.Journal.Append(&journal.DeadEnd{Condition: journal.DeadEndBootLoop, Action: journal.ActionClearSavedEntryAndReboot, Detail: "interrupted handoff"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			failure := errors.New("pending reason handoff failed")
+			switch operation {
+			case "lookup":
+				r.in.Journal = &bootReasonLookupFailure{Journal: r.in.Journal, err: failure}
+			case "append":
+				r.in.Journal = &bootCleanupJournal{Journal: r.in.Journal, kind: journal.KindBootLeaveReason}
+				failure = errKilled
+			case "reset":
+				bl.writeErr = map[string]error{tuningboot.CountVariable: failure}
+			case "clear":
+				bl.writeErr = map[string]error{tuningboot.ReasonVariable: failure}
+			}
+			stop, err := r.finishDeadEnd(e, true)
+			if !errors.Is(err, failure) || stop != nil || bl.calls != 0 || r.shutdownEvent != nil {
+				t.Fatalf("failed handoff continued: stop=%+v err=%v clear calls=%d shutdown=%+v", stop, err, bl.calls, r.shutdownEvent)
+			}
+			if (r.fatal != nil) != (operation == "append") {
+				t.Fatalf("GRUB handoff failure misclassified as journal failure: %v", r.fatal)
+			}
+			got, err := tuningboot.ReadReason(bl)
+			if err != nil || got == nil || *got != prior {
+				t.Fatalf("pending reason replaced on handoff error: got=%+v err=%v", got, err)
+			}
+		})
+	}
 }

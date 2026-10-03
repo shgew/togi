@@ -306,6 +306,10 @@ func (r *runner) recordBootProgress() error {
 	if err := tuningboot.ResetCount(r.in.Bootloader); err != nil {
 		return fmt.Errorf("reset tuning-boot restart count after durable journal append: %w", err)
 	}
+	return r.importBootReason()
+}
+
+func (r *runner) importBootReason() error {
 	if r.bootReason == nil {
 		return nil
 	}
@@ -316,6 +320,9 @@ func (r *runner) recordBootProgress() error {
 	if !recorded {
 		if _, err := r.appendJournal(&journal.BootLeaveReason{ReasonID: r.bootReason.ID, RestartLimitCount: r.bootReason.Count, Reason: r.bootReason.Reason}); err != nil {
 			return err
+		}
+		if r.bootReason == nil {
+			return nil
 		}
 	}
 	if err := tuningboot.ClearReason(r.in.Bootloader); err != nil {
@@ -807,6 +814,9 @@ func (r *runner) finishDeadEnd(e journal.Event, clear bool) (*Stop, error) {
 	switch {
 	case d.Action == journal.ActionExit || (clear && r.in.Bootloader == nil):
 	case clear:
+		if err := r.importBootReason(); err != nil {
+			return nil, err
+		}
 		reasonErr := r.saveLeaveReason(fmt.Sprintf("dead end %s: %s", d.Condition, d.Detail))
 		before, after, cerr := r.in.Bootloader.ClearSavedEntry()
 		entry := &journal.BootSavedEntry{Before: before, After: after}

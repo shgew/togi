@@ -32,7 +32,7 @@ func (e *grubEnvironment) run(_ string, args ...string) (string, error) {
 	case "list":
 		out = "next_entry=normal\n"
 		if e.saved != "" {
-			out += " saved_entry=" + e.saved + "\n"
+			out += "saved_entry=" + e.saved + "\n"
 		}
 		for name, value := range e.values {
 			out += name + "=" + value + "\n"
@@ -123,7 +123,7 @@ func TestGRUBSavedEntryParsing(t *testing.T) {
 		name, listing, want string
 	}{
 		{"other keys", "next_entry=togi\nother_saved_entry=wrong\nsaved_entry_extra=wrong\n", ""},
-		{"whitespace", "next_entry=normal\n \tsaved_entry=togi-specialisation \t\n", "togi-specialisation"},
+		{"value whitespace", "next_entry=normal\nsaved_entry= togi-specialisation \t\n", " togi-specialisation \t"},
 		{"value contains equals", "saved_entry=menu=entry\n", "menu=entry"},
 		{"empty saved entry", "saved_entry=\n", ""},
 		{"no final newline", "next_entry=normal\nsaved_entry=togi", "togi"},
@@ -203,6 +203,27 @@ func TestGRUBRejectsInvalidEnvironmentValues(t *testing.T) {
 			}
 			if err := grub.Unset("saved_entry", tt.variable); err == nil || env.calls != 0 {
 				t.Fatalf("invalid unset reached GRUB: calls=%d err=%v", env.calls, err)
+			}
+		})
+	}
+}
+
+func TestGRUBRetryRejectsWhitespaceCounts(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{" ", " 1", "1 ", "\t2", "3\r"} {
+		t.Run(fmt.Sprintf("%q", value), func(t *testing.T) {
+			t.Parallel()
+			env := &grubEnvironment{saved: "togi", values: map[string]string{tuningboot.CountVariable: value}}
+			grub := GRUB{run: env.run}
+			if got, err := grub.Get(tuningboot.CountVariable); err != nil || got != value {
+				t.Fatalf("stored counter normalized: got=%q want=%q err=%v", got, value, err)
+			}
+			count, retry, err := tuningboot.RestartLimit(grub)
+			if err == nil || retry || count != 0 || env.saved != "togi" || env.values[tuningboot.CountVariable] != value || len(env.values) != 1 {
+				t.Fatalf("malformed count granted recovery: count=%d retry=%v values=%v saved=%q err=%v", count, retry, env.values, env.saved, err)
+			}
+			if diff := cmp.Diff([][]string{{"list"}, {"list"}}, env.operations); diff != "" {
+				t.Fatalf("malformed count changed environment (-want +got):\n%s", diff)
 			}
 		})
 	}

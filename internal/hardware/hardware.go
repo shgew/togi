@@ -40,7 +40,7 @@ func (g GRUB) Get(name string) (string, error) {
 		return "", err
 	}
 	for line := range strings.Lines(out) {
-		if v, ok := strings.CutPrefix(strings.TrimSpace(line), name+"="); ok {
+		if v, ok := strings.CutPrefix(strings.TrimSuffix(line, "\n"), name+"="); ok {
 			return v, nil
 		}
 	}
