@@ -25,7 +25,6 @@ Measure bench wall time locally; do not use timings or scenario tables from an o
 ## What you may change
 
 - `internal/tuner/**`: search, hunts, refinement and guard decisions.
-- Defaults in `internal/config` that set trial durations and start counts.
 - Tests and specifications describing a deliberately changed rule, following the repository's conventions.
 
 Everything else is frozen for tuner experiments, especially:
@@ -35,6 +34,8 @@ Everything else is frozen for tuner experiments, especially:
 - **The hardware path:** `internal/smu`, `internal/trial` and `internal/detect`.
 
 A simulator or machine-file change is an evaluation change, not a tuner experiment. Record ideas needing frozen files in the report for a separate owner decision.
+
+The defaults in `internal/config` are frozen too, and so is the evidence they ask for (the next section's **Evidence volume** rule). Trading evidence for time is safe only when the simulator predicts failures at depths the journal has not tested. The forward-chained check in `just fit` ([benchmarking](../../docs/benchmarking.md#forward-chained-check)) shows that it does not yet: the fit predicts later sessions worse than a constant failure rate. V2 judges hazard from that same simulator, so it cannot catch a shorter trial or fewer starts that miss a real failure. The owner lifts this freeze here, in a separate pull request, once the forward-chained check supports it.
 
 After new real target-machine runs, the owner can refresh the privacy-safe extract with `just facts COPY-OF-STATE-DIR` and refit with `just fit`. Use a temporary copy, never the live state directory. These are owner-triggered evidence updates, not experiments: review their model checks and record a new baseline before comparing tuners in the changed environment. See [benchmarking](../../docs/benchmarking.md) for fitting limits and the checked, constrained bootstrap ensemble.
 
@@ -46,6 +47,7 @@ Breaking any rule invalidates an experiment, however good its ratio looks.
 - **Traceable and deterministic.** Every new decision is a journal event with a cause and a plain-language `msg`, as the journal spec requires. Replaying the journal gives the same decisions.
 - **Safe writes.** Offsets stay clamped to [-50, 0] and pass mark validation, including intermediate SMU writes.
 - **Failure detection stays intact.** Failures remain evidence under the spec's coverage and supersession rules. Never ignore, retry away or reclassify a failure to save time.
+- **Evidence volume.** Each step requires the decisive starts set by `[evidence]` miss and rate. Each trial runs for its configured duration from `[durations]`, and a qualifying rotation runs every regime start in `[guard] rotation`. A change may reorder these starts, skip work the spec already allows to be skipped, or avoid redundant trials. It may not ask for fewer starts, shorter trials or a smaller rotation, whether through configuration or through tuner code.
 - **Tests pass.** Run `go test ./internal/tuner/ ./internal/simrun/ ./cmd/togi/` before each candidate bench run. Update tests for deliberately changed rules; remove tests that only pin obsolete implementation behavior. Run `just gate` before keeping a commit and `just check` before opening a pull request.
 - **Proof has three parts.** A kept change wins the bench, preserves every guardrail and bases target-machine claims on fitted files that pass the model check against real facts. The harness prints model flags but does not reject the verdict or change exit status for them: inspect them separately. A flagged target member blocks the target claim even if the verdict says ACCEPT.
 - **No ruleset bump per experiment.** The starting ruleset is 7. One bump covers the kept decision changes when they become pull requests; follow `AGENTS.md`'s breaking-pull-request and release rules. Recheck the final work before opening it. Agents open pull requests; the owner merges and deploys manually.
@@ -80,7 +82,7 @@ For a run error, inspect its kept simulator log. Fix a trivial implementation er
 
 ## Ideas and model limits
 
-Measure where the current runs spend time rather than trusting old tables. Possible mechanisms include fewer hunt masks, earlier evidence-based stopping, guard order, evidence reuse allowed by the spec, fewer redundant joint-backoff probes, and search or refinement step sizes. Shorter trials may miss late-onset failures; `late-onset` and V2 test that trade-off.
+Measure where the current runs spend time rather than trusting old tables. Possible mechanisms include fewer hunt masks, guard order, evidence reuse allowed by the spec, fewer redundant joint-backoff probes, and search or refinement step sizes. Shorter trials, fewer starts and earlier stopping are frozen under **Evidence volume**; record such ideas in the report with their measured bound.
 
 ADR 0023 rejected probing the shallowest member first, always backing off the shallowest member, moving every member to its passing probe, and reusing edge-probe evidence across hunts. Revisit these only with a new argument.
 
