@@ -196,6 +196,9 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 		sessionStderr = &hidden
 	}
 	if err := j.Open(); err != nil {
+		if dash != nil {
+			dash.hide()
+		}
 		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 	}
 	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr, Close: j.Close, SessionID: j.SessionID})

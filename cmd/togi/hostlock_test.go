@@ -7,11 +7,13 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
 	"testing"
+	"testing/synctest"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/config"
@@ -19,6 +21,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
+	"golang.org/x/sys/unix"
 )
 
 func TestResetRefusesHostLock(t *testing.T) {
@@ -340,6 +343,66 @@ func TestRunReportsConstructionError(t *testing.T) {
 	if code != exitError || !strings.Contains(stderr.String(), "read CPU topology: unavailable") {
 		t.Fatalf("construction error: exit %d, stderr %s", code, stderr.String())
 	}
+}
+
+func TestRunStopsDashboardAfterJournalOpenFailure(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("hardware runs need Linux")
+	}
+	winch := make(chan os.Signal, 1)
+	signal.Notify(winch, syscall.SIGWINCH)
+	defer signal.Stop(winch)
+	synctest.Test(t, func(t *testing.T) {
+		g := testGlobals(t)
+		path := filepath.Join(g.stateDir, "events.jsonl")
+		if err := os.Symlink(filepath.Join(g.stateDir, "missing", "events.jsonl"), path); err != nil {
+			t.Fatal(err)
+		}
+		out, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer out.Close()
+		if err := unix.IoctlSetWinsize(int(out.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 10, Col: 20}); err != nil {
+			t.Fatal(err)
+		}
+		dash := &dashboard{dir: g.stateDir, out: out}
+		defer func() {
+			if dash.cancel != nil {
+				dash.hide()
+			}
+		}()
+		m, err := sim.New(sim.Config{Seed: 82})
+		if err != nil {
+			t.Fatal(err)
+		}
+		newMachine := func(config.Config, string) (machine.Machine, error) {
+			return m.Seams(), nil
+		}
+		var stderr bytes.Buffer
+		code := runHardware(context.Background(), &g, config.Default(), false, nil, 0, &stderr, journal.Renderer{}, dash, newMachine)
+		synctest.Wait()
+		if diff := cmp.Diff(exitError, code); diff != "" {
+			t.Errorf("journal open exit (-want +got): %s", diff)
+		}
+		if !strings.Contains(stderr.String(), "togi run: open "+path+":") {
+			t.Errorf("missing journal open diagnostic: %s", stderr.String())
+		}
+		dash.mu.Lock()
+		showing, done := dash.showing, dash.done
+		dash.mu.Unlock()
+		if done == nil {
+			t.Fatal("run returned before showing the dashboard")
+		}
+		if diff := cmp.Diff(false, showing); diff != "" {
+			t.Errorf("dashboard showing after return (-want +got): %s", diff)
+		}
+		select {
+		case <-done:
+		default:
+			t.Error("dashboard redraw goroutine still running after return")
+		}
+	})
 }
 
 func TestReadOnlyCommandsDoNotTakeHostLock(t *testing.T) {
