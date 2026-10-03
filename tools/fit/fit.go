@@ -157,6 +157,9 @@ func (l *likelihood) rawScore(indices []int) float64 {
 			loss += 0.5 * effect * effect
 		}
 	}
+	if c := l.cfg.CCD; c != nil {
+		loss += 0.5 * (c.Effect[0]*c.Effect[0] + c.Effect[1]*c.Effect[1])
+	}
 	return loss
 }
 
@@ -229,32 +232,7 @@ func initialConfig(records []trialfacts.Record) sim.Config {
 			cfg.Edges[core].Resident[r] = -50
 		}
 	}
-	for ccd := range 2 {
-		members := make(map[int]int)
-		for core := ccd * cores / 2; core < (ccd+1)*cores/2; core++ {
-			members[core] = -50
-		}
-		found := false
-		for _, r := range records {
-			if r.Class.Regime != machine.R7 || r.Outcome != journal.OutcomeFailure {
-				continue
-			}
-			all := true
-			for core := range members {
-				all = all && r.Profile[core] < 0
-			}
-			if !all {
-				continue
-			}
-			found = true
-			for core := range members {
-				members[core] = max(members[core], r.Profile[core])
-			}
-		}
-		if found {
-			cfg.Joints = append(cfg.Joints, sim.Joint{Members: members, Regimes: []machine.Regime{machine.R7}, Rate: 0.005, Signal: machine.Crash})
-		}
-	}
+	cfg.CCD = &sim.CCD{LogRate: -7, Slope: 0.1}
 	return cfg
 }
 
@@ -275,9 +253,13 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 	previous := math.Inf(1)
 	for range 12 {
 		l.fitSingleCore(&cfg)
-		l.fitJoints(&cfg)
-		for ccd := range 2 {
-			l.addJoint(&cfg, records, ccd)
+		if cfg.CCD == nil {
+			l.fitJoints(&cfg)
+			for ccd := range 2 {
+				l.addJoint(&cfg, records, ccd)
+			}
+		} else {
+			l.fitCCD(&cfg)
 		}
 		l.fitRegimeEdges(&cfg)
 		l.fitWorkloads(&cfg)
@@ -320,6 +302,9 @@ func (l *likelihood) fitJoints(cfg *sim.Config) {
 func (l *likelihood) fitRegimeEdges(cfg *sim.Config) {
 	for core := range cfg.Edges {
 		for r, regime := range machine.Regimes {
+			if cfg.CCD != nil && regime == machine.R7 {
+				continue
+			}
 			for _, isolated := range []bool{true, false} {
 				if isolated && r >= 5 {
 					continue
@@ -466,6 +451,9 @@ func (l *likelihood) fitWorkloads(cfg *sim.Config) {
 	for core := range cfg.Edges {
 		workloads := make(map[string]bool)
 		for _, o := range l.obs {
+			if cfg.CCD != nil && o.spec.Regime == machine.R7 {
+				continue
+			}
 			if o.k > 0 && slices.Contains(o.spec.Cores, core) {
 				if cfg.SingleCore != nil && singleCoreObservation(o) {
 					continue
@@ -522,6 +510,10 @@ func cloneMachine(cfg sim.Config) sim.Config {
 		s.Core = slices.Clone(s.Core)
 		s.Workload = maps.Clone(s.Workload)
 		cfg.SingleCore = &s
+	}
+	if cfg.CCD != nil {
+		c := *cfg.CCD
+		cfg.CCD = &c
 	}
 	cfg.Edges = slices.Clone(cfg.Edges)
 	for core := range cfg.Edges {

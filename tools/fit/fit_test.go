@@ -1,7 +1,6 @@
 package main
 
 import (
-	"maps"
 	"math"
 	"math/rand/v2"
 	"slices"
@@ -23,11 +22,8 @@ func synthetic(t *testing.T) (sim.Config, []trialfacts.Record) {
 	t.Helper()
 	model := sim.DefaultModel()
 	model.PastEdgeRate, model.Growth = 0.008, 3
-	cfg := sim.Config{Cores: 4, Model: &model, Edges: make([]sim.Edges, 4), Joints: []sim.Joint{
-		{Members: map[int]int{0: -25, 1: -27}, Regimes: []machine.Regime{machine.R7}, Rate: 0.006},
-		{Members: map[int]int{2: -33, 3: -34}, Regimes: []machine.Regime{machine.R7}, Rate: 0.012},
-	}}
-	cfg.SingleCore = &sim.SingleCore{LogRate: math.Log(0.008) + 4*math.Log(3), Slope: math.Log(3), Core: []float64{0, -math.Log(3), -2*math.Log(3), -3*math.Log(3)}, Workload: map[string]float64{"synthetic": 0}}
+	cfg := sim.Config{Cores: 4, Model: &model, Edges: make([]sim.Edges, 4), CCD: &sim.CCD{LogRate: math.Log(0.006), Slope: 0.15, Effect: [2]float64{0, 0.6}}}
+	cfg.SingleCore = &sim.SingleCore{LogRate: math.Log(0.008) + 4*math.Log(3), Slope: math.Log(3), Core: []float64{0, -math.Log(3), -2 * math.Log(3), -3 * math.Log(3)}, Workload: map[string]float64{"synthetic": 0}}
 	for core := range cfg.Edges {
 		for r := range cfg.Edges[core].Isolated {
 			cfg.Edges[core].Isolated[r] = -20 - core
@@ -72,15 +68,12 @@ func synthetic(t *testing.T) (sim.Config, []trialfacts.Record) {
 			}
 		}
 	}
-	for _, joint := range cfg.Joints {
-		cores := slices.Sorted(maps.Keys(joint.Members))
-		for a := -1; a <= 1; a++ {
-			for b := -1; b <= 1; b++ {
-				profile := make([]int, 4)
-				profile[cores[0]] = joint.Members[cores[0]] + a
-				profile[cores[1]] = joint.Members[cores[1]] + b
-				add(profile, machine.R7, cores, 60)
-			}
+	for ccd := range 2 {
+		cores := []int{ccd * 2, ccd*2 + 1}
+		for depth := 15; depth <= 40; depth += 5 {
+			profile := make([]int, 4)
+			profile[cores[0]], profile[cores[1]] = -depth, -depth
+			add(profile, machine.R7, cores, 150)
 		}
 	}
 	return cfg, records
@@ -101,28 +94,9 @@ func TestFitRecoversMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, o := range aggregate(records) {
-		if !singleCoreObservation(o) {
-			continue
-		}
-		want := source.FailureProbability(o.profile, o.spec)
-		actual := fitted.FailureProbability(o.profile, o.spec)
+		want, actual := source.FailureProbability(o.profile, o.spec), fitted.FailureProbability(o.profile, o.spec)
 		if math.Abs(actual-want) > 0.15 {
-			t.Errorf("single-core profile %v: p=%g want %g", o.profile, actual, want)
-		}
-	}
-	for _, joint := range known.Joints {
-		cores := slices.Sorted(maps.Keys(joint.Members))
-		for a := -1; a <= 1; a++ {
-			for b := -1; b <= 1; b++ {
-				profile := make([]int, known.Cores)
-				profile[cores[0]] = joint.Members[cores[0]] + a
-				profile[cores[1]] = joint.Members[cores[1]] + b
-				spec := machine.TrialSpec{Regime: machine.R7, Workload: machine.Workload{ID: "synthetic"}, Cores: cores, Duration: 60 * time.Second}
-				want, actual := source.FailureProbability(profile, spec), fitted.FailureProbability(profile, spec)
-				if math.Abs(actual-want) > 0.12 {
-					t.Errorf("joint profile %v: p=%g want %g", profile, actual, want)
-				}
-			}
+			t.Errorf("profile %v: p=%g want %g", o.profile, actual, want)
 		}
 	}
 }
@@ -350,6 +324,7 @@ func TestCloneMachineIsolatesConstrainedParameters(t *testing.T) {
 
 func TestJointSearchSeparatesCleanBoundary(t *testing.T) {
 	cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
+	cfg.CCD = nil
 	cfg.Model.NearEdgeRate = 0
 	cfg.Joints = []sim.Joint{{Members: map[int]int{0: -10, 1: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 0.01}}
 	spec := machine.TrialSpec{Regime: machine.R7, Cores: []int{0, 1}, Duration: 60 * time.Second}

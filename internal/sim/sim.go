@@ -30,6 +30,7 @@ type Config struct {
 	// Model nil means DefaultModel(); a non-nil model is used verbatim, zero fields included.
 	Model      *Model
 	SingleCore *SingleCore
+	CCD        *CCD
 	// Boots counts the boots before the first; boot numbering and boot IDs continue from it.
 	Boots int
 	// Start is the clock at the first boot; zero means 2026-01-01T00:00:00Z.
@@ -56,6 +57,13 @@ type SingleCore struct {
 	Slope    float64            `toml:"slope"`
 	Core     []float64          `toml:"core"`
 	Workload map[string]float64 `toml:"workload"`
+}
+
+// CCD adds a smooth R7 hazard for each loaded CCD, using its mean applied depth.
+type CCD struct {
+	LogRate float64    `toml:"log_rate"`
+	Slope   float64    `toml:"slope"`
+	Effect  [2]float64 `toml:"effect"`
 }
 
 type Joint struct {
@@ -223,6 +231,16 @@ func New(cfg Config) (*Machine, error) {
 			if !finite(effect) {
 				return nil, errors.New("new simulator: single_core workload effects must be finite")
 			}
+		}
+	}
+	if c := cfg.CCD; c != nil {
+		for _, x := range []float64{c.LogRate, c.Slope, c.Effect[0], c.Effect[1]} {
+			if math.IsNaN(x) || math.IsInf(x, 0) {
+				return nil, errors.New("new simulator: ccd parameters must be finite")
+			}
+		}
+		if c.Slope < 0 {
+			return nil, errors.New("new simulator: ccd slope must be nonnegative")
 		}
 	}
 	for _, kind := range slices.Sorted(maps.Keys(model.Reset)) {
