@@ -1,54 +1,59 @@
- togi   HUNT   session 1m40s   last event 1m30...
-hunt 3 mask 4 | 1/3 done | 1 failure | 0 crashes
+   togi   00:18:20  running 1m40s  1 failure  0 crashes
 
-all 3 cores   masked   R7 mprime AVX2 36K-248K...
-turn order 00 02 01
-last failure 1m33s ago   unattributed crash fa...
+  █  FINDING THE CULPRIT
+  █  
+  █  A test failed during an all-core load on all 3 cores, and nothing in it names
+  █  a single core.
+  █  
+  █  So I'm narrowing it down. Core 02 is back at the offset it failed with. Core
+  █  00 is parked at offsets that passed before, so it can't be the cause.
+  █  
+  █  If this test fails, core 02 is the culprit. If it passes 5 times, I try a
+  █  different group next.
+  █  
+  █  now  hunt 3, test 4, run 1 of 5
+  █  all-core load on all 3 cores (mprime AVX2 36K-248K)
+  
+  
+  ■ Find limits   ► Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
+  █████████████   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
+  3/3 cores                       after a         the goal        until stopped
+                  paused          clean lap                       
+  
+   HUNT 3    The lap waits while I find which cores caused the failure
+  
+  
+  CCD 0                                -10       -20       -30       -40       -50
+► 00  -20  parked               ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒······························
+► 01  -30  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌···················
+
+  CCD 1                                -10       -20       -30       -40       -50
+► 02  -10  suspect              ██████████········································
+  
+  Coming up
+  When the hunt ends, I record its result and move the offsets back past it. Then
+  the failed test reruns 5 times.
+  Then the work the failure interrupted continues.
+
+  What happened
+    0h00m  hunt     #3 started: which cores caused it?
+    0h00m  crash    all-core load on all 3 cores, rebooted
+    0h00m  combo    core 00 at -25 and core 02 at -15 fail together
+    0h00m  start    session started on 3 cores
 
 
-CCD 0
-
-┌─ 00 > TESTING HUNT MASK ─────────── resident ─┐
-│                      ▀▀█ █▀█                  │
-│                  ▀▀▀ █▀▀ █ █                  │
-│                      ▀▀▀ ▀▀▀                  │
-│ ████████·█████████....j...................... │
-│ 0      -10      -20  -25                  -50 │
-└───────────────────────────────────────────────┘
-
-┌─ 01 > TESTING ───────────────────────── DONE ─┐
-│                      ▀▀█ █▀█                  │
-│                  ▀▀▀  ▀█ █ █                  │
-│                      ▀▀▀ ▀▀▀                  │
-│ ██████████████████████████·x................. │
-│ 0                        -30              -50 │
-└───────────────────────────────────────────────┘
 
 
-CCD 1
-
-┌─ 02 > TESTING HUNT MASK ─────────── resident ─┐
-│                      ▀█  █▀█                  │
-│                  ▀▀▀  █  █ █                  │
-│                      ▀▀▀ ▀▀▀                  │
-│ ████████>....j............................... │
-│ 0      -10  -15                           -50 │
-└───────────────────────────────────────────────┘
 
 
-CO 0 -> -50     > trial     x failed mark     ...
 
 
-Recent
-0h00m  session dashboard started by a togi bui...
-0h00m  core 00 starts resident at -20 ()
-0h00m  core 01 starts done at -30 ()
-0h00m  core 02 starts resident at -10 ()
-0h00m  joint mark J1: core 00 -25 + core 02 -1...
-0h00m  trial previous cores 00, 01, 02 R7 mpri...
-0h00m  trial previous FAIL crash, last evidenc...
-0h00m  unattributed crash failure in resident ...
-0h00m  hunt 3: unattributed failure in idle; a...
-0h00m  hunt 3 mask 4: cores 02 at failing offs...
-0h00m  trial mask cores 00, 01, 02 R7 mprime A...
+
+
+
+
+
+
+
+
 

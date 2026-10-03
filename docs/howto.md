@@ -113,7 +113,7 @@ Rebuild (`nixos-rebuild boot`, or your usual way), then reboot. In BIOS, every C
 sudo togi run
 ```
 
-It shows the session as a dashboard redrawn every second: search, a hunt or refinement when active, the running start and one tile per core. Watch a few trials, then press Ctrl-C. It restores each core to its baseline or its current offset when shallower, records `shutdown` and exits 0; the next run resumes. `sudo togi run --no-tui` prints one line per event instead.
+It shows the session as the `togi watch` dashboard, redrawn every second: what togi is doing and why, the running test, the stages and one row per core. `togi watch` in another terminal shows the same screen and takes keys: `?` explains it. Watch a few trials, then press Ctrl-C. It restores each core to its baseline or its current offset when shallower, records `shutdown` and exits 0; the next run resumes. `sudo togi run --no-tui` prints one line per event instead.
 
 ```sh
 togi status

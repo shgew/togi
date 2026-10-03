@@ -16,6 +16,7 @@ import (
 	"github.com/shgew/togi/internal/tuner"
 )
 
+// watchSessionLine is a session start followed by a warning carrying msg, which the dashboard shows verbatim.
 func watchSessionLine(t *testing.T, msg string) []byte {
 	t.Helper()
 	event := struct {
@@ -25,17 +26,22 @@ func watchSessionLine(t *testing.T, msg string) []byte {
 		Msg  string       `json:"msg"`
 		journal.SessionStart
 	}{
-		Seq: 1, Time: time.Unix(1000, 0).UTC(), Kind: journal.KindSessionStart, Msg: msg,
+		Seq: 1, Time: time.Unix(1000, 0).UTC(), Kind: journal.KindSessionStart, Msg: "session reload started",
 		Schema: journal.Schema, Ruleset: tuner.Ruleset, Session: "reload", Cores: []machine.CoreInfo{{Core: 0, CPUs: []int{0, 1}}},
 	}
 	data, err := json.Marshal(event)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return append(data, '\n')
+	return append(append(data, '\n'), warningLine(t, 2, msg)...)
 }
 
 func watchWarningLine(t *testing.T, msg string) []byte {
+	t.Helper()
+	return warningLine(t, 3, msg)
+}
+
+func warningLine(t *testing.T, seq int, msg string) []byte {
 	t.Helper()
 	event := struct {
 		Seq  int          `json:"seq"`
@@ -43,7 +49,7 @@ func watchWarningLine(t *testing.T, msg string) []byte {
 		Kind journal.Kind `json:"kind"`
 		Msg  string       `json:"msg"`
 		journal.SessionWarning
-	}{Seq: 2, Time: time.Unix(1001, 0).UTC(), Kind: journal.KindSessionWarning, Msg: msg, Operation: "retain", Error: msg}
+	}{Seq: seq, Time: time.Unix(1000+int64(seq), 0).UTC(), Kind: journal.KindSessionWarning, Msg: msg, Operation: "retain", Error: msg}
 	data, err := json.Marshal(event)
 	if err != nil {
 		t.Fatal(err)

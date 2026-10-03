@@ -51,7 +51,7 @@ func terminalFrame(t *testing.T, out *terminalOutput, index, width, height int, 
 	if !clear && strings.Contains(frame, "\x1b[2J") {
 		t.Fatal("unchanged terminal geometry cleared the screen")
 	}
-	lines := strings.Split(strings.TrimSuffix(strings.TrimPrefix(frame, prefix), "\x1b[J"), "\n")
+	lines := strings.Split(strings.TrimSuffix(strings.TrimPrefix(frame, prefix), "\x1b[J"), "\r\n")
 	if len(lines) != height-1 {
 		t.Fatalf("frame did not use requested terminal height: rows=%d want %d", len(lines), height-1)
 	}
@@ -59,9 +59,6 @@ func terminalFrame(t *testing.T, out *terminalOutput, index, width, height int, 
 		if !strings.HasSuffix(line, "\x1b[K") || lipgloss.Width(ansi.Strip(line)) > width-1 {
 			t.Fatalf("frame wrote reserved column or failed to erase stale row: %q", line)
 		}
-	}
-	if lipgloss.Width(ansi.Strip(lines[0])) != width-1 {
-		t.Fatalf("frame did not use requested terminal width: %q", lines[0])
 	}
 	return ansi.Strip(frame)
 }

@@ -120,15 +120,14 @@ func TestDashboardEscapesDiagnosticControls(t *testing.T) {
 		data journal.Payload
 	}{
 		{"recent backend retry", &journal.BackendRetry{}},
-		{"last failure", &journal.Failure{}},
 		{"dead end", &journal.DeadEnd{Condition: journal.DeadEndContainment}},
 		{"in flight", &journal.SMUIntent{}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			events := []journal.Event{start, {Seq: 2, Time: now, Kind: tt.data.Kind(), Msg: msg, Data: tt.data}}
 			frame := Render(Project(events), 300, 40, now)
-			if !strings.Contains(frame, escaped) {
-				t.Fatalf("diagnostic not visibly escaped:\n%q", frame)
+			if !strings.Contains(strings.Join(strings.Fields(ansi.Strip(frame)), ""), escaped) {
+				t.Fatalf("diagnostic not visibly escaped, even across wrapped lines:\n%q", frame)
 			}
 			for _, control := range []string{"\x1b[2J", "\x1b]52;", "\r", "\u009b", "\u009d", "\u009c", "\u2028", "\u2029"} {
 				if strings.Contains(frame, control) {

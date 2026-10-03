@@ -1,0 +1,69 @@
+   togi   00:18:20  running 1m40s  0 failures  0 crashes
+
+  TESTING TOGETHER  lap 1, step 1 of 3  ███████████████████░░░░░  0m27s left
+
+│   maxed out             At -50, the deepest Curve Optimizer allows.
+│ 
+│   can go deeper         Nothing known stops it going deeper. The next deepening
+│                         round will try.
+│ 
+│   held back by others   Alone it can go deeper, up to the red tick, but it
+│                         failed together with other cores at their offsets, so it
+│                         backed off.
+│ 
+│   suspect               During a hunt: back at the offset it failed with, so
+│                         this test tells whether it is part of the cause.
+│ 
+│   parked                During a hunt: held at an offset that passed before,
+│                         usually 0, so it can't be the cause.
+│ 
+│   solo limit            The deepest offset a core passed with every other core
+│                         at 0.
+│ 
+│   combination           Offsets that fail only when several cores are that deep
+│                         at the same time.
+│ 
+│   lap                   One pass through the list of tests. A clean lap has no
+│                         failure.
+│ 
+│   run                   One launch of one test. A step needs several passes in a
+│                         row, because failures are random and one pass proves
+│                         little.
+│ 
+│ 
+│ The kinds of test
+│   light load               One thread of light work, which lets a core boost
+│                            highest.
+█                            Like a game's main thread, opening apps or loading
+█                            web pages.
+█ 
+█   heavy vector load        One thread of heavy vector math, which draws the most
+█                            current.
+█                            Like video encoding, 3D rendering or scientific math
+█                            on one thread.
+█ 
+█   load steps               A load switched on and off in bursts, so the voltage
+█                            has to follow sudden swings.
+█                            Like a game loading a level, or apps waking up for
+█                            short tasks.
+█ 
+█   partial load             A load that runs only part of the time.
+█                            Like background work: a video call, music playback, a
+█                            download.
+█ 
+█   both threads             Work on both threads of a core at once.
+█                            Like compiling or other work that keeps both threads
+█                            of a core busy.
+█ 
+█   idle with short bursts   The machine mostly idle, with short bursts, the way
+█                            it sits on a desktop.
+█                            Like a desktop left alone, or reading and typing.
+█ 
+█   all-core load            Heavy work on many cores at once, for power and heat.
+█                            Like rendering, compiling or exporting video on every
+█                            core.
+█ 
+█ 
+█ Passing tests can't prove offsets will never fail. They show which tests passed, and more laps catch rarer failures.
+
+  ↑↓ PgUp PgDn  lines 63-125 of 125    ? or Esc back    L event log    q quit
