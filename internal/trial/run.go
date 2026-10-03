@@ -32,30 +32,9 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	started := time.Now()
 	watchCtx, cancelWatch := context.WithDeadline(ctx, started.Add(t.spec.Duration))
 	defer cancelWatch()
-	pendingSamples := make(chan machine.TrialConditions, 1)
-	sampleErrors := make(chan error, 1)
-	samplesDone := make(chan error, 1)
-	go func() {
-		samples, writeErr := t.openSamples(filepath.Join(t.options.Dir, t.spec.ID))
-		if writeErr != nil {
-			sampleErrors <- writeErr
-			samplesDone <- writeErr
-			return
-		}
-		for sample := range pendingSamples {
-			if writeErr = appendSample(samples, sample); writeErr != nil {
-				sampleErrors <- writeErr
-				break
-			}
-		}
-		if closeErr := samples.Close(); closeErr != nil {
-			writeErr = errors.Join(writeErr, fmt.Errorf("close trial samples: %w", closeErr))
-		}
-		samplesDone <- writeErr
-	}()
+	samples := startSampleWriter(filepath.Join(t.options.Dir, t.spec.ID), t.openSamples)
 	defer func() {
-		close(pendingSamples)
-		err = errors.Join(err, <-samplesDone)
+		err = errors.Join(err, samples.close())
 	}()
 	conditions := newConditionsSampler(t.options, t.spec, started)
 	result.Stops = t.initialStops
@@ -160,11 +139,8 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 			if temp := sample.TctlC; temp != nil && (result.TctlMaxC == nil || *temp > *result.TctlMaxC) {
 				result.TctlMaxC = temp
 			}
-			select {
-			case pendingSamples <- sample:
-			default:
-			}
-		case <-sampleErrors:
+			samples.write(sample)
+		case <-samples.errors:
 			decision = true
 		case <-signal:
 			now := time.Now()
