@@ -2,7 +2,6 @@ package sim
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"iter"
 	"os"
@@ -87,22 +86,7 @@ func (t trials) Samples(id string) iter.Seq[machine.TrialConditions] {
 		if t.m.samplesDir == "" {
 			return
 		}
-		f, err := os.Open(filepath.Join(t.m.samplesDir, id, "samples.jsonl"))
-		if err != nil {
-			return
-		}
-		defer f.Close()
-		reader := bufio.NewReader(f)
-		for {
-			line, err := reader.ReadBytes('\n')
-			if err != nil {
-				return
-			}
-			var sample machine.TrialConditions
-			if json.Unmarshal(line, &sample) == nil && !yield(sample) {
-				return
-			}
-		}
+		machine.ReadSamples(filepath.Join(t.m.samplesDir, id))(yield)
 	}
 }
 

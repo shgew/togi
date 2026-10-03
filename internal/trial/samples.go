@@ -1,8 +1,8 @@
 package trial
 
 import (
-	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"os"
@@ -123,6 +123,53 @@ type sampleFile interface {
 	Close() error
 }
 
+type sampleWriter struct {
+	pending chan machine.TrialConditions
+	errors  chan error
+	done    chan error
+}
+
+func startSampleWriter(dir string, open func(string) (sampleFile, error)) sampleWriter {
+	w := sampleWriter{
+		pending: make(chan machine.TrialConditions, 1),
+		errors:  make(chan error, 1),
+		done:    make(chan error, 1),
+	}
+	go w.run(dir, open)
+	return w
+}
+
+func (w sampleWriter) run(dir string, open func(string) (sampleFile, error)) {
+	samples, writeErr := open(dir)
+	if writeErr != nil {
+		w.errors <- writeErr
+		w.done <- writeErr
+		return
+	}
+	for sample := range w.pending {
+		if writeErr = appendSample(samples, sample); writeErr != nil {
+			w.errors <- writeErr
+			break
+		}
+	}
+	if closeErr := samples.Close(); closeErr != nil {
+		writeErr = errors.Join(writeErr, fmt.Errorf("close trial samples: %w", closeErr))
+	}
+	w.done <- writeErr
+}
+
+func (w sampleWriter) write(sample machine.TrialConditions) {
+	select {
+	case w.pending <- sample:
+	default:
+	}
+}
+
+func (w sampleWriter) close() error {
+	close(w.pending)
+	return <-w.done
+}
+
 func openSamples(dir string) (sampleFile, error) {
 	f, err := os.OpenFile(filepath.Join(dir, "samples.jsonl"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
@@ -161,21 +208,6 @@ func appendSample(f sampleFile, p machine.TrialConditions) error {
 
 func (r *Runner) Samples(id string) iter.Seq[machine.TrialConditions] {
 	return func(yield func(machine.TrialConditions) bool) {
-		f, err := os.Open(filepath.Join(r.options.Dir, id, "samples.jsonl"))
-		if err != nil {
-			return
-		}
-		defer f.Close()
-		reader := bufio.NewReader(f)
-		for {
-			line, err := reader.ReadBytes('\n')
-			if err != nil {
-				return
-			}
-			var p machine.TrialConditions
-			if json.Unmarshal(line, &p) == nil && !yield(p) {
-				return
-			}
-		}
+		machine.ReadSamples(filepath.Join(r.options.Dir, id))(yield)
 	}
 }
