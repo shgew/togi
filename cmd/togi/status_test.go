@@ -2,9 +2,7 @@ package main
 
 import (
 	"bytes"
-	"compress/gzip"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,19 +11,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
-	"github.com/shgew/togi/internal/watch"
+	"github.com/shgew/togi/internal/watch/watchtest"
 )
 
 func TestStatus(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	renderFixture(t, dir, "concluded")
+	watchtest.Install(t, dir, "concluded")
 	_, st, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +43,7 @@ func TestStatus(t *testing.T) {
 func TestHistoricalTierChangeReadOnlyViews(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	renderFixture(t, dir, "concluded")
+	watchtest.Install(t, dir, "concluded")
 	events, st, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +89,7 @@ func TestHistoricalTierChangeReadOnlyViews(t *testing.T) {
 func TestBetweenTrialMCEReadOnlyViews(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	build := renderFixture(t, dir, "concluded")
+	build := watchtest.Install(t, dir, "concluded")
 	_, before, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +98,7 @@ func TestBetweenTrialMCEReadOnlyViews(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := j.Append(&journal.MCE{CPU: 0, Core: 0, Corrected: true, BetweenTrials: true, Lines: []string{"between-trial hardware error"}})
+	_, err = j.Append(&journal.MCE{CPU: 0, Core: 0, Corrected: true, BetweenTrials: true, Lines: []string{"between-trial hardware error"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,16 +114,12 @@ func TestBetweenTrialMCEReadOnlyViews(t *testing.T) {
 			t.Fatalf("%s hides between-trial MCE: %s", command, out.String())
 		}
 	}
-	events, after, _, err := replayDir(dir)
+	_, after, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if diff := cmp.Diff(before.Cores, after.Cores); diff != "" {
 		t.Fatalf("between-trial MCE changed tuning state: %s", diff)
-	}
-	frame := ansi.Strip(watch.Render(watch.Project(events), 240, 67, e.Time))
-	if !strings.Contains(frame, "between trials (recorded only)") {
-		t.Fatalf("watch hides between-trial MCE: %s", frame)
 	}
 }
 
@@ -142,7 +135,7 @@ func TestStatusJointMarkAndOpenHunt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
-			renderFixture(t, dir, tc.name)
+			watchtest.Install(t, dir, tc.name)
 			events, st, _, err := replayDir(dir)
 			if err != nil {
 				t.Fatal(err)
@@ -156,21 +149,6 @@ func TestStatusJointMarkAndOpenHunt(t *testing.T) {
 			var out bytes.Buffer
 			writeStatus(&out, st, events)
 			golden(t, "status-"+tc.name, out.String())
-			frameEvents := events
-			if tc.until != "" {
-				maskStarted := false
-				for i, e := range events {
-					if e.Kind == journal.KindHuntMask {
-						maskStarted = true
-					}
-					if maskStarted && e.Kind == journal.KindTrialStart {
-						frameEvents = events[:i+1]
-						break
-					}
-				}
-			}
-			frame := watch.Render(watch.Project(frameEvents), 240, 67, frameEvents[len(frameEvents)-1].Time.Add(40*time.Second))
-			golden(t, "watch-"+tc.name+"-240x67", ansi.Strip(frame)+"\n")
 		})
 	}
 }
@@ -198,7 +176,7 @@ func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	build := renderFixture(t, dir, "concluded")
+	build := watchtest.Install(t, dir, "concluded")
 	record := func(payload journal.Payload) {
 		t.Helper()
 		j, err := journal.Open(dir, journal.Options{Boot: "status-test", Build: build})
@@ -248,33 +226,6 @@ func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
 	record(&journal.DefectFound{ID: 1, Title: "False failure at power-off", PR: 16, Direction: "too_cautious", Cores: []int{3, 7}, Decisions: []int{42}})
 	record(&journal.CommandReset{All: true})
 	check(nil, []string{title, core3, core7})
-}
-
-func renderFixture(t *testing.T, dir, name string) journal.Build {
-	t.Helper()
-	f, err := os.Open(filepath.Join("testdata", "render-"+name+".jsonl.gz"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	r, err := gzip.NewReader(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close()
-	out, err := os.Create(filepath.Join(dir, "events.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, r); err != nil {
-		t.Fatal(err)
-	}
-	build, _, err := journal.Scan(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return build
 }
 
 func checkRows(t *testing.T, name, out string, row *regexp.Regexp, st journal.State) {
