@@ -18,6 +18,35 @@ import (
 	"github.com/shgew/togi/internal/tuningboot"
 )
 
+func TestRunFlagsRotationLimit(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		args []string
+		want int
+	}{
+		{name: "endless by default"},
+		{name: "one rotation", args: []string{"--rotations", "1"}, want: 1},
+		{name: "multiple rotations", args: []string{"--rotations=3"}, want: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var g globals
+			var rotations int
+			var grubenv string
+			var noTUI bool
+			flags := runFlags(&g, &rotations, &grubenv, &noTUI)
+			var stdout, stderr bytes.Buffer
+			if code, ok := parseFlags(flags, tc.args, runHelp, &stdout, &stderr); !ok || code != exitOK {
+				t.Fatalf("parse: exit %d, ok %v, stderr %q", code, ok, stderr.String())
+			}
+			if diff := cmp.Diff(tc.want, rotations); diff != "" {
+				t.Fatalf("rotation limit (-want +got): %s", diff)
+			}
+		})
+	}
+}
+
 func TestRunDeadEndEvidencePriority(t *testing.T) {
 	t.Parallel()
 	stderr, err := os.CreateTemp(t.TempDir(), "run-output")
@@ -34,7 +63,7 @@ func TestRunDeadEndEvidencePriority(t *testing.T) {
 		return ""
 	})
 	stop := session.Stop{Reason: session.StopDeadEnd, DeadEnd: &journal.DeadEnd{Condition: journal.DeadEndSMU, Detail: "failed"}, Evidence: []journal.Event{failure}}
-	if code := runResult(stop, nil, stderr, renderer); code != deadEndExit(stop.DeadEnd.Condition) {
+	if code := runResult(stop, nil, stderr, renderer, nil); code != deadEndExit(stop.DeadEnd.Condition) {
 		t.Fatalf("exit %d", code)
 	}
 	data, err := os.ReadFile(stderr.Name())
@@ -231,7 +260,7 @@ func TestRunResultExitCodes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			if code := runResult(tc.stop, tc.err, &out, journal.Renderer{}); code != tc.code {
+			if code := runResult(tc.stop, tc.err, &out, journal.Renderer{}, nil); code != tc.code {
 				t.Fatalf("exit %d, want %d", code, tc.code)
 			}
 			if diff := cmp.Diff(tc.want, out.String()); diff != "" {
@@ -256,7 +285,7 @@ func TestRunResultExitCodes(t *testing.T) {
 		t.Run(string(tc.condition), func(t *testing.T) {
 			var out bytes.Buffer
 			stop := session.Stop{Reason: session.StopDeadEnd, DeadEnd: &journal.DeadEnd{Condition: tc.condition, Detail: "operator intervention required"}}
-			if code := runResult(stop, nil, &out, journal.Renderer{}); code != tc.code {
+			if code := runResult(stop, nil, &out, journal.Renderer{}, nil); code != tc.code {
 				t.Fatalf("exit %d, want %d", code, tc.code)
 			}
 			want := fmt.Sprintf("togi: dead end %s: operator intervention required\n", tc.condition)

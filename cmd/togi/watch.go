@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -33,14 +34,20 @@ Examples:
   togi watch                                  The session in the default state directory, full screen
   togi --state-dir <dir> watch > frame.txt    One 240x67 frame of the session in <dir>`
 
-func runWatch(g *globals, args []string, stdout, stderr io.Writer) int {
+func watchFlags(g *globals, width, height *int) *flag.FlagSet {
 	flags := newFlagSet("watch", g)
-	width := flags.Int("width", 240, "frame width in `columns` when stdout is not a terminal")
-	height := flags.Int("height", 67, "frame height in `rows` when stdout is not a terminal")
+	flags.IntVar(width, "width", 240, "frame width in `columns` when stdout is not a terminal")
+	flags.IntVar(height, "height", 67, "frame height in `rows` when stdout is not a terminal")
+	return flags
+}
+
+func runWatch(g *globals, args []string, stdout, stderr io.Writer) int {
+	var width, height int
+	flags := watchFlags(g, &width, &height)
 	if code, ok := parseFlags(flags, args, watchHelp, stdout, stderr); !ok {
 		return code
 	}
-	if *width < 1 || *height < 1 {
+	if width < 1 || height < 1 {
 		fmt.Fprintln(stderr, "togi watch: --width and --height must be at least 1")
 		commandUsage(flags, watchHelp, stderr)
 		return exitUsage
@@ -55,7 +62,7 @@ func runWatch(g *globals, args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	}
 	snapshot := watch.Load(g.stateDir)
-	_, _ = io.WriteString(stdout, ansi.Strip(watch.Render(snapshot, *width, *height, time.Now()))+"\n")
+	_, _ = io.WriteString(stdout, ansi.Strip(watch.Render(snapshot, width, height, time.Now()))+"\n")
 	if err := snapshot.Err(); err != nil {
 		fmt.Fprintf(stderr, "togi watch: %s\n", journal.EscapeText(err.Error()))
 		return exitError

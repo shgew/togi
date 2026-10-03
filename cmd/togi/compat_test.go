@@ -144,14 +144,8 @@ func TestRunChecksCompatibilityBeforeConfig(t *testing.T) {
 
 func TestRunStillRejectsInvalidConfigForCompatibleJournal(t *testing.T) {
 	dir := t.TempDir()
-	fixture, err := os.ReadFile("testdata/events.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := installJournalFixture(t, dir)
 	path := filepath.Join(dir, "events.jsonl")
-	if err := os.WriteFile(path, fixture, 0o644); err != nil {
-		t.Fatal(err)
-	}
 	configPath := filepath.Join(t.TempDir(), "invalid.toml")
 	if err := os.WriteFile(configPath, []byte("removed_key = true\n"), 0o644); err != nil {
 		t.Fatal(err)

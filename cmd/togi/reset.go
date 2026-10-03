@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -35,14 +36,19 @@ Examples:
   sudo togi reset --core 3   Search core 3 again from its baseline
   sudo togi reset --all      Archive the session and start over`
 
+func resetFlags(g *globals, core **int, all *bool) *flag.FlagSet {
+	flags := newFlagSet("reset", g)
+	flags.Func("core", "reset core `N`: clear its failed mark and every joint mark that includes it; restart its search from the baseline", coreFlag(core))
+	flags.BoolVar(all, "all", false, "archive the session; the next run starts a new one")
+	return flags
+}
+
 func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	var (
 		core *int
 		all  bool
 	)
-	flags := newFlagSet("reset", g)
-	flags.Func("core", "reset core `N`: clear its failed mark and every joint mark that includes it; restart its search from the baseline", coreFlag(&core))
-	flags.BoolVar(&all, "all", false, "archive the session; the next run starts a new one")
+	flags := resetFlags(g, &core, &all)
 	if code, ok := parseFlags(flags, args, resetHelp, stdout, stderr); !ok {
 		return code
 	}

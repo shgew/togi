@@ -98,14 +98,8 @@ func TestResetAllCandidateEdges(t *testing.T) {
 
 func resetCandidateFixture(t *testing.T, mark int) string {
 	t.Helper()
-	fixture, err := os.ReadFile("testdata/events.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	installJournalFixture(t, dir)
 	j, err := journal.Open(dir, journal.Options{Boot: "reset-test"})
 	if err != nil {
 		t.Fatal(err)
@@ -164,10 +158,6 @@ func TestResetAllSkipsUnavailableConfig(t *testing.T) {
 }
 
 func TestResetAllDropsAPendingCarry(t *testing.T) {
-	fixture, err := os.ReadFile("testdata/events.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, tc := range []struct {
 		name    string
 		journal bool
@@ -185,14 +175,11 @@ func TestResetAllDropsAPendingCarry(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			files := map[string][]byte{marker: nil}
-			if tc.journal {
-				files[filepath.Join(dir, "events.jsonl")] = fixture
+			if err := os.WriteFile(marker, nil, 0o644); err != nil {
+				t.Fatal(err)
 			}
-			for path, data := range files {
-				if err := os.WriteFile(path, data, 0o644); err != nil {
-					t.Fatal(err)
-				}
+			if tc.journal {
+				installJournalFixture(t, dir)
 			}
 			if tc.locked {
 				j, err := journal.Open(dir, journal.Options{Boot: "run"})

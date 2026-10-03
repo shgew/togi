@@ -13,6 +13,7 @@ import (
 	"github.com/shgew/togi"
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/hostlock"
+	"github.com/shgew/togi/internal/journal"
 )
 
 const defaultStateDir = "/var/lib/togi"
@@ -31,23 +32,36 @@ type globals struct {
 	config       string
 	configSet    bool
 	stateDir     string
-	stateDirSet  bool
 	hostLockPath string
 }
 
 type command struct {
 	name    string
 	summary string
+	help    string
+	flags   func(g *globals) *flag.FlagSet
 	run     func(g *globals, args []string, stdout, stderr io.Writer) int
 }
 
 var commands = []command{
-	{name: "events", summary: "Render the journal", run: runEvents},
-	{name: "reset", summary: "Reset one core or archive the session", run: runReset},
-	{name: "restart-limit", summary: "Recover after the tuning service reaches its restart limit", run: runRestartLimit},
-	{name: "run", summary: "Start or resume the session in the foreground", run: runRun},
-	{name: "status", summary: "Show core marks, activity and qualified rotations", run: runStatus},
-	{name: "watch", summary: "Show the session as a live dashboard", run: runWatch},
+	{name: "events", summary: "Render the journal", help: eventsHelp, flags: func(g *globals) *flag.FlagSet {
+		return eventsFlags(g, &journal.Filter{}, new(bool))
+	}, run: runEvents},
+	{name: "reset", summary: "Reset one core or archive the session", help: resetHelp, flags: func(g *globals) *flag.FlagSet {
+		return resetFlags(g, new(*int), new(bool))
+	}, run: runReset},
+	{name: "restart-limit", summary: "Recover after the tuning service reaches its restart limit", help: restartLimitHelp, flags: func(g *globals) *flag.FlagSet {
+		return restartLimitFlags(g, new(string))
+	}, run: runRestartLimit},
+	{name: "run", summary: "Start or resume the session in the foreground", help: runHelp, flags: func(g *globals) *flag.FlagSet {
+		return runFlags(g, new(int), new(string), new(bool))
+	}, run: runRun},
+	{name: "status", summary: "Show core marks, activity and qualified rotations", help: statusHelp, flags: func(g *globals) *flag.FlagSet {
+		return newFlagSet("status", g)
+	}, run: runStatus},
+	{name: "watch", summary: "Show the session as a live dashboard", help: watchHelp, flags: func(g *globals) *flag.FlagSet {
+		return watchFlags(g, new(int), new(int))
+	}, run: runWatch},
 }
 
 func main() {
@@ -89,23 +103,11 @@ func cliWithGlobals(args []string, stdout, stderr io.Writer, g globals) int {
 		usage(stderr)
 		return exitUsage
 	}
-	if g.configSet && name != "run" && name != "reset" {
-		return commands[i].run(&g, []string{"--config"}, stdout, stderr)
+	c := commands[i]
+	if g.configSet && !acceptsConfig(c.name) {
+		return flagError(c.flags(&g), c.help, errors.New("flag provided but not defined: -config"), stderr)
 	}
-	return commands[i].run(&g, fs.Args()[1:], stdout, stderr)
-}
-
-func registerGlobals(fs *flag.FlagSet, g *globals) {
-	if fs.Name() == "togi" || fs.Name() == "run" || fs.Name() == "reset" {
-		fs.Func("config", "configuration file `path` for run and reset (default "+config.DefaultPath+")", func(s string) error {
-			g.config, g.configSet = s, true
-			return nil
-		})
-	}
-	fs.Func("state-dir", "state directory `path` (default "+defaultStateDir+")", func(s string) error {
-		g.stateDir, g.stateDirSet = s, true
-		return nil
-	})
+	return c.run(&g, fs.Args()[1:], stdout, stderr)
 }
 
 func isGlobal(f *flag.Flag) bool {

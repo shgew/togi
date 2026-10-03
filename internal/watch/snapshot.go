@@ -149,8 +149,9 @@ func Project(events []journal.Event) Snapshot {
 	}
 
 	var intent *journal.TrialIntent
-	starts := map[string]time.Time{}
-	for _, e := range events {
+	lastFailure := -1
+	for i := range events {
+		e := &events[i]
 		switch p := e.Data.(type) {
 		case *journal.SessionStart:
 			s.order = machine.Order(p.Cores)
@@ -161,32 +162,28 @@ func Project(events []journal.Event) Snapshot {
 			if st.InFlight != nil && st.InFlight.Kind == journal.KindTrialIntent && e.Seq == st.InFlight.Seq {
 				intent = p
 			}
-		case *journal.TrialStart:
-			starts[p.Trial] = e.Time
 		case *journal.TrialEnd:
 			if p.TctlMaxC != nil {
 				s.tctlTrial = p.TctlMaxC
 			}
 		case *journal.Failure:
 			s.failures++
-			s.lastFailure = &line{at: e.Time, msg: vtText(e.Msg)}
+			lastFailure = i
 		case *journal.CrashDetected:
 			s.crashes++
 		}
 		if st.DeadEnd != nil && e.Seq == st.DeadEnd.Seq {
 			s.deadEnd = vtText(e.Msg)
 		}
-		if slices.Contains(logged, e.Kind) {
-			s.recent = append(s.recent, line{at: e.Time, msg: vtText(e.Msg)})
-		}
 	}
-	if len(s.recent) > recentLimit {
-		s.recent = s.recent[len(s.recent)-recentLimit:]
+	if lastFailure >= 0 {
+		e := &events[lastFailure]
+		s.lastFailure = &line{at: e.Time, msg: vtText(e.Msg)}
 	}
 
 	switch {
 	case intent != nil:
-		s.trial = inFlightTrial(intent, starts, len(st.Cores))
+		s.trial = inFlightTrial(intent, len(st.Cores))
 		for i := range s.tiles {
 			tl := &s.tiles[i]
 			tl.loaded = slices.Contains(s.trial.cores, tl.id)
@@ -206,10 +203,29 @@ func Project(events []journal.Event) Snapshot {
 	case st.InFlight != nil:
 		s.inFlight = vtText(st.InFlight.Msg)
 	}
+
+	for i := len(events) - 1; i >= 0; i-- {
+		e := &events[i]
+		if s.trial != nil && !s.trial.hasStarted {
+			if p, ok := e.Data.(*journal.TrialStart); ok && p.Trial == intent.Trial {
+				s.trial.started, s.trial.hasStarted = e.Time, true
+			}
+		}
+		if len(s.recent) < recentLimit && slices.Contains(logged, e.Kind) {
+			if s.recent == nil {
+				s.recent = make([]line, 0, min(recentLimit, len(events)))
+			}
+			s.recent = append(s.recent, line{at: e.Time, msg: vtText(e.Msg)})
+		}
+		if len(s.recent) == recentLimit && (s.trial == nil || s.trial.hasStarted) {
+			break
+		}
+	}
+	slices.Reverse(s.recent)
 	return s
 }
 
-func inFlightTrial(p *journal.TrialIntent, starts map[string]time.Time, sessionCores int) *trial {
+func inFlightTrial(p *journal.TrialIntent, sessionCores int) *trial {
 	cores := p.Cores
 	if p.Core != nil {
 		cores = []int{*p.Core}
@@ -218,7 +234,6 @@ func inFlightTrial(p *journal.TrialIntent, starts map[string]time.Time, sessionC
 	if w, ok := machine.WorkloadByID(p.Workload); ok {
 		workload = w.Label
 	}
-	started, ok := starts[p.Trial]
 	return &trial{
 		cores:      cores,
 		all:        len(cores) == sessionCores,
@@ -226,8 +241,6 @@ func inFlightTrial(p *journal.TrialIntent, starts map[string]time.Time, sessionC
 		condition:  p.Condition,
 		regime:     p.Regime,
 		workload:   workload,
-		started:    started,
-		hasStarted: ok,
 		duration:   time.Duration(p.DurationS) * time.Second,
 	}
 }

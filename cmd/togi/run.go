@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,7 +17,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unsafe"
+
+	"golang.org/x/term"
 
 	"github.com/shgew/togi/internal/carry"
 	"github.com/shgew/togi/internal/config"
@@ -73,23 +75,28 @@ Examples:
   sudo togi run --rotations 1       Stop after the search is done and one qualifying rotation passed
   sudo togi run --no-tui            Print one line per event instead of the dashboard`
 
-func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
-	var (
-		rotations int
-		grubenv   string
-		noTUI     bool
-	)
+func runFlags(g *globals, rotations *int, grubenv *string, noTUI *bool) *flag.FlagSet {
 	flags := newFlagSet("run", g)
 	flags.Func("rotations", "stop after `N` clean qualifying rotations valid for the current profile once every core is done and refinement can reach no more depth (default endless)", func(s string) error {
 		v, err := strconv.Atoi(s)
 		if err != nil || v < 1 {
 			return errors.New("must be a positive integer")
 		}
-		rotations = v
+		*rotations = v
 		return nil
 	})
-	flags.StringVar(&grubenv, "tuning-boot", "", "run as the tuning boot service: require an armed hardware watchdog within 30s; reset retry count on the first durable journal append; persist a leave reason before clearing saved_entry in this GRUB environment `file`, and reboot after a boot loop")
-	flags.BoolVar(&noTUI, "no-tui", false, "print one line per event instead of the dashboard on a terminal")
+	flags.StringVar(grubenv, "tuning-boot", "", "run as the tuning boot service: require an armed hardware watchdog within 30s; reset retry count on the first durable journal append; persist a leave reason before clearing saved_entry in this GRUB environment `file`, and reboot after a boot loop")
+	flags.BoolVar(noTUI, "no-tui", false, "print one line per event instead of the dashboard on a terminal")
+	return flags
+}
+
+func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
+	var (
+		rotations int
+		grubenv   string
+		noTUI     bool
+	)
+	flags := runFlags(g, &rotations, &grubenv, &noTUI)
 	if code, ok := parseFlags(flags, args, runHelp, stdout, stderr); !ok {
 		return code
 	}
@@ -242,24 +249,24 @@ func printCleanStop(events []journal.Event, stderr io.Writer, renderer journal.R
 	}
 }
 
-func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.Renderer, bootloader ...session.Bootloader) int {
+func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.Renderer, bootloader session.Bootloader) int {
 	_, incompatible := errors.AsType[*journal.IncompatibleError](err)
 	_, unknown := errors.AsType[*journal.UnknownKindError](err)
 	if incompatible || unknown {
 		fmt.Fprintln(stderr, renderer.Styled(journal.RedBold, "togi run: "+err.Error()))
-		if len(bootloader) > 0 && bootloader[0] != nil {
+		if bootloader != nil {
 			reasonText := "journal incompatible"
 			if unknown {
 				reasonText = "unknown event kind"
 			}
 			reason, reasonErr := tuningboot.NewReason(reasonText, 0)
 			if reasonErr == nil {
-				reasonErr = tuningboot.WriteReason(bootloader[0], reason)
+				reasonErr = tuningboot.WriteReason(bootloader, reason)
 			}
 			if reasonErr != nil {
 				fmt.Fprintf(stderr, "togi: persist GRUB leave reason: %v\n", reasonErr)
 			}
-			before, after, clearErr := bootloader[0].ClearSavedEntry()
+			before, after, clearErr := bootloader.ClearSavedEntry()
 			if clearErr != nil {
 				fmt.Fprintf(stderr, "togi: clear GRUB saved entry: %v; no reboot requested\n", clearErr)
 			} else {
@@ -338,12 +345,7 @@ func defectPrompt(stderr io.Writer) func(defect.Finding) (bool, error) {
 }
 
 func interactive(out *os.File) bool {
-	isTerminal := func(file *os.File) bool {
-		var termios syscall.Termios
-		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), getTermios, uintptr(unsafe.Pointer(&termios)))
-		return errno == 0
-	}
-	return isTerminal(os.Stdin) && isTerminal(out)
+	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(out.Fd()))
 }
 
 func parseDefectAnswer(line string, err error) bool {
@@ -352,15 +354,4 @@ func parseDefectAnswer(line string, err error) bool {
 	}
 	answer := strings.TrimSpace(line)
 	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes")
-}
-
-func loadConfig(g *globals) (config.Config, bool, error) {
-	cfg, err := config.Load(g.config)
-	if err == nil {
-		return cfg, true, nil
-	}
-	if !g.configSet && errors.Is(err, fs.ErrNotExist) {
-		return config.Default(), false, nil
-	}
-	return config.Config{}, false, err
 }

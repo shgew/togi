@@ -15,11 +15,9 @@ import (
 
 func TestEvents(t *testing.T) {
 	t.Setenv("JOURNAL_STREAM", "")
+	local := time.Local
+	t.Cleanup(func() { time.Local = local })
 	time.Local = time.UTC
-	fixture, err := os.ReadFile("testdata/events.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
 	tests := []struct {
 		name string
 		args []string
@@ -36,9 +34,7 @@ func TestEvents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o644); err != nil {
-				t.Fatal(err)
-			}
+			installJournalFixture(t, dir)
 			var stdout, stderr bytes.Buffer
 			args := append([]string{"events", "--state-dir", dir}, tt.args...)
 			if code := cli(args, &stdout, &stderr); code != exitOK {
@@ -64,14 +60,8 @@ func journalStreamFor(t *testing.T, f *os.File) string {
 
 func TestEventsJSONUncoloredInSystemJournal(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
-	fixture, err := os.ReadFile("testdata/events.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	fixture := installJournalFixture(t, dir)
 	stdout, err := os.CreateTemp(t.TempDir(), "events-output")
 	if err != nil {
 		t.Fatal(err)
@@ -127,10 +117,6 @@ func TestEventsErrors(t *testing.T) {
 }
 
 func TestEventsKindValidation(t *testing.T) {
-	fixture, err := os.ReadFile("testdata/events.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, args := range [][]string{
 		{"--kind", "trial.unknown"},
 		{"--kind", "trila"},
@@ -146,9 +132,7 @@ func TestEventsKindValidation(t *testing.T) {
 				t.Run(fmt.Sprintf("journal=%t", exists), func(t *testing.T) {
 					dir := t.TempDir()
 					if exists {
-						if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o644); err != nil {
-							t.Fatal(err)
-						}
+						installJournalFixture(t, dir)
 					}
 					var stdout, stderr bytes.Buffer
 					code := cli(append([]string{"events", "--state-dir", dir}, args...), &stdout, &stderr)
@@ -171,14 +155,8 @@ func TestEventsKindValidation(t *testing.T) {
 }
 
 func TestEventsKindQueries(t *testing.T) {
-	fixture, err := os.ReadFile("testdata/events.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	fixture := installJournalFixture(t, dir)
 	lines := strings.SplitAfter(string(fixture), "\n")
 	for _, tt := range []struct {
 		name string
