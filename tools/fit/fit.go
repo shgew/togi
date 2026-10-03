@@ -24,10 +24,12 @@ type observation struct {
 }
 
 type likelihood struct {
-	cfg   sim.Config
-	m     *sim.Machine
-	obs   []observation
-	guard *modelcheck.Checker
+	cfg                         sim.Config
+	m                           *sim.Machine
+	obs                         []observation
+	guard                       *modelcheck.Checker
+	ccdPriorRate, ccdPriorDepth float64
+	ccdPrior                    bool
 }
 
 func decisive(records []trialfacts.Record) ([]trialfacts.Record, error) {
@@ -149,8 +151,21 @@ func (l *likelihood) rawScore(indices []int) float64 {
 	for _, i := range indices {
 		loss += l.value(i)
 	}
+	if s := l.cfg.SingleCore; s != nil {
+		loss += 0.5 * s.ResidentEffect * s.ResidentEffect
+		for _, effect := range s.Core {
+			loss += 0.5 * effect * effect
+		}
+		for _, effect := range s.Workload {
+			loss += 0.5 * effect * effect
+		}
+	}
 	if c := l.cfg.CCD; c != nil {
 		loss += 0.5 * (c.Effect[0]*c.Effect[0] + c.Effect[1]*c.Effect[1])
+		if l.ccdPrior {
+			delta := c.LogRate + c.Slope*(l.ccdPriorDepth-25) - l.ccdPriorRate
+			loss += 0.5 * delta * delta
+		}
 	}
 	return loss
 }
@@ -207,6 +222,12 @@ func initialConfig(records []trialfacts.Record) sim.Config {
 	model := sim.DefaultModel()
 	model.PastEdgeRate, model.Growth, model.NearEdgeRate = 0.015, 2, 1e-7
 	cfg := sim.Config{Cores: cores, Edges: make([]sim.Edges, cores), Model: &model}
+	cfg.SingleCore = &sim.SingleCore{LogRate: -9, Slope: 0.15, Core: make([]float64, cores), Workload: make(map[string]float64)}
+	for _, r := range records {
+		if len(r.Class.Cores) == 1 && (r.Class.Regime == machine.R1 || r.Class.Regime == machine.R2) {
+			cfg.SingleCore.Workload[r.Class.Workload] = 0
+		}
+	}
 	if records[0].Context != nil {
 		cfg.BIOSContext = *records[0].Context
 	}
@@ -259,10 +280,12 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 		cfg = cloneMachine(*initial)
 	}
 	l := likelihood{cfg: cfg, obs: aggregate(records), guard: guard}
+	l.ccdPriorRate, l.ccdPriorDepth, l.ccdPrior = ccdPrior(records)
 	l.rebuild()
 	all := l.selectObs(func(observation) bool { return true })
 	previous := math.Inf(1)
 	for range 12 {
+		l.fitSingleCore(&cfg)
 		if cfg.CCD == nil {
 			l.fitJoints(&cfg)
 			for ccd := range 2 {
@@ -326,6 +349,9 @@ func (l *likelihood) fitRegimeEdges(cfg *sim.Config) {
 					continue
 				}
 				indices := l.selectObs(func(o observation) bool {
+					if cfg.SingleCore != nil && singleCoreObservation(o) {
+						return false
+					}
 					if o.spec.Regime != regime || !slices.Contains(o.spec.Cores, core) {
 						return false
 					}
@@ -464,6 +490,9 @@ func (l *likelihood) fitWorkloads(cfg *sim.Config) {
 	for core := range cfg.Edges {
 		workloads := make(map[string]bool)
 		for _, o := range l.obs {
+			if cfg.SingleCore != nil && singleCoreObservation(o) {
+				continue
+			}
 			if cfg.CCD != nil && o.spec.Regime == machine.R7 {
 				continue
 			}
@@ -515,6 +544,12 @@ func (l *likelihood) fitWorkloads(cfg *sim.Config) {
 func cloneMachine(cfg sim.Config) sim.Config {
 	model := *cfg.Model
 	cfg.Model = &model
+	if cfg.SingleCore != nil {
+		s := *cfg.SingleCore
+		s.Core = slices.Clone(s.Core)
+		s.Workload = maps.Clone(s.Workload)
+		cfg.SingleCore = &s
+	}
 	if cfg.CCD != nil {
 		c := *cfg.CCD
 		cfg.CCD = &c

@@ -41,6 +41,8 @@ If a machine file sets `[model.signals]`, it replaces the default signal weights
 
 If an active joint has any member on a loaded CCD, that CCD's smooth hazard is suppressed: joint explanations take precedence over extrapolation. A joint on the other CCD does not suppress this CCD's residual hazard.
 
+`[single_core]` replaces loaded-core edge/flat hazards for R1/R2 singleton starts with `exp(log_rate + core[c] + workload[id] + slope*(-offset-25) + resident_effect)` failures/second. Omit the resident term when every other core's register is zero; the trial's condition label does not select it. `core` has one effect per core, missing workload effects are zero, slope is nonnegative, and all parameters must be finite. Unloaded-core hazards and other starts remain unchanged; files without this table retain the edge model.
+
 A machine file sets the core count, BIOS context, ranking, model parameters, per-core edges, joints and scripted outcomes; unset keys keep the seeded defaults, and an unknown key is an error. If it specifies any per-core edges, it must provide a `[[core]]` table for every core. Set `[bios_context]` with `bios_version`, `board`, `cpu_model`, `microcode` and `boost_limit_mhz` to override the simulator's BIOS context. This one adds a pair that crashes only when cores 03 and 11 are both at −30 or deeper under R7:
 
 ```toml
