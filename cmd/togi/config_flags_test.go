@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestCommandHelpConfigScope(t *testing.T) {
@@ -15,7 +17,7 @@ func TestCommandHelpConfigScope(t *testing.T) {
 			if code := cli([]string{c.name, "--help"}, &stdout, &stderr); code != exitOK {
 				t.Fatalf("exit %d; stderr %s", code, stderr.String())
 			}
-			wantConfig := c.name == "run" || c.name == "reset"
+			wantConfig := acceptsConfig(c.name)
 			if got := strings.Contains(stdout.String(), "--config <path>"); got != wantConfig {
 				t.Fatalf("config flag in help: %v, want %v; stdout %s", got, wantConfig, stdout.String())
 			}
@@ -71,5 +73,38 @@ func TestWriteCommandsAcceptConfigPlacements(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestLeadingConfigRejectionPrecedesCommandArguments(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "events"},
+		{name: "events", args: []string{"--help"}},
+		{name: "events", args: []string{"--kind", "unknown"}},
+		{name: "events", args: []string{"unexpected"}},
+		{name: "status", args: []string{"--unknown"}},
+		{name: "watch", args: []string{"--width", "0"}},
+	} {
+		t.Run(tc.name+"/"+strings.Join(tc.args, " "), func(t *testing.T) {
+			t.Parallel()
+			args := append([]string{"--config", "unused.toml", tc.name}, tc.args...)
+			var stdout, stderr bytes.Buffer
+			if code := cli(args, &stdout, &stderr); code != exitUsage {
+				t.Fatalf("exit %d, want %d; stderr %s", code, exitUsage, stderr.String())
+			}
+			if diff := cmp.Diff("", stdout.String()); diff != "" {
+				t.Fatalf("stdout (-want +got): %s", diff)
+			}
+			diagnostic, help, _ := strings.Cut(stderr.String(), "\n")
+			want := "togi " + tc.name + ": flag provided but not defined: -config"
+			if diff := cmp.Diff(want, diagnostic); diff != "" {
+				t.Fatalf("config diagnostic (-want +got): %s", diff)
+			}
+			golden(t, "help-"+tc.name, help)
+		})
 	}
 }

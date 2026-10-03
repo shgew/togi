@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -44,10 +45,15 @@ func runRestartLimit(g *globals, args []string, stdout, stderr io.Writer) int {
 	})
 }
 
+func restartLimitFlags(g *globals, grubenv *string) *flag.FlagSet {
+	flags := newFlagSet("restart-limit", g)
+	flags.StringVar(grubenv, "tuning-boot", "", "GRUB environment `file` for retry state and the saved tuning entry (required)")
+	return flags
+}
+
 func runRestartLimitWith(g *globals, args []string, stdout, stderr io.Writer, operations restartLimitOperations) int {
 	var grubenv string
-	flags := newFlagSet("restart-limit", g)
-	flags.StringVar(&grubenv, "tuning-boot", "", "GRUB environment `file` for retry state and the saved tuning entry (required)")
+	flags := restartLimitFlags(g, &grubenv)
 	if code, ok := parseFlags(flags, args, restartLimitHelp, stdout, stderr); !ok {
 		return code
 	}

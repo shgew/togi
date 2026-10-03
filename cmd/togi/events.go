@@ -29,11 +29,7 @@ Examples:
   togi events --kind trial,guard.rotation   Every trial event and guard rotation
   togi events --json --trial 0413          The raw events of trial 0413`
 
-func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
-	var (
-		filter  journal.Filter
-		rawJSON bool
-	)
+func eventsFlags(g *globals, filter *journal.Filter, rawJSON *bool) *flag.FlagSet {
 	flags := newFlagSet("events", g)
 	flags.Func("core", "only events naming core `N`", coreFlag(&filter.Core))
 	flags.Func("kind", "only these comma-separated known `kinds`, or groups such as trial for every trial.* kind", func(s string) error {
@@ -54,7 +50,16 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&filter.Trial, "trial", "", "only events of trial `ID`")
 	flags.Func("since", "only events at or after this RFC 3339 `time`", timeFlag(&filter.Since))
 	flags.Func("until", "only events before this RFC 3339 `time`", timeFlag(&filter.Until))
-	flags.BoolVar(&rawJSON, "json", false, "print raw, uncolored JSON events")
+	flags.BoolVar(rawJSON, "json", false, "print raw, uncolored JSON events")
+	return flags
+}
+
+func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
+	var (
+		filter  journal.Filter
+		rawJSON bool
+	)
+	flags := eventsFlags(g, &filter, &rawJSON)
 	if code, ok := parseFlags(flags, args, eventsHelp, stdout, stderr); !ok {
 		return code
 	}
@@ -101,37 +106,4 @@ func timeFlag(t *time.Time) func(string) error {
 		*t = v
 		return nil
 	}
-}
-
-func newFlagSet(name string, g *globals) *flag.FlagSet {
-	flags := flag.NewFlagSet(name, flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	registerGlobals(flags, g)
-	return flags
-}
-
-func parseFlags(flags *flag.FlagSet, args []string, help string, stdout, stderr io.Writer) (int, bool) {
-	err := flags.Parse(args)
-	if err == nil && flags.NArg() > 0 {
-		err = fmt.Errorf("unexpected argument %q", flags.Arg(0))
-	}
-	if err == nil {
-		return exitOK, true
-	}
-	if errors.Is(err, flag.ErrHelp) {
-		commandUsage(flags, help, stdout)
-		return exitOK, false
-	}
-	fmt.Fprintf(stderr, "togi %s: %v\n", flags.Name(), err)
-	commandUsage(flags, help, stderr)
-	return exitUsage, false
-}
-
-func commandUsage(flags *flag.FlagSet, help string, w io.Writer) {
-	var b strings.Builder
-	b.WriteString(help)
-	b.WriteString("\n")
-	writeFlags(&b, "Flags", flags, func(f *flag.Flag) bool { return !isGlobal(f) })
-	writeFlags(&b, "Global flags", flags, isGlobal)
-	_, _ = io.WriteString(w, b.String())
 }
