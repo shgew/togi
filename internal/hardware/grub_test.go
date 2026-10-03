@@ -6,6 +6,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"strings"
 	"testing"
+
+	"github.com/shgew/togi/internal/tuningboot"
 )
 
 var errGRUBRunner = errors.New("injected grub-editenv failure")
@@ -14,10 +16,13 @@ type grubEnvironment struct {
 	saved         string
 	calls, failAt int
 	after, sticky bool
+	values        map[string]string
+	operations    [][]string
 }
 
 func (e *grubEnvironment) run(_ string, args ...string) (string, error) {
 	e.calls++
+	e.operations = append(e.operations, append([]string(nil), args...))
 	fail := e.calls == e.failAt
 	if fail && !e.after {
 		return "", errGRUBRunner
@@ -29,9 +34,29 @@ func (e *grubEnvironment) run(_ string, args ...string) (string, error) {
 		if e.saved != "" {
 			out += " saved_entry=" + e.saved + "\n"
 		}
+		for name, value := range e.values {
+			out += name + "=" + value + "\n"
+		}
 	case "unset":
-		if !e.sticky {
-			e.saved = ""
+		for _, name := range args[1:] {
+			if name == "saved_entry" {
+				if !e.sticky {
+					e.saved = ""
+				}
+			} else {
+				delete(e.values, name)
+			}
+		}
+	case "set":
+		if e.values == nil {
+			e.values = make(map[string]string)
+		}
+		for _, assignment := range args[1:] {
+			name, value, ok := strings.Cut(assignment, "=")
+			if !ok {
+				return "", fmt.Errorf("invalid GRUB assignment %q", assignment)
+			}
+			e.values[name] = value
 		}
 	default:
 		return "", fmt.Errorf("unexpected GRUB operation %s", args[0])
@@ -120,5 +145,116 @@ func TestGRUBSavedEntryParsing(t *testing.T) {
 				t.Fatalf("saved entry (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestGRUBEnvironmentOperations(t *testing.T) {
+	env := &grubEnvironment{saved: "togi"}
+	grub := GRUB{Env: "test grub environment", run: env.run}
+	values := map[string]string{"togi_restart_count": "2", "togi_leave_reason": `{"id":"reason","count":2,"reason":"retry"}`}
+	if err := grub.Set(values); err != nil {
+		t.Fatal(err)
+	}
+	wantSet := []string{"set", "togi_leave_reason=" + values["togi_leave_reason"], "togi_restart_count=2"}
+	if diff := cmp.Diff(wantSet, env.operations[0]); diff != "" {
+		t.Fatalf("one deterministic set (-want +got): %s", diff)
+	}
+	for name, want := range values {
+		got, err := grub.Get(name)
+		if err != nil || got != want {
+			t.Fatalf("Get(%s) = %q, %v; want %q", name, got, err, want)
+		}
+	}
+	if got, err := grub.Get("missing"); err != nil || got != "" {
+		t.Fatalf("absent variable = %q, %v", got, err)
+	}
+	if err := grub.Unset("togi_restart_count", "togi_leave_reason"); err != nil {
+		t.Fatal(err)
+	}
+	if len(env.values) != 0 || env.saved != "togi" {
+		t.Fatalf("unset changed unrelated entry: %+v", env)
+	}
+}
+
+func TestGRUBRejectsInvalidEnvironmentValues(t *testing.T) {
+	for _, tt := range []struct {
+		name, variable, value string
+	}{
+		{"newline value", "reason", "retry\nsaved_entry=togi"},
+		{"nul value", "reason", "retry\x00"},
+		{"non ASCII", "reason", "retry ☃"},
+		{"oversized value", "reason", strings.Repeat("a", 301)},
+		{"empty name", "", "retry"},
+		{"assignment name", "reason=saved_entry", "retry"},
+		{"newline name", "reason\n", "retry"},
+		{"oversized name", strings.Repeat("a", 65), "retry"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			env := &grubEnvironment{}
+			grub := GRUB{run: env.run}
+			if err := grub.Set(map[string]string{tt.variable: tt.value}); err == nil || env.calls != 0 {
+				t.Fatalf("invalid set reached GRUB: calls=%d err=%v", env.calls, err)
+			}
+			if tt.variable == "reason" {
+				return
+			}
+			if _, err := grub.Get(tt.variable); err == nil || env.calls != 0 {
+				t.Fatalf("invalid get reached GRUB: calls=%d err=%v", env.calls, err)
+			}
+			if err := grub.Unset("saved_entry", tt.variable); err == nil || env.calls != 0 {
+				t.Fatalf("invalid unset reached GRUB: calls=%d err=%v", env.calls, err)
+			}
+		})
+	}
+}
+
+func TestGRUBRetryStateFailureWindows(t *testing.T) {
+	// Exhaustion lists the count, sets the count and reason together, then
+	// performs the existing read/unset/read saved-entry verification.
+	for at := 1; at <= 5; at++ {
+		for _, afterEffect := range []bool{false, true} {
+			t.Run(fmt.Sprintf("operation %d after %v", at, afterEffect), func(t *testing.T) {
+				env := &grubEnvironment{saved: "togi", values: map[string]string{tuningboot.CountVariable: "2"}, failAt: at, after: afterEffect}
+				count, retry, err := tuningboot.RestartLimit(GRUB{run: env.run})
+				if !errors.Is(err, errGRUBRunner) || retry {
+					t.Fatalf("count=%d retry=%v error=%v", count, retry, err)
+				}
+				written := at > 2 || at == 2 && afterEffect
+				if (env.values[tuningboot.ReasonVariable] != "") != written {
+					t.Fatalf("reason write effect hidden: %+v", env.values)
+				}
+				unset := at > 4 || at == 4 && afterEffect
+				if (env.saved == "") != unset {
+					t.Fatalf("clear effect hidden: saved=%q", env.saved)
+				}
+			})
+		}
+	}
+}
+
+func TestGRUBReasonReadWriteUnsetFailures(t *testing.T) {
+	for _, operation := range []string{"read", "write", "clear", "reset"} {
+		for _, afterEffect := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s after %v", operation, afterEffect), func(t *testing.T) {
+				env := &grubEnvironment{failAt: 1, after: afterEffect}
+				grub := GRUB{run: env.run}
+				var err error
+				switch operation {
+				case "read":
+					_, err = tuningboot.ReadReason(grub)
+				case "write":
+					err = tuningboot.WriteReason(grub, tuningboot.Reason{ID: "test", Count: 1, Reason: "retry"})
+				case "clear":
+					env.values = map[string]string{tuningboot.ReasonVariable: "record"}
+					err = tuningboot.ClearReason(grub)
+				case "reset":
+					env.values = map[string]string{tuningboot.CountVariable: "2"}
+					err = tuningboot.ResetCount(grub)
+				}
+				if !errors.Is(err, errGRUBRunner) {
+					t.Fatalf("failure not preserved: %v", err)
+				}
+			})
+		}
 	}
 }
