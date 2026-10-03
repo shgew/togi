@@ -75,7 +75,7 @@ func TestOptimum(t *testing.T) {
 			for i, pair := range tt.marks {
 				h.add(&journal.MarkJoint{Mark: i + 1, Hunt: i + 1, Members: []journal.JointMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
 			}
-			if got := h.s.optimum(tt.profile, tt.hi, tt.ranking); cmp.Diff(tt.want, got) != "" {
+			if got := h.s.optimum(tt.hi, tt.ranking); cmp.Diff(tt.want, got) != "" {
 				t.Fatalf("optimum (-want +got):\n%s", cmp.Diff(tt.want, got))
 			}
 		})
@@ -101,7 +101,7 @@ func TestOptimumWithStaircaseJointMarks(t *testing.T) {
 			}
 		}
 	}
-	if diff := cmp.Diff(want, h.s.optimum(h.s.offsets(), []int{0, 0, 0}, []int{0, 1, 2})); diff != "" {
+	if diff := cmp.Diff(want, h.s.optimum([]int{0, 0, 0}, []int{0, 1, 2})); diff != "" {
 		t.Fatalf("optimum against exhaustive search (-want +got):\n%s", diff)
 	}
 }
@@ -117,14 +117,14 @@ func TestFourCoreCycleNeedsGlobalYield(t *testing.T) {
 		h.add(&journal.MarkJoint{Mark: i + 1, Members: []journal.JointMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
 	}
 	p := h.s.offsets()
-	global := h.s.optimum(p, []int{0, 0, 0, 0}, h.s.ids())
+	global := h.s.optimum([]int{0, 0, 0, 0}, h.s.ids())
 	if got := totalDepth(global); got != -198 {
 		t.Fatalf("global optimum %v totals %d, want -198", global, got)
 	}
 	for _, breaker := range []int{1, 3} {
 		bounded := append([]int(nil), p...)
 		bounded[breaker] = -49
-		target := h.s.optimum(bounded, bounded, h.s.ids())
+		target := h.s.optimum(bounded, h.s.ids())
 		if got := totalDepth(target); got != -197 {
 			t.Fatalf("backoff of core %d yields %v totaling %d, want -197", breaker, target, got)
 		}
@@ -257,7 +257,7 @@ func TestOptimumKeepsFailedMarkOutsideSafeBounds(t *testing.T) {
 		hi   int
 		want []int
 	}{{-10, []int{-10}}, {0, []int{-10}}} {
-		if diff := cmp.Diff(tc.want, h.s.optimum([]int{-10}, []int{tc.hi}, []int{0})); diff != "" {
+		if diff := cmp.Diff(tc.want, h.s.optimum([]int{tc.hi}, []int{0})); diff != "" {
 			t.Fatalf("upper bound %d (-want +got):\n%s", tc.hi, diff)
 		}
 	}
@@ -270,5 +270,39 @@ func TestCarriedZeroMarkStopsBeforeTrial(t *testing.T) {
 	p, ok := a.Payload.(*journal.DeadEnd)
 	if !ok || p.Condition != journal.DeadEndFailureAtZero || p.Core == nil || *p.Core != 0 || cmp.Diff([]int{phase.Seq}, a.Cause) != "" {
 		t.Fatalf("zero mark did not stop tuning: %+v", a)
+	}
+}
+
+func TestClassTargetsPreserveHuntAndRerunLookup(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		offsets []int
+		key     string
+		hunt    []int
+		rerun   []int
+		core    int
+		offset  int
+	}{
+		{"singleton before part in hunt", []int{-10}, "[0]", []int{0}, []int{0}, 0, 0},
+		{"single core", []int{-10, -11, -12, -13}, "[1]", []int{1}, nil, 1, -11},
+		{"CCD part", []int{-10, -11, -12, -13}, "[0 1]", []int{0, 1}, []int{0, 1}, 0, 0},
+		{"all cores", []int{-10, -11, -12, -13}, "[0 1 2 3]", []int{0, 1, 2, 3}, []int{0, 1, 2, 3}, 0, 0},
+		{"unknown target", []int{-10, -11, -12, -13}, "[0 2]", []int{0, 1, 2, 3}, nil, 0, 0},
+		{"empty target", []int{-10, -11, -12, -13}, "[]", []int{0, 1, 2, 3}, []int{}, 0, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := residentHarness(t, tt.offsets...)
+			k := trialClass{machine.R7, machine.Workloads(machine.R7)[0].ID, tt.key, 120}
+			h.s.queue = []pendingFailure{{seq: 9, failure: &journal.Failure{Trial: "0001"}, profile: tt.offsets, class: k}}
+			start := h.s.huntStartNext().Payload.(*journal.HuntStart)
+			if diff := cmp.Diff(tt.hunt, start.Cores); diff != "" {
+				t.Fatalf("hunt target (-want +got):\n%s", diff)
+			}
+			h.s.obligations = []rerun{{class: k, seq: 9}}
+			tr := h.s.rerunTrial(k).Trial
+			if diff := cmp.Diff([]any{tt.rerun, tt.core, tt.offset}, []any{tr.Cores, tr.Core, tr.Offset}); diff != "" {
+				t.Fatalf("rerun target (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

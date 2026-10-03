@@ -17,6 +17,26 @@ type trialClass struct {
 	duration int
 }
 
+type classTarget struct {
+	cores []int
+	multi bool
+}
+
+func (s *State) indexClassTargets() {
+	s.classTargets = make(map[string]classTarget, len(s.cores)+len(s.parts)+1)
+	for _, c := range s.byID() {
+		cores := []int{c.id}
+		s.classTargets[coresKey(cores)] = classTarget{cores: cores}
+	}
+	for _, part := range s.parts {
+		key := coresKey(part)
+		if target := s.classTargets[key]; !target.multi {
+			s.classTargets[key] = classTarget{cores: part, multi: true}
+		}
+	}
+	s.classTargets["[]"] = classTarget{cores: []int{}}
+}
+
 type entry struct {
 	seq       int
 	profile   []int

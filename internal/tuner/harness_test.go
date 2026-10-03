@@ -1,7 +1,6 @@
 package tuner
 
 import (
-	"cmp"
 	"fmt"
 	"testing"
 
@@ -20,10 +19,11 @@ type coreStart struct {
 }
 
 type harness struct {
-	t      *testing.T
-	s      *State
-	events []journal.Event
-	trials int
+	t        *testing.T
+	s        *State
+	events   []journal.Event
+	trials   int
+	allIndex map[machine.Regime]int
 }
 
 func newHarness(t *testing.T, starts ...coreStart) *harness {
@@ -71,6 +71,14 @@ func (h *harness) add(p journal.Payload, cause ...int) journal.Event {
 	e := journal.Event{Seq: len(h.events) + 1, Kind: p.Kind(), Boot: "b", Msg: p.Message(), Data: p, Cause: cause}
 	h.events = append(h.events, e)
 	h.s.Fold(e)
+	if end, ok := p.(*journal.TrialEnd); ok && (end.Outcome == journal.OutcomePass || end.Outcome == journal.OutcomeFailure) {
+		if intent := h.s.intents[end.Trial]; intent != nil && intent.Core == nil {
+			if h.allIndex == nil {
+				h.allIndex = map[machine.Regime]int{}
+			}
+			h.allIndex[intent.Regime]++
+		}
+	}
 	return e
 }
 
@@ -81,19 +89,24 @@ func (h *harness) start(a Action) journal.Event {
 	}
 	h.trials++
 	tr := a.Trial
-	p := &journal.TrialIntent{Trial: fmt.Sprintf("%04d", h.trials), Regime: tr.Regime, Workload: cmp.Or(tr.Workload, machine.Workloads(tr.Regime)[0].ID), DurationS: tr.DurationS, Condition: tr.Condition, Phase: tr.Phase, Retry: tr.Retry, Rotation: tr.Rotation, Hunt: tr.Hunt, Mask: tr.Mask, Round: tr.Round, Rerun: tr.Rerun, RecordOnly: tr.RecordOnly, Step: tr.Step, Cores: tr.Cores, Profile: tr.Profile}
+	index := h.allIndex[tr.Regime]
 	if len(tr.Cores) == 0 {
-		p.Core = new(tr.Core)
-		p.Offset = new(tr.Offset)
+		index = h.s.core(tr.Core).workloadIndex[tr.Regime]
 	}
-	if p.Profile == nil {
-		p.Profile = make([]int, len(h.s.cores))
+	profile := tr.Profile
+	if profile == nil {
+		profile = make([]int, len(h.s.cores))
 		if tr.Condition == machine.Isolated {
-			p.Profile[h.s.index(tr.Core)] = tr.Offset
+			profile[h.s.index(tr.Core)] = tr.Offset
 		} else {
-			copy(p.Profile, h.s.Profile())
+			copy(profile, h.s.Profile())
 		}
 	}
+	p, _, err := tr.Complete(index, profile)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	p.Trial = fmt.Sprintf("%04d", h.trials)
 	return h.add(p, a.Cause...)
 }
 
@@ -152,3 +165,32 @@ var (
 	failed = journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, DurationS: 41}
 	unsure = journal.TrialEnd{Outcome: journal.OutcomeInconclusive, Reason: "setup failed"}
 )
+
+func TestTrialCompletionSelectsReducerWorkload(t *testing.T) {
+	for _, regime := range []machine.Regime{machine.R1, machine.R7} {
+		t.Run(string(regime), func(t *testing.T) {
+			h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -10})
+			tr := Trial{Core: 0, Offset: -10, Regime: regime, Condition: machine.Resident, DurationS: 120}
+			if regime == machine.R7 {
+				tr.Cores = []int{0}
+			}
+			for _, step := range []struct {
+				end      journal.TrialEnd
+				workload string
+				want     int
+			}{
+				{passed, "", 0},
+				{failed, "", 1},
+				{unsure, "", 2},
+				{passed, machine.Workloads(regime)[1].ID, 1},
+				{passed, "", 0},
+			} {
+				tr.Workload = step.workload
+				intent, _ := h.trial(Action{Kind: RunTrial, Trial: tr}, step.end)
+				if diff := gocmp.Diff(machine.Workloads(regime)[step.want].ID, intent.Data.(*journal.TrialIntent).Workload); diff != "" {
+					t.Fatalf("completed workload (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+}

@@ -61,6 +61,16 @@ func runMask(h *harness, a Action, fail bool) {
 	}
 }
 
+func assertHuntNextReplay(h *harness, want Action, next func(*State) Action, failure string) {
+	h.t.Helper()
+	replayed := New()
+	var state journal.State
+	journal.Replay(h.events, &state, replayed)
+	if diff := cmp.Diff(want, next(replayed)); diff != "" {
+		h.t.Fatalf("%s:\n%s", failure, diff)
+	}
+}
+
 func TestHuntAnchorRaisesTheQualifiedProfile(t *testing.T) {
 	for _, tt := range []struct {
 		name               string
@@ -103,6 +113,24 @@ func TestHuntAnchorRaisesTheQualifiedProfile(t *testing.T) {
 	}
 }
 
+func TestHuntAnchorSelectionAndReset(t *testing.T) {
+	h := huntHarness(t, 4, 120)
+	start := h.s.hunt.start
+	if start.AnchorSeq != 0 || !slices.Equal(start.Anchor, []int{0, 0, 0, 0}) {
+		t.Fatalf("all-zero anchor %+v", start)
+	}
+	h.add(&journal.CommandReset{Core: new(0)})
+	a := h.next()
+	end, ok := a.Payload.(*journal.HuntEnd)
+	if !ok || end.Result != "cancelled" {
+		t.Fatalf("reset did not cancel hunt: %+v", a)
+	}
+	h.decide(a)
+	if h.s.hunt != nil || len(h.s.queue) != 1 || h.s.queue[0].seq != start.Failure || h.s.queue[0].class.regime != machine.R7 {
+		t.Fatalf("source not requeued with class after cancellation: %+v", h.s.queue)
+	}
+}
+
 func TestAllZeroHuntAnchorOmitsZeroCause(t *testing.T) {
 	h := huntHarness(t, 4, 120)
 	for _, e := range h.events {
@@ -120,123 +148,58 @@ func TestAllZeroHuntAnchorOmitsZeroCause(t *testing.T) {
 	}
 	t.Fatal("no hunt.start")
 }
-func TestHuntPairAndCommitmentResume(t *testing.T) {
-	h := huntHarness(t, 4, 120)
-	var probes []journal.JointMember
-	var end *journal.HuntEnd
-	for range 200 {
-		replay := New()
-		for _, e := range h.events {
-			replay.Fold(e)
-		}
-		if diff := cmp.Diff(h.s.Next(), replay.Next()); diff != "" {
-			t.Fatalf("hunt prefix replay (-live +replay):\n%s", diff)
-		}
-		a := h.next()
-		if mask, ok := a.Payload.(*journal.HuntMask); ok {
-			h.decide(a)
-			if mask.Mask == 1 && !slices.Equal(mask.Cores, []int{2, 3}) {
-				t.Fatalf("recent mark did not move its part first: %v", mask.Cores)
-			}
-			if mask.Edge != nil {
-				probes = append(probes, *mask.Edge)
-			}
-			continue
-		}
-		if a.Kind == RunTrial {
-			p := a.Trial.Profile
-			runMask(h, a, p[0] <= -30 && p[1] <= -20 && p[2] == 0 && p[3] == 0)
-			continue
-		}
-		if e, ok := a.Payload.(*journal.HuntEnd); ok {
-			end = e
-			h.decide(a)
-			break
-		}
-		t.Fatalf("unexpected action %+v", a)
+
+func TestHuntAnchorSkipsExactQualifiedProfile(t *testing.T) {
+	starts := make([]coreStart, 2)
+	for i := range starts {
+		starts[i] = coreStart{phase: journal.PhaseDone, offset: -30, fail: new(-31)}
 	}
-	if end == nil || end.Result != "joint" || cmp.Diff([]int{0, 1}, end.Cores) != "" {
-		t.Fatalf("hunt result %+v", end)
-	}
-	if diff := cmp.Diff([]journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -20}}, end.Members); diff != "" {
-		t.Errorf("probed members (-want +got):\n%s", diff)
-	}
-	want := []journal.JointMember{{Core: 0, Offset: -29}}
-	for _, offset := range []int{-29, -28, -26, -22, -14, -18, -20, -19} {
-		want = append(want, journal.JointMember{Core: 1, Offset: offset})
-	}
-	if diff := cmp.Diff(want, probes); diff != "" {
-		t.Errorf("edge probes (-want +got):\n%s", diff)
-	}
-	mark := h.next()
-	p, ok := mark.Payload.(*journal.MarkJoint)
-	if !ok || cmp.Diff([]journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -20}}, p.Members) != "" {
-		t.Fatalf("mark %+v", mark)
-	}
-	h.decide(mark)
-	replay := New()
-	for _, e := range h.events {
-		replay.Fold(e)
-	}
-	if diff := cmp.Diff(h.s.Next(), replay.Next()); diff != "" {
-		t.Fatalf("commitment resume (-live +replay):\n%s", diff)
-	}
-	back := h.next()
-	d, ok := back.Payload.(*journal.TunerDecision)
-	if !ok || d.Decision != journal.Backoff || d.Phase != journal.PhaseHunt || d.Core != 0 || d.ToOffset != -29 {
-		t.Fatalf("commitment %+v", d)
-	}
-	h.decide(back)
-	if h.s.hunt != nil {
-		t.Fatal("hunt reopened after commitment")
-	}
-	if _, reached := h.s.Reaches(h.s.offsets()); reached {
-		t.Fatalf("commitment reached mark: %v", h.s.offsets())
+	h := newHarness(t, starts...)
+	h.add(&journal.ProfileChange{To: []int{-20, -20}})
+	h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: h.s.steps})
+	old := h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true})
+	h.add(&journal.ProfileChange{From: []int{-20, -20}, To: []int{-30, -30}})
+	h.add(&journal.GuardRotation{Rotation: 2, Event: journal.RotationStart, Steps: h.s.steps})
+	h.add(&journal.GuardRotation{Rotation: 2, Event: journal.RotationEnd, Clean: true, Qualifying: true})
+	failure := h.add(&journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Resident, Regime: machine.R6, Profile: []int{-30, -30}})
+	a := h.s.huntStartNext()
+	start, ok := a.Payload.(*journal.HuntStart)
+	if !ok || start.Failure != failure.Seq || start.AnchorSeq != old.Seq || cmp.Diff([]int{-20, -20}, start.Anchor) != "" {
+		t.Fatalf("anchor %+v, want older #%d", a, old.Seq)
 	}
 }
 
-func TestJointBackoffMovesToATestedProbe(t *testing.T) {
+func TestHuntSkipsPreviouslyMarkedFailure(t *testing.T) {
+	h := huntHarness(t, 2, 120)
+	failure := h.add(&journal.Failure{Attribution: journal.Unattributed, Condition: machine.Resident, Signal: machine.Crash, Profile: h.s.Profile()})
+	for range 2 {
+		h.decide(h.next())
+		for range h.s.n {
+			runMask(h, h.next(), false)
+		}
+	}
+	h.decide(h.next())
+	h.decide(h.next())
+	h.decide(h.next())
+	h.add(&journal.ProfileChange{From: h.s.Profile(), To: h.s.offsets()})
+	a := h.s.huntStartNext()
+	p, ok := a.Payload.(*journal.HuntSkipped)
+	if !ok || p.Failure != failure.Seq || !strings.Contains(p.Reason, "joint mark J1") || cmp.Diff([]int{failure.Seq}, a.Cause) != "" {
+		t.Fatalf("marked source was hunted: %+v", a)
+	}
+	h.decide(a)
+	if len(h.s.queue) != 0 || h.s.hunt != nil {
+		t.Fatal("skipped source remains pending")
+	}
+}
+
+func TestHuntLoadedIdleSplit(t *testing.T) {
 	h := huntHarness(t, 4, 120)
-	fails := func(p []int) bool {
-		return p[0] <= -27 && p[1] <= -27 || p[0] == -26 && p[1] == -30
-	}
-	probes := map[int]int{}
-	for range 200 {
-		a := h.next()
-		if mask, ok := a.Payload.(*journal.HuntMask); ok {
-			e := h.decide(a)
-			if mask.Edge != nil {
-				probes[e.Seq] = mask.Edge.Offset
-			}
-			continue
-		}
-		if a.Kind == RunTrial {
-			runMask(h, a, fails(a.Trial.Profile))
-			continue
-		}
-		if _, ok := a.Payload.(*journal.HuntEnd); ok {
-			h.decide(a)
-			break
-		}
-		t.Fatalf("unexpected action %+v", a)
-	}
-	mark := h.next()
-	p, ok := mark.Payload.(*journal.MarkJoint)
-	if !ok || cmp.Diff([]journal.JointMember{{Core: 0, Offset: -26}, {Core: 1, Offset: -30}}, p.Members) != "" {
-		t.Fatalf("mark %+v", mark)
-	}
-	h.decide(mark)
-	back := h.next()
-	d, ok := back.Payload.(*journal.TunerDecision)
-	if !ok || d.Decision != journal.Backoff || d.Core != 0 || d.ToOffset != -25 {
-		t.Fatalf("commitment %+v, want core 00 to -25, where its probe passed with core 01 at -30", back)
-	}
-	if len(back.Cause) != 2 || probes[back.Cause[1]] != -25 {
-		t.Fatalf("commitment cause %v, want the joint mark and the passing probe", back.Cause)
-	}
-	h.decide(back)
-	if fails(h.s.offsets()) {
-		t.Fatalf("resident %v still fails; one count on core 01 would have left it failing", h.s.offsets())
+	h.s.recent = nil
+	h.s.hunt.start.Cores = []int{0, 2}
+	want := [][]int{{0, 2}, {1, 3}}
+	if got := h.s.split(h.s.hunt, []int{0, 1, 2, 3}, 2); cmp.Diff(want, got) != "" {
+		t.Fatalf("first split (-want +got):\n%s", cmp.Diff(want, got))
 	}
 }
 
@@ -421,6 +384,242 @@ func TestHuntMaskDoesNotReuseShallowerOrIncomparablePasses(t *testing.T) {
 	}
 }
 
+func TestHuntSkipsMarkedMask(t *testing.T) {
+	h := huntHarness(t, 4, 120)
+	h.add(&journal.MarkJoint{Mark: 1, Hunt: 999, Members: []journal.JointMember{{Core: 2, Offset: -30}, {Core: 3, Offset: -30}}})
+	a := h.next()
+	m, ok := a.Payload.(*journal.HuntMask)
+	if !ok || !m.Skipped {
+		t.Fatalf("mask on newly marked profile %+v", a)
+	}
+	h.decide(a)
+	if next := h.next(); next.Kind == RunTrial && next.Trial.Mask == m.Mask {
+		t.Fatalf("ran skipped mask %+v", next)
+	}
+}
+
+func TestRepeatedMaskedCoreProbeReturnsToBinaryPartsAfterPass(t *testing.T) {
+	starts := make([]coreStart, 16)
+	for i := range starts {
+		starts[i] = coreStart{phase: journal.PhaseDone, offset: -10, fail: new(-11)}
+	}
+	h := newHarness(t, starts...)
+	var prior []int
+	for range 1000 {
+		a := h.next()
+		if m, ok := a.Payload.(*journal.HuntMask); ok && m.Hunt == 3 && m.Mask == 1 {
+			if diff := cmp.Diff([]int{3}, m.Cores); diff != "" {
+				t.Fatalf("corroborated core was not probed first (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(append([]int{h.s.hunt.seq}, prior...), a.Cause); diff != "" {
+				t.Fatalf("probe lost its evidence (-want +got):\n%s", diff)
+			}
+			h.decide(a)
+			for range h.s.n {
+				trial := h.next()
+				h.trial(trial, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: trial.Trial.DurationS})
+			}
+			normal := h.next()
+			p, ok := normal.Payload.(*journal.HuntMask)
+			if !ok || p.Granularity != 2 || p.Index != 0 || p.Inferred != "" || p.Profile[3] != -8 || p.Profile[4] != -10 {
+				t.Fatalf("a passing singleton must not establish its untested binary group: %+v", normal)
+			}
+			assertHuntNextReplay(h, normal, (*State).Next, "resumed probe fallback changed (-want +got)")
+			return
+		}
+		if a.Kind == Decide {
+			e := h.decide(a)
+			if f, ok := e.Data.(*journal.Failure); ok && f.Condition == machine.Masked && f.Attribution == journal.Attributed && f.Core != nil && *f.Core == 3 {
+				prior = append(prior, e.Seq)
+			}
+			continue
+		}
+		if a.Kind != RunTrial {
+			t.Fatalf("unexpected action: %+v", a)
+		}
+		intent := h.start(a)
+		p := intent.Data.(*journal.TrialIntent)
+		end := &journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomePass, DurationS: p.DurationS}
+		if p.Profile[3] < -8 || p.Profile[3] < 0 && p.Profile[4] < -9 {
+			end.Outcome, end.Signal = journal.OutcomeFailure, machine.Crash
+		}
+		h.add(end, intent.Seq)
+	}
+	t.Fatal("corroborated singleton probe was never scheduled")
+}
+
+func TestRepeatedMaskedCoreProbeRequiresMatchingAdjacentFailuresSinceReset(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		change func(*Trial, *journal.Failure)
+		reset  bool
+		probe  bool
+	}{
+		{name: "matching adjacent failures", probe: true},
+		{name: "different workload", change: func(tr *Trial, _ *journal.Failure) { tr.Workload = machine.Workloads(machine.R7)[1].ID }},
+		{name: "different duration", change: func(tr *Trial, _ *journal.Failure) { tr.DurationS = 600 }},
+		{name: "different loaded cores", change: func(tr *Trial, _ *journal.Failure) { tr.Cores = []int{0, 1} }},
+		{name: "resident failure", change: func(tr *Trial, f *journal.Failure) { tr.Condition, f.Condition = machine.Resident, machine.Resident }},
+		{name: "unattributed failure", change: func(_ *Trial, f *journal.Failure) { f.Attribution, f.Core, f.Offset = journal.Unattributed, nil, nil }},
+		{name: "different culprit", change: func(_ *Trial, f *journal.Failure) { f.Core = new(0) }},
+		{name: "nonadjacent offsets", change: func(_ *Trial, f *journal.Failure) { f.Offset = new(-8) }},
+		{name: "reset between failures", reset: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			starts := make([]coreStart, 4)
+			for i, offset := range []int{-20, -8, -20, -20} {
+				starts[i] = coreStart{phase: journal.PhaseDone, offset: offset}
+			}
+			h := newHarness(t, starts...)
+			h.decide(h.next())
+			var prior []int
+			for i, offset := range []int{-10, -9} {
+				if i == 1 && tt.reset {
+					h.add(&journal.CommandReset{Core: new(1)})
+				}
+				tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: h.s.ids(), Condition: machine.Masked, Phase: journal.PhaseHunt, DurationS: 120, Profile: []int{0, offset, 0, 0}}
+				failure := &journal.Failure{Attribution: journal.Attributed, Core: new(1), Offset: new(offset), Condition: machine.Masked, Regime: machine.R7, Profile: tr.Profile}
+				if i == 1 && tt.change != nil {
+					tt.change(&tr, failure)
+				}
+				intent, end := h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
+				failure.Trial = intent.Data.(*journal.TrialIntent).Trial
+				prior = append(prior, h.add(failure, end.Seq).Seq)
+			}
+			h.add(&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -8, FailedMark: new(-9)})
+			tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: h.s.ids(), Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 120, Profile: []int{-20, -8, -20, -20}}
+			intent, end := h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
+			failure := h.add(&journal.Failure{Trial: intent.Data.(*journal.TrialIntent).Trial, Attribution: journal.Unattributed, Condition: machine.Resident, Regime: machine.R7, Profile: tr.Profile}, end.Seq)
+			h.decide(h.s.huntStartNext())
+			plan, ok := h.s.nextMaskPlan(h.s.hunt)
+			if !ok {
+				t.Fatal("hunt did not schedule a mask")
+			}
+			want := []int{0, 1}
+			if tt.probe {
+				want = []int{1}
+			}
+			if diff := cmp.Diff(want, plan.cores); diff != "" {
+				t.Fatalf("initial mask for failure #%d (-want +got):\n%s", failure.Seq, diff)
+			}
+			if tt.probe {
+				action := h.s.planMask(h.s.hunt, plan, "partition")
+				if diff := cmp.Diff(append([]int{h.s.hunt.seq}, prior...), action.Cause); diff != "" {
+					t.Fatalf("probe cause (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+}
+
+func TestHuntPairAndCommitmentResume(t *testing.T) {
+	h := huntHarness(t, 4, 120)
+	var probes []journal.JointMember
+	var end *journal.HuntEnd
+	for range 200 {
+		assertHuntNextReplay(h, h.s.Next(), (*State).Next, "hunt prefix replay (-live +replay)")
+		a := h.next()
+		if mask, ok := a.Payload.(*journal.HuntMask); ok {
+			h.decide(a)
+			if mask.Mask == 1 && !slices.Equal(mask.Cores, []int{2, 3}) {
+				t.Fatalf("recent mark did not move its part first: %v", mask.Cores)
+			}
+			if mask.Edge != nil {
+				probes = append(probes, *mask.Edge)
+			}
+			continue
+		}
+		if a.Kind == RunTrial {
+			p := a.Trial.Profile
+			runMask(h, a, p[0] <= -30 && p[1] <= -20 && p[2] == 0 && p[3] == 0)
+			continue
+		}
+		if e, ok := a.Payload.(*journal.HuntEnd); ok {
+			end = e
+			h.decide(a)
+			break
+		}
+		t.Fatalf("unexpected action %+v", a)
+	}
+	if end == nil || end.Result != "joint" || cmp.Diff([]int{0, 1}, end.Cores) != "" {
+		t.Fatalf("hunt result %+v", end)
+	}
+	if diff := cmp.Diff([]journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -20}}, end.Members); diff != "" {
+		t.Errorf("probed members (-want +got):\n%s", diff)
+	}
+	want := []journal.JointMember{{Core: 0, Offset: -29}}
+	for _, offset := range []int{-29, -28, -26, -22, -14, -18, -20, -19} {
+		want = append(want, journal.JointMember{Core: 1, Offset: offset})
+	}
+	if diff := cmp.Diff(want, probes); diff != "" {
+		t.Errorf("edge probes (-want +got):\n%s", diff)
+	}
+	mark := h.next()
+	p, ok := mark.Payload.(*journal.MarkJoint)
+	if !ok || cmp.Diff([]journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -20}}, p.Members) != "" {
+		t.Fatalf("mark %+v", mark)
+	}
+	h.decide(mark)
+	assertHuntNextReplay(h, h.s.Next(), (*State).Next, "commitment resume (-live +replay)")
+	back := h.next()
+	d, ok := back.Payload.(*journal.TunerDecision)
+	if !ok || d.Decision != journal.Backoff || d.Phase != journal.PhaseHunt || d.Core != 0 || d.ToOffset != -29 {
+		t.Fatalf("commitment %+v", d)
+	}
+	h.decide(back)
+	if h.s.hunt != nil {
+		t.Fatal("hunt reopened after commitment")
+	}
+	if _, reached := h.s.Reaches(h.s.offsets()); reached {
+		t.Fatalf("commitment reached mark: %v", h.s.offsets())
+	}
+}
+
+func TestJointBackoffMovesToATestedProbe(t *testing.T) {
+	h := huntHarness(t, 4, 120)
+	fails := func(p []int) bool {
+		return p[0] <= -27 && p[1] <= -27 || p[0] == -26 && p[1] == -30
+	}
+	probes := map[int]int{}
+	for range 200 {
+		a := h.next()
+		if mask, ok := a.Payload.(*journal.HuntMask); ok {
+			e := h.decide(a)
+			if mask.Edge != nil {
+				probes[e.Seq] = mask.Edge.Offset
+			}
+			continue
+		}
+		if a.Kind == RunTrial {
+			runMask(h, a, fails(a.Trial.Profile))
+			continue
+		}
+		if _, ok := a.Payload.(*journal.HuntEnd); ok {
+			h.decide(a)
+			break
+		}
+		t.Fatalf("unexpected action %+v", a)
+	}
+	mark := h.next()
+	p, ok := mark.Payload.(*journal.MarkJoint)
+	if !ok || cmp.Diff([]journal.JointMember{{Core: 0, Offset: -26}, {Core: 1, Offset: -30}}, p.Members) != "" {
+		t.Fatalf("mark %+v", mark)
+	}
+	h.decide(mark)
+	back := h.next()
+	d, ok := back.Payload.(*journal.TunerDecision)
+	if !ok || d.Decision != journal.Backoff || d.Core != 0 || d.ToOffset != -25 {
+		t.Fatalf("commitment %+v, want core 00 to -25, where its probe passed with core 01 at -30", back)
+	}
+	if len(back.Cause) != 2 || probes[back.Cause[1]] != -25 {
+		t.Fatalf("commitment cause %v, want the joint mark and the passing probe", back.Cause)
+	}
+	h.decide(back)
+	if fails(h.s.offsets()) {
+		t.Fatalf("resident %v still fails; one count on core 01 would have left it failing", h.s.offsets())
+	}
+}
+
 func TestHuntFallbackAndFullCheck(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -462,114 +661,6 @@ func TestHuntFallbackAndFullCheck(t *testing.T) {
 			}
 			t.Fatal("hunt did not end")
 		})
-	}
-}
-
-func TestHuntAnchorSelectionAndReset(t *testing.T) {
-	h := huntHarness(t, 4, 120)
-	start := h.s.hunt.start
-	if start.AnchorSeq != 0 || !slices.Equal(start.Anchor, []int{0, 0, 0, 0}) {
-		t.Fatalf("all-zero anchor %+v", start)
-	}
-	h.add(&journal.CommandReset{Core: new(0)})
-	a := h.next()
-	end, ok := a.Payload.(*journal.HuntEnd)
-	if !ok || end.Result != "cancelled" {
-		t.Fatalf("reset did not cancel hunt: %+v", a)
-	}
-	h.decide(a)
-	if h.s.hunt != nil || len(h.s.queue) != 1 || h.s.queue[0].seq != start.Failure || h.s.queue[0].class.regime != machine.R7 {
-		t.Fatalf("source not requeued with class after cancellation: %+v", h.s.queue)
-	}
-}
-
-func TestHuntEscalationAndInferredMask(t *testing.T) {
-	h := huntHarness(t, 2, 600)
-	first := h.next()
-	mask, ok := first.Payload.(*journal.HuntMask)
-	if !ok {
-		t.Fatalf("first mask %+v", first)
-	}
-	profile := slices.Clone(mask.Profile)
-	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[0].ID, Condition: machine.Masked, Phase: journal.PhaseHunt, DurationS: 120, Profile: profile}
-	for range h.s.n {
-		h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
-	}
-	first = h.next()
-	mask, ok = first.Payload.(*journal.HuntMask)
-	if !ok || mask.Inferred != "pass" {
-		t.Fatalf("inferred mask %+v", first)
-	}
-	h.decide(first)
-	escalated := false
-	for range 200 {
-		a := h.next()
-		if mask, ok := a.Payload.(*journal.HuntMask); ok {
-			if mask.Escalated {
-				escalated = true
-				if mask.DurationS != 600 {
-					t.Fatalf("escalated duration %d", mask.DurationS)
-				}
-			}
-			h.decide(a)
-			continue
-		}
-		if a.Kind == RunTrial {
-			runMask(h, a, false)
-			continue
-		}
-		if _, ok := a.Payload.(*journal.HuntEnd); ok {
-			if !escalated {
-				t.Fatal("full pass never escalated")
-			}
-			return
-		}
-		t.Fatalf("unexpected action %+v", a)
-	}
-	t.Fatal("escalated hunt did not finish")
-}
-
-func TestHuntSkipsMarkedMask(t *testing.T) {
-	h := huntHarness(t, 4, 120)
-	h.add(&journal.MarkJoint{Mark: 1, Hunt: 999, Members: []journal.JointMember{{Core: 2, Offset: -30}, {Core: 3, Offset: -30}}})
-	a := h.next()
-	m, ok := a.Payload.(*journal.HuntMask)
-	if !ok || !m.Skipped {
-		t.Fatalf("mask on newly marked profile %+v", a)
-	}
-	h.decide(a)
-	if next := h.next(); next.Kind == RunTrial && next.Trial.Mask == m.Mask {
-		t.Fatalf("ran skipped mask %+v", next)
-	}
-}
-
-func TestHuntAnchorSkipsExactQualifiedProfile(t *testing.T) {
-	starts := make([]coreStart, 2)
-	for i := range starts {
-		starts[i] = coreStart{phase: journal.PhaseDone, offset: -30, fail: new(-31)}
-	}
-	h := newHarness(t, starts...)
-	h.add(&journal.ProfileChange{To: []int{-20, -20}})
-	h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: h.s.steps})
-	old := h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true})
-	h.add(&journal.ProfileChange{From: []int{-20, -20}, To: []int{-30, -30}})
-	h.add(&journal.GuardRotation{Rotation: 2, Event: journal.RotationStart, Steps: h.s.steps})
-	h.add(&journal.GuardRotation{Rotation: 2, Event: journal.RotationEnd, Clean: true, Qualifying: true})
-	failure := h.add(&journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Resident, Regime: machine.R6, Profile: []int{-30, -30}})
-	a := h.s.huntStartNext()
-	start, ok := a.Payload.(*journal.HuntStart)
-	if !ok || start.Failure != failure.Seq || start.AnchorSeq != old.Seq || cmp.Diff([]int{-20, -20}, start.Anchor) != "" {
-		t.Fatalf("anchor %+v, want older #%d", a, old.Seq)
-	}
-}
-
-func TestHuntLoadedIdleSplit(t *testing.T) {
-	h := huntHarness(t, 4, 120)
-	h.s.recent = nil
-	h.s.hunt.start.Cores = []int{0, 2}
-	want := [][]int{{0, 2}, {1, 3}}
-	if got := h.s.split(h.s.hunt, []int{0, 1, 2, 3}, 2); cmp.Diff(want, got) != "" {
-		t.Fatalf("first split (-want +got):\n%s", cmp.Diff(want, got))
 	}
 }
 
@@ -714,135 +805,58 @@ func TestHuntDurationPriorRespectsEvidenceAndShortFailures(t *testing.T) {
 			if a.Payload.(*journal.HuntMask).Inferred == "" && (next.Kind != RunTrial || next.Trial.DurationS != tt.want) {
 				t.Fatalf("masked trial duration: %+v", next)
 			}
-			replayed := New()
-			var state journal.State
-			journal.Replay(h.events, &state, replayed)
-			replayNext, _ := replayed.huntNext()
-			if diff := cmp.Diff(next, replayNext); diff != "" {
-				t.Fatalf("duration resume (-live +replayed):\n%s", diff)
-			}
+			assertHuntNextReplay(h, next, func(s *State) Action {
+				a, _ := s.huntNext()
+				return a
+			}, "duration resume (-live +replayed)")
 		})
 	}
 }
 
-func TestRepeatedMaskedCoreProbeReturnsToBinaryPartsAfterPass(t *testing.T) {
-	starts := make([]coreStart, 16)
-	for i := range starts {
-		starts[i] = coreStart{phase: journal.PhaseDone, offset: -10, fail: new(-11)}
+func TestHuntEscalationAndInferredMask(t *testing.T) {
+	h := huntHarness(t, 2, 600)
+	first := h.next()
+	mask, ok := first.Payload.(*journal.HuntMask)
+	if !ok {
+		t.Fatalf("first mask %+v", first)
 	}
-	h := newHarness(t, starts...)
-	var prior []int
-	for range 1000 {
+	profile := slices.Clone(mask.Profile)
+	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[0].ID, Condition: machine.Masked, Phase: journal.PhaseHunt, DurationS: 120, Profile: profile}
+	for range h.s.n {
+		h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
+	}
+	first = h.next()
+	mask, ok = first.Payload.(*journal.HuntMask)
+	if !ok || mask.Inferred != "pass" {
+		t.Fatalf("inferred mask %+v", first)
+	}
+	h.decide(first)
+	escalated := false
+	for range 200 {
 		a := h.next()
-		if m, ok := a.Payload.(*journal.HuntMask); ok && m.Hunt == 3 && m.Mask == 1 {
-			if diff := cmp.Diff([]int{3}, m.Cores); diff != "" {
-				t.Fatalf("corroborated core was not probed first (-want +got):\n%s", diff)
-			}
-			if diff := cmp.Diff(append([]int{h.s.hunt.seq}, prior...), a.Cause); diff != "" {
-				t.Fatalf("probe lost its evidence (-want +got):\n%s", diff)
+		if mask, ok := a.Payload.(*journal.HuntMask); ok {
+			if mask.Escalated {
+				escalated = true
+				if mask.DurationS != 600 {
+					t.Fatalf("escalated duration %d", mask.DurationS)
+				}
 			}
 			h.decide(a)
-			for range h.s.n {
-				trial := h.next()
-				h.trial(trial, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: trial.Trial.DurationS})
-			}
-			normal := h.next()
-			p, ok := normal.Payload.(*journal.HuntMask)
-			if !ok || p.Granularity != 2 || p.Index != 0 || p.Inferred != "" || p.Profile[3] != -8 || p.Profile[4] != -10 {
-				t.Fatalf("a passing singleton must not establish its untested binary group: %+v", normal)
-			}
-			replayed := New()
-			for _, e := range h.events {
-				replayed.Fold(e)
-			}
-			if diff := cmp.Diff(normal, replayed.Next()); diff != "" {
-				t.Fatalf("resumed probe fallback changed (-want +got):\n%s", diff)
+			continue
+		}
+		if a.Kind == RunTrial {
+			runMask(h, a, false)
+			continue
+		}
+		if _, ok := a.Payload.(*journal.HuntEnd); ok {
+			if !escalated {
+				t.Fatal("full pass never escalated")
 			}
 			return
 		}
-		if a.Kind == Decide {
-			e := h.decide(a)
-			if f, ok := e.Data.(*journal.Failure); ok && f.Condition == machine.Masked && f.Attribution == journal.Attributed && f.Core != nil && *f.Core == 3 {
-				prior = append(prior, e.Seq)
-			}
-			continue
-		}
-		if a.Kind != RunTrial {
-			t.Fatalf("unexpected action: %+v", a)
-		}
-		intent := h.start(a)
-		p := intent.Data.(*journal.TrialIntent)
-		end := &journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomePass, DurationS: p.DurationS}
-		if p.Profile[3] < -8 || p.Profile[3] < 0 && p.Profile[4] < -9 {
-			end.Outcome, end.Signal = journal.OutcomeFailure, machine.Crash
-		}
-		h.add(end, intent.Seq)
+		t.Fatalf("unexpected action %+v", a)
 	}
-	t.Fatal("corroborated singleton probe was never scheduled")
-}
-
-func TestRepeatedMaskedCoreProbeRequiresMatchingAdjacentFailuresSinceReset(t *testing.T) {
-	for _, tt := range []struct {
-		name   string
-		change func(*Trial, *journal.Failure)
-		reset  bool
-		probe  bool
-	}{
-		{name: "matching adjacent failures", probe: true},
-		{name: "different workload", change: func(tr *Trial, _ *journal.Failure) { tr.Workload = machine.Workloads(machine.R7)[1].ID }},
-		{name: "different duration", change: func(tr *Trial, _ *journal.Failure) { tr.DurationS = 600 }},
-		{name: "different loaded cores", change: func(tr *Trial, _ *journal.Failure) { tr.Cores = []int{0, 1} }},
-		{name: "resident failure", change: func(tr *Trial, f *journal.Failure) { tr.Condition, f.Condition = machine.Resident, machine.Resident }},
-		{name: "unattributed failure", change: func(_ *Trial, f *journal.Failure) { f.Attribution, f.Core, f.Offset = journal.Unattributed, nil, nil }},
-		{name: "different culprit", change: func(_ *Trial, f *journal.Failure) { f.Core = new(0) }},
-		{name: "nonadjacent offsets", change: func(_ *Trial, f *journal.Failure) { f.Offset = new(-8) }},
-		{name: "reset between failures", reset: true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			starts := make([]coreStart, 4)
-			for i, offset := range []int{-20, -8, -20, -20} {
-				starts[i] = coreStart{phase: journal.PhaseDone, offset: offset}
-			}
-			h := newHarness(t, starts...)
-			h.decide(h.next())
-			var prior []int
-			for i, offset := range []int{-10, -9} {
-				if i == 1 && tt.reset {
-					h.add(&journal.CommandReset{Core: new(1)})
-				}
-				tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: h.s.ids(), Condition: machine.Masked, Phase: journal.PhaseHunt, DurationS: 120, Profile: []int{0, offset, 0, 0}}
-				failure := &journal.Failure{Attribution: journal.Attributed, Core: new(1), Offset: new(offset), Condition: machine.Masked, Regime: machine.R7, Profile: tr.Profile}
-				if i == 1 && tt.change != nil {
-					tt.change(&tr, failure)
-				}
-				intent, end := h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
-				failure.Trial = intent.Data.(*journal.TrialIntent).Trial
-				prior = append(prior, h.add(failure, end.Seq).Seq)
-			}
-			h.add(&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -8, FailedMark: new(-9)})
-			tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: h.s.ids(), Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 120, Profile: []int{-20, -8, -20, -20}}
-			intent, end := h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
-			failure := h.add(&journal.Failure{Trial: intent.Data.(*journal.TrialIntent).Trial, Attribution: journal.Unattributed, Condition: machine.Resident, Regime: machine.R7, Profile: tr.Profile}, end.Seq)
-			h.decide(h.s.huntStartNext())
-			plan, ok := h.s.nextMaskPlan(h.s.hunt)
-			if !ok {
-				t.Fatal("hunt did not schedule a mask")
-			}
-			want := []int{0, 1}
-			if tt.probe {
-				want = []int{1}
-			}
-			if diff := cmp.Diff(want, plan.cores); diff != "" {
-				t.Fatalf("initial mask for failure #%d (-want +got):\n%s", failure.Seq, diff)
-			}
-			if tt.probe {
-				action := h.s.planMask(h.s.hunt, plan, "partition")
-				if diff := cmp.Diff(append([]int{h.s.hunt.seq}, prior...), action.Cause); diff != "" {
-					t.Fatalf("probe cause (-want +got):\n%s", diff)
-				}
-			}
-		})
-	}
+	t.Fatal("escalated hunt did not finish")
 }
 
 func TestActiveHuntProjection(t *testing.T) {
@@ -909,30 +923,6 @@ func TestActiveHuntProjection(t *testing.T) {
 			}
 			assertProjectionReplay(h)
 		})
-	}
-}
-
-func TestHuntSkipsPreviouslyMarkedFailure(t *testing.T) {
-	h := huntHarness(t, 2, 120)
-	failure := h.add(&journal.Failure{Attribution: journal.Unattributed, Condition: machine.Resident, Signal: machine.Crash, Profile: h.s.Profile()})
-	for range 2 {
-		h.decide(h.next())
-		for range h.s.n {
-			runMask(h, h.next(), false)
-		}
-	}
-	h.decide(h.next())
-	h.decide(h.next())
-	h.decide(h.next())
-	h.add(&journal.ProfileChange{From: h.s.Profile(), To: h.s.offsets()})
-	a := h.s.huntStartNext()
-	p, ok := a.Payload.(*journal.HuntSkipped)
-	if !ok || p.Failure != failure.Seq || !strings.Contains(p.Reason, "joint mark J1") || cmp.Diff([]int{failure.Seq}, a.Cause) != "" {
-		t.Fatalf("marked source was hunted: %+v", a)
-	}
-	h.decide(a)
-	if len(h.s.queue) != 0 || h.s.hunt != nil {
-		t.Fatal("skipped source remains pending")
 	}
 }
 
