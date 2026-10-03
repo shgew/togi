@@ -149,6 +149,14 @@ func (l *likelihood) rawScore(indices []int) float64 {
 	for _, i := range indices {
 		loss += l.value(i)
 	}
+	if s := l.cfg.SingleCore; s != nil {
+		for _, effect := range s.Core {
+			loss += 0.5 * effect * effect
+		}
+		for _, effect := range s.Workload {
+			loss += 0.5 * effect * effect
+		}
+	}
 	return loss
 }
 
@@ -204,6 +212,12 @@ func initialConfig(records []trialfacts.Record) sim.Config {
 	model := sim.DefaultModel()
 	model.PastEdgeRate, model.Growth, model.NearEdgeRate = 0.015, 2, 1e-7
 	cfg := sim.Config{Cores: cores, Edges: make([]sim.Edges, cores), Model: &model}
+	cfg.SingleCore = &sim.SingleCore{LogRate: -9, Slope: 0.15, MaxRate: 0.01, Core: make([]float64, cores), Workload: make(map[string]float64)}
+	for _, r := range records {
+		if len(r.Class.Cores) == 1 && (r.Class.Regime == machine.R1 || r.Class.Regime == machine.R2) {
+			cfg.SingleCore.Workload[r.Class.Workload] = 0
+		}
+	}
 	if records[0].Context != nil {
 		cfg.BIOSContext = *records[0].Context
 	}
@@ -260,6 +274,7 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 	all := l.selectObs(func(observation) bool { return true })
 	previous := math.Inf(1)
 	for range 12 {
+		l.fitSingleCore(&cfg)
 		l.fitJoints(&cfg)
 		for ccd := range 2 {
 			l.addJoint(&cfg, records, ccd)
@@ -311,6 +326,9 @@ func (l *likelihood) fitRegimeEdges(cfg *sim.Config) {
 				}
 				indices := l.selectObs(func(o observation) bool {
 					if o.spec.Regime != regime || !slices.Contains(o.spec.Cores, core) {
+						return false
+					}
+					if cfg.SingleCore != nil && singleCoreObservation(o) {
 						return false
 					}
 					only := r < 5
@@ -449,6 +467,9 @@ func (l *likelihood) fitWorkloads(cfg *sim.Config) {
 		workloads := make(map[string]bool)
 		for _, o := range l.obs {
 			if o.k > 0 && slices.Contains(o.spec.Cores, core) {
+				if cfg.SingleCore != nil && singleCoreObservation(o) {
+					continue
+				}
 				workloads[o.spec.Workload.ID] = true
 			}
 		}
@@ -496,6 +517,12 @@ func (l *likelihood) fitWorkloads(cfg *sim.Config) {
 func cloneMachine(cfg sim.Config) sim.Config {
 	model := *cfg.Model
 	cfg.Model = &model
+	if cfg.SingleCore != nil {
+		s := *cfg.SingleCore
+		s.Core = slices.Clone(s.Core)
+		s.Workload = maps.Clone(s.Workload)
+		cfg.SingleCore = &s
+	}
 	cfg.Edges = slices.Clone(cfg.Edges)
 	for core := range cfg.Edges {
 		cfg.Edges[core].Workload = maps.Clone(cfg.Edges[core].Workload)

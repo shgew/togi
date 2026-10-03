@@ -39,6 +39,13 @@ func (m *Machine) FailureProbability(profile []int, spec machine.TrialSpec) floa
 
 func (m *Machine) coreRate(profile []int, spec machine.TrialSpec, core int) float64 {
 	loaded := slices.Contains(spec.Cores, core)
+	if s := m.cfg.SingleCore; s != nil && loaded && len(spec.Cores) == 1 && (spec.Regime == machine.R1 || spec.Regime == machine.R2) {
+		rate := math.Exp(s.LogRate + s.Core[core] + s.Workload[spec.Workload.ID] + s.Slope*float64(-profile[core]-25))
+		if s.MaxRate > 0 {
+			rate = s.MaxRate / (1 + s.MaxRate/rate)
+		}
+		return rate
+	}
 	edge := m.edge(profile, core, spec.Regime, spec.Workload.ID)
 	if !loaded {
 		if m.edges[core].Idle == nil && m.edges[core].Flat <= 0 {
@@ -80,3 +87,5 @@ func (m *Machine) jointRate(profile []int, regime machine.Regime, joint Joint) f
 	}
 	return joint.Rate
 }
+
+func finite(x float64) bool { return !math.IsNaN(x) && !math.IsInf(x, 0) }
