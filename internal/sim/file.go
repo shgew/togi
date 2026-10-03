@@ -11,13 +11,12 @@ import (
 
 func LoadMachine(path string) (Config, error) {
 	var f struct {
-		Cores       int         `toml:"cores"`
-		Facts       string      `toml:"facts"`
-		BIOS        []int       `toml:"bios"`
-		Ranking     []int       `toml:"ranking"`
-		OldKernel   bool        `toml:"old_kernel"`
-		CCD         *CCD        `toml:"ccd"`
-		SingleCore  *SingleCore `toml:"single_core"`
+		Cores       int    `toml:"cores"`
+		Facts       string `toml:"facts"`
+		BIOS        []int  `toml:"bios"`
+		Ranking     []int  `toml:"ranking"`
+		OldKernel   bool   `toml:"old_kernel"`
+		CCD         *CCD   `toml:"ccd"`
 		BIOSContext *struct {
 			BIOSVersion   string `toml:"bios_version"`
 			Board         string `toml:"board"`
@@ -70,7 +69,6 @@ func LoadMachine(path string) (Config, error) {
 	}
 	cfg := Config{Cores: f.Cores, BIOS: f.BIOS, Ranking: f.Ranking, OldKernel: f.OldKernel, Facts: f.Facts}
 	cfg.CCD = f.CCD
-	cfg.SingleCore = f.SingleCore
 	if b := f.BIOSContext; b != nil {
 		cfg.BIOSContext = machine.BIOSContext{
 			BIOSVersion:   cmp.Or(b.BIOSVersion, defaultBIOSContext.BIOSVersion),

@@ -28,9 +28,6 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the curr
 func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 	cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}, Context: &machine.BIOSContext{Board: "fixture", BIOSVersion: "A", CPUModel: "Zen 5 fixture", Microcode: "0x1", BoostLimitMHz: 5600}}})
 	cfg.CCD = &sim.CCD{LogRate: -9, Slope: 0.1, Effect: [2]float64{0.2, -0.3}}
-	cfg.SingleCore.Core[0] = 0.2
-	cfg.SingleCore.ResidentEffect = -0.7
-	cfg.SingleCore.ResidentCore[0] = -0.3
 	idle := -30
 	cfg.Facts = "../facts/extract.jsonl.gz"
 	cfg.Edges[0].Idle = &idle
@@ -52,9 +49,6 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 		t.Fatal(diff)
 	}
 	if diff := cmp.Diff(cfg.CCD, got.CCD); diff != "" {
-		t.Fatal(diff)
-	}
-	if diff := cmp.Diff(cfg.SingleCore, got.SingleCore); diff != "" {
 		t.Fatal(diff)
 	}
 	if got.Facts != cfg.Facts || got.Model.PastEdgeRate != cfg.Model.PastEdgeRate || got.Model.Growth != cfg.Model.Growth || got.Model.NearEdgeRate != cfg.Model.NearEdgeRate {
