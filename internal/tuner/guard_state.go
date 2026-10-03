@@ -7,6 +7,13 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
+func (s *State) GuardCoverage() (bool, []string) {
+	if s.guard.open {
+		return s.qualifying(s.guard.steps)
+	}
+	return s.qualifying(s.steps)
+}
+
 func (s *State) projectGuard() *journal.GuardState {
 	g := &s.guard
 	if g.profileSeq == 0 {

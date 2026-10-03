@@ -1,0 +1,69 @@
+   togi   00:18:20  running 1m40s  0 failures  0 crashes
+
+  TESTING TOGETHER  lap 1, step 1 of 3  ███████████████████░░░░░  0m27s left
+
+  Event log, as the journal records it
+  
+    0h00m  session dashboard started by a togi build from before version stamps (schema 0, ruleset 0, fixes 0, 3 cores)
+    0h00m  core 00 starts done at -20 ()
+    0h00m  core 01 starts done at -30 ()
+    0h00m  core 02 starts done at -50 ()
+    0h00m  profile for guard: [-20 -30 -50]
+    0h00m  guard rotation 1 start: R1 R2 R7
+    0h00m  trial guard core 01 R2 mprime AVX2 36K-248K 120s resident rotation 1
+    0h00m  trial guard started pid 0 in scope  on cpu 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  L or Esc back    ? what is all this    q quit

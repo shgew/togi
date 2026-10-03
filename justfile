@@ -71,6 +71,11 @@ check-one +names:
 sim seed="1":
     {{ dev }} go run ./tools/sim --seed "$1"
 
+# Play a recorded journal through the dashboard on a fast-forward clock
+[group('run')]
+replay *args:
+    {{ dev }} go run ./tools/replay "$@"
+
 # Summarize a current or archived journal for review
 [group('run')]
 stats *args:

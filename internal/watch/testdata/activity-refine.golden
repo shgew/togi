@@ -1,42 +1,42 @@
-  togi   REFINE   session 1m40s   last event 1m36s ago                                                                                                  00:18:20
- refine round 2 | 1/3 done | 0 failures | 0 crashes
+   togi   00:18:20  running 1m40s  0 failures  0 crashes
 
- no trial running
- turn order 00 02 01
- no failures yet
+  █  GOING DEEPER
+  █  
+  █  Deciding what to test next.
+  
+  
+  ■ Find limits   ■ Test together ► Go deeper     ○ Clean lap     ∞ Keep checking
+  █████████████   █████████████   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
+  3/3 cores       lap was clean   round 2         the goal        until stopped
+                                                                  
+  
+   HUNT      no hunt running
+  
+  
+  CCD 0                                -10       -20       -30       -40       -50
+  00  -20  can go deeper        ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒······························
+  01  -30  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌···················
 
+  CCD 1                                -10       -20       -30       -40       -50
+  02  -10  can go deeper        ▒▒▒▒▒▒▒▒▒▒········································
+  
+  Coming up
+  If the round passes, the deeper offsets need a new clean lap. If not, I handle
+  the failure first.
 
- CCD 0
-
- ┌─ 00 ───────────────────── resident ─┐  ┌─ 01 ──────────────────────── DONE ─┐
- │                 ▀▀█ █▀█             │  │                ▀▀█ █▀█             │
- │             ▀▀▀ █▀▀ █ █             │  │            ▀▀▀  ▀█ █ █             │
- │                 ▀▀▀ ▀▀▀             │  │                ▀▀▀ ▀▀▀             │
- │ ██████████████..................... │  │ █████████████████████x............ │
- │ 0           -20                 -50 │  │ 0                  -30         -50 │
- └─────────────────────────────────────┘  └────────────────────────────────────┘
-
-
- CCD 1
-
- ┌─ 02 ───────────────────── resident ─┐
- │                 ▀█  █▀█             │
- │             ▀▀▀  █  █ █             │
- │                 ▀▀▀ ▀▀▀             │
- │ ███████............................ │
- │ 0    -10                        -50 │
- └─────────────────────────────────────┘
-
-
- CO 0 -> -50     > trial     x failed mark     j joint mark     · mask anchor     ░ unexplored
+  What happened
+    0h00m  round    #2: trying core 00 deeper
+    0h00m  start    session started on 3 cores
 
 
- Recent
- 0h00m  session dashboard started by a togi build from before version stamps (schema 0, ruleset 0, fixes 0, 3 cores)
- 0h00m  core 00 starts resident at -20 ()
- 0h00m  core 01 starts done at -30 ()
- 0h00m  core 02 starts resident at -10 ()
- 0h00m  refine round 2 start: core 00 toward [-22 -30 -10]
+
+
+
+
+
+
+
+
 
 
 

@@ -190,6 +190,7 @@ in
             environment.TERM = "linux";
             serviceConfig = {
               ExecStart = "${lib.getExe cfg.package} watch";
+              StandardInput = "tty";
               StandardOutput = "tty";
               StandardError = "journal";
               TTYPath = "/dev/tty1";

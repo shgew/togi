@@ -37,7 +37,7 @@ func (d *dashboard) show() {
 	d.mu.Unlock()
 	go func() {
 		defer close(done)
-		err := watch.Run(ctx, d.dir, d.out)
+		err := watch.Run(ctx, d.dir, d.out, nil)
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		d.showing = false

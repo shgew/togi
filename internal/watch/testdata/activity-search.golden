@@ -1,42 +1,42 @@
-  togi   SEARCH   session 1m40s   last event 1m37s ago                                                                                                  00:18:20
- 0/3 done | 0 failures | 0 crashes
+   togi   00:18:20  running 1m40s  0 failures  0 crashes
 
- core 00   isolated   R1 mprime SSE 4K-21K   ██████████████████████████████ 90/90s
- turn order 00 02 01
- no failures yet
+  █  FINDING LIMITS
+  █  
+  █  I'm finding each core's limit, one core at a time. Core 00 runs a light load
+  █  alone at -25 while every other core waits at 0, so a failure can only be its
+  █  own.
+  █  
+  █  It passes at -20 and fails at -40, so its limit is between -20 and -39. I'm
+  █  closing in one count at a time.
+  █  
+  █  2 of 3 cores have found their limit, 1 to go.
+  █  
+  █  now  search step
+  █  light load on core 00 alone at -25 (mprime SSE 4K-21K)
+  █  ████████████████████████████████████████  0m00s left
+  
+  
+  ► Find limits   ○ Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
+  █████████░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
+  2/3 cores       all together    after a         the goal        until stopped
+                                  clean lap                       
+  
+   HUNT      no hunt running
+  
+  
+  CCD 0                                -10       -20       -30       -40       -50
+► 00  -25  searching            █████████████████████████··············▌··········
+  01    0  held back by others  ··················································
 
+  CCD 1                                -10       -20       -30       -40       -50
+  02    0  held back by others  ··················································
+  
+  Coming up
+  When every core has its limit, they all run together through laps of every kind
+  of test.
 
- CCD 0
-
- ┌─ 00 > TESTING ────────── searching ─┐  ┌─ 01 ─────────────────── searching ─┐
- │                 ▀▀█ █▀█             │  │                                    │
- │             ▀▀▀ █▀▀ █ █             │  │                ▀▀▀ ▀▀▀             │
- │                 ▀▀▀ ▀▀▀             │  │                                    │
- │ ██████████████░░░>░░░░░░░░░x....... │  │ .................................. │
- │ 0               -25       -40   -50 │  │ 0                              -50 │
- └─────────────────────────────────────┘  └────────────────────────────────────┘
-
-
- CCD 1
-
- ┌─ 02 ──────────────────── searching ─┐
- │                                     │
- │                 ▀▀▀ ▀▀▀             │
- │                                     │
- │ ................................... │
- │ 0                               -50 │
- └─────────────────────────────────────┘
-
-
- CO 0 -> -50     > trial     x failed mark     j joint mark     · mask anchor     ░ unexplored
-
-
- Recent
- 0h00m  session dashboard started by a togi build from before version stamps (schema 0, ruleset 0, fixes 0, 3 cores)
- 0h00m  core 00 starts search at -25 ()
- 0h00m  trial search core 00 CO -25 R1 mprime SSE 4K-21K 90s isolated
-
-
+  What happened
+    0h00m  start    session started on 3 cores
 
 
 

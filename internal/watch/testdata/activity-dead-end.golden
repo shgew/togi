@@ -1,23 +1,39 @@
- togi   SEARCH   session 1m40s   last event 1m37s ago 00...
-0/3 done | 1 failure | 0 crashes
-no trial running
-dead end failure_at_zero: core 00 failed at CO 0           
+   togi   00:18:20  stopped at a dead end after 3s  1 failure  0 crashes
 
-CCD 0
-┌─ 00 ────────── searching ─┐ ┌─ 01 ────────── searching ─┐
-│  --                       │ │  --                       │
-│ ......................... │ │ ......................... │
-│ 0 0                   -50 │ │ 0                     -50 │
-└───────────────────────────┘ └───────────────────────────┘
+  █  I STOPPED
+  █  
+  █  A core failed even at offset 0, so the problem isn't Curve Optimizer. Check
+  █  the rest of the system before tuning again.
+  █  
+  █  Details: dead end failure_at_zero: core 00 failed at CO 0
+  
+  
+  ► Find limits   ○ Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
+  █████████░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
+  2/3 cores       all together    after a         the goal        until stopped
+                                  clean lap                       
+  
+   HUNT      no hunt running
+  
+  
+  CCD 0                                -10       -20       -30       -40       -50
+  00    0  searching            ▌·················································
+  01    0  held back by others  ··················································
 
-CCD 1
-┌─ 02 ────────── searching ─┐
-│  --                       │
-│ ......................... │
-│ 0                     -50 │
-└───────────────────────────┘
-CO 0 -> -50     > trial     x failed mark     j joint ma...
-Recent
-0h00m  core 00 failure at CO 0: computation_error in tri...
-0h00m  core 00 starts search at 0 ()
-0h00m  dead end failure_at_zero: core 00 failed at CO 0
+  CCD 1                                -10       -20       -30       -40       -50
+  02    0  held back by others  ··················································
+
+  What happened
+    0h00m  stop     dead end: core 00 failed at CO 0
+    0h00m  cause    core 00 fails at 0
+    0h00m  start    session started on 3 cores
+
+
+
+
+
+
+
+
+
+

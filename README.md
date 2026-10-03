@@ -40,7 +40,7 @@ togi --version                         # version and git revision of this build
 sudo togi run                          # tune this machine; Ctrl-C stops, the next run resumes
 sudo togi run --rotations 3            # stop after three qualified rotations when refinement is complete
 togi status                            # activity, marks, per-core offsets and evidence
-togi watch                             # live hunt, refinement and guard dashboard
+togi watch                             # live dashboard: what togi does and why, the stages, every core
 togi --state-dir <dir> status          # inspect a copied journal
 togi --state-dir <dir> events --core 3 # everything that happened to core 3
 ```
