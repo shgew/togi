@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	binary  = journal.Build{Schema: 2, Ruleset: 4}
+	binary  = journal.Build{Schema: journal.Schema, Ruleset: 4}
 	context = machine.BIOSContext{BIOSVersion: "3.10", Board: "X870E", CPUModel: "9950X", Microcode: "0xb404032", BoostLimitMHz: 5700}
 )
 
@@ -45,7 +45,7 @@ func newJournal(t *testing.T, dir, session string, ruleset int, ctx *machine.BIO
 	}
 	t.Cleanup(func() { _ = j.Close() })
 	w := &writer{t: t, j: j, session: session}
-	w.add(&journal.SessionStart{Schema: 2, Ruleset: ruleset, Session: session, Cores: cores})
+	w.add(&journal.SessionStart{Schema: journal.Schema, Ruleset: ruleset, Session: session, Cores: cores})
 	if ctx != nil {
 		w.add(&journal.SessionContext{BIOSContext: *ctx})
 	}
@@ -101,7 +101,7 @@ func (w *writer) archive(dir string) {
 }
 
 func src(session string, ruleset int) journal.CarriedSource {
-	return journal.CarriedSource{Session: session, Path: filepath.Join("archive", session+".jsonl"), Schema: 2, Ruleset: ruleset}
+	return journal.CarriedSource{Session: session, Path: filepath.Join("archive", session+".jsonl"), Schema: journal.Schema, Ruleset: ruleset}
 }
 
 func prepare(t *testing.T, dir string, entries []defect.Entry) *Carry {
@@ -122,17 +122,17 @@ func prepareWithContext(dir string, entries []defect.Entry, current *machine.BIO
 	return Prepare(j, binary, entries, current)
 }
 
-func TestPrepareSeedsEdgesAndMarks(t *testing.T) {
+func TestPrepareSeedsSoloLimitsAndFailurePoints(t *testing.T) {
 	dir := t.TempDir()
 	w := newJournal(t, dir, "X", 3, &context)
-	w.pass(0, -30, machine.Isolated)
-	edge0 := w.pass(0, -35, machine.Isolated)
-	mark0 := w.fail(0, -36, machine.Isolated, journal.Attributed)
-	mark1 := w.fail(1, -40, machine.Resident, journal.Attributed)
-	edge1 := w.pass(1, -40, machine.Isolated)
-	w.pass(1, -45, machine.Resident)
-	w.fail(2, -20, machine.Resident, journal.Unattributed)
-	mark6 := w.fail(6, 0, machine.Isolated, journal.Attributed)
+	w.pass(0, -30, machine.Alone)
+	soloLimit0 := w.pass(0, -35, machine.Alone)
+	failurePoint0 := w.fail(0, -36, machine.Alone, journal.Attributed)
+	failurePoint1 := w.fail(1, -40, machine.Together, journal.Attributed)
+	soloLimit1 := w.pass(1, -40, machine.Alone)
+	w.pass(1, -45, machine.Together)
+	w.fail(2, -20, machine.Together, journal.Unattributed)
+	failurePoint6 := w.fail(6, 0, machine.Alone, journal.Attributed)
 	w.close()
 
 	got := prepare(t, dir, []defect.Entry{})
@@ -140,9 +140,9 @@ func TestPrepareSeedsEdgesAndMarks(t *testing.T) {
 		Sources: []journal.CarriedSource{src("X", 3)},
 		Context: &context,
 		Cores: []journal.CarriedCore{
-			{Core: 0, Edge: new(-35), EdgeSession: "X", EdgeSeq: edge0, FailedMark: new(-36), MarkSession: "X", MarkSeq: mark0, MarkSignal: machine.UnexpectedExit},
-			{Core: 1, Edge: new(-40), EdgeSession: "X", EdgeSeq: edge1, FailedMark: new(-40), MarkSession: "X", MarkSeq: mark1, MarkSignal: machine.UnexpectedExit},
-			{Core: 6, FailedMark: new(0), MarkSession: "X", MarkSeq: mark6, MarkSignal: machine.UnexpectedExit},
+			{Core: 0, SoloLimit: new(-35), SoloLimitSession: "X", SoloLimitSeq: soloLimit0, FailurePoint: new(-36), FailurePointSession: "X", FailurePointSeq: failurePoint0, FailurePointSignal: machine.UnexpectedExit},
+			{Core: 1, SoloLimit: new(-40), SoloLimitSession: "X", SoloLimitSeq: soloLimit1, FailurePoint: new(-40), FailurePointSession: "X", FailurePointSeq: failurePoint1, FailurePointSignal: machine.UnexpectedExit},
+			{Core: 6, FailurePoint: new(0), FailurePointSession: "X", FailurePointSeq: failurePoint6, FailurePointSignal: machine.UnexpectedExit},
 		},
 	}
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(Carry{})); diff != "" {
@@ -167,7 +167,7 @@ func TestPrepareBIOSChange(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			w := newJournal(t, dir, "X", 4, tc.recorded)
-			mark := w.fail(0, -30, machine.Isolated, journal.Attributed)
+			failurePoint := w.fail(0, -30, machine.Alone, journal.Attributed)
 			w.close()
 			got, err := prepareWithContext(dir, []defect.Entry{}, tc.current)
 			if err != nil {
@@ -176,7 +176,7 @@ func TestPrepareBIOSChange(t *testing.T) {
 			var want *Carry
 			if tc.archive {
 				want = &Carry{Sources: []journal.CarriedSource{src("X", 4)}, Context: tc.recorded, Cores: []journal.CarriedCore{
-					{Core: 0, FailedMark: new(-30), MarkSession: "X", MarkSeq: mark, MarkSignal: machine.UnexpectedExit},
+					{Core: 0, FailurePoint: new(-30), FailurePointSession: "X", FailurePointSeq: failurePoint, FailurePointSignal: machine.UnexpectedExit},
 				}}
 			}
 			if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(Carry{})); diff != "" {
@@ -193,7 +193,7 @@ func TestPrepareBIOSChange(t *testing.T) {
 func TestPrepareResumesInterruptedBIOSArchive(t *testing.T) {
 	dir := t.TempDir()
 	w := newJournal(t, dir, "X", 4, &context)
-	mark := w.fail(0, -30, machine.Isolated, journal.Attributed)
+	failurePoint := w.fail(0, -30, machine.Alone, journal.Attributed)
 	if err := os.MkdirAll(filepath.Join(dir, "archive"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestPrepareResumesInterruptedBIOSArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := &Carry{Sources: []journal.CarriedSource{src("X", 4)}, Context: &context, Cores: []journal.CarriedCore{
-		{Core: 0, FailedMark: new(-30), MarkSession: "X", MarkSeq: mark, MarkSignal: machine.UnexpectedExit},
+		{Core: 0, FailurePoint: new(-30), FailurePointSession: "X", FailurePointSeq: failurePoint, FailurePointSignal: machine.UnexpectedExit},
 	}}
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(Carry{})); diff != "" {
 		t.Fatalf("carry (-want +got):\n%s", diff)
@@ -235,7 +235,7 @@ func TestPrepareCarriesHuntCulprit(t *testing.T) {
 			dir := t.TempDir()
 			sparse := []machine.CoreInfo{{Core: 0, CPUs: []int{0}}, {Core: 2, CPUs: []int{2}}, {Core: 5, CPUs: []int{5}}}
 			w := newJournal(t, dir, "X", 3, &context, sparse...)
-			failure := w.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R7, Condition: machine.Resident})
+			failure := w.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R7, Condition: machine.Together})
 			w.add(&journal.HuntStart{Hunt: 1, Failure: failure, Failing: []int{-10, -35, -20}, Candidates: []int{2}})
 			end := w.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{2}})
 			if tc.reset {
@@ -243,7 +243,7 @@ func TestPrepareCarriesHuntCulprit(t *testing.T) {
 			}
 			attributedSeq := 0
 			if tc.attributed != 0 {
-				attributedSeq = w.fail(2, tc.attributed, machine.Resident, journal.Attributed)
+				attributedSeq = w.fail(2, tc.attributed, machine.Together, journal.Attributed)
 			}
 			w.close()
 			got := prepare(t, dir, []defect.Entry{})
@@ -253,7 +253,7 @@ func TestPrepareCarriesHuntCulprit(t *testing.T) {
 				if tc.attributed != 0 && (tc.reset || tc.attributed > -35) {
 					seq, signal = attributedSeq, machine.UnexpectedExit
 				}
-				want = []journal.CarriedCore{{Core: 2, FailedMark: new(tc.wantOffset), MarkSession: "X", MarkSeq: seq, MarkSignal: signal}}
+				want = []journal.CarriedCore{{Core: 2, FailurePoint: new(tc.wantOffset), FailurePointSession: "X", FailurePointSeq: seq, FailurePointSignal: signal}}
 			}
 			if diff := cmp.Diff(want, got.Cores); diff != "" {
 				t.Fatalf("cores (-want +got):\n%s", diff)
@@ -265,14 +265,14 @@ func TestPrepareCarriesHuntCulprit(t *testing.T) {
 func TestPrepareDropsWhatAResetCleared(t *testing.T) {
 	dir := t.TempDir()
 	w := newJournal(t, dir, "X", 3, &context)
-	w.pass(2, -30, machine.Isolated)
-	w.fail(2, -31, machine.Isolated, journal.Attributed)
+	w.pass(2, -30, machine.Alone)
+	w.fail(2, -31, machine.Alone, journal.Attributed)
 	w.add(&journal.CommandReset{Core: new(2)})
-	mark := w.fail(2, -10, machine.Isolated, journal.Attributed)
+	failurePoint := w.fail(2, -10, machine.Alone, journal.Attributed)
 	w.close()
 
 	got := prepare(t, dir, []defect.Entry{})
-	want := []journal.CarriedCore{{Core: 2, FailedMark: new(-10), MarkSession: "X", MarkSeq: mark, MarkSignal: machine.UnexpectedExit}}
+	want := []journal.CarriedCore{{Core: 2, FailurePoint: new(-10), FailurePointSession: "X", FailurePointSeq: failurePoint, FailurePointSignal: machine.UnexpectedExit}}
 	if diff := cmp.Diff(want, got.Cores); diff != "" {
 		t.Fatalf("cores (-want +got):\n%s", diff)
 	}
@@ -281,7 +281,7 @@ func TestPrepareDropsWhatAResetCleared(t *testing.T) {
 func TestPrepareSkipsFailuresBehindADefect(t *testing.T) {
 	dir := t.TempDir()
 	w := newJournal(t, dir, "X", 3, &context)
-	failure := w.fail(3, -25, machine.Isolated, journal.Attributed)
+	failure := w.fail(3, -25, machine.Alone, journal.Attributed)
 	w.add(&journal.TunerDecision{Core: 3, Phase: journal.PhaseSearch, Decision: journal.Backoff, FromOffset: -25, ToOffset: -24}, failure)
 	w.close()
 
@@ -294,18 +294,18 @@ func TestPrepareSkipsFailuresBehindADefect(t *testing.T) {
 	}
 }
 
-func TestPrepareMarksATrialInFlight(t *testing.T) {
+func TestPrepareRecordsFailurePointForTrialInFlight(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		offset     int
-		condition  machine.Condition
-		mark       bool
-		recordOnly bool
+		name         string
+		offset       int
+		condition    machine.Condition
+		failurePoint bool
+		recordOnly   bool
 	}{
-		{"isolated", -20, machine.Isolated, true, false},
-		{"at CO 0", 0, machine.Isolated, false, false},
-		{"resident", -20, machine.Resident, false, false},
-		{"record-only isolated", -20, machine.Isolated, false, true},
+		{"alone", -20, machine.Alone, true, false},
+		{"at CO 0", 0, machine.Alone, false, false},
+		{"together", -20, machine.Together, false, false},
+		{"record-only alone", -20, machine.Alone, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -314,8 +314,8 @@ func TestPrepareMarksATrialInFlight(t *testing.T) {
 			w.close()
 
 			var want []journal.CarriedCore
-			if tc.mark {
-				want = []journal.CarriedCore{{Core: 4, FailedMark: new(-20), MarkSession: "X", MarkSeq: 3, MarkSignal: machine.Crash}}
+			if tc.failurePoint {
+				want = []journal.CarriedCore{{Core: 4, FailurePoint: new(-20), FailurePointSession: "X", FailurePointSeq: 3, FailurePointSignal: machine.Crash}}
 			}
 			if diff := cmp.Diff(want, prepare(t, dir, []defect.Entry{}).Cores); diff != "" {
 				t.Fatalf("cores (-want +got):\n%s", diff)
@@ -327,7 +327,7 @@ func TestPrepareMarksATrialInFlight(t *testing.T) {
 func TestPrepareIgnoresATrialStoppedByAShutdown(t *testing.T) {
 	dir := t.TempDir()
 	w := newJournal(t, dir, "X", 3, &context)
-	w.intent(4, -20, machine.Isolated)
+	w.intent(4, -20, machine.Alone)
 	w.add(&journal.Shutdown{Reason: journal.ShutdownSignal})
 	w.close()
 	if got := prepare(t, dir, []defect.Entry{}); len(got.Cores) != 0 {
@@ -340,11 +340,11 @@ func TestPrepareChainsACarryAndWalksNoFurther(t *testing.T) {
 		t.Run(fmt.Sprintf("reset %v", reset), func(t *testing.T) {
 			dir := t.TempDir()
 			old := newJournal(t, dir, "A", 2, &context)
-			old.fail(7, -30, machine.Isolated, journal.Attributed)
+			old.fail(7, -30, machine.Alone, journal.Attributed)
 			old.archive(dir)
 			w := newJournal(t, dir, "X", 3, &context)
-			w.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 2)}, Marks: true, Carried: []journal.CarriedCore{
-				{Core: 5, FailedMark: new(-12), MarkSession: "A", MarkSeq: 7, MarkSignal: machine.Crash},
+			w.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 2)}, FailurePoints: true, Carried: []journal.CarriedCore{
+				{Core: 5, FailurePoint: new(-12), FailurePointSession: "A", FailurePointSeq: 7, FailurePointSignal: machine.Crash},
 			}})
 			if reset {
 				w.add(&journal.CommandReset{Core: new(5)})
@@ -354,7 +354,7 @@ func TestPrepareChainsACarryAndWalksNoFurther(t *testing.T) {
 			got := prepare(t, dir, []defect.Entry{})
 			want := &Carry{Sources: []journal.CarriedSource{src("X", 3)}, Context: &context}
 			if !reset {
-				want.Cores = []journal.CarriedCore{{Core: 5, FailedMark: new(-12), MarkSession: "A", MarkSeq: 7, MarkSignal: machine.Crash}}
+				want.Cores = []journal.CarriedCore{{Core: 5, FailurePoint: new(-12), FailurePointSession: "A", FailurePointSeq: 7, FailurePointSignal: machine.Crash}}
 			}
 			if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(Carry{})); diff != "" {
 				t.Fatalf("carry (-want +got):\n%s", diff)
@@ -381,12 +381,12 @@ func TestPrepareWalksBackThroughUnseededTransitions(t *testing.T) {
 			dir := t.TempDir()
 			writeSchema1(t, dir, "A", tc.aContext)
 			b := newJournal(t, dir, "B", tc.bRuleset, &context)
-			b.fail(1, -33, machine.Isolated, journal.Attributed)
+			b.fail(1, -33, machine.Alone, journal.Attributed)
 			b.add(&journal.CommandReset{All: true})
 			b.add(&journal.SessionArchived{Session: "B", Path: filepath.Join("archive", "B.jsonl")})
 			b.archive(dir)
 			x := newJournal(t, dir, "X", 3, &context)
-			x.pass(2, -40, machine.Isolated)
+			x.pass(2, -40, machine.Alone)
 			x.close()
 
 			got := prepare(t, dir, []defect.Entry{})
@@ -409,13 +409,13 @@ func writeSchema1(t *testing.T, dir, session string, ctx *machine.BIOSContext) {
 	t.Helper()
 	scratch := t.TempDir()
 	w := newJournal(t, scratch, session, 0, ctx)
-	w.fail(0, -28, machine.Isolated, journal.Attributed)
+	w.fail(0, -28, machine.Alone, journal.Attributed)
 	w.close()
 	data, err := os.ReadFile(filepath.Join(scratch, "events.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	data = bytes.ReplaceAll(data, []byte(`"schema":2`), []byte(`"schema":1`))
+	data = bytes.ReplaceAll(data, []byte(`"schema":3`), []byte(`"schema":1`))
 	data = append(data, `{"seq":99,"time":"2026-09-24T20:43:52Z","boot":"boot","kind":"escalation.window","msg":"escalation window","window_s":600}`+"\n"...)
 	if err := os.MkdirAll(filepath.Join(dir, "archive"), 0o755); err != nil {
 		t.Fatal(err)
@@ -428,7 +428,7 @@ func writeSchema1(t *testing.T, dir, session string, ctx *machine.BIOSContext) {
 func TestPrepareLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	w := newJournal(t, dir, "X", 3, &context)
-	w.fail(0, -30, machine.Isolated, journal.Attributed)
+	w.fail(0, -30, machine.Alone, journal.Attributed)
 	w.close()
 	before, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
 	if err != nil {
@@ -451,7 +451,7 @@ func TestPrepareLifecycle(t *testing.T) {
 	}
 
 	next := newJournal(t, dir, "Y", 4, &context)
-	next.add(&journal.SessionCarried{Sources: first.Sources, Marks: true, Carried: first.Cores})
+	next.add(&journal.SessionCarried{Sources: first.Sources, FailurePoints: true, Carried: first.Cores})
 	next.close()
 	if got := prepare(t, dir, []defect.Entry{}); got != nil {
 		t.Fatalf("carry after it was recorded: %+v", got)
@@ -464,7 +464,7 @@ func TestPrepareLifecycle(t *testing.T) {
 func TestPrepareLeavesANewerJournal(t *testing.T) {
 	dir := t.TempDir()
 	w := newJournal(t, dir, "X", 5, &context)
-	w.fail(0, -30, machine.Isolated, journal.Attributed)
+	w.fail(0, -30, machine.Alone, journal.Attributed)
 	w.close()
 	before, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
 	if err != nil {
@@ -483,7 +483,7 @@ func TestPrepareCarriesNothingFromAnArchivedJournal(t *testing.T) {
 		t.Run(fmt.Sprintf("torn tail %v", torn), func(t *testing.T) {
 			dir := t.TempDir()
 			w := newJournal(t, dir, "X", 3, &context)
-			w.fail(0, -30, machine.Isolated, journal.Attributed)
+			w.fail(0, -30, machine.Alone, journal.Attributed)
 			w.add(&journal.SessionArchived{Session: "X", Path: filepath.Join("archive", "X.jsonl")})
 			w.close()
 			if torn {
@@ -540,7 +540,7 @@ func TestPrepareRefusesALineWithoutAKind(t *testing.T) {
 func TestPrepareDoesNotSeedAfterCorePhases(t *testing.T) {
 	dir := t.TempDir()
 	a := newJournal(t, dir, "A", 3, &context, machine.CoreInfo{Core: 0})
-	a.pass(0, -30, machine.Isolated)
+	a.pass(0, -30, machine.Alone)
 	a.close()
 	prepare(t, dir, []defect.Entry{})
 	b := newJournal(t, dir, "B", 4, &context, machine.CoreInfo{Core: 0})
@@ -560,12 +560,12 @@ func TestPrepareDoesNotSeedAfterCorePhases(t *testing.T) {
 func TestPrepareWalkStopsAtOlderCarryCommitment(t *testing.T) {
 	dir := t.TempDir()
 	a := newJournal(t, dir, "A", 1, &context, machine.CoreInfo{Core: 0}, machine.CoreInfo{Core: 7})
-	edge := a.pass(0, -30, machine.Isolated)
-	a.fail(7, -20, machine.Isolated, journal.Attributed)
+	soloLimit := a.pass(0, -30, machine.Alone)
+	a.fail(7, -20, machine.Alone, journal.Attributed)
 	a.archive(dir)
 	b := newJournal(t, dir, "B", 2, &context, machine.CoreInfo{Core: 0}, machine.CoreInfo{Core: 7})
-	b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 1)}, Marks: true, Carried: []journal.CarriedCore{
-		{Core: 0, Edge: new(-30), EdgeSession: "A", EdgeSeq: edge},
+	b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 1)}, FailurePoints: true, Carried: []journal.CarriedCore{
+		{Core: 0, SoloLimit: new(-30), SoloLimitSession: "A", SoloLimitSeq: soloLimit},
 	}})
 	b.archive(dir)
 	c := newJournal(t, dir, "C", 3, &context, machine.CoreInfo{Core: 0}, machine.CoreInfo{Core: 7})
@@ -574,9 +574,9 @@ func TestPrepareWalkStopsAtOlderCarryCommitment(t *testing.T) {
 	if diff := cmp.Diff([]journal.CarriedSource{src("C", 3), src("B", 2)}, got.Sources); diff != "" {
 		t.Fatalf("committed source boundary (-want +got):\n%s", diff)
 	}
-	want := []journal.CarriedCore{{Core: 0, Edge: new(-30), EdgeSession: "A", EdgeSeq: edge}}
+	want := []journal.CarriedCore{{Core: 0, SoloLimit: new(-30), SoloLimitSession: "A", SoloLimitSeq: soloLimit}}
 	if diff := cmp.Diff(want, got.Cores); diff != "" {
-		t.Fatalf("walk revived omitted old mark (-want +got):\n%s", diff)
+		t.Fatalf("walk revived omitted old failure point (-want +got):\n%s", diff)
 	}
 }
 
@@ -585,7 +585,7 @@ func TestPrepareRefusesBrokenArchiveLayoutWithoutChangingJournal(t *testing.T) {
 		t.Run(layout, func(t *testing.T) {
 			dir := t.TempDir()
 			w := newJournal(t, dir, "A", 3, &context, machine.CoreInfo{Core: 0})
-			w.pass(0, -30, machine.Isolated)
+			w.pass(0, -30, machine.Alone)
 			w.close()
 			path := filepath.Join(dir, "events.jsonl")
 			switch layout {

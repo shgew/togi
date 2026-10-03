@@ -48,9 +48,9 @@ func watchCuts(t *testing.T) []watchCut {
 		p, ok := e.Data.(*journal.TunerDecision)
 		return ok && p.Phase == journal.PhaseSearch && p.Decision == journal.Backoff
 	})
-	guard := through(func(e journal.Event) bool {
-		p, ok := e.Data.(*journal.GuardRotation)
-		return ok && p.Event == journal.RotationStart
+	checking := through(func(e journal.Event) bool {
+		p, ok := e.Data.(*journal.CheckingLap)
+		return ok && p.Event == journal.LapStart
 	})
 	last := events[len(events)-1]
 	p := &journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Detail: "five trials in a row proved nothing"}
@@ -60,7 +60,7 @@ func watchCuts(t *testing.T) []watchCut {
 	all := [][2]int{{240, 67}, {160, 45}, {120, 33}}
 	return []watchCut{
 		{name: "search", events: search, sizes: all, color: true},
-		{name: "guard", events: guard, sizes: all, color: true},
+		{name: "checking", events: checking, sizes: all, color: true},
 		{name: "deadend", events: deadEnd, sizes: all[:1]},
 	}
 }
@@ -168,14 +168,14 @@ func TestWatchWithoutJournal(t *testing.T) {
 	golden(t, "watch-missing-120x33", ansi.Strip(Render(Load(dir), 120, 33, time.Unix(0, 0).UTC()))+"\n")
 }
 
-func TestWatchJointMarkAndOpenHunt(t *testing.T) {
+func TestWatchCombinationAndOpenHunt(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		until journal.Kind
 	}{
-		{name: "hunt", until: journal.KindHuntMask},
-		{name: "mark"},
+		{name: "hunt", until: journal.KindHuntGroup},
+		{name: "combination"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -187,12 +187,12 @@ func TestWatchJointMarkAndOpenHunt(t *testing.T) {
 			}
 			frameEvents := events
 			if tc.until != "" {
-				maskStarted := false
+				groupStarted := false
 				for i, e := range events {
-					if e.Kind == journal.KindHuntMask {
-						maskStarted = true
+					if e.Kind == journal.KindHuntGroup {
+						groupStarted = true
 					}
-					if maskStarted && e.Kind == journal.KindTrialStart {
+					if groupStarted && e.Kind == journal.KindTrialStart {
 						frameEvents = events[:i+1]
 						break
 					}

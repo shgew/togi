@@ -24,8 +24,8 @@ dev = [1, 2, 3, 4]
 holdout = [101, 102, 103, 104]
 
 [[scenario]]
-name = "idle-edge"
-machine = "machines/idle-edge.toml"
+name = "idle-limit"
+machine = "machines/idle-limit.toml"
 dev = [1, 2, 3, 4]
 holdout = [101, 102, 103, 104]
 
@@ -36,8 +36,8 @@ dev = [1, 2, 3, 4]
 holdout = [101, 102, 103, 104]
 
 [[scenario]]
-name = "target-r4-edge"
-machine = "machines/target-r4-edge.toml"
+name = "target-r4-limit"
+machine = "machines/target-r4-limit.toml"
 replay = true
 dev = [1, 2, 3, 4]
 holdout = [101, 102, 103, 104]
@@ -50,8 +50,8 @@ dev = [1, 2, 3, 4]
 holdout = [101, 102, 103, 104]
 
 [[scenario]]
-name = "target-delayed-joint"
-machine = "machines/target-delayed-joint.toml"
+name = "target-delayed-combination"
+machine = "machines/target-delayed-combination.toml"
 replay = true
 dev = [1, 2, 3, 4]
 holdout = [101, 102, 103, 104]

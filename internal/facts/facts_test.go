@@ -61,23 +61,23 @@ func TestReadJournalDecisiveFacts(t *testing.T) {
 			}
 			add(&journal.SessionStart{Build: build, Session: "20261001T000000Z", Cores: []machine.CoreInfo{{Core: 4}, {Core: 2}}})
 			add(&journal.SessionContext{BIOSContext: context})
-			add(&journal.ProfileApplied{Offsets: []int{-20, -30}, Condition: machine.Resident})
-			add(&journal.TrialIntent{Trial: "isolated", Core: new(4), Offset: new(-10), Regime: machine.R1, Workload: "one", DurationS: 90, Condition: machine.Isolated, Phase: journal.PhaseSearch})
-			add(&journal.TrialEnd{Trial: "isolated", Outcome: journal.OutcomePass, DurationS: 89})
-			add(&journal.TrialIntent{Trial: "resident", Cores: []int{4, 2}, Regime: machine.R7, Workload: "all", DurationS: 900, Condition: machine.Resident, Phase: journal.PhaseGuard})
+			add(&journal.ProfileApplied{Offsets: []int{-20, -30}, Condition: machine.Together})
+			add(&journal.TrialIntent{Trial: "alone", Core: new(4), Offset: new(-10), Regime: machine.R1, Workload: "one", DurationS: 90, Condition: machine.Alone, Phase: journal.PhaseSearch})
+			add(&journal.TrialEnd{Trial: "alone", Outcome: journal.OutcomePass, DurationS: 89})
+			add(&journal.TrialIntent{Trial: "together", Cores: []int{4, 2}, Regime: machine.R7, Workload: "all", DurationS: 900, Condition: machine.Together, Phase: journal.PhaseChecking})
 			add(&journal.SMUReadback{Core: 2, Offset: -19})
 			add(&journal.ConfigLoaded{Version: "new", Rev: "bbbb", Schema: schema, Ruleset: 6})
-			add(&journal.TrialEnd{Trial: "resident", Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 12})
-			add(&journal.ProfileApplied{Offsets: []int{-9, -30}, Condition: machine.Masked})
-			add(&journal.TrialIntent{Trial: "masked", Cores: []int{4, 2}, Regime: machine.R7, Workload: "all", DurationS: 120, Condition: machine.Masked, Phase: journal.PhaseHunt})
-			add(&journal.TrialEnd{Trial: "masked", Outcome: journal.OutcomePass, DurationS: 120})
-			add(&journal.TrialIntent{Trial: "refine", Cores: []int{2, 4}, Profile: []int{-25, -35}, Regime: machine.R7, Workload: "all", DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseRefine})
-			add(&journal.TrialEnd{Trial: "refine", Outcome: journal.OutcomePass, DurationS: 120})
-			add(&journal.TrialIntent{Trial: "rerun", Core: new(2), Regime: machine.R2, Workload: "one", DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Rerun: true})
+			add(&journal.TrialEnd{Trial: "together", Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 12})
+			add(&journal.ProfileApplied{Offsets: []int{-9, -30}, Condition: machine.Parked})
+			add(&journal.TrialIntent{Trial: "parked", Cores: []int{4, 2}, Regime: machine.R7, Workload: "all", DurationS: 120, Condition: machine.Parked, Phase: journal.PhaseHunt})
+			add(&journal.TrialEnd{Trial: "parked", Outcome: journal.OutcomePass, DurationS: 120})
+			add(&journal.TrialIntent{Trial: "deepening", Cores: []int{2, 4}, Profile: []int{-25, -35}, Regime: machine.R7, Workload: "all", DurationS: 120, Condition: machine.Together, Phase: journal.PhaseDeepening})
+			add(&journal.TrialEnd{Trial: "deepening", Outcome: journal.OutcomePass, DurationS: 120})
+			add(&journal.TrialIntent{Trial: "rerun", Core: new(2), Regime: machine.R2, Workload: "one", DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Rerun: true})
 			add(&journal.TrialEnd{Trial: "rerun", Outcome: journal.OutcomeFailure, Signal: machine.Stall, DurationS: 7})
-			add(&journal.TrialIntent{Trial: "inconclusive", Core: new(2), Regime: machine.R2, Condition: machine.Isolated})
+			add(&journal.TrialIntent{Trial: "inconclusive", Core: new(2), Regime: machine.R2, Condition: machine.Alone})
 			add(&journal.TrialEnd{Trial: "inconclusive", Outcome: journal.OutcomeInconclusive, DurationS: 1})
-			add(&journal.TrialIntent{Trial: "open", Core: new(2), Regime: machine.R2, Condition: machine.Isolated})
+			add(&journal.TrialIntent{Trial: "open", Core: new(2), Regime: machine.R2, Condition: machine.Alone})
 			events = append(events, journal.Event{Kind: "future.trial", Boot: "a"})
 			events[7].Boot, events[8].Boot = "b", "b"
 			writeJournal(t, path, events, `{"seq":21`)
@@ -92,8 +92,8 @@ func TestReadJournalDecisiveFacts(t *testing.T) {
 				t.Fatalf("session identity: %+v", s)
 			}
 			want := []Fact{
-				{Kind: TrialFact, Session: s.ID, Seq: 5, Time: time.Unix(4, 0).UTC(), Build: build, Ruleset: 1, Trial: "isolated", Boot: "a", Class: Class{Regime: machine.R1, Workload: "one", Cores: []int{4}, DurationS: 90}, Condition: machine.Isolated, Phase: journal.PhaseSearch, Profile: []int{0, -10}, Outcome: journal.OutcomePass, DurationS: 89},
-				{Kind: TrialFact, Session: s.ID, Seq: 9, Time: time.Unix(8, 0).UTC(), Build: build, Ruleset: 1, Trial: "resident", Boot: "a", Class: Class{Regime: machine.R7, Workload: "all", Cores: []int{2, 4}, DurationS: 900}, Condition: machine.Resident, Phase: journal.PhaseGuard, Profile: []int{-20, -30}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 12},
+				{Kind: TrialFact, Session: s.ID, Seq: 5, Time: time.Unix(4, 0).UTC(), Build: build, Ruleset: 1, Trial: "alone", Boot: "a", Class: Class{Regime: machine.R1, Workload: "one", Cores: []int{4}, DurationS: 90}, Condition: machine.Alone, Phase: journal.PhaseSearch, Profile: []int{0, -10}, Outcome: journal.OutcomePass, DurationS: 89},
+				{Kind: TrialFact, Session: s.ID, Seq: 9, Time: time.Unix(8, 0).UTC(), Build: build, Ruleset: 1, Trial: "together", Boot: "a", Class: Class{Regime: machine.R7, Workload: "all", Cores: []int{2, 4}, DurationS: 900}, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: []int{-20, -30}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 12},
 			}
 			newBuild := journal.Build{Version: "new", Rev: "bbbb", Schema: schema, Ruleset: 6}
 			for _, tc := range []struct {
@@ -107,9 +107,9 @@ func TestReadJournalDecisiveFacts(t *testing.T) {
 				duration  int
 				rerun     bool
 			}{
-				{"masked", 12, machine.Masked, journal.PhaseHunt, []int{-9, -30}, journal.OutcomePass, "", 120, false},
-				{"refine", 14, machine.Resident, journal.PhaseRefine, []int{-25, -35}, journal.OutcomePass, "", 120, false},
-				{"rerun", 16, machine.Resident, journal.PhaseGuard, []int{-9, -30}, journal.OutcomeFailure, machine.Stall, 7, true},
+				{"parked", 12, machine.Parked, journal.PhaseHunt, []int{-9, -30}, journal.OutcomePass, "", 120, false},
+				{"deepening", 14, machine.Together, journal.PhaseDeepening, []int{-25, -35}, journal.OutcomePass, "", 120, false},
+				{"rerun", 16, machine.Together, journal.PhaseChecking, []int{-9, -30}, journal.OutcomeFailure, machine.Stall, 7, true},
 			} {
 				class := Class{Regime: machine.R7, Workload: "all", Cores: []int{2, 4}, DurationS: 120}
 				if tc.rerun {
@@ -136,13 +136,13 @@ func TestIdleFailures(t *testing.T) {
 		profile     []int
 		want        bool
 	}{
-		{"resident", machine.Resident, journal.Unattributed, "", []int{-10, -20}, true},
-		{"masked", machine.Masked, journal.Unattributed, "", []int{-10, 0}, true},
-		{"attributed", machine.Resident, journal.Attributed, "", []int{-10, 0}, false},
-		{"isolated", machine.Isolated, journal.Unattributed, "", []int{-10, 0}, false},
+		{"together", machine.Together, journal.Unattributed, "", []int{-10, -20}, true},
+		{"parked", machine.Parked, journal.Unattributed, "", []int{-10, 0}, true},
+		{"attributed", machine.Together, journal.Attributed, "", []int{-10, 0}, false},
+		{"alone", machine.Alone, journal.Unattributed, "", []int{-10, 0}, false},
 		{"stray", "", journal.Unattributed, "", nil, false},
-		{"partial profile", machine.Resident, journal.Unattributed, "", []int{-10}, false},
-		{"trial failure is not idle", machine.Resident, journal.Unattributed, "one", []int{-10, -20}, false},
+		{"partial profile", machine.Together, journal.Unattributed, "", []int{-10}, false},
+		{"trial failure is not idle", machine.Together, journal.Unattributed, "one", []int{-10, -20}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "events.jsonl")
@@ -171,11 +171,11 @@ func TestResetHistoryPreservesFacts(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "events.jsonl")
 	events := []journal.Event{
 		{Data: &journal.SessionStart{Schema: 1, Session: "session", Cores: []machine.CoreInfo{{Core: 0}}}},
-		{Data: &journal.TrialIntent{Trial: "before", Core: new(0), Offset: new(-10), Condition: machine.Isolated}},
+		{Data: &journal.TrialIntent{Trial: "before", Core: new(0), Offset: new(-10), Condition: machine.Alone}},
 		{Data: &journal.TrialEnd{Trial: "before", Outcome: journal.OutcomePass}},
 		{Data: &journal.CommandReset{Core: new(0)}},
 		{Cause: []int{4}, Data: &journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: 0}},
-		{Data: &journal.TrialIntent{Trial: "after", Core: new(0), Offset: new(-5), Condition: machine.Isolated}},
+		{Data: &journal.TrialIntent{Trial: "after", Core: new(0), Offset: new(-5), Condition: machine.Alone}},
 		{Data: &journal.TrialEnd{Trial: "after", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError}},
 		{Data: &journal.CommandReset{All: true}},
 		{Cause: []int{8}, Data: &journal.SessionArchived{Session: "session", Path: "archive/session.jsonl"}},
@@ -244,7 +244,7 @@ not-json
 `, true},
 		{"missing kind", `{"seq":1,"schema":2}
 `, true},
-		{"newer schema", `{"seq":1,"kind":"session.start","schema":3}
+		{"newer schema", `{"seq":1,"kind":"session.start","schema":4}
 `, true},
 		{"bad sequence", `{"seq":1,"kind":"session.start","schema":2}
 {"seq":3,"kind":"future.fact"}
@@ -279,7 +279,7 @@ func TestUnstampedConfigKeepsRecordedBuild(t *testing.T) {
 	events := []journal.Event{
 		{Seq: 1, Data: &journal.SessionStart{Build: build, Session: "old", Cores: []machine.CoreInfo{{Core: 0}}}},
 		{Seq: 2, Data: &journal.ConfigLoaded{}},
-		{Seq: 3, Data: &journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-10), Regime: machine.R1, Workload: "one", DurationS: 90, Condition: machine.Isolated}},
+		{Seq: 3, Data: &journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-10), Regime: machine.R1, Workload: "one", DurationS: 90, Condition: machine.Alone}},
 		{Seq: 4, Data: &journal.TrialEnd{Trial: "one", Outcome: journal.OutcomePass, DurationS: 90}},
 	}
 	s := FromEvents(events)
@@ -298,7 +298,7 @@ func TestTrialEvidenceTracksOnlyOpenStartedTrialInItsBoot(t *testing.T) {
 			t.Run(kind+"/"+state, func(t *testing.T) {
 				events := []journal.Event{
 					{Seq: 1, Boot: "a", Data: &journal.SessionStart{Schema: 2, Ruleset: 6, Session: "session", Cores: []machine.CoreInfo{{Core: 0}}}},
-					{Seq: 2, Time: at, Boot: "a", Data: &journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-10), Regime: machine.R1, Condition: machine.Isolated, Profile: []int{-10}, DurationS: 90}},
+					{Seq: 2, Time: at, Boot: "a", Data: &journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-10), Regime: machine.R1, Condition: machine.Alone, Profile: []int{-10}, DurationS: 90}},
 				}
 				want := at
 				if state != "not started" {
@@ -355,7 +355,7 @@ func TestCrashEvidenceMatchesIntentSequenceAndPreviousBoot(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := FromEvents([]journal.Event{
 				{Seq: 1, Boot: "a", Data: &journal.SessionStart{Schema: 2, Ruleset: 6, Session: "session", Cores: []machine.CoreInfo{{Core: 0}}}},
-				{Seq: 2, Boot: "a", Data: &journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-10), Regime: machine.R1, Condition: machine.Isolated, Profile: []int{-10}, DurationS: 90}},
+				{Seq: 2, Boot: "a", Data: &journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-10), Regime: machine.R1, Condition: machine.Alone, Profile: []int{-10}, DurationS: 90}},
 				{Seq: 3, Boot: "c", Data: &journal.CrashDetected{InFlight: tc.inFlight, PreviousBoot: tc.previous}},
 			})
 			if s.Trials[0].Crashed != tc.want || len(s.Facts) != 0 {

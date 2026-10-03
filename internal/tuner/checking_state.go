@@ -7,39 +7,39 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func (s *State) GuardCoverage() (bool, []string) {
-	if s.guard.open {
-		return s.qualifying(s.guard.steps)
+func (s *State) CheckingCoverage() (bool, []string) {
+	if s.checking.open {
+		return s.fullLapCoverage(s.checking.steps)
 	}
-	return s.qualifying(s.steps)
+	return s.fullLapCoverage(s.steps)
 }
 
-func (s *State) projectGuard() *journal.GuardState {
-	g := &s.guard
+func (s *State) projectChecking() *journal.CheckingState {
+	g := &s.checking
 	if g.profileSeq == 0 {
 		return nil
 	}
-	if !s.projectionDirty && s.projectedGuard != nil {
-		return s.projectedGuard
+	if !s.projectionDirty && s.projectedChecking != nil {
+		return s.projectedChecking
 	}
 	peak, peakSeq := 0, 0
 	for _, entries := range s.ledger {
 		for _, e := range entries {
-			if e.seq > g.profileSeq && e.pass && e.condition == machine.Resident && e.hasTctl &&
+			if e.seq > g.profileSeq && e.pass && e.condition == machine.Together && e.hasTctl &&
 				(peakSeq == 0 || e.tctlMax > peak || e.tctlMax == peak && e.seq < peakSeq) {
 				peak, peakSeq = e.tctlMax, e.seq
 			}
 		}
 	}
-	lastQualified := 0
-	for _, q := range s.qualified {
-		if s.eligibleQualifiedRotation(q) {
-			lastQualified = q.rotation
+	lastCleanLap := 0
+	for _, q := range s.passedFullLaps {
+		if s.eligibleCleanLap(q) {
+			lastCleanLap = q.lap
 		}
 	}
-	qualifying, missing := s.qualifying(s.steps)
+	fullLapCoverage, missing := s.fullLapCoverage(s.steps)
 	if g.open {
-		qualifying, missing = s.qualifying(g.steps)
+		fullLapCoverage, missing = s.fullLapCoverage(g.steps)
 	}
 	if g.open {
 		g.stepsDone = len(g.steps)
@@ -56,7 +56,7 @@ func (s *State) projectGuard() *journal.GuardState {
 						break
 					}
 				}
-				if q.count > 0 && s.passes(q.class, g.profile, g.startSeq, rotationEvidence) < q.count {
+				if q.count > 0 && s.passes(q.class, g.profile, g.startSeq, lapEvidence) < q.count {
 					unmet = true
 					break
 				}
@@ -67,7 +67,7 @@ func (s *State) projectGuard() *journal.GuardState {
 			}
 		}
 	}
-	out := &journal.GuardState{Rotation: g.rotation, RotationOpen: g.open, Steps: slices.Clone(g.steps), StepsDone: g.stepsDone, Profile: slices.Clone(g.profile), ProfileSeq: g.profileSeq, Qualifying: qualifying, Missing: missing, CleanRotations: s.QualifiedRotations(), LastQualifiedRotation: lastQualified, TctlMaxSeq: peakSeq}
+	out := &journal.CheckingState{Lap: g.lap, LapOpen: g.open, Steps: slices.Clone(g.steps), StepsDone: g.stepsDone, Profile: slices.Clone(g.profile), ProfileSeq: g.profileSeq, Full: fullLapCoverage, Missing: missing, CleanLaps: s.CleanLaps(), LastCleanLap: lastCleanLap, TctlMaxSeq: peakSeq}
 	if peakSeq != 0 {
 		out.TctlMaxC = new(peak)
 	}
@@ -79,7 +79,7 @@ func (s *State) projectGuard() *journal.GuardState {
 	for k, entries := range s.ledger {
 		valid, checked := 0, false
 		for _, e := range entries {
-			if !e.pass || e.carried || e.condition == machine.Isolated || !atLeastDeep(e.profile, g.profile) {
+			if !e.pass || e.carried || e.condition == machine.Alone || !atLeastDeep(e.profile, g.profile) {
 				continue
 			}
 			if !checked {
@@ -97,6 +97,6 @@ func (s *State) projectGuard() *journal.GuardState {
 			}
 		}
 	}
-	s.projectedGuard = out
+	s.projectedChecking = out
 	return out
 }

@@ -14,7 +14,7 @@ import (
 func TestRunRefusesDifferentRulesetWithoutAppending(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "events.jsonl")
-	original := []byte(`{"seq":1,"time":"2026-10-02T01:14:07.000000000Z","boot":"old","kind":"session.start","msg":"session started","session":"old","schema":2,"ruleset":99,"version":"0.2.1","rev":"def5678","cores":[]}` + "\n")
+	original := []byte(`{"seq":1,"time":"2026-10-02T01:14:07.000000000Z","boot":"old","kind":"session.start","msg":"session started","session":"old","schema":3,"ruleset":99,"version":"0.2.1","rev":"def5678","cores":[]}` + "\n")
 	if err := os.WriteFile(path, original, 0o644); err != nil {
 		t.Fatal(err)
 	}

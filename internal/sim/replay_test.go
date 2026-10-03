@@ -34,11 +34,11 @@ func TestReplayDraws(t *testing.T) {
 	}
 	seen := make(map[answer]bool)
 	for seed := uint64(1); seed <= 64; seed++ {
-		cfg := Config{Seed: seed, Cores: 2, BIOSContext: bios, BIOS: profile, Model: sharp(machine.ComputationError), Edges: flat(2, -10, -10), Replay: replay}
+		cfg := Config{Seed: seed, Cores: 2, BIOSContext: bios, BIOS: profile, Model: sharp(machine.ComputationError), Limits: flat(2, -10, -10), Replay: replay}
 		var answers []answer
 		for range 2 {
 			m := newMachine(t, cfg)
-			run, err := m.Seams().Trials.Start(context.Background(), machine.TrialSpec{ID: "1", Index: 4, Regime: machine.R7, Workload: machine.Workload{ID: "work"}, Condition: machine.Masked, Cores: []int{0, 1}, Duration: time.Minute})
+			run, err := m.Seams().Trials.Start(context.Background(), machine.TrialSpec{ID: "1", Index: 4, Regime: machine.R7, Workload: machine.Workload{ID: "work"}, Condition: machine.Parked, Cores: []int{0, 1}, Duration: time.Minute})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -69,7 +69,7 @@ func TestReplayFallback(t *testing.T) {
 	base := machine.TrialSpec{ID: "1", Regime: machine.R1, Workload: machine.Workload{ID: "work"}, Cores: []int{0}, Duration: time.Minute}
 	for _, name := range []string{"regime", "workload", "cores", "duration", "loaded offset", "unloaded offset", "context", "idle"} {
 		t.Run(name, func(t *testing.T) {
-			cfg := Config{Seed: 42, Cores: 2, BIOSContext: bios, BIOS: []int{-20, -21}, Edges: flat(2, -10, -10), Model: sharp(machine.ComputationError)}
+			cfg := Config{Seed: 42, Cores: 2, BIOSContext: bios, BIOS: []int{-20, -21}, Limits: flat(2, -10, -10), Model: sharp(machine.ComputationError)}
 			spec := base
 			switch name {
 			case "regime":
@@ -126,7 +126,7 @@ func TestReplayCrashTime(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			m := newMachine(t, Config{Seed: 3, Cores: 2, BIOSContext: bios, BIOS: []int{-20, -21}, Edges: flat(2, -50, -50), Replay: replay})
+			m := newMachine(t, Config{Seed: 3, Cores: 2, BIOSContext: bios, BIOS: []int{-20, -21}, Limits: flat(2, -50, -50), Replay: replay})
 			spec := machine.TrialSpec{Regime: machine.R7, Workload: machine.Workload{ID: "work"}, Cores: []int{0, 1}, Duration: time.Minute}
 			if diff := cmp.Diff(true, m.HasRealAnswer([]int{-20, -21}, spec)); diff != "" {
 				t.Fatal(diff)

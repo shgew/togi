@@ -27,7 +27,7 @@ func TestFactPrefixNeedsCarryCommitmentToStopTraversal(t *testing.T) {
 			b := newJournal(t, dir, "B", 6, &context, cores...)
 			b.add(originals[0].Payload())
 			if committed {
-				b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 6)}, Marks: true})
+				b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 6)}, FailurePoints: true})
 			}
 			own, _ := factTrial(b, 0, journal.OutcomeFailure)
 			b.archive(dir)
@@ -75,7 +75,7 @@ func TestFactResetBoundaryExcludesDiscardedSourcesAndCopies(t *testing.T) {
 	for _, f := range old {
 		b.add(f.Payload())
 	}
-	b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 6)}, Marks: true})
+	b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 6)}, FailurePoints: true})
 	own, _ := factTrial(b, 0, journal.OutcomePass)
 	b.archive(dir)
 	got, err := prepareFacts(dir, "B", nil, &context, 1)
@@ -107,11 +107,11 @@ func TestResetBoundaryFiltersCopiedCandidateValues(t *testing.T) {
 	}
 	b := newJournal(t, dir, "B", 6, &context)
 	b.add(&journal.SessionCarried{
-		Sources: []journal.CarriedSource{src("A", 5)},
-		Marks:   true,
+		Sources:       []journal.CarriedSource{src("A", 5)},
+		FailurePoints: true,
 		Carried: []journal.CarriedCore{
-			{Core: 0, Edge: new(-30), EdgeSession: "A", EdgeSeq: 3},
-			{Core: 1, FailedMark: new(-5), MarkSession: "A", MarkSeq: 4, MarkSignal: machine.ComputationError},
+			{Core: 0, SoloLimit: new(-30), SoloLimitSession: "A", SoloLimitSeq: 3},
+			{Core: 1, FailurePoint: new(-5), FailurePointSession: "A", FailurePointSeq: 4, FailurePointSignal: machine.ComputationError},
 		},
 	})
 	b.close()
@@ -120,7 +120,7 @@ func TestResetBoundaryFiltersCopiedCandidateValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer j.Close()
-	c, err := Prepare(j, journal.Build{Schema: 2, Ruleset: 7}, nil, &context)
+	c, err := Prepare(j, journal.Build{Schema: journal.Schema, Ruleset: 7}, nil, &context)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestResetBoundaryFinishesInterruptedPendingDrop(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "archive", "A.jsonl"), []byte("not JSON\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c, err := Prepare(j, journal.Build{Schema: 2, Ruleset: 7}, nil, &context)
+	c, err := Prepare(j, journal.Build{Schema: journal.Schema, Ruleset: 7}, nil, &context)
 	if err != nil || c != nil {
 		t.Fatalf("reset source survived interrupted marker removal: carry %+v, error %v", c, err)
 	}

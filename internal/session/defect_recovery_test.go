@@ -152,7 +152,7 @@ func assertDefectAnswerResets(t *testing.T, events []journal.Event, foundSeq int
 func defectRecoveryOutcome(t *testing.T, dir string) []journal.CoreState {
 	t.Helper()
 	in := simInput(dir, newSim(t, small()))
-	if stop := simulate(t, in); stop.Reason != StopRotations {
+	if stop := simulate(t, in); stop.Reason != StopLaps {
 		t.Fatalf("after reset: %+v", stop)
 	}
 	var state journal.State
@@ -188,7 +188,7 @@ func TestLegacyDefectAnswerPreservesLaterCoreProgress(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, core := range []int{0, 1} {
-				if _, err := j.Append(&journal.CorePhase{Core: core, To: journal.PhaseDone, Offset: -30, FailedMark: new(-31)}); err != nil {
+				if _, err := j.Append(&journal.CorePhase{Core: core, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -216,7 +216,7 @@ func TestDefectAnswerDoesNotReuseConsumedFindingResets(t *testing.T) {
 		}
 	}
 	for _, core := range []int{0, 1} {
-		if _, err := j.Append(&journal.CorePhase{Core: core, To: journal.PhaseDone, Offset: -30, FailedMark: new(-31)}); err != nil {
+		if _, err := j.Append(&journal.CorePhase{Core: core, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)}); err != nil {
 			t.Fatal(err)
 		}
 	}

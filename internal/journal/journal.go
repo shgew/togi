@@ -369,7 +369,16 @@ func decodeLinesAfter(data []byte, history bool, before int) (events []Event, en
 	if end == 0 {
 		return nil, 0, nil
 	}
-	events, err = decodeParts(lineParts(data[:end], runtime.GOMAXPROCS(0), minDecodePart), history, before)
+	legacy := false
+	if history {
+		line, _, _ := bytes.Cut(data, []byte{'\n'})
+		var build Build
+		if err := json.Unmarshal(line, &build); err != nil {
+			return nil, 0, err
+		}
+		legacy = build.Schema < Schema
+	}
+	events, err = decodeParts(lineParts(data[:end], runtime.GOMAXPROCS(0), minDecodePart), history, legacy, before)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -397,14 +406,14 @@ type decodedPart struct {
 }
 
 // decodeParts decodes parts concurrently, then checks them in line order so the first bad line is the one reported.
-func decodeParts(parts [][]byte, history bool, before int) ([]Event, error) {
+func decodeParts(parts [][]byte, history, legacy bool, before int) ([]Event, error) {
 	decoded := make([]decodedPart, len(parts))
 	if len(parts) == 1 {
-		decoded[0] = decodePart(parts[0], history)
+		decoded[0] = decodePart(parts[0], history, legacy)
 	} else {
 		var wg sync.WaitGroup
 		for i, part := range parts {
-			wg.Go(func() { decoded[i] = decodePart(part, history) })
+			wg.Go(func() { decoded[i] = decodePart(part, history, legacy) })
 		}
 		wg.Wait()
 	}
@@ -436,14 +445,27 @@ func decodeParts(parts [][]byte, history bool, before int) ([]Event, error) {
 }
 
 // decodePart decodes lines until the first that fails.
-func decodePart(part []byte, history bool) decodedPart {
+func decodePart(part []byte, history, legacy bool) decodedPart {
 	var d decodedPart
 	for len(part) > 0 {
 		i := bytes.IndexByte(part, '\n')
-		e, err := decodeEvent(part[:i], history)
+		line := part[:i]
+		if legacy {
+			var err error
+			line, err = translateLegacy(line)
+			if err != nil {
+				d.err = err
+				return d
+			}
+		}
+		e, err := decodeEvent(line, history)
 		if err != nil {
 			d.err = err
 			return d
+		}
+		e.Raw = part[:i]
+		if legacy && e.Data != nil && e.Kind != KindConfigLoaded {
+			e.Msg = e.Data.Message()
 		}
 		d.events = append(d.events, e)
 		part = part[i+1:]
@@ -525,12 +547,21 @@ func ReadForCarry(path string) ([]Event, error) {
 		return nil, fmt.Errorf("read journal %s: %w", path, err)
 	}
 	var events []Event
+	legacy := false
 	for n := 1; ; n++ {
 		line, rest, ok := bytes.Cut(data, []byte{'\n'})
 		if !ok {
 			break
 		}
 		data = rest
+		raw := line
+		if n == 1 {
+			var build Build
+			if err := json.Unmarshal(line, &build); err != nil {
+				return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
+			}
+			legacy = build.Schema < Schema
+		}
 		var env envelope
 		if err := json.Unmarshal(line, &env); err != nil {
 			return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
@@ -541,9 +572,20 @@ func ReadForCarry(path string) ([]Event, error) {
 		if n == 1 && env.Kind != KindSessionStart {
 			return nil, fmt.Errorf("read journal %s line 1: first event is %s, want %s", path, env.Kind, KindSessionStart)
 		}
+		if legacy {
+			if kind := legacyKinds[string(env.Kind)]; kind != "" {
+				env.Kind = Kind(kind)
+			}
+		}
 		var p Payload
 		switch {
 		case carryKinds[env.Kind]:
+			if legacy {
+				line, err = translateLegacy(line)
+				if err != nil {
+					return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
+				}
+			}
 			if p, err = decodePayload(env.Kind, line); err != nil {
 				return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
 			}
@@ -556,7 +598,10 @@ func ReadForCarry(path string) ([]Event, error) {
 		default:
 			continue
 		}
-		events = append(events, Event{Seq: env.Seq, Time: env.Time, Mono: env.Mono, Boot: env.Boot, Kind: env.Kind, Msg: env.Msg, Cause: env.Cause, Data: p, Raw: line})
+		if legacy && p != nil && env.Kind != KindConfigLoaded {
+			env.Msg = p.Message()
+		}
+		events = append(events, Event{Seq: env.Seq, Time: env.Time, Mono: env.Mono, Boot: env.Boot, Kind: env.Kind, Msg: env.Msg, Cause: env.Cause, Data: p, Raw: raw})
 	}
 	if len(events) == 0 {
 		return nil, fmt.Errorf("read journal %s: no session.start", path)

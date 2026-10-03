@@ -56,7 +56,7 @@ func TestApplyWritesShallowBeforeDeepInCoreOrder(t *testing.T) {
 		}
 	}
 	r.applied = []int{-30, -20, -10, -30}
-	if err := r.apply([]int{-31, -19, -11, -29}, &journal.ProfileApplied{Offsets: []int{-31, -19, -11, -29}, Condition: machine.Resident}, 0); err != nil {
+	if err := r.apply([]int{-31, -19, -11, -29}, &journal.ProfileApplied{Offsets: []int{-31, -19, -11, -29}, Condition: machine.Together}, 0); err != nil {
 		t.Fatal(err)
 	}
 	var writes [][2]int
@@ -70,19 +70,19 @@ func TestApplyWritesShallowBeforeDeepInCoreOrder(t *testing.T) {
 	}
 }
 
-func TestApplyRefusesJointMarkBeforeSMUWrite(t *testing.T) {
+func TestApplyRefusesCombinationBeforeSMUWrite(t *testing.T) {
 	t.Parallel()
 	r, _, closeJournal := checkedRunner(t, []int{-30, 0})
 	defer closeJournal()
 	r.applied = []int{-30, 0}
-	if _, err := r.append(&journal.MarkJoint{Mark: 1, Members: []journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}}); err != nil {
+	if _, err := r.append(&journal.Combination{Combination: 1, Members: []journal.CombinationMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}}); err != nil {
 		t.Fatal(err)
 	}
 	before := r.in.Journal.Events()
 	smu := &recordedSMU{SMU: r.in.Machine.SMU}
 	r.in.Machine.SMU = smu
-	if err := r.apply([]int{-30, -30}, &journal.ProfileApplied{Offsets: []int{-30, -30}, Condition: machine.Resident}, 0); err == nil {
-		t.Fatal("profile reaching the joint mark was not refused")
+	if err := r.apply([]int{-30, -30}, &journal.ProfileApplied{Offsets: []int{-30, -30}, Condition: machine.Together}, 0); err == nil {
+		t.Fatal("profile reaching the combination was not refused")
 	}
 	if diff := cmp.Diff(before, r.in.Journal.Events()); diff != "" {
 		t.Fatalf("refused profile recorded a write (-before +after):\n%s", diff)
@@ -105,14 +105,14 @@ func (s *recordedSMU) SetOffset(core, offset int) error {
 	return s.SMU.SetOffset(core, offset)
 }
 
-func TestApplyRefusesJointMarkAndPartialWrite(t *testing.T) {
+func TestApplyRefusesCombinationAndPartialWrite(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		failAt  int
 		offsets []int
 	}{
-		{"joint mark", 0, []int{-30, 0, 0, 0}},
+		{"combination", 0, []int{-30, 0, 0, 0}},
 		{"partial SMU write", 3, []int{-30, 0, 0, 0}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -122,13 +122,13 @@ func TestApplyRefusesJointMarkAndPartialWrite(t *testing.T) {
 			smu := &recordedSMU{SMU: r.in.Machine.SMU}
 			r.in.Machine.SMU = smu
 			if tc.failAt == 0 {
-				if _, err := r.append(&journal.MarkJoint{Mark: 1, Members: []journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}}); err != nil {
+				if _, err := r.append(&journal.Combination{Combination: 1, Members: []journal.CombinationMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}}); err != nil {
 					t.Fatal(err)
 				}
 			} else {
 				m.FailWriteAt(tc.failAt)
 			}
-			err := r.apply([]int{-30, -30, 0, 0}, &journal.ProfileApplied{Offsets: []int{-30, -30, 0, 0}, Condition: machine.Resident}, 0)
+			err := r.apply([]int{-30, -30, 0, 0}, &journal.ProfileApplied{Offsets: []int{-30, -30, 0, 0}, Condition: machine.Together}, 0)
 			if err == nil || (tc.failAt != 0 && !errors.Is(err, errDeadEndEvidence)) {
 				t.Fatalf("apply did not refuse the incomplete write: %v", err)
 			}
@@ -184,7 +184,7 @@ func TestApplyRefusesJointMarkAndPartialWrite(t *testing.T) {
 					t.Fatalf("failed write payload (-want +got):\n%s", diff)
 				}
 			} else if failure != nil {
-				t.Fatal("joint-mark refusal reported an SMU failure")
+				t.Fatal("combination refusal reported an SMU failure")
 			}
 			if diff := cmp.Diff(wantIntents, intents); diff != "" {
 				t.Fatalf("write intents (-want +got):\n%s", diff)
@@ -196,20 +196,20 @@ func TestApplyRefusesJointMarkAndPartialWrite(t *testing.T) {
 	}
 }
 
-func TestRestoreNeverReachesJointMarkWithNonzeroBaseline(t *testing.T) {
+func TestRestoreNeverReachesCombinationWithNonzeroBaseline(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name                    string
 		baseline, current, want []int
 	}{
-		{"joint mark", []int{-30, -30, 0, 0}, []int{-30, -29, 0, 0}, []int{-30, -29, 0, 0}},
-		{"baseline shallower than mark", []int{-40, -40, 0, 0}, []int{-30, -29, 0, 0}, []int{-30, -29, 0, 0}},
+		{"combination", []int{-30, -30, 0, 0}, []int{-30, -29, 0, 0}, []int{-30, -29, 0, 0}},
+		{"baseline shallower than combination", []int{-40, -40, 0, 0}, []int{-30, -29, 0, 0}, []int{-30, -29, 0, 0}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			r, m, closeJournal := checkedRunner(t, tc.baseline)
 			defer closeJournal()
-			if _, err := r.append(&journal.MarkJoint{Mark: 1, Members: []journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}}); err != nil {
+			if _, err := r.append(&journal.Combination{Combination: 1, Members: []journal.CombinationMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}}); err != nil {
 				t.Fatal(err)
 			}
 			for core, offset := range tc.current {
@@ -245,15 +245,15 @@ func TestRestoreNeverReachesJointMarkWithNonzeroBaseline(t *testing.T) {
 	}
 }
 
-func TestApplyRefusesFailedMark(t *testing.T) {
+func TestApplyRefusesFailurePoint(t *testing.T) {
 	t.Parallel()
 	r, _, closeJournal := checkedRunner(t, []int{0, 0, 0, 0})
 	defer closeJournal()
-	if _, err := r.append(&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -29, FailedMark: new(-30)}); err != nil {
+	if _, err := r.append(&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -29, FailurePoint: new(-30)}); err != nil {
 		t.Fatal(err)
 	}
-	err := r.apply([]int{0, 0, -30, 0}, &journal.ProfileApplied{Offsets: []int{0, 0, -30, 0}, Condition: machine.Resident}, 0)
-	want := fmt.Sprintf("refusing to write core %02d to %d: the profile would reach failed mark -30 of core 02", 2, -30)
+	err := r.apply([]int{0, 0, -30, 0}, &journal.ProfileApplied{Offsets: []int{0, 0, -30, 0}, Condition: machine.Together}, 0)
+	want := fmt.Sprintf("refusing to write core %02d to %d: the profile would reach failure point -30 of core 02", 2, -30)
 	if err == nil || err.Error() != want {
 		t.Fatalf("apply: %v; want %s", err, want)
 	}
@@ -299,9 +299,9 @@ func TestIdleEvidenceWindowStartsAtApplicationsFirstWrite(t *testing.T) {
 		{&journal.SessionBaseline{Offsets: []int{0, 0}}, 0},
 		{&journal.SMUIntent{Op: journal.SMUSet, Core: new(0), Offset: -10}, 1000},
 		{&journal.SMUIntent{Op: journal.SMUSet, Core: new(8), Offset: -12}, 2000},
-		{&journal.ProfileApplied{Condition: machine.Resident}, 3000},
+		{&journal.ProfileApplied{Condition: machine.Together}, 3000},
 		{&journal.SMUIntent{Op: journal.SMUSet, Core: new(8), Offset: -11}, 5000},
-		{&journal.ProfileApplied{Condition: machine.Resident}, 6000},
+		{&journal.ProfileApplied{Condition: machine.Together}, 6000},
 	} {
 		f.Fold(journal.Event{Seq: i + 1, Kind: e.p.Kind(), Boot: "b", Mono: e.mono, Data: e.p})
 		if _, ok := e.p.(*journal.ProfileApplied); ok {
@@ -316,7 +316,7 @@ func TestIdleEvidenceWindowStartsAtApplicationsFirstWrite(t *testing.T) {
 func TestFoldConsumesAttributedIdleFailure(t *testing.T) {
 	t.Parallel()
 	f := newFold()
-	crash := &journal.CrashDetected{PreviousBoot: "previous", Condition: machine.Resident}
+	crash := &journal.CrashDetected{PreviousBoot: "previous", Condition: machine.Together}
 	f.Fold(journal.Event{Seq: 1, Kind: crash.Kind(), Boot: "current", Data: crash})
 	if diff := cmp.Diff([]int{1}, f.pendingIdle); diff != "" {
 		t.Fatalf("pending idle crash (-want +got):\n%s", diff)

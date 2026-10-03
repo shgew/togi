@@ -15,9 +15,9 @@ func partialEvidence(h *harness, carried bool, outcome journal.Outcome, cores, p
 	h.t.Helper()
 	for range count {
 		if carried {
-			h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Seq: len(h.events) + 1, Trial: "partial"}, Class: journal.TrialClass{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120}, Profile: profile, Condition: machine.Resident, Phase: journal.PhaseGuard, RecordOnly: true, Outcome: outcome, Signal: machine.ComputationError, Core: new(cores[0]), DurationS: 7})
+			h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Seq: len(h.events) + 1, Trial: "partial"}, Class: journal.TrialClass{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120}, Profile: profile, Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true, Outcome: outcome, Signal: machine.ComputationError, Core: new(cores[0]), DurationS: 7})
 		} else {
-			h.trial(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120, Profile: profile, Condition: machine.Resident, Phase: journal.PhaseGuard, RecordOnly: true}}, journal.TrialEnd{Outcome: outcome, Signal: machine.ComputationError, Core: new(cores[0]), DurationS: 7})
+			h.trial(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120, Profile: profile, Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true}}, journal.TrialEnd{Outcome: outcome, Signal: machine.ComputationError, Core: new(cores[0]), DurationS: 7})
 		}
 	}
 }
@@ -25,7 +25,7 @@ func partialEvidence(h *harness, carried bool, outcome journal.Outcome, cores, p
 func sevenCorePartialHarness(t *testing.T) (*harness, []int, []int) {
 	t.Helper()
 	profile := []int{-10, -20, -20, -20, -20, -20, -20, -20, -10, -20, -20, -20, -20, -20, -20, -20}
-	return residentHarness(t, profile...), []int{1, 2, 3, 4, 5, 6, 7}, profile
+	return hasRoomHarness(t, profile...), []int{1, 2, 3, 4, 5, 6, 7}, profile
 }
 
 func TestRecordOnlyEvidenceConsumers(t *testing.T) {
@@ -41,32 +41,32 @@ func TestRecordOnlyEvidenceConsumers(t *testing.T) {
 				if _, ok := h.s.Drain(); ok {
 					t.Fatal("record-only outcome requested a decision")
 				}
-				for _, rule := range []evidenceRule{allEvidence, edgeEvidence, huntEvidence, rerunEvidence, refinementEvidence, rotationEvidence} {
+				for _, rule := range []evidenceRule{allEvidence, soloLimitEvidence, huntEvidence, rerunEvidence, deepeningEvidence, lapEvidence} {
 					if h.s.passes(k, profile, 0, rule) != 0 || h.s.fails(k, profile, 0) {
 						t.Fatalf("record-only evidence admitted by rule %d", rule)
 					}
 				}
-				tr := Trial{Regime: k.regime, Workload: k.workload, Cores: cores, DurationS: k.duration, Condition: machine.Resident, Phase: journal.PhaseRefine, Profile: profile}
+				tr := Trial{Regime: k.regime, Workload: k.workload, Cores: cores, DurationS: k.duration, Condition: machine.Together, Phase: journal.PhaseDeepening, Profile: profile}
 				if a := h.s.skipKnownFailure(Action{Kind: RunTrial, Trial: tr}); a.Kind != RunTrial {
 					t.Fatalf("record-only failure skipped a normal trial: %+v", a)
 				}
-				anchor := slices.Clone(profile)
+				parked := slices.Clone(profile)
 				for _, id := range cores {
-					anchor[id] = 0
+					parked[id] = 0
 				}
-				h.add(&journal.HuntStart{Hunt: 1, Regime: k.regime, Workload: k.workload, Cores: cores, DurationS: 120, StartS: 120, Starts: h.s.n, Failing: profile, Anchor: anchor, Candidates: cores})
-				for _, stage := range []string{"part", "complement", "full", "edge"} {
-					a := h.s.planMask(h.s.hunt, maskPlan{cores: cores, set: cores, stage: stage, duration: 120}, "probe")
-					mask := a.Payload.(*journal.HuntMask)
-					if mask.Inferred != "" {
-						t.Fatalf("%s inferred record-only outcome: %+v", stage, mask)
+				h.add(&journal.HuntStart{Hunt: 1, Regime: k.regime, Workload: k.workload, Cores: cores, DurationS: 120, StartS: 120, Starts: h.s.n, Failing: profile, Parked: parked, Candidates: cores})
+				for _, stage := range []string{"part", "complement", "full", "probe"} {
+					a := h.s.planGroup(h.s.hunt, groupPlan{cores: cores, set: cores, stage: stage, duration: 120}, "probe")
+					group := a.Payload.(*journal.HuntGroup)
+					if group.Inferred != "" {
+						t.Fatalf("%s inferred record-only outcome: %+v", stage, group)
 					}
 					h.decide(a)
-					if got := h.s.maskOutcome(h.s.hunt, h.s.hunt.masks[len(h.s.hunt.masks)-1]); got != "running" {
+					if got := h.s.groupOutcome(h.s.hunt, h.s.hunt.groups[len(h.s.hunt.groups)-1]); got != "running" {
 						t.Fatalf("%s running outcome %s", stage, got)
 					}
 					state := h.s.projectHunt()
-					if got := state.Masks[len(state.Masks)-1].Passes; got != 0 {
+					if got := state.Groups[len(state.Groups)-1].Passes; got != 0 {
 						t.Fatalf("hunt projection counted %d record-only passes", got)
 					}
 				}
@@ -80,7 +80,7 @@ func TestRecordOnlyDoesNotInvalidateOrSupplyMonotonicityEvidence(t *testing.T) {
 	for _, carried := range []bool{false, true} {
 		t.Run(fmt.Sprintf("carried=%t", carried), func(t *testing.T) {
 			h, cores, profile := sevenCorePartialHarness(t)
-			tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120, Condition: machine.Masked, Phase: journal.PhaseHunt, Profile: profile}
+			tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120, Condition: machine.Parked, Phase: journal.PhaseHunt, Profile: profile}
 			for range h.s.n {
 				h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
 			}
@@ -101,8 +101,8 @@ func TestRecordOnlyDoesNotInvalidateOrSupplyMonotonicityEvidence(t *testing.T) {
 
 func TestRecordOnlySkipsNeitherKnownFailuresNorReruns(t *testing.T) {
 	h, cores, profile := sevenCorePartialHarness(t)
-	tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Profile: profile}
-	failure := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "normal"}, Class: journal.TrialClass{Regime: tr.Regime, Workload: tr.Workload, Cores: cores, DurationS: 120}, Condition: machine.Resident, Profile: profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+	tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: profile}
+	failure := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "normal"}, Class: journal.TrialClass{Regime: tr.Regime, Workload: tr.Workload, Cores: cores, DurationS: 120}, Condition: machine.Together, Profile: profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
 	partialEvidence(h, false, journal.OutcomePass, cores, profile, h.s.n)
 	if a := h.s.skipKnownFailure(Action{Kind: RunTrial, Trial: tr}); a.Kind != Decide {
 		t.Fatal("record-only passes covered a normal known failure")
@@ -119,7 +119,7 @@ func TestRecordOnlySkipsNeitherKnownFailuresNorReruns(t *testing.T) {
 
 func TestRecordOnlyTrialIDDoesNotHideCarriedKnownFailure(t *testing.T) {
 	h, cores, profile := sevenCorePartialHarness(t)
-	tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Profile: profile}
+	tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: profile}
 	carried := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0001"}, Class: journal.TrialClass{Regime: tr.Regime, Workload: tr.Workload, Cores: cores, DurationS: tr.DurationS}, Condition: tr.Condition, Profile: profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
 	partialEvidence(h, false, journal.OutcomePass, cores, profile, 1)
 	a := h.s.skipKnownFailure(Action{Kind: RunTrial, Trial: tr})
@@ -140,43 +140,43 @@ func TestRecordOnlyTrialIDDoesNotHideCarriedKnownFailure(t *testing.T) {
 	}
 }
 
-func TestRecordOnlyCannotFulfillRefinementChecks(t *testing.T) {
+func TestRecordOnlyCannotFulfillDeepeningChecks(t *testing.T) {
 	for _, carried := range []bool{false, true} {
 		for _, outcome := range []journal.Outcome{journal.OutcomePass, journal.OutcomeFailure} {
 			t.Run(fmt.Sprintf("carried=%t/%s", carried, outcome), func(t *testing.T) {
 				h, cores, profile := sevenCorePartialHarness(t)
 				h.s.parts = [][]int{cores}
-				h.add(&journal.RefineRound{Round: 1, Event: journal.RotationStart, Profile: profile, Target: profile, Cores: []int{1}, Starts: h.s.n, StartS: 120})
+				h.add(&journal.DeepeningRound{Round: 1, Event: journal.LapStart, Profile: profile, Target: profile, Cores: []int{1}, Starts: h.s.n, StartS: 120})
 				h.s.round.initial = slices.Clone(profile)
 				h.s.round.initial[1]++
 				for _, r := range []machine.Regime{machine.R1, machine.R2} {
 					for range h.s.n {
-						h.trial(Action{Kind: RunTrial, Trial: Trial{Core: 1, Regime: r, Workload: machine.Workloads(r)[0].ID, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseRefine, Profile: profile}}, passed)
+						h.trial(Action{Kind: RunTrial, Trial: Trial{Core: 1, Regime: r, Workload: machine.Workloads(r)[0].ID, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseDeepening, Profile: profile}}, passed)
 					}
 				}
 				partialEvidence(h, carried, outcome, cores, profile, h.s.n)
 				a := h.s.skipKnownFailure(h.s.roundCheck())
 				if a.Kind != RunTrial || a.Trial.Regime != machine.R7 || a.Trial.RecordOnly || !slices.Equal(a.Trial.Cores, cores) {
-					t.Fatalf("record-only evidence answered refinement: %+v", a)
+					t.Fatalf("record-only evidence answered deepening: %+v", a)
 				}
 				checks := h.s.projectRound().Checks
 				if checks[len(checks)-1].Passes != 0 {
-					t.Fatal("refinement projection counted partial evidence")
+					t.Fatal("deepening projection counted partial evidence")
 				}
 			})
 		}
 	}
 }
 
-func TestR7PartialMasksFreezeAtStepStart(t *testing.T) {
-	h := residentHarness(t, -10, -10, -20, -30, -40, -20, -20, -40)
-	h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: []machine.Regime{machine.R7}})
+func TestR7PartialGroupsFreezeAtStepStart(t *testing.T) {
+	h := hasRoomHarness(t, -10, -10, -20, -30, -40, -20, -20, -40)
+	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R7}})
 	a := h.next()
-	step, ok := a.Payload.(*journal.GuardStep)
+	step, ok := a.Payload.(*journal.CheckingStep)
 	if !ok {
 		t.Fatalf("missing step snapshot: %+v", a)
 	}
-	want := []journal.GuardPartial{{CCD: 0, Cores: []int{2, 3}}, {CCD: 1, Cores: []int{4, 7}}}
+	want := []journal.CheckingPartial{{CCD: 0, Cores: []int{2, 3}}, {CCD: 1, Cores: []int{4, 7}}}
 	if diff := cmp.Diff(want, step.Partials); diff != "" {
 		t.Fatal(diff)
 	}
@@ -191,19 +191,19 @@ func TestR7PartialMasksFreezeAtStepStart(t *testing.T) {
 	for _, e := range h.events {
 		replay.Fold(e)
 	}
-	a = replay.rotationNext()
+	a = replay.lapNext()
 	if !a.Trial.RecordOnly || a.Trial.Retry || !slices.Equal(a.Trial.Cores, []int{2, 3}) {
-		t.Fatalf("resume recomputed mask or retried failed start: %+v", a)
+		t.Fatalf("resume recomputed group or retried failed start: %+v", a)
 	}
-	if got := replay.guard.partial[1].completed[classOf(h.s.intents["0001"])]; got != 1 {
+	if got := replay.checking.partial[1].completed[classOf(h.s.intents["0001"])]; got != 1 {
 		t.Fatalf("failed start not recorded as attempted: %d", got)
 	}
 }
 
-func TestR7PartialFailuresLeaveQualificationAndProfileUnchanged(t *testing.T) {
+func TestR7PartialFailuresLeaveFullLapCoverageAndProfileUnchanged(t *testing.T) {
 	for _, topology := range []string{"two CCDs", "one CCD", "all tied"} {
 		t.Run(topology, func(t *testing.T) {
-			h := residentHarness(t, -10, -20, -10, -20)
+			h := hasRoomHarness(t, -10, -20, -10, -20)
 			switch topology {
 			case "one CCD":
 				h.s.ccd = map[int]int{0: 0, 1: 0, 2: 0, 3: 0}
@@ -212,11 +212,11 @@ func TestR7PartialFailuresLeaveQualificationAndProfileUnchanged(t *testing.T) {
 				h.add(&journal.ProfileChange{To: []int{-20, -20, -20, -20}})
 			}
 			before := h.s.offsets()
-			h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: h.s.steps})
+			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: h.s.steps})
 			partialStarts, snapshots := 0, 0
 			for range 1000 {
-				a := h.s.rotationNext()
-				if step, ok := a.Payload.(*journal.GuardStep); ok {
+				a := h.s.lapNext()
+				if step, ok := a.Payload.(*journal.CheckingStep); ok {
 					snapshots++
 					if topology == "all tied" {
 						for _, part := range step.Partials {
@@ -240,13 +240,13 @@ func TestR7PartialFailuresLeaveQualificationAndProfileUnchanged(t *testing.T) {
 					}
 					continue
 				}
-				end, ok := a.Payload.(*journal.GuardRotation)
-				if !ok || !end.Clean || !end.Qualifying {
-					t.Fatalf("partial failure dirtied rotation: %+v", a)
+				end, ok := a.Payload.(*journal.CheckingLap)
+				if !ok || !end.Passed || !end.Full {
+					t.Fatalf("partial failure dirtied lap: %+v", a)
 				}
 				h.decide(a)
-				if h.s.QualifiedRotations() != 1 || !slices.Equal(before, h.s.offsets()) || len(h.s.marks) != 0 {
-					t.Fatal("partial failures changed profile, marks or qualification")
+				if h.s.CleanLaps() != 1 || !slices.Equal(before, h.s.offsets()) || len(h.s.combinations) != 0 {
+					t.Fatal("partial failures changed profile, failure points or full-lap coverage")
 				}
 				want := 24
 				switch topology {
@@ -260,7 +260,7 @@ func TestR7PartialFailuresLeaveQualificationAndProfileUnchanged(t *testing.T) {
 				}
 				return
 			}
-			t.Fatal("rotation did not finish")
+			t.Fatal("lap did not finish")
 		})
 	}
 }
@@ -268,7 +268,7 @@ func TestR7PartialFailuresLeaveQualificationAndProfileUnchanged(t *testing.T) {
 func TestRecordOnlyDoesNotVetoLongHuntPrior(t *testing.T) {
 	h, cores, profile := sevenCorePartialHarness(t)
 	partialEvidence(h, false, journal.OutcomeFailure, cores, profile, 1)
-	tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: h.s.ids(), DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Profile: profile}
+	tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: h.s.ids(), DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: profile}
 	for range h.s.n {
 		h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
 	}
@@ -276,25 +276,25 @@ func TestRecordOnlyDoesNotVetoLongHuntPrior(t *testing.T) {
 	h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
 	failure := h.decide(h.next())
 	h.decide(h.s.huntStartNext())
-	plan, ok := h.s.nextMaskPlan(h.s.hunt)
+	plan, ok := h.s.nextGroupPlan(h.s.hunt)
 	if !ok || plan.duration != 600 || !plan.escalated {
 		t.Fatalf("partial short failure vetoed longer hunt: %+v, source #%d", plan, failure.Seq)
 	}
 }
 
-func TestRecordOnlyCannotContradictQualifiedProfile(t *testing.T) {
+func TestRecordOnlyCannotContradictPassedFullLapProfile(t *testing.T) {
 	for _, carried := range []bool{false, true} {
 		t.Run(fmt.Sprintf("carried=%t", carried), func(t *testing.T) {
 			h, cores, profile := sevenCorePartialHarness(t)
-			h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: h.s.steps})
-			h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true})
+			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: h.s.steps})
+			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
 			shallow := slices.Clone(profile)
 			shallow[0]++
 			h.add(&journal.ProfileChange{From: profile, To: shallow})
 			h.add(&journal.ProfileChange{From: shallow, To: profile})
 			partialEvidence(h, carried, journal.OutcomeFailure, cores, profile, 1)
-			if h.s.QualifiedRotations() != 1 || h.s.covering() == 0 {
-				t.Fatal("partial failure contradicted an earlier qualified rotation")
+			if h.s.CleanLaps() != 1 || h.s.covering() == 0 {
+				t.Fatal("partial failure contradicted an earlier clean lap")
 			}
 			assertProjectionReplay(h)
 		})
@@ -302,8 +302,8 @@ func TestRecordOnlyCannotContradictQualifiedProfile(t *testing.T) {
 }
 
 func TestRecordOnlyInconclusiveRetriesSamePart(t *testing.T) {
-	h := residentHarness(t, -10, -20, -10, -20)
-	h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: []machine.Regime{machine.R7}})
+	h := hasRoomHarness(t, -10, -20, -10, -20)
+	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R7}})
 	h.decide(h.next())
 	first := h.next()
 	h.trial(first, unsure)

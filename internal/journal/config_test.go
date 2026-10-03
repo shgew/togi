@@ -17,7 +17,7 @@ func TestConfigLoadedDecodesEveryShippedJournalBody(t *testing.T) {
 		name       string
 		schema     int
 		candidates map[int]int
-		rotation   []machine.Regime
+		lap        []machine.Regime
 	}{
 		{"20260924T204352Z", 1, nil, []machine.Regime{machine.R1, machine.R2, machine.R6, machine.R3, machine.R4, machine.R7, machine.R5, machine.R6}},
 		{"20260926T151414Z", 2, map[int]int{0: -36, 1: -38, 2: -38, 3: -36, 4: -36, 5: -39, 6: -46, 7: -46, 8: -50, 9: -50, 10: -50, 11: -47, 12: -50, 13: -49, 14: -50, 15: -50}, []machine.Regime{machine.R1, machine.R2, machine.R6, machine.R3, machine.R4, machine.R7, machine.R5, machine.R6}},
@@ -35,9 +35,9 @@ func TestConfigLoadedDecodesEveryShippedJournalBody(t *testing.T) {
 			}
 			defer gz.Close()
 			want := ConfigSnapshot{
-				StartOffsets: map[int]int{}, CandidateEdges: tc.candidates,
-				Durations: ConfigDurations{SearchTrialS: 90, GuardTrialS: 120, GuardIdleS: 900, GuardAllCoreS: 1200},
-				Guard:     ConfigGuard{Rotation: tc.rotation},
+				StartOffsets: map[int]int{}, CandidateSoloLimits: tc.candidates,
+				Durations: ConfigDurations{SearchTrialS: 90, CheckingTrialS: 120, CheckingIdleS: 900, CheckingAllCoreS: 1200},
+				Checking:  ConfigChecking{Lap: tc.lap},
 				DeadEnds:  ConfigDeadEnds{InconclusiveInARow: 3, StrayCrashesInARow: 3},
 				Backends:  ConfigBackends{Mprime: "/nix/store/64hjzgj1msiyndpdxrk9l3gkjf3sczgj-mprime-31.04b02", Ycruncher: "/nix/store/n5g91xa9pzcfqyyh62xpwz3v53f87y0a-y-cruncher-0.8.7.9547"},
 			}
@@ -58,7 +58,11 @@ func TestConfigLoadedDecodesEveryShippedJournalBody(t *testing.T) {
 					continue
 				}
 				found = true
-				e, err := decode(scan.Bytes())
+				line, err := translateLegacy(scan.Bytes())
+				if err != nil {
+					t.Fatal(err)
+				}
+				e, err := decode(line)
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -48,7 +48,7 @@ func TestAppendRefusesUnregisteredKind(t *testing.T) {
 
 func TestOpaqueEventRefusesWriterBeforeTornTailRepair(t *testing.T) {
 	dir := t.TempDir()
-	data := []byte(`{"seq":1,"kind":"session.start","schema":2,"ruleset":4,"version":"0.6.0","rev":"future"}` + "\n" + `{"seq":2,"kind":"future.fact","msg":"future fact","nested":{"value":42}}` + "\n" + `{"seq":3`)
+	data := []byte(`{"seq":1,"kind":"session.start","schema":3,"ruleset":4,"version":"0.6.0","rev":"future"}` + "\n" + `{"seq":2,"kind":"future.fact","msg":"future fact","nested":{"value":42}}` + "\n" + `{"seq":3`)
 	path := filepath.Join(dir, eventsFile)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestOpaqueEventRefusesWriterBeforeTornTailRepair(t *testing.T) {
 
 func TestDefaultBuildRefusesOpaqueWriter(t *testing.T) {
 	dir := t.TempDir()
-	data := []byte(`{"seq":1,"kind":"session.start","schema":2}` + "\n" + `{"seq":2,"kind":"future.fact"}` + "\n")
+	data := []byte(`{"seq":1,"kind":"session.start","schema":3}` + "\n" + `{"seq":2,"kind":"future.fact"}` + "\n")
 	path := filepath.Join(dir, eventsFile)
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)

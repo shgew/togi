@@ -13,10 +13,10 @@ import (
 
 func TestCarriedFactsKeepOriginalProvenance(t *testing.T) {
 	build := journal.Build{Version: "0.7.0", Rev: "original", Schema: 2, Ruleset: 6, Fixes: 3}
-	idle := &journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Core: new(3), Offset: new(-30), Regime: machine.R7, Condition: machine.Masked, Profile: []int{-20, -30, -40}}
+	idle := &journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Core: new(3), Offset: new(-30), Regime: machine.R7, Condition: machine.Parked, Profile: []int{-20, -30, -40}}
 	original := FromEvents([]journal.Event{
 		{Seq: 1, Data: &journal.SessionStart{Build: build, Session: "original", Evidence: 4, Cores: []machine.CoreInfo{{Core: 7}, {Core: 1}, {Core: 3}}}},
-		{Seq: 2, Boot: "intent-boot", Data: &journal.TrialIntent{Trial: "0304", Regime: machine.R7, Workload: "workload", Cores: []int{7, 3}, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Rerun: true, RecordOnly: true, Profile: []int{-22, -30, -50}}},
+		{Seq: 2, Boot: "intent-boot", Data: &journal.TrialIntent{Trial: "0304", Regime: machine.R7, Workload: "workload", Cores: []int{7, 3}, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Rerun: true, RecordOnly: true, Profile: []int{-22, -30, -50}}},
 		{Seq: 3, Data: &journal.ConfigLoaded{Version: "later", Ruleset: 6}},
 		{Seq: 4, Time: time.Unix(40, 0).UTC(), Boot: "end-boot", Data: &journal.TrialEnd{Trial: "0304", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(7), DurationS: 11}},
 		{Seq: 5, Time: time.Unix(50, 0).UTC(), Boot: "idle-boot", Data: idle},
@@ -44,7 +44,7 @@ func TestCarriedFactsKeepOriginalProvenance(t *testing.T) {
 			events = append(events, journal.Event{Time: time.Unix(100, 0).UTC(), Boot: "copy-boot", Data: f.Payload()})
 		}
 		events = append(events,
-			journal.Event{Data: &journal.TrialIntent{Trial: "own", Core: new(1), Offset: new(-10), Profile: []int{-10, 0, 0}, Condition: machine.Isolated}},
+			journal.Event{Data: &journal.TrialIntent{Trial: "own", Core: new(1), Offset: new(-10), Profile: []int{-10, 0, 0}, Condition: machine.Alone}},
 			journal.Event{Data: &journal.TrialEnd{Trial: "own", Outcome: journal.OutcomePass}},
 		)
 		writeJournal(t, path, events, "")
@@ -76,8 +76,8 @@ func TestCarriedEventsDoNotChangeTuning(t *testing.T) {
 		afterProjection.Fold(e)
 	}
 	for i, payload := range []journal.Payload{
-		&journal.TrialCarried{Source: journal.FactSource{Session: "old", Seq: 40, Trial: "0040", Evidence: 1}, Class: journal.TrialClass{Regime: machine.R1, Cores: []int{0}, DurationS: 90}, Condition: machine.Isolated, Profile: []int{-50, 0}, Outcome: journal.OutcomePass, DurationS: 90},
-		&journal.FailureCarried{Source: journal.FactSource{Session: "old", Seq: 50, Evidence: 1}, Class: journal.TrialClass{Regime: machine.R6, Cores: []int{0, 1}}, Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Resident, Profile: []int{-50, -50}},
+		&journal.TrialCarried{Source: journal.FactSource{Session: "old", Seq: 40, Trial: "0040", Evidence: 1}, Class: journal.TrialClass{Regime: machine.R1, Cores: []int{0}, DurationS: 90}, Condition: machine.Alone, Profile: []int{-50, 0}, Outcome: journal.OutcomePass, DurationS: 90},
+		&journal.FailureCarried{Source: journal.FactSource{Session: "old", Seq: 50, Evidence: 1}, Class: journal.TrialClass{Regime: machine.R6, Cores: []int{0, 1}}, Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Together, Profile: []int{-50, -50}},
 	} {
 		e := journal.Event{Seq: i + 4, Data: payload, Kind: payload.Kind()}
 		after.Fold(e)
@@ -98,12 +98,12 @@ func TestCarryReaderReconstructsHistoricalProfiles(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "events.jsonl")
 	writeJournal(t, path, []journal.Event{
 		{Data: &journal.SessionStart{Schema: 1, Ruleset: 6, Session: "historical", Cores: []machine.CoreInfo{{Core: 7}, {Core: 1}, {Core: 3}}}},
-		{Data: &journal.ProfileApplied{Offsets: []int{-10, -20, -30}, Condition: machine.Resident}},
-		{Data: &journal.TrialIntent{Trial: "applied", Cores: []int{7, 1}, Regime: machine.R7, DurationS: 120, Condition: machine.Resident}},
+		{Data: &journal.ProfileApplied{Offsets: []int{-10, -20, -30}, Condition: machine.Together}},
+		{Data: &journal.TrialIntent{Trial: "applied", Cores: []int{7, 1}, Regime: machine.R7, DurationS: 120, Condition: machine.Together}},
 		{Data: &journal.TrialEnd{Trial: "applied", Outcome: journal.OutcomePass, DurationS: 120}},
 		{Data: &journal.ProfileChange{To: []int{-11, -22, -33}}},
 		{Data: &journal.SMUReadback{Core: 3, Offset: -25}},
-		{Data: &journal.TrialIntent{Trial: "readback", Cores: []int{7, 3}, Regime: machine.R7, DurationS: 900, Condition: machine.Masked}},
+		{Data: &journal.TrialIntent{Trial: "readback", Cores: []int{7, 3}, Regime: machine.R7, DurationS: 900, Condition: machine.Parked}},
 		{Data: &journal.TrialEnd{Trial: "readback", Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 11}},
 	}, "")
 	events, err := journal.ReadForCarry(path)
@@ -128,7 +128,7 @@ func TestCarryReaderReconstructsHistoricalProfiles(t *testing.T) {
 func TestRecordOnlyFactsRetainTrialClassAndOutcomes(t *testing.T) {
 	for _, outcome := range []journal.Outcome{journal.OutcomePass, journal.OutcomeFailure, journal.OutcomeInconclusive} {
 		t.Run(string(outcome), func(t *testing.T) {
-			intent := &journal.TrialIntent{Trial: "partial", Cores: []int{7, 3}, Regime: machine.R7, Workload: "workload", DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Rotation: 2, Step: 4, RecordOnly: true, Profile: []int{-20, -30, -50}}
+			intent := &journal.TrialIntent{Trial: "partial", Cores: []int{7, 3}, Regime: machine.R7, Workload: "workload", DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Lap: 2, Step: 4, RecordOnly: true, Profile: []int{-20, -30, -50}}
 			ordinary := *intent
 			ordinary.RecordOnly, ordinary.Step = false, 0
 			if diff := cmp.Diff(ClassOf(&ordinary), ClassOf(intent)); diff != "" {

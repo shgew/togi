@@ -14,12 +14,12 @@ import (
 )
 
 func TestCarriedRerunCitationReplay(t *testing.T) {
-	for _, refine := range []bool{false, true} {
+	for _, deepening := range []bool{false, true} {
 		for _, reload := range []bool{false, true} {
-			t.Run(fmt.Sprintf("refine=%t/reload=%t", refine, reload), func(t *testing.T) {
-				h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -10, fail: new(-11)})
+			t.Run(fmt.Sprintf("deepening=%t/reload=%t", deepening, reload), func(t *testing.T) {
+				h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10, fail: new(-11)})
 				cfg := config.Default()
-				cfg.Guard.Rotation = []machine.Regime{machine.R1}
+				cfg.Checking.Lap = []machine.Regime{machine.R1}
 				h.add(&journal.ConfigLoaded{Config: snapshotConfig(cfg)})
 				h.add(&journal.ProfileChange{To: []int{-10}})
 				failure := carryTrials(h, machine.R1, []int{0}, []int{-10}, 900, 1, journal.OutcomeFailure)[0]
@@ -29,10 +29,10 @@ func TestCarriedRerunCitationReplay(t *testing.T) {
 				}
 				facts := carryTrials(h, machine.R1, []int{0}, []int{-10}, h.s.durations.StartS, count, journal.OutcomePass)
 				facts = append(facts, carryTrials(h, machine.R1, []int{0}, []int{-10}, 900, 1, journal.OutcomePass)...)
-				if refine {
-					h.add(&journal.RefineRound{Round: 1, Event: journal.RotationStart, Profile: []int{-9}, Target: []int{-9}, Cores: []int{0}, Starts: h.s.n, StartS: h.s.durations.StartS})
+				if deepening {
+					h.add(&journal.DeepeningRound{Round: 1, Event: journal.LapStart, Profile: []int{-9}, Target: []int{-9}, Cores: []int{0}, Starts: h.s.n, StartS: h.s.durations.StartS})
 				}
-				h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: -10, ToOffset: -9, FailedMark: new(-10)}, failure)
+				h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -10, ToOffset: -9, FailurePoint: new(-10)}, failure)
 				h.add(&journal.ProfileChange{From: []int{-10}, To: []int{-9}})
 				if reload {
 					// A supported configuration reload lowers the evidence threshold
@@ -41,12 +41,12 @@ func TestCarriedRerunCitationReplay(t *testing.T) {
 					h.add(&journal.ConfigLoaded{Config: snapshotConfig(cfg)})
 				}
 				a := h.next()
-				if refine {
-					if p, ok := a.Payload.(*journal.RefineRound); !ok || p.Event != journal.RotationEnd || !p.Passed {
-						t.Fatalf("rerun did not finish refinement: %+v", a)
+				if deepening {
+					if p, ok := a.Payload.(*journal.DeepeningRound); !ok || p.Event != journal.LapEnd || !p.Passed {
+						t.Fatalf("rerun did not finish deepening: %+v", a)
 					}
-				} else if p, ok := a.Payload.(*journal.GuardRotation); !ok || p.Event != journal.RotationStart {
-					t.Fatalf("rerun did not start rotation: %+v", a)
+				} else if p, ok := a.Payload.(*journal.CheckingLap); !ok || p.Event != journal.LapStart {
+					t.Fatalf("rerun did not start lap: %+v", a)
 				}
 				for _, seq := range facts {
 					if !slices.Contains(a.Cause, seq) {
@@ -57,12 +57,12 @@ func TestCarriedRerunCitationReplay(t *testing.T) {
 					t.Fatalf("rerun completion lacks explanation: %s", a.Payload.Message())
 				}
 				h.decide(a)
-				if !refine {
-					// Carried reruns do not qualify a guard rotation. Finish its live
+				if !deepening {
+					// Carried reruns do not supply full-lap coverage. Finish its live
 					// steps so the next decision exposes stale replay-only citations.
 					a = h.next()
 					if a.Kind != RunTrial || a.Trial.Rerun || a.Trial.Regime != machine.R1 {
-						t.Fatalf("expected live rotation step: %+v", a)
+						t.Fatalf("expected live lap step: %+v", a)
 					}
 					h.trial(a, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: a.Trial.DurationS})
 				}
@@ -91,10 +91,10 @@ func TestCarriedRerunCitationReplay(t *testing.T) {
 }
 
 func TestCarriedRerunBoundaryPreservesPendingChecks(t *testing.T) {
-	for _, refine := range []bool{false, true} {
+	for _, deepening := range []bool{false, true} {
 		for _, missingLong := range []bool{false, true} {
-			t.Run(fmt.Sprintf("refine=%t/missing-long=%t", refine, missingLong), func(t *testing.T) {
-				h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -10, fail: new(-11)})
+			t.Run(fmt.Sprintf("deepening=%t/missing-long=%t", deepening, missingLong), func(t *testing.T) {
+				h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10, fail: new(-11)})
 				h.add(&journal.ProfileChange{To: []int{-10}})
 				failure := carryTrials(h, machine.R1, []int{0}, []int{-10}, 900, 1, journal.OutcomeFailure)[0]
 				count, duration := h.s.n-1, h.s.durations.StartS
@@ -102,12 +102,12 @@ func TestCarriedRerunBoundaryPreservesPendingChecks(t *testing.T) {
 					count, duration = h.s.n, 900
 				}
 				carryTrials(h, machine.R1, []int{0}, []int{-10}, h.s.durations.StartS, count, journal.OutcomePass)
-				h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: -10, ToOffset: -9, FailedMark: new(-10)}, failure)
+				h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -10, ToOffset: -9, FailurePoint: new(-10)}, failure)
 				h.add(&journal.ProfileChange{From: []int{-10}, To: []int{-9}})
-				if refine {
-					h.add(&journal.RefineRound{Round: 1, Event: journal.RotationEnd})
+				if deepening {
+					h.add(&journal.DeepeningRound{Round: 1, Event: journal.LapEnd})
 				} else {
-					h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: []machine.Regime{machine.R1}})
+					h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}})
 				}
 				replayed := New()
 				for _, e := range h.events {

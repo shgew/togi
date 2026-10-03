@@ -5,9 +5,9 @@ import "fmt"
 type Condition string
 
 const (
-	Isolated Condition = "isolated"
-	Resident Condition = "resident"
-	Masked   Condition = "masked"
+	Alone    Condition = "alone"
+	Together Condition = "together"
+	Parked   Condition = "parked"
 )
 
 type Signal string

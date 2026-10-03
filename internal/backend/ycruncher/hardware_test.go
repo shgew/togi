@@ -93,7 +93,7 @@ func TestHardwareWorkloads(t *testing.T) {
 			continue
 		}
 		t.Run(w.ID, func(t *testing.T) {
-			spec := machine.TrialSpec{ID: "hw" + w.ID, Regime: machine.R1, Workload: w, Condition: machine.Isolated, Cores: []int{2}, CPUs: []int{2}, Duration: 20 * time.Second, Index: i}
+			spec := machine.TrialSpec{ID: "hw" + w.ID, Regime: machine.R1, Workload: w, Condition: machine.Alone, Cores: []int{2}, CPUs: []int{2}, Duration: 20 * time.Second, Index: i}
 			running, err := r.Start(context.Background(), spec)
 			if err != nil {
 				t.Fatal(err)

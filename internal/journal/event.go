@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const Schema = 2
+const Schema = 3
 
 const timeLayout = "2006-01-02T15:04:05.000000000Z"
 
@@ -48,15 +48,15 @@ const (
 	KindCrashDetected   Kind = "crash.detected"
 	KindTunerDecision   Kind = "tuner.decision"
 	KindCorePhase       Kind = "core.phase"
-	KindGuardRotation   Kind = "guard.rotation"
-	KindGuardStep       Kind = "guard.step"
+	KindCheckingLap     Kind = "checking.lap"
+	KindCheckingStep    Kind = "checking.step"
 	KindHostRanking     Kind = "host.ranking"
 	KindHuntStart       Kind = "hunt.start"
-	KindHuntMask        Kind = "hunt.mask"
+	KindHuntGroup       Kind = "hunt.group"
 	KindHuntEnd         Kind = "hunt.end"
 	KindHuntSkipped     Kind = "hunt.skipped"
-	KindMarkJoint       Kind = "mark.joint"
-	KindRefineRound     Kind = "refine.round"
+	KindCombination     Kind = "combination"
+	KindDeepeningRound  Kind = "deepening.round"
 	KindTunerWarning    Kind = "tuner.warning"
 	KindBackendRetry    Kind = "backend.retry"
 	KindCommandReset    Kind = "command.reset"
@@ -248,15 +248,15 @@ var payloadTypes = map[Kind]payloadType{
 	KindCrashDetected:   typeOf[CrashDetected](),
 	KindTunerDecision:   typeOf[TunerDecision](),
 	KindCorePhase:       typeOf[CorePhase](),
-	KindGuardRotation:   typeOf[GuardRotation](),
-	KindGuardStep:       typeOf[GuardStep](),
+	KindCheckingLap:     typeOf[CheckingLap](),
+	KindCheckingStep:    typeOf[CheckingStep](),
 	KindHostRanking:     typeOf[HostRanking](),
 	KindHuntStart:       typeOf[HuntStart](),
-	KindHuntMask:        typeOf[HuntMask](),
+	KindHuntGroup:       typeOf[HuntGroup](),
 	KindHuntEnd:         typeOf[HuntEnd](),
 	KindHuntSkipped:     typeOf[HuntSkipped](),
-	KindMarkJoint:       typeOf[MarkJoint](),
-	KindRefineRound:     typeOf[RefineRound](),
+	KindCombination:     typeOf[Combination](),
+	KindDeepeningRound:  typeOf[DeepeningRound](),
 	KindTunerWarning:    typeOf[TunerWarning](),
 	KindBackendRetry:    typeOf[BackendRetry](),
 	KindCommandReset:    typeOf[CommandReset](),

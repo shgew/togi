@@ -33,7 +33,7 @@ func TestStatus(t *testing.T) {
 		t.Fatalf("status: exit %d, stderr %s", code, stderr.String())
 	}
 	status := stdout.String()
-	if want := fmt.Sprintf("qualified rotations since last deepening: %d, latest rotation %d", st.Guard.CleanRotations, st.Guard.LastQualifiedRotation); !strings.Contains(status, want) {
+	if want := fmt.Sprintf("clean laps since last deepening: %d, latest lap %d", st.Checking.CleanLaps, st.Checking.LastCleanLap); !strings.Contains(status, want) {
 		t.Fatalf("status lacks %q:\n%s", want, status)
 	}
 	checkRows(t, "status", status, regexp.MustCompile(`(?m)^(\d\d)  +\d  +\d  +(-?\d+)  `), st)
@@ -123,14 +123,14 @@ func TestBetweenTrialMCEReadOnlyViews(t *testing.T) {
 	}
 }
 
-func TestStatusJointMarkAndOpenHunt(t *testing.T) {
+func TestStatusCombinationAndOpenHunt(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		until journal.Kind
 	}{
-		{name: "hunt", until: journal.KindHuntMask},
-		{name: "mark"},
+		{name: "hunt", until: journal.KindHuntGroup},
+		{name: "combination"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -140,11 +140,11 @@ func TestStatusJointMarkAndOpenHunt(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tc.until == journal.KindHuntMask && (st.Hunt == nil || len(st.Hunt.Masks) == 0) {
-				t.Fatal("hunt fixture has no open mask")
+			if tc.until == journal.KindHuntGroup && (st.Hunt == nil || len(st.Hunt.Groups) == 0) {
+				t.Fatal("hunt fixture has no open group")
 			}
-			if tc.until == "" && len(st.JointMarks) == 0 {
-				t.Fatal("joint fixture has no joint mark")
+			if tc.until == "" && len(st.Combinations) == 0 {
+				t.Fatal("combination fixture has no combination")
 			}
 			var out bytes.Buffer
 			writeStatus(&out, st, events)
@@ -153,13 +153,13 @@ func TestStatusJointMarkAndOpenHunt(t *testing.T) {
 	}
 }
 
-func TestStatusOpenRefinement(t *testing.T) {
+func TestStatusOpenDeepening(t *testing.T) {
 	t.Parallel()
 	st := journal.State{
 		Session: &journal.SessionInfo{ID: "20260101T000000Z", Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)},
-		Phase:   string(journal.PhaseRefine),
-		Cores:   []journal.CoreState{{Core: 3, CCD: 0, Offset: -9, Phase: journal.PhaseDone}},
-		Refine: &journal.RefineState{
+		Phase:   string(journal.PhaseDeepening),
+		Cores:   []journal.CoreState{{Core: 3, CCD: 0, Offset: -9, Phase: journal.PhaseAtLimit}},
+		Deepening: &journal.DeepeningState{
 			Round: 2, Seq: 42, Target: []int{-10}, Profile: []int{-9}, Cores: []int{3},
 			Checks: []journal.CheckState{
 				{Regime: machine.R1, Workload: "mprime-sse-4k-21k", Cores: []int{3}, Passes: 5, Needed: 5},
@@ -169,7 +169,7 @@ func TestStatusOpenRefinement(t *testing.T) {
 	}
 	var out bytes.Buffer
 	writeStatus(&out, st, nil)
-	golden(t, "status-refine", out.String())
+	golden(t, "status-deepening", out.String())
 }
 
 func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
@@ -245,33 +245,33 @@ func checkRows(t *testing.T, name, out string, row *regexp.Regexp, st journal.St
 
 func TestStatusExceptionalActivity(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"nonqualifying-guard", "dead-end", "anchored-edge-mask", "fallback-joint-mark"} {
+	for _, name := range []string{"partial-checking", "dead-end", "parked-member-probe-group", "fallback-combination"} {
 		t.Run(name, func(t *testing.T) {
 			st := journal.State{
 				Session: &journal.SessionInfo{ID: "s1", Start: time.Unix(100, 0).UTC()},
 				Cores: []journal.CoreState{
-					{Core: 3, CCD: 0, Offset: -9, Phase: journal.PhaseDone},
-					{Core: 7, CCD: 0, Offset: -8, Phase: journal.PhaseDone},
+					{Core: 3, CCD: 0, Offset: -9, Phase: journal.PhaseAtLimit},
+					{Core: 7, CCD: 0, Offset: -8, Phase: journal.PhaseAtLimit},
 				},
 			}
 			switch name {
-			case "nonqualifying-guard":
-				st.Phase = string(journal.PhaseGuard)
-				st.Guard = &journal.GuardState{Rotation: 4, Steps: []machine.Regime{machine.R1}, Profile: []int{-9, -8}, Missing: []string{"core 03 has no R1 pass"}}
+			case "partial-checking":
+				st.Phase = string(journal.PhaseChecking)
+				st.Checking = &journal.CheckingState{Lap: 4, Steps: []machine.Regime{machine.R1}, Profile: []int{-9, -8}, Missing: []string{"core 03 has no R1 pass"}}
 			case "dead-end":
 				st.DeadEnd = &journal.DeadEndRef{Condition: journal.DeadEndNoEvidence, Seq: 42}
-			case "anchored-edge-mask":
+			case "parked-member-probe-group":
 				st.Phase = string(journal.PhaseHunt)
 				st.Cores[0].Offset = -10
 				st.Hunt = &journal.HuntState{
-					Hunt: 2, Seq: 40, Failure: 30, AnchorSeq: 20, Anchor: []int{0, 0},
+					Hunt: 2, Seq: 40, Failure: 30, ParkedSeq: 20, Parked: []int{0, 0},
 					Regime: machine.R7, Trial: "0001", Candidates: []int{3, 7},
-					Masks: []journal.MaskState{{Mask: 3, Edge: &journal.JointMember{Core: 3, Offset: -10}, Held: []journal.JointMember{{Core: 7, Offset: -8}}, Passes: 2, Needed: 5, Outcome: "running"}},
+					Groups: []journal.GroupState{{Group: 3, Probe: &journal.CombinationMember{Core: 3, Offset: -10}, Held: []journal.CombinationMember{{Core: 7, Offset: -8}}, Passes: 2, Needed: 5, Outcome: "running"}},
 				}
-			case "fallback-joint-mark":
-				st.JointMarks = []journal.JointMarkState{{Mark: 2, Hunt: 3, Seq: 42, Fallback: true, Members: []journal.JointMember{{Core: 3, Offset: -10}, {Core: 7, Offset: -8}}}}
-				st.Cores[0].JointMarks = []int{2}
-				st.Cores[1].JointMarks = []int{2}
+			case "fallback-combination":
+				st.Combinations = []journal.CombinationState{{Combination: 2, Hunt: 3, Seq: 42, Fallback: true, Members: []journal.CombinationMember{{Core: 3, Offset: -10}, {Core: 7, Offset: -8}}}}
+				st.Cores[0].Combinations = []int{2}
+				st.Cores[1].Combinations = []int{2}
 			}
 			var out bytes.Buffer
 			var events []journal.Event
@@ -286,11 +286,11 @@ func TestStatusExceptionalActivity(t *testing.T) {
 
 func TestStatusRecordOnlyPartial(t *testing.T) {
 	t.Parallel()
-	p := &journal.TrialIntent{Trial: "partial", Cores: []int{1, 2, 3, 4, 5, 6, 7}, RecordOnly: true, Step: 1, Rotation: 1, Regime: machine.R7, Workload: "AVX2", Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 120}
+	p := &journal.TrialIntent{Trial: "partial", Cores: []int{1, 2, 3, 4, 5, 6, 7}, RecordOnly: true, Step: 1, Lap: 1, Regime: machine.R7, Workload: "AVX2", Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120}
 	st := journal.State{
 		Session:  &journal.SessionInfo{ID: "s1", Start: time.Unix(100, 0).UTC()},
-		Phase:    string(journal.PhaseGuard),
-		Guard:    &journal.GuardState{Rotation: 1, RotationOpen: true, Steps: []machine.Regime{machine.R7}},
+		Phase:    string(journal.PhaseChecking),
+		Checking: &journal.CheckingState{Lap: 1, LapOpen: true, Steps: []machine.Regime{machine.R7}},
 		InFlight: &journal.InFlight{Seq: 20, Msg: p.Message()},
 	}
 	var out bytes.Buffer

@@ -33,7 +33,7 @@ func TestDefectAnswersAndDisarm(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in := simInput(t.TempDir(), newSim(t, small()))
-			if stop := simulate(t, in); stop.Reason != StopRotations {
+			if stop := simulate(t, in); stop.Reason != StopLaps {
 				t.Fatalf("initial run stopped with %s", stop.Reason)
 			}
 			in.Defects = []defect.Entry{testDefect(defect.TooAggressive)}
@@ -52,7 +52,7 @@ func TestDefectAnswersAndDisarm(t *testing.T) {
 				if stop.Reason != StopDeadEnd || stop.DeadEnd.Condition != journal.DeadEndDefect {
 					t.Fatalf("unattended stop %+v", stop)
 				}
-			} else if stop.Reason != StopRotations || calls != 1 {
+			} else if stop.Reason != StopLaps || calls != 1 {
 				t.Fatalf("answered stop %+v, prompt calls %d", stop, calls)
 			}
 			events := readEvents(t, in.Dir)
@@ -100,7 +100,7 @@ func TestDefectAnswersAndDisarm(t *testing.T) {
 
 func TestRealPowerOffDefectFoundOnceOnResume(t *testing.T) {
 	in := simInput(t.TempDir(), newSim(t, small()))
-	if stop := simulate(t, in); stop.Reason != StopRotations {
+	if stop := simulate(t, in); stop.Reason != StopLaps {
 		t.Fatalf("initial run stopped with %s", stop.Reason)
 	}
 	j, err := journal.Open(in.Dir, journal.Options{Boot: "historic-poweroff", Now: in.Machine.Now, Build: Build()})
@@ -123,7 +123,7 @@ func TestRealPowerOffDefectFoundOnceOnResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decision, err := j.Append(&journal.TunerDecision{Core: 0, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: -10, ToOffset: -9, FailedMark: new(-10), Reason: "power-off false failure"}, failure.Seq)
+	decision, err := j.Append(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -10, ToOffset: -9, FailurePoint: new(-10), Reason: "power-off false failure"}, failure.Seq)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestRealPowerOffDefectFoundOnceOnResume(t *testing.T) {
 	if err := j.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if stop := simulate(t, in); stop.Reason != StopRotations {
+	if stop := simulate(t, in); stop.Reason != StopLaps {
 		t.Fatalf("too-cautious finding stopped tuning: %+v", stop)
 	}
 	events := readEvents(t, in.Dir)

@@ -12,7 +12,7 @@ import (
 	"github.com/shgew/togi/internal/session"
 )
 
-func resetBoundaryJournal(t *testing.T, dir, id string, build journal.Build, ctx machine.BIOSContext, edge, mark int) *journal.Journal {
+func resetBoundaryJournal(t *testing.T, dir, id string, build journal.Build, ctx machine.BIOSContext, soloLimit, failurePoint int) *journal.Journal {
 	t.Helper()
 	j, err := journal.Open(dir, journal.Options{Boot: "fixture"})
 	if err != nil {
@@ -21,11 +21,11 @@ func resetBoundaryJournal(t *testing.T, dir, id string, build journal.Build, ctx
 	for _, p := range []journal.Payload{
 		&journal.SessionStart{Build: build, Session: id, Evidence: 1, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}},
 		&journal.SessionContext{BIOSContext: ctx},
-		&journal.TrialIntent{Trial: "0001", Core: new(0), Offset: new(edge), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Condition: machine.Isolated, Phase: journal.PhaseSearch, DurationS: 90, Profile: []int{edge, 0}},
+		&journal.TrialIntent{Trial: "0001", Core: new(0), Offset: new(soloLimit), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Condition: machine.Alone, Phase: journal.PhaseSearch, DurationS: 90, Profile: []int{soloLimit, 0}},
 		&journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomePass, DurationS: 90},
-		&journal.TrialIntent{Trial: "0002", Core: new(1), Offset: new(mark), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Condition: machine.Isolated, Phase: journal.PhaseSearch, DurationS: 90, Profile: []int{0, mark}},
+		&journal.TrialIntent{Trial: "0002", Core: new(1), Offset: new(failurePoint), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Condition: machine.Alone, Phase: journal.PhaseSearch, DurationS: 90, Profile: []int{0, failurePoint}},
 		&journal.TrialEnd{Trial: "0002", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, DurationS: 11},
-		&journal.Failure{Trial: "0002", Core: new(1), Offset: new(mark), Attribution: journal.Attributed, Condition: machine.Isolated, Signal: machine.ComputationError},
+		&journal.Failure{Trial: "0002", Core: new(1), Offset: new(failurePoint), Attribution: journal.Attributed, Condition: machine.Alone, Signal: machine.ComputationError},
 	} {
 		if _, err := j.Append(p); err != nil {
 			t.Fatal(err)
@@ -34,7 +34,7 @@ func resetBoundaryJournal(t *testing.T, dir, id string, build journal.Build, ctx
 	return j
 }
 
-func TestResetAllPathsCannotReviveFactsEdgesOrMarks(t *testing.T) {
+func TestResetAllPathsCannotReviveFactsSoloLimitsOrFailurePoints(t *testing.T) {
 	for _, path := range []string{"normal", "pending before journal", "pending empty journal", "incompatible schema", "recovered incompatible archive", "recorded incompatible archive"} {
 		t.Run(path, func(t *testing.T) {
 			dir := t.TempDir()
@@ -109,8 +109,8 @@ func TestResetAllPathsCannotReviveFactsEdgesOrMarks(t *testing.T) {
 				}
 			}
 			for _, core := range c.Cores {
-				if core.Edge != nil && core.EdgeSession != newID || core.FailedMark != nil && core.MarkSession != newID {
-					t.Fatalf("reset revived old edge/mark: %+v", core)
+				if core.SoloLimit != nil && core.SoloLimitSession != newID || core.FailurePoint != nil && core.FailurePointSession != newID {
+					t.Fatalf("reset revived old solo limit/failure point: %+v", core)
 				}
 			}
 		})

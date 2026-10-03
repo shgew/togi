@@ -19,22 +19,22 @@ import (
 const DefaultPath = "/etc/togi/config.toml"
 
 type Config struct {
-	StartOffsets   map[int]int `json:"start_offsets"`
-	CandidateEdges map[int]int `json:"candidate_edges"`
-	Durations      Durations   `json:"durations"`
-	Evidence       Evidence    `json:"evidence"`
-	Guard          Guard       `json:"guard"`
-	DeadEnds       DeadEnds    `json:"dead_ends"`
-	Backends       Backends    `json:"backends"`
-	BackendUser    string      `json:"backend_user"`
+	StartOffsets        map[int]int `json:"start_offsets"`
+	CandidateSoloLimits map[int]int `json:"candidate_solo_limits"`
+	Durations           Durations   `json:"durations"`
+	Evidence            Evidence    `json:"evidence"`
+	Checking            Checking    `json:"checking"`
+	DeadEnds            DeadEnds    `json:"dead_ends"`
+	Backends            Backends    `json:"backends"`
+	BackendUser         string      `json:"backend_user"`
 }
 
 type Durations struct {
-	SearchTrialS  int `toml:"search_trial_s" json:"search_trial_s"`
-	StartS        int `toml:"start_s" json:"start_s"`
-	GuardTrialS   int `toml:"guard_trial_s" json:"guard_trial_s"`
-	GuardIdleS    int `toml:"guard_idle_s" json:"guard_idle_s"`
-	GuardAllCoreS int `toml:"guard_all_core_s" json:"guard_all_core_s"`
+	SearchTrialS     int `toml:"search_trial_s" json:"search_trial_s"`
+	StartS           int `toml:"start_s" json:"start_s"`
+	CheckingTrialS   int `toml:"checking_trial_s" json:"checking_trial_s"`
+	CheckingIdleS    int `toml:"checking_idle_s" json:"checking_idle_s"`
+	CheckingAllCoreS int `toml:"checking_all_core_s" json:"checking_all_core_s"`
 }
 
 type Evidence struct {
@@ -46,8 +46,8 @@ func (e Evidence) Starts() int {
 	return int(math.Ceil(math.Log(e.Miss) / math.Log1p(-e.Rate)))
 }
 
-type Guard struct {
-	Rotation []machine.Regime `toml:"rotation" json:"rotation"`
+type Checking struct {
+	Lap []machine.Regime `toml:"lap" json:"lap"`
 }
 
 type DeadEnds struct {
@@ -62,18 +62,18 @@ type Backends struct {
 
 func Default() Config {
 	return Config{
-		StartOffsets:   map[int]int{},
-		CandidateEdges: map[int]int{},
+		StartOffsets:        map[int]int{},
+		CandidateSoloLimits: map[int]int{},
 		Durations: Durations{
-			SearchTrialS:  90,
-			StartS:        120,
-			GuardTrialS:   120,
-			GuardIdleS:    900,
-			GuardAllCoreS: 1200,
+			SearchTrialS:     90,
+			StartS:           120,
+			CheckingTrialS:   120,
+			CheckingIdleS:    900,
+			CheckingAllCoreS: 1200,
 		},
 		Evidence: Evidence{Miss: 0.05, Rate: 0.5},
-		Guard: Guard{
-			Rotation: []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R4, machine.R6},
+		Checking: Checking{
+			Lap: []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R4, machine.R6},
 		},
 		DeadEnds: DeadEnds{
 			InconclusiveInARow: 3,
@@ -83,14 +83,14 @@ func Default() Config {
 }
 
 type file struct {
-	StartOffsets   map[string]int `toml:"start_offsets"`
-	CandidateEdges map[string]int `toml:"candidate_edges"`
-	Durations      *Durations     `toml:"durations"`
-	Evidence       *Evidence      `toml:"evidence"`
-	Guard          *Guard         `toml:"guard"`
-	DeadEnds       *DeadEnds      `toml:"dead_ends"`
-	Backends       *Backends      `toml:"backends"`
-	BackendUser    *string        `toml:"backend_user"`
+	StartOffsets        map[string]int `toml:"start_offsets"`
+	CandidateSoloLimits map[string]int `toml:"candidate_solo_limits"`
+	Durations           *Durations     `toml:"durations"`
+	Evidence            *Evidence      `toml:"evidence"`
+	Checking            *Checking      `toml:"checking"`
+	DeadEnds            *DeadEnds      `toml:"dead_ends"`
+	Backends            *Backends      `toml:"backends"`
+	BackendUser         *string        `toml:"backend_user"`
 }
 
 func Load(path string) (Config, error) {
@@ -103,7 +103,7 @@ func Load(path string) (Config, error) {
 
 func load(path string) (Config, error) {
 	c := Default()
-	f := file{Durations: &c.Durations, Evidence: &c.Evidence, Guard: &c.Guard, DeadEnds: &c.DeadEnds, Backends: &c.Backends, BackendUser: &c.BackendUser}
+	f := file{Durations: &c.Durations, Evidence: &c.Evidence, Checking: &c.Checking, DeadEnds: &c.DeadEnds, Backends: &c.Backends, BackendUser: &c.BackendUser}
 	md, err := toml.DecodeFile(path, &f)
 	if err != nil {
 		return Config{}, err
@@ -121,7 +121,7 @@ func load(path string) (Config, error) {
 	if err := convertOffsets("start_offsets", f.StartOffsets, c.StartOffsets); err != nil {
 		return Config{}, err
 	}
-	if err := convertOffsets("candidate_edges", f.CandidateEdges, c.CandidateEdges); err != nil {
+	if err := convertOffsets("candidate_solo_limits", f.CandidateSoloLimits, c.CandidateSoloLimits); err != nil {
 		return Config{}, err
 	}
 	if err := validate(c); err != nil {
@@ -159,9 +159,9 @@ func validate(c Config) error {
 	}{
 		{"search_trial_s", c.Durations.SearchTrialS, 1},
 		{"start_s", c.Durations.StartS, 1},
-		{"guard_trial_s", c.Durations.GuardTrialS, 1},
-		{"guard_idle_s", c.Durations.GuardIdleS, 1},
-		{"guard_all_core_s", c.Durations.GuardAllCoreS, 4},
+		{"checking_trial_s", c.Durations.CheckingTrialS, 1},
+		{"checking_idle_s", c.Durations.CheckingIdleS, 1},
+		{"checking_all_core_s", c.Durations.CheckingAllCoreS, 4},
 	}
 	for _, d := range durations {
 		if d.value < d.min || d.value > 86400 {
@@ -178,17 +178,17 @@ func validate(c Config) error {
 	if math.IsNaN(starts) || math.IsInf(starts, 0) || starts > 1000 {
 		return fmt.Errorf("evidence: miss %g and rate %g need more than 1000 starts per step", c.Evidence.Miss, c.Evidence.Rate)
 	}
-	for _, core := range slices.Sorted(maps.Keys(c.CandidateEdges)) {
+	for _, core := range slices.Sorted(maps.Keys(c.CandidateSoloLimits)) {
 		if _, ok := c.StartOffsets[core]; ok {
-			return fmt.Errorf("start_offsets.\"%d\" and candidate_edges.\"%d\": set at most one per core", core, core)
+			return fmt.Errorf("start_offsets.\"%d\" and candidate_solo_limits.\"%d\": set at most one per core", core, core)
 		}
 	}
-	if len(c.Guard.Rotation) == 0 {
-		return errors.New("guard.rotation: must not be empty")
+	if len(c.Checking.Lap) == 0 {
+		return errors.New("checking.lap: must not be empty")
 	}
-	for i, r := range c.Guard.Rotation {
+	for i, r := range c.Checking.Lap {
 		if !r.Valid() {
-			return fmt.Errorf("guard.rotation[%d] = %q: not a regime", i, r)
+			return fmt.Errorf("checking.lap[%d] = %q: not a regime", i, r)
 		}
 	}
 	thresholds := []intField{

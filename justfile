@@ -13,7 +13,7 @@ _default:
 test *args:
     {{ dev }} go test -shuffle=on ./... "$@"
 
-# Run one package (`just focus ./internal/tuner`) or test pattern (`just focus TestGuard/crash`)
+# Run one package (`just focus ./internal/tuner`) or test pattern (`just focus TestChecking/crash`)
 [group('test')]
 focus +args:
     if [[ "$1" == ./* || "$1" == ../* || "$1" == *... || -d "$1" ]]; then {{ dev }} go test "$@"; else pattern="$1"; shift; {{ dev }} go test -run "$pattern" ./... "$@"; fi
@@ -66,7 +66,7 @@ check *args:
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")
 
-# Run a simulated session through the search and its first clean qualifying rotation
+# Run a simulated session through the search and its first clean lap
 [group('run')]
 sim seed="1":
     {{ dev }} go run ./tools/sim --seed "$1"

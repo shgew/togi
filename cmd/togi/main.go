@@ -56,7 +56,7 @@ var commands = []command{
 	{name: "run", summary: "Start or resume the session in the foreground", help: runHelp, flags: func(g *globals) *flag.FlagSet {
 		return runFlags(g, new(int), new(string), new(bool))
 	}, run: runRun},
-	{name: "status", summary: "Show core marks, activity and qualified rotations", help: statusHelp, flags: func(g *globals) *flag.FlagSet {
+	{name: "status", summary: "Show core failure points, combinations, activity and clean laps", help: statusHelp, flags: func(g *globals) *flag.FlagSet {
 		return newFlagSet("status", g)
 	}, run: runStatus},
 	{name: "watch", summary: "Show the session as a live dashboard", help: watchHelp, flags: func(g *globals) *flag.FlagSet {
@@ -139,8 +139,8 @@ func usage(w io.Writer) {
 	b.WriteString("       togi --version\n\n")
 	b.WriteString("Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs.\n\n")
 	b.WriteString("Examples:\n")
-	b.WriteString("  sudo togi run --rotations 1   Stop after search and one qualifying rotation\n")
-	b.WriteString("  togi status                   Show core marks, activity and qualified rotations\n\n")
+	b.WriteString("  sudo togi run --laps 1   Stop after search and one clean lap\n")
+	b.WriteString("  togi status                   Show core failure points, combinations, activity and clean laps\n\n")
 	b.WriteString("Commands:\n")
 	sorted := slices.SortedFunc(slices.Values(commands), func(a, b command) int { return strings.Compare(a.name, b.name) })
 	for _, c := range sorted {

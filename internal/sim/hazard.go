@@ -7,15 +7,15 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-// Hazard returns steady-state failures per second, without onset boosts or joint delays.
+// Hazard returns steady-state failures per second, without onset boosts or combination delays.
 // Profile must contain one register offset for each machine core.
 func (m *Machine) Hazard(profile []int, spec machine.TrialSpec) float64 {
 	var rate float64
-	for core := range m.edges {
+	for core := range m.limits {
 		rate += m.coreRate(profile, spec, core)
 	}
-	for _, joint := range m.cfg.Joints {
-		rate += m.jointRate(profile, spec.Regime, joint)
+	for _, combination := range m.cfg.Combinations {
+		rate += m.combinationRate(profile, spec.Regime, combination)
 	}
 	for ccd := range 2 {
 		rate += m.ccdRate(profile, spec, ccd)
@@ -24,18 +24,18 @@ func (m *Machine) Hazard(profile []int, spec machine.TrialSpec) float64 {
 }
 
 // FailureProbability integrates the same hazards as a simulated start, including
-// onset boosts, unloaded-core hazards and delayed joints, without drawing RNG.
+// onset boosts, unloaded-core hazards and delayed combinations, without drawing RNG.
 func (m *Machine) FailureProbability(profile []int, spec machine.TrialSpec) float64 {
 	exposure := func(after float64) float64 {
 		duration := spec.Duration.Seconds()
 		return max(0, duration-after) + max(0, m.model.OnsetBoost)*max(0, min(duration, m.model.OnsetS)-after)
 	}
 	var hazard float64
-	for core := range m.edges {
+	for core := range m.limits {
 		hazard += m.coreRate(profile, spec, core) * exposure(0)
 	}
-	for _, joint := range m.cfg.Joints {
-		hazard += m.jointRate(profile, spec.Regime, joint) * exposure(joint.AfterS)
+	for _, combination := range m.cfg.Combinations {
+		hazard += m.combinationRate(profile, spec.Regime, combination) * exposure(combination.AfterS)
 	}
 	for ccd := range 2 {
 		hazard += m.ccdRate(profile, spec, ccd) * exposure(0)
@@ -45,46 +45,46 @@ func (m *Machine) FailureProbability(profile []int, spec machine.TrialSpec) floa
 
 func (m *Machine) coreRate(profile []int, spec machine.TrialSpec, core int) float64 {
 	loaded := slices.Contains(spec.Cores, core)
-	edge := m.edge(profile, core, spec.Regime, spec.Workload.ID)
+	limit := m.limit(profile, core, spec.Regime, spec.Workload.ID)
 	if !loaded {
-		if m.edges[core].Idle == nil && m.edges[core].Flat <= 0 {
+		if m.limits[core].Idle == nil && m.limits[core].Flat <= 0 {
 			return 0
 		}
-		if m.edges[core].Idle != nil {
-			edge = *m.edges[core].Idle
+		if m.limits[core].Idle != nil {
+			limit = *m.limits[core].Idle
 		}
 	}
-	rate := m.edges[core].Flat
-	if loaded || m.edges[core].Idle != nil {
-		d := edge - profile[core]
+	rate := m.limits[core].Flat
+	if loaded || m.limits[core].Idle != nil {
+		d := limit - profile[core]
 		if d >= 1 {
-			rate += m.model.PastEdgeRate * math.Pow(m.model.Growth, float64(d-1))
+			rate += m.model.PastLimitRate * math.Pow(m.model.Growth, float64(d-1))
 		} else if loaded {
-			rate += m.model.NearEdgeRate
+			rate += m.model.NearLimitRate
 		}
 	}
 	if profile[core] == 0 {
-		rate -= m.edges[core].Flat
+		rate -= m.limits[core].Flat
 	}
 	return rate
 }
 
-func (m *Machine) jointRate(profile []int, regime machine.Regime, joint Joint) float64 {
-	if len(joint.Regimes) > 0 && !slices.Contains(joint.Regimes, regime) {
+func (m *Machine) combinationRate(profile []int, regime machine.Regime, combination Combination) float64 {
+	if len(combination.Regimes) > 0 && !slices.Contains(combination.Regimes, regime) {
 		return 0
 	}
-	if len(joint.Members) == 0 {
+	if len(combination.Members) == 0 {
 		return 0
 	}
-	for core, offset := range joint.Members {
+	for core, offset := range combination.Members {
 		if profile[core] > offset {
 			return 0
 		}
 	}
-	if joint.Rate == 0 {
-		return m.model.PastEdgeRate
+	if combination.Rate == 0 {
+		return m.model.PastLimitRate
 	}
-	return joint.Rate
+	return combination.Rate
 }
 
 func (m *Machine) ccdRate(profile []int, spec machine.TrialSpec, ccd int) float64 {
@@ -100,12 +100,12 @@ func (m *Machine) ccdRate(profile []int, spec machine.TrialSpec, ccd int) float6
 	if !loaded {
 		return 0
 	}
-	// Existing joint explanations take precedence over extrapolation on this CCD.
-	for _, joint := range m.cfg.Joints {
-		if m.jointRate(profile, spec.Regime, joint) <= 0 {
+	// Existing combination explanations take precedence over extrapolation on this CCD.
+	for _, combination := range m.cfg.Combinations {
+		if m.combinationRate(profile, spec.Regime, combination) <= 0 {
 			continue
 		}
-		for core := range joint.Members {
+		for core := range combination.Members {
 			if core/size == ccd {
 				return 0
 			}

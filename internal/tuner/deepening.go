@@ -9,13 +9,13 @@ import (
 )
 
 type round struct {
-	start   *journal.RefineRound
+	start   *journal.DeepeningRound
 	seq     int
 	initial []int
 }
 
-func (s *State) foldRound(e journal.Event, p *journal.RefineRound) {
-	if p.Event == journal.RotationStart {
+func (s *State) foldRound(e journal.Event, p *journal.DeepeningRound) {
+	if p.Event == journal.LapStart {
 		s.round = &round{start: p, seq: e.Seq, initial: s.offsets()}
 		s.nextRound = max(s.nextRound, p.Round)
 		s.lastPlanSeq = e.Seq
@@ -33,12 +33,12 @@ func totalDepth(p []int) int {
 	return sum
 }
 
-func (s *State) refineDue() bool { return !s.guard.open && s.refinable() }
+func (s *State) deepeningDue() bool { return !s.checking.open && s.canDeepen() }
 
-func (s *State) Refinable() bool { return s.refinable() }
+func (s *State) CanDeepen() bool { return s.canDeepen() }
 
-func (s *State) refinable() bool {
-	if s.hunt != nil || len(s.queue) > 0 || len(s.obligations) > 0 || s.anySearch() || len(s.qualified) == 0 {
+func (s *State) canDeepen() bool {
+	if s.hunt != nil || len(s.queue) > 0 || len(s.obligations) > 0 || s.anySearch() || len(s.passedFullLaps) == 0 {
 		return false
 	}
 	p := s.offsets()
@@ -49,7 +49,7 @@ func (s *State) refinable() bool {
 	if totalDepth(target) < totalDepth(p) {
 		return true
 	}
-	return slices.ContainsFunc(s.cores, func(c *core) bool { return c.phase == journal.PhaseResident })
+	return slices.ContainsFunc(s.cores, func(c *core) bool { return c.phase == journal.PhaseHasRoom })
 }
 
 func (s *State) roundStart() Action {
@@ -67,8 +67,8 @@ func (s *State) roundStart() Action {
 			changed = append(changed, c.id)
 		}
 	}
-	anchor := s.qualified[len(s.qualified)-1]
-	return Action{Kind: Decide, Payload: &journal.RefineRound{Round: s.nextRound + 1, Event: journal.RotationStart, Anchor: slices.Clone(anchor.profile), AnchorSeq: anchor.seq, Target: target, Profile: q, Cores: changed, Ranking: slices.Clone(s.ranking), Starts: s.n, StartS: s.durations.StartS}, Cause: []int{anchor.seq}}
+	parked := s.passedFullLaps[len(s.passedFullLaps)-1]
+	return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.nextRound + 1, Event: journal.LapStart, Parked: slices.Clone(parked.profile), ParkedSeq: parked.seq, Target: target, Profile: q, Cores: changed, Ranking: slices.Clone(s.ranking), Starts: s.n, StartS: s.durations.StartS}, Cause: []int{parked.seq}}
 }
 
 func (s *State) roundMoves() (Action, bool) {
@@ -76,8 +76,8 @@ func (s *State) roundMoves() (Action, bool) {
 	if r == nil {
 		return Action{}, false
 	}
-	if mark, ok := s.reaches(r.start.Profile); ok {
-		return Action{Kind: Decide, Payload: &journal.RefineRound{Round: r.start.Round, Event: journal.RotationEnd, Reason: "its profile reaches " + mark}, Cause: []int{r.seq}}, true
+	if reachedConstraint, ok := s.reaches(r.start.Profile); ok {
+		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: r.start.Round, Event: journal.LapEnd, Reason: "its profile reaches " + reachedConstraint}, Cause: []int{r.seq}}, true
 	}
 	for _, yield := range []bool{true, false} {
 		for _, c := range s.cores {
@@ -92,7 +92,7 @@ func (s *State) roundMoves() (Action, bool) {
 				decision = journal.Yield
 				reason = fmt.Sprintf("round %d: yields to %d so the profile can reach %d counts", r.start.Round, target, -totalDepth(r.start.Target))
 			}
-			return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseRefine, Decision: decision, FromOffset: c.offset, ToOffset: target, Pass: c.pass, FailedMark: c.fail, Reason: reason}, Cause: []int{r.seq}}, true
+			return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseDeepening, Decision: decision, FromOffset: c.offset, ToOffset: target, Pass: c.pass, FailurePoint: c.fail, Reason: reason}, Cause: []int{r.seq}}, true
 		}
 	}
 	return Action{}, false
@@ -137,7 +137,7 @@ func (s *State) roundCheck() Action {
 	r := s.round
 	cause := []int{r.seq}
 	for _, q := range s.roundChecks() {
-		seqs := s.passSeqs(q.class, r.start.Profile, r.seq, refinementEvidence)
+		seqs := s.passSeqs(q.class, r.start.Profile, r.seq, deepeningEvidence)
 		if len(seqs) >= q.count {
 			cause = s.citeCarried(cause, seqs[:q.count]...)
 			continue
@@ -145,7 +145,7 @@ func (s *State) roundCheck() Action {
 		if s.retry != nil && s.retry.Round == r.start.Round {
 			return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{r.seq}}
 		}
-		t := Trial{Regime: q.class.regime, Workload: q.class.workload, Condition: machine.Resident, Phase: journal.PhaseRefine, DurationS: q.class.duration, Round: r.start.Round}
+		t := Trial{Regime: q.class.regime, Workload: q.class.workload, Condition: machine.Together, Phase: journal.PhaseDeepening, DurationS: q.class.duration, Round: r.start.Round}
 		if q.class.regime == machine.R7 {
 			t.Cores = q.cores
 		} else {
@@ -153,17 +153,17 @@ func (s *State) roundCheck() Action {
 		}
 		return Action{Kind: RunTrial, Trial: t, Cause: []int{r.seq}}
 	}
-	return Action{Kind: Decide, Payload: &journal.RefineRound{Round: r.start.Round, Event: journal.RotationEnd, Passed: true, Reason: s.carriedReason(cause)}, Cause: cause}
+	return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: r.start.Round, Event: journal.LapEnd, Passed: true, Reason: s.carriedReason(cause)}, Cause: cause}
 }
 
-func (s *State) projectRound() *journal.RefineState {
+func (s *State) projectRound() *journal.DeepeningState {
 	r := s.round
 	if r == nil {
 		return nil
 	}
-	st := &journal.RefineState{Round: r.start.Round, Seq: r.seq, Target: slices.Clone(r.start.Target), Profile: slices.Clone(r.start.Profile), Cores: slices.Clone(r.start.Cores)}
+	st := &journal.DeepeningState{Round: r.start.Round, Seq: r.seq, Target: slices.Clone(r.start.Target), Profile: slices.Clone(r.start.Profile), Cores: slices.Clone(r.start.Cores)}
 	for _, q := range s.roundChecks() {
-		st.Checks = append(st.Checks, journal.CheckState{Regime: q.class.regime, Workload: q.class.workload, Cores: slices.Clone(q.cores), Passes: s.passes(q.class, r.start.Profile, r.seq, refinementEvidence), Needed: q.count})
+		st.Checks = append(st.Checks, journal.CheckState{Regime: q.class.regime, Workload: q.class.workload, Cores: slices.Clone(q.cores), Passes: s.passes(q.class, r.start.Profile, r.seq, deepeningEvidence), Needed: q.count})
 	}
 	return st
 }

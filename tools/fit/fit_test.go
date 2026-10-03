@@ -21,16 +21,16 @@ import (
 func synthetic(t *testing.T) (sim.Config, []trialfacts.Record) {
 	t.Helper()
 	model := sim.DefaultModel()
-	model.PastEdgeRate, model.Growth = 0.008, 3
-	cfg := sim.Config{Cores: 4, Model: &model, Edges: make([]sim.Edges, 4), CCD: &sim.CCD{LogRate: math.Log(0.006), Slope: 0.15, Effect: [2]float64{0, 0.6}}}
-	for core := range cfg.Edges {
-		for r := range cfg.Edges[core].Isolated {
-			cfg.Edges[core].Isolated[r] = -20 - core
+	model.PastLimitRate, model.Growth = 0.008, 3
+	cfg := sim.Config{Cores: 4, Model: &model, Limits: make([]sim.Limits, 4), CCD: &sim.CCD{LogRate: math.Log(0.006), Slope: 0.15, Effect: [2]float64{0, 0.6}}}
+	for core := range cfg.Limits {
+		for r := range cfg.Limits[core].Alone {
+			cfg.Limits[core].Alone[r] = -20 - core
 		}
-		for r := range cfg.Edges[core].Resident {
-			cfg.Edges[core].Resident[r] = -18 - core
+		for r := range cfg.Limits[core].Together {
+			cfg.Limits[core].Together[r] = -18 - core
 		}
-		cfg.Edges[core].Resident[6] = -50
+		cfg.Limits[core].Together[6] = -50
 	}
 	m, err := sim.New(cfg)
 	if err != nil {
@@ -49,19 +49,19 @@ func synthetic(t *testing.T) (sim.Config, []trialfacts.Record) {
 			records = append(records, trialfacts.Record{Session: "synthetic", Seq: len(records) + 1, Kind: facts.TrialFact, Class: facts.Class{Regime: regime, Workload: "synthetic", Cores: cores, DurationS: 60}, Profile: slices.Clone(profile), Outcome: outcome})
 		}
 	}
-	for core := range cfg.Edges {
+	for core := range cfg.Limits {
 		for _, regime := range []machine.Regime{machine.R1, machine.R2} {
-			for _, isolated := range []bool{true, false} {
-				edge := cfg.Edges[core].Resident[0]
-				if isolated {
-					edge = cfg.Edges[core].Isolated[0]
+			for _, alone := range []bool{true, false} {
+				limit := cfg.Limits[core].Together[0]
+				if alone {
+					limit = cfg.Limits[core].Alone[0]
 				}
 				for delta := -1; delta <= 3; delta++ {
 					profile := make([]int, 4)
-					if !isolated {
+					if !alone {
 						profile[(core+1)%4] = -5
 					}
-					profile[core] = edge - delta
+					profile[core] = limit - delta
 					add(profile, regime, []int{core}, 60)
 				}
 			}
@@ -81,15 +81,15 @@ func synthetic(t *testing.T) (sim.Config, []trialfacts.Record) {
 func TestFitRecoversMachine(t *testing.T) {
 	known, records := synthetic(t)
 	got, _ := fit(records)
-	for core := range known.Edges {
+	for core := range known.Limits {
 		for r := range 2 {
-			if got.Edges[core].Isolated[r] != known.Edges[core].Isolated[r] || got.Edges[core].Resident[r] != known.Edges[core].Resident[r] {
-				t.Errorf("core %d regime %d: edges %+v; want %+v", core, r, got.Edges[core], known.Edges[core])
+			if got.Limits[core].Alone[r] != known.Limits[core].Alone[r] || got.Limits[core].Together[r] != known.Limits[core].Together[r] {
+				t.Errorf("core %d regime %d: limits %+v; want %+v", core, r, got.Limits[core], known.Limits[core])
 			}
 		}
 	}
-	if math.Abs(got.Model.PastEdgeRate/known.Model.PastEdgeRate-1) > 0.25 || math.Abs(got.Model.Growth-known.Model.Growth) > 0.6 {
-		t.Errorf("hazard shape: rate=%g growth=%g; want rate=%g growth=%g", got.Model.PastEdgeRate, got.Model.Growth, known.Model.PastEdgeRate, known.Model.Growth)
+	if math.Abs(got.Model.PastLimitRate/known.Model.PastLimitRate-1) > 0.25 || math.Abs(got.Model.Growth-known.Model.Growth) > 0.6 {
+		t.Errorf("hazard shape: rate=%g growth=%g; want rate=%g growth=%g", got.Model.PastLimitRate, got.Model.Growth, known.Model.PastLimitRate, known.Model.Growth)
 	}
 	fitted, err := sim.New(got)
 	if err != nil {
@@ -137,11 +137,11 @@ func TestMixedContextRejected(t *testing.T) {
 
 func TestFitRecoversFlatAndIdle(t *testing.T) {
 	model := sim.DefaultModel()
-	model.PastEdgeRate, model.Growth = 0.008, 3
+	model.PastLimitRate, model.Growth = 0.008, 3
 	idle := -30
-	known := sim.Config{Cores: 2, Model: &model, Edges: []sim.Edges{
-		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}, Flat: 0.00015},
-		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}, Idle: &idle},
+	known := sim.Config{Cores: 2, Model: &model, Limits: []sim.Limits{
+		{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}, Flat: 0.00015},
+		{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}, Idle: &idle},
 	}}
 	source, err := sim.New(known)
 	if err != nil {
@@ -177,21 +177,21 @@ func TestFitRecoversFlatAndIdle(t *testing.T) {
 		}
 	}
 	got, _ := fit(records)
-	if got.Edges[1].Idle == nil {
-		t.Errorf("idle edge: disabled; want %d", idle)
-	} else if *got.Edges[1].Idle != idle {
-		t.Errorf("idle edge: got %d want %d (past_edge_rate=%g growth=%g)", *got.Edges[1].Idle, idle, got.Model.PastEdgeRate, got.Model.Growth)
+	if got.Limits[1].Idle == nil {
+		t.Errorf("idle limit: disabled; want %d", idle)
+	} else if *got.Limits[1].Idle != idle {
+		t.Errorf("idle limit: got %d want %d (past_limit_rate=%g growth=%g)", *got.Limits[1].Idle, idle, got.Model.PastLimitRate, got.Model.Growth)
 	}
-	if math.Abs(got.Edges[0].Flat/known.Edges[0].Flat-1) > 0.4 {
-		t.Errorf("flat rate: got %g want %g", got.Edges[0].Flat, known.Edges[0].Flat)
+	if math.Abs(got.Limits[0].Flat/known.Limits[0].Flat-1) > 0.4 {
+		t.Errorf("flat rate: got %g want %g", got.Limits[0].Flat, known.Limits[0].Flat)
 	}
 }
 
 func TestConstrainedFitUsesResampledLikelihood(t *testing.T) {
 	model := sim.DefaultModel()
-	base := sim.Config{Cores: 2, Model: &model, Edges: []sim.Edges{
-		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}, Flat: -math.Log(0.8) / 900},
-		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+	base := sim.Config{Cores: 2, Model: &model, Limits: []sim.Limits{
+		{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}, Flat: -math.Log(0.8) / 900},
+		{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}},
 	}}
 	var original, sample []trialfacts.Record
 	for i := range 40 {
@@ -218,7 +218,7 @@ func TestConstrainedFitUsesResampledLikelihood(t *testing.T) {
 	if check.Status != "ok" || check.Groups[0].MeanP <= 0.25 {
 		t.Fatalf("resampled likelihood must increase failure probability without violating original evidence: %+v", check)
 	}
-	if base.Edges[0].Flat != -math.Log(0.8)/900 {
+	if base.Limits[0].Flat != -math.Log(0.8)/900 {
 		t.Fatal("constrained refit mutated the all-facts starting machine")
 	}
 }
@@ -228,11 +228,11 @@ func TestConstrainedFitRefitsCCDWithoutChangingR7Structure(t *testing.T) {
 	base := sim.Config{
 		Cores: 2, Model: &model,
 		CCD: &sim.CCD{LogRate: math.Log(-math.Log(0.8) / 60)},
-		Edges: []sim.Edges{
-			{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
-			{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+		Limits: []sim.Limits{
+			{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+			{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}},
 		},
-		Joints: []sim.Joint{{Members: map[int]int{1: -40}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001}},
+		Combinations: []sim.Combination{{Members: map[int]int{1: -40}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001}},
 	}
 	want := cloneMachine(base)
 	var original, sample []trialfacts.Record
@@ -267,12 +267,12 @@ func TestConstrainedFitRefitsCCDWithoutChangingR7Structure(t *testing.T) {
 	if cmp.Equal(first.CCD, want.CCD) {
 		t.Fatal("residual CCD parameters did not refit")
 	}
-	if diff := cmp.Diff(want.Joints, first.Joints); diff != "" {
-		t.Fatalf("CCD refit changed frozen joints: %s", diff)
+	if diff := cmp.Diff(want.Combinations, first.Combinations); diff != "" {
+		t.Fatalf("CCD refit changed frozen combinations: %s", diff)
 	}
-	for core := range first.Edges {
-		if first.Edges[core].Resident[6] != want.Edges[core].Resident[6] || len(first.Edges[core].Workload) != 0 {
-			t.Fatalf("CCD refit added R7 edge/workload structure on core %d: %+v", core, first.Edges[core])
+	for core := range first.Limits {
+		if first.Limits[core].Together[6] != want.Limits[core].Together[6] || len(first.Limits[core].Workload) != 0 {
+			t.Fatalf("CCD refit added R7 limit/workload structure on core %d: %+v", core, first.Limits[core])
 		}
 	}
 	if diff := cmp.Diff(want, base); diff != "" {
@@ -285,9 +285,9 @@ func TestConstrainedFitRefitsCCDWithoutChangingR7Structure(t *testing.T) {
 }
 
 func TestLikelihoodRejectsImpossibleOutcomes(t *testing.T) {
-	cfg := sim.Config{Cores: 2, Edges: []sim.Edges{
-		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
-		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+	cfg := sim.Config{Cores: 2, Limits: []sim.Limits{
+		{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+		{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}},
 	}}
 	l := likelihood{cfg: cfg, obs: []observation{{profile: []int{-10, 0}, spec: machine.TrialSpec{Regime: machine.R1, Cores: []int{0}, Duration: 90 * time.Second}, n: 1}}}
 	l.rebuild()
@@ -296,7 +296,7 @@ func TestLikelihoodRejectsImpossibleOutcomes(t *testing.T) {
 		failures   int
 		impossible bool
 	}{{0, 1, true}, {100, 0, true}, {0, 0, false}, {100, 1, false}} {
-		cfg.Edges[0].Flat, l.obs[0].k = tc.flat, tc.failures
+		cfg.Limits[0].Flat, l.obs[0].k = tc.flat, tc.failures
 		loss := l.value(0)
 		if tc.impossible {
 			if !math.IsInf(loss, 1) {
@@ -377,45 +377,45 @@ func TestDecisiveFiltersNonStartsAndPreservesContext(t *testing.T) {
 func TestCloneMachineIsolatesConstrainedParameters(t *testing.T) {
 	idle := -20
 	model := sim.DefaultModel()
-	cfg := sim.Config{Cores: 2, Model: &model, Edges: []sim.Edges{{Idle: &idle, Workload: map[string]int{"work": -25}}, {}}, Joints: []sim.Joint{{Members: map[int]int{0: -30}, Rate: 0.01}}}
+	cfg := sim.Config{Cores: 2, Model: &model, Limits: []sim.Limits{{Idle: &idle, Workload: map[string]int{"work": -25}}, {}}, Combinations: []sim.Combination{{Members: map[int]int{0: -30}, Rate: 0.01}}}
 	wantModel := model
 	wantIdle := -20
-	want := sim.Config{Cores: 2, Model: &wantModel, Edges: []sim.Edges{{Idle: &wantIdle, Workload: map[string]int{"work": -25}}, {}}, Joints: []sim.Joint{{Members: map[int]int{0: -30}, Rate: 0.01}}}
+	want := sim.Config{Cores: 2, Model: &wantModel, Limits: []sim.Limits{{Idle: &wantIdle, Workload: map[string]int{"work": -25}}, {}}, Combinations: []sim.Combination{{Members: map[int]int{0: -30}, Rate: 0.01}}}
 	got := cloneMachine(cfg)
-	got.Model.PastEdgeRate = 0.4
-	*got.Edges[0].Idle = -1
-	got.Edges[0].Workload["work"] = -1
-	got.Joints[0].Members[0] = -1
-	got.Joints[0].Rate = 0.2
+	got.Model.PastLimitRate = 0.4
+	*got.Limits[0].Idle = -1
+	got.Limits[0].Workload["work"] = -1
+	got.Combinations[0].Members[0] = -1
+	got.Combinations[0].Rate = 0.2
 	if diff := cmp.Diff(want, cfg); diff != "" {
 		t.Fatalf("refit changed its seed: %s", diff)
 	}
 }
 
-func TestJointSearchSeparatesCleanBoundary(t *testing.T) {
+func TestCombinationSearchSeparatesCleanBoundary(t *testing.T) {
 	cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
 	cfg.CCD = nil
-	cfg.Model.NearEdgeRate = 0
-	cfg.Joints = []sim.Joint{{Members: map[int]int{0: -10, 1: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 0.01}}
+	cfg.Model.NearLimitRate = 0
+	cfg.Combinations = []sim.Combination{{Members: map[int]int{0: -10, 1: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 0.01}}
 	spec := machine.TrialSpec{Regime: machine.R7, Cores: []int{0, 1}, Duration: 60 * time.Second}
 	l := likelihood{cfg: cfg, obs: []observation{{profile: []int{-20, -20}, spec: spec, n: 100}, {profile: []int{-30, -30}, spec: spec, n: 100, k: 50}}}
 	l.rebuild()
 	all := []int{0, 1}
 	before := l.score(all)
-	l.fitJoints(&cfg)
-	l.fitJoints(&cfg)
+	l.fitCombinations(&cfg)
+	l.fitCombinations(&cfg)
 	if after := l.score(all); !(after < before-1) {
-		t.Fatalf("joint did not improve likelihood: %g -> %g", before, after)
+		t.Fatalf("combination did not improve likelihood: %g -> %g", before, after)
 	}
 	if p := l.m.FailureProbability([]int{-20, -20}, spec); p != 0 {
-		t.Fatalf("clean boundary retains joint hazard: %g", p)
+		t.Fatalf("clean boundary retains combination hazard: %g", p)
 	}
 	if p := l.m.FailureProbability([]int{-30, -30}, spec); math.Abs(p-0.5) > 0.01 {
 		t.Fatalf("failure boundary p=%g; want 0.5", p)
 	}
 }
 
-func TestJointCandidateLimitPreservesModel(t *testing.T) {
+func TestCombinationCandidateLimitPreservesModel(t *testing.T) {
 	var records []trialfacts.Record
 	for i := range 100 {
 		outcome := journal.OutcomePass
@@ -427,25 +427,25 @@ func TestJointCandidateLimitPreservesModel(t *testing.T) {
 	for _, count := range []int{7, 8} {
 		t.Run(strconv.Itoa(count), func(t *testing.T) {
 			cfg := initialConfig(records)
-			cfg.Model.NearEdgeRate = 0
-			cfg.Joints = nil
+			cfg.Model.NearLimitRate = 0
+			cfg.Combinations = nil
 			for j := range count {
-				cfg.Joints = append(cfg.Joints, sim.Joint{Members: map[int]int{0: -20 - j}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001})
+				cfg.Combinations = append(cfg.Combinations, sim.Combination{Members: map[int]int{0: -20 - j}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001})
 			}
 			want := cloneMachine(cfg)
 			l := likelihood{cfg: cfg, obs: aggregate(records)}
 			l.rebuild()
 			before := l.score([]int{0})
-			l.addJoint(&cfg, records, 0)
+			l.addCombination(&cfg, records, 0)
 			if count == 8 {
 				if diff := cmp.Diff(want, cfg); diff != "" {
-					t.Fatalf("ninth joint admitted: %s", diff)
+					t.Fatalf("ninth combination admitted: %s", diff)
 				}
 			} else {
-				if len(cfg.Joints) != 8 || !(l.score([]int{0}) < before-0.5) {
-					t.Fatalf("otherwise admissible candidate was not fitted: joints=%d loss %g -> %g", len(cfg.Joints), before, l.score([]int{0}))
+				if len(cfg.Combinations) != 8 || !(l.score([]int{0}) < before-0.5) {
+					t.Fatalf("otherwise admissible candidate was not fitted: combinations=%d loss %g -> %g", len(cfg.Combinations), before, l.score([]int{0}))
 				}
-				if diff := cmp.Diff(map[int]int{0: -30}, cfg.Joints[7].Members); diff != "" {
+				if diff := cmp.Diff(map[int]int{0: -30}, cfg.Combinations[7].Members); diff != "" {
 					t.Fatalf("viable distinct candidate (-want +got):\n%s", diff)
 				}
 			}
@@ -457,13 +457,13 @@ func TestWorkloadOverridesRequireSupportAndImproveLikelihood(t *testing.T) {
 	for _, n := range []int{9, 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
-			cfg.Model.NearEdgeRate = 0
+			cfg.Model.NearLimitRate = 0
 			spec := machine.TrialSpec{Regime: machine.R1, Workload: machine.Workload{ID: "supported"}, Cores: []int{0}, Duration: 60 * time.Second}
 			l := likelihood{cfg: cfg, obs: []observation{{profile: []int{-20, 0}, spec: spec, n: n, k: 1}}}
 			l.rebuild()
 			before := l.score([]int{0})
 			l.fitWorkloads(&cfg)
-			_, exists := cfg.Edges[0].Workload["supported"]
+			_, exists := cfg.Limits[0].Workload["supported"]
 			if exists != (n >= 10) {
 				t.Fatalf("%d starts: override=%v", n, exists)
 			}
@@ -474,24 +474,24 @@ func TestWorkloadOverridesRequireSupportAndImproveLikelihood(t *testing.T) {
 	}
 }
 
-func TestCoupledShiftIncludesWorkloadAndPreservesUnsupportedEdges(t *testing.T) {
+func TestCoupledShiftIncludesWorkloadAndPreservesUnsupportedLimits(t *testing.T) {
 	cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
-	cfg.Model.NearEdgeRate = 0
-	cfg.Model.PastEdgeRate = 0.01
-	cfg.Edges[0].Workload = map[string]int{"active": -20, "unsupported": -50}
+	cfg.Model.NearLimitRate = 0
+	cfg.Model.PastLimitRate = 0.01
+	cfg.Limits[0].Workload = map[string]int{"active": -20, "unsupported": -50}
 	spec := machine.TrialSpec{Regime: machine.R1, Workload: machine.Workload{ID: "active"}, Cores: []int{0}, Duration: 60 * time.Second}
 	l := likelihood{cfg: cfg, obs: []observation{{profile: []int{-21, 0}, spec: spec, n: 100}, {profile: []int{-24, 0}, spec: spec, n: 100, k: 99}}}
 	l.rebuild()
 	before := l.score([]int{0, 1})
 	deep := l.m.FailureProbability([]int{-24, 0}, spec)
-	l.fitEdgeRateShift(&cfg, []int{0, 1})
-	if !(l.score([]int{0, 1}) < before) || cfg.Edges[0].Workload["active"] >= -20 {
+	l.fitLimitRateShift(&cfg, []int{0, 1})
+	if !(l.score([]int{0, 1}) < before) || cfg.Limits[0].Workload["active"] >= -20 {
 		t.Fatal("coupled shift did not remove false boundary hazard")
 	}
 	if got := l.m.FailureProbability([]int{-24, 0}, spec); math.Abs(got-deep) > 1e-12 {
-		t.Fatalf("past-edge hazard changed: %g -> %g", deep, got)
+		t.Fatalf("past-limit hazard changed: %g -> %g", deep, got)
 	}
-	if cfg.Edges[0].Workload["unsupported"] != -50 || cfg.Edges[0].Isolated[0] != -50 {
-		t.Fatal("unsupported edges moved")
+	if cfg.Limits[0].Workload["unsupported"] != -50 || cfg.Limits[0].Alone[0] != -50 {
+		t.Fatal("unsupported limits moved")
 	}
 }

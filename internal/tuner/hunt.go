@@ -10,19 +10,19 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-type maskRecord struct {
-	payload *journal.HuntMask
+type groupRecord struct {
+	payload *journal.HuntGroup
 	seq     int
 	cause   []int
 }
 
 type hunt struct {
-	start                          *journal.HuntStart
-	seq                            int
-	class                          trialClass
-	masks                          []maskRecord
-	end                            *journal.HuntEnd
-	endSeq, markSeq, directFailure int
+	start                                 *journal.HuntStart
+	seq                                   int
+	class                                 trialClass
+	groups                                []groupRecord
+	end                                   *journal.HuntEnd
+	endSeq, combinationSeq, directFailure int
 }
 
 func (s *State) openHunt(e journal.Event, p *journal.HuntStart) {
@@ -35,13 +35,13 @@ func (s *State) openHunt(e journal.Event, p *journal.HuntStart) {
 	}
 }
 
-func (s *State) recordMask(e journal.Event, p *journal.HuntMask) {
+func (s *State) recordGroup(e journal.Event, p *journal.HuntGroup) {
 	if h := s.hunt; h != nil && p.Hunt == h.start.Hunt {
-		m := maskRecord{p, e.Seq, e.Cause}
-		if n := len(h.masks); n > 0 && h.masks[n-1].payload.Mask == p.Mask {
-			h.masks[n-1] = m
+		m := groupRecord{p, e.Seq, e.Cause}
+		if n := len(h.groups); n > 0 && h.groups[n-1].payload.Group == p.Group {
+			h.groups[n-1] = m
 		} else {
-			h.masks = append(h.masks, m)
+			h.groups = append(h.groups, m)
 		}
 		s.projectionDirty = true
 	}
@@ -72,7 +72,7 @@ func (s *State) resetHuntCore(c *core) {
 }
 
 func (s *State) commitHuntDecision(e journal.Event, p *journal.TunerDecision) {
-	if s.hunt != nil && s.hunt.end != nil && p.Phase == journal.PhaseHunt && len(e.Cause) > 0 && (e.Cause[0] == s.hunt.endSeq || e.Cause[0] == s.hunt.markSeq) {
+	if s.hunt != nil && s.hunt.end != nil && p.Phase == journal.PhaseHunt && len(e.Cause) > 0 && (e.Cause[0] == s.hunt.endSeq || e.Cause[0] == s.hunt.combinationSeq) {
 		s.hunt = nil
 	}
 }
@@ -83,12 +83,12 @@ func (s *State) skipHunt(p *journal.HuntSkipped) {
 	}
 }
 
-func (s *State) markHunt(e journal.Event, p *journal.MarkJoint) {
+func (s *State) recordHuntCombination(e journal.Event, p *journal.Combination) {
 	if s.hunt != nil && s.hunt.end != nil && s.hunt.start.Hunt == p.Hunt {
-		s.hunt.markSeq = e.Seq
-		if len(s.guard.profile) == len(s.cores) {
+		s.hunt.combinationSeq = e.Seq
+		if len(s.checking.profile) == len(s.cores) {
 			for _, m := range p.Members {
-				if s.guard.profile[s.index(m.Core)] > m.Offset {
+				if s.checking.profile[s.index(m.Core)] > m.Offset {
 					s.hunt = nil
 					break
 				}
@@ -112,12 +112,12 @@ func (s *State) failureBySeq(seq int) *pendingFailure {
 
 func (s *State) huntStartNext() Action {
 	f := s.queue[0]
-	if mark, ok := s.reaches(f.profile); ok {
-		return Action{Kind: Decide, Payload: &journal.HuntSkipped{Failure: f.seq, Reason: "its profile reaches " + mark}, Cause: []int{f.seq}}
+	if reachedConstraint, ok := s.reaches(f.profile); ok {
+		return Action{Kind: Decide, Payload: &journal.HuntSkipped{Failure: f.seq, Reason: "its profile reaches " + reachedConstraint}, Cause: []int{f.seq}}
 	}
-	anchor := make([]int, len(f.profile))
-	anchorSeq := 0
-	for _, q := range slices.Backward(s.qualified) {
+	parked := make([]int, len(f.profile))
+	parkedSeq := 0
+	for _, q := range slices.Backward(s.passedFullLaps) {
 		if len(q.profile) != len(f.profile) {
 			continue
 		}
@@ -128,13 +128,13 @@ func (s *State) huntStartNext() Action {
 		if slices.Equal(raised, f.profile) {
 			continue
 		}
-		anchor = raised
-		anchorSeq = q.seq
+		parked = raised
+		parkedSeq = q.seq
 		break
 	}
 	var candidates []int
 	for i, c := range s.byID() {
-		if f.profile[i] < anchor[i] {
+		if f.profile[i] < parked[i] {
 			candidates = append(candidates, c.id)
 		}
 	}
@@ -142,11 +142,11 @@ func (s *State) huntStartNext() Action {
 	if len(cores) == 0 {
 		cores = s.ids()
 	}
-	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: cores, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Anchor: anchor, AnchorSeq: anchorSeq, Candidates: candidates, Starts: s.n, StartS: s.durations.StartS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
+	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: cores, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Parked: parked, ParkedSeq: parkedSeq, Candidates: candidates, Starts: s.n, StartS: s.durations.StartS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
 	p.Reason = f.failure.Reason
 	cause := []int{f.seq}
-	if anchorSeq != 0 {
-		cause = append(cause, anchorSeq)
+	if parkedSeq != 0 {
+		cause = append(cause, parkedSeq)
 	}
 	return Action{Kind: Decide, Payload: p, Cause: cause}
 }
@@ -201,7 +201,7 @@ func (s *State) split(h *hunt, set []int, g int) [][]int {
 	return parts
 }
 
-func (s *State) repeatedMaskedCore(h *hunt, duration int) (int, [2]int, bool) {
+func (s *State) repeatedParkedCore(h *hunt, duration int) (int, [2]int, bool) {
 	if len(s.recent) != 1 || len(h.start.Candidates) <= 2 {
 		return 0, [2]int{}, false
 	}
@@ -216,7 +216,7 @@ func (s *State) repeatedMaskedCore(h *hunt, duration int) (int, [2]int, bool) {
 		if !s.failureAfter(*f, s.resetSeq) {
 			continue
 		}
-		if f.seq >= h.start.Failure || f.class != k || f.failure.Condition != machine.Masked || f.failure.Attribution != journal.Attributed || f.failure.Core == nil || f.failure.Offset == nil {
+		if f.seq >= h.start.Failure || f.class != k || f.failure.Condition != machine.Parked || f.failure.Attribution != journal.Attributed || f.failure.Core == nil || f.failure.Offset == nil {
 			continue
 		}
 		if *f.failure.Core != id {
@@ -234,26 +234,26 @@ func (s *State) repeatedMaskedCore(h *hunt, duration int) (int, [2]int, bool) {
 	return 0, [2]int{}, false
 }
 
-type maskPlan struct {
+type groupPlan struct {
 	set, cores                        []int
 	g                                 int
 	stage                             string
 	index, duration                   int
 	escalated, fullChecked, anyFailed bool
-	edge                              *journal.JointMember
-	held                              []journal.JointMember
+	probe                             *journal.CombinationMember
+	held                              []journal.CombinationMember
 	priority                          []int
 	singleCorePrior                   [2]int
 	result                            bool
 }
 
-func planOf(m *journal.HuntMask) maskPlan {
-	return maskPlan{set: m.Set, cores: m.Cores, g: m.Granularity, stage: m.Stage, index: m.Index, duration: m.DurationS, escalated: m.Escalated, fullChecked: m.FullChecked, anyFailed: m.AnyFailed, edge: m.Edge, held: m.Held}
+func planOf(m *journal.HuntGroup) groupPlan {
+	return groupPlan{set: m.Set, cores: m.Cores, g: m.Granularity, stage: m.Stage, index: m.Index, duration: m.DurationS, escalated: m.Escalated, fullChecked: m.FullChecked, anyFailed: m.AnyFailed, probe: m.Probe, held: m.Held}
 }
 
-func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
-	p := maskPlan{set: slices.Clone(h.start.Candidates), g: 2, stage: "part", duration: h.start.StartS}
-	if len(h.masks) == 0 && h.start.Trial != "" && h.start.DurationS > h.start.StartS {
+func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
+	p := groupPlan{set: slices.Clone(h.start.Candidates), g: 2, stage: "part", duration: h.start.StartS}
+	if len(h.groups) == 0 && h.start.Trial != "" && h.start.DurationS > h.start.StartS {
 		shortFailed := slices.ContainsFunc(s.failures, func(e entry) bool {
 			return (e.carried || e.seq > s.resetSeq) && e.seq < h.start.Failure && e.class.regime == h.class.regime && e.class.duration <= h.start.StartS
 		})
@@ -269,17 +269,17 @@ func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
 	if len(p.set) == 0 {
 		return p, false
 	}
-	split := slices.IndexFunc(h.masks, func(m maskRecord) bool { return m.payload.Edge != nil })
+	split := slices.IndexFunc(h.groups, func(m groupRecord) bool { return m.payload.Probe != nil })
 	if split < 0 {
-		split = len(h.masks)
+		split = len(h.groups)
 	}
 	if split == 0 {
 		if len(p.set) == 1 {
 			p.result = true
 			return p, false
 		}
-		if len(h.masks) == 0 {
-			if id, prior, ok := s.repeatedMaskedCore(h, p.duration); ok {
+		if len(h.groups) == 0 {
+			if id, prior, ok := s.repeatedParkedCore(h, p.duration); ok {
 				p.g, p.cores, p.singleCorePrior = len(p.set), []int{id}, prior
 				return p, true
 			}
@@ -287,10 +287,10 @@ func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
 		p.cores = s.split(h, p.set, p.g)[0]
 		return p, true
 	}
-	last := h.masks[split-1]
+	last := h.groups[split-1]
 	m := last.payload
-	p = maskPlan{set: slices.Clone(m.Set), g: m.Granularity, stage: m.Stage, index: m.Index, duration: m.DurationS, escalated: m.Escalated, fullChecked: m.FullChecked, anyFailed: m.AnyFailed}
-	outcome := s.maskOutcome(h, last)
+	p = groupPlan{set: slices.Clone(m.Set), g: m.Granularity, stage: m.Stage, index: m.Index, duration: m.DurationS, escalated: m.Escalated, fullChecked: m.FullChecked, anyFailed: m.AnyFailed}
+	outcome := s.groupOutcome(h, last)
 	if outcome == "running" {
 		return p, false
 	}
@@ -314,7 +314,7 @@ func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
 		}
 		p.fullChecked = true
 	}
-	if len(h.masks) == 1 && m.Stage == "part" && len(m.Cores) == 1 && m.Granularity > 2 && m.Granularity == len(h.start.Candidates) {
+	if len(h.groups) == 1 && m.Stage == "part" && len(m.Cores) == 1 && m.Granularity > 2 && m.Granularity == len(h.start.Candidates) {
 		p.g, p.index = 2, 0
 		p.cores = s.split(h, p.set, p.g)[0]
 		return p, true
@@ -342,13 +342,13 @@ func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
 		parts := s.split(h, p.set, p.g)
 		if p.index+1 < len(parts) {
 			p.index++
-			p.cores = s.maskPart(parts, p.stage, p.index, p.set)
+			p.cores = s.groupPart(parts, p.stage, p.index, p.set)
 			return p, true
 		}
 		if p.stage == "part" && p.g > 2 {
 			p.stage = "complement"
 			p.index = 0
-			p.cores = s.maskPart(parts, p.stage, p.index, p.set)
+			p.cores = s.groupPart(parts, p.stage, p.index, p.set)
 			return p, true
 		}
 	}
@@ -369,7 +369,7 @@ func (s *State) nextMaskPlan(h *hunt) (maskPlan, bool) {
 	return p, false
 }
 
-func (s *State) maskPart(parts [][]int, stage string, index int, set []int) []int {
+func (s *State) groupPart(parts [][]int, stage string, index int, set []int) []int {
 	if stage == "part" {
 		return slices.Clone(parts[index])
 	}
@@ -382,7 +382,7 @@ func (s *State) maskPart(parts [][]int, stage string, index int, set []int) []in
 	return out
 }
 
-func (s *State) maskEvidence(h *hunt, m maskRecord, cite bool) (string, int, []int) {
+func (s *State) groupEvidence(h *hunt, m groupRecord, cite bool) (string, int, []int) {
 	if m.payload.Skipped {
 		return "skipped", 0, nil
 	}
@@ -411,14 +411,14 @@ func (s *State) maskEvidence(h *hunt, m maskRecord, cite bool) (string, int, []i
 	return "running", 0, nil
 }
 
-func (s *State) maskOutcome(h *hunt, m maskRecord) string {
-	outcome, _, _ := s.maskEvidence(h, m, false)
+func (s *State) groupOutcome(h *hunt, m groupRecord) string {
+	outcome, _, _ := s.groupEvidence(h, m, false)
 	return outcome
 }
 
-func (s *State) citeMaskCarried(cause []int, h *hunt, m maskRecord) []int {
+func (s *State) citeGroupCarried(cause []int, h *hunt, m groupRecord) []int {
 	cause = s.citeCarried(cause, m.cause...)
-	_, failure, seqs := s.maskEvidence(h, m, true)
+	_, failure, seqs := s.groupEvidence(h, m, true)
 	if failure != 0 {
 		return s.citeCarried(cause, failure)
 	}
@@ -430,129 +430,129 @@ func (s *State) huntNext() (Action, bool) {
 	if h.end != nil {
 		return s.huntCommitment(h)
 	}
-	if len(h.masks) > 0 {
-		m := h.masks[len(h.masks)-1]
-		if s.maskOutcome(h, m) == "running" {
-			if mark, ok := s.reaches(m.payload.Profile); ok {
-				return Action{Kind: Decide, Payload: s.makeMask(h, planOf(m.payload), m.payload.Mask, "", true, "its profile reaches "+mark), Cause: []int{m.seq}}, true
+	if len(h.groups) > 0 {
+		m := h.groups[len(h.groups)-1]
+		if s.groupOutcome(h, m) == "running" {
+			if reachedConstraint, ok := s.reaches(m.payload.Profile); ok {
+				return Action{Kind: Decide, Payload: s.makeGroup(h, planOf(m.payload), m.payload.Group, "", true, "its profile reaches "+reachedConstraint), Cause: []int{m.seq}}, true
 			}
-			if s.retry != nil && s.retry.Hunt == h.start.Hunt && s.retry.Mask == m.payload.Mask {
+			if s.retry != nil && s.retry.Hunt == h.start.Hunt && s.retry.Group == m.payload.Group {
 				return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{m.seq}}, true
 			}
-			t := Trial{Regime: h.start.Regime, Workload: h.start.Workload, Condition: machine.Masked, Phase: journal.PhaseHunt, DurationS: m.payload.DurationS, Cores: slices.Clone(h.start.Cores), Profile: slices.Clone(m.payload.Profile), Hunt: h.start.Hunt, Mask: m.payload.Mask}
+			t := Trial{Regime: h.start.Regime, Workload: h.start.Workload, Condition: machine.Parked, Phase: journal.PhaseHunt, DurationS: m.payload.DurationS, Cores: slices.Clone(h.start.Cores), Profile: slices.Clone(m.payload.Profile), Hunt: h.start.Hunt, Group: m.payload.Group}
 			return Action{Kind: RunTrial, Trial: t, Cause: []int{m.seq}}, true
 		}
 	}
-	next, has := s.nextMaskPlan(h)
+	next, has := s.nextGroupPlan(h)
 	if has {
-		return s.planMask(h, next, "testing the part of the failing profile"), true
+		return s.planGroup(h, next, "testing the part of the failing profile"), true
 	}
-	result, reason := "joint", "masked trial outcomes isolated the minimal failing set"
-	var members []journal.JointMember
+	result, reason := "combination", "parked trial outcomes identified the minimal failing set"
+	var members []journal.CombinationMember
 	switch {
 	case len(next.set) == 1:
 		result = "culprit"
 	case !next.anyFailed:
-		result, reason = "fallback", "no tested mask failed, so the remaining candidates stay unresolved and are marked together"
+		result, reason = "fallback", "no tested group failed, so the remaining candidates stay unresolved and form a combination"
 	default:
-		probe, found, clause, probing := s.nextEdge(h, next)
+		probe, found, clause, probing := s.nextMemberProbe(h, next)
 		if probing {
-			return s.planMask(h, probe, fmt.Sprintf("probing how shallow core %02d must be for the combination to pass", probe.edge.Core)), true
+			return s.planGroup(h, probe, fmt.Sprintf("probing how shallow core %02d must be for the combination to pass", probe.probe.Core)), true
 		}
 		members, reason = found, reason+clause
 	}
 	cause := []int{h.seq}
-	for _, m := range h.masks {
-		cause = s.citeMaskCarried(cause, h, m)
+	for _, m := range h.groups {
+		cause = s.citeGroupCarried(cause, h, m)
 	}
 	reason += s.carriedReason(cause)
-	return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: result, Cores: slices.Clone(next.set), Members: members, Masks: len(h.masks), Reason: reason}, Cause: cause}, true
+	return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: result, Cores: slices.Clone(next.set), Members: members, Groups: len(h.groups), Reason: reason}, Cause: cause}, true
 }
 
-func (s *State) planMask(h *hunt, p maskPlan, reason string) Action {
-	payload := s.makeMask(h, p, len(h.masks)+1, "", false, reason)
+func (s *State) planGroup(h *hunt, p groupPlan, reason string) Action {
+	payload := s.makeGroup(h, p, len(h.groups)+1, "", false, reason)
 	k := h.class.withDuration(p.duration)
 	since := s.inferenceSince(payload, h.seq)
 	cause := []int{h.seq}
 	seqs := s.passSeqs(k, payload.Profile, since, huntEvidence)
 	if len(seqs) >= h.start.Starts {
 		seqs = seqs[:h.start.Starts]
-		payload.Inferred, payload.Reason = "pass", "passing starts already establish the mask"
+		payload.Inferred, payload.Reason = "pass", "passing starts already establish the group"
 		cause = s.citeCarried(cause, seqs...)
 	} else if failure := s.failingSeq(k, payload.Profile, since); failure != 0 {
-		payload.Inferred, payload.Reason = "failure", "a known failure establishes the mask"
+		payload.Inferred, payload.Reason = "failure", "a known failure establishes the group"
 		cause = s.citeCarried(cause, failure)
-	} else if mark, ok := s.reaches(payload.Profile); ok {
-		payload.Skipped, payload.Reason = true, "its profile reaches "+mark
+	} else if reachedConstraint, ok := s.reaches(payload.Profile); ok {
+		payload.Skipped, payload.Reason = true, "its profile reaches "+reachedConstraint
 	}
 	if len(p.priority) > 0 {
 		payload.Reason += fmt.Sprintf("; %d valid short starts preceded the longer failure, with no failure in this regime at the short duration or less since reset, so test the failed duration", len(p.priority))
 		cause = append(cause, p.priority...)
 	}
 	if p.singleCorePrior[0] > 0 {
-		payload.Reason += fmt.Sprintf("; two masked failures in this class followed one-count backoffs on core %02d, so probe that core first", p.cores[0])
+		payload.Reason += fmt.Sprintf("; two parked failures in this class followed one-count backoffs on core %02d, so probe that core first", p.cores[0])
 		cause = append(cause, p.singleCorePrior[:]...)
 	}
-	for _, m := range h.masks {
-		cause = s.citeMaskCarried(cause, h, m)
+	for _, m := range h.groups {
+		cause = s.citeGroupCarried(cause, h, m)
 	}
 	payload.Reason += s.carriedReason(cause)
 	return Action{Kind: Decide, Payload: payload, Cause: cause}
 }
 
-func (s *State) inferenceSince(m *journal.HuntMask, since int) int {
+func (s *State) inferenceSince(m *journal.HuntGroup, since int) int {
 	if m.Stage == "part" || m.Stage == "complement" {
 		return s.resetSeq
 	}
 	return since
 }
 
-func (s *State) makeMask(h *hunt, p maskPlan, number int, inferred string, skipped bool, reason string) *journal.HuntMask {
-	profile := slices.Clone(h.start.Anchor)
+func (s *State) makeGroup(h *hunt, p groupPlan, number int, inferred string, skipped bool, reason string) *journal.HuntGroup {
+	profile := slices.Clone(h.start.Parked)
 	for _, id := range p.cores {
 		profile[s.index(id)] = h.start.Failing[s.index(id)]
 	}
-	var edge *journal.JointMember
-	if p.edge != nil {
-		edge = new(*p.edge)
+	var probe *journal.CombinationMember
+	if p.probe != nil {
+		probe = new(*p.probe)
 		for _, m := range p.held {
 			profile[s.index(m.Core)] = m.Offset
 		}
-		profile[s.index(edge.Core)] = edge.Offset
+		profile[s.index(probe.Core)] = probe.Offset
 	}
-	return &journal.HuntMask{Hunt: h.start.Hunt, Mask: number, Cores: slices.Clone(p.cores), Profile: profile, Set: slices.Clone(p.set), Granularity: p.g, Stage: p.stage, Index: p.index, DurationS: p.duration, Escalated: p.escalated, FullChecked: p.fullChecked, AnyFailed: p.anyFailed, Edge: edge, Held: slices.Clone(p.held), Inferred: inferred, Skipped: skipped, Reason: reason}
+	return &journal.HuntGroup{Hunt: h.start.Hunt, Group: number, Cores: slices.Clone(p.cores), Profile: profile, Set: slices.Clone(p.set), Granularity: p.g, Stage: p.stage, Index: p.index, DurationS: p.duration, Escalated: p.escalated, FullChecked: p.fullChecked, AnyFailed: p.anyFailed, Probe: probe, Held: slices.Clone(p.held), Inferred: inferred, Skipped: skipped, Reason: reason}
 }
 
-func (s *State) nextEdge(h *hunt, joint maskPlan) (maskPlan, []journal.JointMember, string, bool) {
-	members := make([]journal.JointMember, 0, len(joint.set))
-	for _, id := range joint.set {
+func (s *State) nextMemberProbe(h *hunt, combination groupPlan) (groupPlan, []journal.CombinationMember, string, bool) {
+	members := make([]journal.CombinationMember, 0, len(combination.set))
+	for _, id := range combination.set {
 		i := s.index(id)
-		if s.guard.profile[i] > h.start.Failing[i] {
-			return maskPlan{}, nil, "", false
+		if s.checking.profile[i] > h.start.Failing[i] {
+			return groupPlan{}, nil, "", false
 		}
-		members = append(members, journal.JointMember{Core: id, Offset: h.start.Failing[i]})
+		members = append(members, journal.CombinationMember{Core: id, Offset: h.start.Failing[i]})
 	}
 	probes := 0
 	for k := range members {
 		core := members[k].Core
 		i := s.index(core)
-		lo, hi := h.start.Failing[i], h.start.Anchor[i]
+		lo, hi := h.start.Failing[i], h.start.Parked[i]
 		failed, passed := 0, false
-		for _, m := range h.masks {
-			if m.payload.Edge == nil || m.payload.Edge.Core != core {
+		for _, m := range h.groups {
+			if m.payload.Probe == nil || m.payload.Probe.Core != core {
 				continue
 			}
 			probes++
-			switch s.maskOutcome(h, m) {
+			switch s.groupOutcome(h, m) {
 			case "failure":
-				lo = max(lo, m.payload.Edge.Offset)
+				lo = max(lo, m.payload.Probe.Offset)
 				failed++
 			case "pass":
-				hi = min(hi, m.payload.Edge.Offset)
+				hi = min(hi, m.payload.Probe.Offset)
 				passed = true
 			default:
 				members[k].Offset = lo
-				return maskPlan{}, members, "; edge probes stopped at a skipped mask with it failing at " + jointOffsets(members), false
+				return groupPlan{}, members, "; member probes stopped at a skipped group with it failing at " + combinationOffsets(members), false
 			}
 		}
 		members[k].Offset = lo
@@ -568,12 +568,12 @@ func (s *State) nextEdge(h *hunt, joint maskPlan) (maskPlan, []journal.JointMemb
 		for j, m := range held {
 			cores[j] = m.Core
 		}
-		return maskPlan{set: slices.Clone(joint.set), cores: cores, g: joint.g, stage: "edge", index: probes, duration: joint.duration, escalated: joint.escalated, fullChecked: joint.fullChecked, anyFailed: true, edge: &journal.JointMember{Core: core, Offset: probe}, held: held}, nil, "", true
+		return groupPlan{set: slices.Clone(combination.set), cores: cores, g: combination.g, stage: "probe", index: probes, duration: combination.duration, escalated: combination.escalated, fullChecked: combination.fullChecked, anyFailed: true, probe: &journal.CombinationMember{Core: core, Offset: probe}, held: held}, nil, "", true
 	}
-	return maskPlan{}, members, "; edge probes found it still failing at " + jointOffsets(members) + " and passing with any one member a count shallower", false
+	return groupPlan{}, members, "; member probes found it still failing at " + combinationOffsets(members) + " and passing with any one member a count shallower", false
 }
 
-func jointOffsets(members []journal.JointMember) string {
+func combinationOffsets(members []journal.CombinationMember) string {
 	parts := make([]string, len(members))
 	for i, m := range members {
 		parts[i] = fmt.Sprintf("core %02d %d", m.Core, m.Offset)
@@ -588,9 +588,9 @@ func (s *State) huntRanking(h *hunt) []int {
 	return h.start.Ranking
 }
 
-func (s *State) jointBackoff(members []journal.JointMember, rank []int) (journal.JointMember, int, bool) {
+func (s *State) combinationBackoff(members []journal.CombinationMember, rank []int) (journal.CombinationMember, int, bool) {
 	p := s.offsets()
-	var chosen journal.JointMember
+	var chosen journal.CombinationMember
 	bestSum, bestRank, found := math.MaxInt, -1, false
 	for _, m := range members {
 		candidate := slices.Clone(p)
@@ -623,64 +623,64 @@ func (s *State) huntCommitment(h *hunt) (Action, bool) {
 			return Action{}, false
 		}
 		x := h.start.Failing[s.index(c.id)]
-		mark := x
+		failurePoint := x
 		if c.fail != nil {
-			mark = max(mark, *c.fail)
+			failurePoint = max(failurePoint, *c.fail)
 		}
 		to := max(c.offset, x+1)
-		pass, discarded := keepPass(c.pass, mark)
-		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailedMark: new(mark), Reason: fmt.Sprintf("hunt %d found core %02d; failed mark %d%s", h.start.Hunt, c.id, mark, discarded)}, Cause: []int{h.endSeq}}, true
+		pass, discarded := keepPass(c.pass, failurePoint)
+		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailurePoint: new(failurePoint), Reason: fmt.Sprintf("hunt %d found core %02d; failure point %d%s", h.start.Hunt, c.id, failurePoint, discarded)}, Cause: []int{h.endSeq}}, true
 	}
-	var marked *journal.JointMarkState
-	for i := range s.marks {
-		if s.marks[i].Hunt == h.start.Hunt {
-			marked = &s.marks[i]
+	var recordedCombination *journal.CombinationState
+	for i := range s.combinations {
+		if s.combinations[i].Hunt == h.start.Hunt {
+			recordedCombination = &s.combinations[i]
 			break
 		}
 	}
-	if marked == nil {
+	if recordedCombination == nil {
 		members := slices.Clone(end.Members)
 		if members == nil {
 			for _, id := range end.Cores {
-				members = append(members, journal.JointMember{Core: id, Offset: h.start.Failing[s.index(id)]})
+				members = append(members, journal.CombinationMember{Core: id, Offset: h.start.Failing[s.index(id)]})
 			}
 		}
 		reason := fmt.Sprintf("hunt %d found a combined failure", h.start.Hunt)
 		for _, m := range members {
-			if s.guard.profile[s.index(m.Core)] > m.Offset {
+			if s.checking.profile[s.index(m.Core)] > m.Offset {
 				reason = fmt.Sprintf("no backoff: core %02d is already shallower", m.Core)
 				break
 			}
 		}
-		return Action{Kind: Decide, Payload: &journal.MarkJoint{Mark: s.nextMark + 1, Members: members, Fallback: end.Result == "fallback", Hunt: h.start.Hunt, Reason: reason}, Cause: []int{h.endSeq}}, true
+		return Action{Kind: Decide, Payload: &journal.Combination{Combination: s.nextCombination + 1, Members: members, Fallback: end.Result == "fallback", Hunt: h.start.Hunt, Reason: reason}, Cause: []int{h.endSeq}}, true
 	}
 
-	for _, m := range marked.Members {
-		if s.guard.profile[s.index(m.Core)] > m.Offset {
+	for _, m := range recordedCombination.Members {
+		if s.checking.profile[s.index(m.Core)] > m.Offset {
 			return Action{}, false
 		}
 	}
 	if c, probe, ok := s.testedBackoff(h); ok {
-		to := probe.payload.Edge.Offset
-		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailedMark: c.fail, Reason: fmt.Sprintf("joint mark J%d: backing off core %02d to %d, where hunt %d mask %d passed with the rest of the joint at its failing offsets", marked.Mark, c.id, to, h.start.Hunt, probe.payload.Mask)}, Cause: []int{marked.Seq, probe.seq}}, true
+		to := probe.payload.Probe.Offset
+		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("combination C%d: backing off core %02d to %d, where hunt %d group %d passed with the rest of the combination at its failing offsets", recordedCombination.Combination, c.id, to, h.start.Hunt, probe.payload.Group)}, Cause: []int{recordedCombination.Seq, probe.seq}}, true
 	}
-	chosen, reach, ok := s.jointBackoff(marked.Members, s.huntRanking(h))
+	chosen, reach, ok := s.combinationBackoff(recordedCombination.Members, s.huntRanking(h))
 	if !ok {
 		return Action{}, false
 	}
 	c := s.core(chosen.Core)
 	to := max(c.offset, chosen.Offset+1)
-	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailedMark: c.fail, Reason: fmt.Sprintf("joint mark J%d: backing off core %02d leaves %d counts reachable", marked.Mark, c.id, reach)}, Cause: []int{marked.Seq}}, true
+	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("combination C%d: backing off core %02d leaves %d counts reachable", recordedCombination.Combination, c.id, reach)}, Cause: []int{recordedCombination.Seq}}, true
 }
 
-func (s *State) testedBackoff(h *hunt) (*core, maskRecord, bool) {
+func (s *State) testedBackoff(h *hunt) (*core, groupRecord, bool) {
 	rank := s.huntRanking(h)
 	var best *core
-	var bestProbe maskRecord
+	var bestProbe groupRecord
 	bestMove, bestOrder := 0, -1
-	for _, m := range h.masks {
-		edge := m.payload.Edge
-		if edge == nil || s.maskOutcome(h, m) != "pass" {
+	for _, m := range h.groups {
+		probe := m.payload.Probe
+		if probe == nil || s.groupOutcome(h, m) != "pass" {
 			continue
 		}
 		alone := true
@@ -690,16 +690,16 @@ func (s *State) testedBackoff(h *hunt) (*core, maskRecord, bool) {
 				break
 			}
 		}
-		c := s.core(edge.Core)
-		if !alone || c == nil || edge.Offset <= c.offset {
+		c := s.core(probe.Core)
+		if !alone || c == nil || probe.Offset <= c.offset {
 			continue
 		}
 		moved := s.offsets()
-		moved[s.index(c.id)] = edge.Offset
+		moved[s.index(c.id)] = probe.Offset
 		if _, reached := s.reaches(moved); reached {
 			continue
 		}
-		move, order := edge.Offset-c.offset, slices.Index(rank, c.id)
+		move, order := probe.Offset-c.offset, slices.Index(rank, c.id)
 		if best == nil || move < bestMove || move == bestMove && order > bestOrder {
 			best, bestProbe, bestMove, bestOrder = c, m, move, order
 		}
@@ -716,11 +716,11 @@ func (s *State) projectHunt() *journal.HuntState {
 		return s.projectedHunt
 	}
 	p := h.start
-	out := &journal.HuntState{Hunt: p.Hunt, Seq: h.seq, Failure: p.Failure, Regime: p.Regime, Trial: p.Trial, Anchor: slices.Clone(p.Anchor), AnchorSeq: p.AnchorSeq, Candidates: slices.Clone(p.Candidates)}
-	for _, m := range h.masks {
-		state := journal.MaskState{Mask: m.payload.Mask, Seq: m.seq, Cores: slices.Clone(m.payload.Cores), Outcome: s.maskOutcome(h, m), Needed: p.Starts}
-		if m.payload.Edge != nil {
-			state.Edge = new(*m.payload.Edge)
+	out := &journal.HuntState{Hunt: p.Hunt, Seq: h.seq, Failure: p.Failure, Regime: p.Regime, Trial: p.Trial, Parked: slices.Clone(p.Parked), ParkedSeq: p.ParkedSeq, Candidates: slices.Clone(p.Candidates)}
+	for _, m := range h.groups {
+		state := journal.GroupState{Group: m.payload.Group, Seq: m.seq, Cores: slices.Clone(m.payload.Cores), Outcome: s.groupOutcome(h, m), Needed: p.Starts}
+		if m.payload.Probe != nil {
+			state.Probe = new(*m.payload.Probe)
 			state.Held = slices.Clone(m.payload.Held)
 		}
 		since := m.seq
@@ -728,7 +728,7 @@ func (s *State) projectHunt() *journal.HuntState {
 			since = h.seq
 		}
 		state.Passes = s.passes(h.class.withDuration(m.payload.DurationS), m.payload.Profile, s.inferenceSince(m.payload, since), huntEvidence)
-		out.Masks = append(out.Masks, state)
+		out.Groups = append(out.Groups, state)
 		out.Escalated = m.payload.Escalated
 	}
 	s.projectedHunt = out

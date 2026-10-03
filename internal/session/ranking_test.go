@@ -33,11 +33,11 @@ func TestRankingFallbackAndTies(t *testing.T) {
 			r, _, closeJournal := checkedRunner(t, []int{0, 0, 0, 0})
 			defer closeJournal()
 			for core := range 4 {
-				if _, err := r.append(&journal.CorePhase{Core: core, To: journal.PhaseDone, Offset: -50}); err != nil {
+				if _, err := r.append(&journal.CorePhase{Core: core, To: journal.PhaseAtLimit, Offset: -50}); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if _, err := r.append(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Regime: machine.R6, Profile: []int{-50, -50, -50, -50}}); err != nil {
+			if _, err := r.append(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Regime: machine.R6, Profile: []int{-50, -50, -50, -50}}); err != nil {
 				t.Fatal(err)
 			}
 			r.in.Machine.Host = rankingHost{Host: r.in.Machine.Host, values: tc.values}

@@ -20,9 +20,9 @@ func historySentences(s Snapshot) []string {
 func TestProjectRebootHistoryDuringSMUApplication(t *testing.T) {
 	t.Parallel()
 	events := dashboardEvents(dashboardSession(),
-		&journal.ProfileApplied{Offsets: []int{-10, -10, -10}, Condition: machine.Resident},
+		&journal.ProfileApplied{Offsets: []int{-10, -10, -10}, Condition: machine.Together},
 		&journal.SMUIntent{Op: journal.SMUSet, Core: new(0), Offset: -20},
-		&journal.CrashDetected{PreviousBoot: "boot", InFlight: new(3), Condition: machine.Resident})
+		&journal.CrashDetected{PreviousBoot: "boot", InFlight: new(3), Condition: machine.Together})
 	events[3].Boot = "next"
 	s := Project(events)
 	if diff := cmp.Diff([]string{
@@ -52,17 +52,17 @@ func TestProjectRebootHistoryDuringTrial(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			payloads := []journal.Payload{dashboardSession(),
-				&journal.TrialIntent{Trial: "trial", Core: new(0), Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R2, Workload: "mprime-avx2-36k-248k", Profile: []int{-20, -10, -10}, DurationS: 120},
-				&journal.ProfileApplied{Offsets: []int{-20, -10, -10}, Condition: machine.Resident},
+				&journal.TrialIntent{Trial: "trial", Core: new(0), Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R2, Workload: "mprime-avx2-36k-248k", Profile: []int{-20, -10, -10}, DurationS: 120},
+				&journal.ProfileApplied{Offsets: []int{-20, -10, -10}, Condition: machine.Together},
 				&journal.TrialStart{Trial: "trial"}}
 			if tc.evidence != nil {
 				payloads = append(payloads, tc.evidence)
 			}
 			crashAt := len(payloads)
 			payloads = append(payloads,
-				&journal.CrashDetected{PreviousBoot: "boot", InFlight: new(2), Condition: machine.Resident},
+				&journal.CrashDetected{PreviousBoot: "boot", InFlight: new(2), Condition: machine.Together},
 				&journal.TrialEnd{Trial: "trial", Outcome: journal.OutcomeFailure, Signal: tc.signal, Interrupted: tc.evidence != nil},
-				&journal.Failure{Trial: "trial", Signal: tc.signal, Attribution: journal.Unattributed, Condition: machine.Resident, Regime: machine.R2, Profile: []int{-20, -10, -10}})
+				&journal.Failure{Trial: "trial", Signal: tc.signal, Attribution: journal.Unattributed, Condition: machine.Together, Regime: machine.R2, Profile: []int{-20, -10, -10}})
 			events := dashboardEvents(payloads...)
 			for i := crashAt; i < len(events); i++ {
 				events[i].Boot = "next"
@@ -101,11 +101,11 @@ func TestProjectMultipleRebootsStayDistinct(t *testing.T) {
 	t.Parallel()
 	events := dashboardEvents(dashboardSession(),
 		&journal.SMUIntent{Op: journal.SMUSetAll, Offset: -10},
-		&journal.CrashDetected{PreviousBoot: "boot", InFlight: new(2), Condition: machine.Resident},
-		&journal.TrialIntent{Trial: "trial", Core: new(0), Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R2, Workload: "mprime-avx2-36k-248k", Profile: []int{-20, -10, -10}, DurationS: 120},
-		&journal.ProfileApplied{Offsets: []int{-20, -10, -10}, Condition: machine.Resident},
+		&journal.CrashDetected{PreviousBoot: "boot", InFlight: new(2), Condition: machine.Together},
+		&journal.TrialIntent{Trial: "trial", Core: new(0), Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R2, Workload: "mprime-avx2-36k-248k", Profile: []int{-20, -10, -10}, DurationS: 120},
+		&journal.ProfileApplied{Offsets: []int{-20, -10, -10}, Condition: machine.Together},
 		&journal.TrialStart{Trial: "trial"},
-		&journal.CrashDetected{PreviousBoot: "next", InFlight: new(4), Condition: machine.Resident},
+		&journal.CrashDetected{PreviousBoot: "next", InFlight: new(4), Condition: machine.Together},
 		&journal.TrialEnd{Trial: "trial", Outcome: journal.OutcomeFailure, Signal: machine.Crash})
 	for i := 2; i < 6; i++ {
 		events[i].Boot = "next"
@@ -130,7 +130,7 @@ func TestProjectMultipleRebootsStayDistinct(t *testing.T) {
 func TestProjectRebootHistoryRequiresMatchingCause(t *testing.T) {
 	t.Parallel()
 	events := dashboardEvents(dashboardSession(),
-		&journal.CrashDetected{PreviousBoot: "boot", Condition: machine.Resident},
+		&journal.CrashDetected{PreviousBoot: "boot", Condition: machine.Together},
 		&journal.TrialEnd{Trial: "unrelated", Outcome: journal.OutcomeFailure, Signal: machine.Crash})
 	events[1].Boot, events[2].Boot = "next", "next"
 	events[2].Cause = []int{events[0].Seq}
@@ -156,7 +156,7 @@ func TestProjectFallbackHistory(t *testing.T) {
 			"combo: core 00 at -20 and core 02 at -10 kept as an unresolved, conservative limit",
 			"hunt: #3 unresolved: conservative limit over cores 00, 02",
 		}},
-		{"proven combination", "joint", false, []string{
+		{"proven combination", "combination", false, []string{
 			"start: session started on 3 cores",
 			"combo: core 00 at -20 and core 02 at -10 fail together",
 			"hunt: #3 found a combination",
@@ -165,13 +165,13 @@ func TestProjectFallbackHistory(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			s := Project(dashboardEvents(dashboardSession(),
-				&journal.MarkJoint{Mark: 1, Hunt: 3, Members: []journal.JointMember{{Core: 0, Offset: -20}, {Core: 2, Offset: -10}}, Fallback: tc.fallback},
+				&journal.Combination{Combination: 1, Hunt: 3, Members: []journal.CombinationMember{{Core: 0, Offset: -20}, {Core: 2, Offset: -10}}, Fallback: tc.fallback},
 				&journal.HuntEnd{Hunt: 3, Result: tc.result, Cores: []int{0, 2}}))
 			if diff := cmp.Diff(tc.want, historySentences(s)); diff != "" {
 				t.Fatalf("history must distinguish a conservative fallback from an observed combination (-want +got):\n%s", diff)
 			}
 			if s.history[1].tone != warnTone || s.history[2].tone != warnTone {
-				t.Fatalf("joint history severity changed: %+v", s.history)
+				t.Fatalf("combination history severity changed: %+v", s.history)
 			}
 		})
 	}

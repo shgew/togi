@@ -9,15 +9,15 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
-func TestIdleCrashInGuard(t *testing.T) {
+func TestIdleCrashInChecking(t *testing.T) {
 	t.Parallel()
 	_, ref := reference(t, small())
 	applied := slices.IndexFunc(ref, func(e journal.Event) bool {
 		p, ok := e.Data.(*journal.ProfileApplied)
-		return ok && p.Condition == machine.Resident
+		return ok && p.Condition == machine.Together
 	})
 	if applied < 0 {
-		t.Fatal("reference run never applied a resident profile")
+		t.Fatal("reference run never applied the profile")
 	}
 	firstWrite := -1
 	for i := applied - 1; i >= 0; i-- {
@@ -27,7 +27,7 @@ func TestIdleCrashInGuard(t *testing.T) {
 		}
 	}
 	if firstWrite < 0 {
-		t.Fatal("no nonzero write before resident profile")
+		t.Fatal("no nonzero write before the profile was applied")
 	}
 	for _, tc := range []struct {
 		name string
@@ -40,7 +40,7 @@ func TestIdleCrashInGuard(t *testing.T) {
 			t.Parallel()
 			in := simInput(t.TempDir(), newSim(t, small()))
 			stop := drive(t, in, crashAt(tc.at.Seq, in.Machine))
-			if stop.Reason != StopRotations {
+			if stop.Reason != StopLaps {
 				t.Fatalf("stopped with %+v", stop)
 			}
 			events := readEvents(t, in.Dir)
@@ -49,7 +49,7 @@ func TestIdleCrashInGuard(t *testing.T) {
 				t.Fatal("no crash.detected")
 			}
 			failure := failureCiting(events, crash.Seq)
-			if failure == nil || failure.Signal != machine.Crash || failure.Regime != machine.R6 || failure.Condition != machine.Resident {
+			if failure == nil || failure.Signal != machine.Crash || failure.Regime != machine.R6 || failure.Condition != machine.Together {
 				t.Fatalf("idle crash failure: %+v", failure)
 			}
 			failureSeq := 0
@@ -85,8 +85,8 @@ func TestResumeContinuesBoots(t *testing.T) {
 		t.Fatalf("Resume: %d boots from %s, want %d after %s", cfg.Boots, cfg.Start, len(boots), last)
 	}
 	in := simInput(dir, newSim(t, cfg))
-	in.Rotations = 2
-	if stop := simulate(t, in); stop.Reason != StopRotations {
+	in.Laps = 2
+	if stop := simulate(t, in); stop.Reason != StopLaps {
 		t.Fatalf("second run stopped with %+v", stop)
 	}
 	events := readEvents(t, dir)

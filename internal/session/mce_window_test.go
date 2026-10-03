@@ -43,7 +43,7 @@ func (r windowCrashRunning) Stop() error {
 func crashWindowTrial(t *testing.T, r *runner, advance func(time.Duration)) {
 	t.Helper()
 	r.in.Machine.Trials = windowCrashTrials{Trials: r.in.Machine.Trials, advance: advance}
-	a := tuner.Action{Trial: tuner.Trial{Core: 0, Offset: -1, Regime: machine.R1, Condition: machine.Isolated, DurationS: 10}}
+	a := tuner.Action{Trial: tuner.Trial{Core: 0, Offset: -1, Regime: machine.R1, Condition: machine.Alone, DurationS: 10}}
 	if err := r.trial(context.Background(), a); !errors.Is(err, machine.ErrCrashed) {
 		t.Fatalf("trial: %v, want crash", err)
 	}

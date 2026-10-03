@@ -98,16 +98,16 @@ type evidenceRule uint8
 
 const (
 	allEvidence evidenceRule = iota
-	edgeEvidence
+	soloLimitEvidence
 	huntEvidence
 	rerunEvidence
-	refinementEvidence
-	rotationEvidence
+	deepeningEvidence
+	lapEvidence
 )
 
 func (r evidenceRule) admits(e *entry, since int) bool {
 	if e.carried {
-		return r != rotationEvidence
+		return r != lapEvidence
 	}
 	return e.seq > since
 }
@@ -221,7 +221,7 @@ func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *jo
 		if p.Core != nil && p.Offset != nil {
 			profile[s.index(*p.Core)] = *p.Offset
 		} else {
-			copy(profile, s.guard.profile)
+			copy(profile, s.checking.profile)
 		}
 	}
 	if end.Outcome == journal.OutcomeFailure {
@@ -292,7 +292,7 @@ func (s *State) recordCarried(ev journal.Event, p *journal.TrialCarried) {
 	if p.Outcome == journal.OutcomeFailure {
 		evidence := s.failures[len(s.failures)-1]
 		failure := &journal.Failure{Signal: p.Signal, Attribution: journal.Unattributed, Core: p.Core, Trial: p.Source.Trial, Regime: p.Class.Regime, Condition: p.Condition, Profile: evidence.profile}
-		if failure.Core == nil && p.Condition == machine.Isolated && len(p.Class.Cores) == 1 {
+		if failure.Core == nil && p.Condition == machine.Alone && len(p.Class.Cores) == 1 {
 			failure.Core = new(p.Class.Cores[0])
 		}
 		if failure.Core != nil {
@@ -341,7 +341,7 @@ func (s *State) queueRerun(ev journal.Event) {
 				return
 			}
 			if f.failure.Trial == "" {
-				k := trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, coresKey(s.ids()), s.durations.GuardIdleS}
+				k := trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, coresKey(s.ids()), s.durations.CheckingIdleS}
 				s.obligations = append(s.obligations, rerun{k, cause})
 				return
 			}

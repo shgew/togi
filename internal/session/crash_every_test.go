@@ -43,7 +43,7 @@ func TestCrashAtEveryTrialEvent(t *testing.T) {
 		t.Run(fmt.Sprint(k), func(t *testing.T) {
 			t.Parallel()
 			in := simInput(t.TempDir(), newSim(t, small()))
-			if stop := drive(t, in, crashAt(k, in.Machine)); stop.Reason != StopRotations {
+			if stop := drive(t, in, crashAt(k, in.Machine)); stop.Reason != StopLaps {
 				t.Fatalf("stopped with %+v", stop)
 			}
 			events := readEvents(t, in.Dir)
@@ -108,25 +108,25 @@ func TestCrashAtEveryTrialEvent(t *testing.T) {
 			if !ended && failure.Trial != intent.Trial {
 				t.Fatalf("crash at %s: failure %+v does not cite trial %s", hit.Kind, failure, intent.Trial)
 			}
-			if !ended && intent.Condition == machine.Isolated {
+			if !ended && intent.Condition == machine.Alone {
 				if failure.Core == nil || *failure.Core != *intent.Core || failure.Offset == nil || *failure.Offset != *intent.Offset {
-					t.Fatalf("isolated crash attribution %+v, intent %+v", failure, intent)
+					t.Fatalf("crash attribution for trial alone %+v, intent %+v", failure, intent)
 				}
 			}
-			if !ended && intent.Condition == machine.Resident && failure.Signal == machine.Crash && failure.Attribution != journal.Unattributed {
-				t.Fatalf("resident crash attribution %+v", failure)
+			if !ended && intent.Condition == machine.Together && failure.Signal == machine.Crash && failure.Attribution != journal.Unattributed {
+				t.Fatalf("crash attribution for trial together %+v", failure)
 			}
 			if diff := cmp.Diff([]string(nil), in.Machine.Violations()); diff != "" {
 				t.Fatalf("simulator isolation violations (-want +got):\n%s", diff)
 			}
-			marks := tuner.New()
+			engine := tuner.New()
 			for _, e := range events {
-				if p, ok := e.Data.(*journal.TrialIntent); ok && p.Condition != machine.Isolated {
-					if mark, reaches := marks.Reaches(p.Profile); reaches {
-						t.Fatalf("trial %s reaches %s", p.Trial, mark)
+				if p, ok := e.Data.(*journal.TrialIntent); ok && p.Condition != machine.Alone {
+					if constraint, reaches := engine.Reaches(p.Profile); reaches {
+						t.Fatalf("trial %s reaches %s", p.Trial, constraint)
 					}
 				}
-				marks.Fold(e)
+				engine.Fold(e)
 			}
 		})
 	}

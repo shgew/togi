@@ -26,32 +26,32 @@ func dashboardSession() *journal.SessionStart {
 
 func dashboardHuntEvents() []journal.Event {
 	return dashboardEvents(dashboardSession(),
-		&journal.CorePhase{Core: 0, To: journal.PhaseResident, Offset: -20},
-		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -30, FailedMark: new(-31)},
-		&journal.CorePhase{Core: 2, To: journal.PhaseResident, Offset: -10},
-		&journal.MarkJoint{Mark: 1, Members: []journal.JointMember{{Core: 0, Offset: -25}, {Core: 2, Offset: -15}}},
-		&journal.TrialIntent{Trial: "previous", Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Profile: []int{-20, -30, -10}, DurationS: 120},
+		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
+		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
+		&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -10},
+		&journal.Combination{Combination: 1, Members: []journal.CombinationMember{{Core: 0, Offset: -25}, {Core: 2, Offset: -15}}},
+		&journal.TrialIntent{Trial: "previous", Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Profile: []int{-20, -30, -10}, DurationS: 120},
 		&journal.TrialEnd{Trial: "previous", Outcome: journal.OutcomeFailure, Signal: machine.Crash},
-		&journal.Failure{Trial: "previous", Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Regime: machine.R7, Profile: []int{-20, -30, -10}},
-		&journal.HuntStart{Hunt: 3, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Anchor: []int{-10, -30, -5}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Starts: 5, StartS: 120, DurationS: 120},
-		&journal.HuntMask{Hunt: 3, Mask: 4, Cores: []int{2}, Profile: []int{-10, -30, -10}, DurationS: 120},
-		&journal.TrialIntent{Trial: "mask", Condition: machine.Masked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Profile: []int{-10, -30, -10}, DurationS: 120, Hunt: 3, Mask: 4},
-		&journal.TrialStart{Trial: "mask"})
+		&journal.Failure{Trial: "previous", Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Regime: machine.R7, Profile: []int{-20, -30, -10}},
+		&journal.HuntStart{Hunt: 3, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Parked: []int{-10, -30, -5}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Starts: 5, StartS: 120, DurationS: 120},
+		&journal.HuntGroup{Hunt: 3, Group: 4, Cores: []int{2}, Profile: []int{-10, -30, -10}, DurationS: 120},
+		&journal.TrialIntent{Trial: "group", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Profile: []int{-10, -30, -10}, DurationS: 120, Hunt: 3, Group: 4},
+		&journal.TrialStart{Trial: "group"})
 }
 
-func dashboardRefineEvents() []journal.Event {
+func dashboardDeepeningEvents() []journal.Event {
 	return dashboardEvents(dashboardSession(),
-		&journal.CorePhase{Core: 0, To: journal.PhaseResident, Offset: -20},
-		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -30, FailedMark: new(-31)},
-		&journal.CorePhase{Core: 2, To: journal.PhaseResident, Offset: -10},
-		&journal.RefineRound{Round: 2, Event: journal.RotationStart, Anchor: []int{-20, -30, -10}, Target: []int{-22, -30, -10}, Profile: []int{-21, -30, -10}, Cores: []int{0}, Starts: 5, StartS: 120})
+		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
+		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
+		&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -10},
+		&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Parked: []int{-20, -30, -10}, Target: []int{-22, -30, -10}, Profile: []int{-21, -30, -10}, Cores: []int{0}, Starts: 5, StartS: 120})
 }
 
 func TestProjectTrialLifecycle(t *testing.T) {
 	t.Parallel()
-	intent := &journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-25), Condition: machine.Isolated, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}}
+	intent := &journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-25), Condition: machine.Alone, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}}
 	events := dashboardEvents(dashboardSession(),
-		&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -25, Pass: new(-20), FailedMark: new(-30)},
+		&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -25, Pass: new(-20), FailurePoint: new(-30)},
 		&journal.CorePhase{Core: 1, To: journal.PhaseSearch, Offset: -5},
 		&journal.CorePhase{Core: 2, To: journal.PhaseSearch, Offset: -5},
 		intent,
@@ -59,7 +59,7 @@ func TestProjectTrialLifecycle(t *testing.T) {
 		&journal.SMUReadback{Core: 0, Offset: -25},
 		&journal.TrialStart{Trial: "one"})
 	s := Project(events)
-	wantTrial := &trial{cores: []int{0}, condition: machine.Isolated, regime: machine.R1, workload: "mprime SSE 4K-21K", offset: new(-25), started: events[7].Time, hasStarted: true, duration: 90 * time.Second}
+	wantTrial := &trial{cores: []int{0}, condition: machine.Alone, regime: machine.R1, workload: "mprime SSE 4K-21K", offset: new(-25), started: events[7].Time, hasStarted: true, duration: 90 * time.Second}
 	if diff := cmp.Diff(wantTrial, s.trial, cmp.AllowUnexported(trial{})); diff != "" {
 		t.Fatalf("an SMU write after the intent hid the running trial (-want +got):\n%s", diff)
 	}
@@ -149,7 +149,7 @@ func TestProjectTrialStartSelection(t *testing.T) {
 	}
 }
 
-func TestProjectMaskedHunt(t *testing.T) {
+func TestProjectParkedHunt(t *testing.T) {
 	t.Parallel()
 	s := Project(dashboardHuntEvents())
 	got := make([]coreView, len(s.cores))
@@ -162,9 +162,9 @@ func TestProjectMaskedHunt(t *testing.T) {
 		{id: 2, loaded: true, suspect: true},
 	}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(coreView{})); diff != "" {
-		t.Fatalf("hunt roles: a candidate outside the mask is parked, a mask member is a suspect (-want +got):\n%s", diff)
+		t.Fatalf("hunt roles: a candidate outside the group is parked, a group member is a suspect (-want +got):\n%s", diff)
 	}
-	if s.hunt == nil || s.hunt.id != 3 || s.hunt.mask == nil || s.hunt.mask.id != 4 || s.trial.workload != "mprime AVX2 36K-248K" {
+	if s.hunt == nil || s.hunt.id != 3 || s.hunt.group == nil || s.hunt.group.id != 4 || s.trial.workload != "mprime AVX2 36K-248K" {
 		t.Fatalf("hunt identity lost: %+v", s.hunt)
 	}
 	var lines []string
@@ -234,7 +234,7 @@ func TestProjectBoundsHistory(t *testing.T) {
 func TestProjectStoppedShowsTunedOffsets(t *testing.T) {
 	t.Parallel()
 	s := Project(dashboardEvents(dashboardSession(),
-		&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -20, FailedMark: new(-21)},
+		&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -20, FailurePoint: new(-21)},
 		&journal.SMUReadback{Core: 0, Offset: -20},
 		&journal.SMUReadback{Core: 0, Offset: 0},
 		&journal.ProfileRestored{Offsets: []int{0, 0, 0}},
@@ -249,7 +249,7 @@ func TestProjectSparseCoreIDs(t *testing.T) {
 	start := &journal.SessionStart{Session: "sparse", Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 1}}, {Core: 8, CCD: 1, CPUs: []int{16, 17}}}}
 	s := Project(dashboardEvents(start,
 		&journal.ProfileRestored{Offsets: []int{-5, -9}},
-		&journal.TrialIntent{Trial: "one", Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Core: new(8), Profile: []int{-5, -9}, DurationS: 120},
+		&journal.TrialIntent{Trial: "one", Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Core: new(8), Profile: []int{-5, -9}, DurationS: 120},
 		&journal.TrialEnd{Trial: "one", Outcome: journal.OutcomePass, DurationS: 120}))
 	got := []string{fmt.Sprintf("core %02d applied %d", s.cores[1].id, s.cores[1].applied), s.history[len(s.history)-1].sentence()}
 	want := []string{"core 08 applied -9", "light load on core 08 at -9, 2 min"}
@@ -286,7 +286,7 @@ func TestProjectCrashEndsOnlyItsBootTrial(t *testing.T) {
 		t.Run(previousBoot, func(t *testing.T) {
 			t.Parallel()
 			events := dashboardEvents(dashboardSession(),
-				&journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-25), Condition: machine.Isolated, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}},
+				&journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-25), Condition: machine.Alone, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}},
 				&journal.TrialStart{Trial: "one"},
 				&journal.SMUIntent{Op: journal.SMUSet, Core: new(1), Offset: 0},
 				&journal.CrashDetected{PreviousBoot: previousBoot, InFlight: new(4)})
@@ -316,7 +316,7 @@ func TestProjectSMUDeadEndKeepsReadback(t *testing.T) {
 func TestProjectTrialPreparationDoesNotClaimLoad(t *testing.T) {
 	t.Parallel()
 	events := dashboardEvents(dashboardSession(),
-		&journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-25), Condition: machine.Isolated, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}},
+		&journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-25), Condition: machine.Alone, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}},
 		&journal.SMUReadback{Core: 0, Offset: -25})
 	s := Project(events)
 	if s.trial == nil || s.trial.hasStarted || s.cores[0].loaded || s.cores[0].tested || s.cores[0].applied != -25 {

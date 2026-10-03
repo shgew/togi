@@ -79,8 +79,8 @@ func TestExtractAllSessionsPrivacyAndDeterminism(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Record{
-		{Session: "20260101T000000Z", Build: journal.Build{Version: "fixture", Rev: "abc", Schema: 1, Ruleset: 1}, Ruleset: 1, Seq: 3, Trial: "1", Kind: facts.TrialFact, Class: facts.Class{Regime: machine.R1, Workload: "fixture", Cores: []int{0}, DurationS: 90}, Condition: machine.Isolated, Phase: journal.PhaseSearch, Profile: []int{-10, 0}, Outcome: journal.OutcomePass, DurationS: 90},
-		{Session: "20260102T000000Z", Build: journal.Build{Version: "fixture", Rev: "abc", Schema: 1, Ruleset: 6}, Ruleset: 6, Seq: 3, Trial: "1", Kind: facts.TrialFact, Class: facts.Class{Regime: machine.R1, Workload: "fixture", Cores: []int{0}, DurationS: 90}, Condition: machine.Isolated, Phase: journal.PhaseSearch, Profile: []int{-10, 0}, Outcome: journal.OutcomePass, DurationS: 90},
+		{Session: "20260101T000000Z", Build: journal.Build{Version: "fixture", Rev: "abc", Schema: 1, Ruleset: 1}, Ruleset: 1, Seq: 3, Trial: "1", Kind: facts.TrialFact, Class: facts.Class{Regime: machine.R1, Workload: "fixture", Cores: []int{0}, DurationS: 90}, Condition: machine.Alone, Phase: journal.PhaseSearch, Profile: []int{-10, 0}, Outcome: journal.OutcomePass, DurationS: 90},
+		{Session: "20260102T000000Z", Build: journal.Build{Version: "fixture", Rev: "abc", Schema: 1, Ruleset: 6}, Ruleset: 6, Seq: 3, Trial: "1", Kind: facts.TrialFact, Class: facts.Class{Regime: machine.R1, Workload: "fixture", Cores: []int{0}, DurationS: 90}, Condition: machine.Alone, Phase: journal.PhaseSearch, Profile: []int{-10, 0}, Outcome: journal.OutcomePass, DurationS: 90},
 	}
 	if diff := cmp.Diff(want, records); diff != "" {
 		t.Fatalf("extract (-want +got):\n%s", diff)
@@ -119,9 +119,9 @@ func TestExtractRecordOnlyPartialFacts(t *testing.T) {
 	build := journal.Build{Schema: 2, Ruleset: 8}
 	class := facts.Class{Regime: machine.R7, Workload: "fixture", Cores: []int{0}, DurationS: 120}
 	want := []Record{
-		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 3, Trial: "pass", Kind: facts.TrialFact, Class: class, Condition: machine.Resident, Phase: journal.PhaseGuard, RecordOnly: true, Profile: []int{-30, -50}, Outcome: journal.OutcomePass, DurationS: 120},
-		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 5, Trial: "failure", Kind: facts.TrialFact, Class: class, Condition: machine.Resident, Phase: journal.PhaseGuard, RecordOnly: true, Profile: []int{-30, -50}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 7},
-		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 7, Trial: "full", Kind: facts.TrialFact, Class: facts.Class{Regime: machine.R7, Workload: "fixture", Cores: []int{0, 1}, DurationS: 120}, Condition: machine.Resident, Phase: journal.PhaseGuard, Profile: []int{-30, -50}, Outcome: journal.OutcomePass, DurationS: 120},
+		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 3, Trial: "pass", Kind: facts.TrialFact, Class: class, Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true, Profile: []int{-30, -50}, Outcome: journal.OutcomePass, DurationS: 120},
+		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 5, Trial: "failure", Kind: facts.TrialFact, Class: class, Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true, Profile: []int{-30, -50}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 7},
+		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 7, Trial: "full", Kind: facts.TrialFact, Class: facts.Class{Regime: machine.R7, Workload: "fixture", Cores: []int{0, 1}, DurationS: 120}, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: []int{-30, -50}, Outcome: journal.OutcomePass, DurationS: 120},
 	}
 	if diff := cmp.Diff(want, records); diff != "" {
 		t.Fatalf("privacy-safe partial records (-want +got):\n%s", diff)

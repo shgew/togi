@@ -1,9 +1,9 @@
 Usage: togi status
 
-Show the session at a glance: search, hunt, refinement or guard activity and
-qualified rotations since the last deepening, then each core's offset, failed
-and joint marks, done phase, queued work and last decision. An open hunt shows
-masks and starts; an open refinement round shows checks and passes. Evidence
+Show the session at a glance: search, hunt, deepening or checking activity and
+clean laps since the last deepening, then each core's offset, failure point
+and combinations, phase, queued work and last decision. An open hunt shows
+groups and starts; an open deepening round shows checks and passes. Evidence
 includes workloads, valid starts and the Tctl peak since the last profile
 change, and lists between-trial MCEs without treating them as failures. Lists reset
 commands for unanswered too-cautious defects. Read-only; rendered from the

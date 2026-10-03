@@ -3,22 +3,22 @@ package journal
 import "github.com/shgew/togi/internal/machine"
 
 type ConfigSnapshot struct {
-	StartOffsets   map[int]int     `json:"start_offsets"`
-	CandidateEdges map[int]int     `json:"candidate_edges"`
-	Durations      ConfigDurations `json:"durations"`
-	Evidence       ConfigEvidence  `json:"evidence"`
-	Guard          ConfigGuard     `json:"guard"`
-	DeadEnds       ConfigDeadEnds  `json:"dead_ends"`
-	Backends       ConfigBackends  `json:"backends"`
-	BackendUser    string          `json:"backend_user"`
+	StartOffsets        map[int]int     `json:"start_offsets"`
+	CandidateSoloLimits map[int]int     `json:"candidate_solo_limits"`
+	Durations           ConfigDurations `json:"durations"`
+	Evidence            ConfigEvidence  `json:"evidence"`
+	Checking            ConfigChecking  `json:"checking"`
+	DeadEnds            ConfigDeadEnds  `json:"dead_ends"`
+	Backends            ConfigBackends  `json:"backends"`
+	BackendUser         string          `json:"backend_user"`
 }
 
 type ConfigDurations struct {
-	SearchTrialS  int `json:"search_trial_s"`
-	StartS        int `json:"start_s"`
-	GuardTrialS   int `json:"guard_trial_s"`
-	GuardIdleS    int `json:"guard_idle_s"`
-	GuardAllCoreS int `json:"guard_all_core_s"`
+	SearchTrialS     int `json:"search_trial_s"`
+	StartS           int `json:"start_s"`
+	CheckingTrialS   int `json:"checking_trial_s"`
+	CheckingIdleS    int `json:"checking_idle_s"`
+	CheckingAllCoreS int `json:"checking_all_core_s"`
 }
 
 type ConfigEvidence struct {
@@ -26,8 +26,8 @@ type ConfigEvidence struct {
 	Rate float64 `json:"rate"`
 }
 
-type ConfigGuard struct {
-	Rotation []machine.Regime `json:"rotation"`
+type ConfigChecking struct {
+	Lap []machine.Regime `json:"lap"`
 }
 
 type ConfigDeadEnds struct {

@@ -58,10 +58,10 @@ func (t trials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Runn
 	if m.missingBackends[spec.Workload.Backend] {
 		return nil, fmt.Errorf("start simulated backend %s: %w", spec.Workload.Backend, machine.ErrBackendMissing)
 	}
-	if spec.Condition == machine.Isolated {
+	if spec.Condition == machine.Alone {
 		for c, o := range m.regs {
 			if o != 0 && !slices.Contains(spec.Cores, c) {
-				m.violations = append(m.violations, fmt.Sprintf("trial %s: core %d at %d during an isolated trial on cores %v", spec.ID, c, o, spec.Cores))
+				m.violations = append(m.violations, fmt.Sprintf("trial %s: core %d at %d during a trial alone on cores %v", spec.ID, c, o, spec.Cores))
 			}
 		}
 	}
@@ -109,7 +109,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	defer func() { err = errors.Join(err, r.sampleConditions(m.now.Sub(start), stallCore)) }()
 	failCore, failAt, forcedSignal := -1, spec.Duration, machine.Signal("")
 	idleFailure := false
-	var jointCrash *Joint
+	var combinationCrash *Combination
 	script, scripted := m.cfg.Script[spec.ID]
 	fact, replayed := m.replayDraw(spec)
 	switch {
@@ -148,30 +148,30 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 			if t < failAt {
 				failCore, failAt, forcedSignal = core, t, machine.Crash
 				idleFailure = false
-				jointCrash = &Joint{}
+				combinationCrash = &Combination{}
 			}
 		}
-		for j, joint := range m.cfg.Joints {
-			rate := m.jointRate(m.regs, spec.Regime, joint)
+		for j, combination := range m.cfg.Combinations {
+			rate := m.combinationRate(m.regs, spec.Regime, combination)
 			if rate <= 0 {
 				continue
 			}
 			core := -1
 			for _, c := range spec.Cores {
-				if _, ok := joint.Members[c]; ok {
+				if _, ok := combination.Members[c]; ok {
 					core = c
 					break
 				}
 			}
 			idle := core < 0
 			if idle {
-				core = slices.Min(slices.Collect(maps.Keys(joint.Members)))
+				core = slices.Min(slices.Collect(maps.Keys(combination.Members)))
 			}
-			t := m.failureDraw(rate, joint.AfterS, spec, core, fmt.Sprintf("joint-%d", j))
+			t := m.failureDraw(rate, combination.AfterS, spec, core, fmt.Sprintf("joint-%d", j))
 			if t < failAt {
-				failCore, failAt, forcedSignal = core, t, joint.Signal
+				failCore, failAt, forcedSignal = core, t, combination.Signal
 				idleFailure = idle
-				jointCrash = &m.cfg.Joints[j]
+				combinationCrash = &m.cfg.Combinations[j]
 				if idle || forcedSignal == "" {
 					forcedSignal = machine.Crash
 				}
@@ -246,7 +246,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 		}
 		r.progress(report, r.counted(machine.Result{Ran: failAt}))
 		if !replayed {
-			m.queueCrashMCE(rng, failCore, idleFailure, jointCrash)
+			m.queueCrashMCE(rng, failCore, idleFailure, combinationCrash)
 		}
 		m.Crash()
 		return machine.Result{}, machine.ErrCrashed
@@ -263,10 +263,10 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	return machine.Result{}, fmt.Errorf("simulated trial: no signal to draw from %v", m.model.Signals)
 }
 
-func (m *Machine) queueCrashMCE(rng *rand.Rand, core int, idle bool, joint *Joint) {
-	if joint != nil {
-		if joint.CrashMCECore != nil {
-			m.queued = append(m.queued, machine.MCE{CPU: *joint.CrashMCECore, Core: *joint.CrashMCECore, Bank: 0, BankType: machine.LoadStore})
+func (m *Machine) queueCrashMCE(rng *rand.Rand, core int, idle bool, combination *Combination) {
+	if combination != nil {
+		if combination.CrashMCECore != nil {
+			m.queued = append(m.queued, machine.MCE{CPU: *combination.CrashMCECore, Core: *combination.CrashMCECore, Bank: 0, BankType: machine.LoadStore})
 		}
 		return
 	}
@@ -306,7 +306,17 @@ func (r *running) progress(report machine.Reporter, res machine.Result) {
 }
 
 func (m *Machine) trialRNG(purpose string, spec machine.TrialSpec, core int) *rand.Rand {
-	return m.rng(purpose, core, spec.Regime, spec.Condition, m.regs[core], spec.Index)
+	// Seed domains are immutable even when condition wire names change.
+	condition := string(spec.Condition)
+	switch spec.Condition {
+	case machine.Alone:
+		condition = "isolated"
+	case machine.Together:
+		condition = "resident"
+	case machine.Parked:
+		condition = "masked"
+	}
+	return m.rng(purpose, core, spec.Regime, condition, m.regs[core], spec.Index)
 }
 
 func (m *Machine) failureTime(spec machine.TrialSpec, core int) (time.Duration, machine.Signal, bool) {
@@ -343,15 +353,15 @@ func (m *Machine) failureDraw(rate, afterS float64, spec machine.TrialSpec, core
 	return time.Duration((afterS + seconds) * float64(time.Second))
 }
 
-func (m *Machine) edge(profile []int, core int, r machine.Regime, workload string) int {
-	if edge, ok := m.edges[core].Workload[workload]; ok {
-		return edge
+func (m *Machine) limit(profile []int, core int, r machine.Regime, workload string) int {
+	if limit, ok := m.limits[core].Workload[workload]; ok {
+		return limit
 	}
 	i := slices.Index(machine.Regimes, r)
 	if i < 0 {
 		return 0
 	}
-	if i < len(m.edges[core].Isolated) {
+	if i < len(m.limits[core].Alone) {
 		only := true
 		for c, offset := range profile {
 			if c != core && offset != 0 {
@@ -360,10 +370,10 @@ func (m *Machine) edge(profile []int, core int, r machine.Regime, workload strin
 			}
 		}
 		if only {
-			return m.edges[core].Isolated[i]
+			return m.limits[core].Alone[i]
 		}
 	}
-	return m.edges[core].Resident[i]
+	return m.limits[core].Together[i]
 }
 
 var resetOrder = []machine.ResetKind{machine.ResetWatchdog, machine.ResetSyncFlood, machine.ResetCPUShutdown, machine.ResetPowerButton, machine.ResetThermalTrip, machine.ResetPowerLoss, machine.ResetUnknown}

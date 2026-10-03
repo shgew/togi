@@ -59,9 +59,9 @@ func (s Snapshot) story(now time.Time) story {
 			"I'm preparing the next test. Its intent is recorded, but the workload hasn't started yet.",
 			fmt.Sprintf("Planned: %s on %s for %s.", regimeWords[t.regime], coresText(t.cores, len(s.cores)), duration(t.duration)),
 		}}
-	case t.condition == machine.Isolated:
+	case t.condition == machine.Alone:
 		st = s.searchStory(t)
-	case t.condition == machine.Masked:
+	case t.condition == machine.Parked:
 		st = s.huntStory(t, now)
 	case t.round != 0:
 		st = s.deepenStory()
@@ -81,13 +81,13 @@ func (s Snapshot) story(now time.Time) story {
 }
 
 func (s Snapshot) goal() bool {
-	return s.guard != nil && s.guard.CleanRotations > 0 && s.phase == journal.PhaseGuard &&
-		!s.refinable && s.refine == nil && s.rerunDuration == 0 && len(s.cores) > 0 &&
-		!slices.ContainsFunc(s.cores, func(c coreView) bool { return c.phase != journal.PhaseDone || c.queued })
+	return s.checking != nil && s.checking.CleanLaps > 0 && s.phase == journal.PhaseChecking &&
+		!s.canDeepen && s.deepening == nil && s.rerunDuration == 0 && len(s.cores) > 0 &&
+		!slices.ContainsFunc(s.cores, func(c coreView) bool { return c.phase != journal.PhaseAtLimit || c.queued })
 }
 
 // currentStep is the number of the lap step running now, counting from 1.
-func currentStep(g *journal.GuardState) int {
+func currentStep(g *journal.CheckingState) int {
 	return min(g.StepsDone+1, len(g.Steps))
 }
 
@@ -126,7 +126,7 @@ func (s Snapshot) headline() string {
 		return "FINDING LIMITS"
 	case s.phase == journal.PhaseHunt:
 		return "FINDING THE CULPRIT"
-	case s.phase == journal.PhaseRefine:
+	case s.phase == journal.PhaseDeepening:
 		return "GOING DEEPER"
 	case s.goal():
 		return "KEEPING WATCH"
@@ -174,7 +174,7 @@ func (s Snapshot) huntStory(t *trial, now time.Time) story {
 		return st
 	}
 	st.paragraphs = append(st.paragraphs, causeText(h, len(s.cores), now))
-	m := h.mask
+	m := h.group
 	if m == nil {
 		return st
 	}
@@ -184,15 +184,15 @@ func (s Snapshot) huntStory(t *trial, now time.Time) story {
 		st.paragraphs = append(st.paragraphs,
 			"Every smaller group passed on its own, so I'm rerunning the whole failing set of offsets to see whether it fails again.",
 			"If it fails, the cause needs several cores deep at once and I keep narrowing. If it passes, I repeat it at the length of the original test.")
-	case "edge":
-		if m.edge != nil {
+	case "probe":
+		if m.probe != nil {
 			combination := slices.Clone(m.cores)
-			if !slices.Contains(combination, m.edge.Core) {
-				combination = append(combination, m.edge.Core)
+			if !slices.Contains(combination, m.probe.Core) {
+				combination = append(combination, m.probe.Core)
 			}
 			st.paragraphs = append(st.paragraphs,
-				fmt.Sprintf("%s fail only together. Now I'm finding how far core %02d must back off for them to pass: it runs at %d while the others stay at their failing offsets.", capital(coreList(combination)), m.edge.Core, m.edge.Offset),
-				fmt.Sprintf("If this passes %d times, core %02d is safe at %d in that combination. If it fails, it has to back off further.", m.needed, m.edge.Core, m.edge.Offset))
+				fmt.Sprintf("%s fail only together. Now I'm finding how far core %02d must back off for them to pass: it runs at %d while the others stay at their failing offsets.", capital(coreList(combination)), m.probe.Core, m.probe.Offset),
+				fmt.Sprintf("If this passes %d times, core %02d is safe at %d in that combination. If it fails, it has to back off further.", m.needed, m.probe.Core, m.probe.Offset))
 		}
 	default:
 		back := "back at the offsets they failed with"
@@ -216,13 +216,13 @@ func (s Snapshot) huntStory(t *trial, now time.Time) story {
 	return st
 }
 
-func (s Snapshot) parkedText(h *huntView, m *maskView) string {
+func (s Snapshot) parkedText(h *huntView, m *groupView) string {
 	var parkedCores []int
 	allZero := true
 	for i, c := range s.cores {
 		if slices.Contains(h.candidates, c.id) && !slices.Contains(m.cores, c.id) {
 			parkedCores = append(parkedCores, c.id)
-			if i < len(h.anchor) && h.anchor[i] != 0 {
+			if i < len(h.parked) && h.parked[i] != 0 {
 				allZero = false
 			}
 		}
@@ -272,7 +272,7 @@ func failureCause(sig machine.Signal) string {
 func (s Snapshot) deepenStory() story {
 	st := story{headline: "GOING DEEPER", tone: plainTone}
 	st.paragraphs = append(st.paragraphs, "These offsets passed a clean lap, but some cores may have room left, so I'm trying to win back depth.")
-	if r := s.refine; r != nil {
+	if r := s.deepening; r != nil {
 		var moves, checks []string
 		for i, c := range s.cores {
 			if slices.Contains(r.Cores, c.id) && i < len(r.Profile) {
@@ -318,7 +318,7 @@ func (s Snapshot) rerunStory() story {
 const recordOnlyNote = "This part only keeps a record: cores that had their CCD's shallowest offset when the step started stay idle, even if offsets change. A pass or a failure, even a crash, moves no offset. The lap goes on either way."
 
 func (s Snapshot) lapStory(t *trial) story {
-	g := s.guard
+	g := s.checking
 	if s.goal() {
 		st := story{headline: "KEEPING WATCH  ∞", tone: goodTone, paragraphs: []string{
 			"Every core has found its limit, and these offsets passed a full lap of every kind of test: light and heavy loads, load steps, partial load, both threads of a core, idle, and all cores at once.",
@@ -336,7 +336,7 @@ func (s Snapshot) lapStory(t *trial) story {
 		steps = len(g.Steps)
 	}
 	coverage := "that covers every kind of load"
-	if !s.guardQualifying {
+	if !s.checkingFull {
 		coverage = "from the configured schedule"
 	}
 	st.paragraphs = append(st.paragraphs, fmt.Sprintf(
@@ -347,7 +347,7 @@ func (s Snapshot) lapStory(t *trial) story {
 	if t.recordOnly {
 		st.paragraphs = append(st.paragraphs, recordOnlyNote)
 	}
-	if s.guardQualifying {
+	if s.checkingFull {
 		st.paragraphs = append(st.paragraphs, "The goal is a clean lap: every step passes with no failure, on offsets that can't go any deeper.")
 	} else {
 		st.paragraphs = append(st.paragraphs, s.missingCoverage())
@@ -370,22 +370,22 @@ func describeLoad(t *trial, total int) string {
 
 func (s Snapshot) nowLine(t *trial, now time.Time) *nowLine {
 	n := &nowLine{detail: regimeWords[t.regime] + " on " + coresText(t.cores, len(s.cores)), backend: t.workload}
-	if t.condition == machine.Isolated && t.offset != nil {
+	if t.condition == machine.Alone && t.offset != nil {
 		n.detail += fmt.Sprintf(" alone at %d", *t.offset)
 	}
 	switch {
-	case t.condition == machine.Masked && s.hunt != nil && s.hunt.mask != nil:
-		m := s.hunt.mask
+	case t.condition == machine.Parked && s.hunt != nil && s.hunt.group != nil:
+		m := s.hunt.group
 		n.what = fmt.Sprintf("hunt %d, test %d, run %d of %d", s.hunt.id, m.id, min(m.passes+1, m.needed), m.needed)
 	case t.round != 0:
 		n.what = fmt.Sprintf("deepening round %d", t.round)
-	case t.condition == machine.Isolated:
+	case t.condition == machine.Alone:
 		n.what = "search step"
 		if len(t.cores) > 0 && s.core(t.cores[0]).checking {
 			n.what = "confirming the limit"
 		}
-	case s.guard != nil && len(s.guard.Steps) > 0:
-		n.what = fmt.Sprintf("lap %d, step %d of %d", s.guard.Rotation, currentStep(s.guard), len(s.guard.Steps))
+	case s.checking != nil && len(s.checking.Steps) > 0:
+		n.what = fmt.Sprintf("lap %d, step %d of %d", s.checking.Lap, currentStep(s.checking), len(s.checking.Steps))
 	}
 	if t.rerun {
 		n.what = "rerun after a fix"
@@ -444,7 +444,7 @@ func (s Snapshot) comingUp() []string {
 			fmt.Sprintf("When the hunt ends, I record its result and move the offsets back past it. Then the failed test needs %d starts of %s, followed by one at its original length if that differs.", s.starts, duration(s.startDuration)),
 			"Then the work the failure interrupted continues.",
 		}
-	case s.phase == journal.PhaseRefine:
+	case s.phase == journal.PhaseDeepening:
 		return []string{"If the round passes, the deeper offsets need a new clean lap. If not, I handle the failure first."}
 	}
 	return s.lapNext()
@@ -471,14 +471,14 @@ func (s Snapshot) searchNext() []string {
 		}
 		lines = append(lines, "Next in line, taking turns so each core cools down between its own tests: "+strings.Join(ids, ", ")+".")
 	}
-	if !s.guardQualifying {
+	if !s.checkingFull {
 		return append(lines, "When every core has its limit, they run together through the configured test schedule.", s.missingCoverage())
 	}
 	return append(lines, "When every core has its limit, they all run together through laps of every kind of test.")
 }
 
 func (s Snapshot) lapNext() []string {
-	g := s.guard
+	g := s.checking
 	if g == nil || len(g.Steps) == 0 {
 		return nil
 	}
@@ -500,7 +500,7 @@ func (s Snapshot) lapNext() []string {
 	if len(parts) > 0 {
 		lines = append(lines, "Rest of this lap: "+strings.Join(parts, ", ")+".")
 	}
-	if !s.guardQualifying {
+	if !s.checkingFull {
 		return append(lines, s.missingCoverage(), "Then another lap of the configured schedule, until you stop me.")
 	}
 	if s.goal() {
@@ -511,15 +511,15 @@ func (s Snapshot) lapNext() []string {
 
 func (s Snapshot) missingCoverage() string {
 	if s.goal() {
-		text := "This schedule doesn't cover every kind of test. Its future laps don't add qualifying clean-lap credit, but the goal is already reached."
-		if len(s.guardMissing) > 0 {
-			text += " Missing: " + strings.Join(s.guardMissing, "; ") + "."
+		text := "This schedule doesn't cover every kind of test. Its future laps don't add clean-lap credit, but the goal is already reached."
+		if len(s.checkingMissing) > 0 {
+			text += " Missing: " + strings.Join(s.checkingMissing, "; ") + "."
 		}
 		return text
 	}
-	text := "This schedule doesn't cover every kind of test, so its laps can't qualify for the clean-lap goal."
-	if len(s.guardMissing) > 0 {
-		text += " Missing: " + strings.Join(s.guardMissing, ", ") + "."
+	text := "This schedule doesn't cover every kind of test, so its laps cannot count for the clean-lap goal."
+	if len(s.checkingMissing) > 0 {
+		text += " Missing: " + strings.Join(s.checkingMissing, ", ") + "."
 	}
 	return text
 }
@@ -545,11 +545,11 @@ const (
 func (s Snapshot) stations() []station {
 	left := s.searching()
 	total := len(s.cores)
-	g := s.guard
+	g := s.checking
 	lap, step := "", ""
 	fill := 0.0
 	if g != nil && len(g.Steps) > 0 {
-		lap, step = fmt.Sprintf("lap %d", g.Rotation), fmt.Sprintf("step %d of %d", currentStep(g), len(g.Steps))
+		lap, step = fmt.Sprintf("lap %d", g.Lap), fmt.Sprintf("step %d of %d", currentStep(g), len(g.Steps))
 		fill = float64(g.StepsDone) / float64(len(g.Steps))
 	}
 	find := station{label: "Find limits", state: reached, sub: []string{fmt.Sprintf("%d/%d cores", total-left, total)}}
@@ -557,7 +557,7 @@ func (s Snapshot) stations() []station {
 	deeper := station{label: "Go deeper", state: upcoming, sub: []string{"after a", "clean lap"}}
 	clean := station{label: "Clean lap", state: target, sub: []string{"the goal"}}
 	keep := station{label: "Keep checking", state: endless, sub: []string{"until stopped"}}
-	if !s.guardQualifying {
+	if !s.checkingFull {
 		clean.state, clean.sub = upcoming, []string{"not covered", "by schedule"}
 		deeper.sub = []string{"needs a full", "clean lap"}
 	}
@@ -565,13 +565,13 @@ func (s Snapshot) stations() []station {
 	case left > 0:
 		find.state, find.fill = current, float64(total-left)/float64(max(total, 1))
 	case s.goal():
-		together.state, together.sub = reached, []string{plural(g.Rotation, "lap")}
+		together.state, together.sub = reached, []string{plural(g.Lap, "lap")}
 		deeper.state, deeper.sub = reached, []string{"no room left"}
 		clean.state, clean.sub = reached, []string{"reached"}
-		keep.state, keep.fill, keep.sub = current, fill, []string{lap, plural(g.CleanRotations, "clean lap")}
-	case s.refine != nil:
+		keep.state, keep.fill, keep.sub = current, fill, []string{lap, plural(g.CleanLaps, "clean lap")}
+	case s.deepening != nil:
 		together.state, together.sub = reached, []string{"lap was clean"}
-		deeper.state, deeper.sub = current, []string{fmt.Sprintf("round %d", s.refine.Round)}
+		deeper.state, deeper.sub = current, []string{fmt.Sprintf("round %d", s.deepening.Round)}
 		deeper.paused = s.phase == journal.PhaseHunt
 	default:
 		together.state, together.fill, together.sub = current, fill, []string{lap, step}

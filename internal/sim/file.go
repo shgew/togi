@@ -25,9 +25,9 @@ func LoadMachine(path string) (Config, error) {
 			BoostLimitMHz int    `toml:"boost_limit_mhz"`
 		} `toml:"bios_context"`
 		Model struct {
-			PastEdgeRate  *float64                      `toml:"past_edge_rate"`
+			PastLimitRate *float64                      `toml:"past_limit_rate"`
 			Growth        *float64                      `toml:"growth"`
-			NearEdgeRate  *float64                      `toml:"near_edge_rate"`
+			NearLimitRate *float64                      `toml:"near_limit_rate"`
 			CrashMCE      *float64                      `toml:"crash_mce"`
 			CoreLocalBank *float64                      `toml:"core_local_bank"`
 			OnsetS        *float64                      `toml:"onset_s"`
@@ -37,20 +37,20 @@ func LoadMachine(path string) (Config, error) {
 		} `toml:"model"`
 		Core []struct {
 			ID       int            `toml:"id"`
-			Isolated []int          `toml:"isolated"`
-			Resident []int          `toml:"resident"`
+			Alone    []int          `toml:"alone"`
+			Together []int          `toml:"together"`
 			Idle     *int           `toml:"idle"`
 			Workload map[string]int `toml:"workload"`
 			Flat     float64        `toml:"flat"`
 		} `toml:"core"`
-		Joint []struct {
+		Combination []struct {
 			Members      map[string]int   `toml:"members"`
 			Regimes      []machine.Regime `toml:"regimes"`
 			Rate         float64          `toml:"rate"`
 			AfterS       float64          `toml:"after_s"`
 			Signal       machine.Signal   `toml:"signal"`
 			CrashMCECore *int             `toml:"crash_mce_core"`
-		} `toml:"joint"`
+		} `toml:"combination"`
 		Script []struct {
 			Trial     string            `toml:"trial"`
 			Signal    machine.Signal    `toml:"signal"`
@@ -84,9 +84,9 @@ func LoadMachine(path string) (Config, error) {
 			*dst = *src
 		}
 	}
-	set(&model.PastEdgeRate, f.Model.PastEdgeRate)
+	set(&model.PastLimitRate, f.Model.PastLimitRate)
 	set(&model.Growth, f.Model.Growth)
-	set(&model.NearEdgeRate, f.Model.NearEdgeRate)
+	set(&model.NearLimitRate, f.Model.NearLimitRate)
 	set(&model.CrashMCE, f.Model.CrashMCE)
 	set(&model.CoreLocalBank, f.Model.CoreLocalBank)
 	set(&model.OnsetS, f.Model.OnsetS)
@@ -105,21 +105,21 @@ func LoadMachine(path string) (Config, error) {
 		if err := validateCores(cfg.Cores); err != nil {
 			return Config{}, fmt.Errorf("load simulator machine %s: new simulator: %w", path, err)
 		}
-		cfg.Edges = make([]Edges, cfg.Cores)
+		cfg.Limits = make([]Limits, cfg.Cores)
 		seen := make([]bool, cfg.Cores)
 		for _, core := range f.Core {
 			if core.ID < 0 || core.ID >= cfg.Cores || seen[core.ID] {
 				return Config{}, fmt.Errorf("load simulator machine %s: invalid or duplicate core %d", path, core.ID)
 			}
-			if len(core.Isolated) != 5 || len(core.Resident) != 7 {
-				return Config{}, fmt.Errorf("load simulator machine %s: core %d needs five isolated and seven resident edges", path, core.ID)
+			if len(core.Alone) != 5 || len(core.Together) != 7 {
+				return Config{}, fmt.Errorf("load simulator machine %s: core %d needs five alone and seven together limits", path, core.ID)
 			}
 			seen[core.ID] = true
-			var e Edges
-			copy(e.Isolated[:], core.Isolated)
-			copy(e.Resident[:], core.Resident)
+			var e Limits
+			copy(e.Alone[:], core.Alone)
+			copy(e.Together[:], core.Together)
 			e.Idle, e.Workload, e.Flat = core.Idle, core.Workload, core.Flat
-			cfg.Edges[core.ID] = e
+			cfg.Limits[core.ID] = e
 		}
 		for c, ok := range seen {
 			if !ok {
@@ -127,16 +127,16 @@ func LoadMachine(path string) (Config, error) {
 			}
 		}
 	}
-	for _, j := range f.Joint {
+	for _, j := range f.Combination {
 		members := make(map[int]int, len(j.Members))
 		for name, offset := range j.Members {
 			c, err := strconv.Atoi(name)
 			if err != nil {
-				return Config{}, fmt.Errorf("load simulator machine %s: joint member %q: %w", path, name, err)
+				return Config{}, fmt.Errorf("load simulator machine %s: combination member %q: %w", path, name, err)
 			}
 			members[c] = offset
 		}
-		cfg.Joints = append(cfg.Joints, Joint{Members: members, Regimes: j.Regimes, Rate: j.Rate, AfterS: j.AfterS, Signal: j.Signal, CrashMCECore: j.CrashMCECore})
+		cfg.Combinations = append(cfg.Combinations, Combination{Members: members, Regimes: j.Regimes, Rate: j.Rate, AfterS: j.AfterS, Signal: j.Signal, CrashMCECore: j.CrashMCECore})
 	}
 	if f.Script != nil {
 		cfg.Script = make(map[string]Outcome, len(f.Script))

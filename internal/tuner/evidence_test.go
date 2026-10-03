@@ -10,7 +10,7 @@ import (
 )
 
 func TestEvidenceValidity(t *testing.T) {
-	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -20, fail: new(-21)}, coreStart{phase: journal.PhaseDone, offset: -10, fail: new(-11)})
+	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20, fail: new(-21)}, coreStart{phase: journal.PhaseAtLimit, offset: -10, fail: new(-11)})
 	w := machine.Workloads(machine.R7)[0].ID
 	k := trialClass{machine.R7, w, "[0 1]", 120}
 	cases := []struct {
@@ -19,7 +19,7 @@ func TestEvidenceValidity(t *testing.T) {
 	}{{[]int{-20, -10}, true}, {[]int{-19, -10}, true}, {[]int{-20, -10}, false}, {[]int{-22, -10}, true}, {[]int{-20, -12}, true}}
 	var seqs []int
 	for _, tc := range cases {
-		tr := Trial{Regime: machine.R7, Workload: w, Cores: []int{0, 1}, DurationS: 120, Profile: tc.profile, Condition: machine.Masked, Phase: journal.PhaseHunt}
+		tr := Trial{Regime: machine.R7, Workload: w, Cores: []int{0, 1}, DurationS: 120, Profile: tc.profile, Condition: machine.Parked, Phase: journal.PhaseHunt}
 		out := passed
 		if !tc.pass {
 			out = failed
@@ -37,26 +37,26 @@ func TestEvidenceValidity(t *testing.T) {
 		t.Errorf("deep profile passes after invalidation = %d, want 1", got)
 	}
 	if got := h.s.passes(k, []int{-20, -11}, 0, allEvidence); got != 1 {
-		t.Errorf("mask deep only on second core = %d, want 1", got)
+		t.Errorf("group deep only on second core = %d, want 1", got)
 	}
 	if !h.s.fails(k, []int{-20, -10}, seqs[1]) {
 		t.Error("shallow failure did not invalidate class")
 	}
-	idle := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Regime: machine.R6, Profile: []int{-20, -10}})
+	idle := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Regime: machine.R6, Profile: []int{-20, -10}})
 	idleK := trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, fmt.Sprint([]int{0, 1}), 900}
 	if !h.s.fails(idleK, []int{-20, -10}, 0) {
 		t.Fatalf("idle failure #%d did not invalidate R6", idle.Seq)
 	}
-	masked := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Masked, Regime: machine.R6, Profile: []int{-20, -10}})
+	parked := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Parked, Regime: machine.R6, Profile: []int{-20, -10}})
 	if !h.s.fails(idleK, []int{-20, -10}, idle.Seq) || h.s.queue[len(h.s.queue)-1].class.regime != machine.R6 {
-		t.Fatalf("masked idle failure #%d did not enter the R6 wildcard and hunt queue", masked.Seq)
+		t.Fatalf("parked idle failure #%d did not enter the R6 wildcard and hunt queue", parked.Seq)
 	}
 }
 
 func TestMonotonicityWarning(t *testing.T) {
-	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -10})
+	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10})
 	w := machine.Workloads(machine.R1)[0].ID
-	tr := Trial{Regime: machine.R1, Core: 0, Offset: -10, Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 120, Workload: w, Profile: []int{-10}}
+	tr := Trial{Regime: machine.R1, Core: 0, Offset: -10, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120, Workload: w, Profile: []int{-10}}
 	var expected []int
 	for range h.s.n {
 		_, end := h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
@@ -88,17 +88,17 @@ func TestIdleMonotonicityWarning(t *testing.T) {
 		{"deeper passing profile", []int{-11, -13}, []int{900}, []int{0, 1}, true},
 		{"shallower passing profile", []int{-9, -11}, []int{120}, []int{0, 1}, false},
 		{"durations cannot pool", []int{-10, -12}, []int{120, 900}, []int{0, 1}, false},
-		{"partial load cannot qualify", []int{-10, -12}, []int{120}, []int{0}, false},
+		{"partial load cannot establish the class", []int{-10, -12}, []int{120}, []int{0}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h := residentHarness(t, -10, -12)
+			h := hasRoomHarness(t, -10, -12)
 			var seqs []int
 			for i := range h.s.n {
-				tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: tc.cores, DurationS: tc.durations[i%len(tc.durations)], Condition: machine.Resident, Profile: tc.passProfile}
+				tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: tc.cores, DurationS: tc.durations[i%len(tc.durations)], Condition: machine.Together, Profile: tc.passProfile}
 				_, end := h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
 				seqs = append(seqs, end.Seq)
 			}
-			failure := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Regime: machine.R6, Profile: []int{-10, -12}})
+			failure := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Regime: machine.R6, Profile: []int{-10, -12}})
 			a := h.next()
 			warning, ok := a.Payload.(*journal.TunerWarning)
 			if ok != tc.warn {
@@ -131,11 +131,11 @@ func TestIdleMonotonicityWarning(t *testing.T) {
 	}
 }
 
-func TestIdleMonotonicityChoosesEarliestQualifiedClass(t *testing.T) {
-	h := residentHarness(t, -10, -12)
+func TestIdleMonotonicityChoosesEarliestPassingClass(t *testing.T) {
+	h := hasRoomHarness(t, -10, -12)
 	var expected []int
 	for _, duration := range []int{900, 120} {
-		tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: duration, Condition: machine.Resident, Profile: []int{-10, -12}}
+		tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: duration, Condition: machine.Together, Profile: []int{-10, -12}}
 		for i := range h.s.n + 1 {
 			_, end := h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
 			if duration == 900 && i < h.s.n {
@@ -148,7 +148,7 @@ func TestIdleMonotonicityChoosesEarliestQualifiedClass(t *testing.T) {
 		for _, e := range h.events {
 			s.Fold(e)
 		}
-		failure := journal.Event{Seq: len(h.events) + 1, Data: &journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Profile: []int{-10, -12}}}
+		failure := journal.Event{Seq: len(h.events) + 1, Data: &journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Profile: []int{-10, -12}}}
 		s.Fold(failure)
 		a := s.Next()
 		warning, ok := a.Payload.(*journal.TunerWarning)

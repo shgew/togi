@@ -17,33 +17,33 @@ func (s *State) queuedReset() (Action, bool) {
 			continue
 		}
 		if s.hunt != nil && s.hunt.end == nil {
-			return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: s.hunt.start.Hunt, Result: "cancelled", Masks: len(s.hunt.masks), Reason: fmt.Sprintf("core %02d was reset", c.id)}, Cause: []int{c.queueSeq}}, true
+			return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: s.hunt.start.Hunt, Result: "cancelled", Groups: len(s.hunt.groups), Reason: fmt.Sprintf("core %02d was reset", c.id)}, Cause: []int{c.queueSeq}}, true
 		}
 		if s.round != nil {
-			return Action{Kind: Decide, Payload: &journal.RefineRound{Round: s.round.start.Round, Event: journal.RotationEnd, Reason: fmt.Sprintf("core %02d was reset", c.id)}, Cause: []int{c.queueSeq}}, true
+			return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.LapEnd, Reason: fmt.Sprintf("core %02d was reset", c.id)}, Cause: []int{c.queueSeq}}, true
 		}
-		if s.guard.open {
-			return Action{Kind: Decide, Payload: &journal.GuardRotation{Rotation: s.guard.rotation, Event: journal.RotationEnd, Reason: fmt.Sprintf("core %02d was reset", c.id)}, Cause: []int{c.queueSeq}}, true
+		if s.checking.open {
+			return Action{Kind: Decide, Payload: &journal.CheckingLap{Lap: s.checking.lap, Event: journal.LapEnd, Reason: fmt.Sprintf("core %02d was reset", c.id)}, Cause: []int{c.queueSeq}}, true
 		}
 		var cleared []int
-		for _, mark := range s.marks {
-			for _, member := range mark.Members {
+		for _, combination := range s.combinations {
+			for _, member := range combination.Members {
 				if member.Core == c.id {
-					cleared = append(cleared, mark.Mark)
+					cleared = append(cleared, combination.Combination)
 					break
 				}
 			}
 		}
 		labels := make([]string, len(cleared))
 		for i, m := range cleared {
-			labels[i] = fmt.Sprintf("J%d", m)
+			labels[i] = fmt.Sprintf("C%d", m)
 		}
-		what := "failed mark"
+		what := "failure point"
 		if len(labels) > 0 {
-			what += " and joint marks " + strings.Join(labels, ", ")
+			what += " and combinations " + strings.Join(labels, ", ")
 		}
 		reason := fmt.Sprintf("reset: %s cleared; search restarts from the baseline %d", what, c.baseline)
-		return Action{Kind: Decide, Payload: &journal.CorePhase{Core: c.id, From: c.phase, To: journal.PhaseSearch, Offset: machine.ClampOffset(c.baseline), ClearedJoint: slices.Clone(cleared), Reason: reason}, Cause: []int{c.queueSeq}}, true
+		return Action{Kind: Decide, Payload: &journal.CorePhase{Core: c.id, From: c.phase, To: journal.PhaseSearch, Offset: machine.ClampOffset(c.baseline), ClearedCombination: slices.Clone(cleared), Reason: reason}, Cause: []int{c.queueSeq}}, true
 	}
 	return Action{}, false
 }

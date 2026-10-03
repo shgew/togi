@@ -23,9 +23,9 @@ const resetHelp = `Usage: togi reset --core <N> | --all
 
 Reset one core, so the next run restarts its search from the baseline, or archive
 the whole session, so the next run starts a new one that carries nothing from it.
-Give exactly one of the two. --core clears its failed mark and every joint mark
-that includes it. --all warns if a configured candidate edge reached a failed
-mark in the archived session; missing or invalid configuration does not prevent
+Give exactly one of the two. --core clears its failure point and every combination
+that includes it. --all warns if a configured candidate solo limit reached a failure
+point in the archived session; missing or invalid configuration does not prevent
 archiving.
 --core refuses a different journal ruleset or schema; --all archives either.
 Both forms refuse unknown event kinds; install the build that wrote them.
@@ -38,7 +38,7 @@ Examples:
 
 func resetFlags(g *globals, core **int, all *bool) *flag.FlagSet {
 	flags := newFlagSet("reset", g)
-	flags.Func("core", "reset core `N`: clear its failed mark and every joint mark that includes it; restart its search from the baseline", coreFlag(core))
+	flags.Func("core", "reset core `N`: clear its failure point and every combination that includes it; restart its search from the baseline", coreFlag(core))
 	flags.BoolVar(all, "all", false, "archive the session; the next run starts a new one")
 	return flags
 }
@@ -166,32 +166,32 @@ func resetWarnings(events []journal.Event, g *globals) []string {
 	cfg, _, err := loadConfig(g)
 	if err != nil {
 		if g.configSet {
-			return []string{fmt.Sprintf("warning: cannot check candidate edges: %v", err)}
+			return []string{fmt.Sprintf("warning: cannot check candidate solo limits: %v", err)}
 		}
 		return nil
 	}
-	if len(cfg.CandidateEdges) == 0 {
+	if len(cfg.CandidateSoloLimits) == 0 {
 		return nil
 	}
 	var state journal.State
 	t := tuner.New()
 	journal.Replay(events, &state, t)
 	t.Project(&state)
-	marks := make(map[int]int, len(state.Cores))
+	failurePoints := make(map[int]int, len(state.Cores))
 	for _, core := range state.Cores {
-		if core.FailedMark != nil {
-			marks[core.Core] = *core.FailedMark
+		if core.FailurePoint != nil {
+			failurePoints[core.Core] = *core.FailurePoint
 		}
 	}
 	var warnings []string
-	for _, core := range slices.Sorted(maps.Keys(cfg.CandidateEdges)) {
-		edge := cfg.CandidateEdges[core]
-		if mark, ok := marks[core]; ok && edge <= mark {
+	for _, core := range slices.Sorted(maps.Keys(cfg.CandidateSoloLimits)) {
+		soloLimit := cfg.CandidateSoloLimits[core]
+		if failurePoint, ok := failurePoints[core]; ok && soloLimit <= failurePoint {
 			remedy := "remove it"
-			if mark < 0 {
-				remedy = fmt.Sprintf("use %d, the failed mark plus one, or remove it", mark+1)
+			if failurePoint < 0 {
+				remedy = fmt.Sprintf("use %d, the failure point plus one, or remove it", failurePoint+1)
 			}
-			warnings = append(warnings, fmt.Sprintf("warning: candidate edge %d for core %02d is at or deeper than its failed mark %d in the archived session; %s", edge, core, mark, remedy))
+			warnings = append(warnings, fmt.Sprintf("warning: candidate solo limit %d for core %02d is at or deeper than its failure point %d in the archived session; %s", soloLimit, core, failurePoint, remedy))
 		}
 	}
 	return warnings

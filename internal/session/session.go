@@ -33,8 +33,8 @@ type Input struct {
 	Boot       string
 	Journal    Journal
 	Machine    machine.Machine
-	// Rotations is the number of clean qualifying rotations after search and refinement.
-	Rotations int
+	// Laps is the number of clean laps after search and deepening.
+	Laps int
 	// Bootloader is set only in the tuning boot, where a dead end hands the next boot back to the normal system.
 	Bootloader Bootloader
 	// Prompt is nil when stdin or stderr is not a terminal.
@@ -64,9 +64,9 @@ type Journal interface {
 type StopReason string
 
 const (
-	StopSignal    StopReason = "signal"
-	StopDeadEnd   StopReason = "dead_end"
-	StopRotations StopReason = "rotations"
+	StopSignal  StopReason = "signal"
+	StopDeadEnd StopReason = "dead_end"
+	StopLaps    StopReason = "laps"
 )
 
 type Stop struct {
@@ -260,9 +260,9 @@ func (r *runner) validateConfiguredCores() error {
 			return fmt.Errorf("start offset for core %d: %w", core, ErrNoSuchCore)
 		}
 	}
-	for _, core := range slices.Sorted(maps.Keys(r.in.Config.CandidateEdges)) {
+	for _, core := range slices.Sorted(maps.Keys(r.in.Config.CandidateSoloLimits)) {
 		if r.coreInfo(core) == nil {
-			return fmt.Errorf("candidate edge for core %d: %w", core, ErrNoSuchCore)
+			return fmt.Errorf("candidate solo limit for core %d: %w", core, ErrNoSuchCore)
 		}
 	}
 	return nil
@@ -966,16 +966,16 @@ func (r *runner) startSession() error {
 		cc, has := r.fold.carried[c.Core]
 		phase, start, reason := journal.PhaseSearch, machine.ClampOffset(b), "baseline"
 		check := false
-		if o, ok := r.in.Config.CandidateEdges[c.Core]; ok {
-			start, reason, check = o, "configured candidate edge", true
+		if o, ok := r.in.Config.CandidateSoloLimits[c.Core]; ok {
+			start, reason, check = o, "configured candidate solo limit", true
 		} else if o, ok := r.in.Config.StartOffsets[c.Core]; ok {
 			start, reason = o, "configured start offset"
-		} else if has && cc.Edge != nil {
-			start, reason, check = *cc.Edge, fmt.Sprintf("candidate edge %d carried from session %s", *cc.Edge, cc.EdgeSession), true
+		} else if has && cc.SoloLimit != nil {
+			start, reason, check = *cc.SoloLimit, fmt.Sprintf("candidate solo limit %d carried from session %s", *cc.SoloLimit, cc.SoloLimitSession), true
 		} else if start != b {
 			reason = fmt.Sprintf("baseline %d clamped to %d", b, start)
 		}
-		p := &journal.CorePhase{Core: c.Core, To: phase, CheckEdge: check}
+		p := &journal.CorePhase{Core: c.Core, To: phase, CheckSoloLimit: check}
 		if check {
 			p.Workloads = []string{machine.Workloads(machine.R1)[0].ID, machine.Workloads(machine.R2)[0].ID}
 		}
@@ -983,12 +983,12 @@ func (r *runner) startSession() error {
 		if has {
 			cause = append(cause, r.fold.carriedSeq)
 		}
-		if has && cc.FailedMark != nil {
-			m := *cc.FailedMark
-			p.FailedMark = new(m)
+		if has && cc.FailurePoint != nil {
+			m := *cc.FailurePoint
+			p.FailurePoint = new(m)
 			if m < 0 && start <= m {
 				start = m + 1
-				reason += fmt.Sprintf("; clamped to %d, one count shallower than the failed mark %d carried from session %s", start, m, cc.MarkSession)
+				reason += fmt.Sprintf("; clamped to %d, one count shallower than the failure point %d carried from session %s", start, m, cc.FailurePointSession)
 			}
 		}
 		p.Offset, p.Reason = start, reason
@@ -1005,13 +1005,13 @@ func (r *runner) recordCarry() error {
 	if err := c.ResolveFacts(r.fold.context); err != nil {
 		return err
 	}
-	p := &journal.SessionCarried{Sources: c.Sources, Marks: true}
+	p := &journal.SessionCarried{Sources: c.Sources, FailurePoints: true}
 	if c.Context == nil {
-		p.Marks, p.Detail = false, "the archived session recorded no BIOS context"
+		p.FailurePoints, p.Detail = false, "the archived session recorded no BIOS context"
 	} else if detail, ok := machine.CompareContext(*c.Context, *r.fold.context); !ok {
-		p.Marks, p.Detail = false, detail
+		p.FailurePoints, p.Detail = false, detail
 	}
-	if p.Marks && len(c.Facts) > 0 {
+	if p.FailurePoints && len(c.Facts) > 0 {
 		type identity struct {
 			session string
 			seq     int
@@ -1044,9 +1044,9 @@ func (r *runner) recordCarry() error {
 		if r.coreInfo(cc.Core) == nil {
 			continue
 		}
-		if !p.Marks {
-			cc.FailedMark, cc.MarkSession, cc.MarkSeq, cc.MarkSignal = nil, "", 0, ""
-			if cc.Edge == nil {
+		if !p.FailurePoints {
+			cc.FailurePoint, cc.FailurePointSession, cc.FailurePointSeq, cc.FailurePointSignal = nil, "", 0, ""
+			if cc.SoloLimit == nil {
 				continue
 			}
 		}
@@ -1059,10 +1059,10 @@ func (r *runner) recordCarry() error {
 func (r *runner) ensureCondition(t tuner.Trial) error {
 	target := make([]int, len(r.cores))
 	switch t.Condition {
-	case machine.Isolated:
-	case machine.Resident:
+	case machine.Alone:
+	case machine.Together:
 		target = r.tuner.Profile()
-	case machine.Masked:
+	case machine.Parked:
 		target = t.Profile
 	default:
 		return fmt.Errorf("apply trial condition %s: unknown condition", t.Condition)
@@ -1101,8 +1101,8 @@ func (r *runner) apply(target []int, record journal.Payload, cause int) error {
 			if deeper {
 				next := slices.Clone(r.applied)
 				next[i] = target[i]
-				if mark, reaches := r.tuner.Reaches(next); reaches {
-					return fmt.Errorf("refusing to write core %02d to %d: the profile would reach %s", c.Core, target[i], mark)
+				if constraint, reaches := r.tuner.Reaches(next); reaches {
+					return fmt.Errorf("refusing to write core %02d to %d: the profile would reach %s", c.Core, target[i], constraint)
 				}
 			}
 			seq, err := r.set(c.Core, target[i], causes...)
@@ -1137,8 +1137,8 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 				stop, err := r.deadEnd(d, a.Cause...)
 				return deref(stop), err
 			}
-			if g, ok := a.Payload.(*journal.GuardRotation); ok && g.Event == journal.RotationStart && r.reachedRotations() {
-				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownRotations, Rotations: r.in.Rotations}, StopRotations)
+			if g, ok := a.Payload.(*journal.CheckingLap); ok && g.Event == journal.LapStart && r.reachedLaps() {
+				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownLaps, Laps: r.in.Laps}, StopLaps)
 			}
 			if ctx.Err() != nil {
 				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
@@ -1232,8 +1232,8 @@ func (r *runner) retryBackend(ctx context.Context, t tuner.Trial) error {
 	return nil
 }
 
-func (r *runner) reachedRotations() bool {
-	return r.in.Rotations > 0 && r.tuner.QualifiedRotations() >= r.in.Rotations
+func (r *runner) reachedLaps() bool {
+	return r.in.Laps > 0 && r.tuner.CleanLaps() >= r.in.Laps
 }
 
 func (r *runner) shutdown(p *journal.Shutdown, stop StopReason) (Stop, error) {
@@ -1332,7 +1332,7 @@ func (r *runner) restore() error {
 		o := r.fold.baseline[i]
 		if s := slices.IndexFunc(r.state.Cores, func(s journal.CoreState) bool { return s.Core == c.Core }); s >= 0 {
 			o = max(o, r.state.Cores[s].Offset)
-			if failed := r.state.Cores[s].FailedMark; failed != nil {
+			if failed := r.state.Cores[s].FailurePoint; failed != nil {
 				o = max(o, *failed+1)
 			}
 		}

@@ -35,7 +35,7 @@ func TestStatsArgumentErrors(t *testing.T) {
 }
 
 func TestStatsReadsOnlyJournal(t *testing.T) {
-	f, err := os.Open(filepath.Join("testdata", "joint.jsonl.gz"))
+	f, err := os.Open(filepath.Join("testdata", "combination.jsonl.gz"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestStatsReadsOnlyJournal(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte("invalid state"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.ReadFile(filepath.Join("testdata", "joint.golden"))
+	want, err := os.ReadFile(filepath.Join("testdata", "combination.golden"))
 	if err != nil {
 		t.Fatal(err)
 	}

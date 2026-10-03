@@ -11,13 +11,13 @@ import (
 )
 
 func renderHunts(tab *table, p *projection, since time.Time) {
-	tab.section("Hunts", "hunt\tstart\thours\tfailing trial\tanchor\tcandidates\tplanned/run/inferred/skipped\ttrials\tcrashes\tresult\tmembers/culprit\tcommitment")
+	tab.section("Hunts", "hunt\tstart\thours\tfailing trial\tparked offsets\tcandidates\tplanned/run/inferred/skipped\ttrials\tcrashes\tresult\tmembers/culprit\tcommitment")
 	for _, h := range p.hunts {
 		if !selected(h.time, since) {
 			continue
 		}
 		ran, inferred, skipped, crashes := 0, 0, 0, 0
-		for _, m := range h.masks {
+		for _, m := range h.groups {
 			if len(m.trials) > 0 {
 				ran++
 			}
@@ -33,9 +33,9 @@ func renderHunts(tab *table, p *projection, since time.Time) {
 				crashes++
 			}
 		}
-		anchor := "all-zero"
-		if h.start.AnchorSeq != 0 {
-			anchor = fmt.Sprintf("#%d", h.start.AnchorSeq)
+		parked := "all-zero"
+		if h.start.ParkedSeq != 0 {
+			parked = fmt.Sprintf("#%d", h.start.ParkedSeq)
 		}
 		result, members := "open", "-"
 		if h.result != nil {
@@ -43,7 +43,7 @@ func renderHunts(tab *table, p *projection, since time.Time) {
 			members = coreList(h.result.Cores)
 			if len(h.result.Members) > 0 {
 				a := slices.Clone(h.result.Members)
-				slices.SortFunc(a, func(a, b journal.JointMember) int { return a.Core - b.Core })
+				slices.SortFunc(a, func(a, b journal.CombinationMember) int { return a.Core - b.Core })
 				labels := make([]string, len(a))
 				for i, m := range a {
 					labels[i] = fmt.Sprintf("%02d:%d", m.Core, m.Offset)
@@ -51,32 +51,32 @@ func renderHunts(tab *table, p *projection, since time.Time) {
 				members = strings.Join(labels, ",")
 			}
 		}
-		tab.row("%d\t%s\t%.3f\t%s\t%s\t%d\t%d/%d/%d/%d\t%d\t%d\t%s\t%s\t%s", h.start.Hunt, stamp(h.time), h.end.Sub(h.time).Hours(), h.start.Trial, anchor, len(h.start.Candidates), len(h.masks), ran, inferred, skipped, len(h.trials), crashes, result, members, h.commitment)
+		tab.row("%d\t%s\t%.3f\t%s\t%s\t%d\t%d/%d/%d/%d\t%d\t%d\t%s\t%s\t%s", h.start.Hunt, stamp(h.time), h.end.Sub(h.time).Hours(), h.start.Trial, parked, len(h.start.Candidates), len(h.groups), ran, inferred, skipped, len(h.trials), crashes, result, members, h.commitment)
 	}
 }
 
-func renderGuard(tab *table, p *projection, events []journal.Event, since time.Time) {
-	tab.section("Guard", "metric\tcount")
-	starts, ends, qualifying := 0, 0, 0
+func renderChecking(tab *table, p *projection, events []journal.Event, since time.Time) {
+	tab.section("Checking", "metric\tcount")
+	starts, ends, full := 0, 0, 0
 	for _, e := range events {
 		if !selected(e.Time, since) {
 			continue
 		}
-		if v, ok := e.Data.(*journal.GuardRotation); ok {
-			if v.Event == journal.RotationStart {
+		if v, ok := e.Data.(*journal.CheckingLap); ok {
+			if v.Event == journal.LapStart {
 				starts++
 			}
-			if v.Event == journal.RotationEnd {
+			if v.Event == journal.LapEnd {
 				ends++
-				if v.Qualifying {
-					qualifying++
+				if v.Full {
+					full++
 				}
 			}
 		}
 	}
-	tab.row("rotations started\t%d", starts)
-	tab.row("rotations ended\t%d", ends)
-	tab.row("rotations qualifying\t%d", qualifying)
+	tab.row("laps started\t%d", starts)
+	tab.row("laps ended\t%d", ends)
+	tab.row("full laps\t%d", full)
 	reruns, failed := 0, 0
 	seen := map[int]bool{}
 	for _, t := range p.trials {
@@ -100,11 +100,11 @@ func renderGuard(tab *table, p *projection, events []journal.Event, since time.T
 	}
 	tab.row("reruns\t%d", reruns)
 	tab.row("reruns failing first start\t%d", failed)
-	tab.section("Guard steps and resident outcomes", "rotation\tregime\tloaded cores\toutcome\ttrials")
+	tab.section("Checking steps and together outcomes", "lap\tregime\tloaded cores\toutcome\ttrials")
 	counts := map[string]int{}
 	for _, t := range p.trials {
-		if selected(t.time, since) && t.intent.Phase == journal.PhaseGuard && t.intent.Condition == machine.Resident {
-			counts[fmt.Sprintf("%04d\t%s\t%s\t%s", t.intent.Rotation, t.intent.Regime, coreList(loaded(t.intent, p.cores)), outcome(t))]++
+		if selected(t.time, since) && t.intent.Phase == journal.PhaseChecking && t.intent.Condition == machine.Together {
+			counts[fmt.Sprintf("%04d\t%s\t%s\t%s", t.intent.Lap, t.intent.Regime, coreList(loaded(t.intent, p.cores)), outcome(t))]++
 		}
 	}
 	for _, k := range keys(counts) {
@@ -112,7 +112,7 @@ func renderGuard(tab *table, p *projection, events []journal.Event, since time.T
 	}
 }
 
-type reuseCount struct{ masks, established, passed, failed, trials, seconds int }
+type reuseCount struct{ groups, established, passed, failed, trials, seconds int }
 
 func renderEvidence(tab *table, p *projection, events []journal.Event, since time.Time) {
 	tab.section("Evidence quality", "warning\tcount")
@@ -138,13 +138,13 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 	for _, k := range keys(contradictions) {
 		tab.row("%s\t%d", k, contradictions[k])
 	}
-	tab.section("Prior evidence per hunt mask", "hunt\tmask\tstage\tprior passes\trequired\testablished\tpasses again\tfailures again\ttrials\thours")
+	tab.section("Prior evidence per hunt group", "hunt\tgroup\tstage\tprior passes\trequired\testablished\tpasses again\tfailures again\ttrials\thours")
 	summary := map[string]*reuseCount{}
 	for _, h := range p.hunts {
 		if !selected(h.time, since) {
 			continue
 		}
-		for _, m := range h.masks {
+		for _, m := range h.groups {
 			if len(m.trials) == 0 {
 				continue
 			}
@@ -163,14 +163,14 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 					}
 				}
 			}
-			tab.row("%d\t%d\t%s\t%d\t%d\t%t\t%d\t%d\t%d\t%.3f", h.start.Hunt, m.plan.Mask, m.plan.Stage, prior, h.start.Starts, established, passes, failures, len(m.trials), float64(cost)/3600)
+			tab.row("%d\t%d\t%s\t%d\t%d\t%t\t%d\t%d\t%d\t%.3f", h.start.Hunt, m.plan.Group, m.plan.Stage, prior, h.start.Starts, established, passes, failures, len(m.trials), float64(cost)/3600)
 			k := fmt.Sprintf("%04d\t%s", h.start.Hunt, m.plan.Stage)
 			s := summary[k]
 			if s == nil {
 				s = &reuseCount{}
 				summary[k] = s
 			}
-			s.masks++
+			s.groups++
 			if established {
 				s.established++
 				if failures > 0 {
@@ -183,10 +183,10 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 			}
 		}
 	}
-	tab.section("Prior evidence by hunt and stage", "hunt\tstage\tran masks\testablished masks\tpassed again\tfailed again\tredundant trials\tredundant hours")
+	tab.section("Prior evidence by hunt and stage", "hunt\tstage\tran groups\testablished groups\tpassed again\tfailed again\tredundant trials\tredundant hours")
 	for _, k := range keys(summary) {
 		s := summary[k]
-		tab.row("%s\t%d\t%d\t%d\t%d\t%d\t%.3f", k, s.masks, s.established, s.passed, s.failed, s.trials, float64(s.seconds)/3600)
+		tab.row("%s\t%d\t%d\t%d\t%d\t%d\t%.3f", k, s.groups, s.established, s.passed, s.failed, s.trials, float64(s.seconds)/3600)
 	}
 }
 
@@ -205,7 +205,7 @@ func singleCarriedFailureDecisions(events []journal.Event, since time.Time) int 
 			if p.Decision != journal.Backoff {
 				continue
 			}
-		case *journal.HuntMask:
+		case *journal.HuntGroup:
 			if p.Inferred != "failure" {
 				continue
 			}

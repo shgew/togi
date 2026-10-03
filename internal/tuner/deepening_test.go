@@ -9,56 +9,56 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func qualifiedHarness(t *testing.T, offsets []int, marks [][]int) *harness {
+func cleanLapHarness(t *testing.T, offsets []int, combinations [][]int) *harness {
 	t.Helper()
 	starts := make([]coreStart, len(offsets))
 	for i, v := range offsets {
-		starts[i] = coreStart{phase: journal.PhaseDone, offset: v}
+		starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: v}
 	}
 	h := newHarness(t, starts...)
-	for i, pair := range marks {
-		h.add(&journal.MarkJoint{Mark: i + 1, Hunt: i + 1, Members: []journal.JointMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
+	for i, pair := range combinations {
+		h.add(&journal.Combination{Combination: i + 1, Hunt: i + 1, Members: []journal.CombinationMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
 	}
 	h.add(&journal.ProfileChange{To: slices.Clone(offsets)})
-	h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: h.s.steps})
-	h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true})
+	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: h.s.steps})
+	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
 	return h
 }
 
-func nextRound(h *harness) *journal.RefineRound {
+func nextRound(h *harness) *journal.DeepeningRound {
 	h.t.Helper()
 	for range 20 {
 		a := h.next()
-		if p, ok := a.Payload.(*journal.RefineRound); ok && p.Event == journal.RotationStart {
+		if p, ok := a.Payload.(*journal.DeepeningRound); ok && p.Event == journal.LapStart {
 			h.decide(a)
 			return p
 		}
 		if a.Kind != Decide {
-			h.t.Fatalf("expected refine round: %+v", a)
+			h.t.Fatalf("expected deepening round: %+v", a)
 		}
 		h.decide(a)
 	}
-	h.t.Fatal("no refinement round")
+	h.t.Fatal("no deepening round")
 	return nil
 }
 
-func TestIdleFailureEndsRefineBeforeMoves(t *testing.T) {
-	h := qualifiedHarness(t, []int{-49, -49, -49, -50}, [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}})
+func TestIdleFailureEndsDeepeningBeforeMoves(t *testing.T) {
+	h := cleanLapHarness(t, []int{-49, -49, -49, -50}, [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}})
 	round := nextRound(h)
-	failure := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R6, Condition: machine.Resident, Profile: h.s.Profile()})
+	failure := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R6, Condition: machine.Together, Profile: h.s.Profile()})
 	a := h.next()
-	end, ok := a.Payload.(*journal.RefineRound)
-	if !ok || end.Round != round.Round || end.Event != journal.RotationEnd || end.Reason != "a failure needs a hunt" {
-		t.Fatalf("idle failure did not end refine round: %+v", a)
+	end, ok := a.Payload.(*journal.DeepeningRound)
+	if !ok || end.Round != round.Round || end.Event != journal.LapEnd || end.Reason != "a failure needs a hunt" {
+		t.Fatalf("idle failure did not end deepening round: %+v", a)
 	}
 	if diff := cmp.Diff([]int{failure.Seq}, a.Cause); diff != "" {
 		t.Fatalf("round end cause (-want +got):\n%s", diff)
 	}
 }
 
-func TestRefineGlobalOptimumAndResume(t *testing.T) {
-	marks := [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}}
-	h := qualifiedHarness(t, []int{-49, -49, -49, -50}, marks)
+func TestDeepeningGlobalOptimumAndResume(t *testing.T) {
+	combinations := [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}}
+	h := cleanLapHarness(t, []int{-49, -49, -49, -50}, combinations)
 	r := nextRound(h)
 	if diff := cmp.Diff([]int{-50, -49, -50, -49}, r.Target); diff != "" {
 		t.Fatalf("global optimum (-want +got):\n%s", diff)
@@ -102,7 +102,7 @@ func TestRefineGlobalOptimumAndResume(t *testing.T) {
 			replayed.Fold(e)
 		}
 		if diff := cmp.Diff(h.s.Next(), replayed.Next()); diff != "" {
-			t.Fatalf("refine prefix replay (-live +replayed):\n%s", diff)
+			t.Fatalf("deepening prefix replay (-live +replayed):\n%s", diff)
 		}
 		a := h.next()
 		if a.Kind == RunTrial {
@@ -112,7 +112,7 @@ func TestRefineGlobalOptimumAndResume(t *testing.T) {
 			h.trial(a, passed)
 			continue
 		}
-		if end, ok := a.Payload.(*journal.RefineRound); ok && end.Event == journal.RotationEnd {
+		if end, ok := a.Payload.(*journal.DeepeningRound); ok && end.Event == journal.LapEnd {
 			if !end.Passed {
 				t.Fatalf("failed round %+v", end)
 			}
@@ -124,11 +124,11 @@ func TestRefineGlobalOptimumAndResume(t *testing.T) {
 	t.Fatal("round checks never finished")
 }
 
-func TestRefineHalfwayTowardFailedMark(t *testing.T) {
-	h := newHarness(t, coreStart{phase: journal.PhaseResident, offset: -10, fail: new(-50)})
+func TestDeepeningHalfwayTowardFailurePoint(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseHasRoom, offset: -10, fail: new(-50)})
 	h.add(&journal.ProfileChange{To: []int{-10}})
-	h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: h.s.steps})
-	h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true})
+	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: h.s.steps})
+	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
 	r := nextRound(h)
 	if diff := cmp.Diff([]int{-30}, r.Profile); diff != "" {
 		t.Fatalf("first halfway (-want +got):\n%s", diff)
@@ -141,7 +141,7 @@ func TestRefineHalfwayTowardFailedMark(t *testing.T) {
 			h.trial(a, passed)
 			continue
 		}
-		if p, ok := a.Payload.(*journal.RefineRound); ok && p.Event == journal.RotationEnd {
+		if p, ok := a.Payload.(*journal.DeepeningRound); ok && p.Event == journal.LapEnd {
 			h.decide(a)
 			break
 		}
@@ -153,14 +153,14 @@ func TestRefineHalfwayTowardFailedMark(t *testing.T) {
 	}
 }
 
-func TestActiveRefineProjection(t *testing.T) {
+func TestActiveDeepeningProjection(t *testing.T) {
 	for _, close := range []string{"passed", "cancelled"} {
 		t.Run(close, func(t *testing.T) {
-			h := newHarness(t, coreStart{phase: journal.PhaseResident, offset: -10}, coreStart{phase: journal.PhaseResident, offset: -10}, coreStart{phase: journal.PhaseResident, offset: -10}, coreStart{phase: journal.PhaseResident, offset: -10})
+			h := newHarness(t, coreStart{phase: journal.PhaseHasRoom, offset: -10}, coreStart{phase: journal.PhaseHasRoom, offset: -10}, coreStart{phase: journal.PhaseHasRoom, offset: -10}, coreStart{phase: journal.PhaseHasRoom, offset: -10})
 			h.add(&journal.ProfileChange{To: []int{-10, -10, -10, -10}})
-			round := &journal.RefineRound{Round: 2, Event: journal.RotationStart, Target: []int{-20, -9, -10, -10}, Profile: []int{-15, -9, -10, -10}, Cores: []int{0, 1}, Starts: 2, StartS: 120}
+			round := &journal.DeepeningRound{Round: 2, Event: journal.LapStart, Target: []int{-20, -9, -10, -10}, Profile: []int{-15, -9, -10, -10}, Cores: []int{0, 1}, Starts: 2, StartS: 120}
 			begin := h.add(round)
-			want := &journal.RefineState{Round: 2, Seq: begin.Seq, Target: round.Target, Profile: round.Profile, Cores: round.Cores, Checks: []journal.CheckState{
+			want := &journal.DeepeningState{Round: 2, Seq: begin.Seq, Target: round.Target, Profile: round.Profile, Cores: round.Cores, Checks: []journal.CheckState{
 				{Regime: machine.R1, Workload: machine.Workloads(machine.R1)[1].ID, Cores: []int{0}, Needed: 2},
 				{Regime: machine.R2, Workload: machine.Workloads(machine.R2)[1].ID, Cores: []int{0}, Needed: 2},
 				{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[1].ID, Cores: []int{0, 1}, Needed: 2},
@@ -169,10 +169,10 @@ func TestActiveRefineProjection(t *testing.T) {
 			assert := func() {
 				t.Helper()
 				st := projected(h)
-				if st.Phase != string(journal.PhaseRefine) {
+				if st.Phase != string(journal.PhaseDeepening) {
 					t.Fatalf("active round phase %s", st.Phase)
 				}
-				if diff := cmp.Diff(want, st.Refine); diff != "" {
+				if diff := cmp.Diff(want, st.Deepening); diff != "" {
 					t.Fatalf("round projection (-want +got):\n%s", diff)
 				}
 				assertProjectionReplay(h)
@@ -198,8 +198,8 @@ func TestActiveRefineProjection(t *testing.T) {
 					want.Checks[i].Passes++
 					assert()
 					if close == "cancelled" {
-						h.add(&journal.RefineRound{Round: 2, Event: journal.RotationEnd, Reason: "a failure needs a hunt"}, begin.Seq)
-						if projected(h).Refine != nil {
+						h.add(&journal.DeepeningRound{Round: 2, Event: journal.LapEnd, Reason: "a failure needs a hunt"}, begin.Seq)
+						if projected(h).Deepening != nil {
 							t.Fatal("cancelled round remains active")
 						}
 						assertProjectionReplay(h)
@@ -208,12 +208,12 @@ func TestActiveRefineProjection(t *testing.T) {
 				}
 			}
 			end := h.s.roundCheck()
-			p, ok := end.Payload.(*journal.RefineRound)
-			if !ok || p.Event != journal.RotationEnd || !p.Passed || !slices.Equal(end.Cause, []int{begin.Seq}) {
+			p, ok := end.Payload.(*journal.DeepeningRound)
+			if !ok || p.Event != journal.LapEnd || !p.Passed || !slices.Equal(end.Cause, []int{begin.Seq}) {
 				t.Fatalf("completed round: %+v", end)
 			}
 			h.decide(end)
-			if projected(h).Refine != nil {
+			if projected(h).Deepening != nil {
 				t.Fatal("completed round remains active")
 			}
 			assertProjectionReplay(h)
@@ -221,8 +221,8 @@ func TestActiveRefineProjection(t *testing.T) {
 	}
 }
 
-func TestLiveRefinementFailureEndsRoundBeforeBackoff(t *testing.T) {
-	h := qualifiedHarness(t, []int{-10, -10}, nil)
+func TestLiveDeepeningFailureEndsRoundBeforeBackoff(t *testing.T) {
+	h := cleanLapHarness(t, []int{-10, -10}, nil)
 	r := nextRound(h)
 	for {
 		a, ok := h.s.roundMoves()
@@ -235,14 +235,14 @@ func TestLiveRefinementFailureEndsRoundBeforeBackoff(t *testing.T) {
 	h.trial(h.s.roundCheck(), journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)})
 	failure := h.decide(h.next())
 	a := h.next()
-	p, ok := a.Payload.(*journal.RefineRound)
-	if !ok || p.Round != r.Round || p.Event != journal.RotationEnd || p.Passed || cmp.Diff([]int{failure.Seq}, a.Cause) != "" {
+	p, ok := a.Payload.(*journal.DeepeningRound)
+	if !ok || p.Round != r.Round || p.Event != journal.LapEnd || p.Passed || cmp.Diff([]int{failure.Seq}, a.Cause) != "" {
 		t.Fatalf("live failure did not close round: %+v", a)
 	}
 	h.decide(a)
 	a = h.next()
 	back, ok := a.Payload.(*journal.TunerDecision)
-	if !ok || back.Phase != journal.PhaseRefine || back.ToOffset != r.Profile[0]+1 || back.FailedMark == nil || *back.FailedMark != r.Profile[0] {
-		t.Fatalf("live refine failure lost mark: %+v", a)
+	if !ok || back.Phase != journal.PhaseDeepening || back.ToOffset != r.Profile[0]+1 || back.FailurePoint == nil || *back.FailurePoint != r.Profile[0] {
+		t.Fatalf("live deepening failure lost failure point: %+v", a)
 	}
 }

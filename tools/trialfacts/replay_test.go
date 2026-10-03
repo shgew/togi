@@ -29,7 +29,7 @@ func TestLoadReplaySelectsTrialEvidence(t *testing.T) {
 	enc := json.NewEncoder(gz)
 	for _, r := range []Record{
 		{Session: "s1", Seq: 4, Trial: "1", Kind: facts.TrialFact, Context: &context, Class: class, Profile: []int{-10, 0}, Outcome: journal.OutcomePass, DurationS: 90},
-		{Session: "s1", Seq: 5, Kind: facts.IdleFact, Context: &context, Class: facts.Class{Regime: machine.R6, Cores: []int{0, 1}}, Condition: machine.Resident, Profile: []int{-20, 0}, Outcome: journal.OutcomeFailure, Signal: machine.Crash},
+		{Session: "s1", Seq: 5, Kind: facts.IdleFact, Context: &context, Class: facts.Class{Regime: machine.R6, Cores: []int{0, 1}}, Condition: machine.Together, Profile: []int{-20, 0}, Outcome: journal.OutcomeFailure, Signal: machine.Crash},
 		{Session: "s2", Seq: 4, Trial: "1", Kind: facts.TrialFact, Class: class, Profile: []int{-30, 0}, Outcome: journal.OutcomePass, DurationS: 90},
 		{Session: "s3", Seq: 4, Trial: "1", Kind: facts.TrialFact, Context: &other, Class: class, Profile: []int{-40, 0}, Outcome: journal.OutcomePass, DurationS: 90},
 	} {

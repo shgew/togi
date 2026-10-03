@@ -15,7 +15,7 @@ import (
 
 func TestHumanJournalBoundaries(t *testing.T) {
 	t.Parallel()
-	header := `{"seq":1,"time":"2026-10-02T01:10:00Z","kind":"session.start","schema":2,"ruleset":3,"session":"session","cores":[]}` + "\n"
+	header := `{"seq":1,"time":"2026-10-02T01:10:00Z","kind":"session.start","schema":3,"ruleset":3,"session":"session","cores":[]}` + "\n"
 	context := `{"seq":2,"time":"2026-10-02T01:10:01Z","kind":"session.context","msg":"context","bios_version":"bios\u202e","board":"board\u001b[2J","cpu_model":"cpu\nforged","microcode":"code\u2066"}` + "\n"
 	dir := t.TempDir()
 	raw := header + context
@@ -80,11 +80,11 @@ func TestHumanProjectedFieldsEscapeControls(t *testing.T) {
 	text := "日本語\u202e\x1b[2J\nforged"
 	escaped := `日本語\u202e\x1b[2J\nforged`
 	st := journal.State{
-		Session: &journal.SessionInfo{ID: text, Start: time.Date(2026, 10, 2, 1, 0, 0, 0, time.UTC)},
-		Cores:   []journal.CoreState{{Core: 0, Phase: journal.Phase(text), Queued: text}},
-		Hunt:    &journal.HuntState{Trial: text, Regime: machine.Regime(text), Masks: []journal.MaskState{{Outcome: text}}},
-		Refine:  &journal.RefineState{Checks: []journal.CheckState{{Regime: machine.Regime(text), Workload: text}}},
-		Guard:   &journal.GuardState{Exposure: []journal.ExposureRow{{Regime: machine.Regime(text), Workload: text}}},
+		Session:   &journal.SessionInfo{ID: text, Start: time.Date(2026, 10, 2, 1, 0, 0, 0, time.UTC)},
+		Cores:     []journal.CoreState{{Core: 0, Phase: journal.Phase(text), Queued: text}},
+		Hunt:      &journal.HuntState{Trial: text, Regime: machine.Regime(text), Groups: []journal.GroupState{{Outcome: text}}},
+		Deepening: &journal.DeepeningState{Checks: []journal.CheckState{{Regime: machine.Regime(text), Workload: text}}},
+		Checking:  &journal.CheckingState{Exposure: []journal.ExposureRow{{Regime: machine.Regime(text), Workload: text}}},
 	}
 	for _, render := range []struct {
 		name  string

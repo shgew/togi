@@ -48,12 +48,12 @@ func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 							t.Error(err)
 							return
 						}
-						stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1, InMemoryJournal: inMemory})
+						stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1, InMemoryJournal: inMemory})
 						if err != nil {
 							t.Error(err)
 							return
 						}
-						if stop.Reason != session.StopRotations {
+						if stop.Reason != session.StopLaps {
 							t.Errorf("in-memory %t: stopped with %+v", inMemory, stop)
 							return
 						}
@@ -93,12 +93,12 @@ func TestInMemoryProjectionFailureWarnsAfterStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1, InMemoryJournal: true})
+	stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1, InMemoryJournal: true})
 	if err != nil {
 		t.Fatalf("projection failure must not fail a concluded session: %v", err)
 	}
-	if stop.Reason != session.StopRotations {
-		t.Fatalf("stopped with %+v, want requested rotations", stop)
+	if stop.Reason != session.StopLaps {
+		t.Fatalf("stopped with %+v, want requested laps", stop)
 	}
 	events, _, err := journal.Read(dir)
 	if err != nil {

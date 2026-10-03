@@ -25,25 +25,25 @@ type Config struct {
 	// BIOS holds the offsets restored at every boot; default all 0.
 	BIOS        []int
 	BIOSContext machine.BIOSContext
-	// Edges are the hidden edges; nil draws them from Seed.
-	Edges []Edges
+	// Limits are the hidden limits; nil draws them from Seed.
+	Limits []Limits
 	// Model nil means DefaultModel(); a non-nil model is used verbatim, zero fields included.
 	Model *Model
 	CCD   *CCD
 	// Boots counts the boots before the first; boot numbering and boot IDs continue from it.
 	Boots int
 	// Start is the clock at the first boot; zero means 2026-01-01T00:00:00Z.
-	Start     time.Time
-	Joints    []Joint
-	Ranking   []int
-	Script    map[string]Outcome
-	OldKernel bool
+	Start        time.Time
+	Combinations []Combination
+	Ranking      []int
+	Script       map[string]Outcome
+	OldKernel    bool
 }
 
-// Edges index 0 is R1; Resident[5] and Resident[6] are R6 and R7.
-type Edges struct {
-	Isolated [5]int
-	Resident [7]int
+// Limits index 0 is R1; Together[5] and Together[6] are R6 and R7.
+type Limits struct {
+	Alone    [5]int
+	Together [7]int
 	Idle     *int
 	Workload map[string]int
 	Flat     float64
@@ -56,7 +56,7 @@ type CCD struct {
 	Effect  [2]float64 `toml:"effect"`
 }
 
-type Joint struct {
+type Combination struct {
 	Members      map[int]int
 	Regimes      []machine.Regime
 	Rate         float64
@@ -74,9 +74,9 @@ type Outcome struct {
 }
 
 type Model struct {
-	PastEdgeRate  float64
+	PastLimitRate float64
 	Growth        float64
-	NearEdgeRate  float64
+	NearLimitRate float64
 	Signals       map[machine.Signal]float64
 	CrashMCE      float64
 	CoreLocalBank float64
@@ -87,9 +87,9 @@ type Model struct {
 
 func DefaultModel() Model {
 	return Model{
-		PastEdgeRate: math.Ln10 / 90,
-		Growth:       4,
-		NearEdgeRate: 0,
+		PastLimitRate: math.Ln10 / 90,
+		Growth:        4,
+		NearLimitRate: 0,
 		Signals: map[machine.Signal]float64{
 			machine.ComputationError: 4,
 			machine.Stall:            1,
@@ -119,7 +119,7 @@ const RebootTime = 90 * time.Second
 type Machine struct {
 	cfg        Config
 	model      Model
-	edges      []Edges
+	limits     []Limits
 	regs       []int
 	boot       int
 	bootID     string
@@ -242,7 +242,7 @@ func New(cfg Config) (*Machine, error) {
 	m := &Machine{
 		cfg:             cfg,
 		model:           model,
-		edges:           cfg.Edges,
+		limits:          cfg.Limits,
 		boot:            cfg.Boots,
 		now:             start,
 		logs:            map[string][]machine.MCE{},
@@ -253,90 +253,90 @@ func New(cfg Config) (*Machine, error) {
 		missingBackends: map[machine.Backend]bool{},
 		failedChecks:    map[string]string{},
 	}
-	if m.edges == nil {
-		m.edges = m.drawEdges()
+	if m.limits == nil {
+		m.limits = m.drawLimits()
 	}
-	if len(m.edges) != cfg.Cores {
-		return nil, fmt.Errorf("new simulator: %d edges for %d cores", len(m.edges), cfg.Cores)
+	if len(m.limits) != cfg.Cores {
+		return nil, fmt.Errorf("new simulator: %d limits for %d cores", len(m.limits), cfg.Cores)
 	}
-	for c, e := range m.edges {
-		for _, v := range slices.Concat(e.Isolated[:], e.Resident[:]) {
+	for c, e := range m.limits {
+		for _, v := range slices.Concat(e.Alone[:], e.Together[:]) {
 			if v < machine.MinOffset || v > 1 {
-				return nil, fmt.Errorf("new simulator: edge %d of core %d outside [-50, 1]", v, c)
+				return nil, fmt.Errorf("new simulator: limit %d of core %d outside [-50, 1]", v, c)
 			}
 		}
 	}
 	if cfg.Ranking != nil && len(cfg.Ranking) != cfg.Cores {
 		return nil, fmt.Errorf("new simulator: %d ranking values for %d cores", len(cfg.Ranking), cfg.Cores)
 	}
-	for c, e := range m.edges {
+	for c, e := range m.limits {
 		if e.Idle != nil && (*e.Idle < machine.MinOffset || *e.Idle > 1) {
-			return nil, fmt.Errorf("new simulator: idle edge %d of core %d outside [-50, 1]", *e.Idle, c)
+			return nil, fmt.Errorf("new simulator: idle limit %d of core %d outside [-50, 1]", *e.Idle, c)
 		}
 		for workload, offset := range e.Workload {
 			if offset < machine.MinOffset || offset > 1 {
-				return nil, fmt.Errorf("new simulator: workload %s edge %d of core %d outside [-50, 1]", workload, offset, c)
+				return nil, fmt.Errorf("new simulator: workload %s limit %d of core %d outside [-50, 1]", workload, offset, c)
 			}
 		}
 		if e.Flat < 0 {
 			return nil, fmt.Errorf("new simulator: flat rate %g of core %d is negative", e.Flat, c)
 		}
 	}
-	if err := validateJoints(cfg.Joints, cfg.Cores); err != nil {
+	if err := validateCombinations(cfg.Combinations, cfg.Cores); err != nil {
 		return nil, fmt.Errorf("new simulator: %w", err)
 	}
 	m.startBoot()
 	return m, nil
 }
 
-func validateJoints(joints []Joint, cores int) error {
-	for _, joint := range joints {
-		for c, offset := range joint.Members {
+func validateCombinations(combinations []Combination, cores int) error {
+	for _, combination := range combinations {
+		for c, offset := range combination.Members {
 			if c < 0 || c >= cores || offset < machine.MinOffset || offset > machine.MaxOffset {
-				return fmt.Errorf("joint member core %d offset %d invalid", c, offset)
+				return fmt.Errorf("combination member core %d offset %d invalid", c, offset)
 			}
 		}
-		for _, r := range joint.Regimes {
+		for _, r := range combination.Regimes {
 			if !slices.Contains(machine.Regimes, r) {
-				return fmt.Errorf("joint regime %q is not supported", r)
+				return fmt.Errorf("combination regime %q is not supported", r)
 			}
 		}
-		if joint.Signal != "" && !slices.Contains(signalOrder, joint.Signal) {
-			return fmt.Errorf("joint signal %q is not supported", joint.Signal)
+		if combination.Signal != "" && !slices.Contains(signalOrder, combination.Signal) {
+			return fmt.Errorf("combination signal %q is not supported", combination.Signal)
 		}
-		if joint.Rate < 0 || joint.AfterS < 0 {
-			return fmt.Errorf("joint rate %g or delay %g is negative", joint.Rate, joint.AfterS)
+		if combination.Rate < 0 || combination.AfterS < 0 {
+			return fmt.Errorf("combination rate %g or delay %g is negative", combination.Rate, combination.AfterS)
 		}
-		if core := joint.CrashMCECore; core != nil && (*core < 0 || *core >= cores) {
-			return fmt.Errorf("joint crash MCE core %d outside [0, %d)", *core, cores)
+		if core := combination.CrashMCECore; core != nil && (*core < 0 || *core >= cores) {
+			return fmt.Errorf("combination crash MCE core %d outside [0, %d)", *core, cores)
 		}
 	}
 	return nil
 }
 
-func (m *Machine) drawEdges() []Edges {
+func (m *Machine) drawLimits() []Limits {
 	r := m.rng("edges")
-	resident := func() int {
+	together := func() int {
 		if r.Float64() < 0.75 {
 			return 0
 		}
 		return 1 + r.IntN(3)
 	}
-	edges := make([]Edges, m.cfg.Cores)
-	for c := range edges {
+	limits := make([]Limits, m.cfg.Cores)
+	for c := range limits {
 		base := -5 - r.IntN(36)
 		deepest := machine.MinOffset
-		for i := range edges[c].Isolated {
-			edges[c].Isolated[i] = machine.ClampOffset(base + r.IntN(3))
-			deepest = max(deepest, edges[c].Isolated[i])
+		for i := range limits[c].Alone {
+			limits[c].Alone[i] = machine.ClampOffset(base + r.IntN(3))
+			deepest = max(deepest, limits[c].Alone[i])
 		}
 		for i := range 5 {
-			edges[c].Resident[i] = machine.ClampOffset(edges[c].Isolated[i] + resident())
+			limits[c].Together[i] = machine.ClampOffset(limits[c].Alone[i] + together())
 		}
-		edges[c].Resident[5] = machine.ClampOffset(deepest + resident())
-		edges[c].Resident[6] = machine.ClampOffset(deepest + resident())
+		limits[c].Together[5] = machine.ClampOffset(deepest + together())
+		limits[c].Together[6] = machine.ClampOffset(deepest + together())
 	}
-	return edges
+	return limits
 }
 
 func fnv64(parts ...any) uint64 {
@@ -396,7 +396,7 @@ func (m *Machine) Sleep(ctx context.Context, d time.Duration) error {
 	return nil
 }
 
-func (m *Machine) IsolatedEdge(core int) int { return slices.Max(m.edges[core].Isolated[:]) }
+func (m *Machine) AloneLimit(core int) int { return slices.Max(m.limits[core].Alone[:]) }
 
 func (m *Machine) Crash() {
 	if m.nextReset == "" {

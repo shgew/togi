@@ -101,7 +101,7 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 		line.tag, line.text, line.tone = decisionText(d)
 	case *journal.CorePhase:
 		line.tag, line.text, line.tone = phaseText(d)
-	case *journal.GuardRotation:
+	case *journal.CheckingLap:
 		line.tag, line.text, line.tone = lapText(d)
 	case *journal.HuntStart:
 		line.tag, line.text, line.tone = tagHunt, fmt.Sprintf("#%d started: which cores caused it?", d.Hunt), warnTone
@@ -109,7 +109,7 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 		line.tag, line.text, line.tone = huntEndText(d)
 	case *journal.HuntSkipped:
 		line.tag, line.text = tagHunt, "not needed, these offsets already reach a known failure"
-	case *journal.MarkJoint:
+	case *journal.Combination:
 		text := membersText(d.Members, n)
 		if d.Fallback {
 			text += " kept as an unresolved, conservative limit"
@@ -117,7 +117,7 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 			text += " fail together"
 		}
 		line.tag, line.text, line.tone = tagCombo, text, warnTone
-	case *journal.RefineRound:
+	case *journal.DeepeningRound:
 		line.tag, line.text, line.tone = roundText(d)
 	case *journal.DeadEnd:
 		line.tag, line.text, line.tone = tagStop, "dead end: "+vtText(d.Detail), badTone
@@ -148,7 +148,7 @@ func (p *projector) trialEnd(line entry, d *journal.TrialEnd, cause []int) (entr
 	in := p.intents[d.Trial]
 	var what string
 	if in != nil {
-		if in.Condition == machine.Isolated && d.Outcome == journal.OutcomePass {
+		if in.Condition == machine.Alone && d.Outcome == journal.OutcomePass {
 			return entry{}, false
 		}
 		what = p.trialWhat(in)
@@ -225,7 +225,7 @@ func decisionText(d *journal.TunerDecision) (string, string, tone) {
 	switch d.Decision {
 	case journal.StepDeeper:
 		return tagSearch, fmt.Sprintf("core %02d passed %d, next %d", d.Core, d.FromOffset, d.ToOffset), plainTone
-	case journal.CheckEdge:
+	case journal.CheckSoloLimit:
 		return tagSearch, fmt.Sprintf("core %02d confirming %d as its solo limit", d.Core, d.ToOffset), plainTone
 	case journal.Deepen:
 		return tagDeeper, fmt.Sprintf("core %02d %d → %d", d.Core, d.FromOffset, d.ToOffset), goodTone
@@ -247,16 +247,16 @@ func phaseText(d *journal.CorePhase) (string, string, tone) {
 	return "", "", plainTone
 }
 
-func lapText(d *journal.GuardRotation) (string, string, tone) {
+func lapText(d *journal.CheckingLap) (string, string, tone) {
 	switch {
-	case d.Event == journal.RotationStart:
-		return tagLap, fmt.Sprintf("#%d started, %d steps", d.Rotation, len(d.Steps)), plainTone
-	case d.Clean && d.Qualifying:
-		return tagLap, fmt.Sprintf("#%d clean, every kind of test passed", d.Rotation), goodTone
-	case d.Clean:
-		return tagLap, fmt.Sprintf("#%d clean but missing %s", d.Rotation, vtText(strings.Join(d.Missing, ", "))), warnTone
+	case d.Event == journal.LapStart:
+		return tagLap, fmt.Sprintf("#%d started, %d steps", d.Lap, len(d.Steps)), plainTone
+	case d.Passed && d.Full:
+		return tagLap, fmt.Sprintf("#%d clean, every kind of test passed", d.Lap), goodTone
+	case d.Passed:
+		return tagLap, fmt.Sprintf("#%d clean but missing %s", d.Lap, vtText(strings.Join(d.Missing, ", "))), warnTone
 	}
-	return tagLap, fmt.Sprintf("#%d ended early: %s", d.Rotation, vtText(d.Reason)), warnTone
+	return tagLap, fmt.Sprintf("#%d ended early: %s", d.Lap, vtText(d.Reason)), warnTone
 }
 
 func huntEndText(d *journal.HuntEnd) (string, string, tone) {
@@ -265,7 +265,7 @@ func huntEndText(d *journal.HuntEnd) (string, string, tone) {
 		if len(d.Cores) == 1 {
 			return tagHunt, fmt.Sprintf("#%d found the culprit: core %02d", d.Hunt, d.Cores[0]), goodTone
 		}
-	case "joint":
+	case "combination":
 		return tagHunt, fmt.Sprintf("#%d found a combination", d.Hunt), warnTone
 	case "fallback":
 		return tagHunt, fmt.Sprintf("#%d unresolved: conservative limit over %s", d.Hunt, coreList(d.Cores)), warnTone
@@ -275,9 +275,9 @@ func huntEndText(d *journal.HuntEnd) (string, string, tone) {
 	return tagHunt, fmt.Sprintf("#%d ended: %s", d.Hunt, vtText(d.Reason)), plainTone
 }
 
-func roundText(d *journal.RefineRound) (string, string, tone) {
+func roundText(d *journal.DeepeningRound) (string, string, tone) {
 	switch {
-	case d.Event == journal.RotationStart:
+	case d.Event == journal.LapStart:
 		return tagRound, fmt.Sprintf("#%d: trying %s deeper", d.Round, coreList(d.Cores)), plainTone
 	case d.Passed:
 		return tagRound, fmt.Sprintf("#%d passed, the deeper offsets held", d.Round), goodTone
@@ -298,7 +298,7 @@ func (p *projector) trialWhat(in *journal.TrialIntent) string {
 	}
 	where := "on " + coresText(cores, len(p.st.Cores))
 	switch {
-	case in.Condition == machine.Isolated && in.Offset != nil:
+	case in.Condition == machine.Alone && in.Offset != nil:
 		where += fmt.Sprintf(" alone at %d", *in.Offset)
 	case len(cores) == 1:
 		if i := slices.IndexFunc(p.st.Cores, func(c journal.CoreState) bool { return c.Core == cores[0] }); i >= 0 && i < len(in.Profile) {
@@ -348,7 +348,7 @@ func coreList(cores []int) string {
 	return "cores " + strings.Join(parts, ", ")
 }
 
-func membersText(members []journal.JointMember, total int) string {
+func membersText(members []journal.CombinationMember, total int) string {
 	if len(members) > 4 {
 		cores := make([]int, len(members))
 		for i, m := range members {

@@ -22,13 +22,13 @@ func TestLoad(t *testing.T) {
 	evidence.Evidence = Evidence{Miss: 0.001, Rate: 0.25}
 	offsets := Default()
 	offsets.StartOffsets = map[int]int{3: -10}
-	edges := Default()
-	edges.StartOffsets = map[int]int{2: -5}
-	edges.CandidateEdges = map[int]int{3: -36}
-	rotation := Default()
+	soloLimits := Default()
+	soloLimits.StartOffsets = map[int]int{2: -5}
+	soloLimits.CandidateSoloLimits = map[int]int{3: -36}
+	lap := Default()
 	allCore := Default()
-	allCore.Durations.GuardAllCoreS = 4
-	rotation.Guard.Rotation = []machine.Regime{machine.R7}
+	allCore.Durations.CheckingAllCoreS = 4
+	lap.Checking.Lap = []machine.Regime{machine.R7}
 	user := Default()
 	user.BackendUser = "togi-trial"
 
@@ -43,11 +43,11 @@ func TestLoad(t *testing.T) {
 		{name: "backend user wrong type", content: "backend_user = 1001\n", wantErr: "backend_user"},
 		{name: "partial file", content: "[durations]\nsearch_trial_s = 60\n", want: partial},
 		{name: "start offset", content: "[start_offsets]\n3 = -10\n", want: offsets},
-		{name: "candidate edge beside another core's start offset", content: "[start_offsets]\n2 = -5\n[candidate_edges]\n3 = -36\n", want: edges},
-		{name: "candidate edge and start offset for one core", content: "[start_offsets]\n3 = -30\n[candidate_edges]\n3 = -36\n", wantErr: `start_offsets."3" and candidate_edges."3": set at most one per core`},
-		{name: "candidate edge below floor", content: "[candidate_edges]\n3 = -51\n", wantErr: `candidate_edges."3" = -51: offset must be within [-50, 0]`},
-		{name: "rotation replaced", content: "[guard]\nrotation = [\"R7\"]\n", want: rotation},
-		{name: "shortest all-core duration", content: "[durations]\nguard_all_core_s = 4\n", want: allCore},
+		{name: "candidate solo limit beside another core's start offset", content: "[start_offsets]\n2 = -5\n[candidate_solo_limits]\n3 = -36\n", want: soloLimits},
+		{name: "candidate solo limit and start offset for one core", content: "[start_offsets]\n3 = -30\n[candidate_solo_limits]\n3 = -36\n", wantErr: `start_offsets."3" and candidate_solo_limits."3": set at most one per core`},
+		{name: "candidate solo limit below floor", content: "[candidate_solo_limits]\n3 = -51\n", wantErr: `candidate_solo_limits."3" = -51: offset must be within [-50, 0]`},
+		{name: "lap replaced", content: "[checking]\nlap = [\"R7\"]\n", want: lap},
+		{name: "shortest all-core duration", content: "[durations]\nchecking_all_core_s = 4\n", want: allCore},
 		{name: "longest start", content: "[durations]\nstart_s = 86400\n", want: start},
 		{name: "zero start", content: "[durations]\nstart_s = 0\n", wantErr: "durations.start_s = 0: must be within [1, 86400]"},
 		{name: "start beyond a day", content: "[durations]\nstart_s = 86401\n", wantErr: "durations.start_s = 86401: must be within [1, 86400]"},
@@ -58,7 +58,7 @@ func TestLoad(t *testing.T) {
 		{name: "one rate", content: "[evidence]\nrate = 1\n", wantErr: "evidence.rate = 1: must be within (0, 1)"},
 		{name: "too many starts", content: "[evidence]\nrate = 1e-300\n", wantErr: "evidence: miss 0.05 and rate 1e-300 need more than 1000 starts per step"},
 		{name: "removed confirmation key takes precedence", content: "[durations]\nconfirmation_trial_s = 300\nbogus = 1\n", wantErr: "durations.confirmation_trial_s was removed in togi 0.5.0: confirmation no longer exists; delete the key"},
-		{name: "all-core duration too short to split", content: "[durations]\nguard_all_core_s = 3\n", wantErr: "durations.guard_all_core_s = 3: must be within [4, 86400]"},
+		{name: "all-core duration too short to split", content: "[durations]\nchecking_all_core_s = 3\n", wantErr: "durations.checking_all_core_s = 3: must be within [4, 86400]"},
 		{name: "unknown top-level key", content: "bogus = 1\n", wantErr: "unknown keys: bogus"},
 		{name: "unknown nested key", content: "[durations]\nsearch_s = 1\n", wantErr: "unknown keys: durations.search_s"},
 		{name: "syntax error", content: "[durations\n", wantErr: "load config"},
@@ -68,9 +68,9 @@ func TestLoad(t *testing.T) {
 		{name: "core not a number", content: "[start_offsets]\nx = -1\n", wantErr: `start_offsets."x": core must be a non-negative integer`},
 		{name: "negative core", content: "[start_offsets]\n-1 = -1\n", wantErr: `start_offsets."-1": core must be a non-negative integer`},
 		{name: "core not canonical", content: "[start_offsets]\n03 = -1\n", wantErr: `start_offsets."03": core must be a non-negative integer`},
-		{name: "zero duration", content: "[durations]\nguard_idle_s = 0\n", wantErr: "durations.guard_idle_s = 0: must be within [1, 86400]"},
-		{name: "empty rotation", content: "[guard]\nrotation = []\n", wantErr: "guard.rotation: must not be empty"},
-		{name: "rotation not a regime", content: "[guard]\nrotation = [\"R1\", \"R8\"]\n", wantErr: `guard.rotation[1] = "R8": not a regime`},
+		{name: "zero duration", content: "[durations]\nchecking_idle_s = 0\n", wantErr: "durations.checking_idle_s = 0: must be within [1, 86400]"},
+		{name: "empty lap", content: "[checking]\nlap = []\n", wantErr: "checking.lap: must not be empty"},
+		{name: "lap not a regime", content: "[checking]\nlap = [\"R1\", \"R8\"]\n", wantErr: `checking.lap[1] = "R8": not a regime`},
 		{name: "zero threshold", content: "[dead_ends]\nstray_crashes_in_a_row = 0\n", wantErr: "dead_ends.stray_crashes_in_a_row = 0: must be within [1, 100]"},
 		{name: "relative backend", content: "[backends]\nmprime = \"bin/mprime\"\n", wantErr: `backends.mprime = "bin/mprime": must be an absolute path`},
 	}
@@ -126,10 +126,10 @@ func TestEvidenceStarts(t *testing.T) {
 	}
 }
 
-func TestDefaultRotation(t *testing.T) {
+func TestDefaultLap(t *testing.T) {
 	t.Parallel()
 	want := []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R4, machine.R6}
-	if diff := cmp.Diff(want, Default().Guard.Rotation); diff != "" {
-		t.Fatalf("default rotation mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff(want, Default().Checking.Lap); diff != "" {
+		t.Fatalf("default lap mismatch (-want +got):\n%s", diff)
 	}
 }

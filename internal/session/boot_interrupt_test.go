@@ -157,12 +157,12 @@ func TestFailedBootCleanupNeverAuthorizesRebootOnResume(t *testing.T) {
 }
 
 type bootFacts struct {
-	Cores      []journal.CoreState
-	JointMarks []journal.JointMarkState
-	Guard      *journal.GuardState
-	Hunt       *journal.HuntState
-	Refine     *journal.RefineState
-	Evidence   []string
+	Cores        []journal.CoreState
+	Combinations []journal.CombinationState
+	Checking     *journal.CheckingState
+	Hunt         *journal.HuntState
+	Deepening    *journal.DeepeningState
+	Evidence     []string
 }
 
 func bootDecisionFacts(t *testing.T, in simRun) bootFacts {
@@ -172,14 +172,14 @@ func bootDecisionFacts(t *testing.T, in simRun) bootFacts {
 	engine := tuner.New()
 	journal.Replay(events, &state, engine)
 	engine.Project(&state)
-	facts := bootFacts{Cores: state.Cores, JointMarks: state.JointMarks, Guard: state.Guard, Hunt: state.Hunt, Refine: state.Refine}
-	decisive := []journal.Kind{journal.KindFailure, journal.KindCrashDetected, journal.KindMCE, journal.KindTrialIntent, journal.KindTunerDecision, journal.KindMarkJoint}
+	facts := bootFacts{Cores: state.Cores, Combinations: state.Combinations, Checking: state.Checking, Hunt: state.Hunt, Deepening: state.Deepening}
+	decisive := []journal.Kind{journal.KindFailure, journal.KindCrashDetected, journal.KindMCE, journal.KindTrialIntent, journal.KindTunerDecision, journal.KindCombination}
 	for _, e := range events {
 		if slices.Contains(decisive, e.Kind) {
 			facts.Evidence = append(facts.Evidence, e.Msg)
 		}
 	}
-	if len(facts.Cores) == 0 || len(facts.JointMarks) == 0 || len(facts.Evidence) == 0 {
+	if len(facts.Cores) == 0 || len(facts.Combinations) == 0 || len(facts.Evidence) == 0 {
 		t.Fatalf("decision facts missing from fixture: %+v", facts)
 	}
 	return facts

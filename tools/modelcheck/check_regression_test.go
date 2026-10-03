@@ -156,7 +156,7 @@ func TestCheckerRefusesMalformedStarts(t *testing.T) {
 
 func TestCheckerCountsIdleWithoutInventingExposure(t *testing.T) {
 	model := sim.DefaultModel()
-	model.NearEdgeRate = 0
+	model.NearLimitRate = 0
 	cfg := sim.Config{Model: &model}
 	var records []trialfacts.Record
 	for range 10 {

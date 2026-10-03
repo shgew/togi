@@ -229,7 +229,7 @@ func TestSignalBeforePowerLossSurvivesCrash(t *testing.T) {
 				t.Fatalf("durable backend evidence %+v, want %s on core 0", progress, signal)
 			}
 			stop := simulate(t, in)
-			if stop.Reason != StopRotations {
+			if stop.Reason != StopLaps {
 				t.Fatalf("stopped with %+v", stop)
 			}
 			var end *journal.TrialEnd
@@ -268,7 +268,7 @@ func TestPowerButtonBetweenTrialsIsInconclusive(t *testing.T) {
 	}
 	in := simInput(t.TempDir(), newSim(t, small()))
 	in.Machine.NextReset(machine.ResetPowerButton)
-	if stop := drive(t, in, crashAt(ref[index].Seq, in.Machine)); stop.Reason != StopRotations {
+	if stop := drive(t, in, crashAt(ref[index].Seq, in.Machine)); stop.Reason != StopLaps {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	crash, ok := crashDetectedFor(readEvents(t, in.Dir), ref[index].Boot)
@@ -363,7 +363,7 @@ func TestCorrectedMCESelectionSurvivesWallJump(t *testing.T) {
 			seams := in.Machine.Seams()
 			seams.Trials = jumpTrials{Trials: seams.Trials, jump: func() { in.Machine.JumpWall(jump) }}
 			stop, err := driveWithSeams(in, seams)
-			if err != nil || stop.Reason != StopRotations {
+			if err != nil || stop.Reason != StopLaps {
 				t.Fatalf("run %+v, %v", stop, err)
 			}
 			events := readEvents(t, in.Dir)
@@ -459,7 +459,7 @@ func TestInterruptedTrialDurationUsesMonotonicTimeAfterWallJump(t *testing.T) {
 			seams := in.Machine.Seams()
 			seams.Trials = &jumpAndCrashTrials{Trials: seams.Trials, m: in.Machine, jump: jump}
 			stop, err := driveWithSeams(in, seams)
-			if err != nil || stop.Reason != StopRotations {
+			if err != nil || stop.Reason != StopLaps {
 				t.Fatalf("resume after wall jump %+v, %v", stop, err)
 			}
 			events := readEvents(t, in.Dir)
@@ -858,23 +858,23 @@ func TestRecordOnlyPartialCrashContinuesWithoutTuningFailure(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			cfg := sim.Config{Seed: 4, Cores: 4, BIOS: []int{0, 0, 0, 0}, Edges: make([]sim.Edges, 4)}
-			for core := range cfg.Edges {
-				for i := range cfg.Edges[core].Isolated {
-					cfg.Edges[core].Isolated[i] = -50
+			cfg := sim.Config{Seed: 4, Cores: 4, BIOS: []int{0, 0, 0, 0}, Limits: make([]sim.Limits, 4)}
+			for core := range cfg.Limits {
+				for i := range cfg.Limits[core].Alone {
+					cfg.Limits[core].Alone[i] = -50
 				}
-				for i := range cfg.Edges[core].Resident {
-					cfg.Edges[core].Resident[i] = -50
+				for i := range cfg.Limits[core].Together {
+					cfg.Limits[core].Together[i] = -50
 				}
 			}
 			model := sim.DefaultModel()
 			model.CrashMCE = 0
 			cfg.Model = &model
 			in := simInput(t.TempDir(), newSim(t, cfg))
-			in.Config.CandidateEdges = map[int]int{0: -20, 1: -40, 2: -25, 3: -45}
+			in.Config.CandidateSoloLimits = map[int]int{0: -20, 1: -40, 2: -25, 3: -45}
 			in.Config.Durations.StartS = 1
-			in.Config.Durations.GuardTrialS = 1
-			in.Config.Durations.GuardAllCoreS = 1
+			in.Config.Durations.CheckingTrialS = 1
+			in.Config.Durations.CheckingAllCoreS = 1
 			in.Config.Evidence.Rate = 0.95
 			in.Config.Evidence.Miss = 0.2
 			in.Machine.NextReset(machine.ResetWatchdog)
@@ -887,16 +887,16 @@ func TestRecordOnlyPartialCrashContinuesWithoutTuningFailure(t *testing.T) {
 				t.Fatalf("partial crash: error %v, intent %+v", err, interrupted.intent)
 			}
 			partial := interrupted.intent
-			if partial.Regime != machine.R7 || partial.Step < 1 || partial.Rotation < 1 || len(partial.Cores) == 0 {
+			if partial.Regime != machine.R7 || partial.Step < 1 || partial.Lap < 1 || len(partial.Cores) == 0 {
 				t.Fatalf("partial intent fields not forwarded: %+v", partial)
 			}
 			before := readEvents(t, in.Dir)
-			var frozen *journal.GuardStep
+			var frozen *journal.CheckingStep
 			var intentSeq int
 			for _, e := range before {
 				switch p := e.Data.(type) {
-				case *journal.GuardStep:
-					if p.Rotation == partial.Rotation && p.Step == partial.Step {
+				case *journal.CheckingStep:
+					if p.Lap == partial.Lap && p.Step == partial.Step {
 						frozen = p
 					}
 				case *journal.TrialIntent:
@@ -917,11 +917,11 @@ func TestRecordOnlyPartialCrashContinuesWithoutTuningFailure(t *testing.T) {
 			if !errors.Is(err, errKilled) || resumed.next == nil {
 				t.Fatalf("partial continuation: error %v, next %+v", err, resumed.next)
 			}
-			if next := resumed.next; next.Trial == partial.Trial || next.Retry || next.Rerun || next.Hunt != 0 || next.Rotation != partial.Rotation || next.Step != partial.Step {
+			if next := resumed.next; next.Trial == partial.Trial || next.Retry || next.Rerun || next.Hunt != 0 || next.Lap != partial.Lap || next.Step != partial.Step {
 				t.Fatalf("partial failure retried, hunted or left its step: partial %+v, next %+v", partial, next)
 			}
 			if diff := cmp.Diff(partial.Profile, resumed.next.Profile); diff != "" {
-				t.Fatalf("partial crash changed resident offsets: %s", diff)
+				t.Fatalf("partial crash changed profile offsets: %s", diff)
 			}
 			events := readEvents(t, in.Dir)
 			var detected *journal.CrashDetected
@@ -940,19 +940,19 @@ func TestRecordOnlyPartialCrashContinuesWithoutTuningFailure(t *testing.T) {
 					if p.Trial == partial.Trial {
 						end = p
 					}
-				case *journal.GuardStep:
-					if p.Rotation == frozen.Rotation && p.Step == frozen.Step {
+				case *journal.CheckingStep:
+					if p.Lap == frozen.Lap && p.Step == frozen.Step {
 						snapshots++
 					}
-				case *journal.Failure, *journal.HuntStart, *journal.HuntSkipped, *journal.MarkJoint:
+				case *journal.Failure, *journal.HuntStart, *journal.HuntSkipped, *journal.Combination:
 					t.Fatalf("partial crash manufactured a failure decision: %+v", e)
 				case *journal.TunerDecision:
 					if p.Decision == journal.Backoff {
 						t.Fatalf("partial crash caused backoff: %+v", p)
 					}
 				case *journal.CorePhase:
-					if p.FailedMark != nil {
-						t.Fatalf("partial crash manufactured a failed mark: %+v", p)
+					if p.FailurePoint != nil {
+						t.Fatalf("partial crash manufactured a failure point: %+v", p)
 					}
 				}
 			}

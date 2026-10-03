@@ -18,8 +18,8 @@ func TestSimRefusesInvalidInputs(t *testing.T) {
 	}{
 		{"unknown flag", []string{"--unknown"}, 2, "flag provided but not defined: -unknown"},
 		{"positional argument", []string{"extra"}, 2, "sim: unexpected positional arguments"},
-		{"zero rotations", []string{"--rotations", "0"}, 2, "sim: --rotations must be a positive integer"},
-		{"negative rotations", []string{"--rotations", "-1"}, 2, "sim: --rotations must be a positive integer"},
+		{"zero laps", []string{"--laps", "0"}, 2, "sim: --laps must be a positive integer"},
+		{"negative laps", []string{"--laps", "-1"}, 2, "sim: --laps must be a positive integer"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer

@@ -15,15 +15,15 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func dashboardGuardEvents(extra ...journal.Payload) []journal.Event {
+func dashboardCheckingEvents(extra ...journal.Payload) []journal.Event {
 	return dashboardEvents(append([]journal.Payload{dashboardSession(),
-		&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -20, FailedMark: new(-21)},
-		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -30, FailedMark: new(-31)},
-		&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -50},
+		&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -20, FailurePoint: new(-21)},
+		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
+		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.ProfileChange{To: []int{-20, -30, -50}},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: []machine.Regime{machine.R1, machine.R2, machine.R7}},
-		&journal.TrialIntent{Trial: "guard", Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R2, Workload: "mprime-avx2-36k-248k", Core: new(1), Profile: []int{-20, -30, -50}, DurationS: 120, Rotation: 1},
-		&journal.TrialStart{Trial: "guard"},
+		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R1, machine.R2, machine.R7}},
+		&journal.TrialIntent{Trial: "checking", Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R2, Workload: "mprime-avx2-36k-248k", Core: new(1), Profile: []int{-20, -30, -50}, DurationS: 120, Lap: 1},
+		&journal.TrialStart{Trial: "checking"},
 	}, extra...)...)
 }
 
@@ -36,17 +36,17 @@ func TestDashboardActivityFrames(t *testing.T) {
 		width, height int
 	}{
 		{"search", dashboardEvents(dashboardSession(),
-			&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -25, Pass: new(-20), FailedMark: new(-40)},
-			&journal.TrialIntent{Trial: "search", Core: new(0), Offset: new(-25), Condition: machine.Isolated, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}},
+			&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -25, Pass: new(-20), FailurePoint: new(-40)},
+			&journal.TrialIntent{Trial: "search", Core: new(0), Offset: new(-25), Condition: machine.Alone, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}},
 			&journal.SMUReadback{Core: 0, Offset: -25},
 			&journal.TrialStart{Trial: "search"}), 200, 60},
 		{"hunt", dashboardHuntEvents(), 200, 60},
-		{"refine", dashboardRefineEvents(), 200, 60},
-		{"guard", dashboardGuardEvents(), 200, 60},
-		{"narrow", dashboardGuardEvents(), 90, 60},
+		{"deepening", dashboardDeepeningEvents(), 200, 60},
+		{"checking", dashboardCheckingEvents(), 200, 60},
+		{"narrow", dashboardCheckingEvents(), 90, 60},
 		{"dead-end", dashboardEvents(dashboardSession(),
-			&journal.Failure{Signal: machine.ComputationError, Attribution: journal.Attributed, Core: new(0), Offset: new(0), Condition: machine.Isolated, Profile: []int{0, 0, 0}},
-			&journal.CorePhase{Core: 0, To: journal.PhaseSearch, FailedMark: new(0)},
+			&journal.Failure{Signal: machine.ComputationError, Attribution: journal.Attributed, Core: new(0), Offset: new(0), Condition: machine.Alone, Profile: []int{0, 0, 0}},
+			&journal.CorePhase{Core: 0, To: journal.PhaseSearch, FailurePoint: new(0)},
 			&journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Core: new(0), Detail: "core 00 failed at CO 0"}), 160, 40},
 		{"no-session", nil, 120, 20},
 	} {
@@ -59,13 +59,13 @@ func TestDashboardActivityFrames(t *testing.T) {
 func TestDashboardNarrowTrackRetainsStages(t *testing.T) {
 	t.Parallel()
 	goal := Project(dashboardEvents(dashboardSession(),
-		&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -50},
-		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -50},
-		&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -50},
+		&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -50},
+		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -50},
+		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.ProfileChange{To: []int{-50, -50, -50}},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: config.Default().Guard.Rotation},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true},
-		&journal.TrialIntent{Trial: "watch", Core: new(0), Offset: new(-50), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Profile: []int{-50, -50, -50}},
+		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: config.Default().Checking.Lap},
+		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true},
+		&journal.TrialIntent{Trial: "watch", Core: new(0), Offset: new(-50), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: []int{-50, -50, -50}},
 		&journal.TrialStart{Trial: "watch"}))
 	for _, tc := range []struct {
 		name    string
@@ -73,9 +73,9 @@ func TestDashboardNarrowTrackRetainsStages(t *testing.T) {
 		current string
 	}{
 		{"search", Project(dashboardEvents(dashboardSession(), &journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -5})), "Find limits"},
-		{"guard", Project(dashboardGuardEvents()), "Test together"},
+		{"checking", Project(dashboardCheckingEvents()), "Test together"},
 		{"hunt", Project(dashboardHuntEvents()), "Test together"},
-		{"refine", Project(dashboardRefineEvents()), "Go deeper"},
+		{"deepening", Project(dashboardDeepeningEvents()), "Go deeper"},
 		{"goal", goal, "Keep checking"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -118,9 +118,9 @@ func TestDashboardShortMainFramesRetainCoreOffsets(t *testing.T) {
 		events  []journal.Event
 		current string
 	}{
-		{"guard", dashboardGuardEvents(), "Test together"},
+		{"checking", dashboardCheckingEvents(), "Test together"},
 		{"hunt", dashboardHuntEvents(), "Test together"},
-		{"refine", dashboardRefineEvents(), "Go deeper"},
+		{"deepening", dashboardDeepeningEvents(), "Go deeper"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := Project(tc.events)
@@ -162,10 +162,10 @@ func TestDashboardShortMainFramesRetainCoreOffsets(t *testing.T) {
 			}
 		})
 	}
-	s := Project(dashboardGuardEvents())
+	s := Project(dashboardCheckingEvents())
 	s.cores = nil
 	for id := range 16 {
-		s.cores = append(s.cores, coreView{id: id, ccd: id / 8, phase: journal.PhaseDone, applied: -20, tuned: -20})
+		s.cores = append(s.cores, coreView{id: id, ccd: id / 8, phase: journal.PhaseAtLimit, applied: -20, tuned: -20})
 	}
 	frame, _ := RenderView(s, Screen{Width: 90, Height: 24, Keys: true}, now)
 	if !strings.Contains(ansi.Strip(frame), "00  -20") {
@@ -182,7 +182,7 @@ func TestDashboardCompactStoppedOffsetsKeepDisclaimer(t *testing.T) {
 	payloads := []journal.Payload{start}
 	for id := range 16 {
 		payloads = append(payloads,
-			&journal.CorePhase{Core: id, To: journal.PhaseDone, Offset: -20, FailedMark: new(-21)},
+			&journal.CorePhase{Core: id, To: journal.PhaseAtLimit, Offset: -20, FailurePoint: new(-21)},
 			&journal.SMUReadback{Core: id, Offset: 0})
 	}
 	payloads = append(payloads,
@@ -240,7 +240,7 @@ func TestDashboardCoreRowsGroupUniqueSortedCCDs(t *testing.T) {
 func TestDashboardViews(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(1100, 0).UTC()
-	s := Project(dashboardGuardEvents())
+	s := Project(dashboardCheckingEvents())
 	for name, sc := range map[string]Screen{
 		"help":     {View: HelpView},
 		"help-end": {View: HelpView, Scroll: -1},
@@ -338,15 +338,15 @@ func TestRecordOnlyPartialTrial(t *testing.T) {
 	profile := []int{-20, -30, -50}
 	resumed := []int{-20, -10, -50}
 	events := dashboardEvents(dashboardSession(),
-		&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -20, FailedMark: new(-21)},
-		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -30, FailedMark: new(-31)},
-		&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -50},
+		&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -20, FailurePoint: new(-21)},
+		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
+		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.ProfileChange{To: profile},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: []machine.Regime{machine.R7}},
-		&journal.GuardStep{Rotation: 1, Step: 1, Profile: profile, Partials: []journal.GuardPartial{{CCD: 0, Cores: []int{1}}, {CCD: 1, Reason: "all CCD cores are done"}}},
+		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R7}},
+		&journal.CheckingStep{Lap: 1, Step: 1, Profile: profile, Partials: []journal.CheckingPartial{{CCD: 0, Cores: []int{1}}, {CCD: 1, Reason: "all CCD cores are at their limits"}}},
 		&journal.ProfileChange{From: profile, To: resumed},
 		&journal.SMUReadback{Core: 1, Offset: -10},
-		&journal.TrialIntent{Trial: "partial", Cores: []int{1}, RecordOnly: true, Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Profile: resumed, DurationS: 120, Rotation: 1, Step: 1},
+		&journal.TrialIntent{Trial: "partial", Cores: []int{1}, RecordOnly: true, Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Profile: resumed, DurationS: 120, Lap: 1, Step: 1},
 		&journal.TrialStart{Trial: "partial"},
 		&journal.TrialEnd{Trial: "partial", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError})
 	live := events[:len(events)-1]
@@ -359,7 +359,7 @@ func TestRecordOnlyPartialTrial(t *testing.T) {
 		t.Fatalf("the narrator must say a partial changes nothing and not call it a per-core step:\n%s", text)
 	}
 	if s.cores[0].loaded || !s.cores[1].loaded || s.cores[1].applied != -10 {
-		t.Fatalf("the partial must keep its step-start mask after the loaded core becomes shallowest: %+v", s.cores)
+		t.Fatalf("the partial must keep its step-start group after the loaded core becomes shallowest: %+v", s.cores)
 	}
 	for view, text := range map[string]string{
 		"narrator": strings.Join(st.paragraphs, " "),
@@ -367,13 +367,13 @@ func TestRecordOnlyPartialTrial(t *testing.T) {
 	} {
 		text = strings.Join(strings.Fields(ansi.Strip(text)), " ")
 		if !strings.Contains(text, "when the step started") || !strings.Contains(text, "even if offsets change") {
-			t.Errorf("%s must explain the frozen step-start mask, not the current shallowest offsets:\n%s", view, text)
+			t.Errorf("%s must explain the frozen step-start group, not the current shallowest offsets:\n%s", view, text)
 		}
 	}
 	if !slices.ContainsFunc(s.log, func(l entry) bool {
-		return strings.Contains(l.text, "CCD 1 record-only partial skipped: all CCD cores are done")
+		return strings.Contains(l.text, "CCD 1 record-only partial skipped: all CCD cores are at their limits")
 	}) {
-		t.Fatal("the log must show the guard step with its skipped partial's reason")
+		t.Fatal("the log must show the checking step with its skipped partial's reason")
 	}
 	ended := Project(events)
 	last := ended.history[len(ended.history)-1]

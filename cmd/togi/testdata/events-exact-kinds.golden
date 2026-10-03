@@ -1,2 +1,2 @@
 01:15:37 trial.end      trial 0413 PASS 90s | Tctl max 71°C
-01:15:37 tuner.decision core 07 passed R1+R2 at -32; next -37 (coarse, no failed mark yet)
+01:15:37 tuner.decision core 07 passed R1+R2 at -32; next -37 (coarse, no failure point yet)

@@ -18,7 +18,7 @@ import (
 	"github.com/shgew/togi/internal/tuningboot"
 )
 
-func TestRunFlagsRotationLimit(t *testing.T) {
+func TestRunFlagsLapLimit(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
@@ -26,22 +26,22 @@ func TestRunFlagsRotationLimit(t *testing.T) {
 		want int
 	}{
 		{name: "endless by default"},
-		{name: "one rotation", args: []string{"--rotations", "1"}, want: 1},
-		{name: "multiple rotations", args: []string{"--rotations=3"}, want: 3},
+		{name: "one lap", args: []string{"--laps", "1"}, want: 1},
+		{name: "multiple laps", args: []string{"--laps=3"}, want: 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var g globals
-			var rotations int
+			var laps int
 			var grubenv string
 			var noTUI bool
-			flags := runFlags(&g, &rotations, &grubenv, &noTUI)
+			flags := runFlags(&g, &laps, &grubenv, &noTUI)
 			var stdout, stderr bytes.Buffer
 			if code, ok := parseFlags(flags, tc.args, runHelp, &stdout, &stderr); !ok || code != exitOK {
 				t.Fatalf("parse: exit %d, ok %v, stderr %q", code, ok, stderr.String())
 			}
-			if diff := cmp.Diff(tc.want, rotations); diff != "" {
-				t.Fatalf("rotation limit (-want +got): %s", diff)
+			if diff := cmp.Diff(tc.want, laps); diff != "" {
+				t.Fatalf("lap limit (-want +got): %s", diff)
 			}
 		})
 	}
@@ -221,23 +221,23 @@ func TestPrintCleanStop(t *testing.T) {
 	}
 }
 
-func TestRunRejectsInvalidRotations(t *testing.T) {
+func TestRunRejectsInvalidLaps(t *testing.T) {
 	t.Parallel()
 	for _, value := range []string{"0", "-1", "many"} {
 		t.Run(value, func(t *testing.T) {
 			g := testGlobals(t)
 			var out, diagnostics bytes.Buffer
-			code := runRun(&g, []string{"--rotations", value}, &out, &diagnostics)
+			code := runRun(&g, []string{"--laps", value}, &out, &diagnostics)
 			if code != exitUsage || out.Len() != 0 {
 				t.Fatalf("exit %d, stdout %q", code, out.String())
 			}
 			firstLine, _, _ := strings.Cut(diagnostics.String(), "\n")
-			want := fmt.Sprintf("togi run: invalid value %q for flag -rotations: must be a positive integer", value)
+			want := fmt.Sprintf("togi run: invalid value %q for flag -laps: must be a positive integer", value)
 			if diff := cmp.Diff(want, firstLine); diff != "" {
-				t.Fatalf("rotation diagnostic (-want +got): %s", diff)
+				t.Fatalf("lap diagnostic (-want +got): %s", diff)
 			}
 			if diff := cmp.Diff(map[string]string{}, directoryFiles(t, g.stateDir)); diff != "" {
-				t.Fatalf("invalid rotations changed state: %s", diff)
+				t.Fatalf("invalid laps changed state: %s", diff)
 			}
 		})
 	}
@@ -253,7 +253,7 @@ func TestRunResultExitCodes(t *testing.T) {
 		want string
 	}{
 		{"signal", session.Stop{Reason: session.StopSignal}, nil, 0, ""},
-		{"rotations", session.Stop{Reason: session.StopRotations}, nil, 0, ""},
+		{"laps", session.Stop{Reason: session.StopLaps}, nil, 0, ""},
 		{"missing-core", session.Stop{}, session.ErrNoSuchCore, 2, "togi run: no such core\n"},
 		{"journal-locked", session.Stop{}, journal.ErrLocked, 3, "togi run: another togi process holds the journal lock\n"},
 		{"ordinary-error", session.Stop{}, errors.New("read failed\x1b[2J\nforged"), 1, "togi run: read failed\\x1b[2J\\nforged\n"},

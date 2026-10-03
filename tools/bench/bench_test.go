@@ -21,18 +21,18 @@ func TestMetrics(t *testing.T) {
 	}
 	add(0, &journal.SessionStart{Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}})
 	add(0, &journal.SessionBaseline{Offsets: []int{0, 0}})
-	add(0.1, &journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -10})
-	add(0.1, &journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -11})
+	add(0.1, &journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -10})
+	add(0.1, &journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -11})
 	add(0.2, &journal.ProfileChange{To: []int{-10, -11}})
 	add(0.3, &journal.TrialEnd{Trial: "1", DurationS: 90, Outcome: journal.OutcomePass})
 	add(0.4, &journal.CrashDetected{})
 	add(0.5, &journal.TrialEnd{Trial: "2", DurationS: 30, Outcome: journal.OutcomeFailure})
-	add(1, &journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true})
-	add(1.1, &journal.GuardRotation{Rotation: 2, Event: journal.RotationEnd, Clean: true})
-	add(1.4, &journal.HuntStart{Hunt: 1, Anchor: []int{-10, -11}, Candidates: []int{0, 1}})
-	add(1.5, &journal.MarkJoint{Mark: 1, Members: []journal.JointMember{{Core: 0, Offset: -12}, {Core: 1, Offset: -12}}})
-	add(2, &journal.ProfileApplied{Offsets: []int{0, 0}, Condition: machine.Masked})
-	m, err := sim.New(sim.Config{Cores: 2, Edges: []sim.Edges{{Flat: 0.00001, Isolated: [5]int{-20, -20, -20, -20, -20}, Resident: [7]int{-20, -20, -20, -20, -20, -20, -20}}, {Flat: 0.00002, Isolated: [5]int{-20, -20, -20, -20, -20}, Resident: [7]int{-20, -20, -20, -20, -20, -20, -20}}}})
+	add(1, &journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true})
+	add(1.1, &journal.CheckingLap{Lap: 2, Event: journal.LapEnd, Passed: true})
+	add(1.4, &journal.HuntStart{Hunt: 1, Parked: []int{-10, -11}, Candidates: []int{0, 1}})
+	add(1.5, &journal.Combination{Combination: 1, Members: []journal.CombinationMember{{Core: 0, Offset: -12}, {Core: 1, Offset: -12}}})
+	add(2, &journal.ProfileApplied{Offsets: []int{0, 0}, Condition: machine.Parked})
+	m, err := sim.New(sim.Config{Cores: 2, Limits: []sim.Limits{{Flat: 0.00001, Alone: [5]int{-20, -20, -20, -20, -20}, Together: [7]int{-20, -20, -20, -20, -20, -20, -20}}, {Flat: 0.00002, Alone: [5]int{-20, -20, -20, -20, -20}, Together: [7]int{-20, -20, -20, -20, -20, -20, -20}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,12 +41,12 @@ func TestMetrics(t *testing.T) {
 	for _, regime := range machine.Regimes {
 		hazards[regime] = 0.108
 	}
-	want := result{SimHours: 2, FirstCleanRotationH: new(1.0), CleanRotations: 2, Crashes: 1, Trials: 2, TrialHours: 120.0 / 3600, Hunts: 1, JointMarks: 1, FinalProfile: []int{-10, -11}, Depth: -21, HazardPerH: hazards, HazardMaxPerH: 0.108}
+	want := result{SimHours: 2, FirstPassedLapH: new(1.0), PassedLaps: 2, Crashes: 1, Trials: 2, TrialHours: 120.0 / 3600, Hunts: 1, Combinations: 1, FinalProfile: []int{-10, -11}, Depth: -21, HazardPerH: hazards, HazardMaxPerH: 0.108}
 	if diff := cmp.Diff(want, got, approx); diff != "" {
 		t.Fatalf("metrics (-want +got):\n%s", diff)
 	}
 	got = metrics(events[:6], m, 2)
-	if diff := cmp.Diff((*float64)(nil), got.FirstCleanRotationH); diff != "" {
+	if diff := cmp.Diff((*float64)(nil), got.FirstPassedLapH); diff != "" {
 		t.Fatal(diff)
 	}
 }

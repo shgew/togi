@@ -1,0 +1,12 @@
+hunt 2, group 3 | clean laps since last deepening: 0, latest lap 0
+session s1 started 1970-01-01T00:01:40Z
+in flight: none
+
+CORE  CCD  SLOT  OFFSET  PHASE     FAILURE  COMBINATIONS  QUEUED  LAST DECISION
+03    0    3     -10     at_limit  -        -             -       -
+07    0    7     -8      at_limit  -        -             -       -
+
+hunt 2 [#40]: unattributed computation_error in R7 trial 0001; parked offsets lap end #20
+  candidates 03 07
+GROUP  CORES                    OUTCOME  STARTS
+G3     03 at -10 with 07 at -8  running  2/5

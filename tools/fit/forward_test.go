@@ -131,8 +131,8 @@ func TestForwardCheck(t *testing.T) {
 	})
 	t.Run("log loss and constant", func(t *testing.T) {
 		model := sim.DefaultModel()
-		model.PastEdgeRate, model.NearEdgeRate, model.OnsetBoost = 0, 0, 0
-		cfg := sim.Config{Cores: 2, Model: &model, Edges: []sim.Edges{{Flat: math.Log(2)}, {}}}
+		model.PastLimitRate, model.NearLimitRate, model.OnsetBoost = 0, 0, 0
+		cfg := sim.Config{Cores: 2, Model: &model, Limits: []sim.Limits{{Flat: math.Log(2)}, {}}}
 		heldOut := []trialfacts.Record{record, record, record}
 		for i := range heldOut {
 			heldOut[i].Profile = []int{-1, 0}

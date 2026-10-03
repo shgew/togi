@@ -63,7 +63,7 @@ func report(out io.Writer, session facts.Session, since time.Time) error {
 	gaps := renderTime(tab, p, since)
 	renderFailures(tab, p, events, since, gaps)
 	renderHunts(tab, p, since)
-	renderGuard(tab, p, events, since)
+	renderChecking(tab, p, events, since)
 	renderEvidence(tab, p, events, since)
 	renderDepth(tab, p, since)
 	return renderOutcomes(tab, p, since)
