@@ -211,7 +211,7 @@ func TestRoundTrip(t *testing.T) {
 		&SessionBaseline{Offsets: []int{0, -5}},
 		&SessionNotice{Notice: NoticeNonzeroBaseline, Cores: []int{7}},
 		&SessionArchived{Session: "20261002T011407Z", Path: "archive/20261002T011407Z.jsonl"},
-		&SessionCarried{Sources: []CarriedSource{{Session: "20261001T000000Z", Path: "archive/20261001T000000Z.jsonl", Schema: 2, Ruleset: 2}}, FailurePoints: true, Carried: []CarriedCore{{Core: 7, SoloLimit: new(-30), SoloLimitSession: "20261001T000000Z", SoloLimitSeq: 12, FailurePoint: new(-31), FailurePointSession: "20261001T000000Z", FailurePointSeq: 14, FailurePointSignal: machine.Crash}}},
+		&SessionCarried{Sources: []CarriedSource{{Session: "20261001T000000Z", Path: "archive/20261001T000000Z.jsonl", Schema: 2, Ruleset: 2}}, FailurePoints: true, Carried: []CarriedCore{{Core: 7, CandidateSoloLimit: new(-30), CandidateSoloLimitSession: "20261001T000000Z", CandidateSoloLimitSeq: 12, FailurePoint: new(-31), FailurePointSession: "20261001T000000Z", FailurePointSeq: 14, FailurePointSignal: machine.Crash}}},
 		&ConfigLoaded{Path: "/etc/togi/config.toml", File: true, Config: cfg},
 		&PreflightCheck{Check: "root", Detail: "uid 0", OK: true},
 		&SMUIntent{Op: SMUSetAll, Offset: 0},

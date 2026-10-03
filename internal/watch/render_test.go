@@ -254,6 +254,25 @@ func TestDashboardViews(t *testing.T) {
 	}
 }
 
+func TestDashboardHelpFrameWidth(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1100, 0).UTC()
+	s := Project(dashboardCheckingEvents())
+	for _, width := range []int{80, 160} {
+		for _, scroll := range []int{0, -1} {
+			t.Run(fmt.Sprintf("width-%d-scroll-%d", width, scroll), func(t *testing.T) {
+				frame, _ := RenderView(s, Screen{View: HelpView, Keys: true, Scroll: scroll, Width: width, Height: 70}, now)
+				limit := margin + min(width-1-margin, frameWidth)
+				for i, line := range strings.Split(frame, "\n") {
+					if got := ansi.StringWidth(line); got > limit {
+						t.Errorf("line %d spans %d cells, frame allows %d: %q", i+1, got, limit, ansi.Strip(line))
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestPress(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

@@ -253,7 +253,7 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 				t.Fatalf("carry: %+v", carried)
 			}
 			core := carried.Carried[0]
-			if core.Core != 0 || core.SoloLimit == nil || *core.SoloLimit != -30 || core.SoloLimitSeq != 4 || core.FailurePoint == nil || *core.FailurePoint != -35 || core.FailurePointSeq != 8 {
+			if core.Core != 0 || core.CandidateSoloLimit == nil || *core.CandidateSoloLimit != -30 || core.CandidateSoloLimitSeq != 4 || core.FailurePoint == nil || *core.FailurePoint != -35 || core.FailurePointSeq != 8 {
 				t.Fatalf("known-event carry: %+v", core)
 			}
 		})
@@ -276,7 +276,7 @@ func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 	}
 	phases := firstPhases(events)
 	failurePoints := map[int]int{}
-	var soloLimits, withFailurePoints int
+	var candidateSoloLimits, withFailurePoints int
 	for _, cc := range carried.Carried {
 		p := phases[cc.Core]
 		if cc.FailurePoint != nil {
@@ -286,9 +286,9 @@ func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 				t.Errorf("core %02d starts %+v, carried failure point %d", cc.Core, p, *cc.FailurePoint)
 			}
 		}
-		if cc.SoloLimit != nil {
-			soloLimits++
-			want := *cc.SoloLimit
+		if cc.CandidateSoloLimit != nil {
+			candidateSoloLimits++
+			want := *cc.CandidateSoloLimit
 			if cc.FailurePoint != nil {
 				want = max(want, *cc.FailurePoint+1)
 			}
@@ -297,8 +297,8 @@ func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 			}
 		}
 	}
-	if soloLimits == 0 || withFailurePoints == 0 {
-		t.Fatalf("carried %d solo limits and %d failure points, want some of each", soloLimits, withFailurePoints)
+	if candidateSoloLimits == 0 || withFailurePoints == 0 {
+		t.Fatalf("carried %d candidate solo limits and %d failure points, want some of each", candidateSoloLimits, withFailurePoints)
 	}
 	for _, e := range events {
 		if p, ok := e.Data.(*journal.TrialIntent); ok && p.Condition == machine.Alone && p.Core != nil && p.Offset != nil {
@@ -319,7 +319,7 @@ func TestARulesetTransitionAfterABIOSChangeCarriesOnlySoloLimits(t *testing.T) {
 		t.Fatalf("session.carried %+v, want failure points left behind for the BIOS change", carried)
 	}
 	if len(carried.Carried) == 0 {
-		t.Fatal("no solo limits carried across the BIOS change")
+		t.Fatal("no candidate solo limits carried across the BIOS change")
 	}
 	for core, p := range firstPhases(events) {
 		if p.FailurePoint != nil {
@@ -452,7 +452,7 @@ func TestRulesetTransitionCarriesCulpritAndDirectHuntFailurePoints(t *testing.T)
 					cfg.Limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
 					cfg.Limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
 				}
-				cfg.Combinations = []sim.Combination{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
+				cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
 				c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 			} else {
 				cfg.Limits[1].Together[6] = -5

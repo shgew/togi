@@ -193,8 +193,8 @@ func (f carryFilesystemFixture) resume(t *testing.T) *journal.SessionCarried {
 	if result == nil || len(result.Sources) == 0 || result.Sources[0].Session != "A" || len(result.Carried) != 2 {
 		t.Fatalf("original lineage lost: %+v", result)
 	}
-	if core := result.Carried[0]; core.Core != 0 || core.SoloLimit == nil || *core.SoloLimit != -30 || core.SoloLimitSession != "A" || core.SoloLimitSeq != 7 {
-		t.Fatalf("reset epoch or passing solo limit lost: %+v", core)
+	if core := result.Carried[0]; core.Core != 0 || core.CandidateSoloLimit == nil || *core.CandidateSoloLimit != -30 || core.CandidateSoloLimitSession != "A" || core.CandidateSoloLimitSeq != 7 {
+		t.Fatalf("reset epoch or passing candidate solo limit lost: %+v", core)
 	}
 	if core := result.Carried[1]; core.Core != 1 || core.FailurePoint == nil || *core.FailurePoint != -31 || core.FailurePointSession != "A" || core.FailurePointSeq != 10 {
 		t.Fatalf("failure point lost: %+v", core)

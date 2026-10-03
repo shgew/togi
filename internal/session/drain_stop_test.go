@@ -49,9 +49,9 @@ func TestStopDrainsDurableFailureBoundaries(t *testing.T) {
 				}
 			}
 			if combination || unattributed {
-				cfg.Combinations = []sim.Combination{{Members: map[int]int{0: -30, 1: -30}, Regimes: []machine.Regime{machine.R7}, Rate: 1e6, Signal: machine.CorrectedMCE}}
+				cfg.Joints = []sim.Joint{{Members: map[int]int{0: -30, 1: -30}, Regimes: []machine.Regime{machine.R7}, Rate: 1e6, Signal: machine.CorrectedMCE}}
 				if zero {
-					cfg.Combinations[0].Members = map[int]int{0: 0, 1: 0}
+					cfg.Joints[0].Members = map[int]int{0: 0, 1: 0}
 				}
 				model := sim.DefaultModel()
 				model.CoreLocalBank = 0

@@ -53,7 +53,7 @@ func TestFactEligibilityAcrossArchiveChain(t *testing.T) {
 		{name: "reset epochs and defects", epoch: 1},
 		{name: "evidence epoch bump", epoch: 2},
 		{name: "BIOS archive boundary", epoch: 1, biosBoundary: true},
-		{name: "new BIOS carries only solo limits", epoch: 1, newBIOS: true},
+		{name: "new BIOS carries only candidate solo limits", epoch: 1, newBIOS: true},
 		{name: "unknown current BIOS carries no facts", epoch: 1, missingBIOS: true},
 		{name: "newest reset all", epoch: 1, resetAll: true},
 		{name: "newest core reset", epoch: 1, resetCore: true},
@@ -140,7 +140,7 @@ func TestFactEligibilityAcrossArchiveChain(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if len(carry.Facts) != 0 || len(carry.Cores) != 2 || carry.Cores[0].SoloLimit == nil || *carry.Cores[0].SoloLimit != -30 {
+				if len(carry.Facts) != 0 || len(carry.Cores) != 2 || carry.Cores[0].CandidateSoloLimit == nil || *carry.Cores[0].CandidateSoloLimit != -30 {
 					t.Fatalf("new BIOS must keep candidate solo limit without facts: %+v", carry)
 				}
 			}
@@ -452,7 +452,7 @@ func TestRulesetSevenToEightRetainsSameBIOSEvidenceAndFailurePoints(t *testing.T
 		t.Fatalf("transition sources: %s", diff)
 	}
 	if diff := cmp.Diff([]journal.CarriedCore{
-		{Core: 0, SoloLimit: new(-30), SoloLimitSession: pass.session, SoloLimitSeq: pass.seq},
+		{Core: 0, CandidateSoloLimit: new(-30), CandidateSoloLimitSession: pass.session, CandidateSoloLimitSeq: pass.seq},
 		{Core: 1, FailurePoint: new(-30), FailurePointSession: failure.session, FailurePointSeq: failurePoint, FailurePointSignal: machine.ComputationError},
 	}, got.Cores); diff != "" {
 		t.Fatalf("ordinary carried values (-want +got):\n%s", diff)

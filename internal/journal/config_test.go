@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -79,6 +80,54 @@ func TestConfigLoadedDecodesEveryShippedJournalBody(t *testing.T) {
 			}
 			if !found {
 				t.Fatal("fixture has no config.loaded body")
+			}
+		})
+	}
+}
+
+func TestReadReplayPreservesConfiguration(t *testing.T) {
+	t.Parallel()
+	for _, schema := range []int{1, 2, Schema} {
+		t.Run(fmt.Sprint(schema), func(t *testing.T) {
+			schedule := `"checking":{"lap":["R2","R7","R1"]}`
+			if schema < Schema {
+				schedule = `"guard":{"rotation":["R2","R7","R1"]}`
+			}
+			first := fmt.Sprintf(`{"seq":1,"kind":"session.start","schema":%d,"ruleset":8,"session":"replay"}`, schema)
+			second := fmt.Sprintf(`{"seq":2,"kind":"config.loaded","msg":"recorded configuration","schema":%d,"ruleset":8,"config":{"durations":{"start_s":7},"evidence":{"miss":0.01,"rate":0.2},%s}}`, schema, schedule)
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(first+"\n"+second+"\ntorn"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			events, torn, err := ReadReplay(dir, 8)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := &ConfigLoaded{
+				Schema: schema, Ruleset: 8,
+				Config: ConfigSnapshot{
+					Durations: ConfigDurations{StartS: 7},
+					Evidence:  ConfigEvidence{Miss: 0.01, Rate: 0.2},
+					Checking:  ConfigChecking{Lap: []machine.Regime{machine.R2, machine.R7, machine.R1}},
+				},
+			}
+			if diff := cmp.Diff(want, events[1].Data); diff != "" {
+				t.Fatalf("replay configuration (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff([]byte("torn"), torn); diff != "" {
+				t.Fatalf("torn tail (-want +got):\n%s", diff)
+			}
+			if schema == Schema {
+				current, currentTorn, err := Read(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := cmp.Diff(current, events); diff != "" {
+					t.Fatalf("current-schema replay (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(currentTorn, torn); diff != "" {
+					t.Fatalf("current-schema torn tail (-want +got):\n%s", diff)
+				}
 			}
 		})
 	}

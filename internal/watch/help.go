@@ -20,8 +20,8 @@ var help = []helpSection{
 		{"Find limits", "One core at a time, with every other core at 0, I move its offset deeper until a stress test fails, then confirm the deepest offset that passed with several passes in a row. That is its solo limit.", ""},
 		{"Test together", "All cores run at their offsets at once, through a lap: the configured list of tests. A full lap covers every required kind of load. Cores can be fine alone and still fail together.", ""},
 		{"Find the culprit", "When a test fails and nothing names a single core, I pause the lap and hunt: I rerun the test with some cores parked and narrow down, by halves, which cores cause it. I may find one core or a combination that fails together. If all tested groups pass, the suspects remain unresolved, and I keep their offsets shallower together as a precaution. A hunt can come at any time, so nothing can say how long tuning takes.", ""},
-		{"Go deeper", "Backing off after a failure can leave room elsewhere. After a clean lap I try to win depth back, checking every move.", ""},
-		{"Clean lap", "The goal: a full lap with all its checks passed at the resulting offsets and no room left to deepen. Earlier failures can lead to backing off and finishing this same lap.", ""},
+		{"Go deeper", "Backing off after a failure can leave room elsewhere. After a passed full lap I try to win depth back, checking every move.", ""},
+		{"Clean lap", "The goal: a passed full lap ending with every core at its limit, with no more total depth reachable. Ordinary steps pass; record-only partial steps complete either way. Earlier failures can lead to backing off and finishing this same lap.", ""},
 		{"Keep checking", "After that I keep running laps to catch rarer failures until you stop me.", ""},
 	}},
 	{"Reading the screen", []helpItem{
@@ -44,7 +44,7 @@ var help = []helpSection{
 		{"parked", "During a hunt: held at an offset that passed before, usually 0, so it can't be the cause.", ""},
 		{"solo limit", "The deepest offset a core passed with every other core at 0.", ""},
 		{"combination", "Offsets that must not be reached together. A hunt may prove the group fails together, or leave an unresolved group restricted as a precaution.", ""},
-		{"lap", "One pass through the configured list of tests. A clean lap has passing evidence for each scheduled check at the resulting offsets. Only a full lap covers every required kind of load.", ""},
+		{"lap", "One pass through the configured checking schedule. A passed lap has passing evidence for its ordinary steps; record-only partial steps only need to complete. A full lap covers every required kind of load. A clean lap is a passed full lap that ended with every core at its limit and remains valid for the current profile.", ""},
 		{"recorded only", "A partial all-core part of a lap step. Cores that had their CCD's shallowest offset when the step started stay idle, even if offsets change. Its result is kept on record but moves no offset. The lap needs it to finish, pass or fail, and it covers no required kind of load.", ""},
 		{"run", "One launch of one test. Confirming a solo limit, a hunt group or a deepening move needs several passes in a row. Ordinary lap steps can advance after one pass, while all-core steps also include repeated short runs and a long run.", ""},
 	}},
@@ -91,7 +91,8 @@ func helpLines(width int) []string {
 			}
 		}
 	}
-	return append(out, "", "", grey.Render("Passing tests can't prove offsets will never fail. They show which tests passed, and more laps catch rarer failures."))
+	out = append(out, "", "")
+	return append(out, wrapStyled("Passing tests can't prove offsets will never fail. They show which tests passed, and more laps catch rarer failures.", width, grey)...)
 }
 
 func testsSection() helpSection {

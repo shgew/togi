@@ -3,9 +3,6 @@
   TESTING TOGETHER  lap 1, step 1 of 3  ███████████████████░░░░░  0m27s left
 
 │ 
-│   parked                During a hunt: held at an offset that passed before,
-│                         usually 0, so it can't be the cause.
-│ 
 │   solo limit            The deepest offset a core passed with every other core
 │                         at 0.
 │ 
@@ -13,10 +10,12 @@
 │                         prove the group fails together, or leave an unresolved
 │                         group restricted as a precaution.
 │ 
-│   lap                   One pass through the configured list of tests. A clean
-│                         lap has passing evidence for each scheduled check at the
-│                         resulting offsets. Only a full lap covers every required
-│                         kind of load.
+│   lap                   One pass through the configured checking schedule. A
+│                         passed lap has passing evidence for its ordinary steps;
+│                         record-only partial steps only need to complete. A full
+│                         lap covers every required kind of load. A clean lap is a
+│                         passed full lap that ended with every core at its limit
+│                         and remains valid for the current profile.
 │ 
 │   recorded only         A partial all-core part of a lap step. Cores that had
 │                         their CCD's shallowest offset when the step started stay
@@ -38,8 +37,8 @@
 │                            web pages.
 │ 
 │   heavy vector load        One thread of heavy vector math, which draws the most
-█                            current.
-█                            Like video encoding, 3D rendering or scientific math
+│                            current.
+│                            Like video encoding, 3D rendering or scientific math
 █                            on one thread.
 █ 
 █   load steps               A load switched on and off in bursts, so the voltage
@@ -64,6 +63,7 @@
 █                            core.
 █ 
 █ 
-█ Passing tests can't prove offsets will never fail. They show which tests passed, and more laps catch rarer failures.
+█ Passing tests can't prove offsets will never fail. They show which tests passed,
+█ and more laps catch rarer failures.
 
-  ↑↓ PgUp PgDn  lines 82-144 of 144    ? or Esc back    L event log    q quit
+  ↑↓ PgUp PgDn  lines 87-149 of 149    ? or Esc back    L event log    q quit

@@ -34,7 +34,7 @@ A cost finding needs at least one dev run above the secondary threshold. Confirm
 A machine the tuner cannot possibly handle teaches nothing. Every candidate must satisfy all of these:
 
 - **P1, consistent with real evidence.** Start from a committed target fit, `tools/bench/machines/target-fit-<k>.toml`. Keep its `[bios_context]` and point `facts` at `tools/bench/facts/target.jsonl.gz` relative to the new file. The bench's model check must report `ok`: the machine still explains every real group with at least 10 starts. Keep `replay = true`, so trials matching real facts get real answers and the perturbation acts only where the real machine was not measured.
-- **P2, existing mechanisms only.** Use the parameters `docs/simulating.md` and `internal/sim/doc.go` describe: per-core, regime and workload limits, idle limits, past-limit, near-limit and flat rates, growth, onset boost, combinations, misleading MCEs and reset kinds. Keep rates and limits inside the fitter's ranges in [benchmarking](../../docs/benchmarking.md#fitting-the-target-machine).
+- **P2, existing mechanisms only.** Use the parameters `docs/simulating.md` and `internal/sim/doc.go` describe: per-core, regime and workload limits, idle limits, past-limit, near-limit and flat rates, growth, onset boost, joints, misleading MCEs and reset kinds. Keep rates and limits inside the fitter's ranges in [benchmarking](../../docs/benchmarking.md#fitting-the-target-machine).
 - **P3, a physical story.** State in one sentence what about a real CPU the change represents, such as a core whose AVX-512 limit is two counts shallower than its SSE limit, or a CCD that crashes only after ten minutes of heat soak.
 
 A machine built from the seeded default machine instead of a target fit has no P1 evidence. Report such findings separately as unanchored.
@@ -57,8 +57,8 @@ A machine built from the seeded default machine instead of a target fit has no P
 The committed `tools/bench/baseline.jsonl` already has unsafe conclusions. They are not new findings, but explaining them is the cheapest first experiment:
 
 - `default` seeds 21, 104, 106 and 114 conclude one count past a together R3 or R4 limit with a hazard of 92 failures/h: checking lap runs a single start of each, and one start misses about 5% of the time (#107).
-- `target` dev seeds 6, 8 and 13 conclude with an R7 hazard of 1.5–1.8/h, and holdout seed 111 with an R2 hazard of 12/h. Their mechanism is not yet explained.
-- `misleading-mce` seeds 3 and 103 conclude with an R7 hazard of 3.24/h from its second, unattributed combination. Its first combination deliberately leaves an MCE naming one core (#114), but neither final profile triggers that combination.
+- `target` dev seed 8 and holdout seed 115 conclude with an R7 hazard of 1.5–1.7/h. Their mechanism is not yet explained.
+- `target-r4-limit`, `target-nonmember-mce`, `target-delayed-joint` and `target-flat-risk` are earlier findings of this program (#107, #348, #105); their unsafe runs are what those scenarios exist to show.
 
 ## The loop
 

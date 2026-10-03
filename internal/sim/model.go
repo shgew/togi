@@ -109,7 +109,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	defer func() { err = errors.Join(err, r.sampleConditions(m.now.Sub(start), stallCore)) }()
 	failCore, failAt, forcedSignal := -1, spec.Duration, machine.Signal("")
 	idleFailure := false
-	var combinationCrash *Combination
+	var jointCrash *Joint
 	script, scripted := m.cfg.Script[spec.ID]
 	fact, replayed := m.replayDraw(spec)
 	switch {
@@ -148,30 +148,30 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 			if t < failAt {
 				failCore, failAt, forcedSignal = core, t, machine.Crash
 				idleFailure = false
-				combinationCrash = &Combination{}
+				jointCrash = &Joint{}
 			}
 		}
-		for j, combination := range m.cfg.Combinations {
-			rate := m.combinationRate(m.regs, spec.Regime, combination)
+		for j, joint := range m.cfg.Joints {
+			rate := m.jointRate(m.regs, spec.Regime, joint)
 			if rate <= 0 {
 				continue
 			}
 			core := -1
 			for _, c := range spec.Cores {
-				if _, ok := combination.Members[c]; ok {
+				if _, ok := joint.Members[c]; ok {
 					core = c
 					break
 				}
 			}
 			idle := core < 0
 			if idle {
-				core = slices.Min(slices.Collect(maps.Keys(combination.Members)))
+				core = slices.Min(slices.Collect(maps.Keys(joint.Members)))
 			}
-			t := m.failureDraw(rate, combination.AfterS, spec, core, fmt.Sprintf("joint-%d", j))
+			t := m.failureDraw(rate, joint.AfterS, spec, core, fmt.Sprintf("joint-%d", j))
 			if t < failAt {
-				failCore, failAt, forcedSignal = core, t, combination.Signal
+				failCore, failAt, forcedSignal = core, t, joint.Signal
 				idleFailure = idle
-				combinationCrash = &m.cfg.Combinations[j]
+				jointCrash = &m.cfg.Joints[j]
 				if idle || forcedSignal == "" {
 					forcedSignal = machine.Crash
 				}
@@ -246,7 +246,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 		}
 		r.progress(report, r.counted(machine.Result{Ran: failAt}))
 		if !replayed {
-			m.queueCrashMCE(rng, failCore, idleFailure, combinationCrash)
+			m.queueCrashMCE(rng, failCore, idleFailure, jointCrash)
 		}
 		m.Crash()
 		return machine.Result{}, machine.ErrCrashed
@@ -263,10 +263,10 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	return machine.Result{}, fmt.Errorf("simulated trial: no signal to draw from %v", m.model.Signals)
 }
 
-func (m *Machine) queueCrashMCE(rng *rand.Rand, core int, idle bool, combination *Combination) {
-	if combination != nil {
-		if combination.CrashMCECore != nil {
-			m.queued = append(m.queued, machine.MCE{CPU: *combination.CrashMCECore, Core: *combination.CrashMCECore, Bank: 0, BankType: machine.LoadStore})
+func (m *Machine) queueCrashMCE(rng *rand.Rand, core int, idle bool, joint *Joint) {
+	if joint != nil {
+		if joint.CrashMCECore != nil {
+			m.queued = append(m.queued, machine.MCE{CPU: *joint.CrashMCECore, Core: *joint.CrashMCECore, Bank: 0, BankType: machine.LoadStore})
 		}
 		return
 	}

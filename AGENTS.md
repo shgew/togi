@@ -96,7 +96,7 @@ CI (`.github/workflows/check.yml`) runs the Linux flake checks on GitHub-hosted 
 
 The Linux `module` check evaluates GRUB mirror constraints, the grubenv mount dependency and package overrides. `trial-scope-tests` builds the trial package's `hardware`-tagged test binary; `vm` runs its scope tests as root under real systemd, without stress backends or SMU access.
 
-`vm-restart-limit` covers systemd's restart-limit recovery with a stub package: `run` exits 2, while other invocations sleep. It checks three failed starts, recovery to the normal generation, GRUB's saved entry clearing and host-lock ownership without depending on the Go package, so Go-only changes reuse its cached result.
+`vm-restart-limit` covers systemd's restart-limit recovery with a stub package: `run` and `restart-limit` exit 2, while other invocations sleep. It checks three failed starts, the fallback leave reason when `restart-limit` itself fails, recovery to the normal generation, GRUB's saved entry clearing and host-lock ownership without depending on the Go package, so Go-only changes reuse its cached result.
 
 On macOS (aarch64-darwin) the dev shell, `just test`, `just gate`, `just sim` and the read-only commands work; `just check` builds `package`, `race`, `lint` and `fmt` and skips the VM tests, `just hardware` and the `integration` tests are Linux-only. Linux-only code follows the Go convention: OS-suffixed files (`_linux.go`, `_darwin.go`) for real implementations, and a `//go:build !linux` fallback returning a wrapped `errors.ErrUnsupported`.
 

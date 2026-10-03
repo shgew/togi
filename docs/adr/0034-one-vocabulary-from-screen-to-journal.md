@@ -55,12 +55,13 @@ Enums, payload fields, state keys and operator settings use the same names:
 | `checking.step` | `rotation` | `lap` |
 | `trial.intent` | `rotation`, `mask` | `lap`, `group` |
 | `shutdown` | `rotations` | `laps` |
-| `hunt.start` and `deepening.round` | `anchor`, `anchor_seq` | `parked`, `parked_seq` |
+| `hunt.start` | `anchor`, `anchor_seq` | `parked`, `parked_seq` |
+| `deepening.round` | `anchor`, `anchor_seq` | `base`, `base_seq` |
 | `hunt.group` | `mask`, `edge` | `group`, `probe` |
 | `hunt.end` | `masks` | `groups` |
 | `combination` | `mark` | `combination` |
 | `session.carried` | `marks` | `failure_points` |
-| `session.carried.carried[]` | `edge`, `edge_session`, `edge_seq` | `solo_limit`, `solo_limit_session`, `solo_limit_seq` |
+| `session.carried.carried[]` | `edge`, `edge_session`, `edge_seq` | `candidate_solo_limit`, `candidate_solo_limit_session`, `candidate_solo_limit_seq` |
 | `session.carried.carried[]` | `failed_mark`, `mark_session`, `mark_seq`, `mark_signal` | `failure_point`, `failure_point_session`, `failure_point_seq`, `failure_point_signal` |
 | `tuner.decision`, `core.phase` | `failed_mark` | `failure_point` |
 | `core.phase` | `check_edge`, `cleared_joint` | `check_solo_limit`, `cleared_combination` |
@@ -83,6 +84,6 @@ Other fields and messages built from these terms follow the same mapping. Names 
 
 ## Consequences
 
-`journal.Schema` increases from 2 to 3. This is breaking: the next `togi run` archives an older live session without appending to it, then starts a new session carrying its eligible solo limits, failure points and facts. Archive and history readers continue accepting schemas 1 and 2 by translating their kinds, fields and enum values into the schema-3 names before decoding. They do not rewrite the archived bytes. `tuner.Ruleset` and the evidence epoch do not change for this rename.
+`journal.Schema` increases from 2 to 3. This is breaking: the next `togi run` archives an older live session without appending to it, then starts a new session carrying its eligible candidate solo limits, failure points and facts. Archive and history readers continue accepting schemas 1 and 2 by translating their kinds, fields and enum values into the schema-3 names before decoding. They do not rewrite the archived bytes. `tuner.Ruleset` and the evidence epoch do not change for this rename.
 
 Configuration keys and the lap-count CLI flag change as listed above, with no aliases for the old settings or flag. Operators using explicit settings update them before running the new build. Current specs, help, tool programs and unreleased changelog fragments use the new vocabulary. ADRs 0001–0033 and released changelog entries retain their original words; this decision's tables translate them without changing their historical record.

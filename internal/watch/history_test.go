@@ -211,3 +211,26 @@ func TestProjectOrphanTrialIDIsEscaped(t *testing.T) {
 		t.Fatalf("orphan trial identifiers must not send controls to main history (-want +got):\n%s", diff)
 	}
 }
+
+func TestProjectDeepeningHistorySeparatesDeeperAndYieldedMembers(t *testing.T) {
+	t.Parallel()
+	events := dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, From: journal.PhaseSearch, To: journal.PhaseHasRoom, Offset: -20},
+		&journal.CorePhase{Core: 1, From: journal.PhaseSearch, To: journal.PhaseAtLimit, Offset: -30},
+		&journal.CorePhase{Core: 2, From: journal.PhaseSearch, To: journal.PhaseAtLimit, Offset: -10},
+		&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Target: []int{-22, -29, -10}, Profile: []int{-21, -29, -10}, Cores: []int{0, 1}},
+		&journal.TunerDecision{Core: 1, Phase: journal.PhaseDeepening, Decision: journal.Yield, FromOffset: -30, ToOffset: -29},
+		&journal.TunerDecision{Core: 0, Phase: journal.PhaseDeepening, Decision: journal.Deepen, FromOffset: -20, ToOffset: -21})
+	s := Project(events)
+	if diff := cmp.Diff([]string{
+		"start: session started on 3 cores",
+		"limit: core 00 solo limit -20",
+		"limit: core 01 solo limit -30",
+		"limit: core 02 solo limit -10",
+		"round: #2: core 00 goes deeper to -21, core 01 yields to -29",
+		"yield: core 01 -30 → -29 so others go deeper",
+		"deeper: core 00 -20 → -21",
+	}, historySentences(s)); diff != "" {
+		t.Fatalf("round history must describe each member's direction (-want +got):\n%s", diff)
+	}
+}

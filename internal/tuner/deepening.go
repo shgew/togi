@@ -67,8 +67,8 @@ func (s *State) roundStart() Action {
 			changed = append(changed, c.id)
 		}
 	}
-	parked := s.passedFullLaps[len(s.passedFullLaps)-1]
-	return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.nextRound + 1, Event: journal.LapStart, Parked: slices.Clone(parked.profile), ParkedSeq: parked.seq, Target: target, Profile: q, Cores: changed, Ranking: slices.Clone(s.ranking), Starts: s.n, StartS: s.durations.StartS}, Cause: []int{parked.seq}}
+	base := s.passedFullLaps[len(s.passedFullLaps)-1]
+	return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.nextRound + 1, Event: journal.LapStart, Base: slices.Clone(base.profile), BaseSeq: base.seq, Target: target, Profile: q, Cores: changed, Ranking: slices.Clone(s.ranking), Starts: s.n, StartS: s.durations.StartS}, Cause: []int{base.seq}}
 }
 
 func (s *State) roundMoves() (Action, bool) {

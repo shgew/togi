@@ -120,22 +120,22 @@ func (j *Journal) Read() (events []Event, torn []byte, err error) {
 }
 
 func (j *Journal) decode(data []byte, binary Build) ([]Event, int, error) {
-	if err := checkStart(data, binary, false); err != nil {
+	if err := checkStart(data, binary, readLive); err != nil {
 		return nil, 0, err
 	}
 	p := j.opts.Prefix
 	if p == nil {
-		return decodeLines(data, false)
+		return decodeLines(data, readLive)
 	}
 	if len(p.data) == 0 || !bytes.HasPrefix(data, p.data) {
-		events, end, err := decodeLines(data, false)
+		events, end, err := decodeLines(data, readLive)
 		if err != nil {
 			return nil, 0, err
 		}
 		p.data, p.events = data[:end], slices.Clip(events)
 		return events, end, nil
 	}
-	tail, end, err := decodeLinesAfter(data[len(p.data):], false, len(p.events))
+	tail, end, err := decodeLinesAfter(data[len(p.data):], readLive, len(p.events))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -157,7 +157,7 @@ func (j *Journal) parse(data []byte) ([]Event, int, error) {
 	decoded := j.decoded
 	j.decoded = nil
 	if decoded != nil && bytes.Equal(decoded.data, data) {
-		if err := checkStart(data, j.opts.Build, false); err != nil {
+		if err := checkStart(data, j.opts.Build, readLive); err != nil {
 			return nil, 0, err
 		}
 		return slices.Clone(decoded.events), decoded.end, nil
@@ -306,19 +306,27 @@ func (j *Journal) finishPendingArchive() (string, error) {
 	return id, nil
 }
 
+type readMode uint8
+
+const (
+	readLive readMode = iota
+	readHistory
+	readReplay
+)
+
 func parse(data []byte, binary Build) (events []Event, end int, err error) {
-	return parseEvents(data, binary, false)
+	return parseEvents(data, binary, readLive)
 }
 
-func parseEvents(data []byte, binary Build, history bool) (events []Event, end int, err error) {
-	if err := checkStart(data, binary, history); err != nil {
+func parseEvents(data []byte, binary Build, mode readMode) (events []Event, end int, err error) {
+	if err := checkStart(data, binary, mode); err != nil {
 		return nil, 0, err
 	}
-	return decodeLines(data, history)
+	return decodeLines(data, mode)
 }
 
 // checkStart refuses a journal whose session.start this binary cannot resume, before any other line is decoded.
-func checkStart(data []byte, binary Build, history bool) error {
+func checkStart(data []byte, binary Build, mode readMode) error {
 	line, _, ok := bytes.Cut(data, []byte{'\n'})
 	if !ok {
 		return nil
@@ -330,10 +338,10 @@ func checkStart(data []byte, binary Build, history bool) error {
 	if err := json.Unmarshal(line, &first); err != nil {
 		return fmt.Errorf("journal line 1: %w", err)
 	}
-	if history && (first.Schema < 1 || first.Schema > Schema) {
+	if mode != readLive && (first.Schema < 1 || first.Schema > Schema) {
 		return fmt.Errorf("journal schema %d cannot be read by schema %d", first.Schema, Schema)
 	}
-	if first.Kind != KindSessionStart || history {
+	if first.Kind != KindSessionStart || mode == readHistory {
 		return nil
 	}
 	if binary.Schema == 0 {
@@ -342,6 +350,12 @@ func checkStart(data []byte, binary Build, history bool) error {
 	recordedRuleset := first.Ruleset
 	if recordedRuleset == 0 {
 		recordedRuleset = 1
+	}
+	if mode == readReplay {
+		if recordedRuleset != binary.Ruleset {
+			return fmt.Errorf("journal ruleset %d cannot be replayed by ruleset %d; replay needs a journal from the current ruleset", recordedRuleset, binary.Ruleset)
+		}
+		return nil
 	}
 	if binary.Ruleset == 0 {
 		binary.Ruleset = recordedRuleset
@@ -359,18 +373,18 @@ func checkStart(data []byte, binary Build, history bool) error {
 // minDecodePart keeps small journals on one goroutine, where splitting costs more than it saves.
 const minDecodePart = 256 << 10
 
-func decodeLines(data []byte, history bool) (events []Event, end int, err error) {
-	return decodeLinesAfter(data, history, 0)
+func decodeLines(data []byte, mode readMode) (events []Event, end int, err error) {
+	return decodeLinesAfter(data, mode, 0)
 }
 
 // decodeLinesAfter decodes lines that follow the first `before` events of a journal.
-func decodeLinesAfter(data []byte, history bool, before int) (events []Event, end int, err error) {
+func decodeLinesAfter(data []byte, mode readMode, before int) (events []Event, end int, err error) {
 	end = bytes.LastIndexByte(data, '\n') + 1
 	if end == 0 {
 		return nil, 0, nil
 	}
 	legacy := false
-	if history {
+	if mode != readLive {
 		line, _, _ := bytes.Cut(data, []byte{'\n'})
 		var build Build
 		if err := json.Unmarshal(line, &build); err != nil {
@@ -378,7 +392,7 @@ func decodeLinesAfter(data []byte, history bool, before int) (events []Event, en
 		}
 		legacy = build.Schema < Schema
 	}
-	events, err = decodeParts(lineParts(data[:end], runtime.GOMAXPROCS(0), minDecodePart), history, legacy, before)
+	events, err = decodeParts(lineParts(data[:end], runtime.GOMAXPROCS(0), minDecodePart), mode == readHistory, legacy, before)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -464,9 +478,6 @@ func decodePart(part []byte, history, legacy bool) decodedPart {
 			return d
 		}
 		e.Raw = part[:i]
-		if legacy && e.Data != nil && e.Kind != KindConfigLoaded {
-			e.Msg = e.Data.Message()
-		}
 		d.events = append(d.events, e)
 		part = part[i+1:]
 	}
@@ -478,19 +489,19 @@ func Read(dir string) (events []Event, torn []byte, err error) {
 }
 
 func ReadFile(path string) (events []Event, torn []byte, err error) {
-	data, events, end, err := decodeFile(path)
+	data, events, end, err := decodeFile(path, Build{}, readLive)
 	if err != nil {
 		return nil, nil, err
 	}
 	return events, tornTail(data, end), nil
 }
 
-func decodeFile(path string) (data []byte, events []Event, end int, err error) {
+func decodeFile(path string, binary Build, mode readMode) (data []byte, events []Event, end int, err error) {
 	data, err = os.ReadFile(path)
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("read journal %s: %w", path, err)
 	}
-	events, end, err = parse(data, Build{})
+	events, end, err = parseEvents(data, binary, mode)
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("read journal %s: %w", path, err)
 	}
@@ -508,15 +519,19 @@ func tornTail(data []byte, end int) []byte {
 // resume compatibility. Unknown kinds remain opaque and a torn tail is ignored.
 // ConfigLoaded retains only its build stamp, not its historical configuration.
 func ReadHistory(path string) ([]Event, error) {
-	data, err := os.ReadFile(path)
+	_, events, _, err := decodeFile(path, Build{}, readHistory)
 	if err != nil {
-		return nil, fmt.Errorf("read journal %s: %w", path, err)
-	}
-	events, _, err := parseEvents(data, Build{}, true)
-	if err != nil {
-		return nil, fmt.Errorf("read journal %s: %w", path, err)
+		return nil, err
 	}
 	return events, nil
+}
+
+func ReadReplay(dir string, ruleset int) (events []Event, torn []byte, err error) {
+	data, events, end, err := decodeFile(filepath.Join(dir, eventsFile), Build{Schema: Schema, Ruleset: ruleset}, readReplay)
+	if err != nil {
+		return nil, nil, err
+	}
+	return events, tornTail(data, end), nil
 }
 
 var carryKinds = map[Kind]bool{
@@ -597,9 +612,6 @@ func ReadForCarry(path string) ([]Event, error) {
 			p = &ConfigLoaded{Build: b}
 		default:
 			continue
-		}
-		if legacy && p != nil && env.Kind != KindConfigLoaded {
-			env.Msg = p.Message()
 		}
 		events = append(events, Event{Seq: env.Seq, Time: env.Time, Mono: env.Mono, Boot: env.Boot, Kind: env.Kind, Msg: env.Msg, Cause: env.Cause, Data: p, Raw: raw})
 	}

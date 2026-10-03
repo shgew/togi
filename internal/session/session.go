@@ -970,8 +970,8 @@ func (r *runner) startSession() error {
 			start, reason, check = o, "configured candidate solo limit", true
 		} else if o, ok := r.in.Config.StartOffsets[c.Core]; ok {
 			start, reason = o, "configured start offset"
-		} else if has && cc.SoloLimit != nil {
-			start, reason, check = *cc.SoloLimit, fmt.Sprintf("candidate solo limit %d carried from session %s", *cc.SoloLimit, cc.SoloLimitSession), true
+		} else if has && cc.CandidateSoloLimit != nil {
+			start, reason, check = *cc.CandidateSoloLimit, fmt.Sprintf("candidate solo limit %d carried from session %s", *cc.CandidateSoloLimit, cc.CandidateSoloLimitSession), true
 		} else if start != b {
 			reason = fmt.Sprintf("baseline %d clamped to %d", b, start)
 		}
@@ -1046,7 +1046,7 @@ func (r *runner) recordCarry() error {
 		}
 		if !p.FailurePoints {
 			cc.FailurePoint, cc.FailurePointSession, cc.FailurePointSeq, cc.FailurePointSignal = nil, "", 0, ""
-			if cc.SoloLimit == nil {
+			if cc.CandidateSoloLimit == nil {
 				continue
 			}
 		}

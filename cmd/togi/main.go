@@ -47,15 +47,11 @@ var commands = []command{
 	{name: "events", summary: "Render the journal", help: eventsHelp, flags: func(g *globals) *flag.FlagSet {
 		return eventsFlags(g, &journal.Filter{}, new(bool))
 	}, run: runEvents},
-	{name: "reset", summary: "Reset one core or archive the session", help: resetHelp, flags: func(g *globals) *flag.FlagSet {
-		return resetFlags(g, new(*int), new(bool))
-	}, run: runReset},
+	{name: "reset", summary: "Reset one core or archive the session", run: runReset},
 	{name: "restart-limit", summary: "Recover after the tuning service reaches its restart limit", help: restartLimitHelp, flags: func(g *globals) *flag.FlagSet {
 		return restartLimitFlags(g, new(string))
 	}, run: runRestartLimit},
-	{name: "run", summary: "Start or resume the session in the foreground", help: runHelp, flags: func(g *globals) *flag.FlagSet {
-		return runFlags(g, new(int), new(string), new(bool))
-	}, run: runRun},
+	{name: "run", summary: "Start or resume the session in the foreground", run: runRun},
 	{name: "status", summary: "Show core failure points, combinations, activity and clean laps", help: statusHelp, flags: func(g *globals) *flag.FlagSet {
 		return newFlagSet("status", g)
 	}, run: runStatus},

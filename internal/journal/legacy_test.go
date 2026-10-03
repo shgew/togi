@@ -18,10 +18,10 @@ func TestTranslateLegacy(t *testing.T) {
 		{"step", `{"kind":"guard.step","rotation":3}`, `{"kind":"checking.step","lap":3}`},
 		{"member probe", `{"kind":"hunt.mask","mask":4,"edge":{"core":5,"offset":-30},"stage":"edge"}`, `{"kind":"hunt.group","group":4,"probe":{"core":5,"offset":-30},"stage":"probe"}`},
 		{"combination", `{"kind":"mark.joint","mark":3}`, `{"kind":"combination","combination":3}`},
-		{"deepening", `{"kind":"refine.round","anchor":[0,-20],"anchor_seq":8}`, `{"kind":"deepening.round","parked":[0,-20],"parked_seq":8}`},
+		{"deepening", `{"kind":"refine.round","anchor":[0,-20],"anchor_seq":8}`, `{"kind":"deepening.round","base":[0,-20],"base_seq":8}`},
 		{"hunt start", `{"kind":"hunt.start","anchor":[0,-20],"anchor_seq":8}`, `{"kind":"hunt.start","parked":[0,-20],"parked_seq":8}`},
 		{"hunt end", `{"kind":"hunt.end","masks":4,"result":"joint"}`, `{"kind":"hunt.end","groups":4,"result":"combination"}`},
-		{"carried values", `{"kind":"session.carried","marks":true,"carried":[{"core":0,"edge":-30,"edge_session":"old","edge_seq":4,"failed_mark":-31,"mark_session":"older","mark_seq":9,"mark_signal":"crash"}]}`, `{"kind":"session.carried","failure_points":true,"carried":[{"core":0,"solo_limit":-30,"solo_limit_session":"old","solo_limit_seq":4,"failure_point":-31,"failure_point_session":"older","failure_point_seq":9,"failure_point_signal":"crash"}]}`},
+		{"carried values", `{"kind":"session.carried","marks":true,"carried":[{"core":0,"edge":-30,"edge_session":"old","edge_seq":4,"failed_mark":-31,"mark_session":"older","mark_seq":9,"mark_signal":"crash"}]}`, `{"kind":"session.carried","failure_points":true,"carried":[{"core":0,"candidate_solo_limit":-30,"candidate_solo_limit_session":"old","candidate_solo_limit_seq":4,"failure_point":-31,"failure_point_session":"older","failure_point_seq":9,"failure_point_signal":"crash"}]}`},
 		{"phase", `{"kind":"core.phase","from":"resident","to":"done","failed_mark":-31,"check_edge":true,"cleared_joint":[3]}`, `{"kind":"core.phase","from":"has_room","to":"at_limit","failure_point":-31,"check_solo_limit":true,"cleared_combination":[3]}`},
 		{"decision", `{"kind":"tuner.decision","phase":"refine","decision":"check_edge","failed_mark":-31}`, `{"kind":"tuner.decision","phase":"deepening","decision":"check_solo_limit","failure_point":-31}`},
 		{"trial", `{"kind":"trial.intent","phase":"guard","condition":"resident","rotation":3,"mask":4,"seed":18446744073709551615}`, `{"kind":"trial.intent","phase":"checking","condition":"together","lap":3,"group":4,"seed":18446744073709551615}`},
@@ -71,12 +71,16 @@ func TestLegacyReadersPreserveRecordedLines(t *testing.T) {
 	for _, schema := range []int{1, 2} {
 		t.Run(fmt.Sprint(schema), func(t *testing.T) {
 			first := fmt.Sprintf(`{"seq":1,"kind":"session.start","schema":%d,"session":"old"}`, schema)
-			second := `{"seq":2,"kind":"trial.intent","trial":"0001","condition":"isolated","phase":"guard","rotation":3,"mask":4}`
-			path := filepath.Join(t.TempDir(), "old.jsonl")
+			second := `{"seq":2,"kind":"trial.intent","msg":"isolated trial under guard: raw diagnostic \u001b[31mfailed\u001b[0m\n","trial":"0001","condition":"isolated","phase":"guard","rotation":3,"mask":4}`
+			path := filepath.Join(t.TempDir(), "events.jsonl")
 			if err := os.WriteFile(path, []byte(first+"\n"+second+"\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			for _, read := range []func(string) ([]Event, error){ReadHistory, ReadForCarry} {
+			readReplay := func(path string) ([]Event, error) {
+				events, _, err := ReadReplay(filepath.Dir(path), 1)
+				return events, err
+			}
+			for _, read := range []func(string) ([]Event, error){ReadHistory, ReadForCarry, readReplay} {
 				events, err := read(path)
 				if err != nil {
 					t.Fatal(err)
@@ -87,6 +91,9 @@ func TestLegacyReadersPreserveRecordedLines(t *testing.T) {
 				}
 				if diff := cmp.Diff(second, string(events[1].Raw)); diff != "" {
 					t.Fatalf("recorded line (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff("isolated trial under guard: raw diagnostic \x1b[31mfailed\x1b[0m\n", events[1].Msg); diff != "" {
+					t.Fatalf("recorded message (-want +got):\n%s", diff)
 				}
 				if diff := cmp.Diff(schema, events[0].Data.(*SessionStart).Schema); diff != "" {
 					t.Fatalf("provenance schema (-want +got):\n%s", diff)

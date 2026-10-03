@@ -14,7 +14,7 @@ func TestOperatorRecoveryAndDecisionMessages(t *testing.T) {
 		payload Payload
 		want    string
 	}{
-		{"carry excludes failure points", &SessionCarried{Sources: []CarriedSource{{Session: "old", Schema: 1, Ruleset: 3}}, Detail: "BIOS context changed", Carried: []CarriedCore{{Core: 7, SoloLimit: new(-30)}}}, "carried 1 candidate solo limits from session old (schema 1, ruleset 3); failure points stay behind: BIOS context changed"},
+		{"carry excludes failure points", &SessionCarried{Sources: []CarriedSource{{Session: "old", Schema: 1, Ruleset: 3}}, Detail: "BIOS context changed", Carried: []CarriedCore{{Core: 7, CandidateSoloLimit: new(-30)}}}, "carried 1 candidate solo limits from session old (schema 1, ruleset 3); failure points stay behind: BIOS context changed"},
 		{"preflight refusal", &PreflightCheck{Check: "driver", Detail: "unsupported CPU", OK: false}, "preflight driver: FAILED (unsupported CPU)"},
 		{"read error", &SMUError{Op: SMURead, Core: new(7), Error: "mailbox unavailable"}, "SMU read core 07 failed: mailbox unavailable"},
 		{"write all", &SMUWrite{Op: SMUSetAll, Offset: 0}, "SMU wrote all cores CO 0"},

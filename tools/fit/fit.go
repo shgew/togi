@@ -241,7 +241,7 @@ func initialConfig(records []trialfacts.Record) sim.Config {
 			}
 		}
 		if found {
-			cfg.Combinations = append(cfg.Combinations, sim.Combination{Members: members, Regimes: []machine.Regime{machine.R7}, Rate: 0.005, Signal: machine.Crash})
+			cfg.Joints = append(cfg.Joints, sim.Joint{Members: members, Regimes: []machine.Regime{machine.R7}, Rate: 0.005, Signal: machine.Crash})
 		}
 	}
 	return cfg
@@ -264,9 +264,9 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 	previous := math.Inf(1)
 	for range 12 {
 		if cfg.CCD == nil {
-			l.fitCombinations(&cfg)
+			l.fitJoints(&cfg)
 			for ccd := range 2 {
-				l.addCombination(&cfg, records, ccd)
+				l.addJoint(&cfg, records, ccd)
 			}
 		} else {
 			l.fitCCD(&cfg)
@@ -292,25 +292,25 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 	return cfg, l.score(all)
 }
 
-func (l *likelihood) fitCombinations(cfg *sim.Config) {
-	for j := range cfg.Combinations {
-		combination := &cfg.Combinations[j]
-		indices := l.selectObs(func(o observation) bool { return slices.Contains(combination.Regimes, o.spec.Regime) })
-		l.continuous(func() float64 { return combination.Rate }, func(x float64) { combination.Rate = max(x, 1e-12) }, indices, 1e-7, 0.5)
+func (l *likelihood) fitJoints(cfg *sim.Config) {
+	for j := range cfg.Joints {
+		joint := &cfg.Joints[j]
+		indices := l.selectObs(func(o observation) bool { return slices.Contains(joint.Regimes, o.spec.Regime) })
+		l.continuous(func() float64 { return joint.Rate }, func(x float64) { joint.Rate = max(x, 1e-12) }, indices, 1e-7, 0.5)
 		for core := range cfg.Cores {
-			limit, ok := combination.Members[core]
+			limit, ok := joint.Members[core]
 			if !ok {
 				continue
 			}
 			best, score := limit, l.score(indices)
 			for candidate := -50; candidate <= 0; candidate++ {
-				combination.Members[core] = candidate
+				joint.Members[core] = candidate
 				v := l.rawScore(indices)
 				if v < score-1e-9 && l.admissible() {
 					best, score = candidate, v
 				}
 			}
-			combination.Members[core] = best
+			joint.Members[core] = best
 		}
 	}
 }
@@ -398,10 +398,10 @@ func (l *likelihood) fitIdle(cfg *sim.Config) {
 	}
 }
 
-func (l *likelihood) addCombination(cfg *sim.Config, records []trialfacts.Record, ccd int) {
+func (l *likelihood) addJoint(cfg *sim.Config, records []trialfacts.Record, ccd int) {
 	count := 0
-	for _, combination := range cfg.Combinations {
-		if _, ok := combination.Members[ccd*cfg.Cores/2]; ok {
+	for _, joint := range cfg.Joints {
+		if _, ok := joint.Members[ccd*cfg.Cores/2]; ok {
 			count++
 		}
 	}
@@ -411,13 +411,13 @@ func (l *likelihood) addCombination(cfg *sim.Config, records []trialfacts.Record
 	indices := l.selectObs(func(o observation) bool { return o.spec.Regime == machine.R7 })
 	baseline := l.score(indices)
 	bestScore := baseline - 0.5
-	var best sim.Combination
+	var best sim.Joint
 	seen := make(map[string]bool)
-	original := len(cfg.Combinations)
-	cfg.Combinations = append(cfg.Combinations, sim.Combination{Regimes: []machine.Regime{machine.R7}, Rate: 0.001, Signal: machine.Crash})
+	original := len(cfg.Joints)
+	cfg.Joints = append(cfg.Joints, sim.Joint{Regimes: []machine.Regime{machine.R7}, Rate: 0.001, Signal: machine.Crash})
 	l.cfg = *cfg
 	l.rebuild()
-	candidate := &cfg.Combinations[original]
+	candidate := &cfg.Joints[original]
 	for _, r := range records {
 		if r.Class.Regime != machine.R7 || r.Outcome != journal.OutcomeFailure {
 			continue
@@ -438,8 +438,8 @@ func (l *likelihood) addCombination(cfg *sim.Config, records []trialfacts.Record
 		}
 		seen[string(key)] = true
 		duplicate := false
-		for _, combination := range cfg.Combinations[:original] {
-			duplicate = duplicate || maps.Equal(combination.Members, members)
+		for _, joint := range cfg.Joints[:original] {
+			duplicate = duplicate || maps.Equal(joint.Members, members)
 		}
 		if duplicate {
 			continue
@@ -452,9 +452,9 @@ func (l *likelihood) addCombination(cfg *sim.Config, records []trialfacts.Record
 		}
 	}
 	if best.Members == nil {
-		cfg.Combinations = cfg.Combinations[:original]
+		cfg.Joints = cfg.Joints[:original]
 	} else {
-		cfg.Combinations[original] = best
+		cfg.Joints[original] = best
 	}
 	l.cfg = *cfg
 	l.rebuild()
@@ -527,9 +527,9 @@ func cloneMachine(cfg sim.Config) sim.Config {
 			cfg.Limits[core].Idle = &value
 		}
 	}
-	cfg.Combinations = slices.Clone(cfg.Combinations)
-	for j := range cfg.Combinations {
-		cfg.Combinations[j].Members = maps.Clone(cfg.Combinations[j].Members)
+	cfg.Joints = slices.Clone(cfg.Joints)
+	for j := range cfg.Joints {
+		cfg.Joints[j].Members = maps.Clone(cfg.Joints[j].Members)
 	}
 	return cfg
 }

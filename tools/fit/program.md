@@ -47,7 +47,7 @@ Everything else is frozen, especially:
 Breaking any rule invalidates an experiment, however good its loss looks.
 
 - **Forward only.** Fit and score only the unsealed sessions during dev experiments. The unsealed reference, candidate confirmation and full-extract F4 check run only after selecting a dev winner; their sealed outcomes must not guide subsequent experiments. Never edit the extract. No parameter may be keyed to a session, ruleset, date, sequence number or trial ID.
-- **No memorized profiles.** Parameters describe cores, CCDs, regimes, workloads, offsets and durations, never one applied profile. The current R7 combinations are memorized failing profiles; replacing them is in scope, adding more is not.
+- **No memorized profiles.** Parameters describe cores, CCDs, regimes, workloads, offsets and durations, never one applied profile. The current R7 joints are memorized failing profiles; replacing them is in scope, adding more is not.
 - **One rule for draws and scores.** Simulated trials draw failures from the same rules that `Machine.FailureProbability` and `Machine.Hazard` report. A score computed from a model the simulator does not run measures nothing.
 - **Deterministic.** Fixed inputs reproduce the forward scores and machine files byte for byte; elapsed wall-time lines are excluded.
 - **Fit time.** Report the `Forward-chained elapsed` line. A change that more than doubles it needs a reason in the report.
@@ -55,7 +55,7 @@ Breaking any rule invalidates an experiment, however good its loss looks.
 
 ## The loop
 
-1. **Hypothesis.** Write one falsifiable sentence naming the structure, the held-out starts it should explain and the expected effect. Example: a smooth per-CCD R7 hazard in place of memorized combinations should turn most of the ruleset-4 R7 failures now at p < 0.01 into expected ones without predicting more than twice the observed R7 failures.
+1. **Hypothesis.** Write one falsifiable sentence naming the structure, the held-out starts it should explain and the expected effect. Example: a smooth per-CCD R7 hazard in place of memorized joints should turn most of the ruleset-4 R7 failures now at p < 0.01 into expected ones without predicting more than twice the observed R7 failures.
 2. **Bound it before building it.** Use the per-regime rows of `runs/<best>.txt` to see where predicted and observed failures diverge. If the starts the idea targets cannot move the pooled loss by more than 0.005 per start, pick another idea.
 3. **Implement the smallest change** that tests the hypothesis, in one commit. Run the required tests.
 4. **Score:** `just forward --seal 1 > runs/<n>.txt`.

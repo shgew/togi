@@ -24,7 +24,7 @@ func carriedFixture(t *testing.T, m *sim.Machine) *carry.Carry {
 	return &carry.Carry{
 		Context: &bios,
 		Sources: []journal.CarriedSource{{Session: "20261001T000000Z", Ruleset: 6, Schema: journal.Schema}},
-		Cores:   []journal.CarriedCore{{Core: 0, SoloLimit: new(-12), SoloLimitSession: "20261001T000000Z", SoloLimitSeq: 10}},
+		Cores:   []journal.CarriedCore{{Core: 0, CandidateSoloLimit: new(-12), CandidateSoloLimitSession: "20261001T000000Z", CandidateSoloLimitSeq: 10}},
 		Facts: []facts.Fact{
 			{Kind: facts.TrialFact, Session: "20260930T000000Z", Seq: 20, Time: at.Add(-time.Hour), Build: build, Ruleset: 6, Epoch: tuner.EvidenceEpoch, Trial: "0003", Boot: "original-boot", Class: facts.Class{Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Cores: []int{0}, DurationS: 90}, Condition: machine.Alone, Phase: journal.PhaseSearch, Profile: []int{-12, 0}, Outcome: journal.OutcomePass, DurationS: 90},
 			{Kind: facts.TrialFact, Session: "20261001T000000Z", Seq: 10, Time: at, Build: build, Ruleset: 6, Epoch: tuner.EvidenceEpoch, Trial: "0001", Boot: "source-boot", Class: facts.Class{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 90}, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: []int{-12, -13}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 11},
@@ -115,7 +115,7 @@ func TestCarryFactsRequireSameBIOS(t *testing.T) {
 				commitment = p
 			}
 		}
-		if commitment == nil || commitment.FailurePoints || len(commitment.Carried) != 1 || commitment.Carried[0].SoloLimit == nil || *commitment.Carried[0].SoloLimit != -12 {
+		if commitment == nil || commitment.FailurePoints || len(commitment.Carried) != 1 || commitment.Carried[0].CandidateSoloLimit == nil || *commitment.Carried[0].CandidateSoloLimit != -12 {
 			t.Fatalf("BIOS transition did not retain only candidate solo limit: %#v", commitment)
 		}
 	}

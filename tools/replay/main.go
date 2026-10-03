@@ -21,6 +21,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/tuner"
 	"github.com/shgew/togi/internal/watch"
 )
 
@@ -49,7 +50,7 @@ func run(args []string, out *os.File, errOut io.Writer) error {
 	if *dir == "" || flags.NArg() != 0 || *speed <= 0 || math.IsNaN(*speed) || math.IsInf(*speed, 0) {
 		return fmt.Errorf("replay: --state-dir is required and --speed must be finite and positive")
 	}
-	events, _, err := journal.Read(*dir)
+	events, _, err := journal.ReadReplay(*dir, tuner.Ruleset)
 	if err != nil {
 		return fmt.Errorf("replay: read journal: %w", err)
 	}
