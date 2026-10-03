@@ -21,7 +21,7 @@ focus +args:
 # Run the hardware tests on the target machine (Linux only)
 [group('test')]
 hardware *args:
-    {{ dev }} go test -tags hardware -p 1 ./... "$@"
+    {{ dev }} env TMPDIR=/tmp go test -tags hardware -p 1 ./... "$@"
 
 # Fuzz the journal parser for the given time (`just fuzz 5m`); failures land in internal/journal/testdata/fuzz
 [group('test')]
