@@ -297,14 +297,21 @@ func execute(o options, stdout, stderr io.Writer) error {
 	return nil
 }
 
-func simulate(binary, root string, spec runSpec, timeout time.Duration) (result, error) {
+type simulation struct {
+	dir      string
+	exit     int
+	wall     float64
+	timedOut bool
+}
+
+func launchSimulator(binary, root string, spec runSpec, timeout time.Duration) (simulation, error) {
 	dir := filepath.Join(root, spec.scenario.Name, fmt.Sprintf("%s-%d", spec.split, spec.seed))
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return result{}, fmt.Errorf("create run %s: %w", dir, err)
+		return simulation{}, fmt.Errorf("create run %s: %w", dir, err)
 	}
 	log, err := os.Create(filepath.Join(dir, "sim.log"))
 	if err != nil {
-		return result{}, fmt.Errorf("create run log: %w", err)
+		return simulation{}, fmt.Errorf("create run log: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -322,7 +329,7 @@ func simulate(binary, root string, spec runSpec, timeout time.Duration) (result,
 	wall := time.Since(started).Seconds()
 	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
 	if closeErr := log.Close(); closeErr != nil {
-		return result{}, fmt.Errorf("close run log: %w", closeErr)
+		return simulation{}, fmt.Errorf("close run log: %w", closeErr)
 	}
 	exit := 0
 	if err != nil {
@@ -333,10 +340,18 @@ func simulate(binary, root string, spec runSpec, timeout time.Duration) (result,
 		case timedOut:
 			exit = -1
 		default:
-			return result{}, fmt.Errorf("start simulator: %w", err)
+			return simulation{}, fmt.Errorf("start simulator: %w", err)
 		}
 	}
-	events, _, err := journal.Read(dir)
+	return simulation{dir: dir, exit: exit, wall: wall, timedOut: timedOut}, nil
+}
+
+func simulate(binary, root string, spec runSpec, timeout time.Duration) (result, error) {
+	run, err := launchSimulator(binary, root, spec, timeout)
+	if err != nil {
+		return result{}, err
+	}
+	events, _, err := journal.Read(run.dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return result{}, fmt.Errorf("read run journal: %w", err)
 	}
@@ -351,14 +366,14 @@ func simulate(binary, root string, spec runSpec, timeout time.Duration) (result,
 		cores = 16
 	}
 	r := metrics(events, m, cores)
-	text, err := os.ReadFile(filepath.Join(dir, "sim.log"))
+	text, err := os.ReadFile(filepath.Join(run.dir, "sim.log"))
 	if err != nil {
 		return result{}, fmt.Errorf("read run log: %w", err)
 	}
 	r.Scenario, r.Seed, r.Split = spec.scenario.Name, spec.seed, spec.split
 	r.Machine = spec.scenario.Machine
-	r.ExitCode, r.WallS = exit, wall
-	r.Status = runStatus(exit, timedOut, events, string(text))
+	r.ExitCode, r.WallS = run.exit, run.wall
+	r.Status = runStatus(run.exit, run.timedOut, events, string(text))
 	return r, nil
 }
 
