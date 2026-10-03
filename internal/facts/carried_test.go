@@ -16,7 +16,7 @@ func TestCarriedFactsKeepOriginalProvenance(t *testing.T) {
 	idle := &journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Core: new(3), Offset: new(-30), Regime: machine.R7, Condition: machine.Masked, Profile: []int{-20, -30, -40}}
 	original := FromEvents([]journal.Event{
 		{Seq: 1, Data: &journal.SessionStart{Build: build, Session: "original", Evidence: 4, Cores: []machine.CoreInfo{{Core: 7}, {Core: 1}, {Core: 3}}}},
-		{Seq: 2, Boot: "intent-boot", Data: &journal.TrialIntent{Trial: "0304", Regime: machine.R7, Workload: "workload", Cores: []int{7, 3}, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Rerun: true, Profile: []int{-22, -30, -50}}},
+		{Seq: 2, Boot: "intent-boot", Data: &journal.TrialIntent{Trial: "0304", Regime: machine.R7, Workload: "workload", Cores: []int{7, 3}, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Rerun: true, RecordOnly: true, Profile: []int{-22, -30, -50}}},
 		{Seq: 3, Data: &journal.ConfigLoaded{Version: "later", Ruleset: 6}},
 		{Seq: 4, Time: time.Unix(40, 0).UTC(), Boot: "end-boot", Data: &journal.TrialEnd{Trial: "0304", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(7), DurationS: 11}},
 		{Seq: 5, Time: time.Unix(50, 0).UTC(), Boot: "idle-boot", Data: idle},
@@ -26,6 +26,9 @@ func TestCarriedFactsKeepOriginalProvenance(t *testing.T) {
 	}
 	if original.Facts[0].Build != build || original.Facts[0].Boot != "intent-boot" || original.Facts[0].Epoch != 4 || original.Facts[0].Class.DurationS != 120 || original.Facts[0].DurationS != 11 {
 		t.Fatalf("original trial provenance: %+v", original.Facts[0])
+	}
+	if !original.Facts[0].RecordOnly || original.Facts[1].RecordOnly {
+		t.Fatalf("record-only marker changed across extraction: %+v", original.Facts)
 	}
 	if diff := cmp.Diff(idle, original.Facts[1].Idle); diff != "" {
 		t.Fatal(diff)
@@ -52,7 +55,7 @@ func TestCarriedFactsKeepOriginalProvenance(t *testing.T) {
 		if diff := cmp.Diff(copies, copied.Carried); diff != "" {
 			t.Fatalf("%s changed provenance: %s", id, diff)
 		}
-		if copied.Epoch != 9 || len(copied.Facts) != 1 || copied.Facts[0].Session != id || copied.Facts[0].Trial != "own" || copied.Facts[0].Epoch != 9 {
+		if copied.Epoch != 9 || len(copied.Facts) != 1 || copied.Facts[0].Session != id || copied.Facts[0].Trial != "own" || copied.Facts[0].Epoch != 9 || copied.Facts[0].RecordOnly {
 			t.Fatalf("own facts mixed with carried: %+v", copied)
 		}
 		original = copied
@@ -119,5 +122,40 @@ func TestCarryReaderReconstructsHistoricalProfiles(t *testing.T) {
 	}
 	if len(s.Facts) != len(want) {
 		t.Fatalf("decisive facts = %d, want %d", len(s.Facts), len(want))
+	}
+}
+
+func TestRecordOnlyFactsRetainTrialClassAndOutcomes(t *testing.T) {
+	for _, outcome := range []journal.Outcome{journal.OutcomePass, journal.OutcomeFailure, journal.OutcomeInconclusive} {
+		t.Run(string(outcome), func(t *testing.T) {
+			intent := &journal.TrialIntent{Trial: "partial", Cores: []int{7, 3}, Regime: machine.R7, Workload: "workload", DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Rotation: 2, Step: 4, RecordOnly: true, Profile: []int{-20, -30, -50}}
+			ordinary := *intent
+			ordinary.RecordOnly, ordinary.Step = false, 0
+			if diff := cmp.Diff(ClassOf(&ordinary), ClassOf(intent)); diff != "" {
+				t.Fatalf("marker changed trial class: %s", diff)
+			}
+			path := filepath.Join(t.TempDir(), "events.jsonl")
+			writeJournal(t, path, []journal.Event{
+				{Data: &journal.SessionStart{Schema: journal.Schema, Ruleset: 8, Session: "original", Cores: []machine.CoreInfo{{Core: 1}, {Core: 3}, {Core: 7}}}},
+				{Boot: "intent-boot", Data: intent},
+				{Data: &journal.TrialEnd{Trial: "partial", Outcome: outcome, Signal: machine.ComputationError, Core: new(7), DurationS: 11}},
+			}, "")
+			session, err := ReadJournal(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !session.Trials[0].Intent.RecordOnly || session.Trials[0].Intent.Step != 4 {
+				t.Fatalf("partial intent fields lost: %+v", session.Trials[0].Intent)
+			}
+			if outcome == journal.OutcomeInconclusive {
+				if len(session.Facts) != 0 {
+					t.Fatalf("inconclusive manufactured facts: %+v", session.Facts)
+				}
+				return
+			}
+			if len(session.Facts) != 1 || !session.Facts[0].RecordOnly || session.Facts[0].Outcome != outcome || session.Facts[0].Core == nil || *session.Facts[0].Core != 7 {
+				t.Fatalf("record-only decisive outcome lost: %+v", session.Facts)
+			}
+		})
 	}
 }

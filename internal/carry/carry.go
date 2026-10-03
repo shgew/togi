@@ -309,7 +309,7 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 			intents[p.Trial] = p
 		case *journal.TrialEnd:
 			ended[p.Trial] = true
-			if p.Outcome == journal.OutcomeFailure {
+			if in := intents[p.Trial]; p.Outcome == journal.OutcomeFailure && (in == nil || !in.RecordOnly) {
 				signals[e.Seq] = p.Signal
 			}
 		case *journal.Shutdown:
@@ -317,9 +317,11 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 		case *journal.HuntStart:
 			hunts[p.Hunt] = p
 		case *journal.Failure:
-			signals[e.Seq] = p.Signal
+			if in := intents[p.Trial]; in == nil || !in.RecordOnly {
+				signals[e.Seq] = p.Signal
+			}
 		case *journal.TrialCarried:
-			if p.Outcome == journal.OutcomeFailure {
+			if p.Outcome == journal.OutcomeFailure && !p.RecordOnly {
 				signals[e.Seq] = p.Signal
 			}
 		case *journal.FailureCarried:
@@ -332,10 +334,13 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 		switch p := e.Data.(type) {
 		case *journal.TrialEnd:
 			in := intents[p.Trial]
-			if p.Outcome == journal.OutcomePass && in != nil && in.Condition == machine.Isolated && in.Core != nil && in.Offset != nil {
+			if p.Outcome == journal.OutcomePass && in != nil && !in.RecordOnly && in.Condition == machine.Isolated && in.Core != nil && in.Offset != nil {
 				all = append(all, candidate{core: *in.Core, offset: *in.Offset, edge: true, session: s.Session, seq: e.Seq, at: e.Seq})
 			}
 		case *journal.Failure:
+			if in := intents[p.Trial]; in != nil && in.RecordOnly {
+				continue
+			}
 			if p.KnownFailure == 0 && p.Attribution == journal.Attributed && p.Core != nil && p.Offset != nil && !slices.Contains(excluded, e.Seq) {
 				all = append(all, candidate{core: *p.Core, offset: *p.Offset, session: s.Session, seq: e.Seq, signal: p.Signal, at: e.Seq})
 			}
@@ -367,7 +372,7 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 	}
 	if inFlight != nil {
 		p := inFlight.Data.(*journal.TrialIntent)
-		if p.Condition == machine.Isolated && p.Core != nil && p.Offset != nil && *p.Offset != 0 {
+		if !p.RecordOnly && p.Condition == machine.Isolated && p.Core != nil && p.Offset != nil && *p.Offset != 0 {
 			all = append(all, candidate{core: *p.Core, offset: *p.Offset, session: s.Session, seq: inFlight.Seq, signal: machine.Crash, at: inFlight.Seq})
 		}
 	}

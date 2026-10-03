@@ -16,20 +16,21 @@ import (
 )
 
 type Record struct {
-	Session   string               `json:"session"`
-	Build     journal.Build        `json:"build"`
-	Ruleset   int                  `json:"ruleset"`
-	Context   *machine.BIOSContext `json:"context"`
-	Seq       int                  `json:"seq"`
-	Trial     string               `json:"trial,omitempty"`
-	Kind      facts.Kind           `json:"kind"`
-	Class     facts.Class          `json:"class"`
-	Condition machine.Condition    `json:"condition"`
-	Phase     journal.Phase        `json:"phase"`
-	Profile   []int                `json:"profile"`
-	Outcome   journal.Outcome      `json:"outcome"`
-	Signal    machine.Signal       `json:"signal,omitempty"`
-	DurationS int                  `json:"duration_s"`
+	Session    string               `json:"session"`
+	Build      journal.Build        `json:"build"`
+	Ruleset    int                  `json:"ruleset"`
+	Context    *machine.BIOSContext `json:"context"`
+	Seq        int                  `json:"seq"`
+	Trial      string               `json:"trial,omitempty"`
+	Kind       facts.Kind           `json:"kind"`
+	Class      facts.Class          `json:"class"`
+	Condition  machine.Condition    `json:"condition"`
+	Phase      journal.Phase        `json:"phase"`
+	RecordOnly bool                 `json:"record_only,omitempty"`
+	Profile    []int                `json:"profile"`
+	Outcome    journal.Outcome      `json:"outcome"`
+	Signal     machine.Signal       `json:"signal,omitempty"`
+	DurationS  int                  `json:"duration_s"`
 }
 
 func Extract(dir string, dst io.Writer) (int, error) {
@@ -55,7 +56,7 @@ func Extract(dir string, dst io.Writer) (int, error) {
 			class := f.Class
 			class.Cores = slices.Clone(class.Cores)
 			slices.Sort(class.Cores)
-			r := Record{Session: f.Session, Build: f.Build, Ruleset: f.Ruleset, Context: session.Context, Seq: f.Seq, Trial: f.Trial, Kind: f.Kind, Class: class, Condition: f.Condition, Phase: f.Phase, Profile: f.Profile, Outcome: f.Outcome, Signal: f.Signal, DurationS: f.DurationS}
+			r := Record{Session: f.Session, Build: f.Build, Ruleset: f.Ruleset, Context: session.Context, Seq: f.Seq, Trial: f.Trial, Kind: f.Kind, Class: class, Condition: f.Condition, Phase: f.Phase, RecordOnly: f.RecordOnly, Profile: f.Profile, Outcome: f.Outcome, Signal: f.Signal, DurationS: f.DurationS}
 			if err := encoder.Encode(r); err != nil {
 				return count, fmt.Errorf("encode fact: %w", err)
 			}
