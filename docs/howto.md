@@ -153,11 +153,11 @@ togi stops by itself at a dead end: failure at offset 0, an untrusted SMU, repea
 ## 7. After a breaking update
 
 An update whose changelog line starts with **BREAKING** changes the tuning rules or the journal format, so it cannot continue a session written by an earlier build. Nothing needs doing by hand: rebuild, then run `sudo togi run` or pick "NixOS - togi". The first run archives the old session to `/var/lib/togi/archive/` and starts a new one that carries what the old one found:
-- each core's deepest offset passing an isolated trial becomes a candidate edge, and the new core checks it in search with the full R1 and R2 start count;
+- each core's deepest offset passing an isolated trial becomes a candidate edge, and the new core checks it in search; eligible carried passes count toward the required starts of its frozen R1 and R2 classes;
 - each core's shallowest attributed failure, including a single culprit found by a hunt, becomes a carried failed mark; joint marks do not carry, and reset or defect exclusions still apply;
 - a candidate edge at or deeper than its carried mark is clamped one count shallower.
 
-When the old session was started by hand after an earlier breaking update, with `reset --all`, the carry also reads the sessions archived before it, as long as they ran under the same BIOS and each under a different ruleset from the one after it.
+When the archived session was not itself seeded by a carry, the carry also reads older sessions under the same BIOS, going back while each differs in ruleset or evidence epoch from the one after it and stopping after the first that was seeded. `reset --all` permanently excludes sessions at or before its boundary, including their copied evidence; later transitions never reach behind it.
 
 `togi status` shows the carry on its `carried:` line, and each core's first `core.phase` in `togi events --kind core.phase` names where its start came from. `togi events --kind session.carried` shows the whole event, with the session and `seq` behind every carried value.
 

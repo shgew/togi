@@ -23,7 +23,7 @@ What togi takes from existing tools and research, and what it deliberately leave
 - **Volatility:** runtime CO values reset on reboot and are never written to BIOS or NVRAM.
 - **Backend quirks:** listed under Backends in `spec/workloads.md`.
 - **Failure detection:** machine checks come from the kernel log, not from rasdaemon or EDAC counters. A failure to read the kernel log is an environment fault, not a pass.
-- **Unattended recovery:** a GRUB specialisation with a saved default entry, panic-on-oops/lockup sysctls, a systemd runtime watchdog, and a resume service with a restart limit. The owner's NixOS config, not the fork, implements this today.
+- **Unattended recovery:** a GRUB specialisation with a saved default entry, panic-on-oops/lockup sysctls, a systemd runtime watchdog, and a resume service with a restart limit. The owner's NixOS config, not the fork, originally implemented this; togi now provides it in its [NixOS module](../nix/module.nix).
 
 ### Taken: ideas
 
@@ -35,8 +35,8 @@ What togi takes from existing tools and research, and what it deliberately leave
 
 | Feature | Why |
 |---|---|
-| Qt GUI, desktop entry, notifications | CLI first; a TUI later reads the journal |
-| Monitoring subsystem (hwmon, SPD, RAPL, APERF/MPERF, Super I/O) | Not needed to judge a trial; togi reads Tctl only |
+| Qt GUI, desktop entry, notifications | CLI first; `togi watch` reads the journal as a TUI |
+| Full monitoring subsystem (hwmon, SPD, RAPL, APERF/MPERF, Super I/O) | Not needed to judge a trial; togi samples temperatures, per-core clocks, the PM table and package energy-derived power, not a general monitoring subsystem |
 | SQLite history | [ADR 0003](adr/0003-journal-is-source-of-truth.md) |
 | Seven validation stages, endurance banks, annealing | Replaced by isolated search, masked hunts, refinement and continuing guard with qualified rotations ([ADR 0020](adr/0020-hunt-and-refine.md), [ADR 0028](adr/0028-remove-tiers.md)) |
 | Multi-boot crash hunt and bisection | Adopted: journaled masked delta debugging with complements, fixed loaded cores and workload, and cautious fallback marks ([ADR 0020](adr/0020-hunt-and-refine.md)); not simple load-splitting bisection |

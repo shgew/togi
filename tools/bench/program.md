@@ -50,20 +50,13 @@ Breaking any rule invalidates an experiment, however good its ratio looks.
 - **Evidence volume.** Preserve the spec's start requirements: one R1 and one R2 start for an ordinary search step; the decisive starts set by `[evidence]` miss and rate for candidate-edge checks, hunt masks, refinement checks and rerun obligations. Each trial runs for its configured duration from `[durations]`, and a qualifying rotation runs every regime start in `[guard] rotation`. A change may reorder these starts, skip work the spec already allows to be skipped, or avoid redundant trials. It may not ask for fewer starts, shorter trials or a smaller rotation, whether through configuration or through tuner code.
 - **Tests pass.** Run `go test ./internal/tuner/ ./internal/simrun/ ./cmd/togi/` before each candidate bench run. Update tests for deliberately changed rules; remove tests that only pin obsolete implementation behavior. Run `just gate` before keeping a commit and `just check` before opening a pull request.
 - **Proof has three parts.** A kept change wins the bench, preserves every guardrail and bases target-machine claims on fitted files that pass the model check against real facts. The harness prints model flags but does not reject the verdict or change exit status for them: inspect them separately. A flagged target member blocks the target claim even if the verdict says ACCEPT.
-- **No ruleset bump per experiment.** The starting ruleset is 7. One bump covers the kept decision changes when they become pull requests; follow `AGENTS.md`'s breaking-pull-request and release rules. Recheck the final work before opening it. Agents open pull requests; the owner merges and deploys manually.
+- **No ruleset bump per experiment.** One bump covers the kept decision changes when they become pull requests; follow `AGENTS.md`'s breaking-pull-request and release rules. Recheck the final work before opening it. Agents open pull requests; the owner merges and deploys manually.
 
 ## The metric and guardrails
 
-`just bench` runs the selected split, pairs runs with the baseline by scenario and seed, and prints `ACCEPT`, `REJECT` or `NEUTRAL`. [Benchmarking](../../docs/benchmarking.md#comparing-two-versions) defines the calculation and output fields.
+`just bench` runs the selected split and compares it with the baseline. [Benchmarking](../../docs/benchmarking.md#comparing-two-versions) defines pairing, the comparison ratio, bootstrap interval, V1–V4 guardrails and verdicts. Check printed verdicts and violations, not just command exit status.
 
-- **Primary:** candidate time to conclusion divided by baseline time. The geometric mean is computed within each scenario and scenarios have equal weight; a stratified bootstrap supplies the 95% interval. Lower is better.
-- **V1:** a run the baseline concluded must still conclude.
-- **V2:** final `hazard_max_per_h` must not rise by more than 0.01 per hour in any run.
-- **V3:** depth must not become shallower by more than 1 count averaged over a scenario or by more than 5 in any run.
-- **V4:** `target`, the replay-oracle ensemble, must not get slower overall.
-- **Secondary:** crashes, trials and hunts. At equal time, prefer fewer crashes; simulated reboot time already contributes to the primary metric.
-
-ACCEPT requires no violation and an interval upper bound below 1.0. REJECT means any violation or an interval lower bound above 1.0; other results are NEUTRAL. Check printed verdicts and violations, not just command exit status.
+Secondary measures are crashes, trials and hunts. At equal time, prefer fewer crashes; simulated reboot time already contributes to the primary metric.
 
 The `target` scenario uses `target-fit-0.toml` (all decisive starts) and eight whole-trial bootstrap refits. Each member is checked against the original extract. Its replay oracle draws a real outcome when the whole applied profile and trial class match same-BIOS facts; otherwise it uses the fitted member. The tuner sees only the resulting journal. Record candidate and baseline `real_answer_share` from the verdict: the share measures direct real-fact coverage of the path, not confidence. Hazard metrics and model checks describe the fitted fallback, not an empirical oracle hazard.
 

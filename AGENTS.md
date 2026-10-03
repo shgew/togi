@@ -57,7 +57,7 @@ A pull request updates everything that describes the old state, in the same pull
 - `CHANGELOG.md` under `## [Unreleased]`, for every change a user of togi would notice: commands, flags, behavior, output, configuration. One line per change under `Added`, `Changed`, `Fixed` or `Removed`, stating the effect and linking the pull request. A `**BREAKING**` line starts with what the operator must do or will see, then the mechanism. Refactors, tests and doc edits that leave the tool unchanged get no entry;
 - the specs, and any comment the change makes wrong.
 
-The first pull request that makes something runnable on real hardware adds `docs/howto.md` with the operator's steps. Later pull requests that change those steps update it.
+Pull requests that change the operator's steps update `docs/howto.md`.
 
 ## Writing
 

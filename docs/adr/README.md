@@ -4,7 +4,7 @@ The specs describe current behavior; ADRs record why and the alternatives reject
 
 A new ADR adds its line here and updates the status of any ADR it supersedes.
 
-- [0001: Go as the implementation language](0001-go.md) — **in force**.
+- [0001: Go as the implementation language](0001-go.md) — **in force** for the language; its Bubble Tea consequence no longer holds: `togi watch` uses a custom redraw loop with Lip Gloss rendering.
 - [0002: Clean-room rewrite, not a port of linux-corecycler](0002-clean-room-rewrite.md) — **in force**.
 - [0003: The journal is the source of truth; no database](0003-journal-is-source-of-truth.md) — **in force**.
 - [0004: togi finds offsets; BIOS applies them](0004-find-only.md) — **in force**.
@@ -29,7 +29,7 @@ A new ADR adds its line here and updates the status of any ADR it supersedes.
 - [0023: Hunts that converge on shared voltage](0023-hunts-that-converge-on-shared-voltage.md) — **in force**.
 - [0024: Schedule from uncontradicted evidence](0024-schedule-from-uncontradicted-evidence.md) — **partly superseded** by [0027](0027-carry-trial-facts.md): after-reset hunt-planning windows admit eligible carried evidence across their local sequence boundary; by [0028](0028-remove-tiers.md): Bronze credit, tier-change citation and the tier clock; earlier qualified-rotation credit for `run --rotations` remains.
 - [0025: Recorded agent review](0025-recorded-agent-review.md) — **partly superseded** by [0026](0026-review-only-what-changed.md): a whole record for every reviewed head, version-1 JSON and fresh reviewers for fix diffs; by [0031](0031-pull-requests-under-the-owners-account.md): the App as the agents' identity for every GitHub action; the App still posts review records and `review` checks.
-- [0026: Review only what changed](0026-review-only-what-changed.md) — **in force**.
+- [0026: Review only what changed](0026-review-only-what-changed.md) — **partly superseded** by [0030](0030-coverage-is-a-review-signal.md): the record's version-2 JSON, now version 3 with the coverage judgment; reviewing only what changed remains.
 - [0027: Carry trial facts across ruleset changes](0027-carry-trial-facts.md) — **in force**.
 - [0028: Report qualified rotations instead of durability tiers](0028-remove-tiers.md) — **in force**.
 - [0029: Bench verdicts rest on fitted machines](0029-bench-verdicts-rest-on-fitted-machines.md) — **in force**.
