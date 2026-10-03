@@ -45,7 +45,7 @@ var help = []helpSection{
 		{"solo limit", "The deepest offset a core passed with every other core at 0.", ""},
 		{"combination", "Offsets that must not be reached together. A hunt may prove the group fails together, or leave an unresolved group restricted as a precaution.", ""},
 		{"lap", "One pass through the configured list of tests. A clean lap has passing evidence for each scheduled check at the resulting offsets. Only a full lap covers every required kind of load.", ""},
-		{"recorded only", "A partial all-core part of a lap step, with the cores at their CCD's shallowest offset left idle. Its result is kept on record but moves no offset. The lap needs it to finish, pass or fail, and it covers no required kind of load.", ""},
+		{"recorded only", "A partial all-core part of a lap step. Cores that had their CCD's shallowest offset when the step started stay idle, even if offsets change. Its result is kept on record but moves no offset. The lap needs it to finish, pass or fail, and it covers no required kind of load.", ""},
 		{"run", "One launch of one test. Confirming a solo limit, a hunt group or a deepening move needs several passes in a row. Ordinary lap steps can advance after one pass, while all-core steps also include repeated short runs and a long run.", ""},
 	}},
 }

@@ -336,6 +336,7 @@ func TestScrollbarThumbTracksThePage(t *testing.T) {
 func TestRecordOnlyPartialTrial(t *testing.T) {
 	t.Parallel()
 	profile := []int{-20, -30, -50}
+	resumed := []int{-20, -10, -50}
 	events := dashboardEvents(dashboardSession(),
 		&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -20, FailedMark: new(-21)},
 		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -30, FailedMark: new(-31)},
@@ -343,7 +344,9 @@ func TestRecordOnlyPartialTrial(t *testing.T) {
 		&journal.ProfileChange{To: profile},
 		&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: []machine.Regime{machine.R7}},
 		&journal.GuardStep{Rotation: 1, Step: 1, Profile: profile, Partials: []journal.GuardPartial{{CCD: 0, Cores: []int{1}}, {CCD: 1, Reason: "all CCD cores are done"}}},
-		&journal.TrialIntent{Trial: "partial", Cores: []int{1}, RecordOnly: true, Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Profile: profile, DurationS: 120, Rotation: 1, Step: 1},
+		&journal.ProfileChange{From: profile, To: resumed},
+		&journal.SMUReadback{Core: 1, Offset: -10},
+		&journal.TrialIntent{Trial: "partial", Cores: []int{1}, RecordOnly: true, Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Profile: resumed, DurationS: 120, Rotation: 1, Step: 1},
 		&journal.TrialStart{Trial: "partial"},
 		&journal.TrialEnd{Trial: "partial", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError})
 	live := events[:len(events)-1]
@@ -355,6 +358,18 @@ func TestRecordOnlyPartialTrial(t *testing.T) {
 	if text := strings.Join(st.paragraphs, "\n"); !strings.Contains(text, "moves no offset") || strings.Contains(text, "one core at a time") {
 		t.Fatalf("the narrator must say a partial changes nothing and not call it a per-core step:\n%s", text)
 	}
+	if s.cores[0].loaded || !s.cores[1].loaded || s.cores[1].applied != -10 {
+		t.Fatalf("the partial must keep its step-start mask after the loaded core becomes shallowest: %+v", s.cores)
+	}
+	for view, text := range map[string]string{
+		"narrator": strings.Join(st.paragraphs, " "),
+		"help":     strings.Join(helpLines(frameWidth), " "),
+	} {
+		text = strings.Join(strings.Fields(ansi.Strip(text)), " ")
+		if !strings.Contains(text, "when the step started") || !strings.Contains(text, "even if offsets change") {
+			t.Errorf("%s must explain the frozen step-start mask, not the current shallowest offsets:\n%s", view, text)
+		}
+	}
 	if !slices.ContainsFunc(s.log, func(l entry) bool {
 		return strings.Contains(l.text, "CCD 1 record-only partial skipped: all CCD cores are done")
 	}) {
@@ -362,7 +377,7 @@ func TestRecordOnlyPartialTrial(t *testing.T) {
 	}
 	ended := Project(events)
 	last := ended.history[len(ended.history)-1]
-	if got := last.tag + ": " + last.sentence(); got != "fail: partial all-core load on core 01 at -30, wrong result, recorded only" || last.tone != warnTone {
+	if got := last.tag + ": " + last.sentence(); got != "fail: partial all-core load on core 01 at -10, wrong result, recorded only" || last.tone != warnTone {
 		t.Fatalf("a partial's failure must read as recorded only, not as a decisive failure: %q tone %v", got, last.tone)
 	}
 }

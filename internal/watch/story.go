@@ -315,7 +315,7 @@ func (s Snapshot) rerunStory() story {
 	return story{headline: s.headline(), tone: plainTone, paragraphs: []string{text}}
 }
 
-const recordOnlyNote = "This part only keeps a record: cores at their CCD's shallowest offset sit idle, and a pass or a failure, even a crash, moves no offset. The lap goes on either way."
+const recordOnlyNote = "This part only keeps a record: cores that had their CCD's shallowest offset when the step started stay idle, even if offsets change. A pass or a failure, even a crash, moves no offset. The lap goes on either way."
 
 func (s Snapshot) lapStory(t *trial) story {
 	g := s.guard

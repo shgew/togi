@@ -18,11 +18,11 @@
 │                         resulting offsets. Only a full lap covers every required
 │                         kind of load.
 │ 
-│   recorded only         A partial all-core part of a lap step, with the cores at
-│                         their CCD's shallowest offset left idle. Its result is
-│                         kept on record but moves no offset. The lap needs it to
-│                         finish, pass or fail, and it covers no required kind of
-│                         load.
+│   recorded only         A partial all-core part of a lap step. Cores that had
+│                         their CCD's shallowest offset when the step started stay
+│                         idle, even if offsets change. Its result is kept on
+│                         record but moves no offset. The lap needs it to finish,
+│                         pass or fail, and it covers no required kind of load.
 │ 
 │   run                   One launch of one test. Confirming a solo limit, a hunt
 │                         group or a deepening move needs several passes in a row.
