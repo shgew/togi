@@ -37,10 +37,46 @@ type forwardRow struct {
 	regimes          map[machine.Regime]forwardCounts
 }
 
-// starts contains only the decisive starts validated by decisive.
-func forwardCheck(starts []trialfacts.Record) ([]forwardRow, forwardScore, error) {
+func forward(extract string, seal int, stdout io.Writer) error {
+	records, err := trialfacts.Read(extract)
+	if err != nil {
+		return err
+	}
+	starts, err := decisive(records)
+	if err != nil {
+		return err
+	}
+	return reportForwardCheck(stdout, starts, seal)
+}
+
+func reportForwardCheck(w io.Writer, starts []trialfacts.Record, seal int) error {
+	started := time.Now()
+	rows, pooled, err := forwardCheck(starts, seal)
+	if err != nil {
+		return err
+	}
+	reportForward(w, rows, pooled, seal)
+	fmt.Fprintf(w, "Forward-chained elapsed: %s\n", time.Since(started).Round(time.Millisecond))
+	return nil
+}
+
+// starts contains only the decisive starts validated by decisive. The newest
+// seal sessions are neither fitted nor scored.
+func forwardCheck(starts []trialfacts.Record, seal int) ([]forwardRow, forwardScore, error) {
 	ordered := slices.Clone(starts)
 	slices.SortStableFunc(ordered, func(a, b trialfacts.Record) int { return journal.CompareSessionIDs(a.Session, b.Session) })
+	var bounds []int
+	for i := range ordered {
+		if i == 0 || ordered[i].Session != ordered[i-1].Session {
+			bounds = append(bounds, i)
+		}
+	}
+	if seal > 0 {
+		if seal >= len(bounds)-1 {
+			return nil, forwardScore{}, fmt.Errorf("--seal %d leaves no held-out session to score (%d held out)", seal, max(len(bounds)-1, 0))
+		}
+		ordered = ordered[:bounds[len(bounds)-seal]]
+	}
 	seen := make(map[string]bool)
 	trainingFailures, trainingSessions := 0, 0
 	var rows []forwardRow
@@ -141,7 +177,7 @@ func scoreForward(cfg sim.Config, heldOut []trialfacts.Record, seen map[string]b
 	return score, regimes, nil
 }
 
-func reportForward(w io.Writer, rows []forwardRow, pooled forwardScore) {
+func reportForward(w io.Writer, rows []forwardRow, pooled forwardScore, seal int) {
 	fmt.Fprintln(w, "\nForward-chained check")
 	if len(rows) == 0 {
 		fmt.Fprintln(w, "No held-out sessions (need at least two sessions with decisive starts).")
@@ -155,6 +191,9 @@ func reportForward(w io.Writer, rows []forwardRow, pooled forwardScore) {
 				fmt.Fprintf(w, "  %s starts=%d observed=%d predicted=%.1f\n", regime, counts.starts, counts.failures, counts.predicted)
 			}
 		}
+	}
+	if seal > 0 {
+		fmt.Fprintf(w, "Sealed newest sessions: %d (neither fitted nor scored)\n", seal)
 	}
 	fmt.Fprint(w, "Pooled: ")
 	reportForwardScore(w, pooled, "per-prefix")

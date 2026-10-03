@@ -28,16 +28,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 	out := flags.String("out", "tools/bench/machines", "output directory for target-fit-0.toml and bootstrap refits")
 	seed := flags.Uint64("seed", 263, "fixed bootstrap seed")
 	refits := flags.Int("bootstrap", 8, "number of whole-trial bootstrap refits")
+	forwardOnly := flags.Bool("forward-only", false, "run only the forward-chained check: fit no ensemble and write no machine files")
+	seal := flags.Int("seal", 0, "with --forward-only, leave the newest N sessions out of the forward-chained check")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
 		return 0
 	} else if err != nil {
 		return 2
 	}
-	if flags.NArg() != 0 || *refits < 0 {
-		fmt.Fprintln(stderr, "fit: require no positional arguments and a nonnegative --bootstrap")
+	if flags.NArg() != 0 || *refits < 0 || *seal < 0 || (*seal > 0 && !*forwardOnly) {
+		fmt.Fprintln(stderr, "fit: require no positional arguments, a nonnegative --bootstrap, and a nonnegative --seal only with --forward-only")
 		return 2
 	}
-	if err := generate(*extract, *out, *seed, *refits, stdout); err != nil {
+	var err error
+	if *forwardOnly {
+		err = forward(*extract, *seal, stdout)
+	} else {
+		err = generate(*extract, *out, *seed, *refits, stdout)
+	}
+	if err != nil {
 		fmt.Fprintf(stderr, "fit: %v\n", err)
 		return 1
 	}
@@ -136,13 +144,9 @@ func generate(extract, out string, seed uint64, refits int, stdout io.Writer) er
 		}
 	}
 	modelcheck.Report(stdout, checks)
-	forwardStarted := time.Now()
-	rows, pooled, err := forwardCheck(starts)
-	if err != nil {
+	if err := reportForwardCheck(stdout, starts, 0); err != nil {
 		return err
 	}
-	reportForward(stdout, rows, pooled)
-	fmt.Fprintf(stdout, "Forward-chained elapsed: %s\n", time.Since(forwardStarted).Round(time.Millisecond))
 	fmt.Fprintf(stdout, "Fit elapsed: %s\n", time.Since(started).Round(time.Millisecond))
 	return nil
 }

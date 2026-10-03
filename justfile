@@ -95,6 +95,11 @@ facts state_dir:
 fit *args:
     {{ dev }} go run ./tools/fit "$@"
 
+# Run only the forward-chained check of the target fit, writing no machine files (`just forward --seal 1`)
+[group('run')]
+forward *args:
+    {{ dev }} go run ./tools/fit --forward-only "$@"
+
 # Start the release workflow on main and follow it: once check passed on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]
 release:

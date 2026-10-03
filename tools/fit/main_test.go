@@ -235,3 +235,46 @@ func TestGenerateRefusesConflictingDestinations(t *testing.T) {
 		})
 	}
 }
+
+func TestRunForwardOnly(t *testing.T) {
+	root := t.TempDir()
+	extract := filepath.Join(root, "facts.jsonl.gz")
+	var compressed bytes.Buffer
+	gz := gzip.NewWriter(&compressed)
+	encoder := json.NewEncoder(gz)
+	for i, session := range []string{"20260101T000000Z", "20260102T000000Z"} {
+		record := trialfacts.Record{Session: session, Seq: 1, Kind: facts.TrialFact, Outcome: journal.OutcomePass, Profile: []int{-10, 0}, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
+		if i == 1 {
+			record.Outcome = journal.OutcomeFailure
+		}
+		if err := encoder.Encode(record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(extract, compressed.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(root, "machines")
+	for _, tc := range []struct {
+		args   []string
+		code   int
+		output string
+	}{
+		{[]string{"--forward-only"}, 0, "20260102T000000Z ruleset=0 training_sessions=1: starts=1 failures=1"},
+		{[]string{"--forward-only", "--seal", "1"}, 1, "fit: --seal 1 leaves no held-out session to score (1 held out)"},
+		{[]string{"--seal", "1"}, 2, "only with --forward-only"},
+		{[]string{"--forward-only", "--seal", "-1"}, 2, "nonnegative --seal"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := run(append([]string{"--facts", extract, "--out", out}, tc.args...), &stdout, &stderr)
+		if code != tc.code || !strings.Contains(stdout.String()+stderr.String(), tc.output) {
+			t.Errorf("fit %v = %d, stdout %q, stderr %q; want %d and %q", tc.args, code, stdout.String(), stderr.String(), tc.code, tc.output)
+		}
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Fatalf("forward-only run created the output directory: %v", err)
+	}
+}

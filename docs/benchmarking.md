@@ -136,6 +136,13 @@ Each session row names the session ID, ruleset and `training_sessions` count. `s
 
 `Pooled` sums all held-out sessions' counts and predictions and divides summed log losses by their total starts. Its constant uses each session's own earlier prefix, not one failure rate fitted to the pooled outcomes; its group counts sum the separate held-out checks. `Forward-chained elapsed` reports the added wall time. This is evidence about extrapolation to later sessions, not a gate or a guarantee about unseen profiles or other machines.
 
+```sh
+just forward            # the check alone: no ensemble, no machine files
+just forward --seal 1   # also leave the newest session unfitted and unscored
+```
+
+`just forward` runs `tools/fit --forward-only`: the same rows and `Pooled` line, without fitting the ensemble or writing machine files. `--seal N`, accepted only with `--forward-only`, drops the newest N sessions before the check: they are neither fitted nor scored, the remaining rows are unchanged, and `Pooled` covers only the remaining held-out sessions. At least one held-out session must remain. Model research ([program](../tools/fit/program.md)) iterates with the newest session sealed and scores it only to confirm a kept change.
+
 The committed extract produced these rows with the default `just fit` arguments:
 
 ```text
