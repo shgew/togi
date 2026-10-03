@@ -499,7 +499,7 @@ func trialFromIntent(p *journal.TrialIntent) Trial {
 }
 
 func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
-	if intent := s.intents[p.Trial]; intent != nil && intent.RecordOnly {
+	if intent := s.intents[p.Trial]; p.KnownFailure == 0 && intent != nil && intent.RecordOnly {
 		return
 	}
 	if a := s.awaiting; a != nil && a.intent.Trial == p.Trial {

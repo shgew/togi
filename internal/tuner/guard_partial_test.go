@@ -117,6 +117,29 @@ func TestRecordOnlySkipsNeitherKnownFailuresNorReruns(t *testing.T) {
 	}
 }
 
+func TestRecordOnlyTrialIDDoesNotHideCarriedKnownFailure(t *testing.T) {
+	h, cores, profile := sevenCorePartialHarness(t)
+	tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Profile: profile}
+	carried := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0001"}, Class: journal.TrialClass{Regime: tr.Regime, Workload: tr.Workload, Cores: cores, DurationS: tr.DurationS}, Condition: tr.Condition, Profile: profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+	partialEvidence(h, false, journal.OutcomePass, cores, profile, 1)
+	a := h.s.skipKnownFailure(Action{Kind: RunTrial, Trial: tr})
+	if a.Kind != Decide {
+		t.Fatal("ordinary trial did not skip the carried known failure")
+	}
+	failure, ok := a.Payload.(*journal.Failure)
+	if !ok || failure.Trial != "0001" || failure.KnownFailure != carried.Seq {
+		t.Fatalf("skip payload = %+v, want carried failure with colliding trial ID", a.Payload)
+	}
+	before := len(h.s.pendingFailures)
+	h.decide(a)
+	if len(h.s.pendingFailures) != before+1 {
+		t.Fatal("local record-only trial ID hid an ordinary carried known-failure decision")
+	}
+	if got := h.s.pendingFailures[before].seq; got != carried.Seq {
+		t.Fatalf("pending failure source = %d, want carried fact %d", got, carried.Seq)
+	}
+}
+
 func TestRecordOnlyCannotFulfillRefinementChecks(t *testing.T) {
 	for _, carried := range []bool{false, true} {
 		for _, outcome := range []journal.Outcome{journal.OutcomePass, journal.OutcomeFailure} {
