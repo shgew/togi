@@ -100,6 +100,7 @@ func TestFirstJournalDifference(t *testing.T) {
 		{"third line", "{}\n{}\n{\"seq\":3}\n{\"seq\":4}\n", "{}\n{}\n{\"seq\":9}\n{}\n", &journalDifference{line: 3, base: `{"seq":3}`, head: `{"seq":9}`}},
 		{"missing event", "{}\n{}\n", "{}\n", &journalDifference{line: 2, base: "{}", head: "<missing event>"}},
 		{"extra event", "{}\n", "{}\n{}\n", &journalDifference{line: 2, base: "<missing event>", head: "{}"}},
+		{"leading object whitespace", " {\"kind\":\"session.start\"}\n", " { \"kind\":\"session.start\"}\n", &journalDifference{line: 1, base: ` {"kind":"session.start"}`, head: ` { "kind":"session.start"}`}},
 		{"missing newline", "{}\n", "{}", &journalDifference{line: 1, base: "{}", head: "{}"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -132,6 +133,14 @@ func TestCompareJournals(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dirs := [2]string{t.TempDir(), t.TempDir()}
+			for _, dir := range dirs {
+				if err := os.MkdirAll(filepath.Join(dir, "archive"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "archive", "common.jsonl"), []byte("{}\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if tc.file != "" {
 				path := filepath.Join(dirs[tc.side], tc.file)
 				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -189,6 +198,11 @@ func TestSameReport(t *testing.T) {
 
 func TestSameExitCodesAndSplits(t *testing.T) {
 	dirs := [2]string{t.TempDir(), t.TempDir()}
+	for _, dir := range dirs {
+		if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte("{}\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, tc := range []struct {
 		name, baseSplit, headSplit string
 		baseExit, headExit         int
@@ -210,6 +224,19 @@ func TestSameExitCodesAndSplits(t *testing.T) {
 				t.Fatal(diff)
 			}
 		})
+	}
+}
+
+func TestSameRejectsMissingJournals(t *testing.T) {
+	key := sessionKey{"s", "dev", 1}
+	base := []sameSession{{key, simulation{dir: t.TempDir(), exit: 1}}}
+	head := []sameSession{{key, simulation{dir: t.TempDir(), exit: 1}}}
+	var report bytes.Buffer
+	if _, err := compareSessions(&report, base, head); err == nil || !strings.Contains(err.Error(), "missing journals") {
+		t.Fatalf("want missing-journal execution error, got %v", err)
+	}
+	if strings.Contains(report.String(), "0 of 1 sessions differ") {
+		t.Fatal("failed simulations must not report equality")
 	}
 }
 

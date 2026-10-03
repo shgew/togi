@@ -222,6 +222,9 @@ func compareJournals(base, head string) (*journalDifference, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list head journals: %w", err)
 	}
+	if len(a) == 0 || len(b) == 0 {
+		return nil, fmt.Errorf("missing journals: base has %d, head has %d", len(a), len(b))
+	}
 	paths := make([]string, 0, len(a)+len(b))
 	for path := range a {
 		paths = append(paths, path)
@@ -351,6 +354,7 @@ func normalizeBuild(line []byte) ([]byte, error) {
 		return nil, err
 	}
 	end := int(decoder.InputOffset())
+	opening := end
 	normalized := bytes.Clone(line[:end])
 	first := true
 	for decoder.More() {
@@ -368,7 +372,7 @@ func normalizeBuild(line []byte) ([]byte, error) {
 			continue
 		}
 		start := separator
-		if first && separator != 1 {
+		if first && separator != opening {
 			for start < end && line[start] != '"' {
 				start++
 			}
