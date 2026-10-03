@@ -41,9 +41,15 @@ func (s Snapshot) story(now time.Time) story {
 	case s.deadEnd != nil:
 		return s.deadEndStory()
 	case s.stopped != nil:
-		st := story{headline: "I'M STOPPED", paragraphs: []string{
-			"I put the offsets back to safe values before stopping. The numbers below are what I found, not what is applied now. Everything I learned is in the journal, and togi run picks up where I left off.",
-		}}
+		text := "I've stopped. Everything I learned is in the journal, and togi run picks up where I left off."
+		switch s.stoppedReason {
+		case journal.ShutdownSignal, journal.ShutdownLaps:
+			text = "I put the offsets back to safe values before stopping. The numbers below are what I found, not what is applied now. Everything I learned is in the journal, and togi run picks up where I left off."
+		case journal.ShutdownCommand:
+			text = "The command finished without changing the applied offsets. Everything I learned is in the journal, and togi run picks up where I left off."
+		case journal.ShutdownDeadEnd:
+		}
+		st := story{headline: "I'M STOPPED", paragraphs: []string{text}}
 		if s.goal() {
 			st.paragraphs = append(st.paragraphs, "These offsets passed a clean lap of every kind of test: they are the ones to carry into the BIOS.")
 		}
@@ -182,8 +188,8 @@ func (s Snapshot) huntStory(t *trial, now time.Time) story {
 	switch m.stage {
 	case "full":
 		st.paragraphs = append(st.paragraphs,
-			"Every smaller group passed on its own, so I'm rerunning the whole failing set of offsets to see whether it fails again.",
-			"If it fails, the cause needs several cores deep at once and I keep narrowing. If it passes, I repeat it at the length of the original test.")
+			"Every smaller group passed on its own, so I'm rerunning the full failing group to see whether it fails again.",
+			"If it fails, the cause needs several cores deep at once and I keep narrowing. If it passes, I split the original candidates in two and restart group trials at the length of the original trial.")
 	case "probe":
 		if m.probe != nil {
 			combination := slices.Clone(m.cores)
@@ -271,7 +277,7 @@ func failureCause(sig machine.Signal) string {
 
 func (s Snapshot) deepenStory() story {
 	st := story{headline: "GOING DEEPER", tone: plainTone}
-	st.paragraphs = append(st.paragraphs, "These offsets passed a clean lap, but some cores may have room left, so I'm trying to win back depth.")
+	st.paragraphs = append(st.paragraphs, "These offsets passed a full lap, but some cores may have room left, so I'm trying to win back depth.")
 	if r := s.deepening; r != nil {
 		var moves, checks []string
 		for i, c := range s.cores {
@@ -348,7 +354,7 @@ func (s Snapshot) lapStory(t *trial) story {
 		st.paragraphs = append(st.paragraphs, recordOnlyNote)
 	}
 	if s.checkingFull {
-		st.paragraphs = append(st.paragraphs, "The goal is a clean lap: every step passes with no failure, on offsets that can't go any deeper.")
+		st.paragraphs = append(st.paragraphs, "The goal is a clean lap: ordinary steps must pass and record-only partial steps only need to complete, on offsets that can't go any deeper.")
 	} else {
 		st.paragraphs = append(st.paragraphs, s.missingCoverage())
 	}
@@ -445,7 +451,7 @@ func (s Snapshot) comingUp() []string {
 			"Then the work the failure interrupted continues.",
 		}
 	case s.phase == journal.PhaseDeepening:
-		return []string{"If the round passes, the deeper offsets need a new clean lap. If not, I handle the failure first."}
+		return []string{"If the round passes, I keep deepening while more depth is reachable, then return to checking laps. If not, I handle the failure first."}
 	}
 	return s.lapNext()
 }
@@ -554,12 +560,12 @@ func (s Snapshot) stations() []station {
 	}
 	find := station{label: "Find limits", state: reached, sub: []string{fmt.Sprintf("%d/%d cores", total-left, total)}}
 	together := station{label: "Test together", state: upcoming, sub: []string{"all together"}}
-	deeper := station{label: "Go deeper", state: upcoming, sub: []string{"after a", "clean lap"}}
+	deeper := station{label: "Go deeper", state: upcoming, sub: []string{"after a full", "passed lap"}}
 	clean := station{label: "Clean lap", state: target, sub: []string{"the goal"}}
 	keep := station{label: "Keep checking", state: endless, sub: []string{"until stopped"}}
 	if !s.checkingFull {
 		clean.state, clean.sub = upcoming, []string{"not covered", "by schedule"}
-		deeper.sub = []string{"needs a full", "clean lap"}
+		deeper.sub = []string{"needs a full", "passed lap"}
 	}
 	switch {
 	case left > 0:
@@ -570,7 +576,7 @@ func (s Snapshot) stations() []station {
 		clean.state, clean.sub = reached, []string{"reached"}
 		keep.state, keep.fill, keep.sub = current, fill, []string{lap, plural(g.CleanLaps, "clean lap")}
 	case s.deepening != nil:
-		together.state, together.sub = reached, []string{"lap was clean"}
+		together.state, together.sub = reached, []string{"lap passed"}
 		deeper.state, deeper.sub = current, []string{fmt.Sprintf("round %d", s.deepening.Round)}
 		deeper.paused = s.phase == journal.PhaseHunt
 	default:

@@ -8,8 +8,8 @@
   █  This step is all-core load: heavy work on many cores at once, for power and
   █  heat. It runs on cores 00-07 at once.
   █  
-  █  The goal is a clean lap: every step passes with no failure, on offsets that
-  █  can't go any deeper.
+  █  The goal is a clean lap: ordinary steps must pass and record-only partial
+  █  steps only need to complete, on offsets that can't go any deeper.
   █  
   █  now  lap 1, step 1 of 14
   █  all-core load on cores 00-07 (mprime AVX2 36K-248K)
@@ -18,8 +18,8 @@
   
   ■ Find limits   ► Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
   █████████████   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
-  16/16 cores     lap 1           after a         the goal        until stopped
-                  step 1 of 14    clean lap                       
+  16/16 cores     lap 1           after a full    the goal        until stopped
+                  step 1 of 14    passed lap                      
   
    HUNT      no hunt running
   

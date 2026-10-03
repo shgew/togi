@@ -181,6 +181,68 @@ func TestProjectParkedHunt(t *testing.T) {
 	}
 }
 
+func TestProjectMemberProbeRows(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name          string
+		loaded        []int
+		profile       []int
+		started       bool
+		heldOnly      bool
+		groupAtParked bool
+	}{
+		{name: "all cores loaded", loaded: []int{0, 1, 2}, profile: []int{-15, -30, -8}, started: true},
+		{name: "loaded noncandidate at nonparked offset", loaded: []int{0, 1, 2}, profile: []int{-15, -29, -8}, started: true},
+		{name: "probe loaded alone", loaded: []int{0}, profile: []int{-15, -30, -8}, started: true},
+		{name: "held member loaded alone", loaded: []int{2}, profile: []int{-15, -30, -8}, started: true},
+		{name: "idle members judged while nonmember loaded", loaded: []int{1}, profile: []int{-15, -30, -8}, started: true},
+		{name: "held member outside group cores", loaded: []int{0, 1, 2}, profile: []int{-15, -30, -8}, started: true, heldOnly: true},
+		{name: "group member failing offset equals parked", loaded: []int{0, 1, 2}, profile: []int{-15, -30, -10}, started: true, groupAtParked: true},
+		{name: "probe at parked offset", loaded: []int{0, 1, 2}, profile: []int{-10, -30, -8}, started: true},
+		{name: "held member at parked offset", loaded: []int{0, 1, 2}, profile: []int{-15, -30, -5}, started: true},
+		{name: "preparing member probe", loaded: []int{0, 1, 2}, profile: []int{-15, -30, -8}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			parked := []int{-10, -30, -5}
+			if tc.groupAtParked {
+				parked[2] = -10
+			}
+			groupCores := []int{2}
+			if tc.heldOnly {
+				groupCores = nil
+			}
+			held := []journal.CombinationMember{{Core: 2, Offset: tc.profile[2]}}
+			if tc.groupAtParked {
+				held = nil
+			}
+			events := dashboardEvents(dashboardSession(),
+				&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
+				&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30},
+				&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -10},
+				&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: tc.loaded, Parked: parked, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Starts: 5, StartS: 120, DurationS: 120},
+				&journal.HuntGroup{Hunt: 1, Group: 1, Stage: "probe", Cores: groupCores, Probe: &journal.CombinationMember{Core: 0, Offset: tc.profile[0]}, Held: held, Profile: tc.profile, DurationS: 120},
+				&journal.TrialIntent{Trial: "probe", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: tc.loaded, Profile: tc.profile, DurationS: 120, Hunt: 1, Group: 1})
+			if tc.started {
+				events = appendStoryEvents(events, &journal.TrialStart{Trial: "probe"})
+			}
+			s := Project(events)
+			for _, c := range s.cores {
+				loaded := false
+				for _, core := range tc.loaded {
+					loaded = loaded || core == c.id
+				}
+				member := c.id == 0 || c.id == 2
+				want := coreView{id: c.id, loaded: tc.started && loaded, suspect: member, tested: tc.started && member}
+				got := coreView{id: c.id, loaded: c.loaded, suspect: c.suspect, parked: c.parked, tested: c.tested}
+				if diff := cmp.Diff(want, got, cmp.AllowUnexported(coreView{})); diff != "" {
+					t.Fatalf("member probe row (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+}
+
 func TestFoldEntryFoldsRepeatedPasses(t *testing.T) {
 	t.Parallel()
 	at := time.Unix(0, 0).UTC()
@@ -228,6 +290,43 @@ func TestProjectBoundsHistory(t *testing.T) {
 	s := Project(events)
 	if len(s.history) != historyLimit || s.history[historyLimit-1].text != fmt.Sprintf("warning %d", 2*historyLimit+4) {
 		t.Fatalf("history not bounded to the newest events: %d entries, last %+v", len(s.history), s.history[len(s.history)-1])
+	}
+}
+
+func TestProjectRawLogRecentSuffix(t *testing.T) {
+	t.Parallel()
+	for _, count := range []int{0, logLimit - 1, logLimit, logLimit + 1, 3*logLimit + 5} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			t.Parallel()
+			events := dashboardEvents(dashboardSession())
+			for i := range count {
+				batch := dashboardEvents(
+					&journal.SMUIntent{Op: journal.SMUSet, Core: new(0), Offset: -20},
+					&journal.SMUWrite{Core: new(0), Offset: -20},
+					&journal.SMUReadback{Core: 0, Offset: -20},
+					&journal.PreflightCheck{},
+					&journal.SessionWarning{Operation: "projection", Error: fmt.Sprint(i)})
+				for _, e := range batch {
+					e.Seq = len(events) + 1
+					e.Time = events[0].Time.Add(time.Duration(e.Seq) * time.Second)
+					e.Msg = fmt.Sprintf("event %d: peak 75°C\n\x1b[31m", e.Seq)
+					events = append(events, e)
+				}
+			}
+			var want []entry
+			for _, e := range events {
+				if e.Kind == journal.KindSMUIntent || e.Kind == journal.KindSMUWrite || e.Kind == journal.KindSMUReadback || e.Kind == journal.KindPreflightCheck {
+					continue
+				}
+				want = append(want, entry{at: e.Time, text: vtText(e.Msg)})
+			}
+			if len(want) > logLimit {
+				want = want[len(want)-logLimit:]
+			}
+			if diff := cmp.Diff(want, Project(events).log, cmp.AllowUnexported(entry{})); diff != "" {
+				t.Fatalf("raw log must retain the same newest eligible events in journal order (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

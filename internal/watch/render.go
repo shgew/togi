@@ -97,7 +97,7 @@ func RenderView(s Snapshot, sc Screen, now time.Time) (string, int) {
 	switch sc.View {
 	case HelpView, LogView:
 		if p := s.progress(now); p != "" {
-			lines = append(lines, pad+p, "")
+			lines = append(lines, pad+ansi.Truncate(p, width, "..."), "")
 		}
 		var body []string
 		if sc.View == LogView {

@@ -45,6 +45,7 @@ type Snapshot struct {
 	lastCrash       *time.Time
 	deadEnd         *deadEndView
 	stopped         *time.Time
+	stoppedReason   journal.ShutdownReason
 	history         []entry
 	log             []entry
 }
@@ -103,6 +104,7 @@ type groupView struct {
 	passes int
 	needed int
 	probe  *journal.CombinationMember
+	held   []journal.CombinationMember
 }
 
 type deadEndView struct {
@@ -175,7 +177,7 @@ func Project(events []journal.Event) Snapshot {
 	} else {
 		s.checkingFull, s.checkingMissing = t.CheckingCoverage()
 	}
-	p := projector{s: &s, st: &st, intents: map[string]*journal.TrialIntent{}, applied: map[int]int{}, checking: map[int]bool{}, failures: map[int]*failureView{}}
+	p := projector{s: &s, st: &st, intents: map[string]*journal.TrialIntent{}, applied: map[int]int{}, tuned: map[int]int{}, checking: map[int]bool{}, failures: map[int]*failureView{}}
 	for _, e := range events {
 		p.fold(e)
 	}
@@ -188,6 +190,7 @@ type projector struct {
 	st          *journal.State
 	intents     map[string]*journal.TrialIntent
 	applied     map[int]int
+	tuned       map[int]int
 	checking    map[int]bool
 	current     *journal.TrialIntent
 	currentBoot string
@@ -231,9 +234,17 @@ func (p *projector) fold(e journal.Event) {
 		}
 	case *journal.CorePhase:
 		p.checking[d.Core] = d.To == journal.PhaseSearch && d.CheckSoloLimit
+		p.tuned[d.Core] = d.Offset
 	case *journal.TunerDecision:
+		p.tuned[d.Core] = d.ToOffset
 		if d.Phase == journal.PhaseSearch {
 			p.checking[d.Core] = d.Decision == journal.CheckSoloLimit
+		}
+	case *journal.ProfileChange:
+		for i, offset := range d.To {
+			if i < len(p.st.Cores) {
+				p.tuned[p.st.Cores[i].Core] = offset
+			}
 		}
 	case *journal.Failure:
 		s.failures++
@@ -261,17 +272,12 @@ func (p *projector) fold(e journal.Event) {
 		p.stopped = true
 		at := e.Time
 		s.stopped = &at
+		s.stoppedReason = d.Reason
 	}
 	if line, ok := p.describe(e); ok {
 		s.history = foldEntry(s.history, line)
 		if len(s.history) > 2*historyLimit {
 			s.history = slices.Clone(s.history[len(s.history)-historyLimit:])
-		}
-	}
-	if e.Kind != journal.KindSMUIntent && e.Kind != journal.KindSMUWrite && e.Kind != journal.KindSMUReadback && e.Kind != journal.KindPreflightCheck {
-		s.log = append(s.log, entry{at: e.Time, text: vtText(e.Msg)})
-		if len(s.log) > 2*logLimit {
-			s.log = slices.Clone(s.log[len(s.log)-logLimit:])
 		}
 	}
 }
@@ -287,9 +293,14 @@ func (p *projector) finish(events []journal.Event) {
 	if len(s.history) > historyLimit {
 		s.history = s.history[len(s.history)-historyLimit:]
 	}
-	if len(s.log) > logLimit {
-		s.log = s.log[len(s.log)-logLimit:]
+	for i := len(events) - 1; i >= 0 && len(s.log) < logLimit; i-- {
+		e := events[i]
+		if e.Kind == journal.KindSMUIntent || e.Kind == journal.KindSMUWrite || e.Kind == journal.KindSMUReadback || e.Kind == journal.KindPreflightCheck {
+			continue
+		}
+		s.log = append(s.log, entry{at: e.Time, text: vtText(e.Msg)})
 	}
+	slices.Reverse(s.log)
 	switch {
 	case p.current != nil:
 		s.trial = newTrial(p.current, events)
@@ -314,7 +325,7 @@ func (p *projector) hunt() {
 	if n := len(st.Hunt.Groups); n > 0 {
 		m := st.Hunt.Groups[n-1]
 		if m.Outcome == "running" {
-			h.group = &groupView{id: m.Group, cores: m.Cores, passes: m.Passes, needed: m.Needed, probe: m.Probe}
+			h.group = &groupView{id: m.Group, cores: m.Cores, passes: m.Passes, needed: m.Needed, probe: m.Probe, held: m.Held}
 			if p.group != nil && p.group.Group == m.Group {
 				h.group.stage = p.group.Stage
 			}
@@ -335,7 +346,10 @@ func (p *projector) coreViews() {
 			v.loaded = t.hasStarted && slices.Contains(t.cores, c.Core)
 			parked := t.condition == machine.Parked && s.hunt != nil && s.hunt.group != nil
 			if parked && slices.Contains(s.hunt.candidates, c.Core) {
-				v.suspect = slices.Contains(s.hunt.group.cores, c.Core)
+				g := s.hunt.group
+				v.suspect = slices.Contains(g.cores, c.Core) || g.probe != nil && g.probe.Core == c.Core || slices.ContainsFunc(g.held, func(m journal.CombinationMember) bool {
+					return m.Core == c.Core
+				})
 				v.parked = !v.suspect && i < len(s.hunt.parked)
 			}
 			v.tested = t.hasStarted && (v.suspect || v.loaded && !parked)

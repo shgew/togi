@@ -8,8 +8,8 @@
   [94m█[m  [37mThis step is all-core load: heavy work on many cores at once, for power and[m
   [94m█[m  [37mheat. It runs on cores 00-07 at once.[m
   [94m█[m  
-  [94m█[m  [37mThe goal is a clean lap: every step passes with no failure, on offsets that[m
-  [94m█[m  [37mcan't go any deeper.[m
+  [94m█[m  [37mThe goal is a clean lap: ordinary steps must pass and record-only partial[m
+  [94m█[m  [37msteps only need to complete, on offsets that can't go any deeper.[m
   [94m█[m  
   [94m█[m  [90mnow  [m[97mlap 1, step 1 of 14[m
   [94m█[m  [37mall-core load on cores 00-07[m[90m (mprime AVX2 36K-248K)[m
@@ -18,8 +18,8 @@
   
   [92m■ Find limits[m   [93m► Test together[m [90m○ Go deeper[m     [97m○ Clean lap[m     [90m∞ Keep checking[m
   [92m█████████████[m[90m[m   [93m[m[90m░░░░░░░░░░░░░[m   [90m[m[90m░░░░░░░░░░░░░[m   [90m[m[90m░░░░░░░░░░░░░[m   [90m[m[90m░░░░░░░░░░░░░[m
-  [90m16/16 cores[m     [37mlap 1[m           [90mafter a[m         [90mthe goal[m        [90muntil stopped[m
-  [90m[m                [90mstep 1 of 14[m    [90mclean lap[m       [90m[m                [90m[m
+  [90m16/16 cores[m     [37mlap 1[m           [90mafter a full[m    [90mthe goal[m        [90muntil stopped[m
+  [90m[m                [90mstep 1 of 14[m    [90mpassed lap[m      [90m[m                [90m[m
   
   [90m HUNT    [m  [90mno hunt running[m
   

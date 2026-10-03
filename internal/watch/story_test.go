@@ -91,14 +91,23 @@ func TestStoryDeepeningUsesTogetherScheduledChecks(t *testing.T) {
 		t.Fatal("fixture has no projected deepening checks")
 	}
 	text := storyText(s)
-	for _, want := range []string{"core 00 goes deeper to -21", "core 01 yields to -29", "whole proposed profile stays applied", "3 light load runs on core 00", "3 heavy vector load runs on core 00"} {
+	for _, want := range []string{"passed a full lap", "core 00 goes deeper to -21", "core 01 yields to -29", "whole proposed profile stays applied", "3 light load runs on core 00", "3 heavy vector load runs on core 00"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q: %s", want, text)
 		}
 	}
-	for _, wrong := range []string{"runs alone", "light load runs on core 01", "heavy vector load runs on core 01"} {
+	for _, wrong := range []string{"passed a clean lap", "runs alone", "light load runs on core 01", "heavy vector load runs on core 01"} {
 		if strings.Contains(text, wrong) {
 			t.Fatalf("promised unplanned check %q: %s", wrong, text)
+		}
+	}
+	next := strings.Join(s.comingUp(), "\n")
+	if !strings.Contains(next, "keep deepening while more depth is reachable") || !strings.Contains(next, "return to checking laps") || strings.Contains(next, "new clean lap") {
+		t.Fatalf("passed round promises the wrong continuation: %s", next)
+	}
+	for _, st := range s.stations() {
+		if st.label == "Test together" && strings.Contains(strings.Join(st.sub, " "), "clean") {
+			t.Fatalf("passed full lap incorrectly described as clean: %+v", st)
 		}
 	}
 }
@@ -386,5 +395,52 @@ func TestStoryGoalSurvivesPartialScheduleReload(t *testing.T) {
 				t.Fatalf("partial future schedule confused prior credit: %s", next)
 			}
 		})
+	}
+}
+
+func TestStoryShutdownClaimsRestorationOnlyForRunStops(t *testing.T) {
+	t.Parallel()
+	for _, reason := range []journal.ShutdownReason{journal.ShutdownCommand, journal.ShutdownSignal, journal.ShutdownLaps, journal.ShutdownDeadEnd} {
+		t.Run(string(reason), func(t *testing.T) {
+			s := Project(dashboardEvents(dashboardSession(),
+				&journal.ProfileApplied{Offsets: []int{-20, -30, -10}, Condition: machine.Together},
+				&journal.Shutdown{Reason: reason}))
+			text := storyText(s)
+			if s.stoppedReason != reason {
+				t.Fatalf("lost shutdown reason: got %q, want %q", s.stoppedReason, reason)
+			}
+			restored := strings.Contains(text, "put the offsets back to safe values")
+			if restored != (reason == journal.ShutdownSignal || reason == journal.ShutdownLaps) {
+				t.Fatalf("shutdown %q misstates restoration: %s", reason, text)
+			}
+			if reason == journal.ShutdownCommand && (!strings.Contains(text, "without changing the applied offsets") || strings.Contains(text, "not what is applied now")) {
+				t.Fatalf("command shutdown implies hardware changed: %s", text)
+			}
+		})
+	}
+}
+
+func TestStoryFullHuntPassRestartsBinaryGroups(t *testing.T) {
+	t.Parallel()
+	events := dashboardEvents(dashboardSession(),
+		&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Parked: []int{0, 0, 0}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 1, 2}, Starts: 5, StartS: 120, DurationS: 600},
+		&journal.HuntGroup{Hunt: 1, Group: 3, Stage: "full", Cores: []int{0, 1, 2}, Profile: []int{-20, -30, -10}, DurationS: 120},
+		&journal.TrialIntent{Trial: "full", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Profile: []int{-20, -30, -10}, DurationS: 120, Hunt: 1, Group: 3},
+		&journal.TrialStart{Trial: "full"})
+	text := storyText(Project(events))
+	if !strings.Contains(text, "split the original candidates in two") || !strings.Contains(text, "restart group trials at the length of the original trial") || strings.Contains(text, "I repeat it") {
+		t.Fatalf("full-group pass promises the wrong next trial: %s", text)
+	}
+}
+
+func TestStoryCheckingGoalIncludesRecordOnlyCompletion(t *testing.T) {
+	t.Parallel()
+	s := Snapshot{checkingFull: true}
+	st := s.lapStory(&trial{regime: machine.R7, cores: []int{0}, recordOnly: true})
+	text := strings.Join(st.paragraphs, "\n")
+	for _, want := range []string{"ordinary steps must pass", "record-only partial steps only need to complete", "The lap goes on either way"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("checking goal contradicts record-only completion: missing %q in %s", want, text)
+		}
 	}
 }

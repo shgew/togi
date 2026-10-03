@@ -23,12 +23,14 @@
 █                      tuning takes.
 █ 
 █   Go deeper          Backing off after a failure can leave room elsewhere. After
-█                      a clean lap I try to win depth back, checking every move.
+█                      a passed full lap I try to win depth back, checking every
+█                      move.
 █ 
-█   Clean lap          The goal: a full lap with all its checks passed at the
-█                      resulting offsets and no room left to deepen. Earlier
-█                      failures can lead to backing off and finishing this same
-█                      lap.
+█   Clean lap          The goal: a passed full lap ending with every core at its
+█                      limit, with no more total depth reachable. Ordinary steps
+│                      pass; record-only partial steps complete either way.
+│                      Earlier failures can lead to backing off and finishing this
+│                      same lap.
 │ 
 │   Keep checking      After that I keep running laps to catch rarer failures
 │                      until you stop me.
@@ -63,7 +65,5 @@
 │                   temperature (Tctl) any run reached. L shows the journal
 │                   itself.
 │ 
-│ 
-│ Words
 
-  ↑↓ PgUp PgDn  lines 1-63 of 144    ? or Esc back    L event log    q quit
+  ↑↓ PgUp PgDn  lines 1-63 of 149    ? or Esc back    L event log    q quit

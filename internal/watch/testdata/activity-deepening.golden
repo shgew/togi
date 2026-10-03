@@ -7,7 +7,7 @@
   
   ■ Find limits   ■ Test together ► Go deeper     ○ Clean lap     ∞ Keep checking
   █████████████   █████████████   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
-  3/3 cores       lap was clean   round 2         the goal        until stopped
+  3/3 cores       lap passed      round 2         the goal        until stopped
                                                                   
   
    HUNT      no hunt running
@@ -21,11 +21,11 @@
   02  -10  can go deeper        ▒▒▒▒▒▒▒▒▒▒········································
   
   Coming up
-  If the round passes, the deeper offsets need a new clean lap. If not, I handle
-  the failure first.
+  If the round passes, I keep deepening while more depth is reachable, then return
+  to checking laps. If not, I handle the failure first.
 
   What happened
-    0h00m  round    #2: trying core 00 deeper
+    0h00m  round    #2: core 00 goes deeper to -21
     0h00m  start    session started on 3 cores
 
 

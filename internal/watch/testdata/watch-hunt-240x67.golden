@@ -21,8 +21,8 @@
   
   ■ Find limits   ► Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
   █████████████   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
-  16/16 cores     lap 1           after a         the goal        until stopped
-                  paused          clean lap                       
+  16/16 cores     lap 1           after a full    the goal        until stopped
+                  paused          passed lap                      
   
    HUNT 1    Lap 1 waits at step 1 while I find which cores caused the crash
   

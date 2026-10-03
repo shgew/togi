@@ -118,7 +118,7 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 		}
 		line.tag, line.text, line.tone = tagCombo, text, warnTone
 	case *journal.DeepeningRound:
-		line.tag, line.text, line.tone = roundText(d)
+		line.tag, line.text, line.tone = p.roundText(d)
 	case *journal.DeadEnd:
 		line.tag, line.text, line.tone = tagStop, "dead end: "+vtText(d.Detail), badTone
 	case *journal.Shutdown:
@@ -275,12 +275,23 @@ func huntEndText(d *journal.HuntEnd) (string, string, tone) {
 	return tagHunt, fmt.Sprintf("#%d ended: %s", d.Hunt, vtText(d.Reason)), plainTone
 }
 
-func roundText(d *journal.DeepeningRound) (string, string, tone) {
+func (p *projector) roundText(d *journal.DeepeningRound) (string, string, tone) {
 	switch {
 	case d.Event == journal.LapStart:
-		return tagRound, fmt.Sprintf("#%d: trying %s deeper", d.Round, coreList(d.Cores)), plainTone
+		var moves []string
+		for i, c := range p.st.Cores {
+			if !slices.Contains(d.Cores, c.Core) || i >= len(d.Profile) {
+				continue
+			}
+			move := "goes deeper"
+			if d.Profile[i] > p.tuned[c.Core] {
+				move = "yields"
+			}
+			moves = append(moves, fmt.Sprintf("core %02d %s to %d", c.Core, move, d.Profile[i]))
+		}
+		return tagRound, fmt.Sprintf("#%d: %s", d.Round, strings.Join(moves, ", ")), plainTone
 	case d.Passed:
-		return tagRound, fmt.Sprintf("#%d passed, the deeper offsets held", d.Round), goodTone
+		return tagRound, fmt.Sprintf("#%d passed, the proposed offsets held", d.Round), goodTone
 	}
 	return tagRound, fmt.Sprintf("#%d stopped: %s", d.Round, vtText(d.Reason)), warnTone
 }
