@@ -293,16 +293,11 @@ func TestUnconfirmedCleanupDeadEnd(t *testing.T) {
 			name = "partial start"
 		}
 		t.Run(name, func(t *testing.T) {
-			run := func(in simRun, killed *trigger) (Stop, error) {
+			run := func(in simRun, killed *appendGate) (Stop, error) {
 				seams := in.Machine.Seams()
 				seams.Trials = containmentTrials{Trials: seams.Trials, atStart: atStart}
-				boot, _ := seams.Host.BootID()
-				j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic})
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer j.Close()
-				return Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapFor(in, killed)(j), Machine: seams})
+				in.Seams = &seams
+				return simulateBoot(context.Background(), in, wrapFor(in, killed))
 			}
 			cfg := small()
 			cfg.BIOS = []int{-10, -20}

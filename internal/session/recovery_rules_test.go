@@ -339,19 +339,8 @@ func (r wallJumpRunning) Wait(context.Context, machine.Reporter) (machine.Result
 }
 
 func runWithSeams(ctx context.Context, in simRun, seams machine.Machine) (Stop, error) {
-	boot, err := seams.Host.BootID()
-	if err != nil {
-		return Stop{}, err
-	}
-	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Build: Build()})
-	if err != nil {
-		return Stop{}, err
-	}
-	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapFor(in, nil)(j), Machine: seams, Rotations: in.Rotations, Stderr: in.Stderr})
-	if closeErr := j.Close(); err == nil {
-		err = closeErr
-	}
-	return stop, err
+	in.Seams = &seams
+	return simulateBoot(ctx, in, wrapFor(in, nil))
 }
 
 func TestCorrectedMCESelectionSurvivesWallJump(t *testing.T) {

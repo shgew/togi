@@ -52,17 +52,19 @@ func (s observedSweepTrials) Sweep(ctx context.Context) (string, error) {
 	if s.o.writes != 0 || s.o.trials != 0 {
 		s.o.t.Fatal("sweep followed a write or trial")
 	}
-	checks := 0
+	checks := map[string]bool{}
 	for _, e := range s.o.journal.Events()[s.o.start:] {
 		if p, ok := e.Data.(*journal.PreflightCheck); ok {
 			if !p.OK {
 				s.o.t.Fatal("sweep ran after failed preflight")
 			}
-			checks++
+			checks[p.Check] = true
 		}
 	}
-	if checks < 7 {
-		s.o.t.Fatalf("sweep preceded nonwriting preflight: %d checks", checks)
+	for _, name := range []string{"root", "cpu", "ryzen_smu", "readback", "slot_mapping", "backends", "systemd_run", "pm_table"} {
+		if !checks[name] {
+			s.o.t.Fatalf("sweep preceded nonwriting preflight check %s", name)
+		}
 	}
 	if s.o.fail {
 		return "", errors.New("stale scope cleanup cannot be confirmed")

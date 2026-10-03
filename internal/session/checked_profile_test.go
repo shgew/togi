@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -71,21 +70,57 @@ func TestApplyWritesShallowBeforeDeepInCoreOrder(t *testing.T) {
 	}
 }
 
+func TestApplyRefusesJointMarkBeforeSMUWrite(t *testing.T) {
+	t.Parallel()
+	r, _, closeJournal := checkedRunner(t, []int{-30, 0})
+	defer closeJournal()
+	r.applied = []int{-30, 0}
+	if _, err := r.append(&journal.MarkJoint{Mark: 1, Members: []journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}}); err != nil {
+		t.Fatal(err)
+	}
+	before := r.in.Journal.Events()
+	smu := &recordedSMU{SMU: r.in.Machine.SMU}
+	r.in.Machine.SMU = smu
+	if err := r.apply([]int{-30, -30}, &journal.ProfileApplied{Offsets: []int{-30, -30}, Condition: machine.Resident}, 0); err == nil {
+		t.Fatal("profile reaching the joint mark was not refused")
+	}
+	if diff := cmp.Diff(before, r.in.Journal.Events()); diff != "" {
+		t.Fatalf("refused profile recorded a write (-before +after):\n%s", diff)
+	}
+	if diff := cmp.Diff([][2]int(nil), smu.writes); diff != "" {
+		t.Fatalf("refused profile reached the SMU (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]int{-30, 0}, r.applied); diff != "" {
+		t.Fatalf("refused profile changed applied offsets (-want +got):\n%s", diff)
+	}
+}
+
+type recordedSMU struct {
+	machine.SMU
+	writes [][2]int
+}
+
+func (s *recordedSMU) SetOffset(core, offset int) error {
+	s.writes = append(s.writes, [2]int{core, offset})
+	return s.SMU.SetOffset(core, offset)
+}
+
 func TestApplyRefusesJointMarkAndPartialWrite(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		failAt  int
-		want    string
 		offsets []int
 	}{
-		{"joint mark", 0, "refusing to write core 01 to -30: the profile would reach joint mark J1", []int{-30, 0, 0, 0}},
-		{"partial SMU write", 3, "", []int{-30, 0, 0, 0}},
+		{"joint mark", 0, []int{-30, 0, 0, 0}},
+		{"partial SMU write", 3, []int{-30, 0, 0, 0}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			r, m, closeJournal := checkedRunner(t, []int{0, 0, 0, 0})
 			defer closeJournal()
+			smu := &recordedSMU{SMU: r.in.Machine.SMU}
+			r.in.Machine.SMU = smu
 			if tc.failAt == 0 {
 				if _, err := r.append(&journal.MarkJoint{Mark: 1, Members: []journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}}); err != nil {
 					t.Fatal(err)
@@ -94,8 +129,8 @@ func TestApplyRefusesJointMarkAndPartialWrite(t *testing.T) {
 				m.FailWriteAt(tc.failAt)
 			}
 			err := r.apply([]int{-30, -30, 0, 0}, &journal.ProfileApplied{Offsets: []int{-30, -30, 0, 0}, Condition: machine.Resident}, 0)
-			if err == nil || (tc.failAt == 0 && err.Error() != tc.want) || (tc.failAt != 0 && !errors.Is(err, errDeadEndEvidence)) {
-				t.Fatalf("apply: %v, want %s", err, tc.want)
+			if err == nil || (tc.failAt != 0 && !errors.Is(err, errDeadEndEvidence)) {
+				t.Fatalf("apply did not refuse the incomplete write: %v", err)
 			}
 			if diff := cmp.Diff(tc.offsets, r.applied); diff != "" {
 				t.Fatalf("applied (-want +got):\n%s", diff)
@@ -110,10 +145,52 @@ func TestApplyRefusesJointMarkAndPartialWrite(t *testing.T) {
 			if slices.ContainsFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindProfileApplied }) {
 				t.Fatal("profile.applied recorded after incomplete write")
 			}
-			if tc.failAt != 0 && !slices.ContainsFunc(events, func(e journal.Event) bool {
-				return e.Kind == journal.KindSMUError && strings.Contains(e.Msg, "simulated SMU command failure")
-			}) {
-				t.Fatal("missing SMU failure evidence")
+			wantWrites := [][2]int{{0, -30}}
+			if tc.failAt != 0 {
+				wantWrites = append(wantWrites, [2]int{1, -30})
+			}
+			if diff := cmp.Diff(wantWrites, smu.writes); diff != "" {
+				t.Fatalf("actual writes (-want +got):\n%s", diff)
+			}
+			var intents []*journal.SMUIntent
+			var written []*journal.SMUWrite
+			var failure *journal.SMUError
+			for _, e := range events {
+				switch p := e.Data.(type) {
+				case *journal.SMUIntent:
+					if p.Core != nil {
+						intents = append(intents, p)
+					}
+				case *journal.SMUWrite:
+					if p.Core != nil {
+						written = append(written, p)
+					}
+				case *journal.SMUError:
+					if diff := cmp.Diff(journal.KindSMUError, e.Kind); diff != "" {
+						t.Fatal(diff)
+					}
+					failure = p
+				}
+			}
+			wantIntents := []*journal.SMUIntent{{Op: journal.SMUSet, Core: new(0), Offset: -30}}
+			if tc.failAt != 0 {
+				wantIntents = append(wantIntents, &journal.SMUIntent{Op: journal.SMUSet, Core: new(1), Offset: -30})
+				if failure == nil || failure.Error == "" {
+					t.Fatal("missing SMU failure evidence")
+				}
+				got := *failure
+				got.Error = ""
+				if diff := cmp.Diff(journal.SMUError{Op: journal.SMUSet, Core: new(1), Offset: -30}, got); diff != "" {
+					t.Fatalf("failed write payload (-want +got):\n%s", diff)
+				}
+			} else if failure != nil {
+				t.Fatal("joint-mark refusal reported an SMU failure")
+			}
+			if diff := cmp.Diff(wantIntents, intents); diff != "" {
+				t.Fatalf("write intents (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff([]*journal.SMUWrite{{Op: journal.SMUSet, Core: new(0), Offset: -30}}, written); diff != "" {
+				t.Fatalf("completed writes (-want +got):\n%s", diff)
 			}
 		})
 	}

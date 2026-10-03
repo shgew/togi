@@ -51,20 +51,6 @@ func (j *blockedProjection) WriteState(s journal.State) error {
 	return err
 }
 
-func stateBoot(in simRun, wrap func(*journal.Journal) Journal) (stop Stop, err error) {
-	seams := in.Machine.Seams()
-	boot, err := seams.Host.BootID()
-	if err != nil {
-		return Stop{}, err
-	}
-	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Build: Build()})
-	if err != nil {
-		return Stop{}, err
-	}
-	defer func() { err = errors.Join(err, j.Close()) }()
-	return Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrap(j), Machine: seams, Rotations: in.Rotations, Stderr: in.Stderr})
-}
-
 func TestStateWriteFailureWarnsContinuesAndRebuilds(t *testing.T) {
 	t.Parallel()
 	cfg := small()
@@ -76,7 +62,7 @@ func TestStateWriteFailureWarnsContinuesAndRebuilds(t *testing.T) {
 	var stderr bytes.Buffer
 	in.Stderr = &stderr
 	var blocked *blockedProjection
-	stop, err := stateBoot(in, func(j *journal.Journal) Journal {
+	stop, err := simulateBoot(context.Background(), in, func(j *journal.Journal) Journal {
 		blocked = &blockedProjection{Journal: j, dir: dir, kind: journal.KindTrialEnd}
 		return blocked
 	})
@@ -128,7 +114,7 @@ func TestStateWriteFailureWarnsContinuesAndRebuilds(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.Reboot()
-	stop, err = stateBoot(in, func(j *journal.Journal) Journal { return j })
+	stop, err = simulateBoot(context.Background(), in, func(j *journal.Journal) Journal { return j })
 	if err != nil || stop.Reason != StopRotations {
 		t.Fatalf("next start: stop %+v, error %v", stop, err)
 	}
@@ -179,7 +165,7 @@ func TestProjectionWarningAppendFailureIsFatal(t *testing.T) {
 			var stderr bytes.Buffer
 			in.Stderr = &stderr
 			var faulty *failAppendJournal
-			stop, err := stateBoot(in, func(j *journal.Journal) Journal {
+			stop, err := simulateBoot(context.Background(), in, func(j *journal.Journal) Journal {
 				var projection Journal = &blockedProjection{Journal: j, dir: in.Dir, kind: journal.KindTrialStart}
 				if startup {
 					projection = unwritableState{j}
@@ -226,7 +212,7 @@ func TestStateRebuildWriteFailureWarnsAndContinues(t *testing.T) {
 	m := newSim(t, cfg)
 	in := simInput(t.TempDir(), m)
 	in.Config.CandidateEdges = map[int]int{0: -50, 1: -50}
-	stop, err := stateBoot(in, func(j *journal.Journal) Journal { return j })
+	stop, err := simulateBoot(context.Background(), in, func(j *journal.Journal) Journal { return j })
 	if err != nil || stop.Reason != StopRotations {
 		t.Fatalf("initial run: stop %+v, error %v", stop, err)
 	}
@@ -241,7 +227,7 @@ func TestStateRebuildWriteFailureWarnsAndContinues(t *testing.T) {
 	var stderr bytes.Buffer
 	in.Stderr = &stderr
 	var blocked *blockedProjection
-	stop, err = stateBoot(in, func(j *journal.Journal) Journal {
+	stop, err = simulateBoot(context.Background(), in, func(j *journal.Journal) Journal {
 		blocked = &blockedProjection{Journal: j, dir: in.Dir, blocked: true}
 		return blocked
 	})

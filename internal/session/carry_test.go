@@ -1,36 +1,17 @@
 package session
 
 import (
-	"context"
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/carry"
-	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/tuner"
 )
-
-type carryCrashJournal struct {
-	*testJournal
-	remaining int
-}
-
-func (j *carryCrashJournal) Append(p journal.Payload, cause ...int) (journal.Event, error) {
-	e, err := j.testJournal.Append(p, cause...)
-	if err == nil && (p.Kind() == journal.KindTrialCarried || p.Kind() == journal.KindFailureCarried) {
-		j.remaining--
-		if j.remaining == 0 {
-			return e, errKilled
-		}
-	}
-	return e, err
-}
 
 func carriedFixture(t *testing.T, m *sim.Machine) *carry.Carry {
 	t.Helper()
@@ -52,37 +33,23 @@ func carriedFixture(t *testing.T, m *sim.Machine) *carry.Carry {
 	}
 }
 
-func runCarriedSession(t *testing.T, dir string, m *sim.Machine, c *carry.Carry, crashAfter int) ([]journal.Event, Stop) {
+func runCarriedSession(t *testing.T, dir string, m *sim.Machine, c *carry.Carry, interruptAfter int) ([]journal.Event, Stop) {
 	t.Helper()
-	for range maxSimulatedBoots {
-		seams := m.Seams()
-		boot, err := seams.Host.BootID()
-		if err != nil {
-			t.Fatal(err)
-		}
-		j, err := journal.Open(dir, journal.Options{Boot: boot, Now: m.Now, Monotonic: seams.Clock.Monotonic, Build: Build()})
-		if err != nil {
-			t.Fatal(err)
-		}
-		wrapped := &carryCrashJournal{testJournal: &testJournal{Journal: j, state: stateOf(dir)}, remaining: crashAfter}
-		stop, runErr := Run(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Boot: boot, Journal: wrapped, Machine: seams, Rotations: 1, Carry: c, SessionID: j.SessionID})
-		events := j.Events()
-		if err := j.Close(); err != nil {
-			t.Fatal(err)
-		}
-		switch {
-		case errors.Is(runErr, errKilled):
-			crashAfter = 0
-		case errors.Is(runErr, machine.ErrCrashed):
-			m.Reboot()
-		case runErr != nil:
-			t.Fatal(runErr)
-		default:
-			return events, stop
+	in := simInput(dir, m)
+	in.Carry = c
+	var gate *appendGate
+	if interruptAfter > 0 {
+		gate = &appendGate{
+			after: true,
+			at:    interruptAfter,
+			match: func(p journal.Payload, _ journal.Event) bool {
+				return p.Kind() == journal.KindTrialCarried || p.Kind() == journal.KindFailureCarried
+			},
+			do: func(journal.Event) error { return errKilled },
 		}
 	}
-	t.Fatal("too many boots")
-	return nil, Stop{}
+	stop := drive(t, in, gate)
+	return readEvents(t, dir), stop
 }
 
 func TestCarryFactsResumeWithoutDuplicates(t *testing.T) {
