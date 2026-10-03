@@ -36,18 +36,18 @@ func TestSampleEvidenceStalledWorker(t *testing.T) {
 			for i, reading := range tc.readings {
 				samples[i] = machine.TrialConditions{ElapsedMS: int64(i+1) * 1000, WorkerCPUMS: reading}
 			}
-			last, core, at := sampleEvidence(slices.Values(samples), tc.cores, tc.regime)
+			summary := sampleEvidence(slices.Values(samples), tc.cores, tc.regime)
 			if len(samples) > 0 {
-				if diff := cmp.Diff(&samples[len(samples)-1], last); diff != "" {
+				if diff := cmp.Diff(&samples[len(samples)-1], summary.last); diff != "" {
 					t.Fatal(diff)
 				}
-			} else if last != nil {
-				t.Fatalf("last sample without samples: %+v", last)
+			} else if summary.last != nil {
+				t.Fatalf("last sample without samples: %+v", summary.last)
 			}
-			if diff := cmp.Diff(tc.core, core); diff != "" {
+			if diff := cmp.Diff(tc.core, summary.stalledCore); diff != "" {
 				t.Fatal(diff)
 			}
-			if diff := cmp.Diff(tc.at, at); diff != "" {
+			if diff := cmp.Diff(tc.at, summary.workerStalledMS); diff != "" {
 				t.Fatal(diff)
 			}
 		})

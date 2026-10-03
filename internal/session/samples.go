@@ -6,7 +6,13 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func sampleEvidence(samples iter.Seq[machine.TrialConditions], cores []int, regime machine.Regime) (*machine.TrialConditions, *int, *int64) {
+type sampleSummary struct {
+	last            *machine.TrialConditions
+	stalledCore     *int
+	workerStalledMS *int64
+}
+
+func sampleEvidence(samples iter.Seq[machine.TrialConditions], cores []int, regime machine.Regime) sampleSummary {
 	type worker struct {
 		cpu   int64
 		stall *int64
@@ -34,7 +40,7 @@ func sampleEvidence(samples iter.Seq[machine.TrialConditions], cores []int, regi
 		count++
 	}
 	if !valid || count < 2 {
-		return last, nil, nil
+		return sampleSummary{last: last}
 	}
 	first := -1
 	tie := false
@@ -49,7 +55,7 @@ func sampleEvidence(samples iter.Seq[machine.TrialConditions], cores []int, regi
 		}
 	}
 	if first < 0 || tie {
-		return last, nil, nil
+		return sampleSummary{last: last}
 	}
-	return last, new(cores[first]), workers[first].stall
+	return sampleSummary{last: last, stalledCore: new(cores[first]), workerStalledMS: workers[first].stall}
 }

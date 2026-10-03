@@ -307,7 +307,8 @@ func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine
 		end.Core = nil
 	}
 	if end.Outcome == journal.OutcomeFailure && len(tr.t.Cores) >= 2 {
-		_, end.StalledCore, end.WorkerStalledMS = sampleEvidence(r.in.Machine.Trials.Samples(tr.id), tr.t.Cores, tr.t.Regime)
+		summary := sampleEvidence(r.in.Machine.Trials.Samples(tr.id), tr.t.Cores, tr.t.Regime)
+		end.StalledCore, end.WorkerStalledMS = summary.stalledCore, summary.workerStalledMS
 	}
 	ended, err := r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...)
 	if err != nil {

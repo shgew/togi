@@ -567,11 +567,11 @@ func (r *runner) closeOpenTrial() error {
 		end.Core = nil
 	}
 	if _, crashed := r.fold.crashSeq[open.boot]; crashed || end.Outcome == journal.OutcomeFailure {
-		sample, stalledCore, stalledMS := sampleEvidence(r.in.Machine.Trials.Samples(open.intent.Trial), open.intent.Cores, open.intent.Regime)
+		summary := sampleEvidence(r.in.Machine.Trials.Samples(open.intent.Trial), open.intent.Cores, open.intent.Regime)
 		if end.Outcome == journal.OutcomeFailure {
-			end.StalledCore, end.WorkerStalledMS = stalledCore, stalledMS
+			end.StalledCore, end.WorkerStalledMS = summary.stalledCore, summary.workerStalledMS
 		}
-		if sample != nil && crashed {
+		if sample := summary.last; sample != nil && crashed {
 			end.LastSampleS = new(int(sample.ElapsedMS / 1000))
 			end.LastSampleTctlC = sample.TctlC
 			for _, mhz := range sample.CoreMHz {
