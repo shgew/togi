@@ -49,7 +49,7 @@ func TestMatchingPstoreReadError(t *testing.T) {
 func TestPstoreSurvivesLostJournalTail(t *testing.T) {
 	t.Parallel()
 	k := NewKernel(nil)
-	k.pstore = fstest.MapFS{"150/001/dmesg.txt": {Data: []byte("kernel page dump\n")}}
+	k.pstore = fstest.MapFS{"150/001/dmesg.txt": {Data: []byte("Panic#1 Part1\nkernel page dump\n")}}
 	k.journalctl = func(args []string) ([]byte, []byte, int, error) {
 		if args[0] != "--list-boots" {
 			return nil, nil, 0, errors.New("journal tail is corrupt")
@@ -63,7 +63,7 @@ func TestPstoreSurvivesLostJournalTail(t *testing.T) {
 	if got == nil {
 		t.Fatal("lost journal tail discarded pstore diagnostic")
 	}
-	if diff := cmp.Diff([]string{"kernel page dump"}, got.Lines); diff != "" {
+	if diff := cmp.Diff([]string{"Panic#1 Part1", "kernel page dump"}, got.Lines); diff != "" {
 		t.Fatal(diff)
 	}
 }

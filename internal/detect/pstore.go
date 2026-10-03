@@ -19,6 +19,7 @@ import (
 const pstoreDir = "/var/lib/systemd/pstore"
 const pstoreTailBytes = 4096
 const pstoreTailLines = 32
+const pstoreHeaderBytes = 128
 
 func (k *Kernel) SavedPstore(boot string) (*machine.PstoreRecord, error) {
 	entries, err := fs.ReadDir(k.pstore, ".")
@@ -36,7 +37,7 @@ func (k *Kernel) SavedPstore(boot string) (*machine.PstoreRecord, error) {
 		return nil, err
 	}
 	selected := ""
-	firstStamp := int64(0)
+	firstPart := uint64(0)
 	latestCount := uint64(0)
 	for _, entry := range entries {
 		stamp, err := strconv.ParseInt(entry.Name(), 10, 64)
@@ -55,8 +56,7 @@ func (k *Kernel) SavedPstore(boot string) (*machine.PstoreRecord, error) {
 			if len(count.Name()) != 3 || !count.IsDir() {
 				continue
 			}
-			number, err := strconv.ParseUint(count.Name(), 10, 16)
-			if err != nil {
+			if _, err := strconv.ParseUint(count.Name(), 10, 16); err != nil {
 				continue
 			}
 			file := path.Join(entry.Name(), count.Name(), "dmesg.txt")
@@ -70,9 +70,13 @@ func (k *Kernel) SavedPstore(boot string) (*machine.PstoreRecord, error) {
 			if !info.Mode().IsRegular() {
 				return nil, fmt.Errorf("stat pstore record %s: not a regular file", file)
 			}
-			// EFI timestamps each chunk separately; the earliest group holds the newest messages.
-			if selected == "" || number > latestCount || number == latestCount && stamp < firstStamp {
-				selected, firstStamp, latestCount = file, stamp, number
+			number, part, err := k.pstoreIdentity(file)
+			if err != nil {
+				return nil, err
+			}
+			// Directory count digits wrap; chunk headers retain the full dump identity.
+			if selected == "" || number > latestCount || number == latestCount && part < firstPart {
+				selected, firstPart, latestCount = file, part, number
 			}
 		}
 	}
@@ -83,12 +87,40 @@ func (k *Kernel) SavedPstore(boot string) (*machine.PstoreRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open pstore record %s: %w", selected, err)
 	}
-	lines, readErr := pstoreTail(file)
+	lines, readErr := pstoreTail(file, pstoreTailBytes-pstoreHeaderBytes)
 	closeErr := file.Close()
 	if err := errors.Join(readErr, closeErr); err != nil {
 		return nil, fmt.Errorf("read pstore record %s: %w", selected, err)
 	}
 	return &machine.PstoreRecord{Path: path.Join(pstoreDir, selected), Lines: lines}, nil
+}
+
+func (k *Kernel) pstoreIdentity(name string) (uint64, uint64, error) {
+	file, err := k.pstore.Open(name)
+	if err != nil {
+		return 0, 0, fmt.Errorf("open pstore header %s: %w", name, err)
+	}
+	reader, ok := file.(io.ReaderAt)
+	if !ok {
+		return 0, 0, errors.Join(errors.New("pstore header does not support bounded reads"), file.Close())
+	}
+	var data [pstoreHeaderBytes]byte
+	n, readErr := reader.ReadAt(data[:], 0)
+	if errors.Is(readErr, io.EOF) {
+		readErr = nil
+	}
+	if err := errors.Join(readErr, file.Close()); err != nil {
+		return 0, 0, fmt.Errorf("read pstore header %s: %w", name, err)
+	}
+	line, _, complete := strings.Cut(string(data[:n]), "\n")
+	_, identity, hasCount := strings.Cut(line, "#")
+	countText, partText, hasPart := strings.Cut(identity, " Part")
+	count, countErr := strconv.ParseUint(countText, 10, 64)
+	part, partErr := strconv.ParseUint(partText, 10, 64)
+	if !complete || !hasCount || !hasPart || countErr != nil || partErr != nil || part == 0 {
+		return 0, 0, fmt.Errorf("read pstore header %s: invalid dump identity", name)
+	}
+	return count, part, nil
 }
 
 func (k *Kernel) pstoreBootSpan(boot string) (time.Time, time.Time, error) {
@@ -114,7 +146,7 @@ func (k *Kernel) pstoreBootSpan(boot string) (time.Time, time.Time, error) {
 	return time.Time{}, time.Time{}, nil
 }
 
-func pstoreTail(file fs.File) ([]string, error) {
+func pstoreTail(file fs.File, limit int) ([]string, error) {
 	info, err := file.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("stat opened record: %w", err)
@@ -126,7 +158,7 @@ func pstoreTail(file fs.File) ([]string, error) {
 	if !ok {
 		return nil, errors.New("opened record does not support bounded reads")
 	}
-	size := min(info.Size(), int64(pstoreTailBytes))
+	size := min(info.Size(), int64(limit))
 	data := make([]byte, size)
 	if _, err := reader.ReadAt(data, info.Size()-size); err != nil {
 		return nil, err
