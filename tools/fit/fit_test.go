@@ -239,7 +239,7 @@ func TestConstrainedFitRefitsCCDWithoutChangingR7Structure(t *testing.T) {
 	for i := range 40 {
 		r := trialfacts.Record{
 			Kind: facts.TrialFact, Profile: []int{-20, -20},
-			Class: facts.Class{Regime: machine.R7, Workload: "residual", Cores: []int{0}, DurationS: 60},
+			Class:   facts.Class{Regime: machine.R7, Workload: "residual", Cores: []int{0}, DurationS: 60},
 			Outcome: journal.OutcomePass,
 		}
 		if i < 8 {
