@@ -44,7 +44,7 @@ Each differing session prints its first differing event's journal path, line num
 
 This is not a CI check: it needs two builds. `just bench` cannot prove equality because it compares metrics against thresholds; one changed decision with unchanged totals can pass.
 
-To control concurrency, timeouts or retention directly, use `go run ./tools/bench --same DIR [--suite FILE] [--jobs N] [--timeout 180s] [--keep DIR]`. A relative suite path resolves inside each tree. This mode skips metrics, model checks and the bench summary; explicitly setting `--split`, `--baseline` or `--out` is a usage error. `--keep` retains separate `base/` and `head/` run sets under a new directory. Without it, matching runs are removed; differing runs are retained and their directory is printed on stderr.
+To control concurrency, timeouts or retention directly, use `go run ./tools/bench --same DIR [--suite FILE] [--jobs N] [--timeout 180s] [--keep DIR]`. A relative suite path resolves inside each tree. This mode skips metrics, model checks and the bench summary; explicitly setting `--split`, `--baseline` or `--out` is a usage error. Each job runs one session from both trees and compares it. `--keep` retains separate `base/` and `head/` run sets under a new directory. Without it, runs go in a new directory under `togi` in the user cache directory (`$XDG_CACHE_HOME` or `~/.cache` on Linux, `~/Library/Caches` on macOS), each session's runs are removed as soon as they match, and only differing or failed sessions are retained, with their directory printed on stderr.
 
 ## What a run records
 

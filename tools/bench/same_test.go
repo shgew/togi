@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,20 +160,47 @@ func TestCompareJournals(t *testing.T) {
 	}
 }
 
-func TestSameReport(t *testing.T) {
-	key := sessionKey{"scenario", "dev", 1}
-	base := []sameSession{{key, simulation{dir: t.TempDir(), exit: 0}}}
-	head := []sameSession{{key, simulation{dir: t.TempDir(), exit: 1}}}
-	for side, sessions := range [2][]sameSession{base, head} {
-		text := fmt.Sprintf("{}\n{\"decision\":%d}\n", side)
-		if err := os.WriteFile(filepath.Join(sessions[0].run.dir, "events.jsonl"), []byte(text), 0600); err != nil {
-			t.Fatal(err)
+type fakeSession struct {
+	key       sessionKey
+	journal   string
+	noJournal bool
+	exit      int
+}
+
+func runFakeSame(t *testing.T, root string, sessions [2][]fakeSession, keep bool) (string, bool, error) {
+	t.Helper()
+	var runs [2][]runSpec
+	byKey := [2]map[sessionKey]fakeSession{{}, {}}
+	for side := range sessions {
+		for _, s := range sessions[side] {
+			runs[side] = append(runs[side], runSpec{scenario: scenario{Name: s.key.scenario}, split: s.key.split, seed: s.key.seed})
+			byKey[side][s.key] = s
 		}
 	}
-	base = append(base, sameSession{key: sessionKey{"removed", "holdout", 2}})
-	head = append(head, sameSession{key: sessionKey{"added", "holdout", 3}})
-	var got bytes.Buffer
-	different, err := compareSessions(&got, base, head)
+	launch := func(side int, spec runSpec) (simulation, error) {
+		s := byKey[side][sessionKey{spec.scenario.Name, spec.split, spec.seed}]
+		dir := filepath.Join(root, sameSides[side], s.key.String())
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return simulation{}, err
+		}
+		if !s.noJournal {
+			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(s.journal), 0600); err != nil {
+				return simulation{}, err
+			}
+		}
+		return simulation{dir: dir, exit: s.exit}, nil
+	}
+	var report bytes.Buffer
+	different, err := runSame(&report, pairRuns(runs), 2, keep, launch)
+	return report.String(), different, err
+}
+
+func TestSameReport(t *testing.T) {
+	key := sessionKey{"scenario", "dev", 1}
+	got, different, err := runFakeSame(t, t.TempDir(), [2][]fakeSession{
+		{{key: key, journal: "{}\n{\"decision\":0}\n"}, {key: sessionKey{"removed", "holdout", 2}, journal: "{}\n"}},
+		{{key: key, journal: "{}\n{\"decision\":1}\n", exit: 1}, {key: sessionKey{"added", "holdout", 3}, journal: "{}\n"}},
+	}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +209,7 @@ func TestSameReport(t *testing.T) {
 	}
 	path := filepath.Join("testdata", "same.golden")
 	if *update {
-		if err := os.WriteFile(path, got.Bytes(), 0600); err != nil {
+		if err := os.WriteFile(path, []byte(got), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -191,18 +217,12 @@ func TestSameReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diff := cmp.Diff(string(want), got.String()); diff != "" {
+	if diff := cmp.Diff(string(want), got); diff != "" {
 		t.Fatal(diff)
 	}
 }
 
 func TestSameExitCodesAndSplits(t *testing.T) {
-	dirs := [2]string{t.TempDir(), t.TempDir()}
-	for _, dir := range dirs {
-		if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte("{}\n"), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
 	for _, tc := range []struct {
 		name, baseSplit, headSplit string
 		baseExit, headExit         int
@@ -213,10 +233,10 @@ func TestSameExitCodesAndSplits(t *testing.T) {
 		{"split is part of identity", "dev", "holdout", 0, 0, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			base := []sameSession{{sessionKey{"s", tc.baseSplit, 1}, simulation{dir: dirs[0], exit: tc.baseExit}}}
-			head := []sameSession{{sessionKey{"s", tc.headSplit, 1}, simulation{dir: dirs[1], exit: tc.headExit}}}
-			var report bytes.Buffer
-			got, err := compareSessions(&report, base, head)
+			_, got, err := runFakeSame(t, t.TempDir(), [2][]fakeSession{
+				{{key: sessionKey{"s", tc.baseSplit, 1}, journal: "{}\n", exit: tc.baseExit}},
+				{{key: sessionKey{"s", tc.headSplit, 1}, journal: "{}\n", exit: tc.headExit}},
+			}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -227,34 +247,67 @@ func TestSameExitCodesAndSplits(t *testing.T) {
 	}
 }
 
+func TestSameKeepsOnlyDifferingRuns(t *testing.T) {
+	matches, differs := sessionKey{"matches", "dev", 1}, sessionKey{"differs", "dev", 1}
+	for _, tc := range []struct {
+		name string
+		keep bool
+		want []string
+	}{
+		{"matching runs removed", false, []string{"base/differs/dev-1", "head/differs/dev-1"}},
+		{"keep retains every run", true, []string{"base/differs/dev-1", "base/matches/dev-1", "head/differs/dev-1", "head/matches/dev-1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if _, _, err := runFakeSame(t, root, [2][]fakeSession{
+				{{key: matches, journal: "{}\n"}, {key: differs, journal: "{}\n"}},
+				{{key: matches, journal: "{}\n"}, {key: differs, journal: "{}\n", exit: 1}},
+			}, tc.keep); err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+				if err != nil || entry.Name() != "events.jsonl" {
+					return err
+				}
+				rel, err := filepath.Rel(root, filepath.Dir(path))
+				got = append(got, filepath.ToSlash(rel))
+				return err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
 func TestSameRejectsMissingJournals(t *testing.T) {
 	key := sessionKey{"s", "dev", 1}
-	base := []sameSession{{key, simulation{dir: t.TempDir(), exit: 1}}}
-	head := []sameSession{{key, simulation{dir: t.TempDir(), exit: 1}}}
-	var report bytes.Buffer
-	if _, err := compareSessions(&report, base, head); err == nil || !strings.Contains(err.Error(), "missing journals") {
+	report, _, err := runFakeSame(t, t.TempDir(), [2][]fakeSession{
+		{{key: key, noJournal: true, exit: 1}},
+		{{key: key, noJournal: true, exit: 1}},
+	}, false)
+	if err == nil || !strings.Contains(err.Error(), "missing journals") {
 		t.Fatalf("want missing-journal execution error, got %v", err)
 	}
-	if strings.Contains(report.String(), "0 of 1 sessions differ") {
+	if strings.Contains(report, "0 of 1 sessions differ") {
 		t.Fatal("failed simulations must not report equality")
 	}
 }
 
 func TestSameRejectsEmptyJournals(t *testing.T) {
 	key := sessionKey{"s", "dev", 1}
-	dirs := [2]string{t.TempDir(), t.TempDir()}
-	for _, dir := range dirs {
-		if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), nil, 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	base := []sameSession{{key, simulation{dir: dirs[0], exit: 1}}}
-	head := []sameSession{{key, simulation{dir: dirs[1], exit: 1}}}
-	var report bytes.Buffer
-	if _, err := compareSessions(&report, base, head); err == nil || !strings.Contains(err.Error(), "journals contain no events") {
+	report, _, err := runFakeSame(t, t.TempDir(), [2][]fakeSession{
+		{{key: key, exit: 1}},
+		{{key: key, exit: 1}},
+	}, false)
+	if err == nil || !strings.Contains(err.Error(), "journals contain no events") {
 		t.Fatalf("want empty-journal execution error, got %v", err)
 	}
-	if strings.Contains(report.String(), "0 of 1 sessions differ") {
+	if strings.Contains(report, "0 of 1 sessions differ") {
 		t.Fatal("zero-event simulations must not report equality")
 	}
 }

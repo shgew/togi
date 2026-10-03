@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,9 +24,15 @@ type sessionKey struct {
 	seed            uint64
 }
 
-type sameSession struct {
-	key sessionKey
-	run simulation
+func (k sessionKey) String() string {
+	return fmt.Sprintf("%s/%s-%d", k.scenario, k.split, k.seed)
+}
+
+var sameSides = [2]string{"base", "head"}
+
+type samePair struct {
+	key  sessionKey
+	runs [2]*runSpec
 }
 
 type journalDifference struct {
@@ -73,120 +80,140 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 			return false, fmt.Errorf("build simulator in %s: %w", tree, err)
 		}
 	}
-	if o.keep != "" {
-		if err := os.MkdirAll(o.keep, 0755); err != nil {
-			return false, fmt.Errorf("create keep directory: %w", err)
+	parent := o.keep
+	if parent == "" {
+		cache, err := os.UserCacheDir()
+		if err != nil {
+			return false, fmt.Errorf("resolve cache directory: %w", err)
 		}
+		parent = filepath.Join(cache, "togi")
 	}
-	root, err := os.MkdirTemp(o.keep, "togi-same-runs-")
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		return false, fmt.Errorf("create run parent directory: %w", err)
+	}
+	root, err := os.MkdirTemp(parent, "togi-same-runs-")
 	if err != nil {
 		return false, fmt.Errorf("create run directory: %w", err)
 	}
-	retain := true
-	defer func() {
-		if retain || o.keep != "" {
-			fmt.Fprintf(stderr, "bench: keeping runs in %s\n", root)
-		} else {
-			os.RemoveAll(root)
+	launch := func(side int, spec runSpec) (simulation, error) {
+		run, err := launchSimulator(binaries[side], filepath.Join(root, sameSides[side]), spec, o.timeout)
+		if err == nil && run.timedOut {
+			err = fmt.Errorf("simulator timed out after %s", o.timeout)
 		}
-	}()
-	type job struct{ side, index int }
-	var sessions [2][]sameSession
-	var errs [2][]error
-	for side := range runs {
-		sessions[side] = make([]sameSession, len(runs[side]))
-		errs[side] = make([]error, len(runs[side]))
+		return run, err
 	}
-	queue := make(chan job)
+	different, err := runSame(stdout, pairRuns(runs), o.jobs, o.keep != "", launch)
+	if err != nil || different || o.keep != "" {
+		fmt.Fprintf(stderr, "bench: keeping runs in %s\n", root)
+	} else {
+		os.RemoveAll(root)
+	}
+	return different, err
+}
+
+func pairRuns(runs [2][]runSpec) []samePair {
+	index := make(map[sessionKey]int)
+	var pairs []samePair
+	for side := range runs {
+		for i := range runs[side] {
+			spec := &runs[side][i]
+			key := sessionKey{spec.scenario.Name, spec.split, spec.seed}
+			n, ok := index[key]
+			if !ok {
+				n = len(pairs)
+				index[key] = n
+				pairs = append(pairs, samePair{key: key})
+			}
+			pairs[n].runs[side] = spec
+		}
+	}
+	slices.SortFunc(pairs, func(a, b samePair) int {
+		return cmp.Or(
+			strings.Compare(a.key.scenario, b.key.scenario),
+			strings.Compare(a.key.split, b.key.split),
+			cmp.Compare(a.key.seed, b.key.seed),
+		)
+	})
+	return pairs
+}
+
+func runSame(w io.Writer, pairs []samePair, jobs int, keep bool, launch func(side int, spec runSpec) (simulation, error)) (bool, error) {
+	diffs := make([]*journalDifference, len(pairs))
+	errs := make([]error, len(pairs))
+	queue := make(chan int)
 	var wg sync.WaitGroup
-	for range min(o.jobs, len(runs[0])+len(runs[1])) {
+	for range min(jobs, len(pairs)) {
 		wg.Go(func() {
-			for j := range queue {
-				spec := runs[j.side][j.index]
-				side := []string{"base", "head"}[j.side]
-				run, err := launchSimulator(binaries[j.side], filepath.Join(root, side), spec, o.timeout)
-				if err == nil && run.timedOut {
-					err = fmt.Errorf("simulator timed out after %s", o.timeout)
-				}
-				sessions[j.side][j.index] = sameSession{sessionKey{spec.scenario.Name, spec.split, spec.seed}, run}
-				if err != nil {
-					errs[j.side][j.index] = fmt.Errorf("%s %s/%s-%d: %w", side, spec.scenario.Name, spec.split, spec.seed, err)
-				}
+			for i := range queue {
+				diffs[i], errs[i] = runSamePair(pairs[i], keep, launch)
 			}
 		})
 	}
-	for side := range runs {
-		for index := range runs[side] {
-			queue <- job{side, index}
-		}
+	for i := range pairs {
+		queue <- i
 	}
 	close(queue)
 	wg.Wait()
-	if err := errors.Join(append(errs[0], errs[1]...)...); err != nil {
+	if err := errors.Join(errs...); err != nil {
 		return false, err
 	}
-	different, err := compareSessions(stdout, sessions[0], sessions[1])
-	if err != nil {
-		return false, err
-	}
-	retain = different
-	return different, nil
-}
-
-func compareSessions(w io.Writer, base, head []sameSession) (bool, error) {
-	paired := make(map[sessionKey][2]*simulation)
-	for side, sessions := range [2][]sameSession{base, head} {
-		for _, session := range sessions {
-			pair := paired[session.key]
-			pair[side] = &session.run
-			paired[session.key] = pair
-		}
-	}
-	keys := make([]sessionKey, 0, len(paired))
-	for key := range paired {
-		keys = append(keys, key)
-	}
-	slices.SortFunc(keys, func(a, b sessionKey) int {
-		if n := strings.Compare(a.scenario, b.scenario); n != 0 {
-			return n
-		}
-		if n := strings.Compare(a.split, b.split); n != 0 {
-			return n
-		}
-		if a.seed < b.seed {
-			return -1
-		}
-		if a.seed > b.seed {
-			return 1
-		}
-		return 0
-	})
 	differences := 0
-	for _, key := range keys {
-		pair := paired[key]
-		var diff *journalDifference
-		switch {
-		case pair[0] == nil:
-			diff = &journalDifference{file: "<session>", base: "<missing>", head: "<present>"}
-		case pair[1] == nil:
-			diff = &journalDifference{file: "<session>", base: "<present>", head: "<missing>"}
-		default:
-			var err error
-			diff, err = compareJournals(pair[0].dir, pair[1].dir)
-			if err != nil {
-				return false, fmt.Errorf("compare %s/%s-%d: %w", key.scenario, key.split, key.seed, err)
-			}
-			if diff == nil && pair[0].exit != pair[1].exit {
-				diff = &journalDifference{file: "<exit code>", base: fmt.Sprint(pair[0].exit), head: fmt.Sprint(pair[1].exit)}
-			}
-		}
+	for i, diff := range diffs {
 		if diff != nil {
 			differences++
-			fmt.Fprintf(w, "same: %s/%s-%d\n  %s:%d\n  base: %s\n  head: %s\n", key.scenario, key.split, key.seed, diff.file, diff.line, diff.base, diff.head)
+			fmt.Fprintf(w, "same: %s\n  %s:%d\n  base: %s\n  head: %s\n", pairs[i].key, diff.file, diff.line, diff.base, diff.head)
 		}
 	}
-	fmt.Fprintf(w, "same: %d of %d sessions differ\n", differences, len(keys))
+	fmt.Fprintf(w, "same: %d of %d sessions differ\n", differences, len(pairs))
 	return differences != 0, nil
+}
+
+func runSamePair(pair samePair, keep bool, launch func(side int, spec runSpec) (simulation, error)) (*journalDifference, error) {
+	var sims [2]*simulation
+	var errs []error
+	for side, spec := range pair.runs {
+		if spec == nil {
+			continue
+		}
+		run, err := launch(side, *spec)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s %s: %w", sameSides[side], pair.key, err))
+			continue
+		}
+		sims[side] = &run
+	}
+	if len(errs) != 0 {
+		return nil, errors.Join(errs...)
+	}
+	diff, err := compareSession(sims)
+	if err != nil {
+		return nil, fmt.Errorf("compare %s: %w", pair.key, err)
+	}
+	if diff == nil && !keep {
+		for side, run := range sims {
+			if err := os.RemoveAll(run.dir); err != nil {
+				return nil, fmt.Errorf("remove matching %s %s: %w", sameSides[side], pair.key, err)
+			}
+		}
+	}
+	return diff, nil
+}
+
+func compareSession(sims [2]*simulation) (*journalDifference, error) {
+	switch {
+	case sims[0] == nil:
+		return &journalDifference{file: "<session>", base: "<missing>", head: "<present>"}, nil
+	case sims[1] == nil:
+		return &journalDifference{file: "<session>", base: "<present>", head: "<missing>"}, nil
+	}
+	diff, err := compareJournals(sims[0].dir, sims[1].dir)
+	if err != nil {
+		return nil, err
+	}
+	if diff == nil && sims[0].exit != sims[1].exit {
+		diff = &journalDifference{file: "<exit code>", base: fmt.Sprint(sims[0].exit), head: fmt.Sprint(sims[1].exit)}
+	}
+	return diff, nil
 }
 
 func journalFiles(dir string) (map[string]string, error) {
