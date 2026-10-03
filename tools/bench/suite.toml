@@ -55,3 +55,10 @@ machine = "machines/target-delayed-joint.toml"
 replay = true
 dev = [1, 2, 3, 4]
 holdout = [101, 102, 103, 104]
+
+[[scenario]]
+name = "target-flat-risk"
+machine = "machines/target-flat-risk.toml"
+replay = true
+dev = [1, 2, 3, 4]
+holdout = [101, 102, 103, 104]
