@@ -34,8 +34,8 @@ type HuntStart struct {
 	Cores      []int          `json:"cores"`
 	DurationS  int            `json:"duration_s"`
 	Failing    []int          `json:"failing"`
-	Anchor     []int          `json:"anchor"`
-	AnchorSeq  int            `json:"anchor_seq"`
+	Parked     []int          `json:"parked"`
+	ParkedSeq  int            `json:"parked_seq"`
 	Candidates []int          `json:"candidates"`
 	Starts     int            `json:"starts"`
 	StartS     int            `json:"start_s"`
@@ -47,48 +47,48 @@ type HuntStart struct {
 
 func (*HuntStart) Kind() Kind { return KindHuntStart }
 func (p *HuntStart) Message() string {
-	source := fmt.Sprintf("resident %s trial %s", p.Regime, p.Trial)
+	source := fmt.Sprintf("together %s trial %s", p.Regime, p.Trial)
 	if p.Trial == "" {
 		source = "idle"
 	}
-	anchor := "all-zero"
-	if p.AnchorSeq != 0 {
-		anchor = fmt.Sprintf("rotation end #%d", p.AnchorSeq)
+	parked := "parked at 0"
+	if p.ParkedSeq != 0 {
+		parked = fmt.Sprintf("parked offsets from lap end #%d", p.ParkedSeq)
 	}
-	msg := fmt.Sprintf("hunt %d: unattributed failure in %s; anchor from %s; candidates %s; masks of %d × %ds", p.Hunt, source, anchor, coreList(p.Candidates), p.Starts, p.StartS)
+	msg := fmt.Sprintf("hunt %d: unattributed failure in %s; %s; candidates %s; groups of %d × %ds", p.Hunt, source, parked, coreList(p.Candidates), p.Starts, p.StartS)
 	if p.Reason != "" {
 		msg += "; " + p.Reason
 	}
 	return msg
 }
 
-type HuntMask struct {
-	Hunt        int           `json:"hunt"`
-	Mask        int           `json:"mask"`
-	Cores       []int         `json:"cores"`
-	Profile     []int         `json:"profile"`
-	Set         []int         `json:"set"`
-	Granularity int           `json:"granularity"`
-	Stage       string        `json:"stage"`
-	Index       int           `json:"index"`
-	DurationS   int           `json:"duration_s"`
-	Escalated   bool          `json:"escalated,omitempty"`
-	FullChecked bool          `json:"full_checked,omitempty"`
-	AnyFailed   bool          `json:"any_failed,omitempty"`
-	Edge        *JointMember  `json:"edge,omitempty"`
-	Held        []JointMember `json:"held,omitempty"`
-	Inferred    string        `json:"inferred,omitempty"`
-	Skipped     bool          `json:"skipped,omitempty"`
-	Reason      string        `json:"reason"`
+type HuntGroup struct {
+	Hunt        int                 `json:"hunt"`
+	Group       int                 `json:"group"`
+	Cores       []int               `json:"cores"`
+	Profile     []int               `json:"profile"`
+	Set         []int               `json:"set"`
+	Granularity int                 `json:"granularity"`
+	Stage       string              `json:"stage"`
+	Index       int                 `json:"index"`
+	DurationS   int                 `json:"duration_s"`
+	Escalated   bool                `json:"escalated,omitempty"`
+	FullChecked bool                `json:"full_checked,omitempty"`
+	AnyFailed   bool                `json:"any_failed,omitempty"`
+	Probe       *CombinationMember  `json:"probe,omitempty"`
+	Held        []CombinationMember `json:"held,omitempty"`
+	Inferred    string              `json:"inferred,omitempty"`
+	Skipped     bool                `json:"skipped,omitempty"`
+	Reason      string              `json:"reason"`
 }
 
-func (*HuntMask) Kind() Kind { return KindHuntMask }
-func (p *HuntMask) Message() string {
-	prefix := fmt.Sprintf("hunt %d mask %d: cores %s", p.Hunt, p.Mask, coreList(p.Cores))
-	running := "at failing offsets, the rest at the anchor"
-	if p.Edge != nil {
-		prefix = fmt.Sprintf("hunt %d mask %d: core %s at %d with %s", p.Hunt, p.Mask, coreID(p.Edge.Core), p.Edge.Offset, memberList(p.Held))
-		running = "the rest at the anchor"
+func (*HuntGroup) Kind() Kind { return KindHuntGroup }
+func (p *HuntGroup) Message() string {
+	prefix := fmt.Sprintf("hunt %d group %d: cores %s", p.Hunt, p.Group, coreList(p.Cores))
+	running := "at failing offsets, the rest parked"
+	if p.Probe != nil {
+		prefix = fmt.Sprintf("hunt %d group %d: core %s at %d with %s", p.Hunt, p.Group, coreID(p.Probe.Core), p.Probe.Offset, memberList(p.Held))
+		running = "the rest parked"
 	}
 	if p.Skipped {
 		return fmt.Sprintf("%s skipped: %s", prefix, p.Reason)
@@ -96,7 +96,7 @@ func (p *HuntMask) Message() string {
 	if p.Inferred != "" {
 		return fmt.Sprintf("%s %s inferred: %s", prefix, p.Inferred, p.Reason)
 	}
-	if p.Edge != nil {
+	if p.Probe != nil {
 		prefix += ","
 	}
 	message := fmt.Sprintf("%s %s; starts of %ds", prefix, running, p.DurationS)
@@ -107,30 +107,30 @@ func (p *HuntMask) Message() string {
 }
 
 type HuntEnd struct {
-	Hunt    int           `json:"hunt"`
-	Result  string        `json:"result"`
-	Cores   []int         `json:"cores,omitempty"`
-	Members []JointMember `json:"members,omitempty"`
-	Masks   int           `json:"masks"`
-	Reason  string        `json:"reason"`
+	Hunt    int                 `json:"hunt"`
+	Result  string              `json:"result"`
+	Cores   []int               `json:"cores,omitempty"`
+	Members []CombinationMember `json:"members,omitempty"`
+	Groups  int                 `json:"groups"`
+	Reason  string              `json:"reason"`
 }
 
 func (*HuntEnd) Kind() Kind { return KindHuntEnd }
 func (p *HuntEnd) Message() string {
-	masks := fmt.Sprintf("%d mask", p.Masks)
-	if p.Masks != 1 {
-		masks += "s"
+	groups := fmt.Sprintf("%d group", p.Groups)
+	if p.Groups != 1 {
+		groups += "s"
 	}
 	switch {
 	case p.Result == "direct" && len(p.Cores) == 1:
-		return fmt.Sprintf("hunt %d ended after %s: core %s was attributed directly (%s)", p.Hunt, masks, coreID(p.Cores[0]), p.Reason)
+		return fmt.Sprintf("hunt %d ended after %s: core %s was attributed directly (%s)", p.Hunt, groups, coreID(p.Cores[0]), p.Reason)
 	case len(p.Cores) == 1:
 		if p.Reason != "" {
-			return fmt.Sprintf("hunt %d found core %s after %s (%s)", p.Hunt, coreID(p.Cores[0]), masks, p.Reason)
+			return fmt.Sprintf("hunt %d found core %s after %s (%s)", p.Hunt, coreID(p.Cores[0]), groups, p.Reason)
 		}
-		return fmt.Sprintf("hunt %d found core %s after %s", p.Hunt, coreID(p.Cores[0]), masks)
+		return fmt.Sprintf("hunt %d found core %s after %s", p.Hunt, coreID(p.Cores[0]), groups)
 	}
-	return fmt.Sprintf("hunt %d %s: cores %s after %s (%s)", p.Hunt, p.Result, coreList(p.Cores), masks, p.Reason)
+	return fmt.Sprintf("hunt %d %s: cores %s after %s (%s)", p.Hunt, p.Result, coreList(p.Cores), groups, p.Reason)
 }
 
 type HuntSkipped struct {
@@ -143,28 +143,28 @@ func (p *HuntSkipped) Message() string {
 	return fmt.Sprintf("failure #%d is not hunted: %s", p.Failure, p.Reason)
 }
 
-type JointMember struct {
+type CombinationMember struct {
 	Core   int `json:"core"`
 	Offset int `json:"offset"`
 }
-type MarkJoint struct {
-	Mark     int           `json:"mark"`
-	Members  []JointMember `json:"members"`
-	Fallback bool          `json:"fallback,omitempty"`
-	Hunt     int           `json:"hunt"`
-	Reason   string        `json:"reason"`
+type Combination struct {
+	Combination int                 `json:"combination"`
+	Members     []CombinationMember `json:"members"`
+	Fallback    bool                `json:"fallback,omitempty"`
+	Hunt        int                 `json:"hunt"`
+	Reason      string              `json:"reason"`
 }
 
-func (*MarkJoint) Kind() Kind { return KindMarkJoint }
-func (p *MarkJoint) Message() string {
+func (*Combination) Kind() Kind { return KindCombination }
+func (p *Combination) Message() string {
 	suffix := fmt.Sprintf("observed in hunt %d", p.Hunt)
 	if p.Fallback {
 		suffix = fmt.Sprintf("fallback over every candidate of hunt %d", p.Hunt)
 	}
-	return fmt.Sprintf("joint mark J%d: %s, %s", p.Mark, memberList(p.Members), suffix)
+	return fmt.Sprintf("combination C%d: %s, %s", p.Combination, memberList(p.Members), suffix)
 }
 
-func memberList(members []JointMember) string {
+func memberList(members []CombinationMember) string {
 	parts := make([]string, len(members))
 	for i, m := range members {
 		parts[i] = fmt.Sprintf("core %s %d", coreID(m.Core), m.Offset)
@@ -172,33 +172,33 @@ func memberList(members []JointMember) string {
 	return strings.Join(parts, " + ")
 }
 
-type RefineRound struct {
-	Round     int           `json:"round"`
-	Event     RotationEvent `json:"event"`
-	Anchor    []int         `json:"anchor,omitempty"`
-	AnchorSeq int           `json:"anchor_seq,omitempty"`
-	Target    []int         `json:"target,omitempty"`
-	Profile   []int         `json:"profile,omitempty"`
-	Cores     []int         `json:"cores,omitempty"`
-	Ranking   []int         `json:"ranking,omitempty"`
-	Starts    int           `json:"starts,omitempty"`
-	StartS    int           `json:"start_s,omitempty"`
-	Passed    bool          `json:"passed,omitempty"`
-	Reason    string        `json:"reason,omitempty"`
+type DeepeningRound struct {
+	Round     int      `json:"round"`
+	Event     LapEvent `json:"event"`
+	Parked    []int    `json:"parked,omitempty"`
+	ParkedSeq int      `json:"parked_seq,omitempty"`
+	Target    []int    `json:"target,omitempty"`
+	Profile   []int    `json:"profile,omitempty"`
+	Cores     []int    `json:"cores,omitempty"`
+	Ranking   []int    `json:"ranking,omitempty"`
+	Starts    int      `json:"starts,omitempty"`
+	StartS    int      `json:"start_s,omitempty"`
+	Passed    bool     `json:"passed,omitempty"`
+	Reason    string   `json:"reason,omitempty"`
 }
 
-func (*RefineRound) Kind() Kind { return KindRefineRound }
-func (p *RefineRound) Message() string {
-	if p.Event == RotationStart {
+func (*DeepeningRound) Kind() Kind { return KindDeepeningRound }
+func (p *DeepeningRound) Message() string {
+	if p.Event == LapStart {
 		if len(p.Cores) == 1 {
-			return fmt.Sprintf("refine round %d start: core %s toward %v%s", p.Round, coreID(p.Cores[0]), p.Target, p.Reason)
+			return fmt.Sprintf("deepening round %d start: core %s toward %v%s", p.Round, coreID(p.Cores[0]), p.Target, p.Reason)
 		}
-		return fmt.Sprintf("refine round %d start: %d cores toward %v%s", p.Round, len(p.Cores), p.Target, p.Reason)
+		return fmt.Sprintf("deepening round %d start: %d cores toward %v%s", p.Round, len(p.Cores), p.Target, p.Reason)
 	}
 	if p.Passed {
-		return fmt.Sprintf("refine round %d end: passed%s", p.Round, p.Reason)
+		return fmt.Sprintf("deepening round %d end: passed%s", p.Round, p.Reason)
 	}
-	return fmt.Sprintf("refine round %d end: %s", p.Round, p.Reason)
+	return fmt.Sprintf("deepening round %d end: %s", p.Round, p.Reason)
 }
 
 type TunerWarning struct {

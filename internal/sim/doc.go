@@ -1,32 +1,32 @@
 // Package sim is a seeded fake Zen 5 machine behind every hardware seam in package machine.
 //
-// # Edges
+// # Limits
 //
-// Each core has a hidden isolated edge for R1-R5 and resident edge for R1-R7. The isolated edge applies when
-// all other cores' registers are zero; otherwise the resident edge applies, regardless of trial condition.
-// Workload-specific edges override both. Unless Config.Edges gives them, edges are drawn from the seed: a base B uniform
-// in [-40, -5] per core, isolated R1-R5 at B+u with u uniform in {0, 1, 2}, resident R1-R5 at isolated+v, and
-// resident R6 and R7 at the deepest isolated edge plus v, where v is 0 with probability 0.75 and otherwise uniform in
-// {1, 2, 3}. Edges are clamped to [-50, 0]; an explicit edge of 1 makes even offset 0 fail.
+// Each core has a hidden alone limit for R1-R5 and together limit for R1-R7. The alone limit applies when
+// all other cores' registers are zero; otherwise the together limit applies, regardless of trial condition.
+// Workload-specific limits override both. Unless Config.Limits gives them, limits are drawn from the seed: a base B uniform
+// in [-40, -5] per core, alone R1-R5 at B+u with u uniform in {0, 1, 2}, together R1-R5 at alone+v, and
+// together R6 and R7 at the deepest alone limit plus v, where v is 0 with probability 0.75 and otherwise uniform in
+// {1, 2, 3}. Limits are clamped to [-50, 0]; an explicit limit of 1 makes even offset 0 fail.
 //
 // # Failures
 //
-// A loaded core at offset o, with edge E for the workload or regime, is d = E - o counts past the edge.
-// It fails at rate PastEdgeRate * Growth^(d-1) per second when d >= 1, and at NearEdgeRate otherwise. With the
-// default model a 90 s trial one count past the edge fails 90% of the time, each further count quadruples the rate,
-// and nothing fails at or shallower than the edge. Flat adds an independent rate at any nonzero offset.
-// OnsetBoost increases the hazard for the first OnsetS seconds, and joints add hazards while all members are deep
-// enough, possibly after a delay. Idle edges, and joints with no member in the loaded set, can crash a trial through a
-// core outside its loaded set. Joint crashes leave no MCE unless Joint.CrashMCECore explicitly requests misleading
+// A loaded core at offset o, with limit E for the workload or regime, is d = E - o counts past the limit.
+// It fails at rate PastLimitRate * Growth^(d-1) per second when d >= 1, and at NearLimitRate otherwise. With the
+// default model a 90 s trial one count past the limit fails 90% of the time, each further count quadruples the rate,
+// and nothing fails at or shallower than the limit. Flat adds an independent rate at any nonzero offset.
+// OnsetBoost increases the hazard for the first OnsetS seconds, and combinations add hazards while all members are deep
+// enough, possibly after a delay. Idle limits, and combinations with no member in the loaded set, can crash a trial through a
+// core outside its loaded set. Combination crashes leave no MCE unless Combination.CrashMCECore explicitly requests misleading
 // core-local evidence; idle per-core crashes leave no MCE.
 // R3 and R4 follow their load-step schedules only to report SIGSTOP and SIGCONT counts, not to change failure rates.
 //
 // Config.CCD adds an R7 hazard only on each loaded CCD, at rate
 // exp(LogRate + Effect[ccd] + Slope*(mean applied CCD depth-25)).
-// An active joint with any member on that CCD suppresses its smooth hazard.
+// An active combination with any member on that CCD suppresses its smooth hazard.
 // CCD failures are unattributed crashes. The same rate drives draws and scores;
 // onset boosts apply as they do to per-core hazards. Files without [ccd] retain
-// the edge/joint model unchanged.
+// the limit/combination model unchanged.
 //
 // A failing core produces one signal, drawn by the Model.Signals weights:
 //   - computation_error, stall, unexpected_exit: the trial ends at the failure time with that signal;

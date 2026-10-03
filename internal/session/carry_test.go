@@ -24,11 +24,11 @@ func carriedFixture(t *testing.T, m *sim.Machine) *carry.Carry {
 	return &carry.Carry{
 		Context: &bios,
 		Sources: []journal.CarriedSource{{Session: "20261001T000000Z", Ruleset: 6, Schema: journal.Schema}},
-		Cores:   []journal.CarriedCore{{Core: 0, Edge: new(-12), EdgeSession: "20261001T000000Z", EdgeSeq: 10}},
+		Cores:   []journal.CarriedCore{{Core: 0, SoloLimit: new(-12), SoloLimitSession: "20261001T000000Z", SoloLimitSeq: 10}},
 		Facts: []facts.Fact{
-			{Kind: facts.TrialFact, Session: "20260930T000000Z", Seq: 20, Time: at.Add(-time.Hour), Build: build, Ruleset: 6, Epoch: tuner.EvidenceEpoch, Trial: "0003", Boot: "original-boot", Class: facts.Class{Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Cores: []int{0}, DurationS: 90}, Condition: machine.Isolated, Phase: journal.PhaseSearch, Profile: []int{-12, 0}, Outcome: journal.OutcomePass, DurationS: 90},
-			{Kind: facts.TrialFact, Session: "20261001T000000Z", Seq: 10, Time: at, Build: build, Ruleset: 6, Epoch: tuner.EvidenceEpoch, Trial: "0001", Boot: "source-boot", Class: facts.Class{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 90}, Condition: machine.Resident, Phase: journal.PhaseGuard, Profile: []int{-12, -13}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 11},
-			{Kind: facts.IdleFact, Session: "20261001T000000Z", Seq: 12, Time: at.Add(time.Minute), Build: build, Ruleset: 6, Epoch: 0, Boot: "source-boot", Class: facts.Class{Regime: machine.R6, Cores: []int{0, 1}}, Condition: machine.Resident, Profile: []int{-12, -13}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Idle: &journal.Failure{Signal: machine.Crash, Condition: machine.Resident, Profile: []int{-12, -13}}},
+			{Kind: facts.TrialFact, Session: "20260930T000000Z", Seq: 20, Time: at.Add(-time.Hour), Build: build, Ruleset: 6, Epoch: tuner.EvidenceEpoch, Trial: "0003", Boot: "original-boot", Class: facts.Class{Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Cores: []int{0}, DurationS: 90}, Condition: machine.Alone, Phase: journal.PhaseSearch, Profile: []int{-12, 0}, Outcome: journal.OutcomePass, DurationS: 90},
+			{Kind: facts.TrialFact, Session: "20261001T000000Z", Seq: 10, Time: at, Build: build, Ruleset: 6, Epoch: tuner.EvidenceEpoch, Trial: "0001", Boot: "source-boot", Class: facts.Class{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 90}, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: []int{-12, -13}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 11},
+			{Kind: facts.IdleFact, Session: "20261001T000000Z", Seq: 12, Time: at.Add(time.Minute), Build: build, Ruleset: 6, Epoch: 0, Boot: "source-boot", Class: facts.Class{Regime: machine.R6, Cores: []int{0, 1}}, Condition: machine.Together, Profile: []int{-12, -13}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Idle: &journal.Failure{Signal: machine.Crash, Condition: machine.Together, Profile: []int{-12, -13}}},
 		},
 	}
 }
@@ -115,8 +115,8 @@ func TestCarryFactsRequireSameBIOS(t *testing.T) {
 				commitment = p
 			}
 		}
-		if commitment == nil || commitment.Marks || len(commitment.Carried) != 1 || commitment.Carried[0].Edge == nil || *commitment.Carried[0].Edge != -12 {
-			t.Fatalf("BIOS transition did not retain only candidate edge: %#v", commitment)
+		if commitment == nil || commitment.FailurePoints || len(commitment.Carried) != 1 || commitment.Carried[0].SoloLimit == nil || *commitment.Carried[0].SoloLimit != -12 {
+			t.Fatalf("BIOS transition did not retain only candidate solo limit: %#v", commitment)
 		}
 	}
 }
@@ -147,12 +147,12 @@ func TestCarryFactsWaitForValidatedContext(t *testing.T) {
 			for _, p := range []journal.Payload{
 				&journal.SessionStart{Schema: journal.Schema, Ruleset: tuner.Ruleset - 1, Session: "20261001T000000Z", Cores: cores, Evidence: tuner.EvidenceEpoch},
 				&journal.SessionContext{BIOSContext: bios},
-				&journal.TrialIntent{Trial: "0001", Core: new(0), Offset: new(-12), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Condition: machine.Isolated, Phase: journal.PhaseSearch, DurationS: 90, Profile: []int{-12, 0}},
+				&journal.TrialIntent{Trial: "0001", Core: new(0), Offset: new(-12), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Condition: machine.Alone, Phase: journal.PhaseSearch, DurationS: 90, Profile: []int{-12, 0}},
 				&journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomePass, DurationS: 90},
-				&journal.TrialIntent{Trial: "0002", Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 90, Profile: []int{-12, -13}},
+				&journal.TrialIntent{Trial: "0002", Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 90, Profile: []int{-12, -13}},
 				&journal.TrialEnd{Trial: "0002", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, DurationS: 11},
-				&journal.Failure{Trial: "0002", Attribution: journal.Unattributed, Signal: machine.ComputationError, Condition: machine.Resident, Profile: []int{-12, -13}},
-				&journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Resident, Profile: []int{-12, -13}},
+				&journal.Failure{Trial: "0002", Attribution: journal.Unattributed, Signal: machine.ComputationError, Condition: machine.Together, Profile: []int{-12, -13}},
+				&journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Together, Profile: []int{-12, -13}},
 			} {
 				if _, err := old.Append(p); err != nil {
 					t.Fatal(err)

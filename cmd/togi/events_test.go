@@ -165,7 +165,7 @@ func TestEventsKindQueries(t *testing.T) {
 	}{
 		{"trimmed mixed kinds", []string{"--kind", " trial.end , failure, "}, lines[8] + lines[10]},
 		{"repeated kinds", []string{"--kind", "trial.end", "--kind", "failure"}, lines[8] + lines[10]},
-		{"valid without matches", []string{"--kind", "mark.joint"}, ""},
+		{"valid without matches", []string{"--kind", "combination"}, ""},
 		{"combined filters without matches", []string{"--kind", "trial", "--trial", "absent"}, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

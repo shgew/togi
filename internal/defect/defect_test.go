@@ -33,7 +33,7 @@ func TestPowerOffDefect(t *testing.T) {
 		}, false},
 		{"shutdown outside five seconds", func(e []journal.Event) { e[13].Time = e[10].Time.Add(6 * time.Second) }, false},
 		{"shutdown from another boot", func(e []journal.Event) { e[13].Boot = "boot-c" }, false},
-		{"unrelated shutdown reason", func(e []journal.Event) { e[13].Data.(*journal.Shutdown).Reason = journal.ShutdownRotations }, false},
+		{"unrelated shutdown reason", func(e []journal.Event) { e[13].Data.(*journal.Shutdown).Reason = journal.ShutdownLaps }, false},
 		{"decision does not cite the failure", func(e []journal.Event) { e[12].Cause = []int{11} }, false},
 		{"no clean exit progress", func(e []journal.Event) {
 			e[9].Data.(*journal.TrialProgress).Detail = "core 10 backend exited early: exit status 1"
@@ -86,7 +86,7 @@ func TestPowerOffFixtureReplaysBackoff(t *testing.T) {
 	engine.Project(&state)
 	for _, core := range state.Cores {
 		if core.Core == 10 {
-			if core.Offset != -45 || core.FailedMark == nil || *core.FailedMark != -50 || core.LastDecision == nil || core.LastDecision.Seq != 13 {
+			if core.Offset != -45 || core.FailurePoint == nil || *core.FailurePoint != -50 || core.LastDecision == nil || core.LastDecision.Seq != 13 {
 				t.Fatalf("replayed core 10: %+v", core)
 			}
 			return

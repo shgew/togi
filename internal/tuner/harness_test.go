@@ -37,7 +37,7 @@ func newHarness(t *testing.T, starts ...coreStart) *harness {
 	begin := h.add(&journal.SessionStart{Schema: journal.Schema, Session: "s", Cores: infos})
 	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: snapshotConfig(config.Default())})
 	for i, c := range starts {
-		p := &journal.CorePhase{Core: i, To: c.phase, Offset: c.offset, Pass: c.pass, FailedMark: c.fail, CheckEdge: c.check, Reason: "test"}
+		p := &journal.CorePhase{Core: i, To: c.phase, Offset: c.offset, Pass: c.pass, FailurePoint: c.fail, CheckSoloLimit: c.check, Reason: "test"}
 		if c.check {
 			p.Workloads = []string{machine.Workloads(machine.R1)[0].ID, machine.Workloads(machine.R2)[0].ID}
 		}
@@ -48,14 +48,14 @@ func newHarness(t *testing.T, starts ...coreStart) *harness {
 
 func snapshotConfig(c config.Config) journal.ConfigSnapshot {
 	return journal.ConfigSnapshot{
-		StartOffsets:   c.StartOffsets,
-		CandidateEdges: c.CandidateEdges,
-		Durations:      journal.ConfigDurations(c.Durations),
-		Evidence:       journal.ConfigEvidence(c.Evidence),
-		Guard:          journal.ConfigGuard(c.Guard),
-		DeadEnds:       journal.ConfigDeadEnds(c.DeadEnds),
-		Backends:       journal.ConfigBackends(c.Backends),
-		BackendUser:    c.BackendUser,
+		StartOffsets:        c.StartOffsets,
+		CandidateSoloLimits: c.CandidateSoloLimits,
+		Durations:           journal.ConfigDurations(c.Durations),
+		Evidence:            journal.ConfigEvidence(c.Evidence),
+		Checking:            journal.ConfigChecking(c.Checking),
+		DeadEnds:            journal.ConfigDeadEnds(c.DeadEnds),
+		Backends:            journal.ConfigBackends(c.Backends),
+		BackendUser:         c.BackendUser,
 	}
 }
 
@@ -96,7 +96,7 @@ func (h *harness) start(a Action) journal.Event {
 	profile := tr.Profile
 	if profile == nil {
 		profile = make([]int, len(h.s.cores))
-		if tr.Condition == machine.Isolated {
+		if tr.Condition == machine.Alone {
 			profile[h.s.index(tr.Core)] = tr.Offset
 		} else {
 			copy(profile, h.s.Profile())
@@ -169,8 +169,8 @@ var (
 func TestTrialCompletionSelectsReducerWorkload(t *testing.T) {
 	for _, regime := range []machine.Regime{machine.R1, machine.R7} {
 		t.Run(string(regime), func(t *testing.T) {
-			h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -10})
-			tr := Trial{Core: 0, Offset: -10, Regime: regime, Condition: machine.Resident, DurationS: 120}
+			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10})
+			tr := Trial{Core: 0, Offset: -10, Regime: regime, Condition: machine.Together, DurationS: 120}
 			if regime == machine.R7 {
 				tr.Cores = []int{0}
 			}

@@ -19,7 +19,7 @@ func factTrial(w *writer, core int, outcome journal.Outcome) (factID, int) {
 	id := fmt.Sprintf("%04d", w.trials)
 	profile := []int{0, 0}
 	profile[core] = -30
-	w.add(&journal.TrialIntent{Trial: id, Core: new(core), Offset: new(-30), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Condition: machine.Isolated, Phase: journal.PhaseSearch, DurationS: 90, Profile: profile})
+	w.add(&journal.TrialIntent{Trial: id, Core: new(core), Offset: new(-30), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Condition: machine.Alone, Phase: journal.PhaseSearch, DurationS: 90, Profile: profile})
 	signal, duration := machine.Signal(""), 90
 	if outcome == journal.OutcomeFailure {
 		signal, duration = machine.ComputationError, 11
@@ -27,7 +27,7 @@ func factTrial(w *writer, core int, outcome journal.Outcome) (factID, int) {
 	end := w.add(&journal.TrialEnd{Trial: id, Outcome: outcome, Signal: signal, DurationS: duration})
 	failure := 0
 	if outcome == journal.OutcomeFailure {
-		failure = w.add(&journal.Failure{Trial: id, Core: new(core), Offset: new(-30), Attribution: journal.Attributed, Condition: machine.Isolated, Signal: machine.ComputationError})
+		failure = w.add(&journal.Failure{Trial: id, Core: new(core), Offset: new(-30), Attribution: journal.Attributed, Condition: machine.Alone, Signal: machine.ComputationError})
 	}
 	return factID{w.session, end}, failure
 }
@@ -53,7 +53,7 @@ func TestFactEligibilityAcrossArchiveChain(t *testing.T) {
 		{name: "reset epochs and defects", epoch: 1},
 		{name: "evidence epoch bump", epoch: 2},
 		{name: "BIOS archive boundary", epoch: 1, biosBoundary: true},
-		{name: "new BIOS carries only edges", epoch: 1, newBIOS: true},
+		{name: "new BIOS carries only solo limits", epoch: 1, newBIOS: true},
 		{name: "unknown current BIOS carries no facts", epoch: 1, missingBIOS: true},
 		{name: "newest reset all", epoch: 1, resetAll: true},
 		{name: "newest core reset", epoch: 1, resetCore: true},
@@ -78,7 +78,7 @@ func TestFactEligibilityAcrossArchiveChain(t *testing.T) {
 			bPass, _ := factTrial(b, 1, journal.OutcomePass)
 			_, excluded := factTrial(b, 1, journal.OutcomeFailure)
 			b.add(&journal.TunerDecision{Core: 1, Decision: journal.Backoff}, excluded)
-			b.add(&journal.ConfigLoaded{Schema: 2, Ruleset: 6, Fixes: 1})
+			b.add(&journal.ConfigLoaded{Schema: journal.Schema, Ruleset: 6, Fixes: 1})
 			bFixed, fixed := factTrial(b, 1, journal.OutcomeFailure)
 			b.add(&journal.TunerDecision{Core: 1, Decision: journal.Backoff}, fixed)
 			b.archive(dir)
@@ -136,12 +136,12 @@ func TestFactEligibilityAcrossArchiveChain(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer j.Close()
-				carry, err := Prepare(j, journal.Build{Schema: 2, Ruleset: 7}, entries, &current)
+				carry, err := Prepare(j, journal.Build{Schema: journal.Schema, Ruleset: 7}, entries, &current)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if len(carry.Facts) != 0 || len(carry.Cores) != 2 || carry.Cores[0].Edge == nil || *carry.Cores[0].Edge != -30 {
-					t.Fatalf("new BIOS must keep candidate edge without facts: %+v", carry)
+				if len(carry.Facts) != 0 || len(carry.Cores) != 2 || carry.Cores[0].SoloLimit == nil || *carry.Cores[0].SoloLimit != -30 {
+					t.Fatalf("new BIOS must keep candidate solo limit without facts: %+v", carry)
 				}
 			}
 		})
@@ -165,7 +165,7 @@ func TestFactCopyForwardPreservesProvenanceAndStopsWalk(t *testing.T) {
 			for _, f := range first {
 				b.add(f.Payload())
 			}
-			b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 6)}, Marks: true})
+			b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 6)}, FailurePoints: true})
 			bOwn, _ := factTrial(b, 0, journal.OutcomeFailure)
 			b.archive(dir)
 			// A missing original archive retains copied facts without restarting collection.
@@ -219,13 +219,13 @@ func TestCopiedFailuresRecheckedAgainstOriginalDefects(t *testing.T) {
 			older.archive(dir)
 			a := newJournal(t, dir, "A", 6, &context, cores...)
 			if tc.fixed {
-				a.add(&journal.ConfigLoaded{Schema: 2, Ruleset: 6, Fixes: 1})
+				a.add(&journal.ConfigLoaded{Schema: journal.Schema, Ruleset: 6, Fixes: 1})
 			}
 			aPass, _ := factTrial(a, 0, journal.OutcomePass)
 			aFailure, failure := factTrial(a, 1, journal.OutcomeFailure)
 			a.add(&journal.TunerDecision{Core: 1, Decision: journal.Backoff}, failure)
-			a.add(&journal.ProfileApplied{Offsets: []int{-30, -30}, Condition: machine.Resident})
-			idle := a.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Profile: []int{-30, -30}})
+			a.add(&journal.ProfileApplied{Offsets: []int{-30, -30}, Condition: machine.Together})
+			idle := a.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Profile: []int{-30, -30}})
 			a.add(&journal.TunerDecision{Core: 0, Decision: journal.Backoff}, idle)
 			a.archive(dir)
 			first, err := prepareFacts(dir, "A", nil, &context, 1)
@@ -233,13 +233,13 @@ func TestCopiedFailuresRecheckedAgainstOriginalDefects(t *testing.T) {
 				t.Fatal(err)
 			}
 			b := newJournal(t, dir, "B", 6, &context, cores...)
-			b.add(&journal.ConfigLoaded{Schema: 2, Ruleset: 6, Fixes: 1})
+			b.add(&journal.ConfigLoaded{Schema: journal.Schema, Ruleset: 6, Fixes: 1})
 			for _, f := range first {
 				if f.Session == "A" {
 					b.add(f.Payload())
 				}
 			}
-			b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 6)}, Marks: true})
+			b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 6)}, FailurePoints: true})
 			bOwn, _ := factTrial(b, 0, journal.OutcomeFailure)
 			b.archive(dir)
 			original := filepath.Join(dir, "archive", "A.jsonl")
@@ -267,7 +267,7 @@ func TestCopiedFailuresRecheckedAgainstOriginalDefects(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer j.Close()
-				if c, err := Prepare(j, journal.Build{Schema: 2, Ruleset: 7}, entries, &context); err == nil || c != nil {
+				if c, err := Prepare(j, journal.Build{Schema: journal.Schema, Ruleset: 7}, entries, &context); err == nil || c != nil {
 					t.Fatalf("Prepare committed carry despite unreadable original defect evidence: carry %+v, error %v", c, err)
 				}
 				return
@@ -341,24 +341,24 @@ func TestFactWalkRejectsCorruptOlderArchive(t *testing.T) {
 		t.Fatalf("corrupt archive silently omitted: facts %+v, error %v", got, err)
 	}
 	if c, err := compute(dir, "B", nil); err == nil || c != nil {
-		t.Fatalf("corrupt mark source silently omitted: carry %+v, error %v", c, err)
+		t.Fatalf("corrupt failure point source silently omitted: carry %+v, error %v", c, err)
 	}
 }
 
-func TestRecordOnlyFactsSurviveTwoTransitionsWithoutMarks(t *testing.T) {
+func TestRecordOnlyFactsSurviveTwoTransitionsWithoutFailurePoints(t *testing.T) {
 	dir := t.TempDir()
 	cores := []machine.CoreInfo{{Core: 0}, {Core: 1}}
 	a := newJournal(t, dir, "A", 8, &context, cores...)
 	for _, outcome := range []journal.Outcome{journal.OutcomePass, journal.OutcomeFailure} {
 		id := string(outcome)
-		a.add(&journal.TrialIntent{Trial: id, Cores: []int{0}, Profile: []int{-30, -50}, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Rotation: 1, Step: 2, RecordOnly: true})
+		a.add(&journal.TrialIntent{Trial: id, Cores: []int{0}, Profile: []int{-30, -50}, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Lap: 1, Step: 2, RecordOnly: true})
 		signal, duration := machine.Signal(""), 120
 		if outcome == journal.OutcomeFailure {
 			signal, duration = machine.ComputationError, 11
 		}
 		end := a.add(&journal.TrialEnd{Trial: id, Outcome: outcome, Signal: signal, DurationS: duration, Core: new(0)})
 		if outcome == journal.OutcomeFailure {
-			failure := a.add(&journal.Failure{Trial: id, Attribution: journal.Attributed, Core: new(0), Offset: new(-30), Condition: machine.Resident, Regime: machine.R7, Signal: signal})
+			failure := a.add(&journal.Failure{Trial: id, Attribution: journal.Attributed, Core: new(0), Offset: new(-30), Condition: machine.Together, Regime: machine.R7, Signal: signal})
 			for i, source := range []int{end, failure} {
 				a.add(&journal.HuntStart{Hunt: i + 1, Failure: source, Trial: id, Failing: []int{-30, -50}})
 				a.add(&journal.HuntEnd{Hunt: i + 1, Result: "culprit", Cores: []int{0}})
@@ -378,7 +378,7 @@ func TestRecordOnlyFactsSurviveTwoTransitionsWithoutMarks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(derived.Cores) != 0 {
-		t.Fatalf("live record-only outcomes manufactured marks: %+v", derived.Cores)
+		t.Fatalf("live record-only outcomes manufactured failure points: %+v", derived.Cores)
 	}
 	b := newJournal(t, dir, "B", 9, &context, cores...)
 	for _, f := range first {
@@ -392,7 +392,7 @@ func TestRecordOnlyFactsSurviveTwoTransitionsWithoutMarks(t *testing.T) {
 			b.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{0}})
 		}
 	}
-	b.add(&journal.SessionCarried{Sources: derived.Sources, Marks: true, Carried: derived.Cores})
+	b.add(&journal.SessionCarried{Sources: derived.Sources, FailurePoints: true, Carried: derived.Cores})
 	b.archive(dir)
 	second, err := prepareFacts(dir, "B", []defect.Entry{}, &context, 1)
 	if err != nil {
@@ -406,13 +406,13 @@ func TestRecordOnlyFactsSurviveTwoTransitionsWithoutMarks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(derived.Cores) != 0 {
-		t.Fatalf("re-carried record-only failure manufactured marks: %+v", derived.Cores)
+		t.Fatalf("re-carried record-only failure manufactured failure points: %+v", derived.Cores)
 	}
 	c := newJournal(t, dir, "C", 10, &context, cores...)
 	for _, f := range second {
 		c.add(f.Payload())
 	}
-	c.add(&journal.SessionCarried{Sources: derived.Sources, Marks: true, Carried: derived.Cores})
+	c.add(&journal.SessionCarried{Sources: derived.Sources, FailurePoints: true, Carried: derived.Cores})
 	c.close()
 	copied, err := facts.ReadJournal(filepath.Join(dir, "events.jsonl"))
 	if err != nil {
@@ -426,11 +426,11 @@ func TestRecordOnlyFactsSurviveTwoTransitionsWithoutMarks(t *testing.T) {
 	}
 }
 
-func TestRulesetSevenToEightRetainsSameBIOSEvidenceAndMarks(t *testing.T) {
+func TestRulesetSevenToEightRetainsSameBIOSEvidenceAndFailurePoints(t *testing.T) {
 	dir := t.TempDir()
 	old := newJournal(t, dir, "ruleset-seven", 7, &context, machine.CoreInfo{Core: 0}, machine.CoreInfo{Core: 1})
 	pass, _ := factTrial(old, 0, journal.OutcomePass)
-	failure, mark := factTrial(old, 1, journal.OutcomeFailure)
+	failure, failurePoint := factTrial(old, 1, journal.OutcomeFailure)
 	old.close()
 	before, err := facts.ReadJournal(filepath.Join(dir, "events.jsonl"))
 	if err != nil {
@@ -452,8 +452,8 @@ func TestRulesetSevenToEightRetainsSameBIOSEvidenceAndMarks(t *testing.T) {
 		t.Fatalf("transition sources: %s", diff)
 	}
 	if diff := cmp.Diff([]journal.CarriedCore{
-		{Core: 0, Edge: new(-30), EdgeSession: pass.session, EdgeSeq: pass.seq},
-		{Core: 1, FailedMark: new(-30), MarkSession: failure.session, MarkSeq: mark, MarkSignal: machine.ComputationError},
+		{Core: 0, SoloLimit: new(-30), SoloLimitSession: pass.session, SoloLimitSeq: pass.seq},
+		{Core: 1, FailurePoint: new(-30), FailurePointSession: failure.session, FailurePointSeq: failurePoint, FailurePointSignal: machine.ComputationError},
 	}, got.Cores); diff != "" {
 		t.Fatalf("ordinary carried values (-want +got):\n%s", diff)
 	}

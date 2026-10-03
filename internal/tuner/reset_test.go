@@ -8,31 +8,31 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func TestResetClearsJointAndReevaluatesOtherCores(t *testing.T) {
+func TestResetClearsCombinationAndReevaluatesOtherCores(t *testing.T) {
 	h := newHarness(t,
-		coreStart{phase: journal.PhaseDone, offset: -30, fail: new(-31)},
-		coreStart{phase: journal.PhaseDone, offset: -30},
+		coreStart{phase: journal.PhaseAtLimit, offset: -30, fail: new(-31)},
+		coreStart{phase: journal.PhaseAtLimit, offset: -30},
 	)
 	h.add(&journal.SessionBaseline{Offsets: []int{-10, -10}})
-	h.add(&journal.MarkJoint{Mark: 1, Hunt: 1, Members: []journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -31}}})
+	h.add(&journal.Combination{Combination: 1, Hunt: 1, Members: []journal.CombinationMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -31}}})
 	h.add(&journal.CommandReset{Core: new(0)})
 	a := h.next()
 	reset, ok := a.Payload.(*journal.CorePhase)
-	if !ok || reset.To != journal.PhaseSearch || reset.Offset != -10 || cmp.Diff([]int{1}, reset.ClearedJoint) != "" {
+	if !ok || reset.To != journal.PhaseSearch || reset.Offset != -10 || cmp.Diff([]int{1}, reset.ClearedCombination) != "" {
 		t.Fatalf("reset action %+v", a)
 	}
 	h.decide(a)
 	a = h.next()
 	other, ok := a.Payload.(*journal.CorePhase)
-	if !ok || other.Core != 1 || other.From != journal.PhaseDone || other.To != journal.PhaseResident {
-		t.Fatalf("other core remains incorrectly done after joint reset: %+v", a)
+	if !ok || other.Core != 1 || other.From != journal.PhaseAtLimit || other.To != journal.PhaseHasRoom {
+		t.Fatalf("other core remains incorrectly at its limit after combination reset: %+v", a)
 	}
 }
 
 func TestResetAfterHuntEndDropsCommitment(t *testing.T) {
-	h := residentHarness(t, -29, -30)
-	h.add(&journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-29, -30}, Anchor: []int{0, 0}, Candidates: []int{0, 1}, Starts: 5, StartS: 120})
-	h.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{0}, Masks: 2})
+	h := hasRoomHarness(t, -29, -30)
+	h.add(&journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-29, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Starts: 5, StartS: 120})
+	h.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{0}, Groups: 2})
 	h.add(&journal.CommandReset{Core: new(0)})
 	a := h.next()
 	p, ok := a.Payload.(*journal.CorePhase)
@@ -47,31 +47,31 @@ func TestResetAfterHuntEndDropsCommitment(t *testing.T) {
 	if d, ok := a.Payload.(*journal.TunerDecision); ok && d.Phase == journal.PhaseHunt {
 		t.Fatalf("reset core received hunt commitment: %+v", a)
 	}
-	if _, ok := a.Payload.(*journal.MarkJoint); ok {
-		t.Fatalf("reset core received joint mark: %+v", a)
+	if _, ok := a.Payload.(*journal.Combination); ok {
+		t.Fatalf("reset core received combination: %+v", a)
 	}
 }
 
-func TestResetClosesRoundAndRotationBeforeSearching(t *testing.T) {
-	for _, refining := range []bool{false, true} {
-		h := qualifiedHarness(t, []int{-10}, nil)
+func TestResetClosesRoundAndLapBeforeSearching(t *testing.T) {
+	for _, deepening := range []bool{false, true} {
+		h := cleanLapHarness(t, []int{-10}, nil)
 		h.add(&journal.SessionBaseline{Offsets: []int{-7}})
-		if refining {
-			h.add(&journal.RefineRound{Round: 2, Event: journal.RotationStart, Profile: []int{-30}, Target: []int{-50}, Cores: []int{0}, Starts: h.s.n, StartS: h.s.durations.StartS})
+		if deepening {
+			h.add(&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Profile: []int{-30}, Target: []int{-50}, Cores: []int{0}, Starts: h.s.n, StartS: h.s.durations.StartS})
 		} else {
-			h.add(&journal.GuardRotation{Rotation: 4, Event: journal.RotationStart, Steps: h.s.steps})
+			h.add(&journal.CheckingLap{Lap: 4, Event: journal.LapStart, Steps: h.s.steps})
 		}
 		reset := h.add(&journal.CommandReset{Core: new(0)})
 		a := h.next()
-		if refining {
-			r, ok := a.Payload.(*journal.RefineRound)
-			if !ok || r.Round != 2 || r.Event != journal.RotationEnd || r.Passed {
-				t.Fatalf("reset must cancel refinement first: %+v", a)
+		if deepening {
+			r, ok := a.Payload.(*journal.DeepeningRound)
+			if !ok || r.Round != 2 || r.Event != journal.LapEnd || r.Passed {
+				t.Fatalf("reset must cancel deepening first: %+v", a)
 			}
 		} else {
-			g, ok := a.Payload.(*journal.GuardRotation)
-			if !ok || g.Rotation != 4 || g.Event != journal.RotationEnd || g.Clean || g.Qualifying {
-				t.Fatalf("reset must close rotation unclean: %+v", a)
+			g, ok := a.Payload.(*journal.CheckingLap)
+			if !ok || g.Lap != 4 || g.Event != journal.LapEnd || g.Passed || g.Full {
+				t.Fatalf("reset must close lap without passing: %+v", a)
 			}
 		}
 		if diff := cmp.Diff([]int{reset.Seq}, a.Cause); diff != "" {
@@ -80,7 +80,7 @@ func TestResetClosesRoundAndRotationBeforeSearching(t *testing.T) {
 		h.decide(a)
 		a = h.next()
 		p, ok := a.Payload.(*journal.CorePhase)
-		if !ok || p.To != journal.PhaseSearch || p.Offset != -7 || p.Pass != nil || p.FailedMark != nil {
+		if !ok || p.To != journal.PhaseSearch || p.Offset != -7 || p.Pass != nil || p.FailurePoint != nil {
 			t.Fatalf("reset must restart baseline search: %+v", a)
 		}
 		h.decide(a)

@@ -21,17 +21,17 @@ const (
 )
 
 type State struct {
-	Schema     int              `json:"schema"`
-	Session    *SessionInfo     `json:"session"`
-	LastSeq    int              `json:"last_seq"`
-	Phase      string           `json:"phase"`
-	Cores      []CoreState      `json:"cores"`
-	InFlight   *InFlight        `json:"in_flight"`
-	DeadEnd    *DeadEndRef      `json:"dead_end"`
-	Guard      *GuardState      `json:"guard"`
-	JointMarks []JointMarkState `json:"joint_marks"`
-	Hunt       *HuntState       `json:"hunt"`
-	Refine     *RefineState     `json:"refine"`
+	Schema       int                `json:"schema"`
+	Session      *SessionInfo       `json:"session"`
+	LastSeq      int                `json:"last_seq"`
+	Phase        string             `json:"phase"`
+	Cores        []CoreState        `json:"cores"`
+	InFlight     *InFlight          `json:"in_flight"`
+	DeadEnd      *DeadEndRef        `json:"dead_end"`
+	Checking     *CheckingState     `json:"checking"`
+	Combinations []CombinationState `json:"combinations"`
+	Hunt         *HuntState         `json:"hunt"`
+	Deepening    *DeepeningState    `json:"deepening"`
 
 	open []openIntent
 }
@@ -51,34 +51,34 @@ type CoreState struct {
 	Offset       int          `json:"offset"`
 	Phase        Phase        `json:"phase"`
 	Pass         *int         `json:"pass"`
-	FailedMark   *int         `json:"failed_mark"`
-	JointMarks   []int        `json:"joint_marks,omitempty"`
+	FailurePoint *int         `json:"failure_point"`
+	Combinations []int        `json:"combinations,omitempty"`
 	Queued       string       `json:"queued,omitempty"`
 	LastDecision *DecisionRef `json:"last_decision"`
 }
 
-type GuardState struct {
-	Rotation              int              `json:"rotation"`
-	RotationOpen          bool             `json:"rotation_open"`
-	Steps                 []machine.Regime `json:"steps"`
-	StepsDone             int              `json:"steps_done"`
-	Profile               []int            `json:"profile"`
-	ProfileSeq            int              `json:"profile_seq"`
-	Qualifying            bool             `json:"qualifying"`
-	Missing               []string         `json:"missing"`
-	Exposure              []ExposureRow    `json:"exposure"`
-	CleanRotations        int              `json:"clean_rotations"`
-	LastQualifiedRotation int              `json:"last_qualified_rotation"`
-	TctlMaxC              *int             `json:"tctl_max_c"`
-	TctlMaxSeq            int              `json:"tctl_max_seq"`
+type CheckingState struct {
+	Lap          int              `json:"lap"`
+	LapOpen      bool             `json:"lap_open"`
+	Steps        []machine.Regime `json:"steps"`
+	StepsDone    int              `json:"steps_done"`
+	Profile      []int            `json:"profile"`
+	ProfileSeq   int              `json:"profile_seq"`
+	Full         bool             `json:"full"`
+	Missing      []string         `json:"missing"`
+	Exposure     []ExposureRow    `json:"exposure"`
+	CleanLaps    int              `json:"clean_laps"`
+	LastCleanLap int              `json:"last_clean_lap"`
+	TctlMaxC     *int             `json:"tctl_max_c"`
+	TctlMaxSeq   int              `json:"tctl_max_seq"`
 }
 
-type JointMarkState struct {
-	Mark     int           `json:"mark"`
-	Members  []JointMember `json:"members"`
-	Fallback bool          `json:"fallback"`
-	Hunt     int           `json:"hunt"`
-	Seq      int           `json:"seq"`
+type CombinationState struct {
+	Combination int                 `json:"combination"`
+	Members     []CombinationMember `json:"members"`
+	Fallback    bool                `json:"fallback"`
+	Hunt        int                 `json:"hunt"`
+	Seq         int                 `json:"seq"`
 }
 
 type HuntState struct {
@@ -87,25 +87,25 @@ type HuntState struct {
 	Failure    int            `json:"failure"`
 	Regime     machine.Regime `json:"regime"`
 	Trial      string         `json:"trial"`
-	Anchor     []int          `json:"anchor"`
-	AnchorSeq  int            `json:"anchor_seq"`
+	Parked     []int          `json:"parked"`
+	ParkedSeq  int            `json:"parked_seq"`
 	Candidates []int          `json:"candidates"`
 	Escalated  bool           `json:"escalated"`
-	Masks      []MaskState    `json:"masks"`
+	Groups     []GroupState   `json:"groups"`
 }
 
-type MaskState struct {
-	Mask    int           `json:"mask"`
-	Seq     int           `json:"seq"`
-	Cores   []int         `json:"cores"`
-	Edge    *JointMember  `json:"edge,omitempty"`
-	Held    []JointMember `json:"held,omitempty"`
-	Outcome string        `json:"outcome"`
-	Passes  int           `json:"passes"`
-	Needed  int           `json:"needed"`
+type GroupState struct {
+	Group   int                 `json:"group"`
+	Seq     int                 `json:"seq"`
+	Cores   []int               `json:"cores"`
+	Probe   *CombinationMember  `json:"probe,omitempty"`
+	Held    []CombinationMember `json:"held,omitempty"`
+	Outcome string              `json:"outcome"`
+	Passes  int                 `json:"passes"`
+	Needed  int                 `json:"needed"`
 }
 
-type RefineState struct {
+type DeepeningState struct {
 	Round   int          `json:"round"`
 	Seq     int          `json:"seq"`
 	Target  []int        `json:"target"`

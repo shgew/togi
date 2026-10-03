@@ -4,7 +4,7 @@ You are an autonomous researcher working on togi, a Go CLI that finds per-core C
 
 ## What conclusion means
 
-A session concludes when every core is done, refinement can reach no more total depth, and a clean qualifying guard rotation supports the resulting profile. Eligible earlier uncontradicted rotations can supply that evidence. `tools/sim` stops at that point. Time to conclusion is simulated time from `session.start` to the last event, including the 90 s charged for each crash reboot. Qualification records tested coverage, not a guarantee of future stability.
+A session concludes when every core is at its limit, deepening can reach no more total depth, and a clean lap supports the resulting profile. Eligible earlier uncontradicted laps can supply that evidence. `tools/sim` stops at that point. Time to conclusion is simulated time from `session.start` to the last event, including the 90 s charged for each crash reboot. A full lap records tested coverage, not a guarantee of future stability.
 
 ## Setup
 
@@ -24,7 +24,7 @@ Measure bench wall time locally; do not use timings or scenario tables from an o
 
 ## What you may change
 
-- `internal/tuner/**`: search, hunts, refinement and guard decisions.
+- `internal/tuner/**`: search, hunts, deepening and checking decisions.
 - Tests and specifications describing a deliberately changed rule, following the repository's conventions.
 
 Everything else is frozen for tuner experiments, especially:
@@ -45,9 +45,9 @@ Breaking any rule invalidates an experiment, however good its ratio looks.
 
 - **Evidence only.** The tuner decides from journal evidence. It never reads simulator internals, fitted machines, facts extracts, seeds or scenario identities. Never special-case a core number, CCD or scenario's offsets; topology recorded in the journal can inform a tested hypothesis.
 - **Traceable and deterministic.** Every new decision is a journal event with a cause and a plain-language `msg`, as the journal spec requires. Replaying the journal gives the same decisions.
-- **Safe writes.** Offsets stay clamped to [-50, 0] and pass mark validation, including intermediate SMU writes.
+- **Safe writes.** Offsets stay clamped to [-50, 0] and pass failure point or combination validation, including intermediate SMU writes.
 - **Failure detection stays intact.** Failures remain evidence under the spec's coverage and supersession rules. Never ignore, retry away or reclassify a failure to save time.
-- **Evidence volume.** Preserve the spec's start requirements: one R1 and one R2 start for an ordinary search step; the decisive starts set by `[evidence]` miss and rate for candidate-edge checks, hunt masks, refinement checks and rerun obligations. Each trial runs for its configured duration from `[durations]`, and a qualifying rotation runs every regime start in `[guard] rotation`. A change may reorder these starts, skip work the spec already allows to be skipped, or avoid redundant trials. It may not ask for fewer starts, shorter trials or a smaller rotation, whether through configuration or through tuner code.
+- **Evidence volume.** Preserve the spec's start requirements: one R1 and one R2 start for an ordinary search step; the decisive starts set by `[evidence]` miss and rate for candidate-solo-limit checks, hunt groups, deepening checks and rerun obligations. Each trial runs for its configured duration from `[durations]`, and a full lap runs every regime start in `lap = [...]` in `[checking]`. A change may reorder these starts, skip work the spec already allows to be skipped, or avoid redundant trials. It may not ask for fewer starts, shorter trials or a smaller lap, whether through configuration or through tuner code.
 - **Tests pass.** Run `go test ./internal/tuner/ ./internal/simrun/ ./cmd/togi/` before each candidate bench run. Update tests for deliberately changed rules; remove tests that only pin obsolete implementation behavior. Run `just gate` before keeping a commit and `just check` before opening a pull request.
 - **Proof has three parts.** A kept change wins the bench, preserves every guardrail and bases target-machine claims on fitted files that pass the model check against real facts. The harness prints model flags but does not reject the verdict or change exit status for them: inspect them separately. A flagged target member blocks the target claim even if the verdict says ACCEPT.
 - **No ruleset bump per experiment.** One bump covers the kept decision changes when they become pull requests; follow `AGENTS.md`'s breaking-pull-request and release rules. Recheck the final work before opening it. Agents open pull requests; the owner merges and deploys manually.
@@ -62,7 +62,7 @@ The `target` scenario uses `target-fit-0.toml` (all decisive starts) and eight w
 
 ## The loop
 
-1. **Hypothesis.** Write one falsifiable sentence naming the mechanism, scenarios it should help and expected size. Example: starting a guard rotation with the last failed regime should reduce wasted coverage before the next failure on `target` without slowing `default`.
+1. **Hypothesis.** Write one falsifiable sentence naming the mechanism, scenarios it should help and expected size. Example: starting a checking lap with the last failed regime should reduce wasted coverage before the next failure on `target` without slowing `default`.
 2. **Bound it before building it.** Run `just bench --split dev --baseline runs/best.jsonl --keep runs/dirs` on the current best. Use the printed `runs/dirs/bench-*/<scenario>/dev-<seed>` directories with `just stats --state-dir DIRECTORY`. Measure how much time the mechanism could save; if the bound is under 3% of that scenario's time, pick another idea.
 3. **Implement the smallest change** that tests the hypothesis, in one commit. Run the required scoped tests.
 4. **Run dev** against the current best: `just bench --split dev --baseline runs/best.jsonl --out runs/<n>.jsonl --keep runs/experiment-<n>`. Require complete pairing and passing target model checks. Seeds are deterministic; rerunning the same commit cannot improve its draw.
@@ -75,9 +75,9 @@ For a run error, inspect its kept simulator log. Fix a trivial implementation er
 
 ## Ideas and model limits
 
-Measure where the current runs spend time rather than trusting old tables. Possible mechanisms include fewer hunt masks, guard order, evidence reuse allowed by the spec, fewer redundant joint-backoff probes, and search or refinement step sizes. Shorter trials, fewer starts and earlier stopping are frozen under **Evidence volume**; record such ideas in the report with their measured bound.
+Measure where the current runs spend time rather than trusting old tables. Possible mechanisms include fewer hunt groups, checking order, evidence reuse allowed by the spec, fewer redundant combination-backoff probes, and search or deepening step sizes. Shorter trials, fewer starts and earlier stopping are frozen under **Evidence volume**; record such ideas in the report with their measured bound.
 
-ADR 0023 rejected probing the shallowest member first, always backing off the shallowest member, moving every member to its passing probe, and reusing edge-probe evidence across hunts. Revisit these only with a new argument.
+ADR 0023 rejected probing the shallowest member first, always backing off the shallowest member, moving every member to its passing probe, and reusing member-probe evidence across hunts. Revisit these only with a new argument.
 
 The simulator is a model, not the machine. The fitted ensemble expresses variation within the available real evidence and model constraints, not every hardware uncertainty. Unsupported boundaries, onset timing, idle exposure and attribution have limits described in `docs/benchmarking.md`. Prefer mechanisms grounded in evidence rules over constants fitted to the simulator. Keep the adversarial scenarios as checks beyond the target fit, and scope claims to the measured suite and real-answer coverage. Bench evidence does not authorize a hardware deployment.
 

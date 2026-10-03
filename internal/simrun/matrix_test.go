@@ -6,28 +6,28 @@ import (
 )
 
 type matrixResult struct {
-	Attribution []journal.Failure
-	Decisions   []journal.TunerDecision
-	Phases      []journal.CorePhase
-	Marks       []journal.MarkJoint
-	Profiles    []journal.ProfileChange
-	Hunts       []matrixHunt
-	Masks       []journal.HuntMask
-	Ends        []journal.HuntEnd
-	Rounds      []matrixRound
-	Checks      []matrixTrial
-	Reruns      []matrixTrial
+	Attribution   []journal.Failure
+	Decisions     []journal.TunerDecision
+	Phases        []journal.CorePhase
+	FailurePoints []journal.Combination
+	Profiles      []journal.ProfileChange
+	Hunts         []matrixHunt
+	Groups        []journal.HuntGroup
+	Ends          []journal.HuntEnd
+	Rounds        []matrixRound
+	Checks        []matrixTrial
+	Reruns        []matrixTrial
 }
 
 type matrixHunt struct {
-	Start           journal.HuntStart
-	Failure         journal.Failure
-	QualifiedAnchor bool
+	Start          journal.HuntStart
+	Failure        journal.Failure
+	CleanLapParked bool
 }
 
 type matrixRound struct {
-	Round           journal.RefineRound
-	QualifiedAnchor bool
+	Round          journal.DeepeningRound
+	CleanLapParked bool
 }
 
 type matrixTrial struct {
@@ -53,22 +53,22 @@ func matrixCommitments(events []journal.Event) matrixResult {
 			out.Decisions = append(out.Decisions, *p)
 		case *journal.CorePhase:
 			out.Phases = append(out.Phases, *p)
-		case *journal.MarkJoint:
-			out.Marks = append(out.Marks, *p)
+		case *journal.Combination:
+			out.FailurePoints = append(out.FailurePoints, *p)
 		case *journal.ProfileChange:
 			out.Profiles = append(out.Profiles, *p)
 		case *journal.HuntStart:
 			start := *p
-			start.Trial, start.Failure, start.AnchorSeq = "", 0, 0
-			out.Hunts = append(out.Hunts, matrixHunt{Start: start, Failure: failures[p.Failure], QualifiedAnchor: p.AnchorSeq != 0})
-		case *journal.HuntMask:
-			out.Masks = append(out.Masks, *p)
+			start.Trial, start.Failure, start.ParkedSeq = "", 0, 0
+			out.Hunts = append(out.Hunts, matrixHunt{Start: start, Failure: failures[p.Failure], CleanLapParked: p.ParkedSeq != 0})
+		case *journal.HuntGroup:
+			out.Groups = append(out.Groups, *p)
 		case *journal.HuntEnd:
 			out.Ends = append(out.Ends, *p)
-		case *journal.RefineRound:
+		case *journal.DeepeningRound:
 			round := *p
-			round.AnchorSeq = 0
-			out.Rounds = append(out.Rounds, matrixRound{Round: round, QualifiedAnchor: p.AnchorSeq != 0})
+			round.ParkedSeq = 0
+			out.Rounds = append(out.Rounds, matrixRound{Round: round, CleanLapParked: p.ParkedSeq != 0})
 		case *journal.TrialIntent:
 			intent := *p
 			intent.Trial, intent.KernelBoundary = "", journal.KernelBoundary{}

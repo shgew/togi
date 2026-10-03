@@ -32,19 +32,19 @@ import (
 	"github.com/shgew/togi/internal/tuningboot"
 )
 
-const runHelp = `Usage: togi run [--rotations <N>] [--tuning-boot <grubenv>] [--no-tui]
+const runHelp = `Usage: togi run [--laps <N>] [--tuning-boot <grubenv>] [--no-tui]
 
-Start or resume the tuning session in the foreground: search each core's deepest
-stable offset, hunt the core behind unattributed failures with masked starts,
-refine the resident profile to the most total depth its failed and joint
-marks allow, then guard it with qualifying rotations. After a crash, the next
-run attributes it from the journal and continues. On resume, known defects
+Start or resume the tuning session in the foreground: search for each core's
+solo limit, hunt the core or combination behind unattributed failures with
+parked trials, deepen the profile to the most total depth its failure points
+and combinations allow, then keep checking it with full laps. After a crash,
+the next run attributes it from the journal and continues. On resume, known defects
 affecting past decisions name the cores; in a terminal run offers to reset them.
 An unanswered too-aggressive defect stops an unattended run. It needs root.
 A journal from an older ruleset, schema or evidence epoch, and no newer one,
-is archived. The new session starts each core from its edges and failed marks,
-carrying eligible same-BIOS trial facts for edge checks, hunts, reruns and
-refinement. Passes carry only from the current evidence epoch; rotations still
+is archived. The new session starts each core from its solo limit and failure point,
+carrying eligible same-BIOS trial facts for solo-limit checks, hunts, reruns and
+deepening. Passes carry only from the current evidence epoch; laps still
 require live passes. A newer ruleset, schema or evidence epoch stops the run
 before another event is written; reset --all archives that session. An older
 journal is archived even with unknown event kinds; carry uses only known events.
@@ -60,9 +60,9 @@ dashboard instead of one line per event, and prints the outcome when it stops:
 the restored offsets and why it stopped, or the dead end or error;
 events.jsonl still records every event. --no-tui prints the lines instead.
 
---rotations N stops after N clean qualifying rotations valid for the current
-profile once every core is done and refinement can reach no more depth. An
-earlier rotation can count after a deepening if its profile was at least as deep
+--laps N stops after N clean laps valid for the current
+profile once every core is at its limit and deepening can reach no more depth. An
+earlier lap can count after a deepening if its profile was at least as deep
 and no failure since the last reset contradicted it.
 
 --tuning-boot runs the unattended service with an armed hardware watchdog.
@@ -72,17 +72,17 @@ journals persist a short leave reason before clearing the saved GRUB entry.
 
 Examples:
   sudo togi run                     Tune this machine until a signal or a dead end
-  sudo togi run --rotations 1       Stop after the search is done and one qualifying rotation passed
+  sudo togi run --laps 1            Stop after search finishes and one clean lap passes
   sudo togi run --no-tui            Print one line per event instead of the dashboard`
 
-func runFlags(g *globals, rotations *int, grubenv *string, noTUI *bool) *flag.FlagSet {
+func runFlags(g *globals, laps *int, grubenv *string, noTUI *bool) *flag.FlagSet {
 	flags := newFlagSet("run", g)
-	flags.Func("rotations", "stop after `N` clean qualifying rotations valid for the current profile once every core is done and refinement can reach no more depth (default endless)", func(s string) error {
+	flags.Func("laps", "stop after `N` clean laps valid for the current profile once every core is at its limit and deepening can reach no more depth (default endless)", func(s string) error {
 		v, err := strconv.Atoi(s)
 		if err != nil || v < 1 {
 			return errors.New("must be a positive integer")
 		}
-		*rotations = v
+		*laps = v
 		return nil
 	})
 	flags.StringVar(grubenv, "tuning-boot", "", "run as the tuning boot service: require an armed hardware watchdog within 30s; reset retry count on the first durable journal append; persist a leave reason before clearing saved_entry in this GRUB environment `file`, and reboot after a boot loop")
@@ -92,11 +92,11 @@ func runFlags(g *globals, rotations *int, grubenv *string, noTUI *bool) *flag.Fl
 
 func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	var (
-		rotations int
-		grubenv   string
-		noTUI     bool
+		laps    int
+		grubenv string
+		noTUI   bool
 	)
-	flags := runFlags(g, &rotations, &grubenv, &noTUI)
+	flags := runFlags(g, &laps, &grubenv, &noTUI)
 	if code, ok := parseFlags(flags, args, runHelp, stdout, stderr); !ok {
 		return code
 	}
@@ -131,7 +131,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	if out, ok := stderr.(*os.File); ok && !noTUI && interactive(out) {
 		dash = &dashboard{dir: g.stateDir, out: out}
 	}
-	return runHardware(ctx, g, cfg, file, bootloader, rotations, stderr, renderer, dash, hardware.New)
+	return runHardware(ctx, g, cfg, file, bootloader, laps, stderr, renderer, dash, hardware.New)
 }
 
 func runStartupRefusal(g *globals, err error, stderr io.Writer, renderer journal.Renderer, bootloader session.Bootloader) int {
@@ -149,7 +149,7 @@ func runStartupRefusal(g *globals, err error, stderr io.Writer, renderer journal
 	return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 }
 
-func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, rotations int, stderr io.Writer, renderer journal.Renderer, dash *dashboard, newMachine func(config.Config, string) (machine.Machine, error)) int {
+func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, laps int, stderr io.Writer, renderer journal.Renderer, dash *dashboard, newMachine func(config.Config, string) (machine.Machine, error)) int {
 	if err := hardware.CheckPlatform(); err != nil {
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
@@ -214,7 +214,7 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 		}
 		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 	}
-	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Rotations: rotations, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr, Close: j.Close, SessionID: j.SessionID})
+	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Laps: laps, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr, Close: j.Close, SessionID: j.SessionID})
 	if dash != nil {
 		dash.hide()
 		_, _ = hidden.WriteTo(stderr)
@@ -287,7 +287,7 @@ func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.
 		return exitError
 	}
 	switch stop.Reason {
-	case session.StopSignal, session.StopRotations:
+	case session.StopSignal, session.StopLaps:
 		return exitOK
 	case session.StopDeadEnd:
 		line := fmt.Sprintf("togi: dead end %s: %s", stop.DeadEnd.Condition, stop.DeadEnd.Detail)

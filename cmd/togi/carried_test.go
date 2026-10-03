@@ -35,8 +35,8 @@ func TestCarriedEventsLeaveStatusUnchanged(t *testing.T) {
 	}
 	var trialRaw, failureRaw string
 	for _, payload := range []journal.Payload{
-		&journal.TrialCarried{Source: journal.FactSource{Session: "original", Seq: 304, Build: session.Build(), Trial: "0304", Evidence: 1}, Class: journal.TrialClass{Regime: machine.R7, Workload: "workload", Cores: []int{0}, DurationS: 120}, Profile: []int{-50, -50}, Condition: machine.Resident, Phase: journal.PhaseGuard, Outcome: journal.OutcomePass, DurationS: 120},
-		&journal.FailureCarried{Source: journal.FactSource{Session: "original", Seq: 400, Build: session.Build(), Evidence: 1}, Class: journal.TrialClass{Regime: machine.R6, Cores: []int{0, 1}}, Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Profile: []int{-50, -50}},
+		&journal.TrialCarried{Source: journal.FactSource{Session: "original", Seq: 304, Build: session.Build(), Trial: "0304", Evidence: 1}, Class: journal.TrialClass{Regime: machine.R7, Workload: "workload", Cores: []int{0}, DurationS: 120}, Profile: []int{-50, -50}, Condition: machine.Together, Phase: journal.PhaseChecking, Outcome: journal.OutcomePass, DurationS: 120},
+		&journal.FailureCarried{Source: journal.FactSource{Session: "original", Seq: 400, Build: session.Build(), Evidence: 1}, Class: journal.TrialClass{Regime: machine.R6, Cores: []int{0, 1}}, Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Profile: []int{-50, -50}},
 	} {
 		e, err := j.Append(payload)
 		if err != nil {

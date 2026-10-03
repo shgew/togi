@@ -1,12 +1,12 @@
 cores = 2
 facts = "model-facts.jsonl.gz"
 [model]
-near_edge_rate = 1
+near_limit_rate = 1
 [[core]]
 id = 0
-isolated = [-50, -50, -50, -50, -50]
-resident = [-50, -50, -50, -50, -50, -50, -50]
+alone = [-50, -50, -50, -50, -50]
+together = [-50, -50, -50, -50, -50, -50, -50]
 [[core]]
 id = 1
-isolated = [-50, -50, -50, -50, -50]
-resident = [-50, -50, -50, -50, -50, -50, -50]
+alone = [-50, -50, -50, -50, -50]
+together = [-50, -50, -50, -50, -50, -50, -50]

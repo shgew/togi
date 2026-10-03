@@ -49,7 +49,7 @@ func interruptedEvents(jump time.Duration, evidence journal.Payload, signal mach
 		{Seq: 6, Boot: "b", Time: at.Add(100*time.Second + jump), Mono: 10000, Data: &journal.CrashDetected{PreviousBoot: "a", InFlight: new(2)}},
 		{Seq: 7, Boot: "b", Time: at.Add(100*time.Second + jump), Mono: 10000, Data: &journal.TrialEnd{Trial: "trial", Outcome: journal.OutcomeFailure, Signal: signal, DurationS: 20}},
 		{Seq: 8, Boot: "b", Time: at.Add(100*time.Second + jump), Mono: 10000, Data: &journal.Failure{Trial: "trial", Signal: signal, Regime: machine.R7, Attribution: journal.Unattributed}},
-		{Seq: 9, Boot: "b", Time: at.Add(100*time.Second + jump), Mono: 10000, Data: &journal.HuntEnd{Hunt: 1, Result: "joint"}},
+		{Seq: 9, Boot: "b", Time: at.Add(100*time.Second + jump), Mono: 10000, Data: &journal.HuntEnd{Hunt: 1, Result: "combination"}},
 	}
 }
 
@@ -106,7 +106,7 @@ func TestRerunsGroupRecordedObligation(t *testing.T) {
 			cause = 200
 		}
 		id := fmt.Sprint(i)
-		add(&journal.TrialIntent{Trial: id, Phase: journal.PhaseGuard, Rerun: true, Regime: machine.R6, DurationS: duration}, cause)
+		add(&journal.TrialIntent{Trial: id, Phase: journal.PhaseChecking, Rerun: true, Regime: machine.R6, DurationS: duration}, cause)
 		add(&journal.TrialStart{Trial: id})
 		result := journal.OutcomePass
 		if i >= 5 {
@@ -114,29 +114,29 @@ func TestRerunsGroupRecordedObligation(t *testing.T) {
 		}
 		add(&journal.TrialEnd{Trial: id, Outcome: result})
 	}
-	want := [][]string{{"rotations", "started", "0"}, {"rotations", "ended", "0"}, {"rotations", "qualifying", "0"}, {"reruns", "2"}, {"reruns", "failing", "first", "start", "1"}}
-	if diff := cmp.Diff(want, reportRows(t, events, "Guard")); diff != "" {
+	want := [][]string{{"laps", "started", "0"}, {"laps", "ended", "0"}, {"full", "laps", "0"}, {"reruns", "2"}, {"reruns", "failing", "first", "start", "1"}}
+	if diff := cmp.Diff(want, reportRows(t, events, "Checking")); diff != "" {
 		t.Fatal(diff)
 	}
 }
 
 func TestHuntCommitmentRequiresRecordedCause(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		result string
-		joint  bool
-		cause  int
-		want   string
+		name        string
+		result      string
+		combination bool
+		cause       int
+		want        string
 	}{
 		{name: "cancelled unrelated search", result: "cancelled", cause: 99, want: "none"},
 		{name: "culprit unrelated search", result: "culprit", cause: 99, want: "none"},
 		{name: "culprit end cause", result: "culprit", cause: 2, want: "00 -10->-9"},
-		{name: "joint mark cause", result: "joint", joint: true, cause: 3, want: "00 -10->-9"},
+		{name: "combination cause", result: "combination", combination: true, cause: 3, want: "00 -10->-9"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			events := []journal.Event{{Seq: 1, Boot: "a", Data: &journal.HuntStart{Hunt: 1}}, {Seq: 2, Boot: "a", Data: &journal.HuntEnd{Hunt: 1, Result: tc.result}}}
-			if tc.joint {
-				events = append(events, journal.Event{Seq: 3, Boot: "a", Cause: []int{2}, Data: &journal.MarkJoint{Hunt: 1, Mark: 1}})
+			if tc.combination {
+				events = append(events, journal.Event{Seq: 3, Boot: "a", Cause: []int{2}, Data: &journal.Combination{Hunt: 1, Combination: 1}})
 			}
 			events = append(events, journal.Event{Seq: 4, Boot: "a", Cause: []int{tc.cause}, Data: &journal.TunerDecision{Phase: journal.PhaseSearch, Decision: journal.Backoff, Core: 0, FromOffset: -10, ToOffset: -9}})
 			if diff := cmp.Diff(tc.want, project(facts.FromEvents(events)).hunts[0].commitment); diff != "" {
@@ -164,14 +164,14 @@ func TestIdleCrashInvalidatesAllCoreR6PriorPasses(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			intent := func(id string, hunt int) *journal.TrialIntent {
-				return &journal.TrialIntent{Trial: id, Hunt: hunt, Mask: hunt, Regime: tc.regime, Cores: tc.loaded, Profile: []int{-10, -10}, Workload: "load", DurationS: 120}
+				return &journal.TrialIntent{Trial: id, Hunt: hunt, Group: hunt, Regime: tc.regime, Cores: tc.loaded, Profile: []int{-10, -10}, Workload: "load", DurationS: 120}
 			}
-			payloads := []journal.Payload{&journal.SessionStart{Cores: cores}, intent("pass", 0), &journal.TrialEnd{Trial: "pass", Outcome: journal.OutcomePass}, &journal.Failure{Signal: machine.Crash, Profile: tc.profile}, &journal.HuntStart{Hunt: 1, Starts: 1}, &journal.HuntMask{Hunt: 1, Mask: 1, Stage: "part"}, intent("mask", 1)}
+			payloads := []journal.Payload{&journal.SessionStart{Cores: cores}, intent("pass", 0), &journal.TrialEnd{Trial: "pass", Outcome: journal.OutcomePass}, &journal.Failure{Signal: machine.Crash, Profile: tc.profile}, &journal.HuntStart{Hunt: 1, Starts: 1}, &journal.HuntGroup{Hunt: 1, Group: 1, Stage: "part"}, intent("group", 1)}
 			var events []journal.Event
 			for i, payload := range payloads {
 				events = append(events, journal.Event{Seq: i + 1, Boot: "a", Time: time.Unix(int64(i), 0), Data: payload})
 			}
-			rows := reportRows(t, events, "Prior evidence per hunt mask")
+			rows := reportRows(t, events, "Prior evidence per hunt group")
 			if diff := cmp.Diff(tc.want, rows[0][3]); diff != "" {
 				t.Fatal(diff)
 			}
@@ -188,18 +188,18 @@ func TestSingleCarriedFailureDecisions(t *testing.T) {
 		since   time.Time
 		want    int
 	}{
-		{"inferred failure with hunt context", &journal.HuntMask{Inferred: "failure"}, []int{5, 1}, time.Time{}, 1},
+		{"inferred failure with hunt context", &journal.HuntGroup{Inferred: "failure"}, []int{5, 1}, time.Time{}, 1},
 		{"carried idle failure backoff", &journal.TunerDecision{Decision: journal.Backoff}, []int{2}, time.Time{}, 1},
-		{"repeated cause is one observation", &journal.HuntMask{Inferred: "failure"}, []int{1, 1}, time.Time{}, 1},
-		{"two carried failures", &journal.HuntMask{Inferred: "failure"}, []int{1, 2}, time.Time{}, 0},
+		{"repeated cause is one observation", &journal.HuntGroup{Inferred: "failure"}, []int{1, 1}, time.Time{}, 1},
+		{"two carried failures", &journal.HuntGroup{Inferred: "failure"}, []int{1, 2}, time.Time{}, 0},
 		{"carried and live failures", &journal.TunerDecision{Decision: journal.Backoff}, []int{1, 3}, time.Time{}, 0},
 		{"live failure only", &journal.TunerDecision{Decision: journal.Backoff}, []int{3}, time.Time{}, 0},
-		{"passing inference with context failure", &journal.HuntMask{Inferred: "pass"}, []int{1, 4, 5}, time.Time{}, 0},
+		{"passing inference with context failure", &journal.HuntGroup{Inferred: "pass"}, []int{1, 4, 5}, time.Time{}, 0},
 		{"hunt start context citation", &journal.HuntStart{}, []int{1}, time.Time{}, 0},
-		{"non-backoff decision", &journal.TunerDecision{Decision: journal.CheckEdge}, []int{1}, time.Time{}, 0},
-		{"carried pass is not a failure", &journal.HuntMask{Inferred: "failure"}, []int{4}, time.Time{}, 0},
-		{"decision before cutoff", &journal.HuntMask{Inferred: "failure"}, []int{1}, at.Add(time.Second), 0},
-		{"decision at cutoff uses earlier evidence", &journal.HuntMask{Inferred: "failure"}, []int{1}, at, 1},
+		{"non-backoff decision", &journal.TunerDecision{Decision: journal.CheckSoloLimit}, []int{1}, time.Time{}, 0},
+		{"carried pass is not a failure", &journal.HuntGroup{Inferred: "failure"}, []int{4}, time.Time{}, 0},
+		{"decision before cutoff", &journal.HuntGroup{Inferred: "failure"}, []int{1}, at.Add(time.Second), 0},
+		{"decision at cutoff uses earlier evidence", &journal.HuntGroup{Inferred: "failure"}, []int{1}, at, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			events := []journal.Event{
@@ -224,7 +224,7 @@ func TestSingleCarriedFailureThroughHunt(t *testing.T) {
 		extra []int
 		want  int
 	}{
-		{"carried failure through joint mark", nil, 1},
+		{"carried failure through combination", nil, 1},
 		{"live failure added", []int{3}, 0},
 		{"second carried failure added", []int{4}, 0},
 		{"repeated failure through multiple paths", []int{1, 5}, 1},
@@ -238,7 +238,7 @@ func TestSingleCarriedFailureThroughHunt(t *testing.T) {
 				{Seq: 5, Data: &journal.HuntStart{}, Cause: []int{1}},
 				{Seq: 6, Data: &journal.TrialEnd{Outcome: journal.OutcomePass}, Cause: []int{3}},
 				{Seq: 7, Data: &journal.HuntEnd{}, Cause: append([]int{5, 2, 6}, tc.extra...)},
-				{Seq: 8, Data: &journal.MarkJoint{}, Cause: []int{7}},
+				{Seq: 8, Data: &journal.Combination{}, Cause: []int{7}},
 				{Seq: 9, Time: at, Data: &journal.TunerDecision{Decision: journal.Backoff}, Cause: []int{8}},
 			}
 			if diff := cmp.Diff(tc.want, singleCarriedFailureDecisions(events, at)); diff != "" {

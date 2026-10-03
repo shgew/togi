@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,7 +38,7 @@ func TestWatchProblemFrame(t *testing.T) {
 		problem string
 	}{
 		{name: "malformed", problem: "invalid character"},
-		{name: "incompatible-schema", fixture: "schema", problem: "uses schema 2"},
+		{name: "incompatible-schema", fixture: "schema", problem: fmt.Sprintf("uses schema %d", journal.Schema)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

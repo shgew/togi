@@ -18,13 +18,13 @@ func TestUnknownConfiguredCoreRefusesBeforeStartingSession(t *testing.T) {
 	for _, candidate := range []bool{false, true} {
 		name := "start offset"
 		if candidate {
-			name = "candidate edge"
+			name = "candidate solo limit"
 		}
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			in := simInput(t.TempDir(), newSim(t, small()))
 			if candidate {
-				in.Config.CandidateEdges = map[int]int{99: -10}
+				in.Config.CandidateSoloLimits = map[int]int{99: -10}
 			} else {
 				in.Config.StartOffsets = map[int]int{99: -10}
 			}
@@ -42,7 +42,7 @@ func TestUnknownConfiguredCoreRefusesBeforeStartingSession(t *testing.T) {
 	}
 }
 
-func TestCarriedStartsRespectMarksAndMachineTopology(t *testing.T) {
+func TestCarriedStartsRespectFailurePointsAndMachineTopology(t *testing.T) {
 	t.Parallel()
 	for _, changed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "same BIOS", true: "changed BIOS"}[changed], func(t *testing.T) {
@@ -52,15 +52,15 @@ func TestCarriedStartsRespectMarksAndMachineTopology(t *testing.T) {
 			c := carriedFixture(t, m)
 			c.Facts = nil
 			c.Cores = []journal.CarriedCore{
-				{Core: 0, Edge: new(-12), EdgeSession: "source", FailedMark: new(-10), MarkSession: "source"},
-				{Core: 1, FailedMark: new(-20), MarkSession: "source"},
-				{Core: 99, Edge: new(-15), EdgeSession: "source"},
+				{Core: 0, SoloLimit: new(-12), SoloLimitSession: "source", FailurePoint: new(-10), FailurePointSession: "source"},
+				{Core: 1, FailurePoint: new(-20), FailurePointSession: "source"},
+				{Core: 99, SoloLimit: new(-15), SoloLimitSession: "source"},
 			}
 			if changed {
 				c.Context.BIOSVersion = "changed"
 			}
 			r.in.Carry = c
-			r.in.Config.CandidateEdges = map[int]int{0: -12}
+			r.in.Config.CandidateSoloLimits = map[int]int{0: -12}
 			if err := r.startSession(); err != nil {
 				t.Fatal(err)
 			}
@@ -76,31 +76,31 @@ func TestCarriedStartsRespectMarksAndMachineTopology(t *testing.T) {
 			}
 			want := []journal.CarriedCore{c.Cores[0], c.Cores[1]}
 			if changed {
-				want = []journal.CarriedCore{{Core: 0, Edge: new(-12), EdgeSession: "source"}}
+				want = []journal.CarriedCore{{Core: 0, SoloLimit: new(-12), SoloLimitSession: "source"}}
 			}
-			if carried == nil || carried.Marks == changed {
+			if carried == nil || carried.FailurePoints == changed {
 				t.Fatalf("carry commitment: %+v", carried)
 			}
 			if diff := cmp.Diff(want, carried.Carried); diff != "" {
 				t.Fatalf("eligible carried cores (-want +got):\n%s", diff)
 			}
-			wantOffset, wantMark := -9, new(-10)
+			wantOffset, wantFailurePoint := -9, new(-10)
 			if changed {
-				wantOffset, wantMark = -12, nil
+				wantOffset, wantFailurePoint = -12, nil
 			}
 			if len(phases) != 2 || phases[0] == nil || phases[1] == nil {
 				t.Fatalf("initial phases: %+v", phases)
 			}
-			if phases[0].Offset != wantOffset || !phases[0].CheckEdge {
-				t.Fatalf("configured edge crossed carried mark: %+v", phases[0])
+			if phases[0].Offset != wantOffset || !phases[0].CheckSoloLimit {
+				t.Fatalf("configured solo limit crossed carried failure point: %+v", phases[0])
 			}
-			if diff := cmp.Diff(wantMark, phases[0].FailedMark); diff != "" {
+			if diff := cmp.Diff(wantFailurePoint, phases[0].FailurePoint); diff != "" {
 				t.Fatal(diff)
 			}
-			if !changed && !strings.Contains(phases[0].Reason, "one count shallower than the failed mark -10 carried from session source") {
-				t.Fatalf("mark clamp unexplained: %+v", phases[0])
+			if !changed && !strings.Contains(phases[0].Reason, "one count shallower than the failure point -10 carried from session source") {
+				t.Fatalf("failure point clamp unexplained: %+v", phases[0])
 			}
-			if diff := cmp.Diff(map[bool]*int{false: new(-20), true: nil}[changed], phases[1].FailedMark); diff != "" {
+			if diff := cmp.Diff(map[bool]*int{false: new(-20), true: nil}[changed], phases[1].FailurePoint); diff != "" {
 				t.Fatal(diff)
 			}
 		})
@@ -182,7 +182,7 @@ func TestHostReadFailureDoesNotStartTuning(t *testing.T) {
 			t.Parallel()
 			in := simInput(t.TempDir(), newSim(t, small()))
 			if name == "resumed BIOS context" {
-				if stop := simulate(t, in); stop.Reason != StopRotations {
+				if stop := simulate(t, in); stop.Reason != StopLaps {
 					t.Fatalf("reference: %+v", stop)
 				}
 				in.Machine.Reboot()

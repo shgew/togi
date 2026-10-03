@@ -1,1 +1,1 @@
-{"seq":3,"time":"2026-10-02T01:10:00.200000000Z","boot":"e8f9a0b1-1c2d-4e5f-8a9b-0c1d2e3f4a5b","kind":"core.phase","msg":"core 03 starts search at 0 (baseline)","core":3,"from":"","to":"search","offset":0,"pass":null,"failed_mark":null,"reason":"baseline"}
+{"boot":"e8f9a0b1-1c2d-4e5f-8a9b-0c1d2e3f4a5b","core":3,"failure_point":null,"from":"","kind":"core.phase","msg":"core 03 starts search at 0 (baseline)","offset":0,"pass":null,"reason":"baseline","seq":3,"time":"2026-10-02T01:10:00.200000000Z","to":"search"}

@@ -113,7 +113,7 @@ func TestRunOwnerEveryExit(t *testing.T) {
 			r.in.Machine.Trials = trials
 			r.in.Machine.SMU = ownerSMU{SMU: r.in.Machine.SMU, trials: trials, t: t}
 			r.in.Journal = ownerJournal{Journal: r.in.Journal, fail: mode == "ordinary error", cause: original}
-			r.in.Rotations = 1
+			r.in.Laps = 1
 			closed := false
 			r.in.Close = func() error {
 				closed = true

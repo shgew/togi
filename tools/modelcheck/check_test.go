@@ -37,8 +37,8 @@ func TestModelGrouping(t *testing.T) {
 		cores, profile []int
 		depth          int
 	}{
-		{"isolated", facts.TrialFact, []int{1}, []int{0, -30, 0}, -30},
-		{"resident", facts.TrialFact, []int{0, 1, 2}, []int{-40, -20, -30}, -20},
+		{"alone", facts.TrialFact, []int{1}, []int{0, -30, 0}, -30},
+		{"together", facts.TrialFact, []int{0, 1, 2}, []int{-40, -20, -30}, -20},
 		{"any-zero", facts.TrialFact, []int{0, 1, 2}, []int{-40, 0, -30}, 0},
 		{"idle", facts.IdleFact, []int{0, 1, 2}, []int{-40, -20, -30}, -20},
 	} {
@@ -86,9 +86,9 @@ func TestFixtureModelCheck(t *testing.T) {
 }
 
 func TestCheckerConstraintsPreserveBinomialCheck(t *testing.T) {
-	cfg := sim.Config{Cores: 2, Edges: []sim.Edges{
-		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
-		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+	cfg := sim.Config{Cores: 2, Limits: []sim.Limits{
+		{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+		{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}},
 	}}
 	var records []trialfacts.Record
 	for i := range 20 {
@@ -106,7 +106,7 @@ func TestCheckerConstraintsPreserveBinomialCheck(t *testing.T) {
 		p    float64
 		want bool
 	}{{0, false}, {0.001, false}, {0.1, true}, {0.9, false}} {
-		cfg.Edges[0].Flat = -math.Log1p(-tc.p) / 90
+		cfg.Limits[0].Flat = -math.Log1p(-tc.p) / 90
 		m, err := sim.New(cfg)
 		if err != nil {
 			t.Fatal(err)

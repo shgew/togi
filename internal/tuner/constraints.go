@@ -14,10 +14,10 @@ func (s *State) reaches(p []int) (string, bool) {
 	}
 	for _, c := range s.byID() {
 		if c.fail != nil && p[s.index(c.id)] <= *c.fail {
-			return fmt.Sprintf("failed mark %d of core %02d", *c.fail, c.id), true
+			return fmt.Sprintf("failure point %d of core %02d", *c.fail, c.id), true
 		}
 	}
-	for _, m := range s.marks {
+	for _, m := range s.combinations {
 		all := true
 		for _, member := range m.Members {
 			if p[s.index(member.Core)] > member.Offset {
@@ -26,7 +26,7 @@ func (s *State) reaches(p []int) (string, bool) {
 			}
 		}
 		if all {
-			return fmt.Sprintf("joint mark J%d", m.Mark), true
+			return fmt.Sprintf("combination C%d", m.Combination), true
 		}
 	}
 	return "", false
@@ -45,7 +45,7 @@ func SoleNonzero(profile []int) (index int, ok bool) {
 	return
 }
 
-func (s *State) done(c *core, p []int) (string, bool) {
+func (s *State) atLimit(c *core, p []int) (string, bool) {
 	if c.offset == machine.MinOffset {
 		return "at the floor -50", true
 	}
@@ -63,8 +63,8 @@ func (s *State) optimum(hi, ranking []int) []int {
 			lo[i] = max(machine.MinOffset, *c.fail+1)
 		}
 	}
-	active := make([]journal.JointMarkState, 0, len(s.marks))
-	for _, m := range s.marks {
+	active := make([]journal.CombinationState, 0, len(s.combinations))
+	for _, m := range s.combinations {
 		reached := true
 		for _, v := range m.Members {
 			if lo[s.index(v.Core)] > v.Offset {
@@ -76,7 +76,7 @@ func (s *State) optimum(hi, ranking []int) []int {
 			active = append(active, m)
 		}
 	}
-	slices.SortFunc(active, func(a, b journal.JointMarkState) int { return a.Mark - b.Mark })
+	slices.SortFunc(active, func(a, b journal.CombinationState) int { return a.Combination - b.Combination })
 	if len(ranking) != n {
 		ranking = s.ids()
 	}
@@ -126,15 +126,15 @@ func (s *State) optimum(hi, ranking []int) []int {
 			}
 			return
 		}
-		mark := active[at]
-		for _, m := range mark.Members {
+		combination := active[at]
+		for _, m := range combination.Members {
 			if i := s.index(m.Core); i >= 0 && max(lo[i], caps[i]) > m.Offset {
 				visit(at + 1)
 				return
 			}
 		}
-		members := slices.Clone(mark.Members)
-		slices.SortFunc(members, func(a, b journal.JointMember) int {
+		members := slices.Clone(combination.Members)
+		slices.SortFunc(members, func(a, b journal.CombinationMember) int {
 			ia, ib := s.index(a.Core), s.index(b.Core)
 			lossA := max(lo[ia], a.Offset+1) - lo[ia]
 			lossB := max(lo[ib], b.Offset+1) - lo[ib]

@@ -345,10 +345,10 @@ func (s Snapshot) huntLamp() string {
 			what = "the crash"
 		}
 		switch {
-		case s.refine != nil:
-			paused = fmt.Sprintf("Deepening round %d waits", s.refine.Round)
-		case s.guard != nil && len(s.guard.Steps) > 0:
-			paused = fmt.Sprintf("Lap %d waits at step %d", s.guard.Rotation, currentStep(s.guard))
+		case s.deepening != nil:
+			paused = fmt.Sprintf("Deepening round %d waits", s.deepening.Round)
+		case s.checking != nil && len(s.checking.Steps) > 0:
+			paused = fmt.Sprintf("Lap %d waits at step %d", s.checking.Lap, currentStep(s.checking))
 		}
 		return lamp.Render(fmt.Sprintf(" %-8s", fmt.Sprintf("HUNT %d", h.id))) + "  " +
 			amber.Render(fmt.Sprintf("%s while I find which cores caused %s", paused, what))
@@ -485,9 +485,9 @@ func (c coreView) state() string {
 			return "confirming"
 		}
 		return "searching"
-	case journal.PhaseResident:
+	case journal.PhaseHasRoom:
 		return "can go deeper"
-	case journal.PhaseDone, journal.PhaseGuard, journal.PhaseHunt, journal.PhaseRefine:
+	case journal.PhaseAtLimit, journal.PhaseChecking, journal.PhaseHunt, journal.PhaseDeepening:
 	}
 	switch {
 	case c.tuned == -50:

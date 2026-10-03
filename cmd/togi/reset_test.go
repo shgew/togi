@@ -22,7 +22,7 @@ func TestCommandsRefuseWhileLocked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture = bytes.Replace(fixture, []byte(`"schema":2,"ruleset":3`), fmt.Appendf(nil, `"schema":2,"ruleset":%d`, session.Build().Ruleset), 1)
+	fixture = bytes.Replace(fixture, []byte(`"ruleset":3`), fmt.Appendf(nil, `"ruleset":%d`, session.Build().Ruleset), 1)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o644); err != nil {
 		t.Fatal(err)
@@ -50,40 +50,40 @@ func TestCommandsRefuseWhileLocked(t *testing.T) {
 	}
 }
 
-func TestResetAllCandidateEdges(t *testing.T) {
+func TestResetAllCandidateSoloLimits(t *testing.T) {
 	tests := []struct {
-		name    string
-		core    int
-		mark    int
-		edge    int
-		warning bool
+		name         string
+		core         int
+		failurePoint int
+		soloLimit    int
+		warning      bool
 	}{
-		{"at failed mark", 3, -10, -10, true},
-		{"deeper than failed mark", 3, -10, -11, true},
-		{"shallower than failed mark", 3, -10, -9, false},
+		{"at failure point", 3, -10, -10, true},
+		{"deeper than failure point", 3, -10, -11, true},
+		{"shallower than failure point", 3, -10, -9, false},
 		{"failed at zero", 3, 0, 0, true},
-		{"no failed mark", 7, -10, -10, false},
+		{"no failure point", 7, -10, -10, false},
 		{"suspect backoff only", 7, -10, -11, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir := resetCandidateFixture(t, tt.mark)
+			dir := resetCandidateFixture(t, tt.failurePoint)
 			cfg := filepath.Join(t.TempDir(), "config.toml")
-			if err := os.WriteFile(cfg, []byte(fmt.Sprintf("[candidate_edges]\n\"%d\" = %d\n", tt.core, tt.edge)), 0o644); err != nil {
+			if err := os.WriteFile(cfg, []byte(fmt.Sprintf("[candidate_solo_limits]\n\"%d\" = %d\n", tt.core, tt.soloLimit)), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			var stdout, stderr bytes.Buffer
 			if code := testCLI(t, []string{"reset", "--all", "--state-dir", dir, "--config", cfg}, &stdout, &stderr); code != exitOK {
 				t.Fatalf("reset exit %d: %s", code, stderr.String())
 			}
-			got := strings.Contains(stderr.String(), fmt.Sprintf("candidate edge %d for core %02d", tt.edge, tt.core))
+			got := strings.Contains(stderr.String(), fmt.Sprintf("candidate solo limit %d for core %02d", tt.soloLimit, tt.core))
 			if diff := cmp.Diff(tt.warning, got); diff != "" {
 				t.Errorf("candidate warning (-want +got):\n%s; stderr %q", diff, stderr.String())
 			}
 			if tt.warning {
 				remedy := "remove it"
-				if tt.mark < 0 {
-					remedy = fmt.Sprintf("use %d, the failed mark plus one, or remove it", tt.mark+1)
+				if tt.failurePoint < 0 {
+					remedy = fmt.Sprintf("use %d, the failure point plus one, or remove it", tt.failurePoint+1)
 				}
 				if !strings.Contains(stderr.String(), remedy) {
 					t.Errorf("missing remedy %q: %q", remedy, stderr.String())
@@ -96,7 +96,7 @@ func TestResetAllCandidateEdges(t *testing.T) {
 	}
 }
 
-func resetCandidateFixture(t *testing.T, mark int) string {
+func resetCandidateFixture(t *testing.T, failurePoint int) string {
 	t.Helper()
 	dir := t.TempDir()
 	installJournalFixture(t, dir)
@@ -112,10 +112,10 @@ func resetCandidateFixture(t *testing.T, mark int) string {
 		}
 		return event
 	}
-	fail := appendEvent(&journal.Failure{Signal: machine.Signal("error"), Attribution: journal.Attributed, Core: new(3), Offset: new(mark)})
+	fail := appendEvent(&journal.Failure{Signal: machine.Signal("error"), Attribution: journal.Attributed, Core: new(3), Offset: new(failurePoint)})
 	appendEvent(&journal.TunerDecision{
 		Core: 3, Phase: journal.PhaseSearch, Decision: journal.Backoff,
-		FromOffset: mark, ToOffset: min(mark+1, 0), FailedMark: new(mark), Reason: "attributed failure",
+		FromOffset: failurePoint, ToOffset: min(failurePoint+1, 0), FailurePoint: new(failurePoint), Reason: "attributed failure",
 	}, fail.Seq)
 	if err := j.Close(); err != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestResetAllSkipsUnavailableConfig(t *testing.T) {
 			if code := runReset(g, []string{"--all"}, &stdout, &stderr); code != exitOK {
 				t.Fatalf("reset exit %d: %s", code, stderr.String())
 			}
-			if diff := cmp.Diff(tt.warning, strings.Contains(stderr.String(), "cannot check candidate edges")); diff != "" {
+			if diff := cmp.Diff(tt.warning, strings.Contains(stderr.String(), "cannot check candidate solo limits")); diff != "" {
 				t.Errorf("config warning (-want +got):\n%s; stderr %q", diff, stderr.String())
 			}
 			if !strings.Contains(stdout.String(), "archived to archive/") {
@@ -215,14 +215,14 @@ func TestResetAllWarnsAcrossRulesets(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := filepath.Join(t.TempDir(), "config.toml")
-	if err := os.WriteFile(cfg, []byte("[candidate_edges]\n\"3\" = -10\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte("[candidate_solo_limits]\n\"3\" = -10\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
 	if code := testCLI(t, []string{"--state-dir", dir, "--config", cfg, "reset", "--all"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("reset exit %d: %s", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "candidate edge -10 for core 03") || !strings.Contains(stdout.String(), "archived to archive/") {
+	if !strings.Contains(stderr.String(), "candidate solo limit -10 for core 03") || !strings.Contains(stdout.String(), "archived to archive/") {
 		t.Errorf("ruleset-2 archive: stdout %q, stderr %q", stdout.String(), stderr.String())
 	}
 }
@@ -318,7 +318,7 @@ func TestResetCoreCommandOutcome(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			fixture = bytes.Replace(fixture, []byte(`"schema":2,"ruleset":3`), fmt.Appendf(nil, `"schema":2,"ruleset":%d`, session.Build().Ruleset), 1)
+			fixture = bytes.Replace(fixture, []byte(`"ruleset":3`), fmt.Appendf(nil, `"ruleset":%d`, session.Build().Ruleset), 1)
 			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o600); err != nil {
 				t.Fatal(err)
 			}

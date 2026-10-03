@@ -18,8 +18,8 @@ import (
 
 var update = flag.Bool("update", false, "rewrite testdata/*.golden from the current output")
 
-func TestSimulatedJointReport(t *testing.T) {
-	f, err := os.Open(filepath.Join("testdata", "joint.jsonl.gz"))
+func TestSimulatedCombinationReport(t *testing.T) {
+	f, err := os.Open(filepath.Join("testdata", "combination.jsonl.gz"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestSimulatedJointReport(t *testing.T) {
 	if err := report(&got, session, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join("testdata", "joint.golden")
+	path := filepath.Join("testdata", "combination.golden")
 	if *update {
 		if err := os.WriteFile(path, got.Bytes(), 0o644); err != nil {
 			t.Fatal(err)
@@ -90,7 +90,7 @@ func TestRunGrouping(t *testing.T) {
 }
 
 func TestPriorPasses(t *testing.T) {
-	target := journal.TrialIntent{Regime: machine.R7, Workload: "load", Cores: []int{1, 0}, DurationS: 120, Profile: []int{-10, -10}, Condition: machine.Masked}
+	target := journal.TrialIntent{Regime: machine.R7, Workload: "load", Cores: []int{1, 0}, DurationS: 120, Profile: []int{-10, -10}, Condition: machine.Parked}
 	makeTrial := func(seq int, profile []int, result journal.Outcome, modify func(*journal.TrialIntent)) *trial {
 		in := target
 		in.Profile = profile
@@ -108,7 +108,7 @@ func TestPriorPasses(t *testing.T) {
 		{"shallow and incomparable do not", []*trial{makeTrial(1, []int{-9, -10}, journal.OutcomePass, nil), makeTrial(2, []int{-11, -9}, journal.OutcomePass, nil)}, 0},
 		{"later shallow failure invalidates", []*trial{makeTrial(1, []int{-11, -11}, journal.OutcomePass, nil), makeTrial(2, []int{-9, -9}, journal.OutcomeFailure, nil), makeTrial(3, []int{-10, -10}, journal.OutcomePass, nil)}, 1},
 		{"deeper failure does not invalidate", []*trial{makeTrial(1, []int{-10, -10}, journal.OutcomePass, nil), makeTrial(2, []int{-11, -11}, journal.OutcomeFailure, nil)}, 1},
-		{"same sorted cores and different condition", []*trial{makeTrial(1, []int{-10, -10}, journal.OutcomePass, func(in *journal.TrialIntent) { in.Cores = []int{0, 1}; in.Condition = machine.Resident })}, 1},
+		{"same sorted cores and different condition", []*trial{makeTrial(1, []int{-10, -10}, journal.OutcomePass, func(in *journal.TrialIntent) { in.Cores = []int{0, 1}; in.Condition = machine.Together })}, 1},
 		{"class fields matter", []*trial{makeTrial(1, []int{-10, -10}, journal.OutcomePass, func(in *journal.TrialIntent) { in.DurationS = 300 }), makeTrial(2, []int{-10, -10}, journal.OutcomePass, func(in *journal.TrialIntent) { in.Workload = "other" }), makeTrial(3, []int{-10, -10}, journal.OutcomePass, func(in *journal.TrialIntent) { in.Regime = machine.R6 }), makeTrial(4, []int{-10, -10}, journal.OutcomePass, func(in *journal.TrialIntent) { in.Cores = []int{0} })}, 0},
 		{"hunt boundary excluded", []*trial{makeTrial(10, []int{-10, -10}, journal.OutcomePass, nil), makeTrial(11, []int{-10, -10}, journal.OutcomePass, nil)}, 0},
 		{"inconclusive does not invalidate", []*trial{makeTrial(1, []int{-10, -10}, journal.OutcomePass, nil), makeTrial(2, []int{-9, -9}, journal.OutcomeInconclusive, nil)}, 1},

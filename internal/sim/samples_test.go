@@ -141,7 +141,7 @@ func TestInMemorySampleRetentionDoesNotGrowWithDuration(t *testing.T) {
 func TestSampleSetupFailuresRemainErrors(t *testing.T) {
 	for _, name := range []string{"directory", "file"} {
 		t.Run(name, func(t *testing.T) {
-			m := newMachine(t, Config{Cores: 2, Edges: flat(2, -50, -50)})
+			m := newMachine(t, Config{Cores: 2, Limits: flat(2, -50, -50)})
 			dir := t.TempDir()
 			want := "create simulated sample directory"
 			if name == "directory" {

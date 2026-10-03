@@ -36,11 +36,11 @@ type huntInfo struct {
 	seq        int
 	result     *journal.HuntEnd
 	commitment string
-	masks      []*maskInfo
+	groups     []*groupInfo
 	trials     []*trial
 }
-type maskInfo struct {
-	plan   *journal.HuntMask
+type groupInfo struct {
+	plan   *journal.HuntGroup
 	trials []*trial
 }
 type projection struct {
@@ -70,7 +70,7 @@ func project(session facts.Session) *projection {
 	var active *runInfo
 	commitments := map[int]*huntInfo{}
 	var previousBoot string
-	masks := map[[2]int]*maskInfo{}
+	groups := map[[2]int]*groupInfo{}
 	for _, e := range events {
 		if _, ok := p.boots[e.Boot]; !ok {
 			p.boots[e.Boot] = bootTime{start: e.Time.Add(-time.Duration(e.Mono) * time.Millisecond), firstEvent: e.Time}
@@ -100,7 +100,7 @@ func project(session facts.Session) *projection {
 				active = nil
 			}
 		case *journal.TrialIntent:
-			p.addTrial(trials[e.Seq], active, masks)
+			p.addTrial(trials[e.Seq], active, groups)
 		case *journal.CrashDetected:
 			if active != nil {
 				active.crashes++
@@ -113,11 +113,11 @@ func project(session facts.Session) *projection {
 			h := &huntInfo{start: v, time: e.Time, seq: e.Seq, commitment: "none"}
 			p.hunts = append(p.hunts, h)
 			p.huntByID[v.Hunt] = h
-		case *journal.HuntMask:
-			m := &maskInfo{plan: v}
-			masks[[2]int{v.Hunt, v.Mask}] = m
+		case *journal.HuntGroup:
+			m := &groupInfo{plan: v}
+			groups[[2]int{v.Hunt, v.Group}] = m
 			if h := p.huntByID[v.Hunt]; h != nil {
-				h.masks = append(h.masks, m)
+				h.groups = append(h.groups, m)
 			}
 		case *journal.HuntEnd:
 			if h := p.huntByID[v.Hunt]; h != nil {
@@ -125,7 +125,7 @@ func project(session facts.Session) *projection {
 				h.result = v
 				commitments[e.Seq] = h
 			}
-		case *journal.MarkJoint:
+		case *journal.Combination:
 			if h := p.huntByID[v.Hunt]; h != nil {
 				commitments[e.Seq] = h
 			}
@@ -159,7 +159,7 @@ func (p *projection) finishHunts(last time.Time) {
 	}
 }
 
-func (p *projection) addTrial(record *facts.Trial, active *runInfo, masks map[[2]int]*maskInfo) {
+func (p *projection) addTrial(record *facts.Trial, active *runInfo, groups map[[2]int]*groupInfo) {
 	v := record.Intent
 	t := &trial{intent: v, key: class(v, p.cores), seq: record.Seq, endSeq: record.EndSeq, time: record.Time, lastEvidence: record.LastEvidence, cause: record.Cause, boot: record.Boot, started: record.Started, crashed: record.Crashed, end: record.End}
 	p.trials = append(p.trials, t)
@@ -170,7 +170,7 @@ func (p *projection) addTrial(record *facts.Trial, active *runInfo, masks map[[2
 	if h := p.huntByID[v.Hunt]; h != nil {
 		h.trials = append(h.trials, t)
 	}
-	if m := masks[[2]int{v.Hunt, v.Mask}]; m != nil {
+	if m := groups[[2]int{v.Hunt, v.Group}]; m != nil {
 		m.trials = append(m.trials, t)
 	}
 }

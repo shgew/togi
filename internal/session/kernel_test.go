@@ -149,7 +149,7 @@ func boundaryRunner(t *testing.T) (*runner, *boundaryKernel, func(time.Duration)
 	if err := r.startSession(); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.ensureCondition(tuner.Trial{Condition: machine.Isolated}); err != nil {
+	if err := r.ensureCondition(tuner.Trial{Condition: machine.Alone}); err != nil {
 		t.Fatal(err)
 	}
 	return r, k, advance
@@ -157,7 +157,7 @@ func boundaryRunner(t *testing.T) (*runner, *boundaryKernel, func(time.Duration)
 
 func runBoundaryTrial(t *testing.T, r *runner) *journal.TrialEnd {
 	t.Helper()
-	a := tuner.Action{Trial: tuner.Trial{Core: 0, Offset: -1, Regime: machine.R1, Condition: machine.Isolated, DurationS: 10}}
+	a := tuner.Action{Trial: tuner.Trial{Core: 0, Offset: -1, Regime: machine.R1, Condition: machine.Alone, DurationS: 10}}
 	if err := r.trial(context.Background(), a); err != nil {
 		t.Fatal(err)
 	}
@@ -365,16 +365,16 @@ func reopenBoundaryRunner(t *testing.T, r *runner, k *boundaryKernel) *runner {
 }
 
 func TestInterruptedSetupReplaysReadbackWindow(t *testing.T) {
-	for _, setup := range []string{"isolated", "resident", "masked", "mismatch", "wrong target", "wrong cause"} {
+	for _, setup := range []string{"alone", "together", "parked", "mismatch", "wrong target", "wrong cause"} {
 		t.Run(setup, func(t *testing.T) {
 			r, k, advance := boundaryRunner(t)
 			advance(time.Second)
-			p := &journal.TrialIntent{Trial: "interrupted", Core: new(0), Offset: new(-1), Profile: []int{-1}, Condition: machine.Isolated}
-			if setup == "resident" || setup == "masked" {
-				p.Condition = machine.Resident
+			p := &journal.TrialIntent{Trial: "interrupted", Core: new(0), Offset: new(-1), Profile: []int{-1}, Condition: machine.Alone}
+			if setup == "together" || setup == "parked" {
+				p.Condition = machine.Together
 			}
-			if setup == "masked" {
-				p.Condition = machine.Masked
+			if setup == "parked" {
+				p.Condition = machine.Parked
 				p.Core, p.Offset, p.Cores = nil, nil, []int{0}
 			}
 			intent, err := r.append(p)
@@ -384,7 +384,7 @@ func TestInterruptedSetupReplaysReadbackWindow(t *testing.T) {
 			advance(time.Second)
 			k.add(r.in.Boot, r.in.Machine.Clock.Monotonic(), "before readback")
 			advance(time.Second)
-			if setup != "resident" && setup != "masked" {
+			if setup != "together" && setup != "parked" {
 				offset, core, cause := -1, 0, intent.Seq
 				if setup == "wrong target" {
 					core = 1
@@ -419,7 +419,7 @@ func TestInterruptedSetupReplaysReadbackWindow(t *testing.T) {
 					between = append(between, m.BetweenTrials)
 				}
 			}
-			if diff := cmp.Diff([]bool{setup == "isolated", false}, between); diff != "" {
+			if diff := cmp.Diff([]bool{setup == "alone", false}, between); diff != "" {
 				t.Fatal(diff)
 			}
 			t.Logf("setup=%s: before/after-readback between-trial=%v", setup, between)
@@ -433,7 +433,7 @@ func TestDeadEndShutdownCapturesRestorationTail(t *testing.T) {
 			r, k, advance := boundaryRunner(t)
 			profile := slices.Clone(r.fold.baseline)
 			profile[0]--
-			if err := r.apply(profile, &journal.ProfileApplied{Offsets: profile, Condition: machine.Resident}, r.fold.baselineSeq); err != nil {
+			if err := r.apply(profile, &journal.ProfileApplied{Offsets: profile, Condition: machine.Together}, r.fold.baselineSeq); err != nil {
 				t.Fatal(err)
 			}
 			d, err := r.append(&journal.DeadEnd{Condition: journal.DeadEndPreflight, Action: journal.ActionExit})
@@ -518,7 +518,7 @@ func TestUncorrectedTrialMCERejectsFullDurationPass(t *testing.T) {
 	}}
 	end := runBoundaryTrial(t, r)
 	if end.Outcome != journal.OutcomeFailure || end.Signal != machine.UncorrectedMCE || end.Core != nil {
-		t.Fatalf("uncorrected error became a passing isolated trial: %+v", end)
+		t.Fatalf("uncorrected error became a passing trial alone: %+v", end)
 	}
 	events := r.in.Journal.Events()
 	for _, seq := range events[len(events)-1].Cause {
@@ -554,7 +554,7 @@ func TestTrialKernelCrashNeverInventsPass(t *testing.T) {
 				advance(spec.Duration)
 				return machine.Result{Ran: spec.Duration, Signal: tc.signal, Core: 0}
 			}}
-			err := r.trial(context.Background(), tuner.Action{Trial: tuner.Trial{Core: 0, Offset: -1, Regime: machine.R1, Condition: machine.Isolated, DurationS: 10}})
+			err := r.trial(context.Background(), tuner.Action{Trial: tuner.Trial{Core: 0, Offset: -1, Regime: machine.R1, Condition: machine.Alone, DurationS: 10}})
 			if !errors.Is(err, machine.ErrCrashed) {
 				t.Fatalf("boundary crash: %v", err)
 			}

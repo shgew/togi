@@ -10,10 +10,10 @@ import (
 
 func TestFitIdlePreservesTotalLikelihood(t *testing.T) {
 	model := sim.DefaultModel()
-	model.PastEdgeRate, model.Growth = 0.015, 2
-	cfg := sim.Config{Cores: 2, Model: &model, Edges: []sim.Edges{
-		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}, Flat: 0.001},
-		{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+	model.PastLimitRate, model.Growth = 0.015, 2
+	cfg := sim.Config{Cores: 2, Model: &model, Limits: []sim.Limits{
+		{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}, Flat: 0.001},
+		{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}},
 	}}
 	spec := machine.TrialSpec{Regime: machine.R1, Cores: []int{0}, Duration: 60 * time.Second}
 	l := likelihood{cfg: cfg, obs: []observation{
@@ -24,10 +24,10 @@ func TestFitIdlePreservesTotalLikelihood(t *testing.T) {
 	all := l.selectObs(func(observation) bool { return true })
 	before := l.score(all)
 	l.fitIdle(&cfg)
-	if got := cfg.Edges[1].Idle; got == nil {
-		t.Error("idle edge disabled; want 0")
+	if got := cfg.Limits[1].Idle; got == nil {
+		t.Error("idle limit disabled; want 0")
 	} else if *got != 0 {
-		t.Errorf("idle edge: got %d; want 0 to explain the negative-offset failure without adding stock-offset hazards", *got)
+		t.Errorf("idle limit: got %d; want 0 to explain the negative-offset failure without adding stock-offset hazards", *got)
 	}
 	if after := l.score(all); after > before+1e-9 {
 		t.Errorf("idle coordinate worsened total negative log likelihood: before=%g after=%g", before, after)
@@ -42,19 +42,19 @@ func TestFitIdleRequiresNegativeUnloadedExposure(t *testing.T) {
 		wantEnabled bool
 	}{
 		{name: "disabled"},
-		{name: "existing edge", enabled: true, initial: 0, wantEnabled: true},
-		{name: "unsupported edge", enabled: true, initial: -50},
+		{name: "existing limit", enabled: true, initial: 0, wantEnabled: true},
+		{name: "unsupported limit", enabled: true, initial: -50},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			model := sim.DefaultModel()
-			model.PastEdgeRate, model.Growth = 0.015, 2
-			cfg := sim.Config{Cores: 2, Model: &model, Edges: []sim.Edges{
-				{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}, Flat: 0.001},
-				{Isolated: [5]int{-50, -50, -50, -50, -50}, Resident: [7]int{-50, -50, -50, -50, -50, -50, -50}},
+			model.PastLimitRate, model.Growth = 0.015, 2
+			cfg := sim.Config{Cores: 2, Model: &model, Limits: []sim.Limits{
+				{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}, Flat: 0.001},
+				{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}},
 			}}
 			if tc.enabled {
 				idle := tc.initial
-				cfg.Edges[1].Idle = &idle
+				cfg.Limits[1].Idle = &idle
 			}
 			l := likelihood{cfg: cfg, obs: []observation{
 				{
@@ -71,16 +71,16 @@ func TestFitIdleRequiresNegativeUnloadedExposure(t *testing.T) {
 			}}
 			l.rebuild()
 			l.fitIdle(&cfg)
-			got := cfg.Edges[1].Idle
+			got := cfg.Limits[1].Idle
 			switch {
 			case !tc.wantEnabled:
 				if got != nil {
-					t.Errorf("idle edge without negative unloaded exposure: got %d; want disabled", *got)
+					t.Errorf("idle limit without negative unloaded exposure: got %d; want disabled", *got)
 				}
 			case got == nil:
-				t.Errorf("existing idle edge disabled without negative unloaded exposure; want %d", tc.initial)
+				t.Errorf("existing idle limit disabled without negative unloaded exposure; want %d", tc.initial)
 			case *got != tc.initial:
-				t.Errorf("existing idle edge without negative unloaded exposure: got %d; want %d", *got, tc.initial)
+				t.Errorf("existing idle limit without negative unloaded exposure: got %d; want %d", *got, tc.initial)
 			}
 		})
 	}

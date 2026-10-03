@@ -214,7 +214,7 @@ func (f *fold) Fold(e journal.Event) {
 		}
 		if p.Offset != 0 && f.open == nil && !slices.Contains(e.Cause, f.baselineSeq) {
 			f.applied[e.Boot] = e.Seq
-			f.appliedCond[e.Boot] = machine.Resident
+			f.appliedCond[e.Boot] = machine.Together
 			if !f.applying[e.Boot] {
 				f.appliedMono[e.Boot] = e.Mono
 				f.applying[e.Boot] = true

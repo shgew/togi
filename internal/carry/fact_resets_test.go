@@ -17,7 +17,7 @@ func TestResetOfLoadedCoreFiltersCopiedFacts(t *testing.T) {
 			a := newJournal(t, dir, "A", 6, &context, cores...)
 			factTrial(a, 0, journal.OutcomePass)
 			aCore1, _ := factTrial(a, 1, journal.OutcomeFailure)
-			a.add(&journal.Failure{Attribution: journal.Unattributed, Condition: machine.Resident, Profile: []int{-30, -30}, Signal: machine.Crash}, 2)
+			a.add(&journal.Failure{Attribution: journal.Unattributed, Condition: machine.Together, Profile: []int{-30, -30}, Signal: machine.Crash}, 2)
 			a.archive(dir)
 			copied, err := prepareFacts(dir, "A", nil, &context, 1)
 			if err != nil {

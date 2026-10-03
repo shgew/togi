@@ -30,8 +30,8 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 	cfg.CCD = &sim.CCD{LogRate: -9, Slope: 0.1, Effect: [2]float64{0.2, -0.3}}
 	idle := -30
 	cfg.Facts = "../facts/extract.jsonl.gz"
-	cfg.Edges[0].Idle = &idle
-	cfg.Edges[0].Workload = map[string]int{"z": -24, "a": -20}
+	cfg.Limits[0].Idle = &idle
+	cfg.Limits[0].Workload = map[string]int{"z": -24, "a": -20}
 	groups := []modelcheck.Group{{Class: facts.Class{Regime: machine.R7, Workload: "work", Cores: []int{0, 1}, DurationS: 120}, Depth: -24, N: 45, K: 5}}
 	content := encodeMachine(cfg, 2, 263, 45, 12.5, groups)
 	path := filepath.Join(t.TempDir(), "fit.toml")
@@ -42,7 +42,7 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diff := cmp.Diff(cfg.Edges, got.Edges); diff != "" {
+	if diff := cmp.Diff(cfg.Limits, got.Limits); diff != "" {
 		t.Fatal(diff)
 	}
 	if diff := cmp.Diff(cfg.BIOSContext, got.BIOSContext); diff != "" {
@@ -51,7 +51,7 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 	if diff := cmp.Diff(cfg.CCD, got.CCD); diff != "" {
 		t.Fatal(diff)
 	}
-	if got.Facts != cfg.Facts || got.Model.PastEdgeRate != cfg.Model.PastEdgeRate || got.Model.Growth != cfg.Model.Growth || got.Model.NearEdgeRate != cfg.Model.NearEdgeRate {
+	if got.Facts != cfg.Facts || got.Model.PastLimitRate != cfg.Model.PastLimitRate || got.Model.Growth != cfg.Model.Growth || got.Model.NearLimitRate != cfg.Model.NearLimitRate {
 		t.Fatalf("encoded fit lost parameters: %+v", got)
 	}
 	if *update {

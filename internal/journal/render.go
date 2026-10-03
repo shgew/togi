@@ -82,13 +82,13 @@ func (f Filter) Match(e Event) bool {
 		return true
 	}
 	var fields struct {
-		Core       *int            `json:"core"`
-		Cores      json.RawMessage `json:"cores"`
-		Candidates []int           `json:"candidates"`
-		Members    []JointMember   `json:"members"`
-		Trial      string          `json:"trial"`
-		Source     FactSource      `json:"source"`
-		Class      TrialClass      `json:"class"`
+		Core       *int                `json:"core"`
+		Cores      json.RawMessage     `json:"cores"`
+		Candidates []int               `json:"candidates"`
+		Members    []CombinationMember `json:"members"`
+		Trial      string              `json:"trial"`
+		Source     FactSource          `json:"source"`
+		Class      TrialClass          `json:"class"`
 	}
 	if err := json.Unmarshal(e.Raw, &fields); err != nil {
 		return false
@@ -102,7 +102,7 @@ func (f Filter) Match(e Event) bool {
 	if f.Core != nil {
 		var cores []int
 		_ = json.Unmarshal(fields.Cores, &cores)
-		if (fields.Core == nil || *fields.Core != *f.Core) && !slices.Contains(cores, *f.Core) && !slices.Contains(fields.Class.Cores, *f.Core) && !slices.Contains(fields.Candidates, *f.Core) && !slices.ContainsFunc(fields.Members, func(m JointMember) bool { return m.Core == *f.Core }) {
+		if (fields.Core == nil || *fields.Core != *f.Core) && !slices.Contains(cores, *f.Core) && !slices.Contains(fields.Class.Cores, *f.Core) && !slices.Contains(fields.Candidates, *f.Core) && !slices.ContainsFunc(fields.Members, func(m CombinationMember) bool { return m.Core == *f.Core }) {
 			return false
 		}
 	}

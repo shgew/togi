@@ -10,7 +10,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func TestInterruptedEpochTransitionRetainsOriginalEdgesAndMarks(t *testing.T) {
+func TestInterruptedEpochTransitionRetainsOriginalSoloLimitsAndFailurePoints(t *testing.T) {
 	for _, evidence := range []int{0, 1} {
 		t.Run(fmt.Sprintf("source-evidence-%d", evidence), func(t *testing.T) {
 			dir := t.TempDir()
@@ -36,7 +36,7 @@ func TestInterruptedEpochTransitionRetainsOriginalEdgesAndMarks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if first == nil || len(first.Cores) != 2 || first.Cores[0].Edge == nil || *first.Cores[0].Edge != -30 || first.Cores[1].FailedMark == nil || *first.Cores[1].FailedMark != -30 {
+			if first == nil || len(first.Cores) != 2 || first.Cores[0].SoloLimit == nil || *first.Cores[0].SoloLimit != -30 || first.Cores[1].FailurePoint == nil || *first.Cores[1].FailurePoint != -30 {
 				t.Fatalf("first epoch transition did not preserve source evidence: %+v", first)
 			}
 			if len(first.Facts) != 1 || first.Facts[0].Outcome != journal.OutcomeFailure || first.Facts[0].Session != failure.session || first.Facts[0].Seq != failure.seq {
@@ -65,7 +65,7 @@ func TestInterruptedEpochTransitionRetainsOriginalEdgesAndMarks(t *testing.T) {
 				t.Fatal("second epoch upgrade did not prepare carry")
 			}
 			if diff := cmp.Diff(first.Cores, second.Cores); diff != "" {
-				t.Fatalf("interrupted same-ruleset epoch chain lost original edges/marks (-want +got):\n%s", diff)
+				t.Fatalf("interrupted same-ruleset epoch chain lost original solo limits/failure points (-want +got):\n%s", diff)
 			}
 			if diff := cmp.Diff(first.Facts, second.Facts); diff != "" {
 				t.Fatalf("interrupted epoch chain changed original failure facts (-want +got):\n%s", diff)

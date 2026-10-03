@@ -14,12 +14,12 @@ import (
 func storyConfig(steps []machine.Regime, startS int) *journal.ConfigLoaded {
 	c := config.Default()
 	if steps == nil {
-		steps = c.Guard.Rotation
+		steps = c.Checking.Lap
 	}
 	return &journal.ConfigLoaded{Config: journal.ConfigSnapshot{
-		Durations: journal.ConfigDurations{SearchTrialS: c.Durations.SearchTrialS, StartS: startS, GuardTrialS: c.Durations.GuardTrialS, GuardIdleS: c.Durations.GuardIdleS, GuardAllCoreS: c.Durations.GuardAllCoreS},
+		Durations: journal.ConfigDurations{SearchTrialS: c.Durations.SearchTrialS, StartS: startS, CheckingTrialS: c.Durations.CheckingTrialS, CheckingIdleS: c.Durations.CheckingIdleS, CheckingAllCoreS: c.Durations.CheckingAllCoreS},
 		Evidence:  journal.ConfigEvidence{Miss: c.Evidence.Miss, Rate: c.Evidence.Rate},
-		Guard:     journal.ConfigGuard{Rotation: steps},
+		Checking:  journal.ConfigChecking{Lap: steps},
 	}}
 }
 
@@ -44,11 +44,11 @@ func TestStoryIntentWaitsForActualStart(t *testing.T) {
 		round     int
 		rerun     bool
 	}{
-		{"search", machine.Isolated, journal.PhaseSearch, 0, false},
-		{"hunt", machine.Masked, journal.PhaseHunt, 0, false},
-		{"refine", machine.Resident, journal.PhaseRefine, 2, false},
-		{"rerun", machine.Resident, journal.PhaseGuard, 0, true},
-		{"guard", machine.Resident, journal.PhaseGuard, 0, false},
+		{"search", machine.Alone, journal.PhaseSearch, 0, false},
+		{"hunt", machine.Parked, journal.PhaseHunt, 0, false},
+		{"deepening", machine.Together, journal.PhaseDeepening, 2, false},
+		{"rerun", machine.Together, journal.PhaseChecking, 0, true},
+		{"checking", machine.Together, journal.PhaseChecking, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			intent := &journal.TrialIntent{Trial: "planned", Core: new(0), Offset: new(-25), Condition: tc.condition, Phase: tc.phase, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 120, Profile: []int{-25, 0, 0}, Round: tc.round, Rerun: tc.rerun}
@@ -75,20 +75,20 @@ func TestStoryIntentWaitsForActualStart(t *testing.T) {
 	}
 }
 
-func TestStoryRefinementUsesResidentScheduledChecks(t *testing.T) {
+func TestStoryDeepeningUsesTogetherScheduledChecks(t *testing.T) {
 	t.Parallel()
 	events := dashboardEvents(dashboardSession(),
-		&journal.CorePhase{Core: 0, To: journal.PhaseResident, Offset: -20},
-		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -30, FailedMark: new(-31)},
-		&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -10, FailedMark: new(-11)},
-		&journal.RefineRound{Round: 2, Event: journal.RotationStart, Anchor: []int{-20, -30, -10}, Target: []int{-22, -29, -10}, Profile: []int{-21, -29, -10}, Cores: []int{0, 1}, Starts: 3, StartS: 120},
-		&journal.TunerDecision{Core: 1, Phase: journal.PhaseRefine, Decision: journal.Yield, FromOffset: -30, ToOffset: -29, FailedMark: new(-31)},
-		&journal.TunerDecision{Core: 0, Phase: journal.PhaseRefine, Decision: journal.Deepen, FromOffset: -20, ToOffset: -21},
-		&journal.TrialIntent{Trial: "refine", Condition: machine.Resident, Phase: journal.PhaseRefine, Regime: machine.R1, Workload: "mprime-sse-24k-160k", Core: new(0), Offset: new(-21), Profile: []int{-21, -29, -10}, DurationS: 120, Round: 2},
-		&journal.TrialStart{Trial: "refine"})
+		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
+		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
+		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -10, FailurePoint: new(-11)},
+		&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Parked: []int{-20, -30, -10}, Target: []int{-22, -29, -10}, Profile: []int{-21, -29, -10}, Cores: []int{0, 1}, Starts: 3, StartS: 120},
+		&journal.TunerDecision{Core: 1, Phase: journal.PhaseDeepening, Decision: journal.Yield, FromOffset: -30, ToOffset: -29, FailurePoint: new(-31)},
+		&journal.TunerDecision{Core: 0, Phase: journal.PhaseDeepening, Decision: journal.Deepen, FromOffset: -20, ToOffset: -21},
+		&journal.TrialIntent{Trial: "deepening", Condition: machine.Together, Phase: journal.PhaseDeepening, Regime: machine.R1, Workload: "mprime-sse-24k-160k", Core: new(0), Offset: new(-21), Profile: []int{-21, -29, -10}, DurationS: 120, Round: 2},
+		&journal.TrialStart{Trial: "deepening"})
 	s := Project(events)
-	if s.refine == nil || len(s.refine.Checks) == 0 {
-		t.Fatal("fixture has no projected refinement checks")
+	if s.deepening == nil || len(s.deepening.Checks) == 0 {
+		t.Fatal("fixture has no projected deepening checks")
 	}
 	text := storyText(s)
 	for _, want := range []string{"core 00 goes deeper to -21", "core 01 yields to -29", "whole proposed profile stays applied", "3 light load runs on core 00", "3 heavy vector load runs on core 00"} {
@@ -103,19 +103,19 @@ func TestStoryRefinementUsesResidentScheduledChecks(t *testing.T) {
 	}
 }
 
-func TestStoryEdgeProbeNamesCombinationNotLoadedCores(t *testing.T) {
+func TestStoryMemberProbeNamesCombinationNotLoadedCores(t *testing.T) {
 	t.Parallel()
 	for _, loaded := range [][]int{{1}, {0, 1, 2}} {
 		events := dashboardEvents(dashboardSession(),
-			&journal.CorePhase{Core: 0, To: journal.PhaseResident, Offset: -20},
-			&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -30},
-			&journal.CorePhase{Core: 2, To: journal.PhaseResident, Offset: -10},
-			&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: loaded, Anchor: []int{0, 0, 0}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Starts: 5, StartS: 120, DurationS: 120},
-			&journal.HuntMask{Hunt: 1, Mask: 1, Stage: "edge", Cores: []int{2}, Edge: &journal.JointMember{Core: 0, Offset: -15}, Profile: []int{-15, 0, -10}, DurationS: 120},
-			&journal.TrialIntent{Trial: "edge", Condition: machine.Masked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: loaded, Profile: []int{-15, 0, -10}, DurationS: 120, Hunt: 1, Mask: 1},
-			&journal.TrialStart{Trial: "edge"})
+			&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
+			&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30},
+			&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -10},
+			&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: loaded, Parked: []int{0, 0, 0}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Starts: 5, StartS: 120, DurationS: 120},
+			&journal.HuntGroup{Hunt: 1, Group: 1, Stage: "probe", Cores: []int{2}, Probe: &journal.CombinationMember{Core: 0, Offset: -15}, Profile: []int{-15, 0, -10}, DurationS: 120},
+			&journal.TrialIntent{Trial: "probe", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: loaded, Profile: []int{-15, 0, -10}, DurationS: 120, Hunt: 1, Group: 1},
+			&journal.TrialStart{Trial: "probe"})
 		if text := storyText(Project(events)); !strings.Contains(text, "Cores 00, 02 fail only together") || strings.Contains(text, "core 01 must back off") {
-			t.Fatalf("edge combination confused with loaded cores %v: %s", loaded, text)
+			t.Fatalf("probe combination confused with loaded cores %v: %s", loaded, text)
 		}
 	}
 }
@@ -140,28 +140,28 @@ func TestStoryDeadEndsPreserveCauseWithoutInventingDiagnosis(t *testing.T) {
 	}
 }
 
-func TestStoryPartialGuardScheduleCannotPromiseGoal(t *testing.T) {
+func TestStoryPartialCheckingScheduleCannotPromiseGoal(t *testing.T) {
 	t.Parallel()
 	cfg := storyConfig([]machine.Regime{machine.R1}, 120)
 	search := Project(dashboardEvents(dashboardSession(), cfg,
 		&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -5}))
-	if next := strings.Join(search.comingUp(), "\n"); strings.Contains(next, "laps of every kind") || !strings.Contains(next, "can't qualify") || !strings.Contains(next, "R2:") {
+	if next := strings.Join(search.comingUp(), "\n"); strings.Contains(next, "laps of every kind") || !strings.Contains(next, "cannot count") || !strings.Contains(next, "R2:") {
 		t.Fatalf("search promises unavailable coverage: %s", next)
 	}
 	events := dashboardEvents(dashboardSession(), cfg,
-		&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -50},
-		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -50},
-		&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -50},
+		&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -50},
+		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -50},
+		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.ProfileChange{To: []int{-50, -50, -50}},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: []machine.Regime{machine.R1}},
-		&journal.TrialIntent{Trial: "partial", Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Core: new(0), Offset: new(-50), Profile: []int{-50, -50, -50}, DurationS: 120},
+		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}},
+		&journal.TrialIntent{Trial: "partial", Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Core: new(0), Offset: new(-50), Profile: []int{-50, -50, -50}, DurationS: 120},
 		&journal.TrialStart{Trial: "partial"})
 	s := Project(events)
-	if s.guard == nil || s.guard.Qualifying || len(s.guard.Missing) == 0 {
+	if s.checking == nil || s.checking.Full || len(s.checking.Missing) == 0 {
 		t.Fatal("fixture did not project a partial schedule")
 	}
 	for _, text := range []string{storyText(s), strings.Join(s.comingUp(), "\n")} {
-		if strings.Contains(text, "covers every kind of load") || strings.Contains(text, "that's the goal") || !strings.Contains(text, "can't qualify") || !strings.Contains(text, "R2:") {
+		if strings.Contains(text, "covers every kind of load") || strings.Contains(text, "that's the goal") || !strings.Contains(text, "cannot count") || !strings.Contains(text, "R2:") {
 			t.Fatalf("partial schedule promises full clean-lap goal: %s", text)
 		}
 	}
@@ -172,22 +172,22 @@ func TestStoryPartialGuardScheduleCannotPromiseGoal(t *testing.T) {
 	}
 }
 
-func TestStoryGoalRequiresNoRemainingRefinement(t *testing.T) {
+func TestStoryGoalRequiresNoRemainingDeepening(t *testing.T) {
 	t.Parallel()
 	start := &journal.SessionStart{Session: "global", Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}, {Core: 2}, {Core: 3}}}
 	payloads := []journal.Payload{start}
 	for i, offset := range []int{-49, -49, -49, -50} {
-		payloads = append(payloads, &journal.CorePhase{Core: i, To: journal.PhaseDone, Offset: offset})
+		payloads = append(payloads, &journal.CorePhase{Core: i, To: journal.PhaseAtLimit, Offset: offset})
 	}
 	for i, pair := range [][2]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}} {
-		payloads = append(payloads, &journal.MarkJoint{Mark: i + 1, Members: []journal.JointMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
+		payloads = append(payloads, &journal.Combination{Combination: i + 1, Members: []journal.CombinationMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
 	}
 	payloads = append(payloads, &journal.ProfileChange{To: []int{-49, -49, -49, -50}},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: config.Default().Guard.Rotation},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true})
+		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: config.Default().Checking.Lap},
+		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
 	s := Project(dashboardEvents(payloads...))
-	if s.guard == nil || s.guard.CleanRotations != 1 || !s.refinable {
-		t.Fatalf("fixture must retain qualified credit with globally deeper profile reachable: %+v", s)
+	if s.checking == nil || s.checking.CleanLaps != 1 || !s.canDeepen {
+		t.Fatalf("fixture must retain clean credit with globally deeper profile reachable: %+v", s)
 	}
 	assertStoryNotGoal(t, s)
 	payloads = append(payloads, &journal.Shutdown{Reason: journal.ShutdownSignal})
@@ -197,7 +197,7 @@ func TestStoryGoalRequiresNoRemainingRefinement(t *testing.T) {
 func assertStoryNotGoal(t *testing.T, s Snapshot) {
 	t.Helper()
 	if s.goal() || strings.Contains(storyText(s), "carry into the BIOS") {
-		t.Fatalf("qualified credit mistaken for finished refinement: %s", storyText(s))
+		t.Fatalf("clean credit mistaken for finished deepening: %s", storyText(s))
 	}
 	for _, st := range s.stations() {
 		if strings.Join(st.sub, " ") == "no room left" || st.label == "Clean lap" && st.state == reached {
@@ -211,18 +211,18 @@ func TestStoryRerunSeparatesShortRepeatsAndOriginalLength(t *testing.T) {
 	for _, originalS := range []int{37, 900} {
 		t.Run(fmt.Sprint(originalS), func(t *testing.T) {
 			events := dashboardEvents(dashboardSession(), storyConfig(nil, 37),
-				&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -20, FailedMark: new(-21)},
-				&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -50},
-				&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -50},
+				&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -20, FailurePoint: new(-21)},
+				&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -50},
+				&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 				&journal.ProfileChange{To: []int{-20, -50, -50}},
-				&journal.TrialIntent{Trial: "failed", Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Core: new(0), Offset: new(-20), Profile: []int{-20, -50, -50}, DurationS: originalS},
+				&journal.TrialIntent{Trial: "failed", Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Core: new(0), Offset: new(-20), Profile: []int{-20, -50, -50}, DurationS: originalS},
 				&journal.TrialEnd{Trial: "failed", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)},
-				&journal.Failure{Trial: "failed", Signal: machine.ComputationError, Attribution: journal.Attributed, Condition: machine.Resident, Regime: machine.R1, Core: new(0), Offset: new(-20), Profile: []int{-20, -50, -50}},
-				&journal.TunerDecision{Core: 0, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: -20, ToOffset: -19, FailedMark: new(-20)},
+				&journal.Failure{Trial: "failed", Signal: machine.ComputationError, Attribution: journal.Attributed, Condition: machine.Together, Regime: machine.R1, Core: new(0), Offset: new(-20), Profile: []int{-20, -50, -50}},
+				&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -20, ToOffset: -19, FailurePoint: new(-20)},
 				&journal.ProfileChange{From: []int{-20, -50, -50}, To: []int{-19, -50, -50}})
 			events[9].Cause = []int{9}
 			intent := func(id string, seconds int) *journal.TrialIntent {
-				return &journal.TrialIntent{Trial: id, Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Core: new(0), Offset: new(-19), Profile: []int{-19, -50, -50}, DurationS: seconds, Rerun: true}
+				return &journal.TrialIntent{Trial: id, Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Core: new(0), Offset: new(-19), Profile: []int{-19, -50, -50}, DurationS: seconds, Rerun: true}
 			}
 			short := appendStoryEvents(append([]journal.Event(nil), events...), intent("short", 37), &journal.TrialStart{Trial: "short"})
 			s := Project(short)
@@ -271,40 +271,40 @@ func TestStoryInconclusiveResetIsNotRecentCrash(t *testing.T) {
 func TestStoryCreditedLapAfterBackoffStillHasDepthToFind(t *testing.T) {
 	t.Parallel()
 	oldProfile, backedOff := []int{-20, -20, -50}, []int{-20, -19, -50}
-	steps := config.Default().Guard.Rotation
+	steps := config.Default().Checking.Lap
 	w := machine.Workloads(machine.R2)[0].ID
 	events := dashboardEvents(dashboardSession(),
-		&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -20, Pass: new(-20)},
-		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -20, Pass: new(-20), FailedMark: new(-21)},
-		&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -50, Pass: new(-50)},
-		&journal.MarkJoint{Mark: 1, Members: []journal.JointMember{{Core: 0, Offset: -21}, {Core: 1, Offset: -20}}},
+		&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -20, Pass: new(-20)},
+		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -20, Pass: new(-20), FailurePoint: new(-21)},
+		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50, Pass: new(-50)},
+		&journal.Combination{Combination: 1, Members: []journal.CombinationMember{{Core: 0, Offset: -21}, {Core: 1, Offset: -20}}},
 		&journal.ProfileChange{To: oldProfile},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: steps},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true},
-		&journal.GuardRotation{Rotation: 2, Event: journal.RotationStart, Steps: steps},
-		&journal.TrialIntent{Trial: "fail", Core: new(1), Offset: new(-20), Regime: machine.R2, Workload: w, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Rotation: 2, Profile: oldProfile},
+		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: steps},
+		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true},
+		&journal.CheckingLap{Lap: 2, Event: journal.LapStart, Steps: steps},
+		&journal.TrialIntent{Trial: "fail", Core: new(1), Offset: new(-20), Regime: machine.R2, Workload: w, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Lap: 2, Profile: oldProfile},
 		&journal.TrialStart{Trial: "fail"},
 		&journal.TrialEnd{Trial: "fail", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(1), DurationS: 10},
-		&journal.Failure{Trial: "fail", Signal: machine.ComputationError, Attribution: journal.Attributed, Core: new(1), Offset: new(-20), Regime: machine.R2, Condition: machine.Resident, Profile: oldProfile},
-		&journal.TunerDecision{Core: 1, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: -20, ToOffset: -19, FailedMark: new(-20)},
-		&journal.CorePhase{Core: 0, From: journal.PhaseDone, To: journal.PhaseResident, Offset: -20, Pass: new(-20)},
+		&journal.Failure{Trial: "fail", Signal: machine.ComputationError, Attribution: journal.Attributed, Core: new(1), Offset: new(-20), Regime: machine.R2, Condition: machine.Together, Profile: oldProfile},
+		&journal.TunerDecision{Core: 1, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -20, ToOffset: -19, FailurePoint: new(-20)},
+		&journal.CorePhase{Core: 0, From: journal.PhaseAtLimit, To: journal.PhaseHasRoom, Offset: -20, Pass: new(-20)},
 		&journal.ProfileChange{From: oldProfile, To: backedOff})
 	events[13].Cause = []int{13}
 	s := Project(events)
-	if s.guard == nil || s.guard.CleanRotations != 1 || s.core(0).phase != journal.PhaseResident || s.rerunDuration != 120*time.Second {
+	if s.checking == nil || s.checking.CleanLaps != 1 || s.core(0).phase != journal.PhaseHasRoom || s.rerunDuration != 120*time.Second {
 		t.Fatalf("fixture lost credited lap, freed depth or pending rerun: %+v", s)
 	}
 	assertStoryNotGoal(t, s)
 	for i := range 5 {
 		id := fmt.Sprintf("backoff-pass-%d", i)
 		events = appendStoryEvents(events,
-			&journal.TrialIntent{Trial: id, Core: new(1), Offset: new(-19), Regime: machine.R2, Workload: w, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Profile: backedOff, Rerun: true},
+			&journal.TrialIntent{Trial: id, Core: new(1), Offset: new(-19), Regime: machine.R2, Workload: w, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: backedOff, Rerun: true},
 			&journal.TrialStart{Trial: id},
 			&journal.TrialEnd{Trial: id, Outcome: journal.OutcomePass, DurationS: 120})
 	}
 	s = Project(events)
-	if s.guard.CleanRotations != 1 || !s.refinable || s.rerunDuration != 0 {
-		t.Fatalf("fixture did not finish reruns with refinement still due: %+v", s)
+	if s.checking.CleanLaps != 1 || !s.canDeepen || s.rerunDuration != 0 {
+		t.Fatalf("fixture did not finish reruns with deepening still due: %+v", s)
 	}
 	assertStoryNotGoal(t, s)
 }
@@ -312,13 +312,13 @@ func TestStoryCreditedLapAfterBackoffStillHasDepthToFind(t *testing.T) {
 func TestStoryGoalRetainsCompletedFullSchedule(t *testing.T) {
 	t.Parallel()
 	s := Project(dashboardEvents(dashboardSession(),
-		&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -50},
-		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -50},
-		&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -50},
+		&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -50},
+		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -50},
+		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.ProfileChange{To: []int{-50, -50, -50}},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: config.Default().Guard.Rotation},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true},
-		&journal.TrialIntent{Trial: "watch", Core: new(0), Offset: new(-50), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Profile: []int{-50, -50, -50}},
+		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: config.Default().Checking.Lap},
+		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true},
+		&journal.TrialIntent{Trial: "watch", Core: new(0), Offset: new(-50), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: []int{-50, -50, -50}},
 		&journal.TrialStart{Trial: "watch"}))
 	if !s.goal() || !strings.Contains(storyText(s), "carry into the BIOS") {
 		t.Fatalf("completed full schedule lost its normal goal narration: %s", storyText(s))
@@ -333,18 +333,18 @@ func TestStoryGoalRetainsCompletedFullSchedule(t *testing.T) {
 func TestStoryQueuedResetIsNotCompletedGoal(t *testing.T) {
 	t.Parallel()
 	events := dashboardEvents(dashboardSession(),
-		&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -50},
-		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -50},
-		&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -50},
+		&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -50},
+		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -50},
+		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.ProfileChange{To: []int{-50, -50, -50}},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: config.Default().Guard.Rotation},
-		&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true})
+		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: config.Default().Checking.Lap},
+		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
 	if !Project(events).goal() {
 		t.Fatal("fixture never reached the goal before reset")
 	}
 	events = appendStoryEvents(events, &journal.CommandReset{Core: new(0)})
 	s := Project(events)
-	if s.core(0).phase != journal.PhaseDone || !s.core(0).queued {
+	if s.core(0).phase != journal.PhaseAtLimit || !s.core(0).queued {
 		t.Fatalf("fixture must retain old phase while reset is queued: %+v", s.core(0))
 	}
 	assertStoryNotGoal(t, s)
@@ -356,19 +356,19 @@ func TestStoryGoalSurvivesPartialScheduleReload(t *testing.T) {
 		t.Run(fmt.Sprint(stopped), func(t *testing.T) {
 			t.Parallel()
 			events := dashboardEvents(dashboardSession(),
-				&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -50},
-				&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -50},
-				&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -50},
+				&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -50},
+				&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -50},
+				&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 				&journal.ProfileChange{To: []int{-50, -50, -50}},
-				&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: config.Default().Guard.Rotation},
-				&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true},
+				&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: config.Default().Checking.Lap},
+				&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true},
 				storyConfig([]machine.Regime{machine.R1}, 120))
 			if stopped {
-				events = appendStoryEvents(events, &journal.Shutdown{Reason: journal.ShutdownRotations, Rotations: 1})
+				events = appendStoryEvents(events, &journal.Shutdown{Reason: journal.ShutdownLaps, Laps: 1})
 			}
 			s := Project(events)
-			if s.guard == nil || s.guard.CleanRotations != 1 || s.guard.Qualifying || s.refinable || s.rerunDuration != 0 {
-				t.Fatalf("fixture must retain qualifying credit while only the next schedule is partial: %+v", s)
+			if s.checking == nil || s.checking.CleanLaps != 1 || s.checking.Full || s.canDeepen || s.rerunDuration != 0 {
+				t.Fatalf("fixture must retain full credit while only the next schedule is partial: %+v", s)
 			}
 			if !s.goal() {
 				t.Fatalf("next schedule erased an already completed goal: %s", storyText(s))
@@ -382,7 +382,7 @@ func TestStoryGoalSurvivesPartialScheduleReload(t *testing.T) {
 				}
 			}
 			next := strings.Join(s.lapNext(), "\n")
-			if !strings.Contains(next, "future laps don't add qualifying") || !strings.Contains(next, "goal is already reached") {
+			if !strings.Contains(next, "future laps don't add clean-lap credit") || !strings.Contains(next, "goal is already reached") {
 				t.Fatalf("partial future schedule confused prior credit: %s", next)
 			}
 		})

@@ -39,7 +39,7 @@
   What happened
    28h00m  stop     dead end: five trials in a row proved nothing
    27h59m  stop     stopped
-   27h59m  lap      #2 clean, every kind of test passed
+   27h59m  lap      #2 passed, a full lap of every kind of test
    27h59m  pass     idle with short bursts on all 16 cores, 15 min, peak 69 C
    27h44m  pass     partial load on core 15 at -35, 2 min, peak 65 C
    27h42m  pass     partial load on core 07 at -30, 2 min, peak 67 C

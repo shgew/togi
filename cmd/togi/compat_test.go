@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,14 +20,22 @@ func incompatibleFixture(t *testing.T, field string) (string, []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stamp := `,"version":"0.2.1","rev":"def5678","ruleset":3,"schema":99`
-	if field == "ruleset" {
-		stamp = `,"version":"0.2.1","rev":"def5678","ruleset":99,"schema":2`
+	header, rest, ok := bytes.Cut(fixture, []byte("\n"))
+	if !ok {
+		t.Fatal("fixture did not contain session header")
 	}
-	data := []byte(strings.Replace(string(fixture), `,"schema":2,"ruleset":3`, stamp, 1))
-	if bytes.Equal(fixture, data) {
-		t.Fatal("fixture did not contain schema stamp")
+	var stamp map[string]json.RawMessage
+	if err := json.Unmarshal(header, &stamp); err != nil {
+		t.Fatal(err)
 	}
+	stamp["version"] = json.RawMessage(`"0.2.1"`)
+	stamp["rev"] = json.RawMessage(`"def5678"`)
+	stamp[field] = json.RawMessage(`99`)
+	header, err = json.Marshal(stamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := append(append(header, '\n'), rest...)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), data, 0o644); err != nil {
 		t.Fatal(err)
@@ -50,7 +59,7 @@ func TestReadCommandsHandleIncompatibleJournal(t *testing.T) {
 			if command == "events" {
 				args = append(args, "--json")
 			}
-			if code := cli(args, &stdout, &stderr); code != exitError || stdout.Len() != 0 || !strings.Contains(stderr.String(), "uses schema 2") {
+			if code := cli(args, &stdout, &stderr); code != exitError || stdout.Len() != 0 || !strings.Contains(stderr.String(), fmt.Sprintf("uses schema %d", journal.Schema)) {
 				t.Fatalf("%s exit %d, stdout %q, stderr %q", command, code, stdout.String(), stderr.String())
 			}
 			after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))

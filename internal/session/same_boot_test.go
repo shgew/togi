@@ -39,12 +39,12 @@ func sameBootFixture(t *testing.T, pending bool) simRun {
 		&journal.SessionStart{Build: Build(), Session: "same-boot", Cores: cores},
 		&journal.SessionContext{BIOSContext: bios},
 		&journal.SessionBaseline{Offsets: cfg.BIOS},
-		&journal.CorePhase{Core: 0, To: journal.PhaseResident, Offset: -30},
-		&journal.CorePhase{Core: 1, To: journal.PhaseResident, Offset: -29},
-		&journal.CorePhase{Core: 2, To: journal.PhaseResident, Offset: -19, FailedMark: new(-20)},
-		&journal.CorePhase{Core: 3, To: journal.PhaseResident, Offset: -5},
-		&journal.MarkJoint{Mark: 1, Members: []journal.JointMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}},
-		&journal.ProfileApplied{Offsets: []int{-45, -45, -25, -12}, Condition: machine.Resident},
+		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -30},
+		&journal.CorePhase{Core: 1, To: journal.PhaseHasRoom, Offset: -29},
+		&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -19, FailurePoint: new(-20)},
+		&journal.CorePhase{Core: 3, To: journal.PhaseHasRoom, Offset: -5},
+		&journal.Combination{Combination: 1, Members: []journal.CombinationMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}},
+		&journal.ProfileApplied{Offsets: []int{-45, -45, -25, -12}, Condition: machine.Together},
 	}
 	if pending {
 		payloads = append(payloads, &journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Action: journal.ActionClearSavedEntry, Detail: "recorded backend failure"})
@@ -217,11 +217,11 @@ func TestSameBootResumeDrainsPendingFailureBeforeRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	phase := &journal.CorePhase{Core: 2, From: journal.PhaseResident, To: journal.PhaseSearch, Offset: -15}
+	phase := &journal.CorePhase{Core: 2, From: journal.PhaseHasRoom, To: journal.PhaseSearch, Offset: -15}
 	if _, err := j.Append(phase); err != nil {
 		t.Fatal(err)
 	}
-	failure, err := j.Append(&journal.Failure{Signal: machine.ComputationError, Attribution: journal.Attributed, Core: new(2), Offset: new(-15), Condition: machine.Isolated})
+	failure, err := j.Append(&journal.Failure{Signal: machine.ComputationError, Attribution: journal.Attributed, Core: new(2), Offset: new(-15), Condition: machine.Alone})
 	if err != nil {
 		t.Fatal(err)
 	}

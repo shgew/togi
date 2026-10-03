@@ -12,22 +12,22 @@ import (
 type Phase string
 
 const (
-	PhaseSearch   Phase = "search"
-	PhaseResident Phase = "resident"
-	PhaseDone     Phase = "done"
-	PhaseGuard    Phase = "guard"
-	PhaseHunt     Phase = "hunt"
-	PhaseRefine   Phase = "refine"
+	PhaseSearch    Phase = "search"
+	PhaseHasRoom   Phase = "has_room"
+	PhaseAtLimit   Phase = "at_limit"
+	PhaseChecking  Phase = "checking"
+	PhaseHunt      Phase = "hunt"
+	PhaseDeepening Phase = "deepening"
 )
 
 type Decision string
 
 const (
-	StepDeeper Decision = "step_deeper"
-	Backoff    Decision = "backoff"
-	CheckEdge  Decision = "check_edge"
-	Deepen     Decision = "deepen"
-	Yield      Decision = "yield"
+	StepDeeper     Decision = "step_deeper"
+	Backoff        Decision = "backoff"
+	CheckSoloLimit Decision = "check_solo_limit"
+	Deepen         Decision = "deepen"
+	Yield          Decision = "yield"
 )
 
 type Outcome string
@@ -70,20 +70,20 @@ const (
 	Unattributed Attribution = "unattributed"
 )
 
-type RotationEvent string
+type LapEvent string
 
 const (
-	RotationStart RotationEvent = "start"
-	RotationEnd   RotationEvent = "end"
+	LapStart LapEvent = "start"
+	LapEnd   LapEvent = "end"
 )
 
 type ShutdownReason string
 
 const (
-	ShutdownSignal    ShutdownReason = "signal"
-	ShutdownDeadEnd   ShutdownReason = "dead_end"
-	ShutdownRotations ShutdownReason = "rotations"
-	ShutdownCommand   ShutdownReason = "command"
+	ShutdownSignal  ShutdownReason = "signal"
+	ShutdownDeadEnd ShutdownReason = "dead_end"
+	ShutdownLaps    ShutdownReason = "laps"
+	ShutdownCommand ShutdownReason = "command"
 )
 
 func coreID(c int) string { return fmt.Sprintf("%02d", c) }
@@ -175,10 +175,10 @@ func (p *SessionArchived) Message() string {
 }
 
 type SessionCarried struct {
-	Sources []CarriedSource `json:"sources"`
-	Marks   bool            `json:"marks"`
-	Detail  string          `json:"detail,omitempty"`
-	Carried []CarriedCore   `json:"carried,omitempty"`
+	Sources       []CarriedSource `json:"sources"`
+	FailurePoints bool            `json:"failure_points"`
+	Detail        string          `json:"detail,omitempty"`
+	Carried       []CarriedCore   `json:"carried,omitempty"`
 }
 
 type CarriedSource struct {
@@ -189,14 +189,14 @@ type CarriedSource struct {
 }
 
 type CarriedCore struct {
-	Core        int            `json:"core"`
-	Edge        *int           `json:"edge,omitempty"`
-	EdgeSession string         `json:"edge_session,omitempty"`
-	EdgeSeq     int            `json:"edge_seq,omitempty"`
-	FailedMark  *int           `json:"failed_mark,omitempty"`
-	MarkSession string         `json:"mark_session,omitempty"`
-	MarkSeq     int            `json:"mark_seq,omitempty"`
-	MarkSignal  machine.Signal `json:"mark_signal,omitempty"`
+	Core                int            `json:"core"`
+	SoloLimit           *int           `json:"solo_limit,omitempty"`
+	SoloLimitSession    string         `json:"solo_limit_session,omitempty"`
+	SoloLimitSeq        int            `json:"solo_limit_seq,omitempty"`
+	FailurePoint        *int           `json:"failure_point,omitempty"`
+	FailurePointSession string         `json:"failure_point_session,omitempty"`
+	FailurePointSeq     int            `json:"failure_point_seq,omitempty"`
+	FailurePointSignal  machine.Signal `json:"failure_point_signal,omitempty"`
 }
 
 func (*SessionCarried) Kind() Kind { return KindSessionCarried }
@@ -206,19 +206,19 @@ func (p *SessionCarried) Message() string {
 		sources[i] = fmt.Sprintf("session %s (schema %d, ruleset %d)", s.Session, s.Schema, s.Ruleset)
 	}
 	from := strings.Join(sources, ", ")
-	var edges, marks int
+	var soloLimits, failurePoints int
 	for _, c := range p.Carried {
-		if c.Edge != nil {
-			edges++
+		if c.SoloLimit != nil {
+			soloLimits++
 		}
-		if c.FailedMark != nil {
-			marks++
+		if c.FailurePoint != nil {
+			failurePoints++
 		}
 	}
-	if p.Marks {
-		return fmt.Sprintf("carried %d candidate edges and %d failed marks from %s", edges, marks, from)
+	if p.FailurePoints {
+		return fmt.Sprintf("carried %d candidate solo limits and %d failure points from %s", soloLimits, failurePoints, from)
 	}
-	return fmt.Sprintf("carried %d candidate edges from %s; failed marks stay behind: %s", edges, from, p.Detail)
+	return fmt.Sprintf("carried %d candidate solo limits from %s; failure points stay behind: %s", soloLimits, from, p.Detail)
 }
 
 type KernelBoundary struct {
@@ -335,11 +335,11 @@ type ProfileApplied struct {
 func (*ProfileApplied) Kind() Kind { return KindProfileApplied }
 func (p *ProfileApplied) Message() string {
 	switch p.Condition {
-	case machine.Isolated:
-		return "profile applied for isolated trials: every core at CO 0"
-	case machine.Masked:
-		return fmt.Sprintf("mask profile applied: %v", p.Offsets)
-	case machine.Resident:
+	case machine.Alone:
+		return "profile applied for alone trials: every core at CO 0"
+	case machine.Parked:
+		return fmt.Sprintf("group profile applied: %v", p.Offsets)
+	case machine.Together:
 	}
 	return fmt.Sprintf("profile applied: %v", p.Offsets)
 }
@@ -353,7 +353,7 @@ func (*ProfileChange) Kind() Kind { return KindProfileChange }
 func (p *ProfileChange) Message() string {
 	switch {
 	case p.From == nil:
-		return fmt.Sprintf("profile for guard: %v", p.To)
+		return fmt.Sprintf("profile for checking: %v", p.To)
 	case slices.Equal(p.From, p.To):
 		return fmt.Sprintf("profile unchanged at %v", p.To)
 	}
@@ -382,10 +382,10 @@ type TrialIntent struct {
 	Condition  machine.Condition `json:"condition"`
 	Phase      Phase             `json:"phase,omitempty"`
 	Retry      bool              `json:"retry,omitempty"`
-	Rotation   int               `json:"rotation,omitempty"`
+	Lap        int               `json:"lap,omitempty"`
 	Step       int               `json:"step,omitempty"`
 	Hunt       int               `json:"hunt,omitempty"`
-	Mask       int               `json:"mask,omitempty"`
+	Group      int               `json:"group,omitempty"`
 	Round      int               `json:"round,omitempty"`
 	Rerun      bool              `json:"rerun,omitempty"`
 	RecordOnly bool              `json:"record_only,omitempty"`
@@ -411,14 +411,14 @@ func (p *TrialIntent) Message() string {
 	if p.Retry {
 		b.WriteString(" (retry)")
 	}
-	if p.Rotation > 0 {
-		fmt.Fprintf(&b, " rotation %d", p.Rotation)
+	if p.Lap > 0 {
+		fmt.Fprintf(&b, " lap %d", p.Lap)
 	}
 	if p.Step > 0 {
 		fmt.Fprintf(&b, " step %d", p.Step)
 	}
 	if p.Hunt > 0 {
-		fmt.Fprintf(&b, " hunt %d mask %d", p.Hunt, p.Mask)
+		fmt.Fprintf(&b, " hunt %d group %d", p.Hunt, p.Group)
 	}
 	if p.Round > 0 {
 		fmt.Fprintf(&b, " round %d", p.Round)
@@ -596,7 +596,11 @@ func (p *Failure) Message() string {
 	if p.KnownFailure != 0 {
 		return p.Reason
 	}
-	loaded := p.Condition == machine.Resident || p.Condition == machine.Masked
+	loaded := p.Condition == machine.Together || p.Condition == machine.Parked
+	profile := "current"
+	if p.Condition == machine.Parked {
+		profile = "group"
+	}
 	switch p.Attribution {
 	case Attributed:
 		if p.Core == nil || p.Offset == nil {
@@ -604,19 +608,19 @@ func (p *Failure) Message() string {
 		}
 		switch {
 		case loaded && p.Trial == "":
-			return fmt.Sprintf("core %s failure at CO %d: %s with the %s profile applied and no trial in flight, the only nonzero core", coreID(*p.Core), *p.Offset, p.Signal, p.Condition)
+			return fmt.Sprintf("core %s failure at CO %d: %s with the %s profile applied and no trial in flight, the only nonzero core", coreID(*p.Core), *p.Offset, p.Signal, profile)
 		case loaded:
 			return fmt.Sprintf("core %s failure at CO %d: %s in %s %s trial %s", coreID(*p.Core), *p.Offset, p.Signal, p.Condition, p.Regime, p.Trial)
 		}
-		return fmt.Sprintf("core %s failure at CO %d: %s in trial %s (isolated: attributed to the target)", coreID(*p.Core), *p.Offset, p.Signal, p.Trial)
+		return fmt.Sprintf("core %s failure at CO %d: %s in trial %s (alone: attributed to the target)", coreID(*p.Core), *p.Offset, p.Signal, p.Trial)
 	case Unattributed:
 		switch {
-		case p.Condition == machine.Masked && p.Trial != "":
-			return fmt.Sprintf("unattributed %s failure in masked %s trial %s: the mask fails, no evidence names a single core", p.Signal, p.Regime, p.Trial)
+		case p.Condition == machine.Parked && p.Trial != "":
+			return fmt.Sprintf("unattributed %s failure in parked %s trial %s: the group fails, no evidence names a single core", p.Signal, p.Regime, p.Trial)
 		case loaded && p.Trial != "":
-			return fmt.Sprintf("unattributed %s failure in resident %s trial %s: no evidence names a single core", p.Signal, p.Regime, p.Trial)
+			return fmt.Sprintf("unattributed %s failure in together %s trial %s: no evidence names a single core", p.Signal, p.Regime, p.Trial)
 		case loaded:
-			return fmt.Sprintf("unattributed %s failure with the %s profile applied and no trial in flight: counted as an %s failure", p.Signal, p.Condition, p.Regime)
+			return fmt.Sprintf("unattributed %s failure with the %s profile applied and no trial in flight: counted as an %s failure", p.Signal, profile, p.Regime)
 		}
 		return fmt.Sprintf("unattributed %s failure: no trial was in flight", p.Signal)
 	}
@@ -678,8 +682,8 @@ func (p *CrashDetected) Message() string {
 	if p.Stray {
 		msg += "; stray: the profile was never applied in that boot"
 	}
-	if p.Condition == machine.Resident {
-		msg += "; the resident profile was applied"
+	if p.Condition == machine.Together {
+		msg += "; the current profile was applied"
 	}
 	if p.ResetReason != "" || p.ResetReasonRaw != "" {
 		reason := p.ResetReasonRaw
@@ -698,15 +702,15 @@ func (p *CrashDetected) Message() string {
 }
 
 type TunerDecision struct {
-	Core       int      `json:"core"`
-	Phase      Phase    `json:"phase"`
-	Decision   Decision `json:"decision"`
-	FromOffset int      `json:"from_offset"`
-	ToOffset   int      `json:"to_offset"`
-	Pass       *int     `json:"pass"`
-	FailedMark *int     `json:"failed_mark"`
-	Workloads  []string `json:"workloads,omitempty"`
-	Reason     string   `json:"reason"`
+	Core         int      `json:"core"`
+	Phase        Phase    `json:"phase"`
+	Decision     Decision `json:"decision"`
+	FromOffset   int      `json:"from_offset"`
+	ToOffset     int      `json:"to_offset"`
+	Pass         *int     `json:"pass"`
+	FailurePoint *int     `json:"failure_point"`
+	Workloads    []string `json:"workloads,omitempty"`
+	Reason       string   `json:"reason"`
 }
 
 func (*TunerDecision) Kind() Kind { return KindTunerDecision }
@@ -715,8 +719,8 @@ func (p *TunerDecision) Message() string {
 	switch p.Decision {
 	case StepDeeper:
 		verb = "passed R1+R2"
-	case CheckEdge:
-		verb = "checks its edge"
+	case CheckSoloLimit:
+		verb = "checks its solo limit"
 	case Deepen:
 		verb = "deepened"
 	case Yield:
@@ -732,71 +736,82 @@ func (p *TunerDecision) Message() string {
 }
 
 type CorePhase struct {
-	Core         int      `json:"core"`
-	From         Phase    `json:"from"`
-	To           Phase    `json:"to"`
-	Offset       int      `json:"offset"`
-	Pass         *int     `json:"pass"`
-	FailedMark   *int     `json:"failed_mark"`
-	CheckEdge    bool     `json:"check_edge,omitempty"`
-	Workloads    []string `json:"workloads,omitempty"`
-	ClearedJoint []int    `json:"cleared_joint,omitempty"`
-	Reason       string   `json:"reason"`
+	Core               int      `json:"core"`
+	From               Phase    `json:"from"`
+	To                 Phase    `json:"to"`
+	Offset             int      `json:"offset"`
+	Pass               *int     `json:"pass"`
+	FailurePoint       *int     `json:"failure_point"`
+	CheckSoloLimit     bool     `json:"check_solo_limit,omitempty"`
+	Workloads          []string `json:"workloads,omitempty"`
+	ClearedCombination []int    `json:"cleared_combination,omitempty"`
+	Reason             string   `json:"reason"`
 }
 
 func (*CorePhase) Kind() Kind { return KindCorePhase }
 func (p *CorePhase) Message() string {
 	if p.From == "" {
-		return fmt.Sprintf("core %s starts %s at %d (%s)", coreID(p.Core), p.To, p.Offset, p.Reason)
+		return fmt.Sprintf("core %s starts %s at %d (%s)", coreID(p.Core), phaseText(p.To), p.Offset, p.Reason)
 	}
-	return fmt.Sprintf("core %s %s -> %s at %d (%s)", coreID(p.Core), p.From, p.To, p.Offset, p.Reason)
+	return fmt.Sprintf("core %s %s -> %s at %d (%s)", coreID(p.Core), phaseText(p.From), phaseText(p.To), p.Offset, p.Reason)
 }
 
-type GuardRotation struct {
-	Rotation   int              `json:"rotation"`
-	Event      RotationEvent    `json:"event"`
-	Clean      bool             `json:"clean,omitempty"`
-	Qualifying bool             `json:"qualifying,omitempty"`
-	Missing    []string         `json:"missing,omitempty"`
-	Steps      []machine.Regime `json:"steps,omitempty"`
-	Reason     string           `json:"reason,omitempty"`
+func phaseText(phase Phase) string {
+	switch phase {
+	case PhaseHasRoom:
+		return "has room"
+	case PhaseAtLimit:
+		return "at its limit"
+	case PhaseSearch, PhaseChecking, PhaseHunt, PhaseDeepening:
+	}
+	return string(phase)
 }
 
-func (*GuardRotation) Kind() Kind { return KindGuardRotation }
-func (p *GuardRotation) Message() string {
+type CheckingLap struct {
+	Lap     int              `json:"lap"`
+	Event   LapEvent         `json:"event"`
+	Passed  bool             `json:"passed,omitempty"`
+	Full    bool             `json:"full,omitempty"`
+	Missing []string         `json:"missing,omitempty"`
+	Steps   []machine.Regime `json:"steps,omitempty"`
+	Reason  string           `json:"reason,omitempty"`
+}
+
+func (*CheckingLap) Kind() Kind { return KindCheckingLap }
+func (p *CheckingLap) Message() string {
 	switch p.Event {
-	case RotationStart:
+	case LapStart:
 		steps := make([]string, len(p.Steps))
 		for i, r := range p.Steps {
 			steps[i] = string(r)
 		}
-		return fmt.Sprintf("guard rotation %d start: %s%s", p.Rotation, strings.Join(steps, " "), p.Reason)
-	case RotationEnd:
-		if p.Clean {
-			return fmt.Sprintf("guard rotation %d end clean%s", p.Rotation, p.Reason)
+		return fmt.Sprintf("checking lap %d start: %s%s", p.Lap, strings.Join(steps, " "), p.Reason)
+	case LapEnd:
+		if p.Passed {
+			return fmt.Sprintf("checking lap %d end passed%s", p.Lap, p.Reason)
 		}
-		return fmt.Sprintf("guard rotation %d end, not clean: %s", p.Rotation, p.Reason)
+		return fmt.Sprintf("checking lap %d end, not passed: %s", p.Lap, p.Reason)
 	}
-	return fmt.Sprintf("guard rotation %d %s", p.Rotation, p.Event)
+	return fmt.Sprintf("checking lap %d %s", p.Lap, p.Event)
 }
 
-type GuardPartial struct {
+type CheckingPartial struct {
 	CCD    int    `json:"ccd"`
 	Cores  []int  `json:"cores"`
 	Reason string `json:"reason,omitempty"`
 }
 
-type GuardStep struct {
-	Rotation int            `json:"rotation"`
-	Step     int            `json:"step"`
-	Profile  []int          `json:"profile"`
-	Partials []GuardPartial `json:"partials"`
+type CheckingStep struct {
+	Lap      int               `json:"lap"`
+	Step     int               `json:"step"`
+	Profile  []int             `json:"profile"`
+	Partials []CheckingPartial `json:"partials"`
 }
 
-func (*GuardStep) Kind() Kind { return KindGuardStep }
-func (p *GuardStep) Message() string {
+func (*CheckingStep) Kind() Kind { return KindCheckingStep }
+func (p *CheckingStep) Message() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "guard rotation %d R7 step %d starts at resident profile %v", p.Rotation, p.Step, p.Profile)
+	fmt.Fprintf(&b, "checking lap %d R7 step %d starts at current profile %v", p.Lap, p.Step, p.Profile)
 	for _, partial := range p.Partials {
 		if len(partial.Cores) == 0 {
 			fmt.Fprintf(&b, "; CCD %d record-only partial skipped: %s", partial.CCD, partial.Reason)
@@ -918,7 +933,7 @@ func (p *BootLeaveReason) Message() string {
 type Shutdown struct {
 	Reason ShutdownReason `json:"reason"`
 	KernelBoundary
-	Rotations int `json:"rotations,omitempty"`
+	Laps int `json:"laps,omitempty"`
 }
 
 func (*Shutdown) Kind() Kind { return KindShutdown }
@@ -928,11 +943,11 @@ func (p *Shutdown) Message() string {
 		return "stopped by signal"
 	case ShutdownDeadEnd:
 		return "stopped at a dead end"
-	case ShutdownRotations:
-		if p.Rotations == 1 {
-			return "every core is done and the profile passed the requested clean qualifying rotation; stopping"
+	case ShutdownLaps:
+		if p.Laps == 1 {
+			return "every core is at its limit and the profile passed the requested clean lap; stopping"
 		}
-		return fmt.Sprintf("every core is done and the profile passed the requested %d clean qualifying rotations; stopping", p.Rotations)
+		return fmt.Sprintf("every core is at its limit and the profile passed the requested %d clean laps; stopping", p.Laps)
 	case ShutdownCommand:
 		return "command finished"
 	}

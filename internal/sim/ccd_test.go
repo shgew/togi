@@ -11,7 +11,7 @@ import (
 )
 
 func TestCCDLoadedHazardAndDraws(t *testing.T) {
-	cfg := Config{Cores: 4, Edges: flat(4, -50, -50), CCD: &CCD{LogRate: math.Log(0.002), Slope: 0.1, Effect: [2]float64{0, 1}}}
+	cfg := Config{Cores: 4, Limits: flat(4, -50, -50), CCD: &CCD{LogRate: math.Log(0.002), Slope: 0.1, Effect: [2]float64{0, 1}}}
 	m := newMachine(t, cfg)
 	spec := machine.TrialSpec{Regime: machine.R7, Cores: []int{0, 1}, Duration: 90 * time.Second}
 	profile := []int{-25, -25, -40, -40}
@@ -69,21 +69,21 @@ func TestCCDValidation(t *testing.T) {
 	}
 }
 
-func TestCCDResidualDefersToExistingJoint(t *testing.T) {
-	cfg := Config{Cores: 4, Edges: flat(4, -50, -50), CCD: &CCD{LogRate: math.Log(0.002)}, Joints: []Joint{{Members: map[int]int{0: -20, 1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 0.01}}}
+func TestCCDResidualDefersToExistingCombination(t *testing.T) {
+	cfg := Config{Cores: 4, Limits: flat(4, -50, -50), CCD: &CCD{LogRate: math.Log(0.002)}, Combinations: []Combination{{Members: map[int]int{0: -20, 1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 0.01}}}
 	m := newMachine(t, cfg)
 	spec := machine.TrialSpec{Regime: machine.R7, Cores: []int{0, 1, 2, 3}, Duration: time.Minute}
 	profile := []int{-25, -25, -25, -25}
 	if got := m.ccdRate(profile, spec, 0); got != 0 {
-		t.Fatalf("active joint must suppress residual rate: %g", got)
+		t.Fatalf("active combination must suppress residual rate: %g", got)
 	}
 	if got := m.ccdRate(profile, spec, 1); math.Abs(got-0.002) > 1e-12 {
 		t.Fatalf("other CCD residual rate=%g", got)
 	}
 	if got := m.Hazard(profile, spec); math.Abs(got-0.012) > 1e-12 {
-		t.Fatalf("joint plus uncovered CCD rate=%g", got)
+		t.Fatalf("combination plus uncovered CCD rate=%g", got)
 	}
 	if got := m.ccdRate([]int{-19, -25, -25, -25}, spec, 0); math.Abs(got-0.002) > 1e-12 {
-		t.Fatalf("inactive joint suppressed residual: %g", got)
+		t.Fatalf("inactive combination suppressed residual: %g", got)
 	}
 }

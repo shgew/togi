@@ -58,7 +58,7 @@ func TestStateWriteFailureWarnsContinuesAndRebuilds(t *testing.T) {
 	m := newSim(t, cfg)
 	dir := t.TempDir()
 	in := simInput(dir, m)
-	in.Config.CandidateEdges = map[int]int{0: -50, 1: -50}
+	in.Config.CandidateSoloLimits = map[int]int{0: -50, 1: -50}
 	var stderr bytes.Buffer
 	in.Stderr = &stderr
 	var blocked *blockedProjection
@@ -66,7 +66,7 @@ func TestStateWriteFailureWarnsContinuesAndRebuilds(t *testing.T) {
 		blocked = &blockedProjection{Journal: j, dir: dir, kind: journal.KindTrialEnd}
 		return blocked
 	})
-	if err != nil || stop.Reason != StopRotations {
+	if err != nil || stop.Reason != StopLaps {
 		t.Fatalf("projection failure stopped tuning: stop %+v, error %v", stop, err)
 	}
 	if !blocked.blocked || blocked.failure == nil {
@@ -115,7 +115,7 @@ func TestStateWriteFailureWarnsContinuesAndRebuilds(t *testing.T) {
 	}
 	m.Reboot()
 	stop, err = simulateBoot(context.Background(), in, func(j *journal.Journal) Journal { return j })
-	if err != nil || stop.Reason != StopRotations {
+	if err != nil || stop.Reason != StopLaps {
 		t.Fatalf("next start: stop %+v, error %v", stop, err)
 	}
 	resumed := readEvents(t, dir)
@@ -155,7 +155,7 @@ func TestProjectionWarningAppendFailureIsFatal(t *testing.T) {
 			cfg.Model = quietModel()
 			m := newSim(t, cfg)
 			in := simInput(t.TempDir(), m)
-			in.Config.CandidateEdges = map[int]int{0: -50, 1: -50}
+			in.Config.CandidateSoloLimits = map[int]int{0: -50, 1: -50}
 			var before []journal.Event
 			if startup {
 				simulate(t, in)
@@ -211,9 +211,9 @@ func TestStateRebuildWriteFailureWarnsAndContinues(t *testing.T) {
 	cfg.Model = quietModel()
 	m := newSim(t, cfg)
 	in := simInput(t.TempDir(), m)
-	in.Config.CandidateEdges = map[int]int{0: -50, 1: -50}
+	in.Config.CandidateSoloLimits = map[int]int{0: -50, 1: -50}
 	stop, err := simulateBoot(context.Background(), in, func(j *journal.Journal) Journal { return j })
-	if err != nil || stop.Reason != StopRotations {
+	if err != nil || stop.Reason != StopLaps {
 		t.Fatalf("initial run: stop %+v, error %v", stop, err)
 	}
 	before := readEvents(t, in.Dir)
@@ -231,7 +231,7 @@ func TestStateRebuildWriteFailureWarnsAndContinues(t *testing.T) {
 		blocked = &blockedProjection{Journal: j, dir: in.Dir, blocked: true}
 		return blocked
 	})
-	if err != nil || stop.Reason != StopRotations {
+	if err != nil || stop.Reason != StopLaps {
 		t.Fatalf("startup projection failure stopped tuning: stop %+v, error %v", stop, err)
 	}
 	resumed := readEvents(t, in.Dir)[len(before):]

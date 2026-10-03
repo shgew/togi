@@ -1,4 +1,4 @@
-// Package carry derives the candidate edges, failed marks and trial facts a
+// Package carry derives the candidate solo limits, failure points and trial facts a
 // session written by an older ruleset, schema or evidence epoch carries into the next one.
 package carry
 
@@ -21,7 +21,7 @@ import (
 type Carry struct {
 	Sources []journal.CarriedSource
 	Context *machine.BIOSContext  // the BIOS context Sources[0] recorded; nil if it recorded none
-	Cores   []journal.CarriedCore // ascending core; each has an Edge, a FailedMark, or both
+	Cores   []journal.CarriedCore // ascending core; each has a SoloLimit, a FailurePoint, or both
 	Facts   []facts.Fact
 
 	factDir     string
@@ -238,14 +238,14 @@ func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
 				cc = &journal.CarriedCore{Core: v.core}
 				cores[v.core] = cc
 			}
-			if v.edge {
-				if cc.Edge == nil || v.offset < *cc.Edge {
-					cc.Edge, cc.EdgeSession, cc.EdgeSeq = new(v.offset), v.session, v.seq
+			if v.soloLimit {
+				if cc.SoloLimit == nil || v.offset < *cc.SoloLimit {
+					cc.SoloLimit, cc.SoloLimitSession, cc.SoloLimitSeq = new(v.offset), v.session, v.seq
 				}
 				continue
 			}
-			if cc.FailedMark == nil || v.offset > *cc.FailedMark {
-				cc.FailedMark, cc.MarkSession, cc.MarkSeq, cc.MarkSignal = new(v.offset), v.session, v.seq, v.signal
+			if cc.FailurePoint == nil || v.offset > *cc.FailurePoint {
+				cc.FailurePoint, cc.FailurePointSession, cc.FailurePointSeq, cc.FailurePointSignal = new(v.offset), v.session, v.seq, v.signal
 			}
 		}
 	}
@@ -274,7 +274,7 @@ func olderArchives(dir, id string) ([]string, error) {
 
 type candidate struct {
 	core, offset int
-	edge         bool
+	soloLimit    bool
 	session      string
 	seq          int
 	signal       machine.Signal
@@ -282,7 +282,7 @@ type candidate struct {
 	at int
 }
 
-// candidates lists, in seq order, the edges and marks the source's events yield, dropping those a later reset of their
+// candidates lists, in seq order, the solo limits and failure points the source's events yield, dropping those a later reset of their
 // core cleared.
 func (s source) candidates(entries []defect.Entry) []candidate {
 	resetAt := make(map[int]int)
@@ -334,8 +334,8 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 		switch p := e.Data.(type) {
 		case *journal.TrialEnd:
 			in := intents[p.Trial]
-			if p.Outcome == journal.OutcomePass && in != nil && !in.RecordOnly && in.Condition == machine.Isolated && in.Core != nil && in.Offset != nil {
-				all = append(all, candidate{core: *in.Core, offset: *in.Offset, edge: true, session: s.Session, seq: e.Seq, at: e.Seq})
+			if p.Outcome == journal.OutcomePass && in != nil && !in.RecordOnly && in.Condition == machine.Alone && in.Core != nil && in.Offset != nil {
+				all = append(all, candidate{core: *in.Core, offset: *in.Offset, soloLimit: true, session: s.Session, seq: e.Seq, at: e.Seq})
 			}
 		case *journal.Failure:
 			if in := intents[p.Trial]; in != nil && in.RecordOnly {
@@ -357,11 +357,11 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 			}
 		case *journal.SessionCarried:
 			for _, cc := range p.Carried {
-				if cc.FailedMark != nil {
-					all = append(all, candidate{core: cc.Core, offset: *cc.FailedMark, session: cc.MarkSession, seq: cc.MarkSeq, signal: cc.MarkSignal, at: e.Seq})
+				if cc.FailurePoint != nil {
+					all = append(all, candidate{core: cc.Core, offset: *cc.FailurePoint, session: cc.FailurePointSession, seq: cc.FailurePointSeq, signal: cc.FailurePointSignal, at: e.Seq})
 				}
-				if cc.Edge != nil {
-					all = append(all, candidate{core: cc.Core, offset: *cc.Edge, edge: true, session: cc.EdgeSession, seq: cc.EdgeSeq, at: e.Seq})
+				if cc.SoloLimit != nil {
+					all = append(all, candidate{core: cc.Core, offset: *cc.SoloLimit, soloLimit: true, session: cc.SoloLimitSession, seq: cc.SoloLimitSeq, at: e.Seq})
 				}
 			}
 		case *journal.TrialIntent:
@@ -372,7 +372,7 @@ func (s source) candidates(entries []defect.Entry) []candidate {
 	}
 	if inFlight != nil {
 		p := inFlight.Data.(*journal.TrialIntent)
-		if !p.RecordOnly && p.Condition == machine.Isolated && p.Core != nil && p.Offset != nil && *p.Offset != 0 {
+		if !p.RecordOnly && p.Condition == machine.Alone && p.Core != nil && p.Offset != nil && *p.Offset != 0 {
 			all = append(all, candidate{core: *p.Core, offset: *p.Offset, session: s.Session, seq: inFlight.Seq, signal: machine.Crash, at: inFlight.Seq})
 		}
 	}

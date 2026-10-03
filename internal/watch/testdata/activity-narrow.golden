@@ -9,7 +9,7 @@
   █  the most current. It runs on one core at a time, now core 01, while the
   █  others sit idle at their offsets.
   █  
-  █  This schedule doesn't cover every kind of test, so its laps can't qualify for
+  █  This schedule doesn't cover every kind of test, so its laps cannot count for
   █  the clean-lap goal. Missing: R1: 2 more steps, R2: 2 more steps, R3: 1 more
   █  steps, R4: 1 more steps, R5: 1 more steps, R6: 1 more steps, R7: 2 more
   █  steps.
@@ -36,9 +36,9 @@
   
   Coming up
   Rest of this lap: heavy vector load, all-core load.
-  This schedule doesn't cover every kind of test, so its laps can't qualify for
-  the clean-lap goal. Missing: R1: 2 more steps, R2: 2 more steps, R3: 1 more
-  steps, R4: 1 more steps, R5: 1 more steps, R6: 1 more steps, R7: 2 more steps.
+  This schedule doesn't cover every kind of test, so its laps cannot count for the
+  clean-lap goal. Missing: R1: 2 more steps, R2: 2 more steps, R3: 1 more steps,
+  R4: 1 more steps, R5: 1 more steps, R6: 1 more steps, R7: 2 more steps.
   Then another lap of the configured schedule, until you stop me.
 
   What happened

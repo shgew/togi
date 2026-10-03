@@ -37,7 +37,7 @@ func ruleset3Session(t *testing.T) (dir, id string) {
 			ruleset3Err = err
 			return
 		}
-		if _, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Rotations: 1}); err != nil {
+		if _, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Laps: 1}); err != nil {
 			ruleset3Err = err
 			return
 		}
@@ -109,7 +109,7 @@ func simulateAgain(t *testing.T, dir string, cfg sim.Config, c config.Config) (s
 	if err != nil {
 		t.Fatal(err)
 	}
-	stop, err := Simulate(context.Background(), Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1})
+	stop, err := Simulate(context.Background(), Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,11 +175,11 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 			for _, p := range []journal.Payload{
 				&journal.SessionStart{Schema: journal.Schema, Ruleset: tc.ruleset, Session: id},
 				&journal.SessionContext{BIOSContext: bios},
-				&journal.TrialIntent{Trial: "0001", Core: new(0), Offset: new(-30), Regime: machine.R1, Condition: machine.Isolated},
+				&journal.TrialIntent{Trial: "0001", Core: new(0), Offset: new(-30), Regime: machine.R1, Condition: machine.Alone},
 				&journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomePass},
-				&journal.TrialIntent{Trial: "0002", Core: new(0), Offset: new(-35), Regime: machine.R1, Condition: machine.Isolated},
+				&journal.TrialIntent{Trial: "0002", Core: new(0), Offset: new(-35), Regime: machine.R1, Condition: machine.Alone},
 				&journal.TrialEnd{Trial: "0002", Outcome: journal.OutcomeFailure, Signal: machine.UnexpectedExit, Core: new(0)},
-				&journal.Failure{Signal: machine.UnexpectedExit, Attribution: journal.Attributed, Core: new(0), Offset: new(-35), Trial: "0002", Regime: machine.R1, Condition: machine.Isolated},
+				&journal.Failure{Signal: machine.UnexpectedExit, Attribution: journal.Attributed, Core: new(0), Offset: new(-35), Trial: "0002", Regime: machine.R1, Condition: machine.Alone},
 			} {
 				if _, err := j.Append(p); err != nil {
 					t.Fatal(err)
@@ -194,6 +194,9 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 				t.Fatal(err)
 			}
 			original = bytes.Replace(original, fmt.Appendf(nil, `"schema":%d`, journal.Schema), fmt.Appendf(nil, `"schema":%d`, tc.schema), 1)
+			if tc.schema < journal.Schema {
+				original = bytes.ReplaceAll(original, []byte(`"condition":"alone"`), []byte(`"condition":"isolated"`))
+			}
 			lines := bytes.SplitAfter(original, []byte{'\n'})
 			for n := 4; n < 7; n++ {
 				lines[n] = bytes.Replace(lines[n], fmt.Appendf(nil, `"seq":%d`, n+1), fmt.Appendf(nil, `"seq":%d`, n+2), 1)
@@ -246,11 +249,11 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 				t.Fatalf("new session stamp: %+v", start)
 			}
 			carried := carriedEvent(t, events)
-			if len(carried.Sources) != 1 || carried.Sources[0].Session != id || !carried.Marks || len(carried.Carried) != 1 {
+			if len(carried.Sources) != 1 || carried.Sources[0].Session != id || !carried.FailurePoints || len(carried.Carried) != 1 {
 				t.Fatalf("carry: %+v", carried)
 			}
 			core := carried.Carried[0]
-			if core.Core != 0 || core.Edge == nil || *core.Edge != -30 || core.EdgeSeq != 4 || core.FailedMark == nil || *core.FailedMark != -35 || core.MarkSeq != 8 {
+			if core.Core != 0 || core.SoloLimit == nil || *core.SoloLimit != -30 || core.SoloLimitSeq != 4 || core.FailurePoint == nil || *core.FailurePoint != -35 || core.FailurePointSeq != 8 {
 				t.Fatalf("known-event carry: %+v", core)
 			}
 		})
@@ -261,92 +264,92 @@ func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 	t.Parallel()
 	dir, id := ruleset3Session(t)
 	stop, events := simulateAgain(t, dir, sim.Config{Seed: 1}, config.Default())
-	if stop.Reason != session.StopRotations {
+	if stop.Reason != session.StopLaps {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "archive", id+".jsonl")); err != nil {
 		t.Fatalf("archived session: %v", err)
 	}
 	carried := carriedEvent(t, events)
-	if carried.Sources[0].Session != id || !carried.Marks {
-		t.Fatalf("session.carried %+v, want marks from %s", carried, id)
+	if carried.Sources[0].Session != id || !carried.FailurePoints {
+		t.Fatalf("session.carried %+v, want failure points from %s", carried, id)
 	}
 	phases := firstPhases(events)
-	marks := map[int]int{}
-	var edges, withMarks int
+	failurePoints := map[int]int{}
+	var soloLimits, withFailurePoints int
 	for _, cc := range carried.Carried {
 		p := phases[cc.Core]
-		if cc.FailedMark != nil {
-			withMarks++
-			marks[cc.Core] = *cc.FailedMark
-			if p.FailedMark == nil || *p.FailedMark != *cc.FailedMark || p.Offset <= *cc.FailedMark {
-				t.Errorf("core %02d starts %+v, carried mark %d", cc.Core, p, *cc.FailedMark)
+		if cc.FailurePoint != nil {
+			withFailurePoints++
+			failurePoints[cc.Core] = *cc.FailurePoint
+			if p.FailurePoint == nil || *p.FailurePoint != *cc.FailurePoint || p.Offset <= *cc.FailurePoint {
+				t.Errorf("core %02d starts %+v, carried failure point %d", cc.Core, p, *cc.FailurePoint)
 			}
 		}
-		if cc.Edge != nil {
-			edges++
-			want := *cc.Edge
-			if cc.FailedMark != nil {
-				want = max(want, *cc.FailedMark+1)
+		if cc.SoloLimit != nil {
+			soloLimits++
+			want := *cc.SoloLimit
+			if cc.FailurePoint != nil {
+				want = max(want, *cc.FailurePoint+1)
 			}
-			if p.To != journal.PhaseSearch || !p.CheckEdge || p.Offset != want {
-				t.Errorf("core %02d starts %s at %d (check_edge %v), want checking search at %d", cc.Core, p.To, p.Offset, p.CheckEdge, want)
+			if p.To != journal.PhaseSearch || !p.CheckSoloLimit || p.Offset != want {
+				t.Errorf("core %02d starts %s at %d (check_solo_limit %v), want checking search at %d", cc.Core, p.To, p.Offset, p.CheckSoloLimit, want)
 			}
 		}
 	}
-	if edges == 0 || withMarks == 0 {
-		t.Fatalf("carried %d edges and %d marks, want some of each", edges, withMarks)
+	if soloLimits == 0 || withFailurePoints == 0 {
+		t.Fatalf("carried %d solo limits and %d failure points, want some of each", soloLimits, withFailurePoints)
 	}
 	for _, e := range events {
-		if p, ok := e.Data.(*journal.TrialIntent); ok && p.Condition == machine.Isolated && p.Core != nil && p.Offset != nil {
-			if m, ok := marks[*p.Core]; ok && *p.Offset <= m {
-				t.Errorf("seq %d tests core %02d at %d, at or past its carried mark %d", e.Seq, *p.Core, *p.Offset, m)
+		if p, ok := e.Data.(*journal.TrialIntent); ok && p.Condition == machine.Alone && p.Core != nil && p.Offset != nil {
+			if m, ok := failurePoints[*p.Core]; ok && *p.Offset <= m {
+				t.Errorf("seq %d tests core %02d at %d, at or past its carried failure point %d", e.Seq, *p.Core, *p.Offset, m)
 			}
 		}
 	}
 }
 
-func TestARulesetTransitionAfterABIOSChangeCarriesOnlyEdges(t *testing.T) {
+func TestARulesetTransitionAfterABIOSChangeCarriesOnlySoloLimits(t *testing.T) {
 	t.Parallel()
 	dir, _ := ruleset3Session(t)
 	bios := machine.BIOSContext{BIOSVersion: "changed", Board: "board", CPUModel: "cpu", Microcode: "0x1", BoostLimitMHz: 5000}
 	_, events := simulateAgain(t, dir, sim.Config{Seed: 1, BIOSContext: bios}, config.Default())
 	carried := carriedEvent(t, events)
-	if carried.Marks || !strings.Contains(carried.Detail, "bios_version") {
-		t.Fatalf("session.carried %+v, want marks left behind for the BIOS change", carried)
+	if carried.FailurePoints || !strings.Contains(carried.Detail, "bios_version") {
+		t.Fatalf("session.carried %+v, want failure points left behind for the BIOS change", carried)
 	}
 	if len(carried.Carried) == 0 {
-		t.Fatal("no edges carried across the BIOS change")
+		t.Fatal("no solo limits carried across the BIOS change")
 	}
 	for core, p := range firstPhases(events) {
-		if p.FailedMark != nil {
-			t.Errorf("core %02d starts with failed mark %d", core, *p.FailedMark)
+		if p.FailurePoint != nil {
+			t.Errorf("core %02d starts with failure point %d", core, *p.FailurePoint)
 		}
 	}
 }
 
-func TestAConfiguredCandidateEdgeStopsShortOfACarriedMark(t *testing.T) {
+func TestAConfiguredCandidateSoloLimitStopsShortOfACarriedFailurePoint(t *testing.T) {
 	t.Parallel()
 	dir, _ := ruleset3Session(t)
 	c := config.Default()
-	c.CandidateEdges = map[int]int{0: -50}
+	c.CandidateSoloLimits = map[int]int{0: -50}
 	_, events := simulateAgain(t, dir, sim.Config{Seed: 1}, c)
-	var mark *int
+	var failurePoint *int
 	for _, cc := range carriedEvent(t, events).Carried {
 		if cc.Core == 0 {
-			mark = cc.FailedMark
+			failurePoint = cc.FailurePoint
 		}
 	}
-	if mark == nil || *mark <= -50 {
-		t.Fatalf("core 00 carried mark %v, want one shallower than -50", mark)
+	if failurePoint == nil || *failurePoint <= -50 {
+		t.Fatalf("core 00 carried failure point %v, want one shallower than -50", failurePoint)
 	}
 	p := firstPhases(events)[0]
-	if p.To != journal.PhaseSearch || !p.CheckEdge || p.Offset != *mark+1 || !strings.HasPrefix(p.Reason, fmt.Sprintf("configured candidate edge; clamped to %d", *mark+1)) {
-		t.Fatalf("core 00 starts %+v, want checking search at %d", p, *mark+1)
+	if p.To != journal.PhaseSearch || !p.CheckSoloLimit || p.Offset != *failurePoint+1 || !strings.HasPrefix(p.Reason, fmt.Sprintf("configured candidate solo limit; clamped to %d", *failurePoint+1)) {
+		t.Fatalf("core 00 starts %+v, want checking search at %d", p, *failurePoint+1)
 	}
 }
 
-func TestACarriedMarkAtZeroDeadEndsTheCore(t *testing.T) {
+func TestACarriedFailurePointAtZeroDeadEndsTheCore(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	probe, err := sim.New(sim.Config{Seed: 1})
@@ -365,9 +368,9 @@ func TestACarriedMarkAtZeroDeadEndsTheCore(t *testing.T) {
 	for _, p := range []journal.Payload{
 		&journal.SessionStart{Schema: journal.Schema, Ruleset: 2, Session: "20260901T000000Z"},
 		&journal.SessionContext{BIOSContext: bios},
-		&journal.TrialIntent{Trial: "0001", Core: new(0), Offset: new(0), Regime: machine.R6, Condition: machine.Isolated},
+		&journal.TrialIntent{Trial: "0001", Core: new(0), Offset: new(0), Regime: machine.R6, Condition: machine.Alone},
 		&journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomeFailure, Signal: machine.UnexpectedExit, Core: new(0)},
-		&journal.Failure{Signal: machine.UnexpectedExit, Attribution: journal.Attributed, Core: new(0), Offset: new(0), Trial: "0001", Regime: machine.R6, Condition: machine.Isolated},
+		&journal.Failure{Signal: machine.UnexpectedExit, Attribution: journal.Attributed, Core: new(0), Offset: new(0), Trial: "0001", Regime: machine.R6, Condition: machine.Alone},
 	} {
 		if _, err := j.Append(p); err != nil {
 			t.Fatal(err)
@@ -391,9 +394,9 @@ func TestBIOSArchiveInterruptedBeforeMoveResumesCarry(t *testing.T) {
 	}
 	dir := t.TempDir()
 	c := quickMatrixConfig()
-	c.CandidateEdges = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
-	in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1}
-	stopAfterIsolatedPasses(&in, 4)
+	c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
+	in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1}
+	stopAfterAlonePasses(&in, 4)
 	if _, err := Simulate(context.Background(), in); err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +432,7 @@ func TestBIOSArchiveInterruptedBeforeMoveResumesCarry(t *testing.T) {
 		t.Fatalf("read new session: %v, torn %q", err, torn)
 	}
 	carried := carriedEvent(t, events)
-	if carried.Marks || len(carried.Carried) == 0 || carried.Sources[0].Session != id {
+	if carried.FailurePoints || len(carried.Carried) == 0 || carried.Sources[0].Session != id {
 		t.Fatalf("interrupted BIOS archive carry %+v", carried)
 	}
 	if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
@@ -437,7 +440,7 @@ func TestBIOSArchiveInterruptedBeforeMoveResumesCarry(t *testing.T) {
 	}
 }
 
-func TestRulesetTransitionCarriesCulpritAndDirectHuntMarks(t *testing.T) {
+func TestRulesetTransitionCarriesCulpritAndDirectHuntFailurePoints(t *testing.T) {
 	t.Parallel()
 	for _, result := range []string{"culprit", "direct"} {
 		t.Run(result, func(t *testing.T) {
@@ -445,14 +448,14 @@ func TestRulesetTransitionCarriesCulpritAndDirectHuntMarks(t *testing.T) {
 			cfg := huntConfig(4)
 			c := config.Default()
 			if result == "culprit" {
-				for i := range cfg.Edges {
-					cfg.Edges[i].Isolated = [5]int{-50, -50, -50, -50, -50}
-					cfg.Edges[i].Resident = [7]int{-50, -50, -50, -50, -50, -50, -50}
+				for i := range cfg.Limits {
+					cfg.Limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
+					cfg.Limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
 				}
-				cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
-				c.CandidateEdges = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
+				cfg.Combinations = []sim.Combination{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
+				c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 			} else {
-				cfg.Edges[1].Resident[6] = -5
+				cfg.Limits[1].Together[6] = -5
 			}
 			finished := false
 			_, source, dir := runHunt(t, cfg, nil, func(in *Input) {
@@ -479,23 +482,23 @@ func TestRulesetTransitionCarriesCulpritAndDirectHuntMarks(t *testing.T) {
 				t.Fatal("missing hunt start")
 			}
 			wantOffset := start.Failing[1]
-			markSeq := 0
+			failurePointSeq := 0
 			signal := machine.Crash
 			if result == "culprit" {
 				for _, e := range source {
 					if p, ok := e.Data.(*journal.HuntEnd); ok && p.Hunt == end.Hunt {
-						markSeq = e.Seq
+						failurePointSeq = e.Seq
 					}
 				}
 			} else {
 				for _, e := range source {
 					if p, ok := e.Data.(*journal.Failure); ok && p.Core != nil && *p.Core == 1 && p.Offset != nil && *p.Offset == wantOffset {
-						markSeq, signal = e.Seq, p.Signal
+						failurePointSeq, signal = e.Seq, p.Signal
 					}
 				}
 			}
-			if markSeq == 0 {
-				t.Fatalf("%s hunt has no mark source", result)
+			if failurePointSeq == 0 {
+				t.Fatalf("%s hunt has no failure point source", result)
 			}
 			id := stampRuleset3(t, dir)
 			resumed, err := sim.Resume(dir, cfg)
@@ -517,34 +520,34 @@ func TestRulesetTransitionCarriesCulpritAndDirectHuntMarks(t *testing.T) {
 				t.Fatal(err)
 			}
 			carried := carriedEvent(t, events)
-			if !carried.Marks || carried.Sources[0].Session != id {
+			if !carried.FailurePoints || carried.Sources[0].Session != id {
 				t.Fatalf("%s carry %+v", result, carried)
 			}
-			var mark *journal.CarriedCore
+			var failurePoint *journal.CarriedCore
 			for i := range carried.Carried {
 				if carried.Carried[i].Core == 1 {
-					mark = &carried.Carried[i]
+					failurePoint = &carried.Carried[i]
 				}
 			}
-			if mark == nil || mark.FailedMark == nil || *mark.FailedMark != wantOffset || mark.MarkSeq != markSeq || mark.MarkSignal != signal {
-				t.Fatalf("%s carried core 1 %+v, want offset %d from #%d (%s)", result, mark, wantOffset, markSeq, signal)
+			if failurePoint == nil || failurePoint.FailurePoint == nil || *failurePoint.FailurePoint != wantOffset || failurePoint.FailurePointSeq != failurePointSeq || failurePoint.FailurePointSignal != signal {
+				t.Fatalf("%s carried core 1 %+v, want offset %d from #%d (%s)", result, failurePoint, wantOffset, failurePointSeq, signal)
 			}
 		})
 	}
 }
 
-func TestCurrentRulesetChecksCarriedEdgesButQualifiesWithLivePasses(t *testing.T) {
+func TestCurrentRulesetChecksCarriedSoloLimitsButCompletesFullLapsWithLivePasses(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(2)
 	c := config.Default()
-	c.CandidateEdges = map[int]int{0: -10, 1: -10}
-	firstRotation := func(e journal.Event) bool {
-		p, ok := e.Data.(*journal.GuardRotation)
-		return ok && p.Event == journal.RotationEnd && p.Clean && p.Qualifying
+	c.CandidateSoloLimits = map[int]int{0: -10, 1: -10}
+	firstPassedFullLap := func(e journal.Event) bool {
+		p, ok := e.Data.(*journal.CheckingLap)
+		return ok && p.Event == journal.LapEnd && p.Passed && p.Full
 	}
 	_, source, dir := runHunt(t, cfg, nil, func(in *Input) {
 		in.Config = c
-		in.Until = firstRotation
+		in.Until = firstPassedFullLap
 	})
 	id := stampRuleset(t, dir, 6)
 	resumed, err := sim.Resume(dir, cfg)
@@ -556,7 +559,7 @@ func TestCurrentRulesetChecksCarriedEdgesButQualifiesWithLivePasses(t *testing.T
 		t.Fatal(err)
 	}
 	if _, err := Simulate(context.Background(), Input{
-		Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Until: firstRotation,
+		Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Until: firstPassedFullLap,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -572,26 +575,26 @@ func TestCurrentRulesetChecksCarriedEdgesButQualifiesWithLivePasses(t *testing.T
 		t.Fatalf("archived source: %+v, %v", archived, err)
 	}
 	carried := map[int]*journal.TrialCarried{}
-	residentCarried := map[string]int{}
+	togetherCarried := map[string]int{}
 	checked := map[int]bool{}
 	for _, e := range events {
 		switch p := e.Data.(type) {
 		case *journal.TrialCarried:
 			carried[e.Seq] = p
-			if p.Source.Session == id && p.Condition == machine.Resident && p.Outcome == journal.OutcomePass {
+			if p.Source.Session == id && p.Condition == machine.Together && p.Outcome == journal.OutcomePass {
 				key := fmt.Sprintf("%s/%s/%v/%d", p.Class.Regime, p.Class.Workload, p.Class.Cores, p.Class.DurationS)
-				residentCarried[key]++
+				togetherCarried[key]++
 			}
 		case *journal.TrialIntent:
 			if p.Phase == journal.PhaseSearch {
-				t.Errorf("live candidate-edge trial at seq %d: %+v", e.Seq, p)
+				t.Errorf("live candidate-solo-limit trial at seq %d: %+v", e.Seq, p)
 			}
 		case *journal.CorePhase:
 			if p.From != journal.PhaseSearch || p.To == journal.PhaseSearch {
 				continue
 			}
 			if !strings.Contains(p.Reason, "carried") || !strings.Contains(p.Reason, id) {
-				t.Errorf("edge completion does not explain its carried source: %+v", p)
+				t.Errorf("solo limit completion does not explain its carried source: %+v", p)
 			}
 			counts := map[machine.Regime]int{}
 			for _, seq := range e.Cause {
@@ -608,32 +611,32 @@ func TestCurrentRulesetChecksCarriedEdgesButQualifiesWithLivePasses(t *testing.T
 		}
 	}
 	if !checked[0] || !checked[1] {
-		t.Fatalf("candidate edges completed: %v", checked)
+		t.Fatalf("candidate solo limits completed: %v", checked)
 	}
-	if diff := cmp.Diff(firstRotationLivePasses(t, source), residentCarried); diff != "" {
-		t.Fatalf("source's complete resident qualification evidence was not carried (-source +carried):\n%s", diff)
+	if diff := cmp.Diff(firstPassedFullLapLivePasses(t, source), togetherCarried); diff != "" {
+		t.Fatalf("source's complete together full-lap evidence was not carried (-source +carried):\n%s", diff)
 	}
-	if diff := cmp.Diff(firstRotationLivePasses(t, source), firstRotationLivePasses(t, events)); diff != "" {
-		t.Fatalf("first rotation must repeat every live qualification class despite carried resident passes (-source +new):\n%s", diff)
+	if diff := cmp.Diff(firstPassedFullLapLivePasses(t, source), firstPassedFullLapLivePasses(t, events)); diff != "" {
+		t.Fatalf("first lap must repeat every live full-lap class despite carried together passes (-source +new):\n%s", diff)
 	}
 }
 
-func firstRotationLivePasses(t *testing.T, events []journal.Event) map[string]int {
+func firstPassedFullLapLivePasses(t *testing.T, events []journal.Event) map[string]int {
 	t.Helper()
 	intents := map[string]*journal.TrialIntent{}
 	counts := map[string]int{}
 	open := false
 	for _, e := range events {
 		switch p := e.Data.(type) {
-		case *journal.GuardRotation:
-			if p.Event == journal.RotationStart {
+		case *journal.CheckingLap:
+			if p.Event == journal.LapStart {
 				if open {
-					t.Fatal("first rotation restarted before qualifying")
+					t.Fatal("first lap restarted before passing in full")
 				}
 				open = true
 			} else if open {
-				if !p.Clean || !p.Qualifying {
-					t.Fatalf("first rotation did not qualify: %+v", p)
+				if !p.Passed || !p.Full {
+					t.Fatalf("first lap did not pass in full: %+v", p)
 				}
 				return counts
 			}
@@ -644,7 +647,7 @@ func firstRotationLivePasses(t *testing.T, events []journal.Event) map[string]in
 		case *journal.TrialEnd:
 			if intent := intents[p.Trial]; intent != nil {
 				if p.Outcome != journal.OutcomePass {
-					t.Fatalf("first rotation trial did not pass: %+v", p)
+					t.Fatalf("first lap trial did not pass: %+v", p)
 				}
 				cores := intent.Cores
 				if intent.Core != nil {
@@ -655,37 +658,37 @@ func firstRotationLivePasses(t *testing.T, events []journal.Event) map[string]in
 			}
 		}
 	}
-	t.Fatal("no first qualifying rotation")
+	t.Fatal("no first passed full lap")
 	return nil
 }
 
-func TestCurrentRulesetStartsHuntFromCarriedResidentFailure(t *testing.T) {
+func TestCurrentRulesetStartsHuntFromCarriedTogetherFailure(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(4)
-	cfg.Edges[1].Resident[6] = -5
+	cfg.Limits[1].Together[6] = -5
 	c := config.Default()
-	c.CandidateEdges = map[int]int{0: -9, 1: -9, 2: -9, 3: -9}
+	c.CandidateSoloLimits = map[int]int{0: -9, 1: -9, 2: -9, 3: -9}
 	_, source, dir := runHunt(t, cfg, nil, func(in *Input) {
 		in.Config = c
 		in.Until = func(e journal.Event) bool {
 			p, ok := e.Data.(*journal.Failure)
-			return ok && p.Condition == machine.Resident && p.Regime == machine.R7 && p.Attribution == journal.Unattributed
+			return ok && p.Condition == machine.Together && p.Regime == machine.R7 && p.Attribution == journal.Unattributed
 		}
 	})
 	failure, ok := findPayload(source, func(p *journal.Failure) bool {
-		return p.Condition == machine.Resident && p.Regime == machine.R7 && p.Attribution == journal.Unattributed
+		return p.Condition == machine.Together && p.Regime == machine.R7 && p.Attribution == journal.Unattributed
 	})
 	if !ok {
-		t.Fatal("source session has no resident guard failure")
+		t.Fatal("source session has no checking failure together")
 	}
 	intent, ok := findPayload(source, func(p *journal.TrialIntent) bool { return p.Trial == failure.Trial })
-	if !ok || intent.Phase != journal.PhaseGuard {
-		t.Fatal("source failure is not a guard step")
+	if !ok || intent.Phase != journal.PhaseChecking {
+		t.Fatal("source failure is not a checking step")
 	}
 	if diff := cmp.Diff([]int{-9, -9, -9, -9}, intent.Profile); diff != "" {
 		t.Fatalf("source failing profile (-want +got):\n%s", diff)
 	}
-	c.CandidateEdges = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
+	c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 	id := stampRuleset(t, dir, 6)
 	resumed, err := sim.Resume(dir, cfg)
 	if err != nil {
@@ -720,8 +723,8 @@ func TestCurrentRulesetStartsHuntFromCarriedResidentFailure(t *testing.T) {
 				carriedSeq = e.Seq
 			}
 		case *journal.TrialIntent:
-			if p.Condition == machine.Resident && p.Regime == intent.Regime && p.Workload == intent.Workload && p.DurationS == intent.DurationS && cmp.Diff(p.Cores, intent.Cores) == "" && cmp.Diff(p.Profile, intent.Profile) == "" {
-				t.Fatalf("carried resident guard failure was rerun: %+v", p)
+			if p.Condition == machine.Together && p.Regime == intent.Regime && p.Workload == intent.Workload && p.DurationS == intent.DurationS && cmp.Diff(p.Cores, intent.Cores) == "" && cmp.Diff(p.Profile, intent.Profile) == "" {
+				t.Fatalf("carried checking failure together was rerun: %+v", p)
 			}
 		case *journal.HuntStart:
 			if diff := cmp.Diff([]int{-10, -10, -10, -10}, currentProfile); diff != "" {

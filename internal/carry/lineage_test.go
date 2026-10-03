@@ -18,8 +18,8 @@ func TestInterruptedTransitionRetainsOriginalPendingLineage(t *testing.T) {
 		t.Run(map[bool]string{false: "after start", true: "after config"}[loaded], func(t *testing.T) {
 			dir := t.TempDir()
 			old := newJournal(t, dir, "A", 2, &context)
-			old.pass(0, -30, machine.Isolated)
-			old.fail(1, -25, machine.Isolated, journal.Attributed)
+			old.pass(0, -30, machine.Alone)
+			old.fail(1, -25, machine.Alone, journal.Attributed)
 			old.close()
 			first := prepare(t, dir, []defect.Entry{})
 			original, err := os.ReadFile(filepath.Join(dir, "archive", "A.jsonl"))
@@ -28,7 +28,7 @@ func TestInterruptedTransitionRetainsOriginalPendingLineage(t *testing.T) {
 			}
 			interrupted := newJournal(t, dir, "B", 3, nil)
 			if loaded {
-				interrupted.add(&journal.ConfigLoaded{Schema: 2, Ruleset: 3})
+				interrupted.add(&journal.ConfigLoaded{Schema: journal.Schema, Ruleset: 3})
 			}
 			interrupted.close()
 			got := prepare(t, dir, []defect.Entry{})
@@ -43,7 +43,7 @@ func TestInterruptedTransitionRetainsOriginalPendingLineage(t *testing.T) {
 				t.Fatalf("original archive changed: %v", err)
 			}
 			final := newJournal(t, dir, "C", 4, &context)
-			final.add(&journal.SessionCarried{Sources: got.Sources, Marks: true, Carried: got.Cores})
+			final.add(&journal.SessionCarried{Sources: got.Sources, FailurePoints: true, Carried: got.Cores})
 			final.close()
 			if carry := prepare(t, dir, []defect.Entry{}); carry != nil {
 				t.Fatalf("recorded carry reapplied: %+v", carry)

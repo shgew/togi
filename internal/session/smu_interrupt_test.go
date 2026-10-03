@@ -93,7 +93,7 @@ func TestEmergencyZeroingInterruptsEverySMUWindow(t *testing.T) {
 		m.InterruptSMU(nil)
 		m.NextReset(machine.ResetPowerLoss)
 		m.Reboot()
-		if stop := simulate(t, in); stop.Reason != StopRotations {
+		if stop := simulate(t, in); stop.Reason != StopLaps {
 			t.Fatalf("resume after emergency: %+v", stop)
 		}
 		return accesses, emergencyDecisionFacts(readEvents(t, in.Dir))
@@ -116,8 +116,8 @@ func emergencyDecisionFacts(events []journal.Event) []journal.Payload {
 	var facts []journal.Payload
 	for _, event := range events {
 		switch event.Data.(type) {
-		case *journal.Failure, *journal.TunerDecision, *journal.CorePhase, *journal.MarkJoint, *journal.ProfileChange,
-			*journal.HuntStart, *journal.HuntMask, *journal.HuntEnd, *journal.RefineRound, *journal.TrialIntent, *journal.TrialEnd:
+		case *journal.Failure, *journal.TunerDecision, *journal.CorePhase, *journal.Combination, *journal.ProfileChange,
+			*journal.HuntStart, *journal.HuntGroup, *journal.HuntEnd, *journal.DeepeningRound, *journal.TrialIntent, *journal.TrialEnd:
 			facts = append(facts, event.Data)
 		}
 	}

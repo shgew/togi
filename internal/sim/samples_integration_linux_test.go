@@ -17,7 +17,7 @@ import (
 func TestSamplePersistenceFailuresRemainErrors(t *testing.T) {
 	for _, duration := range []time.Duration{3 * time.Second, time.Hour} {
 		t.Run(duration.String(), func(t *testing.T) {
-			m := newMachine(t, Config{Cores: 2, Edges: flat(2, -50, -50)})
+			m := newMachine(t, Config{Cores: 2, Limits: flat(2, -50, -50)})
 			dir := t.TempDir()
 			trialDir := filepath.Join(dir, "0001")
 			if err := os.Mkdir(trialDir, 0700); err != nil {

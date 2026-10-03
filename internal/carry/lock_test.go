@@ -17,11 +17,11 @@ import (
 func TestCompetingTransitionCannotClearCarry(t *testing.T) {
 	dir := t.TempDir()
 	old := newJournal(t, dir, "A", 3, &context)
-	old.fail(0, -20, "isolated", journal.Attributed)
+	old.fail(0, -20, "alone", journal.Attributed)
 	old.close()
 	first := prepare(t, dir, []defect.Entry{})
 	winner := newJournal(t, dir, "B", 4, &context)
-	winner.add(&journal.SessionCarried{Sources: first.Sources, Marks: true, Carried: first.Cores})
+	winner.add(&journal.SessionCarried{Sources: first.Sources, FailurePoints: true, Carried: first.Cores})
 	done := make(chan error, 1)
 	go func() {
 		_, err := prepareWithContext(dir, []defect.Entry{}, nil)
@@ -38,7 +38,7 @@ func TestCompetingTransitionCannotClearCarry(t *testing.T) {
 func TestTransitionLockPrecedesPreparation(t *testing.T) {
 	dir := t.TempDir()
 	old := newJournal(t, dir, "A", 3, &context)
-	old.fail(0, -20, "isolated", journal.Attributed)
+	old.fail(0, -20, "alone", journal.Attributed)
 	old.close()
 	path := filepath.Join(dir, "events.jsonl")
 	before, err := os.ReadFile(path)
@@ -88,7 +88,7 @@ func TestTransitionRefusesCorruptCurrentSchemaWithoutMutation(t *testing.T) {
 		t.Run(corruption, func(t *testing.T) {
 			dir := t.TempDir()
 			old := newJournal(t, dir, "A", 3, &context)
-			old.fail(0, -20, "isolated", journal.Attributed)
+			old.fail(0, -20, "alone", journal.Attributed)
 			old.close()
 			path := filepath.Join(dir, "events.jsonl")
 			data, err := os.ReadFile(path)

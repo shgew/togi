@@ -29,15 +29,15 @@ type Snapshot struct {
 	trial           *trial
 	inFlight        string
 	hunt            *huntView
-	refine          *journal.RefineState
-	guard           *journal.GuardState
+	deepening       *journal.DeepeningState
+	checking        *journal.CheckingState
 	order           []int
 	starts          int
 	startDuration   time.Duration
 	rerunDuration   time.Duration
-	refinable       bool
-	guardQualifying bool
-	guardMissing    []string
+	canDeepen       bool
+	checkingFull    bool
+	checkingMissing []string
 	failures        int
 	crashes         int
 	hunts           int
@@ -90,19 +90,19 @@ type huntView struct {
 	id         int
 	regime     machine.Regime
 	loaded     []int
-	anchor     []int
+	parked     []int
 	candidates []int
 	cause      *failureView
-	mask       *maskView
+	group      *groupView
 }
 
-type maskView struct {
+type groupView struct {
 	id     int
 	stage  string
 	cores  []int
 	passes int
 	needed int
-	edge   *journal.JointMember
+	probe  *journal.CombinationMember
 }
 
 type deadEndView struct {
@@ -163,17 +163,17 @@ func Project(events []journal.Event) Snapshot {
 		session:       true,
 		phase:         journal.Phase(st.Phase),
 		start:         st.Session.Start,
-		guard:         st.Guard,
-		refine:        st.Refine,
+		checking:      st.Checking,
+		deepening:     st.Deepening,
 		starts:        defaults.Evidence.Starts(),
 		startDuration: time.Duration(defaults.Durations.StartS) * time.Second,
 		rerunDuration: time.Duration(t.RerunDuration()) * time.Second,
-		refinable:     t.Refinable(),
+		canDeepen:     t.CanDeepen(),
 	}
-	if s.guard != nil {
-		s.guardQualifying, s.guardMissing = s.guard.Qualifying, s.guard.Missing
+	if s.checking != nil {
+		s.checkingFull, s.checkingMissing = s.checking.Full, s.checking.Missing
 	} else {
-		s.guardQualifying, s.guardMissing = t.GuardCoverage()
+		s.checkingFull, s.checkingMissing = t.CheckingCoverage()
 	}
 	p := projector{s: &s, st: &st, intents: map[string]*journal.TrialIntent{}, applied: map[int]int{}, checking: map[int]bool{}, failures: map[int]*failureView{}}
 	for _, e := range events {
@@ -193,7 +193,7 @@ type projector struct {
 	currentBoot string
 	huntStart   *journal.HuntStart
 	huntFail    *failureView
-	mask        *journal.HuntMask
+	group       *journal.HuntGroup
 	failures    map[int]*failureView
 	stopped     bool
 }
@@ -230,10 +230,10 @@ func (p *projector) fold(e journal.Event) {
 			p.current = nil
 		}
 	case *journal.CorePhase:
-		p.checking[d.Core] = d.To == journal.PhaseSearch && d.CheckEdge
+		p.checking[d.Core] = d.To == journal.PhaseSearch && d.CheckSoloLimit
 	case *journal.TunerDecision:
 		if d.Phase == journal.PhaseSearch {
-			p.checking[d.Core] = d.Decision == journal.CheckEdge
+			p.checking[d.Core] = d.Decision == journal.CheckSoloLimit
 		}
 	case *journal.Failure:
 		s.failures++
@@ -251,10 +251,10 @@ func (p *projector) fold(e journal.Event) {
 		}
 	case *journal.HuntStart:
 		s.hunts++
-		p.huntStart, p.mask = d, nil
+		p.huntStart, p.group = d, nil
 		p.huntFail = p.failures[d.Failure]
-	case *journal.HuntMask:
-		p.mask = d
+	case *journal.HuntGroup:
+		p.group = d
 	case *journal.DeadEnd:
 		s.deadEnd = &deadEndView{at: e.Time, condition: d.Condition, detail: vtText(e.Msg)}
 	case *journal.Shutdown:
@@ -309,14 +309,14 @@ func (p *projector) hunt() {
 	}
 	h := &huntView{
 		id: st.Hunt.Hunt, regime: p.huntStart.Regime, loaded: p.huntStart.Cores,
-		anchor: st.Hunt.Anchor, candidates: st.Hunt.Candidates, cause: p.huntFail,
+		parked: st.Hunt.Parked, candidates: st.Hunt.Candidates, cause: p.huntFail,
 	}
-	if n := len(st.Hunt.Masks); n > 0 {
-		m := st.Hunt.Masks[n-1]
+	if n := len(st.Hunt.Groups); n > 0 {
+		m := st.Hunt.Groups[n-1]
 		if m.Outcome == "running" {
-			h.mask = &maskView{id: m.Mask, cores: m.Cores, passes: m.Passes, needed: m.Needed, edge: m.Edge}
-			if p.mask != nil && p.mask.Mask == m.Mask {
-				h.mask.stage = p.mask.Stage
+			h.group = &groupView{id: m.Group, cores: m.Cores, passes: m.Passes, needed: m.Needed, probe: m.Probe}
+			if p.group != nil && p.group.Group == m.Group {
+				h.group.stage = p.group.Stage
 			}
 		}
 	}
@@ -327,18 +327,18 @@ func (p *projector) coreViews() {
 	s, st := p.s, p.st
 	showReadback := s.stopped == nil && s.deadEnd == nil || s.deadEnd != nil && s.deadEnd.condition == journal.DeadEndSMU
 	for i, c := range st.Cores {
-		v := coreView{id: c.Core, ccd: c.CCD, phase: c.Phase, tuned: c.Offset, applied: c.Offset, pass: c.Pass, fail: c.FailedMark, checking: p.checking[c.Core], queued: c.Queued != ""}
+		v := coreView{id: c.Core, ccd: c.CCD, phase: c.Phase, tuned: c.Offset, applied: c.Offset, pass: c.Pass, fail: c.FailurePoint, checking: p.checking[c.Core], queued: c.Queued != ""}
 		if a, ok := p.applied[c.Core]; ok && showReadback {
 			v.applied = a
 		}
 		if t := s.trial; t != nil {
 			v.loaded = t.hasStarted && slices.Contains(t.cores, c.Core)
-			masked := t.condition == machine.Masked && s.hunt != nil && s.hunt.mask != nil
-			if masked && slices.Contains(s.hunt.candidates, c.Core) {
-				v.suspect = slices.Contains(s.hunt.mask.cores, c.Core)
-				v.parked = !v.suspect && i < len(s.hunt.anchor)
+			parked := t.condition == machine.Parked && s.hunt != nil && s.hunt.group != nil
+			if parked && slices.Contains(s.hunt.candidates, c.Core) {
+				v.suspect = slices.Contains(s.hunt.group.cores, c.Core)
+				v.parked = !v.suspect && i < len(s.hunt.parked)
 			}
-			v.tested = t.hasStarted && (v.suspect || v.loaded && !masked)
+			v.tested = t.hasStarted && (v.suspect || v.loaded && !parked)
 		}
 		s.cores = append(s.cores, v)
 	}

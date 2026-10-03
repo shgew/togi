@@ -19,11 +19,11 @@ func TestReviewBoundaryReport(t *testing.T) {
 	}
 	add(&journal.SessionStart{Session: "review", Cores: []machine.CoreInfo{{Core: 0, CCD: 0}, {Core: 1, CCD: 1}}})
 	add(&journal.ConfigLoaded{Version: "1.2.3"})
-	add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart})
-	appendTrial := func(id string, result journal.Outcome, hunt, mask int, workload string) {
-		condition, phase := machine.Resident, journal.PhaseGuard
+	add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart})
+	appendTrial := func(id string, result journal.Outcome, hunt, group int, workload string) {
+		condition, phase := machine.Together, journal.PhaseChecking
 		if hunt != 0 {
-			condition, phase = machine.Masked, journal.PhaseHunt
+			condition, phase = machine.Parked, journal.PhaseHunt
 		}
 		duration := 60
 		profile := []int{-10, -10}
@@ -31,7 +31,7 @@ func TestReviewBoundaryReport(t *testing.T) {
 			duration = 120
 			profile = []int{-11, -11}
 		}
-		add(&journal.TrialIntent{Trial: id, Regime: machine.R6, Workload: workload, DurationS: duration, Profile: profile, Hunt: hunt, Mask: mask, Condition: condition, Phase: phase, Rotation: 1})
+		add(&journal.TrialIntent{Trial: id, Regime: machine.R6, Workload: workload, DurationS: duration, Profile: profile, Hunt: hunt, Group: group, Condition: condition, Phase: phase, Lap: 1})
 		add(&journal.TrialStart{Trial: id})
 		if duration == 120 {
 			add(&journal.TrialProgress{Trial: id})
@@ -46,42 +46,42 @@ func TestReviewBoundaryReport(t *testing.T) {
 		add(end)
 	}
 	appendTrial("prior", journal.OutcomePass, 0, 0, "load")
-	anchor := add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Qualifying: true, Clean: true})
+	parkedSeq := add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Full: true, Passed: true})
 	appendTrial("trigger", journal.OutcomeFailure, 0, 0, "load")
 	failure := add(&journal.Failure{Trial: "trigger", Regime: machine.R6, Signal: machine.ComputationError, Attribution: journal.Unattributed, Profile: []int{-11, -11}})
 	for _, hunt := range []int{1, 2} {
-		add(&journal.HuntStart{Hunt: hunt, Trial: "trigger", Failure: failure, AnchorSeq: anchor, Anchor: []int{-10, -10}, Failing: []int{-11, -11}, Candidates: []int{0, 1}, Cores: []int{0, 1}, Regime: machine.R6, Workload: "load", DurationS: 120, Starts: 1, StartS: 60})
+		add(&journal.HuntStart{Hunt: hunt, Trial: "trigger", Failure: failure, ParkedSeq: parkedSeq, Parked: []int{-10, -10}, Failing: []int{-11, -11}, Candidates: []int{0, 1}, Cores: []int{0, 1}, Regime: machine.R6, Workload: "load", DurationS: 120, Starts: 1, StartS: 60})
 		if hunt == 1 {
-			add(&journal.HuntMask{Hunt: 1, Mask: 1, Skipped: true, Stage: "part", Cores: []int{0, 1}})
+			add(&journal.HuntGroup{Hunt: 1, Group: 1, Skipped: true, Stage: "part", Cores: []int{0, 1}})
 			add(&journal.HuntEnd{Hunt: 1, Result: "cancelled"})
 		}
 	}
 	cutoff := events[len(events)-1].Time
 	add(&journal.TunerWarning{Warning: "inconclusive"})
 	for i, result := range []journal.Outcome{journal.OutcomePass, journal.OutcomeFailure, journal.OutcomeInconclusive} {
-		add(&journal.HuntMask{Hunt: 2, Mask: i + 1, Stage: "part", Cores: []int{0, 1}, Profile: []int{-10, -10}, DurationS: 60})
+		add(&journal.HuntGroup{Hunt: 2, Group: i + 1, Stage: "part", Cores: []int{0, 1}, Profile: []int{-10, -10}, DurationS: 60})
 		appendTrial(fmt.Sprint(i), result, 2, i+1, "load")
 		if result == journal.OutcomeFailure {
 			add(&journal.Failure{Trial: fmt.Sprint(i), Signal: machine.ComputationError, Attribution: journal.Unattributed, Profile: []int{-10, -10}})
 		}
 	}
-	add(&journal.HuntEnd{Hunt: 2, Result: "joint", Members: []journal.JointMember{{Core: 1, Offset: -10}, {Core: 0, Offset: -10}}})
+	add(&journal.HuntEnd{Hunt: 2, Result: "combination", Members: []journal.CombinationMember{{Core: 1, Offset: -10}, {Core: 0, Offset: -10}}})
 	for _, since := range []time.Time{{}, cutoff} {
-		if diff := cmp.Diff([][]string{{"2", "1", "part", "1", "1", "true", "1", "0", "1", "0.017"}, {"2", "2", "part", "1", "1", "true", "0", "1", "1", "0.017"}, {"2", "3", "part", "1", "1", "true", "0", "0", "1", "0.017"}}, reportRows(t, events, "Prior evidence per hunt mask", since)); diff != "" {
+		if diff := cmp.Diff([][]string{{"2", "1", "part", "1", "1", "true", "1", "0", "1", "0.017"}, {"2", "2", "part", "1", "1", "true", "0", "1", "1", "0.017"}, {"2", "3", "part", "1", "1", "true", "0", "0", "1", "0.017"}}, reportRows(t, events, "Prior evidence per hunt group", since)); diff != "" {
 			t.Fatal(diff)
 		}
 		if diff := cmp.Diff([][]string{{"0002", "part", "3", "3", "1", "1", "3", "0.050"}}, reportRows(t, events, "Prior evidence by hunt and stage", since)); diff != "" {
 			t.Fatal(diff)
 		}
 	}
-	if diff := cmp.Diff([][]string{{"0001", "R6", "00,01", "failure", "1"}, {"0001", "R6", "00,01", "pass", "1"}}, reportRows(t, events, "Guard steps and resident outcomes")); diff != "" {
+	if diff := cmp.Diff([][]string{{"0001", "R6", "00,01", "failure", "1"}, {"0001", "R6", "00,01", "pass", "1"}}, reportRows(t, events, "Checking steps and together outcomes")); diff != "" {
 		t.Fatalf("legacy all-core expansion (-want +got):\n%s", diff)
 	}
 	rows := reportRows(t, events, "Hunts")
 	if diff := cmp.Diff("1/0/0/1", rows[0][6]); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff(fmt.Sprintf("#%d", anchor), rows[0][4]); diff != "" {
+	if diff := cmp.Diff(fmt.Sprintf("#%d", parkedSeq), rows[0][4]); diff != "" {
 		t.Fatal(diff)
 	}
 	if got := reportRows(t, events, "Hunts", cutoff); len(got) != 1 || got[0][0] != "2" {
@@ -90,10 +90,10 @@ func TestReviewBoundaryReport(t *testing.T) {
 	if diff := cmp.Diff([][]string{{"inconclusive", "1"}, {"decisions", "resting", "on", "a", "single", "carried", "failure", "0"}}, reportRows(t, events, "Evidence quality", cutoff)); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff([][]string{{"2", "masked", "no", "reliable", "result"}}, reportRows(t, events, "Inconclusive trials")); diff != "" {
+	if diff := cmp.Diff([][]string{{"2", "parked", "no", "reliable", "result"}}, reportRows(t, events, "Inconclusive trials")); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff([][]string{{"rotations", "started", "0"}, {"rotations", "ended", "0"}, {"rotations", "qualifying", "0"}, {"reruns", "0"}, {"reruns", "failing", "first", "start", "0"}}, reportRows(t, events, "Guard", cutoff)); diff != "" {
+	if diff := cmp.Diff([][]string{{"laps", "started", "0"}, {"laps", "ended", "0"}, {"full", "laps", "0"}, {"reruns", "0"}, {"reruns", "failing", "first", "start", "0"}}, reportRows(t, events, "Checking", cutoff)); diff != "" {
 		t.Fatal(diff)
 	}
 	if diff := cmp.Diff([][]string{{"R6", "load", "3", "0.050", "1"}}, reportRows(t, events, "Exposure", cutoff)); diff != "" {
@@ -123,8 +123,8 @@ func TestReviewEvenRecoveryMedian(t *testing.T) {
 		}
 		intent := crash[1].Data.(*journal.TrialIntent)
 		intent.Hunt = 0
-		intent.Phase = journal.PhaseGuard
-		intent.Condition = machine.Resident
+		intent.Phase = journal.PhaseChecking
+		intent.Condition = machine.Together
 		intent.Profile = []int{-10, -10}
 		intent.DurationS = 120
 		crash[8].Data = &journal.Shutdown{Reason: journal.ShutdownCommand}
@@ -171,8 +171,8 @@ func TestCrashTimingBoundaries(t *testing.T) {
 			events[0].Data = &journal.SessionStart{Session: "review", Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}}
 			intent := events[1].Data.(*journal.TrialIntent)
 			intent.Hunt = 0
-			intent.Phase = journal.PhaseGuard
-			intent.Condition = machine.Resident
+			intent.Phase = journal.PhaseChecking
+			intent.Condition = machine.Together
 			intent.Profile = []int{-10, -10}
 			intent.DurationS = 120
 			events[8].Data = &journal.Shutdown{Reason: journal.ShutdownCommand}

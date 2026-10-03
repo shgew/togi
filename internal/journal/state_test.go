@@ -16,7 +16,7 @@ func TestInterruptedStateWriteKeepsPrevious(t *testing.T) {
 	dir := t.TempDir()
 	j := openTest(t, dir)
 	a := State{Schema: Schema, LastSeq: 4, Phase: "per_core", Cores: []CoreState{{Core: 0, CPUs: []int{0, 16}, Offset: -5}}}
-	b := State{Schema: Schema, LastSeq: 9, Phase: "guard"}
+	b := State{Schema: Schema, LastSeq: 9, Phase: "checking"}
 	if err := j.WriteState(a); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestReadStateDamageAndMissing(t *testing.T) {
 func TestStateDecisionsAndDeadEndResume(t *testing.T) {
 	var s State
 	s.Fold(Event{Seq: 1, Kind: KindSessionStart, Data: sessionStart()})
-	s.Fold(Event{Seq: 2, Kind: KindTunerDecision, Msg: "failed", Data: &TunerDecision{Core: 7, Phase: PhaseSearch, Decision: Backoff, FromOffset: -1, ToOffset: 0, FailedMark: new(-1), Reason: "failure"}})
+	s.Fold(Event{Seq: 2, Kind: KindTunerDecision, Msg: "failed", Data: &TunerDecision{Core: 7, Phase: PhaseSearch, Decision: Backoff, FromOffset: -1, ToOffset: 0, FailurePoint: new(-1), Reason: "failure"}})
 	if diff := cmp.Diff(&DecisionRef{Seq: 2, Msg: "failed"}, s.Cores[1].LastDecision); diff != "" {
 		t.Fatal(diff)
 	}

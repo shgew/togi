@@ -100,7 +100,7 @@ func TestOutputLimitSessionContainmentDeadEnd(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer j.Close()
-				stop, err := session.Run(context.Background(), session.Input{Config: config.Default(), Boot: boot, Journal: outputSessionJournal{Journal: j, trials: trials}, Machine: seams, Rotations: 1})
+				stop, err := session.Run(context.Background(), session.Input{Config: config.Default(), Boot: boot, Journal: outputSessionJournal{Journal: j, trials: trials}, Machine: seams, Laps: 1})
 				if err != nil || stop.Reason != session.StopDeadEnd || stop.DeadEnd == nil || stop.DeadEnd.Condition != journal.DeadEndContainment {
 					t.Fatalf("escaped output stop reason=%s dead end=%+v err=%v", stop.Reason, stop.DeadEnd, err)
 				}
@@ -152,7 +152,7 @@ func TestWatchedBacklogSessionContainmentDeadEnd(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer j.Close()
-		stop, err := session.Run(context.Background(), session.Input{Config: config.Default(), Boot: boot, Journal: outputSessionJournal{Journal: j, trials: trials}, Machine: seams, Rotations: 1})
+		stop, err := session.Run(context.Background(), session.Input{Config: config.Default(), Boot: boot, Journal: outputSessionJournal{Journal: j, trials: trials}, Machine: seams, Laps: 1})
 		if err != nil || stop.Reason != session.StopDeadEnd || stop.DeadEnd == nil || stop.DeadEnd.Condition != journal.DeadEndContainment {
 			t.Fatalf("undrained watched output: stop=%s dead end=%+v err=%v", stop.Reason, stop.DeadEnd, err)
 		}

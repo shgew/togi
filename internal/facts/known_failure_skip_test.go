@@ -10,7 +10,7 @@ import (
 )
 
 func TestKnownFailureSkipDoesNotCreateIdleFact(t *testing.T) {
-	for _, condition := range []machine.Condition{machine.Resident, machine.Masked} {
+	for _, condition := range []machine.Condition{machine.Together, machine.Parked} {
 		t.Run(string(condition), func(t *testing.T) {
 			build := journal.Build{Schema: 2, Ruleset: 7}
 			at := time.Unix(10, 0).UTC()

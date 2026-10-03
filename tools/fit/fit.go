@@ -160,11 +160,11 @@ func (l *likelihood) discrete(dst *int, indices []int) {
 		return
 	}
 	best, score := *dst, l.score(indices)
-	for edge := -50; edge <= 1; edge++ {
-		*dst = edge
+	for limit := -50; limit <= 1; limit++ {
+		*dst = limit
 		candidate := l.rawScore(indices)
 		if candidate < score-1e-9 && l.admissible() {
-			best, score = edge, candidate
+			best, score = limit, candidate
 		}
 	}
 	*dst = best
@@ -205,17 +205,17 @@ func (l *likelihood) continuous(get func() float64, set func(float64), indices [
 func initialConfig(records []trialfacts.Record) sim.Config {
 	cores := len(records[0].Profile)
 	model := sim.DefaultModel()
-	model.PastEdgeRate, model.Growth, model.NearEdgeRate = 0.015, 2, 1e-7
-	cfg := sim.Config{Cores: cores, Edges: make([]sim.Edges, cores), Model: &model}
+	model.PastLimitRate, model.Growth, model.NearLimitRate = 0.015, 2, 1e-7
+	cfg := sim.Config{Cores: cores, Limits: make([]sim.Limits, cores), Model: &model}
 	if records[0].Context != nil {
 		cfg.BIOSContext = *records[0].Context
 	}
-	for core := range cfg.Edges {
-		for r := range cfg.Edges[core].Isolated {
-			cfg.Edges[core].Isolated[r] = -50
+	for core := range cfg.Limits {
+		for r := range cfg.Limits[core].Alone {
+			cfg.Limits[core].Alone[r] = -50
 		}
-		for r := range cfg.Edges[core].Resident {
-			cfg.Edges[core].Resident[r] = -50
+		for r := range cfg.Limits[core].Together {
+			cfg.Limits[core].Together[r] = -50
 		}
 	}
 	for ccd := range 2 {
@@ -241,7 +241,7 @@ func initialConfig(records []trialfacts.Record) sim.Config {
 			}
 		}
 		if found {
-			cfg.Joints = append(cfg.Joints, sim.Joint{Members: members, Regimes: []machine.Regime{machine.R7}, Rate: 0.005, Signal: machine.Crash})
+			cfg.Combinations = append(cfg.Combinations, sim.Combination{Members: members, Regimes: []machine.Regime{machine.R7}, Rate: 0.005, Signal: machine.Crash})
 		}
 	}
 	return cfg
@@ -264,19 +264,19 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 	previous := math.Inf(1)
 	for range 12 {
 		if cfg.CCD == nil {
-			l.fitJoints(&cfg)
+			l.fitCombinations(&cfg)
 			for ccd := range 2 {
-				l.addJoint(&cfg, records, ccd)
+				l.addCombination(&cfg, records, ccd)
 			}
 		} else {
 			l.fitCCD(&cfg)
 		}
-		l.fitRegimeEdges(&cfg)
+		l.fitRegimeLimits(&cfg)
 		l.fitWorkloads(&cfg)
 		l.fitHazardShape(cfg.Model, all)
 		l.fitFlat(&cfg)
 		l.fitIdle(&cfg)
-		l.fitEdgeRateShift(&cfg, all)
+		l.fitLimitRateShift(&cfg, all)
 		score := l.score(all)
 		if previous-score < 1e-5 {
 			break
@@ -292,37 +292,37 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 	return cfg, l.score(all)
 }
 
-func (l *likelihood) fitJoints(cfg *sim.Config) {
-	for j := range cfg.Joints {
-		joint := &cfg.Joints[j]
-		indices := l.selectObs(func(o observation) bool { return slices.Contains(joint.Regimes, o.spec.Regime) })
-		l.continuous(func() float64 { return joint.Rate }, func(x float64) { joint.Rate = max(x, 1e-12) }, indices, 1e-7, 0.5)
+func (l *likelihood) fitCombinations(cfg *sim.Config) {
+	for j := range cfg.Combinations {
+		combination := &cfg.Combinations[j]
+		indices := l.selectObs(func(o observation) bool { return slices.Contains(combination.Regimes, o.spec.Regime) })
+		l.continuous(func() float64 { return combination.Rate }, func(x float64) { combination.Rate = max(x, 1e-12) }, indices, 1e-7, 0.5)
 		for core := range cfg.Cores {
-			edge, ok := joint.Members[core]
+			limit, ok := combination.Members[core]
 			if !ok {
 				continue
 			}
-			best, score := edge, l.score(indices)
+			best, score := limit, l.score(indices)
 			for candidate := -50; candidate <= 0; candidate++ {
-				joint.Members[core] = candidate
+				combination.Members[core] = candidate
 				v := l.rawScore(indices)
 				if v < score-1e-9 && l.admissible() {
 					best, score = candidate, v
 				}
 			}
-			joint.Members[core] = best
+			combination.Members[core] = best
 		}
 	}
 }
 
-func (l *likelihood) fitRegimeEdges(cfg *sim.Config) {
-	for core := range cfg.Edges {
+func (l *likelihood) fitRegimeLimits(cfg *sim.Config) {
+	for core := range cfg.Limits {
 		for r, regime := range machine.Regimes {
 			if cfg.CCD != nil && regime == machine.R7 {
 				continue
 			}
-			for _, isolated := range []bool{true, false} {
-				if isolated && r >= 5 {
+			for _, alone := range []bool{true, false} {
+				if alone && r >= 5 {
 					continue
 				}
 				indices := l.selectObs(func(o observation) bool {
@@ -335,12 +335,12 @@ func (l *likelihood) fitRegimeEdges(cfg *sim.Config) {
 							only = false
 						}
 					}
-					return only == isolated
+					return only == alone
 				})
-				if isolated {
-					l.discrete(&cfg.Edges[core].Isolated[r], indices)
+				if alone {
+					l.discrete(&cfg.Limits[core].Alone[r], indices)
 				} else {
-					l.discrete(&cfg.Edges[core].Resident[r], indices)
+					l.discrete(&cfg.Limits[core].Together[r], indices)
 				}
 			}
 		}
@@ -348,11 +348,11 @@ func (l *likelihood) fitRegimeEdges(cfg *sim.Config) {
 }
 
 func (l *likelihood) fitHazardShape(model *sim.Model, all []int) {
-	for _, dst := range []*float64{&model.PastEdgeRate, &model.Growth, &model.NearEdgeRate} {
+	for _, dst := range []*float64{&model.PastLimitRate, &model.Growth, &model.NearLimitRate} {
 		low, high := 1e-8, 0.5
 		if dst == &model.Growth {
 			low, high = 1.05, 8
-		} else if dst == &model.NearEdgeRate {
+		} else if dst == &model.NearLimitRate {
 			high = 0.001
 		}
 		l.continuous(func() float64 { return *dst }, func(x float64) {
@@ -366,15 +366,15 @@ func (l *likelihood) fitHazardShape(model *sim.Model, all []int) {
 }
 
 func (l *likelihood) fitFlat(cfg *sim.Config) {
-	for core := range cfg.Edges {
+	for core := range cfg.Limits {
 		indices := l.selectObs(func(o observation) bool { return o.profile[core] < 0 })
-		dst := &cfg.Edges[core].Flat
+		dst := &cfg.Limits[core].Flat
 		l.continuous(func() float64 { return *dst }, func(x float64) { *dst = x }, indices, 1e-10, 0.001)
 	}
 }
 
 func (l *likelihood) fitIdle(cfg *sim.Config) {
-	for core := range cfg.Edges {
+	for core := range cfg.Limits {
 		hasExposure := false
 		indices := l.selectObs(func(o observation) bool {
 			if slices.Contains(o.spec.Cores, core) {
@@ -384,24 +384,24 @@ func (l *likelihood) fitIdle(cfg *sim.Config) {
 			return true
 		})
 		idle := -50
-		if cfg.Edges[core].Idle != nil {
-			idle = *cfg.Edges[core].Idle
+		if cfg.Limits[core].Idle != nil {
+			idle = *cfg.Limits[core].Idle
 		}
-		cfg.Edges[core].Idle = &idle
-		// Zero-offset starts constrain Idle=1, but cannot alone identify an idle edge.
+		cfg.Limits[core].Idle = &idle
+		// Zero-offset starts constrain Idle=1, but cannot alone identify an idle limit.
 		if hasExposure {
 			l.discrete(&idle, indices)
 		}
 		if idle == -50 {
-			cfg.Edges[core].Idle = nil
+			cfg.Limits[core].Idle = nil
 		}
 	}
 }
 
-func (l *likelihood) addJoint(cfg *sim.Config, records []trialfacts.Record, ccd int) {
+func (l *likelihood) addCombination(cfg *sim.Config, records []trialfacts.Record, ccd int) {
 	count := 0
-	for _, joint := range cfg.Joints {
-		if _, ok := joint.Members[ccd*cfg.Cores/2]; ok {
+	for _, combination := range cfg.Combinations {
+		if _, ok := combination.Members[ccd*cfg.Cores/2]; ok {
 			count++
 		}
 	}
@@ -411,13 +411,13 @@ func (l *likelihood) addJoint(cfg *sim.Config, records []trialfacts.Record, ccd 
 	indices := l.selectObs(func(o observation) bool { return o.spec.Regime == machine.R7 })
 	baseline := l.score(indices)
 	bestScore := baseline - 0.5
-	var best sim.Joint
+	var best sim.Combination
 	seen := make(map[string]bool)
-	original := len(cfg.Joints)
-	cfg.Joints = append(cfg.Joints, sim.Joint{Regimes: []machine.Regime{machine.R7}, Rate: 0.001, Signal: machine.Crash})
+	original := len(cfg.Combinations)
+	cfg.Combinations = append(cfg.Combinations, sim.Combination{Regimes: []machine.Regime{machine.R7}, Rate: 0.001, Signal: machine.Crash})
 	l.cfg = *cfg
 	l.rebuild()
-	candidate := &cfg.Joints[original]
+	candidate := &cfg.Combinations[original]
 	for _, r := range records {
 		if r.Class.Regime != machine.R7 || r.Outcome != journal.OutcomeFailure {
 			continue
@@ -438,8 +438,8 @@ func (l *likelihood) addJoint(cfg *sim.Config, records []trialfacts.Record, ccd 
 		}
 		seen[string(key)] = true
 		duplicate := false
-		for _, joint := range cfg.Joints[:original] {
-			duplicate = duplicate || maps.Equal(joint.Members, members)
+		for _, combination := range cfg.Combinations[:original] {
+			duplicate = duplicate || maps.Equal(combination.Members, members)
 		}
 		if duplicate {
 			continue
@@ -452,16 +452,16 @@ func (l *likelihood) addJoint(cfg *sim.Config, records []trialfacts.Record, ccd 
 		}
 	}
 	if best.Members == nil {
-		cfg.Joints = cfg.Joints[:original]
+		cfg.Combinations = cfg.Combinations[:original]
 	} else {
-		cfg.Joints[original] = best
+		cfg.Combinations[original] = best
 	}
 	l.cfg = *cfg
 	l.rebuild()
 }
 
 func (l *likelihood) fitWorkloads(cfg *sim.Config) {
-	for core := range cfg.Edges {
+	for core := range cfg.Limits {
 		workloads := make(map[string]bool)
 		for _, o := range l.obs {
 			if cfg.CCD != nil && o.spec.Regime == machine.R7 {
@@ -471,7 +471,7 @@ func (l *likelihood) fitWorkloads(cfg *sim.Config) {
 				workloads[o.spec.Workload.ID] = true
 			}
 		}
-		edge := &cfg.Edges[core]
+		limit := &cfg.Limits[core]
 		for _, workload := range slices.Sorted(maps.Keys(workloads)) {
 			if workload == "" {
 				continue
@@ -485,29 +485,29 @@ func (l *likelihood) fitWorkloads(cfg *sim.Config) {
 				continue
 			}
 			baseline := l.score(indices)
-			value, exists := edge.Workload[workload]
-			if edge.Workload == nil {
-				edge.Workload = make(map[string]int)
+			value, exists := limit.Workload[workload]
+			if limit.Workload == nil {
+				limit.Workload = make(map[string]int)
 			}
 			if !exists {
 				value = -50
 			}
 			best, score := value, math.Inf(1)
 			for candidate := -50; candidate <= 1; candidate++ {
-				edge.Workload[workload] = candidate
+				limit.Workload[workload] = candidate
 				loss := l.rawScore(indices)
 				if loss < score-1e-9 && l.admissible() {
 					best, score = candidate, loss
 				}
 			}
 			if !exists && baseline-score < 0.5 {
-				delete(edge.Workload, workload)
+				delete(limit.Workload, workload)
 			} else {
-				edge.Workload[workload] = best
+				limit.Workload[workload] = best
 			}
 		}
-		if len(edge.Workload) == 0 {
-			edge.Workload = nil
+		if len(limit.Workload) == 0 {
+			limit.Workload = nil
 		}
 	}
 }
@@ -519,74 +519,74 @@ func cloneMachine(cfg sim.Config) sim.Config {
 		c := *cfg.CCD
 		cfg.CCD = &c
 	}
-	cfg.Edges = slices.Clone(cfg.Edges)
-	for core := range cfg.Edges {
-		cfg.Edges[core].Workload = maps.Clone(cfg.Edges[core].Workload)
-		if cfg.Edges[core].Idle != nil {
-			value := *cfg.Edges[core].Idle
-			cfg.Edges[core].Idle = &value
+	cfg.Limits = slices.Clone(cfg.Limits)
+	for core := range cfg.Limits {
+		cfg.Limits[core].Workload = maps.Clone(cfg.Limits[core].Workload)
+		if cfg.Limits[core].Idle != nil {
+			value := *cfg.Limits[core].Idle
+			cfg.Limits[core].Idle = &value
 		}
 	}
-	cfg.Joints = slices.Clone(cfg.Joints)
-	for j := range cfg.Joints {
-		cfg.Joints[j].Members = maps.Clone(cfg.Joints[j].Members)
+	cfg.Combinations = slices.Clone(cfg.Combinations)
+	for j := range cfg.Combinations {
+		cfg.Combinations[j].Members = maps.Clone(cfg.Combinations[j].Members)
 	}
 	return cfg
 }
 
-type edgeShift struct {
+type limitShift struct {
 	value    int
 	dst      *int
 	workload map[string]int
 	key      string
 }
 
-func edgeShifts(cfg *sim.Config) []edgeShift {
-	var shifts []edgeShift
+func limitShifts(cfg *sim.Config) []limitShift {
+	var shifts []limitShift
 	add := func(dst *int) {
 		if *dst > -50 {
-			shifts = append(shifts, edgeShift{value: *dst, dst: dst})
+			shifts = append(shifts, limitShift{value: *dst, dst: dst})
 		}
 	}
-	for core := range cfg.Edges {
-		edge := &cfg.Edges[core]
-		for r := range edge.Isolated {
-			add(&edge.Isolated[r])
+	for core := range cfg.Limits {
+		limit := &cfg.Limits[core]
+		for r := range limit.Alone {
+			add(&limit.Alone[r])
 		}
-		for r := range edge.Resident {
-			add(&edge.Resident[r])
+		for r := range limit.Together {
+			add(&limit.Together[r])
 		}
-		if edge.Idle != nil {
-			add(edge.Idle)
+		if limit.Idle != nil {
+			add(limit.Idle)
 		}
-		for _, key := range slices.Sorted(maps.Keys(edge.Workload)) {
-			if value := edge.Workload[key]; value > -50 {
-				shifts = append(shifts, edgeShift{value: value, workload: edge.Workload, key: key})
+		for _, key := range slices.Sorted(maps.Keys(limit.Workload)) {
+			if value := limit.Workload[key]; value > -50 {
+				shifts = append(shifts, limitShift{value: value, workload: limit.Workload, key: key})
 			}
 		}
 	}
 	return shifts
 }
 
-func (l *likelihood) fitEdgeRateShift(cfg *sim.Config, all []int) {
-	shifts := edgeShifts(cfg)
-	if len(shifts) == 0 || cfg.Model.PastEdgeRate == 0 {
+func (l *likelihood) fitLimitRateShift(cfg *sim.Config, all []int) {
+	shifts := limitShifts(cfg)
+	if len(shifts) == 0 || cfg.Model.PastLimitRate == 0 {
 		return
 	}
 	low, high := -50, 50
-	for _, edge := range shifts {
-		low, high = max(low, -50-edge.value), min(high, 1-edge.value)
+	for _, limit := range shifts {
+		low, high = max(low, -50-limit.value), min(high, 1-limit.value)
 	}
-	rate := cfg.Model.PastEdgeRate
+	rate := cfg.Model.PastLimitRate
 	apply := func(delta int, shiftedRate float64) {
-		for _, edge := range shifts {
-			if edge.dst != nil {
-				*edge.dst = edge.value + delta
+		for _, limit := range shifts {
+			if limit.dst != nil {
+				*limit.dst = limit.value + delta
 			} else {
-				edge.workload[edge.key] = edge.value + delta
+				limit.workload[limit.key] = limit.value + delta
 			}
 		}
-		cfg.Model.PastEdgeRate = shiftedRate
+		cfg.Model.PastLimitRate = shiftedRate
 		l.rebuild()
 	}
 	best, bestRate, score := 0, rate, l.score(all)

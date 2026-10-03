@@ -80,14 +80,14 @@ func (f carryFilesystemFixture) writeSource(t *testing.T, id string, build journ
 	if established {
 		payloads = append(payloads,
 			&journal.SessionContext{BIOSContext: f.context},
-			&journal.TrialIntent{Trial: "old", Core: new(0), Offset: new(-35), Regime: machine.R6, Condition: machine.Isolated},
+			&journal.TrialIntent{Trial: "old", Core: new(0), Offset: new(-35), Regime: machine.R6, Condition: machine.Alone},
 			&journal.TrialEnd{Trial: "old", Outcome: journal.OutcomePass},
 			&journal.CommandReset{Core: new(0)},
-			&journal.TrialIntent{Trial: "pass", Core: new(0), Offset: new(-30), Regime: machine.R6, Condition: machine.Isolated},
+			&journal.TrialIntent{Trial: "pass", Core: new(0), Offset: new(-30), Regime: machine.R6, Condition: machine.Alone},
 			&journal.TrialEnd{Trial: "pass", Outcome: journal.OutcomePass},
-			&journal.TrialIntent{Trial: "fail", Core: new(1), Offset: new(-31), Regime: machine.R6, Condition: machine.Isolated},
+			&journal.TrialIntent{Trial: "fail", Core: new(1), Offset: new(-31), Regime: machine.R6, Condition: machine.Alone},
 			&journal.TrialEnd{Trial: "fail", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(1)},
-			&journal.Failure{Trial: "fail", Attribution: journal.Attributed, Signal: machine.ComputationError, Core: new(1), Offset: new(-31), Regime: machine.R6, Condition: machine.Isolated},
+			&journal.Failure{Trial: "fail", Attribution: journal.Attributed, Signal: machine.ComputationError, Core: new(1), Offset: new(-31), Regime: machine.R6, Condition: machine.Alone},
 		)
 	} else {
 		payloads = append(payloads, &journal.ConfigLoaded{Build: build})
@@ -193,11 +193,11 @@ func (f carryFilesystemFixture) resume(t *testing.T) *journal.SessionCarried {
 	if result == nil || len(result.Sources) == 0 || result.Sources[0].Session != "A" || len(result.Carried) != 2 {
 		t.Fatalf("original lineage lost: %+v", result)
 	}
-	if core := result.Carried[0]; core.Core != 0 || core.Edge == nil || *core.Edge != -30 || core.EdgeSession != "A" || core.EdgeSeq != 7 {
-		t.Fatalf("reset epoch or passing edge lost: %+v", core)
+	if core := result.Carried[0]; core.Core != 0 || core.SoloLimit == nil || *core.SoloLimit != -30 || core.SoloLimitSession != "A" || core.SoloLimitSeq != 7 {
+		t.Fatalf("reset epoch or passing solo limit lost: %+v", core)
 	}
-	if core := result.Carried[1]; core.Core != 1 || core.FailedMark == nil || *core.FailedMark != -31 || core.MarkSession != "A" || core.MarkSeq != 10 {
-		t.Fatalf("failed mark lost: %+v", core)
+	if core := result.Carried[1]; core.Core != 1 || core.FailurePoint == nil || *core.FailurePoint != -31 || core.FailurePointSession != "A" || core.FailurePointSeq != 10 {
+		t.Fatalf("failure point lost: %+v", core)
 	}
 	if pending, err := journal.PendingCarry(f.dir); err != nil || pending != "" {
 		t.Fatalf("settled marker retained: %q, %v", pending, err)

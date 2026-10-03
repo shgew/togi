@@ -21,7 +21,7 @@ func TestSearchConverges(t *testing.T) {
 				e := h.decide(a)
 				if p, ok := e.Data.(*journal.CorePhase); ok && p.To != journal.PhaseSearch {
 					if p.Offset != threshold {
-						t.Fatalf("seed %d: edge %d, want %d", seed, p.Offset, threshold)
+						t.Fatalf("seed %d: solo limit %d, want %d", seed, p.Offset, threshold)
 					}
 					settled = true
 					break
@@ -35,16 +35,16 @@ func TestSearchConverges(t *testing.T) {
 			}
 		}
 		if !settled {
-			t.Fatalf("seed %d did not find edge", seed)
+			t.Fatalf("seed %d did not find solo limit", seed)
 		}
 	}
 }
 
 func TestRandomOutcomesPreserveProfiles(t *testing.T) {
-	maskedFailures := 0
+	parkedFailures := 0
 	for seed := uint64(1); seed <= 12; seed++ {
 		rng := rand.New(rand.NewPCG(seed, 1))
-		h := residentHarness(t, -30, -30, -30, -30)
+		h := hasRoomHarness(t, -30, -30, -30, -30)
 		started, ended := 0, 0
 		for step := range 700 {
 			if step >= 350 && h.s.hunt == nil && started > 0 {
@@ -60,7 +60,7 @@ func TestRandomOutcomesPreserveProfiles(t *testing.T) {
 						t.Fatalf("seed %d: profile change reached %s", seed, name)
 					}
 				}
-				marks := append([]journal.JointMarkState(nil), h.s.marks...)
+				combinations := append([]journal.CombinationState(nil), h.s.combinations...)
 				e := h.decide(a)
 				if _, ok := e.Data.(*journal.HuntStart); ok {
 					started++
@@ -68,15 +68,15 @@ func TestRandomOutcomesPreserveProfiles(t *testing.T) {
 				if _, ok := e.Data.(*journal.HuntEnd); ok {
 					ended++
 				}
-				for _, mark := range marks {
+				for _, combination := range combinations {
 					still := false
-					for _, current := range h.s.marks {
-						if current.Mark == mark.Mark && cmp.Diff(mark.Members, current.Members) == "" {
+					for _, current := range h.s.combinations {
+						if current.Combination == combination.Combination && cmp.Diff(combination.Members, current.Members) == "" {
 							still = true
 						}
 					}
 					if !still {
-						t.Fatalf("seed %d: mark J%d disappeared without reset", seed, mark.Mark)
+						t.Fatalf("seed %d: combination C%d disappeared without reset", seed, combination.Combination)
 					}
 				}
 				continue
@@ -91,18 +91,18 @@ func TestRandomOutcomesPreserveProfiles(t *testing.T) {
 					t.Fatalf("seed %d: offset %d outside range", seed, offset)
 				}
 			}
-			if p.Condition == machine.Isolated {
+			if p.Condition == machine.Alone {
 				for i, x := range p.Profile {
 					if i != *p.Core && x != 0 {
-						t.Fatalf("seed %d: isolated profile %v", seed, p.Profile)
+						t.Fatalf("seed %d: alone profile %v", seed, p.Profile)
 					}
 				}
 			}
 			end := passed
 			if rng.Float64() < .035 {
 				end = journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 10}
-				if p.Condition == machine.Masked {
-					maskedFailures++
+				if p.Condition == machine.Parked {
+					parkedFailures++
 				}
 			} else if rng.Float64() < .06 {
 				end = unsure
@@ -114,7 +114,7 @@ func TestRandomOutcomesPreserveProfiles(t *testing.T) {
 			t.Fatalf("seed %d: hunts started %d, ended %d", seed, started, ended)
 		}
 	}
-	if maskedFailures == 0 {
-		t.Fatal("fixed seeds did not exercise a failed masked trial")
+	if parkedFailures == 0 {
+		t.Fatal("fixed seeds did not exercise a failed parked trial")
 	}
 }

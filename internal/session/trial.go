@@ -119,7 +119,7 @@ func (r *runner) trial(ctx context.Context, a tuner.Action) error {
 		index = r.fold.index[t.Core][t.Regime]
 	}
 	profile := slices.Clone(r.applied)
-	if t.Condition == machine.Isolated {
+	if t.Condition == machine.Alone {
 		profile = make([]int, len(r.cores))
 		for i, c := range r.cores {
 			if c.Core == t.Core {
@@ -292,7 +292,7 @@ func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine
 	if ctx.Err() != nil {
 		end.Reason = joinDiagnostic(end.Reason, "stopped by signal")
 	}
-	if tr.t.Condition == machine.Isolated {
+	if tr.t.Condition == machine.Alone {
 		end.Core = nil
 	}
 	cores := tr.t.Cores
@@ -366,9 +366,9 @@ func (p *trialReport) record(payload journal.Payload) {
 }
 
 // writesTarget reports whether the trial sets and reads back its target before running and resets it afterward.
-// Isolated trials do so at every offset, including 0; resident trials run on the profile already applied.
+// Trials alone do so at every offset, including 0; trials together run on the profile already applied.
 func (tr *trialRun) writesTarget() bool {
-	return tr.t.Condition == machine.Isolated
+	return tr.t.Condition == machine.Alone
 }
 
 type recordedMCE struct {

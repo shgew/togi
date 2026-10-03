@@ -235,7 +235,7 @@ func (s *Session) recordTrialEnd(e journal.Event, end *journal.TrialEnd, t *Tria
 }
 
 func (s *Session) recordIdleFailure(e journal.Event, p *journal.Failure, build journal.Build, ids []int) {
-	if p.KnownFailure == 0 && p.Trial == "" && (p.Condition == machine.Resident || p.Condition == machine.Masked) && p.Attribution == journal.Unattributed && len(p.Profile) == len(ids) {
+	if p.KnownFailure == 0 && p.Trial == "" && (p.Condition == machine.Together || p.Condition == machine.Parked) && p.Attribution == journal.Unattributed && len(p.Profile) == len(ids) {
 		idle := *p
 		idle.Profile = slices.Clone(p.Profile)
 		s.Facts = append(s.Facts, Fact{Kind: IdleFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: build, Ruleset: build.Ruleset, Epoch: s.Epoch, Boot: e.Boot, Class: Class{Regime: machine.R6, Cores: slices.Clone(ids)}, Condition: p.Condition, Profile: slices.Clone(p.Profile), Outcome: journal.OutcomeFailure, Signal: p.Signal, Core: p.Core, Idle: &idle})
@@ -289,7 +289,7 @@ func trialProfile(p *journal.TrialIntent, ids, applied []int) []int {
 		return slices.Clone(p.Profile)
 	}
 	profile := make([]int, len(ids))
-	if p.Condition == machine.Isolated && p.Core != nil && p.Offset != nil {
+	if p.Condition == machine.Alone && p.Core != nil && p.Offset != nil {
 		if i := slices.Index(ids, *p.Core); i >= 0 {
 			profile[i] = *p.Offset
 		}

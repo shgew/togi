@@ -125,10 +125,10 @@ func assertMatrixDecisions(t *testing.T, want matrixResult, events []journal.Eve
 	assertMatrixRerunRetries(t, events)
 	seen := map[[2]int]bool{}
 	for _, e := range events {
-		if p, ok := e.Data.(*journal.HuntMask); ok {
-			key := [2]int{p.Hunt, p.Mask}
+		if p, ok := e.Data.(*journal.HuntGroup); ok {
+			key := [2]int{p.Hunt, p.Group}
 			if seen[key] {
-				t.Fatalf("duplicated hunt.mask %v", key)
+				t.Fatalf("duplicated hunt.group %v", key)
 			}
 			seen[key] = true
 		}

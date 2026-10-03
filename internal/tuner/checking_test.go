@@ -10,52 +10,52 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func residentHarness(t *testing.T, offsets ...int) *harness {
+func hasRoomHarness(t *testing.T, offsets ...int) *harness {
 	t.Helper()
 	starts := make([]coreStart, len(offsets))
 	for i, x := range offsets {
-		starts[i] = coreStart{phase: journal.PhaseDone, offset: x, fail: new(x - 1), pass: new(x)}
+		starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: x, fail: new(x - 1), pass: new(x)}
 	}
 	h := newHarness(t, starts...)
 	h.decide(h.next())
 	return h
 }
 
-func TestCoveredOpenRotationYieldsToRefinement(t *testing.T) {
+func TestCoveredOpenLapYieldsToDeepening(t *testing.T) {
 	offsets := []int{-49, -49, -49, -50}
 	for _, tt := range []struct {
-		name      string
-		qualified []int
-		covered   bool
-		complete  bool
+		name           string
+		passedFullLaps []int
+		covered        bool
+		complete       bool
 	}{
 		{"same profile", offsets, true, false},
-		{"deeper qualified profile", []int{-50, -49, -49, -50}, true, false},
-		{"shallower qualified profile", []int{-48, -49, -49, -50}, false, false},
+		{"deeper passed full-lap profile", []int{-50, -49, -49, -50}, true, false},
+		{"shallower passed full-lap profile", []int{-48, -49, -49, -50}, false, false},
 		{"completed same profile", offsets, true, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			starts := make([]coreStart, len(offsets))
 			for i, v := range offsets {
-				starts[i] = coreStart{phase: journal.PhaseDone, offset: v}
+				starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: v}
 			}
 			h := newHarness(t, starts...)
 			for i, pair := range [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}} {
-				h.add(&journal.MarkJoint{Mark: i + 1, Hunt: i + 1, Members: []journal.JointMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
+				h.add(&journal.Combination{Combination: i + 1, Hunt: i + 1, Members: []journal.CombinationMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
 			}
-			h.add(&journal.ProfileChange{To: tt.qualified})
-			h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: h.s.steps})
-			rotation := h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true}).Seq
-			h.add(&journal.ProfileChange{From: tt.qualified, To: offsets})
-			h.add(&journal.GuardRotation{Rotation: 2, Event: journal.RotationStart, Steps: h.s.steps})
+			h.add(&journal.ProfileChange{To: tt.passedFullLaps})
+			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: h.s.steps})
+			lap := h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true}).Seq
+			h.add(&journal.ProfileChange{From: tt.passedFullLaps, To: offsets})
+			h.add(&journal.CheckingLap{Lap: 2, Event: journal.LapStart, Steps: h.s.steps})
 			if tt.complete {
-				// Replay a fully executed rotation before asking Next to close it.
+				// Replay a fully executed lap before asking Next to close it.
 				// The covered shortcut must only replace work still left to run.
 				for {
-					a := h.s.rotationNext()
+					a := h.s.lapNext()
 					if a.Kind == RunTrial {
 						h.trial(a, passed)
-					} else if _, step := a.Payload.(*journal.GuardStep); step {
+					} else if _, step := a.Payload.(*journal.CheckingStep); step {
 						h.decide(a)
 					} else {
 						break
@@ -63,30 +63,30 @@ func TestCoveredOpenRotationYieldsToRefinement(t *testing.T) {
 				}
 			}
 			a := h.next()
-			end, ok := a.Payload.(*journal.GuardRotation)
+			end, ok := a.Payload.(*journal.CheckingLap)
 			if tt.complete {
-				if a.Kind != Decide || !ok || end.Event != journal.RotationEnd || !end.Clean || !end.Qualifying || end.Rotation != 2 {
-					t.Fatalf("completed rotation must close clean and qualifying: %+v", a)
+				if a.Kind != Decide || !ok || end.Event != journal.LapEnd || !end.Passed || !end.Full || end.Lap != 2 {
+					t.Fatalf("completed lap must close passed and full: %+v", a)
 				}
 				h.decide(a)
 				nextRound(h)
 				return
 			}
-			if got := ok && end.Event == journal.RotationEnd && !end.Clean; got != tt.covered {
+			if got := ok && end.Event == journal.LapEnd && !end.Passed; got != tt.covered {
 				t.Fatalf("covered end %t, want %t: %+v", got, tt.covered, a)
 			}
 			if !tt.covered {
-				if _, step := a.Payload.(*journal.GuardStep); step {
+				if _, step := a.Payload.(*journal.CheckingStep); step {
 					h.decide(a)
 					a = h.next()
 				}
 				if a.Kind != RunTrial {
-					t.Fatalf("uncovered incomplete rotation must continue testing: %+v", a)
+					t.Fatalf("uncovered incomplete lap must continue testing: %+v", a)
 				}
 				return
 			}
-			if a.Cause[0] != rotation {
-				t.Fatalf("cause %v, want rotation #%d first", a.Cause, rotation)
+			if a.Cause[0] != lap {
+				t.Fatalf("cause %v, want lap #%d first", a.Cause, lap)
 			}
 			h.decide(a)
 			nextRound(h)
@@ -94,28 +94,28 @@ func TestCoveredOpenRotationYieldsToRefinement(t *testing.T) {
 	}
 }
 
-func TestRotationCoverage(t *testing.T) {
-	h := residentHarness(t, -10, -12, -13, -11)
+func TestLapCoverage(t *testing.T) {
+	h := hasRoomHarness(t, -10, -12, -13, -11)
 	cases := []struct {
 		name    string
 		steps   []machine.Regime
 		missing []string
-	}{{"default", config.Default().Guard.Rotation, nil}, {"short", []machine.Regime{machine.R1, machine.R7}, []string{"R1: 2 more steps", "R2: 3 more steps", "R3: 1 more steps", "R4: 1 more steps", "R5: 1 more steps", "R6: 1 more steps", "R7: 2 more steps"}}}
+	}{{"default", config.Default().Checking.Lap, nil}, {"short", []machine.Regime{machine.R1, machine.R7}, []string{"R1: 2 more steps", "R2: 3 more steps", "R3: 1 more steps", "R4: 1 more steps", "R5: 1 more steps", "R6: 1 more steps", "R7: 2 more steps"}}}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			qualified, missing := h.s.qualifying(tt.steps)
-			if qualified != (len(tt.missing) == 0) || cmp.Diff(tt.missing, missing) != "" {
-				t.Fatalf("qualification %t, missing (-want +got):\n%s", qualified, cmp.Diff(tt.missing, missing))
+			full, missing := h.s.fullLapCoverage(tt.steps)
+			if full != (len(tt.missing) == 0) || cmp.Diff(tt.missing, missing) != "" {
+				t.Fatalf("full-lap coverage %t, missing (-want +got):\n%s", full, cmp.Diff(tt.missing, missing))
 			}
 		})
 	}
 }
 
 func TestR7StartsAndSharedDuration(t *testing.T) {
-	h := residentHarness(t, -10, -11, -12, -13)
+	h := hasRoomHarness(t, -10, -11, -12, -13)
 	cfg := config.Default()
-	cfg.Guard.Rotation = []machine.Regime{machine.R7}
-	cfg.Durations.GuardAllCoreS = 480
+	cfg.Checking.Lap = []machine.Regime{machine.R7}
+	cfg.Durations.CheckingAllCoreS = 480
 	h.add(&journal.ConfigLoaded{Config: snapshotConfig(cfg)})
 	h.decide(h.next())
 	h.decide(h.next())
@@ -142,20 +142,20 @@ func TestR7StartsAndSharedDuration(t *testing.T) {
 			h.trial(a, passed)
 		}
 	}
-	if _, ok := h.next().Payload.(*journal.GuardRotation); !ok {
-		t.Fatal("rotation not complete")
+	if _, ok := h.next().Payload.(*journal.CheckingLap); !ok {
+		t.Fatal("lap not complete")
 	}
 }
 
-func TestAttributionAtMaskAnchorAndAlreadyShallower(t *testing.T) {
-	h := residentHarness(t, -10, -12)
+func TestAttributionAtGroupParkedOffsetsAndAlreadyShallower(t *testing.T) {
+	h := hasRoomHarness(t, -10, -12)
 	profile := []int{-10, -12}
-	tr := Trial{Core: 0, Regime: machine.R7, Phase: journal.PhaseHunt, Condition: machine.Masked, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Profile: profile, Hunt: 1, Mask: 1}
+	tr := Trial{Core: 0, Regime: machine.R7, Phase: journal.PhaseHunt, Condition: machine.Parked, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Profile: profile, Hunt: 1, Group: 1}
 	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0), DurationS: 10})
 	a := h.next()
 	f, ok := a.Payload.(*journal.Failure)
-	if !ok || *f.Offset != -10 || f.Condition != machine.Masked {
-		t.Fatalf("mask failure %+v", a)
+	if !ok || *f.Offset != -10 || f.Condition != machine.Parked {
+		t.Fatalf("group failure %+v", a)
 	}
 	h.decide(a)
 	a = h.next()
@@ -174,8 +174,8 @@ func TestAttributionAtMaskAnchorAndAlreadyShallower(t *testing.T) {
 }
 
 func TestRerunLongFailedPart(t *testing.T) {
-	h := residentHarness(t, -10, -11)
-	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[0].ID, Condition: machine.Resident, DurationS: 600}
+	h := hasRoomHarness(t, -10, -11)
+	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[0].ID, Condition: machine.Together, DurationS: 600}
 	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)})
 	first := h.decide(h.next())
 	h.decide(h.next())
@@ -193,7 +193,7 @@ func TestRerunLongFailedPart(t *testing.T) {
 	}
 	h.trial(a, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)})
 	failure := h.decide(h.next())
-	h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: -9, ToOffset: -8, FailedMark: new(-9)}, failure.Seq)
+	h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -9, ToOffset: -8, FailurePoint: new(-9)}, failure.Seq)
 	h.add(&journal.ProfileChange{From: []int{-9, -11}, To: []int{-8, -11}})
 	a, ok := h.s.rerunNext()
 	if !ok || a.Trial.DurationS != 600 {
@@ -216,13 +216,13 @@ func TestRerunLongFailedPart(t *testing.T) {
 }
 
 func TestRerunRepeatedCommitmentCitesLatestFailure(t *testing.T) {
-	h := residentHarness(t, -10)
-	tr := Trial{Core: 0, Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Phase: journal.PhaseGuard, Condition: machine.Resident, DurationS: 120}
+	h := hasRoomHarness(t, -10)
+	tr := Trial{Core: 0, Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, Phase: journal.PhaseChecking, Condition: machine.Together, DurationS: 120}
 	failed := journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)}
 	commit := func(a Action, from, to int) int {
 		h.trial(a, failed)
 		failure := h.decide(h.next())
-		h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: from, ToOffset: to, FailedMark: new(from)}, failure.Seq)
+		h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: from, ToOffset: to, FailurePoint: new(from)}, failure.Seq)
 		h.add(&journal.ProfileChange{From: []int{from}, To: []int{to}})
 		return failure.Seq
 	}
@@ -256,10 +256,10 @@ func TestRerunRepeatedCommitmentCitesLatestFailure(t *testing.T) {
 	}
 }
 
-func TestGuardCarriesDeeperPassAcrossBackoff(t *testing.T) {
-	h := residentHarness(t, -20)
+func TestCheckingCarriesDeeperPassAcrossBackoff(t *testing.T) {
+	h := hasRoomHarness(t, -20)
 	cfg := config.Default()
-	cfg.Guard.Rotation = []machine.Regime{machine.R1}
+	cfg.Checking.Lap = []machine.Regime{machine.R1}
 	h.add(&journal.ConfigLoaded{Config: snapshotConfig(cfg)})
 	h.decide(h.next())
 	first := h.next()
@@ -267,17 +267,17 @@ func TestGuardCarriesDeeperPassAcrossBackoff(t *testing.T) {
 		t.Fatalf("first requirement %+v", first)
 	}
 	h.trial(first, passed)
-	h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseGuard, Decision: journal.Backoff, FromOffset: -20, ToOffset: -19, FailedMark: new(-20), Reason: "test backoff"})
+	h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -20, ToOffset: -19, FailurePoint: new(-20), Reason: "test backoff"})
 	h.add(&journal.ProfileChange{From: []int{-20}, To: []int{-19}})
-	if a := h.s.rotationNext(); a.Kind != Decide {
+	if a := h.s.lapNext(); a.Kind != Decide {
 		t.Fatalf("deeper passing start was lost after backoff: %+v", a)
 	}
 }
 
-func TestResidentSingleNonzeroAttribution(t *testing.T) {
-	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: 0}, coreStart{phase: journal.PhaseResident, offset: -12})
+func TestTogetherSingleNonzeroAttribution(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: 0}, coreStart{phase: journal.PhaseHasRoom, offset: -12})
 	h.add(&journal.ProfileChange{To: []int{0, -12}})
-	tr := Trial{Regime: machine.R6, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R6)[0].ID, Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 120}
+	tr := Trial{Regime: machine.R6, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R6)[0].ID, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120}
 	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash})
 	a := h.next()
 	f, ok := a.Payload.(*journal.Failure)
@@ -286,25 +286,25 @@ func TestResidentSingleNonzeroAttribution(t *testing.T) {
 	}
 }
 
-func TestRotationStartInvalidatesProjectedGuard(t *testing.T) {
-	h := residentHarness(t, -10)
-	h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: h.s.steps})
-	h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true})
+func TestLapStartInvalidatesProjectedChecking(t *testing.T) {
+	h := hasRoomHarness(t, -10)
+	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: h.s.steps})
+	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
 	closed := projected(h)
-	if closed.Guard == nil || closed.Guard.RotationOpen {
-		t.Fatalf("expected closed rotation: %+v", closed.Guard)
+	if closed.Checking == nil || closed.Checking.LapOpen {
+		t.Fatalf("expected closed lap: %+v", closed.Checking)
 	}
-	h.add(&journal.GuardRotation{Rotation: 2, Event: journal.RotationStart, Steps: h.s.steps})
+	h.add(&journal.CheckingLap{Lap: 2, Event: journal.LapStart, Steps: h.s.steps})
 	open := projected(h)
-	if open.Guard == nil || open.Guard.Rotation != 2 || !open.Guard.RotationOpen {
-		t.Fatalf("new rotation absent from projection: %+v", open.Guard)
+	if open.Checking == nil || open.Checking.Lap != 2 || !open.Checking.LapOpen {
+		t.Fatalf("new lap absent from projection: %+v", open.Checking)
 	}
 }
 
-func TestResidentMultipleMCECoresRemainUnattributed(t *testing.T) {
-	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: 0}, coreStart{phase: journal.PhaseResident, offset: -12})
+func TestTogetherMultipleMCECoresRemainUnattributed(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: 0}, coreStart{phase: journal.PhaseHasRoom, offset: -12})
 	h.add(&journal.ProfileChange{To: []int{0, -12}})
-	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[0].ID, Condition: machine.Resident, Phase: journal.PhaseGuard, DurationS: 120}
+	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[0].ID, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120}
 	intent := h.start(Action{Kind: RunTrial, Trial: tr})
 	left := h.add(&journal.MCE{Core: 0, BankType: machine.LoadStore})
 	right := h.add(&journal.MCE{Core: 1, BankType: machine.LoadStore})
@@ -321,11 +321,11 @@ func TestResidentMultipleMCECoresRemainUnattributed(t *testing.T) {
 
 func commitRerunSource(h *harness, kind string) (Trial, journal.Event) {
 	h.t.Helper()
-	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[1].ID, Condition: machine.Resident, DurationS: 600}
+	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[1].ID, Condition: machine.Together, DurationS: 600}
 	var source journal.Event
 	if kind == "idle" {
-		source = h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Profile: h.s.Profile()})
-		tr.Regime, tr.Workload, tr.Cores, tr.DurationS = machine.R6, machine.Workloads(machine.R6)[0].ID, h.s.ids(), h.s.durations.GuardIdleS
+		source = h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Profile: h.s.Profile()})
+		tr.Regime, tr.Workload, tr.Cores, tr.DurationS = machine.R6, machine.Workloads(machine.R6)[0].ID, h.s.ids(), h.s.durations.CheckingIdleS
 	} else {
 		end := journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 5}
 		if kind == "attributed" {
@@ -337,18 +337,18 @@ func commitRerunSource(h *harness, kind string) (Trial, journal.Event) {
 	if kind != "attributed" {
 		start := h.decide(h.s.huntStartNext()).Data.(*journal.HuntStart)
 		if kind == "direct" {
-			tr.Workload, tr.Cores, tr.DurationS, tr.Condition = machine.Workloads(machine.R7)[2].ID, h.s.ids(), 240, machine.Masked
-			tr.Hunt, tr.Mask = start.Hunt, 1
+			tr.Workload, tr.Cores, tr.DurationS, tr.Condition = machine.Workloads(machine.R7)[2].ID, h.s.ids(), 240, machine.Parked
+			tr.Hunt, tr.Group = start.Hunt, 1
 			h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(1)})
 			source = h.decide(h.next())
 			h.decide(h.next())
 		} else {
 			result, cores := "culprit", []int{0}
-			if kind == "joint" {
-				result, cores = "joint", []int{0, 1}
+			if kind == "combination" {
+				result, cores = "combination", []int{0, 1}
 			}
 			h.add(&journal.HuntEnd{Hunt: start.Hunt, Result: result, Cores: cores}, start.Failure)
-			if kind == "joint" {
+			if kind == "combination" {
 				h.decide(h.next())
 			}
 		}
@@ -366,9 +366,9 @@ func commitRerunSource(h *harness, kind string) (Trial, journal.Event) {
 }
 
 func TestRerunDerivedCommitments(t *testing.T) {
-	for _, kind := range []string{"attributed", "idle", "culprit", "joint", "direct"} {
+	for _, kind := range []string{"attributed", "idle", "culprit", "combination", "direct"} {
 		t.Run(kind, func(t *testing.T) {
-			h := residentHarness(t, -10, -11, -12, -13)
+			h := hasRoomHarness(t, -10, -11, -12, -13)
 			tr, source := commitRerunSource(h, kind)
 			durations := make([]int, h.s.n)
 			for i := range durations {
@@ -379,7 +379,7 @@ func TestRerunDerivedCommitments(t *testing.T) {
 			}
 			for _, duration := range durations {
 				a, ok := h.s.rerunNext()
-				if !ok || !a.Trial.Rerun || a.Trial.Condition != machine.Resident || a.Trial.Regime != tr.Regime || a.Trial.Workload != tr.Workload || !slices.Equal(a.Trial.Cores, tr.Cores) || a.Trial.DurationS != duration {
+				if !ok || !a.Trial.Rerun || a.Trial.Condition != machine.Together || a.Trial.Regime != tr.Regime || a.Trial.Workload != tr.Workload || !slices.Equal(a.Trial.Cores, tr.Cores) || a.Trial.DurationS != duration {
 					t.Fatalf("derived %s rerun: %+v", kind, a)
 				}
 				if diff := cmp.Diff([]int{source.Seq}, a.Cause); diff != "" {
@@ -395,14 +395,14 @@ func TestRerunDerivedCommitments(t *testing.T) {
 }
 
 func TestRerunFIFOAndSharedDuration(t *testing.T) {
-	h := residentHarness(t, -10, -11, -12, -13)
+	h := hasRoomHarness(t, -10, -11, -12, -13)
 	var causes []int
 	for _, tc := range []struct {
 		core     int
 		regime   machine.Regime
 		duration int
 	}{{0, machine.R1, 120}, {1, machine.R2, 600}} {
-		tr := Trial{Core: tc.core, Regime: tc.regime, Workload: machine.Workloads(tc.regime)[1].ID, Condition: machine.Resident, DurationS: tc.duration}
+		tr := Trial{Core: tc.core, Regime: tc.regime, Workload: machine.Workloads(tc.regime)[1].ID, Condition: machine.Together, DurationS: tc.duration}
 		h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(tc.core)})
 		failure := h.decide(h.next())
 		causes = append(causes, failure.Seq)
@@ -431,16 +431,16 @@ func TestRerunFIFOAndSharedDuration(t *testing.T) {
 	}
 }
 
-func TestRepeatedRotationClassesAddStarts(t *testing.T) {
+func TestRepeatedLapClassesAddStarts(t *testing.T) {
 	for _, regime := range machine.Regimes {
 		t.Run(string(regime), func(t *testing.T) {
-			h := residentHarness(t, -10)
+			h := hasRoomHarness(t, -10)
 			catalog := len(machine.Workloads(regime))
 			steps := make([]machine.Regime, catalog+1)
 			for i := range steps {
 				steps[i] = regime
 			}
-			h.add(&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: steps})
+			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: steps})
 			first := h.s.requirements(0)
 			last := h.s.requirements(catalog)
 			for i, q := range last {
@@ -466,7 +466,7 @@ func TestDrainStopsAtTrialBoundary(t *testing.T) {
 	h.decide(a)
 	a, ok = h.s.Drain()
 	back, yes := a.Payload.(*journal.TunerDecision)
-	if !ok || !yes || back.ToOffset != -5 || back.FailedMark == nil || *back.FailedMark != -10 {
+	if !ok || !yes || back.ToOffset != -5 || back.FailurePoint == nil || *back.FailurePoint != -10 {
 		t.Fatalf("drain backoff: %+v", a)
 	}
 	h.decide(a)
@@ -479,8 +479,8 @@ func TestDrainStopsAtTrialBoundary(t *testing.T) {
 }
 
 func TestDrainRejectsUnattributedFailureAtZero(t *testing.T) {
-	h := residentHarness(t, 0, 0)
-	failure := h.add(&journal.Failure{Attribution: journal.Unattributed, Condition: machine.Resident, Profile: []int{0, 0}, Signal: machine.Crash})
+	h := hasRoomHarness(t, 0, 0)
+	failure := h.add(&journal.Failure{Attribution: journal.Unattributed, Condition: machine.Together, Profile: []int{0, 0}, Signal: machine.Crash})
 	a, ok := h.s.Drain()
 	p, yes := a.Payload.(*journal.DeadEnd)
 	if !ok || !yes || p.Condition != journal.DeadEndFailureAtZero || p.Core != nil || cmp.Diff([]int{failure.Seq}, a.Cause) != "" {

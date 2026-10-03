@@ -10,43 +10,43 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func TestMarks(t *testing.T) {
-	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -49, fail: new(-50)}, coreStart{phase: journal.PhaseDone, offset: -49})
-	h.add(&journal.MarkJoint{Mark: 1, Hunt: 1, Members: []journal.JointMember{{Core: 0, Offset: -49}, {Core: 1, Offset: -50}}})
+func TestConstraints(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -49, fail: new(-50)}, coreStart{phase: journal.PhaseAtLimit, offset: -49})
+	h.add(&journal.Combination{Combination: 1, Hunt: 1, Members: []journal.CombinationMember{{Core: 0, Offset: -49}, {Core: 1, Offset: -50}}})
 	tests := []struct {
 		profile []int
 		name    string
-		marked  bool
-	}{{[]int{-49, -49}, "failed mark -50 of core 00", false}, {[]int{-50, -49}, "failed mark -50 of core 00", true}, {[]int{-49, -50}, "joint mark J1", true}}
+		reached bool
+	}{{[]int{-49, -49}, "failure point -50 of core 00", false}, {[]int{-50, -49}, "failure point -50 of core 00", true}, {[]int{-49, -50}, "combination C1", true}}
 	for _, tt := range tests {
 		got, yes := h.s.Reaches(tt.profile)
-		if yes != tt.marked || tt.marked && got != tt.name {
-			t.Errorf("Reaches(%v) = %q,%v, want %q,%v", tt.profile, got, yes, tt.name, tt.marked)
+		if yes != tt.reached || tt.reached && got != tt.name {
+			t.Errorf("Reaches(%v) = %q,%v, want %q,%v", tt.profile, got, yes, tt.name, tt.reached)
 		}
 	}
 	if i, ok := SoleNonzero([]int{0, -10, 0}); !ok || i != 1 {
 		t.Errorf("SoleNonzero singleton = %d,%v", i, ok)
 	}
 	if _, ok := SoleNonzero([]int{-1, -1}); ok {
-		t.Fatal("joint profile has a sole nonzero offset")
+		t.Fatal("combination profile has a sole nonzero offset")
 	}
-	if _, ok := h.s.done(h.s.core(0), []int{-49, -49}); !ok {
-		t.Fatal("failed mark does not make core done")
+	if _, ok := h.s.atLimit(h.s.core(0), []int{-49, -49}); !ok {
+		t.Fatal("failure point does not put the core at its limit")
 	}
 }
 
-func TestResidentCrashNamesTheSoleNonzeroCoreByID(t *testing.T) {
+func TestTogetherCrashNamesTheSoleNonzeroCoreByID(t *testing.T) {
 	h := &harness{t: t, s: New()}
 	infos := []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 16}}, {Core: 8, CCD: 1, CPUs: []int{8, 24}}}
 	begin := h.add(&journal.SessionStart{Schema: journal.Schema, Session: "s", Cores: infos})
 	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: snapshotConfig(config.Default())})
-	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseDone, Reason: "test"}, begin.Seq)
-	h.add(&journal.CorePhase{Core: 8, To: journal.PhaseDone, Offset: -12, Reason: "test"}, begin.Seq)
-	intent := h.add(&journal.TrialIntent{Trial: "0001", Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Cores: []int{0, 8}, Profile: []int{0, -12}})
+	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Reason: "test"}, begin.Seq)
+	h.add(&journal.CorePhase{Core: 8, To: journal.PhaseAtLimit, Offset: -12, Reason: "test"}, begin.Seq)
+	intent := h.add(&journal.TrialIntent{Trial: "0001", Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Cores: []int{0, 8}, Profile: []int{0, -12}})
 	h.add(&journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomeFailure, Signal: machine.Crash}, intent.Seq)
 	a, ok := h.s.Attribution()
 	if !ok {
-		t.Fatal("no attribution for the failed resident trial")
+		t.Fatal("no attribution for the failed together trial")
 	}
 	f := a.Payload.(*journal.Failure)
 	if diff := cmp.Diff([]any{journal.Attributed, new(8), new(-12)}, []any{f.Attribution, f.Core, f.Offset}); diff != "" {
@@ -57,10 +57,10 @@ func TestResidentCrashNamesTheSoleNonzeroCoreByID(t *testing.T) {
 func TestOptimum(t *testing.T) {
 	tests := []struct {
 		name                       string
-		marks                      [][]int
+		combinations               [][]int
 		profile, hi, ranking, want []int
 	}{
-		{"two individually legal deepenings form a joint", [][]int{{0, 1}}, []int{-49, -49}, []int{0, 0}, []int{0, 1}, []int{-50, -49}},
+		{"two individually legal deepenings form a combination", [][]int{{0, 1}}, []int{-49, -49}, []int{0, 0}, []int{0, 1}, []int{-50, -49}},
 		{"three-core backoff counterexample", [][]int{{0, 1}, {0, 2}}, []int{-49, -50, -50}, []int{-49, -49, -50}, []int{0, 1, 2}, []int{-49, -50, -50}},
 		{"four-core cycle global", [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}}, []int{-49, -50, -49, -50}, []int{0, 0, 0, 0}, []int{0, 1, 2, 3}, []int{-50, -49, -50, -49}},
 		{"better-ranked equal-sum later", [][]int{{0, 1}}, []int{-49, -49}, []int{0, 0}, []int{1, 0}, []int{-49, -50}},
@@ -69,11 +69,11 @@ func TestOptimum(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			starts := make([]coreStart, len(tt.profile))
 			for i, x := range tt.profile {
-				starts[i] = coreStart{phase: journal.PhaseDone, offset: x}
+				starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: x}
 			}
 			h := newHarness(t, starts...)
-			for i, pair := range tt.marks {
-				h.add(&journal.MarkJoint{Mark: i + 1, Hunt: i + 1, Members: []journal.JointMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
+			for i, pair := range tt.combinations {
+				h.add(&journal.Combination{Combination: i + 1, Hunt: i + 1, Members: []journal.CombinationMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
 			}
 			if got := h.s.optimum(tt.hi, tt.ranking); cmp.Diff(tt.want, got) != "" {
 				t.Fatalf("optimum (-want +got):\n%s", cmp.Diff(tt.want, got))
@@ -82,11 +82,11 @@ func TestOptimum(t *testing.T) {
 	}
 }
 
-func TestOptimumWithStaircaseJointMarks(t *testing.T) {
-	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -20, fail: new(-27)}, coreStart{phase: journal.PhaseDone, offset: -20, fail: new(-39)}, coreStart{phase: journal.PhaseDone, offset: -20, fail: new(-30)})
+func TestOptimumWithStaircaseCombinations(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20, fail: new(-27)}, coreStart{phase: journal.PhaseAtLimit, offset: -20, fail: new(-39)}, coreStart{phase: journal.PhaseAtLimit, offset: -20, fail: new(-30)})
 	step := []int{-26, -38, -29}
 	for k := range 39 {
-		h.add(&journal.MarkJoint{Mark: k + 1, Hunt: k + 1, Members: []journal.JointMember{{Core: 0, Offset: step[0]}, {Core: 1, Offset: step[1]}, {Core: 2, Offset: step[2]}}})
+		h.add(&journal.Combination{Combination: k + 1, Hunt: k + 1, Members: []journal.CombinationMember{{Core: 0, Offset: step[0]}, {Core: 1, Offset: step[1]}, {Core: 2, Offset: step[2]}}})
 		step[2-k%3]++
 	}
 	var want []int
@@ -108,13 +108,13 @@ func TestOptimumWithStaircaseJointMarks(t *testing.T) {
 
 func TestFourCoreCycleNeedsGlobalYield(t *testing.T) {
 	h := newHarness(t,
-		coreStart{phase: journal.PhaseDone, offset: -49},
-		coreStart{phase: journal.PhaseDone, offset: -50},
-		coreStart{phase: journal.PhaseDone, offset: -49},
-		coreStart{phase: journal.PhaseDone, offset: -50},
+		coreStart{phase: journal.PhaseAtLimit, offset: -49},
+		coreStart{phase: journal.PhaseAtLimit, offset: -50},
+		coreStart{phase: journal.PhaseAtLimit, offset: -49},
+		coreStart{phase: journal.PhaseAtLimit, offset: -50},
 	)
 	for i, pair := range [][2]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}} {
-		h.add(&journal.MarkJoint{Mark: i + 1, Members: []journal.JointMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
+		h.add(&journal.Combination{Combination: i + 1, Members: []journal.CombinationMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
 	}
 	p := h.s.offsets()
 	global := h.s.optimum([]int{0, 0, 0, 0}, h.s.ids())
@@ -181,33 +181,33 @@ func TestDirectFailureAtZero(t *testing.T) {
 		core      *int
 		idle      bool
 	}{
-		{"isolated search", machine.Isolated, []int{0, 0}, new(0), false},
-		{"attributed resident", machine.Resident, []int{0, -10}, new(0), false},
-		{"attributed masked anchor", machine.Masked, []int{0, -10}, new(0), false},
-		{"unattributed resident", machine.Resident, []int{0, 0}, nil, false},
-		{"unattributed idle", machine.Resident, []int{0, 0}, nil, true},
+		{"alone search", machine.Alone, []int{0, 0}, new(0), false},
+		{"attributed together", machine.Together, []int{0, -10}, new(0), false},
+		{"attributed failure at parked offsets", machine.Parked, []int{0, -10}, new(0), false},
+		{"unattributed together", machine.Together, []int{0, 0}, nil, false},
+		{"unattributed idle", machine.Together, []int{0, 0}, nil, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h := residentHarness(t, tc.profile...)
-			if tc.condition == machine.Isolated {
+			h := hasRoomHarness(t, tc.profile...)
+			if tc.condition == machine.Alone {
 				h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: 0})
 			}
-			if tc.condition == machine.Masked {
-				h.add(&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -10})
+			if tc.condition == machine.Parked {
+				h.add(&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -10})
 				h.add(&journal.ProfileChange{From: tc.profile, To: []int{-10, -10}})
-				h.add(&journal.HuntStart{Hunt: 1, Failing: []int{-10, -10}, Anchor: []int{0, 0}, Candidates: []int{0, 1}, Starts: 5, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120})
+				h.add(&journal.HuntStart{Hunt: 1, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Starts: 5, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120})
 			}
 			var failure journal.Event
 			if tc.idle {
-				failure = h.add(&journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Resident, Profile: tc.profile})
+				failure = h.add(&journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Together, Profile: tc.profile})
 			} else {
-				tr := Trial{Core: 0, Offset: 0, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Phase: journal.PhaseGuard, Condition: tc.condition, DurationS: 120, Profile: tc.profile, Cores: []int{0, 1}}
-				if tc.condition == machine.Isolated {
+				tr := Trial{Core: 0, Offset: 0, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Phase: journal.PhaseChecking, Condition: tc.condition, DurationS: 120, Profile: tc.profile, Cores: []int{0, 1}}
+				if tc.condition == machine.Alone {
 					tr.Cores, tr.Regime, tr.Phase = nil, machine.R1, journal.PhaseSearch
 					tr.Workload = machine.Workloads(machine.R1)[0].ID
 				}
-				if tc.condition == machine.Masked {
-					tr.Hunt, tr.Mask = 1, 1
+				if tc.condition == machine.Parked {
+					tr.Hunt, tr.Group = 1, 1
 				}
 				h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, Core: tc.core})
 				failure = h.decide(h.next())
@@ -251,8 +251,8 @@ func TestThermalReasonYieldsToMCEEvidence(t *testing.T) {
 	}
 }
 
-func TestOptimumKeepsFailedMarkOutsideSafeBounds(t *testing.T) {
-	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -10, fail: new(-11)})
+func TestOptimumKeepsFailurePointOutsideSafeBounds(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10, fail: new(-11)})
 	for _, tc := range []struct {
 		hi   int
 		want []int
@@ -263,13 +263,13 @@ func TestOptimumKeepsFailedMarkOutsideSafeBounds(t *testing.T) {
 	}
 }
 
-func TestCarriedZeroMarkStopsBeforeTrial(t *testing.T) {
+func TestCarriedZeroFailurePointStopsBeforeTrial(t *testing.T) {
 	h := newHarness(t, searchAt(0)...)
-	phase := h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: 0, FailedMark: new(0)})
+	phase := h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: 0, FailurePoint: new(0)})
 	a := h.next()
 	p, ok := a.Payload.(*journal.DeadEnd)
 	if !ok || p.Condition != journal.DeadEndFailureAtZero || p.Core == nil || *p.Core != 0 || cmp.Diff([]int{phase.Seq}, a.Cause) != "" {
-		t.Fatalf("zero mark did not stop tuning: %+v", a)
+		t.Fatalf("zero failure point did not stop tuning: %+v", a)
 	}
 }
 
@@ -291,7 +291,7 @@ func TestClassTargetsPreserveHuntAndRerunLookup(t *testing.T) {
 		{"empty target", []int{-10, -11, -12, -13}, "[]", []int{0, 1, 2, 3}, []int{}, 0, 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			h := residentHarness(t, tt.offsets...)
+			h := hasRoomHarness(t, tt.offsets...)
 			k := trialClass{machine.R7, machine.Workloads(machine.R7)[0].ID, tt.key, 120}
 			h.s.queue = []pendingFailure{{seq: 9, failure: &journal.Failure{Trial: "0001"}, profile: tt.offsets, class: k}}
 			start := h.s.huntStartNext().Payload.(*journal.HuntStart)

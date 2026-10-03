@@ -14,8 +14,8 @@ func (s *State) skipKnownFailure(a Action) Action {
 	t := a.Trial
 	profile := t.Profile
 	if len(profile) == 0 {
-		profile = s.guard.profile
-		if t.Condition == machine.Isolated {
+		profile = s.checking.profile
+		if t.Condition == machine.Alone {
 			profile = make([]int, len(s.cores))
 			profile[s.index(t.Core)] = t.Offset
 		}
@@ -34,10 +34,10 @@ func (s *State) skipKnownFailure(a Action) Action {
 		return a
 	}
 	reason := fmt.Sprintf("skipped %s %s %s trial on %s for %ds at profile %v: known failure #%d at an equal-or-shallower profile is not covered by %d newer passes%s", t.Condition, t.Regime, workload, k.cores, t.DurationS, profile, seq, s.n, s.carriedReason([]int{seq}))
-	if t.Condition == machine.Masked {
+	if t.Condition == machine.Parked {
 		h := s.hunt
-		m := h.masks[len(h.masks)-1]
-		return Action{Kind: Decide, Payload: s.makeMask(h, planOf(m.payload), m.payload.Mask, "failure", false, reason), Cause: []int{m.seq, seq}}
+		m := h.groups[len(h.groups)-1]
+		return Action{Kind: Decide, Payload: s.makeGroup(h, planOf(m.payload), m.payload.Group, "failure", false, reason), Cause: []int{m.seq, seq}}
 	}
 	known := s.failureBySeq(seq)
 	if known == nil {
@@ -46,7 +46,7 @@ func (s *State) skipKnownFailure(a Action) Action {
 	failure := *known.failure
 	failure.KnownFailure, failure.Reason, failure.Round = seq, reason, t.Round
 	failure.Condition, failure.Regime = t.Condition, t.Regime
-	if t.Condition == machine.Isolated {
+	if t.Condition == machine.Alone {
 		failure.Attribution, failure.Core = journal.Attributed, new(t.Core)
 		failure.Offset = new(known.profile[s.index(t.Core)])
 	} else if failure.Attribution == journal.Unattributed {

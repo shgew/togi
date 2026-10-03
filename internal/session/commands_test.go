@@ -61,7 +61,7 @@ func TestResetCore(t *testing.T) {
 	}
 	m := resumed(t, dir, small())
 	in.Machine = m
-	if stop := simulate(t, in); stop.Reason != StopRotations {
+	if stop := simulate(t, in); stop.Reason != StopLaps {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	events := readEvents(t, dir)
@@ -71,16 +71,16 @@ func TestResetCore(t *testing.T) {
 	}
 	restart := slices.IndexFunc(events, func(e journal.Event) bool {
 		p, ok := e.Data.(*journal.CorePhase)
-		return ok && p.Core == 1 && p.From == journal.PhaseDone && p.To == journal.PhaseSearch && slices.Equal(e.Cause, []int{events[reset].Seq})
+		return ok && p.Core == 1 && p.From == journal.PhaseAtLimit && p.To == journal.PhaseSearch && slices.Equal(e.Cause, []int{events[reset].Seq})
 	})
 	if restart < 0 {
-		t.Fatal("no done -> search for core 1 citing command.reset")
+		t.Fatal("no at its limit -> search for core 1 citing command.reset")
 	}
-	if c := coreState(t, in, 1); c.Phase != journal.PhaseDone || c.Offset != m.IsolatedEdge(1) {
-		t.Fatalf("core 1 %+v, want done again at its edge %d", c, m.IsolatedEdge(1))
+	if c := coreState(t, in, 1); c.Phase != journal.PhaseAtLimit || c.Offset != m.AloneLimit(1) {
+		t.Fatalf("core 1 %+v, want at its limit again at its solo limit %d", c, m.AloneLimit(1))
 	}
-	if st, _ := readMemState(in.state); st.Guard == nil || st.Guard.CleanRotations == 0 {
-		t.Fatalf("guard %+v, want a qualified rotation again", st.Guard)
+	if st, _ := readMemState(in.state); st.Checking == nil || st.Checking.CleanLaps == 0 {
+		t.Fatalf("checking %+v, want a clean lap again", st.Checking)
 	}
 }
 
@@ -102,7 +102,7 @@ func TestResetAll(t *testing.T) {
 	if p, ok := archived[len(archived)-1].Data.(*journal.SessionArchived); !ok || p.Session != old || path != filepath.Join("archive", old+".jsonl") {
 		t.Fatalf("archive %s ends with %s", path, archived[len(archived)-1].Msg)
 	}
-	if stop := simulate(t, simInput(dir, resumed(t, dir, small()))); stop.Reason != StopRotations {
+	if stop := simulate(t, simInput(dir, resumed(t, dir, small()))); stop.Reason != StopLaps {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	if s := readEvents(t, dir)[0].Data.(*journal.SessionStart).Session; s == old {

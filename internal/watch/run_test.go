@@ -299,7 +299,7 @@ func TestShowKeyboardDispatch(t *testing.T) {
 	})
 }
 
-// These tests use real pipe reads; only poll's timeout is injected. A poll call acknowledges
+// These tests use real pipe reads; only poll's timeout is injected. A poll call acknowlprobes
 // that the previous read has been decoded, so fragments cannot accidentally coalesce.
 func TestReadKeysFragmentedSequences(t *testing.T) {
 	t.Parallel()

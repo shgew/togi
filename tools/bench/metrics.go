@@ -25,8 +25,8 @@ type result struct {
 	ExitCode                int                        `json:"exit_code"`
 	WallS                   float64                    `json:"wall_s"`
 	SimHours                float64                    `json:"sim_hours"`
-	FirstCleanRotationH     *float64                   `json:"first_clean_rotation_h"`
-	CleanRotations          int                        `json:"clean_rotations"`
+	FirstPassedLapH         *float64                   `json:"first_passed_lap_h"`
+	PassedLaps              int                        `json:"passed_laps"`
 	PartialSeconds          float64                    `json:"partial_seconds"`
 	Crashes                 int                        `json:"crashes"`
 	Trials                  int                        `json:"trials"`
@@ -35,7 +35,7 @@ type result struct {
 	ScenarioRealAnswerShare float64                    `json:"scenario_real_answer_share"`
 	TrialHours              float64                    `json:"trial_hours"`
 	Hunts                   int                        `json:"hunts"`
-	JointMarks              int                        `json:"joint_marks"`
+	Combinations            int                        `json:"combinations"`
 	FinalProfile            []int                      `json:"final_profile"`
 	Depth                   int                        `json:"depth"`
 	HazardPerH              map[machine.Regime]float64 `json:"hazard_per_h"`
@@ -71,31 +71,31 @@ func metrics(events []journal.Event, m *sim.Machine, cores int) result {
 		h := e.Time.Sub(start).Hours()
 		r.SimHours = h
 		switch p := e.Data.(type) {
-		case *journal.GuardRotation:
-			if p.Event == journal.RotationEnd && p.Clean {
-				r.CleanRotations++
-				r.PartialSeconds += partialSeconds[p.Rotation]
-				if r.FirstCleanRotationH == nil {
-					r.FirstCleanRotationH = new(h)
+		case *journal.CheckingLap:
+			if p.Event == journal.LapEnd && p.Passed {
+				r.PassedLaps++
+				r.PartialSeconds += partialSeconds[p.Lap]
+				if r.FirstPassedLapH == nil {
+					r.FirstPassedLapH = new(h)
 				}
 			}
 		case *journal.TrialIntent:
-			if p.RecordOnly && p.Rotation > 0 {
-				partialIntents[p.Trial] = p.Rotation
+			if p.RecordOnly && p.Lap > 0 {
+				partialIntents[p.Trial] = p.Lap
 			}
 		case *journal.CrashDetected:
 			r.Crashes++
 		case *journal.TrialEnd:
 			r.Trials++
 			r.TrialHours += float64(p.DurationS) / 3600
-			if rotation, ok := partialIntents[p.Trial]; ok {
-				partialSeconds[rotation] += float64(p.DurationS)
+			if lap, ok := partialIntents[p.Trial]; ok {
+				partialSeconds[lap] += float64(p.DurationS)
 				delete(partialIntents, p.Trial)
 			}
 		case *journal.HuntStart:
 			r.Hunts++
-		case *journal.MarkJoint:
-			r.JointMarks++
+		case *journal.Combination:
+			r.Combinations++
 		}
 	}
 	for _, trial := range facts.FromEvents(events).Trials {
@@ -143,11 +143,11 @@ func answerShare(real, trials int) float64 {
 	return float64(real) / float64(trials)
 }
 
-func partialSecondsPerRotation(seconds float64, rotations int) float64 {
-	if rotations == 0 {
+func partialSecondsPerPassedLap(seconds float64, passedLaps int) float64 {
+	if passedLaps == 0 {
 		return 0
 	}
-	return seconds / float64(rotations)
+	return seconds / float64(passedLaps)
 }
 
 func setScenarioShares(results []result) {

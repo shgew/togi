@@ -44,24 +44,24 @@ func StyleOf(e Event) Style {
 			return Green
 		case Backoff, Yield:
 			return Yellow
-		case CheckEdge:
+		case CheckSoloLimit:
 		}
 	case *CorePhase:
-		if p.To == PhaseDone || p.To == PhaseResident && p.From == PhaseSearch {
+		if p.To == PhaseAtLimit || p.To == PhaseHasRoom && p.From == PhaseSearch {
 			return GreenBold
 		}
-	case *GuardRotation:
-		if p.Event == RotationEnd && p.Clean && p.Qualifying {
+	case *CheckingLap:
+		if p.Event == LapEnd && p.Passed && p.Full {
 			return GreenBold
 		}
-	case *HuntStart, *MarkJoint, *TunerWarning, *SessionWarning:
+	case *HuntStart, *Combination, *TunerWarning, *SessionWarning:
 		return Yellow
 	case *HuntEnd:
-		if p.Result == "culprit" || p.Result == "joint" || p.Result == "direct" {
+		if p.Result == "culprit" || p.Result == "combination" || p.Result == "direct" {
 			return Green
 		}
-	case *RefineRound:
-		if p.Event == RotationEnd && p.Passed {
+	case *DeepeningRound:
+		if p.Event == LapEnd && p.Passed {
 			return GreenBold
 		}
 	case *BackendRetry:

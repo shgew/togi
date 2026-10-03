@@ -47,8 +47,8 @@ func TestCarriedPayloadsDecodeAcrossReaders(t *testing.T) {
 	source := FactSource{Session: "original", Seq: 304, Build: Build{Version: "0.7.0", Rev: "rev", Schema: 2, Ruleset: 6, Fixes: 2}, Trial: "0304", Time: time.Unix(100, 0).UTC(), Boot: "original-boot", Evidence: 3}
 	class := TrialClass{Regime: machine.R7, Workload: "workload", Cores: []int{3, 7}, DurationS: 120}
 	payloads := []Payload{
-		&TrialCarried{Source: source, Class: class, Condition: machine.Resident, Phase: PhaseGuard, Rerun: true, RecordOnly: true, Profile: []int{-10, -30, -50}, Outcome: OutcomeFailure, Signal: machine.ComputationError, DurationS: 11, Core: new(7)},
-		&FailureCarried{Source: FactSource{Session: source.Session, Seq: 400, Build: source.Build, Time: source.Time, Boot: source.Boot, Evidence: 0}, Class: TrialClass{Regime: machine.R6, Cores: []int{1, 3, 7}}, Signal: machine.Crash, Attribution: Unattributed, Core: new(3), Offset: new(-30), Regime: machine.R6, Condition: machine.Masked, Profile: []int{-10, -30, -50}},
+		&TrialCarried{Source: source, Class: class, Condition: machine.Together, Phase: PhaseChecking, Rerun: true, RecordOnly: true, Profile: []int{-10, -30, -50}, Outcome: OutcomeFailure, Signal: machine.ComputationError, DurationS: 11, Core: new(7)},
+		&FailureCarried{Source: FactSource{Session: source.Session, Seq: 400, Build: source.Build, Time: source.Time, Boot: source.Boot, Evidence: 0}, Class: TrialClass{Regime: machine.R6, Cores: []int{1, 3, 7}}, Signal: machine.Crash, Attribution: Unattributed, Core: new(3), Offset: new(-30), Regime: machine.R6, Condition: machine.Parked, Profile: []int{-10, -30, -50}},
 	}
 	for _, schema := range []int{1, Schema} {
 		for _, payload := range payloads {
@@ -98,8 +98,8 @@ func TestCarriedPayloadsDecodeAcrossReaders(t *testing.T) {
 func TestRecordOnlyMarkerRoundTripAndLegacyDefault(t *testing.T) {
 	for _, recordOnly := range []bool{false, true} {
 		for _, payload := range []Payload{
-			&TrialIntent{Trial: "partial", Cores: []int{3}, Regime: machine.R7, Condition: machine.Resident, Rotation: 2, Step: 4, RecordOnly: recordOnly},
-			&TrialCarried{Source: FactSource{Session: "original", Trial: "partial"}, Class: TrialClass{Regime: machine.R7, Cores: []int{3}}, Condition: machine.Resident, Outcome: OutcomeFailure, RecordOnly: recordOnly},
+			&TrialIntent{Trial: "partial", Cores: []int{3}, Regime: machine.R7, Condition: machine.Together, Lap: 2, Step: 4, RecordOnly: recordOnly},
+			&TrialCarried{Source: FactSource{Session: "original", Trial: "partial"}, Class: TrialClass{Regime: machine.R7, Cores: []int{3}}, Condition: machine.Together, Outcome: OutcomeFailure, RecordOnly: recordOnly},
 		} {
 			t.Run(fmt.Sprintf("%s/record-only-%t", payload.Kind(), recordOnly), func(t *testing.T) {
 				raw, err := encode(Event{Seq: 1, Kind: payload.Kind(), Data: payload})
@@ -131,7 +131,7 @@ func TestRecordOnlyMarkerRoundTripAndLegacyDefault(t *testing.T) {
 	}
 }
 
-func TestGuardStepSnapshotRoundTrip(t *testing.T) {
+func TestCheckingStepSnapshotRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	j, err := Open(dir, Options{Boot: "boot", Now: func() time.Time { return time.Unix(100, 0).UTC() }})
 	if err != nil {
@@ -141,14 +141,14 @@ func TestGuardStepSnapshotRoundTrip(t *testing.T) {
 	if _, err := j.Append(&SessionStart{Schema: Schema, Ruleset: 8, Session: "current"}); err != nil {
 		t.Fatal(err)
 	}
-	snapshot := &GuardStep{Rotation: 2, Step: 4, Profile: []int{-20, -50, -30, -50}, Partials: []GuardPartial{
+	snapshot := &CheckingStep{Lap: 2, Step: 4, Profile: []int{-20, -50, -30, -50}, Partials: []CheckingPartial{
 		{CCD: 1, Cores: []int{3}},
-		{CCD: 5, Cores: []int{}, Reason: "all CCD cores are done"},
+		{CCD: 5, Cores: []int{}, Reason: "all CCD cores are at their limits"},
 	}}
 	if _, err := j.Append(snapshot); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateKindSelector("guard.step"); err != nil {
+	if err := ValidateKindSelector("checking.step"); err != nil {
 		t.Fatal(err)
 	}
 	for _, reader := range []func(string) ([]Event, error){
@@ -162,7 +162,7 @@ func TestGuardStepSnapshotRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if events[1].Kind != KindGuardStep {
+		if events[1].Kind != KindCheckingStep {
 			t.Fatalf("snapshot kind = %s", events[1].Kind)
 		}
 		if diff := cmp.Diff(snapshot, events[1].Data); diff != "" {

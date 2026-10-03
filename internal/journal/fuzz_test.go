@@ -57,7 +57,7 @@ func FuzzParse(f *testing.F) {
 }
 
 func TestParseInputBoundaries(t *testing.T) {
-	header := []byte("{\"seq\":1,\"kind\":\"session.start\",\"schema\":2}\n")
+	header := []byte("{\"seq\":1,\"kind\":\"session.start\",\"schema\":3}\n")
 	unknown := []byte("{\"seq\":2,\"kind\":\"future.observation\",\"evidence\":17}\n")
 	for _, tt := range []struct {
 		name string
@@ -139,11 +139,11 @@ func TestParseShippedSchemas(t *testing.T) {
 }
 
 func TestDamagedJournalReaders(t *testing.T) {
-	header := `{"seq":1,"kind":"session.start","schema":2,"session":"source"}` + "\n"
+	header := `{"seq":1,"kind":"session.start","schema":3,"session":"source"}` + "\n"
 	for _, tc := range []struct{ name, data, diagnostic string }{
 		{"malformed first line", "{\n", "line 1"},
 		{"missing kind", header + `{"seq":2}` + "\n", "event has no kind"},
-		{"wrong first event", `{"seq":1,"kind":"shutdown","schema":2}` + "\n", "first event is shutdown"},
+		{"wrong first event", `{"seq":1,"kind":"shutdown","schema":3}` + "\n", "first event is shutdown"},
 		{"invalid payload", header + `{"seq":2,"kind":"trial.end","duration_s":"bad"}` + "\n", "decode trial.end"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

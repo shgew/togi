@@ -41,11 +41,11 @@ linters:
       - path: '^internal/trial/run\.go$'
         text: '^cognitive complexity [0-9]+ of func `\(\*running\)\.Wait` is high'
         linters: [gocognit]
-      - path: '^internal/tuner/marks\.go$'
+      - path: '^internal/tuner/constraints\.go$'
         text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.optimum` is high'
         linters: [gocognit]
-      - path: '^internal/tuner/guard_state\.go$'
-        text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.projectGuard` is high'
+      - path: '^internal/tuner/checking_state\.go$'
+        text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.projectChecking` is high'
         linters: [gocognit]
       - path: '^internal/tuner/tuner\.go$'
         text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.Fold` is high'

@@ -2,9 +2,9 @@ Usage: togi reset --core <N> | --all
 
 Reset one core, so the next run restarts its search from the baseline, or archive
 the whole session, so the next run starts a new one that carries nothing from it.
-Give exactly one of the two. --core clears its failed mark and every joint mark
-that includes it. --all warns if a configured candidate edge reached a failed
-mark in the archived session; missing or invalid configuration does not prevent
+Give exactly one of the two. --core clears its failure point and every combination
+that includes it. --all warns if a configured candidate solo limit reached a failure
+point in the archived session; missing or invalid configuration does not prevent
 archiving.
 --core refuses a different journal ruleset or schema; --all archives either.
 Both forms refuse unknown event kinds; install the build that wrote them.
@@ -18,7 +18,7 @@ Examples:
 Flags:
   --all                archive the session; the next run starts a new one
   --config <path>      configuration file path for run and reset (default /etc/togi/config.toml)
-  --core <N>           reset core N: clear its failed mark and every joint mark that includes it; restart its search from the baseline
+  --core <N>           reset core N: clear its failure point and every combination that includes it; restart its search from the baseline
 
 Global flags:
   --state-dir <path>   state directory path (default /var/lib/togi)

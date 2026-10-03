@@ -175,7 +175,7 @@ func TestResumeInterruptedDeadEndOutsideTuningBoot(t *testing.T) {
 	if !slices.Equal(resumed, []journal.Kind{journal.KindShutdown}) {
 		t.Fatalf("resume events after dead end: %v", resumed)
 	}
-	if stop := simulate(t, in); stop.Reason != StopRotations {
+	if stop := simulate(t, in); stop.Reason != StopLaps {
 		t.Fatalf("next run did not resume tuning: %+v", stop)
 	}
 }

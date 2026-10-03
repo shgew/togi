@@ -15,30 +15,30 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
-func TestSixteenCoresReachQualifiedRotation(t *testing.T) {
+func TestSixteenCoresReachCleanLap(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	m, err := sim.New(sim.Config{Seed: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Rotations: 1})
+	stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stop.Reason != session.StopRotations {
+	if stop.Reason != session.StopLaps {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	st, err := journal.ReadState(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(st.Cores) != 16 || st.Refine != nil || st.Guard == nil || st.Guard.CleanRotations == 0 {
-		t.Fatalf("state has %d cores, refine %+v, guard %+v", len(st.Cores), st.Refine, st.Guard)
+	if len(st.Cores) != 16 || st.Deepening != nil || st.Checking == nil || st.Checking.CleanLaps == 0 {
+		t.Fatalf("state has %d cores, deepening %+v, checking %+v", len(st.Cores), st.Deepening, st.Checking)
 	}
 	for _, c := range st.Cores {
-		if c.Phase != journal.PhaseDone {
-			t.Errorf("core %d is %s, want done", c.Core, c.Phase)
+		if c.Phase != journal.PhaseAtLimit {
+			t.Errorf("core %d is %s, want at its limit", c.Core, c.Phase)
 		}
 	}
 	if diff := cmp.Diff([]string(nil), m.Violations()); diff != "" {
@@ -48,50 +48,50 @@ func TestSixteenCoresReachQualifiedRotation(t *testing.T) {
 	if err != nil || torn != nil {
 		t.Fatalf("read journal: %v, torn %q", err, torn)
 	}
-	qualifying := false
+	passedFullLap := false
 	parts := map[int]map[int]int{}
-	var marks []journal.MarkJoint
+	var combinations []journal.Combination
 	failed := map[int]int{}
 	for _, e := range events {
 		switch p := e.Data.(type) {
-		case *journal.GuardRotation:
-			if p.Event == journal.RotationEnd && p.Clean && p.Qualifying {
-				qualifying = true
+		case *journal.CheckingLap:
+			if p.Event == journal.LapEnd && p.Passed && p.Full {
+				passedFullLap = true
 			}
 		case *journal.TrialIntent:
-			if p.Regime == machine.R7 && p.Phase == journal.PhaseGuard {
-				if parts[p.Rotation] == nil {
-					parts[p.Rotation] = map[int]int{}
+			if p.Regime == machine.R7 && p.Phase == journal.PhaseChecking {
+				if parts[p.Lap] == nil {
+					parts[p.Lap] = map[int]int{}
 				}
-				parts[p.Rotation][p.DurationS]++
+				parts[p.Lap][p.DurationS]++
 			}
 			for core, at := range failed {
 				if p.Profile[core] <= at {
-					t.Errorf("trial %s reaches failed mark of core %d at %d", p.Trial, core, at)
+					t.Errorf("trial %s reaches failure point of core %d at %d", p.Trial, core, at)
 				}
 			}
-			for _, mark := range marks {
+			for _, combination := range combinations {
 				reaches := true
-				for _, member := range mark.Members {
+				for _, member := range combination.Members {
 					if p.Profile[member.Core] > member.Offset {
 						reaches = false
 						break
 					}
 				}
 				if reaches {
-					t.Errorf("trial %s reaches joint mark J%d", p.Trial, mark.Mark)
+					t.Errorf("trial %s reaches combination C%d", p.Trial, combination.Combination)
 				}
 			}
 		case *journal.Failure:
 			if p.Attribution == journal.Attributed && p.Core != nil && p.Offset != nil {
 				failed[*p.Core] = *p.Offset
 			}
-		case *journal.MarkJoint:
-			marks = append(marks, *p)
+		case *journal.Combination:
+			combinations = append(combinations, *p)
 		}
 	}
-	if !qualifying {
-		t.Error("no clean qualifying rotation end")
+	if !passedFullLap {
+		t.Error("no passed full lap end")
 	}
 	found := false
 	for _, durations := range parts {
@@ -117,7 +117,7 @@ func TestSimulatorRefusesAnotherJournalWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer j.Close()
-	_, err = Simulate(context.Background(), Input{Config: config.Default(), Dir: dir, Machine: m, Rotations: 1})
+	_, err = Simulate(context.Background(), Input{Config: config.Default(), Dir: dir, Machine: m, Laps: 1})
 	if !errors.Is(err, journal.ErrLocked) {
 		t.Fatalf("second writer: %v, want locked journal", err)
 	}

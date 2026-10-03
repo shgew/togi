@@ -40,7 +40,7 @@ func TestPrepareEvidenceEpochTransition(t *testing.T) {
 			w.add(&journal.SessionStart{Schema: journal.Schema, Ruleset: 6, Session: w.session, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}, Evidence: tc.evidence})
 			w.add(&journal.SessionContext{BIOSContext: context})
 			factTrial(w, 0, journal.OutcomePass)
-			failure, mark := factTrial(w, 1, journal.OutcomeFailure)
+			failure, failurePoint := factTrial(w, 1, journal.OutcomeFailure)
 			originalFacts := facts.FromEvents(old.Events()).Facts
 			w.close()
 			path := filepath.Join(dir, "events.jsonl")
@@ -104,8 +104,8 @@ func TestPrepareEvidenceEpochTransition(t *testing.T) {
 			if diff := cmp.Diff(want, c.Facts); diff != "" {
 				t.Fatalf("upgrade must retain failure provenance and discard old-epoch pass (-want +got):\n%s", diff)
 			}
-			if c.Facts[0].Session != failure.session || c.Facts[0].Seq != failure.seq || len(c.Cores) != 2 || c.Cores[1].FailedMark == nil || *c.Cores[1].FailedMark != -30 || c.Cores[1].MarkSeq != mark {
-				t.Fatalf("failure and failed mark not preserved: %+v", c)
+			if c.Facts[0].Session != failure.session || c.Facts[0].Seq != failure.seq || len(c.Cores) != 2 || c.Cores[1].FailurePoint == nil || *c.Cores[1].FailurePoint != -30 || c.Cores[1].FailurePointSeq != failurePoint {
+				t.Fatalf("failure and failure point not preserved: %+v", c)
 			}
 			archived, err := os.ReadFile(filepath.Join(dir, "archive", w.session+".jsonl"))
 			if err != nil || !bytes.Equal(before, archived) {

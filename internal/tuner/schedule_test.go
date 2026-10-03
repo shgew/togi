@@ -8,7 +8,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func TestSearchAndEdgeCheck(t *testing.T) {
+func TestSearchAndSoloLimitCheck(t *testing.T) {
 	h := newHarness(t, searchAt(-49)...)
 	first := h.next()
 	if first.Kind != RunTrial || first.Trial.Regime != machine.R1 || first.Trial.DurationS != h.s.durations.SearchTrialS {
@@ -33,12 +33,12 @@ func TestSearchAndEdgeCheck(t *testing.T) {
 		}
 		h.trial(a, passed)
 	}
-	edge := h.next()
-	d, ok = edge.Payload.(*journal.TunerDecision)
-	if !ok || d.Decision != journal.CheckEdge || d.ToOffset != -50 || len(d.Workloads) != 2 {
-		t.Fatalf("edge %+v", edge)
+	soloLimit := h.next()
+	d, ok = soloLimit.Payload.(*journal.TunerDecision)
+	if !ok || d.Decision != journal.CheckSoloLimit || d.ToOffset != -50 || len(d.Workloads) != 2 {
+		t.Fatalf("solo limit %+v", soloLimit)
 	}
-	h.decide(edge)
+	h.decide(soloLimit)
 	for _, r := range []machine.Regime{machine.R1, machine.R2} {
 		for range h.s.n {
 			a := h.next()
@@ -50,8 +50,8 @@ func TestSearchAndEdgeCheck(t *testing.T) {
 	}
 	a := h.next()
 	phase, ok := a.Payload.(*journal.CorePhase)
-	if !ok || phase.To != journal.PhaseDone || phase.Pass == nil || *phase.Pass != -50 {
-		t.Fatalf("edge completion %+v", a)
+	if !ok || phase.To != journal.PhaseAtLimit || phase.Pass == nil || *phase.Pass != -50 {
+		t.Fatalf("solo limit completion %+v", a)
 	}
 	h.decide(a)
 	profile := h.next()
@@ -75,12 +75,12 @@ func TestSearchFailureAndRetry(t *testing.T) {
 	}
 	h.decide(f)
 	back := h.next()
-	if p, ok := back.Payload.(*journal.TunerDecision); !ok || p.Decision != journal.Backoff || p.ToOffset != -5 || *p.FailedMark != -10 {
+	if p, ok := back.Payload.(*journal.TunerDecision); !ok || p.Decision != journal.Backoff || p.ToOffset != -5 || *p.FailurePoint != -10 {
 		t.Fatalf("backoff %+v", back)
 	}
 }
 
-func TestDecisionSupersedesIsolatedRetry(t *testing.T) {
+func TestDecisionSupersedesAloneRetry(t *testing.T) {
 	h := newHarness(t, searchAt(-10)...)
 	h.trial(h.next(), unsure)
 	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -5})
@@ -90,49 +90,49 @@ func TestDecisionSupersedesIsolatedRetry(t *testing.T) {
 	}
 }
 
-func TestSearchSkipsResidentCores(t *testing.T) {
-	h := newHarness(t, coreStart{phase: journal.PhaseDone, offset: -50}, coreStart{phase: journal.PhaseSearch, offset: -10})
+func TestSearchSkipsCoresWithRoom(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -50}, coreStart{phase: journal.PhaseSearch, offset: -10})
 	a := h.next()
-	if a.Kind != RunTrial || a.Trial.Core != 1 || a.Trial.Regime != machine.R1 || a.Trial.Condition != machine.Isolated {
-		t.Fatalf("search scheduled resident core: %+v", a)
+	if a.Kind != RunTrial || a.Trial.Core != 1 || a.Trial.Regime != machine.R1 || a.Trial.Condition != machine.Alone {
+		t.Fatalf("search scheduled core with room: %+v", a)
 	}
 }
 
-func TestSeededCandidateEdgeFreezesWorkloads(t *testing.T) {
+func TestSeededCandidateSoloLimitFreezesWorkloads(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseSearch, offset: -20})
 	w1, w2 := machine.Workloads(machine.R1)[1].ID, machine.Workloads(machine.R2)[2].ID
-	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -20, CheckEdge: true, Workloads: []string{w1, w2}})
+	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -20, CheckSoloLimit: true, Workloads: []string{w1, w2}})
 	a := h.next()
 	if a.Kind != RunTrial || a.Trial.Regime != machine.R1 || a.Trial.Workload != w1 {
-		t.Fatalf("seeded edge lost frozen R1 class: %+v", a)
+		t.Fatalf("seeded solo limit lost frozen R1 class: %+v", a)
 	}
 	for range h.s.n {
 		h.trial(h.next(), passed)
 	}
 	a = h.next()
 	if a.Kind != RunTrial || a.Trial.Regime != machine.R2 || a.Trial.Workload != w2 {
-		t.Fatalf("seeded edge lost frozen R2 class: %+v", a)
+		t.Fatalf("seeded solo limit lost frozen R2 class: %+v", a)
 	}
 	for range h.s.n {
 		h.trial(h.next(), passed)
 	}
 	a = h.next()
 	p, ok := a.Payload.(*journal.CorePhase)
-	if !ok || p.To != journal.PhaseResident || p.Pass == nil || *p.Pass != -20 {
-		t.Fatalf("seeded edge did not qualify: %+v", a)
+	if !ok || p.To != journal.PhaseHasRoom || p.Pass == nil || *p.Pass != -20 {
+		t.Fatalf("seeded solo limit did not pass its checks: %+v", a)
 	}
 }
 
-func TestSeededCandidateEdgeAdvancesNextWorkloadPair(t *testing.T) {
+func TestSeededCandidateSoloLimitAdvancesNextWorkloadPair(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseSearch, offset: -20})
-	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -20, CheckEdge: true, Workloads: []string{machine.Workloads(machine.R1)[0].ID, machine.Workloads(machine.R2)[0].ID}})
+	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -20, CheckSoloLimit: true, Workloads: []string{machine.Workloads(machine.R1)[0].ID, machine.Workloads(machine.R2)[0].ID}})
 	h.trial(h.next(), failed)
 	for range 100 {
 		a := h.next()
-		if p, ok := a.Payload.(*journal.TunerDecision); ok && p.Decision == journal.CheckEdge {
+		if p, ok := a.Payload.(*journal.TunerDecision); ok && p.Decision == journal.CheckSoloLimit {
 			want := []string{machine.Workloads(machine.R1)[1].ID, machine.Workloads(machine.R2)[1].ID}
 			if diff := cmp.Diff(want, p.Workloads); diff != "" {
-				t.Fatalf("next candidate edge workloads (-want +got):\n%s", diff)
+				t.Fatalf("next candidate solo limit workloads (-want +got):\n%s", diff)
 			}
 			return
 		}
@@ -142,5 +142,5 @@ func TestSeededCandidateEdgeAdvancesNextWorkloadPair(t *testing.T) {
 			h.decide(a)
 		}
 	}
-	t.Fatal("search never scheduled the next candidate edge")
+	t.Fatal("search never scheduled the next candidate solo limit")
 }
