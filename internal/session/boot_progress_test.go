@@ -184,7 +184,8 @@ func TestTuningBootReasonSurvivesEveryImportBoundary(t *testing.T) {
 			wrap := func(j *journal.Journal) Journal { return j }
 			if tc.kind != "" {
 				wrap = func(j *journal.Journal) Journal {
-					return &bootCleanupJournal{Journal: j, kind: tc.kind, after: tc.after}
+					gate := &appendGate{match: eventKind(tc.kind), after: tc.after, do: func(journal.Event) error { return errKilled }}
+					return &interruptedJournal{Journal: j, gate: gate}
 				}
 			}
 			_, err := stoppedTuningBoot(t, in, wrap)
@@ -361,7 +362,8 @@ func TestTuningBootReasonSurvivesResumedDeadEnd(t *testing.T) {
 			wrap := func(j *journal.Journal) Journal { return j }
 			if tc.failEntry {
 				wrap = func(j *journal.Journal) Journal {
-					return &bootCleanupJournal{Journal: j, kind: journal.KindBootSavedEntry}
+					gate := &appendGate{match: eventKind(journal.KindBootSavedEntry), do: func(journal.Event) error { return errKilled }}
+					return &interruptedJournal{Journal: j, gate: gate}
 				}
 			}
 			stop, err := stoppedTuningBoot(t, in, wrap)
@@ -477,7 +479,8 @@ func TestResumedDeadEndReasonErrorsStopBeforeGRUBHandoff(t *testing.T) {
 			case "lookup":
 				r.in.Journal = &bootReasonLookupFailure{Journal: r.in.Journal, err: failure}
 			case "append":
-				r.in.Journal = &bootCleanupJournal{Journal: r.in.Journal, kind: journal.KindBootLeaveReason}
+				gate := &appendGate{match: eventKind(journal.KindBootLeaveReason), do: func(journal.Event) error { return errKilled }}
+				r.in.Journal = &interruptedJournal{Journal: r.in.Journal, gate: gate}
 				failure = errKilled
 			case "reset":
 				bl.writeErr = map[string]error{tuningboot.CountVariable: failure}
