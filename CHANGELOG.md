@@ -12,6 +12,10 @@ All notable changes to togi are documented in this file. The format is based on 
 
 - `state.json` is written as one compact JSON line instead of indented JSON, so every per-event rewrite marshals and fsyncs about half the bytes; the fields are unchanged, and `jq . state.json` shows it indented ([#296]).
 
+### Fixed
+
+- When `togi run` cannot open its journal after showing the dashboard, it stops the dashboard before printing the error, instead of leaving it drawing as togi exits ([#332]).
+
 ## [0.8.0] - 2026-10-02
 
 ### Added
@@ -408,3 +412,4 @@ All notable changes to togi are documented in this file. The format is based on 
 [#290]: https://github.com/shgew/togi/pull/290
 [#296]: https://github.com/shgew/togi/pull/296
 [#328]: https://github.com/shgew/togi/pull/328
+[#332]: https://github.com/shgew/togi/pull/332
