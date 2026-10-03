@@ -126,7 +126,7 @@ func RenderView(s Snapshot, sc Screen, now time.Time) (string, int) {
 			}
 		}
 	}
-	if sc.Keys {
+	if sc.Keys && sc.Height >= 2 {
 		for len(lines) < sc.Height-2 {
 			lines = append(lines, "")
 		}

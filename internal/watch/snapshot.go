@@ -197,7 +197,9 @@ func (p *projector) fold(e journal.Event) {
 		p.applied[d.Core] = d.Offset
 	case *journal.ProfileRestored:
 		for i, o := range d.Offsets {
-			p.applied[i] = o
+			if i < len(p.st.Cores) {
+				p.applied[p.st.Cores[i].Core] = o
+			}
 		}
 	case *journal.TrialIntent:
 		p.intents[d.Trial] = d

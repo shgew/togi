@@ -80,7 +80,7 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 	case *journal.SessionStart:
 		line.tag, line.text = tagStart, fmt.Sprintf("session started on %d cores", len(d.Cores))
 	case *journal.TrialEnd:
-		return p.trialEnd(line, d, n)
+		return p.trialEnd(line, d)
 	case *journal.Failure:
 		line.tag, line.text, line.tone = failureText(d)
 	case *journal.CrashDetected:
@@ -133,14 +133,14 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 
 // trialEnd tells how a trial ended in plain words; the workload's program and settings stay on the running test's line
 // and in the event log, so a line of what happened fits the frame.
-func (p *projector) trialEnd(line entry, d *journal.TrialEnd, n int) (entry, bool) {
+func (p *projector) trialEnd(line entry, d *journal.TrialEnd) (entry, bool) {
 	in := p.intents[d.Trial]
 	what := "trial " + d.Trial
 	if in != nil {
 		if in.Condition == machine.Isolated && d.Outcome == journal.OutcomePass {
 			return entry{}, false
 		}
-		what = trialWhat(in, n)
+		what = p.trialWhat(in)
 	}
 	switch d.Outcome {
 	case journal.OutcomePass:
@@ -256,8 +256,9 @@ func roundText(d *journal.RefineRound) (string, string, tone) {
 	return tagRound, fmt.Sprintf("#%d stopped: %s", d.Round, vtText(d.Reason)), warnTone
 }
 
-// trialWhat says in plain words what a trial loads and where, such as "heavy vector load on core 07 alone at -32".
-func trialWhat(in *journal.TrialIntent, total int) string {
+// trialWhat says in plain words what a trial loads and where, such as "heavy vector load on core 07 alone at -32". A
+// profile lists offsets in the session's core order, which need not match core IDs.
+func (p *projector) trialWhat(in *journal.TrialIntent) string {
 	what := regimeWords[in.Regime]
 	if what == "" {
 		what = vtText(string(in.Regime))
@@ -266,12 +267,14 @@ func trialWhat(in *journal.TrialIntent, total int) string {
 	if in.Core != nil {
 		cores = []int{*in.Core}
 	}
-	where := "on " + coresText(cores, total)
+	where := "on " + coresText(cores, len(p.st.Cores))
 	switch {
 	case in.Condition == machine.Isolated && in.Offset != nil:
 		where += fmt.Sprintf(" alone at %d", *in.Offset)
-	case len(cores) == 1 && cores[0] < len(in.Profile):
-		where += fmt.Sprintf(" at %d", in.Profile[cores[0]])
+	case len(cores) == 1:
+		if i := slices.IndexFunc(p.st.Cores, func(c journal.CoreState) bool { return c.Core == cores[0] }); i >= 0 && i < len(in.Profile) {
+			where += fmt.Sprintf(" at %d", in.Profile[i])
+		}
 	}
 	return what + " " + where
 }

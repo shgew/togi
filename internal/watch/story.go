@@ -337,7 +337,7 @@ func (s Snapshot) nowLine(t *trial, now time.Time) *nowLine {
 		n.what = fmt.Sprintf("deepening round %d", t.round)
 	case t.condition == machine.Isolated:
 		n.what = "search step"
-		if s.core(t.cores[0]).checking {
+		if len(t.cores) > 0 && s.core(t.cores[0]).checking {
 			n.what = "confirming the limit"
 		}
 	case s.guard != nil && len(s.guard.Steps) > 0:

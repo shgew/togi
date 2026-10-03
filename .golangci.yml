@@ -50,8 +50,5 @@ linters:
       - path: '^internal/tuner/tuner\.go$'
         text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.Fold` is high'
         linters: [gocognit]
-      - path: '^internal/watch/snapshot\.go$'
-        text: '^cognitive complexity [0-9]+ of func `Project` is high'
-        linters: [gocognit]
 formatters:
   enable: [gofmt]

@@ -242,3 +242,17 @@ func TestProjectStoppedShowsTunedOffsets(t *testing.T) {
 		t.Fatalf("a stopped session shows the restored 0 instead of what was found: %+v", s.cores[0])
 	}
 }
+
+func TestProjectSparseCoreIDs(t *testing.T) {
+	t.Parallel()
+	start := &journal.SessionStart{Session: "sparse", Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 1}}, {Core: 8, CCD: 1, CPUs: []int{16, 17}}}}
+	s := Project(dashboardEvents(start,
+		&journal.ProfileRestored{Offsets: []int{-5, -9}},
+		&journal.TrialIntent{Trial: "one", Condition: machine.Resident, Phase: journal.PhaseGuard, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Core: new(8), Profile: []int{-5, -9}, DurationS: 120},
+		&journal.TrialEnd{Trial: "one", Outcome: journal.OutcomePass, DurationS: 120}))
+	got := []string{fmt.Sprintf("core %02d applied %d", s.cores[1].id, s.cores[1].applied), s.history[len(s.history)-1].sentence()}
+	want := []string{"core 08 applied -9", "light load on core 08 at -9, 2 min"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("profiles list offsets in core order, not by core ID (-want +got):\n%s", diff)
+	}
+}
