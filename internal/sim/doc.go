@@ -21,6 +21,12 @@
 // core-local evidence; idle per-core crashes leave no MCE.
 // R3 and R4 follow their load-step schedules only to report SIGSTOP and SIGCONT counts, not to change failure rates.
 //
+// Config.SingleCore opts R1/R2 singleton starts into a smooth loaded-core hazard:
+// exp(LogRate + Core[c] + Workload[id] + Slope*(-offset-25)) failures/second.
+// It replaces that loaded core's edge and flat hazards, not unloaded-core hazards.
+// Isolated and resident profiles share the same loaded-core rule. Missing workload
+// effects are zero; machine files without [single_core] retain their old behavior.
+//
 // A failing core produces one signal, drawn by the Model.Signals weights:
 //   - computation_error, stall, unexpected_exit: the trial ends at the failure time with that signal;
 //   - corrected_mce: a corrected MCE on the core's first logical CPU enters the current boot's kernel log and the

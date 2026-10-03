@@ -28,7 +28,8 @@ type Config struct {
 	// Edges are the hidden edges; nil draws them from Seed.
 	Edges []Edges
 	// Model nil means DefaultModel(); a non-nil model is used verbatim, zero fields included.
-	Model *Model
+	Model      *Model
+	SingleCore *SingleCore
 	// Boots counts the boots before the first; boot numbering and boot IDs continue from it.
 	Boots int
 	// Start is the clock at the first boot; zero means 2026-01-01T00:00:00Z.
@@ -46,6 +47,15 @@ type Edges struct {
 	Idle     *int
 	Workload map[string]int
 	Flat     float64
+}
+
+// SingleCore replaces loaded-core edge hazards for R1 and R2 singleton starts.
+// LogRate is the shared log rate at offset -25; Core and Workload are log-rate effects.
+type SingleCore struct {
+	LogRate  float64            `toml:"log_rate"`
+	Slope    float64            `toml:"slope"`
+	Core     []float64          `toml:"core"`
+	Workload map[string]float64 `toml:"workload"`
 }
 
 type Joint struct {
@@ -199,6 +209,21 @@ func New(cfg Config) (*Machine, error) {
 	}
 	if err := validateSignals(model.Signals); err != nil {
 		return nil, fmt.Errorf("new simulator: %w", err)
+	}
+	if s := cfg.SingleCore; s != nil {
+		if len(s.Core) != cfg.Cores || !finite(s.LogRate) || !finite(s.Slope) || s.Slope < 0 {
+			return nil, errors.New("new simulator: single_core needs one effect per core and finite log_rate and nonnegative slope")
+		}
+		for _, effect := range s.Core {
+			if !finite(effect) {
+				return nil, errors.New("new simulator: single_core core effects must be finite")
+			}
+		}
+		for _, effect := range s.Workload {
+			if !finite(effect) {
+				return nil, errors.New("new simulator: single_core workload effects must be finite")
+			}
+		}
 	}
 	for _, kind := range slices.Sorted(maps.Keys(model.Reset)) {
 		weight := model.Reset[kind]
