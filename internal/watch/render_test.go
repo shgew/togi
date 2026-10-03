@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -49,6 +51,157 @@ func TestDashboardActivityFrames(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			golden(t, "activity-"+tc.name, ansi.Strip(Render(Project(tc.events), tc.width, tc.height, now))+"\n")
+		})
+	}
+}
+
+func TestDashboardNarrowTrackRetainsStages(t *testing.T) {
+	t.Parallel()
+	goal := Project(dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, To: journal.PhaseDone, Offset: -50},
+		&journal.CorePhase{Core: 1, To: journal.PhaseDone, Offset: -50},
+		&journal.CorePhase{Core: 2, To: journal.PhaseDone, Offset: -50},
+		&journal.ProfileChange{To: []int{-50, -50, -50}},
+		&journal.GuardRotation{Rotation: 1, Event: journal.RotationStart, Steps: config.Default().Guard.Rotation},
+		&journal.GuardRotation{Rotation: 1, Event: journal.RotationEnd, Clean: true, Qualifying: true},
+		&journal.TrialIntent{Trial: "watch", Core: new(0), Offset: new(-50), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, DurationS: 120, Condition: machine.Resident, Phase: journal.PhaseGuard, Profile: []int{-50, -50, -50}},
+		&journal.TrialStart{Trial: "watch"}))
+	for _, tc := range []struct {
+		name    string
+		s       Snapshot
+		current string
+	}{
+		{"search", Project(dashboardEvents(dashboardSession(), &journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -5})), "Find limits"},
+		{"guard", Project(dashboardGuardEvents()), "Test together"},
+		{"hunt", Project(dashboardHuntEvents()), "Test together"},
+		{"refine", Project(dashboardRefineEvents()), "Go deeper"},
+		{"goal", goal, "Keep checking"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, width := range []int{17, 37, 47, 57, 67} {
+				lines := track(tc.s.stations(), width)
+				for _, line := range lines {
+					if cells := ansi.StringWidth(line); cells > width {
+						t.Errorf("track line has %d cells, allocated %d: %q", cells, width, ansi.Strip(line))
+					}
+				}
+				frame := ansi.Strip(fit(lines, width, len(lines)+1))
+				for _, label := range []string{"Find limits", "Test together", "Go deeper", "Clean lap", "Keep checking"} {
+					if !strings.Contains(frame, label) {
+						t.Errorf("width %d lost station %q:\n%s", width, label, frame)
+					}
+				}
+				if !strings.Contains(frame, "► "+tc.current) {
+					t.Errorf("width %d lost current marker for %q:\n%s", width, tc.current, frame)
+				}
+				if tc.name != "goal" && !strings.Contains(frame, "○ Clean lap") {
+					t.Errorf("width %d lost goal marker:\n%s", width, frame)
+				}
+				if tc.name == "goal" && !strings.Contains(frame, "■ Clean lap") {
+					t.Errorf("width %d lost reached goal marker:\n%s", width, frame)
+				}
+			}
+			frame := ansi.Strip(Render(tc.s, 50, 60, time.Unix(1100, 0).UTC()))
+			if !strings.Contains(frame, "► "+tc.current) || !strings.Contains(frame, "Clean lap") || !strings.Contains(frame, "Keep checking") {
+				t.Errorf("50-column frame lost stage meaning:\n%s", frame)
+			}
+		})
+	}
+}
+
+func TestDashboardShortMainFramesRetainCoreOffsets(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1100, 0).UTC()
+	for _, tc := range []struct {
+		name    string
+		events  []journal.Event
+		current string
+	}{
+		{"guard", dashboardGuardEvents(), "Test together"},
+		{"hunt", dashboardHuntEvents(), "Test together"},
+		{"refine", dashboardRefineEvents(), "Go deeper"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := Project(tc.events)
+			for _, width := range []int{50, 90} {
+				for _, height := range []int{20, 24} {
+					for _, keys := range []bool{false, true} {
+						sc := Screen{Width: width, Height: height, Keys: keys}
+						rendered, scrolled := RenderView(s, sc, now)
+						frame := ansi.Strip(rendered)
+						if scrolled != 0 {
+							t.Errorf("main frame unexpectedly scrolls: %d", scrolled)
+						}
+						for _, c := range s.cores {
+							offset := fmt.Sprintf("%02d  %3d", c.id, c.applied)
+							if !strings.Contains(frame, offset) {
+								t.Errorf("%dx%d keys=%t hid core offset %q:\n%s", width, height, keys, offset, frame)
+							}
+						}
+						if !strings.Contains(frame, "Clean lap") || !strings.Contains(frame, "Keep checking") || !strings.Contains(frame, "► "+tc.current) {
+							t.Errorf("%dx%d keys=%t lost stage meaning:\n%s", width, height, keys, frame)
+						}
+						if !strings.Contains(frame, s.story(now).headline) {
+							t.Errorf("%dx%d keys=%t lost activity headline:\n%s", width, height, keys, frame)
+						}
+						if s.trial != nil && !strings.Contains(frame, s.story(now).now.what) {
+							t.Errorf("%dx%d keys=%t lost running test:\n%s", width, height, keys, frame)
+						}
+						lines := strings.Split(rendered, "\n")
+						if len(lines) != height-1 {
+							t.Errorf("frame has %d rows, want %d", len(lines), height-1)
+						}
+						for _, line := range lines {
+							if ansi.StringWidth(line) > width-1 {
+								t.Errorf("frame wrote reserved column: %q", line)
+							}
+						}
+					}
+				}
+			}
+		})
+	}
+	s := Project(dashboardGuardEvents())
+	s.cores = nil
+	for id := range 16 {
+		s.cores = append(s.cores, coreView{id: id, ccd: id / 8, phase: journal.PhaseDone, applied: -20, tuned: -20})
+	}
+	frame, _ := RenderView(s, Screen{Width: 90, Height: 24, Keys: true}, now)
+	if !strings.Contains(ansi.Strip(frame), "00  -20") {
+		t.Fatalf("16-core short frame hid all applied offsets:\n%s", ansi.Strip(frame))
+	}
+}
+
+func TestDashboardCoreRowsGroupUniqueSortedCCDs(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		ccds []int
+		want []string
+	}{
+		{"interleaved", []int{0, 1, 0, 1}, []string{"CCD 0", "00", "02", "CCD 1", "01", "03"}},
+		{"reverse CCD IDs", []int{1, 1, 0, 0}, []string{"CCD 0", "02", "03", "CCD 1", "00", "01"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			session := &journal.SessionStart{Session: "topology"}
+			for id, ccd := range tc.ccds {
+				session.Cores = append(session.Cores, machine.CoreInfo{Core: id, CCD: ccd, CPUs: []int{2 * id, 2*id + 1}})
+			}
+			s := Project(dashboardEvents(session))
+			var got []string
+			for _, line := range s.coreRows(frameWidth) {
+				line = strings.TrimSpace(ansi.Strip(line))
+				switch {
+				case line == "":
+				case strings.HasPrefix(line, "CCD "):
+					got = append(got, line[:5])
+				default:
+					got = append(got, line[:2])
+				}
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("CCD/core order (-want +got):\n%s", diff)
+			}
 		})
 	}
 }

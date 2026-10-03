@@ -49,7 +49,8 @@
   
   Coming up
   When the hunt ends, I record its result and move the offsets back past it. Then
-  the failed test reruns 5 times.
+  the failed test needs 5 starts of 2 min, followed by one at its original length
+  if that differs.
   Then the work the failure interrupted continues.
 
   What happened
@@ -63,4 +64,3 @@
     7h12m  limit    core 13 solo limit -10
     7h12m  limit    core 05 solo limit -10
     7h12m  limit    core 12 solo limit -10
-    7h12m  limit    core 04 solo limit -10

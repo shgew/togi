@@ -3,6 +3,7 @@ package watch
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/colorprofile"
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
 
@@ -92,14 +94,19 @@ func Show(ctx context.Context, out, in *os.File, tick <-chan time.Time, frame Fr
 			return fmt.Errorf("read keys: %w", err)
 		}
 		defer func() { _ = term.Restore(int(in.Fd()), state) }()
-		o.keys = readKeys(ctx, in)
+		keys, stop, err := readKeys(ctx, in, unix.Poll)
+		if err != nil {
+			return fmt.Errorf("read keys: %w", err)
+		}
+		o.keys, o.stopKeys = keys, stop
 	}
 	return show(ctx, out, func() (int, int, error) { return term.GetSize(int(out.Fd())) }, tick, winch, profile(out), frame, o)
 }
 
 type options struct {
-	palette bool
-	keys    <-chan key
+	palette  bool
+	keys     <-chan key
+	stopKeys func()
 }
 
 // key is one key press: a printable or control character, or one of the named keys below.
@@ -123,50 +130,148 @@ var csiKeys = map[string]key{
 	"[F": keyEnd, "OF": keyEnd, "[4~": keyEnd, "[8~": keyEnd,
 }
 
-// decodeKeys splits one read from the terminal into keys. An escape sequence becomes its named key, or nothing when
-// it names a key the dashboard ignores; ESC alone is Esc.
+// decodeKeys decodes a complete batch; the stream reader retains unfinished escape sequences.
 func decodeKeys(b []byte) []key {
+	keys, _ := splitKeys(b, true)
+	return keys
+}
+
+func splitKeys(b []byte, final bool) ([]key, int) {
 	var keys []key
-	for i := 0; i < len(b); i++ {
+	for i := 0; i < len(b); {
 		if b[i] != 0x1b {
 			keys = append(keys, key(b[i:i+1]))
+			i++
 			continue
 		}
-		if i+1 == len(b) || b[i+1] != '[' && b[i+1] != 'O' {
+		if i+1 == len(b) {
+			if !final {
+				return keys, i
+			}
 			keys = append(keys, keyEsc)
+			i++
+			continue
+		}
+		if b[i+1] != '[' && b[i+1] != 'O' {
+			keys = append(keys, keyEsc)
+			i++
 			continue
 		}
 		j := i + 2
 		for j < len(b) && (b[j] < 0x40 || b[j] > 0x7e) {
 			j++
 		}
-		if k, ok := csiKeys[string(b[i+1:min(j+1, len(b))])]; ok {
+		if j == len(b) {
+			if !final {
+				return keys, i
+			}
+			return keys, len(b)
+		}
+		if k, ok := csiKeys[string(b[i+1:j+1])]; ok {
 			keys = append(keys, k)
 		}
-		i = j
+		i = j + 1
 	}
-	return keys
+	return keys, len(b)
 }
 
-func readKeys(ctx context.Context, in io.Reader) <-chan key {
-	keys := make(chan key)
+const escapeTimeout = 50 * time.Millisecond
+
+func sendKeys(ctx context.Context, keys chan<- key, batch []key) bool {
+	for _, k := range batch {
+		select {
+		case keys <- k:
+		case <-ctx.Done():
+			return false
+		}
+	}
+	return true
+}
+
+// readKeys polls a private wake pipe alongside input so stopping never closes or changes the caller's file.
+// stop cancels and joins both the reader and its wake callback before releasing their descriptors.
+func readKeys(ctx context.Context, in *os.File, poll func([]unix.PollFd, int) (int, error)) (<-chan key, func(), error) {
+	wake, notify, err := os.Pipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	woken := make(chan struct{})
+	stopWake := context.AfterFunc(ctx, func() {
+		_, _ = notify.Write([]byte{1})
+		close(woken)
+	})
+	keys, done := make(chan key), make(chan struct{})
 	go func() {
-		buf := make([]byte, 64)
-		for {
-			n, err := in.Read(buf)
+		defer close(done)
+		defer close(keys)
+		fds := []unix.PollFd{
+			{Fd: int32(in.Fd()), Events: unix.POLLIN},
+			{Fd: int32(wake.Fd()), Events: unix.POLLIN},
+		}
+		var buf [128]byte
+		used := 0
+		var deadline time.Time
+		for ctx.Err() == nil {
+			timeout := -1
+			if used > 0 {
+				timeout = int((max(time.Until(deadline), 0) + time.Millisecond - 1) / time.Millisecond)
+			}
+			n, err := poll(fds, timeout)
+			if errors.Is(err, unix.EINTR) {
+				continue
+			}
+			if err != nil || ctx.Err() != nil || fds[1].Revents != 0 {
+				return
+			}
+			if n == 0 {
+				if !sendKeys(ctx, keys, decodeKeys(buf[:used])) {
+					return
+				}
+				used = 0
+				continue
+			}
+			if fds[0].Revents&unix.POLLNVAL != 0 {
+				return
+			}
+			if fds[0].Revents&(unix.POLLIN|unix.POLLHUP|unix.POLLERR) == 0 {
+				continue
+			}
+			n, err = unix.Read(int(in.Fd()), buf[used:])
+			if errors.Is(err, unix.EINTR) || errors.Is(err, unix.EAGAIN) {
+				continue
+			}
 			if err != nil {
 				return
 			}
-			for _, k := range decodeKeys(buf[:n]) {
-				select {
-				case keys <- k:
-				case <-ctx.Done():
-					return
-				}
+			if n == 0 {
+				sendKeys(ctx, keys, decodeKeys(buf[:used]))
+				return
+			}
+			batch, consumed := splitKeys(buf[:used+n], false)
+			if !sendKeys(ctx, keys, batch) {
+				return
+			}
+			if used == 0 || consumed > 0 {
+				deadline = time.Now().Add(escapeTimeout)
+			}
+			used = copy(buf[:], buf[consumed:used+n])
+			if used == len(buf) {
+				// An oversized unsupported sequence must not fill the read buffer indefinitely.
+				used = 0
 			}
 		}
 	}()
-	return keys
+	stop := func() {
+		cancel()
+		<-done
+		if !stopWake() {
+			<-woken
+		}
+		_ = wake.Close()
+		_ = notify.Close()
+	}
+	return keys, stop, nil
 }
 
 func run(ctx context.Context, dir string, out io.Writer, size func() (int, int, error), tick <-chan time.Time, winch <-chan os.Signal, p colorprofile.Profile) error {
@@ -175,6 +280,9 @@ func run(ctx context.Context, dir string, out io.Writer, size func() (int, int, 
 }
 
 func show(ctx context.Context, out io.Writer, size func() (int, int, error), tick <-chan time.Time, winch <-chan os.Signal, p colorprofile.Profile, frame Frame, o options) error {
+	if o.stopKeys != nil {
+		defer o.stopKeys()
+	}
 	enter, leave := "\x1b[?25l\x1b[2J", "\x1b[0m\x1b[2J\x1b[H\x1b[?25h"
 	if o.palette {
 		enter, leave = paletteSet()+enter, leave+paletteReset
@@ -217,7 +325,10 @@ func show(ctx context.Context, out io.Writer, size func() (int, int, error), tic
 			return nil
 		case <-tick:
 		case <-winch:
-		case k := <-o.keys:
+		case k, ok := <-o.keys:
+			if !ok {
+				return nil
+			}
 			next, quit := press(sc, k, scrolled)
 			if quit {
 				return nil

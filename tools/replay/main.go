@@ -3,10 +3,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json/jsontext"
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/signal"
 	"strings"
@@ -32,7 +35,7 @@ func run(args []string, out *os.File, errOut io.Writer) error {
 	flags := flag.NewFlagSet("replay", flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	dir := flags.String("state-dir", "", "state directory whose events.jsonl to play")
-	speed := flags.Float64("speed", 300, "simulated seconds per wall-clock second")
+	speed := flags.Float64("speed", 300, "simulated seconds per wall-clock second (finite and positive)")
 	from := flags.Int("from", 1, "start playing at this event `seq`")
 	at := flags.Int("at", 0, "print one frame as of this event `seq` and exit")
 	after := flags.Duration("after", 0, "with --at, how long after that event the frame is drawn")
@@ -43,8 +46,8 @@ func run(args []string, out *os.File, errOut io.Writer) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if *dir == "" || flags.NArg() != 0 || *speed <= 0 {
-		return fmt.Errorf("replay: --state-dir is required and --speed must be positive")
+	if *dir == "" || flags.NArg() != 0 || *speed <= 0 || math.IsNaN(*speed) || math.IsInf(*speed, 0) {
+		return fmt.Errorf("replay: --state-dir is required and --speed must be finite and positive")
 	}
 	events, _, err := journal.Read(*dir)
 	if err != nil {
@@ -90,6 +93,86 @@ func frame(out io.Writer, events []journal.Event, n int, v watch.View, after tim
 	return err
 }
 
+const maxDuration = time.Duration(1<<63 - 1)
+
+type playback struct {
+	events         []journal.Event
+	speed          float64
+	n              int
+	at, gap        time.Duration
+	mono, nextMono bool
+	raw            bytes.Reader
+	decoder        *jsontext.Decoder
+}
+
+func newPlayback(events []journal.Event, n int, speed float64) *playback {
+	p := &playback{events: events, n: n, speed: speed}
+	p.decoder = jsontext.NewDecoder(&p.raw)
+	p.mono = p.hasMono(events[n-1].Raw)
+	p.schedule()
+	return p
+}
+
+// hasMono reads only top-level names: zero is a valid stamp, and nested stamps are not this event's clock.
+func (p *playback) hasMono(raw []byte) bool {
+	p.raw.Reset(raw)
+	p.decoder.Reset(&p.raw)
+	token, err := p.decoder.ReadToken()
+	if err != nil || token.Kind() != '{' {
+		return false
+	}
+	for p.decoder.PeekKind() != '}' {
+		name, err := p.decoder.ReadToken()
+		if err != nil {
+			return false
+		}
+		if name.String() == "mono_ms" {
+			return true
+		}
+		if err := p.decoder.SkipValue(); err != nil {
+			return false
+		}
+	}
+	return false
+}
+
+func (p *playback) schedule() {
+	if p.n == len(p.events) {
+		return
+	}
+	before, after := &p.events[p.n-1], &p.events[p.n]
+	p.nextMono = p.hasMono(after.Raw)
+	p.gap = max(0, after.Time.Sub(before.Time))
+	if before.Boot != "" && before.Boot == after.Boot && p.mono && p.nextMono {
+		p.gap = 0
+		if after.Mono > before.Mono {
+			ms := uint64(after.Mono) - uint64(before.Mono)
+			if ms > uint64(maxDuration/time.Millisecond) {
+				p.gap = maxDuration
+			} else {
+				p.gap = time.Duration(ms) * time.Millisecond
+			}
+		}
+	}
+}
+
+// advance takes elapsed wall time since playback started, not the journal's adjustable wall clock.
+func (p *playback) advance(elapsed time.Duration) (int, time.Time) {
+	scaled := float64(elapsed) * p.speed
+	if scaled >= float64(maxDuration) {
+		elapsed = maxDuration
+	} else {
+		elapsed = time.Duration(scaled)
+	}
+	for p.n < len(p.events) && p.gap <= elapsed-p.at {
+		p.at += p.gap
+		p.n++
+		p.mono = p.nextMono
+		p.schedule()
+	}
+	return p.n, p.events[p.n-1].Time.Add(elapsed - p.at)
+}
+
 func play(out *os.File, events []journal.Event, n int, speed float64) error {
 	if !term.IsTerminal(int(out.Fd())) {
 		return fmt.Errorf("replay: playing needs a terminal; use --at for one frame")
@@ -98,14 +181,12 @@ func play(out *os.File, events []journal.Event, n int, speed float64) error {
 	defer stop()
 	tick := time.NewTicker(250 * time.Millisecond)
 	defer tick.Stop()
-	start, wall := events[n-1].Time, time.Now()
+	p := newPlayback(events, n, speed)
+	wall := time.Now()
 	shown := -1
 	var snap watch.Snapshot
 	return watch.Show(ctx, out, os.Stdin, tick.C, func(sc watch.Screen) (string, int) {
-		clock := start.Add(time.Duration(float64(time.Since(wall)) * speed))
-		for n < len(events) && !events[n].Time.After(clock) {
-			n++
-		}
+		n, clock := p.advance(time.Since(wall))
 		if n != shown {
 			snap, shown = watch.Project(events[:n]), n
 		}

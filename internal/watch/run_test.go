@@ -3,6 +3,8 @@ package watch
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/google/go-cmp/cmp"
+	"golang.org/x/sys/unix"
 )
 
 const terminalEnter = "\x1b[?25l\x1b[2J"
@@ -209,6 +213,398 @@ func TestRunShowsJournalProblemAndRecovery(t *testing.T) {
 		cancel()
 		if err := <-done; err != nil || out.writes[len(out.writes)-1] != terminalLeave {
 			t.Fatalf("recovered watch did not stop cleanly: err=%v writes=%q", err, out.writes)
+		}
+	})
+}
+
+func TestShowKeyboardDispatch(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		keys := make(chan key)
+		tick := make(chan time.Time)
+		out := &terminalOutput{}
+		var screens []Screen
+		scrolled := 20
+		frame := func(sc Screen) (string, int) {
+			screens = append(screens, sc)
+			return fmt.Sprintf("view %d scroll %d", sc.View, sc.Scroll), scrolled
+		}
+		done := make(chan error, 1)
+		go func() {
+			done <- show(ctx, out, func() (int, int, error) { return 80, 12, nil }, tick, nil, colorprofile.ASCII, frame, options{keys: keys})
+		}()
+		check := func(view View, scroll int, clear bool) {
+			t.Helper()
+			synctest.Wait()
+			want := Screen{View: view, Scroll: scroll, Width: 80, Height: 12, Keys: true}
+			if diff := cmp.Diff(want, screens[len(screens)-1]); diff != "" {
+				t.Fatalf("consumer frame (-want +got):\n%s", diff)
+			}
+			text := out.writes[len(out.writes)-1]
+			if strings.HasPrefix(text, "\x1b[2J\x1b[H") != clear {
+				t.Fatalf("view change clear=%t: %q", clear, text)
+			}
+			if !strings.Contains(text, fmt.Sprintf("view %d scroll %d", view, scroll)) {
+				t.Fatalf("consumer frame not drawn: %q", text)
+			}
+		}
+		check(MainView, 0, true)
+		for _, step := range []struct {
+			key    key
+			view   View
+			scroll int
+			clear  bool
+		}{
+			{"?", HelpView, 0, true},
+			{keyDown, HelpView, 1, false},
+			{keyPageDown, HelpView, 5, false},
+			{keyHome, HelpView, 0, false},
+			{keyEnd, HelpView, 20, false},
+			{"?", MainView, 0, true},
+			{keyDown, MainView, 0, false},
+			{"L", LogView, -1, true},
+			{keyUp, LogView, 19, false},
+			{keyDown, LogView, -1, false},
+			{keyUp, LogView, 19, false},
+		} {
+			keys <- step.key
+			check(step.view, step.scroll, step.clear)
+		}
+		scrolled = 25
+		tick <- time.Time{}
+		check(LogView, 19, false)
+		keys <- keyEnd
+		check(LogView, -1, false)
+		scrolled = 30
+		tick <- time.Time{}
+		check(LogView, -1, false)
+		keys <- keyEsc
+		check(MainView, 0, true)
+		keys <- "h"
+		check(HelpView, 0, true)
+		keys <- "l"
+		check(LogView, -1, true)
+		keys <- "l"
+		check(MainView, 0, true)
+		frames := len(screens)
+		keys <- "q"
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if len(screens) != frames || out.writes[len(out.writes)-1] != terminalLeave {
+			t.Fatalf("quit redrew or failed cleanup: screens=%v writes=%q", screens, out.writes)
+		}
+	})
+}
+
+// These tests use real pipe reads; only poll's timeout is injected. A poll call acknowledges
+// that the previous read has been decoded, so fragments cannot accidentally coalesce.
+func TestReadKeysFragmentedSequences(t *testing.T) {
+	t.Parallel()
+	for _, sequence := range []struct {
+		bytes string
+		want  key
+	}{
+		{"\x1b[A", keyUp}, {"\x1b[B", keyDown},
+		{"\x1bOA", keyUp}, {"\x1bOB", keyDown},
+		{"\x1b[5~", keyPageUp}, {"\x1b[6~", keyPageDown},
+		{"\x1b[H", keyHome}, {"\x1bOF", keyEnd},
+	} {
+		for split := 1; split < len(sequence.bytes); split++ {
+			t.Run(fmt.Sprintf("%q/%d", sequence.bytes, split), func(t *testing.T) {
+				in, writer, err := os.Pipe()
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer in.Close()
+				defer writer.Close()
+				calls := make(chan int)
+				poll := func(fds []unix.PollFd, timeout int) (int, error) {
+					calls <- timeout
+					return unix.Poll(fds, -1)
+				}
+				keys, stop, err := readKeys(context.Background(), in, poll)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if timeout := <-calls; timeout != -1 {
+					t.Fatalf("idle poll timeout=%d", timeout)
+				}
+				if _, err := io.WriteString(writer, sequence.bytes[:split]); err != nil {
+					t.Fatal(err)
+				}
+				if timeout := <-calls; timeout < 0 || timeout > int(escapeTimeout/time.Millisecond) {
+					t.Fatalf("prefix did not schedule bounded timeout: %d", timeout)
+				}
+				select {
+				case k := <-keys:
+					t.Fatalf("fragment became premature key %q", k)
+				default:
+				}
+				if _, err := io.WriteString(writer, sequence.bytes[split:]); err != nil {
+					t.Fatal(err)
+				}
+				if got := <-keys; got != sequence.want {
+					t.Fatalf("split sequence=%q want %q", got, sequence.want)
+				}
+				<-calls
+				stop()
+				if _, ok := <-keys; ok {
+					t.Fatal("stopped reader left key channel open")
+				}
+			})
+		}
+	}
+}
+
+func TestReadKeysEscapeTimeoutAndEOF(t *testing.T) {
+	t.Parallel()
+	for _, prefix := range []string{"\x1b", "\x1b[", "\x1bO"} {
+		t.Run(fmt.Sprintf("%q", prefix), func(t *testing.T) {
+			in, writer, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer in.Close()
+			defer writer.Close()
+			calls := make(chan int)
+			poll := func(fds []unix.PollFd, timeout int) (int, error) {
+				calls <- timeout
+				if timeout >= 0 {
+					return 0, nil
+				}
+				return unix.Poll(fds, -1)
+			}
+			keys, stop, err := readKeys(context.Background(), in, poll)
+			if err != nil {
+				t.Fatal(err)
+			}
+			<-calls
+			if _, err := io.WriteString(writer, prefix); err != nil {
+				t.Fatal(err)
+			}
+			if timeout := <-calls; timeout < 0 || timeout > 50 {
+				t.Fatalf("escape timeout=%d", timeout)
+			}
+			if prefix == "\x1b" {
+				if got := <-keys; got != keyEsc {
+					t.Fatalf("standalone escape=%q", got)
+				}
+			}
+			<-calls
+			if _, err := io.WriteString(writer, "j"); err != nil {
+				t.Fatal(err)
+			}
+			if got := <-keys; got != "j" {
+				t.Fatalf("timeout swallowed subsequent key: %q", got)
+			}
+			<-calls
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := <-keys; ok {
+				t.Fatal("EOF did not close keys")
+			}
+			stop()
+		})
+	}
+}
+
+func TestShowJoinsKeyboardOnEveryExit(t *testing.T) {
+	t.Parallel()
+	for _, exit := range []string{"q", "EOF", "cancel", "clear error", "size error", "frame error"} {
+		t.Run(exit, func(t *testing.T) {
+			in, writer, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer in.Close()
+			defer writer.Close()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			polling := make(chan struct{}, 1)
+			poll := func(fds []unix.PollFd, timeout int) (int, error) {
+				polling <- struct{}{}
+				return unix.Poll(fds, timeout)
+			}
+			keys, stop, err := readKeys(ctx, in, poll)
+			if err != nil {
+				t.Fatal(err)
+			}
+			<-polling
+			failure := errors.New("terminal failed")
+			out := &terminalOutput{err: failure}
+			switch exit {
+			case "clear error":
+				out.failAt = 1
+			case "frame error":
+				out.failAt = 2
+			}
+			size := func() (int, int, error) {
+				if exit == "size error" {
+					return 0, 0, failure
+				}
+				return 80, 12, nil
+			}
+			drawn := make(chan struct{})
+			frame := func(sc Screen) (string, int) {
+				close(drawn)
+				return "frame", 0
+			}
+			done := make(chan error, 1)
+			go func() {
+				done <- show(ctx, out, size, nil, nil, colorprofile.ASCII, frame, options{keys: keys, stopKeys: stop})
+			}()
+			switch exit {
+			case "q", "EOF", "cancel":
+				<-drawn
+				switch exit {
+				case "q":
+					_, err = io.WriteString(writer, "q")
+				case "EOF":
+					err = writer.Close()
+				case "cancel":
+					cancel()
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			err = <-done
+			if strings.Contains(exit, "error") {
+				if !errors.Is(err, failure) {
+					t.Fatalf("lost terminal failure: %v", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := <-keys; ok {
+				t.Fatal("show returned before keyboard reader closed")
+			}
+			if exit != "clear error" && out.writes[len(out.writes)-1] != terminalLeave {
+				t.Fatalf("exit failed cursor cleanup: %q", out.writes)
+			}
+			if exit != "EOF" {
+				if _, err := io.WriteString(writer, "remaining input"); err != nil {
+					t.Fatalf("reader closed caller-owned input: %v", err)
+				}
+				buf := make([]byte, len("remaining input"))
+				if _, err := io.ReadFull(in, buf); err != nil || string(buf) != "remaining input" {
+					t.Fatalf("joined reader consumed subsequent input: %q, %v", buf, err)
+				}
+			}
+		})
+	}
+}
+
+func TestShowFragmentedArrowStream(t *testing.T) {
+	t.Parallel()
+	for _, sequence := range []string{"\x1b[A", "\x1bOA"} {
+		t.Run(fmt.Sprintf("%q", sequence), func(t *testing.T) {
+			in, writer, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer in.Close()
+			defer writer.Close()
+			calls := make(chan int)
+			stopping := make(chan struct{})
+			poll := func(fds []unix.PollFd, timeout int) (int, error) {
+				select {
+				case calls <- timeout:
+				case <-stopping:
+				}
+				return unix.Poll(fds, -1)
+			}
+			keys, stop, err := readKeys(context.Background(), in, poll)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := &terminalOutput{}
+			frames := make(chan Screen, 1)
+			done := make(chan error, 1)
+			go func() {
+				done <- show(context.Background(), out, func() (int, int, error) { return 80, 12, nil }, nil, nil, colorprofile.ASCII, func(sc Screen) (string, int) {
+					frames <- sc
+					return "frame", 20
+				}, options{keys: keys, stopKeys: stop})
+			}()
+			if sc := <-frames; sc.View != MainView {
+				t.Fatalf("initial screen=%v", sc)
+			}
+			<-calls
+			if _, err := io.WriteString(writer, "L"); err != nil {
+				t.Fatal(err)
+			}
+			if sc := <-frames; sc.View != LogView || sc.Scroll != -1 {
+				t.Fatalf("log did not open following: %v", sc)
+			}
+			<-calls
+			for i := range len(sequence) {
+				if _, err := io.WriteString(writer, sequence[i:i+1]); err != nil {
+					t.Fatal(err)
+				}
+				if i+1 < len(sequence) {
+					<-calls
+					select {
+					case sc := <-frames:
+						t.Fatalf("incomplete arrow changed frame: %v", sc)
+					default:
+					}
+				}
+			}
+			if sc := <-frames; sc.View != LogView || sc.Scroll != 19 {
+				t.Fatalf("byte-fragmented arrow returned from log instead of scrolling: %v", sc)
+			}
+			<-calls
+			close(stopping)
+			if _, err := io.WriteString(writer, "q"); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			if out.writes[len(out.writes)-1] != terminalLeave {
+				t.Fatal("stream quit did not clean up terminal")
+			}
+		})
+	}
+}
+
+func TestReadKeysCancelsBlockedDelivery(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		in, writer, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer in.Close()
+		defer writer.Close()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		ready := make(chan struct{})
+		poll := func(fds []unix.PollFd, timeout int) (int, error) {
+			<-ready
+			fds[0].Revents = unix.POLLIN
+			return 1, nil
+		}
+		keys, stop, err := readKeys(ctx, in, poll)
+		if err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if _, err := io.WriteString(writer, "q"); err != nil {
+			t.Fatal(err)
+		}
+		close(ready)
+		synctest.Wait()
+		// There is no key consumer: the actual pipe read completed and delivery is blocked.
+		cancel()
+		stop()
+		if _, ok := <-keys; ok {
+			t.Fatal("cancellation did not join blocked key delivery")
 		}
 	})
 }

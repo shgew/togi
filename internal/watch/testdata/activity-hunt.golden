@@ -13,6 +13,7 @@
   █  
   █  now  hunt 3, test 4, run 1 of 5
   █  all-core load on all 3 cores (mprime AVX2 36K-248K)
+  █  ██████████████████████████████░░░░░░░░░░  0m31s left
   
   
   ■ Find limits   ► Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
@@ -32,7 +33,8 @@
   
   Coming up
   When the hunt ends, I record its result and move the offsets back past it. Then
-  the failed test reruns 5 times.
+  the failed test needs 5 starts of 2 min, followed by one at its original length
+  if that differs.
   Then the work the failure interrupted continues.
 
   What happened
@@ -40,8 +42,6 @@
     0h00m  crash    all-core load on all 3 cores, rebooted
     0h00m  combo    core 00 at -25 and core 02 at -15 fail together
     0h00m  start    session started on 3 cores
-
-
 
 
 

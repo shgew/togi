@@ -312,6 +312,13 @@ func (s *State) attributedDecision(c *core, f *journal.Failure, seq int) (Action
 	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: phase, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailedMark: new(fail), Reason: reason}, Cause: []int{cause}}, true
 }
 
+func (s *State) RerunDuration() int {
+	if len(s.obligations) == 0 {
+		return 0
+	}
+	return s.obligations[0].class.duration
+}
+
 // pendingRerun retires completed checks and retains their carried citations until
 // a rotation or refinement decision consumes them. Fold calls it as evidence,
 // profiles and commitments change, so replay does not depend on calls to Next.

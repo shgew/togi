@@ -1,28 +1,14 @@
    togi   01:28:09  running 1h28m  1 failure  0 crashes
 
   █  FINDING LIMITS
-  █  
-  █  I'm finding each core's limit, one core at a time. Core 07 runs a light load
-  █  alone at -5 while every other core waits at 0, so a failure can only be its
-  █  own.
-  █  
-  █  So far it passed down to 0 and hasn't failed yet. If this step passes, it
-  █  goes 5 counts deeper.
-  █  
-  █  0 of 16 cores have found their limit, 16 to go.
-  █  
   █  now  search step
   █  light load on core 07 alone at -5 (y-cruncher BKT + SFTv4)
   █  ██████████████████░░░░░░░░░░░░░░░░░░░░░░  0m50s left
-  
-  
   ► Find limits   ○ Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
   0/16 cores      all together    after a         the goal        until stopped
                                   clean lap                       
-  
    HUNT      no hunt running
-  
   
   CCD 0                                -10       -20       -30       -40       -50
   00    0  searching            ░░░░░·············································
@@ -30,3 +16,17 @@
   02    0  searching            ░░░░░·············································
   03    0  searching            ░░░░░·············································
   04    0  searching            ░░░░░·············································
+  05    0  searching            ░░░░░·············································
+  06    0  searching            ░░░░░·············································
+► 07   -5  searching            █████·············································
+
+  CCD 1                                -10       -20       -30       -40       -50
+  08    0  searching            ░░░░░·············································
+  09    0  searching            ░░░░░·············································
+  10    0  searching            ░░░░░·············································
+  11    0  searching            ░░░░░·············································
+  12    0  searching            ░░░░░·············································
+  13    0  searching            ░░░░░·············································
+  14    0  searching            ····▌·············································
+  15    0  searching            ··················································
+  

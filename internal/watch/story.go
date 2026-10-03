@@ -54,6 +54,11 @@ func (s Snapshot) story(now time.Time) story {
 	switch {
 	case t == nil:
 		st = s.idleStory()
+	case !t.hasStarted:
+		st = story{headline: s.headline(), tone: plainTone, paragraphs: []string{
+			"I'm preparing the next test. Its intent is recorded, but the workload hasn't started yet.",
+			fmt.Sprintf("Planned: %s on %s for %s.", regimeWords[t.regime], coresText(t.cores, len(s.cores)), duration(t.duration)),
+		}}
 	case t.condition == machine.Isolated:
 		st = s.searchStory(t)
 	case t.condition == machine.Masked:
@@ -76,7 +81,9 @@ func (s Snapshot) story(now time.Time) story {
 }
 
 func (s Snapshot) goal() bool {
-	return s.guard != nil && s.guard.CleanRotations > 0 && s.phase == journal.PhaseGuard
+	return s.guard != nil && s.guard.Qualifying && s.guard.CleanRotations > 0 && s.phase == journal.PhaseGuard &&
+		!s.refinable && s.refine == nil && s.rerunDuration == 0 && len(s.cores) > 0 &&
+		!slices.ContainsFunc(s.cores, func(c coreView) bool { return c.phase != journal.PhaseDone || c.queued })
 }
 
 // currentStep is the number of the lap step running now, counting from 1.
@@ -179,8 +186,12 @@ func (s Snapshot) huntStory(t *trial, now time.Time) story {
 			"If it fails, the cause needs several cores deep at once and I keep narrowing. If it passes, I repeat it at the length of the original test.")
 	case "edge":
 		if m.edge != nil {
+			combination := slices.Clone(m.cores)
+			if !slices.Contains(combination, m.edge.Core) {
+				combination = append(combination, m.edge.Core)
+			}
 			st.paragraphs = append(st.paragraphs,
-				fmt.Sprintf("%s fail only together. Now I'm finding how far core %02d must back off for them to pass: it runs at %d while the others stay at their failing offsets.", capital(suspects), m.edge.Core, m.edge.Offset),
+				fmt.Sprintf("%s fail only together. Now I'm finding how far core %02d must back off for them to pass: it runs at %d while the others stay at their failing offsets.", capital(coreList(combination)), m.edge.Core, m.edge.Offset),
 				fmt.Sprintf("If this passes %d times, core %02d is safe at %d in that combination. If it fails, it has to back off further.", m.needed, m.edge.Core, m.edge.Offset))
 		}
 	default:
@@ -262,21 +273,29 @@ func (s Snapshot) deepenStory() story {
 	st := story{headline: "GOING DEEPER", tone: plainTone}
 	st.paragraphs = append(st.paragraphs, "These offsets passed a clean lap, but some cores may have room left, so I'm trying to win back depth.")
 	if r := s.refine; r != nil {
-		var moves []string
+		var moves, checks []string
 		for i, c := range s.cores {
 			if slices.Contains(r.Cores, c.id) && i < len(r.Profile) {
-				moves = append(moves, fmt.Sprintf("core %02d to %d", c.id, r.Profile[i]))
+				move := "yields"
+				if slices.ContainsFunc(r.Checks, func(check journal.CheckState) bool {
+					return (check.Regime == machine.R1 || check.Regime == machine.R2) && slices.Contains(check.Cores, c.id)
+				}) {
+					move = "goes deeper"
+				}
+				moves = append(moves, fmt.Sprintf("core %02d %s to %d", c.id, move, r.Profile[i]))
 			}
 		}
 		if len(moves) > 0 {
-			st.paragraphs = append(st.paragraphs, fmt.Sprintf("Round %d moves %s. Each moved core has to pass %d light and %d heavy runs alone, then the all-core tests that include it.", r.Round, strings.Join(moves, ", "), s.starts, s.starts))
+			st.paragraphs = append(st.paragraphs, fmt.Sprintf("Round %d: %s. The whole proposed profile stays applied during the checks; yielded cores don't need their own checks.", r.Round, strings.Join(moves, ", ")))
 		}
 		done, total := 0, 0
 		for _, c := range r.Checks {
 			done += min(c.Passes, c.Needed)
 			total += c.Needed
+			checks = append(checks, fmt.Sprintf("%d %s runs on %s", c.Needed, regimeWords[c.Regime], coreList(c.Cores)))
 		}
 		if total > 0 {
+			st.paragraphs = append(st.paragraphs, "The scheduled checks are "+strings.Join(checks, ", ")+".")
 			st.paragraphs = append(st.paragraphs, fmt.Sprintf("%d of %d runs in this round have passed. If one fails, the round stops and that failure is handled first.", done, total))
 		}
 	}
@@ -284,9 +303,16 @@ func (s Snapshot) deepenStory() story {
 }
 
 func (s Snapshot) rerunStory() story {
-	return story{headline: s.headline(), tone: plainTone, paragraphs: []string{
-		fmt.Sprintf("A failure just moved some offsets back. Now I rerun the test that failed, %d times, to make sure the new offsets hold before the lap goes on.", s.starts),
-	}}
+	text := fmt.Sprintf("A failure just moved some offsets back. Now the failed test needs %d starts of %s.", s.starts, duration(s.startDuration))
+	if s.trial != nil && s.trial.duration != s.startDuration {
+		text = fmt.Sprintf("The initial repeats passed. Now I rerun the failed test once at its original length, %s, before the interrupted work continues.", duration(s.trial.duration))
+	} else if s.rerunDuration != s.startDuration && s.rerunDuration > 0 {
+		text += fmt.Sprintf(" Then it needs one start of %s, its original length.", duration(s.rerunDuration))
+	}
+	if s.trial == nil || s.trial.duration == s.startDuration {
+		text += " Once those checks pass, the interrupted work continues."
+	}
+	return story{headline: s.headline(), tone: plainTone, paragraphs: []string{text}}
 }
 
 func (s Snapshot) lapStory(t *trial) story {
@@ -304,12 +330,20 @@ func (s Snapshot) lapStory(t *trial) story {
 	if g != nil {
 		steps = len(g.Steps)
 	}
+	coverage := "that covers every kind of load"
+	if !s.guardQualifying {
+		coverage = "from the configured schedule"
+	}
 	st.paragraphs = append(st.paragraphs, fmt.Sprintf(
-		"Every core found its limit on its own. Now they all run at their offsets together, through a lap of %d steps that covers every kind of load.", steps))
+		"Every core found its limit on its own. Now they all run at their offsets together, through a lap of %d steps %s.", steps, coverage))
 	if why, ok := regimeExplained[t.regime]; ok {
 		st.paragraphs = append(st.paragraphs, fmt.Sprintf("This step is %s: %s. It runs %s.", regimeWords[t.regime], why, describeLoad(t, len(s.cores))))
 	}
-	st.paragraphs = append(st.paragraphs, "The goal is a clean lap: every step passes with no failure, on offsets that can't go any deeper.")
+	if s.guardQualifying {
+		st.paragraphs = append(st.paragraphs, "The goal is a clean lap: every step passes with no failure, on offsets that can't go any deeper.")
+	} else {
+		st.paragraphs = append(st.paragraphs, s.missingCoverage())
+	}
 	return st
 }
 
@@ -346,6 +380,10 @@ func (s Snapshot) nowLine(t *trial, now time.Time) *nowLine {
 	if t.rerun {
 		n.what = "rerun after a fix"
 	}
+	if !t.hasStarted {
+		n.what = "preparing " + n.what
+		n.detail = "planned: " + n.detail
+	}
 	if t.hasStarted && t.duration > 0 {
 		elapsed := min(max(now.Sub(t.started), 0), t.duration)
 		n.progress, n.timed, n.left = float64(elapsed)/float64(t.duration), true, t.duration-elapsed
@@ -358,9 +396,9 @@ func (s Snapshot) deadEndStory() story {
 	why := map[journal.DeadEndCondition]string{
 		journal.DeadEndFailureAtZero: "A core failed even at offset 0, so the problem isn't Curve Optimizer. Check the rest of the system before tuning again.",
 		journal.DeadEndSMU:           "The CPU didn't take an offset the way I wrote it, so I can't trust what is applied. Nothing else will be written.",
-		journal.DeadEndNoEvidence:    "The stress programs kept failing to run, so no test can say anything. Check that they are installed and can start.",
+		journal.DeadEndNoEvidence:    "I couldn't obtain usable failure evidence, so I can't continue testing safely. Check the recorded details before tuning again.",
 		journal.DeadEndBootLoop:      "The machine crashed three times in a row before I applied any offsets: something else is crashing it.",
-		journal.DeadEndContainment:   "A stress program ran outside the cores it was given, so I can't tell which core a failure belongs to.",
+		journal.DeadEndContainment:   "I couldn't confirm that the stress programs were contained and cleaned up safely, so tuning can't continue.",
 		journal.DeadEndPreflight:     "A check before tuning failed: this isn't the environment I tune in.",
 		journal.DeadEndDefect:        "An earlier build may have moved offsets deeper than proven. Answer the reset question at a terminal before tuning continues.",
 		journal.DeadEndThermalTrip:   "The CPU shut down from heat. Check the cooling before tuning again.",
@@ -376,11 +414,20 @@ func (s Snapshot) comingUp() []string {
 	switch {
 	case !s.session || s.deadEnd != nil || s.stopped != nil:
 		return nil
+	case s.trial != nil && s.trial.rerun:
+		if s.trial.duration != s.startDuration {
+			return []string{fmt.Sprintf("If this one original-length start of %s passes, the work the failure interrupted continues.", duration(s.trial.duration))}
+		}
+		line := fmt.Sprintf("The failed test needs %d passing starts of %s", s.starts, duration(s.startDuration))
+		if s.rerunDuration != s.startDuration && s.rerunDuration > 0 {
+			line += fmt.Sprintf(", then one start of %s at the original length", duration(s.rerunDuration))
+		}
+		return []string{line + ". Once those checks pass, the work the failure interrupted continues."}
 	case s.phase == journal.PhaseSearch:
 		return s.searchNext()
 	case s.phase == journal.PhaseHunt:
 		return []string{
-			fmt.Sprintf("When the hunt ends, I record its result and move the offsets back past it. Then the failed test reruns %d times.", s.starts),
+			fmt.Sprintf("When the hunt ends, I record its result and move the offsets back past it. Then the failed test needs %d starts of %s, followed by one at its original length if that differs.", s.starts, duration(s.startDuration)),
 			"Then the work the failure interrupted continues.",
 		}
 	case s.phase == journal.PhaseRefine:
@@ -410,6 +457,9 @@ func (s Snapshot) searchNext() []string {
 		}
 		lines = append(lines, "Next in line, taking turns so each core cools down between its own tests: "+strings.Join(ids, ", ")+".")
 	}
+	if !s.guardQualifying {
+		return append(lines, "When every core has its limit, they run together through the configured test schedule.", s.missingCoverage())
+	}
 	return append(lines, "When every core has its limit, they all run together through laps of every kind of test.")
 }
 
@@ -436,10 +486,21 @@ func (s Snapshot) lapNext() []string {
 	if len(parts) > 0 {
 		lines = append(lines, "Rest of this lap: "+strings.Join(parts, ", ")+".")
 	}
+	if !s.guardQualifying {
+		return append(lines, s.missingCoverage(), "Then another lap of the configured schedule, until you stop me.")
+	}
 	if s.goal() {
 		return append(lines, "Then another lap, until you stop me.")
 	}
 	return append(lines, "If the lap finishes clean on offsets that can't go deeper, that's the goal. After that I keep checking.")
+}
+
+func (s Snapshot) missingCoverage() string {
+	text := "This schedule doesn't cover every kind of test, so its laps can't qualify for the clean-lap goal."
+	if len(s.guardMissing) > 0 {
+		text += " Missing: " + strings.Join(s.guardMissing, ", ") + "."
+	}
+	return text
 }
 
 type station struct {
@@ -475,6 +536,10 @@ func (s Snapshot) stations() []station {
 	deeper := station{label: "Go deeper", state: upcoming, sub: []string{"after a", "clean lap"}}
 	clean := station{label: "Clean lap", state: target, sub: []string{"the goal"}}
 	keep := station{label: "Keep checking", state: endless, sub: []string{"until stopped"}}
+	if !s.guardQualifying {
+		clean.state, clean.sub = upcoming, []string{"not covered", "by schedule"}
+		deeper.sub = []string{"needs a full", "clean lap"}
+	}
 	switch {
 	case left > 0:
 		find.state, find.fill = current, float64(total-left)/float64(max(total, 1))

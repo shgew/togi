@@ -35,6 +35,8 @@ func totalDepth(p []int) int {
 
 func (s *State) refineDue() bool { return !s.guard.open && s.refinable() }
 
+func (s *State) Refinable() bool { return s.refinable() }
+
 func (s *State) refinable() bool {
 	if s.hunt != nil || len(s.queue) > 0 || len(s.obligations) > 0 || s.anySearch() || len(s.qualified) == 0 {
 		return false

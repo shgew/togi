@@ -2,8 +2,8 @@
 
   █  I STOPPED
   █  
-  █  The stress programs kept failing to run, so no test can say anything. Check
-  █  that they are installed and can start.
+  █  I couldn't obtain usable failure evidence, so I can't continue testing
+  █  safely. Check the recorded details before tuning again.
   █  
   █  Details: dead end no_evidence: five trials in a row proved nothing
   

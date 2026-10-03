@@ -35,7 +35,8 @@ func dashboardHuntEvents() []journal.Event {
 		&journal.Failure{Trial: "previous", Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Resident, Regime: machine.R7, Profile: []int{-20, -30, -10}},
 		&journal.HuntStart{Hunt: 3, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Anchor: []int{-10, -30, -5}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Starts: 5, StartS: 120, DurationS: 120},
 		&journal.HuntMask{Hunt: 3, Mask: 4, Cores: []int{2}, Profile: []int{-10, -30, -10}, DurationS: 120},
-		&journal.TrialIntent{Trial: "mask", Condition: machine.Masked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Profile: []int{-10, -30, -10}, DurationS: 120, Hunt: 3, Mask: 4})
+		&journal.TrialIntent{Trial: "mask", Condition: machine.Masked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Profile: []int{-10, -30, -10}, DurationS: 120, Hunt: 3, Mask: 4},
+		&journal.TrialStart{Trial: "mask"})
 }
 
 func dashboardRefineEvents() []journal.Event {
@@ -254,5 +255,71 @@ func TestProjectSparseCoreIDs(t *testing.T) {
 	want := []string{"core 08 applied -9", "light load on core 08 at -9, 2 min"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("profiles list offsets in core order, not by core ID (-want +got):\n%s", diff)
+	}
+}
+
+func TestProjectCrashClassification(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name          string
+		crash         *journal.CrashDetected
+		wantCrashes   int
+		wantLastCrash bool
+	}{
+		{name: "offset-related crash", crash: &journal.CrashDetected{PreviousBoot: "boot"}, wantCrashes: 1, wantLastCrash: true},
+		{name: "power reset", crash: &journal.CrashDetected{PreviousBoot: "boot", Inconclusive: true}},
+		{name: "before offsets", crash: &journal.CrashDetected{PreviousBoot: "boot", Stray: true}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := Project(dashboardEvents(dashboardSession(), tt.crash))
+			if s.crashes != tt.wantCrashes || (s.lastCrash != nil) != tt.wantLastCrash {
+				t.Fatalf("crash classification lost: crashes=%d, lastCrash=%v", s.crashes, s.lastCrash)
+			}
+		})
+	}
+}
+
+func TestProjectCrashEndsOnlyItsBootTrial(t *testing.T) {
+	t.Parallel()
+	for _, previousBoot := range []string{"boot", "older"} {
+		t.Run(previousBoot, func(t *testing.T) {
+			t.Parallel()
+			events := dashboardEvents(dashboardSession(),
+				&journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-25), Condition: machine.Isolated, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}},
+				&journal.TrialStart{Trial: "one"},
+				&journal.SMUIntent{Op: journal.SMUSet, Core: new(1), Offset: 0},
+				&journal.CrashDetected{PreviousBoot: previousBoot, InFlight: new(4)})
+			events[len(events)-1].Boot = "next"
+			s := Project(events)
+			running := previousBoot != "boot"
+			if (s.trial != nil) != running || s.cores[0].loaded != running {
+				t.Fatalf("trial from %q after reboot of %q: trial=%+v core=%+v", "boot", previousBoot, s.trial, s.cores[0])
+			}
+		})
+	}
+}
+
+func TestProjectSMUDeadEndKeepsReadback(t *testing.T) {
+	t.Parallel()
+	s := Project(dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -25},
+		&journal.SMUIntent{Op: journal.SMUSet, Core: new(0), Offset: -25},
+		&journal.SMUReadback{Core: 0, Offset: 0},
+		&journal.DeadEnd{Condition: journal.DeadEndSMU, Detail: "core 00 read back 0 instead of -25"},
+		&journal.Shutdown{Reason: journal.ShutdownDeadEnd}))
+	if got := s.cores[0]; got.applied != 0 || got.tuned != -25 {
+		t.Fatalf("SMU dead end replaced hardware readback with desired offset: %+v", got)
+	}
+}
+
+func TestProjectTrialPreparationDoesNotClaimLoad(t *testing.T) {
+	t.Parallel()
+	events := dashboardEvents(dashboardSession(),
+		&journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-25), Condition: machine.Isolated, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}},
+		&journal.SMUReadback{Core: 0, Offset: -25})
+	s := Project(events)
+	if s.trial == nil || s.trial.hasStarted || s.cores[0].loaded || s.cores[0].tested || s.cores[0].applied != -25 {
+		t.Fatalf("applied offsets during preparation are not a running workload: trial=%+v core=%+v", s.trial, s.cores[0])
 	}
 }

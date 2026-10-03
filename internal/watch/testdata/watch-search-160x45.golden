@@ -1,28 +1,14 @@
    togi   01:28:09  running 1h28m  1 failure  0 crashes
 
   █  FINDING LIMITS
-  █  
-  █  I'm finding each core's limit, one core at a time. Core 07 runs a light load
-  █  alone at -5 while every other core waits at 0, so a failure can only be its
-  █  own.
-  █  
-  █  So far it passed down to 0 and hasn't failed yet. If this step passes, it
-  █  goes 5 counts deeper.
-  █  
-  █  0 of 16 cores have found their limit, 16 to go.
-  █  
   █  now  search step
   █  light load on core 07 alone at -5 (y-cruncher BKT + SFTv4)
   █  ██████████████████░░░░░░░░░░░░░░░░░░░░░░  0m50s left
-  
-  
   ► Find limits   ○ Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
   0/16 cores      all together    after a         the goal        until stopped
                                   clean lap                       
-  
    HUNT      no hunt running
-  
   
   CCD 0                                -10       -20       -30       -40       -50
   00    0  searching            ░░░░░·············································
@@ -42,3 +28,17 @@
   12    0  searching            ░░░░░·············································
   13    0  searching            ░░░░░·············································
   14    0  searching            ····▌·············································
+  15    0  searching            ··················································
+  
+  Coming up
+  Next in line, taking turns so each core cools down between its own tests: 15,
+  00, 08, 01, 09, 02, 10, 03, 11, 04, 12, 05, 13, 06, 14.
+  When every core has its limit, they all run together through laps of every kind
+  of test.
+
+  What happened
+    1h27m  backoff  core 14 -5 → -1
+    1h27m  cause    core 14 fails at -5
+    1h27m  fail     light load on core 14 alone at -5, wrong result
+    1h27m  search   core 06 passed -5, next -10
+    1h24m  search   core 13 passed -5, next -10

@@ -21,27 +21,32 @@ const (
 
 // Snapshot is everything one frame shows, projected from the journal.
 type Snapshot struct {
-	problem     error
-	session     bool
-	start       time.Time
-	phase       journal.Phase
-	cores       []coreView
-	trial       *trial
-	inFlight    string
-	hunt        *huntView
-	refine      *journal.RefineState
-	guard       *journal.GuardState
-	order       []int
-	starts      int
-	failures    int
-	crashes     int
-	hunts       int
-	lastFailure *failureView
-	lastCrash   *time.Time
-	deadEnd     *deadEndView
-	stopped     *time.Time
-	history     []entry
-	log         []entry
+	problem         error
+	session         bool
+	start           time.Time
+	phase           journal.Phase
+	cores           []coreView
+	trial           *trial
+	inFlight        string
+	hunt            *huntView
+	refine          *journal.RefineState
+	guard           *journal.GuardState
+	order           []int
+	starts          int
+	startDuration   time.Duration
+	rerunDuration   time.Duration
+	refinable       bool
+	guardQualifying bool
+	guardMissing    []string
+	failures        int
+	crashes         int
+	hunts           int
+	lastFailure     *failureView
+	lastCrash       *time.Time
+	deadEnd         *deadEndView
+	stopped         *time.Time
+	history         []entry
+	log             []entry
 }
 
 func (s Snapshot) Err() error {
@@ -55,6 +60,7 @@ type coreView struct {
 	applied    int
 	pass, fail *int
 	checking   bool
+	queued     bool
 	loaded     bool
 	tested     bool
 	suspect    bool
@@ -107,13 +113,14 @@ type deadEndView struct {
 // entry is one line of what happened, in plain words or as the journal recorded it. A pass line counts the runs of
 // one test it folds together, each lasting each, and the hottest Tctl any of them reached.
 type entry struct {
-	at   time.Time
-	tag  string
-	text string
-	tone tone
-	runs int
-	each time.Duration
-	peak *int
+	at     time.Time
+	tag    string
+	text   string
+	tone   tone
+	runs   int
+	each   time.Duration
+	peak   *int
+	reboot int // CrashDetected source sequence, or zero for other entries.
 }
 
 type tone int
@@ -150,13 +157,22 @@ func Project(events []journal.Event) Snapshot {
 	if st.Session == nil {
 		return Snapshot{}
 	}
+	defaults := config.Default()
 	s := Snapshot{
-		session: true,
-		phase:   journal.Phase(st.Phase),
-		start:   st.Session.Start,
-		guard:   st.Guard,
-		refine:  st.Refine,
-		starts:  config.Default().Evidence.Starts(),
+		session:       true,
+		phase:         journal.Phase(st.Phase),
+		start:         st.Session.Start,
+		guard:         st.Guard,
+		refine:        st.Refine,
+		starts:        defaults.Evidence.Starts(),
+		startDuration: time.Duration(defaults.Durations.StartS) * time.Second,
+		rerunDuration: time.Duration(t.RerunDuration()) * time.Second,
+		refinable:     t.Refinable(),
+	}
+	if s.guard != nil {
+		s.guardQualifying, s.guardMissing = s.guard.Qualifying, s.guard.Missing
+	} else {
+		s.guardQualifying, s.guardMissing = t.GuardCoverage()
 	}
 	p := projector{s: &s, st: &st, intents: map[string]*journal.TrialIntent{}, starts: map[string]time.Time{}, applied: map[int]int{}, checking: map[int]bool{}, failures: map[int]*failureView{}}
 	for _, e := range events {
@@ -167,18 +183,19 @@ func Project(events []journal.Event) Snapshot {
 }
 
 type projector struct {
-	s         *Snapshot
-	st        *journal.State
-	intents   map[string]*journal.TrialIntent
-	starts    map[string]time.Time
-	applied   map[int]int
-	checking  map[int]bool
-	current   *journal.TrialIntent
-	huntStart *journal.HuntStart
-	huntFail  *failureView
-	mask      *journal.HuntMask
-	failures  map[int]*failureView
-	stopped   bool
+	s           *Snapshot
+	st          *journal.State
+	intents     map[string]*journal.TrialIntent
+	starts      map[string]time.Time
+	applied     map[int]int
+	checking    map[int]bool
+	current     *journal.TrialIntent
+	currentBoot string
+	huntStart   *journal.HuntStart
+	huntFail    *failureView
+	mask        *journal.HuntMask
+	failures    map[int]*failureView
+	stopped     bool
 }
 
 func (p *projector) fold(e journal.Event) {
@@ -193,6 +210,9 @@ func (p *projector) fold(e journal.Event) {
 		if ev := d.Config.Evidence; ev.Miss > 0 && ev.Rate > 0 {
 			s.starts = config.Evidence{Miss: ev.Miss, Rate: ev.Rate}.Starts()
 		}
+		if d.Config.Durations.StartS > 0 {
+			s.startDuration = time.Duration(d.Config.Durations.StartS) * time.Second
+		}
 	case *journal.SMUReadback:
 		p.applied[d.Core] = d.Offset
 	case *journal.ProfileRestored:
@@ -204,6 +224,7 @@ func (p *projector) fold(e journal.Event) {
 	case *journal.TrialIntent:
 		p.intents[d.Trial] = d
 		p.current = d
+		p.currentBoot = e.Boot
 	case *journal.TrialEnd:
 		if p.current != nil && p.current.Trial == d.Trial {
 			p.current = nil
@@ -222,11 +243,14 @@ func (p *projector) fold(e journal.Event) {
 		p.failures[e.Seq] = f
 		s.lastFailure = f
 	case *journal.CrashDetected:
+		if p.current != nil && p.currentBoot == d.PreviousBoot {
+			p.current = nil
+		}
 		if !d.Stray && !d.Inconclusive {
 			s.crashes++
+			at := e.Time
+			s.lastCrash = &at
 		}
-		at := e.Time
-		s.lastCrash = &at
 	case *journal.HuntStart:
 		s.hunts++
 		p.huntStart, p.mask = d, nil
@@ -303,19 +327,20 @@ func (p *projector) hunt() {
 
 func (p *projector) coreViews() {
 	s, st := p.s, p.st
+	showReadback := s.stopped == nil && s.deadEnd == nil || s.deadEnd != nil && s.deadEnd.condition == journal.DeadEndSMU
 	for i, c := range st.Cores {
-		v := coreView{id: c.Core, ccd: c.CCD, phase: c.Phase, tuned: c.Offset, applied: c.Offset, pass: c.Pass, fail: c.FailedMark, checking: p.checking[c.Core]}
-		if a, ok := p.applied[c.Core]; ok && s.stopped == nil && s.deadEnd == nil {
+		v := coreView{id: c.Core, ccd: c.CCD, phase: c.Phase, tuned: c.Offset, applied: c.Offset, pass: c.Pass, fail: c.FailedMark, checking: p.checking[c.Core], queued: c.Queued != ""}
+		if a, ok := p.applied[c.Core]; ok && showReadback {
 			v.applied = a
 		}
 		if t := s.trial; t != nil {
-			v.loaded = slices.Contains(t.cores, c.Core)
+			v.loaded = t.hasStarted && slices.Contains(t.cores, c.Core)
 			masked := t.condition == machine.Masked && s.hunt != nil && s.hunt.mask != nil
 			if masked && slices.Contains(s.hunt.candidates, c.Core) {
 				v.suspect = slices.Contains(s.hunt.mask.cores, c.Core)
 				v.parked = !v.suspect && i < len(s.hunt.anchor)
 			}
-			v.tested = v.suspect || v.loaded && !masked
+			v.tested = t.hasStarted && (v.suspect || v.loaded && !masked)
 		}
 		s.cores = append(s.cores, v)
 	}

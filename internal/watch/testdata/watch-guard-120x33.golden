@@ -1,28 +1,14 @@
    togi   10:15:17  running 10h15m  28 failures  7 crashes
 
   █  TESTING TOGETHER
-  █  
-  █  Every core found its limit on its own. Now they all run at their offsets
-  █  together, through a lap of 14 steps that covers every kind of load.
-  █  
-  █  This step is all-core load: heavy work on many cores at once, for power and
-  █  heat. It runs on cores 00-07 at once.
-  █  
-  █  The goal is a clean lap: every step passes with no failure, on offsets that
-  █  can't go any deeper.
-  █  
   █  now  lap 1, step 1 of 14
   █  all-core load on cores 00-07 (mprime AVX2 36K-248K)
   █  █████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░  1m20s left
-  
-  
   ■ Find limits   ► Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
   █████████████   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
   16/16 cores     lap 1           after a         the goal        until stopped
                   step 1 of 14    clean lap                       
-  
    HUNT      no hunt running
-  
   
   CCD 0                                -10       -20       -30       -40       -50
 ► 00  -37  limit found          █████████████████████████████████████▌············
@@ -30,3 +16,17 @@
 ► 02  -35  limit found          ███████████████████████████████████▌··············
 ► 03  -17  limit found          █████████████████▌································
 ► 04  -32  limit found          ████████████████████████████████▌·················
+► 05  -10  limit found          ██████████▌·······································
+► 06  -30  limit found          ██████████████████████████████▌···················
+► 07  -32  limit found          ████████████████████████████████▌·················
+
+  CCD 1                                -10       -20       -30       -40       -50
+  08  -27  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌······················
+  09  -18  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌·······························
+  10  -16  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌·································
+  11   -7  limit found          ▒▒▒▒▒▒▒▌··········································
+  12  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
+  13  -24  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌·························
+  14   -4  limit found          ▒▒▒▒▌·············································
+  15  -39  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌··········
+  

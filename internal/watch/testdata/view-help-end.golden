@@ -2,14 +2,9 @@
 
   TESTING TOGETHER  lap 1, step 1 of 3  ███████████████████░░░░░  0m27s left
 
-│   maxed out             At -50, the deepest Curve Optimizer allows.
-│ 
-│   can go deeper         Nothing known stops it going deeper. The next deepening
-│                         round will try.
-│ 
-│   held back by others   Alone it can go deeper, up to the red tick, but it
-│                         failed together with other cores at their offsets, so it
-│                         backed off.
+│   held back by others   Combination restrictions keep it shallower than its own
+│                         failure point, so it cannot go deeper at the other
+│                         cores' current offsets.
 │ 
 │   suspect               During a hunt: back at the offset it failed with, so
 │                         this test tells whether it is part of the cause.
@@ -20,23 +15,28 @@
 │   solo limit            The deepest offset a core passed with every other core
 │                         at 0.
 │ 
-│   combination           Offsets that fail only when several cores are that deep
-│                         at the same time.
+│   combination           Offsets that must not be reached together. A hunt may
+│                         prove the group fails together, or leave an unresolved
+│                         group restricted as a precaution.
 │ 
-│   lap                   One pass through the list of tests. A clean lap has no
-│                         failure.
+│   lap                   One pass through the configured list of tests. A clean
+│                         lap has passing evidence for each scheduled check at the
+│                         resulting offsets. Only a full lap covers every required
+│                         kind of load.
 │ 
-│   run                   One launch of one test. A step needs several passes in a
-│                         row, because failures are random and one pass proves
-│                         little.
+│   run                   One launch of one test. Confirming a solo limit, a hunt
+│                         group or a deepening move needs several passes in a row.
+│                         Ordinary lap steps can advance after one pass, while
+│                         all-core steps also include repeated short runs and a
+│                         long run.
 │ 
 │ 
 │ The kinds of test
 │   light load               One thread of light work, which lets a core boost
 │                            highest.
-█                            Like a game's main thread, opening apps or loading
-█                            web pages.
-█ 
+│                            Like a game's main thread, opening apps or loading
+│                            web pages.
+│ 
 █   heavy vector load        One thread of heavy vector math, which draws the most
 █                            current.
 █                            Like video encoding, 3D rendering or scientific math
@@ -66,4 +66,4 @@
 █ 
 █ Passing tests can't prove offsets will never fail. They show which tests passed, and more laps catch rarer failures.
 
-  ↑↓ PgUp PgDn  lines 63-125 of 125    ? or Esc back    L event log    q quit
+  ↑↓ PgUp PgDn  lines 76-138 of 138    ? or Esc back    L event log    q quit

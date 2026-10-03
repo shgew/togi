@@ -80,10 +80,13 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 	case *journal.SessionStart:
 		line.tag, line.text = tagStart, fmt.Sprintf("session started on %d cores", len(d.Cores))
 	case *journal.TrialEnd:
-		return p.trialEnd(line, d)
+		return p.trialEnd(line, d, e.Cause)
 	case *journal.Failure:
 		line.tag, line.text, line.tone = failureText(d)
 	case *journal.CrashDetected:
+		if !d.Stray && !d.Inconclusive {
+			line.reboot = e.Seq
+		}
 		switch {
 		case d.Stray:
 			line.tag, line.text, line.tone = tagCrash, "before any offsets were applied, rebooted", warnTone
@@ -91,6 +94,8 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 			line.tag, line.text = tagReset, "power loss or reset, which says nothing about the offsets"
 		case d.InFlight == nil:
 			line.tag, line.text, line.tone = tagCrash, "idle with the offsets applied, rebooted", badTone
+		default:
+			line.tag, line.text, line.tone = tagCrash, "with the offsets applied, rebooted", badTone
 		}
 	case *journal.TunerDecision:
 		line.tag, line.text, line.tone = decisionText(d)
@@ -105,7 +110,13 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 	case *journal.HuntSkipped:
 		line.tag, line.text = tagHunt, "not needed, these offsets already reach a known failure"
 	case *journal.MarkJoint:
-		line.tag, line.text, line.tone = tagCombo, membersText(d.Members, n)+" fail together", warnTone
+		text := membersText(d.Members, n)
+		if d.Fallback {
+			text += " kept as an unresolved, conservative limit"
+		} else {
+			text += " fail together"
+		}
+		line.tag, line.text, line.tone = tagCombo, text, warnTone
 	case *journal.RefineRound:
 		line.tag, line.text, line.tone = roundText(d)
 	case *journal.DeadEnd:
@@ -133,14 +144,16 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 
 // trialEnd tells how a trial ended in plain words; the workload's program and settings stay on the running test's line
 // and in the event log, so a line of what happened fits the frame.
-func (p *projector) trialEnd(line entry, d *journal.TrialEnd) (entry, bool) {
+func (p *projector) trialEnd(line entry, d *journal.TrialEnd, cause []int) (entry, bool) {
 	in := p.intents[d.Trial]
-	what := "trial " + d.Trial
+	var what string
 	if in != nil {
 		if in.Condition == machine.Isolated && d.Outcome == journal.OutcomePass {
 			return entry{}, false
 		}
 		what = p.trialWhat(in)
+	} else {
+		what = "trial " + vtText(d.Trial)
 	}
 	switch d.Outcome {
 	case journal.OutcomePass:
@@ -149,6 +162,14 @@ func (p *projector) trialEnd(line entry, d *journal.TrialEnd) (entry, bool) {
 	case journal.OutcomeFailure:
 		if d.Signal == machine.Crash {
 			line.tag, line.text, line.tone = tagCrash, what+", rebooted", badTone
+			// Recovery appends the trial outcome after the reboot; only an exact cause links their history.
+			for i := len(p.s.history) - 1; i >= 0; i-- {
+				previous := &p.s.history[i]
+				if previous.reboot != 0 && slices.Contains(cause, previous.reboot) {
+					previous.tag, previous.text, previous.tone = line.tag, line.text, line.tone
+					return entry{}, false
+				}
+			}
 		} else {
 			line.tag, line.text, line.tone = tagFail, what+", "+signalText(d.Signal), badTone
 		}
@@ -239,7 +260,7 @@ func huntEndText(d *journal.HuntEnd) (string, string, tone) {
 	case "joint":
 		return tagHunt, fmt.Sprintf("#%d found a combination", d.Hunt), warnTone
 	case "fallback":
-		return tagHunt, fmt.Sprintf("#%d found no single culprit: it takes %s deep at once", d.Hunt, coreList(d.Cores)), warnTone
+		return tagHunt, fmt.Sprintf("#%d unresolved: conservative limit over %s", d.Hunt, coreList(d.Cores)), warnTone
 	case "cancelled":
 		return tagHunt, fmt.Sprintf("#%d cancelled", d.Hunt), plainTone
 	}

@@ -3,6 +3,7 @@ package watch
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -118,7 +119,7 @@ func RenderView(s Snapshot, sc Screen, now time.Time) (string, int) {
 			hint = fmt.Sprintf("↑↓ PgUp PgDn  lines %d-%d of %d    %s", top+1, min(len(body), top+page), len(body), hint)
 		}
 	case MainView:
-		lines = append(lines, s.mainLines(width, now)...)
+		lines = append(lines, s.mainLines(width, room-len(lines), now)...)
 		if rows := room - len(lines) - 1; rows > 2 {
 			lines = append(lines, "")
 			for _, l := range s.historyLines(width, rows) {
@@ -170,21 +171,34 @@ func (s Snapshot) progress(now time.Time) string {
 
 // mainLines is the main view above what happened. Each line carries its own margin, so the core rows can mark the
 // cores under load in it.
-func (s Snapshot) mainLines(width int, now time.Time) []string {
+func (s Snapshot) mainLines(width, height int, now time.Time) []string {
 	var out []string
 	add := func(lines ...string) {
 		for _, l := range lines {
 			out = append(out, pad+l)
 		}
 	}
-	add(s.narrator(width, now)...)
+	st := s.story(now)
 	if !s.session || s.problem != nil {
+		add(narrator(width, st, false)...)
 		return out
 	}
-	add("", "")
-	add(track(s.stations(), width)...)
-	add("", s.huntLamp(), "", "")
-	out = append(out, s.coreRows(width)...)
+	intro := narrator(width, st, false)
+	stages, cores := track(s.stations(), width), s.coreRows(width)
+	if len(intro)+len(stages)+6+len(cores) <= height {
+		add(intro...)
+		add("", "")
+		add(stages...)
+		add("", s.huntLamp(), "", "")
+	} else {
+		// Prose and spacing must not push every applied offset below an unscrollable main view.
+		intro = narrator(width, st, true)
+		rows := max(height-len(stages)-len(cores)-2, 2)
+		add(intro[:min(len(intro), rows)]...)
+		add(stages...)
+		add(s.huntLamp(), "")
+	}
+	out = append(out, cores...)
 	if next := s.comingUp(); len(next) > 0 {
 		add("", grey.Render("Coming up"))
 		for _, n := range next {
@@ -195,24 +209,33 @@ func (s Snapshot) mainLines(width int, now time.Time) []string {
 }
 
 // narrator draws what togi says beside a solid vertical slab, wrapped to the frame.
-func (s Snapshot) narrator(width int, now time.Time) []string {
-	st := s.story(now)
+func narrator(width int, st story, compact bool) []string {
 	tw := width - 3
-	lines := []string{toneStyle(st.tone).Render(st.headline), ""}
-	for i, p := range st.paragraphs {
-		if i > 0 {
-			lines = append(lines, "")
+	lines := []string{toneStyle(st.tone).Render(st.headline)}
+	if !compact {
+		lines = append(lines, "")
+		for i, p := range st.paragraphs {
+			if i > 0 {
+				lines = append(lines, "")
+			}
+			lines = append(lines, wrapStyled(p, tw, textStyle)...)
 		}
-		lines = append(lines, wrapStyled(p, tw, textStyle)...)
 	}
 	if n := st.now; n != nil {
 		detail := textStyle.Render(n.detail)
 		if n.backend != "" {
 			detail += grey.Render(" (" + n.backend + ")")
 		}
-		lines = append(lines, "", grey.Render("now  ")+white.Render(n.what), ansi.Truncate(detail, tw, ""))
+		if !compact {
+			lines = append(lines, "")
+		}
+		lines = append(lines, grey.Render("now  ")+white.Render(n.what), ansi.Truncate(detail, tw, ""))
 		if n.timed {
-			lines = append(lines, n.countdown(40))
+			cells := 40
+			if compact {
+				cells = min(cells, max(tw-12, 1))
+			}
+			lines = append(lines, n.countdown(cells))
 		}
 	}
 	slab := blue.Render("█")
@@ -234,14 +257,15 @@ func (n *nowLine) countdown(cells int) string {
 }
 
 // track draws the stages side by side, each with its name, a progress bar and up to two lines beneath; on a narrow
-// screen, the names on one line and the current stage's bar beneath.
+// screen, the names wrap across lines and the current stage's bar sits beneath.
 func track(stations []station, width int) []string {
 	span := width / len(stations)
 	cells := span - 3
 	compact := cells < 12
 	rows := make([]string, 4)
+	var currentRows []string
 	if compact {
-		rows = rows[:2]
+		rows = rows[:1]
 	}
 	for _, st := range stations {
 		mark, style, fillStyle, fill := "○", grey, grey, 0.0
@@ -257,9 +281,23 @@ func track(stations []station, width int) []string {
 		case upcoming:
 		}
 		if compact {
-			rows[0] += style.Render(mark+" "+st.label) + "  "
+			label := style.Render(mark + " " + st.label)
+			j := len(rows) - 1
+			if rows[j] != "" {
+				if ansi.StringWidth(rows[j])+2+ansi.StringWidth(label) > width {
+					rows = append(rows, "")
+					j++
+				} else {
+					rows[j] += "  "
+				}
+			}
+			rows[j] += label
 			if st.state == current {
-				rows[1] = bar(20, st.fill, lit) + "  " + textStyle.Render(strings.Join(st.sub, ", "))
+				progress := bar(min(20, width), st.fill, lit) + "  " + textStyle.Render(strings.Join(st.sub, ", "))
+				currentRows = []string{progress}
+				if ansi.StringWidth(progress) > width {
+					currentRows = wrapStyled(progress, width, plain)
+				}
 			}
 			continue
 		}
@@ -284,6 +322,7 @@ func track(stations []station, width int) []string {
 			rows[j] += c + strings.Repeat(" ", max(0, span-lipgloss.Width(c)))
 		}
 	}
+	rows = append(rows, currentRows...)
 	for j := range rows {
 		rows[j] = strings.TrimRight(rows[j], " ")
 	}
@@ -319,10 +358,11 @@ func (s Snapshot) coreRows(width int) []string {
 	var out []string
 	var ccds []int
 	for _, c := range s.cores {
-		if len(ccds) == 0 || ccds[len(ccds)-1] != c.ccd {
+		if !slices.Contains(ccds, c.ccd) {
 			ccds = append(ccds, c.ccd)
 		}
 	}
+	slices.Sort(ccds)
 	for i, ccd := range ccds {
 		if i > 0 {
 			out = append(out, "")
