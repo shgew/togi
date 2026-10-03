@@ -34,3 +34,38 @@ name = "misleading-mce"
 machine = "machines/misleading-mce.toml"
 dev = [1, 2, 3, 4]
 holdout = [101, 102, 103, 104]
+
+[[scenario]]
+name = "target-r4-edge"
+machine = "machines/target-r4-edge.toml"
+replay = true
+dev = [1, 2, 3, 4]
+holdout = [101, 102, 103, 104]
+
+[[scenario]]
+name = "target-nonmember-mce"
+machine = "machines/target-nonmember-mce.toml"
+replay = true
+dev = [1, 2, 3, 4]
+holdout = [101, 102, 103, 104]
+
+[[scenario]]
+name = "target-delayed-joint"
+machine = "machines/target-delayed-joint.toml"
+replay = true
+dev = [1, 2, 3, 4]
+holdout = [101, 102, 103, 104]
+
+[[scenario]]
+name = "target-flat-risk"
+machine = "machines/target-flat-risk.toml"
+replay = true
+dev = [1, 2, 3, 4]
+holdout = [101, 102, 103, 104]
+
+[[scenario]]
+name = "target-flat-cost"
+machine = "machines/target-flat-cost.toml"
+replay = true
+dev = [1, 2, 3, 4]
+holdout = [101, 102, 103, 104]

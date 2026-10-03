@@ -20,6 +20,11 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 |`late-onset`|R7 failures that start only after four minutes of load|
 |`idle-edge`|cores that fail idle at shallower offsets than under load (issue #106)|
 |`misleading-mce`|joint crashes that leave an MCE naming one core (issue #114)|
+|`target-r4-edge`|target-fit-derived one-count resident R4 edge gap on core 15; a single medium-duty guard start can miss it (issue #107)|
+|`target-nonmember-mce`|target-fit-derived CCD0 joint crashes deliberately name nonmember core 15; masked hunts can stop at that core's anchor zero (related to issue #114)|
+|`target-delayed-joint`|target-fit-derived CCD1 joint delayed by two minutes; short checks miss it and finite long-start coverage can still conclude unsafe (issue #105)|
+|`target-flat-risk`|target-fit-derived rare offset-independent core-15 hazard that survives nonzero backoffs and finite guard evidence (issue #105)|
+|`target-flat-cost`|target-fit-derived stronger core-15 flat hazard; repeated hunts and one-count backoffs exceed three times the unmodified median (issues #105, #106)|
 
 Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds stay unseen by the change being tuned.
 
@@ -33,7 +38,7 @@ Each simulator subprocess retains parsed events across its simulated reboots and
 
 ## Proving unchanged decisions
 
-For a shape-only change, run `just same [base]`; the base defaults to `origin/main` and is exported locally without fetching or registering a worktree. It builds the base and current simulators and runs each tree's own suite and machine files across every dev and holdout seed (116 sessions today). Sessions pair by scenario, split and seed. Every current and archived journal pairs by its relative path and is compared byte for byte, after removing only `version`, `rev` and the exact build description in `msg` from `session.start` and `config.loaded`. Everything else, including `ruleset`, `schema`, `fixes` and `evidence_epoch`, must match.
+For a shape-only change, run `just same [base]`; the base defaults to `origin/main` and is exported locally without fetching or registering a worktree. It builds the base and current simulators and runs each tree's own suite and machine files across every dev and holdout seed. Sessions pair by scenario, split and seed. Every current and archived journal pairs by its relative path and is compared byte for byte, after removing only `version`, `rev` and the exact build description in `msg` from `session.start` and `config.loaded`. Everything else, including `ruleset`, `schema`, `fixes` and `evidence_epoch`, must match.
 
 Each differing session prints its first differing event's journal path, line number and both normalized lines. Missing sessions or journal files and differing simulator exit codes also count as differences. The command exits 0 when all sessions match and nonzero on a difference, execution error (including a timeout), or invalid arguments. A difference is fixed or split into its own issue, never explained away.
 
