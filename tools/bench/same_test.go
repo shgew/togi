@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,6 +166,7 @@ type fakeSession struct {
 	journal   string
 	noJournal bool
 	exit      int
+	launchErr error
 }
 
 func runFakeSame(t *testing.T, root string, sessions [2][]fakeSession, keep bool) (string, bool, error) {
@@ -182,6 +184,12 @@ func runFakeSame(t *testing.T, root string, sessions [2][]fakeSession, keep bool
 		dir := filepath.Join(root, sameSides[side], s.key.String())
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return simulation{}, err
+		}
+		if err := os.WriteFile(filepath.Join(dir, "sim.log"), []byte("diagnostic log\n"), 0600); err != nil {
+			return simulation{}, err
+		}
+		if s.launchErr != nil {
+			return simulation{}, s.launchErr
 		}
 		if !s.noJournal {
 			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(s.journal), 0600); err != nil {
@@ -279,6 +287,97 @@ func TestSameKeepsOnlyDifferingRuns(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestSameRemovesMatchingRunsBeforeNextPair(t *testing.T) {
+	for _, keep := range []bool{false, true} {
+		t.Run(map[bool]string{false: "remove", true: "keep"}[keep], func(t *testing.T) {
+			root := t.TempDir()
+			keys := []sessionKey{{"first", "dev", 1}, {"second", "dev", 1}}
+			var runs [2][]runSpec
+			for side := range runs {
+				for _, key := range keys {
+					runs[side] = append(runs[side], runSpec{scenario: scenario{Name: key.scenario}, split: key.split, seed: key.seed})
+				}
+			}
+			launch := func(side int, spec runSpec) (simulation, error) {
+				if side == 0 && spec.scenario.Name == "second" {
+					for _, name := range sameSides {
+						dir := filepath.Join(root, name, keys[0].String())
+						_, err := os.Stat(dir)
+						if keep && err != nil {
+							t.Errorf("kept matching directory %s: %v", dir, err)
+						}
+						if !keep && !errors.Is(err, os.ErrNotExist) {
+							t.Errorf("matching directory still present before next pair: %s (err %v)", dir, err)
+						}
+					}
+				}
+				key := sessionKey{spec.scenario.Name, spec.split, spec.seed}
+				dir := filepath.Join(root, sameSides[side], key.String())
+				if err := os.MkdirAll(filepath.Join(dir, "samples"), 0755); err != nil {
+					return simulation{}, err
+				}
+				for _, file := range []string{"events.jsonl", "sim.log", "samples/trial.json"} {
+					if err := os.WriteFile(filepath.Join(dir, file), []byte("{}\n"), 0600); err != nil {
+						return simulation{}, err
+					}
+				}
+				return simulation{dir: dir}, nil
+			}
+			var report bytes.Buffer
+			if different, err := runSame(&report, pairRuns(runs), 1, keep, launch); err != nil || different {
+				t.Fatalf("matching pairs: different=%v, err=%v", different, err)
+			}
+			for _, name := range sameSides {
+				for _, key := range keys {
+					dir := filepath.Join(root, name, key.String())
+					if !keep {
+						if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+							t.Errorf("matching directory retained: %s (err %v)", dir, err)
+						}
+						continue
+					}
+					for _, file := range []string{"events.jsonl", "sim.log", "samples/trial.json"} {
+						if _, err := os.Stat(filepath.Join(dir, file)); err != nil {
+							t.Errorf("kept artifact %s/%s: %v", dir, file, err)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestSameKeepsFailedPairs(t *testing.T) {
+	for failedSide, name := range sameSides {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			failed, matches := sessionKey{"failed", "dev", 1}, sessionKey{"matches", "dev", 1}
+			failure := errors.New("launcher failed")
+			sessions := [2][]fakeSession{
+				{{key: failed, journal: "{}\n"}, {key: matches, journal: "{}\n"}},
+				{{key: failed, journal: "{}\n"}, {key: matches, journal: "{}\n"}},
+			}
+			sessions[failedSide][0].launchErr = failure
+			report, _, err := runFakeSame(t, root, sessions, false)
+			if !errors.Is(err, failure) || !strings.Contains(err.Error(), name+" "+failed.String()) {
+				t.Fatalf("want contextual launch error, got %v", err)
+			}
+			if report != "" {
+				t.Fatalf("failed run must not report equality: %q", report)
+			}
+			for _, side := range sameSides {
+				dir := filepath.Join(root, side, failed.String())
+				if got, err := os.ReadFile(filepath.Join(dir, "sim.log")); err != nil || string(got) != "diagnostic log\n" {
+					t.Errorf("failed-pair diagnostic %s: got %q, err %v", dir, got, err)
+				}
+				if _, err := os.Stat(filepath.Join(root, side, matches.String())); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("matching pair retained after launch failure: %s (err %v)", side, err)
+				}
 			}
 		})
 	}
