@@ -736,6 +736,7 @@ func TestCrashedSeamsRejectOperations(t *testing.T) {
 		"kernel cursor": func() error { _, err := s.Kernel.ReadMCEs(boot, ""); return err },
 		"reset":         func() error { _, err := s.Kernel.ResetReason(boot); return err },
 		"reset after":   func() error { _, err := s.Kernel.ResetReasonAfter(boot); return err },
+		"pstore":        func() error { _, err := s.Kernel.SavedPstore(boot); return err },
 		"start":         func() error { _, err := s.Trials.Start(context.Background(), spec); return err },
 	} {
 		t.Run(name, func(t *testing.T) {
