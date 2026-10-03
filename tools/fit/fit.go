@@ -24,12 +24,10 @@ type observation struct {
 }
 
 type likelihood struct {
-	cfg                         sim.Config
-	m                           *sim.Machine
-	obs                         []observation
-	guard                       *modelcheck.Checker
-	ccdPriorRate, ccdPriorDepth float64
-	ccdPrior                    bool
+	cfg   sim.Config
+	m     *sim.Machine
+	obs   []observation
+	guard *modelcheck.Checker
 }
 
 func decisive(records []trialfacts.Record) ([]trialfacts.Record, error) {
@@ -153,10 +151,6 @@ func (l *likelihood) rawScore(indices []int) float64 {
 	}
 	if c := l.cfg.CCD; c != nil {
 		loss += 0.5 * (c.Effect[0]*c.Effect[0] + c.Effect[1]*c.Effect[1])
-		if l.ccdPrior {
-			delta := c.LogRate + c.Slope*(l.ccdPriorDepth-25) - l.ccdPriorRate
-			loss += 0.5 * delta * delta
-		}
 	}
 	return loss
 }
@@ -265,7 +259,6 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 		cfg = cloneMachine(*initial)
 	}
 	l := likelihood{cfg: cfg, obs: aggregate(records), guard: guard}
-	l.ccdPriorRate, l.ccdPriorDepth, l.ccdPrior = ccdPrior(records)
 	l.rebuild()
 	all := l.selectObs(func(observation) bool { return true })
 	previous := math.Inf(1)
