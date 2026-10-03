@@ -216,3 +216,34 @@ func TestSingleCarriedFailureDecisions(t *testing.T) {
 		})
 	}
 }
+
+func TestSingleCarriedFailureThroughHunt(t *testing.T) {
+	at := time.Unix(100, 0)
+	for _, tc := range []struct {
+		name  string
+		extra []int
+		want  int
+	}{
+		{"carried failure through joint mark", nil, 1},
+		{"live failure added", []int{3}, 0},
+		{"second carried failure added", []int{4}, 0},
+		{"repeated failure through multiple paths", []int{1, 5}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			events := []journal.Event{
+				{Seq: 1, Data: &journal.TrialCarried{Outcome: journal.OutcomeFailure}},
+				{Seq: 2, Data: &journal.TrialCarried{Outcome: journal.OutcomePass}},
+				{Seq: 3, Data: &journal.TrialEnd{Outcome: journal.OutcomeFailure}},
+				{Seq: 4, Data: &journal.FailureCarried{}},
+				{Seq: 5, Data: &journal.HuntStart{}, Cause: []int{1}},
+				{Seq: 6, Data: &journal.TrialEnd{Outcome: journal.OutcomePass}, Cause: []int{3}},
+				{Seq: 7, Data: &journal.HuntEnd{}, Cause: append([]int{5, 2, 6}, tc.extra...)},
+				{Seq: 8, Data: &journal.MarkJoint{}, Cause: []int{7}},
+				{Seq: 9, Time: at, Data: &journal.TunerDecision{Decision: journal.Backoff}, Cause: []int{8}},
+			}
+			if diff := cmp.Diff(tc.want, singleCarriedFailureDecisions(events, at)); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
