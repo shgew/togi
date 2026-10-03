@@ -57,8 +57,8 @@ A machine built from the seeded default machine instead of a target fit has no P
 The committed `tools/bench/baseline.jsonl` already has unsafe conclusions. They are not new findings, but explaining them is the cheapest first experiment:
 
 - `default` seeds 21, 104, 106 and 114 conclude one count past a together R3 or R4 limit with a hazard of 92 failures/h: checking lap runs a single start of each, and one start misses about 5% of the time (#107).
-- `target` dev seeds 6, 8 and 13 conclude with an R7 hazard of 1.5–1.8/h, and holdout seed 111 with an R2 hazard of 12/h. Their mechanism is not yet explained.
-- `misleading-mce` seeds 3 and 103 conclude with an R7 hazard of 3.24/h from its second, unattributed combination. Its first combination deliberately leaves an MCE naming one core (#114), but neither final profile triggers that combination.
+- `target` dev seed 8 and holdout seed 115 conclude with an R7 hazard of 1.5–1.7/h. Their mechanism is not yet explained.
+- `target-r4-limit`, `target-nonmember-mce`, `target-delayed-joint` and `target-flat-risk` are earlier findings of this program (#107, #348, #105); their unsafe runs are what those scenarios exist to show.
 
 ## The loop
 
