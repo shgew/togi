@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -82,7 +83,7 @@ func TestJournalctlKilledAtDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	start, err := journalctlProcessStart(pid)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err != nil && !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ESRCH) {
 		t.Fatal(err)
 	}
 	if err == nil && start == fields[1] {
