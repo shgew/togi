@@ -48,3 +48,10 @@ machine = "machines/target-nonmember-mce.toml"
 replay = true
 dev = [1, 2, 3, 4]
 holdout = [101, 102, 103, 104]
+
+[[scenario]]
+name = "target-delayed-joint"
+machine = "machines/target-delayed-joint.toml"
+replay = true
+dev = [1, 2, 3, 4]
+holdout = [101, 102, 103, 104]

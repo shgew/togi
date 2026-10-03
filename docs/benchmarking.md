@@ -22,6 +22,7 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 |`misleading-mce`|joint crashes that leave an MCE naming one core (issue #114)|
 |`target-r4-edge`|target-fit-derived one-count resident R4 edge gap on core 15; a single medium-duty guard start can miss it (issue #107)|
 |`target-nonmember-mce`|target-fit-derived CCD0 joint crashes deliberately name nonmember core 15; masked hunts can stop at that core's anchor zero (related to issue #114)|
+|`target-delayed-joint`|target-fit-derived CCD1 joint delayed by two minutes; short checks miss it and finite long-start coverage can still conclude unsafe (issue #105)|
 
 Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds stay unseen by the change being tuned.
 

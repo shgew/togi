@@ -1,0 +1,183 @@
+# Target-fit-derived adversarial machine: CCD1 shared-rail instability starts after two minutes of heat soak.
+# Derived from target-fit-4.toml; all parameters except the named mechanism are unchanged.
+cores = 16
+facts = "../facts/target.jsonl.gz"
+
+[bios_context]
+bios_version = "4.43"
+board = "ASRock X870E Taichi"
+cpu_model = "AMD Ryzen 9 9950X3D2 16-Core Processor"
+microcode = "0xb404038"
+boost_limit_mhz = 5650
+
+[model]
+past_edge_rate = 0.0029067995729377782
+growth = 2.5754932971816853
+near_edge_rate = 0
+onset_boost = 0.0
+
+[[core]]
+id = 0
+isolated = [-44, -50, -50, -50, -50]
+resident = [-50, -50, -50, -50, -50, -50, -35]
+flat = 0
+workload = {"mprime-avx512-36k-248k" = -33, "ycruncher-fftv4-n63-vt3" = -39, "ycruncher-snt-svt" = -43}
+
+[[core]]
+id = 1
+isolated = [-42, -40, -50, -50, -38]
+resident = [-50, -50, -50, -50, -50, -50, -50]
+flat = 0
+
+[[core]]
+id = 2
+isolated = [-50, -38, -50, -50, -50]
+resident = [-50, -50, -50, -50, -50, -50, -50]
+flat = 0
+
+[[core]]
+id = 3
+isolated = [-36, -34, -50, -50, -50]
+resident = [-50, -34, -50, -50, -50, -50, -50]
+flat = 0
+workload = {"ycruncher-fftv4-n63-vt3" = -32}
+
+[[core]]
+id = 4
+isolated = [-43, -38, -50, -50, -36]
+resident = [-50, -50, -50, -50, -50, -50, -50]
+flat = 0
+workload = {"ycruncher-bkt-sftv4" = -36}
+
+[[core]]
+id = 5
+isolated = [-50, -50, -50, -50, -50]
+resident = [-50, -50, -50, -50, -50, -50, -50]
+flat = 0
+workload = {"mprime-avx512-36k-248k" = -37, "ycruncher-bkt-sftv4" = -39, "ycruncher-fftv4-n63-vt3" = -37, "ycruncher-snt-svt" = -38}
+
+[[core]]
+id = 6
+isolated = [-50, -46, -50, -50, -50]
+resident = [-50, -50, -50, -50, -50, -50, -50]
+flat = 0
+workload = {"mprime-avx512-36k-248k" = -45}
+
+[[core]]
+id = 7
+isolated = [-50, -50, -50, -50, -50]
+resident = [-50, -50, -50, -50, -50, -50, -50]
+flat = 0
+workload = {"mprime-avx512-36k-248k" = -42}
+
+[[core]]
+id = 8
+isolated = [-50, -50, -50, -50, -49]
+resident = [-50, -50, -50, -50, -50, -50, -47]
+flat = 0
+
+[[core]]
+id = 9
+isolated = [-50, -50, -50, -50, -50]
+resident = [-50, -50, -50, -50, -50, -50, -47]
+flat = 0
+workload = {"mprime-avx512-36k-248k" = -48}
+
+[[core]]
+id = 10
+isolated = [-50, -50, -50, -50, -48]
+resident = [-50, -50, -50, -50, -50, -50, -50]
+flat = 8.3783547313563129e-08
+
+[[core]]
+id = 11
+isolated = [-50, -46, -50, -50, -50]
+resident = [-50, -50, -50, -50, -50, -50, -44]
+flat = 1.7442307930189238e-05
+
+[[core]]
+id = 12
+isolated = [-50, -50, -50, -50, -50]
+resident = [-50, -50, -50, -50, -50, -50, -50]
+flat = 0
+
+[[core]]
+id = 13
+isolated = [-50, -49, -50, -50, -50]
+resident = [-50, -50, -50, -50, -50, -50, -44]
+flat = 0
+
+[[core]]
+id = 14
+isolated = [-50, -50, -50, -50, -50]
+resident = [-50, -50, -50, -50, -50, -50, -50]
+flat = 2.4965291813649395e-06
+
+[[core]]
+id = 15
+isolated = [-50, -50, -50, -50, -50]
+resident = [-50, -50, -50, -50, -50, -50, -50]
+flat = 0
+
+[[joint]]
+regimes = ["R7"]
+rate = 0.0010017511385993301
+after_s = 0.0
+signal = "crash"
+members = {"0" = -24, "1" = -30, "2" = -34, "3" = -34, "4" = -29, "5" = -36, "6" = -45, "7" = -35}
+
+[[joint]]
+regimes = ["R7"]
+rate = 0.00085988565724390319
+after_s = 120.0
+signal = "crash"
+members = {"8" = -46, "9" = -45, "10" = -46, "11" = -42, "12" = -48, "13" = -42, "14" = -48, "15" = -48}
+
+[[joint]]
+regimes = ["R7"]
+rate = 0.21166507315729127
+after_s = 0.0
+signal = "crash"
+members = {"0" = -27, "1" = -38, "2" = -36, "3" = -34, "4" = -34, "5" = -35, "6" = -45, "7" = -40}
+
+[[joint]]
+regimes = ["R7"]
+rate = 0.0018234244475476499
+after_s = 0.0
+signal = "crash"
+members = {"8" = -48, "9" = -47, "10" = -48, "11" = -44, "12" = -50, "13" = -47, "14" = -50, "15" = -50}
+
+[[joint]]
+regimes = ["R7"]
+rate = 0.21166507315729127
+after_s = 0.0
+signal = "crash"
+members = {"0" = -26, "1" = -38, "2" = -37, "3" = -33, "4" = -36, "5" = -36, "6" = -45, "7" = -42}
+
+[[joint]]
+regimes = ["R7"]
+rate = 0.0047576780401206642
+after_s = 0.0
+signal = "crash"
+members = {"0" = -27, "1" = -26, "2" = -36, "3" = -34, "4" = -36, "5" = -36, "6" = -45, "7" = -41}
+
+[[joint]]
+regimes = ["R7"]
+rate = 0.0022523688473982694
+after_s = 0.0
+signal = "crash"
+members = {"0" = -23, "1" = -38, "2" = -37, "3" = -34, "4" = -36, "5" = -36, "6" = -36, "7" = -41}
+
+[[joint]]
+regimes = ["R7"]
+rate = 0.00073011097930175933
+after_s = 0.0
+signal = "crash"
+members = {"0" = -26, "1" = -36, "2" = -35, "3" = -34, "4" = -34, "5" = -36, "6" = -45, "7" = -40}
+
+[[joint]]
+regimes = ["R7"]
+rate = 0.12442975782465157
+after_s = 0.0
+signal = "crash"
+members = {"0" = -30, "1" = -37, "2" = -36, "3" = -33, "4" = -35, "5" = -35, "6" = -44, "7" = -41}
