@@ -33,11 +33,11 @@ type Config struct {
 	// Boots counts the boots before the first; boot numbering and boot IDs continue from it.
 	Boots int
 	// Start is the clock at the first boot; zero means 2026-01-01T00:00:00Z.
-	Start        time.Time
-	Combinations []Combination
-	Ranking      []int
-	Script       map[string]Outcome
-	OldKernel    bool
+	Start     time.Time
+	Joints    []Joint
+	Ranking   []int
+	Script    map[string]Outcome
+	OldKernel bool
 }
 
 // Limits index 0 is R1; Together[5] and Together[6] are R6 and R7.
@@ -56,7 +56,7 @@ type CCD struct {
 	Effect  [2]float64 `toml:"effect"`
 }
 
-type Combination struct {
+type Joint struct {
 	Members      map[int]int
 	Regimes      []machine.Regime
 	Rate         float64
@@ -282,33 +282,33 @@ func New(cfg Config) (*Machine, error) {
 			return nil, fmt.Errorf("new simulator: flat rate %g of core %d is negative", e.Flat, c)
 		}
 	}
-	if err := validateCombinations(cfg.Combinations, cfg.Cores); err != nil {
+	if err := validateJoints(cfg.Joints, cfg.Cores); err != nil {
 		return nil, fmt.Errorf("new simulator: %w", err)
 	}
 	m.startBoot()
 	return m, nil
 }
 
-func validateCombinations(combinations []Combination, cores int) error {
-	for _, combination := range combinations {
-		for c, offset := range combination.Members {
+func validateJoints(joints []Joint, cores int) error {
+	for _, joint := range joints {
+		for c, offset := range joint.Members {
 			if c < 0 || c >= cores || offset < machine.MinOffset || offset > machine.MaxOffset {
-				return fmt.Errorf("combination member core %d offset %d invalid", c, offset)
+				return fmt.Errorf("joint member core %d offset %d invalid", c, offset)
 			}
 		}
-		for _, r := range combination.Regimes {
+		for _, r := range joint.Regimes {
 			if !slices.Contains(machine.Regimes, r) {
-				return fmt.Errorf("combination regime %q is not supported", r)
+				return fmt.Errorf("joint regime %q is not supported", r)
 			}
 		}
-		if combination.Signal != "" && !slices.Contains(signalOrder, combination.Signal) {
-			return fmt.Errorf("combination signal %q is not supported", combination.Signal)
+		if joint.Signal != "" && !slices.Contains(signalOrder, joint.Signal) {
+			return fmt.Errorf("joint signal %q is not supported", joint.Signal)
 		}
-		if combination.Rate < 0 || combination.AfterS < 0 {
-			return fmt.Errorf("combination rate %g or delay %g is negative", combination.Rate, combination.AfterS)
+		if joint.Rate < 0 || joint.AfterS < 0 {
+			return fmt.Errorf("joint rate %g or delay %g is negative", joint.Rate, joint.AfterS)
 		}
-		if core := combination.CrashMCECore; core != nil && (*core < 0 || *core >= cores) {
-			return fmt.Errorf("combination crash MCE core %d outside [0, %d)", *core, cores)
+		if core := joint.CrashMCECore; core != nil && (*core < 0 || *core >= cores) {
+			return fmt.Errorf("joint crash MCE core %d outside [0, %d)", *core, cores)
 		}
 	}
 	return nil

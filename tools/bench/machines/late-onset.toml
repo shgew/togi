@@ -84,13 +84,13 @@ id = 15
 alone = [-50, -50, -50, -50, -50]
 together = [-50, -50, -50, -50, -50, -50, -50]
 
-[[combination]]
+[[joint]]
 regimes = ["R7"]
 rate = 0.05
 after_s = 240
 members = {"2" = -33}
 
-[[combination]]
+[[joint]]
 regimes = ["R7"]
 rate = 0.05
 after_s = 240

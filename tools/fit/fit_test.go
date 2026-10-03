@@ -232,7 +232,7 @@ func TestConstrainedFitRefitsCCDWithoutChangingR7Structure(t *testing.T) {
 			{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}},
 			{Alone: [5]int{-50, -50, -50, -50, -50}, Together: [7]int{-50, -50, -50, -50, -50, -50, -50}},
 		},
-		Combinations: []sim.Combination{{Members: map[int]int{1: -40}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001}},
+		Joints: []sim.Joint{{Members: map[int]int{1: -40}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001}},
 	}
 	want := cloneMachine(base)
 	var original, sample []trialfacts.Record
@@ -267,8 +267,8 @@ func TestConstrainedFitRefitsCCDWithoutChangingR7Structure(t *testing.T) {
 	if cmp.Equal(first.CCD, want.CCD) {
 		t.Fatal("residual CCD parameters did not refit")
 	}
-	if diff := cmp.Diff(want.Combinations, first.Combinations); diff != "" {
-		t.Fatalf("CCD refit changed frozen combinations: %s", diff)
+	if diff := cmp.Diff(want.Joints, first.Joints); diff != "" {
+		t.Fatalf("CCD refit changed frozen joints: %s", diff)
 	}
 	for core := range first.Limits {
 		if first.Limits[core].Together[6] != want.Limits[core].Together[6] || len(first.Limits[core].Workload) != 0 {
@@ -377,45 +377,45 @@ func TestDecisiveFiltersNonStartsAndPreservesContext(t *testing.T) {
 func TestCloneMachineIsolatesConstrainedParameters(t *testing.T) {
 	idle := -20
 	model := sim.DefaultModel()
-	cfg := sim.Config{Cores: 2, Model: &model, Limits: []sim.Limits{{Idle: &idle, Workload: map[string]int{"work": -25}}, {}}, Combinations: []sim.Combination{{Members: map[int]int{0: -30}, Rate: 0.01}}}
+	cfg := sim.Config{Cores: 2, Model: &model, Limits: []sim.Limits{{Idle: &idle, Workload: map[string]int{"work": -25}}, {}}, Joints: []sim.Joint{{Members: map[int]int{0: -30}, Rate: 0.01}}}
 	wantModel := model
 	wantIdle := -20
-	want := sim.Config{Cores: 2, Model: &wantModel, Limits: []sim.Limits{{Idle: &wantIdle, Workload: map[string]int{"work": -25}}, {}}, Combinations: []sim.Combination{{Members: map[int]int{0: -30}, Rate: 0.01}}}
+	want := sim.Config{Cores: 2, Model: &wantModel, Limits: []sim.Limits{{Idle: &wantIdle, Workload: map[string]int{"work": -25}}, {}}, Joints: []sim.Joint{{Members: map[int]int{0: -30}, Rate: 0.01}}}
 	got := cloneMachine(cfg)
 	got.Model.PastLimitRate = 0.4
 	*got.Limits[0].Idle = -1
 	got.Limits[0].Workload["work"] = -1
-	got.Combinations[0].Members[0] = -1
-	got.Combinations[0].Rate = 0.2
+	got.Joints[0].Members[0] = -1
+	got.Joints[0].Rate = 0.2
 	if diff := cmp.Diff(want, cfg); diff != "" {
 		t.Fatalf("refit changed its seed: %s", diff)
 	}
 }
 
-func TestCombinationSearchSeparatesCleanBoundary(t *testing.T) {
+func TestJointSearchSeparatesCleanBoundary(t *testing.T) {
 	cfg := initialConfig([]trialfacts.Record{{Profile: []int{0, 0}}})
 	cfg.CCD = nil
 	cfg.Model.NearLimitRate = 0
-	cfg.Combinations = []sim.Combination{{Members: map[int]int{0: -10, 1: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 0.01}}
+	cfg.Joints = []sim.Joint{{Members: map[int]int{0: -10, 1: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 0.01}}
 	spec := machine.TrialSpec{Regime: machine.R7, Cores: []int{0, 1}, Duration: 60 * time.Second}
 	l := likelihood{cfg: cfg, obs: []observation{{profile: []int{-20, -20}, spec: spec, n: 100}, {profile: []int{-30, -30}, spec: spec, n: 100, k: 50}}}
 	l.rebuild()
 	all := []int{0, 1}
 	before := l.score(all)
-	l.fitCombinations(&cfg)
-	l.fitCombinations(&cfg)
+	l.fitJoints(&cfg)
+	l.fitJoints(&cfg)
 	if after := l.score(all); !(after < before-1) {
-		t.Fatalf("combination did not improve likelihood: %g -> %g", before, after)
+		t.Fatalf("joint did not improve likelihood: %g -> %g", before, after)
 	}
 	if p := l.m.FailureProbability([]int{-20, -20}, spec); p != 0 {
-		t.Fatalf("clean boundary retains combination hazard: %g", p)
+		t.Fatalf("clean boundary retains joint hazard: %g", p)
 	}
 	if p := l.m.FailureProbability([]int{-30, -30}, spec); math.Abs(p-0.5) > 0.01 {
 		t.Fatalf("failure boundary p=%g; want 0.5", p)
 	}
 }
 
-func TestCombinationCandidateLimitPreservesModel(t *testing.T) {
+func TestJointCandidateLimitPreservesModel(t *testing.T) {
 	var records []trialfacts.Record
 	for i := range 100 {
 		outcome := journal.OutcomePass
@@ -428,24 +428,24 @@ func TestCombinationCandidateLimitPreservesModel(t *testing.T) {
 		t.Run(strconv.Itoa(count), func(t *testing.T) {
 			cfg := initialConfig(records)
 			cfg.Model.NearLimitRate = 0
-			cfg.Combinations = nil
+			cfg.Joints = nil
 			for j := range count {
-				cfg.Combinations = append(cfg.Combinations, sim.Combination{Members: map[int]int{0: -20 - j}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001})
+				cfg.Joints = append(cfg.Joints, sim.Joint{Members: map[int]int{0: -20 - j}, Regimes: []machine.Regime{machine.R7}, Rate: 0.001})
 			}
 			want := cloneMachine(cfg)
 			l := likelihood{cfg: cfg, obs: aggregate(records)}
 			l.rebuild()
 			before := l.score([]int{0})
-			l.addCombination(&cfg, records, 0)
+			l.addJoint(&cfg, records, 0)
 			if count == 8 {
 				if diff := cmp.Diff(want, cfg); diff != "" {
-					t.Fatalf("ninth combination admitted: %s", diff)
+					t.Fatalf("ninth joint admitted: %s", diff)
 				}
 			} else {
-				if len(cfg.Combinations) != 8 || !(l.score([]int{0}) < before-0.5) {
-					t.Fatalf("otherwise admissible candidate was not fitted: combinations=%d loss %g -> %g", len(cfg.Combinations), before, l.score([]int{0}))
+				if len(cfg.Joints) != 8 || !(l.score([]int{0}) < before-0.5) {
+					t.Fatalf("otherwise admissible candidate was not fitted: joints=%d loss %g -> %g", len(cfg.Joints), before, l.score([]int{0}))
 				}
-				if diff := cmp.Diff(map[int]int{0: -30}, cfg.Combinations[7].Members); diff != "" {
+				if diff := cmp.Diff(map[int]int{0: -30}, cfg.Joints[7].Members); diff != "" {
 					t.Fatalf("viable distinct candidate (-want +got):\n%s", diff)
 				}
 			}

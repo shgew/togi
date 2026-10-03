@@ -43,14 +43,14 @@ func LoadMachine(path string) (Config, error) {
 			Workload map[string]int `toml:"workload"`
 			Flat     float64        `toml:"flat"`
 		} `toml:"core"`
-		Combination []struct {
+		Joint []struct {
 			Members      map[string]int   `toml:"members"`
 			Regimes      []machine.Regime `toml:"regimes"`
 			Rate         float64          `toml:"rate"`
 			AfterS       float64          `toml:"after_s"`
 			Signal       machine.Signal   `toml:"signal"`
 			CrashMCECore *int             `toml:"crash_mce_core"`
-		} `toml:"combination"`
+		} `toml:"joint"`
 		Script []struct {
 			Trial     string            `toml:"trial"`
 			Signal    machine.Signal    `toml:"signal"`
@@ -127,16 +127,16 @@ func LoadMachine(path string) (Config, error) {
 			}
 		}
 	}
-	for _, j := range f.Combination {
+	for _, j := range f.Joint {
 		members := make(map[int]int, len(j.Members))
 		for name, offset := range j.Members {
 			c, err := strconv.Atoi(name)
 			if err != nil {
-				return Config{}, fmt.Errorf("load simulator machine %s: combination member %q: %w", path, name, err)
+				return Config{}, fmt.Errorf("load simulator machine %s: joint member %q: %w", path, name, err)
 			}
 			members[c] = offset
 		}
-		cfg.Combinations = append(cfg.Combinations, Combination{Members: members, Regimes: j.Regimes, Rate: j.Rate, AfterS: j.AfterS, Signal: j.Signal, CrashMCECore: j.CrashMCECore})
+		cfg.Joints = append(cfg.Joints, Joint{Members: members, Regimes: j.Regimes, Rate: j.Rate, AfterS: j.AfterS, Signal: j.Signal, CrashMCECore: j.CrashMCECore})
 	}
 	if f.Script != nil {
 		cfg.Script = make(map[string]Outcome, len(f.Script))

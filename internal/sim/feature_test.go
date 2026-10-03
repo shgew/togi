@@ -102,49 +102,49 @@ func TestModelHazards(t *testing.T) {
 			})
 		}
 	})
-	t.Run("combination after threshold", func(t *testing.T) {
-		m := newMachine(t, Config{Cores: 2, BIOS: []int{-20, -20}, Limits: flat(2, -30, -30), Model: sharp(machine.Crash), Combinations: []Combination{{Members: map[int]int{0: -20, 1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 1e6, AfterS: 30}}})
+	t.Run("joint after threshold", func(t *testing.T) {
+		m := newMachine(t, Config{Cores: 2, BIOS: []int{-20, -20}, Limits: flat(2, -30, -30), Model: sharp(machine.Crash), Joints: []Joint{{Members: map[int]int{0: -20, 1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 1e6, AfterS: 30}}})
 		if res, err := runSpec(t, m, "0001", machine.R1, work, []int{0}, time.Minute, nil); err != nil || res.Signal != "" {
 			t.Fatalf("wrong regime: %+v %v", res, err)
 		}
 		if res, err := runSpec(t, m, "0002", machine.R7, work, []int{0}, 20*time.Second, nil); err != nil || res.Signal != "" {
-			t.Fatalf("combination before threshold: %+v %v", res, err)
+			t.Fatalf("joint before threshold: %+v %v", res, err)
 		}
 		_, err := runSpec(t, m, "0003", machine.R7, work, []int{0}, time.Minute, nil)
 		if !errors.Is(err, machine.ErrCrashed) || m.Monotonic() < 110*time.Second {
-			t.Fatalf("combination crash %v at %s", err, m.Monotonic())
+			t.Fatalf("joint crash %v at %s", err, m.Monotonic())
 		}
 	})
-	t.Run("combination attribution follows loaded order", func(t *testing.T) {
+	t.Run("joint attribution follows loaded order", func(t *testing.T) {
 		m := newMachine(t, Config{
 			Cores: 2, BIOS: []int{-20, -20}, Limits: flat(2, -30, -30), Model: sharp(machine.Crash),
-			Combinations: []Combination{{Members: map[int]int{0: -20, 1: -20}, Rate: 1e6, Signal: machine.ComputationError}},
+			Joints: []Joint{{Members: map[int]int{0: -20, 1: -20}, Rate: 1e6, Signal: machine.ComputationError}},
 		})
 		res, err := runSpec(t, m, "0001", machine.R7, work, []int{1, 0}, time.Second, nil)
 		if err != nil || res.Signal != machine.ComputationError || res.Core != 1 {
-			t.Fatalf("attributed combination: %+v %v", res, err)
+			t.Fatalf("attributed joint: %+v %v", res, err)
 		}
 	})
-	t.Run("combination default crash overrides model signal", func(t *testing.T) {
+	t.Run("joint default crash overrides model signal", func(t *testing.T) {
 		model := sharp(machine.ComputationError)
 		model.CrashMCE = 0
-		m := newMachine(t, Config{Cores: 2, BIOS: []int{-20, 0}, Limits: flat(2, -30, -30), Model: model, Combinations: []Combination{{Members: map[int]int{0: -20}, Rate: 1e6}}})
+		m := newMachine(t, Config{Cores: 2, BIOS: []int{-20, 0}, Limits: flat(2, -30, -30), Model: model, Joints: []Joint{{Members: map[int]int{0: -20}, Rate: 1e6}}})
 		if _, err := runSpec(t, m, "0001", machine.R1, work, []int{0}, time.Second, nil); !errors.Is(err, machine.ErrCrashed) {
-			t.Fatalf("default combination signal: %v", err)
+			t.Fatalf("default joint signal: %v", err)
 		}
 	})
-	t.Run("unloaded combination crashes as an idle member", func(t *testing.T) {
+	t.Run("unloaded joint crashes as an idle member", func(t *testing.T) {
 		model := sharp(machine.ComputationError)
 		model.CrashMCE = 1
-		m := newMachine(t, Config{Cores: 4, BIOS: []int{0, -20, -20, 0}, Limits: flat(4, -30, -30), Model: model, Combinations: []Combination{{Members: map[int]int{1: -20, 2: -20}, Rate: 1e6}}})
+		m := newMachine(t, Config{Cores: 4, BIOS: []int{0, -20, -20, 0}, Limits: flat(4, -30, -30), Model: model, Joints: []Joint{{Members: map[int]int{1: -20, 2: -20}, Rate: 1e6}}})
 		if _, err := runSpec(t, m, "0001", machine.R1, work, []int{0}, time.Second, nil); !errors.Is(err, machine.ErrCrashed) {
-			t.Fatalf("unloaded combination: %v", err)
+			t.Fatalf("unloaded joint: %v", err)
 		}
 		m.Reboot()
 		boot, _ := m.Seams().Host.BootID()
 		mces, err := m.Seams().Kernel.MCEs(boot, 0)
 		if err != nil || len(mces) != 0 {
-			t.Fatalf("unloaded combination named cores through MCEs %+v %v", mces, err)
+			t.Fatalf("unloaded joint named cores through MCEs %+v %v", mces, err)
 		}
 	})
 	t.Run("idle and flat", func(t *testing.T) {
@@ -416,7 +416,7 @@ flat = 0.1
 id = 1
 alone = [-30, -30, -30, -30, -30]
 together = [-29, -29, -29, -29, -29, -29, -29]
-[[combination]]
+[[joint]]
 members = { "0" = -20, "1" = -20 }
 regimes = ["R7"]
 rate = 0.05
@@ -440,7 +440,7 @@ then_crash = true
 	if diff := cmp.Diff([]int{9, 7}, cfg.Ranking); diff != "" {
 		t.Fatal(diff)
 	}
-	if cfg.Model.PastLimitRate != .7 || cfg.Model.OnsetS != 100 || cfg.Model.Reset[machine.ResetThermalTrip] != 1 || cfg.Limits[0].Workload["special"] != -27 || cfg.Combinations[0].AfterS != 30 || !cfg.Script["0042"].ThenCrash {
+	if cfg.Model.PastLimitRate != .7 || cfg.Model.OnsetS != 100 || cfg.Model.Reset[machine.ResetThermalTrip] != 1 || cfg.Limits[0].Workload["special"] != -27 || cfg.Joints[0].AfterS != 30 || !cfg.Script["0042"].ThenCrash {
 		t.Fatalf("incomplete config: %+v", cfg)
 	}
 	if err := os.WriteFile(path, []byte(content+"unknown = 1\n"), 0600); err != nil {
@@ -504,9 +504,9 @@ func TestNewRejectsInvalidHazardsAndSignals(t *testing.T) {
 		{"negative flat", Config{Cores: 2, Limits: negative}, "new simulator: flat rate -1 of core 1 is negative"},
 		{"script signal", Config{Cores: 2, Script: map[string]Outcome{"0001": {Signal: "crsh"}}}, `new simulator: script trial 0001 signal "crsh" is not supported`},
 		{"script reset", Config{Cores: 2, Script: map[string]Outcome{"0001": {Reset: "brownout"}}}, `new simulator: script trial 0001 reset "brownout" is not supported`},
-		{"combination regime", Config{Cores: 2, Combinations: []Combination{{Members: map[int]int{0: -5}, Regimes: []machine.Regime{"R9"}}}}, `new simulator: combination regime "R9" is not supported`},
-		{"combination signal", Config{Cores: 2, Combinations: []Combination{{Members: map[int]int{0: -5}, Signal: "crsh"}}}, `new simulator: combination signal "crsh" is not supported`},
-		{"combination rate", Config{Cores: 2, Combinations: []Combination{{Members: map[int]int{0: -5}, Rate: -1}}}, "new simulator: combination rate -1 or delay 0 is negative"},
+		{"joint regime", Config{Cores: 2, Joints: []Joint{{Members: map[int]int{0: -5}, Regimes: []machine.Regime{"R9"}}}}, `new simulator: joint regime "R9" is not supported`},
+		{"joint signal", Config{Cores: 2, Joints: []Joint{{Members: map[int]int{0: -5}, Signal: "crsh"}}}, `new simulator: joint signal "crsh" is not supported`},
+		{"joint rate", Config{Cores: 2, Joints: []Joint{{Members: map[int]int{0: -5}, Rate: -1}}}, "new simulator: joint rate -1 or delay 0 is negative"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -570,7 +570,7 @@ func TestLoadMachineBIOSContext(t *testing.T) {
 	}
 }
 
-func TestCombinationCrashMachineEvidence(t *testing.T) {
+func TestJointCrashMachineEvidence(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
@@ -598,7 +598,7 @@ together = [-30, -30, -30, -30, -30, -30, -30]
 id = 1
 alone = [-30, -30, -30, -30, -30]
 together = [-30, -30, -30, -30, -30, -30, -30]
-[[combination]]
+[[joint]]
 members = { "0" = -20, "1" = -20 }
 rate = 1000000
 %s
@@ -608,7 +608,7 @@ rate = 1000000
 			}
 			cfg, err := LoadMachine(path)
 			if tc.key != "" && tc.core == nil {
-				if err == nil || !strings.Contains(err.Error(), "combination crash MCE core") {
+				if err == nil || !strings.Contains(err.Error(), "joint crash MCE core") {
 					t.Fatalf("invalid MCE core error: %v", err)
 				}
 				return
@@ -618,7 +618,7 @@ rate = 1000000
 			}
 			m := newMachine(t, cfg)
 			if _, err := runSpec(t, m, "0001", machine.R7, machine.PickWorkload(machine.R7, 0), []int{1, 0}, time.Second, nil); !errors.Is(err, machine.ErrCrashed) {
-				t.Fatalf("combination crash: %v", err)
+				t.Fatalf("joint crash: %v", err)
 			}
 			m.Reboot()
 			boot, _ := m.Seams().Host.BootID()
@@ -628,7 +628,7 @@ rate = 1000000
 			}
 			if tc.core == nil {
 				if len(mces) != 0 {
-					t.Fatalf("default combination crash invented evidence: %+v", mces)
+					t.Fatalf("default joint crash invented evidence: %+v", mces)
 				}
 				return
 			}
@@ -686,7 +686,7 @@ func TestLoadMachineInvalidDefinitions(t *testing.T) {
 		{"limit shape", "cores = 2\n[[core]]\nid = 0\nalone = [-10]\n", "needs five alone and seven together limits"},
 		{"missing core", "cores = 2\n" + fmt.Sprintf(core, 0), "missing core 1"},
 		{"default topology incomplete", fmt.Sprintf(core, 0), "missing core 1"},
-		{"combination identity", "cores = 2\n[[combination]]\nmembers = { nope = -10 }\n", "combination member \"nope\""},
+		{"joint identity", "cores = 2\n[[joint]]\nmembers = { nope = -10 }\n", "joint member \"nope\""},
 		{"empty script", "cores = 2\n[[script]]\ntrial = \"\"\n", "empty script trial"},
 		{"duplicate script", "cores = 2\n[[script]]\ntrial = \"0001\"\n[[script]]\ntrial = \"0001\"\n", "duplicate script trial 0001"},
 	} {
@@ -714,9 +714,9 @@ func TestNewRejectsInvalidModelTopology(t *testing.T) {
 		{"idle above zero failure", Config{Cores: 2, Limits: []Limits{{Idle: new(2)}, {}}}, "idle limit 2 of core 0 outside [-50, 1]"},
 		{"workload below floor", Config{Cores: 2, Limits: []Limits{{Workload: map[string]int{"custom": -51}}, {}}}, "workload custom limit -51"},
 		{"workload above zero failure", Config{Cores: 2, Limits: []Limits{{Workload: map[string]int{"custom": 2}}, {}}}, "workload custom limit 2"},
-		{"combination core negative", Config{Cores: 2, Combinations: []Combination{{Members: map[int]int{-1: -10}}}}, "combination member core -1 offset -10 invalid"},
-		{"combination core outside", Config{Cores: 2, Combinations: []Combination{{Members: map[int]int{2: -10}}}}, "combination member core 2 offset -10 invalid"},
-		{"combination offset", Config{Cores: 2, Combinations: []Combination{{Members: map[int]int{0: 1}}}}, "combination member core 0 offset 1 invalid"},
+		{"joint core negative", Config{Cores: 2, Joints: []Joint{{Members: map[int]int{-1: -10}}}}, "joint member core -1 offset -10 invalid"},
+		{"joint core outside", Config{Cores: 2, Joints: []Joint{{Members: map[int]int{2: -10}}}}, "joint member core 2 offset -10 invalid"},
+		{"joint offset", Config{Cores: 2, Joints: []Joint{{Members: map[int]int{0: 1}}}}, "joint member core 0 offset 1 invalid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := New(tc.cfg)
