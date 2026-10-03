@@ -1,0 +1,13 @@
+same: added/holdout-3
+  <session>:0
+  base: <missing>
+  head: <present>
+same: removed/holdout-2
+  <session>:0
+  base: <present>
+  head: <missing>
+same: scenario/dev-1
+  events.jsonl:2
+  base: {"decision":0}
+  head: {"decision":1}
+same: 3 of 3 sessions differ

@@ -38,9 +38,10 @@ type runSpec struct {
 	cfg      sim.Config
 }
 type options struct {
-	suite, split, out, baseline, keep string
-	jobs                              int
-	timeout                           time.Duration
+	suite, split, out, baseline, keep, same string
+
+	jobs    int
+	timeout time.Duration
 }
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
@@ -49,11 +50,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var o options
 	flags := flag.NewFlagSet("bench", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	flags.StringVar(&o.suite, "suite", "tools/bench/suite.toml", "scenario TOML file; machine paths are relative to this file")
-	flags.StringVar(&o.split, "split", "dev", "seed split: dev, holdout, or all")
-	flags.StringVar(&o.out, "out", "", "write one JSON object per run to this file")
-	flags.StringVar(&o.baseline, "baseline", "", "compare against a JSON Lines baseline")
-	flags.StringVar(&o.keep, "keep", "", "keep run directories under this directory")
+	flags.StringVar(&o.suite, "suite", "tools/bench/suite.toml", "scenario TOML file; relative paths resolve in each tree with --same; machine paths are relative to this file")
+	flags.StringVar(&o.split, "split", "dev", "seed split: dev, holdout, or all; incompatible with --same")
+	flags.StringVar(&o.out, "out", "", "write one JSON object per run to this file; incompatible with --same")
+	flags.StringVar(&o.baseline, "baseline", "", "compare against a JSON Lines baseline; incompatible with --same")
+	flags.StringVar(&o.keep, "keep", "", "keep run directories under this directory; --same separates base and head")
+	flags.StringVar(&o.same, "same", "", "compare all session journals against checkout DIR, ignoring only build version, revision and description; skip metrics and model checks")
 	flags.IntVar(&o.jobs, "jobs", runtime.NumCPU(), "maximum parallel simulator subprocesses")
 	flags.DurationVar(&o.timeout, "timeout", 180*time.Second, "wall timeout for each simulator subprocess")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
@@ -61,9 +63,32 @@ func run(args []string, stdout, stderr io.Writer) int {
 	} else if err != nil {
 		return 2
 	}
+	if o.same != "" {
+		conflict := ""
+		flags.Visit(func(f *flag.Flag) {
+			if f.Name == "split" || f.Name == "baseline" || f.Name == "out" {
+				conflict = f.Name
+			}
+		})
+		if conflict != "" {
+			fmt.Fprintf(stderr, "bench: --same cannot be combined with --%s\n", conflict)
+			return 2
+		}
+	}
 	if flags.NArg() != 0 || o.jobs < 1 || o.timeout <= 0 || (o.split != "dev" && o.split != "holdout" && o.split != "all") {
 		fmt.Fprintln(stderr, "bench: require no positional arguments, positive --jobs and --timeout, and --split dev|holdout|all")
 		return 2
+	}
+	if o.same != "" {
+		different, err := executeSame(o, stdout, stderr)
+		if err != nil {
+			fmt.Fprintf(stderr, "bench: %v\n", err)
+			return 1
+		}
+		if different {
+			return 1
+		}
+		return 0
 	}
 	if err := execute(o, stdout, stderr); err != nil {
 		fmt.Fprintf(stderr, "bench: %v\n", err)
@@ -297,14 +322,21 @@ func execute(o options, stdout, stderr io.Writer) error {
 	return nil
 }
 
-func simulate(binary, root string, spec runSpec, timeout time.Duration) (result, error) {
+type simulation struct {
+	dir      string
+	exit     int
+	wall     float64
+	timedOut bool
+}
+
+func launchSimulator(binary, root string, spec runSpec, timeout time.Duration) (simulation, error) {
 	dir := filepath.Join(root, spec.scenario.Name, fmt.Sprintf("%s-%d", spec.split, spec.seed))
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return result{}, fmt.Errorf("create run %s: %w", dir, err)
+		return simulation{}, fmt.Errorf("create run %s: %w", dir, err)
 	}
 	log, err := os.Create(filepath.Join(dir, "sim.log"))
 	if err != nil {
-		return result{}, fmt.Errorf("create run log: %w", err)
+		return simulation{}, fmt.Errorf("create run log: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -322,7 +354,7 @@ func simulate(binary, root string, spec runSpec, timeout time.Duration) (result,
 	wall := time.Since(started).Seconds()
 	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
 	if closeErr := log.Close(); closeErr != nil {
-		return result{}, fmt.Errorf("close run log: %w", closeErr)
+		return simulation{}, fmt.Errorf("close run log: %w", closeErr)
 	}
 	exit := 0
 	if err != nil {
@@ -333,10 +365,18 @@ func simulate(binary, root string, spec runSpec, timeout time.Duration) (result,
 		case timedOut:
 			exit = -1
 		default:
-			return result{}, fmt.Errorf("start simulator: %w", err)
+			return simulation{}, fmt.Errorf("start simulator: %w", err)
 		}
 	}
-	events, _, err := journal.Read(dir)
+	return simulation{dir: dir, exit: exit, wall: wall, timedOut: timedOut}, nil
+}
+
+func simulate(binary, root string, spec runSpec, timeout time.Duration) (result, error) {
+	run, err := launchSimulator(binary, root, spec, timeout)
+	if err != nil {
+		return result{}, err
+	}
+	events, _, err := journal.Read(run.dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return result{}, fmt.Errorf("read run journal: %w", err)
 	}
@@ -351,14 +391,14 @@ func simulate(binary, root string, spec runSpec, timeout time.Duration) (result,
 		cores = 16
 	}
 	r := metrics(events, m, cores)
-	text, err := os.ReadFile(filepath.Join(dir, "sim.log"))
+	text, err := os.ReadFile(filepath.Join(run.dir, "sim.log"))
 	if err != nil {
 		return result{}, fmt.Errorf("read run log: %w", err)
 	}
 	r.Scenario, r.Seed, r.Split = spec.scenario.Name, spec.seed, spec.split
 	r.Machine = spec.scenario.Machine
-	r.ExitCode, r.WallS = exit, wall
-	r.Status = runStatus(exit, timedOut, events, string(text))
+	r.ExitCode, r.WallS = run.exit, run.wall
+	r.Status = runStatus(run.exit, run.timedOut, events, string(text))
 	return r, nil
 }
 

@@ -31,6 +31,16 @@ Every run is a `tools/sim` subprocess with its own state directory, in parallel 
 
 Each simulator subprocess retains parsed events across its simulated reboots and writes `state.json` only at stop, avoiding journal re-parsing and per-event state-file rewrites. It still appends every event to `events.jsonl`; `--keep` leaves the journal and final state available for inspection. This changes wall-clock overhead, not simulated durations or tuner decisions. Recovery and interruption tests use the file-backed path, and fixed-seed equivalence tests compare both output files byte for byte on the default machine and `target-fit-0.toml`.
 
+## Proving unchanged decisions
+
+For a shape-only change, run `just same [base]`; the base defaults to `origin/main` and is exported locally without fetching or registering a worktree. It builds the base and current simulators and runs each tree's own suite and machine files across every dev and holdout seed (116 sessions today). Sessions pair by scenario, split and seed. Every current and archived journal pairs by its relative path and is compared byte for byte, after removing only `version`, `rev` and the exact build description in `msg` from `session.start` and `config.loaded`. Everything else, including `ruleset`, `schema`, `fixes` and `evidence_epoch`, must match.
+
+Each differing session prints its first differing event's journal path, line number and both normalized lines. Missing sessions or journal files and differing simulator exit codes also count as differences. The command exits 0 when all sessions match and nonzero on a difference, execution error (including a timeout), or invalid arguments. A difference is fixed or split into its own issue, never explained away.
+
+This is not a CI check: it needs two builds. `just bench` cannot prove equality because it compares metrics against thresholds; one changed decision with unchanged totals can pass.
+
+To control concurrency, timeouts or retention directly, use `go run ./tools/bench --same DIR [--suite FILE] [--jobs N] [--timeout 180s] [--keep DIR]`. A relative suite path resolves inside each tree. This mode skips metrics, model checks and the bench summary; explicitly setting `--split`, `--baseline` or `--out` is a usage error. `--keep` retains separate `base/` and `head/` run sets under a new directory. Without it, matching runs are removed; differing runs are retained and their directory is printed on stderr.
+
 ## What a run records
 
 `--out FILE` writes one JSON object per run:
