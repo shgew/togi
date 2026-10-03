@@ -181,10 +181,11 @@ func TestR7PartialFailuresLeaveQualificationAndProfileUnchanged(t *testing.T) {
 	for _, topology := range []string{"two CCDs", "one CCD", "all tied"} {
 		t.Run(topology, func(t *testing.T) {
 			h := residentHarness(t, -10, -20, -10, -20)
-			if topology == "one CCD" {
+			switch topology {
+			case "one CCD":
 				h.s.ccd = map[int]int{0: 0, 1: 0, 2: 0, 3: 0}
 				h.s.parts = [][]int{{0, 1, 2, 3}}
-			} else if topology == "all tied" {
+			case "all tied":
 				h.add(&journal.ProfileChange{To: []int{-20, -20, -20, -20}})
 			}
 			before := h.s.offsets()
@@ -225,9 +226,10 @@ func TestR7PartialFailuresLeaveQualificationAndProfileUnchanged(t *testing.T) {
 					t.Fatal("partial failures changed profile, marks or qualification")
 				}
 				want := 24
-				if topology == "one CCD" {
+				switch topology {
+				case "one CCD":
 					want = 12
-				} else if topology == "all tied" {
+				case "all tied":
 					want = 0
 				}
 				if partialStarts != want || snapshots != 3 {
