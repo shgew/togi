@@ -37,6 +37,10 @@ func (s *source) snapshot() Snapshot {
 	return s.snap
 }
 
+func (s *source) frame(sc Screen) (string, int) {
+	return RenderView(s.snapshot(), sc, time.Now())
+}
+
 // profile is the colour profile of out; NO_COLOR with any value turns colour off, as no-color.org defines it.
 func profile(out *os.File) colorprofile.Profile {
 	p := colorprofile.Detect(out, os.Environ())
@@ -72,9 +76,7 @@ func Run(ctx context.Context, dir string, out, in *os.File) error {
 	src := source{dir: dir}
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
-	return Show(ctx, out, in, tick.C, func(sc Screen) (string, int) {
-		return RenderView(src.snapshot(), sc, time.Now())
-	})
+	return Show(ctx, out, in, tick.C, src.frame)
 }
 
 // Show runs the redraw loop on out, drawing frame whenever tick fires, the terminal is resized or a key changes what
@@ -169,9 +171,7 @@ func readKeys(ctx context.Context, in io.Reader) <-chan key {
 
 func run(ctx context.Context, dir string, out io.Writer, size func() (int, int, error), tick <-chan time.Time, winch <-chan os.Signal, p colorprofile.Profile) error {
 	src := source{dir: dir}
-	return show(ctx, out, size, tick, winch, p, func(sc Screen) (string, int) {
-		return RenderView(src.snapshot(), sc, time.Now())
-	}, options{})
+	return show(ctx, out, size, tick, winch, p, src.frame, options{})
 }
 
 func show(ctx context.Context, out io.Writer, size func() (int, int, error), tick <-chan time.Time, winch <-chan os.Signal, p colorprofile.Profile, frame Frame, o options) error {

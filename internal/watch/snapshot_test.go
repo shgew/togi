@@ -2,11 +2,11 @@ package watch
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -58,7 +58,7 @@ func TestProjectTrialLifecycle(t *testing.T) {
 		&journal.SMUReadback{Core: 0, Offset: -25},
 		&journal.TrialStart{Trial: "one"})
 	s := Project(events)
-	wantTrial := &trial{id: "one", cores: []int{0}, condition: machine.Isolated, regime: machine.R1, workload: "mprime SSE 4K-21K", offset: new(-25), started: events[7].Time, hasStarted: true, duration: 90 * time.Second, phase: journal.PhaseSearch}
+	wantTrial := &trial{cores: []int{0}, condition: machine.Isolated, regime: machine.R1, workload: "mprime SSE 4K-21K", offset: new(-25), started: events[7].Time, hasStarted: true, duration: 90 * time.Second}
 	if diff := cmp.Diff(wantTrial, s.trial, cmp.AllowUnexported(trial{})); diff != "" {
 		t.Fatalf("an SMU write after the intent hid the running trial (-want +got):\n%s", diff)
 	}
@@ -74,8 +74,8 @@ func TestProjectTrialLifecycle(t *testing.T) {
 		t.Fatalf("ended trial still running: %+v", s.trial)
 	}
 	for _, h := range s.history {
-		if strings.HasPrefix(h.text, "Passed:") {
-			t.Fatalf("a search pass crowds the account of what happened: %q", h.text)
+		if h.tag == tagPass {
+			t.Fatalf("a search pass crowds the account of what happened: %q", h.sentence())
 		}
 	}
 }

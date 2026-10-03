@@ -335,7 +335,7 @@ func duration(d time.Duration) string {
 	case d < time.Hour:
 		return fmt.Sprintf("%d min", int(d.Minutes()))
 	}
-	return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
+	return hm(d)
 }
 
 // sentence is the line as the screen shows it: a pass names how many runs it folds and the hottest Tctl they reached.

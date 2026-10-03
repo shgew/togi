@@ -64,7 +64,7 @@ type Screen struct {
 // Every element of a frame shares one width and the text wraps to it: 80 columns, the most a line of prose should run
 // (WCAG 1.4.8), and exactly a core row with one gauge cell per count. It is a count of characters, not a share of the
 // screen, so a wider screen leaves room to the right rather than longer lines, and nothing moves as the content
-// changes.
+// changes. Only the event log, one unwrapped line per event, runs to the edge of the screen.
 const (
 	margin     = 2
 	frameWidth = 80
@@ -72,6 +72,8 @@ const (
 	gaugeCells = 50
 	rowText    = 30
 )
+
+var pad = strings.Repeat(" ", margin)
 
 // Render draws the main view on a w by h screen: exactly h-1 lines, each at most w-1 cells wide, so the last row and
 // column are never written and the screen never scrolls.
@@ -84,7 +86,6 @@ func Render(s Snapshot, w, h int, now time.Time) string {
 func RenderView(s Snapshot, sc Screen, now time.Time) (string, int) {
 	screen := max(sc.Width, minWidth) - 1
 	width := min(screen-margin, frameWidth)
-	pad := strings.Repeat(" ", margin)
 	lines := []string{pad + s.header(now), ""}
 	footer := 0
 	if sc.Keys {
@@ -97,10 +98,11 @@ func RenderView(s Snapshot, sc Screen, now time.Time) (string, int) {
 		if p := s.progress(now); p != "" {
 			lines = append(lines, pad+p, "")
 		}
-		body := helpLines(width)
-		hint = "? or Esc back    L event log    q quit"
+		var body []string
 		if sc.View == LogView {
-			body, hint = logLines(s, screen-margin), "L or Esc back    ? what is all this    q quit"
+			body, hint = s.logLines(screen-margin), "L or Esc back    ? what is all this    q quit"
+		} else {
+			body, hint = helpLines(width), "? or Esc back    L event log    q quit"
 		}
 		page := max(room-len(lines), 1)
 		scrolled = max(len(body)-page, 0)
@@ -116,10 +118,10 @@ func RenderView(s Snapshot, sc Screen, now time.Time) (string, int) {
 			hint = fmt.Sprintf("↑↓ PgUp PgDn  lines %d-%d of %d    %s", top+1, min(len(body), top+page), len(body), hint)
 		}
 	case MainView:
-		lines = append(lines, s.mainColumn(width, now)...)
+		lines = append(lines, s.mainLines(width, now)...)
 		if rows := room - len(lines) - 1; rows > 2 {
 			lines = append(lines, "")
-			for _, l := range historyLines(s, width, rows) {
+			for _, l := range s.historyLines(width, rows) {
 				lines = append(lines, pad+l)
 			}
 		}
@@ -160,16 +162,15 @@ func (s Snapshot) progress(now time.Time) string {
 	if n := st.now; n != nil {
 		line += "  " + white.Render(n.what)
 		if n.timed {
-			line += "  " + bar(24, n.progress) + "  " + white.Render(clock(n.left)+" left")
+			line += "  " + n.countdown(24)
 		}
 	}
 	return line
 }
 
-// mainColumn is the main view above what happened. Each line carries its own margin, so the core rows can mark the
+// mainLines is the main view above what happened. Each line carries its own margin, so the core rows can mark the
 // cores under load in it.
-func (s Snapshot) mainColumn(width int, now time.Time) []string {
-	pad := strings.Repeat(" ", margin)
+func (s Snapshot) mainLines(width int, now time.Time) []string {
 	var out []string
 	add := func(lines ...string) {
 		for _, l := range lines {
@@ -211,7 +212,7 @@ func (s Snapshot) narrator(width int, now time.Time) []string {
 		}
 		lines = append(lines, "", grey.Render("now  ")+white.Render(n.what), ansi.Truncate(detail, tw, ""))
 		if n.timed {
-			lines = append(lines, bar(40, n.progress)+"  "+white.Render(clock(n.left)+" left"))
+			lines = append(lines, n.countdown(40))
 		}
 	}
 	slab := blue.Render("█")
@@ -222,9 +223,14 @@ func (s Snapshot) narrator(width int, now time.Time) []string {
 	return out
 }
 
-func bar(cells int, p float64) string {
+func bar(cells int, p float64, fill lipgloss.Style) string {
 	k := int(math.Round(float64(cells) * min(max(p, 0), 1)))
-	return lit.Render(strings.Repeat("█", k)) + grey.Render(strings.Repeat("░", cells-k))
+	return fill.Render(strings.Repeat("█", k)) + grey.Render(strings.Repeat("░", cells-k))
+}
+
+// countdown is the running test's progress bar and the time it has left.
+func (n *nowLine) countdown(cells int) string {
+	return bar(cells, n.progress, lit) + "  " + white.Render(clock(n.left)+" left")
 }
 
 // track draws the stages side by side, each with its name, a progress bar and up to two lines beneath; on a narrow
@@ -238,13 +244,12 @@ func track(stations []station, width int) []string {
 		rows = rows[:2]
 	}
 	for _, st := range stations {
-		mark, style, fillStyle, k := "○", grey, grey, 0
+		mark, style, fillStyle, fill := "○", grey, grey, 0.0
 		switch st.state {
 		case reached:
-			mark, style, fillStyle, k = "■", green, green, cells
+			mark, style, fillStyle, fill = "■", green, green, 1
 		case current:
-			mark, style, fillStyle = "►", amber, amber
-			k = int(math.Round(float64(cells) * min(max(st.fill, 0), 1)))
+			mark, style, fillStyle, fill = "►", amber, amber, st.fill
 		case target:
 			style = white
 		case endless:
@@ -254,13 +259,13 @@ func track(stations []station, width int) []string {
 		if compact {
 			rows[0] += style.Render(mark+" "+st.label) + "  "
 			if st.state == current {
-				rows[1] = bar(20, st.fill) + "  " + textStyle.Render(strings.Join(st.sub, ", "))
+				rows[1] = bar(20, st.fill, lit) + "  " + textStyle.Render(strings.Join(st.sub, ", "))
 			}
 			continue
 		}
 		cols := []string{
 			style.Render(ansi.Truncate(mark+" "+st.label, span-1, "")),
-			fillStyle.Render(strings.Repeat("█", k)) + grey.Render(strings.Repeat("░", cells-k)),
+			bar(cells, fill, fillStyle),
 		}
 		for j := range 2 {
 			sub, subStyle := "", grey
@@ -294,10 +299,10 @@ func (s Snapshot) huntLamp() string {
 			what = "the crash"
 		}
 		switch {
-		case h.during == journal.PhaseRefine && s.refine != nil:
+		case s.refine != nil:
 			paused = fmt.Sprintf("Deepening round %d waits", s.refine.Round)
 		case s.guard != nil && len(s.guard.Steps) > 0:
-			paused = fmt.Sprintf("Lap %d waits at step %d", s.guard.Rotation, min(s.guard.StepsDone+1, len(s.guard.Steps)))
+			paused = fmt.Sprintf("Lap %d waits at step %d", s.guard.Rotation, currentStep(s.guard))
 		}
 		return lamp.Render(fmt.Sprintf(" %-8s", fmt.Sprintf("HUNT %d", h.id))) + "  " +
 			amber.Render(fmt.Sprintf("%s while I find which cores caused %s", paused, what))
@@ -318,7 +323,6 @@ func (s Snapshot) coreRows(width int) []string {
 			ccds = append(ccds, c.ccd)
 		}
 	}
-	pad := strings.Repeat(" ", margin)
 	for i, ccd := range ccds {
 		if i > 0 {
 			out = append(out, "")
@@ -352,7 +356,7 @@ func scale(cells int) string {
 // stands, then the gauge. A core this test is judging is drawn bright, every other core grey; ► in the margin marks the
 // cores that carry the load.
 func (c coreView) row(cells int) string {
-	marker, text, words := strings.Repeat(" ", margin), grey, grey
+	marker, text, words := pad, grey, grey
 	if c.loaded {
 		marker = white.Render("►") + strings.Repeat(" ", margin-1)
 	}
@@ -448,15 +452,15 @@ func (c coreView) state() string {
 }
 
 // historyLines lists what happened, newest first: the time into the session, a tag for the kind of event and the line.
-func historyLines(s Snapshot, width, rows int) []string {
+func (s Snapshot) historyLines(width, rows int) []string {
 	if !s.session {
 		return nil
 	}
 	out := []string{grey.Render("What happened")}
-	indent := strings.Repeat(" ", 9+tagWidth+2)
+	indent := strings.Repeat(" ", stampWidth+tagWidth+2)
 	for i := len(s.history) - 1; i >= 0 && len(out) < rows; i-- {
 		e := s.history[i]
-		prefix := grey.Render(fmt.Sprintf("%7s  ", hm(e.at.Sub(s.start)))) + toneStyle(e.tone).Render(fmt.Sprintf("%-*s", tagWidth, e.tag)) + "  "
+		prefix := s.stamp(e) + toneStyle(e.tone).Render(fmt.Sprintf("%-*s", tagWidth, e.tag)) + "  "
 		for j, l := range wrapStyled(e.sentence(), width-len(indent), textStyle) {
 			if len(out) >= rows {
 				break
@@ -472,12 +476,19 @@ func historyLines(s Snapshot, width, rows int) []string {
 }
 
 // logLines is the journal's own record, oldest first, one event per line.
-func logLines(s Snapshot, width int) []string {
+func (s Snapshot) logLines(width int) []string {
 	out := []string{grey.Render("Event log, as the journal records it"), ""}
 	for _, e := range s.log {
-		out = append(out, grey.Render(fmt.Sprintf("%7s  ", hm(e.at.Sub(s.start))))+textStyle.Render(ansi.Truncate(e.text, width-9, "...")))
+		out = append(out, s.stamp(e)+textStyle.Render(ansi.Truncate(e.text, width-stampWidth, "...")))
 	}
 	return out
+}
+
+// stampWidth is the width of a stamp: the time into the session, right-aligned, and two spaces.
+const stampWidth = 9
+
+func (s Snapshot) stamp(e entry) string {
+	return grey.Render(fmt.Sprintf("%*s  ", stampWidth-2, hm(e.at.Sub(s.start))))
 }
 
 // wrapStyled breaks text into lines of at most width cells, each rendered in style. A word longer than a line, such as

@@ -59,14 +59,14 @@ func (s Snapshot) story(now time.Time) story {
 	case t.condition == machine.Masked:
 		st = s.huntStory(t, now)
 	case t.round != 0:
-		st = s.deepenStory(t)
+		st = s.deepenStory()
 	case t.rerun:
-		st = s.rerunStory(t)
+		st = s.rerunStory()
 	default:
 		st = s.lapStory(t)
 	}
 	if t != nil {
-		st.now = s.nowLine(t, now, st.now)
+		st.now = s.nowLine(t, now)
 	}
 	if s.lastCrash != nil && st.headline != "FINDING THE CULPRIT" && now.Sub(*s.lastCrash) < 30*time.Minute && (s.lastFailure == nil || !s.lastFailure.at.Before(*s.lastCrash)) {
 		lead := fmt.Sprintf("The machine crashed and rebooted %s, and I picked up where I left off.", ago(now.Sub(*s.lastCrash)))
@@ -77,6 +77,11 @@ func (s Snapshot) story(now time.Time) story {
 
 func (s Snapshot) goal() bool {
 	return s.guard != nil && s.guard.CleanRotations > 0 && s.phase == journal.PhaseGuard
+}
+
+// currentStep is the number of the lap step running now, counting from 1.
+func currentStep(g *journal.GuardState) int {
+	return min(g.StepsDone+1, len(g.Steps))
 }
 
 func (s Snapshot) searching() int {
@@ -175,7 +180,7 @@ func (s Snapshot) huntStory(t *trial, now time.Time) story {
 	case "edge":
 		if m.edge != nil {
 			st.paragraphs = append(st.paragraphs,
-				fmt.Sprintf("%s fail only together. Now I'm finding how far core %02d must back off for them to pass: it runs at %d while the others stay at their failing offsets.", strings.ToUpper(suspects[:1])+suspects[1:], m.edge.Core, m.edge.Offset),
+				fmt.Sprintf("%s fail only together. Now I'm finding how far core %02d must back off for them to pass: it runs at %d while the others stay at their failing offsets.", capital(suspects), m.edge.Core, m.edge.Offset),
 				fmt.Sprintf("If this passes %d times, core %02d is safe at %d in that combination. If it fails, it has to back off further.", m.needed, m.edge.Core, m.edge.Offset))
 		}
 	default:
@@ -253,7 +258,7 @@ func failureCause(sig machine.Signal) string {
 	return "a test failed"
 }
 
-func (s Snapshot) deepenStory(t *trial) story {
+func (s Snapshot) deepenStory() story {
 	st := story{headline: "GOING DEEPER", tone: plainTone}
 	st.paragraphs = append(st.paragraphs, "These offsets passed a clean lap, but some cores may have room left, so I'm trying to win back depth.")
 	if r := s.refine; r != nil {
@@ -278,7 +283,7 @@ func (s Snapshot) deepenStory(t *trial) story {
 	return st
 }
 
-func (s Snapshot) rerunStory(t *trial) story {
+func (s Snapshot) rerunStory() story {
 	return story{headline: s.headline(), tone: plainTone, paragraphs: []string{
 		fmt.Sprintf("A failure just moved some offsets back. Now I rerun the test that failed, %d times, to make sure the new offsets hold before the lap goes on.", s.starts),
 	}}
@@ -319,16 +324,11 @@ func describeLoad(t *trial, total int) string {
 	return "on " + coresText(t.cores, total) + " at once"
 }
 
-func (s Snapshot) nowLine(t *trial, now time.Time, base *nowLine) *nowLine {
-	n := base
-	if n == nil {
-		n = &nowLine{}
-	}
-	n.detail = regimeWords[t.regime] + " on " + coresText(t.cores, len(s.cores))
+func (s Snapshot) nowLine(t *trial, now time.Time) *nowLine {
+	n := &nowLine{detail: regimeWords[t.regime] + " on " + coresText(t.cores, len(s.cores)), backend: t.workload}
 	if t.condition == machine.Isolated && t.offset != nil {
 		n.detail += fmt.Sprintf(" alone at %d", *t.offset)
 	}
-	n.backend = t.workload
 	switch {
 	case t.condition == machine.Masked && s.hunt != nil && s.hunt.mask != nil:
 		m := s.hunt.mask
@@ -341,7 +341,7 @@ func (s Snapshot) nowLine(t *trial, now time.Time, base *nowLine) *nowLine {
 			n.what = "confirming the limit"
 		}
 	case s.guard != nil && len(s.guard.Steps) > 0:
-		n.what = fmt.Sprintf("lap %d, step %d of %d", s.guard.Rotation, min(s.guard.StepsDone+1, len(s.guard.Steps)), len(s.guard.Steps))
+		n.what = fmt.Sprintf("lap %d, step %d of %d", s.guard.Rotation, currentStep(s.guard), len(s.guard.Steps))
 	}
 	if t.rerun {
 		n.what = "rerun after a fix"
@@ -418,7 +418,7 @@ func (s Snapshot) lapNext() []string {
 	if g == nil || len(g.Steps) == 0 {
 		return nil
 	}
-	rest := g.Steps[min(g.StepsDone+1, len(g.Steps)):]
+	rest := g.Steps[currentStep(g):]
 	var parts []string
 	for i := 0; i < len(rest); {
 		j := i
@@ -467,7 +467,7 @@ func (s Snapshot) stations() []station {
 	lap, step := "", ""
 	fill := 0.0
 	if g != nil && len(g.Steps) > 0 {
-		lap, step = fmt.Sprintf("lap %d", g.Rotation), fmt.Sprintf("step %d of %d", min(g.StepsDone+1, len(g.Steps)), len(g.Steps))
+		lap, step = fmt.Sprintf("lap %d", g.Rotation), fmt.Sprintf("step %d of %d", currentStep(g), len(g.Steps))
 		fill = float64(g.StepsDone) / float64(len(g.Steps))
 	}
 	find := station{label: "Find limits", state: reached, sub: []string{fmt.Sprintf("%d/%d cores", total-left, total)}}

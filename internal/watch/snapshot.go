@@ -23,7 +23,7 @@ const (
 type Snapshot struct {
 	problem     error
 	session     bool
-	start, last time.Time
+	start       time.Time
 	phase       journal.Phase
 	cores       []coreView
 	trial       *trial
@@ -54,7 +54,6 @@ type coreView struct {
 	tuned      int
 	applied    int
 	pass, fail *int
-	combos     int
 	checking   bool
 	loaded     bool
 	tested     bool
@@ -63,7 +62,6 @@ type coreView struct {
 }
 
 type trial struct {
-	id         string
 	cores      []int
 	condition  machine.Condition
 	regime     machine.Regime
@@ -72,51 +70,37 @@ type trial struct {
 	started    time.Time
 	hasStarted bool
 	duration   time.Duration
-	phase      journal.Phase
-	rotation   int
-	hunt, mask int
 	round      int
 	rerun      bool
 }
 
 type failureView struct {
-	at         time.Time
-	signal     machine.Signal
-	attributed bool
-	core       *int
-	offset     *int
-	regime     machine.Regime
+	at     time.Time
+	signal machine.Signal
 }
 
 type huntView struct {
 	id         int
 	regime     machine.Regime
-	workload   string
 	loaded     []int
-	failing    []int
 	anchor     []int
 	candidates []int
 	cause      *failureView
-	during     journal.Phase
 	mask       *maskView
-	masksDone  int
 }
 
 type maskView struct {
-	id      int
-	stage   string
-	cores   []int
-	passes  int
-	needed  int
-	edge    *journal.JointMember
-	held    []journal.JointMember
-	profile []int
+	id     int
+	stage  string
+	cores  []int
+	passes int
+	needed int
+	edge   *journal.JointMember
 }
 
 type deadEndView struct {
 	at        time.Time
 	condition journal.DeadEndCondition
-	core      *int
 	detail    string
 }
 
@@ -173,9 +157,6 @@ func Project(events []journal.Event) Snapshot {
 		guard:   st.Guard,
 		refine:  st.Refine,
 		starts:  config.Default().Evidence.Starts(),
-	}
-	if n := len(events); n > 0 {
-		s.last = events[n-1].Time
 	}
 	p := projector{s: &s, st: &st, intents: map[string]*journal.TrialIntent{}, starts: map[string]time.Time{}, applied: map[int]int{}, checking: map[int]bool{}, failures: map[int]*failureView{}}
 	for _, e := range events {
@@ -235,7 +216,7 @@ func (p *projector) fold(e journal.Event) {
 		}
 	case *journal.Failure:
 		s.failures++
-		f := p.failure(e, d)
+		f := &failureView{at: e.Time, signal: d.Signal}
 		p.failures[e.Seq] = f
 		s.lastFailure = f
 	case *journal.CrashDetected:
@@ -251,7 +232,7 @@ func (p *projector) fold(e journal.Event) {
 	case *journal.HuntMask:
 		p.mask = d
 	case *journal.DeadEnd:
-		s.deadEnd = &deadEndView{at: e.Time, condition: d.Condition, core: d.Core, detail: vtText(e.Msg)}
+		s.deadEnd = &deadEndView{at: e.Time, condition: d.Condition, detail: vtText(e.Msg)}
 	case *journal.Shutdown:
 		p.stopped = true
 		at := e.Time
@@ -269,10 +250,6 @@ func (p *projector) fold(e journal.Event) {
 			s.log = slices.Clone(s.log[len(s.log)-logLimit:])
 		}
 	}
-}
-
-func (p *projector) failure(e journal.Event, d *journal.Failure) *failureView {
-	return &failureView{at: e.Time, signal: d.Signal, attributed: d.Attribution == journal.Attributed, core: d.Core, offset: d.Offset, regime: d.Regime}
 }
 
 func (p *projector) finish() {
@@ -307,25 +284,16 @@ func (p *projector) hunt() {
 		return
 	}
 	h := &huntView{
-		id: st.Hunt.Hunt, regime: p.huntStart.Regime, workload: workloadLabel(p.huntStart.Workload), loaded: p.huntStart.Cores,
-		failing: p.huntStart.Failing, anchor: st.Hunt.Anchor, candidates: st.Hunt.Candidates, cause: p.huntFail, during: journal.PhaseGuard,
-	}
-	if st.Refine != nil {
-		h.during = journal.PhaseRefine
-	}
-	for _, m := range st.Hunt.Masks {
-		if m.Outcome != "running" {
-			h.masksDone++
-		}
+		id: st.Hunt.Hunt, regime: p.huntStart.Regime, loaded: p.huntStart.Cores,
+		anchor: st.Hunt.Anchor, candidates: st.Hunt.Candidates, cause: p.huntFail,
 	}
 	if n := len(st.Hunt.Masks); n > 0 {
 		m := st.Hunt.Masks[n-1]
 		if m.Outcome == "running" {
-			mv := &maskView{id: m.Mask, cores: m.Cores, passes: m.Passes, needed: m.Needed, edge: m.Edge, held: m.Held}
+			h.mask = &maskView{id: m.Mask, cores: m.Cores, passes: m.Passes, needed: m.Needed, edge: m.Edge}
 			if p.mask != nil && p.mask.Mask == m.Mask {
-				mv.stage, mv.profile = p.mask.Stage, p.mask.Profile
+				h.mask.stage = p.mask.Stage
 			}
-			h.mask = mv
 		}
 	}
 	s.hunt = h
@@ -334,7 +302,7 @@ func (p *projector) hunt() {
 func (p *projector) coreViews() {
 	s, st := p.s, p.st
 	for i, c := range st.Cores {
-		v := coreView{id: c.Core, ccd: c.CCD, phase: c.Phase, tuned: c.Offset, applied: c.Offset, pass: c.Pass, fail: c.FailedMark, combos: len(c.JointMarks), checking: p.checking[c.Core]}
+		v := coreView{id: c.Core, ccd: c.CCD, phase: c.Phase, tuned: c.Offset, applied: c.Offset, pass: c.Pass, fail: c.FailedMark, checking: p.checking[c.Core]}
 		if a, ok := p.applied[c.Core]; ok && s.stopped == nil && s.deadEnd == nil {
 			v.applied = a
 		}
@@ -373,7 +341,6 @@ func newTrial(p *journal.TrialIntent, starts map[string]time.Time) *trial {
 	}
 	started, ok := starts[p.Trial]
 	return &trial{
-		id:         p.Trial,
 		cores:      cores,
 		condition:  p.Condition,
 		regime:     p.Regime,
@@ -382,10 +349,6 @@ func newTrial(p *journal.TrialIntent, starts map[string]time.Time) *trial {
 		started:    started,
 		hasStarted: ok,
 		duration:   time.Duration(p.DurationS) * time.Second,
-		phase:      p.Phase,
-		rotation:   p.Rotation,
-		hunt:       p.Hunt,
-		mask:       p.Mask,
 		round:      p.Round,
 		rerun:      p.Rerun,
 	}
