@@ -37,6 +37,10 @@ Fault injection, explicit edges and the failure model are a Go API for tests (`s
 
 If a machine file sets `[model.signals]`, it replaces the default signal weights. Weights must be non-negative and sum to a positive total; an empty or all-zero map is rejected before the session starts.
 
+`[ccd]` opts into an additional smooth R7 hazard for each loaded CCD. The rate in failures/second is `exp(log_rate + effect[ccd] + slope*(mean applied CCD depth-25))`; `effect` contains the two CCD log-rate effects, and mean depth includes every core's applied offset on that CCD, including zeros. A CCD contributes nothing when none of its cores are loaded. Its failures are unattributed crashes without core-local MCE evidence. All parameters must be finite and slope nonnegative. Existing core and joint hazards still contribute; files without this table keep the old model exactly.
+
+If an active joint has any member on a loaded CCD, that CCD's smooth hazard is suppressed: joint explanations take precedence over extrapolation. A joint on the other CCD does not suppress this CCD's residual hazard.
+
 A machine file sets the core count, BIOS context, ranking, model parameters, per-core edges, joints and scripted outcomes; unset keys keep the seeded defaults, and an unknown key is an error. If it specifies any per-core edges, it must provide a `[[core]]` table for every core. Set `[bios_context]` with `bios_version`, `board`, `cpu_model`, `microcode` and `boost_limit_mhz` to override the simulator's BIOS context. This one adds a pair that crashes only when cores 03 and 11 are both at −30 or deeper under R7:
 
 ```toml

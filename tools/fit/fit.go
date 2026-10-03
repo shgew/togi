@@ -149,6 +149,9 @@ func (l *likelihood) rawScore(indices []int) float64 {
 	for _, i := range indices {
 		loss += l.value(i)
 	}
+	if c := l.cfg.CCD; c != nil {
+		loss += 0.5 * (c.Effect[0]*c.Effect[0] + c.Effect[1]*c.Effect[1])
+	}
 	return loss
 }
 
@@ -260,9 +263,13 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 	all := l.selectObs(func(observation) bool { return true })
 	previous := math.Inf(1)
 	for range 12 {
-		l.fitJoints(&cfg)
-		for ccd := range 2 {
-			l.addJoint(&cfg, records, ccd)
+		if cfg.CCD == nil {
+			l.fitJoints(&cfg)
+			for ccd := range 2 {
+				l.addJoint(&cfg, records, ccd)
+			}
+		} else {
+			l.fitCCD(&cfg)
 		}
 		l.fitRegimeEdges(&cfg)
 		l.fitWorkloads(&cfg)
@@ -275,6 +282,12 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 			break
 		}
 		previous = score
+	}
+	if cfg.CCD == nil {
+		cfg.CCD = &sim.CCD{LogRate: -9, Slope: 0.1}
+		l.cfg = cfg
+		l.rebuild()
+		l.fitCCD(&cfg)
 	}
 	return cfg, l.score(all)
 }
@@ -305,6 +318,9 @@ func (l *likelihood) fitJoints(cfg *sim.Config) {
 func (l *likelihood) fitRegimeEdges(cfg *sim.Config) {
 	for core := range cfg.Edges {
 		for r, regime := range machine.Regimes {
+			if cfg.CCD != nil && regime == machine.R7 {
+				continue
+			}
 			for _, isolated := range []bool{true, false} {
 				if isolated && r >= 5 {
 					continue
@@ -448,6 +464,9 @@ func (l *likelihood) fitWorkloads(cfg *sim.Config) {
 	for core := range cfg.Edges {
 		workloads := make(map[string]bool)
 		for _, o := range l.obs {
+			if cfg.CCD != nil && o.spec.Regime == machine.R7 {
+				continue
+			}
 			if o.k > 0 && slices.Contains(o.spec.Cores, core) {
 				workloads[o.spec.Workload.ID] = true
 			}
@@ -496,6 +515,10 @@ func (l *likelihood) fitWorkloads(cfg *sim.Config) {
 func cloneMachine(cfg sim.Config) sim.Config {
 	model := *cfg.Model
 	cfg.Model = &model
+	if cfg.CCD != nil {
+		c := *cfg.CCD
+		cfg.CCD = &c
+	}
 	cfg.Edges = slices.Clone(cfg.Edges)
 	for core := range cfg.Edges {
 		cfg.Edges[core].Workload = maps.Clone(cfg.Edges[core].Workload)
