@@ -396,6 +396,15 @@ func (r waitErrorRunning) Wait(ctx context.Context, report machine.Reporter) (ma
 	return result, errors.New("injected runner failure")
 }
 
+func (r waitErrorRunning) Stop() error {
+	_ = r.Running.Stop()
+	if r.cancel != nil {
+		r.cancel()
+		return nil
+	}
+	return errors.New("injected runner failure")
+}
+
 func TestRunnerWaitErrorsCountTowardBackendDeadEnd(t *testing.T) {
 	t.Parallel()
 	r, _, closeJournal := checkedRunner(t, []int{0, 0})

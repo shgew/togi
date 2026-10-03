@@ -33,6 +33,8 @@ type running struct {
 	spec    machine.TrialSpec
 	started machine.Started
 	escape  bool
+	stopped bool
+	stopErr error
 }
 
 func (trials) Passed(string) error { return nil }
@@ -82,6 +84,16 @@ func (t trials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Runn
 }
 
 func (r *running) Started() machine.Started { return r.started }
+
+func (r *running) Stop() error {
+	if !r.stopped {
+		r.stopped = true
+		if r.m.crashed || r.boot != r.m.boot {
+			r.stopErr = machine.ErrCrashed
+		}
+	}
+	return r.stopErr
+}
 
 func (r *running) Wait(ctx context.Context, report machine.Reporter) (result machine.Result, err error) {
 	m := r.m

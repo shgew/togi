@@ -340,6 +340,12 @@ func (r wallJumpRunning) Wait(context.Context, machine.Reporter) (machine.Result
 	return machine.Result{Ran: 85 * time.Second}, context.Canceled
 }
 
+func (r wallJumpRunning) Stop() error {
+	r.jump()
+	r.cancel()
+	return nil
+}
+
 func runWithSeams(ctx context.Context, in simRun, seams machine.Machine) (Stop, error) {
 	in.Seams = &seams
 	return simulateBoot(ctx, in, wrapFor(in, nil))
@@ -401,6 +407,11 @@ func (r jumpRunning) Wait(ctx context.Context, report machine.Reporter) (machine
 	return r.Running.Wait(ctx, report)
 }
 
+func (r jumpRunning) Stop() error {
+	r.jump()
+	return r.Running.Stop()
+}
+
 type jumpAndCrashTrials struct {
 	machine.Trials
 	m     *sim.Machine
@@ -435,6 +446,8 @@ func (r jumpAndCrashRunning) Wait(ctx context.Context, report machine.Reporter) 
 	r.m.Crash()
 	return machine.Result{}, machine.ErrCrashed
 }
+
+func (r jumpAndCrashRunning) Stop() error { return nil }
 
 func TestInterruptedTrialDurationUsesMonotonicTimeAfterWallJump(t *testing.T) {
 	t.Parallel()

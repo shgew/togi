@@ -95,6 +95,13 @@ func (r evidenceRunning) Wait(context.Context, machine.Reporter) (machine.Result
 	return r.result, r.err
 }
 
+func (r evidenceRunning) Stop() error {
+	if errors.Is(r.err, machine.ErrContainment) || !errors.Is(r.err, context.Canceled) {
+		return r.err
+	}
+	return nil
+}
+
 type evidenceKernel struct {
 	machine.Kernel
 	clock machine.Clock
