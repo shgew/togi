@@ -28,7 +28,8 @@ type watchCut struct {
 }
 
 // simulate runs a simulated session through its first clean cycle, or until until reports true, and returns its
-// journal at the current ruleset.
+// journal at the current ruleset. Its config.loaded events name a fixed build, so a release's version bump leaves the
+// frames unchanged.
 func simulate(m *sim.Machine, cfg config.Config, until func(journal.Event) bool) ([]journal.Event, error) {
 	dir, err := os.MkdirTemp("", "togi-watch-frames")
 	if err != nil {
@@ -44,6 +45,12 @@ func simulate(m *sim.Machine, cfg config.Config, until func(journal.Event) bool)
 	events, torn, err := journal.Read(dir)
 	if err != nil || torn != nil {
 		return nil, fmt.Errorf("read simulated journal: %w, torn %q", err, torn)
+	}
+	for i, e := range events {
+		if p, ok := e.Data.(*journal.ConfigLoaded); ok {
+			p.Version, p.Rev = "0.0.0", "dev"
+			events[i].Msg = p.Message()
+		}
 	}
 	return events, nil
 }
