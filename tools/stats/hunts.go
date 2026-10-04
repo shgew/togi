@@ -288,7 +288,7 @@ func renderDepth(tab *table, p *projection, since time.Time) {
 			groups[k][depth] = &depthCount{}
 		}
 		d := groups[k][depth]
-		d.cyclesStarted++
+		d.trials++
 		if t.end != nil && t.end.Outcome == journal.OutcomeFailure {
 			d.failures++
 			failing[k] = true

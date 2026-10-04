@@ -400,7 +400,7 @@ func TestHuntSkipsReachedGroup(t *testing.T) {
 
 func TestRepeatedParkedCoreProbeReturnsToBinaryPartsAfterPass(t *testing.T) {
 	starts := make([]coreStart, 16)
-	for i := range trials {
+	for i := range starts {
 		starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: -10, fail: new(-11)}
 	}
 	h := newHarness(t, starts...)
