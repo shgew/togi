@@ -138,7 +138,7 @@ func TestNewSessionTrialGetsNoSamplesFromAnEarlierInvocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: t.TempDir(), Machine: m, Laps: 1}
+	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: t.TempDir(), Machine: m, Cycles: 1}
 	in.Until = func(e journal.Event) bool {
 		p, ok := e.Data.(*journal.TrialEnd)
 		return ok && p.Trial == "0001"
