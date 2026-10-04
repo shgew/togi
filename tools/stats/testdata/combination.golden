@@ -169,12 +169,12 @@ R7 voltage requests
 field                               count
 failures without request telemetry  3
 
-R7 starts by top request (4 mV bins)
-class  top request V  starts  failures
+R7 trials by top request (4 mV bins)
+class  top request V  trials  failures
 none
 
-R7 starts by top requester
-class  core  starts  failures
+R7 trials by top requester
+class  core  trials  failures
 none
 
 Inconclusive trials

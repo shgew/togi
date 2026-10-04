@@ -11,7 +11,7 @@ import (
 )
 
 func renderRequests(tab *table, p *projection, since time.Time) {
-	type counts struct{ starts, failures int }
+	type counts struct{ trials, failures int }
 	bins, requesters := map[string]counts{}, map[string]counts{}
 	missingFailures := 0
 	for _, t := range p.trials {
@@ -28,7 +28,7 @@ func renderRequests(tab *table, p *projection, since time.Time) {
 		}
 		add := func(m map[string]counts, key string) {
 			x := m[key]
-			x.starts++
+			x.trials++
 			if failed {
 				x.failures++
 			}
@@ -42,20 +42,20 @@ func renderRequests(tab *table, p *projection, since time.Time) {
 	}
 	tab.section("R7 voltage requests", "field\tcount")
 	tab.row("failures without request telemetry\t%d", missingFailures)
-	tab.section("R7 starts by top request (4 mV bins)", "class\ttop request V\tstarts\tfailures")
+	tab.section("R7 trials by top request (4 mV bins)", "class\ttop request V\ttrials\tfailures")
 	if len(bins) == 0 {
 		tab.row("none")
 	}
 	for _, key := range keys(bins) {
 		x := bins[key]
-		tab.row("%s\t%d\t%d", key, x.starts, x.failures)
+		tab.row("%s\t%d\t%d", key, x.trials, x.failures)
 	}
-	tab.section("R7 starts by top requester", "class\tcore\tstarts\tfailures")
+	tab.section("R7 trials by top requester", "class\tcore\ttrials\tfailures")
 	if len(requesters) == 0 {
 		tab.row("none")
 	}
 	for _, key := range keys(requesters) {
 		x := requesters[key]
-		tab.row("%s\t%d\t%d", key, x.starts, x.failures)
+		tab.row("%s\t%d\t%d", key, x.trials, x.failures)
 	}
 }
