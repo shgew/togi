@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -271,7 +272,7 @@ func TestLiveJournalProblemAndRecovery(t *testing.T) {
 		check := func(want string) {
 			t.Helper()
 			synctest.Wait()
-			if !strings.Contains(frames[len(frames)-1], want) {
+			if !strings.Contains(strings.Join(strings.Fields(strings.ReplaceAll(ansi.Strip(frames[len(frames)-1]), "▌", "")), " "), want) {
 				t.Fatalf("live frame does not show %q:\n%s", want, frames[len(frames)-1])
 			}
 		}

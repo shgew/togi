@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"testing/synctest"
@@ -94,29 +95,44 @@ func TestLiveHoldsUntilJournalKeyResizeOrDeadline(t *testing.T) {
 		keys := make(chan key)
 		winch := make(chan os.Signal)
 		out := &terminalOutput{}
+		var mu sync.Mutex
 		var until time.Time
 		frames, sizes, reloads := 0, 0, 0
 		done := make(chan error, 1)
 		go func() {
 			done <- show(ctx, out, func() (int, int, error) {
+				mu.Lock()
+				defer mu.Unlock()
 				sizes++
 				return 80, 12, nil
 			}, nil, winch, colorprofile.ASCII, func(Screen) Drawn {
+				mu.Lock()
+				defer mu.Unlock()
 				frames++
 				return Drawn{Lines: []string{fmt.Sprint(frames)}, Until: until}
-			}, options{live: true, changes: changes, keys: keys, reload: func() bool { reloads++; return true }})
+			}, options{live: true, changes: changes, keys: keys, reload: func() bool {
+				mu.Lock()
+				defer mu.Unlock()
+				reloads++
+				return true
+			}})
 		}()
 		check := func(wantFrames, wantReloads int) {
 			t.Helper()
 			synctest.Wait()
-			if diff := cmp.Diff([]int{wantFrames, wantFrames, wantReloads}, []int{frames, sizes, reloads}); diff != "" {
+			mu.Lock()
+			got := []int{frames, sizes, reloads}
+			mu.Unlock()
+			if diff := cmp.Diff([]int{wantFrames, wantFrames, wantReloads}, got); diff != "" {
 				t.Fatalf("redraws, size reads, journal reloads (-want +got):\n%s", diff)
 			}
 		}
 		check(1, 0)
 		time.Sleep(time.Second)
 		check(2, 0)
+		mu.Lock()
 		until = time.Now().Add(20 * time.Second)
+		mu.Unlock()
 		changes <- nil
 		check(3, 1)
 		time.Sleep(5 * time.Second)

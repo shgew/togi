@@ -56,7 +56,7 @@ func TestWatchProblemFrame(t *testing.T) {
 			if code != exitError {
 				t.Errorf("exit %d, want %d", code, exitError)
 			}
-			if !strings.Contains(strings.Join(strings.Fields(stdout.String()), " "), tc.problem) {
+			if !strings.Contains(strings.Join(strings.Fields(strings.ReplaceAll(stdout.String(), "▌", "")), " "), tc.problem) {
 				t.Errorf("stdout %q, want problem %q", stdout.String(), tc.problem)
 			}
 			if !strings.Contains(stderr.String(), "togi watch: ") || !strings.Contains(stderr.String(), tc.problem) {
