@@ -6,6 +6,8 @@ You are an autonomous researcher working on togi, a Go CLI that finds per-core C
 
 `just forward` runs only the [forward-chained check](../../docs/benchmarking.md#forward-chained-check): for each real session after the first, it fits the earlier sessions' decisive starts and scores the held-out session. It writes no machine files. `--seal 1` leaves the newest session out entirely; it is the confirmation set, the way the bench keeps a holdout split.
 
+`just fit` and `just forward` run independent fits in parallel, bounded by `--jobs` (default: CPU count). Use `--jobs 1` for serial execution or the same explicit worker count for reference and candidate timing comparisons. Worker count does not change the samples, machine files or report order.
+
 - **Primary:** the `Pooled` `log_loss/start fit` of `just forward --seal 1`. Lower is better. The `constant` predictor's pooled loss on the same line is the bar a useful model must clear.
 - **F1, surprises:** the pooled `failures_p<0.01` must not rise. These are failures the model called nearly impossible; a lower loss bought with more of them hides blind spots.
 - **F2, calibration:** the pooled `|ln(predicted / failures)|` must not rise. Log loss alone can improve while the model predicts several times too many failures.

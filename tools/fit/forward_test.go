@@ -34,7 +34,7 @@ func TestForwardCheck(t *testing.T) {
 				starts = append(starts, r)
 			}
 		}
-		rows, pooled, err := forwardCheck(starts, 0)
+		rows, pooled, err := forwardCheck(starts, 0, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -53,7 +53,7 @@ func TestForwardCheck(t *testing.T) {
 				later[i].Outcome = journal.OutcomeFailure
 			}
 		}
-		changed, _, err := forwardCheck(later, 0)
+		changed, _, err := forwardCheck(later, 0, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -65,7 +65,7 @@ func TestForwardCheck(t *testing.T) {
 				later[i].Outcome = journal.OutcomeFailure
 			}
 		}
-		changed, _, err = forwardCheck(later, 0)
+		changed, _, err = forwardCheck(later, 0, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -81,7 +81,7 @@ func TestForwardCheck(t *testing.T) {
 			r.Session, r.Seq = session, 1
 			starts = append(starts, r)
 		}
-		rows, _, err := forwardCheck(starts, 0)
+		rows, _, err := forwardCheck(starts, 0, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -93,7 +93,7 @@ func TestForwardCheck(t *testing.T) {
 			t.Fatalf("held-out sessions out of chronological order (-want +got):\n%s", diff)
 		}
 		starts[0].Outcome = journal.OutcomeFailure
-		changed, _, err := forwardCheck(starts, 0)
+		changed, _, err := forwardCheck(starts, 0, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -111,11 +111,11 @@ func TestForwardCheck(t *testing.T) {
 			}
 			starts = append(starts, r, r)
 		}
-		all, _, err := forwardCheck(starts, 0)
+		all, _, err := forwardCheck(starts, 0, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
-		sealed, pooled, err := forwardCheck(starts, 1)
+		sealed, pooled, err := forwardCheck(starts, 1, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -125,7 +125,7 @@ func TestForwardCheck(t *testing.T) {
 		if diff := cmp.Diff([]int{4, 2}, []int{pooled.starts, pooled.failures}); diff != "" {
 			t.Fatalf("pooled score included the sealed session (-want +got):\n%s", diff)
 		}
-		if _, _, err := forwardCheck(starts, 3); err == nil || err.Error() != "--seal 3 leaves no held-out session to score (3 held out)" {
+		if _, _, err := forwardCheck(starts, 3, 3); err == nil || err.Error() != "--seal 3 leaves no held-out session to score (3 held out)" {
 			t.Fatalf("sealing every held-out session: %v", err)
 		}
 	})

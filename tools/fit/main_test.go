@@ -96,10 +96,10 @@ func TestGenerateWritesCheckedReproducibleEnsemble(t *testing.T) {
 			t.Fatal(err)
 		}
 		var first [][]byte
-		for _, dir := range []string{"first", "second"} {
+		for jobs, dir := range []string{"first", "second"} {
 			out := filepath.Join(root, dir)
 			var report bytes.Buffer
-			if err := generate(extract, out, 263, 1, &report); err != nil {
+			if err := generate(extract, out, 263, 1, jobs+1, &report); err != nil {
 				t.Fatal(err)
 			}
 			for n := range 2 {
@@ -170,7 +170,7 @@ func TestGenerateRefusesMissingOrNondecisiveEvidence(t *testing.T) {
 		extract := filepath.Join(root, "facts.jsonl.gz")
 		out := filepath.Join(root, "machines")
 		var output bytes.Buffer
-		if err := generate(extract, out, 263, 0, &output); err == nil {
+		if err := generate(extract, out, 263, 0, 2, &output); err == nil {
 			t.Fatal("missing extract accepted")
 		}
 		var compressed bytes.Buffer
@@ -181,7 +181,7 @@ func TestGenerateRefusesMissingOrNondecisiveEvidence(t *testing.T) {
 		if err := os.WriteFile(extract, compressed.Bytes(), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := generate(extract, out, 263, 0, &output); err == nil || err.Error() != "extract has no decisive starts" {
+		if err := generate(extract, out, 263, 0, 2, &output); err == nil || err.Error() != "extract has no decisive starts" {
 			t.Fatalf("empty extract: %v", err)
 		}
 		if _, err := os.Stat(out); !os.IsNotExist(err) {
@@ -215,7 +215,7 @@ func TestGenerateRefusesConflictingDestinations(t *testing.T) {
 			want := "create output directory"
 			if directory {
 				conflict = filepath.Join(out, "target-fit-0.toml")
-				want = "write fitted machine"
+				want = "fit 0 write fitted machine"
 				if err := os.MkdirAll(conflict, 0700); err != nil {
 					t.Fatal(err)
 				}
@@ -223,7 +223,7 @@ func TestGenerateRefusesConflictingDestinations(t *testing.T) {
 				t.Fatal(err)
 			}
 			var report bytes.Buffer
-			if err := generate(extract, out, 263, 0, &report); err == nil || !strings.HasPrefix(err.Error(), want+":") || report.Len() != 0 {
+			if err := generate(extract, out, 263, 0, 2, &report); err == nil || !strings.HasPrefix(err.Error(), want+":") || report.Len() != 0 {
 				t.Fatalf("conflicting destination: %v, report %q; want %s", err, report.String(), want)
 			}
 			info, err := os.Stat(conflict)
@@ -271,6 +271,8 @@ func TestRunForwardOnly(t *testing.T) {
 		{[]string{"--forward-only", "--seal", "1"}, 1, "fit: --seal 1 leaves no held-out session to score (1 held out)"},
 		{[]string{"--seal", "1"}, 2, "only with --forward-only"},
 		{[]string{"--forward-only", "--seal", "-1"}, 2, "nonnegative --seal"},
+		{[]string{"--forward-only", "--jobs", "0"}, 2, "positive --jobs"},
+		{[]string{"--forward-only", "--jobs", "-1"}, 2, "positive --jobs"},
 	} {
 		var stdout, stderr bytes.Buffer
 		code := run(append([]string{"--facts", extract, "--out", out}, tc.args...), &stdout, &stderr)
