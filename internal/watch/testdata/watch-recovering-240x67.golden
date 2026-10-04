@@ -1,0 +1,66 @@
+  togi   02:47:42   session 2h47m   3 failures · 1 crashes   last observed failure 02:45, 2m ago
+
+  ► SOLO LIMITS  0 of 16 found  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+
+  ▌  RECOVERED FROM A CRASH The machine crashed and rebooted. No trial has started since I recovered on this boot.        last trial      FAILURE  0:00 on 12 · Tctl max 67 C
+  ▌  next: R1 light load on core 13 at -15 with mprime SSE 4K-21K
+
+  RECOVERED FROM A CRASH ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  R1 light load on core 05 alone at -15 · detected 02:47:02
+  next: R1 light load on core 13 at -15 with mprime SSE 4K-21K
+
+
+
+
+
+
+
+
+
+  CCD 0               0       -10       -20       -30       -40       -50 fail pt  not under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  waiting at 0
+    00    0  SEARCH    ···············                                             passed -15 · next -20                    08    0  SEARCH    ···············                                             passed -15 · next -20
+    01    0  SEARCH    ···············                                             passed -15 · next -20                    09    0  SEARCH    ···············                                             passed -15 · next -20
+    02    0  SEARCH    ···············                                             passed -15 · next -20                    10    0  SEARCH    ···············                                             passed -15 · next -20
+    03    0  SEARCH    ···············                                             passed -15 · next -20                    11    0  SEARCH    ······   █                                            -10   passed -6 · next -7
+    04    0  SEARCH    ···············                                             passed -15 · next -20                    12    0  SEARCH    ··········    █                                       -15   passed -10 · next -11
+    05  -15  SEARCH    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                             passed -10 · next -15                    13    0  SEARCH    ··········                                                  passed -10 · next -15
+    06    0  SEARCH    ··········                                                  passed -10 · next -15                    14    0  SEARCH    ·   █                                                  -5   passed -1 · next -2
+    07    0  SEARCH    ··········                                                  passed -10 · next -15                    15    0  SEARCH    ··········                                                  passed -10 · next -15
+
+  TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
+                                                                                                                          
+    core   this turn                      at     workload                  so far                                         02:47  crash    with the offsets applied, rebooted
+    13     search step: light, then       -15    mprime SSE 4K-21K         passed -10 · next -15                          02:47  resume   session resumed
+    06     search step: light, then       -15    mprime SSE 4K-21K         passed -10 · next -15                          02:45  backoff  core 12 -15 → -11
+    14     search step: 1 count deeper    -2     mprime SSE 4K-21K         passed -1 · next -2                            02:45  fail     core 12 fails at -15
+    07     search step: light, then       -15    mprime SSE 4K-21K         passed -10 · next -15                          02:45  fail     light load on core 12 alone at -15, wrong result
+    15     search step: light, then       -15    mprime SSE 4K-21K         passed -10 · next -15                          02:45  step     core 04 passed -15, next -20
+    00     search step: light, then       -20    y-cruncher BKT + SFTv4    passed -15 · next -20                          02:42  step     core 11 passed -6, next -7
+    08     search step: light, then       -20    y-cruncher BKT + SFTv4    passed -15 · next -20                          02:39  step     core 03 passed -15, next -20
+    01     search step: light, then       -20    y-cruncher BKT + SFTv4    passed -15 · next -20                          02:36  step     core 10 passed -15, next -20
+    09     search step: light, then       -20    y-cruncher BKT + SFTv4    passed -15 · next -20                          02:33  step     core 02 passed -15, next -20
+    02     search step: light, then       -20    y-cruncher BKT + SFTv4    passed -15 · next -20                          02:30  step     core 09 passed -15, next -20
+    10     search step: light, then       -20    y-cruncher BKT + SFTv4    passed -15 · next -20                          02:27  step     core 01 passed -15, next -20
+    03     search step: light, then       -20    y-cruncher BKT + SFTv4    passed -15 · next -20                          02:24  step     core 08 passed -15, next -20
+    11     search step: 1 count deeper    -7     y-cruncher BKT + SFTv4    passed -6 · next -7                            02:21  step     core 00 passed -15, next -20
+    04     search step: light, then       -20    y-cruncher BKT + SFTv4    passed -15 · next -20                          02:18  step     core 15 passed -10, next -15
+    12     search step: 1 count deeper    -11    y-cruncher BKT + SFTv4    passed -10 · next -11                          02:15  step     core 07 passed -10, next -15
+    05     search step: light, then       -15    mprime SSE 4K-21K         passed -10 · next -15                          02:12  step     core 14 passed -1, next -2
+                                                                                                                          02:09  step     core 06 passed -10, next -15
+                                                                                                                          02:06  step     core 13 passed -10, next -15
+                                                                                                                          02:03  step     core 05 passed -10, next -15
+                                                                                                                          02:00  step     core 12 passed -10, next -15
+                                                                                                                          01:57  step     core 04 passed -10, next -15
+                                                                                                                          01:54  backoff  core 11 -10 → -6
+                                                                                                                          01:54  fail     core 11 fails at -10
+                                                                                                                          01:54  fail     light load on core 11 alone at -10, the stress program stalled
+                                                                                                                          01:54  step     core 03 passed -10, next -15
+                                                                                                                          01:51  step     core 10 passed -10, next -15
+                                                                                                                          01:48  step     core 02 passed -10, next -15
+                                                                                                                          01:45  step     core 09 passed -10, next -15
+                                                                                                                          01:42  step     core 01 passed -10, next -15
+                                                                                                                          01:39  step     core 08 passed -10, next -15
+                                                                                                                          01:36  step     core 00 passed -10, next -15
+                                                                                                                          +35 more
+
+   ?  help    l  log    esc  back    q  close view

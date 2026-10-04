@@ -1,0 +1,32 @@
+ togi   10:15:17   session 10h15m   28 failures · 7 crashes   last observed failure 06:59, 3h15m ago
+ ■ SOLO ─ ► CYCLE 1 ─ ○ DEEPEN ─ CLEAN 0
+
+ ▌  I'm between trials. The journal keeps the last result and the next trial when it is known.
+
+ BETWEEN TRIALS  FAILURE · R7 on 00-07 · 0:00 · the stress program quit · core 05 named · next: rerun R7 all-core
+ next: rerun R7 all-core load on 00-07 with mprime AVX2 36K-248K
+
+
+
+ CCD 0            0  2 counts/cell       -50fail ptnot       CCD 1            0  2 counts/cell       -50fail ptnot
+   00 -37 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38             08 -27 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -28 
+   01 -34 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -35             09 -18 AT LIMIT ▄▄▄▄▄▄▄▄▄█                  -19 
+   02 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -36             10 -16 AT LIMIT ▄▄▄▄▄▄▄▄█                   -17 
+   03 -17 AT LIMIT ▄▄▄▄▄▄▄▄█                   -18             11  -7 AT LIMIT ▄▄▄█                         -8 
+   04 -32 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33             12 -10 AT LIMIT ▄▄▄▄▄█                      -11 
+   05 -10 AT LIMIT ▄▄▄▄▄█                      -11             13 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄█               -25 
+   06 -30 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -31             14  -4 AT LIMIT ▄▄█                          -5 
+   07 -32 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33             15 -39 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -40 
+
+ CYCLE 1 ─────────────────────────────── 14 steps · 0 done   WHAT HAPPENED ──────────────────────────────────── l: all
+                                                             
+ ►  1 R7 all-core       5 parts                              10:14  fail     all-core load on cores 00-07, the stress
+     partial CCD 0 00-04 06 07 · record only recorded: 0     10:14  cycle    #1 started, 14 steps
+     full CCD 0 00-07 0/4 passed                             10:14  limit    core 15 solo limit -39
+     partial CCD 1 08-13 15 · record only recorded: 0        10:13  limit    core 01 solo limit -34
+     full CCD 1 08-15 0/4 passed                             10:13  limit    core 00 solo limit -37
+     full CCD 0+1 00-15 0/4 passed                           10:11  limit    core 07 solo limit -32
+ ○  2 R7 all-core       5 parts                              10:11  limit    core 04 solo limit -32
+ +12 more                                                    +193 more
+
+  ?  help    l  log    esc  back    q  close view

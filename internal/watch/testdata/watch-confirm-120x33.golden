@@ -1,0 +1,32 @@
+ togi   00:00:40   session 0h00m   0 failures · 0 crashes
+ ► SOLO  0 of 16 found ─ ○ CYCLE ─ ○ DEEPEN ─ CLEAN 0
+
+ ▌  -10 is core 00's candidate solo limit, and I'm confirming it.
+
+  R1   light load  on core 00 alone at -10   mprime SSE 4K-21K · 1 worker               CONFIRM CORE 00 AT -10 · LIGHT
+ ███████████████████████████████████████████████████████████████████████████████████████████  0:50 left  0/5 ► · · · ·
+
+ all 5 pass → core 10 at -10            core named → named core backs off      inconclusive → core 00 at -10
+
+ CCD 0            0  2 counts/cell       -50fail ptone       CCD 1            0  2 counts/cell       -50fail ptwaiting
+ ► 00 -10 CONFIRM  ▄▄▄▄▄                           L0/5        08   0 CONFIRM                                  L0/5
+   01   0 CONFIRM                                  L0/5        09   0 CONFIRM                                  L0/5
+   02   0 CONFIRM                                  L0/5        10   0 CONFIRM                                  L0/5
+   03   0 CONFIRM                                  L0/5        11   0 CONFIRM                                  L0/5
+   04   0 CONFIRM                                  L0/5        12   0 CONFIRM                                  L0/5
+   05   0 CONFIRM                                  L0/5        13   0 CONFIRM                                  L0/5
+   06   0 CONFIRM                                  L0/5        14   0 CONFIRM                                  L0/5
+   07   0 CONFIRM                                  L0/5        15   0 CONFIRM                                  L0/5
+
+ TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ──────────────────────────────────── l: all
+                                                             
+   08 -10 confirm: light, then heavy vector -10: light       00:00  start    session started on 16 cores
+   01 -10 confirm: light, then heavy vector -10: light
+   09 -10 confirm: light, then heavy vector -10: light
+   02 -10 confirm: light, then heavy vector -10: light
+   10 -10 confirm: light, then heavy vector -10: light
+   03 -10 confirm: light, then heavy vector -10: light
+   11 -10 confirm: light, then heavy vector -10: light
+ +9 more
+
+  ?  help    l  log    esc  back    q  close view

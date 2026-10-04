@@ -2,413 +2,93 @@ package watch
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/tuner"
 )
 
-// story is what togi says about the moment: a headline, a few paragraphs and the test running now.
 type story struct {
 	headline   string
-	tone       tone
 	paragraphs []string
-	now        *nowLine
-}
-
-type nowLine struct {
-	what     string
-	detail   string
-	backend  string
-	progress float64
-	timed    bool
-	left     time.Duration
+	tone       tone
 }
 
 func (s Snapshot) story(now time.Time) story {
 	switch {
 	case s.problem != nil:
-		return story{headline: "I CAN'T READ THE JOURNAL", tone: badTone, paragraphs: []string{
-			vtText(s.problem.Error()),
-			"I keep trying every second. Tuning itself is not affected by this screen.",
-		}}
+		return story{"I CAN'T READ THE JOURNAL", []string{vtText(s.problem.Error()), "I'll retry when the journal changes. Tuning itself is not affected by this screen."}, badTone}
 	case !s.session:
-		return story{headline: "NO SESSION YET", paragraphs: []string{
-			"Nothing has been recorded yet. Start tuning with togi run, or boot the togi entry, and I'll tell you what I'm doing here.",
-		}}
+		return story{"NO SESSION YET", []string{"Nothing has been recorded yet. Start with togi run, or boot the togi entry, and I'll tell you what I'm doing here."}, plainTone}
 	case s.deadEnd != nil:
 		return s.deadEndStory()
 	case s.stopped != nil:
-		text := "I've stopped. Everything I learned is in the journal, and togi run picks up where I left off."
-		switch s.stoppedReason {
-		case journal.ShutdownSignal, journal.ShutdownCycles:
-			text = "I put the offsets back to safe values before stopping. The numbers below are what I found, not what is applied now. Everything I learned is in the journal, and togi run picks up where I left off."
-		case journal.ShutdownCommand:
-			text = "The command finished without changing the applied offsets. Everything I learned is in the journal, and togi run picks up where I left off."
-		case journal.ShutdownDeadEnd:
+		text := "I've stopped. Everything I learned is in the journal; togi run picks up where I left off."
+		if s.stopped.saved {
+			text = "The rows show the saved profile, not applied now. I restored safer offsets before stopping."
 		}
-		st := story{headline: "I'M STOPPED", paragraphs: []string{text}}
-		if s.goal() {
-			st.paragraphs = append(st.paragraphs, "These offsets passed a clean cycle of every kind of test: they are the ones to carry into the BIOS.")
-		}
-		return st
+		return story{"STOPPED", []string{text, stopWords(s.stopped.reason)}, plainTone}
+	case s.recover != nil:
+		return story{"RECOVERED FROM A CRASH", []string{"The machine crashed and rebooted. No trial has started since I recovered on this boot.", s.nextLine()}, warnTone}
+	case s.trial == nil:
+		return story{"BETWEEN TRIALS", []string{"I'm between trials. The journal keeps the last result and the next trial when it is known.", s.nextLine()}, plainTone}
 	}
-	var st story
 	t := s.trial
-	switch {
-	case t == nil:
-		st = s.idleStory()
-	case !t.hasStarted:
-		st = story{headline: s.headline(), tone: plainTone, paragraphs: []string{
-			"I'm preparing the next test. Its intent is recorded, but the workload hasn't started yet.",
-			fmt.Sprintf("Planned: %s on %s for %s.", regimeWords[t.regime], coresText(t.cores, len(s.cores)), duration(t.duration)),
-		}}
-	case t.condition == machine.Alone:
-		st = s.searchStory(t)
-	case t.condition == machine.Parked:
-		st = s.huntStory(t, now)
-	case t.round != 0:
-		st = s.deepenStory()
-	case t.rerun:
-		st = s.rerunStory()
-	default:
-		st = s.cycleStory(t)
-	}
-	if t != nil {
-		st.now = s.nowLine(t, now)
-	}
-	if s.lastCrash != nil && st.headline != "FINDING THE CULPRIT" && now.Sub(*s.lastCrash) < 30*time.Minute && (s.lastFailure == nil || !s.lastFailure.at.Before(*s.lastCrash)) {
-		lead := fmt.Sprintf("The machine crashed and rebooted %s, and I picked up where I left off.", ago(now.Sub(*s.lastCrash)))
-		st.paragraphs = append([]string{lead}, st.paragraphs...)
-	}
-	return st
-}
-
-func (s Snapshot) goal() bool {
-	return s.checking != nil && s.checking.CleanCycles > 0 && s.phase == journal.PhaseChecking &&
-		!s.canDeepen && s.deepening == nil && s.rerunDuration == 0 && len(s.cores) > 0 &&
-		!slices.ContainsFunc(s.cores, func(c coreView) bool { return c.phase != journal.PhaseAtLimit || c.queued })
-}
-
-// currentStep is the number of the cycle step running now, counting from 1.
-func currentStep(g *journal.CheckingState) int {
-	return min(g.StepsDone+1, len(g.Steps))
-}
-
-func (s Snapshot) searching() int {
-	n := 0
-	for _, c := range s.cores {
-		if c.phase == journal.PhaseSearch {
-			n++
-		}
-	}
-	return n
-}
-
-func (s Snapshot) core(id int) coreView {
-	for _, c := range s.cores {
-		if c.id == id {
-			return c
-		}
-	}
-	return coreView{id: id}
-}
-
-func (s Snapshot) idleStory() story {
-	st := story{headline: s.headline(), tone: plainTone}
-	if s.inFlight != "" {
-		st.paragraphs = append(st.paragraphs, "Between tests: "+s.inFlight)
-	} else {
-		st.paragraphs = append(st.paragraphs, "Deciding what to test next.")
-	}
-	return st
-}
-
-func (s Snapshot) headline() string {
-	switch {
-	case s.phase == journal.PhaseSearch:
-		return "FINDING LIMITS"
-	case s.phase == journal.PhaseHunt:
-		return "FINDING THE CULPRIT"
-	case s.phase == journal.PhaseDeepening:
-		return "GOING DEEPER"
-	case s.goal():
-		return "KEEPING WATCH"
-	}
-	return "TESTING TOGETHER"
-}
-
-func (s Snapshot) searchStory(t *trial) story {
-	if len(t.cores) == 0 {
-		return s.idleStory()
-	}
-	c := s.core(t.cores[0])
-	at := c.applied
-	if t.offset != nil {
-		at = *t.offset
-	}
-	st := story{headline: "FINDING LIMITS", tone: plainTone}
-	st.paragraphs = append(st.paragraphs, fmt.Sprintf(
-		"I'm finding each core's limit, one core at a time. Core %02d runs a %s alone at %d while every other core waits at 0, so a failure can only be its own.",
-		c.id, regimeWords[t.regime], at))
-	switch {
-	case c.checking:
-		st.paragraphs = append(st.paragraphs, fmt.Sprintf(
-			"%d looks like its limit, so I'm confirming it: it has to pass %d light and %d heavy runs in a row before I trust it.", at, s.trials, s.trials))
-	case c.pass == nil && c.fail == nil:
-		st.paragraphs = append(st.paragraphs, "This is its first step. Each step is a light load, then a heavy vector load, at the same offset. If both pass, it goes 5 counts deeper.")
-	case c.fail == nil:
-		st.paragraphs = append(st.paragraphs, fmt.Sprintf("So far it passed down to %d and hasn't failed yet. If this step passes, it goes 5 counts deeper.", *c.pass))
-	case c.pass == nil:
-		st.paragraphs = append(st.paragraphs, fmt.Sprintf("It failed at %d, so I'm backing up 5 counts at a time until it passes.", *c.fail))
-	default:
-		st.paragraphs = append(st.paragraphs, fmt.Sprintf(
-			"It passes at %d and fails at %d, so its limit is between %d and %d. I'm closing in one count at a time.", *c.pass, *c.fail, *c.pass, *c.fail+1))
-	}
-	left := s.searching()
-	st.paragraphs = append(st.paragraphs, fmt.Sprintf("%d of %d cores have found their limit, %d to go.", len(s.cores)-left, len(s.cores), left))
-	return st
-}
-
-func (s Snapshot) huntStory(t *trial, now time.Time) story {
-	st := story{headline: "FINDING THE CULPRIT", tone: warnTone}
-	h := s.hunt
-	if h == nil {
-		st.paragraphs = append(st.paragraphs, "A test failed with every core at its offset and nothing named a single core, so I'm testing groups of cores to find out which ones cause it.")
-		return st
-	}
-	st.paragraphs = append(st.paragraphs, causeText(h, len(s.cores), now))
-	m := h.group
-	if m == nil {
-		return st
-	}
-	suspects := coreList(m.cores)
-	switch m.stage {
-	case "full":
-		st.paragraphs = append(st.paragraphs,
-			"Every smaller group passed on its own, so I'm rerunning the full failing group to see whether it fails again.",
-			"If it fails, the cause needs several cores deep at once and I keep narrowing. If it passes, I split the original candidates in two and restart group trials at the length of the original trial.")
-	case "probe":
-		if m.probe != nil {
-			combination := slices.Clone(m.cores)
-			if !slices.Contains(combination, m.probe.Core) {
-				combination = append(combination, m.probe.Core)
-			}
-			st.paragraphs = append(st.paragraphs,
-				fmt.Sprintf("%s fail only together. Now I'm finding how far core %02d must back off for them to pass: it runs at %d while the others stay at their failing offsets.", capital(coreList(combination)), m.probe.Core, m.probe.Offset),
-				fmt.Sprintf("If this passes %d times, core %02d is safe at %d in that combination. If it fails, it has to back off further.", m.needed, m.probe.Core, m.probe.Offset))
-		}
-	default:
-		back := "back at the offsets they failed with"
-		outcome := fmt.Sprintf("If this test fails, the cause is among %s and I split them further.", suspects)
-		if len(m.cores) == 1 {
-			back = "back at the offset it failed with"
-			outcome = fmt.Sprintf("If this test fails, %s is the culprit.", suspects)
-		}
-		st.paragraphs = append(st.paragraphs,
-			fmt.Sprintf("So I'm narrowing it down. %s %s %s. %s.", capital(suspects), are(m.cores), back, capital(s.parkedText(h, m))))
-		if idle := slices.DeleteFunc(slices.Clone(m.cores), func(c int) bool { return slices.Contains(t.cores, c) }); len(idle) > 0 {
-			pronoun := "they are"
-			if len(idle) == 1 {
-				pronoun = "it is"
-			}
-			st.paragraphs = append(st.paragraphs, fmt.Sprintf("The load runs on %s, as in the test that failed. %s %s idle, but had these offsets when it failed, so %s under suspicion too.",
-				coresText(t.cores, len(s.cores)), capital(coreList(idle)), are(idle), pronoun))
-		}
-		st.paragraphs = append(st.paragraphs, fmt.Sprintf("%s If it passes %d times, I try a different group next.", outcome, m.needed))
-	}
-	return st
-}
-
-func (s Snapshot) parkedText(h *huntView, m *groupView) string {
-	var parkedCores []int
-	allZero := true
-	for i, c := range s.cores {
-		if slices.Contains(h.candidates, c.id) && !slices.Contains(m.cores, c.id) {
-			parkedCores = append(parkedCores, c.id)
-			if i < len(h.parked) && h.parked[i] != 0 {
-				allZero = false
-			}
-		}
-	}
-	if len(parkedCores) == 0 {
-		return "every other core keeps its offset"
-	}
-	where := "at offsets that passed before"
-	if allZero {
-		where = "at 0"
-	}
-	pronoun := "they"
-	if len(parkedCores) == 1 {
-		pronoun = "it"
-	}
-	return fmt.Sprintf("%s %s parked %s, so %s can't be the cause", coreList(parkedCores), are(parkedCores), where, pronoun)
-}
-
-func causeText(h *huntView, total int, now time.Time) string {
-	what := "A test failed"
-	when := ""
-	if c := h.cause; c != nil {
-		what = capital(failureCause(c.signal))
-		when = " " + ago(now.Sub(c.at))
-	}
-	return fmt.Sprintf("%s%s during %s on %s, and nothing in it names a single core.", what, when, article(regimeWords[h.regime]), coresText(h.loaded, total))
-}
-
-func failureCause(sig machine.Signal) string {
-	switch sig {
-	case machine.Crash:
-		return "the machine crashed"
-	case machine.ComputationError:
-		return "a stress test got a wrong result"
-	case machine.Stall:
-		return "a stress test stalled"
-	case machine.UnexpectedExit:
-		return "a stress test quit unexpectedly"
-	case machine.CorrectedMCE:
-		return "the CPU reported a corrected hardware error"
-	case machine.UncorrectedMCE:
-		return "the CPU reported an uncorrected hardware error"
-	}
-	return "a test failed"
-}
-
-func (s Snapshot) deepenStory() story {
-	st := story{headline: "GOING DEEPER", tone: plainTone}
-	st.paragraphs = append(st.paragraphs, "These offsets passed a full cycle, but some cores may have room left, so I'm trying to win back depth.")
-	if r := s.deepening; r != nil {
-		var moves, checks []string
-		for i, c := range s.cores {
-			if slices.Contains(r.Cores, c.id) && i < len(r.Profile) {
-				move := "yields"
-				if slices.ContainsFunc(r.Checks, func(check journal.CheckState) bool {
-					return (check.Regime == machine.R1 || check.Regime == machine.R2) && slices.Contains(check.Cores, c.id)
-				}) {
-					move = "goes deeper"
-				}
-				moves = append(moves, fmt.Sprintf("core %02d %s to %d", c.id, move, r.Profile[i]))
-			}
-		}
-		if len(moves) > 0 {
-			st.paragraphs = append(st.paragraphs, fmt.Sprintf("Round %d: %s. The whole proposed profile stays applied during the checks; yielded cores don't need their own checks.", r.Round, strings.Join(moves, ", ")))
-		}
-		done, total := 0, 0
-		for _, c := range r.Checks {
-			done += min(c.Passes, c.Needed)
-			total += c.Needed
-			checks = append(checks, fmt.Sprintf("%d %s runs on %s", c.Needed, regimeWords[c.Regime], coreList(c.Cores)))
-		}
-		if total > 0 {
-			st.paragraphs = append(st.paragraphs, "The scheduled checks are "+strings.Join(checks, ", ")+".")
-			st.paragraphs = append(st.paragraphs, fmt.Sprintf("%d of %d runs in this round have passed. If one fails, the round stops and that failure is handled first.", done, total))
-		}
-	}
-	return st
-}
-
-func (s Snapshot) rerunStory() story {
-	text := fmt.Sprintf("A failure just moved some offsets back. Now the failed test needs %d trials of %s.", s.trials, duration(s.shortTrialDuration))
-	if s.trial != nil && s.trial.duration != s.shortTrialDuration {
-		text = fmt.Sprintf("The initial repeats passed. Now I rerun the failed test once at its original length, %s, before the interrupted work continues.", duration(s.trial.duration))
-	} else if s.rerunDuration != s.shortTrialDuration && s.rerunDuration > 0 {
-		text += fmt.Sprintf(" Then it needs one trial of %s, its original length.", duration(s.rerunDuration))
-	}
-	if s.trial == nil || s.trial.duration == s.shortTrialDuration {
-		text += " Once those checks pass, the interrupted work continues."
-	}
-	return story{headline: s.headline(), tone: plainTone, paragraphs: []string{text}}
-}
-
-const recordOnlyNote = "This part only keeps a record: cores that had their CCD's shallowest offset when the step started stay idle, even if offsets change. A pass or a failure, even a crash, moves no offset. The cycle goes on either way."
-
-func (s Snapshot) cycleStory(t *trial) story {
-	g := s.checking
-	if s.goal() {
-		st := story{headline: "KEEPING WATCH  ∞", tone: goodTone, paragraphs: []string{
-			"Every core has found its limit, and these offsets passed a full cycle of every kind of test: light and heavy loads, load steps, partial load, both threads of a core, idle, and all cores at once.",
-			"Passing tests can't prove a profile will never fail, so I keep running cycles to catch rare failures. Stop me whenever you like. These offsets are the ones to carry into the BIOS.",
-		}}
-		st.paragraphs = append(st.paragraphs, "Right now: "+describeLoad(t, len(s.cores))+".")
-		if t.recordOnly {
-			st.paragraphs = append(st.paragraphs, recordOnlyNote)
-		}
-		return st
-	}
-	st := story{headline: "TESTING TOGETHER", tone: plainTone}
-	steps := 0
-	if g != nil {
-		steps = len(g.Steps)
-	}
-	coverage := "that covers every kind of load"
-	if !s.checkingFull {
-		coverage = "from the configured schedule"
-	}
-	st.paragraphs = append(st.paragraphs, fmt.Sprintf(
-		"Every core found its limit on its own. Now they all run at their offsets together, through a cycle of %d steps %s.", steps, coverage))
-	if why, ok := regimeExplained[t.regime]; ok {
-		st.paragraphs = append(st.paragraphs, fmt.Sprintf("This step is %s: %s. It runs %s.", regimeWords[t.regime], why, describeLoad(t, len(s.cores))))
+	if !t.hasStarted {
+		return story{"PREPARING", []string{"I'm waiting for the workload to start. Its intent is recorded, but the trial has not started yet.", "Planned: " + trialDescription(*t) + " for " + shortDuration(t.duration) + "."}, plainTone}
 	}
 	if t.recordOnly {
-		st.paragraphs = append(st.paragraphs, recordOnlyNote)
+		return story{"RECORD ONLY", []string{"This partial load keeps a record, but its result changes no decision and moves no offset.", "A pass or a failure completes this part; it supplies no full-cycle coverage."}, plainTone}
 	}
-	if s.checkingFull {
-		st.paragraphs = append(st.paragraphs, "The goal is a clean cycle: ordinary steps must pass and record-only partial steps only need to complete, on offsets that can't go any deeper.")
-	} else {
-		st.paragraphs = append(st.paragraphs, s.missingCoverage())
-	}
-	return st
-}
-
-// describeLoad says where a test's load runs, in plain words.
-func describeLoad(t *trial, total int) string {
-	switch {
-	case t.regime == machine.R6:
-		return "with every core mostly idle and short bursts on one core at a time"
-	case len(t.cores) == 1 && t.regime != machine.R7:
-		return fmt.Sprintf("on one core at a time, now core %02d, while the others sit idle at their offsets", t.cores[0])
-	case len(t.cores) == 1:
-		return "on " + coresText(t.cores, total)
-	}
-	return "on " + coresText(t.cores, total) + " at once"
-}
-
-func (s Snapshot) nowLine(t *trial, now time.Time) *nowLine {
-	n := &nowLine{detail: regimeWords[t.regime] + " on " + coresText(t.cores, len(s.cores)), backend: t.workload}
-	if t.condition == machine.Alone && t.offset != nil {
-		n.detail += fmt.Sprintf(" alone at %d", *t.offset)
-	}
-	switch {
-	case t.condition == machine.Parked && s.hunt != nil && s.hunt.group != nil:
-		m := s.hunt.group
-		n.what = fmt.Sprintf("hunt %d, test %d, run %d of %d", s.hunt.id, m.id, min(m.passes+1, m.needed), m.needed)
-	case t.round != 0:
-		n.what = fmt.Sprintf("deepening round %d", t.round)
-	case t.condition == machine.Alone:
-		n.what = "search step"
-		if len(t.cores) > 0 && s.core(t.cores[0]).checking {
-			n.what = "confirming the limit"
+	if s.hunt != nil {
+		h := s.hunt
+		if t.probe != nil {
+			return story{fmt.Sprintf("HUNT %d", h.id), []string{"The group was kept together. I probe each member: how shallow must it go for the rest to pass?", fmt.Sprintf("Core %02d is at %d; held members keep their recorded failing offsets.", t.probe.Core, t.probe.Offset)}, huntTone}
 		}
-	case s.checking != nil && len(s.checking.Steps) > 0:
-		n.what = fmt.Sprintf("cycle %d, step %d of %d", s.checking.Cycle, currentStep(s.checking), len(s.checking.Steps))
+		cause := "A trial failed and named no core."
+		if h.cause.signal == machine.Crash {
+			cause = "The machine crashed during " + string(h.cause.trial.regime) + " " + loadWords(h.cause.trial.regime) + " and rebooted. No core was named."
+		}
+		return story{fmt.Sprintf("HUNT %d", h.id), []string{cause, "I rerun that load with " + coreIDs(h.candidates) + " split between failing and parked offsets."}, huntTone}
+	}
+	if t.condition == machine.Alone {
+		c := s.core(t.core)
+		text := fmt.Sprintf("I'm finding core %02d's solo limit, one turn at a time, now at %d.", t.core, t.offset)
+		if c != nil && c.confirm != nil {
+			text = fmt.Sprintf("%d is core %02d's candidate solo limit, and I'm confirming it.", c.confirm.offset, c.id)
+			if c.fail != nil {
+				text = fmt.Sprintf("Core %02d failed at %d, so %d is its candidate solo limit, and I'm confirming it.", c.id, *c.fail, c.confirm.offset)
+			}
+		}
+		return story{"SOLO LIMITS", []string{text, "One core at a time with the rest at 0, so any failure belongs to the loaded core."}, plainTone}
 	}
 	if t.rerun {
-		n.what = "rerun after a fix"
+		return story{"RERUN", []string{"The failed load runs again after the offsets changed. This trial checks the new profile.", fmt.Sprintf("%d passed so far; this is trial %d of %d of this requirement.", t.passed, t.index, t.of)}, plainTone}
 	}
-	if t.recordOnly {
-		n.what += ", recorded only"
-		n.detail = "partial " + n.detail
+	if t.round > 0 || s.phase == journal.PhaseDeepening {
+		return story{fmt.Sprintf("DEEPEN · ROUND %d", t.round), []string{"These offsets passed a full cycle. I check the deepening plan's proposed profile together.", "The checks below distinguish cores that go deeper from members that yield shallower."}, plainTone}
 	}
-	if !t.hasStarted {
-		n.what = "preparing " + n.what
-		n.detail = "planned: " + n.detail
+	name := fmt.Sprintf("CYCLE %d", t.cycle)
+	if t.regime == machine.R6 {
+		until := t.started.Add(t.duration)
+		if now.Before(until) {
+			return story{name, []string{fmt.Sprintf("Step %d leaves every core idle for %s, with short wake-ups, to test idle and boost states.", t.step, shortDuration(t.duration)), "This screen holds still until " + until.Format("15:04") + ", clock included, so drawing it cannot wake the cores."}, plainTone}
+		}
+		return story{name, []string{fmt.Sprintf("The idle trial was planned to end at %s. I'm waiting for its result in the journal.", until.Format("15:04"))}, plainTone}
 	}
-	if t.hasStarted && t.duration > 0 {
-		elapsed := min(max(now.Sub(t.started), 0), t.duration)
-		n.progress, n.timed, n.left = float64(elapsed)/float64(t.duration), true, t.duration-elapsed
+	text := fmt.Sprintf("Step %d is %s %s with %s.", t.step, t.regime, loadWords(t.regime), workloadDisplay(t.workload))
+	where := "Every core runs at its profile offset. The cycle keeps testing until stopped."
+	if t.parts > 0 {
+		where = fmt.Sprintf("Part %d of %d loads %s for %s.", t.part, t.parts, coreIDs(t.cores), shortDuration(t.duration))
 	}
-	return n
+	if s.cleanCycles > 0 {
+		where = fmt.Sprintf("%d clean cycles count for this profile. Passing trials cannot prove it will never fail.", s.cleanCycles)
+	}
+	return story{name, []string{text, where}, plainTone}
 }
 
 func (s Snapshot) deadEndStory() story {
@@ -417,197 +97,555 @@ func (s Snapshot) deadEndStory() story {
 		journal.DeadEndFailureAtZero: "A core failed even at offset 0, so the problem isn't Curve Optimizer. Check the rest of the system before tuning again.",
 		journal.DeadEndSMU:           "The CPU didn't take an offset the way I wrote it, so I can't trust what is applied. Nothing else will be written.",
 		journal.DeadEndNoEvidence:    "I couldn't obtain usable failure evidence, so I can't continue testing safely. Check the recorded details before tuning again.",
-		journal.DeadEndBootLoop:      "The machine crashed three times in a row before I applied any offsets: something else is crashing it.",
-		journal.DeadEndContainment:   "I couldn't confirm that the stress programs were contained and cleaned up safely, so tuning can't continue.",
-		journal.DeadEndPreflight:     "A check before tuning failed: this isn't the environment I tune in.",
+		journal.DeadEndBootLoop:      "The machine crashed three times in a row before I applied any offsets: something else is crashing it. Check the system before tuning again.",
+		journal.DeadEndContainment:   "I couldn't confirm that the stress programs were contained and cleaned up safely, so tuning can't continue. Check the recorded details.",
+		journal.DeadEndPreflight:     "A check before tuning failed: this isn't the environment I tune in. Fix the recorded check before tuning again.",
 		journal.DeadEndDefect:        "An earlier build may have moved offsets deeper than proven. Answer the reset question at a terminal before tuning continues.",
 		journal.DeadEndThermalTrip:   "The CPU shut down from heat. Check the cooling before tuning again.",
 	}[d.condition]
 	if why == "" {
-		why = "I can't make progress from here."
+		why = "I can't make progress from here. Check the recorded details before tuning again."
 	}
-	return story{headline: "I STOPPED", tone: badTone, paragraphs: []string{why, "Details: " + d.detail}}
+	return story{"DEAD END", []string{why, "Details: " + vtText(d.detail)}, badTone}
 }
 
-// comingUp lists what follows the current work, as far as the journal tells.
-func (s Snapshot) comingUp() []string {
+func stopWords(reason journal.ShutdownReason) string {
+	switch reason {
+	case journal.ShutdownSignal:
+		return "stopped by a signal"
+	case journal.ShutdownCycles:
+		return "requested clean cycles completed"
+	case journal.ShutdownCommand:
+		return "read-only command finished; no applied offsets changed"
+	case journal.ShutdownDeadEnd:
+		return "tuning stopped at a dead end"
+	}
+	return vtText(string(reason))
+}
+
+func loadWords(regime machine.Regime) string {
+	if regime == machine.R6 {
+		return "idle + bursts"
+	}
+	if words := regimeWords[regime]; words != "" {
+		return words
+	}
+	return vtText(string(regime))
+}
+
+func trialWhere(t trialView) string {
+	where := "on " + coreIDs(t.cores)
+	if t.condition == machine.Alone {
+		where = fmt.Sprintf("on core %02d alone at %d", t.core, t.offset)
+	} else if len(t.parked) > 0 {
+		where += " · " + coreIDs(t.parked) + " parked"
+		if len(t.idle) > 0 {
+			where += ", idle " + coreIDs(t.idle)
+		}
+	}
+	return where
+}
+
+func trialDescription(t trialView) string {
+	return string(t.regime) + " " + loadWords(t.regime) + " " + trialWhere(t)
+}
+
+func (s Snapshot) operation(t trialView) string {
+	text := ""
+	tone := lit
 	switch {
-	case !s.session || s.deadEnd != nil || s.stopped != nil:
+	case t.hunt > 0:
+		tone = amber
+		text = fmt.Sprintf("HUNT %d", t.hunt)
+		switch {
+		case t.probe != nil:
+			text += fmt.Sprintf(" · GROUP %d · CORE %02d AT %d", t.group, t.probe.Core, t.probe.Offset)
+		case t.huntParts > 0:
+			text += fmt.Sprintf(" · PART %d OF %d", t.huntPart, t.huntParts)
+		case t.group > 0:
+			text += fmt.Sprintf(" · GROUP %d", t.group)
+		}
+	case t.condition == machine.Alone:
+		verb := "SEARCH"
+		if c := s.core(t.core); c != nil && c.confirm != nil {
+			verb = "CONFIRM"
+		}
+		text = fmt.Sprintf("%s CORE %02d AT %d", verb, t.core, t.offset)
+		switch t.regime {
+		case machine.R1:
+			text += " · LIGHT"
+		case machine.R2:
+			text += " · HEAVY"
+		case machine.R3, machine.R4, machine.R5, machine.R6, machine.R7:
+		}
+	case t.rerun:
+		text = "RERUN AFTER BACKOFF"
+	case t.round > 0:
+		text = fmt.Sprintf("DEEPEN · ROUND %d", t.round)
+	default:
+		text = fmt.Sprintf("CYCLE %d · STEP %d", t.cycle, t.step)
+		if t.parts > 0 {
+			text += fmt.Sprintf(" · PART %d", t.part)
+		}
+	}
+	if t.recordOnly {
+		text += " · RECORD ONLY"
+	}
+	return tone.Render(text)
+}
+
+func lastDescription(t trialEnd) string {
+	out := strings.ToUpper(string(t.outcome)) + " · " + string(t.regime) + " on " + coreIDs(t.cores) + " · " + clock(t.duration)
+	if t.signal != "" {
+		out += " · " + signalWords[t.signal]
+	}
+	if t.core != nil {
+		out += fmt.Sprintf(" · core %02d named", *t.core)
+	}
+	return out
+}
+
+func (s Snapshot) lastLines() []string {
+	if s.last == nil {
 		return nil
-	case s.trial != nil && s.trial.rerun:
-		if s.trial.duration != s.shortTrialDuration {
-			return []string{fmt.Sprintf("If this one original-length trial of %s passes, the work the failure interrupted continues.", duration(s.trial.duration))}
-		}
-		line := fmt.Sprintf("The failed test needs %d passing trials of %s", s.trials, duration(s.shortTrialDuration))
-		if s.rerunDuration != s.shortTrialDuration && s.rerunDuration > 0 {
-			line += fmt.Sprintf(", then one trial of %s at the original length", duration(s.rerunDuration))
-		}
-		return []string{line + ". Once those checks pass, the work the failure interrupted continues."}
-	case s.phase == journal.PhaseSearch:
-		return s.searchNext()
-	case s.phase == journal.PhaseHunt:
-		return []string{
-			fmt.Sprintf("When the hunt ends, I record its result and move the offsets back past it. Then the failed test needs %d trials of %s, followed by one at its original length if that differs.", s.trials, duration(s.shortTrialDuration)),
-			"Then the work the failure interrupted continues.",
-		}
-	case s.phase == journal.PhaseDeepening:
-		return []string{"If the round passes, I keep deepening while more depth is reachable, then return to checking cycles. If not, I handle the failure first."}
 	}
-	return s.cycleNext()
+	t := s.last
+	style := green
+	switch t.outcome {
+	case journal.OutcomeFailure:
+		style = red
+	case journal.OutcomeInconclusive:
+		style = amber
+	case journal.OutcomePass:
+	}
+	line := grey.Render("last trial      ") + style.Render(strings.ToUpper(string(t.outcome))) + grey.Render("  "+clock(t.duration)+" on "+coreIDs(t.cores))
+	if t.tctlMaxC != nil {
+		line += grey.Render(fmt.Sprintf(" · Tctl max %d C", *t.tctlMaxC))
+	}
+	if t.voltageV != nil {
+		line += grey.Render(fmt.Sprintf(" · %.2f V median", *t.voltageV))
+	}
+	return []string{line}
 }
 
-func (s Snapshot) searchNext() []string {
-	current := -1
-	if s.trial != nil && len(s.trial.cores) == 1 {
-		current = s.trial.cores[0]
+func (s Snapshot) nextLine() string {
+	if s.next == nil {
+		return "next: deciding"
 	}
-	start := slices.Index(s.order, current) + 1
-	var next []int
-	for k := range s.order {
-		id := s.order[(start+k)%len(s.order)]
-		if id != current && s.core(id).phase == journal.PhaseSearch {
-			next = append(next, id)
-		}
-	}
-	lines := []string{}
-	if len(next) > 0 {
-		ids := make([]string, len(next))
-		for i, id := range next {
-			ids[i] = fmt.Sprintf("%02d", id)
-		}
-		lines = append(lines, "Next in line, taking turns so each core cools down between its own tests: "+strings.Join(ids, ", ")+".")
-	}
-	if !s.checkingFull {
-		return append(lines, "When every core has its limit, they run together through the configured test schedule.", s.missingCoverage())
-	}
-	return append(lines, "When every core has its limit, they all run together through cycles of every kind of test.")
+	return "next: " + forecastTrial(*s.next)
 }
 
-func (s Snapshot) cycleNext() []string {
-	g := s.checking
-	if g == nil || len(g.Steps) == 0 {
-		return nil
+func forecastTrial(t tuner.Trial) string {
+	where := coreIDs(t.Cores)
+	if len(t.Cores) == 0 {
+		where = fmt.Sprintf("core %02d at %d", t.Core, t.Offset)
 	}
-	rest := g.Steps[currentStep(g):]
-	var parts []string
-	for i := 0; i < len(rest); {
-		j := i
-		for j+1 < len(rest) && rest[j+1] == rest[i] {
-			j++
-		}
-		w := regimeWords[rest[i]]
-		if j > i {
-			w += fmt.Sprintf(" x%d", j-i+1)
-		}
-		parts = append(parts, w)
-		i = j + 1
+	text := string(t.Regime) + " " + loadWords(t.Regime) + " on " + where
+	if t.Workload != "" {
+		text += " with " + workloadDisplayID(t.Workload)
 	}
-	var lines []string
-	if len(parts) > 0 {
-		lines = append(lines, "Rest of this cycle: "+strings.Join(parts, ", ")+".")
+	switch {
+	case t.Hunt > 0:
+		text = fmt.Sprintf("hunt %d group %d: %s", t.Hunt, t.Group, text)
+	case t.Cycle > 0:
+		text = fmt.Sprintf("cycle %d step %d: %s", t.Cycle, t.Step, text)
+	case t.Round > 0:
+		text = fmt.Sprintf("deepening round %d: %s", t.Round, text)
 	}
-	if !s.checkingFull {
-		return append(lines, s.missingCoverage(), "Then another cycle of the configured schedule, until you stop me.")
+	if t.Rerun {
+		text = "rerun " + text
 	}
-	if s.goal() {
-		return append(lines, "Then another cycle, until you stop me.")
-	}
-	return append(lines, "If the cycle finishes clean on offsets that can't go deeper, that's the goal. After that I keep checking.")
-}
-
-func (s Snapshot) missingCoverage() string {
-	if s.goal() {
-		text := "This schedule doesn't cover every kind of test. Its future cycles don't add clean-cycle credit, but the goal is already reached."
-		if len(s.checkingMissing) > 0 {
-			text += " Missing: " + strings.Join(s.checkingMissing, "; ") + "."
-		}
-		return text
-	}
-	text := "This schedule doesn't cover every kind of test, so its cycles cannot count for the clean-cycle goal."
-	if len(s.checkingMissing) > 0 {
-		text += " Missing: " + strings.Join(s.checkingMissing, ", ") + "."
+	if t.RecordOnly {
+		text += " · record only"
 	}
 	return text
 }
 
-type station struct {
-	label  string
-	state  stationState
-	sub    []string
-	fill   float64
-	paused bool
+type outcomeRow struct {
+	label, text, compact string
+	style                lipgloss.Style
 }
 
-type stationState int
-
-const (
-	upcoming stationState = iota
-	current
-	reached
-	target
-	endless
-)
-
-func (s Snapshot) stations() []station {
-	left := s.searching()
-	total := len(s.cores)
-	g := s.checking
-	cycle, step := "", ""
-	fill := 0.0
-	if g != nil && len(g.Steps) > 0 {
-		cycle, step = fmt.Sprintf("cycle %d", g.Cycle), fmt.Sprintf("step %d of %d", currentStep(g), len(g.Steps))
-		fill = float64(g.StepsDone) / float64(len(g.Steps))
+func (s Snapshot) outcomeRows() []outcomeRow {
+	order := []premise{ifAllPass, ifPasses, ifFails, ifNamed, ifUnnamed, ifInconclusive}
+	if s.hunt != nil {
+		order = []premise{ifAllPass, ifPasses, ifUnnamed, ifNamed, ifFails, ifInconclusive}
 	}
-	find := station{label: "Find limits", state: reached, sub: []string{fmt.Sprintf("%d/%d cores", total-left, total)}}
-	together := station{label: "Test together", state: upcoming, sub: []string{"all together"}}
-	deeper := station{label: "Go deeper", state: upcoming, sub: []string{"after a full", "passed cycle"}}
-	clean := station{label: "Clean cycle", state: target, sub: []string{"the goal"}}
-	keep := station{label: "Keep checking", state: endless, sub: []string{"until stopped"}}
-	if !s.checkingFull {
-		clean.state, clean.sub = upcoming, []string{"not covered", "by schedule"}
-		deeper.sub = []string{"needs a full", "passed cycle"}
-	}
-	switch {
-	case left > 0:
-		find.state, find.fill = current, float64(total-left)/float64(max(total, 1))
-	case s.goal():
-		together.state, together.sub = reached, []string{plural(g.Cycle, "cycle")}
-		deeper.state, deeper.sub = reached, []string{"no room left"}
-		clean.state, clean.sub = reached, []string{"reached"}
-		keep.state, keep.fill, keep.sub = current, fill, []string{cycle, plural(g.CleanCycles, "clean cycle")}
-	case s.deepening != nil:
-		together.state, together.sub = reached, []string{"cycle passed"}
-		deeper.state, deeper.sub = current, []string{fmt.Sprintf("round %d", s.deepening.Round)}
-		deeper.paused = s.phase == journal.PhaseHunt
-	default:
-		together.state, together.fill, together.sub = current, fill, []string{cycle, step}
-		together.paused = s.phase == journal.PhaseHunt
-	}
-	for _, st := range []*station{&together, &deeper} {
-		if st.paused {
-			st.sub = append(st.sub[:1], "paused")
+	var out []outcomeRow
+	passShown := false
+	for _, kind := range order {
+		for _, branch := range s.outcomes {
+			if branch.premise != kind || ((kind == ifPasses || kind == ifAllPass) && passShown) {
+				continue
+			}
+			label, style := "if it passes", green
+			switch kind {
+			case ifPasses:
+			case ifAllPass:
+				label = fmt.Sprintf("if all %d pass", branch.passes)
+			case ifFails:
+				label, style = "if it fails", red
+			case ifNamed:
+				label, style = "if a core is named", red
+			case ifUnnamed:
+				label, style = "if none is named", red
+			case ifInconclusive:
+				label, style = "if inconclusive", grey
+			}
+			out = append(out, outcomeRow{label, outcomeWords(branch), compactOutcome(branch), style})
+			if kind == ifAllPass || kind == ifPasses {
+				passShown = true
+			}
+			if len(out) == 3 {
+				return out
+			}
 		}
 	}
-	return []station{find, together, deeper, clean, keep}
+	return out
 }
 
-func capital(s string) string {
-	if s == "" {
-		return s
+func compactOutcome(branch outcome) string {
+	if branch.needsMCE {
+		return "read hardware evidence"
 	}
-	return strings.ToUpper(s[:1]) + s[1:]
+	if branch.needsRanking {
+		return "read core ranking"
+	}
+	if branch.needsHistory {
+		return "complete hunt history needed"
+	}
+	if branch.premise == ifNamed {
+		text := ""
+		for _, payload := range branch.decisions {
+			switch d := payload.(type) {
+			case *journal.TunerDecision:
+				if d.Decision == journal.Backoff {
+					text = "named core backs off"
+				}
+			case *journal.HuntEnd:
+				text = "hunt ends"
+			case *journal.DeadEnd:
+				return "→ tuning stops"
+			}
+		}
+		if text != "" {
+			return "→ " + text
+		}
+		if branch.next != nil {
+			return "→ " + outcomeNextWords(*branch.next, true)
+		}
+		return "no next trial projected"
+	}
+	var text string
+	for _, decision := range branch.decisions {
+		switch d := decision.(type) {
+		case *journal.DeadEnd:
+			return "stop: " + vtText(d.Detail)
+		case *journal.HuntStart:
+			text = fmt.Sprintf("hunt %d: %s", d.Hunt, coreIDs(d.Candidates))
+		case *journal.HuntGroup:
+			text = fmt.Sprintf("group %d: %s", d.Group, coreIDs(d.Cores))
+			if d.Probe != nil {
+				text = fmt.Sprintf("probe %02d at %d", d.Probe.Core, d.Probe.Offset)
+			}
+		case *journal.HuntEnd:
+			text = "hunt ends"
+		case *journal.Combination:
+			text = fmt.Sprintf("record C%d", d.Combination)
+		case *journal.TunerDecision:
+			text = fmt.Sprintf("core %02d to %d", d.Core, d.ToOffset)
+		case *journal.CheckingStep:
+			text = fmt.Sprintf("step %d", d.Step)
+		case *journal.CorePhase:
+			if d.From == journal.PhaseSearch && d.To != journal.PhaseSearch {
+				text = fmt.Sprintf("solo %02d at %d", d.Core, d.Offset)
+			}
+		}
+	}
+	if text != "" {
+		return "→ " + text
+	}
+	if t := branch.next; t != nil {
+		switch {
+		case t.Hunt > 0:
+			return fmt.Sprintf("→ group %d", t.Group)
+		case t.Rerun:
+			return "→ rerun " + string(t.Regime)
+		case t.Cycle > 0:
+			return fmt.Sprintf("→ step %d", t.Step)
+		case t.Round > 0:
+			return fmt.Sprintf("→ round %d", t.Round)
+		case len(t.Cores) == 0:
+			return fmt.Sprintf("→ core %02d at %d", t.Core, t.Offset)
+		default:
+			return "→ " + string(t.Regime) + " " + coreIDs(t.Cores)
+		}
+	}
+	return "no next trial projected"
 }
 
-func are(cores []int) string {
-	if len(cores) == 1 {
-		return "is"
+func outcomeWords(branch outcome) string {
+	var parts []string
+	for _, decision := range forecastDecisions(branch) {
+		text := decisionWords(decision)
+		if branch.premise == ifNamed {
+			text = namedDecisionWords(decision)
+		}
+		if text != "" {
+			parts = append(parts, text)
+		}
 	}
-	return "are"
+	switch {
+	case branch.needsMCE:
+		parts = append(parts, "read hardware evidence before deciding")
+	case branch.needsRanking:
+		parts = append(parts, "read the core ranking before deciding")
+	case branch.needsHistory:
+		parts = append(parts, "complete hunt history needed before deciding")
+	case branch.next != nil:
+		parts = append(parts, "next: "+outcomeNextWords(*branch.next, branch.premise == ifNamed))
+	case len(parts) == 0:
+		parts = append(parts, "no next trial projected")
+	}
+	return strings.Join(parts, " → ")
 }
 
-func article(noun string) string {
-	if noun != "" && strings.ContainsRune("aeiou", rune(noun[0])) {
-		return "an " + noun
+func outcomeNextWords(t tuner.Trial, named bool) string {
+	var position string
+	switch {
+	case named && len(t.Cores) == 0:
+		position = "retry the named core"
+	case t.Hunt > 0:
+		position = fmt.Sprintf("hunt %d group %d on %s", t.Hunt, t.Group, coreIDs(t.Cores))
+	case t.Rerun:
+		position = "rerun on " + coreIDs(t.Cores)
+	case t.Cycle > 0:
+		position = fmt.Sprintf("cycle %d step %d", t.Cycle, t.Step)
+	case t.Round > 0:
+		position = fmt.Sprintf("round %d", t.Round)
+	case len(t.Cores) == 0:
+		position = fmt.Sprintf("core %02d at %d", t.Core, t.Offset)
+	default:
+		position = "on " + coreIDs(t.Cores)
 	}
-	return "a " + noun
+	text := position + ": " + string(t.Regime)
+	if t.Workload != "" {
+		text += " " + workloadDisplayID(t.Workload)
+	}
+	if t.RecordOnly {
+		text += " · record only"
+	}
+	return text
+}
+
+func forecastDecisions(branch outcome) [2]journal.Payload {
+	type ranked struct {
+		payload      journal.Payload
+		score, index int
+	}
+	var selected [2]ranked
+	for i, payload := range branch.decisions {
+		score := decisionImportance(payload)
+		if score == 0 {
+			continue
+		}
+		if (selected[0].payload != nil && selected[0].payload.Kind() == payload.Kind()) ||
+			(selected[1].payload != nil && selected[1].payload.Kind() == payload.Kind()) {
+			continue
+		}
+		candidate := ranked{payload, score, i}
+		switch {
+		case score > selected[0].score:
+			selected[1], selected[0] = selected[0], candidate
+		case score > selected[1].score:
+			selected[1] = candidate
+		}
+	}
+	if selected[1].payload != nil && selected[1].index < selected[0].index {
+		selected[0], selected[1] = selected[1], selected[0]
+	}
+	return [2]journal.Payload{selected[0].payload, selected[1].payload}
+}
+
+func decisionImportance(payload journal.Payload) int {
+	switch d := payload.(type) {
+	case *journal.DeadEnd:
+		return 100
+	case *journal.Combination:
+		return 90
+	case *journal.HuntEnd:
+		return 85
+	case *journal.HuntStart:
+		return 80
+	case *journal.TunerDecision:
+		return 70
+	case *journal.DeepeningRound:
+		return 65
+	case *journal.CorePhase:
+		if d.From == journal.PhaseSearch && d.To != journal.PhaseSearch {
+			return 60
+		}
+	case *journal.CheckingCycle:
+		return 50
+	case *journal.CheckingStep:
+		return 45
+	case *journal.HuntGroup:
+		return 40
+	}
+	return 0
+}
+
+func namedDecisionWords(payload journal.Payload) string {
+	switch d := payload.(type) {
+	case *journal.TunerDecision:
+		switch d.Decision {
+		case journal.Backoff:
+			return "record its failure point; back off the named core"
+		case journal.CheckSoloLimit:
+			return "confirm the named core's candidate solo limit"
+		case journal.StepDeeper, journal.Deepen:
+			return "deepen the named core"
+		case journal.Yield:
+			return "the named core yields"
+		}
+	case *journal.CorePhase:
+		if d.To == journal.PhaseSearch {
+			return "restart the named core's search"
+		}
+		if d.To == journal.PhaseHasRoom {
+			return "the named core has room"
+		}
+		if d.To == journal.PhaseAtLimit {
+			return "the named core is at its limit"
+		}
+	case *journal.HuntEnd:
+		return fmt.Sprintf("hunt %d ends; the named core is identified", d.Hunt)
+	case *journal.DeadEnd:
+		return "tuning stops at a dead end"
+	case *journal.Combination:
+		return fmt.Sprintf("record combination C%d", d.Combination)
+	case *journal.ProfileChange:
+		return "update the profile"
+	default:
+		return decisionWords(payload)
+	}
+	return ""
+}
+
+func decisionWords(payload journal.Payload) string {
+	switch d := payload.(type) {
+	case *journal.TunerDecision:
+		verb := "moves"
+		switch d.Decision {
+		case journal.StepDeeper, journal.Deepen:
+			verb = "goes deeper"
+		case journal.Backoff:
+			verb = "backs off"
+		case journal.Yield:
+			verb = "yields"
+		case journal.CheckSoloLimit:
+			return fmt.Sprintf("confirm core %02d's candidate solo limit at %d", d.Core, d.ToOffset)
+		}
+		text := fmt.Sprintf("core %02d %s: %d to %d", d.Core, verb, d.FromOffset, d.ToOffset)
+		if d.FailurePoint != nil {
+			text = fmt.Sprintf("failure point %d; core %02d %s to %d", *d.FailurePoint, d.Core, verb, d.ToOffset)
+		}
+		return text
+	case *journal.CorePhase:
+		if d.From == journal.PhaseSearch && d.To != journal.PhaseSearch {
+			return fmt.Sprintf("core %02d's solo limit is %d", d.Core, d.Offset)
+		}
+		if d.CheckSoloLimit {
+			return fmt.Sprintf("confirm core %02d at %d", d.Core, d.Offset)
+		}
+		if d.To == journal.PhaseHasRoom {
+			return fmt.Sprintf("core %02d has room at %d", d.Core, d.Offset)
+		}
+		if d.To == journal.PhaseAtLimit {
+			return fmt.Sprintf("core %02d is at its limit at %d", d.Core, d.Offset)
+		}
+		return vtText(d.Message())
+	case *journal.HuntStart:
+		return fmt.Sprintf("hunt %d starts over %s", d.Hunt, coreIDs(d.Candidates))
+	case *journal.HuntGroup:
+		text := fmt.Sprintf("hunt %d group %d: %s at failing offsets", d.Hunt, d.Group, coreIDs(d.Cores))
+		if d.Probe != nil {
+			text = fmt.Sprintf("probe core %02d at %d", d.Probe.Core, d.Probe.Offset)
+		}
+		if len(d.Held) > 0 {
+			text += "; hold " + memberSummary(d.Held)
+		}
+		return text
+	case *journal.HuntEnd:
+		if d.Result == "direct" || d.Result == "culprit" {
+			return fmt.Sprintf("hunt %d ends; %s identified", d.Hunt, coreIDs(d.Cores))
+		}
+		return fmt.Sprintf("hunt %d ends: %s over %s", d.Hunt, vtText(d.Result), coreIDs(d.Cores))
+	case *journal.Combination:
+		return fmt.Sprintf("record C%d over %s", d.Combination, memberCoreIDs(d.Members))
+	case *journal.CheckingStep:
+		return fmt.Sprintf("cycle %d advances to step %d", d.Cycle, d.Step)
+	case *journal.CheckingCycle:
+		if d.Event == journal.CycleStart {
+			return fmt.Sprintf("cycle %d starts", d.Cycle)
+		}
+		if d.Passed && d.Full {
+			return fmt.Sprintf("cycle %d passed with full coverage", d.Cycle)
+		}
+		if d.Passed {
+			return fmt.Sprintf("cycle %d passed; missing %s", d.Cycle, strings.Join(d.Missing, ", "))
+		}
+		return fmt.Sprintf("cycle %d ends: %s", d.Cycle, vtText(d.Reason))
+	case *journal.DeepeningRound:
+		if d.Event == journal.CycleStart {
+			return fmt.Sprintf("deepening round %d starts over %s", d.Round, coreIDs(d.Cores))
+		}
+		if d.Passed {
+			return fmt.Sprintf("deepening round %d passed", d.Round)
+		}
+		return fmt.Sprintf("deepening round %d ends: %s", d.Round, vtText(d.Reason))
+	case *journal.DeadEnd:
+		return "dead end: " + strings.ReplaceAll(vtText(string(d.Condition)), "_", " ")
+	case *journal.TunerWarning:
+		return vtText(d.Message())
+	case *journal.HostRanking:
+		return "core ranking recorded"
+	case *journal.HuntSkipped:
+		return "no hunt: " + vtText(d.Reason)
+	}
+	return ""
+}
+
+func memberCoreIDs(members []journal.CombinationMember) string {
+	ids := make([]int, len(members))
+	for i, member := range members {
+		ids[i] = member.Core
+	}
+	return coreIDs(ids)
+}
+
+func memberSummary(members []journal.CombinationMember) string {
+	if len(members) <= 2 {
+		return compactMembers(members)
+	}
+	return memberCoreIDs(members) + " at recorded offsets"
+}
+
+func workloadDisplay(w machine.Workload) string {
+	if w.Base != "" {
+		if base, ok := machine.WorkloadByID(w.Base); ok {
+			return vtText(base.Label)
+		}
+	}
+	if w.Label != "" {
+		return vtText(w.Label)
+	}
+	return vtText(w.ID)
+}
+
+func workloadDisplayID(id string) string {
+	if w, ok := machine.WorkloadByID(id); ok {
+		return workloadDisplay(w)
+	}
+	return vtText(id)
 }

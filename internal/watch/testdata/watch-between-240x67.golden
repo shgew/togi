@@ -1,15 +1,13 @@
-  togi   10:16:17   session 10h15m   28 failures · 7 crashes   last observed failure 06:59, 3h16m ago
+  togi   10:15:17   session 10h15m   28 failures · 7 crashes   last observed failure 06:59, 3h15m ago
 
   ■ SOLO LIMITS  16/16  ───  ► CYCLE 1  step 1 of 14  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
-  ▌  DEAD END I couldn't obtain usable failure evidence, so I can't continue testing safely. Check the recorded           last trial      PASS  1:30 on 15 · Tctl max 71 C
-  ▌  details before tuning again.
+  ▌  BETWEEN TRIALS I'm between trials. The journal keeps the last result and the next trial when it is known.            last trial      FAILURE  0:00 on 00-07 · Tctl max 65 C
+  ▌  next: rerun R7 all-core load on 00-07 with mprime AVX2 36K-248K
 
-  DEAD END ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  no evidence: five trials in a row proved nothing
-
-
-
+  BETWEEN TRIALS ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  FAILURE · R7 on 00-07 · 0:00 · the stress program quit · core 05 named
+  next: rerun R7 all-core load on 00-07 with mprime AVX2 36K-248K
 
 
 
@@ -17,22 +15,24 @@
 
 
 
-  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
-  ► 00  -37  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                -38                                            08  -27  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                          -28   
-  ► 01  -34  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                   -35                                            09  -18  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                   -19   
-  ► 02  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                  -36                                            10  -16  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                     -17   
-  ► 03  -17  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                    -18                                            11   -7  AT LIMIT  ▄▄▄▄▄▄▄█                                               -8   
-  ► 04  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            12  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
-  ► 05  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            13  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                             -25   
-  ► 06  -30  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                       -31                                            14   -4  AT LIMIT  ▄▄▄▄█                                                  -5   
-  ► 07  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            15  -39  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█              -40   
+
+
+  CCD 0               0       -10       -20       -30       -40       -50 fail pt  not under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
+    00  -37  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                -38                                            08  -27  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                          -28   
+    01  -34  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                   -35                                            09  -18  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                   -19   
+    02  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                  -36                                            10  -16  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                     -17   
+    03  -17  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                    -18                                            11   -7  AT LIMIT  ▄▄▄▄▄▄▄█                                               -8   
+    04  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            12  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
+    05  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            13  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                             -25   
+    06  -30  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                       -31                                            14   -4  AT LIMIT  ▄▄▄▄█                                                  -5   
+    07  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            15  -39  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█              -40   
 
   CYCLE 1 ───────────────────────────────────────────────────────────────────────────────────────── 14 steps · 0 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
                                                                                                                           
-    #   kind                  where                   workload                  schedule       result                     10:15  stop     dead end: five trials in a row proved nothing
+    #   kind                  where                   workload                  schedule       result                     10:14  fail     all-core load on cores 00-07, the stress program quit
   ►  1  R7 all-core           2 CCDs · 5 parts        mprime AVX2 36K-248K      5 parts                                   10:14  cycle    #1 started, 14 steps
         ├ partial CCD 0       00-04 06 07 · record only                         3 x 2m + 5m    recorded: 0 passed         10:14  limit    core 15 solo limit -39
-  ►     ├ full CCD 0          00-07                                             3 x 2m + 5m    trial 1 of 3               10:13  limit    core 01 solo limit -34
+        ├ full CCD 0          00-07                                             3 x 2m + 5m    0/4 passed                 10:13  limit    core 01 solo limit -34
         ├ partial CCD 1       08-13 15 · record only                            3 x 2m + 5m    recorded: 0 passed         10:13  limit    core 00 solo limit -37
         ├ full CCD 1          08-15                                             3 x 2m + 5m    0/4 passed                 10:11  limit    core 07 solo limit -32
         └ full CCD 0+1        00-15                                             3 x 2m + 10m   0/4 passed                 10:11  limit    core 04 solo limit -32

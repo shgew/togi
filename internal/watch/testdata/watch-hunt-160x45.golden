@@ -1,0 +1,44 @@
+  togi   07:14:23   session 7h14m   33 failures · 33 crashes   last observed failure 07:13, a moment ago
+
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14  ───  ►  HUNT 1   parts · part 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until
+
+  ▌  HUNT 1 The machine crashed during R7 all-core load and rebooted. No core     last trial      FAILURE  0:00 on 00-07
+  ▌  was named.
+
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0290
+   R7   all-core load  on 00-07 · 00-07 parked, idle 08-15   mprime AVX2 36K-248K · 8 workers                                            HUNT 1 · PART 1 OF 2
+  █████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
+
+  if all 5 pass        hunt 1 group 2: 00-07 at failing offsets → next: hunt 1 group 2 on 00-07: R7 mprime AVX2 36K-248K
+  if none is named     hunt 1 group 2: 12-15 at failing offsets → next: hunt 1 group 2 on 00-07: R7 mprime AVX2 36K-248K
+  if inconclusive      next: hunt 1 group 1 on 00-07: R7 mprime AVX2 36K-248K
+
+  CCD 0               0  2 counts/cell       -50 fail pt  parked, still           CCD 1               0  2 counts/cell       -50 fail pt  all idle, all
+  ► 00    0  PARKED    ·····█                       -11   returns to -10            08  -10  MEMBER    ▄▄▄▄▄█                       -11   
+  ► 01    0  PARKED    ·····█                       -11   returns to -10            09  -10  MEMBER    ▄▄▄▄▄█                       -11   
+  ► 02    0  PARKED    ·····█                       -11   returns to -10            10  -10  MEMBER    ▄▄▄▄▄█                       -11   
+  ► 03    0  PARKED    ·····█                       -11   returns to -10            11  -10  MEMBER    ▄▄▄▄▄█                       -11   
+  ► 04    0  PARKED    ·····█                       -11   returns to -10            12  -10  MEMBER    ▄▄▄▄▄█                       -11   
+  ► 05    0  PARKED    ·····█                       -11   returns to -10            13  -10  MEMBER    ▄▄▄▄▄█                       -11   
+  ► 06    0  PARKED    ·····█                       -11   returns to -10            14  -10  MEMBER    ▄▄▄▄▄█                       -11   
+  ► 07    0  PARKED    ·····█                       -11   returns to -10            15  -10  MEMBER    ▄▄▄▄▄█                       -11   
+
+  HUNT 1 ───────────────────────────────────────── started 07:13 · 40s so far     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
+                                                                                  
+  cause     crash in R7 all-core load on 00-07 · no core named                    07:13  hunt     #1 started: which cores caused it?
+  candidates00-15, every core with an offset in the failing profile               07:13  crash    all-core load on cores 00-07, rebooted
+                                                                                  07:13  resume   session resumed
+  ► part 1/2 08-15 at failing offsets · 00-07 parked · 5 x 2m · trial 1/5         07:12  cycle    #1 started, 14 steps
+    part 2/2 00-07 at failing offsets · 08-15 parked · 5 x 2m · to come           07:12  limit    core 15 solo limit -10
+                                                                                  07:12  limit    core 07 solo limit -10
+  groups    most recent groups; carried answers need no trial                     07:12  limit    core 14 solo limit -10
+            G1 08-15 · running · 0/5 passed                                       07:12  limit    core 06 solo limit -10
+                                                                                  07:12  limit    core 13 solo limit -10
+  then      after the hunt resolves:                                              07:12  limit    core 05 solo limit -10
+            rerun all-core load on 00-07: 5 x 2m                                  07:12  limit    core 12 solo limit -10
+                                                                                  07:12  limit    core 04 solo limit -10
+                                                                                  07:12  limit    core 11 solo limit -10
+                                                                                  07:12  limit    core 03 solo limit -10
+                                                                                  +183 more
+
+   ?  help    l  log    esc  back    q  close view

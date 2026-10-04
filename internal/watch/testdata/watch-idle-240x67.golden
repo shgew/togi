@@ -1,0 +1,66 @@
+  togi   14:43:51   session 14h43m   54 failures · 11 crashes   last observed failure 13:03   screen paused until 14:58
+
+  ■ SOLO LIMITS  16/16  ───  ► CYCLE 1  step 1 of 14  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+
+  ▌  CYCLE 1 Step 0 leaves every core idle for 15m, with short wake-ups, to test idle and boost states.                   last trial      PASS  2:00 on 15 · Tctl max 73 C
+  ▌  This screen holds still until 14:58, clock included, so drawing it cannot wake the cores.
+
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0553
+   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between                                                                                                                                               CYCLE 1 · STEP 0
+
+  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      ▀█  █ █   █▀▀ █▀█
+  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused until 14:58 so it cannot wake the idle cores  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░       █  ▀▀█ ▀ ▀▀█ █▀█
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ▀▀▀   ▀ ▀ ▀▀▀ ▀▀▀
+  started 14:43 · 15:00                                                                                                                                                                                                               ends at
+
+  if it passes         cycle 1 advances to step 1 → next: cycle 1 step 1: R7 mprime AVX2 36K-248K · record only
+  if a core is named   record its failure point; back off the named core → next: rerun on 00-15: R6 mprime SSE 4K-21K
+  if none is named     hunt 5 starts over 00-13 15 → hunt 5 group 1: 00-07 at failing offsets → next: hunt 5 group 1 on 00-15: R6 mprime SSE 4K-21K
+
+  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  all under load
+  ► 00  -37  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                -38                                          ► 08  -26  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                           -27   
+  ► 01  -33  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                    -34                                          ► 09  -16  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·                                    -17   
+  ► 02  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                  -36                                          ► 10  -16  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                     -17   
+  ► 03  -17  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                    -18                                          ► 11   -4  AT LIMIT  ▄▄▄▄█··                                                -5   
+  ► 04  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                          ► 12  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
+  ► 05   -7  AT LIMIT  ▄▄▄▄▄▄▄█··                                             -8                                          ► 13  -22  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·                              -23   
+  ► 06  -27  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··                        -28                                          ► 14    0  AT LIMIT  █···                                                   -1   
+  ► 07  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                          ► 15  -38  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█               -39   
+
+  CYCLE 1 ───────────────────────────────────────────────────────────────────────────────────────── 14 steps · 3 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
+                                                                                                                          
+    #   kind                  where                   workload                  schedule       result                     14:43  pass     heavy vector load on core 15 at -38, 2 min, peak 73 C
+  ►  1  R7 all-core           2 CCDs · 5 parts        mprime AVX2 36K-248K      5 parts                                   14:41  pass     heavy vector load on core 07 at -32, 2 min, peak 73 C
+        ├ partial CCD 0       00-04 06 07 · record only                         3 x 2m + 5m    recorded: 0 passed         14:39  pass     heavy vector load on core 14 at 0, 2 min, peak 62 C
+        ├ full CCD 0          00-07                                             3 x 2m + 5m    6/4 passed                 14:37  pass     heavy vector load on core 06 at -27, 2 min, peak 71 C
+        ├ partial CCD 1       08-13 15 · record only                            3 x 2m + 5m    recorded: 0 passed         14:35  pass     heavy vector load on core 13 at -22, 2 min, peak 76 C
+        ├ full CCD 1          08-15                                             3 x 2m + 5m    6/4 passed                 14:33  pass     heavy vector load on core 05 at -7, 2 min, peak 74 C
+        └ full CCD 0+1        00-15                                             3 x 2m + 10m   4/4 passed                 14:31  pass     heavy vector load on core 12 at -10, 2 min, peak 71 C
+  ○  2  R7 all-core           2 CCDs · 5 parts        mprime AVX-512 36K-248K   5 parts                                   14:29  pass     heavy vector load on core 04 at -32, 2 min, peak 73 C
+  ○  3  R7 all-core           2 CCDs · 5 parts        y-cruncher FFTv4 + N63 +  5 parts                                   14:27  pass     heavy vector load on core 11 at -4, 2 min, peak 67 C
+  ■  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K      16 x 2m        done                       14:25  pass     heavy vector load on core 03 at -17, 2 min, peak 76 C
+  ■  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K   16 x 2m        done                       14:23  pass     heavy vector load on core 10 at -16, 2 min, peak 73 C
+  ■  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 +  16 x 2m        done                       14:21  pass     heavy vector load on core 02 at -35, 2 min, peak 63 C
+  ○  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K         1 x 15m                                   14:19  pass     heavy vector load on core 09 at -16, 2 min, peak 64 C
+  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K         16 x 2m                                   14:17  pass     heavy vector load on core 01 at -33, 2 min, peak 66 C
+  ○  9  R1 light              one core at a time      mprime SSE 4K-21K         16 x 2m                                   14:15  pass     heavy vector load on core 08 at -26, 2 min, peak 69 C
+  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4    16 x 2m                                   14:13  pass     heavy vector load on core 00 at -37, 2 min, peak 74 C
+  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT      16 x 2m                                   14:11  pass     heavy vector load on core 15 at -38, 2 min, peak 62 C
+  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K         16 x 2m                                   14:09  pass     heavy vector load on core 07 at -32, 2 min, peak 62 C
+  ○ 13  R4 partial            one core at a time      mprime SSE 4K-21K         16 x 2m                                   14:07  pass     heavy vector load on core 14 at 0, 2 min, peak 70 C
+  ○ 14  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4    1 x 15m                                   14:05  pass     heavy vector load on core 06 at -27, 2 min, peak 72 C
+                                                                                                                          14:03  pass     heavy vector load on core 13 at -22, 2 min, peak 70 C
+                                                                                                                          14:01  pass     heavy vector load on core 05 at -7, 2 min, peak 69 C
+                                                                                                                          13:59  pass     heavy vector load on core 12 at -10, 2 min, peak 68 C
+                                                                                                                          13:57  pass     heavy vector load on core 04 at -32, 2 min, peak 69 C
+                                                                                                                          13:55  pass     heavy vector load on core 11 at -4, 2 min, peak 69 C
+                                                                                                                          13:53  pass     heavy vector load on core 03 at -17, 2 min, peak 64 C
+                                                                                                                          13:51  pass     heavy vector load on core 10 at -16, 2 min, peak 66 C
+                                                                                                                          13:49  pass     heavy vector load on core 02 at -35, 2 min, peak 66 C
+                                                                                                                          13:47  pass     heavy vector load on core 09 at -16, 2 min, peak 63 C
+                                                                                                                          13:45  pass     heavy vector load on core 01 at -33, 2 min, peak 62 C
+                                                                                                                          13:43  pass     heavy vector load on core 08 at -26, 2 min, peak 68 C
+                                                                                                                          13:41  pass     heavy vector load on core 00 at -37, 2 min, peak 72 C
+                                                                                                                          +168 more
+
+   ?  help    l  log    esc  back    q  close view

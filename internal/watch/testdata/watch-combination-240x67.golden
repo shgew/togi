@@ -1,66 +1,66 @@
-   togi   15:29:24  stopped after 15h28m  39 failures  39 crashes
+  togi   15:29:24   session 15h28m   39 failures · 39 crashes   last observed failure 07:52, 7h36m ago
 
-  █  I'M STOPPED
-  █  
-  █  I put the offsets back to safe values before stopping. The numbers below are
-  █  what I found, not what is applied now. Everything I learned is in the
-  █  journal, and togi run picks up where I left off.
-  █  
-  █  These offsets passed a clean cycle of every kind of test: they are the ones
-  █  to carry into the BIOS.
-  
-  
-  ■ Find limits   ■ Test together ■ Go deeper     ■ Clean cycle   ► Keep checking
-  █████████████   █████████████   █████████████   █████████████   █████████████
-  16/16 cores     1 cycle         no room left    reached         cycle 1
-                                                                  1 clean cycle
-  
-   HUNT      no hunt running, 1 hunt so far
-  
-  
-  CCD 0                                -10       -20       -30       -40       -50
-  00  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  01  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  02  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  03  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  04  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  05  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  06  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  07  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
+  ■ SOLO LIMITS  16/16  ───  ► CYCLE 1  step 14 of 14  ───  ○ DEEPEN  ───  CLEAN CYCLES 1  · repeats until stopped
 
-  CCD 1                                -10       -20       -30       -40       -50
-  08  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  09  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  10  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  11   -9  held back by others  ▒▒▒▒▒▒▒▒▒·▌·······································
-  12  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  13  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  14  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
-  15  -10  limit found          ▒▒▒▒▒▒▒▒▒▒▌·······································
+  ▌  STOPPED The rows show the saved profile, not applied now. I restored safer offsets before stopping.                  last trial      PASS  15:00 on 00-15 · Tctl max 62 C
+  ▌  requested clean cycles completed
 
-  What happened
-   15h28m  stop     stopped
-   15h28m  cycle    #1 passed, a full cycle of every kind of test
-   15h28m  pass     idle with short bursts on all 16 cores, 15 min, peak 62 C
-   15h13m  pass     partial load on core 15 at -10, 2 min, peak 74 C
-   15h11m  pass     partial load on core 07 at -10, 2 min, peak 64 C
-   15h09m  pass     partial load on core 14 at -10, 2 min, peak 75 C
-   15h07m  pass     partial load on core 06 at -10, 2 min, peak 67 C
-   15h05m  pass     partial load on core 13 at -10, 2 min, peak 71 C
-   15h03m  pass     partial load on core 05 at -10, 2 min, peak 75 C
-   15h01m  pass     partial load on core 12 at -10, 2 min, peak 68 C
-   14h59m  pass     partial load on core 04 at -10, 2 min, peak 74 C
-   14h57m  pass     partial load on core 11 at -9, 2 min, peak 66 C
-   14h55m  pass     partial load on core 03 at -10, 2 min, peak 71 C
-   14h53m  pass     partial load on core 10 at -10, 2 min, peak 67 C
-   14h51m  pass     partial load on core 02 at -10, 2 min, peak 74 C
-   14h49m  pass     partial load on core 09 at -10, 2 min, peak 64 C
-   14h47m  pass     partial load on core 01 at -10, 2 min, peak 67 C
-   14h45m  pass     partial load on core 08 at -10, 2 min, peak 68 C
-   14h43m  pass     partial load on core 00 at -10, 2 min, peak 67 C
-   14h41m  pass     load steps on core 15 at -10, 2 min, peak 71 C
-   14h39m  pass     load steps on core 07 at -10, 2 min, peak 71 C
-   14h37m  pass     load steps on core 14 at -10, 2 min, peak 69 C
-   14h35m  pass     load steps on core 06 at -10, 2 min, peak 62 C
-   14h33m  pass     load steps on core 13 at -10, 2 min, peak 64 C
-   14h31m  pass     load steps on core 05 at -10, 2 min, peak 75 C
+  STOPPED ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  15:28:44 · requested clean cycles completed
+  Rows show the saved profile, not applied now.
+
+
+
+
+
+
+
+
+
+  CCD 0               0       -10       -20       -30       -40       -50 fail pt  not under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
+    00  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            08  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
+    01  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            09  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
+    02  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            10  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
+    03  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            11   -9  AT LIMIT  ▄▄▄▄▄▄▄▄▄░█                                           -11   held by C1 · solo -10
+    04  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            12  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
+    05  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            13  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
+    06  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            14  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
+    07  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            15  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
+
+  CYCLE 1 ──────────────────────────────────────────────────────────────────────────────────────── 14 steps · 14 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
+                                                                                                                          
+    #   kind                  where                   workload                  schedule       result                     15:28  stop     stopped
+  ■  1  R7 all-core           2 CCDs · 5 parts        mprime AVX2 36K-248K      5 parts        done                       15:28  cycle    #1 passed, a full cycle of every kind of test
+  ■  2  R7 all-core           2 CCDs · 5 parts        mprime AVX-512 36K-248K   5 parts        done                       15:28  pass     idle with short bursts on all 16 cores, 15 min, peak 62 C
+  ■  3  R7 all-core           2 CCDs · 5 parts        y-cruncher FFTv4 + N63 +  5 parts        done                       15:13  pass     partial load on core 15 at -10, 2 min, peak 74 C
+  ■  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K      16 x 2m        done                       15:11  pass     partial load on core 07 at -10, 2 min, peak 64 C
+  ■  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K   16 x 2m        done                       15:09  pass     partial load on core 14 at -10, 2 min, peak 75 C
+  ■  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 +  16 x 2m        done                       15:07  pass     partial load on core 06 at -10, 2 min, peak 67 C
+  ■  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K         1 x 15m        done                       15:05  pass     partial load on core 13 at -10, 2 min, peak 71 C
+  ■  8  R5 both threads       one core at a time      mprime SSE 4K-21K         16 x 2m        done                       15:03  pass     partial load on core 05 at -10, 2 min, peak 75 C
+  ■  9  R1 light              one core at a time      mprime SSE 4K-21K         16 x 2m        done                       15:01  pass     partial load on core 12 at -10, 2 min, peak 68 C
+  ■ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4    16 x 2m        done                       14:59  pass     partial load on core 04 at -10, 2 min, peak 74 C
+  ■ 11  R1 light              one core at a time      y-cruncher SNT + SVT      16 x 2m        done                       14:57  pass     partial load on core 11 at -9, 2 min, peak 66 C
+  ■ 12  R3 load steps         one core at a time      mprime SSE 4K-21K         16 x 2m        done                       14:55  pass     partial load on core 03 at -10, 2 min, peak 71 C
+  ■ 13  R4 partial            one core at a time      mprime SSE 4K-21K         16 x 2m        done                       14:53  pass     partial load on core 10 at -10, 2 min, peak 67 C
+  ■ 14  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4    1 x 15m        done                       14:51  pass     partial load on core 02 at -10, 2 min, peak 74 C
+                                                                                                                          14:49  pass     partial load on core 09 at -10, 2 min, peak 64 C
+  COMBINATIONS ───────────────────────────────────────────────────────────────────────── offsets that failed together     14:47  pass     partial load on core 01 at -10, 2 min, peak 67 C
+                                                                                                                          14:45  pass     partial load on core 08 at -10, 2 min, peak 68 C
+          3   11    found by              against the profile now                                                         14:43  pass     partial load on core 00 at -10, 2 min, peak 67 C
+  C1    -10  -10    hunt 1, probed      holds core 11 at -9                                                               14:41  pass     load steps on core 15 at -10, 2 min, peak 71 C
+                                                                                                                          14:39  pass     load steps on core 07 at -10, 2 min, peak 71 C
+  now   -10   -9                                                                                                          14:37  pass     load steps on core 14 at -10, 2 min, peak 69 C
+                                                                                                                          14:35  pass     load steps on core 06 at -10, 2 min, peak 62 C
+                                                                                                                          14:33  pass     load steps on core 13 at -10, 2 min, peak 64 C
+                                                                                                                          14:31  pass     load steps on core 05 at -10, 2 min, peak 75 C
+                                                                                                                          14:29  pass     load steps on core 12 at -10, 2 min, peak 63 C
+                                                                                                                          14:27  pass     load steps on core 04 at -10, 2 min, peak 67 C
+                                                                                                                          14:25  pass     load steps on core 11 at -9, 2 min, peak 62 C
+                                                                                                                          14:23  pass     load steps on core 03 at -10, 2 min, peak 74 C
+                                                                                                                          14:21  pass     load steps on core 10 at -10, 2 min, peak 67 C
+                                                                                                                          14:19  pass     load steps on core 02 at -10, 2 min, peak 66 C
+                                                                                                                          14:17  pass     load steps on core 09 at -10, 2 min, peak 72 C
+                                                                                                                          +168 more
+
+   ?  help    l  log    esc  back    q  close view

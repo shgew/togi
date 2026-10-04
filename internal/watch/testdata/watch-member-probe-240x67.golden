@@ -1,0 +1,66 @@
+  togi   04:51:10   session 4h51m   7 failures · 7 crashes   last observed failure 04:50, a moment ago
+
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14  ───  ►  HUNT 1   member probes · core 03 at -9  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+
+  ▌  HUNT 1 The group was kept together. I probe each member: how shallow must it go for the rest to pass?                last trial      FAILURE  0:00 on 00-07
+  ▌  Core 03 is at -9; held members keep their recorded failing offsets.
+
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0188
+   R7   all-core load  on 00-07 · 00-02 04-10 12-15 parked, idle 11   mprime AVX2 36K-248K · 8 workers                                                                                                      HUNT 1 · GROUP 41 · CORE 03 AT -9
+
+  ████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████          ▀█    ▀▀█ █▀█
+  ████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████           █  ▀ █▀▀ █ █
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
+  0:40 of 2:00                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
+
+  if all 5 pass        probe core 11 at -9; hold 03:-10 → next: hunt 1 group 42 on 00-07: R7 mprime AVX2 36K-248K
+  if none is named     probe core 03 at -8; hold 11:-10 → next: hunt 1 group 42 on 00-07: R7 mprime AVX2 36K-248K
+  if a core is named   hunt 1 ends; the named core is identified → record its failure point; back off the named core → next: rerun on 00-07: R7 mprime AVX2 36K-248K
+
+  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
+  ► 00    0  PARKED    ··········                                                  returns to -10                           08    0  PARKED    ··········                                                  returns to -10
+  ► 01    0  PARKED    ··········                                                  returns to -10                           09    0  PARKED    ··········                                                  returns to -10
+  ► 02    0  PARKED    ··········                                                  returns to -10                           10    0  PARKED    ··········                                                  returns to -10
+  ► 03   -9  PROBE     ▄▄▄▄▄▄▄▄▄·                                                                                           11  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄                                                  
+  ► 04    0  PARKED    ··········                                                  returns to -10                           12    0  PARKED    ··········                                                  returns to -10
+  ► 05    0  PARKED    ··········                                                  returns to -10                           13    0  PARKED    ··········                                                  returns to -10
+  ► 06    0  PARKED    ··········                                                  returns to -10                           14    0  PARKED    ··········                                                  returns to -10
+  ► 07    0  PARKED    ··········                                                  returns to -10                           15    0  PARKED    ··········                                                  returns to -10
+
+  HUNT 1 ────────────────────────────────────────────────────────────────────────────── started 04:01 · 49m40s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
+                                                                                                                          
+  cause     crash in R7 all-core load on 00-07 · no core named                                                            04:50  skip     hunt 1 groups 39-40: pass from carried trials
+  candidates00-15, every core with an offset in the failing profile                                                       04:50  crash    hunt 1 group 38: all-core load on cores 00-07, rebooted
+                                                                                                                          04:50  resume   session resumed
+                                                                                                                          04:49  skip     hunt 1 groups 34-37: pass from carried trials
+  probes    member  now   group failed at      passed at           state                                                  04:49  crash    hunt 1 group 33: all-core load on cores 00-07, rebooted
+            03   -9  failed -10 · passed - · ► trial 1 of 5                                                               04:49  resume   session resumed
+            11  -10  failed -10 · passed - · waiting                                                                      04:47  skip     hunt 1 groups 27-32: pass from carried trials
+                                                                                                                          04:47  crash    hunt 1 group 26: all-core load on cores 00-07, rebooted
+  groups    most recent groups; carried answers need no trial                                                             04:47  resume   session resumed
+            G38 03 11 · failure · 0/5 passed                                                                              04:46  skip     hunt 1 groups 22-25: pass from carried trials
+            G39 03 · pass · 10/5 passed                                                                                   04:46  crash    hunt 1 group 21: all-core load on cores 00-07, rebooted
+            G40 11 · pass · 10/5 passed                                                                                   04:46  resume   session resumed
+            G41 11 · running · 0/5 passed                                                                                 04:44  skip     hunt 1 groups 15-20: pass from carried trials
+                                                                                                                          04:44  crash    hunt 1 group 14: all-core load on cores 00-07, rebooted
+  then      after the hunt resolves:                                                                                      04:44  resume   session resumed
+            rerun all-core load on 00-07: 5 x 2m                                                                          04:43  pass     hunt 1 group 13: all-core load on cores 00-07, 5 trials of 2 min, peak 72 C
+                                                                                                                          04:33  skip     hunt 1 groups 9-12: pass from carried trials
+                                                                                                                          04:33  crash    hunt 1 group 8: all-core load on cores 00-07, rebooted
+                                                                                                                          04:33  resume   session resumed
+                                                                                                                          04:31  pass     hunt 1 group 7: all-core load on cores 00-07, 5 trials of 2 min, peak 73 C
+                                                                                                                          04:21  skip     hunt 1 groups 3-6: pass from carried trials
+                                                                                                                          04:21  pass     hunt 1 group 2: all-core load on cores 00-07, 5 trials of 2 min, peak 76 C
+                                                                                                                          04:11  pass     hunt 1 group 1: all-core load on cores 00-07, 5 trials of 2 min, peak 76 C
+                                                                                                                          04:01  hunt     #1 started: which cores caused it?
+                                                                                                                          04:01  crash    all-core load on cores 00-07, rebooted
+                                                                                                                          04:01  resume   session resumed
+                                                                                                                          04:00  step     cycle 1 step 1 started
+                                                                                                                          04:00  cycle    #1 started, 14 steps
+                                                                                                                          04:00  limit    core 15 solo limit -10
+                                                                                                                          04:00  limit    core 07 solo limit -10
+                                                                                                                          04:00  limit    core 14 solo limit -10
+                                                                                                                          04:00  limit    core 06 solo limit -10
+                                                                                                                          +13 more
+
+   ?  help    l  log    esc  back    q  close view

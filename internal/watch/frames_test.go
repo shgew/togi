@@ -1,67 +1,148 @@
 package watch
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/google/go-cmp/cmp"
 
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/simrun"
 	"github.com/shgew/togi/internal/watch/watchtest"
 )
 
 type watchCut struct {
 	name   string
 	events []journal.Event
-	sizes  [][2]int
-	color  bool
+}
+
+func fixtureEvents(tb testing.TB, name string) []journal.Event {
+	tb.Helper()
+	dir := tb.TempDir()
+	watchtest.Install(tb, dir, name)
+	events, _, err := journal.ReadReplay(dir, 5)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return events
+}
+
+func cutAt(tb testing.TB, events []journal.Event, accept func(journal.Event) bool) []journal.Event {
+	tb.Helper()
+	for i, e := range events {
+		if accept(e) {
+			return events[:i+1]
+		}
+	}
+	tb.Fatal("no cut point in the simulated journal")
+	return nil
+}
+
+func cutTrial(tb testing.TB, events []journal.Event, accept func(*journal.TrialIntent) bool) []journal.Event {
+	tb.Helper()
+	trial := ""
+	return cutAt(tb, events, func(e journal.Event) bool {
+		switch p := e.Data.(type) {
+		case *journal.TrialIntent:
+			if trial == "" && accept(p) {
+				trial = p.Trial
+			}
+		case *journal.TrialStart:
+			return trial != "" && p.Trial == trial
+		}
+		return false
+	})
+}
+
+func probeEvents(t *testing.T) []journal.Event {
+	t.Helper()
+	model := sim.DefaultModel()
+	model.PastLimitRate = 1
+	model.Signals = map[machine.Signal]float64{machine.Crash: 1}
+	model.CrashMCE = 0
+	limits := make([]sim.Limits, 16)
+	for i := range limits {
+		limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
+		limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
+	}
+	m, err := sim.New(sim.Config{
+		Seed: 1, Cores: 16, Limits: limits, Model: &model,
+		Joints: []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.CandidateSoloLimits = make(map[int]int, 16)
+	for core := range 16 {
+		cfg.CandidateSoloLimits[core] = -10
+	}
+	dir := t.TempDir()
+	deepening := false
+	_, err = simrun.Simulate(context.Background(), simrun.Input{
+		Config: cfg, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true,
+		Until: func(e journal.Event) bool {
+			switch p := e.Data.(type) {
+			case *journal.TrialIntent:
+				deepening = p.Phase == journal.PhaseDeepening
+			case *journal.TrialStart:
+				return deepening
+			}
+			return false
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || torn != nil {
+		t.Fatalf("read simulated journal: %v, torn %q", err, torn)
+	}
+	return events
 }
 
 func watchCuts(t *testing.T) []watchCut {
 	t.Helper()
-	dir := t.TempDir()
-	watchtest.Install(t, dir, "concluded")
-	events, _, err := journal.ReadReplay(dir, 5)
-	if err != nil {
-		t.Fatal(err)
-	}
-	through := func(first func(journal.Event) bool) []journal.Event {
-		t.Helper()
-		found := false
-		for i, e := range events {
-			if !found {
-				found = first(e)
-				continue
-			}
-			if _, ok := e.Data.(*journal.TrialStart); ok {
-				return events[:i+1]
-			}
+	events := fixtureEvents(t, "concluded")
+	checking := cutTrial(t, events, func(p *journal.TrialIntent) bool {
+		return p.Phase == journal.PhaseChecking && p.Regime == machine.R7
+	})
+	last := checking[len(checking)-1]
+	deadEnd := &journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Detail: "five trials in a row proved nothing"}
+	probes := probeEvents(t)
+	probing := false
+	memberProbe := cutAt(t, probes, func(e journal.Event) bool {
+		if p, ok := e.Data.(*journal.HuntGroup); ok && p.Probe != nil {
+			probing = true
 		}
-		t.Fatal("no cut point in the simulated journal")
-		return nil
-	}
-	search := through(func(e journal.Event) bool {
-		p, ok := e.Data.(*journal.TunerDecision)
-		return ok && p.Phase == journal.PhaseSearch && p.Decision == journal.Backoff
+		return probing && e.Kind == journal.KindTrialStart
 	})
-	checking := through(func(e journal.Event) bool {
-		p, ok := e.Data.(*journal.CheckingCycle)
-		return ok && p.Event == journal.CycleStart
-	})
-	last := events[len(events)-1]
-	p := &journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Detail: "five trials in a row proved nothing"}
-	deadEnd := slices.Concat(events, []journal.Event{
-		{Seq: last.Seq + 1, Time: last.Time.Add(time.Minute), Boot: last.Boot, Kind: journal.KindDeadEnd, Msg: p.Message(), Data: p},
-	})
-	all := [][2]int{{240, 67}, {160, 45}, {120, 33}}
 	return []watchCut{
-		{name: "search", events: search, sizes: all, color: true},
-		{name: "checking", events: checking, sizes: all, color: true},
-		{name: "deadend", events: deadEnd, sizes: all[:1]},
+		{"search", cutTrial(t, events, func(p *journal.TrialIntent) bool {
+			return p.Phase == journal.PhaseSearch && p.Offset != nil && *p.Offset < 0
+		})},
+		{"confirm", cutTrial(t, probes, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseSearch })},
+		{"checking", checking},
+		{"hunt", cutTrial(t, fixtureEvents(t, "hunt"), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseHunt })},
+		{"member-probe", memberProbe},
+		{"deepening", cutTrial(t, probes, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })},
+		{"idle", cutTrial(t, events, func(p *journal.TrialIntent) bool { return p.Regime == machine.R6 })},
+		{"between", cutAt(t, events, func(e journal.Event) bool { return e.Seq > last.Seq && e.Kind == journal.KindTrialEnd })},
+		{"recovering", cutAt(t, events, func(e journal.Event) bool { return e.Kind == journal.KindCrashDetected })},
+		{"stopped", events},
+		{"combination", fixtureEvents(t, "combination")},
+		{"deadend", slices.Concat(checking, []journal.Event{
+			{Seq: last.Seq + 1, Time: last.Time.Add(time.Minute), Boot: last.Boot, Kind: deadEnd.Kind(), Msg: deadEnd.Message(), Data: deadEnd},
+		})},
 	}
 }
 
@@ -69,43 +150,60 @@ func cutTime(events []journal.Event) time.Time {
 	return events[len(events)-1].Time.Add(40 * time.Second).UTC()
 }
 
-func TestWatchFrames(t *testing.T) {
-	t.Parallel()
-	for _, c := range watchCuts(t) {
-		s, now := Project(c.events), cutTime(c.events)
-		for _, size := range c.sizes {
-			frame := Render(s, size[0], size[1], now)
-			golden(t, fmt.Sprintf("watch-%s-%dx%d", c.name, size[0], size[1]), ansi.Strip(frame)+"\n")
-		}
-		if c.color {
-			golden(t, fmt.Sprintf("watch-%s-240x67-color", c.name), Render(s, 240, 67, now)+"\n")
+func assertFrameBounds(t *testing.T, drawn Drawn, sc Screen) {
+	t.Helper()
+	if diff := cmp.Diff(max(0, sc.Height-1), len(drawn.Lines)); diff != "" {
+		t.Errorf("frame rows (-want +got):\n%s", diff)
+	}
+	for row, line := range drawn.Lines {
+		if cells := ansi.StringWidth(line); cells > max(0, sc.Width-1) {
+			t.Errorf("%dx%d: row %d writes reserved column (%d cells): %q", sc.Width, sc.Height, row, cells, ansi.Strip(line))
 		}
 	}
 }
 
-func TestWatchFrameFitsScreen(t *testing.T) {
-	t.Parallel()
-	for _, c := range watchCuts(t) {
+func TestWatchFrames(t *testing.T) {
+	cuts := watchCuts(t)
+	for _, c := range cuts {
 		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
 			s, now := Project(c.events), cutTime(c.events)
-			for w := 1; w <= 300; w += 7 {
-				t.Run(fmt.Sprint(w), func(t *testing.T) {
-					t.Parallel()
-					for h := 2; h <= 100; h += 5 {
-						lines := strings.Split(Render(s, w, h, now), "\n")
-						if len(lines) != h-1 {
-							t.Errorf("%dx%d: %d lines, want %d", w, h, len(lines), h-1)
-						}
-						for i, ln := range lines {
-							if lipgloss.Width(ln) > w-1 {
-								t.Errorf("%dx%d: line %d is %d cells wide, want at most %d", w, h, i, lipgloss.Width(ln), w-1)
-							}
-						}
+			for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
+				sc := Screen{Width: size[0], Height: size[1], Keys: true}
+				drawn := RenderView(s, sc, now)
+				assertFrameBounds(t, drawn, sc)
+				golden(t, fmt.Sprintf("watch-%s-%dx%d", c.name, size[0], size[1]), ansi.Strip(strings.Join(drawn.Lines, "\n"))+"\n")
+			}
+			for _, view := range []View{MainView, HelpView, LogView} {
+				for _, scroll := range []int{0, 3, -1, 100000} {
+					sc := Screen{View: view, Scroll: scroll, Width: 80, Height: 24, Keys: true}
+					assertFrameBounds(t, RenderView(s, sc, now), sc)
+				}
+			}
+			if c.name == "checking" || c.name == "member-probe" || c.name == "idle" {
+				golden(t, "watch-"+c.name+"-240x67-color", Render(s, 240, 67, now)+"\n")
+			}
+			if c.name == "member-probe" {
+				for _, view := range []struct {
+					name   string
+					view   View
+					scroll int
+				}{{"help", HelpView, 0}, {"help-end", HelpView, -1}, {"log", LogView, -1}} {
+					for _, size := range [][2]int{{240, 67}, {160, 45}, {80, 24}} {
+						sc := Screen{View: view.view, Scroll: view.scroll, Width: size[0], Height: size[1], Keys: true}
+						drawn := RenderView(s, sc, now)
+						assertFrameBounds(t, drawn, sc)
+						golden(t, fmt.Sprintf("view-%s-%dx%d", view.name, size[0], size[1]), ansi.Strip(strings.Join(drawn.Lines, "\n"))+"\n")
 					}
-				})
+				}
 			}
 		})
+	}
+	now := time.Unix(0, 0).UTC()
+	for _, s := range []Snapshot{{}, {problem: errors.New("journal is unreadable")}} {
+		for _, view := range []View{MainView, HelpView, LogView} {
+			sc := Screen{View: view, Width: 80, Height: 24, Keys: true}
+			assertFrameBounds(t, RenderView(s, sc, now), sc)
+		}
 	}
 }
 
@@ -113,15 +211,14 @@ func TestDashboardEscapesDiagnosticControls(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 	msg := "日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u009d0;title\u009c\u2028\u2029"
-	escaped := `日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u009d0;title\u009c\u2028\u2029`
+	escaped := `\u65e5\u672c\u8a9e\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u009d0;title\u009c\u2028\u2029`
 	start := journal.Event{Seq: 1, Time: now, Kind: journal.KindSessionStart, Data: &journal.SessionStart{Session: "diagnostics"}}
 	for _, tt := range []struct {
 		name string
 		data journal.Payload
 	}{
 		{"recent backend retry", &journal.BackendRetry{}},
-		{"dead end", &journal.DeadEnd{Condition: journal.DeadEndContainment}},
-		{"in flight", &journal.SMUIntent{}},
+		{"dead end", &journal.DeadEnd{Condition: journal.DeadEndContainment, Detail: msg}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			events := []journal.Event{start, {Seq: 2, Time: now, Kind: tt.data.Kind(), Msg: msg, Data: tt.data}}
@@ -154,7 +251,7 @@ func TestDashboardEscapesTrialDetails(t *testing.T) {
 		}},
 	}
 	frame := Render(Project(events), 300, 40, now)
-	if !strings.Contains(frame, `日本語\x1b]0;title\x07\r\n\u009b2J`) {
+	if !strings.Contains(frame, `\u65e5\u672c\u8a9e\x1b]0;title\x07\r\n\u009b2J`) {
 		t.Fatalf("trial workload not visibly escaped: %q", frame)
 	}
 	if strings.Contains(frame, "\x1b]0;") || strings.ContainsAny(frame, "\r\u009b") {
@@ -165,42 +262,10 @@ func TestDashboardEscapesTrialDetails(t *testing.T) {
 func TestWatchWithoutJournal(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	golden(t, "watch-missing-120x33", ansi.Strip(Render(Load(dir), 120, 33, time.Unix(0, 0).UTC()))+"\n")
-}
-
-func TestWatchCombinationAndOpenHunt(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name  string
-		until journal.Kind
-	}{
-		{name: "hunt", until: journal.KindHuntGroup},
-		{name: "combination"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			dir := t.TempDir()
-			watchtest.Install(t, dir, tc.name)
-			events, _, err := journal.ReadReplay(dir, 5)
-			if err != nil {
-				t.Fatal(err)
-			}
-			frameEvents := events
-			if tc.until != "" {
-				groupStarted := false
-				for i, e := range events {
-					if e.Kind == journal.KindHuntGroup {
-						groupStarted = true
-					}
-					if groupStarted && e.Kind == journal.KindTrialStart {
-						frameEvents = events[:i+1]
-						break
-					}
-				}
-			}
-			frame := Render(Project(frameEvents), 240, 67, frameEvents[len(frameEvents)-1].Time.Add(40*time.Second))
-			golden(t, "watch-"+tc.name+"-240x67", ansi.Strip(frame)+"\n")
-		})
+	now := time.Unix(0, 0).UTC()
+	for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
+		golden(t, fmt.Sprintf("watch-missing-%dx%d", size[0], size[1]), ansi.Strip(Render(Load(dir), size[0], size[1], now))+"\n")
+		golden(t, fmt.Sprintf("watch-problem-%dx%d", size[0], size[1]), ansi.Strip(Render(Snapshot{problem: errors.New("read journal: permission denied")}, size[0], size[1], now))+"\n")
 	}
 }
 
@@ -219,5 +284,15 @@ func TestWatchBetweenTrialMCE(t *testing.T) {
 	frame := ansi.Strip(Render(Project(events), 240, 67, e.Time))
 	if !strings.Contains(frame, "between trials (recorded only)") {
 		t.Fatalf("watch hides between-trial MCE: %s", frame)
+	}
+}
+
+func BenchmarkProject(b *testing.B) {
+	events := fixtureEvents(b, "concluded")
+	events = cutTrial(b, events, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseChecking && p.Regime == machine.R7 })
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		Project(events)
 	}
 }
