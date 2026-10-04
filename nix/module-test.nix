@@ -1,4 +1,8 @@
-{ pkgs, package }:
+{
+  pkgs,
+  hostPkgs,
+  package,
+}:
 let
   inherit (pkgs) lib;
   module = import ./module.nix { packages.${pkgs.stdenv.hostPlatform.system}.default = package; };
@@ -129,6 +133,6 @@ assert lib.hasInfix
 assert
   overriddenTuning.systemd.services.togi-watch.serviceConfig.ExecStart
   == "${lib.getExe pkgs.hello} watch";
-pkgs.runCommand "togi-module-check" { } ''
+hostPkgs.runCommand "togi-module-check" { } ''
   touch "$out"
 ''

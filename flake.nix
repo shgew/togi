@@ -31,7 +31,7 @@
           testPhase = flags: packages: ''
             runHook preCheck
             export GOFLAGS=''${GOFLAGS//-trimpath/}
-            go test -p $NIX_BUILD_CORES ${flags} -shuffle=on ${lib.optionalString pkgs.stdenv.hostPlatform.isLinux "-tags integration"} ${packages}
+            go test -p $NIX_BUILD_CORES ${flags} -shuffle=on -tags integration ${packages}
             runHook postCheck
           '';
           togi =
@@ -54,10 +54,10 @@
                 ];
               };
               vendorHash = "sha256-EHuetMPWkpLwwXxTzjDYlfHkyLEg51WaSKI74Aorpvc=";
-              nativeCheckInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [
-                pkgs.util-linux
+              nativeCheckInputs = [
                 pkgs.gitMinimal
-              ];
+              ]
+              ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
               ldflags = [ "-X github.com/shgew/togi.rev=${rev}" ];
               subPackages = [ "cmd/togi" ];
               checkPhase = testPhase "" "./...";
@@ -103,7 +103,9 @@
               buildPhase = ''
                 runHook preBuild
                 export HOME=$TMPDIR GOLANGCI_LINT_CACHE=$TMPDIR/golangci-lint
-                golangci-lint run ./...
+                for target in linux/amd64 darwin/arm64; do
+                  GOOS=''${target%/*} GOARCH=''${target#*/} CGO_ENABLED=0 golangci-lint run ./...
+                done
                 runHook postBuild
               '';
               doCheck = false;
@@ -149,6 +151,11 @@
                   HOME=$TMPDIR GOCACHE=$TMPDIR/go-cache GOPROXY=off GOTOOLCHAIN=local CGO_ENABLED=0 go run ./tools/release -check changes
                   touch "$out"
                 '';
+            module = import ./nix/module-test.nix {
+              pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
+              hostPkgs = pkgs;
+              package = inputs.self.checks.x86_64-linux.package;
+            };
           }
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
             let
@@ -159,10 +166,6 @@
               };
             in
             {
-              module = import ./nix/module-test.nix {
-                inherit pkgs;
-                package = config.checks.package;
-              };
               trial-scope-tests = config.checks.package.overrideAttrs {
                 pname = "togi-trial-scope-tests";
                 buildPhase = ''

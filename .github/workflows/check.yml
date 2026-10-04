@@ -63,7 +63,7 @@ jobs:
         run: cachix push togi < "$RUNNER_TEMP/out-paths"
 
   macos:
-    name: package (macOS arm64)
+    name: macOS arm64
     runs-on: macos-26
     env:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -75,9 +75,12 @@ jobs:
           name: togi
           authToken: ${{ env.CACHIX_AUTH_TOKEN }}
           skipPush: true
-      - name: nix build .#checks.aarch64-darwin.package
-        run: nix build --no-link --print-build-logs --print-out-paths .#checks.aarch64-darwin.package > "$RUNNER_TEMP/out-paths"
-      - name: Push the check's output to Cachix
+      - name: nix build every aarch64-darwin check
+        run: |
+          list=$(nix eval --raw .#checks.aarch64-darwin --apply 'checks: toString (map (name: ".#checks.aarch64-darwin.${name}") (builtins.attrNames checks))')
+          read -ra checks <<< "$list"
+          nix build --no-link --print-build-logs --print-out-paths "${checks[@]}" > "$RUNNER_TEMP/out-paths"
+      - name: Push the checks' outputs to Cachix
         if: env.CACHIX_AUTH_TOKEN != ''
         continue-on-error: true
         run: cachix push togi < "$RUNNER_TEMP/out-paths"

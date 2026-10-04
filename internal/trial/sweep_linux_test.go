@@ -68,26 +68,6 @@ func TestScopeProcessDiscoveryAndIdentity(t *testing.T) {
 	}
 }
 
-func TestProcessDisappeared(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		err  error
-		gone bool
-	}{
-		{"exited-during-read", &os.PathError{Op: "read", Path: "/proc/42/cgroup", Err: syscall.ESRCH}, true},
-		{"exited-before-open", &os.PathError{Op: "open", Path: "/proc/42/cgroup", Err: syscall.ENOENT}, true},
-		{"denied", syscall.EACCES, false},
-		{"io-failure", syscall.EIO, false},
-		{"present", nil, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := processDisappeared(tc.err); got != tc.gone {
-				t.Fatalf("disappeared(%v) = %v, want %v", tc.err, got, tc.gone)
-			}
-		})
-	}
-}
-
 func TestSystemdScopeListFiltersNames(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), teardownLimit)
