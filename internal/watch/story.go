@@ -613,9 +613,6 @@ func (s Snapshot) nextTrialWords(n tuner.Trial, after *trialView, shape huntShap
 	default:
 		text = what
 	}
-	if n.RecordOnly {
-		text += " · record only"
-	}
 	return text
 }
 
@@ -670,7 +667,7 @@ func sameTrial(n tuner.Trial, t *trialView) bool {
 	}
 	same := n.Regime == t.regime && n.Workload == t.workload.ID && time.Duration(n.DurationS)*time.Second == t.duration &&
 		n.Hunt == t.hunt && n.Group == t.group && n.Cycle == t.cycle && n.Step == t.step && n.Round == t.round &&
-		n.Rerun == t.rerun && n.RecordOnly == t.recordOnly
+		n.Rerun == t.rerun
 	if len(n.Cores) == 0 {
 		return same && t.condition == machine.Alone && n.Core == t.core && n.Offset == t.offset
 	}
@@ -680,7 +677,7 @@ func sameTrial(n tuner.Trial, t *trialView) bool {
 // samePart is true when n is a later trial of the checking part t belongs to, perhaps of another length.
 func samePart(n tuner.Trial, t *trialView) bool {
 	return t != nil && n.Cycle > 0 && n.Hunt == 0 && !n.Rerun && n.Cycle == t.cycle && n.Step == t.step &&
-		n.RecordOnly == t.recordOnly && slices.Equal(slices.Sorted(slices.Values(n.Cores)), slices.Sorted(slices.Values(t.cores)))
+		slices.Equal(slices.Sorted(slices.Values(n.Cores)), slices.Sorted(slices.Values(t.cores)))
 }
 
 // phrase is one step of an outcome line; a minor one is left out first when the line does not fit.

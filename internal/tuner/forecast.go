@@ -122,8 +122,9 @@ func sameHuntPlan(a, b *journal.HuntGroup) bool {
 		slices.Equal(a.Profile, b.Profile) && slices.Equal(a.Held, b.Held)
 }
 
-// namedCores returns the cores whose naming the forecast follows: a judged core away from 0 standing in for every
-// core whose failure backs it off, then the first loaded core at 0, judged or parked, whose failure is a dead end.
+// namedCores selects representative named failures. Multi-core R7 distinguishes a movable core,
+// a zero-offset non-top core routed to its CCD's request order, and a zero-offset top core.
+// Request order comes only from recorded measurements (or the tuner's offset fallback).
 func namedCores(s *State, p *journal.TrialIntent) []int {
 	cores := slices.Clone(p.Cores)
 	if p.Core != nil {
@@ -131,6 +132,30 @@ func namedCores(s *State, p *journal.TrialIntent) []int {
 	}
 	slices.Sort(cores)
 	loaded := slices.Clone(cores)
+	if p.Regime == machine.R7 && len(loaded) > 1 {
+		top := s.r7Top(p.Workload, loaded, p.Profile)
+		var named []int
+		for _, kind := range []int{0, 1, 2} {
+			for _, id := range loaded {
+				i := s.index(id)
+				if i < 0 || i >= len(p.Profile) {
+					continue
+				}
+				category := 0
+				if p.Profile[i] == 0 {
+					category = 1
+					if slices.Contains(top, id) {
+						category = 2
+					}
+				}
+				if category == kind {
+					named = append(named, id)
+					break
+				}
+			}
+		}
+		return named
+	}
 	if s.hunt != nil && p.Hunt == s.hunt.start.Hunt {
 		for _, g := range s.hunt.groups {
 			if g.payload.Group == p.Group {
@@ -157,7 +182,7 @@ func namedCores(s *State, p *journal.TrialIntent) []int {
 		standIn = cores[i]
 	}
 	named := []int{standIn}
-	// Any loaded core at 0, judged or parked, ends tuning when named.
+	// Outside multi-core R7, any loaded core at 0 ends tuning when named.
 	if i := slices.IndexFunc(loaded, func(id int) bool { return id != standIn && atZero(id) }); i >= 0 {
 		named = append(named, loaded[i])
 	}
@@ -167,7 +192,7 @@ func namedCores(s *State, p *journal.TrialIntent) []int {
 // sameRequirement reports whether a forecast trial repeats the in-flight trial's evidence requirement.
 func sameRequirement(a, b *journal.TrialIntent) bool {
 	return classOf(a) == classOf(b) && slices.Equal(a.Profile, b.Profile) && a.Phase == b.Phase &&
-		a.Condition == b.Condition && a.RecordOnly == b.RecordOnly && a.Rerun == b.Rerun &&
+		a.Condition == b.Condition && a.Rerun == b.Rerun &&
 		a.Cycle == b.Cycle && a.Step == b.Step && a.Hunt == b.Hunt && a.Group == b.Group && a.Round == b.Round
 }
 
@@ -191,6 +216,8 @@ func (f *forecastState) end(p *journal.TrialIntent, premise Premise, core *int) 
 
 // Forecast replays events independently for each premise, without hardware, clocks or randomness.
 // Recorded rankings answer future reads; NeedsRanking marks a read without recorded evidence.
+// Hypothetical ends contain no request or clock telemetry: R7 uses earlier recorded measurements
+// or the tuner's offset fallback. New telemetry in a real trial end can change the projected outcome.
 // Until every core's initial phase is recorded, there is no schedulable forecast.
 func Forecast(events []journal.Event) ForecastPlan {
 	base := replayForecast(events)
@@ -220,7 +247,7 @@ func Forecast(events []journal.Event) ForecastPlan {
 	}
 	premises := []premiseCore{{premise: IfPass}}
 	requirement := base.state.Requirement(p)
-	remaining := max(1, requirement.Needed-requirement.Passed-requirement.Failed)
+	remaining := max(1, requirement.Needed-requirement.Passed)
 	if remaining > 1 {
 		premises = append(premises, premiseCore{premise: IfAllPass})
 	}
@@ -229,7 +256,7 @@ func Forecast(events []journal.Event) ForecastPlan {
 	}
 	if p.Condition != machine.Alone {
 		end := &journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError}
-		if p.RecordOnly || base.state.attributeTogether(&awaiting{intent: p, end: end}).Attribution == journal.Unattributed {
+		if base.state.attributeTogether(&awaiting{intent: p, end: end}).Attribution == journal.Unattributed {
 			premises = append(premises, premiseCore{premise: IfUnnamed})
 		}
 	}
@@ -237,7 +264,7 @@ func Forecast(events []journal.Event) ForecastPlan {
 	for _, pc := range premises {
 		premise := pc.premise
 		f := replayForecast(events)
-		b := ForecastBranch{Premise: premise, Core: pc.core}
+		b := ForecastBranch{Premise: premise, Core: pc.core, WithoutTelemetry: p.Regime == machine.R7 && len(p.Cores) > 1 && premise != IfInconclusive}
 		if premise == IfPass {
 			b.Passes = 1
 		}

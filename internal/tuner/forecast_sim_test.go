@@ -52,7 +52,7 @@ func simulatedForecastJournal(tb testing.TB, seed uint64, cores int) []journal.E
 
 func forecastDecision(p journal.Payload) bool {
 	switch p.(type) {
-	case *journal.Failure, *journal.TunerDecision, *journal.CorePhase, *journal.CheckingCycle, *journal.CheckingStep, *journal.ProfileChange, *journal.HuntStart, *journal.HuntGroup, *journal.HuntEnd, *journal.HuntSkipped, *journal.Combination, *journal.DeepeningRound, *journal.TunerWarning, *journal.DeadEnd:
+	case *journal.Failure, *journal.TunerDecision, *journal.CorePhase, *journal.CheckingCycle, *journal.CheckingStep, *journal.CheckingChain, *journal.ProfileChange, *journal.HuntStart, *journal.HuntGroup, *journal.HuntEnd, *journal.HuntSkipped, *journal.Combination, *journal.DeepeningRound, *journal.TunerWarning, *journal.DeadEnd:
 		return true
 	}
 	return false
@@ -105,6 +105,7 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 		cmpopts.IgnoreFields(journal.TunerDecision{}, "Reason"),
 		cmpopts.IgnoreFields(journal.CorePhase{}, "Reason"),
 		cmpopts.IgnoreFields(journal.CheckingCycle{}, "Reason"),
+		cmpopts.IgnoreFields(journal.CheckingChain{}, "Msg"),
 		cmpopts.IgnoreFields(journal.HuntStart{}, "Failure", "ParkedSeq", "Trial"),
 		cmpopts.IgnoreFields(journal.HuntGroup{}, "Reason"),
 		cmpopts.IgnoreFields(journal.HuntEnd{}, "Reason"),
@@ -152,6 +153,15 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 				}
 				if end == nil {
 					t.Fatalf("trial %s has no end", intent.Trial)
+				}
+				if intent.Regime == machine.R7 && len(intent.Cores) > 1 && end.Outcome != journal.OutcomeInconclusive &&
+					(len(end.VoltageRequestsV) > 0 || len(end.TopRequesters) > 0 || len(end.CCDMHz) > 0) {
+					// Forecast ends the current trial without fabricated telemetry. Its branches use earlier
+					// measurements; a real end can reorder requests, change voltage targets or derive a
+					// different partial. That future telemetry is not an input available at this intent.
+					// The unit fixture separately pins these branches against telemetry-free tuner folds.
+					missing++
+					continue
 				}
 				premise := tuner.IfPass
 				actualCore := end.Core
