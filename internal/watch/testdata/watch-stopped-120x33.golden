@@ -19,14 +19,14 @@
  CYCLE 2 ────────────────────────────── 14 steps · 14 done   WHAT HAPPENED ──────────────────────────────────── l: all
 
  ■  1 R7 all-core       5 parts       done                   03:59  stop     stopped
- ■  2 R7 all-core       5 parts       done                   03:59  cycle    #2 passed, a full cycle of every kind of
- ■  3 R7 all-core       5 parts       done                   03:59  pass     idle with short bursts on all 16 cores
- ■  4 R2 heavy vector   16 x 2m       done                   03:44  pass     partial load on core 15 at -35, 2 min
- ■  5 R2 heavy vector   16 x 2m       done                   03:42  pass     partial load on core 07 at -30, 2 min
- ■  6 R2 heavy vector   16 x 2m       done                   03:40  pass     partial load on core 14 at 0, 2 min
- ■  7 R6 idle + bursts  15m           done                   03:38  pass     partial load on core 06 at -27, 2 min
- ■  8 R5 both threads   16 x 2m       done                   03:36  pass     partial load on core 13 at -22, 2 min
- ■  9 R1 light          16 x 2m       done                   03:34  pass     partial load on core 05 at -7, 2 min
+ ■  2 R7 all-core       5 parts       done                   03:59  cycle    cycle 2 passed, a full cycle of every
+ ■  3 R7 all-core       5 parts       done                   03:59  pass     R6 idle + bursts on 00-15 · passed
+ ■  4 R2 heavy vector   16 x 2m       done                   03:44  pass     R4 partial load on core 15 at -35
+ ■  5 R2 heavy vector   16 x 2m       done                   03:42  pass     R4 partial load on core 07 at -30
+ ■  6 R2 heavy vector   16 x 2m       done                   03:40  pass     R4 partial load on core 14 at 0 · passed
+ ■  7 R6 idle + bursts  15m           done                   03:38  pass     R4 partial load on core 06 at -27
+ ■  8 R5 both threads   16 x 2m       done                   03:36  pass     R4 partial load on core 13 at -22
+ ■  9 R1 light          16 x 2m       done                   03:34  pass     R4 partial load on core 05 at -7
  +5 more                                                     +191 more
 
   ?  help    l  log    esc  back    q  close view

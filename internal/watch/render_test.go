@@ -11,6 +11,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 func TestHelpWideUsesThreeColumns(t *testing.T) {
@@ -225,6 +227,26 @@ func TestMediumCoreNotesRetainCombinationAndSoloOffsets(t *testing.T) {
 		if !strings.Contains(frame, note) {
 			t.Errorf("medium frame hid constraint facts %q:\n%s", note, frame)
 		}
+	}
+}
+
+func TestOutcomeLinesMergeBranchesThatSayTheSame(t *testing.T) {
+	t.Parallel()
+	next := &tuner.Trial{Regime: machine.R7, Cores: []int{1, 2}, Cycle: 1, Step: 1, RecordOnly: true, DurationS: 120, Workload: "w"}
+	s := Snapshot{
+		trial: &trialView{regime: machine.R7, cores: []int{1, 2}, cycle: 1, step: 1, recordOnly: true, duration: 2 * time.Minute, workload: machine.Workload{ID: "w"}, index: 1, of: 4},
+		outcomes: []outcome{
+			{premise: ifPasses, next: next},
+			{premise: ifNamed, next: next},
+			{premise: ifUnnamed, next: next},
+		},
+	}
+	var got []string
+	for _, row := range s.outcomeRows() {
+		got = append(got, row.label+": "+fitPhrases(row.phrases, 200))
+	}
+	if diff := cmp.Diff([]string{"pass or fail: recorded only, moves nothing → next: trial 2 of 4"}, got); diff != "" {
+		t.Fatalf("identical branches must share one line (-want +got):\n%s", diff)
 	}
 }
 

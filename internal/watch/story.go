@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -597,374 +598,425 @@ func (s Snapshot) partWords(n tuner.Trial) string {
 	return ""
 }
 
-type outcomeRow struct {
-	label, text, compact string
-	style                lipgloss.Style
+// sameTrial is true when n is another trial of the same requirement as t.
+func sameTrial(n tuner.Trial, t *trialView) bool {
+	if t == nil {
+		return false
+	}
+	same := n.Regime == t.regime && n.Workload == t.workload.ID && time.Duration(n.DurationS)*time.Second == t.duration &&
+		n.Hunt == t.hunt && n.Group == t.group && n.Cycle == t.cycle && n.Step == t.step && n.Round == t.round &&
+		n.Rerun == t.rerun && n.RecordOnly == t.recordOnly
+	if len(n.Cores) == 0 {
+		return same && t.condition == machine.Alone && n.Core == t.core && n.Offset == t.offset
+	}
+	return same && slices.Equal(slices.Sorted(slices.Values(n.Cores)), slices.Sorted(slices.Values(t.cores)))
 }
 
+// phrase is one step of an outcome line; a minor one is left out first when the line does not fit.
+type phrase struct {
+	text  string
+	minor bool
+}
+
+type outcomeRow struct {
+	label, short, compact string
+	phrases               []phrase
+	style                 lipgloss.Style
+}
+
+// fitPhrases joins an outcome line's phrases with arrows, leaving out minor ones, then any but the first and the
+// last, until it fits.
+func fitPhrases(phrases []phrase, width int) string {
+	join := func(ps []phrase) string {
+		parts := make([]string, len(ps))
+		for i, p := range ps {
+			parts[i] = p.text
+		}
+		return strings.Join(parts, " → ")
+	}
+	text := join(phrases)
+	for ansi.StringWidth(text) > width {
+		drop := -1
+		for i, p := range phrases {
+			if p.minor && p.text != "..." {
+				drop = i
+				break
+			}
+		}
+		if drop < 0 {
+			for i := 1; i < len(phrases)-1; i++ {
+				if phrases[i].text != "..." {
+					drop = i
+					break
+				}
+			}
+		}
+		if drop < 0 {
+			return text
+		}
+		phrases = slices.Clone(phrases)
+		switch {
+		case drop > 0 && phrases[drop-1].text == "...":
+			phrases = slices.Delete(phrases, drop, drop+1)
+		case drop+1 < len(phrases) && phrases[drop+1].text == "...":
+			phrases = slices.Delete(phrases, drop, drop+1)
+		default:
+			phrases[drop] = phrase{"...", true}
+		}
+		text = join(phrases)
+	}
+	return text
+}
+
+// outcomeRows are the outcome lines: each branch's decisions in words, branches that say the same merged into one.
 func (s Snapshot) outcomeRows() []outcomeRow {
+	t := s.trial
+	type group struct {
+		premises []premise
+		phrases  []phrase
+		text     string
+		compact  string
+		passes   int
+	}
+	var groups []group
+	for _, branch := range s.outcomes {
+		phrases, compact := s.outcomeWords(branch)
+		text := fitPhrases(phrases, 1<<20)
+		i := slices.IndexFunc(groups, func(g group) bool { return g.text == text })
+		if i < 0 {
+			groups = append(groups, group{phrases: phrases, text: text, compact: compact})
+			i = len(groups) - 1
+		}
+		groups[i].premises = append(groups[i].premises, branch.premise)
+		groups[i].passes = max(groups[i].passes, branch.passes)
+	}
+	hasAll := slices.ContainsFunc(groups, func(g group) bool { return slices.Contains(g.premises, ifAllPass) })
 	order := []premise{ifAllPass, ifPasses, ifFails, ifNamed, ifUnnamed, ifInconclusive}
 	if s.hunt != nil {
 		order = []premise{ifAllPass, ifPasses, ifUnnamed, ifNamed, ifFails, ifInconclusive}
 	}
+	rank := func(g group) int {
+		best := len(order)
+		for _, p := range g.premises {
+			best = min(best, slices.Index(order, p))
+		}
+		return best
+	}
+	slices.SortStableFunc(groups, func(a, b group) int { return rank(a) - rank(b) })
 	var out []outcomeRow
-	passShown := false
-	for _, kind := range order {
-		for _, branch := range s.outcomes {
-			if branch.premise != kind || ((kind == ifPasses || kind == ifAllPass) && passShown) {
-				continue
-			}
-			label, style := "if it passes", green
-			switch kind {
-			case ifPasses:
-			case ifAllPass:
-				label = fmt.Sprintf("if all %d pass", branch.passes)
-			case ifFails:
-				label, style = "if it fails", red
-			case ifNamed:
-				label, style = "if a core is named", red
-			case ifUnnamed:
-				label, style = "if none is named", red
-			case ifInconclusive:
-				label, style = "if inconclusive", grey
-			}
-			out = append(out, outcomeRow{label, outcomeWords(branch), compactOutcome(branch), style})
-			if kind == ifAllPass || kind == ifPasses {
-				passShown = true
-			}
-			if len(out) == 3 {
-				return out
-			}
+	for _, g := range groups {
+		if hasAll && slices.Equal(g.premises, []premise{ifPasses}) {
+			continue
+		}
+		label, short, style := premiseWords(g.premises, g.passes, t)
+		out = append(out, outcomeRow{label, short, g.compact, g.phrases, style})
+		if len(out) == 3 {
+			break
 		}
 	}
 	return out
 }
 
-func compactOutcome(branch outcome) string {
-	if branch.needsMCE {
-		return "read hardware evidence"
-	}
-	if branch.needsRanking {
-		return "read core ranking"
-	}
-	if branch.needsHistory {
-		return "complete hunt history needed"
-	}
-	if branch.premise == ifNamed {
-		text := ""
-		for _, payload := range branch.decisions {
-			switch d := payload.(type) {
-			case *journal.TunerDecision:
-				if d.Decision == journal.Backoff {
-					text = "named core backs off"
-				}
-			case *journal.HuntEnd:
-				text = "hunt ends"
-			case *journal.DeadEnd:
-				return "→ tuning stops"
-			}
+func premiseWords(premises []premise, passes int, t *trialView) (string, string, lipgloss.Style) {
+	has := func(p premise) bool { return slices.Contains(premises, p) }
+	fails := has(ifFails) || has(ifNamed) || has(ifUnnamed)
+	pass := has(ifPasses) || has(ifAllPass)
+	switch {
+	case pass && fails:
+		return "pass or fail", "pass or fail", textStyle
+	case has(ifAllPass):
+		passed, of := passes, passes
+		if t != nil && t.of > 0 {
+			passed, of = t.passed+passes, t.of
 		}
-		if text != "" {
-			return "→ " + text
-		}
-		if branch.next != nil {
-			return "→ " + outcomeNextWords(*branch.next, true)
-		}
-		return "no next trial projected"
+		return fmt.Sprintf("if %d of %d pass", passed, of), fmt.Sprintf("%d/%d pass", passed, of), green
+	case has(ifPasses):
+		return "if it passes", "pass", green
+	case has(ifFails) || has(ifNamed) && has(ifUnnamed):
+		return "if it fails", "fail", red
+	case has(ifNamed):
+		return "if a core is named", "core named", red
+	case has(ifUnnamed):
+		return "if none is named", "none named", red
 	}
-	var text string
-	for _, decision := range branch.decisions {
-		switch d := decision.(type) {
-		case *journal.DeadEnd:
-			return "stop: " + vtText(d.Detail)
-		case *journal.HuntStart:
-			text = fmt.Sprintf("hunt %d: %s", d.Hunt, coreIDs(d.Candidates))
-		case *journal.HuntGroup:
-			text = fmt.Sprintf("group %d: %s", d.Group, coreIDs(d.Cores))
-			if d.Probe != nil {
-				text = fmt.Sprintf("probe %02d at %d", d.Probe.Core, d.Probe.Offset)
-			}
-		case *journal.HuntEnd:
-			text = "hunt ends"
-		case *journal.Combination:
-			text = fmt.Sprintf("record C%d", d.Combination)
-		case *journal.TunerDecision:
-			text = fmt.Sprintf("core %02d to %d", d.Core, d.ToOffset)
-		case *journal.CheckingStep:
-			text = fmt.Sprintf("step %d", d.Step)
-		case *journal.CorePhase:
-			if d.From == journal.PhaseSearch && d.To != journal.PhaseSearch {
-				text = fmt.Sprintf("solo %02d at %d", d.Core, d.Offset)
-			}
-		}
-	}
-	if text != "" {
-		return "→ " + text
-	}
-	if t := branch.next; t != nil {
-		switch {
-		case t.Hunt > 0:
-			return fmt.Sprintf("→ group %d", t.Group)
-		case t.Rerun:
-			return "→ rerun " + string(t.Regime)
-		case t.Cycle > 0:
-			return fmt.Sprintf("→ step %d", t.Step)
-		case t.Round > 0:
-			return fmt.Sprintf("→ round %d", t.Round)
-		case len(t.Cores) == 0:
-			return fmt.Sprintf("→ core %02d at %d", t.Core, t.Offset)
-		default:
-			return "→ " + string(t.Regime) + " " + coreIDs(t.Cores)
-		}
-	}
-	return "no next trial projected"
+	return "if inconclusive", "inconclusive", grey
 }
 
-func outcomeWords(branch outcome) string {
-	var parts []string
-	for _, decision := range forecastDecisions(branch) {
-		text := decisionWords(decision)
-		if branch.premise == ifNamed {
-			text = namedDecisionWords(decision)
-		}
-		if text != "" {
-			parts = append(parts, text)
+// outcomeWords puts a branch's decisions in words, in the order the tuner records them, then the trial it runs next.
+func (s Snapshot) outcomeWords(branch outcome) ([]phrase, string) {
+	t := s.trial
+	named := branch.premise == ifNamed
+	phrases := s.decisionPhrases(branch.decisions, named)
+	var shape huntShape
+	stepDone := false
+	for _, d := range branch.decisions {
+		switch d := d.(type) {
+		case *journal.HuntStart:
+			shape = huntShape{d.Failing, d.Parked}
+		case *journal.CheckingStep:
+			stepDone = true
 		}
 	}
+	passing := branch.premise == ifPasses || branch.premise == ifAllPass
+	if t != nil && passing && !stepDone && t.parts > 1 && t.of > 0 && t.passed+branch.passes >= t.of {
+		phrases = append(phrases, phrase{fmt.Sprintf("part %d is done", t.part), false})
+	}
+	if t != nil && t.recordOnly && len(phrases) == 0 && branch.premise != ifInconclusive {
+		phrases = append(phrases, phrase{"recorded only, moves nothing", false})
+	}
+	compact := ""
+	for _, d := range branch.decisions {
+		switch d := d.(type) {
+		case *journal.DeadEnd:
+			compact = "tuning stops"
+		case *journal.HuntEnd:
+			if compact == "" {
+				compact = "hunt ends"
+			}
+		case *journal.HuntStart:
+			if compact == "" {
+				compact = fmt.Sprintf("hunt %d", d.Hunt)
+			}
+		case *journal.Combination:
+			if compact == "" {
+				compact = fmt.Sprintf("C%d", d.Combination)
+			}
+		case *journal.TunerDecision:
+			if compact == "" && d.Decision == journal.Backoff {
+				compact = "backs off"
+			}
+		}
+	}
+	var next string
 	switch {
 	case branch.needsMCE:
-		parts = append(parts, "read hardware evidence before deciding")
+		next = "read hardware evidence before deciding"
 	case branch.needsRanking:
-		parts = append(parts, "read the core ranking before deciding")
+		next = "read the core ranking before deciding"
 	case branch.needsHistory:
-		parts = append(parts, "complete hunt history needed before deciding")
-	case branch.next != nil:
-		parts = append(parts, "next: "+outcomeNextWords(*branch.next, branch.premise == ifNamed))
-	case len(parts) == 0:
-		parts = append(parts, "no next trial projected")
+		next = "complete hunt history needed before deciding"
+	case branch.next == nil:
+		if len(phrases) == 0 {
+			next = "no next trial projected"
+		}
+	case branch.next.Retry && sameTrial(*branch.next, t):
+		next, compact = "the same trial runs again", "same trial again"
+	case sameTrial(*branch.next, t) && (branch.premise == ifPasses || t.recordOnly) && t.index < t.of:
+		next = fmt.Sprintf("next: trial %d of %d", t.index+1, t.of)
+	case sameTrial(*branch.next, t):
+		next = "next: this load again"
+	default:
+		next = "next: " + s.nextTrialWords(*branch.next, t, shape)
 	}
-	return strings.Join(parts, " → ")
+	if compact == "" {
+		compact = compactNext(next)
+	}
+	if next != "" {
+		phrases = append(phrases, phrase{next, false})
+	}
+	return phrases, "→ " + compact
 }
 
-func outcomeNextWords(t tuner.Trial, named bool) string {
-	var position string
-	switch {
-	case named && len(t.Cores) == 0:
-		position = "retry the named core"
-	case t.Hunt > 0:
-		position = fmt.Sprintf("hunt %d group %d on %s", t.Hunt, t.Group, coreIDs(t.Cores))
-	case t.Rerun:
-		position = "rerun on " + coreIDs(t.Cores)
-	case t.Cycle > 0:
-		position = fmt.Sprintf("cycle %d step %d", t.Cycle, t.Step)
-	case t.Round > 0:
-		position = fmt.Sprintf("round %d", t.Round)
-	case len(t.Cores) == 0:
-		position = fmt.Sprintf("core %02d at %d", t.Core, t.Offset)
-	default:
-		position = "on " + coreIDs(t.Cores)
+// compactNext shortens what comes next to its position: "part 2: 08-15", "group 8", "step 3".
+func compactNext(next string) string {
+	text := strings.TrimPrefix(next, "next: ")
+	if name, rest, ok := strings.Cut(text, ": "); ok {
+		if strings.HasPrefix(name, "hunt ") {
+			_, group, _ := strings.Cut(name, " group ")
+			return "group " + group
+		}
+		if strings.HasPrefix(name, "part ") {
+			cores, _, _ := strings.Cut(rest, " ")
+			if strings.Contains(rest, " on ") {
+				return name
+			}
+			return name + ": " + cores
+		}
+		return name
 	}
-	text := position + ": " + string(t.Regime)
-	if t.Workload != "" {
-		text += " " + workloadDisplayID(t.Workload)
-	}
-	if t.RecordOnly {
-		text += " · record only"
+	if strings.HasPrefix(text, "rerun ") {
+		return "rerun"
 	}
 	return text
 }
 
-func forecastDecisions(branch outcome) [2]journal.Payload {
-	type ranked struct {
-		payload      journal.Payload
-		score, index int
-	}
-	var selected [2]ranked
-	for i, payload := range branch.decisions {
-		score := decisionImportance(payload)
-		if score == 0 {
-			continue
-		}
-		if (selected[0].payload != nil && selected[0].payload.Kind() == payload.Kind()) ||
-			(selected[1].payload != nil && selected[1].payload.Kind() == payload.Kind()) {
-			continue
-		}
-		candidate := ranked{payload, score, i}
-		switch {
-		case score > selected[0].score:
-			selected[1], selected[0] = selected[0], candidate
-		case score > selected[1].score:
-			selected[1] = candidate
+// decisionPhrases puts each recorded decision in a short phrase. Consecutive hunt groups answered by carried trials
+// become one phrase. A branch that assumes a named core speaks of "it", since any loaded core could be the one.
+func (s Snapshot) decisionPhrases(decisions []journal.Payload, named bool) []phrase {
+	var out []phrase
+	push := func(text string, minor bool) {
+		if text != "" && (len(out) == 0 || out[len(out)-1].text != text) {
+			out = append(out, phrase{text, minor})
 		}
 	}
-	if selected[1].payload != nil && selected[1].index < selected[0].index {
-		selected[0], selected[1] = selected[1], selected[0]
+	add := func(text string) { push(text, false) }
+	minor := func(text string) { push(text, true) }
+	var namedCore, failed *int
+	for i := 0; i < len(decisions); i++ {
+		switch d := decisions[i].(type) {
+		case *journal.Failure:
+			switch {
+			case d.KnownFailure != 0:
+				add(s.knownFailureWords(d, decisions[i+1:]))
+			case named && d.Core != nil:
+				namedCore = d.Core
+				add("its failure point is recorded")
+			case d.Core != nil:
+				failed = d.Core
+			}
+		case *journal.HuntStart:
+			minor(fmt.Sprintf("hunt %d starts over %s", d.Hunt, coreIDs(d.Candidates)))
+		case *journal.HuntGroup:
+			if d.Skipped {
+				add(fmt.Sprintf("group %d skipped", d.Group))
+				continue
+			}
+			if d.Inferred == "" {
+				continue
+			}
+			var p phrase
+			p, i = carriedGroups(decisions, i)
+			push(p.text, p.minor)
+		case *journal.HuntEnd:
+			push(huntEndPhrase(d, named))
+		case *journal.Combination:
+			add(fmt.Sprintf("C%d over %s", d.Combination, memberCoreIDs(d.Members)))
+		case *journal.TunerDecision:
+			if named && namedCore != nil && d.Core == *namedCore {
+				add("it backs off")
+				continue
+			}
+			add(decisionPhrase(d, failed))
+		case *journal.CorePhase:
+			switch {
+			case d.From == journal.PhaseSearch && d.To != journal.PhaseSearch:
+				add(fmt.Sprintf("core %02d solo limit %d", d.Core, d.Offset))
+			case named:
+			case d.To == journal.PhaseSearch:
+				add(fmt.Sprintf("core %02d starts its search over", d.Core))
+			}
+		case *journal.CheckingStep:
+			if d.Step > 1 {
+				add(fmt.Sprintf("step %d is done", d.Step-1))
+			}
+		case *journal.CheckingCycle:
+			switch {
+			case d.Event == journal.CycleStart:
+				minor(fmt.Sprintf("cycle %d starts", d.Cycle))
+			case d.Passed && d.Full:
+				add(fmt.Sprintf("cycle %d passed, a full cycle", d.Cycle))
+			case d.Passed:
+				add(fmt.Sprintf("cycle %d passed", d.Cycle))
+			default:
+				add(fmt.Sprintf("cycle %d ends", d.Cycle))
+			}
+		case *journal.DeepeningRound:
+			switch {
+			case d.Event == journal.CycleStart:
+				add(fmt.Sprintf("deepening round %d starts", d.Round))
+			case d.Passed:
+				add(fmt.Sprintf("deepening round %d passed", d.Round))
+			default:
+				add(fmt.Sprintf("deepening round %d ends", d.Round))
+			}
+		case *journal.DeadEnd:
+			add("tuning stops: " + strings.ReplaceAll(vtText(string(d.Condition)), "_", " "))
+		case *journal.HuntSkipped:
+			add("no hunt: these offsets reach a known failure")
+		}
 	}
-	return [2]journal.Payload{selected[0].payload, selected[1].payload}
+	return out
 }
 
-func decisionImportance(payload journal.Payload) int {
-	switch d := payload.(type) {
-	case *journal.DeadEnd:
-		return 100
-	case *journal.Combination:
-		return 90
-	case *journal.HuntEnd:
-		return 85
-	case *journal.HuntStart:
-		return 80
-	case *journal.TunerDecision:
-		return 70
-	case *journal.DeepeningRound:
-		return 65
-	case *journal.CorePhase:
-		if d.From == journal.PhaseSearch && d.To != journal.PhaseSearch {
-			return 60
+// carriedGroups folds the run of hunt groups answered by carried trials that starts at decisions[i] into one phrase,
+// and returns the index of the run's last group.
+func carriedGroups(decisions []journal.Payload, i int) (phrase, int) {
+	d := decisions[i].(*journal.HuntGroup)
+	last := i
+	for last+1 < len(decisions) {
+		g, ok := decisions[last+1].(*journal.HuntGroup)
+		if !ok || g.Inferred != d.Inferred || g.Skipped || g.Hunt != d.Hunt {
+			break
 		}
-	case *journal.CheckingCycle:
-		return 50
-	case *journal.CheckingStep:
-		return 45
-	case *journal.HuntGroup:
-		return 40
+		last++
 	}
-	return 0
+	first, end := d.Group, decisions[last].(*journal.HuntGroup).Group
+	groups := fmt.Sprintf("group %d", first)
+	if end > first {
+		groups = fmt.Sprintf("groups %d-%d", first, end)
+	}
+	switch {
+	case d.Inferred != "pass":
+		return phrase{groups + " failed in a carried trial", false}, last
+	case end > first:
+		return phrase{groups + " answered by carried trials", true}, last
+	}
+	return phrase{groups + " answered by a carried trial", true}, last
 }
 
-func namedDecisionWords(payload journal.Payload) string {
-	switch d := payload.(type) {
-	case *journal.TunerDecision:
-		switch d.Decision {
-		case journal.Backoff:
-			return "record its failure point; back off the named core"
-		case journal.CheckSoloLimit:
-			return "confirm the named core's candidate solo limit"
-		case journal.StepDeeper, journal.Deepen:
-			return "deepen the named core"
-		case journal.Yield:
-			return "the named core yields"
+func huntEndPhrase(d *journal.HuntEnd, named bool) (string, bool) {
+	switch {
+	case named && (d.Result == "direct" || d.Result == "culprit"):
+		return "the hunt ends", false
+	case d.Result == "direct" || d.Result == "culprit":
+		return fmt.Sprintf("hunt %d ends: %s named", d.Hunt, coreIDs(d.Cores)), false
+	case d.Result == "fallback":
+		return fmt.Sprintf("hunt %d unresolved", d.Hunt), true
+	case d.Result == "combination":
+		return fmt.Sprintf("hunt %d keeps %s together", d.Hunt, coreIDs(d.Cores)), false
+	case d.Result == "cancelled":
+		return fmt.Sprintf("hunt %d cancelled", d.Hunt), false
+	}
+	return fmt.Sprintf("hunt %d ends", d.Hunt), false
+}
+
+// decisionPhrase puts a move of one core in words; failed is the core a failure in the same branch named, whose
+// backoff records its failure point.
+func decisionPhrase(d *journal.TunerDecision, failed *int) string {
+	switch d.Decision {
+	case journal.Backoff:
+		if failed != nil && *failed == d.Core && d.FailurePoint != nil {
+			return fmt.Sprintf("core %02d fails at %d, %d → %d", d.Core, *d.FailurePoint, d.FromOffset, d.ToOffset)
 		}
-	case *journal.CorePhase:
-		if d.To == journal.PhaseSearch {
-			return "restart the named core's search"
-		}
-		if d.To == journal.PhaseHasRoom {
-			return "the named core has room"
-		}
-		if d.To == journal.PhaseAtLimit {
-			return "the named core is at its limit"
-		}
-	case *journal.HuntEnd:
-		return fmt.Sprintf("hunt %d ends; the named core is identified", d.Hunt)
-	case *journal.DeadEnd:
-		return "tuning stops at a dead end"
-	case *journal.Combination:
-		return fmt.Sprintf("record combination C%d", d.Combination)
-	case *journal.ProfileChange:
-		return "update the profile"
-	default:
-		return decisionWords(payload)
+		return fmt.Sprintf("core %02d %d → %d", d.Core, d.FromOffset, d.ToOffset)
+	case journal.StepDeeper:
+		return fmt.Sprintf("core %02d next %d", d.Core, d.ToOffset)
+	case journal.CheckSoloLimit:
+		return fmt.Sprintf("core %02d confirms %d", d.Core, d.ToOffset)
+	case journal.Deepen:
+		return fmt.Sprintf("core %02d deepens %d → %d", d.Core, d.FromOffset, d.ToOffset)
+	case journal.Yield:
+		return fmt.Sprintf("core %02d yields %d → %d", d.Core, d.FromOffset, d.ToOffset)
 	}
 	return ""
 }
 
-func decisionWords(payload journal.Payload) string {
-	switch d := payload.(type) {
-	case *journal.TunerDecision:
-		verb := "moves"
-		switch d.Decision {
-		case journal.StepDeeper, journal.Deepen:
-			verb = "goes deeper"
-		case journal.Backoff:
-			verb = "backs off"
-		case journal.Yield:
-			verb = "yields"
-		case journal.CheckSoloLimit:
-			return fmt.Sprintf("confirm core %02d's candidate solo limit at %d", d.Core, d.ToOffset)
+// knownFailureWords says which trial the tuner skips because it already failed at these offsets.
+func (s Snapshot) knownFailureWords(d *journal.Failure, after []journal.Payload) string {
+	what := string(d.Regime) + " " + kindWords(d.Regime)
+	for _, p := range after {
+		start, ok := p.(*journal.HuntStart)
+		if !ok {
+			continue
 		}
-		text := fmt.Sprintf("core %02d %s: %d to %d", d.Core, verb, d.FromOffset, d.ToOffset)
-		if d.FailurePoint != nil {
-			text = fmt.Sprintf("failure point %d; core %02d %s to %d", *d.FailurePoint, d.Core, verb, d.ToOffset)
+		what += " on " + coreIDs(start.Cores)
+		if t := s.trial; t != nil && !t.rerun {
+			if name := s.partWords(tuner.Trial{Step: t.step, Cores: start.Cores}); name != "" {
+				_, rest, _ := strings.Cut(name, ": ")
+				what, _, _ = strings.Cut(rest, " on ")
+			}
 		}
-		return text
-	case *journal.CorePhase:
-		if d.From == journal.PhaseSearch && d.To != journal.PhaseSearch {
-			return fmt.Sprintf("core %02d's solo limit is %d", d.Core, d.Offset)
-		}
-		if d.CheckSoloLimit {
-			return fmt.Sprintf("confirm core %02d at %d", d.Core, d.Offset)
-		}
-		if d.To == journal.PhaseHasRoom {
-			return fmt.Sprintf("core %02d has room at %d", d.Core, d.Offset)
-		}
-		if d.To == journal.PhaseAtLimit {
-			return fmt.Sprintf("core %02d is at its limit at %d", d.Core, d.Offset)
-		}
-		return vtText(d.Message())
-	case *journal.HuntStart:
-		return fmt.Sprintf("hunt %d starts over %s", d.Hunt, coreIDs(d.Candidates))
-	case *journal.HuntGroup:
-		text := fmt.Sprintf("hunt %d group %d: %s at failing offsets", d.Hunt, d.Group, coreIDs(d.Cores))
-		if d.Probe != nil {
-			text = fmt.Sprintf("probe core %02d at %d", d.Probe.Core, d.Probe.Offset)
-		}
-		if len(d.Held) > 0 {
-			text += "; hold " + memberSummary(d.Held)
-		}
-		return text
-	case *journal.HuntEnd:
-		if d.Result == "direct" || d.Result == "culprit" {
-			return fmt.Sprintf("hunt %d ends; %s identified", d.Hunt, coreIDs(d.Cores))
-		}
-		return fmt.Sprintf("hunt %d ends: %s over %s", d.Hunt, vtText(d.Result), coreIDs(d.Cores))
-	case *journal.Combination:
-		return fmt.Sprintf("record C%d over %s", d.Combination, memberCoreIDs(d.Members))
-	case *journal.CheckingStep:
-		return fmt.Sprintf("cycle %d advances to step %d", d.Cycle, d.Step)
-	case *journal.CheckingCycle:
-		if d.Event == journal.CycleStart {
-			return fmt.Sprintf("cycle %d starts", d.Cycle)
-		}
-		if d.Passed && d.Full {
-			return fmt.Sprintf("cycle %d passed with full coverage", d.Cycle)
-		}
-		if d.Passed {
-			return fmt.Sprintf("cycle %d passed; missing %s", d.Cycle, strings.Join(d.Missing, ", "))
-		}
-		return fmt.Sprintf("cycle %d ends: %s", d.Cycle, vtText(d.Reason))
-	case *journal.DeepeningRound:
-		if d.Event == journal.CycleStart {
-			return fmt.Sprintf("deepening round %d starts over %s", d.Round, coreIDs(d.Cores))
-		}
-		if d.Passed {
-			return fmt.Sprintf("deepening round %d passed", d.Round)
-		}
-		return fmt.Sprintf("deepening round %d ends: %s", d.Round, vtText(d.Reason))
-	case *journal.DeadEnd:
-		return "dead end: " + strings.ReplaceAll(vtText(string(d.Condition)), "_", " ")
-	case *journal.TunerWarning:
-		return vtText(d.Message())
-	case *journal.HostRanking:
-		return "core ranking recorded"
-	case *journal.HuntSkipped:
-		return "no hunt: " + vtText(d.Reason)
+		break
 	}
-	return ""
-}
-
-func memberSummary(members []journal.CombinationMember) string {
-	if len(members) <= 2 {
-		return compactMembers(members)
+	verb := "failed"
+	if d.Signal == machine.Crash {
+		verb = "crashed"
 	}
-	return memberCoreIDs(members) + " at recorded offsets"
-}
-
-func compactMembers(members []journal.CombinationMember) string {
-	parts := make([]string, len(members))
-	for i, member := range members {
-		parts[i] = fmt.Sprintf("%02d:%d", member.Core, member.Offset)
+	text := what + " at these offsets already " + verb
+	if s.carried[d.KnownFailure] {
+		text += " in a carried trial"
 	}
-	return strings.Join(parts, " ")
+	return text
 }
 
 func memberCoreIDs(members []journal.CombinationMember) string {

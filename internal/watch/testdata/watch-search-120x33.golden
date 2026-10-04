@@ -6,7 +6,7 @@
   R1   light load  on core 00 alone at -5   y-cruncher BKT + SFTv4 · 1 worker             SEARCH CORE 00 AT -5 · LIGHT
  ███████████████████████████████████████████████████████████████████████████████████████████████████  0:50 left  0/1 ►
 
- pass → core 00 at -5                   core named → named core backs off      inconclusive → core 00 at -5
+ pass → R2 heavy vector on core 00 alone at -5   core named → backs off   inconclusive → same trial again
 
  CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 waiting    0  2 counts/cell       -50 fail
  ► 00  -5 SEARCH   ▄▄▄                             → -5        08   0 SEARCH                                   → -5

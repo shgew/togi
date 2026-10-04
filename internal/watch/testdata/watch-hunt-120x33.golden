@@ -6,7 +6,7 @@
   R7   all-core load  on 00-07 · 08-15 at failing offsets, 00-07 parked at 0   mprime AVX2        HUNT 1 · PART 1 OF 2
  ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
 
- all 5 pass → group 2: 00-07            none named → group 2: 12-15            inconclusive → group 1
+ 5/5 pass → part 2: 08-15   none named → group 2   inconclusive → same trial again
 
  CCD 0 parked     0  2 counts/cell       -50 fail  back      CCD 1 judged     0  2 counts/cell       -50 fail
  ► 00   0 PARKED   ·····█                      -11  -10        08 -10 MEMBER   ▄▄▄▄▄█                      -11
@@ -20,13 +20,13 @@
 
  HUNT 1 ────────────────────────────────────── 07:13 · 40s   WHAT HAPPENED ──────────────────────────────────── l: all
 
- cause  crash in R7 all-core on 00-07, no core named         07:13  hunt     #1 started: which cores caused it?
- ► part 1/2 08-15 at failing offsets  trial 1/5              07:13  crash    all-core load on cores 00-07, rebooted
-   part 2/2 00-07 at failing offsets  if part 1 passes       07:13  resume   session resumed
-                                                             07:12  cycle    #1 started, 14 steps
- then   1  record a failure point or a combination           07:12  limit    core 15 solo limit -10
-        2  back off past it                                  07:12  limit    core 07 solo limit -10
-        3  rerun R7 all-core: 5 x 2m                         07:12  limit    core 14 solo limit -10
-                                                             +190 more
+ cause  crash in R7 all-core on 00-07, no core named         07:13  hunt     #1 started · part 1: 08-15 at failing
+ ► part 1/2 08-15 at failing offsets  trial 1/5              07:13  crash    R7 full CCD 0 on 00-07 · rebooted · no
+   part 2/2 00-07 at failing offsets  if part 1 passes       07:12  cycle    cycle 1 started · 14 steps
+                                                             07:12  limit    cores 00, 01, 02, 03, 04, 05, 06, 07
+ then   1  record a failure point or a combination           03:12  confirm  core 15 confirming -10 as its solo limit
+        2  back off past it                                  03:12  fail     core 15 fails at -11
+        3  rerun R7 all-core: 5 x 2m                         03:12  crash    core 15 · R1 light at -11 · rebooted
+                                                             +142 more
 
   ?  help    l  log    esc  back    q  close view

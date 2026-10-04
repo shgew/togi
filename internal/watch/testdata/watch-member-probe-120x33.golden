@@ -6,7 +6,7 @@
   R7   all-core load  on 00-07 · 11 at failing offsets, core 03 at -9, 00-02         HUNT 1 · GROUP 41 · CORE 03 AT -9
  ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
 
- all 5 pass → probe 11 at -9            none named → probe 03 at -8            core named → named core backs off
+ 5/5 pass → group 42   none named → group 42   core named → hunt ends
 
  CCD 0 all loaded 0  2 counts/cell       -50 fail  back      CCD 1 idle       0  2 counts/cell       -50 fail  back
  ► 00   0 PARKED   ····▀                            -10        08   0 PARKED   ····▀                            -10
@@ -20,13 +20,13 @@
 
  HUNT 1 ─────────────────────────────────── 04:01 · 49m40s   WHAT HAPPENED ──────────────────────────────────── l: all
 
- cause  crash in R7 all-core on 00-07, no core named         04:50  skip     hunt 1 groups 39-40: pass from carried
-                                                             04:50  crash    hunt 1 group 38: all-core load on cores
- partss 1-7   parts of 00-15 and      all passed             04:50  resume   session resumed
- group 8      00-03 08-15 at failing  crashed                04:49  skip     hunt 1 groups 34-37: pass from carried
- groups 9-13  parts of 00-03 08-15    all passed             04:49  crash    hunt 1 group 33: all-core load on cores
- group 14     00-03 08-11 at failing  crashed                04:49  resume   session resumed
- groups 15-20 parts of 00-03 08-11    all passed             04:47  skip     hunt 1 groups 27-32: pass from carried
- +16 more                                                    +38 more
+ cause  crash in R7 all-core on 00-07, no core named         04:50  group    hunt 1 groups 39-40 · parts of 03 11
+                                                             04:50  crash    hunt 1 group 38 · 03 11 at failing
+ partss 1-7   parts of 00-15 and      all passed             04:49  group    hunt 1 groups 34-37 · parts of 03 10 11
+ group 8      00-03 08-15 at failing  crashed                04:49  crash    hunt 1 group 33 · 03 10 11 at failing
+ groups 9-13  parts of 00-03 08-15    all passed             04:47  group    hunt 1 groups 27-32 · parts of 02 03 10
+ group 14     00-03 08-11 at failing  crashed                04:47  crash    hunt 1 group 26 · 02 03 10 11 at failing
+ groups 15-20 parts of 00-03 08-11    all passed             04:46  group    hunt 1 groups 22-25 · parts of 02 03
+ +16 more                                                    +16 more
 
   ?  help    l  log    esc  back    q  close view

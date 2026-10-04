@@ -219,21 +219,29 @@ func TestProjectMemberProbeRows(t *testing.T) {
 	}
 }
 
-func TestFoldEntryFoldsRepeatedPasses(t *testing.T) {
+func TestFoldEntryFoldsRepeatedOutcomes(t *testing.T) {
 	t.Parallel()
 	at := time.Unix(0, 0).UTC()
-	pass := func(text string, minutes, peak int) entry {
-		at = at.Add(time.Duration(minutes) * time.Minute)
-		return entry{at: at, tag: tagPass, text: text, runs: 1, each: time.Duration(minutes) * time.Minute, peak: new(peak)}
+	next := func() time.Time {
+		at = at.Add(2 * time.Minute)
+		return at
+	}
+	pass := func(first, peak int) entry {
+		return entry{at: next(), tag: tagPass, kind: trialsEntry, key: "pass R7 full CCD 0 on 00-07", text: "R7 full CCD 0 on 00-07", runs: 1, first: first, of: 4, peak: new(peak)}
+	}
+	limit := func(core, offset int) entry {
+		return entry{at: next(), tag: tagLimit, kind: limitsEntry, key: "limit", cores: []int{core}, offset: offset}
 	}
 	var history []entry
 	for _, e := range []entry{
-		pass("all-core load on cores 00-07", 2, 70),
-		pass("all-core load on cores 00-07", 2, 76),
-		pass("all-core load on cores 00-07", 2, 62),
-		pass("all-core load on cores 00-07", 10, 69),
-		{at: time.Unix(16*60, 0).UTC(), tag: tagCrash, text: "all-core load on cores 00-07, rebooted"},
-		pass("all-core load on cores 00-07", 10, 60),
+		pass(1, 70),
+		pass(2, 76),
+		pass(3, 62),
+		{at: next(), tag: tagCrash, text: "R7 full CCD 0 on 00-07 · rebooted"},
+		pass(4, 60),
+		limit(12, -50),
+		limit(14, -50),
+		limit(3, -34),
 	} {
 		history = foldEntry(history, e)
 	}
@@ -242,12 +250,13 @@ func TestFoldEntryFoldsRepeatedPasses(t *testing.T) {
 		got = append(got, e.at.Format("15:04")+" "+e.tag+": "+e.sentence())
 	}
 	if diff := cmp.Diff([]string{
-		"00:06 pass: all-core load on cores 00-07, 3 trials of 2 min, peak 76 C",
-		"00:16 pass: all-core load on cores 00-07, 10 min, peak 69 C",
-		"00:16 crash: all-core load on cores 00-07, rebooted",
-		"00:26 pass: all-core load on cores 00-07, 10 min, peak 60 C",
+		"00:06 pass: R7 full CCD 0 on 00-07 · trials 1-3 of 4 passed · Tctl max 76°C",
+		"00:08 crash: R7 full CCD 0 on 00-07 · rebooted",
+		"00:10 pass: R7 full CCD 0 on 00-07 · trial 4 of 4 passed · Tctl max 60°C",
+		"00:14 limit: cores 12, 14 solo limit -50, the deepest offset",
+		"00:16 limit: core 03 solo limit -34",
 	}, got); diff != "" {
-		t.Fatalf("passes of one test fold into one line with the latest time and the hottest peak, and nothing else folds (-want +got):\n%s", diff)
+		t.Fatalf("adjacent outcomes of one part fold into one line with the latest time and the hottest peak, and nothing else folds (-want +got):\n%s", diff)
 	}
 }
 
@@ -331,7 +340,7 @@ func TestProjectSparseCoreIDs(t *testing.T) {
 		&journal.TrialIntent{Trial: "one", Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Core: new(8), Profile: []int{-5, -9}, DurationS: 120},
 		&journal.TrialEnd{Trial: "one", Outcome: journal.OutcomePass, DurationS: 120}))
 	got := []string{fmt.Sprintf("core %02d applied %d", s.cores[1].id, s.cores[1].applied), s.history[0].sentence()}
-	want := []string{"core 08 applied -9", "light load on core 08 at -9, 2 min"}
+	want := []string{"core 08 applied -9", "R1 light on core 08 at -9 · passed"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("profiles list offsets in core order, not by core ID (-want +got):\n%s", diff)
 	}

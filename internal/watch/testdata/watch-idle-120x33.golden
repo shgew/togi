@@ -6,7 +6,7 @@
   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between                         CYCLE 1 · STEP 7
  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused until 14:58 · ends at
 
- pass → step 1                          core named → named core backs off      none named → group 1: 00-07
+ pass → step 1   core named → backs off   none named → hunt 5
 
  CCD 0 all loaded 0  2 counts/cell       -50 fail            CCD 1 all loaded 0  2 counts/cell       -50 fail
  ► 00 -37 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38           ► 08 -26 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -27
@@ -20,13 +20,13 @@
 
  CYCLE 1 ─────────────────────────────── 14 steps · 3 done   WHAT HAPPENED ──────────────────────────────────── l: all
 
- ►  1 R7 all-core       5 parts       part 1 of 5            14:43  pass     heavy vector load on core 15 at -38, 2
-      ├ partial CCD 0   00-04 06 07                          14:41  pass     heavy vector load on core 07 at -32, 2
-      ├ full CCD 0      00-07         6 failed               14:39  pass     heavy vector load on core 14 at 0, 2
-      ├ partial CCD 1   08-13 15                             14:37  pass     heavy vector load on core 06 at -27, 2
-      ├ full CCD 1      08-15         13 failed              14:35  pass     heavy vector load on core 13 at -22, 2
-      └ full CCD 0+1    00-15         4/4 passed             14:33  pass     heavy vector load on core 05 at -7, 2
- ○  2 R7 all-core       5 parts                              14:31  pass     heavy vector load on core 12 at -10, 2
+ ►  1 R7 all-core       5 parts       part 1 of 5            14:43  pass     R2 heavy vector on core 15 at -38
+      ├ partial CCD 0   00-04 06 07                          14:41  pass     R2 heavy vector on core 07 at -32
+      ├ full CCD 0      00-07         6 failed               14:39  pass     R2 heavy vector on core 14 at 0 · passed
+      ├ partial CCD 1   08-13 15                             14:37  pass     R2 heavy vector on core 06 at -27
+      ├ full CCD 1      08-15         13 failed              14:35  pass     R2 heavy vector on core 13 at -22
+      └ full CCD 0+1    00-15         4/4 passed             14:33  pass     R2 heavy vector on core 05 at -7
+ ○  2 R7 all-core       5 parts                              14:31  pass     R2 heavy vector on core 12 at -10
  +12 more                                                    +193 more
 
   ?  help    l  log    esc  back    q  close view

@@ -770,20 +770,15 @@ func drawOutcomes(c *canvas, p layout, s Snapshot) {
 	}
 	rows := s.outcomeRows()
 	if p.class == compactLayout {
-		width := max((p.outcomes.w-4)/max(len(rows), 1), 0)
+		parts := make([]string, len(rows))
 		for i, o := range rows {
-			label := strings.TrimPrefix(o.label, "if ")
-			label = strings.ReplaceAll(label, "a core is named", "core named")
-			label = strings.ReplaceAll(label, "none is named", "none named")
-			label = strings.ReplaceAll(label, "it passes", "pass")
-			label = strings.ReplaceAll(label, "it fails", "fail")
-			line := o.style.Render(label) + " " + textStyle.Render(o.compact)
-			c.put(p.outcomes, i*(width+2), 0, trimWords(line, width))
+			parts[i] = o.style.Render(o.short) + " " + textStyle.Render(o.compact)
 		}
+		c.put(p.outcomes, 0, 0, strings.Join(parts, "   "))
 		return
 	}
 	for i, o := range rows {
-		c.put(p.outcomes, 0, i, o.style.Render(fmt.Sprintf("%-21s", o.label))+trimWords(textStyle.Render(o.text), max(p.outcomes.w-21, 0)))
+		c.put(p.outcomes, 0, i, o.style.Render(fmt.Sprintf("%-21s", o.label))+textStyle.Render(fitPhrases(o.phrases, max(p.outcomes.w-21, 0))))
 	}
 }
 
@@ -1082,9 +1077,28 @@ func (s Snapshot) historyPanel(width int) []string {
 	}
 	out := []string{rule(width, grey.Render("WHAT HAPPENED"), grey.Render(right)), ""}
 	for _, e := range s.history {
-		out = append(out, grey.Render(e.at.Format("15:04"))+"  "+toneStyle(e.tone).Render(fmt.Sprintf("%-8s", e.tag))+" "+trimWords(textStyle.Render(vtText(e.sentence())), max(width-16, 0)))
+		before, alarm, after := e.sentenceParts()
+		text := textStyle.Render(before) + red.Render(alarm) + textStyle.Render(after)
+		out = append(out, grey.Render(e.at.Format("15:04"))+"  "+tagStyle(e.tag).Render(fmt.Sprintf("%-8s", e.tag))+" "+trimWords(text, max(width-16, 0)))
 	}
 	return out
+}
+
+// tagStyle colours a history tag by what kind of event it names, so the eye finds a crash or a hunt down the column.
+func tagStyle(tag string) lipgloss.Style {
+	switch tag {
+	case tagPass:
+		return green
+	case tagCrash, tagFail:
+		return red
+	case tagHunt, tagGroup, tagBackoff, tagProbe, tagMCE, tagNote:
+		return amber
+	case tagCombo:
+		return magenta
+	case tagStart, tagSkip, tagRecord, tagResume, tagReset:
+		return grey
+	}
+	return textStyle
 }
 
 func (s Snapshot) core(id int) *coreView {

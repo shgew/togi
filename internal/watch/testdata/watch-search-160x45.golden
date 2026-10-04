@@ -9,9 +9,9 @@
    R1   light load  on core 00 alone at -5   y-cruncher BKT + SFTv4 · 1 worker                                                   SEARCH CORE 00 AT -5 · LIGHT
   █████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████  0:50 left  0/1 ►
 
-  if it passes         next: core 00 at -5: R2 mprime AVX-512 36K-248K
-  if a core is named   record its failure point; back off the named core → next: retry the named core: R1 y-cruncher BKT + SFTv4
-  if inconclusive      next: core 00 at -5: R1 y-cruncher BKT + SFTv4
+  if it passes         next: R2 heavy vector on core 00 alone at -5
+  if a core is named   its failure point is recorded → it backs off → next: R1 light on core 08 alone at -5
+  if inconclusive      the same trial runs again
 
   CCD 0               0  2 counts/cell       -50 fail pt  one loaded              CCD 1               0  2 counts/cell       -50 fail pt  waiting at 0
   ► 00   -5  SEARCH    ▄▄▄                                p 0 · n -5                08    0  SEARCH                                       p 0 · n -5

@@ -3,6 +3,7 @@ package watch
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"slices"
 	"strings"
@@ -44,7 +45,7 @@ func Project(events []journal.Event) Snapshot {
 	for _, c := range st.Cores {
 		s.order = append(s.order, c.Core)
 	}
-	p := projector{s: &s, st: &st, intents: requirements.intents, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{}, applied: map[int]int{}, tuned: map[int]int{}, solo: map[int]int{}, failures: map[int]*failureView{}, backs: map[int]int{}, sources: map[int]int{}, probes: map[int]bool{}, requirements: requirements.failed, counts: requirements.counts, checkHunts: map[[2]int][]int{}}
+	p := projector{s: &s, st: &st, intents: requirements.intents, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{}, applied: map[int]int{}, tuned: map[int]int{}, solo: map[int]int{}, failures: map[int]*failureView{}, backs: map[int]int{}, sources: map[int]int{}, probes: map[int]bool{}, requirements: requirements.failed, counts: requirements.counts, checkHunts: map[[2]int][]int{}, cycleSteps: map[int][]machine.Regime{}, huntStarts: map[int]huntStartView{}, groups: map[[2]int]*journal.HuntGroup{}}
 	for _, e := range events {
 		p.fold(e)
 	}
@@ -150,6 +151,17 @@ type projector struct {
 	requirements         map[string]tuner.TrialRequirement
 	counts               map[string]trialCount
 	checkHunts           map[[2]int][]int
+	carrying             bool // solo limits arriving now were carried from an earlier session
+	cycleSteps           map[int][]machine.Regime
+	huntStarts           map[int]huntStartView
+	groups               map[[2]int]*journal.HuntGroup
+}
+
+type huntStartView struct {
+	at         time.Time
+	candidates []int
+	named      bool // its first part is on its history line
+	live       int  // groups answered by trials run in this session
 }
 
 func (p *projector) fold(e journal.Event) {
@@ -280,6 +292,7 @@ func (p *projector) finish(events []journal.Event, t *tuner.State) {
 	}
 	p.cyclePlan(t.CyclePlan())
 	p.huntPlan(t.HuntPlan(), events)
+	p.nameHuntStart()
 	turns := t.SearchTurns()
 	for _, tr := range turns {
 		p.s.turns = append(p.s.turns, turnView{core: tr.Core, confirm: tr.Confirm, regimes: tr.Regimes, offset: tr.Offset, workload: tr.Workload, step: tr.Step, running: tr.Running})
@@ -293,6 +306,7 @@ func (p *projector) finish(events []journal.Event, t *tuner.State) {
 
 func (p *projector) recent(events []journal.Event) {
 	s := p.s
+	s.history = mergeProbePasses(s.history)
 	if len(s.history) > historyLimit {
 		s.history = s.history[len(s.history)-historyLimit:]
 	}
@@ -440,6 +454,19 @@ func (p *projector) huntPlan(hp *tuner.HuntPlan, events []journal.Event) {
 		}
 	}
 	p.s.hunt = h
+}
+
+// nameHuntStart puts the first part of the running hunt on its start line before the part's group is recorded.
+func (p *projector) nameHuntStart() {
+	h := p.s.hunt
+	if h == nil || len(h.plan) == 0 || p.huntStarts[h.id].named {
+		return
+	}
+	for i := range p.s.history {
+		if e := &p.s.history[i]; e.key == "hunt start" && e.hunt == h.id {
+			e.text = fmt.Sprintf("#%d started · part 1: %s", h.id, partLayout(h.plan[0].failing, h.candidates))
+		}
+	}
 }
 
 func (p *projector) coreViews(t *tuner.State, turns []tuner.SearchTurn) {
@@ -646,27 +673,6 @@ func journalTag(e journal.Event, intents map[string]*journal.TrialIntent) string
 		return tagStop
 	}
 	return vtText(strings.ReplaceAll(string(e.Kind), ".", " "))
-}
-
-func foldEntry(history []entry, line entry) []entry {
-	if n := len(history); n > 0 && line.tag == tagSkip && line.firstGroup > 0 {
-		last := &history[n-1]
-		if last.tag == tagSkip && last.hunt == line.hunt && last.text == line.text && last.lastGroup+1 == line.firstGroup {
-			last.at, last.lastGroup = line.at, line.lastGroup
-			return history
-		}
-	}
-	if n := len(history); n > 0 && (line.tag == tagPass || line.tag == tagRecord) {
-		last := &history[n-1]
-		if last.tag == line.tag && last.text == line.text && last.each == line.each {
-			last.at, last.runs = line.at, last.runs+line.runs
-			if line.peak != nil && (last.peak == nil || *line.peak > *last.peak) {
-				last.peak = line.peak
-			}
-			return history
-		}
-	}
-	return append(history, line)
 }
 
 func trialCores(p *journal.TrialIntent) []int {

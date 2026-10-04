@@ -318,17 +318,25 @@ type deadEndView struct {
 	detail    string
 }
 
-// entry is one line of what happened, in plain words or as the journal recorded it.
+// entry is one line of what happened, in plain words or as the journal recorded it. Lines with the same key merge
+// when they follow each other.
 type entry struct {
 	at                          time.Time
 	tag                         string
 	text                        string
 	tone                        tone
-	runs                        int
-	each                        time.Duration
+	kind                        entryKind
+	key                         string
+	alarm                       string // words of text drawn as an alarm
+	tail                        string // words after a merged count
+	signal                      machine.Signal
+	runs, first, of             int // merged trials, the number of the first, and how many its part or requirement needs
 	peak                        *int
 	reboot                      int
 	hunt, firstGroup, lastGroup int
+	probe                       bool // a member probe's trials
+	cores                       []int
+	offset, count               int
 }
 
 type tone int

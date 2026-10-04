@@ -19,14 +19,14 @@
  CYCLE 1 ────────────────────────────── 14 steps · 14 done   WHAT HAPPENED ──────────────────────────────────── l: all
 
  ■  1 R7 all-core       5 parts       done                   15:28  stop     stopped
- ■  2 R7 all-core       5 parts       done                   15:28  cycle    #1 passed, a full cycle of every kind of
- ■  3 R7 all-core       5 parts       done                   15:28  pass     idle with short bursts on all 16 cores
- ■  4 R2 heavy vector   16 x 2m       done                   15:13  pass     partial load on core 15 at -10, 2 min
- ■  5 R2 heavy vector   16 x 2m       done                   15:11  pass     partial load on core 07 at -10, 2 min
- ■  6 R2 heavy vector   16 x 2m       done                   15:09  pass     partial load on core 14 at -10, 2 min
- ■  7 R6 idle + bursts  15m           done                   15:07  pass     partial load on core 06 at -10, 2 min
- ■  8 R5 both threads   16 x 2m       done                   15:05  pass     partial load on core 13 at -10, 2 min
- ■  9 R1 light          16 x 2m       done                   15:03  pass     partial load on core 05 at -10, 2 min
+ ■  2 R7 all-core       5 parts       done                   15:28  cycle    cycle 1 passed, a full cycle of every
+ ■  3 R7 all-core       5 parts       done                   15:28  pass     R6 idle + bursts on 00-15 · passed
+ ■  4 R2 heavy vector   16 x 2m       done                   15:13  pass     R4 partial load on core 15 at -10
+ ■  5 R2 heavy vector   16 x 2m       done                   15:11  pass     R4 partial load on core 07 at -10
+ ■  6 R2 heavy vector   16 x 2m       done                   15:09  pass     R4 partial load on core 14 at -10
+ ■  7 R6 idle + bursts  15m           done                   15:07  pass     R4 partial load on core 06 at -10
+ ■  8 R5 both threads   16 x 2m       done                   15:05  pass     R4 partial load on core 13 at -10
+ ■  9 R1 light          16 x 2m       done                   15:03  pass     R4 partial load on core 05 at -10
  +9 more                                                     +191 more
 
   ?  help    l  log    esc  back    q  close view

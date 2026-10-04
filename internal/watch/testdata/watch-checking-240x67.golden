@@ -13,8 +13,8 @@
   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
   0:40 of 2:00                                                                                                                                                                        0 passed · trial 1 of 4  ► · · ·                   left
 
-  if all 3 pass        cycle 1 advances to step 1 → next: cycle 1 step 1: R7 mprime AVX2 36K-248K · record only
-  if a core is named   record its failure point; back off the named core → next: rerun on 00-07: R7 mprime AVX2 36K-248K
+  if 3 of 4 pass       next: part 1: partial CCD 0 on 00-04 06 07, 2m
+  if a core is named   its failure point is recorded → it backs off → next: rerun R7 all-core on 00-07 · 2m
   if none is named     read the core ranking before deciding
 
   CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
@@ -29,38 +29,38 @@
 
   CYCLE 1 ───────────────────────────────────────────────────────────────────────────────────────── 14 steps · 0 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
 
-    #   kind                  where                   workload                      schedule       result                 10:14  cycle    #1 started, 14 steps
+    #   kind                  where                   workload                      schedule       result                 10:14  cycle    cycle 1 started · 14 steps
   ►  1  R7 all-core           2 CCDs · 5 parts        mprime AVX2 36K-248K          5 parts        part 2 of 5            10:14  limit    core 15 solo limit -39
         ├ partial CCD 0       00-04 06 07 · record only                             3 x 2m + 5m                           10:13  limit    core 01 solo limit -34
   ►     ├ full CCD 0          00-07                                                 3 x 2m + 5m    trial 1 of 4           10:13  limit    core 00 solo limit -37
-        ├ partial CCD 1       08-13 15 · record only                                3 x 2m + 5m                           10:11  limit    core 07 solo limit -32
-        ├ full CCD 1          08-15                                                 3 x 2m + 5m                           10:11  limit    core 04 solo limit -32
-        └ full CCD 0+1        00-15                                                 3 x 2m + 10m                          10:05  limit    core 13 solo limit -24
-  ○  2  R7 all-core           2 CCDs · 5 parts        mprime AVX-512 36K-248K       5 parts                               10:04  limit    core 02 solo limit -35
-  ○  3  R7 all-core           2 CCDs · 5 parts        y-cruncher FFTv4 + N63 + VT3  5 parts                               10:02  limit    core 08 solo limit -27
-  ○  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m                               09:58  limit    core 06 solo limit -30
-  ○  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m                               09:53  limit    core 09 solo limit -18
-  ○  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m                               09:41  limit    core 03 solo limit -17
-  ○  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   09:25  limit    core 10 solo limit -16
-  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               09:14  limit    core 14 solo limit -4
-  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               09:10  limit    core 11 solo limit -7
-  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               08:52  limit    core 05 solo limit -10
-  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               08:52  limit    core 12 solo limit -10
-  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               07:50  confirm  core 15 confirming -39 as its solo limit
-  ○ 13  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               07:25  step     core 15 passed -38, next -39
-  ○ 14  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   07:04  confirm  core 01 confirming -34 as its solo limit
-                                                                                                                          06:59  confirm  core 00 confirming -37 as its solo limit
-                                                                                                                          06:59  fail     core 00 fails at -38
-                                                                                                                          06:59  crash    light load on core 00 alone at -38, rebooted
-                                                                                                                          06:59  resume   session resumed
+        ├ partial CCD 1       08-13 15 · record only                                3 x 2m + 5m                           10:11  limit    cores 04, 07 solo limit -32
+        ├ full CCD 1          08-15                                                 3 x 2m + 5m                           10:05  limit    core 13 solo limit -24
+        └ full CCD 0+1        00-15                                                 3 x 2m + 10m                          10:04  limit    core 02 solo limit -35
+  ○  2  R7 all-core           2 CCDs · 5 parts        mprime AVX-512 36K-248K       5 parts                               10:02  limit    core 08 solo limit -27
+  ○  3  R7 all-core           2 CCDs · 5 parts        y-cruncher FFTv4 + N63 + VT3  5 parts                               09:58  limit    core 06 solo limit -30
+  ○  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m                               09:53  limit    core 09 solo limit -18
+  ○  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m                               09:41  limit    core 03 solo limit -17
+  ○  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m                               09:25  limit    core 10 solo limit -16
+  ○  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   09:14  limit    core 14 solo limit -4
+  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               09:10  limit    core 11 solo limit -7
+  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               08:52  limit    cores 05, 12 solo limit -10
+  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               07:50  confirm  core 15 confirming -39 as its solo limit
+  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               07:25  step     core 15 passed -38, next -39
+  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               07:04  confirm  core 01 confirming -34 as its solo limit
+  ○ 13  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               06:59  confirm  core 00 confirming -37 as its solo limit
+  ○ 14  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   06:59  fail     core 00 fails at -38
+                                                                                                                          06:59  crash    core 00 · R1 light at -38 · rebooted
                                                                                                                           06:57  step     core 15 passed -37, next -38
                                                                                                                           06:54  confirm  core 07 confirming -32 as its solo limit
                                                                                                                           06:54  fail     core 07 fails at -33
-                                                                                                                          06:54  crash    light load on core 07 alone at -33, rebooted
-                                                                                                                          06:54  resume   session resumed
+                                                                                                                          06:54  crash    core 07 · R1 light at -33 · rebooted
                                                                                                                           06:45  confirm  core 04 confirming -32 as its solo limit
                                                                                                                           06:45  fail     core 04 fails at -33
-                                                                                                                          06:45  crash    heavy vector load on core 04 alone at -33, rebooted
+                                                                                                                          06:45  crash    core 04 · R2 heavy vector at -33 · rebooted
+                                                                                                                          06:34  step     core 01 passed -33, next -34
+                                                                                                                          06:30  step     core 00 passed -37, next -38
+                                                                                                                          06:27  step     core 15 passed -36, next -37
+                                                                                                                          06:24  step     core 07 passed -32, next -33
                                                                                                                           +168 more
 
    ?  help    l  log    esc  back    q  close view

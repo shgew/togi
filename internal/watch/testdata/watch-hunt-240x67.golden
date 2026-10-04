@@ -13,9 +13,9 @@
   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
   0:40 of 2:00                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 
-  if all 5 pass        hunt 1 group 2: 00-07 at failing offsets → next: hunt 1 group 2 on 00-07: R7 mprime AVX2 36K-248K
-  if none is named     hunt 1 group 2: 12-15 at failing offsets → next: hunt 1 group 2 on 00-07: R7 mprime AVX2 36K-248K
-  if inconclusive      next: hunt 1 group 1 on 00-07: R7 mprime AVX2 36K-248K
+  if 5 of 5 pass       next: part 2: 08-15 parked at 0, idle
+  if none is named     next: hunt 1 group 2: R7 all-core on 00-07 · 12-15 at failing offsets, 00-11 parked at 0
+  if inconclusive      the same trial runs again
 
   CCD 0               0       -10       -20       -30       -40       -50 fail pt  parked at 0, still under load          CCD 1               0       -10       -20       -30       -40       -50 fail pt  all idle, all judged
   ► 00    0  PARKED    ··········█                                           -11   returns to -10                           08  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄█                                           -11
@@ -29,38 +29,38 @@
 
   HUNT 1 ───────────────────────────────────────────────────────────────────────────────── started 07:13 · 40s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
 
-  cause       crash in R7 all-core on 00-07 · cycle 1 step 1, part 2, trial 1 of 4 · no core named                        07:13  hunt     #1 started: which cores caused it?
-  candidates  00-15, every core with an offset in the failing profile                                                     07:13  crash    all-core load on cores 00-07, rebooted
-                                                                                                                          07:13  resume   session resumed
-  parts       part        at failing offsets   parked at 0   schedule   state                                             07:12  cycle    #1 started, 14 steps
-            ► 1 of 2      08-15                00-07         5 x 2m     trial 1 of 5                                      07:12  limit    core 15 solo limit -10
-              2 of 2      00-07                08-15         5 x 2m     if part 1 passes                                  07:12  limit    core 07 solo limit -10
-              then finer parts and their complements, until one fails or none does                                        07:12  limit    core 14 solo limit -10
-                                                                                                                          07:12  limit    core 06 solo limit -10
-  then        if the hunt resolves and the rerun passes:                                                                  07:12  limit    core 13 solo limit -10
-              1  record what it found: one core's failure point, or a combination                                         07:12  limit    core 05 solo limit -10
-              2  back off past it                                                                                         07:12  limit    core 12 solo limit -10
-              3  rerun R7 all-core on 00-07: 5 trials of 2m, its original length                                          07:12  limit    core 04 solo limit -10
-              4  resume cycle 1 at step 1, part 2                                                                         07:12  limit    core 11 solo limit -10
-                                                                                                                          07:12  limit    core 03 solo limit -10
-                                                                                                                          07:12  limit    core 10 solo limit -10
-                                                                                                                          07:12  limit    core 02 solo limit -10
-                                                                                                                          07:12  limit    core 09 solo limit -10
-                                                                                                                          07:12  limit    core 01 solo limit -10
-                                                                                                                          07:12  limit    core 08 solo limit -10
-                                                                                                                          07:12  limit    core 00 solo limit -10
-                                                                                                                          03:12  confirm  core 15 confirming -10 as its solo limit
-                                                                                                                          03:12  fail     core 15 fails at -11
-                                                                                                                          03:12  crash    light load on core 15 alone at -11, rebooted
-                                                                                                                          03:12  resume   session resumed
+  cause       crash in R7 all-core on 00-07 · cycle 1 step 1, part 2, trial 1 of 4 · no core named                        07:13  hunt     #1 started · part 1: 08-15 at failing offsets, 00-07 parked
+  candidates  00-15, every core with an offset in the failing profile                                                     07:13  crash    R7 full CCD 0 on 00-07 · rebooted · no core named
+                                                                                                                          07:12  cycle    cycle 1 started · 14 steps
+  parts       part        at failing offsets   parked at 0   schedule   state                                             07:12  limit    cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15 solo limit -10
+            ► 1 of 2      08-15                00-07         5 x 2m     trial 1 of 5                                      03:12  confirm  core 15 confirming -10 as its solo limit
+              2 of 2      00-07                08-15         5 x 2m     if part 1 passes                                  03:12  fail     core 15 fails at -11
+              then finer parts and their complements, until one fails or none does                                        03:12  crash    core 15 · R1 light at -11 · rebooted
                                                                                                                           03:10  confirm  core 07 confirming -10 as its solo limit
-                                                                                                                          03:10  fail     core 07 fails at -11
-                                                                                                                          03:10  crash    light load on core 07 alone at -11, rebooted
-                                                                                                                          03:10  resume   session resumed
-                                                                                                                          03:09  confirm  core 14 confirming -10 as its solo limit
-                                                                                                                          03:09  fail     core 14 fails at -11
-                                                                                                                          03:09  crash    light load on core 14 alone at -11, rebooted
-                                                                                                                          03:09  resume   session resumed
-                                                                                                                          +165 more
+  then        if the hunt resolves and the rerun passes:                                                                  03:10  fail     core 07 fails at -11
+              1  record what it found: one core's failure point, or a combination                                         03:10  crash    core 07 · R1 light at -11 · rebooted
+              2  back off past it                                                                                         03:09  confirm  core 14 confirming -10 as its solo limit
+              3  rerun R7 all-core on 00-07: 5 trials of 2m, its original length                                          03:09  fail     core 14 fails at -11
+              4  resume cycle 1 at step 1, part 2                                                                         03:09  crash    core 14 · R1 light at -11 · rebooted
+                                                                                                                          03:07  confirm  core 06 confirming -10 as its solo limit
+                                                                                                                          03:07  fail     core 06 fails at -11
+                                                                                                                          03:07  crash    core 06 · R1 light at -11 · rebooted
+                                                                                                                          03:06  confirm  core 13 confirming -10 as its solo limit
+                                                                                                                          03:06  fail     core 13 fails at -11
+                                                                                                                          03:06  crash    core 13 · R1 light at -11 · rebooted
+                                                                                                                          03:04  confirm  core 05 confirming -10 as its solo limit
+                                                                                                                          03:04  fail     core 05 fails at -11
+                                                                                                                          03:04  crash    core 05 · R1 light at -11 · rebooted
+                                                                                                                          03:03  confirm  core 12 confirming -10 as its solo limit
+                                                                                                                          03:03  fail     core 12 fails at -11
+                                                                                                                          03:03  crash    core 12 · R1 light at -11 · rebooted
+                                                                                                                          03:01  confirm  core 04 confirming -10 as its solo limit
+                                                                                                                          03:01  fail     core 04 fails at -11
+                                                                                                                          03:01  crash    core 04 · R1 light at -11 · rebooted
+                                                                                                                          03:00  confirm  core 11 confirming -10 as its solo limit
+                                                                                                                          03:00  fail     core 11 fails at -11
+                                                                                                                          03:00  crash    core 11 · R1 light at -11 · rebooted
+                                                                                                                          02:58  confirm  core 03 confirming -10 as its solo limit
+                                                                                                                          +117 more
 
    ?  help    l  log    esc  back    q  close view

@@ -6,7 +6,7 @@
   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers                            CYCLE 1 · STEP 1 · PART 2
  █████████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/4 ► · · ·
 
- all 3 pass → step 1                    core named → named core backs off      none named read core ranking
+ 3/4 pass → part 1   core named → backs off   none named → read the core ranking before deciding
 
  CCD 0 all loaded 0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
  ► 00 -37 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38             08 -27 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -28
@@ -20,13 +20,13 @@
 
  CYCLE 1 ─────────────────────────────── 14 steps · 0 done   WHAT HAPPENED ──────────────────────────────────── l: all
 
- ►  1 R7 all-core       5 parts       part 2 of 5            10:14  cycle    #1 started, 14 steps
+ ►  1 R7 all-core       5 parts       part 2 of 5            10:14  cycle    cycle 1 started · 14 steps
       ├ partial CCD 0   00-04 06 07                          10:14  limit    core 15 solo limit -39
  ►    ├ full CCD 0      00-07         trial 1 of 4           10:13  limit    core 01 solo limit -34
       ├ partial CCD 1   08-13 15                             10:13  limit    core 00 solo limit -37
-      ├ full CCD 1      08-15                                10:11  limit    core 07 solo limit -32
-      └ full CCD 0+1    00-15                                10:11  limit    core 04 solo limit -32
- ○  2 R7 all-core       5 parts                              10:05  limit    core 13 solo limit -24
+      ├ full CCD 1      08-15                                10:11  limit    cores 04, 07 solo limit -32
+      └ full CCD 0+1    00-15                                10:05  limit    core 13 solo limit -24
+ ○  2 R7 all-core       5 parts                              10:04  limit    core 02 solo limit -35
  +12 more                                                    +193 more
 
   ?  help    l  log    esc  back    q  close view

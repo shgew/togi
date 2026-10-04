@@ -6,7 +6,7 @@
   R1   light load  on 00   mprime SSE 4K-21K · 1 worker                                               DEEPEN · ROUND 1
  ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
 
- all 5 pass → round 1                   core named → named core backs off      none named → group 1: 01-10 12-15
+ 5/5 pass → deepening round 1   pass → deepening round 1   core named → backs off
 
  CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
  ► 00 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             08 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          

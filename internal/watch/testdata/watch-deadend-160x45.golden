@@ -21,24 +21,24 @@
   CYCLE 1 ───────────────────────────────────────────────── 14 steps · 0 done     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
 
     #  kind              where               schedule      result                 10:15  stop     dead end: five trials in a row proved nothing
-  ►  1 R7 all-core       2 CCDs · 5 parts    5 parts       part 2 of 5            10:14  cycle    #1 started, 14 steps
+  ►  1 R7 all-core       2 CCDs · 5 parts    5 parts       part 2 of 5            10:14  cycle    cycle 1 started · 14 steps
        ├ partial CCD 0   00-04 06 07         3 x 2m + 5m                          10:14  limit    core 15 solo limit -39
   ►    ├ full CCD 0      00-07               3 x 2m + 5m   trial 1 of 4           10:13  limit    core 01 solo limit -34
        ├ partial CCD 1   08-13 15            3 x 2m + 5m                          10:13  limit    core 00 solo limit -37
-       ├ full CCD 1      08-15               3 x 2m + 5m                          10:11  limit    core 07 solo limit -32
-       └ full CCD 0+1    00-15               3 x 2m + 10m                         10:11  limit    core 04 solo limit -32
-  ○  2 R7 all-core       2 CCDs · 5 parts    5 parts                              10:05  limit    core 13 solo limit -24
-  ○  3 R7 all-core       2 CCDs · 5 parts    5 parts                              10:04  limit    core 02 solo limit -35
-  ○  4 R2 heavy vector   one core at a time  16 x 2m                              10:02  limit    core 08 solo limit -27
-  ○  5 R2 heavy vector   one core at a time  16 x 2m                              09:58  limit    core 06 solo limit -30
-  ○  6 R2 heavy vector   one core at a time  16 x 2m                              09:53  limit    core 09 solo limit -18
-  ○  7 R6 idle + bursts  all cores idle      15m                                  09:41  limit    core 03 solo limit -17
-  ○  8 R5 both threads   one core at a time  16 x 2m                              09:25  limit    core 10 solo limit -16
-  ○  9 R1 light          one core at a time  16 x 2m                              09:14  limit    core 14 solo limit -4
-  ○ 10 R1 light          one core at a time  16 x 2m                              09:10  limit    core 11 solo limit -7
-  ○ 11 R1 light          one core at a time  16 x 2m                              08:52  limit    core 05 solo limit -10
-  ○ 12 R3 load steps     one core at a time  16 x 2m                              08:52  limit    core 12 solo limit -10
-  ○ 13 R4 partial load   one core at a time  16 x 2m                              07:50  confirm  core 15 confirming -39 as its solo limit
+       ├ full CCD 1      08-15               3 x 2m + 5m                          10:11  limit    cores 04, 07 solo limit -32
+       └ full CCD 0+1    00-15               3 x 2m + 10m                         10:05  limit    core 13 solo limit -24
+  ○  2 R7 all-core       2 CCDs · 5 parts    5 parts                              10:04  limit    core 02 solo limit -35
+  ○  3 R7 all-core       2 CCDs · 5 parts    5 parts                              10:02  limit    core 08 solo limit -27
+  ○  4 R2 heavy vector   one core at a time  16 x 2m                              09:58  limit    core 06 solo limit -30
+  ○  5 R2 heavy vector   one core at a time  16 x 2m                              09:53  limit    core 09 solo limit -18
+  ○  6 R2 heavy vector   one core at a time  16 x 2m                              09:41  limit    core 03 solo limit -17
+  ○  7 R6 idle + bursts  all cores idle      15m                                  09:25  limit    core 10 solo limit -16
+  ○  8 R5 both threads   one core at a time  16 x 2m                              09:14  limit    core 14 solo limit -4
+  ○  9 R1 light          one core at a time  16 x 2m                              09:10  limit    core 11 solo limit -7
+  ○ 10 R1 light          one core at a time  16 x 2m                              08:52  limit    cores 05, 12 solo limit -10
+  ○ 11 R1 light          one core at a time  16 x 2m                              07:50  confirm  core 15 confirming -39 as its solo limit
+  ○ 12 R3 load steps     one core at a time  16 x 2m                              07:25  step     core 15 passed -38, next -39
+  ○ 13 R4 partial load   one core at a time  16 x 2m                              07:04  confirm  core 01 confirming -34 as its solo limit
   ○ 14 R6 idle + bursts  all cores idle      15m                                  +181 more
 
    ?  help    l  log    esc  back    q  close view
