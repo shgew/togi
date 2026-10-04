@@ -61,6 +61,15 @@ _Avoid_: test
 One launch of one workload on its target under a fixed profile, ending as a pass, a failure or inconclusive. The unit of pass evidence because failures can cluster at onset.
 _Avoid_: start, test, iteration, run
 
+**Top requester**:
+The loaded core with the highest voltage request, setting the shared core voltage. Cores within 1 mV of the highest are tied top requesters; an all-core load has top requesters on each CCD.
+
+**Self-sufficient**:
+A core that passes as a top requester for a given R7 workload.
+
+**Partial part**:
+An R7 load that idles the top requesters found so far, in request order, to test the remaining cores.
+
 **Trial class**:
 The regime, workload, sorted loaded cores and duration of a trial. Pass evidence transfers only within this class.
 
@@ -91,7 +100,7 @@ _Avoid_: mask
 The phase that finds and checks a core's candidate solo limit with R1 and R2 trials alone.
 
 **Hunt**:
-Parked trials that identify the core or combination behind an unattributed failure.
+Parked trials that identify the core or combination behind an unattributed failure outside multi-core R7.
 
 **Member probe**:
 A hunt's parked trial after it finds a combination: one member moves between its failing and parked offsets, members probed before it stay at their shallowest failing offsets and the rest at their failing offsets, to find how shallow that member must be for the combination to pass. Each member is probed in turn.
@@ -110,7 +119,7 @@ One pass through the configured checking schedule, whose requirements are trials
 _Avoid_: rotation
 
 **Full cycle**:
-A cycle covering every R1 and R2 workload on every core, every R7 workload in every full part, and R3, R4, R5 and R6. Record-only partial R7 parts supply no full-cycle coverage.
+A cycle covering every R1 and R2 workload on every core, every part of every R7 workload occurrence, partials included, and R3, R4, R5 and R6.
 _Avoid_: qualifying rotation
 
 **Clean cycle**:
@@ -143,7 +152,7 @@ A failure whose evidence names one core.
 A failure whose evidence names no single core.
 
 **Failure point**:
-The shallowest offset at which a core has had an attributed failure or been named the culprit of a hunt since its last reset, or its carried failure point if that is shallower.
+The shallowest offset ruled out for a core by an attributed failure, hunt culprit or R7 tolerance decision since its last reset, or its carried failure point if that is shallower.
 _Avoid_: failed mark, mark of a core
 
 **Combination**:
@@ -163,7 +172,7 @@ A failure point a transition brings into the new session: the shallowest offset 
 _Avoid_: carried mark
 
 **Carried fact**:
-A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original session, sequence, build, evidence epoch and recorded context. Ordinary carried passes can answer candidate-solo-limit checks, hunt groups, reruns and deepening checks, but never supply checking's full-cycle coverage; ordinary carried failures count everywhere. Record-only partial outcomes retain their marker but influence no tuner decision. Copying a fact again does not make it new evidence.
+A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original provenance and context. It is ordinary evidence subject to the current regime's rules, not a new trial or live exposure.
 
 **Evidence epoch**:
 The compatibility version of trial outcomes: workload content, backend binary and configuration, intended durations, and pass/failure detection. Passes carry only within the current epoch; eligible failures survive an epoch change.
@@ -178,6 +187,9 @@ _Avoid_: candidate edge
 
 **Backoff**:
 Moving a core shallower after a failure.
+
+**Voltage-targeted backoff**:
+A backoff that raises a core's request to a voltage at which the load passed, using the counts needed to reach that target.
 
 **Proven backoff**:
 A backoff after attribution or a hunt identifies a failed offset or combination, recording the failure point or combination.

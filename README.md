@@ -5,7 +5,7 @@
 
 Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them through full checking cycles. Choose how long to keep testing with `run --cycles N`, or let checking continue indefinitely.
 
-- Searches each core alone, hunts the cores behind unattributed failures, then deepens the profile to the most total depth its failure points and combinations allow before continuing checking.
+- Searches each core alone, makes multi-core R7 cores self-sufficient through request-ordered partial loads and voltage-targeted backoffs, hunts unattributed failures outside multi-core R7, then deepens the profile before continuing checking.
 - Tests with self-checking workloads (mprime, y-cruncher) across light, heavy, load-step, medium, SMT, idle and all-core regimes.
 - Survives crashes: the next run reads its journal, attributes the crash and continues.
 - Records every action in a plain-text journal you can read to see what it did and why.
@@ -19,8 +19,8 @@ Works today, on a simulated 16-core machine:
 - the full simulated tuning lifecycle: per-core search, failure hunts, combinations, deepening together, full checking cycles, crash resume and reset;
 - a seeded session after a ruleset update or BIOS change: a ruleset change carries eligible same-BIOS trial facts for candidate-solo-limit checks, hunt groups, reruns and deepening, while full-cycle requirements count only live passes; a BIOS change carries solo limits but not failure points or trial facts;
 - evidence-based hunt duration and singleton-probe scheduling, and credit for an earlier uncontradicted full cycle at an equal or deeper profile;
-- record-only R7 checking parts that leave each CCD's shallowest cores idle, preserving partial-load outcomes as facts without changing offsets, failure points and combinations or full-cycle coverage;
-- reading a session's hunt, combinations, clean cycles and valid per-workload trials with `status`, `events` and the live `watch` dashboard; `status` shows the Tctl peak from passes together since the last profile change and its source trial.
+- ruleset-9 R7 full parts followed by partial chains idling measured top requesters, with ordinary pass requirements and full-cycle coverage; R7 failures use a per-core tolerance ledger and voltage-targeted backoffs, not hunts;
+- reading a session's hunt, combinations, clean cycles, top requesters, per-workload self-sufficiency and valid trials with `status`, `events` and the live `watch` dashboard; `status` shows the Tctl peak from passes together since the last profile change and its source trial.
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:
 - the `ryzen_smu` driver on full 8-core CCDs only; CCDs with fused-off slots are not yet supported;

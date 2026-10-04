@@ -132,6 +132,10 @@ The tuning boot loads `sp5100_tco` in the initrd and lets systemd arm and feed t
 
 The tuning boot also enables kernel-message dumps on orderly reboot or shutdown, as well as panic. When the next `run` detects an unclean togi boot and finds its EFI pstore archive, `togi events --json --kind crash.detected` includes `pstore.path` and the last lines of the saved kernel messages. The ordinary event line and dashboard name the archive location. The archive stays under `/var/lib/systemd/pstore/`; missing records, such as a hard freeze without a dump, leave the field absent. Reading this optional diagnostic cannot stop recovery.
 
+After search, an R7 step runs each CCD's full load, then partial loads that idle the top voltage requesters found so far, down to at least two loaded cores. The all-core load runs last. These partials count toward the lap, so a night can spend longer on R7 than a fixed five-part schedule. `status` and the dashboard show top requesters and each core's self-sufficiency for each R7 workload.
+
+Multi-core R7 no longer starts hunts. A named computation error counts against its core; an unattributed failure counts against the affected CCD's top requesters. The tuner tolerates a failure unless its per-core/workload/duration binomial tail is below `evidence.significance` (default 0.2) at `evidence.failure_rate` (default 0.05). A first-start failure moves, one failure in ten is tolerated, and two in ten move. Tolerated failures are recorded and retried without erasing passing lap evidence. A required backoff raises the core toward a measured passing voltage, rounding up at 3.6 mV per count; without qualifying passes it moves one count. R1–R6 and single-core failures keep their hunts and first-failure rules.
+
 ## 5. In the morning
 
 Shut down or reboot. The next boot is your normal system; with `leaveOnShutdown` off, pick your normal entry in the GRUB menu. Then:
@@ -168,6 +172,8 @@ An update whose changelog line starts with **BREAKING** changes the tuning rules
 - each core's deepest offset passing a trial run alone becomes a candidate solo limit, and the new core checks it in search; eligible carried passes count toward the required trials of its frozen R1 and R2 classes;
 - each core's shallowest attributed failure, including a single culprit found by a hunt, becomes a carried failure point; combinations do not carry, and reset or defect exclusions still apply;
 - a candidate solo limit at or deeper than its carried failure point is clamped one count shallower.
+
+The ruleset-9 transition also counts ruleset-8 record-only R7 outcomes as ordinary evidence. Same-BIOS carried R7 failures are evaluated before the first trial and can move a core immediately; their requests and CCD clocks are retained or reconstructed from archived samples. No manual reset is needed for this transition.
 
 When the archived session was not itself seeded by a carry, the carry also reads older sessions under the same BIOS, going back while each differs in ruleset or evidence epoch from the one after it and stopping after the first that was seeded. `reset --all` permanently excludes sessions at or before its boundary, including their copied evidence; later transitions never reach behind it.
 
