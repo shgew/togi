@@ -96,7 +96,7 @@ func TestSixteenCoresReachCleanCycle(t *testing.T) {
 				}
 			}
 		case *journal.Failure:
-			// Multi-core R7 failures become failure points only when the tolerance ledger moves a core.
+			// Multi-core R7 failures become failure points only through the core each voltage-targeted backoff moves.
 			if !multiR7[p.Trial] && p.Attribution == journal.Attributed && p.Core != nil && p.Offset != nil {
 				failed[*p.Core] = *p.Offset
 			}
