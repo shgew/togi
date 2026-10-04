@@ -134,6 +134,14 @@ func (a *auditor) checkChosenOffsets(e journal.Event) {
 		a.checkOffsets(e, []int{p.FromOffset, p.ToOffset})
 	case *journal.ProfileChange:
 		a.checkOffsets(e, p.To)
+	case *journal.DeepeningRound:
+		a.checkOffsets(e, p.Base)
+		a.checkOffsets(e, p.Target)
+		a.checkOffsets(e, p.Profile)
+	case *journal.HuntGroup:
+		a.checkOffsets(e, p.Profile)
+	case *journal.CheckingStep:
+		a.checkOffsets(e, p.Profile)
 	}
 }
 func (a *auditor) appliedProfile(e journal.Event, offsets []int) {
