@@ -40,3 +40,4 @@ ADRs 0001–0033 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 - [0032: Coverage lists uncovered changed lines](0032-coverage-lists-uncovered-changed-lines.md) — **in force**.
 - [0033: Changelog entries are per-pull-request fragments](0033-changelog-fragments.md) — **in force**.
 - [0034: One vocabulary from screen to journal](0034-one-vocabulary-from-screen-to-journal.md) — **in force** for vocabulary, configuration names and schema-3 journal translation.
+- [0035: License togi under GPL-3.0-or-later](0035-gpl-3.0-or-later.md) — **in force**.

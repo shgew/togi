@@ -74,7 +74,7 @@ Bug reports are welcome as issues. Pull requests and feature requests are not ta
 
 ## License
 
-[MIT](LICENSE).
+Copyright (C) 2026 Hleb Shauchenka. togi is free software under the [GNU General Public License, version 3 or any later version](LICENSE) (GPL-3.0-or-later). Releases up to and including 0.9.0 were published under the MIT license and remain available under it ([ADR 0035](docs/adr/0035-gpl-3.0-or-later.md)).
 
 ## Development
 
