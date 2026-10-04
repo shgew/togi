@@ -2,7 +2,7 @@
 
   ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14, part 2  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0
 
-  │ DEEPEN        After a passed full cycle, try cores that have room one count deeper, checking every move.
+  │               they must; every move is checked.
   │ 
   │ CLEAN CYCLES  The goal: a passed full cycle with every core at its limit and nothing left to deepen. Counted for the current profile; cycles repeat until
   │               stopped.

@@ -16,8 +16,8 @@
  │                     probe: the group failed with core 00 at -30, -29, -27
  │ 
  │ ►         the core carries load in this trial
- │ ▄▄▄       offset applied now; white when this trial judges the core
- │ grey ▄▄▄  offset applied now; grey when the core is not judged
- │ ···       depth it reached but does not use now: given back, parked,
+ │ ▄▄▄       offset applied now, or saved after a stop restored the hardware;
+ │           white when this trial judges the core
+ │ grey ▄▄▄  the same depth, grey when the core is not judged
 
   ?  help    l  log    esc  back    q  close view

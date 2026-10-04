@@ -18,8 +18,8 @@ type helpItem struct {
 
 var screenHelp = helpSection{"READING THE SCREEN", []helpItem{
 	{"►", "the core carries load in this trial"},
-	{"▄▄▄", "offset applied now; white when this trial judges the core"},
-	{"grey ▄▄▄", "offset applied now; grey when the core is not judged"},
+	{"▄▄▄", "offset applied now, or saved after a stop restored the hardware; white when this trial judges the core"},
+	{"grey ▄▄▄", "the same depth, grey when the core is not judged"},
 	{"···", "depth it reached but does not use now: given back, parked, waiting"},
 	{"░░░", "depth a combination blocks now"},
 	{"█", "its failure point: this core failed there on its own account"},
@@ -42,9 +42,9 @@ var topHelp = helpSection{"THE TOP LINE", []helpItem{
 var tuningHelp = helpSection{"WHAT TOGI DOES", []helpItem{
 	{"SOLO LIMITS", "One core under load, the rest at 0. Step 5 counts deeper while light (R1) and heavy (R2) pass; near a failure, 1 count at a time. Confirm the deepest pass with the configured number of light and heavy trials in a row. A failure while confirming discards that pass and the search backs off."},
 	{"CYCLES", "All cores at their offsets, through the configured steps of a cycle. R7 steps run each CCD and both, with record-only partial loads first. The partial's group is frozen when the step started, even if offsets change."},
-	{"FAILURES", "A failure that names a core sets its failure point; the core backs off and the load reruns with short trials plus one at its original length when that is longer. One that names no core starts a hunt, unless that profile already reaches a recorded failure. Record-only results change nothing. A failure with every core at 0 stops tuning."},
+	{"FAILURES", "A failure that names a core sets its failure point; the core backs off and the load reruns with short trials plus one at its original length when that differs. One that names no core starts a hunt, unless that profile already reaches a recorded failure. Record-only results change nothing. A failure with every core at 0 stops tuning."},
 	{"HUNT", "Rerun the failing load with a part of the candidates at their failing offsets and the rest parked; keep a part that fails. If no part fails, the group is kept as a combination, and member probes find how far one member must back off for the rest to pass."},
-	{"DEEPEN", "After a passed full cycle, try cores that have room one count deeper, checking every move."},
+	{"DEEPEN", "After a passed full cycle, aim at the deepest safe total and move each core with room halfway toward it, letting others yield first where they must; every move is checked."},
 	{"CLEAN CYCLES", "The goal: a passed full cycle with every core at its limit and nothing left to deepen. Counted for the current profile; cycles repeat until stopped."},
 	{"R6", "During idle trials this screen holds still, clock included, so it cannot wake the cores."},
 	{"NO ETA", "A hunt can start at any time, so togi shows only what is scheduled and the time left in the current trial."},
@@ -118,7 +118,7 @@ func helpReading(width int) []string {
 		{4, -28, -36, "AT LIMIT", "at its limit: one count deeper reaches C5", white.Render(strings.Repeat("▄", 28)) + magenta.Render(strings.Repeat("░", 7)) + red.Render("█")},
 		{0, -26, -32, "HAS ROOM", "has room: backed off after a hunt, may deepen", white.Render(strings.Repeat("▄", 26)) + grey.Render("·····") + red.Render("█")},
 		{9, 0, -48, "PARKED", "parked at 0 by a hunt; returns to -47", grey.Render(strings.Repeat("·", 47)) + red.Render("█")},
-		{0, -26, -32, "PROBE", "probe: the group failed with core 00 at -30, -29, -27", white.Render(strings.Repeat("▄", 26)) + amber.Render("▀ ▀▀") + red.Render(" █")},
+		{0, -26, -32, "PROBE", "probe: the group failed with core 00 at -30, -29, -27", white.Render(strings.Repeat("▄", 26)) + red.Render("▀ ▀▀ █")},
 	} {
 		prefix := fmt.Sprintf("► %02d  %3d  %-8s ", example.core, example.offset, example.state)
 		if example.state == "PARKED" {
