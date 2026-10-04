@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -79,5 +80,40 @@ func TestHuntPlanMarksOnlyGroupsAnsweredByCarriedEvidence(t *testing.T) {
 	groups := h.s.HuntPlan().Groups
 	if len(groups) != 2 || groups[0].Outcome != "pass" || !groups[0].Carried || groups[1].Outcome != "pass" || groups[1].Carried {
 		t.Fatalf("group 1 is answered by carried trials and group 2 by live ones: %+v", groups)
+	}
+}
+
+func TestHuntPlanKeepsACarriedFailureAnswerAfterLaterLiveFailures(t *testing.T) {
+	starts := make([]coreStart, 4)
+	for i := range starts {
+		starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: -10}
+	}
+	h := newHarness(t, starts...)
+	d := h.s.durations.ShortTrialS
+	// The first half of the hunt is already answered by a carried failure at its profile.
+	carryTrials(h, machine.R7, []int{0, 1, 2, 3}, []int{-10, -10, 0, 0}, d, 1, journal.OutcomeFailure)
+	h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1, 2, 3}, DurationS: d, TrialS: d, Trials: h.s.n, Failing: []int{-10, -10, -10, -10}, Parked: []int{0, 0, 0, 0}, Candidates: []int{0, 1, 2, 3}})
+	a, ok := h.s.huntNext()
+	if g, _ := a.Payload.(*journal.HuntGroup); !ok || g == nil || g.Inferred != "failure" || !slices.Equal(g.Profile, []int{-10, -10, 0, 0}) {
+		t.Fatalf("first group should be answered by the carried failure: %+v", a)
+	}
+	h.decide(a)
+	for range 20 {
+		a, ok = h.s.huntNext()
+		if !ok || a.Kind == Decide && a.Payload.Kind() == journal.KindHuntEnd {
+			break
+		}
+		if a.Kind == RunTrial {
+			h.trial(a, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, DurationS: d})
+			if failure, ok := h.s.Next().Payload.(*journal.Failure); ok {
+				h.add(failure)
+			}
+			break
+		}
+		h.decide(a)
+	}
+	groups := h.s.HuntPlan().Groups
+	if len(groups) < 2 || !groups[0].Carried {
+		t.Fatalf("a later live failure rewrote the carried answer of group 1: %+v", groups)
 	}
 }

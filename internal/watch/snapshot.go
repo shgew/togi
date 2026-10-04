@@ -461,7 +461,8 @@ func (p *projector) huntPlan(hp *tuner.HuntPlan, events []journal.Event) {
 			}
 		case *journal.FailureCarried:
 			if e.Seq == hp.FailureSeq {
-				h.cause.core, h.cause.known, h.cause.carried, h.cause.regime = d.Core, true, true, d.Class.Regime
+				// An idle crash, not a trial: no regime, whatever ledger class it was filed under.
+				h.cause.core, h.cause.known, h.cause.carried, h.cause.regime = d.Core, true, true, ""
 			}
 		}
 	}

@@ -190,6 +190,10 @@ func (c huntCause) knownWords() string {
 	text := fmt.Sprintf("%s %s already failed at these offsets", vtText(string(c.regime)), kindWords(c.regime))
 	if c.regime == "" {
 		text = "an idle failure is already recorded at these offsets"
+		if c.carried {
+			text += ", carried from an earlier session"
+		}
+		return text
 	}
 	if c.carried {
 		text += " in a carried trial"

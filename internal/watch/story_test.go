@@ -158,3 +158,11 @@ func TestSplitWordsParkAtZeroOnlyWhenTheProfileDoes(t *testing.T) {
 		t.Fatalf("split %q", got)
 	}
 }
+
+func TestCarriedIdleFailureCauseIsNotATrial(t *testing.T) {
+	t.Parallel()
+	c := huntCause{known: true, carried: true}
+	if got := c.knownWords(); strings.Contains(got, "trial") || !strings.Contains(got, "idle failure") {
+		t.Fatalf("carried idle failure described as %q", got)
+	}
+}
