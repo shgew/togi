@@ -23,7 +23,7 @@ func appendStoryEvents(events []journal.Event, payloads ...journal.Payload) []jo
 	return events
 }
 
-func TestIdleTrialHoldsEveryViewUntilPlannedEnd(t *testing.T) {
+func TestIdleTrialHoldsEveryViewUntilItsEndIsRecorded(t *testing.T) {
 	t.Parallel()
 	events := cutTrial(t, simulated(t, sessionJournal), func(p *journal.TrialIntent) bool { return p.Regime == machine.R6 })
 	s := Project(events)
@@ -35,12 +35,13 @@ func TestIdleTrialHoldsEveryViewUntilPlannedEnd(t *testing.T) {
 		for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}, {80, 24}} {
 			sc := Screen{View: view, Width: size[0], Height: size[1], Keys: true, Scroll: -1}
 			first := RenderView(s, sc, s.trial.started.Add(time.Second))
-			later := RenderView(s, sc, until.Add(-time.Second))
-			if diff := cmp.Diff(until, first.Until); diff != "" {
-				t.Errorf("idle frame wake deadline (-want +got):\n%s", diff)
+			if !first.Until.After(until.Add(24 * time.Hour)) {
+				t.Errorf("idle frame wakes at %s, before the trial's end can be recorded", first.Until)
 			}
-			if diff := cmp.Diff(first.Lines, later.Lines); diff != "" {
-				t.Errorf("view %d %dx%d changes during idle trial (-first +later):\n%s", view, size[0], size[1], diff)
+			for _, at := range []time.Time{until.Add(-time.Second), until.Add(time.Minute)} {
+				if diff := cmp.Diff(first.Lines, RenderView(s, sc, at).Lines); diff != "" {
+					t.Errorf("view %d %dx%d changes at %s during the idle trial (-first +later):\n%s", view, size[0], size[1], at, diff)
+				}
 			}
 			assertFrameBounds(t, first, sc)
 			if view == MainView {

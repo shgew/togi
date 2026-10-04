@@ -45,7 +45,7 @@ togi --state-dir <dir> status          # inspect a copied journal
 togi --state-dir <dir> events --core 3 # everything that happened to core 3
 ```
 
-The dashboard adapts to wide and compact terminals. It shows checking's cycle checklist, hunt parts and member probes, or search turns beside recent decisions; `?` explains the gauges and `l` opens the journal. Outcome lines come from the tuner itself. R6 idle trials hold the screen still until their planned end, without a ticking clock.
+The dashboard adapts to wide and compact terminals. It shows checking's cycle checklist, hunt parts and member probes, or search turns beside recent decisions; `?` explains the gauges and `l` opens the journal. Outcome lines come from the tuner itself. R6 idle trials hold the screen still, without a ticking clock, until the journal records their end.
 
 [docs/howto.md](docs/howto.md) walks through installing the NixOS module, a first in-session run and an overnight tuning boot. `togi --help` lists every command, and `togi <command> --help` gives its description, examples and flags. [Commands](docs/spec/runtime.md#commands) describes each one in full.
 

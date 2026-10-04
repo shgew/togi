@@ -10,7 +10,7 @@ import (
 )
 
 // dashboard drops event lines while the journal-driven watch is visible; hidden, it forwards them to out.
-// watch updates the clock once a second outside idle trials and holds still until an idle trial's planned end.
+// watch updates the clock once a second outside idle trials and holds still during an idle trial until the journal changes.
 type dashboard struct {
 	dir     string
 	out     *os.File

@@ -274,15 +274,14 @@ func Render(s Snapshot, w, h int, now time.Time) string {
 func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 	p := measure(s, sc)
 	c := newCanvas(p)
-	until := s.quietUntil()
-	if !until.IsZero() && now.Before(until) {
-		now = s.trial.started
-	} else {
-		until = time.Time{}
+	var until time.Time
+	planned := s.quietUntil()
+	if !planned.IsZero() {
+		now, until = s.trial.started, heldUntilRecorded
 	}
 	header := s.header(now)
-	if p.class == compactLayout && !until.IsZero() {
-		header = grey.Render("togi") + "  " + white.Render(now.Format("15:04:05")) + "  " + amber.Render("paused until "+until.Format("15:04")) +
+	if p.class == compactLayout && !planned.IsZero() {
+		header = grey.Render("togi") + "  " + white.Render(now.Format("15:04:05")) + "  " + amber.Render("paused until "+planned.Format("15:04")) +
 			grey.Render("  session ") + textStyle.Render(hm(now.Sub(s.start))) +
 			grey.Render(fmt.Sprintf("  %d failures · %d crashes", s.failures, s.crashes))
 	}
@@ -371,6 +370,11 @@ func narratorLines(st story, width, height int, brief bool) []string {
 	return out
 }
 
+// heldUntilRecorded is the Until of a started idle trial's frames: they change only with the journal, keys or a resize,
+// past the trial's planned end until its end is recorded, so drawing never wakes the idle cores.
+var heldUntilRecorded = time.Date(9999, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+// quietUntil is a started idle trial's planned end, or zero when no idle trial is running.
 func (s Snapshot) quietUntil() time.Time {
 	if s.problem == nil && s.session && s.deadEnd == nil && s.stopped == nil && s.trial != nil && s.trial.hasStarted && s.trial.regime == machine.R6 && s.trial.duration > 0 {
 		return s.trial.started.Add(s.trial.duration)

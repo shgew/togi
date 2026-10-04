@@ -38,7 +38,7 @@ A finished simulation's `watch` shows only its last moment. `just replay --state
 
 `watch` and replay read the journal, not the sample files, so both work without `--samples`. Use that flag when inspecting the per-second sample series on disk.
 
-Replay draws the same measured layout as `watch`: 240x67 has side-by-side CCD tables, a large trial countdown and context beside recent history; 160x45 uses an inline countdown and 120x33 compacts the lower panels. Use those sizes with `--at` to compare a recorded decision, hunt split or member probe. Outcome lines are conditional forecasts produced by the tuner over the recorded events. Playback can advance through R6; a live view instead holds its quiet frame until the trial's planned end.
+Replay draws the same measured layout as `watch`: 240x67 has side-by-side CCD tables, a large trial countdown and context beside recent history; 160x45 uses an inline countdown and 120x33 compacts the lower panels. Use those sizes with `--at` to compare a recorded decision, hunt split or member probe. Outcome lines are conditional forecasts produced by the tuner over the recorded events. Playback advances through R6 on its own clock; a live view instead holds its quiet frame until the journal records the trial's end.
 
 Replay accepts all shipped journal schemas from the current ruleset, including schemas 1–4. Recordings from another ruleset are refused; replay needs the tuning rules used to write the journal. It translates older payload vocabulary while retaining recorded messages and configuration, so the dashboard uses the recorded checking cycle schedule. An incomplete final line is ignored; replay never changes the recording.
 
