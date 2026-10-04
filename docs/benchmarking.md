@@ -34,7 +34,7 @@ Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds s
 
 ### Ruleset-9 evaluation
 
-For the shared-voltage strategy, [ADR 0036](adr/0036-self-sufficient-cores.md) and [issue #105](https://github.com/shgew/togi/issues/105) define a separate owner-approved gate, not a change to the generic comparison verdict below. Rework ruleset 9 before creating adversaries. Search adversaries against ruleset 8 only, using an in-sample all-facts `target-shared-voltage.toml` anchor labelled not forward-validated that passes the model check on every eligible group. If no in-sample fit passes, hand-set adversaries must state that they have no anchor.
+For the shared-voltage strategy, [ADR 0037](adr/0037-self-sufficient-cores.md) and [issue #105](https://github.com/shgew/togi/issues/105) define a separate owner-approved gate, not a change to the generic comparison verdict below. Rework ruleset 9 before creating adversaries. Search adversaries against ruleset 8 only, using an in-sample all-facts `target-shared-voltage.toml` anchor labelled not forward-validated that passes the model check on every eligible group. If no in-sample fit passes, hand-set adversaries must state that they have no anchor.
 
 Compare every shared-voltage scenario, each adversary and the hand-set `shared-voltage.toml`, with 12 dev and 12 holdout seeds each against ruleset 8. Ruleset 9 must conclude wherever ruleset 8 concluded; median and maximum final-profile worst R7 hazard must be no higher; and time must be at most 2× ruleset 8's. Pooled across adversaries, median worst R7 hazard must be strictly lower. Report legacy scenarios, crashes and depth without gating them. Stop for the owner's decision if no anchored adversary makes ruleset 8 worse or if the gate fails.
 
