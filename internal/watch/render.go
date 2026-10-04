@@ -1158,12 +1158,15 @@ func shortDuration(d time.Duration) string {
 	return fmt.Sprintf("%ds", max(int(d/time.Second), 0))
 }
 
+// ibm437 holds the non-ASCII glyphs of IBM437, the character set of the kernel's built-in console fonts.
+const ibm437 = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ☺☻♥♦♣♠•◘○◙♂♀♪♫☼►◄↕‼¶§▬↨↑↓→←∟↔▲▼"
+
+// consoleText replaces what the console font cannot draw: common typography by ASCII, anything else by a visible escape.
 func consoleText(text string) string {
-	const glyphs = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ☺☻♥♦♣♠•◘○◙♂♀♪♫☼►◄↕‼¶§▬↨↑↓→←∟↔▲▼"
 	var b strings.Builder
 	start := 0
 	for i, ch := range text {
-		if ch < 128 || strings.ContainsRune(glyphs, ch) {
+		if ch < 128 || strings.ContainsRune(ibm437, ch) {
 			continue
 		}
 		b.WriteString(text[start:i])

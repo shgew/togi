@@ -269,6 +269,47 @@ func TestFramesSpendBytesOnCellsNotStaleStyles(t *testing.T) {
 	}
 }
 
+// Every glyph the dashboard itself draws must be in the console font; a glyph outside it would reach the console as a
+// visible \u escape.
+func TestFramesDrawOnlyIBM437Glyphs(t *testing.T) {
+	for _, c := range watchCuts(t) {
+		s, now := Project(c.events), cutTime(c.events)
+		for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}, {80, 24}} {
+			for _, view := range []View{MainView, HelpView, LogView} {
+				for row, line := range RenderView(s, Screen{View: view, Width: size[0], Height: size[1], Keys: true}, now).Lines {
+					text := ansi.Strip(line)
+					for _, ch := range text {
+						if ch >= 128 && !strings.ContainsRune(ibm437, ch) {
+							t.Errorf("%s %dx%d view %d row %d draws %q outside IBM437: %q", c.name, size[0], size[1], view, row, ch, text)
+						}
+					}
+					if strings.Contains(text, `\u`) {
+						t.Errorf("%s %dx%d view %d row %d escapes a glyph the console cannot draw: %q", c.name, size[0], size[1], view, row, text)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestConsoleTextReplacesWhatTheFontCannotDraw(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]string{
+		"5 × 2m":           "5 x 2m",
+		"parts…":           "parts...",
+		"a — b – c":        "a - b - c",
+		"‘a’ “b”":          `'a' "b"`,
+		"░▄█ ·►":           "░▄█ ·►",
+		"Tctl 95°C":        "Tctl 95°C",
+		"done ✓ 日":         `done \u2713 \u65e5`,
+		"plain ascii text": "plain ascii text",
+	} {
+		if got := consoleText(in); got != want {
+			t.Errorf("consoleText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestDashboardEscapesDiagnosticControls(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
