@@ -59,6 +59,30 @@ func TestSummarizeNeedsMinSamplesAfterWarmup(t *testing.T) {
 	}
 }
 
+func TestSummarizeNeedsMinClockSamplesPerCCD(t *testing.T) {
+	// Core 8's clock is missing from the first qualifying sample, so CCD1 has
+	// 19 sample medians while CCD0 has 20.
+	seq := samples(WarmupMS, WarmupMS+(MinSamples-1)*1000, func(ms int64) (map[int]float32, map[int]int) {
+		mhz := map[int]int{0: 5200, 8: 5100}
+		if ms == WarmupMS {
+			delete(mhz, 8)
+		}
+		return map[int]float32{0: 1.1, 8: 1.05}, mhz
+	})
+	got, ok := Summarize(seq, []int{0, 8}, ccdOf)
+	if !ok {
+		t.Fatal("20 samples after the warmup did not summarize")
+	}
+	want := Telemetry{
+		Requests:      map[int]float64{0: float64(float32(1.1)), 8: float64(float32(1.05))},
+		TopRequesters: []int{0, 8},
+		CCDMHz:        map[int]int{0: 5200},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("Summarize (-want +got):\n%s", diff)
+	}
+}
+
 func TestSummarizeSkipsSamplesWithoutLanes(t *testing.T) {
 	seq := func(yield func(machine.TrialConditions) bool) {
 		for ms := int64(WarmupMS); ms < WarmupMS+60000; ms += 1000 {
