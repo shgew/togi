@@ -48,6 +48,7 @@ func TestForecastFormerRecordOnlyPartialRequiresBackoff(t *testing.T) {
 			if b.Passes != 3 || b.Next == nil || b.Next.DurationS != 300 {
 				t.Fatalf("legacy record-only marker split the ordinary pass requirement: %+v", b)
 			}
+		case IfInconclusive:
 		}
 	}
 	if !named || !unnamed || !all {
@@ -379,7 +380,7 @@ func TestForecastR7PremisesFoldDistinctOutcomesWithoutInventedTelemetry(t *testi
 			end.Outcome, end.Signal = journal.OutcomeFailure, machine.ComputationError
 		case IfInconclusive:
 			end.Outcome, end.DurationS = journal.OutcomeInconclusive, 0
-		case IfPass:
+		case IfPass, IfAllPass:
 		}
 		seq := len(h.events) + 1
 		s.Fold(journal.Event{Seq: seq, Data: end})
