@@ -266,3 +266,46 @@ func TestR7ZeroFailureDrainsWithoutReadingRanking(t *testing.T) {
 		t.Fatalf("zero failure was not drained: %+v", a)
 	}
 }
+
+func TestR7BackoffReason(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		requests map[int]float64
+		target   float64
+		want     string
+	}{
+		{"offset fallback", nil, 0, "order came from offsets at CO -30; no request telemetry, one count"},
+		{"no pass", map[int]float64{0: 1.09447, 1: 1.08}, 0, "request 1.094 V; no qualifying pass, one count"},
+		{"equal target", map[int]float64{0: 1.1539, 1: 1.08}, 1.1539, "request 1.154 V already met the passed target 1.154 V; one count"},
+		{"higher than target", map[int]float64{0: 1.16, 1: 1.08}, 1.1539, "request 1.160 V already met the passed target 1.154 V; one count"},
+		{"one count", map[int]float64{0: 1.15, 1: 1.08}, 1.153, "request 1.150 V to 1.153 V, 1 count"},
+		{"several counts", map[int]float64{0: 1.09447, 1: 1.08}, 1.1539, "request 1.094 V to 1.154 V, 17 counts"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := r7Harness(t)
+			h.s.n = 1
+			if tc.target > 0 {
+				r7Fact(h, true, []int{0, 1}, h.s.Profile(), map[int]float64{0: tc.target, 1: 1.08}, []int{0}, nil, nil, nil)
+			}
+			r7Fact(h, false, []int{0, 1}, h.s.Profile(), tc.requests, []int{0}, new(0), nil, nil)
+			f := h.s.pendingFailures[len(h.s.pendingFailures)-1]
+			a := h.s.r7Backoff(f, *h.s.r7FailureEntry(f), h.s.core(0), []int{f.seq}, 1, 1)
+			got := a.Payload.(*journal.TunerDecision).Reason
+			want := fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core 00 %s; tolerance 1 failure in 1 start", f.seq, tc.want) + h.s.carriedReason(a.Cause)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestR7CountWording(t *testing.T) {
+	for _, noun := range []string{"count", "failure", "start"} {
+		if diff := cmp.Diff("1 "+noun, r7Count(1, noun)); diff != "" {
+			t.Fatal(diff)
+		}
+		if diff := cmp.Diff("2 "+noun+"s", r7Count(2, noun)); diff != "" {
+			t.Fatal(diff)
+		}
+	}
+}

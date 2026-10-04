@@ -207,8 +207,8 @@ func (s *State) r7Decision() (Action, bool) {
 		if f := s.failureBySeq(a.Cause[0]); f != nil {
 			_, sources := s.r7Requests(f.class.workload, s.classCores(f.class), f.profile)
 			a.Cause = append(a.Cause, sources...)
-			if len(sources) == 0 && !strings.Contains(p.Reason, "fell back to offsets") {
-				p.Reason += "; request order fell back to offsets"
+			if len(sources) == 0 && !strings.Contains(p.Reason, "order came from offsets") {
+				p.Reason += fmt.Sprintf("; request order came from offsets at CO %d", f.profile[s.index(p.Core)])
 			}
 		}
 	}
@@ -264,7 +264,7 @@ func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core, targets 
 	cause := append([]int{f.seq}, causes...)
 	tail := binomialTail(k, n, rate)
 	if tail >= alpha {
-		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseChecking, Decision: journal.Tolerate, FromOffset: c.offset, ToOffset: c.offset, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("tolerated R7 failure #%d: core %02d has %d failures in %d starts; binomial tail %.6g >= significance %.6g%s", f.seq, c.id, k, n, tail, alpha, s.carriedReason(cause))}, Cause: cause}, true
+		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseChecking, Decision: journal.Tolerate, FromOffset: c.offset, ToOffset: c.offset, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("tolerated R7 failure #%d: core %02d has %s in %s; binomial tail %.6g >= significance %.6g%s", f.seq, c.id, r7Count(k, "failure"), r7Count(n, "start"), tail, alpha, s.carriedReason(cause))}, Cause: cause}, true
 	}
 	if failed.profile[s.index(c.id)] == 0 {
 		return Action{Kind: Decide, Payload: failedAtZero(c.id), Cause: []int{f.seq}}, true
@@ -319,13 +319,19 @@ func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, 
 	}
 	target, passSeqs := s.r7VoltageTarget(failed, c.id, req[c.id])
 	counts := 1
-	reason := fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core %02d request %.6f V; no qualifying pass, one count", f.seq, c.id, req[c.id])
 	if len(passSeqs) > 0 {
 		counts = requests.Counts(req[c.id], target)
-		reason = fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core %02d request %.6f V to %.6f V, %d counts", f.seq, c.id, req[c.id], target, counts)
 	}
-	if len(sources) == 0 {
-		reason += "; request order fell back to offsets"
+	reason := fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core %02d ", f.seq, c.id)
+	switch {
+	case len(sources) == 0:
+		reason += fmt.Sprintf("order came from offsets at CO %d; no request telemetry, one count", failed.profile[s.index(c.id)])
+	case len(passSeqs) == 0:
+		reason += fmt.Sprintf("request %.3f V; no qualifying pass, one count", req[c.id])
+	case req[c.id] >= target:
+		reason += fmt.Sprintf("request %.3f V already met the passed target %.3f V; one count", req[c.id], target)
+	default:
+		reason += fmt.Sprintf("request %.3f V to %.3f V, %s", req[c.id], target, r7Count(counts, "count"))
 	}
 	cause = append(cause, sources...)
 	cause = append(cause, passSeqs...)
@@ -335,8 +341,15 @@ func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, 
 	}
 	pass, _ := keepPass(c.pass, fail)
 	to := min(0, max(c.offset, failed.profile[s.index(c.id)]+counts, fail+1))
-	reason += fmt.Sprintf("; tolerance %d failures in %d starts", k, n)
+	reason += fmt.Sprintf("; tolerance %s in %s", r7Count(k, "failure"), r7Count(n, "start"))
 	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailurePoint: new(fail), Reason: reason + s.carriedReason(cause)}, Cause: cause}
+}
+
+func r7Count(n int, noun string) string {
+	if n != 1 {
+		noun += "s"
+	}
+	return fmt.Sprintf("%d %s", n, noun)
 }
 
 func (s *State) lowerPreferred(a, b int) bool {
