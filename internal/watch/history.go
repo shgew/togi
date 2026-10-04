@@ -584,7 +584,6 @@ func (p *projector) roundText(d *journal.DeepeningRound) (string, string, tone) 
 	return tagRound, fmt.Sprintf("#%d stopped: %s", d.Round, vtText(d.Reason)), warnTone
 }
 
-
 func coresText(cores []int, total int) string {
 	switch {
 	case len(cores) == 1:

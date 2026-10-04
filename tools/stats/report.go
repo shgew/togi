@@ -326,14 +326,14 @@ func renderR7Decisions(tab *table, events []journal.Event, since time.Time) {
 			tab.row("%d\t%s\t%02d\t%d\t%d\t%d\t%v\t%s", e.Seq, d.Decision, d.Core, d.FromOffset, d.ToOffset, d.ToOffset-d.FromOffset, e.Cause, journal.EscapeText(d.Reason))
 		}
 	}
-	tab.section("R7 chain derivations", "seq\tlap\tstep\tCCD\tworkload\tpart\trequest groups\tloaded cores\tsources")
+	tab.section("R7 chain derivations", "seq\tcycle\tstep\tCCD\tworkload\tpart\trequest groups\tloaded cores\tsources")
 	for _, e := range events {
 		if d, ok := e.Data.(*journal.CheckingChain); ok && selected(e.Time, since) {
 			source := fmt.Sprint(d.SourceSeqs)
 			if len(d.SourceSeqs) == 0 {
 				source = "offset fallback"
 			}
-			tab.row("%d\t%d\t%d\t%d\t%s\t%s\t%v\t%s\t%s", e.Seq, d.Lap, d.Step, d.CCD, journal.EscapeText(d.Workload), journal.EscapeText(d.Part), d.Groups, coreList(d.Cores), source)
+			tab.row("%d\t%d\t%d\t%d\t%s\t%s\t%v\t%s\t%s", e.Seq, d.Cycle, d.Step, d.CCD, journal.EscapeText(d.Workload), journal.EscapeText(d.Part), d.Groups, coreList(d.Cores), source)
 		}
 	}
 }

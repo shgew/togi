@@ -55,7 +55,7 @@ func TestCoveredOpenCycleYieldsToDeepening(t *testing.T) {
 					a := h.s.cycleNext()
 					if a.Kind == RunTrial {
 						h.trial(a, passed)
-					} else if _, end := a.Payload.(*journal.CheckingLap); !end {
+					} else if _, end := a.Payload.(*journal.CheckingCycle); !end {
 						h.decide(a)
 					} else {
 						break

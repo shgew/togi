@@ -408,7 +408,7 @@ func TestR7NamedZeroAttributionUsesStartTop(t *testing.T) {
 				if !ended || dead.Condition != journal.DeadEndFailureAtZero {
 					t.Fatalf("%+v", a)
 				}
-				basis := "its start's recorded top requesters"
+				basis := "its trial's recorded top requesters"
 				switch {
 				case tc.previous != nil:
 					basis = fmt.Sprintf("request measurements [%d]", previous.Seq)
@@ -468,7 +468,7 @@ func TestR7FailureUsesRequestsAsOfItsStart(t *testing.T) {
 	a, ok := h.s.Drain()
 	move, moved := a.Payload.(*journal.TunerDecision)
 	if !ok || !moved || move.Decision != journal.Backoff || move.Core != 0 {
-		t.Fatalf("the failure did not back off its start's top requester: %+v", a)
+		t.Fatalf("the failure did not back off its trial's top requester: %+v", a)
 	}
 	if !slices.Contains(a.Cause, before.Seq) || slices.Contains(a.Cause, after.Seq) {
 		t.Fatalf("cause %v must cite #%d and not the later #%d", a.Cause, before.Seq, after.Seq)

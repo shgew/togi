@@ -112,19 +112,19 @@ func (s *State) entryTop(e entry) []int {
 	return top
 }
 
-// entryTopSources returns a start's top groups and the measurements that
+// entryTopSources returns a trial's top groups and the measurements that
 // ordered them, empty when its own top_requesters or offsets decided.
 func (s *State) entryTopSources(e entry) ([]int, []int) {
 	if len(e.top) > 0 {
 		return e.top, nil
 	}
-	req, sources := s.startRequests(e)
+	req, sources := s.trialRequests(e)
 	return s.r7TopRequests(e.cores, req), sources
 }
 
-// startRequests returns a start's own requests, or those derived from
-// measurements available as of that start, never later ones.
-func (s *State) startRequests(e entry) (map[int]float64, []int) {
+// trialRequests returns a trial's own requests, or those derived from
+// measurements available as of that trial, never later ones.
+func (s *State) trialRequests(e entry) (map[int]float64, []int) {
 	if len(e.requests) > 0 {
 		return e.requests, []int{e.seq}
 	}
@@ -221,7 +221,7 @@ func (s *State) r7TargetGroup(failed entry, id int) r7Order {
 			return r7Order{group: []int{id}, named: true, sources: sources}
 		}
 	}
-	req, sources := s.startRequests(failed)
+	req, sources := s.trialRequests(failed)
 	part := map[int]float64{}
 	for _, core := range failed.cores {
 		if s.ccd[core] == s.ccd[id] {
@@ -289,18 +289,18 @@ func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core) Action {
 		cause = append(cause, s.rankingSeq)
 	}
 	if s.round != nil {
-		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.LapEnd, Reason: fmt.Sprintf("R7 failure #%d requires backoff", f.seq)}, Cause: []int{f.seq}}
+		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.CycleEnd, Reason: fmt.Sprintf("R7 failure #%d requires backoff", f.seq)}, Cause: []int{f.seq}}
 	}
 	return s.r7Backoff(f, failed, s.core(chosen), cause, order)
 }
 
 // r7FailedAtZero explains which zero rule ended the session: a named core that
-// was top in its start, or every loaded core of the affected CCD at CO 0.
+// was top in its trial, or every loaded core of the affected CCD at CO 0.
 func (s *State) r7FailedAtZero(failed entry, id int, order r7Order) *journal.DeadEnd {
 	dead := failedAtZero(id)
 	switch {
 	case order.named:
-		basis := "its start's recorded top requesters"
+		basis := "its trial's recorded top requesters"
 		if len(failed.top) == 0 {
 			basis = fmt.Sprintf("request measurements %v", order.sources)
 			if len(order.sources) == 0 {
@@ -321,7 +321,7 @@ func (s *State) r7FailedAtZero(failed entry, id int, order r7Order) *journal.Dea
 }
 
 func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, order r7Order) Action {
-	req, sources := s.startRequests(failed)
+	req, sources := s.trialRequests(failed)
 	if _, measured := req[c.id]; !measured {
 		req, sources = s.r7RequestsBefore(f.class.workload, []int{c.id}, failed.profile, failed.seq)
 	}

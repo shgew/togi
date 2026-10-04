@@ -79,7 +79,7 @@ func TestSkipKnownFailure(t *testing.T) {
 func TestKnownSingleCoreR7FailureMatchesWorkload(t *testing.T) {
 	h := hasRoomHarness(t, -20, -20)
 	workloads := machine.Workloads(machine.R7)
-	tr := Trial{Regime: machine.R7, Workload: workloads[0].ID, Cores: []int{0}, DurationS: h.s.durations.StartS, Condition: machine.Together, Phase: journal.PhaseChecking}
+	tr := Trial{Regime: machine.R7, Workload: workloads[0].ID, Cores: []int{0}, DurationS: h.s.durations.ShortTrialS, Condition: machine.Together, Phase: journal.PhaseChecking}
 	fact := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old"}, Class: journal.TrialClass{Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: tr.DurationS}, Condition: machine.Together, Profile: []int{-20, -20}, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
 	a := h.s.skipKnownFailure(Action{Kind: RunTrial, Trial: tr})
 	if p, ok := a.Payload.(*journal.Failure); !ok || p.KnownFailure != fact.Seq {

@@ -23,21 +23,21 @@ func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		machineFile string
-		cleanLap    bool
+		cleanCycle  bool
 	}{
-		{name: "shared-voltage", machineFile: "../../tools/bench/machines/shared-voltage.toml", cleanLap: true},
+		{name: "shared-voltage", machineFile: "../../tools/bench/machines/shared-voltage.toml", cleanCycle: true},
 		{name: "legacy-default"},
 		{name: "target-fit-0", machineFile: "../../tools/bench/machines/target-fit-0.toml"},
 	} {
 		seeds := []uint64{1, 2, 3}
-		if tc.cleanLap {
+		if tc.cleanCycle {
 			seeds = []uint64{1000, 1001, 1002}
 		}
 		for _, seed := range seeds {
 			t.Run(fmt.Sprintf("%s/%d", tc.name, seed), func(t *testing.T) {
 				t.Parallel()
 				cfg := sim.Config{Seed: seed}
-				if tc.cleanLap {
+				if tc.cleanCycle {
 					cfg = sharedVoltageConfig(t, seed)
 				} else if tc.machineFile != "" {
 					var err error
@@ -65,7 +65,7 @@ func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 							return
 						}
 						stops[i] = stop
-						if tc.cleanLap && stop.Reason != session.StopCycles {
+						if tc.cleanCycle && stop.Reason != session.StopCycles {
 							t.Errorf("in-memory %t: stopped with %+v", inMemory, stop)
 							return
 						}

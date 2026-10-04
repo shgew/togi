@@ -21,10 +21,10 @@ func TestR7SimulationRunsFullFirstOffsetFallbackChains(t *testing.T) {
 		for id := range 16 {
 			in.Config.CandidateSoloLimits[id] = -10 - 5*(id%8)
 		}
-		in.Config.Checking.Lap = []machine.Regime{machine.R7}
+		in.Config.Checking.Cycle = []machine.Regime{machine.R7}
 		in.Until = func(e journal.Event) bool {
-			p, ok := e.Data.(*journal.CheckingLap)
-			return ok && p.Event == journal.LapEnd && p.Passed
+			p, ok := e.Data.(*journal.CheckingCycle)
+			return ok && p.Event == journal.CycleEnd && p.Passed
 		}
 	})
 	var got [][]int

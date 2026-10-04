@@ -824,16 +824,16 @@ func (p *CheckingStep) Message() string {
 }
 
 type CheckingChain struct {
-	Cycle int `json:"cycle"`
-	Step int `json:"step"`
-	CCD int `json:"ccd"`
-	Workload string `json:"workload"`
-	Groups [][]int `json:"groups"`
-	Cores []int `json:"cores"`
-	SourceSeqs []int `json:"source_seqs"`
-	Profile []int `json:"profile"`
-	Part string `json:"part"`
-	Msg string `json:"-"`
+	Cycle      int     `json:"cycle"`
+	Step       int     `json:"step"`
+	CCD        int     `json:"ccd"`
+	Workload   string  `json:"workload"`
+	Groups     [][]int `json:"groups"`
+	Cores      []int   `json:"cores"`
+	SourceSeqs []int   `json:"source_seqs"`
+	Profile    []int   `json:"profile"`
+	Part       string  `json:"part"`
+	Msg        string  `json:"-"`
 }
 
 func (*CheckingChain) Kind() Kind { return KindCheckingChain }

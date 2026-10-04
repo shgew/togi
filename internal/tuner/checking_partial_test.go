@@ -137,22 +137,22 @@ func TestR7ChainFreezesStartedPartsAndRederivesUnstartedParts(t *testing.T) {
 func TestR7ChainKeepsStartedDescendantOfSatisfiedParent(t *testing.T) {
 	h := chainHarness(t)
 	passChainPart(t, h, []int{0, 1, 2, 3}, map[int]float64{0: 1.1, 1: 1.11, 2: 1.2, 3: 1.09})
-	a := h.s.lapNext()
+	a := h.s.cycleNext()
 	parent := a.Payload.(*journal.CheckingChain)
 	h.decide(a)
-	// Lap evidence can meet a parent's requirements without a start of its
-	// own, so its child is the first part of the chain to start.
+	// Cycle evidence can meet a parent's requirements without a trial of its
+	// own, so its child is the first part of the chain to run.
 	child := []int{0, 3}
-	h.add(&journal.CheckingChain{Lap: 1, Step: 1, CCD: parent.CCD, Workload: parent.Workload, Part: "partial 2", Groups: [][]int{{1}, {0}, {3}}, Cores: child, Profile: slices.Clone(h.s.Profile())})
-	h.trial(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: parent.Workload, Cores: child, DurationS: h.s.durations.StartS, Phase: journal.PhaseChecking, Condition: machine.Together, Lap: 1, Step: 1}}, unsure)
+	h.add(&journal.CheckingChain{Cycle: 1, Step: 1, CCD: parent.CCD, Workload: parent.Workload, Part: "partial 2", Groups: [][]int{{1}, {0}, {3}}, Cores: child, Profile: slices.Clone(h.s.Profile())})
+	h.trial(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: parent.Workload, Cores: child, DurationS: h.s.durations.ShortTrialS, Phase: journal.PhaseChecking, Condition: machine.Together, Cycle: 1, Step: 1}}, unsure)
 	p := slices.Clone(h.s.Profile())
 	p[2] = -1
 	h.add(&journal.ProfileChange{From: h.s.Profile(), To: p})
-	if next, ok := h.s.lapNext().Payload.(*journal.CheckingChain); ok && next.Part == "partial 1" {
+	if next, ok := h.s.cycleNext().Payload.(*journal.CheckingChain); ok && next.Part == "partial 1" {
 		t.Fatalf("rederiving the parent dropped its started child: %+v", next)
 	}
 	if !slices.ContainsFunc(h.s.r7StepParts(0), func(cores []int) bool { return slices.Equal(cores, child) }) {
-		t.Fatalf("started child left the lap requirements: %v", h.s.r7StepParts(0))
+		t.Fatalf("started child left the cycle requirements: %v", h.s.r7StepParts(0))
 	}
 	assertProjectionReplay(h)
 }
@@ -178,7 +178,9 @@ func TestLegacyPartialPassesAreOrdinaryEvidence(t *testing.T) {
 				}
 			}
 			want := h.s.n
-			if carried { want = 0 }
+			if carried {
+				want = 0
+			}
 			if got := h.s.passes(k, h.s.Profile(), h.s.checking.startSeq, cycleEvidence); got != want {
 				t.Fatalf("cycle counted %d partial passes, want %d", got, want)
 			}
@@ -193,7 +195,9 @@ func TestR7FullCycleIncludesEveryPartial(t *testing.T) {
 	for range 1000 {
 		a := h.s.cycleNext()
 		if a.Kind == RunTrial {
-			if a.Trial.Regime == machine.R7 && len(a.Trial.Cores) < 4 { partialTrials++ }
+			if a.Trial.Regime == machine.R7 && len(a.Trial.Cores) < 4 {
+				partialTrials++
+			}
 			h.trial(a, passed)
 			continue
 		}
@@ -226,7 +230,9 @@ func TestR7OneCCDRunsFullThenChainOnce(t *testing.T) {
 	for range 100 {
 		a = h.s.cycleNext()
 		if end, ok := a.Payload.(*journal.CheckingCycle); ok {
-			if !end.Passed { t.Fatal("one-CCD chain did not pass") }
+			if !end.Passed {
+				t.Fatal("one-CCD chain did not pass")
+			}
 			return
 		}
 		if a.Kind == RunTrial {

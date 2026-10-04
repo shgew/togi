@@ -17,7 +17,7 @@ func TestDeepeningRechecksOwnPartialForEveryR7Workload(t *testing.T) {
 	}
 	p := slices.Clone(initial)
 	p[1]--
-	h.add(&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Profile: p, Target: p, Cores: []int{1}, Starts: 2, StartS: 120})
+	h.add(&journal.DeepeningRound{Round: 2, Event: journal.CycleStart, Profile: p, Target: p, Cores: []int{1}, Trials: 2, TrialS: 120})
 	checks := h.s.roundChecks()
 	if len(checks) != 5 {
 		t.Fatalf("checks = %+v, want R1/R2 and all three R7 workloads", checks)
@@ -58,7 +58,7 @@ func TestDeepeningRequestRankChangeAddsCCDWholePart(t *testing.T) {
 	}
 	p := slices.Clone(initial)
 	p[0], p[1] = -50, -21
-	h.add(&journal.DeepeningRound{Round: 1, Event: journal.LapStart, Profile: p, Target: p, Cores: []int{0, 1}, Starts: 2, StartS: 120})
+	h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleStart, Profile: p, Target: p, Cores: []int{0, 1}, Trials: 2, TrialS: 120})
 	checks := h.s.roundChecks()
 	var r7 [][]int
 	for _, q := range checks {

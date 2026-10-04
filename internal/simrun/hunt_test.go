@@ -300,7 +300,6 @@ func TestHuntCombination(t *testing.T) {
 	t.Log("joint miss risk per 120s failing trial is exp(-1200), below 1e-500 but not zero; this fixed seed is not a universal accuracy guarantee")
 }
 
-
 func TestHuntJointMisleadingMCE(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(16)

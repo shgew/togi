@@ -875,7 +875,7 @@ func TestPartialCrashRecoversAndBacksOffWithoutHunt(t *testing.T) {
 			model.CrashMCE = 0
 			cfg.Model = &model
 			in := simInput(t.TempDir(), newSim(t, cfg))
-			in.Config.CandidateSoloLimits = map[int]int{0:-20,1:-25,2:-30,3:-35,4:-20,5:-25,6:-30,7:-35}
+			in.Config.CandidateSoloLimits = map[int]int{0: -20, 1: -25, 2: -30, 3: -35, 4: -20, 5: -25, 6: -30, 7: -35}
 			in.Config.Durations.ShortTrialS = 1
 			in.Config.Durations.CheckingTrialS = 1
 			in.Config.Durations.CheckingAllCoreS = 1

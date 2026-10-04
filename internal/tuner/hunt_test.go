@@ -406,7 +406,7 @@ func TestRepeatedParkedCoreProbeReturnsToBinaryPartsAfterPass(t *testing.T) {
 	}
 	h := newHarness(t, starts...)
 	c := config.Default()
-	c.Checking.Lap = []machine.Regime{machine.R6}
+	c.Checking.Cycle = []machine.Regime{machine.R6}
 	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: snapshotConfig(c)})
 	var prior []int
 	for range 1000 {

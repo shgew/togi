@@ -157,9 +157,9 @@ func (s *State) roundR7Checks(workload string, full []int, out []requirement, so
 			break
 		}
 		if s.roundDeepened(groups[0]) || slices.Equal(previous, full) && s.roundDeepened(initialTop) {
-			k := trialClass{machine.R7, workload, coresKey(previous), r.start.StartS}
+			k := trialClass{machine.R7, workload, coresKey(previous), r.start.TrialS}
 			if !slices.ContainsFunc(out, func(q requirement) bool { return q.class == k }) {
-				out = append(out, requirement{class: k, cores: slices.Clone(previous), count: r.start.Starts})
+				out = append(out, requirement{class: k, cores: slices.Clone(previous), count: r.start.Trials})
 			}
 		}
 		next := make([]int, 0, len(previous)-len(groups[0]))

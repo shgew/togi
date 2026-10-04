@@ -161,7 +161,7 @@ R7 voltage-targeted backoffs
 seq  decision  core  from  to  counts  causes  reason
 
 R7 chain derivations
-seq  lap  step  CCD  workload  part  request groups  loaded cores  sources
+seq  cycle  step  CCD  workload  part  request groups  loaded cores  sources
 
 Failure rate by depth
 regime / workload / loaded cores / duration  shallowest offset  trials  failures  rate
