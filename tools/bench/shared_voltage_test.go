@@ -144,6 +144,15 @@ func TestR7PartialChainRecomputesRequestsAndTies(t *testing.T) {
 	}
 }
 
+func TestR7PartialDropsTopOfNegativeRequests(t *testing.T) {
+	// A machine file may set requests below 0 V; the chain must still shrink.
+	var lanes [16]float32
+	lanes[0], lanes[1], lanes[2] = -.022, -.0225, -.05
+	if diff := cmp.Diff([]int{2}, nextR7Partial([]int{0, 1, 2}, lanes)); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
 func TestWorstR7HazardCCDsAllCoreAndWorkloads(t *testing.T) {
 	for _, name := range []string{"second CCD partial", "all-core power pressure", "last workload"} {
 		t.Run(name, func(t *testing.T) {

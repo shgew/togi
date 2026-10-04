@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"slices"
 	"time"
 
@@ -158,7 +159,7 @@ func worstR7HazardPerH(m *sim.Machine, profile []int) *float64 {
 
 // nextR7Partial compacts the load in place, dropping the current top tie group.
 func nextR7Partial(cores []int, lanes [16]float32) []int {
-	var top float64
+	top := math.Inf(-1)
 	for _, core := range cores {
 		top = max(top, float64(lanes[core]))
 	}
