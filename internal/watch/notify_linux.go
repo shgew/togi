@@ -119,31 +119,45 @@ func (n *journalNotifier) relevant(data []byte) bool {
 
 // watchJournal arms notifications, then calls load for the first frame. A journal that appeared in between is
 // watched before the reader starts, so discovery polling never runs while a loaded journal is on screen.
-func watchJournal(ctx context.Context, dir string, load func()) (<-chan error, func(), error) {
+func watchJournal(ctx context.Context, dir string, load func()) (<-chan error, chan<- struct{}, func(), error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("resolve state directory: %w", err)
+		return nil, nil, nil, fmt.Errorf("resolve state directory: %w", err)
 	}
 	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open journal notifications: %w", err)
+		return nil, nil, nil, fmt.Errorf("open journal notifications: %w", err)
 	}
 	file := os.NewFile(uintptr(fd), "journal notifications")
 	n := journalNotifier{fd: fd, dir: dir}
 	if err := n.arm(); err != nil {
 		_ = file.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	load()
 	if n.polling {
 		if err := n.arm(); err != nil {
 			_ = file.Close()
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	stopClose := context.AfterFunc(ctx, func() { _ = file.Close() })
 	changes, done := make(chan error, 1), make(chan struct{})
+	// reloaded is the consumer's acknowledgement that it reloaded after a change.
+	reloaded := make(chan struct{}, 1)
+	send := func(err error) bool {
+		select {
+		case <-reloaded: // an acknowledgement of an earlier change
+		default:
+		}
+		select {
+		case changes <- err:
+			return err == nil
+		case <-ctx.Done():
+			return false
+		}
+	}
 	go func() {
 		defer close(done)
 		defer close(changes)
@@ -179,13 +193,22 @@ func watchJournal(ctx context.Context, dir string, load func()) (<-chan error, f
 					err = n.arm()
 				}
 			}
-			select {
-			case changes <- err:
-			case <-ctx.Done():
+			if !send(err) {
 				return
 			}
-			if err != nil {
-				return
+			if n.polling {
+				// The journal is gone. Once the consumer has reloaded, look again before discovery ticks, so a
+				// journal that appeared meanwhile is watched, not polled for, while a frame shows it.
+				select {
+				case <-reloaded:
+				case <-ctx.Done():
+					return
+				}
+				if err := n.arm(); err != nil || !n.polling {
+					if !send(err) {
+						return
+					}
+				}
 			}
 		}
 	}()
@@ -194,5 +217,5 @@ func watchJournal(ctx context.Context, dir string, load func()) (<-chan error, f
 		<-done
 		stopClose()
 	}
-	return changes, stop, nil
+	return changes, reloaded, stop, nil
 }

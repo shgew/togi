@@ -9,7 +9,7 @@ import (
 
 // watchJournal calls load for the first frame, then signals once a second where filesystem notifications are
 // unavailable; the caller's reload decides whether the journal changed.
-func watchJournal(ctx context.Context, _ string, load func()) (<-chan error, func(), error) {
+func watchJournal(ctx context.Context, _ string, load func()) (<-chan error, chan<- struct{}, func(), error) {
 	load()
 	ctx, cancel := context.WithCancel(ctx)
 	changes, done := make(chan error), make(chan struct{})
@@ -30,5 +30,5 @@ func watchJournal(ctx context.Context, _ string, load func()) (<-chan error, fun
 			}
 		}
 	}()
-	return changes, func() { cancel(); <-done }, nil
+	return changes, nil, func() { cancel(); <-done }, nil
 }
