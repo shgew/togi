@@ -75,6 +75,7 @@ assert lib.hasInfix "RequiresMountsFor=/boot/grub/grubenv" tuning.systemd.units.
 assert builtins.elem "systemd-pstore.service" tuning.systemd.services.togi.after;
 assert builtins.elem "printk.always_kmsg_dump=1" tuning.boot.kernelParams;
 assert !(builtins.elem "printk.always_kmsg_dump=1" one.boot.kernelParams);
+assert tuning.systemd.settings.Manager.RuntimeWatchdogSec == "30s";
 assert
   tuning.systemd.services.togi-restart-limit.unitConfig.RequiresMountsFor == "/boot/grub/grubenv";
 assert leaveTuningBoot.unitConfig.RequiresMountsFor == "/boot/grub/grubenv";

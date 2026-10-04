@@ -9,17 +9,22 @@ let
     builtins.elemAt (pkgs.lib.splitString "\nPY\n" (builtins.elemAt (pkgs.lib.splitString "<<'PY'\n" (builtins.readFile ../docs/howto.md)) 1)) 0
   );
   tuningBoot =
-    { pkgs, ... }:
+    { pkgs, lib, ... }:
     {
       imports = [ module ];
       virtualisation.useBootLoader = true;
+      networking.useDHCP = false;
       boot.loader.grub.enable = true;
       boot.loader.timeout = 1;
       virtualisation.qemu.options = [
         "-device i6300esb"
         "-watchdog-action reset"
       ];
-      specialisation.togi.configuration.boot.initrd.kernelModules = [ "i6300esb" ];
+      specialisation.togi.configuration = {
+        boot.initrd.kernelModules = [ "i6300esb" ];
+        # The module check pins the shipped 30s; only the test waits less for a reset.
+        systemd.settings.Manager.RuntimeWatchdogSec = lib.mkForce "10s";
+      };
       services.togi = {
         enable = true;
         tuning.enable = true;
@@ -58,6 +63,7 @@ in
 
       machine.start(allow_reboot=True)
       machine.wait_for_unit("multi-user.target")
+      machine.log(machine.wait_until_succeeds("systemd-analyze critical-chain multi-user.target"))
       machine.succeed("togi-trial-tests -test.run '^TestHardwareScope' -test.v -test.timeout 180s")
       lock_identity = machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip()
       assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
@@ -154,6 +160,7 @@ in
       assert "saved_entry=NixOS - togi" in machine.succeed("grub-editenv /boot/grub/grubenv list")
       machine.reboot()
       machine.wait_for_unit("multi-user.target")
+      machine.log(machine.wait_until_succeeds("systemd-analyze critical-chain multi-user.target"))
       booted_system = machine.succeed("readlink -f /run/current-system").strip()
       assert booted_system == tuning_system, (booted_system, tuning_system)
       machine.wait_until_succeeds("grep -qx active /sys/class/watchdog/watchdog0/state")
@@ -250,12 +257,13 @@ in
       assert machine.qmp_client is not None
       machine.qmp_client.send("query-status")
       list(machine.qmp_client.events())
+      machine.log(f"freezing PID 1 at {time.time():.6f}")
       machine.succeed("echo 1 > /sys/fs/cgroup/init.scope/cgroup.freeze")
       machine.wait_until_succeeds(
           "grep -qx 'frozen 1' /sys/fs/cgroup/init.scope/cgroup.events", timeout=10
       )
       watchdog_event = None
-      deadline = time.monotonic() + 90
+      deadline = time.monotonic() + 30
       while time.monotonic() < deadline and watchdog_event is None:
           machine.qmp_client.send("query-status")
           for event in machine.qmp_client.events():
