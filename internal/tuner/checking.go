@@ -21,12 +21,9 @@ type checking struct {
 }
 
 type checkingStep struct {
-	start     *journal.CheckingStep
-	seq       int
-	completed map[trialClass]int
-	passed    map[trialClass]int
-	failed    map[trialClass]int
-	chains    map[int][]*checkingChain
+	start  *journal.CheckingStep
+	seq    int
+	chains map[int][]*checkingChain
 }
 
 type checkingChain struct {

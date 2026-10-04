@@ -360,7 +360,7 @@ func (p *projector) cyclePlan(cp tuner.CyclePlan) {
 	for i, step := range cp.Steps {
 		v := cycleStep{regime: step.Regime, workload: step.Workload, done: step.Done, hunts: p.checkHunts[[2]int{cp.Number, i + 1}]}
 		for _, part := range step.Parts {
-			v.parts = append(v.parts, cyclePart{cores: part.Cores, ccd: part.CCD, full: part.Full, recordOnly: part.RecordOnly, short: part.Short, shortLen: time.Duration(part.ShortS) * time.Second, long: part.Long, longLen: time.Duration(part.LongS) * time.Second, passed: part.Passed, failed: part.Failed, running: part.Running, done: part.Done})
+			v.parts = append(v.parts, cyclePart{cores: part.Cores, ccd: part.CCD, full: part.Full, short: part.Short, shortLen: time.Duration(part.ShortS) * time.Second, long: part.Long, longLen: time.Duration(part.LongS) * time.Second, passed: part.Passed, failed: part.Failed, running: part.Running, done: part.Done})
 		}
 		s.cycle.steps = append(s.cycle.steps, v)
 	}

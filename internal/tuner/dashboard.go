@@ -11,7 +11,7 @@ type Limit struct {
 	Combination    int
 }
 
-// TrialRequirement counts valid outcomes of the requirement containing a trial.
+// TrialRequirement counts passing evidence; Trial is Passed+1, never advanced by failures.
 type TrialRequirement struct{ Passed, Failed, Trial, Needed int }
 
 // CyclePlan describes checking's recorded schedule and its current obligations.
@@ -28,14 +28,16 @@ type CycleStep struct {
 	Regime   machine.Regime
 	Workload machine.Workload
 	Parts    []CyclePart
-	Done     bool
+	// ChainsComplete means every R7 CCD chain has a valid recorded ending; true outside R7.
+	ChainsComplete bool
+	Done           bool
 }
 
-// CyclePart describes one load, including frozen record-only partial loads.
+// CyclePart describes a required load. R7 partials appear only once their chain is derived.
 type CyclePart struct {
 	Cores                      []int
 	CCD                        int
-	Full, RecordOnly           bool
+	Full, Partial              bool
 	Short, ShortS, Long, LongS int
 	Passed, Failed             int
 	Running, Done              bool
@@ -112,8 +114,7 @@ const (
 	// IfAllPass assumes every remaining trial of its requirement passes; it is omitted when another requirement's
 	// trial would run before them.
 	IfAllPass Premise = "all_pass"
-	// IfNamed assumes a failure names the branch's Core: a judged core away from 0 standing in for every such
-	// core, or the first loaded core at 0.
+	// IfNamed assumes a failure names Core, selected to represent distinct offset/request-order outcomes.
 	IfNamed Premise = "named"
 	// IfUnnamed assumes a failure names no core.
 	IfUnnamed Premise = "unnamed"
@@ -132,6 +133,9 @@ type ForecastBranch struct {
 	// NeedsHistory marks a missing checking profile, a recurring hunt plan without new evidence, or decisions
 	// that do not settle on a next trial.
 	NeedsHistory bool
+	// WithoutTelemetry marks R7 outcomes conditional on no new request or clock measurements in trial.end.
+	// Recorded measurements, or offset order when absent, supply the tuner's fallback.
+	WithoutTelemetry bool
 	// NextStep is the checking step Next loads, counting from 1; zero outside a checking cycle.
 	NextStep int
 }

@@ -30,7 +30,7 @@ func (s *State) recordCheckingStep(e journal.Event, p *journal.CheckingStep) {
 	if g.partial == nil {
 		g.partial = map[int]*checkingStep{}
 	}
-	g.partial[p.Step] = &checkingStep{start: p, seq: e.Seq, chains: map[int][]*checkingChain{}, completed: map[trialClass]int{}, passed: map[trialClass]int{}, failed: map[trialClass]int{}}
+	g.partial[p.Step] = &checkingStep{start: p, seq: e.Seq, chains: map[int][]*checkingChain{}}
 	g.lastSeq = e.Seq
 	s.projectionDirty = true
 }
@@ -62,24 +62,13 @@ func (s *State) recordCheckingTrial(p *journal.TrialIntent) {
 		for i, node := range chain {
 			if node.start.Workload == p.Workload && slices.Equal(node.start.Cores, p.Cores) {
 				// A started part's loaded set depends on its predecessors, so
-				// they freeze with it even if lap evidence already met theirs.
+				// they freeze with it even if cycle evidence already met theirs.
 				for _, predecessor := range chain[:i+1] {
 					predecessor.started = true
 				}
 			}
 		}
 	}
-}
-
-// partialRequirements serves the legacy dashboard projection, not R7 scheduling.
-func (s *State) partialRequirements(full requirement, cores []int) []requirement {
-	short := full.class.withDuration(s.durations.ShortTrialS)
-	short.cores = coresKey(cores)
-	long := short.withDuration(s.longS(full.cores))
-	if short == long {
-		return []requirement{{class: short, cores: cores, count: 4}}
-	}
-	return []requirement{{class: short, cores: cores, count: 3}, {class: long, cores: cores, count: 1}}
 }
 
 func (s *State) stepWorkload(step int) string {
@@ -139,7 +128,7 @@ func (s *State) deriveCheckingChain(step, ccd, index int, previous []int) Action
 	if len(cores) == 0 {
 		msg += "; chain ends because removing the top group leaves fewer than two cores"
 	}
-	p := &journal.CheckingChain{Cycle: g.cycle, Step: step+1, CCD: ccd, Workload: w, Part: fmt.Sprintf("partial %d", index+1), Groups: groups, Cores: cores, SourceSeqs: sources, Profile: slices.Clone(g.profile), Msg: msg}
+	p := &journal.CheckingChain{Cycle: g.cycle, Step: step + 1, CCD: ccd, Workload: w, Part: fmt.Sprintf("partial %d", index+1), Groups: groups, Cores: cores, SourceSeqs: sources, Profile: slices.Clone(g.profile), Msg: msg}
 	cause := append([]int{s.checking.partial[step+1].seq, g.lastSeq}, sources...)
 	return Action{Kind: Decide, Payload: p, Cause: cause}
 }
@@ -154,7 +143,7 @@ func (s *State) r7PartNext(step int, part []int, duration int) (Action, bool) {
 		if q.class.duration != s.durations.ShortTrialS && q.class.duration != duration {
 			continue
 		}
-		t := Trial{Regime: machine.R7, Workload: q.class.workload, Cores: slices.Clone(part), DurationS: q.class.duration, Phase: journal.PhaseChecking, Condition: machine.Together, Cycle: g.cycle, Step: step+1}
+		t := Trial{Regime: machine.R7, Workload: q.class.workload, Cores: slices.Clone(part), DurationS: q.class.duration, Phase: journal.PhaseChecking, Condition: machine.Together, Cycle: g.cycle, Step: step + 1}
 		if s.retry != nil && s.retry.Cycle == g.cycle && s.retry.Step == step+1 && s.retry.Workload == t.Workload && s.retry.DurationS == t.DurationS && slices.Equal(s.retry.Cores, part) {
 			t = *s.retry
 		}
