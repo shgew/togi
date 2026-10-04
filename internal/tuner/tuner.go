@@ -129,6 +129,7 @@ type State struct {
 	intents                 map[string]*journal.TrialIntent
 	intentSeq               map[int]string
 	signalled               map[string]bool
+	flight                  *journal.TrialIntent
 	awaiting                *awaiting
 	mces                    map[int]*journal.MCE
 	steps                   []machine.Regime
@@ -316,6 +317,7 @@ func (s *State) Fold(e journal.Event) {
 			s.commitHuntDecision(e, p)
 		}
 	case *journal.TrialIntent:
+		s.flight = p
 		s.intents[p.Trial] = p
 		s.intentSeq[e.Seq] = p.Trial
 		s.retry = nil
@@ -327,6 +329,9 @@ func (s *State) Fold(e journal.Event) {
 			s.signalled[p.Trial] = true
 		}
 	case *journal.TrialEnd:
+		if s.flight != nil && s.flight.Trial == p.Trial {
+			s.flight = nil
+		}
 		s.foldTrialEnd(e, p)
 		s.pendingRerun()
 	case *journal.MCE:
@@ -353,6 +358,7 @@ func (s *State) Fold(e journal.Event) {
 			}
 		}
 	case *journal.CrashDetected:
+		s.flight = nil
 		if p.ResetReason == machine.ResetThermalTrip && !p.Inconclusive {
 			evidence := false
 			if p.InFlight != nil {

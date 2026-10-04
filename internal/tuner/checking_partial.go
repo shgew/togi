@@ -42,7 +42,7 @@ func (s *State) recordCheckingStep(e journal.Event, p *journal.CheckingStep) {
 	if g.partial == nil {
 		g.partial = map[int]*checkingStep{}
 	}
-	g.partial[p.Step] = &checkingStep{start: p, seq: e.Seq, completed: map[trialClass]int{}}
+	g.partial[p.Step] = &checkingStep{start: p, seq: e.Seq, completed: map[trialClass]int{}, passed: map[trialClass]int{}, failed: map[trialClass]int{}}
 	g.lastSeq = e.Seq
 	s.projectionDirty = true
 }
@@ -55,6 +55,11 @@ func (s *State) recordPartialEnd(e journal.Event, p *journal.TrialIntent, end *j
 	}
 	if end.Outcome == journal.OutcomePass || end.Outcome == journal.OutcomeFailure {
 		step.completed[classOf(p)]++
+		if end.Outcome == journal.OutcomePass {
+			step.passed[classOf(p)]++
+		} else {
+			step.failed[classOf(p)]++
+		}
 	}
 	g.lastSeq = e.Seq
 	s.projectionDirty = true
@@ -72,21 +77,23 @@ func (s *State) partialRequirement(step int, full requirement) (trialClass, []in
 		if slices.ContainsFunc(full.cores, func(id int) bool { return s.ccd[id] != partial.CCD }) {
 			continue
 		}
-		short := full.class.withDuration(s.durations.ShortTrialS)
-		short.cores = coresKey(partial.Cores)
-		long := short.withDuration(s.longS(full.cores))
-		needed := 3
-		if long == short {
-			needed++
-		}
-		if started.completed[short] < needed {
-			return short, partial.Cores, true
-		}
-		if long != short && started.completed[long] < 1 {
-			return long, partial.Cores, true
+		for _, q := range s.partialRequirements(full, partial.Cores) {
+			if started.completed[q.class] < q.count {
+				return q.class, partial.Cores, true
+			}
 		}
 	}
 	return trialClass{}, nil, false
+}
+
+func (s *State) partialRequirements(full requirement, cores []int) []requirement {
+	short := full.class.withDuration(s.durations.ShortTrialS)
+	short.cores = coresKey(cores)
+	long := short.withDuration(s.longS(full.cores))
+	if short == long {
+		return []requirement{{class: short, cores: cores, count: 4}}
+	}
+	return []requirement{{class: short, cores: cores, count: 3}, {class: long, cores: cores, count: 1}}
 }
 
 func (s *State) partialNext(step int, full requirement) (Action, bool) {

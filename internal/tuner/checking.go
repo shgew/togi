@@ -24,6 +24,8 @@ type checkingStep struct {
 	start     *journal.CheckingStep
 	seq       int
 	completed map[trialClass]int
+	passed    map[trialClass]int
+	failed    map[trialClass]int
 }
 
 type requirement struct {
