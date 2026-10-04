@@ -41,7 +41,7 @@ func TestRecordOnlyEvidenceConsumers(t *testing.T) {
 				if _, ok := h.s.Drain(); ok {
 					t.Fatal("record-only outcome requested a decision")
 				}
-				for _, rule := range []evidenceRule{allEvidence, soloLimitEvidence, huntEvidence, rerunEvidence, deepeningEvidence, lapEvidence} {
+				for _, rule := range []evidenceRule{allEvidence, soloLimitEvidence, huntEvidence, rerunEvidence, deepeningEvidence, cycleEvidence} {
 					if h.s.passes(k, profile, 0, rule) != 0 || h.s.fails(k, profile, 0) {
 						t.Fatalf("record-only evidence admitted by rule %d", rule)
 					}
@@ -54,7 +54,7 @@ func TestRecordOnlyEvidenceConsumers(t *testing.T) {
 				for _, id := range cores {
 					parked[id] = 0
 				}
-				h.add(&journal.HuntStart{Hunt: 1, Regime: k.regime, Workload: k.workload, Cores: cores, DurationS: 120, StartS: 120, Starts: h.s.n, Failing: profile, Parked: parked, Candidates: cores})
+				h.add(&journal.HuntStart{Hunt: 1, Regime: k.regime, Workload: k.workload, Cores: cores, DurationS: 120, TrialS: 120, Trials: h.s.n, Failing: profile, Parked: parked, Candidates: cores})
 				for _, stage := range []string{"part", "complement", "full", "probe"} {
 					a := h.s.planGroup(h.s.hunt, groupPlan{cores: cores, set: cores, stage: stage, duration: 120}, "probe")
 					group := a.Payload.(*journal.HuntGroup)
@@ -109,7 +109,7 @@ func TestRecordOnlySkipsNeitherKnownFailuresNorReruns(t *testing.T) {
 	}
 	tr.RecordOnly = true
 	if a := h.s.skipKnownFailure(Action{Kind: RunTrial, Trial: tr}); a.Kind != RunTrial {
-		t.Fatal("known failure skipped a record-only start")
+		t.Fatal("known failure skipped a record-only trial")
 	}
 	h.s.obligations = []rerun{{class: trialClass{tr.Regime, tr.Workload, coresKey(cores), 120}, seq: failure.Seq}}
 	if _, pending := h.s.pendingRerun(); !pending {
@@ -146,7 +146,7 @@ func TestRecordOnlyCannotFulfillDeepeningChecks(t *testing.T) {
 			t.Run(fmt.Sprintf("carried=%t/%s", carried, outcome), func(t *testing.T) {
 				h, cores, profile := sevenCorePartialHarness(t)
 				h.s.parts = [][]int{cores}
-				h.add(&journal.DeepeningRound{Round: 1, Event: journal.LapStart, Profile: profile, Target: profile, Cores: []int{1}, Starts: h.s.n, StartS: 120})
+				h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleStart, Profile: profile, Target: profile, Cores: []int{1}, Trials: h.s.n, TrialS: 120})
 				h.s.round.initial = slices.Clone(profile)
 				h.s.round.initial[1]++
 				for _, r := range []machine.Regime{machine.R1, machine.R2} {
@@ -170,7 +170,7 @@ func TestRecordOnlyCannotFulfillDeepeningChecks(t *testing.T) {
 
 func TestR7PartialGroupsFreezeAtStepStart(t *testing.T) {
 	h := hasRoomHarness(t, -10, -10, -20, -30, -40, -20, -20, -40)
-	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R7}})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R7}})
 	a := h.next()
 	step, ok := a.Payload.(*journal.CheckingStep)
 	if !ok {
@@ -191,16 +191,16 @@ func TestR7PartialGroupsFreezeAtStepStart(t *testing.T) {
 	for _, e := range h.events {
 		replay.Fold(e)
 	}
-	a = replay.lapNext()
+	a = replay.cycleNext()
 	if !a.Trial.RecordOnly || a.Trial.Retry || !slices.Equal(a.Trial.Cores, []int{2, 3}) {
-		t.Fatalf("resume recomputed group or retried failed start: %+v", a)
+		t.Fatalf("resume recomputed group or retried failed trial: %+v", a)
 	}
 	if got := replay.checking.partial[1].completed[classOf(h.s.intents["0001"])]; got != 1 {
-		t.Fatalf("failed start not recorded as attempted: %d", got)
+		t.Fatalf("failed trial not recorded as attempted: %d", got)
 	}
 }
 
-func TestR7PartialFailuresLeaveFullLapCoverageAndProfileUnchanged(t *testing.T) {
+func TestR7PartialFailuresLeaveFullCycleCoverageAndProfileUnchanged(t *testing.T) {
 	for _, topology := range []string{"two CCDs", "one CCD", "all tied"} {
 		t.Run(topology, func(t *testing.T) {
 			h := hasRoomHarness(t, -10, -20, -10, -20)
@@ -212,10 +212,10 @@ func TestR7PartialFailuresLeaveFullLapCoverageAndProfileUnchanged(t *testing.T) 
 				h.add(&journal.ProfileChange{To: []int{-20, -20, -20, -20}})
 			}
 			before := h.s.offsets()
-			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: h.s.steps})
-			partialStarts, snapshots := 0, 0
+			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: h.s.steps})
+			partialTrials, snapshots := 0, 0
 			for range 1000 {
-				a := h.s.lapNext()
+				a := h.s.cycleNext()
 				if step, ok := a.Payload.(*journal.CheckingStep); ok {
 					snapshots++
 					if topology == "all tied" {
@@ -231,7 +231,7 @@ func TestR7PartialFailuresLeaveFullLapCoverageAndProfileUnchanged(t *testing.T) 
 				if a.Kind == RunTrial {
 					end := passed
 					if a.Trial.RecordOnly {
-						partialStarts++
+						partialTrials++
 						end = journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(a.Trial.Cores[0]), DurationS: 3}
 					}
 					h.trial(a, end)
@@ -240,13 +240,13 @@ func TestR7PartialFailuresLeaveFullLapCoverageAndProfileUnchanged(t *testing.T) 
 					}
 					continue
 				}
-				end, ok := a.Payload.(*journal.CheckingLap)
+				end, ok := a.Payload.(*journal.CheckingCycle)
 				if !ok || !end.Passed || !end.Full {
-					t.Fatalf("partial failure dirtied lap: %+v", a)
+					t.Fatalf("partial failure dirtied cycle: %+v", a)
 				}
 				h.decide(a)
-				if h.s.CleanLaps() != 1 || !slices.Equal(before, h.s.offsets()) || len(h.s.combinations) != 0 {
-					t.Fatal("partial failures changed profile, failure points or full-lap coverage")
+				if h.s.CleanCycles() != 1 || !slices.Equal(before, h.s.offsets()) || len(h.s.combinations) != 0 {
+					t.Fatal("partial failures changed profile, failure points or full-cycle coverage")
 				}
 				want := 24
 				switch topology {
@@ -255,12 +255,12 @@ func TestR7PartialFailuresLeaveFullLapCoverageAndProfileUnchanged(t *testing.T) 
 				case "all tied":
 					want = 0
 				}
-				if partialStarts != want || snapshots != 3 {
-					t.Fatalf("partial starts %d want %d; snapshots %d want 3", partialStarts, want, snapshots)
+				if partialTrials != want || snapshots != 3 {
+					t.Fatalf("partial trials %d want %d; snapshots %d want 3", partialTrials, want, snapshots)
 				}
 				return
 			}
-			t.Fatal("lap did not finish")
+			t.Fatal("cycle did not finish")
 		})
 	}
 }
@@ -282,19 +282,19 @@ func TestRecordOnlyDoesNotVetoLongHuntPrior(t *testing.T) {
 	}
 }
 
-func TestRecordOnlyCannotContradictPassedFullLapProfile(t *testing.T) {
+func TestRecordOnlyCannotContradictPassedFullCycleProfile(t *testing.T) {
 	for _, carried := range []bool{false, true} {
 		t.Run(fmt.Sprintf("carried=%t", carried), func(t *testing.T) {
 			h, cores, profile := sevenCorePartialHarness(t)
-			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: h.s.steps})
-			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
+			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: h.s.steps})
+			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
 			shallow := slices.Clone(profile)
 			shallow[0]++
 			h.add(&journal.ProfileChange{From: profile, To: shallow})
 			h.add(&journal.ProfileChange{From: shallow, To: profile})
 			partialEvidence(h, carried, journal.OutcomeFailure, cores, profile, 1)
-			if h.s.CleanLaps() != 1 || h.s.covering() == 0 {
-				t.Fatal("partial failure contradicted an earlier clean lap")
+			if h.s.CleanCycles() != 1 || h.s.covering() == 0 {
+				t.Fatal("partial failure contradicted an earlier clean cycle")
 			}
 			assertProjectionReplay(h)
 		})
@@ -303,7 +303,7 @@ func TestRecordOnlyCannotContradictPassedFullLapProfile(t *testing.T) {
 
 func TestRecordOnlyInconclusiveRetriesSamePart(t *testing.T) {
 	h := hasRoomHarness(t, -10, -20, -10, -20)
-	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R7}})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R7}})
 	h.decide(h.next())
 	first := h.next()
 	h.trial(first, unsure)

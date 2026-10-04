@@ -128,7 +128,7 @@ func TestCarryReaderReconstructsHistoricalProfiles(t *testing.T) {
 func TestRecordOnlyFactsRetainTrialClassAndOutcomes(t *testing.T) {
 	for _, outcome := range []journal.Outcome{journal.OutcomePass, journal.OutcomeFailure, journal.OutcomeInconclusive} {
 		t.Run(string(outcome), func(t *testing.T) {
-			intent := &journal.TrialIntent{Trial: "partial", Cores: []int{7, 3}, Regime: machine.R7, Workload: "workload", DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Lap: 2, Step: 4, RecordOnly: true, Profile: []int{-20, -30, -50}}
+			intent := &journal.TrialIntent{Trial: "partial", Cores: []int{7, 3}, Regime: machine.R7, Workload: "workload", DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Cycle: 2, Step: 4, RecordOnly: true, Profile: []int{-20, -30, -50}}
 			ordinary := *intent
 			ordinary.RecordOnly, ordinary.Step = false, 0
 			if diff := cmp.Diff(ClassOf(&ordinary), ClassOf(intent)); diff != "" {

@@ -42,7 +42,7 @@ func runHunt(t *testing.T, cfg sim.Config, setup func(*sim.Machine), tweak func(
 		setup(m)
 	}
 	dir := t.TempDir()
-	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1, InMemoryJournal: true}
+	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true}
 	if tweak != nil {
 		tweak(&in)
 	}
@@ -124,7 +124,7 @@ func TestHuntAllZeroParkedOffsets(t *testing.T) {
 	cfg := huntConfig(16)
 	cfg.Limits[11].Together[6] = -5
 	stop, events, _ := runHunt(t, cfg, nil, nil)
-	if stop.Reason != session.StopLaps {
+	if stop.Reason != session.StopCycles {
 		t.Fatalf("stop %+v", stop)
 	}
 	start, ok := findPayload(events, func(p *journal.HuntStart) bool { return p.ParkedSeq == 0 })
@@ -141,12 +141,12 @@ func TestHuntAllZeroParkedOffsets(t *testing.T) {
 	if _, ok := findPayload(events, func(p *journal.TunerDecision) bool { return p.Decision == journal.Backoff && p.Core == 11 }); !ok {
 		t.Fatal("core 11 not backed off")
 	}
-	if _, ok := findPayload(events, func(p *journal.CheckingLap) bool { return p.Event == journal.LapEnd && p.Passed && p.Full }); !ok {
-		t.Fatal("no passed full lap")
+	if _, ok := findPayload(events, func(p *journal.CheckingCycle) bool { return p.Event == journal.CycleEnd && p.Passed && p.Full }); !ok {
+		t.Fatal("no passed full cycle")
 	}
 }
 
-func TestHuntCulpritAfterCleanLapParkedOffsets(t *testing.T) {
+func TestHuntCulpritAfterCleanCycleParkedOffsets(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(4)
 	for i := range cfg.Limits {
@@ -157,12 +157,12 @@ func TestHuntCulpritAfterCleanLapParkedOffsets(t *testing.T) {
 	stop, events, _ := runHunt(t, cfg, nil, func(in *Input) {
 		in.Config.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 	})
-	if stop.Reason != session.StopLaps {
+	if stop.Reason != session.StopCycles {
 		t.Fatalf("stop %+v", stop)
 	}
 	start, ok := findPayload(events, func(p *journal.HuntStart) bool { return p.ParkedSeq > 0 })
 	if !ok {
-		t.Fatal("no hunt with parked offsets from a clean lap")
+		t.Fatal("no hunt with parked offsets from a clean cycle")
 	}
 	end, ok := findPayload(events, func(p *journal.HuntEnd) bool { return p.Hunt == start.Hunt && p.Result == "culprit" })
 	if !ok || cmp.Diff([]int{1}, end.Cores) != "" {
@@ -189,7 +189,7 @@ func TestParkedOffsetBackendFailureRaisesParkedOffsets(t *testing.T) {
 	_, probe, _ := runHunt(t, cfg, nil, candidates)
 	first, ok := findPayload(probe, func(p *journal.HuntStart) bool { return p.ParkedSeq > 0 })
 	if !ok {
-		t.Fatal("no parked offsets from a clean lap")
+		t.Fatal("no parked offsets from a clean cycle")
 	}
 	var group *journal.HuntGroup
 	var trial string
@@ -259,7 +259,7 @@ func TestHuntCombination(t *testing.T) {
 	}
 	cfg.Joints = []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
 	stop, events, _ := runHunt(t, cfg, nil, nil)
-	if stop.Reason != session.StopLaps {
+	if stop.Reason != session.StopCycles {
 		t.Fatalf("stop %+v", stop)
 	}
 	combination, ok := findPayload(events, func(p *journal.Combination) bool { return !p.Fallback && len(p.Members) == 2 })
@@ -297,7 +297,7 @@ func TestHuntCombination(t *testing.T) {
 	if diff := cmp.Diff(want, assertAdversarialEvidence(t, events, 1, 32)); diff != "" {
 		t.Errorf("sharp joint final profile (-want +got):\n%s", diff)
 	}
-	t.Log("joint miss risk per 120s failing start is exp(-1200), below 1e-500 but not zero; this fixed seed is not a universal accuracy guarantee")
+	t.Log("joint miss risk per 120s failing trial is exp(-1200), below 1e-500 but not zero; this fixed seed is not a universal accuracy guarantee")
 }
 
 func TestSharedVoltageJointBacksOffOnlyTheShallowestCore(t *testing.T) {
@@ -314,7 +314,7 @@ func TestSharedVoltageJointBacksOffOnlyTheShallowestCore(t *testing.T) {
 		{Members: ccd0(-23), Regimes: []machine.Regime{machine.R7}, Rate: 0.0009},
 	}
 	stop, events, _ := runHunt(t, cfg, nil, nil)
-	if stop.Reason != session.StopLaps {
+	if stop.Reason != session.StopCycles {
 		t.Fatalf("stop %+v", stop)
 	}
 	hunts, crashes := 0, 0
@@ -338,7 +338,7 @@ func TestSharedVoltageJointBacksOffOnlyTheShallowestCore(t *testing.T) {
 		t.Errorf("final profile (-want +got):\n%s", diff)
 	}
 	assertAdversarialEvidence(t, events, 8, 40)
-	t.Logf("shared-voltage .0009/s hazard miss risk over eligible exposure T is exp(-.0009*T), %g for one 120s start; this fixed seed does not promise accuracy on every seed", math.Exp(-.0009*120))
+	t.Logf("shared-voltage .0009/s hazard miss risk over eligible exposure T is exp(-.0009*T), %g for one 120s trial; this fixed seed does not promise accuracy on every seed", math.Exp(-.0009*120))
 }
 
 func TestHuntJointMisleadingMCE(t *testing.T) {
@@ -349,7 +349,7 @@ func TestHuntJointMisleadingMCE(t *testing.T) {
 	cfg.Model = &model
 	cfg.Joints = []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10, CrashMCECore: new(3)}}
 	stop, events, _ := runHunt(t, cfg, nil, nil)
-	if stop.Reason != session.StopLaps {
+	if stop.Reason != session.StopCycles {
 		t.Fatalf("stop %+v", stop)
 	}
 	if _, ok := findPayload(events, func(p *journal.TunerDecision) bool {
@@ -385,7 +385,7 @@ func TestDelayedHuntEscalates(t *testing.T) {
 			cfg := huntConfig(4)
 			cfg.Joints = []sim.Joint{{Members: map[int]int{1: -10}, Regimes: []machine.Regime{tc.regime}, AfterS: tc.after, Rate: 10}}
 			stop, events, _ := runHunt(t, cfg, nil, nil)
-			if stop.Reason != session.StopLaps {
+			if stop.Reason != session.StopCycles {
 				t.Fatalf("delayed session stop %+v", stop)
 			}
 			if diff := cmp.Diff([]int{-10, -9, -10, -10}, assertAdversarialEvidence(t, events, 4, 32)); diff != "" {
@@ -552,7 +552,7 @@ func TestClockJumpDoesNotLoseTrialMCE(t *testing.T) {
 	}
 	dir := t.TempDir()
 	jump := &jumpAtTrialStart{machine: m}
-	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1,
+	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1,
 		Wrap:  func(j session.Journal) session.Journal { jump.Journal = j; return jump },
 		Until: func(e journal.Event) bool { return e.Kind == journal.KindTrialEnd },
 	}
@@ -589,7 +589,7 @@ func TestBIOSChangeArchivesAndChecksSoloLimits(t *testing.T) {
 	dir := t.TempDir()
 	c := quickMatrixConfig()
 	c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
-	in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1}
+	in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1}
 	stopAfterAlonePasses(&in, 4)
 	if _, err := Simulate(context.Background(), in); err != nil {
 		t.Fatal(err)
@@ -681,11 +681,11 @@ func TestPowerLossDuringDeepeningResume(t *testing.T) {
 	runInterruptionMatrix(t, "deepening", cfg, c,
 		func(e journal.Event) bool {
 			p, ok := e.Data.(*journal.DeepeningRound)
-			return ok && p.Event == journal.LapStart
+			return ok && p.Event == journal.CycleStart
 		},
 		func(e journal.Event, _ *bool) bool {
 			p, ok := e.Data.(*journal.DeepeningRound)
-			return ok && p.Event == journal.LapEnd
+			return ok && p.Event == journal.CycleEnd
 		})
 }
 
@@ -694,7 +694,7 @@ func quickMatrixConfig() config.Config {
 	c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 	c.Evidence.Miss = .5
 	c.Durations.SearchTrialS = 1
-	c.Durations.StartS = 1
+	c.Durations.ShortTrialS = 1
 	c.Durations.CheckingTrialS = 1
 	c.Durations.CheckingIdleS = 1
 	c.Durations.CheckingAllCoreS = 1
@@ -705,7 +705,7 @@ func runInterruptionMatrix(t *testing.T, name string, cfg sim.Config, c config.C
 	t.Helper()
 	_, prefix, _ := runHunt(t, cfg, nil, func(in *Input) {
 		in.Config = c
-		in.Laps = 0
+		in.Cycles = 0
 		in.Until = open
 	})
 	openIndex := slices.IndexFunc(prefix, open)
@@ -800,7 +800,7 @@ func TestScriptedJointAndIdleLimits(t *testing.T) {
 					return false
 				}
 			})
-			if stop.Reason != session.StopLaps {
+			if stop.Reason != session.StopCycles {
 				t.Fatalf("scripted session stop %+v", stop)
 			}
 			huntBudget, crashBudget := 4, 32
@@ -872,14 +872,14 @@ func scriptedSharpOutcome(cfg sim.Config, p *journal.TrialIntent) sim.Outcome {
 	return sim.Outcome{}
 }
 
-func TestIdleOnlyHazardReachesCleanLap(t *testing.T) {
+func TestIdleOnlyHazardReachesCleanCycle(t *testing.T) {
 	for _, seed := range []uint64{1, 2} {
 		t.Run(fmt.Sprintf("seed-%d", seed), func(t *testing.T) {
 			cfg := huntConfig(4)
 			cfg.Seed = seed
 			cfg.Limits[3].Idle = new(-5)
 			stop, events, _ := runHunt(t, cfg, nil, nil)
-			if stop.Reason != session.StopLaps {
+			if stop.Reason != session.StopCycles {
 				t.Fatalf("idle-only stop %+v", stop)
 			}
 			huntBudget := *cfg.Limits[3].Idle - cfg.Limits[3].Together[0]
@@ -904,7 +904,7 @@ func TestIdleOnlyHazardReachesCleanLap(t *testing.T) {
 			if !found {
 				t.Fatal("idle-only hazard never failed outside the loaded cores")
 			}
-			t.Logf("zero near-limit rate, eligible idle failing hazard at least 1/s: a 120s failing start misses with probability at most exp(-120) = %g; equality is a fixed-seed regression, not a universal guarantee", math.Exp(-120))
+			t.Logf("zero near-limit rate, eligible idle failing hazard at least 1/s: a 120s failing trial misses with probability at most exp(-120) = %g; equality is a fixed-seed regression, not a universal guarantee", math.Exp(-120))
 		})
 	}
 }

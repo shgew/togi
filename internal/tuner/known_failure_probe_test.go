@@ -17,7 +17,7 @@ func TestKnownFailureSkipCompletesRunningMemberProbeGroup(t *testing.T) {
 	tr.Condition, tr.Profile = machine.Together, []int{-10, -10}
 	sourceIntent, source := h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
 	attribution := h.decide(h.next())
-	start := h.add(&journal.HuntStart{Hunt: 1, Failure: attribution.Seq, Trial: sourceIntent.Data.(*journal.TrialIntent).Trial, Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: tr.DurationS, StartS: tr.DurationS, Starts: h.s.n, Failing: tr.Profile, Parked: []int{0, 0}, Candidates: tr.Cores})
+	start := h.add(&journal.HuntStart{Hunt: 1, Failure: attribution.Seq, Trial: sourceIntent.Data.(*journal.TrialIntent).Trial, Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: tr.DurationS, TrialS: tr.DurationS, Trials: h.s.n, Failing: tr.Profile, Parked: []int{0, 0}, Candidates: tr.Cores})
 	h.add(&journal.HuntGroup{Hunt: 1, Group: 1, Stage: "full", Set: tr.Cores, Cores: tr.Cores, Granularity: 2, DurationS: tr.DurationS, Profile: tr.Profile, FullChecked: true, AnyFailed: true, Inferred: "failure"}, start.Seq, source.Seq)
 	planned := h.decide(h.next())
 	group, ok := planned.Data.(*journal.HuntGroup)

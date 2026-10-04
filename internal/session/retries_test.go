@@ -127,7 +127,7 @@ func TestRecoveryKernelLogRetriesAndDeadEnd(t *testing.T) {
 			if tc.deadEnd && (stop.Reason != StopDeadEnd || stop.DeadEnd.Condition != journal.DeadEndNoEvidence) {
 				t.Fatalf("stop %+v", stop)
 			}
-			if !tc.deadEnd && stop.Reason != StopLaps {
+			if !tc.deadEnd && stop.Reason != StopCycles {
 				t.Fatalf("stop %+v", stop)
 			}
 			var got, retrySeqs, deadEndCause []int
@@ -175,7 +175,7 @@ func TestRecoveryKernelLogRetryStopsCleanlyOnSignal(t *testing.T) {
 		t.Fatalf("last event %s, want signal shutdown", events[len(events)-1].Msg)
 	}
 	seams = in.Machine.Seams()
-	if stop, err := driveWithSeams(in, seams); err != nil || stop.Reason != StopLaps {
+	if stop, err := driveWithSeams(in, seams); err != nil || stop.Reason != StopCycles {
 		t.Fatalf("resume: %+v %v", stop, err)
 	}
 	for _, e := range readEvents(t, in.Dir) {
@@ -213,8 +213,8 @@ func TestRecoverySkipsAnOlderBootTheSystemJournalDropped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recover: %v", err)
 	}
-	if stop.Reason != StopLaps {
-		t.Fatalf("stop %+v, want laps", stop)
+	if stop.Reason != StopCycles {
+		t.Fatalf("stop %+v, want cycles", stop)
 	}
 	for _, e := range readEvents(t, in.Dir) {
 		if p, ok := e.Data.(*journal.BackendRetry); ok && p.Backend == "kernel_log" {
@@ -237,7 +237,7 @@ func TestRecoveryWithoutSuccessorDoesNotBorrowCurrentResetReason(t *testing.T) {
 	seams := in.Machine.Seams()
 	seams.Kernel = missingSuccessorKernel{Kernel: seams.Kernel}
 	stop, err := driveWithSeams(in, seams)
-	if err != nil || stop.Reason != StopLaps {
+	if err != nil || stop.Reason != StopCycles {
 		t.Fatalf("recover: %+v, %v", stop, err)
 	}
 	events := readEvents(t, in.Dir)
@@ -300,7 +300,7 @@ func TestRecoveryRetryResumeUsesSameAttempt(t *testing.T) {
 	seams.Clock = clock
 	seams.Kernel = kernel
 	stop, err := driveWithSeams(in, seams)
-	if err != nil || stop.Reason != StopLaps {
+	if err != nil || stop.Reason != StopCycles {
 		t.Fatalf("resumed recovery %+v, %v", stop, err)
 	}
 	var attempts []int

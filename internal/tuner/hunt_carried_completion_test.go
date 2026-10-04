@@ -11,21 +11,21 @@ import (
 
 func TestRunningHuntGroupCitesMixedCarriedAndLivePasses(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10}, coreStart{phase: journal.PhaseAtLimit, offset: -10})
-	d := h.s.durations.StartS
+	d := h.s.durations.ShortTrialS
 	first := carryTrials(h, machine.R7, []int{0, 1}, []int{-10, 0}, d, 3, journal.OutcomePass)
 	second := carryTrials(h, machine.R7, []int{0, 1}, []int{0, -10}, d, 3, journal.OutcomePass)
-	start := h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: d, StartS: d, Starts: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
+	start := h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: d, TrialS: d, Trials: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
 	for group, facts := range [][]int{first, second} {
 		a, ok := h.s.huntNext()
 		p, isGroup := a.Payload.(*journal.HuntGroup)
 		if !ok || !isGroup || p.Group != group+1 || p.Inferred != "" {
-			t.Fatalf("group %d should need two live starts: %+v", group+1, a)
+			t.Fatalf("group %d should need two live trials: %+v", group+1, a)
 		}
 		h.decide(a)
 		for range 2 {
 			a, ok = h.s.huntNext()
 			if !ok || a.Kind != RunTrial || a.Trial.Group != group+1 {
-				t.Fatalf("group %d live start: %+v", group+1, a)
+				t.Fatalf("group %d live trial: %+v", group+1, a)
 			}
 			h.trial(a, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: d})
 		}

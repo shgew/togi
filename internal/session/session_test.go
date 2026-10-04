@@ -53,7 +53,7 @@ type simRun struct {
 	Machine     *sim.Machine
 	Log         io.Writer
 	Stderr      io.Writer
-	Laps        int
+	Cycles        int
 	Bootloader  Bootloader
 	Prompt      func(defect.Finding) (bool, error)
 	Defects     []defect.Entry
@@ -66,7 +66,7 @@ type simRun struct {
 }
 
 func simInput(dir string, m *sim.Machine) simRun {
-	return simRun{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1, prefix: &journal.Prefix{}, state: &memState{}}
+	return simRun{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, prefix: &journal.Prefix{}, state: &memState{}}
 }
 
 func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Journal) (Stop, error) {
@@ -86,7 +86,7 @@ func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Jo
 	if in.AfterAppend != nil {
 		wrapped = &interruptedJournal{Journal: wrapped, gate: in.AfterAppend}
 	}
-	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapped, Machine: seams, Laps: in.Laps, Bootloader: in.Bootloader, Prompt: in.Prompt, Defects: in.Defects, Stderr: in.Stderr, SessionID: j.SessionID, Carry: in.Carry})
+	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Bootloader: in.Bootloader, Prompt: in.Prompt, Defects: in.Defects, Stderr: in.Stderr, SessionID: j.SessionID, Carry: in.Carry})
 	if cerr := j.Close(); err == nil && cerr != nil {
 		return Stop{}, cerr
 	}
@@ -94,7 +94,7 @@ func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Jo
 }
 
 // memState stands in for state.json: rewriting a file after every event dominates these tests on
-// copy-on-write filesystems, and the file itself is covered by the journal package and simrun's TestSixteenCoresReachCleanLap.
+// copy-on-write filesystems, and the file itself is covered by the journal package and simrun's TestSixteenCoresReachCleanCycle.
 // It keeps the last written state and encodes it when read: a boot ends right after a write or at a trigger
 // inside Append, before the runner folds anything into the state it last wrote.
 type memState struct {
@@ -259,7 +259,7 @@ func summary(t *testing.T, in simRun) string {
 		out += fmt.Sprintf(" core %d %s;", c.Core, coreSummary{c.Phase, c.Offset, c.Pass, c.FailurePoint})
 	}
 	if g := st.Checking; g != nil {
-		out += fmt.Sprintf(" checking lap %d, clean laps %d, last clean lap %d, exposure %v", g.Lap, g.CleanLaps, g.LastCleanLap, g.Exposure)
+		out += fmt.Sprintf(" checking cycle %d, clean cycles %d, last clean cycle %d, exposure %v", g.Cycle, g.CleanCycles, g.LastCleanCycle, g.Exposure)
 	}
 	return out
 }
@@ -276,7 +276,7 @@ func readEvents(t *testing.T, dir string) []journal.Event {
 func referenceRun(t *testing.T, cfg sim.Config) (simRun, []journal.Event) {
 	t.Helper()
 	in := simInput(t.TempDir(), newSim(t, cfg))
-	if stop := simulate(t, in); stop.Reason != StopLaps {
+	if stop := simulate(t, in); stop.Reason != StopCycles {
 		t.Fatalf("reference run stopped with %+v", stop)
 	}
 	return in, readEvents(t, in.Dir)
@@ -299,7 +299,7 @@ func TestKillAtEveryEvent(t *testing.T) {
 			dir := t.TempDir()
 			m := newSim(t, small())
 			in := simInput(dir, m)
-			if stop := drive(t, in, killAt(k)); stop.Reason != StopLaps {
+			if stop := drive(t, in, killAt(k)); stop.Reason != StopCycles {
 				t.Fatalf("stopped with %+v", stop)
 			}
 			if got := summary(t, in); got != want {
@@ -324,7 +324,7 @@ func TestCandidateSoloLimitsStartChecking(t *testing.T) {
 	dir := t.TempDir()
 	in := simInput(dir, newSim(t, small()))
 	in.Config.CandidateSoloLimits = map[int]int{0: -12, 1: -13}
-	if stop := simulate(t, in); stop.Reason != StopLaps {
+	if stop := simulate(t, in); stop.Reason != StopCycles {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	phases := map[int]*journal.CorePhase{}
@@ -396,7 +396,7 @@ func TestCrashDuringRecovery(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			m := newSim(t, cfg)
-			if stop := drive(t, simInput(dir, m), crashAt(k, m)); stop.Reason != StopLaps {
+			if stop := drive(t, simInput(dir, m), crashAt(k, m)); stop.Reason != StopCycles {
 				t.Fatalf("stopped with %+v", stop)
 			}
 			events := readEvents(t, dir)
@@ -441,7 +441,7 @@ func TestStrayCrashes(t *testing.T) {
 					t.Fatalf("stopped with %+v after %d stray crashes", stop, strays)
 				}
 			default:
-				if stop.Reason != StopLaps || strays != 2 {
+				if stop.Reason != StopCycles || strays != 2 {
 					t.Fatalf("stopped with %+v after %d stray crashes", stop, strays)
 				}
 			}
@@ -482,7 +482,7 @@ func TestDeadEnds(t *testing.T) {
 		{name: "failed preflight", fault: func(m *sim.Machine) { m.FailCheck("root", "uid 1000") }, want: journal.DeadEndPreflight, evidence: journal.KindPreflightCheck},
 		{name: "changed BIOS context", before: func(t *testing.T, in simRun) {
 			t.Helper()
-			if stop := simulate(t, in); stop.Reason != StopLaps {
+			if stop := simulate(t, in); stop.Reason != StopCycles {
 				t.Fatalf("first run stopped with %+v", stop)
 			}
 			in.Machine.SetBIOSContext(changed)
@@ -511,8 +511,8 @@ func TestDeadEnds(t *testing.T) {
 			in := setup(t)
 			stop := simulate(t, in)
 			if tt.want == "" {
-				if stop.Reason != StopLaps {
-					t.Fatalf("stopped with %+v, want laps", stop)
+				if stop.Reason != StopCycles {
+					t.Fatalf("stopped with %+v, want cycles", stop)
 				}
 				return
 			}
@@ -584,7 +584,7 @@ func TestCrashThenPreflightFailure(t *testing.T) {
 		}
 	}
 	m.FailCheck("root", "")
-	if stop := simulate(t, in); stop.Reason != StopLaps {
+	if stop := simulate(t, in); stop.Reason != StopCycles {
 		t.Fatalf("second run stopped with %+v", stop)
 	}
 	failures := 0
@@ -616,7 +616,7 @@ func TestSignalStopsCleanly(t *testing.T) {
 	}
 	m.Reboot()
 	in.AfterAppend = nil
-	if stop := simulate(t, in); stop.Reason != StopLaps {
+	if stop := simulate(t, in); stop.Reason != StopCycles {
 		t.Fatalf("second run stopped with %+v", stop)
 	}
 	events := readEvents(t, dir)
@@ -694,7 +694,7 @@ func TestStopRestoresBaseline(t *testing.T) {
 		offsets []int
 	}{
 		{name: "signal during search", cfg: small(), do: interrupt, want: StopSignal, offsets: []int{-10, -10}},
-		{name: "laps with the profile applied", cfg: uneven, want: StopLaps, offsets: []int{-10, -5}},
+		{name: "cycles with the profile applied", cfg: uneven, want: StopCycles, offsets: []int{-10, -5}},
 		{name: "SMU dead end", cfg: small(), do: func(m *sim.Machine, _ context.CancelFunc) { m.CorruptReadback(0) }, want: StopDeadEnd},
 	}
 	for _, tt := range tests {
@@ -835,12 +835,12 @@ func TestRunnerErrorKeepsMachineCheck(t *testing.T) {
 		if oerr != nil {
 			t.Fatal(oerr)
 		}
-		stop, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapFor(in, nil)(j), Machine: seams, Laps: in.Laps})
+		stop, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapFor(in, nil)(j), Machine: seams, Cycles: in.Cycles})
 		if cerr := j.Close(); err == nil {
 			err = cerr
 		}
 	}
-	if err != nil || stop.Reason != StopLaps {
+	if err != nil || stop.Reason != StopCycles {
 		t.Fatalf("run stopped with %+v, %v", stop, err)
 	}
 	events := readEvents(t, in.Dir)

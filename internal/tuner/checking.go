@@ -11,7 +11,7 @@ import (
 type checking struct {
 	profile    []int
 	profileSeq int
-	lap        int
+	cycle        int
 	open       bool
 	startSeq   int
 	steps      []machine.Regime
@@ -34,7 +34,7 @@ type requirement struct {
 	offset int
 }
 
-func (s *State) fullLapCoverage(steps []machine.Regime) (bool, []string) {
+func (s *State) fullCycleCoverage(steps []machine.Regime) (bool, []string) {
 	want := map[machine.Regime]int{machine.R1: 3, machine.R2: 3, machine.R3: 1, machine.R4: 1, machine.R5: 1, machine.R6: 1, machine.R7: 3}
 	var missing []string
 	for _, r := range machine.Regimes {
@@ -51,11 +51,11 @@ func (s *State) fullLapCoverage(steps []machine.Regime) (bool, []string) {
 	return len(missing) == 0, missing
 }
 
-func (s *State) foldLap(e journal.Event, p *journal.CheckingLap) {
+func (s *State) foldCycle(e journal.Event, p *journal.CheckingCycle) {
 	g := &s.checking
 	g.lastSeq = e.Seq
-	if p.Event == journal.LapStart {
-		g.lap, g.open, g.startSeq = p.Lap, true, e.Seq
+	if p.Event == journal.CycleStart {
+		g.cycle, g.open, g.startSeq = p.Cycle, true, e.Seq
 		g.steps = slices.Clone(p.Steps)
 		g.stepsDone = 0
 		g.partial = map[int]*checkingStep{}
@@ -67,7 +67,7 @@ func (s *State) foldLap(e journal.Event, p *journal.CheckingLap) {
 		g.stepsDone = len(g.steps)
 	}
 	if p.Passed && p.Full {
-		s.passedFullLaps = append(s.passedFullLaps, passedFullLap{profile: slices.Clone(g.profile), seq: e.Seq, lap: p.Lap, allAtLimit: s.allAtLimit()})
+		s.passedFullCycles = append(s.passedFullCycles, passedFullCycle{profile: slices.Clone(g.profile), seq: e.Seq, cycle: p.Cycle, allAtLimit: s.allAtLimit()})
 	}
 	s.projectionDirty = true
 }
@@ -138,7 +138,7 @@ func (s *State) requirements(step int) []requirement {
 		add(s.ids(), s.durations.CheckingIdleS, 1, 0, 0)
 	case machine.R7:
 		for _, part := range s.parts {
-			add(part, s.durations.StartS, 3, 0, 0)
+			add(part, s.durations.ShortTrialS, 3, 0, 0)
 			add(part, s.longS(part), 1, 0, 0)
 		}
 	}
@@ -153,7 +153,7 @@ func (s *State) requirements(step int) []requirement {
 	return req
 }
 
-func (s *State) lapNext() Action {
+func (s *State) cycleNext() Action {
 	g := &s.checking
 	for i := 0; i < len(g.steps); i++ {
 		if g.steps[i] == machine.R7 && g.partial[i+1] == nil {
@@ -168,13 +168,13 @@ func (s *State) lapNext() Action {
 			if q.count == 0 {
 				continue
 			}
-			if s.passes(q.class, g.profile, g.startSeq, lapEvidence) >= q.count {
+			if s.passes(q.class, g.profile, g.startSeq, cycleEvidence) >= q.count {
 				continue
 			}
-			if s.retry != nil && !s.retry.RecordOnly && s.retry.Lap == g.lap && s.retry.Condition == machine.Together {
+			if s.retry != nil && !s.retry.RecordOnly && s.retry.Cycle == g.cycle && s.retry.Condition == machine.Together {
 				return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{g.lastSeq}}
 			}
-			t := Trial{Regime: q.class.regime, Workload: q.class.workload, DurationS: q.class.duration, Phase: journal.PhaseChecking, Condition: machine.Together, Lap: g.lap}
+			t := Trial{Regime: q.class.regime, Workload: q.class.workload, DurationS: q.class.duration, Phase: journal.PhaseChecking, Condition: machine.Together, Cycle: g.cycle}
 			if q.class.regime == machine.R6 || q.class.regime == machine.R7 {
 				t.Cores = q.cores
 			} else {
@@ -183,8 +183,8 @@ func (s *State) lapNext() Action {
 			return Action{Kind: RunTrial, Trial: t, Cause: []int{g.lastSeq}}
 		}
 	}
-	fullLapCoverage, missing := s.fullLapCoverage(g.steps)
-	return Action{Kind: Decide, Payload: &journal.CheckingLap{Lap: g.lap, Event: journal.LapEnd, Passed: true, Full: fullLapCoverage, Missing: missing}, Cause: []int{g.startSeq, g.lastSeq}}
+	fullCycleCoverage, missing := s.fullCycleCoverage(g.steps)
+	return Action{Kind: Decide, Payload: &journal.CheckingCycle{Cycle: g.cycle, Event: journal.CycleEnd, Passed: true, Full: fullCycleCoverage, Missing: missing}, Cause: []int{g.startSeq, g.lastSeq}}
 }
 
 func (s *State) coveredEnd() (Action, bool) {
@@ -194,7 +194,7 @@ func (s *State) coveredEnd() (Action, bool) {
 	complete := true
 	for i := range s.checking.steps {
 		for _, q := range s.requirements(i) {
-			if q.count > 0 && s.passes(q.class, s.checking.profile, s.checking.startSeq, lapEvidence) < q.count {
+			if q.count > 0 && s.passes(q.class, s.checking.profile, s.checking.startSeq, cycleEvidence) < q.count {
 				complete = false
 				break
 			}
@@ -210,12 +210,12 @@ func (s *State) coveredEnd() (Action, bool) {
 	if seq == 0 {
 		return Action{}, false
 	}
-	reason := fmt.Sprintf("clean lap #%d already covers this profile with no contradicting failure, and deepening is due", seq)
-	return Action{Kind: Decide, Payload: &journal.CheckingLap{Lap: s.checking.lap, Event: journal.LapEnd, Reason: reason}, Cause: []int{seq, s.checking.lastSeq}}, true
+	reason := fmt.Sprintf("clean cycle #%d already covers this profile with no contradicting failure, and deepening is due", seq)
+	return Action{Kind: Decide, Payload: &journal.CheckingCycle{Cycle: s.checking.cycle, Event: journal.CycleEnd, Reason: reason}, Cause: []int{seq, s.checking.lastSeq}}, true
 }
 
 func (s *State) covering() int {
-	for _, q := range slices.Backward(s.passedFullLaps) {
+	for _, q := range slices.Backward(s.passedFullCycles) {
 		if q.allAtLimit && s.uncontradicted(q) {
 			return q.seq
 		}
@@ -284,7 +284,7 @@ func (s *State) attributedDecision(c *core, f *journal.Failure, seq int) (Action
 		deepening = true
 	}
 	if s.round != nil && deepening {
-		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.LapEnd, Reason: fmt.Sprintf("attributed failure #%d", seq)}, Cause: []int{seq}}, true
+		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.CycleEnd, Reason: fmt.Sprintf("attributed failure #%d", seq)}, Cause: []int{seq}}, true
 	}
 	phase := journal.PhaseChecking
 	if f.Condition == machine.Parked {
@@ -320,18 +320,18 @@ func (s *State) RerunDuration() int {
 }
 
 // pendingRerun retires completed checks and retains their carried citations until
-// a lap or deepening decision consumes them. Fold calls it as evidence,
+// a cycle or deepening decision consumes them. Fold calls it as evidence,
 // profiles and commitments change, so replay does not depend on calls to Next.
 func (s *State) pendingRerun() (trialClass, bool) {
 	for len(s.obligations) > 0 {
 		r := s.obligations[0]
-		start := r.class.withDuration(s.durations.StartS)
-		seqs := s.passSeqs(start, s.checking.profile, r.seq, rerunEvidence)
+		short := r.class.withDuration(s.durations.ShortTrialS)
+		seqs := s.passSeqs(short, s.checking.profile, r.seq, rerunEvidence)
 		if len(seqs) < s.n {
-			return start, true
+			return short, true
 		}
 		seqs = seqs[:s.n]
-		if r.class.duration != s.durations.StartS {
+		if r.class.duration != s.durations.ShortTrialS {
 			long := s.passSeqs(r.class, s.checking.profile, r.seq, rerunEvidence)
 			if len(long) < 1 {
 				return r.class, true
@@ -362,7 +362,7 @@ func (s *State) afterReruns(a Action) Action {
 	}
 	reason := "; rerun checks passed" + s.carriedReason(s.rerunCauses)
 	switch p := a.Payload.(type) {
-	case *journal.CheckingLap:
+	case *journal.CheckingCycle:
 		p.Reason += reason
 	case *journal.DeepeningRound:
 		p.Reason += reason

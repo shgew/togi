@@ -34,7 +34,7 @@ func TestSkipKnownFailure(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20}, coreStart{phase: journal.PhaseAtLimit, offset: -20})
 			h.add(&journal.ProfileChange{To: []int{-20, -20}})
-			tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{1, 0}, DurationS: h.s.durations.StartS, Condition: machine.Together, Phase: journal.PhaseChecking}
+			tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{1, 0}, DurationS: h.s.durations.ShortTrialS, Condition: machine.Together, Phase: journal.PhaseChecking}
 			var seq int
 			if tc.live {
 				old := tr
@@ -86,14 +86,14 @@ func TestSkippedTogetherFailureMakesProgress(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20}, coreStart{phase: journal.PhaseAtLimit, offset: -20})
 			h.add(&journal.ProfileChange{To: []int{-20, -20}})
-			fact := &journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0304"}, Class: journal.TrialClass{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0}, DurationS: h.s.durations.StartS}, Condition: machine.Together, Profile: []int{-20, -20}, Outcome: journal.OutcomeFailure, Signal: machine.Crash}
+			fact := &journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0304"}, Class: journal.TrialClass{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0}, DurationS: h.s.durations.ShortTrialS}, Condition: machine.Together, Profile: []int{-20, -20}, Outcome: journal.OutcomeFailure, Signal: machine.Crash}
 			if attributed {
 				fact.Core = new(0)
 			}
 			failure := h.add(fact)
-			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R7}})
+			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R7}})
 			if attributed {
-				h.s.retry = &Trial{Regime: fact.Class.Regime, Workload: fact.Class.Workload, Cores: fact.Class.Cores, DurationS: fact.Class.DurationS, Condition: machine.Together, Phase: journal.PhaseChecking, Lap: 1, Retry: true, Profile: fact.Profile}
+				h.s.retry = &Trial{Regime: fact.Class.Regime, Workload: fact.Class.Workload, Cores: fact.Class.Cores, DurationS: fact.Class.DurationS, Condition: machine.Together, Phase: journal.PhaseChecking, Cycle: 1, Retry: true, Profile: fact.Profile}
 			}
 			found := false
 			for range 100 {
@@ -152,10 +152,10 @@ func TestSkippedDeepeningAndRerunFailures(t *testing.T) {
 			h.add(&journal.ProfileChange{To: []int{-19, -20}})
 			r := machine.R1
 			w := machine.Workloads(r)[0].ID
-			d := h.s.durations.StartS
+			d := h.s.durations.ShortTrialS
 			failure := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0304"}, Class: journal.TrialClass{Regime: r, Workload: w, Cores: []int{0}, DurationS: d}, Condition: machine.Together, Profile: []int{-20, -20}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Core: new(0)})
 			if deepening {
-				h.add(&journal.DeepeningRound{Round: 1, Event: journal.LapStart, Profile: []int{-20, -20}, Target: []int{-21, -20}, Cores: []int{0}, Starts: h.s.n, StartS: d})
+				h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleStart, Profile: []int{-20, -20}, Target: []int{-21, -20}, Cores: []int{0}, Trials: h.s.n, TrialS: d})
 			}
 			h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseDeepening, Decision: journal.Deepen, FromOffset: -19, ToOffset: -20})
 			h.add(&journal.ProfileChange{To: []int{-20, -20}})
@@ -179,7 +179,7 @@ func TestSkippedDeepeningAndRerunFailures(t *testing.T) {
 			if deepening {
 				a := h.next()
 				end, ok := a.Payload.(*journal.DeepeningRound)
-				if !ok || end.Event != journal.LapEnd || end.Passed || !slices.Contains(a.Cause, failure.Seq) {
+				if !ok || end.Event != journal.CycleEnd || end.Passed || !slices.Contains(a.Cause, failure.Seq) {
 					t.Fatalf("skipped deepening did not close as failed: %+v", a)
 				}
 				h.decide(a)

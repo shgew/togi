@@ -102,12 +102,12 @@ const (
 	huntEvidence
 	rerunEvidence
 	deepeningEvidence
-	lapEvidence
+	cycleEvidence
 )
 
 func (r evidenceRule) admits(e *entry, since int) bool {
 	if e.carried {
-		return r != lapEvidence
+		return r != cycleEvidence
 	}
 	return e.seq > since
 }

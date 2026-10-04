@@ -74,7 +74,7 @@ func TestStopDrainsDurableFailureBoundaries(t *testing.T) {
 				in.Config.CandidateSoloLimits[0] = -40
 			}
 			in.Config.Durations.SearchTrialS = 1
-			in.Config.Durations.StartS = 1
+			in.Config.Durations.ShortTrialS = 1
 			in.Config.Durations.CheckingTrialS = 1
 			in.Config.Durations.CheckingAllCoreS = 4
 			in.Config.Evidence.Rate = 0.95

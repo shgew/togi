@@ -152,7 +152,7 @@ func assertDefectAnswerResets(t *testing.T, events []journal.Event, foundSeq int
 func defectRecoveryOutcome(t *testing.T, dir string) []journal.CoreState {
 	t.Helper()
 	in := simInput(dir, newSim(t, small()))
-	if stop := simulate(t, in); stop.Reason != StopLaps {
+	if stop := simulate(t, in); stop.Reason != StopCycles {
 		t.Fatalf("after reset: %+v", stop)
 	}
 	var state journal.State

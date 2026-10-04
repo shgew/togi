@@ -15,7 +15,7 @@ type round struct {
 }
 
 func (s *State) foldRound(e journal.Event, p *journal.DeepeningRound) {
-	if p.Event == journal.LapStart {
+	if p.Event == journal.CycleStart {
 		s.round = &round{start: p, seq: e.Seq, initial: s.offsets()}
 		s.nextRound = max(s.nextRound, p.Round)
 		s.lastPlanSeq = e.Seq
@@ -38,7 +38,7 @@ func (s *State) deepeningDue() bool { return !s.checking.open && s.canDeepen() }
 func (s *State) CanDeepen() bool { return s.canDeepen() }
 
 func (s *State) canDeepen() bool {
-	if s.hunt != nil || len(s.queue) > 0 || len(s.obligations) > 0 || s.anySearch() || len(s.passedFullLaps) == 0 {
+	if s.hunt != nil || len(s.queue) > 0 || len(s.obligations) > 0 || s.anySearch() || len(s.passedFullCycles) == 0 {
 		return false
 	}
 	p := s.offsets()
@@ -67,8 +67,8 @@ func (s *State) roundStart() Action {
 			changed = append(changed, c.id)
 		}
 	}
-	base := s.passedFullLaps[len(s.passedFullLaps)-1]
-	return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.nextRound + 1, Event: journal.LapStart, Base: slices.Clone(base.profile), BaseSeq: base.seq, Target: target, Profile: q, Cores: changed, Ranking: slices.Clone(s.ranking), Starts: s.n, StartS: s.durations.StartS}, Cause: []int{base.seq}}
+	base := s.passedFullCycles[len(s.passedFullCycles)-1]
+	return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.nextRound + 1, Event: journal.CycleStart, Base: slices.Clone(base.profile), BaseSeq: base.seq, Target: target, Profile: q, Cores: changed, Ranking: slices.Clone(s.ranking), Trials: s.n, TrialS: s.durations.ShortTrialS}, Cause: []int{base.seq}}
 }
 
 func (s *State) roundMoves() (Action, bool) {
@@ -77,7 +77,7 @@ func (s *State) roundMoves() (Action, bool) {
 		return Action{}, false
 	}
 	if reachedConstraint, ok := s.reaches(r.start.Profile); ok {
-		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: r.start.Round, Event: journal.LapEnd, Reason: "its profile reaches " + reachedConstraint}, Cause: []int{r.seq}}, true
+		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: r.start.Round, Event: journal.CycleEnd, Reason: "its profile reaches " + reachedConstraint}, Cause: []int{r.seq}}, true
 	}
 	for _, yield := range []bool{true, false} {
 		for _, c := range s.cores {
@@ -113,7 +113,7 @@ func (s *State) roundChecks() []requirement {
 		}
 		for _, regime := range []machine.Regime{machine.R1, machine.R2} {
 			w := machine.Workloads(regime)[index].ID
-			out = append(out, requirement{class: trialClass{regime, w, coresKey([]int{c.id}), r.start.StartS}, cores: []int{c.id}, core: c.id, offset: p[i], count: r.start.Starts})
+			out = append(out, requirement{class: trialClass{regime, w, coresKey([]int{c.id}), r.start.TrialS}, cores: []int{c.id}, core: c.id, offset: p[i], count: r.start.Trials})
 		}
 	}
 	for _, part := range s.parts {
@@ -127,7 +127,7 @@ func (s *State) roundChecks() []requirement {
 		}
 		if needed {
 			w := machine.Workloads(machine.R7)[index].ID
-			out = append(out, requirement{class: trialClass{machine.R7, w, coresKey(part), r.start.StartS}, cores: slices.Clone(part), count: r.start.Starts})
+			out = append(out, requirement{class: trialClass{machine.R7, w, coresKey(part), r.start.TrialS}, cores: slices.Clone(part), count: r.start.Trials})
 		}
 	}
 	return out
@@ -153,7 +153,7 @@ func (s *State) roundCheck() Action {
 		}
 		return Action{Kind: RunTrial, Trial: t, Cause: []int{r.seq}}
 	}
-	return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: r.start.Round, Event: journal.LapEnd, Passed: true, Reason: s.carriedReason(cause)}, Cause: cause}
+	return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: r.start.Round, Event: journal.CycleEnd, Passed: true, Reason: s.carriedReason(cause)}, Cause: cause}
 }
 
 func (s *State) projectRound() *journal.DeepeningState {

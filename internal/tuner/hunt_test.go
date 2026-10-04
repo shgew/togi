@@ -71,10 +71,10 @@ func assertHuntNextReplay(h *harness, want Action, next func(*State) Action, fai
 	}
 }
 
-func TestHuntParkedOffsetsRaisesThePassedFullLapProfile(t *testing.T) {
+func TestHuntParkedOffsetsRaisesThePassedFullCycleProfile(t *testing.T) {
 	for _, tt := range []struct {
 		name                    string
-		passedFullLaps, failing []int
+		passedFullCycles, failing []int
 		parked                  []int
 		parkedSeq               int
 		candidates              []int
@@ -85,11 +85,11 @@ func TestHuntParkedOffsetsRaisesThePassedFullLapProfile(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			starts := make([]coreStart, 4)
-			for i := range starts {
+			for i := range trials {
 				starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: tt.failing[i]}
 			}
 			h := newHarness(t, starts...)
-			h.s.passedFullLaps = []passedFullLap{{profile: tt.passedFullLaps, seq: 7}}
+			h.s.passedFullCycles = []passedFullCycle{{profile: tt.passedFullCycles, seq: 7}}
 			class := trialClass{machine.R7, machine.Workloads(machine.R7)[0].ID, fmt.Sprint(h.s.ids()), 120}
 			h.s.queue = []pendingFailure{{seq: 9, failure: &journal.Failure{Trial: "0001"}, profile: tt.failing, class: class}}
 			p, ok := h.s.huntStartNext().Payload.(*journal.HuntStart)
@@ -149,18 +149,18 @@ func TestAllZeroHuntParkedOffsetsOmitsZeroCause(t *testing.T) {
 	t.Fatal("no hunt.start")
 }
 
-func TestHuntParkedOffsetsSkipsExactPassedFullLapProfile(t *testing.T) {
+func TestHuntParkedOffsetsSkipsExactPassedFullCycleProfile(t *testing.T) {
 	starts := make([]coreStart, 2)
-	for i := range starts {
+	for i := range trials {
 		starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: -30, fail: new(-31)}
 	}
 	h := newHarness(t, starts...)
 	h.add(&journal.ProfileChange{To: []int{-20, -20}})
-	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: h.s.steps})
-	old := h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: h.s.steps})
+	old := h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
 	h.add(&journal.ProfileChange{From: []int{-20, -20}, To: []int{-30, -30}})
-	h.add(&journal.CheckingLap{Lap: 2, Event: journal.LapStart, Steps: h.s.steps})
-	h.add(&journal.CheckingLap{Lap: 2, Event: journal.LapEnd, Passed: true, Full: true})
+	h.add(&journal.CheckingCycle{Cycle: 2, Event: journal.CycleStart, Steps: h.s.steps})
+	h.add(&journal.CheckingCycle{Cycle: 2, Event: journal.CycleEnd, Passed: true, Full: true})
 	failure := h.add(&journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Together, Regime: machine.R6, Profile: []int{-30, -30}})
 	a := h.s.huntStartNext()
 	start, ok := a.Payload.(*journal.HuntStart)
@@ -277,17 +277,17 @@ func TestHuntGroupReuseAfterReset(t *testing.T) {
 				if tt.afterReset {
 					reset()
 				}
-				end, starts := passed, 5
+				end, trials := passed, 5
 				if !tt.pass {
-					end, starts = journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash}, 1
+					end, trials = journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash}, 1
 				}
-				for range starts {
+				for range trials {
 					h.trial(Action{Kind: RunTrial, Trial: tr}, end)
 				}
 				if !tt.afterReset {
 					reset()
 				}
-				h.add(&journal.HuntStart{Hunt: 2, Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: 120, StartS: 120, Starts: 5, Failing: []int{-30, -30, -30, -30}, Parked: []int{0, 0, 0, 0}, Candidates: h.s.ids()})
+				h.add(&journal.HuntStart{Hunt: 2, Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: 120, TrialS: 120, Trials: 5, Failing: []int{-30, -30, -30, -30}, Parked: []int{0, 0, 0, 0}, Candidates: h.s.ids()})
 				a := h.s.planGroup(h.s.hunt, groupPlan{set: h.s.ids(), cores: []int{0, 1}, g: 2, stage: stage, duration: 120}, "testing")
 				m := a.Payload.(*journal.HuntGroup)
 				got := struct {
@@ -314,7 +314,7 @@ func TestRunningHuntGroupReusesEarlierPasses(t *testing.T) {
 			for range 4 {
 				h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
 			}
-			h.add(&journal.HuntStart{Hunt: 2, Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: 120, StartS: 120, Starts: 5, Failing: []int{-30, -30, -30, -30}, Parked: []int{0, 0, 0, 0}, Candidates: h.s.ids()})
+			h.add(&journal.HuntStart{Hunt: 2, Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: 120, TrialS: 120, Trials: 5, Failing: []int{-30, -30, -30, -30}, Parked: []int{0, 0, 0, 0}, Candidates: h.s.ids()})
 			a := h.s.planGroup(h.s.hunt, groupPlan{set: h.s.ids(), cores: []int{0, 1}, g: 2, stage: stage, duration: 120}, "testing")
 			h.decide(a)
 			for _, tt := range []struct {
@@ -366,7 +366,7 @@ func TestHuntGroupDoesNotReuseShallowerOrIncomparablePasses(t *testing.T) {
 			for range 5 {
 				h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
 			}
-			h.add(&journal.HuntStart{Hunt: 2, Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: 120, StartS: 120, Starts: 5, Failing: []int{-30, -30, -30, -30}, Parked: []int{0, 0, 0, 0}, Candidates: h.s.ids()})
+			h.add(&journal.HuntStart{Hunt: 2, Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: 120, TrialS: 120, Trials: 5, Failing: []int{-30, -30, -30, -30}, Parked: []int{0, 0, 0, 0}, Candidates: h.s.ids()})
 			h.decide(h.s.planGroup(h.s.hunt, groupPlan{set: h.s.ids(), cores: []int{0, 1}, g: 2, stage: "part", duration: 120}, "testing"))
 			p := h.s.projectHunt()
 			got := struct {
@@ -400,7 +400,7 @@ func TestHuntSkipsReachedGroup(t *testing.T) {
 
 func TestRepeatedParkedCoreProbeReturnsToBinaryPartsAfterPass(t *testing.T) {
 	starts := make([]coreStart, 16)
-	for i := range starts {
+	for i := range trials {
 		starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: -10, fail: new(-11)}
 	}
 	h := newHarness(t, starts...)
@@ -666,7 +666,7 @@ func TestHuntFallbackAndFullCheck(t *testing.T) {
 
 func TestHuntCombinationAlreadyBroken(t *testing.T) {
 	h := hasRoomHarness(t, -29, -30)
-	start := &journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-30, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Starts: 5, StartS: 120}
+	start := &journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-30, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Trials: 5, TrialS: 120}
 	h.add(start)
 	h.add(&journal.HuntEnd{Hunt: 1, Result: "combination", Cores: []int{0, 1}, Groups: 2})
 	a := h.next()
@@ -682,7 +682,7 @@ func TestHuntCombinationAlreadyBroken(t *testing.T) {
 
 func TestHuntCulpritDiscardsContradictedPass(t *testing.T) {
 	h := hasRoomHarness(t, -29, -30)
-	h.add(&journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-29, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Starts: 5, StartS: 120})
+	h.add(&journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-29, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Trials: 5, TrialS: 120})
 	h.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{0}, Groups: 2})
 	a := h.next()
 	d, ok := a.Payload.(*journal.TunerDecision)
@@ -761,7 +761,7 @@ func TestHuntDurationPriorRespectsEvidenceAndShortFailures(t *testing.T) {
 	}{
 		{"valid deeper passes", 5, 0, []int{-32, -32}, false, false, 600},
 		{"short failure in another workload", 5, 0, []int{-32, -32}, true, false, 120},
-		{"insufficient starts", 4, 0, []int{-32, -32}, false, false, 120},
+		{"insufficient trials", 4, 0, []int{-32, -32}, false, false, 120},
 		{"different workload", 5, 1, []int{-32, -32}, false, false, 120},
 		{"incomparable profile", 5, 0, []int{-32, -29}, false, false, 120},
 		{"reset evidence boundary", 5, 0, []int{-32, -32}, false, true, 120},
@@ -876,13 +876,13 @@ func TestActiveHuntProjection(t *testing.T) {
 		outcome   string
 	}{
 		{name: "running reuses earlier valid passes", stage: "part", prior: 2, newPasses: 1, passes: 3, outcome: "running"},
-		{name: "passing complement accumulates starts", stage: "complement", prior: 4, newPasses: 1, passes: 5, outcome: "pass"},
+		{name: "passing complement accumulates trials", stage: "complement", prior: 4, newPasses: 1, passes: 5, outcome: "pass"},
 		{name: "failure invalidates earlier passes", stage: "part", prior: 2, fail: true, outcome: "failure"},
 		{name: "inferred pass", stage: "part", prior: 5, inferred: "pass", passes: 5, outcome: "pass"},
 		{name: "inferred failure", stage: "complement", inferred: "failure", outcome: "failure"},
 		{name: "skipped", stage: "part", skipped: true, outcome: "skipped"},
 		{name: "reset excludes reused evidence", stage: "part", prior: 4, reset: true, newPasses: 1, passes: 1, outcome: "running"},
-		{name: "escalated full uses only new starts", stage: "full", prior: 4, newPasses: 1, escalated: true, passes: 1, outcome: "running"},
+		{name: "escalated full uses only new trials", stage: "full", prior: 4, newPasses: 1, escalated: true, passes: 1, outcome: "running"},
 		{name: "member probe preserves held members", stage: "probe", prior: 4, newPasses: 1, probe: &journal.CombinationMember{Core: 0, Offset: -30}, held: []journal.CombinationMember{{Core: 1, Offset: -30}}, passes: 1, outcome: "running"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -899,7 +899,7 @@ func TestActiveHuntProjection(t *testing.T) {
 			if tc.reset {
 				h.add(&journal.CommandReset{Core: new(0)})
 			}
-			start := &journal.HuntStart{Hunt: 2, Failure: old.Failure, Trial: old.Trial, Regime: old.Regime, Workload: old.Workload, Cores: old.Cores, DurationS: 600, Starts: 5, StartS: 120, Parked: []int{0, 0, 0, 0}, Failing: []int{-30, -30, -30, -30}, Candidates: h.s.ids()}
+			start := &journal.HuntStart{Hunt: 2, Failure: old.Failure, Trial: old.Trial, Regime: old.Regime, Workload: old.Workload, Cores: old.Cores, DurationS: 600, Trials: 5, TrialS: 120, Parked: []int{0, 0, 0, 0}, Failing: []int{-30, -30, -30, -30}, Candidates: h.s.ids()}
 			begin := h.add(start)
 			group := h.add(&journal.HuntGroup{Hunt: 2, Group: 1, Cores: []int{0, 1}, Profile: tr.Profile, Stage: tc.stage, DurationS: duration, Inferred: tc.inferred, Skipped: tc.skipped, Escalated: tc.escalated, Probe: tc.probe, Held: tc.held})
 			for range tc.newPasses {

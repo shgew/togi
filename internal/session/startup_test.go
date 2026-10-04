@@ -182,7 +182,7 @@ func TestHostReadFailureDoesNotStartTuning(t *testing.T) {
 			t.Parallel()
 			in := simInput(t.TempDir(), newSim(t, small()))
 			if name == "resumed BIOS context" {
-				if stop := simulate(t, in); stop.Reason != StopLaps {
+				if stop := simulate(t, in); stop.Reason != StopCycles {
 					t.Fatalf("reference: %+v", stop)
 				}
 				in.Machine.Reboot()

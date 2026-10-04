@@ -33,8 +33,8 @@ type Input struct {
 	Boot       string
 	Journal    Journal
 	Machine    machine.Machine
-	// Laps is the number of clean laps after search and deepening.
-	Laps int
+	// Cycles is the number of clean cycles after search and deepening.
+	Cycles int
 	// Bootloader is set only in the tuning boot, where a dead end hands the next boot back to the normal system.
 	Bootloader Bootloader
 	// Prompt is nil when stdin or stderr is not a terminal.
@@ -66,7 +66,7 @@ type StopReason string
 const (
 	StopSignal  StopReason = "signal"
 	StopDeadEnd StopReason = "dead_end"
-	StopLaps    StopReason = "laps"
+	StopCycles    StopReason = "cycles"
 )
 
 type Stop struct {
@@ -646,7 +646,7 @@ func (r *runner) closeOpenTrial() error {
 			end.StalledCore, end.WorkerStalledMS = summary.stalledCore, summary.workerStalledMS
 		}
 		if sample := summary.last; sample != nil && crashed {
-			end.LastSampleS = new(int(sample.ElapsedMS / 1000))
+			end.LastSampleS = new(int(sample.EcyclesedMS / 1000))
 			end.LastSampleTctlC = sample.TctlC
 			for _, mhz := range sample.CoreMHz {
 				if end.LastSampleMinMHz == nil || mhz < *end.LastSampleMinMHz {
@@ -1137,8 +1137,8 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 				stop, err := r.deadEnd(d, a.Cause...)
 				return deref(stop), err
 			}
-			if g, ok := a.Payload.(*journal.CheckingLap); ok && g.Event == journal.LapStart && r.reachedLaps() {
-				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownLaps, Laps: r.in.Laps}, StopLaps)
+			if g, ok := a.Payload.(*journal.CheckingCycle); ok && g.Event == journal.CycleStart && r.reachedCycles() {
+				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownCycles, Cycles: r.in.Cycles}, StopCycles)
 			}
 			if ctx.Err() != nil {
 				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
@@ -1232,8 +1232,8 @@ func (r *runner) retryBackend(ctx context.Context, t tuner.Trial) error {
 	return nil
 }
 
-func (r *runner) reachedLaps() bool {
-	return r.in.Laps > 0 && r.tuner.CleanLaps() >= r.in.Laps
+func (r *runner) reachedCycles() bool {
+	return r.in.Cycles > 0 && r.tuner.CleanCycles() >= r.in.Cycles
 }
 
 func (r *runner) shutdown(p *journal.Shutdown, stop StopReason) (Stop, error) {

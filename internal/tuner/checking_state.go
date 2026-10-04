@@ -9,9 +9,9 @@ import (
 
 func (s *State) CheckingCoverage() (bool, []string) {
 	if s.checking.open {
-		return s.fullLapCoverage(s.checking.steps)
+		return s.fullCycleCoverage(s.checking.steps)
 	}
-	return s.fullLapCoverage(s.steps)
+	return s.fullCycleCoverage(s.steps)
 }
 
 func (s *State) projectChecking() *journal.CheckingState {
@@ -31,15 +31,15 @@ func (s *State) projectChecking() *journal.CheckingState {
 			}
 		}
 	}
-	lastCleanLap := 0
-	for _, q := range s.passedFullLaps {
-		if s.eligibleCleanLap(q) {
-			lastCleanLap = q.lap
+	lastCleanCycle := 0
+	for _, q := range s.passedFullCycles {
+		if s.eligibleCleanCycle(q) {
+			lastCleanCycle = q.cycle
 		}
 	}
-	fullLapCoverage, missing := s.fullLapCoverage(s.steps)
+	fullCycleCoverage, missing := s.fullCycleCoverage(s.steps)
 	if g.open {
-		fullLapCoverage, missing = s.fullLapCoverage(g.steps)
+		fullCycleCoverage, missing = s.fullCycleCoverage(g.steps)
 	}
 	if g.open {
 		g.stepsDone = len(g.steps)
@@ -56,7 +56,7 @@ func (s *State) projectChecking() *journal.CheckingState {
 						break
 					}
 				}
-				if q.count > 0 && s.passes(q.class, g.profile, g.startSeq, lapEvidence) < q.count {
+				if q.count > 0 && s.passes(q.class, g.profile, g.startSeq, cycleEvidence) < q.count {
 					unmet = true
 					break
 				}
@@ -67,7 +67,7 @@ func (s *State) projectChecking() *journal.CheckingState {
 			}
 		}
 	}
-	out := &journal.CheckingState{Lap: g.lap, LapOpen: g.open, Steps: slices.Clone(g.steps), StepsDone: g.stepsDone, Profile: slices.Clone(g.profile), ProfileSeq: g.profileSeq, Full: fullLapCoverage, Missing: missing, CleanLaps: s.CleanLaps(), LastCleanLap: lastCleanLap, TctlMaxSeq: peakSeq}
+	out := &journal.CheckingState{Cycle: g.cycle, CycleOpen: g.open, Steps: slices.Clone(g.steps), StepsDone: g.stepsDone, Profile: slices.Clone(g.profile), ProfileSeq: g.profileSeq, Full: fullCycleCoverage, Missing: missing, CleanCycles: s.CleanCycles(), LastCleanCycle: lastCleanCycle, TctlMaxSeq: peakSeq}
 	if peakSeq != 0 {
 		out.TctlMaxC = new(peak)
 	}
@@ -75,7 +75,7 @@ func (s *State) projectChecking() *journal.CheckingState {
 		regime   machine.Regime
 		workload string
 	}
-	starts := map[exposureKey]int{}
+	trials := map[exposureKey]int{}
 	for k, entries := range s.ledger {
 		valid, checked := 0, false
 		for _, e := range entries {
@@ -86,14 +86,14 @@ func (s *State) projectChecking() *journal.CheckingState {
 				valid, checked = s.latestFailure(k, g.profile, 0), true
 			}
 			if e.seq > valid {
-				starts[exposureKey{k.regime, k.workload}]++
+				trials[exposureKey{k.regime, k.workload}]++
 			}
 		}
 	}
 	for _, r := range machine.Regimes {
 		for _, w := range machine.Workloads(r) {
-			if n := starts[exposureKey{r, w.ID}]; n > 0 {
-				out.Exposure = append(out.Exposure, journal.ExposureRow{Regime: r, Workload: w.ID, Starts: n})
+			if n := trials[exposureKey{r, w.ID}]; n > 0 {
+				out.Exposure = append(out.Exposure, journal.ExposureRow{Regime: r, Workload: w.ID, Trials: n})
 			}
 		}
 	}

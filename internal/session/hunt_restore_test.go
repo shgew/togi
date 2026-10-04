@@ -48,7 +48,7 @@ func TestRestoreAfterCombinationHuntCommitmentNeverReachesCombination(t *testing
 	cfg.Model = &model
 	in := simInput(t.TempDir(), newSim(t, cfg))
 	in.Config.CandidateSoloLimits = map[int]int{0: -30, 1: -30, 2: -30, 3: -30}
-	in.Config.Durations.StartS = 1
+	in.Config.Durations.ShortTrialS = 1
 	in.Config.Durations.CheckingTrialS = 1
 	in.Config.Durations.CheckingAllCoreS = 4
 	in.Config.Evidence.Rate = 0.95

@@ -31,7 +31,7 @@ func TestResetClearsCombinationAndReevaluatesOtherCores(t *testing.T) {
 
 func TestResetAfterHuntEndDropsCommitment(t *testing.T) {
 	h := hasRoomHarness(t, -29, -30)
-	h.add(&journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-29, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Starts: 5, StartS: 120})
+	h.add(&journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-29, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Trials: 5, TrialS: 120})
 	h.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{0}, Groups: 2})
 	h.add(&journal.CommandReset{Core: new(0)})
 	a := h.next()
@@ -52,26 +52,26 @@ func TestResetAfterHuntEndDropsCommitment(t *testing.T) {
 	}
 }
 
-func TestResetClosesRoundAndLapBeforeSearching(t *testing.T) {
+func TestResetClosesRoundAndCycleBeforeSearching(t *testing.T) {
 	for _, deepening := range []bool{false, true} {
-		h := cleanLapHarness(t, []int{-10}, nil)
+		h := cleanCycleHarness(t, []int{-10}, nil)
 		h.add(&journal.SessionBaseline{Offsets: []int{-7}})
 		if deepening {
-			h.add(&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Profile: []int{-30}, Target: []int{-50}, Cores: []int{0}, Starts: h.s.n, StartS: h.s.durations.StartS})
+			h.add(&journal.DeepeningRound{Round: 2, Event: journal.CycleStart, Profile: []int{-30}, Target: []int{-50}, Cores: []int{0}, Trials: h.s.n, TrialS: h.s.durations.ShortTrialS})
 		} else {
-			h.add(&journal.CheckingLap{Lap: 4, Event: journal.LapStart, Steps: h.s.steps})
+			h.add(&journal.CheckingCycle{Cycle: 4, Event: journal.CycleStart, Steps: h.s.steps})
 		}
 		reset := h.add(&journal.CommandReset{Core: new(0)})
 		a := h.next()
 		if deepening {
 			r, ok := a.Payload.(*journal.DeepeningRound)
-			if !ok || r.Round != 2 || r.Event != journal.LapEnd || r.Passed {
+			if !ok || r.Round != 2 || r.Event != journal.CycleEnd || r.Passed {
 				t.Fatalf("reset must cancel deepening first: %+v", a)
 			}
 		} else {
-			g, ok := a.Payload.(*journal.CheckingLap)
-			if !ok || g.Lap != 4 || g.Event != journal.LapEnd || g.Passed || g.Full {
-				t.Fatalf("reset must close lap without passing: %+v", a)
+			g, ok := a.Payload.(*journal.CheckingCycle)
+			if !ok || g.Cycle != 4 || g.Event != journal.CycleEnd || g.Passed || g.Full {
+				t.Fatalf("reset must close cycle without passing: %+v", a)
 			}
 		}
 		if diff := cmp.Diff([]int{reset.Seq}, a.Cause); diff != "" {

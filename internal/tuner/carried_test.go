@@ -37,7 +37,7 @@ func TestCarriedEvidenceConsumers(t *testing.T) {
 			a, ok := h.s.perCore()
 			p, phase := a.Payload.(*journal.CorePhase)
 			if !ok || !phase || p.To != journal.PhaseHasRoom {
-				t.Fatalf("carried candidate solo limit requires a live start: %+v", a)
+				t.Fatalf("carried candidate solo limit requires a live trial: %+v", a)
 			}
 			if diff := cmp.Diff(append([]int{boundary.Seq}, facts...), a.Cause); diff != "" {
 				t.Fatalf("solo limit evidence (-want +got):\n%s", diff)
@@ -54,39 +54,39 @@ func TestCarriedEvidenceConsumers(t *testing.T) {
 			}
 			a, ok := h.s.perCore()
 			if !ok || a.Kind != RunTrial || a.Trial.Regime != machine.R1 {
-				t.Fatalf("ordinary search skipped its live starts: %+v", a)
+				t.Fatalf("ordinary search skipped its live trials: %+v", a)
 			}
 		}},
-		{"checking lap", func(t *testing.T) {
+		{"checking cycle", func(t *testing.T) {
 			t.Helper()
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20})
 			h.add(&journal.ProfileChange{To: []int{-20}})
 			carryTrials(h, machine.R1, []int{0}, []int{-20}, h.s.durations.CheckingTrialS, h.s.n, journal.OutcomePass)
-			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}})
-			a := h.s.lapNext()
+			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
+			a := h.s.cycleNext()
 			if a.Kind != RunTrial || a.Trial.Regime != machine.R1 || a.Trial.Condition != machine.Together {
-				t.Fatalf("lap credited on carried passes: %+v", a)
+				t.Fatalf("cycle credited on carried passes: %+v", a)
 			}
 			if st := h.s.projectChecking(); st.StepsDone != 0 {
 				t.Fatalf("projection counted carried passes: %+v", st)
 			}
 			h.trial(a, passed)
-			a = h.s.lapNext()
-			if p, ok := a.Payload.(*journal.CheckingLap); !ok || !p.Passed {
-				t.Fatalf("live pass did not finish lap: %+v", a)
+			a = h.s.cycleNext()
+			if p, ok := a.Payload.(*journal.CheckingCycle); !ok || !p.Passed {
+				t.Fatalf("live pass did not finish cycle: %+v", a)
 			}
 		}},
 		{"rerun", func(t *testing.T) {
 			t.Helper()
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20})
 			h.add(&journal.ProfileChange{To: []int{-20}})
-			short := carryTrials(h, machine.R1, []int{0}, []int{-20}, h.s.durations.StartS, h.s.n, journal.OutcomePass)
+			short := carryTrials(h, machine.R1, []int{0}, []int{-20}, h.s.durations.ShortTrialS, h.s.n, journal.OutcomePass)
 			long := carryTrials(h, machine.R1, []int{0}, []int{-20}, 900, 1, journal.OutcomePass)
 			h.s.obligations = []rerun{{trialClass{machine.R1, machine.Workloads(machine.R1)[0].ID, "[0]", 900}, len(h.events) + 1}}
 			if a, ok := h.s.rerunNext(); ok {
 				t.Fatalf("covered rerun scheduled a trial: %+v", a)
 			}
-			a := h.s.afterReruns(Action{Kind: Decide, Payload: &journal.CheckingLap{Lap: 1, Event: journal.LapStart}})
+			a := h.s.afterReruns(Action{Kind: Decide, Payload: &journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart}})
 			if diff := cmp.Diff(append(short, long...), a.Cause); diff != "" {
 				t.Fatalf("completed rerun provenance (-want +got):\n%s", diff)
 			}
@@ -99,9 +99,9 @@ func TestCarriedEvidenceConsumers(t *testing.T) {
 			h := newHarness(t, coreStart{phase: journal.PhaseHasRoom, offset: -10})
 			var facts []int
 			for _, r := range []machine.Regime{machine.R1, machine.R2, machine.R7} {
-				facts = append(facts, carryTrials(h, r, []int{0}, []int{-11}, h.s.durations.StartS, h.s.n, journal.OutcomePass)...)
+				facts = append(facts, carryTrials(h, r, []int{0}, []int{-11}, h.s.durations.ShortTrialS, h.s.n, journal.OutcomePass)...)
 			}
-			boundary := h.add(&journal.DeepeningRound{Round: 1, Event: journal.LapStart, Profile: []int{-11}, Target: []int{-12}, Cores: []int{0}, Starts: h.s.n, StartS: h.s.durations.StartS})
+			boundary := h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleStart, Profile: []int{-11}, Target: []int{-12}, Cores: []int{0}, Trials: h.s.n, TrialS: h.s.durations.ShortTrialS})
 			a := h.s.roundCheck()
 			p, ok := a.Payload.(*journal.DeepeningRound)
 			if !ok || !p.Passed {
@@ -112,19 +112,19 @@ func TestCarriedEvidenceConsumers(t *testing.T) {
 			}
 			for _, c := range h.s.projectRound().Checks {
 				if c.Passes != h.s.n {
-					t.Fatalf("projection excluded carried starts: %+v", c)
+					t.Fatalf("projection excluded carried trials: %+v", c)
 				}
 			}
 		}},
 		{"hunt group", func(t *testing.T) {
 			t.Helper()
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10}, coreStart{phase: journal.PhaseAtLimit, offset: -10})
-			facts := carryTrials(h, machine.R7, []int{0, 1}, []int{-10, 0}, h.s.durations.StartS, h.s.n, journal.OutcomePass)
-			h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: h.s.durations.StartS, StartS: h.s.durations.StartS, Starts: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
-			a := h.s.planGroup(h.s.hunt, groupPlan{cores: []int{0}, set: []int{0, 1}, stage: "probe", duration: h.s.durations.StartS}, "probe")
+			facts := carryTrials(h, machine.R7, []int{0, 1}, []int{-10, 0}, h.s.durations.ShortTrialS, h.s.n, journal.OutcomePass)
+			h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: h.s.durations.ShortTrialS, TrialS: h.s.durations.ShortTrialS, Trials: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
+			a := h.s.planGroup(h.s.hunt, groupPlan{cores: []int{0}, set: []int{0, 1}, stage: "probe", duration: h.s.durations.ShortTrialS}, "probe")
 			p := a.Payload.(*journal.HuntGroup)
 			if p.Inferred != "pass" {
-				t.Fatalf("carried group needs a live start: %+v", p)
+				t.Fatalf("carried group needs a live trial: %+v", p)
 			}
 			for _, seq := range facts {
 				if !slices.Contains(a.Cause, seq) {
@@ -156,7 +156,7 @@ func TestCarriedFailureInvalidation(t *testing.T) {
 			if tc.idle {
 				r = machine.R6
 			}
-			d := h.s.durations.StartS
+			d := h.s.durations.ShortTrialS
 			w := machine.Workloads(r)[0].ID
 			k := trialClass{r, w, "[0]", d}
 			carryTrials(h, r, []int{0}, []int{-20}, d, h.s.n, journal.OutcomePass)
@@ -167,7 +167,7 @@ func TestCarriedFailureInvalidation(t *testing.T) {
 				seqs := carryTrials(h, r, []int{0}, []int{-19}, d, 1, journal.OutcomeFailure)
 				failure = h.events[seqs[0]-1]
 			}
-			boundary := h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{r}}).Seq
+			boundary := h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{r}}).Seq
 			if got := h.s.passes(k, []int{-20}, boundary, deepeningEvidence); got != 0 {
 				t.Fatalf("earlier passes survived failure: %d", got)
 			}
@@ -178,7 +178,7 @@ func TestCarriedFailureInvalidation(t *testing.T) {
 				tr := Trial{Regime: r, Workload: w, Core: 0, Cores: []int{0}, Profile: []int{-20}, DurationS: d, Condition: machine.Together}
 				h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
 				if got := h.s.fails(k, []int{-20}, boundary); got != (i+1 < h.s.n) {
-					t.Fatalf("class failing after %d live starts = %t", i+1, got)
+					t.Fatalf("class failing after %d live trials = %t", i+1, got)
 				}
 			}
 			if got := h.s.passes(k, []int{-20}, boundary, deepeningEvidence); got != h.s.n {
@@ -195,11 +195,11 @@ func TestResetClearsCarriedCoreEvidence(t *testing.T) {
 			for _, id := range []int{0, 1} {
 				p := []int{0, 0}
 				p[id] = -20
-				carryTrials(h, machine.R1, []int{id}, p, h.s.durations.StartS, h.s.n, outcome)
+				carryTrials(h, machine.R1, []int{id}, p, h.s.durations.ShortTrialS, h.s.n, outcome)
 			}
 			h.add(&journal.CommandReset{Core: new(0)})
 			for _, id := range []int{0, 1} {
-				k := trialClass{machine.R1, machine.Workloads(machine.R1)[0].ID, fmt.Sprint([]int{id}), h.s.durations.StartS}
+				k := trialClass{machine.R1, machine.Workloads(machine.R1)[0].ID, fmt.Sprint([]int{id}), h.s.durations.ShortTrialS}
 				p := []int{0, 0}
 				p[id] = -20
 				got := h.s.passes(k, p, 0, soloLimitEvidence) > 0
@@ -249,9 +249,9 @@ func TestCarriedSoloLimitEligibility(t *testing.T) {
 
 func TestCarriedFailureEstablishesLaterHuntGroup(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10}, coreStart{phase: journal.PhaseAtLimit, offset: -10})
-	failure := carryTrials(h, machine.R7, []int{0, 1}, []int{-10, 0}, h.s.durations.StartS, 1, journal.OutcomeFailure)[0]
-	start := h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: h.s.durations.StartS, StartS: h.s.durations.StartS, Starts: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
-	a := h.s.planGroup(h.s.hunt, groupPlan{cores: []int{0}, set: []int{0, 1}, stage: "probe", duration: h.s.durations.StartS}, "probe")
+	failure := carryTrials(h, machine.R7, []int{0, 1}, []int{-10, 0}, h.s.durations.ShortTrialS, 1, journal.OutcomeFailure)[0]
+	start := h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: h.s.durations.ShortTrialS, TrialS: h.s.durations.ShortTrialS, Trials: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
+	a := h.s.planGroup(h.s.hunt, groupPlan{cores: []int{0}, set: []int{0, 1}, stage: "probe", duration: h.s.durations.ShortTrialS}, "probe")
 	p := a.Payload.(*journal.HuntGroup)
 	if p.Inferred != "failure" {
 		t.Fatalf("carried failure did not establish later group: %+v", p)
@@ -270,13 +270,13 @@ func TestCarriedFailureEstablishesLaterHuntGroup(t *testing.T) {
 
 func TestCarriedPassMonotonicityWarning(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20})
-	facts := carryTrials(h, machine.R1, []int{0}, []int{-20}, h.s.durations.StartS, h.s.n, journal.OutcomePass)
-	_, failure := h.trial(Action{Kind: RunTrial, Trial: Trial{Core: 0, Offset: -19, Profile: []int{-19}, Condition: machine.Together, Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, DurationS: h.s.durations.StartS}}, failed)
+	facts := carryTrials(h, machine.R1, []int{0}, []int{-20}, h.s.durations.ShortTrialS, h.s.n, journal.OutcomePass)
+	_, failure := h.trial(Action{Kind: RunTrial, Trial: Trial{Core: 0, Offset: -19, Profile: []int{-19}, Condition: machine.Together, Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, DurationS: h.s.durations.ShortTrialS}}, failed)
 	h.decide(h.next())
 	a := h.s.Next()
 	p, ok := a.Payload.(*journal.TunerWarning)
 	if !ok {
-		t.Fatalf("failure did not contradict carried starts: %+v", a)
+		t.Fatalf("failure did not contradict carried trials: %+v", a)
 	}
 	if diff := cmp.Diff(append([]int{failure.Seq}, facts...), a.Cause); diff != "" {
 		t.Fatalf("warning evidence (-want +got):\n%s", diff)
@@ -318,7 +318,7 @@ func TestCarriedPassesDoNotAddSessionExposure(t *testing.T) {
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10})
 			r := machine.R1
 			w := machine.Workloads(r)[0].ID
-			d := h.s.durations.StartS
+			d := h.s.durations.ShortTrialS
 			h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old"}, Class: journal.TrialClass{Regime: r, Workload: w, Cores: []int{0}, DurationS: d}, Condition: condition, Profile: []int{-10}, Outcome: journal.OutcomePass, DurationS: d})
 			boundary := h.add(&journal.ProfileChange{To: []int{-10}}).Seq
 			k := trialClass{r, w, "[0]", d}
@@ -329,7 +329,7 @@ func TestCarriedPassesDoNotAddSessionExposure(t *testing.T) {
 				t.Fatalf("archived observation counted as session exposure: %+v", got)
 			}
 			h.trial(Action{Kind: RunTrial, Trial: Trial{Core: 0, Offset: -10, Regime: r, Workload: w, DurationS: d, Condition: condition, Profile: []int{-10}}}, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: d})
-			want := []journal.ExposureRow{{Regime: r, Workload: w, Starts: 1}}
+			want := []journal.ExposureRow{{Regime: r, Workload: w, Trials: 1}}
 			if diff := cmp.Diff(want, h.s.projectChecking().Exposure); diff != "" {
 				t.Fatalf("live-only exposure (-want +got):\n%s", diff)
 			}
@@ -347,7 +347,7 @@ func TestCarriedFailureSurvivesNewerPreBoundaryLiveFailure(t *testing.T) {
 					r = machine.R6
 				}
 				w := machine.Workloads(r)[0].ID
-				d := h.s.durations.StartS
+				d := h.s.durations.ShortTrialS
 				var carried int
 				if idle {
 					carried = h.add(&journal.FailureCarried{Source: journal.FactSource{Session: "old"}, Class: journal.TrialClass{Regime: machine.R6, Cores: []int{0, 1}}, Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Profile: []int{-9, -4}}).Seq
@@ -361,7 +361,7 @@ func TestCarriedFailureSurvivesNewerPreBoundaryLiveFailure(t *testing.T) {
 				sourceTrial.Profile = []int{-10, -10}
 				h.trial(Action{Kind: RunTrial, Trial: sourceTrial}, failed)
 				source := h.decide(h.next())
-				start := h.add(&journal.HuntStart{Hunt: 1, Failure: source.Seq, Regime: r, Workload: w, Cores: []int{0, 1}, DurationS: d, StartS: d, Starts: h.s.n, Failing: sourceTrial.Profile, Parked: []int{0, -5}, Candidates: []int{0, 1}})
+				start := h.add(&journal.HuntStart{Hunt: 1, Failure: source.Seq, Regime: r, Workload: w, Cores: []int{0, 1}, DurationS: d, TrialS: d, Trials: h.s.n, Failing: sourceTrial.Profile, Parked: []int{0, -5}, Candidates: []int{0, 1}})
 				cores := []int{0, 1}
 				if stage == "probe" {
 					cores = []int{0}

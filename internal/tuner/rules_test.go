@@ -297,7 +297,7 @@ func TestDirectFailureAtZero(t *testing.T) {
 			if tc.condition == machine.Parked {
 				h.add(&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -10})
 				h.add(&journal.ProfileChange{From: tc.profile, To: []int{-10, -10}})
-				h.add(&journal.HuntStart{Hunt: 1, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Starts: 5, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120})
+				h.add(&journal.HuntStart{Hunt: 1, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Trials: 5, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120})
 			}
 			var failure journal.Event
 			if tc.idle {

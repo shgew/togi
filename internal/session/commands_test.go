@@ -61,7 +61,7 @@ func TestResetCore(t *testing.T) {
 	}
 	m := resumed(t, dir, small())
 	in.Machine = m
-	if stop := simulate(t, in); stop.Reason != StopLaps {
+	if stop := simulate(t, in); stop.Reason != StopCycles {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	events := readEvents(t, dir)
@@ -79,8 +79,8 @@ func TestResetCore(t *testing.T) {
 	if c := coreState(t, in, 1); c.Phase != journal.PhaseAtLimit || c.Offset != m.AloneLimit(1) {
 		t.Fatalf("core 1 %+v, want at its limit again at its solo limit %d", c, m.AloneLimit(1))
 	}
-	if st, _ := readMemState(in.state); st.Checking == nil || st.Checking.CleanLaps == 0 {
-		t.Fatalf("checking %+v, want a clean lap again", st.Checking)
+	if st, _ := readMemState(in.state); st.Checking == nil || st.Checking.CleanCycles == 0 {
+		t.Fatalf("checking %+v, want a clean cycle again", st.Checking)
 	}
 }
 
@@ -102,7 +102,7 @@ func TestResetAll(t *testing.T) {
 	if p, ok := archived[len(archived)-1].Data.(*journal.SessionArchived); !ok || p.Session != old || path != filepath.Join("archive", old+".jsonl") {
 		t.Fatalf("archive %s ends with %s", path, archived[len(archived)-1].Msg)
 	}
-	if stop := simulate(t, simInput(dir, resumed(t, dir, small()))); stop.Reason != StopLaps {
+	if stop := simulate(t, simInput(dir, resumed(t, dir, small()))); stop.Reason != StopCycles {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	if s := readEvents(t, dir)[0].Data.(*journal.SessionStart).Session; s == old {
