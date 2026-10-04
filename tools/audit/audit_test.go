@@ -121,7 +121,9 @@ func TestAuditInvariants(t *testing.T) {
 `, true, []finding{{2, "termination"}}},
 		{"no rebuild", `{"seq":2,"boot":"b","kind":"core.phase","core":0}
 `, false, nil},
-		{"rebuilt", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+		{"stale rebuilt snapshot", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores","last_seq"]}
+`, false, nil},
+		{"current rebuilt snapshot disagrees", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
 `, false, []finding{{2, "replay"}}},
 		{"reset clears marks", `{"seq":2,"boot":"b","kind":"core.phase","core":0,"failure_point":-30}
 {"seq":3,"boot":"b","kind":"combination","combination":1,"members":[{"core":0,"offset":-30},{"core":8,"offset":-20}]}
@@ -149,8 +151,18 @@ func TestAuditInvariants(t *testing.T) {
 
 func TestProjectedState(t *testing.T) {
 	t.Parallel()
-	for _, bad := range []bool{false, true} {
-		t.Run(map[bool]string{false: "equal", true: "different"}[bad], func(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		lastSeq int
+		phase   string
+		want    []finding
+	}{
+		{"equal", 1, "checking", nil},
+		{"stale disagreement", 0, "search", nil},
+		{"different sequence", 2, "search", nil},
+		{"current disagreement", 1, "search", []finding{{1, "replay"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(header), 0600); err != nil {
@@ -159,9 +171,7 @@ func TestProjectedState(t *testing.T) {
 			cached := journal.State{Schema: 3, LastSeq: 1, Phase: "checking", Session: &journal.SessionInfo{ID: "test"}, Cores: []journal.CoreState{{Core: 0, CCD: 0, CPUs: []int{0, 1}}, {Core: 8, CCD: 1, CPUs: []int{2, 3}}}}
 			events := handwritten(t, "")
 			cached.Session.Start = events[0].Time
-			if bad {
-				cached.LastSeq = 99
-			}
+			cached.LastSeq, cached.Phase = tc.lastSeq, tc.phase
 			data, err := json.Marshal(cached)
 			if err != nil {
 				t.Fatal(err)
@@ -176,11 +186,7 @@ func TestProjectedState(t *testing.T) {
 			if diff := cmp.Diff(1, count); diff != "" {
 				t.Fatal(diff)
 			}
-			var want []finding
-			if bad {
-				want = []finding{{1, "replay"}}
-			}
-			if diff := cmp.Diff(want, findings(issues)); diff != "" {
+			if diff := cmp.Diff(tc.want, findings(issues)); diff != "" {
 				t.Fatalf("projection (-want +got):\n%s\n%+v", diff, issues)
 			}
 		})

@@ -149,6 +149,17 @@ func auditDirectory(dir string, simulated bool) ([]violation, int, error) {
 			found = append(found, issue)
 			continue
 		}
+		var snapshot struct {
+			LastSeq int `json:"last_seq"`
+		}
+		if err := json.Unmarshal(cached, &snapshot); err != nil {
+			issue.Reason = fmt.Sprintf("decode state.json: %v", err)
+			found = append(found, issue)
+			continue
+		}
+		if snapshot.LastSeq != seq {
+			continue
+		}
 		// History reading intentionally omits configuration. Replay uses the complete
 		// current-ruleset reader instead; older sessions cannot have a current projection.
 		events, _, err = journal.ReadReplay(dir, tuner.Ruleset)

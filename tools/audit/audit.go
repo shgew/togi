@@ -114,6 +114,8 @@ func (a *auditor) foldConclusion(e journal.Event) {
 		// Nonfatal projection warnings may follow the final shutdown.
 		a.lastStop = previous
 	case *journal.StateRebuilt:
-		a.add(e, "replay", "state.rebuilt records disagreement between state.json and journal projection")
+		if !slices.Contains(p.Fields, "last_seq") {
+			a.add(e, "replay", "state.rebuilt records disagreement with a current state.json snapshot")
+		}
 	}
 }
