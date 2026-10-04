@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const Schema = 3
+const Schema = 4
 
 const timeLayout = "2006-01-02T15:04:05.000000000Z"
 
@@ -48,7 +48,7 @@ const (
 	KindCrashDetected   Kind = "crash.detected"
 	KindTunerDecision   Kind = "tuner.decision"
 	KindCorePhase       Kind = "core.phase"
-	KindCheckingLap     Kind = "checking.lap"
+	KindCheckingCycle     Kind = "checking.cycle"
 	KindCheckingStep    Kind = "checking.step"
 	KindHostRanking     Kind = "host.ranking"
 	KindHuntStart       Kind = "hunt.start"
@@ -248,7 +248,7 @@ var payloadTypes = map[Kind]payloadType{
 	KindCrashDetected:   typeOf[CrashDetected](),
 	KindTunerDecision:   typeOf[TunerDecision](),
 	KindCorePhase:       typeOf[CorePhase](),
-	KindCheckingLap:     typeOf[CheckingLap](),
+	KindCheckingCycle:     typeOf[CheckingCycle](),
 	KindCheckingStep:    typeOf[CheckingStep](),
 	KindHostRanking:     typeOf[HostRanking](),
 	KindHuntStart:       typeOf[HuntStart](),

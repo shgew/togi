@@ -383,16 +383,16 @@ func decodeLinesAfter(data []byte, mode readMode, before int) (events []Event, e
 	if end == 0 {
 		return nil, 0, nil
 	}
-	legacy := false
+	schema := Schema
 	if mode != readLive {
 		line, _, _ := bytes.Cut(data, []byte{'\n'})
 		var build Build
 		if err := json.Unmarshal(line, &build); err != nil {
 			return nil, 0, err
 		}
-		legacy = build.Schema < Schema
+		schema = build.Schema
 	}
-	events, err = decodeParts(lineParts(data[:end], runtime.GOMAXPROCS(0), minDecodePart), mode == readHistory, legacy, before)
+	events, err = decodeParts(lineParts(data[:end], runtime.GOMAXPROCS(0), minDecodePart), mode == readHistory, schema, before)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -420,14 +420,14 @@ type decodedPart struct {
 }
 
 // decodeParts decodes parts concurrently, then checks them in line order so the first bad line is the one reported.
-func decodeParts(parts [][]byte, history, legacy bool, before int) ([]Event, error) {
+func decodeParts(parts [][]byte, history bool, schema, before int) ([]Event, error) {
 	decoded := make([]decodedPart, len(parts))
 	if len(parts) == 1 {
-		decoded[0] = decodePart(parts[0], history, legacy)
+		decoded[0] = decodePart(parts[0], history, schema)
 	} else {
 		var wg sync.WaitGroup
 		for i, part := range parts {
-			wg.Go(func() { decoded[i] = decodePart(part, history, legacy) })
+			wg.Go(func() { decoded[i] = decodePart(part, history, schema) })
 		}
 		wg.Wait()
 	}
@@ -459,14 +459,14 @@ func decodeParts(parts [][]byte, history, legacy bool, before int) ([]Event, err
 }
 
 // decodePart decodes lines until the first that fails.
-func decodePart(part []byte, history, legacy bool) decodedPart {
+func decodePart(part []byte, history bool, schema int) decodedPart {
 	var d decodedPart
 	for len(part) > 0 {
 		i := bytes.IndexByte(part, '\n')
 		line := part[:i]
-		if legacy {
+		if schema < Schema {
 			var err error
-			line, err = translateLegacy(line)
+			line, err = translateSchema(line, schema)
 			if err != nil {
 				d.err = err
 				return d
@@ -562,7 +562,7 @@ func ReadForCarry(path string) ([]Event, error) {
 		return nil, fmt.Errorf("read journal %s: %w", path, err)
 	}
 	var events []Event
-	legacy := false
+	schema := Schema
 	for n := 1; ; n++ {
 		line, rest, ok := bytes.Cut(data, []byte{'\n'})
 		if !ok {
@@ -575,7 +575,10 @@ func ReadForCarry(path string) ([]Event, error) {
 			if err := json.Unmarshal(line, &build); err != nil {
 				return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
 			}
-			legacy = build.Schema < Schema
+			schema = build.Schema
+			if schema < 1 || schema > Schema {
+				return nil, fmt.Errorf("journal schema %d cannot be read by schema %d", schema, Schema)
+			}
 		}
 		var env envelope
 		if err := json.Unmarshal(line, &env); err != nil {
@@ -587,16 +590,21 @@ func ReadForCarry(path string) ([]Event, error) {
 		if n == 1 && env.Kind != KindSessionStart {
 			return nil, fmt.Errorf("read journal %s line 1: first event is %s, want %s", path, env.Kind, KindSessionStart)
 		}
-		if legacy {
+		if schema < 3 {
 			if kind := legacyKinds[string(env.Kind)]; kind != "" {
+				env.Kind = Kind(kind)
+			}
+		}
+		if schema < 4 {
+			if kind := cycleKinds[string(env.Kind)]; kind != "" {
 				env.Kind = Kind(kind)
 			}
 		}
 		var p Payload
 		switch {
 		case carryKinds[env.Kind]:
-			if legacy {
-				line, err = translateLegacy(line)
+			if schema < Schema {
+				line, err = translateSchema(line, schema)
 				if err != nil {
 					return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
 				}

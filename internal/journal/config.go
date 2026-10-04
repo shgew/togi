@@ -15,7 +15,7 @@ type ConfigSnapshot struct {
 
 type ConfigDurations struct {
 	SearchTrialS     int `json:"search_trial_s"`
-	StartS           int `json:"start_s"`
+	ShortTrialS           int `json:"short_trial_s"`
 	CheckingTrialS   int `json:"checking_trial_s"`
 	CheckingIdleS    int `json:"checking_idle_s"`
 	CheckingAllCoreS int `json:"checking_all_core_s"`
@@ -27,7 +27,7 @@ type ConfigEvidence struct {
 }
 
 type ConfigChecking struct {
-	Lap []machine.Regime `json:"lap"`
+	Cycle []machine.Regime `json:"cycle"`
 }
 
 type ConfigDeadEnds struct {

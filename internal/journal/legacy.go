@@ -45,8 +45,48 @@ var legacyKindValues = map[string]map[string]map[string]string{
 	"hunt.group": {"stage": {"edge": "probe"}},
 }
 
-// translateLegacy changes the decoded vocabulary, not the recorded schema or provenance.
+// translateLegacy maps schemas one and two to schema-three vocabulary.
 func translateLegacy(line []byte) ([]byte, error) {
+	return translateVocabulary(line, legacyKinds, legacyFields, legacyKindFields, legacyValues, legacyKindValues)
+}
+
+var cycleKinds = map[string]string{"checking.lap": "checking.cycle"}
+
+var cycleFields = map[string]string{
+	"lap": "cycle", "laps": "cycles", "lap_open": "cycle_open",
+	"clean_laps": "clean_cycles", "last_clean_lap": "last_clean_cycle",
+	"starts": "trials",
+}
+
+var cycleKindFields = map[string]map[string]string{
+	"config.loaded":   {"start_s": "short_trial_s"},
+	"hunt.start":      {"start_s": "trial_s"},
+	"deepening.round": {"start_s": "trial_s"},
+}
+
+var cycleKindValues = map[string]map[string]map[string]string{
+	"shutdown": {"reason": {"laps": "cycles"}},
+}
+
+// translateSchema changes decoded vocabulary without changing recorded stamps or messages.
+func translateSchema(line []byte, schema int) ([]byte, error) {
+	var err error
+	if schema < 3 {
+		line, err = translateLegacy(line)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if schema < 4 {
+		line, err = translateVocabulary(line, cycleKinds, cycleFields, cycleKindFields, nil, cycleKindValues)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return line, nil
+}
+
+func translateVocabulary(line []byte, kinds, fields map[string]string, kindFields, values map[string]map[string]string, kindValues map[string]map[string]map[string]string) ([]byte, error) {
 	var body map[string]any
 	decoder := json.NewDecoder(bytes.NewReader(line))
 	decoder.UseNumber()
@@ -57,7 +97,7 @@ func translateLegacy(line []byte) ([]byte, error) {
 		return nil, errors.New("unexpected data after JSON event")
 	}
 	kind, _ := body["kind"].(string)
-	if renamed := legacyKinds[kind]; renamed != "" {
+	if renamed := kinds[kind]; renamed != "" {
 		kind = renamed
 		body["kind"] = kind
 	}
@@ -69,15 +109,15 @@ func translateLegacy(line []byte) ([]byte, error) {
 			for field, child := range value {
 				child = translate(child)
 				if text, ok := child.(string); ok {
-					if renamed := legacyValues[field][text]; renamed != "" {
+					if renamed := values[field][text]; renamed != "" {
 						child = renamed
 					}
-					if renamed := legacyKindValues[kind][field][text]; renamed != "" {
+					if renamed := kindValues[kind][field][text]; renamed != "" {
 						child = renamed
 					}
 				}
-				name := legacyFields[field]
-				if renamed := legacyKindFields[kind][field]; renamed != "" {
+				name := fields[field]
+				if renamed := kindFields[kind][field]; renamed != "" {
 					name = renamed
 				}
 				if name == "" {

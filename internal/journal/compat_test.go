@@ -139,8 +139,8 @@ func TestEvidenceEpochCompatibilityDiagnostics(t *testing.T) {
 		recorded Build
 		want     string
 	}{
-		{"older epoch", Build{Version: "old", Schema: Schema, Ruleset: 7, EvidenceEpoch: 1}, "this journal was written by togi old (schema 3, ruleset 7, evidence epoch 1); this build, togi new, uses evidence epoch 2. togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over."},
-		{"newer epoch", Build{Version: "future", Schema: Schema, Ruleset: 7, EvidenceEpoch: 3}, "this journal was written by togi future (schema 3, ruleset 7, evidence epoch 3); this build, togi new, uses evidence epoch 2. Install togi future to continue this session, or run togi reset --all to archive it and start over."},
+		{"older epoch", Build{Version: "old", Schema: Schema, Ruleset: 7, EvidenceEpoch: 1}, "this journal was written by togi old (schema 4, ruleset 7, evidence epoch 1); this build, togi new, uses evidence epoch 2. togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over."},
+		{"newer epoch", Build{Version: "future", Schema: Schema, Ruleset: 7, EvidenceEpoch: 3}, "this journal was written by togi future (schema 4, ruleset 7, evidence epoch 3); this build, togi new, uses evidence epoch 2. Install togi future to continue this session, or run togi reset --all to archive it and start over."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := Compatible(tc.recorded, binary)

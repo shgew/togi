@@ -70,11 +70,11 @@ const (
 	Unattributed Attribution = "unattributed"
 )
 
-type LapEvent string
+type CycleEvent string
 
 const (
-	LapStart LapEvent = "start"
-	LapEnd   LapEvent = "end"
+	CycleStart CycleEvent = "start"
+	CycleEnd   CycleEvent = "end"
 )
 
 type ShutdownReason string
@@ -82,7 +82,7 @@ type ShutdownReason string
 const (
 	ShutdownSignal  ShutdownReason = "signal"
 	ShutdownDeadEnd ShutdownReason = "dead_end"
-	ShutdownLaps    ShutdownReason = "laps"
+	ShutdownCycles    ShutdownReason = "cycles"
 	ShutdownCommand ShutdownReason = "command"
 )
 
@@ -382,7 +382,7 @@ type TrialIntent struct {
 	Condition  machine.Condition `json:"condition"`
 	Phase      Phase             `json:"phase,omitempty"`
 	Retry      bool              `json:"retry,omitempty"`
-	Lap        int               `json:"lap,omitempty"`
+	Cycle        int               `json:"cycle,omitempty"`
 	Step       int               `json:"step,omitempty"`
 	Hunt       int               `json:"hunt,omitempty"`
 	Group      int               `json:"group,omitempty"`
@@ -411,8 +411,8 @@ func (p *TrialIntent) Message() string {
 	if p.Retry {
 		b.WriteString(" (retry)")
 	}
-	if p.Lap > 0 {
-		fmt.Fprintf(&b, " lap %d", p.Lap)
+	if p.Cycle > 0 {
+		fmt.Fprintf(&b, " cycle %d", p.Cycle)
 	}
 	if p.Step > 0 {
 		fmt.Fprintf(&b, " step %d", p.Step)
@@ -767,9 +767,9 @@ func phaseText(phase Phase) string {
 	return string(phase)
 }
 
-type CheckingLap struct {
-	Lap     int              `json:"lap"`
-	Event   LapEvent         `json:"event"`
+type CheckingCycle struct {
+	Cycle     int              `json:"cycle"`
+	Event   CycleEvent         `json:"event"`
 	Passed  bool             `json:"passed,omitempty"`
 	Full    bool             `json:"full,omitempty"`
 	Missing []string         `json:"missing,omitempty"`
@@ -777,22 +777,22 @@ type CheckingLap struct {
 	Reason  string           `json:"reason,omitempty"`
 }
 
-func (*CheckingLap) Kind() Kind { return KindCheckingLap }
-func (p *CheckingLap) Message() string {
+func (*CheckingCycle) Kind() Kind { return KindCheckingCycle }
+func (p *CheckingCycle) Message() string {
 	switch p.Event {
-	case LapStart:
+	case CycleStart:
 		steps := make([]string, len(p.Steps))
 		for i, r := range p.Steps {
 			steps[i] = string(r)
 		}
-		return fmt.Sprintf("checking lap %d start: %s%s", p.Lap, strings.Join(steps, " "), p.Reason)
-	case LapEnd:
+		return fmt.Sprintf("checking cycle %d start: %s%s", p.Cycle, strings.Join(steps, " "), p.Reason)
+	case CycleEnd:
 		if p.Passed {
-			return fmt.Sprintf("checking lap %d end passed%s", p.Lap, p.Reason)
+			return fmt.Sprintf("checking cycle %d end passed%s", p.Cycle, p.Reason)
 		}
-		return fmt.Sprintf("checking lap %d end, not passed: %s", p.Lap, p.Reason)
+		return fmt.Sprintf("checking cycle %d end, not passed: %s", p.Cycle, p.Reason)
 	}
-	return fmt.Sprintf("checking lap %d %s", p.Lap, p.Event)
+	return fmt.Sprintf("checking cycle %d %s", p.Cycle, p.Event)
 }
 
 type CheckingPartial struct {
@@ -802,7 +802,7 @@ type CheckingPartial struct {
 }
 
 type CheckingStep struct {
-	Lap      int               `json:"lap"`
+	Cycle      int               `json:"cycle"`
 	Step     int               `json:"step"`
 	Profile  []int             `json:"profile"`
 	Partials []CheckingPartial `json:"partials"`
@@ -811,7 +811,7 @@ type CheckingStep struct {
 func (*CheckingStep) Kind() Kind { return KindCheckingStep }
 func (p *CheckingStep) Message() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "checking lap %d R7 step %d starts at current profile %v", p.Lap, p.Step, p.Profile)
+	fmt.Fprintf(&b, "checking cycle %d R7 step %d starts at current profile %v", p.Cycle, p.Step, p.Profile)
 	for _, partial := range p.Partials {
 		if len(partial.Cores) == 0 {
 			fmt.Fprintf(&b, "; CCD %d record-only partial skipped: %s", partial.CCD, partial.Reason)
@@ -933,7 +933,7 @@ func (p *BootLeaveReason) Message() string {
 type Shutdown struct {
 	Reason ShutdownReason `json:"reason"`
 	KernelBoundary
-	Laps int `json:"laps,omitempty"`
+	Cycles int `json:"cycles,omitempty"`
 }
 
 func (*Shutdown) Kind() Kind { return KindShutdown }
@@ -943,11 +943,11 @@ func (p *Shutdown) Message() string {
 		return "stopped by signal"
 	case ShutdownDeadEnd:
 		return "stopped at a dead end"
-	case ShutdownLaps:
-		if p.Laps == 1 {
-			return "every core is at its limit and the profile passed the requested clean lap; stopping"
+	case ShutdownCycles:
+		if p.Cycles == 1 {
+			return "every core is at its limit and the profile passed the requested clean cycle; stopping"
 		}
-		return fmt.Sprintf("every core is at its limit and the profile passed the requested %d clean laps; stopping", p.Laps)
+		return fmt.Sprintf("every core is at its limit and the profile passed the requested %d clean cycles; stopping", p.Cycles)
 	case ShutdownCommand:
 		return "command finished"
 	}

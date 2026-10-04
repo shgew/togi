@@ -58,8 +58,8 @@ type CoreState struct {
 }
 
 type CheckingState struct {
-	Lap          int              `json:"lap"`
-	LapOpen      bool             `json:"lap_open"`
+	Cycle          int              `json:"cycle"`
+	CycleOpen      bool             `json:"cycle_open"`
 	Steps        []machine.Regime `json:"steps"`
 	StepsDone    int              `json:"steps_done"`
 	Profile      []int            `json:"profile"`
@@ -67,8 +67,8 @@ type CheckingState struct {
 	Full         bool             `json:"full"`
 	Missing      []string         `json:"missing"`
 	Exposure     []ExposureRow    `json:"exposure"`
-	CleanLaps    int              `json:"clean_laps"`
-	LastCleanLap int              `json:"last_clean_lap"`
+	CleanCycles    int              `json:"clean_cycles"`
+	LastCleanCycle int              `json:"last_clean_cycle"`
 	TctlMaxC     *int             `json:"tctl_max_c"`
 	TctlMaxSeq   int              `json:"tctl_max_seq"`
 }
@@ -125,7 +125,7 @@ type CheckState struct {
 type ExposureRow struct {
 	Regime   machine.Regime `json:"regime"`
 	Workload string         `json:"workload"`
-	Starts   int            `json:"starts"`
+	Trials   int            `json:"trials"`
 }
 
 type DecisionRef struct {

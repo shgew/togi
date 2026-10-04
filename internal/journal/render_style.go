@@ -50,8 +50,8 @@ func StyleOf(e Event) Style {
 		if p.To == PhaseAtLimit || p.To == PhaseHasRoom && p.From == PhaseSearch {
 			return GreenBold
 		}
-	case *CheckingLap:
-		if p.Event == LapEnd && p.Passed && p.Full {
+	case *CheckingCycle:
+		if p.Event == CycleEnd && p.Passed && p.Full {
 			return GreenBold
 		}
 	case *HuntStart, *Combination, *TunerWarning, *SessionWarning:
@@ -61,7 +61,7 @@ func StyleOf(e Event) Style {
 			return Green
 		}
 	case *DeepeningRound:
-		if p.Event == LapEnd && p.Passed {
+		if p.Event == CycleEnd && p.Passed {
 			return GreenBold
 		}
 	case *BackendRetry:
