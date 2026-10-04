@@ -2,7 +2,7 @@
 # IN-SAMPLE all-facts shared-voltage anchor; NOT forward-validated.
 # The first candidate failed the 2026-10-04 #306 R7 forward bar: 36.0 predicted / 17 observed (>2x).
 # That check was not blind; a future forward claim needs a new blind session.
-# All decisive starts=3297; raw Bernoulli negative_log_likelihood=283.79098647702926
+# All decisive trials=3297; raw Bernoulli negative_log_likelihood=283.79098647702926
 # Checked against every eligible group of the full original extract before writing.
 # Unsupported y-cruncher R7 thresholds: per-core max of AVX2/AVX-512; no hardware evidence.
 # Real-fact replay is enabled by replay=true on a bench suite scenario, not by a machine key.

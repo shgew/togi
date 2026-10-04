@@ -177,7 +177,7 @@ func TestSharedVoltageAnchorCheckedDeterministicAndReplayable(t *testing.T) {
 					t.Fatalf("misleading or unsupported anchor content %q", text)
 				}
 			}
-			if !strings.Contains(stdout.String(), fmt.Sprintf("raw total in-sample log loss %.17g", loss)) || !strings.Contains(stdout.String(), "R7 in-sample (record only): starts=20 observed=10 predicted=") || !strings.Contains(stdout.String(), "ok (1 eligible groups; 1 idle failures") {
+			if !strings.Contains(stdout.String(), fmt.Sprintf("raw total in-sample log loss %.17g", loss)) || !strings.Contains(stdout.String(), "R7 in-sample (record only): trials=20 observed=10 predicted=") || !strings.Contains(stdout.String(), "ok (1 eligible groups; 1 idle failures") {
 				t.Fatalf("missing raw in-sample diagnostics: %s", stdout.String())
 			}
 			candidate := fmt.Sprintf("Shared-voltage candidate (record only): rate=%.17g/s margin_v=%.17g background_rate=%.17g/s", want.SharedVoltage.Rate, want.SharedVoltage.MarginV, want.SharedVoltage.BackgroundRate)
@@ -185,10 +185,10 @@ func TestSharedVoltageAnchorCheckedDeterministicAndReplayable(t *testing.T) {
 				t.Fatalf("missing candidate parameter diagnostics: %s", stdout.String())
 			}
 			_, r7Report, _ := strings.Cut(stdout.String(), "R7 in-sample (record only): ")
-			var starts, observed int
+			var trials, observed int
 			var predicted, r7Loss, r7MeanLoss float64
-			fields, err := fmt.Sscanf(r7Report, "starts=%d observed=%d predicted=%f raw_log_loss=%f log_loss/start=%f", &starts, &observed, &predicted, &r7Loss, &r7MeanLoss)
-			if err != nil || fields != 5 || starts != 20 || observed != 10 || math.Abs(predicted-10) > 1e-10 || math.Abs(r7Loss-loss) > 1e-10 || math.Abs(r7MeanLoss-math.Ln2) > 1e-10 {
+			fields, err := fmt.Sscanf(r7Report, "trials=%d observed=%d predicted=%f raw_log_loss=%f log_loss/trial=%f", &trials, &observed, &predicted, &r7Loss, &r7MeanLoss)
+			if err != nil || fields != 5 || trials != 20 || observed != 10 || math.Abs(predicted-10) > 1e-10 || math.Abs(r7Loss-loss) > 1e-10 || math.Abs(r7MeanLoss-math.Ln2) > 1e-10 {
 				t.Fatalf("incorrect raw R7 diagnostics: %q (%v)", r7Report, err)
 			}
 			if attempt == 0 {
@@ -234,7 +234,7 @@ func TestSharedVoltageAnchorFlaggedFitNeverWrites(t *testing.T) {
 			if code != 1 || !strings.Contains(stderr.String(), "anchor not written") || !strings.Contains(stdout.String(), "flagged (1 eligible groups") || !strings.Contains(stdout.String(), "cores=[0 1 2 3 4 5 6 7] duration=120s depth=-20 n=20 k=10 interval=[0,0] mean_p=") {
 				t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 			}
-			if !strings.Contains(stdout.String(), "All starts in-sample (record only): starts=20 raw total in-sample log loss ") || !strings.Contains(stdout.String(), "R7 in-sample (record only): starts=20 observed=10 predicted=") || strings.Count(stdout.String(), "log_loss/start=") != 2 || strings.Contains(stdout.String(), "Wrote IN-SAMPLE anchor:") {
+			if !strings.Contains(stdout.String(), "All trials in-sample (record only): trials=20 raw total in-sample log loss ") || !strings.Contains(stdout.String(), "R7 in-sample (record only): trials=20 observed=10 predicted=") || strings.Count(stdout.String(), "log_loss/trial=") != 2 || strings.Contains(stdout.String(), "Wrote IN-SAMPLE anchor:") {
 				t.Fatalf("flagged fit lost record-only scores or claimed generation: %s", stdout.String())
 			}
 			if existing {

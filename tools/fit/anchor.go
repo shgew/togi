@@ -27,25 +27,25 @@ func generateSharedVoltageAnchor(extract, out string, stdout io.Writer, fitter s
 	if err != nil {
 		return err
 	}
-	starts, err := decisive(records)
+	trials, err := decisive(records)
 	if err != nil {
 		return err
 	}
-	for _, r := range starts {
+	for _, r := range trials {
 		if len(r.Profile) != 16 {
 			return fmt.Errorf("shared-voltage in-sample fit requires 16 cores: fact %s:%d has %d", r.Session, r.Seq, len(r.Profile))
 		}
 	}
 	// The machine file fills empty context fields with simulator defaults on
 	// load, which would no longer match the facts the model check replayed.
-	if c := starts[0].Context; c == nil || c.BIOSVersion == "" || c.Board == "" || c.CPUModel == "" || c.Microcode == "" || c.BoostLimitMHz == 0 {
+	if c := trials[0].Context; c == nil || c.BIOSVersion == "" || c.Board == "" || c.CPUModel == "" || c.Microcode == "" || c.BoostLimitMHz == 0 {
 		return fmt.Errorf("shared-voltage in-sample fit requires BIOS context with every field set for real-fact replay")
 	}
-	cfg, loss := fitter(starts)
+	cfg, loss := fitter(trials)
 	if cfg.Cores != 16 || cfg.SharedVoltage == nil {
 		return fmt.Errorf("shared-voltage fitter returned a machine without the 16-core shared-voltage model")
 	}
-	cfg.BIOSContext = *starts[0].Context
+	cfg.BIOSContext = *trials[0].Context
 	absExtract, err := filepath.Abs(extract)
 	if err != nil {
 		return fmt.Errorf("resolve extract: %w", err)
@@ -67,7 +67,7 @@ func generateSharedVoltageAnchor(extract, out string, stdout io.Writer, fitter s
 	fmt.Fprintln(stdout, "IN-SAMPLE shared-voltage fit; NOT forward-validated. The 2026-10-04 #306 R7 forward bar failed.")
 	fmt.Fprintf(stdout, "Shared-voltage candidate (record only): rate=%.17g/s margin_v=%.17g background_rate=%.17g/s\n", cfg.SharedVoltage.Rate, cfg.SharedVoltage.MarginV, cfg.SharedVoltage.BackgroundRate)
 	fmt.Fprintln(stdout, "\nModel check (unchanged 99% binomial intervals; full original extract)")
-	fmt.Fprintf(stdout, "%s: %s (%d eligible groups; %d idle failures without start exposure)\n", path, check.Status, len(check.Groups), check.IdleFailures)
+	fmt.Fprintf(stdout, "%s: %s (%d eligible groups; %d idle failures without trial exposure)\n", path, check.Status, len(check.Groups), check.IdleFailures)
 	for _, g := range check.Groups {
 		if g.Flagged {
 			fmt.Fprintf(stdout, "  %s %s cores=%v duration=%ds depth=%d n=%d k=%d interval=[%d,%d] mean_p=%.17g\n", g.Class.Regime, g.Class.Workload, g.Class.Cores, g.Class.DurationS, g.Depth, g.N, g.K, g.Interval[0], g.Interval[1], g.MeanP)
@@ -78,14 +78,14 @@ func generateSharedVoltageAnchor(extract, out string, stdout io.Writer, fitter s
 		return err
 	}
 	var r7Loss, predicted float64
-	var r7Starts, observed int
-	for _, r := range starts {
+	var r7Trials, observed int
+	for _, r := range trials {
 		if r.Class.Regime != machine.R7 {
 			continue
 		}
 		spec := machine.TrialSpec{Regime: r.Class.Regime, Workload: machine.Workload{ID: r.Class.Workload}, Cores: r.Class.Cores, Duration: time.Duration(r.Class.DurationS) * time.Second, Condition: r.Condition}
 		p := m.FailureProbability(r.Profile, spec)
-		r7Starts++
+		r7Trials++
 		predicted += p
 		if r.Outcome == journal.OutcomeFailure {
 			observed++
@@ -94,17 +94,17 @@ func generateSharedVoltageAnchor(extract, out string, stdout io.Writer, fitter s
 			r7Loss -= math.Log1p(-p)
 		}
 	}
-	fmt.Fprintf(stdout, "All starts in-sample (record only): starts=%d raw total in-sample log loss %.17g log_loss/start=%.17g\n", len(starts), loss, loss/float64(len(starts)))
+	fmt.Fprintf(stdout, "All trials in-sample (record only): trials=%d raw total in-sample log loss %.17g log_loss/trial=%.17g\n", len(trials), loss, loss/float64(len(trials)))
 	var r7MeanLoss float64
-	if r7Starts > 0 {
-		r7MeanLoss = r7Loss / float64(r7Starts)
+	if r7Trials > 0 {
+		r7MeanLoss = r7Loss / float64(r7Trials)
 	}
-	fmt.Fprintf(stdout, "R7 in-sample (record only): starts=%d observed=%d predicted=%.17g raw_log_loss=%.17g log_loss/start=%.17g\n", r7Starts, observed, predicted, r7Loss, r7MeanLoss)
+	fmt.Fprintf(stdout, "R7 in-sample (record only): trials=%d observed=%d predicted=%.17g raw_log_loss=%.17g log_loss/trial=%.17g\n", r7Trials, observed, predicted, r7Loss, r7MeanLoss)
 	fmt.Fprintln(stdout, "Unsupported y-cruncher R7 thresholds: per core, max of mprime AVX2 and AVX-512; no hardware evidence.")
 	if check.Status != "ok" {
 		return fmt.Errorf("in-sample shared-voltage fit fails the unchanged model check; anchor not written")
 	}
-	content := encodeSharedVoltageAnchor(cfg, len(starts), loss)
+	content := encodeSharedVoltageAnchor(cfg, len(trials), loss)
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
@@ -116,13 +116,13 @@ func generateSharedVoltageAnchor(extract, out string, stdout io.Writer, fitter s
 	return nil
 }
 
-func encodeSharedVoltageAnchor(cfg sim.Config, starts int, loss float64) []byte {
+func encodeSharedVoltageAnchor(cfg sim.Config, trials int, loss float64) []byte {
 	var b bytes.Buffer
 	fmt.Fprintln(&b, "# Generated by just fit-shared-voltage; do not hand-edit.")
 	fmt.Fprintln(&b, "# IN-SAMPLE all-facts shared-voltage anchor; NOT forward-validated.")
 	fmt.Fprintln(&b, "# The first candidate failed the 2026-10-04 #306 R7 forward bar: 36.0 predicted / 17 observed (>2x).")
 	fmt.Fprintln(&b, "# That check was not blind; a future forward claim needs a new blind session.")
-	fmt.Fprintf(&b, "# All decisive starts=%d; raw Bernoulli negative_log_likelihood=%.17g\n", starts, loss)
+	fmt.Fprintf(&b, "# All decisive trials=%d; raw Bernoulli negative_log_likelihood=%.17g\n", trials, loss)
 	fmt.Fprintln(&b, "# Checked against every eligible group of the full original extract before writing.")
 	fmt.Fprintln(&b, "# Unsupported y-cruncher R7 thresholds: per-core max of AVX2/AVX-512; no hardware evidence.")
 	fmt.Fprintln(&b, "# Real-fact replay is enabled by replay=true on a bench suite scenario, not by a machine key.")
