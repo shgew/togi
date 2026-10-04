@@ -23,7 +23,7 @@
  ■  1 R7 all-core       5 parts       done                   15:25  pass     R2 heavy vector on core 15 at -38
  ■  2 R7 all-core       5 parts       done                   15:23  pass     R2 heavy vector on core 07 at -32
  ■  3 R7 all-core       5 parts       done                   15:21  pass     R2 heavy vector on core 14 at 0 · passed
- ■  4 R2 heavy vector   16 x 2m       done                   15:19  pass     R2 heavy vector on core 06 at -27
+ ■  4 R2 heavy vector   16 x 2m       done · hunt 3          15:19  pass     R2 heavy vector on core 06 at -27
  ■  5 R2 heavy vector   16 x 2m       done                   15:17  pass     R2 heavy vector on core 13 at -22
  ■  6 R2 heavy vector   16 x 2m       done                   15:15  pass     R2 heavy vector on core 05 at -7
  ►  7 R6 idle + bursts  15m           trial 1 of 1           15:13  pass     R2 heavy vector on core 12 at -10

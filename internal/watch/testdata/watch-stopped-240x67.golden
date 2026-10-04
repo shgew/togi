@@ -25,16 +25,16 @@
   ■  1  R7 all-core           2 CCDs · 5 parts        mprime AVX2 36K-248K          5 parts        done                   21:29  cycle    cycle 1 passed, a full cycle of every kind of test
   ■  2  R7 all-core           2 CCDs · 5 parts        mprime AVX-512 36K-248K       5 parts        done                   21:29  pass     R6 idle + bursts on 00-15 · passed · Tctl max 76°C
   ■  3  R7 all-core           2 CCDs · 5 parts        y-cruncher FFTv4 + N63 + VT3  5 parts        done                   21:14  pass     R4 partial load on core 15 at -35 · passed · Tctl max 71°C
-  ■  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m        done                   21:12  pass     rerun of R4 partial load on core 07 at -30 · 5 of 5 passed · Tctl max 76°C
+  ■  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m        done · hunt 3          21:12  pass     rerun of R4 partial load on core 07 at -30 · 5 of 5 passed · Tctl max 76°C
   ■  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m        done                   21:02  backoff  core 07 -31 → -30
   ■  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m        done                   21:02  hunt     #6 done · 3 groups in 20m15s · core 07 named
   ■  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m            done                   21:02  fail     core 07 fails at -31
-  ■  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m        done                   21:02  fail     hunt 6 group 3 · 04-07 at failing offsets · wrong result · core 07 named
+  ■  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m        done · hunts 4-5       21:02  fail     hunt 6 group 3 · 04-07 at failing offsets · wrong result · core 07 named
   ■  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m        done                   21:02  pass     hunt 6 group 2 · 00-06 08-13 15 at failing offsets · 5 of 5 passed · Tctl max 76°C
   ■ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m        done                   20:52  pass     hunt 6 group 1 · 07 at failing offsets · 5 of 5 passed · Tctl max 75°C
   ■ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m        done                   20:42  hunt     #6 started · part 1: 07 at failing offsets, 00-06 08-13 15 parked
   ■ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m        done                   20:42  fail     R4 partial load on core 07 at -31 · corrected hardware error · no core named
-  ■ 13  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m        done                   20:40  pass     R4 partial load on core 14 at 0 · passed · Tctl max 74°C
+  ■ 13  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m        done · hunt 6          20:40  pass     R4 partial load on core 14 at 0 · passed · Tctl max 74°C
   ■ 14  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m            done                   20:38  pass     R4 partial load on core 06 at -27 · passed · Tctl max 63°C
                                                                                                                           20:36  pass     R4 partial load on core 13 at -22 · passed · Tctl max 72°C
                                                                                                                           20:34  pass     R4 partial load on core 05 at -7 · passed · Tctl max 67°C

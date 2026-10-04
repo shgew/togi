@@ -21,11 +21,11 @@
  ■  1 R7 all-core       5 parts       done                   21:29  stop     stopped
  ■  2 R7 all-core       5 parts       done                   21:29  cycle    cycle 1 passed, a full cycle of every
  ■  3 R7 all-core       5 parts       done                   21:29  pass     R6 idle + bursts on 00-15 · passed
- ■  4 R2 heavy vector   16 x 2m       done                   21:14  pass     R4 partial load on core 15 at -35
+ ■  4 R2 heavy vector   16 x 2m       done · hunt 3          21:14  pass     R4 partial load on core 15 at -35
  ■  5 R2 heavy vector   16 x 2m       done                   21:12  pass     rerun of R4 partial load on core 07 at
  ■  6 R2 heavy vector   16 x 2m       done                   21:02  backoff  core 07 -31 → -30
  ■  7 R6 idle + bursts  15m           done                   21:02  hunt     #6 done · 3 groups in 20m15s · core 07
- ■  8 R5 both threads   16 x 2m       done                   21:02  fail     core 07 fails at -31
+ ■  8 R5 both threads   16 x 2m       done · hunts 4-5       21:02  fail     core 07 fails at -31
  ■  9 R1 light          16 x 2m       done                   21:02  fail     hunt 6 group 3 · 04-07 at failing
  +5 more                                                     +191 more
 

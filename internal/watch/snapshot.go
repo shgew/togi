@@ -35,7 +35,7 @@ func Load(dir string) Snapshot {
 func Project(events []journal.Event) Snapshot {
 	var st journal.State
 	t := tuner.New()
-	requirements := requirementRecorder{t: t, intents: map[string]*journal.TrialIntent{}, failed: map[string]tuner.TrialRequirement{}, counts: map[string]trialCount{}}
+	requirements := requirementRecorder{t: t, intents: map[string]*journal.TrialIntent{}, failed: map[string]tuner.TrialRequirement{}, counts: map[string]trialCount{}, steps: map[string]int{}}
 	journal.Replay(events, &st, &requirements, t)
 	t.Project(&st)
 	if st.Session == nil {
@@ -45,7 +45,7 @@ func Project(events []journal.Event) Snapshot {
 	for _, c := range st.Cores {
 		s.order = append(s.order, c.Core)
 	}
-	p := projector{s: &s, st: &st, intents: requirements.intents, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{}, applied: map[int]int{}, tuned: map[int]int{}, solo: map[int]int{}, failures: map[int]*failureView{}, backs: map[int]int{}, sources: map[int]int{}, probes: map[int]bool{}, requirements: requirements.failed, counts: requirements.counts, checkHunts: map[[2]int][]int{}, cycleSteps: map[int][]machine.Regime{}, huntStarts: map[int]huntStartView{}, groups: map[[2]int]*journal.HuntGroup{}}
+	p := projector{s: &s, st: &st, intents: requirements.intents, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{}, applied: map[int]int{}, tuned: map[int]int{}, solo: map[int]int{}, failures: map[int]*failureView{}, backs: map[int]int{}, sources: map[int]int{}, probes: map[int]bool{}, requirements: requirements.failed, counts: requirements.counts, steps: requirements.steps, checkHunts: map[[2]int][]int{}, cycleSteps: map[int][]machine.Regime{}, huntStarts: map[int]huntStartView{}, groups: map[[2]int]*journal.HuntGroup{}}
 	for _, e := range events {
 		p.fold(e)
 	}
@@ -58,6 +58,7 @@ type requirementRecorder struct {
 	intents map[string]*journal.TrialIntent
 	failed  map[string]tuner.TrialRequirement
 	counts  map[string]trialCount
+	steps   map[string]int // the one-based checking step each cycle trial ran in
 }
 
 // trialCount is which trial of its checking part, or else of its requirement, a trial was: index of of.
@@ -79,9 +80,15 @@ func (r *requirementRecorder) Fold(e journal.Event) {
 		}
 		r.counts[d.Trial] = trialCount{req.Trial, req.Needed}
 		if in.Cycle > 0 {
-			if part, ok := cyclePartOf(r.t.CyclePlan(), in.Cycle, in.Step, trialCores(in)); ok {
+			plan := r.t.CyclePlan()
+			if part, ok := cyclePartOf(plan, in.Cycle, in.Step, trialCores(in)); ok {
 				r.counts[d.Trial] = partCount(part, in.RecordOnly)
 			}
+			step := in.Step
+			if step == 0 && plan.Number == in.Cycle {
+				step = plan.Current + 1
+			}
+			r.steps[d.Trial] = step
 		}
 	}
 }
@@ -141,6 +148,7 @@ type projector struct {
 	applied, tuned, solo map[int]int
 	current              *journal.TrialIntent
 	currentBoot          string
+	steps                map[string]int // the one-based checking step each cycle trial ran in
 	huntFail             *failureView
 	failures             map[int]*failureView
 	backs, sources       map[int]int
@@ -180,6 +188,9 @@ func (p *projector) fold(e journal.Event) {
 		p.solo = map[int]int{}
 	case *journal.ConfigLoaded:
 		p.configs++
+	case *journal.SMUIntent:
+		// A write after a restoration means the hardware no longer holds what was restored.
+		p.restored = false
 	case *journal.SMUReadback:
 		p.applied[d.Core] = d.Offset
 	case *journal.ProfileRestored:
@@ -218,7 +229,11 @@ func (p *projector) fold(e journal.Event) {
 		}
 	case *journal.CorePhase:
 		p.tuned[d.Core] = d.Offset
-		if d.From == journal.PhaseSearch && d.To != journal.PhaseSearch {
+		switch {
+		case d.To == journal.PhaseSearch:
+			// A reset core searches again; its old solo limit no longer holds.
+			delete(p.solo, d.Core)
+		case d.From == journal.PhaseSearch:
 			p.solo[d.Core] = d.Offset
 		}
 	case *journal.TunerDecision:
@@ -254,7 +269,7 @@ func (p *projector) fold(e journal.Event) {
 		s.shapes[d.Hunt] = huntShape{failing: d.Failing, parked: d.Parked}
 		p.huntFail = p.failures[d.Failure]
 		if in := p.intents[d.Trial]; in != nil && in.Cycle > 0 {
-			key := [2]int{in.Cycle, in.Step}
+			key := [2]int{in.Cycle, p.steps[d.Trial]}
 			p.checkHunts[key] = append(p.checkHunts[key], d.Hunt)
 		}
 	case *journal.HuntGroup:
@@ -475,7 +490,8 @@ func (p *projector) coreViews(t *tuner.State, turns []tuner.SearchTurn) {
 		p.trialRole(&v, i)
 		if p.s.hunt != nil {
 			for _, g := range p.s.hunt.groups {
-				if (g.outcome == "failure" || g.outcome == "fail") && slices.Contains(g.cores, c.Core) && i < len(g.profile) && !slices.Contains(v.groupFails, g.profile[i]) {
+				member := slices.Contains(g.cores, c.Core) || g.probe != nil && g.probe.Core == c.Core
+				if (g.outcome == "failure" || g.outcome == "fail") && member && i < len(g.profile) && !slices.Contains(v.groupFails, g.profile[i]) {
 					v.groupFails = append(v.groupFails, g.profile[i])
 				}
 			}

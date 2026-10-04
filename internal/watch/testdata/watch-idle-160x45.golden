@@ -29,7 +29,7 @@
   ■  1 R7 all-core       2 CCDs · 5 parts    5 parts       done                   15:23  pass     R2 heavy vector on core 07 at -32 · passed · Tctl max 73°C
   ■  2 R7 all-core       2 CCDs · 5 parts    5 parts       done                   15:21  pass     R2 heavy vector on core 14 at 0 · passed · Tctl max 62°C
   ■  3 R7 all-core       2 CCDs · 5 parts    5 parts       done                   15:19  pass     R2 heavy vector on core 06 at -27 · passed · Tctl max 71°C
-  ■  4 R2 heavy vector   one core at a time  16 x 2m       done                   15:17  pass     R2 heavy vector on core 13 at -22 · passed · Tctl max 76°C
+  ■  4 R2 heavy vector   one core at a time  16 x 2m       done · hunt 3          15:17  pass     R2 heavy vector on core 13 at -22 · passed · Tctl max 76°C
   ■  5 R2 heavy vector   one core at a time  16 x 2m       done                   15:15  pass     R2 heavy vector on core 05 at -7 · passed · Tctl max 74°C
   ■  6 R2 heavy vector   one core at a time  16 x 2m       done                   15:13  pass     R2 heavy vector on core 12 at -10 · passed · Tctl max 71°C
   ►  7 R6 idle + bursts  all cores idle      15m           trial 1 of 1           15:11  pass     R2 heavy vector on core 04 at -32 · passed · Tctl max 73°C
