@@ -733,10 +733,11 @@ func (e entry) sentenceParts() (string, string, string) {
 	return e.text, "", ""
 }
 
-// tally counts merged trials against what their part or requirement needs: "4 of 4", "trials 1-3 of 4".
+// tally counts merged trials against what their part or requirement needs: "4 of 4", "trials 1-3 of 4". Passes that
+// run past the requirement, as when a failure leaves earlier passes standing, are only counted.
 func (e entry) tally() string {
 	switch {
-	case e.of == 0 || e.of == 1 && e.runs == 1:
+	case e.of == 0 || e.of == 1 && e.runs == 1 || e.first+e.runs-1 > e.of:
 		return fmt.Sprint(e.runs)
 	case e.first == 1 && e.runs == e.of:
 		return fmt.Sprintf("%d of %d", e.runs, e.of)

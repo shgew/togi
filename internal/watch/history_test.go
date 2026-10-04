@@ -261,3 +261,22 @@ func TestHistoryGroupsCarriedAnswersWithoutHidingOutcomeChanges(t *testing.T) {
 		t.Fatalf("carried group answers (-want +got):\n%s", diff)
 	}
 }
+
+func TestTallyNeverCountsPastTheRequirement(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		first, runs, of int
+		want            string
+	}{
+		{1, 4, 4, "4 of 4"},
+		{1, 3, 4, "trials 1-3 of 4"},
+		{2, 1, 4, "trial 2 of 4"},
+		{2, 4, 5, "trials 2-5 of 5"},
+		{2, 5, 5, "5"},
+		{1, 1, 1, "1"},
+	} {
+		if got := (entry{first: tc.first, runs: tc.runs, of: tc.of}).tally(); got != tc.want {
+			t.Errorf("first %d, runs %d, of %d: %q, want %q", tc.first, tc.runs, tc.of, got, tc.want)
+		}
+	}
+}
