@@ -129,7 +129,7 @@ func TestCheckRecordsRefusesInvalidMachine(t *testing.T) {
 	}
 }
 
-func TestCheckerRefusesMalformedStarts(t *testing.T) {
+func TestCheckerRefusesMalformedTrials(t *testing.T) {
 	valid := trialfacts.Record{Session: "extract", Seq: 7, Kind: facts.TrialFact, Outcome: journal.OutcomePass, Profile: []int{0, 0}, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
 	for _, tc := range []struct {
 		name   string

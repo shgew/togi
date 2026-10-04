@@ -4,14 +4,14 @@ You are an autonomous researcher working on togi, a Go CLI that finds per-core C
 
 ## The metric
 
-`just forward` runs only the [forward-chained check](../../docs/benchmarking.md#forward-chained-check): for each real session after the first, it fits the earlier sessions' decisive starts and scores the held-out session. It writes no machine files. `--seal 1` leaves the newest session out entirely; it is the confirmation set, the way the bench keeps a holdout split.
+`just forward` runs only the [forward-chained check](../../docs/benchmarking.md#forward-chained-check): for each real session after the first, it fits the earlier sessions' decisive trials and scores the held-out session. It writes no machine files. `--seal 1` leaves the newest session out entirely; it is the confirmation set, the way the bench keeps a holdout split.
 
 `just fit` and `just forward` run independent fits in parallel, bounded by `--jobs` (default: CPU count). Use `--jobs 1` for serial execution or the same explicit worker count for reference and candidate timing comparisons. Worker count does not change the samples, machine files or report order.
 
-- **Primary:** the `Pooled` `log_loss/start fit` of `just forward --seal 1`. Lower is better. The `constant` predictor's pooled loss on the same line is the bar a useful model must clear.
+- **Primary:** the `Pooled` `log_loss/trial fit` of `just forward --seal 1`. Lower is better. The `constant` predictor's pooled loss on the same line is the bar a useful model must clear.
 - **F1, surprises:** the pooled `failures_p<0.01` must not rise. These are failures the model called nearly impossible; a lower loss bought with more of them hides blind spots.
 - **F2, calibration:** the pooled `|ln(predicted / failures)|` must not rise. Log loss alone can improve while the model predicts several times too many failures.
-- **F3, breadth:** the fit loss must improve in a majority of the unsealed held-out sessions. The largest session holds about half of the unsealed starts and must not decide alone.
+- **F3, breadth:** the fit loss must improve in a majority of the unsealed held-out sessions. The largest session holds about half of the unsealed trials and must not decide alone.
 - **F4, in-sample check:** after the sealed confirmation, `just fit --out runs/fit-<n>` reports `ok` for the all-facts fit and every bootstrap member. This fits the full extract, so it is a finalization check, not feedback for dev experiments. The bench's `target` scenario relies on that check.
 - **F5, opt-in structure:** with the committed machine files, `just bench --split all --baseline tools/bench/baseline.jsonl` pairs every run `equal`. A machine file that does not set a new key behaves exactly as before, so the default machine, the hand-written scenarios and the committed fits keep their meaning until they are regenerated.
 
@@ -57,8 +57,8 @@ Breaking any rule invalidates an experiment, however good its loss looks.
 
 ## The loop
 
-1. **Hypothesis.** Write one falsifiable sentence naming the structure, the held-out starts it should explain and the expected effect. Example: a smooth per-CCD R7 hazard in place of memorized joints should turn most of the ruleset-4 R7 failures now at p < 0.01 into expected ones without predicting more than twice the observed R7 failures.
-2. **Bound it before building it.** Use the per-regime rows of `runs/<best>.txt` to see where predicted and observed failures diverge. If the starts the idea targets cannot move the pooled loss by more than 0.005 per start, pick another idea.
+1. **Hypothesis.** Write one falsifiable sentence naming the structure, the held-out trials it should explain and the expected effect. Example: a smooth per-CCD R7 hazard in place of memorized joints should turn most of the ruleset-4 R7 failures now at p < 0.01 into expected ones without predicting more than twice the observed R7 failures.
+2. **Bound it before building it.** Use the per-regime rows of `runs/<best>.txt` to see where predicted and observed failures diverge. If the trials the idea targets cannot move the pooled loss by more than 0.005 per trial, pick another idea.
 3. **Implement the smallest change** that tests the hypothesis, in one commit. Run the required tests.
 4. **Score:** `just forward --seal 1 > runs/<n>.txt`.
 5. **Decide.** Keep only if the primary metric improves and F1–F3 hold. At confirmation, obtain the unchanged reference with `(cd runs/reference && just forward) > runs/0000-sealed.txt`, then confirm with `just forward > runs/<n>-sealed.txt`. Check F4 with `just fit --out runs/fit-<n>` and F5 with the bench. These full-extract checks are permitted only at this stage. Discard a failed confirmation like a loss, restoring only the experiment's changes; do not tune against its sealed results.
@@ -67,7 +67,7 @@ Breaking any rule invalidates an experiment, however good its loss looks.
 
 ## Ideas and limits
 
-The planned model changes in #306 are the starting queue: a structured single-core hazard with per-core intercepts shrunk toward a shared mean, workload effects shared across cores and one limit for alone and together starts; and a smooth hazard per loaded CCD for R7. A throwaway prototype of both reached a pooled loss of 0.195 with 5 surprises on all four held-out sessions, but predicted 295.5 failures against 107, almost all from R7: F2 exists for that case.
+The planned model changes in #306 are the starting queue: a structured single-core hazard with per-core intercepts shrunk toward a shared mean, workload effects shared across cores and one limit for alone and together trials; and a smooth hazard per loaded CCD for R7. A throwaway prototype of both reached a pooled loss of 0.195 with 5 surprises on all four held-out sessions, but predicted 295.5 failures against 107, almost all from R7: F2 exists for that case.
 
 R7 evidence is partly contradictory: 35 of 84 R7 failures have a pass at an equal-or-deeper full profile with the same loaded cores. A model that explains R7 by making a deeper offset safer, or by a variable the extract does not record, needs a stated physical argument. Record the argument and the data that would decide it, such as the targeted hardware probes in #306, rather than fitting around it.
 

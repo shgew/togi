@@ -142,18 +142,18 @@ func TestGenerateWritesCheckedReproducibleEnsemble(t *testing.T) {
 					if !ok {
 						continue
 					}
-					var starts int
+					var trials int
 					var loss float64
-					if fields, err := fmt.Sscanf(evidence, "%d starts; negative log likelihood %f", &starts, &loss); err != nil || fields != 2 {
+					if fields, err := fmt.Sscanf(evidence, "%d trials; negative log likelihood %f", &trials, &loss); err != nil || fields != 2 {
 						continue
 					}
 					wantLoss := -float64(failures)*math.Log(prediction) - float64(12-failures)*math.Log1p(-prediction)
-					if starts != 12 || math.Abs(loss-wantLoss) > 0.0001 {
-						t.Fatalf("member %d resampled likelihood = %d starts, %g; want 12 starts, %g", n, starts, loss, wantLoss)
+					if trials != 12 || math.Abs(loss-wantLoss) > 0.0001 {
+						t.Fatalf("member %d resampled likelihood = %d trials, %g; want 12 trials, %g", n, trials, loss, wantLoss)
 					}
 					found = true
 				}
-				if !found || !strings.Contains(report.String(), path+": ok (1 eligible groups; 0 idle failures without start exposure)") {
+				if !found || !strings.Contains(report.String(), path+": ok (1 eligible groups; 0 idle failures without trial exposure)") {
 					t.Fatalf("missing fit evidence: %s", report.String())
 				}
 			}
@@ -236,7 +236,7 @@ func TestGenerateConstrainedRefitsMatchSerial(t *testing.T) {
 				if !ok {
 					continue
 				}
-				if fields, err := fmt.Sscanf(evidence, "30 starts; negative log likelihood %f", &loss); err == nil && fields == 1 {
+				if fields, err := fmt.Sscanf(evidence, "30 trials; negative log likelihood %f", &loss); err == nil && fields == 1 {
 					found = true
 				}
 			}
@@ -274,7 +274,7 @@ func TestGenerateRefusesMissingOrNondecisiveEvidence(t *testing.T) {
 		if err := os.WriteFile(extract, compressed.Bytes(), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := generate(extract, out, 263, 0, 2, &output); err == nil || err.Error() != "extract has no decisive starts" {
+		if err := generate(extract, out, 263, 0, 2, &output); err == nil || err.Error() != "extract has no decisive trials" {
 			t.Fatalf("empty extract: %v", err)
 		}
 		if _, err := os.Stat(out); !os.IsNotExist(err) {
@@ -360,7 +360,7 @@ func TestRunForwardOnly(t *testing.T) {
 		code   int
 		output string
 	}{
-		{[]string{"--forward-only"}, 0, "20260102T000000Z ruleset=0 training_sessions=1: starts=1 failures=1"},
+		{[]string{"--forward-only"}, 0, "20260102T000000Z ruleset=0 training_sessions=1: trials=1 failures=1"},
 		{[]string{"--forward-only", "--seal", "1"}, 1, "fit: --seal 1 leaves no held-out session to score (1 held out)"},
 		{[]string{"--seal", "1"}, 2, "only with --forward-only"},
 		{[]string{"--forward-only", "--seal", "-1"}, 2, "nonnegative --seal"},

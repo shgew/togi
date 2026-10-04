@@ -32,8 +32,8 @@ func TestTransitionSummaryTracksSoloLimitCheckState(t *testing.T) {
 			add(&journal.TunerDecision{Core: 0, Decision: journal.CheckSoloLimit})
 			add(&journal.TrialIntent{Core: new(0), Phase: journal.PhaseSearch})
 			demo := summarizeTransition(events)
-			if demo.soloLimitStarts != 3 {
-				t.Fatalf("live solo-limit-check starts = %d, want 3 (not the ordinary search start)", demo.soloLimitStarts)
+			if demo.soloLimitTrials != 3 {
+				t.Fatalf("live solo-limit-check trials = %d, want 3 (not the ordinary search start)", demo.soloLimitTrials)
 			}
 		})
 	}
@@ -50,17 +50,17 @@ func TestTransitionSummaryCountsCarriedAnswerBeforeClearingSoloLimit(t *testing.
 			{Seq: 3, Cause: []int{2, 1}, Data: &journal.CorePhase{Core: 0, From: journal.PhaseSearch, To: journal.PhaseHasRoom}},
 			{Seq: 4, Data: &journal.CorePhase{Core: 0, From: journal.PhaseHasRoom, To: journal.PhaseSearch}},
 			{Seq: 5, Data: &journal.TrialIntent{Core: new(0), Phase: journal.PhaseSearch}},
-			{Seq: 6, Data: &journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true}},
+			{Seq: 6, Data: &journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true}},
 		}
 		demo := summarizeTransition(events)
-		if demo.answered != 1 || len(demo.decisions) != 1 || demo.decisions[0].Seq != 3 || demo.soloLimitStarts != 0 {
+		if demo.answered != 1 || len(demo.decisions) != 1 || demo.decisions[0].Seq != 3 || demo.soloLimitTrials != 0 {
 			t.Fatalf("carried solo-limit answer lost or check retained: %+v", demo)
 		}
 		var out bytes.Buffer
 		if err := renderTransition(&out, demo); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(out.String(), "candidate-solo-limit completions citing carried passes: 1\nlive solo-limit-check starts: 0\n") {
+		if !strings.Contains(out.String(), "candidate-solo-limit completions citing carried passes: 1\nlive solo-limit-check trials: 0\n") {
 			t.Fatalf("summary reports incorrect counts:\n%s", out.String())
 		}
 	}

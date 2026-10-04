@@ -114,7 +114,7 @@ func TestRerunsGroupRecordedObligation(t *testing.T) {
 		}
 		add(&journal.TrialEnd{Trial: id, Outcome: result})
 	}
-	want := [][]string{{"laps", "started", "0"}, {"laps", "ended", "0"}, {"full", "laps", "0"}, {"reruns", "2"}, {"reruns", "failing", "first", "start", "1"}}
+	want := [][]string{{"cycles", "started", "0"}, {"cycles", "ended", "0"}, {"full", "cycles", "0"}, {"reruns", "2"}, {"reruns", "failing", "first", "trial", "1"}}
 	if diff := cmp.Diff(want, reportRows(t, events, "Checking")); diff != "" {
 		t.Fatal(diff)
 	}
@@ -166,7 +166,7 @@ func TestIdleCrashInvalidatesAllCoreR6PriorPasses(t *testing.T) {
 			intent := func(id string, hunt int) *journal.TrialIntent {
 				return &journal.TrialIntent{Trial: id, Hunt: hunt, Group: hunt, Regime: tc.regime, Cores: tc.loaded, Profile: []int{-10, -10}, Workload: "load", DurationS: 120}
 			}
-			payloads := []journal.Payload{&journal.SessionStart{Cores: cores}, intent("pass", 0), &journal.TrialEnd{Trial: "pass", Outcome: journal.OutcomePass}, &journal.Failure{Signal: machine.Crash, Profile: tc.profile}, &journal.HuntStart{Hunt: 1, Starts: 1}, &journal.HuntGroup{Hunt: 1, Group: 1, Stage: "part"}, intent("group", 1)}
+			payloads := []journal.Payload{&journal.SessionStart{Cores: cores}, intent("pass", 0), &journal.TrialEnd{Trial: "pass", Outcome: journal.OutcomePass}, &journal.Failure{Signal: machine.Crash, Profile: tc.profile}, &journal.HuntStart{Hunt: 1, Trials: 1}, &journal.HuntGroup{Hunt: 1, Group: 1, Stage: "part"}, intent("group", 1)}
 			var events []journal.Event
 			for i, payload := range payloads {
 				events = append(events, journal.Event{Seq: i + 1, Boot: "a", Time: time.Unix(int64(i), 0), Data: payload})

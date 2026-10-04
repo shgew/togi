@@ -27,8 +27,8 @@ func TestMetrics(t *testing.T) {
 	add(0.3, &journal.TrialEnd{Trial: "1", DurationS: 90, Outcome: journal.OutcomePass})
 	add(0.4, &journal.CrashDetected{})
 	add(0.5, &journal.TrialEnd{Trial: "2", DurationS: 30, Outcome: journal.OutcomeFailure})
-	add(1, &journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true})
-	add(1.1, &journal.CheckingLap{Lap: 2, Event: journal.LapEnd, Passed: true})
+	add(1, &journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true})
+	add(1.1, &journal.CheckingCycle{Cycle: 2, Event: journal.CycleEnd, Passed: true})
 	add(1.4, &journal.HuntStart{Hunt: 1, Parked: []int{-10, -11}, Candidates: []int{0, 1}})
 	add(1.5, &journal.Combination{Combination: 1, Members: []journal.CombinationMember{{Core: 0, Offset: -12}, {Core: 1, Offset: -12}}})
 	add(2, &journal.ProfileApplied{Offsets: []int{0, 0}, Condition: machine.Parked})
@@ -41,12 +41,12 @@ func TestMetrics(t *testing.T) {
 	for _, regime := range machine.Regimes {
 		hazards[regime] = 0.108
 	}
-	want := result{SimHours: 2, FirstPassedLapH: new(1.0), PassedLaps: 2, Crashes: 1, Trials: 2, TrialHours: 120.0 / 3600, Hunts: 1, Combinations: 1, FinalProfile: []int{-10, -11}, Depth: -21, HazardPerH: hazards, HazardMaxPerH: 0.108}
+	want := result{SimHours: 2, FirstPassedCycleH: new(1.0), PassedCycles: 2, Crashes: 1, Trials: 2, TrialHours: 120.0 / 3600, Hunts: 1, Combinations: 1, FinalProfile: []int{-10, -11}, Depth: -21, HazardPerH: hazards, HazardMaxPerH: 0.108}
 	if diff := cmp.Diff(want, got, approx); diff != "" {
 		t.Fatalf("metrics (-want +got):\n%s", diff)
 	}
 	got = metrics(events[:6], m, 2)
-	if diff := cmp.Diff((*float64)(nil), got.FirstPassedLapH); diff != "" {
+	if diff := cmp.Diff((*float64)(nil), got.FirstPassedCycleH); diff != "" {
 		t.Fatal(diff)
 	}
 }

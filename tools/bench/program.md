@@ -4,7 +4,7 @@ You are an autonomous researcher working on togi, a Go CLI that finds per-core C
 
 ## What conclusion means
 
-A session concludes when every core is at its limit, deepening can reach no more total depth, and a clean lap supports the resulting profile. Eligible earlier uncontradicted laps can supply that evidence. `tools/sim` stops at that point. Time to conclusion is simulated time from `session.start` to the last event, including the 90 s charged for each crash reboot. A full lap records tested coverage, not a guarantee of future stability.
+A session concludes when every core is at its limit, deepening can reach no more total depth, and a clean cycle supports the resulting profile. Eligible earlier uncontradicted cycles can supply that evidence. `tools/sim` stops at that point. Time to conclusion is simulated time from `session.start` to the last event, including the 90 s charged for each crash reboot. A full cycle records tested coverage, not a guarantee of future stability.
 
 ## Setup
 
@@ -35,7 +35,7 @@ Everything else is frozen for tuner experiments, especially:
 
 A simulator or machine-file change is an evaluation change, not a tuner experiment. Record ideas needing frozen files in the report for a separate owner decision.
 
-The defaults in `internal/config` are frozen too, and so is the evidence they ask for (the next section's **Evidence volume** rule). Trading evidence for time is safe only when the simulator predicts failures at depths the journal has not tested. The forward-chained check in `just fit` ([benchmarking](../../docs/benchmarking.md#forward-chained-check)) shows that it does not yet: the fit predicts later sessions worse than a constant failure rate. V2 judges hazard from that same simulator, so it cannot catch a shorter trial or fewer starts that miss a real failure. The owner lifts this freeze here, in a separate pull request, once the forward-chained check supports it.
+The defaults in `internal/config` are frozen too, and so is the evidence they ask for (the next section's **Evidence volume** rule). Trading evidence for time is safe only when the simulator predicts failures at depths the journal has not tested. The forward-chained check in `just fit` ([benchmarking](../../docs/benchmarking.md#forward-chained-check)) shows that it does not yet: the fit predicts later sessions worse than a constant failure rate. V2 judges hazard from that same simulator, so it cannot catch a shorter trial or fewer trials that miss a real failure. The owner lifts this freeze here, in a separate pull request, once the forward-chained check supports it.
 
 After new real target-machine runs, the owner can refresh the privacy-safe extract with `just facts COPY-OF-STATE-DIR` and refit with `just fit`. Use a temporary copy, never the live state directory. These are owner-triggered evidence updates, not experiments: review their model checks and record a new baseline before comparing tuners in the changed environment. See [benchmarking](../../docs/benchmarking.md) for fitting limits and the checked, constrained bootstrap ensemble.
 
@@ -47,7 +47,7 @@ Breaking any rule invalidates an experiment, however good its ratio looks.
 - **Traceable and deterministic.** Every new decision is a journal event with a cause and a plain-language `msg`, as the journal spec requires. Replaying the journal gives the same decisions.
 - **Safe writes.** Offsets stay clamped to [-50, 0] and pass failure point or combination validation, including intermediate SMU writes.
 - **Failure detection stays intact.** Failures remain evidence under the spec's coverage and supersession rules. Never ignore, retry away or reclassify a failure to save time.
-- **Evidence volume.** Preserve the spec's start requirements: one R1 and one R2 start for an ordinary search step; the decisive starts set by `[evidence]` miss and rate for candidate-solo-limit checks, hunt groups, deepening checks and rerun obligations. Each trial runs for its configured duration from `[durations]`, and a full lap runs every regime start in `lap = [...]` in `[checking]`. A change may reorder these starts, skip work the spec already allows to be skipped, or avoid redundant trials. It may not ask for fewer starts, shorter trials or a smaller lap, whether through configuration or through tuner code.
+- **Evidence volume.** Preserve the spec's trial requirements: one R1 and one R2 trial for an ordinary search step; the decisive trials set by `[evidence]` miss and rate for candidate-solo-limit checks, hunt groups, deepening checks and rerun obligations. Each trial runs for its configured duration from `[durations]`, and a full cycle runs every regime trial in `cycle = [...]` in `[checking]`. A change may reorder these trials, skip work the spec already allows to be skipped, or avoid redundant trials. It may not ask for fewer trials, shorter trials or a smaller cycle, whether through configuration or through tuner code.
 - **Tests pass.** Run `go test ./internal/tuner/ ./internal/simrun/ ./cmd/togi/` before each candidate bench run. Update tests for deliberately changed rules; remove tests that only pin obsolete implementation behavior. Run `just gate` before keeping a commit and `just check` before opening a pull request.
 - **Proof has three parts.** A kept change wins the bench, preserves every guardrail and bases target-machine claims on fitted files that pass the model check against real facts. The harness prints model flags but does not reject the verdict or change exit status for them: inspect them separately. A flagged target member blocks the target claim even if the verdict says ACCEPT.
 - **No ruleset bump per experiment.** One bump covers the kept decision changes when they become pull requests; follow `AGENTS.md`'s breaking-pull-request and release rules. Recheck the final work before opening it. Agents open pull requests; the owner merges and deploys manually.
@@ -58,11 +58,11 @@ Breaking any rule invalidates an experiment, however good its ratio looks.
 
 Secondary measures are crashes, trials and hunts. At equal time, prefer fewer crashes; simulated reboot time already contributes to the primary metric.
 
-The `target` scenario uses `target-fit-0.toml` (all decisive starts) and eight whole-trial bootstrap refits. Each member is checked against the original extract. Its replay oracle draws a real outcome when the whole applied profile and trial class match same-BIOS facts; otherwise it uses the fitted member. The tuner sees only the resulting journal. Record candidate and baseline `real_answer_share` from the verdict: the share measures direct real-fact coverage of the path, not confidence. Hazard metrics and model checks describe the fitted fallback, not an empirical oracle hazard.
+The `target` scenario uses `target-fit-0.toml` (all decisive trials) and eight whole-trial bootstrap refits. Each member is checked against the original extract. Its replay oracle draws a real outcome when the whole applied profile and trial class match same-BIOS facts; otherwise it uses the fitted member. The tuner sees only the resulting journal. Record candidate and baseline `real_answer_share` from the verdict: the share measures direct real-fact coverage of the path, not confidence. Hazard metrics and model checks describe the fitted fallback, not an empirical oracle hazard.
 
 ## The loop
 
-1. **Hypothesis.** Write one falsifiable sentence naming the mechanism, scenarios it should help and expected size. Example: starting a checking lap with the last failed regime should reduce wasted coverage before the next failure on `target` without slowing `default`.
+1. **Hypothesis.** Write one falsifiable sentence naming the mechanism, scenarios it should help and expected size. Example: starting a checking cycle with the last failed regime should reduce wasted coverage before the next failure on `target` without slowing `default`.
 2. **Bound it before building it.** Run `just bench --split dev --baseline runs/best.jsonl --keep runs/dirs` on the current best. Use the printed `runs/dirs/bench-*/<scenario>/dev-<seed>` directories with `just stats --state-dir DIRECTORY`. Measure how much time the mechanism could save; if the bound is under 3% of that scenario's time, pick another idea.
 3. **Implement the smallest change** that tests the hypothesis, in one commit. Run the required scoped tests.
 4. **Run dev** against the current best: `just bench --split dev --baseline runs/best.jsonl --out runs/<n>.jsonl --keep runs/experiment-<n>`. Require complete pairing and passing target model checks. Seeds are deterministic; rerunning the same commit cannot improve its draw.
@@ -75,7 +75,7 @@ For a run error, inspect its kept simulator log. Fix a trivial implementation er
 
 ## Ideas and model limits
 
-Measure where the current runs spend time rather than trusting old tables. Possible mechanisms include fewer hunt groups, checking order, evidence reuse allowed by the spec, fewer redundant combination-backoff probes, and search or deepening step sizes. Shorter trials, fewer starts and earlier stopping are frozen under **Evidence volume**; record such ideas in the report with their measured bound.
+Measure where the current runs spend time rather than trusting old tables. Possible mechanisms include fewer hunt groups, checking order, evidence reuse allowed by the spec, fewer redundant combination-backoff probes, and search or deepening step sizes. Shorter trials, fewer trials and earlier stopping are frozen under **Evidence volume**; record such ideas in the report with their measured bound.
 
 ADR 0023 rejected probing the shallowest member first, always backing off the shallowest member, moving every member to its passing probe, and reusing member-probe evidence across hunts. Revisit these only with a new argument.
 

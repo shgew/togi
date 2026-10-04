@@ -248,6 +248,40 @@ func TestRunFrameRetainsRecordedClock(t *testing.T) {
 	}
 }
 
+func TestRunFrameCurrentRulesetAllSchemas(t *testing.T) {
+	t.Parallel()
+	for schema := 1; schema <= 4; schema++ {
+		t.Run(fmt.Sprintf("schema %d", schema), func(t *testing.T) {
+			kind, cycleKey := "checking.lap", "lap"
+			if schema == 4 {
+				kind, cycleKey = "checking.cycle", "cycle"
+			}
+			data := fmt.Sprintf("{\"seq\":1,\"time\":\"2026-01-01T00:00:00Z\",\"kind\":\"session.start\",\"msg\":\"recorded session\",\"schema\":%d,\"ruleset\":%d,\"session\":\"replay\",\"cores\":[{\"core\":0,\"ccd\":0,\"cpus\":[0,1]}]}\n"+
+				"{\"seq\":2,\"time\":\"2026-01-01T00:00:01Z\",\"kind\":%q,\"msg\":\"recorded checking evidence\",\"%s\":1,\"event\":\"end\",\"passed\":true,\"full\":true}\n", schema, tuner.Ruleset, kind, cycleKey)
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			out, err := os.Create(filepath.Join(t.TempDir(), "frame"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = out.Close() })
+			var errOut bytes.Buffer
+			if err := run([]string{"--state-dir", dir, "--at", "2", "--view", "log"}, out, &errOut); err != nil {
+				t.Fatal(err)
+			}
+			frame, err := os.ReadFile(out.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(frame, []byte("recorded checking evidence")) {
+				t.Fatalf("schema %d frame lost the recorded checking event:\n%s", schema, frame)
+			}
+		})
+	}
+}
+
 func TestRunFrameShippedSchemas(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

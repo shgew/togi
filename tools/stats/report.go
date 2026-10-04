@@ -240,7 +240,7 @@ func renderOutcomes(tab *table, p *projection, since time.Time) error {
 
 func renderExposure(tab *table, p *projection, since time.Time) {
 	tab.section("Exposure", "regime\tworkload\tstarts\thours\tfailures")
-	type exposure struct{ starts, seconds, failures int }
+	type exposure struct{ trials, seconds, failures int }
 	exposures := map[string]*exposure{}
 	for _, t := range p.trials {
 		if !selected(t.time, since) {
@@ -253,7 +253,7 @@ func renderExposure(tab *table, p *projection, since time.Time) {
 			exposures[k] = x
 		}
 		if t.started {
-			x.starts++
+			x.trials++
 		}
 		x.seconds += seconds(t)
 		if t.end != nil && t.end.Outcome == journal.OutcomeFailure {
@@ -262,7 +262,7 @@ func renderExposure(tab *table, p *projection, since time.Time) {
 	}
 	for _, k := range keys(exposures) {
 		x := exposures[k]
-		tab.row("%s\t%d\t%.3f\t%d", k, x.starts, float64(x.seconds)/3600, x.failures)
+		tab.row("%s\t%d\t%.3f\t%d", k, x.trials, float64(x.seconds)/3600, x.failures)
 	}
 }
 

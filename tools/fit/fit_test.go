@@ -342,7 +342,7 @@ func TestDecisiveRefusesInvalidEvidence(t *testing.T) {
 	}
 }
 
-func TestDecisiveFiltersNonStartsAndPreservesContext(t *testing.T) {
+func TestDecisiveFiltersNonTrialsAndPreservesContext(t *testing.T) {
 	context := machine.BIOSContext{Board: "fixture", BIOSVersion: "A"}
 	valid := trialfacts.Record{Kind: facts.TrialFact, Outcome: journal.OutcomeFailure, Profile: []int{-50, 0}, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}, Context: &context}
 	idle := valid
@@ -361,7 +361,7 @@ func TestDecisiveFiltersNonStartsAndPreservesContext(t *testing.T) {
 		t.Fatal(diff)
 	}
 	for _, records := range [][]trialfacts.Record{nil, {idle, other}} {
-		if got, err := decisive(records); err == nil || err.Error() != "extract has no decisive starts" || got != nil {
+		if got, err := decisive(records); err == nil || err.Error() != "extract has no decisive trials" || got != nil {
 			t.Fatalf("empty evidence: %v %v", got, err)
 		}
 	}
@@ -465,7 +465,7 @@ func TestWorkloadOverridesRequireSupportAndImproveLikelihood(t *testing.T) {
 			l.fitWorkloads(&cfg)
 			_, exists := cfg.Limits[0].Workload["supported"]
 			if exists != (n >= 10) {
-				t.Fatalf("%d starts: override=%v", n, exists)
+				t.Fatalf("%d trials: override=%v", n, exists)
 			}
 			if n >= 10 && !(l.score([]int{0}) < before) {
 				t.Fatal("supported override did not explain failure")

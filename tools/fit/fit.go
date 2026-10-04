@@ -60,7 +60,7 @@ func decisive(records []trialfacts.Record) ([]trialfacts.Record, error) {
 		out = append(out, r)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("extract has no decisive starts")
+		return nil, fmt.Errorf("extract has no decisive trials")
 	}
 	return out, nil
 }
@@ -388,7 +388,7 @@ func (l *likelihood) fitIdle(cfg *sim.Config) {
 			idle = *cfg.Limits[core].Idle
 		}
 		cfg.Limits[core].Idle = &idle
-		// Zero-offset starts constrain Idle=1, but cannot alone identify an idle limit.
+		// Zero-offset trials constrain Idle=1, but cannot alone identify an idle limit.
 		if hasExposure {
 			l.discrete(&idle, indices)
 		}
@@ -477,11 +477,11 @@ func (l *likelihood) fitWorkloads(cfg *sim.Config) {
 				continue
 			}
 			indices := l.selectObs(func(o observation) bool { return o.spec.Workload.ID == workload && slices.Contains(o.spec.Cores, core) })
-			starts := 0
+			trials := 0
 			for _, i := range indices {
-				starts += l.obs[i].n
+				trials += l.obs[i].n
 			}
-			if starts < 10 {
+			if trials < 10 {
 				continue
 			}
 			baseline := l.score(indices)

@@ -28,7 +28,7 @@ func run(args []string, stderr io.Writer) int {
 	flags := flag.NewFlagSet("sim", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	seed := flags.Uint64("seed", 1, "draw the simulated machine's limits and failures from this `seed`")
-	laps := flags.Int("laps", 1, "stop after `N` clean laps once every core is at its limit and deepening can reach no more depth")
+	cycles := flags.Int("cycles", 1, "stop after `N` clean cycles once every core is at its limit and deepening can reach no more depth")
 	machineFile := flags.String("machine", "", "load the simulated machine from this TOML `file`")
 	replay := flags.Bool("replay-facts", false, "answer exact class/profile matches from the machine's same-BIOS facts extract")
 	dir := flags.String("state-dir", "", "use this state `directory`, resuming a journal it holds; default a new temporary one")
@@ -42,8 +42,8 @@ func run(args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "sim: unexpected positional arguments")
 		return 2
 	}
-	if *laps < 1 {
-		fmt.Fprintln(stderr, "sim: --laps must be a positive integer")
+	if *cycles < 1 {
+		fmt.Fprintln(stderr, "sim: --cycles must be a positive integer")
 		return 2
 	}
 	if *dir == "" {
@@ -84,7 +84,7 @@ func run(args []string, stderr io.Writer) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	renderer := journal.NewRenderer(stderr, os.Getenv)
-	stop, err := simrun.Simulate(ctx, simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: stderr, Renderer: renderer, Laps: *laps, InMemoryJournal: true, WriteSamples: *samples})
+	stop, err := simrun.Simulate(ctx, simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: stderr, Renderer: renderer, Cycles: *cycles, InMemoryJournal: true, WriteSamples: *samples})
 	if err != nil {
 		fmt.Fprintf(stderr, "sim: %v\n", err)
 		return 1

@@ -25,8 +25,8 @@ type result struct {
 	ExitCode                int                        `json:"exit_code"`
 	WallS                   float64                    `json:"wall_s"`
 	SimHours                float64                    `json:"sim_hours"`
-	FirstPassedLapH         *float64                   `json:"first_passed_lap_h"`
-	PassedLaps              int                        `json:"passed_laps"`
+	FirstPassedCycleH         *float64                   `json:"first_passed_cycle_h"`
+	PassedCycles              int                        `json:"passed_cycles"`
 	PartialSeconds          float64                    `json:"partial_seconds"`
 	Crashes                 int                        `json:"crashes"`
 	Trials                  int                        `json:"trials"`
@@ -71,25 +71,25 @@ func metrics(events []journal.Event, m *sim.Machine, cores int) result {
 		h := e.Time.Sub(start).Hours()
 		r.SimHours = h
 		switch p := e.Data.(type) {
-		case *journal.CheckingLap:
-			if p.Event == journal.LapEnd && p.Passed {
-				r.PassedLaps++
-				r.PartialSeconds += partialSeconds[p.Lap]
-				if r.FirstPassedLapH == nil {
-					r.FirstPassedLapH = new(h)
+		case *journal.CheckingCycle:
+			if p.Event == journal.CycleEnd && p.Passed {
+				r.PassedCycles++
+				r.PartialSeconds += partialSeconds[p.Cycle]
+				if r.FirstPassedCycleH == nil {
+					r.FirstPassedCycleH = new(h)
 				}
 			}
 		case *journal.TrialIntent:
-			if p.RecordOnly && p.Lap > 0 {
-				partialIntents[p.Trial] = p.Lap
+			if p.RecordOnly && p.Cycle > 0 {
+				partialIntents[p.Trial] = p.Cycle
 			}
 		case *journal.CrashDetected:
 			r.Crashes++
 		case *journal.TrialEnd:
 			r.Trials++
 			r.TrialHours += float64(p.DurationS) / 3600
-			if lap, ok := partialIntents[p.Trial]; ok {
-				partialSeconds[lap] += float64(p.DurationS)
+			if cycle, ok := partialIntents[p.Trial]; ok {
+				partialSeconds[cycle] += float64(p.DurationS)
 				delete(partialIntents, p.Trial)
 			}
 		case *journal.HuntStart:
@@ -143,11 +143,11 @@ func answerShare(real, trials int) float64 {
 	return float64(real) / float64(trials)
 }
 
-func partialSecondsPerPassedLap(seconds float64, passedLaps int) float64 {
-	if passedLaps == 0 {
+func partialSecondsPerPassedCycle(seconds float64, passedCycles int) float64 {
+	if passedCycles == 0 {
 		return 0
 	}
-	return seconds / float64(passedLaps)
+	return seconds / float64(passedCycles)
 }
 
 func setScenarioShares(results []result) {

@@ -22,7 +22,7 @@ type comparison struct {
 	CrashDelta, DepthDelta, MaxHazardDelta                         float64
 	V1, V2, V3, V4                                                 int
 	RealAnswerShare, BaselineRealAnswerShare                       float64
-	PartialSecondsPerPassedLap, BaselinePartialSecondsPerPassedLap float64
+	PartialSecondsPerPassedCycle, BaselinePartialSecondsPerPassedCycle float64
 }
 
 func pairing(candidate, baseline []result) []pair {
@@ -54,7 +54,7 @@ func compare(pairs []pair) comparison {
 	})
 	var real, trials, baseReal, baseTrials int
 	var partialSeconds, basePartialSeconds float64
-	var passedLaps, basePassedLaps int
+	var passedCycles, basePassedCycles int
 	for i, p := range pairs {
 		a, b := p.candidate, p.baseline
 		real += a.RealAnswers
@@ -62,9 +62,9 @@ func compare(pairs []pair) comparison {
 		baseReal += b.RealAnswers
 		baseTrials += b.Trials
 		partialSeconds += a.PartialSeconds
-		passedLaps += a.PassedLaps
+		passedCycles += a.PassedCycles
 		basePartialSeconds += b.PartialSeconds
-		basePassedLaps += b.PassedLaps
+		basePassedCycles += b.PassedCycles
 		if b.Status == "concluded" && a.Status != "concluded" {
 			c.V1++
 		}
@@ -99,8 +99,8 @@ func compare(pairs []pair) comparison {
 	}
 	c.RealAnswerShare = answerShare(real, trials)
 	c.BaselineRealAnswerShare = answerShare(baseReal, baseTrials)
-	c.PartialSecondsPerPassedLap = partialSecondsPerPassedLap(partialSeconds, passedLaps)
-	c.BaselinePartialSecondsPerPassedLap = partialSecondsPerPassedLap(basePartialSeconds, basePassedLaps)
+	c.PartialSecondsPerPassedCycle = partialSecondsPerPassedCycle(partialSeconds, passedCycles)
+	c.BaselinePartialSecondsPerPassedCycle = partialSecondsPerPassedCycle(basePartialSeconds, basePassedCycles)
 	for _, d := range depths {
 		if d.sum/float64(d.n) > 1 {
 			c.V3++
@@ -171,12 +171,12 @@ func verdict(c comparison) string {
 
 func printComparison(w io.Writer, label string, c comparison) {
 	fmt.Fprintf(w, "%s ratio=%.3f ci=[%.3f,%.3f] pairs=%d timed=%d faster=%d slower=%d equal=%d crash_delta=%.3f depth_delta=%.3f max_hazard_delta=%.6f real_answer_share=%.6f baseline_real_answer_share=%.6f violations=V1:%d,V2:%d,V3:%d,V4:%d\n", label, c.Ratio, c.Lo, c.Hi, c.Pairs, c.Timed, c.Faster, c.Slower, c.Equal, c.CrashDelta, c.DepthDelta, c.MaxHazardDelta, c.RealAnswerShare, c.BaselineRealAnswerShare, c.V1, c.V2, c.V3, c.V4)
-	fmt.Fprintf(w, "%s partial_s_per_passed_lap=%.3f baseline_partial_s_per_passed_lap=%.3f\n", label, c.PartialSecondsPerPassedLap, c.BaselinePartialSecondsPerPassedLap)
+	fmt.Fprintf(w, "%s partial_s_per_passed_cycle=%.3f baseline_partial_s_per_passed_cycle=%.3f\n", label, c.PartialSecondsPerPassedCycle, c.BaselinePartialSecondsPerPassedCycle)
 }
 
 func reportComparison(w io.Writer, candidate, baseline []result) {
 	fmt.Fprintln(w, "comparison: overall ratio weights scenarios equally; CI resamples pairs within each scenario (10000, fixed seed). V1=lost conclusion; V2=hazard increase >0.01/h; V3=mean depth increase >1 or pair >5; V4=target ratio >1. Positive depth delta is shallower.")
-	fmt.Fprintln(w, "comparison: partial seconds per passed lap pool completed passed laps over paired runs separately for candidate and baseline; missing baseline metrics are zero. Diagnostic only, not a verdict gate.")
+	fmt.Fprintln(w, "comparison: partial seconds per passed cycle pool completed passed cycles over paired runs separately for candidate and baseline; missing baseline metrics are zero. Diagnostic only, not a verdict gate.")
 	pairs := pairing(candidate, baseline)
 	splits := make(map[string]bool)
 	for _, r := range candidate {
@@ -209,8 +209,8 @@ func reportComparison(w io.Writer, candidate, baseline []result) {
 
 func reportSummary(w io.Writer, results []result) {
 	fmt.Fprintln(w, "summary: time, crashes and depth include all run statuses; hazard is steady-state failures/hour with all cores loaded.")
-	fmt.Fprintln(w, "summary: partial_s/passed_lap is measured record-only load seconds in completed passed laps divided by their count, pooled across runs; zero when none completed.")
-	fmt.Fprintln(w, "scenario          runs concluded median_h mean_h median_crashes mean_depth max_hazard/h real_answer_share partial_s/passed_lap")
+	fmt.Fprintln(w, "summary: partial_s/passed_cycle is measured record-only load seconds in completed passed cycles divided by their count, pooled across runs; zero when none completed.")
+	fmt.Fprintln(w, "scenario          runs concluded median_h mean_h median_crashes mean_depth max_hazard/h real_answer_share partial_s/passed_cycle")
 	groups := make(map[string][]result)
 	var names []string
 	for _, r := range results {
@@ -233,12 +233,12 @@ func summaryRow(w io.Writer, name string, rows []result) {
 	var concluded, real, trials int
 	var sum, depth, hazard float64
 	var partialSeconds float64
-	var passedLaps int
+	var passedCycles int
 	for _, r := range rows {
 		real += r.RealAnswers
 		trials += r.Trials
 		partialSeconds += r.PartialSeconds
-		passedLaps += r.PassedLaps
+		passedCycles += r.PassedCycles
 		if r.Status == "concluded" {
 			concluded++
 		}
@@ -250,5 +250,5 @@ func summaryRow(w io.Writer, name string, rows []result) {
 	}
 	slices.Sort(hours)
 	slices.Sort(crashes)
-	fmt.Fprintf(w, "%-17s %4d %9d %8.3f %8.3f %14.1f %10.2f %12.6f %17.6f %23.3f\n", name, len(rows), concluded, percentile(hours, 0.5), sum/float64(len(rows)), percentile(crashes, 0.5), depth/float64(len(rows)), hazard, answerShare(real, trials), partialSecondsPerPassedLap(partialSeconds, passedLaps))
+	fmt.Fprintf(w, "%-17s %4d %9d %8.3f %8.3f %14.1f %10.2f %12.6f %17.6f %23.3f\n", name, len(rows), concluded, percentile(hours, 0.5), sum/float64(len(rows)), percentile(crashes, 0.5), depth/float64(len(rows)), hazard, answerShare(real, trials), partialSecondsPerPassedCycle(partialSeconds, passedCycles))
 }

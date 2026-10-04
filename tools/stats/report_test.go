@@ -19,7 +19,7 @@ func TestReviewBoundaryReport(t *testing.T) {
 	}
 	add(&journal.SessionStart{Session: "review", Cores: []machine.CoreInfo{{Core: 0, CCD: 0}, {Core: 1, CCD: 1}}})
 	add(&journal.ConfigLoaded{Version: "1.2.3"})
-	add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart})
+	add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart})
 	appendTrial := func(id string, result journal.Outcome, hunt, group int, workload string) {
 		condition, phase := machine.Together, journal.PhaseChecking
 		if hunt != 0 {
@@ -31,7 +31,7 @@ func TestReviewBoundaryReport(t *testing.T) {
 			duration = 120
 			profile = []int{-11, -11}
 		}
-		add(&journal.TrialIntent{Trial: id, Regime: machine.R6, Workload: workload, DurationS: duration, Profile: profile, Hunt: hunt, Group: group, Condition: condition, Phase: phase, Lap: 1})
+		add(&journal.TrialIntent{Trial: id, Regime: machine.R6, Workload: workload, DurationS: duration, Profile: profile, Hunt: hunt, Group: group, Condition: condition, Phase: phase, Cycle: 1})
 		add(&journal.TrialStart{Trial: id})
 		if duration == 120 {
 			add(&journal.TrialProgress{Trial: id})
@@ -46,11 +46,11 @@ func TestReviewBoundaryReport(t *testing.T) {
 		add(end)
 	}
 	appendTrial("prior", journal.OutcomePass, 0, 0, "load")
-	parkedSeq := add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Full: true, Passed: true})
+	parkedSeq := add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Full: true, Passed: true})
 	appendTrial("trigger", journal.OutcomeFailure, 0, 0, "load")
 	failure := add(&journal.Failure{Trial: "trigger", Regime: machine.R6, Signal: machine.ComputationError, Attribution: journal.Unattributed, Profile: []int{-11, -11}})
 	for _, hunt := range []int{1, 2} {
-		add(&journal.HuntStart{Hunt: hunt, Trial: "trigger", Failure: failure, ParkedSeq: parkedSeq, Parked: []int{-10, -10}, Failing: []int{-11, -11}, Candidates: []int{0, 1}, Cores: []int{0, 1}, Regime: machine.R6, Workload: "load", DurationS: 120, Starts: 1, StartS: 60})
+		add(&journal.HuntStart{Hunt: hunt, Trial: "trigger", Failure: failure, ParkedSeq: parkedSeq, Parked: []int{-10, -10}, Failing: []int{-11, -11}, Candidates: []int{0, 1}, Cores: []int{0, 1}, Regime: machine.R6, Workload: "load", DurationS: 120, Trials: 1, TrialS: 60})
 		if hunt == 1 {
 			add(&journal.HuntGroup{Hunt: 1, Group: 1, Skipped: true, Stage: "part", Cores: []int{0, 1}})
 			add(&journal.HuntEnd{Hunt: 1, Result: "cancelled"})
@@ -93,7 +93,7 @@ func TestReviewBoundaryReport(t *testing.T) {
 	if diff := cmp.Diff([][]string{{"2", "parked", "no", "reliable", "result"}}, reportRows(t, events, "Inconclusive trials")); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff([][]string{{"laps", "started", "0"}, {"laps", "ended", "0"}, {"full", "laps", "0"}, {"reruns", "0"}, {"reruns", "failing", "first", "start", "0"}}, reportRows(t, events, "Checking", cutoff)); diff != "" {
+	if diff := cmp.Diff([][]string{{"cycles", "started", "0"}, {"cycles", "ended", "0"}, {"full", "cycles", "0"}, {"reruns", "0"}, {"reruns", "failing", "first", "trial", "0"}}, reportRows(t, events, "Checking", cutoff)); diff != "" {
 		t.Fatal(diff)
 	}
 	if diff := cmp.Diff([][]string{{"R6", "load", "3", "0.050", "1"}}, reportRows(t, events, "Exposure", cutoff)); diff != "" {
