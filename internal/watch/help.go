@@ -18,11 +18,11 @@ type helpItem struct {
 var help = []helpSection{
 	{"What I do", []helpItem{
 		{"Find limits", "One core at a time, with every other core at 0, I move its offset deeper until a stress test fails, then confirm the deepest offset that passed with several passes in a row. That is its solo limit.", ""},
-		{"Test together", "All cores run at their offsets at once, through a lap: the configured list of tests. A full lap covers every required kind of load. Cores can be fine alone and still fail together.", ""},
-		{"Find the culprit", "When a test fails and nothing names a single core, I pause the lap and hunt: I rerun the test with some cores parked and narrow down, by halves, which cores cause it. I may find one core or a combination that fails together. If all tested groups pass, the suspects remain unresolved, and I keep their offsets shallower together as a precaution. A hunt can come at any time, so nothing can say how long tuning takes.", ""},
-		{"Go deeper", "Backing off after a failure can leave room elsewhere. After a passed full lap I try to win depth back, checking every move.", ""},
-		{"Clean lap", "The goal: a passed full lap ending with every core at its limit, with no more total depth reachable. Ordinary steps pass; record-only partial steps complete either way. Earlier failures can lead to backing off and finishing this same lap.", ""},
-		{"Keep checking", "After that I keep running laps to catch rarer failures until you stop me.", ""},
+		{"Test together", "All cores run at their offsets at once, through a cycle: the configured list of tests. A full cycle covers every required kind of load. Cores can be fine alone and still fail together.", ""},
+		{"Find the culprit", "When a test fails and nothing names a single core, I pause the cycle and hunt: I rerun the test with some cores parked and narrow down, by halves, which cores cause it. I may find one core or a combination that fails together. If all tested groups pass, the suspects remain unresolved, and I keep their offsets shallower together as a precaution. A hunt can come at any time, so nothing can say how long tuning takes.", ""},
+		{"Go deeper", "Backing off after a failure can leave room elsewhere. After a passed full cycle I try to win depth back, checking every move.", ""},
+		{"Clean cycle", "The goal: a passed full cycle ending with every core at its limit, with no more total depth reachable. Ordinary steps pass; record-only partial steps complete either way. Earlier failures can lead to backing off and finishing this same cycle.", ""},
+		{"Keep checking", "After that I keep running cycles to catch rarer failures until you stop me.", ""},
 	}},
 	{"Reading the screen", []helpItem{
 		{"Bright rows", "The cores this test is judging. Grey rows are not being judged right now.", ""},
@@ -36,7 +36,7 @@ var help = []helpSection{
 	{"Words", []helpItem{
 		{"searching", "Still finding its solo limit.", ""},
 		{"confirming", "Repeating its deepest pass to be sure of it.", ""},
-		{"limit found", "One count deeper failed. It stays here, and every lap still tests it.", ""},
+		{"limit found", "One count deeper failed. It stays here, and every cycle still tests it.", ""},
 		{"maxed out", "At -50, the deepest Curve Optimizer allows.", ""},
 		{"can go deeper", "Nothing known stops it going deeper. The next deepening round will try.", ""},
 		{"held back by others", "Combination restrictions keep it shallower than its own failure point, so it cannot go deeper at the other cores' current offsets.", ""},
@@ -44,9 +44,9 @@ var help = []helpSection{
 		{"parked", "During a hunt: held at an offset that passed before, usually 0, so it can't be the cause.", ""},
 		{"solo limit", "The deepest offset a core passed with every other core at 0.", ""},
 		{"combination", "Offsets that must not be reached together. A hunt may prove the group fails together, or leave an unresolved group restricted as a precaution.", ""},
-		{"lap", "One pass through the configured checking schedule. A passed lap has passing evidence for its ordinary steps; record-only partial steps only need to complete. A full lap covers every required kind of load. A clean lap is a passed full lap that ended with every core at its limit and remains valid for the current profile.", ""},
-		{"recorded only", "A partial all-core part of a lap step. Cores that had their CCD's shallowest offset when the step started stay idle, even if offsets change. Its result is kept on record but moves no offset. The lap needs it to finish, pass or fail, and it covers no required kind of load.", ""},
-		{"run", "One launch of one test. Confirming a solo limit, a hunt group or a deepening move needs several passes in a row. Ordinary lap steps can advance after one pass, while all-core steps also include repeated short runs and a long run.", ""},
+		{"cycle", "One pass through the configured checking schedule. A passed cycle has passing evidence for its ordinary steps; record-only partial steps only need to complete. A full cycle covers every required kind of load. A clean cycle is a passed full cycle that ended with every core at its limit and remains valid for the current profile.", ""},
+		{"recorded only", "A partial all-core part of a cycle step. Cores that had their CCD's shallowest offset when the step started stay idle, even if offsets change. Its result is kept on record but moves no offset. The cycle needs it to finish, pass or fail, and it covers no required kind of load.", ""},
+		{"trial", "One launch of one test. Confirming a solo limit, a hunt group or a deepening move needs several passes in a row. Ordinary cycle steps can advance after one pass, while all-core steps also include repeated short trials and a long trial.", ""},
 	}},
 }
 
@@ -92,7 +92,7 @@ func helpLines(width int) []string {
 		}
 	}
 	out = append(out, "", "")
-	return append(out, wrapStyled("Passing tests can't prove offsets will never fail. They show which tests passed, and more laps catch rarer failures.", width, grey)...)
+	return append(out, wrapStyled("Passing tests can't prove offsets will never fail. They show which tests passed, and more cycles catch rarer failures.", width, grey)...)
 }
 
 func testsSection() helpSection {

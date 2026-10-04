@@ -20,8 +20,8 @@ import (
 const watchHelp = `Usage: togi watch [--width <columns>] [--height <rows>]
 
 Show the session as a dashboard that redraws every second. togi says in plain
-words what it is doing and why, how far the current test and lap have come,
-and the stages from finding each core's limit to a clean lap; a HUNT lamp
+words what it is doing and why, how far the current test and cycle have come,
+and the stages from finding each core's limit to a clean cycle; a HUNT lamp
 lights while a hunt pauses them. One row per core shows the offset applied
 now, where the core stands and how deep it goes; the cores the test is judging
 are bright, the others grey. Below them, what happened recently. On a

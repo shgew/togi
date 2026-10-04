@@ -177,25 +177,25 @@ func TestProjectFallbackHistory(t *testing.T) {
 	}
 }
 
-func TestProjectLapHistory(t *testing.T) {
+func TestProjectCycleHistory(t *testing.T) {
 	t.Parallel()
 	s := Project(dashboardEvents(dashboardSession(),
-		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Missing: []string{"R2: 3 more steps"}},
-		&journal.CheckingLap{Lap: 2, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}},
-		&journal.CheckingLap{Lap: 2, Event: journal.LapEnd, Passed: true, Full: true},
-		&journal.CheckingLap{Lap: 3, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}},
-		&journal.CheckingLap{Lap: 3, Event: journal.LapEnd, Reason: "failure"}))
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Missing: []string{"R2: 3 more steps"}},
+		&journal.CheckingCycle{Cycle: 2, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}},
+		&journal.CheckingCycle{Cycle: 2, Event: journal.CycleEnd, Passed: true, Full: true},
+		&journal.CheckingCycle{Cycle: 3, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}},
+		&journal.CheckingCycle{Cycle: 3, Event: journal.CycleEnd, Reason: "failure"}))
 	if diff := cmp.Diff([]string{
 		"start: session started on 3 cores",
-		"lap: #1 started, 1 steps",
-		"lap: #1 passed but missing R2: 3 more steps",
-		"lap: #2 started, 1 steps",
-		"lap: #2 passed, a full lap of every kind of test",
-		"lap: #3 started, 1 steps",
-		"lap: #3 ended early: failure",
+		"cycle: #1 started, 1 steps",
+		"cycle: #1 passed but missing R2: 3 more steps",
+		"cycle: #2 started, 1 steps",
+		"cycle: #2 passed, a full cycle of every kind of test",
+		"cycle: #3 started, 1 steps",
+		"cycle: #3 ended early: failure",
 	}, historySentences(s)); diff != "" {
-		t.Fatalf("lap history must call a lap passed, never clean, which needs every core at its limit (-want +got):\n%s", diff)
+		t.Fatalf("cycle history must call a cycle passed, never clean, which needs every core at its limit (-want +got):\n%s", diff)
 	}
 }
 
@@ -218,7 +218,7 @@ func TestProjectDeepeningHistorySeparatesDeeperAndYieldedMembers(t *testing.T) {
 		&journal.CorePhase{Core: 0, From: journal.PhaseSearch, To: journal.PhaseHasRoom, Offset: -20},
 		&journal.CorePhase{Core: 1, From: journal.PhaseSearch, To: journal.PhaseAtLimit, Offset: -30},
 		&journal.CorePhase{Core: 2, From: journal.PhaseSearch, To: journal.PhaseAtLimit, Offset: -10},
-		&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Target: []int{-22, -29, -10}, Profile: []int{-21, -29, -10}, Cores: []int{0, 1}},
+		&journal.DeepeningRound{Round: 2, Event: journal.CycleStart, Target: []int{-22, -29, -10}, Profile: []int{-21, -29, -10}, Cores: []int{0, 1}},
 		&journal.TunerDecision{Core: 1, Phase: journal.PhaseDeepening, Decision: journal.Yield, FromOffset: -30, ToOffset: -29},
 		&journal.TunerDecision{Core: 0, Phase: journal.PhaseDeepening, Decision: journal.Deepen, FromOffset: -20, ToOffset: -21})
 	s := Project(events)

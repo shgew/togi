@@ -23,10 +23,10 @@ import (
 const statusHelp = `Usage: togi status
 
 Show the session at a glance: search, hunt, deepening or checking activity and
-clean laps since the last deepening, then each core's offset, failure point
+clean cycles since the last deepening, then each core's offset, failure point
 and combinations, phase, queued work and last decision. An open hunt shows
-groups and starts; an open deepening round shows checks and passes. Evidence
-includes workloads, valid starts and the Tctl peak since the last profile
+groups and trials; an open deepening round shows checks and passes. Evidence
+includes workloads, valid trials and the Tctl peak since the last profile
 change, and lists between-trial MCEs without treating them as failures. Lists reset
 commands for unanswered too-cautious defects. Read-only; rendered from the
 journal. A different ruleset warns before rendering; a different schema is
@@ -126,7 +126,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		}
 	case string(journal.PhaseChecking):
 		if gs := st.Checking; gs != nil {
-			activity = fmt.Sprintf("checking lap %d, steps %d/%d", gs.Lap, gs.StepsDone, len(gs.Steps))
+			activity = fmt.Sprintf("checking cycle %d, steps %d/%d", gs.Cycle, gs.StepsDone, len(gs.Steps))
 			if !gs.Full && len(gs.Missing) > 0 {
 				activity += ", not full: " + strings.Join(gs.Missing, "; ")
 			}
@@ -134,9 +134,9 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	}
 	clean, latest := 0, 0
 	if gs := st.Checking; gs != nil {
-		clean, latest = gs.CleanLaps, gs.LastCleanLap
+		clean, latest = gs.CleanCycles, gs.LastCleanCycle
 	}
-	fmt.Fprintf(w, "%s | clean laps since last deepening: %d, latest lap %d\n", journal.EscapeText(activity), clean, latest)
+	fmt.Fprintf(w, "%s | clean cycles since last deepening: %d, latest cycle %d\n", journal.EscapeText(activity), clean, latest)
 	fmt.Fprintf(w, "session %s started %s\n", journal.EscapeText(st.Session.ID), st.Session.Start.UTC().Format(time.RFC3339))
 	writeBIOSLine(w, st.Session)
 	if f := st.InFlight; f != nil {
@@ -174,7 +174,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	if h := st.Hunt; h != nil {
 		parked := "all-zero"
 		if h.ParkedSeq != 0 {
-			parked = fmt.Sprintf("lap end #%d", h.ParkedSeq)
+			parked = fmt.Sprintf("cycle end #%d", h.ParkedSeq)
 		}
 		signal := "failure"
 		for _, e := range events {
@@ -259,7 +259,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	tw = newTable(w)
 	fmt.Fprintln(tw, "REGIME\tWORKLOAD\tSTARTS")
 	for _, r := range gs.Exposure {
-		fmt.Fprintf(tw, "%s\t%s\t%d\n", journal.EscapeText(string(r.Regime)), journal.EscapeText(r.Workload), r.Starts)
+		fmt.Fprintf(tw, "%s\t%s\t%d\n", journal.EscapeText(string(r.Regime)), journal.EscapeText(r.Workload), r.Trials)
 	}
 	_ = tw.Flush()
 	if gs.TctlMaxC != nil {

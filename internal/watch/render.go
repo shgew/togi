@@ -340,7 +340,7 @@ func track(stations []station, width int) []string {
 func (s Snapshot) huntLamp() string {
 	if s.phase == journal.PhaseHunt && s.hunt != nil {
 		h := s.hunt
-		what, paused := "the failure", "The lap waits"
+		what, paused := "the failure", "The cycle waits"
 		if h.cause != nil && h.cause.signal == machine.Crash {
 			what = "the crash"
 		}
@@ -348,7 +348,7 @@ func (s Snapshot) huntLamp() string {
 		case s.deepening != nil:
 			paused = fmt.Sprintf("Deepening round %d waits", s.deepening.Round)
 		case s.checking != nil && len(s.checking.Steps) > 0:
-			paused = fmt.Sprintf("Lap %d waits at step %d", s.checking.Lap, currentStep(s.checking))
+			paused = fmt.Sprintf("Cycle %d waits at step %d", s.checking.Cycle, currentStep(s.checking))
 		}
 		return lamp.Render(fmt.Sprintf(" %-8s", fmt.Sprintf("HUNT %d", h.id))) + "  " +
 			amber.Render(fmt.Sprintf("%s while I find which cores caused %s", paused, what))

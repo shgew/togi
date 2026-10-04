@@ -55,7 +55,7 @@ const (
 	tagDeeper  = "deeper"
 	tagBackoff = "backoff"
 	tagYield   = "yield"
-	tagLap     = "lap"
+	tagCycle     = "cycle"
 	tagHunt    = "hunt"
 	tagCombo   = "combo"
 	tagRound   = "round"
@@ -101,8 +101,8 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 		line.tag, line.text, line.tone = decisionText(d)
 	case *journal.CorePhase:
 		line.tag, line.text, line.tone = phaseText(d)
-	case *journal.CheckingLap:
-		line.tag, line.text, line.tone = lapText(d)
+	case *journal.CheckingCycle:
+		line.tag, line.text, line.tone = cycleText(d)
 	case *journal.HuntStart:
 		line.tag, line.text, line.tone = tagHunt, fmt.Sprintf("#%d started: which cores caused it?", d.Hunt), warnTone
 	case *journal.HuntEnd:
@@ -247,16 +247,16 @@ func phaseText(d *journal.CorePhase) (string, string, tone) {
 	return "", "", plainTone
 }
 
-func lapText(d *journal.CheckingLap) (string, string, tone) {
+func cycleText(d *journal.CheckingCycle) (string, string, tone) {
 	switch {
-	case d.Event == journal.LapStart:
-		return tagLap, fmt.Sprintf("#%d started, %d steps", d.Lap, len(d.Steps)), plainTone
+	case d.Event == journal.CycleStart:
+		return tagCycle, fmt.Sprintf("#%d started, %d steps", d.Cycle, len(d.Steps)), plainTone
 	case d.Passed && d.Full:
-		return tagLap, fmt.Sprintf("#%d passed, a full lap of every kind of test", d.Lap), goodTone
+		return tagCycle, fmt.Sprintf("#%d passed, a full cycle of every kind of test", d.Cycle), goodTone
 	case d.Passed:
-		return tagLap, fmt.Sprintf("#%d passed but missing %s", d.Lap, vtText(strings.Join(d.Missing, ", "))), warnTone
+		return tagCycle, fmt.Sprintf("#%d passed but missing %s", d.Cycle, vtText(strings.Join(d.Missing, ", "))), warnTone
 	}
-	return tagLap, fmt.Sprintf("#%d ended early: %s", d.Lap, vtText(d.Reason)), warnTone
+	return tagCycle, fmt.Sprintf("#%d ended early: %s", d.Cycle, vtText(d.Reason)), warnTone
 }
 
 func huntEndText(d *journal.HuntEnd) (string, string, tone) {
@@ -277,7 +277,7 @@ func huntEndText(d *journal.HuntEnd) (string, string, tone) {
 
 func (p *projector) roundText(d *journal.DeepeningRound) (string, string, tone) {
 	switch {
-	case d.Event == journal.LapStart:
+	case d.Event == journal.CycleStart:
 		var moves []string
 		for i, c := range p.st.Cores {
 			if !slices.Contains(d.Cores, c.Core) || i >= len(d.Profile) {

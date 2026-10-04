@@ -32,8 +32,8 @@ type Snapshot struct {
 	deepening       *journal.DeepeningState
 	checking        *journal.CheckingState
 	order           []int
-	starts          int
-	startDuration   time.Duration
+	trials          int
+	shortTrialDuration   time.Duration
 	rerunDuration   time.Duration
 	canDeepen       bool
 	checkingFull    bool
@@ -167,8 +167,8 @@ func Project(events []journal.Event) Snapshot {
 		start:         st.Session.Start,
 		checking:      st.Checking,
 		deepening:     st.Deepening,
-		starts:        defaults.Evidence.Starts(),
-		startDuration: time.Duration(defaults.Durations.StartS) * time.Second,
+		trials:        defaults.Evidence.Trials(),
+		shortTrialDuration: time.Duration(defaults.Durations.ShortTrialS) * time.Second,
 		rerunDuration: time.Duration(t.RerunDuration()) * time.Second,
 		canDeepen:     t.CanDeepen(),
 	}
@@ -211,10 +211,10 @@ func (p *projector) fold(e journal.Event) {
 		s.order = machine.Order(d.Cores)
 	case *journal.ConfigLoaded:
 		if ev := d.Config.Evidence; ev.Miss > 0 && ev.Rate > 0 {
-			s.starts = config.Evidence{Miss: ev.Miss, Rate: ev.Rate}.Starts()
+			s.trials = config.Evidence{Miss: ev.Miss, Rate: ev.Rate}.Trials()
 		}
-		if d.Config.Durations.StartS > 0 {
-			s.startDuration = time.Duration(d.Config.Durations.StartS) * time.Second
+		if d.Config.Durations.ShortTrialS > 0 {
+			s.shortTrialDuration = time.Duration(d.Config.Durations.ShortTrialS) * time.Second
 		}
 	case *journal.SMUReadback:
 		p.applied[d.Core] = d.Offset

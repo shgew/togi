@@ -52,7 +52,7 @@ var commands = []command{
 		return restartLimitFlags(g, new(string))
 	}, run: runRestartLimit},
 	{name: "run", summary: "Start or resume the session in the foreground", run: runRun},
-	{name: "status", summary: "Show core failure points, combinations, activity and clean laps", help: statusHelp, flags: func(g *globals) *flag.FlagSet {
+	{name: "status", summary: "Show core failure points, combinations, activity and clean cycles", help: statusHelp, flags: func(g *globals) *flag.FlagSet {
 		return newFlagSet("status", g)
 	}, run: runStatus},
 	{name: "watch", summary: "Show the session as a live dashboard", help: watchHelp, flags: func(g *globals) *flag.FlagSet {
@@ -135,8 +135,8 @@ func usage(w io.Writer) {
 	b.WriteString("       togi --version\n\n")
 	b.WriteString("Finds and tests per-core Curve Optimizer offsets on Zen 5 desktop CPUs.\n\n")
 	b.WriteString("Examples:\n")
-	b.WriteString("  sudo togi run --laps 1   Stop after search and one clean lap\n")
-	b.WriteString("  togi status                   Show core failure points, combinations, activity and clean laps\n\n")
+	b.WriteString("  sudo togi run --cycles 1   Stop after search and one clean cycle\n")
+	b.WriteString("  togi status                   Show core failure points, combinations, activity and clean cycles\n\n")
 	b.WriteString("Commands:\n")
 	sorted := slices.SortedFunc(slices.Values(commands), func(a, b command) int { return strings.Compare(a.name, b.name) })
 	for _, c := range sorted {

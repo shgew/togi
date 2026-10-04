@@ -11,15 +11,15 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func storyConfig(steps []machine.Regime, startS int) *journal.ConfigLoaded {
+func storyConfig(steps []machine.Regime, shortTrialS int) *journal.ConfigLoaded {
 	c := config.Default()
 	if steps == nil {
-		steps = c.Checking.Lap
+		steps = c.Checking.Cycle
 	}
 	return &journal.ConfigLoaded{Config: journal.ConfigSnapshot{
-		Durations: journal.ConfigDurations{SearchTrialS: c.Durations.SearchTrialS, StartS: startS, CheckingTrialS: c.Durations.CheckingTrialS, CheckingIdleS: c.Durations.CheckingIdleS, CheckingAllCoreS: c.Durations.CheckingAllCoreS},
+		Durations: journal.ConfigDurations{SearchTrialS: c.Durations.SearchTrialS, ShortTrialS: shortTrialS, CheckingTrialS: c.Durations.CheckingTrialS, CheckingIdleS: c.Durations.CheckingIdleS, CheckingAllCoreS: c.Durations.CheckingAllCoreS},
 		Evidence:  journal.ConfigEvidence{Miss: c.Evidence.Miss, Rate: c.Evidence.Rate},
-		Checking:  journal.ConfigChecking{Lap: steps},
+		Checking:  journal.ConfigChecking{Cycle: steps},
 	}}
 }
 
@@ -81,7 +81,7 @@ func TestStoryDeepeningUsesTogetherScheduledChecks(t *testing.T) {
 		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
 		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
 		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -10, FailurePoint: new(-11)},
-		&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Base: []int{-20, -30, -10}, Target: []int{-22, -29, -10}, Profile: []int{-21, -29, -10}, Cores: []int{0, 1}, Starts: 3, StartS: 120},
+		&journal.DeepeningRound{Round: 2, Event: journal.CycleStart, Base: []int{-20, -30, -10}, Target: []int{-22, -29, -10}, Profile: []int{-21, -29, -10}, Cores: []int{0, 1}, Trials: 3, TrialS: 120},
 		&journal.TunerDecision{Core: 1, Phase: journal.PhaseDeepening, Decision: journal.Yield, FromOffset: -30, ToOffset: -29, FailurePoint: new(-31)},
 		&journal.TunerDecision{Core: 0, Phase: journal.PhaseDeepening, Decision: journal.Deepen, FromOffset: -20, ToOffset: -21},
 		&journal.TrialIntent{Trial: "deepening", Condition: machine.Together, Phase: journal.PhaseDeepening, Regime: machine.R1, Workload: "mprime-sse-24k-160k", Core: new(0), Offset: new(-21), Profile: []int{-21, -29, -10}, DurationS: 120, Round: 2},
@@ -91,23 +91,23 @@ func TestStoryDeepeningUsesTogetherScheduledChecks(t *testing.T) {
 		t.Fatal("fixture has no projected deepening checks")
 	}
 	text := storyText(s)
-	for _, want := range []string{"passed a full lap", "core 00 goes deeper to -21", "core 01 yields to -29", "whole proposed profile stays applied", "3 light load runs on core 00", "3 heavy vector load runs on core 00"} {
+	for _, want := range []string{"passed a full cycle", "core 00 goes deeper to -21", "core 01 yields to -29", "whole proposed profile stays applied", "3 light load runs on core 00", "3 heavy vector load runs on core 00"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q: %s", want, text)
 		}
 	}
-	for _, wrong := range []string{"passed a clean lap", "runs alone", "light load runs on core 01", "heavy vector load runs on core 01"} {
+	for _, wrong := range []string{"passed a clean cycle", "runs alone", "light load runs on core 01", "heavy vector load runs on core 01"} {
 		if strings.Contains(text, wrong) {
 			t.Fatalf("promised unplanned check %q: %s", wrong, text)
 		}
 	}
 	next := strings.Join(s.comingUp(), "\n")
-	if !strings.Contains(next, "keep deepening while more depth is reachable") || !strings.Contains(next, "return to checking laps") || strings.Contains(next, "new clean lap") {
+	if !strings.Contains(next, "keep deepening while more depth is reachable") || !strings.Contains(next, "return to checking cycles") || strings.Contains(next, "new clean cycle") {
 		t.Fatalf("passed round promises the wrong continuation: %s", next)
 	}
 	for _, st := range s.stations() {
 		if st.label == "Test together" && strings.Contains(strings.Join(st.sub, " "), "clean") {
-			t.Fatalf("passed full lap incorrectly described as clean: %+v", st)
+			t.Fatalf("passed full cycle incorrectly described as clean: %+v", st)
 		}
 	}
 }
@@ -119,7 +119,7 @@ func TestStoryMemberProbeNamesCombinationNotLoadedCores(t *testing.T) {
 			&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
 			&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30},
 			&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -10},
-			&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: loaded, Parked: []int{0, 0, 0}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Starts: 5, StartS: 120, DurationS: 120},
+			&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: loaded, Parked: []int{0, 0, 0}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Trials: 5, TrialS: 120, DurationS: 120},
 			&journal.HuntGroup{Hunt: 1, Group: 1, Stage: "probe", Cores: []int{2}, Probe: &journal.CombinationMember{Core: 0, Offset: -15}, Profile: []int{-15, 0, -10}, DurationS: 120},
 			&journal.TrialIntent{Trial: "probe", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: loaded, Profile: []int{-15, 0, -10}, DurationS: 120, Hunt: 1, Group: 1},
 			&journal.TrialStart{Trial: "probe"})
@@ -154,7 +154,7 @@ func TestStoryPartialCheckingScheduleCannotPromiseGoal(t *testing.T) {
 	cfg := storyConfig([]machine.Regime{machine.R1}, 120)
 	search := Project(dashboardEvents(dashboardSession(), cfg,
 		&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: -5}))
-	if next := strings.Join(search.comingUp(), "\n"); strings.Contains(next, "laps of every kind") || !strings.Contains(next, "cannot count") || !strings.Contains(next, "R2:") {
+	if next := strings.Join(search.comingUp(), "\n"); strings.Contains(next, "cycles of every kind") || !strings.Contains(next, "cannot count") || !strings.Contains(next, "R2:") {
 		t.Fatalf("search promises unavailable coverage: %s", next)
 	}
 	events := dashboardEvents(dashboardSession(), cfg,
@@ -162,7 +162,7 @@ func TestStoryPartialCheckingScheduleCannotPromiseGoal(t *testing.T) {
 		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.ProfileChange{To: []int{-50, -50, -50}},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}},
 		&journal.TrialIntent{Trial: "partial", Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Core: new(0), Offset: new(-50), Profile: []int{-50, -50, -50}, DurationS: 120},
 		&journal.TrialStart{Trial: "partial"})
 	s := Project(events)
@@ -171,11 +171,11 @@ func TestStoryPartialCheckingScheduleCannotPromiseGoal(t *testing.T) {
 	}
 	for _, text := range []string{storyText(s), strings.Join(s.comingUp(), "\n")} {
 		if strings.Contains(text, "covers every kind of load") || strings.Contains(text, "that's the goal") || !strings.Contains(text, "cannot count") || !strings.Contains(text, "R2:") {
-			t.Fatalf("partial schedule promises full clean-lap goal: %s", text)
+			t.Fatalf("partial schedule promises full clean-cycle goal: %s", text)
 		}
 	}
 	for _, st := range s.stations() {
-		if st.label == "Clean lap" && (st.state == target || st.state == reached || strings.Join(st.sub, " ") != "not covered by schedule") {
+		if st.label == "Clean cycle" && (st.state == target || st.state == reached || strings.Join(st.sub, " ") != "not covered by schedule") {
 			t.Fatalf("partial schedule shows achievable goal: %+v", st)
 		}
 	}
@@ -192,10 +192,10 @@ func TestStoryGoalRequiresNoRemainingDeepening(t *testing.T) {
 		payloads = append(payloads, &journal.Combination{Combination: i + 1, Members: []journal.CombinationMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
 	}
 	payloads = append(payloads, &journal.ProfileChange{To: []int{-49, -49, -49, -50}},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: config.Default().Checking.Lap},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: config.Default().Checking.Cycle},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
 	s := Project(dashboardEvents(payloads...))
-	if s.checking == nil || s.checking.CleanLaps != 1 || !s.canDeepen {
+	if s.checking == nil || s.checking.CleanCycles != 1 || !s.canDeepen {
 		t.Fatalf("fixture must retain clean credit with globally deeper profile reachable: %+v", s)
 	}
 	assertStoryNotGoal(t, s)
@@ -209,7 +209,7 @@ func assertStoryNotGoal(t *testing.T, s Snapshot) {
 		t.Fatalf("clean credit mistaken for finished deepening: %s", storyText(s))
 	}
 	for _, st := range s.stations() {
-		if strings.Join(st.sub, " ") == "no room left" || st.label == "Clean lap" && st.state == reached {
+		if strings.Join(st.sub, " ") == "no room left" || st.label == "Clean cycle" && st.state == reached {
 			t.Fatalf("remaining depth shown as exhausted: %+v", st)
 		}
 	}
@@ -236,13 +236,13 @@ func TestStoryRerunSeparatesShortRepeatsAndOriginalLength(t *testing.T) {
 			short := appendStoryEvents(append([]journal.Event(nil), events...), intent("short", 37), &journal.TrialStart{Trial: "short"})
 			s := Project(short)
 			for _, text := range []string{storyText(s), strings.Join(s.comingUp(), "\n")} {
-				if !strings.Contains(text, "5") || !strings.Contains(text, "starts of 37 s") {
+				if !strings.Contains(text, "5") || !strings.Contains(text, "trials of 37 s") {
 					t.Fatalf("short requirement lost recorded count/duration: %s", text)
 				}
-				if originalS != 37 && !strings.Contains(text, "one start of 15 min") {
+				if originalS != 37 && !strings.Contains(text, "one trial of 15 min") {
 					t.Fatalf("original-length followup omitted: %s", text)
 				}
-				if originalS == 37 && strings.Contains(text, "one start") {
+				if originalS == 37 && strings.Contains(text, "one trial") {
 					t.Fatalf("invented followup when durations coincide: %s", text)
 				}
 			}
@@ -256,11 +256,11 @@ func TestStoryRerunSeparatesShortRepeatsAndOriginalLength(t *testing.T) {
 			events = appendStoryEvents(events, intent("long", originalS), &journal.TrialStart{Trial: "long"})
 			s = Project(events)
 			for _, text := range []string{storyText(s), strings.Join(s.comingUp(), "\n")} {
-				if !strings.Contains(text, "15 min") || strings.Contains(text, "5 starts") || strings.Contains(text, "5 passing starts") || strings.Contains(text, "5 times") {
+				if !strings.Contains(text, "15 min") || strings.Contains(text, "5 trials") || strings.Contains(text, "5 passing trials") || strings.Contains(text, "5 times") {
 					t.Fatalf("long stage described as another short batch: %s", text)
 				}
-				if !strings.Contains(text, "once") && !strings.Contains(text, "one original-length start") {
-					t.Fatalf("long stage isn't exactly one start: %s", text)
+				if !strings.Contains(text, "once") && !strings.Contains(text, "one original-length trial") {
+					t.Fatalf("long stage isn't exactly one trial: %s", text)
 				}
 			}
 		})
@@ -277,10 +277,10 @@ func TestStoryInconclusiveResetIsNotRecentCrash(t *testing.T) {
 	}
 }
 
-func TestStoryCreditedLapAfterBackoffStillHasDepthToFind(t *testing.T) {
+func TestStoryCreditedCycleAfterBackoffStillHasDepthToFind(t *testing.T) {
 	t.Parallel()
 	oldProfile, backedOff := []int{-20, -20, -50}, []int{-20, -19, -50}
-	steps := config.Default().Checking.Lap
+	steps := config.Default().Checking.Cycle
 	w := machine.Workloads(machine.R2)[0].ID
 	events := dashboardEvents(dashboardSession(),
 		&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -20, Pass: new(-20)},
@@ -288,10 +288,10 @@ func TestStoryCreditedLapAfterBackoffStillHasDepthToFind(t *testing.T) {
 		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50, Pass: new(-50)},
 		&journal.Combination{Combination: 1, Members: []journal.CombinationMember{{Core: 0, Offset: -21}, {Core: 1, Offset: -20}}},
 		&journal.ProfileChange{To: oldProfile},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: steps},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true},
-		&journal.CheckingLap{Lap: 2, Event: journal.LapStart, Steps: steps},
-		&journal.TrialIntent{Trial: "fail", Core: new(1), Offset: new(-20), Regime: machine.R2, Workload: w, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Lap: 2, Profile: oldProfile},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: steps},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true},
+		&journal.CheckingCycle{Cycle: 2, Event: journal.CycleStart, Steps: steps},
+		&journal.TrialIntent{Trial: "fail", Core: new(1), Offset: new(-20), Regime: machine.R2, Workload: w, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Cycle: 2, Profile: oldProfile},
 		&journal.TrialStart{Trial: "fail"},
 		&journal.TrialEnd{Trial: "fail", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(1), DurationS: 10},
 		&journal.Failure{Trial: "fail", Signal: machine.ComputationError, Attribution: journal.Attributed, Core: new(1), Offset: new(-20), Regime: machine.R2, Condition: machine.Together, Profile: oldProfile},
@@ -300,8 +300,8 @@ func TestStoryCreditedLapAfterBackoffStillHasDepthToFind(t *testing.T) {
 		&journal.ProfileChange{From: oldProfile, To: backedOff})
 	events[13].Cause = []int{13}
 	s := Project(events)
-	if s.checking == nil || s.checking.CleanLaps != 1 || s.core(0).phase != journal.PhaseHasRoom || s.rerunDuration != 120*time.Second {
-		t.Fatalf("fixture lost credited lap, freed depth or pending rerun: %+v", s)
+	if s.checking == nil || s.checking.CleanCycles != 1 || s.core(0).phase != journal.PhaseHasRoom || s.rerunDuration != 120*time.Second {
+		t.Fatalf("fixture lost credited cycle, freed depth or pending rerun: %+v", s)
 	}
 	assertStoryNotGoal(t, s)
 	for i := range 5 {
@@ -312,7 +312,7 @@ func TestStoryCreditedLapAfterBackoffStillHasDepthToFind(t *testing.T) {
 			&journal.TrialEnd{Trial: id, Outcome: journal.OutcomePass, DurationS: 120})
 	}
 	s = Project(events)
-	if s.checking.CleanLaps != 1 || !s.canDeepen || s.rerunDuration != 0 {
+	if s.checking.CleanCycles != 1 || !s.canDeepen || s.rerunDuration != 0 {
 		t.Fatalf("fixture did not finish reruns with deepening still due: %+v", s)
 	}
 	assertStoryNotGoal(t, s)
@@ -325,15 +325,15 @@ func TestStoryGoalRetainsCompletedFullSchedule(t *testing.T) {
 		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.ProfileChange{To: []int{-50, -50, -50}},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: config.Default().Checking.Lap},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: config.Default().Checking.Cycle},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true},
 		&journal.TrialIntent{Trial: "watch", Core: new(0), Offset: new(-50), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: []int{-50, -50, -50}},
 		&journal.TrialStart{Trial: "watch"}))
 	if !s.goal() || !strings.Contains(storyText(s), "carry into the BIOS") {
 		t.Fatalf("completed full schedule lost its normal goal narration: %s", storyText(s))
 	}
 	for _, st := range s.stations() {
-		if st.label == "Go deeper" && strings.Join(st.sub, " ") != "no room left" || st.label == "Clean lap" && st.state != reached {
+		if st.label == "Go deeper" && strings.Join(st.sub, " ") != "no room left" || st.label == "Clean cycle" && st.state != reached {
 			t.Fatalf("completed goal station changed: %+v", st)
 		}
 	}
@@ -346,8 +346,8 @@ func TestStoryQueuedResetIsNotCompletedGoal(t *testing.T) {
 		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.ProfileChange{To: []int{-50, -50, -50}},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: config.Default().Checking.Lap},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: config.Default().Checking.Cycle},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
 	if !Project(events).goal() {
 		t.Fatal("fixture never reached the goal before reset")
 	}
@@ -369,14 +369,14 @@ func TestStoryGoalSurvivesPartialScheduleReload(t *testing.T) {
 				&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -50},
 				&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 				&journal.ProfileChange{To: []int{-50, -50, -50}},
-				&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: config.Default().Checking.Lap},
-				&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true},
+				&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: config.Default().Checking.Cycle},
+				&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true},
 				storyConfig([]machine.Regime{machine.R1}, 120))
 			if stopped {
-				events = appendStoryEvents(events, &journal.Shutdown{Reason: journal.ShutdownLaps, Laps: 1})
+				events = appendStoryEvents(events, &journal.Shutdown{Reason: journal.ShutdownCycles, Cycles: 1})
 			}
 			s := Project(events)
-			if s.checking == nil || s.checking.CleanLaps != 1 || s.checking.Full || s.canDeepen || s.rerunDuration != 0 {
+			if s.checking == nil || s.checking.CleanCycles != 1 || s.checking.Full || s.canDeepen || s.rerunDuration != 0 {
 				t.Fatalf("fixture must retain full credit while only the next schedule is partial: %+v", s)
 			}
 			if !s.goal() {
@@ -386,12 +386,12 @@ func TestStoryGoalSurvivesPartialScheduleReload(t *testing.T) {
 				t.Fatalf("completed-goal narration was lost after reload: %+v", s.story(time.Unix(1100, 0).UTC()))
 			}
 			for _, st := range s.stations() {
-				if st.label == "Clean lap" && st.state != reached {
+				if st.label == "Clean cycle" && st.state != reached {
 					t.Fatalf("completed goal was not retained: %+v", st)
 				}
 			}
-			next := strings.Join(s.lapNext(), "\n")
-			if !strings.Contains(next, "future laps don't add clean-lap credit") || !strings.Contains(next, "goal is already reached") {
+			next := strings.Join(s.cycleNext(), "\n")
+			if !strings.Contains(next, "future cycles don't add clean-cycle credit") || !strings.Contains(next, "goal is already reached") {
 				t.Fatalf("partial future schedule confused prior credit: %s", next)
 			}
 		})
@@ -400,7 +400,7 @@ func TestStoryGoalSurvivesPartialScheduleReload(t *testing.T) {
 
 func TestStoryShutdownClaimsRestorationOnlyForRunStops(t *testing.T) {
 	t.Parallel()
-	for _, reason := range []journal.ShutdownReason{journal.ShutdownCommand, journal.ShutdownSignal, journal.ShutdownLaps, journal.ShutdownDeadEnd} {
+	for _, reason := range []journal.ShutdownReason{journal.ShutdownCommand, journal.ShutdownSignal, journal.ShutdownCycles, journal.ShutdownDeadEnd} {
 		t.Run(string(reason), func(t *testing.T) {
 			s := Project(dashboardEvents(dashboardSession(),
 				&journal.ProfileApplied{Offsets: []int{-20, -30, -10}, Condition: machine.Together},
@@ -410,7 +410,7 @@ func TestStoryShutdownClaimsRestorationOnlyForRunStops(t *testing.T) {
 				t.Fatalf("lost shutdown reason: got %q, want %q", s.stoppedReason, reason)
 			}
 			restored := strings.Contains(text, "put the offsets back to safe values")
-			if restored != (reason == journal.ShutdownSignal || reason == journal.ShutdownLaps) {
+			if restored != (reason == journal.ShutdownSignal || reason == journal.ShutdownCycles) {
 				t.Fatalf("shutdown %q misstates restoration: %s", reason, text)
 			}
 			if reason == journal.ShutdownCommand && (!strings.Contains(text, "without changing the applied offsets") || strings.Contains(text, "not what is applied now")) {
@@ -423,7 +423,7 @@ func TestStoryShutdownClaimsRestorationOnlyForRunStops(t *testing.T) {
 func TestStoryFullHuntPassRestartsBinaryGroups(t *testing.T) {
 	t.Parallel()
 	events := dashboardEvents(dashboardSession(),
-		&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Parked: []int{0, 0, 0}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 1, 2}, Starts: 5, StartS: 120, DurationS: 600},
+		&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Parked: []int{0, 0, 0}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 1, 2}, Trials: 5, TrialS: 120, DurationS: 600},
 		&journal.HuntGroup{Hunt: 1, Group: 3, Stage: "full", Cores: []int{0, 1, 2}, Profile: []int{-20, -30, -10}, DurationS: 120},
 		&journal.TrialIntent{Trial: "full", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Profile: []int{-20, -30, -10}, DurationS: 120, Hunt: 1, Group: 3},
 		&journal.TrialStart{Trial: "full"})
@@ -436,9 +436,9 @@ func TestStoryFullHuntPassRestartsBinaryGroups(t *testing.T) {
 func TestStoryCheckingGoalIncludesRecordOnlyCompletion(t *testing.T) {
 	t.Parallel()
 	s := Snapshot{checkingFull: true}
-	st := s.lapStory(&trial{regime: machine.R7, cores: []int{0}, recordOnly: true})
+	st := s.cycleStory(&trial{regime: machine.R7, cores: []int{0}, recordOnly: true})
 	text := strings.Join(st.paragraphs, "\n")
-	for _, want := range []string{"ordinary steps must pass", "record-only partial steps only need to complete", "The lap goes on either way"} {
+	for _, want := range []string{"ordinary steps must pass", "record-only partial steps only need to complete", "The cycle goes on either way"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("checking goal contradicts record-only completion: missing %q in %s", want, text)
 		}

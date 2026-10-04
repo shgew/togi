@@ -49,8 +49,8 @@ func watchCuts(t *testing.T) []watchCut {
 		return ok && p.Phase == journal.PhaseSearch && p.Decision == journal.Backoff
 	})
 	checking := through(func(e journal.Event) bool {
-		p, ok := e.Data.(*journal.CheckingLap)
-		return ok && p.Event == journal.LapStart
+		p, ok := e.Data.(*journal.CheckingCycle)
+		return ok && p.Event == journal.CycleStart
 	})
 	last := events[len(events)-1]
 	p := &journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Detail: "five trials in a row proved nothing"}

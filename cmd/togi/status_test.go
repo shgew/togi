@@ -33,7 +33,7 @@ func TestStatus(t *testing.T) {
 		t.Fatalf("status: exit %d, stderr %s", code, stderr.String())
 	}
 	status := stdout.String()
-	if want := fmt.Sprintf("clean laps since last deepening: %d, latest lap %d", st.Checking.CleanLaps, st.Checking.LastCleanLap); !strings.Contains(status, want) {
+	if want := fmt.Sprintf("clean cycles since last deepening: %d, latest cycle %d", st.Checking.CleanCycles, st.Checking.LastCleanCycle); !strings.Contains(status, want) {
 		t.Fatalf("status lacks %q:\n%s", want, status)
 	}
 	checkRows(t, "status", status, regexp.MustCompile(`(?m)^(\d\d)  +\d  +\d  +(-?\d+)  `), st)
@@ -257,7 +257,7 @@ func TestStatusExceptionalActivity(t *testing.T) {
 			switch name {
 			case "partial-checking":
 				st.Phase = string(journal.PhaseChecking)
-				st.Checking = &journal.CheckingState{Lap: 4, Steps: []machine.Regime{machine.R1}, Profile: []int{-9, -8}, Missing: []string{"core 03 has no R1 pass"}}
+				st.Checking = &journal.CheckingState{Cycle: 4, Steps: []machine.Regime{machine.R1}, Profile: []int{-9, -8}, Missing: []string{"core 03 has no R1 pass"}}
 			case "dead-end":
 				st.DeadEnd = &journal.DeadEndRef{Condition: journal.DeadEndNoEvidence, Seq: 42}
 			case "parked-member-probe-group":
@@ -286,11 +286,11 @@ func TestStatusExceptionalActivity(t *testing.T) {
 
 func TestStatusRecordOnlyPartial(t *testing.T) {
 	t.Parallel()
-	p := &journal.TrialIntent{Trial: "partial", Cores: []int{1, 2, 3, 4, 5, 6, 7}, RecordOnly: true, Step: 1, Lap: 1, Regime: machine.R7, Workload: "AVX2", Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120}
+	p := &journal.TrialIntent{Trial: "partial", Cores: []int{1, 2, 3, 4, 5, 6, 7}, RecordOnly: true, Step: 1, Cycle: 1, Regime: machine.R7, Workload: "AVX2", Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120}
 	st := journal.State{
 		Session:  &journal.SessionInfo{ID: "s1", Start: time.Unix(100, 0).UTC()},
 		Phase:    string(journal.PhaseChecking),
-		Checking: &journal.CheckingState{Lap: 1, LapOpen: true, Steps: []machine.Regime{machine.R7}},
+		Checking: &journal.CheckingState{Cycle: 1, CycleOpen: true, Steps: []machine.Regime{machine.R7}},
 		InFlight: &journal.InFlight{Seq: 20, Msg: p.Message()},
 	}
 	var out bytes.Buffer

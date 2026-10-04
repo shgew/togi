@@ -33,7 +33,7 @@ func dashboardHuntEvents() []journal.Event {
 		&journal.TrialIntent{Trial: "previous", Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Profile: []int{-20, -30, -10}, DurationS: 120},
 		&journal.TrialEnd{Trial: "previous", Outcome: journal.OutcomeFailure, Signal: machine.Crash},
 		&journal.Failure{Trial: "previous", Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Regime: machine.R7, Profile: []int{-20, -30, -10}},
-		&journal.HuntStart{Hunt: 3, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Parked: []int{-10, -30, -5}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Starts: 5, StartS: 120, DurationS: 120},
+		&journal.HuntStart{Hunt: 3, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Parked: []int{-10, -30, -5}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Trials: 5, TrialS: 120, DurationS: 120},
 		&journal.HuntGroup{Hunt: 3, Group: 4, Cores: []int{2}, Profile: []int{-10, -30, -10}, DurationS: 120},
 		&journal.TrialIntent{Trial: "group", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 1, 2}, Profile: []int{-10, -30, -10}, DurationS: 120, Hunt: 3, Group: 4},
 		&journal.TrialStart{Trial: "group"})
@@ -44,7 +44,7 @@ func dashboardDeepeningEvents() []journal.Event {
 		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
 		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
 		&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -10},
-		&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Base: []int{-20, -30, -10}, Target: []int{-22, -30, -10}, Profile: []int{-21, -30, -10}, Cores: []int{0}, Starts: 5, StartS: 120})
+		&journal.DeepeningRound{Round: 2, Event: journal.CycleStart, Base: []int{-20, -30, -10}, Target: []int{-22, -30, -10}, Profile: []int{-21, -30, -10}, Cores: []int{0}, Trials: 5, TrialS: 120})
 }
 
 func TestProjectTrialLifecycle(t *testing.T) {
@@ -220,7 +220,7 @@ func TestProjectMemberProbeRows(t *testing.T) {
 				&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
 				&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30},
 				&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -10},
-				&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: tc.loaded, Parked: parked, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Starts: 5, StartS: 120, DurationS: 120},
+				&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: tc.loaded, Parked: parked, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Trials: 5, TrialS: 120, DurationS: 120},
 				&journal.HuntGroup{Hunt: 1, Group: 1, Stage: "probe", Cores: groupCores, Probe: &journal.CombinationMember{Core: 0, Offset: tc.profile[0]}, Held: held, Profile: tc.profile, DurationS: 120},
 				&journal.TrialIntent{Trial: "probe", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: tc.loaded, Profile: tc.profile, DurationS: 120, Hunt: 1, Group: 1})
 			if tc.started {

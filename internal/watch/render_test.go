@@ -21,8 +21,8 @@ func dashboardCheckingEvents(extra ...journal.Payload) []journal.Event {
 		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
 		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.ProfileChange{To: []int{-20, -30, -50}},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R1, machine.R2, machine.R7}},
-		&journal.TrialIntent{Trial: "checking", Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R2, Workload: "mprime-avx2-36k-248k", Core: new(1), Profile: []int{-20, -30, -50}, DurationS: 120, Lap: 1},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1, machine.R2, machine.R7}},
+		&journal.TrialIntent{Trial: "checking", Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R2, Workload: "mprime-avx2-36k-248k", Core: new(1), Profile: []int{-20, -30, -50}, DurationS: 120, Cycle: 1},
 		&journal.TrialStart{Trial: "checking"},
 	}, extra...)...)
 }
@@ -63,8 +63,8 @@ func TestDashboardNarrowTrackRetainsStages(t *testing.T) {
 		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.ProfileChange{To: []int{-50, -50, -50}},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: config.Default().Checking.Lap},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: config.Default().Checking.Cycle},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true},
 		&journal.TrialIntent{Trial: "watch", Core: new(0), Offset: new(-50), Regime: machine.R1, Workload: machine.Workloads(machine.R1)[0].ID, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: []int{-50, -50, -50}},
 		&journal.TrialStart{Trial: "watch"}))
 	for _, tc := range []struct {
@@ -87,7 +87,7 @@ func TestDashboardNarrowTrackRetainsStages(t *testing.T) {
 					}
 				}
 				frame := ansi.Strip(fit(lines, width, len(lines)+1))
-				for _, label := range []string{"Find limits", "Test together", "Go deeper", "Clean lap", "Keep checking"} {
+				for _, label := range []string{"Find limits", "Test together", "Go deeper", "Clean cycle", "Keep checking"} {
 					if !strings.Contains(frame, label) {
 						t.Errorf("width %d lost station %q:\n%s", width, label, frame)
 					}
@@ -95,15 +95,15 @@ func TestDashboardNarrowTrackRetainsStages(t *testing.T) {
 				if !strings.Contains(frame, "► "+tc.current) {
 					t.Errorf("width %d lost current marker for %q:\n%s", width, tc.current, frame)
 				}
-				if tc.name != "goal" && !strings.Contains(frame, "○ Clean lap") {
+				if tc.name != "goal" && !strings.Contains(frame, "○ Clean cycle") {
 					t.Errorf("width %d lost goal marker:\n%s", width, frame)
 				}
-				if tc.name == "goal" && !strings.Contains(frame, "■ Clean lap") {
+				if tc.name == "goal" && !strings.Contains(frame, "■ Clean cycle") {
 					t.Errorf("width %d lost reached goal marker:\n%s", width, frame)
 				}
 			}
 			frame := ansi.Strip(Render(tc.s, 50, 60, time.Unix(1100, 0).UTC()))
-			if !strings.Contains(frame, "► "+tc.current) || !strings.Contains(frame, "Clean lap") || !strings.Contains(frame, "Keep checking") {
+			if !strings.Contains(frame, "► "+tc.current) || !strings.Contains(frame, "Clean cycle") || !strings.Contains(frame, "Keep checking") {
 				t.Errorf("50-column frame lost stage meaning:\n%s", frame)
 			}
 		})
@@ -139,7 +139,7 @@ func TestDashboardShortMainFramesRetainCoreOffsets(t *testing.T) {
 								t.Errorf("%dx%d keys=%t hid core offset %q:\n%s", width, height, keys, offset, frame)
 							}
 						}
-						if !strings.Contains(frame, "Clean lap") || !strings.Contains(frame, "Keep checking") || !strings.Contains(frame, "► "+tc.current) {
+						if !strings.Contains(frame, "Clean cycle") || !strings.Contains(frame, "Keep checking") || !strings.Contains(frame, "► "+tc.current) {
 							t.Errorf("%dx%d keys=%t lost stage meaning:\n%s", width, height, keys, frame)
 						}
 						if !strings.Contains(frame, s.story(now).headline) {
@@ -361,17 +361,17 @@ func TestRecordOnlyPartialTrial(t *testing.T) {
 		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
 		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
 		&journal.ProfileChange{To: profile},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R7}},
-		&journal.CheckingStep{Lap: 1, Step: 1, Profile: profile, Partials: []journal.CheckingPartial{{CCD: 0, Cores: []int{1}}, {CCD: 1, Reason: "all CCD cores are at their limits"}}},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R7}},
+		&journal.CheckingStep{Cycle: 1, Step: 1, Profile: profile, Partials: []journal.CheckingPartial{{CCD: 0, Cores: []int{1}}, {CCD: 1, Reason: "all CCD cores are at their limits"}}},
 		&journal.ProfileChange{From: profile, To: resumed},
 		&journal.SMUReadback{Core: 1, Offset: -10},
-		&journal.TrialIntent{Trial: "partial", Cores: []int{1}, RecordOnly: true, Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Profile: resumed, DurationS: 120, Lap: 1, Step: 1},
+		&journal.TrialIntent{Trial: "partial", Cores: []int{1}, RecordOnly: true, Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Profile: resumed, DurationS: 120, Cycle: 1, Step: 1},
 		&journal.TrialStart{Trial: "partial"},
 		&journal.TrialEnd{Trial: "partial", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError})
 	live := events[:len(events)-1]
 	s := Project(live)
 	st := s.story(live[len(live)-1].Time.Add(time.Minute))
-	if st.now == nil || st.now.what != "lap 1, step 1 of 1, recorded only" || st.now.detail != "partial all-core load on core 01" {
+	if st.now == nil || st.now.what != "cycle 1, step 1 of 1, recorded only" || st.now.detail != "partial all-core load on core 01" {
 		t.Fatalf("a running partial must be named record-only with its loaded cores: %+v", st.now)
 	}
 	if text := strings.Join(st.paragraphs, "\n"); !strings.Contains(text, "moves no offset") || strings.Contains(text, "one core at a time") {
