@@ -327,3 +327,20 @@ func TestUndrawableGlyphsAreMeasuredEscaped(t *testing.T) {
 		t.Fatalf("trimmed escape %q", got)
 	}
 }
+
+func TestCCDRoleCountsLoadAndProbes(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		cores []coreView
+		want  string
+	}{
+		{"parked with a load left", []coreView{{ccd: 0, state: coreParked, loaded: true}, {ccd: 0, state: coreParked}}, "parked at 0, 1 under load"},
+		{"parked and idle", []coreView{{ccd: 0, state: coreParked}, {ccd: 0, state: coreParked}}, "parked at 0, idle"},
+		{"a member probed", []coreView{{ccd: 0, state: coreMember, loaded: true}, {ccd: 0, state: coreProbe, loaded: true}}, "members, one probed shallower than its failing offset"},
+	} {
+		if got, _ := (Snapshot{cores: tc.cores}).ccdRole(0); got != tc.want {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}

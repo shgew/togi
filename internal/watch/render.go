@@ -548,7 +548,11 @@ func (s Snapshot) resting() bool {
 func (s Snapshot) restingBand() (string, lipgloss.Style, []string) {
 	switch {
 	case s.deadEnd != nil:
-		return "DEAD END", red, []string{strings.ReplaceAll(vtText(string(s.deadEnd.condition)), "_", " ") + ": " + vtText(s.deadEnd.detail)}
+		lines := []string{strings.ReplaceAll(vtText(string(s.deadEnd.condition)), "_", " ") + ": " + vtText(s.deadEnd.detail)}
+		if s.stopped != nil && s.stopped.saved {
+			lines = append(lines, "Rows show the saved profile, not applied now.")
+		}
+		return "DEAD END", red, lines
 	case s.stopped != nil:
 		lines := []string{s.stopped.at.Format("15:04:05") + " · " + stopWords(s.stopped.reason)}
 		if s.stopped.saved {
@@ -1009,7 +1013,7 @@ func (c coreView) noteLine(width int) string {
 
 // ccdRole says what this trial does with a CCD's cores, in full and in a word.
 func (s Snapshot) ccdRole(id int) (string, string) {
-	loaded, judged, parked, total, suspects, members := 0, 0, 0, 0, 0, 0
+	loaded, judged, parked, total, suspects, members, probes := 0, 0, 0, 0, 0, 0, 0
 	atZero, parkedZero := true, true
 	for _, c := range s.cores {
 		if c.ccd != id {
@@ -1033,8 +1037,11 @@ func (s Snapshot) ccdRole(id int) (string, string) {
 			parkedZero = parkedZero && offset == 0
 		case coreSuspect:
 			suspects++
-		case coreMember, coreProbe:
+		case coreMember:
 			members++
+		case coreProbe:
+			members++
+			probes++
 		case coreWaiting, coreSearch, coreConfirm, coreFound, coreAtLimit, coreHasRoom:
 		}
 	}
@@ -1047,10 +1054,14 @@ func (s Snapshot) ccdRole(id int) (string, string) {
 		return "", ""
 	case parked == total && loaded == total:
 		return parkedWords + ", still under load", "parked"
+	case parked == total && loaded > 0:
+		return fmt.Sprintf("%s, %d under load", parkedWords, loaded), "parked"
 	case parked == total:
 		return parkedWords + ", idle", "parked"
 	case loaded == total && suspects == total:
 		return "suspects at their failing offsets", "suspects"
+	case loaded == total && members == total && probes > 0:
+		return "members, one probed shallower than its failing offset", "members"
 	case loaded == total && members == total:
 		return "members at their failing offsets", "members"
 	case loaded == total:

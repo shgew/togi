@@ -247,6 +247,7 @@ func TestForecastAllPassStaysWithinItsRequirement(t *testing.T) {
 				if pass != nil && pass.Next != nil && (pass.Next.Core != *p.Core || pass.Next.Regime != p.Regime) {
 					t.Fatalf("all-pass branch assumed passes of another requirement first: next %+v, branch %+v", pass.Next, b)
 				}
+			case IfNamed, IfUnnamed, IfInconclusive:
 			}
 		}
 		if p.Core != nil && *p.Core == 0 && pass != nil && pass.Next != nil && pass.Next.Core == 1 {
