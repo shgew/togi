@@ -78,7 +78,7 @@ Copyright (C) 2026 Hleb Shauchenka. togi is free software under the [GNU General
 
 ## Development
 
-Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, and `just gate` runs every non-VM flake check sequentially, using warm Go caches: formatting, lint, the NixOS module's evaluation, changelog fragments, shuffled integration-tagged tests, the race detector and, on Linux, the hardware-tagged trial test compile. `just check` adds the Linux VM tests and stays CI's definition of green; CI runs every check on every pull request. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the agent check ladder and the rest.
+Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, and `just gate` runs every non-VM flake check sequentially, using warm Go caches: formatting, lint, the NixOS module's evaluation, changelog fragments, the vendored Go modules, shuffled integration-tagged tests, the race detector and, on Linux, the hardware-tagged trial test compile. `just check` adds the Linux VM tests and stays CI's definition of green; CI runs every check on every pull request. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the agent check ladder and the rest.
 
 Hardware tests share a private host lock with `run` and `reset`. Delegated users need explicit lock access as well as SMU and cpuset-controller permissions; see [host-lock provisioning](docs/howto.md#host-lock-and-delegated-hardware-tests). After upgrading from a public-readable lock, quiesce old lock openers or reboot before relying on the new permissions.
 

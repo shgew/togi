@@ -64,6 +64,11 @@ gate:
     just check-one fmt
     just lint
     just check-one module changes
+    vendored=$(nix build --no-link --print-out-paths '.#checks.{{ system }}.package.goModules')
+    fresh=$(mktemp -d)
+    trap 'rm -rf "$fresh"' EXIT
+    go mod vendor -o "$fresh/vendor"
+    diff -rq "$fresh/vendor" "$vendored" >&2 || { echo 'gate: the Go modules vendored for vendorHash in flake.nix differ from go.mod and go.sum; update vendorHash' >&2; exit 1; }
     go test -shuffle=on -tags integration ./...
     go test -race -shuffle=on -tags integration ./internal/trial ./internal/session ./internal/journal ./internal/watch
     if [[ "{{ os() }}" == linux ]]; then

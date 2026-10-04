@@ -78,7 +78,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just` | List the recipes |
 | `just bot <gh args>` | Post review records and `review` checks as robotogi, using the private key file named by `ROBOTOGI_KEY_FILE` |
 | `just test` | The tight loop |
-| `just gate` | Every non-VM flake check, sequentially, cheapest first: fmt, lint, module and changes, shuffled integration-tagged tests, race, and, on Linux, the hardware-tagged trial test compile. Uses warm dev-shell Go caches |
+| `just gate` | Every non-VM flake check, sequentially, cheapest first: fmt, lint, module and changes, the Go modules vendored for `vendorHash` against `go.mod` and `go.sum`, shuffled integration-tagged tests, race, and, on Linux, the hardware-tagged trial test compile. Uses warm dev-shell Go caches |
 | `just check` | Every flake check the host builds, CI's definition of green: package (shuffled integration-tagged tests), race (trial, session, journal and watch), lint (Linux and macOS), fmt, changes (changelog fragments), module (NixOS module evaluation) and, on Linux, `trial-scope-tests` and the VM tests `vm` (tuning boot) and `vm-restart-limit`. Must pass before every push to a pull request head, review fixes included; CI also runs the Linux-only checks for macOS authors |
 | `just fmt` | Format Go, Nix and the justfile in place |
 | `just sim [seed]` | A simulated session through its first clean lap in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
