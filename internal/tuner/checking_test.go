@@ -55,7 +55,7 @@ func TestCoveredOpenCycleYieldsToDeepening(t *testing.T) {
 					a := h.s.cycleNext()
 					if a.Kind == RunTrial {
 						h.trial(a, passed)
-					} else if _, step := a.Payload.(*journal.CheckingStep); step {
+					} else if _, end := a.Payload.(*journal.CheckingLap); !end {
 						h.decide(a)
 					} else {
 						break
@@ -120,23 +120,27 @@ func TestR7TrialsAndSharedDuration(t *testing.T) {
 	h.decide(h.next())
 	h.decide(h.next())
 	for _, part := range []struct {
-		cores      []int
-		recordOnly bool
-		long       int
+		cores []int
+		long  int
 	}{
-		{[]int{1}, true, 120},
-		{[]int{0, 1}, false, 120},
-		{[]int{3}, true, 120},
-		{[]int{2, 3}, false, 120},
-		{[]int{0, 1, 2, 3}, false, 240},
+		{[]int{0, 1}, 120},
+		{[]int{2, 3}, 120},
+		{[]int{0, 1, 2, 3}, 240},
 	} {
 		for trial := range 4 {
 			a := h.next()
+			for a.Kind == Decide {
+				if _, chain := a.Payload.(*journal.CheckingChain); !chain {
+					t.Fatalf("unexpected decision between parts: %+v", a)
+				}
+				h.decide(a)
+				a = h.next()
+			}
 			duration := 120
 			if trial == 3 {
 				duration = part.long
 			}
-			if a.Kind != RunTrial || a.Trial.Regime != machine.R7 || a.Trial.DurationS != duration || a.Trial.RecordOnly != part.recordOnly || !slices.Equal(a.Trial.Cores, part.cores) {
+			if a.Kind != RunTrial || a.Trial.Regime != machine.R7 || a.Trial.DurationS != duration || !slices.Equal(a.Trial.Cores, part.cores) {
 				t.Fatalf("part %v trial %d: %+v", part.cores, trial, a)
 			}
 			h.trial(a, passed)

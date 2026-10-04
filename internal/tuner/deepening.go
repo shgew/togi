@@ -6,6 +6,7 @@ import (
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/requests"
 )
 
 type round struct {
@@ -98,13 +99,21 @@ func (s *State) roundMoves() (Action, bool) {
 	return Action{}, false
 }
 
-func (s *State) roundChecks() []requirement {
+func (s *State) roundChecksWithSources() ([]requirement, []int) {
 	r := s.round
 	if r == nil {
-		return nil
+		return nil, nil
 	}
 	p := r.start.Profile
 	var out []requirement
+	var sources []int
+	cite := func(seqs []int) {
+		for _, seq := range seqs {
+			if !slices.Contains(sources, seq) {
+				sources = append(sources, seq)
+			}
+		}
+	}
 	index := (r.start.Round - 1) % 3
 	for _, c := range s.cores {
 		i := s.index(c.id)
@@ -116,28 +125,80 @@ func (s *State) roundChecks() []requirement {
 			out = append(out, requirement{class: trialClass{regime, w, coresKey([]int{c.id}), r.start.TrialS}, cores: []int{c.id}, core: c.id, offset: p[i], count: r.start.Trials})
 		}
 	}
-	for _, part := range s.parts {
-		needed := false
-		for _, id := range part {
-			idx := s.index(id)
-			if slices.Contains(r.start.Cores, id) && p[idx] < r.initial[idx] {
-				needed = true
-				break
-			}
-		}
-		if needed {
-			w := machine.Workloads(machine.R7)[index].ID
-			out = append(out, requirement{class: trialClass{machine.R7, w, coresKey(part), r.start.TrialS}, cores: slices.Clone(part), count: r.start.Trials})
+	addPart := func(w string, part []int) {
+		k := trialClass{machine.R7, w, coresKey(part), r.start.TrialS}
+		if !slices.ContainsFunc(out, func(q requirement) bool { return q.class == k }) {
+			out = append(out, requirement{class: k, cores: slices.Clone(part), count: r.start.Trials})
 		}
 	}
-	return out
+	for _, workload := range machine.Workloads(machine.R7) {
+		for _, full := range s.ccdParts() {
+			previous := full
+			initialRequests, initialSources := s.r7Requests(workload.ID, full, r.initial)
+			cite(initialSources)
+			var initialTop []int
+			if groups := requests.Groups(initialRequests); len(groups) > 0 {
+				initialTop = groups[0]
+			}
+			for len(previous) > 0 {
+				voltages, seqs := s.r7Requests(workload.ID, previous, p)
+				cite(seqs)
+				groups := requests.Groups(voltages)
+				if len(groups) == 0 {
+					break
+				}
+				needed := false
+				for _, id := range groups[0] {
+					if slices.Contains(r.start.Cores, id) && p[s.index(id)] < r.initial[s.index(id)] {
+						needed = true
+					}
+				}
+				if slices.Equal(previous, full) {
+					for _, id := range initialTop {
+						if slices.Contains(r.start.Cores, id) && p[s.index(id)] < r.initial[s.index(id)] {
+							needed = true
+						}
+					}
+				}
+				if needed {
+					addPart(workload.ID, previous)
+				}
+				next := make([]int, 0, len(previous)-len(groups[0]))
+				for _, id := range previous {
+					if !slices.Contains(groups[0], id) {
+						next = append(next, id)
+					}
+				}
+				previous = next
+				if len(previous) < 2 {
+					break
+				}
+			}
+		}
+	}
+	return out, sources
+}
+
+func (s *State) roundChecks() []requirement {
+	checks, _ := s.roundChecksWithSources()
+	return checks
+}
+
+func (s *State) roundCheckProfile(q requirement) []int {
+	if q.class.regime == machine.R7 {
+		return s.round.start.Profile
+	}
+	profile := make([]int, len(s.cores))
+	profile[s.index(q.core)] = q.offset
+	return profile
 }
 
 func (s *State) roundCheck() Action {
 	r := s.round
-	cause := []int{r.seq}
-	for _, q := range s.roundChecks() {
-		seqs := s.passSeqs(q.class, r.start.Profile, r.seq, deepeningEvidence)
+	checks, sources := s.roundChecksWithSources()
+	cause := append([]int{r.seq}, sources...)
+	for _, q := range checks {
+		seqs := s.passSeqs(q.class, s.roundCheckProfile(q), r.seq, deepeningEvidence)
 		if len(seqs) >= q.count {
 			cause = s.citeCarried(cause, seqs[:q.count]...)
 			continue
@@ -148,10 +209,12 @@ func (s *State) roundCheck() Action {
 		t := Trial{Regime: q.class.regime, Workload: q.class.workload, Condition: machine.Together, Phase: journal.PhaseDeepening, DurationS: q.class.duration, Round: r.start.Round}
 		if q.class.regime == machine.R7 {
 			t.Cores = q.cores
+			t.Profile = r.start.Profile
 		} else {
 			t.Core, t.Offset = q.core, q.offset
+			t.Condition = machine.Alone
 		}
-		return Action{Kind: RunTrial, Trial: t, Cause: []int{r.seq}}
+		return Action{Kind: RunTrial, Trial: t, Cause: cause}
 	}
 	return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: r.start.Round, Event: journal.CycleEnd, Passed: true, Reason: s.carriedReason(cause)}, Cause: cause}
 }
@@ -163,7 +226,7 @@ func (s *State) projectRound() *journal.DeepeningState {
 	}
 	st := &journal.DeepeningState{Round: r.start.Round, Seq: r.seq, Target: slices.Clone(r.start.Target), Profile: slices.Clone(r.start.Profile), Cores: slices.Clone(r.start.Cores)}
 	for _, q := range s.roundChecks() {
-		st.Checks = append(st.Checks, journal.CheckState{Regime: q.class.regime, Workload: q.class.workload, Cores: slices.Clone(q.cores), Passes: s.passes(q.class, r.start.Profile, r.seq, deepeningEvidence), Needed: q.count})
+		st.Checks = append(st.Checks, journal.CheckState{Regime: q.class.regime, Workload: q.class.workload, Cores: slices.Clone(q.cores), Passes: s.passes(q.class, s.roundCheckProfile(q), r.seq, deepeningEvidence), Needed: q.count})
 	}
 	return st
 }

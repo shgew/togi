@@ -324,7 +324,7 @@ func (s *State) Fold(e journal.Event) {
 		s.flight = p
 		s.intents[p.Trial] = p
 		s.intentSeq[e.Seq] = p.Trial
-		s.recordCheckingStart(p)
+		s.recordCheckingTrial(p)
 		s.retry = nil
 		if p.Condition == machine.Alone && p.Core != nil {
 			s.cursor = slices.IndexFunc(s.cores, func(c *core) bool { return c.id == *p.Core })
