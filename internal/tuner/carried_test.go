@@ -14,8 +14,12 @@ import (
 func carryTrials(h *harness, r machine.Regime, cores, profile []int, duration, count int, outcome journal.Outcome) []int {
 	h.t.Helper()
 	var seqs []int
+	condition := machine.Alone
+	if r == machine.R6 {
+		condition = machine.Together
+	}
 	for range count {
-		e := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "20261002T004254Z", Seq: len(h.events) + 1, Evidence: EvidenceEpoch}, Class: journal.TrialClass{Regime: r, Workload: machine.Workloads(r)[0].ID, Cores: cores, DurationS: duration}, Condition: machine.Alone, Profile: profile, DurationS: duration, Outcome: outcome})
+		e := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "20261002T004254Z", Seq: len(h.events) + 1, Evidence: EvidenceEpoch}, Class: journal.TrialClass{Regime: r, Workload: machine.Workloads(r)[0].ID, Cores: cores, DurationS: duration}, Condition: condition, Profile: profile, DurationS: duration, Outcome: outcome})
 		seqs = append(seqs, e.Seq)
 	}
 	return seqs
@@ -119,8 +123,8 @@ func TestCarriedEvidenceConsumers(t *testing.T) {
 		{"hunt group", func(t *testing.T) {
 			t.Helper()
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10}, coreStart{phase: journal.PhaseAtLimit, offset: -10})
-			facts := carryTrials(h, machine.R7, []int{0, 1}, []int{-10, 0}, h.s.durations.ShortTrialS, h.s.n, journal.OutcomePass)
-			h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: h.s.durations.ShortTrialS, TrialS: h.s.durations.ShortTrialS, Trials: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
+			facts := carryTrials(h, machine.R6, []int{0, 1}, []int{-10, 0}, h.s.durations.ShortTrialS, h.s.n, journal.OutcomePass)
+			h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: h.s.durations.ShortTrialS, TrialS: h.s.durations.ShortTrialS, Trials: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
 			a := h.s.planGroup(h.s.hunt, groupPlan{cores: []int{0}, set: []int{0, 1}, stage: "probe", duration: h.s.durations.ShortTrialS}, "probe")
 			p := a.Payload.(*journal.HuntGroup)
 			if p.Inferred != "pass" {
@@ -249,8 +253,8 @@ func TestCarriedSoloLimitEligibility(t *testing.T) {
 
 func TestCarriedFailureEstablishesLaterHuntGroup(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10}, coreStart{phase: journal.PhaseAtLimit, offset: -10})
-	failure := carryTrials(h, machine.R7, []int{0, 1}, []int{-10, 0}, h.s.durations.ShortTrialS, 1, journal.OutcomeFailure)[0]
-	start := h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: h.s.durations.ShortTrialS, TrialS: h.s.durations.ShortTrialS, Trials: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
+	failure := carryTrials(h, machine.R6, []int{0, 1}, []int{-10, 0}, h.s.durations.ShortTrialS, 1, journal.OutcomeFailure)[0]
+	start := h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: h.s.durations.ShortTrialS, TrialS: h.s.durations.ShortTrialS, Trials: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
 	a := h.s.planGroup(h.s.hunt, groupPlan{cores: []int{0}, set: []int{0, 1}, stage: "probe", duration: h.s.durations.ShortTrialS}, "probe")
 	p := a.Payload.(*journal.HuntGroup)
 	if p.Inferred != "failure" {
@@ -342,10 +346,7 @@ func TestCarriedFailureSurvivesNewerPreBoundaryLiveFailure(t *testing.T) {
 		for _, stage := range []string{"full", "probe"} {
 			t.Run(fmt.Sprintf("idle=%t/%s", idle, stage), func(t *testing.T) {
 				h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10}, coreStart{phase: journal.PhaseAtLimit, offset: -10})
-				r := machine.R7
-				if idle {
-					r = machine.R6
-				}
+				r := machine.R6
 				w := machine.Workloads(r)[0].ID
 				d := h.s.durations.ShortTrialS
 				var carried int
