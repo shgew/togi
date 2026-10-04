@@ -1,6 +1,9 @@
 package tuner
 
 import (
+	"encoding/json"
+	"math/rand/v2"
+	"os"
 	"slices"
 	"testing"
 
@@ -104,6 +107,105 @@ func TestOptimumWithStaircaseCombinations(t *testing.T) {
 	if diff := cmp.Diff(want, h.s.optimum([]int{0, 0, 0}, []int{0, 1, 2})); diff != "" {
 		t.Fatalf("optimum against exhaustive search (-want +got):\n%s", diff)
 	}
+}
+
+func TestOptimumMatchesExhaustiveSearch(t *testing.T) {
+	for seed := uint64(1); seed <= 400; seed++ {
+		rng := rand.New(rand.NewPCG(seed, 0))
+		n := 2 + rng.IntN(4)
+		starts := make([]coreStart, n)
+		for i := range starts {
+			starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: -30}
+			if rng.IntN(2) == 0 {
+				starts[i].fail = new(-50 + rng.IntN(4))
+			}
+		}
+		h := newHarness(t, starts...)
+		for k := range 1 + rng.IntN(40) {
+			var members []journal.CombinationMember
+			for _, i := range rng.Perm(n)[:2+rng.IntN(n-1)] {
+				members = append(members, journal.CombinationMember{Core: i, Offset: -50 + rng.IntN(6)})
+			}
+			h.add(&journal.Combination{Combination: k + 1, Hunt: k + 1, Fallback: len(members) == n, Members: members})
+		}
+		hi := make([]int, n)
+		for i := range hi {
+			hi[i] = -47 + rng.IntN(6)
+		}
+		ranking := rng.Perm(n)
+		if rng.IntN(4) == 0 {
+			ranking = nil
+		}
+		if diff := cmp.Diff(exhaustiveOptimum(h.s, hi, ranking), h.s.optimum(hi, ranking)); diff != "" {
+			t.Fatalf("seed %d: optimum against exhaustive search, ranking %v, hi %v (-want +got):\n%s", seed, ranking, hi, diff)
+		}
+	}
+}
+
+// The fixture is a combination backoff from a simulated session whose 50 accumulated
+// fallback and CCD combinations once took the search over a minute.
+func TestOptimumWithAccumulatedCombinations(t *testing.T) {
+	data, err := os.ReadFile("testdata/optimum-accumulated-combinations.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		FailurePoints     [][2]int `json:"failure_points"`
+		Hi, Ranking, Want []int
+		Combinations      [][][2]int
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	starts := make([]coreStart, len(fixture.Hi))
+	for i := range starts {
+		starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: fixture.Hi[i]}
+	}
+	for _, f := range fixture.FailurePoints {
+		starts[f[0]].fail = new(f[1])
+	}
+	h := newHarness(t, starts...)
+	for k, c := range fixture.Combinations {
+		members := make([]journal.CombinationMember, len(c))
+		for i, m := range c {
+			members[i] = journal.CombinationMember{Core: m[0], Offset: m[1]}
+		}
+		h.add(&journal.Combination{Combination: k + 1, Hunt: k + 1, Fallback: len(c) == len(starts), Members: members})
+	}
+	if diff := cmp.Diff(fixture.Want, h.s.optimum(fixture.Hi, fixture.Ranking)); diff != "" {
+		t.Fatalf("optimum (-want +got):\n%s", diff)
+	}
+}
+
+func exhaustiveOptimum(s *State, hi, ranking []int) []int {
+	if len(ranking) != len(hi) {
+		ranking = s.ids()
+	}
+	var best []int
+	p := slices.Repeat([]int{machine.MinOffset}, len(hi))
+	for {
+		if _, reached := s.reaches(p); !reached && (best == nil || totalDepth(p) < totalDepth(best) || totalDepth(p) == totalDepth(best) && rankedDeeper(p, best, ranking)) {
+			best = slices.Clone(p)
+		}
+		i := 0
+		for i < len(p) && p[i] == hi[i] {
+			p[i] = machine.MinOffset
+			i++
+		}
+		if i == len(p) {
+			return best
+		}
+		p[i]++
+	}
+}
+
+func rankedDeeper(p, q, ranking []int) bool {
+	for _, id := range ranking {
+		if p[id] != q[id] {
+			return p[id] < q[id]
+		}
+	}
+	return false
 }
 
 func TestFourCoreCycleNeedsGlobalYield(t *testing.T) {
