@@ -1,14 +1,14 @@
-// Package watch is the read-only dashboard: a projection of the journal, the frame rendered from it and the redraw loop.
+// Package watch projects the journal into a read-only dashboard.
 package watch
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/tuner"
@@ -19,260 +19,280 @@ const (
 	logLimit     = 400
 )
 
-// Snapshot is everything one frame shows, projected from the journal.
-type Snapshot struct {
-	problem         error
-	session         bool
-	start           time.Time
-	phase           journal.Phase
-	cores           []coreView
-	trial           *trial
-	inFlight        string
-	hunt            *huntView
-	deepening       *journal.DeepeningState
-	checking        *journal.CheckingState
-	order           []int
-	starts          int
-	startDuration   time.Duration
-	rerunDuration   time.Duration
-	canDeepen       bool
-	checkingFull    bool
-	checkingMissing []string
-	failures        int
-	crashes         int
-	hunts           int
-	lastFailure     *failureView
-	lastCrash       *time.Time
-	deadEnd         *deadEndView
-	stopped         *time.Time
-	stoppedReason   journal.ShutdownReason
-	history         []entry
-	log             []entry
+func (s Snapshot) Err() error { return s.problem }
+
+func Load(dir string) Snapshot {
+	events, _, err := journal.Read(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Snapshot{}
+	}
+	if err != nil {
+		return Snapshot{problem: err}
+	}
+	return Project(events)
 }
 
-func (s Snapshot) Err() error {
-	return s.problem
+func Project(events []journal.Event) Snapshot {
+	var st journal.State
+	t := tuner.New()
+	requirements := requirementRecorder{t: t, intents: map[string]*journal.TrialIntent{}, failed: map[string]tuner.TrialRequirement{}, counts: map[string]trialCount{}, steps: map[string]int{}}
+	journal.Replay(events, &st, &requirements, t)
+	t.Project(&st)
+	if st.Session == nil {
+		return Snapshot{}
+	}
+	s := Snapshot{session: true, start: st.Session.Start, phase: journal.Phase(st.Phase), carried: map[int]bool{}, shapes: map[int]huntShape{}}
+	for _, c := range st.Cores {
+		s.order = append(s.order, c.Core)
+	}
+	p := projector{s: &s, st: &st, intents: requirements.intents, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{}, applied: map[int]int{}, tuned: map[int]int{}, solo: map[int]int{}, failures: map[int]*failureView{}, backs: map[int]int{}, sources: map[int]int{}, combinationSeqs: map[int]int{}, probes: map[int]bool{}, requirements: requirements.failed, counts: requirements.counts, steps: requirements.steps, checkHunts: map[[2]int][]int{}, cycleSteps: map[int][]machine.Regime{}, huntStarts: map[int]huntStartView{}, groups: map[[2]int]*journal.HuntGroup{}}
+	for _, e := range events {
+		p.fold(e)
+	}
+	p.finish(events, t)
+	return s
 }
 
-type coreView struct {
-	id, ccd    int
-	phase      journal.Phase
-	tuned      int
-	applied    int
-	pass, fail *int
-	checking   bool
-	queued     bool
-	loaded     bool
-	tested     bool
-	suspect    bool
-	parked     bool
+type requirementRecorder struct {
+	t       *tuner.State
+	intents map[string]*journal.TrialIntent
+	failed  map[string]tuner.TrialRequirement
+	counts  map[string]trialCount
+	steps   map[string]int // the one-based checking step each cycle trial ran in
 }
 
-type trial struct {
-	cores      []int
-	condition  machine.Condition
-	regime     machine.Regime
-	workload   string
-	offset     *int
-	started    time.Time
-	hasStarted bool
-	duration   time.Duration
-	round      int
-	rerun      bool
-	recordOnly bool
+// trialCount is which trial of its checking part, or else of its requirement, a trial was: index of of.
+type trialCount struct{ index, of int }
+
+// Fold runs before the tuner folds the same event, so it sees each trial's requirement as the trial ran.
+func (r *requirementRecorder) Fold(e journal.Event) {
+	switch d := e.Data.(type) {
+	case *journal.TrialIntent:
+		r.intents[d.Trial] = d
+	case *journal.TrialEnd:
+		in := r.intents[d.Trial]
+		if in == nil {
+			return
+		}
+		req := r.t.Requirement(in)
+		if d.Outcome == journal.OutcomeFailure {
+			r.failed[d.Trial] = req
+		}
+		r.counts[d.Trial] = trialCount{req.Trial, req.Needed}
+		if in.Cycle > 0 {
+			plan := r.t.CyclePlan()
+			if part, ok := cyclePartOf(plan, in.Cycle, in.Step, trialCores(in)); ok {
+				r.counts[d.Trial] = partCount(part, in.RecordOnly)
+			}
+			step := in.Step
+			if step == 0 && plan.Number == in.Cycle {
+				step = plan.Current + 1
+			}
+			r.steps[d.Trial] = step
+		}
+	}
+}
+
+// cyclePartOf finds the part of a checking step that loads these cores: the part the tuner runs now when one matches,
+// else the matching part of the given step, where step 0 means the step the cycle is at.
+func cyclePartOf(plan tuner.CyclePlan, cycle, step int, cores []int) (tuner.CyclePart, bool) {
+	if plan.Number != cycle {
+		return tuner.CyclePart{}, false
+	}
+	want := slices.Sorted(slices.Values(cores))
+	matches := func(part tuner.CyclePart) bool {
+		return slices.Equal(slices.Sorted(slices.Values(part.Cores)), want)
+	}
+	for i, s := range plan.Steps {
+		for _, part := range s.Parts {
+			if part.Running && matches(part) && (step == 0 || step == i+1) {
+				return part, true
+			}
+		}
+	}
+	if step == 0 {
+		step = plan.Current + 1
+	}
+	if step < 1 || step > len(plan.Steps) {
+		return tuner.CyclePart{}, false
+	}
+	for _, part := range plan.Steps[step-1].Parts {
+		if matches(part) {
+			return part, true
+		}
+	}
+	return tuner.CyclePart{}, false
+}
+
+// partCount is which trial of its part the next trial is: record-only parts count failures as done, other parts
+// need passes.
+func partCount(part tuner.CyclePart, recordOnly bool) trialCount {
+	done := part.Passed
+	if recordOnly {
+		done += part.Failed
+	}
+	of := part.Short + part.Long
+	return trialCount{min(done+1, max(of, 1)), of}
 }
 
 type failureView struct {
 	at     time.Time
 	signal machine.Signal
 }
-
-type huntView struct {
-	id         int
-	regime     machine.Regime
-	loaded     []int
-	parked     []int
-	candidates []int
-	cause      *failureView
-	group      *groupView
-}
-
-type groupView struct {
-	id     int
-	stage  string
-	cores  []int
-	passes int
-	needed int
-	probe  *journal.CombinationMember
-	held   []journal.CombinationMember
-}
-
-type deadEndView struct {
-	at        time.Time
-	condition journal.DeadEndCondition
-	detail    string
-}
-
-// entry is one line of what happened, in plain words or as the journal recorded it. A pass line counts the runs of
-// one test it folds together, each lasting each, and the hottest Tctl any of them reached.
-type entry struct {
-	at     time.Time
-	tag    string
-	text   string
-	tone   tone
-	runs   int
-	each   time.Duration
-	peak   *int
-	reboot int // CrashDetected source sequence, or zero for other entries.
-}
-
-type tone int
-
-const (
-	plainTone tone = iota
-	goodTone
-	badTone
-	warnTone
-)
-
-// Load reads the journal in dir without locking it. A torn tail is ignored: the writer is mid-append and the next read
-// gets the line.
-func Load(dir string) Snapshot {
-	events, _, err := journal.Read(dir)
-	var incompatible *journal.IncompatibleError
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return Snapshot{}
-	case errors.As(err, &incompatible):
-		return Snapshot{problem: incompatible}
-	case err != nil:
-		return Snapshot{problem: err}
-	}
-	return Project(events)
-}
-
-// Project replays events into the snapshot a frame shows.
-func Project(events []journal.Event) Snapshot {
-	var st journal.State
-	t := tuner.New()
-	journal.Replay(events, &st, t)
-	t.Project(&st)
-	if st.Session == nil {
-		return Snapshot{}
-	}
-	defaults := config.Default()
-	s := Snapshot{
-		session:       true,
-		phase:         journal.Phase(st.Phase),
-		start:         st.Session.Start,
-		checking:      st.Checking,
-		deepening:     st.Deepening,
-		starts:        defaults.Evidence.Starts(),
-		startDuration: time.Duration(defaults.Durations.StartS) * time.Second,
-		rerunDuration: time.Duration(t.RerunDuration()) * time.Second,
-		canDeepen:     t.CanDeepen(),
-	}
-	if s.checking != nil {
-		s.checkingFull, s.checkingMissing = s.checking.Full, s.checking.Missing
-	} else {
-		s.checkingFull, s.checkingMissing = t.CheckingCoverage()
-	}
-	p := projector{s: &s, st: &st, intents: map[string]*journal.TrialIntent{}, applied: map[int]int{}, tuned: map[int]int{}, checking: map[int]bool{}, failures: map[int]*failureView{}}
-	for _, e := range events {
-		p.fold(e)
-	}
-	p.finish(events)
-	return s
-}
-
 type projector struct {
-	s           *Snapshot
-	st          *journal.State
-	intents     map[string]*journal.TrialIntent
-	applied     map[int]int
-	tuned       map[int]int
-	checking    map[int]bool
-	current     *journal.TrialIntent
-	currentBoot string
-	huntStart   *journal.HuntStart
-	huntFail    *failureView
-	group       *journal.HuntGroup
-	failures    map[int]*failureView
-	stopped     bool
+	s                    *Snapshot
+	st                   *journal.State
+	intents              map[string]*journal.TrialIntent
+	ends                 map[string]*trialEnd
+	groupSignals         map[[2]int]machine.Signal // how each failed hunt group's trial failed
+	applied, tuned, solo map[int]int
+	current              *journal.TrialIntent
+	currentBoot          string
+	steps                map[string]int // the one-based checking step each cycle trial ran in
+	huntFail             *failureView
+	failures             map[int]*failureView
+	backs, sources       map[int]int
+	combinationSeqs      map[int]int // combination ID by its event's sequence
+	probes               map[int]bool
+	stopped              bool
+	restored             bool
+	configs              int
+	requirements         map[string]tuner.TrialRequirement
+	counts               map[string]trialCount
+	checkHunts           map[[2]int][]int
+	carrying             bool // solo limits arriving now were carried from an earlier session
+	cycleSteps           map[int][]machine.Regime
+	huntStarts           map[int]huntStartView
+	groups               map[[2]int]*journal.HuntGroup
+}
+
+type huntStartView struct {
+	at         time.Time
+	candidates []int
+	named      bool // its first part is on its history line
+	live       int  // groups answered by trials run in this session
+}
+
+// clearsCombination records which combination a backoff clears. Only a backoff citing the combination itself
+// clears it; later decisions merely descend from that one.
+func (p *projector) clearsCombination(e journal.Event) {
+	if d, ok := e.Data.(*journal.TunerDecision); !ok || d.Decision != journal.Backoff {
+		return
+	}
+	for _, cause := range e.Cause {
+		if id := p.combinationSeqs[cause]; id != 0 {
+			p.sources[e.Seq] = id
+			return
+		}
+	}
 }
 
 func (p *projector) fold(e journal.Event) {
 	s := p.s
+	p.clearsCombination(e)
 	if e.Kind != journal.KindShutdown && e.Kind != journal.KindProfileRestored && e.Kind != journal.KindSessionWarning {
 		p.stopped = false
 	}
 	switch d := e.Data.(type) {
 	case *journal.SessionStart:
-		s.order = machine.Order(d.Cores)
+		p.solo = map[int]int{}
 	case *journal.ConfigLoaded:
-		if ev := d.Config.Evidence; ev.Miss > 0 && ev.Rate > 0 {
-			s.starts = config.Evidence{Miss: ev.Miss, Rate: ev.Rate}.Starts()
-		}
-		if d.Config.Durations.StartS > 0 {
-			s.startDuration = time.Duration(d.Config.Durations.StartS) * time.Second
-		}
+		p.configs++
+	case *journal.SMUIntent:
+		// A write after a restoration means the hardware no longer holds what was restored.
+		p.restored = false
 	case *journal.SMUReadback:
 		p.applied[d.Core] = d.Offset
 	case *journal.ProfileRestored:
+		p.restored = true
 		for i, o := range d.Offsets {
 			if i < len(p.st.Cores) {
 				p.applied[p.st.Cores[i].Core] = o
 			}
 		}
 	case *journal.TrialIntent:
+		p.current, p.currentBoot = d, e.Boot
 		p.intents[d.Trial] = d
-		p.current = d
-		p.currentBoot = e.Boot
+		p.restored = false
+	case *journal.TrialStart:
+		s.recover = nil
 	case *journal.TrialEnd:
+		s.last = &trialEnd{id: d.Trial, at: e.Time, outcome: d.Outcome, signal: d.Signal, core: d.Core, duration: time.Duration(d.DurationS) * time.Second, stalled: d.StalledCore, tctlMaxC: d.TctlMaxC, voltageV: d.VoltageRequestMedianV}
+		if d.LastSampleS != nil {
+			sample := time.Duration(*d.LastSampleS) * time.Second
+			s.last.lastSample = &sample
+		}
+		if in := p.intents[d.Trial]; in != nil {
+			s.last.regime = in.Regime
+			s.last.cores = trialCores(in)
+			s.last.planned = time.Duration(in.DurationS) * time.Second
+			if in.Hunt > 0 && d.Outcome == journal.OutcomeFailure {
+				p.groupSignals[[2]int{in.Hunt, in.Group}] = d.Signal
+			}
+		}
+		p.ends[d.Trial] = s.last
+		if s.recover != nil && s.recover.trial != nil && s.recover.trial.id == d.Trial {
+			s.recover.end = s.last
+		}
 		if p.current != nil && p.current.Trial == d.Trial {
 			p.current = nil
 		}
 	case *journal.CorePhase:
-		p.checking[d.Core] = d.To == journal.PhaseSearch && d.CheckSoloLimit
 		p.tuned[d.Core] = d.Offset
+		switch {
+		case d.To == journal.PhaseSearch:
+			// A reset core searches again; its old solo limit no longer holds.
+			delete(p.solo, d.Core)
+		case d.From == journal.PhaseSearch:
+			p.solo[d.Core] = d.Offset
+		}
 	case *journal.TunerDecision:
 		p.tuned[d.Core] = d.ToOffset
-		if d.Phase == journal.PhaseSearch {
-			p.checking[d.Core] = d.Decision == journal.CheckSoloLimit
+		if d.Decision == journal.Backoff {
+			p.backs[d.Core] = p.sources[e.Seq]
 		}
 	case *journal.ProfileChange:
-		for i, offset := range d.To {
+		for i, o := range d.To {
 			if i < len(p.st.Cores) {
-				p.tuned[p.st.Cores[i].Core] = offset
+				p.tuned[p.st.Cores[i].Core] = o
 			}
 		}
 	case *journal.Failure:
 		s.failures++
 		f := &failureView{at: e.Time, signal: d.Signal}
 		p.failures[e.Seq] = f
-		s.lastFailure = f
+		if d.KnownFailure == 0 {
+			at := e.Time
+			s.lastFailure = &at
+		}
 	case *journal.CrashDetected:
+		s.crashes++
+		r := &recoveryView{crashAt: e.Time, bootAt: e.Time, reset: d.ResetReason}
 		if p.current != nil && p.currentBoot == d.PreviousBoot {
+			r.trial = newTrial(p.current, nil)
 			p.current = nil
 		}
-		if !d.Stray && !d.Inconclusive {
-			s.crashes++
-			at := e.Time
-			s.lastCrash = &at
-		}
+		s.recover = r
+	case *journal.TrialCarried:
+		s.carried[e.Seq] = true
 	case *journal.HuntStart:
-		s.hunts++
-		p.huntStart, p.group = d, nil
+		s.shapes[d.Hunt] = huntShape{failing: d.Failing, parked: d.Parked}
 		p.huntFail = p.failures[d.Failure]
+		if in := p.intents[d.Trial]; in != nil && in.Cycle > 0 {
+			key := [2]int{in.Cycle, p.steps[d.Trial]}
+			p.checkHunts[key] = append(p.checkHunts[key], d.Hunt)
+		}
 	case *journal.HuntGroup:
-		p.group = d
+		if d.Probe != nil {
+			p.probes[d.Hunt] = true
+		}
+	case *journal.Combination:
+		p.combinationSeqs[e.Seq] = d.Combination
 	case *journal.DeadEnd:
-		s.deadEnd = &deadEndView{at: e.Time, condition: d.Condition, detail: vtText(e.Msg)}
+		s.deadEnd = &deadEndView{at: e.Time, condition: d.Condition, detail: vtText(d.Detail)}
 	case *journal.Shutdown:
 		p.stopped = true
-		at := e.Time
-		s.stopped = &at
-		s.stoppedReason = d.Reason
+		s.stopped = &stopView{at: e.Time, reason: d.Reason, saved: p.restored}
 	}
 	if line, ok := p.describe(e); ok {
 		s.history = foldEntry(s.history, line)
@@ -282,133 +302,463 @@ func (p *projector) fold(e journal.Event) {
 	}
 }
 
-func (p *projector) finish(events []journal.Event) {
-	s, st := p.s, p.st
+func (p *projector) finish(events []journal.Event, t *tuner.State) {
 	if !p.stopped {
-		s.stopped = nil
+		p.s.stopped = nil
 	}
-	if st.DeadEnd == nil {
-		s.deadEnd = nil
+	if p.st.DeadEnd == nil {
+		p.s.deadEnd = nil
 	}
+	p.recent(events)
+	if p.current != nil {
+		p.s.trial = newTrial(p.current, events)
+		r := t.Requirement(p.current)
+		p.s.trial.passed, p.s.trial.index, p.s.trial.of = r.Passed, r.Trial, r.Needed
+	}
+	p.cyclePlan(t.CyclePlan())
+	p.huntPlan(t.HuntPlan(), events)
+	p.nameHuntStart()
+	turns := t.SearchTurns()
+	for _, tr := range turns {
+		p.s.turns = append(p.s.turns, turnView{core: tr.Core, confirm: tr.Confirm, regimes: tr.Regimes, offset: tr.Offset, workload: tr.Workload, step: tr.Step, running: tr.Running})
+	}
+	dp := t.DeepeningPlan()
+	p.s.deepen = &deepenView{round: dp.Round, room: dp.Room, profile: dp.Profile, checks: dp.Checks, waiting: dp.Waiting}
+	p.coreViews(t, turns)
+	p.combinations()
+	p.forecasts(tuner.Forecast(events))
+}
+
+func (p *projector) recent(events []journal.Event) {
+	s := p.s
+	s.history = mergeProbePasses(s.history)
 	if len(s.history) > historyLimit {
 		s.history = s.history[len(s.history)-historyLimit:]
 	}
-	for i := len(events) - 1; i >= 0 && len(s.log) < logLimit; i-- {
-		e := events[i]
+	slices.Reverse(s.history)
+	for _, e := range slices.Backward(events) {
+		if len(s.log) == logLimit {
+			break
+		}
 		if e.Kind == journal.KindSMUIntent || e.Kind == journal.KindSMUWrite || e.Kind == journal.KindSMUReadback || e.Kind == journal.KindPreflightCheck {
 			continue
 		}
-		s.log = append(s.log, entry{at: e.Time, text: vtText(e.Msg)})
+		s.log = append(s.log, entry{at: e.Time, tag: journalTag(e, p.intents), text: vtText(e.Msg)})
 	}
 	slices.Reverse(s.log)
-	switch {
-	case p.current != nil:
-		s.trial = newTrial(p.current, events)
-	case st.InFlight != nil && st.InFlight.Kind == journal.KindSMUIntent:
-		s.inFlight = "setting offsets on the CPU (" + vtText(st.InFlight.Msg) + ")."
-	case st.InFlight != nil:
-		s.inFlight = vtText(st.InFlight.Msg) + "."
-	}
-	p.hunt()
-	p.coreViews()
 }
 
-func (p *projector) hunt() {
-	s, st := p.s, p.st
-	if st.Hunt == nil || p.huntStart == nil || p.huntStart.Hunt != st.Hunt.Hunt {
+func (p *projector) cyclePlan(cp tuner.CyclePlan) {
+	s := p.s
+	if p.st.Checking != nil {
+		s.cleanCycles = p.st.Checking.CleanCycles
+	}
+	if cp.Number == 0 && len(cp.Steps) == 0 {
 		return
 	}
-	h := &huntView{
-		id: st.Hunt.Hunt, regime: p.huntStart.Regime, loaded: p.huntStart.Cores,
-		parked: st.Hunt.Parked, candidates: st.Hunt.Candidates, cause: p.huntFail,
+	s.cycle = &cycleView{number: cp.Number, open: cp.Open, current: cp.Current, paused: cp.Paused}
+	for i, step := range cp.Steps {
+		v := cycleStep{regime: step.Regime, workload: step.Workload, done: step.Done, hunts: p.checkHunts[[2]int{cp.Number, i + 1}]}
+		for _, part := range step.Parts {
+			v.parts = append(v.parts, cyclePart{cores: part.Cores, ccd: part.CCD, full: part.Full, recordOnly: part.RecordOnly, short: part.Short, shortLen: time.Duration(part.ShortS) * time.Second, long: part.Long, longLen: time.Duration(part.LongS) * time.Second, passed: part.Passed, failed: part.Failed, running: part.Running, done: part.Done})
+		}
+		s.cycle.steps = append(s.cycle.steps, v)
 	}
-	if n := len(st.Hunt.Groups); n > 0 {
-		m := st.Hunt.Groups[n-1]
-		if m.Outcome == "running" {
-			h.group = &groupView{id: m.Group, cores: m.Cores, passes: m.Passes, needed: m.Needed, probe: m.Probe, held: m.Held}
-			if p.group != nil && p.group.Group == m.Group {
-				h.group.stage = p.group.Stage
-			}
-		}
+	if s.trial != nil {
+		p.placeInCycle(s.trial)
 	}
-	s.hunt = h
-}
-
-func (p *projector) coreViews() {
-	s, st := p.s, p.st
-	showReadback := s.stopped == nil && s.deadEnd == nil || s.deadEnd != nil && s.deadEnd.condition == journal.DeadEndSMU
-	for i, c := range st.Cores {
-		v := coreView{id: c.Core, ccd: c.CCD, phase: c.Phase, tuned: c.Offset, applied: c.Offset, pass: c.Pass, fail: c.FailurePoint, checking: p.checking[c.Core], queued: c.Queued != ""}
-		if a, ok := p.applied[c.Core]; ok && showReadback {
-			v.applied = a
+	if s.recover != nil && s.recover.trial != nil {
+		tr := s.recover.trial
+		p.placeInCycle(tr)
+		if count, ok := p.counts[tr.id]; ok {
+			tr.index, tr.of = count.index, count.of
 		}
-		if t := s.trial; t != nil {
-			v.loaded = t.hasStarted && slices.Contains(t.cores, c.Core)
-			parked := t.condition == machine.Parked && s.hunt != nil && s.hunt.group != nil
-			if parked && slices.Contains(s.hunt.candidates, c.Core) {
-				g := s.hunt.group
-				v.suspect = slices.Contains(g.cores, c.Core) || g.probe != nil && g.probe.Core == c.Core || slices.ContainsFunc(g.held, func(m journal.CombinationMember) bool {
-					return m.Core == c.Core
-				})
-				v.parked = !v.suspect && i < len(s.hunt.parked)
-			}
-			v.tested = t.hasStarted && (v.suspect || v.loaded && !parked)
-		}
-		s.cores = append(s.cores, v)
 	}
 }
 
-// foldEntry appends line to history, folding a pass into the line before when that line passed the same test.
-func foldEntry(history []entry, line entry) []entry {
-	if n := len(history); n > 0 && line.tag == tagPass {
-		last := &history[n-1]
-		if last.tag == tagPass && last.text == line.text && last.each == line.each {
-			last.at, last.runs = line.at, last.runs+line.runs
-			if line.peak != nil && (last.peak == nil || *line.peak > *last.peak) {
-				last.peak = line.peak
+// placeInCycle finds the step and part of its checking cycle a trial loads, and which trial of that part it is.
+func (p *projector) placeInCycle(tr *trialView) {
+	g := p.s.cycle
+	if g == nil || tr.cycle != g.number {
+		return
+	}
+	want := slices.Sorted(slices.Values(tr.cores))
+	matches := func(part cyclePart) bool { return slices.Equal(slices.Sorted(slices.Values(part.cores)), want) }
+	place := func(step, index int) {
+		parts := g.steps[step].parts
+		part := parts[index]
+		tr.step, tr.part, tr.parts = step+1, index+1, len(parts)
+		count := partCount(tuner.CyclePart{Short: part.short, Long: part.long, Passed: part.passed, Failed: part.failed}, part.recordOnly)
+		tr.passed, tr.index, tr.of = part.passed, count.index, count.of
+	}
+	for i, step := range g.steps {
+		for j, part := range step.parts {
+			if part.running && matches(part) && (tr.step == 0 || tr.step == i+1) {
+				place(i, j)
+				return
 			}
-			return history
 		}
 	}
-	return append(history, line)
+	step := tr.step
+	if step == 0 {
+		step = g.current + 1
+	}
+	if step < 1 || step > len(g.steps) {
+		return
+	}
+	for j, part := range g.steps[step-1].parts {
+		if matches(part) {
+			place(step-1, j)
+			return
+		}
+	}
 }
 
-// newTrial projects the open trial; its latest matching start, wherever it falls, says when it began.
-func newTrial(p *journal.TrialIntent, events []journal.Event) *trial {
-	cores := p.Cores
+func (p *projector) huntPlan(hp *tuner.HuntPlan, events []journal.Event) {
+	if hp == nil {
+		return
+	}
+	h := &huntView{id: hp.Number, regime: hp.Regime, candidates: hp.Candidates}
+	rp := hp.Rerun
+	h.rerun = rerunPlan{regime: rp.Regime, cores: rp.Cores, short: rp.Short, shortLen: time.Duration(rp.ShortS) * time.Second, long: rp.Long, longLen: time.Duration(rp.LongS) * time.Second}
+	if p.huntFail != nil {
+		h.cause.at, h.cause.signal = p.huntFail.at, p.huntFail.signal
+	}
+	if in := p.intents[hp.Trial]; in != nil {
+		h.cause.trial = *newTrial(in, events)
+		h.cause.rerunOf = in.Rerun
+		r := p.requirements[in.Trial]
+		h.cause.trialNum = r.Trial
+		h.cause.trial.passed, h.cause.trial.index, h.cause.trial.of = r.Passed, r.Trial, r.Needed
+		p.placeInCycle(&h.cause.trial)
+		h.cause.end = p.ends[in.Trial]
+	}
+	if hs := p.st.Hunt; hs != nil && hs.Hunt == hp.Number {
+		shape := p.s.shapes[hp.Number]
+		shape.parked = hs.Parked
+		p.s.shapes[hp.Number] = shape
+		h.parkedZero = true
+		for i, offset := range hs.Parked {
+			if i < len(shape.failing) && shape.failing[i] != offset && offset != 0 {
+				h.parkedZero = false
+			}
+		}
+	}
+	for _, e := range events {
+		switch d := e.Data.(type) {
+		case *journal.HuntStart:
+			if d.Hunt == hp.Number {
+				h.started = e.Time
+			}
+		case *journal.Failure:
+			if e.Seq == hp.FailureSeq {
+				h.cause.core, h.cause.known, h.cause.carried, h.cause.regime = d.Core, d.KnownFailure != 0, p.s.carried[d.KnownFailure], d.Regime
+			}
+		case *journal.TrialCarried:
+			// A skip of a known carried failure starts the hunt from that carried fact.
+			if e.Seq == hp.FailureSeq {
+				h.cause.known, h.cause.carried, h.cause.regime = true, true, d.Class.Regime
+			}
+		case *journal.FailureCarried:
+			if e.Seq == hp.FailureSeq {
+				// An idle crash, not a trial: no regime, whatever ledger class it was filed under.
+				h.cause.core, h.cause.known, h.cause.carried, h.cause.regime = d.Core, true, true, ""
+			}
+		}
+	}
+	for _, part := range hp.Parts {
+		h.plan = append(h.plan, huntPart{failing: part.Failing, parked: part.Parked, trials: part.Trials, length: time.Duration(part.DurationS) * time.Second, group: part.Group, outcome: part.Outcome, running: part.Running})
+	}
+	for _, g := range hp.Groups {
+		h.groups = append(h.groups, groupView{id: g.Number, cores: g.Cores, profile: g.Profile, stage: g.Stage, probe: g.Probe, held: g.Held, outcome: g.Outcome, signal: p.groupSignals[[2]int{hp.Number, g.Number}], passes: g.Passed, needed: g.Needed, inferred: g.Carried})
+	}
+	for _, pr := range hp.Probes {
+		h.probes = append(h.probes, probeView{member: pr.Member, now: pr.Offset, failedAt: pr.FailedAt, passedAt: pr.PassedAt, carried: pr.Carried, running: pr.Running, done: pr.Done})
+	}
+	if tr := p.s.trial; tr != nil && tr.hunt == hp.Number {
+		tr.huntParts = len(h.plan)
+		for i, part := range h.plan {
+			if part.running {
+				tr.huntPart = i + 1
+			}
+		}
+		for _, g := range h.groups {
+			if g.id == tr.group {
+				tr.probe = g.probe
+			}
+		}
+	}
+	p.s.hunt = h
+}
+
+// nameHuntStart puts the first part of the running hunt on its start line before the part's group is recorded.
+func (p *projector) nameHuntStart() {
+	h := p.s.hunt
+	if h == nil || len(h.plan) == 0 || p.huntStarts[h.id].named {
+		return
+	}
+	for i := range p.s.history {
+		if e := &p.s.history[i]; e.key == "hunt start" && e.hunt == h.id {
+			e.text = fmt.Sprintf("#%d started · part 1: %s", h.id, partLayout(h.plan[0].failing, h.candidates))
+		}
+	}
+}
+
+func (p *projector) coreViews(t *tuner.State, turns []tuner.SearchTurn) {
+	for i, c := range p.st.Cores {
+		v := p.coreView(c, t, turns)
+		p.trialRole(&v, i)
+		if p.s.hunt != nil {
+			for _, g := range p.s.hunt.groups {
+				member := slices.Contains(g.cores, c.Core) || g.probe != nil && g.probe.Core == c.Core
+				if (g.outcome == "failure" || g.outcome == "fail") && member && i < len(g.profile) && !slices.Contains(v.groupFails, g.profile[i]) {
+					v.groupFails = append(v.groupFails, g.profile[i])
+				}
+			}
+		}
+		p.s.cores = append(p.s.cores, v)
+	}
+	slices.SortFunc(p.s.cores, func(a, b coreView) int { return a.id - b.id })
+	if tr := p.s.trial; tr != nil {
+		for _, c := range p.s.cores {
+			if !slices.Contains(tr.cores, c.id) && !slices.Contains(tr.parked, c.id) {
+				tr.idle = append(tr.idle, c.id)
+			}
+		}
+	}
+}
+
+func (p *projector) coreView(c journal.CoreState, t *tuner.State, turns []tuner.SearchTurn) coreView {
+	v := coreView{id: c.Core, ccd: c.CCD, profile: c.Offset, applied: c.Offset, pass: c.Pass, fail: c.FailurePoint, queued: vtText(c.Queued)}
+	if a, ok := p.applied[c.Core]; ok {
+		v.applied = a
+	}
+	if solo, ok := p.solo[c.Core]; ok {
+		v.solo = &solo
+	}
+	if v.solo != nil && v.profile > *v.solo {
+		v.gaveBack = p.backs[c.Core]
+	}
+	switch c.Phase {
+	case journal.PhaseSearch:
+		v.state = coreWaiting
+	case journal.PhaseAtLimit:
+		v.state = coreAtLimit
+	case journal.PhaseHasRoom, journal.PhaseChecking, journal.PhaseHunt, journal.PhaseDeepening:
+		v.state = coreHasRoom
+	default:
+		v.state = coreWaiting
+	}
+	if len(turns) > 0 && c.Phase != journal.PhaseSearch && v.solo != nil {
+		v.state = coreFound
+	}
+	for _, tr := range turns {
+		if tr.Core != c.Core {
+			continue
+		}
+		v.next = &tr.Offset
+		v.state = coreSearch
+		if tr.Confirm {
+			v.state = coreConfirm
+			v.confirm = &confirmView{offset: tr.Offset, light: tr.Light, heavy: tr.Heavy, needed: tr.Needed}
+		}
+		if !tr.Running && c.Offset == 0 && c.Pass == nil {
+			v.state = coreWaiting
+		}
+	}
+	if p.s.hunt != nil && slices.Contains(p.s.hunt.candidates, c.Core) {
+		v.state = coreSuspect
+	}
+	l := t.CoreLimit(c.Core)
+	if l.Floor || l.Failure || l.Combination != 0 {
+		v.holder = &limit{floor: l.Floor, failure: l.Failure, combination: l.Combination}
+	}
+	return v
+}
+
+func (p *projector) trialRole(v *coreView, index int) {
+	tr, h := p.s.trial, p.s.hunt
+	if tr == nil {
+		return
+	}
+	v.loaded = tr.hasStarted && slices.Contains(tr.cores, v.id)
+	v.judged = v.loaded
+	if h == nil || tr.condition != machine.Parked {
+		return
+	}
+	member := false
+	for _, g := range h.groups {
+		if g.outcome != "running" {
+			continue
+		}
+		member = slices.Contains(g.cores, v.id) || g.probe != nil && g.probe.Core == v.id || slices.ContainsFunc(g.held, func(m journal.CombinationMember) bool { return m.Core == v.id })
+		if g.probe != nil && g.probe.Core == v.id {
+			v.state = coreProbe
+		}
+	}
+	if member {
+		if v.state != coreProbe {
+			v.state = coreMember
+		}
+		v.judged = tr.hasStarted
+		return
+	}
+	parked := index < len(p.st.Hunt.Parked) && index < len(tr.profile) && tr.profile[index] == p.st.Hunt.Parked[index]
+	v.judged = v.loaded && !parked
+	if parked {
+		tr.parked = append(tr.parked, v.id)
+	}
+	if slices.Contains(h.candidates, v.id) {
+		v.state = coreParked
+		o := v.profile
+		v.returnsTo = &o
+	}
+}
+
+func (p *projector) combinations() {
+	for _, c := range p.st.Combinations {
+		v := comboView{id: c.Combination, members: c.Members, hunt: c.Hunt, fallback: c.Fallback, probed: p.probes[c.Hunt]}
+		for _, m := range c.Members {
+			for _, core := range p.s.cores {
+				if core.id != m.Core {
+					continue
+				}
+				if core.profile > m.Offset {
+					v.clear = append(v.clear, m.Core)
+				}
+				if core.holder != nil && core.holder.combination == c.Combination {
+					held := journal.CombinationMember{Core: core.id, Offset: core.profile}
+					v.holds = &held
+				}
+			}
+		}
+		p.s.combos = append(p.s.combos, v)
+	}
+}
+
+func (p *projector) forecasts(forecast tuner.ForecastPlan) {
+	p.s.next = atStep(forecast.Next, forecast.NextStep)
+	named := false
+	for _, b := range forecast.Branches {
+		pr := ifPasses
+		switch b.Premise {
+		case tuner.IfPass:
+		case tuner.IfAllPass:
+			pr = ifAllPass
+		case tuner.IfNamed:
+			pr = ifNamed
+		case tuner.IfUnnamed:
+			pr = ifUnnamed
+		case tuner.IfInconclusive:
+			pr = ifInconclusive
+		}
+		o := outcome{premise: pr, passes: b.Passes, decisions: b.Decisions, next: atStep(b.Next, b.NextStep), core: b.Core, needsRanking: b.NeedsRanking, needsHistory: b.NeedsHistory}
+		if pr == ifNamed {
+			// The tuner follows a core away from 0 first, then a core at 0 whose failure ends differently.
+			o.atZero = named
+			named = true
+		}
+		p.s.outcomes = append(p.s.outcomes, o)
+	}
+}
+
+// atStep places a forecast trial at the checking step the tuner reports for it; intents record only partial steps.
+func atStep(t *tuner.Trial, step int) *tuner.Trial {
+	if t == nil || t.Step != 0 || step == 0 {
+		return t
+	}
+	placed := *t
+	placed.Step = step
+	return &placed
+}
+
+func journalTag(e journal.Event, intents map[string]*journal.TrialIntent) string {
+	switch d := e.Data.(type) {
+	case *journal.TrialEnd:
+		if in := intents[d.Trial]; in != nil && in.RecordOnly {
+			return tagRecord
+		}
+		if d.Outcome == journal.OutcomePass {
+			return tagPass
+		}
+		if d.Signal == machine.Crash {
+			return tagCrash
+		}
+		if d.Outcome == journal.OutcomeFailure {
+			return tagFail
+		}
+		return tagUnclear
+	case *journal.Failure:
+		if d.KnownFailure != 0 {
+			return tagSkip
+		}
+		return tagFail
+	case *journal.CrashDetected:
+		return tagCrash
+	case *journal.HuntGroup:
+		if d.Skipped || d.Inferred != "" {
+			return tagSkip
+		}
+		if d.Probe != nil {
+			return tagProbe
+		}
+		return tagGroup
+	case *journal.HuntStart, *journal.HuntEnd, *journal.HuntSkipped:
+		return tagHunt
+	case *journal.Combination:
+		return tagCombo
+	case *journal.TunerDecision:
+		tag, _, _ := decisionText(d)
+		return tag
+	case *journal.CorePhase:
+		tag, _, _ := phaseText(d)
+		if tag != "" {
+			return tag
+		}
+		return tagLimit
+	case *journal.CheckingCycle:
+		return tagCycle
+	case *journal.CheckingStep:
+		return tagSearch
+	case *journal.SessionStart:
+		return tagStart
+	case *journal.Shutdown, *journal.DeadEnd:
+		return tagStop
+	}
+	return vtText(strings.ReplaceAll(string(e.Kind), ".", " "))
+}
+
+func trialCores(p *journal.TrialIntent) []int {
 	if p.Core != nil {
-		cores = []int{*p.Core}
+		return []int{*p.Core}
 	}
-	var started time.Time
-	ok := false
-	for i := len(events) - 1; i >= 0 && !ok; i-- {
-		if d, is := events[i].Data.(*journal.TrialStart); is && d.Trial == p.Trial {
-			started, ok = events[i].Time, true
+	return slices.Clone(p.Cores)
+}
+func newTrial(p *journal.TrialIntent, events []journal.Event) *trialView {
+	tr := &trialView{id: p.Trial, cores: trialCores(p), condition: p.Condition, regime: p.Regime, phase: p.Phase, profile: slices.Clone(p.Profile), duration: time.Duration(p.DurationS) * time.Second, round: p.Round, rerun: p.Rerun, retry: p.Retry, recordOnly: p.RecordOnly, cycle: p.Cycle, step: p.Step, hunt: p.Hunt, group: p.Group}
+	tr.workload, _ = machine.WorkloadByID(p.Workload)
+	if tr.workload.Label == "" {
+		tr.workload.Label = vtText(p.Workload)
+		tr.workload.ID = vtText(p.Workload)
+	}
+	if p.Core != nil {
+		tr.core = *p.Core
+	}
+	if p.Offset != nil {
+		tr.offset = *p.Offset
+	}
+	for _, e := range slices.Backward(events) {
+		if d, ok := e.Data.(*journal.TrialStart); ok && d.Trial == p.Trial {
+			tr.started, tr.hasStarted = e.Time, true
+			break
 		}
 	}
-	return &trial{
-		cores:      cores,
-		condition:  p.Condition,
-		regime:     p.Regime,
-		workload:   trialLabel(p),
-		offset:     p.Offset,
-		started:    started,
-		hasStarted: ok,
-		duration:   time.Duration(p.DurationS) * time.Second,
-		round:      p.Round,
-		rerun:      p.Rerun,
-		recordOnly: p.RecordOnly,
-	}
+	return tr
 }
-
 func workloadLabel(id string) string {
 	if w, ok := machine.WorkloadByID(id); ok {
 		return w.Label
 	}
 	return vtText(id)
 }
-
-// vtText drops the degree sign, which the Linux console's default font may lack.
-func vtText(msg string) string {
-	return strings.ReplaceAll(journal.EscapeText(msg), "°C", " C")
-}
+func vtText(msg string) string { return journal.EscapeText(msg) }

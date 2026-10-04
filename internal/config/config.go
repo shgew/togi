@@ -31,7 +31,7 @@ type Config struct {
 
 type Durations struct {
 	SearchTrialS     int `toml:"search_trial_s" json:"search_trial_s"`
-	StartS           int `toml:"start_s" json:"start_s"`
+	ShortTrialS      int `toml:"short_trial_s" json:"short_trial_s"`
 	CheckingTrialS   int `toml:"checking_trial_s" json:"checking_trial_s"`
 	CheckingIdleS    int `toml:"checking_idle_s" json:"checking_idle_s"`
 	CheckingAllCoreS int `toml:"checking_all_core_s" json:"checking_all_core_s"`
@@ -42,12 +42,12 @@ type Evidence struct {
 	Rate float64 `toml:"rate" json:"rate"`
 }
 
-func (e Evidence) Starts() int {
+func (e Evidence) Trials() int {
 	return int(math.Ceil(math.Log(e.Miss) / math.Log1p(-e.Rate)))
 }
 
 type Checking struct {
-	Lap []machine.Regime `toml:"lap" json:"lap"`
+	Cycle []machine.Regime `toml:"cycle" json:"cycle"`
 }
 
 type DeadEnds struct {
@@ -66,14 +66,14 @@ func Default() Config {
 		CandidateSoloLimits: map[int]int{},
 		Durations: Durations{
 			SearchTrialS:     90,
-			StartS:           120,
+			ShortTrialS:      120,
 			CheckingTrialS:   120,
 			CheckingIdleS:    900,
 			CheckingAllCoreS: 1200,
 		},
 		Evidence: Evidence{Miss: 0.05, Rate: 0.5},
 		Checking: Checking{
-			Lap: []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R4, machine.R6},
+			Cycle: []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R4, machine.R6},
 		},
 		DeadEnds: DeadEnds{
 			InconclusiveInARow: 3,
@@ -158,7 +158,7 @@ func validate(c Config) error {
 		value, min int
 	}{
 		{"search_trial_s", c.Durations.SearchTrialS, 1},
-		{"start_s", c.Durations.StartS, 1},
+		{"short_trial_s", c.Durations.ShortTrialS, 1},
 		{"checking_trial_s", c.Durations.CheckingTrialS, 1},
 		{"checking_idle_s", c.Durations.CheckingIdleS, 1},
 		{"checking_all_core_s", c.Durations.CheckingAllCoreS, 4},
@@ -174,21 +174,21 @@ func validate(c Config) error {
 	if math.IsNaN(c.Evidence.Rate) || math.IsInf(c.Evidence.Rate, 0) || c.Evidence.Rate <= 0 || c.Evidence.Rate >= 1 {
 		return fmt.Errorf("evidence.rate = %g: must be within (0, 1)", c.Evidence.Rate)
 	}
-	starts := math.Log(c.Evidence.Miss) / math.Log1p(-c.Evidence.Rate)
-	if math.IsNaN(starts) || math.IsInf(starts, 0) || starts > 1000 {
-		return fmt.Errorf("evidence: miss %g and rate %g need more than 1000 starts per step", c.Evidence.Miss, c.Evidence.Rate)
+	trials := math.Log(c.Evidence.Miss) / math.Log1p(-c.Evidence.Rate)
+	if math.IsNaN(trials) || math.IsInf(trials, 0) || trials > 1000 {
+		return fmt.Errorf("evidence: miss %g and rate %g need more than 1000 trials per step", c.Evidence.Miss, c.Evidence.Rate)
 	}
 	for _, core := range slices.Sorted(maps.Keys(c.CandidateSoloLimits)) {
 		if _, ok := c.StartOffsets[core]; ok {
 			return fmt.Errorf("start_offsets.\"%d\" and candidate_solo_limits.\"%d\": set at most one per core", core, core)
 		}
 	}
-	if len(c.Checking.Lap) == 0 {
-		return errors.New("checking.lap: must not be empty")
+	if len(c.Checking.Cycle) == 0 {
+		return errors.New("checking.cycle: must not be empty")
 	}
-	for i, r := range c.Checking.Lap {
+	for i, r := range c.Checking.Cycle {
 		if !r.Valid() {
-			return fmt.Errorf("checking.lap[%d] = %q: not a regime", i, r)
+			return fmt.Errorf("checking.cycle[%d] = %q: not a regime", i, r)
 		}
 	}
 	thresholds := []intField{

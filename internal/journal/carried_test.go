@@ -98,7 +98,7 @@ func TestCarriedPayloadsDecodeAcrossReaders(t *testing.T) {
 func TestRecordOnlyMarkerRoundTripAndLegacyDefault(t *testing.T) {
 	for _, recordOnly := range []bool{false, true} {
 		for _, payload := range []Payload{
-			&TrialIntent{Trial: "partial", Cores: []int{3}, Regime: machine.R7, Condition: machine.Together, Lap: 2, Step: 4, RecordOnly: recordOnly},
+			&TrialIntent{Trial: "partial", Cores: []int{3}, Regime: machine.R7, Condition: machine.Together, Cycle: 2, Step: 4, RecordOnly: recordOnly},
 			&TrialCarried{Source: FactSource{Session: "original", Trial: "partial"}, Class: TrialClass{Regime: machine.R7, Cores: []int{3}}, Condition: machine.Together, Outcome: OutcomeFailure, RecordOnly: recordOnly},
 		} {
 			t.Run(fmt.Sprintf("%s/record-only-%t", payload.Kind(), recordOnly), func(t *testing.T) {
@@ -141,7 +141,7 @@ func TestCheckingStepSnapshotRoundTrip(t *testing.T) {
 	if _, err := j.Append(&SessionStart{Schema: Schema, Ruleset: 8, Session: "current"}); err != nil {
 		t.Fatal(err)
 	}
-	snapshot := &CheckingStep{Lap: 2, Step: 4, Profile: []int{-20, -50, -30, -50}, Partials: []CheckingPartial{
+	snapshot := &CheckingStep{Cycle: 2, Step: 4, Profile: []int{-20, -50, -30, -50}, Partials: []CheckingPartial{
 		{CCD: 1, Cores: []int{3}},
 		{CCD: 5, Cores: []int{}, Reason: "all CCD cores are at their limits"},
 	}}

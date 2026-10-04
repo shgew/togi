@@ -102,9 +102,9 @@ func sampleConfig() ConfigSnapshot {
 	return ConfigSnapshot{
 		StartOffsets:        map[int]int{},
 		CandidateSoloLimits: map[int]int{},
-		Durations:           ConfigDurations{SearchTrialS: 90, StartS: 120, CheckingTrialS: 120, CheckingIdleS: 900, CheckingAllCoreS: 1200},
+		Durations:           ConfigDurations{SearchTrialS: 90, ShortTrialS: 120, CheckingTrialS: 120, CheckingIdleS: 900, CheckingAllCoreS: 1200},
 		Evidence:            ConfigEvidence{Miss: 0.05, Rate: 0.5},
-		Checking:            ConfigChecking{Lap: []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R4, machine.R6}},
+		Checking:            ConfigChecking{Cycle: []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R4, machine.R6}},
 		DeadEnds:            ConfigDeadEnds{InconclusiveInARow: 3, StrayCrashesInARow: 3},
 	}
 }
@@ -223,7 +223,7 @@ func TestRoundTrip(t *testing.T) {
 		&ProfileChange{To: []int{0, -5}},
 		&ProfileRestored{Offsets: []int{0, -5}},
 		&TrialIntent{Trial: "0413", Core: new(7), Offset: new(-32), Regime: machine.R2, Workload: "mprime-avx2-36k-248k", DurationS: 90, Condition: machine.Alone, Phase: PhaseSearch, Retry: true},
-		&TrialIntent{Trial: "0414", Cores: []int{0, 7}, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", DurationS: 1200, Condition: machine.Together, Phase: PhaseChecking, Lap: 3},
+		&TrialIntent{Trial: "0414", Cores: []int{0, 7}, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", DurationS: 1200, Condition: machine.Together, Phase: PhaseChecking, Cycle: 3},
 		&TrialStart{Trial: "0413", Scope: "togi-trial-0413", PID: 48211, CPUs: []int{7, 23}, Argv: []string{"mprime", "-t"}},
 		&TrialProgress{Trial: "0413", Detail: "FFT 36K done"},
 		&TrialSignal{Trial: "0413", Schedule: "random on/off periods", Seed: 814},
@@ -242,9 +242,9 @@ func TestRoundTrip(t *testing.T) {
 		&TunerDecision{Core: 7, Phase: PhaseChecking, Decision: Backoff, FromOffset: -32, ToOffset: -31, Pass: new(-33), FailurePoint: new(-34), Reason: "r"},
 		&TunerDecision{Core: 3, Phase: PhaseDeepening, Decision: Yield, FromOffset: -30, ToOffset: -29, Reason: "r"},
 		&CorePhase{Core: 7, From: PhaseSearch, To: PhaseHasRoom, Offset: -33, Pass: new(-33), FailurePoint: new(-34), CheckSoloLimit: true, Workloads: []string{"r1", "r2"}, Reason: "candidate solo limit"},
-		&CheckingLap{Lap: 2, Event: LapStart, Steps: []machine.Regime{machine.R1, machine.R6}},
-		&CheckingLap{Lap: 2, Event: LapEnd, Passed: true},
-		&CheckingLap{Lap: 2, Event: LapEnd, Reason: "the profile changed"},
+		&CheckingCycle{Cycle: 2, Event: CycleStart, Steps: []machine.Regime{machine.R1, machine.R6}},
+		&CheckingCycle{Cycle: 2, Event: CycleEnd, Passed: true},
+		&CheckingCycle{Cycle: 2, Event: CycleEnd, Reason: "the profile changed"},
 		&CommandReset{Core: new(7)},
 		&DeadEnd{Condition: DeadEndFailureAtZero, Core: new(7), Detail: "core 07 failed at CO 0", Action: "exit"},
 		&BootSavedEntry{Before: "togi", After: ""},
@@ -252,7 +252,7 @@ func TestRoundTrip(t *testing.T) {
 		&BootSavedEntry{Before: "togi", ReasonError: "ESP is read-only"},
 		&BootLeaveReason{ReasonID: "previous-boot", RestartLimitCount: 3, Reason: "service restart limit exhausted; returning to the normal system"},
 		&TrialStart{Trial: "0009", Scope: "togi-trial-0009", PID: 10, CPUs: []int{0, 8}, Argv: []string{"mprime"}, Files: []string{"c00/prime.txt"}, Instances: []TrialInstance{{Core: 0, CPUs: []int{0}, PID: 10, Scope: "togi-trial-0009-c00"}, {Core: 8, CPUs: []int{8}, PID: 11, Scope: "togi-trial-0009-c08"}}},
-		&Shutdown{Reason: ShutdownLaps, Laps: 3},
+		&Shutdown{Reason: ShutdownCycles, Cycles: 3},
 		&JournalTorn{Offset: 120, BytesHex: "7b22"},
 		&StateRebuilt{Fields: []string{"cores", "last_seq"}},
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -30,5 +31,27 @@ func TestDashboardEventVisibility(t *testing.T) {
 	}
 	if diff := cmp.Diff("startup\nshutdown\n", string(got)); diff != "" {
 		t.Fatalf("dashboard event visibility: %s", diff)
+	}
+}
+
+func TestDashboardPanicFallsBackToEventLines(t *testing.T) {
+	t.Parallel()
+	out, err := os.CreateTemp(t.TempDir(), "events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	d := dashboard{out: out, run: func(context.Context, string, *os.File) error { panic("projection bug") }}
+	d.show()
+	d.hide()
+	if _, err := d.Write([]byte("next event\n")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(out.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff("togi run: dashboard: panic: projection bug; printing events instead\nnext event\n", string(got)); diff != "" {
+		t.Fatalf("dashboard panic fallback: %s", diff)
 	}
 }

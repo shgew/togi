@@ -41,7 +41,7 @@ func TestPayloadStyles(t *testing.T) {
 	}{
 		{&HostRanking{Ranking: []int{3, 11}}, Plain},
 		{&HostRanking{Detail: "missing"}, Plain},
-		{&HuntStart{Hunt: 4, Regime: machine.R7, Trial: "0007", Candidates: []int{3, 11}, Starts: 5, StartS: 120}, Yellow},
+		{&HuntStart{Hunt: 4, Regime: machine.R7, Trial: "0007", Candidates: []int{3, 11}, Trials: 5, TrialS: 120}, Yellow},
 		{&HuntGroup{Hunt: 4, Group: 1, Cores: []int{3, 11}, Skipped: true, Reason: "already checked"}, Plain},
 		{&HuntGroup{Hunt: 4, Group: 2, Cores: []int{3}, Inferred: "pass", Reason: "complement failed"}, Plain},
 		{&HuntGroup{Hunt: 4, Group: 3, Cores: []int{11}, Inferred: "failure", Reason: "complement passed"}, Plain},
@@ -50,10 +50,10 @@ func TestPayloadStyles(t *testing.T) {
 		{&HuntSkipped{Failure: 904, Reason: "failure point already known"}, Plain},
 		{&HuntEnd{Hunt: 3, Result: "culprit", Cores: []int{13}, Groups: 4}, Green},
 		{&Combination{Combination: 2, Members: []CombinationMember{{Core: 3, Offset: -40}, {Core: 11, Offset: -30}}, Hunt: 4}, Yellow},
-		{&DeepeningRound{Round: 2, Event: LapEnd, Passed: true}, GreenBold},
+		{&DeepeningRound{Round: 2, Event: CycleEnd, Passed: true}, GreenBold},
 		{&TunerWarning{Warning: "monotonicity", Trial: "0520", Passes: []int{1, 2}}, Yellow},
 		{&BackendRetry{Backend: "mprime", Attempt: 2, WaitS: 300, Reason: "setup failed"}, Dim},
-		{&CheckingLap{Event: LapEnd, Passed: true}, Plain},
+		{&CheckingCycle{Event: CycleEnd, Passed: true}, Plain},
 		{&Failure{Signal: machine.Crash, Attribution: Attributed, Core: new(1), Offset: new(-38), Trial: "0385", Regime: machine.R7, Condition: machine.Parked}, Red},
 		{&Failure{Signal: machine.Crash, Attribution: Attributed, Core: new(2), Offset: new(-12), Regime: machine.R6, Condition: machine.Together}, Red},
 		{&Failure{Signal: machine.Crash, Attribution: Unattributed, Trial: "0310", Regime: machine.R7, Condition: machine.Parked}, Red},
@@ -147,7 +147,7 @@ func TestMonotonicStamp(t *testing.T) {
 
 func TestNewKindsRoundTripAndCoreFilter(t *testing.T) {
 	t.Parallel()
-	payloads := []Payload{&HuntStart{Hunt: 1, Failure: 2, Candidates: []int{3}}, &HuntGroup{Hunt: 1, Group: 1, Cores: []int{3}}, &Combination{Combination: 1, Members: []CombinationMember{{Core: 3, Offset: -30}}}, &DeepeningRound{Round: 1, Event: LapStart}, &HostRanking{Ranking: []int{3}}, &HuntEnd{Hunt: 1, Result: "direct"}, &HuntSkipped{Failure: 1}, &TunerWarning{Warning: "monotonicity"}, &BackendRetry{Backend: "mprime"}}
+	payloads := []Payload{&HuntStart{Hunt: 1, Failure: 2, Candidates: []int{3}}, &HuntGroup{Hunt: 1, Group: 1, Cores: []int{3}}, &Combination{Combination: 1, Members: []CombinationMember{{Core: 3, Offset: -30}}}, &DeepeningRound{Round: 1, Event: CycleStart}, &HostRanking{Ranking: []int{3}}, &HuntEnd{Hunt: 1, Result: "direct"}, &HuntSkipped{Failure: 1}, &TunerWarning{Warning: "monotonicity"}, &BackendRetry{Backend: "mprime"}}
 	for _, p := range payloads {
 		t.Run(string(p.Kind()), func(t *testing.T) {
 			e := Event{Seq: 1, Time: time.Unix(0, 0), Boot: "boot", Kind: p.Kind(), Msg: p.Message(), Data: p}

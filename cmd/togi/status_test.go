@@ -18,11 +18,19 @@ import (
 	"github.com/shgew/togi/internal/watch/watchtest"
 )
 
+func installStatusFixture(t *testing.T, dir, name string) journal.Build {
+	t.Helper()
+	build := watchtest.Install(t, dir, name)
+	currentJournalCopy(t, dir)
+	build.Schema = journal.Schema
+	return build
+}
+
 func TestStatus(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	watchtest.Install(t, dir, "concluded")
+	installStatusFixture(t, dir, "concluded")
 	_, st, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +41,7 @@ func TestStatus(t *testing.T) {
 		t.Fatalf("status: exit %d, stderr %s", code, stderr.String())
 	}
 	status := stdout.String()
-	if want := fmt.Sprintf("clean laps since last deepening: %d, latest lap %d", st.Checking.CleanLaps, st.Checking.LastCleanLap); !strings.Contains(status, want) {
+	if want := fmt.Sprintf("clean cycles since last deepening: %d, latest cycle %d", st.Checking.CleanCycles, st.Checking.LastCleanCycle); !strings.Contains(status, want) {
 		t.Fatalf("status lacks %q:\n%s", want, status)
 	}
 	checkRows(t, "status", status, regexp.MustCompile(`(?m)^(\d\d)  +\d  +\d  +(-?\d+)  `), st)
@@ -43,7 +51,7 @@ func TestStatus(t *testing.T) {
 func TestHistoricalTierChangeReadOnlyViews(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	watchtest.Install(t, dir, "concluded")
+	installStatusFixture(t, dir, "concluded")
 	events, st, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +97,7 @@ func TestHistoricalTierChangeReadOnlyViews(t *testing.T) {
 func TestBetweenTrialMCEReadOnlyViews(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	build := watchtest.Install(t, dir, "concluded")
+	build := installStatusFixture(t, dir, "concluded")
 	_, before, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +143,7 @@ func TestStatusCombinationAndOpenHunt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
-			watchtest.Install(t, dir, tc.name)
+			installStatusFixture(t, dir, tc.name)
 			events, st, _, err := replayDir(dir)
 			if err != nil {
 				t.Fatal(err)
@@ -176,7 +184,7 @@ func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	build := watchtest.Install(t, dir, "concluded")
+	build := installStatusFixture(t, dir, "concluded")
 	record := func(payload journal.Payload) {
 		t.Helper()
 		j, err := journal.Open(dir, journal.Options{Boot: "status-test", Build: build})
@@ -257,7 +265,7 @@ func TestStatusExceptionalActivity(t *testing.T) {
 			switch name {
 			case "partial-checking":
 				st.Phase = string(journal.PhaseChecking)
-				st.Checking = &journal.CheckingState{Lap: 4, Steps: []machine.Regime{machine.R1}, Profile: []int{-9, -8}, Missing: []string{"core 03 has no R1 pass"}}
+				st.Checking = &journal.CheckingState{Cycle: 4, Steps: []machine.Regime{machine.R1}, Profile: []int{-9, -8}, Missing: []string{"core 03 has no R1 pass"}}
 			case "dead-end":
 				st.DeadEnd = &journal.DeadEndRef{Condition: journal.DeadEndNoEvidence, Seq: 42}
 			case "parked-member-probe-group":
@@ -286,11 +294,11 @@ func TestStatusExceptionalActivity(t *testing.T) {
 
 func TestStatusRecordOnlyPartial(t *testing.T) {
 	t.Parallel()
-	p := &journal.TrialIntent{Trial: "partial", Cores: []int{1, 2, 3, 4, 5, 6, 7}, RecordOnly: true, Step: 1, Lap: 1, Regime: machine.R7, Workload: "AVX2", Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120}
+	p := &journal.TrialIntent{Trial: "partial", Cores: []int{1, 2, 3, 4, 5, 6, 7}, RecordOnly: true, Step: 1, Cycle: 1, Regime: machine.R7, Workload: "AVX2", Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120}
 	st := journal.State{
 		Session:  &journal.SessionInfo{ID: "s1", Start: time.Unix(100, 0).UTC()},
 		Phase:    string(journal.PhaseChecking),
-		Checking: &journal.CheckingState{Lap: 1, LapOpen: true, Steps: []machine.Regime{machine.R7}},
+		Checking: &journal.CheckingState{Cycle: 1, CycleOpen: true, Steps: []machine.Regime{machine.R7}},
 		InFlight: &journal.InFlight{Seq: 20, Msg: p.Message()},
 	}
 	var out bytes.Buffer

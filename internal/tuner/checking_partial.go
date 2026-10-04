@@ -10,7 +10,7 @@ import (
 
 func (s *State) startCheckingStep(step int) *journal.CheckingStep {
 	g := &s.checking
-	p := &journal.CheckingStep{Lap: g.lap, Step: step + 1, Profile: slices.Clone(g.profile)}
+	p := &journal.CheckingStep{Cycle: g.cycle, Step: step + 1, Profile: slices.Clone(g.profile)}
 	parts := s.parts
 	if len(parts) > 1 {
 		parts = parts[:len(parts)-1]
@@ -36,13 +36,13 @@ func (s *State) startCheckingStep(step int) *journal.CheckingStep {
 
 func (s *State) recordCheckingStep(e journal.Event, p *journal.CheckingStep) {
 	g := &s.checking
-	if p.Lap != g.lap || !g.open {
+	if p.Cycle != g.cycle || !g.open {
 		return
 	}
 	if g.partial == nil {
 		g.partial = map[int]*checkingStep{}
 	}
-	g.partial[p.Step] = &checkingStep{start: p, seq: e.Seq, completed: map[trialClass]int{}}
+	g.partial[p.Step] = &checkingStep{start: p, seq: e.Seq, completed: map[trialClass]int{}, passed: map[trialClass]int{}, failed: map[trialClass]int{}}
 	g.lastSeq = e.Seq
 	s.projectionDirty = true
 }
@@ -50,11 +50,16 @@ func (s *State) recordCheckingStep(e journal.Event, p *journal.CheckingStep) {
 func (s *State) recordPartialEnd(e journal.Event, p *journal.TrialIntent, end *journal.TrialEnd) {
 	g := &s.checking
 	step := g.partial[p.Step]
-	if p.Lap != g.lap || step == nil {
+	if p.Cycle != g.cycle || step == nil {
 		return
 	}
 	if end.Outcome == journal.OutcomePass || end.Outcome == journal.OutcomeFailure {
 		step.completed[classOf(p)]++
+		if end.Outcome == journal.OutcomePass {
+			step.passed[classOf(p)]++
+		} else {
+			step.failed[classOf(p)]++
+		}
 	}
 	g.lastSeq = e.Seq
 	s.projectionDirty = true
@@ -72,21 +77,23 @@ func (s *State) partialRequirement(step int, full requirement) (trialClass, []in
 		if slices.ContainsFunc(full.cores, func(id int) bool { return s.ccd[id] != partial.CCD }) {
 			continue
 		}
-		short := full.class.withDuration(s.durations.StartS)
-		short.cores = coresKey(partial.Cores)
-		long := short.withDuration(s.longS(full.cores))
-		needed := 3
-		if long == short {
-			needed++
-		}
-		if started.completed[short] < needed {
-			return short, partial.Cores, true
-		}
-		if long != short && started.completed[long] < 1 {
-			return long, partial.Cores, true
+		for _, q := range s.partialRequirements(full, partial.Cores) {
+			if started.completed[q.class] < q.count {
+				return q.class, partial.Cores, true
+			}
 		}
 	}
 	return trialClass{}, nil, false
+}
+
+func (s *State) partialRequirements(full requirement, cores []int) []requirement {
+	short := full.class.withDuration(s.durations.ShortTrialS)
+	short.cores = coresKey(cores)
+	long := short.withDuration(s.longS(full.cores))
+	if short == long {
+		return []requirement{{class: short, cores: cores, count: 4}}
+	}
+	return []requirement{{class: short, cores: cores, count: 3}, {class: long, cores: cores, count: 1}}
 }
 
 func (s *State) partialNext(step int, full requirement) (Action, bool) {
@@ -95,8 +102,8 @@ func (s *State) partialNext(step int, full requirement) (Action, bool) {
 		return Action{}, false
 	}
 	g := &s.checking
-	t := Trial{Regime: machine.R7, Workload: k.workload, Cores: slices.Clone(cores), DurationS: k.duration, Phase: journal.PhaseChecking, Condition: machine.Together, Lap: g.lap, RecordOnly: true, Step: step + 1}
-	if s.retry != nil && s.retry.RecordOnly && s.retry.Lap == g.lap && s.retry.Step == t.Step && s.retry.Workload == k.workload && s.retry.DurationS == k.duration && slices.Equal(s.retry.Cores, cores) {
+	t := Trial{Regime: machine.R7, Workload: k.workload, Cores: slices.Clone(cores), DurationS: k.duration, Phase: journal.PhaseChecking, Condition: machine.Together, Cycle: g.cycle, RecordOnly: true, Step: step + 1}
+	if s.retry != nil && s.retry.RecordOnly && s.retry.Cycle == g.cycle && s.retry.Step == t.Step && s.retry.Workload == k.workload && s.retry.DurationS == k.duration && slices.Equal(s.retry.Cores, cores) {
 		t = *s.retry
 	}
 	return Action{Kind: RunTrial, Trial: t, Cause: []int{g.partial[step+1].seq, g.lastSeq}}, true

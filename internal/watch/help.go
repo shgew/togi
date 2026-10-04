@@ -2,8 +2,9 @@ package watch
 
 import (
 	"fmt"
+	"strings"
 
-	"github.com/shgew/togi/internal/machine"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type helpSection struct {
@@ -12,93 +13,201 @@ type helpSection struct {
 }
 
 type helpItem struct {
-	label, text, example string
+	label, text string
 }
 
-var help = []helpSection{
-	{"What I do", []helpItem{
-		{"Find limits", "One core at a time, with every other core at 0, I move its offset deeper until a stress test fails, then confirm the deepest offset that passed with several passes in a row. That is its solo limit.", ""},
-		{"Test together", "All cores run at their offsets at once, through a lap: the configured list of tests. A full lap covers every required kind of load. Cores can be fine alone and still fail together.", ""},
-		{"Find the culprit", "When a test fails and nothing names a single core, I pause the lap and hunt: I rerun the test with some cores parked and narrow down, by halves, which cores cause it. I may find one core or a combination that fails together. If all tested groups pass, the suspects remain unresolved, and I keep their offsets shallower together as a precaution. A hunt can come at any time, so nothing can say how long tuning takes.", ""},
-		{"Go deeper", "Backing off after a failure can leave room elsewhere. After a passed full lap I try to win depth back, checking every move.", ""},
-		{"Clean lap", "The goal: a passed full lap ending with every core at its limit, with no more total depth reachable. Ordinary steps pass; record-only partial steps complete either way. Earlier failures can lead to backing off and finishing this same lap.", ""},
-		{"Keep checking", "After that I keep running laps to catch rarer failures until you stop me.", ""},
-	}},
-	{"Reading the screen", []helpItem{
-		{"Bright rows", "The cores this test is judging. Grey rows are not being judged right now.", ""},
-		{"►", "The cores the load runs on. During a hunt they can differ from the bright ones: parked cores carry the load at 0 while the suspects sit at the offsets that failed.", ""},
-		{"The number", "The offset applied right now. After a stop or dead end I show what was found instead, except at an SMU dead end, when I keep the last hardware readback. 0 is no undervolt, -50 is the deepest Curve Optimizer allows.", ""},
-		{"The bar", "One cell per count, from 0 on the left to -50 on the right, filled up to the displayed offset. A faint bar shows the offset a parked core goes back to.", ""},
-		{"The red tick", "The failed offset attributed to this core, including failures with other cores at nonzero offsets. Tuning stays shallower than this failure point.", ""},
-		{"HUNT", "Lights up while a hunt pauses the stages.", ""},
-		{"What happened", "Recent events, newest first, each with a tag for its kind: pass, fail, crash, hunt and so on. A test that passed several times in a row takes one line, with the hottest CPU temperature (Tctl) any run reached. L shows the journal itself.", ""},
-	}},
-	{"Words", []helpItem{
-		{"searching", "Still finding its solo limit.", ""},
-		{"confirming", "Repeating its deepest pass to be sure of it.", ""},
-		{"limit found", "One count deeper failed. It stays here, and every lap still tests it.", ""},
-		{"maxed out", "At -50, the deepest Curve Optimizer allows.", ""},
-		{"can go deeper", "Nothing known stops it going deeper. The next deepening round will try.", ""},
-		{"held back by others", "Combination restrictions keep it shallower than its own failure point, so it cannot go deeper at the other cores' current offsets.", ""},
-		{"suspect", "During a hunt: back at the offset it failed with, so this test tells whether it is part of the cause.", ""},
-		{"parked", "During a hunt: held at an offset that passed before, usually 0, so it can't be the cause.", ""},
-		{"solo limit", "The deepest offset a core passed with every other core at 0.", ""},
-		{"combination", "Offsets that must not be reached together. A hunt may prove the group fails together, or leave an unresolved group restricted as a precaution.", ""},
-		{"lap", "One pass through the configured checking schedule. A passed lap has passing evidence for its ordinary steps; record-only partial steps only need to complete. A full lap covers every required kind of load. A clean lap is a passed full lap that ended with every core at its limit and remains valid for the current profile.", ""},
-		{"recorded only", "A partial all-core part of a lap step. Cores that had their CCD's shallowest offset when the step started stay idle, even if offsets change. Its result is kept on record but moves no offset. The lap needs it to finish, pass or fail, and it covers no required kind of load.", ""},
-		{"run", "One launch of one test. Confirming a solo limit, a hunt group or a deepening move needs several passes in a row. Ordinary lap steps can advance after one pass, while all-core steps also include repeated short runs and a long run.", ""},
-	}},
-}
+var screenHelp = helpSection{"READING THE SCREEN", []helpItem{
+	{"►", "the core carries load in this trial"},
+	{"▄▄▄", "offset applied now, or saved after a stop restored the hardware; white when this trial judges the core"},
+	{"grey ▄▄▄", "the same depth, grey when the core is not judged"},
+	{"···", "depth it reached but does not use now: given back, parked, waiting"},
+	{"░░░", "depth a combination blocks now"},
+	{"█", "its failure point: this core failed there on its own account"},
+	{"▀", "a group trial failed with this core at that offset"},
+	{"cyan", "running now"},
+	{"amber", "a hunt, and what it paused"},
+	{"red", "failures, past and present"},
+	{"green", "passed, done"},
+	{"magenta", "combinations"},
+	{"grey", "idle, parked, still to come"},
+}}
 
-// regimeLike names everyday work each kind of test resembles.
-var regimeLike = map[machine.Regime]string{
-	machine.R1: "Like a game's main thread, opening apps or loading web pages.",
-	machine.R2: "Like video encoding, 3D rendering or scientific math on one thread.",
-	machine.R3: "Like a game loading a level, or apps waking up for short tasks.",
-	machine.R4: "Like background work: a video call, music playback, a download.",
-	machine.R5: "Like compiling or other work that keeps both threads of a core busy.",
-	machine.R6: "Like a desktop left alone, or reading and typing.",
-	machine.R7: "Like rendering, compiling or exporting video on every core.",
-}
+var topHelp = helpSection{"THE TOP LINE", []helpItem{
+	{"failures", "failure decisions, including trials skipped because they already failed"},
+	{"crashes", "boots that ended without a clean shutdown"},
+	{"last observed", "the last failure seen in this session that changed what togi does; record-only results and skips do not count"},
+	{"q", "closes this view only; tuning keeps running"},
+}}
 
-func helpLines(width int) []string {
-	var out []string
-	for i, sec := range append(help, testsSection()) {
-		if i > 0 {
-			out = append(out, "", "")
+var tuningHelp = helpSection{"WHAT TOGI DOES", []helpItem{
+	{"SOLO LIMITS", "One core under load, the rest at 0. Step 5 counts deeper while light (R1) and heavy (R2) pass; near a failure, 1 count at a time. Confirm the deepest pass with the configured number of light and heavy trials in a row. A failure while confirming discards that pass and the search backs off."},
+	{"CYCLES", "All cores at their offsets, through the configured steps of a cycle. R7 steps run each CCD and both, with record-only partial loads first. The partial's group is frozen when the step started, even if offsets change."},
+	{"FAILURES", "A failure that names a core sets its failure point; the core backs off and the load reruns with short trials plus one at its original length when that differs. One that names no core starts a hunt, unless that profile already reaches a recorded failure. Record-only results change nothing. A failure with every core at 0 stops tuning."},
+	{"HUNT", "Rerun the failing load with a part of the candidates at their failing offsets and the rest parked; keep a part that fails. If no part fails, the group is kept as a combination, and member probes find how far one member must back off for the rest to pass."},
+	{"DEEPEN", "After a passed full cycle, aim at the deepest safe total and move each core with room halfway toward it, letting others yield first where they must; every move is checked."},
+	{"CLEAN CYCLES", "The goal: a passed full cycle with every core at its limit and nothing left to deepen. Counted for the current profile; cycles repeat until stopped."},
+	{"R6", "During idle trials this screen holds still, clock included, so it cannot wake the cores."},
+	{"NO ETA", "A hunt can start at any time, so togi shows only what is scheduled and the time left in the current trial."},
+}}
+
+var wordsHelp = helpSection{"WORDS", []helpItem{
+	{"offset", "Curve Optimizer counts, 0 to -50; deeper is more negative"},
+	{"trial", "one launch of one workload; evidence is counted in trials"},
+	{"solo limit", "the deepest offset a core confirmed under load alone"},
+	{"failure point", "the shallowest offset where a core failed on its own account"},
+	{"combination", "offsets at which a group of cores failed together; the profile is kept from reaching all of them at once. Unresolved: no smaller group was shown to fail"},
+	{"at its limit", "-50, or one count deeper reaches a failure point or combination"},
+	{"has room", "one count deeper reaches neither; deepening may take it"},
+	{"suspect", "a core a hunt keeps at its failing offset"},
+	{"parked", "a core a hunt holds shallower: at its last passed full-cycle offset raised to the failing profile, or 0"},
+	{"record only", "a partial R7 load whose result is kept but changes no decision"},
+	{"cycle", "one pass through the checking schedule"},
+}}
+
+var loadHelp = helpSection{"KINDS OF LOAD", []helpItem{
+	{"R1 light", "one light thread: compiling, browsing"},
+	{"R2 heavy vector", "one AVX2/AVX-512 thread: encoding, rendering"},
+	{"R3 load steps", "load switching on and off: current steps"},
+	{"R4 partial load", "light load at 25-75% duty: bursty work"},
+	{"R5 both threads", "both threads of one core: SMT pressure"},
+	{"R6 idle + bursts", "idle with short wake-ups: idle and boost"},
+	{"R7 all-core", "each CCD, then both: power and heat"},
+}}
+
+func renderHelpBody(width, height, scroll int) ([]string, int) {
+	if width >= 195 {
+		leftWidth := (width - 8) * 81 / 227
+		middleWidth := (width - 8) * 75 / 227
+		rightWidth := width - 8 - leftWidth - middleWidth
+		columns := [][]string{
+			append(helpReading(leftWidth), helpSectionLines(topHelp, leftWidth, false)...),
+			helpSectionLines(tuningHelp, middleWidth, true),
+			append(helpSectionLines(wordsHelp, rightWidth, false), helpSectionLines(loadHelp, rightWidth, false)...),
 		}
-		out = append(out, amber.Render(sec.title))
-		labelWidth := 0
-		for _, it := range sec.items {
-			labelWidth = max(labelWidth, len([]rune(it.label)))
-		}
-		labelWidth += 3
-		tw := width - 2 - labelWidth
-		for j, it := range sec.items {
-			if j > 0 {
-				out = append(out, "")
-			}
-			lines := wrapStyled(it.text, tw, textStyle)
-			if it.example != "" {
-				lines = append(lines, wrapStyled(it.example, tw, grey)...)
-			}
-			for k, l := range lines {
-				label := ""
-				if k == 0 {
-					label = it.label
+		rows := max(len(columns[0]), len(columns[1]), len(columns[2]))
+		lines := make([]string, rows)
+		for row := range rows {
+			for col, colWidth := range []int{leftWidth, middleWidth, rightWidth} {
+				line := ""
+				if row < len(columns[col]) {
+					line = columns[col][row]
 				}
-				out = append(out, "  "+white.Render(fmt.Sprintf("%-*s", labelWidth, label))+l)
+				lines[row] += line + strings.Repeat(" ", max(0, colWidth-ansi.StringWidth(line)))
+				if col < 2 {
+					lines[row] += "    "
+				}
 			}
 		}
+		return scrollBody(lines, width, height, scroll)
 	}
-	out = append(out, "", "")
-	return append(out, wrapStyled("Passing tests can't prove offsets will never fail. They show which tests passed, and more laps catch rarer failures.", width, grey)...)
+	bodyWidth := max(1, width-2)
+	lines := helpReading(bodyWidth)
+	for _, section := range []helpSection{topHelp, tuningHelp, wordsHelp, loadHelp} {
+		lines = append(lines, helpSectionLines(section, bodyWidth, section.title == tuningHelp.title)...)
+	}
+	return scrollBodyWithBar(lines, width, height, scroll)
 }
 
-func testsSection() helpSection {
-	sec := helpSection{title: "The kinds of test"}
-	for _, r := range []machine.Regime{machine.R1, machine.R2, machine.R3, machine.R4, machine.R5, machine.R6, machine.R7} {
-		sec.items = append(sec.items, helpItem{regimeWords[r], capital(regimeExplained[r]) + ".", regimeLike[r]})
+func helpReading(width int) []string {
+	out := []string{helpRule(screenHelp.title, width), ""}
+	for _, example := range []struct {
+		core, offset, failure int
+		state, note           string
+		gauge                 string
+	}{
+		{4, -28, -36, "AT LIMIT", "at its limit: one count deeper reaches C5", white.Render(strings.Repeat("▄", 28)) + magenta.Render(strings.Repeat("░", 7)) + red.Render("█")},
+		{0, -26, -32, "HAS ROOM", "has room: backed off after a hunt, may deepen", white.Render(strings.Repeat("▄", 26)) + grey.Render("·····") + red.Render("█")},
+		{9, 0, -48, "PARKED", "parked at 0 by a hunt; returns to -47", grey.Render(strings.Repeat("·", 47)) + red.Render("█")},
+		{0, -26, -32, "PROBE", "probe: the group failed with core 00 at -30, -29, -27", white.Render(strings.Repeat("▄", 26)) + red.Render("▀ ▀▀ █")},
+	} {
+		prefix := fmt.Sprintf("► %02d  %3d  %-8s ", example.core, example.offset, example.state)
+		if example.state == "PARKED" {
+			prefix = "  " + prefix[4:]
+		}
+		gauge := example.gauge + strings.Repeat(" ", max(0, 50-ansi.StringWidth(example.gauge)))
+		out = append(out, ansi.Truncate(white.Render(prefix)+gauge+"  "+red.Render(fmt.Sprintf("%3d", example.failure)), width, ""))
+		indent := min(ansi.StringWidth(prefix), max(0, width-20))
+		for _, line := range wrapStyled(example.note, max(1, width-indent), grey) {
+			out = append(out, strings.Repeat(" ", indent)+line)
+		}
+		out = append(out, "")
 	}
-	return sec
+	items := helpSectionLines(screenHelp, width, false)
+	out = append(out, items[2:]...)
+	return out
+}
+
+func helpSectionLines(section helpSection, width int, spaced bool) []string {
+	out := []string{helpRule(section.title, width), ""}
+	labelWidth := 0
+	for _, item := range section.items {
+		labelWidth = max(labelWidth, ansi.StringWidth(item.label))
+	}
+	labelWidth = min(labelWidth+2, max(1, width/3))
+	for _, item := range section.items {
+		text := wrapStyled(item.text, max(1, width-labelWidth), textStyle)
+		for row, line := range text {
+			label := strings.Repeat(" ", labelWidth)
+			if row == 0 {
+				name := ansi.Truncate(item.label, labelWidth-1, "")
+				label = white.Render(name) + strings.Repeat(" ", labelWidth-ansi.StringWidth(name))
+			}
+			out = append(out, ansi.Truncate(label+line, width, ""))
+		}
+		if spaced {
+			out = append(out, "")
+		}
+	}
+	return append(out, "", "")
+}
+
+func helpRule(title string, width int) string {
+	return white.Render(title) + " " + grey.Render(strings.Repeat("─", max(0, width-ansi.StringWidth(title)-1)))
+}
+
+func renderLogBody(s Snapshot, width, height, scroll int) ([]string, int) {
+	bodyWidth := max(1, width-2)
+	lines := []string{helpRule("JOURNAL", bodyWidth), ""}
+	if len(s.log) == 0 {
+		lines = append(lines, grey.Render("No journal entries yet."))
+	}
+	for _, e := range s.log {
+		stamp := grey.Render(e.at.Format("15:04:05")) + "  "
+		tag := trimWords(vtText(e.tag), 20)
+		prefix := stamp + toneStyle(e.tone).Render(fmt.Sprintf("%-20s", tag)) + "  "
+		room := max(0, bodyWidth-ansi.StringWidth(prefix))
+		text := e.text
+		if ansi.StringWidth(text) > room {
+			text = trimWords(text, max(0, room-3)) + "..."
+		}
+		lines = append(lines, prefix+textStyle.Render(text))
+	}
+	return scrollBodyWithBar(lines, width, height, scroll)
+}
+
+func scrollBody(lines []string, width, height, scroll int) ([]string, int) {
+	height = max(0, height)
+	scrolled := max(0, len(lines)-height)
+	top := min(max(scroll, 0), scrolled)
+	if scroll < 0 {
+		top = scrolled
+	}
+	out := make([]string, 0, height)
+	for _, line := range lines[top:min(len(lines), top+height)] {
+		out = append(out, ansi.Truncate(line, max(0, width), ""))
+	}
+	return out, scrolled
+}
+
+func scrollBodyWithBar(lines []string, width, height, scroll int) ([]string, int) {
+	out, scrolled := scrollBody(lines, max(0, width-2), height, scroll)
+	top := min(max(scroll, 0), scrolled)
+	if scroll < 0 {
+		top = scrolled
+	}
+	bar := scrollbar(max(0, height), len(lines), top, scrolled)
+	for row := range out {
+		out[row] = ansi.Truncate(bar[row]+" "+out[row], max(0, width), "")
+	}
+	return out, scrolled
 }

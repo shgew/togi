@@ -16,25 +16,25 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
-func TestSixteenCoresReachCleanLap(t *testing.T) {
+func TestSixteenCoresReachCleanCycle(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	m, err := sim.New(sim.Config{Seed: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1})
+	stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stop.Reason != session.StopLaps {
+	if stop.Reason != session.StopCycles {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	st, err := journal.ReadState(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(st.Cores) != 16 || st.Deepening != nil || st.Checking == nil || st.Checking.CleanLaps == 0 {
+	if len(st.Cores) != 16 || st.Deepening != nil || st.Checking == nil || st.Checking.CleanCycles == 0 {
 		t.Fatalf("state has %d cores, deepening %+v, checking %+v", len(st.Cores), st.Deepening, st.Checking)
 	}
 	for _, c := range st.Cores {
@@ -49,22 +49,22 @@ func TestSixteenCoresReachCleanLap(t *testing.T) {
 	if err != nil || torn != nil {
 		t.Fatalf("read journal: %v, torn %q", err, torn)
 	}
-	passedFullLap := false
+	passedFullCycle := false
 	parts := map[int]map[int]int{}
 	var combinations []journal.Combination
 	failed := map[int]int{}
 	for _, e := range events {
 		switch p := e.Data.(type) {
-		case *journal.CheckingLap:
-			if p.Event == journal.LapEnd && p.Passed && p.Full {
-				passedFullLap = true
+		case *journal.CheckingCycle:
+			if p.Event == journal.CycleEnd && p.Passed && p.Full {
+				passedFullCycle = true
 			}
 		case *journal.TrialIntent:
 			if p.Regime == machine.R7 && p.Phase == journal.PhaseChecking {
-				if parts[p.Lap] == nil {
-					parts[p.Lap] = map[int]int{}
+				if parts[p.Cycle] == nil {
+					parts[p.Cycle] = map[int]int{}
 				}
-				parts[p.Lap][p.DurationS]++
+				parts[p.Cycle][p.DurationS]++
 			}
 			for core, at := range failed {
 				if p.Profile[core] <= at {
@@ -91,8 +91,8 @@ func TestSixteenCoresReachCleanLap(t *testing.T) {
 			combinations = append(combinations, *p)
 		}
 	}
-	if !passedFullLap {
-		t.Error("no passed full lap end")
+	if !passedFullCycle {
+		t.Error("no passed full cycle end")
 	}
 	found := false
 	for _, durations := range parts {
@@ -102,7 +102,7 @@ func TestSixteenCoresReachCleanLap(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("R7 parts did not run three starts of 120s and long 300/300/600s: %v", parts)
+		t.Errorf("R7 parts did not run three trials of 120s and long 300/300/600s: %v", parts)
 	}
 }
 
@@ -118,7 +118,7 @@ func TestSimulatorRefusesAnotherJournalWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer j.Close()
-	_, err = Simulate(context.Background(), Input{Config: config.Default(), Dir: dir, Machine: m, Laps: 1})
+	_, err = Simulate(context.Background(), Input{Config: config.Default(), Dir: dir, Machine: m, Cycles: 1})
 	if !errors.Is(err, journal.ErrLocked) {
 		t.Fatalf("second writer: %v, want locked journal", err)
 	}
@@ -138,7 +138,7 @@ func TestNewSessionTrialGetsNoSamplesFromAnEarlierInvocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: t.TempDir(), Machine: m, Laps: 1}
+	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: t.TempDir(), Machine: m, Cycles: 1}
 	in.Until = func(e journal.Event) bool {
 		p, ok := e.Data.(*journal.TrialEnd)
 		return ok && p.Trial == "0001"

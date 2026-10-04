@@ -1,0 +1,32 @@
+ togi   10:38:58   session 10h38m   37 failures · 8 crashes   last observed failure 10:38, a moment ago
+ ■ SOLO ─ ○ CYCLE 1 paused at 1/14 ─ ►  HUNT 1   part 1 of 2 ─ ○ DEEPEN ─ CLEAN 0
+
+ ▌  Crashed early in R7 all-core on 08-15; no core named. Rerunning it with 00-07 parked.
+
+  R7   all-core load  on 08-15 · 00-07 parked at 0, idle   mprime AVX2 36K-248K · 8 workers       HUNT 1 · PART 1 OF 2
+ ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
+
+ 5/5 pass → part 2: 00-07   none named → group 2   core named → hunt ends
+
+ CCD 0 parked     0  2 counts/cell       -50 fail  back      CCD 1 members    0  2 counts/cell       -50 fail
+   00   0 PARKED   ··················█         -38  -37      ► 08 -27 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -28
+   01   0 PARKED   ·················█          -35  -34      ► 09 -18 MEMBER   ▄▄▄▄▄▄▄▄▄█                  -19
+   02   0 PARKED   ·················█          -36  -35      ► 10 -16 MEMBER   ▄▄▄▄▄▄▄▄█                   -17
+   03   0 PARKED   ········█                   -18  -17      ► 11  -7 MEMBER   ▄▄▄█                         -8
+   04   0 PARKED   ················█           -33  -32      ► 12 -10 MEMBER   ▄▄▄▄▄█                      -11
+   05   0 PARKED   ···█·                        -8   -7      ► 13 -23 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄█                -24
+   06   0 PARKED   ·············█·             -28  -27      ► 14  -3 MEMBER   ▄█                           -4
+   07   0 PARKED   ················█           -33  -32      ► 15 -39 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -40
+
+ HUNT 1 ────────────────────────────────────── 10:38 · 40s   WHAT HAPPENED ──────────────────────────────────── l: all
+
+ cause  crash in the rerun of R7 all-core on 08-15, no       10:38  hunt     #1 started · part 1: 08-15 at failing
+ ► part 1/2 08-15 at failing offsets  trial 1/5              10:38  crash    rerun of R7 all-core on 08-15 · rebooted
+   part 2/2 00-07 at failing offsets  if part 1 passes       10:36  backoff  core 13 -24 → -23
+                                                             10:36  fail     core 13 fails at -24
+ then   1  record a failure point or a combination           10:36  fail     rerun of R7 all-core on 08-15 · wrong
+        2  back off past it                                  10:36  backoff  core 14 -4 → -3
+        3  rerun R7 all-core: 5 x 2m                         10:36  fail     core 14 fails at -4
+                                                             +193 more
+
+  ?  help    l  log    esc  back    q  close view

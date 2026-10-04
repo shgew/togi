@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -11,7 +12,7 @@ import (
 
 func historySentences(s Snapshot) []string {
 	var lines []string
-	for _, h := range s.history {
+	for _, h := range slices.Backward(s.history) {
 		lines = append(lines, h.tag+": "+h.sentence())
 	}
 	return lines
@@ -31,7 +32,7 @@ func TestProjectRebootHistoryDuringSMUApplication(t *testing.T) {
 	}, historySentences(s)); diff != "" {
 		t.Fatalf("an in-flight SMU write must retain the reboot without inventing a trial (-want +got):\n%s", diff)
 	}
-	if s.crashes != 1 || s.history[1].reboot != events[3].Seq || s.history[1].tone != badTone {
+	if s.crashes != 1 || s.history[0].reboot != events[3].Seq || s.history[0].tone != badTone {
 		t.Fatalf("SMU reboot provenance or severity lost: crashes=%d, history=%+v", s.crashes, s.history)
 	}
 }
@@ -44,10 +45,10 @@ func TestProjectRebootHistoryDuringTrial(t *testing.T) {
 		evidence journal.Payload
 		wantEnd  string
 	}{
-		{"ordinary crash", machine.Crash, nil, "crash: heavy vector load on core 00 at -20, rebooted"},
-		{"retained computation failure", machine.ComputationError, &journal.TrialProgress{Trial: "trial", Signal: machine.ComputationError, Core: new(0)}, "fail: heavy vector load on core 00 at -20, wrong result"},
-		{"retained corrected MCE", machine.CorrectedMCE, &journal.MCE{Trial: "trial", Core: 0, Corrected: true, FromBoot: "boot"}, "fail: heavy vector load on core 00 at -20, corrected hardware error"},
-		{"retained uncorrected MCE", machine.UncorrectedMCE, &journal.MCE{Trial: "trial", Core: 0, FromBoot: "boot"}, "fail: heavy vector load on core 00 at -20, uncorrected hardware error"},
+		{"ordinary crash", machine.Crash, nil, "crash: R2 heavy vector on core 00 at -20 · rebooted · no core named"},
+		{"retained computation failure", machine.ComputationError, &journal.TrialProgress{Trial: "trial", Signal: machine.ComputationError, Core: new(0)}, "fail: R2 heavy vector on core 00 at -20 · wrong result · no core named"},
+		{"retained corrected MCE", machine.CorrectedMCE, &journal.MCE{Trial: "trial", Core: 0, Corrected: true, FromBoot: "boot"}, "fail: R2 heavy vector on core 00 at -20 · corrected hardware error · no core named"},
+		{"retained uncorrected MCE", machine.UncorrectedMCE, &journal.MCE{Trial: "trial", Core: 0, FromBoot: "boot"}, "fail: R2 heavy vector on core 00 at -20 · uncorrected hardware error · no core named"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -90,7 +91,11 @@ func TestProjectRebootHistoryDuringTrial(t *testing.T) {
 			if diff := cmp.Diff(want, historySentences(s)); diff != "" {
 				t.Fatalf("only a crash outcome represents the reboot; durable failure evidence must coexist with it (-want +got):\n%s", diff)
 			}
-			if h := s.history[1]; h.reboot != events[crashAt].Seq || !h.at.Equal(events[crashAt].Time) {
+			index := 0
+			if tc.evidence != nil {
+				index = 1
+			}
+			if h := s.history[index]; h.reboot != events[crashAt].Seq || !h.at.Equal(events[crashAt].Time) {
 				t.Fatalf("enriching reboot history must retain its source and original time: %+v", h)
 			}
 		})
@@ -118,11 +123,11 @@ func TestProjectMultipleRebootsStayDistinct(t *testing.T) {
 	if diff := cmp.Diff([]string{
 		"start: session started on 3 cores",
 		"crash: with the offsets applied, rebooted",
-		"crash: heavy vector load on core 00 at -20, rebooted",
+		"crash: R2 heavy vector on core 00 at -20 · rebooted · no core named",
 	}, historySentences(s)); diff != "" {
 		t.Fatalf("closing one crashed trial must not consume another boot's reboot (-want +got):\n%s", diff)
 	}
-	if s.crashes != 2 || s.history[1].reboot != events[2].Seq || s.history[2].reboot != events[6].Seq {
+	if s.crashes != 2 || s.history[1].reboot != events[2].Seq || s.history[0].reboot != events[6].Seq {
 		t.Fatalf("distinct reboot identities lost: crashes=%d, history=%+v", s.crashes, s.history)
 	}
 }
@@ -137,7 +142,7 @@ func TestProjectRebootHistoryRequiresMatchingCause(t *testing.T) {
 	if diff := cmp.Diff([]string{
 		"start: session started on 3 cores",
 		"crash: idle with the offsets applied, rebooted",
-		"crash: trial unrelated, rebooted",
+		"crash: trial unrelated · rebooted",
 	}, historySentences(Project(events))); diff != "" {
 		t.Fatalf("a crash trial end without the reboot in its causes must not hide that reboot (-want +got):\n%s", diff)
 	}
@@ -153,13 +158,13 @@ func TestProjectFallbackHistory(t *testing.T) {
 	}{
 		{"unresolved fallback", "fallback", true, []string{
 			"start: session started on 3 cores",
-			"combo: core 00 at -20 and core 02 at -10 kept as an unresolved, conservative limit",
-			"hunt: #3 unresolved: conservative limit over cores 00, 02",
+			"combo: C1 over 00 02 · hunt 3 unresolved",
+			"hunt: #3 done · 00 02 unresolved",
 		}},
 		{"proven combination", "combination", false, []string{
 			"start: session started on 3 cores",
-			"combo: core 00 at -20 and core 02 at -10 fail together",
-			"hunt: #3 found a combination",
+			"combo: C1: 00 -20  02 -10",
+			"hunt: #3 done · 00 02 kept together",
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -170,32 +175,32 @@ func TestProjectFallbackHistory(t *testing.T) {
 			if diff := cmp.Diff(tc.want, historySentences(s)); diff != "" {
 				t.Fatalf("history must distinguish a conservative fallback from an observed combination (-want +got):\n%s", diff)
 			}
-			if s.history[1].tone != warnTone || s.history[2].tone != warnTone {
+			if s.history[1].tone != comboTone || s.history[0].tone != warnTone {
 				t.Fatalf("combination history severity changed: %+v", s.history)
 			}
 		})
 	}
 }
 
-func TestProjectLapHistory(t *testing.T) {
+func TestProjectCycleHistory(t *testing.T) {
 	t.Parallel()
 	s := Project(dashboardEvents(dashboardSession(),
-		&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}},
-		&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Missing: []string{"R2: 3 more steps"}},
-		&journal.CheckingLap{Lap: 2, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}},
-		&journal.CheckingLap{Lap: 2, Event: journal.LapEnd, Passed: true, Full: true},
-		&journal.CheckingLap{Lap: 3, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}},
-		&journal.CheckingLap{Lap: 3, Event: journal.LapEnd, Reason: "failure"}))
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Missing: []string{"R2: 3 more steps"}},
+		&journal.CheckingCycle{Cycle: 2, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}},
+		&journal.CheckingCycle{Cycle: 2, Event: journal.CycleEnd, Passed: true, Full: true},
+		&journal.CheckingCycle{Cycle: 3, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}},
+		&journal.CheckingCycle{Cycle: 3, Event: journal.CycleEnd, Reason: "failure"}))
 	if diff := cmp.Diff([]string{
 		"start: session started on 3 cores",
-		"lap: #1 started, 1 steps",
-		"lap: #1 passed but missing R2: 3 more steps",
-		"lap: #2 started, 1 steps",
-		"lap: #2 passed, a full lap of every kind of test",
-		"lap: #3 started, 1 steps",
-		"lap: #3 ended early: failure",
+		"cycle: cycle 1 started · 1 step",
+		"cycle: cycle 1 passed but missing R2: 3 more steps",
+		"cycle: cycle 2 started · 1 step",
+		"cycle: cycle 2 passed, a full cycle of every kind of test",
+		"cycle: cycle 3 started · 1 step",
+		"cycle: cycle 3 ended early: failure",
 	}, historySentences(s)); diff != "" {
-		t.Fatalf("lap history must call a lap passed, never clean, which needs every core at its limit (-want +got):\n%s", diff)
+		t.Fatalf("cycle history must call a cycle passed, never clean, which needs every core at its limit (-want +got):\n%s", diff)
 	}
 }
 
@@ -206,7 +211,7 @@ func TestProjectOrphanTrialIDIsEscaped(t *testing.T) {
 		&journal.TrialEnd{Trial: id, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError}))
 	if diff := cmp.Diff([]string{
 		"start: session started on 3 cores",
-		`fail: trial orphan\x1b]52;c;payload\x07\n\r\t\x7f\u009b2J\u009dtitle\u2028\u2029\u202e\xff, wrong result`,
+		`fail: trial orphan\x1b]52;c;payload\x07\n\r\t\x7f\u009b2J\u009dtitle\u2028\u2029\u202e\xff · wrong result`,
 	}, historySentences(s)); diff != "" {
 		t.Fatalf("orphan trial identifiers must not send controls to main history (-want +got):\n%s", diff)
 	}
@@ -218,7 +223,7 @@ func TestProjectDeepeningHistorySeparatesDeeperAndYieldedMembers(t *testing.T) {
 		&journal.CorePhase{Core: 0, From: journal.PhaseSearch, To: journal.PhaseHasRoom, Offset: -20},
 		&journal.CorePhase{Core: 1, From: journal.PhaseSearch, To: journal.PhaseAtLimit, Offset: -30},
 		&journal.CorePhase{Core: 2, From: journal.PhaseSearch, To: journal.PhaseAtLimit, Offset: -10},
-		&journal.DeepeningRound{Round: 2, Event: journal.LapStart, Target: []int{-22, -29, -10}, Profile: []int{-21, -29, -10}, Cores: []int{0, 1}},
+		&journal.DeepeningRound{Round: 2, Event: journal.CycleStart, Target: []int{-22, -29, -10}, Profile: []int{-21, -29, -10}, Cores: []int{0, 1}},
 		&journal.TunerDecision{Core: 1, Phase: journal.PhaseDeepening, Decision: journal.Yield, FromOffset: -30, ToOffset: -29},
 		&journal.TunerDecision{Core: 0, Phase: journal.PhaseDeepening, Decision: journal.Deepen, FromOffset: -20, ToOffset: -21})
 	s := Project(events)
@@ -228,9 +233,50 @@ func TestProjectDeepeningHistorySeparatesDeeperAndYieldedMembers(t *testing.T) {
 		"limit: core 01 solo limit -30",
 		"limit: core 02 solo limit -10",
 		"round: #2: core 00 goes deeper to -21, core 01 yields to -29",
-		"yield: core 01 -30 → -29 so others go deeper",
-		"deeper: core 00 -20 → -21",
+		"room: core 01 -30 → -29 so others go deeper",
+		"room: core 00 -20 → -21",
 	}, historySentences(s)); diff != "" {
 		t.Fatalf("round history must describe each member's direction (-want +got):\n%s", diff)
+	}
+}
+
+func TestHistoryGroupsInferredAnswersWithoutHidingOutcomeChanges(t *testing.T) {
+	t.Parallel()
+	events := dashboardEvents(dashboardSession(),
+		&journal.HuntStart{Hunt: 4, Candidates: []int{0, 1, 2}},
+		&journal.HuntGroup{Hunt: 4, Group: 2, Cores: []int{0}, Inferred: "pass"},
+		&journal.HuntGroup{Hunt: 4, Group: 3, Cores: []int{1}, Inferred: "pass"},
+		&journal.HuntGroup{Hunt: 4, Group: 4, Cores: []int{0, 1}, Inferred: "failure"},
+		&journal.HuntStart{Hunt: 5, Candidates: []int{0, 1}},
+		&journal.HuntGroup{Hunt: 5, Group: 5, Cores: []int{1}, Inferred: "pass"})
+	want := []string{
+		"start: session started on 3 cores",
+		"hunt: #4 started · part 1: 00 at failing offsets, 01 02 parked",
+		"group: hunt 4 groups 2-3 · parts of 00 01 · all passed on existing evidence",
+		"group: hunt 4 group 4 · 00 01 · failed on existing evidence",
+		"hunt: #5 started · part 1: 01 at failing offsets, 00 parked",
+		"group: hunt 5 group 5 · 01 · passed on existing evidence",
+	}
+	if diff := cmp.Diff(want, historySentences(Project(events))); diff != "" {
+		t.Fatalf("inferred group answers (-want +got):\n%s", diff)
+	}
+}
+
+func TestTallyNeverCountsPastTheRequirement(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		first, runs, of int
+		want            string
+	}{
+		{1, 4, 4, "4 of 4"},
+		{1, 3, 4, "trials 1-3 of 4"},
+		{2, 1, 4, "trial 2 of 4"},
+		{2, 4, 5, "trials 2-5 of 5"},
+		{2, 5, 5, "5"},
+		{1, 1, 1, "1"},
+	} {
+		if got := (entry{first: tc.first, runs: tc.runs, of: tc.of}).tally(); got != tc.want {
+			t.Errorf("first %d, runs %d, of %d: %q, want %q", tc.first, tc.runs, tc.of, got, tc.want)
+		}
 	}
 }

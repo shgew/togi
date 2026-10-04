@@ -18,7 +18,7 @@ import (
 	"github.com/shgew/togi/internal/tuningboot"
 )
 
-func TestRunFlagsLapLimit(t *testing.T) {
+func TestRunFlagsCycleLimit(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
@@ -26,22 +26,22 @@ func TestRunFlagsLapLimit(t *testing.T) {
 		want int
 	}{
 		{name: "endless by default"},
-		{name: "one lap", args: []string{"--laps", "1"}, want: 1},
-		{name: "multiple laps", args: []string{"--laps=3"}, want: 3},
+		{name: "one cycle", args: []string{"--cycles", "1"}, want: 1},
+		{name: "multiple cycles", args: []string{"--cycles=3"}, want: 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var g globals
-			var laps int
+			var cycles int
 			var grubenv string
 			var noTUI bool
-			flags := runFlags(&g, &laps, &grubenv, &noTUI)
+			flags := runFlags(&g, &cycles, &grubenv, &noTUI)
 			var stdout, stderr bytes.Buffer
 			if code, ok := parseFlags(flags, tc.args, runHelp, &stdout, &stderr); !ok || code != exitOK {
 				t.Fatalf("parse: exit %d, ok %v, stderr %q", code, ok, stderr.String())
 			}
-			if diff := cmp.Diff(tc.want, laps); diff != "" {
-				t.Fatalf("lap limit (-want +got): %s", diff)
+			if diff := cmp.Diff(tc.want, cycles); diff != "" {
+				t.Fatalf("cycle limit (-want +got): %s", diff)
 			}
 		})
 	}
@@ -221,25 +221,41 @@ func TestPrintCleanStop(t *testing.T) {
 	}
 }
 
-func TestRunRejectsInvalidLaps(t *testing.T) {
+func TestRunRejectsInvalidCycles(t *testing.T) {
 	t.Parallel()
 	for _, value := range []string{"0", "-1", "many"} {
 		t.Run(value, func(t *testing.T) {
 			g := testGlobals(t)
 			var out, diagnostics bytes.Buffer
-			code := runRun(&g, []string{"--laps", value}, &out, &diagnostics)
+			code := runRun(&g, []string{"--cycles", value}, &out, &diagnostics)
 			if code != exitUsage || out.Len() != 0 {
 				t.Fatalf("exit %d, stdout %q", code, out.String())
 			}
 			firstLine, _, _ := strings.Cut(diagnostics.String(), "\n")
-			want := fmt.Sprintf("togi run: invalid value %q for flag -laps: must be a positive integer", value)
+			want := fmt.Sprintf("togi run: invalid value %q for flag -cycles: must be a positive integer", value)
 			if diff := cmp.Diff(want, firstLine); diff != "" {
-				t.Fatalf("lap diagnostic (-want +got): %s", diff)
+				t.Fatalf("cycle diagnostic (-want +got): %s", diff)
 			}
 			if diff := cmp.Diff(map[string]string{}, directoryFiles(t, g.stateDir)); diff != "" {
-				t.Fatalf("invalid laps changed state: %s", diff)
+				t.Fatalf("invalid cycles changed state: %s", diff)
 			}
 		})
+	}
+}
+
+func TestRunRejectsOldCyclesFlag(t *testing.T) {
+	t.Parallel()
+	g := testGlobals(t)
+	var out, diagnostics bytes.Buffer
+	code := runRun(&g, []string{"--laps", "1"}, &out, &diagnostics)
+	if code != exitUsage || out.Len() != 0 {
+		t.Fatalf("exit %d, stdout %q", code, out.String())
+	}
+	if !strings.Contains(diagnostics.String(), "flag provided but not defined: -laps") {
+		t.Fatalf("old flag diagnostic: %q", diagnostics.String())
+	}
+	if diff := cmp.Diff(map[string]string{}, directoryFiles(t, g.stateDir)); diff != "" {
+		t.Fatalf("old flag changed state: %s", diff)
 	}
 }
 
@@ -253,7 +269,7 @@ func TestRunResultExitCodes(t *testing.T) {
 		want string
 	}{
 		{"signal", session.Stop{Reason: session.StopSignal}, nil, 0, ""},
-		{"laps", session.Stop{Reason: session.StopLaps}, nil, 0, ""},
+		{"cycles", session.Stop{Reason: session.StopCycles}, nil, 0, ""},
 		{"missing-core", session.Stop{}, session.ErrNoSuchCore, 2, "togi run: no such core\n"},
 		{"journal-locked", session.Stop{}, journal.ErrLocked, 3, "togi run: another togi process holds the journal lock\n"},
 		{"ordinary-error", session.Stop{}, errors.New("read failed\x1b[2J\nforged"), 1, "togi run: read failed\\x1b[2J\\nforged\n"},

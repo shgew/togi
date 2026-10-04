@@ -114,7 +114,7 @@ func Report(w io.Writer, checks []*Result) {
 	}
 	fmt.Fprintln(w, "\nModel check (99% binomial intervals)")
 	for _, check := range checks {
-		fmt.Fprintf(w, "%s: %s (%d eligible groups; %d idle failures without start exposure)\n", check.Machine, check.Status, len(check.Groups), check.IdleFailures)
+		fmt.Fprintf(w, "%s: %s (%d eligible groups; %d idle failures without trial exposure)\n", check.Machine, check.Status, len(check.Groups), check.IdleFailures)
 		for _, g := range check.Groups {
 			if g.Flagged {
 				fmt.Fprintf(w, "  %s %s cores=%v duration=%ds depth=%d n=%d k=%d interval=[%d,%d] mean_p=%.6g\n", g.Class.Regime, g.Class.Workload, g.Class.Cores, g.Class.DurationS, g.Depth, g.N, g.K, g.Interval[0], g.Interval[1], g.MeanP)

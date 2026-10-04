@@ -21,17 +21,17 @@ func hasRoomHarness(t *testing.T, offsets ...int) *harness {
 	return h
 }
 
-func TestCoveredOpenLapYieldsToDeepening(t *testing.T) {
+func TestCoveredOpenCycleYieldsToDeepening(t *testing.T) {
 	offsets := []int{-49, -49, -49, -50}
 	for _, tt := range []struct {
-		name           string
-		passedFullLaps []int
-		covered        bool
-		complete       bool
+		name             string
+		passedFullCycles []int
+		covered          bool
+		complete         bool
 	}{
 		{"same profile", offsets, true, false},
-		{"deeper passed full-lap profile", []int{-50, -49, -49, -50}, true, false},
-		{"shallower passed full-lap profile", []int{-48, -49, -49, -50}, false, false},
+		{"deeper passed full-cycle profile", []int{-50, -49, -49, -50}, true, false},
+		{"shallower passed full-cycle profile", []int{-48, -49, -49, -50}, false, false},
 		{"completed same profile", offsets, true, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -43,16 +43,16 @@ func TestCoveredOpenLapYieldsToDeepening(t *testing.T) {
 			for i, pair := range [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}} {
 				h.add(&journal.Combination{Combination: i + 1, Hunt: i + 1, Members: []journal.CombinationMember{{Core: pair[0], Offset: -50}, {Core: pair[1], Offset: -50}}})
 			}
-			h.add(&journal.ProfileChange{To: tt.passedFullLaps})
-			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: h.s.steps})
-			lap := h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true}).Seq
-			h.add(&journal.ProfileChange{From: tt.passedFullLaps, To: offsets})
-			h.add(&journal.CheckingLap{Lap: 2, Event: journal.LapStart, Steps: h.s.steps})
+			h.add(&journal.ProfileChange{To: tt.passedFullCycles})
+			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: h.s.steps})
+			cycle := h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true}).Seq
+			h.add(&journal.ProfileChange{From: tt.passedFullCycles, To: offsets})
+			h.add(&journal.CheckingCycle{Cycle: 2, Event: journal.CycleStart, Steps: h.s.steps})
 			if tt.complete {
-				// Replay a fully executed lap before asking Next to close it.
+				// Replay a fully executed cycle before asking Next to close it.
 				// The covered shortcut must only replace work still left to run.
 				for {
-					a := h.s.lapNext()
+					a := h.s.cycleNext()
 					if a.Kind == RunTrial {
 						h.trial(a, passed)
 					} else if _, step := a.Payload.(*journal.CheckingStep); step {
@@ -63,16 +63,16 @@ func TestCoveredOpenLapYieldsToDeepening(t *testing.T) {
 				}
 			}
 			a := h.next()
-			end, ok := a.Payload.(*journal.CheckingLap)
+			end, ok := a.Payload.(*journal.CheckingCycle)
 			if tt.complete {
-				if a.Kind != Decide || !ok || end.Event != journal.LapEnd || !end.Passed || !end.Full || end.Lap != 2 {
-					t.Fatalf("completed lap must close passed and full: %+v", a)
+				if a.Kind != Decide || !ok || end.Event != journal.CycleEnd || !end.Passed || !end.Full || end.Cycle != 2 {
+					t.Fatalf("completed cycle must close passed and full: %+v", a)
 				}
 				h.decide(a)
 				nextRound(h)
 				return
 			}
-			if got := ok && end.Event == journal.LapEnd && !end.Passed; got != tt.covered {
+			if got := ok && end.Event == journal.CycleEnd && !end.Passed; got != tt.covered {
 				t.Fatalf("covered end %t, want %t: %+v", got, tt.covered, a)
 			}
 			if !tt.covered {
@@ -81,12 +81,12 @@ func TestCoveredOpenLapYieldsToDeepening(t *testing.T) {
 					a = h.next()
 				}
 				if a.Kind != RunTrial {
-					t.Fatalf("uncovered incomplete lap must continue testing: %+v", a)
+					t.Fatalf("uncovered incomplete cycle must continue testing: %+v", a)
 				}
 				return
 			}
-			if a.Cause[0] != lap {
-				t.Fatalf("cause %v, want lap #%d first", a.Cause, lap)
+			if a.Cause[0] != cycle {
+				t.Fatalf("cause %v, want cycle #%d first", a.Cause, cycle)
 			}
 			h.decide(a)
 			nextRound(h)
@@ -94,27 +94,27 @@ func TestCoveredOpenLapYieldsToDeepening(t *testing.T) {
 	}
 }
 
-func TestLapCoverage(t *testing.T) {
+func TestCycleCoverage(t *testing.T) {
 	h := hasRoomHarness(t, -10, -12, -13, -11)
 	cases := []struct {
 		name    string
 		steps   []machine.Regime
 		missing []string
-	}{{"default", config.Default().Checking.Lap, nil}, {"short", []machine.Regime{machine.R1, machine.R7}, []string{"R1: 2 more steps", "R2: 3 more steps", "R3: 1 more steps", "R4: 1 more steps", "R5: 1 more steps", "R6: 1 more steps", "R7: 2 more steps"}}}
+	}{{"default", config.Default().Checking.Cycle, nil}, {"short", []machine.Regime{machine.R1, machine.R7}, []string{"R1: 2 more steps", "R2: 3 more steps", "R3: 1 more steps", "R4: 1 more steps", "R5: 1 more steps", "R6: 1 more steps", "R7: 2 more steps"}}}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			full, missing := h.s.fullLapCoverage(tt.steps)
+			full, missing := h.s.fullCycleCoverage(tt.steps)
 			if full != (len(tt.missing) == 0) || cmp.Diff(tt.missing, missing) != "" {
-				t.Fatalf("full-lap coverage %t, missing (-want +got):\n%s", full, cmp.Diff(tt.missing, missing))
+				t.Fatalf("full-cycle coverage %t, missing (-want +got):\n%s", full, cmp.Diff(tt.missing, missing))
 			}
 		})
 	}
 }
 
-func TestR7StartsAndSharedDuration(t *testing.T) {
+func TestR7TrialsAndSharedDuration(t *testing.T) {
 	h := hasRoomHarness(t, -10, -11, -12, -13)
 	cfg := config.Default()
-	cfg.Checking.Lap = []machine.Regime{machine.R7}
+	cfg.Checking.Cycle = []machine.Regime{machine.R7}
 	cfg.Durations.CheckingAllCoreS = 480
 	h.add(&journal.ConfigLoaded{Config: snapshotConfig(cfg)})
 	h.decide(h.next())
@@ -130,20 +130,20 @@ func TestR7StartsAndSharedDuration(t *testing.T) {
 		{[]int{2, 3}, false, 120},
 		{[]int{0, 1, 2, 3}, false, 240},
 	} {
-		for start := range 4 {
+		for trial := range 4 {
 			a := h.next()
 			duration := 120
-			if start == 3 {
+			if trial == 3 {
 				duration = part.long
 			}
 			if a.Kind != RunTrial || a.Trial.Regime != machine.R7 || a.Trial.DurationS != duration || a.Trial.RecordOnly != part.recordOnly || !slices.Equal(a.Trial.Cores, part.cores) {
-				t.Fatalf("part %v start %d: %+v", part.cores, start, a)
+				t.Fatalf("part %v trial %d: %+v", part.cores, trial, a)
 			}
 			h.trial(a, passed)
 		}
 	}
-	if _, ok := h.next().Payload.(*journal.CheckingLap); !ok {
-		t.Fatal("lap not complete")
+	if _, ok := h.next().Payload.(*journal.CheckingCycle); !ok {
+		t.Fatal("cycle not complete")
 	}
 }
 
@@ -197,7 +197,7 @@ func TestRerunLongFailedPart(t *testing.T) {
 	h.add(&journal.ProfileChange{From: []int{-9, -11}, To: []int{-8, -11}})
 	a, ok := h.s.rerunNext()
 	if !ok || a.Trial.DurationS != 600 {
-		t.Fatalf("passing starts lost after repeated long-class commitment: %+v", a)
+		t.Fatalf("passing trials lost after repeated long-class commitment: %+v", a)
 	}
 	if diff := cmp.Diff([]int{failure.Seq}, a.Cause); diff != "" {
 		t.Fatalf("long rerun cause (-want +got):\n%s", diff)
@@ -206,7 +206,7 @@ func TestRerunLongFailedPart(t *testing.T) {
 	for range h.s.n {
 		a, ok = h.s.rerunNext()
 		if !ok || a.Trial.DurationS != 120 {
-			t.Fatalf("new obligation did not demand its passing starts: %+v", a)
+			t.Fatalf("new obligation did not demand its passing trials: %+v", a)
 		}
 		h.trial(a, passed)
 	}
@@ -259,7 +259,7 @@ func TestRerunRepeatedCommitmentCitesLatestFailure(t *testing.T) {
 func TestCheckingCarriesDeeperPassAcrossBackoff(t *testing.T) {
 	h := hasRoomHarness(t, -20)
 	cfg := config.Default()
-	cfg.Checking.Lap = []machine.Regime{machine.R1}
+	cfg.Checking.Cycle = []machine.Regime{machine.R1}
 	h.add(&journal.ConfigLoaded{Config: snapshotConfig(cfg)})
 	h.decide(h.next())
 	first := h.next()
@@ -269,8 +269,8 @@ func TestCheckingCarriesDeeperPassAcrossBackoff(t *testing.T) {
 	h.trial(first, passed)
 	h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -20, ToOffset: -19, FailurePoint: new(-20), Reason: "test backoff"})
 	h.add(&journal.ProfileChange{From: []int{-20}, To: []int{-19}})
-	if a := h.s.lapNext(); a.Kind != Decide {
-		t.Fatalf("deeper passing start was lost after backoff: %+v", a)
+	if a := h.s.cycleNext(); a.Kind != Decide {
+		t.Fatalf("deeper passing trial was lost after backoff: %+v", a)
 	}
 }
 
@@ -286,18 +286,18 @@ func TestTogetherSingleNonzeroAttribution(t *testing.T) {
 	}
 }
 
-func TestLapStartInvalidatesProjectedChecking(t *testing.T) {
+func TestCycleStartInvalidatesProjectedChecking(t *testing.T) {
 	h := hasRoomHarness(t, -10)
-	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: h.s.steps})
-	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: h.s.steps})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
 	closed := projected(h)
-	if closed.Checking == nil || closed.Checking.LapOpen {
-		t.Fatalf("expected closed lap: %+v", closed.Checking)
+	if closed.Checking == nil || closed.Checking.CycleOpen {
+		t.Fatalf("expected closed cycle: %+v", closed.Checking)
 	}
-	h.add(&journal.CheckingLap{Lap: 2, Event: journal.LapStart, Steps: h.s.steps})
+	h.add(&journal.CheckingCycle{Cycle: 2, Event: journal.CycleStart, Steps: h.s.steps})
 	open := projected(h)
-	if open.Checking == nil || open.Checking.Lap != 2 || !open.Checking.LapOpen {
-		t.Fatalf("new lap absent from projection: %+v", open.Checking)
+	if open.Checking == nil || open.Checking.Cycle != 2 || !open.Checking.CycleOpen {
+		t.Fatalf("new cycle absent from projection: %+v", open.Checking)
 	}
 }
 
@@ -372,9 +372,9 @@ func TestRerunDerivedCommitments(t *testing.T) {
 			tr, source := commitRerunSource(h, kind)
 			durations := make([]int, h.s.n)
 			for i := range durations {
-				durations[i] = h.s.durations.StartS
+				durations[i] = h.s.durations.ShortTrialS
 			}
-			if tr.DurationS != h.s.durations.StartS {
+			if tr.DurationS != h.s.durations.ShortTrialS {
 				durations = append(durations, tr.DurationS)
 			}
 			for _, duration := range durations {
@@ -414,24 +414,24 @@ func TestRerunFIFOAndSharedDuration(t *testing.T) {
 		if i == 1 {
 			count++
 		}
-		for start := range count {
+		for trial := range count {
 			a, ok := h.s.rerunNext()
 			duration := 120
-			if start == h.s.n {
+			if trial == h.s.n {
 				duration = 600
 			}
 			if !ok || a.Trial.Core != i || a.Trial.Regime != regime || a.Trial.Workload != machine.Workloads(regime)[1].ID || a.Trial.DurationS != duration || !slices.Equal(a.Cause, []int{causes[i]}) {
-				t.Fatalf("FIFO obligation %d start %d: %+v", i, start, a)
+				t.Fatalf("FIFO obligation %d trial %d: %+v", i, trial, a)
 			}
 			h.trial(a, passed)
 		}
 	}
 	if a, ok := h.s.rerunNext(); ok {
-		t.Fatalf("shared duration added redundant long start: %+v", a)
+		t.Fatalf("shared duration added redundant long trial: %+v", a)
 	}
 }
 
-func TestRepeatedLapClassesAddStarts(t *testing.T) {
+func TestRepeatedCycleClassesAddTrials(t *testing.T) {
 	for _, regime := range machine.Regimes {
 		t.Run(string(regime), func(t *testing.T) {
 			h := hasRoomHarness(t, -10)
@@ -440,7 +440,7 @@ func TestRepeatedLapClassesAddStarts(t *testing.T) {
 			for i := range steps {
 				steps[i] = regime
 			}
-			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: steps})
+			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: steps})
 			first := h.s.requirements(0)
 			last := h.s.requirements(catalog)
 			for i, q := range last {

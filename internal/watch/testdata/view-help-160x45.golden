@@ -1,0 +1,44 @@
+  togi   04:51:10   session 4h51m   7 failures · 7 crashes   last observed failure 04:50, a moment ago
+
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14, part 2  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0
+
+  █ READING THE SCREEN ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  █ 
+  █ ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░█                -36
+  █                     at its limit: one count deeper reaches C5
+  █ 
+  █ ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····█                    -32
+  █                     has room: backed off after a hunt, may deepen
+  █ 
+  █   09    0  PARKED   ···············································█    -48
+  █                     parked at 0 by a hunt; returns to -47
+  █ 
+  █ ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ █                    -32
+  █                     probe: the group failed with core 00 at -30, -29, -27
+  █ 
+  █ ►         the core carries load in this trial
+  │ ▄▄▄       offset applied now, or saved after a stop restored the hardware; white when this trial judges the core
+  │ grey ▄▄▄  the same depth, grey when the core is not judged
+  │ ···       depth it reached but does not use now: given back, parked, waiting
+  │ ░░░       depth a combination blocks now
+  │ █         its failure point: this core failed there on its own account
+  │ ▀         a group trial failed with this core at that offset
+  │ cyan      running now
+  │ amber     a hunt, and what it paused
+  │ red       failures, past and present
+  │ green     passed, done
+  │ magenta   combinations
+  │ grey      idle, parked, still to come
+  │ 
+  │ 
+  │ THE TOP LINE ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  │ 
+  │ failures       failure decisions, including trials skipped because they already failed
+  │ crashes        boots that ended without a clean shutdown
+  │ last observed  the last failure seen in this session that changed what togi does; record-only results and skips do not count
+  │ q              closes this view only; tuning keeps running
+  │ 
+  │ 
+  │ WHAT TOGI DOES ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+   ?  help    l  log    esc  back    q  close view

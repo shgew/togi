@@ -17,7 +17,7 @@ import (
 )
 
 type forwardCounts struct {
-	starts, failures int
+	trials, failures int
 	predicted        float64
 }
 
@@ -42,16 +42,16 @@ func forward(extract string, seal, jobs int, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	starts, err := decisive(records)
+	trials, err := decisive(records)
 	if err != nil {
 		return err
 	}
-	return reportForwardCheck(stdout, starts, seal, jobs)
+	return reportForwardCheck(stdout, trials, seal, jobs)
 }
 
-func reportForwardCheck(w io.Writer, starts []trialfacts.Record, seal, jobs int) error {
+func reportForwardCheck(w io.Writer, trials []trialfacts.Record, seal, jobs int) error {
 	started := time.Now()
-	rows, pooled, err := forwardCheck(starts, seal, jobs)
+	rows, pooled, err := forwardCheck(trials, seal, jobs)
 	if err != nil {
 		return err
 	}
@@ -60,10 +60,10 @@ func reportForwardCheck(w io.Writer, starts []trialfacts.Record, seal, jobs int)
 	return nil
 }
 
-// starts contains only the decisive starts validated by decisive. The newest
+// trials contains only the decisive trials validated by decisive. The newest
 // seal sessions are neither fitted nor scored.
-func forwardCheck(starts []trialfacts.Record, seal, jobs int) ([]forwardRow, forwardScore, error) {
-	ordered := slices.Clone(starts)
+func forwardCheck(trials []trialfacts.Record, seal, jobs int) ([]forwardRow, forwardScore, error) {
+	ordered := slices.Clone(trials)
 	slices.SortStableFunc(ordered, func(a, b trialfacts.Record) int { return journal.CompareSessionIDs(a.Session, b.Session) })
 	var bounds []int
 	for i := range ordered {
@@ -103,7 +103,7 @@ func forwardCheck(starts []trialfacts.Record, seal, jobs int) ([]forwardRow, for
 				return nil, forwardScore{}, fmt.Errorf("forward-chained session %s: %w", heldOut[0].Session, err)
 			}
 			rows = append(rows, forwardRow{session: heldOut[0].Session, ruleset: heldOut[0].Ruleset, trainingSessions: trainingSessions, constant: constant, score: score, regimes: regimes})
-			pooled.starts += score.starts
+			pooled.trials += score.trials
 			pooled.failures += score.failures
 			pooled.predicted += score.predicted
 			pooled.fitLoss += score.fitLoss
@@ -164,9 +164,9 @@ func scoreForward(cfg sim.Config, heldOut []trialfacts.Record, seen map[string]b
 		p := m.FailureProbability(r.Profile, spec)
 		failure := r.Outcome == journal.OutcomeFailure
 		counts := regimes[r.Class.Regime]
-		counts.starts++
+		counts.trials++
 		counts.predicted += p
-		score.starts++
+		score.trials++
 		score.predicted += p
 		if failure {
 			counts.failures++
@@ -188,7 +188,7 @@ func scoreForward(cfg sim.Config, heldOut []trialfacts.Record, seen map[string]b
 func reportForward(w io.Writer, rows []forwardRow, pooled forwardScore, seal int) {
 	fmt.Fprintln(w, "\nForward-chained check")
 	if len(rows) == 0 {
-		fmt.Fprintln(w, "No held-out sessions (need at least two sessions with decisive starts).")
+		fmt.Fprintln(w, "No held-out sessions (need at least two sessions with decisive trials).")
 		return
 	}
 	for _, row := range rows {
@@ -196,7 +196,7 @@ func reportForward(w io.Writer, rows []forwardRow, pooled forwardScore, seal int
 		reportForwardScore(w, row.score, fmt.Sprintf("%.3f", row.constant))
 		for _, regime := range machine.Regimes {
 			if counts, ok := row.regimes[regime]; ok {
-				fmt.Fprintf(w, "  %s starts=%d observed=%d predicted=%.1f\n", regime, counts.starts, counts.failures, counts.predicted)
+				fmt.Fprintf(w, "  %s trials=%d observed=%d predicted=%.1f\n", regime, counts.trials, counts.failures, counts.predicted)
 			}
 		}
 	}
@@ -208,6 +208,6 @@ func reportForward(w io.Writer, rows []forwardRow, pooled forwardScore, seal int
 }
 
 func reportForwardScore(w io.Writer, score forwardScore, constant string) {
-	n := float64(score.starts)
-	fmt.Fprintf(w, "starts=%d failures=%d predicted=%.1f log_loss/start fit=%.4f constant(%s)=%.4f failures_p<0.01=%d exact_matches=%d/%d (%.1f%%) flagged/eligible=%d/%d\n", score.starts, score.failures, score.predicted, score.fitLoss/n, constant, score.constantLoss/n, score.surprises, score.matches, score.starts, 100*float64(score.matches)/n, score.flagged, score.eligible)
+	n := float64(score.trials)
+	fmt.Fprintf(w, "trials=%d failures=%d predicted=%.1f log_loss/trial fit=%.4f constant(%s)=%.4f failures_p<0.01=%d exact_matches=%d/%d (%.1f%%) flagged/eligible=%d/%d\n", score.trials, score.failures, score.predicted, score.fitLoss/n, constant, score.constantLoss/n, score.surprises, score.matches, score.trials, 100*float64(score.matches)/n, score.flagged, score.eligible)
 }

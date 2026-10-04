@@ -17,7 +17,7 @@ import (
 func TestForwardCheck(t *testing.T) {
 	record := trialfacts.Record{Kind: facts.TrialFact, Class: facts.Class{Regime: machine.R1, Workload: "fixture", Cores: []int{0}, DurationS: 1}, Profile: []int{-20, 0}, Outcome: journal.OutcomePass}
 	t.Run("no leakage", func(t *testing.T) {
-		var starts []trialfacts.Record
+		var trials []trialfacts.Record
 		// Deliberately put the latest session first, preserving within-session order.
 		for session := 3; session >= 1; session-- {
 			n := 3
@@ -31,23 +31,23 @@ func TestForwardCheck(t *testing.T) {
 				if i == 0 {
 					r.Outcome = journal.OutcomeFailure
 				}
-				starts = append(starts, r)
+				trials = append(trials, r)
 			}
 		}
-		rows, pooled, err := forwardCheck(starts, 0, 3)
+		rows, pooled, err := forwardCheck(trials, 0, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if diff := cmp.Diff([]string{"20260102T000000Z", "20260103T000000Z"}, []string{rows[0].session, rows[1].session}); diff != "" {
 			t.Fatal(diff)
 		}
-		if diff := cmp.Diff([]int{1, 2, 2, 3, 6, 6}, []int{rows[0].trainingSessions, rows[1].trainingSessions, rows[0].ruleset, rows[1].ruleset, pooled.starts, pooled.matches}); diff != "" {
+		if diff := cmp.Diff([]int{1, 2, 2, 3, 6, 6}, []int{rows[0].trainingSessions, rows[1].trainingSessions, rows[0].ruleset, rows[1].ruleset, pooled.trials, pooled.matches}); diff != "" {
 			t.Fatal(diff)
 		}
 		if diff := cmp.Diff(0.25, rows[0].constant); diff != "" {
 			t.Fatal(diff)
 		}
-		later := slices.Clone(starts)
+		later := slices.Clone(trials)
 		for i := range later {
 			if later[i].Session == "20260103T000000Z" {
 				later[i].Outcome = journal.OutcomeFailure
@@ -75,13 +75,13 @@ func TestForwardCheck(t *testing.T) {
 	})
 	t.Run("numeric session suffixes", func(t *testing.T) {
 		sessions := []string{"20260101T000000Z", "20260101T000000Z-2", "20260101T000000Z-9", "20260101T000000Z-10"}
-		var starts []trialfacts.Record
+		var trials []trialfacts.Record
 		for _, session := range slices.Backward(sessions) {
 			r := record
 			r.Session, r.Seq = session, 1
-			starts = append(starts, r)
+			trials = append(trials, r)
 		}
-		rows, _, err := forwardCheck(starts, 0, 3)
+		rows, _, err := forwardCheck(trials, 0, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -92,8 +92,8 @@ func TestForwardCheck(t *testing.T) {
 		if diff := cmp.Diff(sessions[1:], got); diff != "" {
 			t.Fatalf("held-out sessions out of chronological order (-want +got):\n%s", diff)
 		}
-		starts[0].Outcome = journal.OutcomeFailure
-		changed, _, err := forwardCheck(starts, 0, 3)
+		trials[0].Outcome = journal.OutcomeFailure
+		changed, _, err := forwardCheck(trials, 0, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,30 +102,30 @@ func TestForwardCheck(t *testing.T) {
 		}
 	})
 	t.Run("seal", func(t *testing.T) {
-		var starts []trialfacts.Record
+		var trials []trialfacts.Record
 		for i, session := range []string{"20260101T000000Z", "20260102T000000Z", "20260103T000000Z", "20260104T000000Z"} {
 			r := record
 			r.Session, r.Seq = session, 1
 			if i%2 == 1 {
 				r.Outcome = journal.OutcomeFailure
 			}
-			starts = append(starts, r, r)
+			trials = append(trials, r, r)
 		}
-		all, _, err := forwardCheck(starts, 0, 3)
+		all, _, err := forwardCheck(trials, 0, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
-		sealed, pooled, err := forwardCheck(starts, 1, 3)
+		sealed, pooled, err := forwardCheck(trials, 1, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if diff := cmp.Diff(all[:2], sealed, cmp.AllowUnexported(forwardRow{}, forwardScore{}, forwardCounts{})); diff != "" {
 			t.Fatalf("sealing the newest session changed the earlier rows (-want +got):\n%s", diff)
 		}
-		if diff := cmp.Diff([]int{4, 2}, []int{pooled.starts, pooled.failures}); diff != "" {
+		if diff := cmp.Diff([]int{4, 2}, []int{pooled.trials, pooled.failures}); diff != "" {
 			t.Fatalf("pooled score included the sealed session (-want +got):\n%s", diff)
 		}
-		if _, _, err := forwardCheck(starts, 3, 3); err == nil || err.Error() != "--seal 3 leaves no held-out session to score (3 held out)" {
+		if _, _, err := forwardCheck(trials, 3, 3); err == nil || err.Error() != "--seal 3 leaves no held-out session to score (3 held out)" {
 			t.Fatalf("sealing every held-out session: %v", err)
 		}
 	})
@@ -146,9 +146,9 @@ func TestForwardCheck(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Three one-second starts have p=1-exp(-log(2))=0.5, regardless
+		// Three one-second trials have p=1-exp(-log(2))=0.5, regardless
 		// of measured duration. The constant assigns p=1/4 to two failures.
-		counts := forwardCounts{starts: 3, failures: 2, predicted: 1.5}
+		counts := forwardCounts{trials: 3, failures: 2, predicted: 1.5}
 		want := forwardScore{forwardCounts: counts, fitLoss: 3 * math.Log(2), constantLoss: -2*math.Log(0.25) - math.Log(0.75), matches: 2}
 		opts := []cmp.Option{cmp.AllowUnexported(forwardScore{}, forwardCounts{}), cmpopts.EquateApprox(0, 1e-12)}
 		if diff := cmp.Diff(want, score, opts...); diff != "" {

@@ -2,15 +2,22 @@ package watch
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/tuner"
@@ -144,4 +151,156 @@ func TestLoadIncompatibleJournal(t *testing.T) {
 	if !errors.As(s.Err(), &incompatible) || s.session {
 		t.Fatalf("incompatible journal presented as a session: %+v", s)
 	}
+}
+
+func TestJournalNotificationsReloadChanges(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "linux" {
+		t.Skip("journal notifications need Linux")
+	}
+	for _, operation := range []string{"append", "replace", "delete", "create", "missing directory", "replaced directory", "traverse-only append", "traverse-only replace"} {
+		t.Run(operation, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "state", "nested")
+			path := filepath.Join(dir, "events.jsonl")
+			if operation != "missing directory" {
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if operation != "create" && operation != "missing directory" {
+				if err := os.WriteFile(path, watchSessionLine(t, "original"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if strings.HasPrefix(operation, "traverse-only ") {
+				// A root run leaves the state directory 0711; without read permission it cannot be watched.
+				if err := os.Chmod(dir, 0311); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+			}
+			src := source{dir: dir}
+			src.reload()
+			changes, _, stop, err := watchJournal(context.Background(), dir, func() {})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stop()
+			switch strings.TrimPrefix(operation, "traverse-only ") {
+			case "append":
+				file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = file.Write(watchWarningLine(t, "updated"))
+				closeErr := file.Close()
+				if err != nil || closeErr != nil {
+					t.Fatalf("append journal: %v; close: %v", err, closeErr)
+				}
+			case "replace":
+				replacement := filepath.Join(root, "replacement")
+				if err := os.WriteFile(replacement, watchSessionLine(t, "updated"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Rename(replacement, path); err != nil {
+					t.Fatal(err)
+				}
+			case "delete":
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			case "replaced directory":
+				if err := os.Rename(dir, dir+"-old"); err != nil {
+					t.Fatal(err)
+				}
+				fallthrough
+			case "create", "missing directory":
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, watchSessionLine(t, "updated"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err, ok := <-changes; !ok || err != nil {
+				t.Fatalf("journal notification: open=%t err=%v", ok, err)
+			}
+			if !src.reload() {
+				t.Fatal("notification did not reload the changed journal")
+			}
+			want := "updated"
+			if operation == "delete" {
+				want = "no session yet"
+			}
+			text := Render(src.snap, 160, 40, time.Unix(1100, 0).UTC())
+			if !strings.Contains(text, want) {
+				t.Fatalf("%s notification did not show %q:\n%s", operation, want, text)
+			}
+		})
+	}
+}
+
+func TestSourceReloadGuard(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	src := source{dir: dir}
+	if !src.reload() || src.reload() {
+		t.Fatal("unchanged missing journal was repeatedly reloaded")
+	}
+	path := filepath.Join(dir, "events.jsonl")
+	if err := os.WriteFile(path, watchSessionLine(t, "original"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if !src.reload() || src.reload() {
+		t.Fatal("unchanged journal was repeatedly reloaded")
+	}
+}
+
+func TestLiveJournalProblemAndRecovery(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		dir := t.TempDir()
+		src := source{dir: dir}
+		src.reload()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		changes := make(chan error)
+		var frames []string
+		done := make(chan error, 1)
+		go func() {
+			done <- show(ctx, io.Discard, func() (int, int, error) { return 160, 40, nil }, nil, nil, colorprofile.ASCII,
+				func(sc Screen) Drawn {
+					d := src.frame(sc)
+					frames = append(frames, strings.Join(d.Lines, "\n"))
+					return d
+				}, options{changes: changes, reload: src.reload})
+		}()
+		check := func(want string) {
+			t.Helper()
+			synctest.Wait()
+			if !strings.Contains(strings.Join(strings.Fields(strings.ReplaceAll(ansi.Strip(frames[len(frames)-1]), "▌", "")), " "), want) {
+				t.Fatalf("live frame does not show %q:\n%s", want, frames[len(frames)-1])
+			}
+		}
+		check("no session yet")
+		path := filepath.Join(dir, "events.jsonl")
+		if err := os.WriteFile(path, []byte("not json\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		changes <- nil
+		check("invalid character")
+		if err := os.WriteFile(path, watchSessionLine(t, "live journal recovered"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		changes <- nil
+		check("live journal recovered")
+		if diff := cmp.Diff(3, len(frames)); diff != "" {
+			t.Fatalf("journal-driven frames (-want +got):\n%s", diff)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func TestEarlierLapCreditsAnUncontradictedShallowerOrEqualProfile(t *testing.T) {
+func TestEarlierCycleCreditsAnUncontradictedShallowerOrEqualProfile(t *testing.T) {
 	failure := func(profile []int) journal.Payload {
 		return &journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Together, Regime: machine.R6, Profile: profile}
 	}
@@ -18,41 +18,41 @@ func TestEarlierLapCreditsAnUncontradictedShallowerOrEqualProfile(t *testing.T) 
 		final []int
 		want  int
 	}{
-		{"returns to the passed full-lap profile", nil, []int{-10, -12}, 1},
-		{"shallower than the passed full-lap profile", nil, []int{-10, -11}, 1},
-		{"deeper than the passed full-lap profile", nil, []int{-11, -12}, 0},
-		{"failure at the passed full-lap profile", []journal.Payload{failure([]int{-10, -12})}, []int{-10, -12}, 0},
+		{"returns to the passed full-cycle profile", nil, []int{-10, -12}, 1},
+		{"shallower than the passed full-cycle profile", nil, []int{-10, -11}, 1},
+		{"deeper than the passed full-cycle profile", nil, []int{-11, -12}, 0},
+		{"failure at the passed full-cycle profile", []journal.Payload{failure([]int{-10, -12})}, []int{-10, -12}, 0},
 		{"failure at a deeper profile", []journal.Payload{failure([]int{-11, -13})}, []int{-10, -12}, 1},
 		{"incomplete failure profile", []journal.Payload{failure([]int{-10})}, []int{-10, -12}, 0},
 		{"failure at an incomparable profile", []journal.Payload{failure([]int{-11, -11})}, []int{-10, -12}, 1},
-		{"failure at a profile as shallow as the passed full-lap one", []journal.Payload{failure([]int{-9, -12})}, []int{-10, -12}, 0},
-		{"reset after the passed full lap", []journal.Payload{&journal.CommandReset{Core: new(1)}}, []int{-10, -12}, 0},
+		{"failure at a profile as shallow as the passed full-cycle one", []journal.Payload{failure([]int{-9, -12})}, []int{-10, -12}, 0},
+		{"reset after the passed full cycle", []journal.Payload{&journal.CommandReset{Core: new(1)}}, []int{-10, -12}, 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h := hasRoomHarness(t, -10, -12)
-			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}})
-			h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
+			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
+			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
 			h.add(&journal.ProfileChange{From: []int{-10, -12}, To: []int{-11, -11}})
 			for _, p := range tt.after {
 				h.add(p)
 			}
 			h.add(&journal.ProfileChange{From: []int{-11, -11}, To: tt.final})
-			if got := h.s.CleanLaps(); got != tt.want {
-				t.Fatalf("clean laps = %d, want %d", got, tt.want)
+			if got := h.s.CleanCycles(); got != tt.want {
+				t.Fatalf("clean cycles = %d, want %d", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestCreditedLapReplays(t *testing.T) {
+func TestCreditedCycleReplays(t *testing.T) {
 	h := hasRoomHarness(t, -10, -12)
-	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}})
-	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
 	h.add(&journal.ProfileChange{From: []int{-10, -12}, To: []int{-11, -12}})
 	h.add(&journal.ProfileChange{From: []int{-11, -12}, To: []int{-10, -12}})
 	state := projected(h)
-	if state.Checking.CleanLaps != 1 || state.Checking.LastCleanLap != 1 {
-		t.Fatalf("lost credited lap: %+v", state.Checking)
+	if state.Checking.CleanCycles != 1 || state.Checking.LastCleanCycle != 1 {
+		t.Fatalf("lost credited cycle: %+v", state.Checking)
 	}
 	replayed := New()
 	for _, event := range h.events {
@@ -61,37 +61,37 @@ func TestCreditedLapReplays(t *testing.T) {
 	var got journal.State
 	replayed.Project(&got)
 	if diff := cmp.Diff(state.Checking, got.Checking); diff != "" {
-		t.Fatalf("credited lap after replay (-want +got):\n%s", diff)
+		t.Fatalf("credited cycle after replay (-want +got):\n%s", diff)
 	}
 }
 
-func TestCleanLapSummaryAfterDeepening(t *testing.T) {
+func TestCleanCycleSummaryAfterDeepening(t *testing.T) {
 	h := hasRoomHarness(t, -10)
-	for _, lap := range []int{3, 7} {
-		h.add(&journal.CheckingLap{Lap: lap, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}})
-		h.add(&journal.CheckingLap{Lap: lap, Event: journal.LapEnd, Passed: true, Full: true})
+	for _, cycle := range []int{3, 7} {
+		h.add(&journal.CheckingCycle{Cycle: cycle, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
+		h.add(&journal.CheckingCycle{Cycle: cycle, Event: journal.CycleEnd, Passed: true, Full: true})
 	}
 	g := projected(h).Checking
-	if g.CleanLaps != 2 || g.LastCleanLap != 7 {
-		t.Fatalf("clean lap summary: %+v", g)
+	if g.CleanCycles != 2 || g.LastCleanCycle != 7 {
+		t.Fatalf("clean cycle summary: %+v", g)
 	}
 	h.add(&journal.ProfileChange{From: []int{-10}, To: []int{-11}})
 	g = projected(h).Checking
-	if g.CleanLaps != 0 || g.LastCleanLap != 0 {
-		t.Fatalf("deepening retained shallower lap credit: %+v", g)
+	if g.CleanCycles != 0 || g.LastCleanCycle != 0 {
+		t.Fatalf("deepening retained shallower cycle credit: %+v", g)
 	}
 }
 
-func TestEarlierLapRequiresCoresAtLimitAtItsEnd(t *testing.T) {
+func TestEarlierCycleRequiresCoresAtLimitAtItsEnd(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseHasRoom, offset: -10})
 	h.decide(h.next())
-	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapStart, Steps: []machine.Regime{machine.R1}})
-	h.add(&journal.CheckingLap{Lap: 1, Event: journal.LapEnd, Passed: true, Full: true})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
 	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -10, FailurePoint: new(-11)})
 	h.add(&journal.ProfileChange{From: []int{-10}, To: []int{-11}})
 	h.add(&journal.ProfileChange{From: []int{-11}, To: []int{-10}})
-	if got := h.s.CleanLaps(); got != 0 {
-		t.Fatalf("lap that ended before every core was at its limit counted: %d", got)
+	if got := h.s.CleanCycles(); got != 0 {
+		t.Fatalf("cycle that ended before every core was at its limit counted: %d", got)
 	}
 }
 

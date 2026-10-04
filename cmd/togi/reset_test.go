@@ -18,10 +18,7 @@ import (
 )
 
 func TestCommandsRefuseWhileLocked(t *testing.T) {
-	fixture, err := os.ReadFile("testdata/events.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := currentJournalFixture(t, "testdata/events.jsonl")
 	fixture = bytes.Replace(fixture, []byte(`"ruleset":3`), fmt.Appendf(nil, `"ruleset":%d`, session.Build().Ruleset), 1)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o644); err != nil {
@@ -314,10 +311,7 @@ func TestResetCoreCommandOutcome(t *testing.T) {
 	for _, core := range []int{3, 999} {
 		t.Run(fmt.Sprint(core), func(t *testing.T) {
 			dir := t.TempDir()
-			fixture, err := os.ReadFile("testdata/events.jsonl")
-			if err != nil {
-				t.Fatal(err)
-			}
+			fixture := currentJournalFixture(t, "testdata/events.jsonl")
 			fixture = bytes.Replace(fixture, []byte(`"ruleset":3`), fmt.Appendf(nil, `"ruleset":%d`, session.Build().Ruleset), 1)
 			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), fixture, 0o600); err != nil {
 				t.Fatal(err)

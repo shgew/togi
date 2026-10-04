@@ -58,11 +58,8 @@ A concrete backend configuration within a regime, such as mprime SSE with FFT si
 _Avoid_: test
 
 **Trial**:
-One run of one workload on its target under a fixed profile, ending as a pass, a failure or inconclusive. One trial is one start.
-_Avoid_: test, iteration, run
-
-**Start**:
-One launch of a trial's workload, the unit of pass evidence because failures can cluster at onset.
+One launch of one workload on its target under a fixed profile, ending as a pass, a failure or inconclusive. The unit of pass evidence because failures can cluster at onset.
+_Avoid_: start, test, iteration, run
 
 **Trial class**:
 The regime, workload, sorted loaded cores and duration of a trial. Pass evidence transfers only within this class.
@@ -83,7 +80,7 @@ A trial condition retaining the failed trial's workload and load, with a group's
 _Avoid_: masked
 
 **Parked offsets**:
-The newest passed full-lap profile raised to the failing profile, each core at the shallower of its two offsets, when that differs from the failing profile; otherwise the next older passed full-lap profile raised the same way, or all-zero.
+The newest passed full-cycle profile raised to the failing profile, each core at the shallower of its two offsets, when that differs from the failing profile; otherwise the next older passed full-cycle profile raised the same way, or all-zero.
 _Avoid_: anchor
 
 **Group**:
@@ -91,7 +88,7 @@ One hunt trial plan: the selected cores kept at failing offsets, with every othe
 _Avoid_: mask
 
 **Search**:
-The phase that finds and checks a core's candidate solo limit with R1 and R2 starts alone.
+The phase that finds and checks a core's candidate solo limit with R1 and R2 trials alone.
 
 **Hunt**:
 Parked trials that identify the core or combination behind an unattributed failure.
@@ -108,20 +105,20 @@ _Avoid_: refinement, refine
 Testing together across all regimes; it continues after search and deepening finish.
 _Avoid_: guard
 
-**Lap**:
-One pass through the configured checking schedule, whose requirements are starts.
+**Cycle**:
+One pass through the configured checking schedule, whose requirements are trials.
 _Avoid_: rotation
 
-**Full lap**:
-A lap covering every R1 and R2 workload on every core, every R7 workload in every full part, and R3, R4, R5 and R6. Record-only partial R7 parts supply no full-lap coverage.
+**Full cycle**:
+A cycle covering every R1 and R2 workload on every core, every R7 workload in every full part, and R3, R4, R5 and R6. Record-only partial R7 parts supply no full-cycle coverage.
 _Avoid_: qualifying rotation
 
-**Clean lap**:
-A passed full lap that ended with every core at its limit and remains valid for the current profile under checking's evidence rules.
+**Clean cycle**:
+A passed full cycle that ended with every core at its limit and remains valid for the current profile under checking's evidence rules.
 _Avoid_: qualified rotation
 
-**Passed lap**:
-A lap whose requirements all passed. It need not be full or end with every core at its limit.
+**Passed cycle**:
+A cycle whose requirements all passed. It need not be full or end with every core at its limit.
 _Avoid_: clean rotation
 
 **Inconclusive**:
@@ -166,7 +163,7 @@ A failure point a transition brings into the new session: the shallowest offset 
 _Avoid_: carried mark
 
 **Carried fact**:
-A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original session, sequence, build, evidence epoch and recorded context. Ordinary carried passes can answer candidate-solo-limit checks, hunt groups, reruns and deepening checks, but never supply checking's full-lap coverage; ordinary carried failures count everywhere. Record-only partial outcomes retain their marker but influence no tuner decision. Copying a fact again does not make it new evidence.
+A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original session, sequence, build, evidence epoch and recorded context. Ordinary carried passes can answer candidate-solo-limit checks, hunt groups, reruns and deepening checks, but never supply checking's full-cycle coverage; ordinary carried failures count everywhere. Record-only partial outcomes retain their marker but influence no tuner decision. Copying a fact again does not make it new evidence.
 
 **Evidence epoch**:
 The compatibility version of trial outcomes: workload content, backend binary and configuration, intended durations, and pass/failure detection. Passes carry only within the current epoch; eligible failures survive an epoch change.
@@ -176,7 +173,7 @@ A core's checked candidate solo limit, tested alone; deepening together may move
 _Avoid_: edge, stable value, optimal offset, result
 
 **Candidate solo limit**:
-An offset proposed as a core's solo limit, which still needs the required passing starts in its frozen R1 and R2 trial classes. Search, configuration or carried evidence can supply it.
+An offset proposed as a core's solo limit, which still needs the required passing trials in its frozen R1 and R2 trial classes. Search, configuration or carried evidence can supply it.
 _Avoid_: candidate edge
 
 **Backoff**:

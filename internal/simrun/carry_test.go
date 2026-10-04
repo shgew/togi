@@ -37,7 +37,7 @@ func ruleset3Session(t *testing.T) (dir, id string) {
 			ruleset3Err = err
 			return
 		}
-		if _, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Laps: 1}); err != nil {
+		if _, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Cycles: 1}); err != nil {
 			ruleset3Err = err
 			return
 		}
@@ -109,7 +109,7 @@ func simulateAgain(t *testing.T, dir string, cfg sim.Config, c config.Config) (s
 	if err != nil {
 		t.Fatal(err)
 	}
-	stop, err := Simulate(context.Background(), Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1})
+	stop, err := Simulate(context.Background(), Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,6 +155,7 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 		{"older ruleset", session.Build().Ruleset - 1, journal.Schema, false, false},
 		{"interrupted older ruleset", session.Build().Ruleset - 1, journal.Schema, false, true},
 		{"older schema", session.Build().Ruleset, journal.Schema - 1, false, false},
+		{"schema 2", session.Build().Ruleset, 2, false, false},
 		{"current build", session.Build().Ruleset, journal.Schema, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -194,7 +195,7 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 				t.Fatal(err)
 			}
 			original = bytes.Replace(original, fmt.Appendf(nil, `"schema":%d`, journal.Schema), fmt.Appendf(nil, `"schema":%d`, tc.schema), 1)
-			if tc.schema < journal.Schema {
+			if tc.schema < 3 {
 				original = bytes.ReplaceAll(original, []byte(`"condition":"alone"`), []byte(`"condition":"isolated"`))
 			}
 			lines := bytes.SplitAfter(original, []byte{'\n'})
@@ -264,7 +265,7 @@ func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 	t.Parallel()
 	dir, id := ruleset3Session(t)
 	stop, events := simulateAgain(t, dir, sim.Config{Seed: 1}, config.Default())
-	if stop.Reason != session.StopLaps {
+	if stop.Reason != session.StopCycles {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "archive", id+".jsonl")); err != nil {
@@ -395,7 +396,7 @@ func TestBIOSArchiveInterruptedBeforeMoveResumesCarry(t *testing.T) {
 	dir := t.TempDir()
 	c := quickMatrixConfig()
 	c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
-	in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1, WriteSamples: true}
+	in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, WriteSamples: true}
 	stopAfterAlonePasses(&in, 4)
 	if _, err := Simulate(context.Background(), in); err != nil {
 		t.Fatal(err)
@@ -536,18 +537,18 @@ func TestRulesetTransitionCarriesCulpritAndDirectHuntFailurePoints(t *testing.T)
 	}
 }
 
-func TestCurrentRulesetChecksCarriedSoloLimitsButCompletesFullLapsWithLivePasses(t *testing.T) {
+func TestCurrentRulesetChecksCarriedSoloLimitsButCompletesFullCyclesWithLivePasses(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(2)
 	c := config.Default()
 	c.CandidateSoloLimits = map[int]int{0: -10, 1: -10}
-	firstPassedFullLap := func(e journal.Event) bool {
-		p, ok := e.Data.(*journal.CheckingLap)
-		return ok && p.Event == journal.LapEnd && p.Passed && p.Full
+	firstPassedFullCycle := func(e journal.Event) bool {
+		p, ok := e.Data.(*journal.CheckingCycle)
+		return ok && p.Event == journal.CycleEnd && p.Passed && p.Full
 	}
 	_, source, dir := runHunt(t, cfg, nil, func(in *Input) {
 		in.Config = c
-		in.Until = firstPassedFullLap
+		in.Until = firstPassedFullCycle
 	})
 	id := stampRuleset(t, dir, 6)
 	resumed, err := sim.Resume(dir, cfg)
@@ -559,7 +560,7 @@ func TestCurrentRulesetChecksCarriedSoloLimitsButCompletesFullLapsWithLivePasses
 		t.Fatal(err)
 	}
 	if _, err := Simulate(context.Background(), Input{
-		Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Until: firstPassedFullLap,
+		Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Until: firstPassedFullCycle,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -603,8 +604,8 @@ func TestCurrentRulesetChecksCarriedSoloLimitsButCompletesFullLapsWithLivePasses
 				}
 			}
 			for _, regime := range []machine.Regime{machine.R1, machine.R2} {
-				if counts[regime] != c.Evidence.Starts() {
-					t.Errorf("core %d cites %d carried %s passes, want %d", p.Core, counts[regime], regime, c.Evidence.Starts())
+				if counts[regime] != c.Evidence.Trials() {
+					t.Errorf("core %d cites %d carried %s passes, want %d", p.Core, counts[regime], regime, c.Evidence.Trials())
 				}
 			}
 			checked[p.Core] = true
@@ -613,30 +614,30 @@ func TestCurrentRulesetChecksCarriedSoloLimitsButCompletesFullLapsWithLivePasses
 	if !checked[0] || !checked[1] {
 		t.Fatalf("candidate solo limits completed: %v", checked)
 	}
-	if diff := cmp.Diff(firstPassedFullLapLivePasses(t, source), togetherCarried); diff != "" {
-		t.Fatalf("source's complete together full-lap evidence was not carried (-source +carried):\n%s", diff)
+	if diff := cmp.Diff(firstPassedFullCycleLivePasses(t, source), togetherCarried); diff != "" {
+		t.Fatalf("source's complete together full-cycle evidence was not carried (-source +carried):\n%s", diff)
 	}
-	if diff := cmp.Diff(firstPassedFullLapLivePasses(t, source), firstPassedFullLapLivePasses(t, events)); diff != "" {
-		t.Fatalf("first lap must repeat every live full-lap class despite carried together passes (-source +new):\n%s", diff)
+	if diff := cmp.Diff(firstPassedFullCycleLivePasses(t, source), firstPassedFullCycleLivePasses(t, events)); diff != "" {
+		t.Fatalf("first cycle must repeat every live full-cycle class despite carried together passes (-source +new):\n%s", diff)
 	}
 }
 
-func firstPassedFullLapLivePasses(t *testing.T, events []journal.Event) map[string]int {
+func firstPassedFullCycleLivePasses(t *testing.T, events []journal.Event) map[string]int {
 	t.Helper()
 	intents := map[string]*journal.TrialIntent{}
 	counts := map[string]int{}
 	open := false
 	for _, e := range events {
 		switch p := e.Data.(type) {
-		case *journal.CheckingLap:
-			if p.Event == journal.LapStart {
+		case *journal.CheckingCycle:
+			if p.Event == journal.CycleStart {
 				if open {
-					t.Fatal("first lap restarted before passing in full")
+					t.Fatal("first cycle restarted before passing in full")
 				}
 				open = true
 			} else if open {
 				if !p.Passed || !p.Full {
-					t.Fatalf("first lap did not pass in full: %+v", p)
+					t.Fatalf("first cycle did not pass in full: %+v", p)
 				}
 				return counts
 			}
@@ -647,7 +648,7 @@ func firstPassedFullLapLivePasses(t *testing.T, events []journal.Event) map[stri
 		case *journal.TrialEnd:
 			if intent := intents[p.Trial]; intent != nil {
 				if p.Outcome != journal.OutcomePass {
-					t.Fatalf("first lap trial did not pass: %+v", p)
+					t.Fatalf("first cycle trial did not pass: %+v", p)
 				}
 				cores := intent.Cores
 				if intent.Core != nil {
@@ -658,7 +659,7 @@ func firstPassedFullLapLivePasses(t *testing.T, events []journal.Event) map[stri
 			}
 		}
 	}
-	t.Fatal("no first passed full lap")
+	t.Fatal("no first passed full cycle")
 	return nil
 }
 

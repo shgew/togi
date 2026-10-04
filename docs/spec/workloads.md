@@ -49,7 +49,7 @@ Each watched-file polling read processes at most 64 KiB, including short complet
 | R6 idle | Normal power management with the profile applied | One confined 1-thread R1 instance per core, each stopped with SIGSTOP as soon as it enters its scope, before the next instance launches. Trial timing begins only after all instances are stopped. First half: no load at all. Second half: short bursts (SIGCONT, then SIGSTOP 100 ms later, every 2 s) on one core at a time in scheduling order |
 | R7 all-core | Package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance on each loaded core. On two CCDs a checking step runs CCD0 partial, CCD0 full, CCD1 partial, CCD1 full and all-core parts; on one CCD it runs a partial then the all-core part. Partial parts are record-only and leave idle every core tied at that CCD's shallowest profile offset when the step starts |
 
-Within a regime, search cycles listed workloads; candidate-solo-limit checks freeze one R1 and one R2 workload. Checking's repeated R1, R2 and R7 steps cycle their catalogs, so three occurrences cover each workload. All parts of one R7 step share its selected R2 workload. Inconclusive starts retry the same class; a record-only failure is recorded once and the schedule continues without a rerun.
+Within a regime, search cycles listed workloads; candidate-solo-limit checks freeze one R1 and one R2 workload. Checking's repeated R1, R2 and R7 steps cycle their catalogs, so three occurrences cover each workload. All parts of one R7 step share its selected R2 workload. Inconclusive trials retry the same class; a record-only failure is recorded once and the schedule continues without a rerun.
 
 R6 and R7 run on the profile and in parked hunt trials; R7 also checks deepening rounds. R6 targets every core; an R7 trial can target part of a CCD, a full CCD or every core. `trial.intent.cores` lists exactly the loaded cores; the applied profile also includes idle cores. Each loaded core runs one instance on its first logical CPU, in its own scope and work directory, so a computation error or stall names that instance's core. A partial with no loaded cores is skipped with its reason in `checking.step`, not launched as an empty trial.
 
@@ -63,18 +63,18 @@ Defaults, all configurable:
 
 | Use | Duration |
 |---|---|
-| Search trial (R1, then R2) | 90 s each; a candidate-solo-limit class needs `n` passing starts |
-| Short start for R7, hunt groups, deepening checks and backoff reruns | 120 s (`durations.start_s`) |
+| Search trial (R1, then R2) | 90 s each; a candidate-solo-limit class needs `n` passing trials |
+| Short trial for R7, hunt groups, deepening checks and backoff reruns | 120 s (`durations.short_trial_s`) |
 | Checking per-core trial (R1 to R5) | 2 min each |
 | Checking R6 | 15 min |
-| Checking R7 long starts | 30 min total on two CCDs: 5 min each for CCD0 partial/full and CCD1 partial/full, 10 min all cores; 40 min on one CCD: 20 min partial and 20 min all cores |
+| Checking R7 long trials | 30 min total on two CCDs: 5 min each for CCD0 partial/full and CCD1 partial/full, 10 min all cores; 40 min on one CCD: 20 min partial and 20 min all cores |
 
-For `D = durations.checking_all_core_s` and `n` CCDs, a full R7 long start runs for `D` on one CCD; on multiple CCDs, each full single-CCD part runs `floor(D / 4)` seconds and the all-core part runs `D - n*floor(D / 4)` seconds. A partial receives its CCD's full-part long duration in addition to these allocations. Every nonempty part runs three short `start_s` starts and one long start. When short and long durations match, their counts add: four starts. Full parts require passes; record-only parts require completed decisive starts, whether pass or failure, and never supply full-lap coverage. `checking_all_core_s` must be in [4, 86400]. A trial is torn down before the next start. Inconclusive starts repeat their part's loaded cores and workload; passing full-part starts and completed partial starts survive interruption. A hunt group or deepening check instead needs `n` passing starts from `evidence.*` and never gains a record-only partial.
+For `D = durations.checking_all_core_s` and `n` CCDs, a full R7 long trial runs for `D` on one CCD; on multiple CCDs, each full single-CCD part runs `floor(D / 4)` seconds and the all-core part runs `D - n*floor(D / 4)` seconds. A partial receives its CCD's full-part long duration in addition to these allocations. Every nonempty part runs three short `short_trial_s` trials and one long trial. When short and long durations match, their counts add: four trials. Full parts require passes; record-only parts require completed decisive trials, whether pass or failure, and never supply full-cycle coverage. `checking_all_core_s` must be in [4, 86400]. A trial is torn down before the next trial. Inconclusive trials repeat their part's loaded cores and workload; passing full-part trials and completed partial trials survive interruption. A hunt group or deepening check instead needs `n` passing trials from `evidence.*` and never gains a record-only partial.
 
 Hunt-group duration selection and its carried-evidence rules are defined in [tuner.md, Hunt](tuner.md#hunt).
 
-Default checking lap, about 8.3 h on 16 cores with nonempty partials (about 7.2 h when all partials are skipped):
-1. R7, R7, R7: every R2 workload, each on CCD0 partial/full, CCD1 partial/full and all cores, with three short starts and one long start per nonempty part.
+Default checking cycle, about 8.3 h on 16 cores with nonempty partials (about 7.2 h when all partials are skipped):
+1. R7, R7, R7: every R2 workload, each on CCD0 partial/full, CCD1 partial/full and all cores, with three short trials and one long trial per nonempty part.
 2. R2, R2, R2: every R2 workload on every core.
 3. R6.
 4. R5 on every core.
@@ -83,7 +83,7 @@ Default checking lap, about 8.3 h on 16 cores with nonempty partials (about 7.2 
 7. R4 on every core.
 8. R6.
 
-Full-lap coverage, earlier-lap credit, carried-evidence boundaries and per-core scheduling order are defined in [tuner.md, Checking](tuner.md#checking). Search time depends on solo limit distance and failed steps; candidate checks require five passes of each frozen R1 and R2 class by default, including eligible carried passes.
+Full-cycle coverage, earlier-cycle credit, carried-evidence boundaries and per-core scheduling order are defined in [tuner.md, Checking](tuner.md#checking). Search time depends on solo limit distance and failed steps; candidate checks require five passes of each frozen R1 and R2 class by default, including eligible carried passes.
 
 ## Containment
 

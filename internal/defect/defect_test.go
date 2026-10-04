@@ -12,9 +12,9 @@ import (
 
 func fixture(t *testing.T) []journal.Event {
 	t.Helper()
-	events, torn, err := journal.ReadFile("testdata/power-off.jsonl")
-	if err != nil || len(torn) != 0 {
-		t.Fatalf("read pre-fix journal: %v, %d torn bytes", err, len(torn))
+	events, err := journal.ReadHistory("testdata/power-off.jsonl")
+	if err != nil {
+		t.Fatalf("read pre-fix journal: %v", err)
 	}
 	return events
 }
@@ -33,7 +33,7 @@ func TestPowerOffDefect(t *testing.T) {
 		}, false},
 		{"shutdown outside five seconds", func(e []journal.Event) { e[13].Time = e[10].Time.Add(6 * time.Second) }, false},
 		{"shutdown from another boot", func(e []journal.Event) { e[13].Boot = "boot-c" }, false},
-		{"unrelated shutdown reason", func(e []journal.Event) { e[13].Data.(*journal.Shutdown).Reason = journal.ShutdownLaps }, false},
+		{"unrelated shutdown reason", func(e []journal.Event) { e[13].Data.(*journal.Shutdown).Reason = journal.ShutdownCycles }, false},
 		{"decision does not cite the failure", func(e []journal.Event) { e[12].Cause = []int{11} }, false},
 		{"no clean exit progress", func(e []journal.Event) {
 			e[9].Data.(*journal.TrialProgress).Detail = "core 10 backend exited early: exit status 1"

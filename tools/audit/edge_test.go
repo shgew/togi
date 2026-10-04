@@ -46,7 +46,7 @@ func TestAvoidanceHistory(t *testing.T) {
 		{"BIOS change does not carry points", `{"seq":2,"boot":"b","kind":"session.carried","failure_points":false,"carried":[{"core":8,"failure_point":-20}]}
 {"seq":3,"boot":"b","kind":"profile.applied","offsets":[0,-20]}
 `, nil},
-		{"warning after shutdown", `{"seq":2,"boot":"b","kind":"shutdown","reason":"laps"}
+		{"warning after shutdown", `{"seq":2,"boot":"b","kind":"shutdown","reason":"cycles"}
 {"seq":3,"boot":"b","kind":"session.warning","operation":"write state projection"}
 {"seq":4,"boot":"b","kind":"session.warning","operation":"write state projection"}
 `, nil},
@@ -73,7 +73,7 @@ func TestMissingCause(t *testing.T) {
 }
 func TestProjectionShape(t *testing.T) {
 	t.Parallel()
-	state := journal.State{Schema: 3}
+	state := journal.State{Schema: 4}
 	data, err := json.Marshal(state)
 	if err != nil {
 		t.Fatal(err)

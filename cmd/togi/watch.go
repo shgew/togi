@@ -19,15 +19,16 @@ import (
 
 const watchHelp = `Usage: togi watch [--width <columns>] [--height <rows>]
 
-Show the session as a dashboard that redraws every second. togi says in plain
-words what it is doing and why, how far the current test and lap have come,
-and the stages from finding each core's limit to a clean lap; a HUNT lamp
-lights while a hunt pauses them. One row per core shows the offset applied
-now, where the core stands and how deep it goes; the cores the test is judging
-are bright, the others grey. Below them, what happened recently. On a
-terminal, keys switch views: ? explains everything on the screen, L shows the
-event log as the journal records it, the arrow and page keys scroll both, q
-quits. Read-only; rendered from the journal, which it reloads when it changes.
+Show the session as a read-only dashboard. It redraws when the journal changes
+and once a second for the clock. During an idle trial it holds still, clock
+included, until the journal changes, a key is pressed or the terminal is
+resized. togi says in plain words what it is doing and why, how far the
+current trial and cycle have come, and what each outcome would lead to. Each
+CCD's cores show their offsets and limits side by side; below them, the cycle,
+hunt or search beside what happened recently. On a terminal, keys switch
+views: ? explains the screen, l shows the journal, the arrow and page keys
+scroll both, q quits. Rendered from the journal, which it reloads only when it
+changes.
 On a terminal it fills the screen until interrupted; otherwise it prints one
 frame of --width by --height and exits. An unreadable or incompatible journal
 appears in the frame and on stderr, and one-frame watch exits 1; live watch

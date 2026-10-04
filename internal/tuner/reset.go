@@ -20,10 +20,10 @@ func (s *State) queuedReset() (Action, bool) {
 			return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: s.hunt.start.Hunt, Result: "cancelled", Groups: len(s.hunt.groups), Reason: fmt.Sprintf("core %02d was reset", c.id)}, Cause: []int{c.queueSeq}}, true
 		}
 		if s.round != nil {
-			return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.LapEnd, Reason: fmt.Sprintf("core %02d was reset", c.id)}, Cause: []int{c.queueSeq}}, true
+			return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.CycleEnd, Reason: fmt.Sprintf("core %02d was reset", c.id)}, Cause: []int{c.queueSeq}}, true
 		}
 		if s.checking.open {
-			return Action{Kind: Decide, Payload: &journal.CheckingLap{Lap: s.checking.lap, Event: journal.LapEnd, Reason: fmt.Sprintf("core %02d was reset", c.id)}, Cause: []int{c.queueSeq}}, true
+			return Action{Kind: Decide, Payload: &journal.CheckingCycle{Cycle: s.checking.cycle, Event: journal.CycleEnd, Reason: fmt.Sprintf("core %02d was reset", c.id)}, Cause: []int{c.queueSeq}}, true
 		}
 		var cleared []int
 		for _, combination := range s.combinations {

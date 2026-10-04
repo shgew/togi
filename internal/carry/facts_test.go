@@ -351,7 +351,7 @@ func TestRecordOnlyFactsSurviveTwoTransitionsWithoutFailurePoints(t *testing.T) 
 	a := newJournal(t, dir, "A", 8, &context, cores...)
 	for _, outcome := range []journal.Outcome{journal.OutcomePass, journal.OutcomeFailure} {
 		id := string(outcome)
-		a.add(&journal.TrialIntent{Trial: id, Cores: []int{0}, Profile: []int{-30, -50}, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Lap: 1, Step: 2, RecordOnly: true})
+		a.add(&journal.TrialIntent{Trial: id, Cores: []int{0}, Profile: []int{-30, -50}, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Cycle: 1, Step: 2, RecordOnly: true})
 		signal, duration := machine.Signal(""), 120
 		if outcome == journal.OutcomeFailure {
 			signal, duration = machine.ComputationError, 11

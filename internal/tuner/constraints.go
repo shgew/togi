@@ -9,12 +9,30 @@ import (
 )
 
 func (s *State) reaches(p []int) (string, bool) {
-	if len(p) != len(s.cores) {
+	limit, id, offset := s.reachedLimit(p)
+	return limitReason(limit, id, offset)
+}
+
+func limitReason(limit Limit, id, offset int) (string, bool) {
+	switch {
+	case limit.Floor:
+		return "at the floor -50", true
+	case limit.Failure:
+		return fmt.Sprintf("failure point %d of core %02d", offset, id), true
+	case limit.Combination != 0:
+		return fmt.Sprintf("combination C%d", limit.Combination), true
+	default:
 		return "", false
+	}
+}
+
+func (s *State) reachedLimit(p []int) (Limit, int, int) {
+	if len(p) != len(s.cores) {
+		return Limit{}, 0, 0
 	}
 	for _, c := range s.byID() {
 		if c.fail != nil && p[s.index(c.id)] <= *c.fail {
-			return fmt.Sprintf("failure point %d of core %02d", *c.fail, c.id), true
+			return Limit{Failure: true}, c.id, *c.fail
 		}
 	}
 	for _, m := range s.combinations {
@@ -26,10 +44,10 @@ func (s *State) reaches(p []int) (string, bool) {
 			}
 		}
 		if all {
-			return fmt.Sprintf("combination C%d", m.Combination), true
+			return Limit{Combination: m.Combination}, 0, 0
 		}
 	}
-	return "", false
+	return Limit{}, 0, 0
 }
 
 func (s *State) Reaches(profile []int) (string, bool) { return s.reaches(profile) }
@@ -46,12 +64,17 @@ func SoleNonzero(profile []int) (index int, ok bool) {
 }
 
 func (s *State) atLimit(c *core, p []int) (string, bool) {
+	limit, id, offset := s.limitAt(c, p)
+	return limitReason(limit, id, offset)
+}
+
+func (s *State) limitAt(c *core, p []int) (Limit, int, int) {
 	if c.offset == machine.MinOffset {
-		return "at the floor -50", true
+		return Limit{Floor: true}, 0, 0
 	}
 	q := slices.Clone(p)
 	q[s.index(c.id)]--
-	return s.reaches(q)
+	return s.reachedLimit(q)
 }
 
 // optimum returns the deepest-total profile within [floor, hi] that reaches no

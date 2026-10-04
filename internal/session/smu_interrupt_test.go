@@ -93,7 +93,7 @@ func TestEmergencyZeroingInterruptsEverySMUWindow(t *testing.T) {
 		m.InterruptSMU(nil)
 		m.NextReset(machine.ResetPowerLoss)
 		m.Reboot()
-		if stop := simulate(t, in); stop.Reason != StopLaps {
+		if stop := simulate(t, in); stop.Reason != StopCycles {
 			t.Fatalf("resume after emergency: %+v", stop)
 		}
 		return accesses, emergencyDecisionFacts(readEvents(t, in.Dir))

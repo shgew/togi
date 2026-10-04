@@ -229,7 +229,7 @@ func TestSignalBeforePowerLossSurvivesCrash(t *testing.T) {
 				t.Fatalf("durable backend evidence %+v, want %s on core 0", progress, signal)
 			}
 			stop := simulate(t, in)
-			if stop.Reason != StopLaps {
+			if stop.Reason != StopCycles {
 				t.Fatalf("stopped with %+v", stop)
 			}
 			var end *journal.TrialEnd
@@ -268,7 +268,7 @@ func TestPowerButtonBetweenTrialsIsInconclusive(t *testing.T) {
 	}
 	in := simInput(t.TempDir(), newSim(t, small()))
 	in.Machine.NextReset(machine.ResetPowerButton)
-	if stop := drive(t, in, crashAt(ref[index].Seq, in.Machine)); stop.Reason != StopLaps {
+	if stop := drive(t, in, crashAt(ref[index].Seq, in.Machine)); stop.Reason != StopCycles {
 		t.Fatalf("stopped with %+v", stop)
 	}
 	crash, ok := crashDetectedFor(readEvents(t, in.Dir), ref[index].Boot)
@@ -363,7 +363,7 @@ func TestCorrectedMCESelectionSurvivesWallJump(t *testing.T) {
 			seams := in.Machine.Seams()
 			seams.Trials = jumpTrials{Trials: seams.Trials, jump: func() { in.Machine.JumpWall(jump) }}
 			stop, err := driveWithSeams(in, seams)
-			if err != nil || stop.Reason != StopLaps {
+			if err != nil || stop.Reason != StopCycles {
 				t.Fatalf("run %+v, %v", stop, err)
 			}
 			events := readEvents(t, in.Dir)
@@ -459,7 +459,7 @@ func TestInterruptedTrialDurationUsesMonotonicTimeAfterWallJump(t *testing.T) {
 			seams := in.Machine.Seams()
 			seams.Trials = &jumpAndCrashTrials{Trials: seams.Trials, m: in.Machine, jump: jump}
 			stop, err := driveWithSeams(in, seams)
-			if err != nil || stop.Reason != StopLaps {
+			if err != nil || stop.Reason != StopCycles {
 				t.Fatalf("resume after wall jump %+v, %v", stop, err)
 			}
 			events := readEvents(t, in.Dir)
@@ -872,7 +872,7 @@ func TestRecordOnlyPartialCrashContinuesWithoutTuningFailure(t *testing.T) {
 			cfg.Model = &model
 			in := simInput(t.TempDir(), newSim(t, cfg))
 			in.Config.CandidateSoloLimits = map[int]int{0: -20, 1: -40, 2: -25, 3: -45}
-			in.Config.Durations.StartS = 1
+			in.Config.Durations.ShortTrialS = 1
 			in.Config.Durations.CheckingTrialS = 1
 			in.Config.Durations.CheckingAllCoreS = 1
 			in.Config.Evidence.Rate = 0.95
@@ -887,7 +887,7 @@ func TestRecordOnlyPartialCrashContinuesWithoutTuningFailure(t *testing.T) {
 				t.Fatalf("partial crash: error %v, intent %+v", err, interrupted.intent)
 			}
 			partial := interrupted.intent
-			if partial.Regime != machine.R7 || partial.Step < 1 || partial.Lap < 1 || len(partial.Cores) == 0 {
+			if partial.Regime != machine.R7 || partial.Step < 1 || partial.Cycle < 1 || len(partial.Cores) == 0 {
 				t.Fatalf("partial intent fields not forwarded: %+v", partial)
 			}
 			before := readEvents(t, in.Dir)
@@ -896,7 +896,7 @@ func TestRecordOnlyPartialCrashContinuesWithoutTuningFailure(t *testing.T) {
 			for _, e := range before {
 				switch p := e.Data.(type) {
 				case *journal.CheckingStep:
-					if p.Lap == partial.Lap && p.Step == partial.Step {
+					if p.Cycle == partial.Cycle && p.Step == partial.Step {
 						frozen = p
 					}
 				case *journal.TrialIntent:
@@ -917,7 +917,7 @@ func TestRecordOnlyPartialCrashContinuesWithoutTuningFailure(t *testing.T) {
 			if !errors.Is(err, errKilled) || resumed.next == nil {
 				t.Fatalf("partial continuation: error %v, next %+v", err, resumed.next)
 			}
-			if next := resumed.next; next.Trial == partial.Trial || next.Retry || next.Rerun || next.Hunt != 0 || next.Lap != partial.Lap || next.Step != partial.Step {
+			if next := resumed.next; next.Trial == partial.Trial || next.Retry || next.Rerun || next.Hunt != 0 || next.Cycle != partial.Cycle || next.Step != partial.Step {
 				t.Fatalf("partial failure retried, hunted or left its step: partial %+v, next %+v", partial, next)
 			}
 			if diff := cmp.Diff(partial.Profile, resumed.next.Profile); diff != "" {
@@ -941,7 +941,7 @@ func TestRecordOnlyPartialCrashContinuesWithoutTuningFailure(t *testing.T) {
 						end = p
 					}
 				case *journal.CheckingStep:
-					if p.Lap == frozen.Lap && p.Step == frozen.Step {
+					if p.Cycle == frozen.Cycle && p.Step == frozen.Step {
 						snapshots++
 					}
 				case *journal.Failure, *journal.HuntStart, *journal.HuntSkipped, *journal.Combination:

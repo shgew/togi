@@ -1,66 +1,66 @@
-   togi   04:01:38  stopped at a dead end after 28h00m  70 failures  13 crashes
+  togi   10:16:17   session 10h15m   28 failures · 7 crashes   last observed failure 06:59, 3h16m ago
 
-  █  I STOPPED
-  █  
-  █  I couldn't obtain usable failure evidence, so I can't continue testing
-  █  safely. Check the recorded details before tuning again.
-  █  
-  █  Details: dead end no_evidence: five trials in a row proved nothing
-  
-  
-  ■ Find limits   ■ Test together ■ Go deeper     ■ Clean lap     ► Keep checking
-  █████████████   █████████████   █████████████   █████████████   █████████████
-  16/16 cores     2 laps          no room left    reached         lap 2
-                                                                  2 clean laps
-  
-   HUNT      no hunt running, 7 hunts so far
-  
-  
-  CCD 0                                -10       -20       -30       -40       -50
-  00  -37  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌············
-  01  -31  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌··················
-  02  -35  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌··············
-  03  -17  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌································
-  04  -32  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌·················
-  05   -7  limit found          ▒▒▒▒▒▒▒▌··········································
-  06  -27  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌······················
-  07  -30  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌···················
+  ■ SOLO LIMITS  16/16  ───  ► CYCLE 1  step 1 of 14 · part 1 of 5 · trial 1 of 4  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
-  CCD 1                                -10       -20       -30       -40       -50
-  08  -24  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌·························
-  09  -16  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌·································
-  10  -15  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌··································
-  11   -4  limit found          ▒▒▒▒▌·············································
-  12   -7  limit found          ▒▒▒▒▒▒▒▌··········································
-  13  -22  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌···························
-  14    0  limit found          ▌·················································
-  15  -35  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌··············
+  ▌  DEAD END   I couldn't obtain usable failure evidence, so I can't continue testing safely. Check the recorded         last trial      PASS  1:30 on core 15 · Tctl max 71°C
+  ▌             details before tuning again.
 
-  What happened
-   28h00m  stop     dead end: five trials in a row proved nothing
-   27h59m  stop     stopped
-   27h59m  lap      #2 passed, a full lap of every kind of test
-   27h59m  pass     idle with short bursts on all 16 cores, 15 min, peak 69 C
-   27h44m  pass     partial load on core 15 at -35, 2 min, peak 65 C
-   27h42m  pass     partial load on core 07 at -30, 2 min, peak 67 C
-   27h40m  pass     partial load on core 14 at 0, 2 min, peak 73 C
-   27h38m  pass     partial load on core 06 at -27, 2 min, peak 76 C
-   27h36m  pass     partial load on core 13 at -22, 2 min, peak 71 C
-   27h34m  pass     partial load on core 05 at -7, 2 min, peak 69 C
-   27h32m  pass     partial load on core 12 at -7, 2 min, peak 65 C
-   27h30m  pass     partial load on core 04 at -32, 2 min, peak 73 C
-   27h28m  pass     partial load on core 11 at -4, 2 min, peak 62 C
-   27h26m  pass     partial load on core 03 at -17, 2 min, peak 71 C
-   27h24m  pass     partial load on core 10 at -15, 2 min, peak 70 C
-   27h22m  pass     partial load on core 02 at -35, 2 min, peak 73 C
-   27h20m  pass     partial load on core 09 at -16, 2 min, peak 62 C
-   27h18m  pass     partial load on core 01 at -31, 2 min, peak 74 C
-   27h16m  pass     partial load on core 08 at -24, 2 min, peak 76 C
-   27h14m  pass     partial load on core 00 at -37, 2 min, peak 64 C
-   27h12m  pass     load steps on core 15 at -35, 2 min, peak 64 C
-   27h10m  pass     load steps on core 07 at -30, 2 min, peak 68 C
-   27h08m  pass     load steps on core 14 at 0, 2 min, peak 67 C
-   27h06m  pass     load steps on core 06 at -27, 2 min, peak 69 C
-   27h04m  pass     load steps on core 13 at -22, 2 min, peak 70 C
-   27h02m  pass     load steps on core 05 at -7, 2 min, peak 71 C
-   27h00m  pass     load steps on core 12 at -7, 2 min, peak 68 C
+  DEAD END ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  no evidence: five trials in a row proved nothing
+
+  CCD 0               0       -10       -20       -30       -40       -50 fail pt  7 under load · 7 judged                CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
+  ► 00  -37  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                -38                                            08  -27  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                          -28
+  ► 01  -34  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                   -35                                            09  -18  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                   -19
+  ► 02  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                  -36                                            10  -16  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                     -17
+  ► 03  -17  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                    -18                                            11   -7  AT LIMIT  ▄▄▄▄▄▄▄█                                               -8
+  ► 04  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            12  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11
+    05  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            13  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                             -25
+  ► 06  -30  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                       -31                                            14   -4  AT LIMIT  ▄▄▄▄█                                                  -5
+  ► 07  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            15  -39  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█              -40
+
+  CYCLE 1 ───────────────────────────────────────────────────────────────────────────────────────── 14 steps · 0 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
+
+    #   kind                  where                   workload                      schedule       result                 10:15  stop     dead end: five trials in a row proved nothing
+  ►  1  R7 all-core           2 CCDs · 5 parts        mprime AVX2 36K-248K          5 parts        part 1 of 5            10:14  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
+  ►     ├ partial CCD 0       00-04 06 07 · record only                             3 x 2m + 5m    trial 1 of 4           10:14  cycle    cycle 1 started · 14 steps
+        ├ full CCD 0          00-07                                                 3 x 2m + 5m                           10:14  limit    core 15 solo limit -39
+        ├ partial CCD 1       08-13 15 · record only                                3 x 2m + 5m                           10:13  limit    core 01 solo limit -34
+        ├ full CCD 1          08-15                                                 3 x 2m + 5m                           10:13  limit    core 00 solo limit -37
+        └ full CCD 0+1        00-15                                                 3 x 2m + 10m                          10:11  limit    cores 04, 07 solo limit -32
+  ○  2  R7 all-core           2 CCDs · 5 parts        mprime AVX-512 36K-248K       5 parts                               10:05  limit    core 13 solo limit -24
+  ○  3  R7 all-core           2 CCDs · 5 parts        y-cruncher FFTv4 + N63 + VT3  5 parts                               10:04  limit    core 02 solo limit -35
+  ○  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m                               10:02  limit    core 08 solo limit -27
+  ○  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m                               09:58  limit    core 06 solo limit -30
+  ○  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m                               09:53  limit    core 09 solo limit -18
+  ○  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   09:41  limit    core 03 solo limit -17
+  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               09:25  limit    core 10 solo limit -16
+  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               09:14  limit    core 14 solo limit -4
+  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               09:10  limit    core 11 solo limit -7
+  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               08:52  limit    cores 05, 12 solo limit -10
+  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               07:50  confirm  core 15 confirming -39 as its solo limit
+  ○ 13  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               07:25  step     core 15 passed -38, next -39
+  ○ 14  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   07:04  confirm  core 01 confirming -34 as its solo limit
+                                                                                                                          06:59  confirm  core 00 confirming -37 as its solo limit
+                                                                                                                          06:59  fail     core 00 fails at -38
+                                                                                                                          06:59  crash    core 00 · R1 light at -38 · rebooted · early in trial 1 of 1
+                                                                                                                          06:57  step     core 15 passed -37, next -38
+                                                                                                                          06:54  confirm  core 07 confirming -32 as its solo limit
+                                                                                                                          06:54  fail     core 07 fails at -33
+                                                                                                                          06:54  crash    core 07 · R1 light at -33 · rebooted · early in trial 1 of 1
+                                                                                                                          06:45  confirm  core 04 confirming -32 as its solo limit
+                                                                                                                          06:45  fail     core 04 fails at -33
+                                                                                                                          06:45  crash    core 04 · R2 heavy vector at -33 · rebooted · early in trial 1 of 1
+                                                                                                                          06:34  step     core 01 passed -33, next -34
+                                                                                                                          06:30  step     core 00 passed -37, next -38
+                                                                                                                          06:27  step     core 15 passed -36, next -37
+                                                                                                                          06:24  step     core 07 passed -32, next -33
+                                                                                                                          06:18  confirm  core 13 confirming -24 as its solo limit
+                                                                                                                          06:12  step     core 04 passed -32, next -33
+                                                                                                                          06:04  confirm  core 02 confirming -35 as its solo limit
+                                                                                                                          06:04  fail     core 02 fails at -36
+                                                                                                                          06:04  fail     core 02 · R1 light at -36 · the stress program quit
+                                                                                                                          06:03  step     core 01 passed -32, next -33
+                                                                                                                          06:00  confirm  core 08 confirming -27 as its solo limit
+                                                                                                                          +159 more
+
+   ?  help    l  log    esc  back    q  close view

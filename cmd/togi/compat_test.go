@@ -16,10 +16,7 @@ import (
 
 func incompatibleFixture(t *testing.T, field string) (string, []byte) {
 	t.Helper()
-	fixture, err := os.ReadFile("testdata/events.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := currentJournalFixture(t, "testdata/events.jsonl")
 	header, rest, ok := bytes.Cut(fixture, []byte("\n"))
 	if !ok {
 		t.Fatal("fixture did not contain session header")
@@ -31,7 +28,7 @@ func incompatibleFixture(t *testing.T, field string) (string, []byte) {
 	stamp["version"] = json.RawMessage(`"0.2.1"`)
 	stamp["rev"] = json.RawMessage(`"def5678"`)
 	stamp[field] = json.RawMessage(`99`)
-	header, err = json.Marshal(stamp)
+	header, err := json.Marshal(stamp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,10 +326,7 @@ func TestUnknownKindsBeforeRunConfigAndReset(t *testing.T) {
 }
 
 func TestCommandsWithFutureKind(t *testing.T) {
-	fixture, err := os.ReadFile("testdata/events.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := currentJournalFixture(t, "testdata/events.jsonl")
 	future, err := os.ReadFile("testdata/future-kind.jsonl")
 	if err != nil {
 		t.Fatal(err)
@@ -386,6 +380,31 @@ func TestCommandsWithFutureKind(t *testing.T) {
 			}
 			if diff := cmp.Diff(data, after); diff != "" {
 				t.Fatalf("journal changed (-want +got): %s", diff)
+			}
+		})
+	}
+}
+
+func TestReadCommandsRefuseHistoricalSchemaFixture(t *testing.T) {
+	t.Parallel()
+	original, err := os.ReadFile("testdata/events.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"status", "events", "watch"} {
+		t.Run(command, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "events.jsonl")
+			if err := os.WriteFile(path, original, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			if code := cli([]string{"--state-dir", dir, command}, &stdout, &stderr); code != exitError || (command != "watch" && stdout.Len() != 0) || !strings.Contains(stderr.String(), fmt.Sprintf("uses schema %d", journal.Schema)) {
+				t.Fatalf("%s exit %d, stdout %q, stderr %q", command, code, stdout.String(), stderr.String())
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(after, original) {
+				t.Fatalf("read changed historical journal: %v", err)
 			}
 		})
 	}

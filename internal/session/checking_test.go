@@ -40,7 +40,7 @@ func TestIdleCrashInChecking(t *testing.T) {
 			t.Parallel()
 			in := simInput(t.TempDir(), newSim(t, small()))
 			stop := drive(t, in, crashAt(tc.at.Seq, in.Machine))
-			if stop.Reason != StopLaps {
+			if stop.Reason != StopCycles {
 				t.Fatalf("stopped with %+v", stop)
 			}
 			events := readEvents(t, in.Dir)
@@ -85,8 +85,8 @@ func TestResumeContinuesBoots(t *testing.T) {
 		t.Fatalf("Resume: %d boots from %s, want %d after %s", cfg.Boots, cfg.Start, len(boots), last)
 	}
 	in := simInput(dir, newSim(t, cfg))
-	in.Laps = 2
-	if stop := simulate(t, in); stop.Reason != StopLaps {
+	in.Cycles = 2
+	if stop := simulate(t, in); stop.Reason != StopCycles {
 		t.Fatalf("second run stopped with %+v", stop)
 	}
 	events := readEvents(t, dir)

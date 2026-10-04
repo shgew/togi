@@ -26,7 +26,7 @@ in the system journal unless NO_COLOR is set.
 
 Examples:
   togi events --core 3                     Everything that happened to core 3
-  togi events --kind trial,checking.lap   Every trial event and checking lap
+  togi events --kind trial,checking.cycle   Every trial event and checking cycle
   togi events --json --trial 0413          The raw events of trial 0413`
 
 func eventsFlags(g *globals, filter *journal.Filter, rawJSON *bool) *flag.FlagSet {

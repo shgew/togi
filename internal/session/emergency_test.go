@@ -144,7 +144,7 @@ func TestJournalFailureReportsFailedEmergencyZeroAndReadbacks(t *testing.T) {
 	faulty := &failAppendJournal{Journal: wrapFor(in, nil)(j), kind: journal.KindTrialStart}
 	smu := &failEmergencyZero{SMU: seams.SMU, journal: faulty}
 	seams.SMU = smu
-	_, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: faulty, Machine: seams, Laps: 1, Stderr: &stderr})
+	_, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: faulty, Machine: seams, Cycles: 1, Stderr: &stderr})
 	if closeErr := j.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
@@ -191,7 +191,7 @@ func TestStateRewriteFailureOnResumeRestoresSafeOffsets(t *testing.T) {
 	stop, err := simulateBoot(context.Background(), in, func(j *journal.Journal) Journal {
 		return unwritableState{wrapFor(in, nil)(j)}
 	})
-	if err != nil || stop.Reason != StopLaps {
+	if err != nil || stop.Reason != StopCycles {
 		t.Fatalf("projection failure stopped resumed tuning: stop %+v, error %v", stop, err)
 	}
 	if diff := cmp.Diff("", stderr.String()); diff != "" {
@@ -253,7 +253,7 @@ func TestEveryEarlyJournalAppendFailureRespectsSweepGate(t *testing.T) {
 	cfg.BIOS = []int{-10, -10}
 	cfg.Script = map[string]sim.Outcome{"0001": {Signal: machine.ComputationError, AtS: 1, Core: 0}}
 	ref := simInput(t.TempDir(), newSim(t, cfg))
-	if stop := simulate(t, ref); stop.Reason != StopLaps {
+	if stop := simulate(t, ref); stop.Reason != StopCycles {
 		t.Fatalf("reference stopped with %+v", stop)
 	}
 	events := readEvents(t, ref.Dir)
@@ -291,7 +291,7 @@ func TestEveryEarlyJournalAppendFailureRespectsSweepGate(t *testing.T) {
 				t.Fatal(err)
 			}
 			faulty := &failAppendJournal{Journal: wrapFor(in, nil)(j), at: k}
-			_, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: faulty, Machine: seams, Laps: 1, Stderr: &stderr})
+			_, err = Run(context.Background(), Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: faulty, Machine: seams, Cycles: 1, Stderr: &stderr})
 			if closeErr := j.Close(); closeErr != nil {
 				t.Fatal(closeErr)
 			}

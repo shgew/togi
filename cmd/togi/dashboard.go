@@ -9,11 +9,12 @@ import (
 	"github.com/shgew/togi/internal/watch"
 )
 
-// dashboard draws the session on out while it shows and drops the event lines written to it meanwhile; they stay in
-// the journal. Hidden, it forwards them to out.
+// dashboard drops event lines while the journal-driven watch is visible; hidden, it forwards them to out.
+// watch updates the clock once a second outside idle trials and holds still during an idle trial until the journal changes.
 type dashboard struct {
 	dir     string
 	out     *os.File
+	run     func(ctx context.Context, dir string, out *os.File) error // watch.Run when nil
 	mu      sync.Mutex
 	showing bool
 	cancel  context.CancelFunc
@@ -35,9 +36,13 @@ func (d *dashboard) show() {
 	d.mu.Lock()
 	d.showing, d.cancel, d.done = true, cancel, done
 	d.mu.Unlock()
+	run := d.run
+	if run == nil {
+		run = func(ctx context.Context, dir string, out *os.File) error { return watch.Run(ctx, dir, out, nil) }
+	}
 	go func() {
 		defer close(done)
-		err := watch.Run(ctx, d.dir, d.out, nil)
+		err := contained(func() error { return run(ctx, d.dir, d.out) })
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		d.showing = false
@@ -45,6 +50,16 @@ func (d *dashboard) show() {
 			fmt.Fprintf(d.out, "togi run: dashboard: %v; printing events instead\n", err)
 		}
 	}()
+}
+
+// contained turns a panic into an error, so a dashboard bug hides the dashboard instead of stopping tuning.
+func contained(f func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return f()
 }
 
 func (d *dashboard) hide() {

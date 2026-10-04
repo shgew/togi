@@ -24,7 +24,7 @@ func (s *State) checkSoloLimit(c coreState, offset int, pass, fail *int, label s
 	k := c.checks
 	w1 := machine.Workloads(machine.R1)[k%len(machine.Workloads(machine.R1))].ID
 	w2 := machine.Workloads(machine.R2)[k%len(machine.Workloads(machine.R2))].ID
-	return &journal.TunerDecision{Core: c.core, Phase: journal.PhaseSearch, Decision: journal.CheckSoloLimit, FromOffset: c.offset, ToOffset: offset, Pass: pass, FailurePoint: fail, Workloads: []string{w1, w2}, Reason: fmt.Sprintf("candidate solo limit %d: %s; the full pass rule needs %d starts each of R1 %s and R2 %s", offset, label, s.n, w1, w2)}
+	return &journal.TunerDecision{Core: c.core, Phase: journal.PhaseSearch, Decision: journal.CheckSoloLimit, FromOffset: c.offset, ToOffset: offset, Pass: pass, FailurePoint: fail, Workloads: []string{w1, w2}, Reason: fmt.Sprintf("candidate solo limit %d: %s; the full pass rule needs %d trials each of R1 %s and R2 %s", offset, label, s.n, w1, w2)}
 }
 
 func (s *State) searchPass(c coreState) journal.Payload {
@@ -117,7 +117,7 @@ func (s *State) perCore() (Action, bool) {
 		} else {
 			reason = "one count deeper reaches no failure point or combination"
 		}
-		return Action{Kind: Decide, Payload: &journal.CorePhase{Core: c.id, From: journal.PhaseSearch, To: phase, Offset: c.offset, Pass: new(c.offset), FailurePoint: c.fail, Reason: fmt.Sprintf("solo limit %d passed %d starts of R1 %s and R2 %s%s; %s", c.offset, s.n, c.checkWorkloads[0], c.checkWorkloads[1], s.carriedReason(cause), reason)}, Cause: cause}, true
+		return Action{Kind: Decide, Payload: &journal.CorePhase{Core: c.id, From: journal.PhaseSearch, To: phase, Offset: c.offset, Pass: new(c.offset), FailurePoint: c.fail, Reason: fmt.Sprintf("solo limit %d passed %d trials of R1 %s and R2 %s%s; %s", c.offset, s.n, c.checkWorkloads[0], c.checkWorkloads[1], s.carriedReason(cause), reason)}, Cause: cause}, true
 	}
 	return Action{}, false
 }

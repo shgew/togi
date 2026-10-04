@@ -1,4 +1,4 @@
-hunt 1, group 1 | clean laps since last deepening: 0, latest lap 0
+hunt 1, group 1 | clean cycles since last deepening: 0, latest cycle 0
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0, boost limit 5700 MHz
 in flight: none
@@ -23,7 +23,7 @@ CORE  CCD  SLOT  OFFSET  PHASE     FAILURE  COMBINATIONS  QUEUED  LAST DECISION
 
 hunt 1 [#3715]: unattributed crash in R7 trial 0289; parked offsets all-zero
   candidates 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
-GROUP  CORES                    OUTCOME  STARTS
+GROUP  CORES                    OUTCOME  TRIALS
 G1     08 09 10 11 12 13 14 15  running  0/5
 
-REGIME  WORKLOAD  STARTS
+REGIME  WORKLOAD  TRIALS

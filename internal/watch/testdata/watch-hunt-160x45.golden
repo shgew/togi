@@ -1,0 +1,44 @@
+  togi   10:38:58   session 10h38m   37 failures · 8 crashes   last observed failure 10:38, a moment ago
+
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14, part 4  ───  ►  HUNT 1   parts · part 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats
+
+  ▌  HUNT 1   Crashed early in R7 all-core on 08-15; no core named. Rerunning     last trial      CRASH  on 08-15
+  ▌           it with 00-07 parked.
+
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0449
+   R7   all-core load  on 08-15 · 00-07 parked at 0, idle   mprime AVX2 36K-248K · 8 workers                                             HUNT 1 · PART 1 OF 2
+  █████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
+
+  if 5 of 5 pass       next: part 2: 00-07 at failing offsets, 08-15 parked at 0
+  if none is named     next: hunt 1 group 2: R7 all-core on 08-15 · 12-15 at failing offsets, 00-11 parked at 0
+  if a core is named   its failure point is recorded → the hunt ends → it backs off → next: rerun R7 all-core on 08-15 · 2m
+
+  CCD 0               0  2 counts/cell       -50 fail pt  parked at 0, idle       CCD 1               0  2 counts/cell       -50 fail pt  members
+    00    0  PARKED    ··················█          -38   returns to -37          ► 08  -27  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄█               -28
+    01    0  PARKED    ·················█           -35   returns to -34          ► 09  -18  MEMBER    ▄▄▄▄▄▄▄▄▄█                   -19
+    02    0  PARKED    ·················█           -36   returns to -35          ► 10  -16  MEMBER    ▄▄▄▄▄▄▄▄█                    -17
+    03    0  PARKED    ········█                    -18   returns to -17          ► 11   -7  MEMBER    ▄▄▄█                          -8
+    04    0  PARKED    ················█            -33   returns to -32          ► 12  -10  MEMBER    ▄▄▄▄▄█                       -11
+    05    0  PARKED    ···█·                         -8   returns to -7           ► 13  -23  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄█                 -24
+    06    0  PARKED    ·············█·              -28   returns to -27          ► 14   -3  MEMBER    ▄█                            -4
+    07    0  PARKED    ················█            -33   returns to -32          ► 15  -39  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -40
+
+  HUNT 1 ───────────────────────────────────────── started 10:38 · 40s so far     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
+
+  cause       crash in the rerun of R7 all-core on 08-15 · no core named          10:38  hunt     #1 started · part 1: 08-15 at failing offsets, 00-07 parked
+  evidence    the last sample came 0:01 into the trial · not enough to            10:38  crash    rerun of R7 all-core on 08-15 · rebooted · early in trial
+  candidates  00-15, every core with an offset in the failing profile             10:36  backoff  core 13 -24 → -23
+                                                                                  10:36  fail     core 13 fails at -24
+  parts       part    failing      parked at 0  schedule state                    10:36  fail     rerun of R7 all-core on 08-15 · wrong result · core 13
+            ► 1 of 2  08-15        00-07        5 x 2m   trial 1 of 5             10:36  backoff  core 14 -4 → -3
+              2 of 2  00-07        08-15        5 x 2m   if part 1 passes         10:36  fail     core 14 fails at -4
+              then finer parts and their complements, until one fails or          10:36  fail     R7 full CCD 1 on 08-15 · corrected hardware error · no
+                                                                                  10:34  record   R7 partial CCD 1 on 08-13 15 · computation errors in 4 of
+  then        if the hunt resolves and the rerun passes:                          10:34  pass     R7 full CCD 0 on 00-07 · trial 4 of 4 passed · Tctl max
+              1  record what it found: one core's failure point, or a             10:29  pass     rerun of R7 all-core on 00-07 · 5 passed · Tctl max 76°C
+              2  back off past it                                                 10:19  backoff  core 05 -8 → -7
+              3  rerun R7 all-core on 08-15: 5 trials of 2m, its original         10:19  fail     core 05 fails at -8
+              4  resume cycle 1                                                   10:19  fail     rerun of R7 all-core on 00-07 · the stress program quit
+                                                                                  +186 more
+
+   ?  help    l  log    esc  back    q  close view

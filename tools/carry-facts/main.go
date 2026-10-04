@@ -32,7 +32,7 @@ func run(args []string, out, errOut io.Writer) (err error) {
 	flags := flag.NewFlagSet("carry-facts", flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	dirArg := flags.String("state-dir", "", "required temporary copy of the state directory; preparation mutates this copy")
-	simulate := flags.Bool("simulate", false, "run the current ruleset through its first passed full lap using the recorded BIOS context")
+	simulate := flags.Bool("simulate", false, "run the current ruleset through its first passed full cycle using the recorded BIOS context")
 	seed := flags.Uint64("seed", 1, "draw simulated limits and outcomes from this seed")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -141,8 +141,8 @@ func simulateRecorded(dir string, live facts.Session, seed uint64, out io.Writer
 	stop, err := simrun.Simulate(context.Background(), simrun.Input{
 		Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m,
 		Until: func(e journal.Event) bool {
-			p, ok := e.Data.(*journal.CheckingLap)
-			return ok && p.Event == journal.LapEnd && p.Passed && p.Full
+			p, ok := e.Data.(*journal.CheckingCycle)
+			return ok && p.Event == journal.CycleEnd && p.Passed && p.Full
 		},
 	})
 	if err != nil {
@@ -162,28 +162,28 @@ func simulateRecorded(dir string, live facts.Session, seed uint64, out io.Writer
 }
 
 type transitionDemo struct {
-	passes             int
-	failures           int
-	answered           int
-	soloLimitStarts    int
-	lapStarts          int
-	lapPasses          int
-	firstTrials        []journal.Event
-	decisions          []journal.Event
-	firstPassedFullLap *journal.Event
-	skips              []journal.Event
-	hunts              []journal.Event
-	inferredGroups     []journal.Event
+	passes               int
+	failures             int
+	answered             int
+	soloLimitTrials      int
+	cycleTrials          int
+	cyclePasses          int
+	firstTrials          []journal.Event
+	decisions            []journal.Event
+	firstPassedFullCycle *journal.Event
+	skips                []journal.Event
+	hunts                []journal.Event
+	inferredGroups       []journal.Event
 }
 
 func summarizeTransition(events []journal.Event) transitionDemo {
-	var passes, failures, answered, soloLimitStarts, lapStarts, lapPasses int
+	var passes, failures, answered, soloLimitTrials, cycleTrials, cyclePasses int
 	checking := map[int]bool{}
 	carried := map[int]bool{}
-	lapTrials := map[string]bool{}
+	cycleTrialIDs := map[string]bool{}
 	var firstTrials []journal.Event
 	var decisions []journal.Event
-	var firstPassedFullLap *journal.Event
+	var firstPassedFullCycle *journal.Event
 	var skips, hunts, inferredGroups []journal.Event
 	for _, e := range events {
 		switch p := e.Data.(type) {
@@ -226,27 +226,27 @@ func summarizeTransition(events []journal.Event) transitionDemo {
 				firstTrials = append(firstTrials, e)
 			}
 			if p.Phase == journal.PhaseSearch && p.Core != nil && checking[*p.Core] {
-				soloLimitStarts++
+				soloLimitTrials++
 			}
-			if p.Phase == journal.PhaseChecking && p.Lap == 1 {
-				lapTrials[p.Trial] = true
-				lapStarts++
+			if p.Phase == journal.PhaseChecking && p.Cycle == 1 {
+				cycleTrialIDs[p.Trial] = true
+				cycleTrials++
 			}
 		case *journal.TrialEnd:
-			if lapTrials[p.Trial] && p.Outcome == journal.OutcomePass {
-				lapPasses++
+			if cycleTrialIDs[p.Trial] && p.Outcome == journal.OutcomePass {
+				cyclePasses++
 			}
-		case *journal.CheckingLap:
-			if p.Event == journal.LapEnd && p.Passed && p.Full && firstPassedFullLap == nil {
+		case *journal.CheckingCycle:
+			if p.Event == journal.CycleEnd && p.Passed && p.Full && firstPassedFullCycle == nil {
 				copy := e
-				firstPassedFullLap = &copy
+				firstPassedFullCycle = &copy
 			}
 		}
 	}
 	return transitionDemo{
-		passes: passes, failures: failures, answered: answered, soloLimitStarts: soloLimitStarts,
-		lapStarts: lapStarts, lapPasses: lapPasses,
-		firstTrials: firstTrials, decisions: decisions, firstPassedFullLap: firstPassedFullLap,
+		passes: passes, failures: failures, answered: answered, soloLimitTrials: soloLimitTrials,
+		cycleTrials: cycleTrials, cyclePasses: cyclePasses,
+		firstTrials: firstTrials, decisions: decisions, firstPassedFullCycle: firstPassedFullCycle,
 		skips: skips, hunts: hunts, inferredGroups: inferredGroups,
 	}
 }
@@ -261,7 +261,7 @@ func citesCarriedFact(cause []int, carried map[int]bool) bool {
 }
 
 func renderTransition(out io.Writer, demo transitionDemo) error {
-	if _, err := fmt.Fprintf(out, "ruleset %d simulated with recorded BIOS context; evidence epoch %d\ncarried facts: %d passes, %d failures\ncandidate-solo-limit completions citing carried passes: %d\nlive solo-limit-check starts: %d\nfirst lap live starts: %d; live passes: %d\n", session.Build().Ruleset, tuner.EvidenceEpoch, demo.passes, demo.failures, demo.answered, demo.soloLimitStarts, demo.lapStarts, demo.lapPasses); err != nil {
+	if _, err := fmt.Fprintf(out, "ruleset %d simulated with recorded BIOS context; evidence epoch %d\ncarried facts: %d passes, %d failures\ncandidate-solo-limit completions citing carried passes: %d\nlive solo-limit-check trials: %d\nfirst cycle live trials: %d; live passes: %d\n", session.Build().Ruleset, tuner.EvidenceEpoch, demo.passes, demo.failures, demo.answered, demo.soloLimitTrials, demo.cycleTrials, demo.cyclePasses); err != nil {
 		return err
 	}
 	for _, e := range demo.decisions {
@@ -290,9 +290,9 @@ func renderTransition(out io.Writer, demo transitionDemo) error {
 			return err
 		}
 	}
-	if demo.firstPassedFullLap == nil {
-		return fmt.Errorf("carry-facts: simulator stopped before a passed full lap")
+	if demo.firstPassedFullCycle == nil {
+		return fmt.Errorf("carry-facts: simulator stopped before a passed full cycle")
 	}
-	_, err := fmt.Fprintf(out, "first passed full lap #%d: %s\n", demo.firstPassedFullLap.Seq, demo.firstPassedFullLap.Msg)
+	_, err := fmt.Fprintf(out, "first passed full cycle #%d: %s\n", demo.firstPassedFullCycle.Seq, demo.firstPassedFullCycle.Msg)
 	return err
 }

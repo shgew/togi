@@ -117,7 +117,7 @@ func (s *State) huntStartNext() Action {
 	}
 	parked := make([]int, len(f.profile))
 	parkedSeq := 0
-	for _, q := range slices.Backward(s.passedFullLaps) {
+	for _, q := range slices.Backward(s.passedFullCycles) {
 		if len(q.profile) != len(f.profile) {
 			continue
 		}
@@ -142,7 +142,7 @@ func (s *State) huntStartNext() Action {
 	if len(cores) == 0 {
 		cores = s.ids()
 	}
-	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: cores, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Parked: parked, ParkedSeq: parkedSeq, Candidates: candidates, Starts: s.n, StartS: s.durations.StartS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
+	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: cores, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Parked: parked, ParkedSeq: parkedSeq, Candidates: candidates, Trials: s.n, TrialS: s.durations.ShortTrialS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
 	p.Reason = f.failure.Reason
 	cause := []int{f.seq}
 	if parkedSeq != 0 {
@@ -252,17 +252,17 @@ func planOf(m *journal.HuntGroup) groupPlan {
 }
 
 func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
-	p := groupPlan{set: slices.Clone(h.start.Candidates), g: 2, stage: "part", duration: h.start.StartS}
-	if len(h.groups) == 0 && h.start.Trial != "" && h.start.DurationS > h.start.StartS {
+	p := groupPlan{set: slices.Clone(h.start.Candidates), g: 2, stage: "part", duration: h.start.TrialS}
+	if len(h.groups) == 0 && h.start.Trial != "" && h.start.DurationS > h.start.TrialS {
 		shortFailed := slices.ContainsFunc(s.failures, func(e entry) bool {
-			return (e.carried || e.seq > s.resetSeq) && e.seq < h.start.Failure && e.class.regime == h.class.regime && e.class.duration <= h.start.StartS
+			return (e.carried || e.seq > s.resetSeq) && e.seq < h.start.Failure && e.class.regime == h.class.regime && e.class.duration <= h.start.TrialS
 		})
 		if !shortFailed {
-			seqs := s.passSeqs(h.class.withDuration(h.start.StartS), h.start.Failing, s.resetSeq, huntEvidence)
+			seqs := s.passSeqs(h.class.withDuration(h.start.TrialS), h.start.Failing, s.resetSeq, huntEvidence)
 			seqs = slices.DeleteFunc(seqs, func(seq int) bool { return seq >= h.start.Failure })
-			if len(seqs) >= h.start.Starts {
+			if len(seqs) >= h.start.Trials {
 				p.duration, p.escalated = h.start.DurationS, true
-				p.priority = seqs[:h.start.Starts]
+				p.priority = seqs[:h.start.Trials]
 			}
 		}
 	}
@@ -352,7 +352,7 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 			return p, true
 		}
 	}
-	if !p.escalated && !p.fullChecked && p.g == 2 && slices.Equal(p.set, h.start.Candidates) && h.start.DurationS != h.start.StartS {
+	if !p.escalated && !p.fullChecked && p.g == 2 && slices.Equal(p.set, h.start.Candidates) && h.start.DurationS != h.start.TrialS {
 		p.stage = "full"
 		p.index = 0
 		p.cores = slices.Clone(p.set)
@@ -402,9 +402,9 @@ func (s *State) groupEvidence(h *hunt, m groupRecord, cite bool) (string, int, [
 	} else {
 		count = s.passes(k, m.payload.Profile, since, huntEvidence)
 	}
-	if count >= h.start.Starts {
+	if count >= h.start.Trials {
 		if cite {
-			seqs = seqs[:h.start.Starts]
+			seqs = seqs[:h.start.Trials]
 		}
 		return "pass", 0, seqs
 	}
@@ -475,9 +475,9 @@ func (s *State) planGroup(h *hunt, p groupPlan, reason string) Action {
 	since := s.inferenceSince(payload, h.seq)
 	cause := []int{h.seq}
 	seqs := s.passSeqs(k, payload.Profile, since, huntEvidence)
-	if len(seqs) >= h.start.Starts {
-		seqs = seqs[:h.start.Starts]
-		payload.Inferred, payload.Reason = "pass", "passing starts already establish the group"
+	if len(seqs) >= h.start.Trials {
+		seqs = seqs[:h.start.Trials]
+		payload.Inferred, payload.Reason = "pass", "passing trials already establish the group"
 		cause = s.citeCarried(cause, seqs...)
 	} else if failure := s.failingSeq(k, payload.Profile, since); failure != 0 {
 		payload.Inferred, payload.Reason = "failure", "a known failure establishes the group"
@@ -486,7 +486,7 @@ func (s *State) planGroup(h *hunt, p groupPlan, reason string) Action {
 		payload.Skipped, payload.Reason = true, "its profile reaches "+reachedConstraint
 	}
 	if len(p.priority) > 0 {
-		payload.Reason += fmt.Sprintf("; %d valid short starts preceded the longer failure, with no failure in this regime at the short duration or less since reset, so test the failed duration", len(p.priority))
+		payload.Reason += fmt.Sprintf("; %d valid short trials preceded the longer failure, with no failure in this regime at the short duration or less since reset, so test the failed duration", len(p.priority))
 		cause = append(cause, p.priority...)
 	}
 	if p.singleCorePrior[0] > 0 {
@@ -718,7 +718,7 @@ func (s *State) projectHunt() *journal.HuntState {
 	p := h.start
 	out := &journal.HuntState{Hunt: p.Hunt, Seq: h.seq, Failure: p.Failure, Regime: p.Regime, Trial: p.Trial, Parked: slices.Clone(p.Parked), ParkedSeq: p.ParkedSeq, Candidates: slices.Clone(p.Candidates)}
 	for _, m := range h.groups {
-		state := journal.GroupState{Group: m.payload.Group, Seq: m.seq, Cores: slices.Clone(m.payload.Cores), Outcome: s.groupOutcome(h, m), Needed: p.Starts}
+		state := journal.GroupState{Group: m.payload.Group, Seq: m.seq, Cores: slices.Clone(m.payload.Cores), Outcome: s.groupOutcome(h, m), Needed: p.Trials}
 		if m.payload.Probe != nil {
 			state.Probe = new(*m.payload.Probe)
 			state.Held = slices.Clone(m.payload.Held)

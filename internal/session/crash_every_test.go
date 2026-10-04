@@ -43,7 +43,7 @@ func TestCrashAtEveryTrialEvent(t *testing.T) {
 		t.Run(fmt.Sprint(k), func(t *testing.T) {
 			t.Parallel()
 			in := simInput(t.TempDir(), newSim(t, small()))
-			if stop := drive(t, in, crashAt(k, in.Machine)); stop.Reason != StopLaps {
+			if stop := drive(t, in, crashAt(k, in.Machine)); stop.Reason != StopCycles {
 				t.Fatalf("stopped with %+v", stop)
 			}
 			events := readEvents(t, in.Dir)

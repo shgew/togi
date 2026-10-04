@@ -39,7 +39,7 @@ type Trial struct {
 	Phase              journal.Phase
 	Condition          machine.Condition
 	Cores              []int
-	Lap                int
+	Cycle              int
 	Retry              bool
 	Workload           string
 	DurationS          int
@@ -61,7 +61,7 @@ func (t Trial) Complete(index int, profile []int) (*journal.TrialIntent, machine
 	}
 	p := &journal.TrialIntent{
 		Regime: t.Regime, Workload: w.ID, DurationS: t.DurationS,
-		Condition: t.Condition, Phase: t.Phase, Retry: t.Retry, Lap: t.Lap, Step: t.Step,
+		Condition: t.Condition, Phase: t.Phase, Retry: t.Retry, Cycle: t.Cycle, Step: t.Step,
 		Profile: profile, Hunt: t.Hunt, Group: t.Group, Round: t.Round, Rerun: t.Rerun, RecordOnly: t.RecordOnly,
 	}
 	if len(t.Cores) > 0 {
@@ -113,10 +113,10 @@ type rerun struct {
 	seq   int
 }
 
-type passedFullLap struct {
+type passedFullCycle struct {
 	profile    []int
 	seq        int
-	lap        int
+	cycle      int
 	allAtLimit bool
 }
 
@@ -129,6 +129,7 @@ type State struct {
 	intents                 map[string]*journal.TrialIntent
 	intentSeq               map[int]string
 	signalled               map[string]bool
+	flight                  *journal.TrialIntent
 	awaiting                *awaiting
 	mces                    map[int]*journal.MCE
 	steps                   []machine.Regime
@@ -158,7 +159,7 @@ type State struct {
 	nextRound               int
 	ranking                 []int
 	rankingSeq, lastPlanSeq int
-	passedFullLaps          []passedFullLap
+	passedFullCycles        []passedFullCycle
 	lastDeepenSeq           int
 	bestProfile             []int
 	bestDirty               bool
@@ -173,7 +174,7 @@ type State struct {
 
 func New() *State {
 	c := config.Default()
-	return &State{cursor: -1, intents: map[string]*journal.TrialIntent{}, intentSeq: map[int]string{}, signalled: map[string]bool{}, mces: map[int]*journal.MCE{}, ledger: map[trialClass][]entry{}, carriedSources: map[int]string{}, failureIndex: map[int]int{}, steps: c.Checking.Lap, durations: journal.ConfigDurations(c.Durations), evidence: journal.ConfigEvidence(c.Evidence), n: c.Evidence.Starts(), projectionDirty: true, bestDirty: true}
+	return &State{cursor: -1, intents: map[string]*journal.TrialIntent{}, intentSeq: map[int]string{}, signalled: map[string]bool{}, mces: map[int]*journal.MCE{}, ledger: map[trialClass][]entry{}, carriedSources: map[int]string{}, failureIndex: map[int]int{}, steps: c.Checking.Cycle, durations: journal.ConfigDurations(c.Durations), evidence: journal.ConfigEvidence(c.Evidence), n: c.Evidence.Trials(), projectionDirty: true, bestDirty: true}
 }
 
 func partition(cores []machine.CoreInfo) (map[int]int, [][]int) {
@@ -248,7 +249,7 @@ func (s *State) Fold(e journal.Event) {
 		s.bestDirty = true
 		s.projectionDirty = true
 	case *journal.ConfigLoaded:
-		s.steps = slices.Clone(p.Config.Checking.Lap)
+		s.steps = slices.Clone(p.Config.Checking.Cycle)
 		s.durations = p.Config.Durations
 		s.evidence = p.Config.Evidence
 		s.n = int(math.Ceil(math.Log(s.evidence.Miss) / math.Log1p(-s.evidence.Rate)))
@@ -316,6 +317,7 @@ func (s *State) Fold(e journal.Event) {
 			s.commitHuntDecision(e, p)
 		}
 	case *journal.TrialIntent:
+		s.flight = p
 		s.intents[p.Trial] = p
 		s.intentSeq[e.Seq] = p.Trial
 		s.retry = nil
@@ -327,6 +329,9 @@ func (s *State) Fold(e journal.Event) {
 			s.signalled[p.Trial] = true
 		}
 	case *journal.TrialEnd:
+		if s.flight != nil && s.flight.Trial == p.Trial {
+			s.flight = nil
+		}
 		s.foldTrialEnd(e, p)
 		s.pendingRerun()
 	case *journal.MCE:
@@ -353,6 +358,7 @@ func (s *State) Fold(e journal.Event) {
 			}
 		}
 	case *journal.CrashDetected:
+		s.flight = nil
 		if p.ResetReason == machine.ResetThermalTrip && !p.Inconclusive {
 			evidence := false
 			if p.InFlight != nil {
@@ -383,8 +389,8 @@ func (s *State) Fold(e journal.Event) {
 		s.checking.profileSeq = e.Seq
 		s.checking.lastSeq = e.Seq
 		s.projectionDirty = true
-	case *journal.CheckingLap:
-		s.foldLap(e, p)
+	case *journal.CheckingCycle:
+		s.foldCycle(e, p)
 		s.rerunCauses = nil
 	case *journal.CheckingStep:
 		s.recordCheckingStep(e, p)
@@ -496,7 +502,7 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 }
 
 func trialFromIntent(p *journal.TrialIntent) Trial {
-	t := Trial{Regime: p.Regime, Phase: p.Phase, Condition: p.Condition, Cores: slices.Clone(p.Cores), Workload: p.Workload, DurationS: p.DurationS, Profile: slices.Clone(p.Profile), Lap: p.Lap, Hunt: p.Hunt, Group: p.Group, Round: p.Round, Rerun: p.Rerun, RecordOnly: p.RecordOnly, Step: p.Step}
+	t := Trial{Regime: p.Regime, Phase: p.Phase, Condition: p.Condition, Cores: slices.Clone(p.Cores), Workload: p.Workload, DurationS: p.DurationS, Profile: slices.Clone(p.Profile), Cycle: p.Cycle, Hunt: p.Hunt, Group: p.Group, Round: p.Round, Rerun: p.Rerun, RecordOnly: p.RecordOnly, Step: p.Step}
 	if p.Core != nil {
 		t.Core = *p.Core
 	}
@@ -657,7 +663,7 @@ func (s *State) next() Action {
 		}
 	}
 	if len(s.queue) > 0 && s.round != nil {
-		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.LapEnd, Reason: "a failure needs a hunt"}, Cause: []int{s.queue[0].seq}}
+		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.CycleEnd, Reason: "a failure needs a hunt"}, Cause: []int{s.queue[0].seq}}
 	}
 	if s.round != nil {
 		if a, ok := s.roundMoves(); ok {
@@ -688,7 +694,7 @@ func (s *State) next() Action {
 		return s.afterReruns(s.roundCheck())
 	}
 	if s.checking.open {
-		a := s.lapNext()
+		a := s.cycleNext()
 		_, startsStep := a.Payload.(*journal.CheckingStep)
 		if a.Kind == RunTrial || startsStep {
 			if end, ok := s.coveredEnd(); ok {
@@ -703,7 +709,7 @@ func (s *State) next() Action {
 		}
 		return s.afterReruns(s.roundStart())
 	}
-	return s.afterReruns(Action{Kind: Decide, Payload: &journal.CheckingLap{Lap: s.checking.lap + 1, Event: journal.LapStart, Steps: slices.Clone(s.steps)}, Cause: []int{s.checking.lastSeq}})
+	return s.afterReruns(Action{Kind: Decide, Payload: &journal.CheckingCycle{Cycle: s.checking.cycle + 1, Event: journal.CycleStart, Steps: slices.Clone(s.steps)}, Cause: []int{s.checking.lastSeq}})
 }
 
 func (s *State) anySearch() bool {
@@ -743,21 +749,21 @@ func (s *State) phaseNext() (Action, bool) {
 
 func (s *State) Profile() []int  { return slices.Clone(s.checking.profile) }
 func (s *State) ProfileSeq() int { return s.checking.profileSeq }
-func (s *State) CleanLaps() int {
+func (s *State) CleanCycles() int {
 	n := 0
-	for _, q := range s.passedFullLaps {
-		if s.eligibleCleanLap(q) {
+	for _, q := range s.passedFullCycles {
+		if s.eligibleCleanCycle(q) {
 			n++
 		}
 	}
 	return n
 }
 
-func (s *State) eligibleCleanLap(q passedFullLap) bool {
+func (s *State) eligibleCleanCycle(q passedFullCycle) bool {
 	return q.allAtLimit && (q.seq > s.lastDeepenSeq || s.uncontradicted(q))
 }
 
-func (s *State) uncontradicted(q passedFullLap) bool {
+func (s *State) uncontradicted(q passedFullCycle) bool {
 	if q.seq <= s.resetSeq || !atLeastDeep(q.profile, s.checking.profile) {
 		return false
 	}

@@ -1,0 +1,44 @@
+  togi   04:51:10   session 4h51m   7 failures · 7 crashes   last observed failure 04:50, a moment ago
+
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14, part 2  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0
+
+  │               they must; every move is checked.
+  │ 
+  │ CLEAN CYCLES  The goal: a passed full cycle with every core at its limit and nothing left to deepen. Counted for the current profile; cycles repeat until
+  │               stopped.
+  │ 
+  │ R6            During idle trials this screen holds still, clock included, so it cannot wake the cores.
+  │ 
+  │ NO ETA        A hunt can start at any time, so togi shows only what is scheduled and the time left in the current trial.
+  │ 
+  │ 
+  │ 
+  │ WORDS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  │ 
+  │ offset         Curve Optimizer counts, 0 to -50; deeper is more negative
+  │ trial          one launch of one workload; evidence is counted in trials
+  │ solo limit     the deepest offset a core confirmed under load alone
+  │ failure point  the shallowest offset where a core failed on its own account
+  │ combination    offsets at which a group of cores failed together; the profile is kept from reaching all of them at once. Unresolved: no smaller group was
+  │                shown to fail
+  │ at its limit   -50, or one count deeper reaches a failure point or combination
+  │ has room       one count deeper reaches neither; deepening may take it
+  │ suspect        a core a hunt keeps at its failing offset
+  │ parked         a core a hunt holds shallower: at its last passed full-cycle offset raised to the failing profile, or 0
+  █ record only    a partial R7 load whose result is kept but changes no decision
+  █ cycle          one pass through the checking schedule
+  █ 
+  █ 
+  █ KINDS OF LOAD ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  █ 
+  █ R1 light          one light thread: compiling, browsing
+  █ R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+  █ R3 load steps     load switching on and off: current steps
+  █ R4 partial load   light load at 25-75% duty: bursty work
+  █ R5 both threads   both threads of one core: SMT pressure
+  █ R6 idle + bursts  idle with short wake-ups: idle and boost
+  █ R7 all-core       each CCD, then both: power and heat
+  █ 
+  █ 
+
+   ?  help    l  log    esc  back    q  close view

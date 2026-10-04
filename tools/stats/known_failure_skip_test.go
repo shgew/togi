@@ -22,7 +22,7 @@ func TestKnownFailureSkipDoesNotRecountIdleFailure(t *testing.T) {
 		intent("pass", 0),
 		&journal.TrialEnd{Trial: "pass", Outcome: journal.OutcomePass},
 		&skip,
-		&journal.HuntStart{Hunt: 1, Starts: 1},
+		&journal.HuntStart{Hunt: 1, Trials: 1},
 		&journal.HuntGroup{Hunt: 1, Group: 1, Stage: "part"},
 		intent("group", 1),
 	}

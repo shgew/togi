@@ -37,8 +37,8 @@ type HuntStart struct {
 	Parked     []int          `json:"parked"`
 	ParkedSeq  int            `json:"parked_seq"`
 	Candidates []int          `json:"candidates"`
-	Starts     int            `json:"starts"`
-	StartS     int            `json:"start_s"`
+	Trials     int            `json:"trials"`
+	TrialS     int            `json:"trial_s"`
 	Miss       float64        `json:"miss"`
 	Rate       float64        `json:"rate"`
 	Ranking    []int          `json:"ranking"`
@@ -53,9 +53,9 @@ func (p *HuntStart) Message() string {
 	}
 	parked := "parked at 0"
 	if p.ParkedSeq != 0 {
-		parked = fmt.Sprintf("parked offsets from lap end #%d", p.ParkedSeq)
+		parked = fmt.Sprintf("parked offsets from cycle end #%d", p.ParkedSeq)
 	}
-	msg := fmt.Sprintf("hunt %d: unattributed failure in %s; %s; candidates %s; groups of %d × %ds", p.Hunt, source, parked, coreList(p.Candidates), p.Starts, p.StartS)
+	msg := fmt.Sprintf("hunt %d: unattributed failure in %s; %s; candidates %s; groups of %d × %ds", p.Hunt, source, parked, coreList(p.Candidates), p.Trials, p.TrialS)
 	if p.Reason != "" {
 		msg += "; " + p.Reason
 	}
@@ -99,7 +99,7 @@ func (p *HuntGroup) Message() string {
 	if p.Probe != nil {
 		prefix += ","
 	}
-	message := fmt.Sprintf("%s %s; starts of %ds", prefix, running, p.DurationS)
+	message := fmt.Sprintf("%s %s; trials of %ds", prefix, running, p.DurationS)
 	if p.Reason != "" {
 		message += "; " + p.Reason
 	}
@@ -173,23 +173,23 @@ func memberList(members []CombinationMember) string {
 }
 
 type DeepeningRound struct {
-	Round   int      `json:"round"`
-	Event   LapEvent `json:"event"`
-	Base    []int    `json:"base,omitempty"`
-	BaseSeq int      `json:"base_seq,omitempty"`
-	Target  []int    `json:"target,omitempty"`
-	Profile []int    `json:"profile,omitempty"`
-	Cores   []int    `json:"cores,omitempty"`
-	Ranking []int    `json:"ranking,omitempty"`
-	Starts  int      `json:"starts,omitempty"`
-	StartS  int      `json:"start_s,omitempty"`
-	Passed  bool     `json:"passed,omitempty"`
-	Reason  string   `json:"reason,omitempty"`
+	Round   int        `json:"round"`
+	Event   CycleEvent `json:"event"`
+	Base    []int      `json:"base,omitempty"`
+	BaseSeq int        `json:"base_seq,omitempty"`
+	Target  []int      `json:"target,omitempty"`
+	Profile []int      `json:"profile,omitempty"`
+	Cores   []int      `json:"cores,omitempty"`
+	Ranking []int      `json:"ranking,omitempty"`
+	Trials  int        `json:"trials,omitempty"`
+	TrialS  int        `json:"trial_s,omitempty"`
+	Passed  bool       `json:"passed,omitempty"`
+	Reason  string     `json:"reason,omitempty"`
 }
 
 func (*DeepeningRound) Kind() Kind { return KindDeepeningRound }
 func (p *DeepeningRound) Message() string {
-	if p.Event == LapStart {
+	if p.Event == CycleStart {
 		if len(p.Cores) == 1 {
 			return fmt.Sprintf("deepening round %d start: core %s toward %v%s", p.Round, coreID(p.Cores[0]), p.Target, p.Reason)
 		}

@@ -85,7 +85,7 @@ check *args:
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")
 
-# Run a simulated session through the search and its first clean lap
+# Run a simulated session through the search and its first clean cycle
 [group('run')]
 sim seed="1":
     {{ dev }} go run ./tools/sim --seed "$1"

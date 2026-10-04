@@ -20,9 +20,9 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 |`late-onset`|R7 failures that start only after four minutes of load|
 |`idle-limit`|cores that fail idle at shallower offsets than under load (issue #106)|
 |`misleading-mce`|joint crashes that leave an MCE naming one core (issue #114)|
-|`target-r4-limit`|target-fit-derived one-count together R4 limit gap on core 15; a single medium-duty checking start can miss it (issue #107)|
+|`target-r4-limit`|target-fit-derived one-count together R4 limit gap on core 15; a single medium-duty checking trial can miss it (issue #107)|
 |`target-nonmember-mce`|target-fit-derived CCD0 joint crashes deliberately name nonmember core 15; parked hunts can stop at that core's parked offset of zero (related to issue #114)|
-|`target-delayed-joint`|target-fit-derived CCD1 joint delayed by two minutes; short checks miss it and finite long-start coverage can still conclude unsafe (issue #105)|
+|`target-delayed-joint`|target-fit-derived CCD1 joint delayed by two minutes; short checks miss it and finite long-trial coverage can still conclude unsafe (issue #105)|
 |`target-flat-risk`|target-fit-derived rare offset-independent core-15 hazard that survives nonzero backoffs and finite checking evidence (issue #105)|
 |`target-flat-cost`|target-fit-derived stronger core-15 flat hazard; repeated hunts and one-count backoffs exceed three times the unmodified median (issues #105, #106)|
 
@@ -65,12 +65,12 @@ To control concurrency, timeouts or retention directly, use `go run ./tools/benc
 
 `--out FILE` writes one JSON object per run:
 
-- `status`: `concluded` (the session stopped after its clean lap), `deadend`, `error` or `timeout`;
+- `status`: `concluded` (the session stopped after its clean cycle), `deadend`, `error` or `timeout`;
 - `sim_hours`: simulated time from `session.start` to the last event, including the 90 s each crash reboot costs. This is the time to conclusion;
-- `first_passed_lap_h`: simulated time to the first passed lap;
+- `first_passed_cycle_h`: simulated time to the first passed cycle;
 - `crashes`, `trials`, `trial_hours`, `hunts` and `combinations`;
-- `passed_laps`: completed `checking.lap` ends marked passed, whether full or not;
-- `partial_seconds`: measured `trial.end.duration_s` summed for record-only trials belonging to those passed laps, including passes, failures and inconclusive retries. Failed or unfinished laps, unfinished trials, and trial-less crashes contribute no partial seconds.
+- `passed_cycles`: completed `checking.cycle` ends marked passed, whether full or not;
+- `partial_seconds`: measured `trial.end.duration_s` summed for record-only trials belonging to those passed cycles, including passes, failures and inconclusive retries. Failed or unfinished cycles, unfinished trials, and trial-less crashes contribute no partial seconds.
 - `real_answers` and `real_answer_share`: the number and fraction of completed trials answered by matching real facts; inconclusive trials and failures before workload startup count in `trials` but not as real answers;
 - `scenario_real_answer_share`: real answers divided by completed trials across the scenario's selected runs, not an average of per-run fractions;
 - `machine`: the fitted ensemble member selected for the seed.
@@ -81,7 +81,7 @@ The commit, a dirty flag and the ruleset are recorded with every run.
 
 The summary prints each scenario's `real_answer_share` and a pooled total. Comparison scenario rows and the verdict line print the candidate and baseline shares over paired runs. These fractions describe how much of the observed path has direct real evidence, not a confidence score. Unfinished trials in a timed-out subprocess have no recorded outcome and are not counted. Hazard metrics and model checks still describe the fitted fallback, not an empirical oracle hazard.
 
-The summary's `partial_s/passed_lap` divides pooled `partial_seconds` by pooled `passed_laps`, not by runs or full laps and not by an average of per-run ratios. It reports zero when no passed lap completed. This is the elapsed load cost of record-only R7 partials per completed passed lap: failed partials still cost their measured elapsed time, not their intended duration. It excludes reboot and other non-load overhead. Record-only outcomes remain normal trial ends and retained facts (including carried facts), but never tuner decision evidence; their marker does not change the trial class.
+The summary's `partial_s/passed_cycle` divides pooled `partial_seconds` by pooled `passed_cycles`, not by runs or full cycles and not by an average of per-run ratios. It reports zero when no passed cycle completed. This is the elapsed load cost of record-only R7 partials per completed passed cycle: failed partials still cost their measured elapsed time, not their intended duration. It excludes reboot and other non-load overhead. Record-only outcomes remain normal trial ends and retained facts (including carried facts), but never tuner decision evidence; their marker does not change the trial class.
 
 ## Comparing two versions
 
@@ -98,7 +98,7 @@ Violations:
 - **V3:** depth gets shallower: by more than 1 count averaged over a scenario, or by more than 5 in one run.
 - **V4:** `target`, the target machine's replay-oracle ensemble, gets slower overall.
 
-Comparison rows and the verdict's diagnostic row report `partial_s_per_passed_lap` and `baseline_partial_s_per_passed_lap`. Each side pools partial seconds and passed laps separately over the paired runs only. Older baseline records missing these fields contribute zero; a wholly older baseline therefore reports zero partial seconds per passed lap. The candidate minus baseline value quantifies the added partial load time. This metric is informational and does not change the normal verdict or violations: issue #105's record-only layer is exempt from the benchmark gate.
+Comparison rows and the verdict's diagnostic row report `partial_s_per_passed_cycle` and `baseline_partial_s_per_passed_cycle`. Each side pools partial seconds and passed cycles separately over the paired runs only. Older baseline records missing these fields contribute zero; a wholly older baseline therefore reports zero partial seconds per passed cycle. The candidate minus baseline value quantifies the added partial load time. This metric is informational and does not change the normal verdict or violations: issue #105's record-only layer is exempt from the benchmark gate.
 
 Seeds are deterministic: the same commit always produces the same runs, so rerunning cannot change a result. A change to how the tuner decides moves later sessions onto different random paths, so compare whole scenarios, not single seeds.
 
@@ -131,13 +131,13 @@ just facts COPY-OF-STATE-DIR
 
 The generator reads every archived and live session through `internal/facts`, including sessions before `reset --all` and older builds. Its gzip JSON Lines output is byte-stable for fixed inputs. Generation rejects sources with no facts and writes to a temporary file beside the destination; the committed extract is replaced only after extraction and file close succeed, so an unreadable or empty source leaves it unchanged. Records retain session, build, ruleset, BIOS context, sequence, trial ID, kind, class, condition, phase, full profile, outcome, signal and measured duration. They omit journal timestamps, paths, hostnames and boot IDs. `tools/trialfacts` is the shared reader for evaluation tools.
 
-The model check groups decisive starts by BIOS context, trial class (regime, workload, sorted loaded cores and intended duration), and the shallowest loaded-core offset in the applied profile. Any loaded core at 0 puts the start at depth 0. If the machine declares a BIOS context, only matching facts are checked; otherwise contexts are checked separately.
+The model check groups decisive trials by BIOS context, trial class (regime, workload, sorted loaded cores and intended duration), and the shallowest loaded-core offset in the applied profile. Any loaded core at 0 puts the trial at depth 0. If the machine declares a BIOS context, only matching facts are checked; otherwise contexts are checked separately.
 
-This check uses decisive pass/failure starts only; interrupted and inconclusive trials are omitted. A facts-declaring machine with positive `thermal_trip` or `power_loss` weights in `[model.reset]` is rejected: those resets can turn simulated crashes into inconclusive outcomes, while the simulator's failure probability includes the full failure hazard. Comparing that probability to decisive-only starts would use incompatible denominators.
+This check uses decisive pass/failure trials only; interrupted and inconclusive trials are omitted. A facts-declaring machine with positive `thermal_trip` or `power_loss` weights in `[model.reset]` is rejected: those resets can turn simulated crashes into inconclusive outcomes, while the simulator's failure probability includes the full failure hazard. Comparing that probability to decisive-only trials would use incompatible denominators.
 
-For each group with at least 10 starts, the simulator computes each start's exact failure probability over its intended duration, including onset boosts, unloaded-core hazards and delayed joints. The check averages these probabilities and compares observed failures against quantiles 0.005 and 0.995 of Binomial(n, mean_p). A count outside that inclusive interval flags the machine. Idle failures are retained as their own fact class but have no start duration or exposure denominator, so the report counts them separately rather than inventing a per-start prediction.
+For each group with at least 10 trials, the simulator computes each trial's exact failure probability over its intended duration, including onset boosts, unloaded-core hazards and delayed joints. The check averages these probabilities and compares observed failures against quantiles 0.005 and 0.995 of Binomial(n, mean_p). A count outside that inclusive interval flags the machine. Idle failures are retained as their own fact class but have no trial duration or exposure denominator, so the report counts them separately rather than inventing a per-trial prediction.
 
-`just bench` prints `ok` or `flagged` for each checked file, and every offending class, depth, n, k, interval and mean_p. JSON run records carry the same information in `model_check`, including all eligible groups. A flag says the file does not explain that part of the real evidence; it does not change the comparison verdict or exit status. Investigate the group before using improvements on that file as evidence about the target machine. This is a model diagnostic, not a claim that adaptive journal starts are independent or that all groups jointly have a 99% coverage guarantee.
+`just bench` prints `ok` or `flagged` for each checked file, and every offending class, depth, n, k, interval and mean_p. JSON run records carry the same information in `model_check`, including all eligible groups. A flag says the file does not explain that part of the real evidence; it does not change the comparison verdict or exit status. Investigate the group before using improvements on that file as evidence about the target machine. This is a model diagnostic, not a claim that adaptive journal trials are independent or that all groups jointly have a 99% coverage guarantee.
 
 ## Fitting the target machine
 
@@ -146,7 +146,7 @@ just fit
 # Optional: --facts EXTRACT.jsonl.gz --out DIRECTORY --seed 263 --bootstrap 8 --jobs N
 ```
 
-`tools/fit` reads the same privacy-safe extract as the model check. It writes `target-fit-0.toml` from all decisive starts and `target-fit-1.toml` through `target-fit-8.toml` from whole-trial bootstrap samples drawn with replacement. The default seed is 263; refit `n` uses seed `263+n`. Every file declares its extract relative to the output directory and its BIOS context. Mixed-context extracts are refused: split them before fitting. The `target` scenario spreads separate dev and holdout seeds across all nine files, with the replay oracle above each.
+`tools/fit` reads the same privacy-safe extract as the model check. It writes `target-fit-0.toml` from all decisive trials and `target-fit-1.toml` through `target-fit-8.toml` from whole-trial bootstrap samples drawn with replacement. The default seed is 263; refit `n` uses seed `263+n`. Every file declares its extract relative to the output directory and its BIOS context. Mixed-context extracts are refused: split them before fitting. The `target` scenario spreads separate dev and holdout seeds across all nine files, with the replay oracle above each.
 
 The independent fits run in parallel up to `--jobs`, which defaults to the CPU count. Unconstrained fits finish before any flagged bootstrap members restart from the all-facts fit; those constrained refits also run in parallel. `--jobs 1` runs the same fits serially. Machine bytes and report order do not depend on the worker count.
 
@@ -154,7 +154,7 @@ Each bootstrap sample is fitted without constraints first. If its model check ag
 
 For the committed extract at seed 263, refits **2 and 8** required the constraint on `R7 mprime-avx2-36k-248k-allcore`, cores 0–7, 120 s, depth -24 (`n=45`, `k=5`). Their unconstrained predictions were respectively `mean_p=0.0178977`, interval `[0,4]`, and `mean_p=0.0125439`, interval `[0,3]`. The committed all-facts fit and all eight constrained bootstrap members report `ok` on all 44 eligible groups. Data generation took about **2 min 15 s** in a development run; allow a few minutes for `just fit`, including development-shell startup and Go compilation.
 
-The objective is the Bernoulli negative log likelihood of observed passes and failures, using `sim.Machine.FailureProbability` over each start's **intended**, not measured, duration. Equal profile/class observations are aggregated without losing their counts. This includes unloaded-core failures and uses exactly the prediction the model check uses. A bounded coordinate search fits integer per-core alone/together regime limits, the shared past-limit rate and growth, the shared near-limit rate, per-core flat rates and unloaded-core idle limits. R7 failures support layered CCD shared-rail joints: each CCD starts with one all-member joint, and additional failure-profile candidates are accepted when they improve negative log likelihood by at least 0.5, up to eight layers per CCD. Joint member thresholds are fitted independently, not forced to a common depth. Workload limit overrides require at least 10 loaded starts, a failure, and the same minimum likelihood improvement. Search stops after twelve sweeps or negligible likelihood improvement; it is a local maximum-likelihood fit conditional on the selected structure, not a guarantee of a global optimum.
+The objective is the Bernoulli negative log likelihood of observed passes and failures, using `sim.Machine.FailureProbability` over each trial's **intended**, not measured, duration. Equal profile/class observations are aggregated without losing their counts. This includes unloaded-core failures and uses exactly the prediction the model check uses. A bounded coordinate search fits integer per-core alone/together regime limits, the shared past-limit rate and growth, the shared near-limit rate, per-core flat rates and unloaded-core idle limits. R7 failures support layered CCD shared-rail joints: each CCD trials with one all-member joint, and additional failure-profile candidates are accepted when they improve negative log likelihood by at least 0.5, up to eight layers per CCD. Joint member thresholds are fitted independently, not forced to a common depth. Workload limit overrides require at least 10 loaded trials, a failure, and the same minimum likelihood improvement. Search stops after twelve sweeps or negligible likelihood improvement; it is a local maximum-likelihood fit conditional on the selected structure, not a guarantee of a global optimum.
 
 Each sweep also searches coupled integer limit/rate shifts. Moving active per-core, workload and idle limits by `delta` and scaling the past-limit rate by `growth^(-delta)` preserves already-past-limit hazards until a profile crosses a limit. This lets the search remove false hazards at observed clean boundaries instead of getting stuck when separate limit and rate moves each worsen the likelihood. Unsupported -50 limits stay fixed; joints are not shifted, and the same rate/limit bounds and original-evidence constraints still apply.
 
@@ -162,21 +162,21 @@ The positive-rate search covers past-limit rates from `1e-8` to `0.5` failures/s
 
 The fitter retains the original limit/joint fit, then adds a smooth loaded-CCD `[ccd]` hazard only where no fitted joint on that CCD applies. The residual stage freezes the existing joints and introduces no new joint candidates. It fits a shared log rate, nonnegative shared depth slope and two CCD effects with unit-normal shrinkage toward zero. Rate bounds are `1e-7` to `0.1`/s (zero is represented by `1e-12`/s), slope is zero or `1e-4` to `0.5` per mean depth count, and effects are bounded to [−5, 5]. Reported likelihood includes shrinkage. Existing machine files without `[ccd]` retain the original model.
 
-The extract cannot identify every simulator parameter. Unsupported or all-passing limit boundaries stay at -50; absence of failures does not prove that boundary. The fit shares the hazard shape across cores and regimes because sparse failures cannot resolve a separate shape for each. Unsupported workload overrides stay absent; flat rates stay zero without supporting failures. Onset boost and joint delays stay at zero: decisive binary starts do not identify failure-time shapes. Signal weights, crash-MCE probability, bank attribution and reset kinds retain simulator defaults; these are not parameters of the binary likelihood. Idle facts without starts are counted by the check but provide no idle exposure denominator. Idle limits can be fitted only through decisive starts with nonzero offsets on unloaded cores; otherwise they stay disabled. Offset-zero unloaded starts also constrain idle-limit candidates, since a limit of 1 adds a hazard at stock offsets. Failure-only joint activation sets identify a lower bound, not an upper bound on the rate; a saturated fitted rate is a deterministic representative on that likelihood plateau, not a precise physical measurement. Generated headers summarize the fitted parameter families, unsupported-limit and unobserved-idle limits, and the fixed onset, delay, signal, MCE and reset settings.
+The extract cannot identify every simulator parameter. Unsupported or all-passing limit boundaries stay at -50; absence of failures does not prove that boundary. The fit shares the hazard shape across cores and regimes because sparse failures cannot resolve a separate shape for each. Unsupported workload overrides stay absent; flat rates stay zero without supporting failures. Onset boost and joint delays stay at zero: decisive binary trials do not identify failure-time shapes. Signal weights, crash-MCE probability, bank attribution and reset kinds retain simulator defaults; these are not parameters of the binary likelihood. Idle facts without trials are counted by the check but provide no idle exposure denominator. Idle limits can be fitted only through decisive trials with nonzero offsets on unloaded cores; otherwise they stay disabled. Offset-zero unloaded trials also constrain idle-limit candidates, since a limit of 1 adds a hazard at stock offsets. Failure-only joint activation sets identify a lower bound, not an upper bound on the rate; a saturated fitted rate is a deterministic representative on that likelihood plateau, not a precise physical measurement. Generated headers summarize the fitted parameter families, unsupported-limit and unobserved-idle limits, and the fixed onset, delay, signal, MCE and reset settings.
 
 Generation prints likelihoods, CCD joint parameters, model checks against the **original** extract (also for bootstrap fits), and elapsed wall time. Files contain no timestamps and use stable ordering and full-precision parameters, so fixed inputs and seed reproduce them byte for byte on one architecture. Between amd64 and arm64 they can differ in the last digits: Go implements its math functions separately for each architecture, and the arm64 compiler fuses multiply-adds. A last-digit difference after refitting on the other architecture is not a model change. A model-check flag is not silently repaired or excluded: inspect the named class, depth and interval before using that ensemble member as target evidence. A flag may reflect a poor local optimum, the current model's shared-shape/joint assumptions, or a sparse failure absent from a bootstrap sample; it is not by itself proof of an impossible fit. The shared `tools/modelcheck` implementation is used by both `just fit` and `just bench`, with the same 99% intervals.
 
 ### Forward-chained check
 
-After the ensemble's model check, `just fit` orders sessions with decisive starts by their UTC session IDs, comparing equal-second numeric suffixes numerically (`-2` before `-10`). For each session after the first, it fits all earlier sessions' decisive starts once, without bootstrap resampling or model-check constraints, then predicts only the held-out session. These fits stay in memory and do not change the generated machine files.
+After the ensemble's model check, `just fit` orders sessions with decisive trials by their UTC session IDs, comparing equal-second numeric suffixes numerically (`-2` before `-10`). For each session after the first, it fits all earlier sessions' decisive trials once, without bootstrap resampling or model-check constraints, then predicts only the held-out session. These fits stay in memory and do not change the generated machine files.
 
 The prefix fits run in parallel with the same `--jobs` limit. Scoring and pooling remain in session order, so no held-out outcomes enter their own training prefix and the report is unchanged apart from elapsed times.
 
-Each session row names the session ID, ruleset and `training_sessions` count. `starts` and `failures` count held-out decisive starts and observed failures; `predicted` sums the fit's failure probabilities over their intended durations. `log_loss/start` is the mean Bernoulli log loss, with probabilities clamped to `[1e-4, 1-1e-4]`. It compares the `fit` to a `constant` predictor whose probability, shown in parentheses, is the earlier training starts' failure rate. Lower loss is better: fit loss above the constant means the fit predicts that later session worse than a single average failure rate.
+Each session row names the session ID, ruleset and `training_sessions` count. `trials` and `failures` count held-out decisive trials and observed failures; `predicted` sums the fit's failure probabilities over their intended durations. `log_loss/trial` is the mean Bernoulli log loss, with probabilities clamped to `[1e-4, 1-1e-4]`. It compares the `fit` to a `constant` predictor whose probability, shown in parentheses, is the earlier training trials' failure rate. Lower loss is better: fit loss above the constant means the fit predicts that later session worse than a single average failure rate.
 
-`failures_p<0.01` counts observed failures assigned less than 1% probability: outcomes the model treated as nearly impossible. `exact_matches` is the number and share of held-out starts whose trial class and full profile occur in the earlier training starts. That share bounds what replay could answer from earlier evidence; it does not establish that replay's answers would be correct. `flagged/eligible` counts held-out groups flagged by the unchanged model check, with at least 10 starts and the same 99% binomial intervals. The indented regime rows break down held-out starts and observed versus predicted failures.
+`failures_p<0.01` counts observed failures assigned less than 1% probability: outcomes the model treated as nearly impossible. `exact_matches` is the number and share of held-out trials whose trial class and full profile occur in the earlier training trials. That share bounds what replay could answer from earlier evidence; it does not establish that replay's answers would be correct. `flagged/eligible` counts held-out groups flagged by the unchanged model check, with at least 10 trials and the same 99% binomial intervals. The indented regime rows break down held-out trials and observed versus predicted failures.
 
-`Pooled` sums all held-out sessions' counts and predictions and divides summed log losses by their total starts. Its constant uses each session's own earlier prefix, not one failure rate fitted to the pooled outcomes; its group counts sum the separate held-out checks. `Forward-chained elapsed` reports the added wall time. This is evidence about extrapolation to later sessions, not a gate or a guarantee about unseen profiles or other machines.
+`Pooled` sums all held-out sessions' counts and predictions and divides summed log losses by their total trials. Its constant uses each session's own earlier prefix, not one failure rate fitted to the pooled outcomes; its group counts sum the separate held-out checks. `Forward-chained elapsed` reports the added wall time. This is evidence about extrapolation to later sessions, not a gate or a guarantee about unseen profiles or other machines.
 
 ```sh
 just forward            # the check alone: no ensemble, no machine files
@@ -189,30 +189,30 @@ Before the joint-preserving residual hazard was added, the committed extract pro
 
 ```text
 Forward-chained check
-20260926T151414Z ruleset=2 training_sessions=1: starts=479 failures=22 predicted=2.5 log_loss/start fit=0.3478 constant(0.064)=0.1892 failures_p<0.01=20 exact_matches=44/479 (9.2%) flagged/eligible=0/0
-  R1 starts=195 observed=1 predicted=0.4
-  R2 starts=155 observed=17 predicted=0.3
-  R3 starts=56 observed=0 predicted=0.1
-  R4 starts=50 observed=0 predicted=0.1
-  R5 starts=18 observed=2 predicted=0.0
-  R6 starts=3 observed=0 predicted=0.1
-  R7 starts=2 observed=2 predicted=1.6
-20260927T221954Z ruleset=3 training_sessions=2: starts=403 failures=18 predicted=9.0 log_loss/start fit=0.1841 constant(0.057)=0.1840 failures_p<0.01=10 exact_matches=89/403 (22.1%) flagged/eligible=0/0
-  R1 starts=51 observed=0 predicted=0.0
-  R2 starts=281 observed=4 predicted=0.4
-  R3 starts=17 observed=0 predicted=0.0
-  R4 starts=17 observed=0 predicted=0.0
-  R5 starts=17 observed=1 predicted=0.0
-  R7 starts=20 observed=13 predicted=8.6
-20260929T180308Z ruleset=4 training_sessions=3: starts=894 failures=59 predicted=13.9 log_loss/start fit=0.4597 constant(0.054)=0.2445 failures_p<0.01=44 exact_matches=10/894 (1.1%) flagged/eligible=6/8
-  R1 starts=80 observed=0 predicted=0.0
-  R2 starts=80 observed=0 predicted=0.0
-  R7 starts=734 observed=59 predicted=13.9
-20261002T004254Z ruleset=6 training_sessions=4: starts=317 failures=8 predicted=18.9 log_loss/start fit=0.0666 constant(0.058)=0.1302 failures_p<0.01=0 exact_matches=246/317 (77.6%) flagged/eligible=1/4
-  R1 starts=80 observed=0 predicted=0.0
-  R2 starts=80 observed=0 predicted=0.0
-  R7 starts=157 observed=8 predicted=18.9
-Pooled: starts=2093 failures=107 predicted=44.4 log_loss/start fit=0.3215 constant(per-prefix)=0.2029 failures_p<0.01=74 exact_matches=389/2093 (18.6%) flagged/eligible=7/12
+20260926T151414Z ruleset=2 training_sessions=1: trials=479 failures=22 predicted=2.5 log_loss/trial fit=0.3478 constant(0.064)=0.1892 failures_p<0.01=20 exact_matches=44/479 (9.2%) flagged/eligible=0/0
+  R1 trials=195 observed=1 predicted=0.4
+  R2 trials=155 observed=17 predicted=0.3
+  R3 trials=56 observed=0 predicted=0.1
+  R4 trials=50 observed=0 predicted=0.1
+  R5 trials=18 observed=2 predicted=0.0
+  R6 trials=3 observed=0 predicted=0.1
+  R7 trials=2 observed=2 predicted=1.6
+20260927T221954Z ruleset=3 training_sessions=2: trials=403 failures=18 predicted=9.0 log_loss/trial fit=0.1841 constant(0.057)=0.1840 failures_p<0.01=10 exact_matches=89/403 (22.1%) flagged/eligible=0/0
+  R1 trials=51 observed=0 predicted=0.0
+  R2 trials=281 observed=4 predicted=0.4
+  R3 trials=17 observed=0 predicted=0.0
+  R4 trials=17 observed=0 predicted=0.0
+  R5 trials=17 observed=1 predicted=0.0
+  R7 trials=20 observed=13 predicted=8.6
+20260929T180308Z ruleset=4 training_sessions=3: trials=894 failures=59 predicted=13.9 log_loss/trial fit=0.4597 constant(0.054)=0.2445 failures_p<0.01=44 exact_matches=10/894 (1.1%) flagged/eligible=6/8
+  R1 trials=80 observed=0 predicted=0.0
+  R2 trials=80 observed=0 predicted=0.0
+  R7 trials=734 observed=59 predicted=13.9
+20261002T004254Z ruleset=6 training_sessions=4: trials=317 failures=8 predicted=18.9 log_loss/trial fit=0.0666 constant(0.058)=0.1302 failures_p<0.01=0 exact_matches=246/317 (77.6%) flagged/eligible=1/4
+  R1 trials=80 observed=0 predicted=0.0
+  R2 trials=80 observed=0 predicted=0.0
+  R7 trials=157 observed=8 predicted=18.9
+Pooled: trials=2093 failures=107 predicted=44.4 log_loss/trial fit=0.3215 constant(per-prefix)=0.2029 failures_p<0.01=74 exact_matches=389/2093 (18.6%) flagged/eligible=7/12
 ```
 
 In one development run, the four added prefix fits and held-out checks took about 43 s. This is an observed wall time, not a runtime benchmark.

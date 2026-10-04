@@ -27,10 +27,10 @@ type Input struct {
 	Machine    *sim.Machine
 	Log        io.Writer
 	Renderer   journal.Renderer
-	// Laps is the number of clean laps of one profile after which the run stops; 0 keeps checking endlessly.
-	Laps  int
-	Wrap  func(session.Journal) session.Journal
-	Until func(journal.Event) bool
+	// Cycles is the number of clean cycles of one profile after which the run stops; 0 keeps checking endlessly.
+	Cycles int
+	Wrap   func(session.Journal) session.Journal
+	Until  func(journal.Event) bool
 	// InMemoryJournal retains the writer across simulated reboots and writes state only when Simulate returns.
 	// Leave it false when testing file recovery or injecting journal interruptions.
 	InMemoryJournal bool
@@ -110,7 +110,7 @@ func boot(ctx context.Context, in Input, cached **memoryJournal, prefix *journal
 	if in.Wrap != nil {
 		wrapped = in.Wrap(wrapped)
 	}
-	stop, err := session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Laps: in.Laps, Carry: carried, Stderr: in.Log, SessionID: j.SessionID})
+	stop, err := session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Carry: carried, Stderr: in.Log, SessionID: j.SessionID})
 	if *cached != nil {
 		if errors.Is(err, machine.ErrCrashed) {
 			if serr := (*cached).snapshot(); serr != nil {

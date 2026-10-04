@@ -1,44 +1,44 @@
-   togi   01:28:09  running 1h28m  1 failure  0 crashes
+  togi   00:48:40   session 0h48m   0 failures · 0 crashes
 
-  █  FINDING LIMITS
-  █  now  search step
-  █  light load on core 07 alone at -5 (y-cruncher BKT + SFTv4)
-  █  ██████████████████░░░░░░░░░░░░░░░░░░░░░░  0m50s left
-  ► Find limits   ○ Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
-  ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
-  0/16 cores      all together    after a full    the goal        until stopped
-                                  passed lap                      
-   HUNT      no hunt running
-  
-  CCD 0                                -10       -20       -30       -40       -50
-  00    0  searching            ░░░░░·············································
-  01    0  searching            ░░░░░·············································
-  02    0  searching            ░░░░░·············································
-  03    0  searching            ░░░░░·············································
-  04    0  searching            ░░░░░·············································
-  05    0  searching            ░░░░░·············································
-  06    0  searching            ░░░░░·············································
-► 07   -5  searching            █████·············································
+  ► SOLO LIMITS  0 of 16 found · core 00 searching -5  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
-  CCD 1                                -10       -20       -30       -40       -50
-  08    0  searching            ░░░░░·············································
-  09    0  searching            ░░░░░·············································
-  10    0  searching            ░░░░░·············································
-  11    0  searching            ░░░░░·············································
-  12    0  searching            ░░░░░·············································
-  13    0  searching            ░░░░░·············································
-  14    0  searching            ····▌·············································
-  15    0  searching            ··················································
-  
-  Coming up
-  Next in line, taking turns so each core cools down between its own tests: 15,
-  00, 08, 01, 09, 02, 10, 03, 11, 04, 12, 05, 13, 06, 14.
-  When every core has its limit, they all run together through laps of every kind
-  of test.
+  ▌  SOLO LIMITS   I'm finding core 00's solo limit, one turn at a time, now      last trial      PASS  1:30 on core 15 · Tctl max 66°C
+  ▌                at -5.
 
-  What happened
-    1h27m  backoff  core 14 -5 → -1
-    1h27m  cause    core 14 fails at -5
-    1h27m  fail     light load on core 14 alone at -5, wrong result
-    1h27m  search   core 06 passed -5, next -10
-    1h24m  search   core 13 passed -5, next -10
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0033
+   R1   light load  on core 00 alone at -5   y-cruncher BKT + SFTv4 · 1 worker                                                   SEARCH CORE 00 AT -5 · LIGHT
+  █████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████  0:50 left  0/1 ►
+
+  if it passes         next: R2 heavy vector on core 00 alone at -5
+  if a core is named   its failure point is recorded → it backs off → next: R1 light on core 08 alone at -5
+  if inconclusive      the same trial runs again
+
+  CCD 0               0  2 counts/cell       -50 fail pt  one loaded              CCD 1               0  2 counts/cell       -50 fail pt  waiting at 0
+  ► 00   -5  SEARCH    ▄▄▄                                p 0 · n -5                08    0  SEARCH                                       p 0 · n -5
+    01    0  SEARCH                                       p 0 · n -5                09    0  SEARCH                                       p 0 · n -5
+    02    0  SEARCH                                       p 0 · n -5                10    0  SEARCH                                       p 0 · n -5
+    03    0  SEARCH                                       p 0 · n -5                11    0  SEARCH                                       p 0 · n -5
+    04    0  SEARCH                                       p 0 · n -5                12    0  SEARCH                                       p 0 · n -5
+    05    0  SEARCH                                       p 0 · n -5                13    0  SEARCH                                       p 0 · n -5
+    06    0  SEARCH                                       p 0 · n -5                14    0  SEARCH                                       p 0 · n -5
+    07    0  SEARCH                                       p 0 · n -5                15    0  SEARCH                                       p 0 · n -5
+
+  TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
+
+    cor this turn                   at   so far                                   00:48  step     core 15 passed 0, next -5
+    08  search step: light, then    -5   passed 0 · next -5                       00:45  step     core 07 passed 0, next -5
+    01  search step: light, then    -5   passed 0 · next -5                       00:42  step     core 14 passed 0, next -5
+    09  search step: light, then    -5   passed 0 · next -5                       00:39  step     core 06 passed 0, next -5
+    02  search step: light, then    -5   passed 0 · next -5                       00:36  step     core 13 passed 0, next -5
+    10  search step: light, then    -5   passed 0 · next -5                       00:33  step     core 05 passed 0, next -5
+    03  search step: light, then    -5   passed 0 · next -5                       00:30  step     core 12 passed 0, next -5
+    11  search step: light, then    -5   passed 0 · next -5                       00:27  step     core 04 passed 0, next -5
+    04  search step: light, then    -5   passed 0 · next -5                       00:24  step     core 11 passed 0, next -5
+    12  search step: light, then    -5   passed 0 · next -5                       00:21  step     core 03 passed 0, next -5
+    05  search step: light, then    -5   passed 0 · next -5                       00:18  step     core 10 passed 0, next -5
+    13  search step: light, then    -5   passed 0 · next -5                       00:15  step     core 02 passed 0, next -5
+    06  search step: light, then    -5   passed 0 · next -5                       00:12  step     core 09 passed 0, next -5
+    14  search step: light, then    -5   passed 0 · next -5                       00:09  step     core 01 passed 0, next -5
+  +3 more                                                                         +3 more
+
+   ?  help    l  log    esc  back    q  close view

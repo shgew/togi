@@ -1,0 +1,44 @@
+  togi   02:47:42   session 2h47m   3 failures · 1 crashes   last observed failure 02:45, 2m ago
+
+  ► SOLO LIMITS  0 of 16 found  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+
+  ▌  RECOVERED   I picked up from the journal after the reboot; nothing it        last trial      FAILURE  0:00 on core 12 · wrong result · Tctl max 67°C
+  ▌              recorded is lost.
+
+  RECOVERED FROM A CRASH ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  crash in core 05 · R1 light at -15
+  detected 02:47:02 after a watchdog reset
+  next: R1 light on core 13 alone at -15
+
+  CCD 0               0  2 counts/cell       -50 fail pt  not under load          CCD 1               0  2 counts/cell       -50 fail pt  waiting at 0
+    00    0  SEARCH    ········                           p -15 · n -20             08    0  SEARCH    ········                           p -15 · n -20
+    01    0  SEARCH    ········                           p -15 · n -20             09    0  SEARCH    ········                           p -15 · n -20
+    02    0  SEARCH    ········                           p -15 · n -20             10    0  SEARCH    ········                           p -15 · n -20
+    03    0  SEARCH    ········                           p -15 · n -20             11    0  SEARCH    ··· █                        -10   p -6 · n -7
+    04    0  SEARCH    ········                           p -15 · n -20             12    0  SEARCH    ·····  █                     -15   p -10 · n -11
+    05  -15  SEARCH    ▄▄▄▄▄▄▄▄                           p -10 · n -15             13    0  SEARCH    ·····                              p -10 · n -15
+    06    0  SEARCH    ·····                              p -10 · n -15             14    0  SEARCH    · █                           -5   p -1 · n -2
+    07    0  SEARCH    ·····                              p -10 · n -15             15    0  SEARCH    ·····                              p -10 · n -15
+
+  TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
+
+    cor this turn                   at   so far                                   02:47  crash    with the offsets applied, rebooted
+    13  search step: light, then    -15  passed -10 · next -15                    02:45  backoff  core 12 -15 → -11
+    06  search step: light, then    -15  passed -10 · next -15                    02:45  fail     core 12 fails at -15
+    14  search step: 1 count deeper -2   passed -1 · next -2                      02:45  fail     core 12 · R1 light at -15 · wrong result
+    07  search step: light, then    -15  passed -10 · next -15                    02:45  step     core 04 passed -15, next -20
+    15  search step: light, then    -15  passed -10 · next -15                    02:42  step     core 11 passed -6, next -7
+    00  search step: light, then    -20  passed -15 · next -20                    02:39  step     core 03 passed -15, next -20
+    08  search step: light, then    -20  passed -15 · next -20                    02:36  step     core 10 passed -15, next -20
+    01  search step: light, then    -20  passed -15 · next -20                    02:33  step     core 02 passed -15, next -20
+    09  search step: light, then    -20  passed -15 · next -20                    02:30  step     core 09 passed -15, next -20
+    02  search step: light, then    -20  passed -15 · next -20                    02:27  step     core 01 passed -15, next -20
+    10  search step: light, then    -20  passed -15 · next -20                    02:24  step     core 08 passed -15, next -20
+    03  search step: light, then    -20  passed -15 · next -20                    02:21  step     core 00 passed -15, next -20
+    11  search step: 1 count deeper -7   passed -6 · next -7                      02:18  step     core 15 passed -10, next -15
+    04  search step: light, then    -20  passed -15 · next -20                    02:15  step     core 07 passed -10, next -15
+    12  search step: 1 count deeper -11  passed -10 · next -11                    02:12  step     core 14 passed -1, next -2
+    05  search step: light, then    -15  passed -10 · next -15                    02:09  step     core 06 passed -10, next -15
+                                                                                  +49 more
+
+   ?  help    l  log    esc  back    q  close view

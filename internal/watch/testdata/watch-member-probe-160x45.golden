@@ -1,0 +1,44 @@
+  togi   04:51:10   session 4h51m   7 failures · 7 crashes   last observed failure 04:50, a moment ago
+
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14, part 2  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0
+
+  ▌  HUNT 1   Probing members of 03 11: core 03 at -9.                            last trial      CRASH  on 00-07
+
+
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0188
+   R7   all-core load  on 00-07 · 11 at failing offsets, core 03 at -9, 00-02 04-10 12-15 parked at 0   mprime AVX2         HUNT 1 · GROUP 41 · CORE 03 AT -9
+  █████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
+
+  if 5 of 5 pass       next: hunt 1 group 42: R7 all-core on 00-07 · 03 at failing offsets, core 11 at -9, 00-02 04-10 12-15 parked at 0
+  if none is named     next: hunt 1 group 42: R7 all-core on 00-07 · 11 at failing offsets, core 03 at -8, 00-02 04-10 12-15 parked at 0
+  if a core is named   its failure point is recorded → the hunt ends → it backs off → next: rerun R7 all-core on 00-07 · 2m · a core at 0: tuning stops
+
+  CCD 0               0  2 counts/cell       -50 fail pt  all under load          CCD 1               0  2 counts/cell       -50 fail pt  not under load
+  ► 00    0  PARKED    ····▀                              returns to -10            08    0  PARKED    ····▀                              returns to -10
+  ► 01    0  PARKED    ····▀                              returns to -10            09    0  PARKED    ····▀                              returns to -10
+  ► 02    0  PARKED    ····▀                              returns to -10            10    0  PARKED    ····▀                              returns to -10
+  ► 03   -9  PROBE     ▄▄▄▄▀                              -10                       11  -10  MEMBER    ▄▄▄▄▀                    
+  ► 04    0  PARKED    ·····                              returns to -10            12    0  PARKED    ····▀                              returns to -10
+  ► 05    0  PARKED    ·····                              returns to -10            13    0  PARKED    ····▀                              returns to -10
+  ► 06    0  PARKED    ·····                              returns to -10            14    0  PARKED    ····▀                              returns to -10
+  ► 07    0  PARKED    ·····                              returns to -10            15    0  PARKED    ····▀                              returns to -10
+
+  HUNT 1 ────────────────────────────────────── started 04:01 · 49m40s so far     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
+
+  cause       crash in R7 all-core on 00-07 · cycle 1 step 1, part 2, trial       04:50  group    hunt 1 groups 39-40 · parts of 03 11 · all passed on
+  candidates  00-15, every core with an offset in the failing profile             04:50  crash    hunt 1 group 38 · 03 11 at failing offsets · rebooted
+                                                                                  04:49  group    hunt 1 groups 34-37 · parts of 03 10 11 · all passed on
+  parts       groups 1-7   parts of 00-15 and their      all passed               04:49  crash    hunt 1 group 33 · 03 10 11 at failing offsets · rebooted
+              group 8      00-03 08-15 at failing        crashed                  04:47  group    hunt 1 groups 27-32 · parts of 02 03 10 11 · all passed on
+              groups 9-13  parts of 00-03 08-15 and      all passed               04:47  crash    hunt 1 group 26 · 02 03 10 11 at failing offsets · rebooted
+              group 14     00-03 08-11 at failing        crashed                  04:46  group    hunt 1 groups 22-25 · parts of 02 03 08-11 · all passed on
+              groups 15-20 parts of 00-03 08-11          all passed               04:46  crash    hunt 1 group 21 · 02 03 08-11 at failing offsets · rebooted
+              group 21     02 03 08-11 at failing        crashed                  04:44  group    hunt 1 groups 15-20 · parts of 00-03 08-11 · all passed on
+              groups 22-25 parts of 02 03 08-11 and      all passed               04:44  crash    hunt 1 group 14 · 00-03 08-11 at failing offsets · rebooted
+              group 26     02 03 10 11 at failing        crashed                  04:43  pass     hunt 1 group 13 · 00-03 12-15 at failing offsets · 5 of 5
+              groups 27-32 parts of 02 03 10 11          all passed               04:33  group    hunt 1 groups 9-12 · parts of 00-03 08-15 · all passed on
+              group 33     03 10 11 at failing offsets   crashed                  04:33  crash    hunt 1 group 8 · 00-03 08-15 at failing offsets · rebooted
+              groups 34-37 parts of 03 10 11 and their   all passed               04:31  pass     hunt 1 group 7 · 04-15 at failing offsets · 5 of 5 passed
+  +13 more                                                                        +9 more
+
+   ?  help    l  log    esc  back    q  close view

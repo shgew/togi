@@ -8,7 +8,7 @@ last      2026-01-01T18:00:30Z
 
 Runs
 run  start                 end                   build       trials  crashes  ended
-1    2026-01-01T00:00:00Z  2026-01-01T18:00:30Z  test+fixed  483     3        laps
+1    2026-01-01T00:00:00Z  2026-01-01T18:00:30Z  test+fixed  483     3        cycles
 
 Time
 phase / condition / regime / outcome         trial seconds  hours
@@ -34,7 +34,7 @@ regime  workload                      signal  attribution   count
 R7      mprime-avx2-36k-248k-allcore  crash   unattributed  3
 
 Exposure
-regime  workload                         starts  hours  failures
+regime  workload                         trials  hours  failures
 R1      mprime-sse-4k-21k                58      1.767  0
 R1      ycruncher-bkt-sftv4              38      1.267  0
 R1      ycruncher-snt-svt                38      1.267  0
@@ -76,64 +76,64 @@ hunt  start                 hours  failing trial  parked offsets  candidates  pl
 
 Checking
 metric                      count
-laps started                2
-laps ended                  2
-full laps                   2
+cycles started              2
+cycles ended                2
+full cycles                 2
 reruns                      1
-reruns failing first start  0
+reruns failing first trial  0
 
 Checking steps and together outcomes
-lap   regime  loaded cores  outcome  trials
-0000  R7      00,01         pass     5
-0001  R1      00            pass     3
-0001  R1      01            pass     3
-0001  R1      02            pass     3
-0001  R1      03            pass     3
-0001  R2      00            pass     3
-0001  R2      01            pass     3
-0001  R2      02            pass     3
-0001  R2      03            pass     3
-0001  R3      00            pass     1
-0001  R3      01            pass     1
-0001  R3      02            pass     1
-0001  R3      03            pass     1
-0001  R4      00            pass     1
-0001  R4      01            pass     1
-0001  R4      02            pass     1
-0001  R4      03            pass     1
-0001  R5      00            pass     1
-0001  R5      01            pass     1
-0001  R5      02            pass     1
-0001  R5      03            pass     1
-0001  R6      00,01,02,03   pass     2
-0001  R7      00,01         failure  1
-0001  R7      00,01         pass     9
-0001  R7      00,01,02,03   pass     12
-0001  R7      02,03         pass     12
-0002  R1      00            pass     3
-0002  R1      01            pass     3
-0002  R1      02            pass     3
-0002  R1      03            pass     3
-0002  R2      00            pass     3
-0002  R2      01            pass     3
-0002  R2      02            pass     3
-0002  R2      03            pass     3
-0002  R3      00            pass     1
-0002  R3      01            pass     1
-0002  R3      02            pass     1
-0002  R3      03            pass     1
-0002  R4      00            pass     1
-0002  R4      01            pass     1
-0002  R4      02            pass     1
-0002  R4      03            pass     1
-0002  R5      00            pass     1
-0002  R5      01            pass     1
-0002  R5      02            pass     1
-0002  R5      03            pass     1
-0002  R6      00,01,02,03   pass     2
-0002  R7      00,01         pass     12
-0002  R7      00,01,02,03   pass     12
-0002  R7      02,03         pass     12
+cycle  regime  loaded cores  outcome  trials
+0000   R7      00,01         pass     5
+0001   R1      00            pass     3
+0001   R1      01            pass     3
+0001   R1      02            pass     3
+0001   R1      03            pass     3
+0001   R2      00            pass     3
+0001   R2      01            pass     3
+0001   R2      02            pass     3
+0001   R2      03            pass     3
+0001   R3      00            pass     1
+0001   R3      01            pass     1
+0001   R3      02            pass     1
+0001   R3      03            pass     1
+0001   R4      00            pass     1
+0001   R4      01            pass     1
+0001   R4      02            pass     1
+0001   R4      03            pass     1
+0001   R5      00            pass     1
+0001   R5      01            pass     1
+0001   R5      02            pass     1
+0001   R5      03            pass     1
+0001   R6      00,01,02,03   pass     2
+0001   R7      00,01         failure  1
+0001   R7      00,01         pass     9
+0001   R7      00,01,02,03   pass     12
+0001   R7      02,03         pass     12
+0002   R1      00            pass     3
+0002   R1      01            pass     3
+0002   R1      02            pass     3
+0002   R1      03            pass     3
+0002   R2      00            pass     3
+0002   R2      01            pass     3
+0002   R2      02            pass     3
+0002   R2      03            pass     3
+0002   R3      00            pass     1
+0002   R3      01            pass     1
+0002   R3      02            pass     1
+0002   R3      03            pass     1
+0002   R4      00            pass     1
+0002   R4      01            pass     1
+0002   R4      02            pass     1
+0002   R4      03            pass     1
+0002   R5      00            pass     1
+0002   R5      01            pass     1
+0002   R5      02            pass     1
+0002   R5      03            pass     1
+0002   R6      00,01,02,03   pass     2
+0002   R7      00,01         pass     12
+0002   R7      00,01,02,03   pass     12
+0002   R7      02,03         pass     12
 
 Evidence quality
 warning                                        count
@@ -158,7 +158,7 @@ hunt  stage       ran groups  established groups  passed again  failed again  re
 0001  probe       2           0                   0             0             0                 0.000
 
 Failure rate by depth
-regime / workload / loaded cores / duration  shallowest offset  starts  failures  rate
+regime / workload / loaded cores / duration  shallowest offset  trials  failures  rate
 R7/mprime-avx2-36k-248k-allcore/00,01/120s   -50                3       0         0.0%
 R7/mprime-avx2-36k-248k-allcore/00,01/120s   -48                5       0         0.0%
 R7/mprime-avx2-36k-248k-allcore/00,01/120s   -30                5       0         0.0%

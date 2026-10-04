@@ -57,16 +57,16 @@ func renderHunts(tab *table, p *projection, since time.Time) {
 
 func renderChecking(tab *table, p *projection, events []journal.Event, since time.Time) {
 	tab.section("Checking", "metric\tcount")
-	starts, ends, full := 0, 0, 0
+	cyclesStarted, ends, full := 0, 0, 0
 	for _, e := range events {
 		if !selected(e.Time, since) {
 			continue
 		}
-		if v, ok := e.Data.(*journal.CheckingLap); ok {
-			if v.Event == journal.LapStart {
-				starts++
+		if v, ok := e.Data.(*journal.CheckingCycle); ok {
+			if v.Event == journal.CycleStart {
+				cyclesStarted++
 			}
-			if v.Event == journal.LapEnd {
+			if v.Event == journal.CycleEnd {
 				ends++
 				if v.Full {
 					full++
@@ -74,9 +74,9 @@ func renderChecking(tab *table, p *projection, events []journal.Event, since tim
 			}
 		}
 	}
-	tab.row("laps started\t%d", starts)
-	tab.row("laps ended\t%d", ends)
-	tab.row("full laps\t%d", full)
+	tab.row("cycles started\t%d", cyclesStarted)
+	tab.row("cycles ended\t%d", ends)
+	tab.row("full cycles\t%d", full)
 	reruns, failed := 0, 0
 	seen := map[int]bool{}
 	for _, t := range p.trials {
@@ -99,12 +99,12 @@ func renderChecking(tab *table, p *projection, events []journal.Event, since tim
 		}
 	}
 	tab.row("reruns\t%d", reruns)
-	tab.row("reruns failing first start\t%d", failed)
-	tab.section("Checking steps and together outcomes", "lap\tregime\tloaded cores\toutcome\ttrials")
+	tab.row("reruns failing first trial\t%d", failed)
+	tab.section("Checking steps and together outcomes", "cycle\tregime\tloaded cores\toutcome\ttrials")
 	counts := map[string]int{}
 	for _, t := range p.trials {
 		if selected(t.time, since) && t.intent.Phase == journal.PhaseChecking && t.intent.Condition == machine.Together {
-			counts[fmt.Sprintf("%04d\t%s\t%s\t%s", t.intent.Lap, t.intent.Regime, coreList(loaded(t.intent, p.cores)), outcome(t))]++
+			counts[fmt.Sprintf("%04d\t%s\t%s\t%s", t.intent.Cycle, t.intent.Regime, coreList(loaded(t.intent, p.cores)), outcome(t))]++
 		}
 	}
 	for _, k := range keys(counts) {
@@ -149,7 +149,7 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 				continue
 			}
 			prior := priorPasses(p.trials, m.trials[0].intent, h.seq, p.cores, p.idle)
-			established := prior >= h.start.Starts
+			established := prior >= h.start.Trials
 			passes, failures, cost := 0, 0, 0
 			for _, t := range m.trials {
 				cost += seconds(t)
@@ -163,7 +163,7 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 					}
 				}
 			}
-			tab.row("%d\t%d\t%s\t%d\t%d\t%t\t%d\t%d\t%d\t%.3f", h.start.Hunt, m.plan.Group, m.plan.Stage, prior, h.start.Starts, established, passes, failures, len(m.trials), float64(cost)/3600)
+			tab.row("%d\t%d\t%s\t%d\t%d\t%t\t%d\t%d\t%d\t%.3f", h.start.Hunt, m.plan.Group, m.plan.Stage, prior, h.start.Trials, established, passes, failures, len(m.trials), float64(cost)/3600)
 			k := fmt.Sprintf("%04d\t%s", h.start.Hunt, m.plan.Stage)
 			s := summary[k]
 			if s == nil {
@@ -175,7 +175,7 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 				s.established++
 				if failures > 0 {
 					s.failed++
-				} else if passes >= h.start.Starts {
+				} else if passes >= h.start.Trials {
 					s.passed++
 				}
 				s.trials += len(m.trials)
@@ -254,10 +254,10 @@ func singleCarriedFailureDecisions(events []journal.Event, since time.Time) int 
 	return count
 }
 
-type depthCount struct{ starts, failures int }
+type depthCount struct{ trials, failures int }
 
 func renderDepth(tab *table, p *projection, since time.Time) {
-	tab.section("Failure rate by depth", "regime / workload / loaded cores / duration\tshallowest offset\tstarts\tfailures\trate")
+	tab.section("Failure rate by depth", "regime / workload / loaded cores / duration\tshallowest offset\ttrials\tfailures\trate")
 	groups := map[string]map[int]*depthCount{}
 	failing := map[string]bool{}
 	for _, t := range p.trials {
@@ -288,7 +288,7 @@ func renderDepth(tab *table, p *projection, since time.Time) {
 			groups[k][depth] = &depthCount{}
 		}
 		d := groups[k][depth]
-		d.starts++
+		d.trials++
 		if t.end != nil && t.end.Outcome == journal.OutcomeFailure {
 			d.failures++
 			failing[k] = true
@@ -305,7 +305,7 @@ func renderDepth(tab *table, p *projection, since time.Time) {
 		slices.Sort(depths)
 		for _, d := range depths {
 			c := groups[k][d]
-			tab.row("%s\t%d\t%d\t%d\t%.1f%%", k, d, c.starts, c.failures, 100*float64(c.failures)/float64(c.starts))
+			tab.row("%s\t%d\t%d\t%d\t%.1f%%", k, d, c.trials, c.failures, 100*float64(c.failures)/float64(c.trials))
 		}
 	}
 }

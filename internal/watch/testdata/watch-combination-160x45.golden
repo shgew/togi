@@ -1,0 +1,44 @@
+  togi   05:34:10   session 53h33m   7 failures · 7 crashes   last observed failure 04:50, 48h43m ago
+
+  ■ SOLO LIMITS  16/16  ───  ► CYCLE 2  step 14 of 14  ───  ○ DEEPEN  ───  CLEAN CYCLES 1  · repeats until stopped
+
+  ▌  STOPPED   I restored safer offsets before stopping. togi run picks up        last trial      PASS  15:00 on 00-15 · Tctl max 70°C
+  ▌            where I left off.
+
+  STOPPED ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  05:33:30 · requested clean cycles completed
+  Rows show the saved profile, not applied now.
+
+  CCD 0               0  2 counts/cell       -50 fail pt  not under load          CCD 1               0  2 counts/cell       -50 fail pt  not under load
+    00  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                    08  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+    01  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                    09  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+    02  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                    10  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+    03  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                    11   -9  AT LIMIT  ▄▄▄▄▄                              C1 · solo -10
+    04  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                    12  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+    05  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                    13  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+    06  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                    14  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+    07  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                    15  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+
+  CYCLE 2 ──────────────────────────────────────────────── 14 steps · 14 done     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
+
+    #  kind              where               schedule      result                 05:33  stop     stopped
+  ■  1 R7 all-core       2 CCDs · 5 parts    5 parts       done                   05:33  cycle    cycle 2 passed, a full cycle of every kind of test
+  ■  2 R7 all-core       2 CCDs · 5 parts    5 parts       done                   05:33  pass     R6 idle + bursts on 00-15 · passed · Tctl max 70°C
+  ■  3 R7 all-core       2 CCDs · 5 parts    5 parts       done                   05:18  pass     R4 partial load on core 15 at -50 · passed · Tctl max 68°C
+  ■  4 R2 heavy vector   one core at a time  16 x 2m       done                   05:16  pass     R4 partial load on core 07 at -50 · passed · Tctl max 70°C
+  ■  5 R2 heavy vector   one core at a time  16 x 2m       done                   05:14  pass     R4 partial load on core 14 at -50 · passed · Tctl max 63°C
+  ■  6 R2 heavy vector   one core at a time  16 x 2m       done                   05:12  pass     R4 partial load on core 06 at -50 · passed · Tctl max 76°C
+  ■  7 R6 idle + bursts  all cores idle      15m           done                   05:10  pass     R4 partial load on core 13 at -50 · passed · Tctl max 76°C
+  ■  8 R5 both threads   one core at a time  16 x 2m       done                   05:08  pass     R4 partial load on core 05 at -50 · passed · Tctl max 75°C
+  ■  9 R1 light          one core at a time  16 x 2m       done                   05:06  pass     R4 partial load on core 12 at -50 · passed · Tctl max 69°C
+  ■ 10 R1 light          one core at a time  16 x 2m       done                   05:04  pass     R4 partial load on core 04 at -50 · passed · Tctl max 67°C
+  ■ 11 R1 light          one core at a time  16 x 2m       done                   05:02  pass     R4 partial load on core 11 at -9 · passed · Tctl max 65°C
+  ■ 12 R3 load steps     one core at a time  16 x 2m       done                   05:00  pass     R4 partial load on core 03 at -50 · passed · Tctl max 75°C
+  ■ 13 R4 partial load   one core at a time  16 x 2m       done                   04:58  pass     R4 partial load on core 10 at -50 · passed · Tctl max 65°C
+  ■ 14 R6 idle + bursts  all cores idle      15m           done                   04:56  pass     R4 partial load on core 02 at -50 · passed · Tctl max 71°C
+                                                                                  04:54  pass     R4 partial load on core 09 at -50 · passed · Tctl max 62°C
+  COMBINATIONS ────────────────────────────────────────────── failed together     04:52  pass     R4 partial load on core 01 at -50 · passed · Tctl max 70°C
+                                                                                  04:50  pass     R4 partial load on core 08 at -50 · passed · Tctl max 75°C
+  +4 more                                                                         +182 more
+
+   ?  help    l  log    esc  back    q  close view
