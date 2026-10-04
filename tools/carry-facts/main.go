@@ -180,7 +180,7 @@ func summarizeTransition(events []journal.Event) transitionDemo {
 	var passes, failures, answered, soloLimitTrials, cycleTrials, cyclePasses int
 	checking := map[int]bool{}
 	carried := map[int]bool{}
-	cycleTrials := map[string]bool{}
+	cycleTrialIDs := map[string]bool{}
 	var firstTrials []journal.Event
 	var decisions []journal.Event
 	var firstPassedFullCycle *journal.Event
@@ -229,11 +229,11 @@ func summarizeTransition(events []journal.Event) transitionDemo {
 				soloLimitTrials++
 			}
 			if p.Phase == journal.PhaseChecking && p.Cycle == 1 {
-				cycleTrials[p.Trial] = true
+				cycleTrialIDs[p.Trial] = true
 				cycleTrials++
 			}
 		case *journal.TrialEnd:
-			if cycleTrials[p.Trial] && p.Outcome == journal.OutcomePass {
+			if cycleTrialIDs[p.Trial] && p.Outcome == journal.OutcomePass {
 				cyclePasses++
 			}
 		case *journal.CheckingCycle:
