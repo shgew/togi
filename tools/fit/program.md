@@ -13,7 +13,7 @@ You are an autonomous researcher working on togi, a Go CLI that finds per-core C
 - **F4, in-sample check:** after the sealed confirmation, `just fit --out runs/fit-<n>` reports `ok` for the all-facts fit and every bootstrap member. This fits the full extract, so it is a finalization check, not feedback for dev experiments. The bench's `target` scenario relies on that check.
 - **F5, opt-in structure:** with the committed machine files, `just bench --split all --baseline tools/bench/baseline.jsonl` pairs every run `equal`. A machine file that does not set a new key behaves exactly as before, so the default machine, the hand-written scenarios and the committed fits keep their meaning until they are regenerated.
 
-Score the sealed session (`just forward`, no seal) once per dev winner, only for confirmation: its fit loss and its `failures_p<0.01` must not rise.
+Score the sealed session (`just forward`, no seal) once per dev winner, only for confirmation, after its dev experiments end. It is one session, so the check asks that the winner be no worse within noise, not better: its fit loss must stay at most 1.10 times the unchanged reference's on the same extract, and its `failures_p<0.01` must not rise. Report the 95% interval of that loss ratio from a paired bootstrap that resamples the sealed session's trials, scoring both models on the same resamples. The interval shows how much one session can tell apart; the 1.10 threshold alone decides.
 
 The seal moves forward by itself. When the owner refreshes the extract after a new real run (`just facts`), that run becomes the sealed session and the previously sealed one becomes a dev session. Every refresh is a confirmation no experiment has seen; score every kept model on it.
 
