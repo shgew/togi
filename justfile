@@ -53,9 +53,27 @@ lint *args:
 fmt:
     nix fmt
 
-# Pre-handoff gate: lint, the fmt flake check (tracked files), then tests
+# Run every non-VM flake check, cheapest first, using warm dev-shell Go caches
 [group('quality')]
-gate: lint (check-one "fmt") test
+gate:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "${TOGI_DEV_SHELL:-}" != "1" ]]; then
+        exec {{ dev }} just --justfile '{{ justfile() }}' gate
+    fi
+    just check-one fmt
+    just lint
+    just check-one module changes
+    vendored=$(nix build --no-link --print-out-paths '.#checks.{{ system }}.package.goModules')
+    fresh=$(mktemp -d)
+    trap 'rm -rf "$fresh"' EXIT
+    go mod vendor -o "$fresh/vendor"
+    diff -rq "$fresh/vendor" "$vendored" >&2 || { echo 'gate: the Go modules vendored for vendorHash in flake.nix differ from go.mod and go.sum; update vendorHash' >&2; exit 1; }
+    go test -shuffle=on -tags integration ./...
+    go test -race -shuffle=on -tags integration ./internal/trial ./internal/session ./internal/journal ./internal/watch
+    if [[ "{{ os() }}" == linux ]]; then
+        go test -c -tags hardware -o /dev/null ./internal/trial
+    fi
 
 # Run every flake check this host builds: package, race, lint, fmt, changes, module and, on Linux, trial-scope-tests and the VM tests
 [group('nix')]
