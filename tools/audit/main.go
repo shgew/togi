@@ -163,6 +163,7 @@ func auditDirectory(dir string, simulated bool) ([]violation, int, error) {
 			continue
 		}
 		var snapshot struct {
+			Schema  int `json:"schema"`
 			LastSeq int `json:"last_seq"`
 		}
 		if err := json.Unmarshal(cached, &snapshot); err != nil {
@@ -174,7 +175,13 @@ func auditDirectory(dir string, simulated bool) ([]violation, int, error) {
 			continue
 		}
 		// Replay needs the current ruleset; an older session has no current projection.
-		if ruleset := journal.BuildOf(events).Ruleset; ruleset != 0 && ruleset != tuner.Ruleset {
+		build := journal.BuildOf(events)
+		if build.Ruleset != 0 && build.Ruleset != tuner.Ruleset {
+			continue
+		}
+		// Projection always stamps the current schema, so a snapshot or session from
+		// an older schema cannot match it; the next run archives that session.
+		if (snapshot.Schema > 0 && snapshot.Schema < journal.Schema) || (build.Schema > 0 && build.Schema < journal.Schema) {
 			continue
 		}
 		// History reading intentionally omits configuration. Replay uses the complete
