@@ -1175,10 +1175,12 @@ func consoleText(text string) string {
 	return b.String()
 }
 
+// trimWords measures text as the console will show it, after consoleText escapes glyphs it cannot draw.
 func trimWords(text string, width int) string {
 	if width <= 0 {
 		return ""
 	}
+	text = consoleText(text)
 	if ansi.StringWidth(text) <= width {
 		return text
 	}
@@ -1191,10 +1193,12 @@ func trimWords(text string, width int) string {
 	return cut
 }
 
+// wrapStyled wraps text as the console will show it, after consoleText escapes glyphs it cannot draw.
 func wrapStyled(text string, width int, style lipgloss.Style) []string {
 	if width <= 0 {
 		return nil
 	}
+	text = consoleText(text)
 	var out []string
 	for paragraph := range strings.SplitSeq(text, "\n") {
 		line := ""

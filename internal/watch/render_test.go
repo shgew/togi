@@ -316,3 +316,14 @@ func TestRestingBandLeavesItsRowsToThePanels(t *testing.T) {
 		}
 	}
 }
+
+func TestUndrawableGlyphsAreMeasuredEscaped(t *testing.T) {
+	t.Parallel()
+	text := "journal error: " + strings.Repeat("界", 60)
+	if got := ansi.Strip(strings.Join(wrapStyled(text, 100, textStyle), "")); strings.Count(got, `\u754c`) != 60 {
+		t.Fatalf("wrapped escapes lost text: %q", got)
+	}
+	if got := trimWords(text, 30); ansi.StringWidth(got) > 30 || !strings.HasPrefix(got, "journal error") {
+		t.Fatalf("trimmed escape %q", got)
+	}
+}

@@ -645,7 +645,7 @@ func fitPhrases(phrases []phrase, width int) string {
 	join := func(ps []phrase) string {
 		parts := make([]string, len(ps))
 		for i, p := range ps {
-			parts[i] = p.text
+			parts[i] = consoleText(p.text)
 		}
 		return strings.Join(parts, " → ")
 	}
