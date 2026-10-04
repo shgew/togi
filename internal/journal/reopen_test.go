@@ -163,7 +163,7 @@ func TestOpenRepairFilesystemFailures(t *testing.T) {
 					t.Skip("known pre-existing evidence-loss bug: tail is truncated before the journal.torn write; https://github.com/shgew/togi/issues/305")
 				}
 				dir := t.TempDir()
-				prefix := []byte(`{"seq":1,"kind":"session.start","schema":3}` + "\n")
+				prefix := []byte(fmt.Sprintf(`{"seq":1,"kind":"session.start","schema":%d}`+"\n", Schema))
 				tail := []byte(`{"seq":2,"kind":"shutdown"`)
 				path := filepath.Join(dir, eventsFile)
 				if err := os.WriteFile(path, append(bytes.Clone(prefix), tail...), 0600); err != nil {
@@ -212,7 +212,7 @@ func TestOpenRepairFilesystemFailures(t *testing.T) {
 func TestTornTailTruncateFailurePreservesEvidence(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, eventsFile)
-	data := []byte(`{"seq":1,"kind":"session.start","schema":3}` + "\n" + `{"seq":2`)
+	data := []byte(fmt.Sprintf(`{"seq":1,"kind":"session.start","schema":%d}`+"\n", Schema) + `{"seq":2`)
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}

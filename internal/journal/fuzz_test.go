@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,7 +58,7 @@ func FuzzParse(f *testing.F) {
 }
 
 func TestParseInputBoundaries(t *testing.T) {
-	header := []byte("{\"seq\":1,\"kind\":\"session.start\",\"schema\":4}\n")
+	header := []byte(fmt.Sprintf(`{"seq":1,"kind":"session.start","schema":%d}`+"\n", Schema))
 	unknown := []byte("{\"seq\":2,\"kind\":\"future.observation\",\"evidence\":17}\n")
 	for _, tt := range []struct {
 		name string
@@ -139,11 +140,11 @@ func TestParseShippedSchemas(t *testing.T) {
 }
 
 func TestDamagedJournalReaders(t *testing.T) {
-	header := `{"seq":1,"kind":"session.start","schema":4,"session":"source"}` + "\n"
+	header := fmt.Sprintf(`{"seq":1,"kind":"session.start","schema":%d,"session":"source"}`+"\n", Schema)
 	for _, tc := range []struct{ name, data, diagnostic string }{
 		{"malformed first line", "{\n", "line 1"},
 		{"missing kind", header + `{"seq":2}` + "\n", "event has no kind"},
-		{"wrong first event", `{"seq":1,"kind":"shutdown","schema":4}` + "\n", "first event is shutdown"},
+		{"wrong first event", fmt.Sprintf(`{"seq":1,"kind":"shutdown","schema":%d}`+"\n", Schema), "first event is shutdown"},
 		{"invalid payload", header + `{"seq":2,"kind":"trial.end","duration_s":"bad"}` + "\n", "decode trial.end"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -183,7 +184,7 @@ func TestDamagedJournalReaders(t *testing.T) {
 }
 
 func TestHistoricalReadersRejectUnshippedSchemas(t *testing.T) {
-	for _, schema := range []string{"-1", "0", "5", "99"} {
+	for _, schema := range []string{"-1", "0", fmt.Sprint(Schema + 1), "99"} {
 		t.Run(schema, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), eventsFile)
 			if err := os.WriteFile(path, []byte(`{"seq":1,"kind":"session.start","schema":`+schema+`}`+"\n"), 0600); err != nil {

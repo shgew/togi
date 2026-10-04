@@ -244,8 +244,7 @@ not-json
 `, true},
 		{"missing kind", `{"seq":1,"schema":2}
 `, true},
-		{"newer schema", `{"seq":1,"kind":"session.start","schema":4}
-`, true},
+		{"newer schema", fmt.Sprintf("{\"seq\":1,\"kind\":\"session.start\",\"schema\":%d}\n", journal.Schema+1), true},
 		{"bad sequence", `{"seq":1,"kind":"session.start","schema":2}
 {"seq":3,"kind":"future.fact"}
 `, true},

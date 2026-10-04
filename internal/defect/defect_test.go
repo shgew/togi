@@ -12,9 +12,9 @@ import (
 
 func fixture(t *testing.T) []journal.Event {
 	t.Helper()
-	events, torn, err := journal.ReadFile("testdata/power-off.jsonl")
-	if err != nil || len(torn) != 0 {
-		t.Fatalf("read pre-fix journal: %v, %d torn bytes", err, len(torn))
+	events, err := journal.ReadHistory("testdata/power-off.jsonl")
+	if err != nil {
+		t.Fatalf("read pre-fix journal: %v", err)
 	}
 	return events
 }

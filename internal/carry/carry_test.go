@@ -415,7 +415,7 @@ func writeSchema1(t *testing.T, dir, session string, ctx *machine.BIOSContext) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data = bytes.ReplaceAll(data, []byte(`"schema":3`), []byte(`"schema":1`))
+	data = bytes.ReplaceAll(data, fmt.Appendf(nil, `"schema":%d`, journal.Schema), []byte(`"schema":1`))
 	data = append(data, `{"seq":99,"time":"2026-09-24T20:43:52Z","boot":"boot","kind":"escalation.window","msg":"escalation window","window_s":600}`+"\n"...)
 	if err := os.MkdirAll(filepath.Join(dir, "archive"), 0o755); err != nil {
 		t.Fatal(err)

@@ -155,6 +155,7 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 		{"older ruleset", session.Build().Ruleset - 1, journal.Schema, false, false},
 		{"interrupted older ruleset", session.Build().Ruleset - 1, journal.Schema, false, true},
 		{"older schema", session.Build().Ruleset, journal.Schema - 1, false, false},
+		{"schema 2", session.Build().Ruleset, 2, false, false},
 		{"current build", session.Build().Ruleset, journal.Schema, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -194,7 +195,7 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 				t.Fatal(err)
 			}
 			original = bytes.Replace(original, fmt.Appendf(nil, `"schema":%d`, journal.Schema), fmt.Appendf(nil, `"schema":%d`, tc.schema), 1)
-			if tc.schema < journal.Schema {
+			if tc.schema < 3 {
 				original = bytes.ReplaceAll(original, []byte(`"condition":"alone"`), []byte(`"condition":"isolated"`))
 			}
 			lines := bytes.SplitAfter(original, []byte{'\n'})

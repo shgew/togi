@@ -193,8 +193,8 @@ func TestRunShowsJournalProblemAndRecovery(t *testing.T) {
 		}
 		winch <- syscall.SIGWINCH
 		synctest.Wait()
-		if !strings.Contains(terminalFrame(t, out, 2, 160, 40, false), "invalid character") {
-			t.Fatal("live journal read error was not displayed")
+		if frame := terminalFrame(t, out, 2, 160, 40, false); !strings.Contains(frame, "invalid character") {
+			t.Fatalf("live journal read error was not displayed: %s", frame)
 		}
 		select {
 		case err := <-done:

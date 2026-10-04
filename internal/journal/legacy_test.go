@@ -153,7 +153,7 @@ func TestTranslateSchemaFourVocabulary(t *testing.T) {
 func TestTranslateSchemaChainsLegacySteps(t *testing.T) {
 	for _, schema := range []int{1, 2, 3, Schema} {
 		t.Run(fmt.Sprint(schema), func(t *testing.T) {
-			line := `{"kind":"checking.cycle","cycle":3,"event":"end","passed":true,"full":true,"schema":4}`
+			line := fmt.Sprintf(`{"kind":"checking.cycle","cycle":3,"event":"end","passed":true,"full":true,"schema":%d}`, Schema)
 			if schema == 3 {
 				line = `{"kind":"checking.lap","lap":3,"event":"end","passed":true,"full":true,"schema":3}`
 			} else if schema < 3 {
