@@ -191,6 +191,8 @@ func play(out *os.File, events []journal.Event, n int, speed float64) error {
 		if n != shown {
 			snap, shown = watch.Project(events[:n]), n
 		}
-		return watch.RenderView(snap, sc, clock)
+		frame := watch.RenderView(snap, sc, clock)
+		frame.Until = time.Time{}
+		return frame
 	})
 }

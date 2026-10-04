@@ -1,0 +1,44 @@
+  togi   04:51:10   session 4h51m   7 failures · 7 crashes   last observed failure 04:50, a moment ago
+
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14  ───  ►  HUNT 1   member probes · core 03 at -9  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  ·
+
+  │ 04:46:00  trial intent          trial 0185 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime AVX2 36K-248K all-core 120s parked hunt 1 group 26
+  │ 04:46:00  trial start           trial 0185 started pid 1185 in scope togi-trial-0185 on cpus 0,1,2,3,4,5,6,7
+  │ 04:47:30  config loaded         no config at /etc/togi/config.toml; using defaults with togi 0.9.0+dev (schema 4, ruleset 8, fixes 1)
+  │ 04:47:30  crash                 crash: boot 27869679 ended without a clean shutdown; in flight: seq 1991; reset reason: x86/amd: Previous system...
+  │ 04:47:30  crash                 trial 0185 FAIL crash, last evidence 0s after start
+  │ 04:47:30  fail                  unattributed crash failure in parked R7 trial 0185: the group fails, no evidence names a single core
+  │ 04:47:30  skip                  hunt 1 group 27: cores 02, 03 pass inferred: passing trials already establish the group
+  │ 04:47:30  skip                  hunt 1 group 28: cores 10, 11 pass inferred: passing trials already establish the group
+  │ 04:47:30  skip                  hunt 1 group 29: cores 02 pass inferred: passing trials already establish the group
+  │ 04:47:30  skip                  hunt 1 group 30: cores 03 pass inferred: passing trials already establish the group
+  │ 04:47:30  skip                  hunt 1 group 31: cores 10 pass inferred: passing trials already establish the group
+  │ 04:47:30  skip                  hunt 1 group 32: cores 11 pass inferred: passing trials already establish the group
+  │ 04:47:30  group                 hunt 1 group 33: cores 03, 10, 11 at failing offsets, the rest parked; trials of 120s; testing the part of the...
+  │ 04:47:30  profile applied       group profile applied: [0 0 0 -10 0 0 0 0 0 0 -10 -10 0 0 0 0]
+  │ 04:47:30  trial intent          trial 0186 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime AVX2 36K-248K all-core 120s parked hunt 1 group 33
+  │ 04:47:30  trial start           trial 0186 started pid 1186 in scope togi-trial-0186 on cpus 0,1,2,3,4,5,6,7
+  │ 04:49:00  config loaded         no config at /etc/togi/config.toml; using defaults with togi 0.9.0+dev (schema 4, ruleset 8, fixes 1)
+  │ 04:49:00  crash                 crash: boot 1c0d76e4 ended without a clean shutdown; in flight: seq 2042; reset reason: x86/amd: Previous system...
+  │ 04:49:00  crash                 trial 0186 FAIL crash, last evidence 0s after start
+  │ 04:49:00  fail                  unattributed crash failure in parked R7 trial 0186: the group fails, no evidence names a single core
+  │ 04:49:00  skip                  hunt 1 group 34: cores 03 pass inferred: passing trials already establish the group
+  │ 04:49:00  skip                  hunt 1 group 35: cores 10 pass inferred: passing trials already establish the group
+  │ 04:49:00  skip                  hunt 1 group 36: cores 11 pass inferred: passing trials already establish the group
+  │ 04:49:00  skip                  hunt 1 group 37: cores 10, 11 pass inferred: passing trials already establish the group
+  │ 04:49:00  group                 hunt 1 group 38: cores 03, 11 at failing offsets, the rest parked; trials of 120s; testing the part of the failing...
+  │ 04:49:00  profile applied       group profile applied: [0 0 0 -10 0 0 0 0 0 0 0 -10 0 0 0 0]
+  │ 04:49:00  trial intent          trial 0187 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime AVX2 36K-248K all-core 120s parked hunt 1 group 38
+  │ 04:49:00  trial start           trial 0187 started pid 1187 in scope togi-trial-0187 on cpus 0,1,2,3,4,5,6,7
+  │ 04:50:30  config loaded         no config at /etc/togi/config.toml; using defaults with togi 0.9.0+dev (schema 4, ruleset 8, fixes 1)
+  │ 04:50:30  crash                 crash: boot 641f0b8e ended without a clean shutdown; in flight: seq 2088; reset reason: x86/amd: Previous system...
+  │ 04:50:30  crash                 trial 0187 FAIL crash, last evidence 0s after start
+  │ 04:50:30  fail                  unattributed crash failure in parked R7 trial 0187: the group fails, no evidence names a single core
+  │ 04:50:30  skip                  hunt 1 group 39: cores 03 pass inferred: passing trials already establish the group
+  │ 04:50:30  skip                  hunt 1 group 40: cores 11 pass inferred: passing trials already establish the group
+  │ 04:50:30  probe                 hunt 1 group 41: core 03 at -9 with core 11 -10, the rest parked; trials of 120s; probing how shallow core 03 must be...
+  █ 04:50:30  profile applied       group profile applied: [0 0 0 -9 0 0 0 0 0 0 0 -10 0 0 0 0]
+  █ 04:50:30  trial intent          trial 0188 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime AVX2 36K-248K all-core 120s parked hunt 1 group 41
+  █ 04:50:30  trial start           trial 0188 started pid 1188 in scope togi-trial-0188 on cpus 0,1,2,3,4,5,6,7
+
+   ?  help    l  log    esc  back    q  close view

@@ -1,0 +1,66 @@
+  togi   04:51:10   session 4h51m   7 failures · 7 crashes   last observed failure 04:50, a moment ago
+
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14  ───  ►  HUNT 1   member probes · core 03 at -9  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped  ───  1:20 left
+
+  READING THE SCREEN ──────────────────────────────────────────────────────────────    WHAT TOGI DOES ────────────────────────────────────────────────────────────    WORDS ─────────────────────────────────────────────────────────────────
+                                                                                                                                                                                                                                             
+  ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░█                -36          SOLO LIMITS   One core under load, the rest at 0. Step 5 counts deeper         offset         Curve Optimizer counts, 0 to -50; deeper is more        
+                      at its limit: one count deeper reaches C5                                      while light (R1) and heavy (R2) pass; near a failure, 1 count                   negative                                                
+                                                                                                     at a time. Confirm the deepest pass with the configured          trial          one launch of one workload; evidence is counted in      
+  ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····█                    -32                        number of light and heavy trials in a row. A failure while                      trials                                                  
+                      has room: backed off after a hunt, may deepen                                  confirming discards that pass and the search backs off.          solo limit     the deepest offset a core confirmed under load alone    
+                                                                                                                                                                      failure point  the shallowest offset where a core failed on its own    
+    09    0  PARKED   ···············································█    -48          CYCLES        All cores at their offsets, through the configured steps of a                   account                                                 
+                      parked at 0 by a hunt; returns to -47                                          cycle. R7 steps run each CCD and both, with record-only          combination    offsets at which a group of cores failed together; the  
+                                                                                                     partial loads first. The partial's group is frozen when the                     profile is kept from reaching all of them at once.      
+  ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ █                    -32                        step started, even if offsets change.                                           Unresolved: no smaller group was shown to fail          
+                      probe: the group failed with core 00 at -30, -29, -27                                                                                           at its limit   -50, or one count deeper reaches a failure point or     
+                                                                                       FAILURES      A failure that names a core sets its failure point; the core                    combination                                             
+  ►         the core carries load in this trial                                                      backs off and the load reruns with short trials plus one at      has room       one count deeper reaches neither; deepening may take it 
+  ▄▄▄       offset applied now; white when this trial judges the core                                its original length when that is longer. One that names no       suspect        a core a hunt keeps at its failing offset               
+  grey ▄▄▄  offset applied now; grey when the core is not judged                                     core starts a hunt, unless that profile already reaches a        parked         a core a hunt holds shallower: at its last passed       
+  ···       depth it reached but does not use now: given back, parked, waiting                       recorded failure. Record-only results change nothing. A                         full-cycle offset raised to the failing profile, or 0   
+  ░░░       depth a combination blocks now                                                           failure with every core at 0 stops tuning.                       record only    a partial R7 load whose result is kept but changes no   
+  █         its failure point: this core failed there on its own account                                                                                                             decision                                                
+  ▀         a group trial failed with this core at that offset                         HUNT          Rerun the failing load with a part of the candidates at their    cycle          one pass through the checking schedule                  
+  cyan      running now                                                                              failing offsets and the rest parked; keep a part that fails.                                                                            
+  amber     a hunt, and what it paused                                                               If no part fails, the group is kept as a combination, and                                                                               
+  red       failures, past and present                                                               member probes find how far one member must back off for the      KINDS OF LOAD ─────────────────────────────────────────────────────────
+  green     passed, done                                                                             rest to pass.                                                                                                                           
+  magenta   combinations                                                                                                                                              R1 light          one light thread: compiling, browsing                
+  grey      idle, parked, still to come                                                DEEPEN        After a passed full cycle, try cores that have room one count    R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering         
+                                                                                                     deeper, checking every move.                                     R3 load steps     load switching on and off: current steps             
+                                                                                                                                                                      R4 partial load   light load at 25-75% duty: bursty work               
+  THE TOP LINE ────────────────────────────────────────────────────────────────────    CLEAN CYCLES  The goal: a passed full cycle with every core at its limit       R5 both threads   both threads of one core: SMT pressure               
+                                                                                                     and nothing left to deepen. Counted for the current profile;     R6 idle + bursts  idle with short wake-ups: idle and boost             
+  failures       failure decisions, including trials skipped because they already                    cycles repeat until stopped.                                     R7 all-core       each CCD, then both: power and heat                  
+                 failed                                                                                                                                                                                                                      
+  crashes        boots that ended without a clean shutdown                             R6            During idle trials this screen holds still, clock included,                                                                             
+  last observed  the last failure seen in this session that changed what togi does;                  so it cannot wake the cores.                                                                                                            
+                 record-only results and skips do not count                                                                                                                                                                                  
+  q              closes this view only; tuning keeps running                           NO ETA        A hunt can start at any time, so togi shows only what is                                                                                
+                                                                                                     scheduled and the time left in the current trial.                                                                                       
+                                                                                                                                                                                                                                             
+                                                                                                                                                                                                                                             
+                                                                                                                                                                                                                                             
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   ?  help    l  log    esc  back    q  close view
