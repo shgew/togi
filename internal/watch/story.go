@@ -162,10 +162,27 @@ func (s Snapshot) splitWords() string {
 	}
 	for _, part := range h.plan {
 		if part.running {
+			// The part parks every core outside it, candidates or not: say "at 0" only when the profile running
+			// holds each of them there.
+			parked := "parked"
+			if t := s.trial; t != nil && s.allAtZero(t.profile, part.parked) {
+				parked = "parked at 0"
+			}
 			return fmt.Sprintf("%s at their failing offsets, %s %s", coreIDs(part.failing), coreIDs(part.parked), parked)
 		}
 	}
 	return fmt.Sprintf("part of %s at its offsets, the rest %s", coreIDs(h.candidates), parked)
+}
+
+// allAtZero reports whether profile, in session core order, holds every listed core at 0.
+func (s Snapshot) allAtZero(profile, cores []int) bool {
+	for _, id := range cores {
+		i := slices.Index(s.order, id)
+		if i < 0 || i >= len(profile) || profile[i] != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // knownWords describes a hunt started by a trial skipped because its profile already failed.

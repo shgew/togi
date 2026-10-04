@@ -146,3 +146,15 @@ func TestDeepeningForecastKeepsTheProposedProfileApplied(t *testing.T) {
 		t.Fatalf("deepening checks run with the proposed profile applied, not alone:\n%s", text)
 	}
 }
+
+func TestSplitWordsParkAtZeroOnlyWhenTheProfileDoes(t *testing.T) {
+	t.Parallel()
+	s := Snapshot{order: []int{0, 1, 2}, hunt: &huntView{parkedZero: true, plan: []huntPart{{failing: []int{0}, parked: []int{1, 2}, running: true}}}, trial: &trialView{profile: []int{-10, 0, -30}}}
+	if got := s.splitWords(); strings.Contains(got, "at 0") {
+		t.Fatalf("core 02 stays at -30, yet the split says %q", got)
+	}
+	s.trial.profile = []int{-10, 0, 0}
+	if got := s.splitWords(); !strings.Contains(got, "01 02 parked at 0") {
+		t.Fatalf("split %q", got)
+	}
+}
