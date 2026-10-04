@@ -2,6 +2,32 @@
 
 All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Changes not yet released wait in [`changes/`](changes/) until the release assembles them here.
 
+## [0.10.0] - 2026-10-04
+
+### Added
+
+- `togi run` outside the tuning boot warns before writing offsets when no hardware watchdog is active: a freeze then needs a manual reset, and the how-to now recommends starting sessions from the tuning boot, especially after a breaking update ([#371]).
+- Trial ends record each loaded core's median voltage request, the top requesters and each loaded CCD's median clock ([#379]).
+- `just stats` groups R7 trials and failures by top voltage request and by top requester ([#379]).
+- Transitions carry each trial's voltage requests, top requesters, CCD clocks and stalled core, recovering them from archived samples for trials recorded before trial ends held them ([#380]).
+- `status` shows each core's R7 self-sufficiency per workload and its CCD's current top requesters; `watch` marks the running R7 workload's top requesters in the CCD tables and lists every R7 workload's top requesters and self-sufficient cores below the cycle checklist ([#402]).
+- Checking's dashboard plan follows recorded partial chains and their passing-trial requirements, counting an R7 step's parts as `N+` while partials may follow; multi-core R7 outcome forecasts fold voltage-targeted backoffs and CO-0 step-downs rather than hunts, marked as following earlier requests or offset order ([#402]).
+
+### Changed
+
+- **BREAKING** Rename `[checking] lap` to `cycle` and `durations.start_s` to `short_trial_s` in `config.toml`, and use `togi run --cycles` instead of `--laps`; the old names are refused ([#397]).
+- **BREAKING** The next run archives the current session and starts a new one carrying its candidate solo limits, failure points and facts, because the journal moves to schema 4 with renamed kinds, fields and values; archived journals of schemas 1 to 3 are still read ([#397]).
+- **BREAKING** Existing sessions move to ruleset 9 on the next `run`, carrying their same-BIOS facts: multi-core R7 checking runs each CCD's full part, then partial loads that idle successive top voltage requesters, and every multi-core R7 failure backs off a core by voltage-targeted counts instead of starting a hunt, unless that core already sits shallower than in the failure; a top group already at CO 0 steps down within its CCD, an all-core failure leaves out a CCD that was entirely at CO 0 while the other CCD can still move, unless a stalled core confined the failure to that CCD, and a named core at 0 dead-ends only if it was a top requester ([#402]).
+- togi is now licensed under GPL-3.0-or-later instead of MIT, so changed versions that are distributed must stay open under the same license; releases up to and including 0.9.0 remain available under MIT ([#375]).
+- `togi status`, `togi events` and the dashboard say cycle where they said lap and trial where they said start, including the `TRIALS` column of `togi status` ([#397]).
+- `togi watch` uses the whole screen: a stage line, the running trial with what each outcome leads to as the tuner forecasts it, both CCDs side by side, and the cycle checklist, hunt parts and probes, or search turns beside what happened ([#398]).
+- On Linux, `togi watch` redraws when the journal changes instead of rereading it every second, and holds the screen still through each R6 idle trial until its end is recorded ([#398]).
+
+### Fixed
+
+- Choosing a combination backoff no longer stalls the tuner for minutes between trials once many combinations have accumulated ([#368]).
+- A crash inside the dashboard of `togi run` no longer stops tuning: the dashboard is hidden and event lines are printed instead ([#398]).
+
 ## [0.9.0] - 2026-10-04
 
 ### Added
@@ -323,6 +349,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 [0.9.0]: https://github.com/shgew/togi/releases/tag/v0.9.0
 
+[0.10.0]: https://github.com/shgew/togi/releases/tag/v0.10.0
+
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
 [#3]: https://github.com/shgew/togi/issues/3
@@ -429,3 +457,11 @@ All notable changes to togi are documented in this file. The format is based on 
 [#336]: https://github.com/shgew/togi/pull/336
 [#338]: https://github.com/shgew/togi/pull/338
 [#358]: https://github.com/shgew/togi/pull/358
+[#368]: https://github.com/shgew/togi/pull/368
+[#371]: https://github.com/shgew/togi/pull/371
+[#375]: https://github.com/shgew/togi/pull/375
+[#379]: https://github.com/shgew/togi/pull/379
+[#380]: https://github.com/shgew/togi/pull/380
+[#397]: https://github.com/shgew/togi/pull/397
+[#398]: https://github.com/shgew/togi/pull/398
+[#402]: https://github.com/shgew/togi/pull/402
