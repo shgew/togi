@@ -182,10 +182,7 @@ func TestEventsKindQueries(t *testing.T) {
 }
 
 func TestEventsUnfilteredUnknownKind(t *testing.T) {
-	fixture, err := os.ReadFile("testdata/events.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := currentJournalFixture(t, "testdata/events.jsonl")
 	future := "{\"seq\":12,\"time\":\"2026-10-02T01:21:00Z\",\"boot\":\"e8f9a0b1-1c2d-4e5f-8a9b-0c1d2e3f4a5b\",\"kind\":\"future.observation\",\"msg\":\"opaque future event\",\"value\":17}\n"
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), append(fixture, future...), 0o644); err != nil {
@@ -203,10 +200,7 @@ func TestEventsUnfilteredUnknownKind(t *testing.T) {
 
 func TestReadCommandsReportTornTail(t *testing.T) {
 	t.Parallel()
-	fixture, err := os.ReadFile("testdata/events.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := currentJournalFixture(t, "testdata/events.jsonl")
 	for _, command := range []string{"status", "events"} {
 		t.Run(command, func(t *testing.T) {
 			dir := t.TempDir()

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 func TestHumanJournalBoundaries(t *testing.T) {
 	t.Parallel()
-	header := `{"seq":1,"time":"2026-10-02T01:10:00Z","kind":"session.start","schema":3,"ruleset":3,"session":"session","cores":[]}` + "\n"
+	header := fmt.Sprintf(`{"seq":1,"time":"2026-10-02T01:10:00Z","kind":"session.start","schema":%d,"ruleset":3,"session":"session","cores":[]}`, journal.Schema) + "\n"
 	context := `{"seq":2,"time":"2026-10-02T01:10:01Z","kind":"session.context","msg":"context","bios_version":"bios\u202e","board":"board\u001b[2J","cpu_model":"cpu\nforged","microcode":"code\u2066"}` + "\n"
 	dir := t.TempDir()
 	raw := header + context

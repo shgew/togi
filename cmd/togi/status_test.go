@@ -18,11 +18,19 @@ import (
 	"github.com/shgew/togi/internal/watch/watchtest"
 )
 
+func installStatusFixture(t *testing.T, dir, name string) journal.Build {
+	t.Helper()
+	build := watchtest.Install(t, dir, name)
+	currentJournalCopy(t, dir)
+	build.Schema = journal.Schema
+	return build
+}
+
 func TestStatus(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	watchtest.Install(t, dir, "concluded")
+	installStatusFixture(t, dir, "concluded")
 	_, st, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +51,7 @@ func TestStatus(t *testing.T) {
 func TestHistoricalTierChangeReadOnlyViews(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	watchtest.Install(t, dir, "concluded")
+	installStatusFixture(t, dir, "concluded")
 	events, st, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +97,7 @@ func TestHistoricalTierChangeReadOnlyViews(t *testing.T) {
 func TestBetweenTrialMCEReadOnlyViews(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	build := watchtest.Install(t, dir, "concluded")
+	build := installStatusFixture(t, dir, "concluded")
 	_, before, _, err := replayDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +143,7 @@ func TestStatusCombinationAndOpenHunt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
-			watchtest.Install(t, dir, tc.name)
+			installStatusFixture(t, dir, tc.name)
 			events, st, _, err := replayDir(dir)
 			if err != nil {
 				t.Fatal(err)
@@ -176,7 +184,7 @@ func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	build := watchtest.Install(t, dir, "concluded")
+	build := installStatusFixture(t, dir, "concluded")
 	record := func(payload journal.Payload) {
 		t.Helper()
 		j, err := journal.Open(dir, journal.Options{Boot: "status-test", Build: build})

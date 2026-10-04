@@ -199,7 +199,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		fmt.Fprintf(w, "\nhunt %d [#%d]: unattributed %s in %s trial %s; parked offsets %s\n", h.Hunt, h.Seq, journal.EscapeText(signal), journal.EscapeText(string(h.Regime)), journal.EscapeText(cmp.Or(h.Trial, "-")), parked)
 		fmt.Fprintf(w, "  candidates %s\n", coreIDs(h.Candidates))
 		tw := newTable(w)
-		fmt.Fprintln(tw, "GROUP\tCORES\tOUTCOME\tSTARTS")
+		fmt.Fprintln(tw, "GROUP\tCORES\tOUTCOME\tTRIALS")
 		for _, m := range h.Groups {
 			cores := coreIDs(m.Cores)
 			if m.Probe != nil {
@@ -257,7 +257,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	}
 	fmt.Fprintln(w)
 	tw = newTable(w)
-	fmt.Fprintln(tw, "REGIME\tWORKLOAD\tSTARTS")
+	fmt.Fprintln(tw, "REGIME\tWORKLOAD\tTRIALS")
 	for _, r := range gs.Exposure {
 		fmt.Fprintf(tw, "%s\t%s\t%d\n", journal.EscapeText(string(r.Regime)), journal.EscapeText(r.Workload), r.Trials)
 	}

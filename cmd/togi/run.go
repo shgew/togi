@@ -96,7 +96,7 @@ func runFlags(g *globals, cycles *int, grubenv *string, noTUI *bool) *flag.FlagS
 
 func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	var (
-		cycles    int
+		cycles  int
 		grubenv string
 		noTUI   bool
 	)

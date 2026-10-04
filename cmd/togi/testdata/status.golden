@@ -1,4 +1,4 @@
-checking lap 2, steps 14/14 | clean laps since last deepening: 2, latest lap 2
+checking cycle 2, steps 14/14 | clean cycles since last deepening: 2, latest cycle 2
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0, boost limit 5700 MHz
 in flight: none
@@ -21,7 +21,7 @@ CORE  CCD  SLOT  OFFSET  PHASE     FAILURE  COMBINATIONS  QUEUED  LAST DECISION
 14    1    6     0       at_limit  -1       -             -       [#4840] core 14 backed off at -1; next 0 (attributed corrected_mce in together R7 trial 0452; failure point -1)
 15    1    7     -35     at_limit  -36      -             -       [#5828] core 15 backed off at -36; next -35 (attributed computation_error in together R5 trial 0605; failure point -36)
 
-REGIME  WORKLOAD                         STARTS
+REGIME  WORKLOAD                         TRIALS
 R1      mprime-sse-4k-21k                36
 R1      ycruncher-bkt-sftv4              32
 R1      ycruncher-snt-svt                32
