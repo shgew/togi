@@ -164,6 +164,78 @@ func TestGenerateWritesCheckedReproducibleEnsemble(t *testing.T) {
 	})
 }
 
+func TestGenerateConstrainedRefitsMatchSerial(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		root := t.TempDir()
+		extract := filepath.Join(root, "facts.jsonl.gz")
+		var compressed bytes.Buffer
+		gz := gzip.NewWriter(&compressed)
+		encoder := json.NewEncoder(gz)
+		context := machine.BIOSContext{Board: "fixture", BIOSVersion: "A", CPUModel: "Zen 5 fixture", Microcode: "0x1", BoostLimitMHz: 5600}
+		for i := range 30 {
+			outcome := journal.OutcomePass
+			if i == 0 {
+				outcome = journal.OutcomeFailure
+			}
+			r := trialfacts.Record{Kind: facts.TrialFact, Outcome: outcome, Profile: []int{-10, 0}, Context: &context, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
+			if err := encoder.Encode(r); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := gz.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(extract, compressed.Bytes(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out := filepath.Join(root, "machines")
+		generated := func(jobs int) (string, [][]byte) {
+			var report bytes.Buffer
+			if err := generate(extract, out, 263, 4, jobs, &report); err != nil {
+				t.Fatal(err)
+			}
+			var machines [][]byte
+			for n := range 5 {
+				path := filepath.Join(out, "target-fit-"+strconv.Itoa(n)+".toml")
+				content, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				machines = append(machines, content)
+				cfg, err := sim.LoadMachine(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				check, err := modelcheck.Check(path, cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if check.Status != "ok" {
+					t.Fatalf("jobs %d member %d fails the original evidence: %+v", jobs, n, check)
+				}
+			}
+			return report.String(), machines
+		}
+		serialReport, serialMachines := generated(1)
+		// Seeds 264-266 resample none of the single failure, so refits 1-3 are flagged and refit from fit 0.
+		for n := 1; n <= 3; n++ {
+			if !strings.Contains(serialReport, "Refit "+strconv.Itoa(n)+" constraint: R1  cores=[0] duration=60s depth=-10 n=30 k=1 ") {
+				t.Fatalf("refit %d not constrained:\n%s", n, serialReport)
+			}
+		}
+		if strings.Contains(serialReport, "Refit 4 constraint") {
+			t.Fatalf("refit 4 constrained:\n%s", serialReport)
+		}
+		parallelReport, parallelMachines := generated(5)
+		if diff := cmp.Diff(serialReport, parallelReport); diff != "" {
+			t.Fatalf("parallel report differs from serial (-serial +parallel):\n%s", diff)
+		}
+		if diff := cmp.Diff(serialMachines, parallelMachines); diff != "" {
+			t.Fatalf("parallel machines differ from serial (-serial +parallel):\n%s", diff)
+		}
+	})
+}
+
 func TestGenerateRefusesMissingOrNondecisiveEvidence(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		root := t.TempDir()
