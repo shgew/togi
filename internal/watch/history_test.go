@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -11,7 +12,7 @@ import (
 
 func historySentences(s Snapshot) []string {
 	var lines []string
-	for _, h := range s.history {
+	for _, h := range slices.Backward(s.history) {
 		lines = append(lines, h.tag+": "+h.sentence())
 	}
 	return lines
@@ -31,7 +32,7 @@ func TestProjectRebootHistoryDuringSMUApplication(t *testing.T) {
 	}, historySentences(s)); diff != "" {
 		t.Fatalf("an in-flight SMU write must retain the reboot without inventing a trial (-want +got):\n%s", diff)
 	}
-	if s.crashes != 1 || s.history[1].reboot != events[3].Seq || s.history[1].tone != badTone {
+	if s.crashes != 1 || s.history[0].reboot != events[3].Seq || s.history[0].tone != badTone {
 		t.Fatalf("SMU reboot provenance or severity lost: crashes=%d, history=%+v", s.crashes, s.history)
 	}
 }
@@ -90,7 +91,11 @@ func TestProjectRebootHistoryDuringTrial(t *testing.T) {
 			if diff := cmp.Diff(want, historySentences(s)); diff != "" {
 				t.Fatalf("only a crash outcome represents the reboot; durable failure evidence must coexist with it (-want +got):\n%s", diff)
 			}
-			if h := s.history[1]; h.reboot != events[crashAt].Seq || !h.at.Equal(events[crashAt].Time) {
+			index := 0
+			if tc.evidence != nil {
+				index = 1
+			}
+			if h := s.history[index]; h.reboot != events[crashAt].Seq || !h.at.Equal(events[crashAt].Time) {
 				t.Fatalf("enriching reboot history must retain its source and original time: %+v", h)
 			}
 		})
@@ -122,7 +127,7 @@ func TestProjectMultipleRebootsStayDistinct(t *testing.T) {
 	}, historySentences(s)); diff != "" {
 		t.Fatalf("closing one crashed trial must not consume another boot's reboot (-want +got):\n%s", diff)
 	}
-	if s.crashes != 2 || s.history[1].reboot != events[2].Seq || s.history[2].reboot != events[6].Seq {
+	if s.crashes != 2 || s.history[1].reboot != events[2].Seq || s.history[0].reboot != events[6].Seq {
 		t.Fatalf("distinct reboot identities lost: crashes=%d, history=%+v", s.crashes, s.history)
 	}
 }
@@ -170,7 +175,7 @@ func TestProjectFallbackHistory(t *testing.T) {
 			if diff := cmp.Diff(tc.want, historySentences(s)); diff != "" {
 				t.Fatalf("history must distinguish a conservative fallback from an observed combination (-want +got):\n%s", diff)
 			}
-			if s.history[1].tone != warnTone || s.history[2].tone != warnTone {
+			if s.history[1].tone != comboTone || s.history[0].tone != warnTone {
 				t.Fatalf("combination history severity changed: %+v", s.history)
 			}
 		})
@@ -228,9 +233,31 @@ func TestProjectDeepeningHistorySeparatesDeeperAndYieldedMembers(t *testing.T) {
 		"limit: core 01 solo limit -30",
 		"limit: core 02 solo limit -10",
 		"round: #2: core 00 goes deeper to -21, core 01 yields to -29",
-		"yield: core 01 -30 → -29 so others go deeper",
-		"deeper: core 00 -20 → -21",
+		"room: core 01 -30 → -29 so others go deeper",
+		"room: core 00 -20 → -21",
 	}, historySentences(s)); diff != "" {
 		t.Fatalf("round history must describe each member's direction (-want +got):\n%s", diff)
+	}
+}
+
+func TestHistoryGroupsCarriedAnswersWithoutHidingOutcomeChanges(t *testing.T) {
+	t.Parallel()
+	events := dashboardEvents(dashboardSession(),
+		&journal.HuntStart{Hunt: 4, Candidates: []int{0, 1}},
+		&journal.HuntGroup{Hunt: 4, Group: 2, Inferred: "pass"},
+		&journal.HuntGroup{Hunt: 4, Group: 3, Inferred: "pass"},
+		&journal.HuntGroup{Hunt: 4, Group: 4, Inferred: "fail"},
+		&journal.HuntStart{Hunt: 5, Candidates: []int{0, 1}},
+		&journal.HuntGroup{Hunt: 5, Group: 5, Inferred: "pass"})
+	want := []string{
+		"start: session started on 3 cores",
+		"hunt: #4 started: which cores caused it?",
+		"skip: hunt 4 groups 2-3: pass from carried trials",
+		"skip: hunt 4 group 4: fail from carried trials",
+		"hunt: #5 started: which cores caused it?",
+		"skip: hunt 5 group 5: pass from carried trials",
+	}
+	if diff := cmp.Diff(want, historySentences(Project(events))); diff != "" {
+		t.Fatalf("carried group answers (-want +got):\n%s", diff)
 	}
 }

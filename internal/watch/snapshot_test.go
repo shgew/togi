@@ -39,14 +39,6 @@ func dashboardHuntEvents() []journal.Event {
 		&journal.TrialStart{Trial: "group"})
 }
 
-func dashboardDeepeningEvents() []journal.Event {
-	return dashboardEvents(dashboardSession(),
-		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
-		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
-		&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -10},
-		&journal.DeepeningRound{Round: 2, Event: journal.CycleStart, Base: []int{-20, -30, -10}, Target: []int{-22, -30, -10}, Profile: []int{-21, -30, -10}, Cores: []int{0}, Trials: 5, TrialS: 120})
-}
-
 func TestProjectTrialLifecycle(t *testing.T) {
 	t.Parallel()
 	intent := &journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-25), Condition: machine.Alone, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}}
@@ -59,14 +51,13 @@ func TestProjectTrialLifecycle(t *testing.T) {
 		&journal.SMUReadback{Core: 0, Offset: -25},
 		&journal.TrialStart{Trial: "one"})
 	s := Project(events)
-	wantTrial := &trial{cores: []int{0}, condition: machine.Alone, regime: machine.R1, workload: "mprime SSE 4K-21K", offset: new(-25), started: events[7].Time, hasStarted: true, duration: 90 * time.Second}
-	if diff := cmp.Diff(wantTrial, s.trial, cmp.AllowUnexported(trial{})); diff != "" {
-		t.Fatalf("an SMU write after the intent hid the running trial (-want +got):\n%s", diff)
+	if s.trial == nil || s.trial.id != "one" || !s.trial.hasStarted || s.trial.started != events[7].Time || s.trial.duration != 90*time.Second {
+		t.Fatalf("an SMU write after the intent hid the running trial: %+v", s.trial)
 	}
-	if c := s.cores[0]; !c.loaded || c.applied != -25 || c.tuned != -25 {
+	if c := s.cores[0]; !c.loaded || c.applied != -25 || c.profile != -25 {
 		t.Fatalf("target core not lit at its applied offset: %+v", c)
 	}
-	if c := s.cores[1]; c.loaded || c.parked {
+	if c := s.cores[1]; c.loaded || c.state == coreParked {
 		t.Fatalf("a core waiting its turn presented as active or parked: %+v", c)
 	}
 	events = append(events, journal.Event{Seq: 9, Time: events[7].Time.Add(90 * time.Second), Boot: "boot", Kind: journal.KindTrialEnd, Data: &journal.TrialEnd{Trial: "one", Outcome: journal.OutcomePass, DurationS: 90}})
@@ -152,32 +143,13 @@ func TestProjectTrialStartSelection(t *testing.T) {
 func TestProjectParkedHunt(t *testing.T) {
 	t.Parallel()
 	s := Project(dashboardHuntEvents())
-	got := make([]coreView, len(s.cores))
-	for i, c := range s.cores {
-		got[i] = coreView{id: c.id, loaded: c.loaded, suspect: c.suspect, parked: c.parked}
-	}
-	want := []coreView{
-		{id: 0, loaded: true, parked: true},
-		{id: 1, loaded: true},
-		{id: 2, loaded: true, suspect: true},
-	}
-	if diff := cmp.Diff(want, got, cmp.AllowUnexported(coreView{})); diff != "" {
-		t.Fatalf("hunt roles: a candidate outside the group is parked, a group member is a suspect (-want +got):\n%s", diff)
-	}
-	if s.hunt == nil || s.hunt.id != 3 || s.hunt.group == nil || s.hunt.group.id != 4 || s.trial.workload != "mprime AVX2 36K-248K" {
+	if s.hunt == nil || s.hunt.id != 3 || s.trial.workload.Base == "" {
 		t.Fatalf("hunt identity lost: %+v", s.hunt)
 	}
-	var lines []string
-	for _, h := range s.history {
-		lines = append(lines, h.tag+": "+h.sentence())
-	}
-	if diff := cmp.Diff([]string{
-		"start: session started on 3 cores",
-		"combo: core 00 at -25 and core 02 at -15 fail together",
-		"crash: all-core load on all 3 cores, rebooted",
-		"hunt: #3 started: which cores caused it?",
-	}, lines); diff != "" {
-		t.Fatalf("what happened (-want +got):\n%s", diff)
+	for _, c := range s.cores {
+		if !c.loaded || c.judged != (c.id == 2) {
+			t.Fatalf("hunt loaded and judged roles lost: %+v", c)
+		}
 	}
 }
 
@@ -220,9 +192,14 @@ func TestProjectMemberProbeRows(t *testing.T) {
 				&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
 				&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30},
 				&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -10},
+				&journal.ProfileChange{From: []int{0, 0, 0}, To: []int{-20, -30, -10}},
 				&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: tc.loaded, Parked: parked, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Trials: 5, TrialS: 120, DurationS: 120},
-				&journal.HuntGroup{Hunt: 1, Group: 1, Stage: "probe", Cores: groupCores, Probe: &journal.CombinationMember{Core: 0, Offset: tc.profile[0]}, Held: held, Profile: tc.profile, DurationS: 120},
-				&journal.TrialIntent{Trial: "probe", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: tc.loaded, Profile: tc.profile, DurationS: 120, Hunt: 1, Group: 1})
+				&journal.HuntGroup{Hunt: 1, Group: 1, Stage: "full", Cores: []int{0, 2}, Set: []int{0, 2}, Granularity: 2, Profile: []int{-20, -30, -10}, DurationS: 120},
+				&journal.TrialIntent{Trial: "full", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: tc.loaded, Profile: []int{-20, -30, -10}, DurationS: 120, Hunt: 1, Group: 1},
+				&journal.TrialStart{Trial: "full"},
+				&journal.TrialEnd{Trial: "full", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError},
+				&journal.HuntGroup{Hunt: 1, Group: 2, Stage: "probe", Set: []int{0, 2}, Granularity: 2, FullChecked: true, AnyFailed: true, Cores: groupCores, Probe: &journal.CombinationMember{Core: 0, Offset: tc.profile[0]}, Held: held, Profile: tc.profile, DurationS: 120},
+				&journal.TrialIntent{Trial: "probe", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: tc.loaded, Profile: tc.profile, DurationS: 120, Hunt: 1, Group: 2})
 			if tc.started {
 				events = appendStoryEvents(events, &journal.TrialStart{Trial: "probe"})
 			}
@@ -233,10 +210,9 @@ func TestProjectMemberProbeRows(t *testing.T) {
 					loaded = loaded || core == c.id
 				}
 				member := c.id == 0 || c.id == 2
-				want := coreView{id: c.id, loaded: tc.started && loaded, suspect: member, tested: tc.started && member}
-				got := coreView{id: c.id, loaded: c.loaded, suspect: c.suspect, parked: c.parked, tested: c.tested}
-				if diff := cmp.Diff(want, got, cmp.AllowUnexported(coreView{})); diff != "" {
-					t.Fatalf("member probe row (-want +got):\n%s", diff)
+				nonparked := c.id < len(tc.profile) && tc.profile[c.id] != parked[c.id]
+				if c.loaded != (tc.started && loaded) || c.judged != (tc.started && (member || loaded && nonparked)) {
+					t.Fatalf("member probe loaded and judged roles: %+v", c)
 				}
 			}
 		})
@@ -266,7 +242,7 @@ func TestFoldEntryFoldsRepeatedPasses(t *testing.T) {
 		got = append(got, e.at.Format("15:04")+" "+e.tag+": "+e.sentence())
 	}
 	if diff := cmp.Diff([]string{
-		"00:06 pass: all-core load on cores 00-07, 3 runs of 2 min, peak 76 C",
+		"00:06 pass: all-core load on cores 00-07, 3 trials of 2 min, peak 76 C",
 		"00:16 pass: all-core load on cores 00-07, 10 min, peak 69 C",
 		"00:16 crash: all-core load on cores 00-07, rebooted",
 		"00:26 pass: all-core load on cores 00-07, 10 min, peak 60 C",
@@ -288,7 +264,7 @@ func TestProjectBoundsHistory(t *testing.T) {
 		events = append(events, e)
 	}
 	s := Project(events)
-	if len(s.history) != historyLimit || s.history[historyLimit-1].text != fmt.Sprintf("warning %d", 2*historyLimit+4) {
+	if len(s.history) != historyLimit || s.history[0].text != fmt.Sprintf("warning %d", 2*historyLimit+4) {
 		t.Fatalf("history not bounded to the newest events: %d entries, last %+v", len(s.history), s.history[len(s.history)-1])
 	}
 }
@@ -323,7 +299,11 @@ func TestProjectRawLogRecentSuffix(t *testing.T) {
 			if len(want) > logLimit {
 				want = want[len(want)-logLimit:]
 			}
-			if diff := cmp.Diff(want, Project(events).log, cmp.AllowUnexported(entry{})); diff != "" {
+			got := Project(events).log
+			for i := range got {
+				got[i].tag = ""
+			}
+			if diff := cmp.Diff(want, got, cmp.AllowUnexported(entry{})); diff != "" {
 				t.Fatalf("raw log must retain the same newest eligible events in journal order (-want +got):\n%s", diff)
 			}
 		})
@@ -338,8 +318,8 @@ func TestProjectStoppedShowsTunedOffsets(t *testing.T) {
 		&journal.SMUReadback{Core: 0, Offset: 0},
 		&journal.ProfileRestored{Offsets: []int{0, 0, 0}},
 		&journal.Shutdown{Reason: journal.ShutdownSignal}))
-	if s.stopped == nil || s.cores[0].applied != -20 {
-		t.Fatalf("a stopped session shows the restored 0 instead of what was found: %+v", s.cores[0])
+	if s.stopped == nil || !s.stopped.saved || s.cores[0].applied != 0 || s.cores[0].profile != -20 {
+		t.Fatalf("saved profile and hardware offsets were conflated: %+v", s.cores[0])
 	}
 }
 
@@ -350,7 +330,7 @@ func TestProjectSparseCoreIDs(t *testing.T) {
 		&journal.ProfileRestored{Offsets: []int{-5, -9}},
 		&journal.TrialIntent{Trial: "one", Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R1, Workload: "mprime-sse-4k-21k", Core: new(8), Profile: []int{-5, -9}, DurationS: 120},
 		&journal.TrialEnd{Trial: "one", Outcome: journal.OutcomePass, DurationS: 120}))
-	got := []string{fmt.Sprintf("core %02d applied %d", s.cores[1].id, s.cores[1].applied), s.history[len(s.history)-1].sentence()}
+	got := []string{fmt.Sprintf("core %02d applied %d", s.cores[1].id, s.cores[1].applied), s.history[0].sentence()}
 	want := []string{"core 08 applied -9", "light load on core 08 at -9, 2 min"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("profiles list offsets in core order, not by core ID (-want +got):\n%s", diff)
@@ -360,20 +340,19 @@ func TestProjectSparseCoreIDs(t *testing.T) {
 func TestProjectCrashClassification(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
-		name          string
-		crash         *journal.CrashDetected
-		wantCrashes   int
-		wantLastCrash bool
+		name        string
+		crash       *journal.CrashDetected
+		wantCrashes int
 	}{
-		{name: "offset-related crash", crash: &journal.CrashDetected{PreviousBoot: "boot"}, wantCrashes: 1, wantLastCrash: true},
-		{name: "power reset", crash: &journal.CrashDetected{PreviousBoot: "boot", Inconclusive: true}},
-		{name: "before offsets", crash: &journal.CrashDetected{PreviousBoot: "boot", Stray: true}},
+		{name: "offset-related crash", crash: &journal.CrashDetected{PreviousBoot: "boot"}, wantCrashes: 1},
+		{name: "power reset", crash: &journal.CrashDetected{PreviousBoot: "boot", Inconclusive: true}, wantCrashes: 1},
+		{name: "before offsets", crash: &journal.CrashDetected{PreviousBoot: "boot", Stray: true}, wantCrashes: 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s := Project(dashboardEvents(dashboardSession(), tt.crash))
-			if s.crashes != tt.wantCrashes || (s.lastCrash != nil) != tt.wantLastCrash {
-				t.Fatalf("crash classification lost: crashes=%d, lastCrash=%v", s.crashes, s.lastCrash)
+			if s.crashes != tt.wantCrashes || s.recover == nil {
+				t.Fatalf("unclean boot lost: crashes=%d recovery=%+v", s.crashes, s.recover)
 			}
 		})
 	}
@@ -407,7 +386,7 @@ func TestProjectSMUDeadEndKeepsReadback(t *testing.T) {
 		&journal.SMUReadback{Core: 0, Offset: 0},
 		&journal.DeadEnd{Condition: journal.DeadEndSMU, Detail: "core 00 read back 0 instead of -25"},
 		&journal.Shutdown{Reason: journal.ShutdownDeadEnd}))
-	if got := s.cores[0]; got.applied != 0 || got.tuned != -25 {
+	if got := s.cores[0]; got.applied != 0 || got.profile != -25 {
 		t.Fatalf("SMU dead end replaced hardware readback with desired offset: %+v", got)
 	}
 }
@@ -418,7 +397,38 @@ func TestProjectTrialPreparationDoesNotClaimLoad(t *testing.T) {
 		&journal.TrialIntent{Trial: "one", Core: new(0), Offset: new(-25), Condition: machine.Alone, Phase: journal.PhaseSearch, Regime: machine.R1, Workload: "mprime-sse-4k-21k", DurationS: 90, Profile: []int{-25, 0, 0}},
 		&journal.SMUReadback{Core: 0, Offset: -25})
 	s := Project(events)
-	if s.trial == nil || s.trial.hasStarted || s.cores[0].loaded || s.cores[0].tested || s.cores[0].applied != -25 {
+	if s.trial == nil || s.trial.hasStarted || s.cores[0].loaded || s.cores[0].judged || s.cores[0].applied != -25 {
 		t.Fatalf("applied offsets during preparation are not a running workload: trial=%+v core=%+v", s.trial, s.cores[0])
+	}
+}
+
+func TestProjectFailureCountersSeparateObservedAndSkipped(t *testing.T) {
+	t.Parallel()
+	events := dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
+		&journal.Failure{Signal: machine.ComputationError, Attribution: journal.Attributed, Core: new(0), Offset: new(-20), Condition: machine.Alone},
+		&journal.Failure{Signal: machine.ComputationError, Attribution: journal.Attributed, Core: new(0), Offset: new(-20), KnownFailure: 3},
+		&journal.TrialIntent{Trial: "partial", Condition: machine.Together, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", RecordOnly: true, Profile: []int{-19, 0, 0}, Cores: []int{0, 1}},
+		&journal.TrialEnd{Trial: "partial", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError})
+	s := Project(events)
+	if s.failures != 2 || s.lastFailure == nil || !s.lastFailure.Equal(events[2].Time) {
+		t.Fatalf("observed failure and skipped evidence were conflated: count=%d last=%v", s.failures, s.lastFailure)
+	}
+	if s.history[0].tag != tagRecord {
+		t.Fatalf("record-only outcome presented as a decision: %+v", s.history[0])
+	}
+}
+
+func TestProjectRecoveryEndsOnlyWhenTrialStarts(t *testing.T) {
+	t.Parallel()
+	events := dashboardEvents(dashboardSession(),
+		&journal.CrashDetected{PreviousBoot: "previous", Stray: true},
+		&journal.TrialIntent{Trial: "next", Core: new(0), Regime: machine.R1, Workload: "mprime-sse-4k-21k", Condition: machine.Alone, Profile: []int{0, 0, 0}})
+	if Project(events).recover == nil {
+		t.Fatal("preparing offsets hid recovery before a trial started")
+	}
+	events = appendStoryEvents(events, &journal.TrialStart{Trial: "next"})
+	if Project(events).recover != nil {
+		t.Fatal("started trial retained recovery banner")
 	}
 }

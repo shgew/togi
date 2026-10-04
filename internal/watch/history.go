@@ -20,16 +20,6 @@ var regimeWords = map[machine.Regime]string{
 	machine.R7: "all-core load",
 }
 
-var regimeExplained = map[machine.Regime]string{
-	machine.R1: "one thread of light work, which lets a core boost highest",
-	machine.R2: "one thread of heavy vector math, which draws the most current",
-	machine.R3: "a load switched on and off in bursts, so the voltage has to follow sudden swings",
-	machine.R4: "a load that runs only part of the time",
-	machine.R5: "work on both threads of a core at once",
-	machine.R6: "the machine mostly idle, with short bursts, the way it sits on a desktop",
-	machine.R7: "heavy work on many cores at once, for power and heat",
-}
-
 var signalWords = map[machine.Signal]string{
 	machine.ComputationError: "wrong result",
 	machine.UnexpectedExit:   "the stress program quit",
@@ -47,14 +37,14 @@ const (
 	tagFail    = "fail"
 	tagCrash   = "crash"
 	tagUnclear = "unclear"
-	tagCause   = "cause"
+	tagCause   = "fail"
 	tagSkip    = "skip"
 	tagReset   = "reset"
-	tagSearch  = "search"
+	tagSearch  = "step"
 	tagLimit   = "limit"
-	tagDeeper  = "deeper"
+	tagDeeper  = "room"
 	tagBackoff = "backoff"
-	tagYield   = "yield"
+	tagYield   = "room"
 	tagCycle   = "cycle"
 	tagHunt    = "hunt"
 	tagCombo   = "combo"
@@ -63,6 +53,11 @@ const (
 	tagMCE     = "mce"
 	tagNote    = "note"
 	tagWidth   = 7
+	tagRecord  = "record"
+	tagGroup   = "group"
+	tagProbe   = "probe"
+	tagConfirm = "confirm"
+	tagResume  = "resume"
 )
 
 func signalText(sig machine.Signal) string {
@@ -79,6 +74,11 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 	switch d := e.Data.(type) {
 	case *journal.SessionStart:
 		line.tag, line.text = tagStart, fmt.Sprintf("session started on %d cores", len(d.Cores))
+	case *journal.ConfigLoaded:
+		if p.configs < 2 {
+			return entry{}, false
+		}
+		line.tag, line.text = tagResume, "session resumed"
 	case *journal.TrialEnd:
 		return p.trialEnd(line, d, e.Cause)
 	case *journal.Failure:
@@ -105,6 +105,25 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 		line.tag, line.text, line.tone = cycleText(d)
 	case *journal.HuntStart:
 		line.tag, line.text, line.tone = tagHunt, fmt.Sprintf("#%d started: which cores caused it?", d.Hunt), warnTone
+	case *journal.HuntGroup:
+		if !d.Skipped && d.Inferred == "" {
+			return entry{}, false
+		}
+		line.tag, line.text, line.tone = tagGroup, fmt.Sprintf("H%d G%d: %s at failing offsets; the rest parked", d.Hunt, d.Group, coreList(d.Cores)), huntTone
+		if d.Probe != nil {
+			line.tag, line.text = tagProbe, fmt.Sprintf("H%d G%d: core %02d at %d; %s held", d.Hunt, d.Group, d.Probe.Core, d.Probe.Offset, membersText(d.Held, n))
+		}
+		if d.Skipped {
+			line.tag, line.text = tagSkip, vtText(d.Reason)
+		} else {
+			line.text += "; " + vtText(d.Inferred) + " from carried trials"
+			if d.Probe == nil {
+				line.tag, line.text, line.tone = tagSkip, vtText(d.Inferred)+" from carried trials", plainTone
+				line.hunt, line.firstGroup, line.lastGroup = d.Hunt, d.Group, d.Group
+			}
+		}
+	case *journal.CheckingStep:
+		line.tag, line.text = tagSearch, fmt.Sprintf("cycle %d step %d started", d.Cycle, d.Step)
 	case *journal.HuntEnd:
 		line.tag, line.text, line.tone = huntEndText(d)
 	case *journal.HuntSkipped:
@@ -116,7 +135,7 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 		} else {
 			text += " fail together"
 		}
-		line.tag, line.text, line.tone = tagCombo, text, warnTone
+		line.tag, line.text, line.tone = tagCombo, text, comboTone
 	case *journal.DeepeningRound:
 		line.tag, line.text, line.tone = p.roundText(d)
 	case *journal.DeadEnd:
@@ -152,6 +171,12 @@ func (p *projector) trialEnd(line entry, d *journal.TrialEnd, cause []int) (entr
 			return entry{}, false
 		}
 		what = p.trialWhat(in)
+		if in.Hunt > 0 {
+			what = fmt.Sprintf("hunt %d group %d: %s", in.Hunt, in.Group, what)
+		}
+		if in.RecordOnly {
+			line.runs, line.each, line.peak = 1, time.Duration(d.DurationS)*time.Second, d.TctlMaxC
+		}
 	} else {
 		what = "trial " + vtText(d.Trial)
 	}
@@ -159,6 +184,9 @@ func (p *projector) trialEnd(line entry, d *journal.TrialEnd, cause []int) (entr
 	case journal.OutcomePass:
 		line.tag, line.text, line.tone = tagPass, what, goodTone
 		line.runs, line.each, line.peak = 1, time.Duration(d.DurationS)*time.Second, d.TctlMaxC
+		if in != nil && in.RecordOnly {
+			line.tag, line.text, line.tone = tagRecord, what+", passed (record only)", plainTone
+		}
 	case journal.OutcomeFailure:
 		recorded := ""
 		if in != nil && in.RecordOnly {
@@ -180,6 +208,9 @@ func (p *projector) trialEnd(line entry, d *journal.TrialEnd, cause []int) (entr
 				tone = warnTone
 			}
 			line.tag, line.text, line.tone = tagFail, what+", "+signalText(d.Signal)+recorded, tone
+			if recorded != "" {
+				line.tag, line.tone = tagRecord, plainTone
+			}
 		}
 	case journal.OutcomeInconclusive:
 		reason := "it could not run"
@@ -194,7 +225,7 @@ func (p *projector) trialEnd(line entry, d *journal.TrialEnd, cause []int) (entr
 func failureText(d *journal.Failure) (string, string, tone) {
 	switch {
 	case d.KnownFailure != 0:
-		return tagSkip, "this test already failed at these offsets, acting on that", warnTone
+		return tagSkip, "this trial already failed at these offsets, acting on that", warnTone
 	case d.Attribution == journal.Attributed && d.Core != nil && d.Offset != nil:
 		return tagCause, fmt.Sprintf("core %02d fails at %d", *d.Core, *d.Offset), warnTone
 	case d.Trial == "" && d.Signal != machine.Crash:
@@ -203,30 +234,12 @@ func failureText(d *journal.Failure) (string, string, tone) {
 	return "", "", plainTone
 }
 
-// trialLabel names a trial's workload; all-core runs use their base workload's name.
-func trialLabel(in *journal.TrialIntent) string {
-	if in.Regime == machine.R7 {
-		return baseLabel(in.Workload)
-	}
-	return workloadLabel(in.Workload)
-}
-
-// baseLabel names a workload by the R1 or R2 workload it derives from, so an all-core run is not labelled twice.
-func baseLabel(id string) string {
-	if w, ok := machine.WorkloadByID(id); ok && w.Base != "" {
-		if b, ok := machine.WorkloadByID(w.Base); ok {
-			return b.Label
-		}
-	}
-	return workloadLabel(id)
-}
-
 func decisionText(d *journal.TunerDecision) (string, string, tone) {
 	switch d.Decision {
 	case journal.StepDeeper:
 		return tagSearch, fmt.Sprintf("core %02d passed %d, next %d", d.Core, d.FromOffset, d.ToOffset), plainTone
 	case journal.CheckSoloLimit:
-		return tagSearch, fmt.Sprintf("core %02d confirming %d as its solo limit", d.Core, d.ToOffset), plainTone
+		return tagConfirm, fmt.Sprintf("core %02d confirming %d as its solo limit", d.Core, d.ToOffset), plainTone
 	case journal.Deepen:
 		return tagDeeper, fmt.Sprintf("core %02d %d → %d", d.Core, d.FromOffset, d.ToOffset), goodTone
 	case journal.Yield:
@@ -384,14 +397,21 @@ func duration(d time.Duration) string {
 	return hm(d)
 }
 
-// sentence is the line as the screen shows it: a pass names how many runs it folds and the hottest Tctl they reached.
+// sentence includes the number of merged trials and their hottest Tctl.
 func (e entry) sentence() string {
-	if e.tag != tagPass {
+	if e.tag == tagSkip && e.firstGroup > 0 {
+		groups := fmt.Sprintf("group %d", e.firstGroup)
+		if e.lastGroup > e.firstGroup {
+			groups = fmt.Sprintf("groups %d-%d", e.firstGroup, e.lastGroup)
+		}
+		return fmt.Sprintf("hunt %d %s: %s", e.hunt, groups, e.text)
+	}
+	if e.tag != tagPass && e.tag != tagRecord {
 		return e.text
 	}
 	text := e.text + ", " + duration(e.each)
 	if e.runs > 1 {
-		text = fmt.Sprintf("%s, %d runs of %s", e.text, e.runs, duration(e.each))
+		text = fmt.Sprintf("%s, %d trials of %s", e.text, e.runs, duration(e.each))
 	}
 	if e.peak != nil {
 		text += fmt.Sprintf(", peak %d C", *e.peak)
