@@ -17,4 +17,4 @@ Flake checks stay hermetic. No host Go build cache (`GOCACHE`), module cache or 
 
 ## Consequences
 
-A Go change that affects a check's inputs rebuilds it from a cold Go cache. Local speed comes instead from `just gate`, which runs every non-VM check from the dev shell with warm caches, and narrower check sources: the VM tests take only shipped source, so changes to tests, tools or the simulator reuse their cached result.
+A Go change that affects a check's inputs rebuilds it from a cold Go cache. Local speed comes instead from recipes such as `just gate`, which run from the dev shell with warm caches and claim less than `just check`, and from check sources narrowed to what each check needs, so a change reuses every check whose source it does not touch.
