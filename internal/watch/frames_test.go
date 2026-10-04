@@ -58,7 +58,8 @@ var sessionJournal = sync.OnceValues(func() ([]journal.Event, error) {
 	return simulate(m, config.Default(), nil)
 })
 
-// probeMachine fails together only through a combination of cores 03 and 11, so its hunt probes members.
+// probeMachine fails together only through a combination of cores 03 and 11 in R6, where a failure naming no core
+// still starts a hunt, so its hunt probes members.
 func probeMachine() (*sim.Machine, config.Config, error) {
 	model := sim.DefaultModel()
 	model.PastLimitRate = 1
@@ -71,7 +72,7 @@ func probeMachine() (*sim.Machine, config.Config, error) {
 	}
 	m, err := sim.New(sim.Config{
 		Seed: 1, Cores: 16, Limits: limits, Model: &model,
-		Joints: []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}},
+		Joints: []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R6}, Rate: 10}},
 	})
 	cfg := config.Default()
 	cfg.CandidateSoloLimits = make(map[int]int, 16)

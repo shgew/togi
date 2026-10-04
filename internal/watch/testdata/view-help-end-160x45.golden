@@ -1,11 +1,8 @@
-  togi   04:51:10   session 4h51m   7 failures · 7 crashes   last observed failure 04:50, a moment ago
+  togi   08:22:00   session 8h22m   8 failures · 8 crashes   last observed failure 08:22   screen paused until 08:24
 
-  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14, part 2  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 7 of 14  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0
 
-  │               they must; every move is checked.
-  │ 
-  │ CLEAN CYCLES  The goal: a passed full cycle with every core at its limit and nothing left to deepen. Counted for the current profile; cycles repeat until
-  │               stopped.
+  │               the current profile; cycles repeat until stopped.
   │ 
   │ R6            During idle trials this screen holds still, clock included, so it cannot wake the cores.
   │ 
@@ -15,18 +12,21 @@
   │ 
   │ WORDS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   │ 
-  │ offset         Curve Optimizer counts, 0 to -50; deeper is more negative
-  │ trial          one launch of one workload; evidence is counted in trials
-  │ solo limit     the deepest offset a core confirmed under load alone
-  │ failure point  the shallowest offset where a core failed on its own account
-  │ combination    offsets at which a group of cores failed together; the profile is kept from reaching all of them at once. Unresolved: no smaller group was
-  │                shown to fail
-  │ at its limit   -50, or one count deeper reaches a failure point or combination
-  │ has room       one count deeper reaches neither; deepening may take it
-  │ suspect        a core a hunt keeps at its failing offset
-  │ parked         a core a hunt holds shallower: at its last passed full-cycle offset raised to the failing profile, or 0
-  █ record only    a partial R7 load whose result is kept but changes no decision
-  █ cycle          one pass through the checking schedule
+  │ offset           Curve Optimizer counts, 0 to -50; deeper is more negative
+  │ trial            one launch of one workload; evidence is counted in trials
+  │ solo limit       the deepest offset a core confirmed under load alone
+  │ failure point    the shallowest offset where a core failed on its own account
+  │ combination      offsets at which a group of cores failed together; the profile is kept from reaching all of them at once. Unresolved: no smaller group
+  │                  was shown to fail
+  │ at its limit     -50, or one count deeper reaches a failure point or combination
+  │ has room         one count deeper reaches neither; deepening may take it
+  │ suspect          a core a hunt keeps at its failing offset
+  │ parked           a core a hunt holds shallower: at its last passed full-cycle offset raised to the failing profile, or 0
+  │ partial part     R7 with top-requester groups idle, down to two loaded cores; passes and failures count as ordinary evidence
+  │ top requester    loaded core with the highest voltage request; both CCDs share it. Within 1 mV ties; offset order is a fallback, not a measurement
+  │ self-sufficient  observed passing as top requester for this R7 workload at equal or deeper offsets since reset; evidence, not a guarantee
+  █ record only      a trial whose result is kept but changes no decision
+  █ cycle            one pass through the checking schedule
   █ 
   █ 
   █ KINDS OF LOAD ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

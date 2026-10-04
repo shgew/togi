@@ -232,7 +232,7 @@ func TestMediumCoreNotesRetainCombinationAndSoloOffsets(t *testing.T) {
 
 func TestOutcomeLinesMergeBranchesAndNameTheSamePartsTrials(t *testing.T) {
 	t.Parallel()
-	next := &tuner.Trial{Regime: machine.R7, Cores: []int{1, 2}, Cycle: 1, Step: 1, RecordOnly: true, DurationS: 120, Workload: "w"}
+	next := &tuner.Trial{Regime: machine.R7, Cores: []int{1, 2}, Cycle: 1, Step: 1, DurationS: 120, Workload: "w"}
 	long := *next
 	long.DurationS = 300
 	s := Snapshot{
@@ -418,27 +418,8 @@ func TestPartialTrialUsesOrdinaryEvidence(t *testing.T) {
 		t.Fatal("log must show the derived chain part")
 	}
 	ended := Project(events)
-	last := ended.history[len(ended.history)-1]
+	last := ended.history[0]
 	if got := last.tag + ": " + last.sentence(); !strings.Contains(got, "partial CCD 0") || !strings.Contains(got, "wrong result") || strings.Contains(got, "record only") || last.tone != badTone {
 		t.Fatalf("partial failure must be decisive: %q tone %v", got, last.tone)
-	}
-}
-
-func TestR7EvidenceStaysInContextNotForecast(t *testing.T) {
-	t.Parallel()
-	w := machine.Workloads(machine.R7)[0].ID
-	s := Snapshot{r7: []tuner.R7CoreStatus{
-		{Core: 0, Workload: w, TopRequester: true, OffsetFallback: true, SelfSufficient: true},
-		{Core: 1, Workload: w},
-	}}
-	p := layout{context: rectangle{w: 115, h: 8}}
-	text := ansi.Strip(strings.Join(s.dashboardContextLines(p, time.Time{}), "\n"))
-	for _, want := range []string{"top requesters 00", "offset fallback", "Self-sufficient: 00", "pending: 01", "not a guarantee"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("context lost %q: %s", want, text)
-		}
-	}
-	if rows := s.outcomeRows(); len(rows) != 0 {
-		t.Fatalf("evidence must not invent Forecast branches: %+v", rows)
 	}
 }

@@ -82,7 +82,7 @@ func (r *requirementRecorder) Fold(e journal.Event) {
 		if in.Cycle > 0 {
 			plan := r.t.CyclePlan()
 			if part, ok := cyclePartOf(plan, in.Cycle, in.Step, trialCores(in)); ok {
-				r.counts[d.Trial] = partCount(part, in.RecordOnly)
+				r.counts[d.Trial] = partCount(part)
 			}
 			step := in.Step
 			if step == 0 && plan.Number == in.Cycle {
@@ -124,13 +124,9 @@ func cyclePartOf(plan tuner.CyclePlan, cycle, step int, cores []int) (tuner.Cycl
 	return tuner.CyclePart{}, false
 }
 
-// partCount is which trial of its part the next trial is: record-only parts count failures as done, other parts
-// need passes.
-func partCount(part tuner.CyclePart, recordOnly bool) trialCount {
+// partCount is which trial of its part the next trial is: only passes count toward a part.
+func partCount(part tuner.CyclePart) trialCount {
 	done := part.Passed
-	if recordOnly {
-		done += part.Failed
-	}
 	of := part.Short + part.Long
 	return trialCount{min(done+1, max(of, 1)), of}
 }
@@ -358,7 +354,7 @@ func (p *projector) cyclePlan(cp tuner.CyclePlan) {
 	}
 	s.cycle = &cycleView{number: cp.Number, open: cp.Open, current: cp.Current, paused: cp.Paused}
 	for i, step := range cp.Steps {
-		v := cycleStep{regime: step.Regime, workload: step.Workload, done: step.Done, hunts: p.checkHunts[[2]int{cp.Number, i + 1}]}
+		v := cycleStep{regime: step.Regime, workload: step.Workload, done: step.Done, more: !step.ChainsComplete, hunts: p.checkHunts[[2]int{cp.Number, i + 1}]}
 		for _, part := range step.Parts {
 			v.parts = append(v.parts, cyclePart{cores: part.Cores, ccd: part.CCD, full: part.Full, short: part.Short, shortLen: time.Duration(part.ShortS) * time.Second, long: part.Long, longLen: time.Duration(part.LongS) * time.Second, passed: part.Passed, failed: part.Failed, running: part.Running, done: part.Done})
 		}
@@ -388,7 +384,7 @@ func (p *projector) placeInCycle(tr *trialView) {
 		parts := g.steps[step].parts
 		part := parts[index]
 		tr.step, tr.part, tr.parts = step+1, index+1, len(parts)
-		count := partCount(tuner.CyclePart{Short: part.short, Long: part.long, Passed: part.passed, Failed: part.failed}, part.recordOnly)
+		count := partCount(tuner.CyclePart{Short: part.short, Long: part.long, Passed: part.passed, Failed: part.failed})
 		tr.passed, tr.index, tr.of = part.passed, count.index, count.of
 	}
 	for i, step := range g.steps {
@@ -652,7 +648,7 @@ func (p *projector) forecasts(forecast tuner.ForecastPlan) {
 		case tuner.IfInconclusive:
 			pr = ifInconclusive
 		}
-		o := outcome{premise: pr, passes: b.Passes, decisions: b.Decisions, next: atStep(b.Next, b.NextStep), core: b.Core, needsRanking: b.NeedsRanking, needsHistory: b.NeedsHistory}
+		o := outcome{premise: pr, passes: b.Passes, decisions: b.Decisions, next: atStep(b.Next, b.NextStep), core: b.Core, needsRanking: b.NeedsRanking, needsHistory: b.NeedsHistory, withoutTelemetry: b.WithoutTelemetry}
 		if pr == ifNamed {
 			// The tuner follows a core away from 0 first, then a core at 0 whose failure ends differently.
 			o.atZero = named

@@ -176,7 +176,7 @@ func TestCarriedIdleFailureCauseIsNotATrial(t *testing.T) {
 
 func TestStoryPartialExplainsOrdinaryEvidence(t *testing.T) {
 	t.Parallel()
-	s := Snapshot{trial: &trialView{hasStarted: true, regime: machine.R7, condition: machine.Together, cycle: 1, step: 1, partial: true, cores: []int{1}, parts: 2}}
+	s := Snapshot{session: true, trial: &trialView{hasStarted: true, regime: machine.R7, condition: machine.Together, cycle: 1, step: 1, partial: true, cores: []int{1}, parts: 2}}
 	st := s.story(time.Time{})
 	text := strings.Join(st.lines, "\n")
 	for _, want := range []string{"top-requester groups", "when the part starts", "even if offsets change", "Passes and failures count as ordinary evidence"} {

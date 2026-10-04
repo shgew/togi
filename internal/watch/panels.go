@@ -66,23 +66,38 @@ func (s Snapshot) contextLines(p layout, now time.Time) []string {
 	if len(s.turns) > 0 {
 		return s.turnLines(t, w, p.class)
 	}
-	if s.phase == journal.PhaseDeepening && s.deepen != nil {
-		return s.deepenLines(t, w)
+	r7 := s.r7Lines(p)
+	room := p.context.h
+	if len(r7) > 0 {
+		room -= len(r7) + 1
 	}
 	var out []string
-	if s.cycle != nil {
-		out = s.cycleLines(t, w, p.class)
-	}
-	if len(s.combos) > 0 {
-		if len(out) > 0 {
-			out = append(out, "")
+	if s.phase == journal.PhaseDeepening && s.deepen != nil {
+		out = s.deepenLines(t, w)
+	} else {
+		if s.cycle != nil {
+			out = s.cycleLines(t, w, p.class, room)
 		}
-		out = append(out, s.combinationLines(t, w, p.class)...)
+		if len(s.combos) > 0 {
+			if len(out) > 0 {
+				out = append(out, "")
+			}
+			out = append(out, s.combinationLines(t, w, p.class)...)
+		}
 	}
-	return out
+	if len(r7) == 0 {
+		return out
+	}
+	out = out[:min(len(out), max(room, 0))]
+	if len(out) > 0 {
+		out = append(out, "")
+	}
+	return append(out, r7...)
 }
 
-func (s Snapshot) cycleLines(t tables, width int, class sizeClass) []string {
+// cycleLines keeps the running part, or else the current step, within height rows: it leaves out the rows above it
+// from the top, then the blank under the rule.
+func (s Snapshot) cycleLines(t tables, width int, class sizeClass, height int) []string {
 	g := s.cycle
 	done := 0
 	for _, step := range g.steps {
@@ -91,8 +106,11 @@ func (s Snapshot) cycleLines(t tables, width int, class sizeClass) []string {
 		}
 	}
 	out := []string{rule(width, grey.Render(fmt.Sprintf("CYCLE %d", g.number)), grey.Render(fmt.Sprintf("%d steps · %d done", len(g.steps), done))), ""}
+	keep := []int{0}
+	focus := -1
 	scheduleShown := t.cycle[5].w > 0
 	if class != compactLayout {
+		keep = append(keep, len(out))
 		out = append(out, tableRow(t.cycle, "", grey.Render("#"), grey.Render("kind"), grey.Render("where"), grey.Render("workload"), grey.Render("schedule"), grey.Render("result")))
 	}
 	for i, step := range g.steps {
@@ -124,12 +142,39 @@ func (s Snapshot) cycleLines(t tables, width int, class sizeClass) []string {
 			where = schedule
 		}
 		kind := code.Render(string(step.regime)) + style.Render(" "+kindWords(step.regime))
+		if i == g.current && !step.done {
+			keep, focus = append(keep, len(out)), len(out)
+		}
 		out = append(out, tableRow(t.cycle, marker, style.Render(fmt.Sprintf("%2d", i+1)), kind, style.Render(where), grey.Render(workloadDisplay(step.workload)), style.Render(schedule), result))
 		if i == g.current && !step.done {
-			out = append(out, s.cyclePartLines(t, step, class)...)
+			for j, line := range s.cyclePartLines(t, step) {
+				if j < len(step.parts) && step.parts[j].running {
+					focus = len(out)
+				}
+				out = append(out, line)
+			}
 		}
 	}
-	return out
+	excess := focus + 1 - height
+	if excess <= 0 {
+		return out
+	}
+	drop := map[int]bool{}
+	for i := 2; i < focus && len(drop) < excess; i++ {
+		if !slices.Contains(keep, i) {
+			drop[i] = true
+		}
+	}
+	if len(drop) < excess {
+		drop[1] = true
+	}
+	fitted := make([]string, 0, len(out)-len(drop))
+	for i, line := range out {
+		if !drop[i] {
+			fitted = append(fitted, line)
+		}
+	}
+	return fitted
 }
 
 // stepPosition is where the running step is: its part, or its trial when it has one part.
@@ -160,25 +205,31 @@ func firstOpenPart(step cycleStep) int {
 	return 0
 }
 
-func (s Snapshot) cyclePartLines(t tables, step cycleStep, class sizeClass) []string {
+func (s Snapshot) cyclePartLines(t tables, step cycleStep) []string {
 	var out []string
-	if len(step.parts) == 1 && !step.parts[0].recordOnly {
+	if len(step.parts) == 1 && !step.more {
 		return nil
 	}
+	partials := false
 	for j, part := range step.parts {
 		marker, style, faint := "", textStyle, grey
 		if part.running {
 			marker, style, faint = stageMarker("►"), white, white
 		}
 		where := coreIDs(part.cores)
-		if part.recordOnly && class == wideLayout {
-			where += " · record only"
-		}
 		tree := "├"
-		if j == len(step.parts)-1 {
+		if j == len(step.parts)-1 && !step.more {
 			tree = "└"
 		}
+		partials = partials || !part.full
 		out = append(out, tableRow(t.cycle, marker, "", track.Render(tree)+" "+style.Render(partName(step.regime, part)), style.Render(where), "", faint.Render(partSchedule(part)), s.partResult(part)))
+	}
+	if step.more {
+		pending := "partials may follow"
+		if partials {
+			pending = "more partials may follow"
+		}
+		out = append(out, tableRow(t.cycle, "", "", track.Render("└")+" "+grey.Render(pending)))
 	}
 	return out
 }
@@ -201,14 +252,6 @@ func (s Snapshot) partResult(part cyclePart) string {
 	switch {
 	case part.running && s.trial != nil && s.trial.of > 0:
 		return lit.Render(fmt.Sprintf("trial %d of %d", s.trial.index, s.trial.of))
-	case part.recordOnly && part.failed > 0:
-		out := grey.Render("recorded: ")
-		if part.passed > 0 {
-			out += grey.Render(fmt.Sprintf("%d passed, ", part.passed))
-		}
-		return out + red.Render(fmt.Sprintf("%d failed", part.failed))
-	case part.recordOnly && part.passed > 0:
-		return grey.Render(fmt.Sprintf("recorded: %d passed", part.passed))
 	case part.passed+part.failed == 0:
 		return ""
 	case part.failed > 0:
@@ -238,7 +281,11 @@ func partSchedule(p cyclePart) string {
 
 func stepSchedule(step cycleStep) (string, string) {
 	if step.regime == machine.R7 {
-		return fmt.Sprintf("%d CCDs · %d parts", countCCDs(step.parts), len(step.parts)), fmt.Sprintf("%d parts", len(step.parts))
+		parts := fmt.Sprint(len(step.parts))
+		if step.more {
+			parts += "+"
+		}
+		return fmt.Sprintf("%d CCDs · %s parts", countCCDs(step.parts), parts), parts + " parts"
 	}
 	where := "one core at a time"
 	if step.regime == machine.R6 {

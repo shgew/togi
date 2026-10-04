@@ -1,11 +1,11 @@
- togi   04:51:10   session 4h51m   7 failures · 7 crashes   last observed
- ■ SOLO ─ ○ CYCLE 1 paused at 1/14 ─ ►  HUNT 1   member 1 of 2 ─ ○ DEEPEN ─
+ togi  08:22:00  paused until 08:24  session 8h22m  8 failures · 8 crashes
+ ■ SOLO ─ ○ CYCLE 1 paused at 7/14 ─ ►  HUNT 1   member 1 of 2 ─ ○ DEEPEN ─
 
- │ parked         a core a hunt holds shallower: at its last passed full-cycle
- │                offset raised to the failing profile, or 0
- │ record only    a partial R7 load whose result is kept but changes no
- │                decision
- │ cycle          one pass through the checking schedule
+ │ self-sufficient  observed passing as top requester for this R7 workload at
+ │                  equal or deeper offsets since reset; evidence, not a
+ │                  guarantee
+ │ record only      a trial whose result is kept but changes no decision
+ │ cycle            one pass through the checking schedule
  │ 
  │ 
  │ KINDS OF LOAD ─────────────────────────────────────────────────────────────

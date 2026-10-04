@@ -703,6 +703,7 @@ type outcomeRow struct {
 	label, short, compact string
 	phrases               []phrase
 	style                 lipgloss.Style
+	basis                 string // where backoffs take top requesters from, when new telemetry could change them
 }
 
 // fitPhrases joins an outcome line's phrases with arrows, leaving out minor ones, then any but the first and the
@@ -757,17 +758,18 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 		phrases  []phrase
 		text     string
 		compact  string
+		basis    string
 		passes   int
 		zero     *int // the core at 0 a named branch follows, unless the group also holds the stand-in
 		standIn  bool // holds the named branch that stands in for every core away from 0
 	}
 	var groups []group
 	for _, branch := range s.outcomes {
-		phrases, compact := s.outcomeWords(branch)
+		phrases, compact, basis := s.outcomeWords(branch)
 		text := fitPhrases(phrases, 1<<20)
 		i := slices.IndexFunc(groups, func(g group) bool { return g.text == text })
 		if i < 0 {
-			groups = append(groups, group{phrases: phrases, text: text, compact: compact})
+			groups = append(groups, group{phrases: phrases, text: text, compact: compact, basis: basis})
 			i = len(groups) - 1
 		}
 		groups[i].premises = append(groups[i].premises, branch.premise)
@@ -829,7 +831,7 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 			}
 		}
 		label, short, style := premiseWords(g.premises, g.passes, t, who)
-		out = append(out, outcomeRow{label, short, g.compact, g.phrases, style})
+		out = append(out, outcomeRow{label, short, g.compact, g.phrases, style, g.basis})
 		if len(out) == outcomeRowLimit {
 			break
 		}
@@ -867,10 +869,15 @@ func premiseWords(premises []premise, passes int, t *trialView, who string) (str
 }
 
 // outcomeWords puts a branch's decisions in words, in the order the tuner records them, then the trial it runs next.
-func (s Snapshot) outcomeWords(branch outcome) ([]phrase, string) {
+// basis says where the decisions take top requesters from when the forecast end has no telemetry.
+func (s Snapshot) outcomeWords(branch outcome) (phrases []phrase, compact, basis string) {
 	t := s.trial
 	named := branch.premise == ifNamed
-	phrases := s.decisionPhrases(branch.decisions, named)
+	phrases = s.decisionPhrases(branch.decisions, named)
+	if branch.withoutTelemetry && len(phrases) > 0 {
+		basis = s.requestBasis()
+		phrases[len(phrases)-1].text += " " + basis
+	}
 	var shape huntShape
 	stepDone := false
 	for _, d := range branch.decisions {
@@ -892,7 +899,6 @@ func (s Snapshot) outcomeWords(branch outcome) ([]phrase, string) {
 	if t != nil && t.recordOnly && len(phrases) == 0 && branch.premise != ifInconclusive {
 		phrases = append(phrases, phrase{"recorded only, moves nothing", false})
 	}
-	compact := ""
 	for _, d := range branch.decisions {
 		switch d := d.(type) {
 		case *journal.DeadEnd:
@@ -942,7 +948,7 @@ func (s Snapshot) outcomeWords(branch outcome) ([]phrase, string) {
 	if next != "" {
 		phrases = append(phrases, phrase{next, false})
 	}
-	return phrases, "→ " + compact
+	return phrases, "→ " + compact, basis
 }
 
 // compactNext shortens what comes next to its position: "part 2: 08-15", "part 4: core 09", "group 8", "step 3".

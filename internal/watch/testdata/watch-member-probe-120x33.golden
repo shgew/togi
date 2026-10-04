@@ -1,32 +1,32 @@
- togi   04:51:10   session 4h51m   7 failures · 7 crashes   last observed failure 04:50, a moment ago
- ■ SOLO ─ ○ CYCLE 1 paused at 1/14 ─ ►  HUNT 1   member 1 of 2 ─ ○ DEEPEN ─ CLEAN 0
+ togi  08:22:00  paused until 08:24  session 8h22m  8 failures · 8 crashes
+ ■ SOLO ─ ○ CYCLE 1 paused at 7/14 ─ ►  HUNT 1   member 1 of 2 ─ ○ DEEPEN ─ CLEAN 0
 
  ▌  Probing members of 03 11: core 03 at -9.
 
-  R7   all-core load  on 00-07 · 11 at failing offsets, core 03 at -9, 00-02         HUNT 1 · GROUP 41 · CORE 03 AT -9
- ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
+  R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between        HUNT 1 · GROUP 42 · CORE 03 AT -9
+ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · ends at 08:24
 
- 5/5 pass → group 42   none named → group 42   core named → hunt ends · a core at 0: tuning stops
+ 5/5 pass → group 43   none named → group 43   core named → hunt ends · a core at 0: tuning stops
 
- CCD 0 all loaded 0  2 counts/cell       -50 fail  back      CCD 1 idle       0  2 counts/cell       -50 fail  back
- ► 00   0 PARKED   ····▀                            -10        08   0 PARKED   ····▀                            -10
- ► 01   0 PARKED   ····▀                            -10        09   0 PARKED   ····▀                            -10
- ► 02   0 PARKED   ····▀                            -10        10   0 PARKED   ····▀                            -10
- ► 03  -9 PROBE    ▄▄▄▄▀                           -10         11 -10 MEMBER   ▄▄▄▄▀                    
- ► 04   0 PARKED   ·····                            -10        12   0 PARKED   ····▀                            -10
- ► 05   0 PARKED   ·····                            -10        13   0 PARKED   ····▀                            -10
- ► 06   0 PARKED   ·····                            -10        14   0 PARKED   ····▀                            -10
- ► 07   0 PARKED   ·····                            -10        15   0 PARKED   ····▀                            -10
+ CCD 0 all loaded 0  2 counts/cell       -50 fail  back      CCD 1 all loaded 0  2 counts/cell       -50 fail  back
+ ► 00   0 PARKED   ····▀                            -10      ► 08   0 PARKED   ····▀                            -10
+ ► 01   0 PARKED   ····▀                            -10      ► 09   0 PARKED   ····▀                            -10
+ ► 02   0 PARKED   ····▀                            -10      ► 10   0 PARKED   ····▀                            -10
+ ► 03  -9 PROBE    ▄▄▄▄▀                           -10       ► 11 -10 MEMBER   ▄▄▄▄▀                    
+ ► 04   0 PARKED   ····▀                            -10      ► 12   0 PARKED   ····▀                            -10
+ ► 05   0 PARKED   ····▀                            -10      ► 13   0 PARKED   ····▀                            -10
+ ► 06   0 PARKED   ····▀                            -10      ► 14   0 PARKED   ····▀                            -10
+ ► 07   0 PARKED   ····▀                            -10      ► 15   0 PARKED   ····▀                            -10
 
- HUNT 1 ─────────────────────────────────── 04:01 · 49m40s   WHAT HAPPENED ──────────────────────────────────── l: all
+ HUNT 1 ─────────────────────────────────── 07:31 · 50m30s   WHAT HAPPENED ──────────────────────────────────── l: all
 
- cause  crash in R7 all-core on 00-07, no core named         04:50  group    hunt 1 groups 39-40 · parts of 03 11
-                                                             04:50  crash    hunt 1 group 38 · 03 11 at failing
- groups 1-7   parts of 00-15 and      all passed             04:49  group    hunt 1 groups 34-37 · parts of 03 10 11
- group 8      00-03 08-15 at failing  crashed                04:49  crash    hunt 1 group 33 · 03 10 11 at failing
- groups 9-13  parts of 00-03 08-15    all passed             04:47  group    hunt 1 groups 27-32 · parts of 02 03 10
- group 14     00-03 08-11 at failing  crashed                04:47  crash    hunt 1 group 26 · 02 03 10 11 at failing
- groups 15-20 parts of 00-03 08-11    all passed             04:46  group    hunt 1 groups 22-25 · parts of 02 03
- +16 more                                                    +16 more
+ cause  crash in R6 idle + bursts on 00-15, no core named    08:22  group    hunt 1 groups 40-41 · parts of 03 11
+                                                             08:22  crash    hunt 1 group 39 · 03 11 at failing
+ groups 1-2   parts of 00-15          all passed             08:20  group    hunt 1 groups 35-38 · parts of 03 10 11
+ group 3      00-15 at failing        crashed                08:20  crash    hunt 1 group 34 · 03 10 11 at failing
+ groups 4-8   parts of 00-15 and      all passed             08:19  group    hunt 1 groups 28-33 · parts of 02 03 10
+ group 9      00-03 08-15 at failing  crashed                08:19  crash    hunt 1 group 27 · 02 03 10 11 at failing
+ groups 10-14 parts of 00-03 08-15    all passed             08:17  group    hunt 1 groups 23-26 · parts of 02 03
+ +18 more                                                    +82 more
 
   ?  help    l  log    esc  back    q  close view
