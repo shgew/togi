@@ -507,3 +507,33 @@ func TestForecastR7BasisFollowsTheRunningLoadsMeasurement(t *testing.T) {
 		}
 	}
 }
+
+func TestForecastUnmeasuredChainEndingFollowsOffsetOrder(t *testing.T) {
+	h := hasRoomHarness(t, -20, -20, -20, -20)
+	h.add(&journal.HostRanking{Ranking: h.s.ids()})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R7}})
+	for range 20 {
+		a := h.next()
+		for a.Kind == Decide {
+			h.decide(a)
+			a = h.next()
+		}
+		p := h.start(a).Data.(*journal.TrialIntent)
+		for _, b := range Forecast(h.events).Branches {
+			if b.Premise != IfPass {
+				continue
+			}
+			for _, d := range b.Decisions {
+				if chain, ok := d.(*journal.CheckingChain); ok && len(chain.SourceSeqs) == 0 {
+					// Tied offsets idle the whole two-core CCD at once, so its chain ends without any measurement.
+					if len(chain.Cores) != 0 || !b.OffsetOrder {
+						t.Fatalf("an unmeasured chain ending claimed earlier requests: %+v", b)
+					}
+					return
+				}
+			}
+		}
+		h.add(&journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomePass, DurationS: p.DurationS})
+	}
+	t.Fatal("no pass forecast derived the CCD's chain")
+}

@@ -290,7 +290,7 @@ func Forecast(events []journal.Event) ForecastPlan {
 		failed := premise == IfNamed || premise == IfUnnamed
 		b.OffsetOrder = b.WithoutTelemetry && (failed && len(byOffset) > 0 || slices.ContainsFunc(b.Decisions, func(d journal.Payload) bool {
 			chain, ok := d.(*journal.CheckingChain)
-			return ok && len(chain.Cores) > 0 && len(chain.SourceSeqs) == 0
+			return ok && len(chain.SourceSeqs) == 0
 		}))
 		out.Branches = append(out.Branches, b)
 	}

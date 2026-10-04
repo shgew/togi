@@ -365,13 +365,6 @@ func (s Snapshot) r7Lines(p layout) []string {
 			words := strings.Fields(label)
 			label = strings.Join(words[:min(len(words), 2)], " ")
 		}
-		var tops []string
-		if len(measured) > 0 {
-			tops = append(tops, coreIDs(measured))
-		}
-		if len(byOffset) > 0 {
-			tops = append(tops, coreIDs(byOffset)+" by offset")
-		}
 		suff := "none yet"
 		switch {
 		case len(self) == total:
@@ -386,15 +379,36 @@ func (s Snapshot) r7Lines(p layout) []string {
 		if w.ID == current {
 			style = textStyle
 		}
-		topCell := cmp.Or(strings.Join(tops, "; "), "-")
-		if by := " by offset"; len(byOffset) > 0 && ansi.StringWidth(topCell) > top {
-			// Offsets stand in for these requests; the cut core list keeps saying so.
-			topCell = ansi.Truncate(strings.TrimSuffix(topCell, by), top-len(by), "...") + by
-		}
-		line := asciiCell(label, name) + " " + asciiCell(topCell, top) + " " + suff
+		line := asciiCell(label, name) + " " + asciiCell(topCell(measured, byOffset, top), top) + " " + suff
 		out = append(out, style.Render(ansi.Truncate(line, width, "...")))
 	}
 	return out
+}
+
+// topCell fits a workload's top requesters to width. Offset proxies keep their label when either list is cut, and
+// the measured list is cut first, so it never takes the offset label.
+func topCell(measured, byOffset []int, width int) string {
+	const by = " by offset"
+	m, o := coreIDs(measured), coreIDs(byOffset)
+	switch {
+	case len(byOffset) == 0:
+		return cmp.Or(m, "-")
+	case len(measured) == 0:
+		if ansi.StringWidth(o+by) <= width {
+			return o + by
+		}
+		return ansi.Truncate(o, width-len(by), "...") + by
+	}
+	if both := m + "; " + o + by; ansi.StringWidth(both) <= width {
+		return both
+	}
+	if room := width - len("; ") - ansi.StringWidth(o+by); room >= len("0...") {
+		return ansi.Truncate(m, room, "...") + "; " + o + by
+	}
+	if room := width - len("...; ") - len(by); room >= min(ansi.StringWidth(o), len("0...")) {
+		return "...; " + ansi.Truncate(o, room, "...") + by
+	}
+	return ansi.Truncate(o, width-len(by), "...") + by
 }
 
 // r7Rule heads the R7 lines with its column names; on a wide panel it says the evidence is no guarantee.

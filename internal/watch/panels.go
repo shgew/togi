@@ -71,13 +71,15 @@ func (s Snapshot) contextLines(p layout, now time.Time) []string {
 	if len(r7) > 0 {
 		room -= len(r7) + 1
 	}
-	lines := func(height int) []string {
+	// lines also returns the running part's row, or -1.
+	lines := func(height int) ([]string, int) {
 		if s.phase == journal.PhaseDeepening && s.deepen != nil {
-			return s.deepenLines(t, w)
+			return s.deepenLines(t, w), -1
 		}
 		var out []string
+		focus := -1
 		if s.cycle != nil {
-			out = s.cycleLines(t, w, p.class, height)
+			out, focus = s.cycleLines(t, w, p.class, height)
 		}
 		if len(s.combos) > 0 {
 			if len(out) > 0 {
@@ -85,16 +87,20 @@ func (s Snapshot) contextLines(p layout, now time.Time) []string {
 			}
 			out = append(out, s.combinationLines(t, w, p.class)...)
 		}
-		return out
+		return out, focus
 	}
-	out := lines(room)
+	out, _ := lines(room)
 	if len(r7) == 0 {
 		return out
 	}
 	if len(out) > room {
-		// The R7 lines take the panel's last rows, so the rows above end with what they leave out, keeping the
-		// running part above that count.
-		out = boundedRows(lines(room-1), room)
+		// The R7 lines take the panel's last rows, so the rows above end with what they leave out, unless that count
+		// would push out the running part.
+		if bounded, focus := lines(room - 1); focus < room-1 {
+			out = boundedRows(bounded, room)
+		} else {
+			out = out[:max(room, 0)]
+		}
 	}
 	if len(out) > 0 {
 		out = append(out, "")
@@ -103,8 +109,8 @@ func (s Snapshot) contextLines(p layout, now time.Time) []string {
 }
 
 // cycleLines keeps the running part, or else the current step, within height rows: it leaves out the rows above it
-// from the top, then the blank under the rule.
-func (s Snapshot) cycleLines(t tables, width int, class sizeClass, height int) []string {
+// from the top, then the blank under the rule. It also returns that row's index, or -1 when no step is open.
+func (s Snapshot) cycleLines(t tables, width int, class sizeClass, height int) ([]string, int) {
 	g := s.cycle
 	done := 0
 	for _, step := range g.steps {
@@ -164,7 +170,7 @@ func (s Snapshot) cycleLines(t tables, width int, class sizeClass, height int) [
 	}
 	excess := focus + 1 - height
 	if excess <= 0 {
-		return out
+		return out, focus
 	}
 	drop := map[int]bool{}
 	for i := 2; i < focus && len(drop) < excess; i++ {
@@ -181,7 +187,8 @@ func (s Snapshot) cycleLines(t tables, width int, class sizeClass, height int) [
 			fitted = append(fitted, line)
 		}
 	}
-	return fitted
+	// Every dropped row is above the running part.
+	return fitted, focus - len(drop)
 }
 
 // stepPosition is where the running step is: its part, or its trial when it has one part.

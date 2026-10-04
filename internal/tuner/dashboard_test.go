@@ -278,28 +278,30 @@ func TestRequirementCountsAloneDeepeningChecksAgainstTheirRound(t *testing.T) {
 }
 
 func TestCyclePlanRunsNoPartDuringARerun(t *testing.T) {
-	h := hasRoomHarness(t, -20, -20)
-	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R6}})
+	h := hasRoomHarness(t, -20, -20, -20, -20)
+	h.add(&journal.HostRanking{Ranking: h.s.ids()})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R7}})
 	a := h.next()
 	for a.Kind == Decide {
 		h.decide(a)
 		a = h.next()
 	}
 	p := h.start(a).Data.(*journal.TrialIntent)
-	h.add(&journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0), DurationS: 10})
+	h.add(&journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, DurationS: 10})
 	a = h.next()
 	for a.Kind == Decide {
 		h.decide(a)
 		a = h.next()
 	}
-	if a.Kind != RunTrial || !a.Trial.Rerun || a.Trial.Regime != machine.R6 {
-		t.Fatalf("a named failure did not rerun the failed load: %+v", a)
+	if a.Kind != RunTrial || !a.Trial.Rerun || !slices.Equal(a.Trial.Cores, p.Cores) || a.Trial.DurationS != p.DurationS {
+		t.Fatalf("the R7 failure did not rerun its part's load at the part's length: %+v", a)
 	}
 	h.start(a)
 	plan := h.s.CyclePlan()
 	if !plan.Paused {
 		t.Fatalf("the cycle is not paused while its failure reruns: %+v", plan)
 	}
+	// The rerun loads the failed part's class, so only the rerun exclusion keeps that part from running.
 	for _, step := range plan.Steps {
 		for _, part := range step.Parts {
 			if part.Running {
