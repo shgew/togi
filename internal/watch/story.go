@@ -1054,11 +1054,11 @@ func carriedGroups(decisions []journal.Payload, i int) (phrase, int) {
 	}
 	switch {
 	case d.Inferred != "pass":
-		return phrase{groups + " failed in an earlier trial", false}, last
+		return phrase{groups + " failed on existing evidence", false}, last
 	case end > first:
-		return phrase{groups + " answered by earlier trials", true}, last
+		return phrase{groups + " answered by existing evidence", true}, last
 	}
-	return phrase{groups + " answered by an earlier trial", true}, last
+	return phrase{groups + " answered by existing evidence", true}, last
 }
 
 func huntEndPhrase(d *journal.HuntEnd, named bool) (string, bool) {

@@ -252,10 +252,10 @@ func TestHistoryGroupsInferredAnswersWithoutHidingOutcomeChanges(t *testing.T) {
 	want := []string{
 		"start: session started on 3 cores",
 		"hunt: #4 started · part 1: 00 at failing offsets, 01 02 parked",
-		"group: hunt 4 groups 2-3 · parts of 00 01 · all passed in earlier trials",
-		"group: hunt 4 group 4 · 00 01 · failed in an earlier trial",
+		"group: hunt 4 groups 2-3 · parts of 00 01 · all passed on existing evidence",
+		"group: hunt 4 group 4 · 00 01 · failed on existing evidence",
 		"hunt: #5 started · part 1: 01 at failing offsets, 00 parked",
-		"group: hunt 5 group 5 · 01 · passed in an earlier trial",
+		"group: hunt 5 group 5 · 01 · passed on existing evidence",
 	}
 	if diff := cmp.Diff(want, historySentences(Project(events))); diff != "" {
 		t.Fatalf("inferred group answers (-want +got):\n%s", diff)

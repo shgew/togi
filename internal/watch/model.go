@@ -259,7 +259,7 @@ type groupView struct {
 	signal   machine.Signal // how a failed group's trial failed
 	passes   int
 	needed   int
-	inferred bool // answered by earlier trials; no trial ran
+	inferred bool // answered by existing evidence; no trial ran
 }
 
 type probeView struct {

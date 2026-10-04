@@ -77,7 +77,7 @@ const (
 	plainEntry   entryKind = iota
 	trialsEntry            // trials of one requirement or part: subject, then how many passed or failed
 	limitsEntry            // solo limits found at one offset
-	groupsEntry            // hunt groups answered by earlier trials
+	groupsEntry            // hunt groups answered by existing evidence
 	sessionEntry           // the session start, with the solo limits carried into it
 )
 
@@ -159,7 +159,7 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 	case *journal.CheckingStep:
 		line.tag, line.text = tagSearch, fmt.Sprintf("cycle %d step %d", d.Cycle, d.Step)
 		if regimes := p.cycleSteps[d.Cycle]; d.Step >= 1 && d.Step <= len(regimes) {
-			line.text += fmt.Sprintf(": %s %s", regimes[d.Step-1], kindWords(regimes[d.Step-1]))
+			line.text += fmt.Sprintf(": %s %s", vtText(string(regimes[d.Step-1])), kindWords(regimes[d.Step-1]))
 		}
 		line.key = fmt.Sprintf("step %d %d", d.Cycle, d.Step)
 	case *journal.HuntEnd:
@@ -300,7 +300,7 @@ func (p *projector) huntGroup(line entry, d *journal.HuntGroup) (entry, bool) {
 			verb = "failed"
 		}
 		line.tag, line.tone = tagProbe, huntTone
-		line.text = fmt.Sprintf("hunt %d group %d · core %02d at %d · %s in an earlier trial", d.Hunt, d.Group, d.Probe.Core, d.Probe.Offset, verb)
+		line.text = fmt.Sprintf("hunt %d group %d · core %02d at %d · %s on existing evidence", d.Hunt, d.Group, d.Probe.Core, d.Probe.Offset, verb)
 	default:
 		line.kind, line.tag, line.tone = groupsEntry, tagGroup, huntTone
 		line.cores, line.text = slices.Clone(d.Cores), d.Inferred
@@ -527,7 +527,7 @@ func (p *projector) huntEndText(d *journal.HuntEnd, at time.Time) (string, strin
 	}
 	switch {
 	case start.live == 0 && d.Groups > 0:
-		text += ", all answered by earlier trials"
+		text += ", all answered by existing evidence"
 	case !start.at.IsZero() && d.Groups > 0:
 		text += " in " + age(at.Sub(start.at))
 	}
@@ -698,13 +698,13 @@ func (e entry) sentenceParts() (string, string, string) {
 			groups = fmt.Sprintf("groups %d-%d", e.firstGroup, e.lastGroup)
 		}
 		what := coreIDs(e.cores)
-		verdict := "passed in an earlier trial"
+		verdict := "passed on existing evidence"
 		if e.lastGroup > e.firstGroup {
 			what = "parts of " + what
-			verdict = "all passed in earlier trials"
+			verdict = "all passed on existing evidence"
 		}
 		if e.text != "pass" {
-			verdict = "failed in an earlier trial"
+			verdict = "failed on existing evidence"
 		}
 		return fmt.Sprintf("hunt %d %s · %s · %s", e.hunt, groups, what, verdict), "", ""
 	case trialsEntry:

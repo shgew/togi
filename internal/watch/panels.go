@@ -536,7 +536,7 @@ func (s Snapshot) huntGroupLines(t tables, width int) []string {
 		}
 		result := style.Render(outcome)
 		if r.last.inferred {
-			result += grey.Render(" · answered by earlier trials")
+			result += grey.Render(" · answered by existing evidence")
 		}
 		out = append(out, overlay(grey.Render(label), tableRow(t.groups, textStyle.Render(which), grey.Render(what), result)))
 	}

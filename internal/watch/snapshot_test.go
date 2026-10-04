@@ -2,6 +2,7 @@ package watch
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -439,5 +440,54 @@ func TestProjectRecoveryEndsOnlyWhenTrialStarts(t *testing.T) {
 	events = appendStoryEvents(events, &journal.TrialStart{Trial: "next"})
 	if Project(events).recover != nil {
 		t.Fatal("started trial retained recovery banner")
+	}
+}
+
+func TestProjectResetCoreDropsItsSoloLimit(t *testing.T) {
+	t.Parallel()
+	s := Project(dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: 0},
+		&journal.CorePhase{Core: 0, From: journal.PhaseSearch, To: journal.PhaseAtLimit, Offset: -20, Pass: new(-20), FailurePoint: new(-21)},
+		&journal.CorePhase{Core: 0, From: journal.PhaseAtLimit, To: journal.PhaseSearch, Offset: 0}))
+	if got := s.cores[0].solo; got != nil {
+		t.Fatalf("a reset core searching again kept its old solo limit %d", *got)
+	}
+}
+
+func TestProjectWriteAfterRestorationIsNotSaved(t *testing.T) {
+	t.Parallel()
+	s := Project(dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -25},
+		&journal.ProfileRestored{Offsets: []int{0, 0, 0}},
+		&journal.Shutdown{Reason: journal.ShutdownCycles},
+		&journal.SMUIntent{Op: journal.SMUSet, Core: new(0), Offset: -25},
+		&journal.SMUReadback{Core: 0, Offset: 0},
+		&journal.DeadEnd{Condition: journal.DeadEndSMU, Detail: "core 00 read back 0 instead of -25"},
+		&journal.Shutdown{Reason: journal.ShutdownDeadEnd}))
+	if s.stopped == nil || s.stopped.saved {
+		t.Fatalf("a failed write after an earlier restoration is presented as restored: %+v", s.stopped)
+	}
+}
+
+func TestProjectFailedProbeMarksTheProbedMember(t *testing.T) {
+	t.Parallel()
+	const workload = "mprime-avx2-36k-248k-allcore"
+	events := dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
+		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30},
+		&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -10},
+		&journal.ProfileChange{From: []int{0, 0, 0}, To: []int{-20, -30, -10}},
+		&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: workload, Cores: []int{0, 1, 2}, Parked: []int{-10, -30, -5}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Trials: 5, TrialS: 120, DurationS: 120},
+		&journal.HuntGroup{Hunt: 1, Group: 1, Stage: "full", Cores: []int{0, 2}, Set: []int{0, 2}, Granularity: 2, Profile: []int{-20, -30, -10}, DurationS: 120},
+		&journal.TrialIntent{Trial: "full", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: workload, Cores: []int{0, 1, 2}, Profile: []int{-20, -30, -10}, DurationS: 120, Hunt: 1, Group: 1},
+		&journal.TrialStart{Trial: "full"},
+		&journal.TrialEnd{Trial: "full", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError},
+		&journal.HuntGroup{Hunt: 1, Group: 2, Stage: "probe", Set: []int{0, 2}, Granularity: 2, FullChecked: true, AnyFailed: true, Cores: []int{2}, Probe: &journal.CombinationMember{Core: 0, Offset: -15}, Held: []journal.CombinationMember{{Core: 2, Offset: -10}}, Profile: []int{-15, -30, -10}, DurationS: 120},
+		&journal.TrialIntent{Trial: "probe", Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: workload, Cores: []int{0, 1, 2}, Profile: []int{-15, -30, -10}, DurationS: 120, Hunt: 1, Group: 2},
+		&journal.TrialStart{Trial: "probe"},
+		&journal.TrialEnd{Trial: "probe", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError})
+	s := Project(events)
+	if !slices.Contains(s.cores[0].groupFails, -15) {
+		t.Fatalf("the failed probe of core 00 at -15 is missing from its group failures: %v", s.cores[0].groupFails)
 	}
 }

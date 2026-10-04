@@ -344,3 +344,20 @@ func TestCCDRoleCountsLoadAndProbes(t *testing.T) {
 		}
 	}
 }
+
+func TestRestoredDeadEndLabelsSavedRows(t *testing.T) {
+	t.Parallel()
+	s := Project(dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -25},
+		&journal.DeadEnd{Condition: journal.DeadEndNoEvidence, Detail: "five trials in a row proved nothing"},
+		&journal.ProfileRestored{Offsets: []int{0, 0, 0}},
+		&journal.Shutdown{Reason: journal.ShutdownDeadEnd}))
+	if s.deadEnd == nil || s.stopped == nil || !s.stopped.saved {
+		t.Fatalf("fixture must end in a restored dead end: %+v %+v", s.deadEnd, s.stopped)
+	}
+	for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
+		if text := ansi.Strip(Render(s, size[0], size[1], time.Unix(2000, 0).UTC())); !strings.Contains(text, "Rows show the saved profile, not applied now.") {
+			t.Errorf("%dx%d restored dead end presents saved offsets as applied:\n%s", size[0], size[1], text)
+		}
+	}
+}
