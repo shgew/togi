@@ -173,17 +173,23 @@ type huntStartView struct {
 	live       int  // groups answered by trials run in this session
 }
 
-func (p *projector) fold(e journal.Event) {
-	s := p.s
-	if d, ok := e.Data.(*journal.TunerDecision); ok && d.Decision == journal.Backoff {
-		// Only a backoff citing the combination itself clears it; later decisions merely descend from that one.
-		for _, cause := range e.Cause {
-			if id := p.combinationSeqs[cause]; id != 0 {
-				p.sources[e.Seq] = id
-				break
-			}
+// clearsCombination records which combination a backoff clears. Only a backoff citing the combination itself
+// clears it; later decisions merely descend from that one.
+func (p *projector) clearsCombination(e journal.Event) {
+	if d, ok := e.Data.(*journal.TunerDecision); !ok || d.Decision != journal.Backoff {
+		return
+	}
+	for _, cause := range e.Cause {
+		if id := p.combinationSeqs[cause]; id != 0 {
+			p.sources[e.Seq] = id
+			return
 		}
 	}
+}
+
+func (p *projector) fold(e journal.Event) {
+	s := p.s
+	p.clearsCombination(e)
 	if e.Kind != journal.KindShutdown && e.Kind != journal.KindProfileRestored && e.Kind != journal.KindSessionWarning {
 		p.stopped = false
 	}
