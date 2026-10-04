@@ -3,6 +3,7 @@ package watch
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -489,5 +490,41 @@ func TestProjectFailedProbeMarksTheProbedMember(t *testing.T) {
 	s := Project(events)
 	if !slices.Contains(s.cores[0].groupFails, -15) {
 		t.Fatalf("the failed probe of core 00 at -15 is missing from its group failures: %v", s.cores[0].groupFails)
+	}
+}
+
+func TestProjectHuntCausedByCarriedFacts(t *testing.T) {
+	t.Parallel()
+	const workload = "mprime-avx2-36k-248k-allcore"
+	for _, tc := range []struct {
+		name  string
+		fact  journal.Payload
+		want  string
+		avoid string
+	}{
+		{"carried trial", &journal.TrialCarried{Class: journal.TrialClass{Regime: machine.R7, Workload: workload, Cores: []int{0, 1, 2}, DurationS: 120}, Condition: machine.Together, Profile: []int{-20, -30, -10}, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, DurationS: 30},
+			"already failed at these offsets in a carried trial", "idle"},
+		{"carried idle failure", &journal.FailureCarried{Class: journal.TrialClass{Regime: machine.R6, Cores: []int{0, 1, 2}}, Signal: machine.Crash, Attribution: journal.Unattributed, Profile: []int{-20, -30, -10}},
+			"idle failure is already recorded at these offsets, carried from an earlier session", "R6"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			events := dashboardEvents(dashboardSession(),
+				&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: -20},
+				&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30},
+				&journal.CorePhase{Core: 2, To: journal.PhaseHasRoom, Offset: -10},
+				tc.fact)
+			fact := events[len(events)-1].Seq
+			events = appendStoryEvents(events,
+				&journal.HuntStart{Hunt: 1, Failure: fact, Regime: machine.R7, Workload: workload, Cores: []int{0, 1, 2}, Parked: []int{-10, -30, -5}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Trials: 5, TrialS: 120, DurationS: 120})
+			s := Project(events)
+			if s.hunt == nil {
+				t.Fatal("fixture must have a hunt")
+			}
+			text, _, _ := s.huntCauseStory()
+			if !strings.Contains(text, tc.want) || strings.Contains(text, tc.avoid) {
+				t.Fatalf("hunt cause %q, want %q without %q", text, tc.want, tc.avoid)
+			}
+		})
 	}
 }
