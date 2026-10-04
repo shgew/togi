@@ -36,6 +36,19 @@ Every run is a `tools/sim` subprocess with its own state directory, in parallel 
 
 Each simulator subprocess retains parsed events across its simulated reboots and writes `state.json` only at stop, avoiding journal re-parsing and per-event state-file rewrites. It still appends every event to `events.jsonl`; `--keep` leaves the journal and final state available for inspection. This changes wall-clock overhead, not simulated durations or tuner decisions. Recovery and interruption tests use the file-backed path, and fixed-seed equivalence tests compare both output files byte for byte on the default machine and `target-fit-0.toml`.
 
+## Auditing journals
+
+```sh
+just audit                                        # every suite scenario, 200 seeds each; keeps a temporary evidence directory
+just audit --seeds 50 --jobs 8 --keep runs          # change the sweep size, parallelism and retention directory
+just audit COPY-OF-STATE-DIR OTHER-STATE-DIR         # read-only audit of current and archived journals
+just audit --records RECORDS.jsonl --root BENCH-DIR # re-audit a retained bench sweep, including wall times
+```
+
+`tools/audit` composes `tools/bench --keep` with a generated suite: seeds 1 through `--seeds` for each scenario, preserving ensemble selection and replay settings. `--suite FILE` chooses another suite; `--timeout D` sets each simulator's wall timeout (default 180s). The printed evidence directory retains the generated suite, bench log, run records and state directories.
+
+The audit checks recorded failure-point and combination avoidance independently of the tuner, SMU intent/write/readback ordering, offset bounds, causal references, simulated-run conclusions, and exact `state.json` replay when present. A `state.rebuilt` event is a violation. Real journals may still be live, including between a write and its readback; archived transitions and reset boundaries are valid session endings. Bench records additionally flag timeouts and runs exceeding ten times their scenario's median wall time. Every violation is a JSON object on stdout with its journal, session, sequence and reason; summaries go to stderr, and any violation exits nonzero. Audit copies of real state directories so the journal and state projection are a consistent snapshot.
+
 ## Proving unchanged decisions
 
 For a shape-only change, run `just same [base]`; the base defaults to `origin/main` and is exported locally without fetching or registering a worktree. It builds the base and current simulators and runs each tree's own suite and machine files across every dev and holdout seed. Sessions pair by scenario, split and seed. Every current and archived journal pairs by its relative path and is compared byte for byte, after removing only `version`, `rev` and the exact build description in `msg` from `session.start` and `config.loaded`. Everything else, including `ruleset`, `schema`, `fixes` and `evidence_epoch`, must match.

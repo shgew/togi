@@ -83,6 +83,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just sim [seed]` | A simulated session through its first clean lap in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just replay --state-dir DIR` | Play a recorded journal through the dashboard on a fast-forward clock, or print one frame with `--at SEQ` (`go run ./tools/replay`, `docs/simulating.md`) |
 | `just bench [flags]` | The bench suite of simulated sessions, optionally compared against a baseline run (`go run ./tools/bench`, `docs/benchmarking.md`) |
+| `just audit [flags] [STATE-DIR...]` | Audit journal invariants; without state directories, sweep every bench scenario over 200 seeds and retain the evidence (`docs/benchmarking.md`) |
 | `just same [base]` | Prove a shape-only change leaves all simulated session journals unchanged; base defaults to `origin/main` (`docs/benchmarking.md`) |
 | `just facts STATE-DIR` | Regenerate the committed privacy-safe target evidence from a copied state directory (`docs/benchmarking.md`) |
 | `just fit [flags]` | Regenerate the target-machine fit and eight bootstrap refits, then report the forward-chained check on later sessions (`docs/benchmarking.md`) |
@@ -124,7 +125,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
 | `nix/` | NixOS module and VM tests |
-| `tools/*` | Development programs, never shipped: `bench`, `carry-facts`, `cover`, `facts`, `fit`, `release`, `replay`, `sim`, `stats`; shared evaluation packages `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
+| `tools/*` | Development programs, never shipped: `audit`, `bench`, `carry-facts`, `cover`, `facts`, `fit`, `release`, `replay`, `sim`, `stats`; shared evaluation packages `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
 
 A package owns one responsibility, and its exported API is the seam. Split a package when it holds two responsibilities that change for different reasons.
 
