@@ -165,6 +165,18 @@ R7/mprime-avx2-36k-248k-allcore/00,01/120s   -30                5       0       
 R7/mprime-avx2-36k-248k-allcore/00,01/120s   -10                11      1         9.1%
 R7/mprime-avx2-36k-248k-allcore/00,01/120s   0                  17      2         11.8%
 
+R7 voltage requests
+field                               count
+failures without request telemetry  3
+
+R7 starts by top request (4 mV bins)
+class  top request V  starts  failures
+none
+
+R7 starts by top requester
+class  core  starts  failures
+none
+
 Inconclusive trials
 trial  condition  reason
 

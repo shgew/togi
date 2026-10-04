@@ -545,6 +545,13 @@ func (p *TrialEnd) Message() string {
 	if p.VoltageRequestMedianV != nil && p.VoltageRequestMinV != nil {
 		voltage = fmt.Sprintf(" | loaded voltage request median %.3f V, min %.3f V", *p.VoltageRequestMedianV, *p.VoltageRequestMinV)
 	}
+	if len(p.TopRequesters) > 0 {
+		top := make([]string, len(p.TopRequesters))
+		for i, core := range p.TopRequesters {
+			top[i] = fmt.Sprintf("%02d %.3f V", core, p.VoltageRequestsV[core])
+		}
+		voltage += " | top requester " + strings.Join(top, ", ")
+	}
 	tctl += voltage
 	duration := fmt.Sprintf(" after %ds", p.DurationS)
 	if p.Signal == machine.Crash || p.Interrupted && (p.Reason == TrialReasonStoppedDuringTrial || p.Reason == TrialReasonStoppedAfterMachineCheck) {

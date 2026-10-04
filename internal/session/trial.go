@@ -299,8 +299,9 @@ func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine
 	if len(cores) == 0 {
 		cores = []int{tr.t.Core}
 	}
-	summary := sampleEvidence(r.in.Machine.Trials.Samples(tr.id), cores, tr.t.Regime)
+	summary := sampleEvidence(r.in.Machine.Trials.Samples(tr.id), cores, tr.t.Regime, r.ccdOf)
 	end.VoltageRequestMedianV, end.VoltageRequestMinV = summary.voltageMedianV, summary.voltageMinV
+	end.VoltageRequestsV, end.TopRequesters, end.CCDMHz = summary.requests.Requests, summary.requests.TopRequesters, summary.requests.CCDMHz
 	if end.Outcome == journal.OutcomeFailure {
 		end.StalledCore, end.WorkerStalledMS = summary.stalledCore, summary.workerStalledMS
 	}

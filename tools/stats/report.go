@@ -66,6 +66,7 @@ func report(out io.Writer, session facts.Session, since time.Time) error {
 	renderChecking(tab, p, events, since)
 	renderEvidence(tab, p, events, since)
 	renderDepth(tab, p, since)
+	renderRequests(tab, p, since)
 	return renderOutcomes(tab, p, since)
 }
 

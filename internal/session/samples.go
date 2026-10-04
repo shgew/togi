@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/requests"
 )
 
 type sampleSummary struct {
@@ -13,9 +14,10 @@ type sampleSummary struct {
 	workerStalledMS *int64
 	voltageMedianV  *float64
 	voltageMinV     *float64
+	requests        requests.Telemetry
 }
 
-func sampleEvidence(samples iter.Seq[machine.TrialConditions], cores []int, regime machine.Regime) sampleSummary {
+func sampleEvidence(samples iter.Seq[machine.TrialConditions], cores []int, regime machine.Regime, ccdOf func(int) int) sampleSummary {
 	type worker struct {
 		cpu   int64
 		stall *int64
@@ -25,27 +27,39 @@ func sampleEvidence(samples iter.Seq[machine.TrialConditions], cores []int, regi
 	valid := len(cores) >= 2 && regime != machine.R6
 	count := 0
 	var voltage requestedVoltage
-	for sample := range samples {
-		voltage.add(sample, cores)
-		for i, core := range cores {
-			cpu, present := sample.WorkerCPUMS[core]
-			if !present || cpu < 0 || count > 0 && (cpu < workers[i].cpu || sample.ElapsedMS <= last.ElapsedMS) {
-				valid = false
-			}
-			if count > 0 && cpu == workers[i].cpu {
-				if workers[i].stall == nil {
-					workers[i].stall = new(sample.ElapsedMS)
+	observed := func(yield func(machine.TrialConditions) bool) {
+		more := true
+		for sample := range samples {
+			voltage.add(sample, cores)
+			for i, core := range cores {
+				cpu, present := sample.WorkerCPUMS[core]
+				if !present || cpu < 0 || count > 0 && (cpu < workers[i].cpu || sample.ElapsedMS <= last.ElapsedMS) {
+					valid = false
 				}
-			} else {
-				workers[i].stall = nil
+				if count > 0 && cpu == workers[i].cpu {
+					if workers[i].stall == nil {
+						workers[i].stall = new(sample.ElapsedMS)
+					}
+				} else {
+					workers[i].stall = nil
+				}
+				workers[i].cpu = cpu
 			}
-			workers[i].cpu = cpu
+			last = &sample
+			count++
+			if more {
+				more = yield(sample)
+			}
 		}
-		last = &sample
-		count++
+	}
+	var telemetry requests.Telemetry
+	if len(cores) == 0 {
+		observed(func(machine.TrialConditions) bool { return true })
+	} else {
+		telemetry, _ = requests.Summarize(observed, cores, ccdOf)
 	}
 	median, minimum := voltage.medianMinimum()
-	summary := sampleSummary{last: last, voltageMedianV: median, voltageMinV: minimum}
+	summary := sampleSummary{last: last, voltageMedianV: median, voltageMinV: minimum, requests: telemetry}
 	if !valid || count < 2 {
 		return summary
 	}
