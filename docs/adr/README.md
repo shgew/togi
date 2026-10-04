@@ -4,7 +4,7 @@ The specs describe current behavior; ADRs record why and the alternatives reject
 
 A new ADR adds its line here and updates the status of any ADR it supersedes.
 
-ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-from-screen-to-journal.md) and [0036](0036-cycles-and-trials.md) translate it to the terms in `GLOSSARY.md` without changing the tuning decisions.
+ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-from-screen-to-journal.md) and [0037](0037-cycles-and-trials.md) translate it to the terms in `GLOSSARY.md` without changing the tuning decisions.
 
 - [0001: Go as the implementation language](0001-go.md) — **in force** for the language; its Bubble Tea consequence no longer holds: `togi watch` uses a custom redraw loop with Lip Gloss rendering.
 - [0002: Clean-room rewrite, not a port of linux-corecycler](0002-clean-room-rewrite.md) — **in force**.
@@ -39,7 +39,7 @@ ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 - [0031: Pull requests under the owner's account](0031-pull-requests-under-the-owners-account.md) — **in force**.
 - [0032: Coverage lists uncovered changed lines](0032-coverage-lists-uncovered-changed-lines.md) — **in force**.
 - [0033: Changelog entries are per-pull-request fragments](0033-changelog-fragments.md) — **in force**.
-- [0034: One vocabulary from screen to journal](0034-one-vocabulary-from-screen-to-journal.md) — **in force** for one vocabulary and legacy journal translation; [0036](0036-cycles-and-trials.md) renames the checking schedule and pass-evidence unit and advances the journal to schema 4.
+- [0034: One vocabulary from screen to journal](0034-one-vocabulary-from-screen-to-journal.md) — **in force** for one vocabulary and legacy journal translation; [0037](0037-cycles-and-trials.md) renames the checking schedule and pass-evidence unit and advances the journal to schema 4.
 - [0035: License togi under GPL-3.0-or-later](0035-gpl-3.0-or-later.md) — **in force**.
 - [0036: Flake checks stay hermetic](0036-flake-checks-stay-hermetic.md) — **in force**.
-- [0036: Cycles and trials](0036-cycles-and-trials.md) — **in force**.
+- [0037: Cycles and trials](0037-cycles-and-trials.md) — **in force**.
