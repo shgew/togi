@@ -33,7 +33,7 @@ Backoff targets measured passing voltage rather than an arbitrary stride. For an
 - **One partial per CCD:** rejected because the next requester can protect further cores; the chain tests them in turn.
 - **Per-class failure-rate bound:** rejected; the per-core/workload/duration ledger describes self-sufficiency across loaded sets, but no failure-rate bound controls moves.
 - **Always back off one count:** rejected because measured passing voltage supplies a justified multi-count target; one count remains the fallback without a qualifying pass.
-- **5% failure-rate tolerance at significance 0.2:** rejected on 2026-10-04. On the hand-set shared-voltage machine it raised worst R7 hazard from 0.47 to 1.74 failures/h and bought neither depth nor time ([#386](https://github.com/shgew/togi/issues/386)). Every failure now requires a move; conclusion remains one clean cycle when requested.
+- **5% failure-rate tolerance at significance 0.2:** rejected on 2026-10-04. On the hand-set shared-voltage machine it raised worst R7 hazard from 0.47 to 1.74 failures/h and bought neither depth nor time ([#386](https://github.com/shgew/togi/issues/386)). No failure is tolerated; conclusion remains one clean cycle when requested.
 - **Noisy group testing:** not pursued for multi-core R7 because the measured shared-voltage mechanism and partial chain replace those hunts rather than improve their group-test inference.
 
 ## Consequences

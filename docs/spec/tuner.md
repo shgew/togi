@@ -92,7 +92,7 @@ An unattributed failure whose affected top group is entirely at CO 0 steps down 
 
 ## R7 self-sufficiency evidence
 
-The ledger unit is `(core, R7 workload, intended duration_s)`, after the core's latest reset. It counts passes where the core was a top requester at equal-or-deeper offsets and failures at equal-or-shallower offsets where it was a top requester or the failure named it. Same-BIOS carried facts count with no aging, subject to reset exclusions, and carried failures are evaluated before the first trial. This ledger describes self-sufficiency and supports voltage targets; it never permits a failed trial without a move. One clean cycle still concludes a requested one-cycle run, without a bound on future stability.
+The ledger unit is `(core, R7 workload, intended duration_s)`, after the core's latest reset. It counts passes where the core was a top requester at equal-or-deeper offsets and failures at equal-or-shallower offsets where it was a top requester or the failure named it. Same-BIOS carried facts count with no aging, subject to reset exclusions, and carried failures are evaluated before the first trial. This ledger describes self-sufficiency and supports voltage targets; it never tolerates a failed trial, which follows [R7 voltage-targeted backoff](#r7-voltage-targeted-backoff). One clean cycle still concludes a requested one-cycle run, without a bound on future stability.
 
 ## R7 voltage-targeted backoff
 
