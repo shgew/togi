@@ -105,6 +105,12 @@ func TestCarriedEvidenceConsumers(t *testing.T) {
 			for _, r := range []machine.Regime{machine.R1, machine.R2, machine.R7} {
 				facts = append(facts, carryTrials(h, r, []int{0}, []int{-11}, h.s.durations.ShortTrialS, h.s.n, journal.OutcomePass)...)
 			}
+			for _, w := range machine.Workloads(machine.R7)[1:] {
+				for range h.s.n {
+					e := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "20261002T004254Z", Seq: len(h.events) + 1, Evidence: EvidenceEpoch}, Class: journal.TrialClass{Regime: machine.R7, Workload: w.ID, Cores: []int{0}, DurationS: h.s.durations.ShortTrialS}, Condition: machine.Together, Profile: []int{-11}, Outcome: journal.OutcomePass})
+					facts = append(facts, e.Seq)
+				}
+			}
 			boundary := h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleStart, Profile: []int{-11}, Target: []int{-12}, Cores: []int{0}, Trials: h.s.n, TrialS: h.s.durations.ShortTrialS})
 			a := h.s.roundCheck()
 			p, ok := a.Payload.(*journal.DeepeningRound)

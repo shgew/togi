@@ -11,6 +11,7 @@ import (
 )
 
 func r7Harness(t *testing.T) *harness {
+	t.Helper()
 	h := newHarness(t, coreStart{phase: journal.PhaseHasRoom, offset: -30}, coreStart{phase: journal.PhaseHasRoom, offset: -30}, coreStart{phase: journal.PhaseHasRoom, offset: -30}, coreStart{phase: journal.PhaseHasRoom, offset: -30})
 	h.add(&journal.ProfileChange{To: []int{-30, -30, -30, -30}})
 	h.add(&journal.HostRanking{Ranking: []int{0, 1, 2, 3}})
@@ -77,6 +78,7 @@ func TestR7AttributionAndTieBackoff(t *testing.T) {
 		want           []int
 	}{
 		{"named", []int{0, 1}, []int{0}, new(1), nil, []int{1}},
+		{"named idle core", []int{0, 1}, []int{0}, new(3), nil, []int{3}},
 		{"whole CCD", []int{0, 1}, []int{0}, nil, nil, []int{0}},
 		{"all CCDs", []int{0, 1, 2, 3}, []int{0, 2}, nil, nil, []int{0, 2}},
 		{"stalled CCD", []int{0, 1, 2, 3}, []int{0, 2}, nil, new(3), []int{2}},
@@ -254,9 +256,13 @@ func TestR7ZeroFailureDrainsWithoutReadingRanking(t *testing.T) {
 	h := r7Harness(t)
 	h.s.rankingSeq = 0
 	h.s.ranking = nil
-	for _,c := range h.s.cores { c.offset = 0 }
-	r7Fact(h,false,[]int{0,1},[]int{0,0,0,0},nil,[]int{0,1},nil,nil,nil)
-	a,ok := h.s.Drain()
-	dead,deadOK := a.Payload.(*journal.DeadEnd)
-	if !ok || !deadOK || dead.Condition != journal.DeadEndFailureAtZero { t.Fatalf("zero failure was not drained: %+v",a) }
+	for _, c := range h.s.cores {
+		c.offset = 0
+	}
+	r7Fact(h, false, []int{0, 1}, []int{0, 0, 0, 0}, nil, []int{0, 1}, nil, nil, nil)
+	a, ok := h.s.Drain()
+	dead, deadOK := a.Payload.(*journal.DeadEnd)
+	if !ok || !deadOK || dead.Condition != journal.DeadEndFailureAtZero {
+		t.Fatalf("zero failure was not drained: %+v", a)
+	}
 }

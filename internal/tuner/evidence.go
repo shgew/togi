@@ -240,7 +240,9 @@ func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *jo
 	if p.Core != nil {
 		e.cores = []int{*p.Core}
 	}
-	if s.classTargets == nil { s.classTargets = map[string]classTarget{} }
+	if s.classTargets == nil {
+		s.classTargets = map[string]classTarget{}
+	}
 	s.classTargets[k.cores] = classTarget{cores: slices.Clone(e.cores), multi: len(e.cores) > 1}
 	e.requests, e.top, e.clocks, e.named, e.stalled = end.VoltageRequestsV, end.TopRequesters, end.CCDMHz, end.Core, end.StalledCore
 	if carried, ok := ev.Data.(*journal.TrialCarried); ok {
@@ -324,7 +326,7 @@ func (s *State) failureAfter(f pendingFailure, since int) bool {
 
 func (s *State) resetEvidence(core int) {
 	involves := func(e entry) bool {
-		if slices.Contains(e.cores, core) {
+		if slices.Contains(e.cores, core) || s.multiR7(e.class) && e.named != nil && *e.named == core {
 			delete(s.carriedSources, e.seq)
 			return true
 		}

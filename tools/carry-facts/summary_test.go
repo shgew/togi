@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"flag"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,8 @@ import (
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
+
+var update = flag.Bool("update", false, "update golden files")
 
 func TestTransitionSummarySeparatesCarriedAndLiveEvidence(t *testing.T) {
 	events := []journal.Event{
@@ -41,6 +44,12 @@ func TestTransitionSummarySeparatesCarriedAndLiveEvidence(t *testing.T) {
 	var output bytes.Buffer
 	if err := renderTransition(&output, demo); err != nil {
 		t.Fatal(err)
+	}
+	path := filepath.Join("testdata", "transition.golden")
+	if *update {
+		if err := os.WriteFile(path, output.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	golden, err := os.ReadFile(filepath.Join("testdata", "transition.golden"))
 	if err != nil {

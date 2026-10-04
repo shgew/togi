@@ -100,7 +100,7 @@ func TestSkippedTogetherFailureMakesProgress(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20}, coreStart{phase: journal.PhaseAtLimit, offset: -20})
 			h.add(&journal.ProfileChange{To: []int{-20, -20}})
-			fact := &journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0304"}, Class: journal.TrialClass{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: h.s.durations.ShortTrialS}, Condition: machine.Together, Profile: []int{-20, -20}, Outcome: journal.OutcomeFailure, Signal: machine.Crash}
+			fact := &journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0304"}, Class: journal.TrialClass{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: h.s.durations.CheckingIdleS}, Condition: machine.Together, Profile: []int{-20, -20}, Outcome: journal.OutcomeFailure, Signal: machine.Crash}
 			if attributed {
 				fact.Core = new(0)
 			}
@@ -167,7 +167,11 @@ func TestSkippedDeepeningAndRerunFailures(t *testing.T) {
 			r := machine.R1
 			w := machine.Workloads(r)[0].ID
 			d := h.s.durations.ShortTrialS
-			failure := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0304"}, Class: journal.TrialClass{Regime: r, Workload: w, Cores: []int{0}, DurationS: d}, Condition: machine.Together, Profile: []int{-20, -20}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Core: new(0)})
+			profile, condition := []int{-20, -20}, machine.Together
+			if deepening {
+				profile, condition = []int{-20, 0}, machine.Alone
+			}
+			failure := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0304"}, Class: journal.TrialClass{Regime: r, Workload: w, Cores: []int{0}, DurationS: d}, Condition: condition, Profile: profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Core: new(0)})
 			if deepening {
 				h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleStart, Profile: []int{-20, -20}, Target: []int{-21, -20}, Cores: []int{0}, Trials: h.s.n, TrialS: d})
 			}

@@ -306,6 +306,10 @@ func (s *State) Fold(e journal.Event) {
 		if p.Decision == journal.Tolerate || p.Decision == journal.Backoff {
 			s.consumeR7(e, p.Core, p.Decision == journal.Backoff)
 		}
+		if p.Decision == journal.Tolerate {
+			s.projectionDirty = true
+			break
+		}
 		if c := s.core(p.Core); c != nil {
 			if p.FailurePoint != nil && (c.fail == nil || *p.FailurePoint > *c.fail) {
 				s.recent = []int{c.id}
@@ -636,8 +640,8 @@ func (s *State) Drain() (Action, bool) {
 
 func (s *State) Next() Action {
 	a := s.next()
-	if a.Kind == RunTrial && a.Trial.Regime == machine.R7 && len(a.Trial.Cores)>1 && s.rankingSeq==0 {
-		return Action{Kind:ReadRanking}
+	if a.Kind == RunTrial && a.Trial.Regime == machine.R7 && len(a.Trial.Cores) > 1 && s.rankingSeq == 0 {
+		return Action{Kind: ReadRanking}
 	}
 	return s.skipKnownFailure(a)
 }

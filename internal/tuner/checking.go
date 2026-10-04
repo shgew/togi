@@ -244,7 +244,7 @@ func (s *State) attributeTogether(a *awaiting) *journal.Failure {
 			}
 		}
 	}
-	if len(named) == 0 && !(intent.Regime == machine.R7 && len(intent.Cores) > 1) {
+	if len(named) == 0 && (intent.Regime != machine.R7 || len(intent.Cores) <= 1) {
 		if i, ok := SoleNonzero(intent.Profile); ok && i < len(s.cores) {
 			named = []int{s.byID()[i].id}
 		}

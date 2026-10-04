@@ -17,7 +17,7 @@ func (s *State) classCores(k trialClass) []int {
 		return t.cores
 	}
 	var out []int
-	for _, text := range strings.Fields(strings.Trim(k.cores, "[]")) {
+	for text := range strings.FieldsSeq(strings.Trim(k.cores, "[]")) {
 		id, err := strconv.Atoi(text)
 		if err == nil {
 			out = append(out, id)
@@ -152,7 +152,7 @@ func (s *State) r7Counts(c *core, k trialClass) (int, int, []int) {
 			continue
 		}
 		for _, e := range entries {
-			if !slices.Contains(e.cores, c.id) || len(e.profile) != len(s.cores) {
+			if len(e.profile) != len(s.cores) {
 				continue
 			}
 			offset := e.profile[s.index(c.id)]
@@ -226,107 +226,119 @@ func (s *State) r7PendingDecision() (Action, bool) {
 		if !s.multiR7(f.class) {
 			continue
 		}
-		var failed *entry
-		for i := range s.ledger[f.class] {
-			e := &s.ledger[f.class][i]
-			if s.sameR7Failure(e.seq, f.seq) {
-				failed = e
-				break
-			}
-		}
+		failed := s.r7FailureEntry(f)
 		if failed == nil {
 			continue
-		}
-		if failed.named == nil && f.failure.Core != nil {
-			failed.named = f.failure.Core
 		}
 		targets := s.failureTargets(*failed)
 		for _, id := range targets {
 			if s.r7Handled[f.seq][id] {
 				continue
 			}
-			c := s.core(id)
-			if c == nil {
-				continue
-			}
-			k, n, causes := s.r7Counts(c, f.class)
-			rate, alpha := s.evidence.FailureRate, s.evidence.Significance
-			if rate == 0 {
-				rate = .05
-			}
-			if alpha == 0 {
-				alpha = .2
-			}
-			cause := append([]int{f.seq}, causes...)
-			if binomialTail(k, n, rate) >= alpha {
-				return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: id, Phase: journal.PhaseChecking, Decision: journal.Tolerate, FromOffset: c.offset, ToOffset: c.offset, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("tolerated R7 failure #%d: core %02d has %d failures in %d starts; binomial tail %.6g >= significance %.6g%s", f.seq, id, k, n, binomialTail(k, n, rate), alpha, s.carriedReason(cause))}, Cause: cause}, true
-			}
-			if failed.profile[s.index(id)] == 0 {
-				return Action{Kind: Decide, Payload: failedAtZero(id), Cause: []int{f.seq}}, true
-			}
-			// An unattributed tie moves only its lowest-preferred member on each CCD.
-			if failed.named == nil {
-				chosen := id
-				tied := 0
-				for _, other := range targets {
-					if s.ccd[other] == s.ccd[id] {
-						tied++
-					}
-				}
-				if tied > 1 && s.rankingSeq == 0 {
-					return Action{Kind: ReadRanking}, true
-				}
-				if tied > 1 {
-					cause = append(cause, s.rankingSeq)
-				}
-				for _, other := range targets {
-					if s.ccd[other] != s.ccd[id] || s.r7Handled[f.seq][other] {
-						continue
-					}
-					otherCore := s.core(other)
-					if otherCore == nil {
-						continue
-					}
-					otherK, otherN, _ := s.r7Counts(otherCore, f.class)
-					if binomialTail(otherK, otherN, rate) < alpha && s.lowerPreferred(other, chosen) {
-						chosen = other
-					}
-				}
-				if id != chosen {
-					continue
+			if c := s.core(id); c != nil {
+				if a, ok := s.r7CoreDecision(f, *failed, c, targets); ok {
+					return a, true
 				}
 			}
-			if s.round != nil {
-				return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.LapEnd, Reason: fmt.Sprintf("R7 failure #%d exceeds tolerance", f.seq)}, Cause: []int{f.seq}}, true
-			}
-			req, sources := s.r7Requests(f.class.workload, failed.cores, failed.profile)
-			if len(failed.requests) > 0 {
-				req = failed.requests
-				sources = []int{failed.seq}
-			}
-			target, passSeqs := s.r7VoltageTarget(*failed, id, req[id])
-			counts := 1
-			reason := fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core %02d request %.6f V; no qualifying pass, one count", f.seq, id, req[id])
-			if len(passSeqs) > 0 {
-				counts = requests.Counts(req[id], target)
-				reason = fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core %02d request %.6f V to %.6f V, %d counts", f.seq, id, req[id], target, counts)
-			}
-			if len(sources) == 0 {
-				reason += "; request order fell back to offsets"
-			}
-			cause = append(cause, sources...)
-			cause = append(cause, passSeqs...)
-			fail := failed.profile[s.index(id)]
-			if c.fail != nil {
-				fail = max(fail, *c.fail)
-			}
-			pass, _ := keepPass(c.pass, fail)
-			to := min(0, max(c.offset, failed.profile[s.index(id)]+counts, fail+1))
-			return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: id, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailurePoint: new(fail), Reason: reason + s.carriedReason(cause)}, Cause: cause}, true
 		}
 	}
 	return Action{}, false
 }
+
+func (s *State) r7FailureEntry(f pendingFailure) *entry {
+	for i := range s.ledger[f.class] {
+		e := &s.ledger[f.class][i]
+		if s.sameR7Failure(e.seq, f.seq) {
+			if e.named == nil {
+				e.named = f.failure.Core
+			}
+			return e
+		}
+	}
+	return nil
+}
+
+func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core, targets []int) (Action, bool) {
+	k, n, causes := s.r7Counts(c, f.class)
+	rate, alpha := s.evidence.FailureRate, s.evidence.Significance
+	cause := append([]int{f.seq}, causes...)
+	tail := binomialTail(k, n, rate)
+	if tail >= alpha {
+		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseChecking, Decision: journal.Tolerate, FromOffset: c.offset, ToOffset: c.offset, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("tolerated R7 failure #%d: core %02d has %d failures in %d starts; binomial tail %.6g >= significance %.6g%s", f.seq, c.id, k, n, tail, alpha, s.carriedReason(cause))}, Cause: cause}, true
+	}
+	if failed.profile[s.index(c.id)] == 0 {
+		return Action{Kind: Decide, Payload: failedAtZero(c.id), Cause: []int{f.seq}}, true
+	}
+	if failed.named == nil {
+		chosen, rankingNeeded := s.r7TieChoice(f, targets, c.id)
+		if rankingNeeded {
+			return Action{Kind: ReadRanking}, true
+		}
+		if chosen != c.id {
+			return Action{}, false
+		}
+		if s.rankingSeq > 0 {
+			cause = append(cause, s.rankingSeq)
+		}
+	}
+	if s.round != nil {
+		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.LapEnd, Reason: fmt.Sprintf("R7 failure #%d exceeds tolerance", f.seq)}, Cause: []int{f.seq}}, true
+	}
+	return s.r7Backoff(f, failed, c, cause, k, n), true
+}
+
+func (s *State) r7TieChoice(f pendingFailure, targets []int, id int) (int, bool) {
+	chosen, tied := id, 0
+	for _, other := range targets {
+		if s.ccd[other] != s.ccd[id] {
+			continue
+		}
+		tied++
+		if s.r7Handled[f.seq][other] {
+			continue
+		}
+		c := s.core(other)
+		if c == nil {
+			continue
+		}
+		k, n, _ := s.r7Counts(c, f.class)
+		if binomialTail(k, n, s.evidence.FailureRate) < s.evidence.Significance && s.lowerPreferred(other, chosen) {
+			chosen = other
+		}
+	}
+	return chosen, tied > 1 && s.rankingSeq == 0
+}
+
+func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, k, n int) Action {
+	req, sources := s.r7Requests(f.class.workload, failed.cores, failed.profile)
+	if len(failed.requests) > 0 {
+		req, sources = failed.requests, []int{failed.seq}
+	}
+	if _, measured := req[c.id]; !measured {
+		req, sources = s.r7Requests(f.class.workload, []int{c.id}, failed.profile)
+	}
+	target, passSeqs := s.r7VoltageTarget(failed, c.id, req[c.id])
+	counts := 1
+	reason := fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core %02d request %.6f V; no qualifying pass, one count", f.seq, c.id, req[c.id])
+	if len(passSeqs) > 0 {
+		counts = requests.Counts(req[c.id], target)
+		reason = fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core %02d request %.6f V to %.6f V, %d counts", f.seq, c.id, req[c.id], target, counts)
+	}
+	if len(sources) == 0 {
+		reason += "; request order fell back to offsets"
+	}
+	cause = append(cause, sources...)
+	cause = append(cause, passSeqs...)
+	fail := failed.profile[s.index(c.id)]
+	if c.fail != nil {
+		fail = max(fail, *c.fail)
+	}
+	pass, _ := keepPass(c.pass, fail)
+	to := min(0, max(c.offset, failed.profile[s.index(c.id)]+counts, fail+1))
+	reason += fmt.Sprintf("; tolerance %d failures in %d starts", k, n)
+	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailurePoint: new(fail), Reason: reason + s.carriedReason(cause)}, Cause: cause}
+}
+
 func (s *State) lowerPreferred(a, b int) bool {
 	ra, rb := slices.Index(s.ranking, a), slices.Index(s.ranking, b)
 	if ra != rb {
@@ -366,7 +378,7 @@ func (s *State) r7VoltageTarget(f entry, id int, request float64) (float64, []in
 			if !ok || f.named == nil && voltage <= request {
 				continue
 			}
-			key := fmt.Sprintf("%v/%s", e.profile, class.cores)
+			key := fmt.Sprint(e.profile)
 			group := groups[key]
 			if group == nil {
 				group = &candidate{voltage: voltage}

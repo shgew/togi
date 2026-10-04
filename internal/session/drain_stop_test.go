@@ -63,7 +63,9 @@ func TestStopDrainsDurableFailureBoundaries(t *testing.T) {
 			}
 			in := simInput(t.TempDir(), newSim(t, cfg))
 			in.Config.CandidateSoloLimits = map[int]int{0: -30, 1: -30, 2: -30, 3: -30}
-			if combination || unattributed { in.Config.Checking.Lap = []machine.Regime{machine.R6} }
+			if combination || unattributed {
+				in.Config.Checking.Lap = []machine.Regime{machine.R6}
+			}
 			bootloader := &fakeBootloader{}
 			if zero {
 				in.Bootloader = bootloader
