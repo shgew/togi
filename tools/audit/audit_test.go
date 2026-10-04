@@ -200,23 +200,28 @@ func TestAuditInvariants(t *testing.T) {
 func TestProjectedState(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name    string
-		lastSeq int
-		phase   string
-		want    []finding
+		name     string
+		session  int
+		snapshot int
+		lastSeq  int
+		phase    string
+		want     []finding
 	}{
-		{"equal", 1, "checking", nil},
-		{"stale disagreement", 0, "search", nil},
-		{"different sequence", 2, "search", nil},
-		{"current disagreement", 1, "search", []finding{{1, "replay"}}},
+		{"equal", journal.Schema, journal.Schema, 1, "checking", nil},
+		{"stale disagreement", journal.Schema, journal.Schema, 0, "search", nil},
+		{"different sequence", journal.Schema, journal.Schema, 2, "search", nil},
+		{"current disagreement", journal.Schema, journal.Schema, 1, "search", []finding{{1, "replay"}}},
+		{"older schema", journal.Schema - 1, journal.Schema - 1, 1, "checking", nil},
+		{"older snapshot of a current session", journal.Schema, journal.Schema - 1, 1, "checking", []finding{{1, "replay"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(header), 0600); err != nil {
+			start := strings.Replace(header, `"schema":4`, fmt.Sprintf(`"schema":%d`, tc.session), 1)
+			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(start), 0600); err != nil {
 				t.Fatal(err)
 			}
-			cached := journal.State{Schema: 4, LastSeq: 1, Phase: "checking", Session: &journal.SessionInfo{ID: "test"}, Cores: []journal.CoreState{{Core: 0, CCD: 0, CPUs: []int{0, 1}}, {Core: 8, CCD: 1, CPUs: []int{2, 3}}}}
+			cached := journal.State{Schema: tc.snapshot, LastSeq: 1, Phase: "checking", Session: &journal.SessionInfo{ID: "test"}, Cores: []journal.CoreState{{Core: 0, CCD: 0, CPUs: []int{0, 1}}, {Core: 8, CCD: 1, CPUs: []int{2, 3}}}}
 			events := handwritten(t, "")
 			cached.Session.Start = events[0].Time
 			cached.LastSeq, cached.Phase = tc.lastSeq, tc.phase
