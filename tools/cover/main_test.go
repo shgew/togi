@@ -1,6 +1,9 @@
 package main
 
 import (
+	"go/build"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -139,5 +142,54 @@ func TestProfileOutsideModule(t *testing.T) {
 	_, err := parseProfile(strings.NewReader("mode: set\nother.org/x/a.go:1.1,2.2 1 0\n"), "example.com/m")
 	if err == nil || !strings.Contains(err.Error(), "outside module") {
 		t.Fatalf("err = %v, want a profile entry outside the module refused", err)
+	}
+}
+
+func TestChangedFilesTheBuildLeavesOut(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"a.go":                        "package a\n",
+		"a_linux.go":                  "package a\n",
+		"a_darwin.go":                 "package a\n",
+		"hardware.go":                 "//go:build hardware && linux\n\npackage a\n",
+		"integration.go":              "//go:build integration\n\npackage a\n",
+		"sub/process_linux_test.go":   "package sub\n",
+		"sub/process_darwin_test.go":  "package sub\n",
+		"sub/fallback.go":             "//go:build !linux\n\npackage sub\n",
+		"sub/unchanged_linux_test.go": "package sub\n",
+	}
+	for name, content := range files {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	changed := map[string][]lineRange{}
+	for name := range files {
+		if name != "sub/unchanged_linux_test.go" {
+			changed[name] = []lineRange{{1, 1}}
+		}
+	}
+	for _, tt := range []struct {
+		goos string
+		want []string
+	}{
+		{"darwin", []string{"a_linux.go", "hardware.go", "sub/process_linux_test.go"}},
+		{"linux", []string{"a_darwin.go", "hardware.go", "sub/fallback.go", "sub/process_darwin_test.go"}},
+	} {
+		t.Run(tt.goos, func(t *testing.T) {
+			ctx := build.Default
+			ctx.GOOS, ctx.GOARCH, ctx.BuildTags = tt.goos, "arm64", []string{"integration"}
+			got, err := notBuilt(ctx, root, changed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("files left out (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

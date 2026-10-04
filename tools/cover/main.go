@@ -1,4 +1,5 @@
-// cover prints the lines changed since a base that no test reached, from a coverage profile and git diff.
+// cover prints the lines changed since a base that no test reached, from a coverage profile and git diff,
+// and names the changed files the coverage run's platform and build tags leave out.
 package main
 
 import (
@@ -6,10 +7,12 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"go/build"
 	"io"
 	"maps"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -41,6 +44,7 @@ func run(args []string, out, errOut io.Writer) error {
 	flags.SetOutput(errOut)
 	profilePath := flags.String("profile", "", "coverage profile written by go test -coverprofile")
 	base := flags.String("base", "", "revision whose merge base with HEAD the working tree is compared against")
+	tags := flags.String("tags", "", "comma-separated build tags the coverage run used, as go test -tags takes them")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -68,21 +72,52 @@ func run(args []string, out, errOut io.Writer) error {
 		_, err := fmt.Fprintf(out, "No Go lines changed since %s.\n", *base)
 		return err
 	}
+	ctx := build.Default
+	target := ctx.GOOS + "/" + ctx.GOARCH
+	if *tags != "" {
+		ctx.BuildTags = strings.Split(*tags, ",")
+		target += " with tags " + *tags
+	}
+	unbuilt, err := notBuilt(ctx, ".", changed)
+	if err != nil {
+		return err
+	}
 	uncovered, err := parseProfile(profile, module)
 	if err != nil {
 		return err
 	}
 	gaps := intersect(changed, uncovered)
 	if len(gaps) == 0 {
-		_, err := fmt.Fprintf(out, "Every changed Go line the profile measures ran in a test since %s.\n", *base)
-		return err
+		if _, err := fmt.Fprintf(out, "Every changed Go line the profile measures ran in a test since %s.\n", *base); err != nil {
+			return err
+		}
 	}
 	for _, g := range gaps {
 		if _, err := fmt.Fprintln(out, g); err != nil {
 			return err
 		}
 	}
+	for _, path := range unbuilt {
+		if _, err := fmt.Fprintf(out, "%s: not built for %s\n", path, target); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// notBuilt returns the changed files, sorted, that ctx's build constraints exclude: no profile made under ctx measures them.
+func notBuilt(ctx build.Context, root string, changed map[string][]lineRange) ([]string, error) {
+	var paths []string
+	for _, path := range slices.Sorted(maps.Keys(changed)) {
+		ok, err := ctx.MatchFile(filepath.Join(root, filepath.Dir(path)), filepath.Base(path))
+		if err != nil {
+			return nil, fmt.Errorf("cover: match %s against build constraints: %w", path, err)
+		}
+		if !ok {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
 }
 
 func modulePath(goMod string) (string, error) {
