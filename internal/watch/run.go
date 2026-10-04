@@ -116,6 +116,19 @@ func showTerminal(ctx context.Context, out, in *os.File, tick <-chan time.Time, 
 	return show(ctx, out, func() (int, int, error) { return term.GetSize(int(out.Fd())) }, tick, winch, profile(out), frame, o)
 }
 
+// reloadAndAcknowledge reloads after a journal change and tells the notifier the reload is done. It reports whether
+// the frame changed.
+func (o *options) reloadAndAcknowledge(ctx context.Context) bool {
+	changed := o.reload()
+	if o.reloaded != nil {
+		select {
+		case o.reloaded <- struct{}{}:
+		case <-ctx.Done():
+		}
+	}
+	return changed
+}
+
 type options struct {
 	palette  bool
 	keys     <-chan key
@@ -348,15 +361,7 @@ func show(ctx context.Context, out io.Writer, size func() (int, int, error), tic
 				if err != nil {
 					return fmt.Errorf("watch journal: %w", err)
 				}
-				changed := o.reload()
-				if o.reloaded != nil {
-					select {
-					case o.reloaded <- struct{}{}:
-					case <-ctx.Done():
-						return nil
-					}
-				}
-				if !changed {
+				if !o.reloadAndAcknowledge(ctx) {
 					continue
 				}
 			case <-winch:
