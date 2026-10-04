@@ -82,18 +82,11 @@ const paletteReset = "\x1b]R"
 // With in a terminal, keys switch views and scroll the help and the event log.
 func Run(ctx context.Context, dir string, out, in *os.File) error {
 	changes, stop, err := watchJournal(ctx, dir)
-	o := options{live: true}
-	switch {
-	case errors.Is(err, errors.ErrUnsupported):
-		poll := time.NewTicker(time.Second)
-		defer poll.Stop()
-		o.poll = poll.C
-	case err != nil:
+	if err != nil {
 		return fmt.Errorf("watch journal: %w", err)
-	default:
-		defer stop()
-		o.changes = changes
 	}
+	defer stop()
+	o := options{live: true, changes: changes}
 	src := source{dir: dir}
 	src.reload()
 	o.reload = src.reload
@@ -131,7 +124,6 @@ type options struct {
 	stopKeys func()
 	live     bool
 	changes  <-chan error
-	poll     <-chan time.Time
 	reload   func() bool
 }
 
@@ -357,10 +349,6 @@ func show(ctx context.Context, out io.Writer, size func() (int, int, error), tic
 				if err != nil {
 					return fmt.Errorf("watch journal: %w", err)
 				}
-				if !o.reload() {
-					continue
-				}
-			case <-o.poll:
 				if !o.reload() {
 					continue
 				}
