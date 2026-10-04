@@ -152,8 +152,11 @@ func (s *State) huntProbes(h *hunt, plan groupPlan, groups []HuntGroup) []Member
 }
 
 func (s *State) memberProbe(h *hunt, id int, groups []HuntGroup) MemberProbe {
-	v := MemberProbe{Member: id, Offset: h.start.Failing[s.index(id)]}
-	v.FailedAt = append(v.FailedAt, v.Offset)
+	v := MemberProbe{Member: id}
+	if i := s.index(id); i >= 0 && i < len(h.start.Failing) {
+		v.Offset = h.start.Failing[i]
+		v.FailedAt = append(v.FailedAt, v.Offset)
+	}
 	for j, g := range h.groups {
 		m := g.payload
 		if m.Probe == nil || m.Probe.Core != id {
