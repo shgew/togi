@@ -28,8 +28,9 @@ type Config struct {
 	// Limits are the hidden limits; nil draws them from Seed.
 	Limits []Limits
 	// Model nil means DefaultModel(); a non-nil model is used verbatim, zero fields included.
-	Model *Model
-	CCD   *CCD
+	Model         *Model
+	CCD           *CCD
+	SharedVoltage *SharedVoltage
 	// Boots counts the boots before the first; boot numbering and boot IDs continue from it.
 	Boots int
 	// Start is the clock at the first boot; zero means 2026-01-01T00:00:00Z.
@@ -218,6 +219,11 @@ func New(cfg Config) (*Machine, error) {
 			return nil, errors.New("new simulator: ccd slope must be nonnegative")
 		}
 	}
+	voltage, err := normalizeVoltage(cfg.SharedVoltage, cfg.Cores)
+	if err != nil {
+		return nil, fmt.Errorf("new simulator: %w", err)
+	}
+	cfg.SharedVoltage = voltage
 	for _, kind := range slices.Sorted(maps.Keys(model.Reset)) {
 		weight := model.Reset[kind]
 		if !slices.Contains(resetOrder, kind) {
