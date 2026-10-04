@@ -36,8 +36,10 @@ func generateSharedVoltageAnchor(extract, out string, stdout io.Writer, fitter s
 			return fmt.Errorf("shared-voltage in-sample fit requires 16 cores: fact %s:%d has %d", r.Session, r.Seq, len(r.Profile))
 		}
 	}
-	if starts[0].Context == nil || *starts[0].Context == (machine.BIOSContext{}) {
-		return fmt.Errorf("shared-voltage in-sample fit requires BIOS context for real-fact replay")
+	// The machine file fills empty context fields with simulator defaults on
+	// load, which would no longer match the facts the model check replayed.
+	if c := starts[0].Context; c == nil || c.BIOSVersion == "" || c.Board == "" || c.CPUModel == "" || c.Microcode == "" || c.BoostLimitMHz == 0 {
+		return fmt.Errorf("shared-voltage in-sample fit requires BIOS context with every field set for real-fact replay")
 	}
 	cfg, loss := fitter(starts)
 	if cfg.Cores != 16 || cfg.SharedVoltage == nil {

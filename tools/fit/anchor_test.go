@@ -266,6 +266,13 @@ func TestSharedVoltageAnchorValidatesBeforeFitting(t *testing.T) {
 				records[i].Context = nil
 			}
 		}, "requires BIOS context"},
+		{"partial BIOS", func(records []trialfacts.Record) {
+			context := *records[0].Context
+			context.Microcode = ""
+			for i := range records {
+				records[i].Context = &context
+			}
+		}, "requires BIOS context with every field set"},
 		{"mixed BIOS", func(records []trialfacts.Record) {
 			context := *records[0].Context
 			context.Board = "other"
