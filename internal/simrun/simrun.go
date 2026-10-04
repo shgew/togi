@@ -28,9 +28,9 @@ type Input struct {
 	Log        io.Writer
 	Renderer   journal.Renderer
 	// Cycles is the number of clean cycles of one profile after which the run stops; 0 keeps checking endlessly.
-	Cycles  int
-	Wrap  func(session.Journal) session.Journal
-	Until func(journal.Event) bool
+	Cycles int
+	Wrap   func(session.Journal) session.Journal
+	Until  func(journal.Event) bool
 	// InMemoryJournal retains the writer across simulated reboots and writes state only when Simulate returns.
 	// Leave it false when testing file recovery or injecting journal interruptions.
 	InMemoryJournal bool

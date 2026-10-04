@@ -20,13 +20,13 @@ type matrixResult struct {
 }
 
 type matrixHunt struct {
-	Start          journal.HuntStart
-	Failure        journal.Failure
+	Start            journal.HuntStart
+	Failure          journal.Failure
 	CleanCycleParked bool
 }
 
 type matrixRound struct {
-	Round        journal.DeepeningRound
+	Round          journal.DeepeningRound
 	CleanCycleBase bool
 }
 

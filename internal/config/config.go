@@ -31,7 +31,7 @@ type Config struct {
 
 type Durations struct {
 	SearchTrialS     int `toml:"search_trial_s" json:"search_trial_s"`
-	ShortTrialS           int `toml:"short_trial_s" json:"short_trial_s"`
+	ShortTrialS      int `toml:"short_trial_s" json:"short_trial_s"`
 	CheckingTrialS   int `toml:"checking_trial_s" json:"checking_trial_s"`
 	CheckingIdleS    int `toml:"checking_idle_s" json:"checking_idle_s"`
 	CheckingAllCoreS int `toml:"checking_all_core_s" json:"checking_all_core_s"`
@@ -66,7 +66,7 @@ func Default() Config {
 		CandidateSoloLimits: map[int]int{},
 		Durations: Durations{
 			SearchTrialS:     90,
-			ShortTrialS:           120,
+			ShortTrialS:      120,
 			CheckingTrialS:   120,
 			CheckingIdleS:    900,
 			CheckingAllCoreS: 1200,
