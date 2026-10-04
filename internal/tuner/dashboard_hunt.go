@@ -5,11 +5,26 @@ import (
 	"slices"
 )
 
+// groupCarried reports whether the evidence answering this group came from an earlier session. Causes the group
+// inherits from earlier groups do not count.
 func (s *State) groupCarried(h *hunt, g groupRecord) bool {
 	_, failure, seqs := s.groupEvidence(h, g, true)
+	if g.payload.Inferred != "" {
+		seqs, failure = s.inferredEvidence(h, g)
+	}
 	seqs = append(seqs, failure)
-	seqs = append(seqs, g.cause...)
 	return slices.ContainsFunc(seqs, func(seq int) bool { _, ok := s.carriedSources[seq]; return ok })
+}
+
+// inferredEvidence finds the trials that answered a group before it was planned, as planGroup found them.
+func (s *State) inferredEvidence(h *hunt, g groupRecord) ([]int, int) {
+	k := h.class.withDuration(g.payload.DurationS)
+	since := s.inferenceSince(g.payload, h.seq)
+	if g.payload.Inferred == "pass" {
+		seqs := slices.DeleteFunc(s.passSeqs(k, g.payload.Profile, since, huntEvidence), func(seq int) bool { return seq > g.seq })
+		return seqs[:min(len(seqs), h.start.Trials)], 0
+	}
+	return nil, s.failingSeq(k, g.payload.Profile, since)
 }
 
 // HuntPlan projects the active split and member ladder from the hunt scheduler.
@@ -62,6 +77,14 @@ func (s *State) huntPart(h *hunt, plan groupPlan, cores []int) HuntPart {
 
 func (s *State) huntParts(h *hunt, plan groupPlan, groups []HuntGroup) []HuntPart {
 	var out []HuntPart
+	if plan.singleCorePrior[0] > 0 || len(h.groups) == 1 && plan.stage == "part" && plan.g > 2 && plan.g == len(plan.set) {
+		// A corroborated core runs alone before any halves; if it passes, the split starts over from the halves.
+		part := s.huntPart(h, plan, plan.cores)
+		if len(h.groups) == 1 {
+			part.Group, part.Outcome, part.Running = h.groups[0].payload.Group, groups[0].Outcome, groups[0].Running
+		}
+		return append(out, part)
+	}
 	switch plan.stage {
 	case "part", "complement":
 		split := s.split(h, plan.set, plan.g)
