@@ -63,6 +63,7 @@ func TestSixteenCoresReachCleanCycle(t *testing.T) {
 	parts := map[int]map[int]int{}
 	var combinations []journal.Combination
 	failed := map[int]int{}
+	multiR7 := map[string]bool{}
 	for _, e := range events {
 		switch p := e.Data.(type) {
 		case *journal.CheckingCycle:
@@ -70,6 +71,7 @@ func TestSixteenCoresReachCleanCycle(t *testing.T) {
 				passedFullCycle = true
 			}
 		case *journal.TrialIntent:
+			multiR7[p.Trial] = p.Regime == machine.R7 && len(p.Cores) > 1
 			if p.Regime == machine.R7 && p.Phase == journal.PhaseChecking {
 				if parts[p.Cycle] == nil {
 					parts[p.Cycle] = map[int]int{}
@@ -94,8 +96,13 @@ func TestSixteenCoresReachCleanCycle(t *testing.T) {
 				}
 			}
 		case *journal.Failure:
-			if p.Attribution == journal.Attributed && p.Core != nil && p.Offset != nil {
+			// Multi-core R7 failures become failure points only when the tolerance ledger moves a core.
+			if !multiR7[p.Trial] && p.Attribution == journal.Attributed && p.Core != nil && p.Offset != nil {
 				failed[*p.Core] = *p.Offset
+			}
+		case *journal.TunerDecision:
+			if p.FailurePoint != nil {
+				failed[p.Core] = *p.FailurePoint
 			}
 		case *journal.Combination:
 			combinations = append(combinations, *p)
