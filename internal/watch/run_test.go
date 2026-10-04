@@ -323,7 +323,7 @@ func TestReadKeysFragmentedSequences(t *testing.T) {
 				calls := make(chan int)
 				poll := func(fds []unix.PollFd, timeout int) (int, error) {
 					calls <- timeout
-					return unix.Poll(fds, -1)
+					return pollThroughSignals(fds)
 				}
 				keys, stop, err := readKeys(context.Background(), in, poll)
 				if err != nil {
@@ -375,7 +375,7 @@ func TestReadKeysEscapeTimeoutAndEOF(t *testing.T) {
 				if timeout >= 0 {
 					return 0, nil
 				}
-				return unix.Poll(fds, -1)
+				return pollThroughSignals(fds)
 			}
 			keys, stop, err := readKeys(context.Background(), in, poll)
 			if err != nil {
@@ -409,6 +409,17 @@ func TestReadKeysEscapeTimeoutAndEOF(t *testing.T) {
 			}
 			stop()
 		})
+	}
+}
+
+// pollThroughSignals blocks like the real poll but retries EINTR itself, so a runtime signal never
+// makes readKeys call the fake again and send an acknowledgment the test does not expect.
+func pollThroughSignals(fds []unix.PollFd) (int, error) {
+	for {
+		n, err := unix.Poll(fds, -1)
+		if !errors.Is(err, unix.EINTR) {
+			return n, err
+		}
 	}
 }
 
