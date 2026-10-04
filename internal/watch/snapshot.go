@@ -41,7 +41,7 @@ func Project(events []journal.Event) Snapshot {
 	if st.Session == nil {
 		return Snapshot{}
 	}
-	s := Snapshot{session: true, start: st.Session.Start, phase: journal.Phase(st.Phase), carried: map[int]bool{}, shapes: map[int]huntShape{}}
+	s := Snapshot{session: true, start: st.Session.Start, phase: journal.Phase(st.Phase), carried: map[int]bool{}, shapes: map[int]huntShape{}, r7: t.R7Status()}
 	for _, c := range st.Cores {
 		s.order = append(s.order, c.Core)
 	}
@@ -61,6 +61,7 @@ type requirementRecorder struct {
 	steps   map[string]int // the one-based checking step each cycle trial ran in
 }
 
+<<<<<<< HEAD
 // trialCount is which trial of its checking part, or else of its requirement, a trial was: index of of.
 type trialCount struct{ index, of int }
 
@@ -735,7 +736,7 @@ func trialCores(p *journal.TrialIntent) []int {
 	return slices.Clone(p.Cores)
 }
 func newTrial(p *journal.TrialIntent, events []journal.Event) *trialView {
-	tr := &trialView{id: p.Trial, cores: trialCores(p), condition: p.Condition, regime: p.Regime, phase: p.Phase, profile: slices.Clone(p.Profile), duration: time.Duration(p.DurationS) * time.Second, round: p.Round, rerun: p.Rerun, retry: p.Retry, recordOnly: p.RecordOnly, cycle: p.Cycle, step: p.Step, hunt: p.Hunt, group: p.Group}
+	tr := &trialView{id: p.Trial, cores: trialCores(p), condition: p.Condition, regime: p.Regime, phase: p.Phase, profile: slices.Clone(p.Profile), duration: time.Duration(p.DurationS) * time.Second, round: p.Round, rerun: p.Rerun, retry: p.Retry, recordOnly: p.RecordOnly, partial: partialTrial(p, events), cycle: p.Cycle, step: p.Step, hunt: p.Hunt, group: p.Group}
 	tr.workload, _ = machine.WorkloadByID(p.Workload)
 	if tr.workload.Label == "" {
 		tr.workload.Label = vtText(p.Workload)
@@ -755,6 +756,32 @@ func newTrial(p *journal.TrialIntent, events []journal.Event) *trialView {
 	}
 	return tr
 }
+
+func partialTrial(p *journal.TrialIntent, events []journal.Event) bool {
+	if p.Regime != machine.R7 {
+		return false
+	}
+	if p.RecordOnly {
+		return true
+	}
+	for _, e := range events {
+		if start, ok := e.Data.(*journal.SessionStart); ok {
+			for _, core := range start.Cores {
+				if !slices.Contains(p.Cores, core.Core) {
+					continue
+				}
+				for _, other := range start.Cores {
+					if other.CCD == core.CCD && !slices.Contains(p.Cores, other.Core) {
+						return true
+					}
+				}
+			}
+			return false
+		}
+	}
+	return false
+}
+
 func workloadLabel(id string) string {
 	if w, ok := machine.WorkloadByID(id); ok {
 		return w.Label

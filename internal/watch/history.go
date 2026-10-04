@@ -152,6 +152,8 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 		if d.Event == journal.CycleStart {
 			p.cycleSteps[d.Cycle] = d.Steps
 		}
+	case *journal.CheckingChain:
+		line.tag, line.text = tagNote, vtText(e.Msg)
 	case *journal.HuntStart:
 		return p.huntStart(line, d)
 	case *journal.HuntGroup:
@@ -373,6 +375,7 @@ func (p *projector) trialEnd(line entry, d *journal.TrialEnd, cause []int) (entr
 			line.text += named
 		}
 		if d.Signal == machine.Crash {
+
 			// Recovery appends the trial outcome after the reboot; only an exact cause links their history.
 			for i := len(p.s.history) - 1; i >= 0; i-- {
 				previous := &p.s.history[i]
@@ -388,6 +391,7 @@ func (p *projector) trialEnd(line entry, d *journal.TrialEnd, cause []int) (entr
 					return entry{}, false
 				}
 			}
+
 		}
 	case journal.OutcomeInconclusive:
 		reason := "it could not run"
@@ -462,7 +466,11 @@ func (p *projector) partName(in *journal.TrialIntent) string {
 			ccds = append(ccds, fmt.Sprint(c.CCD))
 		}
 	}
-	if in.RecordOnly {
+	if in.RecordOnly || in.Regime == machine.R7 && slices.ContainsFunc(p.st.Cores, func(c journal.CoreState) bool {
+		return slices.Contains(in.Cores, c.Core) && slices.ContainsFunc(p.st.Cores, func(other journal.CoreState) bool {
+			return other.CCD == c.CCD && !slices.Contains(in.Cores, other.Core)
+		})
+	}) {
 		return "partial CCD " + strings.Join(ccds, "+")
 	}
 	return "full CCD " + strings.Join(ccds, "+")
@@ -488,6 +496,8 @@ func decisionText(d *journal.TunerDecision) (string, string, tone) {
 		return tagDeeper, fmt.Sprintf("core %02d %d → %d", d.Core, d.FromOffset, d.ToOffset), goodTone
 	case journal.Yield:
 		return tagYield, fmt.Sprintf("core %02d %d → %d so others go deeper", d.Core, d.FromOffset, d.ToOffset), plainTone
+	case journal.Tolerate:
+		return tagNote, fmt.Sprintf("core %02d tolerates R7 failure; stays at %d (%s)", d.Core, d.FromOffset, vtText(d.Reason)), warnTone
 	case journal.Backoff:
 	}
 	return tagBackoff, fmt.Sprintf("core %02d %d → %d", d.Core, d.FromOffset, d.ToOffset), warnTone
@@ -575,6 +585,7 @@ func (p *projector) roundText(d *journal.DeepeningRound) (string, string, tone) 
 	}
 	return tagRound, fmt.Sprintf("#%d stopped: %s", d.Round, vtText(d.Reason)), warnTone
 }
+
 
 func coresText(cores []int, total int) string {
 	switch {

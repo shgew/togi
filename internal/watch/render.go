@@ -313,7 +313,7 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 			for i, r := range p.ccds {
 				drawCCD(&c, r, p.columns[i], p.ccdIDs[i], s)
 			}
-			c.rows(p.context, s.contextLines(p, now))
+			c.rows(p.context, s.dashboardContextLines(p, now))
 			c.rows(p.history, s.historyPanel(p.history.w))
 		}
 	}
@@ -321,6 +321,60 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 		c.put(rectangle{p.header.x, p.hint, p.header.w, 1}, 0, 0, keyHints(sc.View))
 	}
 	return Drawn{Lines: fit(c.lines(), p.width, sc.Height), Scroll: scroll, Until: until}
+}
+
+// dashboardContextLines adds R7 evidence to the context, never to the Forecast's outcome branches.
+func (s Snapshot) dashboardContextLines(p layout, now time.Time) []string {
+	out := s.contextLines(p, now)
+	evidence := s.r7Lines(p.context.w)
+	if len(evidence) > 0 {
+		// Keep the evidence visible while leaving the stage-specific context first.
+		room := max(p.context.h-len(evidence)-1, 0)
+		out = out[:min(len(out), room)]
+		if len(out) > 0 {
+			out = append(out, "")
+		}
+		out = append(out, evidence...)
+	}
+	return out
+}
+
+func (s Snapshot) r7Lines(width int) []string {
+	var out []string
+	for _, w := range machine.Workloads(machine.R7) {
+		if s.trial != nil && s.trial.regime == machine.R7 && s.trial.workload.ID != w.ID {
+			continue
+		}
+		var top, sufficient, pending []int
+		fallback := false
+		for _, c := range s.r7 {
+			if c.Workload != w.ID {
+				continue
+			}
+			if c.TopRequester {
+				top = append(top, c.Core)
+				fallback = fallback || c.OffsetFallback
+			}
+			if c.SelfSufficient {
+				sufficient = append(sufficient, c.Core)
+			} else {
+				pending = append(pending, c.Core)
+			}
+		}
+		if len(sufficient)+len(pending) == 0 {
+			continue
+		}
+		source := ""
+		if fallback {
+			source = " (offset fallback)"
+		}
+		out = append(out, trimWords(grey.Render("R7 "+workloadDisplayID(w.ID)+": top requesters "+coreList(top)+source), width))
+		out = append(out, trimWords(grey.Render("Self-sufficient: "+coreList(sufficient)+"; pending: "+coreList(pending)), width))
+	}
+	if len(out) > 0 {
+		out = append(out, trimWords(grey.Render("Observed passes, not a guarantee."), width))
+	}
+	return out
 }
 
 func narrativeStyle(t tone) lipgloss.Style {

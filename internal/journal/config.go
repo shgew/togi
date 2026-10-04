@@ -24,6 +24,8 @@ type ConfigDurations struct {
 type ConfigEvidence struct {
 	Miss float64 `json:"miss"`
 	Rate float64 `json:"rate"`
+	FailureRate float64 `json:"failure_rate"`
+	Significance float64 `json:"significance"`
 }
 
 type ConfigChecking struct {

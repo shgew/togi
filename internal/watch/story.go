@@ -96,11 +96,17 @@ func (s Snapshot) story(now time.Time) story {
 		where = fmt.Sprintf("Part %d of %d, on %s, is record only: it covers nothing in the cycle.", t.part, t.parts, coreIDs(t.cores))
 		brief = fmt.Sprintf("Step %d, %s %s: part %d of %d, on %s, is record only.", t.step, t.regime, kindWords(t.regime), t.part, t.parts, coreIDs(t.cores))
 	}
-	if s.cleanCycles > 0 {
+	if t.partial && !t.recordOnly {
+		where = partialNote
+		brief = fmt.Sprintf("Step %d, R7 partial loads %s; passes and failures count.", t.step, coreIDs(t.cores))
+	}
+	if s.cleanCycles > 0 && !t.partial {
 		where = fmt.Sprintf("%d clean cycles count for this profile. Passing trials cannot prove it will never fail.", s.cleanCycles)
 	}
 	return story{name, []string{step, where}, brief, plainTone}
 }
+
+const partialNote = "This partial idles the top-requester groups found so far. Its loaded set freezes when the part starts, even if offsets change. Passes and failures count as ordinary evidence."
 
 // stageLabel names the stage the tuner is in, for a narrator with no trial to speak of.
 func (s Snapshot) stageLabel() string {
@@ -496,6 +502,8 @@ func (s Snapshot) operation(t trialView) string {
 	}
 	if t.recordOnly {
 		text += " · RECORD ONLY"
+	} else if t.partial {
+		text += " · PARTIAL"
 	}
 	return tone.Render(text)
 }

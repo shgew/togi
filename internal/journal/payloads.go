@@ -28,6 +28,7 @@ const (
 	CheckSoloLimit Decision = "check_solo_limit"
 	Deepen         Decision = "deepen"
 	Yield          Decision = "yield"
+	Tolerate      Decision = "tolerate"
 )
 
 type Outcome string
@@ -725,6 +726,9 @@ type TunerDecision struct {
 
 func (*TunerDecision) Kind() Kind { return KindTunerDecision }
 func (p *TunerDecision) Message() string {
+	if p.Decision == Tolerate {
+		return fmt.Sprintf("core %s tolerates R7 failure at %d; offset unchanged (%s)", coreID(p.Core), p.FromOffset, p.Reason)
+	}
 	verb := string(p.Decision)
 	switch p.Decision {
 	case StepDeeper:
@@ -820,16 +824,35 @@ type CheckingStep struct {
 
 func (*CheckingStep) Kind() Kind { return KindCheckingStep }
 func (p *CheckingStep) Message() string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "checking cycle %d R7 step %d starts at current profile %v", p.Cycle, p.Step, p.Profile)
-	for _, partial := range p.Partials {
-		if len(partial.Cores) == 0 {
-			fmt.Fprintf(&b, "; CCD %d record-only partial skipped: %s", partial.CCD, partial.Reason)
-		} else {
-			fmt.Fprintf(&b, "; CCD %d record-only partial loads cores %s", partial.CCD, coreList(partial.Cores))
-		}
+	return fmt.Sprintf("checking cycle %d R7 step %d starts at current profile %v", p.Cycle, p.Step, p.Profile)
+}
+
+type CheckingChain struct {
+	Cycle int `json:"cycle"`
+	Step int `json:"step"`
+	CCD int `json:"ccd"`
+	Workload string `json:"workload"`
+	Groups [][]int `json:"groups"`
+	Cores []int `json:"cores"`
+	SourceSeqs []int `json:"source_seqs"`
+	Profile []int `json:"profile"`
+	Part string `json:"part"`
+	Msg string `json:"-"`
+}
+
+func (*CheckingChain) Kind() Kind { return KindCheckingChain }
+func (p *CheckingChain) Message() string {
+	if p.Msg != "" {
+		return p.Msg
 	}
-	return b.String()
+	source := fmt.Sprintf("request measurements %v", p.SourceSeqs)
+	if len(p.SourceSeqs) == 0 {
+		source = "offset fallback (no request telemetry)"
+	}
+	if len(p.Cores) == 0 {
+		return fmt.Sprintf("checking cycle %d R7 step %d CCD %d %s: request groups %v from %s; partial chain ends because idling the next top-requester group leaves fewer than two loaded cores", p.Cycle, p.Step, p.CCD, p.Workload, p.Groups, source)
+	}
+	return fmt.Sprintf("checking cycle %d R7 step %d CCD %d %s: request groups %v from %s; next %s loads cores %s at profile %v", p.Cycle, p.Step, p.CCD, p.Workload, p.Groups, source, p.Part, coreList(p.Cores), p.Profile)
 }
 
 type CommandReset struct {

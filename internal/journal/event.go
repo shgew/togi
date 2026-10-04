@@ -50,6 +50,7 @@ const (
 	KindCorePhase       Kind = "core.phase"
 	KindCheckingCycle   Kind = "checking.cycle"
 	KindCheckingStep    Kind = "checking.step"
+	KindCheckingChain   Kind = "checking.chain"
 	KindHostRanking     Kind = "host.ranking"
 	KindHuntStart       Kind = "hunt.start"
 	KindHuntGroup       Kind = "hunt.group"
@@ -250,6 +251,7 @@ var payloadTypes = map[Kind]payloadType{
 	KindCorePhase:       typeOf[CorePhase](),
 	KindCheckingCycle:   typeOf[CheckingCycle](),
 	KindCheckingStep:    typeOf[CheckingStep](),
+	KindCheckingChain:   typeOf[CheckingChain](),
 	KindHostRanking:     typeOf[HostRanking](),
 	KindHuntStart:       typeOf[HuntStart](),
 	KindHuntGroup:       typeOf[HuntGroup](),

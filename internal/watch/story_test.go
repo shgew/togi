@@ -166,3 +166,22 @@ func TestCarriedIdleFailureCauseIsNotATrial(t *testing.T) {
 		t.Fatalf("carried idle failure described as %q", got)
 	}
 }
+
+func TestStoryPartialExplainsOrdinaryEvidence(t *testing.T) {
+	t.Parallel()
+	s := Snapshot{trial: &trialView{hasStarted: true, regime: machine.R7, condition: machine.Together, cycle: 1, step: 1, partial: true, cores: []int{1}, parts: 2}}
+	st := s.story(time.Time{})
+	text := strings.Join(st.lines, "\n")
+	for _, want := range []string{"top-requester groups", "when the part starts", "even if offsets change", "Passes and failures count as ordinary evidence"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("partial narrative lost %q: %s", want, text)
+		}
+	}
+	help, _ := renderHelpBody(115, 1000, 0)
+	words := strings.Join(strings.Fields(ansi.Strip(strings.Join(help, "\n"))), " ")
+	for _, want := range []string{"tolerated failures repeat without moving offsets", "every step and R7 partial part passed", "when the part starts", "even if offsets change"} {
+		if !strings.Contains(words, want) {
+			t.Errorf("help lost R7 intent %q", want)
+		}
+	}
+}

@@ -19,7 +19,7 @@ func TestLoad(t *testing.T) {
 	shortTrial := Default()
 	shortTrial.Durations.ShortTrialS = 86400
 	evidence := Default()
-	evidence.Evidence = Evidence{Miss: 0.001, Rate: 0.25}
+	evidence.Evidence.Miss, evidence.Evidence.Rate = 0.001, 0.25
 	offsets := Default()
 	offsets.StartOffsets = map[int]int{3: -10}
 	soloLimits := Default()
@@ -31,6 +31,8 @@ func TestLoad(t *testing.T) {
 	cycle.Checking.Cycle = []machine.Regime{machine.R7}
 	user := Default()
 	user.BackendUser = "togi-trial"
+	tolerance := Default()
+	tolerance.Evidence.FailureRate, tolerance.Evidence.Significance = 0.1, 0.3
 
 	tests := []struct {
 		name    string
@@ -56,6 +58,15 @@ func TestLoad(t *testing.T) {
 		{name: "one miss", content: "[evidence]\nmiss = 1\n", wantErr: "evidence.miss = 1: must be within (0, 1)"},
 		{name: "zero rate", content: "[evidence]\nrate = 0\n", wantErr: "evidence.rate = 0: must be within (0, 1)"},
 		{name: "one rate", content: "[evidence]\nrate = 1\n", wantErr: "evidence.rate = 1: must be within (0, 1)"},
+		{name: "tolerance overridden", content: "[evidence]\nfailure_rate = 0.1\nsignificance = 0.3\n", want: tolerance},
+		{name: "zero failure rate", content: "[evidence]\nfailure_rate = 0\n", wantErr: "evidence.failure_rate = 0: must be within (0, 1)"},
+		{name: "one failure rate", content: "[evidence]\nfailure_rate = 1\n", wantErr: "evidence.failure_rate = 1: must be within (0, 1)"},
+		{name: "nan failure rate", content: "[evidence]\nfailure_rate = nan\n", wantErr: "evidence.failure_rate = NaN: must be within (0, 1)"},
+		{name: "infinite failure rate", content: "[evidence]\nfailure_rate = inf\n", wantErr: "evidence.failure_rate = +Inf: must be within (0, 1)"},
+		{name: "zero significance", content: "[evidence]\nsignificance = 0\n", wantErr: "evidence.significance = 0: must be within (0, 1)"},
+		{name: "one significance", content: "[evidence]\nsignificance = 1\n", wantErr: "evidence.significance = 1: must be within (0, 1)"},
+		{name: "nan significance", content: "[evidence]\nsignificance = nan\n", wantErr: "evidence.significance = NaN: must be within (0, 1)"},
+		{name: "infinite significance", content: "[evidence]\nsignificance = -inf\n", wantErr: "evidence.significance = -Inf: must be within (0, 1)"},
 		{name: "too many trials", content: "[evidence]\nrate = 1e-300\n", wantErr: "evidence: miss 0.05 and rate 1e-300 need more than 1000 trials per step"},
 		{name: "removed confirmation key takes precedence", content: "[durations]\nconfirmation_trial_s = 300\nbogus = 1\n", wantErr: "durations.confirmation_trial_s was removed in togi 0.5.0: confirmation no longer exists; delete the key"},
 		{name: "all-core duration too short to split", content: "[durations]\nchecking_all_core_s = 3\n", wantErr: "durations.checking_all_core_s = 3: must be within [4, 86400]"},

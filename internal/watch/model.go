@@ -23,6 +23,7 @@ type Snapshot struct {
 
 	cores  []coreView // sorted by core ID
 	combos []comboView
+	r7     []tuner.R7CoreStatus
 
 	trial    *trialView   // the trial in flight: its intent is recorded and it has not ended
 	last     *trialEnd    // the last trial that ended
@@ -127,6 +128,7 @@ type trialView struct {
 	hasStarted bool
 	duration   time.Duration
 	recordOnly bool
+	partial    bool
 	rerun      bool
 	retry      bool
 

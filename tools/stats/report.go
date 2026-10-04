@@ -65,6 +65,7 @@ func report(out io.Writer, session facts.Session, since time.Time) error {
 	renderHunts(tab, p, since)
 	renderChecking(tab, p, events, since)
 	renderEvidence(tab, p, events, since)
+	renderR7Decisions(tab, events, since)
 	renderDepth(tab, p, since)
 	renderRequests(tab, p, since)
 	return renderOutcomes(tab, p, since)
@@ -281,4 +282,48 @@ func loadedCCD(t *trial, cores []machine.CoreInfo, ccds map[int]int) string {
 		return "idle/unknown"
 	}
 	return strings.Join(keys(set), ",")
+}
+
+func renderR7Decisions(tab *table, events []journal.Event, since time.Time) {
+	tab.section("R7 tolerance and voltage-targeted backoffs", "seq\tdecision\tcore\tfrom\tto\tcounts\tcauses\treason")
+	bySeq := make(map[int]journal.Event, len(events))
+	intents := make(map[string]*journal.TrialIntent)
+	for _, e := range events {
+		bySeq[e.Seq] = e
+		if in, ok := e.Data.(*journal.TrialIntent); ok {
+			intents[in.Trial] = in
+		}
+	}
+	for _, e := range events {
+		d, ok := e.Data.(*journal.TunerDecision)
+		if !ok || !selected(e.Time, since) || d.Decision != journal.Tolerate && d.Decision != journal.Backoff {
+			continue
+		}
+		r7 := d.Decision == journal.Tolerate
+		for _, seq := range e.Cause {
+			switch cause := bySeq[seq].Data.(type) {
+			case *journal.Failure:
+				r7 = r7 || cause.Regime == machine.R7
+			case *journal.TrialCarried:
+				r7 = r7 || cause.Class.Regime == machine.R7
+			case *journal.TrialEnd:
+				if in := intents[cause.Trial]; in != nil {
+					r7 = r7 || in.Regime == machine.R7 && len(in.Cores) > 1
+				}
+			}
+		}
+		if r7 {
+			tab.row("%d\t%s\t%02d\t%d\t%d\t%d\t%v\t%s", e.Seq, d.Decision, d.Core, d.FromOffset, d.ToOffset, d.ToOffset-d.FromOffset, e.Cause, journal.EscapeText(d.Reason))
+		}
+	}
+	tab.section("R7 chain derivations", "seq\tlap\tstep\tCCD\tworkload\tpart\trequest groups\tloaded cores\tsources")
+	for _, e := range events {
+		if d, ok := e.Data.(*journal.CheckingChain); ok && selected(e.Time, since) {
+			source := fmt.Sprint(d.SourceSeqs)
+			if len(d.SourceSeqs) == 0 {
+				source = "offset fallback"
+			}
+			tab.row("%d\t%d\t%d\t%d\t%s\t%s\t%v\t%s\t%s", e.Seq, d.Lap, d.Step, d.CCD, journal.EscapeText(d.Workload), journal.EscapeText(d.Part), d.Groups, coreList(d.Cores), source)
+		}
+	}
 }

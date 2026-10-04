@@ -384,3 +384,61 @@ func TestProbeWithoutFailingOffsetRenders(t *testing.T) {
 		t.Fatal("a running probe without a recorded failing offset drew nothing")
 	}
 }
+
+func TestPartialTrialUsesOrdinaryEvidence(t *testing.T) {
+	t.Parallel()
+	profile := []int{-20, -30, -50}
+	resumed := []int{-20, -10, -50}
+	events := dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -20, FailurePoint: new(-21)},
+		&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -30, FailurePoint: new(-31)},
+		&journal.CorePhase{Core: 2, To: journal.PhaseAtLimit, Offset: -50},
+		&journal.ProfileChange{To: profile},
+		&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R7}},
+		&journal.CheckingChain{Cycle: 1, Step: 1, CCD: 0, Workload: "mprime-avx2-36k-248k-allcore", Profile: profile, Groups: [][]int{{0}, {1}}, Cores: []int{1}, Part: "partial 1"},
+		&journal.ProfileChange{From: profile, To: resumed},
+		&journal.SMUReadback{Core: 1, Offset: -10},
+		&journal.TrialIntent{Trial: "partial", Cores: []int{1}, Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Profile: resumed, DurationS: 120, Cycle: 1, Step: 1},
+		&journal.TrialStart{Trial: "partial"},
+		&journal.TrialEnd{Trial: "partial", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError})
+	live := events[:len(events)-1]
+	s := Project(live)
+	if s.trial == nil || !s.trial.partial || s.trial.recordOnly {
+		t.Fatalf("partial must be ordinary evidence: %+v", s.trial)
+	}
+	if s.cores[0].loaded || !s.cores[1].loaded || s.cores[1].applied != -10 {
+		t.Fatalf("partial must preserve its loaded set after offsets change: %+v", s.cores)
+	}
+	if got := ansi.Strip(s.operation(*s.trial)); !strings.Contains(got, "PARTIAL") || strings.Contains(got, "RECORD ONLY") {
+		t.Fatalf("NOW must identify ordinary partial evidence: %q", got)
+	}
+	if !slices.ContainsFunc(s.log, func(l entry) bool {
+		return strings.Contains(l.text, "next partial 1 loads cores 01")
+	}) {
+		t.Fatal("log must show the derived chain part")
+	}
+	ended := Project(events)
+	last := ended.history[len(ended.history)-1]
+	if got := last.tag + ": " + last.sentence(); !strings.Contains(got, "partial CCD 0") || !strings.Contains(got, "wrong result") || strings.Contains(got, "record only") || last.tone != badTone {
+		t.Fatalf("partial failure must be decisive: %q tone %v", got, last.tone)
+	}
+}
+
+func TestR7EvidenceStaysInContextNotForecast(t *testing.T) {
+	t.Parallel()
+	w := machine.Workloads(machine.R7)[0].ID
+	s := Snapshot{r7: []tuner.R7CoreStatus{
+		{Core: 0, Workload: w, TopRequester: true, OffsetFallback: true, SelfSufficient: true},
+		{Core: 1, Workload: w},
+	}}
+	p := layout{context: rectangle{w: 115, h: 8}}
+	text := ansi.Strip(strings.Join(s.dashboardContextLines(p, time.Time{}), "\n"))
+	for _, want := range []string{"top requesters 00", "offset fallback", "Self-sufficient: 00", "pending: 01", "not a guarantee"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("context lost %q: %s", want, text)
+		}
+	}
+	if rows := s.outcomeRows(); len(rows) != 0 {
+		t.Fatalf("evidence must not invent Forecast branches: %+v", rows)
+	}
+}
