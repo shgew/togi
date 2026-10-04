@@ -198,7 +198,7 @@ in
       machine.succeed("test -z \"$(togi events --json --kind smu.intent,trial.intent)\"")
       machine.wait_for_unit("togi-watch.service")
       machine.fail("grep -q '^FONT=' /etc/vconsole.conf")
-      machine.wait_until_succeeds("grep -aq 'dead end preflight' /dev/vcs1")
+      machine.wait_until_succeeds("grep -aq 'preflight: failed checks' /dev/vcs1")
       machine.succeed("systemctl kill --signal=SIGSTOP togi-watch.service")
       machine.succeed("echo '<0>togi-kmsg-probe' > /dev/kmsg")
       machine.wait_until_succeeds("grep -aq togi-kmsg-probe /dev/vcs3")
