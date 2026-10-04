@@ -87,3 +87,37 @@ func TestRerunPlanRetainsFailedLength(t *testing.T) {
 		})
 	}
 }
+
+func TestRequirementCountsOnlyFreshSearchTrials(t *testing.T) {
+	h := newHarness(t, searchAt(-20)...)
+	first := h.start(h.next()).Data.(*journal.TrialIntent)
+	h.add(&journal.TrialEnd{Trial: first.Trial, Outcome: journal.OutcomePass, DurationS: first.DurationS})
+	later := *first
+	later.Trial, later.Offset, later.Profile = "later", new(-15), []int{-15}
+	if diff := cmp.Diff(TrialRequirement{Trial: 1, Needed: 1}, h.s.Requirement(&later)); diff != "" {
+		t.Fatalf("a search step's trial counted an earlier step's pass (-want +got):\n%s", diff)
+	}
+}
+
+func TestCyclePlanRunsOnlyTheCurrentStepsPart(t *testing.T) {
+	h := hasRoomHarness(t, -20, -20)
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R6, machine.R6, machine.R6, machine.R6}})
+	// Occurrences rotate through R6's workloads, so a later step can repeat an earlier step's class.
+	for step := range 4 {
+		a := h.next()
+		for a.Kind == Decide {
+			h.decide(a)
+			a = h.next()
+		}
+		p := h.start(a).Data.(*journal.TrialIntent)
+		plan := h.s.CyclePlan()
+		for i, s := range plan.Steps {
+			for _, part := range s.Parts {
+				if part.Running != (i == step) {
+					t.Fatalf("trial of step %d: step %d part running=%t: %+v", step+1, i+1, part.Running, plan)
+				}
+			}
+		}
+		h.add(&journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomePass, DurationS: p.DurationS})
+	}
+}
