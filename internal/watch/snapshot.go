@@ -601,7 +601,7 @@ func (p *projector) combinations() {
 }
 
 func (p *projector) forecasts(forecast tuner.ForecastPlan) {
-	p.s.next = forecast.Next
+	p.s.next = atStep(forecast.Next, forecast.NextStep)
 	for _, b := range forecast.Branches {
 		pr := ifPasses
 		switch b.Premise {
@@ -615,8 +615,18 @@ func (p *projector) forecasts(forecast tuner.ForecastPlan) {
 		case tuner.IfInconclusive:
 			pr = ifInconclusive
 		}
-		p.s.outcomes = append(p.s.outcomes, outcome{premise: pr, passes: b.Passes, decisions: b.Decisions, next: b.Next, needsRanking: b.NeedsRanking, needsMCE: b.NeedsMCE, needsHistory: b.NeedsHistory})
+		p.s.outcomes = append(p.s.outcomes, outcome{premise: pr, passes: b.Passes, decisions: b.Decisions, next: atStep(b.Next, b.NextStep), needsRanking: b.NeedsRanking, needsMCE: b.NeedsMCE, needsHistory: b.NeedsHistory})
 	}
+}
+
+// atStep places a forecast trial at the checking step the tuner reports for it; intents record only partial steps.
+func atStep(t *tuner.Trial, step int) *tuner.Trial {
+	if t == nil || t.Step != 0 || step == 0 {
+		return t
+	}
+	placed := *t
+	placed.Step = step
+	return &placed
 }
 
 func journalTag(e journal.Event, intents map[string]*journal.TrialIntent) string {

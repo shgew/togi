@@ -257,6 +257,37 @@ func TestOutcomeLinesMergeBranchesAndNameTheSamePartsTrials(t *testing.T) {
 	}
 }
 
+func TestPassingOutcomeNamesTheNextPartOrStep(t *testing.T) {
+	t.Parallel()
+	cycle := &cycleView{number: 1, open: true, steps: []cycleStep{
+		{regime: machine.R2, parts: []cyclePart{{cores: []int{1}, ccd: -1}, {cores: []int{9}, ccd: -1}}},
+		{regime: machine.R6, parts: []cyclePart{{cores: []int{1, 9}, ccd: -1}}},
+	}}
+	perCore := func(core, part int) *trialView {
+		return &trialView{regime: machine.R2, cores: []int{core}, core: core, condition: machine.Alone, duration: 2 * time.Minute, cycle: 1, step: 1, part: part, parts: 2, index: 1, of: 1}
+	}
+	for _, tc := range []struct {
+		name  string
+		trial *trialView
+		next  tuner.Trial
+		want  string
+	}{
+		{"the next core of a per-core step", perCore(1, 1), tuner.Trial{Regime: machine.R2, Core: 9, Offset: -16, Condition: machine.Alone, Cycle: 1, Step: 1, DurationS: 120},
+			"if it passes: part 1 is done → next: part 2: core 09 alone at -16, 2m"},
+		{"the next step", perCore(9, 2), tuner.Trial{Regime: machine.R6, Cores: []int{1, 9}, Condition: machine.Together, Cycle: 1, Step: 2, DurationS: 900, Workload: "mprime-sse-4k-21k-idle"},
+			"if it passes: step 1 is done → next: step 2: R6 idle + bursts with mprime SSE 4K-21K"},
+	} {
+		s := Snapshot{cycle: cycle, trial: tc.trial, outcomes: []outcome{{premise: ifPasses, passes: 1, next: &tc.next}}}
+		rows := s.outcomeRows()
+		if len(rows) != 1 {
+			t.Fatalf("%s: rows=%+v", tc.name, rows)
+		}
+		if got := rows[0].label + ": " + fitPhrases(rows[0].phrases, 200); got != tc.want {
+			t.Errorf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestNarratorWrapsUnderItsText(t *testing.T) {
 	t.Parallel()
 	st := story{label: "HUNT 6", lines: []string{strings.Repeat("word ", 15)}}

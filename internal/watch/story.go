@@ -582,18 +582,27 @@ func (s Snapshot) planPart(n tuner.Trial, shape huntShape) int {
 	return 0
 }
 
-// partWords names the part of the current checking step a trial loads: "part 2: full CCD 0 on 00-07, 5m".
+// partWords names the part of the current checking step a trial loads: "part 2: full CCD 0 on 00-07, 5m", or
+// "part 4: core 09 alone at -26, 2m" for a step that loads one core at a time.
 func (s Snapshot) partWords(n tuner.Trial) string {
 	g := s.cycle
 	if g == nil || n.Step < 1 || n.Step > len(g.steps) {
 		return ""
 	}
 	step := g.steps[n.Step-1]
+	duration := shortDuration(time.Duration(n.DurationS) * time.Second)
 	want := slices.Sorted(slices.Values(n.Cores))
+	if len(want) == 0 {
+		want = []int{n.Core}
+	}
 	for i, part := range step.parts {
-		if slices.Equal(slices.Sorted(slices.Values(part.cores)), want) {
-			return fmt.Sprintf("part %d: %s on %s, %s", i+1, partName(step.regime, part), coreIDs(n.Cores), shortDuration(time.Duration(n.DurationS)*time.Second))
+		if !slices.Equal(slices.Sorted(slices.Values(part.cores)), want) {
+			continue
 		}
+		if len(n.Cores) == 0 {
+			return fmt.Sprintf("part %d: core %02d alone at %d, %s", i+1, n.Core, n.Offset, duration)
+		}
+		return fmt.Sprintf("part %d: %s on %s, %s", i+1, partName(step.regime, part), coreIDs(n.Cores), duration)
 	}
 	return ""
 }
@@ -764,7 +773,11 @@ func (s Snapshot) outcomeWords(branch outcome) ([]phrase, string) {
 		}
 	}
 	passing := branch.premise == ifPasses || branch.premise == ifAllPass
-	if t != nil && passing && !stepDone && t.parts > 1 && t.of > 0 && t.passed+branch.passes >= t.of {
+	switch {
+	case t == nil || !passing || stepDone:
+	case t.step > 0 && branch.next != nil && branch.next.Cycle == t.cycle && branch.next.Step > t.step:
+		phrases = append(phrases, phrase{fmt.Sprintf("step %d is done", t.step), false})
+	case t.parts > 1 && t.of > 0 && t.passed+branch.passes >= t.of:
 		phrases = append(phrases, phrase{fmt.Sprintf("part %d is done", t.part), false})
 	}
 	if t != nil && t.recordOnly && len(phrases) == 0 && branch.premise != ifInconclusive {
@@ -825,7 +838,7 @@ func (s Snapshot) outcomeWords(branch outcome) ([]phrase, string) {
 	return phrases, "→ " + compact
 }
 
-// compactNext shortens what comes next to its position: "part 2: 08-15", "group 8", "step 3".
+// compactNext shortens what comes next to its position: "part 2: 08-15", "part 4: core 09", "group 8", "step 3".
 func compactNext(next string) string {
 	text := strings.TrimPrefix(next, "next: ")
 	if name, rest, ok := strings.Cut(text, ": "); ok {
@@ -834,6 +847,10 @@ func compactNext(next string) string {
 			return "group " + group
 		}
 		if strings.HasPrefix(name, "part ") {
+			if core, ok := strings.CutPrefix(rest, "core "); ok {
+				id, _, _ := strings.Cut(core, " ")
+				return name + ": core " + id
+			}
 			cores, _, _ := strings.Cut(rest, " ")
 			if strings.Contains(rest, " on ") {
 				return name
