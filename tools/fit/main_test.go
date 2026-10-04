@@ -189,12 +189,13 @@ func TestGenerateConstrainedRefitsMatchSerial(t *testing.T) {
 			t.Fatal(err)
 		}
 		out := filepath.Join(root, "machines")
-		generated := func(jobs int) (string, [][]byte) {
+		generated := func(jobs int) (string, [][]byte, []float64) {
 			var report bytes.Buffer
 			if err := generate(extract, out, 263, 4, jobs, &report); err != nil {
 				t.Fatal(err)
 			}
 			var machines [][]byte
+			var predictions []float64
 			for n := range 5 {
 				path := filepath.Join(out, "target-fit-"+strconv.Itoa(n)+".toml")
 				content, err := os.ReadFile(path)
@@ -210,23 +211,43 @@ func TestGenerateConstrainedRefitsMatchSerial(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if check.Status != "ok" {
+				if check.Status != "ok" || len(check.Groups) != 1 {
 					t.Fatalf("jobs %d member %d fails the original evidence: %+v", jobs, n, check)
 				}
+				predictions = append(predictions, check.Groups[0].MeanP)
 			}
-			return report.String(), machines
+			return report.String(), machines, predictions
 		}
-		serialReport, serialMachines := generated(1)
+		serialReport, serialMachines, predictions := generated(1)
 		// Seeds 264-266 resample none of the single failure, so refits 1-3 are flagged and refit from fit 0.
 		for n := 1; n <= 3; n++ {
 			if !strings.Contains(serialReport, "Refit "+strconv.Itoa(n)+" constraint: R1  cores=[0] duration=60s depth=-10 n=30 k=1 ") {
 				t.Fatalf("refit %d not constrained:\n%s", n, serialReport)
 			}
+			if predictions[n] >= predictions[0] {
+				t.Fatalf("refit %d kept the all-facts prediction %g, want below it: %g", n, predictions[0], predictions[n])
+			}
+			path := filepath.Join(out, "target-fit-"+strconv.Itoa(n)+".toml")
+			wantLoss := -30 * math.Log1p(-predictions[n])
+			var loss float64
+			found := false
+			for line := range strings.SplitSeq(serialReport, "\n") {
+				evidence, ok := strings.CutPrefix(line, path+": ")
+				if !ok {
+					continue
+				}
+				if fields, err := fmt.Sscanf(evidence, "30 starts; negative log likelihood %f", &loss); err == nil && fields == 1 {
+					found = true
+				}
+			}
+			if !found || math.Abs(loss-wantLoss) > 0.0001 {
+				t.Fatalf("refit %d reported likelihood %g (found %t); want %g on its failure-free resample:\n%s", n, loss, found, wantLoss, serialReport)
+			}
 		}
 		if strings.Contains(serialReport, "Refit 4 constraint") {
 			t.Fatalf("refit 4 constrained:\n%s", serialReport)
 		}
-		parallelReport, parallelMachines := generated(5)
+		parallelReport, parallelMachines, _ := generated(5)
 		if diff := cmp.Diff(serialReport, parallelReport); diff != "" {
 			t.Fatalf("parallel report differs from serial (-serial +parallel):\n%s", diff)
 		}
