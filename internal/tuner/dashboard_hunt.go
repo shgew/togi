@@ -98,7 +98,12 @@ func (s *State) huntProbes(h *hunt, plan groupPlan, groups []HuntGroup) []Member
 	if len(h.groups) > 0 && s.groupOutcome(h, h.groups[len(h.groups)-1]) == "running" {
 		evidence.groups = h.groups[:len(h.groups)-1]
 	}
-	next, members, _, has := s.nextMemberProbe(&evidence, plan)
+	var next groupPlan
+	var members []journal.CombinationMember
+	has := false
+	if len(s.checking.profile) == len(s.cores) {
+		next, members, _, has = s.nextMemberProbe(&evidence, plan)
+	}
 	var out []MemberProbe
 	for _, id := range plan.set {
 		v := s.memberProbe(h, id, groups)

@@ -125,6 +125,8 @@ type ForecastBranch struct {
 	Decisions              []journal.Payload
 	Next                   *Trial
 	NeedsRanking, NeedsMCE bool
+	// NeedsHistory marks a missing checking profile or a recurring hunt plan without new evidence.
+	NeedsHistory bool
 }
 
 // ForecastPlan holds conditional branches, or the next trial between trials.
@@ -133,6 +135,7 @@ type ForecastPlan struct {
 	Next         *Trial
 	Decisions    []journal.Payload
 	NeedsRanking bool
+	NeedsHistory bool
 }
 
 // RerunPlan describes the first pending post-backoff requirement.

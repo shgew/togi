@@ -116,9 +116,11 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 				f := tuner.Forecast(events[:i+1])
 				var branch *tuner.ForecastBranch
 				for k := range f.Branches {
+					if f.Branches[k].NeedsHistory {
+						t.Fatalf("complete simulated history recurred at trial %s, premise %s", intent.Trial, f.Branches[k].Premise)
+					}
 					if f.Branches[k].Premise == premise {
 						branch = &f.Branches[k]
-						break
 					}
 				}
 				if branch == nil {

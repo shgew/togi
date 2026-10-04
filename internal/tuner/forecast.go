@@ -47,7 +47,12 @@ func (f *forecastState) complete(t Trial) (*journal.TrialIntent, machine.Workloa
 }
 
 func (f *forecastState) drain(b *ForecastBranch) {
+	var plans []*journal.HuntGroup
 	for len(f.state.cores) > 0 {
+		if f.state.huntNeedsProfile() {
+			b.NeedsHistory = true
+			return
+		}
 		a := f.state.Next()
 		switch a.Kind {
 		case RunTrial:
@@ -66,6 +71,13 @@ func (f *forecastState) drain(b *ForecastBranch) {
 			p.Ranking = slices.Clone(p.Ranking)
 			f.fold(&p, a.Cause)
 		case Decide:
+			if group, ok := a.Payload.(*journal.HuntGroup); ok {
+				if slices.ContainsFunc(plans, func(prior *journal.HuntGroup) bool { return sameHuntPlan(prior, group) }) {
+					b.NeedsHistory = true
+					return
+				}
+				plans = append(plans, group)
+			}
 			b.Decisions = append(b.Decisions, a.Payload)
 			f.fold(a.Payload, a.Cause)
 			if _, ok := a.Payload.(*journal.DeadEnd); ok {
@@ -73,6 +85,24 @@ func (f *forecastState) drain(b *ForecastBranch) {
 			}
 		}
 	}
+}
+
+func (s *State) huntNeedsProfile() bool {
+	h := s.hunt
+	if h == nil || len(s.checking.profile) == len(s.cores) {
+		return false
+	}
+	return h.end != nil || len(h.groups) > 0 && s.groupOutcome(h, h.groups[len(h.groups)-1]) != "running"
+}
+
+func sameHuntPlan(a, b *journal.HuntGroup) bool {
+	probe := a.Probe == nil && b.Probe == nil || a.Probe != nil && b.Probe != nil && *a.Probe == *b.Probe
+	return a.Hunt == b.Hunt && a.DurationS == b.DurationS && a.Granularity == b.Granularity &&
+		a.Stage == b.Stage && a.Index == b.Index && a.Escalated == b.Escalated &&
+		a.FullChecked == b.FullChecked && a.AnyFailed == b.AnyFailed &&
+		a.Inferred == b.Inferred && a.Skipped == b.Skipped && probe &&
+		slices.Equal(a.Cores, b.Cores) && slices.Equal(a.Set, b.Set) &&
+		slices.Equal(a.Profile, b.Profile) && slices.Equal(a.Held, b.Held)
 }
 
 func judgedCore(s *State, p *journal.TrialIntent) *int {
@@ -137,6 +167,7 @@ func Forecast(events []journal.Event) ForecastPlan {
 		out.Next = b.Next
 		out.Decisions = b.Decisions
 		out.NeedsRanking = b.NeedsRanking
+		out.NeedsHistory = b.NeedsHistory
 		return out
 	}
 	core := judgedCore(base.state, p)

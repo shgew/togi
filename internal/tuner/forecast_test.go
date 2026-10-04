@@ -182,3 +182,46 @@ func TestForecastWaitsForInitialCorePhases(t *testing.T) {
 		}
 	}
 }
+
+func TestForecastDetectsRecurringHuntPlan(t *testing.T) {
+	h := newHarness(t,
+		coreStart{phase: journal.PhaseHasRoom, offset: -20},
+		coreStart{phase: journal.PhaseAtLimit, offset: -30},
+		coreStart{phase: journal.PhaseHasRoom, offset: -10})
+	h.add(&journal.ProfileChange{To: []int{-20, -30, -10}})
+	h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0}, Parked: []int{-10, -30, -5}, Failing: []int{-20, -30, -10}, Candidates: []int{0, 2}, Trials: 5, TrialS: 120, DurationS: 120})
+	h.add(&journal.HuntGroup{Hunt: 1, Group: 1, Stage: "probe", Cores: []int{2}, Probe: &journal.CombinationMember{Core: 0, Offset: -15}, Held: []journal.CombinationMember{{Core: 2, Offset: -5}}, Profile: []int{-15, -30, -5}, DurationS: 120})
+	h.start(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0}, Profile: []int{-15, -30, -5}, DurationS: 120, Hunt: 1, Group: 1, Phase: journal.PhaseHunt, Condition: machine.Parked}})
+	found := false
+	for _, b := range Forecast(h.events).Branches {
+		if b.NeedsHistory {
+			found = true
+			if b.Next != nil || b.NeedsRanking {
+				t.Fatalf("recurring plan invented an outcome: %+v", b)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("sparse probe history did not report recurring plans")
+	}
+}
+
+func TestHuntProbeWithoutRecordedCheckingProfile(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseHasRoom, offset: -20}, coreStart{phase: journal.PhaseHasRoom, offset: -10})
+	h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, Failing: []int{-20, -10}, Parked: []int{-10, -5}, Candidates: []int{0, 1}, Trials: 5, TrialS: 120, DurationS: 120})
+	h.add(&journal.HuntGroup{Hunt: 1, Group: 1, Stage: "probe", Set: []int{0, 1}, Granularity: 2, Probe: &journal.CombinationMember{Core: 0, Offset: -15}, Held: []journal.CombinationMember{{Core: 1, Offset: -8}}, Profile: []int{-15, -8}, DurationS: 120})
+	h.start(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, Profile: []int{-15, -8}, DurationS: 120, Hunt: 1, Group: 1, Phase: journal.PhaseHunt, Condition: machine.Parked}})
+	plan := h.s.HuntPlan()
+	if len(plan.Probes) != 2 || !plan.Probes[0].Running || plan.Probes[0].Offset != -15 || plan.Groups[0].Probe == nil || len(plan.Groups[0].Held) != 1 {
+		t.Fatalf("lost recorded probe roles: %+v", plan)
+	}
+	for _, b := range Forecast(h.events).Branches {
+		if b.Premise == IfAllPass {
+			if !b.NeedsHistory || b.Next != nil {
+				t.Fatalf("missing profile invented future member plan: %+v", b)
+			}
+			return
+		}
+	}
+	t.Fatal("missing all-pass branch")
+}
