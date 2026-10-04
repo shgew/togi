@@ -2,6 +2,29 @@
 
 All notable changes to togi are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Changes not yet released wait in [`changes/`](changes/) until the release assembles them here.
 
+## [0.9.0] - 2026-10-04
+
+### Added
+
+- Trial ends record the median and minimum over sampled highest voltage requests among their loaded cores, excluding idle cores; crash and interruption recovery use the same persisted samples, and unsupported SMU tables and simulated trials omit the fields ([#328]).
+- The tuning boot saves kernel messages through pstore on orderly reboot or shutdown; crash recovery optionally records a matching EFI archive's location and bounded last lines in `crash.detected`, without stopping recovery when the diagnostic is unavailable ([#330]).
+- Tuning-boot recovery, dead ends and journal refusals persist a leave reason in GRUB; the next tuning-boot run with a writable journal records it once as `boot.leave_reason`, deduplicating interrupted clears by its unique ID and preserving reasons across interrupted dead-end handoffs without a journal schema bump ([#336]).
+- On a terminal, `togi watch` takes keys: `?` explains everything on the screen, `L` shows the event log as the journal records it, the arrow, page, Home and End keys scroll both, Esc returns and `q` quits. The tuning boot's dashboard on tty1 reads the keyboard ([#338]).
+
+### Changed
+
+- **BREAKING** The next run archives the ruleset-7 session and starts a seeded ruleset-8 session carrying its eligible facts; R7 checking steps run extra parts that leave each CCD's shallowest cores idle. `record_only` marks their normal trial and carried outcomes so failures change no offsets, failure points, combinations or full-lap coverage, and neither outcome can answer hunts, skips, reruns or deepening ([#334]).
+- **BREAKING** Rename `[guard]` to `[checking]` in `config.toml`, its `rotation` list to `lap`, `guard_trial_s`, `guard_idle_s` and `guard_all_core_s` to `checking_trial_s`, `checking_idle_s` and `checking_all_core_s`, and `candidate_edges` to `candidate_solo_limits`, and use `togi run --laps` instead of `--rotations`; the old names are refused ([#358]).
+- **BREAKING** The next run archives the current session and starts a new one carrying its candidate solo limits, failure points and facts, because the journal moves to schema 3 with renamed kinds, fields and values; archived journals of schemas 1 and 2 are still read ([#358]).
+- `state.json` is written as one compact JSON line instead of indented JSON, so every per-event rewrite marshals and fsyncs about half the bytes; the fields are unchanged, and `jq . state.json` shows it indented ([#296]).
+- The first two consecutive service restart-limit hits reboot back into the tuning boot; the third returns to the normal system. The cross-boot count resets on the first successful durable journal append, while command failure retains the normal-boot shell fallback and orderly operator shutdown still leaves tuning by default ([#336]).
+- The dashboard of `togi watch` and `togi run` is redesigned around plain words: togi says what it is doing, why, and what each outcome of the running test leads to; a stage track shows the way to a clean lap, with a HUNT lamp that lights while a hunt pauses it; one row per core shows the offset applied while tuning or the tuned offset after a stop or dead end, one word for where it stands and a bar to -50 with its failure point; what happened is listed newest first with a tag per line, repeated passes folded into one with the hottest Tctl. An SMU dead end retains the last hardware readback instead of showing the tuned offset. Record-only partial loads are named, with their loaded cores and fixed step-start loaded-core sets explained. The frame keeps to the left of the screen, 80 columns wide, and never uses bold ([#338]).
+- togi's screens, help, status, journal messages and docs use one vocabulary: alone and together trials, checking laps, full and clean laps, failure points, combinations, parked offsets and hunt groups, deepening, solo limits, and cores at their limit or with room ([#358]).
+
+### Fixed
+
+- When `togi run` cannot open its journal after showing the dashboard, it stops the dashboard before printing the error, instead of leaving it drawing as togi exits ([#332]).
+
 ## [0.8.0] - 2026-10-02
 
 ### Added
@@ -298,6 +321,8 @@ All notable changes to togi are documented in this file. The format is based on 
 
 [0.8.0]: https://github.com/shgew/togi/releases/tag/v0.8.0
 
+[0.9.0]: https://github.com/shgew/togi/releases/tag/v0.9.0
+
 [#1]: https://github.com/shgew/togi/issues/1
 [#2]: https://github.com/shgew/togi/issues/2
 [#3]: https://github.com/shgew/togi/issues/3
@@ -396,3 +421,11 @@ All notable changes to togi are documented in this file. The format is based on 
 [#284]: https://github.com/shgew/togi/pull/284
 [#285]: https://github.com/shgew/togi/pull/285
 [#290]: https://github.com/shgew/togi/pull/290
+[#296]: https://github.com/shgew/togi/pull/296
+[#328]: https://github.com/shgew/togi/pull/328
+[#330]: https://github.com/shgew/togi/pull/330
+[#332]: https://github.com/shgew/togi/pull/332
+[#334]: https://github.com/shgew/togi/pull/334
+[#336]: https://github.com/shgew/togi/pull/336
+[#338]: https://github.com/shgew/togi/pull/338
+[#358]: https://github.com/shgew/togi/pull/358
