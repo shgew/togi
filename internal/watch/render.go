@@ -928,11 +928,22 @@ func drawOutcomes(c *canvas, p layout, s Snapshot) {
 	if p.class == compactLayout {
 		parts := make([]string, len(rows))
 		basis := ""
-		for i, o := range rows {
-			parts[i] = o.style.Render(o.short) + " " + textStyle.Render(o.compact)
-			basis = cmp.Or(basis, o.basis)
+		join := func(brief bool) string {
+			for i, o := range rows {
+				text := o.compact
+				if brief {
+					text = o.brief
+				}
+				parts[i] = o.style.Render(o.short) + " " + textStyle.Render(text)
+				basis = cmp.Or(basis, o.basis)
+			}
+			return strings.Join(parts, "   ")
 		}
-		line := strings.Join(parts, "   ")
+		line := join(false)
+		if ansi.StringWidth(line) > p.outcomes.w {
+			// Count the folded cores at 0 rather than cut the outcomes after them.
+			line = join(true)
+		}
 		if basis != "" {
 			// The basis must stay on screen: it marks backoffs that new telemetry can change.
 			switch room := p.outcomes.w - ansi.StringWidth(line) - 3; {

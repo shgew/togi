@@ -706,9 +706,11 @@ type phrase struct {
 
 type outcomeRow struct {
 	label, short, compact string
-	phrases               []phrase
-	style                 lipgloss.Style
-	basis                 string // where backoffs take top requesters from, when new telemetry could change them
+	// brief is compact with the folded cores at 0 counted instead of spelled out, for a band too narrow for both.
+	brief   string
+	phrases []phrase
+	style   lipgloss.Style
+	basis   string // where backoffs take top requesters from, when new telemetry could change them
 }
 
 // fitPhrases joins an outcome line's phrases with arrows, leaving out minor ones, then any but the first and the
@@ -763,6 +765,8 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 		phrases  []phrase
 		text     string
 		compact  string
+		base     string // compact before cores at 0 were folded in
+		folded   int
 		basis    string
 		passes   int
 		zero     []string // what the named branches at 0 assume is named, unless the group also holds the stand-in
@@ -774,7 +778,7 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 		text := fitPhrases(phrases, 1<<20)
 		i := slices.IndexFunc(groups, func(g group) bool { return g.text == text })
 		if i < 0 {
-			groups = append(groups, group{phrases: phrases, text: text, compact: compact, basis: basis})
+			groups = append(groups, group{phrases: phrases, text: text, compact: compact, base: compact, basis: basis})
 			i = len(groups) - 1
 		}
 		groups[i].premises = append(groups[i].premises, branch.premise)
@@ -810,6 +814,7 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 		g.phrases = slices.Clone(g.phrases)
 		g.phrases[len(g.phrases)-1].text += " · " + exception
 		g.compact += " · " + exception
+		g.folded++
 		groups = slices.Delete(groups, zero, zero+1)
 		if zero < standIn {
 			standIn--
@@ -849,7 +854,11 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 			who = strings.Join(g.zero, " or ")
 			label, short = "if none or "+who+" is named", "none or "+strings.TrimPrefix(who, "a ")+" named"
 		}
-		out = append(out, outcomeRow{label, short, g.compact, g.phrases, style, g.basis})
+		brief := g.compact
+		if g.folded > 0 {
+			brief = g.base + fmt.Sprintf(" · +%d at 0", g.folded)
+		}
+		out = append(out, outcomeRow{label, short, g.compact, brief, g.phrases, style, g.basis})
 		if len(out) == outcomeRowLimit {
 			break
 		}

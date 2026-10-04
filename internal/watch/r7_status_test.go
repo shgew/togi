@@ -213,6 +213,13 @@ func TestOutcomeRowsKeepEveryR7NamedOutcome(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("outcome rows (-want +got):\n%s", diff)
 	}
+	// The compact band counts the folded top requester at 0 so the unnamed outcome still fits.
+	p := measure(s, Screen{Width: 120, Height: 33})
+	c := newCanvas(p)
+	drawOutcomes(&c, p, s)
+	if line := ansi.Strip(c.lines()[p.outcomes.y]); !strings.Contains(line, "+1 at 0") || !strings.Contains(line, "none or core at 0 named → backs off") {
+		t.Fatalf("compact outcomes lost a branch: %q", line)
+	}
 }
 
 func TestZeroOffsetCoresOnDifferentCCDsAreNamedApart(t *testing.T) {
