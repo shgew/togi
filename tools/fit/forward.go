@@ -17,8 +17,9 @@ import (
 )
 
 type forwardCounts struct {
-	trials, failures int
-	predicted        float64
+	trials, failures            int
+	predicted                   float64
+	fitLogLoss, constantLogLoss float64
 }
 
 type forwardScore struct {
@@ -175,6 +176,8 @@ func scoreForward(cfg sim.Config, heldOut []trialfacts.Record, seen map[string]b
 				score.surprises++
 			}
 		}
+		counts.fitLogLoss += logLoss(p, failure)
+		counts.constantLogLoss += logLoss(constant, failure)
 		regimes[r.Class.Regime] = counts
 		score.fitLoss += logLoss(p, failure)
 		score.constantLoss += logLoss(constant, failure)
@@ -196,7 +199,7 @@ func reportForward(w io.Writer, rows []forwardRow, pooled forwardScore, seal int
 		reportForwardScore(w, row.score, fmt.Sprintf("%.3f", row.constant))
 		for _, regime := range machine.Regimes {
 			if counts, ok := row.regimes[regime]; ok {
-				fmt.Fprintf(w, "  %s trials=%d observed=%d predicted=%.1f\n", regime, counts.trials, counts.failures, counts.predicted)
+				fmt.Fprintf(w, "  %s trials=%d observed=%d predicted=%.1f log_loss/trial fit=%.4f constant=%.4f\n", regime, counts.trials, counts.failures, counts.predicted, counts.fitLogLoss/float64(counts.trials), counts.constantLogLoss/float64(counts.trials))
 			}
 		}
 	}

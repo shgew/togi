@@ -154,7 +154,9 @@ func TestForwardCheck(t *testing.T) {
 		if diff := cmp.Diff(want, score, opts...); diff != "" {
 			t.Fatal(diff)
 		}
-		if diff := cmp.Diff(map[machine.Regime]forwardCounts{machine.R1: counts}, regimes, opts...); diff != "" {
+		regimeCounts := counts
+		regimeCounts.fitLogLoss, regimeCounts.constantLogLoss = want.fitLoss, want.constantLoss
+		if diff := cmp.Diff(map[machine.Regime]forwardCounts{machine.R1: regimeCounts}, regimes, opts...); diff != "" {
 			t.Fatal(diff)
 		}
 		for _, tc := range []struct {
