@@ -32,6 +32,14 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 
 Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds stay unseen by the change being tuned.
 
+### Ruleset-9 evaluation
+
+For the shared-voltage strategy, [ADR 0036](adr/0036-self-sufficient-cores.md) and [issue #105](https://github.com/shgew/togi/issues/105) define a separate owner-approved gate, not a change to the generic comparison verdict below. Rework ruleset 9 before creating adversaries. Search adversaries against ruleset 8 only, using an in-sample all-facts `target-shared-voltage.toml` anchor labelled not forward-validated that passes the model check on every eligible group. If no in-sample fit passes, hand-set adversaries must state that they have no anchor.
+
+Compare every shared-voltage scenario, each adversary and the hand-set `shared-voltage.toml`, with 12 dev and 12 holdout seeds each against ruleset 8. Ruleset 9 must conclude wherever ruleset 8 concluded; median and maximum final-profile worst R7 hazard must be no higher; and time must be at most 2× ruleset 8's. Pooled across adversaries, median worst R7 hazard must be strictly lower. Report legacy scenarios, crashes and depth without gating them. Stop for the owner's decision if no anchored adversary makes ruleset 8 worse or if the gate fails.
+
+Score ruleset 9 once on dev, then confirm once on holdout; changes after the dev score are defect fixes with tests. Ordinary dev iteration above does not apply to this evaluation. Every multi-core R7 failure requires voltage-targeted backoff: the rejected 5%/0.2 tolerance raised the hand-set machine's worst R7 hazard from 0.47 to 1.74/h without depth or time gain ([#386](https://github.com/shgew/togi/issues/386)).
+
 `--suite FILE` runs another scenario file instead, with machine paths relative to it. The [adversarial search](../tools/bench/adversary.md) scores candidate machines this way and turns confirmed findings into new scenarios.
 
 The target scenario has 18 dev and 18 holdout seeds: two seeds per ensemble member in each split. Its oracle draws uniformly from decisive facts matching the entire applied profile and trial class (regime, workload, sorted loaded cores and intended duration). Draws are deterministic per seed and trial ID/index. Condition, phase, source ruleset and evidence epoch do not restrict a class match; BIOS context does. The oracle never uses facts from another BIOS context or records without one. Non-matching trials and trial-less failures use the fitted machine. The tuner sees only the resulting journal evidence, not the oracle or its extract.

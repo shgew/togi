@@ -8,7 +8,7 @@ import (
 )
 
 func TestCheckingChainRoundTrip(t *testing.T) {
-	p := &CheckingChain{Lap: 2, Step: 3, CCD: 1, Workload: "avx2", Groups: [][]int{{8, 9}, {10}, {11, 12}}, Cores: []int{10, 11, 12}, SourceSeqs: []int{41, 43}, Profile: []int{-20, -30}, Part: "partial 1"}
+	p := &CheckingChain{Cycle: 2, Step: 3, CCD: 1, Workload: "avx2", Groups: [][]int{{8, 9}, {10}, {11, 12}}, Cores: []int{10, 11, 12}, SourceSeqs: []int{41, 43}, Profile: []int{-20, -30}, Part: "partial 1"}
 	e := Event{Seq: 44, Time: time.Unix(100, 0), Boot: "boot", Kind: p.Kind(), Msg: p.Message(), Cause: p.SourceSeqs, Data: p}
 	line, err := encode(e)
 	if err != nil {

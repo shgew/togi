@@ -1,4 +1,4 @@
-The known-failure skip rule is amended for multi-core R7 by [ADR 0035](0035-self-sufficient-cores.md): its failures enter the tolerance ledger once and never skip new starts. Carry provenance, exclusions and live-only full-lap coverage remain.
+The known-failure skip rule is amended for multi-core R7 by [ADR 0036](0036-self-sufficient-cores.md): each failure enters its evidence ledger once and requires a voltage-targeted backoff, never repeated known-failure skips. Carry provenance, exclusions and live-only full-lap coverage remain.
 
 # Carry trial facts across ruleset changes
 

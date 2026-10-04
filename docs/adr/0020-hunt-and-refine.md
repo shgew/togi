@@ -1,7 +1,7 @@
 The hunt anchor and the joint-mark backoff choice are superseded by [ADR 0023](0023-hunts-that-converge-on-shared-voltage.md).
 The hunt's initial duration and partition ordering, and the requirement for a new qualifying rotation after every deepening, are superseded by [ADR 0024](0024-schedule-from-uncontradicted-evidence.md).
 The Bronze requirement, Silver and Gold thresholds and tier clock, and clean-hour failure-rate bounds are superseded by [ADR 0028](0028-remove-tiers.md); qualification and refinement remain.
-The multi-core R7 hunt, joint/combination backoff and deferred noisy group testing, and affected R7 checking/deepening rules, are superseded by [ADR 0035](0035-self-sufficient-cores.md); R1–R6 and single-core hunt and first-failure rules remain.
+The multi-core R7 hunt, joint/combination backoff and deferred noisy group testing, and affected R7 checking/deepening rules, are superseded by [ADR 0036](0036-self-sufficient-cores.md); R1–R6 and single-core hunt and first-failure rules remain.
 
 # Hunt the core behind every failure and refine every core to its mark
 

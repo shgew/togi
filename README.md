@@ -19,7 +19,7 @@ Works today, on a simulated 16-core machine:
 - the full simulated tuning lifecycle: per-core search, failure hunts, combinations, deepening together, full checking cycles, crash resume and reset;
 - a seeded session after a ruleset update or BIOS change: a ruleset change carries eligible same-BIOS trial facts for candidate-solo-limit checks, hunt groups, reruns and deepening, while full-cycle requirements count only live passes; a BIOS change carries solo limits but not failure points or trial facts;
 - evidence-based hunt duration and singleton-probe scheduling, and credit for an earlier uncontradicted full cycle at an equal or deeper profile;
-- ruleset-9 R7 full parts followed by partial chains idling measured top requesters, with ordinary pass requirements and full-cycle coverage; R7 failures use a per-core tolerance ledger and voltage-targeted backoffs, not hunts;
+- ruleset-9 R7 full parts followed by partial chains idling measured top requesters, with ordinary pass requirements and full-cycle coverage; every multi-core R7 failure requires a voltage-targeted backoff, not a hunt;
 - reading a session's hunt, combinations, clean cycles, top requesters, per-workload self-sufficiency and valid trials with `status`, `events` and the live `watch` dashboard; `status` shows the Tctl peak from passes together since the last profile change and its source trial.
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:

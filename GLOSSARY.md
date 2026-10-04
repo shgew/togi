@@ -152,7 +152,7 @@ A failure whose evidence names one core.
 A failure whose evidence names no single core.
 
 **Failure point**:
-The shallowest offset ruled out for a core by an attributed failure, hunt culprit or R7 tolerance decision since its last reset, or its carried failure point if that is shallower.
+A failure's shallowest ruled-out offset for a core, established by attribution, a hunt culprit or an R7 voltage-targeted backoff since its last reset, or its carried failure point if that is shallower.
 _Avoid_: failed mark, mark of a core
 
 **Combination**:
