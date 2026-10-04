@@ -284,6 +284,10 @@ func loadedCCD(t *trial, cores []machine.CoreInfo, ccds map[int]int) string {
 	return strings.Join(keys(set), ",")
 }
 
+// voltageTargetedRuleset is the first ruleset whose multi-core R7 failures move
+// by voltage-targeted backoff.
+const voltageTargetedRuleset = 9
+
 func renderR7Decisions(tab *table, events []journal.Event, since time.Time) {
 	tab.section("R7 voltage-targeted backoffs", "seq\tdecision\tcore\tfrom\tto\tcounts\tcauses\treason")
 	bySeq := make(map[int]journal.Event, len(events))
@@ -294,22 +298,28 @@ func renderR7Decisions(tab *table, events []journal.Event, since time.Time) {
 			intents[in.Trial] = in
 		}
 	}
+	multiR7 := func(trial string) bool {
+		in := intents[trial]
+		return in != nil && in.Regime == machine.R7 && len(in.Cores) > 1
+	}
+	ruleset := 0
 	for _, e := range events {
+		if p, ok := e.Data.(*journal.SessionStart); ok {
+			ruleset = p.Ruleset
+		}
 		d, ok := e.Data.(*journal.TunerDecision)
-		if !ok || !selected(e.Time, since) || d.Decision != journal.Backoff {
+		if !ok || !selected(e.Time, since) || d.Decision != journal.Backoff || ruleset < voltageTargetedRuleset {
 			continue
 		}
 		r7 := false
 		for _, seq := range e.Cause {
 			switch cause := bySeq[seq].Data.(type) {
 			case *journal.Failure:
-				r7 = r7 || cause.Regime == machine.R7
+				r7 = r7 || multiR7(cause.Trial)
 			case *journal.TrialCarried:
-				r7 = r7 || cause.Class.Regime == machine.R7
+				r7 = r7 || cause.Class.Regime == machine.R7 && len(cause.Class.Cores) > 1
 			case *journal.TrialEnd:
-				if in := intents[cause.Trial]; in != nil {
-					r7 = r7 || in.Regime == machine.R7 && len(in.Cores) > 1
-				}
+				r7 = r7 || multiR7(cause.Trial)
 			}
 		}
 		if r7 {
