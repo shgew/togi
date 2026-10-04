@@ -107,13 +107,6 @@ func (s *State) roundChecksWithSources() ([]requirement, []int) {
 	p := r.start.Profile
 	var out []requirement
 	var sources []int
-	cite := func(seqs []int) {
-		for _, seq := range seqs {
-			if !slices.Contains(sources, seq) {
-				sources = append(sources, seq)
-			}
-		}
-	}
 	index := (r.start.Round - 1) % 3
 	for _, c := range s.cores {
 		i := s.index(c.id)
@@ -125,55 +118,59 @@ func (s *State) roundChecksWithSources() ([]requirement, []int) {
 			out = append(out, requirement{class: trialClass{regime, w, coresKey([]int{c.id}), r.start.TrialS}, cores: []int{c.id}, core: c.id, offset: p[i], count: r.start.Trials})
 		}
 	}
-	addPart := func(w string, part []int) {
-		k := trialClass{machine.R7, w, coresKey(part), r.start.TrialS}
-		if !slices.ContainsFunc(out, func(q requirement) bool { return q.class == k }) {
-			out = append(out, requirement{class: k, cores: slices.Clone(part), count: r.start.Trials})
-		}
-	}
+
 	for _, workload := range machine.Workloads(machine.R7) {
 		for _, full := range s.ccdParts() {
-			previous := full
-			initialRequests, initialSources := s.r7Requests(workload.ID, full, r.initial)
-			cite(initialSources)
-			var initialTop []int
-			if groups := requests.Groups(initialRequests); len(groups) > 0 {
-				initialTop = groups[0]
+			out, sources = s.roundR7Checks(workload.ID, full, out, sources)
+		}
+	}
+	return out, sources
+}
+
+func (s *State) roundDeepened(cores []int) bool {
+	r := s.round
+	return slices.ContainsFunc(cores, func(id int) bool {
+		return slices.Contains(r.start.Cores, id) && r.start.Profile[s.index(id)] < r.initial[s.index(id)]
+	})
+}
+
+func (s *State) roundR7Checks(workload string, full []int, out []requirement, sources []int) ([]requirement, []int) {
+	r := s.round
+	cite := func(seqs []int) {
+		for _, seq := range seqs {
+			if !slices.Contains(sources, seq) {
+				sources = append(sources, seq)
 			}
-			for len(previous) > 0 {
-				voltages, seqs := s.r7Requests(workload.ID, previous, p)
-				cite(seqs)
-				groups := requests.Groups(voltages)
-				if len(groups) == 0 {
-					break
-				}
-				needed := false
-				for _, id := range groups[0] {
-					if slices.Contains(r.start.Cores, id) && p[s.index(id)] < r.initial[s.index(id)] {
-						needed = true
-					}
-				}
-				if slices.Equal(previous, full) {
-					for _, id := range initialTop {
-						if slices.Contains(r.start.Cores, id) && p[s.index(id)] < r.initial[s.index(id)] {
-							needed = true
-						}
-					}
-				}
-				if needed {
-					addPart(workload.ID, previous)
-				}
-				next := make([]int, 0, len(previous)-len(groups[0]))
-				for _, id := range previous {
-					if !slices.Contains(groups[0], id) {
-						next = append(next, id)
-					}
-				}
-				previous = next
-				if len(previous) < 2 {
-					break
-				}
+		}
+	}
+	initialRequests, initialSources := s.r7Requests(workload, full, r.initial)
+	cite(initialSources)
+	var initialTop []int
+	if groups := requests.Groups(initialRequests); len(groups) > 0 {
+		initialTop = groups[0]
+	}
+	for previous := full; len(previous) > 0; {
+		voltages, seqs := s.r7Requests(workload, previous, r.start.Profile)
+		cite(seqs)
+		groups := requests.Groups(voltages)
+		if len(groups) == 0 {
+			break
+		}
+		if s.roundDeepened(groups[0]) || slices.Equal(previous, full) && s.roundDeepened(initialTop) {
+			k := trialClass{machine.R7, workload, coresKey(previous), r.start.StartS}
+			if !slices.ContainsFunc(out, func(q requirement) bool { return q.class == k }) {
+				out = append(out, requirement{class: k, cores: slices.Clone(previous), count: r.start.Starts})
 			}
+		}
+		next := make([]int, 0, len(previous)-len(groups[0]))
+		for _, id := range previous {
+			if !slices.Contains(groups[0], id) {
+				next = append(next, id)
+			}
+		}
+		previous = next
+		if len(previous) < 2 {
+			break
 		}
 	}
 	return out, sources
