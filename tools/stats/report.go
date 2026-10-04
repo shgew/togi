@@ -285,7 +285,7 @@ func loadedCCD(t *trial, cores []machine.CoreInfo, ccds map[int]int) string {
 }
 
 func renderR7Decisions(tab *table, events []journal.Event, since time.Time) {
-	tab.section("R7 tolerance and voltage-targeted backoffs", "seq\tdecision\tcore\tfrom\tto\tcounts\tcauses\treason")
+	tab.section("R7 voltage-targeted backoffs", "seq\tdecision\tcore\tfrom\tto\tcounts\tcauses\treason")
 	bySeq := make(map[int]journal.Event, len(events))
 	intents := make(map[string]*journal.TrialIntent)
 	for _, e := range events {
@@ -296,10 +296,10 @@ func renderR7Decisions(tab *table, events []journal.Event, since time.Time) {
 	}
 	for _, e := range events {
 		d, ok := e.Data.(*journal.TunerDecision)
-		if !ok || !selected(e.Time, since) || d.Decision != journal.Tolerate && d.Decision != journal.Backoff {
+		if !ok || !selected(e.Time, since) || d.Decision != journal.Backoff {
 			continue
 		}
-		r7 := d.Decision == journal.Tolerate
+		r7 := false
 		for _, seq := range e.Cause {
 			switch cause := bySeq[seq].Data.(type) {
 			case *journal.Failure:

@@ -28,7 +28,6 @@ const (
 	CheckSoloLimit Decision = "check_solo_limit"
 	Deepen         Decision = "deepen"
 	Yield          Decision = "yield"
-	Tolerate       Decision = "tolerate"
 )
 
 type Outcome string
@@ -728,8 +727,6 @@ func (*TunerDecision) Kind() Kind { return KindTunerDecision }
 func (p *TunerDecision) Message() string {
 	verb := string(p.Decision)
 	switch p.Decision {
-	case Tolerate:
-		return fmt.Sprintf("core %s tolerates R7 failure at %d; offset unchanged (%s)", coreID(p.Core), p.FromOffset, p.Reason)
 	case StepDeeper:
 		verb = "passed R1+R2"
 	case CheckSoloLimit:

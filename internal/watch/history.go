@@ -496,8 +496,6 @@ func decisionText(d *journal.TunerDecision) (string, string, tone) {
 		return tagDeeper, fmt.Sprintf("core %02d %d → %d", d.Core, d.FromOffset, d.ToOffset), goodTone
 	case journal.Yield:
 		return tagYield, fmt.Sprintf("core %02d %d → %d so others go deeper", d.Core, d.FromOffset, d.ToOffset), plainTone
-	case journal.Tolerate:
-		return tagNote, fmt.Sprintf("core %02d tolerates R7 failure; stays at %d (%s)", d.Core, d.FromOffset, vtText(d.Reason)), warnTone
 	case journal.Backoff:
 	}
 	return tagBackoff, fmt.Sprintf("core %02d %d → %d", d.Core, d.FromOffset, d.ToOffset), warnTone

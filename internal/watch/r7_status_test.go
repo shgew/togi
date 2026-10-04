@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/tuner"
 )
@@ -24,12 +23,5 @@ func TestCoreRowsNameR7TopRequestersAndSelfSufficiency(t *testing.T) {
 	s.r7[0].OffsetFallback = true
 	if text := strings.Join(s.coreRows(240), "\n"); !strings.Contains(text, "offset fallback") {
 		t.Fatalf("fallback must not claim a voltage measurement: %s", text)
-	}
-}
-
-func TestToleratedFailureDoesNotReadAsBackoff(t *testing.T) {
-	tag, text, _ := decisionText(&journal.TunerDecision{Core: 3, Decision: journal.Tolerate, FromOffset: -20, ToOffset: -20, Reason: "1 failure in 10 starts"})
-	if tag == tagBackoff || !strings.Contains(text, "stays at -20") || !strings.Contains(text, "1 failure in 10 starts") {
-		t.Fatalf("tolerance misreported: %s %s", tag, text)
 	}
 }

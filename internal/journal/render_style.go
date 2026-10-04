@@ -42,7 +42,7 @@ func StyleOf(e Event) Style {
 		switch p.Decision {
 		case StepDeeper, Deepen:
 			return Green
-		case Backoff, Yield, Tolerate:
+		case Backoff, Yield:
 			return Yellow
 		case CheckSoloLimit:
 		}

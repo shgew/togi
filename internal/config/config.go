@@ -38,10 +38,8 @@ type Durations struct {
 }
 
 type Evidence struct {
-	Miss         float64 `toml:"miss" json:"miss"`
-	Rate         float64 `toml:"rate" json:"rate"`
-	FailureRate  float64 `toml:"failure_rate" json:"failure_rate"`
-	Significance float64 `toml:"significance" json:"significance"`
+	Miss float64 `toml:"miss" json:"miss"`
+	Rate float64 `toml:"rate" json:"rate"`
 }
 
 func (e Evidence) Trials() int {
@@ -73,7 +71,7 @@ func Default() Config {
 			CheckingIdleS:    900,
 			CheckingAllCoreS: 1200,
 		},
-		Evidence: Evidence{Miss: 0.05, Rate: 0.5, FailureRate: 0.05, Significance: 0.2},
+		Evidence: Evidence{Miss: 0.05, Rate: 0.5},
 		Checking: Checking{
 			Cycle: []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R4, machine.R6},
 		},
@@ -175,14 +173,6 @@ func validate(c Config) error {
 	}
 	if math.IsNaN(c.Evidence.Rate) || math.IsInf(c.Evidence.Rate, 0) || c.Evidence.Rate <= 0 || c.Evidence.Rate >= 1 {
 		return fmt.Errorf("evidence.rate = %g: must be within (0, 1)", c.Evidence.Rate)
-	}
-	for _, field := range []struct {
-		key   string
-		value float64
-	}{{"failure_rate", c.Evidence.FailureRate}, {"significance", c.Evidence.Significance}} {
-		if math.IsNaN(field.value) || math.IsInf(field.value, 0) || field.value <= 0 || field.value >= 1 {
-			return fmt.Errorf("evidence.%s = %g: must be within (0, 1)", field.key, field.value)
-		}
 	}
 	trials := math.Log(c.Evidence.Miss) / math.Log1p(-c.Evidence.Rate)
 	if math.IsNaN(trials) || math.IsInf(trials, 0) || trials > 1000 {

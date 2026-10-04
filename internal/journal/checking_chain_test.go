@@ -29,8 +29,8 @@ func TestCheckingChainRoundTrip(t *testing.T) {
 	}
 }
 
-func TestConfigSnapshotPreservesR7Tolerance(t *testing.T) {
-	p := &ConfigLoaded{Config: ConfigSnapshot{Evidence: ConfigEvidence{Miss: 0.01, Rate: 0.3, FailureRate: 0.07, Significance: 0.15}}}
+func TestConfigSnapshotPreservesHuntEvidence(t *testing.T) {
+	p := &ConfigLoaded{Config: ConfigSnapshot{Evidence: ConfigEvidence{Miss: 0.01, Rate: 0.3}}}
 	line, err := encode(Event{Seq: 1, Time: time.Unix(100, 0), Kind: p.Kind(), Msg: p.Message(), Data: p})
 	if err != nil {
 		t.Fatal(err)
