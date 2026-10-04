@@ -13,7 +13,7 @@
   [0;96m▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀[0;35m▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          [0;97m▀▀▀ ▀ ▀▀▀ ▀▀▀[m
   [0;37m0:40 [0;90mof 2:00                                                                                                                                                                        [0;37m0 passed · trial 1 of 4  [0;96m► [0;90m· · ·                   left[m
 
-  [0;92mif 3 of 4 pass       [0;37mnext: part 1: partial CCD 0 on 00-04 06 07, 2m[m
+  [0;92mif it passes         [0;37mnext: part 1: partial CCD 0 on 00-04 06 07, 2m[m
   [0;91mif a core is named   [0;37mits failure point is recorded → it backs off → next: rerun R7 all-core on 00-07 · 2m[m
   [0;91mif none is named     [0;37mread the core ranking before deciding[m
 

@@ -692,6 +692,8 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 		text     string
 		compact  string
 		passes   int
+		zero     *int // the core at 0 a named branch follows, unless the group also holds the stand-in
+		standIn  bool // holds the named branch that stands in for every core away from 0
 	}
 	var groups []group
 	for _, branch := range s.outcomes {
@@ -704,11 +706,44 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 		}
 		groups[i].premises = append(groups[i].premises, branch.premise)
 		groups[i].passes = max(groups[i].passes, branch.passes)
+		if branch.premise == ifNamed {
+			if branch.atZero {
+				groups[i].zero = branch.core
+			} else {
+				groups[i].standIn = true
+			}
+		}
 	}
 	hasAll := slices.ContainsFunc(groups, func(g group) bool { return slices.Contains(g.premises, ifAllPass) })
-	order := []premise{ifAllPass, ifPasses, ifFails, ifNamed, ifUnnamed, ifInconclusive}
+	if hasAll {
+		groups = slices.DeleteFunc(groups, func(g group) bool { return slices.Equal(g.premises, []premise{ifPasses}) })
+	}
+	standIn := slices.IndexFunc(groups, func(g group) bool { return g.standIn })
+	zero := slices.IndexFunc(groups, func(g group) bool {
+		return g.zero != nil && slices.Equal(g.premises, []premise{ifNamed}) && len(g.phrases) > 0
+	})
+	visible := len(groups)
+	if slices.ContainsFunc(groups, func(g group) bool { return slices.Equal(g.premises, []premise{ifInconclusive}) }) {
+		visible--
+	}
+	if standIn >= 0 && zero >= 0 && len(groups[standIn].phrases) > 0 && visible > outcomeRowLimit {
+		// Too few rows for a line of its own: the core at 0 becomes an exception on the line of the other cores.
+		z, g := groups[zero], &groups[standIn]
+		exception := fmt.Sprintf("core %02d at 0:%s", *z.zero, strings.TrimPrefix(z.compact, "→"))
+		g.phrases = slices.Clone(g.phrases)
+		g.phrases[len(g.phrases)-1].text += " · " + exception
+		g.compact += " · " + exception
+		groups = slices.Delete(groups, zero, zero+1)
+	}
+	namedGroups := 0
+	for _, g := range groups {
+		if slices.Contains(g.premises, ifNamed) {
+			namedGroups++
+		}
+	}
+	order := []premise{ifAllPass, ifPasses, ifNamed, ifUnnamed, ifInconclusive}
 	if s.hunt != nil {
-		order = []premise{ifAllPass, ifPasses, ifUnnamed, ifNamed, ifFails, ifInconclusive}
+		order = []premise{ifAllPass, ifPasses, ifUnnamed, ifNamed, ifInconclusive}
 	}
 	rank := func(g group) int {
 		best := len(order)
@@ -720,21 +755,29 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 	slices.SortStableFunc(groups, func(a, b group) int { return rank(a) - rank(b) })
 	var out []outcomeRow
 	for _, g := range groups {
-		if hasAll && slices.Equal(g.premises, []premise{ifPasses}) {
-			continue
+		who := "a core"
+		if namedGroups > 1 {
+			who = "another core"
+			if g.zero != nil && !g.standIn {
+				who = fmt.Sprintf("core %02d", *g.zero)
+			}
 		}
-		label, short, style := premiseWords(g.premises, g.passes, t)
+		label, short, style := premiseWords(g.premises, g.passes, t, who)
 		out = append(out, outcomeRow{label, short, g.compact, g.phrases, style})
-		if len(out) == 3 {
+		if len(out) == outcomeRowLimit {
 			break
 		}
 	}
 	return out
 }
 
-func premiseWords(premises []premise, passes int, t *trialView) (string, string, lipgloss.Style) {
+// outcomeRowLimit is how many outcome lines the NOW band holds.
+const outcomeRowLimit = 3
+
+// premiseWords labels an outcome line; who names the core a named failure is about.
+func premiseWords(premises []premise, passes int, t *trialView, who string) (string, string, lipgloss.Style) {
 	has := func(p premise) bool { return slices.Contains(premises, p) }
-	fails := has(ifFails) || has(ifNamed) || has(ifUnnamed)
+	fails := has(ifNamed) || has(ifUnnamed)
 	pass := has(ifPasses) || has(ifAllPass)
 	switch {
 	case pass && fails:
@@ -747,10 +790,10 @@ func premiseWords(premises []premise, passes int, t *trialView) (string, string,
 		return fmt.Sprintf("if %d of %d pass", passed, of), fmt.Sprintf("%d/%d pass", passed, of), green
 	case has(ifPasses):
 		return "if it passes", "pass", green
-	case has(ifFails) || has(ifNamed) && has(ifUnnamed):
+	case has(ifNamed) && has(ifUnnamed):
 		return "if it fails", "fail", red
 	case has(ifNamed):
-		return "if a core is named", "core named", red
+		return "if " + who + " is named", strings.Replace(strings.TrimPrefix(who, "a "), "another", "other", 1) + " named", red
 	case has(ifUnnamed):
 		return "if none is named", "none named", red
 	}
@@ -808,8 +851,6 @@ func (s Snapshot) outcomeWords(branch outcome) ([]phrase, string) {
 	}
 	var next string
 	switch {
-	case branch.needsMCE:
-		next = "read hardware evidence before deciding"
 	case branch.needsRanking:
 		next = "read the core ranking before deciding"
 	case branch.needsHistory:

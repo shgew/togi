@@ -13,7 +13,7 @@
   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
   0:40 of 2:00                                                                                                                                                                        0 passed · trial 1 of 4  ► · · ·                   left
 
-  if 3 of 4 pass       next: part 1: partial CCD 0 on 00-04 06 07, 2m
+  if it passes         next: part 1: partial CCD 0 on 00-04 06 07, 2m
   if a core is named   its failure point is recorded → it backs off → next: rerun R7 all-core on 00-07 · 2m
   if none is named     read the core ranking before deciding
 

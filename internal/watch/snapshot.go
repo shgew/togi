@@ -602,6 +602,7 @@ func (p *projector) combinations() {
 
 func (p *projector) forecasts(forecast tuner.ForecastPlan) {
 	p.s.next = atStep(forecast.Next, forecast.NextStep)
+	named := false
 	for _, b := range forecast.Branches {
 		pr := ifPasses
 		switch b.Premise {
@@ -615,7 +616,13 @@ func (p *projector) forecasts(forecast tuner.ForecastPlan) {
 		case tuner.IfInconclusive:
 			pr = ifInconclusive
 		}
-		p.s.outcomes = append(p.s.outcomes, outcome{premise: pr, passes: b.Passes, decisions: b.Decisions, next: atStep(b.Next, b.NextStep), needsRanking: b.NeedsRanking, needsMCE: b.NeedsMCE, needsHistory: b.NeedsHistory})
+		o := outcome{premise: pr, passes: b.Passes, decisions: b.Decisions, next: atStep(b.Next, b.NextStep), core: b.Core, needsRanking: b.NeedsRanking, needsHistory: b.NeedsHistory}
+		if pr == ifNamed {
+			// The tuner follows a core away from 0 first, then a core at 0 whose failure ends differently.
+			o.atZero = named
+			named = true
+		}
+		p.s.outcomes = append(p.s.outcomes, o)
 	}
 }
 

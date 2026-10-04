@@ -162,7 +162,6 @@ type premise int
 const (
 	ifPasses       premise = iota // this trial passes
 	ifAllPass                     // every remaining trial of the requirement passes
-	ifFails                       // it fails; a trial with one core loaded always names it
 	ifNamed                       // it fails and names a core
 	ifUnnamed                     // it fails and names none
 	ifInconclusive                // it ends without a verdict
@@ -176,8 +175,9 @@ type outcome struct {
 	passes       int               // with ifAllPass: how many trials pass
 	decisions    []journal.Payload // the decisions it records, in order
 	next         *tuner.Trial      // the trial it runs next, nil when it stops
+	core         *int              // with ifNamed: the core the failure names
+	atZero       bool              // with ifNamed: the forecast follows a core at 0, apart from the cores away from it
 	needsRanking bool
-	needsMCE     bool
 	needsHistory bool
 }
 

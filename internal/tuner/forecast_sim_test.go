@@ -58,6 +58,47 @@ func forecastDecision(p journal.Payload) bool {
 	return false
 }
 
+// journalAllPass follows the journal past the trial ending at endAt while the next trials pass, and returns the
+// decisions recorded until the trial after the last of passes, and that trial. ok is false when one of them did not
+// pass, the host ranking changed, or the session stopped first.
+func journalAllPass(events []journal.Event, endAt, passes int, lastRanking []int) (decisions []journal.Payload, next *journal.TrialIntent, ok bool) {
+	ran := 1
+	for j := endAt + 1; j < len(events); j++ {
+		switch p := events[j].Data.(type) {
+		case *journal.TrialIntent:
+			if ran == passes {
+				return decisions, p, true
+			}
+			end := -1
+			for k := j + 1; k < len(events); k++ {
+				if e, isEnd := events[k].Data.(*journal.TrialEnd); isEnd && e.Trial == p.Trial {
+					if e.Outcome != journal.OutcomePass {
+						return nil, nil, false
+					}
+					end = k
+					break
+				}
+			}
+			if end < 0 {
+				return nil, nil, false
+			}
+			ran++
+			j = end
+			continue
+		case *journal.HostRanking:
+			if cmp.Diff(lastRanking, p.Ranking) != "" {
+				return nil, nil, false
+			}
+		case *journal.Shutdown:
+			return nil, nil, false
+		}
+		if forecastDecision(events[j].Data) {
+			decisions = append(decisions, events[j].Data)
+		}
+	}
+	return nil, nil, false
+}
+
 func TestForecastMatchesSimulatedTrials(t *testing.T) {
 	options := cmp.Options{
 		cmpopts.IgnoreFields(journal.Failure{}, "Signal", "Trial"),
@@ -70,13 +111,34 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 		cmpopts.IgnoreFields(journal.DeepeningRound{}, "BaseSeq", "Reason"),
 		cmpopts.IgnoreFields(journal.TunerWarning{}, "Trial", "Passes", "Detail"),
 	}
-	for _, seed := range []uint64{1, 7} {
-		t.Run(fmt.Sprint(seed), func(t *testing.T) {
-			events := simulatedForecastJournal(t, seed, 2)
-			checked, missing := 0, 0
+	matchNext := func(t *testing.T, trial string, next *journal.TrialIntent, forecast *tuner.Trial) {
+		t.Helper()
+		if forecast == nil {
+			t.Fatalf("trial %s forecast stopped before %s", trial, next.Trial)
+		}
+		predicted, _, err := forecast.Complete(0, next.Profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		predicted.Trial = next.Trial
+		if diff := cmp.Diff(next, predicted, cmpopts.IgnoreFields(journal.TrialIntent{}, "KernelBoundary")); diff != "" {
+			t.Fatalf("trial %s next (-journal +forecast):\n%s", trial, diff)
+		}
+	}
+	for _, run := range []struct {
+		seed         uint64
+		cores, every int
+	}{{1, 2, 1}, {7, 2, 1}, {1, 16, 8}} {
+		t.Run(fmt.Sprintf("%d/%d cores", run.seed, run.cores), func(t *testing.T) {
+			events := simulatedForecastJournal(t, run.seed, run.cores)
+			checked, allChecked, missing, intents := 0, 0, 0, 0
 			for i, e := range events {
 				intent, ok := e.Data.(*journal.TrialIntent)
 				if !ok {
+					continue
+				}
+				intents++
+				if intents%run.every != 0 {
 					continue
 				}
 				endAt := -1
@@ -114,21 +176,34 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 					}
 				}
 				f := tuner.Forecast(events[:i+1])
-				var branch *tuner.ForecastBranch
+				var branch, all *tuner.ForecastBranch
+				named := false
 				for k := range f.Branches {
-					if f.Branches[k].NeedsHistory {
-						t.Fatalf("complete simulated history recurred at trial %s, premise %s", intent.Trial, f.Branches[k].Premise)
+					b := &f.Branches[k]
+					if b.NeedsHistory {
+						t.Fatalf("complete simulated history recurred at trial %s, premise %s", intent.Trial, b.Premise)
 					}
-					if f.Branches[k].Premise == premise {
-						branch = &f.Branches[k]
+					if b.Premise == tuner.IfAllPass {
+						all = b
 					}
+					if b.Premise != premise {
+						continue
+					}
+					if premise == tuner.IfNamed {
+						named = true
+						// Each named branch follows one core; compare the one the journal names.
+						if actualCore == nil || b.Core == nil || *actualCore != *b.Core {
+							continue
+						}
+					}
+					branch = b
+				}
+				if branch == nil && named {
+					missing++
+					continue
 				}
 				if branch == nil {
 					t.Fatalf("trial %s lacks premise %s: intent=%+v end=%+v", intent.Trial, premise, intent, end)
-				}
-				if premise == tuner.IfNamed && actualCore != nil && branch.Core != nil && *actualCore != *branch.Core {
-					missing++
-					continue
 				}
 				var decisions []journal.Payload
 				var next *journal.TrialIntent
@@ -137,6 +212,15 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 				for j := 0; j <= i; j++ {
 					if p, ok := events[j].Data.(*journal.HostRanking); ok {
 						lastRanking = p.Ranking
+					}
+				}
+				if all != nil && end.Outcome == journal.OutcomePass && !all.NeedsRanking {
+					if decisions, next, ok := journalAllPass(events, endAt, all.Passes, lastRanking); ok {
+						if diff := cmp.Diff(decisions, all.Decisions, options...); diff != "" {
+							t.Fatalf("trial %s all-pass decisions (-journal +forecast):\n%s", intent.Trial, diff)
+						}
+						matchNext(t, intent.Trial, next, all.Next)
+						allChecked++
 					}
 				}
 				rankingChanged := false
@@ -186,18 +270,7 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 					}
 					continue
 				}
-				if branch.Next == nil {
-					t.Fatalf("trial %s forecast stopped before %s", intent.Trial, next.Trial)
-				}
-				tr := *branch.Next
-				predicted, _, err := tr.Complete(0, next.Profile)
-				if err != nil {
-					t.Fatal(err)
-				}
-				predicted.Trial = next.Trial
-				if diff := cmp.Diff(next, predicted, cmpopts.IgnoreFields(journal.TrialIntent{}, "KernelBoundary")); diff != "" {
-					t.Fatalf("trial %s next (-journal +forecast):\n%s", intent.Trial, diff)
-				}
+				matchNext(t, intent.Trial, next, branch.Next)
 				if next.Phase == journal.PhaseChecking && next.Cycle > 0 && !next.Rerun && next.Hunt == 0 {
 					s := tuner.New()
 					for _, e := range events[:nextAt+1] {
@@ -209,10 +282,10 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 				}
 				checked++
 			}
-			if checked < 50 {
-				t.Fatalf("only %d predictions checked (%d unavailable inputs)", checked, missing)
+			if checked < 50 || allChecked == 0 {
+				t.Fatalf("only %d predictions and %d all-pass predictions checked (%d unavailable inputs)", checked, allChecked, missing)
 			}
-			t.Logf("matched %d trial transitions; %d required unavailable inputs", checked, missing)
+			t.Logf("matched %d trial transitions and %d all-pass runs; %d required unavailable inputs", checked, allChecked, missing)
 		})
 	}
 }

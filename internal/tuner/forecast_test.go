@@ -4,6 +4,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"slices"
 	"testing"
 )
 
@@ -224,4 +225,54 @@ func TestHuntProbeWithoutRecordedCheckingProfile(t *testing.T) {
 		}
 	}
 	t.Fatal("missing all-pass branch")
+}
+
+func TestForecastAllPassStaysWithinItsRequirement(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseSearch, offset: -20, check: true}, coreStart{phase: journal.PhaseSearch, offset: -10})
+	for range 20 {
+		a := h.next()
+		if a.Kind == Decide {
+			h.decide(a)
+			continue
+		}
+		p := h.start(a).Data.(*journal.TrialIntent)
+		f := Forecast(h.events)
+		var pass *ForecastBranch
+		for i := range f.Branches {
+			b := &f.Branches[i]
+			switch b.Premise {
+			case IfPass:
+				pass = b
+			case IfAllPass:
+				if pass != nil && pass.Next != nil && (pass.Next.Core != *p.Core || pass.Next.Regime != p.Regime) {
+					t.Fatalf("all-pass branch assumed passes of another requirement first: next %+v, branch %+v", pass.Next, b)
+				}
+			}
+		}
+		if p.Core != nil && *p.Core == 0 && pass != nil && pass.Next != nil && pass.Next.Core == 1 {
+			return
+		}
+		h.add(&journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomePass, DurationS: p.DurationS}, len(h.events))
+	}
+	t.Fatal("search never interleaved the confirming core with the searching one")
+}
+
+func TestForecastNamesCoreAtZeroSeparately(t *testing.T) {
+	h := hasRoomHarness(t, -20, 0)
+	h.start(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Phase: journal.PhaseChecking, Condition: machine.Together}})
+	var named []ForecastBranch
+	for _, b := range Forecast(h.events).Branches {
+		if b.Premise == IfNamed {
+			named = append(named, b)
+		}
+	}
+	if len(named) != 2 || named[0].Core == nil || *named[0].Core != 0 || named[1].Core == nil || *named[1].Core != 1 {
+		t.Fatalf("named branches %+v, want core 00 standing in, then core 01 at 0", named)
+	}
+	deadEnd := func(b ForecastBranch) bool {
+		return slices.ContainsFunc(b.Decisions, func(d journal.Payload) bool { _, ok := d.(*journal.DeadEnd); return ok })
+	}
+	if deadEnd(named[0]) || !deadEnd(named[1]) || named[1].Next != nil {
+		t.Fatalf("core away from 0 must back off and core at 0 must end tuning: %+v", named)
+	}
 }

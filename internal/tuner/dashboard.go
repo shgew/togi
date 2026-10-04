@@ -107,9 +107,11 @@ type Premise string
 const (
 	// IfPass assumes the trial in flight passes.
 	IfPass Premise = "pass"
-	// IfAllPass assumes every remaining trial of its requirement passes.
+	// IfAllPass assumes every remaining trial of its requirement passes; it is omitted when another requirement's
+	// trial would run before them.
 	IfAllPass Premise = "all_pass"
-	// IfNamed assumes a failure names the first judged loaded core.
+	// IfNamed assumes a failure names the branch's Core: a judged core away from 0 standing in for every such
+	// core, or the first judged core at 0.
 	IfNamed Premise = "named"
 	// IfUnnamed assumes a failure names no core.
 	IfUnnamed Premise = "unnamed"
@@ -119,13 +121,14 @@ const (
 
 // ForecastBranch contains the tuner's decisions and first subsequent trial.
 type ForecastBranch struct {
-	Premise                Premise
-	Passes                 int
-	Core                   *int
-	Decisions              []journal.Payload
-	Next                   *Trial
-	NeedsRanking, NeedsMCE bool
-	// NeedsHistory marks a missing checking profile or a recurring hunt plan without new evidence.
+	Premise      Premise
+	Passes       int
+	Core         *int
+	Decisions    []journal.Payload
+	Next         *Trial
+	NeedsRanking bool
+	// NeedsHistory marks a missing checking profile, a recurring hunt plan without new evidence, or decisions
+	// that do not settle on a next trial.
 	NeedsHistory bool
 	// NextStep is the checking step Next loads, counting from 1; zero outside a checking cycle.
 	NextStep int

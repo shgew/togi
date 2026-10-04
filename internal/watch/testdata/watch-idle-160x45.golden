@@ -10,7 +10,7 @@
   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · ends at 14:58
 
   if it passes         next: step 1: R7 all-core with mprime AVX2 36K-248K · record only
-  if a core is named   its failure point is recorded → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m
+  if a core is named   its failure point is recorded → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m · core 14 at 0: tuning stops
   if none is named     hunt 5 starts over 00-13 15 → next: hunt 5 group 1: R6 idle + bursts on 00-15 · 00-07 at failing offsets, 08-13 15 parked at 0
 
   CCD 0               0  2 counts/cell       -50 fail pt  all under load          CCD 1               0  2 counts/cell       -50 fail pt  all under load

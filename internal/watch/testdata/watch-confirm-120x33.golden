@@ -6,7 +6,7 @@
   R1   light load  on core 00 alone at -10   mprime SSE 4K-21K · 1 worker               CONFIRM CORE 00 AT -10 · LIGHT
  ███████████████████████████████████████████████████████████████████████████████████████████  0:50 left  0/5 ► · · · ·
 
- 5/5 pass → R1 light on core 10 alone at -10   core named → backs off   inconclusive → same trial again
+ pass → R1 light on core 08 alone at -10   core named → backs off   inconclusive → same trial again
 
  CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 waiting    0  2 counts/cell       -50 fail
  ► 00 -10 CONFIRM  ▄▄▄▄▄                           L0/5        08   0 CONFIRM                                  L0/5
