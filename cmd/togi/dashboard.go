@@ -9,8 +9,8 @@ import (
 	"github.com/shgew/togi/internal/watch"
 )
 
-// dashboard draws the session on out while it shows and drops the event lines written to it meanwhile; they stay in
-// the journal. Hidden, it forwards them to out.
+// dashboard drops event lines while the journal-driven watch is visible; hidden, it forwards them to out.
+// watch updates the clock once a second outside idle trials and holds still until an idle trial's planned end.
 type dashboard struct {
 	dir     string
 	out     *os.File

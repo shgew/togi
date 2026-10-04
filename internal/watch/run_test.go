@@ -6,16 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
 
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
 )
@@ -39,80 +36,159 @@ func (o *terminalOutput) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func terminalFrame(t *testing.T, out *terminalOutput, index, width, height int, clear bool) string {
-	t.Helper()
-	if len(out.writes) != index+1 {
-		t.Fatalf("redraw did not produce exactly one frame: writes=%d, want %d", len(out.writes), index+1)
-	}
-	frame := out.writes[index]
-	prefix := "\x1b[H"
-	if clear {
-		prefix = "\x1b[2J" + prefix
-	}
-	if !strings.HasPrefix(frame, prefix) || !strings.HasSuffix(frame, "\x1b[J") {
-		t.Fatalf("frame did not home/clear/erase as required: %q", frame)
-	}
-	if !clear && strings.Contains(frame, "\x1b[2J") {
-		t.Fatal("unchanged terminal geometry cleared the screen")
-	}
-	lines := strings.Split(strings.TrimSuffix(strings.TrimPrefix(frame, prefix), "\x1b[J"), "\r\n")
-	if len(lines) != height-1 {
-		t.Fatalf("frame did not use requested terminal height: rows=%d want %d", len(lines), height-1)
-	}
-	for _, line := range lines {
-		if !strings.HasSuffix(line, "\x1b[K") || lipgloss.Width(ansi.Strip(line)) > width-1 {
-			t.Fatalf("frame wrote reserved column or failed to erase stale row: %q", line)
-		}
-	}
-	return ansi.Strip(frame)
-}
-
-func TestRunRedrawResizeAndCancel(t *testing.T) {
+func TestShowWritesOnlyChangedRows(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "events.jsonl")
-		if err := os.WriteFile(path, watchSessionLine(t, "initial live frame"), 0644); err != nil {
-			t.Fatal(err)
-		}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		winch := make(chan os.Signal, 1)
+		tick := make(chan time.Time)
+		winch := make(chan os.Signal)
+		keys := make(chan key)
 		out := &terminalOutput{}
-		w, h := 160, 40
+		lines := []string{"first", "second", "third"}
+		w, h := 80, 12
 		done := make(chan error, 1)
 		go func() {
-			done <- run(ctx, dir, out, func() (int, int, error) { return w, h, nil }, ticker.C, winch, colorprofile.ASCII)
+			done <- show(ctx, out, func() (int, int, error) { return w, h, nil }, tick, winch, colorprofile.ASCII,
+				func(Screen) Drawn { return Drawn{Lines: lines} }, options{keys: keys, palette: true})
 		}()
-		synctest.Wait()
-		if out.writes[0] != terminalEnter || !strings.Contains(terminalFrame(t, out, 1, w, h, true), "initial live frame") {
-			t.Fatalf("terminal did not initialize and draw current journal: %q", out.writes)
+		check := func(want ...string) {
+			t.Helper()
+			synctest.Wait()
+			if diff := cmp.Diff(want, out.writes); diff != "" {
+				t.Fatalf("terminal writes (-want +got):\n%s", diff)
+			}
 		}
-
-		data := append(watchSessionLine(t, "initial live frame"), watchWarningLine(t, "periodic live reload")...)
-		if err := os.WriteFile(path, data, 0644); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(time.Second)
-		synctest.Wait()
-		if !strings.Contains(terminalFrame(t, out, 2, w, h, false), "periodic live reload") {
-			t.Fatal("one-second ticker did not reload the live journal")
-		}
+		initial := "\x1b[2J\x1b[1;1Hfirst\x1b[K\x1b[2;1Hsecond\x1b[K\x1b[3;1Hthird\x1b[K"
+		check(paletteSet()+terminalEnter, initial)
+		lines[1] = "short"
+		tick <- time.Time{}
+		update := "\x1b[2;1Hshort\x1b[K"
+		check(paletteSet()+terminalEnter, initial, update)
+		tick <- time.Time{}
+		check(paletteSet()+terminalEnter, initial, update)
+		lines = lines[:1]
+		tick <- time.Time{}
+		shorter := "\x1b[2;1H\x1b[K\x1b[3;1H\x1b[K"
+		check(paletteSet()+terminalEnter, initial, update, shorter)
+		w, h = 100, 20
 		winch <- syscall.SIGWINCH
-		synctest.Wait()
-		terminalFrame(t, out, 3, w, h, false)
-		w, h = 42, 8
-		winch <- syscall.SIGWINCH
-		synctest.Wait()
-		terminalFrame(t, out, 4, w, h, true)
+		full := "\x1b[2J\x1b[1;1Hfirst\x1b[K"
+		check(paletteSet()+terminalEnter, initial, update, shorter, full)
+		keys <- "?"
+		check(paletteSet()+terminalEnter, initial, update, shorter, full, full)
 		cancel()
 		if err := <-done; err != nil {
 			t.Fatal(err)
 		}
-		if len(out.writes) != 6 || out.writes[5] != terminalLeave {
-			t.Fatalf("cancel did not restore cursor and clear the terminal exactly once: %q", out.writes)
+		check(paletteSet()+terminalEnter, initial, update, shorter, full, full, terminalLeave+paletteReset)
+	})
+}
+
+func TestLiveHoldsUntilJournalKeyResizeOrDeadline(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		changes := make(chan error)
+		keys := make(chan key)
+		winch := make(chan os.Signal)
+		out := &terminalOutput{}
+		var until time.Time
+		frames, sizes, reloads := 0, 0, 0
+		done := make(chan error, 1)
+		go func() {
+			done <- show(ctx, out, func() (int, int, error) {
+				sizes++
+				return 80, 12, nil
+			}, nil, winch, colorprofile.ASCII, func(Screen) Drawn {
+				frames++
+				return Drawn{Lines: []string{fmt.Sprint(frames)}, Until: until}
+			}, options{live: true, changes: changes, keys: keys, reload: func() bool { reloads++; return true }})
+		}()
+		check := func(wantFrames, wantReloads int) {
+			t.Helper()
+			synctest.Wait()
+			if diff := cmp.Diff([]int{wantFrames, wantFrames, wantReloads}, []int{frames, sizes, reloads}); diff != "" {
+				t.Fatalf("redraws, size reads, journal reloads (-want +got):\n%s", diff)
+			}
+		}
+		check(1, 0)
+		time.Sleep(time.Second)
+		check(2, 0)
+		until = time.Now().Add(20 * time.Second)
+		changes <- nil
+		check(3, 1)
+		time.Sleep(5 * time.Second)
+		check(3, 1)
+		changes <- nil
+		check(4, 2)
+		keys <- "?"
+		check(5, 2)
+		winch <- syscall.SIGWINCH
+		check(6, 2)
+		time.Sleep(14 * time.Second)
+		check(6, 2)
+		time.Sleep(time.Second)
+		check(7, 2)
+		time.Sleep(time.Second)
+		check(8, 2)
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestRefreshClockStopsTickerDuringHold(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		var clock refreshClock
+		defer clock.stop()
+		periodic := clock.schedule(time.Time{})
+		until := time.Now().Add(10 * time.Second)
+		deadline := clock.schedule(until)
+		time.Sleep(9 * time.Second)
+		for name, ch := range map[string]<-chan time.Time{"periodic": periodic, "deadline": deadline} {
+			select {
+			case <-ch:
+				t.Fatalf("%s woke during the hold", name)
+			default:
+			}
+		}
+		time.Sleep(time.Second)
+		if got := <-deadline; !got.Equal(until) {
+			t.Fatalf("deadline=%s, want %s", got, until)
+		}
+	})
+}
+
+func TestShowIgnoresUntil(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		tick := make(chan time.Time)
+		frames := 0
+		done := make(chan error, 1)
+		go func() {
+			done <- show(ctx, io.Discard, func() (int, int, error) { return 80, 12, nil }, tick, nil, colorprofile.ASCII,
+				func(Screen) Drawn {
+					frames++
+					return Drawn{Lines: []string{"replay"}, Until: time.Now().Add(time.Hour)}
+				}, options{})
+		}()
+		synctest.Wait()
+		for range 2 {
+			tick <- time.Time{}
+			synctest.Wait()
+		}
+		if diff := cmp.Diff(3, frames); diff != "" {
+			t.Fatalf("caller-tick frames (-want +got):\n%s", diff)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
 		}
 	})
 }
@@ -135,7 +211,6 @@ func TestRunRestoresCursorOnErrors(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				dir := t.TempDir()
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 				failure := errors.New("terminal unavailable")
@@ -150,10 +225,10 @@ func TestRunRestoresCursorOnErrors(t *testing.T) {
 				}
 				winch := make(chan os.Signal, 1)
 				done := make(chan error, 1)
-				go func() { done <- run(ctx, dir, out, size, nil, winch, colorprofile.ASCII) }()
+				frame := func(Screen) Drawn { return Drawn{Lines: []string{fmt.Sprint(calls)}} }
+				go func() { done <- show(ctx, out, size, nil, winch, colorprofile.ASCII, frame, options{}) }()
 				synctest.Wait()
 				if tc.redraw {
-					terminalFrame(t, out, 1, 80, 12, true)
 					winch <- syscall.SIGWINCH
 				}
 				if err := <-done; !errors.Is(err, failure) || !strings.Contains(err.Error(), tc.operation) {
@@ -169,52 +244,6 @@ func TestRunRestoresCursorOnErrors(t *testing.T) {
 			})
 		})
 	}
-}
-
-func TestRunShowsJournalProblemAndRecovery(t *testing.T) {
-	t.Parallel()
-	synctest.Test(t, func(t *testing.T) {
-		dir := t.TempDir()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		out := &terminalOutput{}
-		winch := make(chan os.Signal, 1)
-		done := make(chan error, 1)
-		go func() {
-			done <- run(ctx, dir, out, func() (int, int, error) { return 160, 40, nil }, nil, winch, colorprofile.ASCII)
-		}()
-		synctest.Wait()
-		if !strings.Contains(terminalFrame(t, out, 1, 160, 40, true), "no session yet") {
-			t.Fatal("missing journal was not displayed")
-		}
-		path := filepath.Join(dir, "events.jsonl")
-		if err := os.WriteFile(path, []byte("not json\n"), 0644); err != nil {
-			t.Fatal(err)
-		}
-		winch <- syscall.SIGWINCH
-		synctest.Wait()
-		if frame := terminalFrame(t, out, 2, 160, 40, false); !strings.Contains(frame, "invalid character") {
-			t.Fatalf("live journal read error was not displayed: %s", frame)
-		}
-		select {
-		case err := <-done:
-			t.Fatalf("journal problem stopped live watch: %v", err)
-		default:
-		}
-		if err := os.WriteFile(path, watchSessionLine(t, "live journal recovered"), 0644); err != nil {
-			t.Fatal(err)
-		}
-		winch <- syscall.SIGWINCH
-		synctest.Wait()
-		frame := terminalFrame(t, out, 3, 160, 40, false)
-		if !strings.Contains(frame, "live journal recovered") || strings.Contains(frame, "invalid character") {
-			t.Fatalf("live watch did not replace problem with recovered session: %s", frame)
-		}
-		cancel()
-		if err := <-done; err != nil || out.writes[len(out.writes)-1] != terminalLeave {
-			t.Fatalf("recovered watch did not stop cleanly: err=%v writes=%q", err, out.writes)
-		}
-	})
 }
 
 func TestShowKeyboardDispatch(t *testing.T) {
@@ -235,6 +264,7 @@ func TestShowKeyboardDispatch(t *testing.T) {
 		go func() {
 			done <- show(ctx, out, func() (int, int, error) { return 80, 12, nil }, tick, nil, colorprofile.ASCII, frame, options{keys: keys})
 		}()
+		lastWrites := 0
 		check := func(view View, scroll int, clear bool) {
 			t.Helper()
 			synctest.Wait()
@@ -243,12 +273,13 @@ func TestShowKeyboardDispatch(t *testing.T) {
 				t.Fatalf("consumer frame (-want +got):\n%s", diff)
 			}
 			text := out.writes[len(out.writes)-1]
-			if strings.HasPrefix(text, "\x1b[2J\x1b[H") != clear {
+			if len(out.writes) != lastWrites && strings.HasPrefix(text, "\x1b[2J") != clear {
 				t.Fatalf("view change clear=%t: %q", clear, text)
 			}
 			if !strings.Contains(text, fmt.Sprintf("view %d scroll %d", view, scroll)) {
 				t.Fatalf("consumer frame not drawn: %q", text)
 			}
+			lastWrites = len(out.writes)
 		}
 		check(MainView, 0, true)
 		for _, step := range []struct {

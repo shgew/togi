@@ -23,24 +23,33 @@ import (
 type source struct {
 	dir  string
 	info os.FileInfo
+	err  error
 	snap Snapshot
 }
 
-func (s *source) snapshot() Snapshot {
+func (s *source) reload() bool {
 	info, err := os.Stat(filepath.Join(s.dir, "events.jsonl"))
 	if err != nil {
-		s.info, s.snap = nil, Load(s.dir)
-		return s.snap
+		if s.err != nil && s.err.Error() == err.Error() {
+			return false
+		}
+		s.info, s.err, s.snap = nil, err, Load(s.dir)
+		return true
 	}
 	if s.info != nil && os.SameFile(s.info, info) && info.Size() == s.info.Size() && info.ModTime().Equal(s.info.ModTime()) {
-		return s.snap
+		return false
 	}
-	s.info, s.snap = info, Load(s.dir)
+	s.info, s.err, s.snap = info, nil, Load(s.dir)
+	return true
+}
+
+func (s *source) snapshot() Snapshot {
+	s.reload()
 	return s.snap
 }
 
 func (s *source) frame(sc Screen) Drawn {
-	return RenderView(s.snapshot(), sc, time.Now())
+	return RenderView(s.snap, sc, time.Now())
 }
 
 // profile is the colour profile of out; NO_COLOR with any value turns colour off, as no-color.org defines it.
@@ -55,7 +64,7 @@ func profile(out *os.File) colorprofile.Profile {
 // consolePalette is the dashboard's shade for each of the 16 colour slots on the Linux console, which allows
 // redefining them (ESC ] P nrrggbb). Its default grey and bold handling are too dim at low monitor brightness.
 var consolePalette = [16]string{
-	"000000", "aa3333", "33aa55", "aa7722", "2a4a80", "8a4aa0", "2a8a8a", "e4e4e4",
+	"000000", "aa3333", "33aa55", "aa7722", "2a4a80", "434a54", "2a8a8a", "e4e4e4",
 	"8b919b", "ff6b6b", "6be08a", "ffc04d", "7fb4ff", "d79bff", "5fe3e3", "ffffff",
 }
 
@@ -69,22 +78,38 @@ func paletteSet() string {
 
 const paletteReset = "\x1b]R"
 
-// Run redraws the dashboard for the journal in dir on out once a second until ctx ends. With in a terminal, keys
-// switch between the main view, help and the event log, and scroll the help and the log.
+// Run redraws on journal changes and once a second for the clock, holding still before a frame's Until.
+// With in a terminal, keys switch views and scroll the help and the event log.
 func Run(ctx context.Context, dir string, out, in *os.File) error {
+	changes, stop, err := watchJournal(ctx, dir)
+	o := options{live: true}
+	switch {
+	case errors.Is(err, errors.ErrUnsupported):
+		poll := time.NewTicker(time.Second)
+		defer poll.Stop()
+		o.poll = poll.C
+	case err != nil:
+		return fmt.Errorf("watch journal: %w", err)
+	default:
+		defer stop()
+		o.changes = changes
+	}
 	src := source{dir: dir}
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-	return Show(ctx, out, in, tick.C, src.frame)
+	src.reload()
+	o.reload = src.reload
+	return showTerminal(ctx, out, in, nil, src.frame, o)
 }
 
-// Show runs the redraw loop on out, drawing frame whenever tick fires, the terminal is resized or a key changes what
-// it shows, until ctx ends or the viewer quits.
+// Show redraws on caller ticks, resize and keys until ctx ends or the viewer quits. It ignores frame Until.
 func Show(ctx context.Context, out, in *os.File, tick <-chan time.Time, frame Frame) error {
+	return showTerminal(ctx, out, in, tick, frame, options{})
+}
+
+func showTerminal(ctx context.Context, out, in *os.File, tick <-chan time.Time, frame Frame, o options) error {
 	winch := make(chan os.Signal, 1)
 	signal.Notify(winch, syscall.SIGWINCH)
 	defer signal.Stop(winch)
-	o := options{palette: os.Getenv("TERM") == "linux"}
+	o.palette = os.Getenv("TERM") == "linux"
 	if in != nil && term.IsTerminal(int(in.Fd())) {
 		state, err := term.MakeRaw(int(in.Fd()))
 		if err != nil {
@@ -104,6 +129,10 @@ type options struct {
 	palette  bool
 	keys     <-chan key
 	stopKeys func()
+	live     bool
+	changes  <-chan error
+	poll     <-chan time.Time
+	reload   func() bool
 }
 
 // key is one key press: a printable or control character, or one of the named keys below.
@@ -271,11 +300,6 @@ func readKeys(ctx context.Context, in *os.File, poll func([]unix.PollFd, int) (i
 	return keys, stop, nil
 }
 
-func run(ctx context.Context, dir string, out io.Writer, size func() (int, int, error), tick <-chan time.Time, winch <-chan os.Signal, p colorprofile.Profile) error {
-	src := source{dir: dir}
-	return show(ctx, out, size, tick, winch, p, src.frame, options{})
-}
-
 func show(ctx context.Context, out io.Writer, size func() (int, int, error), tick <-chan time.Time, winch <-chan os.Signal, p colorprofile.Profile, frame Frame, o options) error {
 	if o.stopKeys != nil {
 		defer o.stopKeys()
@@ -292,6 +316,9 @@ func show(ctx context.Context, out io.Writer, size func() (int, int, error), tic
 	var buf bytes.Buffer
 	styled := &colorprofile.Writer{Forward: &buf, Profile: p}
 	var lastW, lastH int
+	var previous []string
+	var clock refreshClock
+	defer clock.stop()
 	sc := Screen{View: MainView, Keys: o.keys != nil}
 	for {
 		w, h, err := size()
@@ -299,43 +326,113 @@ func show(ctx context.Context, out io.Writer, size func() (int, int, error), tic
 			return fmt.Errorf("read terminal size: %w", err)
 		}
 		buf.Reset()
-		if w != lastW || h != lastH {
+		full := w != lastW || h != lastH
+		if full {
 			buf.WriteString("\x1b[2J")
 			lastW, lastH = w, h
 		}
-		buf.WriteString("\x1b[H")
 		sc.Width, sc.Height = w, h
 		d := frame(sc)
-		for i, line := range d.Lines {
-			if i > 0 {
-				buf.WriteString("\r\n")
+		writeRows(&buf, styled, d.Lines, previous, h, full)
+		if buf.Len() > 0 {
+			if _, err := out.Write(buf.Bytes()); err != nil {
+				return fmt.Errorf("draw frame: %w", err)
 			}
-			_, _ = styled.Write([]byte(line))
-			buf.WriteString("\x1b[K")
 		}
-		buf.WriteString("\x1b[J")
-		if _, err := out.Write(buf.Bytes()); err != nil {
-			return fmt.Errorf("draw frame: %w", err)
+		previous = append(previous[:0], d.Lines...)
+		if o.live {
+			tick = clock.schedule(d.Until)
 		}
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-tick:
-		case <-winch:
-		case k, ok := <-o.keys:
-			if !ok {
+	wait:
+		for {
+			select {
+			case <-ctx.Done():
 				return nil
-			}
-			next, quit := press(sc, k, d.Scroll)
-			if quit {
-				return nil
-			}
-			if next.View != sc.View {
+			case <-tick:
+			case err, ok := <-o.changes:
+				if !ok {
+					o.changes = nil
+					continue
+				}
+				if err != nil {
+					return fmt.Errorf("watch journal: %w", err)
+				}
+				if !o.reload() {
+					continue
+				}
+			case <-o.poll:
+				if !o.reload() {
+					continue
+				}
+			case <-winch:
 				lastW = 0
+			case k, ok := <-o.keys:
+				if !ok {
+					return nil
+				}
+				next, quit := press(sc, k, d.Scroll)
+				if quit {
+					return nil
+				}
+				if next.View != sc.View {
+					lastW = 0
+				}
+				sc = next
 			}
-			sc = next
+			break wait
 		}
 	}
+}
+
+func writeRows(buf *bytes.Buffer, styled io.Writer, lines, previous []string, height int, full bool) {
+	for i := range min(max(len(lines), len(previous)), height-1) {
+		line := ""
+		if i < len(lines) {
+			line = lines[i]
+		}
+		if !full && i < len(previous) && line == previous[i] {
+			continue
+		}
+		fmt.Fprintf(buf, "\x1b[%d;1H", i+1)
+		_, _ = styled.Write([]byte(line))
+		buf.WriteString("\x1b[K")
+	}
+}
+
+type refreshClock struct {
+	ticker *time.Ticker
+	timer  *time.Timer
+}
+
+func (c *refreshClock) stop() {
+	if c.ticker != nil {
+		c.ticker.Stop()
+	}
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+}
+
+func (c *refreshClock) schedule(until time.Time) <-chan time.Time {
+	if delay := time.Until(until); delay > 0 {
+		if c.ticker != nil {
+			c.ticker.Stop()
+			c.ticker = nil
+		}
+		if c.timer == nil {
+			c.timer = time.NewTimer(delay)
+		} else {
+			c.timer.Reset(delay)
+		}
+		return c.timer.C
+	}
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+	if c.ticker == nil {
+		c.ticker = time.NewTicker(time.Second)
+	}
+	return c.ticker.C
 }
 
 // press applies a key to the screen: ? and L toggle the help and the event log, Esc returns to the main view, the
