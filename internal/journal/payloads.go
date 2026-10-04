@@ -512,24 +512,27 @@ const (
 type TrialEnd struct {
 	Trial string `json:"trial"`
 	KernelBoundary
-	Outcome               Outcome        `json:"outcome"`
-	Signal                machine.Signal `json:"signal,omitempty"`
-	Core                  *int           `json:"core,omitempty"`
-	DurationS             int            `json:"duration_s"`
-	TctlMaxC              *int           `json:"tctl_max_c,omitempty"`
-	VoltageRequestMedianV *float64       `json:"voltage_request_median_v,omitempty"`
-	VoltageRequestMinV    *float64       `json:"voltage_request_min_v,omitempty"`
-	LastSampleS           *int           `json:"last_sample_s,omitempty"`
-	LastSampleTctlC       *int           `json:"last_sample_tctl_c,omitempty"`
-	LastSampleMinMHz      *int           `json:"last_sample_min_mhz,omitempty"`
-	LastSampleMaxMHz      *int           `json:"last_sample_max_mhz,omitempty"`
-	StalledCore           *int           `json:"stalled_core,omitempty"`
-	WorkerStalledMS       *int64         `json:"worker_stalled_ms,omitempty"`
-	Reason                string         `json:"reason,omitempty"`
-	Interrupted           bool           `json:"interrupted,omitempty"`
-	Escaped               []int          `json:"escaped,omitempty"`
-	BackendMissing        bool           `json:"backend_missing,omitempty"`
-	ContainmentError      string         `json:"containment_error,omitempty"`
+	Outcome               Outcome         `json:"outcome"`
+	Signal                machine.Signal  `json:"signal,omitempty"`
+	Core                  *int            `json:"core,omitempty"`
+	DurationS             int             `json:"duration_s"`
+	TctlMaxC              *int            `json:"tctl_max_c,omitempty"`
+	VoltageRequestMedianV *float64        `json:"voltage_request_median_v,omitempty"`
+	VoltageRequestMinV    *float64        `json:"voltage_request_min_v,omitempty"`
+	VoltageRequestsV      map[int]float64 `json:"voltage_requests_v,omitempty"`
+	TopRequesters         []int           `json:"top_requesters,omitempty"`
+	CCDMHz                map[int]int     `json:"ccd_mhz,omitempty"`
+	LastSampleS           *int            `json:"last_sample_s,omitempty"`
+	LastSampleTctlC       *int            `json:"last_sample_tctl_c,omitempty"`
+	LastSampleMinMHz      *int            `json:"last_sample_min_mhz,omitempty"`
+	LastSampleMaxMHz      *int            `json:"last_sample_max_mhz,omitempty"`
+	StalledCore           *int            `json:"stalled_core,omitempty"`
+	WorkerStalledMS       *int64          `json:"worker_stalled_ms,omitempty"`
+	Reason                string          `json:"reason,omitempty"`
+	Interrupted           bool            `json:"interrupted,omitempty"`
+	Escaped               []int           `json:"escaped,omitempty"`
+	BackendMissing        bool            `json:"backend_missing,omitempty"`
+	ContainmentError      string          `json:"containment_error,omitempty"`
 }
 
 func (*TrialEnd) Kind() Kind { return KindTrialEnd }
