@@ -37,7 +37,7 @@ type forwardRow struct {
 	regimes          map[machine.Regime]forwardCounts
 }
 
-func forward(extract string, seal int, stdout io.Writer) error {
+func forward(extract string, seal, jobs int, stdout io.Writer) error {
 	records, err := trialfacts.Read(extract)
 	if err != nil {
 		return err
@@ -46,12 +46,12 @@ func forward(extract string, seal int, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return reportForwardCheck(stdout, starts, seal)
+	return reportForwardCheck(stdout, starts, seal, jobs)
 }
 
-func reportForwardCheck(w io.Writer, starts []trialfacts.Record, seal int) error {
+func reportForwardCheck(w io.Writer, starts []trialfacts.Record, seal, jobs int) error {
 	started := time.Now()
-	rows, pooled, err := forwardCheck(starts, seal)
+	rows, pooled, err := forwardCheck(starts, seal, jobs)
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func reportForwardCheck(w io.Writer, starts []trialfacts.Record, seal int) error
 
 // starts contains only the decisive starts validated by decisive. The newest
 // seal sessions are neither fitted nor scored.
-func forwardCheck(starts []trialfacts.Record, seal int) ([]forwardRow, forwardScore, error) {
+func forwardCheck(starts []trialfacts.Record, seal, jobs int) ([]forwardRow, forwardScore, error) {
 	ordered := slices.Clone(starts)
 	slices.SortStableFunc(ordered, func(a, b trialfacts.Record) int { return journal.CompareSessionIDs(a.Session, b.Session) })
 	var bounds []int
@@ -76,6 +76,14 @@ func forwardCheck(starts []trialfacts.Record, seal int) ([]forwardRow, forwardSc
 			return nil, forwardScore{}, fmt.Errorf("--seal %d leaves no held-out session to score (%d held out)", seal, max(len(bounds)-1, 0))
 		}
 		ordered = ordered[:bounds[len(bounds)-seal]]
+		bounds = bounds[:len(bounds)-seal]
+	}
+	configs, err := fitParallel(max(len(bounds)-1, 0), jobs, func(i int) (sim.Config, error) {
+		cfg, _ := fit(ordered[:bounds[i+1]])
+		return cfg, nil
+	})
+	if err != nil {
+		return nil, forwardScore{}, err
 	}
 	seen := make(map[string]bool)
 	trainingFailures, trainingSessions := 0, 0
@@ -88,7 +96,7 @@ func forwardCheck(starts []trialfacts.Record, seal int) ([]forwardRow, forwardSc
 		}
 		heldOut := ordered[begin:end]
 		if begin > 0 {
-			cfg, _ := fit(ordered[:begin])
+			cfg := configs[trainingSessions-1]
 			constant := float64(trainingFailures) / float64(begin)
 			score, regimes, err := scoreForward(cfg, heldOut, seen, constant)
 			if err != nil {

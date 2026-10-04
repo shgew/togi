@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"time"
@@ -28,6 +29,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	out := flags.String("out", "tools/bench/machines", "output directory for target-fit-0.toml and bootstrap refits")
 	seed := flags.Uint64("seed", 263, "fixed bootstrap seed")
 	refits := flags.Int("bootstrap", 8, "number of whole-trial bootstrap refits")
+	jobs := flags.Int("jobs", runtime.NumCPU(), "maximum parallel fits")
 	forwardOnly := flags.Bool("forward-only", false, "run only the forward-chained check: fit no ensemble and write no machine files")
 	seal := flags.Int("seal", 0, "with --forward-only, leave the newest N sessions out of the forward-chained check")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
@@ -35,15 +37,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	} else if err != nil {
 		return 2
 	}
-	if flags.NArg() != 0 || *refits < 0 || *seal < 0 || (*seal > 0 && !*forwardOnly) {
-		fmt.Fprintln(stderr, "fit: require no positional arguments, a nonnegative --bootstrap, and a nonnegative --seal only with --forward-only")
+	if flags.NArg() != 0 || *refits < 0 || *jobs < 1 || *seal < 0 || (*seal > 0 && !*forwardOnly) {
+		fmt.Fprintln(stderr, "fit: require no positional arguments, a nonnegative --bootstrap, positive --jobs, and a nonnegative --seal only with --forward-only")
 		return 2
 	}
 	var err error
 	if *forwardOnly {
-		err = forward(*extract, *seal, stdout)
+		err = forward(*extract, *seal, *jobs, stdout)
 	} else {
-		err = generate(*extract, *out, *seed, *refits, stdout)
+		err = generate(*extract, *out, *seed, *refits, *jobs, stdout)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "fit: %v\n", err)
@@ -52,7 +54,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func generate(extract, out string, seed uint64, refits int, stdout io.Writer) error {
+func generate(extract, out string, seed uint64, refits, jobs int, stdout io.Writer) error {
 	started := time.Now()
 	records, err := trialfacts.Read(extract)
 	if err != nil {
@@ -77,26 +79,35 @@ func generate(extract, out string, seed uint64, refits int, stdout io.Writer) er
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
-	var checks []*modelcheck.Result
-	var checker *modelcheck.Checker
-	var base sim.Config
-	for n := range refits + 1 {
+	type fitted struct {
+		sample      []trialfacts.Record
+		cfg         sim.Config
+		loss        float64
+		constrained []modelcheck.Group
+	}
+	fits, err := fitParallel(refits+1, jobs, func(n int) (fitted, error) {
 		sample := starts
 		if n > 0 {
 			sample = bootstrap(starts, seed+uint64(n))
 		}
 		cfg, loss := fit(sample)
+		return fitted{sample: sample, cfg: cfg, loss: loss}, nil
+	})
+	if err != nil {
+		return err
+	}
+	checker, err := modelcheck.NewChecker(fits[0].cfg, records)
+	if err != nil {
+		return fmt.Errorf("fit 0 model checker: %w", err)
+	}
+	base := cloneMachine(fits[0].cfg)
+	fits, err = fitParallel(len(fits), jobs, func(n int) (fitted, error) {
+		result := fits[n]
+		cfg, loss := result.cfg, result.loss
 		path := filepath.Join(out, fmt.Sprintf("target-fit-%d.toml", n))
-		if checker == nil {
-			checker, err = modelcheck.NewChecker(cfg, records)
-			if err != nil {
-				return err
-			}
-			base = cloneMachine(cfg)
-		}
 		m, err := sim.New(cfg)
 		if err != nil {
-			return err
+			return fitted{}, fmt.Errorf("fit %d simulator: %w", n, err)
 		}
 		unconstrained := checker.Check(path, extract, m)
 		var constrained []modelcheck.Group
@@ -104,34 +115,45 @@ func generate(extract, out string, seed uint64, refits int, stdout io.Writer) er
 			for _, group := range unconstrained.Groups {
 				if group.Flagged {
 					constrained = append(constrained, group)
-					fmt.Fprintf(stdout, "Refit %d constraint: %s %s cores=%v duration=%ds depth=%d n=%d k=%d unconstrained_interval=%v mean_p=%.6g\n", n, group.Class.Regime, group.Class.Workload, group.Class.Cores, group.Class.DurationS, group.Depth, group.N, group.K, group.Interval, group.MeanP)
 				}
 			}
 			baseMachine, err := sim.New(base)
 			if err != nil {
-				return err
+				return fitted{}, fmt.Errorf("fit %d base simulator: %w", n, err)
 			}
 			if !checker.Accepts(baseMachine) {
-				return fmt.Errorf("all-facts fit fails the unchanged model check; cannot seed constrained refits")
+				return fitted{}, fmt.Errorf("fit %d: all-facts fit fails the unchanged model check; cannot seed constrained refits", n)
 			}
-			cfg, loss = fitFrom(sample, &base, checker)
+			cfg, loss = fitFrom(result.sample, &base, checker)
+		}
+		result.cfg, result.loss, result.constrained = cfg, loss, constrained
+		return result, nil
+	})
+	if err != nil {
+		return err
+	}
+	checks := make([]*modelcheck.Result, len(fits))
+	for n, result := range fits {
+		cfg, loss, constrained := result.cfg, result.loss, result.constrained
+		path := filepath.Join(out, fmt.Sprintf("target-fit-%d.toml", n))
+		for _, group := range constrained {
+			fmt.Fprintf(stdout, "Refit %d constraint: %s %s cores=%v duration=%ds depth=%d n=%d k=%d unconstrained_interval=%v mean_p=%.6g\n", n, group.Class.Regime, group.Class.Workload, group.Class.Cores, group.Class.DurationS, group.Depth, group.N, group.K, group.Interval, group.MeanP)
 		}
 		cfg.Facts = filepath.ToSlash(rel)
-		content := encodeMachine(cfg, n, seed, len(sample), loss, constrained)
+		content := encodeMachine(cfg, n, seed, len(result.sample), loss, constrained)
 		if err := os.WriteFile(path, content, 0o644); err != nil {
-			return fmt.Errorf("write fitted machine: %w", err)
+			return fmt.Errorf("fit %d write fitted machine: %w", n, err)
 		}
 		loaded, err := sim.LoadMachine(path)
 		if err != nil {
-			return err
+			return fmt.Errorf("fit %d load fitted machine: %w", n, err)
 		}
-		m, err = sim.New(loaded)
+		m, err := sim.New(loaded)
 		if err != nil {
-			return err
+			return fmt.Errorf("fit %d loaded simulator: %w", n, err)
 		}
-		check := checker.Check(path, extract, m)
-		checks = append(checks, check)
-		fmt.Fprintf(stdout, "%s: %d starts; negative log likelihood %.6f\n", path, len(sample), loss)
+		checks[n] = checker.Check(path, extract, m)
+		fmt.Fprintf(stdout, "%s: %d starts; negative log likelihood %.6f\n", path, len(result.sample), loss)
 		for j, joint := range cfg.Joints {
 			ccd := 0
 			for core := range cfg.Cores {
@@ -144,7 +166,7 @@ func generate(extract, out string, seed uint64, refits int, stdout io.Writer) er
 		}
 	}
 	modelcheck.Report(stdout, checks)
-	if err := reportForwardCheck(stdout, starts, 0); err != nil {
+	if err := reportForwardCheck(stdout, starts, 0, jobs); err != nil {
 		return err
 	}
 	fmt.Fprintf(stdout, "Fit elapsed: %s\n", time.Since(started).Round(time.Millisecond))

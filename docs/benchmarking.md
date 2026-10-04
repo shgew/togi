@@ -143,10 +143,12 @@ For each group with at least 10 starts, the simulator computes each start's exac
 
 ```sh
 just fit
-# Optional: --facts EXTRACT.jsonl.gz --out DIRECTORY --seed 263 --bootstrap 8
+# Optional: --facts EXTRACT.jsonl.gz --out DIRECTORY --seed 263 --bootstrap 8 --jobs N
 ```
 
 `tools/fit` reads the same privacy-safe extract as the model check. It writes `target-fit-0.toml` from all decisive starts and `target-fit-1.toml` through `target-fit-8.toml` from whole-trial bootstrap samples drawn with replacement. The default seed is 263; refit `n` uses seed `263+n`. Every file declares its extract relative to the output directory and its BIOS context. Mixed-context extracts are refused: split them before fitting. The `target` scenario spreads separate dev and holdout seeds across all nine files, with the replay oracle above each.
+
+The independent fits run in parallel up to `--jobs`, which defaults to the CPU count. Unconstrained fits finish before any flagged bootstrap members restart from the all-facts fit; those constrained refits also run in parallel. `--jobs 1` runs the same fits serially. Machine bytes and report order do not depend on the worker count.
 
 Each bootstrap sample is fitted without constraints first. If its model check against the original extract flags a group, the fitter restarts from the passing all-facts fit and maximizes that **same resampled likelihood**, accepting only parameter moves that remain inside every original group's unchanged 99% interval. It does not redraw the sample, tune the seed, change the interval or repair the observed counts. This is a **checked, constrained bootstrap ensemble**: its spread is truncated to what the real facts admit, not an unconstrained bootstrap confidence interval. The fit output identifies each constrained refit and its flagged groups, including the unconstrained interval and mean probability. Each generated header records the bootstrap index and constrained groups' class, depth and observed counts; the usual final model-check report still checks the serialized machine files.
 
@@ -167,6 +169,8 @@ Generation prints likelihoods, CCD joint parameters, model checks against the **
 ### Forward-chained check
 
 After the ensemble's model check, `just fit` orders sessions with decisive starts by their UTC session IDs, comparing equal-second numeric suffixes numerically (`-2` before `-10`). For each session after the first, it fits all earlier sessions' decisive starts once, without bootstrap resampling or model-check constraints, then predicts only the held-out session. These fits stay in memory and do not change the generated machine files.
+
+The prefix fits run in parallel with the same `--jobs` limit. Scoring and pooling remain in session order, so no held-out outcomes enter their own training prefix and the report is unchanged apart from elapsed times.
 
 Each session row names the session ID, ruleset and `training_sessions` count. `starts` and `failures` count held-out decisive starts and observed failures; `predicted` sums the fit's failure probabilities over their intended durations. `log_loss/start` is the mean Bernoulli log loss, with probabilities clamped to `[1e-4, 1-1e-4]`. It compares the `fit` to a `constant` predictor whose probability, shown in parentheses, is the earlier training starts' failure rate. Lower loss is better: fit loss above the constant means the fit predicts that later session worse than a single average failure rate.
 
