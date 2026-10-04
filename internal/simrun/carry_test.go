@@ -32,7 +32,7 @@ func ruleset3Session(t *testing.T) (dir, id string) {
 	t.Helper()
 	ruleset3Once.Do(func() {
 		src := t.TempDir()
-		m, err := sim.New(sharedVoltageConfig(t, 1))
+		m, err := sim.New(sharedVoltageConfig(t, 1000))
 		if err != nil {
 			ruleset3Err = err
 			return
@@ -269,7 +269,7 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 	t.Parallel()
 	dir, id := ruleset3Session(t)
-	stop, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1), config.Default())
+	stop, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1000), config.Default())
 	if stop.Reason != session.StopCycles {
 		t.Fatalf("stopped with %+v", stop)
 	}
@@ -319,7 +319,7 @@ func TestARulesetTransitionAfterABIOSChangeCarriesOnlySoloLimits(t *testing.T) {
 	t.Parallel()
 	dir, _ := ruleset3Session(t)
 	bios := machine.BIOSContext{BIOSVersion: "changed", Board: "board", CPUModel: "cpu", Microcode: "0x1", BoostLimitMHz: 5000}
-	cfg := sharedVoltageConfig(t, 1)
+	cfg := sharedVoltageConfig(t, 1000)
 	cfg.BIOSContext = bios
 	_, events := simulateAgain(t, dir, cfg, config.Default())
 	carried := carriedEvent(t, events)
@@ -341,7 +341,7 @@ func TestAConfiguredCandidateSoloLimitStopsShortOfACarriedFailurePoint(t *testin
 	dir, _ := ruleset3Session(t)
 	c := config.Default()
 	c.CandidateSoloLimits = map[int]int{0: -50}
-	_, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1), c)
+	_, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1000), c)
 	var failurePoint *int
 	for _, cc := range carriedEvent(t, events).Carried {
 		if cc.Core == 0 {

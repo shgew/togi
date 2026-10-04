@@ -29,7 +29,7 @@ func sharedVoltageConfig(t *testing.T, seed uint64) sim.Config {
 func TestSixteenCoresReachCleanCycle(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	m, err := sim.New(sharedVoltageConfig(t, 1))
+	m, err := sim.New(sharedVoltageConfig(t, 1000))
 	if err != nil {
 		t.Fatal(err)
 	}

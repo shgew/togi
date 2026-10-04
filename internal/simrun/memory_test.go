@@ -29,7 +29,11 @@ func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 		{name: "legacy-default"},
 		{name: "target-fit-0", machineFile: "../../tools/bench/machines/target-fit-0.toml"},
 	} {
-		for _, seed := range []uint64{1, 2, 3} {
+		seeds := []uint64{1, 2, 3}
+		if tc.cleanLap {
+			seeds = []uint64{1000, 1001, 1002}
+		}
+		for _, seed := range seeds {
 			t.Run(fmt.Sprintf("%s/%d", tc.name, seed), func(t *testing.T) {
 				t.Parallel()
 				cfg := sim.Config{Seed: seed}
@@ -101,7 +105,7 @@ func TestInMemoryProjectionFailureWarnsAfterStop(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "state.json"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	m, err := sim.New(sharedVoltageConfig(t, 1))
+	m, err := sim.New(sharedVoltageConfig(t, 1000))
 	if err != nil {
 		t.Fatal(err)
 	}
