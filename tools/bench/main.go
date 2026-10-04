@@ -279,7 +279,7 @@ func execute(o options, stdout, stderr io.Writer) error {
 	for range min(o.jobs, len(runs)) {
 		wg.Go(func() {
 			for i := range queue {
-				r, err := simulate(binary, runRoot, runs[i], o.timeout)
+				r, err := simulate(binary, runRoot, runs[i], o.timeout, o.keep != "")
 				r.Commit, r.Dirty, r.Ruleset = commit, dirty, tuner.Ruleset
 				r.ModelCheck = checksByMachine[runs[i].scenario.Machine]
 				results[i], errs[i] = r, err
@@ -371,10 +371,13 @@ func launchSimulator(binary, root string, spec runSpec, timeout time.Duration) (
 	return simulation{dir: dir, exit: exit, wall: wall, timedOut: timedOut}, nil
 }
 
-func simulate(binary, root string, spec runSpec, timeout time.Duration) (result, error) {
+func simulate(binary, root string, spec runSpec, timeout time.Duration, keep bool) (result, error) {
 	run, err := launchSimulator(binary, root, spec, timeout)
 	if err != nil {
 		return result{}, err
+	}
+	if !keep {
+		defer os.RemoveAll(run.dir)
 	}
 	events, _, err := journal.Read(run.dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
