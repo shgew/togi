@@ -182,7 +182,7 @@ func TestJournalNotificationsReloadChanges(t *testing.T) {
 			}
 			src := source{dir: dir}
 			src.reload()
-			changes, stop, err := watchJournal(context.Background(), dir)
+			changes, stop, err := watchJournal(context.Background(), dir, func() {})
 			if err != nil {
 				t.Fatal(err)
 			}

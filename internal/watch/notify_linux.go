@@ -117,7 +117,9 @@ func (n *journalNotifier) relevant(data []byte) bool {
 	return changed
 }
 
-func watchJournal(ctx context.Context, dir string) (<-chan error, func(), error) {
+// watchJournal arms notifications, then calls load for the first frame. A journal that appeared in between is
+// watched before the reader starts, so discovery polling never runs while a loaded journal is on screen.
+func watchJournal(ctx context.Context, dir string, load func()) (<-chan error, func(), error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve state directory: %w", err)
@@ -131,6 +133,13 @@ func watchJournal(ctx context.Context, dir string) (<-chan error, func(), error)
 	if err := n.arm(); err != nil {
 		_ = file.Close()
 		return nil, nil, err
+	}
+	load()
+	if n.polling {
+		if err := n.arm(); err != nil {
+			_ = file.Close()
+			return nil, nil, err
+		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	stopClose := context.AfterFunc(ctx, func() { _ = file.Close() })

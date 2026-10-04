@@ -81,15 +81,13 @@ const paletteReset = "\x1b]R"
 // Run redraws on journal changes and once a second for the clock, holding still before a frame's Until.
 // With in a terminal, keys switch views and scroll the help and the event log.
 func Run(ctx context.Context, dir string, out, in *os.File) error {
-	changes, stop, err := watchJournal(ctx, dir)
+	src := source{dir: dir}
+	changes, stop, err := watchJournal(ctx, dir, func() { src.reload() })
 	if err != nil {
 		return fmt.Errorf("watch journal: %w", err)
 	}
 	defer stop()
-	o := options{live: true, changes: changes}
-	src := source{dir: dir}
-	src.reload()
-	o.reload = src.reload
+	o := options{live: true, changes: changes, reload: src.reload}
 	return showTerminal(ctx, out, in, nil, src.frame, o)
 }
 
