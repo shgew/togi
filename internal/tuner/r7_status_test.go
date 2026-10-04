@@ -47,7 +47,7 @@ func TestR7StatusIgnoresFailedStartsAsTopRequester(t *testing.T) {
 			}
 			for _, status := range h.s.R7Status() {
 				if status.Workload == workload && status.Core == 0 && (status.Passes != 0 || status.SelfSufficient) {
-					t.Fatalf("a failed start as top requester counted as self-sufficiency: %+v", status)
+					t.Fatalf("a failed trial as top requester counted as self-sufficiency: %+v", status)
 				}
 			}
 		})

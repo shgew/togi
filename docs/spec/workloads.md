@@ -190,7 +190,7 @@ MCE attribution rules:
 - A new error-description boundary closes orphaned continuation state, so a truncated record does not prevent attribution of the next independent record. A surplus bank continuation establishes interleaving and clears tentative attribution back to the earliest unresolved status; this can also clear independent records whose ownership the log cannot distinguish.
 - Core-local types (load-store, instruction fetch, L2, decode, execution, floating point) name a core.
 - Shared types (L3, memory controller, data fabric and others) name none.
-- In together trials outside multi-core R7, a core-local MCE on a core whose offset is 0 is an attributed failure at 0, which is a dead end. In multi-core R7 it dead-ends only if that core was in its CCD's top group in that start; otherwise the failure routes to that CCD's top group, with the CO-0 stepdown (`tuner.md`).
+- In together trials outside multi-core R7, a core-local MCE on a core whose offset is 0 is an attributed failure at 0, which is a dead end. In multi-core R7 it dead-ends only if that core was in its CCD's top group in that trial; otherwise the failure routes to that CCD's top group, with the CO-0 stepdown (`tuner.md`).
 
 MCA bank contents survive a warm reset and the kernel logs them early in the next boot. The tuning boot keeps the system journal persistent, so the crashed boot's last kernel messages stay readable.
 
