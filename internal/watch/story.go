@@ -188,6 +188,9 @@ func (s Snapshot) allAtZero(profile, cores []int) bool {
 // knownWords describes a hunt started by a trial skipped because its profile already failed.
 func (c huntCause) knownWords() string {
 	text := fmt.Sprintf("%s %s already failed at these offsets", vtText(string(c.regime)), kindWords(c.regime))
+	if c.regime == "" {
+		text = "an idle failure is already recorded at these offsets"
+	}
 	if c.carried {
 		text += " in a carried trial"
 	}
@@ -770,7 +773,7 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 	if standIn >= 0 && zero >= 0 && len(groups[standIn].phrases) > 0 && visible > outcomeRowLimit {
 		// Too few rows for a line of its own: the core at 0 becomes an exception on the line of the other cores.
 		z, g := groups[zero], &groups[standIn]
-		exception := fmt.Sprintf("core %02d at 0:%s", *z.zero, strings.TrimPrefix(z.compact, "→"))
+		exception := "a core at 0:" + strings.TrimPrefix(z.compact, "→")
 		g.phrases = slices.Clone(g.phrases)
 		g.phrases[len(g.phrases)-1].text += " · " + exception
 		g.compact += " · " + exception
@@ -800,7 +803,7 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 		if namedGroups > 1 {
 			who = "another core"
 			if g.zero != nil && !g.standIn {
-				who = fmt.Sprintf("core %02d", *g.zero)
+				who = "a core at 0"
 			}
 		}
 		label, short, style := premiseWords(g.premises, g.passes, t, who)

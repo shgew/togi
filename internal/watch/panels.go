@@ -613,9 +613,9 @@ func (s Snapshot) probeLines(t tables, width int, class sizeClass) []string {
 		}
 		failed, passed := "", ""
 		if probed {
-			failed = red.Render(offsetList(probe.failedAt[1:]))
-			if len(probe.failedAt) == 1 {
-				failed = ""
+			// The first entry is the failing offset the ladder starts from; a short hunt profile may lack it.
+			if len(probe.failedAt) > 1 {
+				failed = red.Render(offsetList(probe.failedAt[1:]))
 			}
 			passed = green.Render(s.passedWords(probe))
 		}

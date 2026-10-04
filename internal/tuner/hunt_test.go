@@ -414,7 +414,16 @@ func TestRepeatedParkedCoreProbeReturnsToBinaryPartsAfterPass(t *testing.T) {
 			if diff := cmp.Diff(append([]int{h.s.hunt.seq}, prior...), a.Cause); diff != "" {
 				t.Fatalf("probe lost its evidence (-want +got):\n%s", diff)
 			}
+			singleton := func(when string) {
+				t.Helper()
+				parts := h.s.HuntPlan().Parts
+				if len(parts) != 1 || !slices.Equal(parts[0].Failing, []int{3}) {
+					t.Fatalf("%s, the dashboard plan must show the corroborated core alone: %+v", when, parts)
+				}
+			}
+			singleton("before the singleton is recorded")
 			h.decide(a)
+			singleton("while the singleton runs")
 			for range h.s.n {
 				trial := h.next()
 				h.trial(trial, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: trial.Trial.DurationS})
@@ -425,6 +434,10 @@ func TestRepeatedParkedCoreProbeReturnsToBinaryPartsAfterPass(t *testing.T) {
 				t.Fatalf("a passing singleton must not establish its untested binary group: %+v", normal)
 			}
 			assertHuntNextReplay(h, normal, (*State).Next, "resumed probe fallback changed (-want +got)")
+			h.decide(normal)
+			if parts := h.s.HuntPlan().Parts; len(parts) != 2 {
+				t.Fatalf("after the singleton passes the plan returns to halves: %+v", parts)
+			}
 			return
 		}
 		if a.Kind == Decide {

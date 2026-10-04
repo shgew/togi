@@ -123,13 +123,14 @@ func sameHuntPlan(a, b *journal.HuntGroup) bool {
 }
 
 // namedCores returns the cores whose naming the forecast follows: a judged core away from 0 standing in for every
-// core whose failure backs it off, then the first judged core at 0, whose failure is a dead end instead.
+// core whose failure backs it off, then the first loaded core at 0, judged or parked, whose failure is a dead end.
 func namedCores(s *State, p *journal.TrialIntent) []int {
 	cores := slices.Clone(p.Cores)
 	if p.Core != nil {
 		cores = []int{*p.Core}
 	}
 	slices.Sort(cores)
+	loaded := slices.Clone(cores)
 	if s.hunt != nil && p.Hunt == s.hunt.start.Hunt {
 		for _, g := range s.hunt.groups {
 			if g.payload.Group == p.Group {
@@ -140,20 +141,25 @@ func namedCores(s *State, p *journal.TrialIntent) []int {
 			}
 		}
 	}
-	if len(cores) == 0 {
-		return nil
-	}
 	atZero := func(id int) bool {
 		i := s.index(id)
 		return i < 0 || i >= len(p.Profile) || p.Profile[i] == 0
+	}
+	if len(cores) == 0 {
+		// A group's parked cores can still carry load and be named.
+		cores = loaded
+	}
+	if len(cores) == 0 {
+		return nil
 	}
 	standIn := cores[0]
 	if i := slices.IndexFunc(cores, func(id int) bool { return !atZero(id) }); i >= 0 {
 		standIn = cores[i]
 	}
 	named := []int{standIn}
-	if i := slices.IndexFunc(cores, func(id int) bool { return id != standIn && atZero(id) }); i >= 0 {
-		named = append(named, cores[i])
+	// Any loaded core at 0, judged or parked, ends tuning when named.
+	if i := slices.IndexFunc(loaded, func(id int) bool { return id != standIn && atZero(id) }); i >= 0 {
+		named = append(named, loaded[i])
 	}
 	return named
 }

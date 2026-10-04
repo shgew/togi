@@ -59,3 +59,25 @@ func TestRunningHuntGroupCitesMixedCarriedAndLivePasses(t *testing.T) {
 		}
 	}
 }
+
+func TestHuntPlanMarksOnlyGroupsAnsweredByCarriedEvidence(t *testing.T) {
+	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10}, coreStart{phase: journal.PhaseAtLimit, offset: -10})
+	d := h.s.durations.ShortTrialS
+	carryTrials(h, machine.R7, []int{0, 1}, []int{-10, 0}, d, h.s.n, journal.OutcomePass)
+	h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: d, TrialS: d, Trials: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
+	for range 20 {
+		a, ok := h.s.huntNext()
+		if !ok || a.Kind == Decide && a.Payload.Kind() == journal.KindHuntEnd {
+			break
+		}
+		if a.Kind == RunTrial {
+			h.trial(a, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: d})
+			continue
+		}
+		h.decide(a)
+	}
+	groups := h.s.HuntPlan().Groups
+	if len(groups) != 2 || groups[0].Outcome != "pass" || !groups[0].Carried || groups[1].Outcome != "pass" || groups[1].Carried {
+		t.Fatalf("group 1 is answered by carried trials and group 2 by live ones: %+v", groups)
+	}
+}

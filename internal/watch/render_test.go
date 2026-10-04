@@ -376,3 +376,11 @@ func TestHuntStageStaysOnAnUnfinishedPartBetweenTrials(t *testing.T) {
 		t.Fatalf("after part 1 passed: %q", got)
 	}
 }
+
+func TestProbeWithoutFailingOffsetRenders(t *testing.T) {
+	t.Parallel()
+	s := Snapshot{hunt: &huntView{probes: []probeView{{member: 0, now: -9, running: true}}}}
+	if lines := s.probeLines(tables{}, 120, mediumLayout); len(lines) == 0 {
+		t.Fatal("a running probe without a recorded failing offset drew nothing")
+	}
+}

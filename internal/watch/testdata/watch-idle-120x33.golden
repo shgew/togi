@@ -6,7 +6,7 @@
   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between                         CYCLE 1 · STEP 7
  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · ends at 15:40
 
- pass → step 8   core named → backs off · core 14 at 0: tuning stops   none named → hunt 4
+ pass → step 8   core named → backs off · a core at 0: tuning stops   none named → hunt 4
 
  CCD 0 all loaded 0  2 counts/cell       -50 fail            CCD 1 all loaded 0  2 counts/cell       -50 fail
  ► 00 -37 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38           ► 08 -26 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -27

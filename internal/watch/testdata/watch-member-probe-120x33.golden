@@ -6,7 +6,7 @@
   R7   all-core load  on 00-07 · 11 at failing offsets, core 03 at -9, 00-02         HUNT 1 · GROUP 41 · CORE 03 AT -9
  ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
 
- 5/5 pass → group 42   none named → group 42   core named → hunt ends
+ 5/5 pass → group 42   none named → group 42   core named → hunt ends · a core at 0: tuning stops
 
  CCD 0 all loaded 0  2 counts/cell       -50 fail  back      CCD 1 idle       0  2 counts/cell       -50 fail  back
  ► 00   0 PARKED   ····▀                            -10        08   0 PARKED   ····▀                            -10

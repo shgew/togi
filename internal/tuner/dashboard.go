@@ -113,7 +113,7 @@ const (
 	// trial would run before them.
 	IfAllPass Premise = "all_pass"
 	// IfNamed assumes a failure names the branch's Core: a judged core away from 0 standing in for every such
-	// core, or the first judged core at 0.
+	// core, or the first loaded core at 0.
 	IfNamed Premise = "named"
 	// IfUnnamed assumes a failure names no core.
 	IfUnnamed Premise = "unnamed"

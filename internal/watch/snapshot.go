@@ -454,6 +454,15 @@ func (p *projector) huntPlan(hp *tuner.HuntPlan, events []journal.Event) {
 			if e.Seq == hp.FailureSeq {
 				h.cause.core, h.cause.known, h.cause.carried, h.cause.regime = d.Core, d.KnownFailure != 0, p.s.carried[d.KnownFailure], d.Regime
 			}
+		case *journal.TrialCarried:
+			// A skip of a known carried failure starts the hunt from that carried fact.
+			if e.Seq == hp.FailureSeq {
+				h.cause.known, h.cause.carried, h.cause.regime = true, true, d.Class.Regime
+			}
+		case *journal.FailureCarried:
+			if e.Seq == hp.FailureSeq {
+				h.cause.core, h.cause.known, h.cause.carried, h.cause.regime = d.Core, true, true, d.Class.Regime
+			}
 		}
 	}
 	for _, part := range hp.Parts {
