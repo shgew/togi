@@ -436,9 +436,12 @@ func TestShowJoinsKeyboardOnEveryExit(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			polling := make(chan struct{}, 1)
-			poll := func(fds []unix.PollFd, timeout int) (int, error) {
-				polling <- struct{}{}
-				return unix.Poll(fds, timeout)
+			poll := func(fds []unix.PollFd, _ int) (int, error) {
+				select {
+				case polling <- struct{}{}:
+				default:
+				}
+				return pollThroughSignals(fds)
 			}
 			keys, stop, err := readKeys(ctx, in, poll)
 			if err != nil {
@@ -527,7 +530,7 @@ func TestShowFragmentedArrowStream(t *testing.T) {
 				case calls <- timeout:
 				case <-stopping:
 				}
-				return unix.Poll(fds, -1)
+				return pollThroughSignals(fds)
 			}
 			keys, stop, err := readKeys(context.Background(), in, poll)
 			if err != nil {
