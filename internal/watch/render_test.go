@@ -86,7 +86,7 @@ func TestDashboardNarrowTrackRetainsStages(t *testing.T) {
 						t.Errorf("track line has %d cells, allocated %d: %q", cells, width, ansi.Strip(line))
 					}
 				}
-				frame := ansi.Strip(fit(lines, width, len(lines)+1))
+				frame := ansi.Strip(strings.Join(fit(lines, width, len(lines)+1), "\n"))
 				for _, label := range []string{"Find limits", "Test together", "Go deeper", "Clean cycle", "Keep checking"} {
 					if !strings.Contains(frame, label) {
 						t.Errorf("width %d lost station %q:\n%s", width, label, frame)
@@ -128,8 +128,8 @@ func TestDashboardShortMainFramesRetainCoreOffsets(t *testing.T) {
 				for _, height := range []int{20, 24} {
 					for _, keys := range []bool{false, true} {
 						sc := Screen{Width: width, Height: height, Keys: keys}
-						rendered, scrolled := RenderView(s, sc, now)
-						frame := ansi.Strip(rendered)
+						drawn := RenderView(s, sc, now)
+						frame, scrolled := ansi.Strip(strings.Join(drawn.Lines, "\n")), drawn.Scroll
 						if scrolled != 0 {
 							t.Errorf("main frame unexpectedly scrolls: %d", scrolled)
 						}
@@ -148,7 +148,7 @@ func TestDashboardShortMainFramesRetainCoreOffsets(t *testing.T) {
 						if s.trial != nil && !strings.Contains(frame, s.story(now).now.what) {
 							t.Errorf("%dx%d keys=%t lost running test:\n%s", width, height, keys, frame)
 						}
-						lines := strings.Split(rendered, "\n")
+						lines := drawn.Lines
 						if len(lines) != height-1 {
 							t.Errorf("frame has %d rows, want %d", len(lines), height-1)
 						}
@@ -167,7 +167,7 @@ func TestDashboardShortMainFramesRetainCoreOffsets(t *testing.T) {
 	for id := range 16 {
 		s.cores = append(s.cores, coreView{id: id, ccd: id / 8, phase: journal.PhaseAtLimit, applied: -20, tuned: -20})
 	}
-	frame, _ := RenderView(s, Screen{Width: 90, Height: 24, Keys: true}, now)
+	frame := strings.Join(RenderView(s, Screen{Width: 90, Height: 24, Keys: true}, now).Lines, "\n")
 	if !strings.Contains(ansi.Strip(frame), "00  -20") {
 		t.Fatalf("16-core short frame hid all applied offsets:\n%s", ansi.Strip(frame))
 	}
@@ -194,7 +194,7 @@ func TestDashboardCompactStoppedOffsetsKeepDisclaimer(t *testing.T) {
 	}
 	for _, width := range []int{20, 50, 90} {
 		for _, height := range []int{20, 24} {
-			frame, _ := RenderView(s, Screen{Width: width, Height: height, Keys: true}, time.Unix(1100, 0).UTC())
+			frame := strings.Join(RenderView(s, Screen{Width: width, Height: height, Keys: true}, time.Unix(1100, 0).UTC()).Lines, "\n")
 			text := ansi.Strip(frame)
 			if !strings.Contains(text, "00  -20") || !strings.Contains(text, "Tuned offsets, not applied now.") && !strings.Contains(text, "Saved, not set") {
 				t.Errorf("%dx%d lost tuned-offset meaning:\n%s", width, height, text)
@@ -248,7 +248,7 @@ func TestDashboardViews(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			sc.Keys, sc.Width, sc.Height = true, 160, 70
-			frame, _ := RenderView(s, sc, now)
+			frame := strings.Join(RenderView(s, sc, now).Lines, "\n")
 			golden(t, "view-"+name, ansi.Strip(frame)+"\n")
 		})
 	}
@@ -261,7 +261,7 @@ func TestDashboardHelpFrameWidth(t *testing.T) {
 	for _, width := range []int{80, 160} {
 		for _, scroll := range []int{0, -1} {
 			t.Run(fmt.Sprintf("width-%d-scroll-%d", width, scroll), func(t *testing.T) {
-				frame, _ := RenderView(s, Screen{View: HelpView, Keys: true, Scroll: scroll, Width: width, Height: 70}, now)
+				frame := strings.Join(RenderView(s, Screen{View: HelpView, Keys: true, Scroll: scroll, Width: width, Height: 70}, now).Lines, "\n")
 				limit := margin + min(width-1-margin, frameWidth)
 				for i, line := range strings.Split(frame, "\n") {
 					if got := ansi.StringWidth(line); got > limit {

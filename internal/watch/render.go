@@ -76,15 +76,13 @@ const (
 
 var pad = strings.Repeat(" ", margin)
 
-// Render draws the main view on a w by h screen: exactly h-1 lines, each at most w-1 cells wide, so the last row and
-// column are never written and the screen never scrolls.
+// Render draws the main view on a w by h screen, as Drawn bounds it.
 func Render(s Snapshot, w, h int, now time.Time) string {
-	frame, _ := RenderView(s, Screen{View: MainView, Width: w, Height: h}, now)
-	return frame
+	return strings.Join(RenderView(s, Screen{View: MainView, Width: w, Height: h}, now).Lines, "\n")
 }
 
-// RenderView draws sc and reports how many lines its view can scroll.
-func RenderView(s Snapshot, sc Screen, now time.Time) (string, int) {
+// RenderView draws sc.
+func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 	screen := max(sc.Width, minWidth) - 1
 	width := min(screen-margin, frameWidth)
 	lines := []string{pad + s.header(now), ""}
@@ -133,7 +131,7 @@ func RenderView(s Snapshot, sc Screen, now time.Time) (string, int) {
 		}
 		lines = append(lines[:min(len(lines), sc.Height-2)], pad+grey.Render(hint))
 	}
-	return fit(lines, sc.Width-1, sc.Height), scrolled
+	return Drawn{Lines: fit(lines, sc.Width-1, sc.Height), Scroll: scrolled}
 }
 
 // header is the top line of every view: the clock, how long the session has run and how often it failed.
@@ -572,7 +570,7 @@ func wrapStyled(text string, width int, style lipgloss.Style) []string {
 	return lines
 }
 
-func fit(lines []string, width, h int) string {
+func fit(lines []string, width, h int) []string {
 	for len(lines) < h-1 {
 		lines = append(lines, "")
 	}
@@ -580,7 +578,7 @@ func fit(lines []string, width, h int) string {
 	for i, ln := range lines {
 		lines[i] = ansi.Truncate(ln, width, "...")
 	}
-	return strings.Join(lines, "\n")
+	return lines
 }
 
 // ago says how long ago something happened, in words.

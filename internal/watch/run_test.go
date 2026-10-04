@@ -227,9 +227,9 @@ func TestShowKeyboardDispatch(t *testing.T) {
 		out := &terminalOutput{}
 		var screens []Screen
 		scrolled := 20
-		frame := func(sc Screen) (string, int) {
+		frame := func(sc Screen) Drawn {
 			screens = append(screens, sc)
-			return fmt.Sprintf("view %d scroll %d", sc.View, sc.Scroll), scrolled
+			return Drawn{Lines: []string{fmt.Sprintf("view %d scroll %d", sc.View, sc.Scroll)}, Scroll: scrolled}
 		}
 		done := make(chan error, 1)
 		go func() {
@@ -463,9 +463,9 @@ func TestShowJoinsKeyboardOnEveryExit(t *testing.T) {
 				return 80, 12, nil
 			}
 			drawn := make(chan struct{})
-			frame := func(sc Screen) (string, int) {
+			frame := func(sc Screen) Drawn {
 				close(drawn)
-				return "frame", 0
+				return Drawn{Lines: []string{"frame"}}
 			}
 			done := make(chan error, 1)
 			go func() {
@@ -540,9 +540,9 @@ func TestShowFragmentedArrowStream(t *testing.T) {
 			frames := make(chan Screen, 1)
 			done := make(chan error, 1)
 			go func() {
-				done <- show(context.Background(), out, func() (int, int, error) { return 80, 12, nil }, nil, nil, colorprofile.ASCII, func(sc Screen) (string, int) {
+				done <- show(context.Background(), out, func() (int, int, error) { return 80, 12, nil }, nil, nil, colorprofile.ASCII, func(sc Screen) Drawn {
 					frames <- sc
-					return "frame", 20
+					return Drawn{Lines: []string{"frame"}, Scroll: 20}
 				}, options{keys: keys, stopKeys: stop})
 			}()
 			if sc := <-frames; sc.View != MainView {

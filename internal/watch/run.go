@@ -39,7 +39,7 @@ func (s *source) snapshot() Snapshot {
 	return s.snap
 }
 
-func (s *source) frame(sc Screen) (string, int) {
+func (s *source) frame(sc Screen) Drawn {
 	return RenderView(s.snapshot(), sc, time.Now())
 }
 
@@ -68,9 +68,6 @@ func paletteSet() string {
 }
 
 const paletteReset = "\x1b]R"
-
-// Frame draws a screen of the dashboard and reports how many lines its view can scroll.
-type Frame func(sc Screen) (string, int)
 
 // Run redraws the dashboard for the journal in dir on out once a second until ctx ends. With in a terminal, keys
 // switch between the main view, help and the event log, and scroll the help and the log.
@@ -308,8 +305,8 @@ func show(ctx context.Context, out io.Writer, size func() (int, int, error), tic
 		}
 		buf.WriteString("\x1b[H")
 		sc.Width, sc.Height = w, h
-		text, scrolled := frame(sc)
-		for i, line := range strings.Split(text, "\n") {
+		d := frame(sc)
+		for i, line := range d.Lines {
 			if i > 0 {
 				buf.WriteString("\r\n")
 			}
@@ -329,7 +326,7 @@ func show(ctx context.Context, out io.Writer, size func() (int, int, error), tic
 			if !ok {
 				return nil
 			}
-			next, quit := press(sc, k, scrolled)
+			next, quit := press(sc, k, d.Scroll)
 			if quit {
 				return nil
 			}

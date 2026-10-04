@@ -240,7 +240,7 @@ func TestRunFrameRetainsRecordedClock(t *testing.T) {
 			if view.view == watch.LogView {
 				sc.Scroll = -1
 			}
-			want, _ := watch.RenderView(watch.Project(events[:2]), sc, events[1].Time.Add(40*time.Second))
+			want := strings.Join(watch.RenderView(watch.Project(events[:2]), sc, events[1].Time.Add(40*time.Second)).Lines, "\n")
 			if diff := cmp.Diff(ansi.Strip(want)+"\n", string(got)); diff != "" {
 				t.Errorf("--at frame must use the selected event wall clock plus --after (-want +got):\n%s", diff)
 			}

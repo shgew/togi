@@ -81,7 +81,7 @@ func frame(out io.Writer, events []journal.Event, n int, v watch.View, after tim
 	if v == watch.LogView {
 		sc.Scroll = -1
 	}
-	text, _ := watch.RenderView(watch.Project(events[:n]), sc, events[n-1].Time.Add(after))
+	text := strings.Join(watch.RenderView(watch.Project(events[:n]), sc, events[n-1].Time.Add(after)).Lines, "\n")
 	if !color {
 		text = ansi.Strip(text)
 	} else {
@@ -186,7 +186,7 @@ func play(out *os.File, events []journal.Event, n int, speed float64) error {
 	wall := time.Now()
 	shown := -1
 	var snap watch.Snapshot
-	return watch.Show(ctx, out, os.Stdin, tick.C, func(sc watch.Screen) (string, int) {
+	return watch.Show(ctx, out, os.Stdin, tick.C, func(sc watch.Screen) watch.Drawn {
 		n, clock := p.advance(time.Since(wall))
 		if n != shown {
 			snap, shown = watch.Project(events[:n]), n
