@@ -12,7 +12,7 @@ import (
 	"github.com/shgew/togi/internal/journal"
 )
 
-const header = `{"seq":1,"time":"2026-01-01T00:00:00.000000000Z","boot":"b","kind":"session.start","session":"test","schema":3,"ruleset":8,"cores":[{"core":0,"ccd":0,"cpus":[0,1]},{"core":8,"ccd":1,"cpus":[2,3]}]}` + "\n"
+const header = `{"seq":1,"time":"2026-01-01T00:00:00.000000000Z","boot":"b","kind":"session.start","session":"test","schema":4,"ruleset":8,"cores":[{"core":0,"ccd":0,"cpus":[0,1]},{"core":8,"ccd":1,"cpus":[2,3]}]}` + "\n"
 
 func handwritten(t *testing.T, body string) []journal.Event {
 	t.Helper()
@@ -79,21 +79,21 @@ func TestAuditInvariants(t *testing.T) {
 {"seq":3,"boot":"b","kind":"smu.write","op":"set_all","offset":0,"cause":[2]}
 {"seq":4,"boot":"b","kind":"smu.readback","core":0,"offset":0,"cause":[3]}
 {"seq":5,"boot":"b","kind":"smu.readback","core":8,"offset":0,"cause":[3]}
-{"seq":6,"boot":"b","kind":"shutdown","reason":"laps"}
+{"seq":6,"boot":"b","kind":"shutdown","reason":"cycles"}
 `, true, nil},
 		{"missing intent", `{"seq":2,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":0}
 {"seq":3,"boot":"b","kind":"smu.readback","core":0,"offset":0,"cause":[2]}
-{"seq":4,"boot":"b","kind":"shutdown","reason":"laps"}
+{"seq":4,"boot":"b","kind":"shutdown","reason":"cycles"}
 `, true, []finding{{2, "write_protocol"}}},
 		{"wrong intent", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set","core":8,"offset":0}
 {"seq":3,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":0,"cause":[2]}
 {"seq":4,"boot":"b","kind":"smu.readback","core":0,"offset":0,"cause":[3]}
-{"seq":5,"boot":"b","kind":"shutdown","reason":"laps"}
+{"seq":5,"boot":"b","kind":"shutdown","reason":"cycles"}
 `, true, []finding{{3, "write_protocol"}}},
 		{"missing readback core", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set_all","offset":0}
 {"seq":3,"boot":"b","kind":"smu.write","op":"set_all","offset":0,"cause":[2]}
 {"seq":4,"boot":"b","kind":"smu.readback","core":0,"offset":0,"cause":[3]}
-{"seq":5,"boot":"b","kind":"shutdown","reason":"laps"}
+{"seq":5,"boot":"b","kind":"shutdown","reason":"cycles"}
 `, true, []finding{{3, "write_protocol"}}},
 		{"live write in progress", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set","core":0,"offset":0}
 {"seq":3,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":0,"cause":[2]}
@@ -112,7 +112,7 @@ func TestAuditInvariants(t *testing.T) {
 {"seq":5,"boot":"b","kind":"profile.change","from":[0,0],"to":[0,1]}
 {"seq":6,"boot":"b","kind":"deepening.round","round":1,"event":"start","base":[-10,0],"target":[-51,0],"profile":[-51,0]}
 {"seq":7,"boot":"b","kind":"hunt.group","hunt":1,"group":1,"cores":[0],"profile":[1,0]}
-{"seq":8,"boot":"b","kind":"checking.step","lap":1,"step":1,"profile":[0,-51]}
+{"seq":8,"boot":"b","kind":"checking.step","cycle":1,"step":1,"profile":[0,-51]}
 {"seq":9,"boot":"b","kind":"hunt.start","hunt":1,"failing":[0,0],"parked":[-51,0]}
 `, false, []finding{{2, "range"}, {3, "range"}, {4, "range"}, {4, "range"}, {5, "range"}, {6, "range"}, {6, "range"}, {7, "range"}, {8, "range"}, {9, "range"}}},
 		{"firmware readback", `{"seq":2,"boot":"b","kind":"smu.readback","core":0,"offset":10}
@@ -121,33 +121,33 @@ func TestAuditInvariants(t *testing.T) {
 		{"previous boot intent", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set","core":0,"offset":0}
 {"seq":3,"boot":"c","kind":"smu.write","op":"set","core":0,"offset":0,"cause":[2]}
 {"seq":4,"boot":"c","kind":"smu.readback","core":0,"offset":0,"cause":[3]}
-{"seq":5,"boot":"c","kind":"shutdown","reason":"laps"}
+{"seq":5,"boot":"c","kind":"shutdown","reason":"cycles"}
 `, true, []finding{{3, "write_protocol"}}},
 		{"reused intent", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set","core":0,"offset":0}
 {"seq":3,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":0,"cause":[2]}
 {"seq":4,"boot":"b","kind":"smu.readback","core":0,"offset":0,"cause":[3]}
 {"seq":5,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":0,"cause":[2]}
 {"seq":6,"boot":"b","kind":"smu.readback","core":0,"offset":0,"cause":[5]}
-{"seq":7,"boot":"b","kind":"shutdown","reason":"laps"}
+{"seq":7,"boot":"b","kind":"shutdown","reason":"cycles"}
 `, true, []finding{{5, "write_protocol"}}},
 		{"write interrupted by reboot", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set","core":0,"offset":-5}
 {"seq":3,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":-5,"cause":[2]}
 {"seq":4,"boot":"c","kind":"core.phase","core":0}
-{"seq":5,"boot":"c","kind":"shutdown","reason":"laps"}
+{"seq":5,"boot":"c","kind":"shutdown","reason":"cycles"}
 `, true, nil},
 		{"same-boot reconciliation readbacks", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set","core":0,"offset":-5}
 {"seq":3,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":-5,"cause":[2]}
 {"seq":4,"boot":"b","kind":"smu.readback","core":0,"offset":-5}
 {"seq":5,"boot":"b","kind":"smu.readback","core":8,"offset":0}
 {"seq":6,"boot":"b","kind":"profile.restored","offsets":[0,0]}
-{"seq":7,"boot":"b","kind":"shutdown","reason":"laps"}
+{"seq":7,"boot":"b","kind":"shutdown","reason":"cycles"}
 `, true, nil},
 		{"earlier cause", `{"seq":2,"boot":"b","kind":"tuner.decision","core":0,"cause":[1]}
 `, false, nil},
 		{"self and future cause", `{"seq":2,"boot":"b","kind":"tuner.decision","core":0,"cause":[2,3,0]}
 {"seq":3,"boot":"b","kind":"core.phase","core":0}
 `, false, []finding{{2, "cause"}, {2, "cause"}, {2, "cause"}}},
-		{"concluded", `{"seq":2,"boot":"b","kind":"shutdown","reason":"laps"}
+		{"concluded", `{"seq":2,"boot":"b","kind":"shutdown","reason":"cycles"}
 `, true, nil},
 		{"dead ended", `{"seq":2,"boot":"b","kind":"deadend","condition":"preflight","detail":"unsupported machine"}
 `, true, nil},
@@ -214,7 +214,7 @@ func TestProjectedState(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(header), 0600); err != nil {
 				t.Fatal(err)
 			}
-			cached := journal.State{Schema: 3, LastSeq: 1, Phase: "checking", Session: &journal.SessionInfo{ID: "test"}, Cores: []journal.CoreState{{Core: 0, CCD: 0, CPUs: []int{0, 1}}, {Core: 8, CCD: 1, CPUs: []int{2, 3}}}}
+			cached := journal.State{Schema: 4, LastSeq: 1, Phase: "checking", Session: &journal.SessionInfo{ID: "test"}, Cores: []journal.CoreState{{Core: 0, CCD: 0, CPUs: []int{0, 1}}, {Core: 8, CCD: 1, CPUs: []int{2, 3}}}}
 			events := handwritten(t, "")
 			cached.Session.Start = events[0].Time
 			cached.LastSeq, cached.Phase = tc.lastSeq, tc.phase
@@ -251,7 +251,7 @@ func writeJournal(t *testing.T, path, header, body string) {
 
 func TestDirectoryJournals(t *testing.T) {
 	t.Parallel()
-	shutdown := `{"seq":2,"boot":"b","kind":"shutdown","reason":"laps"}
+	shutdown := `{"seq":2,"boot":"b","kind":"shutdown","reason":"cycles"}
 `
 	for _, tc := range []struct {
 		name, archive string
