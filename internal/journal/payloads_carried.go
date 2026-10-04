@@ -25,17 +25,21 @@ type TrialClass struct {
 }
 
 type TrialCarried struct {
-	Source     FactSource        `json:"source"`
-	Class      TrialClass        `json:"class"`
-	Condition  machine.Condition `json:"condition"`
-	Phase      Phase             `json:"phase,omitempty"`
-	Rerun      bool              `json:"rerun,omitempty"`
-	RecordOnly bool              `json:"record_only,omitempty"`
-	Profile    []int             `json:"profile"`
-	Outcome    Outcome           `json:"outcome"`
-	Signal     machine.Signal    `json:"signal,omitempty"`
-	DurationS  int               `json:"duration_s"`
-	Core       *int              `json:"core,omitempty"`
+	Source           FactSource        `json:"source"`
+	Class            TrialClass        `json:"class"`
+	Condition        machine.Condition `json:"condition"`
+	Phase            Phase             `json:"phase,omitempty"`
+	Rerun            bool              `json:"rerun,omitempty"`
+	RecordOnly       bool              `json:"record_only,omitempty"`
+	Profile          []int             `json:"profile"`
+	Outcome          Outcome           `json:"outcome"`
+	Signal           machine.Signal    `json:"signal,omitempty"`
+	DurationS        int               `json:"duration_s"`
+	Core             *int              `json:"core,omitempty"`
+	StalledCore      *int              `json:"stalled_core,omitempty"`
+	VoltageRequestsV map[int]float64   `json:"voltage_requests_v,omitempty"`
+	TopRequesters    []int             `json:"top_requesters,omitempty"`
+	CCDMHz           map[int]int       `json:"ccd_mhz,omitempty"`
 }
 
 func (*TrialCarried) Kind() Kind { return KindTrialCarried }
