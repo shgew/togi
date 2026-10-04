@@ -10,7 +10,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `REVIEW.md`: defect criteria and recurring lessons. Read it before reviewing a pull request.
 - `.omp/`: reviewer rules, the `review-coordinator` agent and `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates.
 - `docs/spec/`: normative behavior. Read the relevant spec before changing behavior, and change spec and code in the same pull request or in layers of one stack merged together.
-  - `tuner.md`: offsets, search, hunt, deepening, checking, clean laps, dead ends.
+  - `tuner.md`: offsets, search, hunt, deepening, checking, clean cycles, dead ends.
   - `workloads.md`: regimes, backends, containment, failure detection.
   - `journal.md`: events, state, logging.
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
@@ -81,7 +81,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just gate` | Every non-VM flake check, sequentially, cheapest first: fmt, lint, module and changes, the Go modules vendored for `vendorHash` against `go.mod` and `go.sum`, shuffled integration-tagged tests, race, and, on Linux, the hardware-tagged trial test compile. Uses warm dev-shell Go caches |
 | `just check` | Every flake check the host builds, CI's definition of green: package (shuffled integration-tagged tests), race (trial, session, journal and watch), lint (Linux and macOS), fmt, changes (changelog fragments), module (NixOS module evaluation) and, on Linux, `trial-scope-tests` and the VM tests `vm` (tuning boot) and `vm-restart-limit`. Must pass before every push to a pull request head, review fixes included; CI also runs the Linux-only checks for macOS authors |
 | `just fmt` | Format Go, Nix and the justfile in place |
-| `just sim [seed]` | A simulated session through its first clean lap in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
+| `just sim [seed]` | A simulated session through its first clean cycle in a temporary state directory (`go run ./tools/sim`, `docs/simulating.md`) |
 | `just replay --state-dir DIR` | Play a recorded journal through the dashboard on a fast-forward clock, or print one frame with `--at SEQ` (`go run ./tools/replay`, `docs/simulating.md`) |
 | `just bench [flags]` | The bench suite of simulated sessions, optionally compared against a baseline run (`go run ./tools/bench`, `docs/benchmarking.md`) |
 | `just audit [flags] [STATE-DIR...]` | Audit journal invariants; without state directories, sweep every bench scenario over 200 seeds and retain the evidence (`docs/benchmarking.md`) |

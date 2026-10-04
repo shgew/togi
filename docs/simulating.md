@@ -3,14 +3,14 @@
 `tools/sim` runs a whole tuning session on the seeded simulator in `internal/sim`: a 16-core Zen 5 machine with hidden per-core limits, random failures and crashes. It needs no hardware and no root, and works on every development platform. It is a development program: the package does not ship it, so it runs from a source checkout.
 
 ```sh
-just sim [seed]                                             # search, deepening and one clean lap in a new temporary state directory
-go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--laps N] [--state-dir DIR] [--samples]
+just sim [seed]                                             # search, deepening and one clean cycle in a new temporary state directory
+go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples]
 ```
 
 - `--seed` (default 1) selects deterministic limits and failures; the same seed and history reproduce the journal.
 - `--machine FILE` loads an explicit simulator machine TOML, including limits, joints, ranking, outcome scripts and reset reasons; `--seed` still sets its seed.
 - `--replay-facts` answers exact trial-class/full-profile matches from the machine file's `facts` extract, under its declared BIOS context. Without this flag the file remains a fitted simulator alone.
-- `--laps` (default 1) stops after N clean laps valid for the current profile once every core is at its limit and deepening can reach no more depth. An earlier lap can count after a deepening under the uncontradicted-profile rules in [the tuner spec](spec/tuner.md#checking).
+- `--cycles` (default 1) stops after N clean cycles valid for the current profile once every core is at its limit and deepening can reach no more depth. An earlier cycle can count after a deepening under the uncontradicted-profile rules in [the tuner spec](spec/tuner.md#checking).
 - `--state-dir` uses an existing directory; without it, `sim` creates a temporary one and prints its path to stderr.
 - `--samples` writes `trials/<trial-id>/samples.jsonl` for later inspection; by default trial samples stay in memory.
 
@@ -32,13 +32,13 @@ go run ./cmd/togi --state-dir <dir> events --core 3
 go run ./cmd/togi --state-dir <dir> watch
 ```
 
-`status` reports clean laps since the last deepening (the count and latest lap number), valid per-workload starts and missing full-lap coverage. Its Tctl peak comes from passes together since the last profile change and names the source trial-end event.
+`status` reports clean cycles since the last deepening (the count and latest cycle number), valid per-workload trials and missing full-cycle coverage. Its Tctl peak comes from passes together since the last profile change and names the source trial-end event.
 
 A finished simulation's `watch` shows only its last moment. `just replay --state-dir <dir>` plays the whole journal through the dashboard on a simulated clock, 300 simulated seconds per second by default (`--speed`, which must be finite and positive), starting at `--from SEQ`; the dashboard's keys work as in `watch`. `--at SEQ` prints one frame as of that event instead, `--after 40s` that long after it, `--view help` or `--view log` for those views, with `--width`, `--height` and `--color` as for a frame on a terminal. It also plays a copied real journal.
 
 `watch` and replay read the journal, not the sample files, so both work without `--samples`. Use that flag when inspecting the per-second sample series on disk.
 
-Replay accepts all shipped journal schemas from the current ruleset, including schemas 1 and 2. Recordings from another ruleset are refused; replay needs the tuning rules used to write the journal. It translates older payload vocabulary while retaining recorded messages and configuration, so the dashboard uses the recorded checking lap schedule. An incomplete final line is ignored; replay never changes the recording.
+Replay accepts all shipped journal schemas from the current ruleset, including schemas 1–3. Recordings from another ruleset are refused; replay needs the tuning rules used to write the journal. It translates older payload vocabulary while retaining recorded messages and configuration, so the dashboard uses the recorded checking cycle schedule. An incomplete final line is ignored; replay never changes the recording.
 
 Playback spaces consecutive events by their recorded boot-local `mono_ms` when both stamps are present and their boot IDs match; zero is a valid stamp. Across boots or with a missing stamp (including older journals), it uses the nonnegative wall-clock interval instead. The dashboard clock follows each consumed event's recorded `time`, then advances until the next event, so recorded wall-clock corrections remain visible without shortening or extending same-boot playback intervals.
 
@@ -85,7 +85,7 @@ Replayed crashes record progress at their recorded exposure and use a simulated 
 
 [`just stats`](reviewing.md) reports exposure and failures from real journals; it does not fit simulator defaults. These three archived sessions came from one Ryzen 9 9950X3D2 under one BIOS context. The session IDs identify the unmodified compressed fixtures in `internal/carry/testdata/`.
 
-|Session (ruleset)|Regime|Starts|Trial hours|Crashes|Computation errors|Unexpected exits|
+|Session (ruleset)|Regime|Trials|Trial hours|Crashes|Computation errors|Unexpected exits|
 |---|---|---:|---:|---:|---:|---:|
 |20260924T204352Z (1)|R1|388|12.854|15|0|1|
 |20260924T204352Z (1)|R2|271|8.109|13|14|0|
@@ -111,4 +111,4 @@ Replayed crashes record progress at their recorded exposure and use a simulated 
 
 R2's failures concentrate in mprime AVX-512 (16, 15 and 4 respectively), with y-cruncher FFTv4/N63/VT3 contributing 11, 2 and 0. R7 mprime AVX2 contributes 1, 1 and 5, mprime AVX-512 1, 1 and 4, and y-cruncher 0, 0 and 4. Unattributed crashes load CCD0 alone 3, 1 and 7 times, both CCDs 2, 0 and 1 times, and CCD1 alone 0, 0 and 1 times. Failures contradicting earlier passes of the same class at equal-or-deeper profiles number 0, 1 and 4.
 
-These are observed starts and last-evidence trial hours, not wall-clock session duration. A crash can have zero recorded exposure, and older journals can record a failure before `trial.start`. Rulesets, offsets, workloads and intended durations changed between sessions, so pooled rates are not per-offset failure probabilities. The simulator's fast seeded default remains unchanged. The synthetic bench machines are adversarial scenarios; the `target-fit-*` ensemble instead fits the committed extract and is checked against its eligible groups, with the limits described in [benchmarking](benchmarking.md#fitting-the-target-machine). The tables provide no evidence for adding R3 or R4 schedule-dependent hazards.
+These are observed trials and last-evidence trial hours, not wall-clock session duration. A crash can have zero recorded exposure, and older journals can record a failure before `trial.start`. Rulesets, offsets, workloads and intended durations changed between sessions, so pooled rates are not per-offset failure probabilities. The simulator's fast seeded default remains unchanged. The synthetic bench machines are adversarial scenarios; the `target-fit-*` ensemble instead fits the committed extract and is checked against its eligible groups, with the limits described in [benchmarking](benchmarking.md#fitting-the-target-machine). The tables provide no evidence for adding R3 or R4 schedule-dependent hazards.
