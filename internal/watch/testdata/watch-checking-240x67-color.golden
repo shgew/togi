@@ -3,23 +3,23 @@
   [94m█[m  [37mTESTING TOGETHER[m
   [94m█[m  
   [94m█[m  [37mEvery core found its limit on its own. Now they all run at their offsets[m
-  [94m█[m  [37mtogether, through a lap of 14 steps that covers every kind of load.[m
+  [94m█[m  [37mtogether, through a cycle of 14 steps that covers every kind of load.[m
   [94m█[m  
   [94m█[m  [37mThis step is all-core load: heavy work on many cores at once, for power and[m
   [94m█[m  [37mheat. It runs on cores 00-07 at once.[m
   [94m█[m  
-  [94m█[m  [37mThe goal is a clean lap: ordinary steps must pass and record-only partial[m
+  [94m█[m  [37mThe goal is a clean cycle: ordinary steps must pass and record-only partial[m
   [94m█[m  [37msteps only need to complete, on offsets that can't go any deeper.[m
   [94m█[m  
-  [94m█[m  [90mnow  [m[97mlap 1, step 1 of 14[m
+  [94m█[m  [90mnow  [m[97mcycle 1, step 1 of 14[m
   [94m█[m  [37mall-core load on cores 00-07[m[90m (mprime AVX2 36K-248K)[m
   [94m█[m  [96m█████████████[m[90m░░░░░░░░░░░░░░░░░░░░░░░░░░░[m  [97m1m20s left[m
   
   
-  [92m■ Find limits[m   [93m► Test together[m [90m○ Go deeper[m     [97m○ Clean lap[m     [90m∞ Keep checking[m
+  [92m■ Find limits[m   [93m► Test together[m [90m○ Go deeper[m     [97m○ Clean cycle[m   [90m∞ Keep checking[m
   [92m█████████████[m[90m[m   [93m[m[90m░░░░░░░░░░░░░[m   [90m[m[90m░░░░░░░░░░░░░[m   [90m[m[90m░░░░░░░░░░░░░[m   [90m[m[90m░░░░░░░░░░░░░[m
-  [90m16/16 cores[m     [37mlap 1[m           [90mafter a full[m    [90mthe goal[m        [90muntil stopped[m
-  [90m[m                [90mstep 1 of 14[m    [90mpassed lap[m      [90m[m                [90m[m
+  [90m16/16 cores[m     [37mcycle 1[m         [90mafter a full[m    [90mthe goal[m        [90muntil stopped[m
+  [90m[m                [90mstep 1 of 14[m    [90mpassed cycle[m    [90m[m                [90m[m
   
   [90m HUNT    [m  [90mno hunt running[m
   
@@ -45,14 +45,14 @@
   [90m15  -39[m  [90mlimit found        [m  [90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[90m▒[m[91m▌[m[90m·[m[90m·[m[90m·[m[90m·[m[90m·[m[90m·[m[90m·[m[90m·[m[90m·[m[90m·[m
   
   [90mComing up[m
-  [37mRest of this lap: all-core load x2, heavy vector load x3, idle with short[m
+  [37mRest of this cycle: all-core load x2, heavy vector load x3, idle with short[m
   [37mbursts, both threads, light load x3, load steps, partial load, idle with short[m
   [37mbursts.[m
-  [37mIf the lap finishes clean on offsets that can't go deeper, that's the goal.[m
+  [37mIf the cycle finishes clean on offsets that can't go deeper, that's the goal.[m
   [37mAfter that I keep checking.[m
 
   [90mWhat happened[m
-  [90m 10h14m  [m[37mlap    [m  [37m#1 started, 14 steps[m
+  [90m 10h14m  [m[37mcycle  [m  [37m#1 started, 14 steps[m
   [90m 10h14m  [m[92mlimit  [m  [37mcore 15 solo limit -39[m
   [90m 10h13m  [m[92mlimit  [m  [37mcore 01 solo limit -34[m
   [90m 10h13m  [m[92mlimit  [m  [37mcore 00 solo limit -37[m

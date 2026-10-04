@@ -1,8 +1,7 @@
    togi   00:18:20  running 1m40s  0 failures  0 crashes
 
-  TESTING TOGETHER  lap 1, step 1 of 3  ███████████████████░░░░░  0m27s left
+  TESTING TOGETHER  cycle 1, step 1 of 3  ███████████████████░░░░░  0m27s left
 
-│ 
 │   solo limit            The deepest offset a core passed with every other core
 │                         at 0.
 │ 
@@ -10,24 +9,25 @@
 │                         prove the group fails together, or leave an unresolved
 │                         group restricted as a precaution.
 │ 
-│   lap                   One pass through the configured checking schedule. A
-│                         passed lap has passing evidence for its ordinary steps;
-│                         record-only partial steps only need to complete. A full
-│                         lap covers every required kind of load. A clean lap is a
-│                         passed full lap that ended with every core at its limit
-│                         and remains valid for the current profile.
+│   cycle                 One pass through the configured checking schedule. A
+│                         passed cycle has passing evidence for its ordinary
+│                         steps; record-only partial steps only need to complete.
+│                         A full cycle covers every required kind of load. A clean
+│                         cycle is a passed full cycle that ended with every core
+│                         at its limit and remains valid for the current profile.
 │ 
-│   recorded only         A partial all-core part of a lap step. Cores that had
+│   recorded only         A partial all-core part of a cycle step. Cores that had
 │                         their CCD's shallowest offset when the step started stay
 │                         idle, even if offsets change. Its result is kept on
-│                         record but moves no offset. The lap needs it to finish,
-│                         pass or fail, and it covers no required kind of load.
+│                         record but moves no offset. The cycle needs it to
+│                         finish, pass or fail, and it covers no required kind of
+│                         load.
 │ 
-│   run                   One launch of one test. Confirming a solo limit, a hunt
+│   trial                 One launch of one test. Confirming a solo limit, a hunt
 │                         group or a deepening move needs several passes in a row.
-│                         Ordinary lap steps can advance after one pass, while
-│                         all-core steps also include repeated short runs and a
-│                         long run.
+│                         Ordinary cycle steps can advance after one pass, while
+│                         all-core steps also include repeated short trials and a
+│                         long trial.
 │ 
 │ 
 │ The kinds of test
@@ -64,6 +64,6 @@
 █ 
 █ 
 █ Passing tests can't prove offsets will never fail. They show which tests passed,
-█ and more laps catch rarer failures.
+█ and more cycles catch rarer failures.
 
-  ↑↓ PgUp PgDn  lines 87-149 of 149    ? or Esc back    L event log    q quit
+  ↑↓ PgUp PgDn  lines 88-150 of 150    ? or Esc back    L event log    q quit

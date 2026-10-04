@@ -19,12 +19,12 @@
   █  █████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░  1m20s left
   
   
-  ■ Find limits   ► Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
+  ■ Find limits   ► Test together ○ Go deeper     ○ Clean cycle   ∞ Keep checking
   █████████████   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
-  16/16 cores     lap 1           after a full    the goal        until stopped
-                  paused          passed lap                      
+  16/16 cores     cycle 1         after a full    the goal        until stopped
+                  paused          passed cycle                    
   
-   HUNT 1    Lap 1 waits at step 1 while I find which cores caused the crash
+   HUNT 1    Cycle 1 waits at step 1 while I find which cores caused the crash
   
   
   CCD 0                                -10       -20       -30       -40       -50
@@ -49,14 +49,14 @@
   
   Coming up
   When the hunt ends, I record its result and move the offsets back past it. Then
-  the failed test needs 5 starts of 2 min, followed by one at its original length
+  the failed test needs 5 trials of 2 min, followed by one at its original length
   if that differs.
   Then the work the failure interrupted continues.
 
   What happened
     7h13m  hunt     #1 started: which cores caused it?
     7h13m  crash    all-core load on cores 00-07, rebooted
-    7h12m  lap      #1 started, 14 steps
+    7h12m  cycle    #1 started, 14 steps
     7h12m  limit    core 15 solo limit -10
     7h12m  limit    core 07 solo limit -10
     7h12m  limit    core 14 solo limit -10

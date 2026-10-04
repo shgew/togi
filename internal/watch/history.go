@@ -55,7 +55,7 @@ const (
 	tagDeeper  = "deeper"
 	tagBackoff = "backoff"
 	tagYield   = "yield"
-	tagCycle     = "cycle"
+	tagCycle   = "cycle"
 	tagHunt    = "hunt"
 	tagCombo   = "combo"
 	tagRound   = "round"

@@ -1,6 +1,6 @@
    togi   00:18:20  running 1m40s  0 failures  0 crashes
 
-  TESTING TOGETHER  lap 1, step 1 of 3  ███████████████████░░░░░  0m27s left
+  TESTING TOGETHER  cycle 1, step 1 of 3  ███████████████████░░░░░  0m27s left
 
   Event log, as the journal records it
   
@@ -9,8 +9,8 @@
     0h00m  core 01 starts at its limit at -30 ()
     0h00m  core 02 starts at its limit at -50 ()
     0h00m  profile for checking: [-20 -30 -50]
-    0h00m  checking lap 1 start: R1 R2 R7
-    0h00m  trial checking core 01 R2 mprime AVX2 36K-248K 120s together lap 1
+    0h00m  checking cycle 1 start: R1 R2 R7
+    0h00m  trial checking core 01 R2 mprime AVX2 36K-248K 120s together cycle 1
     0h00m  trial checking started pid 0 in scope  on cpu 
 
 

@@ -16,12 +16,12 @@
   █  ██████████████████████████████░░░░░░░░░░  0m31s left
   
   
-  ■ Find limits   ► Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
+  ■ Find limits   ► Test together ○ Go deeper     ○ Clean cycle   ∞ Keep checking
   █████████████   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
   3/3 cores                       after a full    the goal        until stopped
-                  paused          passed lap                      
+                  paused          passed cycle                    
   
-   HUNT 3    The lap waits while I find which cores caused the failure
+   HUNT 3    The cycle waits while I find which cores caused the failure
   
   
   CCD 0                                -10       -20       -30       -40       -50
@@ -33,7 +33,7 @@
   
   Coming up
   When the hunt ends, I record its result and move the offsets back past it. Then
-  the failed test needs 5 starts of 2 min, followed by one at its original length
+  the failed test needs 5 trials of 2 min, followed by one at its original length
   if that differs.
   Then the work the failure interrupted continues.
 

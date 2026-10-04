@@ -3,23 +3,23 @@
   █  TESTING TOGETHER
   █  
   █  Every core found its limit on its own. Now they all run at their offsets
-  █  together, through a lap of 14 steps that covers every kind of load.
+  █  together, through a cycle of 14 steps that covers every kind of load.
   █  
   █  This step is all-core load: heavy work on many cores at once, for power and
   █  heat. It runs on cores 00-07 at once.
   █  
-  █  The goal is a clean lap: ordinary steps must pass and record-only partial
+  █  The goal is a clean cycle: ordinary steps must pass and record-only partial
   █  steps only need to complete, on offsets that can't go any deeper.
   █  
-  █  now  lap 1, step 1 of 14
+  █  now  cycle 1, step 1 of 14
   █  all-core load on cores 00-07 (mprime AVX2 36K-248K)
   █  █████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░  1m20s left
   
   
-  ■ Find limits   ► Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
+  ■ Find limits   ► Test together ○ Go deeper     ○ Clean cycle   ∞ Keep checking
   █████████████   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
-  16/16 cores     lap 1           after a full    the goal        until stopped
-                  step 1 of 14    passed lap                      
+  16/16 cores     cycle 1         after a full    the goal        until stopped
+                  step 1 of 14    passed cycle                    
   
    HUNT      no hunt running
   
@@ -45,14 +45,14 @@
   15  -39  limit found          ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▌··········
   
   Coming up
-  Rest of this lap: all-core load x2, heavy vector load x3, idle with short
+  Rest of this cycle: all-core load x2, heavy vector load x3, idle with short
   bursts, both threads, light load x3, load steps, partial load, idle with short
   bursts.
-  If the lap finishes clean on offsets that can't go deeper, that's the goal.
+  If the cycle finishes clean on offsets that can't go deeper, that's the goal.
   After that I keep checking.
 
   What happened
-   10h14m  lap      #1 started, 14 steps
+   10h14m  cycle    #1 started, 14 steps
    10h14m  limit    core 15 solo limit -39
    10h13m  limit    core 01 solo limit -34
    10h13m  limit    core 00 solo limit -37

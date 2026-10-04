@@ -8,10 +8,10 @@
   █  Details: dead end failure_at_zero: core 00 failed at CO 0
   
   
-  ► Find limits   ○ Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
+  ► Find limits   ○ Test together ○ Go deeper     ○ Clean cycle   ∞ Keep checking
   █████████░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
   2/3 cores       all together    after a full    the goal        until stopped
-                                  passed lap                      
+                                  passed cycle                    
   
    HUNT      no hunt running
   

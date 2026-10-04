@@ -16,10 +16,10 @@
   █  ████████████████████████████████████████  0m00s left
   
   
-  ► Find limits   ○ Test together ○ Go deeper     ○ Clean lap     ∞ Keep checking
+  ► Find limits   ○ Test together ○ Go deeper     ○ Clean cycle   ∞ Keep checking
   █████████░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░   ░░░░░░░░░░░░░
   2/3 cores       all together    after a full    the goal        until stopped
-                                  passed lap                      
+                                  passed cycle                    
   
    HUNT      no hunt running
   
@@ -32,8 +32,8 @@
   02    0  held back by others  ··················································
   
   Coming up
-  When every core has its limit, they all run together through laps of every kind
-  of test.
+  When every core has its limit, they all run together through cycles of every
+  kind of test.
 
   What happened
     0h00m  start    session started on 3 cores

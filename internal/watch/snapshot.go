@@ -21,33 +21,33 @@ const (
 
 // Snapshot is everything one frame shows, projected from the journal.
 type Snapshot struct {
-	problem         error
-	session         bool
-	start           time.Time
-	phase           journal.Phase
-	cores           []coreView
-	trial           *trial
-	inFlight        string
-	hunt            *huntView
-	deepening       *journal.DeepeningState
-	checking        *journal.CheckingState
-	order           []int
-	trials          int
-	shortTrialDuration   time.Duration
-	rerunDuration   time.Duration
-	canDeepen       bool
-	checkingFull    bool
-	checkingMissing []string
-	failures        int
-	crashes         int
-	hunts           int
-	lastFailure     *failureView
-	lastCrash       *time.Time
-	deadEnd         *deadEndView
-	stopped         *time.Time
-	stoppedReason   journal.ShutdownReason
-	history         []entry
-	log             []entry
+	problem            error
+	session            bool
+	start              time.Time
+	phase              journal.Phase
+	cores              []coreView
+	trial              *trial
+	inFlight           string
+	hunt               *huntView
+	deepening          *journal.DeepeningState
+	checking           *journal.CheckingState
+	order              []int
+	trials             int
+	shortTrialDuration time.Duration
+	rerunDuration      time.Duration
+	canDeepen          bool
+	checkingFull       bool
+	checkingMissing    []string
+	failures           int
+	crashes            int
+	hunts              int
+	lastFailure        *failureView
+	lastCrash          *time.Time
+	deadEnd            *deadEndView
+	stopped            *time.Time
+	stoppedReason      journal.ShutdownReason
+	history            []entry
+	log                []entry
 }
 
 func (s Snapshot) Err() error {
@@ -162,15 +162,15 @@ func Project(events []journal.Event) Snapshot {
 	}
 	defaults := config.Default()
 	s := Snapshot{
-		session:       true,
-		phase:         journal.Phase(st.Phase),
-		start:         st.Session.Start,
-		checking:      st.Checking,
-		deepening:     st.Deepening,
-		trials:        defaults.Evidence.Trials(),
+		session:            true,
+		phase:              journal.Phase(st.Phase),
+		start:              st.Session.Start,
+		checking:           st.Checking,
+		deepening:          st.Deepening,
+		trials:             defaults.Evidence.Trials(),
 		shortTrialDuration: time.Duration(defaults.Durations.ShortTrialS) * time.Second,
-		rerunDuration: time.Duration(t.RerunDuration()) * time.Second,
-		canDeepen:     t.CanDeepen(),
+		rerunDuration:      time.Duration(t.RerunDuration()) * time.Second,
+		canDeepen:          t.CanDeepen(),
 	}
 	if s.checking != nil {
 		s.checkingFull, s.checkingMissing = s.checking.Full, s.checking.Missing

@@ -25,7 +25,7 @@ func watchCuts(t *testing.T) []watchCut {
 	t.Helper()
 	dir := t.TempDir()
 	watchtest.Install(t, dir, "concluded")
-	events, _, err := journal.Read(dir)
+	events, _, err := journal.ReadReplay(dir, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestWatchCombinationAndOpenHunt(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			watchtest.Install(t, dir, tc.name)
-			events, _, err := journal.Read(dir)
+			events, _, err := journal.ReadReplay(dir, 5)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -208,7 +208,7 @@ func TestWatchBetweenTrialMCE(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	watchtest.Install(t, dir, "concluded")
-	events, _, err := journal.Read(dir)
+	events, _, err := journal.ReadReplay(dir, 5)
 	if err != nil {
 		t.Fatal(err)
 	}

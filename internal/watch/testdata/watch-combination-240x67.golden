@@ -6,14 +6,14 @@
   █  what I found, not what is applied now. Everything I learned is in the
   █  journal, and togi run picks up where I left off.
   █  
-  █  These offsets passed a clean lap of every kind of test: they are the ones to
-  █  carry into the BIOS.
+  █  These offsets passed a clean cycle of every kind of test: they are the ones
+  █  to carry into the BIOS.
   
   
-  ■ Find limits   ■ Test together ■ Go deeper     ■ Clean lap     ► Keep checking
+  ■ Find limits   ■ Test together ■ Go deeper     ■ Clean cycle   ► Keep checking
   █████████████   █████████████   █████████████   █████████████   █████████████
-  16/16 cores     1 lap           no room left    reached         lap 1
-                                                                  1 clean lap
+  16/16 cores     1 cycle         no room left    reached         cycle 1
+                                                                  1 clean cycle
   
    HUNT      no hunt running, 1 hunt so far
   
@@ -40,7 +40,7 @@
 
   What happened
    15h28m  stop     stopped
-   15h28m  lap      #1 passed, a full lap of every kind of test
+   15h28m  cycle    #1 passed, a full cycle of every kind of test
    15h28m  pass     idle with short bursts on all 16 cores, 15 min, peak 62 C
    15h13m  pass     partial load on core 15 at -10, 2 min, peak 74 C
    15h11m  pass     partial load on core 07 at -10, 2 min, peak 64 C

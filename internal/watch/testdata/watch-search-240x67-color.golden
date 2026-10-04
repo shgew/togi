@@ -16,10 +16,10 @@
   [94m█[m  [96m██████████████████[m[90m░░░░░░░░░░░░░░░░░░░░░░[m  [97m0m50s left[m
   
   
-  [93m► Find limits[m   [90m○ Test together[m [90m○ Go deeper[m     [97m○ Clean lap[m     [90m∞ Keep checking[m
+  [93m► Find limits[m   [90m○ Test together[m [90m○ Go deeper[m     [97m○ Clean cycle[m   [90m∞ Keep checking[m
   [93m[m[90m░░░░░░░░░░░░░[m   [90m[m[90m░░░░░░░░░░░░░[m   [90m[m[90m░░░░░░░░░░░░░[m   [90m[m[90m░░░░░░░░░░░░░[m   [90m[m[90m░░░░░░░░░░░░░[m
   [37m0/16 cores[m      [90mall together[m    [90mafter a full[m    [90mthe goal[m        [90muntil stopped[m
-  [90m[m                [90m[m                [90mpassed lap[m      [90m[m                [90m[m
+  [90m[m                [90m[m                [90mpassed cycle[m    [90m[m                [90m[m
   
   [90m HUNT    [m  [90mno hunt running[m
   
@@ -47,8 +47,8 @@
   [90mComing up[m
   [37mNext in line, taking turns so each core cools down between its own tests: 15,[m
   [37m00, 08, 01, 09, 02, 10, 03, 11, 04, 12, 05, 13, 06, 14.[m
-  [37mWhen every core has its limit, they all run together through laps of every kind[m
-  [37mof test.[m
+  [37mWhen every core has its limit, they all run together through cycles of every[m
+  [37mkind of test.[m
 
   [90mWhat happened[m
   [90m  1h27m  [m[93mbackoff[m  [37mcore 14 -5 → -1[m
