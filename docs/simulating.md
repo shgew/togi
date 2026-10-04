@@ -4,7 +4,7 @@
 
 ```sh
 just sim [seed]                                             # search, deepening and one clean lap in a new temporary state directory
-go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--laps N] [--state-dir DIR]
+go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--laps N] [--state-dir DIR] [--samples]
 ```
 
 - `--seed` (default 1) selects deterministic limits and failures; the same seed and history reproduce the journal.
@@ -12,12 +12,13 @@ go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--laps N] [--st
 - `--replay-facts` answers exact trial-class/full-profile matches from the machine file's `facts` extract, under its declared BIOS context. Without this flag the file remains a fitted simulator alone.
 - `--laps` (default 1) stops after N clean laps valid for the current profile once every core is at its limit and deepening can reach no more depth. An earlier lap can count after a deepening under the uncontradicted-profile rules in [the tuner spec](spec/tuner.md#checking).
 - `--state-dir` uses an existing directory; without it, `sim` creates a temporary one and prints its path to stderr.
+- `--samples` writes `trials/<trial-id>/samples.jsonl` for later inspection; by default trial samples stay in memory.
 
 A crash reboots the simulated machine in-process and the next boot resumes the journal, as a real reboot would. Within one invocation, parsed events stay in memory across simulated reboots; `events.jsonl` is still appended on every event, but `state.json` is written only when the invocation stops. Journal lines go to stderr as `togi run` logs them, and nothing is fsynced. The state-directory writer lock stays held across simulated reboots. Read-only commands can inspect the final state after the invocation returns; during a run, `state.json` can be absent or still describe the previous invocation.
 
 A state directory that already holds a journal or archives resumes the simulated machine after them: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot, and a session after `reset --all` gets a new id. A new invocation reads the file-backed journal before tuning; only reboots within that invocation reuse the parsed events. Real `togi run` sessions retain their file-backed recovery and per-event state writes.
 
-Simulated trials also write `trials/<trial-id>/samples.jsonl`: each loaded worker's cumulative CPU milliseconds advance once per simulated second. Samples are encoded as they are generated without retaining the series. Without a samples directory, the simulator retains only the last trial's specification, duration and stall metadata and generates its samples lazily when read. On a crash the loaded culprit's worker stops first, two seconds before the reset when the trial ran long enough, so the recovered `trial.end` can demonstrate `stalled_core` and `worker_stalled_ms` outside R6, which omits stalled-worker evidence because its workers are suspended by design. These synthetic samples are diagnostic only and do not change failure draws or tuner decisions.
+Simulated trials keep samples in memory by default: each loaded worker's cumulative CPU milliseconds advance once per simulated second. The simulator retains only the last trial's specification, duration and stall metadata and generates its samples lazily when read. With `--samples`, trials instead write `trials/<trial-id>/samples.jsonl`, encoding samples as they are generated without retaining the series. On a crash the loaded culprit's worker stops first, two seconds before the reset when the trial ran long enough, so the recovered `trial.end` can demonstrate `stalled_core` and `worker_stalled_ms` outside R6, which omits stalled-worker evidence because its workers are suspended by design. Both paths produce the same journal evidence; these synthetic samples are diagnostic only and do not change failure draws or tuner decisions.
 
 The simulator reports no SMU `pm_table` lanes: `pm_table` is absent from samples, and each run records an informational `preflight.check` explaining that the version is unavailable and no per-core lanes are supplied.
 
@@ -35,11 +36,13 @@ go run ./cmd/togi --state-dir <dir> watch
 
 A finished simulation's `watch` shows only its last moment. `just replay --state-dir <dir>` plays the whole journal through the dashboard on a simulated clock, 300 simulated seconds per second by default (`--speed`, which must be finite and positive), starting at `--from SEQ`; the dashboard's keys work as in `watch`. `--at SEQ` prints one frame as of that event instead, `--after 40s` that long after it, `--view help` or `--view log` for those views, with `--width`, `--height` and `--color` as for a frame on a terminal. It also plays a copied real journal.
 
+`watch` and replay read the journal, not the sample files, so both work without `--samples`. Use that flag when inspecting the per-second sample series on disk.
+
 Replay accepts all shipped journal schemas from the current ruleset, including schemas 1 and 2. Recordings from another ruleset are refused; replay needs the tuning rules used to write the journal. It translates older payload vocabulary while retaining recorded messages and configuration, so the dashboard uses the recorded checking lap schedule. An incomplete final line is ignored; replay never changes the recording.
 
 Playback spaces consecutive events by their recorded boot-local `mono_ms` when both stamps are present and their boot IDs match; zero is a valid stamp. Across boots or with a missing stamp (including older journals), it uses the nonnegative wall-clock interval instead. The dashboard clock follows each consumed event's recorded `time`, then advances until the next event, so recorded wall-clock corrections remain visible without shortening or extending same-boot playback intervals.
 
-Fault injection, explicit limits and the failure model are a Go API for tests (`sim.Config`, `sim.Limits`, `sim.Model` and the methods on `sim.Machine`); `internal/sim/doc.go` describes the model. `Machine.Hazard` returns the steady-state failure rate a trial would see at a given profile, from the same rules that draw trial failures, so a tool can judge a final profile against the model's truth. `internal/simrun` drives a session on the simulator across its crashes for tests that need a simulated journal. Its default remains file-backed for recovery and interruption tests; `tools/sim` opts into the in-memory journal path, which is checked against byte-identical journal and final-state files for fixed seeds on the default machine and `target-fit-0.toml`.
+Fault injection, explicit limits and the failure model are a Go API for tests (`sim.Config`, `sim.Limits`, `sim.Model` and the methods on `sim.Machine`); `internal/sim/doc.go` describes the model. `Machine.Hazard` returns the steady-state failure rate a trial would see at a given profile, from the same rules that draw trial failures, so a tool can judge a final profile against the model's truth. `internal/simrun` drives a session on the simulator across its crashes for tests that need a simulated journal. Its journal remains file-backed by default for recovery and interruption tests, and `Input.WriteSamples` opts into sample files. `tools/sim` opts into the in-memory journal path, which is checked against byte-identical journal and final-state files for fixed seeds on the default machine and `target-fit-0.toml`.
 
 If a machine file sets `[model.signals]`, it replaces the default signal weights. Weights must be non-negative and sum to a positive total; an empty or all-zero map is rejected before the session starts.
 

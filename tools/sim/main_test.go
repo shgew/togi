@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestSimRefusesInvalidInputs(t *testing.T) {
@@ -56,5 +59,33 @@ func TestSimReplayRequiresMachineBeforeStateChanges(t *testing.T) {
 	}
 	if _, err := os.Stat(state); !os.IsNotExist(err) {
 		t.Fatalf("invalid replay changed state directory: %v", err)
+	}
+}
+
+func TestSimSamplesAreOptIn(t *testing.T) {
+	t.Parallel()
+	for _, writeSamples := range []bool{false, true} {
+		name := "in-memory"
+		if writeSamples {
+			name = "on-disk"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			args := []string{"--state-dir", dir}
+			if writeSamples {
+				args = append(args, "--samples")
+			}
+			if diff := cmp.Diff(0, run(args, io.Discard)); diff != "" {
+				t.Fatalf("exit code (-want +got):\n%s", diff)
+			}
+			files, err := filepath.Glob(filepath.Join(dir, "trials", "*", "samples.jsonl"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(writeSamples, len(files) > 0); diff != "" {
+				t.Fatalf("sample files exist (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

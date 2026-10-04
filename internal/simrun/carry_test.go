@@ -395,7 +395,7 @@ func TestBIOSArchiveInterruptedBeforeMoveResumesCarry(t *testing.T) {
 	dir := t.TempDir()
 	c := quickMatrixConfig()
 	c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
-	in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1}
+	in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Laps: 1, WriteSamples: true}
 	stopAfterAlonePasses(&in, 4)
 	if _, err := Simulate(context.Background(), in); err != nil {
 		t.Fatal(err)
