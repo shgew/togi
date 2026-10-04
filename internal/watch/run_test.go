@@ -669,3 +669,13 @@ func TestReadKeysCancelsBlockedDelivery(t *testing.T) {
 		}
 	})
 }
+
+func TestRefreshClockArmsNothingForAnIdleTrialHold(t *testing.T) {
+	t.Parallel()
+	var clock refreshClock
+	defer clock.stop()
+	clock.schedule(time.Time{})
+	if ch := clock.schedule(heldUntilRecorded); ch != nil || clock.ticker != nil {
+		t.Fatalf("idle-trial hold armed a clock: channel %v, ticker %v", ch, clock.ticker)
+	}
+}

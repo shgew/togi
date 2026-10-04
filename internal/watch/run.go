@@ -402,6 +402,12 @@ func (c *refreshClock) stop() {
 }
 
 func (c *refreshClock) schedule(until time.Time) <-chan time.Time {
+	if until.Equal(heldUntilRecorded) {
+		// A started idle trial changes only with the journal, a key or a resize: no timer or ticker at all.
+		c.stop()
+		c.ticker = nil
+		return nil
+	}
 	if delay := time.Until(until); delay > 0 {
 		if c.ticker != nil {
 			c.ticker.Stop()
