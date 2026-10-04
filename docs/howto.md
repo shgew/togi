@@ -115,7 +115,7 @@ Start sessions from the [tuning boot](#4-overnight-the-tuning-boot), especially 
 sudo togi run
 ```
 
-It shows the session as the `togi watch` dashboard, redrawn every second: what togi is doing and why, the running test, the stages and one row per core. `togi watch` in another terminal shows the same screen and takes keys: `?` explains it. Watch a few trials, then press Ctrl-C. It restores each core to its baseline or its current offset when shallower, records `shutdown` and exits 0; the next run resumes. `sudo togi run --no-tui` prints one line per event instead.
+It shows the session as the `togi watch` dashboard, redrawn whenever the journal changes: what togi is doing and why, the running trial and what each outcome would lead to, the stages and a table of offsets per CCD. `togi watch` in another terminal shows the same screen and takes keys: `?` explains it. Watch a few trials, then press Ctrl-C. It restores each core to its baseline or its current offset when shallower, records `shutdown` and exits 0; the next run resumes. `sudo togi run --no-tui` prints one line per event instead.
 
 ```sh
 togi status
