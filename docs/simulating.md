@@ -3,7 +3,7 @@
 `tools/sim` runs a whole tuning session on the seeded simulator in `internal/sim`: a 16-core Zen 5 machine with hidden per-core limits, random failures and crashes. It needs no hardware and no root, and works on every development platform. It is a development program: the package does not ship it, so it runs from a source checkout.
 
 ```sh
-just sim [seed] [--machine FILE] [--cycles N] [--state-dir DIR] # search, deepening and one clean cycle
+just sim [SEED [--machine FILE] [--cycles N] [--state-dir DIR]] # search, deepening and one clean cycle; flags follow an explicit seed
 go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples]
 ```
 
