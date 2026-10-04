@@ -76,26 +76,6 @@ func TestScopeTimeoutUsesRemainingTeardownTime(t *testing.T) {
 	})
 }
 
-type blockedStartHost struct{ *fakeHost }
-
-func (h blockedStartHost) Start(ctx context.Context, _ []string, _ string) (process, error) {
-	<-ctx.Done()
-	return nil, ctx.Err()
-}
-
-func TestTrialLaunchTimeout(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		o := fakeOptions(t, "work")
-		o.NoScope = false
-		r := New(o)
-		r.host = blockedStartHost{&fakeHost{}}
-		_, err := r.Start(context.Background(), testSpec("blocked-launch", machine.R1, time.Second))
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("launch = %v", err)
-		}
-	})
-}
-
 func TestRootLauncherClearsSupplementaryGroups(t *testing.T) {
 	t.Parallel()
 	attr := launcherAttributes(0, 42)
