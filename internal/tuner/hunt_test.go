@@ -942,7 +942,7 @@ func TestActiveHuntProjection(t *testing.T) {
 
 func TestDrainCommitsResolvedHuntWithoutStartingGroups(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -30, fail: new(-31)}, coreStart{phase: journal.PhaseAtLimit, offset: -30, fail: new(-31)})
-	h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "source", Intent: 1, End: 2}, Class: journal.TrialClass{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: 120}, Condition: machine.Parked, Core: new(1), Profile: []int{0, -30}, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+	h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "source", Seq: 2}, Class: journal.TrialClass{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: 120}, Condition: machine.Parked, Core: new(1), Profile: []int{0, -30}, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
 	h.decide(h.next())
 	h.trial(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 600}}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash})
 	h.decide(h.next())
