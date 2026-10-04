@@ -75,6 +75,9 @@ func TestTrialIntentDoesNotFreezeBeforeStart(t *testing.T) {
 	if !strings.Contains(text, "waiting") && !strings.Contains(text, "starting") {
 		t.Errorf("trial intent is presented as running:\n%s", text)
 	}
+	if strings.Contains(text, "offsets are set") {
+		t.Errorf("an intent before its readback claims the offsets are set:\n%s", text)
+	}
 }
 
 func TestBetweenTrialsNamesLastOutcomeInsteadOfCountdown(t *testing.T) {
@@ -131,5 +134,14 @@ func TestDeadEndFramePreservesRecordedCause(t *testing.T) {
 		if !strings.Contains(text, "DEAD END") || !strings.Contains(text, tc.detail) || strings.Contains(text, tc.wrong) {
 			t.Errorf("dead end loses recorded cause or invents diagnosis:\n%s", text)
 		}
+	}
+}
+
+func TestDeepeningForecastKeepsTheProposedProfileApplied(t *testing.T) {
+	t.Parallel()
+	events := cutTrial(t, probeEvents(t), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })
+	text := ansi.Strip(Render(Project(events), 240, 67, cutTime(events)))
+	if !strings.Contains(text, "deepening round 1:") || strings.Contains(text, " alone at ") {
+		t.Fatalf("deepening checks run with the proposed profile applied, not alone:\n%s", text)
 	}
 }

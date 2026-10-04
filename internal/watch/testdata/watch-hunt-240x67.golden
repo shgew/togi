@@ -3,7 +3,7 @@
   ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14, part 4  ───  ►  HUNT 1   parts · part 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
   ▌  HUNT 1   The machine crashed early in the rerun of the 2-minute all-core trial on 08-15 and rebooted.                last trial      CRASH  on 08-15
-  ▌           No core was named: I rerun that load with half of 00-15 at its offsets, the other half parked at 0.
+  ▌           No core was named: I rerun that load with 08-15 at their failing offsets, 00-07 parked at 0.
 
   NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0449
    R7   all-core load  on 08-15 · 00-07 parked at 0, idle   mprime AVX2 36K-248K · 8 workers                                                                                                                             HUNT 1 · PART 1 OF 2

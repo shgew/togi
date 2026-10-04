@@ -9,9 +9,9 @@
    R1   light load  on 00   mprime SSE 4K-21K · 1 worker                                                                                     DEEPEN · ROUND 1
   █████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
 
-  if 5 of 5 pass       next: deepening round 1: R2 heavy vector on core 00 alone at -30
-  if it passes         next: deepening round 1: R1 light on core 00 alone at -30
-  if a core is named   its failure point is recorded → deepening round 1 ends → it backs off → next: rerun R1 light on core 00 alone at -29 · 2m
+  if 5 of 5 pass       next: deepening round 1: R2 heavy vector on core 00 at -30
+  if it passes         next: deepening round 1: R1 light on core 00 at -30
+  if a core is named   its failure point is recorded → deepening round 1 ends → it backs off → next: rerun R1 light on core 00 at -29 · 2m
 
   CCD 0               0  2 counts/cell       -50 fail pt  one loaded              CCD 1               0  2 counts/cell       -50 fail pt  not under load
   ► 00  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              08  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          

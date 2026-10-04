@@ -45,7 +45,7 @@ func (s Snapshot) story(now time.Time) story {
 	}
 	t := s.trial
 	if !t.hasStarted {
-		text := "The trial's intent is recorded and its offsets are set; its workload is starting."
+		text := "The trial's intent is recorded; its offsets are being applied and its workload is starting."
 		return story{s.stageLabel(), []string{text}, text, plainTone}
 	}
 	if s.hunt != nil {
@@ -122,9 +122,13 @@ func (s Snapshot) huntStory() story {
 	label := fmt.Sprintf("HUNT %d", h.id)
 	if t.probe != nil {
 		var group []int
+		var signal machine.Signal
 		for _, g := range h.groups {
 			if g.probe == nil {
 				group = g.cores
+				if g.outcome == "failure" {
+					signal = g.signal
+				}
 			}
 		}
 		if len(h.probes) > 0 {
@@ -133,8 +137,9 @@ func (s Snapshot) huntStory() story {
 				group = append(group, probe.member)
 			}
 		}
+		// The retained group's own failure, not the trial that started the hunt.
 		verb := "failed"
-		if h.cause.signal == machine.Crash {
+		if signal == machine.Crash {
 			verb = "crashed"
 		}
 		first := fmt.Sprintf("%s %s together at their offsets, and every smaller part of them that was tested passed.", coreIDs(group), verb)
@@ -155,8 +160,10 @@ func (s Snapshot) splitWords() string {
 	if h.parkedZero {
 		parked = "parked at 0"
 	}
-	if len(h.plan) == 2 {
-		return fmt.Sprintf("half of %s at its offsets, the other half %s", coreIDs(h.candidates), parked)
+	for _, part := range h.plan {
+		if part.running {
+			return fmt.Sprintf("%s at their failing offsets, %s %s", coreIDs(part.failing), coreIDs(part.parked), parked)
+		}
 	}
 	return fmt.Sprintf("part of %s at its offsets, the rest %s", coreIDs(h.candidates), parked)
 }
@@ -535,7 +542,11 @@ func (s Snapshot) nextLine() string {
 func (s Snapshot) nextTrialWords(n tuner.Trial, after *trialView, shape huntShape) string {
 	what := fmt.Sprintf("%s %s on %s", n.Regime, kindWords(n.Regime), coreIDs(n.Cores))
 	if len(n.Cores) == 0 {
-		what = fmt.Sprintf("%s %s on core %02d alone at %d", n.Regime, kindWords(n.Regime), n.Core, n.Offset)
+		// One loaded core: alone only in search; otherwise every other core keeps its profile offset.
+		what = fmt.Sprintf("%s %s on core %02d at %d", n.Regime, kindWords(n.Regime), n.Core, n.Offset)
+		if n.Condition == machine.Alone {
+			what = fmt.Sprintf("%s %s on core %02d alone at %d", n.Regime, kindWords(n.Regime), n.Core, n.Offset)
+		}
 	}
 	var text string
 	switch {
@@ -613,7 +624,7 @@ func (s Snapshot) partWords(n tuner.Trial) string {
 			continue
 		}
 		if len(n.Cores) == 0 {
-			return fmt.Sprintf("part %d: core %02d alone at %d, %s", i+1, n.Core, n.Offset, duration)
+			return fmt.Sprintf("part %d: core %02d at %d, %s", i+1, n.Core, n.Offset, duration)
 		}
 		return fmt.Sprintf("part %d: %s on %s, %s", i+1, partName(step.regime, part), coreIDs(n.Cores), duration)
 	}

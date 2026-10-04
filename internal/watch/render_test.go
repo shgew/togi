@@ -272,8 +272,8 @@ func TestPassingOutcomeNamesTheNextPartOrStep(t *testing.T) {
 		next  tuner.Trial
 		want  string
 	}{
-		{"the next core of a per-core step", perCore(1, 1), tuner.Trial{Regime: machine.R2, Core: 9, Offset: -16, Condition: machine.Alone, Cycle: 1, Step: 1, DurationS: 120},
-			"if it passes: part 1 is done → next: part 2: core 09 alone at -16, 2m"},
+		{"the next core of a per-core step", perCore(1, 1), tuner.Trial{Regime: machine.R2, Core: 9, Offset: -16, Condition: machine.Together, Cycle: 1, Step: 1, DurationS: 120},
+			"if it passes: part 1 is done → next: part 2: core 09 at -16, 2m"},
 		{"the next step", perCore(9, 2), tuner.Trial{Regime: machine.R6, Cores: []int{1, 9}, Condition: machine.Together, Cycle: 1, Step: 2, DurationS: 900, Workload: "mprime-sse-4k-21k-idle"},
 			"if it passes: step 1 is done → next: step 2: R6 idle + bursts with mprime SSE 4K-21K"},
 	} {
