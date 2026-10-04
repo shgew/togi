@@ -45,7 +45,7 @@ func Project(events []journal.Event) Snapshot {
 	for _, c := range st.Cores {
 		s.order = append(s.order, c.Core)
 	}
-	p := projector{s: &s, st: &st, intents: requirements.intents, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{}, applied: map[int]int{}, tuned: map[int]int{}, solo: map[int]int{}, failures: map[int]*failureView{}, backs: map[int]int{}, sources: map[int]int{}, probes: map[int]bool{}, requirements: requirements.failed, counts: requirements.counts, steps: requirements.steps, checkHunts: map[[2]int][]int{}, cycleSteps: map[int][]machine.Regime{}, huntStarts: map[int]huntStartView{}, groups: map[[2]int]*journal.HuntGroup{}}
+	p := projector{s: &s, st: &st, intents: requirements.intents, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{}, applied: map[int]int{}, tuned: map[int]int{}, solo: map[int]int{}, failures: map[int]*failureView{}, backs: map[int]int{}, sources: map[int]int{}, combinationSeqs: map[int]int{}, probes: map[int]bool{}, requirements: requirements.failed, counts: requirements.counts, steps: requirements.steps, checkHunts: map[[2]int][]int{}, cycleSteps: map[int][]machine.Regime{}, huntStarts: map[int]huntStartView{}, groups: map[[2]int]*journal.HuntGroup{}}
 	for _, e := range events {
 		p.fold(e)
 	}
@@ -152,6 +152,7 @@ type projector struct {
 	huntFail             *failureView
 	failures             map[int]*failureView
 	backs, sources       map[int]int
+	combinationSeqs      map[int]int // combination ID by its event's sequence
 	probes               map[int]bool
 	stopped              bool
 	restored             bool
@@ -174,10 +175,13 @@ type huntStartView struct {
 
 func (p *projector) fold(e journal.Event) {
 	s := p.s
-	for _, cause := range e.Cause {
-		if id := p.sources[cause]; id != 0 {
-			p.sources[e.Seq] = id
-			break
+	if d, ok := e.Data.(*journal.TunerDecision); ok && d.Decision == journal.Backoff {
+		// Only a backoff citing the combination itself clears it; later decisions merely descend from that one.
+		for _, cause := range e.Cause {
+			if id := p.combinationSeqs[cause]; id != 0 {
+				p.sources[e.Seq] = id
+				break
+			}
 		}
 	}
 	if e.Kind != journal.KindShutdown && e.Kind != journal.KindProfileRestored && e.Kind != journal.KindSessionWarning {
@@ -277,7 +281,7 @@ func (p *projector) fold(e journal.Event) {
 			p.probes[d.Hunt] = true
 		}
 	case *journal.Combination:
-		p.sources[e.Seq] = d.Combination
+		p.combinationSeqs[e.Seq] = d.Combination
 	case *journal.DeadEnd:
 		s.deadEnd = &deadEndView{at: e.Time, condition: d.Condition, detail: vtText(d.Detail)}
 	case *journal.Shutdown:
