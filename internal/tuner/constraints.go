@@ -2,9 +2,9 @@ package tuner
 
 import (
 	"fmt"
+	"math"
 	"slices"
 
-	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
 
@@ -54,108 +54,172 @@ func (s *State) atLimit(c *core, p []int) (string, bool) {
 	return s.reaches(q)
 }
 
+// optimum returns the deepest-total profile within [floor, hi] that reaches no
+// combination, breaking ties by ranking then core-id order, or nil if none exists.
+// Every core ends at its floor or at a count that breaks some combination, so the
+// search branches only over which member breaks each combination still reached.
 func (s *State) optimum(hi, ranking []int) []int {
 	n := len(s.cores)
-	lo := make([]int, n)
+	p := make([]int, n)
+	total := 0
 	for i, c := range s.byID() {
-		lo[i] = machine.MinOffset
+		p[i] = machine.MinOffset
 		if c.fail != nil {
-			lo[i] = max(machine.MinOffset, *c.fail+1)
+			p[i] = max(machine.MinOffset, *c.fail+1)
 		}
-	}
-	active := make([]journal.CombinationState, 0, len(s.combinations))
-	for _, m := range s.combinations {
-		reached := true
-		for _, v := range m.Members {
-			if lo[s.index(v.Core)] > v.Offset {
-				reached = false
-				break
-			}
+		if p[i] > hi[i] {
+			return nil
 		}
-		if reached {
-			active = append(active, m)
-		}
+		total += p[i]
 	}
-	slices.SortFunc(active, func(a, b journal.CombinationState) int { return a.Combination - b.Combination })
-	if len(ranking) != n {
-		ranking = s.ids()
+	needs, ok := s.breakThresholds(p, hi)
+	if !ok {
+		return nil
 	}
-	best := []int(nil)
-	bestSum := int(^uint(0) >> 1)
-	caps := make([]int, n)
-	sum := func(cap []int) int {
-		total := 0
-		for i := range lo {
-			total += max(lo[i], cap[i])
-		}
-		return total
-	}
-	var visit func(int)
-	for i := range caps {
-		caps[i] = machine.MinOffset
-	}
-	visit = func(at int) {
-		if sum(caps) > bestSum {
-			return
-		}
-		if at == len(active) {
-			candidate := make([]int, n)
-			for i := range candidate {
-				candidate[i] = max(lo[i], caps[i])
-				if candidate[i] > hi[i] {
-					return
+	order := s.tieOrder(ranking)
+	var best []int
+	bestTotal := math.MaxInt
+	moves := make([][]move, len(needs)+1)
+	var visit func(depth int)
+	visit = func(depth int) {
+		branch, branchMoves, bound := -1, 0, 0
+		for k, need := range needs {
+			cheapest, count := math.MaxInt, 0
+			for i, at := range need {
+				if at == unbreakable {
+					continue
 				}
-			}
-			total := sum(caps)
-			better := total < bestSum
-			if total == bestSum {
-				for _, id := range ranking {
-					i := s.index(id)
-					if i < 0 {
-						continue
-					}
-					if candidate[i] != best[i] {
-						better = candidate[i] < best[i]
-						break
-					}
+				if p[i] >= at {
+					count = 0
+					break
 				}
+				cheapest = min(cheapest, at-p[i])
+				count++
 			}
-			if better {
-				bestSum = total
-				best = candidate
-			}
-			return
-		}
-		combination := active[at]
-		for _, m := range combination.Members {
-			if i := s.index(m.Core); i >= 0 && max(lo[i], caps[i]) > m.Offset {
-				visit(at + 1)
-				return
-			}
-		}
-		members := slices.Clone(combination.Members)
-		slices.SortFunc(members, func(a, b journal.CombinationMember) int {
-			ia, ib := s.index(a.Core), s.index(b.Core)
-			lossA := max(lo[ia], a.Offset+1) - lo[ia]
-			lossB := max(lo[ib], b.Offset+1) - lo[ib]
-			if lossA != lossB {
-				return lossA - lossB
-			}
-			return a.Core - b.Core
-		})
-		for _, m := range members {
-			i := s.index(m.Core)
-			if i < 0 || m.Offset+1 > hi[i] {
+			if count == 0 {
 				continue
 			}
-			prior := caps[i]
-			caps[i] = max(caps[i], m.Offset+1)
-			visit(at + 1)
-			caps[i] = prior
+			bound = max(bound, cheapest)
+			if branch < 0 || count < branchMoves {
+				branch, branchMoves = k, count
+			}
+		}
+		if total+bound > bestTotal {
+			return
+		}
+		if branch < 0 {
+			if total < bestTotal || deeperOnTie(p, best, order) {
+				best, bestTotal = slices.Clone(p), total
+			}
+			return
+		}
+		options := moves[depth][:0]
+		for _, i := range order {
+			if at := needs[branch][i]; at != unbreakable {
+				options = append(options, move{i, at})
+			}
+		}
+		slices.SortStableFunc(options, func(a, b move) int { return (a.at - p[a.core]) - (b.at - p[b.core]) })
+		moves[depth] = options
+		for _, m := range options {
+			prior := p[m.core]
+			p[m.core] = m.at
+			total += m.at - prior
+			visit(depth + 1)
+			total -= m.at - prior
+			p[m.core] = prior
 		}
 	}
 	visit(0)
 	return best
+}
+
+const unbreakable = math.MaxInt
+
+type move struct{ core, at int }
+
+// breakThresholds lists, for each combination the floor profile p reaches, the
+// offset at or above which each core breaks it, or unbreakable when that offset
+// exceeds hi. It drops each combination another one already implies, and reports
+// false when some combination cannot be broken within hi.
+func (s *State) breakThresholds(p, hi []int) ([][]int, bool) {
+	var needs [][]int
+	for _, m := range s.combinations {
+		need := make([]int, len(p))
+		for i := range need {
+			need[i] = unbreakable
+		}
+		reached, breakable := true, false
+		for _, v := range m.Members {
+			i := s.index(v.Core)
+			if p[i] > v.Offset {
+				reached = false
+				break
+			}
+			if v.Offset+1 <= hi[i] {
+				need[i] = v.Offset + 1
+				breakable = true
+			}
+		}
+		if !reached {
+			continue
+		}
+		if !breakable {
+			return nil, false
+		}
+		needs = append(needs, need)
+	}
+	implied := func(a, b []int) bool {
+		for i, at := range a {
+			if at != unbreakable && b[i] > at {
+				return false
+			}
+		}
+		return true
+	}
+	kept := make([][]int, 0, len(needs))
+	for k, b := range needs {
+		redundant := false
+		for j, a := range needs {
+			if j != k && implied(a, b) && (j < k || !implied(b, a)) {
+				redundant = true
+				break
+			}
+		}
+		if !redundant {
+			kept = append(kept, b)
+		}
+	}
+	return kept, true
+}
+
+func (s *State) tieOrder(ranking []int) []int {
+	if len(ranking) != len(s.cores) {
+		ranking = s.ids()
+	}
+	order := make([]int, 0, len(s.cores))
+	placed := make([]bool, len(s.cores))
+	for _, id := range ranking {
+		if i := s.index(id); i >= 0 && !placed[i] {
+			order = append(order, i)
+			placed[i] = true
+		}
+	}
+	for i := range placed {
+		if !placed[i] {
+			order = append(order, i)
+		}
+	}
+	return order
+}
+
+func deeperOnTie(p, best, order []int) bool {
+	for _, i := range order {
+		if p[i] != best[i] {
+			return p[i] < best[i]
+		}
+	}
+	return false
 }
 
 func (s *State) best() []int {
