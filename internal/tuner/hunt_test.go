@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -20,7 +21,7 @@ func huntHarness(t *testing.T, cores int, duration int) *harness {
 	h := newHarness(t, starts...)
 	h.decide(h.next())
 	ids := h.s.ids()
-	tr := Trial{Regime: machine.R7, Cores: ids, Workload: machine.Workloads(machine.R7)[0].ID, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: duration, Profile: h.s.offsets()}
+	tr := Trial{Regime: machine.R6, Cores: ids, Workload: machine.Workloads(machine.R6)[0].ID, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: duration, Profile: h.s.offsets()}
 	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 5})
 	a := h.next()
 	if f, ok := a.Payload.(*journal.Failure); !ok || f.Attribution != journal.Unattributed {
@@ -90,7 +91,7 @@ func TestHuntParkedOffsetsRaisesThePassedFullCycleProfile(t *testing.T) {
 			}
 			h := newHarness(t, starts...)
 			h.s.passedFullCycles = []passedFullCycle{{profile: tt.passedFullCycles, seq: 7}}
-			class := trialClass{machine.R7, machine.Workloads(machine.R7)[0].ID, fmt.Sprint(h.s.ids()), 120}
+			class := trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, fmt.Sprint(h.s.ids()), 120}
 			h.s.queue = []pendingFailure{{seq: 9, failure: &journal.Failure{Trial: "0001"}, profile: tt.failing, class: class}}
 			p, ok := h.s.huntStartNext().Payload.(*journal.HuntStart)
 			if !ok {
@@ -126,7 +127,7 @@ func TestHuntParkedOffsetsSelectionAndReset(t *testing.T) {
 		t.Fatalf("reset did not cancel hunt: %+v", a)
 	}
 	h.decide(a)
-	if h.s.hunt != nil || len(h.s.queue) != 1 || h.s.queue[0].seq != start.Failure || h.s.queue[0].class.regime != machine.R7 {
+	if h.s.hunt != nil || len(h.s.queue) != 1 || h.s.queue[0].seq != start.Failure || h.s.queue[0].class.regime != machine.R6 {
 		t.Fatalf("source not requeued with class after cancellation: %+v", h.s.queue)
 	}
 }
@@ -268,7 +269,7 @@ func TestHuntGroupReuseAfterReset(t *testing.T) {
 			t.Run(stage+"/"+tt.name, func(t *testing.T) {
 				h := newHarness(t, searchAt(-30, -30, -30, -30)...)
 				profile := []int{-30, -30, 0, 0}
-				tr := Trial{Regime: machine.R7, Cores: h.s.ids(), Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Parked, Profile: profile}
+				tr := Trial{Regime: machine.R6, Cores: h.s.ids(), Workload: machine.Workloads(machine.R6)[0].ID, DurationS: 120, Condition: machine.Parked, Profile: profile}
 				reset := func() {
 					h.add(&journal.Combination{Combination: 1, Hunt: 1, Members: []journal.CombinationMember{{Core: 0, Offset: -30}, {Core: 1, Offset: -30}}})
 					h.add(&journal.CommandReset{Core: new(0)})
@@ -310,7 +311,7 @@ func TestRunningHuntGroupReusesEarlierPasses(t *testing.T) {
 	for _, stage := range []string{"part", "complement"} {
 		t.Run(stage, func(t *testing.T) {
 			h := newHarness(t, searchAt(-30, -30, -30, -30)...)
-			tr := Trial{Regime: machine.R7, Cores: h.s.ids(), Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Parked, Profile: []int{-30, -30, 0, 0}}
+			tr := Trial{Regime: machine.R6, Cores: h.s.ids(), Workload: machine.Workloads(machine.R6)[0].ID, DurationS: 120, Condition: machine.Parked, Profile: []int{-30, -30, 0, 0}}
 			for range 4 {
 				h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
 			}
@@ -362,7 +363,7 @@ func TestHuntGroupDoesNotReuseShallowerOrIncomparablePasses(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(t, searchAt(-30, -30, -30, -30)...)
-			tr := Trial{Regime: machine.R7, Cores: h.s.ids(), Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Parked, Profile: tt.profile}
+			tr := Trial{Regime: machine.R6, Cores: h.s.ids(), Workload: machine.Workloads(machine.R6)[0].ID, DurationS: 120, Condition: machine.Parked, Profile: tt.profile}
 			for range 5 {
 				h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
 			}
@@ -404,6 +405,9 @@ func TestRepeatedParkedCoreProbeReturnsToBinaryPartsAfterPass(t *testing.T) {
 		starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: -10, fail: new(-11)}
 	}
 	h := newHarness(t, starts...)
+	c := config.Default()
+	c.Checking.Lap = []machine.Regime{machine.R6}
+	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: snapshotConfig(c)})
 	var prior []int
 	for range 1000 {
 		a := h.next()
@@ -469,7 +473,6 @@ func TestRepeatedParkedCoreProbeRequiresMatchingAdjacentFailuresSinceReset(t *te
 		probe  bool
 	}{
 		{name: "matching adjacent failures", probe: true},
-		{name: "different workload", change: func(tr *Trial, _ *journal.Failure) { tr.Workload = machine.Workloads(machine.R7)[1].ID }},
 		{name: "different duration", change: func(tr *Trial, _ *journal.Failure) { tr.DurationS = 600 }},
 		{name: "different loaded cores", change: func(tr *Trial, _ *journal.Failure) { tr.Cores = []int{0, 1} }},
 		{name: "together failure", change: func(tr *Trial, f *journal.Failure) { tr.Condition, f.Condition = machine.Together, machine.Together }},
@@ -490,8 +493,8 @@ func TestRepeatedParkedCoreProbeRequiresMatchingAdjacentFailuresSinceReset(t *te
 				if i == 1 && tt.reset {
 					h.add(&journal.CommandReset{Core: new(1)})
 				}
-				tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: h.s.ids(), Condition: machine.Parked, Phase: journal.PhaseHunt, DurationS: 120, Profile: []int{0, offset, 0, 0}}
-				failure := &journal.Failure{Attribution: journal.Attributed, Core: new(1), Offset: new(offset), Condition: machine.Parked, Regime: machine.R7, Profile: tr.Profile}
+				tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: h.s.ids(), Condition: machine.Parked, Phase: journal.PhaseHunt, DurationS: 120, Profile: []int{0, offset, 0, 0}}
+				failure := &journal.Failure{Attribution: journal.Attributed, Core: new(1), Offset: new(offset), Condition: machine.Parked, Regime: machine.R6, Profile: tr.Profile}
 				if i == 1 && tt.change != nil {
 					tt.change(&tr, failure)
 				}
@@ -500,9 +503,9 @@ func TestRepeatedParkedCoreProbeRequiresMatchingAdjacentFailuresSinceReset(t *te
 				prior = append(prior, h.add(failure, end.Seq).Seq)
 			}
 			h.add(&journal.CorePhase{Core: 1, To: journal.PhaseAtLimit, Offset: -8, FailurePoint: new(-9)})
-			tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: h.s.ids(), Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120, Profile: []int{-20, -8, -20, -20}}
+			tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: h.s.ids(), Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120, Profile: []int{-20, -8, -20, -20}}
 			intent, end := h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
-			failure := h.add(&journal.Failure{Trial: intent.Data.(*journal.TrialIntent).Trial, Attribution: journal.Unattributed, Condition: machine.Together, Regime: machine.R7, Profile: tr.Profile}, end.Seq)
+			failure := h.add(&journal.Failure{Trial: intent.Data.(*journal.TrialIntent).Trial, Attribution: journal.Unattributed, Condition: machine.Together, Regime: machine.R6, Profile: tr.Profile}, end.Seq)
 			h.decide(h.s.huntStartNext())
 			plan, ok := h.s.nextGroupPlan(h.s.hunt)
 			if !ok {
@@ -679,7 +682,7 @@ func TestHuntFallbackAndFullCheck(t *testing.T) {
 
 func TestHuntCombinationAlreadyBroken(t *testing.T) {
 	h := hasRoomHarness(t, -29, -30)
-	start := &journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-30, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Trials: 5, TrialS: 120}
+	start := &journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-30, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Trials: 5, TrialS: 120}
 	h.add(start)
 	h.add(&journal.HuntEnd{Hunt: 1, Result: "combination", Cores: []int{0, 1}, Groups: 2})
 	a := h.next()
@@ -695,7 +698,7 @@ func TestHuntCombinationAlreadyBroken(t *testing.T) {
 
 func TestHuntCulpritDiscardsContradictedPass(t *testing.T) {
 	h := hasRoomHarness(t, -29, -30)
-	h.add(&journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-29, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Trials: 5, TrialS: 120})
+	h.add(&journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-29, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Trials: 5, TrialS: 120})
 	h.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{0}, Groups: 2})
 	a := h.next()
 	d, ok := a.Payload.(*journal.TunerDecision)
@@ -767,25 +770,24 @@ func TestSixteenCoreCulpritAndPair(t *testing.T) {
 func TestHuntDurationPriorRespectsEvidenceAndShortFailures(t *testing.T) {
 	for _, tt := range []struct {
 		name               string
-		count, workload    int
+		count              int
 		profile            []int
 		shortFailed, reset bool
 		want               int
 	}{
-		{"valid deeper passes", 5, 0, []int{-32, -32}, false, false, 600},
-		{"short failure in another workload", 5, 0, []int{-32, -32}, true, false, 120},
-		{"insufficient trials", 4, 0, []int{-32, -32}, false, false, 120},
-		{"different workload", 5, 1, []int{-32, -32}, false, false, 120},
-		{"incomparable profile", 5, 0, []int{-32, -29}, false, false, 120},
-		{"reset evidence boundary", 5, 0, []int{-32, -32}, false, true, 120},
+		{"valid deeper passes", 5, []int{-32, -32}, false, false, 600},
+		{"short failure in the regime", 5, []int{-32, -32}, true, false, 120},
+		{"insufficient trials", 4, []int{-32, -32}, false, false, 120},
+		{"incomparable profile", 5, []int{-32, -29}, false, false, 120},
+		{"reset evidence boundary", 5, []int{-32, -32}, false, true, 120},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -30}, coreStart{phase: journal.PhaseAtLimit, offset: -30})
 			h.decide(h.next())
-			tr := Trial{Regime: machine.R7, Cores: h.s.ids(), Workload: machine.Workloads(machine.R7)[tt.workload].ID, Condition: machine.Parked, Phase: journal.PhaseHunt, DurationS: 120, Profile: tt.profile}
+			tr := Trial{Regime: machine.R6, Cores: h.s.ids(), Workload: machine.Workloads(machine.R6)[0].ID, Condition: machine.Parked, Phase: journal.PhaseHunt, DurationS: 120, Profile: tt.profile}
 			if tt.shortFailed {
 				bad := tr
-				bad.Workload, bad.Profile = machine.Workloads(machine.R7)[1].ID, []int{-40, 0}
+				bad.Profile = []int{-40, 0}
 				h.trial(Action{Kind: RunTrial, Trial: bad}, failed)
 				h.decide(h.next())
 				h.decide(h.next())
@@ -798,7 +800,6 @@ func TestHuntDurationPriorRespectsEvidenceAndShortFailures(t *testing.T) {
 			if tt.reset {
 				h.add(&journal.CommandReset{Core: new(0)})
 			}
-			tr.Workload = machine.Workloads(machine.R7)[0].ID
 			tr.DurationS, tr.Profile, tr.Condition, tr.Phase = 600, []int{-30, -30}, machine.Together, journal.PhaseChecking
 			h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
 			h.decide(h.next())
@@ -834,7 +835,7 @@ func TestHuntEscalationAndInferredGroup(t *testing.T) {
 		t.Fatalf("first group %+v", first)
 	}
 	profile := slices.Clone(group.Profile)
-	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[0].ID, Condition: machine.Parked, Phase: journal.PhaseHunt, DurationS: 120, Profile: profile}
+	tr := Trial{Regime: machine.R6, Cores: h.s.ids(), Workload: machine.Workloads(machine.R6)[0].ID, Condition: machine.Parked, DurationS: 120, Profile: profile}
 	for range h.s.n {
 		h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
 	}
@@ -941,9 +942,9 @@ func TestActiveHuntProjection(t *testing.T) {
 
 func TestDrainCommitsResolvedHuntWithoutStartingGroups(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -30, fail: new(-31)}, coreStart{phase: journal.PhaseAtLimit, offset: -30, fail: new(-31)})
-	h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "source"}, Class: journal.TrialClass{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120}, Condition: machine.Parked, Core: new(1), Profile: []int{0, -30}, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+	h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "source", Intent: 1, End: 2}, Class: journal.TrialClass{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: 120}, Condition: machine.Parked, Core: new(1), Profile: []int{0, -30}, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
 	h.decide(h.next())
-	h.trial(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 600}}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+	h.trial(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 600}}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash})
 	h.decide(h.next())
 	h.decide(h.next())
 	if a, ok := h.s.Drain(); ok {

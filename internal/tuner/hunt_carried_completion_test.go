@@ -13,9 +13,9 @@ import (
 func TestRunningHuntGroupCitesMixedCarriedAndLivePasses(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10}, coreStart{phase: journal.PhaseAtLimit, offset: -10})
 	d := h.s.durations.ShortTrialS
-	first := carryTrials(h, machine.R7, []int{0, 1}, []int{-10, 0}, d, 3, journal.OutcomePass)
-	second := carryTrials(h, machine.R7, []int{0, 1}, []int{0, -10}, d, 3, journal.OutcomePass)
-	start := h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: d, TrialS: d, Trials: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
+	first := carryTrials(h, machine.R6, []int{0, 1}, []int{-10, 0}, d, 3, journal.OutcomePass)
+	second := carryTrials(h, machine.R6, []int{0, 1}, []int{0, -10}, d, 3, journal.OutcomePass)
+	start := h.add(&journal.HuntStart{Hunt: 1, Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: d, TrialS: d, Trials: h.s.n, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}})
 	for group, facts := range [][]int{first, second} {
 		a, ok := h.s.huntNext()
 		p, isGroup := a.Payload.(*journal.HuntGroup)
