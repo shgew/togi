@@ -386,7 +386,12 @@ func (s Snapshot) r7Lines(p layout) []string {
 		if w.ID == current {
 			style = textStyle
 		}
-		line := asciiCell(label, name) + " " + asciiCell(cmp.Or(strings.Join(tops, "; "), "-"), top) + " " + suff
+		topCell := cmp.Or(strings.Join(tops, "; "), "-")
+		if by := " by offset"; len(byOffset) > 0 && ansi.StringWidth(topCell) > top {
+			// Offsets stand in for these requests; the cut core list keeps saying so.
+			topCell = ansi.Truncate(strings.TrimSuffix(topCell, by), top-len(by), "...") + by
+		}
+		line := asciiCell(label, name) + " " + asciiCell(topCell, top) + " " + suff
 		out = append(out, style.Render(ansi.Truncate(line, width, "...")))
 	}
 	return out
@@ -442,14 +447,11 @@ func (s Snapshot) r7Top() map[int]bool {
 	return top
 }
 
-// requestBasis says where a running multi-core R7 trial's forecast backoffs take top requesters from: its end is
+// requestBasis says where a running multi-core R7 trial's forecast decisions take top requesters from: its end is
 // forecast without telemetry, so they come from earlier requests, or offset order where none were measured.
-func (s Snapshot) requestBasis() string {
-	t := s.trial
-	for _, c := range s.r7 {
-		if t != nil && c.Workload == t.workload.ID && c.OffsetFallback && slices.Contains(t.cores, c.Core) {
-			return "per offset order"
-		}
+func requestBasis(branch outcome) string {
+	if branch.offsetOrder {
+		return "per offset order"
 	}
 	return "per earlier requests"
 }
@@ -1033,7 +1035,7 @@ func topNote(note string, byOffset bool, width int) string {
 	if note == "" {
 		return textStyle.Render(word)
 	}
-	if ansi.StringWidth(note)+len(" · ")+len(word) <= width {
+	if ansi.StringWidth(note)+ansi.StringWidth(" · ")+len(word) <= width {
 		return note + grey.Render(" · ") + textStyle.Render(word)
 	}
 	return note

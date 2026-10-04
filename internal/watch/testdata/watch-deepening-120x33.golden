@@ -4,9 +4,9 @@
  ▌  Deepening check: core 00 alone at its proposed -30.
 
   R1   light load  on core 00 alone at -30   mprime SSE 4K-21K · 1 worker    DEEPEN · ROUND 1 · CORE 00 AT -30 · LIGHT
- ███████████████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/1 ►
+ ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
 
- pass → this load again   core named → backs off   inconclusive → same trial again
+ 5/5 pass → deepening round 1   core named → backs off   inconclusive → same trial again
 
  CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 waiting    0  2 counts/cell       -50 fail
  ► 00 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             08   0 HAS ROOM ·····                    
@@ -22,11 +22,11 @@
 
  has room00-10 12-15 · in this order                         13:07  room     core 15 -10 → -30
                                                              13:07  room     core 07 -10 → -30
- CHECKS                                                      13:07  room     core 14 -10 → -30
+ +37 more                                                    13:07  room     core 14 -10 → -30
                                                              13:07  room     core 06 -10 → -30
  R7 ────────────── top ───────────── self-sufficient ─────   13:07  room     core 13 -10 → -30
- mprime AVX2       00-07 11 by of... 11                      13:07  room     core 05 -10 → -30
- mprime AVX-512    00-07 11 by of... 11                      13:07  room     core 12 -10 → -30
- y-cruncher FFTv4  00-07 11 by of... 11                      +193 more
+ mprime AVX2       00-0... by offset 11                      13:07  room     core 05 -10 → -30
+ mprime AVX-512    00-0... by offset 11                      13:07  room     core 12 -10 → -30
+ y-cruncher FFTv4  00-0... by offset 11                      +193 more
 
   ?  help    l  log    esc  back    q  close view

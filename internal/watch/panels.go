@@ -71,12 +71,13 @@ func (s Snapshot) contextLines(p layout, now time.Time) []string {
 	if len(r7) > 0 {
 		room -= len(r7) + 1
 	}
-	var out []string
-	if s.phase == journal.PhaseDeepening && s.deepen != nil {
-		out = s.deepenLines(t, w)
-	} else {
+	lines := func(height int) []string {
+		if s.phase == journal.PhaseDeepening && s.deepen != nil {
+			return s.deepenLines(t, w)
+		}
+		var out []string
 		if s.cycle != nil {
-			out = s.cycleLines(t, w, p.class, room)
+			out = s.cycleLines(t, w, p.class, height)
 		}
 		if len(s.combos) > 0 {
 			if len(out) > 0 {
@@ -84,11 +85,17 @@ func (s Snapshot) contextLines(p layout, now time.Time) []string {
 			}
 			out = append(out, s.combinationLines(t, w, p.class)...)
 		}
+		return out
 	}
+	out := lines(room)
 	if len(r7) == 0 {
 		return out
 	}
-	out = out[:min(len(out), max(room, 0))]
+	if len(out) > room {
+		// The R7 lines take the panel's last rows, so the rows above end with what they leave out, keeping the
+		// running part above that count.
+		out = boundedRows(lines(room-1), room)
+	}
 	if len(out) > 0 {
 		out = append(out, "")
 	}

@@ -179,10 +179,12 @@ type outcome struct {
 	next         *tuner.Trial      // the trial it runs next, nil when it stops
 	core         *int              // with ifNamed: the core the failure names
 	atZero       bool              // with ifNamed: the forecast follows a core at 0, apart from the cores away from it
+	top          bool              // with ifNamed in multi-core R7: that core is a top requester of the load
 	needsRanking bool
 	needsHistory bool
 	// withoutTelemetry: the forecast end measures nothing, so R7 backoffs follow earlier requests or offset order
 	withoutTelemetry bool
+	offsetOrder      bool // with withoutTelemetry: some loaded core's request comes from its offset
 }
 
 type cycleView struct {

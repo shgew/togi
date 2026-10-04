@@ -34,7 +34,7 @@
   ■ 10 R1 light          one core at a time  16 x 2m       done                   02:02  pass     rerun of R4 partial load on core 07 at -30 · 5 of 5 passed
   ■ 11 R1 light          one core at a time  16 x 2m       done                   01:52  backoff  core 07 -31 → -30
   ■ 12 R3 load steps     one core at a time  16 x 2m       done                   01:52  hunt     #4 done · 3 groups in 20m15s · core 07 named
-  ■ 13 R4 partial load   one core at a time  16 x 2m       done · hunt 4          01:52  fail     core 07 fails at -31
+  +2 more                                                                         01:52  fail     core 07 fails at -31
                                                                                   01:52  fail     hunt 4 group 3 · 04-07 at failing offsets · wrong result
   R7 ───────────────────── top requesters ───── self-sufficient ─────────────     01:52  pass     hunt 4 group 2 · 00-06 08-13 15 at failing offsets · 5 of
   mprime AVX2 36K-248K     05 14 by offset      01-14                             01:42  pass     hunt 4 group 1 · 07 at failing offsets · 5 of 5 passed

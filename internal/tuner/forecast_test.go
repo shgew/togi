@@ -336,9 +336,15 @@ func TestForecastR7PremisesFoldDistinctOutcomesWithoutInventedTelemetry(t *testi
 		if b.WithoutTelemetry != (b.Premise != IfInconclusive) {
 			t.Fatalf("R7 forecast lost its telemetry assumption: %+v", b)
 		}
+		if b.OffsetOrder {
+			t.Fatalf("a measured load forecast its order from offsets: %+v", b)
+		}
 		o := outcome{premise: b.Premise, core: -1, moved: -1, dead: forecastDeadEnd(b)}
 		if b.Core != nil {
 			o.core = *b.Core
+			if b.AtZero != (o.core != 0) || b.TopRequester != (o.core == 3) {
+				t.Fatalf("core %02d at 0 %t, top %t: want at 0 for cores 02 and 03, top for core 03", o.core, b.AtZero, b.TopRequester)
+			}
 		}
 		for _, d := range b.Decisions {
 			switch d := d.(type) {
@@ -431,6 +437,9 @@ func TestForecastR7UnnamedUsesOffsetFallbackWithoutRequests(t *testing.T) {
 		if forecastDeadEnd(b) || b.Next == nil || !b.Next.Rerun {
 			t.Fatalf("zero top must step down to the movable loaded core: %+v", b)
 		}
+		if !b.OffsetOrder {
+			t.Fatalf("an unmeasured load did not say offsets ordered it: %+v", b)
+		}
 		for _, d := range b.Decisions {
 			if move, ok := d.(*journal.TunerDecision); ok && move.Decision == journal.Backoff {
 				if move.Core != 1 || move.ToOffset != -29 {
@@ -442,4 +451,59 @@ func TestForecastR7UnnamedUsesOffsetFallbackWithoutRequests(t *testing.T) {
 		t.Fatalf("missing offset-fallback backoff: %+v", b)
 	}
 	t.Fatal("missing unnamed branch")
+}
+
+func TestForecastR7NamesACoreAtZeroOnEachCCD(t *testing.T) {
+	h := hasRoomHarness(t, 0, 0, 0, -30)
+	h.add(&journal.HostRanking{Ranking: h.s.ids()})
+	all := []int{0, 1, 2, 3}
+	r7Fact(h, true, all, h.s.Profile(), map[int]float64{0: 1.2, 1: 1.1, 2: 1.1, 3: 1.2}, nil, nil, nil, nil)
+	h.start(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: all, DurationS: 120, Phase: journal.PhaseChecking, Condition: machine.Together}})
+	type named struct {
+		core        int
+		atZero, top bool
+		dead        bool
+		moved       int
+	}
+	var got []named
+	for _, b := range Forecast(h.events).Branches {
+		if b.Premise != IfNamed {
+			continue
+		}
+		n := named{core: *b.Core, atZero: b.AtZero, top: b.TopRequester, dead: forecastDeadEnd(b), moved: -1}
+		for _, d := range b.Decisions {
+			if move, ok := d.(*journal.TunerDecision); ok && move.Decision == journal.Backoff {
+				n.moved = move.Core
+			}
+		}
+		got = append(got, n)
+	}
+	// Core 01 at 0 routes to CCD 0, whose cores are all at 0; core 02 at 0 routes to CCD 1, whose top requester moves.
+	want := []named{
+		{core: 3, top: true, moved: 3},
+		{core: 1, atZero: true, dead: true, moved: -1},
+		{core: 2, atZero: true, moved: 3},
+		{core: 0, atZero: true, top: true, dead: true, moved: -1},
+	}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(named{})); diff != "" {
+		t.Fatalf("named branches (-want +got):\n%s", diff)
+	}
+}
+
+func TestForecastR7BasisFollowsTheRunningLoadsMeasurement(t *testing.T) {
+	h := hasRoomHarness(t, -30, -30, -30, -30, -30, -30, -30, -30)
+	h.add(&journal.HostRanking{Ranking: h.s.ids()})
+	partial := []int{0, 1, 2}
+	r7Fact(h, true, partial, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.2, 2: 1.0}, nil, nil, nil, nil)
+	h.start(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: partial, DurationS: 120, Phase: journal.PhaseChecking, Condition: machine.Together}})
+	for _, status := range h.s.R7Status() {
+		if status.Workload == machine.Workloads(machine.R7)[0].ID && slices.Contains(partial, status.Core) && !status.OffsetFallback {
+			t.Fatalf("fixture: the full part must be unmeasured: %+v", status)
+		}
+	}
+	for _, b := range Forecast(h.events).Branches {
+		if b.Premise == IfUnnamed && b.OffsetOrder {
+			t.Fatalf("the partial's own measurement ordered its backoff, not offsets: %+v", b)
+		}
+	}
 }

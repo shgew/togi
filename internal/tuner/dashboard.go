@@ -136,6 +136,12 @@ type ForecastBranch struct {
 	// WithoutTelemetry marks R7 outcomes conditional on no new request or clock measurements in trial.end.
 	// Recorded measurements, or offset order when absent, supply the tuner's fallback.
 	WithoutTelemetry bool
+	// OffsetOrder marks a WithoutTelemetry branch whose decisions take some loaded core's request from its offset
+	// because no measurement covers it: a failure's backoff, or a partial part derived without telemetry.
+	OffsetOrder bool
+	// AtZero marks a named branch whose core is at 0 in the trial's profile. TopRequester marks a named multi-core R7
+	// branch whose core is among the load's top requesters in the order the forecast used.
+	AtZero, TopRequester bool
 	// NextStep is the checking step Next loads, counting from 1; zero outside a checking cycle.
 	NextStep int
 }

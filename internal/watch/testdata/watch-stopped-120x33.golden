@@ -22,7 +22,7 @@
  ■  2 R7 all-core       13 parts      done                   02:19  cycle    cycle 1 passed, a full cycle of every
  ■  3 R7 all-core       13 parts      done                   02:19  pass     R6 idle + bursts on 00-15 · passed
  ■  4 R2 heavy vector   16 x 2m       done · hunt 1          02:04  pass     R4 partial load on core 15 at -35
- ■  5 R2 heavy vector   16 x 2m       done                   02:02  note     cycle 1 step 3 CCD 1
+ +10 more                                                    02:02  note     cycle 1 step 3 CCD 1
                                                              02:02  note     cycle 1 step 3 CCD 0
  R7 ────────────── top ───────────── self-sufficient ─────   02:02  note     cycle 1 step 2 CCD 1
  mprime AVX2       05 14 by offset   01-14                   02:02  note     cycle 1 step 2 CCD 0

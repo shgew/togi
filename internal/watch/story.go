@@ -612,12 +612,17 @@ func (s Snapshot) nextTrialWords(n tuner.Trial, after *trialView, shape huntShap
 	case n.Rerun:
 		text = "rerun " + what + " · " + shortDuration(time.Duration(n.DurationS)*time.Second)
 	case n.Cycle > 0:
-		if after != nil && after.cycle == n.Cycle && after.step == n.Step {
+		samePlace := after != nil && after.cycle == n.Cycle && after.step == n.Step
+		if samePlace {
 			if name := s.partWords(n); name != "" {
 				return name
 			}
 		}
 		text = fmt.Sprintf("step %d: %s %s", n.Step, n.Regime, kindWords(n.Regime))
+		if samePlace && len(n.Cores) > 0 {
+			// A part the plan does not hold yet, such as the partial this trial's end derives.
+			text += " on " + coreIDs(n.Cores)
+		}
 		if n.Workload != "" {
 			text += " with " + workloadDisplayID(n.Workload)
 		}
@@ -760,8 +765,8 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 		compact  string
 		basis    string
 		passes   int
-		zero     *int // the core at 0 a named branch follows, unless the group also holds the stand-in
-		standIn  bool // holds the named branch that stands in for every core away from 0
+		zero     []string // what the named branches at 0 assume is named, unless the group also holds the stand-in
+		standIn  bool     // holds the named branch that stands in for every core away from 0
 	}
 	var groups []group
 	for _, branch := range s.outcomes {
@@ -775,10 +780,10 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 		groups[i].premises = append(groups[i].premises, branch.premise)
 		groups[i].passes = max(groups[i].passes, branch.passes)
 		if branch.premise == ifNamed {
-			if branch.atZero {
-				groups[i].zero = branch.core
-			} else {
+			if !branch.atZero {
 				groups[i].standIn = true
+			} else if who := s.zeroWords(branch); !slices.Contains(groups[i].zero, who) {
+				groups[i].zero = append(groups[i].zero, who)
 			}
 		}
 	}
@@ -786,22 +791,29 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 	if hasAll {
 		groups = slices.DeleteFunc(groups, func(g group) bool { return slices.Equal(g.premises, []premise{ifPasses}) })
 	}
-	standIn := slices.IndexFunc(groups, func(g group) bool { return g.standIn })
-	zero := slices.IndexFunc(groups, func(g group) bool {
-		return g.zero != nil && slices.Equal(g.premises, []premise{ifNamed}) && len(g.phrases) > 0
-	})
 	visible := len(groups)
 	if slices.ContainsFunc(groups, func(g group) bool { return slices.Equal(g.premises, []premise{ifInconclusive}) }) {
 		visible--
 	}
-	if standIn >= 0 && zero >= 0 && len(groups[standIn].phrases) > 0 && visible > outcomeRowLimit {
-		// Too few rows for a line of its own: the core at 0 becomes an exception on the line of the other cores.
+	zeroOnly := func(g group) bool {
+		return len(g.zero) > 0 && !g.standIn && len(g.phrases) > 0 &&
+			!slices.ContainsFunc(g.premises, func(p premise) bool { return p != ifNamed })
+	}
+	// Too few rows for lines of their own: the cores at 0 become exceptions on the line of the other cores.
+	for standIn := slices.IndexFunc(groups, func(g group) bool { return g.standIn }); standIn >= 0 && len(groups[standIn].phrases) > 0 && visible > outcomeRowLimit; visible-- {
+		zero := slices.IndexFunc(groups, zeroOnly)
+		if zero < 0 {
+			break
+		}
 		z, g := groups[zero], &groups[standIn]
-		exception := "a core at 0:" + strings.TrimPrefix(z.compact, "→")
+		exception := strings.Join(z.zero, " or ") + ":" + strings.TrimPrefix(z.compact, "→")
 		g.phrases = slices.Clone(g.phrases)
 		g.phrases[len(g.phrases)-1].text += " · " + exception
 		g.compact += " · " + exception
 		groups = slices.Delete(groups, zero, zero+1)
+		if zero < standIn {
+			standIn--
+		}
 	}
 	namedGroups := 0
 	for _, g := range groups {
@@ -826,11 +838,17 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 		who := "a core"
 		if namedGroups > 1 {
 			who = "another core"
-			if g.zero != nil && !g.standIn {
-				who = "a core at 0"
-			}
+		}
+		zero := len(g.zero) > 0 && !g.standIn
+		if zero && namedGroups > 1 {
+			who = strings.Join(g.zero, " or ")
 		}
 		label, short, style := premiseWords(g.premises, g.passes, t, who)
+		if zero && slices.Contains(g.premises, ifUnnamed) && !slices.Contains(g.premises, ifPasses) && !slices.Contains(g.premises, ifAllPass) {
+			// A core at 0 that moves its CCD's top group fails the way an unnamed failure does, not the way every core does.
+			who = strings.Join(g.zero, " or ")
+			label, short = "if none or "+who+" is named", "none or "+strings.TrimPrefix(who, "a ")+" named"
+		}
 		out = append(out, outcomeRow{label, short, g.compact, g.phrases, style, g.basis})
 		if len(out) == outcomeRowLimit {
 			break
@@ -841,6 +859,30 @@ func (s Snapshot) outcomeRows() []outcomeRow {
 
 // outcomeRowLimit is how many outcome lines the NOW band holds.
 const outcomeRowLimit = 3
+
+// zeroWords names what a named branch at 0 assumes is named: a top requester at 0, which ends tuning, or a core at 0
+// whose failure moves its CCD's top group, naming the CCD when cores at 0 on other CCDs move theirs.
+func (s Snapshot) zeroWords(branch outcome) string {
+	if branch.top {
+		return "a top requester at 0"
+	}
+	ccd := func(o outcome) int {
+		if o.core != nil {
+			for _, c := range s.cores {
+				if c.id == *o.core {
+					return c.ccd
+				}
+			}
+		}
+		return -1
+	}
+	for _, o := range s.outcomes {
+		if o.premise == ifNamed && o.atZero && !o.top && ccd(o) != ccd(branch) {
+			return fmt.Sprintf("a CCD %d core at 0", ccd(branch))
+		}
+	}
+	return "a core at 0"
+}
 
 // premiseWords labels an outcome line; who names the core a named failure is about.
 func premiseWords(premises []premise, passes int, t *trialView, who string) (string, string, lipgloss.Style) {
@@ -875,7 +917,7 @@ func (s Snapshot) outcomeWords(branch outcome) (phrases []phrase, compact, basis
 	named := branch.premise == ifNamed
 	phrases = s.decisionPhrases(branch.decisions, named)
 	if branch.withoutTelemetry && len(phrases) > 0 {
-		basis = s.requestBasis()
+		basis = requestBasis(branch)
 		phrases[len(phrases)-1].text += " " + basis
 	}
 	var shape huntShape
@@ -998,7 +1040,10 @@ func (s Snapshot) decisionPhrases(decisions []journal.Payload, named bool) []phr
 				add(s.knownFailureWords(d, decisions[i+1:]))
 			case named && d.Core != nil:
 				namedCore = d.Core
-				add("its failure point is recorded")
+				// A multi-core R7 core at 0 that is no top requester moves its CCD's top group, which takes the failure point.
+				if !movesAnotherCore(decisions[i+1:], *d.Core) {
+					add("its failure point is recorded")
+				}
 			case d.Core != nil:
 				failed = d.Core
 			}
@@ -1037,6 +1082,12 @@ func (s Snapshot) decisionPhrases(decisions []journal.Payload, named bool) []phr
 			if d.Step > 1 {
 				add(fmt.Sprintf("step %d is done", d.Step-1))
 			}
+		case *journal.CheckingChain:
+			if len(d.Cores) == 0 {
+				add(fmt.Sprintf("CCD %d partials end", d.CCD))
+			} else {
+				add(fmt.Sprintf("CCD %d partial on %s", d.CCD, coreIDs(d.Cores)))
+			}
 		case *journal.CheckingCycle:
 			switch {
 			case d.Event == journal.CycleStart:
@@ -1064,6 +1115,16 @@ func (s Snapshot) decisionPhrases(decisions []journal.Payload, named bool) []phr
 		}
 	}
 	return out
+}
+
+// movesAnotherCore reports whether the first move after a named failure records its failure point on another core.
+func movesAnotherCore(after []journal.Payload, named int) bool {
+	for _, p := range after {
+		if move, ok := p.(*journal.TunerDecision); ok {
+			return move.FailurePoint != nil && move.Core != named
+		}
+	}
+	return false
 }
 
 // carriedGroups folds the run of hunt groups answered by carried trials that starts at decisions[i] into one phrase,

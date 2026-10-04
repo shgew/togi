@@ -34,7 +34,7 @@
   ○  6 R2 heavy vector   one core at a time  16 x 2m                              09:58  limit    core 06 solo limit -30
   ○  7 R6 idle + bursts  all cores idle      15m                                  09:53  limit    core 09 solo limit -18
   ○  8 R5 both threads   one core at a time  16 x 2m                              09:41  limit    core 03 solo limit -17
-  ○  9 R1 light          one core at a time  16 x 2m                              09:25  limit    core 10 solo limit -16
+  +6 more                                                                         09:25  limit    core 10 solo limit -16
                                                                                   09:14  limit    core 14 solo limit -4
   R7 ───────────────────── top requesters ───── self-sufficient ─────────────     09:10  limit    core 11 solo limit -7
   mprime AVX2 36K-248K     05 14 by offset      none yet                          08:52  limit    cores 05, 12 solo limit -10

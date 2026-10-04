@@ -34,7 +34,7 @@
   ■  6 R2 heavy vector   one core at a time  16 x 2m       done                   20:03  pass     R2 heavy vector on core 12 at -10 · passed · Tctl max 71°C
   ►  7 R6 idle + bursts  all cores idle      15m           trial 1 of 1           20:01  pass     R2 heavy vector on core 04 at -32 · passed · Tctl max 73°C
   ○  8 R5 both threads   one core at a time  16 x 2m                              19:59  pass     R2 heavy vector on core 11 at -1 · passed · Tctl max 75°C
-  ○  9 R1 light          one core at a time  16 x 2m                              19:57  pass     R2 heavy vector on core 03 at -17 · passed · Tctl max 76°C
+  +6 more                                                                         19:57  pass     R2 heavy vector on core 03 at -17 · passed · Tctl max 76°C
                                                                                   19:55  pass     R2 heavy vector on core 10 at -16 · passed · Tctl max 73°C
   R7 ───────────────────── top requesters ───── self-sufficient ─────────────     19:53  pass     R2 heavy vector on core 02 at -35 · passed · Tctl max 63°C
   mprime AVX2 36K-248K     05 14 by offset      01-14                             19:51  pass     R2 heavy vector on core 09 at -16 · passed · Tctl max 64°C

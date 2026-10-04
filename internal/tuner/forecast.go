@@ -122,8 +122,8 @@ func sameHuntPlan(a, b *journal.HuntGroup) bool {
 		slices.Equal(a.Profile, b.Profile) && slices.Equal(a.Held, b.Held)
 }
 
-// namedCores selects representative named failures. Multi-core R7 distinguishes a movable core,
-// a zero-offset non-top core routed to its CCD's request order, and a zero-offset top core.
+// namedCores selects representative named failures. Multi-core R7 distinguishes a movable core, a zero-offset
+// non-top core on each loaded CCD, routed to that CCD's request order, and a zero-offset top requester.
 // Request order comes only from recorded measurements (or the tuner's offset fallback).
 func namedCores(s *State, p *journal.TrialIntent) []int {
 	cores := slices.Clone(p.Cores)
@@ -134,27 +134,27 @@ func namedCores(s *State, p *journal.TrialIntent) []int {
 	loaded := slices.Clone(cores)
 	if p.Regime == machine.R7 && len(loaded) > 1 {
 		top := s.r7Top(p.Workload, loaded, p.Profile)
-		var named []int
-		for _, kind := range []int{0, 1, 2} {
-			for _, id := range loaded {
-				i := s.index(id)
-				if i < 0 || i >= len(p.Profile) {
-					continue
+		var movable, zeroTop []int
+		zeroByCCD := map[int]bool{}
+		var zero []int
+		for _, id := range loaded {
+			i := s.index(id)
+			switch {
+			case i < 0 || i >= len(p.Profile):
+			case p.Profile[i] != 0:
+				if len(movable) == 0 {
+					movable = []int{id}
 				}
-				category := 0
-				if p.Profile[i] == 0 {
-					category = 1
-					if slices.Contains(top, id) {
-						category = 2
-					}
+			case slices.Contains(top, id):
+				if len(zeroTop) == 0 {
+					zeroTop = []int{id}
 				}
-				if category == kind {
-					named = append(named, id)
-					break
-				}
+			case !zeroByCCD[s.ccd[id]]:
+				zeroByCCD[s.ccd[id]] = true
+				zero = append(zero, id)
 			}
 		}
-		return named
+		return slices.Concat(movable, zero, zeroTop)
 	}
 	if s.hunt != nil && p.Hunt == s.hunt.start.Hunt {
 		for _, g := range s.hunt.groups {
@@ -242,8 +242,9 @@ func Forecast(events []journal.Event) ForecastPlan {
 		return out
 	}
 	type premiseCore struct {
-		premise Premise
-		core    *int
+		premise     Premise
+		core        *int
+		atZero, top bool
 	}
 	premises := []premiseCore{{premise: IfPass}}
 	requirement := base.state.Requirement(p)
@@ -251,8 +252,17 @@ func Forecast(events []journal.Event) ForecastPlan {
 	if remaining > 1 {
 		premises = append(premises, premiseCore{premise: IfAllPass})
 	}
+	multiR7 := p.Regime == machine.R7 && len(p.Cores) > 1
+	var top, byOffset []int
+	if multiR7 {
+		loaded := slices.Sorted(slices.Values(p.Cores))
+		top = base.state.r7Top(p.Workload, loaded, p.Profile)
+		_, _, byOffset = base.state.r7RequestOrigins(p.Workload, loaded, p.Profile, 0)
+	}
 	for _, id := range namedCores(base.state, p) {
-		premises = append(premises, premiseCore{premise: IfNamed, core: new(id)})
+		i := base.state.index(id)
+		atZero := i < 0 || i >= len(p.Profile) || p.Profile[i] == 0
+		premises = append(premises, premiseCore{premise: IfNamed, core: new(id), atZero: atZero, top: slices.Contains(top, id)})
 	}
 	if p.Condition != machine.Alone {
 		end := &journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError}
@@ -264,7 +274,7 @@ func Forecast(events []journal.Event) ForecastPlan {
 	for _, pc := range premises {
 		premise := pc.premise
 		f := replayForecast(events)
-		b := ForecastBranch{Premise: premise, Core: pc.core, WithoutTelemetry: p.Regime == machine.R7 && len(p.Cores) > 1 && premise != IfInconclusive}
+		b := ForecastBranch{Premise: premise, Core: pc.core, AtZero: pc.atZero, TopRequester: pc.top, WithoutTelemetry: multiR7 && premise != IfInconclusive}
 		if premise == IfPass {
 			b.Passes = 1
 		}
@@ -277,6 +287,11 @@ func Forecast(events []journal.Event) ForecastPlan {
 			// Another requirement's trial comes first, so the premise cannot hold on its own.
 			continue
 		}
+		failed := premise == IfNamed || premise == IfUnnamed
+		b.OffsetOrder = b.WithoutTelemetry && (failed && len(byOffset) > 0 || slices.ContainsFunc(b.Decisions, func(d journal.Payload) bool {
+			chain, ok := d.(*journal.CheckingChain)
+			return ok && len(chain.Cores) > 0 && len(chain.SourceSeqs) == 0
+		}))
 		out.Branches = append(out.Branches, b)
 	}
 	return out

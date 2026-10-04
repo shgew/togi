@@ -32,6 +32,13 @@ func (s *State) r7Requests(workload string, cores []int, profile []int) (map[int
 }
 
 func (s *State) r7RequestsBefore(workload string, cores []int, profile []int, before int) (map[int]float64, []int) {
+	req, sources, _ := s.r7RequestOrigins(workload, cores, profile, before)
+	return req, sources
+}
+
+// r7RequestOrigins returns the loaded cores' requests, the measurements that supplied them, and the cores no
+// measurement covers, whose requests their offsets stand in for.
+func (s *State) r7RequestOrigins(workload string, cores []int, profile []int, before int) (map[int]float64, []int, []int) {
 	var exact *entry
 	full := map[int]*entry{}
 	for i := range s.r7Measurements {
@@ -55,7 +62,7 @@ func (s *State) r7RequestsBefore(workload string, cores []int, profile []int, be
 		}
 	}
 	out := make(map[int]float64, len(cores))
-	var sources []int
+	var sources, byOffset []int
 	for _, id := range cores {
 		source := exact
 		if source == nil {
@@ -72,9 +79,10 @@ func (s *State) r7RequestsBefore(workload string, cores []int, profile []int, be
 			}
 		}
 		out[id] = requests.VoltsPerCount * float64(profile[s.index(id)])
+		byOffset = append(byOffset, id)
 	}
 	slices.Sort(sources)
-	return out, sources
+	return out, sources, byOffset
 }
 func (s *State) r7Top(workload string, cores []int, profile []int) []int {
 	req, _ := s.r7Requests(workload, cores, profile)

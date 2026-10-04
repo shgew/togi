@@ -34,7 +34,7 @@
   ○  2 R7 all-core       2 CCDs · 3+ parts   3+ parts                             10:05  limit    core 13 solo limit -24
   ○  3 R7 all-core       2 CCDs · 3+ parts   3+ parts                             10:04  limit    core 02 solo limit -35
   ○  4 R2 heavy vector   one core at a time  16 x 2m                              10:02  limit    core 08 solo limit -27
-  ○  5 R2 heavy vector   one core at a time  16 x 2m                              09:58  limit    core 06 solo limit -30
+  +10 more                                                                        09:58  limit    core 06 solo limit -30
                                                                                   09:53  limit    core 09 solo limit -18
   R7 ───────────────────── top requesters ───── self-sufficient ─────────────     09:41  limit    core 03 solo limit -17
   mprime AVX2 36K-248K     05 14 by offset      none yet                          09:25  limit    core 10 solo limit -16

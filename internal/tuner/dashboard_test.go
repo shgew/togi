@@ -258,6 +258,57 @@ func TestRequirementCountsOnlyFreshSearchTrials(t *testing.T) {
 	}
 }
 
+func TestRequirementCountsAloneDeepeningChecksAgainstTheirRound(t *testing.T) {
+	h := hasRoomHarness(t, -20, -20)
+	p := h.s.Profile()
+	p[1]--
+	h.add(&journal.DeepeningRound{Round: 2, Event: journal.CycleStart, Profile: p, Target: p, Cores: []int{1}, Trials: 3, TrialS: 120})
+	for passed := range 2 {
+		a := h.s.roundCheck()
+		if a.Kind != RunTrial || a.Trial.Condition != machine.Alone || a.Trial.Round != 2 {
+			t.Fatalf("deepening did not check core 01 alone: %+v", a)
+		}
+		intent := h.start(a).Data.(*journal.TrialIntent)
+		want := TrialRequirement{Passed: passed, Trial: passed + 1, Needed: 3}
+		if diff := cmp.Diff(want, h.s.Requirement(intent)); diff != "" {
+			t.Fatalf("an alone deepening check counted as a search step (-want +got):\n%s", diff)
+		}
+		h.add(&journal.TrialEnd{Trial: intent.Trial, Outcome: journal.OutcomePass, DurationS: intent.DurationS})
+	}
+}
+
+func TestCyclePlanRunsNoPartDuringARerun(t *testing.T) {
+	h := hasRoomHarness(t, -20, -20)
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R6}})
+	a := h.next()
+	for a.Kind == Decide {
+		h.decide(a)
+		a = h.next()
+	}
+	p := h.start(a).Data.(*journal.TrialIntent)
+	h.add(&journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0), DurationS: 10})
+	a = h.next()
+	for a.Kind == Decide {
+		h.decide(a)
+		a = h.next()
+	}
+	if a.Kind != RunTrial || !a.Trial.Rerun || a.Trial.Regime != machine.R6 {
+		t.Fatalf("a named failure did not rerun the failed load: %+v", a)
+	}
+	h.start(a)
+	plan := h.s.CyclePlan()
+	if !plan.Paused {
+		t.Fatalf("the cycle is not paused while its failure reruns: %+v", plan)
+	}
+	for _, step := range plan.Steps {
+		for _, part := range step.Parts {
+			if part.Running {
+				t.Fatalf("the rerun ran as a part of the paused cycle: %+v", plan)
+			}
+		}
+	}
+}
+
 func TestCyclePlanRunsOnlyTheCurrentStepsPart(t *testing.T) {
 	h := hasRoomHarness(t, -20, -20)
 	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R6, machine.R6, machine.R6, machine.R6}})

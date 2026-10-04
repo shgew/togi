@@ -212,7 +212,7 @@ func (s *State) Requirement(p *journal.TrialIntent) TrialRequirement {
 	rule := cycleEvidence
 	needed := 1
 	switch {
-	case p.Condition == machine.Alone:
+	case p.Condition == machine.Alone && p.Round == 0:
 		var c *core
 		if p.Core != nil {
 			c = s.core(*p.Core)
