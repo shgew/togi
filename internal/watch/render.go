@@ -583,7 +583,7 @@ func (s Snapshot) recoveredLines() []string {
 	switch {
 	case r.end != nil && r.end.core != nil:
 		first += fmt.Sprintf(" · core %02d named", *r.end.core)
-	case r.end != nil:
+	case r.end != nil && t.hunt == 0 && t.condition != machine.Alone:
 		first += " · no core named"
 	}
 	if t.recordOnly {
