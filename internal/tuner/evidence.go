@@ -51,7 +51,6 @@ type entry struct {
 	top            []int
 	clocks         map[int]int
 	named, stalled *int
-	actionable     bool
 }
 
 func classOf(p *journal.TrialIntent) trialClass {
@@ -122,7 +121,7 @@ func (s *State) latestFailure(k trialClass, p []int, since int) int {
 	entries := s.ledger[k]
 	for i := range entries {
 		e := &entries[i]
-		if !e.pass && (!s.multiR7(e.class) || e.actionable) && e.seq > last && atLeastShallow(e.profile, p) {
+		if !e.pass && e.seq > last && atLeastShallow(e.profile, p) {
 			last = e.seq
 		}
 	}

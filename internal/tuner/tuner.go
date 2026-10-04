@@ -253,12 +253,6 @@ func (s *State) Fold(e journal.Event) {
 		s.steps = slices.Clone(p.Config.Checking.Cycle)
 		s.durations = p.Config.Durations
 		s.evidence = p.Config.Evidence
-		if s.evidence.FailureRate == 0 {
-			s.evidence.FailureRate = .05
-		}
-		if s.evidence.Significance == 0 {
-			s.evidence.Significance = .2
-		}
 		s.n = int(math.Ceil(math.Log(s.evidence.Miss) / math.Log1p(-s.evidence.Rate)))
 		s.pendingRerun()
 		s.projectionDirty = true
@@ -303,12 +297,8 @@ func (s *State) Fold(e journal.Event) {
 			s.decided(c, e.Seq)
 		}
 	case *journal.TunerDecision:
-		if p.Decision == journal.Tolerate || p.Decision == journal.Backoff {
-			s.consumeR7(e, p.Core, p.Decision == journal.Backoff)
-		}
-		if p.Decision == journal.Tolerate {
-			s.projectionDirty = true
-			break
+		if p.Decision == journal.Backoff {
+			s.consumeR7(e, p.Core)
 		}
 		if c := s.core(p.Core); c != nil {
 			if p.FailurePoint != nil && (c.fail == nil || *p.FailurePoint > *c.fail) {
@@ -792,9 +782,6 @@ func (s *State) uncontradicted(q passedFullCycle) bool {
 		return false
 	}
 	return !slices.ContainsFunc(s.pendingFailures, func(f pendingFailure) bool {
-		if s.multiR7(f.class) && !s.r7Actionable(f) {
-			return false
-		}
 		return s.failureAfter(f, s.resetSeq) && (len(f.profile) != len(q.profile) || atLeastShallow(f.profile, q.profile))
 	})
 }

@@ -28,11 +28,15 @@ func (s *State) classCores(k trialClass) []int {
 func (s *State) multiR7(k trialClass) bool { return k.regime == machine.R7 && len(s.classCores(k)) > 1 }
 
 func (s *State) r7Requests(workload string, cores []int, profile []int) (map[int]float64, []int) {
+	return s.r7RequestsBefore(workload, cores, profile, 0)
+}
+
+func (s *State) r7RequestsBefore(workload string, cores []int, profile []int, before int) (map[int]float64, []int) {
 	var exact *entry
 	full := map[int]*entry{}
 	for i := range s.r7Measurements {
 		e := &s.r7Measurements[i]
-		if e.class.workload != workload || len(e.requests) == 0 {
+		if e.class.workload != workload || len(e.requests) == 0 || before > 0 && e.seq > before {
 			continue
 		}
 		if slices.Equal(e.cores, cores) && (exact == nil || e.seq > exact.seq) {
@@ -74,6 +78,10 @@ func (s *State) r7Requests(workload string, cores []int, profile []int) (map[int
 }
 func (s *State) r7Top(workload string, cores []int, profile []int) []int {
 	req, _ := s.r7Requests(workload, cores, profile)
+	return s.r7TopRequests(cores, req)
+}
+
+func (s *State) r7TopRequests(cores []int, req map[int]float64) []int {
 	var top []int
 	for _, ccd := range s.ccdIDs(cores) {
 		part := map[int]float64{}
@@ -103,23 +111,11 @@ func (s *State) entryTop(e entry) []int {
 	if len(e.top) > 0 {
 		return e.top
 	}
-	if len(e.requests) > 0 {
-		var top []int
-		for _, ccd := range s.ccdIDs(e.cores) {
-			req := map[int]float64{}
-			for _, id := range e.cores {
-				if s.ccd[id] == ccd {
-					req[id] = e.requests[id]
-				}
-			}
-			if groups := requests.Groups(req); len(groups) > 0 {
-				top = append(top, groups[0]...)
-			}
-		}
-		slices.Sort(top)
-		return top
+	req := e.requests
+	if len(req) == 0 {
+		req, _ = s.r7RequestsBefore(e.class.workload, e.cores, e.profile, e.seq)
 	}
-	return s.r7Top(e.class.workload, e.cores, e.profile)
+	return s.r7TopRequests(e.cores, req)
 }
 func (s *State) failureTargets(e entry) []int {
 	if e.named != nil {
@@ -131,45 +127,7 @@ func (s *State) failureTargets(e entry) []int {
 	}
 	return top
 }
-func binomialTail(k, n int, rate float64) float64 {
-	if k <= 0 {
-		return 1
-	}
-	sum := 0.0
-	for i := k; i <= n; i++ {
-		a, _ := math.Lgamma(float64(n + 1))
-		b, _ := math.Lgamma(float64(i + 1))
-		c, _ := math.Lgamma(float64(n - i + 1))
-		sum += math.Exp(a - b - c + float64(i)*math.Log(rate) + float64(n-i)*math.Log1p(-rate))
-	}
-	return min(1, sum)
-}
-func (s *State) r7Counts(c *core, k trialClass) (int, int, []int) {
-	failures, passes := 0, 0
-	var causes []int
-	for class, entries := range s.ledger {
-		if class.regime != machine.R7 || class.workload != k.workload || class.duration != k.duration {
-			continue
-		}
-		for _, e := range entries {
-			if len(e.profile) != len(s.cores) {
-				continue
-			}
-			offset := e.profile[s.index(c.id)]
-			if !e.pass && offset >= c.offset && slices.Contains(s.failureTargets(e), c.id) {
-				failures++
-				causes = append(causes, e.seq)
-			}
-			if e.pass && offset <= c.offset && slices.Contains(s.entryTop(e), c.id) {
-				passes++
-				causes = append(causes, e.seq)
-			}
-		}
-	}
-	slices.Sort(causes)
-	return failures, failures + passes, causes
-}
-func (s *State) consumeR7(ev journal.Event, id int, moved bool) {
+func (s *State) consumeR7(ev journal.Event, id int) {
 	for _, seq := range ev.Cause {
 		f := s.failureBySeq(seq)
 		if f == nil || !s.multiR7(f.class) {
@@ -182,36 +140,18 @@ func (s *State) consumeR7(ev journal.Event, id int, moved bool) {
 			s.r7Handled[f.seq] = map[int]bool{}
 		}
 		s.r7Handled[f.seq][id] = true
-		if moved {
-			entries := s.ledger[f.class]
-			for i := range entries {
-				if s.sameR7Failure(entries[i].seq, f.seq) {
-					entries[i].actionable = true
-					if entries[i].named == nil {
-						for _, other := range s.failureTargets(entries[i]) {
-							if s.ccd[other] == s.ccd[id] {
-								s.r7Handled[f.seq][other] = true
-							}
-						}
-					}
+		if failed := s.r7FailureEntry(*f); failed != nil {
+			for _, other := range s.failureTargets(*failed) {
+				if failed.named != nil || s.ccd[other] == s.ccd[id] {
+					s.r7Handled[f.seq][other] = true
 				}
 			}
-			s.ledger[f.class] = entries
 		}
 		break
 	}
 }
 func (s *State) r7Decision() (Action, bool) {
 	a, ok := s.r7PendingDecision()
-	if p, isDecision := a.Payload.(*journal.TunerDecision); isDecision && len(a.Cause) > 0 {
-		if f := s.failureBySeq(a.Cause[0]); f != nil {
-			_, sources := s.r7Requests(f.class.workload, s.classCores(f.class), f.profile)
-			a.Cause = append(a.Cause, sources...)
-			if len(sources) == 0 && !strings.Contains(p.Reason, "order came from offsets") {
-				p.Reason += fmt.Sprintf("; request order came from offsets at CO %d", f.profile[s.index(p.Core)])
-			}
-		}
-	}
 	var unique []int
 	for _, seq := range a.Cause {
 		if !slices.Contains(unique, seq) {
@@ -236,9 +176,7 @@ func (s *State) r7PendingDecision() (Action, bool) {
 				continue
 			}
 			if c := s.core(id); c != nil {
-				if a, ok := s.r7CoreDecision(f, *failed, c, targets); ok {
-					return a, true
-				}
+				return s.r7CoreDecision(f, *failed, c), true
 			}
 		}
 	}
@@ -258,58 +196,95 @@ func (s *State) r7FailureEntry(f pendingFailure) *entry {
 	return nil
 }
 
-func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core, targets []int) (Action, bool) {
-	k, n, causes := s.r7Counts(c, f.class)
-	rate, alpha := s.evidence.FailureRate, s.evidence.Significance
-	cause := append([]int{f.seq}, causes...)
-	tail := binomialTail(k, n, rate)
-	if tail >= alpha {
-		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseChecking, Decision: journal.Tolerate, FromOffset: c.offset, ToOffset: c.offset, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("tolerated R7 failure #%d: core %02d has %s in %s; binomial tail %.6g >= significance %.6g%s", f.seq, c.id, r7Count(k, "failure"), r7Count(n, "start"), tail, alpha, s.carriedReason(cause))}, Cause: cause}, true
+type r7Order struct {
+	group   []int
+	sources []int
+	reason  string
+	rail    float64
+	stepped bool
+	named   bool
+}
+
+func (s *State) r7TargetGroup(failed entry, id int) r7Order {
+	if failed.named != nil {
+		if failed.profile[s.index(id)] != 0 || slices.Contains(s.entryTop(failed), id) {
+			return r7Order{group: []int{id}, named: true}
+		}
 	}
-	if failed.profile[s.index(c.id)] == 0 {
-		return Action{Kind: Decide, Payload: failedAtZero(c.id), Cause: []int{f.seq}}, true
+	req, sources := s.r7Requests(failed.class.workload, failed.cores, failed.profile)
+	part := map[int]float64{}
+	for _, core := range failed.cores {
+		if s.ccd[core] == s.ccd[id] {
+			part[core] = req[core]
+		}
 	}
-	if failed.named == nil {
-		chosen, rankingNeeded := s.r7TieChoice(f, targets, c.id)
-		if rankingNeeded {
-			return Action{Kind: ReadRanking}, true
+	rail, _ := requests.Top(part)
+	groups := r7RequestGroups(part, failed.top)
+	order := r7Order{sources: sources, rail: rail}
+	if failed.named != nil {
+		order.reason = fmt.Sprintf("named core %02d failed at CO 0 without being a top requester; back off CCD %d's top group instead", id, s.ccd[id])
+	}
+	for i, group := range groups {
+		movable := slices.DeleteFunc(slices.Clone(group), func(core int) bool {
+			return failed.profile[s.index(core)] == 0
+		})
+		if len(movable) == 0 {
+			continue
 		}
-		if chosen != c.id {
-			return Action{}, false
+		order.group = movable
+		if i > 0 {
+			order.stepped = true
+			if order.reason != "" {
+				order.reason += "; "
+			}
+			order.reason += fmt.Sprintf("CCD %d groups %v are already at CO 0; step down request order to group %v", s.ccd[id], groups[:i], group)
 		}
-		if s.rankingSeq > 0 {
-			cause = append(cause, s.rankingSeq)
+		return order
+	}
+	return order
+}
+
+func r7RequestGroups(part map[int]float64, top []int) [][]int {
+	var first []int
+	for _, id := range top {
+		if _, ok := part[id]; ok {
+			first = append(first, id)
+			delete(part, id)
 		}
+	}
+	groups := requests.Groups(part)
+	if len(first) == 0 {
+		return groups
+	}
+	slices.Sort(first)
+	return append([][]int{first}, groups...)
+}
+
+func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core) Action {
+	order := s.r7TargetGroup(failed, c.id)
+	if len(order.group) == 0 || order.named && failed.profile[s.index(c.id)] == 0 {
+		return Action{Kind: Decide, Payload: failedAtZero(c.id), Cause: append([]int{f.seq}, order.sources...)}
+	}
+	if len(order.group) > 1 && s.rankingSeq == 0 {
+		return Action{Kind: ReadRanking}
+	}
+	chosen := order.group[0]
+	for _, id := range order.group[1:] {
+		if s.lowerPreferred(id, chosen) {
+			chosen = id
+		}
+	}
+	cause := append([]int{f.seq}, order.sources...)
+	if !order.named && s.rankingSeq > 0 {
+		cause = append(cause, s.rankingSeq)
 	}
 	if s.round != nil {
-		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.LapEnd, Reason: fmt.Sprintf("R7 failure #%d exceeds tolerance", f.seq)}, Cause: []int{f.seq}}, true
+		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.LapEnd, Reason: fmt.Sprintf("R7 failure #%d requires backoff", f.seq)}, Cause: []int{f.seq}}
 	}
-	return s.r7Backoff(f, failed, c, cause, k, n), true
+	return s.r7Backoff(f, failed, s.core(chosen), cause, order)
 }
 
-func (s *State) r7TieChoice(f pendingFailure, targets []int, id int) (int, bool) {
-	chosen, tied := id, 0
-	for _, other := range targets {
-		if s.ccd[other] != s.ccd[id] {
-			continue
-		}
-		tied++
-		if s.r7Handled[f.seq][other] {
-			continue
-		}
-		c := s.core(other)
-		if c == nil {
-			continue
-		}
-		k, n, _ := s.r7Counts(c, f.class)
-		if binomialTail(k, n, s.evidence.FailureRate) < s.evidence.Significance && s.lowerPreferred(other, chosen) {
-			chosen = other
-		}
-	}
-	return chosen, tied > 1 && s.rankingSeq == 0
-}
-
-func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, k, n int) Action {
+func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, order r7Order) Action {
 	req, sources := s.r7Requests(f.class.workload, failed.cores, failed.profile)
 	if len(failed.requests) > 0 {
 		req, sources = failed.requests, []int{failed.seq}
@@ -317,21 +292,38 @@ func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, 
 	if _, measured := req[c.id]; !measured {
 		req, sources = s.r7Requests(f.class.workload, []int{c.id}, failed.profile)
 	}
-	target, passSeqs := s.r7VoltageTarget(failed, c.id, req[c.id])
+	targetEntry := failed
+	if !order.named {
+		targetEntry.named = nil
+	}
+	failingTop := req[c.id]
+	if order.stepped {
+		failingTop = order.rail
+	}
+	target, passSeqs := s.r7VoltageTarget(targetEntry, c.id, failingTop)
 	counts := 1
 	if len(passSeqs) > 0 {
 		counts = requests.Counts(req[c.id], target)
 	}
+	if order.stepped && len(sources) > 0 {
+		counts = max(counts, int(math.Floor((order.rail-req[c.id])/requests.VoltsPerCount+1e-9))+1)
+	}
 	reason := fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core %02d ", f.seq, c.id)
 	switch {
 	case len(sources) == 0:
-		reason += fmt.Sprintf("order came from offsets at CO %d; no request telemetry, one count", failed.profile[s.index(c.id)])
+		reason += fmt.Sprintf("order came from offsets at CO %d; no request telemetry, %s", failed.profile[s.index(c.id)], r7Count(counts, "count"))
 	case len(passSeqs) == 0:
-		reason += fmt.Sprintf("request %.3f V; no qualifying pass, one count", req[c.id])
+		reason += fmt.Sprintf("request %.3f V; no qualifying pass, %s", req[c.id], r7Count(counts, "count"))
 	case req[c.id] >= target:
-		reason += fmt.Sprintf("request %.3f V already met the passed target %.3f V; one count", req[c.id], target)
+		reason += fmt.Sprintf("request %.3f V already met the passed target %.3f V; %s", req[c.id], target, r7Count(counts, "count"))
 	default:
 		reason += fmt.Sprintf("request %.3f V to %.3f V, %s", req[c.id], target, r7Count(counts, "count"))
+	}
+	if order.reason != "" {
+		reason += "; " + order.reason
+	}
+	if order.stepped && len(sources) > 0 {
+		reason += fmt.Sprintf("; %s to rise above %.3f V", r7Count(counts, "count"), order.rail)
 	}
 	cause = append(cause, sources...)
 	cause = append(cause, passSeqs...)
@@ -340,8 +332,7 @@ func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, 
 		fail = max(fail, *c.fail)
 	}
 	pass, _ := keepPass(c.pass, fail)
-	to := min(0, max(c.offset, failed.profile[s.index(c.id)]+counts, fail+1))
-	reason += fmt.Sprintf("; tolerance %s in %s", r7Count(k, "failure"), r7Count(n, "start"))
+	to := min(0, max(c.offset+1, failed.profile[s.index(c.id)]+counts, fail+1))
 	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailurePoint: new(fail), Reason: reason + s.carriedReason(cause)}, Cause: cause}
 }
 
@@ -426,13 +417,4 @@ func (s *State) recordR7Measurement(seq int, p *journal.TrialIntent, end *journa
 		return
 	}
 	s.r7Measurements = append(s.r7Measurements, entry{seq: seq, class: classOf(p), cores: slices.Clone(p.Cores), profile: slices.Clone(p.Profile), requests: end.VoltageRequestsV, top: end.TopRequesters, clocks: end.CCDMHz})
-}
-
-func (s *State) r7Actionable(f pendingFailure) bool {
-	for _, e := range s.ledger[f.class] {
-		if s.sameR7Failure(e.seq, f.seq) {
-			return e.actionable
-		}
-	}
-	return false
 }

@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,49 +25,33 @@ func r7Fact(h *harness, pass bool, cores, profile []int, requests map[int]float6
 	}
 	return h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "ruleset8", Seq: len(h.events) + 1, Trial: fmt.Sprint(len(h.events))}, Class: journal.TrialClass{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120}, RecordOnly: true, Condition: machine.Together, Profile: profile, Outcome: outcome, Signal: machine.ComputationError, Core: named, StalledCore: stalled, VoltageRequestsV: requests, TopRequesters: top, CCDMHz: clocks})
 }
-func TestR7ToleranceBoundaries(t *testing.T) {
-	for _, tc := range []struct {
-		k, n int
-		move bool
-	}{{1, 1, true}, {1, 10, false}, {2, 10, true}, {0, 10, false}, {1, 4, true}, {1, 5, false}} {
-		t.Run(fmt.Sprintf("%d/%d", tc.k, tc.n), func(t *testing.T) {
-			got := binomialTail(tc.k, tc.n, .05) < .2
-			if diff := cmp.Diff(tc.move, got); diff != "" {
-				t.Fatal(diff)
-			}
-		})
-	}
-}
-func TestR7TolerancePreservesPassesAndDoesNotSkip(t *testing.T) {
+func TestR7FailuresMoveAfterLongCleanLedger(t *testing.T) {
 	h := r7Harness(t)
 	cores := []int{0, 1}
-	profile := h.s.Profile()
-	for range 9 {
-		r7Fact(h, true, cores, profile, map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
+	for range 100 {
+		r7Fact(h, true, cores, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
 	}
-	failure := r7Fact(h, false, cores, profile, nil, []int{0}, nil, nil, nil)
-	a, ok := h.s.Drain()
-	if !ok {
-		t.Fatal("no carried tolerance before first trial")
-	}
-	p, ok := a.Payload.(*journal.TunerDecision)
-	if !ok || p.Decision != journal.Tolerate {
-		t.Fatalf("%+v", a)
-	}
-	h.decide(a)
-	k := trialClass{machine.R7, machine.Workloads(machine.R7)[0].ID, coresKey(cores), 120}
-	if got := h.s.passes(k, profile, 0, allEvidence); got != 9 {
-		t.Fatalf("tolerated failure invalidated %d passes", got)
-	}
-	scheduled := Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: k.workload, Cores: cores, DurationS: 120, Condition: machine.Together, Profile: profile}}
-	if diff := cmp.Diff(RunTrial, h.s.skipKnownFailure(scheduled).Kind); diff != "" {
-		t.Fatal(diff)
+	for _, want := range []int{-29, -28} {
+		r7Fact(h, false, cores, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
+		a, ok := h.s.Drain()
+		if !ok {
+			t.Fatal("failure did not move")
+		}
+		move, ok := a.Payload.(*journal.TunerDecision)
+		if !ok || move.Decision != journal.Backoff {
+			t.Fatalf("%+v", a)
+		}
+		if diff := cmp.Diff(want, move.ToOffset); diff != "" {
+			t.Fatal(diff)
+		}
+		h.decide(a)
 	}
 	if len(h.s.queue) != 0 {
 		t.Fatal("R7 queued a hunt")
 	}
-	if h.s.r7Actionable(*h.s.failureBySeq(failure.Seq)) {
-		t.Fatal("tolerated failure actionable")
+	scheduled := Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120, Condition: machine.Together, Profile: h.s.Profile()}}
+	if diff := cmp.Diff(RunTrial, h.s.skipKnownFailure(scheduled).Kind); diff != "" {
+		t.Fatal(diff)
 	}
 	assertProjectionReplay(h)
 }
@@ -274,10 +259,10 @@ func TestR7BackoffReason(t *testing.T) {
 		target   float64
 		want     string
 	}{
-		{"offset fallback", nil, 0, "order came from offsets at CO -30; no request telemetry, one count"},
-		{"no pass", map[int]float64{0: 1.09447, 1: 1.08}, 0, "request 1.094 V; no qualifying pass, one count"},
-		{"equal target", map[int]float64{0: 1.1539, 1: 1.08}, 1.1539, "request 1.154 V already met the passed target 1.154 V; one count"},
-		{"higher than target", map[int]float64{0: 1.16, 1: 1.08}, 1.1539, "request 1.160 V already met the passed target 1.154 V; one count"},
+		{"offset fallback", nil, 0, "order came from offsets at CO -30; no request telemetry, 1 count"},
+		{"no pass", map[int]float64{0: 1.09447, 1: 1.08}, 0, "request 1.094 V; no qualifying pass, 1 count"},
+		{"equal target", map[int]float64{0: 1.1539, 1: 1.08}, 1.1539, "request 1.154 V already met the passed target 1.154 V; 1 count"},
+		{"higher than target", map[int]float64{0: 1.16, 1: 1.08}, 1.1539, "request 1.160 V already met the passed target 1.154 V; 1 count"},
 		{"one count", map[int]float64{0: 1.15, 1: 1.08}, 1.153, "request 1.150 V to 1.153 V, 1 count"},
 		{"several counts", map[int]float64{0: 1.09447, 1: 1.08}, 1.1539, "request 1.094 V to 1.154 V, 17 counts"},
 	} {
@@ -289,9 +274,9 @@ func TestR7BackoffReason(t *testing.T) {
 			}
 			r7Fact(h, false, []int{0, 1}, h.s.Profile(), tc.requests, []int{0}, new(0), nil, nil)
 			f := h.s.pendingFailures[len(h.s.pendingFailures)-1]
-			a := h.s.r7Backoff(f, *h.s.r7FailureEntry(f), h.s.core(0), []int{f.seq}, 1, 1)
+			a := h.s.r7Backoff(f, *h.s.r7FailureEntry(f), h.s.core(0), []int{f.seq}, r7Order{named: true})
 			got := a.Payload.(*journal.TunerDecision).Reason
-			want := fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core 00 %s; tolerance 1 failure in 1 start", f.seq, tc.want) + h.s.carriedReason(a.Cause)
+			want := fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core 00 %s", f.seq, tc.want) + h.s.carriedReason(a.Cause)
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Fatal(diff)
 			}
@@ -307,5 +292,150 @@ func TestR7CountWording(t *testing.T) {
 		if diff := cmp.Diff("2 "+noun+"s", r7Count(2, noun)); diff != "" {
 			t.Fatal(diff)
 		}
+	}
+}
+
+func TestR7ZeroTopStepsDownWithinCCD(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		profile []int
+		req     map[int]float64
+		want    int
+	}{
+		{"measured order", []int{0, -30, -30, -30}, map[int]float64{0: 1.2, 1: 1.15}, -16},
+		{"offset fallback", []int{0, -30, -30, -30}, nil, -29},
+		{"partly zero tie", []int{0, -30, -30, -30}, map[int]float64{0: 1.2, 1: 1.1995}, -29},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := r7Harness(t)
+			h.add(&journal.ProfileChange{To: tc.profile})
+			top := []int{0}
+			if tc.req != nil {
+				top = h.s.r7TopRequests([]int{0, 1}, tc.req)
+			}
+			f := r7Fact(h, false, []int{0, 1}, tc.profile, tc.req, top, nil, nil, nil)
+			a, ok := h.s.Drain()
+			move, moved := a.Payload.(*journal.TunerDecision)
+			if !ok || !moved || move.Decision != journal.Backoff || move.Core != 1 {
+				t.Fatalf("%+v", a)
+			}
+			if diff := cmp.Diff(tc.want, move.ToOffset); diff != "" {
+				t.Fatal(diff)
+			}
+			if tc.name != "partly zero tie" && !strings.Contains(move.Reason, "step down request order") {
+				t.Fatal(move.Reason)
+			}
+			if tc.req != nil && !slices.Contains(a.Cause, f.Seq) {
+				t.Fatal(a.Cause)
+			}
+			h.decide(a)
+			if _, pending := h.s.Drain(); pending {
+				t.Fatal("same CCD failure moved twice")
+			}
+			assertProjectionReplay(h)
+		})
+	}
+}
+
+func TestR7ZeroTopUsesShiftedFullMeasurement(t *testing.T) {
+	h := r7Harness(t)
+	source := r7Fact(h, true, []int{0, 1}, []int{-5, -30, -30, -30}, map[int]float64{0: 1.2, 1: 1.15}, []int{0}, nil, nil, nil)
+	profile := []int{0, -30, -30, -30}
+	h.add(&journal.ProfileChange{To: profile})
+	r7Fact(h, false, []int{0, 1}, profile, nil, []int{0}, nil, nil, nil)
+	a, ok := h.s.Drain()
+	move, moved := a.Payload.(*journal.TunerDecision)
+	if !ok || !moved || move.Core != 1 {
+		t.Fatalf("%+v", a)
+	}
+	if diff := cmp.Diff(-11, move.ToOffset); diff != "" {
+		t.Fatal(diff)
+	}
+	if !slices.Contains(a.Cause, source.Seq) {
+		t.Fatal(a.Cause)
+	}
+}
+
+func TestR7ZeroAffectedCCDDeadEndsRegardlessOfOtherCCD(t *testing.T) {
+	h := r7Harness(t)
+	profile := []int{0, 0, -30, -30}
+	h.add(&journal.ProfileChange{To: profile})
+	r7Fact(h, false, h.s.ids(), profile, map[int]float64{0: 1.2, 1: 1.15, 2: 1.3, 3: 1.25}, []int{0, 2}, nil, new(1), nil)
+	a, ok := h.s.Drain()
+	dead, ended := a.Payload.(*journal.DeadEnd)
+	if !ok || !ended || dead.Condition != journal.DeadEndFailureAtZero {
+		t.Fatalf("%+v", a)
+	}
+}
+
+func TestR7NamedZeroAttributionUsesStartTop(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		top      []int
+		requests map[int]float64
+		previous map[int]float64
+		dead     bool
+	}{
+		{"measured top", []int{0}, map[int]float64{0: 1.2, 1: 1.1}, nil, true},
+		{"measured tied top", []int{0, 1}, map[int]float64{0: 1.2, 1: 1.2005}, nil, true},
+		{"measured not top", []int{1}, map[int]float64{0: 1.1, 1: 1.2}, nil, false},
+		{"derived top", nil, nil, map[int]float64{0: 1.2, 1: 1.1}, true},
+		{"derived not top", nil, nil, map[int]float64{0: 1.1, 1: 1.2}, false},
+		{"offset fallback top", nil, nil, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := r7Harness(t)
+			profile := []int{0, -30, -30, -30}
+			h.add(&journal.ProfileChange{To: profile})
+			if tc.previous != nil {
+				r7Fact(h, true, []int{0, 1}, profile, tc.previous, nil, nil, nil, nil)
+			}
+			r7Fact(h, false, []int{0, 1}, profile, tc.requests, tc.top, new(0), nil, nil)
+			if tc.name == "derived top" {
+				r7Fact(h, true, []int{0, 1}, profile, map[int]float64{0: 1.1, 1: 1.2}, []int{1}, nil, nil, nil)
+			}
+			a, ok := h.s.Drain()
+			if !ok {
+				t.Fatal("no zero decision")
+			}
+			if tc.dead {
+				dead, ended := a.Payload.(*journal.DeadEnd)
+				if !ended || dead.Condition != journal.DeadEndFailureAtZero {
+					t.Fatalf("%+v", a)
+				}
+			} else {
+				move, moved := a.Payload.(*journal.TunerDecision)
+				if !moved || move.Decision != journal.Backoff || move.Core != 1 || move.ToOffset != -29 {
+					t.Fatalf("%+v", a)
+				}
+				if !strings.Contains(move.Reason, "without being a top requester") {
+					t.Fatal(move.Reason)
+				}
+				h.decide(a)
+				if _, pending := h.s.Drain(); pending {
+					t.Fatal("named zero failure moved twice")
+				}
+			}
+			assertProjectionReplay(h)
+		})
+	}
+}
+
+func TestR7StepDownTargetExceedsOriginalTop(t *testing.T) {
+	h := r7Harness(t)
+	for range h.s.n {
+		r7Fact(h, true, []int{0, 1}, []int{0, -20, -30, -30}, map[int]float64{0: 1.19, 1: 1.15}, []int{0}, nil, nil, nil)
+		r7Fact(h, true, []int{0, 1}, []int{0, -10, -30, -30}, map[int]float64{0: 1.236, 1: 1.15}, []int{0}, nil, nil, nil)
+	}
+	profile := []int{0, -30, -30, -30}
+	h.add(&journal.ProfileChange{To: profile})
+	r7Fact(h, false, []int{0, 1}, profile, map[int]float64{0: 1.2, 1: 1.15}, []int{0}, nil, nil, nil)
+	a, ok := h.s.Drain()
+	move, moved := a.Payload.(*journal.TunerDecision)
+	if !ok || !moved || move.Core != 1 {
+		t.Fatalf("%+v", a)
+	}
+	if diff := cmp.Diff(-6, move.ToOffset); diff != "" {
+		t.Fatal(diff)
 	}
 }
