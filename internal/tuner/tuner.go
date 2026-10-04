@@ -14,7 +14,7 @@ import (
 )
 
 // Ruleset must be bumped for changes to steps, offset range, phases, regimes, evidence, hunts, deepening or backoffs; this is breaking.
-const Ruleset = 8
+const Ruleset = 9
 
 const EvidenceEpoch = 1
 
@@ -46,7 +46,6 @@ type Trial struct {
 	Profile            []int
 	Hunt, Group, Round int
 	Rerun              bool
-	RecordOnly         bool
 	Step               int
 }
 
@@ -62,7 +61,7 @@ func (t Trial) Complete(index int, profile []int) (*journal.TrialIntent, machine
 	p := &journal.TrialIntent{
 		Regime: t.Regime, Workload: w.ID, DurationS: t.DurationS,
 		Condition: t.Condition, Phase: t.Phase, Retry: t.Retry, Cycle: t.Cycle, Step: t.Step,
-		Profile: profile, Hunt: t.Hunt, Group: t.Group, Round: t.Round, Rerun: t.Rerun, RecordOnly: t.RecordOnly,
+		Profile: profile, Hunt: t.Hunt, Group: t.Group, Round: t.Round, Rerun: t.Rerun,
 	}
 	if len(t.Cores) > 0 {
 		p.Cores = t.Cores
@@ -170,6 +169,8 @@ type State struct {
 	projectionDirty         bool
 	projectedChecking       *journal.CheckingState
 	projectedHunt           *journal.HuntState
+	r7Handled               map[int]map[int]bool
+	r7Measurements          []entry
 }
 
 func New() *State {
@@ -296,6 +297,9 @@ func (s *State) Fold(e journal.Event) {
 			s.decided(c, e.Seq)
 		}
 	case *journal.TunerDecision:
+		if p.Decision == journal.Tolerate || p.Decision == journal.Backoff {
+			s.consumeR7(e, p.Core, p.Decision == journal.Backoff)
+		}
 		if c := s.core(p.Core); c != nil {
 			if p.FailurePoint != nil && (c.fail == nil || *p.FailurePoint > *c.fail) {
 				s.recent = []int{c.id}
@@ -320,6 +324,7 @@ func (s *State) Fold(e journal.Event) {
 		s.flight = p
 		s.intents[p.Trial] = p
 		s.intentSeq[e.Seq] = p.Trial
+		s.recordCheckingStart(p)
 		s.retry = nil
 		if p.Condition == machine.Alone && p.Core != nil {
 			s.cursor = slices.IndexFunc(s.cores, func(c *core) bool { return c.id == *p.Core })
@@ -394,6 +399,8 @@ func (s *State) Fold(e journal.Event) {
 		s.rerunCauses = nil
 	case *journal.CheckingStep:
 		s.recordCheckingStep(e, p)
+	case *journal.CheckingChain:
+		s.recordCheckingChain(e, p)
 	case *journal.HostRanking:
 		s.ranking = slices.Clone(p.Ranking)
 		s.rankingSeq = e.Seq
@@ -445,15 +452,7 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 		s.thermal = nil
 	}
 	s.recordEvidence(e, intent, p)
-	if intent.RecordOnly {
-		s.recordPartialEnd(e, intent, p)
-		if p.Outcome == journal.OutcomeInconclusive {
-			t := trialFromIntent(intent)
-			t.Retry = true
-			s.retry = &t
-		}
-		return
-	}
+		s.recordR7Measurement(e.Seq, intent, p)
 	if intent.Core != nil && (p.Outcome == journal.OutcomePass || p.Outcome == journal.OutcomeFailure) {
 		if c := s.core(*intent.Core); c != nil {
 			if c.workloadIndex == nil {
@@ -502,7 +501,7 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 }
 
 func trialFromIntent(p *journal.TrialIntent) Trial {
-	t := Trial{Regime: p.Regime, Phase: p.Phase, Condition: p.Condition, Cores: slices.Clone(p.Cores), Workload: p.Workload, DurationS: p.DurationS, Profile: slices.Clone(p.Profile), Cycle: p.Cycle, Hunt: p.Hunt, Group: p.Group, Round: p.Round, Rerun: p.Rerun, RecordOnly: p.RecordOnly, Step: p.Step}
+	t := Trial{Regime: p.Regime, Phase: p.Phase, Condition: p.Condition, Cores: slices.Clone(p.Cores), Workload: p.Workload, DurationS: p.DurationS, Profile: slices.Clone(p.Profile), Cycle: p.Cycle, Hunt: p.Hunt, Group: p.Group, Round: p.Round, Rerun: p.Rerun, Step: p.Step}
 	if p.Core != nil {
 		t.Core = *p.Core
 	}
@@ -513,9 +512,6 @@ func trialFromIntent(p *journal.TrialIntent) Trial {
 }
 
 func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
-	if intent := s.intents[p.Trial]; p.KnownFailure == 0 && intent != nil && intent.RecordOnly {
-		return
-	}
 	if a := s.awaiting; a != nil && a.intent.Trial == p.Trial {
 		s.failureIndex[a.seq] = len(s.pendingFailures)
 		s.awaiting = nil
@@ -543,6 +539,15 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 	}
 	s.failureIndex[e.Seq] = len(s.pendingFailures)
 	s.pendingFailures = append(s.pendingFailures, failure)
+	if s.multiR7(failure.class) {
+		for i := range s.ledger[failure.class] {
+			if s.sameR7Failure(s.ledger[failure.class][i].seq,e.Seq) { s.ledger[failure.class][i].named=p.Core }
+		}
+	}
+	if failure.class.regime == machine.R7 && len(s.classCores(failure.class)) > 1 {
+		s.projectionDirty = true
+		return
+	}
 	if p.Attribution == journal.Attributed && p.Core != nil {
 		if c := s.core(*p.Core); c != nil {
 			c.pending = failure.seq
@@ -603,7 +608,7 @@ func (s *State) Drain() (Action, bool) {
 	if len(s.queue) > 0 && allZero(s.queue[0].profile) {
 		return unattributedFailureAtZero(s.queue[0].seq), true
 	}
-	if a, ok := s.pendingDecision(); ok {
+	if a, ok := s.pendingDecision(); ok && a.Kind == Decide {
 		return a, true
 	}
 	if s.hunt != nil {
@@ -696,6 +701,7 @@ func (s *State) next() Action {
 	if s.checking.open {
 		a := s.cycleNext()
 		_, startsStep := a.Payload.(*journal.CheckingStep)
+		if _, chain := a.Payload.(*journal.CheckingChain); chain { startsStep = true }
 		if a.Kind == RunTrial || startsStep {
 			if end, ok := s.coveredEnd(); ok {
 				a = end
@@ -768,6 +774,7 @@ func (s *State) uncontradicted(q passedFullCycle) bool {
 		return false
 	}
 	return !slices.ContainsFunc(s.pendingFailures, func(f pendingFailure) bool {
+		if s.multiR7(f.class) && !s.r7Actionable(f) { return false }
 		return s.failureAfter(f, s.resetSeq) && (len(f.profile) != len(q.profile) || atLeastShallow(f.profile, q.profile))
 	})
 }

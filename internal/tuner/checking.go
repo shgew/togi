@@ -26,6 +26,13 @@ type checkingStep struct {
 	completed map[trialClass]int
 	passed    map[trialClass]int
 	failed    map[trialClass]int
+	chains    map[int][]*checkingChain
+}
+
+type checkingChain struct {
+	start   *journal.CheckingChain
+	seq     int
+	started bool
 }
 
 type requirement struct {
@@ -101,13 +108,7 @@ func (s *State) longS(part []int) int {
 func (s *State) requirements(step int) []requirement {
 	g := &s.checking
 	r := g.steps[step]
-	occurrence := 0
-	for i := range step {
-		if g.steps[i] == r {
-			occurrence++
-		}
-	}
-	w := machine.Workloads(r)[occurrence%len(machine.Workloads(r))].ID
+	w := s.stepWorkload(step)
 	var req []requirement
 	add := func(cores []int, d, count int, core, offset int) {
 		k := trialClass{r, w, coresKey(cores), d}
@@ -119,13 +120,16 @@ func (s *State) requirements(step int) []requirement {
 			if g.steps[i] != r {
 				continue
 			}
-			previous := 0
-			for j := 0; j < i; j++ {
-				if g.steps[j] == r {
-					previous++
-				}
+			if s.stepWorkload(i) != w {
+				continue
 			}
-			if machine.Workloads(r)[previous%len(machine.Workloads(r))].ID == w {
+			if r == machine.R7 {
+				for _, part := range s.r7StepParts(i) {
+					if slices.Equal(part, cores) {
+						total += count
+					}
+				}
+			} else {
 				total += count
 			}
 		}
@@ -139,7 +143,7 @@ func (s *State) requirements(step int) []requirement {
 	case machine.R6:
 		add(s.ids(), s.durations.CheckingIdleS, 1, 0, 0)
 	case machine.R7:
-		for _, part := range s.parts {
+		for _, part := range s.r7StepParts(step) {
 			add(part, s.durations.ShortTrialS, 3, 0, 0)
 			add(part, s.longS(part), 1, 0, 0)
 		}
@@ -158,22 +162,20 @@ func (s *State) requirements(step int) []requirement {
 func (s *State) cycleNext() Action {
 	g := &s.checking
 	for i := 0; i < len(g.steps); i++ {
-		if g.steps[i] == machine.R7 && g.partial[i+1] == nil {
-			return Action{Kind: Decide, Payload: s.startCheckingStep(i), Cause: []int{g.lastSeq}}
+		if g.steps[i] == machine.R7 {
+			if a, pending := s.r7StepNext(i); pending {
+				return a
+			}
+			continue
 		}
 		for _, q := range s.requirements(i) {
-			if q.class.regime == machine.R7 {
-				if a, pending := s.partialNext(i, q); pending {
-					return a
-				}
-			}
 			if q.count == 0 {
 				continue
 			}
 			if s.passes(q.class, g.profile, g.startSeq, cycleEvidence) >= q.count {
 				continue
 			}
-			if s.retry != nil && !s.retry.RecordOnly && s.retry.Cycle == g.cycle && s.retry.Condition == machine.Together {
+			if s.retry != nil && s.retry.Cycle == g.cycle && s.retry.Condition == machine.Together {
 				return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{g.lastSeq}}
 			}
 			t := Trial{Regime: q.class.regime, Workload: q.class.workload, DurationS: q.class.duration, Phase: journal.PhaseChecking, Condition: machine.Together, Cycle: g.cycle}
@@ -195,6 +197,10 @@ func (s *State) coveredEnd() (Action, bool) {
 	}
 	complete := true
 	for i := range s.checking.steps {
+		if s.checking.steps[i] == machine.R7 && !s.r7ChainsComplete(i) {
+			complete = false
+			break
+		}
 		for _, q := range s.requirements(i) {
 			if q.count > 0 && s.passes(q.class, s.checking.profile, s.checking.startSeq, cycleEvidence) < q.count {
 				complete = false
@@ -238,7 +244,7 @@ func (s *State) attributeTogether(a *awaiting) *journal.Failure {
 			}
 		}
 	}
-	if len(named) == 0 {
+	if len(named) == 0 && !(intent.Regime == machine.R7 && len(intent.Cores) > 1) {
 		if i, ok := SoleNonzero(intent.Profile); ok && i < len(s.cores) {
 			named = []int{s.byID()[i].id}
 		}
@@ -254,6 +260,7 @@ func (s *State) attributeTogether(a *awaiting) *journal.Failure {
 }
 
 func (s *State) pendingDecision() (Action, bool) {
+	if a, ok := s.r7Decision(); ok { return a, true }
 	for _, c := range s.cores {
 		if c.pending == 0 {
 			continue
