@@ -23,28 +23,49 @@ import (
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	return runWithSharedVoltageFit(args, stdout, stderr, fitSharedVoltage)
+}
+
+func runWithSharedVoltageFit(args []string, stdout, stderr io.Writer, fitter sharedVoltageFit) int {
 	flags := flag.NewFlagSet("fit", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	extract := flags.String("facts", "tools/bench/facts/target.jsonl.gz", "compressed decisive-facts extract")
-	out := flags.String("out", "tools/bench/machines", "output directory for target-fit-0.toml and bootstrap refits")
+	out := flags.String("out", "tools/bench/machines", "output directory for fitted machine files")
 	seed := flags.Uint64("seed", 263, "fixed bootstrap seed")
 	refits := flags.Int("bootstrap", 8, "number of whole-trial bootstrap refits")
 	jobs := flags.Int("jobs", runtime.NumCPU(), "maximum parallel fits")
 	forwardOnly := flags.Bool("forward-only", false, "run only the forward-chained check: fit no ensemble and write no machine files")
 	seal := flags.Int("seal", 0, "with --forward-only, leave the newest N sessions out of the forward-chained check")
+	sharedVoltage := flags.Bool("shared-voltage-in-sample", false, "fit all decisive facts to target-shared-voltage.toml; in-sample only, not forward-validated; incompatible with --forward-only, --seal, --seed and --bootstrap")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
 		return 0
 	} else if err != nil {
 		return 2
+	}
+	if *sharedVoltage {
+		conflict := ""
+		flags.Visit(func(f *flag.Flag) {
+			switch f.Name {
+			case "forward-only", "seal", "seed", "bootstrap":
+				conflict = f.Name
+			}
+		})
+		if conflict != "" {
+			fmt.Fprintf(stderr, "fit: --shared-voltage-in-sample cannot be combined with --%s\n", conflict)
+			return 2
+		}
 	}
 	if flags.NArg() != 0 || *refits < 0 || *jobs < 1 || *seal < 0 || (*seal > 0 && !*forwardOnly) {
 		fmt.Fprintln(stderr, "fit: require no positional arguments, a nonnegative --bootstrap, positive --jobs, and a nonnegative --seal only with --forward-only")
 		return 2
 	}
 	var err error
-	if *forwardOnly {
+	switch {
+	case *sharedVoltage:
+		err = generateSharedVoltageAnchor(*extract, *out, stdout, fitter)
+	case *forwardOnly:
 		err = forward(*extract, *seal, *jobs, stdout)
-	} else {
+	default:
 		err = generate(*extract, *out, *seed, *refits, *jobs, stdout)
 	}
 	if err != nil {
@@ -187,41 +208,45 @@ func encodeMachine(cfg sim.Config, index int, seed uint64, trials int, loss floa
 	for _, group := range constrained {
 		fmt.Fprintf(&b, "# Constrained bootstrap: %s %s cores=%v duration=%ds depth=%d n=%d k=%d\n", group.Class.Regime, group.Class.Workload, group.Class.Cores, group.Class.DurationS, group.Depth, group.N, group.K)
 	}
-	fmt.Fprintf(&b, "cores = %d\nfacts = %s\n", cfg.Cores, strconv.Quote(cfg.Facts))
+	encodeConfiguration(&b, cfg)
+	return b.Bytes()
+}
+
+func encodeConfiguration(b *bytes.Buffer, cfg sim.Config) {
+	fmt.Fprintf(b, "cores = %d\nfacts = %s\n", cfg.Cores, strconv.Quote(cfg.Facts))
 	if cfg.BIOSContext != (machine.BIOSContext{}) {
 		c := cfg.BIOSContext
-		fmt.Fprintf(&b, "\n[bios_context]\nbios_version = %s\nboard = %s\ncpu_model = %s\nmicrocode = %s\nboost_limit_mhz = %d\n", strconv.Quote(c.BIOSVersion), strconv.Quote(c.Board), strconv.Quote(c.CPUModel), strconv.Quote(c.Microcode), c.BoostLimitMHz)
+		fmt.Fprintf(b, "\n[bios_context]\nbios_version = %s\nboard = %s\ncpu_model = %s\nmicrocode = %s\nboost_limit_mhz = %d\n", strconv.Quote(c.BIOSVersion), strconv.Quote(c.Board), strconv.Quote(c.CPUModel), strconv.Quote(c.Microcode), c.BoostLimitMHz)
 	}
 	m := cfg.Model
-	fmt.Fprintf(&b, "\n[model]\npast_limit_rate = %.17g\ngrowth = %.17g\nnear_limit_rate = %.17g\nonset_boost = 0.0\n", m.PastLimitRate, m.Growth, m.NearLimitRate)
+	fmt.Fprintf(b, "\n[model]\npast_limit_rate = %.17g\ngrowth = %.17g\nnear_limit_rate = %.17g\nonset_boost = 0.0\n", m.PastLimitRate, m.Growth, m.NearLimitRate)
 	if c := cfg.CCD; c != nil {
-		fmt.Fprintf(&b, "\n[ccd]\nlog_rate = %.17g\nslope = %.17g\neffect = [%.17g, %.17g]\n", c.LogRate, c.Slope, c.Effect[0], c.Effect[1])
+		fmt.Fprintf(b, "\n[ccd]\nlog_rate = %.17g\nslope = %.17g\neffect = [%.17g, %.17g]\n", c.LogRate, c.Slope, c.Effect[0], c.Effect[1])
 	}
 	for core, limit := range cfg.Limits {
-		fmt.Fprintf(&b, "\n[[core]]\nid = %d\nalone = [%d, %d, %d, %d, %d]\ntogether = [%d, %d, %d, %d, %d, %d, %d]\nflat = %.17g\n", core, limit.Alone[0], limit.Alone[1], limit.Alone[2], limit.Alone[3], limit.Alone[4], limit.Together[0], limit.Together[1], limit.Together[2], limit.Together[3], limit.Together[4], limit.Together[5], limit.Together[6], limit.Flat)
+		fmt.Fprintf(b, "\n[[core]]\nid = %d\nalone = [%d, %d, %d, %d, %d]\ntogether = [%d, %d, %d, %d, %d, %d, %d]\nflat = %.17g\n", core, limit.Alone[0], limit.Alone[1], limit.Alone[2], limit.Alone[3], limit.Alone[4], limit.Together[0], limit.Together[1], limit.Together[2], limit.Together[3], limit.Together[4], limit.Together[5], limit.Together[6], limit.Flat)
 		if limit.Idle != nil {
-			fmt.Fprintf(&b, "idle = %d\n", *limit.Idle)
+			fmt.Fprintf(b, "idle = %d\n", *limit.Idle)
 		}
 		if len(limit.Workload) > 0 {
-			fmt.Fprint(&b, "workload = {")
+			fmt.Fprint(b, "workload = {")
 			separator := ""
 			for _, workload := range slices.Sorted(maps.Keys(limit.Workload)) {
-				fmt.Fprintf(&b, "%s%s = %d", separator, strconv.Quote(workload), limit.Workload[workload])
+				fmt.Fprintf(b, "%s%s = %d", separator, strconv.Quote(workload), limit.Workload[workload])
 				separator = ", "
 			}
-			fmt.Fprintln(&b, "}")
+			fmt.Fprintln(b, "}")
 		}
 	}
 	for _, joint := range cfg.Joints {
-		fmt.Fprintf(&b, "\n[[joint]]\nregimes = [\"R7\"]\nrate = %.17g\nafter_s = 0.0\nsignal = \"crash\"\nmembers = {", joint.Rate)
+		fmt.Fprintf(b, "\n[[joint]]\nregimes = [\"R7\"]\nrate = %.17g\nafter_s = 0.0\nsignal = \"crash\"\nmembers = {", joint.Rate)
 		separator := ""
 		for core := range cfg.Cores {
 			if offset, ok := joint.Members[core]; ok {
-				fmt.Fprintf(&b, "%s%s = %d", separator, strconv.Quote(strconv.Itoa(core)), offset)
+				fmt.Fprintf(b, "%s%s = %d", separator, strconv.Quote(strconv.Itoa(core)), offset)
 				separator = ", "
 			}
 		}
-		fmt.Fprintln(&b, "}")
+		fmt.Fprintln(b, "}")
 	}
-	return b.Bytes()
 }

@@ -172,6 +172,62 @@ The extract cannot identify every simulator parameter. Unsupported or all-passin
 
 Generation prints likelihoods, CCD joint parameters, model checks against the **original** extract (also for bootstrap fits), and elapsed wall time. Files contain no timestamps and use stable ordering and full-precision parameters, so fixed inputs and seed reproduce them byte for byte on one architecture. Between amd64 and arm64 they can differ in the last digits: Go implements its math functions separately for each architecture, and the arm64 compiler fuses multiply-adds. A last-digit difference after refitting on the other architecture is not a model change. A model-check flag is not silently repaired or excluded: inspect the named class, depth and interval before using that ensemble member as target evidence. A flag may reflect a poor local optimum, the current model's shared-shape/joint assumptions, or a sparse failure absent from a bootstrap sample; it is not by itself proof of an impossible fit. The shared `tools/modelcheck` implementation is used by both `just fit` and `just bench`, with the same 99% intervals.
 
+### In-sample shared-voltage anchor
+
+```sh
+just fit-shared-voltage
+# Optional: --facts EXTRACT.jsonl.gz --out DIRECTORY
+# Equivalent: go run ./tools/fit --shared-voltage-in-sample
+```
+
+This opt-in mode fits **all decisive starts**, including record-only facts, to the 16-core shared-voltage model and writes only `target-shared-voltage.toml`. It requires one nonempty BIOS context and 16-core profiles. It leaves the default `just fit`, `just forward`, bootstrap dispatch and `target-fit-*` files unchanged. The anchor mode rejects `--bootstrap`, `--seed`, `--forward-only` and `--seal`, even when their supplied values equal their defaults.
+
+Before creating the output directory or changing an anchor, it runs the **unchanged model check on the full original extract**, not a bootstrap or selected subset. It reports `ok` only when every eligible group passes (52 groups on the committed telemetry refresh). A non-ok result prints each exact flagged class, loaded cores, intended duration, depth, observed counts, interval and full-precision mean probability, then exits with failure without writing. A passing in-sample check does not validate later-session predictions.
+
+If the unconstrained all-facts fit flags an original-evidence group, constrained scalar searches first profile the existing `shared_voltage.rate` within its documented `1e-5`–0.03 failures/s bounds, then profile the existing `shared_voltage.background_rate` within 0–0.001 failures/s if needed. Each search holds thresholds, margin, the other rate and legacy parameters fixed. It finds the scalar's interval admitted by every unchanged original-evidence group, then minimizes the same all-facts objective inside that feasible interval. The model already integrates its per-time hazard over each intended duration; these searches add no parameters, duration adjustment, threshold-shift repair or wider voltage-margin tail. Counts, group definitions, intervals and scoring remain unchanged. If neither scalar search finds a feasible value, the command reports the remaining flagged groups and returns failure without writing an anchor.
+
+The fit retains the legacy R1–R6 and single-core model, but replaces multi-core R7 joints and CCD residual hazard with a shared rail. Loaded requests are a per-core/workload base plus a count coefficient and a clock coefficient. A loaded core's required voltage is its threshold plus its own required-clock coefficient times `(CCD MHz - reference MHz) / 100`; the smooth shared hazard follows the margin between required voltage and the highest loaded request across both CCDs. Fitting uses request and clock measurements where available and named-core failure attribution. Its optimization includes threshold shrinkage of 10 mV within CCD/workload and a lognormal margin prior centered at 6 mV with log-2 width; the **reported raw Bernoulli log loss excludes priors and attribution penalties**.
+
+An additional `shared_voltage.background_rate` represents a **CO-independent platform R7 background**: memory, heat or the rest of the platform can fail even when loaded cores have ample voltage margin, including at CO 0. This is one shared rate per multi-core R7 trial, independent of profile, load size and workload; it produces unattributed crashes and contributes to the same hazard and failure-probability predictions used by fitting and model checking. It is separate from the voltage-margin hazard, not a wider margin tail. Its default is zero; only finite nonnegative values are accepted. Legacy loaded-core `Flat` is suppressed in shared R7 and legacy CO-0 subtraction removes its stock hazard, so unchanged `Flat` cannot supply this mechanism.
+
+Shared-voltage parameter bounds:
+
+| Parameter | Range |
+|---|---|
+| Request count coefficient | 0.0025–0.005 V/count |
+| Request and required-voltage clock coefficients | 0.005–0.06 V/100 MHz |
+| Shared per-core rate | `1e-5`–0.03 failures/s |
+| CO-independent platform R7 background rate | 0–0.001 failures/s |
+| Smooth margin | 0.001–0.03 V |
+| Absolute required-voltage thresholds | 0.8–1.5 V |
+| Per-core/workload request bases | 0.9–1.5 V |
+| Clock gain per unloaded core | 0–60 MHz/core |
+| Package and CCD-balance clock responses | 0–30 MHz/W |
+| Full-load CCD clock intercepts | 4000–6000 MHz |
+
+The request reference is fixed at 5240 MHz. Power and thermal limits are fixed at 192 W; workload power is 13 W/core for mprime AVX2 and 15 W/core for AVX-512 and y-cruncher, plus 0.12 W per offset count relative to −35. Full-load clocks use measured medians; unsupported ones retain fixed priors. Unsupported y-cruncher R7 uses, per core, the more demanding (maximum) of the mprime AVX2/AVX-512 thresholds, not a hardware-validated threshold.
+
+The generated header explicitly says **IN-SAMPLE, NOT forward-validated**, records the failed 2026-10-04 [#306](https://github.com/shgew/togi/issues/306#issuecomment-5979625589) bar, and declares relative `facts` and `[bios_context]`. Workloads and cores have stable order; floating-point parameters have full precision. Reports print raw total and per-start in-sample Bernoulli log loss for all starts and R7, and predicted/observed R7 counts **for record-only purposes**, not as held-out scores. These diagnostics also print for a flagged fit before failure returns without writing an anchor. Fixed inputs reproduce files and reports on one architecture, excluding the elapsed line.
+
+**Q17 forward bar remains authoritative.** A shared-voltage fit used for forward claims or regeneration of `target-fit-*` must beat the constant predictor's log loss on a held-out session's R7 starts and predict total R7 failures within a factor of 2 ([#105](https://github.com/shgew/togi/issues/105)). The first candidate failed on 2026-10-04: 36.0 predicted against 17 observed (above the allowed 34), despite log loss 0.270 below constant 0.399. That check was not blind; it was not retuned afterwards, and a future forward claim needs a new blind session. This all-facts anchor neither reruns nor supersedes that check and does not authorize `target-fit-*` regeneration.
+
+To replay exact real facts over the anchor, set `replay = true` on a **bench suite scenario**, not in the machine TOML (that key is unsupported there). For example, place this one-scenario suite at `tools/bench/shared-voltage-suite.toml`:
+
+```toml
+[[scenario]]
+name = "target-shared-voltage-in-sample"
+machine = "machines/target-shared-voltage.toml"
+replay = true
+dev = [1]
+holdout = [101]
+```
+
+```sh
+just bench --suite tools/bench/shared-voltage-suite.toml --split dev
+```
+
+Machine paths resolve relative to the suite; facts resolve relative to the machine. The declared facts and BIOS context let `trialfacts.LoadReplay` construct `sim.NewReplay` for matching decisive trials, with fitted fallback on unmatched classes/profiles. A replay run remains in-sample evidence, not forward validation.
+
 ### Forward-chained check
 
 After the ensemble's model check, `just fit` orders sessions with decisive trials by their UTC session IDs, comparing equal-second numeric suffixes numerically (`-2` before `-10`). For each session after the first, it fits all earlier sessions' decisive trials once, without bootstrap resampling or model-check constraints, then predicts only the held-out session. These fits stay in memory and do not change the generated machine files.

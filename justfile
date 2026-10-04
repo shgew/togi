@@ -129,6 +129,11 @@ facts state_dir:
 fit *args:
     {{ dev }} go run ./tools/fit "$@"
 
+# Fit the all-facts IN-SAMPLE shared-voltage anchor; not forward-validated
+[group('run')]
+fit-shared-voltage *args:
+    {{ dev }} go run ./tools/fit --shared-voltage-in-sample "$@"
+
 # Run only the forward-chained check of the target fit, writing no machine files (`just forward --seal 1`)
 [group('run')]
 forward *args:
