@@ -39,6 +39,10 @@ func TestAvoidanceHistory(t *testing.T) {
 {"seq":3,"boot":"b","kind":"failure","trial":"t","attribution":"attributed","core":0,"offset":-20}
 {"seq":4,"boot":"b","kind":"profile.applied","offsets":[-20,0]}
 `, nil},
+		{"carried known failure despite record-only ID", `{"seq":2,"boot":"b","kind":"trial.intent","trial":"0001","record_only":true}
+{"seq":3,"boot":"b","kind":"failure","trial":"0001","attribution":"attributed","core":0,"offset":-20,"known_failure":2}
+{"seq":4,"boot":"b","kind":"profile.applied","offsets":[-20,0]}
+`, []finding{{4, "avoidance"}}},
 		{"BIOS change does not carry points", `{"seq":2,"boot":"b","kind":"session.carried","failure_points":false,"carried":[{"core":8,"failure_point":-20}]}
 {"seq":3,"boot":"b","kind":"profile.applied","offsets":[0,-20]}
 `, nil},

@@ -36,7 +36,8 @@ func (a *auditor) foldMarks(e journal.Event) {
 	case *journal.TrialIntent:
 		a.trials[p.Trial] = p
 	case *journal.Failure:
-		if intent := a.trials[p.Trial]; intent == nil || !intent.RecordOnly {
+		// A carried known failure keeps its source trial ID, which may collide with a local record-only trial.
+		if intent := a.trials[p.Trial]; p.KnownFailure != 0 || intent == nil || !intent.RecordOnly {
 			if p.Attribution == journal.Attributed && p.Core != nil {
 				a.mark(*p.Core, p.Offset, e.Seq)
 			}
@@ -113,6 +114,26 @@ func (a *auditor) checkOffsets(e journal.Event, offsets []int) {
 		if o < -50 || o > 0 {
 			a.add(e, "range", fmt.Sprintf("offset[%d]=%d is outside [-50, 0]", i, o))
 		}
+	}
+}
+
+// checkChosenOffsets covers offsets togi chooses. Readbacks and baselines report
+// the hardware, which may hold firmware offsets outside togi's range.
+func (a *auditor) checkChosenOffsets(e journal.Event) {
+	switch p := e.Data.(type) {
+	case *journal.SMUIntent:
+		a.checkOffsets(e, []int{p.Offset})
+	case *journal.TrialIntent:
+		a.checkOffsets(e, p.Profile)
+		if p.Offset != nil {
+			a.checkOffsets(e, []int{*p.Offset})
+		}
+	case *journal.CorePhase:
+		a.checkOffsets(e, []int{p.Offset})
+	case *journal.TunerDecision:
+		a.checkOffsets(e, []int{p.FromOffset, p.ToOffset})
+	case *journal.ProfileChange:
+		a.checkOffsets(e, p.To)
 	}
 }
 func (a *auditor) appliedProfile(e journal.Event, offsets []int) {

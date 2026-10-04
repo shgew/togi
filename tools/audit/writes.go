@@ -17,12 +17,11 @@ func (a *auditor) foldWrites(e journal.Event) {
 		a.write(e, p)
 	case *journal.SMUReadback:
 		a.registers[p.Core] = p.Offset
-		for _, cause := range e.Cause {
-			if w := a.pending[cause]; w != nil {
-				delete(w.cores, p.Core)
-				if len(w.cores) == 0 {
-					delete(a.pending, cause)
-				}
+		// Same-boot reconciliation reads every core without citing the interrupted write.
+		for seq, w := range a.pending {
+			delete(w.cores, p.Core)
+			if len(w.cores) == 0 {
+				delete(a.pending, seq)
 			}
 		}
 	case *journal.ProfileApplied:

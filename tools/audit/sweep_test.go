@@ -32,8 +32,8 @@ func TestTimingChecks(t *testing.T) {
 func TestSweepSuite(t *testing.T) {
 	t.Parallel()
 	base := t.TempDir()
-	input := suite{[]scenario{{Name: "default", Dev: []uint64{100}, Holdout: []uint64{200}}, {Name: "single", Machine: "one.toml"}, {Name: "ensemble", Machines: []string{"one.toml", filepath.Join(base, "two.toml")}, Replay: true}}}
-	want := suite{[]scenario{{Name: "default", Dev: []uint64{1, 2, 3}}, {Name: "single", Machine: filepath.Join(base, "one.toml"), Dev: []uint64{1, 2, 3}}, {Name: "ensemble", Machines: []string{filepath.Join(base, "one.toml"), filepath.Join(base, "two.toml")}, Replay: true, Dev: []uint64{1, 2, 3}}}}
+	input := suite{[]scenario{{Name: "default", Dev: []uint64{100}, Holdout: []uint64{200}}, {Name: "single", Machine: "one.toml"}, {Name: "ensemble", Machines: []string{"", "one.toml", filepath.Join(base, "two.toml")}, Replay: true}}}
+	want := suite{[]scenario{{Name: "default", Dev: []uint64{1, 2, 3}}, {Name: "single", Machine: filepath.Join(base, "one.toml"), Dev: []uint64{1, 2, 3}}, {Name: "ensemble", Machines: []string{"", filepath.Join(base, "one.toml"), filepath.Join(base, "two.toml")}, Replay: true, Dev: []uint64{1, 2, 3}}}}
 	if diff := cmp.Diff(want, sweepSuite(input, base, 3)); diff != "" {
 		t.Fatalf("suite (-want +got):\n%s", diff)
 	}

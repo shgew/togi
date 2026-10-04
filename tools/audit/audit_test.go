@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -103,7 +105,39 @@ func TestAuditInvariants(t *testing.T) {
 		{"invalid written range", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set","core":0,"offset":1}
 {"seq":3,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":1,"cause":[2]}
 {"seq":4,"boot":"b","kind":"smu.readback","core":0,"offset":1,"cause":[3]}
-`, false, []finding{{3, "range"}}},
+`, false, []finding{{2, "range"}, {3, "range"}}},
+		{"invalid chosen ranges", `{"seq":2,"boot":"b","kind":"tuner.decision","core":0,"from_offset":0,"to_offset":-51}
+{"seq":3,"boot":"b","kind":"core.phase","core":0,"offset":1}
+{"seq":4,"boot":"b","kind":"trial.intent","trial":"t","offset":-51,"profile":[-51,0]}
+{"seq":5,"boot":"b","kind":"profile.change","from":[0,0],"to":[0,1]}
+`, false, []finding{{2, "range"}, {3, "range"}, {4, "range"}, {4, "range"}, {5, "range"}}},
+		{"firmware readback", `{"seq":2,"boot":"b","kind":"smu.readback","core":0,"offset":10}
+{"seq":3,"boot":"b","kind":"session.baseline","offsets":[10,0],"cause":[2]}
+`, false, nil},
+		{"previous boot intent", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set","core":0,"offset":0}
+{"seq":3,"boot":"c","kind":"smu.write","op":"set","core":0,"offset":0,"cause":[2]}
+{"seq":4,"boot":"c","kind":"smu.readback","core":0,"offset":0,"cause":[3]}
+{"seq":5,"boot":"c","kind":"shutdown","reason":"laps"}
+`, true, []finding{{3, "write_protocol"}}},
+		{"reused intent", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set","core":0,"offset":0}
+{"seq":3,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":0,"cause":[2]}
+{"seq":4,"boot":"b","kind":"smu.readback","core":0,"offset":0,"cause":[3]}
+{"seq":5,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":0,"cause":[2]}
+{"seq":6,"boot":"b","kind":"smu.readback","core":0,"offset":0,"cause":[5]}
+{"seq":7,"boot":"b","kind":"shutdown","reason":"laps"}
+`, true, []finding{{5, "write_protocol"}}},
+		{"write interrupted by reboot", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set","core":0,"offset":-5}
+{"seq":3,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":-5,"cause":[2]}
+{"seq":4,"boot":"c","kind":"core.phase","core":0}
+{"seq":5,"boot":"c","kind":"shutdown","reason":"laps"}
+`, true, nil},
+		{"same-boot reconciliation readbacks", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set","core":0,"offset":-5}
+{"seq":3,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":-5,"cause":[2]}
+{"seq":4,"boot":"b","kind":"smu.readback","core":0,"offset":-5}
+{"seq":5,"boot":"b","kind":"smu.readback","core":8,"offset":0}
+{"seq":6,"boot":"b","kind":"profile.restored","offsets":[0,0]}
+{"seq":7,"boot":"b","kind":"shutdown","reason":"laps"}
+`, true, nil},
 		{"earlier cause", `{"seq":2,"boot":"b","kind":"tuner.decision","core":0,"cause":[1]}
 `, false, nil},
 		{"self and future cause", `{"seq":2,"boot":"b","kind":"tuner.decision","core":0,"cause":[2,3,0]}
@@ -113,6 +147,14 @@ func TestAuditInvariants(t *testing.T) {
 `, true, nil},
 		{"dead ended", `{"seq":2,"boot":"b","kind":"deadend","condition":"preflight","detail":"unsupported machine"}
 `, true, nil},
+		{"archived", `{"seq":2,"boot":"b","kind":"core.phase","core":0}
+{"seq":3,"boot":"b","kind":"session.archived","session":"test","path":"archive/test.jsonl"}
+{"seq":4,"boot":"b","kind":"session.warning","operation":"write state projection"}
+`, true, nil},
+		{"reset all", `{"seq":2,"boot":"b","kind":"command.reset","all":true}
+`, true, nil},
+		{"reset one core does not conclude", `{"seq":2,"boot":"b","kind":"command.reset","core":0}
+`, true, []finding{{2, "termination"}}},
 		{"no conclusion", `{"seq":2,"boot":"b","kind":"core.phase","core":0}
 `, true, []finding{{2, "termination"}}},
 		{"no shutdown reason", `{"seq":2,"boot":"b","kind":"shutdown"}
@@ -190,5 +232,96 @@ func TestProjectedState(t *testing.T) {
 				t.Fatalf("projection (-want +got):\n%s\n%+v", diff, issues)
 			}
 		})
+	}
+}
+
+func writeJournal(t *testing.T, path, header, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(header+body), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDirectoryJournals(t *testing.T) {
+	t.Parallel()
+	shutdown := `{"seq":2,"boot":"b","kind":"shutdown","reason":"laps"}
+`
+	for _, tc := range []struct {
+		name, archive string
+		simulated     bool
+		want          []finding
+	}{
+		{"glob metacharacters in name", `{"seq":2,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":0}
+`, false, []finding{{2, "write_protocol"}}},
+		{"transition archive ends anywhere", `{"seq":2,"boot":"b","kind":"smu.intent","op":"set","core":0,"offset":-5}
+{"seq":3,"boot":"b","kind":"smu.write","op":"set","core":0,"offset":-5,"cause":[2]}
+`, true, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := filepath.Join(t.TempDir(), "copy[1]")
+			writeJournal(t, filepath.Join(dir, "archive", "old.jsonl"), header, tc.archive)
+			writeJournal(t, filepath.Join(dir, "events.jsonl"), header, shutdown)
+			issues, count, err := auditDirectory(dir, tc.simulated)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(2, count); diff != "" {
+				t.Fatal(diff)
+			}
+			if diff := cmp.Diff(tc.want, findings(issues)); diff != "" {
+				t.Fatalf("findings (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestOlderRulesetSnapshot(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeJournal(t, filepath.Join(dir, "events.jsonl"), strings.Replace(header, `"ruleset":8`, `"ruleset":7`, 1), "")
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(`{"last_seq":1}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	issues, _, err := auditDirectory(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) > 0 {
+		t.Fatalf("older ruleset snapshot reported: %+v", issues)
+	}
+}
+
+func TestRecordLookupIgnoresPathSpelling(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	root := filepath.Join(base, "bench-1")
+	writeJournal(t, filepath.Join(root, "s", "dev-1", "events.jsonl"), header, `{"seq":2,"boot":"b","kind":"core.phase","core":0}
+`)
+	records := filepath.Join(base, "records.jsonl")
+	if err := os.WriteFile(records, []byte(`{"scenario":"s","seed":1,"split":"dev","status":"concluded","wall_s":1}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(wd, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if diff := cmp.Diff(1, run([]string{"--records", records, "--root", relative, filepath.Join(root, "s", "dev-1")}, &stdout, &stderr)); diff != "" {
+		t.Fatalf("exit (-want +got):\n%s\n%s", diff, stderr.String())
+	}
+	var issue violation
+	if err := json.Unmarshal(stdout.Bytes(), &issue); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(finding{2, "termination"}, finding{issue.Seq, issue.Check}); diff != "" {
+		t.Fatalf("finding (-want +got):\n%s", diff)
 	}
 }

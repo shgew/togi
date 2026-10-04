@@ -73,14 +73,25 @@ func run(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 	}
+	// Relative and absolute spellings of one run directory share a record.
 	metadata := make(map[string]runRecord)
 	for _, r := range records {
-		metadata[filepath.Clean(runDirectory(o.root, r))] = r
+		key, err := filepath.Abs(runDirectory(o.root, r))
+		if err != nil {
+			fmt.Fprintf(stderr, "audit: %v\n", err)
+			return 1
+		}
+		metadata[key] = r
 	}
 	found := timingViolations(records, o.root)
 	journals := 0
 	for _, dir := range dirs {
-		r, simulated := metadata[filepath.Clean(dir)]
+		key, err := filepath.Abs(dir)
+		if err != nil {
+			fmt.Fprintf(stderr, "audit: %v\n", err)
+			return 1
+		}
+		r, simulated := metadata[key]
 		issues, count, err := auditDirectory(dir, simulated)
 		journals += count
 		if err != nil {
@@ -106,9 +117,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func auditDirectory(dir string, simulated bool) ([]violation, int, error) {
-	archives, err := filepath.Glob(filepath.Join(dir, "archive", "*.jsonl"))
+	archives, err := archivePaths(dir)
 	if err != nil {
-		return nil, 0, fmt.Errorf("list archives: %w", err)
+		return nil, 0, err
 	}
 	paths := archives
 	paths = append(paths, filepath.Join(dir, "events.jsonl"))
@@ -124,7 +135,9 @@ func auditDirectory(dir string, simulated bool) ([]violation, int, error) {
 			continue
 		}
 		count++
-		issues := auditEvents(events, simulated)
+		// An archive may end at a transition or an interrupted action; only a
+		// finished run's current journal must conclude.
+		issues := auditEvents(events, simulated && filepath.Base(path) == "events.jsonl")
 		for i := range issues {
 			issues[i].Directory, issues[i].Journal = dir, path
 		}
@@ -160,8 +173,12 @@ func auditDirectory(dir string, simulated bool) ([]violation, int, error) {
 		if snapshot.LastSeq != seq {
 			continue
 		}
+		// Replay needs the current ruleset; an older session has no current projection.
+		if ruleset := journal.BuildOf(events).Ruleset; ruleset != 0 && ruleset != tuner.Ruleset {
+			continue
+		}
 		// History reading intentionally omits configuration. Replay uses the complete
-		// current-ruleset reader instead; older sessions cannot have a current projection.
+		// current-ruleset reader instead.
 		events, _, err = journal.ReadReplay(dir, tuner.Ruleset)
 		if err != nil {
 			issue.Reason = fmt.Sprintf("cannot compare state.json projection: %v", err)
@@ -182,6 +199,24 @@ func auditDirectory(dir string, simulated bool) ([]violation, int, error) {
 		}
 	}
 	return found, count, nil
+}
+
+// archivePaths lists archive/*.jsonl literally: a state directory name may contain glob metacharacters.
+func archivePaths(dir string) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(dir, "archive"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list archives: %w", err)
+	}
+	var paths []string
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".jsonl") {
+			paths = append(paths, filepath.Join(dir, "archive", entry.Name()))
+		}
+	}
+	return paths, nil
 }
 
 func projectionDifferences(projected journal.State, cached []byte) ([]string, error) {

@@ -70,7 +70,8 @@ func (a *auditor) fold(e journal.Event) {
 		slices.Sort(a.cores)
 	}
 	if e.Boot != a.boot {
-		a.flushWrites()
+		// journal.md rule 2: a reboot may interrupt a write before its readback.
+		clear(a.pending)
 		a.boot = e.Boot
 		clear(a.registers)
 		a.baselineRegisters()
@@ -81,6 +82,7 @@ func (a *auditor) fold(e journal.Event) {
 		}
 	}
 	a.foldMarks(e)
+	a.checkChosenOffsets(e)
 	a.foldWrites(e)
 	a.foldConclusion(e)
 	a.seen[e.Seq] = e

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -91,9 +92,16 @@ func sweep(o options, _, stderr io.Writer) (string, string, error) {
 	if closeErr != nil {
 		return "", "", fmt.Errorf("close bench log: %w", closeErr)
 	}
-	roots, err := filepath.Glob(filepath.Join(evidence, "bench-*"))
+	// The evidence path may contain glob metacharacters, so list it literally.
+	entries, err := os.ReadDir(evidence)
 	if err != nil {
 		return "", "", fmt.Errorf("find retained bench root: %w", err)
+	}
+	var roots []string
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "bench-") {
+			roots = append(roots, filepath.Join(evidence, entry.Name()))
+		}
 	}
 	if len(roots) != 1 {
 		return "", "", fmt.Errorf("find retained bench root in %s: got %d roots", evidence, len(roots))
@@ -109,7 +117,7 @@ func sweepSuite(input suite, base string, seeds int) suite {
 			s.Machine = filepath.Join(base, s.Machine)
 		}
 		for j, path := range s.Machines {
-			if !filepath.IsAbs(path) {
+			if path != "" && !filepath.IsAbs(path) {
 				s.Machines[j] = filepath.Join(base, path)
 			}
 		}
