@@ -109,6 +109,8 @@ Rebuild (`nixos-rebuild boot`, or your usual way), then reboot. In BIOS, every C
 
 ## 3. A quick in-session test
 
+Start sessions from the [tuning boot](#4-overnight-the-tuning-boot), especially after a breaking update: it has hardware-watchdog reset protection. An in-session run is an optional way to watch a few trials on the desktop, not the recommended way to start a session.
+
 ```sh
 sudo togi run
 ```
@@ -120,13 +122,13 @@ togi status
 togi events --kind trial
 ```
 
-If the machine crashes during a trial, it comes back to the normal desktop; the next `sudo togi run` attributes the crash from the journal and continues.
+If the machine freezes during an in-session trial, it needs a manual reset unless an active hardware watchdog provides reset protection. `sudo togi run` warns when no hardware watchdog is active and continues; it does not arm one. After a reset or crash reboot, the next run attributes the crash from the journal and continues.
 
 ## 4. Overnight: the tuning boot
 
 Reboot and pick "NixOS - togi" in the GRUB menu once. That entry boots to a console with no desktop, and tty1 shows `togi watch`, a dashboard of the session. Its log is on tty3 (Alt+F3), with the kernel's messages; tty2 has a login prompt. `togi.service` tunes unattended. GRUB remembers the entry, so every crash reboot returns to it and the service resumes. Shutting down or rebooting on purpose, with the power button, `poweroff` or `reboot`, leaves the tuning boot: togi stops cleanly and the next boot selects your newest normal generation. To keep tuning across your own reboots instead, set `services.togi.tuning.leaveOnShutdown = false;`. Automatic service restart-limit retry reboots are different: their boot-local `/run/togi-retry-tuning-boot` marker makes the shutdown hook preserve the tuning entry even with this option on. The recovery command creates the marker only after its GRUB operations succeed and removes it if reboot fails; the shell fallback removes it as well.
 
-The tuning boot loads `sp5100_tco` in the initrd and lets systemd arm and feed the hardware watchdog. Before writing any Curve Optimizer offsets or starting a workload, togi waits up to 30 seconds for an active hardware watchdog, checking once per second. If it never arms, togi stops with a preflight dead end and clears the saved entry; it does not start tuning without reset protection. `togi events --kind preflight.check` shows the final `watchdog` result. A normal `sudo togi run` does not require or wait for the watchdog.
+The tuning boot loads `sp5100_tco` in the initrd and lets systemd arm and feed the hardware watchdog. Before writing any Curve Optimizer offsets or starting a workload, togi waits up to 30 seconds for an active hardware watchdog, checking once per second. If it never arms, togi stops with a preflight dead end and clears the saved entry; it does not start tuning without reset protection. `togi events --kind preflight.check` shows the final `watchdog` result. A normal `sudo togi run` checks once and warns when none is active, but does not require or wait for the watchdog.
 
 The tuning boot also enables kernel-message dumps on orderly reboot or shutdown, as well as panic. When the next `run` detects an unclean togi boot and finds its EFI pstore archive, `togi events --json --kind crash.detected` includes `pstore.path` and the last lines of the saved kernel messages. The ordinary event line and dashboard name the archive location. The archive stays under `/var/lib/systemd/pstore/`; missing records, such as a hard freeze without a dump, leave the field absent. Reading this optional diagnostic cannot stop recovery.
 
@@ -160,7 +162,7 @@ Leave reasons survive in GRUB as one pending `togi_leave_reason` record. To insp
 
 ## 7. After a breaking update
 
-An update whose changelog line starts with **BREAKING** changes the tuning rules or the journal format, so it cannot continue a session written by an earlier build. If the line also renames configuration keys or `togi run` flags, rename them first in `services.togi.settings` (or `/etc/togi/config.toml`) and in anything that runs `togi run`: togi refuses the old names, and `togi run` exits 2 before it archives anything. The session needs nothing by hand: rebuild, then run `sudo togi run` or pick "NixOS - togi". The first run archives the old session to `/var/lib/togi/archive/` and starts a new one that carries what the old one found:
+An update whose changelog line starts with **BREAKING** changes the tuning rules or the journal format, so it cannot continue a session written by an earlier build. If the line also renames configuration keys or `togi run` flags, rename them first in `services.togi.settings` (or `/etc/togi/config.toml`) and in anything that runs `togi run`: togi refuses the old names, and `togi run` exits 2 before it archives anything. The session needs nothing by hand: rebuild, then reboot and pick "NixOS - togi". Starting from the tuning boot is especially important after a breaking update: a transition starts checking each core at its carried solo limit, the deepest offset that core passed alone in the earlier session. An in-session run without an active hardware watchdog can freeze until a manual reset. The first run archives the old session to `/var/lib/togi/archive/` and starts a new one that carries what the old one found:
 - each core's deepest offset passing a trial run alone becomes a candidate solo limit, and the new core checks it in search; eligible carried passes count toward the required starts of its frozen R1 and R2 classes;
 - each core's shallowest attributed failure, including a single culprit found by a hunt, becomes a carried failure point; combinations do not carry, and reset or defect exclusions still apply;
 - a candidate solo limit at or deeper than its carried failure point is clamped one count shallower.

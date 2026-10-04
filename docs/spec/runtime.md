@@ -114,7 +114,7 @@ Hardware construction checks CPU family/model from `/proc/cpuinfo` and the drive
 Completed session preflight is the startup boundary for stale-scope containment and subsequent same-boot reconciliation, before `startSession` and the first offset write. An interrupted same-boot dead-end completion passes this same boundary before reconciling hardware and completing its recorded action; it starts no tuning.
 
 `run` checks, each recorded as a `preflight.check` event:
-1. In a tuning boot (`--tuning-boot`), a hardware watchdog is armed: at least one `/sys/class/watchdog/watchdog*/state` is `active`, with a readable, nonempty `identity` other than `Software Watchdog`. The software watchdog cannot recover a hardware freeze. This check runs before the other checks: it checks immediately, then polls every 1 second for at most 30 seconds, recording one final `preflight.check` named `watchdog`, not one event per poll. Normal/manual `run` without `--tuning-boot` neither requires nor waits for a watchdog.
+1. In a tuning boot (`--tuning-boot`), a hardware watchdog is armed: at least one `/sys/class/watchdog/watchdog*/state` is `active`, with a readable, nonempty `identity` other than `Software Watchdog`. The software watchdog cannot recover a hardware freeze. This check runs before the other checks: it checks immediately, then polls every 1 second for at most 30 seconds, recording one final `preflight.check` named `watchdog`, not one event per poll.
 2. Running as root.
 3. The CPU is family `0x1A`, model `0x40`-`0x4F` (Granite Ridge desktop).
 4. `ryzen_smu` is loaded and reports a matching codename.
@@ -126,6 +126,8 @@ Completed session preflight is the startup boundary for stale-scope containment 
 10. The BIOS context matches the session, when resuming and all required checks passed.
 
 Any failed check is a dead end. An unarmed watchdog after the bounded wait is dead end `preflight` (exit 15), with the tuning boot's usual saved-entry clear deferred until any required same-boot reconciliation succeeds; no SMU offset write or trial can happen before the watchdog check succeeds. When no same-boot reconciliation is required, a stop signal during the wait records `shutdown` and exits 0, rather than recording a watchdog failure.
+
+Normal/manual `run` without `--tuning-boot` uses the same hardware-watchdog readiness check once at startup, before its first offset write. If none is active, it prints a warning on stderr that a freeze needs a manual reset and recommends starting sessions from the tuning boot, especially after a breaking update. It continues without requiring, waiting for or arming a watchdog. This advisory is not a failed mandatory preflight check or an operation error, and writes no journal event; the tuning boot's watchdog preflight is unchanged. The notice prints before any terminal dashboard starts.
 
 ## Same-boot resume
 
