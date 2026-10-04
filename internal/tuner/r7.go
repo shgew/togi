@@ -394,12 +394,34 @@ func (s *State) lowerPreferred(a, b int) bool {
 	}
 	return a > b
 }
-func (s *State) r7VoltageTarget(f entry, id int, request float64) (float64, []int) {
-	type candidate struct {
-		voltage float64
-		seqs    []int
+
+// targetCandidate collects the qualifying passes at one profile and the lowest
+// top request among them.
+type targetCandidate struct {
+	voltage float64
+	minSeq  int
+	seqs    []int
+}
+
+func (g *targetCandidate) add(voltage float64, seq int) {
+	if voltage < g.voltage || voltage == g.voltage && seq < g.minSeq {
+		g.voltage, g.minSeq = voltage, seq
 	}
-	groups := map[string]*candidate{}
+	g.seqs = append(g.seqs, seq)
+}
+
+// cited returns the earliest n passes, always including the one that set the target.
+func (g *targetCandidate) cited(n int) []int {
+	seqs := slices.Clone(g.seqs[:n])
+	if !slices.Contains(seqs, g.minSeq) {
+		seqs[n-1] = g.minSeq
+		slices.Sort(seqs)
+	}
+	return seqs
+}
+
+func (s *State) r7VoltageTarget(f entry, id int, request float64) (float64, []int) {
+	groups := map[string]*targetCandidate{}
 	for class, entries := range s.ledger {
 		if class.regime != machine.R7 || class.workload != f.class.workload {
 			continue
@@ -427,22 +449,19 @@ func (s *State) r7VoltageTarget(f entry, id int, request float64) (float64, []in
 				continue
 			}
 			key := fmt.Sprint(e.profile)
-			group := groups[key]
-			if group == nil {
-				group = &candidate{voltage: voltage}
-				groups[key] = group
+			if groups[key] == nil {
+				groups[key] = &targetCandidate{voltage: voltage, minSeq: e.seq}
 			}
-			group.voltage = min(group.voltage, voltage)
-			group.seqs = append(group.seqs, e.seq)
+			groups[key].add(voltage, e.seq)
 		}
 	}
 	best := math.Inf(1)
 	var seqs []int
+	first := 0
 	for _, g := range groups {
 		slices.Sort(g.seqs)
-		if len(g.seqs) >= s.n && (g.voltage < best || g.voltage == best && (len(seqs) == 0 || g.seqs[0] < seqs[0])) {
-			best = g.voltage
-			seqs = slices.Clone(g.seqs[:s.n])
+		if len(g.seqs) >= s.n && (g.voltage < best || g.voltage == best && (len(seqs) == 0 || g.seqs[0] < first)) {
+			best, first, seqs = g.voltage, g.seqs[0], g.cited(s.n)
 		}
 	}
 	return best, seqs

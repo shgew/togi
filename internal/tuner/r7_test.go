@@ -479,6 +479,28 @@ func TestR7FailureUsesRequestsAsOfItsStart(t *testing.T) {
 	}
 }
 
+func TestR7VoltageTargetCitesItsLowestPass(t *testing.T) {
+	h := r7Harness(t)
+	cores := []int{0, 1}
+	passed := []int{-20, -30, -30, -30}
+	for range h.s.n {
+		r7Fact(h, true, cores, passed, map[int]float64{0: 1.136, 1: 1.08}, []int{0}, nil, nil, nil)
+	}
+	lowest := r7Fact(h, true, cores, passed, map[int]float64{0: 1.118, 1: 1.08}, []int{0}, nil, nil, nil)
+	r7Fact(h, false, cores, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
+	a, ok := h.s.Drain()
+	move, moved := a.Payload.(*journal.TunerDecision)
+	if !ok || !moved || move.Core != 0 {
+		t.Fatalf("%+v", a)
+	}
+	if diff := cmp.Diff(-25, move.ToOffset); diff != "" {
+		t.Fatal(diff)
+	}
+	if !slices.Contains(a.Cause, lowest.Seq) {
+		t.Fatalf("cause %v omits the pass #%d that set the 1.118 V target", a.Cause, lowest.Seq)
+	}
+}
+
 func TestR7BackoffCountsEachCarriedFactOnce(t *testing.T) {
 	h := r7Harness(t)
 	r7Fact(h, false, []int{0, 1}, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
