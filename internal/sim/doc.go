@@ -33,8 +33,16 @@
 // voltage. Requests depend on workload, offset and the modeled CCD clock; clocks
 // depend on loaded cores, package/thermal budgets and cross-CCD power imbalance.
 // Each loaded core fails with a smooth softplus hazard in voltage minus its
-// threshold. Only computation-error signal draws name the failing core; other
-// draws crash without MCEs. Idle and single-core failures retain the old rules.
+// required voltage: ThresholdV plus the optional ThresholdClockVPer100MHz term
+// times its CCD clock's departure from the reference, in units of 100 MHz.
+// The term defaults to zero, preserving clock-independent thresholds.
+// Optional BackgroundRate adds one CO-independent platform crash rate per
+// multi-core R7 trial, independent of workload and loaded-core count, including
+// all-zero profiles. It defaults to zero, leaves no core/MCE/stall attribution,
+// and receives the same onset boost as the voltage hazards.
+// R7FailureShare exposes that core's share of total steady-state hazard without RNG.
+// Only computation-error signal draws name the failing core; other draws crash
+// without MCEs. Idle and single-core failures retain the old rules.
 // The opt-in model also emits synthetic requests and clocks in streamed samples.
 // See docs/simulating.md for the machine-file contract and formulas.
 //

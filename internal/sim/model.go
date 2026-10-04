@@ -109,6 +109,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	defer func() { err = errors.Join(err, r.sampleConditions(m.now.Sub(start), stallCore)) }()
 	failCore, failAt, forcedSignal := -1, spec.Duration, machine.Signal("")
 	idleFailure := false
+	backgroundFailure := false
 	var jointCrash *Joint
 	script, scripted := m.cfg.Script[spec.ID]
 	fact, replayed := m.replayDraw(spec)
@@ -191,6 +192,16 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				}
 			}
 		}
+		if m.sharedR7(spec) && m.cfg.SharedVoltage.BackgroundRate > 0 {
+			core := spec.Cores[0]
+			t := m.failureDraw(m.cfg.SharedVoltage.BackgroundRate, 0, spec, core, "voltage-background")
+			if t < failAt {
+				failCore, failAt, forcedSignal = core, t, machine.Crash
+				idleFailure = false
+				backgroundFailure = true
+				jointCrash = &Joint{} // Platform background carries no core attribution.
+			}
+		}
 	}
 	res := machine.Result{Ran: spec.Duration}
 	if len(spec.Cores) > 0 {
@@ -245,7 +256,9 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 		r.progress(report, res)
 		return res, nil
 	case machine.Crash:
-		stallCore = failCore
+		if !backgroundFailure {
+			stallCore = failCore
+		}
 		m.now = start.Add(failAt)
 		switch {
 		case replayed:

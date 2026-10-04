@@ -64,11 +64,13 @@ That hand-set scenario is shaped after measured request spreads and clocks, not 
 
 The table supplies `idle_v`, `margin_v` (hazard smoothing width), `rate` (failures/second per core at its threshold), and `power_limit_w` and `thermal_limit_w`. Both limits are effective steady-state package-power budgets in watts; the smaller applies. This is a simple steady-state model, not a heat-soak simulation. All must be finite and positive.
 
+Optional `background_rate` defaults to zero and must be finite and nonnegative. It adds one CO-independent platform-failure rate per multi-core R7 trial, in failures/second, independent of workload, profile (including all-zero offsets), and loaded-core count. It is separate from the voltage-margin hazards: drawing it always produces an unattributed crash, without MCEs or a fabricated stalled worker. The usual onset boost applies; draws, `Hazard`, and `FailureProbability` use the same rate. It does not apply to single-core R7 or other regimes, and replayed outcomes bypass it. Omitting it preserves existing behavior.
+
 For each of the three R7 workload IDs, `[shared_voltage.workload.<id>]` supplies:
 
 | Key | Meaning |
 |---|---|
-| `reference_mhz` | Clock at which request bases are defined |
+| `reference_mhz` | Clock at which request bases and required-voltage thresholds are defined |
 | `full_mhz` | Two unloaded-package full-CCD clock intercepts, MHz |
 | `idle_gain_mhz` | Additional MHz per idled core on that CCD |
 | `watts_per_core` | Loaded-core power at offset −35 |
@@ -78,9 +80,11 @@ For each of the three R7 workload IDs, `[shared_voltage.workload.<id>]` supplies
 
 For a loaded CCD, clock is `full_mhz[ccd] + idle_gain_mhz*(8-loaded_count) - package_mhz_per_w*max(0, package_watts-budget)`. When both CCDs load, subtract `balance_mhz_per_w*(ccd_watts-package_watts/2)` too. Power sums `max(0, watts_per_core + offset_watts_per_count*(offset+35))` over loaded cores only. Round clocks to whole MHz, at least 1. This captures package pressure and cross-CCD power redistribution without a feedback solver. At −35 on the supplied machine, whole-CCD AVX2 runs 5.24/5.22 GHz and seven cores gain 30 MHz. All-core AVX-512 runs 4.799 GHz; setting CCD0 to offset 0 gives 4.329/4.889 GHz.
 
-Each workload requires 16 `[[shared_voltage.workload.<id>.core]]` tables in core-ID order. Each supplies `base_v` at offset 0, `threshold_v`, `count_v` (default 0.0036 V/count), and `clock_v_per_100mhz`. Loaded request is `base_v + count_v*offset + clock_v_per_100mhz*(clock-reference_mhz)/100`. Idle requests equal `idle_v` and **never set the modeled rail**. The shared voltage is the maximum loaded request across both CCDs.
+Each workload requires 16 `[[shared_voltage.workload.<id>.core]]` tables in core-ID order. Each supplies `base_v` at offset 0, `threshold_v` at the reference clock, `count_v` (default 0.0036 V/count), and `clock_v_per_100mhz`. The optional `threshold_clock_v_per_100mhz` defaults to zero. Both clock coefficients must be finite and nonnegative; no upper bound is imposed by the machine decoder. Loaded request is `base_v + count_v*offset + clock_v_per_100mhz*(clock-reference_mhz)/100`. Idle requests equal `idle_v` and **never set the modeled rail**. The shared voltage is the maximum loaded request across both CCDs.
 
-Each loaded core has margin `shared_voltage-threshold_v` and rate `rate*softplus(-margin/margin_v)/ln(2)`, where `softplus(x)=ln(1+exp(x))`. Hazards are smooth above and below the threshold, increase below it, and sum across loaded cores. The usual onset boost applies equally to draws and `FailureProbability`; `Hazard` returns the steady-state sum.
+Required voltage for a loaded core is `threshold_v + threshold_clock_v_per_100mhz*(clock-reference_mhz)/100`, using that core's CCD clock. This optional V/F term models the voltage needed to sustain a higher frequency, separately from the voltage the core requests. Equal request and required-voltage slopes cancel a common clock shift when the same CCD supplies the rail; a different CCD setting the rail need not cancel it. With the default zero coefficient, existing machines keep their clock-independent thresholds and exact previous behavior.
+
+Each loaded core has margin `shared_voltage-required_voltage` and rate `rate*softplus(-margin/margin_v)/ln(2)`, where `softplus(x)=ln(1+exp(x))`. Hazards are smooth above and below the threshold, increase below it, and sum across loaded cores. The usual onset boost applies equally to draws and `FailureProbability`; `Hazard` returns the steady-state sum. `Machine.R7FailureShare` exposes an individual loaded core's shared-voltage rate divided by the total steady-state hazard, including platform background and unloaded-core hazards, for attribution likelihoods. Background contributes no named-core numerator. The method returns zero for invalid or unloaded cores, trials outside multi-core shared-voltage R7, or zero total hazard.
 
 A failing core draws from its optional `signals` map, otherwise `[model.signals]`. Only a computation-error draw remains a computation error naming that core; every other signal becomes an unattributed crash, without fabricated MCEs. Worker-stall telemetry can still name the core that stopped first. Fixed seed and history reproduce failures and telemetry. Non-R7 samples use the AVX2 request/clock parameters illustratively, without changing their hazards. Other PM-table arrays are synthetic: loaded C0 is 100%, idle CC6 is 100%, and unmodeled power and temperature lanes are zero.
 

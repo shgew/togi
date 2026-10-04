@@ -18,6 +18,7 @@ func (m *Machine) Hazard(profile []int, spec machine.TrialSpec) float64 {
 		for _, r := range m.voltageState(profile, spec).rates {
 			rate += r
 		}
+		rate += m.cfg.SharedVoltage.BackgroundRate
 	} else {
 		for _, joint := range m.cfg.Joints {
 			rate += m.jointRate(profile, spec.Regime, joint)
@@ -44,6 +45,7 @@ func (m *Machine) FailureProbability(profile []int, spec machine.TrialSpec) floa
 		for _, rate := range m.voltageState(profile, spec).rates {
 			hazard += rate * exposure(0)
 		}
+		hazard += m.cfg.SharedVoltage.BackgroundRate * exposure(0)
 	} else {
 		for _, joint := range m.cfg.Joints {
 			hazard += m.jointRate(profile, spec.Regime, joint) * exposure(joint.AfterS)

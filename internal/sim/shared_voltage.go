@@ -12,12 +12,13 @@ import (
 
 // SharedVoltage models the common rail, with independent loaded-core hazards.
 type SharedVoltage struct {
-	IdleV         float64                    `toml:"idle_v"`
-	MarginV       float64                    `toml:"margin_v"`
-	Rate          float64                    `toml:"rate"`
-	PowerLimitW   float64                    `toml:"power_limit_w"`
-	ThermalLimitW float64                    `toml:"thermal_limit_w"`
-	Workload      map[string]VoltageWorkload `toml:"workload"`
+	IdleV          float64                    `toml:"idle_v"`
+	MarginV        float64                    `toml:"margin_v"`
+	Rate           float64                    `toml:"rate"`
+	BackgroundRate float64                    `toml:"background_rate"`
+	PowerLimitW    float64                    `toml:"power_limit_w"`
+	ThermalLimitW  float64                    `toml:"thermal_limit_w"`
+	Workload       map[string]VoltageWorkload `toml:"workload"`
 }
 
 type VoltageWorkload struct {
@@ -32,11 +33,12 @@ type VoltageWorkload struct {
 }
 
 type VoltageCore struct {
-	BaseV           float64                    `toml:"base_v"`
-	ThresholdV      float64                    `toml:"threshold_v"`
-	CountV          float64                    `toml:"count_v"`
-	ClockVPer100MHz float64                    `toml:"clock_v_per_100mhz"`
-	Signals         map[machine.Signal]float64 `toml:"signals"`
+	BaseV                    float64                    `toml:"base_v"`
+	ThresholdV               float64                    `toml:"threshold_v"`
+	CountV                   float64                    `toml:"count_v"`
+	ClockVPer100MHz          float64                    `toml:"clock_v_per_100mhz"`
+	ThresholdClockVPer100MHz float64                    `toml:"threshold_clock_v_per_100mhz"`
+	Signals                  map[machine.Signal]float64 `toml:"signals"`
 }
 
 func normalizeVoltage(v *SharedVoltage, cores int) (*SharedVoltage, error) {
@@ -50,6 +52,9 @@ func normalizeVoltage(v *SharedVoltage, cores int) (*SharedVoltage, error) {
 	nonnegative := func(x float64) bool { return x >= 0 && !math.IsInf(x, 0) && !math.IsNaN(x) }
 	if !positive(v.IdleV) || !positive(v.MarginV) || !positive(v.Rate) || !positive(v.PowerLimitW) || !positive(v.ThermalLimitW) {
 		return nil, errors.New("shared_voltage idle_v, margin_v, rate and limits must be finite and positive")
+	}
+	if !nonnegative(v.BackgroundRate) {
+		return nil, errors.New("shared_voltage background_rate must be finite and nonnegative")
 	}
 	out := *v
 	out.Workload = maps.Clone(v.Workload)
@@ -70,7 +75,7 @@ func normalizeVoltage(v *SharedVoltage, cores int) (*SharedVoltage, error) {
 			if p.CountV == 0 {
 				p.CountV = .0036
 			}
-			if !positive(p.BaseV) || !positive(p.ThresholdV) || !positive(p.CountV) || !nonnegative(p.ClockVPer100MHz) {
+			if !positive(p.BaseV) || !positive(p.ThresholdV) || !positive(p.CountV) || !nonnegative(p.ClockVPer100MHz) || !nonnegative(p.ThresholdClockVPer100MHz) {
 				return nil, fmt.Errorf("shared_voltage workload %s core %d has invalid voltage parameters", workload.ID, c)
 			}
 			if p.Signals != nil {
@@ -104,6 +109,29 @@ func (m *Machine) R7Requests(profile []int, spec machine.TrialSpec) ([16]float32
 		return [16]float32{}, false
 	}
 	return m.voltageState(profile, spec).requests, true
+}
+
+// R7FailureShare returns a loaded core's shared-voltage rate divided by the
+// total steady-state hazard, including background and unloaded-core hazards.
+// It returns zero outside multi-core shared-voltage R7, for an unloaded or
+// invalid core, or when total hazard is zero. Profile needs one offset per core.
+func (m *Machine) R7FailureShare(profile []int, spec machine.TrialSpec, core int) float64 {
+	if !m.sharedR7(spec) || core < 0 || core >= len(m.limits) || !slices.Contains(spec.Cores, core) {
+		return 0
+	}
+	state := m.voltageState(profile, spec)
+	var total float64
+	total += m.cfg.SharedVoltage.BackgroundRate
+	for _, rate := range state.rates {
+		total += rate
+	}
+	for c := range m.limits {
+		total += m.coreRate(profile, spec, c)
+	}
+	if total == 0 {
+		return 0
+	}
+	return state.rates[core] / total
 }
 
 type voltageState struct {
@@ -150,7 +178,12 @@ func (m *Machine) voltageState(profile []int, spec machine.TrialSpec) voltageSta
 	}
 	for _, core := range spec.Cores {
 		// Softplus is smooth on both sides of the threshold and linear far below it.
-		x := (w.Core[core].ThresholdV - state.voltage) / v.MarginV
+		p := &w.Core[core]
+		threshold := p.ThresholdV
+		if p.ThresholdClockVPer100MHz != 0 {
+			threshold += p.ThresholdClockVPer100MHz * (float64(state.clocks[core/8]) - w.ReferenceMHz) / 100
+		}
+		x := (threshold - state.voltage) / v.MarginV
 		softplus := max(x, 0) + math.Log1p(math.Exp(-math.Abs(x)))
 		state.rates[core] = v.Rate * softplus / math.Ln2
 	}
