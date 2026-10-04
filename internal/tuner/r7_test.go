@@ -366,6 +366,10 @@ func TestR7ZeroAffectedCCDDeadEndsRegardlessOfOtherCCD(t *testing.T) {
 	if !ok || !ended || dead.Condition != journal.DeadEndFailureAtZero {
 		t.Fatalf("%+v", a)
 	}
+	want := "unattributed R7 failure counts against CCD 0's top group, and every loaded core of that CCD [0 1] is at CO 0; the instability is not caused by Curve Optimizer"
+	if diff := cmp.Diff(want, dead.Detail); diff != "" {
+		t.Fatal(diff)
+	}
 }
 
 func TestR7NamedZeroAttributionUsesStartTop(t *testing.T) {

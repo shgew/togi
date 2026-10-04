@@ -294,11 +294,12 @@ func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core) Action {
 	return s.r7Backoff(f, failed, s.core(chosen), cause, order)
 }
 
-// r7FailedAtZero explains why a named core at CO 0 ends the session: it was a
-// top requester of its CCD in that start.
+// r7FailedAtZero explains which zero rule ended the session: a named core that
+// was top in its start, or every loaded core of the affected CCD at CO 0.
 func (s *State) r7FailedAtZero(failed entry, id int, order r7Order) *journal.DeadEnd {
 	dead := failedAtZero(id)
-	if order.named {
+	switch {
+	case order.named:
 		basis := "its start's recorded top requesters"
 		if len(failed.top) == 0 {
 			basis = fmt.Sprintf("request measurements %v", order.sources)
@@ -307,6 +308,14 @@ func (s *State) r7FailedAtZero(failed entry, id int, order r7Order) *journal.Dea
 			}
 		}
 		dead.Detail = fmt.Sprintf("core %02d failed at CO 0 as a top requester of CCD %d by %s; the instability is not caused by Curve Optimizer", id, s.ccd[id], basis)
+	case failed.named == nil:
+		var loaded []int
+		for _, core := range failed.cores {
+			if s.ccd[core] == s.ccd[id] {
+				loaded = append(loaded, core)
+			}
+		}
+		dead.Detail = fmt.Sprintf("unattributed R7 failure counts against CCD %d's top group, and every loaded core of that CCD %v is at CO 0; the instability is not caused by Curve Optimizer", s.ccd[id], loaded)
 	}
 	return dead
 }
