@@ -349,9 +349,12 @@ func show(ctx context.Context, out io.Writer, size func() (int, int, error), tic
 					return fmt.Errorf("watch journal: %w", err)
 				}
 				changed := o.reload()
-				select {
-				case o.reloaded <- struct{}{}:
-				default:
+				if o.reloaded != nil {
+					select {
+					case o.reloaded <- struct{}{}:
+					case <-ctx.Done():
+						return nil
+					}
 				}
 				if !changed {
 					continue
