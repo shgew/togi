@@ -300,6 +300,10 @@ func (s Snapshot) combinationLines(t tables, width int, class sizeClass) []strin
 	if class != compactLayout {
 		out = append(out, tableRow(t.combos, "", offsets(func(id int) (string, lipgloss.Style) { return fmt.Sprintf("%02d", id), grey }), grey.Render(found), grey.Render("against the profile now")))
 	}
+	if 0 < shown && shown < len(ids) {
+		// Too many member cores for the columns: say which ones the rows leave out rather than hide them.
+		out = append(out, grey.Render(trimWords(fmt.Sprintf("columns show %d of %d member cores; not shown: %s · l: every event", shown, len(ids), coreIDs(ids[shown:])), width)))
+	}
 	for _, combo := range s.combos {
 		member := func(id int) (string, lipgloss.Style) {
 			for _, m := range combo.members {
@@ -667,7 +671,8 @@ func (s Snapshot) huntThen(t tables, width int, class sizeClass) []string {
 				at += fmt.Sprintf(", part %d", part)
 			}
 		}
-		steps = append(steps, textStyle.Render("resume ")+white.Render(at))
+		// The rerun's passes count toward the paused step, so the cycle may resume past it.
+		steps = append(steps, textStyle.Render("resume ")+white.Render(at)+textStyle.Render(", or past it once the rerun's passes complete it"))
 	}
 	var out []string
 	if class == compactLayout {
@@ -814,11 +819,13 @@ func (s Snapshot) huntStage(short bool) string {
 	case len(h.groups) == 0:
 		return "starting"
 	case len(h.plan) > 0:
-		at := 0
-		for i, part := range h.plan {
-			if part.running || at == 0 && part.group == 0 {
-				at = i + 1
-			}
+		// The part in flight, else one started but still short of its passes, else the next unstarted one.
+		at := 1 + slices.IndexFunc(h.plan, func(p huntPart) bool { return p.running })
+		if at == 0 {
+			at = 1 + slices.IndexFunc(h.plan, func(p huntPart) bool { return p.group != 0 && p.outcome == "running" })
+		}
+		if at == 0 {
+			at = 1 + slices.IndexFunc(h.plan, func(p huntPart) bool { return p.group == 0 })
 		}
 		if at == 0 {
 			return fmt.Sprintf("group %d", h.groups[len(h.groups)-1].id)
