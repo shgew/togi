@@ -33,3 +33,37 @@ func TestR7StatusSeparatesWorkloadsOffsetsAndTopRequesters(t *testing.T) {
 		}
 	}
 }
+
+func TestR7StatusUsesSortedProfileAndOnlyCCDParts(t *testing.T) {
+	s := New()
+	s.Fold(journal.Event{Seq: 1, Data: &journal.SessionStart{Cores: []machine.CoreInfo{{Core: 7, CCD: 1}, {Core: 3, CCD: 0}, {Core: 9, CCD: 1}, {Core: 5, CCD: 0}}}})
+	for _, c := range s.cores {
+		c.offset = map[int]int{3: -20, 5: -30, 7: -25, 9: -35}[c.id]
+	}
+	statuses := s.R7Status()
+	if len(statuses) != 4*len(machine.Workloads(machine.R7)) {
+		t.Fatalf("all-core part duplicated status rows: %d", len(statuses))
+	}
+	seen := map[string]map[int]bool{}
+	for _, status := range statuses {
+		if seen[status.Workload] == nil {
+			seen[status.Workload] = map[int]bool{}
+		}
+		if seen[status.Workload][status.Core] {
+			t.Fatalf("duplicate core/workload: %+v", status)
+		}
+		seen[status.Workload][status.Core] = true
+		if status.TopRequester != (status.Core == 3 || status.Core == 7) {
+			t.Fatalf("request order used enumeration rather than core-id profile: %+v", status)
+		}
+	}
+}
+
+func TestR7StatusWithoutTopology(t *testing.T) {
+	s := New()
+	class := trialClass{regime: machine.R7, workload: machine.Workloads(machine.R7)[0].ID}
+	s.ledger[class] = []entry{{pass: true, cores: []int{3, 7}, profile: []int{-20, -30}}}
+	if got := s.R7Status(); len(got) != 0 {
+		t.Fatalf("status invented cores without topology: %+v", got)
+	}
+}

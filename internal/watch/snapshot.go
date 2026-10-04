@@ -61,7 +61,6 @@ type requirementRecorder struct {
 	steps   map[string]int // the one-based checking step each cycle trial ran in
 }
 
-<<<<<<< HEAD
 // trialCount is which trial of its checking part, or else of its requirement, a trial was: index of of.
 type trialCount struct{ index, of int }
 
