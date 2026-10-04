@@ -31,8 +31,8 @@ func (s *State) partCCD(ids []int) int {
 	return ccd
 }
 
-func (s *State) cyclePart(req []requirement, partial *checkingStep, running *journal.TrialIntent) CyclePart {
-	p := CyclePart{Cores: slices.Clone(req[0].cores), CCD: s.partCCD(req[0].cores), RecordOnly: partial != nil, Done: true}
+func (s *State) cyclePart(req []requirement, running *journal.TrialIntent) CyclePart {
+	p := CyclePart{Cores: slices.Clone(req[0].cores), CCD: s.partCCD(req[0].cores), Done: true}
 	fullSize := len(s.cores)
 	if p.CCD >= 0 {
 		fullSize = 0
@@ -42,7 +42,8 @@ func (s *State) cyclePart(req []requirement, partial *checkingStep, running *jou
 			}
 		}
 	}
-	p.Full = !p.RecordOnly && len(p.Cores) == fullSize
+	p.Full = len(p.Cores) == fullSize
+	p.Partial = req[0].class.regime == machine.R7 && !p.Full
 	for _, q := range req {
 		if q.count == 0 {
 			continue
@@ -55,24 +56,22 @@ func (s *State) cyclePart(req []requirement, partial *checkingStep, running *jou
 			p.Long = q.count
 		}
 		passed := s.passes(q.class, s.checking.profile, s.checking.startSeq, cycleEvidence)
-		failed := 0
-		for _, e := range s.ledger[q.class] {
-			if e.seq > s.checking.startSeq && !e.pass && !e.carried && atLeastDeep(e.profile, s.checking.profile) {
-				failed++
-			}
-		}
-		completed := passed
-		if partial != nil {
-			completed = partial.completed[q.class]
-			passed = partial.passed[q.class]
-			failed = partial.failed[q.class]
-		}
 		p.Passed += passed
-		p.Failed += failed
-		p.Done = p.Done && completed >= q.count
-		p.Running = p.Running || (running != nil && classOf(running) == q.class && running.RecordOnly == p.RecordOnly)
+		p.Failed += s.cycleFailures(q.class, s.checking.profile)
+		p.Done = p.Done && passed >= q.count
+		p.Running = p.Running || (running != nil && classOf(running) == q.class)
 	}
 	return p
+}
+
+func (s *State) cycleFailures(k trialClass, profile []int) int {
+	failed := 0
+	for _, e := range s.ledger[k] {
+		if e.seq > s.checking.startSeq && !e.pass && !e.carried && atLeastDeep(e.profile, profile) {
+			failed++
+		}
+	}
+	return failed
 }
 
 // CyclePlan projects requirements using the same scheduling classes as Next.
@@ -80,9 +79,13 @@ func (s *State) CyclePlan() CyclePlan {
 	g := &s.checking
 	out := CyclePlan{Number: g.cycle, Open: g.open, Current: len(g.steps), Paused: s.hunt != nil || len(s.obligations) > 0}
 	running := s.inFlight()
+	if running != nil && (running.Cycle != g.cycle || running.Hunt > 0 || running.Round > 0 || running.Rerun) {
+		running = nil
+	}
 	for i, r := range g.steps {
 		req := s.requirements(i)
-		step := CycleStep{Regime: r, Done: true}
+		step := CycleStep{Regime: r, ChainsComplete: r != machine.R7 || s.r7ChainsComplete(i)}
+		step.Done = step.ChainsComplete
 		if len(req) > 0 {
 			for _, w := range machine.Workloads(r) {
 				if w.ID == req[0].class.workload {
@@ -91,19 +94,12 @@ func (s *State) CyclePlan() CyclePlan {
 				}
 			}
 		}
-		var frozen *journal.CheckingStep
-		if r == machine.R7 {
-			frozen = s.checkingStepPlan(i)
-		}
 		for k := 0; k < len(req); {
 			j := k + 1
 			for j < len(req) && slices.Equal(req[k].cores, req[j].cores) {
 				j++
 			}
-			if r == machine.R7 {
-				step.Parts = append(step.Parts, s.cyclePartials(i, req[k], frozen, running)...)
-			}
-			step.Parts = append(step.Parts, s.cyclePart(req[k:j], nil, running))
+			step.Parts = append(step.Parts, s.cyclePart(req[k:j], running))
 			k = j
 		}
 		for _, p := range step.Parts {
@@ -120,48 +116,16 @@ func (s *State) CyclePlan() CyclePlan {
 		}
 		out.Steps = append(out.Steps, step)
 	}
-	// A class can recur in later steps; the trial in flight runs only the current step's part, or the partial step
-	// it records.
+	// A class can recur in later steps; only the issuing step's part is running.
 	for i := range out.Steps {
 		for j := range out.Steps[i].Parts {
 			part := &out.Steps[i].Parts[j]
-			if part.Running && (part.RecordOnly && running.Step != i+1 || !part.RecordOnly && i != out.Current) {
+			if part.Running && (running.Step > 0 && running.Step != i+1 || running.Step == 0 && i != out.Current) {
 				part.Running = false
 			}
 		}
 	}
 	return out
-}
-
-func (s *State) checkingStepPlan(step int) *journal.CheckingStep {
-	if started := s.checking.partial[step+1]; started != nil {
-		return started.start
-	}
-	if len(s.checking.profile) != len(s.cores) {
-		// Without the cycle's recorded profile, partial loads cannot be planned yet.
-		return &journal.CheckingStep{Cycle: s.checking.cycle, Step: step + 1}
-	}
-	return s.startCheckingStep(step)
-}
-
-func (s *State) cyclePartials(step int, full requirement, frozen *journal.CheckingStep, running *journal.TrialIntent) []CyclePart {
-	started := s.checking.partial[step+1]
-	var parts []CyclePart
-	for _, part := range frozen.Partials {
-		if part.CCD != s.partCCD(full.cores) {
-			continue
-		}
-		if len(part.Cores) == 0 {
-			parts = append(parts, CyclePart{CCD: part.CCD, RecordOnly: true, Done: true})
-			continue
-		}
-		completion := started
-		if completion == nil {
-			completion = &checkingStep{}
-		}
-		parts = append(parts, s.cyclePart(s.partialRequirements(full, part.Cores), completion, running))
-	}
-	return parts
 }
 
 // SearchTurns returns the tuner's rotating core order, with unfinished two-regime steps first.
@@ -248,21 +212,7 @@ func (s *State) Requirement(p *journal.TrialIntent) TrialRequirement {
 	rule := cycleEvidence
 	needed := 1
 	switch {
-	case p.RecordOnly:
-		if step := s.checking.partial[p.Step]; step != nil {
-			for _, full := range s.requirements(p.Step - 1) {
-				if s.partCCD(full.cores) != s.partCCD(p.Cores) {
-					continue
-				}
-				for _, q := range s.partialRequirements(full, p.Cores) {
-					if q.class == k {
-						n := step.completed[k]
-						return TrialRequirement{Passed: step.passed[k], Failed: step.failed[k], Trial: n + 1, Needed: q.count}
-					}
-				}
-			}
-		}
-	case p.Condition == machine.Alone:
+	case p.Condition == machine.Alone && p.Round == 0:
 		var c *core
 		if p.Core != nil {
 			c = s.core(*p.Core)
@@ -300,11 +250,15 @@ func (s *State) Requirement(p *journal.TrialIntent) TrialRequirement {
 		}
 	case p.Cycle > 0:
 		since = s.checking.startSeq
-		for i := range s.checking.steps {
+		n := s.passes(k, profile, since, rule)
+		first, last := 0, len(s.checking.steps)
+		if p.Step > 0 && p.Step <= last {
+			first, last = p.Step-1, p.Step
+		}
+		for i := first; i < last; i++ {
 			for _, q := range s.requirements(i) {
-				if q.class == k && q.count > 0 && s.passes(k, profile, since, rule) < q.count {
-					n := s.passes(k, profile, since, rule)
-					return TrialRequirement{Passed: n, Trial: n + 1, Needed: q.count}
+				if q.class == k && q.count > 0 && (p.Step > 0 || n < q.count) {
+					return TrialRequirement{Passed: n, Failed: s.cycleFailures(k, profile), Trial: n + 1, Needed: q.count}
 				}
 			}
 		}

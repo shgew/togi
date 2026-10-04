@@ -32,13 +32,18 @@ func ruleset3Session(t *testing.T) (dir, id string) {
 	t.Helper()
 	ruleset3Once.Do(func() {
 		src := t.TempDir()
-		m, err := sim.New(sim.Config{Seed: 1})
+		m, err := sim.New(sharedVoltageConfig(t, 1000))
 		if err != nil {
 			ruleset3Err = err
 			return
 		}
-		if _, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Cycles: 1}); err != nil {
+		stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Cycles: 1})
+		if err != nil {
 			ruleset3Err = err
+			return
+		}
+		if stop.Reason != session.StopCycles {
+			ruleset3Err = fmt.Errorf("source session stopped with %+v, want a clean cycle", stop)
 			return
 		}
 		entries, err := os.ReadDir(src)
@@ -264,7 +269,7 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 	t.Parallel()
 	dir, id := ruleset3Session(t)
-	stop, events := simulateAgain(t, dir, sim.Config{Seed: 1}, config.Default())
+	stop, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1000), config.Default())
 	if stop.Reason != session.StopCycles {
 		t.Fatalf("stopped with %+v", stop)
 	}
@@ -314,7 +319,9 @@ func TestARulesetTransitionAfterABIOSChangeCarriesOnlySoloLimits(t *testing.T) {
 	t.Parallel()
 	dir, _ := ruleset3Session(t)
 	bios := machine.BIOSContext{BIOSVersion: "changed", Board: "board", CPUModel: "cpu", Microcode: "0x1", BoostLimitMHz: 5000}
-	_, events := simulateAgain(t, dir, sim.Config{Seed: 1, BIOSContext: bios}, config.Default())
+	cfg := sharedVoltageConfig(t, 1000)
+	cfg.BIOSContext = bios
+	_, events := simulateAgain(t, dir, cfg, config.Default())
 	carried := carriedEvent(t, events)
 	if carried.FailurePoints || !strings.Contains(carried.Detail, "bios_version") {
 		t.Fatalf("session.carried %+v, want failure points left behind for the BIOS change", carried)
@@ -334,7 +341,7 @@ func TestAConfiguredCandidateSoloLimitStopsShortOfACarriedFailurePoint(t *testin
 	dir, _ := ruleset3Session(t)
 	c := config.Default()
 	c.CandidateSoloLimits = map[int]int{0: -50}
-	_, events := simulateAgain(t, dir, sim.Config{Seed: 1}, c)
+	_, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1000), c)
 	var failurePoint *int
 	for _, cc := range carriedEvent(t, events).Carried {
 		if cc.Core == 0 {
@@ -453,10 +460,10 @@ func TestRulesetTransitionCarriesCulpritAndDirectHuntFailurePoints(t *testing.T)
 					cfg.Limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
 					cfg.Limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
 				}
-				cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
+				cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
 				c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 			} else {
-				cfg.Limits[1].Together[6] = -5
+				cfg.Limits[1].Together[5] = -5
 			}
 			finished := false
 			_, source, dir := runHunt(t, cfg, nil, func(in *Input) {
@@ -666,18 +673,18 @@ func firstPassedFullCycleLivePasses(t *testing.T, events []journal.Event) map[st
 func TestCurrentRulesetStartsHuntFromCarriedTogetherFailure(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(4)
-	cfg.Limits[1].Together[6] = -5
+	cfg.Limits[1].Together[5] = -5
 	c := config.Default()
 	c.CandidateSoloLimits = map[int]int{0: -9, 1: -9, 2: -9, 3: -9}
 	_, source, dir := runHunt(t, cfg, nil, func(in *Input) {
 		in.Config = c
 		in.Until = func(e journal.Event) bool {
 			p, ok := e.Data.(*journal.Failure)
-			return ok && p.Condition == machine.Together && p.Regime == machine.R7 && p.Attribution == journal.Unattributed
+			return ok && p.Condition == machine.Together && p.Regime == machine.R6 && p.Attribution == journal.Unattributed
 		}
 	})
 	failure, ok := findPayload(source, func(p *journal.Failure) bool {
-		return p.Condition == machine.Together && p.Regime == machine.R7 && p.Attribution == journal.Unattributed
+		return p.Condition == machine.Together && p.Regime == machine.R6 && p.Attribution == journal.Unattributed
 	})
 	if !ok {
 		t.Fatal("source session has no checking failure together")

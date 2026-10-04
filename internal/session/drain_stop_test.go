@@ -49,7 +49,7 @@ func TestStopDrainsDurableFailureBoundaries(t *testing.T) {
 				}
 			}
 			if combination || unattributed {
-				cfg.Joints = []sim.Joint{{Members: map[int]int{0: -30, 1: -30}, Regimes: []machine.Regime{machine.R7}, Rate: 1e6, Signal: machine.CorrectedMCE}}
+				cfg.Joints = []sim.Joint{{Members: map[int]int{0: -30, 1: -30}, Regimes: []machine.Regime{machine.R6}, Rate: 1e6, Signal: machine.CorrectedMCE}}
 				if zero {
 					cfg.Joints[0].Members = map[int]int{0: 0, 1: 0}
 				}
@@ -63,6 +63,9 @@ func TestStopDrainsDurableFailureBoundaries(t *testing.T) {
 			}
 			in := simInput(t.TempDir(), newSim(t, cfg))
 			in.Config.CandidateSoloLimits = map[int]int{0: -30, 1: -30, 2: -30, 3: -30}
+			if combination || unattributed {
+				in.Config.Checking.Cycle = []machine.Regime{machine.R6}
+			}
 			bootloader := &fakeBootloader{}
 			if zero {
 				in.Bootloader = bootloader

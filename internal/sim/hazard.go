@@ -14,8 +14,15 @@ func (m *Machine) Hazard(profile []int, spec machine.TrialSpec) float64 {
 	for core := range m.limits {
 		rate += m.coreRate(profile, spec, core)
 	}
-	for _, joint := range m.cfg.Joints {
-		rate += m.jointRate(profile, spec.Regime, joint)
+	if m.sharedR7(spec) {
+		for _, r := range m.voltageState(profile, spec).rates {
+			rate += r
+		}
+		rate += m.cfg.SharedVoltage.BackgroundRate
+	} else {
+		for _, joint := range m.cfg.Joints {
+			rate += m.jointRate(profile, spec.Regime, joint)
+		}
 	}
 	for ccd := range 2 {
 		rate += m.ccdRate(profile, spec, ccd)
@@ -34,8 +41,15 @@ func (m *Machine) FailureProbability(profile []int, spec machine.TrialSpec) floa
 	for core := range m.limits {
 		hazard += m.coreRate(profile, spec, core) * exposure(0)
 	}
-	for _, joint := range m.cfg.Joints {
-		hazard += m.jointRate(profile, spec.Regime, joint) * exposure(joint.AfterS)
+	if m.sharedR7(spec) {
+		for _, rate := range m.voltageState(profile, spec).rates {
+			hazard += rate * exposure(0)
+		}
+		hazard += m.cfg.SharedVoltage.BackgroundRate * exposure(0)
+	} else {
+		for _, joint := range m.cfg.Joints {
+			hazard += m.jointRate(profile, spec.Regime, joint) * exposure(joint.AfterS)
+		}
 	}
 	for ccd := range 2 {
 		hazard += m.ccdRate(profile, spec, ccd) * exposure(0)
@@ -45,6 +59,9 @@ func (m *Machine) FailureProbability(profile []int, spec machine.TrialSpec) floa
 
 func (m *Machine) coreRate(profile []int, spec machine.TrialSpec, core int) float64 {
 	loaded := slices.Contains(spec.Cores, core)
+	if loaded && m.sharedR7(spec) {
+		return 0
+	}
 	limit := m.limit(profile, core, spec.Regime, spec.Workload.ID)
 	if !loaded {
 		if m.limits[core].Idle == nil && m.limits[core].Flat <= 0 {
@@ -89,7 +106,7 @@ func (m *Machine) jointRate(profile []int, regime machine.Regime, joint Joint) f
 
 func (m *Machine) ccdRate(profile []int, spec machine.TrialSpec, ccd int) float64 {
 	c := m.cfg.CCD
-	if c == nil || spec.Regime != machine.R7 {
+	if c == nil || spec.Regime != machine.R7 || m.sharedR7(spec) {
 		return 0
 	}
 	size := m.cfg.Cores / 2

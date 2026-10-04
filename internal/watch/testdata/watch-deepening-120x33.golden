@@ -1,32 +1,32 @@
- togi   12:49:10   session 12h49m   7 failures · 7 crashes   last observed failure 04:50, 7h58m ago
+ togi   13:07:40   session 13h07m   8 failures · 8 crashes   last observed failure 08:22, 4h45m ago
  ■ SOLO ─ ■ CYCLE 1 ─ ► DEEPEN  round 1 ─ CLEAN 0
 
- ▌  Checking the deepening plan's proposed profile.
+ ▌  Deepening check: core 00 alone at its proposed -30.
 
-  R1   light load  on 00   mprime SSE 4K-21K · 1 worker                                               DEEPEN · ROUND 1
+  R1   light load  on core 00 alone at -30   mprime SSE 4K-21K · 1 worker    DEEPEN · ROUND 1 · CORE 00 AT -30 · LIGHT
  ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
 
- 5/5 pass → deepening round 1   pass → deepening round 1   core named → backs off
+ 5/5 pass → deepening round 1   core named → backs off   inconclusive → same trial again
 
- CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
- ► 00 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             08 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
-   01 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             09 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
-   02 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             10 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
-   03 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             11  -9 AT LIMIT ▄▄▄▄▄                           C1
-   04 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             12 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
-   05 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             13 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
-   06 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             14 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
-   07 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             15 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
+ CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 waiting    0  2 counts/cell       -50 fail
+ ► 00 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             08   0 HAS ROOM ·····                    
+   01   0 HAS ROOM ·····                                       09   0 HAS ROOM ·····                    
+   02   0 HAS ROOM ·····                                       10   0 HAS ROOM ·····                    
+   03   0 HAS ROOM ·····                                       11   0 AT LIMIT ░░░░░                           C1
+   04   0 HAS ROOM ·····                                       12   0 HAS ROOM ·····                    
+   05   0 HAS ROOM ·····                                       13   0 HAS ROOM ·····                    
+   06   0 HAS ROOM ·····                                       14   0 HAS ROOM ·····                    
+   07   0 HAS ROOM ·····                                       15   0 HAS ROOM ·····                    
 
  DEEPEN · ROUND 1 ────────────────────────────────────────   WHAT HAPPENED ──────────────────────────────────── l: all
 
- has room00-10 12-15 · in this order                         12:48  room     core 15 -10 → -30
-                                                             12:48  room     core 07 -10 → -30
- CHECKS                                                      12:48  room     core 14 -10 → -30
- R1 on 00  0/5 passed  mprime SSE 4K-21K                     12:48  room     core 06 -10 → -30
- R2 on 00  0/5 passed  mprime AVX2 36K-248K                  12:48  room     core 13 -10 → -30
- R1 on 08  0/5 passed  mprime SSE 4K-21K                     12:48  room     core 05 -10 → -30
- R2 on 08  0/5 passed  mprime AVX2 36K-248K                  12:48  room     core 12 -10 → -30
- +29 more                                                    +193 more
+ has room00-10 12-15 · in this order                         13:07  room     core 15 -10 → -30
+                                                             13:07  room     core 07 -10 → -30
+ +37 more                                                    13:07  room     core 14 -10 → -30
+                                                             13:07  room     core 06 -10 → -30
+ R7 ────────────── top ───────────── self-sufficient ─────   13:07  room     core 13 -10 → -30
+ mprime AVX2       00-0... by offset 11                      13:07  room     core 05 -10 → -30
+ mprime AVX-512    00-0... by offset 11                      13:07  room     core 12 -10 → -30
+ y-cruncher FFTv4  00-0... by offset 11                      +193 more
 
   ?  help    l  log    esc  back    q  close view

@@ -27,10 +27,12 @@ clean cycles since the last deepening, then each core's offset, failure point
 and combinations, phase, queued work and last decision. An open hunt shows
 groups and trials; an open deepening round shows checks and passes. Evidence
 includes workloads, valid trials and the Tctl peak since the last profile
-change, and lists between-trial MCEs without treating them as failures. Lists reset
-commands for unanswered too-cautious defects. Read-only; rendered from the
-journal. A different ruleset warns before rendering; a different schema is
-refused.
+change, and lists between-trial MCEs without treating them as failures.
+Shows each core's observed self-sufficiency for each R7 workload and its CCD's
+current top requesters; offsets stand in only when request telemetry is absent.
+Lists reset commands for unanswered too-cautious defects. Read-only; rendered
+from the journal. A different ruleset warns before rendering; a different schema
+is refused.
 
 Examples:
   togi status                     The session in the default state directory
@@ -166,6 +168,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	}
 	_ = tw.Flush()
 	writeCombinations(w, st.Combinations)
+	writeR7Status(w, events)
 	for _, e := range events {
 		if p, ok := e.Data.(*journal.MCE); ok && p.BetweenTrials {
 			fmt.Fprintf(w, "\nbetween-trial evidence [#%d]: %s\n", e.Seq, journal.EscapeText(e.Msg))
@@ -265,6 +268,35 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	if gs.TctlMaxC != nil {
 		fmt.Fprintf(w, "Tctl max since last profile change %d°C [#%d]\n", *gs.TctlMaxC, gs.TctlMaxSeq)
 	}
+}
+
+func writeR7Status(w io.Writer, events []journal.Event) {
+	t := tuner.New()
+	for _, e := range events {
+		t.Fold(e)
+	}
+	status := t.R7Status()
+	if len(status) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "\nR7 self-sufficiency (passed as top requester at equal or deeper offsets; not a guarantee)")
+	tw := newTable(w)
+	fmt.Fprintln(tw, "CORE\tCCD\tWORKLOAD\tSELF-SUFFICIENT\tTOP REQUESTER")
+	for _, c := range status {
+		self := "not yet demonstrated"
+		if c.SelfSufficient {
+			self = fmt.Sprintf("observed (%d passing trials)", c.Passes)
+		}
+		top := "no"
+		if c.TopRequester {
+			top = "yes"
+		}
+		if c.OffsetFallback {
+			top += " (offset fallback)"
+		}
+		fmt.Fprintf(tw, "%02d\t%d\t%s\t%s\t%s\n", c.Core, c.CCD, journal.EscapeText(c.Workload), self, top)
+	}
+	_ = tw.Flush()
 }
 
 func combinationIDs(ids []int) string {

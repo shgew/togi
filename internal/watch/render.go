@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -321,6 +322,153 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 		c.put(rectangle{p.header.x, p.hint, p.header.w, 1}, 0, 0, keyHints(sc.View))
 	}
 	return Drawn{Lines: fit(c.lines(), p.width, sc.Height), Scroll: scroll, Until: until}
+}
+
+// r7Lines lists, under their own rule once checking has a cycle, every R7 workload's current top requesters and its
+// self-sufficient cores. A CCD without request measurements names its top requesters by offset.
+func (s Snapshot) r7Lines(p layout) []string {
+	if s.cycle == nil || len(s.r7) == 0 {
+		return nil
+	}
+	width := p.context.w
+	name, top := 17, 17
+	switch {
+	case p.class == wideLayout && width >= 100:
+		name, top = 30, 24
+	case p.class == mediumLayout && width >= 70:
+		name, top = 24, 20
+	}
+	current := s.r7Workload()
+	out := []string{r7Rule(width, name, top)}
+	for _, w := range machine.Workloads(machine.R7) {
+		var measured, byOffset, self []int
+		total := 0
+		for _, c := range s.r7 {
+			if c.Workload != w.ID {
+				continue
+			}
+			total++
+			if c.TopRequester && c.OffsetFallback {
+				byOffset = append(byOffset, c.Core)
+			} else if c.TopRequester {
+				measured = append(measured, c.Core)
+			}
+			if c.SelfSufficient {
+				self = append(self, c.Core)
+			}
+		}
+		if total == 0 {
+			continue
+		}
+		label := workloadDisplayID(w.ID)
+		if ansi.StringWidth(label) > name-1 {
+			words := strings.Fields(label)
+			label = strings.Join(words[:min(len(words), 2)], " ")
+		}
+		suff := "none yet"
+		switch {
+		case len(self) == total:
+			suff = "all"
+		case len(self) > 0:
+			suff = coreIDs(self)
+		}
+		if ansi.StringWidth(suff) > width-name-top-2 {
+			suff = fmt.Sprintf("%d of %d cores", len(self), total)
+		}
+		style := grey
+		if w.ID == current {
+			style = textStyle
+		}
+		line := asciiCell(label, name) + " " + asciiCell(topCell(measured, byOffset, top), top) + " " + suff
+		out = append(out, style.Render(ansi.Truncate(line, width, "...")))
+	}
+	return out
+}
+
+// topCell fits a workload's top requesters to width. Offset proxies keep their label when either list is cut, and
+// the measured list is cut first, so it never takes the offset label.
+func topCell(measured, byOffset []int, width int) string {
+	const by = " by offset"
+	m, o := coreIDs(measured), coreIDs(byOffset)
+	switch {
+	case len(byOffset) == 0:
+		return cmp.Or(m, "-")
+	case len(measured) == 0:
+		if ansi.StringWidth(o+by) <= width {
+			return o + by
+		}
+		return ansi.Truncate(o, width-len(by), "...") + by
+	}
+	if both := m + "; " + o + by; ansi.StringWidth(both) <= width {
+		return both
+	}
+	if room := width - len("; ") - ansi.StringWidth(o+by); room >= len("0...") {
+		return ansi.Truncate(m, room, "...") + "; " + o + by
+	}
+	if room := width - len("...; ") - len(by); room >= min(ansi.StringWidth(o), len("0...")) {
+		return "...; " + ansi.Truncate(o, room, "...") + by
+	}
+	// Too narrow for both: the measured list shrinks to its cut marker.
+	return "...;" + ansi.Truncate(o, width-len("...;")-len(by), "...") + by
+}
+
+// r7Rule heads the R7 lines with its column names; on a wide panel it says the evidence is no guarantee.
+func r7Rule(width, name, top int) string {
+	topLabel := "top"
+	if top >= 20 {
+		topLabel = "top requesters"
+	}
+	dashes := func(n int) string { return track.Render(strings.Repeat("─", max(n, 1))) }
+	line := grey.Render("R7") + " " + dashes(name-3) + " " + grey.Render(topLabel) + " " + dashes(top-len(topLabel)-1) + " " + grey.Render("self-sufficient")
+	const note = "observed, not a guarantee"
+	if rest := width - ansi.StringWidth(line) - 1; rest >= len(note)+3 {
+		return line + " " + dashes(rest-len(note)-1) + " " + grey.Render(note)
+	}
+	if rest := width - ansi.StringWidth(line) - 1; rest > 0 {
+		return line + " " + dashes(rest)
+	}
+	return ansi.Truncate(line, width, "")
+}
+
+// asciiCell fits plain text to exactly width cells, cutting it with an ASCII marker the console font can draw.
+func asciiCell(text string, width int) string {
+	text = ansi.Truncate(text, width, "...")
+	return text + strings.Repeat(" ", max(width-ansi.StringWidth(text), 0))
+}
+
+// r7Workload is the R7 workload the running trial, or else the cycle's current step, loads; empty outside R7.
+func (s Snapshot) r7Workload() string {
+	if t := s.trial; t != nil && t.regime == machine.R7 {
+		return t.workload.ID
+	}
+	if g := s.cycle; g != nil && g.current < len(g.steps) && g.steps[g.current].regime == machine.R7 {
+		return g.steps[g.current].workload.ID
+	}
+	return ""
+}
+
+// r7Top maps the current R7 workload's top requesters to whether offsets stand in for their requests.
+func (s Snapshot) r7Top() map[int]bool {
+	w := s.r7Workload()
+	if w == "" {
+		return nil
+	}
+	top := map[int]bool{}
+	for _, c := range s.r7 {
+		if c.Workload == w && c.TopRequester {
+			top[c.Core] = c.OffsetFallback
+		}
+	}
+	return top
+}
+
+// requestBasis says where a running multi-core R7 trial's forecast decisions take top requesters from: its end is
+// forecast without telemetry, so they come from earlier requests, or offset order where none were measured.
+func requestBasis(branch outcome) string {
+	if branch.offsetOrder {
+		return "per offset order"
+	}
+	return "per earlier requests"
 }
 
 func narrativeStyle(t tone) lipgloss.Style {
@@ -779,10 +927,40 @@ func drawOutcomes(c *canvas, p layout, s Snapshot) {
 	rows := s.outcomeRows()
 	if p.class == compactLayout {
 		parts := make([]string, len(rows))
-		for i, o := range rows {
-			parts[i] = o.style.Render(o.short) + " " + textStyle.Render(o.compact)
+		basis := ""
+		join := func(brief bool) string {
+			for i, o := range rows {
+				text := o.compact
+				if brief {
+					text = o.brief
+				}
+				parts[i] = o.style.Render(o.short) + " " + textStyle.Render(text)
+				basis = cmp.Or(basis, o.basis)
+			}
+			return strings.Join(parts, "   ")
 		}
-		c.put(p.outcomes, 0, 0, strings.Join(parts, "   "))
+		line := join(false)
+		if ansi.StringWidth(line) > p.outcomes.w {
+			// Count the folded cores at 0 rather than cut the outcomes after them.
+			line = join(true)
+		}
+		if basis != "" {
+			// The basis must stay on screen: it marks backoffs that new telemetry can change.
+			switch room := p.outcomes.w - ansi.StringWidth(line) - 3; {
+			case room >= len("backoffs ")+len(basis):
+				line += "   " + grey.Render("backoffs "+basis)
+			case room >= len(basis):
+				line += "   " + grey.Render(basis)
+			default:
+				for i, o := range rows {
+					if o.basis != "" {
+						parts[i] += textStyle.Render("?")
+					}
+				}
+				line = strings.Join(parts, "   ")
+			}
+		}
+		c.put(p.outcomes, 0, 0, line)
 		return
 	}
 	for i, o := range rows {
@@ -830,6 +1008,7 @@ func drawCCD(c *canvas, r rectangle, col coreColumns, id int, s Snapshot) {
 		shown--
 		c.put(r, 0, r.h-1, grey.Render(fmt.Sprintf("+%d more", len(cores)-shown)))
 	}
+	top := s.r7Top()
 	for i, core := range cores[:shown] {
 		if s.stopped != nil && s.stopped.saved {
 			core.applied = core.profile
@@ -861,9 +1040,31 @@ func drawCCD(c *canvas, r rectangle, col coreColumns, id int, s Snapshot) {
 			}
 			c.put(r, col.failure, y, failStyle.Render(fmt.Sprintf("%5d", *core.fail)))
 		}
-		note := core.noteLine(max(r.w-col.note, 0))
-		c.put(r, col.note, y, trimWords(note, max(r.w-col.note, 0)))
+		width := max(r.w-col.note, 0)
+		note := core.noteLine(width)
+		if byOffset, ok := top[core.id]; ok {
+			note = topNote(note, byOffset, width)
+		}
+		c.put(r, col.note, y, trimWords(note, width))
 	}
+}
+
+// topNote marks a top requester of the current R7 workload, after the core's own note when both fit.
+func topNote(note string, byOffset bool, width int) string {
+	word := "top"
+	if width >= len("top requester") {
+		word = "top requester"
+		if byOffset {
+			word = "top by offset"
+		}
+	}
+	if note == "" {
+		return textStyle.Render(word)
+	}
+	if ansi.StringWidth(note)+ansi.StringWidth(" · ")+len(word) <= width {
+		return note + grey.Render(" · ") + textStyle.Render(word)
+	}
+	return note
 }
 
 func (c coreView) stateWord() string {

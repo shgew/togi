@@ -55,7 +55,7 @@ func TestCoveredOpenCycleYieldsToDeepening(t *testing.T) {
 					a := h.s.cycleNext()
 					if a.Kind == RunTrial {
 						h.trial(a, passed)
-					} else if _, step := a.Payload.(*journal.CheckingStep); step {
+					} else if _, end := a.Payload.(*journal.CheckingCycle); !end {
 						h.decide(a)
 					} else {
 						break
@@ -120,23 +120,27 @@ func TestR7TrialsAndSharedDuration(t *testing.T) {
 	h.decide(h.next())
 	h.decide(h.next())
 	for _, part := range []struct {
-		cores      []int
-		recordOnly bool
-		long       int
+		cores []int
+		long  int
 	}{
-		{[]int{1}, true, 120},
-		{[]int{0, 1}, false, 120},
-		{[]int{3}, true, 120},
-		{[]int{2, 3}, false, 120},
-		{[]int{0, 1, 2, 3}, false, 240},
+		{[]int{0, 1}, 120},
+		{[]int{2, 3}, 120},
+		{[]int{0, 1, 2, 3}, 240},
 	} {
 		for trial := range 4 {
 			a := h.next()
+			for a.Kind == Decide {
+				if _, chain := a.Payload.(*journal.CheckingChain); !chain {
+					t.Fatalf("unexpected decision between parts: %+v", a)
+				}
+				h.decide(a)
+				a = h.next()
+			}
 			duration := 120
 			if trial == 3 {
 				duration = part.long
 			}
-			if a.Kind != RunTrial || a.Trial.Regime != machine.R7 || a.Trial.DurationS != duration || a.Trial.RecordOnly != part.recordOnly || !slices.Equal(a.Trial.Cores, part.cores) {
+			if a.Kind != RunTrial || a.Trial.Regime != machine.R7 || a.Trial.DurationS != duration || !slices.Equal(a.Trial.Cores, part.cores) {
 				t.Fatalf("part %v trial %d: %+v", part.cores, trial, a)
 			}
 			h.trial(a, passed)
@@ -150,7 +154,7 @@ func TestR7TrialsAndSharedDuration(t *testing.T) {
 func TestAttributionAtGroupParkedOffsetsAndAlreadyShallower(t *testing.T) {
 	h := hasRoomHarness(t, -10, -12)
 	profile := []int{-10, -12}
-	tr := Trial{Core: 0, Regime: machine.R7, Phase: journal.PhaseHunt, Condition: machine.Parked, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Profile: profile, Hunt: 1, Group: 1}
+	tr := Trial{Core: 0, Regime: machine.R6, Phase: journal.PhaseHunt, Condition: machine.Parked, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R6)[0].ID, DurationS: 120, Profile: profile, Hunt: 1, Group: 1}
 	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0), DurationS: 10})
 	a := h.next()
 	f, ok := a.Payload.(*journal.Failure)
@@ -321,7 +325,7 @@ func TestTogetherMultipleMCECoresRemainUnattributed(t *testing.T) {
 
 func commitRerunSource(h *harness, kind string) (Trial, journal.Event) {
 	h.t.Helper()
-	tr := Trial{Regime: machine.R7, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R7)[1].ID, Condition: machine.Together, DurationS: 600}
+	tr := Trial{Regime: machine.R6, Cores: []int{0, 1}, Workload: machine.Workloads(machine.R6)[0].ID, Condition: machine.Together, DurationS: 600}
 	var source journal.Event
 	if kind == "idle" {
 		source = h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Profile: h.s.Profile()})
@@ -337,7 +341,7 @@ func commitRerunSource(h *harness, kind string) (Trial, journal.Event) {
 	if kind != "attributed" {
 		start := h.decide(h.s.huntStartNext()).Data.(*journal.HuntStart)
 		if kind == "direct" {
-			tr.Workload, tr.Cores, tr.DurationS, tr.Condition = machine.Workloads(machine.R7)[2].ID, h.s.ids(), 240, machine.Parked
+			tr.Workload, tr.Cores, tr.DurationS, tr.Condition = machine.Workloads(machine.R6)[0].ID, h.s.ids(), 240, machine.Parked
 			tr.Hunt, tr.Group = start.Hunt, 1
 			h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(1)})
 			source = h.decide(h.next())

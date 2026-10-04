@@ -1,12 +1,14 @@
 package main
 
 import (
+	"math"
 	"slices"
 	"time"
 
 	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/requests"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/tuner"
 	"github.com/shgew/togi/tools/modelcheck"
@@ -40,6 +42,7 @@ type result struct {
 	Depth                   int                        `json:"depth"`
 	HazardPerH              map[machine.Regime]float64 `json:"hazard_per_h"`
 	HazardMaxPerH           float64                    `json:"hazard_max_per_h"`
+	WorstR7HazardPerH       *float64                   `json:"worst_r7_hazard_per_h,omitempty"`
 }
 
 func metrics(events []journal.Event, m *sim.Machine, cores int) result {
@@ -120,7 +123,54 @@ func metrics(events []journal.Event, m *sim.Machine, cores int) result {
 		r.HazardPerH[regime] = rate
 		r.HazardMaxPerH = max(r.HazardMaxPerH, rate)
 	}
+	r.WorstR7HazardPerH = worstR7HazardPerH(m, r.FinalProfile)
 	return r
+}
+
+func worstR7HazardPerH(m *sim.Machine, profile []int) *float64 {
+	var all [16]int
+	for core := range all {
+		all[core] = core
+	}
+	spec := machine.TrialSpec{Regime: machine.R7}
+	var worst float64
+	for _, workload := range machine.Workloads(machine.R7) {
+		spec.Workload = workload
+		for ccd := range 2 {
+			var loaded [8]int
+			for i := range loaded {
+				loaded[i] = ccd*8 + i
+			}
+			spec.Cores = loaded[:]
+			for len(spec.Cores) >= 2 {
+				lanes, ok := m.R7Requests(profile, spec)
+				if !ok {
+					return nil
+				}
+				worst = max(worst, m.Hazard(profile, spec)*3600)
+				spec.Cores = nextR7Partial(spec.Cores, lanes)
+			}
+		}
+		spec.Cores = all[:]
+		worst = max(worst, m.Hazard(profile, spec)*3600)
+	}
+	return &worst
+}
+
+// nextR7Partial compacts the load in place, dropping the current top tie group.
+func nextR7Partial(cores []int, lanes [16]float32) []int {
+	top := math.Inf(-1)
+	for _, core := range cores {
+		top = max(top, float64(lanes[core]))
+	}
+	n := 0
+	for _, core := range cores {
+		if float64(lanes[core]) < top-requests.TieV {
+			cores[n] = core
+			n++
+		}
+	}
+	return cores[:n]
 }
 
 func runStatus(exit int, timedOut bool, events []journal.Event, log string) string {

@@ -87,8 +87,8 @@ check-one +names:
 
 # Run a simulated session through the search and its first clean cycle
 [group('run')]
-sim seed="1":
-    {{ dev }} go run ./tools/sim --seed "$1"
+sim seed="1" *args:
+    {{ dev }} go run ./tools/sim --seed "$1" "${@:2}"
 
 # Play a recorded journal through the dashboard on a fast-forward clock
 [group('run')]
@@ -128,6 +128,11 @@ facts state_dir:
 [group('run')]
 fit *args:
     {{ dev }} go run ./tools/fit "$@"
+
+# Fit the all-facts IN-SAMPLE shared-voltage anchor; not forward-validated
+[group('run')]
+fit-shared-voltage *args:
+    {{ dev }} go run ./tools/fit --shared-voltage-in-sample "$@"
 
 # Run only the forward-chained check of the target fit, writing no machine files (`just forward --seal 1`)
 [group('run')]

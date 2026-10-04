@@ -1,3 +1,5 @@
+Superseded by [ADR 0038](0038-self-sufficient-cores.md): multi-core R7 now uses measured top requesters, ordinary partial chains and voltage-targeted backoff on every failure instead of hunts. The hunt mechanics recorded here remain outside multi-core R7.
+
 # Hunts that converge on shared voltage
 
 Supersedes the hunt anchor and the joint-mark backoff choice of [ADR 0020](0020-hunt-and-refine.md); the rest of ADR 0020 stands.

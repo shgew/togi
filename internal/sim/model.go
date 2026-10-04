@@ -109,6 +109,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	defer func() { err = errors.Join(err, r.sampleConditions(m.now.Sub(start), stallCore)) }()
 	failCore, failAt, forcedSignal := -1, spec.Duration, machine.Signal("")
 	idleFailure := false
+	backgroundFailure := false
 	var jointCrash *Joint
 	script, scripted := m.cfg.Script[spec.ID]
 	fact, replayed := m.replayDraw(spec)
@@ -132,6 +133,17 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				idleFailure = !slices.Contains(spec.Cores, c)
 			}
 		}
+		if m.sharedR7(spec) {
+			state := m.voltageState(m.regs, spec)
+			for core, rate := range state.rates {
+				t := m.failureDraw(rate, 0, spec, core, "voltage")
+				if t < failAt {
+					failCore, failAt, forcedSignal = core, t, m.voltageSignal(spec, core)
+					idleFailure = false
+					jointCrash = &Joint{} // Shared-rail crashes never fabricate core-local MCEs.
+				}
+			}
+		}
 		for ccd := range 2 {
 			rate := m.ccdRate(m.regs, spec, ccd)
 			if rate <= 0 {
@@ -152,6 +164,9 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 			}
 		}
 		for j, joint := range m.cfg.Joints {
+			if m.sharedR7(spec) {
+				break
+			}
 			rate := m.jointRate(m.regs, spec.Regime, joint)
 			if rate <= 0 {
 				continue
@@ -175,6 +190,16 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 				if idle || forcedSignal == "" {
 					forcedSignal = machine.Crash
 				}
+			}
+		}
+		if m.sharedR7(spec) && m.cfg.SharedVoltage.BackgroundRate > 0 {
+			core := spec.Cores[0]
+			t := m.failureDraw(m.cfg.SharedVoltage.BackgroundRate, 0, spec, core, "voltage-background")
+			if t < failAt {
+				failCore, failAt, forcedSignal = core, t, machine.Crash
+				idleFailure = false
+				backgroundFailure = true
+				jointCrash = &Joint{} // Platform background carries no core attribution.
 			}
 		}
 	}
@@ -231,7 +256,9 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 		r.progress(report, res)
 		return res, nil
 	case machine.Crash:
-		stallCore = failCore
+		if !backgroundFailure {
+			stallCore = failCore
+		}
 		m.now = start.Add(failAt)
 		switch {
 		case replayed:

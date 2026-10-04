@@ -65,7 +65,9 @@ func report(out io.Writer, session facts.Session, since time.Time) error {
 	renderHunts(tab, p, since)
 	renderChecking(tab, p, events, since)
 	renderEvidence(tab, p, events, since)
+	renderR7Decisions(tab, events, since)
 	renderDepth(tab, p, since)
+	renderRequests(tab, p, since)
 	return renderOutcomes(tab, p, since)
 }
 
@@ -280,4 +282,58 @@ func loadedCCD(t *trial, cores []machine.CoreInfo, ccds map[int]int) string {
 		return "idle/unknown"
 	}
 	return strings.Join(keys(set), ",")
+}
+
+// voltageTargetedRuleset is the first ruleset whose multi-core R7 failures move
+// by voltage-targeted backoff.
+const voltageTargetedRuleset = 9
+
+func renderR7Decisions(tab *table, events []journal.Event, since time.Time) {
+	tab.section("R7 voltage-targeted backoffs", "seq\tdecision\tcore\tfrom\tto\tcounts\tcauses\treason")
+	bySeq := make(map[int]journal.Event, len(events))
+	intents := make(map[string]*journal.TrialIntent)
+	for _, e := range events {
+		bySeq[e.Seq] = e
+		if in, ok := e.Data.(*journal.TrialIntent); ok {
+			intents[in.Trial] = in
+		}
+	}
+	multiR7 := func(trial string) bool {
+		in := intents[trial]
+		return in != nil && in.Regime == machine.R7 && len(in.Cores) > 1
+	}
+	ruleset := 0
+	for _, e := range events {
+		if p, ok := e.Data.(*journal.SessionStart); ok {
+			ruleset = p.Ruleset
+		}
+		d, ok := e.Data.(*journal.TunerDecision)
+		if !ok || !selected(e.Time, since) || d.Decision != journal.Backoff || ruleset < voltageTargetedRuleset {
+			continue
+		}
+		r7 := false
+		for _, seq := range e.Cause {
+			switch cause := bySeq[seq].Data.(type) {
+			case *journal.Failure:
+				r7 = r7 || multiR7(cause.Trial)
+			case *journal.TrialCarried:
+				r7 = r7 || cause.Class.Regime == machine.R7 && len(cause.Class.Cores) > 1
+			case *journal.TrialEnd:
+				r7 = r7 || multiR7(cause.Trial)
+			}
+		}
+		if r7 {
+			tab.row("%d\t%s\t%02d\t%d\t%d\t%d\t%v\t%s", e.Seq, d.Decision, d.Core, d.FromOffset, d.ToOffset, d.ToOffset-d.FromOffset, e.Cause, journal.EscapeText(d.Reason))
+		}
+	}
+	tab.section("R7 chain derivations", "seq\tcycle\tstep\tCCD\tworkload\tpart\trequest groups\tloaded cores\tsources")
+	for _, e := range events {
+		if d, ok := e.Data.(*journal.CheckingChain); ok && selected(e.Time, since) {
+			source := fmt.Sprint(d.SourceSeqs)
+			if len(d.SourceSeqs) == 0 {
+				source = "offset fallback"
+			}
+			tab.row("%d\t%d\t%d\t%d\t%s\t%s\t%v\t%s\t%s", e.Seq, d.Cycle, d.Step, d.CCD, journal.EscapeText(d.Workload), journal.EscapeText(d.Part), d.Groups, coreList(d.Cores), source)
+		}
+	}
 }

@@ -2,6 +2,7 @@ package sim
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"iter"
 	"os"
@@ -21,6 +22,7 @@ type trialSamples struct {
 	spec        machine.TrialSpec
 	ran         time.Duration
 	stalledCore int
+	voltage     *voltageState
 }
 
 func (s trialSamples) conditions() iter.Seq[machine.TrialConditions] {
@@ -29,6 +31,18 @@ func (s trialSamples) conditions() iter.Seq[machine.TrialConditions] {
 			p := machine.TrialConditions{ElapsedMS: at.Milliseconds(), WorkerCPUMS: make(map[int]int64, len(s.spec.Cores))}
 			for _, core := range s.spec.Cores {
 				p.WorkerCPUMS[core] = s.workerCPUMS(core, at)
+			}
+			if s.voltage != nil {
+				pm := machine.PMTable{VoltageRequestV: s.voltage.requests}
+				p.PMTable = &pm
+				p.CoreMHz = make(map[int]int, len(s.spec.Cores))
+				for _, core := range s.spec.Cores {
+					p.CoreMHz[core] = s.voltage.clocks[core/8]
+					pm.C0Pct[core] = 100
+				}
+				for core := range 16 {
+					pm.CC6Pct[core] = 100 - pm.C0Pct[core]
+				}
 			}
 			if !yield(p) {
 				return
@@ -46,6 +60,15 @@ func (s trialSamples) workerCPUMS(core int, at time.Duration) int64 {
 
 // appendLines writes what json.Encoder writes for conditions: the map keys sort as strings.
 func (s trialSamples) appendLines(w *bufio.Writer) error {
+	if s.voltage != nil {
+		enc := json.NewEncoder(w)
+		for sample := range s.conditions() {
+			if err := enc.Encode(sample); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	cores := slices.Clone(s.spec.Cores)
 	slices.SortFunc(cores, func(a, b int) int { return strings.Compare(strconv.Itoa(a), strconv.Itoa(b)) })
 	cores = slices.Compact(cores)
@@ -94,6 +117,10 @@ func (t trials) Samples(id string) iter.Seq[machine.TrialConditions] {
 func (r *running) sampleConditions(ran time.Duration, stalledCore int) error {
 	m := r.m
 	samples := trialSamples{spec: r.spec, ran: ran, stalledCore: stalledCore}
+	if m.cfg.SharedVoltage != nil {
+		state := m.voltageState(m.regs, r.spec)
+		samples.voltage = &state
+	}
 	m.samples = trialSamples{}
 	if m.samplesDir == "" {
 		samples.spec.Cores = slices.Clone(samples.spec.Cores)

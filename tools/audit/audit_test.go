@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,9 +11,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/tuner"
 )
 
-const header = `{"seq":1,"time":"2026-01-01T00:00:00.000000000Z","boot":"b","kind":"session.start","session":"test","schema":4,"ruleset":8,"cores":[{"core":0,"ccd":0,"cpus":[0,1]},{"core":8,"ccd":1,"cpus":[2,3]}]}` + "\n"
+var header = fmt.Sprintf(`{"seq":1,"time":"2026-01-01T00:00:00.000000000Z","boot":"b","kind":"session.start","session":"test","schema":4,"ruleset":%d,"cores":[{"core":0,"ccd":0,"cpus":[0,1]},{"core":8,"ccd":1,"cpus":[2,3]}]}`, tuner.Ruleset) + "\n"
 
 func handwritten(t *testing.T, body string) []journal.Event {
 	t.Helper()
@@ -286,7 +288,7 @@ func TestDirectoryJournals(t *testing.T) {
 func TestOlderRulesetSnapshot(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeJournal(t, filepath.Join(dir, "events.jsonl"), strings.Replace(header, `"ruleset":8`, `"ruleset":7`, 1), "")
+	writeJournal(t, filepath.Join(dir, "events.jsonl"), strings.Replace(header, fmt.Sprintf(`"ruleset":%d`, tuner.Ruleset), fmt.Sprintf(`"ruleset":%d`, tuner.Ruleset-1), 1), "")
 	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(`{"last_seq":1}`), 0600); err != nil {
 		t.Fatal(err)
 	}

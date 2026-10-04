@@ -163,8 +163,9 @@ func TestActiveDeepeningProjection(t *testing.T) {
 			want := &journal.DeepeningState{Round: 2, Seq: begin.Seq, Target: round.Target, Profile: round.Profile, Cores: round.Cores, Checks: []journal.CheckState{
 				{Regime: machine.R1, Workload: machine.Workloads(machine.R1)[1].ID, Cores: []int{0}, Needed: 2},
 				{Regime: machine.R2, Workload: machine.Workloads(machine.R2)[1].ID, Cores: []int{0}, Needed: 2},
+				{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, Needed: 2},
 				{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[1].ID, Cores: []int{0, 1}, Needed: 2},
-				{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[1].ID, Cores: []int{0, 1, 2, 3}, Needed: 2},
+				{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[2].ID, Cores: []int{0, 1}, Needed: 2},
 			}}
 			assert := func() {
 				t.Helper()

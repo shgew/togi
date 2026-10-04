@@ -293,6 +293,7 @@ func TestRunFrameShippedSchemas(t *testing.T) {
 		{"schema 1 ruleset 1", filepath.Join("..", "..", "internal", "carry", "testdata", "20260924T204352Z.jsonl.gz"), 1, 1},
 		{"schema 2 ruleset 2", filepath.Join("..", "..", "internal", "carry", "testdata", "20260926T151414Z.jsonl.gz"), 2, 2},
 		{"schema 2 ruleset 3", filepath.Join("..", "..", "internal", "carry", "testdata", "20260927T221954Z.jsonl.gz"), 2, 3},
+		{"schema 2 ruleset 8", filepath.Join("testdata", "schema-2-ruleset-8.jsonl.gz"), 2, 8},
 		{"schema 2 current ruleset", filepath.Join("testdata", "schema-2-ruleset-8.jsonl.gz"), 2, tuner.Ruleset},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -309,6 +310,9 @@ func TestRunFrameShippedSchemas(t *testing.T) {
 			data, err := io.ReadAll(gz)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if tc.ruleset == tuner.Ruleset {
+				data = bytes.Replace(data, []byte(`"ruleset":8`), fmt.Appendf(nil, `"ruleset":%d`, tuner.Ruleset), 1)
 			}
 			first, _, ok := bytes.Cut(data, []byte{'\n'})
 			if !ok {

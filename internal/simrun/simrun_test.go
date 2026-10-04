@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -16,10 +17,20 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
+func sharedVoltageConfig(t *testing.T, seed uint64) sim.Config {
+	t.Helper()
+	cfg, err := sim.LoadMachine("../../tools/bench/machines/shared-voltage.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Seed = seed
+	return cfg
+}
+
 func TestSixteenCoresReachCleanCycle(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	m, err := sim.New(sim.Config{Seed: 1})
+	m, err := sim.New(sharedVoltageConfig(t, 1000))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,6 +64,9 @@ func TestSixteenCoresReachCleanCycle(t *testing.T) {
 	parts := map[int]map[int]int{}
 	var combinations []journal.Combination
 	failed := map[int]int{}
+	multiR7 := map[string]bool{}
+	named := map[int]int{}
+	measuredReorder, namedMultiCount := false, false
 	for _, e := range events {
 		switch p := e.Data.(type) {
 		case *journal.CheckingCycle:
@@ -60,6 +74,7 @@ func TestSixteenCoresReachCleanCycle(t *testing.T) {
 				passedFullCycle = true
 			}
 		case *journal.TrialIntent:
+			multiR7[p.Trial] = p.Regime == machine.R7 && len(p.Cores) > 1
 			if p.Regime == machine.R7 && p.Phase == journal.PhaseChecking {
 				if parts[p.Cycle] == nil {
 					parts[p.Cycle] = map[int]int{}
@@ -84,12 +99,52 @@ func TestSixteenCoresReachCleanCycle(t *testing.T) {
 				}
 			}
 		case *journal.Failure:
-			if p.Attribution == journal.Attributed && p.Core != nil && p.Offset != nil {
+			// Multi-core R7 failures become failure points only through the core each voltage-targeted backoff moves.
+			if !multiR7[p.Trial] && p.Attribution == journal.Attributed && p.Core != nil && p.Offset != nil {
 				failed[*p.Core] = *p.Offset
+			}
+			if multiR7[p.Trial] && p.Attribution == journal.Attributed && p.Core != nil {
+				named[e.Seq] = *p.Core
+			}
+		case *journal.TunerDecision:
+			if p.FailurePoint != nil {
+				failed[p.Core] = *p.FailurePoint
+			}
+			if len(e.Cause) == 0 {
+				break
+			}
+			if core, ok := named[e.Cause[0]]; ok && p.Decision == journal.Backoff {
+				if p.Core != core {
+					t.Errorf("named R7 failure #%d on core %d backed off core %d", e.Cause[0], core, p.Core)
+				}
+				namedMultiCount = namedMultiCount || p.ToOffset-p.FromOffset > 1 && strings.Contains(p.Reason, "voltage-targeted R7 backoff")
+			}
+		case *journal.CheckingChain:
+			// A measured order that differs from offset order shows requests, not offsets, ranked the cores.
+			var loaded []int
+			for _, group := range p.Groups {
+				loaded = append(loaded, group...)
+			}
+			shallowest := -50
+			for _, core := range loaded {
+				shallowest = max(shallowest, p.Profile[core])
+			}
+			if len(p.SourceSeqs) > 0 && len(p.Groups) > 0 && slices.ContainsFunc(p.Groups[0], func(core int) bool { return p.Profile[core] != shallowest }) {
+				measuredReorder = true
+			}
+		case *journal.HuntStart:
+			if p.Regime == machine.R7 && len(p.Cores) > 1 {
+				t.Errorf("multi-core R7 failure started hunt %d", p.Hunt)
 			}
 		case *journal.Combination:
 			combinations = append(combinations, *p)
 		}
+	}
+	if !measuredReorder {
+		t.Error("no checking chain ordered its partial by measured requests that differ from offset order")
+	}
+	if !namedMultiCount {
+		t.Error("no named R7 computation error moved its core by a multi-count voltage-targeted backoff")
 	}
 	if !passedFullCycle {
 		t.Error("no passed full cycle end")

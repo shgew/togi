@@ -138,12 +138,19 @@ func TestDeadEndFramePreservesRecordedCause(t *testing.T) {
 	}
 }
 
-func TestDeepeningForecastKeepsTheProposedProfileApplied(t *testing.T) {
+func TestDeepeningChecksSayHowTheyLoad(t *testing.T) {
 	t.Parallel()
-	events := cutTrial(t, probeEvents(t), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })
-	text := ansi.Strip(Render(Project(events), 240, 67, cutTime(events)))
-	if !strings.Contains(text, "deepening round 1:") || strings.Contains(text, " alone at ") {
-		t.Fatalf("deepening checks run with the proposed profile applied, not alone:\n%s", text)
+	alone := cutTrial(t, probeEvents(t), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })
+	text := ansi.Strip(Render(Project(alone), 240, 67, cutTime(alone)))
+	if !strings.Contains(text, "DEEPEN · ROUND 1 · CORE 00 AT -30 · LIGHT") || !strings.Contains(text, "Core 00 runs alone at its proposed -30") || strings.Contains(text, "solo limit, one turn at a time") {
+		t.Fatalf("a deepened core's light check runs alone as part of its round, not as a solo-limit search:\n%s", text)
+	}
+	together := cutTrial(t, simulated(t, combinationJournal), func(p *journal.TrialIntent) bool {
+		return p.Phase == journal.PhaseDeepening && p.Regime == machine.R7
+	})
+	text = ansi.Strip(Render(Project(together), 240, 67, cutTime(together)))
+	if !strings.Contains(text, "DEEPEN · ROUND") || strings.Contains(text, " alone at ") {
+		t.Fatalf("R7 deepening checks run with the proposed profile applied, not alone:\n%s", text)
 	}
 }
 
@@ -164,5 +171,24 @@ func TestCarriedIdleFailureCauseIsNotATrial(t *testing.T) {
 	c := huntCause{known: true, carried: true}
 	if got := c.knownWords(); strings.Contains(got, "trial") || !strings.Contains(got, "idle failure") {
 		t.Fatalf("carried idle failure described as %q", got)
+	}
+}
+
+func TestStoryPartialExplainsOrdinaryEvidence(t *testing.T) {
+	t.Parallel()
+	s := Snapshot{session: true, trial: &trialView{hasStarted: true, regime: machine.R7, condition: machine.Together, cycle: 1, step: 1, partial: true, cores: []int{1}, parts: 2}}
+	st := s.story(time.Time{})
+	text := strings.Join(st.lines, "\n")
+	for _, want := range []string{"top-requester groups", "when the part starts", "even if offsets change", "Passes and failures count as ordinary evidence"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("partial narrative lost %q: %s", want, text)
+		}
+	}
+	help, _ := renderHelpBody(115, 1000, 0)
+	words := strings.Join(strings.Fields(ansi.Strip(strings.Join(help, "\n"))), " ")
+	for _, want := range []string{"Every multi-core R7 failure triggers a voltage-targeted backoff", "every step and R7 partial part passed", "when the part starts", "even if offsets change"} {
+		if !strings.Contains(words, want) {
+			t.Errorf("help lost R7 intent %q", want)
+		}
 	}
 }

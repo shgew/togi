@@ -19,7 +19,7 @@ func TestLoad(t *testing.T) {
 	shortTrial := Default()
 	shortTrial.Durations.ShortTrialS = 86400
 	evidence := Default()
-	evidence.Evidence = Evidence{Miss: 0.001, Rate: 0.25}
+	evidence.Evidence.Miss, evidence.Evidence.Rate = 0.001, 0.25
 	offsets := Default()
 	offsets.StartOffsets = map[int]int{3: -10}
 	soloLimits := Default()
@@ -56,6 +56,8 @@ func TestLoad(t *testing.T) {
 		{name: "one miss", content: "[evidence]\nmiss = 1\n", wantErr: "evidence.miss = 1: must be within (0, 1)"},
 		{name: "zero rate", content: "[evidence]\nrate = 0\n", wantErr: "evidence.rate = 0: must be within (0, 1)"},
 		{name: "one rate", content: "[evidence]\nrate = 1\n", wantErr: "evidence.rate = 1: must be within (0, 1)"},
+		{name: "removed failure rate", content: "[evidence]\nfailure_rate = 0.1\n", wantErr: "unknown keys: evidence.failure_rate"},
+		{name: "removed significance", content: "[evidence]\nsignificance = 0.3\n", wantErr: "unknown keys: evidence.significance"},
 		{name: "too many trials", content: "[evidence]\nrate = 1e-300\n", wantErr: "evidence: miss 0.05 and rate 1e-300 need more than 1000 trials per step"},
 		{name: "removed confirmation key takes precedence", content: "[durations]\nconfirmation_trial_s = 300\nbogus = 1\n", wantErr: "durations.confirmation_trial_s was removed in togi 0.5.0: confirmation no longer exists; delete the key"},
 		{name: "all-core duration too short to split", content: "[durations]\nchecking_all_core_s = 3\n", wantErr: "durations.checking_all_core_s = 3: must be within [4, 86400]"},

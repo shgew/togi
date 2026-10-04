@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"math"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -154,7 +156,9 @@ func TestForwardCheck(t *testing.T) {
 		if diff := cmp.Diff(want, score, opts...); diff != "" {
 			t.Fatal(diff)
 		}
-		if diff := cmp.Diff(map[machine.Regime]forwardCounts{machine.R1: counts}, regimes, opts...); diff != "" {
+		regimeCounts := counts
+		regimeCounts.fitLogLoss, regimeCounts.constantLogLoss = want.fitLoss, want.constantLoss
+		if diff := cmp.Diff(map[machine.Regime]forwardCounts{machine.R1: regimeCounts}, regimes, opts...); diff != "" {
 			t.Fatal(diff)
 		}
 		for _, tc := range []struct {
@@ -167,4 +171,18 @@ func TestForwardCheck(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestReportForwardRegimeLogLoss(t *testing.T) {
+	rows := []forwardRow{{session: "s", ruleset: 1, trainingSessions: 1, constant: .5, score: forwardScore{forwardCounts: forwardCounts{trials: 3}}, regimes: map[machine.Regime]forwardCounts{
+		machine.R7: {trials: 2, failures: 1, predicted: .5, fitLogLoss: 1, constantLogLoss: 2},
+		machine.R1: {trials: 1, predicted: .3, fitLogLoss: .3, constantLogLoss: .6},
+	}}}
+	var out bytes.Buffer
+	reportForward(&out, rows, forwardScore{}, 0)
+	want := "  R1 trials=1 observed=0 predicted=0.3 log_loss/trial fit=0.3000 constant=0.6000\n" +
+		"  R7 trials=2 observed=1 predicted=0.5 log_loss/trial fit=0.5000 constant=1.0000\n"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("report lacks per-regime mean losses in regime order:\n%s", out.String())
+	}
 }

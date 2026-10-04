@@ -69,3 +69,30 @@ machine = "machines/target-flat-cost.toml"
 replay = true
 dev = [1, 2, 3, 4]
 holdout = [101, 102, 103, 104]
+
+[[scenario]]
+name = "shared-voltage"
+machine = "machines/shared-voltage.toml"
+dev = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+holdout = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]
+
+[[scenario]]
+name = "target-shared-voltage"
+machine = "machines/target-shared-voltage.toml"
+replay = true
+dev = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+holdout = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]
+
+[[scenario]]
+name = "target-r7-vf-boost"
+machine = "machines/target-r7-vf-boost.toml"
+replay = true
+dev = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+holdout = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]
+
+[[scenario]]
+name = "target-r7-request-gap"
+machine = "machines/target-r7-request-gap.toml"
+replay = true
+dev = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+holdout = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]

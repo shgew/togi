@@ -3,6 +3,7 @@ package carry
 import (
 	"errors"
 	"io/fs"
+	"path/filepath"
 	"slices"
 
 	"github.com/shgew/togi/internal/defect"
@@ -78,9 +79,12 @@ func prepareFacts(dir, id string, entries []defect.Entry, current *machine.BIOSC
 	seen := make(map[factID]bool)
 	defects := factDefects{dir: dir, entries: entries, sources: make(map[string]factExclusions)}
 	var carried []facts.Fact
+	sessions := make(map[string]facts.Session)
 	source := first
 	for i := 0; ; i++ {
 		s := factSession(source.events)
+		s.session.ReadRequests(filepath.Join(dir, "archive", s.session.ID+"-trials"))
+		sessions[s.session.ID] = s.session
 		defects.sources[s.session.ID] = excludeFacts(source.events, entries)
 		carried, err = s.appendEligible(carried, seen, cleared, epoch, boundary, &defects)
 		if err != nil {
@@ -101,6 +105,33 @@ func prepareFacts(dir, id string, entries []defect.Entry, current *machine.BIOSC
 		}
 		if !sameFactContext(source.context, first.context) {
 			break
+		}
+	}
+	for i := range carried {
+		f := &carried[i]
+		if f.Kind != facts.TrialFact || len(f.VoltageRequestsV) != 0 || len(f.TopRequesters) != 0 || len(f.CCDMHz) != 0 {
+			continue
+		}
+		original, ok := sessions[f.Session]
+		if !ok {
+			source, err := read(dir, f.Session)
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return nil, err
+			}
+			if err == nil {
+				original = facts.FromEvents(source.events)
+				original.ReadRequests(filepath.Join(dir, "archive", f.Session+"-trials"))
+			}
+			sessions[f.Session] = original
+		}
+		for _, source := range original.Facts {
+			if source.Seq == f.Seq {
+				f.VoltageRequestsV, f.TopRequesters, f.CCDMHz = source.VoltageRequestsV, source.TopRequesters, source.CCDMHz
+				if f.StalledCore == nil {
+					f.StalledCore = source.StalledCore
+				}
+				break
+			}
 		}
 	}
 	slices.SortFunc(carried, func(a, b facts.Fact) int {

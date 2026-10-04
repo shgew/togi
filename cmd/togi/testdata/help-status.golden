@@ -5,10 +5,12 @@ clean cycles since the last deepening, then each core's offset, failure point
 and combinations, phase, queued work and last decision. An open hunt shows
 groups and trials; an open deepening round shows checks and passes. Evidence
 includes workloads, valid trials and the Tctl peak since the last profile
-change, and lists between-trial MCEs without treating them as failures. Lists reset
-commands for unanswered too-cautious defects. Read-only; rendered from the
-journal. A different ruleset warns before rendering; a different schema is
-refused.
+change, and lists between-trial MCEs without treating them as failures.
+Shows each core's observed self-sufficiency for each R7 workload and its CCD's
+current top requesters; offsets stand in only when request telemetry is absent.
+Lists reset commands for unanswered too-cautious defects. Read-only; rendered
+from the journal. A different ruleset warns before rendering; a different schema
+is refused.
 
 Examples:
   togi status                     The session in the default state directory

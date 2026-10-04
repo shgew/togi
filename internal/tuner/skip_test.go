@@ -27,14 +27,13 @@ func TestSkipKnownFailure(t *testing.T) {
 		{name: "deeper", profile: []int{-21, -20}},
 		{name: "incomparable", profile: []int{-19, -21}},
 		{name: "regime", profile: []int{-20, -20}, change: func(tr *Trial) { tr.Regime = machine.R1 }},
-		{name: "workload", profile: []int{-20, -20}, change: func(tr *Trial) { tr.Workload = machine.Workloads(machine.R7)[1].ID }},
 		{name: "loaded cores", profile: []int{-20, -20}, change: func(tr *Trial) { tr.Cores = []int{0} }},
 		{name: "duration", profile: []int{-20, -20}, change: func(tr *Trial) { tr.DurationS++ }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20}, coreStart{phase: journal.PhaseAtLimit, offset: -20})
 			h.add(&journal.ProfileChange{To: []int{-20, -20}})
-			tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{1, 0}, DurationS: h.s.durations.ShortTrialS, Condition: machine.Together, Phase: journal.PhaseChecking}
+			tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{1, 0}, DurationS: h.s.durations.ShortTrialS, Condition: machine.Together, Phase: journal.PhaseChecking}
 			var seq int
 			if tc.live {
 				old := tr
@@ -77,6 +76,21 @@ func TestSkipKnownFailure(t *testing.T) {
 	}
 }
 
+func TestKnownSingleCoreR7FailureMatchesWorkload(t *testing.T) {
+	h := hasRoomHarness(t, -20, -20)
+	workloads := machine.Workloads(machine.R7)
+	tr := Trial{Regime: machine.R7, Workload: workloads[0].ID, Cores: []int{0}, DurationS: h.s.durations.ShortTrialS, Condition: machine.Together, Phase: journal.PhaseChecking}
+	fact := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old"}, Class: journal.TrialClass{Regime: tr.Regime, Workload: tr.Workload, Cores: tr.Cores, DurationS: tr.DurationS}, Condition: machine.Together, Profile: []int{-20, -20}, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+	a := h.s.skipKnownFailure(Action{Kind: RunTrial, Trial: tr})
+	if p, ok := a.Payload.(*journal.Failure); !ok || p.KnownFailure != fact.Seq {
+		t.Fatalf("single-core R7 known failure was not skipped: %+v", a)
+	}
+	tr.Workload = workloads[1].ID
+	if a := h.s.skipKnownFailure(Action{Kind: RunTrial, Trial: tr}); a.Kind != RunTrial {
+		t.Fatalf("another R7 workload inherited the known failure: %+v", a)
+	}
+}
+
 func TestSkippedTogetherFailureMakesProgress(t *testing.T) {
 	for _, attributed := range []bool{false, true} {
 		name := "hunt"
@@ -86,12 +100,12 @@ func TestSkippedTogetherFailureMakesProgress(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20}, coreStart{phase: journal.PhaseAtLimit, offset: -20})
 			h.add(&journal.ProfileChange{To: []int{-20, -20}})
-			fact := &journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0304"}, Class: journal.TrialClass{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0}, DurationS: h.s.durations.ShortTrialS}, Condition: machine.Together, Profile: []int{-20, -20}, Outcome: journal.OutcomeFailure, Signal: machine.Crash}
+			fact := &journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0304"}, Class: journal.TrialClass{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: h.s.durations.CheckingIdleS}, Condition: machine.Together, Profile: []int{-20, -20}, Outcome: journal.OutcomeFailure, Signal: machine.Crash}
 			if attributed {
 				fact.Core = new(0)
 			}
 			failure := h.add(fact)
-			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R7}})
+			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R6}})
 			if attributed {
 				h.s.retry = &Trial{Regime: fact.Class.Regime, Workload: fact.Class.Workload, Cores: fact.Class.Cores, DurationS: fact.Class.DurationS, Condition: machine.Together, Phase: journal.PhaseChecking, Cycle: 1, Retry: true, Profile: fact.Profile}
 			}
@@ -153,7 +167,11 @@ func TestSkippedDeepeningAndRerunFailures(t *testing.T) {
 			r := machine.R1
 			w := machine.Workloads(r)[0].ID
 			d := h.s.durations.ShortTrialS
-			failure := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0304"}, Class: journal.TrialClass{Regime: r, Workload: w, Cores: []int{0}, DurationS: d}, Condition: machine.Together, Profile: []int{-20, -20}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Core: new(0)})
+			profile, condition := []int{-20, -20}, machine.Together
+			if deepening {
+				profile, condition = []int{-20, 0}, machine.Alone
+			}
+			failure := h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Trial: "0304"}, Class: journal.TrialClass{Regime: r, Workload: w, Cores: []int{0}, DurationS: d}, Condition: condition, Profile: profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Core: new(0)})
 			if deepening {
 				h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleStart, Profile: []int{-20, -20}, Target: []int{-21, -20}, Cores: []int{0}, Trials: h.s.n, TrialS: d})
 			}

@@ -11,15 +11,15 @@ import (
 
 func TestEvidenceValidity(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20, fail: new(-21)}, coreStart{phase: journal.PhaseAtLimit, offset: -10, fail: new(-11)})
-	w := machine.Workloads(machine.R7)[0].ID
-	k := trialClass{machine.R7, w, "[0 1]", 120}
+	w := machine.Workloads(machine.R6)[0].ID
+	k := trialClass{machine.R6, w, "[0 1]", 120}
 	cases := []struct {
 		profile []int
 		pass    bool
 	}{{[]int{-20, -10}, true}, {[]int{-19, -10}, true}, {[]int{-20, -10}, false}, {[]int{-22, -10}, true}, {[]int{-20, -12}, true}}
 	var seqs []int
 	for _, tc := range cases {
-		tr := Trial{Regime: machine.R7, Workload: w, Cores: []int{0, 1}, DurationS: 120, Profile: tc.profile, Condition: machine.Parked, Phase: journal.PhaseHunt}
+		tr := Trial{Regime: machine.R6, Workload: w, Cores: []int{0, 1}, DurationS: 120, Profile: tc.profile, Condition: machine.Parked, Phase: journal.PhaseHunt}
 		out := passed
 		if !tc.pass {
 			out = failed

@@ -38,15 +38,19 @@ func (s *State) indexClassTargets() {
 }
 
 type entry struct {
-	seq       int
-	profile   []int
-	pass      bool
-	condition machine.Condition
-	class     trialClass
-	tctlMax   int
-	hasTctl   bool
-	carried   bool
-	cores     []int
+	seq            int
+	profile        []int
+	pass           bool
+	condition      machine.Condition
+	class          trialClass
+	tctlMax        int
+	hasTctl        bool
+	carried        bool
+	cores          []int
+	requests       map[int]float64
+	top            []int
+	clocks         map[int]int
+	named, stalled *int
 }
 
 func classOf(p *journal.TrialIntent) trialClass {
@@ -211,7 +215,7 @@ func (s *State) carriedReason(seqs []int) string {
 }
 
 func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *journal.TrialEnd) {
-	if p.RecordOnly || end.Outcome != journal.OutcomePass && end.Outcome != journal.OutcomeFailure {
+	if end.Outcome != journal.OutcomePass && end.Outcome != journal.OutcomeFailure {
 		return
 	}
 	k := classOf(p)
@@ -224,7 +228,7 @@ func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *jo
 			copy(profile, s.checking.profile)
 		}
 	}
-	if end.Outcome == journal.OutcomeFailure {
+	if end.Outcome == journal.OutcomeFailure && !s.multiR7(k) {
 		seqs := s.passSeqs(k, profile, 0, allEvidence)
 		if len(seqs) >= s.n && s.n > 0 {
 			s.warning = &journal.TunerWarning{Warning: "monotonicity", Trial: p.Trial, Passes: slices.Clone(seqs[:s.n]), Detail: fmt.Sprintf("failure at profile %v contradicts %d valid passes in %s %s", profile, len(seqs), k.regime, k.workload)}
@@ -235,6 +239,11 @@ func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *jo
 	if p.Core != nil {
 		e.cores = []int{*p.Core}
 	}
+	if s.classTargets == nil {
+		s.classTargets = map[string]classTarget{}
+	}
+	s.classTargets[k.cores] = classTarget{cores: slices.Clone(e.cores), multi: len(e.cores) > 1}
+	e.requests, e.top, e.clocks, e.named, e.stalled = end.VoltageRequestsV, end.TopRequesters, end.CCDMHz, end.Core, end.StalledCore
 	if carried, ok := ev.Data.(*journal.TrialCarried); ok {
 		e.carried = true
 		s.carriedSources[ev.Seq] = carried.Source.Session
@@ -283,11 +292,9 @@ func (s *State) recordIdle(ev journal.Event, p *journal.Failure) {
 }
 
 func (s *State) recordCarried(ev journal.Event, p *journal.TrialCarried) {
-	if p.RecordOnly {
-		return
-	}
 	intent := &journal.TrialIntent{Regime: p.Class.Regime, Workload: p.Class.Workload, Cores: p.Class.Cores, DurationS: p.Class.DurationS, Condition: p.Condition, Profile: p.Profile}
-	end := &journal.TrialEnd{Trial: p.Source.Trial, Outcome: p.Outcome, Signal: p.Signal, DurationS: p.DurationS}
+	end := &journal.TrialEnd{Trial: p.Source.Trial, Outcome: p.Outcome, Signal: p.Signal, DurationS: p.DurationS, Core: p.Core, StalledCore: p.StalledCore, VoltageRequestsV: p.VoltageRequestsV, TopRequesters: p.TopRequesters, CCDMHz: p.CCDMHz}
+	s.recordR7Measurement(ev.Seq, intent, end)
 	s.recordEvidence(ev, intent, end)
 	if p.Outcome == journal.OutcomeFailure {
 		evidence := s.failures[len(s.failures)-1]
@@ -318,7 +325,7 @@ func (s *State) failureAfter(f pendingFailure, since int) bool {
 
 func (s *State) resetEvidence(core int) {
 	involves := func(e entry) bool {
-		if slices.Contains(e.cores, core) {
+		if slices.Contains(e.cores, core) || s.multiR7(e.class) && e.named != nil && *e.named == core {
 			delete(s.carriedSources, e.seq)
 			return true
 		}
@@ -331,6 +338,7 @@ func (s *State) resetEvidence(core int) {
 	s.failures = slices.DeleteFunc(s.failures, involves)
 	s.projectionDirty = true
 	s.rerunCauses = nil
+	s.r7Measurements = slices.DeleteFunc(s.r7Measurements, involves)
 }
 
 func (s *State) queueRerun(ev journal.Event) {

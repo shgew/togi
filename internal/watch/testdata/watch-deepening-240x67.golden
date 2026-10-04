@@ -1,66 +1,66 @@
-  togi   12:49:10   session 12h49m   7 failures · 7 crashes   last observed failure 04:50, 7h58m ago
+  togi   13:07:40   session 13h07m   8 failures · 8 crashes   last observed failure 08:22, 4h45m ago
 
   ■ SOLO LIMITS  16/16  ───  ■ CYCLE 1  ───  ► DEEPEN  round 1  ───  CLEAN CYCLES 0  · repeats until stopped
 
-  ▌  DEEPEN · ROUND 1   These offsets passed a full cycle. I check the deepening plan's proposed profile together.        last trial      PASS  15:00 on 00-15 · Tctl max 62°C
-  ▌                     The checks below distinguish cores that go deeper from members that yield shallower.
+  ▌  DEEPEN · ROUND 1   Core 00 runs alone at its proposed -30, like every deepened core's light and heavy checks.        last trial      PASS  15:00 on 00-15 · Tctl max 67°C
+  ▌                     R7 then checks the parts where a deepened core is a top requester.
 
-  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0390
-   R1   light load  on 00   mprime SSE 4K-21K · 1 worker                                                                                                                                                                     DEEPEN · ROUND 1
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0398
+   R1   light load  on core 00 alone at -30   mprime SSE 4K-21K · 1 worker                                                                                                                          DEEPEN · ROUND 1 · CORE 00 AT -30 · LIGHT
 
   ████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████          ▀█    ▀▀█ █▀█
   ████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████           █  ▀ █▀▀ █ █
   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
   0:40 of 2:00                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 
-  if 5 of 5 pass       next: deepening round 1: R2 heavy vector on core 00 at -30
-  if it passes         next: deepening round 1: R1 light on core 00 at -30
+  if 5 of 5 pass       next: deepening round 1: R2 heavy vector on core 00 alone at -30
   if a core is named   its failure point is recorded → deepening round 1 ends → it backs off → next: rerun R1 light on core 00 at -29 · 2m
+  if inconclusive      the same trial runs again
 
-  CCD 0               0       -10       -20       -30       -40       -50 fail pt  one core under load at a time          CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
-  ► 00  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                                                       08  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
-    01  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                                                       09  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
-    02  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                                                       10  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
-    03  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                                                       11   -9  AT LIMIT  ▄▄▄▄▄▄▄▄▄░                                                  held by C1 · solo -10
-    04  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                                                       12  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
-    05  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                                                       13  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
-    06  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                                                       14  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
-    07  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                                                       15  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
+  CCD 0               0       -10       -20       -30       -40       -50 fail pt  one core under load at a time          CCD 1               0       -10       -20       -30       -40       -50 fail pt  waiting at 0
+  ► 00  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                                                       08    0  HAS ROOM  ··········                                        
+    01    0  HAS ROOM  ··········                                                                                           09    0  HAS ROOM  ··········                                        
+    02    0  HAS ROOM  ··········                                                                                           10    0  HAS ROOM  ··········                                        
+    03    0  HAS ROOM  ··········                                                                                           11    0  AT LIMIT  ░░░░░░░░░░                                                  held by C1 · solo -10
+    04    0  HAS ROOM  ··········                                                                                           12    0  HAS ROOM  ··········                                        
+    05    0  HAS ROOM  ··········                                                                                           13    0  HAS ROOM  ··········                                        
+    06    0  HAS ROOM  ··········                                                                                           14    0  HAS ROOM  ··········                                        
+    07    0  HAS ROOM  ··········                                                                                           15    0  HAS ROOM  ··········                                        
 
   DEEPEN · ROUND 1 ──────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
 
-  has room    00-10 12-15 · in this order                                                                                 12:48  room     core 15 -10 → -30
-                                                                                                                          12:48  room     core 07 -10 → -30
-  CHECKS                                                                                                                  12:48  room     core 14 -10 → -30
-  R1 on 00  0/5 passed  mprime SSE 4K-21K                                                                                 12:48  room     core 06 -10 → -30
-  R2 on 00  0/5 passed  mprime AVX2 36K-248K                                                                              12:48  room     core 13 -10 → -30
-  R1 on 08  0/5 passed  mprime SSE 4K-21K                                                                                 12:48  room     core 05 -10 → -30
-  R2 on 08  0/5 passed  mprime AVX2 36K-248K                                                                              12:48  room     core 12 -10 → -30
-  R1 on 01  0/5 passed  mprime SSE 4K-21K                                                                                 12:48  room     core 04 -10 → -30
-  R2 on 01  0/5 passed  mprime AVX2 36K-248K                                                                              12:48  room     core 03 -10 → -30
-  R1 on 09  0/5 passed  mprime SSE 4K-21K                                                                                 12:48  room     core 10 -10 → -30
-  R2 on 09  0/5 passed  mprime AVX2 36K-248K                                                                              12:48  room     core 02 -10 → -30
-  R1 on 02  0/5 passed  mprime SSE 4K-21K                                                                                 12:48  room     core 09 -10 → -30
-  R2 on 02  0/5 passed  mprime AVX2 36K-248K                                                                              12:48  room     core 01 -10 → -30
-  R1 on 10  0/5 passed  mprime SSE 4K-21K                                                                                 12:48  room     core 08 -10 → -30
-  R2 on 10  0/5 passed  mprime AVX2 36K-248K                                                                              12:48  room     core 00 -10 → -30
-  R1 on 03  0/5 passed  mprime SSE 4K-21K                                                                                 12:48  round    #1: core 00 goes deeper to -30, core 01 goes deeper to -30, core 02 goes deeper to -30, core 03
-  R2 on 03  0/5 passed  mprime AVX2 36K-248K                                                                              12:48  cycle    cycle 1 passed, a full cycle of every kind of test
-  R1 on 04  0/5 passed  mprime SSE 4K-21K                                                                                 12:48  pass     R6 idle + bursts on 00-15 · passed · Tctl max 62°C
-  R2 on 04  0/5 passed  mprime AVX2 36K-248K                                                                              12:33  pass     R4 partial load on core 15 at -10 · passed · Tctl max 74°C
-  R1 on 12  0/5 passed  mprime SSE 4K-21K                                                                                 12:31  pass     R4 partial load on core 07 at -10 · passed · Tctl max 64°C
-  R2 on 12  0/5 passed  mprime AVX2 36K-248K                                                                              12:29  pass     R4 partial load on core 14 at -10 · passed · Tctl max 75°C
-  R1 on 05  0/5 passed  mprime SSE 4K-21K                                                                                 12:27  pass     R4 partial load on core 06 at -10 · passed · Tctl max 67°C
-  R2 on 05  0/5 passed  mprime AVX2 36K-248K                                                                              12:25  pass     R4 partial load on core 13 at -10 · passed · Tctl max 71°C
-  R1 on 13  0/5 passed  mprime SSE 4K-21K                                                                                 12:23  pass     R4 partial load on core 05 at -10 · passed · Tctl max 75°C
-  R2 on 13  0/5 passed  mprime AVX2 36K-248K                                                                              12:21  pass     R4 partial load on core 12 at -10 · passed · Tctl max 68°C
-  R1 on 06  0/5 passed  mprime SSE 4K-21K                                                                                 12:19  pass     R4 partial load on core 04 at -10 · passed · Tctl max 74°C
-  R2 on 06  0/5 passed  mprime AVX2 36K-248K                                                                              12:17  pass     R4 partial load on core 11 at -9 · passed · Tctl max 66°C
-  R1 on 14  0/5 passed  mprime SSE 4K-21K                                                                                 12:15  pass     R4 partial load on core 03 at -10 · passed · Tctl max 71°C
-  R2 on 14  0/5 passed  mprime AVX2 36K-248K                                                                              12:13  pass     R4 partial load on core 10 at -10 · passed · Tctl max 67°C
-  R1 on 07  0/5 passed  mprime SSE 4K-21K                                                                                 12:11  pass     R4 partial load on core 02 at -10 · passed · Tctl max 74°C
-  R2 on 07  0/5 passed  mprime AVX2 36K-248K                                                                              12:09  pass     R4 partial load on core 09 at -10 · passed · Tctl max 64°C
-  R1 on 15  0/5 passed  mprime SSE 4K-21K                                                                                 12:07  pass     R4 partial load on core 01 at -10 · passed · Tctl max 67°C
-  +4 more                                                                                                                 +168 more
+  has room    00-10 12-15 · in this order                                                                                 13:07  room     core 15 -10 → -30
+                                                                                                                          13:07  room     core 07 -10 → -30
+  CHECKS                                                                                                                  13:07  room     core 14 -10 → -30
+  R1 on 00  0/5 passed  mprime SSE 4K-21K                                                                                 13:07  room     core 06 -10 → -30
+  R2 on 00  0/5 passed  mprime AVX2 36K-248K                                                                              13:07  room     core 13 -10 → -30
+  R1 on 08  0/5 passed  mprime SSE 4K-21K                                                                                 13:07  room     core 05 -10 → -30
+  R2 on 08  0/5 passed  mprime AVX2 36K-248K                                                                              13:07  room     core 12 -10 → -30
+  R1 on 01  0/5 passed  mprime SSE 4K-21K                                                                                 13:07  room     core 04 -10 → -30
+  R2 on 01  0/5 passed  mprime AVX2 36K-248K                                                                              13:07  room     core 03 -10 → -30
+  R1 on 09  0/5 passed  mprime SSE 4K-21K                                                                                 13:07  room     core 10 -10 → -30
+  R2 on 09  0/5 passed  mprime AVX2 36K-248K                                                                              13:07  room     core 02 -10 → -30
+  R1 on 02  0/5 passed  mprime SSE 4K-21K                                                                                 13:07  room     core 09 -10 → -30
+  R2 on 02  0/5 passed  mprime AVX2 36K-248K                                                                              13:07  room     core 01 -10 → -30
+  R1 on 10  0/5 passed  mprime SSE 4K-21K                                                                                 13:07  room     core 08 -10 → -30
+  R2 on 10  0/5 passed  mprime AVX2 36K-248K                                                                              13:07  room     core 00 -10 → -30
+  R1 on 03  0/5 passed  mprime SSE 4K-21K                                                                                 13:07  round    #1: core 00 goes deeper to -30, core 01 goes deeper to -30, core 02 goes deeper to -30, core 03
+  R2 on 03  0/5 passed  mprime AVX2 36K-248K                                                                              13:07  cycle    cycle 1 passed, a full cycle of every kind of test
+  R1 on 04  0/5 passed  mprime SSE 4K-21K                                                                                 13:07  pass     R6 idle + bursts on 00-15 · passed · Tctl max 67°C
+  R2 on 04  0/5 passed  mprime AVX2 36K-248K                                                                              12:52  pass     R4 partial load on core 15 at -10 · passed · Tctl max 74°C
+  R1 on 12  0/5 passed  mprime SSE 4K-21K                                                                                 12:50  pass     R4 partial load on core 07 at -10 · passed · Tctl max 64°C
+  R2 on 12  0/5 passed  mprime AVX2 36K-248K                                                                              12:48  pass     R4 partial load on core 14 at -10 · passed · Tctl max 75°C
+  R1 on 05  0/5 passed  mprime SSE 4K-21K                                                                                 12:46  pass     R4 partial load on core 06 at -10 · passed · Tctl max 67°C
+  R2 on 05  0/5 passed  mprime AVX2 36K-248K                                                                              12:44  pass     R4 partial load on core 13 at -10 · passed · Tctl max 71°C
+  R1 on 13  0/5 passed  mprime SSE 4K-21K                                                                                 12:42  pass     R4 partial load on core 05 at -10 · passed · Tctl max 75°C
+  R2 on 13  0/5 passed  mprime AVX2 36K-248K                                                                              12:40  pass     R4 partial load on core 12 at -10 · passed · Tctl max 68°C
+  R1 on 06  0/5 passed  mprime SSE 4K-21K                                                                                 12:38  pass     R4 partial load on core 04 at -10 · passed · Tctl max 74°C
+  R2 on 06  0/5 passed  mprime AVX2 36K-248K                                                                              12:36  pass     R4 partial load on core 11 at -9 · passed · Tctl max 66°C
+  +12 more                                                                                                                12:34  pass     R4 partial load on core 03 at -10 · passed · Tctl max 71°C
+                                                                                                                          12:32  pass     R4 partial load on core 10 at -10 · passed · Tctl max 67°C
+  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     12:30  pass     R4 partial load on core 02 at -10 · passed · Tctl max 74°C
+  mprime AVX2 36K-248K           00-07 11 by offset       11                                                              12:28  pass     R4 partial load on core 09 at -10 · passed · Tctl max 64°C
+  mprime AVX-512 36K-248K        00-07 11 by offset       11                                                              12:26  pass     R4 partial load on core 01 at -10 · passed · Tctl max 67°C
+  y-cruncher FFTv4 + N63 + VT3   00-07 11 by offset       11                                                              +168 more
 
    ?  help    l  log    esc  back    q  close view

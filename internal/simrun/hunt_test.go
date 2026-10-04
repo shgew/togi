@@ -27,7 +27,7 @@ func huntConfig(cores int) sim.Config {
 	limits := make([]sim.Limits, cores)
 	for i := range limits {
 		limits[i].Alone = [5]int{-10, -10, -10, -10, -10}
-		limits[i].Together = [7]int{-10, -10, -10, -10, -10, -10, -10}
+		limits[i].Together = [7]int{-10, -10, -10, -10, -10, -10, -50}
 	}
 	return sim.Config{Seed: 1, Cores: cores, Limits: limits, Model: &model}
 }
@@ -122,7 +122,7 @@ func assertAdversarialEvidence(t *testing.T, events []journal.Event, huntBudget,
 func TestHuntAllZeroParkedOffsets(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(16)
-	cfg.Limits[11].Together[6] = -5
+	cfg.Limits[11].Together[5] = -5
 	stop, events, _ := runHunt(t, cfg, nil, nil)
 	if stop.Reason != session.StopCycles {
 		t.Fatalf("stop %+v", stop)
@@ -153,7 +153,7 @@ func TestHuntCulpritAfterCleanCycleParkedOffsets(t *testing.T) {
 		cfg.Limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
 		cfg.Limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
 	}
-	cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
+	cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
 	stop, events, _ := runHunt(t, cfg, nil, func(in *Input) {
 		in.Config.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 	})
@@ -182,7 +182,7 @@ func TestParkedOffsetBackendFailureRaisesParkedOffsets(t *testing.T) {
 		cfg.Limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
 		cfg.Limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
 	}
-	cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
+	cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
 	candidates := func(in *Input) {
 		in.Config.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 	}
@@ -257,7 +257,7 @@ func TestHuntCombination(t *testing.T) {
 		cfg.Limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
 		cfg.Limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
 	}
-	cfg.Joints = []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
+	cfg.Joints = []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
 	stop, events, _ := runHunt(t, cfg, nil, nil)
 	if stop.Reason != session.StopCycles {
 		t.Fatalf("stop %+v", stop)
@@ -300,54 +300,13 @@ func TestHuntCombination(t *testing.T) {
 	t.Log("joint miss risk per 120s failing trial is exp(-1200), below 1e-500 but not zero; this fixed seed is not a universal accuracy guarantee")
 }
 
-func TestSharedVoltageJointBacksOffOnlyTheShallowestCore(t *testing.T) {
-	t.Parallel()
-	cfg := huntConfig(8)
-	limits := []int{-31, -38, -37, -34, -40, -40, -40, -40}
-	for i, limit := range limits {
-		cfg.Limits[i].Alone = [5]int{limit, limit, limit, limit, limit}
-		cfg.Limits[i].Together = [7]int{limit, limit, limit, limit, limit, limit, limit}
-	}
-	ccd0 := func(offset int) map[int]int { return map[int]int{0: offset, 1: offset, 2: offset, 3: offset} }
-	cfg.Joints = []sim.Joint{
-		{Members: ccd0(-27), Regimes: []machine.Regime{machine.R7}, Rate: 0.05},
-		{Members: ccd0(-23), Regimes: []machine.Regime{machine.R7}, Rate: 0.0009},
-	}
-	stop, events, _ := runHunt(t, cfg, nil, nil)
-	if stop.Reason != session.StopCycles {
-		t.Fatalf("stop %+v", stop)
-	}
-	hunts, crashes := 0, 0
-	var final []int
-	for _, e := range events {
-		switch p := e.Data.(type) {
-		case *journal.HuntStart:
-			hunts++
-		case *journal.CrashDetected:
-			crashes++
-		case *journal.ProfileChange:
-			final = p.To
-		}
-	}
-	if hunts > 8 || crashes > 40 {
-		t.Errorf("%d hunts and %d crashes, want at most 8 and 40", hunts, crashes)
-	}
-	want := slices.Clone(limits)
-	want[0] = -22
-	if diff := cmp.Diff(want, final); diff != "" {
-		t.Errorf("final profile (-want +got):\n%s", diff)
-	}
-	assertAdversarialEvidence(t, events, 8, 40)
-	t.Logf("shared-voltage .0009/s hazard miss risk over eligible exposure T is exp(-.0009*T), %g for one 120s trial; this fixed seed does not promise accuracy on every seed", math.Exp(-.0009*120))
-}
-
 func TestHuntJointMisleadingMCE(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(16)
 	model := sim.DefaultModel()
 	model.PastLimitRate = 1
 	cfg.Model = &model
-	cfg.Joints = []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10, CrashMCECore: new(3)}}
+	cfg.Joints = []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R6}, Rate: 10, CrashMCECore: new(3)}}
 	stop, events, _ := runHunt(t, cfg, nil, nil)
 	if stop.Reason != session.StopCycles {
 		t.Fatalf("stop %+v", stop)
@@ -373,17 +332,16 @@ func TestHuntJointMisleadingMCE(t *testing.T) {
 func TestDelayedHuntEscalates(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name   string
-		regime machine.Regime
-		after  float64
-		long   int
+		name  string
+		after float64
+		long  int
 	}{
-		{"idle six minutes", machine.R6, 360, 900},
-		{"R7 four minutes", machine.R7, 240, 300},
+		{"idle six minutes", 360, 900},
+		{"idle short-duration boundary", 120, 900},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := huntConfig(4)
-			cfg.Joints = []sim.Joint{{Members: map[int]int{1: -10}, Regimes: []machine.Regime{tc.regime}, AfterS: tc.after, Rate: 10}}
+			cfg.Joints = []sim.Joint{{Members: map[int]int{1: -10}, Regimes: []machine.Regime{machine.R6}, AfterS: tc.after, Rate: 10}}
 			stop, events, _ := runHunt(t, cfg, nil, nil)
 			if stop.Reason != session.StopCycles {
 				t.Fatalf("delayed session stop %+v", stop)
@@ -658,7 +616,7 @@ func TestJournalUntilCancelsAfterFirstMatchingAppend(t *testing.T) {
 func TestPowerLossDuringHuntResume(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(4)
-	cfg.Joints = []sim.Joint{{Members: map[int]int{1: -10, 3: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
+	cfg.Joints = []sim.Joint{{Members: map[int]int{1: -10, 3: -10}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
 	runInterruptionMatrix(t, "hunt", cfg, quickMatrixConfig(),
 		func(e journal.Event) bool { return e.Kind == journal.KindHuntStart },
 		func(e journal.Event, closing *bool) bool {
@@ -788,9 +746,12 @@ func TestScriptedJointAndIdleLimits(t *testing.T) {
 			if tc.idle {
 				cfg.Limits[3].Idle = new(-5)
 			} else {
-				cfg.Joints = []sim.Joint{{Members: map[int]int{0: -6, 2: -6}, Regimes: []machine.Regime{machine.R7}, Rate: 10}}
+				cfg.Joints = []sim.Joint{{Members: map[int]int{0: -6, 2: -6}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
 			}
 			stop, events, _ := runHunt(t, cfg, nil, func(in *Input) {
+				if tc.idle {
+					checkingR1First(in)
+				}
 				in.Until = func(e journal.Event) bool {
 					p, ok := e.Data.(*journal.TrialIntent)
 					if !ok {
@@ -821,13 +782,13 @@ func TestScriptedJointAndIdleLimits(t *testing.T) {
 						intents[p.Trial] = p
 					case *journal.Failure:
 						tr := intents[p.Trial]
-						if tr != nil && tr.Condition == machine.Together && tr.Profile[3] < *cfg.Limits[3].Idle && !slices.Contains(tr.Cores, 3) && (tr.Core == nil || *tr.Core != 3) {
+						if tr != nil && tr.Regime == machine.R1 && tr.Condition == machine.Together && tr.Profile[3] < *cfg.Limits[3].Idle && !slices.Contains(tr.Cores, 3) && (tr.Core == nil || *tr.Core != 3) && p.Core != nil && *p.Core == 3 && p.Signal == machine.ComputationError {
 							found = true
 						}
 					}
 				}
 				if !found {
-					t.Fatal("no idle-limit failure outside the loaded cores")
+					t.Fatal("no named R1 idle-limit failure outside the loaded cores")
 				}
 			}
 		})
@@ -846,7 +807,7 @@ func scriptedSharpOutcome(cfg sim.Config, p *journal.TrialIntent) sim.Outcome {
 			limit = cfg.Limits[core].Alone[regime]
 		}
 		if p.Profile[core] < limit {
-			return sim.Outcome{Signal: machine.Crash, AtS: 1, Core: core}
+			return sim.Outcome{Signal: machine.ComputationError, AtS: 1, Core: core}
 		}
 	}
 	if p.Condition == machine.Alone {
@@ -854,7 +815,7 @@ func scriptedSharpOutcome(cfg sim.Config, p *journal.TrialIntent) sim.Outcome {
 	}
 	for core, limit := range cfg.Limits {
 		if limit.Idle != nil && !slices.Contains(loaded, core) && p.Profile[core] < *limit.Idle {
-			return sim.Outcome{Signal: machine.Crash, AtS: 1, Core: core}
+			return sim.Outcome{Signal: machine.ComputationError, AtS: 1, Core: core}
 		}
 	}
 	for _, combination := range cfg.Joints {
@@ -872,13 +833,20 @@ func scriptedSharpOutcome(cfg sim.Config, p *journal.TrialIntent) sim.Outcome {
 	return sim.Outcome{}
 }
 
+func checkingR1First(in *Input) {
+	// Keep every occurrence while exercising idle cores before multi-core R7.
+	cycle := in.Config.Checking.Cycle
+	first := slices.Index(cycle, machine.R1)
+	cycle[0], cycle[first] = cycle[first], cycle[0]
+}
+
 func TestIdleOnlyHazardReachesCleanCycle(t *testing.T) {
 	for _, seed := range []uint64{1, 2} {
 		t.Run(fmt.Sprintf("seed-%d", seed), func(t *testing.T) {
 			cfg := huntConfig(4)
 			cfg.Seed = seed
 			cfg.Limits[3].Idle = new(-5)
-			stop, events, _ := runHunt(t, cfg, nil, nil)
+			stop, events, _ := runHunt(t, cfg, nil, checkingR1First)
 			if stop.Reason != session.StopCycles {
 				t.Fatalf("idle-only stop %+v", stop)
 			}
@@ -896,7 +864,7 @@ func TestIdleOnlyHazardReachesCleanCycle(t *testing.T) {
 					intents[p.Trial] = p
 				case *journal.Failure:
 					tr := intents[p.Trial]
-					if tr != nil && tr.Condition == machine.Together && tr.Profile[3] < *cfg.Limits[3].Idle && !slices.Contains(tr.Cores, 3) && (tr.Core == nil || *tr.Core != 3) {
+					if tr != nil && tr.Regime == machine.R1 && tr.Condition == machine.Together && tr.Profile[3] < *cfg.Limits[3].Idle && !slices.Contains(tr.Cores, 3) && (tr.Core == nil || *tr.Core != 3) {
 						found = true
 					}
 				}

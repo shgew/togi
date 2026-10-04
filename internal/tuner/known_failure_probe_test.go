@@ -11,7 +11,7 @@ import (
 func TestKnownFailureSkipCompletesRunningMemberProbeGroup(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseHasRoom, offset: -10}, coreStart{phase: journal.PhaseHasRoom, offset: -10})
 	h.decide(h.next())
-	tr := Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Condition: machine.Parked, Profile: []int{-9, -10}}
+	tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: 120, Condition: machine.Parked, Profile: []int{-9, -10}}
 	_, known := h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
 	h.decide(h.next())
 	tr.Condition, tr.Profile = machine.Together, []int{-10, -10}

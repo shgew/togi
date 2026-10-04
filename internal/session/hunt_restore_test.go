@@ -34,7 +34,7 @@ func (j *stopAfterHuntCommit) Append(p journal.Payload, cause ...int) (journal.E
 
 func TestRestoreAfterCombinationHuntCommitmentNeverReachesCombination(t *testing.T) {
 	t.Parallel()
-	cfg := sim.Config{Seed: 4, Cores: 4, BIOS: []int{-40, -40, 0, 0}, Limits: make([]sim.Limits, 4), Ranking: []int{4, 3, 2, 1}, Joints: []sim.Joint{{Members: map[int]int{0: -30, 1: -30}, Regimes: []machine.Regime{machine.R7}, Rate: 1e6, Signal: machine.Crash}}}
+	cfg := sim.Config{Seed: 4, Cores: 4, BIOS: []int{-40, -40, 0, 0}, Limits: make([]sim.Limits, 4), Ranking: []int{4, 3, 2, 1}, Joints: []sim.Joint{{Members: map[int]int{0: -30, 1: -30}, Regimes: []machine.Regime{machine.R6}, Rate: 1e6, Signal: machine.Crash}}}
 	for core := range cfg.Limits {
 		for i := range cfg.Limits[core].Alone {
 			cfg.Limits[core].Alone[i] = -31
@@ -48,6 +48,7 @@ func TestRestoreAfterCombinationHuntCommitmentNeverReachesCombination(t *testing
 	cfg.Model = &model
 	in := simInput(t.TempDir(), newSim(t, cfg))
 	in.Config.CandidateSoloLimits = map[int]int{0: -30, 1: -30, 2: -30, 3: -30}
+	in.Config.Checking.Cycle = []machine.Regime{machine.R6}
 	in.Config.Durations.ShortTrialS = 1
 	in.Config.Durations.CheckingTrialS = 1
 	in.Config.Durations.CheckingAllCoreS = 4

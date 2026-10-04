@@ -23,6 +23,7 @@ type Snapshot struct {
 
 	cores  []coreView // sorted by core ID
 	combos []comboView
+	r7     []tuner.R7CoreStatus
 
 	trial    *trialView   // the trial in flight: its intent is recorded and it has not ended
 	last     *trialEnd    // the last trial that ended
@@ -127,6 +128,7 @@ type trialView struct {
 	hasStarted bool
 	duration   time.Duration
 	recordOnly bool
+	partial    bool
 	rerun      bool
 	retry      bool
 
@@ -177,8 +179,12 @@ type outcome struct {
 	next         *tuner.Trial      // the trial it runs next, nil when it stops
 	core         *int              // with ifNamed: the core the failure names
 	atZero       bool              // with ifNamed: the forecast follows a core at 0, apart from the cores away from it
+	top          bool              // with ifNamed in multi-core R7: that core is a top requester of the load
 	needsRanking bool
 	needsHistory bool
+	// withoutTelemetry: the forecast end measures nothing, so R7 backoffs follow earlier requests or offset order
+	withoutTelemetry bool
+	offsetOrder      bool // with withoutTelemetry: some loaded core's request comes from its offset
 }
 
 type cycleView struct {
@@ -194,22 +200,22 @@ type cycleStep struct {
 	workload machine.Workload
 	parts    []cyclePart // one per load the step runs; per-core steps have one part per core
 	done     bool
+	more     bool  // R7 partial parts may still be derived: a CCD's chain has no recorded ending yet
 	hunts    []int // hunts this step started
 }
 
 type cyclePart struct {
-	cores      []int // cores under load
-	ccd        int   // -1 when the part loads every CCD
-	full       bool  // every core of its CCD is loaded
-	recordOnly bool
-	short      int // trials of short length
-	shortLen   time.Duration
-	long       int // trials of the step's original length, when longer
-	longLen    time.Duration
-	passed     int
-	failed     int
-	running    bool
-	done       bool
+	cores    []int // cores under load
+	ccd      int   // -1 when the part loads every CCD
+	full     bool  // every core of its CCD is loaded
+	short    int   // trials of short length
+	shortLen time.Duration
+	long     int // trials of the step's original length, when longer
+	longLen  time.Duration
+	passed   int
+	failed   int
+	running  bool
+	done     bool
 }
 
 type huntView struct {

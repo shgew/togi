@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/requests"
 )
 
 type Kind string
@@ -32,26 +34,30 @@ type Class = journal.TrialClass
 // the trial intent (the idle failure itself for idle facts). DurationS is measured,
 // while Class.DurationS is intended. Rerun retains the recorded flag beside Phase.
 type Fact struct {
-	Kind       Kind
-	Session    string
-	Seq        int
-	Time       time.Time
-	Build      journal.Build
-	Ruleset    int
-	Epoch      int
-	Trial      string
-	Boot       string
-	Class      Class
-	Condition  machine.Condition
-	Phase      journal.Phase
-	Rerun      bool
-	RecordOnly bool `json:"record_only,omitempty"`
-	Profile    []int
-	Outcome    journal.Outcome
-	Signal     machine.Signal
-	DurationS  int
-	Core       *int
-	Idle       *journal.Failure
+	Kind             Kind
+	Session          string
+	Seq              int
+	Time             time.Time
+	Build            journal.Build
+	Ruleset          int
+	Epoch            int
+	Trial            string
+	Boot             string
+	Class            Class
+	Condition        machine.Condition
+	Phase            journal.Phase
+	Rerun            bool
+	RecordOnly       bool `json:"record_only,omitempty"`
+	Profile          []int
+	Outcome          journal.Outcome
+	Signal           machine.Signal
+	DurationS        int
+	Core             *int
+	StalledCore      *int
+	VoltageRequestsV map[int]float64
+	TopRequesters    []int
+	CCDMHz           map[int]int
+	Idle             *journal.Failure
 }
 
 // Trial retains nondecisive trials too, for readers reporting interrupted work.
@@ -138,7 +144,34 @@ func ReadJournal(path string) (Session, error) {
 	s := FromEvents(events)
 	s.Path = path
 	s.Archived = filepath.Base(filepath.Dir(path)) == "archive"
+	trialsDir := filepath.Join(filepath.Dir(path), "trials")
+	if s.Archived {
+		trialsDir = filepath.Join(filepath.Dir(path), s.ID+"-trials")
+	}
+	s.ReadRequests(trialsDir)
 	return s, nil
+}
+
+// ReadRequests fills missing trial request measurements from persisted samples.
+// The source session's recorded topology, not the current machine's, groups CCDs.
+func (s *Session) ReadRequests(trialsDir string) {
+	ccds := make(map[int]int, len(s.Cores))
+	for _, core := range s.Cores {
+		ccds[core.Core] = core.CCD
+	}
+	for i := range s.Facts {
+		f := &s.Facts[i]
+		if f.Kind != TrialFact || len(f.VoltageRequestsV) != 0 || len(f.TopRequesters) != 0 || len(f.CCDMHz) != 0 {
+			continue
+		}
+		if slices.ContainsFunc(f.Class.Cores, func(core int) bool { _, ok := ccds[core]; return !ok }) {
+			continue
+		}
+		telemetry, ok := requests.Summarize(machine.ReadSamples(filepath.Join(trialsDir, f.Trial)), f.Class.Cores, func(core int) int { return ccds[core] })
+		if ok {
+			f.VoltageRequestsV, f.TopRequesters, f.CCDMHz = telemetry.Requests, telemetry.TopRequesters, telemetry.CCDMHz
+		}
+	}
 }
 
 // FromEvents projects already-decoded events without altering their payloads.
@@ -231,7 +264,7 @@ func (s *Session) recordTrialEnd(e journal.Event, end *journal.TrialEnd, t *Tria
 		return
 	}
 	in := t.Intent
-	s.Facts = append(s.Facts, Fact{Kind: TrialFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: t.Build, Ruleset: t.Build.Ruleset, Epoch: s.Epoch, Trial: end.Trial, Boot: t.Boot, Class: ClassOf(in), Condition: in.Condition, Phase: in.Phase, Rerun: in.Rerun, RecordOnly: in.RecordOnly, Profile: slices.Clone(in.Profile), Outcome: end.Outcome, Signal: end.Signal, DurationS: end.DurationS, Core: end.Core})
+	s.Facts = append(s.Facts, Fact{Kind: TrialFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: t.Build, Ruleset: t.Build.Ruleset, Epoch: s.Epoch, Trial: end.Trial, Boot: t.Boot, Class: ClassOf(in), Condition: in.Condition, Phase: in.Phase, Rerun: in.Rerun, RecordOnly: in.RecordOnly, Profile: slices.Clone(in.Profile), Outcome: end.Outcome, Signal: end.Signal, DurationS: end.DurationS, Core: end.Core, StalledCore: end.StalledCore, VoltageRequestsV: maps.Clone(end.VoltageRequestsV), TopRequesters: slices.Clone(end.TopRequesters), CCDMHz: maps.Clone(end.CCDMHz)})
 }
 
 func (s *Session) recordIdleFailure(e journal.Event, p *journal.Failure, build journal.Build, ids []int) {
@@ -315,13 +348,14 @@ func (f Fact) Payload() journal.Payload {
 		idle.Profile = slices.Clone(f.Profile)
 		return &journal.FailureCarried{Source: source, Class: class, Failure: idle}
 	}
-	return &journal.TrialCarried{Source: source, Class: class, Condition: f.Condition, Phase: f.Phase, Rerun: f.Rerun, RecordOnly: f.RecordOnly, Profile: slices.Clone(f.Profile), Outcome: f.Outcome, Signal: f.Signal, DurationS: f.DurationS, Core: f.Core}
+	return &journal.TrialCarried{Source: source, Class: class, Condition: f.Condition, Phase: f.Phase, Rerun: f.Rerun, RecordOnly: f.RecordOnly, Profile: slices.Clone(f.Profile), Outcome: f.Outcome, Signal: f.Signal, DurationS: f.DurationS, Core: f.Core, StalledCore: f.StalledCore, VoltageRequestsV: maps.Clone(f.VoltageRequestsV), TopRequesters: slices.Clone(f.TopRequesters), CCDMHz: maps.Clone(f.CCDMHz)}
 }
 
 func carriedTrial(p *journal.TrialCarried) Fact {
 	f := sourceFact(p.Source, p.Class)
 	f.Kind, f.Condition, f.Phase, f.Rerun, f.RecordOnly = TrialFact, p.Condition, p.Phase, p.Rerun, p.RecordOnly
 	f.Profile, f.Outcome, f.Signal, f.DurationS, f.Core = slices.Clone(p.Profile), p.Outcome, p.Signal, p.DurationS, p.Core
+	f.StalledCore, f.VoltageRequestsV, f.TopRequesters, f.CCDMHz = p.StalledCore, maps.Clone(p.VoltageRequestsV), slices.Clone(p.TopRequesters), maps.Clone(p.CCDMHz)
 	return f
 }
 

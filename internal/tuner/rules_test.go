@@ -45,7 +45,7 @@ func TestTogetherCrashNamesTheSoleNonzeroCoreByID(t *testing.T) {
 	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: snapshotConfig(config.Default())})
 	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Reason: "test"}, begin.Seq)
 	h.add(&journal.CorePhase{Core: 8, To: journal.PhaseAtLimit, Offset: -12, Reason: "test"}, begin.Seq)
-	intent := h.add(&journal.TrialIntent{Trial: "0001", Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Cores: []int{0, 8}, Profile: []int{0, -12}})
+	intent := h.add(&journal.TrialIntent{Trial: "0001", Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Cores: []int{0, 8}, Profile: []int{0, -12}})
 	h.add(&journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomeFailure, Signal: machine.Crash}, intent.Seq)
 	a, ok := h.s.Attribution()
 	if !ok {
@@ -297,13 +297,13 @@ func TestDirectFailureAtZero(t *testing.T) {
 			if tc.condition == machine.Parked {
 				h.add(&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -10})
 				h.add(&journal.ProfileChange{From: tc.profile, To: []int{-10, -10}})
-				h.add(&journal.HuntStart{Hunt: 1, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Trials: 5, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120})
+				h.add(&journal.HuntStart{Hunt: 1, Failing: []int{-10, -10}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Trials: 5, Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: 120})
 			}
 			var failure journal.Event
 			if tc.idle {
 				failure = h.add(&journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Together, Profile: tc.profile})
 			} else {
-				tr := Trial{Core: 0, Offset: 0, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Phase: journal.PhaseChecking, Condition: tc.condition, DurationS: 120, Profile: tc.profile, Cores: []int{0, 1}}
+				tr := Trial{Core: 0, Offset: 0, Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Phase: journal.PhaseChecking, Condition: tc.condition, DurationS: 120, Profile: tc.profile, Cores: []int{0, 1}}
 				if tc.condition == machine.Alone {
 					tr.Cores, tr.Regime, tr.Phase = nil, machine.R1, journal.PhaseSearch
 					tr.Workload = machine.Workloads(machine.R1)[0].ID
@@ -394,7 +394,7 @@ func TestClassTargetsPreserveHuntAndRerunLookup(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h := hasRoomHarness(t, tt.offsets...)
-			k := trialClass{machine.R7, machine.Workloads(machine.R7)[0].ID, tt.key, 120}
+			k := trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, tt.key, 120}
 			h.s.queue = []pendingFailure{{seq: 9, failure: &journal.Failure{Trial: "0001"}, profile: tt.offsets, class: k}}
 			start := h.s.huntStartNext().Payload.(*journal.HuntStart)
 			if diff := cmp.Diff(tt.hunt, start.Cores); diff != "" {

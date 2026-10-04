@@ -1,0 +1,19 @@
+R7 voltage requests
+field                               count
+failures without request telemetry  3
+
+R7 trials by top request (4 mV bins)
+class                top request V   trials  failures
+R7/load/00,01/120s   [1.096, 1.100)  2       1
+R7/load/00,01/120s   [1.100, 1.104)  1       0
+R7/load/00,01/300s   [1.096, 1.100)  1       0
+R7/load/01/120s      [1.096, 1.100)  1       0
+R7/other/00,01/120s  [1.096, 1.100)  1       0
+
+R7 trials by top requester
+class                core  trials  failures
+R7/load/00,01/120s   00    1       1
+R7/load/00,01/120s   01    3       1
+R7/load/00,01/300s   01    1       0
+R7/load/01/120s      01    1       0
+R7/other/00,01/120s  01    1       0

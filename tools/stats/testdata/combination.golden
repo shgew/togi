@@ -157,6 +157,12 @@ hunt  stage       ran groups  established groups  passed again  failed again  re
 0001  part        2           0                   0             0             0                 0.000
 0001  probe       2           0                   0             0             0                 0.000
 
+R7 voltage-targeted backoffs
+seq  decision  core  from  to  counts  causes  reason
+
+R7 chain derivations
+seq  cycle  step  CCD  workload  part  request groups  loaded cores  sources
+
 Failure rate by depth
 regime / workload / loaded cores / duration  shallowest offset  trials  failures  rate
 R7/mprime-avx2-36k-248k-allcore/00,01/120s   -50                3       0         0.0%
@@ -164,6 +170,18 @@ R7/mprime-avx2-36k-248k-allcore/00,01/120s   -48                5       0       
 R7/mprime-avx2-36k-248k-allcore/00,01/120s   -30                5       0         0.0%
 R7/mprime-avx2-36k-248k-allcore/00,01/120s   -10                11      1         9.1%
 R7/mprime-avx2-36k-248k-allcore/00,01/120s   0                  17      2         11.8%
+
+R7 voltage requests
+field                               count
+failures without request telemetry  3
+
+R7 trials by top request (4 mV bins)
+class  top request V  trials  failures
+none
+
+R7 trials by top requester
+class  core  trials  failures
+none
 
 Inconclusive trials
 trial  condition  reason

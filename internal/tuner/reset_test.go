@@ -31,7 +31,7 @@ func TestResetClearsCombinationAndReevaluatesOtherCores(t *testing.T) {
 
 func TestResetAfterHuntEndDropsCommitment(t *testing.T) {
 	h := hasRoomHarness(t, -29, -30)
-	h.add(&journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-29, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Trials: 5, TrialS: 120})
+	h.add(&journal.HuntStart{Hunt: 1, Failure: 10, Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: 120, Failing: []int{-29, -30}, Parked: []int{0, 0}, Candidates: []int{0, 1}, Trials: 5, TrialS: 120})
 	h.add(&journal.HuntEnd{Hunt: 1, Result: "culprit", Cores: []int{0}, Groups: 2})
 	h.add(&journal.CommandReset{Core: new(0)})
 	a := h.next()
