@@ -41,3 +41,4 @@ ADRs 0001–0033 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 - [0033: Changelog entries are per-pull-request fragments](0033-changelog-fragments.md) — **in force**.
 - [0034: One vocabulary from screen to journal](0034-one-vocabulary-from-screen-to-journal.md) — **in force** for vocabulary, configuration names and schema-3 journal translation.
 - [0035: License togi under GPL-3.0-or-later](0035-gpl-3.0-or-later.md) — **in force**.
+- [0036: Flake checks stay hermetic](0036-flake-checks-stay-hermetic.md) — **in force**.
