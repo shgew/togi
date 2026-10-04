@@ -157,7 +157,7 @@ hunt  stage       ran groups  established groups  passed again  failed again  re
 0001  part        2           0                   0             0             0                 0.000
 0001  probe       2           0                   0             0             0                 0.000
 
-R7 tolerance and voltage-targeted backoffs
+R7 voltage-targeted backoffs
 seq  decision  core  from  to  counts  causes  reason
 
 R7 chain derivations
