@@ -113,7 +113,8 @@ func TestAuditInvariants(t *testing.T) {
 {"seq":6,"boot":"b","kind":"deepening.round","round":1,"event":"start","base":[-10,0],"target":[-51,0],"profile":[-51,0]}
 {"seq":7,"boot":"b","kind":"hunt.group","hunt":1,"group":1,"cores":[0],"profile":[1,0]}
 {"seq":8,"boot":"b","kind":"checking.step","lap":1,"step":1,"profile":[0,-51]}
-`, false, []finding{{2, "range"}, {3, "range"}, {4, "range"}, {4, "range"}, {5, "range"}, {6, "range"}, {6, "range"}, {7, "range"}, {8, "range"}}},
+{"seq":9,"boot":"b","kind":"hunt.start","hunt":1,"failing":[0,0],"parked":[-51,0]}
+`, false, []finding{{2, "range"}, {3, "range"}, {4, "range"}, {4, "range"}, {5, "range"}, {6, "range"}, {6, "range"}, {7, "range"}, {8, "range"}, {9, "range"}}},
 		{"firmware readback", `{"seq":2,"boot":"b","kind":"smu.readback","core":0,"offset":10}
 {"seq":3,"boot":"b","kind":"session.baseline","offsets":[10,0],"cause":[2]}
 `, false, nil},

@@ -138,6 +138,8 @@ func (a *auditor) checkChosenOffsets(e journal.Event) {
 		a.checkOffsets(e, p.Base)
 		a.checkOffsets(e, p.Target)
 		a.checkOffsets(e, p.Profile)
+	case *journal.HuntStart:
+		a.checkOffsets(e, p.Parked)
 	case *journal.HuntGroup:
 		a.checkOffsets(e, p.Profile)
 	case *journal.CheckingStep:
