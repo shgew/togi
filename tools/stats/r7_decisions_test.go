@@ -9,7 +9,7 @@ import (
 
 func TestReportR7BackoffsAndChains(t *testing.T) {
 	events := []journal.Event{
-		{Seq: 1, Data: &journal.SessionStart{Build: journal.Build{Ruleset: 9}, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}}},
+		{Seq: 1, Data: &journal.SessionStart{Ruleset: 9, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}}},
 		{Seq: 2, Data: &journal.TrialIntent{Trial: "0001", Regime: machine.R7, Cores: []int{0, 1}}},
 		{Seq: 3, Data: &journal.Failure{Trial: "0001", Regime: machine.R7}},
 		{Seq: 4, Cause: []int{3}, Data: &journal.TunerDecision{Core: 0, Decision: journal.Backoff, FromOffset: -20, ToOffset: -17, Reason: "request 1.100 V to 1.110 V"}},
@@ -26,7 +26,7 @@ func TestReportR7BackoffsAndChains(t *testing.T) {
 	if len(chains) != 1 || chains[0][0] != "5" {
 		t.Fatalf("missing chain derivation: %v", chains)
 	}
-	events[0].Data = &journal.SessionStart{Build: journal.Build{Ruleset: 8}, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}}
+	events[0].Data = &journal.SessionStart{Ruleset: 8, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}}
 	if rows := reportRows(t, events, "R7 voltage-targeted backoffs"); len(rows) != 0 {
 		t.Fatalf("ruleset-8 backoffs reported as voltage-targeted: %v", rows)
 	}
