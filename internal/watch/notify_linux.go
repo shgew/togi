@@ -160,6 +160,11 @@ func watchJournal(ctx context.Context, dir string, load func()) (<-chan error, f
 				case <-wait.C:
 				}
 				err = n.arm()
+				if err == nil && n.polling {
+					// Still no journal: nothing to reload. Signalling only after the journal is watched means no
+					// frame can show it while discovery still ticks.
+					continue
+				}
 			} else {
 				count, readErr := file.Read(buf[:])
 				if ctx.Err() != nil {
