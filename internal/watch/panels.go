@@ -452,11 +452,14 @@ func (s Snapshot) huntPartLines(t tables, width int, class sizeClass) []string {
 	return out
 }
 
-// overlay writes label over the start of a row that leaves those cells blank.
+// overlay writes label over the start of a row that leaves those cells blank; a row without that gutter keeps its text.
 func overlay(label, row string) string {
 	n := ansi.StringWidth(label)
 	if ansi.StringWidth(row) <= n {
 		return label
+	}
+	if strings.TrimSpace(ansi.Strip(ansi.Truncate(row, n+1, ""))) != "" {
+		return row
 	}
 	return label + ansi.TruncateLeft(row, n, "")
 }
