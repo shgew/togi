@@ -1,5 +1,5 @@
 shared               3         3    2.000    2.000            0.0       0.00     0.000000          0.000000                   0.000
 shared worst_r7_hazard/h=0.500000 worst_r7_runs=2
 shared ratio=1.000 ci=[1.000,1.000] pairs=1 timed=1 faster=0 slower=0 equal=1 crash_delta=0.000 depth_delta=0.000 max_hazard_delta=0.000000 real_answer_share=0.000000 baseline_real_answer_share=0.000000 violations=V1:0,V2:0,V3:0,V4:0
-shared partial_s_per_passed_lap=0.000 baseline_partial_s_per_passed_lap=0.000
+shared partial_s_per_passed_cycle=0.000 baseline_partial_s_per_passed_cycle=0.000
 shared max_worst_r7_hazard_delta=0.250000 worst_r7_pairs=1
