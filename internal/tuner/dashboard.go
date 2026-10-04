@@ -127,12 +127,15 @@ type ForecastBranch struct {
 	NeedsRanking, NeedsMCE bool
 	// NeedsHistory marks a missing checking profile or a recurring hunt plan without new evidence.
 	NeedsHistory bool
+	// NextStep is the checking step Next loads, counting from 1; zero outside a checking cycle.
+	NextStep int
 }
 
 // ForecastPlan holds conditional branches, or the next trial between trials.
 type ForecastPlan struct {
 	Branches     []ForecastBranch
 	Next         *Trial
+	NextStep     int
 	Decisions    []journal.Payload
 	NeedsRanking bool
 	NeedsHistory bool

@@ -132,6 +132,7 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 				}
 				var decisions []journal.Payload
 				var next *journal.TrialIntent
+				nextAt := -1
 				var lastRanking []int
 				for j := 0; j <= i; j++ {
 					if p, ok := events[j].Data.(*journal.HostRanking); ok {
@@ -142,7 +143,7 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 				for j := endAt + 1; j < len(events); j++ {
 					p := events[j].Data
 					if v, ok := p.(*journal.TrialIntent); ok {
-						next = v
+						next, nextAt = v, j
 						break
 					}
 					if p, ok := p.(*journal.HostRanking); ok {
@@ -196,6 +197,15 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 				predicted.Trial = next.Trial
 				if diff := cmp.Diff(next, predicted, cmpopts.IgnoreFields(journal.TrialIntent{}, "KernelBoundary")); diff != "" {
 					t.Fatalf("trial %s next (-journal +forecast):\n%s", intent.Trial, diff)
+				}
+				if next.Phase == journal.PhaseChecking && next.Cycle > 0 && !next.Rerun && next.Hunt == 0 {
+					s := tuner.New()
+					for _, e := range events[:nextAt+1] {
+						s.Fold(e)
+					}
+					if want := s.CyclePlan().Current + 1; branch.NextStep != want {
+						t.Fatalf("trial %s next step %d, want %d when it runs", intent.Trial, branch.NextStep, want)
+					}
 				}
 				checked++
 			}

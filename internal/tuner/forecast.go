@@ -47,6 +47,7 @@ func (f *forecastState) complete(t Trial) (*journal.TrialIntent, machine.Workloa
 }
 
 func (f *forecastState) drain(b *ForecastBranch) {
+	b.NextStep = 0
 	var plans []*journal.HuntGroup
 	for len(f.state.cores) > 0 {
 		if f.state.huntNeedsProfile() {
@@ -61,6 +62,12 @@ func (f *forecastState) drain(b *ForecastBranch) {
 				t.Workload = p.Workload
 			}
 			b.Next = &t
+			b.NextStep = t.Step
+			if t.Step == 0 && t.Phase == journal.PhaseChecking && t.Cycle > 0 && !t.Rerun && t.Hunt == 0 {
+				if plan := f.state.CyclePlan(); plan.Number == t.Cycle && plan.Current < len(plan.Steps) {
+					b.NextStep = plan.Current + 1
+				}
+			}
 			return
 		case ReadRanking:
 			if f.ranking == nil {
@@ -164,7 +171,7 @@ func Forecast(events []journal.Event) ForecastPlan {
 	if p == nil {
 		b := ForecastBranch{}
 		base.drain(&b)
-		out.Next = b.Next
+		out.Next, out.NextStep = b.Next, b.NextStep
 		out.Decisions = b.Decisions
 		out.NeedsRanking = b.NeedsRanking
 		out.NeedsHistory = b.NeedsHistory
