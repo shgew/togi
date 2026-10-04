@@ -33,7 +33,16 @@ func (s *State) partCCD(ids []int) int {
 
 func (s *State) cyclePart(req []requirement, partial *checkingStep, running *journal.TrialIntent) CyclePart {
 	p := CyclePart{Cores: slices.Clone(req[0].cores), CCD: s.partCCD(req[0].cores), RecordOnly: partial != nil, Done: true}
-	p.Full = !p.RecordOnly && (len(p.Cores) > 1 || len(s.cores) == 1)
+	fullSize := len(s.cores)
+	if p.CCD >= 0 {
+		fullSize = 0
+		for _, c := range s.cores {
+			if s.ccd[c.id] == p.CCD {
+				fullSize++
+			}
+		}
+	}
+	p.Full = !p.RecordOnly && len(p.Cores) == fullSize
 	for _, q := range req {
 		if q.count == 0 {
 			continue
