@@ -93,7 +93,7 @@ func TestExtractRecordOnlyPartialFacts(t *testing.T) {
 {"seq":2,"kind":"trial.intent","trial":"pass","cores":[0],"profile":[-30,-50],"regime":"R7","workload":"fixture","duration_s":120,"condition":"resident","phase":"guard","rotation":2,"step":4,"record_only":true,"boot":"private-boot","msg":"private-host"}
 {"seq":3,"kind":"trial.end","trial":"pass","outcome":"pass","duration_s":120}
 {"seq":4,"kind":"trial.intent","trial":"failure","cores":[0],"profile":[-30,-50],"regime":"R7","workload":"fixture","duration_s":120,"condition":"resident","phase":"guard","rotation":2,"step":4,"record_only":true,"boot":"private-boot"}
-{"seq":5,"kind":"trial.end","trial":"failure","outcome":"failure","signal":"crash","core":0,"duration_s":7}
+{"seq":5,"kind":"trial.end","trial":"failure","outcome":"failure","signal":"crash","core":0,"duration_s":7,"stalled_core":0,"voltage_requests_v":{"0":1.125},"top_requesters":[0],"ccd_mhz":{"0":4800}}
 {"seq":6,"kind":"trial.intent","trial":"full","cores":[0,1],"profile":[-30,-50],"regime":"R7","workload":"fixture","duration_s":120,"condition":"resident","phase":"guard"}
 {"seq":7,"kind":"trial.end","trial":"full","outcome":"pass","duration_s":120}
 `
@@ -120,7 +120,7 @@ func TestExtractRecordOnlyPartialFacts(t *testing.T) {
 	class := facts.Class{Regime: machine.R7, Workload: "fixture", Cores: []int{0}, DurationS: 120}
 	want := []Record{
 		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 3, Trial: "pass", Kind: facts.TrialFact, Class: class, Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true, Profile: []int{-30, -50}, Outcome: journal.OutcomePass, DurationS: 120},
-		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 5, Trial: "failure", Kind: facts.TrialFact, Class: class, Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true, Profile: []int{-30, -50}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 7},
+		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 5, Trial: "failure", Kind: facts.TrialFact, Class: class, Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true, Profile: []int{-30, -50}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 7, StalledCore: new(0), VoltageRequestsV: map[int]float64{0: 1.125}, TopRequesters: []int{0}, CCDMHz: map[int]int{0: 4800}},
 		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 7, Trial: "full", Kind: facts.TrialFact, Class: facts.Class{Regime: machine.R7, Workload: "fixture", Cores: []int{0, 1}, DurationS: 120}, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: []int{-30, -50}, Outcome: journal.OutcomePass, DurationS: 120},
 	}
 	if diff := cmp.Diff(want, records); diff != "" {

@@ -52,3 +52,5 @@ go run ./tools/carry-facts --state-dir "$copy"
 
 For the target history recorded through session `20261002T004254Z`, expect passes only from that latest session (epoch 1). Eligible failures can come from that session and earlier same-BIOS sessions after `reset --all` in `20260926T151414Z`; facts in that reset session must follow its reset, and no earlier session contributes. Older epochs contribute failures but zero passes. Counts reflect any core-reset and defect exclusions. Numeric counts must come from running the command, not from this recipe. Simulation reuses the recorded BIOS context but draws outcomes from the simulator, not from hardware measurements. Use a fresh copy for each mode because preparation archives its live journal.
 
+To inspect request telemetry from older trial ends, also copy their `archive/<session>-trials/` directories and the live `trials/` directory, or copy the whole state directory. Journal-only copies retain fields already recorded in trial ends but cannot recover measurements from absent samples.
+

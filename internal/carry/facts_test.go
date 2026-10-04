@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -471,5 +472,74 @@ func TestRulesetSevenToEightRetainsSameBIOSEvidenceAndFailurePoints(t *testing.T
 	}
 	if diff := cmp.Diff(before.Events, archived.Events); diff != "" {
 		t.Fatalf("source journal changed during transition: %s", diff)
+	}
+}
+
+func TestCarryRequestTelemetryFromRecordedFieldsAndSamples(t *testing.T) {
+	for _, mode := range []string{"recorded", "archived samples", "no samples"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			cores := []machine.CoreInfo{{Core: 0, CCD: 4}, {Core: 1, CCD: 9}}
+			a := newJournal(t, dir, "A", 8, &context, cores...)
+			a.add(&journal.TrialIntent{Trial: "0001", Regime: machine.R7, Workload: "fixture", Cores: []int{1, 0}, DurationS: 120, Condition: machine.Together, Profile: []int{-30, -40}})
+			end := &journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomeFailure, Signal: machine.Stall, StalledCore: new(0), DurationS: 30}
+			if mode == "recorded" {
+				end.VoltageRequestsV, end.TopRequesters, end.CCDMHz = map[int]float64{0: 1.125, 1: 1.25}, []int{0, 1}, map[int]int{4: 4800, 9: 4900}
+			}
+			a.add(end)
+			a.archive(dir)
+			if mode == "archived samples" {
+				path := filepath.Join(dir, "archive", "A-trials", "0001")
+				if err := os.MkdirAll(path, 0700); err != nil {
+					t.Fatal(err)
+				}
+				sample := "{\"elapsed_ms\":5000,\"pm_table\":{\"voltage_request_v\":[1.125,1.25]},\"core_mhz\":{\"0\":4800,\"1\":4900}}\n"
+				if err := os.WriteFile(filepath.Join(path, "samples.jsonl"), []byte(strings.Repeat(sample, 20)), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			first, err := prepareFacts(dir, "A", nil, &context, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(first) != 1 {
+				t.Fatalf("carried facts = %d, want 1", len(first))
+			}
+			got := first[0].Payload().(*journal.TrialCarried)
+			var volts map[int]float64
+			var top []int
+			var mhz map[int]int
+			if mode != "no samples" {
+				volts, top, mhz = map[int]float64{0: 1.125, 1: 1.25}, []int{0, 1}, map[int]int{4: 4800, 9: 4900}
+			}
+			if diff := cmp.Diff(volts, got.VoltageRequestsV); diff != "" {
+				t.Fatal(diff)
+			}
+			if diff := cmp.Diff(top, got.TopRequesters); diff != "" {
+				t.Fatal(diff)
+			}
+			if diff := cmp.Diff(mhz, got.CCDMHz); diff != "" {
+				t.Fatal(diff)
+			}
+			if diff := cmp.Diff(new(0), got.StalledCore); diff != "" {
+				t.Fatal(diff)
+			}
+			if mode == "archived samples" {
+				got.VoltageRequestsV, got.TopRequesters, got.CCDMHz, got.StalledCore = nil, nil, nil, nil
+			}
+			b := newJournal(t, dir, "B", 8, &context, cores...)
+			b.add(got)
+			if mode == "archived samples" {
+				b.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("A", 8)}, FailurePoints: true})
+			}
+			b.archive(dir)
+			resumed, err := prepareFacts(dir, "B", nil, &context, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(first, resumed); diff != "" {
+				t.Fatalf("interrupted copy-forward (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
