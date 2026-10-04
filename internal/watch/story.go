@@ -612,6 +612,12 @@ func sameTrial(n tuner.Trial, t *trialView) bool {
 	return same && slices.Equal(slices.Sorted(slices.Values(n.Cores)), slices.Sorted(slices.Values(t.cores)))
 }
 
+// samePart is true when n is a later trial of the checking part t belongs to, perhaps of another length.
+func samePart(n tuner.Trial, t *trialView) bool {
+	return t != nil && n.Cycle > 0 && n.Hunt == 0 && !n.Rerun && n.Cycle == t.cycle && n.Step == t.step &&
+		n.RecordOnly == t.recordOnly && slices.Equal(slices.Sorted(slices.Values(n.Cores)), slices.Sorted(slices.Values(t.cores)))
+}
+
 // phrase is one step of an outcome line; a minor one is left out first when the line does not fit.
 type phrase struct {
 	text  string
@@ -805,6 +811,8 @@ func (s Snapshot) outcomeWords(branch outcome) ([]phrase, string) {
 		next = fmt.Sprintf("next: trial %d of %d", t.index+1, t.of)
 	case sameTrial(*branch.next, t):
 		next = "next: this load again"
+	case samePart(*branch.next, t) && (passing || t.recordOnly) && t.index+max(branch.passes, 1) <= t.of:
+		next = fmt.Sprintf("next: trial %d of %d · %s", t.index+max(branch.passes, 1), t.of, shortDuration(time.Duration(branch.next.DurationS)*time.Second))
 	default:
 		next = "next: " + s.nextTrialWords(*branch.next, t, shape)
 	}

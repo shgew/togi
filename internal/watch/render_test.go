@@ -230,13 +230,16 @@ func TestMediumCoreNotesRetainCombinationAndSoloOffsets(t *testing.T) {
 	}
 }
 
-func TestOutcomeLinesMergeBranchesThatSayTheSame(t *testing.T) {
+func TestOutcomeLinesMergeBranchesAndNameTheSamePartsTrials(t *testing.T) {
 	t.Parallel()
 	next := &tuner.Trial{Regime: machine.R7, Cores: []int{1, 2}, Cycle: 1, Step: 1, RecordOnly: true, DurationS: 120, Workload: "w"}
+	long := *next
+	long.DurationS = 300
 	s := Snapshot{
 		trial: &trialView{regime: machine.R7, cores: []int{1, 2}, cycle: 1, step: 1, recordOnly: true, duration: 2 * time.Minute, workload: machine.Workload{ID: "w"}, index: 1, of: 4},
 		outcomes: []outcome{
 			{premise: ifPasses, next: next},
+			{premise: ifAllPass, passes: 3, next: &long},
 			{premise: ifNamed, next: next},
 			{premise: ifUnnamed, next: next},
 		},
@@ -245,8 +248,12 @@ func TestOutcomeLinesMergeBranchesThatSayTheSame(t *testing.T) {
 	for _, row := range s.outcomeRows() {
 		got = append(got, row.label+": "+fitPhrases(row.phrases, 200))
 	}
-	if diff := cmp.Diff([]string{"pass or fail: recorded only, moves nothing → next: trial 2 of 4"}, got); diff != "" {
-		t.Fatalf("identical branches must share one line (-want +got):\n%s", diff)
+	want := []string{
+		"if 3 of 4 pass: recorded only, moves nothing → next: trial 4 of 4 · 5m",
+		"pass or fail: recorded only, moves nothing → next: trial 2 of 4",
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("outcome rows (-want +got):\n%s", diff)
 	}
 }
 
