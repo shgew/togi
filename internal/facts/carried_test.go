@@ -18,7 +18,7 @@ func TestCarriedFactsKeepOriginalProvenance(t *testing.T) {
 		{Seq: 1, Data: &journal.SessionStart{Build: build, Session: "original", Evidence: 4, Cores: []machine.CoreInfo{{Core: 7}, {Core: 1}, {Core: 3}}}},
 		{Seq: 2, Boot: "intent-boot", Data: &journal.TrialIntent{Trial: "0304", Regime: machine.R7, Workload: "workload", Cores: []int{7, 3}, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Rerun: true, RecordOnly: true, Profile: []int{-22, -30, -50}}},
 		{Seq: 3, Data: &journal.ConfigLoaded{Version: "later", Ruleset: 6}},
-		{Seq: 4, Time: time.Unix(40, 0).UTC(), Boot: "end-boot", Data: &journal.TrialEnd{Trial: "0304", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(7), DurationS: 11}},
+		{Seq: 4, Time: time.Unix(40, 0).UTC(), Boot: "end-boot", Data: &journal.TrialEnd{Trial: "0304", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(7), DurationS: 11, StalledCore: new(3), VoltageRequestsV: map[int]float64{3: 1.125, 7: 1.25}, TopRequesters: []int{7}, CCDMHz: map[int]int{0: 4800}}},
 		{Seq: 5, Time: time.Unix(50, 0).UTC(), Boot: "idle-boot", Data: idle},
 	})
 	if diff := cmp.Diff([]int{3, 7}, original.Facts[0].Class.Cores); diff != "" {
@@ -31,6 +31,18 @@ func TestCarriedFactsKeepOriginalProvenance(t *testing.T) {
 		t.Fatalf("record-only marker changed across extraction: %+v", original.Facts)
 	}
 	if diff := cmp.Diff(idle, original.Facts[1].Idle); diff != "" {
+		t.Fatal(diff)
+	}
+	if diff := cmp.Diff(map[int]float64{3: 1.125, 7: 1.25}, original.Facts[0].VoltageRequestsV); diff != "" {
+		t.Fatal(diff)
+	}
+	if diff := cmp.Diff([]int{7}, original.Facts[0].TopRequesters); diff != "" {
+		t.Fatal(diff)
+	}
+	if diff := cmp.Diff(map[int]int{0: 4800}, original.Facts[0].CCDMHz); diff != "" {
+		t.Fatal(diff)
+	}
+	if diff := cmp.Diff(new(3), original.Facts[0].StalledCore); diff != "" {
 		t.Fatal(diff)
 	}
 	for _, id := range []string{"first-copy", "second-copy"} {

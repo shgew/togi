@@ -54,6 +54,9 @@ func (p *TrialCarried) Message() string {
 	if p.RecordOnly {
 		result += " record-only"
 	}
+	if len(p.TopRequesters) > 0 {
+		result += "; top requester cores " + coreList(p.TopRequesters)
+	}
 	return fmt.Sprintf("carried %s of trial %s from session %s (%s): %s %s %s on cores %s %s after %d s at %v (intended %d s, evidence epoch %d)", p.Outcome, p.Source.Trial, p.Source.Session, p.Source.Build.name(), p.Condition, p.Class.Regime, p.Class.Workload, coreList(p.Class.Cores), result, p.DurationS, p.Profile, p.Class.DurationS, p.Source.Evidence)
 }
 
