@@ -134,6 +134,29 @@ func TestR7ChainFreezesStartedPartsAndRederivesUnstartedParts(t *testing.T) {
 	}
 }
 
+func TestR7ChainKeepsStartedDescendantOfSatisfiedParent(t *testing.T) {
+	h := chainHarness(t)
+	passChainPart(t, h, []int{0, 1, 2, 3}, map[int]float64{0: 1.1, 1: 1.11, 2: 1.2, 3: 1.09})
+	a := h.s.lapNext()
+	parent := a.Payload.(*journal.CheckingChain)
+	h.decide(a)
+	// Lap evidence can meet a parent's requirements without a start of its
+	// own, so its child is the first part of the chain to start.
+	child := []int{0, 3}
+	h.add(&journal.CheckingChain{Lap: 1, Step: 1, CCD: parent.CCD, Workload: parent.Workload, Part: "partial 2", Groups: [][]int{{1}, {0}, {3}}, Cores: child, Profile: slices.Clone(h.s.Profile())})
+	h.trial(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: parent.Workload, Cores: child, DurationS: h.s.durations.StartS, Phase: journal.PhaseChecking, Condition: machine.Together, Lap: 1, Step: 1}}, unsure)
+	p := slices.Clone(h.s.Profile())
+	p[2] = -1
+	h.add(&journal.ProfileChange{From: h.s.Profile(), To: p})
+	if next, ok := h.s.lapNext().Payload.(*journal.CheckingChain); ok && next.Part == "partial 1" {
+		t.Fatalf("rederiving the parent dropped its started child: %+v", next)
+	}
+	if !slices.ContainsFunc(h.s.r7StepParts(0), func(cores []int) bool { return slices.Equal(cores, child) }) {
+		t.Fatalf("started child left the lap requirements: %v", h.s.r7StepParts(0))
+	}
+	assertProjectionReplay(h)
+}
+
 func TestLegacyPartialPassesAreOrdinaryEvidence(t *testing.T) {
 	for _, carried := range []bool{false, true} {
 		t.Run(map[bool]string{false: "live", true: "carried"}[carried], func(t *testing.T) {

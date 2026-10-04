@@ -59,9 +59,13 @@ func (s *State) recordCheckingTrial(p *journal.TrialIntent) {
 		return
 	}
 	for _, chain := range step.chains {
-		for _, node := range chain {
+		for i, node := range chain {
 			if node.start.Workload == p.Workload && slices.Equal(node.start.Cores, p.Cores) {
-				node.started = true
+				// A started part's loaded set depends on its predecessors, so
+				// they freeze with it even if lap evidence already met theirs.
+				for _, predecessor := range chain[:i+1] {
+					predecessor.started = true
+				}
 			}
 		}
 	}
