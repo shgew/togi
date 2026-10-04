@@ -1,0 +1,10 @@
+{"seq":1,"time":"2026-10-04T00:00:00Z","boot":"b","kind":"session.start","version":"0.9.0","ruleset":8,"schema":3,"fixes":1,"session":"S","cores":[{"core":0,"ccd":0,"cpus":[0]},{"core":1,"ccd":0,"cpus":[1]},{"core":2,"ccd":1,"cpus":[2]}]}
+{"seq":2,"time":"2026-10-04T00:00:01Z","boot":"b","kind":"trial.intent","trial":"0001","profile":[-10,-10,-10],"cores":[0,1],"regime":"R7","workload":"load","duration_s":120,"condition":"together"}
+{"seq":3,"time":"2026-10-04T00:00:02Z","boot":"b","kind":"trial.start","trial":"0001"}
+{"seq":4,"time":"2026-10-04T00:00:03Z","boot":"b","kind":"trial.end","trial":"0001","outcome":"failure","duration_s":30,"signal":"crash"}
+{"seq":5,"time":"2026-10-04T00:00:04Z","boot":"b","kind":"trial.intent","trial":"0002","profile":[-10,-10,-10],"cores":[0,1],"regime":"R7","workload":"load","duration_s":120,"condition":"together"}
+{"seq":6,"time":"2026-10-04T00:00:05Z","boot":"b","kind":"trial.start","trial":"0002"}
+{"seq":7,"time":"2026-10-04T00:00:06Z","boot":"b","kind":"trial.end","trial":"0002","outcome":"pass","duration_s":120,"voltage_requests_v":{"0":1.2,"1":1.1},"top_requesters":[0]}
+{"seq":8,"time":"2026-10-04T00:00:07Z","boot":"b","kind":"trial.intent","trial":"0003","profile":[-10,-10,-10],"cores":[0,1],"regime":"R7","workload":"load","duration_s":120,"condition":"together"}
+{"seq":9,"time":"2026-10-04T00:00:08Z","boot":"b","kind":"trial.start","trial":"0003"}
+{"seq":10,"time":"2026-10-04T00:00:09Z","boot":"b","kind":"trial.end","trial":"0003","outcome":"failure","duration_s":30,"signal":"crash"}
