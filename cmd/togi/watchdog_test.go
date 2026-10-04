@@ -35,12 +35,21 @@ type warningObservedSMU struct {
 }
 
 func (s warningObservedSMU) SetOffset(core, offset int) error {
+	s.observe()
+	return s.SMU.SetOffset(core, offset)
+}
+
+func (s warningObservedSMU) SetAllOffsets(offset int) error {
+	s.observe()
+	return s.SMU.SetAllOffsets(offset)
+}
+
+func (s warningObservedSMU) observe() {
 	*s.writes++
 	if got := strings.Contains(s.stderr.String(), "togi run: warning: no active hardware watchdog"); got != s.warn {
 		s.t.Fatalf("warning before offset write = %t, want %t; stderr: %s", got, s.warn, s.stderr)
 	}
 	s.cancel()
-	return s.SMU.SetOffset(core, offset)
 }
 
 func TestRunWatchdogWarning(t *testing.T) {
