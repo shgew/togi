@@ -380,8 +380,11 @@ func (s Snapshot) huntLines(t tables, width int, class sizeClass, now time.Time)
 
 func (s Snapshot) huntCauseWords(class sizeClass) string {
 	h := s.hunt
-	if h.cause.carried {
-		return trialName(h.cause.trial) + " already failed at these offsets in a carried trial"
+	if h.cause.known {
+		return h.cause.knownWords()
+	}
+	if h.cause.trial.regime == "" {
+		return "crash while idle, with no trial running"
 	}
 	text := signalText(h.cause.signal) + " in "
 	if h.cause.rerunOf {
@@ -529,7 +532,7 @@ func (s Snapshot) huntGroupLines(t tables, width int) []string {
 		}
 		result := style.Render(outcome)
 		if r.last.inferred {
-			result += grey.Render(fmt.Sprintf(" · %d carried trials", r.passes))
+			result += grey.Render(" · answered by earlier trials")
 		}
 		out = append(out, overlay(grey.Render(label), tableRow(t.groups, textStyle.Render(which), grey.Render(what), result)))
 	}

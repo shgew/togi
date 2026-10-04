@@ -231,9 +231,11 @@ type huntCause struct {
 	end      *trialEnd // how the failing trial ended, when a trial ran
 	signal   machine.Signal
 	core     *int
-	carried  bool // the failing profile was already recorded in a carried trial; no trial ran
-	rerunOf  bool // the failure came in a rerun after a backoff
-	trialNum int  // which trial of its requirement failed, counting from 1
+	known    bool           // the failing profile already failed in a recorded trial; no trial ran
+	carried  bool           // with known: that trial was carried from an earlier session
+	regime   machine.Regime // with known: the regime of the skipped trial
+	rerunOf  bool           // the failure came in a rerun after a backoff
+	trialNum int            // which trial of its requirement failed, counting from 1
 }
 
 type huntPart struct {
@@ -257,7 +259,7 @@ type groupView struct {
 	signal   machine.Signal // how a failed group's trial failed
 	passes   int
 	needed   int
-	inferred bool // answered by carried trials; no trial ran
+	inferred bool // answered by earlier trials; no trial ran
 }
 
 type probeView struct {

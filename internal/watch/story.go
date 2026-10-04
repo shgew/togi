@@ -161,6 +161,15 @@ func (s Snapshot) splitWords() string {
 	return fmt.Sprintf("part of %s at its offsets, the rest %s", coreIDs(h.candidates), parked)
 }
 
+// knownWords describes a hunt started by a trial skipped because its profile already failed.
+func (c huntCause) knownWords() string {
+	text := fmt.Sprintf("%s %s already failed at these offsets", vtText(string(c.regime)), kindWords(c.regime))
+	if c.carried {
+		text += " in a carried trial"
+	}
+	return text
+}
+
 // huntCauseStory tells what started the hunt: a sentence, whether a core was named, and a compact line.
 func (s Snapshot) huntCauseStory() (string, string, string) {
 	c := s.hunt.cause
@@ -168,9 +177,13 @@ func (s Snapshot) huntCauseStory() (string, string, string) {
 	if c.core != nil {
 		named = fmt.Sprintf("Core %02d was named: ", *c.core)
 	}
-	if c.carried {
-		text := trialName(c.trial) + " already failed at these offsets in a carried trial."
+	if c.known {
+		text := c.knownWords() + "."
 		return text, named, text
+	}
+	if c.trial.regime == "" {
+		// An idle failure between trials starts a hunt without a failed trial.
+		return "The machine crashed while idle, with no trial running, and rebooted.", named, "Crashed while idle; no core named."
 	}
 	what := fmt.Sprintf("the %s %s trial on %s", lengthWords(c.trial.duration), kindWords(c.trial.regime), coreIDs(c.trial.cores))
 	if c.rerunOf {
@@ -1013,11 +1026,11 @@ func carriedGroups(decisions []journal.Payload, i int) (phrase, int) {
 	}
 	switch {
 	case d.Inferred != "pass":
-		return phrase{groups + " failed in a carried trial", false}, last
+		return phrase{groups + " failed in an earlier trial", false}, last
 	case end > first:
-		return phrase{groups + " answered by carried trials", true}, last
+		return phrase{groups + " answered by earlier trials", true}, last
 	}
-	return phrase{groups + " answered by a carried trial", true}, last
+	return phrase{groups + " answered by an earlier trial", true}, last
 }
 
 func huntEndPhrase(d *journal.HuntEnd, named bool) (string, bool) {

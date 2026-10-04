@@ -442,7 +442,7 @@ func (p *projector) huntPlan(hp *tuner.HuntPlan, events []journal.Event) {
 			}
 		case *journal.Failure:
 			if e.Seq == hp.FailureSeq {
-				h.cause.core, h.cause.carried = d.Core, d.KnownFailure != 0
+				h.cause.core, h.cause.known, h.cause.carried, h.cause.regime = d.Core, d.KnownFailure != 0, p.s.carried[d.KnownFailure], d.Regime
 			}
 		}
 	}

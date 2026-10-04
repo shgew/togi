@@ -240,25 +240,25 @@ func TestProjectDeepeningHistorySeparatesDeeperAndYieldedMembers(t *testing.T) {
 	}
 }
 
-func TestHistoryGroupsCarriedAnswersWithoutHidingOutcomeChanges(t *testing.T) {
+func TestHistoryGroupsInferredAnswersWithoutHidingOutcomeChanges(t *testing.T) {
 	t.Parallel()
 	events := dashboardEvents(dashboardSession(),
 		&journal.HuntStart{Hunt: 4, Candidates: []int{0, 1, 2}},
 		&journal.HuntGroup{Hunt: 4, Group: 2, Cores: []int{0}, Inferred: "pass"},
 		&journal.HuntGroup{Hunt: 4, Group: 3, Cores: []int{1}, Inferred: "pass"},
-		&journal.HuntGroup{Hunt: 4, Group: 4, Cores: []int{0, 1}, Inferred: "fail"},
+		&journal.HuntGroup{Hunt: 4, Group: 4, Cores: []int{0, 1}, Inferred: "failure"},
 		&journal.HuntStart{Hunt: 5, Candidates: []int{0, 1}},
 		&journal.HuntGroup{Hunt: 5, Group: 5, Cores: []int{1}, Inferred: "pass"})
 	want := []string{
 		"start: session started on 3 cores",
 		"hunt: #4 started · part 1: 00 at failing offsets, 01 02 parked",
-		"group: hunt 4 groups 2-3 · parts of 00 01 · all passed in carried trials",
-		"group: hunt 4 group 4 · 00 01 · failed in a carried trial",
+		"group: hunt 4 groups 2-3 · parts of 00 01 · all passed in earlier trials",
+		"group: hunt 4 group 4 · 00 01 · failed in an earlier trial",
 		"hunt: #5 started · part 1: 01 at failing offsets, 00 parked",
-		"group: hunt 5 group 5 · 01 · passed in a carried trial",
+		"group: hunt 5 group 5 · 01 · passed in an earlier trial",
 	}
 	if diff := cmp.Diff(want, historySentences(Project(events))); diff != "" {
-		t.Fatalf("carried group answers (-want +got):\n%s", diff)
+		t.Fatalf("inferred group answers (-want +got):\n%s", diff)
 	}
 }
 

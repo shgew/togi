@@ -77,7 +77,7 @@ const (
 	plainEntry   entryKind = iota
 	trialsEntry            // trials of one requirement or part: subject, then how many passed or failed
 	limitsEntry            // solo limits found at one offset
-	groupsEntry            // hunt groups answered by carried trials
+	groupsEntry            // hunt groups answered by earlier trials
 	sessionEntry           // the session start, with the solo limits carried into it
 )
 
@@ -200,7 +200,7 @@ func (p *projector) knownFailure(line entry, d *journal.Failure) entry {
 		verb = "crashed"
 	}
 	line.tag, line.tone = tagSkip, plainTone
-	line.text = fmt.Sprintf("%s %s at these offsets already %s", d.Regime, kindWords(d.Regime), verb)
+	line.text = fmt.Sprintf("%s %s at these offsets already %s", vtText(string(d.Regime)), kindWords(d.Regime), verb)
 	if p.s.carried[d.KnownFailure] {
 		line.text += " in a carried trial"
 	}
@@ -300,7 +300,7 @@ func (p *projector) huntGroup(line entry, d *journal.HuntGroup) (entry, bool) {
 			verb = "failed"
 		}
 		line.tag, line.tone = tagProbe, huntTone
-		line.text = fmt.Sprintf("hunt %d group %d · core %02d at %d · %s in a carried trial", d.Hunt, d.Group, d.Probe.Core, d.Probe.Offset, verb)
+		line.text = fmt.Sprintf("hunt %d group %d · core %02d at %d · %s in an earlier trial", d.Hunt, d.Group, d.Probe.Core, d.Probe.Offset, verb)
 	default:
 		line.kind, line.tag, line.tone = groupsEntry, tagGroup, huntTone
 		line.cores, line.text = slices.Clone(d.Cores), d.Inferred
@@ -416,7 +416,7 @@ func (p *projector) lateness(d *journal.TrialEnd, in *journal.TrialIntent, count
 // trialName names a trial in history: its regime, the part of its step, and its cores; a hunt trial by its group.
 func (p *projector) trialName(in *journal.TrialIntent) string {
 	cores := trialCores(in)
-	what := fmt.Sprintf("%s %s", in.Regime, kindWords(in.Regime))
+	what := fmt.Sprintf("%s %s", vtText(string(in.Regime)), kindWords(in.Regime))
 	switch {
 	case in.Condition == machine.Alone && in.Offset != nil:
 		return fmt.Sprintf("core %02d · %s at %d", cores[0], what, *in.Offset)
@@ -439,7 +439,7 @@ func (p *projector) trialName(in *journal.TrialIntent) string {
 		}
 		return text
 	case in.Regime == machine.R7 && in.Cycle > 0:
-		what = string(in.Regime) + " " + p.partName(in)
+		what = vtText(string(in.Regime)) + " " + p.partName(in)
 	}
 	text := what + " " + onCores(cores)
 	if len(cores) == 1 {
@@ -527,7 +527,7 @@ func (p *projector) huntEndText(d *journal.HuntEnd, at time.Time) (string, strin
 	}
 	switch {
 	case start.live == 0 && d.Groups > 0:
-		text += ", all answered by carried trials"
+		text += ", all answered by earlier trials"
 	case !start.at.IsZero() && d.Groups > 0:
 		text += " in " + age(at.Sub(start.at))
 	}
@@ -698,13 +698,13 @@ func (e entry) sentenceParts() (string, string, string) {
 			groups = fmt.Sprintf("groups %d-%d", e.firstGroup, e.lastGroup)
 		}
 		what := coreIDs(e.cores)
-		verdict := "passed in a carried trial"
+		verdict := "passed in an earlier trial"
 		if e.lastGroup > e.firstGroup {
 			what = "parts of " + what
-			verdict = "all passed in carried trials"
+			verdict = "all passed in earlier trials"
 		}
 		if e.text != "pass" {
-			verdict = "failed in a carried trial"
+			verdict = "failed in an earlier trial"
 		}
 		return fmt.Sprintf("hunt %d %s · %s · %s", e.hunt, groups, what, verdict), "", ""
 	case trialsEntry:
