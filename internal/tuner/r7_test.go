@@ -32,7 +32,7 @@ func TestR7FailuresMoveAfterLongCleanLedger(t *testing.T) {
 		r7Fact(h, true, cores, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
 	}
 	for _, want := range []int{-29, -28} {
-		r7Fact(h, false, cores, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
+		r7Fact(h, false, cores, h.s.offsets(), map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
 		a, ok := h.s.Drain()
 		if !ok {
 			t.Fatal("failure did not move")
@@ -511,5 +511,172 @@ func TestR7BackoffCountsEachCarriedFactOnce(t *testing.T) {
 	}
 	if want := h.s.carriedReason(a.Cause); !strings.HasSuffix(move.Reason, want) || !strings.Contains(want, "; 1 carried facts") {
 		t.Fatalf("reason %q must end with %q for its one cited carried fact", move.Reason, want)
+	}
+}
+
+func TestR7AllCoreFailureSkipsCCDAtZero(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		profile []int
+		dead    bool
+	}{
+		{"other CCD movable", []int{0, 0, -30, -30}, false},
+		{"every CCD at zero", []int{0, 0, 0, 0}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := r7Harness(t)
+			r7Fact(h, false, h.s.ids(), tc.profile, nil, []int{1, 2}, nil, nil, nil)
+			a, ok := h.s.Drain()
+			if !ok {
+				t.Fatal("no decision")
+			}
+			if tc.dead {
+				if dead, ended := a.Payload.(*journal.DeadEnd); !ended || dead.Condition != journal.DeadEndFailureAtZero {
+					t.Fatalf("%+v", a)
+				}
+				return
+			}
+			move, moved := a.Payload.(*journal.TunerDecision)
+			if !moved || move.Decision != journal.Backoff {
+				t.Fatalf("%+v", a)
+			}
+			if diff := cmp.Diff([2]int{2, -29}, [2]int{move.Core, move.ToOffset}); diff != "" {
+				t.Fatal(diff)
+			}
+			h.decide(a)
+			if a, pending := h.s.Drain(); pending {
+				t.Fatalf("CCD 0 at CO 0 still counted: %+v", a)
+			}
+			assertProjectionReplay(h)
+		})
+	}
+}
+
+func TestR7OffsetStandInMovesOneCount(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		earlier     map[int]float64
+		cores       []int
+		top         []int
+		stalled     *int
+		passProfile []int
+		passes      map[int]float64
+		core        int
+	}{
+		{"no measurement as of the failure", nil, []int{0, 1}, []int{0}, nil, []int{-26, -30, -30, -30}, map[int]float64{0: 1.115, 1: 1.08}, 0},
+		{"measured CCD beside an unmeasured one", map[int]float64{0: 1.2, 1: 1.15}, []int{0, 1, 2, 3}, nil, new(3), []int{-30, -30, -26, -26}, map[int]float64{0: 1.1, 1: 1.08, 2: 1.2, 3: 1.19}, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := r7Harness(t)
+			if tc.earlier != nil {
+				r7Fact(h, true, []int{0, 1}, h.s.Profile(), tc.earlier, []int{0}, nil, nil, nil)
+			}
+			r7Fact(h, false, tc.cores, h.s.Profile(), nil, tc.top, nil, tc.stalled, nil)
+			var passes []int
+			for range h.s.n {
+				passes = append(passes, r7Fact(h, true, tc.cores, tc.passProfile, tc.passes, nil, nil, nil, nil).Seq)
+			}
+			a, ok := h.s.Drain()
+			move, moved := a.Payload.(*journal.TunerDecision)
+			if !ok || !moved || move.Decision != journal.Backoff {
+				t.Fatalf("%+v", a)
+			}
+			if diff := cmp.Diff([2]int{tc.core, -29}, [2]int{move.Core, move.ToOffset}); diff != "" {
+				t.Fatal(diff)
+			}
+			if slices.ContainsFunc(a.Cause, func(seq int) bool { return slices.Contains(passes, seq) }) {
+				t.Fatalf("cause %v cites passes %v as a voltage target for an offset stand-in", a.Cause, passes)
+			}
+		})
+	}
+}
+
+func TestR7FailureNeedsNoMoveWhileMovedCoreIsShallower(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		current, failed []int
+		named           *int
+		round           bool
+	}{
+		{"named core shallower", []int{-30, -30, -30, -30}, []int{-35, -30, -30, -30}, new(0), false},
+		{"top requester shallower", []int{-30, -30, -30, -30}, []int{-35, -35, -30, -30}, nil, false},
+		{"top requester now at CO 0", []int{0, -30, -30, -30}, []int{-30, -30, -30, -30}, nil, false},
+		{"during a deepening round", []int{-30, -30, -30, -30}, []int{-35, -30, -30, -30}, new(0), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := r7Harness(t)
+			setOffset := func(id, offset int) {
+				h.add(&journal.CorePhase{Core: id, To: journal.PhaseHasRoom, Offset: offset, Reason: "test"})
+			}
+			for id, offset := range tc.current {
+				if offset != h.s.core(id).offset {
+					setOffset(id, offset)
+				}
+			}
+			r7Fact(h, false, []int{0, 1}, tc.failed, nil, []int{0}, tc.named, nil, nil)
+			if tc.round {
+				h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleStart, Profile: h.s.offsets(), Target: h.s.offsets(), Cores: []int{1}, Trials: 2, TrialS: 120})
+			}
+			if a, ok := h.s.Drain(); ok {
+				t.Fatalf("core 00 already shallower than in the failed trial, yet %+v", a)
+			}
+			setOffset(0, tc.failed[0])
+			a, ok := h.s.Drain()
+			if !ok {
+				t.Fatal("failure took no effect once core 00 returned to its failing offset")
+			}
+			if tc.round {
+				if end, ended := a.Payload.(*journal.DeepeningRound); !ended || end.Event != journal.CycleEnd {
+					t.Fatalf("%+v", a)
+				}
+				return
+			}
+			move, moved := a.Payload.(*journal.TunerDecision)
+			if !moved || move.Decision != journal.Backoff {
+				t.Fatalf("%+v", a)
+			}
+			if diff := cmp.Diff([2]int{0, tc.failed[0] + 1}, [2]int{move.Core, move.ToOffset}); diff != "" {
+				t.Fatal(diff)
+			}
+			assertProjectionReplay(h)
+		})
+	}
+}
+
+func TestR7NamedIdleZeroCoreCountsAgainstLoadedCCD(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		profile []int
+		dead    bool
+	}{
+		{"loaded CCD movable", []int{-30, -30, 0, -30}, false},
+		{"loaded CCD at zero", []int{0, 0, 0, -30}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := r7Harness(t)
+			r7Fact(h, false, []int{0, 1}, tc.profile, nil, []int{0}, new(2), nil, nil)
+			a, ok := h.s.Drain()
+			if !ok {
+				t.Fatal("no decision")
+			}
+			if tc.dead {
+				if dead, ended := a.Payload.(*journal.DeadEnd); !ended || dead.Condition != journal.DeadEndFailureAtZero {
+					t.Fatalf("%+v", a)
+				}
+				return
+			}
+			move, moved := a.Payload.(*journal.TunerDecision)
+			if !moved || move.Decision != journal.Backoff {
+				t.Fatalf("%+v", a)
+			}
+			if diff := cmp.Diff([2]int{0, -29}, [2]int{move.Core, move.ToOffset}); diff != "" {
+				t.Fatal(diff)
+			}
+			h.decide(a)
+			if a, pending := h.s.Drain(); pending {
+				t.Fatalf("one failure moved twice: %+v", a)
+			}
+			assertProjectionReplay(h)
+		})
 	}
 }
