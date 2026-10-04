@@ -7,7 +7,7 @@
 
   NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0553
    R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between                                                               CYCLE 1 · STEP 7
-  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused until 14:58 · ends at
+  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · ends at 14:58
 
   if it passes         next: step 1: R7 all-core with mprime AVX2 36K-248K · record only
   if a core is named   its failure point is recorded → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m

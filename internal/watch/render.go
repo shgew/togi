@@ -694,7 +694,7 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 		y := r.h - 1
 		label := white.Render(clock(remaining)) + grey.Render(" left") + "  " + requirementLine(*t, true)
 		if quiet {
-			label = grey.Render("screen paused until ") + textStyle.Render(t.started.Add(t.duration).Format("15:04")) + grey.Render(" · ends at")
+			label = grey.Render("screen paused · ends at ") + textStyle.Render(t.started.Add(t.duration).Format("15:04"))
 		}
 		cells := max(r.w-ansi.StringWidth(label)-2, 0)
 		line := progressBar(cells, frac, "█")

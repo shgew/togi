@@ -4,7 +4,7 @@
  ▌  Every core idle with short wake-ups; this screen holds still.
 
   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between                         CYCLE 1 · STEP 7
- ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused until 14:58 · ends at
+ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · ends at 14:58
 
  pass → step 1   core named → backs off   none named → hunt 5
 
