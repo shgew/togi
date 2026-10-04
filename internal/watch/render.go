@@ -408,7 +408,8 @@ func topCell(measured, byOffset []int, width int) string {
 	if room := width - len("...; ") - len(by); room >= min(ansi.StringWidth(o), len("0...")) {
 		return "...; " + ansi.Truncate(o, room, "...") + by
 	}
-	return ansi.Truncate(o, width-len(by), "...") + by
+	// Too narrow for both: the measured list shrinks to its cut marker.
+	return "...;" + ansi.Truncate(o, width-len("...;")-len(by), "...") + by
 }
 
 // r7Rule heads the R7 lines with its column names; on a wide panel it says the evidence is no guarantee.

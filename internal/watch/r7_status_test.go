@@ -60,6 +60,10 @@ func TestR7LinesNameTopRequestersAndSelfSufficiency(t *testing.T) {
 			t.Fatalf("width %d: measured and offset top requesters lost their own labels: %q", p.context.w, row)
 		}
 	}
+	// Too narrow for both lists, the dropped measured cores still leave a cut marker.
+	if got := topCell([]int{0}, []int{8, 9, 10, 11, 12, 13, 14, 15}, 17); got != "...;... by offset" {
+		t.Fatalf("narrow mixed cell = %q", got)
+	}
 	// The tuning boot's console font covers IBM437 only, so truncation uses ASCII.
 	narrow := ansi.Strip(s.r7Lines(layout{context: rectangle{w: 24}})[1])
 	if !strings.HasSuffix(narrow, "...") || strings.ContainsFunc(narrow, func(r rune) bool { return r > 0x7e }) {
