@@ -53,7 +53,7 @@
                   ./tools
                 ];
               };
-              vendorHash = "sha256-EHuetMPWkpLwwXxTzjDYlfHkyLEg51WaSKI74Aorpvc=";
+              vendorHash = "sha256-KMcBcFvwlqulewo8hwkFBrsiy1PlEeUIWc71LdDEUT0=";
               nativeCheckInputs = [
                 pkgs.gitMinimal
               ]
