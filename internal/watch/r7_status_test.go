@@ -29,6 +29,11 @@ func TestR7RowsNameTopRequestersAndSelfSufficiency(t *testing.T) {
 			t.Fatalf("fallback must not claim a voltage measurement (compact %t): %s", compact, text)
 		}
 	}
+	// The tuning boot's console font covers IBM437 only, so truncation uses ASCII.
+	narrow := ansi.Strip(strings.Join(s.r7Rows(24, true), "\n"))
+	if !strings.HasSuffix(narrow, "...") || strings.ContainsFunc(narrow, func(r rune) bool { return r > 0x7e }) {
+		t.Fatalf("narrow compact row %q must truncate with ASCII", narrow)
+	}
 }
 
 func TestShortDashboardReachesEveryR7Workload(t *testing.T) {
