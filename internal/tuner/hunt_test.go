@@ -473,6 +473,7 @@ func TestRepeatedParkedCoreProbeRequiresMatchingAdjacentFailuresSinceReset(t *te
 		probe  bool
 	}{
 		{name: "matching adjacent failures", probe: true},
+		{name: "different workload", change: func(tr *Trial, _ *journal.Failure) { tr.Workload = machine.Workloads(machine.R6)[1].ID }},
 		{name: "different duration", change: func(tr *Trial, _ *journal.Failure) { tr.DurationS = 600 }},
 		{name: "different loaded cores", change: func(tr *Trial, _ *journal.Failure) { tr.Cores = []int{0, 1} }},
 		{name: "together failure", change: func(tr *Trial, f *journal.Failure) { tr.Condition, f.Condition = machine.Together, machine.Together }},
@@ -770,24 +771,25 @@ func TestSixteenCoreCulpritAndPair(t *testing.T) {
 func TestHuntDurationPriorRespectsEvidenceAndShortFailures(t *testing.T) {
 	for _, tt := range []struct {
 		name               string
-		count              int
+		count, workload    int
 		profile            []int
 		shortFailed, reset bool
 		want               int
 	}{
-		{"valid deeper passes", 5, []int{-32, -32}, false, false, 600},
-		{"short failure in the regime", 5, []int{-32, -32}, true, false, 120},
-		{"insufficient trials", 4, []int{-32, -32}, false, false, 120},
-		{"incomparable profile", 5, []int{-32, -29}, false, false, 120},
-		{"reset evidence boundary", 5, []int{-32, -32}, false, true, 120},
+		{"valid deeper passes", 5, 0, []int{-32, -32}, false, false, 600},
+		{"short failure in another workload", 5, 0, []int{-32, -32}, true, false, 120},
+		{"insufficient trials", 4, 0, []int{-32, -32}, false, false, 120},
+		{"different workload", 5, 1, []int{-32, -32}, false, false, 120},
+		{"incomparable profile", 5, 0, []int{-32, -29}, false, false, 120},
+		{"reset evidence boundary", 5, 0, []int{-32, -32}, false, true, 120},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -30}, coreStart{phase: journal.PhaseAtLimit, offset: -30})
 			h.decide(h.next())
-			tr := Trial{Regime: machine.R6, Cores: h.s.ids(), Workload: machine.Workloads(machine.R6)[0].ID, Condition: machine.Parked, Phase: journal.PhaseHunt, DurationS: 120, Profile: tt.profile}
+			tr := Trial{Regime: machine.R6, Cores: h.s.ids(), Workload: machine.Workloads(machine.R6)[tt.workload].ID, Condition: machine.Parked, Phase: journal.PhaseHunt, DurationS: 120, Profile: tt.profile}
 			if tt.shortFailed {
 				bad := tr
-				bad.Profile = []int{-40, 0}
+				bad.Workload, bad.Profile = machine.Workloads(machine.R6)[1].ID, []int{-40, 0}
 				h.trial(Action{Kind: RunTrial, Trial: bad}, failed)
 				h.decide(h.next())
 				h.decide(h.next())
@@ -800,6 +802,7 @@ func TestHuntDurationPriorRespectsEvidenceAndShortFailures(t *testing.T) {
 			if tt.reset {
 				h.add(&journal.CommandReset{Core: new(0)})
 			}
+			tr.Workload = machine.Workloads(machine.R6)[0].ID
 			tr.DurationS, tr.Profile, tr.Condition, tr.Phase = 600, []int{-30, -30}, machine.Together, journal.PhaseChecking
 			h.trial(Action{Kind: RunTrial, Trial: tr}, failed)
 			h.decide(h.next())

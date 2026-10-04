@@ -34,6 +34,26 @@ func TestR7StatusSeparatesWorkloadsOffsetsAndTopRequesters(t *testing.T) {
 	}
 }
 
+func TestR7StatusIgnoresFailedStartsAsTopRequester(t *testing.T) {
+	for _, carried := range []bool{false, true} {
+		t.Run(map[bool]string{false: "live", true: "carried"}[carried], func(t *testing.T) {
+			h := r7Harness(t)
+			workload := machine.Workloads(machine.R7)[0].ID
+			if carried {
+				r7Fact(h, false, []int{0, 1}, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
+			} else {
+				class := trialClass{regime: machine.R7, workload: workload, cores: "[0 1]", duration: 120}
+				h.s.ledger[class] = append(h.s.ledger[class], entry{seq: 99, class: class, profile: h.s.Profile(), cores: []int{0, 1}, top: []int{0}})
+			}
+			for _, status := range h.s.R7Status() {
+				if status.Workload == workload && status.Core == 0 && (status.Passes != 0 || status.SelfSufficient) {
+					t.Fatalf("a failed start as top requester counted as self-sufficiency: %+v", status)
+				}
+			}
+		})
+	}
+}
+
 func TestR7StatusUsesSortedProfileAndOnlyCCDParts(t *testing.T) {
 	s := New()
 	s.Fold(journal.Event{Seq: 1, Data: &journal.SessionStart{Cores: []machine.CoreInfo{{Core: 7, CCD: 1}, {Core: 3, CCD: 0}, {Core: 9, CCD: 1}, {Core: 5, CCD: 0}}}})
