@@ -1,32 +1,32 @@
  togi   04:51:10   session 4h51m   7 failures · 7 crashes   last observed failure 04:50, a moment ago
- ■ SOLO ─ ○ CYCLE 1 paused at 1/14 ─ ►  HUNT 1   member probes · core 03 at -9 ─ ○ DEEPEN ─ CLEAN 0
+ ■ SOLO ─ ○ CYCLE 1 paused at 1/14 ─ ►  HUNT 1   member 1 of 2 ─ ○ DEEPEN ─ CLEAN 0
 
- ▌  The group was kept together. I probe each member: how shallow must it go for the rest to pass?
+ ▌  Probing members of 03 11: core 03 at -9.
 
-  R7   all-core load  on 00-07 · 00-02 04-10 12-15 parked, idle 11   mprime AVX2     HUNT 1 · GROUP 41 · CORE 03 AT -9
+  R7   all-core load  on 00-07 · 11 at failing offsets, core 03 at -9, 00-02         HUNT 1 · GROUP 41 · CORE 03 AT -9
  ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
 
  all 5 pass → probe 11 at -9            none named → probe 03 at -8            core named → named core backs off
 
- CCD 0            0  2 counts/cell       -50fail ptall       CCD 1            0  2 counts/cell       -50fail ptnot
- ► 00   0 PARKED   ·····                            -10        08   0 PARKED   ·····                            -10
- ► 01   0 PARKED   ·····                            -10        09   0 PARKED   ·····                            -10
- ► 02   0 PARKED   ·····                            -10        10   0 PARKED   ·····                            -10
- ► 03  -9 PROBE    ▄▄▄▄▄                                       11 -10 MEMBER   ▄▄▄▄▄                    
- ► 04   0 PARKED   ·····                            -10        12   0 PARKED   ·····                            -10
- ► 05   0 PARKED   ·····                            -10        13   0 PARKED   ·····                            -10
- ► 06   0 PARKED   ·····                            -10        14   0 PARKED   ·····                            -10
- ► 07   0 PARKED   ·····                            -10        15   0 PARKED   ·····                            -10
+ CCD 0 all loaded 0  2 counts/cell       -50 fail  back      CCD 1 idle       0  2 counts/cell       -50 fail  back
+ ► 00   0 PARKED   ····▀                            -10        08   0 PARKED   ····▀                            -10
+ ► 01   0 PARKED   ····▀                            -10        09   0 PARKED   ····▀                            -10
+ ► 02   0 PARKED   ····▀                            -10        10   0 PARKED   ····▀                            -10
+ ► 03  -9 PROBE    ▄▄▄▄▀                           -10         11 -10 MEMBER   ▄▄▄▄▀                    
+ ► 04   0 PARKED   ·····                            -10        12   0 PARKED   ····▀                            -10
+ ► 05   0 PARKED   ·····                            -10        13   0 PARKED   ····▀                            -10
+ ► 06   0 PARKED   ·····                            -10        14   0 PARKED   ····▀                            -10
+ ► 07   0 PARKED   ·····                            -10        15   0 PARKED   ····▀                            -10
 
- HUNT 1 ──────────────────── started 04:01 · 49m40s so far   WHAT HAPPENED ──────────────────────────────────── l: all
+ HUNT 1 ─────────────────────────────────── 04:01 · 49m40s   WHAT HAPPENED ──────────────────────────────────── l: all
 
- cause     crash in R7 all-core load on 00-07 · no core      04:50  skip     hunt 1 groups 39-40: pass from carried
-           03   -9  failed -10 · passed - · ► trial 1 of 5   04:50  crash    hunt 1 group 38: all-core load on cores
-           11  -10  failed -10 · passed - · waiting          04:50  resume   session resumed
-                                                             04:49  skip     hunt 1 groups 34-37: pass from carried
- then      after the hunt resolves:                          04:49  crash    hunt 1 group 33: all-core load on cores
-           rerun all-core load on 00-07: 5 x 2m              04:49  resume   session resumed
-                                                             04:47  skip     hunt 1 groups 27-32: pass from carried
-                                                             +38 more
+ cause  crash in R7 all-core on 00-07, no core named         04:50  skip     hunt 1 groups 39-40: pass from carried
+                                                             04:50  crash    hunt 1 group 38: all-core load on cores
+ partss 1-7   parts of 00-15 and      all passed             04:50  resume   session resumed
+ group 8      00-03 08-15 at failing  crashed                04:49  skip     hunt 1 groups 34-37: pass from carried
+ groups 9-13  parts of 00-03 08-15    all passed             04:49  crash    hunt 1 group 33: all-core load on cores
+ group 14     00-03 08-11 at failing  crashed                04:49  resume   session resumed
+ groups 15-20 parts of 00-03 08-11    all passed             04:47  skip     hunt 1 groups 27-32: pass from carried
+ +16 more                                                    +38 more
 
   ?  help    l  log    esc  back    q  close view

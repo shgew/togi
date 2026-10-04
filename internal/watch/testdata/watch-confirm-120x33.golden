@@ -8,7 +8,7 @@
 
  all 5 pass → core 10 at -10            core named → named core backs off      inconclusive → core 00 at -10
 
- CCD 0            0  2 counts/cell       -50fail ptone       CCD 1            0  2 counts/cell       -50fail ptwaiting
+ CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 waiting    0  2 counts/cell       -50 fail
  ► 00 -10 CONFIRM  ▄▄▄▄▄                           L0/5        08   0 CONFIRM                                  L0/5
    01   0 CONFIRM                                  L0/5        09   0 CONFIRM                                  L0/5
    02   0 CONFIRM                                  L0/5        10   0 CONFIRM                                  L0/5
@@ -20,13 +20,13 @@
 
  TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ──────────────────────────────────── l: all
 
-   08 -10 confirm: light, then heavy vector -10: light       00:00  start    session started on 16 cores
-   01 -10 confirm: light, then heavy vector -10: light
-   09 -10 confirm: light, then heavy vector -10: light
-   02 -10 confirm: light, then heavy vector -10: light
-   10 -10 confirm: light, then heavy vector -10: light
-   03 -10 confirm: light, then heavy vector -10: light
-   11 -10 confirm: light, then heavy vector -10: light
+   08  confirm: light trial 1 of  -10  light 0/5, heavy      00:00  start    session started on 16 cores
+   01  confirm: light trial 1 of  -10  light 0/5, heavy
+   09  confirm: light trial 1 of  -10  light 0/5, heavy
+   02  confirm: light trial 1 of  -10  light 0/5, heavy
+   10  confirm: light trial 1 of  -10  light 0/5, heavy
+   03  confirm: light trial 1 of  -10  light 0/5, heavy
+   11  confirm: light trial 1 of  -10  light 0/5, heavy
  +9 more
 
   ?  help    l  log    esc  back    q  close view

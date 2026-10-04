@@ -1,14 +1,14 @@
  togi   07:14:23   session 7h14m   33 failures · 33 crashes   last observed failure 07:13, a moment ago
- ■ SOLO ─ ○ CYCLE 1 paused at 1/14 ─ ►  HUNT 1   parts · part 1 of 2 ─ ○ DEEPEN ─ CLEAN 0
+ ■ SOLO ─ ○ CYCLE 1 paused at 1/14 ─ ►  HUNT 1   part 1 of 2 ─ ○ DEEPEN ─ CLEAN 0
 
- ▌  The machine crashed during R7 all-core load and rebooted. No core was named.
+ ▌  Crashed in R7 all-core on 00-07; no core named. Rerunning it with 00-07 parked.
 
-  R7   all-core load  on 00-07 · 00-07 parked, idle 08-15   mprime AVX2 36K-248K · 8 workers      HUNT 1 · PART 1 OF 2
+  R7   all-core load  on 00-07 · 08-15 at failing offsets, 00-07 parked at 0   mprime AVX2        HUNT 1 · PART 1 OF 2
  ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
 
  all 5 pass → group 2: 00-07            none named → group 2: 12-15            inconclusive → group 1
 
- CCD 0            0  2 counts/cell       -50fail ptparked,   CCD 1            0  2 counts/cell       -50fail ptall
+ CCD 0 parked     0  2 counts/cell       -50 fail  back      CCD 1 judged     0  2 counts/cell       -50 fail
  ► 00   0 PARKED   ·····█                      -11  -10        08 -10 MEMBER   ▄▄▄▄▄█                      -11
  ► 01   0 PARKED   ·····█                      -11  -10        09 -10 MEMBER   ▄▄▄▄▄█                      -11
  ► 02   0 PARKED   ·····█                      -11  -10        10 -10 MEMBER   ▄▄▄▄▄█                      -11
@@ -18,15 +18,15 @@
  ► 06   0 PARKED   ·····█                      -11  -10        14 -10 MEMBER   ▄▄▄▄▄█                      -11
  ► 07   0 PARKED   ·····█                      -11  -10        15 -10 MEMBER   ▄▄▄▄▄█                      -11
 
- HUNT 1 ─────────────────────── started 07:13 · 40s so far   WHAT HAPPENED ──────────────────────────────────── l: all
+ HUNT 1 ────────────────────────────────────── 07:13 · 40s   WHAT HAPPENED ──────────────────────────────────── l: all
 
- cause     crash in R7 all-core load on 00-07 · no core      07:13  hunt     #1 started: which cores caused it?
- ► part 1/2 08-15 at failing offsets · 00-07 parked · 5 x    07:13  crash    all-core load on cores 00-07, rebooted
-   part 2/2 00-07 at failing offsets · 08-15 parked · 5 x    07:13  resume   session resumed
+ cause  crash in R7 all-core on 00-07, no core named         07:13  hunt     #1 started: which cores caused it?
+ ► part 1/2 08-15 at failing offsets  trial 1/5              07:13  crash    all-core load on cores 00-07, rebooted
+   part 2/2 00-07 at failing offsets  if part 1 passes       07:13  resume   session resumed
                                                              07:12  cycle    #1 started, 14 steps
- then      after the hunt resolves:                          07:12  limit    core 15 solo limit -10
-           rerun all-core load on 00-07: 5 x 2m              07:12  limit    core 07 solo limit -10
-                                                             07:12  limit    core 14 solo limit -10
+ then   1  record a failure point or a combination           07:12  limit    core 15 solo limit -10
+        2  back off past it                                  07:12  limit    core 07 solo limit -10
+        3  rerun R7 all-core: 5 x 2m                         07:12  limit    core 14 solo limit -10
                                                              +190 more
 
   ?  help    l  log    esc  back    q  close view

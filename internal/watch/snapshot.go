@@ -34,14 +34,17 @@ func Load(dir string) Snapshot {
 func Project(events []journal.Event) Snapshot {
 	var st journal.State
 	t := tuner.New()
-	requirements := requirementRecorder{t: t, intents: map[string]*journal.TrialIntent{}, failed: map[string]tuner.TrialRequirement{}}
+	requirements := requirementRecorder{t: t, intents: map[string]*journal.TrialIntent{}, failed: map[string]tuner.TrialRequirement{}, counts: map[string]trialCount{}}
 	journal.Replay(events, &st, &requirements, t)
 	t.Project(&st)
 	if st.Session == nil {
 		return Snapshot{}
 	}
-	s := Snapshot{session: true, start: st.Session.Start, phase: journal.Phase(st.Phase)}
-	p := projector{s: &s, st: &st, intents: requirements.intents, applied: map[int]int{}, tuned: map[int]int{}, solo: map[int]int{}, failures: map[int]*failureView{}, backs: map[int]int{}, sources: map[int]int{}, probes: map[int]bool{}, requirements: requirements.failed, checkHunts: map[[2]int][]int{}}
+	s := Snapshot{session: true, start: st.Session.Start, phase: journal.Phase(st.Phase), carried: map[int]bool{}, shapes: map[int]huntShape{}}
+	for _, c := range st.Cores {
+		s.order = append(s.order, c.Core)
+	}
+	p := projector{s: &s, st: &st, intents: requirements.intents, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{}, applied: map[int]int{}, tuned: map[int]int{}, solo: map[int]int{}, failures: map[int]*failureView{}, backs: map[int]int{}, sources: map[int]int{}, probes: map[int]bool{}, requirements: requirements.failed, counts: requirements.counts, checkHunts: map[[2]int][]int{}}
 	for _, e := range events {
 		p.fold(e)
 	}
@@ -53,17 +56,75 @@ type requirementRecorder struct {
 	t       *tuner.State
 	intents map[string]*journal.TrialIntent
 	failed  map[string]tuner.TrialRequirement
+	counts  map[string]trialCount
 }
 
+// trialCount is which trial of its checking part, or else of its requirement, a trial was: index of of.
+type trialCount struct{ index, of int }
+
+// Fold runs before the tuner folds the same event, so it sees each trial's requirement as the trial ran.
 func (r *requirementRecorder) Fold(e journal.Event) {
 	switch d := e.Data.(type) {
 	case *journal.TrialIntent:
 		r.intents[d.Trial] = d
 	case *journal.TrialEnd:
-		if in := r.intents[d.Trial]; in != nil && d.Outcome == journal.OutcomeFailure {
-			r.failed[d.Trial] = r.t.Requirement(in)
+		in := r.intents[d.Trial]
+		if in == nil {
+			return
+		}
+		req := r.t.Requirement(in)
+		if d.Outcome == journal.OutcomeFailure {
+			r.failed[d.Trial] = req
+		}
+		r.counts[d.Trial] = trialCount{req.Trial, req.Needed}
+		if in.Cycle > 0 {
+			if part, ok := cyclePartOf(r.t.CyclePlan(), in.Cycle, in.Step, trialCores(in)); ok {
+				r.counts[d.Trial] = partCount(part, in.RecordOnly)
+			}
 		}
 	}
+}
+
+// cyclePartOf finds the part of a checking step that loads these cores: the part the tuner runs now when one matches,
+// else the matching part of the given step, where step 0 means the step the cycle is at.
+func cyclePartOf(plan tuner.CyclePlan, cycle, step int, cores []int) (tuner.CyclePart, bool) {
+	if plan.Number != cycle {
+		return tuner.CyclePart{}, false
+	}
+	want := slices.Sorted(slices.Values(cores))
+	matches := func(part tuner.CyclePart) bool {
+		return slices.Equal(slices.Sorted(slices.Values(part.Cores)), want)
+	}
+	for i, s := range plan.Steps {
+		for _, part := range s.Parts {
+			if part.Running && matches(part) && (step == 0 || step == i+1) {
+				return part, true
+			}
+		}
+	}
+	if step == 0 {
+		step = plan.Current + 1
+	}
+	if step < 1 || step > len(plan.Steps) {
+		return tuner.CyclePart{}, false
+	}
+	for _, part := range plan.Steps[step-1].Parts {
+		if matches(part) {
+			return part, true
+		}
+	}
+	return tuner.CyclePart{}, false
+}
+
+// partCount is which trial of its part the next trial is: record-only parts count failures as done, other parts
+// need passes.
+func partCount(part tuner.CyclePart, recordOnly bool) trialCount {
+	done := part.Passed
+	if recordOnly {
+		done += part.Failed
+	}
+	of := part.Short + part.Long
+	return trialCount{min(done+1, max(of, 1)), of}
 }
 
 type failureView struct {
@@ -74,6 +135,8 @@ type projector struct {
 	s                    *Snapshot
 	st                   *journal.State
 	intents              map[string]*journal.TrialIntent
+	ends                 map[string]*trialEnd
+	groupSignals         map[[2]int]machine.Signal // how each failed hunt group's trial failed
 	applied, tuned, solo map[int]int
 	current              *journal.TrialIntent
 	currentBoot          string
@@ -85,6 +148,7 @@ type projector struct {
 	restored             bool
 	configs              int
 	requirements         map[string]tuner.TrialRequirement
+	counts               map[string]trialCount
 	checkHunts           map[[2]int][]int
 }
 
@@ -120,10 +184,22 @@ func (p *projector) fold(e journal.Event) {
 	case *journal.TrialStart:
 		s.recover = nil
 	case *journal.TrialEnd:
-		s.last = &trialEnd{id: d.Trial, at: e.Time, outcome: d.Outcome, signal: d.Signal, core: d.Core, duration: time.Duration(d.DurationS) * time.Second, tctlMaxC: d.TctlMaxC, voltageV: d.VoltageRequestMedianV}
+		s.last = &trialEnd{id: d.Trial, at: e.Time, outcome: d.Outcome, signal: d.Signal, core: d.Core, duration: time.Duration(d.DurationS) * time.Second, stalled: d.StalledCore, tctlMaxC: d.TctlMaxC, voltageV: d.VoltageRequestMedianV}
+		if d.LastSampleS != nil {
+			sample := time.Duration(*d.LastSampleS) * time.Second
+			s.last.lastSample = &sample
+		}
 		if in := p.intents[d.Trial]; in != nil {
 			s.last.regime = in.Regime
 			s.last.cores = trialCores(in)
+			s.last.planned = time.Duration(in.DurationS) * time.Second
+			if in.Hunt > 0 && d.Outcome == journal.OutcomeFailure {
+				p.groupSignals[[2]int{in.Hunt, in.Group}] = d.Signal
+			}
+		}
+		p.ends[d.Trial] = s.last
+		if s.recover != nil && s.recover.trial != nil && s.recover.trial.id == d.Trial {
+			s.recover.end = s.last
 		}
 		if p.current != nil && p.current.Trial == d.Trial {
 			p.current = nil
@@ -154,13 +230,16 @@ func (p *projector) fold(e journal.Event) {
 		}
 	case *journal.CrashDetected:
 		s.crashes++
-		r := &recoveryView{crashAt: e.Time, bootAt: e.Time}
+		r := &recoveryView{crashAt: e.Time, bootAt: e.Time, reset: d.ResetReason}
 		if p.current != nil && p.currentBoot == d.PreviousBoot {
 			r.trial = newTrial(p.current, nil)
 			p.current = nil
 		}
 		s.recover = r
+	case *journal.TrialCarried:
+		s.carried[e.Seq] = true
 	case *journal.HuntStart:
+		s.shapes[d.Hunt] = huntShape{failing: d.Failing, parked: d.Parked}
 		p.huntFail = p.failures[d.Failure]
 		if in := p.intents[d.Trial]; in != nil && in.Cycle > 0 {
 			key := [2]int{in.Cycle, in.Step}
@@ -246,16 +325,52 @@ func (p *projector) cyclePlan(cp tuner.CyclePlan) {
 		}
 		s.cycle.steps = append(s.cycle.steps, v)
 	}
-	tr := s.trial
-	if tr == nil || tr.step < 1 || tr.step > len(s.cycle.steps) {
+	if s.trial != nil {
+		p.placeInCycle(s.trial)
+	}
+	if s.recover != nil && s.recover.trial != nil {
+		tr := s.recover.trial
+		p.placeInCycle(tr)
+		if count, ok := p.counts[tr.id]; ok {
+			tr.index, tr.of = count.index, count.of
+		}
+	}
+}
+
+// placeInCycle finds the step and part of its checking cycle a trial loads, and which trial of that part it is.
+func (p *projector) placeInCycle(tr *trialView) {
+	g := p.s.cycle
+	if g == nil || tr.cycle != g.number {
 		return
 	}
-	parts := s.cycle.steps[tr.step-1].parts
-	tr.parts = len(parts)
-	for i, part := range parts {
-		if part.running {
-			tr.part = i + 1
-			break
+	want := slices.Sorted(slices.Values(tr.cores))
+	matches := func(part cyclePart) bool { return slices.Equal(slices.Sorted(slices.Values(part.cores)), want) }
+	place := func(step, index int) {
+		parts := g.steps[step].parts
+		part := parts[index]
+		tr.step, tr.part, tr.parts = step+1, index+1, len(parts)
+		count := partCount(tuner.CyclePart{Short: part.short, Long: part.long, Passed: part.passed, Failed: part.failed}, part.recordOnly)
+		tr.passed, tr.index, tr.of = part.passed, count.index, count.of
+	}
+	for i, step := range g.steps {
+		for j, part := range step.parts {
+			if part.running && matches(part) && (tr.step == 0 || tr.step == i+1) {
+				place(i, j)
+				return
+			}
+		}
+	}
+	step := tr.step
+	if step == 0 {
+		step = g.current + 1
+	}
+	if step < 1 || step > len(g.steps) {
+		return
+	}
+	for j, part := range g.steps[step-1].parts {
+		if matches(part) {
+			place(step-1, j)
+			return
 		}
 	}
 }
@@ -276,24 +391,29 @@ func (p *projector) huntPlan(hp *tuner.HuntPlan, events []journal.Event) {
 		r := p.requirements[in.Trial]
 		h.cause.trialNum = r.Trial
 		h.cause.trial.passed, h.cause.trial.index, h.cause.trial.of = r.Passed, r.Trial, r.Needed
+		p.placeInCycle(&h.cause.trial)
+		h.cause.end = p.ends[in.Trial]
+	}
+	if hs := p.st.Hunt; hs != nil && hs.Hunt == hp.Number {
+		shape := p.s.shapes[hp.Number]
+		shape.parked = hs.Parked
+		p.s.shapes[hp.Number] = shape
+		h.parkedZero = true
+		for i, offset := range hs.Parked {
+			if i < len(shape.failing) && shape.failing[i] != offset && offset != 0 {
+				h.parkedZero = false
+			}
+		}
 	}
 	for _, e := range events {
 		switch d := e.Data.(type) {
 		case *journal.HuntStart:
-			if d.Hunt != hp.Number {
-				continue
-			}
-			h.started = e.Time
-			if d.Reason != "" {
-				h.evidence = append(h.evidence, vtText(d.Reason))
+			if d.Hunt == hp.Number {
+				h.started = e.Time
 			}
 		case *journal.Failure:
-			if e.Seq != hp.FailureSeq {
-				continue
-			}
-			h.cause.core, h.cause.carried = d.Core, d.KnownFailure != 0
-			if d.Reason != "" {
-				h.evidence = append(h.evidence, vtText(d.Reason))
+			if e.Seq == hp.FailureSeq {
+				h.cause.core, h.cause.carried = d.Core, d.KnownFailure != 0
 			}
 		}
 	}
@@ -301,7 +421,7 @@ func (p *projector) huntPlan(hp *tuner.HuntPlan, events []journal.Event) {
 		h.plan = append(h.plan, huntPart{failing: part.Failing, parked: part.Parked, trials: part.Trials, length: time.Duration(part.DurationS) * time.Second, group: part.Group, outcome: part.Outcome, running: part.Running})
 	}
 	for _, g := range hp.Groups {
-		h.groups = append(h.groups, groupView{id: g.Number, cores: g.Cores, profile: g.Profile, stage: g.Stage, probe: g.Probe, held: g.Held, outcome: g.Outcome, passes: g.Passed, needed: g.Needed, inferred: g.Carried})
+		h.groups = append(h.groups, groupView{id: g.Number, cores: g.Cores, profile: g.Profile, stage: g.Stage, probe: g.Probe, held: g.Held, outcome: g.Outcome, signal: p.groupSignals[[2]int{hp.Number, g.Number}], passes: g.Passed, needed: g.Needed, inferred: g.Carried})
 	}
 	for _, pr := range hp.Probes {
 		h.probes = append(h.probes, probeView{member: pr.Member, now: pr.Offset, failedAt: pr.FailedAt, passedAt: pr.PassedAt, carried: pr.Carried, running: pr.Running, done: pr.Done})
@@ -328,7 +448,7 @@ func (p *projector) coreViews(t *tuner.State, turns []tuner.SearchTurn) {
 		p.trialRole(&v, i)
 		if p.s.hunt != nil {
 			for _, g := range p.s.hunt.groups {
-				if (g.outcome == "fail" || g.outcome == "failed") && slices.Contains(g.cores, c.Core) && i < len(g.profile) {
+				if (g.outcome == "failure" || g.outcome == "fail") && slices.Contains(g.cores, c.Core) && i < len(g.profile) && !slices.Contains(v.groupFails, g.profile[i]) {
 					v.groupFails = append(v.groupFails, g.profile[i])
 				}
 			}
@@ -582,4 +702,4 @@ func workloadLabel(id string) string {
 	}
 	return vtText(id)
 }
-func vtText(msg string) string { return strings.ReplaceAll(journal.EscapeText(msg), "°C", " C") }
+func vtText(msg string) string { return journal.EscapeText(msg) }

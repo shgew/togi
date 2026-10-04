@@ -1,14 +1,12 @@
  togi   04:00:38   session 27h59m   70 failures · 13 crashes   last observed failure 20:20, 7h39m ago
  ■ SOLO ─ ► CYCLE 2 ─ ○ DEEPEN ─ CLEAN 2
 
- ▌  The rows show the saved profile, not applied now. I restored safer offsets before stopping.
+ ▌  I restored safer offsets before stopping. togi run picks up where I left off.
 
- STOPPED  03:59:58 · requested clean cycles completed · Rows show the saved profile, not applied now.
+ STOPPED  03:59:58 · requested clean cycles completed
  Rows show the saved profile, not applied now.
 
-
-
- CCD 0            0  2 counts/cell       -50fail ptnot       CCD 1            0  2 counts/cell       -50fail ptnot
+ CCD 0 idle       0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
    00 -37 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38             08 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄█·              -25
    01 -31 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·           -32             09 -16 AT LIMIT ▄▄▄▄▄▄▄▄█                   -17
    02 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -36             10 -15 AT LIMIT ▄▄▄▄▄▄▄█                    -16
@@ -20,13 +18,15 @@
 
  CYCLE 2 ────────────────────────────── 14 steps · 14 done   WHAT HAPPENED ──────────────────────────────────── l: all
 
- ■  1 R7 all-core       5 parts done                         03:59  stop     stopped
- ■  2 R7 all-core       5 parts done                         03:59  cycle    #2 passed, a full cycle of every kind of
- ■  3 R7 all-core       5 parts done                         03:59  pass     idle with short bursts on all 16 cores,
- ■  4 R2 heavy vector   16 x 2m done                         03:44  pass     partial load on core 15 at -35, 2 min,
- ■  5 R2 heavy vector   16 x 2m done                         03:42  pass     partial load on core 07 at -30, 2 min,
- ■  6 R2 heavy vector   16 x 2m done                         03:40  pass     partial load on core 14 at 0, 2 min,
- ■  7 R6 idle + bursts  1 x 15m done                         03:38  pass     partial load on core 06 at -27, 2 min,
- +7 more                                                     +193 more
+ ■  1 R7 all-core       5 parts       done                   03:59  stop     stopped
+ ■  2 R7 all-core       5 parts       done                   03:59  cycle    #2 passed, a full cycle of every kind of
+ ■  3 R7 all-core       5 parts       done                   03:59  pass     idle with short bursts on all 16 cores
+ ■  4 R2 heavy vector   16 x 2m       done                   03:44  pass     partial load on core 15 at -35, 2 min
+ ■  5 R2 heavy vector   16 x 2m       done                   03:42  pass     partial load on core 07 at -30, 2 min
+ ■  6 R2 heavy vector   16 x 2m       done                   03:40  pass     partial load on core 14 at 0, 2 min
+ ■  7 R6 idle + bursts  15m           done                   03:38  pass     partial load on core 06 at -27, 2 min
+ ■  8 R5 both threads   16 x 2m       done                   03:36  pass     partial load on core 13 at -22, 2 min
+ ■  9 R1 light          16 x 2m       done                   03:34  pass     partial load on core 05 at -7, 2 min
+ +5 more                                                     +191 more
 
   ?  help    l  log    esc  back    q  close view

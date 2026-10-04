@@ -39,6 +39,15 @@ type Snapshot struct {
 
 	history []entry // what happened, newest first
 	log     []entry // the journal's own lines, oldest first
+
+	order   []int             // core IDs in the session's order, the order of every profile
+	carried map[int]bool      // sequence numbers of trials carried from earlier sessions
+	shapes  map[int]huntShape // each hunt's failing and parked profiles
+}
+
+// huntShape is what a hunt sets each core to: its failing offset, or the offset it is parked at.
+type huntShape struct {
+	failing, parked []int
 }
 
 type coreView struct {
@@ -132,16 +141,19 @@ type trialView struct {
 }
 
 type trialEnd struct {
-	id       string
-	at       time.Time
-	regime   machine.Regime
-	cores    []int
-	outcome  journal.Outcome
-	signal   machine.Signal
-	core     *int
-	duration time.Duration
-	tctlMaxC *int
-	voltageV *float64 // median voltage request
+	id         string
+	at         time.Time
+	regime     machine.Regime
+	cores      []int
+	outcome    journal.Outcome
+	signal     machine.Signal
+	core       *int
+	duration   time.Duration
+	planned    time.Duration // the length the trial was meant to run
+	lastSample *time.Duration
+	stalled    *int // the core whose worker had stopped advancing by the last sample
+	tctlMaxC   *int
+	voltageV   *float64 // median voltage request
 }
 
 // premise is the outcome of the trial in flight an outcome line assumes.
@@ -205,18 +217,18 @@ type huntView struct {
 	started    time.Time
 	regime     machine.Regime
 	cause      huntCause
-	evidence   []string // what the journal recorded about the failure that falls short of naming a core
 	candidates []int
+	parkedZero bool        // parked cores run at offset 0
 	plan       []huntPart  // the current split: run, running and to come
 	groups     []groupView // groups so far, oldest first
 	probes     []probeView
-	rerun      rerunPlan    // what reruns once the hunt resolves
-	resume     *tuner.Trial // the trial the paused stage returns to, when known
+	rerun      rerunPlan // what reruns once the hunt resolves
 }
 
 type huntCause struct {
 	at       time.Time
 	trial    trialView
+	end      *trialEnd // how the failing trial ended, when a trial ran
 	signal   machine.Signal
 	core     *int
 	carried  bool // the failing profile was already recorded in a carried trial; no trial ran
@@ -242,6 +254,7 @@ type groupView struct {
 	probe    *journal.CombinationMember
 	held     []journal.CombinationMember
 	outcome  string
+	signal   machine.Signal // how a failed group's trial failed
 	passes   int
 	needed   int
 	inferred bool // answered by carried trials; no trial ran
@@ -288,7 +301,9 @@ type deepenView struct {
 type recoveryView struct {
 	crashAt time.Time
 	bootAt  time.Time
+	reset   machine.ResetKind
 	trial   *trialView // the trial the crash ended, when one was in flight
+	end     *trialEnd
 }
 
 type stopView struct {

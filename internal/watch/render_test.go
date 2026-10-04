@@ -2,12 +2,15 @@ package watch
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/shgew/togi/internal/journal"
 )
 
 func TestHelpWideUsesThreeColumns(t *testing.T) {
@@ -221,6 +224,35 @@ func TestMediumCoreNotesRetainCombinationAndSoloOffsets(t *testing.T) {
 	for _, note := range []string{"C4 · solo -31", "C1 · solo -37"} {
 		if !strings.Contains(frame, note) {
 			t.Errorf("medium frame hid constraint facts %q:\n%s", note, frame)
+		}
+	}
+}
+
+func TestNarratorWrapsUnderItsText(t *testing.T) {
+	t.Parallel()
+	st := story{label: "HUNT 6", lines: []string{strings.Repeat("word ", 15)}}
+	lines := narratorLines(st, 60, 2, false)
+	if len(lines) != 2 {
+		t.Fatalf("want two lines, got %q", lines)
+	}
+	first, second := ansi.Strip(lines[0]), ansi.Strip(lines[1])
+	if text := strings.Index(first, "word"); text != strings.Index(second, "word") || text <= strings.Index(first, "HUNT 6") {
+		t.Fatalf("second line must start under the text, not the label:\n%s\n%s", first, second)
+	}
+}
+
+func TestRestingBandLeavesItsRowsToThePanels(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1000, 0).UTC()
+	s := Snapshot{session: true, start: now, stopped: &stopView{at: now, reason: journal.ShutdownSignal}, cores: []coreView{{id: 0}}}
+	for _, tc := range []struct {
+		width, height, gap int
+	}{{240, 67, 3}, {160, 45, 3}, {120, 33, 2}} {
+		lines := strings.Split(ansi.Strip(Render(s, tc.width, tc.height, now)), "\n")
+		band := slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(strings.TrimSpace(l), "STOPPED") })
+		ccd := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "CCD 0") })
+		if band < 0 || ccd-band != tc.gap {
+			t.Errorf("%dx%d: a one-line band at row %d must leave the CCD table at row %d, not %d", tc.width, tc.height, band, band+tc.gap, ccd)
 		}
 	}
 }

@@ -75,6 +75,24 @@ type rectangle struct {
 
 type coreColumns struct {
 	id, offset, state, gauge, cells, failure, note int
+	brief                                          bool // the role sits beside the CCD name and notes are bare numbers
+}
+
+// column is a table column inside its panel: the cell it starts at and how many cells it may use. A column of width
+// 0 is not shown at this size.
+type column struct{ at, w int }
+
+// tables holds every table's columns for the screen size, so a header and its rows always share them.
+type tables struct {
+	field  int      // where the value of a label/value row starts
+	cycle  []column // marker, number, kind, where, workload, schedule, result
+	parts  []column // hunt parts: marker, part, at failing offsets, parked, schedule, state
+	groups []column // hunt groups: which, what, outcome
+	probes []column // member, now, failed at, passed at, state
+	steps  []column // the numbered steps after a hunt: number, text
+	turns  []column // marker, core, this turn, at, workload, so far
+	combos []column // name, member offsets, found by, against the profile now
+	member int      // cells per member offset in the combinations table
 }
 
 type layout struct {
@@ -86,6 +104,49 @@ type layout struct {
 	ccds                          []rectangle
 	columns                       []coreColumns
 	ccdIDs                        []int
+	tables                        tables
+}
+
+func tableColumns(class sizeClass, width int) tables {
+	rest := func(at int) column { return column{at, max(width-at, 0)} }
+	none := column{}
+	switch class {
+	case wideLayout:
+		return tables{
+			field:  12,
+			cycle:  []column{{0, 1}, {2, 2}, {6, 21}, {28, 23}, {52, 28}, {82, 13}, rest(97)},
+			parts:  []column{{10, 1}, {12, 10}, {24, 19}, {45, 12}, {59, 9}, rest(70)},
+			groups: []column{{12, 12}, {25, 44}, rest(70)},
+			probes: []column{{12, 7}, {20, 5}, {26, 19}, {46, 22}, rest(69)},
+			steps:  []column{{12, 2}, rest(15)},
+			turns:  []column{{0, 1}, {2, 6}, {9, 30}, {40, 6}, {47, 25}, rest(73)},
+			combos: []column{{0, 5}, {6, 40}, {48, 21}, rest(70)},
+			member: 5,
+		}
+	case mediumLayout:
+		return tables{
+			field:  12,
+			cycle:  []column{{0, 1}, {2, 2}, {5, 17}, {23, 19}, none, {43, 13}, rest(57)},
+			parts:  []column{{10, 1}, {12, 7}, {20, 12}, {33, 12}, {46, 8}, rest(55)},
+			groups: []column{{12, 12}, {25, 29}, rest(55)},
+			probes: []column{{12, 5}, {18, 5}, {24, 12}, {37, 17}, rest(55)},
+			steps:  []column{{12, 2}, rest(15)},
+			turns:  []column{{0, 1}, {2, 3}, {6, 27}, {34, 4}, none, rest(39)},
+			combos: []column{{0, 3}, {4, 32}, {37, 7}, rest(45)},
+			member: 4,
+		}
+	case compactLayout:
+	}
+	return tables{
+		field:  7,
+		cycle:  []column{{0, 1}, {2, 2}, {5, 17}, {23, 13}, none, none, rest(37)},
+		parts:  []column{{0, 1}, {2, 8}, {11, 25}, none, none, rest(37)},
+		groups: []column{{0, 12}, {13, 23}, rest(37)},
+		probes: []column{{2, 5}, {8, 4}, {13, 11}, {25, 11}, rest(37)},
+		steps:  []column{{7, 2}, rest(10)},
+		turns:  []column{{0, 1}, {2, 3}, {6, 26}, {33, 4}, none, rest(38)},
+		combos: []column{{0, 3}, none, {4, 7}, rest(12)},
+	}
 }
 
 func measure(s Snapshot, sc Screen) layout {
@@ -105,6 +166,15 @@ func measure(s Snapshot, sc Screen) layout {
 		margin, gap = 2, 5
 		stageY, sayY, nowY, ccdY = 2, 4, 7, 15
 		nowH, outcomeY, outcomeH = 3, 11, 3
+	}
+	if s.resting() {
+		_, _, lines := s.restingBand()
+		nowH = len(lines)
+		if p.class != compactLayout {
+			nowH++
+		}
+		outcomeH = 0
+		ccdY = nowY + nowH + 1
 	}
 	full := max(p.width-2*margin, 0)
 	left := max((full-gap)/2, 0)
@@ -150,11 +220,11 @@ func measure(s Snapshot, sc Screen) layout {
 		}
 		r := rectangle{x, y, w, height}
 		p.ccds = append(p.ccds, r)
-		col := coreColumns{2, 5, 9, 18, 25, 44, 50}
+		col := coreColumns{2, 5, 9, 18, 25, 44, 50, true}
 		if p.class == wideLayout {
-			col = coreColumns{2, 6, 11, 21, 50, 73, 81}
+			col = coreColumns{2, 6, 11, 21, 50, 73, 81, false}
 		} else if p.class == mediumLayout || !side {
-			col = coreColumns{2, 6, 11, 21, 25, 48, 56}
+			col = coreColumns{2, 6, 11, 21, 25, 48, 56, false}
 		}
 		col.cells = min(col.cells, max(w-col.gauge-1, 0))
 		p.columns = append(p.columns, col)
@@ -169,6 +239,7 @@ func measure(s Snapshot, sc Screen) layout {
 		p.context.w = full
 		p.history = rectangle{margin, lowY + p.context.h, full, 0}
 	}
+	p.tables = tableColumns(p.class, p.context.w)
 	p.body = rectangle{margin, sayY, full, max(p.hint-sayY-1, 0)}
 	return p
 }
@@ -229,24 +300,11 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 		c.rows(p.body, body)
 	case MainView:
 		st := s.story(now)
-		say := p.say
 		if !s.session || s.problem != nil {
-			say = p.body
+			c.rows(p.body, narratorLines(st, p.body.w, p.body.h, false))
+		} else {
+			c.rows(p.say, narratorLines(st, p.say.w, p.say.h, p.class == compactLayout))
 		}
-		lines := make([]string, 0, len(st.paragraphs)+1)
-		for i, line := range st.paragraphs {
-			prefix := ""
-			if i == 0 && p.class != compactLayout {
-				prefix = narrativeStyle(st.tone).Render(st.headline) + "   "
-			}
-			for _, part := range wrapStyled(prefix+line, max(say.w-3, 1), plain) {
-				lines = append(lines, narrativeStyle(st.tone).Render("▌")+"  "+part)
-			}
-		}
-		if len(lines) > say.h {
-			lines = lines[:say.h]
-		}
-		c.rows(say, lines)
 		if s.session && s.problem == nil {
 			if p.class != compactLayout {
 				c.rows(p.last, s.lastLines())
@@ -271,6 +329,46 @@ func narrativeStyle(t tone) lipgloss.Style {
 		return lit
 	}
 	return toneStyle(t)
+}
+
+// narratorLines draws the story as `▌  LABEL   text`, wrapped lines aligned under the text, never under the label.
+// brief is the one line of a compact screen, with no label.
+func narratorLines(st story, width, height int, brief bool) []string {
+	bar := narrativeStyle(st.tone).Render("▌") + "  "
+	if brief {
+		text := st.brief
+		if text == "" && len(st.lines) > 0 {
+			text = st.lines[0]
+		}
+		return []string{bar + trimWords(textStyle.Render(text), max(width-3, 0))}
+	}
+	indent := ansi.StringWidth(st.label) + 3
+	var wrapped []string
+	for _, line := range st.lines {
+		wrapped = append(wrapped, wrapStyled(line, max(width-3-indent, 1), textStyle)...)
+	}
+	if len(wrapped) > height {
+		if brief := wrapStyled(st.brief, max(width-3-indent, 1), textStyle); st.brief != "" && len(brief) <= height {
+			wrapped = brief
+		} else {
+			wrapped = wrapped[:0]
+			for _, line := range st.lines {
+				wrapped = append(wrapped, trimWords(textStyle.Render(line), max(width-3-indent, 1)))
+			}
+		}
+	}
+	out := make([]string, 0, min(len(wrapped), height))
+	for i, line := range wrapped {
+		if i == height {
+			break
+		}
+		label := strings.Repeat(" ", indent)
+		if i == 0 {
+			label = narrativeStyle(st.tone).Render(st.label) + "   "
+		}
+		out = append(out, bar+label+line)
+	}
+	return out
 }
 
 func (s Snapshot) quietUntil() time.Time {
@@ -329,12 +427,8 @@ func (s Snapshot) stageLine(class sizeClass, summary bool, now time.Time) string
 	parts := []string{solo, cycle}
 	if h := s.hunt; h != nil {
 		hunt := amber.Render("► ") + lamp.Render(fmt.Sprintf(" HUNT %d ", h.id))
-		if t := s.trial; t != nil {
-			if t.probe != nil {
-				hunt += amber.Render(fmt.Sprintf("  member probes · core %02d at %d", t.probe.Core, t.probe.Offset))
-			} else if t.huntParts > 0 {
-				hunt += amber.Render(fmt.Sprintf("  parts · part %d of %d", t.huntPart, t.huntParts))
-			}
+		if where := s.huntStage(short); where != "" {
+			hunt += amber.Render("  " + where)
 		}
 		parts = append(parts, hunt)
 	}
@@ -393,22 +487,34 @@ func (s Snapshot) cycleStage(name string, short bool) string {
 		cycle = amber.Render("○ ") + textStyle.Render(name)
 		if short {
 			cycle += amber.Render(fmt.Sprintf(" paused at %d/%d", min(g.current+1, len(g.steps)), len(g.steps)))
-		} else {
-			cycle += amber.Render(fmt.Sprintf("  paused at step %d of %d", min(g.current+1, len(g.steps)), len(g.steps)))
+			break
 		}
+		at := fmt.Sprintf("  paused at step %d of %d", min(g.current+1, len(g.steps)), len(g.steps))
+		if g.current < len(g.steps) && len(g.steps[g.current].parts) > 1 {
+			if part := firstOpenPart(g.steps[g.current]); part > 0 {
+				at += fmt.Sprintf(", part %d", part)
+			}
+		}
+		cycle += amber.Render(at)
 	case s.phase == journal.PhaseChecking:
 		cycle = lit.Render("► ") + white.Render(name)
-		if !short {
-			cycle += textStyle.Render(fmt.Sprintf("  step %d of %d", min(g.current+1, len(g.steps)), len(g.steps)))
+		if short {
+			break
+		}
+		step := min(g.current+1, len(g.steps))
+		t := s.trial
+		if t != nil && t.cycle == g.number && t.step > 0 {
+			step = t.step
+		}
+		cycle += textStyle.Render(fmt.Sprintf("  step %d of %d", step, len(g.steps)))
+		if t != nil && t.cycle == g.number && t.parts > 1 {
+			cycle += textStyle.Render(fmt.Sprintf(" · part %d of %d", t.part, t.parts))
+		}
+		if t != nil && t.cycle == g.number && t.of > 1 {
+			cycle += textStyle.Render(fmt.Sprintf(" · trial %d of %d", t.index, t.of))
 		}
 	default:
 		cycle = green.Render("■ ") + textStyle.Render(name)
-	}
-	if t := s.trial; t != nil && t.parts > 0 && !short {
-		cycle += textStyle.Render(fmt.Sprintf(" · part %d of %d", t.part, t.parts))
-		if !g.paused {
-			cycle += textStyle.Render(fmt.Sprintf(" · trial %d of %d", t.index, t.of))
-		}
 	}
 	return cycle
 }
@@ -432,43 +538,82 @@ func keyHints(view View) string {
 	return strings.Join(parts, "   ")
 }
 
-func drawRestingNow(c *canvas, p layout, s Snapshot) {
-	r := p.now
-	title, style := "BETWEEN TRIALS", grey
-	var lines []string
+// resting is true when no trial is in flight to show, or the session has stopped, met a dead end or just recovered
+// from a crash.
+func (s Snapshot) resting() bool {
+	return s.session && s.problem == nil && (s.deadEnd != nil || s.stopped != nil || s.recover != nil || s.trial == nil)
+}
+
+// restingBand is the NOW band when no trial runs: its title and the rows it needs.
+func (s Snapshot) restingBand() (string, lipgloss.Style, []string) {
 	switch {
 	case s.deadEnd != nil:
-		title, style = "DEAD END", red
-		lines = append(lines, strings.ReplaceAll(vtText(string(s.deadEnd.condition)), "_", " ")+": "+vtText(s.deadEnd.detail))
+		return "DEAD END", red, []string{strings.ReplaceAll(vtText(string(s.deadEnd.condition)), "_", " ") + ": " + vtText(s.deadEnd.detail)}
 	case s.stopped != nil:
-		title = "STOPPED"
-		lines = append(lines, s.stopped.at.Format("15:04:05")+" · "+stopWords(s.stopped.reason))
+		lines := []string{s.stopped.at.Format("15:04:05") + " · " + stopWords(s.stopped.reason)}
 		if s.stopped.saved {
 			lines = append(lines, "Rows show the saved profile, not applied now.")
 		}
+		return "STOPPED", grey, lines
 	case s.recover != nil:
-		title, style = "RECOVERED FROM A CRASH", amber
-		what := "no trial was in flight"
-		if s.recover.trial != nil {
-			what = trialDescription(*s.recover.trial)
-		}
-		lines = append(lines, what+" · detected "+s.recover.bootAt.Format("15:04:05"), s.nextLine())
-	default:
-		if s.last != nil {
-			lines = append(lines, lastDescription(*s.last))
-		}
-		lines = append(lines, s.nextLine())
+		return "RECOVERED FROM A CRASH", amber, s.recoveredLines()
 	}
+	var lines []string
+	if s.last != nil {
+		lines = append(lines, "last: "+lastDescription(*s.last))
+	}
+	return "BETWEEN TRIALS", grey, append(lines, s.nextLine())
+}
+
+// recoveredLines say what the crash ended, how late, what the journal holds about it, and what runs next.
+func (s Snapshot) recoveredLines() []string {
+	r := s.recover
+	detected := "detected " + r.bootAt.Format("15:04:05")
+	if r.reset != "" && r.reset != machine.ResetUnknown {
+		detected += " after a " + strings.ReplaceAll(string(r.reset), "_", " ") + " reset"
+	}
+	if r.trial == nil {
+		return []string{"crash with no trial in flight · " + detected, s.nextLine()}
+	}
+	t := *r.trial
+	first := "crash in " + trialName(t)
+	if where := cyclePlace(t); where != "" {
+		first += " · " + where
+	}
+	switch {
+	case r.end != nil && r.end.core != nil:
+		first += fmt.Sprintf(" · core %02d named", *r.end.core)
+	case r.end != nil:
+		first += " · no core named"
+	}
+	if t.recordOnly {
+		first += " · record only"
+	}
+	var second []string
+	if e := r.end; e != nil && e.lastSample != nil {
+		second = append(second, lateness(e)+" the trial", "last sample "+clock(*e.lastSample)+" of "+clock(e.planned))
+		if e.stalled != nil {
+			second = append(second, fmt.Sprintf("core %02d's worker had stalled by then", *e.stalled))
+		}
+	}
+	second = append(second, detected)
+	return []string{first, strings.Join(second, " · "), s.nextLine()}
+}
+
+func drawRestingNow(c *canvas, p layout, s Snapshot) {
+	r := p.now
+	title, style, lines := s.restingBand()
 	if p.class == compactLayout {
-		c.put(r, 0, 0, style.Render(title)+"  "+textStyle.Render(strings.Join(lines, " · ")))
-		if len(lines) > 1 {
-			c.put(r, 0, 1, textStyle.Render(lines[len(lines)-1]))
+		c.put(r, 0, 0, style.Render(title)+"  "+textStyle.Render(lines[0]))
+		for i, line := range lines[1:] {
+			c.put(r, 0, i+1, textStyle.Render(line))
 		}
 		return
 	}
 	c.put(r, 0, 0, rule(r.w, style.Render(title), ""))
-	body := rectangle{r.x, r.y + 1, r.w, r.h - 1}
-	c.rows(body, wrapStyled(strings.Join(lines, "\n"), r.w, textStyle))
+	for i, line := range lines {
+		c.put(r, 0, i+1, textStyle.Render(line))
+	}
 }
 
 func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
@@ -479,7 +624,7 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 	}
 	t := s.trial
 	op := s.operation(*t)
-	description := chip.Render(" "+string(t.regime)+" ") + "  " + white.Render(loadWords(t.regime)) + "  " + textStyle.Render(trialWhere(*t)) + "   " + grey.Render(workloadDisplay(t.workload))
+	description := chip.Render(" "+string(t.regime)+" ") + "  " + white.Render(loadWords(t.regime)) + "  " + textStyle.Render(s.trialWhere(*t)) + "   " + grey.Render(workloadDisplay(t.workload))
 	if workers := len(t.cores) * t.workload.Threads; workers > 0 {
 		suffix := "s"
 		if workers == 1 {
@@ -643,7 +788,13 @@ func drawOutcomes(c *canvas, p layout, s Snapshot) {
 }
 
 func drawCCD(c *canvas, r rectangle, col coreColumns, id int, s Snapshot) {
-	c.put(r, 0, 0, white.Render(fmt.Sprintf("CCD %d", id)))
+	role, short := s.ccdRole(id)
+	if col.brief {
+		name := fmt.Sprintf("CCD %d", id)
+		c.put(r, 0, 0, white.Render(name)+" "+grey.Render(trimWords(short, col.gauge-len(name)-3)))
+	} else {
+		c.put(r, 0, 0, white.Render(fmt.Sprintf("CCD %d", id)))
+	}
 	c.put(r, col.gauge-1, 0, grey.Render("0"))
 	if col.cells == 50 {
 		for n := 10; n <= 50; n += 10 {
@@ -653,8 +804,18 @@ func drawCCD(c *canvas, r rectangle, col coreColumns, id int, s Snapshot) {
 		c.put(r, col.gauge+2, 0, track.Render("2 counts/cell"))
 		c.put(r, col.gauge+col.cells-3, 0, grey.Render("-50"))
 	}
-	c.put(r, col.failure-1, 0, grey.Render("fail pt"))
-	c.put(r, col.note, 0, grey.Render(s.ccdRole(id)))
+	if col.brief {
+		c.put(r, col.failure, 0, grey.Render("fail"))
+		if slices.ContainsFunc(s.cores, func(core coreView) bool { return core.ccd == id && core.returnsTo != nil }) {
+			c.put(r, col.note, 0, grey.Render("back"))
+		}
+	} else {
+		c.put(r, col.failure-1, 0, grey.Render("fail pt"))
+		if ansi.StringWidth(role) > r.w-col.note {
+			role = short
+		}
+		c.put(r, col.note, 0, grey.Render(role))
+	}
 	var cores []coreView
 	for _, core := range s.cores {
 		if core.ccd == id {
@@ -691,7 +852,11 @@ func drawCCD(c *canvas, r rectangle, col coreColumns, id int, s Snapshot) {
 		c.put(r, col.state, y, stateStyle.Render(core.stateWord()))
 		c.putCells(r, col.gauge, y, core.gauge(col.cells))
 		if core.fail != nil {
-			c.put(r, col.failure, y, style.Render(fmt.Sprintf("%5d", *core.fail)))
+			failStyle := grey
+			if core.judged {
+				failStyle = textStyle
+			}
+			c.put(r, col.failure, y, failStyle.Render(fmt.Sprintf("%5d", *core.fail)))
 		}
 		note := core.noteLine(max(r.w-col.note, 0))
 		c.put(r, col.note, y, trimWords(note, max(r.w-col.note, 0)))
@@ -847,9 +1012,10 @@ func (c coreView) noteLine(width int) string {
 	return ""
 }
 
-func (s Snapshot) ccdRole(id int) string {
-	loaded, judged, parked, total := 0, 0, 0, 0
-	atZero := true
+// ccdRole says what this trial does with a CCD's cores, in full and in a word.
+func (s Snapshot) ccdRole(id int) (string, string) {
+	loaded, judged, parked, total, suspects, members := 0, 0, 0, 0, 0, 0
+	atZero, parkedZero := true, true
 	for _, c := range s.cores {
 		if c.ccd != id {
 			continue
@@ -866,28 +1032,44 @@ func (s Snapshot) ccdRole(id int) string {
 		if c.judged {
 			judged++
 		}
-		if c.state == coreParked {
+		switch c.state {
+		case coreParked:
 			parked++
+			parkedZero = parkedZero && offset == 0
+		case coreSuspect:
+			suspects++
+		case coreMember, coreProbe:
+			members++
+		case coreWaiting, coreSearch, coreConfirm, coreFound, coreAtLimit, coreHasRoom:
 		}
+	}
+	parkedWords := "parked"
+	if parkedZero {
+		parkedWords = "parked at 0"
 	}
 	switch {
-	case total > 0 && parked == total && loaded == total:
-		return "parked, still under load"
-	case total > 0 && parked == total:
-		return "parked, idle"
-	case total > 0 && loaded == total:
-		return "all under load"
-	case total > 0 && judged == total && loaded == 0:
-		return "all idle, all judged"
+	case total == 0:
+		return "", ""
+	case parked == total && loaded == total:
+		return parkedWords + ", still under load", "parked"
+	case parked == total:
+		return parkedWords + ", idle", "parked"
+	case loaded == total && suspects == total:
+		return "suspects at their failing offsets", "suspects"
+	case loaded == total && members == total:
+		return "members at their failing offsets", "members"
+	case loaded == total:
+		return "all under load", "all loaded"
+	case judged == total && loaded == 0:
+		return "all idle, all judged", "judged"
+	case loaded == 0 && atZero:
+		return "waiting at 0", "waiting"
 	case loaded == 0:
-		if atZero {
-			return "waiting at 0"
-		}
-		return "not under load"
+		return "not under load", "idle"
 	case loaded == 1:
-		return "one core under load at a time"
+		return "one core under load at a time", "one loaded"
 	}
-	return fmt.Sprintf("%d under load · %d judged", loaded, judged)
+	return fmt.Sprintf("%d under load · %d judged", loaded, judged), fmt.Sprintf("%d loaded", loaded)
 }
 
 func (s Snapshot) historyPanel(width int) []string {
@@ -901,411 +1083,6 @@ func (s Snapshot) historyPanel(width int) []string {
 	out := []string{rule(width, grey.Render("WHAT HAPPENED"), grey.Render(right)), ""}
 	for _, e := range s.history {
 		out = append(out, grey.Render(e.at.Format("15:04"))+"  "+toneStyle(e.tone).Render(fmt.Sprintf("%-8s", e.tag))+" "+trimWords(textStyle.Render(vtText(e.sentence())), max(width-16, 0)))
-	}
-	return out
-}
-
-func (s Snapshot) contextLines(p layout, now time.Time) []string {
-	w := p.context.w
-	if s.hunt != nil {
-		return s.huntLines(w, p.class, now)
-	}
-	if len(s.turns) > 0 {
-		return s.turnLines(w, p.class)
-	}
-	if s.phase == journal.PhaseDeepening && s.deepen != nil {
-		return s.deepenLines(w)
-	}
-	var out []string
-	if s.cycle != nil {
-		out = s.cycleLines(w, p.class)
-	}
-	if len(s.combos) > 0 {
-		if len(out) > 0 {
-			out = append(out, "")
-		}
-		out = append(out, s.combinationLines(w, p.class)...)
-	}
-	return out
-}
-
-func (s Snapshot) cycleLines(width int, class sizeClass) []string {
-	g := s.cycle
-	done := 0
-	for _, step := range g.steps {
-		if step.done {
-			done++
-		}
-	}
-	out := []string{rule(width, grey.Render(fmt.Sprintf("CYCLE %d", g.number)), grey.Render(fmt.Sprintf("%d steps · %d done", len(g.steps), done))), ""}
-	if class == wideLayout {
-		out = append(out, tableRow(width, []int{2, 6, 28, 52, 78, 93}, []string{"#", "kind", "where", "workload", "schedule", "result"}, grey))
-	}
-	for i, step := range g.steps {
-		marker, style := "○", grey
-		result := ""
-		if step.done {
-			marker, style, result = "■", textStyle, "done"
-		} else if i == g.current {
-			marker, style = "►", white
-			if g.paused {
-				marker, result = "○", "paused"
-			}
-		}
-		kind := string(step.regime) + " " + strings.TrimSuffix(loadWords(step.regime), " load")
-		where, schedule := stepSchedule(step)
-		if len(step.hunts) > 0 {
-			result += " · hunts " + numberList(step.hunts)
-		}
-		if class == wideLayout {
-			out = append(out, stageMarker(marker)+tableRow(width-1, []int{1, 5, 27, 51, 77, 92}, []string{fmt.Sprintf("%2d", i+1), kind, where, workloadDisplay(step.workload), schedule, result}, style))
-		} else {
-			out = append(out, trimWords(stageMarker(marker)+" "+style.Render(fmt.Sprintf("%2d %-17s", i+1, kind))+" "+grey.Render(schedule)+" "+style.Render(result), width))
-		}
-		if i != g.current || step.done {
-			continue
-		}
-		out = append(out, s.cyclePartLines(step, width, class)...)
-	}
-	return out
-}
-
-func (s Snapshot) cyclePartLines(step cycleStep, width int, class sizeClass) []string {
-	var out []string
-	for j, part := range step.parts {
-		if len(step.parts) == 1 && !part.recordOnly {
-			continue
-		}
-		marker := " "
-		if part.running {
-			marker = "►"
-		}
-		label := "part"
-		if step.regime == machine.R7 {
-			label = "partial"
-			if part.full {
-				label = "full"
-			}
-			if part.ccd < 0 {
-				label += " CCD 0+1"
-			} else {
-				label += fmt.Sprintf(" CCD %d", part.ccd)
-			}
-		}
-		where := coreIDs(part.cores)
-		if part.recordOnly {
-			where += " · record only"
-		}
-		result := fmt.Sprintf("%d/%d passed", part.passed, part.short+part.long)
-		if part.recordOnly {
-			result = fmt.Sprintf("recorded: %d passed", part.passed)
-			if part.failed > 0 {
-				result += fmt.Sprintf(", %d failed", part.failed)
-			}
-		} else if part.running && s.trial != nil {
-			result = fmt.Sprintf("trial %d of %d", s.trial.index, s.trial.of)
-		}
-		tree := "├"
-		if j == len(step.parts)-1 {
-			tree = "└"
-		}
-		if class == wideLayout {
-			out = append(out, stageMarker(marker)+tableRow(width-1, []int{5, 27, 77, 92}, []string{tree + " " + label, where, partSchedule(part), result}, textStyle))
-		} else {
-			out = append(out, trimWords(stageMarker(marker)+"   "+textStyle.Render(label+" "+where)+" "+grey.Render(result), width))
-		}
-	}
-	return out
-}
-
-func tableRow(width int, columns []int, values []string, style lipgloss.Style) string {
-	var b strings.Builder
-	x := 0
-	for i, at := range columns {
-		if at >= width || i >= len(values) {
-			break
-		}
-		b.WriteString(strings.Repeat(" ", max(at-x, 0)))
-		next := width
-		if i+1 < len(columns) {
-			next = columns[i+1] - 1
-		}
-		value := trimWords(style.Render(values[i]), max(next-at, 0))
-		b.WriteString(value)
-		x = at + ansi.StringWidth(value)
-	}
-	return b.String()
-}
-
-func stageMarker(mark string) string {
-	switch mark {
-	case "■":
-		return green.Render(mark)
-	case "►":
-		return lit.Render(mark)
-	}
-	return track.Render(mark)
-}
-
-func partSchedule(p cyclePart) string {
-	var out []string
-	if p.short > 0 {
-		out = append(out, fmt.Sprintf("%d x %s", p.short, shortDuration(p.shortLen)))
-	}
-	if p.long > 0 {
-		if p.long == 1 {
-			out = append(out, shortDuration(p.longLen))
-		} else {
-			out = append(out, fmt.Sprintf("%d x %s", p.long, shortDuration(p.longLen)))
-		}
-	}
-	return strings.Join(out, " + ")
-}
-
-func stepSchedule(step cycleStep) (string, string) {
-	if step.regime == machine.R7 {
-		return fmt.Sprintf("%d CCDs · %d parts", countCCDs(step.parts), len(step.parts)), fmt.Sprintf("%d parts", len(step.parts))
-	}
-	where := "one core at a time"
-	if step.regime == machine.R6 {
-		where = "all cores idle"
-	}
-	if len(step.parts) == 1 {
-		return where, partSchedule(step.parts[0])
-	}
-	if len(step.parts) > 0 {
-		return where, fmt.Sprintf("%d x %s", len(step.parts), shortDuration(step.parts[0].shortLen))
-	}
-	return where, ""
-}
-
-func countCCDs(parts []cyclePart) int {
-	var ids []int
-	for _, part := range parts {
-		if part.ccd >= 0 && !slices.Contains(ids, part.ccd) {
-			ids = append(ids, part.ccd)
-		}
-	}
-	return len(ids)
-}
-
-func (s Snapshot) combinationLines(width int, class sizeClass) []string {
-	out := []string{rule(width, grey.Render("COMBINATIONS"), grey.Render("offsets that failed together")), ""}
-	var ids []int
-	for _, combo := range s.combos {
-		for _, member := range combo.members {
-			if !slices.Contains(ids, member.Core) {
-				ids = append(ids, member.Core)
-			}
-		}
-	}
-	slices.Sort(ids)
-	columns := min(len(ids), 8)
-	if class == wideLayout {
-		var header strings.Builder
-		header.WriteString(strings.Repeat(" ", 6))
-		for _, id := range ids[:columns] {
-			header.WriteString(grey.Render(fmt.Sprintf("%3d  ", id)))
-		}
-		header.WriteString(grey.Render("  found by              against the profile now"))
-		out = append(out, header.String())
-	}
-	for _, combo := range s.combos {
-		line := magenta.Render(fmt.Sprintf("C%d", combo.id))
-		if class == wideLayout {
-			line += strings.Repeat(" ", max(6-ansi.StringWidth(line), 1))
-			for _, id := range ids[:columns] {
-				value := ""
-				for _, member := range combo.members {
-					if member.Core == id {
-						value = fmt.Sprint(member.Offset)
-					}
-				}
-				style := grey
-				if slices.Contains(combo.clear, id) {
-					style = textStyle
-					if combo.holds != nil {
-						style = magenta
-					}
-				}
-				line += style.Render(fmt.Sprintf("%3s  ", value))
-			}
-			how := "unresolved"
-			if combo.probed {
-				how = "probed"
-			} else if combo.fallback {
-				how = "fallback"
-			}
-			line += textStyle.Render(fmt.Sprintf("  hunt %d, %-12s", combo.hunt, how))
-		} else {
-			line += " " + grey.Render(compactMembers(combo.members)) + " "
-		}
-		if combo.holds != nil {
-			line += magenta.Render(fmt.Sprintf("holds core %02d at %d", combo.holds.Core, combo.holds.Offset))
-		} else {
-			line += grey.Render("clear: ") + textStyle.Render(coreIDs(combo.clear)+" shallower")
-		}
-		out = append(out, trimWords(line, width))
-	}
-	if class == wideLayout {
-		var line strings.Builder
-		line.WriteString(white.Render("now") + "   ")
-		for _, id := range ids[:columns] {
-			value := ""
-			if c := s.core(id); c != nil {
-				value = fmt.Sprint(c.profile)
-			}
-			line.WriteString(white.Render(fmt.Sprintf("%3s  ", value)))
-		}
-		out = append(out, "", line.String())
-	}
-	return out
-}
-
-func (s Snapshot) huntLines(width int, class sizeClass, now time.Time) []string {
-	h := s.hunt
-	out := []string{rule(width, grey.Render(fmt.Sprintf("HUNT %d", h.id)), grey.Render("started "+h.started.Format("15:04")+" · "+age(now.Sub(h.started))+" so far")), ""}
-	cause := signalWords[h.cause.signal] + " in " + trialDescription(h.cause.trial)
-	if h.cause.carried {
-		cause += " · carried trial"
-	}
-	if h.cause.rerunOf {
-		cause += " · rerun"
-	}
-	if h.cause.core == nil {
-		cause += " · no core named"
-	}
-	out = append(out, fieldLine("cause", cause, width))
-	if class != compactLayout {
-		for _, evidence := range h.evidence {
-			out = append(out, fieldLine("evidence", vtText(evidence), width))
-		}
-		out = append(out, fieldLine("candidates", coreIDs(h.candidates)+", every core with an offset in the failing profile", width), "")
-	}
-	if len(h.plan) > 0 {
-		if class == wideLayout {
-			out = append(out, fieldLine("parts", "part   at failing offsets    parked   schedule   state", width))
-		}
-		for i, part := range h.plan {
-			mark, state := " ", part.outcome
-			if part.running {
-				mark = "►"
-				if s.trial != nil {
-					state = fmt.Sprintf("trial %d/%d", s.trial.index, s.trial.of)
-				}
-			} else if part.group == 0 {
-				state = "to come"
-			}
-			line := fmt.Sprintf("part %d/%d %s at failing offsets · %s parked · %d x %s · %s", i+1, len(h.plan), coreIDs(part.failing), coreIDs(part.parked), part.trials, shortDuration(part.length), state)
-			out = append(out, trimWords(stageMarker(mark)+" "+textStyle.Render(line), width))
-		}
-	}
-	if len(h.probes) > 0 {
-		if class != compactLayout {
-			out = append(out, "", fieldLine("probes", "member  now   group failed at      passed at           state", width))
-		}
-		for _, probe := range h.probes {
-			state := "waiting"
-			if probe.done {
-				state = "done"
-			} else if probe.running && s.trial != nil {
-				state = fmt.Sprintf("► trial %d of %d", s.trial.index, s.trial.of)
-			}
-			line := fmt.Sprintf("%02d  %3d  failed %s · passed %s", probe.member, probe.now, offsetList(probe.failedAt), offsetList(probe.passedAt))
-			if len(probe.carried) > 0 {
-				line += " · carried " + offsetList(probe.carried)
-			}
-			out = append(out, fieldLine("", line+" · "+state, width))
-		}
-	}
-	if class != compactLayout && len(h.groups) > 0 {
-		out = append(out, "", fieldLine("groups", "most recent groups; carried answers need no trial", width))
-		start := max(len(h.groups)-4, 0)
-		for _, group := range h.groups[start:] {
-			line := fmt.Sprintf("G%d %s · %s · %d/%d passed", group.id, coreIDs(group.cores), group.outcome, group.passes, group.needed)
-			if group.inferred {
-				line += " · carried"
-			}
-			out = append(out, fieldLine("", line, width))
-		}
-	}
-	out = append(out, "", fieldLine("then", "after the hunt resolves:", width))
-	rerun := fmt.Sprintf("rerun %s on %s: %d x %s", loadWords(h.rerun.regime), coreIDs(h.rerun.cores), h.rerun.short, shortDuration(h.rerun.shortLen))
-	if h.rerun.long > 0 {
-		rerun += fmt.Sprintf(", then %d x %s", h.rerun.long, shortDuration(h.rerun.longLen))
-	}
-	if h.rerun.short > 0 || h.rerun.long > 0 {
-		out = append(out, fieldLine("", rerun, width))
-	}
-	if h.resume != nil {
-		out = append(out, fieldLine("", "resume "+forecastTrial(*h.resume), width))
-	}
-	return out
-}
-
-func fieldLine(label, text string, width int) string {
-	return trimWords(grey.Render(fmt.Sprintf("%-10s", label))+textStyle.Render(text), width)
-}
-
-func (s Snapshot) turnLines(width int, class sizeClass) []string {
-	out := []string{rule(width, grey.Render("TURNS"), grey.Render("one core per turn, in this order")), ""}
-	if class == wideLayout {
-		out = append(out, tableRow(width, []int{2, 9, 40, 47, 73}, []string{"core", "this turn", "at", "workload", "so far"}, grey))
-	}
-	for _, turn := range s.turns {
-		mark, style := " ", textStyle
-		if turn.running {
-			mark, style = "►", white
-		}
-		what := "search step: " + regimeList(turn.regimes)
-		if turn.step == 1 {
-			what = "search step: 1 count deeper"
-		}
-		if turn.confirm {
-			what = "confirm: " + regimeList(turn.regimes)
-		}
-		sofar := "none yet"
-		if core := s.core(turn.core); core != nil {
-			sofar = ansi.Strip(core.noteLine(34))
-		}
-		if class == wideLayout {
-			out = append(out, stageMarker(mark)+tableRow(width-1, []int{1, 8, 39, 46, 72}, []string{fmt.Sprintf("%02d", turn.core), what, fmt.Sprint(turn.offset), workloadLabel(turn.workload.ID), sofar}, style))
-		} else {
-			out = append(out, trimWords(stageMarker(mark)+" "+style.Render(fmt.Sprintf("%02d %d %s", turn.core, turn.offset, what))+" "+grey.Render(sofar), width))
-		}
-	}
-	var found []int
-	for _, core := range s.cores {
-		if core.solo != nil {
-			found = append(found, core.id)
-		}
-	}
-	if len(found) > 0 {
-		out = append(out, "", grey.Render("waiting for the cycles  ")+textStyle.Render(coreIDs(found))+grey.Render(" · solo limits found"))
-	}
-	return out
-}
-
-func (s Snapshot) deepenLines(width int) []string {
-	d := s.deepen
-	out := []string{rule(width, grey.Render(fmt.Sprintf("DEEPEN · ROUND %d", d.round)), ""), ""}
-	if d.waiting {
-		out = append(out, textStyle.Render("Waiting for a passed full cycle."))
-	}
-	out = append(out, fieldLine("has room", coreIDs(d.room)+" · in this order", width))
-	for i, target := range d.target {
-		if i >= len(s.cores) || target == s.cores[i].profile {
-			continue
-		}
-		verb := "goes deeper"
-		if target > s.cores[i].profile {
-			verb = "yields"
-		}
-		out = append(out, fieldLine("move", fmt.Sprintf("core %02d %s: %d → %d", s.cores[i].id, verb, s.cores[i].profile, target), width))
-	}
-	out = append(out, "", grey.Render("CHECKS"))
-	for _, check := range d.checks {
-		out = append(out, trimWords(textStyle.Render(fmt.Sprintf("%s on %s  %d/%d passed", check.Regime, coreIDs(check.Cores), check.Passes, check.Needed))+"  "+grey.Render(workloadLabel(check.Workload)), width))
 	}
 	return out
 }
@@ -1330,16 +1107,6 @@ func offsetList(values []int) string {
 	return strings.Join(parts, " ")
 }
 
-func numberList(values []int) string { return strings.ReplaceAll(offsetList(values), " ", ",") }
-
-func compactMembers(members []journal.CombinationMember) string {
-	parts := make([]string, len(members))
-	for i, member := range members {
-		parts[i] = fmt.Sprintf("%02d:%d", member.Core, member.Offset)
-	}
-	return strings.Join(parts, " ")
-}
-
 func coreIDs(ids []int) string {
 	text := coreList(ids)
 	text = strings.TrimPrefix(text, "cores ")
@@ -1350,7 +1117,7 @@ func coreIDs(ids []int) string {
 func regimeList(regimes []machine.Regime) string {
 	parts := make([]string, len(regimes))
 	for i, regime := range regimes {
-		parts[i] = strings.TrimSuffix(loadWords(regime), " load")
+		parts[i] = strings.TrimSuffix(kindWords(regime), " vector")
 	}
 	return strings.Join(parts, ", then ")
 }
@@ -1404,7 +1171,8 @@ func trimWords(text string, width int) string {
 	cut := ansi.Truncate(text, width, "")
 	plainCut := ansi.Strip(cut)
 	if i := strings.LastIndexByte(plainCut, ' '); i > 0 {
-		return ansi.Truncate(cut, ansi.StringWidth(plainCut[:i]), "")
+		kept := strings.TrimRight(plainCut[:i], " ·→,;:")
+		return ansi.Truncate(cut, ansi.StringWidth(kept), "")
 	}
 	return cut
 }

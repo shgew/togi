@@ -1,6 +1,6 @@
   togi   04:51:10   session 4h51m   7 failures · 7 crashes   last observed failure 04:50, a moment ago
 
-  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14  ───  ►  HUNT 1   member probes · core 03 at -9  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  ·
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14, part 2  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0
 
   │ 04:46:00  trial intent          trial 0185 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime AVX2 36K-248K all-core 120s parked hunt 1 group 26
   │ 04:46:00  trial start           trial 0185 started pid 1185 in scope togi-trial-0185 on cpus 0,1,2,3,4,5,6,7

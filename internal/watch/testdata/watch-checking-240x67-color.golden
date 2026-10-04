@@ -1,54 +1,54 @@
   [0;90mtogi   [0;97m10:15:17   [0;90msession [0;37m10h15m   28 [0;90mfailures · [0;37m7 [0;90mcrashes   last observed failure [0;37m06:59[0;90m, 3h15m ago[m
 
-  [0;92m■ [0;37mSOLO LIMITS  [0;90m16/16  [0;35m───  [0;96m► [0;97mCYCLE 1  [0;37mstep 1 of 14  [0;35m───  [0;90m○ DEEPEN  [0;35m───  [0;90mCLEAN CYCLES 0  [0;35m· repeats until stopped[m
+  [0;92m■ [0;37mSOLO LIMITS  [0;90m16/16  [0;35m───  [0;96m► [0;97mCYCLE 1  [0;37mstep 1 of 14 · part 2 of 5 · trial 1 of 4  [0;35m───  [0;90m○ DEEPEN  [0;35m───  [0;90mCLEAN CYCLES 0  [0;35m· repeats until stopped[m
 
-  [0;96m▌  CYCLE 1 [mStep 0 is R7 all-core load with mprime AVX2 36K-248K.                                                        [0;90mlast trial      [0;92mPASS  [0;90m1:30 on 15 · Tctl max 71 C[m
-  [0;96m▌  [mEvery core runs at its profile offset. The cycle keeps testing until stopped.
+  [0;96m▌  CYCLE 1   [0;37mStep 1 is R7 all-core with mprime AVX2 36K-248K.                                                           [0;90mlast trial      [0;92mPASS  [0;90m1:30 on core 15 · Tctl max 71°C[m
+  [0;96m▌            [0;37mPart 2 of 5 loads 00-07 for 2 minutes.[m
 
   [0;90mNOW [0;35m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── [0;90mtrial 0425[m
-  [0;97;45m R7 [m  [0;97mall-core load  [0;37mon 00-07   [0;90mmprime AVX2 36K-248K · 8 workers                                                                                                                                                           [0;96mCYCLE 1 · STEP 0[m
+  [0;97;45m R7 [m  [0;97mall-core load  [0;37mon 00-07   [0;90mmprime AVX2 36K-248K · 8 workers                                                                                                                                                  [0;96mCYCLE 1 · STEP 1 · PART 2[m
 
   [0;96m██████████████████████████████████████████████████████████████████████[0;35m██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████          [0;97m▀█    ▀▀█ █▀█[m
   [0;96m██████████████████████████████████████████████████████████████████████[0;35m██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████           [0;97m█  ▀ █▀▀ █ █[m
   [0;96m▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀[0;35m▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          [0;97m▀▀▀ ▀ ▀▀▀ ▀▀▀[m
-  [0;37m0:40 [0;90mof 2:00                                                                                                                                                                          [0;37m0 passed · trial 1 of 3  [0;96m► [0;90m· ·                   left[m
+  [0;37m0:40 [0;90mof 2:00                                                                                                                                                                        [0;37m0 passed · trial 1 of 4  [0;96m► [0;90m· · ·                   left[m
 
   [0;92mif all 3 pass        [0;37mcycle 1 advances to step 1 → next: cycle 1 step 1: R7 mprime AVX2 36K-248K · record only[m
   [0;91mif a core is named   [0;37mrecord its failure point; back off the named core → next: rerun on 00-07: R7 mprime AVX2 36K-248K[m
   [0;91mif none is named     [0;37mread the core ranking before deciding[m
 
   [0;97mCCD 0               [0;90m0       -10       -20       -30       -40       -50 fail pt  all under load                         [0;97mCCD 1               [0;90m0       -10       -20       -30       -40       -50 fail pt  not under load[m
-  [0;96m► [0;97m00  -37  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                [0;97m-38                                            [0;37m08  -27  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                          [0;37m-28[m
-  [0;96m► [0;97m01  -34  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                   [0;97m-35                                            [0;37m09  -18  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                                   [0;37m-19[m
-  [0;96m► [0;97m02  -35  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                  [0;97m-36                                            [0;37m10  -16  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                                     [0;37m-17[m
-  [0;96m► [0;97m03  -17  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                                    [0;97m-18                                            [0;37m11   -7  AT LIMIT  [0;90m▄▄▄▄▄▄▄[0;91m█                                               [0;37m-8[m
-  [0;96m► [0;97m04  -32  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                     [0;97m-33                                            [0;37m12  -10  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄[0;91m█                                           [0;37m-11[m
-  [0;96m► [0;97m05  -10  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄[0;91m█                                           [0;97m-11                                            [0;37m13  -24  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                             [0;37m-25[m
-  [0;96m► [0;97m06  -30  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                       [0;97m-31                                            [0;37m14   -4  AT LIMIT  [0;90m▄▄▄▄[0;91m█                                                  [0;37m-5[m
-  [0;96m► [0;97m07  -32  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                     [0;97m-33                                            [0;37m15  -39  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█              [0;37m-40[m
+  [0;96m► [0;97m00  -37  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                [0;37m-38                                            08  -27  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                          [0;90m-28[m
+  [0;96m► [0;97m01  -34  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                   [0;37m-35                                            09  -18  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                                   [0;90m-19[m
+  [0;96m► [0;97m02  -35  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                  [0;37m-36                                            10  -16  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                                     [0;90m-17[m
+  [0;96m► [0;97m03  -17  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                                    [0;37m-18                                            11   -7  AT LIMIT  [0;90m▄▄▄▄▄▄▄[0;91m█                                               [0;90m-8[m
+  [0;96m► [0;97m04  -32  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                     [0;37m-33                                            12  -10  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄[0;91m█                                           [0;90m-11[m
+  [0;96m► [0;97m05  -10  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄[0;91m█                                           [0;37m-11                                            13  -24  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                             [0;90m-25[m
+  [0;96m► [0;97m06  -30  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                       [0;37m-31                                            14   -4  AT LIMIT  [0;90m▄▄▄▄[0;91m█                                                  [0;90m-5[m
+  [0;96m► [0;97m07  -32  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                     [0;37m-33                                            15  -39  AT LIMIT  [0;90m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█              [0;90m-40[m
 
   [0;90mCYCLE 1 [0;35m───────────────────────────────────────────────────────────────────────────────────────── [0;90m14 steps · 0 done     WHAT HAPPENED [0;35m─────────────────────────────────────────────────────────────────────── [0;90mnewest first · l: every event[m
 
-    [0;90m#   kind                  where                   workload                  schedule       result                     10:14  [0;37mcycle    #1 started, 14 steps[m
-  [0;96m►  [0;97m1  R7 all-core           2 CCDs · 5 parts        mprime AVX2 36K-248K      5 parts                                   [0;90m10:14  [0;92mlimit    [0;37mcore 15 solo limit -39[m
-        [0;37m├ partial CCD 0       00-04 06 07 · record only                         3 x 2m + 5m    recorded: 0 passed         [0;90m10:13  [0;92mlimit    [0;37mcore 01 solo limit -34[m
-  [0;96m►     [0;37m├ full CCD 0          00-07                                             3 x 2m + 5m    trial 1 of 3               [0;90m10:13  [0;92mlimit    [0;37mcore 00 solo limit -37[m
-        [0;37m├ partial CCD 1       08-13 15 · record only                            3 x 2m + 5m    recorded: 0 passed         [0;90m10:11  [0;92mlimit    [0;37mcore 07 solo limit -32[m
-        [0;37m├ full CCD 1          08-15                                             3 x 2m + 5m    0/4 passed                 [0;90m10:11  [0;92mlimit    [0;37mcore 04 solo limit -32[m
-        [0;37m└ full CCD 0+1        00-15                                             3 x 2m + 10m   0/4 passed                 [0;90m10:05  [0;92mlimit    [0;37mcore 13 solo limit -24[m
-  [0;35m○  [0;90m2  R7 all-core           2 CCDs · 5 parts        mprime AVX-512 36K-248K   5 parts                                   10:04  [0;92mlimit    [0;37mcore 02 solo limit -35[m
-  [0;35m○  [0;90m3  R7 all-core           2 CCDs · 5 parts        y-cruncher FFTv4 + N63 +  5 parts                                   10:02  [0;92mlimit    [0;37mcore 08 solo limit -27[m
-  [0;35m○  [0;90m4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K      16 x 2m                                   09:58  [0;92mlimit    [0;37mcore 06 solo limit -30[m
-  [0;35m○  [0;90m5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K   16 x 2m                                   09:53  [0;92mlimit    [0;37mcore 09 solo limit -18[m
-  [0;35m○  [0;90m6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 +  16 x 2m                                   09:41  [0;92mlimit    [0;37mcore 03 solo limit -17[m
-  [0;35m○  [0;90m7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K         1 x 15m                                   09:25  [0;92mlimit    [0;37mcore 10 solo limit -16[m
-  [0;35m○  [0;90m8  R5 both threads       one core at a time      mprime SSE 4K-21K         16 x 2m                                   09:14  [0;92mlimit    [0;37mcore 14 solo limit -4[m
-  [0;35m○  [0;90m9  R1 light              one core at a time      mprime SSE 4K-21K         16 x 2m                                   09:10  [0;92mlimit    [0;37mcore 11 solo limit -7[m
-  [0;35m○ [0;90m10  R1 light              one core at a time      y-cruncher BKT + SFTv4    16 x 2m                                   08:52  [0;92mlimit    [0;37mcore 05 solo limit -10[m
-  [0;35m○ [0;90m11  R1 light              one core at a time      y-cruncher SNT + SVT      16 x 2m                                   08:52  [0;92mlimit    [0;37mcore 12 solo limit -10[m
-  [0;35m○ [0;90m12  R3 load steps         one core at a time      mprime SSE 4K-21K         16 x 2m                                   07:50  [0;37mconfirm  core 15 confirming -39 as its solo limit[m
-  [0;35m○ [0;90m13  R4 partial            one core at a time      mprime SSE 4K-21K         16 x 2m                                   07:25  [0;37mstep     core 15 passed -38, next -39[m
-  [0;35m○ [0;90m14  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4    1 x 15m                                   07:04  [0;37mconfirm  core 01 confirming -34 as its solo limit[m
+    [0;90m#   kind                  where                   workload                      schedule       result                 10:14  [0;37mcycle    #1 started, 14 steps[m
+  [0;96m►  [0;97m1  R7 all-core           2 CCDs · 5 parts        [0;90mmprime AVX2 36K-248K          [0;97m5 parts        [0;96mpart 2 of 5            [0;90m10:14  [0;92mlimit    [0;37mcore 15 solo limit -39[m
+        [0;35m├ [0;37mpartial CCD 0       00-04 06 07 · record only                             [0;90m3 x 2m + 5m                           10:13  [0;92mlimit    [0;37mcore 01 solo limit -34[m
+  [0;96m►     [0;35m├ [0;97mfull CCD 0          00-07                                                 3 x 2m + 5m    [0;96mtrial 1 of 4           [0;90m10:13  [0;92mlimit    [0;37mcore 00 solo limit -37[m
+        [0;35m├ [0;37mpartial CCD 1       08-13 15 · record only                                [0;90m3 x 2m + 5m                           10:11  [0;92mlimit    [0;37mcore 07 solo limit -32[m
+        [0;35m├ [0;37mfull CCD 1          08-15                                                 [0;90m3 x 2m + 5m                           10:11  [0;92mlimit    [0;37mcore 04 solo limit -32[m
+        [0;35m└ [0;37mfull CCD 0+1        00-15                                                 [0;90m3 x 2m + 10m                          10:05  [0;92mlimit    [0;37mcore 13 solo limit -24[m
+  [0;35m○  [0;90m2  [0;37mR7 [0;90mall-core           2 CCDs · 5 parts        mprime AVX-512 36K-248K       5 parts                               10:04  [0;92mlimit    [0;37mcore 02 solo limit -35[m
+  [0;35m○  [0;90m3  [0;37mR7 [0;90mall-core           2 CCDs · 5 parts        y-cruncher FFTv4 + N63 + VT3  5 parts                               10:02  [0;92mlimit    [0;37mcore 08 solo limit -27[m
+  [0;35m○  [0;90m4  [0;37mR2 [0;90mheavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m                               09:58  [0;92mlimit    [0;37mcore 06 solo limit -30[m
+  [0;35m○  [0;90m5  [0;37mR2 [0;90mheavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m                               09:53  [0;92mlimit    [0;37mcore 09 solo limit -18[m
+  [0;35m○  [0;90m6  [0;37mR2 [0;90mheavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m                               09:41  [0;92mlimit    [0;37mcore 03 solo limit -17[m
+  [0;35m○  [0;90m7  [0;37mR6 [0;90midle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   09:25  [0;92mlimit    [0;37mcore 10 solo limit -16[m
+  [0;35m○  [0;90m8  [0;37mR5 [0;90mboth threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               09:14  [0;92mlimit    [0;37mcore 14 solo limit -4[m
+  [0;35m○  [0;90m9  [0;37mR1 [0;90mlight              one core at a time      mprime SSE 4K-21K             16 x 2m                               09:10  [0;92mlimit    [0;37mcore 11 solo limit -7[m
+  [0;35m○ [0;90m10  [0;37mR1 [0;90mlight              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               08:52  [0;92mlimit    [0;37mcore 05 solo limit -10[m
+  [0;35m○ [0;90m11  [0;37mR1 [0;90mlight              one core at a time      y-cruncher SNT + SVT          16 x 2m                               08:52  [0;92mlimit    [0;37mcore 12 solo limit -10[m
+  [0;35m○ [0;90m12  [0;37mR3 [0;90mload steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               07:50  [0;37mconfirm  core 15 confirming -39 as its solo limit[m
+  [0;35m○ [0;90m13  [0;37mR4 [0;90mpartial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               07:25  [0;37mstep     core 15 passed -38, next -39[m
+  [0;35m○ [0;90m14  [0;37mR6 [0;90midle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   07:04  [0;37mconfirm  core 01 confirming -34 as its solo limit[m
                                                                                                                           [0;90m06:59  [0;37mconfirm  core 00 confirming -37 as its solo limit[m
                                                                                                                           [0;90m06:59  [0;93mfail     [0;37mcore 00 fails at -38[m
                                                                                                                           [0;90m06:59  [0;91mcrash    [0;37mlight load on core 00 alone at -38, rebooted[m

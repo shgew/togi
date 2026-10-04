@@ -1,14 +1,14 @@
  togi   12:49:10   session 12h49m   7 failures · 7 crashes   last observed failure 04:50, 7h58m ago
  ■ SOLO ─ ■ CYCLE 1 ─ ► DEEPEN  round 1 ─ CLEAN 0
 
- ▌  These offsets passed a full cycle. I check the deepening plan's proposed profile together.
+ ▌  Checking the deepening plan's proposed profile.
 
   R1   light load  on 00   mprime SSE 4K-21K · 1 worker                                               DEEPEN · ROUND 1
  ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
 
  all 5 pass → round 1                   core named → named core backs off      none named → group 1: 01-10 12-15
 
- CCD 0            0  2 counts/cell       -50fail ptone       CCD 1            0  2 counts/cell       -50fail ptnot
+ CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
  ► 00 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             08 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
    01 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             09 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
    02 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                             10 -30 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
@@ -20,13 +20,13 @@
 
  DEEPEN · ROUND 1 ────────────────────────────────────────   WHAT HAPPENED ──────────────────────────────────── l: all
 
- has room  00-10 12-15 · in this order                       12:48  room     core 15 -10 → -30
- move      core 00 goes deeper: -30 → -50                    12:48  room     core 07 -10 → -30
- move      core 01 goes deeper: -30 → -50                    12:48  room     core 14 -10 → -30
- move      core 02 goes deeper: -30 → -50                    12:48  room     core 06 -10 → -30
- move      core 03 goes deeper: -30 → -50                    12:48  room     core 13 -10 → -30
- move      core 04 goes deeper: -30 → -50                    12:48  room     core 05 -10 → -30
- move      core 05 goes deeper: -30 → -50                    12:48  room     core 12 -10 → -30
+ has room00-10 12-15 · in this order                         12:48  room     core 15 -10 → -30
+ move   core 00 goes deeper: -30 → -50                       12:48  room     core 07 -10 → -30
+ move   core 01 goes deeper: -30 → -50                       12:48  room     core 14 -10 → -30
+ move   core 02 goes deeper: -30 → -50                       12:48  room     core 06 -10 → -30
+ move   core 03 goes deeper: -30 → -50                       12:48  room     core 13 -10 → -30
+ move   core 04 goes deeper: -30 → -50                       12:48  room     core 05 -10 → -30
+ move   core 05 goes deeper: -30 → -50                       12:48  room     core 12 -10 → -30
  +44 more                                                    +193 more
 
   ?  help    l  log    esc  back    q  close view

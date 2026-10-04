@@ -8,7 +8,7 @@
 
  pass → core 00 at -5                   core named → named core backs off      inconclusive → core 00 at -5
 
- CCD 0            0  2 counts/cell       -50fail ptone       CCD 1            0  2 counts/cell       -50fail ptwaiting
+ CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 waiting    0  2 counts/cell       -50 fail
  ► 00  -5 SEARCH   ▄▄▄                             → -5        08   0 SEARCH                                   → -5
    01   0 SEARCH                                   → -5        09   0 SEARCH                                   → -5
    02   0 SEARCH                                   → -5        10   0 SEARCH                                   → -5
@@ -20,13 +20,13 @@
 
  TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ──────────────────────────────────── l: all
 
-   08 -5 search step: light, then heavy vector passed 0 ·    00:48  step     core 15 passed 0, next -5
-   01 -5 search step: light, then heavy vector passed 0 ·    00:45  step     core 07 passed 0, next -5
-   09 -5 search step: light, then heavy vector passed 0 ·    00:42  step     core 14 passed 0, next -5
-   02 -5 search step: light, then heavy vector passed 0 ·    00:39  step     core 06 passed 0, next -5
-   10 -5 search step: light, then heavy vector passed 0 ·    00:36  step     core 13 passed 0, next -5
-   03 -5 search step: light, then heavy vector passed 0 ·    00:33  step     core 05 passed 0, next -5
-   11 -5 search step: light, then heavy vector passed 0 ·    00:30  step     core 12 passed 0, next -5
+   08  search step: light, then   -5   passed 0 · next -5    00:48  step     core 15 passed 0, next -5
+   01  search step: light, then   -5   passed 0 · next -5    00:45  step     core 07 passed 0, next -5
+   09  search step: light, then   -5   passed 0 · next -5    00:42  step     core 14 passed 0, next -5
+   02  search step: light, then   -5   passed 0 · next -5    00:39  step     core 06 passed 0, next -5
+   10  search step: light, then   -5   passed 0 · next -5    00:36  step     core 13 passed 0, next -5
+   03  search step: light, then   -5   passed 0 · next -5    00:33  step     core 05 passed 0, next -5
+   11  search step: light, then   -5   passed 0 · next -5    00:30  step     core 12 passed 0, next -5
  +9 more                                                     +10 more
 
   ?  help    l  log    esc  back    q  close view

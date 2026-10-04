@@ -2,16 +2,13 @@
 
   ► SOLO LIMITS  0 of 16 found  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
-  ▌  RECOVERED FROM A CRASH The machine crashed and rebooted. No trial has        last trial      FAILURE  0:00 on 12 · Tctl max 67 C
-  ▌  started since I recovered on this boot.
+  ▌  RECOVERED   I picked up from the journal after the reboot; nothing it        last trial      FAILURE  0:00 on core 12 · wrong result · Tctl max 67°C
+  ▌              recorded is lost.
 
   RECOVERED FROM A CRASH ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  R1 light load on core 05 alone at -15 · detected 02:47:02
-  next: R1 light load on core 13 at -15 with mprime SSE 4K-21K
-
-
-
-
+  crash in core 05 · R1 light at -15
+  detected 02:47:02 after a watchdog reset
+  next: R1 light on core 13 alone at -15
 
   CCD 0               0  2 counts/cell       -50 fail pt  not under load          CCD 1               0  2 counts/cell       -50 fail pt  waiting at 0
     00    0  SEARCH    ········                           p -15 · n -20             08    0  SEARCH    ········                           p -15 · n -20
@@ -25,20 +22,23 @@
 
   TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
 
-    13 -15 search step: light, then heavy vector passed -10 · next -15            02:47  crash    with the offsets applied, rebooted
-    06 -15 search step: light, then heavy vector passed -10 · next -15            02:47  resume   session resumed
-    14 -2 search step: 1 count deeper passed -1 · next -2                         02:45  backoff  core 12 -15 → -11
-    07 -15 search step: light, then heavy vector passed -10 · next -15            02:45  fail     core 12 fails at -15
-    15 -15 search step: light, then heavy vector passed -10 · next -15            02:45  fail     light load on core 12 alone at -15, wrong result
-    00 -20 search step: light, then heavy vector passed -15 · next -20            02:45  step     core 04 passed -15, next -20
-    08 -20 search step: light, then heavy vector passed -15 · next -20            02:42  step     core 11 passed -6, next -7
-    01 -20 search step: light, then heavy vector passed -15 · next -20            02:39  step     core 03 passed -15, next -20
-    09 -20 search step: light, then heavy vector passed -15 · next -20            02:36  step     core 10 passed -15, next -20
-    02 -20 search step: light, then heavy vector passed -15 · next -20            02:33  step     core 02 passed -15, next -20
-    10 -20 search step: light, then heavy vector passed -15 · next -20            02:30  step     core 09 passed -15, next -20
-    03 -20 search step: light, then heavy vector passed -15 · next -20            02:27  step     core 01 passed -15, next -20
-    11 -7 search step: 1 count deeper passed -6 · next -7                         02:24  step     core 08 passed -15, next -20
-    04 -20 search step: light, then heavy vector passed -15 · next -20            02:21  step     core 00 passed -15, next -20
-  +2 more                                                                         +53 more
+    cor this turn                   at   so far                                   02:47  crash    with the offsets applied, rebooted
+    13  search step: light, then    -15  passed -10 · next -15                    02:47  resume   session resumed
+    06  search step: light, then    -15  passed -10 · next -15                    02:45  backoff  core 12 -15 → -11
+    14  search step: 1 count deeper -2   passed -1 · next -2                      02:45  fail     core 12 fails at -15
+    07  search step: light, then    -15  passed -10 · next -15                    02:45  fail     light load on core 12 alone at -15, wrong result
+    15  search step: light, then    -15  passed -10 · next -15                    02:45  step     core 04 passed -15, next -20
+    00  search step: light, then    -20  passed -15 · next -20                    02:42  step     core 11 passed -6, next -7
+    08  search step: light, then    -20  passed -15 · next -20                    02:39  step     core 03 passed -15, next -20
+    01  search step: light, then    -20  passed -15 · next -20                    02:36  step     core 10 passed -15, next -20
+    09  search step: light, then    -20  passed -15 · next -20                    02:33  step     core 02 passed -15, next -20
+    02  search step: light, then    -20  passed -15 · next -20                    02:30  step     core 09 passed -15, next -20
+    10  search step: light, then    -20  passed -15 · next -20                    02:27  step     core 01 passed -15, next -20
+    03  search step: light, then    -20  passed -15 · next -20                    02:24  step     core 08 passed -15, next -20
+    11  search step: 1 count deeper -7   passed -6 · next -7                      02:21  step     core 00 passed -15, next -20
+    04  search step: light, then    -20  passed -15 · next -20                    02:18  step     core 15 passed -10, next -15
+    12  search step: 1 count deeper -11  passed -10 · next -11                    02:15  step     core 07 passed -10, next -15
+    05  search step: light, then    -15  passed -10 · next -15                    02:12  step     core 14 passed -1, next -2
+                                                                                  +50 more
 
    ?  help    l  log    esc  back    q  close view

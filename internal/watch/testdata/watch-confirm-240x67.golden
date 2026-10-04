@@ -2,8 +2,8 @@
 
   ► SOLO LIMITS  0 of 16 found · core 00 confirming -10  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
-  ▌  SOLO LIMITS -10 is core 00's candidate solo limit, and I'm confirming it.
-  ▌  One core at a time with the rest at 0, so any failure belongs to the loaded core.
+  ▌  SOLO LIMITS   -10 is core 00's candidate solo limit, and I'm confirming it.
+  ▌                One core at a time with the rest at 0, so any failure belongs to the loaded core.
 
   NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0001
    R1   light load  on core 00 alone at -10   mprime SSE 4K-21K · 1 worker                                                                                                                                     CONFIRM CORE 00 AT -10 · LIGHT
@@ -30,22 +30,22 @@
   TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
 
     core   this turn                      at     workload                  so far                                         00:00  start    session started on 16 cores
-    08     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    01     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    09     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    02     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    10     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    03     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    11     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    04     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    12     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    05     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    13     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    06     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    14     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    07     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-    15     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
-  ► 00     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
+    08     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    01     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    09     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    02     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    10     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    03     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    11     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    04     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    12     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    05     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    13     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    06     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    14     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    07     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    15     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+  ► 00     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
 
 
 

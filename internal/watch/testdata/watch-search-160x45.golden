@@ -2,8 +2,8 @@
 
   ► SOLO LIMITS  0 of 16 found · core 00 searching -5  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
-  ▌  SOLO LIMITS I'm finding core 00's solo limit, one turn at a time, now at     last trial      PASS  1:30 on 15 · Tctl max 66 C
-  ▌  -5.
+  ▌  SOLO LIMITS   I'm finding core 00's solo limit, one turn at a time, now      last trial      PASS  1:30 on core 15 · Tctl max 66°C
+  ▌                at -5.
 
   NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0033
    R1   light load  on core 00 alone at -5   y-cruncher BKT + SFTv4 · 1 worker                                                   SEARCH CORE 00 AT -5 · LIGHT
@@ -13,7 +13,7 @@
   if a core is named   record its failure point; back off the named core → next: retry the named core: R1 y-cruncher BKT + SFTv4
   if inconclusive      next: core 00 at -5: R1 y-cruncher BKT + SFTv4
 
-  CCD 0               0  2 counts/cell       -50 fail pt  one core under          CCD 1               0  2 counts/cell       -50 fail pt  waiting at 0
+  CCD 0               0  2 counts/cell       -50 fail pt  one loaded              CCD 1               0  2 counts/cell       -50 fail pt  waiting at 0
   ► 00   -5  SEARCH    ▄▄▄                                p 0 · n -5                08    0  SEARCH                                       p 0 · n -5
     01    0  SEARCH                                       p 0 · n -5                09    0  SEARCH                                       p 0 · n -5
     02    0  SEARCH                                       p 0 · n -5                10    0  SEARCH                                       p 0 · n -5
@@ -25,20 +25,20 @@
 
   TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
 
-    08 -5 search step: light, then heavy vector passed 0 · next -5                00:48  step     core 15 passed 0, next -5
-    01 -5 search step: light, then heavy vector passed 0 · next -5                00:45  step     core 07 passed 0, next -5
-    09 -5 search step: light, then heavy vector passed 0 · next -5                00:42  step     core 14 passed 0, next -5
-    02 -5 search step: light, then heavy vector passed 0 · next -5                00:39  step     core 06 passed 0, next -5
-    10 -5 search step: light, then heavy vector passed 0 · next -5                00:36  step     core 13 passed 0, next -5
-    03 -5 search step: light, then heavy vector passed 0 · next -5                00:33  step     core 05 passed 0, next -5
-    11 -5 search step: light, then heavy vector passed 0 · next -5                00:30  step     core 12 passed 0, next -5
-    04 -5 search step: light, then heavy vector passed 0 · next -5                00:27  step     core 04 passed 0, next -5
-    12 -5 search step: light, then heavy vector passed 0 · next -5                00:24  step     core 11 passed 0, next -5
-    05 -5 search step: light, then heavy vector passed 0 · next -5                00:21  step     core 03 passed 0, next -5
-    13 -5 search step: light, then heavy vector passed 0 · next -5                00:18  step     core 10 passed 0, next -5
-    06 -5 search step: light, then heavy vector passed 0 · next -5                00:15  step     core 02 passed 0, next -5
-    14 -5 search step: light, then heavy vector passed 0 · next -5                00:12  step     core 09 passed 0, next -5
-    07 -5 search step: light, then heavy vector passed 0 · next -5                00:09  step     core 01 passed 0, next -5
-  +2 more                                                                         +3 more
+    cor this turn                   at   so far                                   00:48  step     core 15 passed 0, next -5
+    08  search step: light, then    -5   passed 0 · next -5                       00:45  step     core 07 passed 0, next -5
+    01  search step: light, then    -5   passed 0 · next -5                       00:42  step     core 14 passed 0, next -5
+    09  search step: light, then    -5   passed 0 · next -5                       00:39  step     core 06 passed 0, next -5
+    02  search step: light, then    -5   passed 0 · next -5                       00:36  step     core 13 passed 0, next -5
+    10  search step: light, then    -5   passed 0 · next -5                       00:33  step     core 05 passed 0, next -5
+    03  search step: light, then    -5   passed 0 · next -5                       00:30  step     core 12 passed 0, next -5
+    11  search step: light, then    -5   passed 0 · next -5                       00:27  step     core 04 passed 0, next -5
+    04  search step: light, then    -5   passed 0 · next -5                       00:24  step     core 11 passed 0, next -5
+    12  search step: light, then    -5   passed 0 · next -5                       00:21  step     core 03 passed 0, next -5
+    05  search step: light, then    -5   passed 0 · next -5                       00:18  step     core 10 passed 0, next -5
+    13  search step: light, then    -5   passed 0 · next -5                       00:15  step     core 02 passed 0, next -5
+    06  search step: light, then    -5   passed 0 · next -5                       00:12  step     core 09 passed 0, next -5
+    14  search step: light, then    -5   passed 0 · next -5                       00:09  step     core 01 passed 0, next -5
+  +3 more                                                                         +3 more
 
    ?  help    l  log    esc  back    q  close view

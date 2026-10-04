@@ -2,8 +2,8 @@
 
   ■ SOLO LIMITS  16/16  ───  ■ CYCLE 1  ───  ► DEEPEN  round 1  ───  CLEAN CYCLES 0  · repeats until stopped
 
-  ▌  DEEPEN · ROUND 1 These offsets passed a full cycle. I check the deepening plan's proposed profile together.          last trial      PASS  15:00 on 00-15 · Tctl max 62 C
-  ▌  The checks below distinguish cores that go deeper from members that yield shallower.
+  ▌  DEEPEN · ROUND 1   These offsets passed a full cycle. I check the deepening plan's proposed profile together.        last trial      PASS  15:00 on 00-15 · Tctl max 62°C
+  ▌                     The checks below distinguish cores that go deeper from members that yield shallower.
 
   NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0390
    R1   light load  on 00   mprime SSE 4K-21K · 1 worker                                                                                                                                                                     DEEPEN · ROUND 1
@@ -29,22 +29,22 @@
 
   DEEPEN · ROUND 1 ──────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
 
-  has room  00-10 12-15 · in this order                                                                                   12:48  room     core 15 -10 → -30
-  move      core 00 goes deeper: -30 → -50                                                                                12:48  room     core 07 -10 → -30
-  move      core 01 goes deeper: -30 → -50                                                                                12:48  room     core 14 -10 → -30
-  move      core 02 goes deeper: -30 → -50                                                                                12:48  room     core 06 -10 → -30
-  move      core 03 goes deeper: -30 → -50                                                                                12:48  room     core 13 -10 → -30
-  move      core 04 goes deeper: -30 → -50                                                                                12:48  room     core 05 -10 → -30
-  move      core 05 goes deeper: -30 → -50                                                                                12:48  room     core 12 -10 → -30
-  move      core 06 goes deeper: -30 → -50                                                                                12:48  room     core 04 -10 → -30
-  move      core 07 goes deeper: -30 → -50                                                                                12:48  room     core 03 -10 → -30
-  move      core 08 goes deeper: -30 → -50                                                                                12:48  room     core 10 -10 → -30
-  move      core 09 goes deeper: -30 → -50                                                                                12:48  room     core 02 -10 → -30
-  move      core 10 goes deeper: -30 → -50                                                                                12:48  room     core 09 -10 → -30
-  move      core 12 goes deeper: -30 → -50                                                                                12:48  room     core 01 -10 → -30
-  move      core 13 goes deeper: -30 → -50                                                                                12:48  room     core 08 -10 → -30
-  move      core 14 goes deeper: -30 → -50                                                                                12:48  room     core 00 -10 → -30
-  move      core 15 goes deeper: -30 → -50                                                                                12:48  round    #1: core 00 goes deeper to -30, core 01 goes deeper to -30, core 02 goes deeper to -30, core 03
+  has room    00-10 12-15 · in this order                                                                                 12:48  room     core 15 -10 → -30
+  move        core 00 goes deeper: -30 → -50                                                                              12:48  room     core 07 -10 → -30
+  move        core 01 goes deeper: -30 → -50                                                                              12:48  room     core 14 -10 → -30
+  move        core 02 goes deeper: -30 → -50                                                                              12:48  room     core 06 -10 → -30
+  move        core 03 goes deeper: -30 → -50                                                                              12:48  room     core 13 -10 → -30
+  move        core 04 goes deeper: -30 → -50                                                                              12:48  room     core 05 -10 → -30
+  move        core 05 goes deeper: -30 → -50                                                                              12:48  room     core 12 -10 → -30
+  move        core 06 goes deeper: -30 → -50                                                                              12:48  room     core 04 -10 → -30
+  move        core 07 goes deeper: -30 → -50                                                                              12:48  room     core 03 -10 → -30
+  move        core 08 goes deeper: -30 → -50                                                                              12:48  room     core 10 -10 → -30
+  move        core 09 goes deeper: -30 → -50                                                                              12:48  room     core 02 -10 → -30
+  move        core 10 goes deeper: -30 → -50                                                                              12:48  room     core 09 -10 → -30
+  move        core 12 goes deeper: -30 → -50                                                                              12:48  room     core 01 -10 → -30
+  move        core 13 goes deeper: -30 → -50                                                                              12:48  room     core 08 -10 → -30
+  move        core 14 goes deeper: -30 → -50                                                                              12:48  room     core 00 -10 → -30
+  move        core 15 goes deeper: -30 → -50                                                                              12:48  round    #1: core 00 goes deeper to -30, core 01 goes deeper to -30, core 02 goes deeper to -30, core 03
                                                                                                                           12:48  cycle    #1 passed, a full cycle of every kind of test
   CHECKS                                                                                                                  12:48  pass     idle with short bursts on all 16 cores, 15 min, peak 62 C
   R1 on 00  0/5 passed  mprime SSE 4K-21K                                                                                 12:33  pass     partial load on core 15 at -10, 2 min, peak 74 C

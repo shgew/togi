@@ -2,20 +2,12 @@
 
   ■ SOLO LIMITS  16/16  ───  ► CYCLE 2  step 14 of 14  ───  ○ DEEPEN  ───  CLEAN CYCLES 2  · repeats until stopped
 
-  ▌  STOPPED The rows show the saved profile, not applied now. I restored safer offsets before stopping.                  last trial      PASS  15:00 on 00-15 · Tctl max 69 C
-  ▌  requested clean cycles completed
+  ▌  STOPPED   I restored safer offsets before stopping. togi run picks up where I left off.                              last trial      PASS  15:00 on 00-15 · Tctl max 69°C
+
 
   STOPPED ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   03:59:58 · requested clean cycles completed
   Rows show the saved profile, not applied now.
-
-
-
-
-
-
-
-
 
   CCD 0               0       -10       -20       -30       -40       -50 fail pt  not under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
     00  -37  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                -38                                            08  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··                           -25
@@ -29,21 +21,21 @@
 
   CYCLE 2 ──────────────────────────────────────────────────────────────────────────────────────── 14 steps · 14 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
 
-    #   kind                  where                   workload                  schedule       result                     03:59  stop     stopped
-  ■  1  R7 all-core           2 CCDs · 5 parts        mprime AVX2 36K-248K      5 parts        done                       03:59  cycle    #2 passed, a full cycle of every kind of test
-  ■  2  R7 all-core           2 CCDs · 5 parts        mprime AVX-512 36K-248K   5 parts        done                       03:59  pass     idle with short bursts on all 16 cores, 15 min, peak 69 C
-  ■  3  R7 all-core           2 CCDs · 5 parts        y-cruncher FFTv4 + N63 +  5 parts        done                       03:44  pass     partial load on core 15 at -35, 2 min, peak 65 C
-  ■  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K      16 x 2m        done                       03:42  pass     partial load on core 07 at -30, 2 min, peak 67 C
-  ■  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K   16 x 2m        done                       03:40  pass     partial load on core 14 at 0, 2 min, peak 73 C
-  ■  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 +  16 x 2m        done                       03:38  pass     partial load on core 06 at -27, 2 min, peak 76 C
-  ■  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K         1 x 15m        done                       03:36  pass     partial load on core 13 at -22, 2 min, peak 71 C
-  ■  8  R5 both threads       one core at a time      mprime SSE 4K-21K         16 x 2m        done                       03:34  pass     partial load on core 05 at -7, 2 min, peak 69 C
-  ■  9  R1 light              one core at a time      mprime SSE 4K-21K         16 x 2m        done                       03:32  pass     partial load on core 12 at -7, 2 min, peak 65 C
-  ■ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4    16 x 2m        done                       03:30  pass     partial load on core 04 at -32, 2 min, peak 73 C
-  ■ 11  R1 light              one core at a time      y-cruncher SNT + SVT      16 x 2m        done                       03:28  pass     partial load on core 11 at -4, 2 min, peak 62 C
-  ■ 12  R3 load steps         one core at a time      mprime SSE 4K-21K         16 x 2m        done                       03:26  pass     partial load on core 03 at -17, 2 min, peak 71 C
-  ■ 13  R4 partial            one core at a time      mprime SSE 4K-21K         16 x 2m        done                       03:24  pass     partial load on core 10 at -15, 2 min, peak 70 C
-  ■ 14  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4    1 x 15m        done                       03:22  pass     partial load on core 02 at -35, 2 min, peak 73 C
+    #   kind                  where                   workload                      schedule       result                 03:59  stop     stopped
+  ■  1  R7 all-core           2 CCDs · 5 parts        mprime AVX2 36K-248K          5 parts        done                   03:59  cycle    #2 passed, a full cycle of every kind of test
+  ■  2  R7 all-core           2 CCDs · 5 parts        mprime AVX-512 36K-248K       5 parts        done                   03:59  pass     idle with short bursts on all 16 cores, 15 min, peak 69 C
+  ■  3  R7 all-core           2 CCDs · 5 parts        y-cruncher FFTv4 + N63 + VT3  5 parts        done                   03:44  pass     partial load on core 15 at -35, 2 min, peak 65 C
+  ■  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m        done                   03:42  pass     partial load on core 07 at -30, 2 min, peak 67 C
+  ■  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m        done                   03:40  pass     partial load on core 14 at 0, 2 min, peak 73 C
+  ■  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m        done                   03:38  pass     partial load on core 06 at -27, 2 min, peak 76 C
+  ■  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m            done                   03:36  pass     partial load on core 13 at -22, 2 min, peak 71 C
+  ■  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m        done                   03:34  pass     partial load on core 05 at -7, 2 min, peak 69 C
+  ■  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m        done                   03:32  pass     partial load on core 12 at -7, 2 min, peak 65 C
+  ■ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m        done                   03:30  pass     partial load on core 04 at -32, 2 min, peak 73 C
+  ■ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m        done                   03:28  pass     partial load on core 11 at -4, 2 min, peak 62 C
+  ■ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m        done                   03:26  pass     partial load on core 03 at -17, 2 min, peak 71 C
+  ■ 13  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m        done                   03:24  pass     partial load on core 10 at -15, 2 min, peak 70 C
+  ■ 14  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m            done                   03:22  pass     partial load on core 02 at -35, 2 min, peak 73 C
                                                                                                                           03:20  pass     partial load on core 09 at -16, 2 min, peak 62 C
                                                                                                                           03:18  pass     partial load on core 01 at -31, 2 min, peak 74 C
                                                                                                                           03:16  pass     partial load on core 08 at -24, 2 min, peak 76 C
@@ -61,6 +53,14 @@
                                                                                                                           02:52  pass     load steps on core 10 at -15, 2 min, peak 68 C
                                                                                                                           02:50  pass     load steps on core 02 at -35, 2 min, peak 69 C
                                                                                                                           02:48  pass     load steps on core 09 at -16, 2 min, peak 62 C
-                                                                                                                          +168 more
+                                                                                                                          02:46  pass     load steps on core 01 at -31, 2 min, peak 65 C
+                                                                                                                          02:44  pass     load steps on core 08 at -24, 2 min, peak 74 C
+                                                                                                                          02:42  pass     load steps on core 00 at -37, 2 min, peak 74 C
+                                                                                                                          02:40  pass     light load on core 15 at -35, 2 min, peak 68 C
+                                                                                                                          02:38  pass     light load on core 07 at -30, 2 min, peak 70 C
+                                                                                                                          02:36  pass     light load on core 14 at 0, 2 min, peak 67 C
+                                                                                                                          02:34  pass     light load on core 06 at -27, 2 min, peak 68 C
+                                                                                                                          02:32  pass     light load on core 13 at -22, 2 min, peak 68 C
+                                                                                                                          +160 more
 
    ?  help    l  log    esc  back    q  close view
