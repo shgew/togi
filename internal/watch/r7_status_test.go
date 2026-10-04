@@ -49,6 +49,17 @@ func TestR7LinesNameTopRequestersAndSelfSufficiency(t *testing.T) {
 			t.Fatalf("width %d: the cut top requesters lost their offset label: %q", p.context.w, row)
 		}
 	}
+	// A measured CCD's top requesters never take the other CCD's offset label when the cell is cut.
+	mixed := Snapshot{cycle: &cycleView{}}
+	for id := range 16 {
+		mixed.r7 = append(mixed.r7, tuner.R7CoreStatus{Core: id, CCD: id / 8, Workload: workload, TopRequester: id%2 == 0 && id < 8 || id == 8, OffsetFallback: id >= 8})
+	}
+	for _, p := range []layout{{class: wideLayout, context: rectangle{w: 115}}, {class: mediumLayout, context: rectangle{w: 80}}, {class: compactLayout, context: rectangle{w: 57}}} {
+		row := ansi.Strip(mixed.r7Lines(p)[1])
+		if !strings.Contains(row, "; 08 by offset") || strings.Contains(row, "06 by offset") {
+			t.Fatalf("width %d: measured and offset top requesters lost their own labels: %q", p.context.w, row)
+		}
+	}
 	// The tuning boot's console font covers IBM437 only, so truncation uses ASCII.
 	narrow := ansi.Strip(s.r7Lines(layout{context: rectangle{w: 24}})[1])
 	if !strings.HasSuffix(narrow, "...") || strings.ContainsFunc(narrow, func(r rune) bool { return r > 0x7e }) {
@@ -97,6 +108,11 @@ func TestShortDashboardReachesEveryR7Workload(t *testing.T) {
 				}
 				if !regexp.MustCompile(`\n \+\d+ more +.*\n +.*\n R7 ─`).MatchString(frame) {
 					t.Errorf("120x33 frame (keys %t) cuts the cycle checklist without saying how much it leaves out:\n%s", keys, frame)
+				}
+				// Two rows shorter, the overflow count gives way to the running part.
+				short := ansi.Strip(strings.Join(RenderView(snapshot, Screen{View: MainView, Width: 120, Height: 31, Keys: keys}, now).Lines, "\n"))
+				if !strings.Contains(short, "trial 1 of") {
+					t.Errorf("120x31 frame (keys %t) pushed the running part out of the cycle checklist:\n%s", keys, short)
 				}
 			}
 		}
