@@ -162,3 +162,23 @@ func TestForecastReusesRecordedRanking(t *testing.T) {
 	}
 	t.Fatal("missing unnamed branch")
 }
+
+func TestForecastWaitsForInitialCorePhases(t *testing.T) {
+	events := []journal.Event{
+		{Seq: 1, Data: &journal.SessionStart{Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}}},
+		{Seq: 2, Data: &journal.TrialIntent{Trial: "preparing", Core: new(0), Regime: machine.R1, Condition: machine.Alone}},
+		{Seq: 3, Data: &journal.CorePhase{Core: 0, To: journal.PhaseSearch}},
+	}
+	for n := 1; n <= len(events); n++ {
+		if diff := cmp.Diff(ForecastPlan{}, Forecast(events[:n])); diff != "" {
+			t.Fatal(diff)
+		}
+		s := New()
+		for _, e := range events[:n] {
+			s.Fold(e)
+		}
+		if len(s.DeepeningPlan().Room) != 0 {
+			t.Fatal("uninitialized core was given room")
+		}
+	}
+}

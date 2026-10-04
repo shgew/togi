@@ -196,7 +196,7 @@ func (s *State) DeepeningPlan() DeepeningPlan {
 	out := DeepeningPlan{Waiting: len(s.passedFullCycles) == 0}
 	p := s.offsets()
 	for _, c := range s.cores {
-		if c.phase != journal.PhaseSearch {
+		if c.phase != "" && c.phase != journal.PhaseSearch {
 			if _, limited := s.atLimit(c, p); !limited {
 				out.Room = append(out.Room, c.id)
 			}

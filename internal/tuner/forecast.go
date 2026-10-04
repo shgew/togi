@@ -116,10 +116,11 @@ func (f *forecastState) end(p *journal.TrialIntent, premise Premise, core *int) 
 
 // Forecast replays events independently for each premise, without hardware, clocks or randomness.
 // Recorded rankings answer future reads; NeedsRanking marks a read without recorded evidence.
+// Until every core's initial phase is recorded, there is no schedulable forecast.
 func Forecast(events []journal.Event) ForecastPlan {
 	base := replayForecast(events)
 	out := ForecastPlan{}
-	if len(base.state.cores) == 0 {
+	if len(base.state.cores) == 0 || slices.ContainsFunc(base.state.cores, func(c *core) bool { return c.phase == "" }) {
 		return out
 	}
 	if len(events) > 0 {
