@@ -738,7 +738,7 @@ func TestScriptedJointAndIdleLimits(t *testing.T) {
 		want []int
 	}{
 		{"sharp joint", false, []int{-5, -10, -10, -10}},
-		{"R6 idle-only outside loaded cores", true, []int{-10, -10, -10, -5}},
+		{"idle-only outside loaded cores", true, []int{-10, -10, -10, -5}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := huntConfig(4)
@@ -750,6 +750,9 @@ func TestScriptedJointAndIdleLimits(t *testing.T) {
 				cfg.Joints = []sim.Joint{{Members: map[int]int{0: -6, 2: -6}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
 			}
 			stop, events, _ := runHunt(t, cfg, nil, func(in *Input) {
+				if tc.idle {
+					checkingR1First(in)
+				}
 				in.Until = func(e journal.Event) bool {
 					p, ok := e.Data.(*journal.TrialIntent)
 					if !ok {
@@ -780,13 +783,13 @@ func TestScriptedJointAndIdleLimits(t *testing.T) {
 						intents[p.Trial] = p
 					case *journal.Failure:
 						tr := intents[p.Trial]
-						if tr != nil && tr.Regime == machine.R6 && tr.Condition == machine.Together && tr.Profile[3] < *cfg.Limits[3].Idle && !slices.Contains(tr.Cores, 3) && (tr.Core == nil || *tr.Core != 3) && p.Core != nil && *p.Core == 3 && p.Signal == machine.ComputationError {
+						if tr != nil && tr.Regime == machine.R1 && tr.Condition == machine.Together && tr.Profile[3] < *cfg.Limits[3].Idle && !slices.Contains(tr.Cores, 3) && (tr.Core == nil || *tr.Core != 3) && p.Core != nil && *p.Core == 3 && p.Signal == machine.ComputationError {
 							found = true
 						}
 					}
 				}
 				if !found {
-					t.Fatal("no named R6 idle-limit failure outside the loaded cores")
+					t.Fatal("no named R1 idle-limit failure outside the loaded cores")
 				}
 			}
 		})
@@ -812,7 +815,7 @@ func scriptedSharpOutcome(cfg sim.Config, p *journal.TrialIntent) sim.Outcome {
 		return sim.Outcome{}
 	}
 	for core, limit := range cfg.Limits {
-		if p.Regime == machine.R6 && limit.Idle != nil && !slices.Contains(loaded, core) && p.Profile[core] < *limit.Idle {
+		if limit.Idle != nil && !slices.Contains(loaded, core) && p.Profile[core] < *limit.Idle {
 			return sim.Outcome{Signal: machine.ComputationError, AtS: 1, Core: core}
 		}
 	}
@@ -831,13 +834,20 @@ func scriptedSharpOutcome(cfg sim.Config, p *journal.TrialIntent) sim.Outcome {
 	return sim.Outcome{}
 }
 
+func checkingR1First(in *Input) {
+	// Keep every occurrence while exercising idle cores before multi-core R7.
+	cycle := in.Config.Checking.Cycle
+	first := slices.Index(cycle, machine.R1)
+	cycle[0], cycle[first] = cycle[first], cycle[0]
+}
+
 func TestIdleOnlyHazardReachesCleanCycle(t *testing.T) {
 	for _, seed := range []uint64{1, 2} {
 		t.Run(fmt.Sprintf("seed-%d", seed), func(t *testing.T) {
 			cfg := huntConfig(4)
 			cfg.Seed = seed
 			cfg.Limits[3].Idle = new(-5)
-			stop, events, _ := runHunt(t, cfg, nil, nil)
+			stop, events, _ := runHunt(t, cfg, nil, checkingR1First)
 			if stop.Reason != session.StopCycles {
 				t.Fatalf("idle-only stop %+v", stop)
 			}
@@ -855,7 +865,7 @@ func TestIdleOnlyHazardReachesCleanCycle(t *testing.T) {
 					intents[p.Trial] = p
 				case *journal.Failure:
 					tr := intents[p.Trial]
-					if tr != nil && tr.Condition == machine.Together && tr.Profile[3] < *cfg.Limits[3].Idle && !slices.Contains(tr.Cores, 3) && (tr.Core == nil || *tr.Core != 3) {
+					if tr != nil && tr.Regime == machine.R1 && tr.Condition == machine.Together && tr.Profile[3] < *cfg.Limits[3].Idle && !slices.Contains(tr.Cores, 3) && (tr.Core == nil || *tr.Core != 3) {
 						found = true
 					}
 				}
