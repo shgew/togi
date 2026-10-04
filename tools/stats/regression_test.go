@@ -23,7 +23,12 @@ func reportRows(t *testing.T, events []journal.Event, section string, cutoff ...
 	if err := report(&out, facts.FromEvents(events), since); err != nil {
 		t.Fatal(err)
 	}
-	for block := range strings.SplitSeq(out.String(), "\n\n") {
+	return sectionRows(t, out.String(), section)
+}
+
+func sectionRows(t *testing.T, report, section string) [][]string {
+	t.Helper()
+	for block := range strings.SplitSeq(report, "\n\n") {
 		lines := strings.Split(strings.TrimSpace(block), "\n")
 		if lines[0] != section {
 			continue

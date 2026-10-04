@@ -67,7 +67,7 @@ func report(out io.Writer, session facts.Session, since time.Time) error {
 	renderEvidence(tab, p, events, since)
 	renderR7Decisions(tab, events, since)
 	renderDepth(tab, p, since)
-	renderRequests(tab, p, since)
+	renderRequests(tab, r7Measurements(session, p, since))
 	return renderOutcomes(tab, p, since)
 }
 

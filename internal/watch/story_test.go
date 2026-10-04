@@ -186,7 +186,7 @@ func TestStoryPartialExplainsOrdinaryEvidence(t *testing.T) {
 	}
 	help, _ := renderHelpBody(115, 1000, 0)
 	words := strings.Join(strings.Fields(ansi.Strip(strings.Join(help, "\n"))), " ")
-	for _, want := range []string{"Every multi-core R7 failure triggers a voltage-targeted backoff", "every step and R7 partial part passed", "when the part starts", "even if offsets change"} {
+	for _, want := range []string{"A multi-core R7 failure backs off a core by voltage-targeted counts", "every step and R7 partial part passed", "when the part starts", "even if offsets change"} {
 		if !strings.Contains(words, want) {
 			t.Errorf("help lost R7 intent %q", want)
 		}

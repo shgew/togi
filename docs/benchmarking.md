@@ -38,7 +38,7 @@ For the shared-voltage strategy, [ADR 0038](adr/0038-self-sufficient-cores.md) a
 
 Compare every shared-voltage scenario, each adversary and the hand-set `shared-voltage.toml`, with 12 dev and 12 holdout seeds each against ruleset 8. Ruleset 9 must conclude wherever ruleset 8 concluded; median and maximum final-profile worst R7 hazard must be no higher; and time must be at most 2× ruleset 8's. Pooled across adversaries, median worst R7 hazard must be strictly lower. Report legacy scenarios, crashes and depth without gating them. Stop for the owner's decision if no anchored adversary makes ruleset 8 worse or if the gate fails.
 
-Score ruleset 9 once on dev, then confirm once on holdout; changes after the dev score are defect fixes with tests. Ordinary dev iteration above does not apply to this evaluation. Every multi-core R7 failure requires voltage-targeted backoff: the rejected 5%/0.2 tolerance raised the hand-set machine's worst R7 hazard from 0.47 to 1.74/h without depth or time gain ([#386](https://github.com/shgew/togi/issues/386)).
+Score ruleset 9 once on dev, then confirm once on holdout; changes after the dev score are defect fixes with tests. Ordinary dev iteration above does not apply to this evaluation. No multi-core R7 failure is tolerated: the rejected 5%/0.2 tolerance raised the hand-set machine's worst R7 hazard from 0.47 to 1.74/h without depth or time gain ([#386](https://github.com/shgew/togi/issues/386)).
 
 `--suite FILE` runs another scenario file instead, with machine paths relative to it. The [adversarial search](../tools/bench/adversary.md) scores candidate machines this way and turns confirmed findings into new scenarios.
 

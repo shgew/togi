@@ -138,16 +138,37 @@ func (s *State) trialRequests(e entry) (map[int]float64, []int) {
 	}
 	return s.r7RequestsBefore(e.class.workload, e.cores, e.profile, e.seq)
 }
+
+// failureTargets returns the cores a failure counts against: its named core, or the top groups of the
+// affected CCDs. When another affected CCD still has a movable loaded core, a CCD whose loaded cores
+// were all at CO 0 in that trial is not affected.
 func (s *State) failureTargets(e entry) []int {
-	if e.named != nil {
+	if s.r7NamedCulprit(e) {
 		return []int{*e.named}
 	}
 	top := s.entryTop(e)
 	if e.stalled != nil {
 		top = slices.DeleteFunc(slices.Clone(top), func(id int) bool { return s.ccd[id] != s.ccd[*e.stalled] })
 	}
+	if movable := slices.DeleteFunc(slices.Clone(top), func(id int) bool { return !s.r7LoadedMovable(e, s.ccd[id]) }); len(movable) > 0 {
+		return movable
+	}
 	return top
 }
+
+// r7NamedCulprit reports whether a named failure counts against its named core. A core named at CO 0 on a
+// CCD with no loaded core has no top group of its own, so its failure counts as unattributed.
+func (s *State) r7NamedCulprit(e entry) bool {
+	if e.named == nil {
+		return false
+	}
+	return e.profile[s.index(*e.named)] != 0 || slices.ContainsFunc(e.cores, func(id int) bool { return s.ccd[id] == s.ccd[*e.named] })
+}
+
+func (s *State) r7LoadedMovable(e entry, ccd int) bool {
+	return slices.ContainsFunc(e.cores, func(id int) bool { return s.ccd[id] == ccd && e.profile[s.index(id)] != 0 })
+}
+
 func (s *State) consumeR7(ev journal.Event, id int) {
 	for _, seq := range ev.Cause {
 		f := s.failureBySeq(seq)
@@ -163,7 +184,7 @@ func (s *State) consumeR7(ev journal.Event, id int) {
 		s.r7Handled[f.seq][id] = true
 		if failed := s.r7FailureEntry(*f); failed != nil {
 			for _, other := range s.failureTargets(*failed) {
-				if failed.named != nil || s.ccd[other] == s.ccd[id] {
+				if s.r7NamedCulprit(*failed) || s.ccd[other] == s.ccd[id] {
 					s.r7Handled[f.seq][other] = true
 				}
 			}
@@ -185,13 +206,14 @@ func (s *State) r7PendingDecision() (Action, bool) {
 		if failed == nil {
 			continue
 		}
-		targets := s.failureTargets(*failed)
-		for _, id := range targets {
+		for _, id := range s.failureTargets(*failed) {
 			if s.r7Handled[f.seq][id] {
 				continue
 			}
 			if c := s.core(id); c != nil {
-				return s.r7CoreDecision(f, *failed, c), true
+				if a, ok := s.r7CoreDecision(f, *failed, c); ok {
+					return a, true
+				}
 			}
 		}
 	}
@@ -221,7 +243,8 @@ type r7Order struct {
 }
 
 func (s *State) r7TargetGroup(failed entry, id int) r7Order {
-	if failed.named != nil {
+	named := s.r7NamedCulprit(failed)
+	if named {
 		if failed.profile[s.index(id)] != 0 {
 			return r7Order{group: []int{id}, named: true}
 		}
@@ -239,8 +262,11 @@ func (s *State) r7TargetGroup(failed entry, id int) r7Order {
 	rail, _ := requests.Top(part)
 	groups := r7RequestGroups(part, failed.top)
 	order := r7Order{sources: sources, rail: rail}
-	if failed.named != nil {
+	switch {
+	case named:
 		order.reason = fmt.Sprintf("named core %02d failed at CO 0 without being a top requester; back off CCD %d's top group instead", id, s.ccd[id])
+	case failed.named != nil:
+		order.reason = fmt.Sprintf("named core %02d failed at CO 0 on CCD %d, which had no loaded core; count the failure against loaded CCD %d's top group", *failed.named, s.ccd[*failed.named], s.ccd[id])
 	}
 	for i, group := range groups {
 		movable := slices.DeleteFunc(slices.Clone(group), func(core int) bool {
@@ -278,13 +304,19 @@ func r7RequestGroups(part map[int]float64, top []int) [][]int {
 	return append([][]int{first}, groups...)
 }
 
-func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core) Action {
+// r7CoreDecision returns the decision a failure requires against target c. It reports none when the core
+// the decision would move already sits shallower than in the failed trial: the failure needs no move
+// while that holds, and stays pending in case that core returns to its failing offset.
+func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core) (Action, bool) {
+	if s.r7Answered(failed, c.id) {
+		return Action{}, false
+	}
 	order := s.r7TargetGroup(failed, c.id)
 	if len(order.group) == 0 || order.named && failed.profile[s.index(c.id)] == 0 {
-		return Action{Kind: Decide, Payload: s.r7FailedAtZero(failed, c.id, order), Cause: append([]int{f.seq}, order.sources...)}
+		return Action{Kind: Decide, Payload: s.r7FailedAtZero(failed, c.id, order), Cause: append([]int{f.seq}, order.sources...)}, true
 	}
 	if len(order.group) > 1 && s.rankingSeq == 0 {
-		return Action{Kind: ReadRanking}
+		return Action{Kind: ReadRanking}, true
 	}
 	chosen := order.group[0]
 	for _, id := range order.group[1:] {
@@ -292,14 +324,42 @@ func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core) Action {
 			chosen = id
 		}
 	}
+	if s.r7ShallowerThanFailed(failed, chosen) {
+		return Action{}, false
+	}
 	cause := append([]int{f.seq}, order.sources...)
 	if !order.named && s.rankingSeq > 0 {
 		cause = append(cause, s.rankingSeq)
 	}
 	if s.round != nil {
-		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.CycleEnd, Reason: fmt.Sprintf("R7 failure #%d requires backoff", f.seq)}, Cause: []int{f.seq}}
+		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.CycleEnd, Reason: fmt.Sprintf("R7 failure #%d requires backoff", f.seq)}, Cause: []int{f.seq}}, true
 	}
-	return s.r7Backoff(f, failed, s.core(chosen), cause, order)
+	return s.r7Backoff(f, failed, s.core(chosen), cause, order), true
+}
+
+// r7Answered reports, without computing request order, that every core a decision against target id could
+// move already sits shallower than in the failed trial. A named core at CO 0 is never answered here: whether
+// it dead-ends depends on its trial's request order.
+func (s *State) r7Answered(failed entry, id int) bool {
+	if s.r7NamedCulprit(failed) {
+		return s.r7ShallowerThanFailed(failed, id)
+	}
+	movable := false
+	for _, core := range failed.cores {
+		if s.ccd[core] != s.ccd[id] || failed.profile[s.index(core)] == 0 {
+			continue
+		}
+		if !s.r7ShallowerThanFailed(failed, core) {
+			return false
+		}
+		movable = true
+	}
+	return movable
+}
+
+func (s *State) r7ShallowerThanFailed(failed entry, id int) bool {
+	c := s.core(id)
+	return c != nil && c.offset > failed.profile[s.index(id)]
 }
 
 // r7FailedAtZero explains which zero rule ended the session: a named core that
@@ -316,43 +376,50 @@ func (s *State) r7FailedAtZero(failed entry, id int, order r7Order) *journal.Dea
 			}
 		}
 		dead.Detail = fmt.Sprintf("core %02d failed at CO 0 as a top requester of CCD %d by %s; the instability is not caused by Curve Optimizer", id, s.ccd[id], basis)
-	case failed.named == nil:
+	case !s.r7NamedCulprit(failed):
+		subject := "unattributed R7 failure"
+		if failed.named != nil {
+			subject = fmt.Sprintf("R7 failure naming core %02d at CO 0 on CCD %d, which had no loaded core,", *failed.named, s.ccd[*failed.named])
+		}
 		var loaded []int
 		for _, core := range failed.cores {
 			if s.ccd[core] == s.ccd[id] {
 				loaded = append(loaded, core)
 			}
 		}
-		dead.Detail = fmt.Sprintf("unattributed R7 failure counts against CCD %d's top group, and every loaded core of that CCD %v is at CO 0; the instability is not caused by Curve Optimizer", s.ccd[id], loaded)
+		dead.Detail = fmt.Sprintf("%s counts against CCD %d's top group, and every loaded core of that CCD %v is at CO 0; the instability is not caused by Curve Optimizer", subject, s.ccd[id], loaded)
 	}
 	return dead
 }
 
 func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, order r7Order) Action {
-	req, sources := s.trialRequests(failed)
-	if _, measured := req[c.id]; !measured {
-		req, sources = s.r7RequestsBefore(f.class.workload, []int{c.id}, failed.profile, failed.seq)
-	}
-	targetEntry := failed
-	if !order.named {
-		targetEntry.named = nil
-	}
-	failingTop := req[c.id]
-	if order.stepped {
-		failingTop = order.rail
-	}
-	target, passSeqs := s.r7VoltageTarget(targetEntry, c.id, failingTop)
+	req, sources, measured := s.r7FailingRequest(failed, c.id)
 	counts := 1
-	if len(passSeqs) > 0 {
-		counts = requests.Counts(req[c.id], target)
-	}
-	if order.stepped && len(sources) > 0 {
-		counts = max(counts, int(math.Floor((order.rail-req[c.id])/requests.VoltsPerCount+1e-9))+1)
+	var target float64
+	var passSeqs []int
+	if measured {
+		targetEntry := failed
+		if !order.named {
+			targetEntry.named = nil
+		}
+		failingTop := req[c.id]
+		if order.stepped {
+			failingTop = order.rail
+		}
+		target, passSeqs = s.r7VoltageTarget(targetEntry, c.id, failingTop)
+		if len(passSeqs) > 0 {
+			counts = requests.Counts(req[c.id], target)
+		}
+		if order.stepped {
+			counts = max(counts, int(math.Floor((order.rail-req[c.id])/requests.VoltsPerCount+1e-9))+1)
+		}
 	}
 	reason := fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core %02d ", f.seq, c.id)
 	switch {
 	case len(sources) == 0:
 		reason += fmt.Sprintf("order came from offsets at CO %d; no request telemetry, %s", failed.profile[s.index(c.id)], r7Count(counts, "count"))
+	case !measured:
+		reason += fmt.Sprintf("order came from offsets at CO %d; request measurements %v do not cover it, %s", failed.profile[s.index(c.id)], sources, r7Count(counts, "count"))
 	case len(passSeqs) == 0:
 		reason += fmt.Sprintf("request %.3f V; no qualifying pass, %s", req[c.id], r7Count(counts, "count"))
 	case req[c.id] >= target:
@@ -363,7 +430,7 @@ func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, 
 	if order.reason != "" {
 		reason += "; " + order.reason
 	}
-	if order.stepped && len(sources) > 0 {
+	if order.stepped && measured {
 		reason += fmt.Sprintf("; %s to rise above %.3f V", r7Count(counts, "count"), order.rail)
 	}
 	cause = append(cause, sources...)
@@ -374,8 +441,22 @@ func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, 
 		fail = max(fail, *c.fail)
 	}
 	pass, _ := keepPass(c.pass, fail)
-	to := min(0, max(c.offset+1, failed.profile[s.index(c.id)]+counts, fail+1))
+	to := min(0, max(failed.profile[s.index(c.id)]+counts, fail+1))
 	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailurePoint: new(fail), Reason: reason + s.carriedReason(cause)}, Cause: cause}
+}
+
+// r7FailingRequest returns the requests that supplied core id's failing request, their measurement sources,
+// and whether a measurement covered id rather than its offset standing in.
+func (s *State) r7FailingRequest(failed entry, id int) (map[int]float64, []int, bool) {
+	if _, ok := failed.requests[id]; ok {
+		return failed.requests, []int{failed.seq}, true
+	}
+	cores := failed.cores
+	if len(failed.requests) > 0 || !slices.Contains(cores, id) {
+		cores = []int{id}
+	}
+	req, sources, byOffset := s.r7RequestOrigins(failed.class.workload, cores, failed.profile, failed.seq)
+	return req, sources, !slices.Contains(byOffset, id)
 }
 
 func r7Count(n int, noun string) string {
