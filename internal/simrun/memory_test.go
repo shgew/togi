@@ -20,18 +20,24 @@ import (
 
 func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 	t.Parallel()
-	for _, machineFile := range []string{"", "../../tools/bench/machines/target-fit-0.toml"} {
-		name := "default"
-		if machineFile != "" {
-			name = "target-fit-0"
-		}
+	for _, tc := range []struct {
+		name        string
+		machineFile string
+		cleanLap    bool
+	}{
+		{name: "shared-voltage", machineFile: "../../tools/bench/machines/shared-voltage.toml", cleanLap: true},
+		{name: "legacy-default"},
+		{name: "target-fit-0", machineFile: "../../tools/bench/machines/target-fit-0.toml"},
+	} {
 		for _, seed := range []uint64{1, 2, 3} {
-			t.Run(fmt.Sprintf("%s/%d", name, seed), func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s/%d", tc.name, seed), func(t *testing.T) {
 				t.Parallel()
 				cfg := sim.Config{Seed: seed}
-				if machineFile != "" {
+				if tc.cleanLap {
+					cfg = sharedVoltageConfig(t, seed)
+				} else if tc.machineFile != "" {
 					var err error
-					cfg, err = sim.LoadMachine(machineFile)
+					cfg, err = sim.LoadMachine(tc.machineFile)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -39,6 +45,7 @@ func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 				}
 				// Backend argv in the journal names the state directory, so both runs replace it with one placeholder.
 				var events, states [2][]byte
+				var stops [2]session.Stop
 				var wg sync.WaitGroup
 				for i, inMemory := range []bool{false, true} {
 					dir := t.TempDir()
@@ -53,7 +60,8 @@ func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 							t.Error(err)
 							return
 						}
-						if stop.Reason != session.StopCycles {
+						stops[i] = stop
+						if tc.cleanLap && stop.Reason != session.StopCycles {
 							t.Errorf("in-memory %t: stopped with %+v", inMemory, stop)
 							return
 						}
@@ -72,6 +80,10 @@ func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 				if t.Failed() {
 					return
 				}
+				// Legacy independent-R7 models may dead-end; both journal modes must preserve the same outcome.
+				if diff := cmp.Diff(stops[0], stops[1]); diff != "" {
+					t.Errorf("stop (-file-backed +in-memory):\n%s", diff)
+				}
 				if diff := cmp.Diff(string(events[0]), string(events[1])); diff != "" {
 					t.Errorf("events.jsonl (-file-backed +in-memory):\n%s", diff)
 				}
@@ -89,7 +101,7 @@ func TestInMemoryProjectionFailureWarnsAfterStop(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "state.json"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	m, err := sim.New(sim.Config{Seed: 1})
+	m, err := sim.New(sharedVoltageConfig(t, 1))
 	if err != nil {
 		t.Fatal(err)
 	}

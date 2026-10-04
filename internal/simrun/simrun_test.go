@@ -16,10 +16,20 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
+func sharedVoltageConfig(t *testing.T, seed uint64) sim.Config {
+	t.Helper()
+	cfg, err := sim.LoadMachine("../../tools/bench/machines/shared-voltage.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Seed = seed
+	return cfg
+}
+
 func TestSixteenCoresReachCleanCycle(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	m, err := sim.New(sim.Config{Seed: 1})
+	m, err := sim.New(sharedVoltageConfig(t, 1))
 	if err != nil {
 		t.Fatal(err)
 	}
