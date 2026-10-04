@@ -25,6 +25,10 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 |`target-delayed-joint`|target-fit-derived CCD1 joint delayed by two minutes; short checks miss it and finite long-trial coverage can still conclude unsafe (issue #105)|
 |`target-flat-risk`|target-fit-derived rare offset-independent core-15 hazard that survives nonzero backoffs and finite checking evidence (issue #105)|
 |`target-flat-cost`|target-fit-derived stronger core-15 flat hazard; repeated hunts and one-count backoffs exceed three times the unmodified median (issues #105, #106)|
+|`shared-voltage`|hand-set shared-rail R7 model with workload-dependent requests, clocks and per-core voltage demand; no facts or replay|
+|`target-shared-voltage`|real-fact replay over the all-facts shared-voltage anchor; an in-sample fit, not forward-validated|
+|`target-r7-vf-boost`|anchor-derived AVX2 core-5 required voltage rises faster than its request as partial CCD0 loads boost; in-sample, not forward-validated|
+|`target-r7-request-gap`|anchor-derived AVX-512 required-voltage curves leave core 11 dependent on core 10's rail support: full CCD1 loads pass but partial loads without core 10 can fail; requests unchanged; in-sample, not forward-validated|
 
 Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds stay unseen by the change being tuned.
 
@@ -229,6 +233,8 @@ just bench --suite tools/bench/shared-voltage-suite.toml --split dev
 ```
 
 Machine paths resolve relative to the suite; facts resolve relative to the machine. The declared facts and BIOS context let `trialfacts.LoadReplay` construct `sim.NewReplay` for matching decisive trials, with fitted fallback on unmatched classes/profiles. A replay run remains in-sample evidence, not forward validation.
+
+The suite includes the hand-set `shared-voltage`, the `target-shared-voltage` anchor and two R7 adversaries, each with dev seeds 1–12 and holdout seeds 101–112. Both adversaries passed the unchanged model check on all 52 eligible groups. Under ruleset 8, their dev and holdout median `worst_r7_hazard_per_h` exceeded the corresponding unmodified anchor medians by at least 1.5×. `target-r7-vf-boost` changes only AVX2 core 5's required-clock coefficient to 0.06 V/100 MHz; `target-r7-request-gap` changes AVX-512 cores 9–11's required-clock coefficients to 0.06 V/100 MHz and their required-voltage thresholds to 1.18 V, except core 10 at 1.22 V. Request, clock and power parameters stay at the anchor's values. Across measured R7 starts, both machines reproduce the anchor's loaded requests exactly, retaining its residuals against recorded requests. These expose record-only partial failures and untested request-ordered partial loads, not forward-validated hardware failure rates.
 
 ### Forward-chained check
 
