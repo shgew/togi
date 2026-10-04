@@ -3,6 +3,7 @@ package tuner_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -50,8 +51,8 @@ func simulatedForecastJournal(tb testing.TB, seed uint64, cores int) []journal.E
 }
 
 func forecastDecision(p journal.Payload) bool {
-	switch p.Kind() {
-	case journal.KindFailure, journal.KindTunerDecision, journal.KindCorePhase, journal.KindCheckingCycle, journal.KindCheckingStep, journal.KindProfileChange, journal.KindHuntStart, journal.KindHuntGroup, journal.KindHuntEnd, journal.KindHuntSkipped, journal.KindCombination, journal.KindDeepeningRound, journal.KindTunerWarning, journal.KindDeadEnd:
+	switch p.(type) {
+	case *journal.Failure, *journal.TunerDecision, *journal.CorePhase, *journal.CheckingCycle, *journal.CheckingStep, *journal.ProfileChange, *journal.HuntStart, *journal.HuntGroup, *journal.HuntEnd, *journal.HuntSkipped, *journal.Combination, *journal.DeepeningRound, *journal.TunerWarning, *journal.DeadEnd:
 		return true
 	}
 	return false
@@ -207,8 +208,8 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 func BenchmarkDashboardProjectionForecast(b *testing.B) {
 	events := simulatedForecastJournal(b, 1, 16)
 	// Cut at the last intent to benchmark every conditional branch, not a stopped session.
-	for i := len(events) - 1; i >= 0; i-- {
-		if events[i].Kind == journal.KindTrialIntent {
+	for i, e := range slices.Backward(events) {
+		if e.Kind == journal.KindTrialIntent {
 			events = events[:i+1]
 			break
 		}

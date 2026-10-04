@@ -18,18 +18,8 @@ func (s *State) HuntPlan() *HuntPlan {
 	if h == nil {
 		return nil
 	}
-	out := &HuntPlan{Number: h.start.Hunt, Regime: h.start.Regime, FailureSeq: h.start.Failure, Trial: h.start.Trial, Candidates: slices.Clone(h.start.Candidates)}
-	out.Rerun = s.rerunPlan(h.class)
-	running := s.inFlight()
-	for _, g := range h.groups {
-		m := g.payload
-		v := HuntGroup{Number: m.Group, Cores: slices.Clone(m.Cores), Profile: slices.Clone(m.Profile), Stage: m.Stage, Held: slices.Clone(m.Held), Outcome: s.groupOutcome(h, g), Needed: h.start.Trials, Carried: s.groupCarried(h, g), Running: running != nil && running.Hunt == h.start.Hunt && running.Group == m.Group}
-		v.Passed = s.passes(h.class.withDuration(m.DurationS), m.Profile, s.inferenceSince(m, g.seq), huntEvidence)
-		if m.Probe != nil {
-			v.Probe = new(*m.Probe)
-		}
-		out.Groups = append(out.Groups, v)
-	}
+	out := &HuntPlan{Number: h.start.Hunt, Regime: h.start.Regime, FailureSeq: h.start.Failure, Trial: h.start.Trial, Candidates: slices.Clone(h.start.Candidates), Rerun: s.rerunPlan(h.class)}
+	out.Groups = s.huntGroups(h)
 	plan, pending := s.nextGroupPlan(h)
 	if len(h.groups) > 0 {
 		last := h.groups[len(h.groups)-1]
@@ -37,88 +27,121 @@ func (s *State) HuntPlan() *HuntPlan {
 			plan = planOf(last.payload)
 		}
 	}
-	if plan.stage == "part" || plan.stage == "complement" {
-		for i := range s.split(h, plan.set, plan.g) {
-			cores := s.groupPart(s.split(h, plan.set, plan.g), plan.stage, i, plan.set)
-			part := HuntPart{Failing: slices.Clone(cores), Trials: h.start.Trials, DurationS: plan.duration}
-			for _, id := range s.ids() {
-				if !slices.Contains(cores, id) {
-					part.Parked = append(part.Parked, id)
-				}
-			}
-			for j := len(h.groups) - 1; j >= 0; j-- {
-				m := h.groups[j].payload
+	out.Parts = s.huntParts(h, plan, out.Groups)
+	probing := slices.ContainsFunc(h.groups, func(g groupRecord) bool { return g.payload.Probe != nil })
+	if probing || (!pending && plan.result && len(plan.set) > 1 && plan.anyFailed) {
+		out.Probes = s.huntProbes(h, plan, out.Groups)
+	}
+	return out
+}
+
+func (s *State) huntGroups(h *hunt) []HuntGroup {
+	running := s.inFlight()
+	groups := make([]HuntGroup, 0, len(h.groups))
+	for _, g := range h.groups {
+		m := g.payload
+		v := HuntGroup{Number: m.Group, Cores: slices.Clone(m.Cores), Profile: slices.Clone(m.Profile), Stage: m.Stage, Held: slices.Clone(m.Held), Outcome: s.groupOutcome(h, g), Needed: h.start.Trials, Carried: s.groupCarried(h, g), Running: running != nil && running.Hunt == h.start.Hunt && running.Group == m.Group}
+		v.Passed = s.passes(h.class.withDuration(m.DurationS), m.Profile, s.inferenceSince(m, g.seq), huntEvidence)
+		if m.Probe != nil {
+			v.Probe = new(*m.Probe)
+		}
+		groups = append(groups, v)
+	}
+	return groups
+}
+
+func (s *State) huntPart(h *hunt, plan groupPlan, cores []int) HuntPart {
+	part := HuntPart{Failing: slices.Clone(cores), Trials: h.start.Trials, DurationS: plan.duration}
+	for _, id := range s.ids() {
+		if !slices.Contains(cores, id) {
+			part.Parked = append(part.Parked, id)
+		}
+	}
+	return part
+}
+
+func (s *State) huntParts(h *hunt, plan groupPlan, groups []HuntGroup) []HuntPart {
+	var out []HuntPart
+	switch plan.stage {
+	case "part", "complement":
+		split := s.split(h, plan.set, plan.g)
+		for i := range split {
+			part := s.huntPart(h, plan, s.groupPart(split, plan.stage, i, plan.set))
+			for j, g := range slices.Backward(h.groups) {
+				m := g.payload
 				if m.Stage == plan.stage && m.Granularity == plan.g && m.DurationS == plan.duration && slices.Equal(m.Set, plan.set) && m.Index == i {
 					part.Group = m.Group
-					part.Outcome = out.Groups[j].Outcome
-					part.Running = out.Groups[j].Running
+					part.Outcome = groups[j].Outcome
+					part.Running = groups[j].Running
 					break
 				}
 			}
-			out.Parts = append(out.Parts, part)
+			out = append(out, part)
 		}
-	} else if plan.stage == "full" {
-		part := HuntPart{Failing: slices.Clone(plan.set), Trials: h.start.Trials, DurationS: plan.duration}
-		for _, id := range s.ids() {
-			if !slices.Contains(plan.set, id) {
-				part.Parked = append(part.Parked, id)
-			}
-		}
+	case "full":
+		part := s.huntPart(h, plan, plan.set)
 		if len(h.groups) > 0 {
 			m := h.groups[len(h.groups)-1]
 			if m.payload.Stage == "full" {
 				part.Group = m.payload.Group
 				part.Outcome = s.groupOutcome(h, m)
-				part.Running = out.Groups[len(out.Groups)-1].Running
+				part.Running = groups[len(groups)-1].Running
 			}
 		}
-		out.Parts = append(out.Parts, part)
-	}
-	probing := slices.ContainsFunc(h.groups, func(g groupRecord) bool { return g.payload.Probe != nil })
-	if probing || (!pending && plan.result && len(plan.set) > 1 && plan.anyFailed) {
-		evidence := *h
-		if len(h.groups) > 0 && s.groupOutcome(h, h.groups[len(h.groups)-1]) == "running" {
-			evidence.groups = h.groups[:len(h.groups)-1]
-		}
-		next, members, _, has := s.nextMemberProbe(&evidence, plan)
-		for _, id := range plan.set {
-			v := MemberProbe{Member: id, Offset: h.start.Failing[s.index(id)]}
-			v.FailedAt = append(v.FailedAt, v.Offset)
-			for j, g := range h.groups {
-				m := g.payload
-				if m.Probe == nil || m.Probe.Core != id {
-					continue
-				}
-				v.Offset = m.Probe.Offset
-				switch out.Groups[j].Outcome {
-				case "pass":
-					v.PassedAt = append(v.PassedAt, v.Offset)
-					if out.Groups[j].Carried {
-						v.Carried = append(v.Carried, v.Offset)
-					}
-				case "failure":
-					v.FailedAt = append(v.FailedAt, v.Offset)
-				}
-				v.Running = out.Groups[j].Running
-			}
-			if has && next.probe.Core == id && !v.Running {
-				v.Offset = next.probe.Offset
-			}
-			v.Done = slices.ContainsFunc(members, func(m journal.CombinationMember) bool { return m.Core == id }) || (has && slices.ContainsFunc(next.held, func(m journal.CombinationMember) bool { return m.Core == id }) && slices.Index(plan.set, id) < slices.Index(plan.set, next.probe.Core))
-			if v.Done {
-				for _, m := range members {
-					if m.Core == id {
-						v.Offset = m.Offset
-					}
-				}
-				for _, m := range next.held {
-					if m.Core == id {
-						v.Offset = m.Offset
-					}
-				}
-			}
-			out.Probes = append(out.Probes, v)
-		}
+		out = append(out, part)
 	}
 	return out
+}
+
+func (s *State) huntProbes(h *hunt, plan groupPlan, groups []HuntGroup) []MemberProbe {
+	evidence := *h
+	if len(h.groups) > 0 && s.groupOutcome(h, h.groups[len(h.groups)-1]) == "running" {
+		evidence.groups = h.groups[:len(h.groups)-1]
+	}
+	next, members, _, has := s.nextMemberProbe(&evidence, plan)
+	var out []MemberProbe
+	for _, id := range plan.set {
+		v := s.memberProbe(h, id, groups)
+		if has && next.probe.Core == id && !v.Running {
+			v.Offset = next.probe.Offset
+		}
+		v.Done = slices.ContainsFunc(members, func(m journal.CombinationMember) bool { return m.Core == id }) || (has && slices.Index(plan.set, id) < slices.Index(plan.set, next.probe.Core))
+		if v.Done {
+			for _, m := range members {
+				if m.Core == id {
+					v.Offset = m.Offset
+				}
+			}
+			for _, m := range next.held {
+				if m.Core == id {
+					v.Offset = m.Offset
+				}
+			}
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+func (s *State) memberProbe(h *hunt, id int, groups []HuntGroup) MemberProbe {
+	v := MemberProbe{Member: id, Offset: h.start.Failing[s.index(id)]}
+	v.FailedAt = append(v.FailedAt, v.Offset)
+	for j, g := range h.groups {
+		m := g.payload
+		if m.Probe == nil || m.Probe.Core != id {
+			continue
+		}
+		v.Offset = m.Probe.Offset
+		switch groups[j].Outcome {
+		case "pass":
+			v.PassedAt = append(v.PassedAt, v.Offset)
+			if groups[j].Carried {
+				v.Carried = append(v.Carried, v.Offset)
+			}
+		case "failure":
+			v.FailedAt = append(v.FailedAt, v.Offset)
+		}
+		v.Running = groups[j].Running
+	}
+	return v
 }

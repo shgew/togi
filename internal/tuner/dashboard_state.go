@@ -91,31 +91,17 @@ func (s *State) CyclePlan() CyclePlan {
 				}
 			}
 		}
+		var frozen *journal.CheckingStep
+		if r == machine.R7 {
+			frozen = s.checkingStepPlan(i)
+		}
 		for k := 0; k < len(req); {
 			j := k + 1
 			for j < len(req) && slices.Equal(req[k].cores, req[j].cores) {
 				j++
 			}
 			if r == machine.R7 {
-				started := g.partial[i+1]
-				frozen := s.startCheckingStep(i)
-				if started != nil {
-					frozen = started.start
-				}
-				for _, part := range frozen.Partials {
-					if part.CCD != s.partCCD(req[k].cores) {
-						continue
-					}
-					if len(part.Cores) == 0 {
-						step.Parts = append(step.Parts, CyclePart{CCD: part.CCD, RecordOnly: true, Done: true})
-						continue
-					}
-					completion := started
-					if completion == nil {
-						completion = &checkingStep{completed: map[trialClass]int{}}
-					}
-					step.Parts = append(step.Parts, s.cyclePart(s.partialRequirements(req[k], part.Cores), completion, running))
-				}
+				step.Parts = append(step.Parts, s.cyclePartials(i, req[k], frozen, running)...)
 			}
 			step.Parts = append(step.Parts, s.cyclePart(req[k:j], nil, running))
 			k = j
@@ -135,6 +121,33 @@ func (s *State) CyclePlan() CyclePlan {
 		out.Steps = append(out.Steps, step)
 	}
 	return out
+}
+
+func (s *State) checkingStepPlan(step int) *journal.CheckingStep {
+	if started := s.checking.partial[step+1]; started != nil {
+		return started.start
+	}
+	return s.startCheckingStep(step)
+}
+
+func (s *State) cyclePartials(step int, full requirement, frozen *journal.CheckingStep, running *journal.TrialIntent) []CyclePart {
+	started := s.checking.partial[step+1]
+	var parts []CyclePart
+	for _, part := range frozen.Partials {
+		if part.CCD != s.partCCD(full.cores) {
+			continue
+		}
+		if len(part.Cores) == 0 {
+			parts = append(parts, CyclePart{CCD: part.CCD, RecordOnly: true, Done: true})
+			continue
+		}
+		completion := started
+		if completion == nil {
+			completion = &checkingStep{}
+		}
+		parts = append(parts, s.cyclePart(s.partialRequirements(full, part.Cores), completion, running))
+	}
+	return parts
 }
 
 // SearchTurns returns the tuner's rotating core order, with unfinished two-regime steps first.

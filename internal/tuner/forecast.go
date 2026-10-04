@@ -100,6 +100,7 @@ func judgedCore(s *State, p *journal.TrialIntent) *int {
 func (f *forecastState) end(p *journal.TrialIntent, premise Premise, core *int) {
 	e := &journal.TrialEnd{Trial: p.Trial, DurationS: p.DurationS, Outcome: journal.OutcomePass}
 	switch premise {
+	case IfPass, IfAllPass:
 	case IfNamed:
 		e.Outcome = journal.OutcomeFailure
 		e.Signal = machine.ComputationError
