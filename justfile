@@ -87,6 +87,11 @@ stats *args:
 bench *args:
     {{ dev }} go run ./tools/bench "$@"
 
+# Sweep every simulated scenario and audit its retained journals, or audit given state directories
+[group('run')]
+audit *args:
+    {{ dev }} go run ./tools/audit "$@"
+
 # Prove simulated session decisions are unchanged from a base revision
 [group('run')]
 same base="origin/main":
