@@ -28,7 +28,7 @@
     07    0  CONFIRM                                                               -10: light 0/5, heavy 0/5                15    0  CONFIRM                                                               -10: light 0/5, heavy 0/5
 
   TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
-                                                                                                                          
+
     core   this turn                      at     workload                  so far                                         00:00  start    session started on 16 cores
     08     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5
     01     confirm: light, then heavy     -10    mprime SSE 4K-21K         -10: light 0/5, heavy 0/5

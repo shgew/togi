@@ -24,7 +24,7 @@
     07    0  SEARCH    ·····                              p -10 · n -15             15    0  SEARCH    ·····                              p -10 · n -15
 
   TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
-                                                                                  
+
     13 -15 search step: light, then heavy vector passed -10 · next -15            02:47  crash    with the offsets applied, rebooted
     06 -15 search step: light, then heavy vector passed -10 · next -15            02:47  resume   session resumed
     14 -2 search step: 1 count deeper passed -1 · next -2                         02:45  backoff  core 12 -15 → -11

@@ -14,17 +14,17 @@
 
 
   CCD 0               0  2 counts/cell       -50 fail pt  all under load          CCD 1               0  2 counts/cell       -50 fail pt  not under load
-  ► 00  -37  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -38                             08  -27  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄█               -28   
-  ► 01  -34  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -35                             09  -18  AT LIMIT  ▄▄▄▄▄▄▄▄▄█                   -19   
-  ► 02  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -36                             10  -16  AT LIMIT  ▄▄▄▄▄▄▄▄█                    -17   
-  ► 03  -17  AT LIMIT  ▄▄▄▄▄▄▄▄█                    -18                             11   -7  AT LIMIT  ▄▄▄█                          -8   
-  ► 04  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -33                             12  -10  AT LIMIT  ▄▄▄▄▄█                       -11   
-  ► 05  -10  AT LIMIT  ▄▄▄▄▄█                       -11                             13  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄█                -25   
-  ► 06  -30  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█             -31                             14   -4  AT LIMIT  ▄▄█                           -5   
-  ► 07  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -33                             15  -39  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -40   
+  ► 00  -37  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -38                             08  -27  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄█               -28
+  ► 01  -34  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -35                             09  -18  AT LIMIT  ▄▄▄▄▄▄▄▄▄█                   -19
+  ► 02  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -36                             10  -16  AT LIMIT  ▄▄▄▄▄▄▄▄█                    -17
+  ► 03  -17  AT LIMIT  ▄▄▄▄▄▄▄▄█                    -18                             11   -7  AT LIMIT  ▄▄▄█                          -8
+  ► 04  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -33                             12  -10  AT LIMIT  ▄▄▄▄▄█                       -11
+  ► 05  -10  AT LIMIT  ▄▄▄▄▄█                       -11                             13  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄█                -25
+  ► 06  -30  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█             -31                             14   -4  AT LIMIT  ▄▄█                           -5
+  ► 07  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -33                             15  -39  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -40
 
   CYCLE 1 ───────────────────────────────────────────────── 14 steps · 0 done     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
-                                                                                  
+
   ►  1 R7 all-core       5 parts                                                  10:15  stop     dead end: five trials in a row proved nothing
       partial CCD 0 00-04 06 07 · record only recorded: 0 passed                  10:14  cycle    #1 started, 14 steps
   ►   full CCD 0 00-07 trial 1 of 3                                               10:14  limit    core 15 solo limit -39

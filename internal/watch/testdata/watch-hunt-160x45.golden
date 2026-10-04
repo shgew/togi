@@ -14,17 +14,17 @@
   if inconclusive      next: hunt 1 group 1 on 00-07: R7 mprime AVX2 36K-248K
 
   CCD 0               0  2 counts/cell       -50 fail pt  parked, still           CCD 1               0  2 counts/cell       -50 fail pt  all idle, all
-  ► 00    0  PARKED    ·····█                       -11   returns to -10            08  -10  MEMBER    ▄▄▄▄▄█                       -11   
-  ► 01    0  PARKED    ·····█                       -11   returns to -10            09  -10  MEMBER    ▄▄▄▄▄█                       -11   
-  ► 02    0  PARKED    ·····█                       -11   returns to -10            10  -10  MEMBER    ▄▄▄▄▄█                       -11   
-  ► 03    0  PARKED    ·····█                       -11   returns to -10            11  -10  MEMBER    ▄▄▄▄▄█                       -11   
-  ► 04    0  PARKED    ·····█                       -11   returns to -10            12  -10  MEMBER    ▄▄▄▄▄█                       -11   
-  ► 05    0  PARKED    ·····█                       -11   returns to -10            13  -10  MEMBER    ▄▄▄▄▄█                       -11   
-  ► 06    0  PARKED    ·····█                       -11   returns to -10            14  -10  MEMBER    ▄▄▄▄▄█                       -11   
-  ► 07    0  PARKED    ·····█                       -11   returns to -10            15  -10  MEMBER    ▄▄▄▄▄█                       -11   
+  ► 00    0  PARKED    ·····█                       -11   returns to -10            08  -10  MEMBER    ▄▄▄▄▄█                       -11
+  ► 01    0  PARKED    ·····█                       -11   returns to -10            09  -10  MEMBER    ▄▄▄▄▄█                       -11
+  ► 02    0  PARKED    ·····█                       -11   returns to -10            10  -10  MEMBER    ▄▄▄▄▄█                       -11
+  ► 03    0  PARKED    ·····█                       -11   returns to -10            11  -10  MEMBER    ▄▄▄▄▄█                       -11
+  ► 04    0  PARKED    ·····█                       -11   returns to -10            12  -10  MEMBER    ▄▄▄▄▄█                       -11
+  ► 05    0  PARKED    ·····█                       -11   returns to -10            13  -10  MEMBER    ▄▄▄▄▄█                       -11
+  ► 06    0  PARKED    ·····█                       -11   returns to -10            14  -10  MEMBER    ▄▄▄▄▄█                       -11
+  ► 07    0  PARKED    ·····█                       -11   returns to -10            15  -10  MEMBER    ▄▄▄▄▄█                       -11
 
   HUNT 1 ───────────────────────────────────────── started 07:13 · 40s so far     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
-                                                                                  
+
   cause     crash in R7 all-core load on 00-07 · no core named                    07:13  hunt     #1 started: which cores caused it?
   candidates00-15, every core with an offset in the failing profile               07:13  crash    all-core load on cores 00-07, rebooted
                                                                                   07:13  resume   session resumed

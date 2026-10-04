@@ -28,7 +28,7 @@
     07    0  SEARCH                                                                passed 0 · next -5                       15    0  SEARCH                                                                passed 0 · next -5
 
   TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
-                                                                                                                          
+
     core   this turn                      at     workload                  so far                                         00:48  step     core 15 passed 0, next -5
     08     search step: light, then       -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:45  step     core 07 passed 0, next -5
     01     search step: light, then       -5     y-cruncher BKT + SFTv4    passed 0 · next -5                             00:42  step     core 14 passed 0, next -5

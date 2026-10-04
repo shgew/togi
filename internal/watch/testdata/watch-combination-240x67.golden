@@ -18,17 +18,17 @@
 
 
   CCD 0               0       -10       -20       -30       -40       -50 fail pt  not under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
-    00  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            08  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
-    01  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            09  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
-    02  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            10  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
+    00  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            08  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11
+    01  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            09  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11
+    02  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            10  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11
     03  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            11   -9  AT LIMIT  ▄▄▄▄▄▄▄▄▄░█                                           -11   held by C1 · solo -10
-    04  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            12  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
-    05  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            13  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
-    06  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            14  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
-    07  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            15  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   
+    04  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            12  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11
+    05  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            13  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11
+    06  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            14  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11
+    07  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11                                            15  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11
 
   CYCLE 1 ──────────────────────────────────────────────────────────────────────────────────────── 14 steps · 14 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
-                                                                                                                          
+
     #   kind                  where                   workload                  schedule       result                     15:28  stop     stopped
   ■  1  R7 all-core           2 CCDs · 5 parts        mprime AVX2 36K-248K      5 parts        done                       15:28  cycle    #1 passed, a full cycle of every kind of test
   ■  2  R7 all-core           2 CCDs · 5 parts        mprime AVX-512 36K-248K   5 parts        done                       15:28  pass     idle with short bursts on all 16 cores, 15 min, peak 62 C

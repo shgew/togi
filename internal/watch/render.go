@@ -173,53 +173,6 @@ func measure(s Snapshot, sc Screen) layout {
 	return p
 }
 
-type canvas struct {
-	lines []string
-	width int
-}
-
-func newCanvas(p layout) canvas {
-	return canvas{make([]string, p.height), p.width}
-}
-
-func (c *canvas) put(r rectangle, x, y int, text string) {
-	c.place(r, x, y, text, true)
-}
-
-func (c *canvas) putCells(r rectangle, x, y int, text string) {
-	c.place(r, x, y, text, false)
-}
-
-func (c *canvas) place(r rectangle, x, y int, text string, words bool) {
-	if x < 0 || y < 0 || x >= r.w || y >= r.h || r.y+y < 0 || r.y+y >= len(c.lines) {
-		return
-	}
-	x += r.x
-	if x < 0 || x >= c.width {
-		return
-	}
-	width := min(r.w-(x-r.x), c.width-x)
-	text = consoleText(text)
-	if words {
-		text = trimWords(text, width)
-	} else {
-		text = ansi.Truncate(text, width, "")
-	}
-	line := c.lines[r.y+y]
-	before := ansi.Cut(line, 0, x)
-	if n := x - ansi.StringWidth(before); n > 0 {
-		before += strings.Repeat(" ", n)
-	}
-	c.lines[r.y+y] = before + text + ansi.Cut(line, x+ansi.StringWidth(text), c.width)
-}
-
-func (c *canvas) rows(r rectangle, lines []string) {
-	lines = boundedRows(lines, r.h)
-	for y, line := range lines {
-		c.put(r, 0, y, line)
-	}
-}
-
 func boundedRows(lines []string, height int) []string {
 	if height <= 0 {
 		return nil
@@ -310,7 +263,7 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 	if sc.Keys {
 		c.put(rectangle{p.header.x, p.hint, p.header.w, 1}, 0, 0, keyHints(sc.View))
 	}
-	return Drawn{Lines: fit(c.lines, p.width, sc.Height), Scroll: scroll, Until: until}
+	return Drawn{Lines: fit(c.lines(), p.width, sc.Height), Scroll: scroll, Until: until}
 }
 
 func narrativeStyle(t tone) lipgloss.Style {

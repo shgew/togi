@@ -28,7 +28,7 @@
     07    0  SEARCH    ··········                                                  passed -10 · next -15                    15    0  SEARCH    ··········                                                  passed -10 · next -15
 
   TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
-                                                                                                                          
+
     core   this turn                      at     workload                  so far                                         02:47  crash    with the offsets applied, rebooted
     13     search step: light, then       -15    mprime SSE 4K-21K         passed -10 · next -15                          02:47  resume   session resumed
     06     search step: light, then       -15    mprime SSE 4K-21K         passed -10 · next -15                          02:45  backoff  core 12 -15 → -11

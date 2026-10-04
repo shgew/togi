@@ -21,14 +21,14 @@
   ► 00    0  PARKED    ··········                                                  returns to -10                           08    0  PARKED    ··········                                                  returns to -10
   ► 01    0  PARKED    ··········                                                  returns to -10                           09    0  PARKED    ··········                                                  returns to -10
   ► 02    0  PARKED    ··········                                                  returns to -10                           10    0  PARKED    ··········                                                  returns to -10
-  ► 03   -9  PROBE     ▄▄▄▄▄▄▄▄▄·                                                                                           11  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄                                                  
+  ► 03   -9  PROBE     ▄▄▄▄▄▄▄▄▄·                                                                                           11  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄                                        
   ► 04    0  PARKED    ··········                                                  returns to -10                           12    0  PARKED    ··········                                                  returns to -10
   ► 05    0  PARKED    ··········                                                  returns to -10                           13    0  PARKED    ··········                                                  returns to -10
   ► 06    0  PARKED    ··········                                                  returns to -10                           14    0  PARKED    ··········                                                  returns to -10
   ► 07    0  PARKED    ··········                                                  returns to -10                           15    0  PARKED    ··········                                                  returns to -10
 
   HUNT 1 ────────────────────────────────────────────────────────────────────────────── started 04:01 · 49m40s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
-                                                                                                                          
+
   cause     crash in R7 all-core load on 00-07 · no core named                                                            04:50  skip     hunt 1 groups 39-40: pass from carried trials
   candidates00-15, every core with an offset in the failing profile                                                       04:50  crash    hunt 1 group 38: all-core load on cores 00-07, rebooted
                                                                                                                           04:50  resume   session resumed

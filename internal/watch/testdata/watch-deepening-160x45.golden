@@ -14,17 +14,17 @@
   if none is named     deepening round 1 ends: a failure needs a hunt → hunt 2 starts over 00-10 12-15 → next: hunt 2 group 1 on 00: R1 mprime SSE 4K-21K
 
   CCD 0               0  2 counts/cell       -50 fail pt  one core under          CCD 1               0  2 counts/cell       -50 fail pt  not under load
-  ► 00  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              08  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
-    01  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              09  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
-    02  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              10  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
+  ► 00  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              08  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
+    01  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              09  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
+    02  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              10  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
     03  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              11   -9  AT LIMIT  ▄▄▄▄▄                              C1 · solo -10
-    04  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              12  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
-    05  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              13  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
-    06  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              14  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
-    07  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              15  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                    
+    04  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              12  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
+    05  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              13  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
+    06  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              14  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
+    07  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              15  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄          
 
   DEEPEN · ROUND 1 ──────────────────────────────────────────────────────────     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
-                                                                                  
+
   has room  00-10 12-15 · in this order                                           12:48  room     core 15 -10 → -30
   move      core 00 goes deeper: -30 → -50                                        12:48  room     core 07 -10 → -30
   move      core 01 goes deeper: -30 → -50                                        12:48  room     core 14 -10 → -30

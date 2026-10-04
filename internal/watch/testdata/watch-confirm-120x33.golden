@@ -19,7 +19,7 @@
    07   0 CONFIRM                                  L0/5        15   0 CONFIRM                                  L0/5
 
  TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ──────────────────────────────────── l: all
-                                                             
+
    08 -10 confirm: light, then heavy vector -10: light       00:00  start    session started on 16 cores
    01 -10 confirm: light, then heavy vector -10: light
    09 -10 confirm: light, then heavy vector -10: light

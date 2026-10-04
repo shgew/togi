@@ -12,14 +12,14 @@
  ► 00   0 PARKED   ·····                            -10        08   0 PARKED   ·····                            -10
  ► 01   0 PARKED   ·····                            -10        09   0 PARKED   ·····                            -10
  ► 02   0 PARKED   ·····                            -10        10   0 PARKED   ·····                            -10
- ► 03  -9 PROBE    ▄▄▄▄▄                                       11 -10 MEMBER   ▄▄▄▄▄                           
+ ► 03  -9 PROBE    ▄▄▄▄▄                                       11 -10 MEMBER   ▄▄▄▄▄                    
  ► 04   0 PARKED   ·····                            -10        12   0 PARKED   ·····                            -10
  ► 05   0 PARKED   ·····                            -10        13   0 PARKED   ·····                            -10
  ► 06   0 PARKED   ·····                            -10        14   0 PARKED   ·····                            -10
  ► 07   0 PARKED   ·····                            -10        15   0 PARKED   ·····                            -10
 
  HUNT 1 ──────────────────── started 04:01 · 49m40s so far   WHAT HAPPENED ──────────────────────────────────── l: all
-                                                             
+
  cause     crash in R7 all-core load on 00-07 · no core      04:50  skip     hunt 1 groups 39-40: pass from carried
            03   -9  failed -10 · passed - · ► trial 1 of 5   04:50  crash    hunt 1 group 38: all-core load on cores
            11  -10  failed -10 · passed - · waiting          04:50  resume   session resumed

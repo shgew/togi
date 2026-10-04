@@ -9,17 +9,17 @@
  all 5 pass → group 2: 00-07            none named → group 2: 12-15            inconclusive → group 1
 
  CCD 0            0  2 counts/cell       -50fail ptparked,   CCD 1            0  2 counts/cell       -50fail ptall
- ► 00   0 PARKED   ·····█                      -11  -10        08 -10 MEMBER   ▄▄▄▄▄█                      -11 
- ► 01   0 PARKED   ·····█                      -11  -10        09 -10 MEMBER   ▄▄▄▄▄█                      -11 
- ► 02   0 PARKED   ·····█                      -11  -10        10 -10 MEMBER   ▄▄▄▄▄█                      -11 
- ► 03   0 PARKED   ·····█                      -11  -10        11 -10 MEMBER   ▄▄▄▄▄█                      -11 
- ► 04   0 PARKED   ·····█                      -11  -10        12 -10 MEMBER   ▄▄▄▄▄█                      -11 
- ► 05   0 PARKED   ·····█                      -11  -10        13 -10 MEMBER   ▄▄▄▄▄█                      -11 
- ► 06   0 PARKED   ·····█                      -11  -10        14 -10 MEMBER   ▄▄▄▄▄█                      -11 
- ► 07   0 PARKED   ·····█                      -11  -10        15 -10 MEMBER   ▄▄▄▄▄█                      -11 
+ ► 00   0 PARKED   ·····█                      -11  -10        08 -10 MEMBER   ▄▄▄▄▄█                      -11
+ ► 01   0 PARKED   ·····█                      -11  -10        09 -10 MEMBER   ▄▄▄▄▄█                      -11
+ ► 02   0 PARKED   ·····█                      -11  -10        10 -10 MEMBER   ▄▄▄▄▄█                      -11
+ ► 03   0 PARKED   ·····█                      -11  -10        11 -10 MEMBER   ▄▄▄▄▄█                      -11
+ ► 04   0 PARKED   ·····█                      -11  -10        12 -10 MEMBER   ▄▄▄▄▄█                      -11
+ ► 05   0 PARKED   ·····█                      -11  -10        13 -10 MEMBER   ▄▄▄▄▄█                      -11
+ ► 06   0 PARKED   ·····█                      -11  -10        14 -10 MEMBER   ▄▄▄▄▄█                      -11
+ ► 07   0 PARKED   ·····█                      -11  -10        15 -10 MEMBER   ▄▄▄▄▄█                      -11
 
  HUNT 1 ─────────────────────── started 07:13 · 40s so far   WHAT HAPPENED ──────────────────────────────────── l: all
-                                                             
+
  cause     crash in R7 all-core load on 00-07 · no core      07:13  hunt     #1 started: which cores caused it?
  ► part 1/2 08-15 at failing offsets · 00-07 parked · 5 x    07:13  crash    all-core load on cores 00-07, rebooted
    part 2/2 00-07 at failing offsets · 08-15 parked · 5 x    07:13  resume   session resumed

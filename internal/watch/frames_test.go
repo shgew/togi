@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -203,6 +204,28 @@ func TestWatchFrames(t *testing.T) {
 		for _, view := range []View{MainView, HelpView, LogView} {
 			sc := Screen{View: view, Width: 80, Height: 24, Keys: true}
 			assertFrameBounds(t, RenderView(s, sc, now), sc)
+		}
+	}
+}
+
+// A styled line costs at most one style change per cell; styles that pile up without text between them, as cutting
+// and rejoining styled strings once did, break this long before any terminal shows a difference.
+func TestFramesSpendBytesOnCellsNotStaleStyles(t *testing.T) {
+	redundant := regexp.MustCompile(`\x1b\[[0-9;]*m\x1b\[0?m`)
+	for _, c := range watchCuts(t) {
+		s, now := Project(c.events), cutTime(c.events)
+		for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}, {80, 24}} {
+			for _, view := range []View{MainView, HelpView, LogView} {
+				sc := Screen{View: view, Width: size[0], Height: size[1], Keys: true}
+				for row, line := range RenderView(s, sc, now).Lines {
+					if limit := 16*ansi.StringWidth(line) + 16; len(line) > limit {
+						t.Errorf("%s %dx%d view %d row %d: %d bytes for %d cells", c.name, size[0], size[1], view, row, len(line), ansi.StringWidth(line))
+					}
+					if at := redundant.FindStringIndex(line); at != nil {
+						t.Errorf("%s %dx%d view %d row %d: style reset before use: %q", c.name, size[0], size[1], view, row, line[at[0]:at[1]])
+					}
+				}
+			}
 		}
 	}
 }

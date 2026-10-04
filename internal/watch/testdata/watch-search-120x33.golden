@@ -19,7 +19,7 @@
    07   0 SEARCH                                   → -5        15   0 SEARCH                                   → -5
 
  TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ──────────────────────────────────── l: all
-                                                             
+
    08 -5 search step: light, then heavy vector passed 0 ·    00:48  step     core 15 passed 0, next -5
    01 -5 search step: light, then heavy vector passed 0 ·    00:45  step     core 07 passed 0, next -5
    09 -5 search step: light, then heavy vector passed 0 ·    00:42  step     core 14 passed 0, next -5
