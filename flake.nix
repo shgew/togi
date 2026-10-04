@@ -28,6 +28,44 @@
           ...
         }:
         let
+          goFiles = lib.fileset.unions [
+            ./go.mod
+            ./go.sum
+            ./.golangci.yml
+            ./version.txt
+            ./version.go
+            ./version_test.go
+            ./cmd
+            ./internal
+            ./tools
+          ];
+          shippedFiles =
+            lib.fileset.difference
+              (lib.fileset.intersection goFiles (
+                lib.fileset.fromSource (
+                  lib.sources.cleanSourceWith {
+                    src = ./.;
+                    filter = path: type: type != "directory" || builtins.baseNameOf path != "testdata";
+                  }
+                )
+              ))
+              (
+                lib.fileset.unions [
+                  ./tools
+                  ./internal/sim
+                  ./internal/simrun
+                  (lib.fileset.fileFilter (f: lib.hasSuffix "_test.go" f.name) ./.)
+                ]
+              );
+          shippedPackage = config.checks.package.overrideAttrs {
+            src = lib.fileset.toSource {
+              root = ./.;
+              fileset = shippedFiles;
+            };
+            # Keep the full dependency set and its hash when tools-only imports disappear.
+            goModules = config.checks.package.goModules;
+            doCheck = false;
+          };
           testPhase = flags: packages: ''
             runHook preCheck
             export GOFLAGS=''${GOFLAGS//-trimpath/}
@@ -41,17 +79,7 @@
               version = lib.fileContents ./version.txt;
               src = lib.fileset.toSource {
                 root = ./.;
-                fileset = lib.fileset.unions [
-                  ./go.mod
-                  ./go.sum
-                  ./.golangci.yml
-                  ./version.txt
-                  ./version.go
-                  ./version_test.go
-                  ./cmd
-                  ./internal
-                  ./tools
-                ];
+                fileset = goFiles;
               };
               vendorHash = "sha256-KMcBcFvwlqulewo8hwkFBrsiy1PlEeUIWc71LdDEUT0=";
               nativeCheckInputs = [
@@ -162,12 +190,24 @@
               vm = import ./nix/vm-test.nix {
                 inherit pkgs;
                 trialTests = config.checks.trial-scope-tests;
-                package = config.checks.package.overrideAttrs { doCheck = false; };
+                package = shippedPackage;
               };
             in
             {
-              trial-scope-tests = config.checks.package.overrideAttrs {
+              trial-scope-tests = shippedPackage.overrideAttrs {
                 pname = "togi-trial-scope-tests";
+                src = lib.fileset.toSource {
+                  root = ./.;
+                  fileset = lib.fileset.unions [
+                    shippedFiles
+                    (lib.fileset.fileFilter (
+                      f: lib.hasPrefix "hardware_" f.name && lib.hasSuffix "_test.go" f.name
+                    ) ./internal/trial)
+                    ./internal/trial/helper_test.go
+                    ./internal/trial/trial_test.go
+                    ./internal/trial/fake_test.go
+                  ];
+                };
                 buildPhase = ''
                   runHook preBuild
                   go test -c -tags hardware -o togi-trial-tests ./internal/trial
