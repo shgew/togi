@@ -21,6 +21,7 @@ focus +args:
 # Run the hardware tests on the target machine (Linux only)
 [group('test')]
 hardware *args:
+    @[[ "{{ os() }}" == linux ]] || { echo 'just hardware needs Linux: run it on the target machine' >&2; exit 1; }
     {{ dev }} env TMPDIR=/tmp go test -tags hardware -p 1 ./... "$@"
 
 # Fuzz the journal parser for the given time (`just fuzz 5m`); failures land in internal/journal/testdata/fuzz
@@ -35,17 +36,17 @@ cover base="":
     set -euo pipefail
     profile=$(mktemp)
     trap 'rm -f "$profile"' EXIT
-    {{ dev }} go test -shuffle=on {{ if os() == "linux" { "-tags integration" } else { "" } }} -coverprofile="$profile" ./... >&2
+    {{ dev }} go test -shuffle=on -tags integration -coverprofile="$profile" ./... >&2
     if [[ -z "$1" ]]; then
         {{ dev }} go tool cover -func="$profile"
         exit
     fi
-    {{ dev }} go run ./tools/cover --profile "$profile" --base "$1"
+    {{ dev }} go run ./tools/cover --profile "$profile" --base "$1" --tags integration
 
-# Lint all Go packages with optional lint flags
+# Lint all Go packages as built for Linux and for macOS, with optional lint flags
 [group('quality')]
 lint *args:
-    {{ dev }} golangci-lint run ./... "$@"
+    for target in linux/amd64 darwin/arm64; do {{ dev }} env GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 golangci-lint run ./... "$@"; done
 
 # Format Go, Nix and this justfile in place
 [group('quality')]
@@ -56,12 +57,12 @@ fmt:
 [group('quality')]
 gate: lint (check-one "fmt") test
 
-# Run every flake check CI runs: package, race, lint, fmt and, on Linux, the VM tests
+# Run every flake check this host builds: package, race, lint, fmt, changes, module and, on Linux, trial-scope-tests and the VM tests
 [group('nix')]
 check *args:
     nix flake check "$@"
 
-# Build named flake checks: package, race, lint, fmt or, on Linux, vm and vm-restart-limit (`just check-one race`)
+# Build named flake checks: package, race, lint, fmt, changes, module or, on Linux, trial-scope-tests, vm and vm-restart-limit (`just check-one race`)
 [group('nix')]
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")
