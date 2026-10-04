@@ -387,8 +387,9 @@ func TestR7NamedZeroAttributionUsesStartTop(t *testing.T) {
 			h := r7Harness(t)
 			profile := []int{0, -30, -30, -30}
 			h.add(&journal.ProfileChange{To: profile})
+			var previous journal.Event
 			if tc.previous != nil {
-				r7Fact(h, true, []int{0, 1}, profile, tc.previous, nil, nil, nil, nil)
+				previous = r7Fact(h, true, []int{0, 1}, profile, tc.previous, nil, nil, nil, nil)
 			}
 			r7Fact(h, false, []int{0, 1}, profile, tc.requests, tc.top, new(0), nil, nil)
 			if tc.name == "derived top" {
@@ -402,6 +403,20 @@ func TestR7NamedZeroAttributionUsesStartTop(t *testing.T) {
 				dead, ended := a.Payload.(*journal.DeadEnd)
 				if !ended || dead.Condition != journal.DeadEndFailureAtZero {
 					t.Fatalf("%+v", a)
+				}
+				basis := "its start's recorded top requesters"
+				switch {
+				case tc.previous != nil:
+					basis = fmt.Sprintf("request measurements [%d]", previous.Seq)
+					if !slices.Contains(a.Cause, previous.Seq) {
+						t.Fatalf("dead end lost the measurement that made core 00 top: %v", a.Cause)
+					}
+				case tc.top == nil:
+					basis = "offset order (no request telemetry)"
+				}
+				want := "core 00 failed at CO 0 as a top requester of CCD 0 by " + basis + "; the instability is not caused by Curve Optimizer"
+				if diff := cmp.Diff(want, dead.Detail); diff != "" {
+					t.Fatal(diff)
 				}
 			} else {
 				move, moved := a.Payload.(*journal.TunerDecision)
@@ -437,5 +452,38 @@ func TestR7StepDownTargetExceedsOriginalTop(t *testing.T) {
 	}
 	if diff := cmp.Diff(-6, move.ToOffset); diff != "" {
 		t.Fatal(diff)
+	}
+}
+
+func TestR7FailureUsesRequestsAsOfItsStart(t *testing.T) {
+	h := r7Harness(t)
+	cores := []int{0, 1}
+	before := r7Fact(h, true, cores, h.s.Profile(), map[int]float64{0: 1.2, 1: 1.1}, []int{0}, nil, nil, nil)
+	r7Fact(h, false, cores, h.s.Profile(), nil, nil, nil, nil, nil)
+	after := r7Fact(h, true, cores, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.2}, []int{1}, nil, nil, nil)
+	a, ok := h.s.Drain()
+	move, moved := a.Payload.(*journal.TunerDecision)
+	if !ok || !moved || move.Decision != journal.Backoff || move.Core != 0 {
+		t.Fatalf("the failure did not back off its start's top requester: %+v", a)
+	}
+	if !slices.Contains(a.Cause, before.Seq) || slices.Contains(a.Cause, after.Seq) {
+		t.Fatalf("cause %v must cite #%d and not the later #%d", a.Cause, before.Seq, after.Seq)
+	}
+	h.decide(a)
+	if a, pending := h.s.Drain(); pending {
+		t.Fatalf("one failure moved twice: %+v", a)
+	}
+}
+
+func TestR7BackoffCountsEachCarriedFactOnce(t *testing.T) {
+	h := r7Harness(t)
+	r7Fact(h, false, []int{0, 1}, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
+	a, ok := h.s.Drain()
+	move, moved := a.Payload.(*journal.TunerDecision)
+	if !ok || !moved {
+		t.Fatalf("%+v", a)
+	}
+	if want := h.s.carriedReason(a.Cause); !strings.HasSuffix(move.Reason, want) || !strings.Contains(want, "; 1 carried facts") {
+		t.Fatalf("reason %q must end with %q for its one cited carried fact", move.Reason, want)
 	}
 }

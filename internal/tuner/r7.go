@@ -108,14 +108,27 @@ func (s *State) ccdIDs(cores []int) []int {
 	return ids
 }
 func (s *State) entryTop(e entry) []int {
+	top, _ := s.entryTopSources(e)
+	return top
+}
+
+// entryTopSources returns a start's top groups and the measurements that
+// ordered them, empty when its own top_requesters or offsets decided.
+func (s *State) entryTopSources(e entry) ([]int, []int) {
 	if len(e.top) > 0 {
-		return e.top
+		return e.top, nil
 	}
-	req := e.requests
-	if len(req) == 0 {
-		req, _ = s.r7RequestsBefore(e.class.workload, e.cores, e.profile, e.seq)
+	req, sources := s.startRequests(e)
+	return s.r7TopRequests(e.cores, req), sources
+}
+
+// startRequests returns a start's own requests, or those derived from
+// measurements available as of that start, never later ones.
+func (s *State) startRequests(e entry) (map[int]float64, []int) {
+	if len(e.requests) > 0 {
+		return e.requests, []int{e.seq}
 	}
-	return s.r7TopRequests(e.cores, req)
+	return s.r7RequestsBefore(e.class.workload, e.cores, e.profile, e.seq)
 }
 func (s *State) failureTargets(e entry) []int {
 	if e.named != nil {
@@ -152,13 +165,7 @@ func (s *State) consumeR7(ev journal.Event, id int) {
 }
 func (s *State) r7Decision() (Action, bool) {
 	a, ok := s.r7PendingDecision()
-	var unique []int
-	for _, seq := range a.Cause {
-		if !slices.Contains(unique, seq) {
-			unique = append(unique, seq)
-		}
-	}
-	a.Cause = unique
+	a.Cause = uniqueSeqs(a.Cause)
 	return a, ok
 }
 func (s *State) r7PendingDecision() (Action, bool) {
@@ -207,11 +214,14 @@ type r7Order struct {
 
 func (s *State) r7TargetGroup(failed entry, id int) r7Order {
 	if failed.named != nil {
-		if failed.profile[s.index(id)] != 0 || slices.Contains(s.entryTop(failed), id) {
+		if failed.profile[s.index(id)] != 0 {
 			return r7Order{group: []int{id}, named: true}
 		}
+		if top, sources := s.entryTopSources(failed); slices.Contains(top, id) {
+			return r7Order{group: []int{id}, named: true, sources: sources}
+		}
 	}
-	req, sources := s.r7Requests(failed.class.workload, failed.cores, failed.profile)
+	req, sources := s.startRequests(failed)
 	part := map[int]float64{}
 	for _, core := range failed.cores {
 		if s.ccd[core] == s.ccd[id] {
@@ -263,7 +273,7 @@ func r7RequestGroups(part map[int]float64, top []int) [][]int {
 func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core) Action {
 	order := s.r7TargetGroup(failed, c.id)
 	if len(order.group) == 0 || order.named && failed.profile[s.index(c.id)] == 0 {
-		return Action{Kind: Decide, Payload: failedAtZero(c.id), Cause: append([]int{f.seq}, order.sources...)}
+		return Action{Kind: Decide, Payload: s.r7FailedAtZero(failed, c.id, order), Cause: append([]int{f.seq}, order.sources...)}
 	}
 	if len(order.group) > 1 && s.rankingSeq == 0 {
 		return Action{Kind: ReadRanking}
@@ -284,13 +294,27 @@ func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core) Action {
 	return s.r7Backoff(f, failed, s.core(chosen), cause, order)
 }
 
-func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, order r7Order) Action {
-	req, sources := s.r7Requests(f.class.workload, failed.cores, failed.profile)
-	if len(failed.requests) > 0 {
-		req, sources = failed.requests, []int{failed.seq}
+// r7FailedAtZero explains why a named core at CO 0 ends the session: it was a
+// top requester of its CCD in that start.
+func (s *State) r7FailedAtZero(failed entry, id int, order r7Order) *journal.DeadEnd {
+	dead := failedAtZero(id)
+	if order.named {
+		basis := "its start's recorded top requesters"
+		if len(failed.top) == 0 {
+			basis = fmt.Sprintf("request measurements %v", order.sources)
+			if len(order.sources) == 0 {
+				basis = "offset order (no request telemetry)"
+			}
+		}
+		dead.Detail = fmt.Sprintf("core %02d failed at CO 0 as a top requester of CCD %d by %s; the instability is not caused by Curve Optimizer", id, s.ccd[id], basis)
 	}
+	return dead
+}
+
+func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, order r7Order) Action {
+	req, sources := s.startRequests(failed)
 	if _, measured := req[c.id]; !measured {
-		req, sources = s.r7Requests(f.class.workload, []int{c.id}, failed.profile)
+		req, sources = s.r7RequestsBefore(f.class.workload, []int{c.id}, failed.profile, failed.seq)
 	}
 	targetEntry := failed
 	if !order.named {
@@ -327,6 +351,7 @@ func (s *State) r7Backoff(f pendingFailure, failed entry, c *core, cause []int, 
 	}
 	cause = append(cause, sources...)
 	cause = append(cause, passSeqs...)
+	cause = uniqueSeqs(cause)
 	fail := failed.profile[s.index(c.id)]
 	if c.fail != nil {
 		fail = max(fail, *c.fail)
@@ -341,6 +366,16 @@ func r7Count(n int, noun string) string {
 		noun += "s"
 	}
 	return fmt.Sprintf("%d %s", n, noun)
+}
+
+func uniqueSeqs(seqs []int) []int {
+	var unique []int
+	for _, seq := range seqs {
+		if !slices.Contains(unique, seq) {
+			unique = append(unique, seq)
+		}
+	}
+	return unique
 }
 
 func (s *State) lowerPreferred(a, b int) bool {
