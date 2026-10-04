@@ -28,7 +28,7 @@ const (
 	CheckSoloLimit Decision = "check_solo_limit"
 	Deepen         Decision = "deepen"
 	Yield          Decision = "yield"
-	Tolerate      Decision = "tolerate"
+	Tolerate       Decision = "tolerate"
 )
 
 type Outcome string

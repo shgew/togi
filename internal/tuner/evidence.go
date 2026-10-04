@@ -38,20 +38,20 @@ func (s *State) indexClassTargets() {
 }
 
 type entry struct {
-	seq       int
-	profile   []int
-	pass      bool
-	condition machine.Condition
-	class     trialClass
-	tctlMax   int
-	hasTctl   bool
-	carried   bool
-	cores     []int
-	requests map[int]float64
-	top []int
-	clocks map[int]int
+	seq            int
+	profile        []int
+	pass           bool
+	condition      machine.Condition
+	class          trialClass
+	tctlMax        int
+	hasTctl        bool
+	carried        bool
+	cores          []int
+	requests       map[int]float64
+	top            []int
+	clocks         map[int]int
 	named, stalled *int
-	actionable bool
+	actionable     bool
 }
 
 func classOf(p *journal.TrialIntent) trialClass {
@@ -240,6 +240,7 @@ func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *jo
 	if p.Core != nil {
 		e.cores = []int{*p.Core}
 	}
+	if s.classTargets == nil { s.classTargets = map[string]classTarget{} }
 	s.classTargets[k.cores] = classTarget{cores: slices.Clone(e.cores), multi: len(e.cores) > 1}
 	e.requests, e.top, e.clocks, e.named, e.stalled = end.VoltageRequestsV, end.TopRequesters, end.CCDMHz, end.Core, end.StalledCore
 	if carried, ok := ev.Data.(*journal.TrialCarried); ok {
@@ -292,7 +293,7 @@ func (s *State) recordIdle(ev journal.Event, p *journal.Failure) {
 func (s *State) recordCarried(ev journal.Event, p *journal.TrialCarried) {
 	intent := &journal.TrialIntent{Regime: p.Class.Regime, Workload: p.Class.Workload, Cores: p.Class.Cores, DurationS: p.Class.DurationS, Condition: p.Condition, Profile: p.Profile}
 	end := &journal.TrialEnd{Trial: p.Source.Trial, Outcome: p.Outcome, Signal: p.Signal, DurationS: p.DurationS, Core: p.Core, StalledCore: p.StalledCore, VoltageRequestsV: p.VoltageRequestsV, TopRequesters: p.TopRequesters, CCDMHz: p.CCDMHz}
-	s.recordR7Measurement(ev.Seq,intent,end)
+	s.recordR7Measurement(ev.Seq, intent, end)
 	s.recordEvidence(ev, intent, end)
 	if p.Outcome == journal.OutcomeFailure {
 		evidence := s.failures[len(s.failures)-1]

@@ -142,7 +142,7 @@ func TestLegacyPartialPassesAreOrdinaryEvidence(t *testing.T) {
 			w := machine.Workloads(machine.R7)[0].ID
 			for range h.s.n {
 				if carried {
-					h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Seq: len(h.events)+1, Trial: "partial"}, Class: journal.TrialClass{Regime: machine.R7, Workload: w, Cores: cores, DurationS: 120}, Profile: h.s.Profile(), Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true, Outcome: journal.OutcomePass})
+					h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Seq: len(h.events) + 1, Trial: "partial"}, Class: journal.TrialClass{Regime: machine.R7, Workload: w, Cores: cores, DurationS: 120}, Profile: h.s.Profile(), Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true, Outcome: journal.OutcomePass})
 				} else {
 					h.add(&journal.TrialIntent{Trial: "legacy partial", Regime: machine.R7, Workload: w, Cores: cores, DurationS: 120, Profile: h.s.Profile(), Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true})
 					h.add(&journal.TrialEnd{Trial: "legacy partial", Outcome: journal.OutcomePass, DurationS: 120})
@@ -189,7 +189,9 @@ func TestR7FullCycleIncludesEveryPartial(t *testing.T) {
 
 func TestR7OneCCDRunsFullThenChainOnce(t *testing.T) {
 	h := chainHarness(t)
-	for id := range h.s.ccd { h.s.ccd[id] = 0 }
+	for id := range h.s.ccd {
+		h.s.ccd[id] = 0
+	}
 	h.s.parts = [][]int{h.s.ids()}
 	passChainPart(t, h, h.s.ids(), nil)
 	a := h.s.cycleNext()
@@ -205,9 +207,13 @@ func TestR7OneCCDRunsFullThenChainOnce(t *testing.T) {
 			return
 		}
 		if a.Kind == RunTrial {
-			if len(a.Trial.Cores) == 8 { t.Fatal("full/all-core part ran twice") }
+			if len(a.Trial.Cores) == 8 {
+				t.Fatal("full/all-core part ran twice")
+			}
 			h.trial(a, passed)
-		} else { h.decide(a) }
+		} else {
+			h.decide(a)
+		}
 	}
 	t.Fatal("one-CCD chain did not finish")
 }

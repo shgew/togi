@@ -38,9 +38,9 @@ type Durations struct {
 }
 
 type Evidence struct {
-	Miss float64 `toml:"miss" json:"miss"`
-	Rate float64 `toml:"rate" json:"rate"`
-	FailureRate float64 `toml:"failure_rate" json:"failure_rate"`
+	Miss         float64 `toml:"miss" json:"miss"`
+	Rate         float64 `toml:"rate" json:"rate"`
+	FailureRate  float64 `toml:"failure_rate" json:"failure_rate"`
 	Significance float64 `toml:"significance" json:"significance"`
 }
 
@@ -177,7 +177,7 @@ func validate(c Config) error {
 		return fmt.Errorf("evidence.rate = %g: must be within (0, 1)", c.Evidence.Rate)
 	}
 	for _, field := range []struct {
-		key string
+		key   string
 		value float64
 	}{{"failure_rate", c.Evidence.FailureRate}, {"significance", c.Evidence.Significance}} {
 		if math.IsNaN(field.value) || math.IsInf(field.value, 0) || field.value <= 0 || field.value >= 1 {

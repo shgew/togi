@@ -260,7 +260,9 @@ func (s *State) attributeTogether(a *awaiting) *journal.Failure {
 }
 
 func (s *State) pendingDecision() (Action, bool) {
-	if a, ok := s.r7Decision(); ok { return a, true }
+	if a, ok := s.r7Decision(); ok {
+		return a, true
+	}
 	for _, c := range s.cores {
 		if c.pending == 0 {
 			continue

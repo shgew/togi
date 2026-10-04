@@ -13,7 +13,7 @@ func TestDeepeningRechecksOwnPartialForEveryR7Workload(t *testing.T) {
 	h := hasRoomHarness(t, -20, -20, -20, -20, -20, -20, -20, -20)
 	initial := h.s.Profile()
 	for _, w := range machine.Workloads(machine.R7) {
-		h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Seq: len(h.events)+1}, Class: journal.TrialClass{Regime: machine.R7, Workload: w.ID, Cores: []int{0, 1, 2, 3}, DurationS: 120}, Profile: initial, Condition: machine.Together, Outcome: journal.OutcomePass, VoltageRequestsV: map[int]float64{0: 1.2, 1: 1.1, 2: 1.0, 3: .9}})
+		h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Seq: len(h.events) + 1}, Class: journal.TrialClass{Regime: machine.R7, Workload: w.ID, Cores: []int{0, 1, 2, 3}, DurationS: 120}, Profile: initial, Condition: machine.Together, Outcome: journal.OutcomePass, VoltageRequestsV: map[int]float64{0: 1.2, 1: 1.1, 2: 1.0, 3: .9}})
 	}
 	p := slices.Clone(initial)
 	p[1]--
@@ -54,7 +54,7 @@ func TestDeepeningRequestRankChangeAddsCCDWholePart(t *testing.T) {
 	h := hasRoomHarness(t, -10, -20, -30, -40, -20, -20, -20, -20)
 	initial := h.s.Profile()
 	for _, w := range machine.Workloads(machine.R7) {
-		h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Seq: len(h.events)+1}, Class: journal.TrialClass{Regime: machine.R7, Workload: w.ID, Cores: []int{0, 1, 2, 3}, DurationS: 120}, Profile: initial, Condition: machine.Together, Outcome: journal.OutcomePass, VoltageRequestsV: map[int]float64{0: 1.2, 1: 1.1, 2: 1.0, 3: .9}})
+		h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Seq: len(h.events) + 1}, Class: journal.TrialClass{Regime: machine.R7, Workload: w.ID, Cores: []int{0, 1, 2, 3}, DurationS: 120}, Profile: initial, Condition: machine.Together, Outcome: journal.OutcomePass, VoltageRequestsV: map[int]float64{0: 1.2, 1: 1.1, 2: 1.0, 3: .9}})
 	}
 	p := slices.Clone(initial)
 	p[0], p[1] = -50, -21
@@ -62,7 +62,9 @@ func TestDeepeningRequestRankChangeAddsCCDWholePart(t *testing.T) {
 	checks := h.s.roundChecks()
 	var r7 [][]int
 	for _, q := range checks {
-		if q.class.regime == machine.R7 { r7 = append(r7, q.cores) }
+		if q.class.regime == machine.R7 {
+			r7 = append(r7, q.cores)
+		}
 	}
 	want := [][]int{{0, 1, 2, 3}, {0, 2, 3}, {0, 1, 2, 3}, {0, 2, 3}, {0, 1, 2, 3}, {0, 2, 3}}
 	if diff := cmp.Diff(want, r7); diff != "" {

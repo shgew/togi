@@ -253,6 +253,12 @@ func (s *State) Fold(e journal.Event) {
 		s.steps = slices.Clone(p.Config.Checking.Cycle)
 		s.durations = p.Config.Durations
 		s.evidence = p.Config.Evidence
+		if s.evidence.FailureRate == 0 {
+			s.evidence.FailureRate = .05
+		}
+		if s.evidence.Significance == 0 {
+			s.evidence.Significance = .2
+		}
 		s.n = int(math.Ceil(math.Log(s.evidence.Miss) / math.Log1p(-s.evidence.Rate)))
 		s.pendingRerun()
 		s.projectionDirty = true
@@ -452,7 +458,7 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 		s.thermal = nil
 	}
 	s.recordEvidence(e, intent, p)
-		s.recordR7Measurement(e.Seq, intent, p)
+	s.recordR7Measurement(e.Seq, intent, p)
 	if intent.Core != nil && (p.Outcome == journal.OutcomePass || p.Outcome == journal.OutcomeFailure) {
 		if c := s.core(*intent.Core); c != nil {
 			if c.workloadIndex == nil {
@@ -541,7 +547,9 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 	s.pendingFailures = append(s.pendingFailures, failure)
 	if s.multiR7(failure.class) {
 		for i := range s.ledger[failure.class] {
-			if s.sameR7Failure(s.ledger[failure.class][i].seq,e.Seq) { s.ledger[failure.class][i].named=p.Core }
+			if s.sameR7Failure(s.ledger[failure.class][i].seq, e.Seq) {
+				s.ledger[failure.class][i].named = p.Core
+			}
 		}
 	}
 	if failure.class.regime == machine.R7 && len(s.classCores(failure.class)) > 1 {
@@ -627,7 +635,11 @@ func (s *State) Drain() (Action, bool) {
 }
 
 func (s *State) Next() Action {
-	return s.skipKnownFailure(s.next())
+	a := s.next()
+	if a.Kind == RunTrial && a.Trial.Regime == machine.R7 && len(a.Trial.Cores)>1 && s.rankingSeq==0 {
+		return Action{Kind:ReadRanking}
+	}
+	return s.skipKnownFailure(a)
 }
 
 func (s *State) next() Action {
@@ -701,7 +713,9 @@ func (s *State) next() Action {
 	if s.checking.open {
 		a := s.cycleNext()
 		_, startsStep := a.Payload.(*journal.CheckingStep)
-		if _, chain := a.Payload.(*journal.CheckingChain); chain { startsStep = true }
+		if _, chain := a.Payload.(*journal.CheckingChain); chain {
+			startsStep = true
+		}
 		if a.Kind == RunTrial || startsStep {
 			if end, ok := s.coveredEnd(); ok {
 				a = end
@@ -774,7 +788,9 @@ func (s *State) uncontradicted(q passedFullCycle) bool {
 		return false
 	}
 	return !slices.ContainsFunc(s.pendingFailures, func(f pendingFailure) bool {
-		if s.multiR7(f.class) && !s.r7Actionable(f) { return false }
+		if s.multiR7(f.class) && !s.r7Actionable(f) {
+			return false
+		}
 		return s.failureAfter(f, s.resetSeq) && (len(f.profile) != len(q.profile) || atLeastShallow(f.profile, q.profile))
 	})
 }

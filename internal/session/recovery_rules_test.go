@@ -856,8 +856,12 @@ func TestPartialCrashRecoversAndBacksOffWithoutHunt(t *testing.T) {
 			t.Parallel()
 			cfg := sim.Config{Seed: 4, Cores: 8, BIOS: make([]int, 8), Limits: make([]sim.Limits, 8)}
 			for core := range cfg.Limits {
-				for i := range cfg.Limits[core].Alone { cfg.Limits[core].Alone[i] = -50 }
-				for i := range cfg.Limits[core].Together { cfg.Limits[core].Together[i] = -50 }
+				for i := range cfg.Limits[core].Alone {
+					cfg.Limits[core].Alone[i] = -50
+				}
+				for i := range cfg.Limits[core].Together {
+					cfg.Limits[core].Together[i] = -50
+				}
 			}
 			model := sim.DefaultModel()
 			model.CrashMCE = 0
@@ -872,36 +876,60 @@ func TestPartialCrashRecoversAndBacksOffWithoutHunt(t *testing.T) {
 			in.Machine.NextReset(machine.ResetWatchdog)
 			var interrupted *crashDuringPartialTrial
 			_, err := simulateBoot(context.Background(), in, func(j *journal.Journal) Journal {
-				interrupted = &crashDuringPartialTrial{Journal:wrapFor(in,nil)(j),machine:in.Machine,signal:signal}
+				interrupted = &crashDuringPartialTrial{Journal: wrapFor(in, nil)(j), machine: in.Machine, signal: signal}
 				return interrupted
 			})
-			if !errors.Is(err,machine.ErrCrashed) || interrupted.intent==nil { t.Fatalf("partial crash: %v, %+v",err,interrupted) }
+			if !errors.Is(err, machine.ErrCrashed) || interrupted.intent == nil {
+				t.Fatalf("partial crash: %v, %+v", err, interrupted)
+			}
 			partial := interrupted.intent
 			in.Machine.Reboot()
 			var resumed *stopAfterPartialRecovery
-			_,err = simulateBoot(context.Background(),in,func(j *journal.Journal) Journal {
-				resumed=&stopAfterPartialRecovery{Journal:wrapFor(in,nil)(j),trial:partial.Trial}
+			_, err = simulateBoot(context.Background(), in, func(j *journal.Journal) Journal {
+				resumed = &stopAfterPartialRecovery{Journal: wrapFor(in, nil)(j), trial: partial.Trial}
 				return resumed
 			})
-			if !errors.Is(err,errKilled) || resumed.next==nil { t.Fatalf("resume: %v, %+v",err,resumed) }
-			if diff:=cmp.Diff(partial.Profile,resumed.next.Profile);diff=="" { t.Fatal("failed partial did not back off profile") }
+			if !errors.Is(err, errKilled) || resumed.next == nil {
+				t.Fatalf("resume: %v, %+v", err, resumed)
+			}
+			if diff := cmp.Diff(partial.Profile, resumed.next.Profile); diff == "" {
+				t.Fatal("failed partial did not back off profile")
+			}
 			var end *journal.TrialEnd
 			var failure *journal.Failure
 			var move *journal.TunerDecision
-			events:=readEvents(t,in.Dir)
-			for _,e:=range events {
-				switch p:=e.Data.(type) {
-				case *journal.TrialEnd: if p.Trial==partial.Trial { end=p }
-				case *journal.Failure: if p.Trial==partial.Trial { failure=p }
-				case *journal.TunerDecision: if p.Decision==journal.Backoff && p.Phase!=journal.PhaseSearch { move=p }
-				case *journal.HuntStart,*journal.Combination: t.Fatalf("R7 partial hunted: %+v",e)
+			events := readEvents(t, in.Dir)
+			for _, e := range events {
+				switch p := e.Data.(type) {
+				case *journal.TrialEnd:
+					if p.Trial == partial.Trial {
+						end = p
+					}
+				case *journal.Failure:
+					if p.Trial == partial.Trial {
+						failure = p
+					}
+				case *journal.TunerDecision:
+					if p.Decision == journal.Backoff && p.Phase != journal.PhaseSearch {
+						move = p
+					}
+				case *journal.HuntStart, *journal.Combination:
+					t.Fatalf("R7 partial hunted: %+v", e)
 				}
 			}
-			if end==nil || end.Outcome!=journal.OutcomeFailure || failure==nil || move==nil { t.Fatalf("missing recovered failure/backoff: %+v %+v %+v",end,failure,move) }
-			if signal!="" && move.Core!=partial.Cores[0] { t.Fatalf("named core %d backed off %d",partial.Cores[0],move.Core) }
-			if !slices.Contains(partial.Cores,move.Core) { t.Fatalf("backed off idle core %d",move.Core) }
-			for _,fact:=range facts.FromEvents(events).Facts {
-				if fact.Trial==partial.Trial && fact.RecordOnly { t.Fatal("partial remained record-only") }
+			if end == nil || end.Outcome != journal.OutcomeFailure || failure == nil || move == nil {
+				t.Fatalf("missing recovered failure/backoff: %+v %+v %+v", end, failure, move)
+			}
+			if signal != "" && move.Core != partial.Cores[0] {
+				t.Fatalf("named core %d backed off %d", partial.Cores[0], move.Core)
+			}
+			if !slices.Contains(partial.Cores, move.Core) {
+				t.Fatalf("backed off idle core %d", move.Core)
+			}
+			for _, fact := range facts.FromEvents(events).Facts {
+				if fact.Trial == partial.Trial && fact.RecordOnly {
+					t.Fatal("partial remained record-only")
+				}
 			}
 		})
 	}
