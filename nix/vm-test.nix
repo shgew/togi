@@ -63,7 +63,7 @@ in
 
       machine.start(allow_reboot=True)
       machine.wait_for_unit("multi-user.target")
-      machine.log(machine.succeed("systemd-analyze critical-chain multi-user.target"))
+      machine.log(machine.wait_until_succeeds("systemd-analyze critical-chain multi-user.target"))
       machine.succeed("togi-trial-tests -test.run '^TestHardwareScope' -test.v -test.timeout 180s")
       lock_identity = machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip()
       assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
@@ -160,7 +160,7 @@ in
       assert "saved_entry=NixOS - togi" in machine.succeed("grub-editenv /boot/grub/grubenv list")
       machine.reboot()
       machine.wait_for_unit("multi-user.target")
-      machine.log(machine.succeed("systemd-analyze critical-chain multi-user.target"))
+      machine.log(machine.wait_until_succeeds("systemd-analyze critical-chain multi-user.target"))
       booted_system = machine.succeed("readlink -f /run/current-system").strip()
       assert booted_system == tuning_system, (booted_system, tuning_system)
       machine.wait_until_succeeds("grep -qx active /sys/class/watchdog/watchdog0/state")
