@@ -28,6 +28,16 @@
 // onset boosts apply as they do to per-core hazards. Files without [ccd] retain
 // the limit/joint model unchanged.
 //
+// Config.SharedVoltage replaces loaded-core and joint/CCD hazards for multi-core
+// R7 with a common rail: the highest loaded core request across both CCDs sets
+// voltage. Requests depend on workload, offset and the modeled CCD clock; clocks
+// depend on loaded cores, package/thermal budgets and cross-CCD power imbalance.
+// Each loaded core fails with a smooth softplus hazard in voltage minus its
+// threshold. Only computation-error signal draws name the failing core; other
+// draws crash without MCEs. Idle and single-core failures retain the old rules.
+// The opt-in model also emits synthetic requests and clocks in streamed samples.
+// See docs/simulating.md for the machine-file contract and formulas.
+//
 // A failing core produces one signal, drawn by the Model.Signals weights:
 //   - computation_error, stall, unexpected_exit: the trial ends at the failure time with that signal;
 //   - corrected_mce: a corrected MCE on the core's first logical CPU enters the current boot's kernel log and the

@@ -3,7 +3,7 @@
 `tools/sim` runs a whole tuning session on the seeded simulator in `internal/sim`: a 16-core Zen 5 machine with hidden per-core limits, random failures and crashes. It needs no hardware and no root, and works on every development platform. It is a development program: the package does not ship it, so it runs from a source checkout.
 
 ```sh
-just sim [seed]                                             # search, deepening and one clean cycle in a new temporary state directory
+just sim [seed] [--machine FILE] [--cycles N] [--state-dir DIR] # search, deepening and one clean cycle
 go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples]
 ```
 
@@ -18,9 +18,9 @@ A crash reboots the simulated machine in-process and the next boot resumes the j
 
 A state directory that already holds a journal or archives resumes the simulated machine after them: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot, and a session after `reset --all` gets a new id. A new invocation reads the file-backed journal before tuning; only reboots within that invocation reuse the parsed events. Real `togi run` sessions retain their file-backed recovery and per-event state writes.
 
-Simulated trials keep samples in memory by default: each loaded worker's cumulative CPU milliseconds advance once per simulated second. The simulator retains only the last trial's specification, duration and stall metadata and generates its samples lazily when read. With `--samples`, trials instead write `trials/<trial-id>/samples.jsonl`, encoding samples as they are generated without retaining the series. On a crash the loaded culprit's worker stops first, two seconds before the reset when the trial ran long enough, so the recovered `trial.end` can demonstrate `stalled_core` and `worker_stalled_ms` outside R6, which omits stalled-worker evidence because its workers are suspended by design. Samples in memory last one invocation, across its simulated reboots: when a new invocation closes a trial an interrupted one left open, its `trial.end` carries sample evidence only if both invocations ran with `--samples`. Otherwise both paths produce the same journal evidence; these synthetic samples are diagnostic only and do not change failure draws or tuner decisions.
+Simulated trials keep samples in memory by default: each loaded worker's cumulative CPU milliseconds advance once per simulated second. The simulator retains only the last trial's specification, duration, stall metadata and (when enabled) fixed-size voltage/clock snapshot, generating its samples lazily when read. With `--samples`, trials instead write `trials/<trial-id>/samples.jsonl`, encoding samples as they are generated without retaining the series. On a crash the loaded culprit's worker stops first, two seconds before the reset when the trial ran long enough, so the recovered `trial.end` can demonstrate `stalled_core` and `worker_stalled_ms` outside R6, which omits stalled-worker evidence because its workers are suspended by design. Samples in memory last one invocation, across its simulated reboots: when a new invocation closes a trial an interrupted one left open, its `trial.end` carries sample evidence only if both invocations ran with `--samples`. Otherwise both paths produce the same journal evidence.
 
-The simulator reports no SMU `pm_table` lanes: `pm_table` is absent from samples, and each run records an informational `preflight.check` explaining that the version is unavailable and no per-core lanes are supplied.
+Without `[shared_voltage]`, the simulator reports no SMU `pm_table` lanes: samples omit `pm_table`, and an informational `preflight.check` explains that the version is unavailable. With that table, every sample includes all 16 voltage requests and the loaded cores' clocks. Preflight identifies these as simulated lanes. The session summarizes them using the same warmup and minimum-sample rules as hardware; reading telemetry does not change failure draws.
 
 The session uses the default configuration, never `/etc/togi/config.toml`, and runs unattended: an unanswered too-aggressive defect is a dead end. `sim` exits 0 when the session stops cleanly, 1 at a dead end or on an error, and 2 on a flag error. A journal written under an older ruleset or schema is archived and seeds a new session, as `togi run` does; the resumed machine reports the BIOS context the journals recorded, so their failure points carry. A journal written under a newer ruleset or schema is refused before another event is appended.
 
@@ -51,6 +51,39 @@ If a machine file sets `[model.signals]`, it replaces the default signal weights
 `[ccd]` opts into an additional smooth R7 hazard for each loaded CCD. The rate in failures/second is `exp(log_rate + effect[ccd] + slope*(mean applied CCD depth-25))`; `effect` contains the two CCD log-rate effects, and mean depth includes every core's applied offset on that CCD, including zeros. A CCD contributes nothing when none of its cores are loaded. Its failures are unattributed crashes without core-local MCE evidence. All parameters must be finite and slope nonnegative. Existing core and joint hazards still contribute; files without this table keep the old model exactly.
 
 If an active joint has any member on a loaded CCD, that CCD's smooth hazard is suppressed: joint explanations take precedence over extrapolation. A joint on the other CCD does not suppress this CCD's residual hazard.
+
+### Shared-voltage R7 model
+
+`[shared_voltage]` opts into a common-rail model on a 16-core, two-CCD machine. It **replaces** loaded-core limit/flat hazards, `[ccd]` hazards and joints for multi-core R7 only. Unloaded-core idle hazards, single-core R7, and R1–R6 retain their existing rules. Files without this table retain their exact previous behavior, including journals.
+
+```sh
+just sim 1 --machine tools/bench/machines/shared-voltage.toml
+```
+
+That hand-set scenario is shaped after measured request spreads and clocks, not a fitted target-machine claim or a new bench baseline. Its CCD0 bases span 48 mV and CCD1 bases 30 mV; AVX-512 core 11 needs core 10 or 13 to supply a sufficient request on the example deep profile. y-cruncher uses the more demanding of each core's AVX2 and AVX-512 thresholds, pending hardware evidence.
+
+The table supplies `idle_v`, `margin_v` (hazard smoothing width), `rate` (failures/second per core at its threshold), and `power_limit_w` and `thermal_limit_w`. Both limits are effective steady-state package-power budgets in watts; the smaller applies. This is a simple steady-state model, not a heat-soak simulation. All must be finite and positive.
+
+For each of the three R7 workload IDs, `[shared_voltage.workload.<id>]` supplies:
+
+| Key | Meaning |
+|---|---|
+| `reference_mhz` | Clock at which request bases are defined |
+| `full_mhz` | Two unloaded-package full-CCD clock intercepts, MHz |
+| `idle_gain_mhz` | Additional MHz per idled core on that CCD |
+| `watts_per_core` | Loaded-core power at offset −35 |
+| `offset_watts_per_count` | Additional watts per shallower count |
+| `package_mhz_per_w` | Clock reduction per watt over the effective package budget |
+| `balance_mhz_per_w` | Clock reduction per watt that CCD exceeds the mean CCD power; the cooler CCD receives the corresponding boost |
+
+For a loaded CCD, clock is `full_mhz[ccd] + idle_gain_mhz*(8-loaded_count) - package_mhz_per_w*max(0, package_watts-budget)`. When both CCDs load, subtract `balance_mhz_per_w*(ccd_watts-package_watts/2)` too. Power sums `max(0, watts_per_core + offset_watts_per_count*(offset+35))` over loaded cores only. Round clocks to whole MHz, at least 1. This captures package pressure and cross-CCD power redistribution without a feedback solver. At −35 on the supplied machine, whole-CCD AVX2 runs 5.24/5.22 GHz and seven cores gain 30 MHz. All-core AVX-512 runs 4.799 GHz; setting CCD0 to offset 0 gives 4.329/4.889 GHz.
+
+Each workload requires 16 `[[shared_voltage.workload.<id>.core]]` tables in core-ID order. Each supplies `base_v` at offset 0, `threshold_v`, `count_v` (default 0.0036 V/count), and `clock_v_per_100mhz`. Loaded request is `base_v + count_v*offset + clock_v_per_100mhz*(clock-reference_mhz)/100`. Idle requests equal `idle_v` and **never set the modeled rail**. The shared voltage is the maximum loaded request across both CCDs.
+
+Each loaded core has margin `shared_voltage-threshold_v` and rate `rate*softplus(-margin/margin_v)/ln(2)`, where `softplus(x)=ln(1+exp(x))`. Hazards are smooth above and below the threshold, increase below it, and sum across loaded cores. The usual onset boost applies equally to draws and `FailureProbability`; `Hazard` returns the steady-state sum.
+
+A failing core draws from its optional `signals` map, otherwise `[model.signals]`. Only a computation-error draw remains a computation error naming that core; every other signal becomes an unattributed crash, without fabricated MCEs. Worker-stall telemetry can still name the core that stopped first. Fixed seed and history reproduce failures and telemetry. Non-R7 samples use the AVX2 request/clock parameters illustratively, without changing their hazards. Other PM-table arrays are synthetic: loaded C0 is 100%, idle CC6 is 100%, and unmodeled power and temperature lanes are zero.
+
 
 Each `[[core]]` table uses `alone` for its five R1–R5 limits and `together` for its seven R1–R7 limits. In `[model]`, `past_limit_rate` is the failure rate one count past a limit, `growth` scales the rate for each additional count, and `near_limit_rate` is the loaded-core rate at or shallower than the limit.
 

@@ -87,8 +87,8 @@ check-one +names:
 
 # Run a simulated session through the search and its first clean cycle
 [group('run')]
-sim seed="1":
-    {{ dev }} go run ./tools/sim --seed "$1"
+sim seed="1" *args:
+    {{ dev }} go run ./tools/sim --seed "$1" "${@:2}"
 
 # Play a recorded journal through the dashboard on a fast-forward clock
 [group('run')]

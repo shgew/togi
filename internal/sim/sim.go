@@ -621,6 +621,9 @@ func (h host) Preflight() []machine.Check {
 			checks[i] = machine.Check{Name: name, Detail: detail}
 		}
 	}
+	if h.m.cfg.SharedVoltage != nil {
+		return append(checks, machine.Check{Name: "pm_table", Detail: "simulated shared-voltage model supplies per-core voltage requests and loaded-core clocks", OK: true})
+	}
 	return append(checks, machine.Check{Name: "pm_table", Detail: "pm_table version unavailable: simulator reports no per-core lanes", OK: true})
 }
 
