@@ -37,11 +37,14 @@ func TestShortDashboardReachesEveryR7Workload(t *testing.T) {
 			continue
 		}
 		s, now := Project(c.events), cutTime(c.events)
-		frame := ansi.Strip(Render(s, 120, 33, now))
-		for _, w := range machine.Workloads(machine.R7) {
-			name := strings.Join(strings.Fields(workloadLabel(w.ID))[:2], " ")
-			if !strings.Contains(frame, "R7 "+name+": top ") || !strings.Contains(frame, "self-sufficient: ") {
-				t.Errorf("120x33 frame omits the R7 %s status:\n%s", w.ID, frame)
+		for _, keys := range []bool{false, true} {
+			frame, _ := RenderView(s, Screen{View: MainView, Width: 120, Height: 33, Keys: keys}, now)
+			frame = ansi.Strip(frame)
+			for _, w := range machine.Workloads(machine.R7) {
+				name := strings.Join(strings.Fields(workloadLabel(w.ID))[:2], " ")
+				if !strings.Contains(frame, "R7 "+name+": top ") || !strings.Contains(frame, "self-sufficient: ") {
+					t.Errorf("120x33 frame (keys %t) omits the R7 %s status:\n%s", keys, w.ID, frame)
+				}
 			}
 		}
 	}
