@@ -665,14 +665,9 @@ func (s Snapshot) huntThen(t tables, width int, class sizeClass) []string {
 		steps = append(steps, textStyle.Render("rerun ")+white.Render(where)+textStyle.Render(length))
 	}
 	if g := s.cycle; g != nil && g.current < len(g.steps) && class != compactLayout {
-		at := fmt.Sprintf("cycle %d at step %d", g.number, g.current+1)
-		if step := g.steps[g.current]; len(step.parts) > 1 {
-			if part := firstOpenPart(step); part > 0 {
-				at += fmt.Sprintf(", part %d", part)
-			}
-		}
-		// The rerun's passes count toward the paused step, so the cycle may resume past it.
-		steps = append(steps, textStyle.Render("resume ")+white.Render(at)+textStyle.Render(", or past it once the rerun's passes complete it"))
+		// Where the cycle resumes depends on what the rerun's passes complete, which the tuner does not project
+		// this far ahead; name only the cycle.
+		steps = append(steps, textStyle.Render("resume ")+white.Render(fmt.Sprintf("cycle %d", g.number)))
 	}
 	var out []string
 	if class == compactLayout {

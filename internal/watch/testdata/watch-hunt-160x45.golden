@@ -38,7 +38,7 @@
               1  record what it found: one core's failure point, or a             10:29  pass     rerun of R7 all-core on 00-07 · 5 passed · Tctl max 76°C
               2  back off past it                                                 10:19  backoff  core 05 -8 → -7
               3  rerun R7 all-core on 08-15: 5 trials of 2m, its original         10:19  fail     core 05 fails at -8
-              4  resume cycle 1 at step 1, part 4, or past it once the            10:19  fail     rerun of R7 all-core on 00-07 · the stress program quit
+              4  resume cycle 1                                                   10:19  fail     rerun of R7 all-core on 00-07 · the stress program quit
                                                                                   +186 more
 
    ?  help    l  log    esc  back    q  close view

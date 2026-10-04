@@ -361,3 +361,18 @@ func TestRestoredDeadEndLabelsSavedRows(t *testing.T) {
 		}
 	}
 }
+
+func TestHuntStageStaysOnAnUnfinishedPartBetweenTrials(t *testing.T) {
+	t.Parallel()
+	h := &huntView{groups: []groupView{{id: 4, outcome: "running"}}, plan: []huntPart{{group: 4, outcome: "running"}, {}}}
+	s := Snapshot{hunt: h}
+	if got := s.huntStage(true); got != "part 1 of 2" {
+		t.Fatalf("between trials of an unfinished part 1: %q", got)
+	}
+	h.groups = append(h.groups, groupView{id: 5, outcome: "running"})
+	h.plan[0].outcome = "pass"
+	h.plan[1] = huntPart{group: 5, outcome: "running", running: true}
+	if got := s.huntStage(true); got != "part 2 of 2" {
+		t.Fatalf("after part 1 passed: %q", got)
+	}
+}

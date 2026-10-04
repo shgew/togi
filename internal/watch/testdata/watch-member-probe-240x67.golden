@@ -55,7 +55,7 @@
               1  record the combination: 03 11 at the offsets that still fail
               2  back off one member to a tested passing probe that keeps the profile clear
               3  rerun R7 all-core on 00-07: 5 trials of 2m, its original length
-              4  resume cycle 1 at step 1, part 2, or past it once the rerun's passes complete it
+              4  resume cycle 1
 
 
 

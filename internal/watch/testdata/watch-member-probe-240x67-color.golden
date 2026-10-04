@@ -55,7 +55,7 @@
               [0;90m1  [0;37mrecord the combination: 03 11 at the offsets that still fail[m
               [0;90m2  [0;37mback off one member to a tested passing probe that keeps the profile clear[m
               [0;90m3  [0;37mrerun [0;97mR7 all-core on 00-07[0;37m: 5 trials of 2m, its original length[m
-              [0;90m4  [0;37mresume [0;97mcycle 1 at step 1, part 2[0;37m, or past it once the rerun's passes complete it[m
+              [0;90m4  [0;37mresume [0;97mcycle 1[m
 
 
 
