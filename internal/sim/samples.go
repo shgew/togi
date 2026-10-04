@@ -14,7 +14,8 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func (m *Machine) SetSamplesDir(dir string) { m.samplesDir = dir }
+// SetSamplesDir starts a new sample store and drops samples kept in memory, so a reused machine never answers for another invocation's trial ID.
+func (m *Machine) SetSamplesDir(dir string) { m.samplesDir, m.samples = dir, trialSamples{} }
 
 type trialSamples struct {
 	spec        machine.TrialSpec

@@ -34,6 +34,7 @@ type Input struct {
 	// InMemoryJournal retains the writer across simulated reboots and writes state only when Simulate returns.
 	// Leave it false when testing file recovery or injecting journal interruptions.
 	InMemoryJournal bool
+	WriteSamples    bool
 }
 
 func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
@@ -44,7 +45,11 @@ func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 			err = errors.Join(err, cached.flush(), cached.Close())
 		}
 	}()
-	in.Machine.SetSamplesDir(filepath.Join(in.Dir, "trials"))
+	samplesDir := ""
+	if in.WriteSamples {
+		samplesDir = filepath.Join(in.Dir, "trials")
+	}
+	in.Machine.SetSamplesDir(samplesDir)
 	for range maxBoots {
 		stop, err = boot(ctx, in, &cached, prefix)
 		if errors.Is(err, machine.ErrCrashed) {

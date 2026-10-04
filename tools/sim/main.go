@@ -32,6 +32,7 @@ func run(args []string, stderr io.Writer) int {
 	machineFile := flags.String("machine", "", "load the simulated machine from this TOML `file`")
 	replay := flags.Bool("replay-facts", false, "answer exact class/profile matches from the machine's same-BIOS facts extract")
 	dir := flags.String("state-dir", "", "use this state `directory`, resuming a journal it holds; default a new temporary one")
+	samples := flags.Bool("samples", false, "write trials/<trial-id>/samples.jsonl in the state directory; default keep samples in memory")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
 		return 0
 	} else if err != nil {
@@ -83,7 +84,7 @@ func run(args []string, stderr io.Writer) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	renderer := journal.NewRenderer(stderr, os.Getenv)
-	stop, err := simrun.Simulate(ctx, simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: stderr, Renderer: renderer, Laps: *laps, InMemoryJournal: true})
+	stop, err := simrun.Simulate(ctx, simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: stderr, Renderer: renderer, Laps: *laps, InMemoryJournal: true, WriteSamples: *samples})
 	if err != nil {
 		fmt.Fprintf(stderr, "sim: %v\n", err)
 		return 1
