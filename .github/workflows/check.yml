@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   eval:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       checks: ${{ steps.list.outputs.checks }}
     steps:
@@ -34,7 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         check: ${{ fromJSON(needs.eval.outputs.checks) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     env:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
     steps:
@@ -64,7 +64,7 @@ jobs:
 
   macos:
     name: package (macOS arm64)
-    runs-on: macos-15
+    runs-on: macos-26
     env:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
     steps:
@@ -85,7 +85,7 @@ jobs:
   check:
     if: always()
     needs: [build, macos]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Every check passed
         run: |
