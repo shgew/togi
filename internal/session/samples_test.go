@@ -36,7 +36,7 @@ func TestSampleEvidenceStalledWorker(t *testing.T) {
 			for i, reading := range tc.readings {
 				samples[i] = machine.TrialConditions{ElapsedMS: int64(i+1) * 1000, WorkerCPUMS: reading}
 			}
-			summary := sampleEvidence(slices.Values(samples), tc.cores, tc.regime, func(int) int { return 0 })
+			summary := sampleEvidence(slices.Values(samples), tc.cores, tc.regime, nil)
 			if len(samples) > 0 {
 				if diff := cmp.Diff(&samples[len(samples)-1], summary.last); diff != "" {
 					t.Fatal(diff)
@@ -79,7 +79,7 @@ func TestRequestedVoltage(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			summary := sampleEvidence(slices.Values(tc.samples), tc.cores, machine.R7, func(int) int { return 0 })
+			summary := sampleEvidence(slices.Values(tc.samples), tc.cores, machine.R7, nil)
 			if diff := cmp.Diff(tc.median, summary.voltageMedianV); diff != "" {
 				t.Fatalf("median (-want +got):\n%s", diff)
 			}

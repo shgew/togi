@@ -254,10 +254,6 @@ func (r *runner) coreInfo(core int) *machine.CoreInfo {
 	return nil
 }
 
-func (r *runner) ccdOf(core int) int {
-	return r.coreInfo(core).CCD
-}
-
 func (r *runner) validateConfiguredCores() error {
 	for _, core := range slices.Sorted(maps.Keys(r.in.Config.StartOffsets)) {
 		if r.coreInfo(core) == nil {
@@ -643,7 +639,7 @@ func (r *runner) closeOpenTrial() error {
 	if len(cores) == 0 && open.intent.Core != nil {
 		cores = []int{*open.intent.Core}
 	}
-	summary := sampleEvidence(r.in.Machine.Trials.Samples(open.intent.Trial), cores, open.intent.Regime, r.ccdOf)
+	summary := sampleEvidence(r.in.Machine.Trials.Samples(open.intent.Trial), cores, open.intent.Regime, r.fold.ccds)
 	end.VoltageRequestMedianV, end.VoltageRequestMinV = summary.voltageMedianV, summary.voltageMinV
 	end.VoltageRequestsV, end.TopRequesters, end.CCDMHz = summary.requests.Requests, summary.requests.TopRequesters, summary.requests.CCDMHz
 	if _, crashed := r.fold.crashSeq[open.boot]; crashed || end.Outcome == journal.OutcomeFailure {

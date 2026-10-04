@@ -124,10 +124,31 @@ func TestTrialRequestTelemetry(t *testing.T) {
 	}
 }
 
+// offlineCoreHost reports the topology without one core, as the kernel does
+// when both of its logical CPUs are offline.
+type offlineCoreHost struct {
+	machine.Host
+	core int
+}
+
+func (h offlineCoreHost) Topology() ([]machine.CoreInfo, error) {
+	cores, err := h.Host.Topology()
+	return slices.DeleteFunc(cores, func(c machine.CoreInfo) bool { return c.Core == h.core }), err
+}
+
 func TestCrashRecoveryRequestTelemetry(t *testing.T) {
 	t.Parallel()
-	for _, count := range []int{19, 20} {
-		t.Run(fmt.Sprint(count), func(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		count   int
+		offline bool
+	}{
+		{"19", 19, false},
+		{"20", 20, false},
+		// The recorded topology still maps a loaded core that is offline after the reset.
+		{"20 with a loaded core offline", 20, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			in, _ := firstCrash(t, machine.ResetWatchdog, machine.Crash, false)
 			dir := filepath.Join(in.Dir, "trials")
@@ -136,7 +157,7 @@ func TestCrashRecoveryRequestTelemetry(t *testing.T) {
 				t.Fatal(err)
 			}
 			var contents []byte
-			for _, sample := range requestSamples(count) {
+			for _, sample := range requestSamples(tc.count) {
 				line, err := json.Marshal(sample)
 				if err != nil {
 					t.Fatal(err)
@@ -149,10 +170,13 @@ func TestCrashRecoveryRequestTelemetry(t *testing.T) {
 			}
 			seams := in.Machine.Seams()
 			seams.Trials = sampledTrials{Trials: seams.Trials, reader: trial.New(trial.Options{Dir: dir})}
-			if _, err := driveWithSeams(in, seams); err != nil {
+			if tc.offline {
+				seams.Host = offlineCoreHost{Host: seams.Host, core: 0}
+			}
+			if _, err := driveWithSeams(in, seams); err != nil && !tc.offline {
 				t.Fatal(err)
 			}
-			assertRequestTelemetry(t, readEvents(t, in.Dir), count, true)
+			assertRequestTelemetry(t, readEvents(t, in.Dir), tc.count, true)
 		})
 	}
 }

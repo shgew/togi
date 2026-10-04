@@ -75,10 +75,12 @@ type fold struct {
 	baselineSeq int
 	baseline    []int
 	ids         []int
-	noticed     bool
-	phase       map[int]journal.Phase
-	carriedSeq  int
-	carried     map[int]journal.CarriedCore
+	// ccds maps each core in the session's recorded topology to its CCD.
+	ccds       map[int]int
+	noticed    bool
+	phase      map[int]journal.Phase
+	carriedSeq int
+	carried    map[int]journal.CarriedCore
 
 	boots            []string
 	lastKind         map[string]journal.Kind
@@ -157,8 +159,10 @@ func (f *fold) Fold(e journal.Event) {
 	case *journal.SessionStart:
 		f.started = true
 		f.ids = make([]int, len(p.Cores))
+		f.ccds = make(map[int]int, len(p.Cores))
 		for i, c := range p.Cores {
 			f.ids[i] = c.Core
+			f.ccds[c.Core] = c.CCD
 		}
 		slices.Sort(f.ids)
 	case *journal.ConfigLoaded:
