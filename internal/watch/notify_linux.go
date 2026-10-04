@@ -9,33 +9,64 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
 
 const journalWatchMask = unix.IN_MODIFY | unix.IN_CLOSE_WRITE | unix.IN_ATTRIB | unix.IN_CREATE | unix.IN_MOVED_FROM | unix.IN_MOVED_TO | unix.IN_DELETE | unix.IN_DELETE_SELF | unix.IN_MOVE_SELF | unix.IN_ONLYDIR
 
+const journalFileMask = unix.IN_MODIFY | unix.IN_CLOSE_WRITE | unix.IN_ATTRIB | unix.IN_DELETE_SELF | unix.IN_MOVE_SELF
+
 type journalNotifier struct {
 	fd      int
 	dir     string
 	watches map[int]string
+	// polling is set while the state directory cannot be watched and holds no journal to watch instead,
+	// so nothing would announce the journal's creation.
+	polling bool
 }
+
+func (n *journalNotifier) journal() string { return filepath.Join(n.dir, "events.jsonl") }
 
 func (n *journalNotifier) arm() error {
 	watches := make(map[int]string, 2)
+	polling := false
 	path := n.dir
+climb:
 	for {
 		wd, err := unix.InotifyAddWatch(n.fd, path, journalWatchMask)
-		if err == nil {
+		switch {
+		case err == nil:
 			watches[wd] = path
 			if path != n.dir || path == filepath.Dir(path) {
-				break
+				break climb
 			}
-		} else if !errors.Is(err, unix.ENOENT) && !errors.Is(err, unix.ENOTDIR) {
+		case path == n.dir && errors.Is(err, unix.EACCES):
+			// A root run leaves the state directory traverse-only (0711): other users can read the journal but
+			// not watch the directory, so they watch the journal itself.
+			wd, err := unix.InotifyAddWatch(n.fd, n.journal(), journalFileMask)
+			switch {
+			case err == nil:
+				watches[wd] = n.journal()
+			case errors.Is(err, unix.ENOENT):
+				polling = true
+			default:
+				return fmt.Errorf("watch journal: %w", err)
+			}
+		case path != n.dir && errors.Is(err, unix.EACCES):
+			// An unreadable parent only costs noticing the state directory's replacement, unless nothing below it
+			// could be watched either.
+			polling = polling || len(watches) == 0
+			break climb
+		case !errors.Is(err, unix.ENOENT) && !errors.Is(err, unix.ENOTDIR):
 			return fmt.Errorf("watch state directory: %w", err)
 		}
 		parent := filepath.Dir(path)
 		if parent == path {
+			if polling || len(watches) > 0 {
+				break
+			}
 			return fmt.Errorf("watch state directory: %w", unix.ENOENT)
 		}
 		path = parent
@@ -46,6 +77,7 @@ func (n *journalNotifier) arm() error {
 		}
 	}
 	n.watches = watches
+	n.polling = polling
 	return nil
 }
 
@@ -69,7 +101,7 @@ func (n *journalNotifier) relevant(data []byte) bool {
 		if !watched {
 			continue
 		}
-		if mask&(unix.IN_IGNORED|unix.IN_DELETE_SELF|unix.IN_MOVE_SELF) != 0 {
+		if mask&(unix.IN_IGNORED|unix.IN_DELETE_SELF|unix.IN_MOVE_SELF) != 0 || path == n.journal() {
 			changed = true
 			continue
 		}
@@ -109,17 +141,29 @@ func watchJournal(ctx context.Context, dir string) (<-chan error, func(), error)
 		defer file.Close()
 		var buf [64 * 1024]byte
 		for {
-			count, err := file.Read(buf[:])
-			if ctx.Err() != nil {
-				return
-			}
-			if err == nil && !n.relevant(buf[:count]) {
-				continue
-			}
-			if err != nil {
-				err = fmt.Errorf("read journal notifications: %w", err)
-			} else {
+			var err error
+			if n.polling {
+				wait := time.NewTimer(time.Second)
+				select {
+				case <-ctx.Done():
+					wait.Stop()
+					return
+				case <-wait.C:
+				}
 				err = n.arm()
+			} else {
+				count, readErr := file.Read(buf[:])
+				if ctx.Err() != nil {
+					return
+				}
+				if readErr == nil && !n.relevant(buf[:count]) {
+					continue
+				}
+				if readErr != nil {
+					err = fmt.Errorf("read journal notifications: %w", readErr)
+				} else {
+					err = n.arm()
+				}
 			}
 			select {
 			case changes <- err:

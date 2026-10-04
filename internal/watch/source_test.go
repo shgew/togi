@@ -158,7 +158,7 @@ func TestJournalNotificationsReloadChanges(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("journal notifications need Linux")
 	}
-	for _, operation := range []string{"append", "replace", "delete", "create", "missing directory", "replaced directory"} {
+	for _, operation := range []string{"append", "replace", "delete", "create", "missing directory", "replaced directory", "traverse-only append", "traverse-only replace"} {
 		t.Run(operation, func(t *testing.T) {
 			root := t.TempDir()
 			dir := filepath.Join(root, "state", "nested")
@@ -173,6 +173,13 @@ func TestJournalNotificationsReloadChanges(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if strings.HasPrefix(operation, "traverse-only ") {
+				// A root run leaves the state directory 0711; without read permission it cannot be watched.
+				if err := os.Chmod(dir, 0311); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+			}
 			src := source{dir: dir}
 			src.reload()
 			changes, stop, err := watchJournal(context.Background(), dir)
@@ -180,7 +187,7 @@ func TestJournalNotificationsReloadChanges(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer stop()
-			switch operation {
+			switch strings.TrimPrefix(operation, "traverse-only ") {
 			case "append":
 				file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
 				if err != nil {
