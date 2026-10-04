@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -128,5 +129,44 @@ func TestSimulatorRefusesAnotherJournalWriter(t *testing.T) {
 		if offset, err := m.Seams().SMU.Offset(core); err != nil || offset != 0 {
 			t.Fatalf("refused simulator changed core %d: %d, %v", core, offset, err)
 		}
+	}
+}
+
+func TestNewSessionTrialGetsNoSamplesFromAnEarlierInvocation(t *testing.T) {
+	t.Parallel()
+	m, err := sim.New(huntConfig(4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: t.TempDir(), Machine: m, Laps: 1}
+	in.Until = func(e journal.Event) bool {
+		p, ok := e.Data.(*journal.TrialEnd)
+		return ok && p.Trial == "0001"
+	}
+	if _, err := Simulate(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	if len(slices.Collect(m.Seams().Trials.Samples("0001"))) == 0 {
+		t.Fatal("first session's trial 0001 kept no samples to leak")
+	}
+	m.SetBIOSContext(machine.BIOSContext{BIOSVersion: "new", Board: "sim", CPUModel: "sim", Microcode: "0x2", BoostLimitMHz: 5500})
+	m.Reboot()
+	fired := false
+	in.Wrap = func(j session.Journal) session.Journal {
+		return &resetAtEvent{Journal: j, machine: m, kind: journal.KindTrialIntent, reset: machine.ResetWatchdog, fired: &fired}
+	}
+	if _, err := Simulate(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	events, torn, err := journal.Read(in.Dir)
+	if err != nil || torn != nil {
+		t.Fatalf("read new session: %v, torn %q", err, torn)
+	}
+	end, ok := findPayload(events, func(p *journal.TrialEnd) bool { return p.Trial == "0001" })
+	if !fired || !ok {
+		t.Fatalf("crash at trial.intent fired %t, recovered trial.end found %t", fired, ok)
+	}
+	if end.LastSampleS != nil || end.StalledCore != nil || end.WorkerStalledMS != nil {
+		t.Fatalf("trial 0001 never ran but recorded the earlier session's samples: %+v", end)
 	}
 }
