@@ -143,79 +143,100 @@ func watchJournal(ctx context.Context, dir string, load func()) (<-chan error, c
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	stopClose := context.AfterFunc(ctx, func() { _ = file.Close() })
-	changes, done := make(chan error, 1), make(chan struct{})
-	// reloaded is the consumer's acknowledgement that it reloaded after a change.
-	reloaded := make(chan struct{}, 1)
-	send := func(err error) bool {
-		select {
-		case <-reloaded: // an acknowledgement of an earlier change
-		default:
-		}
-		select {
-		case changes <- err:
-			return err == nil
-		case <-ctx.Done():
-			return false
-		}
-	}
-	go func() {
-		defer close(done)
-		defer close(changes)
-		defer file.Close()
-		var buf [64 * 1024]byte
-		for {
-			var err error
-			if n.polling {
-				wait := time.NewTimer(time.Second)
-				select {
-				case <-ctx.Done():
-					wait.Stop()
-					return
-				case <-wait.C:
-				}
-				err = n.arm()
-				if err == nil && n.polling {
-					// Still no journal: nothing to reload. Signalling only after the journal is watched means no
-					// frame can show it while discovery still ticks.
-					continue
-				}
-			} else {
-				count, readErr := file.Read(buf[:])
-				if ctx.Err() != nil {
-					return
-				}
-				if readErr == nil && !n.relevant(buf[:count]) {
-					continue
-				}
-				if readErr != nil {
-					err = fmt.Errorf("read journal notifications: %w", readErr)
-				} else {
-					err = n.arm()
-				}
-			}
-			if !send(err) {
-				return
-			}
-			if n.polling {
-				// The journal is gone. Once the consumer has reloaded, look again before discovery ticks, so a
-				// journal that appeared meanwhile is watched, not polled for, while a frame shows it.
-				select {
-				case <-reloaded:
-				case <-ctx.Done():
-					return
-				}
-				if err := n.arm(); err != nil || !n.polling {
-					if !send(err) {
-						return
-					}
-				}
-			}
-		}
-	}()
+	w := &journalWatch{n: &n, file: file, changes: make(chan error, 1), reloaded: make(chan struct{}, 1), done: make(chan struct{})}
+	go w.run(ctx)
 	stop := func() {
 		cancel()
-		<-done
+		<-w.done
 		stopClose()
 	}
-	return changes, reloaded, stop, nil
+	return w.changes, w.reloaded, stop, nil
+}
+
+// journalWatch delivers journal changes to the consumer, which acknowledges each reload on reloaded.
+type journalWatch struct {
+	n        *journalNotifier
+	file     *os.File
+	changes  chan error
+	reloaded chan struct{}
+	done     chan struct{}
+	buf      [64 * 1024]byte
+}
+
+func (w *journalWatch) run(ctx context.Context) {
+	defer close(w.done)
+	defer close(w.changes)
+	defer w.file.Close()
+	for {
+		err, ok := w.next(ctx)
+		if !ok {
+			return
+		}
+		if !w.send(ctx, err) {
+			return
+		}
+		if w.n.polling && !w.recheck(ctx) {
+			return
+		}
+	}
+}
+
+// next waits for the next relevant change. ok is false once the context ends.
+func (w *journalWatch) next(ctx context.Context) (error, bool) {
+	for {
+		if w.n.polling {
+			wait := time.NewTimer(time.Second)
+			select {
+			case <-ctx.Done():
+				wait.Stop()
+				return nil, false
+			case <-wait.C:
+			}
+			err := w.n.arm()
+			if err == nil && w.n.polling {
+				// Still no journal: nothing to reload. Signalling only after the journal is watched means no
+				// frame can show it while discovery still ticks.
+				continue
+			}
+			return err, true
+		}
+		count, err := w.file.Read(w.buf[:])
+		if ctx.Err() != nil {
+			return nil, false
+		}
+		if err != nil {
+			return fmt.Errorf("read journal notifications: %w", err), true
+		}
+		if w.n.relevant(w.buf[:count]) {
+			return w.n.arm(), true
+		}
+	}
+}
+
+// send delivers a change, dropping any acknowledgement of an earlier one. It reports whether to continue.
+func (w *journalWatch) send(ctx context.Context, err error) bool {
+	select {
+	case <-w.reloaded:
+	default:
+	}
+	select {
+	case w.changes <- err:
+		return err == nil
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// recheck runs after a change that left the journal missing. Once the consumer has reloaded, it looks again before
+// discovery ticks, so a journal that appeared meanwhile is watched, not polled for, while a frame shows it.
+func (w *journalWatch) recheck(ctx context.Context) bool {
+	select {
+	case <-w.reloaded:
+	case <-ctx.Done():
+		return false
+	}
+	if err := w.n.arm(); err != nil || !w.n.polling {
+		return w.send(ctx, err)
+	}
+	return true
 }
