@@ -120,7 +120,7 @@ func TestExtractRecordOnlyPartialFacts(t *testing.T) {
 	class := facts.Class{Regime: machine.R7, Workload: "fixture", Cores: []int{0}, DurationS: 120}
 	want := []Record{
 		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 3, Trial: "pass", Kind: facts.TrialFact, Class: class, Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true, Profile: []int{-30, -50}, Outcome: journal.OutcomePass, DurationS: 120},
-		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 5, Trial: "failure", Kind: facts.TrialFact, Class: class, Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true, Profile: []int{-30, -50}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 7, StalledCore: new(0), VoltageRequestsV: map[int]float64{0: 1.125}, TopRequesters: []int{0}, CCDMHz: map[int]int{0: 4800}},
+		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 5, Trial: "failure", Kind: facts.TrialFact, Class: class, Condition: machine.Together, Phase: journal.PhaseChecking, RecordOnly: true, Profile: []int{-30, -50}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 7, Core: new(0), StalledCore: new(0), VoltageRequestsV: map[int]float64{0: 1.125}, TopRequesters: []int{0}, CCDMHz: map[int]int{0: 4800}},
 		{Session: "partial-session", Build: build, Ruleset: 8, Seq: 7, Trial: "full", Kind: facts.TrialFact, Class: facts.Class{Regime: machine.R7, Workload: "fixture", Cores: []int{0, 1}, DurationS: 120}, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: []int{-30, -50}, Outcome: journal.OutcomePass, DurationS: 120},
 	}
 	if diff := cmp.Diff(want, records); diff != "" {

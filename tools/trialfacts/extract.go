@@ -32,6 +32,7 @@ type Record struct {
 	Signal           machine.Signal       `json:"signal,omitempty"`
 	DurationS        int                  `json:"duration_s"`
 	StalledCore      *int                 `json:"stalled_core,omitempty"`
+	Core             *int                 `json:"core,omitempty"`
 	VoltageRequestsV map[int]float64      `json:"voltage_requests_v,omitempty"`
 	TopRequesters    []int                `json:"top_requesters,omitempty"`
 	CCDMHz           map[int]int          `json:"ccd_mhz,omitempty"`
@@ -60,7 +61,7 @@ func Extract(dir string, dst io.Writer) (int, error) {
 			class := f.Class
 			class.Cores = slices.Clone(class.Cores)
 			slices.Sort(class.Cores)
-			r := Record{Session: f.Session, Build: f.Build, Ruleset: f.Ruleset, Context: session.Context, Seq: f.Seq, Trial: f.Trial, Kind: f.Kind, Class: class, Condition: f.Condition, Phase: f.Phase, RecordOnly: f.RecordOnly, Profile: f.Profile, Outcome: f.Outcome, Signal: f.Signal, DurationS: f.DurationS, StalledCore: f.StalledCore, VoltageRequestsV: f.VoltageRequestsV, TopRequesters: f.TopRequesters, CCDMHz: f.CCDMHz}
+			r := Record{Session: f.Session, Build: f.Build, Ruleset: f.Ruleset, Context: session.Context, Seq: f.Seq, Trial: f.Trial, Kind: f.Kind, Class: class, Condition: f.Condition, Phase: f.Phase, RecordOnly: f.RecordOnly, Profile: f.Profile, Outcome: f.Outcome, Signal: f.Signal, DurationS: f.DurationS, Core: f.Core, StalledCore: f.StalledCore, VoltageRequestsV: f.VoltageRequestsV, TopRequesters: f.TopRequesters, CCDMHz: f.CCDMHz}
 			if err := encoder.Encode(r); err != nil {
 				return count, fmt.Errorf("encode fact: %w", err)
 			}
