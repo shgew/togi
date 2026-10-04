@@ -684,7 +684,7 @@ func TestReplayMachineCheckKeepsBankAttribution(t *testing.T) {
 }
 
 func voltageSamples() []machine.TrialConditions {
-	samples := []machine.TrialConditions{{EcyclesedMS: 1000}, {EcyclesedMS: 2000}, {EcyclesedMS: 3000}, {EcyclesedMS: 4000}}
+	samples := []machine.TrialConditions{{ElapsedMS: 1000}, {ElapsedMS: 2000}, {ElapsedMS: 3000}, {ElapsedMS: 4000}}
 	for i, value := range []float32{1.5, 1, 1.25} {
 		table := &machine.PMTable{}
 		table.VoltageRequestV[0], table.VoltageRequestV[1] = value, value+0.125
@@ -711,7 +711,7 @@ func TestTrialRequestedVoltageAllRegimes(t *testing.T) {
 			in := simInput(t.TempDir(), newSim(t, small()))
 			samples := voltageSamples()
 			if !lanes {
-				samples = []machine.TrialConditions{{EcyclesedMS: 1000}}
+				samples = []machine.TrialConditions{{ElapsedMS: 1000}}
 			}
 			seams := in.Machine.Seams()
 			seams.Trials = voltageTrials{Trials: seams.Trials, samples: samples}

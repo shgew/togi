@@ -18,7 +18,7 @@ func TestConfigLoadedDecodesEveryShippedJournalBody(t *testing.T) {
 		name       string
 		schema     int
 		candidates map[int]int
-		cycle        []machine.Regime
+		cycle      []machine.Regime
 	}{
 		{"20260924T204352Z", 1, nil, []machine.Regime{machine.R1, machine.R2, machine.R6, machine.R3, machine.R4, machine.R7, machine.R5, machine.R6}},
 		{"20260926T151414Z", 2, map[int]int{0: -36, 1: -38, 2: -38, 3: -36, 4: -36, 5: -39, 6: -46, 7: -46, 8: -50, 9: -50, 10: -50, 11: -47, 12: -50, 13: -49, 14: -50, 15: -50}, []machine.Regime{machine.R1, machine.R2, machine.R6, machine.R3, machine.R4, machine.R7, machine.R5, machine.R6}},

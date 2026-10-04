@@ -48,7 +48,7 @@ const (
 	KindCrashDetected   Kind = "crash.detected"
 	KindTunerDecision   Kind = "tuner.decision"
 	KindCorePhase       Kind = "core.phase"
-	KindCheckingCycle     Kind = "checking.cycle"
+	KindCheckingCycle   Kind = "checking.cycle"
 	KindCheckingStep    Kind = "checking.step"
 	KindHostRanking     Kind = "host.ranking"
 	KindHuntStart       Kind = "hunt.start"
@@ -248,7 +248,7 @@ var payloadTypes = map[Kind]payloadType{
 	KindCrashDetected:   typeOf[CrashDetected](),
 	KindTunerDecision:   typeOf[TunerDecision](),
 	KindCorePhase:       typeOf[CorePhase](),
-	KindCheckingCycle:     typeOf[CheckingCycle](),
+	KindCheckingCycle:   typeOf[CheckingCycle](),
 	KindCheckingStep:    typeOf[CheckingStep](),
 	KindHostRanking:     typeOf[HostRanking](),
 	KindHuntStart:       typeOf[HuntStart](),

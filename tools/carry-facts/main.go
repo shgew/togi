@@ -162,18 +162,18 @@ func simulateRecorded(dir string, live facts.Session, seed uint64, out io.Writer
 }
 
 type transitionDemo struct {
-	passes             int
-	failures           int
-	answered           int
-	soloLimitTrials    int
+	passes               int
+	failures             int
+	answered             int
+	soloLimitTrials      int
 	cycleTrials          int
 	cyclePasses          int
-	firstTrials        []journal.Event
-	decisions          []journal.Event
+	firstTrials          []journal.Event
+	decisions            []journal.Event
 	firstPassedFullCycle *journal.Event
-	skips              []journal.Event
-	hunts              []journal.Event
-	inferredGroups     []journal.Event
+	skips                []journal.Event
+	hunts                []journal.Event
+	inferredGroups       []journal.Event
 }
 
 func summarizeTransition(events []journal.Event) transitionDemo {

@@ -257,7 +257,7 @@ func singleCarriedFailureDecisions(events []journal.Event, since time.Time) int 
 type depthCount struct{ trials, failures int }
 
 func renderDepth(tab *table, p *projection, since time.Time) {
-	tab.section("Failure rate by depth", "regime / workload / loaded cores / duration\tshallowest offset\tstarts\tfailures\trate")
+	tab.section("Failure rate by depth", "regime / workload / loaded cores / duration\tshallowest offset\ttrials\tfailures\trate")
 	groups := map[string]map[int]*depthCount{}
 	failing := map[string]bool{}
 	for _, t := range p.trials {

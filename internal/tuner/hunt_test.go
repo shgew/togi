@@ -73,11 +73,11 @@ func assertHuntNextReplay(h *harness, want Action, next func(*State) Action, fai
 
 func TestHuntParkedOffsetsRaisesThePassedFullCycleProfile(t *testing.T) {
 	for _, tt := range []struct {
-		name                    string
+		name                      string
 		passedFullCycles, failing []int
-		parked                  []int
-		parkedSeq               int
-		candidates              []int
+		parked                    []int
+		parkedSeq                 int
+		candidates                []int
 	}{
 		{"shallower everywhere", []int{-10, -10, -10, -10}, []int{-12, -10, -10, -10}, []int{-10, -10, -10, -10}, 7, []int{0}},
 		{"a yielded core takes its failing offset", []int{-10, -10, -10, -10}, []int{-12, -8, -10, -10}, []int{-10, -8, -10, -10}, 7, []int{0}},
@@ -85,7 +85,7 @@ func TestHuntParkedOffsetsRaisesThePassedFullCycleProfile(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			starts := make([]coreStart, 4)
-			for i := range trials {
+			for i := range starts {
 				starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: tt.failing[i]}
 			}
 			h := newHarness(t, starts...)
@@ -151,7 +151,7 @@ func TestAllZeroHuntParkedOffsetsOmitsZeroCause(t *testing.T) {
 
 func TestHuntParkedOffsetsSkipsExactPassedFullCycleProfile(t *testing.T) {
 	starts := make([]coreStart, 2)
-	for i := range trials {
+	for i := range starts {
 		starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: -30, fail: new(-31)}
 	}
 	h := newHarness(t, starts...)

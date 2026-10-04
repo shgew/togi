@@ -60,17 +60,17 @@ type CoreState struct {
 type CheckingState struct {
 	Cycle          int              `json:"cycle"`
 	CycleOpen      bool             `json:"cycle_open"`
-	Steps        []machine.Regime `json:"steps"`
-	StepsDone    int              `json:"steps_done"`
-	Profile      []int            `json:"profile"`
-	ProfileSeq   int              `json:"profile_seq"`
-	Full         bool             `json:"full"`
-	Missing      []string         `json:"missing"`
-	Exposure     []ExposureRow    `json:"exposure"`
+	Steps          []machine.Regime `json:"steps"`
+	StepsDone      int              `json:"steps_done"`
+	Profile        []int            `json:"profile"`
+	ProfileSeq     int              `json:"profile_seq"`
+	Full           bool             `json:"full"`
+	Missing        []string         `json:"missing"`
+	Exposure       []ExposureRow    `json:"exposure"`
 	CleanCycles    int              `json:"clean_cycles"`
 	LastCleanCycle int              `json:"last_clean_cycle"`
-	TctlMaxC     *int             `json:"tctl_max_c"`
-	TctlMaxSeq   int              `json:"tctl_max_seq"`
+	TctlMaxC       *int             `json:"tctl_max_c"`
+	TctlMaxSeq     int              `json:"tctl_max_seq"`
 }
 
 type CombinationState struct {

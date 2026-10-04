@@ -15,13 +15,13 @@ type key struct {
 }
 type pair struct{ candidate, baseline result }
 type comparison struct {
-	Pairs                                                          int
-	Timed                                                          int
-	Ratio, Lo, Hi                                                  float64
-	Faster, Slower, Equal                                          int
-	CrashDelta, DepthDelta, MaxHazardDelta                         float64
-	V1, V2, V3, V4                                                 int
-	RealAnswerShare, BaselineRealAnswerShare                       float64
+	Pairs                                                              int
+	Timed                                                              int
+	Ratio, Lo, Hi                                                      float64
+	Faster, Slower, Equal                                              int
+	CrashDelta, DepthDelta, MaxHazardDelta                             float64
+	V1, V2, V3, V4                                                     int
+	RealAnswerShare, BaselineRealAnswerShare                           float64
 	PartialSecondsPerPassedCycle, BaselinePartialSecondsPerPassedCycle float64
 }
 

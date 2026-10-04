@@ -39,7 +39,7 @@ type Trial struct {
 	Phase              journal.Phase
 	Condition          machine.Condition
 	Cores              []int
-	Cycle                int
+	Cycle              int
 	Retry              bool
 	Workload           string
 	DurationS          int
@@ -116,7 +116,7 @@ type rerun struct {
 type passedFullCycle struct {
 	profile    []int
 	seq        int
-	cycle        int
+	cycle      int
 	allAtLimit bool
 }
 
@@ -158,7 +158,7 @@ type State struct {
 	nextRound               int
 	ranking                 []int
 	rankingSeq, lastPlanSeq int
-	passedFullCycles          []passedFullCycle
+	passedFullCycles        []passedFullCycle
 	lastDeepenSeq           int
 	bestProfile             []int
 	bestDirty               bool

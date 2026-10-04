@@ -173,18 +173,18 @@ func memberList(members []CombinationMember) string {
 }
 
 type DeepeningRound struct {
-	Round   int      `json:"round"`
+	Round   int        `json:"round"`
 	Event   CycleEvent `json:"event"`
-	Base    []int    `json:"base,omitempty"`
-	BaseSeq int      `json:"base_seq,omitempty"`
-	Target  []int    `json:"target,omitempty"`
-	Profile []int    `json:"profile,omitempty"`
-	Cores   []int    `json:"cores,omitempty"`
-	Ranking []int    `json:"ranking,omitempty"`
-	Trials  int      `json:"trials,omitempty"`
-	TrialS  int      `json:"trial_s,omitempty"`
-	Passed  bool     `json:"passed,omitempty"`
-	Reason  string   `json:"reason,omitempty"`
+	Base    []int      `json:"base,omitempty"`
+	BaseSeq int        `json:"base_seq,omitempty"`
+	Target  []int      `json:"target,omitempty"`
+	Profile []int      `json:"profile,omitempty"`
+	Cores   []int      `json:"cores,omitempty"`
+	Ranking []int      `json:"ranking,omitempty"`
+	Trials  int        `json:"trials,omitempty"`
+	TrialS  int        `json:"trial_s,omitempty"`
+	Passed  bool       `json:"passed,omitempty"`
+	Reason  string     `json:"reason,omitempty"`
 }
 
 func (*DeepeningRound) Kind() Kind { return KindDeepeningRound }

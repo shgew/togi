@@ -66,7 +66,7 @@ type StopReason string
 const (
 	StopSignal  StopReason = "signal"
 	StopDeadEnd StopReason = "dead_end"
-	StopCycles    StopReason = "cycles"
+	StopCycles  StopReason = "cycles"
 )
 
 type Stop struct {
@@ -646,7 +646,7 @@ func (r *runner) closeOpenTrial() error {
 			end.StalledCore, end.WorkerStalledMS = summary.stalledCore, summary.workerStalledMS
 		}
 		if sample := summary.last; sample != nil && crashed {
-			end.LastSampleS = new(int(sample.EcyclesedMS / 1000))
+			end.LastSampleS = new(int(sample.ElapsedMS / 1000))
 			end.LastSampleTctlC = sample.TctlC
 			for _, mhz := range sample.CoreMHz {
 				if end.LastSampleMinMHz == nil || mhz < *end.LastSampleMinMHz {

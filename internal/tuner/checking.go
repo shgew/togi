@@ -11,7 +11,7 @@ import (
 type checking struct {
 	profile    []int
 	profileSeq int
-	cycle        int
+	cycle      int
 	open       bool
 	startSeq   int
 	steps      []machine.Regime

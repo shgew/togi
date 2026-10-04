@@ -53,7 +53,7 @@ type simRun struct {
 	Machine     *sim.Machine
 	Log         io.Writer
 	Stderr      io.Writer
-	Cycles        int
+	Cycles      int
 	Bootloader  Bootloader
 	Prompt      func(defect.Finding) (bool, error)
 	Defects     []defect.Entry

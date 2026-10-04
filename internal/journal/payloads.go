@@ -82,7 +82,7 @@ type ShutdownReason string
 const (
 	ShutdownSignal  ShutdownReason = "signal"
 	ShutdownDeadEnd ShutdownReason = "dead_end"
-	ShutdownCycles    ShutdownReason = "cycles"
+	ShutdownCycles  ShutdownReason = "cycles"
 	ShutdownCommand ShutdownReason = "command"
 )
 
@@ -382,7 +382,7 @@ type TrialIntent struct {
 	Condition  machine.Condition `json:"condition"`
 	Phase      Phase             `json:"phase,omitempty"`
 	Retry      bool              `json:"retry,omitempty"`
-	Cycle        int               `json:"cycle,omitempty"`
+	Cycle      int               `json:"cycle,omitempty"`
 	Step       int               `json:"step,omitempty"`
 	Hunt       int               `json:"hunt,omitempty"`
 	Group      int               `json:"group,omitempty"`
@@ -768,8 +768,8 @@ func phaseText(phase Phase) string {
 }
 
 type CheckingCycle struct {
-	Cycle     int              `json:"cycle"`
-	Event   CycleEvent         `json:"event"`
+	Cycle   int              `json:"cycle"`
+	Event   CycleEvent       `json:"event"`
 	Passed  bool             `json:"passed,omitempty"`
 	Full    bool             `json:"full,omitempty"`
 	Missing []string         `json:"missing,omitempty"`
@@ -802,7 +802,7 @@ type CheckingPartial struct {
 }
 
 type CheckingStep struct {
-	Cycle      int               `json:"cycle"`
+	Cycle    int               `json:"cycle"`
 	Step     int               `json:"step"`
 	Profile  []int             `json:"profile"`
 	Partials []CheckingPartial `json:"partials"`

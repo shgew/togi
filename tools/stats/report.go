@@ -239,7 +239,7 @@ func renderOutcomes(tab *table, p *projection, since time.Time) error {
 }
 
 func renderExposure(tab *table, p *projection, since time.Time) {
-	tab.section("Exposure", "regime\tworkload\tstarts\thours\tfailures")
+	tab.section("Exposure", "regime\tworkload\ttrials\thours\tfailures")
 	type exposure struct{ trials, seconds, failures int }
 	exposures := map[string]*exposure{}
 	for _, t := range p.trials {

@@ -24,10 +24,10 @@ func hasRoomHarness(t *testing.T, offsets ...int) *harness {
 func TestCoveredOpenCycleYieldsToDeepening(t *testing.T) {
 	offsets := []int{-49, -49, -49, -50}
 	for _, tt := range []struct {
-		name           string
+		name             string
 		passedFullCycles []int
-		covered        bool
-		complete       bool
+		covered          bool
+		complete         bool
 	}{
 		{"same profile", offsets, true, false},
 		{"deeper passed full-cycle profile", []int{-50, -49, -49, -50}, true, false},

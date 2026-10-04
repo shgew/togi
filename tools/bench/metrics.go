@@ -25,8 +25,8 @@ type result struct {
 	ExitCode                int                        `json:"exit_code"`
 	WallS                   float64                    `json:"wall_s"`
 	SimHours                float64                    `json:"sim_hours"`
-	FirstPassedCycleH         *float64                   `json:"first_passed_cycle_h"`
-	PassedCycles              int                        `json:"passed_cycles"`
+	FirstPassedCycleH       *float64                   `json:"first_passed_cycle_h"`
+	PassedCycles            int                        `json:"passed_cycles"`
 	PartialSeconds          float64                    `json:"partial_seconds"`
 	Crashes                 int                        `json:"crashes"`
 	Trials                  int                        `json:"trials"`
