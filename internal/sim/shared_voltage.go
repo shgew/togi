@@ -97,6 +97,15 @@ func (m *Machine) sharedR7(spec machine.TrialSpec) bool {
 	return m.cfg.SharedVoltage != nil && spec.Regime == machine.R7 && len(spec.Cores) > 1
 }
 
+// R7Requests returns the model's loaded-core requests without samples or RNG.
+// It is available only for multi-core R7 loads on shared-voltage machines.
+func (m *Machine) R7Requests(profile []int, spec machine.TrialSpec) ([16]float32, bool) {
+	if !m.sharedR7(spec) {
+		return [16]float32{}, false
+	}
+	return m.voltageState(profile, spec).requests, true
+}
+
 type voltageState struct {
 	requests [16]float32
 	clocks   [2]int
