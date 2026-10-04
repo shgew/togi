@@ -138,12 +138,19 @@ func TestDeadEndFramePreservesRecordedCause(t *testing.T) {
 	}
 }
 
-func TestDeepeningForecastKeepsTheProposedProfileApplied(t *testing.T) {
+func TestDeepeningChecksSayHowTheyLoad(t *testing.T) {
 	t.Parallel()
-	events := cutTrial(t, probeEvents(t), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })
-	text := ansi.Strip(Render(Project(events), 240, 67, cutTime(events)))
-	if !strings.Contains(text, "deepening round 1:") || strings.Contains(text, " alone at ") {
-		t.Fatalf("deepening checks run with the proposed profile applied, not alone:\n%s", text)
+	alone := cutTrial(t, probeEvents(t), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })
+	text := ansi.Strip(Render(Project(alone), 240, 67, cutTime(alone)))
+	if !strings.Contains(text, "DEEPEN · ROUND 1 · CORE 00 AT -30 · LIGHT") || !strings.Contains(text, "Core 00 runs alone at its proposed -30") || strings.Contains(text, "solo limit, one turn at a time") {
+		t.Fatalf("a deepened core's light check runs alone as part of its round, not as a solo-limit search:\n%s", text)
+	}
+	together := cutTrial(t, simulated(t, combinationJournal), func(p *journal.TrialIntent) bool {
+		return p.Phase == journal.PhaseDeepening && p.Regime == machine.R7
+	})
+	text = ansi.Strip(Render(Project(together), 240, 67, cutTime(together)))
+	if !strings.Contains(text, "DEEPEN · ROUND") || strings.Contains(text, " alone at ") {
+		t.Fatalf("R7 deepening checks run with the proposed profile applied, not alone:\n%s", text)
 	}
 }
 

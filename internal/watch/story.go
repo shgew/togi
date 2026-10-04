@@ -51,7 +51,7 @@ func (s Snapshot) story(now time.Time) story {
 	if s.hunt != nil {
 		return s.huntStory()
 	}
-	if t.condition == machine.Alone {
+	if t.condition == machine.Alone && t.round == 0 {
 		c := s.core(t.core)
 		text := fmt.Sprintf("I'm finding core %02d's solo limit, one turn at a time, now at %d.", t.core, t.offset)
 		if c != nil && c.confirm != nil {
@@ -74,7 +74,12 @@ func (s Snapshot) story(now time.Time) story {
 		return story{"RERUN", lines, brief, plainTone}
 	}
 	if t.round > 0 || s.phase == journal.PhaseDeepening {
-		return story{fmt.Sprintf("DEEPEN · ROUND %d", t.round), []string{"These offsets passed a full cycle. I check the deepening plan's proposed profile together.", "The checks below distinguish cores that go deeper from members that yield shallower."}, "Checking the deepening plan's proposed profile.", plainTone}
+		label := fmt.Sprintf("DEEPEN · ROUND %d", t.round)
+		if t.condition == machine.Alone {
+			text := fmt.Sprintf("Core %02d runs alone at its proposed %d, like every deepened core's light and heavy checks.", t.core, t.offset)
+			return story{label, []string{text, "R7 then checks the parts where a deepened core is a top requester."}, fmt.Sprintf("Deepening check: core %02d alone at its proposed %d.", t.core, t.offset), plainTone}
+		}
+		return story{label, []string{"These offsets passed a full cycle. I check the deepening plan's proposed profile together.", "The checks below distinguish cores that go deeper from members that yield shallower."}, "Checking the deepening plan's proposed profile.", plainTone}
 	}
 	name := fmt.Sprintf("CYCLE %d", t.cycle)
 	if t.regime == machine.R6 {
@@ -477,23 +482,19 @@ func (s Snapshot) operation(t trialView) string {
 		case t.group > 0:
 			text += fmt.Sprintf(" · GROUP %d", t.group)
 		}
-	case t.condition == machine.Alone:
+	case t.condition == machine.Alone && t.round == 0:
 		verb := "SEARCH"
 		if c := s.core(t.core); c != nil && c.confirm != nil {
 			verb = "CONFIRM"
 		}
-		text = fmt.Sprintf("%s CORE %02d AT %d", verb, t.core, t.offset)
-		switch t.regime {
-		case machine.R1:
-			text += " · LIGHT"
-		case machine.R2:
-			text += " · HEAVY"
-		case machine.R3, machine.R4, machine.R5, machine.R6, machine.R7:
-		}
+		text = fmt.Sprintf("%s CORE %02d AT %d", verb, t.core, t.offset) + loadWord(t.regime)
 	case t.rerun:
 		text = "RERUN AFTER BACKOFF"
 	case t.round > 0:
 		text = fmt.Sprintf("DEEPEN · ROUND %d", t.round)
+		if t.condition == machine.Alone {
+			text += fmt.Sprintf(" · CORE %02d AT %d", t.core, t.offset) + loadWord(t.regime)
+		}
 	default:
 		text = fmt.Sprintf("CYCLE %d · STEP %d", t.cycle, t.step)
 		if t.parts > 1 {
@@ -506,6 +507,18 @@ func (s Snapshot) operation(t trialView) string {
 		text += " · PARTIAL"
 	}
 	return tone.Render(text)
+}
+
+// loadWord marks an alone trial's light or heavy load.
+func loadWord(regime machine.Regime) string {
+	switch regime {
+	case machine.R1:
+		return " · LIGHT"
+	case machine.R2:
+		return " · HEAVY"
+	case machine.R3, machine.R4, machine.R5, machine.R6, machine.R7:
+	}
+	return ""
 }
 
 // endWord is how a trial ended, in one word: a crash is a crash, whatever else the journal says.
