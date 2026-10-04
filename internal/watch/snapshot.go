@@ -298,7 +298,7 @@ func (p *projector) finish(events []journal.Event, t *tuner.State) {
 		p.s.turns = append(p.s.turns, turnView{core: tr.Core, confirm: tr.Confirm, regimes: tr.Regimes, offset: tr.Offset, workload: tr.Workload, step: tr.Step, running: tr.Running})
 	}
 	dp := t.DeepeningPlan()
-	p.s.deepen = &deepenView{round: dp.Round, room: dp.Room, target: dp.Target, checks: dp.Checks, waiting: dp.Waiting}
+	p.s.deepen = &deepenView{round: dp.Round, room: dp.Room, profile: dp.Profile, checks: dp.Checks, waiting: dp.Waiting}
 	p.coreViews(t, turns)
 	p.combinations()
 	p.forecasts(tuner.Forecast(events))

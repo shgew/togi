@@ -1,66 +1,66 @@
-  togi   07:14:23   session 7h14m   33 failures · 33 crashes   last observed failure 07:13, a moment ago
+  togi   10:38:58   session 10h38m   37 failures · 8 crashes   last observed failure 10:38, a moment ago
 
-  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14, part 2  ───  ►  HUNT 1   parts · part 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14, part 4  ───  ►  HUNT 1   parts · part 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
-  ▌  HUNT 1   The machine crashed during the 2-minute all-core trial on 00-07 and rebooted.                               last trial      CRASH  on 00-07
+  ▌  HUNT 1   The machine crashed early in the rerun of the 2-minute all-core trial on 08-15 and rebooted.                last trial      CRASH  on 08-15
   ▌           No core was named: I rerun that load with half of 00-15 at its offsets, the other half parked at 0.
 
-  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0290
-   R7   all-core load  on 00-07 · 08-15 at failing offsets, 00-07 parked at 0   mprime AVX2 36K-248K · 8 workers                                                                                                         HUNT 1 · PART 1 OF 2
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0449
+   R7   all-core load  on 08-15 · 00-07 parked at 0, idle   mprime AVX2 36K-248K · 8 workers                                                                                                                             HUNT 1 · PART 1 OF 2
 
   ████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████          ▀█    ▀▀█ █▀█
   ████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████           █  ▀ █▀▀ █ █
   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
   0:40 of 2:00                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 
-  if 5 of 5 pass       next: part 2: 08-15 parked at 0, idle
-  if none is named     next: hunt 1 group 2: R7 all-core on 00-07 · 12-15 at failing offsets, 00-11 parked at 0
-  if inconclusive      the same trial runs again
+  if 5 of 5 pass       next: part 2: 00-07 at failing offsets, 08-15 parked at 0
+  if none is named     next: hunt 1 group 2: R7 all-core on 08-15 · 12-15 at failing offsets, 00-11 parked at 0
+  if a core is named   its failure point is recorded → the hunt ends → it backs off → next: rerun R7 all-core on 08-15 · 2m
 
-  CCD 0               0       -10       -20       -30       -40       -50 fail pt  parked at 0, still under load          CCD 1               0       -10       -20       -30       -40       -50 fail pt  all idle, all judged
-  ► 00    0  PARKED    ··········█                                           -11   returns to -10                           08  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄█                                           -11
-  ► 01    0  PARKED    ··········█                                           -11   returns to -10                           09  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄█                                           -11
-  ► 02    0  PARKED    ··········█                                           -11   returns to -10                           10  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄█                                           -11
-  ► 03    0  PARKED    ··········█                                           -11   returns to -10                           11  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄█                                           -11
-  ► 04    0  PARKED    ··········█                                           -11   returns to -10                           12  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄█                                           -11
-  ► 05    0  PARKED    ··········█                                           -11   returns to -10                           13  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄█                                           -11
-  ► 06    0  PARKED    ··········█                                           -11   returns to -10                           14  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄█                                           -11
-  ► 07    0  PARKED    ··········█                                           -11   returns to -10                           15  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄█                                           -11
+  CCD 0               0       -10       -20       -30       -40       -50 fail pt  parked at 0, idle                      CCD 1               0       -10       -20       -30       -40       -50 fail pt  members at their failing offsets
+    00    0  PARKED    ·····································█                -38   returns to -37                         ► 08  -27  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                          -28
+    01    0  PARKED    ··································█                   -35   returns to -34                         ► 09  -18  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                   -19
+    02    0  PARKED    ···································█                  -36   returns to -35                         ► 10  -16  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                     -17
+    03    0  PARKED    ·················█                                    -18   returns to -17                         ► 11   -7  MEMBER    ▄▄▄▄▄▄▄█                                               -8
+    04    0  PARKED    ································█                     -33   returns to -32                         ► 12  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄█                                           -11
+    05    0  PARKED    ·······█··                                             -8   returns to -7                          ► 13  -23  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                              -24
+    06    0  PARKED    ···························█··                        -28   returns to -27                         ► 14   -3  MEMBER    ▄▄▄█                                                   -4
+    07    0  PARKED    ································█                     -33   returns to -32                         ► 15  -39  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█              -40
 
-  HUNT 1 ───────────────────────────────────────────────────────────────────────────────── started 07:13 · 40s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
+  HUNT 1 ───────────────────────────────────────────────────────────────────────────────── started 10:38 · 40s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
 
-  cause       crash in R7 all-core on 00-07 · cycle 1 step 1, part 2, trial 1 of 4 · no core named                        07:13  hunt     #1 started · part 1: 08-15 at failing offsets, 00-07 parked
-  candidates  00-15, every core with an offset in the failing profile                                                     07:13  crash    R7 full CCD 0 on 00-07 · rebooted · no core named
-                                                                                                                          07:12  cycle    cycle 1 started · 14 steps
-  parts       part        at failing offsets   parked at 0   schedule   state                                             07:12  limit    cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15 solo limit -10
-            ► 1 of 2      08-15                00-07         5 x 2m     trial 1 of 5                                      03:12  confirm  core 15 confirming -10 as its solo limit
-              2 of 2      00-07                08-15         5 x 2m     if part 1 passes                                  03:12  fail     core 15 fails at -11
-              then finer parts and their complements, until one fails or none does                                        03:12  crash    core 15 · R1 light at -11 · rebooted
-                                                                                                                          03:10  confirm  core 07 confirming -10 as its solo limit
-  then        if the hunt resolves and the rerun passes:                                                                  03:10  fail     core 07 fails at -11
-              1  record what it found: one core's failure point, or a combination                                         03:10  crash    core 07 · R1 light at -11 · rebooted
-              2  back off past it                                                                                         03:09  confirm  core 14 confirming -10 as its solo limit
-              3  rerun R7 all-core on 00-07: 5 trials of 2m, its original length                                          03:09  fail     core 14 fails at -11
-              4  resume cycle 1 at step 1, part 2                                                                         03:09  crash    core 14 · R1 light at -11 · rebooted
-                                                                                                                          03:07  confirm  core 06 confirming -10 as its solo limit
-                                                                                                                          03:07  fail     core 06 fails at -11
-                                                                                                                          03:07  crash    core 06 · R1 light at -11 · rebooted
-                                                                                                                          03:06  confirm  core 13 confirming -10 as its solo limit
-                                                                                                                          03:06  fail     core 13 fails at -11
-                                                                                                                          03:06  crash    core 13 · R1 light at -11 · rebooted
-                                                                                                                          03:04  confirm  core 05 confirming -10 as its solo limit
-                                                                                                                          03:04  fail     core 05 fails at -11
-                                                                                                                          03:04  crash    core 05 · R1 light at -11 · rebooted
-                                                                                                                          03:03  confirm  core 12 confirming -10 as its solo limit
-                                                                                                                          03:03  fail     core 12 fails at -11
-                                                                                                                          03:03  crash    core 12 · R1 light at -11 · rebooted
-                                                                                                                          03:01  confirm  core 04 confirming -10 as its solo limit
-                                                                                                                          03:01  fail     core 04 fails at -11
-                                                                                                                          03:01  crash    core 04 · R1 light at -11 · rebooted
-                                                                                                                          03:00  confirm  core 11 confirming -10 as its solo limit
-                                                                                                                          03:00  fail     core 11 fails at -11
-                                                                                                                          03:00  crash    core 11 · R1 light at -11 · rebooted
-                                                                                                                          02:58  confirm  core 03 confirming -10 as its solo limit
-                                                                                                                          +117 more
+  cause       crash in the rerun of R7 all-core on 08-15 · no core named                                                  10:38  hunt     #1 started · part 1: 08-15 at failing offsets, 00-07 parked
+  evidence    the last sample came 0:01 into the trial · not enough to attribute                                          10:38  crash    rerun of R7 all-core on 08-15 · rebooted · early in trial 1 of 5 · no core named
+  candidates  00-15, every core with an offset in the failing profile                                                     10:36  backoff  core 13 -24 → -23
+                                                                                                                          10:36  fail     core 13 fails at -24
+  parts       part        at failing offsets   parked at 0   schedule   state                                             10:36  fail     rerun of R7 all-core on 08-15 · wrong result · core 13 named
+            ► 1 of 2      08-15                00-07         5 x 2m     trial 1 of 5                                      10:36  backoff  core 14 -4 → -3
+              2 of 2      00-07                08-15         5 x 2m     if part 1 passes                                  10:36  fail     core 14 fails at -4
+              then finer parts and their complements, until one fails or none does                                        10:36  fail     R7 full CCD 1 on 08-15 · corrected hardware error · no core named
+                                                                                                                          10:34  record   R7 partial CCD 1 on 08-13 15 · computation errors in 4 of 4 · record only, moves nothing
+  then        if the hunt resolves and the rerun passes:                                                                  10:34  pass     R7 full CCD 0 on 00-07 · trial 4 of 4 passed · Tctl max 69°C
+              1  record what it found: one core's failure point, or a combination                                         10:29  pass     rerun of R7 all-core on 00-07 · 5 passed · Tctl max 76°C
+              2  back off past it                                                                                         10:19  backoff  core 05 -8 → -7
+              3  rerun R7 all-core on 08-15: 5 trials of 2m, its original length                                          10:19  fail     core 05 fails at -8
+              4  resume cycle 1 at step 1, part 4                                                                         10:19  fail     rerun of R7 all-core on 00-07 · the stress program quit · core 05 named
+                                                                                                                          10:19  pass     rerun of R7 all-core on 00-07 · trial 1 of 5 passed · Tctl max 72°C
+                                                                                                                          10:17  backoff  core 06 -28 → -27
+                                                                                                                          10:17  fail     core 06 fails at -28
+                                                                                                                          10:17  fail     rerun of R7 all-core on 00-07 · wrong result · core 06 named
+                                                                                                                          10:17  backoff  core 05 -9 → -8
+                                                                                                                          10:17  fail     core 05 fails at -9
+                                                                                                                          10:17  fail     rerun of R7 all-core on 00-07 · wrong result · core 05 named
+                                                                                                                          10:17  backoff  core 06 -29 → -28
+                                                                                                                          10:17  fail     core 06 fails at -29
+                                                                                                                          10:17  fail     rerun of R7 all-core on 00-07 · corrected hardware error · no core named
+                                                                                                                          10:15  backoff  core 05 -10 → -9
+                                                                                                                          10:15  fail     core 05 fails at -10
+                                                                                                                          10:15  fail     rerun of R7 all-core on 00-07 · wrong result · core 05 named
+                                                                                                                          10:15  backoff  core 06 -30 → -29
+                                                                                                                          10:15  fail     core 06 fails at -30
+                                                                                                                          10:15  fail     R7 full CCD 0 on 00-07 · wrong result · core 06 named
+                                                                                                                          10:15  record   R7 partial CCD 0 on 00-04 06 07 · wrong result in trial 4 of 4 · record only, moves nothing
+                                                                                                                          10:15  record   R7 partial CCD 0 on 00-04 06 07 · the stress program quit in trial 3 of 4 · record only, moves
+                                                                                                                          +168 more
 
    ?  help    l  log    esc  back    q  close view

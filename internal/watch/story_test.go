@@ -25,7 +25,7 @@ func appendStoryEvents(events []journal.Event, payloads ...journal.Payload) []jo
 
 func TestIdleTrialHoldsEveryViewUntilPlannedEnd(t *testing.T) {
 	t.Parallel()
-	events := cutTrial(t, fixtureEvents(t, "concluded"), func(p *journal.TrialIntent) bool { return p.Regime == machine.R6 })
+	events := cutTrial(t, simulated(t, sessionJournal), func(p *journal.TrialIntent) bool { return p.Regime == machine.R6 })
 	s := Project(events)
 	if s.trial == nil || !s.trial.hasStarted {
 		t.Fatal("fixture must have a started idle trial")
@@ -58,7 +58,7 @@ func TestIdleTrialHoldsEveryViewUntilPlannedEnd(t *testing.T) {
 
 func TestTrialIntentDoesNotFreezeBeforeStart(t *testing.T) {
 	t.Parallel()
-	events := fixtureEvents(t, "concluded")
+	events := simulated(t, sessionJournal)
 	intent := cutAt(t, events, func(e journal.Event) bool {
 		p, ok := e.Data.(*journal.TrialIntent)
 		return ok && p.Regime == machine.R6
@@ -79,7 +79,7 @@ func TestTrialIntentDoesNotFreezeBeforeStart(t *testing.T) {
 
 func TestBetweenTrialsNamesLastOutcomeInsteadOfCountdown(t *testing.T) {
 	t.Parallel()
-	events := fixtureEvents(t, "concluded")
+	events := simulated(t, sessionJournal)
 	checking := cutTrial(t, events, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseChecking })
 	last := checking[len(checking)-1]
 	ended := cutAt(t, events, func(e journal.Event) bool { return e.Seq > last.Seq && e.Kind == journal.KindTrialEnd })
@@ -103,7 +103,7 @@ func TestBetweenTrialsNamesLastOutcomeInsteadOfCountdown(t *testing.T) {
 
 func TestStoppedFrameLabelsSavedNotAppliedOffsets(t *testing.T) {
 	t.Parallel()
-	events := fixtureEvents(t, "concluded")
+	events := simulated(t, sessionJournal)
 	s := Project(events)
 	if s.stopped == nil || !s.stopped.saved {
 		t.Fatal("fixture must have a stopped run with restored hardware")

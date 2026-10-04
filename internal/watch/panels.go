@@ -756,7 +756,7 @@ func (s Snapshot) deepenLines(t tables, width int) []string {
 		out = append(out, textStyle.Render("Waiting for a passed full cycle."))
 	}
 	out = append(out, fieldRow(t, "has room", textStyle.Render(coreIDs(d.room)+" · in this order"), width))
-	for i, target := range d.target {
+	for i, target := range d.profile {
 		if i >= len(s.cores) || target == s.cores[i].profile {
 			continue
 		}

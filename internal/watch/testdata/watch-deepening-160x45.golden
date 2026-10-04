@@ -26,19 +26,19 @@
   DEEPEN · ROUND 1 ──────────────────────────────────────────────────────────     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
 
   has room    00-10 12-15 · in this order                                         12:48  room     core 15 -10 → -30
-  move        core 00 goes deeper: -30 → -50                                      12:48  room     core 07 -10 → -30
-  move        core 01 goes deeper: -30 → -50                                      12:48  room     core 14 -10 → -30
-  move        core 02 goes deeper: -30 → -50                                      12:48  room     core 06 -10 → -30
-  move        core 03 goes deeper: -30 → -50                                      12:48  room     core 13 -10 → -30
-  move        core 04 goes deeper: -30 → -50                                      12:48  room     core 05 -10 → -30
-  move        core 05 goes deeper: -30 → -50                                      12:48  room     core 12 -10 → -30
-  move        core 06 goes deeper: -30 → -50                                      12:48  room     core 04 -10 → -30
-  move        core 07 goes deeper: -30 → -50                                      12:48  room     core 03 -10 → -30
-  move        core 08 goes deeper: -30 → -50                                      12:48  room     core 10 -10 → -30
-  move        core 09 goes deeper: -30 → -50                                      12:48  room     core 02 -10 → -30
-  move        core 10 goes deeper: -30 → -50                                      12:48  room     core 09 -10 → -30
-  move        core 12 goes deeper: -30 → -50                                      12:48  room     core 01 -10 → -30
-  move        core 13 goes deeper: -30 → -50                                      12:48  room     core 08 -10 → -30
-  +37 more                                                                        +186 more
+                                                                                  12:48  room     core 07 -10 → -30
+  CHECKS                                                                          12:48  room     core 14 -10 → -30
+  R1 on 00  0/5 passed  mprime SSE 4K-21K                                         12:48  room     core 06 -10 → -30
+  R2 on 00  0/5 passed  mprime AVX2 36K-248K                                      12:48  room     core 13 -10 → -30
+  R1 on 08  0/5 passed  mprime SSE 4K-21K                                         12:48  room     core 05 -10 → -30
+  R2 on 08  0/5 passed  mprime AVX2 36K-248K                                      12:48  room     core 12 -10 → -30
+  R1 on 01  0/5 passed  mprime SSE 4K-21K                                         12:48  room     core 04 -10 → -30
+  R2 on 01  0/5 passed  mprime AVX2 36K-248K                                      12:48  room     core 03 -10 → -30
+  R1 on 09  0/5 passed  mprime SSE 4K-21K                                         12:48  room     core 10 -10 → -30
+  R2 on 09  0/5 passed  mprime AVX2 36K-248K                                      12:48  room     core 02 -10 → -30
+  R1 on 02  0/5 passed  mprime SSE 4K-21K                                         12:48  room     core 09 -10 → -30
+  R2 on 02  0/5 passed  mprime AVX2 36K-248K                                      12:48  room     core 01 -10 → -30
+  R1 on 10  0/5 passed  mprime SSE 4K-21K                                         12:48  room     core 08 -10 → -30
+  +22 more                                                                        +186 more
 
    ?  help    l  log    esc  back    q  close view

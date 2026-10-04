@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,7 +20,6 @@ import (
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/simrun"
-	"github.com/shgew/togi/internal/watch/watchtest"
 )
 
 type watchCut struct {
@@ -26,15 +27,95 @@ type watchCut struct {
 	events []journal.Event
 }
 
-func fixtureEvents(tb testing.TB, name string) []journal.Event {
+// simulate runs a simulated session through its first clean cycle, or until until reports true, and returns its
+// journal at the current ruleset.
+func simulate(m *sim.Machine, cfg config.Config, until func(journal.Event) bool) ([]journal.Event, error) {
+	dir, err := os.MkdirTemp("", "togi-watch-frames")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	_, err = simrun.Simulate(context.Background(), simrun.Input{
+		Config: cfg, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true, Until: until,
+	})
+	if err != nil {
+		return nil, err
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || torn != nil {
+		return nil, fmt.Errorf("read simulated journal: %w, torn %q", err, torn)
+	}
+	return events, nil
+}
+
+// sessionJournal is a default simulated machine through its first clean cycle: search, checking with R6, hunts,
+// crash recoveries and the stop.
+var sessionJournal = sync.OnceValues(func() ([]journal.Event, error) {
+	m, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		return nil, err
+	}
+	return simulate(m, config.Default(), nil)
+})
+
+// probeMachine fails together only through a combination of cores 03 and 11, so its hunt probes members.
+func probeMachine() (*sim.Machine, config.Config, error) {
+	model := sim.DefaultModel()
+	model.PastLimitRate = 1
+	model.Signals = map[machine.Signal]float64{machine.Crash: 1}
+	model.CrashMCE = 0
+	limits := make([]sim.Limits, 16)
+	for i := range limits {
+		limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
+		limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
+	}
+	m, err := sim.New(sim.Config{
+		Seed: 1, Cores: 16, Limits: limits, Model: &model,
+		Joints: []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}},
+	})
+	cfg := config.Default()
+	cfg.CandidateSoloLimits = make(map[int]int, 16)
+	for core := range 16 {
+		cfg.CandidateSoloLimits[core] = -10
+	}
+	return m, cfg, err
+}
+
+// probeJournal runs the probe machine until its first deepening trial starts.
+var probeJournal = sync.OnceValues(func() ([]journal.Event, error) {
+	m, cfg, err := probeMachine()
+	if err != nil {
+		return nil, err
+	}
+	deepening := false
+	return simulate(m, cfg, func(e journal.Event) bool {
+		switch p := e.Data.(type) {
+		case *journal.TrialIntent:
+			deepening = p.Phase == journal.PhaseDeepening
+		case *journal.TrialStart:
+			return deepening
+		}
+		return false
+	})
+})
+
+// combinationJournal runs the probe machine to its stop, with the combination it found.
+var combinationJournal = sync.OnceValues(func() ([]journal.Event, error) {
+	m, cfg, err := probeMachine()
+	if err != nil {
+		return nil, err
+	}
+	return simulate(m, cfg, nil)
+})
+
+// simulated returns a copy of a simulated journal, so a test can append to it.
+func simulated(tb testing.TB, run func() ([]journal.Event, error)) []journal.Event {
 	tb.Helper()
-	dir := tb.TempDir()
-	watchtest.Install(tb, dir, name)
-	events, _, err := journal.ReadReplay(dir, 5)
+	events, err := run()
 	if err != nil {
 		tb.Fatal(err)
 	}
-	return events
+	return slices.Clone(events)
 }
 
 func cutAt(tb testing.TB, events []journal.Event, accept func(journal.Event) bool) []journal.Event {
@@ -66,54 +147,12 @@ func cutTrial(tb testing.TB, events []journal.Event, accept func(*journal.TrialI
 
 func probeEvents(t *testing.T) []journal.Event {
 	t.Helper()
-	model := sim.DefaultModel()
-	model.PastLimitRate = 1
-	model.Signals = map[machine.Signal]float64{machine.Crash: 1}
-	model.CrashMCE = 0
-	limits := make([]sim.Limits, 16)
-	for i := range limits {
-		limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
-		limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
-	}
-	m, err := sim.New(sim.Config{
-		Seed: 1, Cores: 16, Limits: limits, Model: &model,
-		Joints: []sim.Joint{{Members: map[int]int{3: -10, 11: -10}, Regimes: []machine.Regime{machine.R7}, Rate: 10}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg := config.Default()
-	cfg.CandidateSoloLimits = make(map[int]int, 16)
-	for core := range 16 {
-		cfg.CandidateSoloLimits[core] = -10
-	}
-	dir := t.TempDir()
-	deepening := false
-	_, err = simrun.Simulate(context.Background(), simrun.Input{
-		Config: cfg, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true,
-		Until: func(e journal.Event) bool {
-			switch p := e.Data.(type) {
-			case *journal.TrialIntent:
-				deepening = p.Phase == journal.PhaseDeepening
-			case *journal.TrialStart:
-				return deepening
-			}
-			return false
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	events, torn, err := journal.Read(dir)
-	if err != nil || torn != nil {
-		t.Fatalf("read simulated journal: %v, torn %q", err, torn)
-	}
-	return events
+	return simulated(t, probeJournal)
 }
 
 func watchCuts(t *testing.T) []watchCut {
 	t.Helper()
-	events := fixtureEvents(t, "concluded")
+	events := simulated(t, sessionJournal)
 	checking := cutTrial(t, events, func(p *journal.TrialIntent) bool {
 		return p.Phase == journal.PhaseChecking && p.Regime == machine.R7
 	})
@@ -133,14 +172,14 @@ func watchCuts(t *testing.T) []watchCut {
 		})},
 		{"confirm", cutTrial(t, probes, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseSearch })},
 		{"checking", checking},
-		{"hunt", cutTrial(t, fixtureEvents(t, "hunt"), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseHunt })},
+		{"hunt", cutTrial(t, simulated(t, sessionJournal), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseHunt })},
 		{"member-probe", memberProbe},
 		{"deepening", cutTrial(t, probes, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })},
 		{"idle", cutTrial(t, events, func(p *journal.TrialIntent) bool { return p.Regime == machine.R6 })},
 		{"between", cutAt(t, events, func(e journal.Event) bool { return e.Seq > last.Seq && e.Kind == journal.KindTrialEnd })},
 		{"recovering", cutAt(t, events, func(e journal.Event) bool { return e.Kind == journal.KindCrashDetected })},
 		{"stopped", events},
-		{"combination", fixtureEvents(t, "combination")},
+		{"combination", simulated(t, combinationJournal)},
 		{"deadend", slices.Concat(checking, []journal.Event{
 			{Seq: last.Seq + 1, Time: last.Time.Add(time.Minute), Boot: last.Boot, Kind: deadEnd.Kind(), Msg: deadEnd.Message(), Data: deadEnd},
 		})},
@@ -294,12 +333,7 @@ func TestWatchWithoutJournal(t *testing.T) {
 
 func TestWatchBetweenTrialMCE(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	watchtest.Install(t, dir, "concluded")
-	events, _, err := journal.ReadReplay(dir, 5)
-	if err != nil {
-		t.Fatal(err)
-	}
+	events := simulated(t, sessionJournal)
 	p := &journal.MCE{CPU: 0, Core: 0, Corrected: true, BetweenTrials: true, Lines: []string{"between-trial hardware error"}}
 	last := events[len(events)-1]
 	e := journal.Event{Seq: last.Seq + 1, Time: last.Time.Add(time.Minute), Boot: "between-trials", Kind: p.Kind(), Msg: p.Message(), Data: p}
@@ -311,7 +345,7 @@ func TestWatchBetweenTrialMCE(t *testing.T) {
 }
 
 func BenchmarkProject(b *testing.B) {
-	events := fixtureEvents(b, "concluded")
+	events := simulated(b, sessionJournal)
 	events = cutTrial(b, events, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseChecking && p.Regime == machine.R7 })
 	b.ReportAllocs()
 	b.ResetTimer()

@@ -293,7 +293,7 @@ type turnView struct {
 type deepenView struct {
 	round   int
 	room    []int // cores with room, in the order deepening tries them
-	target  []int
+	profile []int // the profile the round moves to
 	checks  []journal.CheckState
 	waiting bool // deepening waits for a passed full cycle
 }

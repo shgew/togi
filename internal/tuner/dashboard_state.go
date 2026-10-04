@@ -120,12 +120,26 @@ func (s *State) CyclePlan() CyclePlan {
 		}
 		out.Steps = append(out.Steps, step)
 	}
+	// A class can recur in later steps; the trial in flight runs only the current step's part, or the partial step
+	// it records.
+	for i := range out.Steps {
+		for j := range out.Steps[i].Parts {
+			part := &out.Steps[i].Parts[j]
+			if part.Running && (part.RecordOnly && running.Step != i+1 || !part.RecordOnly && i != out.Current) {
+				part.Running = false
+			}
+		}
+	}
 	return out
 }
 
 func (s *State) checkingStepPlan(step int) *journal.CheckingStep {
 	if started := s.checking.partial[step+1]; started != nil {
 		return started.start
+	}
+	if len(s.checking.profile) != len(s.cores) {
+		// Without the cycle's recorded profile, partial loads cannot be planned yet.
+		return &journal.CheckingStep{Cycle: s.checking.cycle, Step: step + 1}
 	}
 	return s.startCheckingStep(step)
 }
@@ -217,7 +231,7 @@ func (s *State) DeepeningPlan() DeepeningPlan {
 	}
 	if r := s.round; r != nil {
 		out.Round = r.start.Round
-		out.Target = slices.Clone(r.start.Target)
+		out.Profile = slices.Clone(r.start.Profile)
 		out.Checks = s.projectRound().Checks
 	}
 	return out
@@ -249,12 +263,17 @@ func (s *State) Requirement(p *journal.TrialIntent) TrialRequirement {
 			}
 		}
 	case p.Condition == machine.Alone:
-		c := s.core(*p.Core)
-		if c.check {
-			needed = s.n
-			since = c.phaseSeq
-			rule = soloLimitEvidence
+		var c *core
+		if p.Core != nil {
+			c = s.core(*p.Core)
 		}
+		if c == nil || !c.check {
+			// An ordinary search step needs one fresh trial; earlier passes in the class answered other steps.
+			return TrialRequirement{Trial: 1, Needed: 1}
+		}
+		needed = s.n
+		since = c.phaseSeq
+		rule = soloLimitEvidence
 	case p.Hunt > 0 && s.hunt != nil:
 		needed = s.hunt.start.Trials
 		rule = huntEvidence

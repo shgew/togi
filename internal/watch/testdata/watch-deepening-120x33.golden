@@ -21,12 +21,12 @@
  DEEPEN · ROUND 1 ────────────────────────────────────────   WHAT HAPPENED ──────────────────────────────────── l: all
 
  has room00-10 12-15 · in this order                         12:48  room     core 15 -10 → -30
- move   core 00 goes deeper: -30 → -50                       12:48  room     core 07 -10 → -30
- move   core 01 goes deeper: -30 → -50                       12:48  room     core 14 -10 → -30
- move   core 02 goes deeper: -30 → -50                       12:48  room     core 06 -10 → -30
- move   core 03 goes deeper: -30 → -50                       12:48  room     core 13 -10 → -30
- move   core 04 goes deeper: -30 → -50                       12:48  room     core 05 -10 → -30
- move   core 05 goes deeper: -30 → -50                       12:48  room     core 12 -10 → -30
- +44 more                                                    +193 more
+                                                             12:48  room     core 07 -10 → -30
+ CHECKS                                                      12:48  room     core 14 -10 → -30
+ R1 on 00  0/5 passed  mprime SSE 4K-21K                     12:48  room     core 06 -10 → -30
+ R2 on 00  0/5 passed  mprime AVX2 36K-248K                  12:48  room     core 13 -10 → -30
+ R1 on 08  0/5 passed  mprime SSE 4K-21K                     12:48  room     core 05 -10 → -30
+ R2 on 08  0/5 passed  mprime AVX2 36K-248K                  12:48  room     core 12 -10 → -30
+ +29 more                                                    +193 more
 
   ?  help    l  log    esc  back    q  close view
