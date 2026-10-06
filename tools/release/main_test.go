@@ -90,9 +90,11 @@ func (f *fakeGit) mutations() []string {
 	return got
 }
 
-// staged returns the content each update-index call stages by path, and the paths it removes.
-func (f *fakeGit) staged() (map[string]string, []string) {
-	files := map[string]string{}
+type stagedFile struct{ Mode, Content string }
+
+// staged returns the mode and content each update-index call stages by path, and the paths it removes.
+func (f *fakeGit) staged() (map[string]stagedFile, []string) {
+	files := map[string]stagedFile{}
 	var removed []string
 	for _, c := range f.calls {
 		if c.args[0] != "update-index" {
@@ -100,9 +102,9 @@ func (f *fakeGit) staged() (map[string]string, []string) {
 		}
 		switch c.args[1] {
 		case "--cacheinfo":
-			_, entry, _ := strings.Cut(c.args[2], ",")
+			mode, entry, _ := strings.Cut(c.args[2], ",")
 			blob, path, _ := strings.Cut(entry, ",")
-			files[path] = f.blobs[blob]
+			files[path] = stagedFile{Mode: mode, Content: f.blobs[blob]}
 		case "--force-remove":
 			removed = append(removed, c.args[2])
 		}
@@ -187,7 +189,8 @@ func TestRelease(t *testing.T) {
 				t.Fatalf("release read origin/main before fetching it: %v", commands)
 			}
 			files, removed := git.staged()
-			if diff := cmp.Diff(map[string]string{"version.txt": tc.next + "\n", "CHANGELOG.md": tc.changelogOut}, files); diff != "" {
+			want := map[string]stagedFile{"version.txt": {Mode: "100644", Content: tc.next + "\n"}, "CHANGELOG.md": {Mode: "100644", Content: tc.changelogOut}}
+			if diff := cmp.Diff(want, files); diff != "" {
 				t.Fatalf("committed files mismatch (-want +got):\n%s", diff)
 			}
 			var consumed []string

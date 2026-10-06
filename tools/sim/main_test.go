@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/shgew/togi/internal/journal"
 )
 
 func TestSimRefusesInvalidInputs(t *testing.T) {
@@ -91,6 +93,37 @@ func TestSimInvalidMachineCreatesNoTemporaryState(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("invalid input created temporary state: %v", entries)
+	}
+}
+
+func TestSimDefaultStateDirIsAnnouncedTemporaryDirectory(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	var out bytes.Buffer
+	if got := run([]string{"--max-boots", "2"}, &out); got != 3 {
+		t.Fatalf("exit %d, output %q", got, out.String())
+	}
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), "togi-sim-") {
+		t.Fatalf("temporary directory entries: %v", entries)
+	}
+	dir := filepath.Join(tmp, entries[0].Name())
+	if line, _, _ := strings.Cut(out.String(), "\n"); line != "sim: state directory "+dir {
+		t.Fatalf("first output line %q, want the state directory %s", line, dir)
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || torn != nil {
+		t.Fatalf("read journal: %v, torn %q", err, torn)
+	}
+	boots := map[string]bool{}
+	for _, e := range events {
+		boots[e.Boot] = true
+	}
+	if diff := cmp.Diff(2, len(boots)); diff != "" {
+		t.Fatalf("boots journaled in the state directory (-want +got):\n%s", diff)
 	}
 }
 
