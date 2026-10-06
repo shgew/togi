@@ -30,11 +30,11 @@ func TestKnownFailureSkipDoesNotRecountIdleFailure(t *testing.T) {
 	for i, payload := range payloads {
 		events = append(events, journal.Event{Seq: i + 1, Time: time.Unix(int64(i), 0), Boot: "boot", Data: payload})
 	}
-	if diff := cmp.Diff([][]string{{"R6", "-", "crash", "unattributed", "1"}}, reportRows(t, events, "Failures")); diff != "" {
+	m := computeEvents(events, time.Time{})
+	if diff := cmp.Diff([]entry[failureKey, int]{{failureKey{machine.R6, "-", machine.Crash, journal.Unattributed}, 1}}, m.failures.counts, metricFields); diff != "" {
 		t.Fatalf("skip recounted the idle failure (-want +got):\n%s", diff)
 	}
-	rows := reportRows(t, events, "Prior evidence per hunt group")
-	if diff := cmp.Diff("1", rows[0][3]); diff != "" {
+	if diff := cmp.Diff(1, m.evidence.groups[0].prior); diff != "" {
 		t.Fatalf("skip invalidated a post-source pass (-want +got):\n%s", diff)
 	}
 }

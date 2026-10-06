@@ -48,7 +48,7 @@ func TestR7RequestReport(t *testing.T) {
 	var got bytes.Buffer
 	tab := &table{out: &got}
 	session := facts.FromEvents(events)
-	renderRequests(tab, r7Measurements(session, project(session), at))
+	renderRequests(tab, computeRequests(r7Measurements(session, project(session), at)))
 	if err := tab.writer.Flush(); err != nil {
 		t.Fatal(err)
 	}
@@ -68,35 +68,26 @@ func TestR7RequestReport(t *testing.T) {
 	}
 }
 
-const (
-	requestsSection  = "R7 voltage requests"
-	topSection       = "R7 trials by top request (4 mV bins)"
-	requesterSection = "R7 trials by top requester"
-)
-
 func TestR7RequestsRecoveredFromSamples(t *testing.T) {
 	t.Parallel()
-	var out, errOut bytes.Buffer
-	if err := run([]string{"--state-dir", filepath.Join("testdata", "recovered-state")}, &out, &errOut); err != nil {
+	session, err := facts.ReadJournal(filepath.Join("testdata", "recovered-state", "events.jsonl"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	report := out.String()
-	if diff := cmp.Diff([][]string{{"failures", "without", "request", "telemetry", "1"}}, sectionRows(t, report, requestsSection)); diff != "" {
-		t.Errorf("missing telemetry (-want +got):\n%s", diff)
+	const class = "R7/load/00,01/120s"
+	want := requestMetrics{
+		missingFailures: 1,
+		bins: []entry[requestBin, requestCounts]{
+			{requestBin{class, 1.128}, requestCounts{trials: 1, failures: 1}},
+			{requestBin{class, 1.2}, requestCounts{trials: 1}},
+		},
+		requesters: []entry[requester, requestCounts]{
+			{requester{class, 0}, requestCounts{trials: 1}},
+			{requester{class, 1}, requestCounts{trials: 1, failures: 1}},
+		},
 	}
-	wantTop := [][]string{
-		{"R7/load/00,01/120s", "[1.128,", "1.132)", "1", "1"},
-		{"R7/load/00,01/120s", "[1.200,", "1.204)", "1", "0"},
-	}
-	if diff := cmp.Diff(wantTop, sectionRows(t, report, topSection)); diff != "" {
-		t.Errorf("top requests (-want +got):\n%s", diff)
-	}
-	wantRequesters := [][]string{
-		{"R7/load/00,01/120s", "00", "1", "0"},
-		{"R7/load/00,01/120s", "01", "1", "1"},
-	}
-	if diff := cmp.Diff(wantRequesters, sectionRows(t, report, requesterSection)); diff != "" {
-		t.Errorf("top requesters (-want +got):\n%s", diff)
+	if diff := cmp.Diff(want, compute(session, time.Time{}).requests, metricFields); diff != "" {
+		t.Errorf("requests (-want +got):\n%s", diff)
 	}
 }
 
@@ -124,16 +115,15 @@ func TestR7RequestsIncludeCarriedFacts(t *testing.T) {
 	for i, p := range payloads {
 		events[i] = journal.Event{Seq: i + 1, Time: at, Data: p}
 	}
-	if diff := cmp.Diff([][]string{{"failures", "without", "request", "telemetry", "0"}}, reportRows(t, events, requestsSection)); diff != "" {
-		t.Errorf("missing telemetry (-want +got):\n%s", diff)
+	const key = "R7/load/00,01/120s"
+	want := requestMetrics{
+		bins:       []entry[requestBin, requestCounts]{{requestBin{key, 1.2}, requestCounts{trials: 3, failures: 2}}},
+		requesters: []entry[requester, requestCounts]{{requester{key, 1}, requestCounts{trials: 3, failures: 2}}},
 	}
-	if diff := cmp.Diff([][]string{{"R7/load/00,01/120s", "[1.200,", "1.204)", "3", "2"}}, reportRows(t, events, topSection)); diff != "" {
-		t.Errorf("top requests (-want +got):\n%s", diff)
+	if diff := cmp.Diff(want, computeEvents(events, time.Time{}).requests, metricFields); diff != "" {
+		t.Errorf("requests (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff([][]string{{"R7/load/00,01/120s", "01", "3", "2"}}, reportRows(t, events, requesterSection)); diff != "" {
-		t.Errorf("top requesters (-want +got):\n%s", diff)
-	}
-	if diff := cmp.Diff([][]string{{"none"}}, reportRows(t, events, topSection, at.Add(time.Second))); diff != "" {
+	if diff := cmp.Diff(requestMetrics{}, computeEvents(events, at.Add(time.Second)).requests, metricFields); diff != "" {
 		t.Errorf("carried facts before --since (-want +got):\n%s", diff)
 	}
 }

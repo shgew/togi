@@ -67,48 +67,57 @@ func TestReviewBoundaryReport(t *testing.T) {
 	}
 	add(&journal.HuntEnd{Hunt: 2, Result: "combination", Members: []journal.CombinationMember{{Core: 1, Offset: -10}, {Core: 0, Offset: -10}}})
 	for _, since := range []time.Time{{}, cutoff} {
-		if diff := cmp.Diff([][]string{{"2", "1", "part", "1", "1", "true", "1", "0", "1", "0.017"}, {"2", "2", "part", "1", "1", "true", "0", "1", "1", "0.017"}, {"2", "3", "part", "1", "1", "true", "0", "0", "1", "0.017"}}, reportRows(t, events, "Prior evidence per hunt group", since)); diff != "" {
+		m := computeEvents(events, since)
+		wantGroups := []groupReuse{
+			{hunt: 2, group: 1, stage: "part", prior: 1, required: 1, established: true, passes: 1, trials: 1, seconds: 60},
+			{hunt: 2, group: 2, stage: "part", prior: 1, required: 1, established: true, failures: 1, trials: 1, seconds: 60},
+			{hunt: 2, group: 3, stage: "part", prior: 1, required: 1, established: true, trials: 1, seconds: 60},
+		}
+		if diff := cmp.Diff(wantGroups, m.evidence.groups, metricFields); diff != "" {
 			t.Fatal(diff)
 		}
-		if diff := cmp.Diff([][]string{{"0002", "part", "3", "3", "1", "1", "3", "0.050"}}, reportRows(t, events, "Prior evidence by hunt and stage", since)); diff != "" {
+		wantStages := []entry[stageKey, stageReuse]{{stageKey{2, "part"}, stageReuse{groups: 3, established: 3, passed: 1, failed: 1, trials: 3, seconds: 180}}}
+		if diff := cmp.Diff(wantStages, m.evidence.stages, metricFields); diff != "" {
 			t.Fatal(diff)
 		}
 	}
-	if diff := cmp.Diff([][]string{{"0001", "R6", "00,01", "failure", "1"}, {"0001", "R6", "00,01", "pass", "1"}}, reportRows(t, events, "Checking steps and together outcomes")); diff != "" {
+	all, recent := computeEvents(events, time.Time{}), computeEvents(events, cutoff)
+	wantSteps := []entry[stepKey, int]{
+		{stepKey{cycle: 1, regime: machine.R6, cores: "00,01", outcome: "failure"}, 1},
+		{stepKey{cycle: 1, regime: machine.R6, cores: "00,01", outcome: "pass"}, 1},
+	}
+	if diff := cmp.Diff(wantSteps, all.checking.steps, metricFields); diff != "" {
 		t.Fatalf("legacy all-core expansion (-want +got):\n%s", diff)
 	}
-	rows := reportRows(t, events, "Hunts")
-	if diff := cmp.Diff("1/0/0/1", rows[0][6]); diff != "" {
+	cancelled := all.hunts[0]
+	if diff := cmp.Diff([4]int{1, 0, 0, 1}, [4]int{len(cancelled.groups), cancelled.ran, cancelled.inferred, cancelled.skipped}); diff != "" {
+		t.Fatalf("planned/run/inferred/skipped (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(parkedSeq, cancelled.start.ParkedSeq); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff(fmt.Sprintf("#%d", parkedSeq), rows[0][4]); diff != "" {
+	if len(recent.hunts) != 1 || recent.hunts[0].start.Hunt != 2 {
+		t.Fatalf("cutoff hunts = %v", recent.hunts)
+	}
+	if diff := cmp.Diff([]entry[string, int]{{"inconclusive", 1}}, recent.evidence.warnings, metricFields); diff != "" {
 		t.Fatal(diff)
 	}
-	if got := reportRows(t, events, "Hunts", cutoff); len(got) != 1 || got[0][0] != "2" {
-		t.Fatalf("cutoff hunts = %v", got)
-	}
-	if diff := cmp.Diff([][]string{{"inconclusive", "1"}, {"decisions", "resting", "on", "a", "single", "carried", "failure", "0"}}, reportRows(t, events, "Evidence quality", cutoff)); diff != "" {
+	if diff := cmp.Diff(0, recent.evidence.singleCarried); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff([][]string{{"2", "parked", "no", "reliable", "result"}}, reportRows(t, events, "Inconclusive trials")); diff != "" {
+	if len(all.inconclusive) != 1 || all.inconclusive[0].Intent.Trial != "2" || all.inconclusive[0].Intent.Condition != machine.Parked || all.inconclusive[0].End.Reason != "no reliable result" {
+		t.Fatalf("inconclusive trials = %v", all.inconclusive)
+	}
+	if diff := cmp.Diff(checkingMetrics{}, recent.checking, metricFields); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff([][]string{{"cycles", "started", "0"}, {"cycles", "ended", "0"}, {"full", "cycles", "0"}, {"reruns", "0"}, {"reruns", "failing", "first", "trial", "0"}}, reportRows(t, events, "Checking", cutoff)); diff != "" {
+	if diff := cmp.Diff([]entry[exposureKey, exposure]{{exposureKey{machine.R6, "load"}, exposure{trials: 3, seconds: 180, failures: 1}}}, recent.exposure, metricFields); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff([][]string{{"R6", "load", "3", "0.050", "1"}}, reportRows(t, events, "Exposure", cutoff)); diff != "" {
+	if diff := cmp.Diff([]entry[failureKey, int]{{failureKey{machine.R6, "load", machine.ComputationError, journal.Unattributed}, 1}}, recent.failures.counts, metricFields); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff([][]string{{"R6", "load", string(machine.ComputationError), "unattributed", "1"}}, reportRows(t, events, "Failures", cutoff)); diff != "" {
-		t.Fatal(diff)
-	}
-	fields := map[string]string{}
-	for _, row := range reportRows(t, events, "Session", cutoff) {
-		if row[0] == "builds" || row[0] == "since" {
-			fields[row[0]] = row[1]
-		}
-	}
-	if diff := cmp.Diff(map[string]string{"builds": "1.2.3", "since": cutoff.Format(time.RFC3339)}, fields); diff != "" {
+	if diff := cmp.Diff([]string{"1.2.3"}, recent.session.builds); diff != "" {
 		t.Fatal(diff)
 	}
 }
@@ -153,7 +162,7 @@ func TestReviewEvenRecoveryMedian(t *testing.T) {
 		}
 		events = append(events, crash...)
 	}
-	if diff := cmp.Diff([][]string{{"4", "10.000", "40.000", "90.000"}}, reportRows(t, events, "Recovery gap")); diff != "" {
+	if diff := cmp.Diff(recoveryGap{4, 10, 40, 90}, computeEvents(events, time.Time{}).recovery, metricFields); diff != "" {
 		t.Fatal(diff)
 	}
 }
@@ -176,13 +185,13 @@ func TestCrashTimingBoundaries(t *testing.T) {
 			intent.Profile = []int{-10, -10}
 			intent.DurationS = 120
 			events[8].Data = &journal.Shutdown{Reason: journal.ShutdownCommand}
-			want := [][]string{{"0", "0"}, {"1-29", "0"}, {"30-59", "0"}, {"60-119", "0"}, {"120+", "0"}}
+			var want crashTiming
 			bin := 2
 			if duration >= 60 {
 				bin = 3
 			}
-			want[bin][1] = "1"
-			if diff := cmp.Diff(want, reportRows(t, events, "Crash timing (last evidence)")); diff != "" {
+			want[bin] = 1
+			if diff := cmp.Diff(want, computeEvents(events, time.Time{}).failures.timing); diff != "" {
 				t.Fatal(diff)
 			}
 		})
