@@ -36,14 +36,14 @@ func New(cfg config.Config, stateDir string) (machine.Machine, error) {
 		backends[machine.Ycruncher] = ycruncher.New(cfg.Backends.Ycruncher)
 	}
 	cores := drv.Topology()
-	conditions := smu.NewConditions("/", cores, os.ReadFile)
+	pmTable := smu.NewPMTableReader("/", cores, os.ReadFile)
 	user, userErr := trial.LookupIdentity(cfg.BackendUser)
-	h := &host{drv: drv, cfg: cfg, backends: backends, user: user, userErr: userErr, conditions: conditions}
+	h := &host{drv: drv, cfg: cfg, backends: backends, user: user, userErr: userErr, pmTable: pmTable}
 	return machine.Machine{
 		Clock:  clock{},
 		SMU:    drv,
 		Host:   h,
-		Trials: trial.New(trial.Options{Dir: filepath.Join(stateDir, "trials"), Backends: backends, Cores: cores, User: user, Conditions: conditions}),
+		Trials: trial.New(trial.Options{Dir: filepath.Join(stateDir, "trials"), Backends: backends, Cores: cores, User: user, PMTable: pmTable}),
 		Kernel: detect.NewKernel(cores),
 	}, nil
 }
@@ -72,12 +72,12 @@ func (clock) Sleep(ctx context.Context, d time.Duration) error {
 }
 
 type host struct {
-	drv        *smu.Driver
-	cfg        config.Config
-	backends   map[machine.Backend]backend.Backend
-	user       trial.Identity
-	userErr    error
-	conditions *smu.Conditions
+	drv      *smu.Driver
+	cfg      config.Config
+	backends map[machine.Backend]backend.Backend
+	user     trial.Identity
+	userErr  error
+	pmTable  *smu.PMTableReader
 }
 
 func (h *host) BootID() (string, error) { return detect.BootID() }
@@ -112,7 +112,7 @@ func (h *host) Preflight() []machine.Check {
 	if uid := os.Geteuid(); uid != 0 {
 		root = machine.Check{Name: "root", Detail: fmt.Sprintf("running as uid %d; run needs root", uid)}
 	}
-	identity := []machine.Check{root, h.drv.CheckCPU(), h.drv.CheckDriver(), h.conditions.Check()}
+	identity := []machine.Check{root, h.drv.CheckCPU(), h.drv.CheckDriver(), h.pmTable.Check()}
 	if !identity[1].OK || !identity[2].OK {
 		return identity
 	}

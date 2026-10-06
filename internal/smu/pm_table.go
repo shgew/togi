@@ -25,7 +25,7 @@ type pmTableResult struct {
 	started time.Time
 }
 
-type Conditions struct {
+type PMTableReader struct {
 	root           string
 	cores          int
 	topologyDetail string
@@ -38,8 +38,8 @@ type Conditions struct {
 	latest      pmTableResult
 }
 
-func NewConditions(root string, cores []machine.CoreInfo, readFile func(string) ([]byte, error)) *Conditions {
-	c := &Conditions{root: root, cores: len(cores), readFile: readFile, seenVersion: pmTableVersionUnavailable}
+func NewPMTableReader(root string, cores []machine.CoreInfo, readFile func(string) ([]byte, error)) *PMTableReader {
+	c := &PMTableReader{root: root, cores: len(cores), readFile: readFile, seenVersion: pmTableVersionUnavailable}
 	if len(cores) != 16 {
 		c.topologyDetail = fmt.Sprintf("unsupported core count %d", len(cores))
 	} else {
@@ -58,7 +58,7 @@ func NewConditions(root string, cores []machine.CoreInfo, readFile func(string) 
 
 // A stuck sysfs transfer cannot be cancelled; keep its one reader instead of
 // launching a replacement on each timeout.
-func (c *Conditions) startRead(now time.Time) {
+func (c *PMTableReader) startRead(now time.Time) {
 	c.done = make(chan struct{})
 	c.started = now
 	go func() {
@@ -76,7 +76,7 @@ func (c *Conditions) startRead(now time.Time) {
 	}()
 }
 
-func (c *Conditions) latestResult(now time.Time) pmTableResult {
+func (c *PMTableReader) latestResult(now time.Time) pmTableResult {
 	p := c.latest
 	switch {
 	case c.done != nil && now.Sub(c.started) >= pmTableReadTimeout:
@@ -113,7 +113,7 @@ func decodePMTable(version uint64, cores int, raw []byte) *machine.PMTable {
 	return p
 }
 
-func (c *Conditions) PMTable() *machine.PMTable {
+func (c *PMTableReader) PMTable() *machine.PMTable {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := time.Now()
@@ -124,7 +124,7 @@ func (c *Conditions) PMTable() *machine.PMTable {
 	return p.table
 }
 
-func (c *Conditions) Check() machine.Check {
+func (c *PMTableReader) Check() machine.Check {
 	c.mu.Lock()
 	now := time.Now()
 	if c.done == nil {

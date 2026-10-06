@@ -8,7 +8,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func (c *Conditions) readPMTable() (uint64, *machine.PMTable, string) {
+func (c *PMTableReader) readPMTable() (uint64, *machine.PMTable, string) {
 	root := filepath.Join(c.root, "sys/kernel/ryzen_smu_drv")
 	rawVersion, err := c.readFile(filepath.Join(root, "pm_table_version"))
 	if err != nil {

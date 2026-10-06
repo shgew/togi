@@ -38,8 +38,8 @@ func newConditionsSampler(o Options, spec machine.TrialSpec, started time.Time) 
 func (s *conditionsSampler) sample(started time.Time) machine.TrialConditions {
 	p := machine.TrialConditions{CoreMHz: make(map[int]int)}
 	p.TctlC, p.TccdC = readTemperatures(s.options.Hwmon)
-	if s.options.Conditions != nil {
-		p.PMTable = s.options.Conditions.PMTable()
+	if s.options.PMTable != nil {
+		p.PMTable = s.options.PMTable.PMTable()
 	}
 	for core, path := range s.cpus {
 		if value := readSensor(path); value != nil && *value >= 0 {

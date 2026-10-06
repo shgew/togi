@@ -27,7 +27,7 @@ func TestBlockedPMTablePreservesSupervision(t *testing.T) {
 					cores[i] = machine.CoreInfo{Core: i, CCD: i / 8}
 				}
 				var transfers atomic.Int64
-				conditions := smu.NewConditions("/", cores, func(path string) ([]byte, error) {
+				pmTable := smu.NewPMTableReader("/", cores, func(path string) ([]byte, error) {
 					if filepath.Base(path) == "pm_table_version" {
 						return []byte{0x05, 0x02, 0x62, 0x00}, nil
 					}
@@ -37,7 +37,7 @@ func TestBlockedPMTablePreservesSupervision(t *testing.T) {
 				})
 				synctest.Wait()
 				o := fakeOptions(t, "work")
-				o.SampleInterval, o.Conditions = 50*time.Millisecond, conditions
+				o.SampleInterval, o.PMTable = 50*time.Millisecond, pmTable
 				r := New(o)
 				h := &fakeHost{}
 				r.host = h

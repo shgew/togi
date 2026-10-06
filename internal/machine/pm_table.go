@@ -9,6 +9,6 @@ type PMTable struct {
 	CC6Pct          [16]float32 `json:"cc6_pct"`
 }
 
-type ConditionsReader interface {
+type PMTableReader interface {
 	PMTable() *PMTable
 }

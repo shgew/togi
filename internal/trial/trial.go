@@ -25,7 +25,7 @@ type Options struct {
 	NoScope                                            bool
 	SampleInterval, StallGrace, StallWindow, StopGrace time.Duration
 	Hwmon, CPUFreq, Powercap                           string
-	Conditions                                         machine.ConditionsReader
+	PMTable                                            machine.PMTableReader
 	teardown                                           time.Duration
 }
 

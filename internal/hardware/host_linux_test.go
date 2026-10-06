@@ -213,7 +213,7 @@ func TestPreflightRefusesUnvalidatedHardware(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				h := host{drv: drv, conditions: smu.NewConditions(root, drv.Topology(), os.ReadFile), userErr: errors.New("backend_user not configured")}
+				h := host{drv: drv, pmTable: smu.NewPMTableReader(root, drv.Topology(), os.ReadFile), userErr: errors.New("backend_user not configured")}
 				checks := h.Preflight()
 				var names []string
 				for _, check := range checks {

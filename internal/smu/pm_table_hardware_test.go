@@ -25,7 +25,7 @@ func TestHardwarePMTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := NewConditions("/", cores, os.ReadFile)
+	c := NewPMTableReader("/", cores, os.ReadFile)
 	t.Cleanup(func() {
 		c.mu.Lock()
 		done := c.done
