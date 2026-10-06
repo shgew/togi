@@ -67,12 +67,12 @@ The dashboard adapts to wide and compact terminals. It shows checking's cycle ch
 |[docs/adr/](docs/adr/)|Why each major decision was made|
 |[docs/prior-art.md](docs/prior-art.md)|What was taken from, and left out of, earlier tools|
 |[Issues](https://github.com/shgew/togi/issues)|The plan, ideas and bugs; the `1.0` milestone holds what ships in 1.0|
-|[CONTRIBUTING.md](CONTRIBUTING.md)|What contributions are accepted before 1.0|
+|[CONTRIBUTING.md](CONTRIBUTING.md)|Why togi takes no contributions|
 |[AGENTS.md](AGENTS.md)|Working on togi: workflow, commands and conventions|
 
 ## Contributing
 
-Bug reports are welcome as issues. Pull requests and feature requests are not taken before 1.0; [CONTRIBUTING.md](CONTRIBUTING.md) says why.
+togi takes no contributions: issues, comments and pull requests are limited to collaborators. [CONTRIBUTING.md](CONTRIBUTING.md) has the details.
 
 ## License
 

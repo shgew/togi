@@ -46,7 +46,7 @@ Every change, docs included, lands as a pull request against `main` on `github.c
 
 ## Issues
 
-Planning and coordination live in issues, filed from the templates in `.github/ISSUE_TEMPLATE/`. Run `just board` before choosing work.
+Planning and coordination live in issues, filed from the templates in `.github/ISSUE_TEMPLATE/`. Run `just board` before choosing work. togi takes no outside contributions (`CONTRIBUTING.md`): a GitHub interaction limit keeps issues, comments, reactions and pull requests to collaborators. GitHub lifts it after six months at most; when `just board` asks, renew it with `just lock-interactions`.
 
 - **Labels.** Kind: `idea` (a thought, not yet discussed), `design` (decided), `feature` (behavior ready to build), `bugfix`, `research` (opened by an autonomous research run), and `breaking` on issues and pull requests alike. Priority: `P0`–`P3`, as their label descriptions define them; no priority label means triaged and deliberately not scheduled. `needs-triage`: nobody has triaged it yet. `needs-decision`: waiting on the owner, with the question in a comment. The `1.0` milestone holds what ships in 1.0.
 - **Lifecycle:** an idea is discussed until decided, then its issue becomes a design with Why, Decided, Acceptance, Open, Pull requests, Links and a `Touches:` line; Pull requests lists the planned pull requests in landing order. When a discussion settles decisions, file or update the issue before it ends. Each pull request that implements part of a design moves its decisions into the spec or an ADR; the last one closes the issue. The spec and ADRs stay the lasting record.
@@ -83,8 +83,9 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | Command | Use |
 |---|---|
 | `just` | List the recipes |
-| `just board` | What waits on the owner, untriaged issues, work in progress with its branches, pull requests and `Touches:`, ready work by priority and block, overlaps between ready and in-progress `Touches:`, and the open `Ruleset N` issue (`go run ./tools/board`) |
+| `just board` | Who may post on the repository, what waits on the owner, untriaged issues, work in progress with its branches, pull requests and `Touches:`, ready work by priority and block, overlaps between ready and in-progress `Touches:`, and the open `Ruleset N` issue (`go run ./tools/board`) |
 | `just claim N BRANCH WORKTREE PLAN [BASE]` | Claim issue N: refuse if it is assigned, else assign it, link BRANCH from BASE (default `main`) and post the start comment naming WORKTREE and PLAN |
+| `just lock-interactions` | Limit issues, comments, reactions and pull requests to collaborators for six months, GitHub's longest interaction limit; run it when `just board` asks |
 | `just bot <gh args>` | Post review records and `review` checks as robotogi, using the private key file named by `ROBOTOGI_KEY_FILE` |
 | `just reviews` | The review track record of the merged pull requests: per pull request, robotogi's `review` check on its head, its findings by priority and outcome from the review records, and the time from opening to the first record; then totals (`go run ./tools/reviews`) |
 | `just test` | The tight loop |

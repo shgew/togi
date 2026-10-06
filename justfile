@@ -154,10 +154,15 @@ release-preview:
 changes:
     {{ dev }} go run ./tools/release -check changes
 
-# Print what waits on the owner, untriaged issues, work in progress, ready work, overlaps and the open Ruleset issue
+# Print who may post on the repository, what waits on the owner, untriaged issues, work in progress, ready work, overlaps and the open Ruleset issue
 [group('github')]
 board:
     {{ dev }} go run ./tools/board
+
+# Limit issues, comments, reactions and pull requests to collaborators for six months, GitHub's longest interaction limit
+[group('github')]
+lock-interactions:
+    {{ dev }} gh api -X PUT 'repos/{owner}/{repo}/interaction-limits' -f limit=collaborators_only -f expiry=six_months
 
 # Claim issue N for BRANCH from BASE (default main): refuse if it is assigned; else assign yourself, link BRANCH and post a start comment naming the branch, WORKTREE and the one-line PLAN
 [group('github')]
