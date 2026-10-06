@@ -221,13 +221,8 @@ func resolve(cfg Config) (Config, Model, error) {
 	if cfg.BIOS == nil {
 		cfg.BIOS = make([]int, cfg.Cores)
 	}
-	if len(cfg.BIOS) != cfg.Cores {
-		return Config{}, Model{}, fmt.Errorf("%d BIOS offsets for %d cores", len(cfg.BIOS), cfg.Cores)
-	}
-	for c, o := range cfg.BIOS {
-		if o < machine.MinOffset || o > machine.MaxOffset {
-			return Config{}, Model{}, fmt.Errorf("BIOS offset %d of core %d outside [-50, 0]", o, c)
-		}
+	if err := validateBIOS(cfg.BIOS, cfg.Cores); err != nil {
+		return Config{}, Model{}, err
 	}
 	if cfg.BIOSContext == (machine.BIOSContext{}) {
 		cfg.BIOSContext = defaultBIOSContext
@@ -239,65 +234,106 @@ func resolve(cfg Config) (Config, Model, error) {
 	if err := validateSignals(model.Signals); err != nil {
 		return Config{}, Model{}, err
 	}
-	if c := cfg.CCD; c != nil {
-		for _, x := range []float64{c.LogRate, c.Slope, c.Effect[0], c.Effect[1]} {
-			if math.IsNaN(x) || math.IsInf(x, 0) {
-				return Config{}, Model{}, errors.New("ccd parameters must be finite")
-			}
-		}
-		if c.Slope < 0 {
-			return Config{}, Model{}, errors.New("ccd slope must be nonnegative")
-		}
+	if err := validateCCD(cfg.CCD); err != nil {
+		return Config{}, Model{}, err
 	}
 	voltage, err := normalizeVoltage(cfg.SharedVoltage, cfg.Cores)
 	if err != nil {
 		return Config{}, Model{}, err
 	}
 	cfg.SharedVoltage = voltage
-	for _, kind := range slices.Sorted(maps.Keys(model.Reset)) {
-		weight := model.Reset[kind]
-		if !slices.Contains(resetOrder, kind) {
-			return Config{}, Model{}, fmt.Errorf("reset %q is not supported", kind)
-		}
-		if weight < 0 {
-			return Config{}, Model{}, fmt.Errorf("reset %q weight %g is negative", kind, weight)
-		}
+	if err := validateResets(model.Reset); err != nil {
+		return Config{}, Model{}, err
 	}
 	for _, trial := range slices.Sorted(maps.Keys(cfg.Script)) {
 		if err := validateOutcome(trial, cfg.Script[trial], cfg.Cores); err != nil {
 			return Config{}, Model{}, err
 		}
 	}
-	if cfg.Limits != nil && len(cfg.Limits) != cfg.Cores {
-		return Config{}, Model{}, fmt.Errorf("%d limits for %d cores", len(cfg.Limits), cfg.Cores)
-	}
-	for c, e := range cfg.Limits {
-		for _, v := range slices.Concat(e.Alone[:], e.Together[:]) {
-			if v < machine.MinOffset || v > 1 {
-				return Config{}, Model{}, fmt.Errorf("limit %d of core %d outside [-50, 1]", v, c)
-			}
-		}
+	if err := validateLimits(cfg.Limits, cfg.Cores); err != nil {
+		return Config{}, Model{}, err
 	}
 	if cfg.Ranking != nil && len(cfg.Ranking) != cfg.Cores {
 		return Config{}, Model{}, fmt.Errorf("%d ranking values for %d cores", len(cfg.Ranking), cfg.Cores)
 	}
-	for c, e := range cfg.Limits {
-		if e.Idle != nil && (*e.Idle < machine.MinOffset || *e.Idle > 1) {
-			return Config{}, Model{}, fmt.Errorf("idle limit %d of core %d outside [-50, 1]", *e.Idle, c)
-		}
-		for workload, offset := range e.Workload {
-			if offset < machine.MinOffset || offset > 1 {
-				return Config{}, Model{}, fmt.Errorf("workload %s limit %d of core %d outside [-50, 1]", workload, offset, c)
-			}
-		}
-		if e.Flat < 0 {
-			return Config{}, Model{}, fmt.Errorf("flat rate %g of core %d is negative", e.Flat, c)
-		}
+	if err := validateLimitHazards(cfg.Limits); err != nil {
+		return Config{}, Model{}, err
 	}
 	if err := validateJoints(cfg.Joints, cfg.Cores); err != nil {
 		return Config{}, Model{}, err
 	}
 	return cfg, model, nil
+}
+
+func validateBIOS(bios []int, cores int) error {
+	if len(bios) != cores {
+		return fmt.Errorf("%d BIOS offsets for %d cores", len(bios), cores)
+	}
+	for c, o := range bios {
+		if o < machine.MinOffset || o > machine.MaxOffset {
+			return fmt.Errorf("BIOS offset %d of core %d outside [-50, 0]", o, c)
+		}
+	}
+	return nil
+}
+
+func validateCCD(c *CCD) error {
+	if c == nil {
+		return nil
+	}
+	for _, x := range []float64{c.LogRate, c.Slope, c.Effect[0], c.Effect[1]} {
+		if math.IsNaN(x) || math.IsInf(x, 0) {
+			return errors.New("ccd parameters must be finite")
+		}
+	}
+	if c.Slope < 0 {
+		return errors.New("ccd slope must be nonnegative")
+	}
+	return nil
+}
+
+func validateResets(weights map[machine.ResetKind]float64) error {
+	for _, kind := range slices.Sorted(maps.Keys(weights)) {
+		weight := weights[kind]
+		if !slices.Contains(resetOrder, kind) {
+			return fmt.Errorf("reset %q is not supported", kind)
+		}
+		if weight < 0 {
+			return fmt.Errorf("reset %q weight %g is negative", kind, weight)
+		}
+	}
+	return nil
+}
+
+func validateLimits(limits []Limits, cores int) error {
+	if limits != nil && len(limits) != cores {
+		return fmt.Errorf("%d limits for %d cores", len(limits), cores)
+	}
+	for c, e := range limits {
+		for _, v := range slices.Concat(e.Alone[:], e.Together[:]) {
+			if v < machine.MinOffset || v > 1 {
+				return fmt.Errorf("limit %d of core %d outside [-50, 1]", v, c)
+			}
+		}
+	}
+	return nil
+}
+
+func validateLimitHazards(limits []Limits) error {
+	for c, e := range limits {
+		if e.Idle != nil && (*e.Idle < machine.MinOffset || *e.Idle > 1) {
+			return fmt.Errorf("idle limit %d of core %d outside [-50, 1]", *e.Idle, c)
+		}
+		for workload, offset := range e.Workload {
+			if offset < machine.MinOffset || offset > 1 {
+				return fmt.Errorf("workload %s limit %d of core %d outside [-50, 1]", workload, offset, c)
+			}
+		}
+		if e.Flat < 0 {
+			return fmt.Errorf("flat rate %g of core %d is negative", e.Flat, c)
+		}
+	}
+	return nil
 }
 
 func (cfg Config) clone() Config {
