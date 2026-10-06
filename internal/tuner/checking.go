@@ -68,10 +68,11 @@ func (s *State) foldCycle(e journal.Event, p *journal.CheckingCycle) {
 		s.projectionDirty = true
 		return
 	}
-	g.open = false
-	if p.Passed {
-		g.stepsDone = len(g.steps)
+	g.stepsDone = len(g.steps)
+	if !p.Passed {
+		g.stepsDone = s.checkingStepsDone()
 	}
+	g.open = false
 	if p.Passed && p.Full {
 		s.passedFullCycles = append(s.passedFullCycles, passedFullCycle{profile: slices.Clone(g.profile), seq: e.Seq, cycle: p.Cycle, allAtLimit: s.allAtLimit()})
 	}
