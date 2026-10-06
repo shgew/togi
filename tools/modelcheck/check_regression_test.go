@@ -29,7 +29,7 @@ func TestModelCheckResetWeights(t *testing.T) {
 			{"positive", 1},
 		} {
 			t.Run(string(kind)+"/"+tc.name, func(t *testing.T) {
-				const path = "../bench/testdata/model-ok.toml"
+				const path = "testdata/model-ok.toml"
 				cfg, err := sim.LoadMachine(path)
 				if err != nil {
 					t.Fatal(err)
@@ -54,7 +54,7 @@ func TestModelCheckResetWeights(t *testing.T) {
 }
 
 func TestModelCheckEligibility(t *testing.T) {
-	const machinePath = "../bench/testdata/model-ok.toml"
+	const machinePath = "testdata/model-ok.toml"
 	cfg, err := sim.LoadMachine(machinePath)
 	if err != nil {
 		t.Fatal(err)
