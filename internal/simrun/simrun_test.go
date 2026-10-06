@@ -187,6 +187,41 @@ func TestSimulatorRefusesAnotherJournalWriter(t *testing.T) {
 	}
 }
 
+func TestBootCapLeavesPartialSessionInJournal(t *testing.T) {
+	t.Parallel()
+	m, err := sim.New(huntConfig(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	_, err = Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true, MaxBoots: 3})
+	if !errors.Is(err, ErrBootCap) {
+		t.Fatalf("capped run: %v, want ErrBootCap", err)
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || torn != nil {
+		t.Fatalf("read capped journal: %v, torn %q", err, torn)
+	}
+	boots := make(map[string]bool)
+	crashes := 0
+	for _, e := range events {
+		boots[e.Boot] = true
+		if e.Kind == journal.KindCrashDetected {
+			crashes++
+		}
+	}
+	if diff := cmp.Diff([]int{3, 2}, []int{len(boots), crashes}); diff != "" {
+		t.Fatalf("boots and detected crashes (-want +got):\n%s", diff)
+	}
+	st, err := journal.ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(events[len(events)-1].Seq, st.LastSeq); diff != "" {
+		t.Fatalf("state after the cap (-want +got):\n%s", diff)
+	}
+}
+
 func TestNewSessionTrialGetsNoSamplesFromAnEarlierInvocation(t *testing.T) {
 	t.Parallel()
 	m, err := sim.New(huntConfig(4))

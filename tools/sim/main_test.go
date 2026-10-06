@@ -23,6 +23,7 @@ func TestSimRefusesInvalidInputs(t *testing.T) {
 		{"positional argument", []string{"extra"}, 2, "sim: unexpected positional arguments"},
 		{"zero cycles", []string{"--cycles", "0"}, 2, "sim: --cycles must be a positive integer"},
 		{"negative cycles", []string{"--cycles", "-1"}, 2, "sim: --cycles must be a positive integer"},
+		{"zero boots", []string{"--max-boots", "0"}, 2, "sim: --max-boots must be a positive integer"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
@@ -30,6 +31,15 @@ func TestSimRefusesInvalidInputs(t *testing.T) {
 				t.Fatalf("exit %d, output %q; want %d, %q", got, out.String(), tc.code, tc.diagnostic)
 			}
 		})
+	}
+}
+
+func TestSimBootCapExitsCensored(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	got := run([]string{"--max-boots", "2", "--state-dir", t.TempDir()}, &out)
+	if got != 3 || !strings.Contains(out.String(), "sim: simulate session: simulated machine reached its boot cap without stopping after 2 boots") {
+		t.Fatalf("exit %d, output %q", got, out.String())
 	}
 }
 

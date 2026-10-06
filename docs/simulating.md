@@ -4,7 +4,7 @@
 
 ```sh
 just sim [SEED [--machine FILE] [--cycles N] [--state-dir DIR]] # search, deepening and one clean cycle; flags follow an explicit seed
-go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples]
+go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples] [--max-boots N]
 ```
 
 - `--seed` (default 1) selects deterministic limits and failures; the same seed and history reproduce the journal.
@@ -13,6 +13,7 @@ go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--
 - `--cycles` (default 1) stops after N clean cycles valid for the current profile once every core is at its limit and deepening can reach no more depth. An earlier cycle can count after a deepening under the uncontradicted-profile rules in [the tuner spec](spec/tuner.md#checking).
 - `--state-dir` uses an existing directory; without it, `sim` creates a temporary one and prints its path to stderr.
 - `--samples` writes `trials/<trial-id>/samples.jsonl` for later inspection; by default trial samples stay in memory.
+- `--max-boots` (default 1000) caps the simulated boots of one invocation. A session still running after N boots stops with its journal and `state.json` as they stand, the reason on stderr, and exit 3.
 
 A crash reboots the simulated machine in-process and the next boot resumes the journal, as a real reboot would. Within one invocation, parsed events stay in memory across simulated reboots; `events.jsonl` is still appended on every event, but `state.json` is written only when the invocation stops. Journal lines go to stderr as `togi run` logs them, and nothing is fsynced. The state-directory writer lock stays held across simulated reboots. Read-only commands can inspect the final state after the invocation returns; during a run, `state.json` can be absent or still describe the previous invocation.
 
@@ -22,7 +23,7 @@ Simulated trials keep samples in memory by default: each loaded worker's cumulat
 
 Without `[shared_voltage]`, the simulator reports no SMU `pm_table` lanes: samples omit `pm_table`, and an informational `preflight.check` explains that the version is unavailable. With that table, every sample includes all 16 voltage requests and the loaded cores' clocks. Preflight identifies these as simulated lanes. The session summarizes them using the same warmup and minimum-sample rules as hardware; reading telemetry does not change failure draws.
 
-The session uses the default configuration, never `/etc/togi/config.toml`, and runs unattended: an unanswered too-aggressive defect is a dead end. `sim` exits 0 when the session stops cleanly, 1 at a dead end or on an error, and 2 on a flag error. A journal written under an older ruleset or schema is archived and seeds a new session, as `togi run` does; the resumed machine reports the BIOS context the journals recorded, so their failure points carry. A journal written under a newer ruleset or schema is refused before another event is appended.
+The session uses the default configuration, never `/etc/togi/config.toml`, and runs unattended: an unanswered too-aggressive defect is a dead end. `sim` exits 0 when the session stops cleanly, 1 at a dead end or on an error, 2 on a flag error and 3 at the boot cap. A journal written under an older ruleset or schema is archived and seeds a new session, as `togi run` does; the resumed machine reports the BIOS context the journals recorded, so their failure points carry. A journal written under a newer ruleset or schema is refused before another event is appended.
 
 The read-only commands work on the result:
 

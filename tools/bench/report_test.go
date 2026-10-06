@@ -17,6 +17,7 @@ func TestBenchReports(t *testing.T) {
 		{Scenario: "zeta", Seed: 2, Split: "dev", Status: "concluded", SimHours: 4, Crashes: 2, Depth: -20, HazardMaxPerH: 0.005, Trials: 2, RealAnswers: 1, PassedCycles: 2, PartialSeconds: 180},
 		{Scenario: "alpha", Seed: 1, Split: "dev", Status: "concluded", SimHours: 2, Depth: -40, Trials: 6, RealAnswers: 1, PassedCycles: 1, PartialSeconds: 120},
 		{Scenario: "zeta", Seed: 3, Split: "dev", Status: "timeout", SimHours: 10, Crashes: 4, Depth: -10, HazardMaxPerH: 0.015, Trials: 8, RealAnswers: 1, PassedCycles: 1, PartialSeconds: 30},
+		{Scenario: "zeta", Seed: 4, Split: "dev", Status: "censored", SimHours: 300, Crashes: 999, Depth: -12, HazardMaxPerH: 0.01, Trials: 9000},
 	}
 	baseline := []result{
 		{Scenario: "alpha", Seed: 1, Split: "dev", Status: "concluded", SimHours: 4, Depth: -40, Trials: 4, RealAnswers: 2, PassedCycles: 2, PartialSeconds: 10},
