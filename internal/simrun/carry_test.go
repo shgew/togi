@@ -23,65 +23,60 @@ import (
 )
 
 var (
-	ruleset3Once  sync.Once
-	ruleset3Files map[string][]byte
-	ruleset3Err   error
+	currentSessionOnce  sync.Once
+	currentSessionFiles map[string][]byte
+	currentSessionErr   error
 )
 
-func ruleset3Session(t *testing.T) (dir, id string) {
+func restampedRuleset3Session(t *testing.T) (dir, id string) {
 	t.Helper()
-	ruleset3Once.Do(func() {
+	currentSessionOnce.Do(func() {
 		src := t.TempDir()
 		m, err := sim.New(sharedVoltageConfig(t, 1000))
 		if err != nil {
-			ruleset3Err = err
+			currentSessionErr = err
 			return
 		}
 		stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Cycles: 1})
 		if err != nil {
-			ruleset3Err = err
+			currentSessionErr = err
 			return
 		}
 		if stop.Reason != session.StopCycles {
-			ruleset3Err = fmt.Errorf("source session stopped with %+v, want a clean cycle", stop)
+			currentSessionErr = fmt.Errorf("source session stopped with %+v, want a clean cycle", stop)
 			return
 		}
 		entries, err := os.ReadDir(src)
 		if err != nil {
-			ruleset3Err = err
+			currentSessionErr = err
 			return
 		}
-		ruleset3Files = make(map[string][]byte, len(entries))
+		currentSessionFiles = make(map[string][]byte, len(entries))
 		for _, e := range entries {
 			if e.IsDir() {
 				continue
 			}
 			data, err := os.ReadFile(filepath.Join(src, e.Name()))
 			if err != nil {
-				ruleset3Err = err
+				currentSessionErr = err
 				return
 			}
-			ruleset3Files[e.Name()] = data
+			currentSessionFiles[e.Name()] = data
 		}
 	})
-	if ruleset3Err != nil {
-		t.Fatal(ruleset3Err)
+	if currentSessionErr != nil {
+		t.Fatal(currentSessionErr)
 	}
 	dir = t.TempDir()
-	for name, data := range ruleset3Files {
+	for name, data := range currentSessionFiles {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return dir, stampRuleset3(t, dir)
+	return dir, restampRuleset(t, dir, 3)
 }
 
-func stampRuleset3(t *testing.T, dir string) string {
-	t.Helper()
-	return stampRuleset(t, dir, 3)
-}
-
-func stampRuleset(t *testing.T, dir string, ruleset int) string {
+func restampRuleset(t *testing.T, dir string, ruleset int) string {
 	t.Helper()
 	path := filepath.Join(dir, "events.jsonl")
 	data, err := os.ReadFile(path)
@@ -268,7 +263,7 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 
 func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 	t.Parallel()
-	dir, id := ruleset3Session(t)
+	dir, id := restampedRuleset3Session(t)
 	stop, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1000), config.Default())
 	if stop.Reason != session.StopCycles {
 		t.Fatalf("stopped with %+v", stop)
@@ -317,7 +312,7 @@ func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 
 func TestARulesetTransitionAfterABIOSChangeCarriesOnlySoloLimits(t *testing.T) {
 	t.Parallel()
-	dir, _ := ruleset3Session(t)
+	dir, _ := restampedRuleset3Session(t)
 	bios := machine.BIOSContext{BIOSVersion: "changed", Board: "board", CPUModel: "cpu", Microcode: "0x1", BoostLimitMHz: 5000}
 	cfg := sharedVoltageConfig(t, 1000)
 	cfg.BIOSContext = bios
@@ -338,7 +333,7 @@ func TestARulesetTransitionAfterABIOSChangeCarriesOnlySoloLimits(t *testing.T) {
 
 func TestAConfiguredCandidateSoloLimitStopsShortOfACarriedFailurePoint(t *testing.T) {
 	t.Parallel()
-	dir, _ := ruleset3Session(t)
+	dir, _ := restampedRuleset3Session(t)
 	c := config.Default()
 	c.CandidateSoloLimits = map[int]int{0: -50}
 	_, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1000), c)
@@ -508,7 +503,7 @@ func TestRulesetTransitionCarriesCulpritAndDirectHuntFailurePoints(t *testing.T)
 			if failurePointSeq == 0 {
 				t.Fatalf("%s hunt has no failure point source", result)
 			}
-			id := stampRuleset3(t, dir)
+			id := restampRuleset(t, dir, 3)
 			resumed, err := sim.Resume(dir, cfg)
 			if err != nil {
 				t.Fatal(err)
@@ -557,7 +552,7 @@ func TestCurrentRulesetChecksCarriedSoloLimitsButCompletesFullCyclesWithLivePass
 		in.Config = c
 		in.Until = firstPassedFullCycle
 	})
-	id := stampRuleset(t, dir, 6)
+	id := restampRuleset(t, dir, 6)
 	resumed, err := sim.Resume(dir, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -697,7 +692,7 @@ func TestCurrentRulesetStartsHuntFromCarriedTogetherFailure(t *testing.T) {
 		t.Fatalf("source failing profile (-want +got):\n%s", diff)
 	}
 	c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
-	id := stampRuleset(t, dir, 6)
+	id := restampRuleset(t, dir, 6)
 	resumed, err := sim.Resume(dir, cfg)
 	if err != nil {
 		t.Fatal(err)
