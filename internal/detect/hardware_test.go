@@ -4,6 +4,7 @@ package detect
 
 import (
 	"encoding/json"
+	"errors"
 	"os/exec"
 	"testing"
 	"time"
@@ -53,17 +54,18 @@ func TestHardwareKernelLog(t *testing.T) {
 	}
 	k := NewKernel([]machine.CoreInfo{{Core: 0, CPUs: []int{0}}})
 	for _, c := range []struct {
-		name  string
-		boot  string
-		since time.Duration
+		name    string
+		boot    string
+		since   time.Duration
+		wantErr error
 	}{
-		{"previous boot", prev, 0},
-		{"current boot, last hour", current, max(0, time.Duration(ts.Nano())-time.Hour)},
-		{"unknown boot", "00000000000000000000000000000000", 0},
+		{"previous boot", prev, 0, nil},
+		{"current boot, last hour", current, max(0, time.Duration(ts.Nano())-time.Hour), nil},
+		{"unknown boot", "00000000000000000000000000000000", 0, machine.ErrBootMissing},
 	} {
 		mces, err := k.MCEs(c.boot, c.since)
-		if err != nil {
-			t.Fatalf("%s: %v", c.name, err)
+		if !errors.Is(err, c.wantErr) {
+			t.Fatalf("%s: error = %v, want %v", c.name, err, c.wantErr)
 		}
 		t.Logf("%s %s: %d machine checks", c.name, c.boot, len(mces))
 		if c.name == "unknown boot" && len(mces) != 0 {

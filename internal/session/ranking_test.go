@@ -15,7 +15,7 @@ type rankingHost struct {
 }
 
 func (h rankingHost) Ranking() ([]machine.CoreRank, error) {
-	cores, err := h.Host.Topology()
+	cores, err := h.Topology()
 	if err != nil {
 		return nil, err
 	}
