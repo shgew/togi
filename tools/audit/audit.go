@@ -40,11 +40,12 @@ type auditor struct {
 	reset           map[int]bool
 	trials          map[string]*journal.TrialIntent
 	hunts           map[int][]int
+	zeroNamed       map[int]int
 }
 
 // auditEvents deliberately does not use tuner predicates or projected failure marks.
 func auditEvents(events []journal.Event, closed bool) []violation {
-	a := auditor{seen: make(map[int]journal.Event), points: make(map[int]point), combinations: make(map[int]combination), registers: make(map[int]int), pending: make(map[int]*pendingWrite), usedIntents: make(map[int]bool), reset: make(map[int]bool), trials: make(map[string]*journal.TrialIntent), hunts: make(map[int][]int)}
+	a := auditor{seen: make(map[int]journal.Event), points: make(map[int]point), combinations: make(map[int]combination), registers: make(map[int]int), pending: make(map[int]*pendingWrite), usedIntents: make(map[int]bool), reset: make(map[int]bool), trials: make(map[string]*journal.TrialIntent), hunts: make(map[int][]int), zeroNamed: make(map[int]int)}
 	for _, e := range events {
 		a.fold(e)
 	}

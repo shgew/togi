@@ -186,6 +186,16 @@ func TestAuditInvariants(t *testing.T) {
 		{"carry point", `{"seq":2,"boot":"b","kind":"session.carried","failure_points":true,"carried":[{"core":8,"failure_point":-10}]}
 {"seq":3,"boot":"b","kind":"profile.applied","offsets":[0,-10]}
 `, false, []finding{{3, "avoidance"}}},
+		{"R7 named core at 0 routed", `{"seq":2,"boot":"b","kind":"failure","attribution":"attributed","core":8,"offset":0,"trial":"0001","regime":"R7","condition":"parked"}
+{"seq":3,"boot":"b","kind":"profile.applied","offsets":[-30,0]}
+`, false, nil},
+		{"R7 named core at 0 dead-ends", `{"seq":2,"boot":"b","kind":"failure","attribution":"attributed","core":8,"offset":0,"trial":"0001","regime":"R7","condition":"together"}
+{"seq":3,"boot":"b","kind":"deadend","condition":"failure_at_zero","core":8,"detail":"core 08 failed at CO 0","cause":[2]}
+{"seq":4,"boot":"b","kind":"profile.applied","offsets":[-30,0]}
+`, false, []finding{{4, "avoidance"}}},
+		{"R7 named core off 0", `{"seq":2,"boot":"b","kind":"failure","attribution":"attributed","core":8,"offset":-20,"trial":"0001","regime":"R7","condition":"parked"}
+{"seq":3,"boot":"b","kind":"profile.applied","offsets":[0,-20]}
+`, false, []finding{{3, "avoidance"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
