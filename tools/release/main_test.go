@@ -23,18 +23,41 @@ const unreleasedOnly = "# Changelog\n"
 var aFix = map[string]string{"35.md": "### Fixed\n\n- A fix.\n"}
 
 type fakeGit struct {
+	t         *testing.T
 	responses map[string]string
-	failures  map[string]error
-	stderr    map[string]string
-	calls     []gitCmd
-	checked   []string
-	checkErr  error
+	// failures fail every command equal to a key or starting with it and a space.
+	failures map[string]error
+	blobs    map[string]string
+	calls    []gitCmd
+	checked  []string
+	checkErr error
 }
 
 func (f *fakeGit) run(c gitCmd) (string, string, error) {
 	f.calls = append(f.calls, c)
 	key := strings.Join(c.args, " ")
-	return f.responses[key], f.stderr[key], f.failures[key]
+	for prefix, err := range f.failures {
+		if key == prefix || strings.HasPrefix(key, prefix+" ") {
+			return "", "", err
+		}
+	}
+	switch {
+	case key == "hash-object -w --stdin":
+		if f.blobs == nil {
+			f.blobs = map[string]string{}
+		}
+		blob := fmt.Sprintf("blob%d", len(f.blobs))
+		f.blobs[blob] = c.stdin
+		return blob + "\n", "", nil
+	case c.args[0] == "update-index":
+		return "", "", nil
+	}
+	response, ok := f.responses[key]
+	if !ok {
+		f.t.Errorf("unexpected git %s", key)
+		return "", "", fmt.Errorf("unexpected git %s", key)
+	}
+	return response, "", nil
 }
 
 func (f *fakeGit) commands() []string {
@@ -55,21 +78,57 @@ func (f *fakeGit) stdin(command string) []string {
 	return got
 }
 
-func mainGit(version, changelog, tags string, fragments map[string]string) *fakeGit {
+// mutations lists the commands that write objects, an index or the checkout.
+func (f *fakeGit) mutations() []string {
+	var got []string
+	for _, c := range f.calls {
+		switch c.args[0] {
+		case "read-tree", "hash-object", "update-index", "write-tree", "commit-tree", "checkout":
+			got = append(got, strings.Join(c.args, " "))
+		}
+	}
+	return got
+}
+
+// staged returns the content each update-index call stages by path, and the paths it removes.
+func (f *fakeGit) staged() (map[string]string, []string) {
+	files := map[string]string{}
+	var removed []string
+	for _, c := range f.calls {
+		if c.args[0] != "update-index" {
+			continue
+		}
+		switch c.args[1] {
+		case "--cacheinfo":
+			_, entry, _ := strings.Cut(c.args[2], ",")
+			blob, path, _ := strings.Cut(entry, ",")
+			files[path] = f.blobs[blob]
+		case "--force-remove":
+			removed = append(removed, c.args[2])
+		}
+	}
+	return files, removed
+}
+
+func mainGit(t *testing.T, version, changelog, tags string, fragments map[string]string) *fakeGit {
+	t.Helper()
 	git := &fakeGit{
+		t: t,
 		responses: map[string]string{
+			"fetch --quiet origin main":               "",
 			"rev-parse --verify origin/main^{commit}": "base\n",
 			"show base:version.txt":                   version + "\n",
 			"show base:CHANGELOG.md":                  changelog,
 			"show base:go.mod":                        "module forge.example/o/r\n\ngo 1.27\n",
 			"ls-remote --tags origin refs/tags/v*":    tags,
 			"rev-parse --git-path togi-release-index": "index\n",
-			"hash-object -w --stdin":                  "blob\n",
+			"read-tree base":                          "",
 			"write-tree":                              "tree\n",
 			"commit-tree tree -p base -F -":           "commit\n",
+			"checkout --quiet --detach base":          "",
+			"checkout --quiet --detach commit":        "",
 		},
 		failures: map[string]error{},
-		stderr:   map[string]string{},
 	}
 	var listing string
 	for _, name := range fragmentNames(fragments) {
@@ -97,21 +156,6 @@ func releaseRunner(git *fakeGit, out *bytes.Buffer, commit bool) runner {
 	}
 }
 
-func readBase(fragments map[string]string) []string {
-	commands := []string{
-		"fetch --quiet origin main",
-		"rev-parse --verify origin/main^{commit}",
-		"show base:version.txt",
-		"show base:CHANGELOG.md",
-		"show base:go.mod",
-		"ls-tree --name-only base changes/",
-	}
-	for _, name := range fragmentNames(fragments) {
-		commands = append(commands, "show base:changes/"+name)
-	}
-	return append(commands, "ls-remote --tags origin refs/tags/v*")
-}
-
 func TestRelease(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -133,41 +177,39 @@ func TestRelease(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			git := mainGit(tc.version, tc.changelog, tc.tags, tc.fragments)
+			git := mainGit(t, tc.version, tc.changelog, tc.tags, tc.fragments)
 			var out bytes.Buffer
 			if err := releaseRunner(git, &out, true).release(); err != nil {
 				t.Fatal(err)
 			}
-			read := readBase(tc.fragments)
-			want := slices.Concat(read, []string{
-				"rev-parse --git-path togi-release-index",
-				"read-tree base",
-				"hash-object -w --stdin",
-				"update-index --cacheinfo 100644,blob,version.txt",
-				"hash-object -w --stdin",
-				"update-index --cacheinfo 100644,blob,CHANGELOG.md",
-			})
-			for _, name := range fragmentNames(tc.fragments) {
-				want = append(want, "update-index --force-remove changes/"+name)
+			commands := git.commands()
+			if commands[0] != "fetch --quiet origin main" {
+				t.Fatalf("release read origin/main before fetching it: %v", commands)
 			}
-			want = append(want,
-				"write-tree",
-				"commit-tree tree -p base -F -",
-				"checkout --quiet --detach commit",
-			)
-			if diff := cmp.Diff(want, git.commands()); diff != "" {
-				t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
-			}
-			if diff := cmp.Diff([]string{tc.next + "\n", tc.changelogOut}, git.stdin("hash-object -w --stdin")); diff != "" {
+			files, removed := git.staged()
+			if diff := cmp.Diff(map[string]string{"version.txt": tc.next + "\n", "CHANGELOG.md": tc.changelogOut}, files); diff != "" {
 				t.Fatalf("committed files mismatch (-want +got):\n%s", diff)
+			}
+			var consumed []string
+			for _, name := range fragmentNames(tc.fragments) {
+				consumed = append(consumed, "changes/"+name)
+			}
+			if diff := cmp.Diff(consumed, removed); diff != "" {
+				t.Fatalf("removed fragments mismatch (-want +got):\n%s", diff)
 			}
 			if diff := cmp.Diff([]string{"Release " + tc.next + "\n\n" + tc.reason + "\n"}, git.stdin("commit-tree tree -p base -F -")); diff != "" {
 				t.Fatalf("commit message mismatch (-want +got):\n%s", diff)
 			}
-			for _, c := range git.calls[len(read)+1 : len(git.calls)-1] {
-				if diff := cmp.Diff([]string{"GIT_INDEX_FILE=index"}, c.env); diff != "" {
-					t.Fatalf("%s env mismatch (-want +got):\n%s", strings.Join(c.args, " "), diff)
+			for _, c := range git.calls {
+				switch c.args[0] {
+				case "read-tree", "update-index", "write-tree":
+					if !slices.Contains(c.env, "GIT_INDEX_FILE=index") {
+						t.Fatalf("%s ran outside the temporary index: env %v", strings.Join(c.args, " "), c.env)
+					}
 				}
+			}
+			if last := commands[len(commands)-1]; last != "checkout --quiet --detach commit" {
+				t.Fatalf("release ended on %q, not on checking out its commit", last)
 			}
 			if got, want := out.String(), "Release "+tc.next+" committed as commit on top of origin/main\n"; got != want {
 				t.Fatalf("output = %q", got)
@@ -181,15 +223,15 @@ func TestRelease(t *testing.T) {
 
 func TestReleaseRefusesWithoutGreenCheck(t *testing.T) {
 	t.Parallel()
-	git := mainGit("0.1.0", released, "sha\trefs/tags/v0.1.0\n", aFix)
+	git := mainGit(t, "0.1.0", released, "sha\trefs/tags/v0.1.0\n", aFix)
 	git.checkErr = errors.New("check run u for base concluded failure")
 	var out bytes.Buffer
 	err := releaseRunner(git, &out, true).release()
 	if got, want := fmt.Sprint(err), "require a passing check on origin/main: check run u for base concluded failure"; got != want {
 		t.Fatalf("release error = %q, want %q", got, want)
 	}
-	if diff := cmp.Diff(readBase(aFix), git.commands()); diff != "" {
-		t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
+	if got := git.mutations(); got != nil {
+		t.Fatalf("refused release changed the repository: %v", got)
 	}
 }
 
@@ -210,14 +252,14 @@ func TestReleaseNothingToRelease(t *testing.T) {
 			if tc.commit {
 				changelog = unreleasedOnly
 			}
-			git := mainGit("0.1.0", changelog, "sha\trefs/tags/v0.1.0\n", nil)
+			git := mainGit(t, "0.1.0", changelog, "sha\trefs/tags/v0.1.0\n", nil)
 			var out bytes.Buffer
 			err := releaseRunner(git, &out, tc.commit).release()
 			if got := fmt.Sprint(err); tc.err != "" && got != tc.err || tc.err == "" && err != nil {
 				t.Fatalf("release error = %v, want %q", err, tc.err)
 			}
-			if diff := cmp.Diff(readBase(nil), git.commands()); diff != "" {
-				t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
+			if got := git.mutations(); got != nil {
+				t.Fatalf("empty release changed the repository: %v", got)
 			}
 			if got := out.String(); got != tc.output {
 				t.Fatalf("output = %q", got)
@@ -228,13 +270,13 @@ func TestReleaseNothingToRelease(t *testing.T) {
 
 func TestReleaseResumesUnpublished(t *testing.T) {
 	t.Parallel()
-	git := mainGit("0.1.0", released, "sha\trefs/tags/v0.0.9\n", nil)
+	git := mainGit(t, "0.1.0", released, "sha\trefs/tags/v0.0.9\n", nil)
 	var out bytes.Buffer
 	if err := releaseRunner(git, &out, true).release(); err != nil {
 		t.Fatal(err)
 	}
-	if diff := cmp.Diff(append(readBase(nil), "checkout --quiet --detach base"), git.commands()); diff != "" {
-		t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff([]string{"checkout --quiet --detach base"}, git.mutations()); diff != "" {
+		t.Fatalf("repository changes mismatch (-want +got):\n%s", diff)
 	}
 	if got, want := out.String(), "0.1.0 is released in CHANGELOG.md; would publish origin/main if its GitHub Release is missing\n"; got != want {
 		t.Fatalf("output = %q", got)
@@ -246,13 +288,13 @@ func TestReleaseResumesUnpublished(t *testing.T) {
 
 func TestReleasePreview(t *testing.T) {
 	t.Parallel()
-	git := mainGit("0.1.0", released, "sha\trefs/tags/v0.1.0\n", aFix)
+	git := mainGit(t, "0.1.0", released, "sha\trefs/tags/v0.1.0\n", aFix)
 	var out bytes.Buffer
 	if err := releaseRunner(git, &out, false).release(); err != nil {
 		t.Fatal(err)
 	}
-	if diff := cmp.Diff(readBase(aFix), git.commands()); diff != "" {
-		t.Fatalf("git commands mismatch (-want +got):\n%s", diff)
+	if got := git.mutations(); got != nil {
+		t.Fatalf("preview changed the repository: %v", got)
 	}
 	want := "Would release from origin/main:\n\nRelease 0.1.1\n\nNo breaking changes (patch bump).\n\n### Fixed\n\n- A fix ([#35]).\n\n[#35]: https://forge.example/o/r/pull/35\n"
 	if diff := cmp.Diff(want, out.String()); diff != "" {
@@ -400,9 +442,10 @@ func (h handlerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func publishFixture(t *testing.T, version, changelog string, releaseStatus int) (*fakeGit, github, *[]string, *map[string]string) {
 	t.Helper()
-	git := &fakeGit{responses: map[string]string{
+	git := &fakeGit{t: t, responses: map[string]string{
 		"show HEAD:version.txt":                                 version + "\n",
 		"show HEAD:CHANGELOG.md":                                changelog,
+		"rev-parse --is-shallow-repository":                     "false\n",
 		"log --first-parent -1 --format=%H HEAD -- version.txt": "merge-sha\n",
 	}}
 	git.responses["ls-remote --tags origin refs/tags/v"+version+" refs/tags/v"+version+"^{}"] = "merge-sha\trefs/tags/v" + version + "\n"
@@ -516,7 +559,7 @@ func TestReleaseFailuresDoNotCommit(t *testing.T) {
 		{name: "duplicate", changelog: released + "\n## [0.1.1] - 2026-09-25\n", want: "rewrite changelog: version [0.1.1] already exists"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			git := mainGit("0.1.0", released, "", aFix)
+			git := mainGit(t, "0.1.0", released, "", aFix)
 			if tc.fragment != "" {
 				git.responses["show base:changes/35.md"] = tc.fragment
 			}
@@ -537,8 +580,8 @@ func TestReleaseFailuresDoNotCommit(t *testing.T) {
 			if err == nil || !strings.HasPrefix(err.Error(), tc.want) {
 				t.Fatalf("error = %v, want %q", err, tc.want)
 			}
-			if len(git.stdin("hash-object -w --stdin")) != 0 || git.checked != nil || out.Len() != 0 {
-				t.Fatalf("failed release progressed: calls %v, checks %v, output %q", git.commands(), git.checked, out.String())
+			if got := git.mutations(); got != nil || git.checked != nil || out.Len() != 0 {
+				t.Fatalf("failed release progressed: changes %v, checks %v, output %q", got, git.checked, out.String())
 			}
 		})
 	}
@@ -546,9 +589,9 @@ func TestReleaseFailuresDoNotCommit(t *testing.T) {
 
 func TestReleaseCommitFailuresStopBeforeCheckout(t *testing.T) {
 	t.Parallel()
-	for _, command := range []string{"rev-parse --git-path togi-release-index", "read-tree base", "hash-object -w --stdin", "update-index --cacheinfo 100644,blob,version.txt", "update-index --force-remove changes/35.md", "write-tree", "commit-tree tree -p base -F -", "checkout --quiet --detach commit"} {
+	for _, command := range []string{"rev-parse --git-path togi-release-index", "read-tree base", "hash-object -w --stdin", "update-index --cacheinfo", "update-index --force-remove", "write-tree", "commit-tree tree -p base -F -", "checkout --quiet --detach commit"} {
 		t.Run(command, func(t *testing.T) {
-			git := mainGit("0.1.0", released, "", aFix)
+			git := mainGit(t, "0.1.0", released, "", aFix)
 			git.failures[command] = errors.New("injected")
 			var out bytes.Buffer
 			err := releaseRunner(git, &out, true).release()
@@ -556,7 +599,7 @@ func TestReleaseCommitFailuresStopBeforeCheckout(t *testing.T) {
 				t.Fatalf("error = %v", err)
 			}
 			calls := git.commands()
-			if calls[len(calls)-1] != command {
+			if last := calls[len(calls)-1]; last != command && !strings.HasPrefix(last, command+" ") {
 				t.Fatalf("continued after failure: %v", calls)
 			}
 			if command != "checkout --quiet --detach commit" && out.Len() != 0 {
