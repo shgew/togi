@@ -42,17 +42,16 @@ var errNoRecord = errors.New("no togi-review block")
 
 // parseRecord reads the hidden togi-review block that ends a review record comment.
 func parseRecord(body string) (record, error) {
-	start := strings.LastIndex(body, recordOpen)
-	if start < 0 {
+	_, rest, found := strings.CutLast(body, recordOpen)
+	if !found {
 		return record{}, errNoRecord
 	}
-	rest := body[start+len(recordOpen):]
-	end := strings.Index(rest, recordClose)
-	if end < 0 {
+	block, _, found := strings.Cut(rest, recordClose)
+	if !found {
 		return record{}, errors.New("unterminated togi-review block")
 	}
 	var r record
-	if err := json.Unmarshal([]byte(rest[:end]), &r); err != nil {
+	if err := json.Unmarshal([]byte(block), &r); err != nil {
 		return record{}, fmt.Errorf("decode togi-review block: %w", err)
 	}
 	if r.Version < 1 || r.Version > 3 {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"slices"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 )
@@ -146,17 +147,14 @@ func render(w io.Writer, rows []row, t totals) error {
 }
 
 func countCells(c counts) string {
-	s := ""
+	cells := make([]string, 0, len(c.Priority)+len(c.Outcome))
 	for _, n := range c.Priority {
-		s += strconv.Itoa(n) + "\t"
+		cells = append(cells, strconv.Itoa(n))
 	}
-	for i, n := range c.Outcome {
-		if i > 0 {
-			s += "\t"
-		}
-		s += strconv.Itoa(n)
+	for _, n := range c.Outcome {
+		cells = append(cells, strconv.Itoa(n))
 	}
-	return s
+	return strings.Join(cells, "\t")
 }
 
 func median(sorted []time.Duration) time.Duration {
