@@ -52,16 +52,8 @@ func (y *Ycruncher) binaries() (lowest, zen5 string, err error) {
 		return "", "", fmt.Errorf("no Zen 5 binary 24-ZN5 in %s: %w", root, machine.ErrBackendMissing)
 	}
 	for _, name := range []string{lowest, zen5} {
-		bin := filepath.Join(root, name)
-		info, err := os.Stat(bin)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return "", "", fmt.Errorf("stat y-cruncher binary %s: %w: %w", bin, machine.ErrBackendMissing, err)
-			}
-			return "", "", fmt.Errorf("stat y-cruncher binary %s: %w", bin, err)
-		}
-		if !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
-			return "", "", fmt.Errorf("y-cruncher binary %s is not executable", bin)
+		if err := backend.CheckExecutable("y-cruncher", filepath.Join(root, name)); err != nil {
+			return "", "", err
 		}
 	}
 	return lowest, zen5, nil
