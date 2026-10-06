@@ -778,11 +778,11 @@ func (s *State) eligibleCleanCycle(q passedFullCycle) bool {
 }
 
 func (s *State) uncontradicted(q passedFullCycle) bool {
-	if q.seq <= s.resetSeq || !atLeastDeep(q.profile, s.checking.profile) {
+	if q.seq <= s.resetSeq || !AtLeastDeep(q.profile, s.checking.profile) {
 		return false
 	}
 	return !slices.ContainsFunc(s.pendingFailures, func(f pendingFailure) bool {
-		return s.failureAfter(f, s.resetSeq) && (len(f.profile) != len(q.profile) || atLeastShallow(f.profile, q.profile))
+		return s.failureAfter(f, s.resetSeq) && (len(f.profile) != len(q.profile) || AtLeastShallow(f.profile, q.profile))
 	})
 }
 

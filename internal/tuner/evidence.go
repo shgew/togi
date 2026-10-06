@@ -76,7 +76,10 @@ func coresKey(cores []int) string {
 }
 
 func (k trialClass) withDuration(d int) trialClass { k.duration = d; return k }
-func atLeastDeep(q, p []int) bool {
+
+// AtLeastDeep reports whether profile q is at least as deep as p on every core,
+// unloaded ones included: a pass at q supports p, and a failure at p invalidates q.
+func AtLeastDeep(q, p []int) bool {
 	if len(q) != len(p) {
 		return false
 	}
@@ -88,7 +91,8 @@ func atLeastDeep(q, p []int) bool {
 	return true
 }
 
-func atLeastShallow(q, p []int) bool { return atLeastDeep(p, q) }
+// AtLeastShallow reports whether profile q is at least as shallow as p on every core.
+func AtLeastShallow(q, p []int) bool { return AtLeastDeep(p, q) }
 func allZero(p []int) bool {
 	for _, v := range p {
 		if v != 0 {
@@ -121,14 +125,14 @@ func (s *State) latestFailure(k trialClass, p []int, since int) int {
 	entries := s.ledger[k]
 	for i := range entries {
 		e := &entries[i]
-		if !e.pass && e.seq > last && atLeastShallow(e.profile, p) {
+		if !e.pass && e.seq > last && AtLeastShallow(e.profile, p) {
 			last = e.seq
 		}
 	}
 	if k.regime == machine.R6 && len(s.idle) > 0 && k.cores == coresKey(s.ids()) {
 		for i := range s.idle {
 			e := &s.idle[i]
-			if e.seq > last && atLeastShallow(e.profile, p) {
+			if e.seq > last && AtLeastShallow(e.profile, p) {
 				last = e.seq
 			}
 		}
@@ -142,7 +146,7 @@ func (s *State) passSeqs(k trialClass, p []int, since int, rule evidenceRule) []
 	entries := s.ledger[k]
 	for i := range entries {
 		e := &entries[i]
-		if e.pass && rule.admits(e, since) && e.seq > last && atLeastDeep(e.profile, p) {
+		if e.pass && rule.admits(e, since) && e.seq > last && AtLeastDeep(e.profile, p) {
 			seqs = append(seqs, e.seq)
 		}
 	}
@@ -155,7 +159,7 @@ func (s *State) passes(k trialClass, p []int, since int, rule evidenceRule) int 
 	entries := s.ledger[k]
 	for i := range entries {
 		e := &entries[i]
-		if e.pass && rule.admits(e, since) && e.seq > last && atLeastDeep(e.profile, p) {
+		if e.pass && rule.admits(e, since) && e.seq > last && AtLeastDeep(e.profile, p) {
 			count++
 		}
 	}
@@ -176,7 +180,7 @@ func (s *State) failingSeq(k trialClass, p []int, since int) int {
 func admittedFailure(entries []entry, p []int, since, last int) int {
 	for i := range entries {
 		e := &entries[i]
-		if !e.pass && e.seq > last && allEvidence.admits(e, since) && atLeastShallow(e.profile, p) {
+		if !e.pass && e.seq > last && allEvidence.admits(e, since) && AtLeastShallow(e.profile, p) {
 			last = e.seq
 		}
 	}

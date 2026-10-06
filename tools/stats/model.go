@@ -9,6 +9,7 @@ import (
 	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 type trial struct {
@@ -208,19 +209,6 @@ func class(t *journal.TrialIntent, cores []machine.CoreInfo) string {
 	return fmt.Sprintf("%s/%s/%s/%ds", t.Regime, t.Workload, coreList(loaded(t, cores)), t.DurationS)
 }
 
-// compareProfile compares every profile element, including unloaded cores: idle
-// offsets are part of the evidence, even though they are not part of its class.
-func compareProfile(a, b []int, deeper bool) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, v := range a {
-		if deeper && v > b[i] || !deeper && v < b[i] {
-			return false
-		}
-	}
-	return true
-}
 func priorPasses(history []*trial, target *journal.TrialIntent, before int, cores []machine.CoreInfo, idle []journal.Event) int {
 	k := class(target, cores)
 	cutoff := 0
@@ -228,7 +216,7 @@ func priorPasses(history []*trial, target *journal.TrialIntent, before int, core
 		if t.end == nil || t.endSeq >= before || t.key != k {
 			continue
 		}
-		if t.end.Outcome == journal.OutcomeFailure && compareProfile(t.intent.Profile, target.Profile, false) {
+		if t.end.Outcome == journal.OutcomeFailure && tuner.AtLeastShallow(t.intent.Profile, target.Profile) {
 			cutoff = max(cutoff, t.endSeq)
 		}
 	}
@@ -241,7 +229,7 @@ func priorPasses(history []*trial, target *journal.TrialIntent, before int, core
 		if all {
 			for _, e := range idle {
 				f := e.Data.(*journal.Failure)
-				if e.Seq < before && compareProfile(f.Profile, target.Profile, false) {
+				if e.Seq < before && tuner.AtLeastShallow(f.Profile, target.Profile) {
 					cutoff = max(cutoff, e.Seq)
 				}
 			}
@@ -249,7 +237,7 @@ func priorPasses(history []*trial, target *journal.TrialIntent, before int, core
 	}
 	n := 0
 	for _, t := range history {
-		if t.end != nil && t.endSeq > cutoff && t.endSeq < before && t.end.Outcome == journal.OutcomePass && t.key == k && compareProfile(t.intent.Profile, target.Profile, true) {
+		if t.end != nil && t.endSeq > cutoff && t.endSeq < before && t.end.Outcome == journal.OutcomePass && t.key == k && tuner.AtLeastDeep(t.intent.Profile, target.Profile) {
 			n++
 		}
 	}

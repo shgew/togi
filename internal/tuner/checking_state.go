@@ -56,7 +56,7 @@ func (s *State) projectChecking() *journal.CheckingState {
 	for k, entries := range s.ledger {
 		valid, checked := 0, false
 		for _, e := range entries {
-			if !e.pass || e.carried || e.condition == machine.Alone || !atLeastDeep(e.profile, g.profile) {
+			if !e.pass || e.carried || e.condition == machine.Alone || !AtLeastDeep(e.profile, g.profile) {
 				continue
 			}
 			if !checked {

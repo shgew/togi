@@ -67,7 +67,7 @@ func (s *State) cyclePart(req []requirement, running *journal.TrialIntent) Cycle
 func (s *State) cycleFailures(k trialClass, profile []int) int {
 	failed := 0
 	for _, e := range s.ledger[k] {
-		if e.seq > s.checking.startSeq && !e.pass && !e.carried && atLeastDeep(e.profile, profile) {
+		if e.seq > s.checking.startSeq && !e.pass && !e.carried && AtLeastDeep(e.profile, profile) {
 			failed++
 		}
 	}
