@@ -25,10 +25,12 @@ type record struct {
 }
 
 type finding struct {
-	Source   string  `json:"source"`
-	Priority string  `json:"priority"`
-	Finding  string  `json:"finding"`
-	Outcome  outcome `json:"outcome"`
+	Source   string `json:"source"`
+	Priority string `json:"priority"`
+	Finding  string `json:"finding"`
+	// Location is kept raw because version 1 records it as an object and later versions as a string; null when absent.
+	Location json.RawMessage `json:"location"`
+	Outcome  outcome         `json:"outcome"`
 }
 
 type outcome struct {

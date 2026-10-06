@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -67,6 +68,78 @@ func TestSummarizeMalformedRecord(t *testing.T) {
 	_, err := summarize([]pull{{Number: 1, Comments: []comment{{URL: "bad", Body: "<!-- togi-review {\"version\":9} -->"}}}})
 	if err == nil || !strings.Contains(err.Error(), "parse record bad: unsupported record version 9") {
 		t.Fatalf("summarize error = %v", err)
+	}
+}
+
+func TestSummarizeSharedText(t *testing.T) {
+	t.Parallel()
+	at := func(location, status string) finding {
+		return finding{Source: "A", Priority: "P2", Finding: "unchecked error", Location: json.RawMessage(`"` + location + `"`), Outcome: outcome{Status: status}}
+	}
+	pulls := []pull{{Number: 1, Opened: opened, Comments: []comment{
+		{URL: "first", Created: opened.Add(time.Hour), Body: recordBody(t, at("a.go:1", "deferred"), at("b.go:2", "rejected"))},
+		{URL: "second", Created: opened.Add(2 * time.Hour), Body: recordBody(t, at("b.go:2", "fixed"))},
+	}}}
+	rows, err := summarize(pulls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []row{{Number: 1, Records: 2, FirstRecord: time.Hour,
+		Findings: counts{Priority: [4]int{0, 0, 2, 0}, Outcome: [3]int{1, 0, 1}}}}
+	if diff := cmp.Diff(want, rows); diff != "" {
+		t.Errorf("rows (-want +got):\n%s", diff)
+	}
+}
+
+var errWrite = errors.New("write failed")
+
+// failingWriter accepts whole writes until room bytes are used, then fails the write that would exceed it.
+type failingWriter struct{ room int }
+
+func (w *failingWriter) Write(p []byte) (int, error) {
+	if len(p) > w.room {
+		return 0, errWrite
+	}
+	w.room -= len(p)
+	return len(p), nil
+}
+
+func TestRenderWriteError(t *testing.T) {
+	t.Parallel()
+	recorded := []row{{Number: 1, Title: "recorded", Check: "success", Records: 1, FirstRecord: 20 * time.Minute}}
+	unrecorded := []row{{Number: 2, Title: "unrecorded"}}
+	for _, tc := range []struct {
+		name string
+		rows []row
+		// failAt is the text starting the write that fails.
+		failAt string
+		want   string
+	}{
+		{"table", recorded, "PR", "write table: write failed"},
+		{"pull requests", recorded, "\n1 merged", "write totals: write failed"},
+		{"findings", recorded, "Findings:", "write totals: write failed"},
+		{"first record", recorded, "Time from", "write totals: write failed"},
+		{"pull requests unrecorded", unrecorded, "\n1 merged", "write totals: write failed"},
+		{"findings unrecorded", unrecorded, "Findings:", "write totals: write failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var full strings.Builder
+			if err := render(&full, tc.rows, total(tc.rows)); err != nil {
+				t.Fatal(err)
+			}
+			room := strings.Index(full.String(), tc.failAt)
+			if room < 0 {
+				t.Fatalf("output lacks %q:\n%s", tc.failAt, full.String())
+			}
+			err := render(&failingWriter{room: room}, tc.rows, total(tc.rows))
+			if !errors.Is(err, errWrite) {
+				t.Fatalf("render error = %v, want %v", err, errWrite)
+			}
+			if diff := cmp.Diff(tc.want, err.Error()); diff != "" {
+				t.Errorf("render error (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -152,6 +225,23 @@ func TestRunTruncatedComments(t *testing.T) {
 	err := run(&strings.Builder{}, gh)
 	if err == nil || !strings.Contains(err.Error(), "pull request #5 has more than 100 comments") {
 		t.Fatalf("run error = %v", err)
+	}
+}
+
+func TestMedian(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		sorted []time.Duration
+		want   time.Duration
+	}{
+		{[]time.Duration{20 * time.Minute}, 20 * time.Minute},
+		{[]time.Duration{20 * time.Minute, 90 * time.Minute}, 55 * time.Minute},
+		{[]time.Duration{10 * time.Minute, 20 * time.Minute, 90 * time.Minute}, 20 * time.Minute},
+		{[]time.Duration{10 * time.Minute, 20 * time.Minute, 30 * time.Minute, 90 * time.Minute}, 25 * time.Minute},
+	} {
+		if got := median(tc.sorted); got != tc.want {
+			t.Errorf("median(%v) = %s, want %s", tc.sorted, got, tc.want)
+		}
 	}
 }
 

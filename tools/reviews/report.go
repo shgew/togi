@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -61,14 +62,13 @@ type totals struct {
 	FirstRecords []time.Duration
 }
 
-// summarize builds one row per pull request, ascending by number. A finding repeated by a later record of the same pull request counts once, with the later outcome.
+// summarize builds one row per pull request, ascending by number. Each finding entry of a record counts once, except that an entry of a later record updates the outcome of one not-yet-updated entry of earlier records with the same source, priority and text, preferring one at the same location.
 func summarize(pulls []pull) ([]row, error) {
 	rows := make([]row, 0, len(pulls))
 	for _, p := range pulls {
 		r := row{Number: p.Number, Title: p.Title, Check: p.Check}
 		comments := slices.SortedStableFunc(slices.Values(p.Comments), func(a, b comment) int { return a.Created.Compare(b.Created) })
-		type key struct{ source, priority, text string }
-		latest := map[key]string{}
+		var found []finding
 		for _, c := range comments {
 			rec, err := parseRecord(c.Body)
 			if errors.Is(err, errNoRecord) {
@@ -81,18 +81,41 @@ func summarize(pulls []pull) ([]row, error) {
 				r.FirstRecord = c.Created.Sub(p.Opened)
 			}
 			r.Records++
+			earlier := len(found)
+			updated := make([]bool, earlier)
 			for _, f := range rec.Findings {
-				latest[key{f.Source, f.Priority, f.Finding}] = f.Outcome.Status
+				if i := earlierMatch(found[:earlier], updated, f); i >= 0 {
+					found[i].Outcome, updated[i] = f.Outcome, true
+					continue
+				}
+				found = append(found, f)
 			}
 		}
-		for k, status := range latest {
-			r.Findings.Priority[slices.Index(priorities[:], k.priority)]++
-			r.Findings.Outcome[slices.Index(outcomes[:], status)]++
+		for _, f := range found {
+			r.Findings.Priority[slices.Index(priorities[:], f.Priority)]++
+			r.Findings.Outcome[slices.Index(outcomes[:], f.Outcome.Status)]++
 		}
 		rows = append(rows, r)
 	}
 	slices.SortFunc(rows, func(a, b row) int { return a.Number - b.Number })
 	return rows, nil
+}
+
+// earlierMatch returns the index of the first entry of earlier not yet updated with f's source, priority and text, preferring one at f's location, or -1.
+func earlierMatch(earlier []finding, updated []bool, f finding) int {
+	match := -1
+	for i, e := range earlier {
+		if updated[i] || e.Source != f.Source || e.Priority != f.Priority || e.Finding != f.Finding {
+			continue
+		}
+		if bytes.Equal(e.Location, f.Location) {
+			return i
+		}
+		if match < 0 {
+			match = i
+		}
+	}
+	return match
 }
 
 func total(rows []row) totals {
@@ -132,12 +155,18 @@ func render(w io.Writer, rows []row, t totals) error {
 		return fmt.Errorf("write table: %w", err)
 	}
 	f := t.Findings
-	fmt.Fprintf(w, "\n%d merged pull requests: %d with robotogi's review check on the head (%d successful), %d with a review record.\n",
+	_, err := fmt.Fprintf(w, "\n%d merged pull requests: %d with robotogi's review check on the head (%d successful), %d with a review record.\n",
 		t.Pulls, t.Checked, t.Successful, t.Recorded)
-	fmt.Fprintf(w, "Findings: P0 %d, P1 %d, P2 %d, P3 %d; fixed %d, rejected %d, deferred %d.\n",
+	if err != nil {
+		return fmt.Errorf("write totals: %w", err)
+	}
+	_, err = fmt.Fprintf(w, "Findings: P0 %d, P1 %d, P2 %d, P3 %d; fixed %d, rejected %d, deferred %d.\n",
 		f.Priority[0], f.Priority[1], f.Priority[2], f.Priority[3], f.Outcome[0], f.Outcome[1], f.Outcome[2])
+	if err != nil {
+		return fmt.Errorf("write totals: %w", err)
+	}
 	if n := len(t.FirstRecords); n > 0 {
-		_, err := fmt.Fprintf(w, "Time from opening to the first record: median %s, longest %s.\n",
+		_, err = fmt.Fprintf(w, "Time from opening to the first record: median %s, longest %s.\n",
 			formatDuration(median(t.FirstRecords)), formatDuration(t.FirstRecords[n-1]))
 		if err != nil {
 			return fmt.Errorf("write totals: %w", err)
