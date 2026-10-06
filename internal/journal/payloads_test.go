@@ -76,3 +76,15 @@ func TestOperatorRecoveryAndDecisionMessages(t *testing.T) {
 		})
 	}
 }
+
+func TestPhaseWord(t *testing.T) {
+	t.Parallel()
+	got := map[Phase]string{}
+	for _, p := range []Phase{PhaseSearch, PhaseHasRoom, PhaseAtLimit, "unknown"} {
+		got[p] = p.Word()
+	}
+	want := map[Phase]string{PhaseSearch: "SEARCH", PhaseHasRoom: "HAS ROOM", PhaseAtLimit: "AT LIMIT", "unknown": "unknown"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("words (-want +got):\n%s", diff)
+	}
+}

@@ -1072,15 +1072,15 @@ func (c coreView) stateWord() string {
 	case coreWaiting:
 		return "WAITING"
 	case coreSearch:
-		return "SEARCH"
+		return journal.PhaseSearch.Word()
 	case coreConfirm:
 		return "CONFIRM"
 	case coreFound:
 		return "FOUND"
 	case coreAtLimit:
-		return "AT LIMIT"
+		return journal.PhaseAtLimit.Word()
 	case coreHasRoom:
-		return "HAS ROOM"
+		return journal.PhaseHasRoom.Word()
 	case coreSuspect:
 		return "SUSPECT"
 	case coreMember:
