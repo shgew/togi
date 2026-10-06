@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"path/filepath"
 
 	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/machine"
@@ -43,12 +42,8 @@ func groupOf(r trialfacts.Record) Group {
 	return Group{Context: r.Context, Kind: r.Kind, Class: r.Class, Depth: depth}
 }
 
-func Check(path string, cfg sim.Config) (*Result, error) {
-	extract := cfg.Facts
-	if !filepath.IsAbs(extract) {
-		extract = filepath.Join(filepath.Dir(path), extract)
-	}
-	records, err := trialfacts.Read(extract)
+func Check(path string, cfg sim.Config, extracts trialfacts.Extracts) (*Result, error) {
+	extract, records, err := extracts.Load(path, cfg)
 	if err != nil {
 		return nil, err
 	}

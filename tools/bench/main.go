@@ -97,7 +97,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func loadRuns(path, split string) ([]runSpec, error) {
+func loadRuns(path, split string, extracts trialfacts.Extracts) ([]runSpec, error) {
 	var suite struct {
 		Scenarios []scenario `toml:"scenario"`
 	}
@@ -136,7 +136,7 @@ func loadRuns(path, split string) ([]runSpec, error) {
 			}
 			resolved[i] = machinePath
 			if s.Replay {
-				configs[i].Replay, err = trialfacts.LoadReplay(machinePath, configs[i])
+				configs[i].Replay, err = extracts.Replay(machinePath, configs[i])
 				if err != nil {
 					return nil, fmt.Errorf("load scenario %s: %w", s.Name, err)
 				}
@@ -212,7 +212,8 @@ func treeDirty(out string) (bool, error) {
 
 func execute(o options, stdout, stderr io.Writer) error {
 	started := time.Now()
-	runs, err := loadRuns(o.suite, o.split)
+	extracts := trialfacts.Extracts{}
+	runs, err := loadRuns(o.suite, o.split, extracts)
 	if err != nil {
 		return err
 	}
@@ -222,7 +223,7 @@ func execute(o options, stdout, stderr io.Writer) error {
 		if spec.cfg.Facts == "" || checksByMachine[spec.scenario.Machine] != nil {
 			continue
 		}
-		check, err := modelcheck.Check(spec.scenario.Machine, spec.cfg)
+		check, err := modelcheck.Check(spec.scenario.Machine, spec.cfg, extracts)
 		if err != nil {
 			return fmt.Errorf("check model %s: %w", spec.scenario.Machine, err)
 		}

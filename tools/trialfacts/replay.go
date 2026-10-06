@@ -1,6 +1,7 @@
 package trialfacts
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -8,15 +9,33 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
-func LoadReplay(machinePath string, cfg sim.Config) (*sim.Replay, error) {
+// Extracts holds the records of each extract read so far, by resolved path.
+type Extracts map[string][]Record
+
+// Load returns the path and records of the machine's extract, which resolves
+// relative to the machine file.
+func (e Extracts) Load(machinePath string, cfg sim.Config) (string, []Record, error) {
 	if cfg.Facts == "" {
-		return nil, fmt.Errorf("load replay oracle: machine has no facts extract")
+		return "", nil, errors.New("machine has no facts extract")
 	}
 	path := cfg.Facts
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(filepath.Dir(machinePath), path)
 	}
-	records, err := Read(path)
+	records, ok := e[path]
+	if !ok {
+		var err error
+		records, err = Read(path)
+		if err != nil {
+			return "", nil, err
+		}
+		e[path] = records
+	}
+	return path, records, nil
+}
+
+func (e Extracts) Replay(machinePath string, cfg sim.Config) (*sim.Replay, error) {
+	_, records, err := e.Load(machinePath, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("load replay oracle: %w", err)
 	}

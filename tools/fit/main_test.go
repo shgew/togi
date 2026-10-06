@@ -118,7 +118,7 @@ func TestGenerateWritesCheckedReproducibleEnsemble(t *testing.T) {
 				if diff := cmp.Diff(context, cfg.BIOSContext); diff != "" {
 					t.Fatal(diff)
 				}
-				check, err := modelcheck.Check(path, cfg)
+				check, err := modelcheck.Check(path, cfg, trialfacts.Extracts{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -207,7 +207,7 @@ func TestGenerateConstrainedRefitsMatchSerial(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				check, err := modelcheck.Check(path, cfg)
+				check, err := modelcheck.Check(path, cfg, trialfacts.Extracts{})
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/tools/trialfacts"
 )
 
 type sessionKey struct {
@@ -51,13 +52,14 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 		return false, fmt.Errorf("resolve base tree: %w", err)
 	}
 	trees := [2]string{base, head}
+	extracts := trialfacts.Extracts{}
 	var runs [2][]runSpec
 	for side, tree := range trees {
 		suite := o.suite
 		if !filepath.IsAbs(suite) {
 			suite = filepath.Join(tree, suite)
 		}
-		runs[side], err = loadRuns(suite, "all")
+		runs[side], err = loadRuns(suite, "all", extracts)
 		if err != nil {
 			return false, fmt.Errorf("load %s suite: %w", tree, err)
 		}

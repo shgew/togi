@@ -35,7 +35,7 @@ func TestModelCheckResetWeights(t *testing.T) {
 					t.Fatal(err)
 				}
 				cfg.Model.Reset = map[machine.ResetKind]float64{machine.ResetWatchdog: 1, kind: tc.weight}
-				check, err := Check(path, cfg)
+				check, err := Check(path, cfg, trialfacts.Extracts{})
 				if tc.weight > 0 {
 					if err == nil || check != nil {
 						t.Fatalf("nondecisive reset weight accepted: check=%+v err=%v", check, err)
@@ -59,7 +59,7 @@ func TestModelCheckEligibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	records, err := trialfacts.Read(filepath.Join(filepath.Dir(machinePath), cfg.Facts))
+	_, records, err := trialfacts.Extracts{}.Load(machinePath, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestModelCheckEligibility(t *testing.T) {
 			}
 			config := cfg
 			config.Facts, config.BIOSContext = path, tc.machine
-			check, err := Check(machinePath, config)
+			check, err := Check(machinePath, config, trialfacts.Extracts{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -116,7 +116,7 @@ func TestModelCheckEligibility(t *testing.T) {
 
 func TestCheckRefusesUnreadableExtract(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "machine.toml")
-	got, err := Check(path, sim.Config{Facts: "missing.jsonl.gz"})
+	got, err := Check(path, sim.Config{Facts: "missing.jsonl.gz"}, trialfacts.Extracts{})
 	if got != nil || !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), "missing.jsonl.gz") {
 		t.Fatalf("missing extract: result=%v err=%v", got, err)
 	}

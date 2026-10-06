@@ -65,7 +65,7 @@ func TestFixtureModelCheck(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			check, err := Check(tc.path, cfg)
+			check, err := Check(tc.path, cfg, trialfacts.Extracts{})
 			if err != nil {
 				t.Fatal(err)
 			}
