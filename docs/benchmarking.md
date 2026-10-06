@@ -20,7 +20,7 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 |`late-onset`|R7 failures that start only after four minutes of load|
 |`idle-limit`|cores that fail idle at shallower offsets than under load (issue #106)|
 |`misleading-mce`|joint crashes that leave an MCE naming one core (issue #114)|
-|`target-r4-limit`|target-fit-derived one-count together R4 limit gap on core 15; a single medium-duty checking trial can miss it (issue #107)|
+|`target-r4-limit`|target-fit-derived one-count together R4 limit gap on core 15; each medium-duty checking trial misses it 70.55% of the time, so the default cycle's three still can (issue #107)|
 |`target-nonmember-mce`|target-fit-derived CCD0 joint crashes deliberately name nonmember core 15; parked hunts can stop at that core's parked offset of zero (related to issue #114)|
 |`target-delayed-joint`|target-fit-derived CCD1 joint delayed by two minutes; short checks miss it and finite long-trial coverage can still conclude unsafe (issue #105)|
 |`target-flat-risk`|target-fit-derived rare offset-independent core-15 hazard that survives nonzero backoffs and finite checking evidence (issue #105)|
