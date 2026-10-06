@@ -3,8 +3,9 @@
 # Fitted: alone/together regime limits, shared rate/growth/near hazard, per-core flat hazard,
 # supported workload overrides, idle limits, and layered R7 CCD joints.
 # Fitted CCD residual: joint-gated loaded hazard with shared depth slope and shrunk CCD effects.
+# Fitted signal mix: counts of 4 failures' signals per regime; regimes without failures use the pooled counts.
 # Unsupported limits stay -50; unobserved idle exposure cannot identify idle hazards.
-# Fixed: onset boost=0, joint delay=0; default signals/MCE/reset.
+# Fixed: onset boost=0, joint delay=0; default MCE/reset.
 # Constrained bootstrap: R7 work cores=[0 1] duration=120s depth=-24 n=45 k=5
 cores = 2
 facts = "../facts/extract.jsonl.gz"
@@ -21,6 +22,11 @@ past_limit_rate = 0.014999999999999999
 growth = 2
 near_limit_rate = 9.9999999999999995e-08
 onset_boost = 0.0
+signals = {"computation_error" = 2, "crash" = 2}
+
+[model.regime_signals]
+"R2" = {"computation_error" = 1}
+"R7" = {"computation_error" = 1, "crash" = 2}
 
 [ccd]
 log_rate = -9

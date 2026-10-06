@@ -367,6 +367,7 @@ func fitSharedVoltage(records []trialfacts.Record) (sim.Config, float64) {
 		cfg, _ = fit(legacy)
 	}
 	cfg.Joints, cfg.CCD = nil, nil
+	fitSignals(&cfg, records)
 	cfg.SharedVoltage = voltageConfig(records)
 	syncYcruncher(cfg.SharedVoltage)
 	var l voltageLikelihood

@@ -33,6 +33,14 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 	cfg.Facts = "../facts/extract.jsonl.gz"
 	cfg.Limits[0].Idle = &idle
 	cfg.Limits[0].Workload = map[string]int{"z": -24, "a": -20}
+	fitSignals(&cfg, []trialfacts.Record{
+		{Class: facts.Class{Regime: machine.R7}, Outcome: journal.OutcomeFailure, Signal: machine.Crash},
+		{Class: facts.Class{Regime: machine.R7}, Outcome: journal.OutcomeFailure, Signal: machine.UncorrectedMCE},
+		{Class: facts.Class{Regime: machine.R7}, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError},
+		{Class: facts.Class{Regime: machine.R2}, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError},
+		{Class: facts.Class{Regime: machine.R2}, Outcome: journal.OutcomeFailure},
+		{Class: facts.Class{Regime: machine.R1}, Outcome: journal.OutcomePass},
+	})
 	groups := []modelcheck.Group{{Class: facts.Class{Regime: machine.R7, Workload: "work", Cores: []int{0, 1}, DurationS: 120}, Depth: -24, N: 45, K: 5}}
 	content := encodeMachine(cfg, 2, 263, 45, 12.5, groups)
 	path := filepath.Join(t.TempDir(), "fit.toml")
@@ -54,6 +62,11 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 	}
 	if got.Facts != cfg.Facts || got.Model.PastLimitRate != cfg.Model.PastLimitRate || got.Model.Growth != cfg.Model.Growth || got.Model.NearLimitRate != cfg.Model.NearLimitRate {
 		t.Fatalf("encoded fit lost parameters: %+v", got)
+	}
+	wantSignals := map[machine.Signal]float64{machine.Crash: 2, machine.ComputationError: 2}
+	wantRegimes := map[machine.Regime]map[machine.Signal]float64{machine.R7: {machine.Crash: 2, machine.ComputationError: 1}, machine.R2: {machine.ComputationError: 1}}
+	if diff := cmp.Diff([]any{wantSignals, wantRegimes}, []any{got.Model.Signals, got.Model.RegimeSignals}); diff != "" {
+		t.Fatalf("encoded signal mix (-want +got):\n%s", diff)
 	}
 	if *update {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {
