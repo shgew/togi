@@ -19,10 +19,11 @@ import (
 )
 
 const (
-	eventsFile = "events.jsonl"
-	lockFile   = "lock"
-	archiveDir = "archive"
-	trialsDir  = "trials"
+	eventsFile    = "events.jsonl"
+	eventsTmpFile = ".events.jsonl.tmp"
+	lockFile      = "lock"
+	archiveDir    = "archive"
+	trialsDir     = "trials"
 )
 
 type Options struct {
@@ -192,6 +193,13 @@ func (j *Journal) Open() error {
 			events, data, end = nil, nil, 0
 		}
 	}
+	var torn Event
+	if end < len(data) && len(events) > 0 {
+		if torn, err = j.replaceTornTail(path, data[:end], len(events)+1, data[end:]); err != nil {
+			return err
+		}
+		events, data, end = append(events, torn), nil, 0
+	}
 	f, err := j.fs.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
@@ -205,23 +213,41 @@ func (j *Journal) Open() error {
 		}
 	}
 	j.f, j.events = f, events
+	if torn.Seq > 0 && opts.Log != nil {
+		fmt.Fprintln(opts.Log, opts.Renderer.Line(torn, time.Local))
+	}
 	if end == len(data) {
 		return nil
 	}
 	if err := f.Truncate(int64(end)); err != nil {
-		return fmt.Errorf("truncate torn tail: %w", err)
+		return fmt.Errorf("truncate torn first line: %w", err)
 	}
-	if len(events) > 0 {
-		torn := &JournalTorn{Offset: int64(end), BytesHex: hex.EncodeToString(data[end:])}
-		if _, err := j.Append(torn); err != nil {
-			return err
-		}
-	} else if opts.Sync {
+	if opts.Sync {
 		if err := f.Sync(); err != nil {
-			return err
+			return fmt.Errorf("sync truncated torn first line: %w", err)
 		}
 	}
 	return nil
+}
+
+// replaceTornTail puts in place of the journal its complete lines followed by a journal.torn event holding the torn
+// tail. Until the rename the journal keeps the torn tail, so an interrupted repair is redone by the next Open and
+// records the tail exactly once.
+func (j *Journal) replaceTornTail(path string, complete []byte, seq int, tail []byte) (Event, error) {
+	e, raw, err := j.next(seq, &JournalTorn{Offset: int64(len(complete)), BytesHex: hex.EncodeToString(tail)}, nil)
+	if err != nil {
+		return Event{}, err
+	}
+	tmp := filepath.Join(j.dir, eventsTmpFile)
+	if err := j.writeTemp(tmp, append(slices.Clip(complete), raw...)); err != nil {
+		_ = j.fs.Remove(tmp)
+		return Event{}, fmt.Errorf("write repaired journal: %w", err)
+	}
+	if err := j.fs.Rename(tmp, path); err != nil {
+		_ = j.fs.Remove(tmp)
+		return Event{}, fmt.Errorf("replace journal with repaired journal: %w", err)
+	}
+	return e, nil
 }
 
 func (j *Journal) RecoverPendingArchive() (string, error) {
@@ -904,39 +930,11 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 	if j.appendErr != nil {
 		return Event{}, j.appendErr
 	}
-	seq := len(j.events) + 1
-	kind := p.Kind()
-	if _, ok := payloadTypes[kind]; !ok {
-		return Event{}, fmt.Errorf("append %s: unregistered kind", kind)
-	}
-	if seq == 1 && kind != KindSessionStart {
-		return Event{}, fmt.Errorf("append %s: the first event must be %s", kind, KindSessionStart)
-	}
-	for _, c := range cause {
-		if c < 1 || c >= seq {
-			return Event{}, fmt.Errorf("append %s: cause %d is not an earlier event", kind, c)
-		}
-	}
-	e := Event{
-		Seq:  seq,
-		Time: j.opts.Now().UTC(),
-		Boot: j.opts.Boot,
-		Kind: kind,
-		Msg:  p.Message(),
-		Data: p,
-	}
-	if j.opts.Monotonic != nil {
-		e.Mono = j.opts.Monotonic().Milliseconds()
-	}
-	if len(cause) > 0 {
-		e.Cause = slices.Clone(cause)
-	}
-	raw, err := encode(e, j.opts.Monotonic != nil)
+	e, raw, err := j.next(len(j.events)+1, p, cause)
 	if err != nil {
-		return Event{}, fmt.Errorf("append %s: %w", kind, err)
+		return Event{}, err
 	}
-	raw = append(raw, '\n')
-	e.Raw = raw[:len(raw)-1]
+	kind := e.Kind
 	n, err := j.f.Write(raw)
 	if err == nil && n != len(raw) {
 		err = io.ErrShortWrite
@@ -956,6 +954,43 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 		fmt.Fprintln(j.opts.Log, j.opts.Renderer.Line(e, time.Local))
 	}
 	return e, nil
+}
+
+// next builds event seq and its line with the newline.
+func (j *Journal) next(seq int, p Payload, cause []int) (Event, []byte, error) {
+	kind := p.Kind()
+	if _, ok := payloadTypes[kind]; !ok {
+		return Event{}, nil, fmt.Errorf("append %s: unregistered kind", kind)
+	}
+	if seq == 1 && kind != KindSessionStart {
+		return Event{}, nil, fmt.Errorf("append %s: the first event must be %s", kind, KindSessionStart)
+	}
+	for _, c := range cause {
+		if c < 1 || c >= seq {
+			return Event{}, nil, fmt.Errorf("append %s: cause %d is not an earlier event", kind, c)
+		}
+	}
+	e := Event{
+		Seq:  seq,
+		Time: j.opts.Now().UTC(),
+		Boot: j.opts.Boot,
+		Kind: kind,
+		Msg:  p.Message(),
+		Data: p,
+	}
+	if j.opts.Monotonic != nil {
+		e.Mono = j.opts.Monotonic().Milliseconds()
+	}
+	if len(cause) > 0 {
+		e.Cause = slices.Clone(cause)
+	}
+	raw, err := encode(e, j.opts.Monotonic != nil)
+	if err != nil {
+		return Event{}, nil, fmt.Errorf("append %s: %w", kind, err)
+	}
+	raw = append(raw, '\n')
+	e.Raw = raw[:len(raw)-1]
+	return e, raw, nil
 }
 
 func (j *Journal) Close() error {

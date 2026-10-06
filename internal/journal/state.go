@@ -224,7 +224,21 @@ func (j *Journal) writeState(s State) error {
 	}
 	data = append(data, '\n')
 	tmp := filepath.Join(dir, stateTmpFile)
-	f, err := j.fs.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err := j.writeTemp(tmp, data); err != nil {
+		return err
+	}
+	if err := j.fs.Rename(tmp, filepath.Join(dir, stateFile)); err != nil {
+		return err
+	}
+	if !sync {
+		return nil
+	}
+	return j.fs.SyncDir(dir)
+}
+
+// writeTemp writes data to a file that a rename will put in place, synced first when the journal syncs.
+func (j *Journal) writeTemp(path string, data []byte) error {
+	f, err := j.fs.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
@@ -236,22 +250,13 @@ func (j *Journal) writeState(s State) error {
 		f.Close()
 		return err
 	}
-	if sync {
+	if j.opts.Sync {
 		if err := f.Sync(); err != nil {
 			f.Close()
 			return err
 		}
 	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := j.fs.Rename(tmp, filepath.Join(dir, stateFile)); err != nil {
-		return err
-	}
-	if !sync {
-		return nil
-	}
-	return j.fs.SyncDir(dir)
+	return f.Close()
 }
 
 func syncDir(dir string) error {
