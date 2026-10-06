@@ -31,8 +31,6 @@ type Options struct {
 	Now       func() time.Time
 	Monotonic func() time.Duration
 	Sync      bool
-	Log       io.Writer
-	Renderer  Renderer
 	Build     Build
 	// Prefix, shared by every Lock of one journal, lets a simulation that reopens it each boot decode only the lines appended since.
 	Prefix *Prefix
@@ -72,7 +70,7 @@ func Open(dir string, opts Options) (*Journal, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := j.Open(); err != nil {
+	if _, err := j.Open(); err != nil {
 		_ = j.Close()
 		return nil, fmt.Errorf("open journal %s: %w", dir, err)
 	}
@@ -166,68 +164,68 @@ func (j *Journal) parse(data []byte) ([]Event, int, error) {
 	return j.decode(data, j.opts.Build)
 }
 
-func (j *Journal) Open() error {
+// Open reads the journal and opens it for appending. A torn tail is replaced by a journal.torn event, which Open
+// returns once it is persisted so the caller can log it.
+func (j *Journal) Open() (torn []Event, err error) {
 	dir, opts := j.dir, j.opts
 	path := filepath.Join(dir, eventsFile)
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+		return nil, err
 	}
 	if errors.Is(err, fs.ErrNotExist) {
 		if _, err := j.finishPendingArchive(); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	events, end, err := j.parse(data)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := KnownKinds(events, opts.Build); err != nil {
-		return err
+		return nil, err
 	}
 	if n := len(events); n > 0 && end == len(data) {
 		if a, ok := events[n-1].Data.(*SessionArchived); ok {
 			if err := j.finishArchive(a.Path); err != nil {
-				return fmt.Errorf("finish archive: %w", err)
+				return nil, fmt.Errorf("finish archive: %w", err)
 			}
 			events, data, end = nil, nil, 0
 		}
 	}
-	var torn Event
 	if end < len(data) && len(events) > 0 {
-		if torn, err = j.replaceTornTail(path, data[:end], len(events)+1, data[end:]); err != nil {
-			return err
+		e, err := j.replaceTornTail(path, data[:end], len(events)+1, data[end:])
+		if err != nil {
+			return nil, err
 		}
-		events, data, end = append(events, torn), nil, 0
+		torn = []Event{e}
+		events, data, end = append(events, e), nil, 0
 	}
 	f, err := j.fs.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if opts.Sync {
 		for _, d := range []string{dir, filepath.Dir(dir)} {
 			if err := j.fs.SyncDir(d); err != nil {
 				f.Close()
-				return fmt.Errorf("sync directory %s: %w", d, err)
+				return nil, fmt.Errorf("sync directory %s: %w", d, err)
 			}
 		}
 	}
 	j.f, j.events = f, events
-	if torn.Seq > 0 && opts.Log != nil {
-		fmt.Fprintln(opts.Log, opts.Renderer.Line(torn, time.Local))
-	}
 	if end == len(data) {
-		return nil
+		return torn, nil
 	}
 	if err := f.Truncate(int64(end)); err != nil {
-		return fmt.Errorf("truncate torn first line: %w", err)
+		return nil, fmt.Errorf("truncate torn first line: %w", err)
 	}
 	if opts.Sync {
 		if err := f.Sync(); err != nil {
-			return fmt.Errorf("sync truncated torn first line: %w", err)
+			return nil, fmt.Errorf("sync truncated torn first line: %w", err)
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // replaceTornTail puts in place of the journal its complete lines followed by a journal.torn event holding the torn
@@ -970,9 +968,6 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 		}
 	}
 	j.events = append(j.events, e)
-	if j.opts.Log != nil {
-		fmt.Fprintln(j.opts.Log, j.opts.Renderer.Line(e, time.Local))
-	}
 	return e, nil
 }
 

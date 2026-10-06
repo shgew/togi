@@ -188,7 +188,7 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	if dash != nil {
 		log = dash
 	}
-	j, err := journal.Lock(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: log, Renderer: renderer, Build: session.Build(), Monotonic: m.Clock.Monotonic})
+	j, err := journal.Lock(g.stateDir, journal.Options{Boot: boot, Sync: true, Build: session.Build(), Monotonic: m.Clock.Monotonic})
 	if err != nil {
 		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 	}
@@ -213,13 +213,15 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	if dash != nil {
 		sessionStderr = &hidden
 	}
-	if err := j.Open(); err != nil {
+	torn, err := j.Open()
+	if err != nil {
 		if dash != nil {
 			dash.hide()
 		}
 		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 	}
-	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Cycles: cycles, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr, Close: j.Close, SessionID: j.SessionID})
+	renderer.Log(log, torn...)
+	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Cycles: cycles, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr, Log: log, Renderer: renderer, Close: j.Close, SessionID: j.SessionID})
 	if dash != nil {
 		dash.hide()
 		_, _ = hidden.WriteTo(stderr)

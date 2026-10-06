@@ -144,15 +144,16 @@ func TestColoredLogDoesNotColorJournal(t *testing.T) {
 	dir := t.TempDir()
 	var log bytes.Buffer
 	renderer := Renderer{color: true, journald: true}
-	j, err := Open(dir, Options{Boot: "boot", Now: fixedClock(), Log: &log, Renderer: renderer})
+	j, err := Open(dir, Options{Boot: "boot", Now: fixedClock()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := j.Append(sessionStart()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := j.Append(&Failure{}); err != nil {
-		t.Fatal(err)
+	for _, p := range []Payload{sessionStart(), &Failure{}} {
+		e, err := j.Append(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		renderer.Log(&log, e)
 	}
 	if err := j.Close(); err != nil {
 		t.Fatal(err)
@@ -256,7 +257,7 @@ func TestDiagnosticLogEscapesWithoutSanitizingJournal(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var log bytes.Buffer
-	j, err := Open(dir, Options{Boot: "boot", Now: fixedClock(), Log: &log})
+	j, err := Open(dir, Options{Boot: "boot", Now: fixedClock()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,6 +270,7 @@ func TestDiagnosticLogEscapesWithoutSanitizingJournal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	Renderer{}.Log(&log, event)
 	if !strings.Contains(log.String(), `trial 0001 日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u2028`+"\n") {
 		t.Fatalf("diagnostic not visibly escaped: %q", log.String())
 	}

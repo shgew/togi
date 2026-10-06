@@ -52,7 +52,7 @@ func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 		if kept == nil {
 			return
 		}
-		finalizeErr := errors.Join(kept.flush(), kept.Close())
+		finalizeErr := errors.Join(kept.flush(in.Log, in.Renderer), kept.Close())
 		if finalizeErr != nil && errors.Is(err, ErrBootCap) {
 			// Keep the cap in the message but out of the chain: an unfinalized capped run is an error, not censored.
 			err = fmt.Errorf("%s; finalize simulated journal: %w", err.Error(), finalizeErr)
@@ -108,7 +108,7 @@ func boot(ctx context.Context, in Input, journals *journals) (stop session.Stop,
 	if in.Wrap != nil {
 		wrapped = in.Wrap(wrapped)
 	}
-	return session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Carry: j.carried, Stderr: in.Log, SessionID: j.sessionID})
+	return session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Carry: j.carried, Stderr: in.Log, Log: in.Log, Renderer: in.Renderer, SessionID: j.sessionID})
 }
 
 // journals gives each boot its journal: one locked for the boot and closed when it ends or, with InMemoryJournal, one
@@ -131,7 +131,7 @@ func (s *journals) open(in Input, id string, current machine.BIOSContext) (bootJ
 		s.kept.SetBoot(id)
 		return s.kept.boot(), nil
 	}
-	j, err := journal.Lock(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Monotonic: in.Machine.Monotonic, Log: in.Log, Renderer: in.Renderer, Build: session.Build(), Prefix: &s.prefix})
+	j, err := journal.Lock(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Monotonic: in.Machine.Monotonic, Build: session.Build(), Prefix: &s.prefix})
 	if err != nil {
 		return bootJournal{}, err
 	}
@@ -140,10 +140,12 @@ func (s *journals) open(in Input, id string, current machine.BIOSContext) (bootJ
 		_ = j.Close()
 		return bootJournal{}, err
 	}
-	if err := j.Open(); err != nil {
+	torn, err := j.Open()
+	if err != nil {
 		_ = j.Close()
 		return bootJournal{}, err
 	}
+	in.Renderer.Log(in.Log, torn...)
 	if in.InMemoryJournal {
 		s.kept = &memoryJournal{Journal: j, carried: carried}
 		return s.kept.boot(), nil
@@ -202,7 +204,7 @@ func (j *memoryJournal) snapshot() error {
 	return nil
 }
 
-func (j *memoryJournal) flush() error {
+func (j *memoryJournal) flush(log io.Writer, renderer journal.Renderer) error {
 	if !j.hasState {
 		return nil
 	}
@@ -211,8 +213,11 @@ func (j *memoryJournal) flush() error {
 		if j.state.LastSeq > 0 {
 			cause = []int{j.state.LastSeq}
 		}
-		_, warningErr := j.Append(&journal.SessionWarning{Operation: "write state projection", Error: err.Error()}, cause...)
-		return warningErr
+		warning, err := j.Append(&journal.SessionWarning{Operation: "write state projection", Error: err.Error()}, cause...)
+		if err != nil {
+			return err
+		}
+		renderer.Log(log, warning)
 	}
 	return nil
 }

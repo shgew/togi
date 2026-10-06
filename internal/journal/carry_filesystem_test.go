@@ -67,7 +67,7 @@ func (f carryFilesystemFixture) lock(t *testing.T, build journal.Build, sync boo
 func (f carryFilesystemFixture) writeSource(t *testing.T, id string, build journal.Build, established bool) {
 	t.Helper()
 	j := f.lock(t, build, false)
-	if err := j.Open(); err != nil {
+	if _, err := j.Open(); err != nil {
 		_ = j.Close()
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func (f carryFilesystemFixture) runCarrySession(t *testing.T, settled bool) {
 		_ = j.Close()
 		t.Fatalf("settled carry reapplied: %+v", carried)
 	}
-	if err := j.Open(); err != nil {
+	if _, err := j.Open(); err != nil {
 		_ = j.Close()
 		t.Fatal(err)
 	}

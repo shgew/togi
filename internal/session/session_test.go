@@ -78,7 +78,7 @@ func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Jo
 	if err != nil {
 		return Stop{}, fmt.Errorf("read boot id: %w", err)
 	}
-	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Log: in.Log, Build: Build(), Prefix: in.prefix})
+	j, err := journal.Open(in.Dir, journal.Options{Boot: boot, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Build: Build(), Prefix: in.prefix})
 	if err != nil {
 		return Stop{}, err
 	}
@@ -86,7 +86,7 @@ func simulateBoot(ctx context.Context, in simRun, wrap func(*journal.Journal) Jo
 	if in.AfterAppend != nil {
 		wrapped = &interruptedJournal{Journal: wrapped, gate: in.AfterAppend}
 	}
-	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Bootloader: in.Bootloader, Prompt: in.Prompt, Defects: in.Defects, Stderr: in.Stderr, SessionID: j.SessionID, Carry: in.Carry})
+	stop, err := Run(ctx, Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: boot, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Bootloader: in.Bootloader, Prompt: in.Prompt, Defects: in.Defects, Stderr: in.Stderr, Log: in.Log, SessionID: j.SessionID, Carry: in.Carry})
 	if cerr := j.Close(); err == nil && cerr != nil {
 		return Stop{}, cerr
 	}

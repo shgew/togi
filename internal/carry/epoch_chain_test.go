@@ -42,7 +42,7 @@ func TestInterruptedEpochTransitionRetainsOriginalSoloLimitsAndFailurePoints(t *
 			if len(first.Facts) != 1 || first.Facts[0].Outcome != journal.OutcomeFailure || first.Facts[0].Session != failure.session || first.Facts[0].Seq != failure.seq {
 				t.Fatalf("first transition must retain the original failure, without old-epoch passes: %+v", first.Facts)
 			}
-			if err := j.Open(); err != nil {
+			if _, err := j.Open(); err != nil {
 				t.Fatal(err)
 			}
 			p := &writer{t: t, j: j, session: "20261002T000000Z"}

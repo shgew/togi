@@ -83,7 +83,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	if all {
 		build.Ruleset = 0
 	}
-	j, err := journal.Lock(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: stderr, Build: build})
+	j, err := journal.Lock(g.stateDir, journal.Options{Boot: boot, Sync: true, Build: build})
 	if err != nil {
 		return resetError(err, journal.ErrLocked, stderr)
 	}
@@ -133,8 +133,10 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
+	opened := len(j.Events())
 	if core != nil {
 		err := session.ResetCore(j, *core)
+		journal.Renderer{}.Log(stderr, j.Events()[opened:]...)
 		if code, ok := closeCommand("reset", j, err, stderr); !ok {
 			return code
 		}
@@ -143,6 +145,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	}
 	warnings := resetWarnings(j.Events(), g)
 	path, err := session.ResetAll(j)
+	journal.Renderer{}.Log(stderr, j.Events()[opened:]...)
 	if code, ok := closeCommand("reset", j, err, stderr); !ok {
 		return code
 	}
@@ -233,13 +236,15 @@ func openForCommand(name string, j *journal.Journal, stderr io.Writer, allowRule
 			return "", exitError, false
 		}
 	}
-	if err := j.Open(); err != nil {
+	torn, err := j.Open()
+	if err != nil {
 		fmt.Fprintf(stderr, "togi %s: %s\n", name, journal.EscapeText(err.Error()))
 		if errors.Is(err, journal.ErrLocked) {
 			return "", exitLocked, false
 		}
 		return "", exitError, false
 	}
+	journal.Renderer{}.Log(stderr, torn...)
 	return events[0].Data.(*journal.SessionStart).Session, exitOK, true
 }
 

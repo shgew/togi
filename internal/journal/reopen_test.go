@@ -217,6 +217,27 @@ func reopenTornFixture(t *testing.T, dir string, prefix, tail []byte) {
 	}
 }
 
+func TestOpenReturnsPersistedTornEventOnce(t *testing.T) {
+	dir, prefix, tail := tornTailFixture(t)
+	for _, want := range []int{1, 0} {
+		j, err := Lock(dir, Options{Now: fixedClock(), Sync: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		torn, err := j.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkTornRecord(t, j.Events(), prefix, tail)
+		if len(torn) != want || want == 1 && !cmp.Equal(torn[0], j.Events()[1]) {
+			t.Fatalf("Open returned %+v, want %d journal.torn event matching %+v", torn, want, j.Events()[1])
+		}
+		if err := j.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // TestOpenRepairFilesystemFailures stops the repair at each filesystem operation, before or after its effect, which
 // also leaves every state a crash at that point can.
 func TestOpenRepairFilesystemFailures(t *testing.T) {
@@ -230,7 +251,7 @@ func TestOpenRepairFilesystemFailures(t *testing.T) {
 				}
 				faults := &faultJournalFilesystem{journalFilesystem: j.fs, at: at, after: after}
 				j.fs = faults
-				if err := j.Open(); !errors.Is(err, errJournalFilesystem) || !faults.fired {
+				if _, err := j.Open(); !errors.Is(err, errJournalFilesystem) || !faults.fired {
 					j.Close()
 					t.Fatalf("repair failure = %v, fired %v, calls %v", err, faults.fired, faults.calls)
 				}
@@ -250,7 +271,7 @@ func TestTornTailRecordWriteFailurePreservesEvidence(t *testing.T) {
 	}
 	faults := &faultJournalFilesystem{journalFilesystem: j.fs, failOp: "write"}
 	j.fs = faults
-	if err := j.Open(); !errors.Is(err, errJournalFilesystem) {
+	if _, err := j.Open(); !errors.Is(err, errJournalFilesystem) {
 		j.Close()
 		t.Fatalf("record write failure: %v", err)
 	}
@@ -284,7 +305,7 @@ func TestTornFirstLineSyncFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	j.fs = &faultJournalFilesystem{journalFilesystem: j.fs, at: 4}
-	if err := j.Open(); !errors.Is(err, errJournalFilesystem) {
+	if _, err := j.Open(); !errors.Is(err, errJournalFilesystem) {
 		t.Fatalf("empty repair sync failure: %v", err)
 	}
 	j.Close()

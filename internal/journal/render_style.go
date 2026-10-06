@@ -100,6 +100,16 @@ func (r Renderer) Line(e Event, loc *time.Location) string {
 	return r.styled(StyleOf(e), FormatLine(e, loc))
 }
 
+// Log writes the line of each persisted event to the run log w, in local time; a nil w discards them.
+func (r Renderer) Log(w io.Writer, events ...Event) {
+	if w == nil {
+		return
+	}
+	for _, e := range events {
+		fmt.Fprintln(w, r.Line(e, time.Local))
+	}
+}
+
 func (r Renderer) PrefixedLine(e Event, loc *time.Location, prefix string) string {
 	return r.styled(StyleOf(e), EscapeText(prefix)+FormatLine(e, loc))
 }

@@ -42,8 +42,11 @@ type Input struct {
 	// Defects overrides the binary's entries in tests; nil uses the shipped list.
 	Defects []defect.Entry
 	// Carry is what a transition carries into a new session; nil otherwise.
-	Carry     *carry.Carry
-	Stderr    io.Writer
+	Carry  *carry.Carry
+	Stderr io.Writer
+	// Log receives each appended event's line, rendered by Renderer; nil discards them.
+	Log       io.Writer
+	Renderer  journal.Renderer
 	Close     func() error
 	SessionID func(time.Time) (string, error)
 }
@@ -296,6 +299,7 @@ func (r *runner) appendJournal(p journal.Payload, cause ...int) (journal.Event, 
 	if err != nil {
 		return journal.Event{}, r.latch(err)
 	}
+	r.in.Renderer.Log(r.in.Log, e)
 	r.fold.Fold(e)
 	r.state.Fold(e)
 	r.tuner.Fold(e)
