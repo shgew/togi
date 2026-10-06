@@ -1,6 +1,6 @@
   [0;90mtogi   [0;97m20:22:28   [0;90msession [0;37m20h22m   55 [0;90mfailures · [0;37m15 [0;90mcrashes   last observed failure [0;37m18:42   [0;93mscreen paused until 20:37[m
 
-  [0;92m■ [0;37mSOLO LIMITS  [0;90m16/16  [0;35m───  [0;96m► [0;97mCYCLE 1  [0;37mstep 7 of 14  [0;35m───  [0;90m○ DEEPEN  [0;35m───  [0;90mCLEAN CYCLES 0  [0;35m· repeats until stopped[m
+  [0;92m■ [0;37mSOLO LIMITS  [0;90m16/16  [0;35m───  [0;96m► [0;97mCYCLE 1  [0;37mstep 7 of 18  [0;35m───  [0;90m○ DEEPEN  [0;35m───  [0;90mCLEAN CYCLES 0  [0;35m· repeats until stopped[m
 
   [0;96m▌  CYCLE 1   [0;37mStep 7 leaves every core idle for 15 minutes, with short wake-ups, to test idle and boost states.          [0;90mlast trial      [0;92mPASS  [0;90m2:00 on core 15 · Tctl max 73°C[m
   [0;96m▌            [0;37mThis screen holds still until 20:37, clock included, so drawing it cannot wake the cores.[m
@@ -27,7 +27,7 @@
   [0;96m► [0;97m06  -27  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█[0;90m··                        [0;37m-28                                          [0;96m► [0;97m14    0  [0;37mAT LIMIT  [0;91m█[0;90m···                                                   [0;37m-1[m
   [0;96m► [0;97m07  -32  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                     [0;37m-33                                          [0;96m► [0;97m15  -38  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█               [0;37m-39[m
 
-  [0;90mCYCLE 1 [0;35m───────────────────────────────────────────────────────────────────────────────────────── [0;90m14 steps · 6 done     WHAT HAPPENED [0;35m─────────────────────────────────────────────────────────────────────── [0;90mnewest first · l: every event[m
+  [0;90mCYCLE 1 [0;35m───────────────────────────────────────────────────────────────────────────────────────── [0;90m18 steps · 6 done     WHAT HAPPENED [0;35m─────────────────────────────────────────────────────────────────────── [0;90mnewest first · l: every event[m
 
     [0;90m#   kind                  where                   workload                      schedule       result                 20:22  [0;92mpass     [0;37mR2 heavy vector on core 15 at -38 · passed · Tctl max 73°C[m
   [0;92m■  [0;37m1  [0;97mR7 [0;37mall-core           2 CCDs · 13 parts       [0;90mmprime AVX2 36K-248K          [0;37m13 parts       [0;92mdone                   [0;90m20:20  [0;92mpass     [0;37mR2 heavy vector on core 07 at -32 · passed · Tctl max 73°C[m
@@ -42,17 +42,17 @@
   [0;35m○ [0;90m10  [0;37mR1 [0;90mlight              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               20:02  [0;92mpass     [0;37mR2 heavy vector on core 10 at -16 · passed · Tctl max 73°C[m
   [0;35m○ [0;90m11  [0;37mR1 [0;90mlight              one core at a time      y-cruncher SNT + SVT          16 x 2m                               20:00  [0;92mpass     [0;37mR2 heavy vector on core 02 at -35 · passed · Tctl max 63°C[m
   [0;35m○ [0;90m12  [0;37mR3 [0;90mload steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               19:58  [0;92mpass     [0;37mR2 heavy vector on core 09 at -16 · passed · Tctl max 64°C[m
-  [0;35m○ [0;90m13  [0;37mR4 [0;90mpartial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               19:56  [0;92mpass     [0;37mR2 heavy vector on core 01 at -33 · passed · Tctl max 66°C[m
-  [0;35m○ [0;90m14  [0;37mR6 [0;90midle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   19:54  [0;92mpass     [0;37mR2 heavy vector on core 08 at -26 · passed · Tctl max 69°C[m
-                                                                                                                          [0;90m19:52  [0;92mpass     [0;37mR2 heavy vector on core 00 at -37 · passed · Tctl max 74°C[m
-  [0;90mR7 [0;35m─────────────────────────── [0;90mtop requesters [0;35m───────── [0;90mself-sufficient [0;35m───────────────── [0;90mobserved, not a guarantee     19:50  [0;92mpass     [0;37mR2 heavy vector on core 15 at -38 · passed · Tctl max 62°C[m
-  [0;90mmprime AVX2 36K-248K           05 14 by offset          01-14                                                           19:48  [0;92mpass     [0;37mR2 heavy vector on core 07 at -32 · passed · Tctl max 62°C[m
-  [0;90mmprime AVX-512 36K-248K        05 14 by offset          01-14                                                           19:46  [0;92mpass     [0;37mR2 heavy vector on core 14 at 0 · passed · Tctl max 70°C[m
-  [0;90my-cruncher FFTv4 + N63 + VT3   05 14 by offset          01-14                                                           19:44  [0;92mpass     [0;37mR2 heavy vector on core 06 at -27 · passed · Tctl max 72°C[m
-                                                                                                                          [0;90m19:42  [0;92mpass     [0;37mR2 heavy vector on core 13 at -22 · passed · Tctl max 70°C[m
-                                                                                                                          [0;90m19:40  [0;92mpass     [0;37mR2 heavy vector on core 05 at -7 · passed · Tctl max 69°C[m
-                                                                                                                          [0;90m19:38  [0;92mpass     [0;37mR2 heavy vector on core 12 at -10 · passed · Tctl max 68°C[m
-                                                                                                                          [0;90m19:36  [0;92mpass     [0;37mR2 heavy vector on core 04 at -32 · passed · Tctl max 69°C[m
+  [0;35m○ [0;90m13  [0;37mR3 [0;90mload steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               19:56  [0;92mpass     [0;37mR2 heavy vector on core 01 at -33 · passed · Tctl max 66°C[m
+  [0;35m○ [0;90m14  [0;37mR3 [0;90mload steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               19:54  [0;92mpass     [0;37mR2 heavy vector on core 08 at -26 · passed · Tctl max 69°C[m
+  [0;35m○ [0;90m15  [0;37mR4 [0;90mpartial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               19:52  [0;92mpass     [0;37mR2 heavy vector on core 00 at -37 · passed · Tctl max 74°C[m
+  [0;35m○ [0;90m16  [0;37mR4 [0;90mpartial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               19:50  [0;92mpass     [0;37mR2 heavy vector on core 15 at -38 · passed · Tctl max 62°C[m
+  [0;35m○ [0;90m17  [0;37mR4 [0;90mpartial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               19:48  [0;92mpass     [0;37mR2 heavy vector on core 07 at -32 · passed · Tctl max 62°C[m
+  [0;35m○ [0;90m18  [0;37mR6 [0;90midle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   19:46  [0;92mpass     [0;37mR2 heavy vector on core 14 at 0 · passed · Tctl max 70°C[m
+                                                                                                                          [0;90m19:44  [0;92mpass     [0;37mR2 heavy vector on core 06 at -27 · passed · Tctl max 72°C[m
+  [0;90mR7 [0;35m─────────────────────────── [0;90mtop requesters [0;35m───────── [0;90mself-sufficient [0;35m───────────────── [0;90mobserved, not a guarantee     19:42  [0;92mpass     [0;37mR2 heavy vector on core 13 at -22 · passed · Tctl max 70°C[m
+  [0;90mmprime AVX2 36K-248K           05 14 by offset          01-14                                                           19:40  [0;92mpass     [0;37mR2 heavy vector on core 05 at -7 · passed · Tctl max 69°C[m
+  [0;90mmprime AVX-512 36K-248K        05 14 by offset          01-14                                                           19:38  [0;92mpass     [0;37mR2 heavy vector on core 12 at -10 · passed · Tctl max 68°C[m
+  [0;90my-cruncher FFTv4 + N63 + VT3   05 14 by offset          01-14                                                           19:36  [0;92mpass     [0;37mR2 heavy vector on core 04 at -32 · passed · Tctl max 69°C[m
                                                                                                                           [0;90m19:34  [0;92mpass     [0;37mR2 heavy vector on core 11 at -4 · passed · Tctl max 69°C[m
                                                                                                                           [0;90m19:32  [0;92mpass     [0;37mR2 heavy vector on core 03 at -17 · passed · Tctl max 64°C[m
                                                                                                                           [0;90m19:30  [0;92mpass     [0;37mR2 heavy vector on core 10 at -16 · passed · Tctl max 66°C[m

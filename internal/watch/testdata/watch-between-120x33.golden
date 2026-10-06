@@ -16,13 +16,13 @@
    06 -30 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -31             14  -4 AT LIMIT ▄▄█                          -5 top
    07 -32 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33             15 -39 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -40
 
- CYCLE 1 ─────────────────────────────── 14 steps · 0 done   WHAT HAPPENED ──────────────────────────────────── l: all
+ CYCLE 1 ─────────────────────────────── 18 steps · 0 done   WHAT HAPPENED ──────────────────────────────────── l: all
 
  ►  1 R7 all-core       3+ parts      part 1 of 3            10:14  fail     R7 full CCD 0 on 00-07 · the stress
       ├ full CCD 0      00-07         1 failed               10:14  step     cycle 1 step 1: R7 all-core, mprime AVX2
-      ├ full CCD 1      08-15                                10:14  cycle    cycle 1 started · 14 steps
+      ├ full CCD 1      08-15                                10:14  cycle    cycle 1 started · 18 steps
       ├ full CCD 0+1    00-15                                10:14  limit    core 15 solo limit -39
- +14 more                                                    10:13  limit    core 01 solo limit -34
+ +18 more                                                    10:13  limit    core 01 solo limit -34
                                                              10:13  limit    core 00 solo limit -37
  R7 ────────────── top ───────────── self-sufficient ─────   10:11  limit    cores 04, 07 solo limit -32
  mprime AVX2       05 14 by offset   none yet                10:05  limit    core 13 solo limit -24

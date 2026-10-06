@@ -1,9 +1,9 @@
- togi   02:27:15   session 26h26m   71 failures · 17 crashes   last observed failure 01:59, 27m ago
+ togi   04:35:15   session 28h34m   71 failures · 17 crashes   last observed failure 03:03, 1h31m ago
  ■ SOLO ─ ► CYCLE 1 ─ ○ DEEPEN ─ CLEAN 1
 
  ▌  I restored safer offsets before stopping. togi run picks up where I left off.
 
- STOPPED  02:26:35 · requested clean cycles completed
+ STOPPED  04:34:35 · requested clean cycles completed
  Rows show the saved profile, not applied now.
 
  CCD 0 idle       0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
@@ -16,17 +16,17 @@
    06 -27 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█·             -28             14   0 AT LIMIT █·                           -1
    07 -30 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -31             15 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··        -36
 
- CYCLE 1 ────────────────────────────── 14 steps · 14 done   WHAT HAPPENED ──────────────────────────────────── l: all
+ CYCLE 1 ────────────────────────────── 18 steps · 18 done   WHAT HAPPENED ──────────────────────────────────── l: all
 
- ■  1 R7 all-core       13 parts      done                   02:26  stop     stopped
- ■  2 R7 all-core       13 parts      done                   02:26  cycle    cycle 1 passed, a full cycle of every
- ■  3 R7 all-core       13 parts      done                   02:26  pass     R6 idle + bursts on 00-15 · passed
- ■  4 R2 heavy vector   16 x 2m       done · hunt 7          02:11  pass     R4 partial load on core 15 at -35
- +10 more                                                    02:09  note     cycle 1 step 3 CCD 1
-                                                             02:09  note     cycle 1 step 3 CCD 0
- R7 ────────────── top ───────────── self-sufficient ─────   02:09  note     cycle 1 step 2 CCD 1
- mprime AVX2       05 14 by offset   01-14                   02:09  note     cycle 1 step 2 CCD 0
- mprime AVX-512    05 14 by offset   01-14                   02:09  note     cycle 1 step 1 CCD 1
+ ■  1 R7 all-core       13 parts      done                   04:34  stop     stopped
+ ■  2 R7 all-core       13 parts      done                   04:34  cycle    cycle 1 passed, a full cycle of every
+ ■  3 R7 all-core       13 parts      done                   04:34  pass     R6 idle + bursts on 00-15 · passed
+ ■  4 R2 heavy vector   16 x 2m       done · hunt 7          04:19  pass     R4 partial load on core 15 at -35
+ +14 more                                                    04:17  pass     R4 partial load on core 07 at -30
+                                                             04:15  pass     R4 partial load on core 14 at 0 · passed
+ R7 ────────────── top ───────────── self-sufficient ─────   04:13  pass     R4 partial load on core 06 at -27
+ mprime AVX2       05 14 by offset   01-14                   04:11  pass     R4 partial load on core 13 at -22
+ mprime AVX-512    05 14 by offset   01-14                   04:09  pass     R4 partial load on core 05 at -7
  y-cruncher FFTv4  05 14 by offset   01-14                   +191 more
 
   ?  help    l  log    esc  back    q  close view

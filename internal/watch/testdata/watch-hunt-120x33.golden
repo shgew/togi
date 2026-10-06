@@ -1,5 +1,5 @@
  togi   10:16:57   session 10h16m   31 failures · 8 crashes   last observed failure 10:16, a moment ago
- ■ SOLO ─ ○ CYCLE 1 paused at 1/14 ─ ►  HUNT 1   locate ─ ○ DEEPEN ─ CLEAN 0
+ ■ SOLO ─ ○ CYCLE 1 paused at 1/18 ─ ►  HUNT 1   locate ─ ○ DEEPEN ─ CLEAN 0
 
  ▌  Crashed early in R7 all-core on 00-07; no core named. Rerunning it with 08-15 at 0.
 

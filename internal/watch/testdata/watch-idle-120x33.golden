@@ -18,11 +18,11 @@
  ► 06 -27 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█·             -28           ► 14   0 AT LIMIT █·                           -1
  ► 07 -32 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33           ► 15 -38 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39
 
- CYCLE 1 ─────────────────────────────── 14 steps · 6 done   WHAT HAPPENED ──────────────────────────────────── l: all
+ CYCLE 1 ─────────────────────────────── 18 steps · 6 done   WHAT HAPPENED ──────────────────────────────────── l: all
 
  ■  6 R2 heavy vector   16 x 2m       done                   20:22  pass     R2 heavy vector on core 15 at -38
  ►  7 R6 idle + bursts  15m           trial 1 of 1           20:20  pass     R2 heavy vector on core 07 at -32
- +7 more                                                     20:18  pass     R2 heavy vector on core 14 at 0 · passed
+ +11 more                                                    20:18  pass     R2 heavy vector on core 14 at 0 · passed
                                                              20:16  pass     R2 heavy vector on core 06 at -27
  R7 ────────────── top ───────────── self-sufficient ─────   20:14  pass     R2 heavy vector on core 13 at -22
  mprime AVX2       05 14 by offset   01-14                   20:12  pass     R2 heavy vector on core 05 at -7

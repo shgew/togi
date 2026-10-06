@@ -1,6 +1,6 @@
   togi   10:16:57   session 10h16m   31 failures · 8 crashes   last observed failure 10:16, a moment ago
 
-  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14, part 1  ───  ►  HUNT 1   locate  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 18, part 1  ───  ►  HUNT 1   locate  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
   ▌  HUNT 1   Crashed early in R7 all-core on 00-07; no core named. Rerunning     last trial      CRASH  on 00-07
   ▌           it with 08-15 at 0.
@@ -34,7 +34,7 @@
   then        if the hunt resolves and the rerun passes:                          10:14  fail     core 05 fails at -10
               1  record what it found: one core's failure point, or a             10:14  fail     R7 full CCD 0 on 00-07 · the stress program quit · core 05
               2  back off past it                                                 10:14  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
-              3  rerun R7 all-core on 00-07: 5 trials of 2m, its original         10:14  cycle    cycle 1 started · 14 steps
+              3  rerun R7 all-core on 00-07: 5 trials of 2m, its original         10:14  cycle    cycle 1 started · 18 steps
               4  resume cycle 1                                                   10:14  limit    core 15 solo limit -39
                                                                                   10:13  limit    core 01 solo limit -34
                                                                                   10:13  limit    core 00 solo limit -37

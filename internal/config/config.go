@@ -73,7 +73,7 @@ func Default() Config {
 		},
 		Evidence: Evidence{Miss: 0.05, Rate: 0.5},
 		Checking: Checking{
-			Cycle: []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R4, machine.R6},
+			Cycle: []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R3, machine.R3, machine.R4, machine.R4, machine.R4, machine.R6},
 		},
 		DeadEnds: DeadEnds{
 			InconclusiveInARow: 3,

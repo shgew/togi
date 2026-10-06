@@ -1,6 +1,6 @@
   togi   20:22:28   session 20h22m   55 failures · 15 crashes   last observed failure 18:42   screen paused until 20:37
 
-  ■ SOLO LIMITS  16/16  ───  ► CYCLE 1  step 7 of 14  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ■ SOLO LIMITS  16/16  ───  ► CYCLE 1  step 7 of 18  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
   ▌  CYCLE 1   Every core idle with short wake-ups; this screen holds still.      last trial      PASS  2:00 on core 15 · Tctl max 73°C
 
@@ -23,7 +23,7 @@
   ► 06  -27  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄█·              -28                           ► 14    0  AT LIMIT  █·                            -1
   ► 07  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -33                           ► 15  -38  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -39
 
-  CYCLE 1 ───────────────────────────────────────────────── 14 steps · 6 done     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
+  CYCLE 1 ───────────────────────────────────────────────── 18 steps · 6 done     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
 
     #  kind              where               schedule      result                 20:22  pass     R2 heavy vector on core 15 at -38 · passed · Tctl max 73°C
   ■  1 R7 all-core       2 CCDs · 13 parts   13 parts      done                   20:20  pass     R2 heavy vector on core 07 at -32 · passed · Tctl max 73°C
@@ -34,7 +34,7 @@
   ■  6 R2 heavy vector   one core at a time  16 x 2m       done                   20:10  pass     R2 heavy vector on core 12 at -10 · passed · Tctl max 71°C
   ►  7 R6 idle + bursts  all cores idle      15m           trial 1 of 1           20:08  pass     R2 heavy vector on core 04 at -32 · passed · Tctl max 73°C
   ○  8 R5 both threads   one core at a time  16 x 2m                              20:06  pass     R2 heavy vector on core 11 at -4 · passed · Tctl max 67°C
-  +6 more                                                                         20:04  pass     R2 heavy vector on core 03 at -17 · passed · Tctl max 76°C
+  +10 more                                                                        20:04  pass     R2 heavy vector on core 03 at -17 · passed · Tctl max 76°C
                                                                                   20:02  pass     R2 heavy vector on core 10 at -16 · passed · Tctl max 73°C
   R7 ───────────────────── top requesters ───── self-sufficient ─────────────     20:00  pass     R2 heavy vector on core 02 at -35 · passed · Tctl max 63°C
   mprime AVX2 36K-248K     05 14 by offset      01-14                             19:58  pass     R2 heavy vector on core 09 at -16 · passed · Tctl max 64°C
