@@ -3,6 +3,7 @@ package simrun
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -177,4 +178,109 @@ func assertMatrixRerunRetries(t *testing.T, events []journal.Event) {
 			delete(pending, obligation)
 		}
 	}
+}
+
+func TestPowerLossDuringHuntResume(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(4)
+	cfg.Joints = []sim.Joint{{Members: map[int]int{1: -10, 3: -10}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
+	runInterruptionMatrix(t, "hunt", cfg, quickMatrixConfig(),
+		func(e journal.Event) bool { return e.Kind == journal.KindHuntStart },
+		func(e journal.Event, closing *bool) bool {
+			if e.Kind == journal.KindHuntEnd {
+				*closing = true
+			}
+			p, ok := e.Data.(*journal.TrialIntent)
+			return *closing && ok && !p.Rerun
+		})
+}
+
+func TestPowerLossDuringDeepeningResume(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(4)
+	for i := range cfg.Limits {
+		cfg.Limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
+		cfg.Limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
+	}
+	c := quickMatrixConfig()
+	runInterruptionMatrix(t, "deepening", cfg, c,
+		func(e journal.Event) bool {
+			p, ok := e.Data.(*journal.DeepeningRound)
+			return ok && p.Event == journal.CycleStart
+		},
+		func(e journal.Event, _ *bool) bool {
+			p, ok := e.Data.(*journal.DeepeningRound)
+			return ok && p.Event == journal.CycleEnd
+		})
+}
+
+func runInterruptionMatrix(t *testing.T, name string, cfg sim.Config, c config.Config, open func(journal.Event) bool, closeWindow func(journal.Event, *bool) bool) {
+	t.Helper()
+	_, prefix, _ := runHunt(t, cfg, nil, func(in *Input) {
+		in.Config = c
+		in.Cycles = 0
+		in.Until = open
+	})
+	openIndex := slices.IndexFunc(prefix, open)
+	if openIndex < 0 {
+		t.Fatalf("%s prefix missing opening event", name)
+	}
+	matrix := interruptionMatrix{name: name, cfg: cfg, config: c, prefix: prefix[:openIndex+1], closeWindow: closeWindow}
+	reference, accesses := matrix.run(t, -1, -1)
+	window := reference[len(matrix.prefix):]
+	want := matrixCommitments(reference)
+	if name == "hunt" && len(want.Reruns) == 0 {
+		t.Fatal("hunt reference has no completed rerun evidence")
+	}
+	if name == "hunt" {
+		for _, rerun := range want.Reruns {
+			if rerun.Outcome != journal.OutcomePass {
+				t.Fatalf("hunt reference rerun did not pass: %+v", rerun)
+			}
+		}
+	}
+	closing := false
+	closeAt := slices.IndexFunc(window, func(e journal.Event) bool { return closeWindow(e, &closing) }) + 1
+	if closeAt == 0 {
+		t.Fatalf("%s reference missing closing event", name)
+	}
+	for at := 0; at <= closeAt; at++ {
+		t.Run(fmt.Sprintf("append %d", at), func(t *testing.T) {
+			t.Parallel()
+			events, _ := matrix.run(t, at, -1)
+			assertMatrixDecisions(t, want, events)
+		})
+	}
+	for i, access := range accesses {
+		t.Run(fmt.Sprintf("smu %d %s core %d after %v", i+1, access.Op, access.Core, access.After), func(t *testing.T) {
+			t.Parallel()
+			events, observed := matrix.run(t, -1, i+1)
+			if diff := cmp.Diff(access, observed[i]); diff != "" {
+				t.Fatalf("interrupted another SMU window (-want +got):\n%s", diff)
+			}
+			assertMatrixDecisions(t, want, events)
+		})
+	}
+}
+
+type matrixCrash struct {
+	session.Journal
+	machine *sim.Machine
+	at      int
+	count   *int
+	crashed *bool
+}
+
+func (j *matrixCrash) Append(p journal.Payload, cause ...int) (journal.Event, error) {
+	e, err := j.Journal.Append(p, cause...)
+	if err == nil {
+		*j.count++
+		if *j.count == j.at {
+			*j.crashed = true
+			j.machine.NextReset(machine.ResetPowerLoss)
+			j.machine.Crash()
+			return e, machine.ErrCrashed
+		}
+	}
+	return e, err
 }

@@ -331,6 +331,63 @@ func TestARulesetTransitionAfterABIOSChangeCarriesOnlySoloLimits(t *testing.T) {
 	}
 }
 
+func TestBIOSChangeArchivesAndChecksSoloLimits(t *testing.T) {
+	t.Parallel()
+	cfg := huntConfig(4)
+	m, err := sim.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	c := quickMatrixConfig()
+	c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
+	in := Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1}
+	stopAfterAlonePasses(&in, 4)
+	if _, err := Simulate(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	old, _, err := journal.Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := old[0].Data.(*journal.SessionStart).Session
+	m.SetBIOSContext(machine.BIOSContext{BIOSVersion: "new", Board: "sim", CPUModel: "sim", Microcode: "0x2", BoostLimitMHz: 5500})
+	m.Reboot()
+	phases := 0
+	in.Until = func(e journal.Event) bool {
+		if p, ok := e.Data.(*journal.CorePhase); ok && p.From == "" {
+			phases++
+		}
+		return phases == 4
+	}
+	if _, err := Simulate(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "archive", id+".jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	events, _, err := journal.Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	carried, ok := findPayload(events, func(p *journal.SessionCarried) bool { return true })
+	if !ok || carried.FailurePoints {
+		t.Fatalf("carried %+v, want candidate solo limits only", carried)
+	}
+	count := 0
+	for _, e := range events {
+		if p, ok := e.Data.(*journal.CorePhase); ok && p.From == "" {
+			if p.To != journal.PhaseSearch || !p.CheckSoloLimit {
+				t.Errorf("core %d not checking carried candidate solo limit: %+v", p.Core, p)
+			}
+			count++
+		}
+	}
+	if count != 4 {
+		t.Errorf("initial core phases %d, want 4", count)
+	}
+}
+
 func TestAConfiguredCandidateSoloLimitStopsShortOfACarriedFailurePoint(t *testing.T) {
 	t.Parallel()
 	dir, _ := restampedRuleset3Session(t)
