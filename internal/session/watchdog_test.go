@@ -58,6 +58,7 @@ func TestWatchdogPreflight(t *testing.T) {
 		wait               time.Duration
 		stop               StopReason
 		trial              bool
+		warned             bool
 	}{
 		{name: "already armed", tuning: true, trial: true},
 		{name: "late arm", readyAt: 3 * time.Second, tuning: true, wait: 3 * time.Second, trial: true},
@@ -65,7 +66,8 @@ func TestWatchdogPreflight(t *testing.T) {
 		{name: "too late", readyAt: 31 * time.Second, tuning: true, wait: 30 * time.Second, stop: StopDeadEnd},
 		{name: "cancel waiting", readyAt: time.Hour, tuning: true, cancel: true, wait: time.Second, stop: StopSignal},
 		{name: "cancel before polling", readyAt: time.Hour, tuning: true, cancel: true, canceledBeforePoll: true, stop: StopSignal},
-		{name: "manual run", readyAt: time.Hour, trial: true},
+		{name: "manual run", readyAt: time.Hour, trial: true, warned: true},
+		{name: "manual armed", trial: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -112,12 +114,20 @@ func TestWatchdogPreflight(t *testing.T) {
 				t.Fatalf("wait (-want +got): %s", diff)
 			}
 			var checks []bool
-			trial := false
+			var warnings []string
+			trial, written := false, false
 			for _, e := range j.Events() {
 				if p, ok := e.Data.(*journal.PreflightCheck); ok && p.Check == "watchdog" {
 					checks = append(checks, p.OK)
 				}
+				if e.Kind == journal.KindSessionWarning {
+					if written {
+						t.Fatalf("watchdog warning after an offset write: %+v", e)
+					}
+					warnings = append(warnings, e.Msg)
+				}
 				if e.Kind == journal.KindSMUIntent || e.Kind == journal.KindTrialIntent {
+					written = true
 					if !tt.trial || time.Duration(e.Mono)*time.Millisecond < tt.wait {
 						t.Fatalf("unsafe action before watchdog: %+v", e)
 					}
@@ -133,6 +143,13 @@ func TestWatchdogPreflight(t *testing.T) {
 			}
 			if diff := cmp.Diff(wantChecks, checks); diff != "" {
 				t.Fatalf("watchdog result (-want +got): %s", diff)
+			}
+			var wantWarnings []string
+			if tt.warned {
+				wantWarnings = []string{"check hardware watchdog: no active hardware watchdog (test hardware watchdog), so a freeze needs a manual reset; start sessions from the tuning boot, especially after a breaking update; continuing the session"}
+			}
+			if diff := cmp.Diff(wantWarnings, warnings); diff != "" {
+				t.Fatalf("watchdog warning (-want +got): %s", diff)
 			}
 			if tt.stop == StopDeadEnd && (stop.DeadEnd.Condition != journal.DeadEndPreflight || bl.calls != 1) {
 				t.Fatalf("timeout did not return to normal boot: stop %+v, clears %d", stop, bl.calls)

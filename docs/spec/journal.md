@@ -99,7 +99,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Group | Kinds |
 |---|---|
 | Session | `session.start` (session ID, cores and build stamp), `session.context` (BIOS context), `session.baseline` (baseline profile), `session.notice`, `session.archived`, `session.carried` (what a transition carries in, Transitions below) |
-| Session warnings | `session.warning` (`operation`, optional `trial`, `error`): nonfatal session maintenance failure; passed-trial marker or prune failures cite the durable passing `trial.end`; state projection write failures cite the durable event when there is one |
+| Session warnings | `session.warning` (`operation`, optional `trial`, `error`): nonfatal session maintenance failure or advisory; passed-trial marker or prune failures cite the durable passing `trial.end`; state projection write failures cite the durable event when there is one; `operation: "check hardware watchdog"` records an in-session run without an active hardware watchdog (`runtime.md`, Preflight) |
 | Config and preflight | `config.loaded` (effective config and build stamp), `preflight.check` (one per check, with result) |
 | SMU | `smu.intent`, `smu.write`, `smu.readback`, `smu.error` |
 | Profile | `profile.applied` (applied condition), `profile.change` (profile, `from` null on entering checking), `profile.restored` (before shutdown) |

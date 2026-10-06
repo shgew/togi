@@ -65,9 +65,10 @@ profile once every core is at its limit and deepening can reach no more depth. A
 earlier cycle can count after a deepening if its profile was at least as deep
 and no failure since the last reset contradicted it.
 
-Without --tuning-boot, run checks the hardware watchdog once and warns if none
-is active, then continues. A freeze without reset protection needs a manual
-reset; start sessions from the tuning boot, especially after a breaking update.
+Without --tuning-boot, run checks the hardware watchdog once and records a
+session.warning if none is active, then continues; the dashboard and togi events
+show it. A freeze without reset protection needs a manual reset; start sessions
+from the tuning boot, especially after a breaking update.
 
 --tuning-boot runs the unattended service with an armed hardware watchdog.
 The first durable journal append resets its consecutive restart-limit count and
@@ -176,11 +177,6 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	if err != nil {
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
-	}
-	if bootloader == nil {
-		if check := m.Host.Watchdog(); !check.OK {
-			fmt.Fprintf(stderr, "togi run: warning: no active hardware watchdog (%s); a freeze needs a manual reset. Start sessions from the tuning boot, especially after a breaking update.\n", journal.EscapeText(check.Detail))
-		}
 	}
 	var current *machine.BIOSContext
 	if m.Host.ValidateSMU() == nil {

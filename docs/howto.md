@@ -122,7 +122,7 @@ togi status
 togi events --kind trial
 ```
 
-If the machine freezes during an in-session trial, it needs a manual reset unless an active hardware watchdog provides reset protection. `sudo togi run` warns when no hardware watchdog is active and continues; it does not arm one. After a reset or crash reboot, the next run attributes the crash from the journal and continues.
+If the machine freezes during an in-session trial, it needs a manual reset unless an active hardware watchdog provides reset protection. `sudo togi run` records a `session.warning` when no hardware watchdog is active and continues; it does not arm one. The warning appears in the dashboard's history and stays in `togi events --kind session.warning`. After a reset or crash reboot, the next run attributes the crash from the journal and continues.
 
 ## 4. Overnight: the tuning boot
 

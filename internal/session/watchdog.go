@@ -37,3 +37,15 @@ func (r *runner) waitWatchdog(ctx context.Context) (*Stop, error) {
 		}
 	}
 }
+
+func (r *runner) warnWatchdog() error {
+	if r.in.Bootloader != nil {
+		return nil
+	}
+	check := r.in.Machine.Host.Watchdog()
+	if check.OK {
+		return nil
+	}
+	_, err := r.append(&journal.SessionWarning{Operation: "check hardware watchdog", Error: fmt.Sprintf("no active hardware watchdog (%s), so a freeze needs a manual reset; start sessions from the tuning boot, especially after a breaking update", check.Detail)})
+	return err
+}
