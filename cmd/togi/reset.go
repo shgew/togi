@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/shgew/togi/internal/detect"
 	"github.com/shgew/togi/internal/hostlock"
@@ -63,15 +64,13 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	}
 	defer lock.Close()
 	if _, err := os.Stat(filepath.Join(g.stateDir, "events.jsonl")); errors.Is(err, fs.ErrNotExist) {
-		pending, pendingErr := filepath.Glob(filepath.Join(g.stateDir, "archive", "*-pending"))
-		if pendingErr != nil || !all || len(pending) == 0 {
+		if !all || !pendingMarker(g.stateDir) {
 			fmt.Fprintf(stderr, "togi reset: no journal at %s\n", filepath.Join(g.stateDir, "events.jsonl"))
 			return exitError
 		}
 	}
 	if events, _, err := journal.Read(g.stateDir); err == nil && len(events) == 0 {
-		pending, _ := filepath.Glob(filepath.Join(g.stateDir, "archive", "*-pending"))
-		if !all || len(pending) == 0 {
+		if !all || !pendingMarker(g.stateDir) {
 			fmt.Fprintf(stderr, "togi reset: no session in %s\n", g.stateDir)
 			return exitError
 		}
@@ -152,6 +151,15 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, warning)
 	}
 	return exitOK
+}
+
+// pendingMarker reports whether the archive in stateDir holds an unfinished archive or carry marker; an unreadable archive holds none.
+func pendingMarker(stateDir string) bool {
+	entries, err := os.ReadDir(filepath.Join(stateDir, "archive"))
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(entries, func(entry fs.DirEntry) bool { return strings.HasSuffix(entry.Name(), "-pending") })
 }
 
 func resetError(err, locked error, stderr io.Writer) int {

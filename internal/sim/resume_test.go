@@ -141,3 +141,54 @@ func TestResumeIgnoresTornIncompatibleTail(t *testing.T) {
 		t.Fatalf("torn resume = %+v, %v", got, err)
 	}
 }
+
+func TestResumeReadsArchivesOfPatternLikeStateDir(t *testing.T) {
+	now := time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC)
+	for _, name := range []string{"state", "state[", "state[1]"} {
+		t.Run(name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), name)
+			if err := os.Mkdir(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			cfg := Config{Seed: 1, Boots: 7, Start: epoch}
+			got, err := Resume(dir, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(cfg, got); diff != "" {
+				t.Fatalf("resume without an archive (-want +got):\n%s", diff)
+			}
+			if err := os.Mkdir(filepath.Join(dir, "archive"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			scratch := t.TempDir()
+			j, err := journal.Open(scratch, journal.Options{Boot: "archived", Now: func() time.Time { return now }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, payload := range []journal.Payload{
+				&journal.SessionStart{Schema: journal.Schema, Session: "archived"},
+				&journal.SessionContext{BIOSContext: machine.BIOSContext{BIOSVersion: "archived"}},
+			} {
+				if _, err := j.Append(payload); err != nil {
+					_ = j.Close()
+					t.Fatal(err)
+				}
+			}
+			if err := j.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(filepath.Join(scratch, "events.jsonl"), filepath.Join(dir, "archive", "archived.jsonl")); err != nil {
+				t.Fatal(err)
+			}
+			got, err = Resume(dir, Config{Seed: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := Config{Seed: 1, Boots: 1, Start: now.Add(RebootTime), BIOSContext: machine.BIOSContext{BIOSVersion: "archived"}}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("resume after archived session (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
