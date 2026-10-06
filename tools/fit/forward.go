@@ -1,14 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"slices"
 	"time"
 
-	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
@@ -116,7 +114,7 @@ func forwardCheck(trials []trialfacts.Record, seal, jobs int) ([]forwardRow, for
 		}
 		// Publish this session to the training prefix only after scoring it.
 		for _, r := range heldOut {
-			seen[profileClassKey(r)] = true
+			seen[trialfacts.ProfileClassKey(r)] = true
 			if r.Outcome == journal.OutcomeFailure {
 				trainingFailures++
 			}
@@ -125,14 +123,6 @@ func forwardCheck(trials []trialfacts.Record, seal, jobs int) ([]forwardRow, for
 		begin = end
 	}
 	return rows, pooled, nil
-}
-
-func profileClassKey(r trialfacts.Record) string {
-	key, _ := json.Marshal(struct {
-		Profile []int
-		Class   facts.Class
-	}{r.Profile, r.Class})
-	return string(key)
 }
 
 func logLoss(p float64, failure bool) float64 {
@@ -161,8 +151,7 @@ func scoreForward(cfg sim.Config, heldOut []trialfacts.Record, seen map[string]b
 	}
 	regimes := make(map[machine.Regime]forwardCounts)
 	for _, r := range heldOut {
-		spec := machine.TrialSpec{Regime: r.Class.Regime, Workload: machine.Workload{ID: r.Class.Workload}, Cores: r.Class.Cores, Duration: time.Duration(r.Class.DurationS) * time.Second, Condition: r.Condition}
-		p := m.FailureProbability(r.Profile, spec)
+		p := m.FailureProbability(r.Profile, trialfacts.Spec(r.Class))
 		failure := r.Outcome == journal.OutcomeFailure
 		counts := regimes[r.Class.Regime]
 		counts.trials++
@@ -181,7 +170,7 @@ func scoreForward(cfg sim.Config, heldOut []trialfacts.Record, seen map[string]b
 		regimes[r.Class.Regime] = counts
 		score.fitLoss += logLoss(p, failure)
 		score.constantLoss += logLoss(constant, failure)
-		if seen[profileClassKey(r)] {
+		if seen[trialfacts.ProfileClassKey(r)] {
 			score.matches++
 		}
 	}

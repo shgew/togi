@@ -150,11 +150,12 @@ func TestSharedVoltageAnchorCheckedDeterministicAndReplayable(t *testing.T) {
 			if cfg.Facts != "../facts.gz" || cfg.BIOSContext != *records[0].Context {
 				t.Fatalf("lost replay provenance: %+v", cfg)
 			}
-			check, err := modelcheck.Check(path, cfg)
+			extracts := trialfacts.Extracts{}
+			check, err := modelcheck.Check(path, cfg, extracts)
 			if err != nil || check.Status != "ok" || len(check.Groups) != 1 || check.Groups[0].N != 20 || check.Groups[0].K != 10 || check.IdleFailures != 1 {
 				t.Fatalf("original-extract check: %+v, %v", check, err)
 			}
-			cfg.Replay, err = trialfacts.LoadReplay(path, cfg)
+			cfg.Replay, err = extracts.Replay(path, cfg)
 			if err != nil {
 				t.Fatal(err)
 			}

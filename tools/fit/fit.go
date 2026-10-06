@@ -7,7 +7,6 @@ import (
 	"math"
 	"math/rand/v2"
 	"slices"
-	"time"
 
 	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
@@ -69,15 +68,12 @@ func aggregate(records []trialfacts.Record) []observation {
 	indices := make(map[string]int)
 	var out []observation
 	for _, r := range records {
-		key, _ := json.Marshal(struct {
-			Profile []int
-			Class   facts.Class
-		}{r.Profile, r.Class})
-		i, ok := indices[string(key)]
+		key := trialfacts.ProfileClassKey(r)
+		i, ok := indices[key]
 		if !ok {
 			i = len(out)
-			indices[string(key)] = i
-			out = append(out, observation{profile: r.Profile, spec: machine.TrialSpec{Regime: r.Class.Regime, Workload: machine.Workload{ID: r.Class.Workload}, Cores: r.Class.Cores, Duration: time.Duration(r.Class.DurationS) * time.Second}})
+			indices[key] = i
+			out = append(out, observation{profile: r.Profile, spec: trialfacts.Spec(r.Class)})
 		}
 		out[i].n++
 		if r.Outcome == journal.OutcomeFailure {

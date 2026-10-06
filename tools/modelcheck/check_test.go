@@ -57,15 +57,15 @@ func TestFixtureModelCheck(t *testing.T) {
 		path, status string
 		interval     [2]int
 	}{
-		{"../bench/testdata/model-ok.toml", "ok", [2]int{0, 0}},
-		{"../bench/testdata/model-flagged.toml", "flagged", [2]int{10, 10}},
+		{"testdata/model-ok.toml", "ok", [2]int{0, 0}},
+		{"testdata/model-flagged.toml", "flagged", [2]int{10, 10}},
 	} {
 		t.Run(tc.status, func(t *testing.T) {
 			cfg, err := sim.LoadMachine(tc.path)
 			if err != nil {
 				t.Fatal(err)
 			}
-			check, err := Check(tc.path, cfg)
+			check, err := Check(tc.path, cfg, trialfacts.Extracts{})
 			if err != nil {
 				t.Fatal(err)
 			}

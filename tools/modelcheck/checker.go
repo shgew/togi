@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
@@ -80,12 +79,12 @@ func NewChecker(cfg sim.Config, records []trialfacts.Record) (*Checker, error) {
 		if r.Outcome == journal.OutcomeFailure {
 			g.group.K++
 		}
-		profile, _ := json.Marshal(r.Profile)
-		index, ok := points[key][string(profile)]
+		pointKey := trialfacts.ProfileClassKey(r)
+		index, ok := points[key][pointKey]
 		if !ok {
 			index = len(g.points)
-			points[key][string(profile)] = index
-			g.points = append(g.points, point{profile: r.Profile, spec: machine.TrialSpec{Regime: r.Class.Regime, Workload: machine.Workload{ID: r.Class.Workload}, Cores: r.Class.Cores, Duration: time.Duration(r.Class.DurationS) * time.Second, Condition: r.Condition}})
+			points[key][pointKey] = index
+			g.points = append(g.points, point{profile: r.Profile, spec: trialfacts.Spec(r.Class)})
 		}
 		g.points[index].n++
 	}

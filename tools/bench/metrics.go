@@ -12,6 +12,7 @@ import (
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/tuner"
 	"github.com/shgew/togi/tools/modelcheck"
+	"github.com/shgew/togi/tools/trialfacts"
 )
 
 type result struct {
@@ -106,9 +107,7 @@ func metrics(events []journal.Event, m *sim.Machine, cores int) result {
 			continue
 		}
 		intent := trial.Intent
-		class := facts.ClassOf(intent)
-		spec := machine.TrialSpec{Regime: class.Regime, Workload: machine.Workload{ID: class.Workload}, Cores: class.Cores, Duration: time.Duration(class.DurationS) * time.Second}
-		if m.HasRealAnswer(intent.Profile, spec) {
+		if m.HasRealAnswer(intent.Profile, trialfacts.Spec(facts.ClassOf(intent))) {
 			r.RealAnswers++
 		}
 	}

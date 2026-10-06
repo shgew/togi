@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/tools/trialfacts"
 )
 
 func TestLoadRunsRejectsInvalidSuite(t *testing.T) {
@@ -33,14 +34,14 @@ func TestLoadRunsRejectsInvalidSuite(t *testing.T) {
 			if err := os.WriteFile(path, []byte(tc.suite), 0600); err != nil {
 				t.Fatal(err)
 			}
-			_, err := loadRuns(path, "dev")
+			_, err := loadRuns(path, "dev", trialfacts.Extracts{})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("loadRuns error = %v, want %q", err, tc.want)
 			}
 		})
 	}
 	t.Run("missing suite", func(t *testing.T) {
-		_, err := loadRuns(filepath.Join(t.TempDir(), "missing.toml"), "dev")
+		_, err := loadRuns(filepath.Join(t.TempDir(), "missing.toml"), "dev", trialfacts.Extracts{})
 		if err == nil || !strings.Contains(err.Error(), "load suite:") {
 			t.Fatalf("loadRuns error = %v, want load suite diagnostic", err)
 		}

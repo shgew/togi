@@ -70,7 +70,7 @@ func run(args []string, stderr io.Writer) int {
 		machineConfig.Seed = *seed
 	}
 	if *replay {
-		machineConfig.Replay, err = trialfacts.LoadReplay(*machineFile, machineConfig)
+		machineConfig.Replay, err = trialfacts.Extracts{}.Replay(*machineFile, machineConfig)
 		if err != nil {
 			fmt.Fprintf(stderr, "sim: %v\n", err)
 			return 1

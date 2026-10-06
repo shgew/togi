@@ -143,7 +143,7 @@ func TestForwardCheck(t *testing.T) {
 			}
 		}
 		heldOut[2].Profile = []int{-2, 0}
-		seen := map[string]bool{profileClassKey(heldOut[0]): true}
+		seen := map[string]bool{trialfacts.ProfileClassKey(heldOut[0]): true}
 		score, regimes, err := scoreForward(cfg, heldOut, seen, 0.25)
 		if err != nil {
 			t.Fatal(err)

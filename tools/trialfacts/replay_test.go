@@ -3,19 +3,22 @@ package trialfacts
 import (
 	"compress/gzip"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
 )
 
-func TestLoadReplaySelectsTrialEvidence(t *testing.T) {
+func TestExtractsReplaySelectsTrialEvidence(t *testing.T) {
 	context := machine.BIOSContext{BIOSVersion: "fixture"}
 	other := machine.BIOSContext{BIOSVersion: "other"}
 	class := facts.Class{Regime: machine.R1, Workload: "fixture", Cores: []int{0}, DurationS: 90}
@@ -45,7 +48,7 @@ func TestLoadReplaySelectsTrialEvidence(t *testing.T) {
 	}
 	for _, extract := range []string{"facts.gz", path} {
 		cfg := sim.Config{Seed: 1, Cores: 2, BIOSContext: context, Facts: extract}
-		cfg.Replay, err = LoadReplay(filepath.Join(dir, "machine.toml"), cfg)
+		cfg.Replay, err = Extracts{}.Replay(filepath.Join(dir, "machine.toml"), cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -70,10 +73,46 @@ func TestLoadReplaySelectsTrialEvidence(t *testing.T) {
 		{"no-context", sim.Config{Facts: path}, "BIOS context is required"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			replay, err := LoadReplay(filepath.Join(dir, "machine.toml"), tc.cfg)
+			replay, err := Extracts{}.Replay(filepath.Join(dir, "machine.toml"), tc.cfg)
 			if replay != nil || err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("LoadReplay=%v, %v; want %s", replay, err, tc.want)
+				t.Fatalf("Replay=%v, %v; want %s", replay, err, tc.want)
 			}
 		})
+	}
+}
+
+func TestExtractsReadEachExtractOnce(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "facts.gz")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(f)
+	want := []Record{{Session: "s1", Seq: 4, Kind: facts.TrialFact, Profile: []int{-10, 0}, Outcome: journal.OutcomePass}}
+	if err := json.NewEncoder(gz).Encode(want[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	extracts := Extracts{}
+	for _, machinePath := range []string{filepath.Join(dir, "first.toml"), filepath.Join(dir, "second.toml")} {
+		got, records, err := extracts.Load(machinePath, sim.Config{Facts: "facts.gz"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := cmp.Diff(path, got); diff != "" {
+			t.Fatal(diff)
+		}
+		if diff := cmp.Diff(want, records); diff != "" {
+			t.Fatal(diff)
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal(err)
+		}
 	}
 }

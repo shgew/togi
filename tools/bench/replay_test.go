@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/tools/trialfacts"
 )
 
 func TestRealAnswerMetrics(t *testing.T) {
@@ -98,9 +101,13 @@ func TestRealAnswerShares(t *testing.T) {
 }
 
 func TestTargetSuite(t *testing.T) {
-	runs, err := loadRuns("suite.toml", "all")
+	extracts := trialfacts.Extracts{}
+	runs, err := loadRuns("suite.toml", "all", extracts)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{filepath.Join("facts", "target.jsonl.gz")}, slices.Collect(maps.Keys(extracts))); diff != "" {
+		t.Fatal(diff)
 	}
 	type splitCounts struct{ Dev, Holdout int }
 	members := map[string]splitCounts{}
