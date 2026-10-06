@@ -4,7 +4,7 @@
 
 ## Decision
 
-The review coordinator reviews a small pull request itself instead of spawning reviewers. Small means at most 2 included files and fewer than 100 changed lines, with no changed file under `internal/smu`, `internal/trial`, `internal/session`, `internal/journal` or `nix/`, measured on the pull request's whole diff. `.omp/commands/review-pr.md` and `.omp/agents/review-coordinator.md` state the path; the record names the coordinator as the reviewer.
+The review coordinator reviews a small pull request itself instead of spawning reviewers. Small means at most 2 files and fewer than 100 changed lines, with no changed file under `internal/smu`, `internal/trial`, `internal/session`, `internal/journal` or `nix/`, measured on the pull request's whole diff and counting every changed file and line, including those the review excludes. `.omp/commands/review-pr.md` and `.omp/agents/review-coordinator.md` state the path; the record names the coordinator as the reviewer.
 
 ADR 0025's gate holds: the coordinator is independent of the pull request's author, applies `REVIEW.md`, triages findings by `AGENTS.md`, and posts the review record and the `review` check. Review of only what changed ([ADR 0026](0026-review-only-what-changed.md)) is unchanged: the coordinator reviews later rounds of a pull request that is still small, and one that grows past small gets reviewers for its delta.
 
