@@ -154,6 +154,33 @@ release-preview:
 changes:
     {{ dev }} go run ./tools/release -check changes
 
+# Print what waits on the owner, untriaged issues, work in progress, ready work, overlaps and the open Ruleset issue
+[group('github')]
+board:
+    {{ dev }} go run ./tools/board
+
+# Claim issue N for BRANCH: refuse if it is assigned; else assign yourself, link BRANCH from main and post the start comment
+[group('github')]
+claim number branch plan="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "${TOGI_DEV_SHELL:-}" != "1" ]]; then
+        exec {{ dev }} just --justfile '{{ justfile() }}' claim "$@"
+    fi
+    holders=$(gh issue view "$1" --json assignees --jq '[.assignees[].login] | join(", ")')
+    if [[ -n "$holders" ]]; then
+        branches=$(gh issue develop --list "$1")
+        echo "claim: #$1 is already assigned to $holders; linked branches: ${branches:-none}" >&2
+        exit 1
+    fi
+    gh issue edit "$1" --add-assignee @me
+    gh issue develop "$1" --name "$2" --base main
+    body="Started on branch \`$2\`."
+    if [[ -n "$3" ]]; then
+        body+=$'\n'"Plan: $3"
+    fi
+    gh issue comment "$1" --body "$body"
+
 # Run GitHub commands as robotogi
 [group('github')]
 bot +args:

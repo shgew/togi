@@ -1,0 +1,40 @@
+Waiting on you (needs-decision)
+  #503 Split the frame renderer (@shgew)
+
+Untriaged (needs-triage)
+  #504 Show the BIOS context
+
+In progress
+  #503 Split the frame renderer (@shgew)
+    block: #502 Block: dashboard
+    branches: frame-split
+    pull requests: #601
+    touches: internal/watch, docs/spec/runtime.md
+  #512 Keep punctuation out of reasons (@shgew, @robotogi)
+    branches: reason-text
+    pull requests: #600, #602
+    touches: internal/journal, internal/tuner/hunt.go
+
+Ready
+  P0
+    #501 Ruleset 10
+      #511 Count R3 failures by rate
+        touches: internal/tunerx
+  P1
+    #501 Ruleset 10
+      #505 Rerun every failure_at_zero dead end
+        touches: internal/tuner, docs/spec/tuner.md
+    no block
+      #506 Draw the hunt progress bar
+        touches: internal/watch/frame.go, docs/howto.md
+  P2
+    #502 Block: dashboard
+      #507 Name the dashboard columns
+        touches: cmd/togi
+
+Overlaps
+  #505 overlaps in-progress #512 on internal/tuner
+  #506 overlaps in-progress #503 on internal/watch/frame.go
+
+Ruleset
+  #501 Ruleset 10 (pinned, 1 of 4 sub-issues closed)

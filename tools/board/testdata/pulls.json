@@ -1,0 +1,31 @@
+[
+ {
+  "data": {
+   "repository": {
+    "pullRequests": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": [
+      {
+       "number": 600,
+       "body": "Closes #999",
+       "headRefName": "reason-text"
+      },
+      {
+       "number": 601,
+       "body": "Refs #503\r\nCloses #5120",
+       "headRefName": "other"
+      },
+      {
+       "number": 602,
+       "body": "fixes: #512",
+       "headRefName": "third"
+      }
+     ]
+    }
+   }
+  }
+ }
+]

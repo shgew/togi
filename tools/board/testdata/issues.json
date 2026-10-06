@@ -1,0 +1,435 @@
+[
+ {
+  "data": {
+   "repository": {
+    "issues": {
+     "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "a"
+     },
+     "nodes": [
+      {
+       "number": 501,
+       "title": "Ruleset 10",
+       "body": "Decided sub-issues and candidates.",
+       "isPinned": true,
+       "labels": {
+        "nodes": [
+         {
+          "name": "P2"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": []
+       },
+       "parent": null,
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 4,
+        "completed": 1
+       }
+      },
+      {
+       "number": 502,
+       "title": "Block: dashboard",
+       "body": "Order: #507, then #509.",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "P2"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": []
+       },
+       "parent": null,
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
+      },
+      {
+       "number": 503,
+       "title": "Split the frame renderer",
+       "body": "## Problem\n\nTouches: `internal/watch`, `docs/spec/runtime.md`\n",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "feature"
+         },
+         {
+          "name": "P1"
+         },
+         {
+          "name": "needs-decision"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": [
+         {
+          "login": "shgew"
+         }
+        ]
+       },
+       "parent": {
+        "number": 502,
+        "title": "Block: dashboard"
+       },
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": [
+         {
+          "ref": {
+           "name": "frame-split"
+          }
+         }
+        ]
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
+      },
+      {
+       "number": 504,
+       "title": "Show the BIOS context",
+       "body": "",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "idea"
+         },
+         {
+          "name": "needs-triage"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": []
+       },
+       "parent": null,
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
+      },
+      {
+       "number": 505,
+       "title": "Rerun every failure_at_zero dead end",
+       "body": "Touches: `internal/tuner`, `docs/spec/tuner.md`",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "bugfix"
+         },
+         {
+          "name": "P1"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": []
+       },
+       "parent": {
+        "number": 501,
+        "title": "Ruleset 10"
+       },
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
+      },
+      {
+       "number": 506,
+       "title": "Draw the hunt progress bar",
+       "body": "Touches: internal/watch/frame.go, `docs/howto.md`",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "feature"
+         },
+         {
+          "name": "P1"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": []
+       },
+       "parent": null,
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
+      },
+      {
+       "number": 507,
+       "title": "Name the dashboard columns",
+       "body": "Touches: `cmd/togi/`",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "design"
+         },
+         {
+          "name": "P2"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": []
+       },
+       "parent": {
+        "number": 502,
+        "title": "Block: dashboard"
+       },
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
+      },
+      {
+       "number": 508,
+       "title": "Other CPU generations",
+       "body": "",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "idea"
+         },
+         {
+          "name": "P1"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": []
+       },
+       "parent": null,
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "data": {
+   "repository": {
+    "issues": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": [
+      {
+       "number": 509,
+       "title": "Colour the failed regimes",
+       "body": "Touches: `internal/watch`",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "feature"
+         },
+         {
+          "name": "P2"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": []
+       },
+       "parent": {
+        "number": 502,
+        "title": "Block: dashboard"
+       },
+       "blockedBy": {
+        "nodes": [
+         {
+          "number": 507,
+          "state": "OPEN"
+         }
+        ]
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
+      },
+      {
+       "number": 510,
+       "title": "Add shell completions",
+       "body": "",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "feature"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": []
+       },
+       "parent": null,
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
+      },
+      {
+       "number": 511,
+       "title": "Count R3 failures by rate",
+       "body": "Touches: `internal/tunerx`",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "bugfix"
+         },
+         {
+          "name": "P2"
+         },
+         {
+          "name": "P0"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": []
+       },
+       "parent": {
+        "number": 501,
+        "title": "Ruleset 10"
+       },
+       "blockedBy": {
+        "nodes": [
+         {
+          "number": 400,
+          "state": "CLOSED"
+         }
+        ]
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
+      },
+      {
+       "number": 512,
+       "title": "Keep punctuation out of reasons",
+       "body": "Plan below.\r\nTouches: `internal/journal`, `internal/tuner/hunt.go`\r\n",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "feature"
+         },
+         {
+          "name": "P3"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": [
+         {
+          "login": "shgew"
+         },
+         {
+          "login": "robotogi"
+         }
+        ]
+       },
+       "parent": null,
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": [
+         {
+          "ref": {
+           "name": "reason-text"
+          }
+         }
+        ]
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+]
