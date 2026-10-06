@@ -263,36 +263,126 @@ func TestReleasePreview(t *testing.T) {
 	}
 }
 
-func TestRequireGreenCheck(t *testing.T) {
+func TestWaitForGreenCheck(t *testing.T) {
 	t.Parallel()
+	const (
+		none       = `[]`
+		queued     = `[{"html_url":"u","status":"queued","conclusion":null}]`
+		inProgress = `[{"html_url":"u","status":"in_progress","conclusion":null}]`
+		success    = `[{"html_url":"u","status":"completed","conclusion":"success"}]`
+		failure    = `[{"html_url":"u","status":"completed","conclusion":"failure"}]`
+		cancelled  = `[{"html_url":"u","status":"completed","conclusion":"cancelled"}]`
+	)
 	for _, tc := range []struct {
-		name, runs, err string
+		name      string
+		responses []string
+		err, out  string
+		sleeps    []time.Duration
 	}{
-		{name: "success", runs: `[{"html_url":"u","status":"completed","conclusion":"success"}]`},
-		{name: "in progress", runs: `[{"html_url":"u","status":"in_progress","conclusion":null}]`, err: "check run u for base is in_progress; run just release again once it passes"},
-		{name: "failure", runs: `[{"html_url":"u","status":"completed","conclusion":"failure"}]`, err: "check run u for base concluded failure"},
-		{name: "cancelled", runs: `[{"html_url":"u","status":"completed","conclusion":"cancelled"}]`, err: "check run u for base concluded cancelled"},
-		{name: "no run", runs: `[]`, err: "no check.yml run on main for base"},
+		{name: "success", responses: []string{success}},
+		{name: "failure", responses: []string{failure}, err: "check run u for base concluded failure"},
+		{name: "cancelled", responses: []string{cancelled}, err: "check run u for base concluded cancelled"},
+		{
+			name:      "missing then in progress then success",
+			responses: []string{none, inProgress, inProgress, success},
+			out:       "no check.yml run on main for base; waiting up to 1h0m0s for it to pass\ncheck run u for base is in_progress; waiting up to 59m30s for it to pass\n",
+			sleeps:    []time.Duration{30 * time.Second, 30 * time.Second, 30 * time.Second},
+		},
+		{
+			name:      "fails while waited on",
+			responses: []string{queued, failure},
+			err:       "check run u for base concluded failure",
+			out:       "check run u for base is queued; waiting up to 1h0m0s for it to pass\n",
+			sleeps:    []time.Duration{30 * time.Second},
+		},
+		{
+			name:      "cancelled while waited on",
+			responses: []string{inProgress, cancelled},
+			err:       "check run u for base concluded cancelled",
+			out:       "check run u for base is in_progress; waiting up to 1h0m0s for it to pass\n",
+			sleeps:    []time.Duration{30 * time.Second},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			var requests []string
-			handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				requests = append(requests, req.Method+" "+req.URL.RequestURI())
-				fmt.Fprint(w, `{"total_count":1,"workflow_runs":`+tc.runs+`}`)
-			})
-			api := github{base: "https://api.forge.example", token: "test-token", client: &http.Client{Transport: handlerTransport{handler}}}
-			err := requireGreenCheck(api, repository{"o", "r"}, "base")
+			check := newFakeCheck(t, tc.responses, 0)
+			var out bytes.Buffer
+			err := waitForGreenCheck(check.api, repository{"o", "r"}, "base", check.now, check.sleep, &out)
 			if got := fmt.Sprint(err); tc.err != "" && got != tc.err || tc.err == "" && err != nil {
-				t.Fatalf("requireGreenCheck error = %v, want %q", err, tc.err)
+				t.Fatalf("waitForGreenCheck error = %v, want %q", err, tc.err)
 			}
-			want := []string{"GET /repos/o/r/actions/workflows/check.yml/runs?branch=main&event=push&head_sha=base&per_page=1"}
-			if diff := cmp.Diff(want, requests); diff != "" {
+			if diff := cmp.Diff(tc.out, out.String()); diff != "" {
+				t.Errorf("output mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.sleeps, check.sleeps); diff != "" {
+				t.Errorf("sleeps mismatch (-want +got):\n%s", diff)
+			}
+			want := slices.Repeat([]string{"GET /repos/o/r/actions/workflows/check.yml/runs?branch=main&event=push&head_sha=base&per_page=1"}, len(tc.responses))
+			if diff := cmp.Diff(want, check.requests); diff != "" {
 				t.Fatalf("requests mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
+
+func TestWaitForGreenCheckTimesOut(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, runs, err string }{
+		{"missing", `[]`, "no check.yml run on main for base after waiting 1h0m0s"},
+		{"queued", `[{"html_url":"u","status":"queued","conclusion":null}]`, "check run u for base is queued after waiting 1h0m0s"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// Each lookup takes 7s: 97 rounds of lookup and 30s sleep reach 59m49s, the 98th lookup leaves 4s for the last sleep, and the 99th ends the wait.
+			check := newFakeCheck(t, []string{tc.runs}, 7*time.Second)
+			err := waitForGreenCheck(check.api, repository{"o", "r"}, "base", check.now, check.sleep, io.Discard)
+			if got := fmt.Sprint(err); got != tc.err {
+				t.Fatalf("waitForGreenCheck error = %v, want %q", err, tc.err)
+			}
+			if got, want := len(check.requests), 99; got != want {
+				t.Errorf("lookups = %d, want %d", got, want)
+			}
+			if got, want := check.sleeps[len(check.sleeps)-1], 4*time.Second; got != want {
+				t.Errorf("last sleep = %s, want %s", got, want)
+			}
+			if got, want := check.elapsed(), checkTimeout+7*time.Second; got != want {
+				t.Errorf("waited %s, want %s", got, want)
+			}
+		})
+	}
+}
+
+// fakeCheck serves the check runs in order, repeating the last, on a fake clock that each lookup advances by lookup.
+type fakeCheck struct {
+	api      github
+	start    time.Time
+	clock    time.Time
+	requests []string
+	sleeps   []time.Duration
+}
+
+func newFakeCheck(t *testing.T, responses []string, lookup time.Duration) *fakeCheck {
+	t.Helper()
+	start := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	check := &fakeCheck{start: start, clock: start}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		runs := responses[min(len(check.requests), len(responses)-1)]
+		check.requests = append(check.requests, req.Method+" "+req.URL.RequestURI())
+		check.clock = check.clock.Add(lookup)
+		fmt.Fprint(w, `{"total_count":1,"workflow_runs":`+runs+`}`)
+	})
+	check.api = github{base: "https://api.forge.example", token: "test-token", client: &http.Client{Transport: handlerTransport{handler}}}
+	return check
+}
+
+func (c *fakeCheck) now() time.Time { return c.clock }
+
+func (c *fakeCheck) sleep(d time.Duration) {
+	c.sleeps = append(c.sleeps, d)
+	c.clock = c.clock.Add(d)
+}
+
+func (c *fakeCheck) elapsed() time.Duration { return c.clock.Sub(c.start) }
 
 type handlerTransport struct{ handler http.Handler }
 
@@ -565,7 +655,9 @@ func TestGitHubFailuresReachOperator(t *testing.T) {
 		w.WriteHeader(http.StatusForbidden)
 		fmt.Fprint(w, "denied")
 	})}}}
-	if err := requireGreenCheck(api, repository{"o", "r"}, "base"); err == nil || !strings.Contains(err.Error(), "look up the check.yml run for base:") || !strings.Contains(err.Error(), "HTTP 403: denied") {
+	noSleep := func(time.Duration) { t.Error("waited after a failed lookup") }
+	epoch := func() time.Time { return time.Time{} }
+	if err := waitForGreenCheck(api, repository{"o", "r"}, "base", epoch, noSleep, io.Discard); err == nil || !strings.Contains(err.Error(), "look up the check.yml run for base:") || !strings.Contains(err.Error(), "HTTP 403: denied") {
 		t.Fatalf("green check error = %v", err)
 	}
 	for _, status := range []int{http.StatusForbidden, http.StatusNotFound} {

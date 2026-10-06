@@ -22,6 +22,9 @@ const (
 	remote        = "origin"
 	defaultBranch = "main"
 	checkWorkflow = "check.yml"
+	// checkTimeout is several times the ten minutes a check run takes, leaving room for runs waiting on a runner.
+	checkTimeout = time.Hour
+	checkPoll    = 30 * time.Second
 )
 
 var repoPart = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
@@ -379,36 +382,62 @@ func (r runner) checkTag(tag, commit string) error {
 	return nil
 }
 
-func requireGreenCheck(api github, repo repository, commit string) error {
+type checkRun struct {
+	HTMLURL    string `json:"html_url"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+}
+
+func latestCheckRun(api github, repo repository, commit string) (checkRun, bool, error) {
 	path := "/repos/" + url.PathEscape(repo.owner) + "/" + url.PathEscape(repo.name) + "/actions/workflows/" + checkWorkflow + "/runs"
 	query := url.Values{"branch": {defaultBranch}, "event": {"push"}, "head_sha": {commit}, "per_page": {"1"}}
 	var result struct {
-		WorkflowRuns []struct {
-			HTMLURL    string `json:"html_url"`
-			Status     string `json:"status"`
-			Conclusion string `json:"conclusion"`
-		} `json:"workflow_runs"`
+		WorkflowRuns []checkRun `json:"workflow_runs"`
 	}
 	if _, err := api.request(http.MethodGet, path+"?"+query.Encode(), nil, &result); err != nil {
-		return fmt.Errorf("look up the %s run for %s: %w", checkWorkflow, commit, err)
+		return checkRun{}, false, fmt.Errorf("look up the %s run for %s: %w", checkWorkflow, commit, err)
 	}
 	if len(result.WorkflowRuns) == 0 {
-		return fmt.Errorf("no %s run on %s for %s", checkWorkflow, defaultBranch, commit)
+		return checkRun{}, false, nil
 	}
-	run := result.WorkflowRuns[0]
-	if run.Status != "completed" {
-		return fmt.Errorf("check run %s for %s is %s; run just release again once it passes", run.HTMLURL, commit, run.Status)
+	return result.WorkflowRuns[0], true, nil
+}
+
+// waitForGreenCheck polls the check run for commit until it completes or checkTimeout passes, and fails unless it succeeded.
+func waitForGreenCheck(api github, repo repository, commit string, now func() time.Time, sleep func(time.Duration), out io.Writer) error {
+	deadline := now().Add(checkTimeout)
+	var reported string
+	for {
+		run, found, err := latestCheckRun(api, repo, commit)
+		if err != nil {
+			return err
+		}
+		if found && run.Status == "completed" {
+			if run.Conclusion != "success" {
+				return fmt.Errorf("check run %s for %s concluded %s", run.HTMLURL, commit, run.Conclusion)
+			}
+			return nil
+		}
+		state := fmt.Sprintf("no %s run on %s for %s", checkWorkflow, defaultBranch, commit)
+		if found {
+			state = fmt.Sprintf("check run %s for %s is %s", run.HTMLURL, commit, run.Status)
+		}
+		left := deadline.Sub(now())
+		if left <= 0 {
+			return fmt.Errorf("%s after waiting %s", state, checkTimeout)
+		}
+		if state != reported {
+			fmt.Fprintf(out, "%s; waiting up to %s for it to pass\n", state, left.Round(time.Second))
+			reported = state
+		}
+		sleep(min(checkPoll, left))
 	}
-	if run.Conclusion != "success" {
-		return fmt.Errorf("check run %s for %s concluded %s", run.HTMLURL, commit, run.Conclusion)
-	}
-	return nil
 }
 
 func main() {
 	var commit, publish bool
 	var check string
-	flag.BoolVar(&commit, "commit", false, "commit the next release on top of origin/main and check it out, once the check workflow passed on origin/main (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
+	flag.BoolVar(&commit, "commit", false, "commit the next release on top of origin/main and check it out, once the check workflow passed on origin/main, waiting up to an hour for it (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
 	flag.BoolVar(&publish, "publish", false, "publish the release version.txt names at HEAD, if not yet published (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
 	flag.StringVar(&check, "check", "", "validate the changelog fragments in `dir` and exit (the changes flake check)")
 	flag.Usage = func() {
@@ -456,7 +485,7 @@ func run(r runner, publish bool) error {
 	if publish {
 		return r.publish(api, repo)
 	}
-	r.requireGreen = func(commit string) error { return requireGreenCheck(api, repo, commit) }
+	r.requireGreen = func(commit string) error { return waitForGreenCheck(api, repo, commit, r.now, time.Sleep, r.out) }
 	return r.release()
 }
 
