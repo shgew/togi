@@ -119,16 +119,16 @@ func (y *Ycruncher) Classify(line string) backend.Line {
 	line = ansi.ReplaceAllString(line, "")
 	if match := affinity.FindStringSubmatch(line); match != nil {
 		cpu, _ := strconv.Atoi(match[1])
-		return backend.Line{Kind: backend.AffinityError, Detail: line, CPU: cpu}
+		return backend.Line{Kind: backend.AffinityError, CPU: cpu}
 	}
 	if computation.MatchString(line) {
-		return backend.Line{Kind: backend.ComputationError, Detail: line}
+		return backend.Line{Kind: backend.ComputationError}
 	}
 	if setup.MatchString(line) {
-		return backend.Line{Kind: backend.SetupError, Detail: line}
+		return backend.Line{Kind: backend.SetupError}
 	}
 	if match := progress.FindStringSubmatch(line); match != nil {
-		return backend.Line{Kind: backend.Progress, Detail: match[1] + " passed"}
+		return backend.Line{Kind: backend.Progress, Progress: match[1] + " passed"}
 	}
 	return backend.Line{Kind: backend.Other}
 }

@@ -21,8 +21,9 @@ const (
 )
 
 type Line struct {
-	Kind   Kind
-	Detail string
+	Kind Kind
+	// Progress is set only for Progress: what passed, as the trial reports it.
+	Progress string
 	// CPU is set only for AffinityError.
 	CPU int
 }

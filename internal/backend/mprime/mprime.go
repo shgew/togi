@@ -69,14 +69,14 @@ var setupErrors = regexp.MustCompile(`(?i)Error allocating memory|Out of memory|
 func (m *Mprime) Classify(line string) backend.Line {
 	for _, pattern := range computationErrors {
 		if pattern.MatchString(line) {
-			return backend.Line{Kind: backend.ComputationError, Detail: line}
+			return backend.Line{Kind: backend.ComputationError}
 		}
 	}
 	if setupErrors.MatchString(line) {
-		return backend.Line{Kind: backend.SetupError, Detail: line}
+		return backend.Line{Kind: backend.SetupError}
 	}
 	if match := progress.FindStringSubmatch(line); match != nil {
-		return backend.Line{Kind: backend.Progress, Detail: "self-test " + match[1] + " passed"}
+		return backend.Line{Kind: backend.Progress, Progress: "self-test " + match[1] + " passed"}
 	}
 	return backend.Line{Kind: backend.Other}
 }

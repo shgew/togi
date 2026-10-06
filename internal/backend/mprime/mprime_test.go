@@ -113,7 +113,7 @@ func TestClassify(t *testing.T) {
 			t.Errorf("%q classified as %v", line, got)
 		}
 	}
-	if got := m.Classify("Self-test 21K (thread 1 of 2) passed!"); got.Kind != backend.Progress || got.Detail != "self-test 21K passed" {
+	if got := m.Classify("Self-test 21K (thread 1 of 2) passed!"); got.Kind != backend.Progress || got.Progress != "self-test 21K passed" {
 		t.Errorf("progress: %#v", got)
 	}
 	if got := m.Classify("Torture Test completed 100 - 0 errors"); got.Kind != backend.Other {
