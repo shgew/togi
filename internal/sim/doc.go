@@ -58,8 +58,10 @@
 // # Determinism
 //
 // Every draw comes from a PCG seeded by Config.Seed and an FNV-1a hash of what is being drawn. A trial's draws are
-// keyed by core, regime, condition, offset and TrialSpec.Index, so the same seed and the same history always yield
-// the same observations, and a retried trial sees the same outcome.
+// keyed by core, regime, condition, offset and TrialSpec.Index; a draw for a core outside TrialSpec.Cores is keyed by
+// the sorted loaded cores too, because Index counts trials on the loaded target and would otherwise repeat one idle
+// draw across starts on different targets. The same seed and the same history always yield the same observations,
+// and a retried trial sees the same outcome.
 //
 // # Machine lifecycle
 //
