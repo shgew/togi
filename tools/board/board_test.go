@@ -170,12 +170,16 @@ func TestPullsFor(t *testing.T) {
 		{Number: 4, Head: linked},
 		{Number: 6, Head: branch{Repo: "someone/togi", Name: "linked"}},
 		{Number: 7, Head: branch{Name: "linked"}},
+		{Number: 8, Body: "Fixes: #12"},
+		{Number: 9, Body: "Refs #12 too"},
+		{Number: 10, Body: "Block: bug fixes\n  #12 Title"},
+		{Number: 11, Body: "Closes\r\n#12"},
 	}
 	var got []int
 	for _, p := range pullsFor(issue{Number: 12, Branches: []branch{linked}}, pulls) {
 		got = append(got, p.Number)
 	}
-	if diff := cmp.Diff([]int{1, 4, 5}, got); diff != "" {
+	if diff := cmp.Diff([]int{1, 4, 5, 8, 9}, got); diff != "" {
 		t.Errorf("pullsFor mismatch (-want +got):\n%s", diff)
 	}
 }

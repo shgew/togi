@@ -45,8 +45,8 @@ type pull struct {
 var (
 	touchesLine = regexp.MustCompile(`(?m)^Touches:[ \t]*(.+)$`)
 	rulesetName = regexp.MustCompile(`^Ruleset (\d+)$`)
-	// issueRef matches the keywords pull requests use to name their issues (AGENTS.md: Closes, Refs).
-	issueRef = regexp.MustCompile(`(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?)\s*:?\s+#(\d+)\b`)
+	// issueRef matches the keywords pull requests use to name their issues (AGENTS.md: Closes, Refs), keyword and number on one line.
+	issueRef = regexp.MustCompile(`(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?)[ \t]*:?[ \t]+#(\d+)\b`)
 )
 
 var priorities = []string{"P0", "P1", "P2", "P3"}
