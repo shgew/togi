@@ -16,7 +16,7 @@ The record is one App comment per reviewed head commit. It names the commit, cov
 
 After recording the review, the App posts a completed check run named `review` on that exact head with a summary linking the comment. Success requires an outcome for every finding and no open P0/P1; deferring such a finding does not clear it. After this change merges, the owner configures the `main` ruleset to require `review` from robotogi and resolved review threads, alongside CI. A new push needs a new check. A pure rebase carries review forward only when `git range-diff` pairs every patch in the layer unchanged; the new head gets a check linking the earlier record, without another review comment.
 
-When the same kind of finding occurs in two pull requests, the pull request fixing the second adds a cited lesson to `REVIEW.md`. Design and feature issues gain Acceptance criteria. The ADR index records which decisions still apply; specs describe current behavior. `just reviews` will report review coverage and findings over merged pull requests in a separate change in #257.
+When the same kind of finding occurs in two pull requests, the pull request fixing the second adds a cited lesson to `REVIEW.md`. Design and feature issues gain Acceptance criteria. The ADR index records which decisions still apply; specs describe current behavior. `just reviews` reports review coverage and findings over merged pull requests.
 
 ## Considered Options
 
