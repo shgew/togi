@@ -33,7 +33,7 @@ After an unattended run on the target machine, write a retro as a new comment on
 - **Session:** session ID, togi version and ruleset, machine and BIOS context, wall time, trials, crashes and how they recovered.
 - **What happened:** the phases in order with their hours, each hunt with groups run and inferred, and the profile at the end.
 - **What went well** and **what went badly**, each with the numbers that show it.
-- **Actions:** one line each, linking the issue or pull request that carries it; file the issue first if none exists.
+- **Actions:** one line each, linking the issue or pull request that carries it; file the issue first if none exists. An action that would change tuner decisions becomes a sub-issue of the open pinned `Ruleset N` issue; any other action becomes an ordinary issue in its block (`AGENTS.md`, Issues). Link both kinds here.
 
 A finding that holds beyond one run moves to where the next change reads it: how the machine fails goes into its bench machine files under `tools/bench/machines/`, and what simulated runs should show goes into `docs/simulating.md`. The retro links to the pull request that moved it.
 
