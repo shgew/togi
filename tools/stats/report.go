@@ -15,19 +15,38 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
+// table writes report sections to out. It keeps the first write error, so a
+// failure in any section reaches the exit status.
 type table struct {
 	out    io.Writer
 	writer *tabwriter.Writer
+	err    error
+}
+
+func (t *table) Write(p []byte) (int, error) {
+	n, err := t.out.Write(p)
+	if t.err == nil {
+		t.err = err
+	}
+	return n, err
 }
 
 func (t *table) section(name, header string) {
 	if t.writer != nil {
 		_ = t.writer.Flush()
-		fmt.Fprintln(t.out)
+		fmt.Fprintln(t)
 	}
-	fmt.Fprintln(t.out, name)
-	t.writer = tabwriter.NewWriter(t.out, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(t, name)
+	t.writer = tabwriter.NewWriter(t, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(t.writer, header)
+}
+
+// close flushes the last section and returns the first write error.
+func (t *table) close() error {
+	if t.writer != nil {
+		_ = t.writer.Flush()
+	}
+	return t.err
 }
 func (t *table) row(format string, args ...any) { fmt.Fprintf(t.writer, format+"\n", args...) }
 func keys[V any](m map[string]V) []string {
@@ -127,7 +146,8 @@ func render(out io.Writer, m metrics) error {
 	renderR7Decisions(tab, m.r7)
 	renderDepth(tab, m.depth)
 	renderRequests(tab, m.requests)
-	return renderOutcomes(tab, m.inconclusive, m.tctl)
+	renderOutcomes(tab, m.inconclusive, m.tctl)
+	return tab.close()
 }
 
 type sessionMetrics struct {
@@ -401,7 +421,7 @@ func passingTctl(p *projection, since time.Time) []entry[tctlKey, int] {
 	})
 }
 
-func renderOutcomes(tab *table, inconclusive []*trial, tctl []entry[tctlKey, int]) error {
+func renderOutcomes(tab *table, inconclusive []*trial, tctl []entry[tctlKey, int]) {
 	tab.section("Inconclusive trials", "trial\tcondition\treason")
 	for _, t := range inconclusive {
 		tab.row("%s\t%s\t%s", t.Intent.Trial, t.Intent.Condition, t.End.Reason)
@@ -410,7 +430,6 @@ func renderOutcomes(tab *table, inconclusive []*trial, tctl []entry[tctlKey, int
 	for _, x := range tctl {
 		tab.row("%s\t%d\t%d", x.key.regime, x.key.maxC, x.value)
 	}
-	return tab.writer.Flush()
 }
 
 type exposureKey struct {

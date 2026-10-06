@@ -49,7 +49,7 @@ func TestR7RequestReport(t *testing.T) {
 	tab := &table{out: &got}
 	session := facts.FromEvents(events)
 	renderRequests(tab, computeRequests(r7Measurements(session, project(session), at)))
-	if err := tab.writer.Flush(); err != nil {
+	if err := tab.close(); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join("testdata", "requests.golden")

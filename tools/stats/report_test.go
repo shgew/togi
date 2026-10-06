@@ -1,14 +1,35 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
+
+// failingFirstWrite fails its first write and accepts every later one.
+type failingFirstWrite struct{ failed bool }
+
+var errFirstWrite = errors.New("first write failed")
+
+func (w *failingFirstWrite) Write(p []byte) (int, error) {
+	if !w.failed {
+		w.failed = true
+		return 0, errFirstWrite
+	}
+	return len(p), nil
+}
+
+func TestReportReturnsEarlierSectionWriteError(t *testing.T) {
+	if err := report(&failingFirstWrite{}, facts.FromEvents(nil), time.Time{}); !errors.Is(err, errFirstWrite) {
+		t.Fatalf("report error = %v, want %v", err, errFirstWrite)
+	}
+}
 
 func TestReviewBoundaryReport(t *testing.T) {
 	at := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
