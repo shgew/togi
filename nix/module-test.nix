@@ -101,27 +101,12 @@ assert lib.hasInfix
 assert builtins.elem "f /run/lock/togi.lock :0600 :root :root - -" one.systemd.tmpfiles.rules;
 assert builtins.elem "f /run/lock/togi.lock :0660 :root :togi-hardware - -"
   delegated.systemd.tmpfiles.rules;
-assert builtins.elem "3" (
-  lib.splitString " " tuning.systemd.services.togi.serviceConfig.RestartPreventExitStatus
-);
-assert lib.all
-  (
-    code:
-    builtins.elem code (
+assert
+  lib.sort lib.lessThan (
+    map lib.toInt (
       lib.splitString " " tuning.systemd.services.togi.serviceConfig.RestartPreventExitStatus
     )
-  )
-  [
-    "10"
-    "11"
-    "12"
-    "13"
-    "14"
-    "15"
-    "16"
-    "17"
-    "18"
-  ];
+  ) == [ 3 ] ++ lib.range 10 18;
 assert one.services.togi.package == package;
 assert builtins.elem pkgs.hello overridden.environment.systemPackages;
 assert builtins.elem pkgs.hello overriddenTuning.environment.systemPackages;

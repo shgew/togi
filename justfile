@@ -13,10 +13,10 @@ _default:
 test *args:
     {{ dev }} go test -shuffle=on ./... "$@"
 
-# Run one package (`just focus ./internal/tuner`) or test pattern (`just focus TestChecking/crash`)
+# Run one package's tests with optional test flags (`just focus ./internal/tuner`, `just focus ./... -run TestChecking/crash`)
 [group('test')]
-focus +args:
-    if [[ "$1" == ./* || "$1" == ../* || "$1" == *... || -d "$1" ]]; then {{ dev }} go test "$@"; else pattern="$1"; shift; {{ dev }} go test -run "$pattern" ./... "$@"; fi
+focus package *args:
+    {{ dev }} go test -shuffle=on "$@"
 
 # Run the hardware tests on the target machine (Linux only)
 [group('test')]
