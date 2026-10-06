@@ -224,8 +224,9 @@ func reportComparison(w io.Writer, candidate, baseline []result) {
 
 func reportSummary(w io.Writer, results []result) {
 	fmt.Fprintln(w, "summary: time, crashes and depth include all run statuses; hazard is steady-state failures/hour with all cores loaded.")
+	fmt.Fprintln(w, "summary: censored runs reached the simulator's boot cap without concluding; their time and crashes are lower bounds.")
 	fmt.Fprintln(w, "summary: partial_s/passed_cycle is measured record-only load seconds in completed passed cycles divided by their count, pooled across runs; zero when none completed.")
-	fmt.Fprintln(w, "scenario          runs concluded median_h mean_h median_crashes mean_depth max_hazard/h real_answer_share partial_s/passed_cycle")
+	fmt.Fprintln(w, "scenario          runs concluded censored median_h mean_h median_crashes mean_depth max_hazard/h real_answer_share partial_s/passed_cycle")
 	if slices.ContainsFunc(results, hasWorstR7Hazard) {
 		fmt.Fprintln(w, "summary: worst_r7_hazard/h is the maximum shared-voltage final-profile hazard over every R7 workload, full CCD loads, request-ordered partials with at least two cores, and all-core; absent on legacy machines.")
 	}
@@ -248,7 +249,7 @@ func summaryRow(w io.Writer, name string, rows []result) {
 		return
 	}
 	hours, crashes := make([]float64, 0, len(rows)), make([]float64, 0, len(rows))
-	var concluded, real, trials int
+	var concluded, censored, real, trials int
 	var sum, depth, hazard float64
 	var partialSeconds float64
 	var passedCycles int
@@ -257,8 +258,11 @@ func summaryRow(w io.Writer, name string, rows []result) {
 		trials += r.Trials
 		partialSeconds += r.PartialSeconds
 		passedCycles += r.PassedCycles
-		if r.Status == "concluded" {
+		switch r.Status {
+		case "concluded":
 			concluded++
+		case "censored":
+			censored++
 		}
 		hours = append(hours, r.SimHours)
 		crashes = append(crashes, float64(r.Crashes))
@@ -268,7 +272,7 @@ func summaryRow(w io.Writer, name string, rows []result) {
 	}
 	slices.Sort(hours)
 	slices.Sort(crashes)
-	fmt.Fprintf(w, "%-17s %4d %9d %8.3f %8.3f %14.1f %10.2f %12.6f %17.6f %23.3f\n", name, len(rows), concluded, percentile(hours, 0.5), sum/float64(len(rows)), percentile(crashes, 0.5), depth/float64(len(rows)), hazard, answerShare(real, trials), partialSecondsPerPassedCycle(partialSeconds, passedCycles))
+	fmt.Fprintf(w, "%-17s %4d %9d %8d %8.3f %8.3f %14.1f %10.2f %12.6f %17.6f %23.3f\n", name, len(rows), concluded, censored, percentile(hours, 0.5), sum/float64(len(rows)), percentile(crashes, 0.5), depth/float64(len(rows)), hazard, answerShare(real, trials), partialSecondsPerPassedCycle(partialSeconds, passedCycles))
 	var worst float64
 	var measured int
 	for _, r := range rows {

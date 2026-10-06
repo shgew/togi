@@ -1,14 +1,18 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"math"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/simrun"
 )
 
 var approx = cmp.Comparer(func(a, b float64) bool { return math.Abs(a-b) <= 1e-12 })
@@ -72,6 +76,7 @@ func TestVerdict(t *testing.T) {
 		{"faster", func() result { r := base; r.SimHours = 8; return r }(), "ACCEPT", [4]int{}},
 		{"slower", func() result { r := base; r.SimHours = 12; return r }(), "REJECT", [4]int{}},
 		{"lost conclusion", func() result { r := base; r.Status = "deadend"; return r }(), "REJECT", [4]int{1, 0, 0, 0}},
+		{"censored", func() result { r := base; r.Status = "censored"; r.SimHours = 40; return r }(), "REJECT", [4]int{1, 0, 0, 0}},
 		{"hazard", func() result { r := base; r.HazardMaxPerH = 0.111; return r }(), "REJECT", [4]int{0, 1, 0, 0}},
 		{"mean depth", func() result { r := base; r.Depth = -18; return r }(), "REJECT", [4]int{0, 0, 1, 0}},
 		{"pair depth", func() result { r := base; r.Depth = -14; return r }(), "REJECT", [4]int{0, 0, 2, 0}},
@@ -153,11 +158,49 @@ func TestRunStatus(t *testing.T) {
 		{"deadend log", 1, false, nil, "sim: dead end stock: unstable", "deadend"},
 		{"error", 1, false, nil, "sim: failed to read file", "error"},
 		{"timeout", -1, true, nil, "", "timeout"},
+		{"boot cap", 3, false, []journal.Event{{Kind: journal.KindCrashDetected}}, "sim: simulate session: simulated machine reached its boot cap without stopping after 1000 boots", "censored"},
+		{"boot cap without journal", 3, false, nil, "", "error"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if diff := cmp.Diff(tc.want, runStatus(tc.exit, tc.timeout, tc.events, tc.log)); diff != "" {
 				t.Fatal(diff)
 			}
 		})
+	}
+}
+
+func TestBootCapRunIsCensoredCost(t *testing.T) {
+	t.Parallel()
+	m, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	_, err = simrun.Simulate(context.Background(), simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true, MaxBoots: 4})
+	if !errors.Is(err, simrun.ErrBootCap) {
+		t.Fatalf("capped run: %v, want ErrBootCap", err)
+	}
+	events, _, err := journal.Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := metrics(events, fresh, 16)
+	r.Status = runStatus(3, false, events, "")
+	got := struct {
+		Status   string
+		Crashes  int
+		Measured bool
+	}{r.Status, r.Crashes, r.SimHours > 0}
+	want := struct {
+		Status   string
+		Crashes  int
+		Measured bool
+	}{"censored", 3, true}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("capped run record (-want +got):\n%s", diff)
 	}
 }

@@ -18,7 +18,12 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
-const maxBoots = 1000
+const defaultMaxBoots = 1000
+
+// ErrBootCap reports a session that was still running when the simulated machine reached its boot cap; the journal
+// holds the partial session and state.json its projection. A capped run that then fails to finalize the journal
+// returns an error that is not ErrBootCap.
+var ErrBootCap = errors.New("simulated machine reached its boot cap without stopping")
 
 type Input struct {
 	Config     config.Config
@@ -35,21 +40,34 @@ type Input struct {
 	// Leave it false when testing file recovery or injecting journal interruptions.
 	InMemoryJournal bool
 	WriteSamples    bool
+	// MaxBoots caps the simulated boots of one invocation; 0 uses 1000.
+	MaxBoots int
 }
 
 func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 	var cached *memoryJournal
 	prefix := &journal.Prefix{}
 	defer func() {
-		if cached != nil {
-			err = errors.Join(err, cached.flush(), cached.Close())
+		if cached == nil {
+			return
 		}
+		finalizeErr := errors.Join(cached.flush(), cached.Close())
+		if finalizeErr != nil && errors.Is(err, ErrBootCap) {
+			// Keep the cap in the message but out of the chain: an unfinalized capped run is an error, not censored.
+			err = fmt.Errorf("%s; finalize simulated journal: %w", err.Error(), finalizeErr)
+			return
+		}
+		err = errors.Join(err, finalizeErr)
 	}()
 	samplesDir := ""
 	if in.WriteSamples {
 		samplesDir = filepath.Join(in.Dir, "trials")
 	}
 	in.Machine.SetSamplesDir(samplesDir)
+	maxBoots := in.MaxBoots
+	if maxBoots == 0 {
+		maxBoots = defaultMaxBoots
+	}
 	for range maxBoots {
 		stop, err = boot(ctx, in, &cached, prefix)
 		if errors.Is(err, machine.ErrCrashed) {
@@ -58,7 +76,7 @@ func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 		}
 		return stop, err
 	}
-	return session.Stop{}, fmt.Errorf("simulated machine rebooted %d times without stopping", maxBoots)
+	return session.Stop{}, fmt.Errorf("simulate session: %w after %d boots", ErrBootCap, maxBoots)
 }
 
 func boot(ctx context.Context, in Input, cached **memoryJournal, prefix *journal.Prefix) (session.Stop, error) {

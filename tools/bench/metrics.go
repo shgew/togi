@@ -183,6 +183,9 @@ func runStatus(exit int, timedOut bool, events []journal.Event, log string) stri
 	if exit == 1 && (slices.ContainsFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindDeadEnd }) || containsDeadEnd(log)) {
 		return "deadend"
 	}
+	if exit == 3 && len(events) > 0 {
+		return "censored"
+	}
 	return "error"
 }
 
