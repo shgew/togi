@@ -541,7 +541,7 @@ func tornTail(data []byte, end int) []byte {
 
 // ReadHistory reads all understood events from shipped schemas without enforcing
 // resume compatibility. Unknown kinds remain opaque and a torn tail is ignored.
-// ConfigLoaded retains only its build stamp, not its historical configuration.
+// ConfigLoaded retains only its build stamp and backend store paths, not the rest of its historical configuration.
 func ReadHistory(path string) ([]Event, error) {
 	_, events, _, err := decodeFile(path, Build{}, readHistory)
 	if err != nil {
@@ -637,11 +637,9 @@ func ReadForCarry(path string) ([]Event, error) {
 				return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
 			}
 		case env.Kind == KindConfigLoaded:
-			var b Build
-			if err := json.Unmarshal(line, &b); err != nil {
+			if p, err = historicConfig(line); err != nil {
 				return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
 			}
-			p = &ConfigLoaded{Build: b}
 		default:
 			continue
 		}

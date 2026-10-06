@@ -39,3 +39,21 @@ type ConfigBackends struct {
 	Mprime    string `json:"mprime"`
 	Ycruncher string `json:"ycruncher"`
 }
+
+// Path returns the package store path recorded for backend, or "" for a backend outside the catalog.
+func (b ConfigBackends) Path(backend machine.Backend) string {
+	switch backend {
+	case machine.Mprime:
+		return b.Mprime
+	case machine.Ycruncher:
+		return b.Ycruncher
+	}
+	return ""
+}
+
+// WorkloadPath returns the package store path recorded for the backend that runs workload, or "" for a workload
+// outside the catalog.
+func (b ConfigBackends) WorkloadPath(workload string) string {
+	w, _ := machine.WorkloadByID(workload)
+	return b.Path(w.Backend)
+}
