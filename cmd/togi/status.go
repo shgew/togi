@@ -164,7 +164,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 			last = fmt.Sprintf("[#%d] %s", d.Seq, journal.EscapeText(d.Msg))
 		}
 		queued := cmp.Or(c.Queued, "-")
-		fmt.Fprintf(tw, "%02d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n", c.Core, c.CCD, c.Core%8, c.Offset, journal.EscapeText(string(c.Phase)), failurePoint(c.FailurePoint), combinationIDs(c.Combinations), journal.EscapeText(queued), last)
+		fmt.Fprintf(tw, "%02d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n", c.Core, c.CCD, c.Core%8, c.Offset, journal.EscapeText(c.Phase.Word()), failurePoint(c.FailurePoint), combinationIDs(c.Combinations), journal.EscapeText(queued), last)
 	}
 	_ = tw.Flush()
 	writeCombinations(w, st.Combinations)

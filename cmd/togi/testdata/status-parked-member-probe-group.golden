@@ -3,8 +3,8 @@ session s1 started 1970-01-01T00:01:40Z
 in flight: none
 
 CORE  CCD  SLOT  OFFSET  PHASE     FAILURE  COMBINATIONS  QUEUED  LAST DECISION
-03    0    3     -10     at_limit  -        -             -       -
-07    0    7     -8      at_limit  -        -             -       -
+03    0    3     -10     AT LIMIT  -        -             -       -
+07    0    7     -8      AT LIMIT  -        -             -       -
 
 hunt 2 [#40]: unattributed computation_error in R7 trial 0001; parked offsets cycle end #20
   candidates 03 07
