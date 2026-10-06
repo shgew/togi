@@ -164,3 +164,8 @@ bot +args:
     fi
     token=$(gh-token generate --app-id 5162510 --key "${ROBOTOGI_KEY_FILE:?ROBOTOGI_KEY_FILE must name the robotogi private key file}" --token-only)
     GH_TOKEN=$token exec gh "$@"
+
+# Print the review track record of merged pull requests: robotogi's review check, findings by priority and outcome, and time to the first record
+[group('github')]
+reviews:
+    {{ dev }} go run ./tools/reviews

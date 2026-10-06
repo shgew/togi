@@ -77,6 +77,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 |---|---|
 | `just` | List the recipes |
 | `just bot <gh args>` | Post review records and `review` checks as robotogi, using the private key file named by `ROBOTOGI_KEY_FILE` |
+| `just reviews` | The review track record of the merged pull requests: per pull request, robotogi's `review` check on its head, its findings by priority and outcome from the review records, and the time from opening to the first record; then totals (`go run ./tools/reviews`) |
 | `just test` | The tight loop |
 | `just gate` | Every non-VM flake check, sequentially, cheapest first: fmt, lint, module and changes, the Go modules vendored for `vendorHash` against `go.mod` and `go.sum`, shuffled integration-tagged tests, race, and, on Linux, the hardware-tagged trial test compile. Uses warm dev-shell Go caches |
 | `just check` | Every flake check the host builds, CI's definition of green: package (shuffled integration-tagged tests), race (trial, session, journal and watch), lint (Linux and macOS), fmt, changes (changelog fragments), module (NixOS module evaluation) and, on Linux, `trial-scope-tests` and the VM tests `vm` (tuning boot) and `vm-restart-limit`. Must pass before every push to a pull request head, review fixes included; CI also runs the Linux-only checks for macOS authors |
@@ -127,7 +128,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
 | `nix/` | NixOS module and VM tests |
-| `tools/*` | Development programs, never shipped: `audit`, `bench`, `carry-facts`, `cover`, `facts`, `fit`, `release`, `replay`, `sim`, `stats`; shared evaluation packages `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
+| `tools/*` | Development programs, never shipped: `audit`, `bench`, `carry-facts`, `cover`, `facts`, `fit`, `release`, `replay`, `reviews`, `sim`, `stats`; shared evaluation packages `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
 
 A package owns one responsibility, and its exported API is the seam. Split a package when it holds two responsibilities that change for different reasons.
 
