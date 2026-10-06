@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
 
@@ -177,6 +178,23 @@ func TestNewKeepsItsOwnConfig(t *testing.T) {
 	res, err := runSpec(t, m, "0001", machine.R1, machine.PickWorkload(machine.R1, 0), []int{0}, time.Minute, nil)
 	if err != nil || res.Signal != machine.Stall || res.Ran != time.Second {
 		t.Fatalf("trial 0001: %+v, %v; want the script given to New", res, err)
+	}
+}
+
+func TestNewKeepsItsOwnConfigReplay(t *testing.T) {
+	t.Parallel()
+	bios := defaultBIOSContext
+	class := journal.TrialClass{Regime: machine.R1, Workload: "work", Cores: []int{0}, DurationS: 60}
+	replay, err := NewReplay(bios, []ReplayFact{{Context: bios, Class: class, Profile: []int{-20, -21}, Outcome: journal.OutcomePass, DurationS: 60}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Cores: 2, BIOSContext: bios, BIOS: []int{-20, -21}, Limits: flat(2, -10, -10), Replay: replay}
+	m := newMachine(t, cfg)
+	*cfg.Replay = Replay{}
+	spec := machine.TrialSpec{ID: "1", Regime: machine.R1, Workload: machine.Workload{ID: "work"}, Cores: []int{0}, Duration: time.Minute}
+	if diff := cmp.Diff(true, m.HasRealAnswer([]int{-20, -21}, spec)); diff != "" {
+		t.Fatal(diff)
 	}
 }
 

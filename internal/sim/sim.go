@@ -355,6 +355,10 @@ func (cfg Config) clone() Config {
 		ccd := *cfg.CCD
 		cfg.CCD = &ccd
 	}
+	if cfg.Replay != nil {
+		replay := *cfg.Replay
+		cfg.Replay = &replay
+	}
 	cfg.Joints = slices.Clone(cfg.Joints)
 	for j := range cfg.Joints {
 		joint := &cfg.Joints[j]
