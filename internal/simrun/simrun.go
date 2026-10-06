@@ -15,6 +15,7 @@ import (
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/render"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 )
@@ -32,7 +33,7 @@ type Input struct {
 	Dir        string
 	Machine    *sim.Machine
 	Log        io.Writer
-	Renderer   journal.Renderer
+	Renderer   render.Renderer
 	// Cycles is the number of clean cycles of one profile after which the run stops; 0 keeps checking endlessly.
 	Cycles int
 	Wrap   func(session.Journal) session.Journal
@@ -204,7 +205,7 @@ func (j *memoryJournal) snapshot() error {
 	return nil
 }
 
-func (j *memoryJournal) flush(log io.Writer, renderer journal.Renderer) error {
+func (j *memoryJournal) flush(log io.Writer, renderer render.Renderer) error {
 	if !j.hasState {
 		return nil
 	}

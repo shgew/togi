@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/render"
 )
 
 type pstoreKernel struct {
@@ -69,7 +70,7 @@ func TestCrashRecoveryPstore(t *testing.T) {
 				t.Fatal("repeat recovery: " + diff)
 			}
 			if tc.record != nil {
-				t.Log(journal.FormatLine(crash, r.in.Machine.Clock.Now().Location()))
+				t.Log(render.FormatLine(crash, r.in.Machine.Clock.Now().Location()))
 				t.Logf("pstore=%s; tail bytes=%d; lines=%d", tc.record.Path, len(strings.Join(tc.record.Lines, "\n")), len(tc.record.Lines))
 			} else {
 				t.Logf("pstore absent; warnings=%d; recovery completed", warnings)

@@ -13,7 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 
-	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/render"
 	"github.com/shgew/togi/internal/watch"
 )
 
@@ -69,7 +69,7 @@ func runWatch(g *globals, args []string, stdout, stderr io.Writer) int {
 	snapshot := watch.Load(g.stateDir)
 	_, _ = io.WriteString(stdout, ansi.Strip(watch.Render(snapshot, width, height, time.Now()))+"\n")
 	if err := snapshot.Err(); err != nil {
-		fmt.Fprintf(stderr, "togi watch: %s\n", journal.EscapeText(err.Error()))
+		fmt.Fprintf(stderr, "togi watch: %s\n", render.EscapeText(err.Error()))
 		return exitError
 	}
 	return exitOK

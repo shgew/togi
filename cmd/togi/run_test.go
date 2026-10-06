@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/render"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/tuningboot"
 )
@@ -56,7 +57,7 @@ func TestRunDeadEndEvidencePriority(t *testing.T) {
 	defer stderr.Close()
 	failure := journal.Event{Kind: journal.KindFailure, Data: &journal.Failure{}, Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC), Msg: "failure"}
 	journalStream := journalStreamFor(t, stderr)
-	renderer := journal.NewRenderer(stderr, func(k string) string {
+	renderer := render.NewRenderer(stderr, func(k string) string {
 		if k == "JOURNAL_STREAM" {
 			return journalStream
 		}
@@ -161,7 +162,7 @@ func TestCompatibilityRefusalClearsGRUBAndUsesErrPriority(t *testing.T) {
 	}
 	defer stderr.Close()
 	stream := journalStreamFor(t, stderr)
-	renderer := journal.NewRenderer(stderr, func(key string) string {
+	renderer := render.NewRenderer(stderr, func(key string) string {
 		if key == "JOURNAL_STREAM" {
 			return stream
 		}
@@ -213,7 +214,7 @@ func TestPrintCleanStop(t *testing.T) {
 				events = append(events, journal.Event{Kind: kind, Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.Local), Msg: msg})
 			}
 			var stderr bytes.Buffer
-			printCleanStop(events, &stderr, journal.Renderer{})
+			printCleanStop(events, &stderr, render.Renderer{})
 			if diff := cmp.Diff(tc.want, stderr.String()); diff != "" {
 				t.Fatalf("closing summary (-want +got):\n%s", diff)
 			}
@@ -276,7 +277,7 @@ func TestRunResultExitCodes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			if code := runResult(tc.stop, tc.err, &out, journal.Renderer{}, nil); code != tc.code {
+			if code := runResult(tc.stop, tc.err, &out, render.Renderer{}, nil); code != tc.code {
 				t.Fatalf("exit %d, want %d", code, tc.code)
 			}
 			if diff := cmp.Diff(tc.want, out.String()); diff != "" {
@@ -301,7 +302,7 @@ func TestRunResultExitCodes(t *testing.T) {
 		t.Run(string(tc.condition), func(t *testing.T) {
 			var out bytes.Buffer
 			stop := session.Stop{Reason: session.StopDeadEnd, DeadEnd: &journal.DeadEnd{Condition: tc.condition, Detail: "operator intervention required"}}
-			if code := runResult(stop, nil, &out, journal.Renderer{}, nil); code != tc.code {
+			if code := runResult(stop, nil, &out, render.Renderer{}, nil); code != tc.code {
 				t.Fatalf("exit %d, want %d", code, tc.code)
 			}
 			want := fmt.Sprintf("togi: dead end %s: operator intervention required\n", tc.condition)
@@ -349,7 +350,7 @@ func TestCompatibilityRefusalReportsFailedClear(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	err := &journal.IncompatibleError{Field: "ruleset", Journal: journal.Build{Ruleset: 99}, Binary: session.Build()}
-	if code := runResult(session.Stop{}, err, &out, journal.Renderer{}, &failedClearBootloader{}); code != exitIncompatible {
+	if code := runResult(session.Stop{}, err, &out, render.Renderer{}, &failedClearBootloader{}); code != exitIncompatible {
 		t.Fatalf("exit %d", code)
 	}
 	want := "togi run: " + err.Error() + "\ntogi: clear GRUB saved entry: saved entry is read-only; no reboot requested\n"
@@ -370,7 +371,7 @@ func TestRunRefusalPersistsFixedReasonBeforeClearing(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			bootloader := &clearingBootloader{}
 			var diagnostics bytes.Buffer
-			code := runResult(session.Stop{}, tt.err, &diagnostics, journal.Renderer{}, bootloader)
+			code := runResult(session.Stop{}, tt.err, &diagnostics, render.Renderer{}, bootloader)
 			if code != exitIncompatible {
 				t.Fatalf("refusal exit %d; diagnostics %s", code, diagnostics.String())
 			}
@@ -397,7 +398,7 @@ func TestRunRefusalStillClearsAfterReasonWriteFailure(t *testing.T) {
 			}
 			var diagnostics bytes.Buffer
 			refusal := &journal.UnknownKindError{}
-			if code := runResult(session.Stop{}, refusal, &diagnostics, journal.Renderer{}, bootloader); code != exitIncompatible {
+			if code := runResult(session.Stop{}, refusal, &diagnostics, render.Renderer{}, bootloader); code != exitIncompatible {
 				t.Fatalf("changed refusal exit: %d", code)
 			}
 			if diff := cmp.Diff([]string{"set", "clear saved_entry"}, fake.environmentCalls); diff != "" {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/render"
 )
 
 const eventsHelp = `Usage: togi events [--core <N>] [--kind <kinds>] [--trial <ID>] [--since <time>] [--until <time>] [--json]
@@ -70,17 +71,17 @@ func runEvents(g *globals, args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	if incompatible, ok := errors.AsType[*journal.IncompatibleError](err); ok {
-		fmt.Fprintln(stderr, journal.NewRenderer(stderr, os.Getenv).Styled(journal.RedBold, "togi events: "+incompatible.Error()))
+		fmt.Fprintln(stderr, render.NewRenderer(stderr, os.Getenv).Styled(render.RedBold, "togi events: "+incompatible.Error()))
 		return exitError
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "togi events: %s\n", journal.EscapeText(err.Error()))
+		fmt.Fprintf(stderr, "togi events: %s\n", render.EscapeText(err.Error()))
 		return exitError
 	}
 	if len(events) > 0 {
 		warnRuleset(events, stderr)
 	}
-	renderer := journal.NewRenderer(stdout, os.Getenv)
+	renderer := render.NewRenderer(stdout, os.Getenv)
 	for _, e := range events {
 		if !filter.Match(e) {
 			continue

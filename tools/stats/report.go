@@ -13,6 +13,7 @@ import (
 	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	textrender "github.com/shgew/togi/internal/render"
 )
 
 // table writes report sections to out. It keeps the first write error, so a
@@ -557,7 +558,7 @@ func renderR7Decisions(tab *table, r r7Decisions) {
 	tab.section("R7 voltage-targeted backoffs", "seq\tdecision\tcore\tfrom\tto\tcounts\tcauses\treason")
 	for _, b := range r.backoffs {
 		d := b.decision
-		tab.row("%d\t%s\t%02d\t%d\t%d\t%d\t%v\t%s", b.seq, d.Decision, d.Core, d.FromOffset, d.ToOffset, b.steps, b.causes, journal.EscapeText(d.Reason))
+		tab.row("%d\t%s\t%02d\t%d\t%d\t%d\t%v\t%s", b.seq, d.Decision, d.Core, d.FromOffset, d.ToOffset, b.steps, b.causes, textrender.EscapeText(d.Reason))
 	}
 	tab.section("R7 chain derivations", "seq\tcycle\tstep\tCCD\tworkload\tpart\trequest groups\tloaded cores\tsources")
 	for _, c := range r.chains {
@@ -566,6 +567,6 @@ func renderR7Decisions(tab *table, r r7Decisions) {
 		if len(d.SourceSeqs) == 0 {
 			source = "offset fallback"
 		}
-		tab.row("%d\t%d\t%d\t%d\t%s\t%s\t%v\t%s\t%s", c.seq, d.Cycle, d.Step, d.CCD, journal.EscapeText(d.Workload), journal.EscapeText(d.Part), d.Groups, coreList(d.Cores), source)
+		tab.row("%d\t%d\t%d\t%d\t%s\t%s\t%v\t%s\t%s", c.seq, d.Cycle, d.Step, d.CCD, textrender.EscapeText(d.Workload), textrender.EscapeText(d.Part), d.Groups, coreList(d.Cores), source)
 	}
 }

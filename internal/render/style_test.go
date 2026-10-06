@@ -1,4 +1,4 @@
-package journal
+package render
 
 import (
 	"bytes"
@@ -11,39 +11,87 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
+
+func fixedClock() func() time.Time {
+	t := time.Date(2026, 10, 2, 1, 14, 7, 120000000, time.UTC)
+	return func() time.Time {
+		t = t.Add(time.Second)
+		return t
+	}
+}
+
+func sessionStart() *journal.SessionStart {
+	return &journal.SessionStart{Schema: journal.Schema, Session: "20261002T011407Z", Cores: []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 16}}, {Core: 7, CCD: 0, CPUs: []int{7, 23}}}}
+}
 
 func TestStyleOf(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
-		data Payload
+		data journal.Payload
 		want Style
 	}{
-		{"failed trial", &TrialEnd{Outcome: OutcomeFailure}, Red},
-		{"failure", &Failure{}, Red},
-		{"crash", &CrashDetected{}, Red},
-		{"dead end", &DeadEnd{}, RedBold},
-		{"passed search step", &TunerDecision{Decision: StepDeeper}, Green},
-		{"candidate solo limit", &CorePhase{From: PhaseSearch, To: PhaseHasRoom}, GreenBold},
-		{"at_limit", &CorePhase{From: PhaseHasRoom, To: PhaseAtLimit}, GreenBold},
-		{"deepen", &TunerDecision{Decision: Deepen}, Green},
-		{"passed cycle", &CheckingCycle{Event: CycleEnd, Passed: true, Full: true}, GreenBold},
-		{"proven backoff", &TunerDecision{Decision: Backoff}, Yellow},
-		{"yield", &TunerDecision{Decision: Yield}, Yellow},
-		{"defect found", &DefectFound{}, Yellow},
-		{"defect answered", &DefectAnswered{}, Plain},
-		{"inconclusive trial", &TrialEnd{Outcome: OutcomeInconclusive}, Dim},
-		{"single passed trial", &TrialEnd{Outcome: OutcomePass}, Plain},
-		{"cycle start", &CheckingCycle{Event: CycleStart}, Plain},
-		{"unpassed cycle", &CheckingCycle{Event: CycleEnd}, Plain},
-		{"initial core phase", &CorePhase{To: PhaseSearch}, Plain},
-		{"other event", &SessionBaseline{}, Plain},
+		{"failed trial", &journal.TrialEnd{Outcome: journal.OutcomeFailure}, Red},
+		{"failure", &journal.Failure{}, Red},
+		{"crash", &journal.CrashDetected{}, Red},
+		{"dead end", &journal.DeadEnd{}, RedBold},
+		{"passed search step", &journal.TunerDecision{Decision: journal.StepDeeper}, Green},
+		{"candidate solo limit", &journal.CorePhase{From: journal.PhaseSearch, To: journal.PhaseHasRoom}, GreenBold},
+		{"at_limit", &journal.CorePhase{From: journal.PhaseHasRoom, To: journal.PhaseAtLimit}, GreenBold},
+		{"deepen", &journal.TunerDecision{Decision: journal.Deepen}, Green},
+		{"passed cycle", &journal.CheckingCycle{Event: journal.CycleEnd, Passed: true, Full: true}, GreenBold},
+		{"proven backoff", &journal.TunerDecision{Decision: journal.Backoff}, Yellow},
+		{"yield", &journal.TunerDecision{Decision: journal.Yield}, Yellow},
+		{"defect found", &journal.DefectFound{}, Yellow},
+		{"defect answered", &journal.DefectAnswered{}, Plain},
+		{"inconclusive trial", &journal.TrialEnd{Outcome: journal.OutcomeInconclusive}, Dim},
+		{"single passed trial", &journal.TrialEnd{Outcome: journal.OutcomePass}, Plain},
+		{"cycle start", &journal.CheckingCycle{Event: journal.CycleStart}, Plain},
+		{"unpassed cycle", &journal.CheckingCycle{Event: journal.CycleEnd}, Plain},
+		{"initial core phase", &journal.CorePhase{To: journal.PhaseSearch}, Plain},
+		{"other event", &journal.SessionBaseline{}, Plain},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := StyleOf(Event{Kind: tt.data.Kind(), Data: tt.data}); got != tt.want {
+			if got := StyleOf(journal.Event{Kind: tt.data.Kind(), Data: tt.data}); got != tt.want {
 				t.Fatalf("style = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPayloadStyles(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		p     journal.Payload
+		style Style
+	}{
+		{&journal.HostRanking{Ranking: []int{3, 11}}, Plain},
+		{&journal.HostRanking{Detail: "missing"}, Plain},
+		{&journal.HuntStart{Hunt: 4, Regime: machine.R7, Trial: "0007", Candidates: []int{3, 11}, Trials: 5, TrialS: 120}, Yellow},
+		{&journal.HuntGroup{Hunt: 4, Group: 1, Cores: []int{3, 11}, Skipped: true, Reason: "already checked"}, Plain},
+		{&journal.HuntGroup{Hunt: 4, Group: 2, Cores: []int{3}, Inferred: "pass", Reason: "complement failed"}, Plain},
+		{&journal.HuntGroup{Hunt: 4, Group: 3, Cores: []int{11}, Inferred: "failure", Reason: "complement passed"}, Plain},
+		{&journal.HuntGroup{Hunt: 4, Group: 4, Cores: []int{3, 11}, DurationS: 120}, Plain},
+		{&journal.HuntGroup{Hunt: 4, Group: 5, Cores: []int{3}, Probe: &journal.CombinationMember{Core: 11, Offset: -22}, Held: []journal.CombinationMember{{Core: 3, Offset: -40}}, DurationS: 120}, Plain},
+		{&journal.HuntSkipped{Failure: 904, Reason: "failure point already known"}, Plain},
+		{&journal.HuntEnd{Hunt: 3, Result: "culprit", Cores: []int{13}, Groups: 4}, Green},
+		{&journal.Combination{Combination: 2, Members: []journal.CombinationMember{{Core: 3, Offset: -40}, {Core: 11, Offset: -30}}, Hunt: 4}, Yellow},
+		{&journal.DeepeningRound{Round: 2, Event: journal.CycleEnd, Passed: true}, GreenBold},
+		{&journal.TunerWarning{Warning: "monotonicity", Trial: "0520", Passes: []int{1, 2}}, Yellow},
+		{&journal.BackendRetry{Backend: "mprime", Attempt: 2, WaitS: 300, Reason: "setup failed"}, Dim},
+		{&journal.CheckingCycle{Event: journal.CycleEnd, Passed: true}, Plain},
+		{&journal.Failure{Signal: machine.Crash, Attribution: journal.Attributed, Core: new(1), Offset: new(-38), Trial: "0385", Regime: machine.R7, Condition: machine.Parked}, Red},
+		{&journal.Failure{Signal: machine.Crash, Attribution: journal.Attributed, Core: new(2), Offset: new(-12), Regime: machine.R6, Condition: machine.Together}, Red},
+		{&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Trial: "0310", Regime: machine.R7, Condition: machine.Parked}, Red},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.p.Kind()), func(t *testing.T) {
+			if d := cmp.Diff(tt.style, StyleOf(journal.Event{Data: tt.p})); d != "" {
+				t.Errorf("style (-want +got): %s", d)
 			}
 		})
 	}
@@ -54,20 +102,20 @@ func TestRendererColors(t *testing.T) {
 	renderer := Renderer{color: true}
 	tests := []struct {
 		name string
-		data Payload
+		data journal.Payload
 		sgr  string
 	}{
-		{"failure", &Failure{}, "\x1b[31m"},
-		{"dead end", &DeadEnd{}, "\x1b[1;31m"},
-		{"passed step", &TunerDecision{Decision: StepDeeper}, "\x1b[32m"},
-		{"at_limit", &CorePhase{From: PhaseHasRoom, To: PhaseAtLimit}, "\x1b[1;32m"},
-		{"backoff", &TunerDecision{Decision: Backoff}, "\x1b[33m"},
-		{"inconclusive", &TrialEnd{Outcome: OutcomeInconclusive}, "\x1b[2m"},
-		{"trial pass", &TrialEnd{Outcome: OutcomePass}, ""},
+		{"failure", &journal.Failure{}, "\x1b[31m"},
+		{"dead end", &journal.DeadEnd{}, "\x1b[1;31m"},
+		{"passed step", &journal.TunerDecision{Decision: journal.StepDeeper}, "\x1b[32m"},
+		{"at_limit", &journal.CorePhase{From: journal.PhaseHasRoom, To: journal.PhaseAtLimit}, "\x1b[1;32m"},
+		{"backoff", &journal.TunerDecision{Decision: journal.Backoff}, "\x1b[33m"},
+		{"inconclusive", &journal.TrialEnd{Outcome: journal.OutcomeInconclusive}, "\x1b[2m"},
+		{"trial pass", &journal.TrialEnd{Outcome: journal.OutcomePass}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			event := Event{Kind: tt.data.Kind(), Data: tt.data, Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC), Msg: tt.name}
+			event := journal.Event{Kind: tt.data.Kind(), Data: tt.data, Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC), Msg: tt.name}
 			want := FormatLine(event, time.UTC)
 			if tt.sgr != "" {
 				want = tt.sgr + want + "\x1b[0m"
@@ -98,7 +146,7 @@ func TestRendererStreams(t *testing.T) {
 	fileIdentity := fileStat.Sys().(*syscall.Stat_t)
 	matched := fmt.Sprintf("%d:%d", fileIdentity.Dev, fileIdentity.Ino)
 	mismatched := fmt.Sprintf("%d:%d", fileIdentity.Dev, fileIdentity.Ino+1)
-	failure := Event{Kind: KindFailure, Data: &Failure{}, Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC), Msg: "failure"}
+	failure := journal.Event{Kind: journal.KindFailure, Data: &journal.Failure{}, Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC), Msg: "failure"}
 	plain := FormatLine(failure, time.UTC)
 	tests := []struct {
 		name   string
@@ -127,7 +175,7 @@ func TestRendererStreams(t *testing.T) {
 		})
 	}
 	journald := NewRenderer(file, func(k string) string { return map[string]string{"JOURNAL_STREAM": matched}[k] })
-	if got := journald.Line(Event{Kind: KindTrialEnd, Data: &TrialEnd{Outcome: OutcomePass}, Msg: "pass", Time: failure.Time}, time.UTC); strings.HasPrefix(got, "<3>") || strings.ContainsRune(got, '\x1b') {
+	if got := journald.Line(journal.Event{Kind: journal.KindTrialEnd, Data: &journal.TrialEnd{Outcome: journal.OutcomePass}, Msg: "pass", Time: failure.Time}, time.UTC); strings.HasPrefix(got, "<3>") || strings.ContainsRune(got, '\x1b') {
 		t.Fatalf("plain line = %q", got)
 	}
 	if got := journald.PrefixedLine(failure, time.UTC, "  evidence: "); got != "<3>\x1b[31m  evidence: "+plain+"\x1b[0m" {
@@ -144,11 +192,11 @@ func TestColoredLogDoesNotColorJournal(t *testing.T) {
 	dir := t.TempDir()
 	var log bytes.Buffer
 	renderer := Renderer{color: true, journald: true}
-	j, err := Open(dir, Options{Boot: "boot", Now: fixedClock()})
+	j, err := journal.Open(dir, journal.Options{Boot: "boot", Now: fixedClock()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []Payload{sessionStart(), &Failure{}} {
+	for _, p := range []journal.Payload{sessionStart(), &journal.Failure{}} {
 		e, err := j.Append(p)
 		if err != nil {
 			t.Fatal(err)
@@ -193,7 +241,7 @@ func TestFormatLineEscapesTerminalControls(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			event := Event{Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC), Kind: KindTrialProgress, Msg: tt.msg}
+			event := journal.Event{Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC), Kind: journal.KindTrialProgress, Msg: tt.msg}
 			want := "01:14:07 trial.progress " + tt.want
 			if d := cmp.Diff(want, FormatLine(event, time.UTC)); d != "" {
 				t.Fatalf("line (-want +got): %s", d)
@@ -204,11 +252,17 @@ func TestFormatLineEscapesTerminalControls(t *testing.T) {
 
 func TestOpaqueEventHumanLinePreservesRawEvidence(t *testing.T) {
 	t.Parallel()
+	dir := t.TempDir()
 	raw := []byte(`{"seq":2,"time":"2026-10-02T01:14:07Z","kind":"future.\u001b[2J","msg":"日本語\u001b]52;c;data\u0007\r\n","nested":{"value":42}}`)
-	event, err := decode(raw)
-	if err != nil {
+	start := fmt.Sprintf(`{"seq":1,"kind":"session.start","schema":%d}`, journal.Schema)
+	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(start+"\n"+string(raw)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || len(torn) != 0 || len(events) != 2 {
+		t.Fatalf("valid opaque event was rejected by the reader: %d events, torn %q, %v", len(events), torn, err)
+	}
+	event := events[1]
 	want := `01:14:07 future.\x1b[2J 日本語\x1b]52;c;data\x07\r\n`
 	if got := (Renderer{color: true}).Line(event, time.UTC); got != want {
 		t.Fatalf("opaque line = %q, want %q", got, want)
@@ -220,9 +274,9 @@ func TestOpaqueEventHumanLinePreservesRawEvidence(t *testing.T) {
 
 func TestRendererEscapesBeforeApplicationStyle(t *testing.T) {
 	t.Parallel()
-	event := Event{
+	event := journal.Event{
 		Time: time.Date(2026, 10, 2, 1, 14, 7, 0, time.UTC),
-		Kind: KindFailure, Data: &Failure{}, Msg: "bad\x1b[0m\r\n日本語",
+		Kind: journal.KindFailure, Data: &journal.Failure{}, Msg: "bad\x1b[0m\r\n日本語",
 	}
 	plain := `01:14:07 failure        bad\x1b[0m\r\n日本語`
 	for _, tt := range []struct {
@@ -257,7 +311,7 @@ func TestDiagnosticLogEscapesWithoutSanitizingJournal(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	var log bytes.Buffer
-	j, err := Open(dir, Options{Boot: "boot", Now: fixedClock()})
+	j, err := journal.Open(dir, journal.Options{Boot: "boot", Now: fixedClock()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +320,7 @@ func TestDiagnosticLogEscapesWithoutSanitizingJournal(t *testing.T) {
 		t.Fatal(err)
 	}
 	detail := "日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u2028"
-	event, err := j.Append(&TrialProgress{Trial: "0001", Detail: detail})
+	event, err := j.Append(&journal.TrialProgress{Trial: "0001", Detail: detail})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +328,7 @@ func TestDiagnosticLogEscapesWithoutSanitizingJournal(t *testing.T) {
 	if !strings.Contains(log.String(), `trial 0001 日本語\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u2028`+"\n") {
 		t.Fatalf("diagnostic not visibly escaped: %q", log.String())
 	}
-	events, torn, err := Read(dir)
+	events, torn, err := journal.Read(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +336,7 @@ func TestDiagnosticLogEscapesWithoutSanitizingJournal(t *testing.T) {
 		t.Fatalf("unexpected torn journal: %q", torn)
 	}
 	recorded := events[len(events)-1]
-	if recorded.Msg != "trial 0001 "+detail || recorded.Data.(*TrialProgress).Detail != detail {
+	if recorded.Msg != "trial 0001 "+detail || recorded.Data.(*journal.TrialProgress).Detail != detail {
 		t.Fatalf("raw diagnostic changed: %+v", recorded)
 	}
 	if !bytes.Equal(recorded.Raw, event.Raw) {
@@ -299,7 +353,7 @@ func TestRendererClosedStreamFallsBackToPlain(t *testing.T) {
 		t.Fatal(err)
 	}
 	renderer := NewRenderer(file, func(string) string { return "1" })
-	e := Event{Time: time.Unix(0, 0), Kind: KindFailure, Data: &Failure{}, Msg: "failure"}
+	e := journal.Event{Time: time.Unix(0, 0), Kind: journal.KindFailure, Data: &journal.Failure{}, Msg: "failure"}
 	if diff := cmp.Diff(FormatLine(e, time.UTC), renderer.Line(e, time.UTC)); diff != "" {
 		t.Fatal(diff)
 	}

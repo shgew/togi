@@ -17,6 +17,7 @@ import (
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/render"
 	"github.com/shgew/togi/internal/tuner"
 	"github.com/shgew/togi/internal/tuningboot"
 )
@@ -46,7 +47,7 @@ type Input struct {
 	Stderr io.Writer
 	// Log receives each appended event's line, rendered by Renderer; nil discards them.
 	Log       io.Writer
-	Renderer  journal.Renderer
+	Renderer  render.Renderer
 	Close     func() error
 	SessionID func(time.Time) (string, error)
 }
