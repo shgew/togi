@@ -597,7 +597,7 @@ func (r *runner) closeOpenTrial() error {
 	}
 	evidence := trialEvidence{
 		result:  machine.Result{Ran: open.ran(), Signal: open.signal},
-		missing: journal.TrialReasonStoppedDuringTrial,
+		missing: "togi stopped during the trial",
 	}
 	cause := []int{open.seq}
 	if open.core != nil {
@@ -607,16 +607,16 @@ func (r *runner) closeOpenTrial() error {
 		evidence.mces = []recordedMCE{{corrected: open.corrected}}
 		cause = append(cause, open.mces...)
 		if open.signal == "" {
-			evidence.missing = journal.TrialReasonStoppedAfterMachineCheck
+			evidence.missing = "togi stopped during the trial after a machine check"
 		}
 	}
-	interrupted := true
+	interrupted, stopped := true, true
 	if seq, crashed := r.fold.crashSeq[open.boot]; crashed {
 		if open.signal == machine.CorrectedMCE || open.signal == machine.UncorrectedMCE {
 			cause = append(cause, r.fold.recordedFor(open.boot, r.in.Boot)...)
 		}
 		if open.signal != "" {
-			evidence.missing = "backend reported a failure before the reset"
+			evidence.missing, stopped = "backend reported a failure before the reset", false
 		}
 		crash := r.eventAt(seq).Data.(*journal.CrashDetected)
 		reset := &journal.TrialEnd{Outcome: journal.OutcomeInconclusive}
@@ -631,13 +631,15 @@ func (r *runner) closeOpenTrial() error {
 		evidence.reset = reset
 		if open.signal == "" && len(open.mces) == 0 {
 			cause = append([]int{seq}, r.fold.recordedFor(open.boot, r.in.Boot)...)
-			evidence.missing = ""
+			evidence.missing, stopped = "", false
 			interrupted = reset.Outcome != journal.OutcomeFailure
 		}
 	}
 	evidence.missing = joinDiagnostic(evidence.missing, open.kernelError)
 	end := adjudicateTrial(evidence)
 	end.Trial, end.Interrupted = open.intent.Trial, interrupted
+	// A kernel diagnostic joined into the reason has always kept the measured wording.
+	end.LastEvidence = stopped && open.kernelError == ""
 	end.KernelBoundary = journal.KernelBoundary{KernelCursor: r.fold.kernelCursors[r.in.Boot], KernelError: open.kernelError}
 	if open.core == nil {
 		end.Core = nil
