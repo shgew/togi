@@ -159,13 +159,17 @@ changes:
 board:
     {{ dev }} go run ./tools/board
 
-# Claim issue N for BRANCH: refuse if it is assigned; else assign yourself, link BRANCH from main and post the start comment
+# Claim issue N for BRANCH from BASE (default main): refuse if it is assigned; else assign yourself, link BRANCH and post a start comment naming the branch, WORKTREE and the one-line PLAN
 [group('github')]
-claim number branch plan="":
+claim number branch worktree plan base="main":
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "${TOGI_DEV_SHELL:-}" != "1" ]]; then
         exec {{ dev }} just --justfile '{{ justfile() }}' claim "$@"
+    fi
+    if [[ -z "$4" || "$4" == *$'\n'* ]]; then
+        echo "claim: PLAN must be one non-empty line" >&2
+        exit 1
     fi
     holders=$(gh issue view "$1" --json assignees --jq '[.assignees[].login] | join(", ")')
     if [[ -n "$holders" ]]; then
@@ -174,12 +178,16 @@ claim number branch plan="":
         exit 1
     fi
     gh issue edit "$1" --add-assignee @me
-    gh issue develop "$1" --name "$2" --base main
-    body="Started on branch \`$2\`."
-    if [[ -n "$3" ]]; then
-        body+=$'\n'"Plan: $3"
-    fi
-    gh issue comment "$1" --body "$body"
+    number=$1
+    unclaim() {
+        echo "claim: $1 failed for #$number; removing your assignment" >&2
+        gh issue edit "$number" --remove-assignee @me || echo "claim: could not unassign #$number; remove the assignment by hand" >&2
+        echo "claim: a branch linked before the failure may remain; rerunning with the same BRANCH reuses it" >&2
+        exit 1
+    }
+    gh issue develop "$1" --name "$2" --base "$5" || unclaim "gh issue develop"
+    body="Started on branch \`$2\` from \`$5\`, in worktree \`$3\`."$'\n'"Plan: $4"
+    gh issue comment "$1" --body "$body" || unclaim "gh issue comment"
 
 # Run GitHub commands as robotogi
 [group('github')]
