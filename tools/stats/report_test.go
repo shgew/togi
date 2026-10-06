@@ -141,6 +141,11 @@ func TestReviewBoundaryReport(t *testing.T) {
 	if diff := cmp.Diff([]string{"1.2.3"}, recent.session.builds); diff != "" {
 		t.Fatal(diff)
 	}
+	checkGolden(t, "review-boundary.golden", renderTable(t, func(tab *table) {
+		renderSession(tab, recent.session, recent.runs, recent.since)
+		renderEvidence(tab, recent.evidence)
+		renderOutcomes(tab, recent.inconclusive, recent.tctl)
+	}))
 }
 
 func TestReviewEvenRecoveryMedian(t *testing.T) {

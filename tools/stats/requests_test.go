@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -45,27 +43,10 @@ func TestR7RequestReport(t *testing.T) {
 	add(machine.R7, "load", []int{0, 1}, 120, journal.OutcomeFailure, 1.096, []int{1}, false, at)
 	add(machine.R1, "load", []int{0, 1}, 120, journal.OutcomeFailure, 1.096, []int{1}, true, at)
 	add(machine.R7, "load", []int{0, 1}, 120, journal.OutcomeFailure, 1.096, []int{1}, true, at.Add(-time.Second))
-	var got bytes.Buffer
-	tab := &table{out: &got}
 	session := facts.FromEvents(events)
-	renderRequests(tab, computeRequests(r7Measurements(session, project(session), at)))
-	if err := tab.close(); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join("testdata", "requests.golden")
-	if *update {
-		if err := os.WriteFile(path, got.Bytes(), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return
-	}
-	want, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diff := cmp.Diff(string(want), got.String()); diff != "" {
-		t.Fatal(diff)
-	}
+	checkGolden(t, "requests.golden", renderTable(t, func(tab *table) {
+		renderRequests(tab, computeRequests(r7Measurements(session, project(session), at)))
+	}))
 }
 
 func TestR7RequestsRecoveredFromSamples(t *testing.T) {

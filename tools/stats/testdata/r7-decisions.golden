@@ -1,0 +1,8 @@
+R7 voltage-targeted backoffs
+seq  decision  core  from  to   counts  causes  reason
+4    backoff   00    -20   -17  3       [3]     request 1.100 V\nto 1.110 V
+
+R7 chain derivations
+seq  cycle  step  CCD  workload  part       request groups  loaded cores  sources
+5    1      2     0    avx2      partial 1  [[0] [1]]       01            offset fallback
+9    2      1     1    sse       full       [[0 1]]         00,01         [3 7]

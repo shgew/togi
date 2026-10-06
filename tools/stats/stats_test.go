@@ -45,9 +45,27 @@ func TestSimulatedCombinationReport(t *testing.T) {
 	if err := report(&got, session, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join("testdata", "combination.golden")
+	checkGolden(t, "combination.golden", got.Bytes())
+}
+
+// renderTable renders sections through the report's table writer.
+func renderTable(t *testing.T, sections func(*table)) []byte {
+	t.Helper()
+	var got bytes.Buffer
+	tab := &table{out: &got}
+	sections(tab)
+	if err := tab.close(); err != nil {
+		t.Fatal(err)
+	}
+	return got.Bytes()
+}
+
+// checkGolden compares got with testdata/name, or rewrites it under -update.
+func checkGolden(t *testing.T, name string, got []byte) {
+	t.Helper()
+	path := filepath.Join("testdata", name)
 	if *update {
-		if err := os.WriteFile(path, got.Bytes(), 0o644); err != nil {
+		if err := os.WriteFile(path, got, 0o644); err != nil {
 			t.Fatal(err)
 		}
 		return
@@ -56,8 +74,8 @@ func TestSimulatedCombinationReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diff := cmp.Diff(string(want), got.String()); diff != "" {
-		t.Errorf("report mismatch (-want +got):\n%s\nrun `go test ./tools/stats -update` to accept the new output", diff)
+	if diff := cmp.Diff(string(want), string(got)); diff != "" {
+		t.Errorf("%s mismatch (-want +got):\n%s\nrun `go test ./tools/stats -update` to accept the new output", name, diff)
 	}
 }
 
