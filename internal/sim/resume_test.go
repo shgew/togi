@@ -168,7 +168,7 @@ func TestResumeReadsArchivesOfPatternLikeStateDir(t *testing.T) {
 			}
 			for _, payload := range []journal.Payload{
 				&journal.SessionStart{Schema: journal.Schema, Session: "archived"},
-				&journal.SessionContext{BIOSContext: machine.BIOSContext{BIOSVersion: "archived"}},
+				&journal.SessionContext{BIOSVersion: "archived"},
 			} {
 				if _, err := j.Append(payload); err != nil {
 					_ = j.Close()
