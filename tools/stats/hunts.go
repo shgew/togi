@@ -80,20 +80,20 @@ func renderChecking(tab *table, p *projection, events []journal.Event, since tim
 	reruns, failed := 0, 0
 	seen := map[int]bool{}
 	for _, t := range p.trials {
-		if !t.intent.Rerun {
+		if !t.Intent.Rerun {
 			continue
 		}
-		k := t.seq
-		if len(t.cause) > 0 {
-			k = t.cause[0]
+		k := t.Seq
+		if len(t.Cause) > 0 {
+			k = t.Cause[0]
 		}
 		if seen[k] {
 			continue
 		}
 		seen[k] = true
-		if selected(t.time, since) {
+		if selected(t.Time, since) {
 			reruns++
-			if t.end != nil && t.end.Outcome == journal.OutcomeFailure {
+			if t.End != nil && t.End.Outcome == journal.OutcomeFailure {
 				failed++
 			}
 		}
@@ -103,12 +103,12 @@ func renderChecking(tab *table, p *projection, events []journal.Event, since tim
 	tab.section("Checking steps and together outcomes", "cycle\tregime\tloaded cores\toutcome\ttrials")
 	counts := map[string]int{}
 	for _, t := range p.trials {
-		if selected(t.time, since) && t.intent.Phase == journal.PhaseChecking && t.intent.Condition == machine.Together {
-			cycle := fmt.Sprintf("%04d", t.intent.Cycle)
-			if t.intent.Rerun {
+		if selected(t.Time, since) && t.Intent.Phase == journal.PhaseChecking && t.Intent.Condition == machine.Together {
+			cycle := fmt.Sprintf("%04d", t.Intent.Cycle)
+			if t.Intent.Rerun {
 				cycle = "rerun"
 			}
-			counts[fmt.Sprintf("%s\t%s\t%s\t%s", cycle, t.intent.Regime, coreList(loaded(t.intent, p.cores)), outcome(t))]++
+			counts[fmt.Sprintf("%s\t%s\t%s\t%s", cycle, t.Intent.Regime, coreList(loaded(t.Intent, p.cores)), outcome(t))]++
 		}
 	}
 	for _, k := range keys(counts) {
@@ -135,8 +135,8 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 	tab.section("Failures after prior passes", "trial class\tfailures with prior passes")
 	contradictions := map[string]int{}
 	for _, t := range p.trials {
-		if selected(t.time, since) && t.end != nil && t.end.Outcome == journal.OutcomeFailure && priorPasses(p.trials, t.intent, t.seq, p.cores, p.idle) > 0 {
-			contradictions[class(t.intent, p.cores)]++
+		if selected(t.Time, since) && t.End != nil && t.End.Outcome == journal.OutcomeFailure && priorPasses(p.trials, t.Intent, t.Seq, p.cores, p.idle) > 0 {
+			contradictions[class(t.Intent, p.cores)]++
 		}
 	}
 	for _, k := range keys(contradictions) {
@@ -152,13 +152,13 @@ func renderEvidence(tab *table, p *projection, events []journal.Event, since tim
 			if len(m.trials) == 0 {
 				continue
 			}
-			prior := priorPasses(p.trials, m.trials[0].intent, h.seq, p.cores, p.idle)
+			prior := priorPasses(p.trials, m.trials[0].Intent, h.seq, p.cores, p.idle)
 			established := prior >= h.start.Trials
 			passes, failures, cost := 0, 0, 0
 			for _, t := range m.trials {
 				cost += seconds(t)
-				if t.end != nil {
-					switch t.end.Outcome {
+				if t.End != nil {
+					switch t.End.Outcome {
 					case journal.OutcomePass:
 						passes++
 					case journal.OutcomeFailure:
@@ -265,26 +265,26 @@ func renderDepth(tab *table, p *projection, since time.Time) {
 	groups := map[string]map[int]*depthCount{}
 	failing := map[string]bool{}
 	for _, t := range p.trials {
-		if !selected(t.time, since) || !t.started {
+		if !selected(t.Time, since) || !t.Started {
 			continue
 		}
-		cores := loaded(t.intent, p.cores)
+		cores := loaded(t.Intent, p.cores)
 		if len(cores) < 2 {
 			continue
 		}
 		depth := -51
 		valid := true
 		for _, c := range cores {
-			if c < 0 || c >= len(t.intent.Profile) {
+			if c < 0 || c >= len(t.Intent.Profile) {
 				valid = false
 				break
 			}
-			depth = max(depth, t.intent.Profile[c])
+			depth = max(depth, t.Intent.Profile[c])
 		}
 		if !valid {
 			continue
 		}
-		k := class(t.intent, p.cores)
+		k := class(t.Intent, p.cores)
 		if groups[k] == nil {
 			groups[k] = map[int]*depthCount{}
 		}
@@ -293,7 +293,7 @@ func renderDepth(tab *table, p *projection, since time.Time) {
 		}
 		d := groups[k][depth]
 		d.trials++
-		if t.end != nil && t.end.Outcome == journal.OutcomeFailure {
+		if t.End != nil && t.End.Outcome == journal.OutcomeFailure {
 			d.failures++
 			failing[k] = true
 		}

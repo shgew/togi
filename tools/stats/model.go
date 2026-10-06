@@ -13,16 +13,8 @@ import (
 )
 
 type trial struct {
-	intent       *journal.TrialIntent
-	seq, endSeq  int
-	time         time.Time
-	lastEvidence time.Time
-	cause        []int
-	crashed      bool
-	boot         string
-	started      bool
-	end          *journal.TrialEnd
-	key          string
+	*facts.Trial
+	key string
 }
 type runInfo struct {
 	start, end      time.Time
@@ -162,7 +154,7 @@ func (p *projection) finishHunts(last time.Time) {
 
 func (p *projection) addTrial(record *facts.Trial, active *runInfo, groups map[[2]int]*groupInfo) {
 	v := record.Intent
-	t := &trial{intent: v, key: class(v, p.cores), seq: record.Seq, endSeq: record.EndSeq, time: record.Time, lastEvidence: record.LastEvidence, cause: record.Cause, boot: record.Boot, started: record.Started, crashed: record.Crashed, end: record.End}
+	t := &trial{Trial: record, key: class(v, p.cores)}
 	p.trials = append(p.trials, t)
 	p.byID[v.Trial] = t
 	if active != nil {
@@ -213,11 +205,11 @@ func priorPasses(history []*trial, target *journal.TrialIntent, before int, core
 	k := class(target, cores)
 	cutoff := 0
 	for _, t := range history {
-		if t.end == nil || t.endSeq >= before || t.key != k {
+		if t.End == nil || t.EndSeq >= before || t.key != k {
 			continue
 		}
-		if t.end.Outcome == journal.OutcomeFailure && tuner.AtLeastShallow(t.intent.Profile, target.Profile) {
-			cutoff = max(cutoff, t.endSeq)
+		if t.End.Outcome == journal.OutcomeFailure && tuner.AtLeastShallow(t.Intent.Profile, target.Profile) {
+			cutoff = max(cutoff, t.EndSeq)
 		}
 	}
 	if target.Regime == machine.R6 {
@@ -237,7 +229,7 @@ func priorPasses(history []*trial, target *journal.TrialIntent, before int, core
 	}
 	n := 0
 	for _, t := range history {
-		if t.end != nil && t.endSeq > cutoff && t.endSeq < before && t.end.Outcome == journal.OutcomePass && t.key == k && tuner.AtLeastDeep(t.intent.Profile, target.Profile) {
+		if t.End != nil && t.EndSeq > cutoff && t.EndSeq < before && t.End.Outcome == journal.OutcomePass && t.key == k && tuner.AtLeastDeep(t.Intent.Profile, target.Profile) {
 			n++
 		}
 	}

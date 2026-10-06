@@ -32,11 +32,11 @@ func r7Measurements(session facts.Session, p *projection, since time.Time) []r7M
 	}
 	var out []r7Measurement
 	for _, t := range p.trials {
-		if t.intent.Regime != machine.R7 || !selected(t.time, since) || !t.started || t.end == nil {
+		if t.Intent.Regime != machine.R7 || !selected(t.Time, since) || !t.Started || t.End == nil {
 			continue
 		}
-		m := r7Measurement{key: t.key, failed: t.end.Outcome == journal.OutcomeFailure, requests: t.end.VoltageRequestsV, top: t.end.TopRequesters}
-		if f, ok := recovered[t.endSeq]; ok && (len(m.requests) == 0 || len(m.top) == 0) {
+		m := r7Measurement{key: t.key, failed: t.End.Outcome == journal.OutcomeFailure, requests: t.End.VoltageRequestsV, top: t.End.TopRequesters}
+		if f, ok := recovered[t.EndSeq]; ok && (len(m.requests) == 0 || len(m.top) == 0) {
 			m.requests, m.top = f.VoltageRequestsV, f.TopRequesters
 		}
 		out = append(out, m)

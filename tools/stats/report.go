@@ -40,19 +40,19 @@ func keys[V any](m map[string]V) []string {
 func stamp(t time.Time) string                   { return t.UTC().Format(time.RFC3339) }
 func selected(t time.Time, since time.Time) bool { return !t.Before(since) }
 func seconds(t *trial) int {
-	if t.end == nil {
+	if t.End == nil {
 		return 0
 	}
-	return t.end.DurationS
+	return t.End.DurationS
 }
 func outcome(t *trial) string {
-	if t.end == nil {
+	if t.End == nil {
 		return "open"
 	}
-	return string(t.end.Outcome)
+	return string(t.End.Outcome)
 }
 func crash(t *trial) bool {
-	return t.crashed || t.end != nil && t.end.Outcome == journal.OutcomeFailure && t.end.Signal == machine.Crash
+	return t.Crashed || t.End != nil && t.End.Outcome == journal.OutcomeFailure && t.End.Signal == machine.Crash
 }
 
 func report(out io.Writer, session facts.Session, since time.Time) error {
@@ -108,8 +108,8 @@ func renderTime(tab *table, p *projection, since time.Time) []float64 {
 	tab.section("Time", "phase / condition / regime / outcome\ttrial seconds\thours")
 	times := map[string]int{}
 	for _, t := range p.trials {
-		if selected(t.time, since) {
-			k := fmt.Sprintf("%s / %s / %s / %s", t.intent.Phase, t.intent.Condition, t.intent.Regime, outcome(t))
+		if selected(t.Time, since) {
+			k := fmt.Sprintf("%s / %s / %s / %s", t.Intent.Phase, t.Intent.Condition, t.Intent.Regime, outcome(t))
 			times[k] += seconds(t)
 		}
 	}
@@ -119,13 +119,13 @@ func renderTime(tab *table, p *projection, since time.Time) []float64 {
 	downtime := 0.0
 	gaps := []float64{}
 	for _, t := range p.trials {
-		if !selected(t.time, since) || !crash(t) {
+		if !selected(t.Time, since) || !crash(t) {
 			continue
 		}
-		if next, ok := p.nextBoot[t.boot]; ok {
+		if next, ok := p.nextBoot[t.Boot]; ok {
 			boot := p.boots[next]
-			gaps = append(gaps, boot.firstEvent.Sub(t.lastEvidence).Seconds())
-			downtime += boot.start.Sub(t.lastEvidence).Seconds()
+			gaps = append(gaps, boot.firstEvent.Sub(t.LastEvidence).Seconds())
+			downtime += boot.start.Sub(t.LastEvidence).Seconds()
 		}
 	}
 	tab.row("crash downtime (last evidence to next boot)\t%.3f\t%.3f", downtime, downtime/3600)
@@ -155,9 +155,9 @@ func renderFailures(tab *table, p *projection, events []journal.Event, since tim
 			regime := v.Regime
 			tr := p.byID[v.Trial]
 			if tr != nil {
-				workload = tr.intent.Workload
+				workload = tr.Intent.Workload
 				if regime == "" {
-					regime = tr.intent.Regime
+					regime = tr.Intent.Regime
 				}
 			}
 			failures[fmt.Sprintf("%s\t%s\t%s\t%s", regime, workload, v.Signal, v.Attribution)]++
@@ -177,7 +177,7 @@ func renderFailures(tab *table, p *projection, events []journal.Event, since tim
 	}
 	renderExposure(tab, p, since)
 	for _, t := range p.trials {
-		if selected(t.time, since) && crash(t) {
+		if selected(t.Time, since) && crash(t) {
 			d := seconds(t)
 			b := 4
 			switch {
@@ -221,15 +221,15 @@ func renderFailures(tab *table, p *projection, events []journal.Event, since tim
 func renderOutcomes(tab *table, p *projection, since time.Time) error {
 	tab.section("Inconclusive trials", "trial\tcondition\treason")
 	for _, t := range p.trials {
-		if selected(t.time, since) && t.end != nil && t.end.Outcome == journal.OutcomeInconclusive {
-			tab.row("%s\t%s\t%s", t.intent.Trial, t.intent.Condition, t.end.Reason)
+		if selected(t.Time, since) && t.End != nil && t.End.Outcome == journal.OutcomeInconclusive {
+			tab.row("%s\t%s\t%s", t.Intent.Trial, t.Intent.Condition, t.End.Reason)
 		}
 	}
 	tab.section("Tctl", "regime\tmax C\tpassing trials")
 	temps := map[string]int{}
 	for _, t := range p.trials {
-		if selected(t.time, since) && t.end != nil && t.end.Outcome == journal.OutcomePass && t.end.TctlMaxC != nil {
-			temps[fmt.Sprintf("%s\t%03d", t.intent.Regime, *t.end.TctlMaxC)]++
+		if selected(t.Time, since) && t.End != nil && t.End.Outcome == journal.OutcomePass && t.End.TctlMaxC != nil {
+			temps[fmt.Sprintf("%s\t%03d", t.Intent.Regime, *t.End.TctlMaxC)]++
 		}
 	}
 	for _, k := range keys(temps) {
@@ -245,20 +245,20 @@ func renderExposure(tab *table, p *projection, since time.Time) {
 	type exposure struct{ trials, seconds, failures int }
 	exposures := map[string]*exposure{}
 	for _, t := range p.trials {
-		if !selected(t.time, since) {
+		if !selected(t.Time, since) {
 			continue
 		}
-		k := fmt.Sprintf("%s\t%s", t.intent.Regime, t.intent.Workload)
+		k := fmt.Sprintf("%s\t%s", t.Intent.Regime, t.Intent.Workload)
 		x := exposures[k]
 		if x == nil {
 			x = &exposure{}
 			exposures[k] = x
 		}
-		if t.started {
+		if t.Started {
 			x.trials++
 		}
 		x.seconds += seconds(t)
-		if t.end != nil && t.end.Outcome == journal.OutcomeFailure {
+		if t.End != nil && t.End.Outcome == journal.OutcomeFailure {
 			x.failures++
 		}
 	}
@@ -273,7 +273,7 @@ func loadedCCD(t *trial, cores []machine.CoreInfo, ccds map[int]int) string {
 		return "idle/unknown"
 	}
 	set := map[string]int{}
-	for _, c := range loaded(t.intent, cores) {
+	for _, c := range loaded(t.Intent, cores) {
 		if ccd, ok := ccds[c]; ok {
 			set[strconv.Itoa(ccd)]++
 		}

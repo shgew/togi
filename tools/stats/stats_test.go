@@ -97,7 +97,7 @@ func TestPriorPasses(t *testing.T) {
 		if modify != nil {
 			modify(&in)
 		}
-		return &trial{intent: &in, key: class(&in, nil), endSeq: seq, end: &journal.TrialEnd{Outcome: result}}
+		return &trial{Trial: &facts.Trial{Intent: &in, EndSeq: seq, End: &journal.TrialEnd{Outcome: result}}, key: class(&in, nil)}
 	}
 	for _, tc := range []struct {
 		name    string
