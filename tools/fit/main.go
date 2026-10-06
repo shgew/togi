@@ -66,7 +66,7 @@ func runWithSharedVoltageFit(args []string, stdout, stderr io.Writer, fitter sha
 	case *forwardOnly:
 		err = forward(*extract, *seal, *jobs, stdout)
 	default:
-		err = generate(*extract, *out, *seed, *refits, *jobs, stdout)
+		_, err = generate(*extract, *out, *seed, *refits, *jobs, stdout)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "fit: %v\n", err)
@@ -75,36 +75,38 @@ func runWithSharedVoltageFit(args []string, stdout, stderr io.Writer, fitter sha
 	return 0
 }
 
-func generate(extract, out string, seed uint64, refits, jobs int, stdout io.Writer) error {
+type fitted struct {
+	sample      []trialfacts.Record
+	cfg         sim.Config
+	loss        float64
+	constrained []modelcheck.Group
+	check       *modelcheck.Result
+}
+
+func generate(extract, out string, seed uint64, refits, jobs int, stdout io.Writer) ([]fitted, error) {
 	started := time.Now()
 	records, err := trialfacts.Read(extract)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	trials, err := decisive(records)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	absExtract, err := filepath.Abs(extract)
 	if err != nil {
-		return fmt.Errorf("resolve extract: %w", err)
+		return nil, fmt.Errorf("resolve extract: %w", err)
 	}
 	absOut, err := filepath.Abs(out)
 	if err != nil {
-		return fmt.Errorf("resolve output directory: %w", err)
+		return nil, fmt.Errorf("resolve output directory: %w", err)
 	}
 	rel, err := filepath.Rel(absOut, absExtract)
 	if err != nil {
-		return fmt.Errorf("relativize extract: %w", err)
+		return nil, fmt.Errorf("relativize extract: %w", err)
 	}
 	if err := os.MkdirAll(out, 0o755); err != nil {
-		return fmt.Errorf("create output directory: %w", err)
-	}
-	type fitted struct {
-		sample      []trialfacts.Record
-		cfg         sim.Config
-		loss        float64
-		constrained []modelcheck.Group
+		return nil, fmt.Errorf("create output directory: %w", err)
 	}
 	fits, err := fitParallel(refits+1, jobs, func(n int) (fitted, error) {
 		sample := trials
@@ -115,11 +117,11 @@ func generate(extract, out string, seed uint64, refits, jobs int, stdout io.Writ
 		return fitted{sample: sample, cfg: cfg, loss: loss}, nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	checker, err := modelcheck.NewChecker(fits[0].cfg, records)
 	if err != nil {
-		return fmt.Errorf("fit 0 model checker: %w", err)
+		return nil, fmt.Errorf("fit 0 model checker: %w", err)
 	}
 	base := cloneMachine(fits[0].cfg)
 	fits, err = fitParallel(len(fits), jobs, func(n int) (fitted, error) {
@@ -151,10 +153,11 @@ func generate(extract, out string, seed uint64, refits, jobs int, stdout io.Writ
 		return result, nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	checks := make([]*modelcheck.Result, len(fits))
-	for n, result := range fits {
+	for n := range fits {
+		result := &fits[n]
 		cfg, loss, constrained := result.cfg, result.loss, result.constrained
 		path := filepath.Join(out, fmt.Sprintf("target-fit-%d.toml", n))
 		for _, group := range constrained {
@@ -163,17 +166,18 @@ func generate(extract, out string, seed uint64, refits, jobs int, stdout io.Writ
 		cfg.Facts = filepath.ToSlash(rel)
 		content := encodeMachine(cfg, n, seed, len(result.sample), loss, constrained)
 		if err := os.WriteFile(path, content, 0o644); err != nil {
-			return fmt.Errorf("fit %d write fitted machine: %w", n, err)
+			return nil, fmt.Errorf("fit %d write fitted machine: %w", n, err)
 		}
 		loaded, err := sim.LoadMachine(path)
 		if err != nil {
-			return fmt.Errorf("fit %d load fitted machine: %w", n, err)
+			return nil, fmt.Errorf("fit %d load fitted machine: %w", n, err)
 		}
 		m, err := sim.New(loaded)
 		if err != nil {
-			return fmt.Errorf("fit %d loaded simulator: %w", n, err)
+			return nil, fmt.Errorf("fit %d loaded simulator: %w", n, err)
 		}
-		checks[n] = checker.Check(path, extract, m)
+		result.check = checker.Check(path, extract, m)
+		checks[n] = result.check
 		fmt.Fprintf(stdout, "%s: %d trials; negative log likelihood %.6f\n", path, len(result.sample), loss)
 		for j, joint := range cfg.Joints {
 			ccd := 0
@@ -188,10 +192,10 @@ func generate(extract, out string, seed uint64, refits, jobs int, stdout io.Writ
 	}
 	modelcheck.Report(stdout, checks)
 	if err := reportForwardCheck(stdout, trials, 0, jobs); err != nil {
-		return err
+		return nil, err
 	}
 	fmt.Fprintf(stdout, "Fit elapsed: %s\n", time.Since(started).Round(time.Millisecond))
-	return nil
+	return fits, nil
 }
 
 func encodeMachine(cfg sim.Config, index int, seed uint64, trials int, loss float64, constrained []modelcheck.Group) []byte {

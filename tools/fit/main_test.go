@@ -5,7 +5,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"flag"
-	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -15,6 +15,7 @@ import (
 	"testing/synctest"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -72,96 +73,82 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 }
 
 func TestGenerateWritesCheckedReproducibleEnsemble(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		root := t.TempDir()
-		extract := filepath.Join(root, "facts.jsonl.gz")
-		var compressed bytes.Buffer
-		gz := gzip.NewWriter(&compressed)
-		encoder := json.NewEncoder(gz)
-		context := machine.BIOSContext{Board: "fixture", BIOSVersion: "A", CPUModel: "Zen 5 fixture", Microcode: "0x1", BoostLimitMHz: 5600}
-		for i := range 12 {
-			outcome := journal.OutcomePass
-			if i >= 6 {
-				outcome = journal.OutcomeFailure
-			}
-			r := trialfacts.Record{Kind: facts.TrialFact, Outcome: outcome, Profile: []int{-10, 0}, Context: &context, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
-			if err := encoder.Encode(r); err != nil {
-				t.Fatal(err)
-			}
+	root := t.TempDir()
+	extract := filepath.Join(root, "facts.jsonl.gz")
+	var compressed bytes.Buffer
+	gz := gzip.NewWriter(&compressed)
+	encoder := json.NewEncoder(gz)
+	context := machine.BIOSContext{Board: "fixture", BIOSVersion: "A", CPUModel: "Zen 5 fixture", Microcode: "0x1", BoostLimitMHz: 5600}
+	for i := range 12 {
+		outcome := journal.OutcomePass
+		if i >= 6 {
+			outcome = journal.OutcomeFailure
 		}
-		if err := gz.Close(); err != nil {
+		r := trialfacts.Record{Kind: facts.TrialFact, Outcome: outcome, Profile: []int{-10, 0}, Context: &context, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
+		if err := encoder.Encode(r); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(extract, compressed.Bytes(), 0o600); err != nil {
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(extract, compressed.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	type evidence struct {
+		Trials int
+		Loss   float64
+	}
+	var first [][]byte
+	for jobs, dir := range []string{"first", "second"} {
+		out := filepath.Join(root, dir)
+		fits, err := generate(extract, out, 263, 1, jobs+1, io.Discard)
+		if err != nil {
 			t.Fatal(err)
 		}
-		var first [][]byte
-		for jobs, dir := range []string{"first", "second"} {
-			out := filepath.Join(root, dir)
-			var report bytes.Buffer
-			if err := generate(extract, out, 263, 1, jobs+1, &report); err != nil {
+		for n := range 2 {
+			path := filepath.Join(out, "target-fit-"+strconv.Itoa(n)+".toml")
+			content, err := os.ReadFile(path)
+			if err != nil {
 				t.Fatal(err)
 			}
-			for n := range 2 {
-				path := filepath.Join(out, "target-fit-"+strconv.Itoa(n)+".toml")
-				content, err := os.ReadFile(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				cfg, err := sim.LoadMachine(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if cfg.Facts != "../facts.jsonl.gz" {
-					t.Fatalf("extract provenance: %q", cfg.Facts)
-				}
-				if diff := cmp.Diff(context, cfg.BIOSContext); diff != "" {
-					t.Fatal(diff)
-				}
-				check, err := modelcheck.Check(path, cfg, trialfacts.Extracts{})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if check.Status != "ok" || len(check.Groups) != 1 || check.Groups[0].N != 12 || check.Groups[0].K != 6 {
-					t.Fatalf("fit lost original evidence: %+v", check)
-				}
-				// Seed 264 draws indices 7,11,11,8,8,10,4,5,7,2,1,0: seven failures.
-				failures := 6 + n
-				prediction := check.Groups[0].MeanP
-				if math.Abs(prediction-float64(failures)/12) > 0.02 {
-					t.Fatalf("member %d resampled prediction = %g, want %d/12", n, prediction, failures)
-				}
-				if dir == "first" {
-					first = append(first, content)
-				} else if diff := cmp.Diff(first[n], content); diff != "" {
-					t.Fatalf("nonreproducible member %d: %s", n, diff)
-				}
-				found := false
-				for line := range strings.SplitSeq(report.String(), "\n") {
-					evidence, ok := strings.CutPrefix(line, path+": ")
-					if !ok {
-						continue
-					}
-					var trials int
-					var loss float64
-					if fields, err := fmt.Sscanf(evidence, "%d trials; negative log likelihood %f", &trials, &loss); err != nil || fields != 2 {
-						continue
-					}
-					wantLoss := -float64(failures)*math.Log(prediction) - float64(12-failures)*math.Log1p(-prediction)
-					if trials != 12 || math.Abs(loss-wantLoss) > 0.0001 {
-						t.Fatalf("member %d resampled likelihood = %d trials, %g; want 12 trials, %g", n, trials, loss, wantLoss)
-					}
-					found = true
-				}
-				if !found || !strings.Contains(report.String(), path+": ok (1 eligible groups; 0 idle failures without trial exposure)") {
-					t.Fatalf("missing fit evidence: %s", report.String())
-				}
+			cfg, err := sim.LoadMachine(path)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if !strings.Contains(report.String(), "Fit elapsed: 0s") {
-				t.Fatalf("elapsed output: %s", report.String())
+			if cfg.Facts != "../facts.jsonl.gz" {
+				t.Fatalf("extract provenance: %q", cfg.Facts)
+			}
+			if diff := cmp.Diff(context, cfg.BIOSContext); diff != "" {
+				t.Fatal(diff)
+			}
+			check, err := modelcheck.Check(path, cfg, trialfacts.Extracts{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if check.Status != "ok" || len(check.Groups) != 1 || check.Groups[0].N != 12 || check.Groups[0].K != 6 {
+				t.Fatalf("fit lost original evidence: %+v", check)
+			}
+			if diff := cmp.Diff(check, fits[n].check); diff != "" {
+				t.Fatalf("member %d reported check differs from the written file's (-file +reported):\n%s", n, diff)
+			}
+			// Seed 264 draws indices 7,11,11,8,8,10,4,5,7,2,1,0: seven failures.
+			failures := 6 + n
+			prediction := check.Groups[0].MeanP
+			if math.Abs(prediction-float64(failures)/12) > 0.02 {
+				t.Fatalf("member %d resampled prediction = %g, want %d/12", n, prediction, failures)
+			}
+			want := evidence{12, -float64(failures)*math.Log(prediction) - float64(12-failures)*math.Log1p(-prediction)}
+			if diff := cmp.Diff(want, evidence{len(fits[n].sample), fits[n].loss}, cmpopts.EquateApprox(0, 0.0001)); diff != "" {
+				t.Fatalf("member %d resampled likelihood (-want +got):\n%s", n, diff)
+			}
+			if dir == "first" {
+				first = append(first, content)
+			} else if diff := cmp.Diff(first[n], content); diff != "" {
+				t.Fatalf("nonreproducible member %d: %s", n, diff)
 			}
 		}
-	})
+	}
 }
 
 func TestGenerateConstrainedRefitsMatchSerial(t *testing.T) {
@@ -189,9 +176,10 @@ func TestGenerateConstrainedRefitsMatchSerial(t *testing.T) {
 			t.Fatal(err)
 		}
 		out := filepath.Join(root, "machines")
-		generated := func(jobs int) (string, [][]byte, []float64) {
+		generated := func(jobs int) (string, [][]byte, []float64, []fitted) {
 			var report bytes.Buffer
-			if err := generate(extract, out, 263, 4, jobs, &report); err != nil {
+			fits, err := generate(extract, out, 263, 4, jobs, &report)
+			if err != nil {
 				t.Fatal(err)
 			}
 			var machines [][]byte
@@ -216,38 +204,32 @@ func TestGenerateConstrainedRefitsMatchSerial(t *testing.T) {
 				}
 				predictions = append(predictions, check.Groups[0].MeanP)
 			}
-			return report.String(), machines, predictions
+			return report.String(), machines, predictions, fits
 		}
-		serialReport, serialMachines, predictions := generated(1)
+		serialReport, serialMachines, predictions, fits := generated(1)
 		// Seeds 264-266 resample none of the single failure, so refits 1-3 are flagged and refit from fit 0.
+		group := modelcheck.Group{Context: &context, Kind: facts.TrialFact, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}, Depth: -10, N: 30, K: 1, Flagged: true}
+		var constrained [][]modelcheck.Group
+		for _, f := range fits {
+			constrained = append(constrained, f.constrained)
+		}
+		if diff := cmp.Diff([][]modelcheck.Group{nil, {group}, {group}, {group}, nil}, constrained, cmpopts.IgnoreFields(modelcheck.Group{}, "Interval", "MeanP")); diff != "" {
+			t.Fatalf("constrained refits (-want +got):\n%s", diff)
+		}
+		type evidence struct {
+			Trials int
+			Loss   float64
+		}
 		for n := 1; n <= 3; n++ {
-			if !strings.Contains(serialReport, "Refit "+strconv.Itoa(n)+" constraint: R1  cores=[0] duration=60s depth=-10 n=30 k=1 ") {
-				t.Fatalf("refit %d not constrained:\n%s", n, serialReport)
-			}
 			if predictions[n] >= predictions[0] {
 				t.Fatalf("refit %d kept the all-facts prediction %g, want below it: %g", n, predictions[0], predictions[n])
 			}
-			path := filepath.Join(out, "target-fit-"+strconv.Itoa(n)+".toml")
-			wantLoss := -30 * math.Log1p(-predictions[n])
-			var loss float64
-			found := false
-			for line := range strings.SplitSeq(serialReport, "\n") {
-				evidence, ok := strings.CutPrefix(line, path+": ")
-				if !ok {
-					continue
-				}
-				if fields, err := fmt.Sscanf(evidence, "30 trials; negative log likelihood %f", &loss); err == nil && fields == 1 {
-					found = true
-				}
-			}
-			if !found || math.Abs(loss-wantLoss) > 0.0001 {
-				t.Fatalf("refit %d reported likelihood %g (found %t); want %g on its failure-free resample:\n%s", n, loss, found, wantLoss, serialReport)
+			want := evidence{30, -30 * math.Log1p(-predictions[n])}
+			if diff := cmp.Diff(want, evidence{len(fits[n].sample), fits[n].loss}, cmpopts.EquateApprox(0, 0.0001)); diff != "" {
+				t.Fatalf("refit %d likelihood on its failure-free resample (-want +got):\n%s", n, diff)
 			}
 		}
-		if strings.Contains(serialReport, "Refit 4 constraint") {
-			t.Fatalf("refit 4 constrained:\n%s", serialReport)
-		}
-		parallelReport, parallelMachines, _ := generated(5)
+		parallelReport, parallelMachines, _, _ := generated(5)
 		if diff := cmp.Diff(serialReport, parallelReport); diff != "" {
 			t.Fatalf("parallel report differs from serial (-serial +parallel):\n%s", diff)
 		}
@@ -263,7 +245,7 @@ func TestGenerateRefusesMissingOrNondecisiveEvidence(t *testing.T) {
 		extract := filepath.Join(root, "facts.jsonl.gz")
 		out := filepath.Join(root, "machines")
 		var output bytes.Buffer
-		if err := generate(extract, out, 263, 0, 2, &output); err == nil {
+		if _, err := generate(extract, out, 263, 0, 2, &output); err == nil {
 			t.Fatal("missing extract accepted")
 		}
 		var compressed bytes.Buffer
@@ -274,7 +256,7 @@ func TestGenerateRefusesMissingOrNondecisiveEvidence(t *testing.T) {
 		if err := os.WriteFile(extract, compressed.Bytes(), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := generate(extract, out, 263, 0, 2, &output); err == nil || err.Error() != "extract has no decisive trials" {
+		if _, err := generate(extract, out, 263, 0, 2, &output); err == nil || err.Error() != "extract has no decisive trials" {
 			t.Fatalf("empty extract: %v", err)
 		}
 		if _, err := os.Stat(out); !os.IsNotExist(err) {
@@ -316,7 +298,7 @@ func TestGenerateRefusesConflictingDestinations(t *testing.T) {
 				t.Fatal(err)
 			}
 			var report bytes.Buffer
-			if err := generate(extract, out, 263, 0, 2, &report); err == nil || !strings.HasPrefix(err.Error(), want+":") || report.Len() != 0 {
+			if _, err := generate(extract, out, 263, 0, 2, &report); err == nil || !strings.HasPrefix(err.Error(), want+":") || report.Len() != 0 {
 				t.Fatalf("conflicting destination: %v, report %q; want %s", err, report.String(), want)
 			}
 			info, err := os.Stat(conflict)
