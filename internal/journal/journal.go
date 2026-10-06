@@ -838,6 +838,26 @@ func carryEstablished(data []byte) bool {
 	return false
 }
 
+// ArchivedSessions lists the sessions archived in dir, oldest first. Every entry named <session>.jsonl counts, whatever its type;
+// a missing archive directory lists none.
+func ArchivedSessions(dir string) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(dir, archiveDir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list archived sessions: %w", err)
+	}
+	var sessions []string
+	for _, entry := range entries {
+		if id, found := strings.CutSuffix(entry.Name(), ".jsonl"); found {
+			sessions = append(sessions, id)
+		}
+	}
+	slices.SortFunc(sessions, CompareSessionIDs)
+	return sessions, nil
+}
+
 // PendingCarry returns the session whose carry no journal has recorded yet, or "" when there is none.
 func PendingCarry(dir string) (string, error) {
 	entries, err := os.ReadDir(filepath.Join(dir, archiveDir))

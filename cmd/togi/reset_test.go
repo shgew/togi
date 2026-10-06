@@ -197,6 +197,36 @@ func TestResetAllDropsAPendingCarry(t *testing.T) {
 	}
 }
 
+func TestResetAllFindsPendingMarkersInPatternLikeStateDir(t *testing.T) {
+	for _, name := range []string{"state[", "state[1]"} {
+		for _, events := range []string{"no journal", "empty journal"} {
+			t.Run(name+"/"+events, func(t *testing.T) {
+				dir := filepath.Join(t.TempDir(), name)
+				marker := filepath.Join(dir, "archive", "x-carry-pending")
+				if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(marker, nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if events == "empty journal" {
+					if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), nil, 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				var stdout, stderr bytes.Buffer
+				g := &globals{config: filepath.Join(t.TempDir(), "config.toml"), stateDir: dir, hostLockPath: filepath.Join(t.TempDir(), "togi.lock")}
+				if code := runReset(g, []string{"--all"}, &stdout, &stderr); code != exitOK {
+					t.Fatalf("reset exit %d, want %d: %s", code, exitOK, stderr.String())
+				}
+				if _, err := os.Stat(marker); !errors.Is(err, fs.ErrNotExist) {
+					t.Fatalf("carry marker after reset --all: %v, want dropped", err)
+				}
+			})
+		}
+	}
+}
+
 func TestResetAllWarnsAcrossRulesets(t *testing.T) {
 	dir := resetCandidateFixture(t, -10)
 	path := filepath.Join(dir, "events.jsonl")
