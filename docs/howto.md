@@ -51,7 +51,7 @@ The module also creates the unprivileged `togi-trial` system user and group and 
 
 To move to a newer release, change the tag in `url`, run `nix flake update togi` and rebuild. An update whose changelog line starts with **BREAKING** starts a seeded session on the next run ([section 7](#7-after-a-breaking-update)).
 
-mprime and y-cruncher come from the host's `nixpkgs`. Do not update them during a session, for example with `nix flake update nixpkgs`: togi does not yet tell a new backend build's passes from the old one's, so passes earned by the old binaries would keep counting for the new ones.
+mprime and y-cruncher come from the host's `nixpkgs`. Updating one of them, for example with `nix flake update nixpkgs`, costs that backend's passes: togi keys passes by each backend's package store path, so after the rebuild every trial class the updated backend runs needs its passes again, while the other backend keeps its own. A `nixpkgs` update that leaves a backend's package unchanged keeps its store path and its passes. This holds during a session and across sessions: passes carried into a new session count only under the build that earned them. Failures keep counting whichever build observed them. Update the backends when the extra trials are worth it, not as routine.
 
 ### Host lock and delegated hardware tests
 

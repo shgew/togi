@@ -31,11 +31,12 @@ func (s *State) R7Status() []R7CoreStatus {
 		if passes[class.workload] == nil {
 			passes[class.workload] = make(map[int]int)
 		}
-		for _, e := range entries {
-			if !e.pass {
+		for i := range entries {
+			e := &entries[i]
+			if !e.pass || !s.current(e) {
 				continue
 			}
-			for _, id := range s.entryTop(e) {
+			for _, id := range s.entryTop(*e) {
 				index, ok := s.indexByID[id]
 				if ok && len(e.profile) > index && e.profile[index] <= profile[index] {
 					passes[class.workload][id]++

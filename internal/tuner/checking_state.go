@@ -55,8 +55,9 @@ func (s *State) projectChecking() *journal.CheckingState {
 	trials := map[exposureKey]int{}
 	for k, entries := range s.ledger {
 		valid, checked := 0, false
-		for _, e := range entries {
-			if !e.pass || e.carried || e.condition == machine.Alone || !AtLeastDeep(e.profile, g.profile) {
+		for i := range entries {
+			e := &entries[i]
+			if !e.pass || e.carried || e.condition == machine.Alone || !AtLeastDeep(e.profile, g.profile) || !s.current(e) {
 				continue
 			}
 			if !checked {

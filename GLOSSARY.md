@@ -49,6 +49,10 @@ The end of a session written by an older ruleset, schema or evidence epoch, with
 An external stress program togi drives: mprime or y-cruncher.
 _Avoid_: tool, stressor
 
+**Backend identity**:
+The package store path `config.loaded` records for a backend, such as `/nix/store/…-y-cruncher-0.8.7.9547`. A pass counts only while its backend keeps the identity it ran under; a failure counts whichever identity ran it.
+_Avoid_: backend version
+
 **Regime**:
 One of seven classes of load, R1 to R7, each exercising a different operating condition.
 _Avoid_: test type, mode, stage
@@ -71,7 +75,7 @@ A core that passes as a top requester for a given R7 workload.
 An R7 load that idles the top requesters found so far, in request order, to test the remaining cores.
 
 **Trial class**:
-The regime, workload, sorted loaded cores and duration of a trial. Pass evidence transfers only within this class.
+The regime, workload, sorted loaded cores and duration of a trial. Pass evidence transfers only within this class, under the backend identity it ran with.
 
 **Target**:
 The core or cores a trial loads.
@@ -178,7 +182,7 @@ _Avoid_: carried mark
 A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original provenance and context. It is ordinary evidence subject to the current regime's rules, not a new trial or live exposure.
 
 **Evidence epoch**:
-The compatibility version of trial outcomes: workload content, backend binary and configuration, intended durations, and pass/failure detection. Passes carry only within the current epoch; eligible failures survive an epoch change.
+The compatibility version of trial outcomes: workload content, the backend configuration togi generates, intended durations, and pass/failure detection. Passes carry only within the current epoch; eligible failures survive an epoch change. A new backend build changes its backend identity instead.
 
 **Solo limit**:
 A core's checked candidate solo limit, tested alone; deepening together may move its offset.

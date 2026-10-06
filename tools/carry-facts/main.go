@@ -98,6 +98,9 @@ func run(args []string, out, errOut io.Writer) (err error) {
 	if prepared == nil {
 		return fmt.Errorf("carry-facts: state copy produced no pending transition")
 	}
+	if err := prepared.ResolveFacts(live.Context, live.Backends); err != nil {
+		return fmt.Errorf("carry-facts: resolve transition facts: %w", err)
+	}
 	type counts struct{ passes, failures int }
 	bySource := map[string]counts{}
 	for _, fact := range prepared.Facts {
@@ -138,8 +141,11 @@ func simulateRecorded(dir string, live facts.Session, seed uint64, out io.Writer
 	if err != nil {
 		return fmt.Errorf("carry-facts: create simulator: %w", err)
 	}
+	// The recorded backends keep their passes: the simulated session records the same store paths.
+	c := config.Default()
+	c.Backends = config.Backends(live.Backends)
 	stop, err := simrun.Simulate(context.Background(), simrun.Input{
-		Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m,
+		Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m,
 		Until: func(e journal.Event) bool {
 			p, ok := e.Data.(*journal.CheckingCycle)
 			return ok && p.Event == journal.CycleEnd && p.Passed && p.Full

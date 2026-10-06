@@ -72,6 +72,7 @@ type recoveredMCE struct {
 type fold struct {
 	started     bool
 	context     *machine.BIOSContext
+	backends    journal.ConfigBackends
 	baselineSeq int
 	baseline    []int
 	ids         []int
@@ -166,6 +167,7 @@ func (f *fold) Fold(e journal.Event) {
 		}
 		slices.Sort(f.ids)
 	case *journal.ConfigLoaded:
+		f.backends = p.Config.Backends
 		f.kernelBoundary(e, p.KernelBoundary)
 	case *journal.Shutdown:
 		f.kernelBoundary(e, p.KernelBoundary)

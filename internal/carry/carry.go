@@ -21,7 +21,7 @@ type Carry struct {
 	Sources []journal.CarriedSource
 	Context *machine.BIOSContext  // the BIOS context Sources[0] recorded; nil if it recorded none
 	Cores   []journal.CarriedCore // ascending core; each has a CandidateSoloLimit, a FailurePoint, or both
-	Facts   []facts.Fact
+	Facts   []facts.Fact          // final only after ResolveFacts, which drops passes of other backend store paths
 
 	factDir     string
 	factEntries []defect.Entry
@@ -117,20 +117,24 @@ func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, c
 	return c, nil
 }
 
-// ResolveFacts completes deferred eligibility after the session validates its actual BIOS context.
-func (c *Carry) ResolveFacts(current *machine.BIOSContext) error {
+// ResolveFacts completes deferred eligibility after the session validates its actual BIOS context, then keeps a pass
+// only when it ran under the package store path backends, the session's recorded configuration, names for its backend.
+// Failures stay whichever binary ran them.
+func (c *Carry) ResolveFacts(current *machine.BIOSContext, backends journal.ConfigBackends) error {
 	if current == nil {
 		return errors.New("carry: cannot prepare facts without the current BIOS context")
 	}
-	if c.factDir == "" {
-		return nil
+	if c.factDir != "" {
+		fs, err := prepareFacts(c.factDir, c.Sources[0].Session, c.factEntries, current, c.factEpoch)
+		if err != nil {
+			return err
+		}
+		c.Facts = fs
+		c.factDir, c.factEntries = "", nil
 	}
-	fs, err := prepareFacts(c.factDir, c.Sources[0].Session, c.factEntries, current, c.factEpoch)
-	if err != nil {
-		return err
-	}
-	c.Facts = fs
-	c.factDir, c.factEntries = "", nil
+	c.Facts = slices.DeleteFunc(c.Facts, func(f facts.Fact) bool {
+		return f.Outcome == journal.OutcomePass && f.Backend != backends.WorkloadPath(f.Class.Workload)
+	})
 	return nil
 }
 

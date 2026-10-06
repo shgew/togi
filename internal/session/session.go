@@ -1017,7 +1017,7 @@ func (r *runner) startSession() error {
 // recordCarry commits the transition after its same-BIOS facts have been recorded.
 func (r *runner) recordCarry() error {
 	c := r.in.Carry
-	if err := c.ResolveFacts(r.fold.context); err != nil {
+	if err := c.ResolveFacts(r.fold.context, r.fold.backends); err != nil {
 		return err
 	}
 	p := &journal.SessionCarried{Sources: c.Sources, FailurePoints: true}

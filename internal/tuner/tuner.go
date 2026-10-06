@@ -135,6 +135,7 @@ type State struct {
 	durations               journal.ConfigDurations
 	evidence                journal.ConfigEvidence
 	n                       int
+	backends                journal.ConfigBackends
 	ccd                     map[int]int
 	parts                   [][]int
 	checking                checking
@@ -256,6 +257,7 @@ func (s *State) Fold(e journal.Event) {
 		s.steps = slices.Clone(p.Config.Checking.Cycle)
 		s.durations = p.Config.Durations
 		s.evidence = p.Config.Evidence
+		s.backends = p.Config.Backends
 		s.n = int(math.Ceil(math.Log(s.evidence.Miss) / math.Log1p(-s.evidence.Rate)))
 		s.pendingRerun()
 		s.projectionDirty = true

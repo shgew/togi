@@ -602,8 +602,9 @@ func (s *State) r7VoltageTarget(f entry, id int, request float64) (float64, []in
 		if class.regime != machine.R7 || class.workload != f.class.workload {
 			continue
 		}
-		for _, e := range entries {
-			if !e.pass || len(e.requests) == 0 || !slices.Contains(e.cores, id) {
+		for i := range entries {
+			e := &entries[i]
+			if !e.pass || len(e.requests) == 0 || !slices.Contains(e.cores, id) || !s.current(e) {
 				continue
 			}
 			if f.named == nil && !slices.Equal(e.cores, f.cores) {

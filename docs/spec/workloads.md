@@ -4,7 +4,7 @@ Normative rules for what a trial runs, how it is contained, and how its outcome 
 
 ## Evidence compatibility
 
-The evidence epoch (`tuner.EvidenceEpoch`, now 1; `tuner.md`, Ruleset) versions whether recorded passes remain comparable with current trials. Changes to workload content, a backend binary or its configuration, intended trial durations, or pass/failure detection must bump it when they change the evidence contract. An epoch bump drops older carried passes while retaining eligible failures; it does not change the journal schema or the strategy ruleset.
+The evidence epoch (`tuner.EvidenceEpoch`, now 1; `tuner.md`, Ruleset) versions whether recorded passes remain comparable with current trials. Changes to workload content, the backend configuration togi generates, intended trial durations, or pass/failure detection must bump it when they change the evidence contract. An epoch bump drops older carried passes while retaining eligible failures; it does not change the journal schema or the strategy ruleset. A new backend build needs no bump: passes are keyed by the backend's package store path (`tuner.md`, Evidence).
 
 ## Backends
 
