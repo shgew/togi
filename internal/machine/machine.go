@@ -33,7 +33,7 @@ func (r Regime) Valid() bool {
 	return slices.Contains(Regimes, r)
 }
 
-func (r Regime) AllCores() bool {
+func (r Regime) InstancePerCore() bool {
 	return r == R6 || r == R7
 }
 

@@ -25,13 +25,13 @@ func TestClampOffsetSafety(t *testing.T) {
 func TestRegimeScope(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		regime     Regime
-		valid, all bool
+		regime         Regime
+		valid, perCore bool
 	}{
 		{R1, true, false}, {R2, true, false}, {R3, true, false}, {R4, true, false}, {R5, true, false}, {R6, true, true}, {R7, true, true}, {"R8", false, false}, {"", false, false},
 	} {
 		t.Run(string(tc.regime), func(t *testing.T) {
-			if diff := cmp.Diff([]bool{tc.valid, tc.all}, []bool{tc.regime.Valid(), tc.regime.AllCores()}); diff != "" {
+			if diff := cmp.Diff([]bool{tc.valid, tc.perCore}, []bool{tc.regime.Valid(), tc.regime.InstancePerCore()}); diff != "" {
 				t.Fatal(diff)
 			}
 		})

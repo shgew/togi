@@ -149,7 +149,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 	t.started.CPUs = slices.Clone(spec.CPUs)
 	t.started.Schedule = machine.ScheduleFor(spec)
 	cores := spec.Cores
-	if !spec.Regime.AllCores() {
+	if !spec.Regime.InstancePerCore() {
 		cores = []int{spec.Cores[0]}
 	}
 	ctx, t.cancel = context.WithTimeout(ctx, spec.Duration+time.Duration(len(cores))*30*time.Second+r.options.StopGrace+20*time.Second)
@@ -158,7 +158,7 @@ func (r *Runner) Start(ctx context.Context, spec machine.TrialSpec) (machine.Run
 		prefix := "work"
 		dir := filepath.Join(root, prefix)
 		scope := t.started.Scope
-		if spec.Regime.AllCores() {
+		if spec.Regime.InstancePerCore() {
 			cpus = []int{spec.CPUs[i]}
 			prefix = fmt.Sprintf("c%02d", core)
 			dir = filepath.Join(root, prefix)
