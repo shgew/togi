@@ -104,7 +104,7 @@ func run(args []string, stderr io.Writer) int {
 	line := fmt.Sprintf("sim: dead end %s: %s", stop.DeadEnd.Condition, stop.DeadEnd.Detail)
 	fmt.Fprintln(stderr, renderer.Text(journal.Event{Kind: journal.KindDeadEnd, Data: stop.DeadEnd}, line))
 	for _, e := range stop.Evidence {
-		fmt.Fprintln(stderr, renderer.Text(e, "  evidence: "+journal.FormatLine(e, time.Local)))
+		fmt.Fprintln(stderr, renderer.PrefixedLine(e, time.Local, "  evidence: "))
 	}
 	return 1
 }

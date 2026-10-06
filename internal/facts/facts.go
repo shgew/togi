@@ -39,7 +39,6 @@ type Fact struct {
 	Seq              int
 	Time             time.Time
 	Build            journal.Build
-	Ruleset          int
 	Epoch            int
 	Trial            string
 	Boot             string
@@ -57,7 +56,17 @@ type Fact struct {
 	VoltageRequestsV map[int]float64
 	TopRequesters    []int
 	CCDMHz           map[int]int
-	Idle             *journal.Failure
+	Idle             *IdleContext
+}
+
+type IdleContext struct {
+	Attribution  journal.Attribution
+	Offset       *int
+	Trial        string
+	Regime       machine.Regime
+	KnownFailure int
+	Reason       string
+	Round        int
 }
 
 // Trial retains nondecisive trials too, for readers reporting interrupted work.
@@ -264,14 +273,12 @@ func (s *Session) recordTrialEnd(e journal.Event, end *journal.TrialEnd, t *Tria
 		return
 	}
 	in := t.Intent
-	s.Facts = append(s.Facts, Fact{Kind: TrialFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: t.Build, Ruleset: t.Build.Ruleset, Epoch: s.Epoch, Trial: end.Trial, Boot: t.Boot, Class: ClassOf(in), Condition: in.Condition, Phase: in.Phase, Rerun: in.Rerun, RecordOnly: in.RecordOnly, Profile: slices.Clone(in.Profile), Outcome: end.Outcome, Signal: end.Signal, DurationS: end.DurationS, Core: end.Core, StalledCore: end.StalledCore, VoltageRequestsV: maps.Clone(end.VoltageRequestsV), TopRequesters: slices.Clone(end.TopRequesters), CCDMHz: maps.Clone(end.CCDMHz)})
+	s.Facts = append(s.Facts, Fact{Kind: TrialFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: t.Build, Epoch: s.Epoch, Trial: end.Trial, Boot: t.Boot, Class: ClassOf(in), Condition: in.Condition, Phase: in.Phase, Rerun: in.Rerun, RecordOnly: in.RecordOnly, Profile: slices.Clone(in.Profile), Outcome: end.Outcome, Signal: end.Signal, DurationS: end.DurationS, Core: end.Core, StalledCore: end.StalledCore, VoltageRequestsV: maps.Clone(end.VoltageRequestsV), TopRequesters: slices.Clone(end.TopRequesters), CCDMHz: maps.Clone(end.CCDMHz)})
 }
 
 func (s *Session) recordIdleFailure(e journal.Event, p *journal.Failure, build journal.Build, ids []int) {
 	if p.KnownFailure == 0 && p.Trial == "" && (p.Condition == machine.Together || p.Condition == machine.Parked) && p.Attribution == journal.Unattributed && len(p.Profile) == len(ids) {
-		idle := *p
-		idle.Profile = slices.Clone(p.Profile)
-		s.Facts = append(s.Facts, Fact{Kind: IdleFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: build, Ruleset: build.Ruleset, Epoch: s.Epoch, Boot: e.Boot, Class: Class{Regime: machine.R6, Cores: slices.Clone(ids)}, Condition: p.Condition, Profile: slices.Clone(p.Profile), Outcome: journal.OutcomeFailure, Signal: p.Signal, Core: p.Core, Idle: &idle})
+		s.Facts = append(s.Facts, Fact{Kind: IdleFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: build, Epoch: s.Epoch, Boot: e.Boot, Class: Class{Regime: machine.R6, Cores: slices.Clone(ids)}, Condition: p.Condition, Profile: slices.Clone(p.Profile), Outcome: journal.OutcomeFailure, Signal: p.Signal, Core: p.Core, Idle: idleContext(p)})
 	}
 }
 
@@ -344,9 +351,7 @@ func (f Fact) Payload() journal.Payload {
 	class.Cores = slices.Clone(class.Cores)
 	slices.Sort(class.Cores)
 	if f.Kind == IdleFact {
-		idle := *f.Idle
-		idle.Profile = slices.Clone(f.Profile)
-		return &journal.FailureCarried{Source: source, Class: class, Failure: idle}
+		return &journal.FailureCarried{Source: source, Class: class, Failure: f.idleFailure()}
 	}
 	return &journal.TrialCarried{Source: source, Class: class, Condition: f.Condition, Phase: f.Phase, Rerun: f.Rerun, RecordOnly: f.RecordOnly, Profile: slices.Clone(f.Profile), Outcome: f.Outcome, Signal: f.Signal, DurationS: f.DurationS, Core: f.Core, StalledCore: f.StalledCore, VoltageRequestsV: maps.Clone(f.VoltageRequestsV), TopRequesters: slices.Clone(f.TopRequesters), CCDMHz: maps.Clone(f.CCDMHz)}
 }
@@ -361,14 +366,20 @@ func carriedTrial(p *journal.TrialCarried) Fact {
 
 func carriedFailure(p *journal.FailureCarried) Fact {
 	f := sourceFact(p.Source, p.Class)
-	idle := p.Failure
-	idle.Profile = slices.Clone(p.Profile)
-	f.Kind, f.Condition, f.Profile, f.Outcome, f.Signal, f.Core, f.Idle = IdleFact, p.Condition, slices.Clone(p.Profile), journal.OutcomeFailure, p.Signal, p.Core, &idle
+	f.Kind, f.Condition, f.Profile, f.Outcome, f.Signal, f.Core, f.Idle = IdleFact, p.Condition, slices.Clone(p.Profile), journal.OutcomeFailure, p.Signal, p.Core, idleContext(&p.Failure)
 	return f
 }
 
 func sourceFact(source journal.FactSource, class Class) Fact {
 	class.Cores = slices.Clone(class.Cores)
 	slices.Sort(class.Cores)
-	return Fact{Session: source.Session, Seq: source.Seq, Time: source.Time, Build: source.Build, Ruleset: source.Build.Ruleset, Epoch: source.Evidence, Trial: source.Trial, Boot: source.Boot, Class: class}
+	return Fact{Session: source.Session, Seq: source.Seq, Time: source.Time, Build: source.Build, Epoch: source.Evidence, Trial: source.Trial, Boot: source.Boot, Class: class}
+}
+
+func idleContext(p *journal.Failure) *IdleContext {
+	return &IdleContext{Attribution: p.Attribution, Offset: p.Offset, Trial: p.Trial, Regime: p.Regime, KnownFailure: p.KnownFailure, Reason: p.Reason, Round: p.Round}
+}
+
+func (f Fact) idleFailure() journal.Failure {
+	return journal.Failure{Signal: f.Signal, Attribution: f.Idle.Attribution, Core: f.Core, Offset: f.Idle.Offset, Trial: f.Idle.Trial, Regime: f.Idle.Regime, Condition: f.Condition, Profile: slices.Clone(f.Profile), KnownFailure: f.Idle.KnownFailure, Reason: f.Idle.Reason, Round: f.Idle.Round}
 }

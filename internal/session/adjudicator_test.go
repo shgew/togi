@@ -174,7 +174,7 @@ func TestInterruptedBackendFailureWithoutReset(t *testing.T) {
 	}
 	events := r.in.Journal.Events()
 	end := events[len(events)-1].Data.(*journal.TrialEnd)
-	if end.Outcome != journal.OutcomeFailure || end.Signal != machine.ComputationError || !end.Interrupted || end.Reason != journal.TrialReasonStoppedDuringTrial {
+	if end.Outcome != journal.OutcomeFailure || end.Signal != machine.ComputationError || !end.Interrupted || end.Reason != "togi stopped during the trial" {
 		t.Fatalf("interrupted backend failure without a reset: %+v", end)
 	}
 	t.Logf("same-boot interruption: outcome=%s signal=%s reason=%q", end.Outcome, end.Signal, end.Reason)

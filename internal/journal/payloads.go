@@ -504,11 +504,6 @@ func (p *TrialSample) Message() string {
 	return fmt.Sprintf("trial %s thread %d %s on cpu %d", p.Trial, p.TID, p.Warning, p.CPU)
 }
 
-const (
-	TrialReasonStoppedDuringTrial       = "togi stopped during the trial"
-	TrialReasonStoppedAfterMachineCheck = "togi stopped during the trial after a machine check"
-)
-
 type TrialEnd struct {
 	Trial string `json:"trial"`
 	KernelBoundary
@@ -533,6 +528,9 @@ type TrialEnd struct {
 	Escaped               []int           `json:"escaped,omitempty"`
 	BackendMissing        bool            `json:"backend_missing,omitempty"`
 	ContainmentError      string          `json:"containment_error,omitempty"`
+	// LastEvidence marks DurationS as the last evidence of a trial togi stopped
+	// watching rather than a measured run. Only the message carries it.
+	LastEvidence bool `json:"-"`
 }
 
 func (*TrialEnd) Kind() Kind { return KindTrialEnd }
@@ -554,7 +552,7 @@ func (p *TrialEnd) Message() string {
 	}
 	tctl += voltage
 	duration := fmt.Sprintf(" after %ds", p.DurationS)
-	if p.Signal == machine.Crash || p.Interrupted && (p.Reason == TrialReasonStoppedDuringTrial || p.Reason == TrialReasonStoppedAfterMachineCheck) {
+	if p.Signal == machine.Crash || p.LastEvidence {
 		duration = fmt.Sprintf(", last evidence %ds after start", p.DurationS)
 	}
 	if p.LastSampleS != nil {

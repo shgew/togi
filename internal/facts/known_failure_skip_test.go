@@ -22,7 +22,7 @@ func TestKnownFailureSkipDoesNotCreateIdleFact(t *testing.T) {
 				{Seq: 2, Time: at, Boot: "boot", Data: &original},
 				{Seq: 3, Time: at.Add(time.Second), Boot: "boot", Cause: []int{2}, Data: &skip},
 			})
-			want := []Fact{{Kind: IdleFact, Session: "X", Seq: 2, Time: at, Build: build, Ruleset: 7, Epoch: 4, Boot: "boot", Class: Class{Regime: machine.R6, Cores: []int{0, 1}}, Condition: condition, Profile: original.Profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Idle: &original}}
+			want := []Fact{{Kind: IdleFact, Session: "X", Seq: 2, Time: at, Build: build, Epoch: 4, Boot: "boot", Class: Class{Regime: machine.R6, Cores: []int{0, 1}}, Condition: condition, Profile: original.Profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Idle: &IdleContext{Attribution: journal.Unattributed}}}
 			if diff := cmp.Diff(want, s.Facts); diff != "" {
 				t.Fatalf("skip created a new idle observation (-want +got):\n%s", diff)
 			}

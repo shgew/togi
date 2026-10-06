@@ -249,7 +249,7 @@ func printCleanStop(events []journal.Event, stderr io.Writer, renderer journal.R
 	for _, i := range [2]int{restored, shutdown} {
 		if i >= 0 {
 			e := events[i]
-			fmt.Fprintln(stderr, renderer.Text(e, journal.FormatLine(e, time.Local)))
+			fmt.Fprintln(stderr, renderer.Line(e, time.Local))
 		}
 	}
 }
@@ -298,7 +298,7 @@ func runResult(stop session.Stop, err error, stderr io.Writer, renderer journal.
 		line := fmt.Sprintf("togi: dead end %s: %s", stop.DeadEnd.Condition, stop.DeadEnd.Detail)
 		fmt.Fprintln(stderr, renderer.Text(journal.Event{Kind: journal.KindDeadEnd, Data: stop.DeadEnd}, line))
 		for _, e := range stop.Evidence {
-			fmt.Fprintln(stderr, renderer.Text(e, "  evidence: "+journal.FormatLine(e, time.Local)))
+			fmt.Fprintln(stderr, renderer.PrefixedLine(e, time.Local, "  evidence: "))
 		}
 		if stop.Reboot {
 			fmt.Fprintln(stderr, "togi: rebooting into the normal system")

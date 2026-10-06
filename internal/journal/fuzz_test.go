@@ -3,7 +3,6 @@ package journal
 import (
 	"bufio"
 	"bytes"
-	"compress/gzip"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -102,17 +101,12 @@ func TestParseShippedSchemas(t *testing.T) {
 		{"20260927T221954Z", 2},
 	} {
 		t.Run(tt.session, func(t *testing.T) {
-			f, err := os.Open(filepath.Join("..", "carry", "testdata", tt.session+".jsonl.gz"))
+			f, err := os.Open(filepath.Join("testdata", tt.session+"-config.jsonl"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer f.Close()
-			z, err := gzip.NewReader(f)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer z.Close()
-			reader := bufio.NewReader(z)
+			reader := bufio.NewReader(f)
 			var prefix []byte
 			for range 2 {
 				line, err := reader.ReadBytes('\n')
