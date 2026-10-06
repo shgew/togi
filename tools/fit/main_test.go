@@ -126,7 +126,7 @@ func TestGenerateWritesCheckedReproducibleEnsemble(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if check.Status != "ok" || len(check.Groups) != 1 || check.Groups[0].N != 12 || check.Groups[0].K != 6 {
+			if check.Status != "ok" || len(check.Groups) != 1 || check.Groups[0].N != 12 || check.Groups[0].K != 6 || check.IdleFailures != 0 {
 				t.Fatalf("fit lost original evidence: %+v", check)
 			}
 			if diff := cmp.Diff(check, fits[n].check); diff != "" {
