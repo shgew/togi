@@ -20,26 +20,54 @@ func computeEvents(events []journal.Event, since time.Time) metrics {
 // metricFields compares metrics by their unexported fields, with nil and empty lists alike.
 var metricFields = cmp.Options{cmp.Exporter(func(reflect.Type) bool { return true }), cmpopts.EquateEmpty()}
 
-func interruptedEvents(jump time.Duration, evidence journal.Payload, signal machine.Signal) []journal.Event {
-	at := time.Unix(100, 0)
-	return []journal.Event{
-		{Seq: 1, Boot: "a", Time: at, Mono: 10000, Data: &journal.HuntStart{Hunt: 1, Trial: "original"}},
-		{Seq: 2, Boot: "a", Time: at, Mono: 10000, Data: &journal.TrialIntent{Trial: "trial", Hunt: 1, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "load"}},
-		{Seq: 3, Boot: "a", Time: at, Mono: 10000, Data: &journal.TrialStart{Trial: "trial"}},
-		{Seq: 4, Boot: "a", Time: at.Add(20*time.Second + jump), Mono: 30000, Data: evidence},
-		{Seq: 5, Boot: "b", Time: at.Add(100*time.Second + jump), Mono: 10000, Data: &journal.ConfigLoaded{}},
-		{Seq: 6, Boot: "b", Time: at.Add(100*time.Second + jump), Mono: 10000, Data: &journal.CrashDetected{PreviousBoot: "a", InFlight: new(2)}},
-		{Seq: 7, Boot: "b", Time: at.Add(100*time.Second + jump), Mono: 10000, Data: &journal.TrialEnd{Trial: "trial", Outcome: journal.OutcomeFailure, Signal: signal, DurationS: 20}},
-		{Seq: 8, Boot: "b", Time: at.Add(100*time.Second + jump), Mono: 10000, Data: &journal.Failure{Trial: "trial", Signal: signal, Regime: machine.R7, Attribution: journal.Unattributed}},
-		{Seq: 9, Boot: "b", Time: at.Add(100*time.Second + jump), Mono: 10000, Data: &journal.HuntEnd{Hunt: 1, Result: "combination"}},
+// interruption is a hunt trial cut short by a crash. Its last evidence comes
+// ran after it starts, after a wall-clock jump; the next boot logs its first
+// event recovery after that evidence, 10 seconds after booting.
+type interruption struct {
+	hunt     int
+	trial    string
+	at       time.Time
+	ran      time.Duration
+	jump     time.Duration
+	recovery time.Duration
+	evidence journal.Payload
+	signal   machine.Signal
+}
+
+func interrupted(evidence journal.Payload, signal machine.Signal) interruption {
+	return interruption{hunt: 1, trial: "trial", at: time.Unix(100, 0), ran: 20 * time.Second, recovery: 80 * time.Second, evidence: evidence, signal: signal}
+}
+
+// events journals the interruption from seq first, in boots named after the trial.
+func (c interruption) events(first int) []journal.Event {
+	const bootMono = 10000
+	crashed, next := c.trial+"/a", c.trial+"/b"
+	evidenceAt := c.at.Add(c.ran + c.jump)
+	recovered := evidenceAt.Add(c.recovery)
+	events := []journal.Event{
+		{Boot: crashed, Time: c.at, Mono: bootMono, Data: &journal.HuntStart{Hunt: c.hunt, Trial: "original"}},
+		{Boot: crashed, Time: c.at, Mono: bootMono, Data: &journal.TrialIntent{Trial: c.trial, Hunt: c.hunt, Phase: journal.PhaseHunt, Regime: machine.R7, Workload: "load"}},
+		{Boot: crashed, Time: c.at, Mono: bootMono, Data: &journal.TrialStart{Trial: c.trial}},
+		{Boot: crashed, Time: evidenceAt, Mono: bootMono + c.ran.Milliseconds(), Data: c.evidence},
+		{Boot: next, Time: recovered, Mono: bootMono, Data: &journal.ConfigLoaded{}},
+		{Boot: next, Time: recovered, Mono: bootMono, Data: &journal.CrashDetected{PreviousBoot: crashed, InFlight: new(first + 1)}},
+		{Boot: next, Time: recovered, Mono: bootMono, Data: &journal.TrialEnd{Trial: c.trial, Outcome: journal.OutcomeFailure, Signal: c.signal, DurationS: int(c.ran / time.Second)}},
+		{Boot: next, Time: recovered, Mono: bootMono, Data: &journal.Failure{Trial: c.trial, Signal: c.signal, Regime: machine.R7, Attribution: journal.Unattributed}},
+		{Boot: next, Time: recovered, Mono: bootMono, Data: &journal.HuntEnd{Hunt: c.hunt, Result: "combination"}},
 	}
+	for i := range events {
+		events[i].Seq = first + i
+	}
+	return events
 }
 
 func TestRecoveryGapUsesLastEvidenceAfterWallJump(t *testing.T) {
 	for _, jump := range []time.Duration{-time.Hour, time.Hour} {
 		for _, evidence := range []journal.Payload{&journal.TrialProgress{Trial: "trial"}, &journal.TrialSignal{Trial: "trial"}, &journal.TrialSample{Trial: "trial"}} {
 			t.Run(fmt.Sprintf("%s/%s", jump, evidence.Kind()), func(t *testing.T) {
-				m := computeEvents(interruptedEvents(jump, evidence, machine.Crash), time.Time{})
+				c := interrupted(evidence, machine.Crash)
+				c.jump = jump
+				m := computeEvents(c.events(1), time.Time{})
 				if diff := cmp.Diff(recoveryGap{1, 80, 80, 80}, m.recovery, metricFields); diff != "" {
 					t.Errorf("recovery gap (-want +got):\n%s", diff)
 				}
@@ -54,7 +82,7 @@ func TestRecoveryGapUsesLastEvidenceAfterWallJump(t *testing.T) {
 func TestCrashMetricsPreserveStrongerSignal(t *testing.T) {
 	for _, signal := range []machine.Signal{machine.ComputationError, machine.Stall, machine.CorrectedMCE, machine.UncorrectedMCE} {
 		t.Run(string(signal), func(t *testing.T) {
-			m := computeEvents(interruptedEvents(0, &journal.TrialProgress{Trial: "trial", Signal: signal}, signal), time.Time{})
+			m := computeEvents(interrupted(&journal.TrialProgress{Trial: "trial", Signal: signal}, signal).events(1), time.Time{})
 			if diff := cmp.Diff(recoveryGap{1, 80, 80, 80}, m.recovery, metricFields); diff != "" {
 				t.Errorf("recovery gap (-want +got):\n%s", diff)
 			}

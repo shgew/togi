@@ -146,42 +146,12 @@ func TestReviewBoundaryReport(t *testing.T) {
 func TestReviewEvenRecoveryMedian(t *testing.T) {
 	var events []journal.Event
 	for i, gap := range []int{90, 10, 50, 30} {
-		crash := interruptedEvents(0, &journal.TrialProgress{Trial: "trial"}, machine.Crash)
-		crash[0].Data = &journal.ConfigLoaded{}
-		if i == 0 {
-			crash[0].Data = &journal.SessionStart{Session: "review", Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}}
-		}
-		intent := crash[1].Data.(*journal.TrialIntent)
-		intent.Hunt = 0
-		intent.Phase = journal.PhaseChecking
-		intent.Condition = machine.Together
-		intent.Profile = []int{-10, -10}
-		intent.DurationS = 120
-		crash[8].Data = &journal.Shutdown{Reason: journal.ShutdownCommand}
-		for j := range crash {
-			crash[j].Seq += i * 9
-			crash[j].Time = crash[j].Time.Add(time.Duration(i) * time.Hour)
-			crash[j].Boot = fmt.Sprintf("%d-%s", i, crash[j].Boot)
-			if j >= 4 {
-				crash[j].Time = crash[j].Time.Add(time.Duration(gap-80) * time.Second)
-			}
-			switch p := crash[j].Data.(type) {
-			case *journal.TrialIntent:
-				p.Trial = fmt.Sprint(i)
-			case *journal.TrialStart:
-				p.Trial = fmt.Sprint(i)
-			case *journal.TrialProgress:
-				p.Trial = fmt.Sprint(i)
-			case *journal.TrialEnd:
-				p.Trial = fmt.Sprint(i)
-			case *journal.Failure:
-				p.Trial = fmt.Sprint(i)
-			case *journal.CrashDetected:
-				p.PreviousBoot = fmt.Sprintf("%d-a", i)
-				p.InFlight = new(i*9 + 2)
-			}
-		}
-		events = append(events, crash...)
+		id := fmt.Sprint(i)
+		c := interrupted(&journal.TrialProgress{Trial: id}, machine.Crash)
+		c.hunt, c.trial = i+1, id
+		c.at = c.at.Add(time.Duration(i) * time.Hour)
+		c.recovery = time.Duration(gap) * time.Second
+		events = append(events, c.events(len(events)+1)...)
 	}
 	if diff := cmp.Diff(recoveryGap{4, 10, 40, 90}, computeEvents(events, time.Time{}).recovery, metricFields); diff != "" {
 		t.Fatal(diff)
@@ -191,21 +161,9 @@ func TestReviewEvenRecoveryMedian(t *testing.T) {
 func TestCrashTimingBoundaries(t *testing.T) {
 	for _, duration := range []int{30, 59, 60, 119} {
 		t.Run(fmt.Sprint(duration), func(t *testing.T) {
-			events := interruptedEvents(0, &journal.TrialProgress{Trial: "trial"}, machine.Crash)
-			events[3].Time = events[3].Time.Add(time.Duration(duration-20) * time.Second)
-			events[3].Mono += int64(duration-20) * 1000
-			events[6].Data.(*journal.TrialEnd).DurationS = duration
-			for i := 4; i < len(events); i++ {
-				events[i].Time = events[i].Time.Add(time.Duration(duration-20) * time.Second)
-			}
-			events[0].Data = &journal.SessionStart{Session: "review", Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}}
-			intent := events[1].Data.(*journal.TrialIntent)
-			intent.Hunt = 0
-			intent.Phase = journal.PhaseChecking
-			intent.Condition = machine.Together
-			intent.Profile = []int{-10, -10}
-			intent.DurationS = 120
-			events[8].Data = &journal.Shutdown{Reason: journal.ShutdownCommand}
+			c := interrupted(&journal.TrialProgress{Trial: "trial"}, machine.Crash)
+			c.ran = time.Duration(duration) * time.Second
+			events := c.events(1)
 			var want crashTiming
 			bin := 2
 			if duration >= 60 {
