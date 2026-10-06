@@ -30,7 +30,7 @@ func TestGeneratePreservesOutputOnSourceError(t *testing.T) {
 			if err := os.WriteFile(path, want, 0600); err != nil {
 				t.Fatal(err)
 			}
-			if err := generate(dir, path); err == nil {
+			if _, err := generate(dir, path); err == nil {
 				t.Fatal("generation accepted an invalid or empty source")
 			}
 			got, err := os.ReadFile(path)
@@ -57,8 +57,12 @@ func TestGenerateReplacesOutputAfterSuccess(t *testing.T) {
 	if err := os.WriteFile(path, []byte("committed extract"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := generate(dir, path); err != nil {
+	n, err := generate(dir, path)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("generate counted %d facts, want 1", n)
 	}
 	records, err := trialfacts.Read(path)
 	if err != nil {

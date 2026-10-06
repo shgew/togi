@@ -32,7 +32,7 @@ func TestGenerateReportsDestinationFailuresAndRemovesTemporaryFiles(t *testing.T
 					t.Fatal(err)
 				}
 			}
-			if err := generate(dir, path); err == nil || !strings.Contains(err.Error(), tc.operation) {
+			if _, err := generate(dir, path); err == nil || !strings.Contains(err.Error(), tc.operation) {
 				t.Fatalf("generate error=%v, want %s", err, tc.operation)
 			}
 			entries, err := os.ReadDir(parent)
