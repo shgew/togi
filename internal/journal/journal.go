@@ -19,10 +19,11 @@ import (
 )
 
 const (
-	eventsFile = "events.jsonl"
-	lockFile   = "lock"
-	archiveDir = "archive"
-	trialsDir  = "trials"
+	eventsFile    = "events.jsonl"
+	eventsTmpFile = ".events.jsonl.tmp"
+	lockFile      = "lock"
+	archiveDir    = "archive"
+	trialsDir     = "trials"
 )
 
 type Options struct {
@@ -192,6 +193,13 @@ func (j *Journal) Open() error {
 			events, data, end = nil, nil, 0
 		}
 	}
+	var torn Event
+	if end < len(data) && len(events) > 0 {
+		if torn, err = j.replaceTornTail(path, data[:end], len(events)+1, data[end:]); err != nil {
+			return err
+		}
+		events, data, end = append(events, torn), nil, 0
+	}
 	f, err := j.fs.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
@@ -205,23 +213,41 @@ func (j *Journal) Open() error {
 		}
 	}
 	j.f, j.events = f, events
+	if torn.Seq > 0 && opts.Log != nil {
+		fmt.Fprintln(opts.Log, opts.Renderer.Line(torn, time.Local))
+	}
 	if end == len(data) {
 		return nil
 	}
 	if err := f.Truncate(int64(end)); err != nil {
-		return fmt.Errorf("truncate torn tail: %w", err)
+		return fmt.Errorf("truncate torn first line: %w", err)
 	}
-	if len(events) > 0 {
-		torn := &JournalTorn{Offset: int64(end), BytesHex: hex.EncodeToString(data[end:])}
-		if _, err := j.Append(torn); err != nil {
-			return err
-		}
-	} else if opts.Sync {
+	if opts.Sync {
 		if err := f.Sync(); err != nil {
-			return err
+			return fmt.Errorf("sync truncated torn first line: %w", err)
 		}
 	}
 	return nil
+}
+
+// replaceTornTail puts in place of the journal its complete lines followed by a journal.torn event holding the torn
+// tail. Until the rename the journal keeps the torn tail, so an interrupted repair is redone by the next Open and
+// records the tail exactly once.
+func (j *Journal) replaceTornTail(path string, complete []byte, seq int, tail []byte) (Event, error) {
+	e, raw, err := j.next(seq, &JournalTorn{Offset: int64(len(complete)), BytesHex: hex.EncodeToString(tail)}, nil)
+	if err != nil {
+		return Event{}, err
+	}
+	tmp := filepath.Join(j.dir, eventsTmpFile)
+	if err := j.writeTemp(tmp, append(slices.Clip(complete), raw...)); err != nil {
+		_ = j.fs.Remove(tmp)
+		return Event{}, fmt.Errorf("write repaired journal: %w", err)
+	}
+	if err := j.fs.Rename(tmp, path); err != nil {
+		_ = j.fs.Remove(tmp)
+		return Event{}, fmt.Errorf("replace journal with repaired journal: %w", err)
+	}
+	return e, nil
 }
 
 func (j *Journal) RecoverPendingArchive() (string, error) {
@@ -904,7 +930,7 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 	if j.appendErr != nil {
 		return Event{}, j.appendErr
 	}
-	e, raw, err := j.next(p, cause)
+	e, raw, err := j.next(len(j.events)+1, p, cause)
 	if err != nil {
 		return Event{}, err
 	}
@@ -930,9 +956,8 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 	return e, nil
 }
 
-// next builds the event that follows the journal's events, and its line with the newline.
-func (j *Journal) next(p Payload, cause []int) (Event, []byte, error) {
-	seq := len(j.events) + 1
+// next builds event seq and its line with the newline.
+func (j *Journal) next(seq int, p Payload, cause []int) (Event, []byte, error) {
 	kind := p.Kind()
 	if _, ok := payloadTypes[kind]; !ok {
 		return Event{}, nil, fmt.Errorf("append %s: unregistered kind", kind)

@@ -18,6 +18,7 @@ type faultJournalFilesystem struct {
 	journalFilesystem
 	calls        []journalFSCall
 	at           int
+	failOp       string
 	after, fired bool
 	shortPath    string
 	shortFired   bool
@@ -25,7 +26,7 @@ type faultJournalFilesystem struct {
 
 func (f *faultJournalFilesystem) operation(call journalFSCall, effect func() error) error {
 	f.calls = append(f.calls, call)
-	fail := !f.fired && f.at > 0 && len(f.calls) == f.at
+	fail := !f.fired && (f.at > 0 && len(f.calls) == f.at || f.failOp != "" && call.op == f.failOp)
 	if fail && !f.after {
 		f.fired = true
 		return errJournalFilesystem
@@ -214,14 +215,7 @@ func TestAppendSyncFailureRequiresReopen(t *testing.T) {
 
 type failingJournalFile struct {
 	journalFile
-	truncateErr, closeErr error
-}
-
-func (f failingJournalFile) Truncate(n int64) error {
-	if f.truncateErr != nil {
-		return f.truncateErr
-	}
-	return f.journalFile.Truncate(n)
+	closeErr error
 }
 
 func (f failingJournalFile) Close() error {
@@ -231,7 +225,7 @@ func (f failingJournalFile) Close() error {
 
 type failingJournalFilesystem struct {
 	journalFilesystem
-	truncateErr, closeErr error
+	closeErr error
 }
 
 func (f failingJournalFilesystem) OpenFile(path string, flags int, mode fs.FileMode) (journalFile, error) {
@@ -239,5 +233,5 @@ func (f failingJournalFilesystem) OpenFile(path string, flags int, mode fs.FileM
 	if err != nil {
 		return nil, err
 	}
-	return failingJournalFile{journalFile: file, truncateErr: f.truncateErr, closeErr: f.closeErr}, nil
+	return failingJournalFile{journalFile: file, closeErr: f.closeErr}, nil
 }
