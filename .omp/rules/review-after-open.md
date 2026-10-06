@@ -1,5 +1,5 @@
 ---
-agents: "!reviewer"
+agents: main
 scope: tool:bash
 condition: '\bgh\s+(?:pr\s+create|stack\s+submit)\b'
 interruptMode: never
