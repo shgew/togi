@@ -89,7 +89,7 @@ A trial condition retaining the failed trial's workload and load, with a group's
 _Avoid_: masked
 
 **Parked offsets**:
-The newest passed full-cycle profile raised to the failing profile, each core at the shallower of its two offsets, when that differs from the failing profile; otherwise the next older passed full-cycle profile raised the same way, or all-zero.
+The newest passed full-cycle profile raised to the failing profile, each core at the shallower of its two offsets, when that differs from the failing profile; otherwise the next older passed full-cycle profile raised the same way, or all-zero. A located hunt parks its loaded cores at their failing offsets and its unloaded cores at 0.
 _Avoid_: anchor
 
 **Group**:
@@ -100,7 +100,10 @@ _Avoid_: mask
 The phase that finds and checks a core's candidate solo limit with R1 and R2 trials alone.
 
 **Hunt**:
-Parked trials that identify the core or combination behind an unattributed failure outside multi-core R7.
+Parked trials that identify the core or combination behind an unattributed failure outside multi-core R7, or a located hunt's unloaded cores.
+
+**Located hunt**:
+The hunt of an unattributed multi-core R7 failure whose unloaded cores were not all at 0. Its first group, locate, reruns the failed load with every unloaded core at 0 and the loaded cores at their failing offsets. A failed locate ends it `loaded` and the failure is charged to the loaded cores; a passed locate narrows only the unloaded cores.
 
 **Member probe**:
 A hunt's parked trial after it finds a combination: one member moves between its failing and parked offsets, members probed before it stay at their shallowest failing offsets and the rest at their failing offsets, to find how shallow that member must be for the combination to pass. Each member is probed in turn.

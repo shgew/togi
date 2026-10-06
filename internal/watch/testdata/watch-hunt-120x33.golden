@@ -1,32 +1,32 @@
- togi   18:13:55   session 18h13m   51 failures · 14 crashes   last observed failure 18:13, a moment ago
- ■ SOLO ─ ○ CYCLE 1 paused at 4/14 ─ ►  HUNT 1   part 1 of 2 ─ ○ DEEPEN ─ CLEAN 0
+ togi   10:16:57   session 10h16m   31 failures · 8 crashes   last observed failure 10:16, a moment ago
+ ■ SOLO ─ ○ CYCLE 1 paused at 1/14 ─ ►  HUNT 1   locate ─ ○ DEEPEN ─ CLEAN 0
 
- ▌  Crashed early in R2 heavy vector on 01; no core named. Rerunning it with 01 14 parked.
+ ▌  Crashed early in R7 all-core on 00-07; no core named. Rerunning it with 08-15 at 0.
 
-  R2   heavy vector load  on 01 · 00 02-13 15 at failing offsets, 01 parked at 0   mprime AVX2    HUNT 1 · PART 1 OF 2
+  R7   all-core load  on 00-07 · 08-15 parked at 0, idle   mprime AVX2 36K-248K · 8 workers           HUNT 1 · GROUP 1
  ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
 
- 5/5 pass → part 2: 00   none named → group 2   core named → tuning stops
+ 5/5 pass → group 2   fail → hunt ends   inconclusive → same trial again   backoffs per offset order
 
- CCD 0 one loaded 0  2 counts/cell       -50 fail  back      CCD 1 idle       0  2 counts/cell       -50 fail
-   00 -37 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38             08 -26 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -27
- ► 01   0 PARKED   ·················█          -35  -34        09 -16 MEMBER   ▄▄▄▄▄▄▄▄█                   -17
-   02 -35 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -36             10 -16 MEMBER   ▄▄▄▄▄▄▄▄█                   -17
-   03 -17 MEMBER   ▄▄▄▄▄▄▄▄█                   -18             11  -1 MEMBER   █···                         -2
-   04 -32 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33             12 -10 MEMBER   ▄▄▄▄▄█                      -11
-   05  -7 MEMBER   ▄▄▄█·                        -8             13 -22 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄█                -23
-   06 -27 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄█·             -28             14   0 AT LIMIT █·                           -1
-   07 -32 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33             15 -38 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -39
+ CCD 0 all loaded 0  2 counts/cell       -50 fail            CCD 1 parked     0  2 counts/cell       -50 fail  back
+ ► 00 -37 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38             08   0 PARKED   ·············█              -28  -27
+ ► 01 -34 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -35             09   0 PARKED   ·········█                  -19  -18
+ ► 02 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -36             10   0 PARKED   ········█                   -17  -16
+ ► 03 -17 AT LIMIT ▄▄▄▄▄▄▄▄█                   -18             11   0 PARKED   ···█                         -8   -7
+ ► 04 -32 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33             12   0 PARKED   ·····█                      -11  -10
+ ► 05  -9 AT LIMIT ▄▄▄▄█                       -10 top         13   0 PARKED   ············█               -25  -24
+ ► 06 -29 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄█             -30             14   0 PARKED   ··█                          -5   -4
+ ► 07 -32 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33             15   0 PARKED   ···················█        -40  -39
 
- HUNT 1 ────────────────────────────────────── 18:13 · 40s   WHAT HAPPENED ──────────────────────────────────── l: all
+ HUNT 1 ────────────────────────────────────── 10:16 · 40s   WHAT HAPPENED ──────────────────────────────────── l: all
 
- cause  crash in R2 heavy vector on 01, no core named        18:13  hunt     #1 started · part 1: 00 02-13 15 at
- ► part 1/2 00 02-13 15 at failing    trial 1/5              18:13  crash    R2 heavy vector on core 01 at -34
-   part 2/2 01 at failing offsets     if part 1 passes       18:11  pass     R2 heavy vector on core 08 at -26
-                                                             18:09  pass     R2 heavy vector on core 00 at -37
- then   1  record a failure point or a combination           18:07  pass     R7 full CCD 0+1 on 00-15 · 4 of 4 passed
-        2  back off past it                                  17:51  note     cycle 1 step 3 CCD 1
-        3  rerun R2 heavy vector: 5 x 2m                     17:51  pass     R7 partial CCD 1 on 08 15 · 4 of 4
+ cause  crash in the rerun of R7 all-core on 00-07, no       10:16  hunt     #1 started · locate: 08-15 at 0
+                                                             10:16  crash    rerun of R7 all-core on 00-07 · rebooted
+ group 1      locate: 08-15 at 0      running · 0/5 passed   10:14  backoff  core 06 -30 → -29
+                                                             10:14  fail     core 06 fails at -30
+ then   1  record a failure point or a combination           10:14  fail     rerun of R7 all-core on 00-07 · wrong
+        2  back off past it                                  10:14  backoff  core 05 -10 → -9
+        3  rerun R7 all-core: 5 x 2m                         10:14  fail     core 05 fails at -10
                                                              +193 more
 
   ?  help    l  log    esc  back    q  close view

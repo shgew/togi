@@ -1001,3 +1001,23 @@ func TestDrainRecordsFallbackCombinationBeforeBackoff(t *testing.T) {
 		t.Fatal("drain left together offsets reaching combination")
 	}
 }
+
+func TestLocatedHuntResumesDuringLocate(t *testing.T) {
+	h := r7Harness(t)
+	failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+	for range 2 {
+		h.decide(h.next())
+	}
+	for range 2 {
+		h.trial(h.next(), passed)
+	}
+	want := h.s.Next()
+	if want.Kind != RunTrial || want.Trial.Group != 1 || !slices.Equal(want.Trial.Profile, []int{-30, -30, 0, 0}) {
+		t.Fatalf("locate did not continue: %+v", want)
+	}
+	assertHuntNextReplay(h, want, (*State).Next, "replay changed the locate trial")
+	if got := projected(h).Hunt.Groups[0]; got.Passes != 2 || got.Outcome != "running" {
+		t.Fatalf("locate progress after resume: %+v", got)
+	}
+	assertProjectionReplay(h)
+}

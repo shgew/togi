@@ -30,14 +30,18 @@ func TestForecastFormerRecordOnlyPartialRequiresBackoff(t *testing.T) {
 	named, unnamed, all := false, false, false
 	for _, b := range f.Branches {
 		switch b.Premise {
-		case IfNamed, IfUnnamed:
-			named = named || b.Premise == IfNamed
-			unnamed = unnamed || b.Premise == IfUnnamed
+		case IfNamed:
+			named = true
 			if !slices.ContainsFunc(b.Decisions, func(d journal.Payload) bool {
 				p, ok := d.(*journal.TunerDecision)
 				return ok && p.Decision == journal.Backoff
 			}) || b.Next == nil || !b.Next.Rerun {
 				t.Fatalf("former record-only partial did not require an ordinary backoff/rerun: %+v", b)
+			}
+		case IfUnnamed:
+			unnamed = true
+			if !slices.ContainsFunc(b.Decisions, func(d journal.Payload) bool { _, ok := d.(*journal.HuntStart); return ok }) || b.Next == nil || b.Next.Condition != machine.Parked {
+				t.Fatalf("an unnamed partial failure with idle cores off CO 0 did not start its located hunt: %+v", b)
 			}
 		case IfPass:
 			if len(b.Decisions) != 0 || b.Next == nil {
@@ -170,7 +174,7 @@ func TestForecastInconclusiveRetainsTrial(t *testing.T) {
 }
 
 func TestForecastReusesRecordedRanking(t *testing.T) {
-	h := hasRoomHarness(t, -20, -20, -20, -20)
+	h := hasRoomHarness(t, -20, -20, 0, 0)
 	h.add(&journal.HostRanking{Ranking: []int{1, 0, 2, 3}})
 	h.start(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Phase: journal.PhaseChecking, Condition: machine.Together}})
 	for _, b := range Forecast(h.events).Branches {
@@ -328,7 +332,7 @@ func TestForecastR7PremisesFoldDistinctOutcomesWithoutInventedTelemetry(t *testi
 		{IfNamed, 0, 0, -29, false},
 		{IfNamed, 2, 1, -16, false},
 		{IfNamed, 3, -1, 0, true},
-		{IfUnnamed, -1, 1, -16, false},
+		{IfUnnamed, -1, -1, 0, false},
 		{IfInconclusive, -1, -1, 0, false},
 	}
 	var got []outcome
@@ -353,8 +357,13 @@ func TestForecastR7PremisesFoldDistinctOutcomesWithoutInventedTelemetry(t *testi
 					o.moved, o.to = d.Core, d.ToOffset
 				}
 			case *journal.HuntStart, *journal.HuntGroup, *journal.Combination:
-				t.Fatalf("multi-core R7 forecast entered a hunt: %+v", b)
+				if b.Premise != IfUnnamed {
+					t.Fatalf("a named multi-core R7 forecast entered a hunt: %+v", b)
+				}
 			}
+		}
+		if b.Premise == IfUnnamed && (b.Next == nil || b.Next.Condition != machine.Parked || b.Next.Hunt == 0 || !slices.Equal(b.Next.Profile, []int{-30, -30, 0, 0, 0, 0, 0, 0})) {
+			t.Fatalf("an unnamed failure did not locate with CCD 1 at CO 0: %+v", b)
 		}
 		got = append(got, o)
 		if o.dead {
@@ -427,7 +436,7 @@ func TestForecastR7PremisesFoldDistinctOutcomesWithoutInventedTelemetry(t *testi
 }
 
 func TestForecastR7UnnamedUsesOffsetFallbackWithoutRequests(t *testing.T) {
-	h := hasRoomHarness(t, 0, -30, -30, -30)
+	h := hasRoomHarness(t, 0, -30, 0, 0)
 	h.add(&journal.HostRanking{Ranking: h.s.ids()})
 	h.start(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Phase: journal.PhaseChecking, Condition: machine.Together}})
 	for _, b := range Forecast(h.events).Branches {

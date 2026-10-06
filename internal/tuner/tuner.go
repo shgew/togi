@@ -14,7 +14,7 @@ import (
 )
 
 // Ruleset must be bumped for changes to steps, offset range, phases, regimes, evidence, hunts, deepening or backoffs; this is breaking.
-const Ruleset = 9
+const Ruleset = 10
 
 const EvidenceEpoch = 1
 
@@ -171,6 +171,7 @@ type State struct {
 	projectedHunt           *journal.HuntState
 	r7Handled               map[int]map[int]bool
 	r7Measurements          []entry
+	located                 map[int]locatedHunt
 }
 
 func New() *State {
@@ -547,6 +548,9 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 		}
 	}
 	if failure.class.regime == machine.R7 && len(s.classCores(failure.class)) > 1 {
+		if c := s.locatedCulprit(failure); c != nil {
+			c.pending = failure.seq
+		}
 		s.projectionDirty = true
 		return
 	}
@@ -697,6 +701,9 @@ func (s *State) next() Action {
 			return Action{Kind: ReadRanking}
 		}
 		return s.huntStartNext()
+	}
+	if a, ok := s.locateNext(); ok {
+		return a
 	}
 	if a, ok := s.rerunNext(); ok {
 		return a

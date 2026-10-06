@@ -86,11 +86,13 @@ func (s *State) huntPart(h *hunt, plan groupPlan, cores []int) HuntPart {
 
 func (s *State) huntParts(h *hunt, plan groupPlan, groups []HuntGroup) []HuntPart {
 	var out []HuntPart
-	if plan.singleCorePrior[0] > 0 || len(h.groups) == 1 && plan.stage == "part" && plan.g > 2 && plan.g == len(plan.set) {
+	narrowing := h.narrowing()
+	if plan.singleCorePrior[0] > 0 || len(narrowing) == 1 && plan.stage == "part" && plan.g > 2 && plan.g == len(plan.set) {
 		// A corroborated core runs alone before any halves; if it passes, the split starts over from the halves.
 		part := s.huntPart(h, plan, plan.cores)
-		if len(h.groups) == 1 {
-			part.Group, part.Outcome, part.Running = h.groups[0].payload.Group, groups[0].Outcome, groups[0].Running
+		if len(narrowing) == 1 {
+			last := len(groups) - 1
+			part.Group, part.Outcome, part.Running = narrowing[0].payload.Group, groups[last].Outcome, groups[last].Running
 		}
 		return append(out, part)
 	}

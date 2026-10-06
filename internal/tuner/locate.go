@@ -1,0 +1,171 @@
+package tuner
+
+import (
+	"fmt"
+	"slices"
+
+	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
+)
+
+// locatedHunt records how a located hunt answered an unattributed multi-core R7 failure: open while result is
+// empty, consumed by any end but loaded, and charged to the loaded cores after a loaded end.
+type locatedHunt struct {
+	hunt, end, failure int
+	result             string
+}
+
+// located reports a hunt of a failed multi-core R7 load: it keeps the loaded cores at their failing offsets
+// and narrows only the unloaded ones. Multi-core R7 hunts of earlier rulesets had loaded candidates.
+func (h *hunt) located() bool {
+	return h.start.Regime == machine.R7 && len(h.start.Cores) > 1 && !slices.ContainsFunc(h.start.Candidates, func(id int) bool { return slices.Contains(h.start.Cores, id) })
+}
+
+// narrowing returns the groups that narrow the candidates: every group but a located hunt's first, locate.
+func (h *hunt) narrowing() []groupRecord {
+	if h.located() && len(h.groups) > 0 {
+		return h.groups[1:]
+	}
+	return h.groups
+}
+
+// locatePlan decides a located hunt's plan until its locate group has passed: the locate group itself, or the
+// end `loaded` once it failed or was skipped.
+func (s *State) locatePlan(h *hunt) (plan groupPlan, has, decided bool) {
+	if !h.located() {
+		return groupPlan{}, false, false
+	}
+	plan = groupPlan{set: slices.Clone(h.start.Candidates), g: 2, stage: "locate", duration: h.start.DurationS}
+	if len(h.groups) == 0 {
+		return plan, true, true
+	}
+	outcome := s.groupOutcome(h, h.groups[0])
+	if outcome == "pass" {
+		return groupPlan{}, false, false
+	}
+	plan.result, plan.loaded = outcome != "running", true
+	return plan, false, true
+}
+
+// locatable returns the failed trial of a live, unattributed multi-core R7 failure whose load left a core
+// nonzero: it is located before it is charged to the loaded cores.
+func (s *State) locatable(f pendingFailure) *entry {
+	if f.carried || f.failure.Condition != machine.Together || !s.multiR7(f.class) {
+		return nil
+	}
+	failed := s.r7FailureEntry(f)
+	if failed == nil || s.r7NamedCulprit(*failed) || len(s.locateCandidates(f)) == 0 {
+		return nil
+	}
+	return failed
+}
+
+func (s *State) locateCandidates(f pendingFailure) []int {
+	loaded := s.classCores(f.class)
+	var out []int
+	for i, c := range s.byID() {
+		if i < len(f.profile) && f.profile[i] != 0 && !slices.Contains(loaded, c.id) {
+			out = append(out, c.id)
+		}
+	}
+	return out
+}
+
+// locateDue returns the first failure that waits for its located hunt and would otherwise move a core or end
+// the session.
+func (s *State) locateDue() (pendingFailure, bool) {
+	if s.hunt != nil {
+		return pendingFailure{}, false
+	}
+	for _, f := range s.pendingFailures {
+		if _, ok := s.located[f.seq]; ok {
+			continue
+		}
+		failed := s.locatable(f)
+		if failed == nil {
+			continue
+		}
+		for _, id := range s.failureTargets(*failed) {
+			if !s.r7Handled[f.seq][id] && !s.r7Answered(*failed, id) {
+				return f, true
+			}
+		}
+	}
+	return pendingFailure{}, false
+}
+
+// locateNext starts the located hunt a failure waits for, once a deepening round has ended and the ranking is read.
+func (s *State) locateNext() (Action, bool) {
+	f, ok := s.locateDue()
+	switch {
+	case !ok:
+		return Action{}, false
+	case s.round != nil:
+		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.round.start.Round, Event: journal.CycleEnd, Reason: fmt.Sprintf("R7 failure #%d needs a located hunt", f.seq)}, Cause: []int{f.seq}}, true
+	case s.rankingSeq <= s.lastPlanSeq:
+		return Action{Kind: ReadRanking}, true
+	}
+	return s.locateStart(f), true
+}
+
+func (s *State) locateStart(f pendingFailure) Action {
+	loaded := slices.Clone(s.classCores(f.class))
+	parked := slices.Clone(f.profile)
+	for i, c := range s.byID() {
+		if !slices.Contains(loaded, c.id) {
+			parked[i] = 0
+		}
+	}
+	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: loaded, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Parked: parked, Candidates: s.locateCandidates(f), Trials: s.n, TrialS: s.durations.ShortTrialS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
+	p.Reason = "no core is named, so the failure is located on the unloaded cores before it is charged to the loaded cores"
+	return Action{Kind: Decide, Payload: p, Cause: []int{f.seq}}
+}
+
+// locatedCulprit returns the core a parked located-hunt failure names directly: an unloaded core at a nonzero
+// offset. A loaded core named ends the hunt loaded instead, and an unloaded core named at CO 0 leaves the group
+// failure unattributed.
+func (s *State) locatedCulprit(f pendingFailure) *core {
+	p := f.failure
+	if f.carried || p.Condition != machine.Parked || p.Attribution != journal.Attributed || p.Core == nil || p.Offset == nil || *p.Offset == 0 || slices.Contains(s.classCores(f.class), *p.Core) {
+		return nil
+	}
+	return s.core(*p.Core)
+}
+
+// locateFailure returns the failed trial that rejected the hunt's latest group, or 0.
+func (s *State) locateFailure(h *hunt) int {
+	if len(h.groups) == 0 {
+		return 0
+	}
+	_, failure, _ := s.groupEvidence(h, h.groups[len(h.groups)-1], true)
+	return failure
+}
+
+// locatedLoadedFailure ends a located hunt loaded when its latest group failed naming a loaded core.
+func (s *State) locatedLoadedFailure(h *hunt) (Action, bool) {
+	failure := s.locateFailure(h)
+	if !h.located() || failure == 0 {
+		return Action{}, false
+	}
+	for _, e := range s.ledger[h.class.withDuration(h.groups[len(h.groups)-1].payload.DurationS)] {
+		if e.seq != failure || e.named == nil || !slices.Contains(h.start.Cores, *e.named) {
+			continue
+		}
+		reason := fmt.Sprintf("failure #%d named loaded core %02d, so the failure stays with the loaded cores", failure, *e.named)
+		return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: "loaded", Cores: slices.Clone(h.start.Cores), Groups: len(h.groups), Reason: reason}, Cause: []int{h.seq, failure}}, true
+	}
+	return Action{}, false
+}
+
+func (s *State) endLocatedHunt(h *hunt, e journal.Event, p *journal.HuntEnd) {
+	switch p.Result {
+	case "cancelled":
+		delete(s.located, h.start.Failure)
+		s.hunt = nil
+	case "loaded":
+		s.located[h.start.Failure] = locatedHunt{hunt: p.Hunt, end: e.Seq, failure: s.locateFailure(h), result: p.Result}
+		s.hunt = nil
+	default:
+		s.located[h.start.Failure] = locatedHunt{hunt: p.Hunt, end: e.Seq, result: p.Result}
+	}
+}

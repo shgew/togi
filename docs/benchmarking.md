@@ -40,6 +40,10 @@ Compare every shared-voltage scenario, each adversary and the hand-set `shared-v
 
 Score ruleset 9 once on dev, then confirm once on holdout; changes after the dev score are defect fixes with tests. Ordinary dev iteration above does not apply to this evaluation. No multi-core R7 failure is tolerated: the rejected 5%/0.2 tolerance raised the hand-set machine's worst R7 hazard from 0.47 to 1.74/h without depth or time gain ([#386](https://github.com/shgew/togi/issues/386)).
 
+### Ruleset-10 evaluation
+
+[ADR 0040](adr/0040-located-hunts.md) keeps ruleset 9's gate on the anchored adversary scenarios and adds one on the hand-set scenarios `default`, `idle-limit` and `late-onset`: no run that ruleset 8 concluded on the same seed may fail to conclude. Ruleset 9 reported those scenarios without gating them, and lost `idle-limit` and `late-onset` runs that way ([#415](https://github.com/shgew/togi/issues/415)). The legacy `target` fits stay reported only, because they fail the model check against the refreshed evidence. The gate is scored after [#376](https://github.com/shgew/togi/issues/376) lands, since it changes the unloaded-core draws the located hunt depends on.
+
 `--suite FILE` runs another scenario file instead, with machine paths relative to it. The [adversarial search](../tools/bench/adversary.md) scores candidate machines this way and turns confirmed findings into new scenarios.
 
 The target scenario has 18 dev and 18 holdout seeds: two seeds per ensemble member in each split. Its oracle draws uniformly from decisive facts matching the entire applied profile and trial class (regime, workload, sorted loaded cores and intended duration). Draws are deterministic per seed and trial ID/index. Condition, phase, source ruleset and evidence epoch do not restrict a class match; BIOS context does. The oracle never uses facts from another BIOS context or records without one. Non-matching trials and trial-less failures use the fitted machine. The tuner sees only the resulting journal evidence, not the oracle or its extract.

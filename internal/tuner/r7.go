@@ -199,11 +199,20 @@ func (s *State) r7Decision() (Action, bool) {
 }
 func (s *State) r7PendingDecision() (Action, bool) {
 	for _, f := range s.pendingFailures {
-		if !s.multiR7(f.class) {
+		if !s.multiR7(f.class) || !f.carried && f.failure.Condition == machine.Parked {
 			continue
 		}
 		failed := s.r7FailureEntry(f)
 		if failed == nil {
+			continue
+		}
+		var located *locatedHunt
+		if loc, ok := s.located[f.seq]; ok {
+			if loc.result != "loaded" {
+				continue
+			}
+			located = &loc
+		} else if s.locatable(f) != nil {
 			continue
 		}
 		for _, id := range s.failureTargets(*failed) {
@@ -211,7 +220,7 @@ func (s *State) r7PendingDecision() (Action, bool) {
 				continue
 			}
 			if c := s.core(id); c != nil {
-				if a, ok := s.r7CoreDecision(f, *failed, c); ok {
+				if a, ok := s.r7CoreDecision(f, *failed, c, located); ok {
 					return a, true
 				}
 			}
@@ -237,6 +246,7 @@ type r7Order struct {
 	group   []int
 	sources []int
 	reason  string
+	located string
 	rail    float64
 	stepped bool
 	named   bool
@@ -304,16 +314,32 @@ func r7RequestGroups(part map[int]float64, top []int) [][]int {
 	return append([][]int{first}, groups...)
 }
 
-// r7CoreDecision returns the decision a failure requires against target c. It reports none when the core
-// the decision would move already sits shallower than in the failed trial: the failure needs no move
-// while that holds, and stays pending in case that core returns to its failing offset.
-func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core) (Action, bool) {
+// r7CoreDecision returns the decision a failure requires against target c, citing the located hunt that kept
+// it on the loaded cores, if any. It reports none when the core the decision would move already sits shallower
+// than in the failed trial: the failure needs no move while that holds, and stays pending in case that core
+// returns to its failing offset.
+func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core, located *locatedHunt) (Action, bool) {
 	if s.r7Answered(failed, c.id) {
 		return Action{}, false
 	}
 	order := s.r7TargetGroup(failed, c.id)
+	var locatedSeqs []int
+	if located != nil {
+		locatedSeqs = []int{located.end}
+		clause := fmt.Sprintf("hunt %d kept the failure on the loaded cores", located.hunt)
+		if located.failure != 0 {
+			clause += fmt.Sprintf(" after failure #%d with every unloaded core at CO 0", located.failure)
+			locatedSeqs = append(locatedSeqs, located.failure)
+		}
+		order.located = clause
+		if order.reason != "" {
+			order.reason += "; "
+		}
+		order.reason += clause
+	}
 	if len(order.group) == 0 || order.named && failed.profile[s.index(c.id)] == 0 {
-		return Action{Kind: Decide, Payload: s.r7FailedAtZero(failed, c.id, order), Cause: append([]int{f.seq}, order.sources...)}, true
+		cause := append([]int{f.seq}, locatedSeqs...)
+		return Action{Kind: Decide, Payload: s.r7FailedAtZero(failed, c.id, order), Cause: append(cause, order.sources...)}, true
 	}
 	if len(order.group) > 1 && s.rankingSeq == 0 {
 		return Action{Kind: ReadRanking}, true
@@ -327,7 +353,8 @@ func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core) (Action,
 	if s.r7ShallowerThanFailed(failed, chosen) {
 		return Action{}, false
 	}
-	cause := append([]int{f.seq}, order.sources...)
+	cause := append([]int{f.seq}, locatedSeqs...)
+	cause = append(cause, order.sources...)
 	if !order.named && s.rankingSeq > 0 {
 		cause = append(cause, s.rankingSeq)
 	}
@@ -387,7 +414,11 @@ func (s *State) r7FailedAtZero(failed entry, id int, order r7Order) *journal.Dea
 				loaded = append(loaded, core)
 			}
 		}
-		dead.Detail = fmt.Sprintf("%s counts against CCD %d's top group, and every loaded core of that CCD %v is at CO 0; the instability is not caused by Curve Optimizer", subject, s.ccd[id], loaded)
+		located := ""
+		if order.located != "" {
+			located = ", and " + order.located
+		}
+		dead.Detail = fmt.Sprintf("%s counts against CCD %d's top group, and every loaded core of that CCD %v is at CO 0%s; the instability is not caused by Curve Optimizer", subject, s.ccd[id], loaded, located)
 	}
 	return dead
 }

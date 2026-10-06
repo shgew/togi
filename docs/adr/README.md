@@ -43,8 +43,9 @@ ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 - [0035: License togi under GPL-3.0-or-later](0035-gpl-3.0-or-later.md) — **in force**.
 - [0036: Flake checks stay hermetic](0036-flake-checks-stay-hermetic.md) — **in force**.
 - [0037: Cycles and trials](0037-cycles-and-trials.md) — **in force**.
-- [0038: Self-sufficient cores under shared voltage](0038-self-sufficient-cores.md) — **accepted, in force** for ruleset-9 multi-core R7 checking, attribution, voltage-targeted backoff and deepening scope.
+- [0038: Self-sufficient cores under shared voltage](0038-self-sufficient-cores.md) — **accepted, in force** for ruleset-9 multi-core R7 checking, attribution, voltage-targeted backoff and deepening scope; **amended** by [0040](0040-located-hunts.md): an unattributed failure is located on the unloaded cores before it is charged, the zero-offset dead end holds irrespective of idle cores only after that, and the gate also covers the hand-set scenarios `default`, `idle-limit` and `late-onset`.
 - [0039: Remind only the main session](0039-remind-only-the-main-session.md) — **in force**.
+- [0040: Locate multi-core R7 failures before charging the loaded cores](0040-located-hunts.md) — **in force**.
 - [0041: The coordinator reviews small pull requests](0041-coordinator-reviews-small-pull-requests.md) — **in force**.
 - [0042: Opt in to the check cache locally](0042-opt-in-to-the-check-cache-locally.md) — **in force**.
 - [0043: Record work that waits on the target machine](0043-record-work-that-waits-on-the-target-machine.md) — **in force**.

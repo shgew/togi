@@ -1,66 +1,66 @@
-  togi   18:13:55   session 18h13m   51 failures · 14 crashes   last observed failure 18:13, a moment ago
+  togi   10:16:57   session 10h16m   31 failures · 8 crashes   last observed failure 10:16, a moment ago
 
-  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 4 of 14, part 3  ───  ►  HUNT 1   parts · part 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 1 of 14, part 1  ───  ►  HUNT 1   locate  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
-  ▌  HUNT 1   The machine crashed early in the 2-minute heavy vector trial on 01 and rebooted.                            last trial      CRASH  on core 01
-  ▌           No core was named: I rerun that load with 00 02-13 15 at their failing offsets, 01 14 parked at 0.
+  ▌  HUNT 1   Crashed early in R7 all-core on 00-07; no core named. Rerunning it with 08-15 at 0.                         last trial      CRASH  on 00-07
 
-  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0610
-   R2   heavy vector load  on 01 · 00 02-13 15 at failing offsets, 01 parked at 0   mprime AVX2 36K-248K · 1 worker                                                                                                      HUNT 1 · PART 1 OF 2
+
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0428
+   R7   all-core load  on 00-07 · 08-15 parked at 0, idle   mprime AVX2 36K-248K · 8 workers                                                                                                                                 HUNT 1 · GROUP 1
 
   ████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████          ▀█    ▀▀█ █▀█
   ████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████           █  ▀ █▀▀ █ █
   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
   0:40 of 2:00                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 
-  if 5 of 5 pass       next: part 2: 00 02-13 15 parked at 0, idle
-  if none is named     next: hunt 1 group 2: R2 heavy vector on 01 · 08-13 15 at failing offsets, 00-07 parked at 0
-  if a core is named   its failure point is recorded → tuning stops: failure at zero
+  if 5 of 5 pass       next: hunt 1 group 2: R7 all-core on 00-07 · 08-11 at failing offsets, 12-15 parked at 0, idle
+  if it fails          hunt 1 keeps the failure on loaded 00-07 → core 05 -9 → -8 per offset order → next: rerun R7 all-core on 00-07 · 2m
+  if inconclusive      the same trial runs again
 
-  CCD 0               0       -10       -20       -30       -40       -50 fail pt  one core under load at a time          CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
-    00  -37  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                -38                                            08  -26  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                           -27
-  ► 01    0  PARKED    ··································█                   -35   returns to -34                           09  -16  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·                                    -17
-    02  -35  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                  -36                                            10  -16  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                     -17
-    03  -17  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                    -18                                            11   -1  MEMBER    ▄█·····                                                -2
-    04  -32  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            12  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▄█                                           -11
-    05   -7  MEMBER    ▄▄▄▄▄▄▄█··                                             -8                                            13  -22  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·                              -23
-    06  -27  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··                        -28                                            14    0  AT LIMIT  █···                                                   -1
-    07  -32  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            15  -38  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█               -39
+  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  parked at 0, idle
+  ► 00  -37  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                -38                                            08    0  PARKED    ···························█                          -28   returns to -27
+  ► 01  -34  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                   -35                                            09    0  PARKED    ··················█                                   -19   returns to -18
+  ► 02  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                  -36                                            10    0  PARKED    ················█                                     -17   returns to -16
+  ► 03  -17  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                    -18                                            11    0  PARKED    ·······█                                               -8   returns to -7
+  ► 04  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            12    0  PARKED    ··········█                                           -11   returns to -10
+  ► 05   -9  AT LIMIT  ▄▄▄▄▄▄▄▄▄█                                            -10   top by offset                            13    0  PARKED    ························█                             -25   returns to -24
+  ► 06  -29  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                        -30                                            14    0  PARKED    ····█                                                  -5   returns to -4 · top by offset
+  ► 07  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            15    0  PARKED    ·······································█              -40   returns to -39
 
-  HUNT 1 ───────────────────────────────────────────────────────────────────────────────── started 18:13 · 40s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
+  HUNT 1 ───────────────────────────────────────────────────────────────────────────────── started 10:16 · 40s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
 
-  cause       crash in R2 heavy vector on 01 · cycle 1 step 4, part 3, trial 1 of 1 · no core named                       18:13  hunt     #1 started · part 1: 00 02-13 15 at failing offsets, 01 parked
-  evidence    the last sample came 0:06 into the trial · not enough to attribute                                          18:13  crash    R2 heavy vector on core 01 at -34 · rebooted · early in trial 1 of 1 · no core named
-  candidates  00-13 15, every core with an offset in the failing profile                                                  18:11  pass     R2 heavy vector on core 08 at -26 · passed · Tctl max 67°C
-                                                                                                                          18:09  pass     R2 heavy vector on core 00 at -37 · passed · Tctl max 64°C
-  parts       part        at failing offsets   parked at 0   schedule   state                                             18:07  pass     R7 full CCD 0+1 on 00-15 · 4 of 4 passed · Tctl max 70°C
-            ► 1 of 2      00 02-13 15          01 14         5 x 2m     trial 1 of 5                                      17:51  note     cycle 1 step 3 CCD 1 ycruncher-fftv4-n63-vt3-allcore: partial 6 idles top group [8] from offset
-              2 of 2      01                   00 02-15      5 x 2m     if part 1 passes                                  17:51  pass     R7 partial CCD 1 on 08 15 · 4 of 4 passed · Tctl max 75°C
-              then finer parts and their complements, until one fails or none does                                        17:40  note     cycle 1 step 3 CCD 1 ycruncher-fftv4-n63-vt3-allcore: partial 5 idles top group [13] from offset
-                                                                                                                          17:40  pass     R7 partial CCD 1 on 08 13 15 · 4 of 4 passed · Tctl max 75°C
-  then        if the hunt resolves and the rerun passes:                                                                  17:29  note     cycle 1 step 3 CCD 1 ycruncher-fftv4-n63-vt3-allcore: partial 4 idles top group [9 10] from offset
-              1  record what it found: one core's failure point, or a combination                                         17:29  pass     R7 partial CCD 1 on 08-10 13 15 · 4 of 4 passed · Tctl max 69°C
-              2  back off past it                                                                                         17:18  note     cycle 1 step 3 CCD 1 ycruncher-fftv4-n63-vt3-allcore: partial 3 idles top group [12] from offset
-              3  rerun R2 heavy vector on 01: 5 trials of 2m, its original length                                         17:18  pass     R7 partial CCD 1 on 08-10 12 13 15 · 4 of 4 passed · Tctl max 76°C
-              4  resume cycle 1                                                                                           17:07  note     cycle 1 step 3 CCD 1 ycruncher-fftv4-n63-vt3-allcore: partial 2 idles top group [11] from offset
-                                                                                                                          17:07  pass     R7 partial CCD 1 on 08-13 15 · 4 of 4 passed · Tctl max 72°C
-                                                                                                                          16:56  note     cycle 1 step 3 CCD 1 ycruncher-fftv4-n63-vt3-allcore: partial 1 idles top group [14] from offset
-                                                                                                                          16:56  pass     R7 full CCD 1 on 08-15 · 4 of 4 passed · Tctl max 71°C
-                                                                                                                          16:45  note     cycle 1 step 3 CCD 0 ycruncher-fftv4-n63-vt3-allcore: partial 6 idles top group [2] from offset
-                                                                                                                          16:45  pass     R7 partial CCD 0 on 00 02 · 4 of 4 passed · Tctl max 76°C
-                                                                                                                          16:34  note     cycle 1 step 3 CCD 0 ycruncher-fftv4-n63-vt3-allcore: partial 5 idles top group [1] from offset
-                                                                                                                          16:34  pass     R7 partial CCD 0 on 00-02 · 4 of 4 passed · Tctl max 69°C
-                                                                                                                          16:23  note     cycle 1 step 3 CCD 0 ycruncher-fftv4-n63-vt3-allcore: partial 4 idles top group [4 7] from offset
-                                                                                                                          16:23  pass     R7 partial CCD 0 on 00-02 04 07 · 4 of 4 passed · Tctl max 75°C
-                                                                                                                          16:12  note     cycle 1 step 3 CCD 0 ycruncher-fftv4-n63-vt3-allcore: partial 3 idles top group [6] from offset
-                                                                                                                          16:12  pass     R7 partial CCD 0 on 00-02 04 06 07 · 4 of 4 passed · Tctl max 72°C
-                                                                                                                          16:01  note     cycle 1 step 3 CCD 0 ycruncher-fftv4-n63-vt3-allcore: partial 2 idles top group [3] from offset
-                                                                                                                          16:01  pass     R7 partial CCD 0 on 00-04 06 07 · 4 of 4 passed · Tctl max 75°C
-                                                                                                                          15:50  note     cycle 1 step 3 CCD 0 ycruncher-fftv4-n63-vt3-allcore: partial 1 idles top group [5] from offset
-                                                                                                                          15:50  pass     R7 full CCD 0 on 00-07 · 4 of 4 passed · Tctl max 74°C
-                                                                                                                          15:39  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3
-                                                                                                                          15:39  pass     R7 full CCD 0+1 on 00-15 · 4 of 4 passed · Tctl max 72°C
-                                                                                                                          15:23  note     cycle 1 step 2 CCD 1 mprime-avx512-36k-248k-allcore: partial 6 idles top group [8] from offset
+  cause       crash in the rerun of R7 all-core on 00-07 · no core named                                                  10:16  hunt     #1 started · locate: 08-15 at 0
+  evidence    core 06's worker had stalled by the last sample, 0:02 into the trial · not enough to attribute              10:16  crash    rerun of R7 all-core on 00-07 · rebooted · early in trial 1 of 5 · no core named
+  candidates  08-15, every core with an offset in the failing profile                                                     10:14  backoff  core 06 -30 → -29
+                                                                                                                          10:14  fail     core 06 fails at -30
+  parts       group 1      locate: 08-15 at 0                           running · 0/5 passed                              10:14  fail     rerun of R7 all-core on 00-07 · wrong result · core 06 named
+                                                                                                                          10:14  backoff  core 05 -10 → -9
+  then        if the hunt resolves and the rerun passes:                                                                  10:14  fail     core 05 fails at -10
+              1  record what it found: one core's failure point, or a combination                                         10:14  fail     R7 full CCD 0 on 00-07 · the stress program quit · core 05 named
+              2  back off past it                                                                                         10:14  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
+              3  rerun R7 all-core on 00-07: 5 trials of 2m, its original length                                          10:14  cycle    cycle 1 started · 14 steps
+              4  resume cycle 1                                                                                           10:14  limit    core 15 solo limit -39
+                                                                                                                          10:13  limit    core 01 solo limit -34
+                                                                                                                          10:13  limit    core 00 solo limit -37
+                                                                                                                          10:11  limit    cores 04, 07 solo limit -32
+                                                                                                                          10:05  limit    core 13 solo limit -24
+                                                                                                                          10:04  limit    core 02 solo limit -35
+                                                                                                                          10:02  limit    core 08 solo limit -27
+                                                                                                                          09:58  limit    core 06 solo limit -30
+                                                                                                                          09:53  limit    core 09 solo limit -18
+                                                                                                                          09:41  limit    core 03 solo limit -17
+                                                                                                                          09:25  limit    core 10 solo limit -16
+                                                                                                                          09:14  limit    core 14 solo limit -4
+                                                                                                                          09:10  limit    core 11 solo limit -7
+                                                                                                                          08:52  limit    cores 05, 12 solo limit -10
+                                                                                                                          07:50  confirm  core 15 confirming -39 as its solo limit
+                                                                                                                          07:25  step     core 15 passed -38, next -39
+                                                                                                                          07:04  confirm  core 01 confirming -34 as its solo limit
+                                                                                                                          06:59  confirm  core 00 confirming -37 as its solo limit
+                                                                                                                          06:59  fail     core 00 fails at -38
+                                                                                                                          06:59  crash    core 00 · R1 light at -38 · rebooted · early in trial 1 of 1
+                                                                                                                          06:57  step     core 15 passed -37, next -38
+                                                                                                                          06:54  confirm  core 07 confirming -32 as its solo limit
                                                                                                                           +168 more
 
    ?  help    l  log    esc  back    q  close view

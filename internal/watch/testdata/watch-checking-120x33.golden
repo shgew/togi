@@ -6,7 +6,7 @@
   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers                            CYCLE 1 · STEP 1 · PART 1
  █████████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/4 ► · · ·
 
- 3/4 pass → trial 4 of 4 · 5m   core named → backs off   none named → backs off   backoffs per offset order
+ 3/4 pass → trial 4 of 4 · 5m   core named → backs off   none named → hunt 1   backoffs per offset order
 
  CCD 0 all loaded 0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
  ► 00 -37 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38             08 -27 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -28

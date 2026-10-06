@@ -857,7 +857,9 @@ func (j *stopAfterPartialRecovery) Append(p journal.Payload, cause ...int) (jour
 	return e, nil
 }
 
-func TestPartialCrashRecoversAndBacksOffWithoutHunt(t *testing.T) {
+// TestPartialCrashRecoversIntoBackoffOrLocatedHunt recovers a crashed R7 partial: a named core backs off without a
+// hunt; an unattributed crash, with the idle cores off CO 0, first reruns the load with them at 0.
+func TestPartialCrashRecoversIntoBackoffOrLocatedHunt(t *testing.T) {
 	t.Parallel()
 	for _, signal := range []machine.Signal{"", machine.ComputationError} {
 		t.Run(string(signal), func(t *testing.T) {
@@ -900,12 +902,10 @@ func TestPartialCrashRecoversAndBacksOffWithoutHunt(t *testing.T) {
 			if !errors.Is(err, errKilled) || resumed.next == nil {
 				t.Fatalf("resume: %v, %+v", err, resumed)
 			}
-			if diff := cmp.Diff(partial.Profile, resumed.next.Profile); diff == "" {
-				t.Fatal("failed partial did not back off profile")
-			}
 			var end *journal.TrialEnd
 			var failure *journal.Failure
 			var move *journal.TunerDecision
+			var start *journal.HuntStart
 			events := readEvents(t, in.Dir)
 			for _, e := range events {
 				switch p := e.Data.(type) {
@@ -921,18 +921,23 @@ func TestPartialCrashRecoversAndBacksOffWithoutHunt(t *testing.T) {
 					if p.Decision == journal.Backoff && p.Phase != journal.PhaseSearch {
 						move = p
 					}
-				case *journal.HuntStart, *journal.Combination:
-					t.Fatalf("R7 partial hunted: %+v", e)
+				case *journal.HuntStart:
+					start = p
+				case *journal.Combination:
+					t.Fatalf("R7 partial combined cores: %+v", e)
 				}
 			}
-			if end == nil || end.Outcome != journal.OutcomeFailure || failure == nil || move == nil {
-				t.Fatalf("missing recovered failure/backoff: %+v %+v %+v", end, failure, move)
+			if end == nil || end.Outcome != journal.OutcomeFailure || failure == nil {
+				t.Fatalf("missing recovered failure: %+v %+v", end, failure)
 			}
 			top := partial.Profile[partial.Cores[0]]
 			for _, core := range partial.Cores {
 				top = max(top, partial.Profile[core])
 			}
 			if signal != "" {
+				if diff := cmp.Diff(partial.Profile, resumed.next.Profile); diff == "" {
+					t.Fatal("failed partial did not back off profile")
+				}
 				named := interrupted.named
 				if partial.Profile[named] >= top {
 					t.Fatalf("fixture named core %d, a top requester of %v", named, partial.Profile)
@@ -940,15 +945,24 @@ func TestPartialCrashRecoversAndBacksOffWithoutHunt(t *testing.T) {
 				if end.Signal != signal || end.Core == nil || *end.Core != named || failure.Attribution != journal.Attributed || failure.Core == nil || *failure.Core != named {
 					t.Fatalf("recovery lost the named computation error: %+v %+v", end, failure)
 				}
-				if move.Core != named {
-					t.Fatalf("named core %d backed off %d", named, move.Core)
+				if start != nil || move == nil || move.Core != named {
+					t.Fatalf("named core %d: hunt %+v, backoff %+v", named, start, move)
 				}
 			} else {
 				if end.Signal != machine.Crash || failure.Attribution != journal.Unattributed {
 					t.Fatalf("recovered crash: %+v %+v", end, failure)
 				}
-				if !slices.Contains(partial.Cores, move.Core) || partial.Profile[move.Core] != top {
-					t.Fatalf("unattributed crash backed off core %d, not a top requester of %v", move.Core, partial.Profile)
+				if move != nil || start == nil || !slices.Equal(start.Cores, partial.Cores) {
+					t.Fatalf("unattributed crash moved %+v instead of locating it: %+v", move, start)
+				}
+				locate := slices.Clone(partial.Profile)
+				for core := range locate {
+					if !slices.Contains(partial.Cores, core) {
+						locate[core] = 0
+					}
+				}
+				if resumed.next.Condition != machine.Parked || !slices.Equal(resumed.next.Cores, partial.Cores) || !slices.Equal(resumed.next.Profile, locate) {
+					t.Fatalf("the locate did not rerun the partial with its idle cores at 0: %+v", resumed.next)
 				}
 			}
 			for _, fact := range facts.FromEvents(events).Facts {

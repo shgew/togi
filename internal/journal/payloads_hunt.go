@@ -2,6 +2,7 @@ package journal
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/shgew/togi/internal/machine"
@@ -54,6 +55,8 @@ func (p *HuntStart) Message() string {
 	parked := "parked at 0"
 	if p.ParkedSeq != 0 {
 		parked = fmt.Sprintf("parked offsets from cycle end #%d", p.ParkedSeq)
+	} else if slices.ContainsFunc(p.Parked, func(offset int) bool { return offset != 0 }) {
+		parked = fmt.Sprintf("loaded cores %s held at their failing offsets, the rest parked at 0", coreList(p.Cores))
 	}
 	msg := fmt.Sprintf("hunt %d: unattributed failure in %s; %s; candidates %s; groups of %d × %ds", p.Hunt, source, parked, coreList(p.Candidates), p.Trials, p.TrialS)
 	if p.Reason != "" {
@@ -86,6 +89,10 @@ func (*HuntGroup) Kind() Kind { return KindHuntGroup }
 func (p *HuntGroup) Message() string {
 	prefix := fmt.Sprintf("hunt %d group %d: cores %s", p.Hunt, p.Group, coreList(p.Cores))
 	running := "at failing offsets, the rest parked"
+	if p.Stage == "locate" {
+		prefix = fmt.Sprintf("hunt %d group %d: locate", p.Hunt, p.Group)
+		running = "with every unloaded core at 0 and the loaded cores at their failing offsets"
+	}
 	if p.Probe != nil {
 		prefix = fmt.Sprintf("hunt %d group %d: core %s at %d with %s", p.Hunt, p.Group, coreID(p.Probe.Core), p.Probe.Offset, memberList(p.Held))
 		running = "the rest parked"
@@ -122,6 +129,8 @@ func (p *HuntEnd) Message() string {
 		groups += "s"
 	}
 	switch {
+	case p.Result == "loaded":
+		return fmt.Sprintf("hunt %d ended after %s: the failure stays with loaded cores %s (%s)", p.Hunt, groups, coreList(p.Cores), p.Reason)
 	case p.Result == "direct" && len(p.Cores) == 1:
 		return fmt.Sprintf("hunt %d ended after %s: core %s was attributed directly (%s)", p.Hunt, groups, coreID(p.Cores[0]), p.Reason)
 	case len(p.Cores) == 1:

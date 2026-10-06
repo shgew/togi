@@ -161,6 +161,9 @@ func (s Snapshot) huntStory() story {
 		return story{label, []string{first, "So I probe each member: how shallow must it go for the rest to pass? " + which}, fmt.Sprintf("Probing members of %s: core %02d at %d.", coreIDs(group), t.probe.Core, t.probe.Offset), huntTone}
 	}
 	cause, named, brief := s.huntCauseStory()
+	if h.locating() {
+		return story{label, []string{cause, named + "I rerun that load with " + coreIDs(h.candidates) + " at 0 and the loaded cores at their offsets: a pass puts the failure on the idle cores."}, brief + " Rerunning it with " + coreIDs(h.candidates) + " at 0.", huntTone}
+	}
 	return story{label, []string{cause, named + "I rerun that load with " + s.splitWords() + "."}, brief + " Rerunning it with " + coreIDs(t.parked) + " parked.", huntTone}
 }
 
@@ -1174,6 +1177,8 @@ func huntEndPhrase(d *journal.HuntEnd, named bool) (string, bool) {
 		return fmt.Sprintf("hunt %d keeps %s together", d.Hunt, coreIDs(d.Cores)), false
 	case d.Result == "cancelled":
 		return fmt.Sprintf("hunt %d cancelled", d.Hunt), false
+	case d.Result == "loaded":
+		return fmt.Sprintf("hunt %d keeps the failure on loaded %s", d.Hunt, coreIDs(d.Cores)), false
 	}
 	return fmt.Sprintf("hunt %d ends", d.Hunt), false
 }

@@ -231,6 +231,12 @@ type huntView struct {
 	rerun      rerunPlan // what reruns once the hunt resolves
 }
 
+// locating reports a located hunt still rerunning its failed load with every unloaded core at 0.
+func (h *huntView) locating() bool {
+	n := len(h.groups)
+	return n > 0 && h.groups[n-1].stage == "locate" && h.groups[n-1].outcome == "running"
+}
+
 type huntCause struct {
 	at       time.Time
 	trial    trialView
