@@ -97,7 +97,11 @@ func NewRenderer(stream io.Writer, getenv func(string) string) Renderer {
 }
 
 func (r Renderer) Line(e Event, loc *time.Location) string {
-	return r.Text(e, FormatLine(e, loc))
+	return r.styled(StyleOf(e), FormatLine(e, loc))
+}
+
+func (r Renderer) PrefixedLine(e Event, loc *time.Location, prefix string) string {
+	return r.styled(StyleOf(e), EscapeText(prefix)+FormatLine(e, loc))
 }
 
 func (r Renderer) Text(e Event, line string) string {
@@ -106,7 +110,10 @@ func (r Renderer) Text(e Event, line string) string {
 
 // Styled escapes untrusted text before applying terminal and journald style.
 func (r Renderer) Styled(style Style, line string) string {
-	line = EscapeText(line)
+	return r.styled(style, EscapeText(line))
+}
+
+func (r Renderer) styled(style Style, line string) string {
 	if r.color {
 		var sgr string
 		switch style {

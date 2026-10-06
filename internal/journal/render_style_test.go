@@ -130,7 +130,7 @@ func TestRendererStreams(t *testing.T) {
 	if got := journald.Line(Event{Kind: KindTrialEnd, Data: &TrialEnd{Outcome: OutcomePass}, Msg: "pass", Time: failure.Time}, time.UTC); strings.HasPrefix(got, "<3>") || strings.ContainsRune(got, '\x1b') {
 		t.Fatalf("plain line = %q", got)
 	}
-	if got := journald.Text(failure, "  evidence: "+plain); got != "<3>\x1b[31m  evidence: "+plain+"\x1b[0m" {
+	if got := journald.PrefixedLine(failure, time.UTC, "  evidence: "); got != "<3>\x1b[31m  evidence: "+plain+"\x1b[0m" {
 		t.Fatalf("evidence line = %q", got)
 	}
 	var buffer bytes.Buffer
@@ -241,7 +241,7 @@ func TestRendererEscapesBeforeApplicationStyle(t *testing.T) {
 		})
 	}
 	renderer := Renderer{color: true}
-	if got, want := renderer.Text(event, "evidence: "+FormatLine(event, time.UTC)), "\x1b[31mevidence: "+plain+"\x1b[0m"; got != want {
+	if got, want := renderer.PrefixedLine(event, time.UTC, "evidence: "), "\x1b[31mevidence: "+plain+"\x1b[0m"; got != want {
 		t.Fatalf("shared evidence double escaped: %q, want %q", got, want)
 	}
 	if got, want := renderer.Text(event, "dead end: "+event.Msg), "\x1b[31m"+`dead end: bad\x1b[0m\r\n日本語`+"\x1b[0m"; got != want {
