@@ -21,7 +21,8 @@ import (
 const defaultMaxBoots = 1000
 
 // ErrBootCap reports a session that was still running when the simulated machine reached its boot cap; the journal
-// holds the partial session.
+// holds the partial session and state.json its projection. A capped run that then fails to finalize the journal
+// returns an error that is not ErrBootCap.
 var ErrBootCap = errors.New("simulated machine reached its boot cap without stopping")
 
 type Input struct {
@@ -47,9 +48,16 @@ func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 	var cached *memoryJournal
 	prefix := &journal.Prefix{}
 	defer func() {
-		if cached != nil {
-			err = errors.Join(err, cached.flush(), cached.Close())
+		if cached == nil {
+			return
 		}
+		finalizeErr := errors.Join(cached.flush(), cached.Close())
+		if finalizeErr != nil && errors.Is(err, ErrBootCap) {
+			// Keep the cap in the message but out of the chain: an unfinalized capped run is an error, not censored.
+			err = fmt.Errorf("%s; finalize simulated journal: %w", err.Error(), finalizeErr)
+			return
+		}
+		err = errors.Join(err, finalizeErr)
 	}()
 	samplesDir := ""
 	if in.WriteSamples {

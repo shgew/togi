@@ -222,6 +222,48 @@ func TestBootCapLeavesPartialSessionInJournal(t *testing.T) {
 	}
 }
 
+func TestBootCapWithFailedFlushIsNotErrBootCap(t *testing.T) {
+	t.Parallel()
+	m, err := sim.New(huntConfig(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	boots := 0
+	wrap := func(j session.Journal) session.Journal {
+		boots++
+		if boots < 3 {
+			return j
+		}
+		// On the last boot, a directory at state.json fails the final state write and a projection citing no earlier
+		// event fails its session.warning.
+		statePath := filepath.Join(dir, "state.json")
+		if err := os.RemoveAll(statePath); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(statePath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return unflushableState{j}
+	}
+	_, err = Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true, MaxBoots: 3, Wrap: wrap})
+	if errors.Is(err, ErrBootCap) {
+		t.Fatalf("capped run with failed flush: %v, want an error that is not ErrBootCap", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "boot cap") || !strings.Contains(err.Error(), "not an earlier event") {
+		t.Fatalf("capped run with failed flush: %v, want the cap and the failed session.warning", err)
+	}
+}
+
+type unflushableState struct {
+	session.Journal
+}
+
+func (j unflushableState) WriteState(s journal.State) error {
+	s.LastSeq = 1 << 30
+	return j.Journal.WriteState(s)
+}
+
 func TestNewSessionTrialGetsNoSamplesFromAnEarlierInvocation(t *testing.T) {
 	t.Parallel()
 	m, err := sim.New(huntConfig(4))
