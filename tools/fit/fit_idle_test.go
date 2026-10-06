@@ -23,8 +23,8 @@ func TestFitIdlePreservesTotalLikelihood(t *testing.T) {
 	l.rebuild()
 	all := l.selectObs(func(observation) bool { return true })
 	before := l.score(all)
-	l.fitIdle(&cfg)
-	if got := cfg.Limits[1].Idle; got == nil {
+	l.fitIdle()
+	if got := l.cfg.Limits[1].Idle; got == nil {
 		t.Error("idle limit disabled; want 0")
 	} else if *got != 0 {
 		t.Errorf("idle limit: got %d; want 0 to explain the negative-offset failure without adding stock-offset hazards", *got)
@@ -70,8 +70,8 @@ func TestFitIdleRequiresNegativeUnloadedExposure(t *testing.T) {
 				},
 			}}
 			l.rebuild()
-			l.fitIdle(&cfg)
-			got := cfg.Limits[1].Idle
+			l.fitIdle()
+			got := l.cfg.Limits[1].Idle
 			switch {
 			case !tc.wantEnabled:
 				if got != nil {

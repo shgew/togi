@@ -177,73 +177,15 @@ func validateSignals(signals map[machine.Signal]float64) error {
 	return nil
 }
 
+// New builds a machine from its own copy of cfg: later changes to cfg, or to anything it references, never reach the machine.
 func New(cfg Config) (*Machine, error) {
-	if cfg.Cores == 0 {
-		cfg.Cores = 16
-	}
-	if err := validateCores(cfg.Cores); err != nil {
+	cfg, model, err := resolve(cfg)
+	if err != nil {
 		return nil, fmt.Errorf("new simulator: %w", err)
-	}
-	if cfg.BIOS == nil {
-		cfg.BIOS = make([]int, cfg.Cores)
-	}
-	if len(cfg.BIOS) != cfg.Cores {
-		return nil, fmt.Errorf("new simulator: %d BIOS offsets for %d cores", len(cfg.BIOS), cfg.Cores)
-	}
-	for c, o := range cfg.BIOS {
-		if o < machine.MinOffset || o > machine.MaxOffset {
-			return nil, fmt.Errorf("new simulator: BIOS offset %d of core %d outside [-50, 0]", o, c)
-		}
-	}
-	if cfg.BIOSContext == (machine.BIOSContext{}) {
-		cfg.BIOSContext = defaultBIOSContext
-	}
-	model := DefaultModel()
-	if cfg.Model != nil {
-		model = *cfg.Model
 	}
 	start := epoch
 	if !cfg.Start.IsZero() {
 		start = cfg.Start
-	}
-	if err := validateSignals(model.Signals); err != nil {
-		return nil, fmt.Errorf("new simulator: %w", err)
-	}
-	if c := cfg.CCD; c != nil {
-		for _, x := range []float64{c.LogRate, c.Slope, c.Effect[0], c.Effect[1]} {
-			if math.IsNaN(x) || math.IsInf(x, 0) {
-				return nil, errors.New("new simulator: ccd parameters must be finite")
-			}
-		}
-		if c.Slope < 0 {
-			return nil, errors.New("new simulator: ccd slope must be nonnegative")
-		}
-	}
-	voltage, err := normalizeVoltage(cfg.SharedVoltage, cfg.Cores)
-	if err != nil {
-		return nil, fmt.Errorf("new simulator: %w", err)
-	}
-	cfg.SharedVoltage = voltage
-	for _, kind := range slices.Sorted(maps.Keys(model.Reset)) {
-		weight := model.Reset[kind]
-		if !slices.Contains(resetOrder, kind) {
-			return nil, fmt.Errorf("new simulator: reset %q is not supported", kind)
-		}
-		if weight < 0 {
-			return nil, fmt.Errorf("new simulator: reset %q weight %g is negative", kind, weight)
-		}
-	}
-	for _, trial := range slices.Sorted(maps.Keys(cfg.Script)) {
-		s := cfg.Script[trial]
-		if s.Core < 0 || s.Core >= cfg.Cores {
-			return nil, fmt.Errorf("new simulator: script trial %s core %d outside [0, %d)", trial, s.Core, cfg.Cores)
-		}
-		if s.Signal != "" && !slices.Contains(signalOrder, s.Signal) {
-			return nil, fmt.Errorf("new simulator: script trial %s signal %q is not supported", trial, s.Signal)
-		}
-		if s.Reset != "" && !slices.Contains(resetOrder, s.Reset) {
-			return nil, fmt.Errorf("new simulator: script trial %s reset %q is not supported", trial, s.Reset)
-		}
 	}
 	m := &Machine{
 		cfg:             cfg,
@@ -262,37 +204,186 @@ func New(cfg Config) (*Machine, error) {
 	if m.limits == nil {
 		m.limits = m.drawLimits()
 	}
-	if len(m.limits) != cfg.Cores {
-		return nil, fmt.Errorf("new simulator: %d limits for %d cores", len(m.limits), cfg.Cores)
+	m.startBoot()
+	return m, nil
+}
+
+// resolve returns a copy of cfg with its defaults applied and the failure model it selects, or the first invalid
+// setting. Limits left nil stay nil: limits drawn from the seed are valid by construction.
+func resolve(cfg Config) (Config, Model, error) {
+	cfg = cfg.clone()
+	if cfg.Cores == 0 {
+		cfg.Cores = 16
 	}
-	for c, e := range m.limits {
+	if err := validateCores(cfg.Cores); err != nil {
+		return Config{}, Model{}, err
+	}
+	if cfg.BIOS == nil {
+		cfg.BIOS = make([]int, cfg.Cores)
+	}
+	if err := validateBIOS(cfg.BIOS, cfg.Cores); err != nil {
+		return Config{}, Model{}, err
+	}
+	if cfg.BIOSContext == (machine.BIOSContext{}) {
+		cfg.BIOSContext = defaultBIOSContext
+	}
+	model := DefaultModel()
+	if cfg.Model != nil {
+		model = *cfg.Model
+	}
+	if err := validateSignals(model.Signals); err != nil {
+		return Config{}, Model{}, err
+	}
+	if err := validateCCD(cfg.CCD); err != nil {
+		return Config{}, Model{}, err
+	}
+	voltage, err := normalizeVoltage(cfg.SharedVoltage, cfg.Cores)
+	if err != nil {
+		return Config{}, Model{}, err
+	}
+	cfg.SharedVoltage = voltage
+	if err := validateResets(model.Reset); err != nil {
+		return Config{}, Model{}, err
+	}
+	for _, trial := range slices.Sorted(maps.Keys(cfg.Script)) {
+		if err := validateOutcome(trial, cfg.Script[trial], cfg.Cores); err != nil {
+			return Config{}, Model{}, err
+		}
+	}
+	if err := validateLimits(cfg.Limits, cfg.Cores); err != nil {
+		return Config{}, Model{}, err
+	}
+	if cfg.Ranking != nil && len(cfg.Ranking) != cfg.Cores {
+		return Config{}, Model{}, fmt.Errorf("%d ranking values for %d cores", len(cfg.Ranking), cfg.Cores)
+	}
+	if err := validateLimitHazards(cfg.Limits); err != nil {
+		return Config{}, Model{}, err
+	}
+	if err := validateJoints(cfg.Joints, cfg.Cores); err != nil {
+		return Config{}, Model{}, err
+	}
+	return cfg, model, nil
+}
+
+func validateBIOS(bios []int, cores int) error {
+	if len(bios) != cores {
+		return fmt.Errorf("%d BIOS offsets for %d cores", len(bios), cores)
+	}
+	for c, o := range bios {
+		if o < machine.MinOffset || o > machine.MaxOffset {
+			return fmt.Errorf("BIOS offset %d of core %d outside [-50, 0]", o, c)
+		}
+	}
+	return nil
+}
+
+func validateCCD(c *CCD) error {
+	if c == nil {
+		return nil
+	}
+	for _, x := range []float64{c.LogRate, c.Slope, c.Effect[0], c.Effect[1]} {
+		if math.IsNaN(x) || math.IsInf(x, 0) {
+			return errors.New("ccd parameters must be finite")
+		}
+	}
+	if c.Slope < 0 {
+		return errors.New("ccd slope must be nonnegative")
+	}
+	return nil
+}
+
+func validateResets(weights map[machine.ResetKind]float64) error {
+	for _, kind := range slices.Sorted(maps.Keys(weights)) {
+		weight := weights[kind]
+		if !slices.Contains(resetOrder, kind) {
+			return fmt.Errorf("reset %q is not supported", kind)
+		}
+		if weight < 0 {
+			return fmt.Errorf("reset %q weight %g is negative", kind, weight)
+		}
+	}
+	return nil
+}
+
+func validateLimits(limits []Limits, cores int) error {
+	if limits != nil && len(limits) != cores {
+		return fmt.Errorf("%d limits for %d cores", len(limits), cores)
+	}
+	for c, e := range limits {
 		for _, v := range slices.Concat(e.Alone[:], e.Together[:]) {
 			if v < machine.MinOffset || v > 1 {
-				return nil, fmt.Errorf("new simulator: limit %d of core %d outside [-50, 1]", v, c)
+				return fmt.Errorf("limit %d of core %d outside [-50, 1]", v, c)
 			}
 		}
 	}
-	if cfg.Ranking != nil && len(cfg.Ranking) != cfg.Cores {
-		return nil, fmt.Errorf("new simulator: %d ranking values for %d cores", len(cfg.Ranking), cfg.Cores)
-	}
-	for c, e := range m.limits {
+	return nil
+}
+
+func validateLimitHazards(limits []Limits) error {
+	for c, e := range limits {
 		if e.Idle != nil && (*e.Idle < machine.MinOffset || *e.Idle > 1) {
-			return nil, fmt.Errorf("new simulator: idle limit %d of core %d outside [-50, 1]", *e.Idle, c)
+			return fmt.Errorf("idle limit %d of core %d outside [-50, 1]", *e.Idle, c)
 		}
 		for workload, offset := range e.Workload {
 			if offset < machine.MinOffset || offset > 1 {
-				return nil, fmt.Errorf("new simulator: workload %s limit %d of core %d outside [-50, 1]", workload, offset, c)
+				return fmt.Errorf("workload %s limit %d of core %d outside [-50, 1]", workload, offset, c)
 			}
 		}
 		if e.Flat < 0 {
-			return nil, fmt.Errorf("new simulator: flat rate %g of core %d is negative", e.Flat, c)
+			return fmt.Errorf("flat rate %g of core %d is negative", e.Flat, c)
 		}
 	}
-	if err := validateJoints(cfg.Joints, cfg.Cores); err != nil {
-		return nil, fmt.Errorf("new simulator: %w", err)
+	return nil
+}
+
+func (cfg Config) clone() Config {
+	cfg.BIOS = slices.Clone(cfg.BIOS)
+	cfg.Limits = slices.Clone(cfg.Limits)
+	for c := range cfg.Limits {
+		if idle := cfg.Limits[c].Idle; idle != nil {
+			cfg.Limits[c].Idle = new(*idle)
+		}
+		cfg.Limits[c].Workload = maps.Clone(cfg.Limits[c].Workload)
 	}
-	m.startBoot()
-	return m, nil
+	if cfg.Model != nil {
+		model := *cfg.Model
+		model.Signals = maps.Clone(model.Signals)
+		model.Reset = maps.Clone(model.Reset)
+		cfg.Model = &model
+	}
+	if cfg.CCD != nil {
+		ccd := *cfg.CCD
+		cfg.CCD = &ccd
+	}
+	if cfg.Replay != nil {
+		replay := *cfg.Replay
+		cfg.Replay = &replay
+	}
+	cfg.Joints = slices.Clone(cfg.Joints)
+	for j := range cfg.Joints {
+		joint := &cfg.Joints[j]
+		joint.Members = maps.Clone(joint.Members)
+		joint.Regimes = slices.Clone(joint.Regimes)
+		if core := joint.CrashMCECore; core != nil {
+			joint.CrashMCECore = new(*core)
+		}
+	}
+	cfg.Ranking = slices.Clone(cfg.Ranking)
+	cfg.Script = maps.Clone(cfg.Script)
+	return cfg
+}
+
+func validateOutcome(trial string, s Outcome, cores int) error {
+	if s.Core < 0 || s.Core >= cores {
+		return fmt.Errorf("script trial %s core %d outside [0, %d)", trial, s.Core, cores)
+	}
+	if s.Signal != "" && !slices.Contains(signalOrder, s.Signal) {
+		return fmt.Errorf("script trial %s signal %q is not supported", trial, s.Signal)
+	}
+	if s.Reset != "" && !slices.Contains(resetOrder, s.Reset) {
+		return fmt.Errorf("script trial %s reset %q is not supported", trial, s.Reset)
+	}
+	return nil
 }
 
 func validateJoints(joints []Joint, cores int) error {
@@ -448,6 +539,18 @@ func (m *Machine) FailCheck(name, detail string) {
 func (m *Machine) SetBIOSContext(c machine.BIOSContext) { m.bios = c }
 
 func (m *Machine) CrashBeforeApply(boots int) { m.crashBeforeApply = boots }
+
+// ScriptTrial fixes the outcome of the trial with ID trial, as Config.Script does, replacing any earlier script for it.
+func (m *Machine) ScriptTrial(trial string, outcome Outcome) error {
+	if err := validateOutcome(trial, outcome, m.cfg.Cores); err != nil {
+		return fmt.Errorf("script simulator trial: %w", err)
+	}
+	if m.cfg.Script == nil {
+		m.cfg.Script = map[string]Outcome{}
+	}
+	m.cfg.Script[trial] = outcome
+	return nil
+}
 
 type SMUOperation struct {
 	Op     string

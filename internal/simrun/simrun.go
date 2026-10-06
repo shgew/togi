@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"time"
 
 	"github.com/shgew/togi/internal/carry"
 	"github.com/shgew/togi/internal/config"
@@ -45,13 +46,13 @@ type Input struct {
 }
 
 func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
-	var cached *memoryJournal
-	prefix := &journal.Prefix{}
+	journals := &journals{}
 	defer func() {
-		if cached == nil {
+		kept := journals.kept
+		if kept == nil {
 			return
 		}
-		finalizeErr := errors.Join(cached.flush(), cached.Close())
+		finalizeErr := errors.Join(kept.flush(), kept.Close())
 		if finalizeErr != nil && errors.Is(err, ErrBootCap) {
 			// Keep the cap in the message but out of the chain: an unfinalized capped run is an error, not censored.
 			err = fmt.Errorf("%s; finalize simulated journal: %w", err.Error(), finalizeErr)
@@ -69,7 +70,7 @@ func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 		maxBoots = defaultMaxBoots
 	}
 	for range maxBoots {
-		stop, err = boot(ctx, in, &cached, prefix)
+		stop, err = boot(ctx, in, journals)
 		if errors.Is(err, machine.ErrCrashed) {
 			in.Machine.Reboot()
 			continue
@@ -79,7 +80,7 @@ func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 	return session.Stop{}, fmt.Errorf("simulate session: %w after %d boots", ErrBootCap, maxBoots)
 }
 
-func boot(ctx context.Context, in Input, cached **memoryJournal, prefix *journal.Prefix) (session.Stop, error) {
+func boot(ctx context.Context, in Input, journals *journals) (stop session.Stop, err error) {
 	seams := in.Machine.Seams()
 	id, err := seams.Host.BootID()
 	if err != nil {
@@ -89,56 +90,70 @@ func boot(ctx context.Context, in Input, cached **memoryJournal, prefix *journal
 	if err != nil {
 		return session.Stop{}, fmt.Errorf("read BIOS context: %w", err)
 	}
-	var j *journal.Journal
-	var carried *carry.Carry
-	if *cached != nil {
-		j = (*cached).Journal
-		j.SetBoot(id)
-		carried = (*cached).carried
-	} else {
-		j, err = journal.Lock(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Monotonic: seams.Clock.Monotonic, Log: in.Log, Renderer: in.Renderer, Build: session.Build(), Prefix: prefix})
-		if err != nil {
-			return session.Stop{}, err
-		}
-		defer func() {
-			if *cached == nil {
-				_ = j.Close()
-			}
-		}()
-		carried, err = carry.Prepare(j, session.Build(), nil, &current)
-		if err != nil {
-			return session.Stop{}, err
-		}
-		if err := j.Open(); err != nil {
-			return session.Stop{}, err
-		}
-		if in.InMemoryJournal {
-			*cached = &memoryJournal{Journal: j, carried: carried}
-		}
+	j, err := journals.open(in, id, current)
+	if err != nil {
+		return session.Stop{}, err
 	}
+	defer func() {
+		if endErr := j.end(err); endErr != nil {
+			stop, err = session.Stop{}, endErr
+		}
+	}()
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var wrapped session.Journal = j
-	if *cached != nil {
-		wrapped = *cached
-	}
+	wrapped := j.Journal
 	if in.Until != nil {
 		wrapped = &untilJournal{Journal: wrapped, until: in.Until, cancel: cancel}
 	}
 	if in.Wrap != nil {
 		wrapped = in.Wrap(wrapped)
 	}
-	stop, err := session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Carry: carried, Stderr: in.Log, SessionID: j.SessionID})
-	if *cached != nil {
-		if errors.Is(err, machine.ErrCrashed) {
-			if serr := (*cached).snapshot(); serr != nil {
-				return session.Stop{}, serr
-			}
-		}
-	} else if cerr := j.Close(); err == nil && cerr != nil {
-		return session.Stop{}, cerr
+	return session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Carry: j.carried, Stderr: in.Log, SessionID: j.sessionID})
+}
+
+// journals gives each boot its journal: one locked for the boot and closed when it ends or, with InMemoryJournal, one
+// kept across boots that Simulate finalizes.
+type journals struct {
+	prefix journal.Prefix
+	kept   *memoryJournal
+}
+
+type bootJournal struct {
+	session.Journal
+	carried   *carry.Carry
+	sessionID func(time.Time) (string, error)
+	// end runs when the boot ends and returns the error that replaces the boot's result, if any.
+	end func(runErr error) error
+}
+
+func (s *journals) open(in Input, id string, current machine.BIOSContext) (bootJournal, error) {
+	if s.kept != nil {
+		s.kept.SetBoot(id)
+		return s.kept.boot(), nil
 	}
-	return stop, err
+	j, err := journal.Lock(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Monotonic: in.Machine.Monotonic, Log: in.Log, Renderer: in.Renderer, Build: session.Build(), Prefix: &s.prefix})
+	if err != nil {
+		return bootJournal{}, err
+	}
+	carried, err := carry.Prepare(j, session.Build(), nil, &current)
+	if err != nil {
+		_ = j.Close()
+		return bootJournal{}, err
+	}
+	if err := j.Open(); err != nil {
+		_ = j.Close()
+		return bootJournal{}, err
+	}
+	if in.InMemoryJournal {
+		s.kept = &memoryJournal{Journal: j, carried: carried}
+		return s.kept.boot(), nil
+	}
+	return bootJournal{Journal: j, carried: carried, sessionID: j.SessionID, end: func(runErr error) error {
+		if err := j.Close(); runErr == nil {
+			return err
+		}
+		return nil
+	}}, nil
 }
 
 type memoryJournal struct {
@@ -159,6 +174,15 @@ func (j *memoryJournal) ReadState() (journal.State, error) {
 		return j.Journal.ReadState()
 	}
 	return j.state, nil
+}
+
+func (j *memoryJournal) boot() bootJournal {
+	return bootJournal{Journal: j, carried: j.carried, sessionID: j.SessionID, end: func(runErr error) error {
+		if errors.Is(runErr, machine.ErrCrashed) {
+			return j.snapshot()
+		}
+		return nil
+	}}
 }
 
 func (j *memoryJournal) snapshot() error {

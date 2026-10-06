@@ -95,6 +95,20 @@ func (r *running) Stop() error {
 	return r.stopErr
 }
 
+// failure is the first failure a trial meets. A set signal overrides the signal drawn for it, though the draw is
+// still taken; a set joint replaces the core-local crash MCE draw.
+type failure struct {
+	core       int
+	at         time.Duration
+	signal     machine.Signal
+	idle       bool
+	background bool
+	joint      *Joint
+	reset      machine.ResetKind
+	thenCrash  bool
+	replayed   bool
+}
+
 func (r *running) Wait(ctx context.Context, report machine.Reporter) (result machine.Result, err error) {
 	m := r.m
 	if m.crashed || r.boot != m.boot {
@@ -107,102 +121,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	start := m.now
 	stallCore := -1
 	defer func() { err = errors.Join(err, r.sampleConditions(m.now.Sub(start), stallCore)) }()
-	failCore, failAt, forcedSignal := -1, spec.Duration, machine.Signal("")
-	idleFailure := false
-	backgroundFailure := false
-	var jointCrash *Joint
-	script, scripted := m.cfg.Script[spec.ID]
-	fact, replayed := m.replayDraw(spec)
-	switch {
-	case replayed:
-		scripted = false
-		if fact.Outcome == journal.OutcomeFailure {
-			failCore = fact.Class.Cores[0]
-			failAt = time.Duration(fact.DurationS) * time.Second
-			forcedSignal = fact.Signal
-		}
-	case scripted:
-		if script.Signal != "" {
-			failCore, failAt = script.Core, time.Duration(script.AtS*float64(time.Second))
-			failAt = max(0, min(failAt, spec.Duration))
-		}
-	default:
-		for c := range m.regs {
-			if t, signal, ok := m.failureTime(spec, c); ok && t < failAt {
-				failCore, failAt, forcedSignal = c, t, signal
-				idleFailure = !slices.Contains(spec.Cores, c)
-			}
-		}
-		if m.sharedR7(spec) {
-			state := m.voltageState(m.regs, spec)
-			for core, rate := range state.rates {
-				t := m.failureDraw(rate, 0, spec, core, "voltage")
-				if t < failAt {
-					failCore, failAt, forcedSignal = core, t, m.voltageSignal(spec, core)
-					idleFailure = false
-					jointCrash = &Joint{} // Shared-rail crashes never fabricate core-local MCEs.
-				}
-			}
-		}
-		for ccd := range 2 {
-			rate := m.ccdRate(m.regs, spec, ccd)
-			if rate <= 0 {
-				continue
-			}
-			core := -1
-			for _, loaded := range spec.Cores {
-				if loaded/(m.cfg.Cores/2) == ccd {
-					core = loaded
-					break
-				}
-			}
-			t := m.failureDraw(rate, 0, spec, core, fmt.Sprintf("ccd-%d", ccd))
-			if t < failAt {
-				failCore, failAt, forcedSignal = core, t, machine.Crash
-				idleFailure = false
-				jointCrash = &Joint{}
-			}
-		}
-		for j, joint := range m.cfg.Joints {
-			if m.sharedR7(spec) {
-				break
-			}
-			rate := m.jointRate(m.regs, spec.Regime, joint)
-			if rate <= 0 {
-				continue
-			}
-			core := -1
-			for _, c := range spec.Cores {
-				if _, ok := joint.Members[c]; ok {
-					core = c
-					break
-				}
-			}
-			idle := core < 0
-			if idle {
-				core = slices.Min(slices.Collect(maps.Keys(joint.Members)))
-			}
-			t := m.failureDraw(rate, joint.AfterS, spec, core, fmt.Sprintf("joint-%d", j))
-			if t < failAt {
-				failCore, failAt, forcedSignal = core, t, joint.Signal
-				idleFailure = idle
-				jointCrash = &m.cfg.Joints[j]
-				if idle || forcedSignal == "" {
-					forcedSignal = machine.Crash
-				}
-			}
-		}
-		if m.sharedR7(spec) && m.cfg.SharedVoltage.BackgroundRate > 0 {
-			core := spec.Cores[0]
-			t := m.failureDraw(m.cfg.SharedVoltage.BackgroundRate, 0, spec, core, "voltage-background")
-			if t < failAt {
-				failCore, failAt, forcedSignal = core, t, machine.Crash
-				idleFailure = false
-				backgroundFailure = true
-				jointCrash = &Joint{} // Platform background carries no core attribution.
-			}
-		}
-	}
+	f, failed := m.trialFailure(spec)
 	res := machine.Result{Ran: spec.Duration}
 	if len(spec.Cores) > 0 {
 		res.TctlMaxC = new(62 + m.trialRNG("tctl", spec, spec.Cores[0]).IntN(15))
@@ -210,84 +129,194 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 	if r.escape && len(spec.Cores) > 0 {
 		res.Escaped = []int{spec.Cores[0] + 2*m.cfg.Cores}
 	}
-	if failCore < 0 {
+	if !failed {
 		m.now = start.Add(spec.Duration)
 		res = r.counted(res)
 		r.progress(report, res)
 		return res, nil
 	}
-	rng := m.trialRNG("signal", spec, failCore)
+	rng := m.trialRNG("signal", spec, f.core)
 	signal := m.drawSignal(rng.Float64())
-	if forcedSignal != "" {
-		signal = forcedSignal
+	if f.signal != "" {
+		signal = f.signal
 	}
-	if scripted {
-		signal = script.Signal
-	}
-	if scripted && script.ThenCrash {
-		stallCore = failCore
-		m.now = start.Add(failAt)
+	if f.thenCrash {
+		stallCore = f.core
+		m.now = start.Add(f.at)
 		if report != nil && signal != machine.Crash {
-			report.Signal(failCore, signal, fmt.Sprintf("simulated %s on core %d", signal, failCore))
+			report.Signal(f.core, signal, fmt.Sprintf("simulated %s on core %d", signal, f.core))
 		}
-		if script.Reset != "" {
-			m.NextReset(script.Reset)
+		if f.reset != "" {
+			m.NextReset(f.reset)
 		}
 		m.Crash()
 		return machine.Result{}, machine.ErrCrashed
 	}
 	switch signal {
 	case machine.ComputationError, machine.Stall, machine.UnexpectedExit:
-		m.now = start.Add(failAt)
-		res.Ran, res.Signal, res.Core = failAt, signal, failCore
+		m.now = start.Add(f.at)
+		res.Ran, res.Signal, res.Core = f.at, signal, f.core
 		res = r.counted(res)
 		if signal == machine.ComputationError && report != nil {
-			report.Signal(failCore, signal, fmt.Sprintf("simulated computation error on core %d", failCore))
+			report.Signal(f.core, signal, fmt.Sprintf("simulated computation error on core %d", f.core))
 		}
 		r.progress(report, res)
 		return res, nil
 	case machine.CorrectedMCE:
-		m.logMCE(m.bootID, m.mce(rng.Float64(), failCore, true), start.Add(failAt))
-		if replayed {
-			res.Ran = failAt
+		m.logMCE(m.bootID, m.mce(rng.Float64(), f.core, true), start.Add(f.at))
+		if f.replayed {
+			res.Ran = f.at
 		}
 		m.now = start.Add(res.Ran)
 		res = r.counted(res)
 		r.progress(report, res)
 		return res, nil
 	case machine.Crash:
-		if !backgroundFailure {
-			stallCore = failCore
+		if !f.background {
+			stallCore = f.core
 		}
-		m.now = start.Add(failAt)
+		m.now = start.Add(f.at)
 		switch {
-		case replayed:
+		case f.replayed:
 			m.NextReset(machine.ResetWatchdog)
 			if report != nil {
 				report.Progress("simulated replayed crash at recorded exposure")
 			}
-		case scripted && script.Reset != "":
-			m.NextReset(script.Reset)
+		case f.reset != "":
+			m.NextReset(f.reset)
 		case m.nextReset == "":
 			m.NextReset(m.drawReset(rng.Float64()))
 		}
-		r.progress(report, r.counted(machine.Result{Ran: failAt}))
-		if !replayed {
-			m.queueCrashMCE(rng, failCore, idleFailure, jointCrash)
+		r.progress(report, r.counted(machine.Result{Ran: f.at}))
+		if !f.replayed {
+			m.queueCrashMCE(rng, f.core, f.idle, f.joint)
 		}
 		m.Crash()
 		return machine.Result{}, machine.ErrCrashed
 	case machine.UncorrectedMCE:
-		m.now = start.Add(failAt)
-		if replayed && report != nil {
-			report.Signal(failCore, machine.UncorrectedMCE, "simulated replayed uncorrected machine check")
+		m.now = start.Add(f.at)
+		if f.replayed && report != nil {
+			report.Signal(f.core, machine.UncorrectedMCE, "simulated replayed uncorrected machine check")
 		}
-		m.queued = append(m.queued, m.mce(0, failCore, false))
+		m.queued = append(m.queued, m.mce(0, f.core, false))
 		m.NextReset(machine.ResetSyncFlood)
 		m.Crash()
 		return machine.Result{}, machine.ErrCrashed
 	}
 	return machine.Result{}, fmt.Errorf("simulated trial: no signal to draw from %v", m.model.Signals)
+}
+
+// trialFailure answers a trial from a matching recorded fact, else from its script, else from the model's draws.
+func (m *Machine) trialFailure(spec machine.TrialSpec) (failure, bool) {
+	if fact, ok := m.replayDraw(spec); ok {
+		return replayedFailure(fact)
+	}
+	if script, ok := m.cfg.Script[spec.ID]; ok {
+		return scriptedFailure(script, spec)
+	}
+	return m.drawnFailure(spec)
+}
+
+func replayedFailure(fact ReplayFact) (failure, bool) {
+	if fact.Outcome != journal.OutcomeFailure {
+		return failure{}, false
+	}
+	return failure{core: fact.Class.Cores[0], at: time.Duration(fact.DurationS) * time.Second, signal: fact.Signal, replayed: true}, true
+}
+
+func scriptedFailure(script Outcome, spec machine.TrialSpec) (failure, bool) {
+	if script.Signal == "" {
+		return failure{}, false
+	}
+	at := time.Duration(script.AtS * float64(time.Second))
+	return failure{
+		core:      script.Core,
+		at:        max(0, min(at, spec.Duration)),
+		signal:    script.Signal,
+		reset:     script.Reset,
+		thenCrash: script.ThenCrash,
+	}, true
+}
+
+// drawnFailure draws every hazard the trial is exposed to, in a fixed order, and keeps the earliest failure.
+func (m *Machine) drawnFailure(spec machine.TrialSpec) (failure, bool) {
+	f := failure{core: -1, at: spec.Duration}
+	for c := range m.regs {
+		if t, signal, ok := m.failureTime(spec, c); ok && t < f.at {
+			f.core, f.at, f.signal = c, t, signal
+			f.idle = !slices.Contains(spec.Cores, c)
+		}
+	}
+	if m.sharedR7(spec) {
+		state := m.voltageState(m.regs, spec)
+		for core, rate := range state.rates {
+			t := m.failureDraw(rate, 0, spec, core, "voltage")
+			if t < f.at {
+				f.core, f.at, f.signal = core, t, m.voltageSignal(spec, core)
+				f.idle = false
+				f.joint = &Joint{} // Shared-rail crashes never fabricate core-local MCEs.
+			}
+		}
+	}
+	for ccd := range 2 {
+		rate := m.ccdRate(m.regs, spec, ccd)
+		if rate <= 0 {
+			continue
+		}
+		core := -1
+		for _, loaded := range spec.Cores {
+			if loaded/(m.cfg.Cores/2) == ccd {
+				core = loaded
+				break
+			}
+		}
+		t := m.failureDraw(rate, 0, spec, core, fmt.Sprintf("ccd-%d", ccd))
+		if t < f.at {
+			f.core, f.at, f.signal = core, t, machine.Crash
+			f.idle = false
+			f.joint = &Joint{}
+		}
+	}
+	for j, joint := range m.cfg.Joints {
+		if m.sharedR7(spec) {
+			break
+		}
+		rate := m.jointRate(m.regs, spec.Regime, joint)
+		if rate <= 0 {
+			continue
+		}
+		core := -1
+		for _, c := range spec.Cores {
+			if _, ok := joint.Members[c]; ok {
+				core = c
+				break
+			}
+		}
+		idle := core < 0
+		if idle {
+			core = slices.Min(slices.Collect(maps.Keys(joint.Members)))
+		}
+		t := m.failureDraw(rate, joint.AfterS, spec, core, fmt.Sprintf("joint-%d", j))
+		if t < f.at {
+			f.core, f.at, f.signal = core, t, joint.Signal
+			f.idle = idle
+			f.joint = &m.cfg.Joints[j]
+			if idle || f.signal == "" {
+				f.signal = machine.Crash
+			}
+		}
+	}
+	if m.sharedR7(spec) && m.cfg.SharedVoltage.BackgroundRate > 0 {
+		core := spec.Cores[0]
+		t := m.failureDraw(m.cfg.SharedVoltage.BackgroundRate, 0, spec, core, "voltage-background")
+		if t < f.at {
+			f.core, f.at, f.signal = core, t, machine.Crash
+			f.idle = false
+			f.background = true
+			f.joint = &Joint{} // Platform background carries no core attribution.
+		}
+	}
+	return f, f.core >= 0
 }
 
 func (m *Machine) queueCrashMCE(rng *rand.Rand, core int, idle bool, joint *Joint) {

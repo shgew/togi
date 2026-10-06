@@ -152,8 +152,8 @@ func LoadMachine(path string) (Config, error) {
 			cfg.Script[s.Trial] = Outcome{Signal: s.Signal, AtS: s.AtS, Core: s.Core, Reset: s.Reset, ThenCrash: s.ThenCrash}
 		}
 	}
-	if _, err := New(cfg); err != nil {
-		return Config{}, fmt.Errorf("load simulator machine %s: %w", path, err)
+	if _, _, err := resolve(cfg); err != nil {
+		return Config{}, fmt.Errorf("load simulator machine %s: new simulator: %w", path, err)
 	}
 	return cfg, nil
 }

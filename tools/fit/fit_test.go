@@ -296,7 +296,8 @@ func TestLikelihoodRejectsImpossibleOutcomes(t *testing.T) {
 		failures   int
 		impossible bool
 	}{{0, 1, true}, {100, 0, true}, {0, 0, false}, {100, 1, false}} {
-		cfg.Limits[0].Flat, l.obs[0].k = tc.flat, tc.failures
+		l.cfg.Limits[0].Flat, l.obs[0].k = tc.flat, tc.failures
+		l.rebuild()
 		loss := l.value(0)
 		if tc.impossible {
 			if !math.IsInf(loss, 1) {
@@ -402,8 +403,8 @@ func TestJointSearchSeparatesCleanBoundary(t *testing.T) {
 	l.rebuild()
 	all := []int{0, 1}
 	before := l.score(all)
-	l.fitJoints(&cfg)
-	l.fitJoints(&cfg)
+	l.fitJoints()
+	l.fitJoints()
 	if after := l.score(all); !(after < before-1) {
 		t.Fatalf("joint did not improve likelihood: %g -> %g", before, after)
 	}
@@ -436,16 +437,16 @@ func TestJointCandidateLimitPreservesModel(t *testing.T) {
 			l := likelihood{cfg: cfg, obs: aggregate(records)}
 			l.rebuild()
 			before := l.score([]int{0})
-			l.addJoint(&cfg, records, 0)
+			l.addJoint(records, 0)
 			if count == 8 {
-				if diff := cmp.Diff(want, cfg); diff != "" {
+				if diff := cmp.Diff(want, l.cfg); diff != "" {
 					t.Fatalf("ninth joint admitted: %s", diff)
 				}
 			} else {
-				if len(cfg.Joints) != 8 || !(l.score([]int{0}) < before-0.5) {
-					t.Fatalf("otherwise admissible candidate was not fitted: joints=%d loss %g -> %g", len(cfg.Joints), before, l.score([]int{0}))
+				if len(l.cfg.Joints) != 8 || !(l.score([]int{0}) < before-0.5) {
+					t.Fatalf("otherwise admissible candidate was not fitted: joints=%d loss %g -> %g", len(l.cfg.Joints), before, l.score([]int{0}))
 				}
-				if diff := cmp.Diff(map[int]int{0: -30}, cfg.Joints[7].Members); diff != "" {
+				if diff := cmp.Diff(map[int]int{0: -30}, l.cfg.Joints[7].Members); diff != "" {
 					t.Fatalf("viable distinct candidate (-want +got):\n%s", diff)
 				}
 			}
@@ -462,8 +463,8 @@ func TestWorkloadOverridesRequireSupportAndImproveLikelihood(t *testing.T) {
 			l := likelihood{cfg: cfg, obs: []observation{{profile: []int{-20, 0}, spec: spec, n: n, k: 1}}}
 			l.rebuild()
 			before := l.score([]int{0})
-			l.fitWorkloads(&cfg)
-			_, exists := cfg.Limits[0].Workload["supported"]
+			l.fitWorkloads()
+			_, exists := l.cfg.Limits[0].Workload["supported"]
 			if exists != (n >= 10) {
 				t.Fatalf("%d trials: override=%v", n, exists)
 			}
@@ -484,14 +485,14 @@ func TestCoupledShiftIncludesWorkloadAndPreservesUnsupportedLimits(t *testing.T)
 	l.rebuild()
 	before := l.score([]int{0, 1})
 	deep := l.m.FailureProbability([]int{-24, 0}, spec)
-	l.fitLimitRateShift(&cfg, []int{0, 1})
-	if !(l.score([]int{0, 1}) < before) || cfg.Limits[0].Workload["active"] >= -20 {
+	l.fitLimitRateShift([]int{0, 1})
+	if !(l.score([]int{0, 1}) < before) || l.cfg.Limits[0].Workload["active"] >= -20 {
 		t.Fatal("coupled shift did not remove false boundary hazard")
 	}
 	if got := l.m.FailureProbability([]int{-24, 0}, spec); math.Abs(got-deep) > 1e-12 {
 		t.Fatalf("past-limit hazard changed: %g -> %g", deep, got)
 	}
-	if cfg.Limits[0].Workload["unsupported"] != -50 || cfg.Limits[0].Alone[0] != -50 {
+	if l.cfg.Limits[0].Workload["unsupported"] != -50 || l.cfg.Limits[0].Alone[0] != -50 {
 		t.Fatal("unsupported limits moved")
 	}
 }

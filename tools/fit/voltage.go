@@ -224,8 +224,8 @@ func voltagePenalty(v *sim.SharedVoltage) float64 {
 	return penalty + .5*width*width
 }
 
-func (l *voltageLikelihood) fitVoltage(cfg *sim.Config) {
-	v := cfg.SharedVoltage
+func (l *voltageLikelihood) fitVoltage() {
+	v := l.cfg.SharedVoltage
 	indices := l.selectObs(func(o observation) bool { return o.spec.Regime == machine.R7 && len(o.spec.Cores) > 1 })
 	if len(indices) == 0 {
 		return
@@ -373,18 +373,18 @@ func fitSharedVoltage(records []trialfacts.Record) (sim.Config, float64) {
 	l.cfg, l.obs, l.named = cfg, aggregate(records), namedVoltageFailures(records)
 	l.rebuild()
 	all := l.selectObs(func(observation) bool { return true })
-	best, previous := cloneSharedFit(cfg), math.Inf(1)
+	best, previous := cloneSharedFit(l.cfg), math.Inf(1)
 	for range 20 {
-		l.fitVoltage(&cfg)
-		l.fitHazardShape(cfg.Model, all)
-		l.fitFlat(&cfg)
-		l.fitIdle(&cfg)
-		l.fitLimitRateShift(&cfg, all)
+		l.fitVoltage()
+		l.fitHazardShape(all)
+		l.fitFlat()
+		l.fitIdle()
+		l.fitLimitRateShift(all)
 		score := l.score(all)
 		if previous-score < 1e-5 {
 			break
 		}
-		best, previous = cloneSharedFit(cfg), score
+		best, previous = cloneSharedFit(l.cfg), score
 	}
 	l.cfg = best
 	l.rebuild()

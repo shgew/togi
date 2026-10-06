@@ -302,3 +302,22 @@ func TestNewSessionTrialGetsNoSamplesFromAnEarlierInvocation(t *testing.T) {
 		t.Fatalf("trial 0001 never ran but recorded the earlier session's samples: %+v", end)
 	}
 }
+
+func TestJournalUntilCancelsAfterFirstMatchingAppend(t *testing.T) {
+	cfg := huntConfig(4)
+	stop, events, _ := runHunt(t, cfg, nil, func(in *Input) {
+		in.Until = func(e journal.Event) bool { return e.Kind == journal.KindTrialEnd }
+	})
+	if stop.Reason != session.StopSignal {
+		t.Fatalf("stop %+v, want signal", stop)
+	}
+	ends := 0
+	for _, e := range events {
+		if e.Kind == journal.KindTrialEnd {
+			ends++
+		}
+	}
+	if ends != 1 {
+		t.Errorf("trial ends %d, want 1", ends)
+	}
+}
