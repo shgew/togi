@@ -104,7 +104,11 @@ func renderChecking(tab *table, p *projection, events []journal.Event, since tim
 	counts := map[string]int{}
 	for _, t := range p.trials {
 		if selected(t.time, since) && t.intent.Phase == journal.PhaseChecking && t.intent.Condition == machine.Together {
-			counts[fmt.Sprintf("%04d\t%s\t%s\t%s", t.intent.Cycle, t.intent.Regime, coreList(loaded(t.intent, p.cores)), outcome(t))]++
+			cycle := fmt.Sprintf("%04d", t.intent.Cycle)
+			if t.intent.Rerun {
+				cycle = "rerun"
+			}
+			counts[fmt.Sprintf("%s\t%s\t%s\t%s", cycle, t.intent.Regime, coreList(loaded(t.intent, p.cores)), outcome(t))]++
 		}
 	}
 	for _, k := range keys(counts) {

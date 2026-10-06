@@ -84,7 +84,6 @@ reruns failing first trial  0
 
 Checking steps and together outcomes
 cycle  regime  loaded cores  outcome  trials
-0000   R7      00,01         pass     5
 0001   R1      00            pass     3
 0001   R1      01            pass     3
 0001   R1      02            pass     3
@@ -134,6 +133,7 @@ cycle  regime  loaded cores  outcome  trials
 0002   R7      00,01         pass     12
 0002   R7      00,01,02,03   pass     12
 0002   R7      02,03         pass     12
+rerun  R7      00,01         pass     5
 
 Evidence quality
 warning                                        count

@@ -125,6 +125,28 @@ func TestRerunsGroupRecordedObligation(t *testing.T) {
 	}
 }
 
+func TestCheckingStepsListRerunsApart(t *testing.T) {
+	var events []journal.Event
+	add := func(p journal.Payload, cause ...int) int {
+		events = append(events, journal.Event{Seq: len(events) + 1, Boot: "a", Time: time.Unix(int64(len(events)), 0), Cause: cause, Data: p})
+		return len(events)
+	}
+	add(&journal.SessionStart{Session: "reruns", Cores: []machine.CoreInfo{{Core: 0, CCD: 0}, {Core: 1, CCD: 0}}})
+	add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart})
+	trial := func(id string, cycle int, rerun bool, result journal.Outcome, cause ...int) int {
+		add(&journal.TrialIntent{Trial: id, Phase: journal.PhaseChecking, Condition: machine.Together, Regime: machine.R6, Workload: "load", DurationS: 60, Profile: []int{-10, -10}, Cycle: cycle, Rerun: rerun}, cause...)
+		add(&journal.TrialStart{Trial: id})
+		return add(&journal.TrialEnd{Trial: id, Outcome: result})
+	}
+	trial("pass", 1, false, journal.OutcomePass)
+	failure := trial("fail", 1, false, journal.OutcomeFailure)
+	trial("rerun", 0, true, journal.OutcomePass, failure)
+	want := [][]string{{"0001", "R6", "00,01", "failure", "1"}, {"0001", "R6", "00,01", "pass", "1"}, {"rerun", "R6", "00,01", "pass", "1"}}
+	if diff := cmp.Diff(want, reportRows(t, events, "Checking steps and together outcomes")); diff != "" {
+		t.Fatalf("checking steps (-want +got):\n%s", diff)
+	}
+}
+
 func TestHuntCommitmentRequiresRecordedCause(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
