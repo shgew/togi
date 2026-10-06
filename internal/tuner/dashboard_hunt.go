@@ -2,7 +2,6 @@ package tuner
 
 import (
 	"github.com/shgew/togi/internal/journal"
-	"github.com/shgew/togi/internal/machine"
 	"slices"
 )
 
@@ -26,14 +25,7 @@ func (s *State) inferredEvidence(h *hunt, g groupRecord) ([]int, int) {
 		return seqs[:min(len(seqs), h.start.Trials)], 0
 	}
 	// The failure answering the group was recorded before it; later hunt failures must not rewrite its source.
-	before := func(entries []entry) []entry {
-		return slices.DeleteFunc(slices.Clone(entries), func(e entry) bool { return e.seq > g.seq })
-	}
-	last := admittedFailure(before(s.ledger[k]), g.payload.Profile, since, 0)
-	if k.regime == machine.R6 && len(s.idle) > 0 && k.cores == coresKey(s.ids()) {
-		last = admittedFailure(before(s.idle), g.payload.Profile, since, last)
-	}
-	return nil, last
+	return nil, s.failureBefore(k, g.payload.Profile, since, g.seq+1)
 }
 
 // HuntPlan projects the active split and member ladder from the hunt scheduler.

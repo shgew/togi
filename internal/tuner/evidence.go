@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -170,17 +171,23 @@ func (s *State) failingSeq(k trialClass, p []int, since int) int {
 	if s.passes(k, p, 0, allEvidence) >= s.n {
 		return 0
 	}
-	last := admittedFailure(s.ledger[k], p, since, 0)
+	return s.failureBefore(k, p, since, math.MaxInt)
+}
+
+// failureBefore is the newest failure admitted since the boundary at an equal or shallower profile, recorded before
+// until, without failingSeq's check that newer passes cover it.
+func (s *State) failureBefore(k trialClass, p []int, since, until int) int {
+	last := admittedFailure(s.ledger[k], p, since, until, 0)
 	if k.regime == machine.R6 && len(s.idle) > 0 && k.cores == coresKey(s.ids()) {
-		last = admittedFailure(s.idle, p, since, last)
+		last = admittedFailure(s.idle, p, since, until, last)
 	}
 	return last
 }
 
-func admittedFailure(entries []entry, p []int, since, last int) int {
+func admittedFailure(entries []entry, p []int, since, until, last int) int {
 	for i := range entries {
 		e := &entries[i]
-		if !e.pass && e.seq > last && allEvidence.admits(e, since) && AtLeastShallow(e.profile, p) {
+		if !e.pass && e.seq > last && e.seq < until && allEvidence.admits(e, since) && AtLeastShallow(e.profile, p) {
 			last = e.seq
 		}
 	}
