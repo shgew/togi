@@ -112,9 +112,10 @@ func (h *host) Preflight() []machine.Check {
 	if uid := os.Geteuid(); uid != 0 {
 		root = machine.Check{Name: "root", Detail: fmt.Sprintf("running as uid %d; run needs root", uid)}
 	}
-	identity := []machine.Check{root, h.drv.CheckCPU(), h.drv.CheckDriver(), h.pmTable.Check()}
-	if !identity[1].OK || !identity[2].OK {
-		return identity
+	cpu, driver := h.drv.CheckCPU(), h.drv.CheckDriver()
+	checks := []machine.Check{root, cpu, driver, h.pmTable.Check()}
+	if !cpu.OK || !driver.OK {
+		return checks
 	}
 	systemdRun := machine.Check{Name: "systemd_run", OK: true}
 	detail, err := trial.CheckSystemdRun(h.user)
@@ -122,17 +123,7 @@ func (h *host) Preflight() []machine.Check {
 	if err != nil {
 		systemdRun.Detail, systemdRun.OK = err.Error(), false
 	}
-	return []machine.Check{
-		root,
-		h.drv.CheckCPU(),
-		h.drv.CheckDriver(),
-		identity[3],
-		h.drv.CheckReadback(),
-		h.drv.CheckSlotMapping(),
-		h.checkBackends(),
-		h.checkBackendUser(),
-		systemdRun,
-	}
+	return append(checks, h.drv.CheckReadback(), h.drv.CheckSlotMapping(), h.checkBackends(), h.checkBackendUser(), systemdRun)
 }
 
 func (h *host) Watchdog() machine.Check { return watchdog("/") }
