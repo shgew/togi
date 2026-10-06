@@ -2,7 +2,7 @@
 
 Status: **Accepted**.
 
-Amended by [ADR 0040](0040-located-hunts.md): an unattributed multi-core R7 failure with an unloaded core off CO 0 is first located by a hunt that holds the loaded cores at their failing offsets, the `failure_at_zero` dead end holds regardless of idle cores only after that hunt keeps the failure on the loaded cores, and the gate also covers the hand-set scenarios `default`, `idle-limit` and `late-onset`.
+Amended by [ADR 0040](0040-located-hunts.md): an unattributed multi-core R7 failure with an unloaded core off CO 0 is first located by a hunt that holds the loaded cores at their failing offsets, the `failure_at_zero` dead end holds regardless of idle cores only after that hunt keeps the failure on the loaded cores and the failing trial also failed with every core at CO 0, and the gate also covers the hand-set scenarios `default`, `idle-limit` and `late-onset`.
 
 Supersedes [ADR 0023](0023-hunts-that-converge-on-shared-voltage.md) and the parts of [ADR 0020](0020-hunt-and-refine.md) about multi-core R7 hunts, joint/combination backoff and deferred noisy group testing. Their hunt mechanics remain available outside multi-core R7; R1–R6, R6 idle failures, single-core failures and their first-failure rules are unchanged. [Issue #105](https://github.com/shgew/togi/issues/105) records the approved decision; [#306](https://github.com/shgew/togi/issues/306) records the simulator prerequisites.
 

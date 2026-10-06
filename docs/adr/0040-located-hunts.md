@@ -2,7 +2,7 @@
 
 Status: **Accepted**.
 
-Amends [ADR 0038](0038-self-sufficient-cores.md): its multi-core R7 attribution, its `failure_at_zero` dead end "regardless of idle cores" and its bench gate. [Issue #415](https://github.com/shgew/togi/issues/415) records the decision and its design; [#416](https://github.com/shgew/togi/issues/416) the Ruleset 10 gate.
+Amends [ADR 0038](0038-self-sufficient-cores.md): its multi-core R7 attribution, its `failure_at_zero` dead end "regardless of idle cores" and its bench gate. [Issue #415](https://github.com/shgew/togi/issues/415) records the decision and its design; [#348](https://github.com/shgew/togi/issues/348) the all-zero rerun before every `failure_at_zero` dead end; [#416](https://github.com/shgew/togi/issues/416) the Ruleset 10 gate.
 
 ## Context
 
@@ -21,9 +21,19 @@ Ruleset 10 locates a live unattributed multi-core R7 failure whose failing profi
 - If narrowing finds no failing group, a `full` group then reruns the full failing profile at the failed trial's duration, since a short pass does not clear a long failure; an earlier full group at `short_trial_s` does not replace it. If it passes `n` trials, the hunt ends `loaded` too, charging the loaded cores as ruleset 9 does, rather than a `fallback` combination over cores that never failed. If it fails, it is an ordinary failed group, so an unattributed failure makes the candidates a combination with member probes rather than a `loaded` end.
 - No loaded core moves while the hunt is open. Its end consumes the failure unless it is `loaded`; the commitment's ordinary rerun obligation reruns the failed load. A deepening round ends before the hunt starts.
 
-Carried failures are still charged before the first trial, since a locate is a live trial. A failure that names a core, unless that core is at CO 0 on a CCD with no loaded core, a load whose unloaded cores are all at 0 already, and all-core loads keep ADR 0038's rules.
+Carried failures are still charged before the first trial, since a locate is a live trial, except those whose locate is their all-zero rerun (below). A failure that names a core, unless that core is at CO 0 on a CCD with no loaded core, a load whose unloaded cores are all at 0 already, and all-core loads keep ADR 0038's rules.
 
 The Ruleset 10 gate keeps ADR 0038's gate on the anchored adversary scenarios and adds the hand-set scenarios `default`, `idle-limit` and `late-onset`: no run that ruleset 8 concluded may fail to conclude. The legacy `target` fits stay reported only; they fail the model check against the refreshed evidence.
+
+### The all-zero rerun
+
+Every `failure_at_zero` dead end claims "the instability is not caused by Curve Optimizer" without observing it. Outside multi-core R7, hunts still park cores at 0 and trust exactly one core-local machine check, so a crash whose machine check names a parked core at 0 ends the session even when the cause is the cores running at their failing offsets: the `target-nonmember-mce` bench scenario pinned that path in ruleset 7 (#343).
+
+- Before any `failure_at_zero` dead end, in multi-core R7 or not, the failing trial reruns with every core at CO 0, in its own regime, workload, loaded cores and duration. A failure whose profile was already all at 0 dead-ends at once.
+- If the rerun fails, the dead end stands and cites both failures. If it passes, Curve Optimizer is involved: outside multi-core R7 the failure no longer names its core at 0, so a together failure is hunted and a parked failure is its group's outcome; in multi-core R7 it no longer counts against its named core or `stalled_core` CCD and is charged as unattributed to the cores still off CO 0.
+- A multi-core R7 failure whose loaded cores were all at CO 0 while an unloaded core was not is located even when carried or naming a core at CO 0, because its locate holds every core at 0 and is that rerun. After a passed all-zero locate, the loaded cores at 0 are never charged: no failing group ends the hunt `fallback` instead of `loaded`, and a group failure naming a core at CO 0 is unattributed.
+
+It costs at most one trial per would-be dead end, at the safest configuration there is.
 
 ## Considered options
 
@@ -33,7 +43,11 @@ The Ruleset 10 gate keeps ADR 0038's gate on the anchored adversary scenarios an
 - **Changing only the dead-end branch**: it still spends about 300 crashes and all of CCD0's depth before reaching the cause.
 - **An idle soak before R7 checking**: it spends time without a guarantee and misses combinations across CCDs.
 - **Accepting the outcome and documenting it.**
+- **Trusting a machine check that names a core at 0** (rulesets up to 9): it ends the session on a claim no trial observed.
+- **A rerun at the failing profile instead of all-zero**: a pass there says the failure is rare, not that Curve Optimizer is involved, and a failure says nothing about the core at 0.
 
 ## Consequences
 
 The ruleset bump archives the ruleset-9 session and seeds a new session from compatible carried facts. Each unattributed multi-core R7 failure with unloaded cores off CO 0 costs a locate at the failed duration: up to `n` conclusive trials, ending at the first failure. A passed locate adds the narrowing's groups, each up to `n` conclusive trials and none for an inferred or skipped group, and, when none of them fails, up to `n` conclusive trials of the full failing profile at the failed duration. Inconclusive trials do not count toward a group and are retried on top of these bounds. When the failure is rare and comes from the loaded cores, locate can pass by chance, and the narrowing that follows ends only once the full failing profile has passed `n` trials at the failed duration before the loaded cores are charged. The simulator keeps letting idle combination members crash, the conservative model, so a located hunt can find combinations of unloaded cores that the target machine may never show. #106 decides later whether those hunts move more than one count.
+
+The all-zero rerun adds at most one trial per would-be `failure_at_zero` dead end, and a dead end now cites the rerun that observed its claim. A machine that genuinely fails at CO 0 still stops, one trial later.

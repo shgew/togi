@@ -146,6 +146,8 @@ Multi-core R7 does not hunt its loaded cores: every failure requires a voltage-t
 
 Before an unattributed multi-core R7 failure moves a loaded core, a located hunt reruns the same load with every idle core at 0, the loaded cores unchanged (`hunt.group` stage `locate`). If that fails too, the hunt ends `loaded` and the backoff above follows; a hunt trial failure that names a loaded core also ends it `loaded`, and that core backs off as a named failure. If locate passes, the hunt narrows the idle cores; when a narrowed group fails, it backs off the one or combination it finds and leaves the loaded cores where they were. When no narrowed group fails, the hunt reruns the failed load as it failed, every core at its failing offset and at the failed duration (stage `full`): if that passes, the hunt ends `loaded` and the backoff above follows; if it fails unattributed, the idle cores form a combination, and if it names an idle core off CO 0, that core backs off; either way the loaded cores stay where they were.
 
+No failure at CO 0 stops togi on its own trial, unless every core was at 0 in it already. togi first reruns the failing trial with every core at CO 0 (`trial.intent` ending `rerun with every core at CO 0`). If that fails too, the dead end in [section 6](#6-dead-ends) follows and cites both failures; if it passes, Curve Optimizer is involved, and the failure goes to the cores that were off CO 0: a hunt outside multi-core R7, or the backoff above.
+
 ## 5. In the morning
 
 Shut down or reboot. The next boot is your normal system; with `leaveOnShutdown` off, pick your normal entry in the GRUB menu. Then:

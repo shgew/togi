@@ -48,6 +48,10 @@ func (s Snapshot) story(now time.Time) story {
 		text := "The trial's intent is recorded; its offsets are being applied and its workload is starting."
 		return story{s.stageLabel(), []string{text}, text, plainTone}
 	}
+	if t.zeroRerun() {
+		lines := []string{"A failure at CO 0 would stop tuning. Before it does, the failed load runs again with every core at CO 0.", "If it fails too, the instability is not caused by Curve Optimizer and tuning stops; if it passes, the failure goes to the cores off CO 0."}
+		return story{"RERUN AT CO 0", lines, "The failed load runs again with every core at CO 0 before tuning stops.", plainTone}
+	}
 	if s.hunt != nil {
 		return s.huntStory()
 	}
@@ -491,6 +495,8 @@ func (s Snapshot) operation(t trialView) string {
 			verb = "CONFIRM"
 		}
 		text = fmt.Sprintf("%s CORE %02d AT %d", verb, t.core, t.offset) + loadWord(t.regime)
+	case t.zeroRerun():
+		text = "RERUN AT CO 0"
 	case t.rerun:
 		text = "RERUN AFTER BACKOFF"
 	case t.round > 0:
@@ -612,6 +618,8 @@ func (s Snapshot) nextTrialWords(n tuner.Trial, after *trialView, shape huntShap
 		if layout != "" {
 			text += " · " + layout
 		}
+	case n.Rerun && n.Condition == machine.Parked:
+		text = "rerun " + what + " with every core at 0 · " + shortDuration(time.Duration(n.DurationS)*time.Second)
 	case n.Rerun:
 		text = "rerun " + what + " · " + shortDuration(time.Duration(n.DurationS)*time.Second)
 	case n.Cycle > 0:
@@ -1025,6 +1033,9 @@ func compactNext(next string) string {
 			return name + ": " + cores
 		}
 		return name
+	}
+	if strings.HasPrefix(text, "rerun ") && strings.Contains(text, " with every core at 0") {
+		return "rerun at CO 0"
 	}
 	if strings.HasPrefix(text, "rerun ") {
 		return "rerun"

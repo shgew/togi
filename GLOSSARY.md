@@ -206,6 +206,9 @@ The hardcoded strategy for search, hunts, deepening, checking and backoffs.
 **Dead end**:
 A condition under which togi cannot make progress and stops itself.
 
+**All-zero rerun**:
+The failing trial run again with every core at CO 0 before a `failure_at_zero` dead end. The dead end stands only if it fails too; a pass sends the failure to the cores off CO 0.
+
 ### Runtime
 
 **Tuning boot**:

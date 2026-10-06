@@ -6,7 +6,7 @@
   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between        HUNT 1 · GROUP 42 · CORE 03 AT -9
  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · ends at 08:24
 
- 5/5 pass → group 43   none named → group 43   core named → hunt ends · a core at 0: rerun
+ 5/5 pass → group 43   none named → group 43   core named → hunt ends · a core at 0: rerun at CO 0
 
  CCD 0 all loaded 0  2 counts/cell       -50 fail  back      CCD 1 all loaded 0  2 counts/cell       -50 fail  back
  ► 00   0 PARKED   ····▀                            -10      ► 08   0 PARKED   ····▀                            -10

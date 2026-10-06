@@ -11,7 +11,7 @@
 
   if 5 of 5 pass       next: hunt 1 group 43: R6 idle + bursts on 00-15 · 03 at failing offsets, core 11 at -9, 00-02 04-10 12-15 parked at 0
   if none is named     next: hunt 1 group 43: R6 idle + bursts on 00-15 · 11 at failing offsets, core 03 at -8, 00-02 04-10 12-15 parked at 0
-  if a core is named   its failure point is recorded → the hunt ends → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: rerun
+  if a core is named   its failure point is recorded → the hunt ends → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: rerun at CO 0
 
   CCD 0               0  2 counts/cell       -50 fail pt  all under load          CCD 1               0  2 counts/cell       -50 fail pt  all under load
   ► 00    0  PARKED    ····▀                              returns to -10          ► 08    0  PARKED    ····▀                              returns to -10

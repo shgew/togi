@@ -142,6 +142,11 @@ type trialView struct {
 	passed, index, of int // trials of the current requirement: passed so far, the running one counting from 1, needed
 }
 
+// zeroRerun reports the all-zero rerun of a failing trial, run before a failure_at_zero dead end.
+func (t trialView) zeroRerun() bool {
+	return t.rerun && t.condition == machine.Parked && t.hunt == 0
+}
+
 type trialEnd struct {
 	id         string
 	at         time.Time

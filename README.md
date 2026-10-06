@@ -20,6 +20,7 @@ Works today, on a simulated 16-core machine:
 - a seeded session after a ruleset update or BIOS change: a ruleset change carries eligible same-BIOS trial facts for candidate-solo-limit checks, hunt groups, reruns and deepening, while full-cycle requirements count only live passes; a BIOS change carries solo limits but not failure points or trial facts;
 - evidence-based hunt duration and singleton-probe scheduling, and credit for an earlier uncontradicted full cycle at an equal or deeper profile;
 - ruleset-9 R7 full parts followed by partial chains idling measured top requesters, with ordinary pass requirements and full-cycle coverage; a multi-core R7 failure backs off a core by voltage-targeted counts, not a hunt, unless that core already sits shallower than when it failed; since ruleset 10, an unattributed one with idle cores off CO 0 is first rerun with them at 0, and hunted among them if that passes;
+- since ruleset 10, a failure at CO 0 stops tuning only after the failing trial also fails with every core at CO 0; if that rerun passes, the failure goes to the cores off CO 0;
 - reading a session's hunt, combinations, clean cycles, top requesters, per-workload self-sufficiency and valid trials with `status`, `events` and the live `watch` dashboard; `status` shows the Tctl peak from passes together since the last profile change and its source trial.
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:

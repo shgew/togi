@@ -458,7 +458,10 @@ func (p *projector) trialName(in *journal.TrialIntent) string {
 			text += fmt.Sprintf(" at %d", in.Profile[i])
 		}
 	}
-	if in.Rerun {
+	switch {
+	case in.Rerun && in.Condition == machine.Parked:
+		text = "rerun of " + text + " with every core at 0"
+	case in.Rerun:
 		text = "rerun of " + text
 	}
 	return text
