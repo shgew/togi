@@ -1,6 +1,6 @@
 ---
-name: "Maintainer: Feature"
-about: For the maintainer. Behavior that is ready to build.
+name: Feature
+about: Behavior that is ready to build.
 labels: ["feature", "needs-triage"]
 ---
 

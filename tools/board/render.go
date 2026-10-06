@@ -8,6 +8,8 @@ import (
 
 func render(w io.Writer, b board) error {
 	p := &printer{w: w}
+	p.section("Interactions", 1)
+	p.line("  %s", b.Interactions)
 	p.section("Waiting on you (needs-decision)", len(b.Waiting))
 	for _, i := range b.Waiting {
 		p.line("  %s%s", head(i), assigned(i))

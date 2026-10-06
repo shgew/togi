@@ -1,4 +1,4 @@
-// Command board prints the coordination board of the current repository's issues: what waits on the owner, untriaged issues, work in progress, ready work and overlaps between them, and the open Ruleset issue.
+// Command board prints the coordination board of the current repository: who may post on it, what waits on the owner, untriaged issues, work in progress, ready work and overlaps between them, and the open Ruleset issue.
 package main
 
 import (
@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 const issuesQuery = `query($owner: String!, $name: String!, $endCursor: String) {
@@ -52,13 +53,13 @@ func runGH(args ...string) ([]byte, error) {
 }
 
 func main() {
-	if err := run(os.Stdout, runGH); err != nil {
+	if err := run(os.Stdout, runGH, time.Now()); err != nil {
 		fmt.Fprintln(os.Stderr, "board:", err)
 		os.Exit(1)
 	}
 }
 
-func run(w io.Writer, gh ghFunc) error {
+func run(w io.Writer, gh ghFunc, now time.Time) error {
 	repo, issues, err := fetchIssues(gh)
 	if err != nil {
 		return err
@@ -67,12 +68,32 @@ func run(w io.Writer, gh ghFunc) error {
 	if err != nil {
 		return err
 	}
-	return render(w, build(repo, issues, pulls))
+	limit, err := fetchLimit(gh)
+	if err != nil {
+		return err
+	}
+	return render(w, build(repo, issues, pulls, limit, now))
 }
 
 // query runs a paginated GraphQL query against the current repository and returns its pages.
 func query(gh ghFunc, q string) ([]byte, error) {
 	return gh("api", "graphql", "--paginate", "--slurp", "-F", "owner={owner}", "-F", "name={repo}", "-f", "query="+q)
+}
+
+// fetchLimit returns the current repository's interaction limit, which GitHub answers as {} when there is none.
+func fetchLimit(gh ghFunc) (interactionLimit, error) {
+	out, err := gh("api", "repos/{owner}/{repo}/interaction-limits")
+	if err != nil {
+		return interactionLimit{}, fmt.Errorf("fetch interaction limit: %w", err)
+	}
+	var l struct {
+		Limit     string    `json:"limit"`
+		ExpiresAt time.Time `json:"expires_at"`
+	}
+	if err := json.Unmarshal(out, &l); err != nil {
+		return interactionLimit{}, fmt.Errorf("decode interaction limit: %w", err)
+	}
+	return interactionLimit{Limit: l.Limit, Expires: l.ExpiresAt}, nil
 }
 
 type nodes[T any] struct {

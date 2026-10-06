@@ -2,12 +2,14 @@ package main
 
 import (
 	"cmp"
+	"fmt"
 	"math"
 	"path"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // issue is an open issue as the board needs it.
@@ -130,19 +132,46 @@ type overlap struct {
 }
 
 type board struct {
-	Waiting    []issue
-	Untriaged  []issue
-	InProgress []progress
-	Ready      []readyGroup
-	Overlaps   []overlap
-	Rulesets   []issue
+	Interactions string
+	Waiting      []issue
+	Untriaged    []issue
+	InProgress   []progress
+	Ready        []readyGroup
+	Overlaps     []overlap
+	Rulesets     []issue
+}
+
+// interactionLimit is the repository's GitHub interaction limit; Limit is empty when there is none.
+type interactionLimit struct {
+	Limit   string
+	Expires time.Time
+}
+
+// renewWithin is how long before it expires the board asks to renew the interaction limit.
+const renewWithin = 30 * 24 * time.Hour
+
+// interactions describes who may post on the repository at now, asking for `just lock-interactions` when anyone but collaborators may, or will within renewWithin.
+func interactions(l interactionLimit, now time.Time) string {
+	const renew = ": run `just lock-interactions`"
+	if l.Limit == "" || !now.Before(l.Expires) {
+		return "open to everyone" + renew
+	}
+	until := l.Expires.Format(time.DateOnly)
+	if l.Limit != "collaborators_only" {
+		return fmt.Sprintf("limited to %s until %s, not only collaborators%s", l.Limit, until, renew)
+	}
+	left := l.Expires.Sub(now)
+	if left > renewWithin {
+		return "collaborators only until " + until
+	}
+	return fmt.Sprintf("collaborators only until %s, %d days left%s", until, int(math.Ceil(left.Hours()/24)), renew)
 }
 
 // build sorts the issues into the board; repo is the owner/name of their repository.
-func build(repo string, issues []issue, pulls []pull) board {
+func build(repo string, issues []issue, pulls []pull, limit interactionLimit, now time.Time) board {
 	issues = slices.Clone(issues)
 	slices.SortFunc(issues, func(a, b issue) int { return a.Number - b.Number })
-	var b board
+	b := board{Interactions: interactions(limit, now)}
 	var ready []readyIssue
 	for _, i := range issues {
 		if i.has("needs-decision") {

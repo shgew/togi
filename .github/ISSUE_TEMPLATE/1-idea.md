@@ -1,5 +1,5 @@
 ---
-name: "Maintainer: Idea"
-about: For the maintainer. A thought to write down; a title is enough.
+name: Idea
+about: A thought to write down; a title is enough.
 labels: ["idea", "needs-triage"]
 ---

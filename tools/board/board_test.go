@@ -8,13 +8,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
 
 var update = flag.Bool("update", false, "rewrite testdata/*.golden from the current output")
 
-// fixtureGH answers the board's two GraphQL queries from testdata.
+// fixtureNow is the clock the fixtures are read at.
+var fixtureNow = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+
+// fixtureGH answers the board's two GraphQL queries and its interaction limit request from testdata.
 func fixtureGH(t *testing.T) ghFunc {
 	t.Helper()
 	return func(args ...string) ([]byte, error) {
@@ -24,6 +28,8 @@ func fixtureGH(t *testing.T) ghFunc {
 			return os.ReadFile(filepath.Join("testdata", "issues.json"))
 		case strings.Contains(q, "pullRequests("):
 			return os.ReadFile(filepath.Join("testdata", "pulls.json"))
+		case strings.HasSuffix(q, "/interaction-limits"):
+			return os.ReadFile(filepath.Join("testdata", "limit.json"))
 		}
 		t.Fatalf("unexpected gh call %q", args)
 		return nil, nil
@@ -32,7 +38,7 @@ func fixtureGH(t *testing.T) ghFunc {
 
 func TestBoardGolden(t *testing.T) {
 	var got bytes.Buffer
-	if err := run(&got, fixtureGH(t)); err != nil {
+	if err := run(&got, fixtureGH(t), fixtureNow); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join("testdata", "board.golden")
@@ -57,6 +63,7 @@ func TestRunReportsFetchFailure(t *testing.T) {
 	}{
 		{"issues", "issues(", "fetch issues: HTTP 401"},
 		{"pull requests after issues", "pullRequests(", "fetch pull requests: HTTP 401"},
+		{"interaction limit after pull requests", "/interaction-limits", "fetch interaction limit: HTTP 401"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -68,12 +75,35 @@ func TestRunReportsFetchFailure(t *testing.T) {
 				return fixture(args...)
 			}
 			var out bytes.Buffer
-			err := run(&out, gh)
+			err := run(&out, gh, fixtureNow)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("run error = %v, want %q", err, tt.want)
 			}
 			if out.Len() > 0 {
 				t.Errorf("run wrote %q, want nothing", out.String())
+			}
+		})
+	}
+}
+
+func TestInteractions(t *testing.T) {
+	now := fixtureNow
+	tests := []struct {
+		name  string
+		limit interactionLimit
+		want  string
+	}{
+		{"none", interactionLimit{}, "open to everyone: run `just lock-interactions`"},
+		{"expired at now", interactionLimit{"collaborators_only", now}, "open to everyone: run `just lock-interactions`"},
+		{"another limit", interactionLimit{"existing_users", now.AddDate(0, 3, 0)}, "limited to existing_users until 2027-01-06, not only collaborators: run `just lock-interactions`"},
+		{"beyond the warning", interactionLimit{"collaborators_only", now.Add(renewWithin + time.Second)}, "collaborators only until 2026-11-05"},
+		{"at the warning", interactionLimit{"collaborators_only", now.Add(renewWithin)}, "collaborators only until 2026-11-05, 30 days left: run `just lock-interactions`"},
+		{"part of a day rounds up", interactionLimit{"collaborators_only", now.Add(time.Hour)}, "collaborators only until 2026-10-06, 1 days left: run `just lock-interactions`"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if diff := cmp.Diff(tt.want, interactions(tt.limit, now)); diff != "" {
+				t.Errorf("interactions mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
