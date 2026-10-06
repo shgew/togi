@@ -1,10 +1,12 @@
 package sim
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -139,6 +141,16 @@ func TestResumeIgnoresTornIncompatibleTail(t *testing.T) {
 	got, err := Resume(dir, Config{})
 	if err != nil || got.Boots != 1 || !got.Start.Equal(epoch.Add(RebootTime)) {
 		t.Fatalf("torn resume = %+v, %v", got, err)
+	}
+}
+
+func TestResumeReportsUnlistableArchive(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "archive"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Resume(dir, Config{}); !errors.Is(err, syscall.ENOTDIR) {
+		t.Fatalf("resume error = %v, want %v", err, syscall.ENOTDIR)
 	}
 }
 
