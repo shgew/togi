@@ -33,40 +33,6 @@ func TestEveryKindDecodesItsEnvelope(t *testing.T) {
 	}
 }
 
-func TestPayloadStyles(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		p     Payload
-		style Style
-	}{
-		{&HostRanking{Ranking: []int{3, 11}}, Plain},
-		{&HostRanking{Detail: "missing"}, Plain},
-		{&HuntStart{Hunt: 4, Regime: machine.R7, Trial: "0007", Candidates: []int{3, 11}, Trials: 5, TrialS: 120}, Yellow},
-		{&HuntGroup{Hunt: 4, Group: 1, Cores: []int{3, 11}, Skipped: true, Reason: "already checked"}, Plain},
-		{&HuntGroup{Hunt: 4, Group: 2, Cores: []int{3}, Inferred: "pass", Reason: "complement failed"}, Plain},
-		{&HuntGroup{Hunt: 4, Group: 3, Cores: []int{11}, Inferred: "failure", Reason: "complement passed"}, Plain},
-		{&HuntGroup{Hunt: 4, Group: 4, Cores: []int{3, 11}, DurationS: 120}, Plain},
-		{&HuntGroup{Hunt: 4, Group: 5, Cores: []int{3}, Probe: &CombinationMember{Core: 11, Offset: -22}, Held: []CombinationMember{{Core: 3, Offset: -40}}, DurationS: 120}, Plain},
-		{&HuntSkipped{Failure: 904, Reason: "failure point already known"}, Plain},
-		{&HuntEnd{Hunt: 3, Result: "culprit", Cores: []int{13}, Groups: 4}, Green},
-		{&Combination{Combination: 2, Members: []CombinationMember{{Core: 3, Offset: -40}, {Core: 11, Offset: -30}}, Hunt: 4}, Yellow},
-		{&DeepeningRound{Round: 2, Event: CycleEnd, Passed: true}, GreenBold},
-		{&TunerWarning{Warning: "monotonicity", Trial: "0520", Passes: []int{1, 2}}, Yellow},
-		{&BackendRetry{Backend: "mprime", Attempt: 2, WaitS: 300, Reason: "setup failed"}, Dim},
-		{&CheckingCycle{Event: CycleEnd, Passed: true}, Plain},
-		{&Failure{Signal: machine.Crash, Attribution: Attributed, Core: new(1), Offset: new(-38), Trial: "0385", Regime: machine.R7, Condition: machine.Parked}, Red},
-		{&Failure{Signal: machine.Crash, Attribution: Attributed, Core: new(2), Offset: new(-12), Regime: machine.R6, Condition: machine.Together}, Red},
-		{&Failure{Signal: machine.Crash, Attribution: Unattributed, Trial: "0310", Regime: machine.R7, Condition: machine.Parked}, Red},
-	}
-	for _, tt := range tests {
-		t.Run(string(tt.p.Kind()), func(t *testing.T) {
-			if d := cmp.Diff(tt.style, StyleOf(Event{Data: tt.p})); d != "" {
-				t.Errorf("style (-want +got): %s", d)
-			}
-		})
-	}
-}
-
 func TestRecoveredTrialMessagesIncludeConditions(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

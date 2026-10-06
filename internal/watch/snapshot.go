@@ -11,6 +11,7 @@ import (
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/render"
 	"github.com/shgew/togi/internal/tuner"
 )
 
@@ -776,4 +777,4 @@ func workloadLabel(id string) string {
 	}
 	return vtText(id)
 }
-func vtText(msg string) string { return journal.EscapeText(msg) }
+func vtText(msg string) string { return render.EscapeText(msg) }

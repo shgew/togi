@@ -16,6 +16,7 @@ import (
 	"github.com/shgew/togi/internal/detect"
 	"github.com/shgew/togi/internal/hostlock"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/render"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/tuner"
 )
@@ -83,14 +84,14 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	if all {
 		build.Ruleset = 0
 	}
-	j, err := journal.Lock(g.stateDir, journal.Options{Boot: boot, Sync: true, Log: stderr, Build: build})
+	j, err := journal.Lock(g.stateDir, journal.Options{Boot: boot, Sync: true, Build: build})
 	if err != nil {
 		return resetError(err, journal.ErrLocked, stderr)
 	}
 	defer j.Close()
 	if events, _, readErr := journal.Read(g.stateDir); readErr == nil {
 		if err := journal.KnownKinds(events, session.Build()); err != nil {
-			fmt.Fprintf(stderr, "togi reset: %s\n", journal.EscapeText(err.Error()))
+			fmt.Fprintf(stderr, "togi reset: %s\n", render.EscapeText(err.Error()))
 			return exitError
 		}
 	}
@@ -109,11 +110,11 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 				return resetError(recoverErr, journal.ErrLocked, stderr)
 			}
 			if recovered != "" {
-				fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next togi run starts a new session\n", journal.EscapeText(recovered), journal.EscapeText(filepath.Join("archive", recovered+".jsonl")))
+				fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next togi run starts a new session\n", render.EscapeText(recovered), render.EscapeText(filepath.Join("archive", recovered+".jsonl")))
 				return exitOK
 			}
 			if dropped != "" {
-				fmt.Fprintf(stdout, "carry from session %s dropped; the next togi run starts a new session with nothing carried\n", journal.EscapeText(dropped))
+				fmt.Fprintf(stdout, "carry from session %s dropped; the next togi run starts a new session with nothing carried\n", render.EscapeText(dropped))
 				return exitOK
 			}
 		}
@@ -125,7 +126,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 			if code, ok := closeCommand("reset", j, archiveErr, stderr); !ok {
 				return code
 			}
-			fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next togi run starts a new session\n", journal.EscapeText(id), journal.EscapeText(path))
+			fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next togi run starts a new session\n", render.EscapeText(id), render.EscapeText(path))
 			return exitOK
 		}
 	}
@@ -133,8 +134,10 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return code
 	}
+	opened := len(j.Events())
 	if core != nil {
 		err := session.ResetCore(j, *core)
+		render.Renderer{}.Log(stderr, j.Events()[opened:]...)
 		if code, ok := closeCommand("reset", j, err, stderr); !ok {
 			return code
 		}
@@ -143,10 +146,11 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	}
 	warnings := resetWarnings(j.Events(), g)
 	path, err := session.ResetAll(j)
+	render.Renderer{}.Log(stderr, j.Events()[opened:]...)
 	if code, ok := closeCommand("reset", j, err, stderr); !ok {
 		return code
 	}
-	fmt.Fprintf(stdout, "session %s archived to %s; the next togi run starts a new session\n", journal.EscapeText(id), journal.EscapeText(path))
+	fmt.Fprintf(stdout, "session %s archived to %s; the next togi run starts a new session\n", render.EscapeText(id), render.EscapeText(path))
 	for _, warning := range warnings {
 		fmt.Fprintln(stderr, warning)
 	}
@@ -163,7 +167,7 @@ func pendingMarker(stateDir string) bool {
 }
 
 func resetError(err, locked error, stderr io.Writer) int {
-	fmt.Fprintf(stderr, "togi reset: %s\n", journal.EscapeText(err.Error()))
+	fmt.Fprintf(stderr, "togi reset: %s\n", render.EscapeText(err.Error()))
 	if errors.Is(err, locked) {
 		return exitLocked
 	}
@@ -210,7 +214,7 @@ func openForCommand(name string, j *journal.Journal, stderr io.Writer, allowRule
 	if !allowRuleset {
 		if stamp, _, scanErr := journal.Scan(dir); scanErr == nil && stamp.Schema != 0 {
 			if err := journal.Compatible(stamp, session.Build()); err != nil {
-				fmt.Fprintf(stderr, "togi %s: %s\n", name, journal.EscapeText(err.Error()))
+				fmt.Fprintf(stderr, "togi %s: %s\n", name, render.EscapeText(err.Error()))
 				return "", exitError, false
 			}
 		}
@@ -221,7 +225,7 @@ func openForCommand(name string, j *journal.Journal, stderr io.Writer, allowRule
 		fmt.Fprintf(stderr, "togi %s: no journal at %s\n", name, filepath.Join(dir, "events.jsonl"))
 		return "", exitError, false
 	case err != nil:
-		fmt.Fprintf(stderr, "togi %s: %s\n", name, journal.EscapeText(err.Error()))
+		fmt.Fprintf(stderr, "togi %s: %s\n", name, render.EscapeText(err.Error()))
 		return "", exitError, false
 	case len(events) == 0:
 		fmt.Fprintf(stderr, "togi %s: no session in %s\n", name, dir)
@@ -229,17 +233,19 @@ func openForCommand(name string, j *journal.Journal, stderr io.Writer, allowRule
 	}
 	if !allowRuleset {
 		if err := journal.Compatible(journal.BuildOf(events), session.Build()); err != nil {
-			fmt.Fprintf(stderr, "togi %s: %s\n", name, journal.EscapeText(err.Error()))
+			fmt.Fprintf(stderr, "togi %s: %s\n", name, render.EscapeText(err.Error()))
 			return "", exitError, false
 		}
 	}
-	if err := j.Open(); err != nil {
-		fmt.Fprintf(stderr, "togi %s: %s\n", name, journal.EscapeText(err.Error()))
+	torn, err := j.Open()
+	if err != nil {
+		fmt.Fprintf(stderr, "togi %s: %s\n", name, render.EscapeText(err.Error()))
 		if errors.Is(err, journal.ErrLocked) {
 			return "", exitLocked, false
 		}
 		return "", exitError, false
 	}
+	render.Renderer{}.Log(stderr, torn...)
 	return events[0].Data.(*journal.SessionStart).Session, exitOK, true
 }
 
@@ -248,7 +254,7 @@ func closeCommand(name string, j *journal.Journal, err error, stderr io.Writer) 
 	if err == nil {
 		return exitOK, true
 	}
-	fmt.Fprintf(stderr, "togi %s: %s\n", name, journal.EscapeText(err.Error()))
+	fmt.Fprintf(stderr, "togi %s: %s\n", name, render.EscapeText(err.Error()))
 	if errors.Is(err, session.ErrNoSuchCore) {
 		return exitUsage, false
 	}

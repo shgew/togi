@@ -171,7 +171,7 @@ func TestCarryFactsWaitForValidatedContext(t *testing.T) {
 				t.Fatal(err)
 			}
 			if prefix != "initial transition" {
-				if err := j.Open(); err != nil {
+				if _, err := j.Open(); err != nil {
 					t.Fatal(err)
 				}
 				payloads := []journal.Payload{&journal.SessionStart{Build: Build(), Session: "20261002T000000Z", Cores: cores, Evidence: tuner.EvidenceEpoch}}

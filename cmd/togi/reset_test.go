@@ -120,6 +120,40 @@ func resetCandidateFixture(t *testing.T, failurePoint int) string {
 	return dir
 }
 
+func TestResetLogsTheEventsItRecords(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"--core", "3"}, []string{"journal.torn", "command.reset", "shutdown"}},
+		{[]string{"--all"}, []string{"journal.torn", "command.reset", "session.archived"}},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			fixture := currentJournalFixture(t, "testdata/events.jsonl")
+			fixture = bytes.Replace(fixture, []byte(`"ruleset":3`), fmt.Appendf(nil, `"ruleset":%d`, session.Build().Ruleset), 1)
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), append(fixture, `{"seq":`...), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			g := &globals{config: filepath.Join(t.TempDir(), "config.toml"), stateDir: dir, hostLockPath: filepath.Join(t.TempDir(), "togi.lock")}
+			if code := runReset(g, tc.args, &stdout, &stderr); code != exitOK {
+				t.Fatalf("reset exit %d: %s", code, stderr.String())
+			}
+			var kinds []string
+			for line := range strings.Lines(stderr.String()) {
+				kinds = append(kinds, strings.Fields(line)[1])
+			}
+			if diff := cmp.Diff(tc.want, kinds); diff != "" {
+				t.Fatalf("logged kinds (-want +got):\n%s\nstderr %q", diff, stderr.String())
+			}
+			if strings.ContainsRune(stderr.String(), '\x1b') {
+				t.Fatalf("reset log is plain: %q", stderr.String())
+			}
+		})
+	}
+}
+
 func TestResetAllSkipsUnavailableConfig(t *testing.T) {
 	for _, tt := range []struct {
 		name, config string

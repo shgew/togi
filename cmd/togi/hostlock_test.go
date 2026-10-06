@@ -17,6 +17,7 @@ import (
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/render"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 	"golang.org/x/sys/unix"
@@ -147,7 +148,7 @@ func TestRunRefusesHostLockBeforeHardwareAndCarry(t *testing.T) {
 	}
 	var stderr bytes.Buffer
 	bootloader := &clearingBootloader{}
-	code := runHardware(context.Background(), &g, config.Default(), false, bootloader, 0, &stderr, journal.Renderer{}, nil, newMachine)
+	code := runHardware(context.Background(), &g, config.Default(), false, bootloader, 0, &stderr, render.Renderer{}, nil, newMachine)
 	if diff := cmp.Diff(exitLocked, code); diff != "" {
 		t.Errorf("contention exit (-want +got): %s; stderr %s", diff, stderr.String())
 	}
@@ -191,7 +192,7 @@ func TestRunRefusesUnsafeHostLockBeforeHardwareAndCarry(t *testing.T) {
 			}
 			bootloader := &clearingBootloader{}
 			var stderr bytes.Buffer
-			code := runHardware(context.Background(), &g, config.Default(), false, bootloader, 0, &stderr, journal.Renderer{}, nil, newMachine)
+			code := runHardware(context.Background(), &g, config.Default(), false, bootloader, 0, &stderr, render.Renderer{}, nil, newMachine)
 			if code != exitError || !strings.Contains(stderr.String(), g.hostLockPath) {
 				t.Fatalf("unsafe lock: exit %d, stderr %s", code, stderr.String())
 			}
@@ -236,7 +237,7 @@ func TestStartupRefusalDoesNotClearGRUBWithoutHostLock(t *testing.T) {
 			mismatch := &journal.IncompatibleError{Field: "ruleset", Journal: journal.Build{Ruleset: 99}, Binary: session.Build()}
 			bootloader := &clearingBootloader{}
 			var stderr bytes.Buffer
-			code := runStartupRefusal(&g, mismatch, &stderr, journal.Renderer{}, bootloader)
+			code := runStartupRefusal(&g, mismatch, &stderr, render.Renderer{}, bootloader)
 			if code != wantCode || bootloader.calls != 0 {
 				t.Fatalf("startup refusal: exit %d, clear calls %d; stderr %s", code, bootloader.calls, stderr.String())
 			}
@@ -245,7 +246,7 @@ func TestStartupRefusalDoesNotClearGRUBWithoutHostLock(t *testing.T) {
 			}
 			if holder != nil {
 				_ = holder.Close()
-				if code := runStartupRefusal(&g, mismatch, &stderr, journal.Renderer{}, bootloader); code != exitIncompatible || bootloader.calls != 1 {
+				if code := runStartupRefusal(&g, mismatch, &stderr, render.Renderer{}, bootloader); code != exitIncompatible || bootloader.calls != 1 {
 					t.Fatalf("released lock refusal: exit %d, clear calls %d", code, bootloader.calls)
 				}
 			}
@@ -287,7 +288,7 @@ func TestRunRefusesIdentityBeforeBIOSOrSMUAccess(t *testing.T) {
 			}
 			bootloader := &clearingBootloader{}
 			var stderr bytes.Buffer
-			code := runHardware(context.Background(), &g, config.Default(), false, bootloader, 0, &stderr, journal.Renderer{}, nil, newMachine)
+			code := runHardware(context.Background(), &g, config.Default(), false, bootloader, 0, &stderr, render.Renderer{}, nil, newMachine)
 			if code != exitPreflight || !strings.Contains(stderr.String(), detail) {
 				t.Fatalf("identity refusal: exit %d, stderr %s", code, stderr.String())
 			}
@@ -337,7 +338,7 @@ func TestRunReportsConstructionError(t *testing.T) {
 		return machine.Machine{}, errors.New("read CPU topology: unavailable")
 	}
 	var stderr bytes.Buffer
-	code := runHardware(context.Background(), &g, config.Default(), false, nil, 0, &stderr, journal.Renderer{}, nil, newMachine)
+	code := runHardware(context.Background(), &g, config.Default(), false, nil, 0, &stderr, render.Renderer{}, nil, newMachine)
 	if code != exitError || !strings.Contains(stderr.String(), "read CPU topology: unavailable") {
 		t.Fatalf("construction error: exit %d, stderr %s", code, stderr.String())
 	}
@@ -374,7 +375,7 @@ func TestRunStopsDashboardAfterJournalOpenFailure(t *testing.T) {
 		return m.Seams(), nil
 	}
 	var stderr bytes.Buffer
-	code := runHardware(context.Background(), &g, config.Default(), false, nil, 0, &stderr, journal.Renderer{}, dash, newMachine)
+	code := runHardware(context.Background(), &g, config.Default(), false, nil, 0, &stderr, render.Renderer{}, dash, newMachine)
 	if diff := cmp.Diff(exitError, code); diff != "" {
 		t.Errorf("journal open exit (-want +got): %s", diff)
 	}

@@ -1,4 +1,4 @@
-// Package journal is the append-only record of a session: events, replay, the state.json projection and log lines.
+// Package journal is the append-only record of a session: events, replay and the state.json projection.
 package journal
 
 import (

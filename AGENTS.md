@@ -122,7 +122,8 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/config` | Configuration |
 | `internal/machine` | Shared vocabulary and the seam interfaces the run loop consumes |
 | `internal/defect` | Known decision-changing bugs and pure matching against the journal |
-| `internal/journal` | Journal, replay, state file, log lines |
+| `internal/journal` | Journal, replay, state file |
+| `internal/render` | Human rendering of events and diagnostics: escaping, line format, colour and the journald priority prefix |
 | `internal/facts` | Decisive trial and idle-failure evidence with journal provenance |
 | `internal/carry` | Transitions: archiving an older session and deriving the solo limits and failure points it carries |
 | `internal/tuner` | Pure decision engine: search, hunt, deepening, checking |

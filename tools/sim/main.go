@@ -14,6 +14,7 @@ import (
 
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/render"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/simrun"
@@ -87,7 +88,7 @@ func run(args []string, stderr io.Writer) int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
-	renderer := journal.NewRenderer(stderr, os.Getenv)
+	renderer := render.NewRenderer(stderr, os.Getenv)
 	stop, err := simrun.Simulate(ctx, simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: stderr, Renderer: renderer, Cycles: *cycles, InMemoryJournal: true, WriteSamples: *samples, MaxBoots: *maxBoots})
 	if errors.Is(err, simrun.ErrBootCap) {
 		fmt.Fprintf(stderr, "sim: %v\n", err)

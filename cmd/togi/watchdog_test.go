@@ -13,6 +13,7 @@ import (
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/render"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 )
@@ -122,7 +123,7 @@ func TestRunWatchdogWarning(t *testing.T) {
 					return nil
 				}}
 			}
-			code := runHardware(ctx, &g, config.Default(), false, bootloader, 0, &stderr, journal.Renderer{}, dash, newMachine)
+			code := runHardware(ctx, &g, config.Default(), false, bootloader, 0, &stderr, render.Renderer{}, dash, newMachine)
 			if diff := cmp.Diff(tt.code, code); diff != "" {
 				t.Fatalf("exit (-want +got): %s; stderr: %s", diff, &stderr)
 			}

@@ -101,7 +101,7 @@ func openFaultJournal(t *testing.T, dir string) (*Journal, *faultJournalFilesyst
 	}
 	faults := &faultJournalFilesystem{journalFilesystem: j.fs}
 	j.fs = faults
-	if err := j.Open(); err != nil {
+	if _, err := j.Open(); err != nil {
 		_ = j.Close()
 		t.Fatal(err)
 	}

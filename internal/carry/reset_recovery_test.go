@@ -58,7 +58,7 @@ func TestInterruptedResetArchivesDiscardedLiveSessionBeforeResume(t *testing.T) 
 			if _, err := os.Stat(pending); !os.IsNotExist(err) {
 				t.Fatalf("reset pending source survived recovery: %v", err)
 			}
-			if err := j.Open(); err != nil {
+			if _, err := j.Open(); err != nil {
 				t.Fatal(err)
 			}
 			if len(j.Events()) != 0 {

@@ -1,4 +1,4 @@
-package journal
+package render
 
 import (
 	"fmt"
@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/shgew/togi/internal/journal"
 )
 
 type Style uint8
@@ -22,49 +24,49 @@ const (
 	Dim
 )
 
-func StyleOf(e Event) Style {
+func StyleOf(e journal.Event) Style {
 	switch p := e.Data.(type) {
-	case *TrialEnd:
+	case *journal.TrialEnd:
 		switch p.Outcome {
-		case OutcomeFailure:
+		case journal.OutcomeFailure:
 			return Red
-		case OutcomeInconclusive:
+		case journal.OutcomeInconclusive:
 			return Dim
-		case OutcomePass:
+		case journal.OutcomePass:
 		}
-	case *Failure, *CrashDetected:
+	case *journal.Failure, *journal.CrashDetected:
 		return Red
-	case *DefectFound:
+	case *journal.DefectFound:
 		return Yellow
-	case *DeadEnd:
+	case *journal.DeadEnd:
 		return RedBold
-	case *TunerDecision:
+	case *journal.TunerDecision:
 		switch p.Decision {
-		case StepDeeper, Deepen:
+		case journal.StepDeeper, journal.Deepen:
 			return Green
-		case Backoff, Yield:
+		case journal.Backoff, journal.Yield:
 			return Yellow
-		case CheckSoloLimit:
+		case journal.CheckSoloLimit:
 		}
-	case *CorePhase:
-		if p.To == PhaseAtLimit || p.To == PhaseHasRoom && p.From == PhaseSearch {
+	case *journal.CorePhase:
+		if p.To == journal.PhaseAtLimit || p.To == journal.PhaseHasRoom && p.From == journal.PhaseSearch {
 			return GreenBold
 		}
-	case *CheckingCycle:
-		if p.Event == CycleEnd && p.Passed && p.Full {
+	case *journal.CheckingCycle:
+		if p.Event == journal.CycleEnd && p.Passed && p.Full {
 			return GreenBold
 		}
-	case *HuntStart, *Combination, *TunerWarning, *SessionWarning:
+	case *journal.HuntStart, *journal.Combination, *journal.TunerWarning, *journal.SessionWarning:
 		return Yellow
-	case *HuntEnd:
+	case *journal.HuntEnd:
 		if p.Result == "culprit" || p.Result == "combination" || p.Result == "direct" {
 			return Green
 		}
-	case *DeepeningRound:
-		if p.Event == CycleEnd && p.Passed {
+	case *journal.DeepeningRound:
+		if p.Event == journal.CycleEnd && p.Passed {
 			return GreenBold
 		}
-	case *BackendRetry:
+	case *journal.BackendRetry:
 		return Dim
 	}
 	return Plain
@@ -96,15 +98,25 @@ func NewRenderer(stream io.Writer, getenv func(string) string) Renderer {
 	return r
 }
 
-func (r Renderer) Line(e Event, loc *time.Location) string {
+func (r Renderer) Line(e journal.Event, loc *time.Location) string {
 	return r.styled(StyleOf(e), FormatLine(e, loc))
 }
 
-func (r Renderer) PrefixedLine(e Event, loc *time.Location, prefix string) string {
+// Log writes the line of each persisted event to the run log w, in local time; a nil w discards them.
+func (r Renderer) Log(w io.Writer, events ...journal.Event) {
+	if w == nil {
+		return
+	}
+	for _, e := range events {
+		fmt.Fprintln(w, r.Line(e, time.Local))
+	}
+}
+
+func (r Renderer) PrefixedLine(e journal.Event, loc *time.Location, prefix string) string {
 	return r.styled(StyleOf(e), EscapeText(prefix)+FormatLine(e, loc))
 }
 
-func (r Renderer) Text(e Event, line string) string {
+func (r Renderer) Text(e journal.Event, line string) string {
 	return r.Styled(StyleOf(e), line)
 }
 
