@@ -261,12 +261,19 @@ func (s *State) r7LocatedNamedDecision(source pendingFailure, loc locatedHunt) (
 	return a, ok
 }
 
+// r7FailureEntry returns a multi-core R7 failure's failed trial. Once its all-zero rerun passed, neither its named
+// core nor its stalled core confines it any more: it counts as unattributed against the cores still off CO 0.
 func (s *State) r7FailureEntry(f pendingFailure) *entry {
 	for i := range s.ledger[f.class] {
 		e := &s.ledger[f.class][i]
 		if s.sameR7Failure(e.seq, f.seq) {
 			if e.named == nil {
 				e.named = f.failure.Core
+			}
+			if r := s.zeroReruns[f.seq]; r != nil && r.passed {
+				unconfined := *e
+				unconfined.named, unconfined.stalled = nil, nil
+				return &unconfined
 			}
 			return e
 		}
@@ -375,7 +382,13 @@ func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core, located 
 	}
 	if len(order.group) == 0 || order.named && failed.profile[s.index(c.id)] == 0 {
 		cause := append([]int{f.seq}, locatedSeqs...)
-		return Action{Kind: Decide, Payload: s.r7FailedAtZero(failed, c.id, order), Cause: append(cause, order.sources...)}, true
+		cause = append(cause, order.sources...)
+		dead := s.r7FailedAtZero(failed, c.id, order)
+		if located != nil && located.failure != 0 {
+			// Every loaded core was at 0, so the failed locate was the all-zero rerun.
+			return Action{Kind: Decide, Payload: dead, Cause: cause}, true
+		}
+		return s.atZero(f, dead, cause)
 	}
 	if len(order.group) > 1 && s.rankingSeq == 0 {
 		return Action{Kind: ReadRanking}, true

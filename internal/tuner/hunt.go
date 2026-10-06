@@ -502,7 +502,7 @@ func (s *State) huntNext() (Action, bool) {
 		result, reason, cores = "loaded", "the failed load failed again with every unloaded core at CO 0, so the failure stays with the loaded cores", slices.Clone(h.start.Cores)
 	case len(next.set) == 1:
 		result = "culprit"
-	case !next.anyFailed && h.located():
+	case !next.anyFailed && h.located() && slices.ContainsFunc(h.start.Cores, func(id int) bool { return !s.atCOZero(h.start.Failing, id) }):
 		result, reason, cores = "loaded", "the full failing profile passed while narrowing the unloaded cores, so the failure stays with the loaded cores", slices.Clone(h.start.Cores)
 	case !next.anyFailed:
 		result, reason = "fallback", "no tested group failed, so the remaining candidates stay unresolved and form a combination"

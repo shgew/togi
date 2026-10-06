@@ -438,7 +438,10 @@ func (p *TrialIntent) Message() string {
 	if p.Round > 0 {
 		fmt.Fprintf(&b, " round %d", p.Round)
 	}
-	if p.Rerun {
+	switch {
+	case p.Rerun && p.Condition == machine.Parked && p.Hunt == 0:
+		b.WriteString(" rerun with every core at CO 0")
+	case p.Rerun:
 		b.WriteString(" rerun")
 	}
 	if p.RecordOnly {

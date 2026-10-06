@@ -55,17 +55,35 @@ func (s *State) locatePlan(h *hunt) (plan groupPlan, has, decided bool) {
 	return plan, false, true
 }
 
-// locatable returns the failed trial of a live, unattributed multi-core R7 failure whose load left a core
-// nonzero: it is located before it is charged to the loaded cores.
+// locatable returns the failed trial of a multi-core R7 failure that is located before it is charged to the loaded
+// cores: a live unattributed one whose load left an unloaded core nonzero, and, carried or naming a core at CO 0,
+// one whose loaded cores were all at CO 0, where locate is its all-zero rerun.
 func (s *State) locatable(f pendingFailure) *entry {
-	if f.carried || f.failure.Condition != machine.Together || !s.multiR7(f.class) {
+	if !s.multiR7(f.class) || !f.carried && f.failure.Condition == machine.Parked || len(s.locateCandidates(f)) == 0 {
 		return nil
 	}
 	failed := s.r7FailureEntry(f)
-	if failed == nil || s.r7NamedCulprit(*failed) || len(s.locateCandidates(f)) == 0 {
+	switch {
+	case failed == nil:
+		return nil
+	case s.loadedAtZero(f):
+		if failed.named != nil && !s.atCOZero(f.profile, *failed.named) {
+			return nil
+		}
+		return failed
+	case f.carried || f.failure.Condition != machine.Together || s.r7NamedCulprit(*failed):
 		return nil
 	}
 	return failed
+}
+
+func (s *State) loadedAtZero(f pendingFailure) bool {
+	return !slices.ContainsFunc(s.classCores(f.class), func(id int) bool { return !s.atCOZero(f.profile, id) })
+}
+
+func (s *State) atCOZero(profile []int, id int) bool {
+	i := s.index(id)
+	return i < 0 || i >= len(profile) || profile[i] == 0
 }
 
 func (s *State) locateCandidates(f pendingFailure) []int {
@@ -149,22 +167,22 @@ func (s *State) locateFailure(h *hunt) int {
 	return failure
 }
 
-// locatedLoadedNamed returns the failure that rejected the hunt's latest group, or 0, and the loaded core it
-// named, if any.
+// locatedLoadedNamed returns the failure that rejected the hunt's latest group, or 0, and the loaded core off CO 0
+// it named, if any. A loaded core named at CO 0 leaves the group failure unattributed.
 func (s *State) locatedLoadedNamed(h *hunt) (int, *int) {
 	failure := s.locateFailure(h)
 	if failure == 0 {
 		return 0, nil
 	}
 	for _, e := range s.ledger[h.class.withDuration(h.groups[len(h.groups)-1].payload.DurationS)] {
-		if e.seq == failure && e.named != nil && slices.Contains(h.start.Cores, *e.named) {
+		if e.seq == failure && e.named != nil && slices.Contains(h.start.Cores, *e.named) && !s.atCOZero(e.profile, *e.named) {
 			return failure, new(*e.named)
 		}
 	}
 	return failure, nil
 }
 
-// locatedLoadedFailure ends a located hunt loaded when its latest group failed naming a loaded core.
+// locatedLoadedFailure ends a located hunt loaded when its latest group failed naming a loaded core off CO 0.
 func (s *State) locatedLoadedFailure(h *hunt) (Action, bool) {
 	if !h.located() {
 		return Action{}, false

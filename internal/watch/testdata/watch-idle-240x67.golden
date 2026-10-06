@@ -14,7 +14,7 @@
   started 20:22 · 15:00                                                                                                                                                                                                               ends at
 
   if it passes         step 7 is done → next: step 8: R5 both threads with mprime SSE 4K-21K
-  if a core is named   its failure point is recorded → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: tuning stops
+  if a core is named   its failure point is recorded → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: rerun
   if none is named     hunt 8 starts over 00-13 15 → next: hunt 8 group 1: R6 idle + bursts on 00-15 · 00-07 at failing offsets, 08-13 15 parked at 0
 
   CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  all under load

@@ -1021,3 +1021,72 @@ func TestLocatedHuntResumesDuringLocate(t *testing.T) {
 	}
 	assertProjectionReplay(h)
 }
+
+func TestParkedFailureNamingACoreAtZeroRerunsAllZero(t *testing.T) {
+	for _, rerunFails := range []bool{false, true} {
+		t.Run(fmt.Sprint(rerunFails), func(t *testing.T) {
+			h := huntHarness(t, 4, 120)
+			a := h.next()
+			group, ok := a.Payload.(*journal.HuntGroup)
+			if !ok {
+				t.Fatalf("first group %+v", a)
+			}
+			h.decide(a)
+			parked := slices.IndexFunc(h.s.ids(), func(id int) bool { return !slices.Contains(group.Cores, id) })
+			intent := h.start(h.next())
+			mce := h.add(&journal.MCE{Core: parked, BankType: machine.LoadStore})
+			h.add(&journal.TrialEnd{Trial: intent.Data.(*journal.TrialIntent).Trial, Outcome: journal.OutcomeFailure, Signal: machine.Crash}, intent.Seq, mce.Seq)
+			a = h.next()
+			if f, ok := a.Payload.(*journal.Failure); !ok || f.Core == nil || *f.Core != parked || *f.Offset != 0 {
+				t.Fatalf("attribution %+v", a)
+			}
+			failure := h.decide(a)
+			a = h.next()
+			want := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: h.s.ids(), DurationS: 120, Condition: machine.Parked, Phase: journal.PhaseHunt, Profile: []int{0, 0, 0, 0}, Rerun: true}
+			if diff := cmp.Diff(Action{Kind: RunTrial, Trial: want, Cause: []int{failure.Seq}}, a); diff != "" {
+				t.Fatalf("all-zero rerun (-want +got):\n%s", diff)
+			}
+			if !rerunFails {
+				h.trial(a, passed)
+				a = h.next()
+				next, ok := a.Payload.(*journal.HuntGroup)
+				if !ok || len(next.Cores) == 0 || slices.ContainsFunc(next.Cores, func(id int) bool { return !slices.Contains(group.Cores, id) }) {
+					t.Fatalf("the failure did not go to group %d's members %v: %+v", group.Group, group.Cores, a)
+				}
+				assertProjectionReplay(h)
+				return
+			}
+			_, rerun := h.trial(a, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+			h.decide(h.next())
+			a = h.next()
+			dead, ok := a.Payload.(*journal.DeadEnd)
+			if !ok || dead.Condition != journal.DeadEndFailureAtZero || !slices.Equal(a.Cause, []int{failure.Seq, rerun.Seq}) {
+				t.Fatalf("dead end %+v", a)
+			}
+			want2 := fmt.Sprintf("core %02d failed at CO 0; the rerun with every core at CO 0 failed too (#%d), so the instability is not caused by Curve Optimizer", parked, rerun.Seq)
+			if diff := cmp.Diff(want2, dead.Detail); diff != "" {
+				t.Fatal(diff)
+			}
+			assertProjectionReplay(h)
+		})
+	}
+}
+
+func TestTogetherFailureNamingACoreAtZeroIsHuntedAfterAPassedRerun(t *testing.T) {
+	h := hasRoomHarness(t, 0, -10)
+	tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Phase: journal.PhaseChecking, Condition: machine.Together, DurationS: 120, Cores: []int{0, 1}}
+	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)})
+	failure := h.decide(h.next())
+	h.trial(h.next(), passed)
+	a := h.next()
+	start, ok := a.Payload.(*journal.HuntStart)
+	if !ok || start.Failure != failure.Seq || !slices.Equal(start.Candidates, []int{1}) {
+		t.Fatalf("the failure was not hunted among the nonzero cores: %+v", a)
+	}
+	h.decide(a)
+	a = h.next()
+	if end, ok := a.Payload.(*journal.HuntEnd); !ok || end.Result != "culprit" || !slices.Equal(end.Cores, []int{1}) {
+		t.Fatalf("hunt end %+v", a)
+	}
+	assertProjectionReplay(h)
+}

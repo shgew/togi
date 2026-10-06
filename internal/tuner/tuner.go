@@ -172,6 +172,8 @@ type State struct {
 	r7Handled               map[int]map[int]bool
 	r7Measurements          []entry
 	located                 map[int]locatedHunt
+	zeroReruns              map[int]*zeroRerun
+	zeroTrials              map[string]int
 }
 
 func New() *State {
@@ -326,6 +328,7 @@ func (s *State) Fold(e journal.Event) {
 		s.intents[p.Trial] = p
 		s.intentSeq[e.Seq] = p.Trial
 		s.recordCheckingTrial(p)
+		s.recordZeroRerun(e, p)
 		s.retry = nil
 		if p.Condition == machine.Alone && p.Core != nil {
 			s.cursor = slices.IndexFunc(s.cores, func(c *core) bool { return c.id == *p.Core })
@@ -339,6 +342,7 @@ func (s *State) Fold(e journal.Event) {
 			s.flight = nil
 		}
 		s.foldTrialEnd(e, p)
+		s.endZeroRerun(e, p)
 		s.pendingRerun()
 	case *journal.MCE:
 		s.mces[e.Seq] = p
@@ -551,6 +555,10 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 		if c := s.locatedCulprit(failure); c != nil {
 			c.pending = failure.seq
 		}
+		s.projectionDirty = true
+		return
+	}
+	if s.zeroRerunFailure(p) {
 		s.projectionDirty = true
 		return
 	}

@@ -302,13 +302,17 @@ func TestForecastNamesCoreAtZeroSeparately(t *testing.T) {
 	if len(named) != 2 || named[0].Core == nil || *named[0].Core != 0 || named[1].Core == nil || *named[1].Core != 1 {
 		t.Fatalf("named branches %+v, want core 00 standing in, then core 01 at 0", named)
 	}
-	if forecastDeadEnd(named[0]) || !forecastDeadEnd(named[1]) || named[1].Next != nil {
-		t.Fatalf("outside multi-core R7, a named failure at 0 must end tuning: %+v", named)
+	if forecastDeadEnd(named[0]) || forecastDeadEnd(named[1]) || !forecastZeroRerun(named[1]) {
+		t.Fatalf("outside multi-core R7, a named failure at 0 must rerun with every core at 0 before ending tuning: %+v", named)
 	}
 }
 
 func forecastDeadEnd(b ForecastBranch) bool {
 	return slices.ContainsFunc(b.Decisions, func(d journal.Payload) bool { _, ok := d.(*journal.DeadEnd); return ok })
+}
+
+func forecastZeroRerun(b ForecastBranch) bool {
+	return b.Next != nil && b.Next.Rerun && b.Next.Condition == machine.Parked && allZero(b.Next.Profile)
 }
 
 func TestForecastR7PremisesFoldDistinctOutcomesWithoutInventedTelemetry(t *testing.T) {
@@ -331,7 +335,7 @@ func TestForecastR7PremisesFoldDistinctOutcomesWithoutInventedTelemetry(t *testi
 		{IfAllPass, -1, -1, 0, false},
 		{IfNamed, 0, 0, -29, false},
 		{IfNamed, 2, 1, -16, false},
-		{IfNamed, 3, -1, 0, true},
+		{IfNamed, 3, -1, 0, false},
 		{IfUnnamed, -1, -1, 0, false},
 		{IfInconclusive, -1, -1, 0, false},
 	}
@@ -469,17 +473,17 @@ func TestForecastR7NamesACoreAtZeroOnEachCCD(t *testing.T) {
 	r7Fact(h, true, all, h.s.Profile(), map[int]float64{0: 1.2, 1: 1.1, 2: 1.1, 3: 1.2}, nil, nil, nil, nil)
 	h.start(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: all, DurationS: 120, Phase: journal.PhaseChecking, Condition: machine.Together}})
 	type named struct {
-		core        int
-		atZero, top bool
-		dead        bool
-		moved       int
+		core           int
+		atZero, top    bool
+		dead, zeroRuns bool
+		moved          int
 	}
 	var got []named
 	for _, b := range Forecast(h.events).Branches {
 		if b.Premise != IfNamed {
 			continue
 		}
-		n := named{core: *b.Core, atZero: b.AtZero, top: b.TopRequester, dead: forecastDeadEnd(b), moved: -1}
+		n := named{core: *b.Core, atZero: b.AtZero, top: b.TopRequester, dead: forecastDeadEnd(b), zeroRuns: forecastZeroRerun(b), moved: -1}
 		for _, d := range b.Decisions {
 			if move, ok := d.(*journal.TunerDecision); ok && move.Decision == journal.Backoff {
 				n.moved = move.Core
@@ -488,11 +492,12 @@ func TestForecastR7NamesACoreAtZeroOnEachCCD(t *testing.T) {
 		got = append(got, n)
 	}
 	// Core 01 at 0 routes to CCD 0, whose cores are all at 0; core 02 at 0 routes to CCD 1, whose top requester moves.
+	// Neither CCD 0 failure ends tuning before its rerun with every core at 0.
 	want := []named{
 		{core: 3, top: true, moved: 3},
-		{core: 1, atZero: true, dead: true, moved: -1},
+		{core: 1, atZero: true, zeroRuns: true, moved: -1},
 		{core: 2, atZero: true, moved: 3},
-		{core: 0, atZero: true, top: true, dead: true, moved: -1},
+		{core: 0, atZero: true, top: true, zeroRuns: true, moved: -1},
 	}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(named{})); diff != "" {
 		t.Fatalf("named branches (-want +got):\n%s", diff)

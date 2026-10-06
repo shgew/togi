@@ -356,19 +356,55 @@ func TestR7ZeroTopUsesShiftedFullMeasurement(t *testing.T) {
 	}
 }
 
-func TestR7ZeroAffectedCCDDeadEndsRegardlessOfOtherCCD(t *testing.T) {
-	h := r7Harness(t)
-	profile := []int{0, 0, -30, -30}
-	h.add(&journal.ProfileChange{To: profile})
-	r7Fact(h, false, h.s.ids(), profile, map[int]float64{0: 1.2, 1: 1.15, 2: 1.3, 3: 1.25}, []int{0, 2}, nil, new(1), nil)
-	a, ok := h.s.Drain()
-	dead, ended := a.Payload.(*journal.DeadEnd)
-	if !ok || !ended || dead.Condition != journal.DeadEndFailureAtZero {
-		t.Fatalf("%+v", a)
+// runZeroRerun checks that the next action reruns the failing load with every core at CO 0, and answers it.
+func runZeroRerun(h *harness, cores []int, fail bool) journal.Event {
+	h.t.Helper()
+	a := h.next()
+	if !a.Trial.Rerun || a.Trial.Condition != machine.Parked || !allZero(a.Trial.Profile) || len(a.Trial.Profile) != len(h.s.cores) || !slices.Equal(a.Trial.Cores, cores) {
+		h.t.Fatalf("all-zero rerun %+v", a)
 	}
-	want := "unattributed R7 failure counts against CCD 0's top group, and every loaded core of that CCD [0 1] is at CO 0; the instability is not caused by Curve Optimizer"
-	if diff := cmp.Diff(want, dead.Detail); diff != "" {
-		t.Fatal(diff)
+	if !fail {
+		_, end := h.trial(a, passed)
+		return end
+	}
+	_, end := h.trial(a, failed)
+	h.decide(h.next())
+	return end
+}
+
+func TestR7ZeroAffectedCCDDeadEndsAfterItsAllZeroRerun(t *testing.T) {
+	for _, rerunFails := range []bool{true, false} {
+		t.Run(fmt.Sprint(rerunFails), func(t *testing.T) {
+			h := r7Harness(t)
+			profile := []int{0, 0, -30, -30}
+			h.add(&journal.ProfileChange{To: profile})
+			failure := r7Fact(h, false, h.s.ids(), profile, map[int]float64{0: 1.2, 1: 1.15, 2: 1.3, 3: 1.25}, []int{0, 2}, nil, new(1), nil)
+			if a, ok := h.s.Drain(); ok {
+				t.Fatalf("decided before the all-zero rerun: %+v", a)
+			}
+			rerun := runZeroRerun(h, h.s.ids(), rerunFails)
+			a, ok := h.s.Drain()
+			if !rerunFails {
+				move, moved := a.Payload.(*journal.TunerDecision)
+				if !ok || !moved || move.Decision != journal.Backoff || move.Core != 2 || move.ToOffset != -29 {
+					t.Fatalf("a passed rerun did not send the failure to CCD 1: %+v", a)
+				}
+				h.decide(a)
+				if a, pending := h.s.Drain(); pending {
+					t.Fatalf("the failure moved twice: %+v", a)
+				}
+				assertProjectionReplay(h)
+				return
+			}
+			dead, ended := a.Payload.(*journal.DeadEnd)
+			if !ok || !ended || dead.Condition != journal.DeadEndFailureAtZero || !slices.Contains(a.Cause, failure.Seq) || !slices.Contains(a.Cause, rerun.Seq) {
+				t.Fatalf("%+v", a)
+			}
+			want := fmt.Sprintf("unattributed R7 failure counts against CCD 0's top group, and every loaded core of that CCD [0 1] is at CO 0; the rerun with every core at CO 0 failed too (#%d), so the instability is not caused by Curve Optimizer", rerun.Seq)
+			if diff := cmp.Diff(want, dead.Detail); diff != "" {
+				t.Fatal(diff)
+			}
+		})
 	}
 }
 
@@ -400,6 +436,14 @@ func TestR7NamedZeroAttributionUsesStartTop(t *testing.T) {
 				r7Fact(h, true, []int{0, 1}, profile, map[int]float64{0: 1.1, 1: 1.2}, []int{1}, nil, nil, nil)
 			}
 			a, ok := h.s.Drain()
+			var rerun journal.Event
+			if tc.dead {
+				if ok {
+					t.Fatalf("decided before the all-zero rerun: %+v", a)
+				}
+				rerun = runZeroRerun(h, []int{0, 1}, true)
+				a, ok = h.s.Drain()
+			}
 			if !ok {
 				t.Fatal("no zero decision")
 			}
@@ -418,7 +462,7 @@ func TestR7NamedZeroAttributionUsesStartTop(t *testing.T) {
 				case tc.top == nil:
 					basis = "offset order (no request telemetry)"
 				}
-				want := "core 00 failed at CO 0 as a top requester of CCD 0 by " + basis + "; the instability is not caused by Curve Optimizer"
+				want := "core 00 failed at CO 0 as a top requester of CCD 0 by " + basis + fmt.Sprintf("; the rerun with every core at CO 0 failed too (#%d), so the instability is not caused by Curve Optimizer", rerun.Seq)
 				if diff := cmp.Diff(want, dead.Detail); diff != "" {
 					t.Fatal(diff)
 				}
@@ -647,7 +691,7 @@ func TestR7NamedIdleZeroCoreCountsAgainstLoadedCCD(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		profile []int
-		dead    bool
+		locates bool
 	}{
 		{"loaded CCD movable", []int{-30, -30, 0, -30}, false},
 		{"loaded CCD at zero", []int{0, 0, 0, -30}, true},
@@ -656,14 +700,20 @@ func TestR7NamedIdleZeroCoreCountsAgainstLoadedCCD(t *testing.T) {
 			h := r7Harness(t)
 			r7Fact(h, false, []int{0, 1}, tc.profile, nil, []int{0}, new(2), nil, nil)
 			a, ok := h.s.Drain()
-			if !ok {
-				t.Fatal("no decision")
-			}
-			if tc.dead {
-				if dead, ended := a.Payload.(*journal.DeadEnd); !ended || dead.Condition != journal.DeadEndFailureAtZero {
-					t.Fatalf("%+v", a)
+			if tc.locates {
+				// With every loaded core at 0, the locate with every core at 0 is the failure's all-zero rerun.
+				if ok {
+					t.Fatalf("decided before locating: %+v", a)
+				}
+				a = h.next()
+				start, started := a.Payload.(*journal.HuntStart)
+				if !started || !slices.Equal(start.Parked, []int{0, 0, 0, 0}) || !slices.Equal(start.Candidates, []int{3}) {
+					t.Fatalf("located hunt %+v", a)
 				}
 				return
+			}
+			if !ok {
+				t.Fatal("no decision")
 			}
 			move, moved := a.Payload.(*journal.TunerDecision)
 			if !moved || move.Decision != journal.Backoff {
@@ -978,6 +1028,48 @@ func TestR7LocatedFailureNamingALoadedCoreChargesThatCore(t *testing.T) {
 			}
 			if _, reaches := h.s.reaches([]int{-30, -30, -30, -30}); !reaches {
 				t.Fatal("core 01's failure point at -30 was not recorded")
+			}
+			assertProjectionReplay(h)
+		})
+	}
+}
+
+func TestR7PassedAllZeroLocateNeverChargesLoadedCoresAtZero(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		fails  func([]int) *int
+		result string
+		cores  []int
+	}{
+		{"no group fails", func([]int) *int { return nil }, "fallback", []int{2, 3}},
+		{"a group names a loaded core at 0", func(p []int) *int {
+			if p[3] == 0 {
+				return nil
+			}
+			return new(0)
+		}, "culprit", []int{3}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := r7Harness(t)
+			for id := range 2 {
+				h.add(&journal.CorePhase{Core: id, To: journal.PhaseHasRoom, Offset: 0, Reason: "test"})
+			}
+			h.add(&journal.ProfileChange{To: []int{0, 0, -30, -30}})
+			failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+			a := runLocated(h, tc.fails)
+			end, ok := a.Payload.(*journal.HuntEnd)
+			if !ok || end.Result != tc.result || !slices.Equal(end.Cores, tc.cores) {
+				t.Fatalf("hunt end %+v", a)
+			}
+			h.decide(a)
+			for a = h.next(); a.Kind == Decide; a = h.next() {
+				if dead, ok := a.Payload.(*journal.DeadEnd); ok {
+					t.Fatalf("dead-ended after the all-zero locate passed: %+v", dead)
+				}
+				h.decide(a)
+			}
+			if !slices.Equal(h.s.offsets()[:2], []int{0, 0}) {
+				t.Fatalf("offsets %v", h.s.offsets())
 			}
 			assertProjectionReplay(h)
 		})
