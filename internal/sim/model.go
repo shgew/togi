@@ -343,7 +343,10 @@ func (m *Machine) trialRNG(purpose string, spec machine.TrialSpec, core int) *ra
 	case machine.Parked:
 		condition = "masked"
 	}
-	return m.rng(purpose, core, spec.Regime, condition, m.regs[core], spec.Index)
+	if slices.Contains(spec.Cores, core) {
+		return m.rng(purpose, core, spec.Regime, condition, m.regs[core], spec.Index)
+	}
+	return m.rng(purpose, core, spec.Regime, condition, m.regs[core], spec.Index, slices.Sorted(slices.Values(spec.Cores)))
 }
 
 func (m *Machine) failureTime(spec machine.TrialSpec, core int) (time.Duration, machine.Signal, bool) {

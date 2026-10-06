@@ -1,7 +1,7 @@
 ---
 name: "Maintainer: Design"
 about: For the maintainer. Decisions settled in a discussion, waiting to be scheduled.
-labels: ["design"]
+labels: ["design", "needs-triage"]
 ---
 
 ## Why
@@ -17,3 +17,6 @@ labels: ["design"]
 ## Pull requests
 
 ## Links
+
+<!-- One line naming the packages or files the change edits, comma-separated, such as `internal/tuner`, `docs/spec/tuner.md`. `just board` compares it with the work in progress to find overlaps. -->
+Touches:

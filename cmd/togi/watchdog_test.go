@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -14,6 +16,8 @@ import (
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 )
+
+const watchdogWarning = "check hardware watchdog: no active hardware watchdog (no hardware watchdog state available), so a freeze needs a manual reset; start sessions from the tuning boot, especially after a breaking update; continuing the session"
 
 type countedWatchdogHost struct {
 	machine.Host
@@ -28,7 +32,7 @@ func (h countedWatchdogHost) Watchdog() machine.Check {
 type warningObservedSMU struct {
 	machine.SMU
 	t      *testing.T
-	stderr *bytes.Buffer
+	dir    string
 	warn   bool
 	writes *int
 	cancel context.CancelFunc
@@ -46,10 +50,24 @@ func (s warningObservedSMU) SetAllOffsets(offset int) error {
 
 func (s warningObservedSMU) observe() {
 	*s.writes++
-	if got := strings.Contains(s.stderr.String(), "togi run: warning: no active hardware watchdog"); got != s.warn {
-		s.t.Fatalf("warning before offset write = %t, want %t; stderr: %s", got, s.warn, s.stderr)
+	events, _, err := journal.Read(s.dir)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	if got := len(watchdogWarnings(events)) > 0; got != s.warn {
+		s.t.Fatalf("warning journaled before offset write = %t, want %t", got, s.warn)
 	}
 	s.cancel()
+}
+
+func watchdogWarnings(events []journal.Event) []string {
+	var warnings []string
+	for _, e := range events {
+		if p, ok := e.Data.(*journal.SessionWarning); ok && p.Operation == "check hardware watchdog" {
+			warnings = append(warnings, e.Msg)
+		}
+	}
+	return warnings
 }
 
 func TestRunWatchdogWarning(t *testing.T) {
@@ -57,14 +75,16 @@ func TestRunWatchdogWarning(t *testing.T) {
 		t.Skip("hardware runs need Linux")
 	}
 	for _, tt := range []struct {
-		name   string
-		active bool
-		tuning bool
-		warn   bool
-		polls  int
-		code   int
+		name      string
+		active    bool
+		tuning    bool
+		dashboard bool
+		warn      bool
+		polls     int
+		code      int
 	}{
 		{name: "manual without watchdog", warn: true, polls: 1},
+		{name: "manual without watchdog on the dashboard", dashboard: true, warn: true, polls: 1},
 		{name: "manual active watchdog", active: true, polls: 1},
 		{name: "tuning active watchdog", active: true, tuning: true, polls: 1},
 		{name: "tuning without watchdog", tuning: true, polls: 31, code: exitPreflight},
@@ -84,13 +104,25 @@ func TestRunWatchdogWarning(t *testing.T) {
 			polls, writes := 0, 0
 			seams := m.Seams()
 			seams.Host = countedWatchdogHost{Host: seams.Host, polls: &polls}
-			seams.SMU = warningObservedSMU{SMU: seams.SMU, t: t, stderr: &stderr, warn: tt.warn, writes: &writes, cancel: cancel}
+			seams.SMU = warningObservedSMU{SMU: seams.SMU, t: t, dir: g.stateDir, warn: tt.warn, writes: &writes, cancel: cancel}
 			newMachine := func(config.Config, string) (machine.Machine, error) { return seams, nil }
 			var bootloader session.Bootloader
 			if tt.tuning {
 				bootloader = &clearingBootloader{}
 			}
-			code := runHardware(ctx, &g, config.Default(), false, bootloader, 0, &stderr, journal.Renderer{}, nil, newMachine)
+			var dash *dashboard
+			if tt.dashboard {
+				out, err := os.Create(filepath.Join(t.TempDir(), "screen"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer out.Close()
+				dash = &dashboard{dir: g.stateDir, out: out, run: func(ctx context.Context, _ string, _ *os.File) error {
+					<-ctx.Done()
+					return nil
+				}}
+			}
+			code := runHardware(ctx, &g, config.Default(), false, bootloader, 0, &stderr, journal.Renderer{}, dash, newMachine)
 			if diff := cmp.Diff(tt.code, code); diff != "" {
 				t.Fatalf("exit (-want +got): %s; stderr: %s", diff, &stderr)
 			}
@@ -109,9 +141,6 @@ func TestRunWatchdogWarning(t *testing.T) {
 				if p, ok := e.Data.(*journal.PreflightCheck); ok && p.Check == "watchdog" {
 					checks = append(checks, p.OK)
 				}
-				if e.Kind == journal.KindSessionWarning {
-					t.Fatalf("advisory unexpectedly journaled: %+v", e)
-				}
 			}
 			var wantChecks []bool
 			if tt.tuning {
@@ -120,20 +149,15 @@ func TestRunWatchdogWarning(t *testing.T) {
 			if diff := cmp.Diff(wantChecks, checks); diff != "" {
 				t.Fatalf("watchdog events (-want +got): %s", diff)
 			}
-			const warning = "togi run: warning: no active hardware watchdog (no hardware watchdog state available); a freeze needs a manual reset. Start sessions from the tuning boot, especially after a breaking update.\n"
-			gotWarning := ""
-			for line := range strings.SplitSeq(stderr.String(), "\n") {
-				if strings.HasPrefix(line, "togi run: warning:") {
-					gotWarning += line + "\n"
-				}
-			}
-			wantWarning := ""
+			var wantWarnings []string
 			if tt.warn {
-				wantWarning = warning
-				t.Log(strings.TrimSpace(gotWarning))
+				wantWarnings = []string{watchdogWarning}
 			}
-			if diff := cmp.Diff(wantWarning, gotWarning); diff != "" {
-				t.Fatalf("warning (-want +got): %s", diff)
+			if diff := cmp.Diff(wantWarnings, watchdogWarnings(events)); diff != "" {
+				t.Fatalf("journaled warning (-want +got): %s", diff)
+			}
+			if diff := cmp.Diff(tt.warn && !tt.dashboard, strings.Contains(stderr.String(), watchdogWarning)); diff != "" {
+				t.Fatalf("warning line on stderr (-want +got): %s; stderr: %s", diff, &stderr)
 			}
 		})
 	}

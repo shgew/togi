@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/facts"
@@ -257,18 +256,16 @@ func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
 
 // olderArchives lists the archived sessions older than id, newest first.
 func olderArchives(dir, id string) ([]string, error) {
-	paths, err := filepath.Glob(filepath.Join(dir, "archive", "*.jsonl"))
+	sessions, err := journal.ArchivedSessions(dir)
 	if err != nil {
-		return nil, fmt.Errorf("carry: list archives: %w", err)
+		return nil, fmt.Errorf("carry: %w", err)
 	}
 	var names []string
-	for _, p := range paths {
-		if name := strings.TrimSuffix(filepath.Base(p), ".jsonl"); journal.CompareSessionIDs(name, id) < 0 {
+	for _, name := range slices.Backward(sessions) {
+		if journal.CompareSessionIDs(name, id) < 0 {
 			names = append(names, name)
 		}
 	}
-	slices.SortFunc(names, journal.CompareSessionIDs)
-	slices.Reverse(names)
 	return names, nil
 }
 

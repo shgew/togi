@@ -88,7 +88,7 @@ func TestModelHazards(t *testing.T) {
 					t.Fatalf("hazard: %+v %v", res, err)
 				}
 				rate := base.PastLimitRate
-				x := m.trialRNG("trial", machine.TrialSpec{Regime: machine.R1, Condition: machine.Together, Index: 0}, 0).ExpFloat64()
+				x := m.trialRNG("trial", machine.TrialSpec{Regime: machine.R1, Condition: machine.Together, Cores: []int{0}, Index: 0}, 0).ExpFloat64()
 				want := x / rate
 				if tc.model.OnsetBoost > 0 {
 					want = x / (rate * (1 + tc.model.OnsetBoost))
@@ -935,7 +935,7 @@ func TestFailureDrawAfterOnset(t *testing.T) {
 	model := sharp(machine.ComputationError)
 	model.PastLimitRate, model.Growth, model.OnsetS, model.OnsetBoost = 0.001, 1, 1, 2
 	m := newMachine(t, Config{Seed: 42, Cores: 2, BIOS: []int{-11, 0}, Limits: flat(2, -10, -10), Model: model})
-	spec := machine.TrialSpec{Regime: machine.R1, Condition: machine.Together}
+	spec := machine.TrialSpec{Regime: machine.R1, Condition: machine.Together, Cores: []int{0}}
 	x := m.trialRNG("trial", spec, 0).ExpFloat64()
 	want := time.Duration((1 + (x-0.003)/0.001) * float64(time.Second))
 	if want <= time.Second {
@@ -947,6 +947,32 @@ func TestFailureDrawAfterOnset(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, res.Ran); diff != "" {
 		t.Fatal(diff)
+	}
+}
+
+func TestUnloadedDrawFollowsLoadedSet(t *testing.T) {
+	model := DefaultModel()
+	model.NearLimitRate = 0
+	limits := flat(4, -30, -30)
+	limits[2].Flat = 1.0 / 60
+	cfg := Config{Cores: 4, BIOS: []int{0, 0, -5, 0}, Limits: limits, Model: &model}
+	crashAt := func(cores []int) time.Duration {
+		t.Helper()
+		m := newMachine(t, cfg)
+		if _, err := runSpec(t, m, "0001", machine.R1, machine.PickWorkload(machine.R1, 0), cores, 24*time.Hour, nil); !errors.Is(err, machine.ErrCrashed) {
+			t.Fatalf("flat unloaded core 2 under %v did not crash: %v", cores, err)
+		}
+		return m.Monotonic()
+	}
+	onFirst, onSecond := crashAt([]int{0}), crashAt([]int{1})
+	if onFirst == onSecond {
+		t.Fatalf("unloaded core 2 crashed at %s under both loaded sets", onFirst)
+	}
+	if diff := cmp.Diff(onFirst, crashAt([]int{0})); diff != "" {
+		t.Fatalf("retried start (-first +retry): %s", diff)
+	}
+	if diff := cmp.Diff(crashAt([]int{0, 1}), crashAt([]int{1, 0})); diff != "" {
+		t.Fatalf("loaded order changed the draw (-sorted +reversed): %s", diff)
 	}
 }
 

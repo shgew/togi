@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -155,20 +156,74 @@ func testStateFailureReopen(t *testing.T, at int, after bool) {
 	}
 }
 
+func tornTailFixture(t *testing.T) (dir string, prefix, tail []byte) {
+	t.Helper()
+	dir = t.TempDir()
+	prefix = []byte(fmt.Sprintf(`{"seq":1,"kind":"session.start","schema":%d}`+"\n", Schema))
+	tail = []byte(`{"seq":2,"kind":"shutdown"`)
+	if err := os.WriteFile(filepath.Join(dir, eventsFile), append(bytes.Clone(prefix), tail...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return dir, prefix, tail
+}
+
+// checkTornEvidence fails unless the journal holds the torn tail itself or a journal.torn event recording it, after the
+// complete prefix.
+func checkTornEvidence(t *testing.T, dir string, prefix, tail []byte) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, eventsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(data, append(bytes.Clone(prefix), tail...)) {
+		return
+	}
+	events, torn, err := Read(dir)
+	if err != nil || len(torn) != 0 || !bytes.HasPrefix(data, prefix) {
+		t.Fatalf("journal lost its torn tail: %q, torn %q, %v", data, torn, err)
+	}
+	checkTornRecord(t, events, prefix, tail)
+}
+
+func checkTornRecord(t *testing.T, events []Event, prefix, tail []byte) {
+	t.Helper()
+	if len(events) != 2 {
+		t.Fatalf("discarded-byte evidence: got %d events, want session.start and one journal.torn", len(events))
+	}
+	want := &JournalTorn{Offset: int64(len(prefix)), BytesHex: fmt.Sprintf("%x", tail)}
+	if diff := cmp.Diff(want, events[1].Data); diff != "" {
+		t.Fatalf("discarded-byte evidence (-want +got):\n%s", diff)
+	}
+}
+
+func reopenTornFixture(t *testing.T, dir string, prefix, tail []byte) {
+	t.Helper()
+	j, err := Open(dir, Options{Now: fixedClock(), Sync: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.Close()
+	events, torn, err := Read(dir)
+	if err != nil || len(torn) != 0 {
+		t.Fatalf("repair left torn tail: %q, %v", torn, err)
+	}
+	checkTornRecord(t, events, prefix, tail)
+	if _, err := os.Stat(filepath.Join(dir, eventsTmpFile)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("repaired journal left its temporary file: %v", err)
+	}
+	e, err := j.Append(&Shutdown{Reason: ShutdownCommand})
+	if err != nil || e.Seq != len(events)+1 {
+		t.Fatalf("recovered sequence: %+v, %v", e, err)
+	}
+}
+
+// TestOpenRepairFilesystemFailures stops the repair at each filesystem operation, before or after its effect, which
+// also leaves every state a crash at that point can.
 func TestOpenRepairFilesystemFailures(t *testing.T) {
-	for at := 1; at <= 5; at++ {
+	for at := 1; at <= 7; at++ {
 		for _, after := range []bool{false, true} {
 			t.Run(fmt.Sprintf("operation-%d-after-%v", at, after), func(t *testing.T) {
-				if at == 4 && !after {
-					t.Skip("known pre-existing evidence-loss bug: tail is truncated before the journal.torn write; https://github.com/shgew/togi/issues/305")
-				}
-				dir := t.TempDir()
-				prefix := []byte(fmt.Sprintf(`{"seq":1,"kind":"session.start","schema":%d}`+"\n", Schema))
-				tail := []byte(`{"seq":2,"kind":"shutdown"`)
-				path := filepath.Join(dir, eventsFile)
-				if err := os.WriteFile(path, append(bytes.Clone(prefix), tail...), 0600); err != nil {
-					t.Fatal(err)
-				}
+				dir, prefix, tail := tornTailFixture(t)
 				j, err := Lock(dir, Options{Now: fixedClock(), Sync: true})
 				if err != nil {
 					t.Fatal(err)
@@ -177,62 +232,45 @@ func TestOpenRepairFilesystemFailures(t *testing.T) {
 				j.fs = faults
 				if err := j.Open(); !errors.Is(err, errJournalFilesystem) || !faults.fired {
 					j.Close()
-					t.Fatalf("repair failure = %v, fired %v", err, faults.fired)
+					t.Fatalf("repair failure = %v, fired %v, calls %v", err, faults.fired, faults.calls)
 				}
 				j.Close()
-				j, err = Open(dir, Options{Now: fixedClock(), Sync: true})
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer j.Close()
-				data, err := os.ReadFile(path)
-				if err != nil || !bytes.HasPrefix(data, prefix) {
-					t.Fatalf("accepted prefix changed: %q, %v", data, err)
-				}
-				events, torn, err := Read(dir)
-				if err != nil || len(torn) != 0 {
-					t.Fatalf("repair left torn tail: %q, %v", torn, err)
-				}
-				if len(events) != 2 {
-					t.Fatalf("discarded-byte evidence missing: got %d events, want session.start and journal.torn", len(events))
-				}
-				p, ok := events[1].Data.(*JournalTorn)
-				if !ok || p.BytesHex != fmt.Sprintf("%x", tail) || p.Offset != int64(len(prefix)) {
-					t.Fatalf("discarded-byte evidence: %+v", events[1])
-				}
-				e, err := j.Append(&Shutdown{Reason: ShutdownCommand})
-				if err != nil || e.Seq != len(events)+1 {
-					t.Fatalf("recovered sequence: %+v, %v", e, err)
-				}
+				checkTornEvidence(t, dir, prefix, tail)
+				reopenTornFixture(t, dir, prefix, tail)
 			})
 		}
 	}
 }
 
-func TestTornTailTruncateFailurePreservesEvidence(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, eventsFile)
-	data := []byte(fmt.Sprintf(`{"seq":1,"kind":"session.start","schema":%d}`+"\n", Schema) + `{"seq":2`)
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		t.Fatal(err)
-	}
-	j, err := Lock(dir, Options{Now: fixedClock()})
+func TestTornTailRecordWriteFailurePreservesEvidence(t *testing.T) {
+	dir, prefix, tail := tornTailFixture(t)
+	j, err := Lock(dir, Options{Now: fixedClock(), Sync: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	j.fs = failingJournalFilesystem{journalFilesystem: j.fs, truncateErr: errJournalFilesystem}
+	faults := &faultJournalFilesystem{journalFilesystem: j.fs, failOp: "write"}
+	j.fs = faults
 	if err := j.Open(); !errors.Is(err, errJournalFilesystem) {
-		t.Fatalf("truncate failure: %v", err)
+		j.Close()
+		t.Fatalf("record write failure: %v", err)
 	}
 	j.Close()
-	after, err := os.ReadFile(path)
-	if err != nil || !bytes.Equal(data, after) {
-		t.Fatalf("failed truncate changed evidence: %q, %v", after, err)
+	data, err := os.ReadFile(filepath.Join(dir, eventsFile))
+	if err != nil {
+		t.Fatal(err)
 	}
-	j = openTest(t, dir)
-	if countJournalKind(j.Events(), KindJournalTorn) != 1 {
-		t.Fatal("retry did not record discarded evidence")
+	if diff := cmp.Diff(string(prefix)+string(tail), string(data)); diff != "" {
+		t.Fatalf("failed record write changed the journal (-want +got):\n%s", diff)
 	}
+	reopenTornFixture(t, dir, prefix, tail)
+}
+
+func TestTornTailRepairReplacesLeftoverTemporaryFile(t *testing.T) {
+	dir, prefix, tail := tornTailFixture(t)
+	if err := os.WriteFile(filepath.Join(dir, eventsTmpFile), []byte(`{"seq":1,"kind":"session.start"`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reopenTornFixture(t, dir, prefix, tail)
 }
 
 func TestTornFirstLineSyncFailure(t *testing.T) {

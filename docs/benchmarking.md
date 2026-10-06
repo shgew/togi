@@ -77,8 +77,8 @@ To control concurrency, timeouts or retention directly, use `go run ./tools/benc
 
 `--out FILE` writes one JSON object per run:
 
-- `status`: `concluded` (the session stopped after its clean cycle), `deadend`, `error` or `timeout`;
-- `sim_hours`: simulated time from `session.start` to the last event, including the 90 s each crash reboot costs. This is the time to conclusion;
+- `status`: `concluded` (the session stopped after its clean cycle), `deadend`, `censored`, `error` or `timeout`. `censored` is a session still running when `tools/sim` reached its boot cap (`--max-boots`, default 1000; [simulating](simulating.md)): it did not conclude, and its metrics describe the partial session, so its `sim_hours` and `crashes` are lower bounds on its cost;
+- `sim_hours`: simulated time from `session.start` to the last event, including the 90 s each crash reboot costs. This is the time to conclusion, or for a run that did not conclude the time it ran;
 - `first_passed_cycle_h`: simulated time to the first passed cycle;
 - `crashes`, `trials`, `trial_hours`, `hunts` and `combinations`;
 - `passed_cycles`: completed `checking.cycle` ends marked passed, whether full or not;
@@ -92,6 +92,8 @@ To control concurrency, timeouts or retention directly, use `go run ./tools/benc
 
 The commit, a dirty flag and the ruleset are recorded with every run.
 
+The summary counts each scenario's runs, `concluded` runs and `censored` runs. Its time, crash and depth columns include every status, so a censored run's time and crashes enter them as lower bounds.
+
 The summary prints each scenario's `real_answer_share` and a pooled total. Comparison scenario rows and the verdict line print the candidate and baseline shares over paired runs. These fractions describe how much of the observed path has direct real evidence, not a confidence score. Unfinished trials in a timed-out subprocess have no recorded outcome and are not counted. Hazard metrics and model checks still describe the fitted fallback, not an empirical oracle hazard.
 
 The summary's `partial_s/passed_cycle` divides pooled `partial_seconds` by pooled `passed_cycles`, not by runs or full cycles and not by an average of per-run ratios. It reports zero when no passed cycle completed. This legacy metric is the elapsed load cost of marked ruleset-8 record-only R7 partials per completed passed cycle: failed partials still cost their measured elapsed time, not their intended duration. It excludes reboot and other non-load overhead. The marker does not change the trial class. Ruleset 9 emits no record-only trials and treats eligible marked outcomes carried from ruleset 8 as ordinary decision evidence; this marker-based metric is not the cost of ruleset-9 partial chains.
@@ -100,7 +102,7 @@ For shared-voltage runs the summary also prints `worst_r7_hazard/h`, the maximum
 
 ## Comparing two versions
 
-Run the base version with `--out base.jsonl` and the candidate with `--baseline base.jsonl`. Runs pair by scenario and seed; a warning counts candidate runs without a base run, and base runs in the candidate's splits without a candidate run. For each pair the ratio is candidate `sim_hours` over base `sim_hours`. Each scenario reports the geometric mean of its ratios with a 95% bootstrap interval. The overall ratio weights scenarios equally, and its interval resamples pairs within each scenario. The last line is a verdict:
+Run the base version with `--out base.jsonl` and the candidate with `--baseline base.jsonl`. Runs pair by scenario and seed; a warning counts candidate runs without a base run, and base runs in the candidate's splits without a candidate run. For each pair that both versions concluded, the ratio is candidate `sim_hours` over base `sim_hours`; a pair either side did not conclude, censored included, has no ratio. Each scenario reports the geometric mean of its ratios with a 95% bootstrap interval. The overall ratio weights scenarios equally, and its interval resamples pairs within each scenario. The last line is a verdict:
 
 - `REJECT`: any violation, or the interval's lower bound above 1.0;
 - `ACCEPT`: no violation and the interval's upper bound below 1.0;
@@ -108,7 +110,7 @@ Run the base version with `--out base.jsonl` and the candidate with `--baseline 
 
 Violations:
 
-- **V1:** a run the base concluded no longer concludes.
+- **V1:** a run the base concluded no longer concludes, including a censored run.
 - **V2:** a run's `hazard_max_per_h` rises by more than 0.01.
 - **V3:** depth gets shallower: by more than 1 count averaged over a scenario, or by more than 5 in one run.
 - **V4:** `target`, the target machine's replay-oracle ensemble, gets slower overall.

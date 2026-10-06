@@ -162,7 +162,7 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 		if err != nil {
 			return Stop{}, err
 		}
-		if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: boundary, Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: configSnapshot(r.in.Config)}); err != nil {
+		if err := r.recordConfig(boundary); err != nil {
 			return Stop{}, err
 		}
 		if err := r.recoverCrashes(ctx); err != nil {
@@ -218,6 +218,13 @@ func (r *runner) startJournal() error {
 	}
 	_, err := r.append(&journal.SessionStart{Build: Build(), Session: id, Cores: r.cores, Evidence: tuner.EvidenceEpoch})
 	return err
+}
+
+func (r *runner) recordConfig(boundary journal.KernelBoundary) error {
+	if _, err := r.append(&journal.ConfigLoaded{Build: Build(), KernelBoundary: boundary, Path: r.in.ConfigPath, File: r.in.ConfigFile, Config: configSnapshot(r.in.Config)}); err != nil {
+		return err
+	}
+	return r.warnWatchdog()
 }
 
 func (r *runner) checkCompatibility(events []journal.Event) error {

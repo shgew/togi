@@ -8,8 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/shgew/togi/internal/journal"
@@ -20,16 +18,14 @@ import (
 // clock starts after their last event, so a later simulated run never reuses a boot ID, a session ID or rewinds time.
 // Without a configured BIOS context, the machine reports the newest one they recorded.
 func Resume(dir string, cfg Config) (Config, error) {
-	archives, err := filepath.Glob(filepath.Join(dir, "archive", "*.jsonl"))
+	sessions, err := journal.ArchivedSessions(dir)
 	if err != nil {
 		return cfg, fmt.Errorf("resume simulator: %w", err)
 	}
-	slices.SortFunc(archives, func(a, b string) int {
-		return journal.CompareSessionIDs(
-			strings.TrimSuffix(filepath.Base(a), ".jsonl"),
-			strings.TrimSuffix(filepath.Base(b), ".jsonl"),
-		)
-	})
+	var archives []string
+	for _, id := range sessions {
+		archives = append(archives, filepath.Join(dir, "archive", id+".jsonl"))
+	}
 	boots := map[string]bool{}
 	var (
 		last time.Time
