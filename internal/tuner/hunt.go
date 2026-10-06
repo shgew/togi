@@ -453,13 +453,27 @@ func (s *State) groupOutcome(h *hunt, m groupRecord) string {
 	return outcome
 }
 
-func (s *State) citeGroupCarried(cause []int, h *hunt, m groupRecord) []int {
+// citeGroup adds what established a group's outcome: the failure that rejected it, live or carried, or, for a group
+// whose failure was inferred, the hunt.group recording that inference and citing its failure. Of passing evidence, only
+// carried passes are cited.
+func (s *State) citeGroup(cause []int, h *hunt, i int) []int {
+	m := h.groups[i]
 	cause = s.citeCarried(cause, m.cause...)
-	_, failure, seqs := s.groupEvidence(h, m, true)
-	if failure != 0 {
-		return s.citeCarried(cause, failure)
+	if m.payload.Inferred == "failure" {
+		return citeNew(cause, m.seq)
 	}
-	return s.citeCarried(cause, seqs...)
+	_, failure, seqs := s.groupEvidence(h, m, true)
+	if failure == 0 {
+		return s.citeCarried(cause, seqs...)
+	}
+	if i+1 < len(h.groups) {
+		// A later group's failure at a shallower profile also rejects this one; cite the failure seen before the hunt moved on.
+		k := h.class.withDuration(m.payload.DurationS)
+		if before := s.failureBefore(k, m.payload.Profile, s.inferenceSince(m.payload, m.seq), h.groups[i+1].seq); before != 0 {
+			failure = before
+		}
+	}
+	return citeNew(cause, failure)
 }
 
 func (s *State) huntNext() (Action, bool) {
@@ -519,8 +533,8 @@ func (s *State) huntNext() (Action, bool) {
 			cause = append(cause, failure)
 		}
 	}
-	for _, m := range h.groups {
-		cause = s.citeGroupCarried(cause, h, m)
+	for i := range h.groups {
+		cause = s.citeGroup(cause, h, i)
 	}
 	reason += s.carriedReason(cause)
 	return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: result, Cores: cores, Members: members, Groups: len(h.groups), Reason: reason}, Cause: cause}, true
@@ -538,7 +552,7 @@ func (s *State) planGroup(h *hunt, p groupPlan, reason string) Action {
 		cause = s.citeCarried(cause, seqs...)
 	} else if failure := s.failingSeq(k, payload.Profile, since); failure != 0 {
 		payload.Inferred, payload.Reason = "failure", "a known failure establishes the group"
-		cause = s.citeCarried(cause, failure)
+		cause = citeNew(cause, failure)
 	} else if reachedConstraint, ok := s.reaches(payload.Profile); ok {
 		payload.Skipped, payload.Reason = true, "its profile reaches "+reachedConstraint
 	}
@@ -550,8 +564,8 @@ func (s *State) planGroup(h *hunt, p groupPlan, reason string) Action {
 		payload.Reason += fmt.Sprintf("; two parked failures in this class followed one-count backoffs on core %02d, so probe that core first", p.cores[0])
 		cause = append(cause, p.singleCorePrior[:]...)
 	}
-	for _, m := range h.groups {
-		cause = s.citeGroupCarried(cause, h, m)
+	for i := range h.groups {
+		cause = s.citeGroup(cause, h, i)
 	}
 	payload.Reason += s.carriedReason(cause)
 	return Action{Kind: Decide, Payload: payload, Cause: cause}

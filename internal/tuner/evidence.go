@@ -207,6 +207,13 @@ func (s *State) citeCarried(cause []int, seqs ...int) []int {
 	return cause
 }
 
+func citeNew(cause []int, seq int) []int {
+	if slices.Contains(cause, seq) {
+		return cause
+	}
+	return append(cause, seq)
+}
+
 func (s *State) carriedReason(seqs []int) string {
 	var sessions []string
 	count := 0
