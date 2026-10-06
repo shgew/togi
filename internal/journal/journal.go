@@ -904,39 +904,11 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 	if j.appendErr != nil {
 		return Event{}, j.appendErr
 	}
-	seq := len(j.events) + 1
-	kind := p.Kind()
-	if _, ok := payloadTypes[kind]; !ok {
-		return Event{}, fmt.Errorf("append %s: unregistered kind", kind)
-	}
-	if seq == 1 && kind != KindSessionStart {
-		return Event{}, fmt.Errorf("append %s: the first event must be %s", kind, KindSessionStart)
-	}
-	for _, c := range cause {
-		if c < 1 || c >= seq {
-			return Event{}, fmt.Errorf("append %s: cause %d is not an earlier event", kind, c)
-		}
-	}
-	e := Event{
-		Seq:  seq,
-		Time: j.opts.Now().UTC(),
-		Boot: j.opts.Boot,
-		Kind: kind,
-		Msg:  p.Message(),
-		Data: p,
-	}
-	if j.opts.Monotonic != nil {
-		e.Mono = j.opts.Monotonic().Milliseconds()
-	}
-	if len(cause) > 0 {
-		e.Cause = slices.Clone(cause)
-	}
-	raw, err := encode(e, j.opts.Monotonic != nil)
+	e, raw, err := j.next(p, cause)
 	if err != nil {
-		return Event{}, fmt.Errorf("append %s: %w", kind, err)
+		return Event{}, err
 	}
-	raw = append(raw, '\n')
-	e.Raw = raw[:len(raw)-1]
+	kind := e.Kind
 	n, err := j.f.Write(raw)
 	if err == nil && n != len(raw) {
 		err = io.ErrShortWrite
@@ -956,6 +928,44 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 		fmt.Fprintln(j.opts.Log, j.opts.Renderer.Line(e, time.Local))
 	}
 	return e, nil
+}
+
+// next builds the event that follows the journal's events, and its line with the newline.
+func (j *Journal) next(p Payload, cause []int) (Event, []byte, error) {
+	seq := len(j.events) + 1
+	kind := p.Kind()
+	if _, ok := payloadTypes[kind]; !ok {
+		return Event{}, nil, fmt.Errorf("append %s: unregistered kind", kind)
+	}
+	if seq == 1 && kind != KindSessionStart {
+		return Event{}, nil, fmt.Errorf("append %s: the first event must be %s", kind, KindSessionStart)
+	}
+	for _, c := range cause {
+		if c < 1 || c >= seq {
+			return Event{}, nil, fmt.Errorf("append %s: cause %d is not an earlier event", kind, c)
+		}
+	}
+	e := Event{
+		Seq:  seq,
+		Time: j.opts.Now().UTC(),
+		Boot: j.opts.Boot,
+		Kind: kind,
+		Msg:  p.Message(),
+		Data: p,
+	}
+	if j.opts.Monotonic != nil {
+		e.Mono = j.opts.Monotonic().Milliseconds()
+	}
+	if len(cause) > 0 {
+		e.Cause = slices.Clone(cause)
+	}
+	raw, err := encode(e, j.opts.Monotonic != nil)
+	if err != nil {
+		return Event{}, nil, fmt.Errorf("append %s: %w", kind, err)
+	}
+	raw = append(raw, '\n')
+	e.Raw = raw[:len(raw)-1]
+	return e, raw, nil
 }
 
 func (j *Journal) Close() error {
