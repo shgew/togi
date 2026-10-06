@@ -42,24 +42,7 @@ func (s *State) projectChecking() *journal.CheckingState {
 		fullCycleCoverage, missing = s.fullCycleCoverage(g.steps)
 	}
 	if g.open {
-		g.stepsDone = len(g.steps)
-		for i := range g.steps {
-			unmet := false
-			if g.steps[i] == machine.R7 && !s.r7ChainsComplete(i) {
-				g.stepsDone = i
-				break
-			}
-			for _, q := range s.requirements(i) {
-				if q.count > 0 && s.passes(q.class, g.profile, g.startSeq, cycleEvidence) < q.count {
-					unmet = true
-					break
-				}
-			}
-			if unmet {
-				g.stepsDone = i
-				break
-			}
-		}
+		g.stepsDone = s.checkingStepsDone()
 	}
 	out := &journal.CheckingState{Cycle: g.cycle, CycleOpen: g.open, Steps: slices.Clone(g.steps), StepsDone: g.stepsDone, Profile: slices.Clone(g.profile), ProfileSeq: g.profileSeq, Full: fullCycleCoverage, Missing: missing, CleanCycles: s.CleanCycles(), LastCleanCycle: lastCleanCycle, TctlMaxSeq: peakSeq}
 	if peakSeq != 0 {
@@ -93,4 +76,19 @@ func (s *State) projectChecking() *journal.CheckingState {
 	}
 	s.projectedChecking = out
 	return out
+}
+
+func (s *State) checkingStepsDone() int {
+	g := &s.checking
+	for i := range g.steps {
+		if g.steps[i] == machine.R7 && !s.r7ChainsComplete(i) {
+			return i
+		}
+		for _, q := range s.requirements(i) {
+			if q.count > 0 && s.passes(q.class, g.profile, g.startSeq, cycleEvidence) < q.count {
+				return i
+			}
+		}
+	}
+	return len(g.steps)
 }

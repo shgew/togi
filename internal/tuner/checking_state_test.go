@@ -65,6 +65,24 @@ func TestCreditedCycleReplays(t *testing.T) {
 	}
 }
 
+func TestUnpassedCycleStepsDoneReplays(t *testing.T) {
+	h := hasRoomHarness(t, -10, -12)
+	for projected(h).Checking.StepsDone < 2 {
+		a := h.next()
+		if a.Kind == RunTrial {
+			h.trial(a, passed)
+		} else {
+			h.decide(a)
+		}
+	}
+	h.add(&journal.CheckingCycle{Cycle: h.s.checking.cycle, Event: journal.CycleEnd, Reason: "core 00 was reset"})
+	live := projected(h)
+	if diff := cmp.Diff(2, live.Checking.StepsDone); diff != "" {
+		t.Fatalf("steps done (-want +got):\n%s", diff)
+	}
+	assertProjectionReplay(h)
+}
+
 func TestCleanCycleSummaryAfterDeepening(t *testing.T) {
 	h := hasRoomHarness(t, -10)
 	for _, cycle := range []int{3, 7} {

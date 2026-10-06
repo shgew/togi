@@ -68,10 +68,11 @@ func (s *State) foldCycle(e journal.Event, p *journal.CheckingCycle) {
 		s.projectionDirty = true
 		return
 	}
-	g.open = false
-	if p.Passed {
-		g.stepsDone = len(g.steps)
+	g.stepsDone = len(g.steps)
+	if !p.Passed {
+		g.stepsDone = s.checkingStepsDone()
 	}
+	g.open = false
 	if p.Passed && p.Full {
 		s.passedFullCycles = append(s.passedFullCycles, passedFullCycle{profile: slices.Clone(g.profile), seq: e.Seq, cycle: p.Cycle, allAtLimit: s.allAtLimit()})
 	}
@@ -192,23 +193,7 @@ func (s *State) coveredEnd() (Action, bool) {
 	if s.retry != nil || !s.canDeepen() {
 		return Action{}, false
 	}
-	complete := true
-	for i := range s.checking.steps {
-		if s.checking.steps[i] == machine.R7 && !s.r7ChainsComplete(i) {
-			complete = false
-			break
-		}
-		for _, q := range s.requirements(i) {
-			if q.count > 0 && s.passes(q.class, s.checking.profile, s.checking.startSeq, cycleEvidence) < q.count {
-				complete = false
-				break
-			}
-		}
-		if !complete {
-			break
-		}
-	}
-	if complete {
+	if s.checkingStepsDone() == len(s.checking.steps) {
 		return Action{}, false
 	}
 	seq := s.covering()
