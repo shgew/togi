@@ -82,6 +82,15 @@ Copyright (C) 2026 Hleb Shauchenka. togi is free software under the [GNU General
 
 Enter the dev shell with `nix develop`, or run `direnv allow` once if you use direnv. `just test` is the tight loop, and `just gate` runs every non-VM flake check sequentially, using warm Go caches: formatting, lint, the NixOS module's evaluation, changelog fragments, the vendored Go modules, shuffled integration-tagged tests, the race detector and, on Linux, the hardware-tagged trial test compile. `just check` adds the Linux VM tests and stays CI's definition of green; CI runs every check on every pull request. Recipes also work outside the dev shell; run `just` to list them. [AGENTS.md](AGENTS.md) has the agent check ladder and the rest.
 
+CI pushes each check's output to the public Cachix cache `togi`, and local `just check` can download those instead of building them. Nix uses the cache only when the machine's own configuration trusts it, so opting in is a choice per machine: either add the cache to the system Nix configuration (`/etc/nix/nix.conf`, `/etc/nix/nix.custom.conf` under Determinate Nix, or the same two settings under `nix.settings` on NixOS or nix-darwin),
+
+```
+extra-substituters = https://togi.cachix.org
+extra-trusted-public-keys = togi.cachix.org-1:1EZ2zQlDkNhHZmROZzR0n0/CcYGLPfAmPs+VaGL72LU=
+```
+
+or run `cachix use togi` as a user listed in `trusted-users`. After changing the system configuration file, by hand or by running `cachix use togi` as root outside NixOS, restart the Nix daemon, because it reads that file only when it starts. Local `just check` then downloads every check whose inputs are unchanged and builds only the rest. Trusting the key makes Nix on that machine accept any store path the cache serves, for any build and not only togi's checks, including outputs pushed by pull request runs that hold the push token ([ADR 0021](docs/adr/0021-cache-check-outputs-on-cachix.md)). The flake configures no cache ([ADR 0042](docs/adr/0042-opt-in-to-the-check-cache-locally.md)).
+
 Hardware tests share a private host lock with `run` and `reset`. Delegated users need explicit lock access as well as SMU and cpuset-controller permissions; see [host-lock provisioning](docs/howto.md#host-lock-and-delegated-hardware-tests). After upgrading from a public-readable lock, quiesce old lock openers or reboot before relying on the new permissions.
 
 togi runs on NixOS. Development works on Linux and on macOS (aarch64-darwin). On macOS, the dev shell, the tests, `just sim`, every flake check except the VM tests and the trial scope tests, and `status`, `events` and `reset` against a copied state directory work; CI runs the Linux-only checks, and `togi run` exits with an error.
