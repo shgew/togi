@@ -17,11 +17,11 @@ func TestFaultsAndRanking(t *testing.T) {
 	}
 	m := newMachine(t, Config{Cores: 2, Ranking: []int{11, 22}, OldKernel: true})
 	ranking, err := m.Seams().Host.Ranking()
-	if err != nil || !cmp.Equal(ranking, []int{11, 22}) {
+	if err != nil || !cmp.Equal(ranking, []machine.CoreRank{{Core: 0, Value: 11}, {Core: 1, Value: 22}}) {
 		t.Fatalf("ranking %v %v", ranking, err)
 	}
-	ranking[0] = 99
-	if got, _ := m.Seams().Host.Ranking(); got[0] != 11 {
+	ranking[0].Value = 99
+	if got, _ := m.Seams().Host.Ranking(); got[0].Value != 11 {
 		t.Fatalf("ranking aliased: %v", got)
 	}
 	m.FailWriteAt(2)

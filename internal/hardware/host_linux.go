@@ -88,10 +88,10 @@ func (h *host) ValidateSMU() error { return h.drv.ValidateSMU() }
 
 func (h *host) BIOSContext() (machine.BIOSContext, error) { return h.drv.BIOSContext() }
 
-func (h *host) Ranking() ([]int, error) { return ranking("/", h.drv.Topology()) }
+func (h *host) Ranking() ([]machine.CoreRank, error) { return ranking("/", h.drv.Topology()) }
 
-func ranking(root string, cores []machine.CoreInfo) ([]int, error) {
-	values := make([]int, len(cores))
+func ranking(root string, cores []machine.CoreInfo) ([]machine.CoreRank, error) {
+	values := make([]machine.CoreRank, len(cores))
 	for i, core := range cores {
 		path := filepath.Join(root, "sys/devices/system/cpu/cpufreq", fmt.Sprintf("policy%d", core.CPUs[0]), "amd_pstate_prefcore_ranking")
 		raw, err := os.ReadFile(path)
@@ -102,7 +102,7 @@ func ranking(root string, cores []machine.CoreInfo) ([]int, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read preferred-core ranking of cpu %d: %w", core.CPUs[0], err)
 		}
-		values[i] = value
+		values[i] = machine.CoreRank{Core: core.Core, Value: value}
 	}
 	return values, nil
 }

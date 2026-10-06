@@ -14,7 +14,17 @@ type rankingHost struct {
 	values []int
 }
 
-func (h rankingHost) Ranking() ([]int, error) { return h.values, nil }
+func (h rankingHost) Ranking() ([]machine.CoreRank, error) {
+	cores, err := h.Host.Topology()
+	if err != nil {
+		return nil, err
+	}
+	ranking := make([]machine.CoreRank, len(h.values))
+	for i, value := range h.values {
+		ranking[i] = machine.CoreRank{Core: cores[i].Core, Value: value}
+	}
+	return ranking, nil
+}
 
 func TestRankingFallbackAndTies(t *testing.T) {
 	t.Parallel()
