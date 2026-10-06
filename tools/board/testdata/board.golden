@@ -7,13 +7,17 @@ Untriaged (needs-triage)
 In progress
   #503 Split the frame renderer (@shgew)
     block: #502 Block: dashboard
-    branches: frame-split
+    branches: frame-split, other
     pull requests: #601
     touches: internal/watch, docs/spec/runtime.md
   #512 Keep punctuation out of reasons (@shgew, @robotogi)
-    branches: reason-text
+    branches: reason-text, third
     pull requests: #600, #602
     touches: internal/journal, internal/tuner/hunt.go
+  #514 Shade the idle cores (@shgew)
+    branches: idle-shade, someone/togi:reason-text
+    pull requests: #603, #604, #605
+    touches: internal/tuner
 
 Ready
   P0
@@ -34,6 +38,7 @@ Ready
 
 Overlaps
   #505 overlaps in-progress #512 on internal/tuner
+  #505 overlaps in-progress #514 on internal/tuner
   #506 overlaps in-progress #503 on internal/watch/frame.go
 
 Ruleset

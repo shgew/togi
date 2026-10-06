@@ -2,6 +2,7 @@
  {
   "data": {
    "repository": {
+    "nameWithOwner": "shgew/togi",
     "issues": {
      "pageInfo": {
       "hasNextPage": true,
@@ -98,7 +99,10 @@
         "nodes": [
          {
           "ref": {
-           "name": "frame-split"
+           "name": "frame-split",
+           "repository": {
+            "nameWithOwner": "shgew/togi"
+           }
           }
          }
         ]
@@ -272,6 +276,7 @@
  {
   "data": {
    "repository": {
+    "nameWithOwner": "shgew/togi",
     "issues": {
      "pageInfo": {
       "hasNextPage": false,
@@ -417,7 +422,10 @@
         "nodes": [
          {
           "ref": {
-           "name": "reason-text"
+           "name": "reason-text",
+           "repository": {
+            "nameWithOwner": "shgew/togi"
+           }
           }
          }
         ]
@@ -455,6 +463,40 @@
        "subIssuesSummary": {
         "total": 3,
         "completed": 1
+       }
+      },
+      {
+       "number": 514,
+       "title": "Shade the idle cores",
+       "body": "Touches: `./internal/tuner/`",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "feature"
+         },
+         {
+          "name": "P2"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": [
+         {
+          "login": "shgew"
+         }
+        ]
+       },
+       "parent": null,
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
        }
       }
      ]

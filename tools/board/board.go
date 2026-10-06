@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"math"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -19,7 +20,7 @@ type issue struct {
 	Assignees    []string
 	Parent       *parent
 	OpenBlockers []int
-	Branches     []string
+	Branches     []branch
 	SubIssues    int
 	SubClosed    int
 }
@@ -29,11 +30,16 @@ type parent struct {
 	Title  string
 }
 
+// branch is a branch of a repository named owner/name; Repo is empty when the repository is gone.
+type branch struct {
+	Repo, Name string
+}
+
 // pull is an open pull request.
 type pull struct {
 	Number int
 	Body   string
-	Head   string
+	Head   branch
 }
 
 var (
@@ -68,7 +74,7 @@ func (i issue) ready() bool {
 		i.SubClosed == i.SubIssues
 }
 
-// touches parses the issue's `Touches:` line into paths.
+// touches parses the issue's `Touches:` line into clean paths, "." being the repository root.
 func touches(body string) []string {
 	m := touchesLine.FindStringSubmatch(strings.ReplaceAll(body, "\r\n", "\n"))
 	if m == nil {
@@ -76,17 +82,16 @@ func touches(body string) []string {
 	}
 	var paths []string
 	for item := range strings.SplitSeq(m[1], ",") {
-		path := strings.TrimRight(strings.Trim(strings.TrimSpace(item), "`"), "/")
-		if path != "" {
-			paths = append(paths, path)
+		if p := strings.Trim(strings.TrimSpace(item), "`"); p != "" {
+			paths = append(paths, path.Clean(p))
 		}
 	}
 	return paths
 }
 
-// overlaps reports whether two paths are equal or one is a directory containing the other.
+// overlaps reports whether two clean paths are equal or one is a directory containing the other.
 func overlaps(a, b string) bool {
-	return a == b || strings.HasPrefix(b, a+"/") || strings.HasPrefix(a, b+"/")
+	return a == b || a == "." || b == "." || strings.HasPrefix(b, a+"/") || strings.HasPrefix(a, b+"/")
 }
 
 // shared returns the paths in a that overlap any path in b.
@@ -102,6 +107,8 @@ func shared(a, b []string) []string {
 
 type progress struct {
 	issue
+	// Work holds the linked branches and the heads of the issue's pull requests, which GitHub unlinks once a pull request is opened from them.
+	Work    []string
 	Touches []string
 	Pulls   []int
 }
@@ -131,7 +138,8 @@ type board struct {
 	Rulesets   []issue
 }
 
-func build(issues []issue, pulls []pull) board {
+// build sorts the issues into the board; repo is the owner/name of their repository.
+func build(repo string, issues []issue, pulls []pull) board {
 	issues = slices.Clone(issues)
 	slices.SortFunc(issues, func(a, b issue) int { return a.Number - b.Number })
 	var b board
@@ -144,7 +152,12 @@ func build(issues []issue, pulls []pull) board {
 			b.Untriaged = append(b.Untriaged, i)
 		}
 		if len(i.Assignees) > 0 {
-			b.InProgress = append(b.InProgress, progress{issue: i, Touches: touches(i.Body), Pulls: pullsFor(i, pulls)})
+			own := pullsFor(i, pulls)
+			p := progress{issue: i, Work: work(repo, i.Branches, own), Touches: touches(i.Body)}
+			for _, pr := range own {
+				p.Pulls = append(p.Pulls, pr.Number)
+			}
+			b.InProgress = append(b.InProgress, p)
 		}
 		if i.ready() {
 			ready = append(ready, readyIssue{issue: i, Touches: touches(i.Body)})
@@ -164,19 +177,37 @@ func build(issues []issue, pulls []pull) board {
 	return b
 }
 
-// pullsFor returns the open pull requests that name the issue with a closing or Refs keyword, or whose head is one of its linked branches.
-func pullsFor(i issue, pulls []pull) []int {
-	var out []int
+// pullsFor returns, by number, the open pull requests that name the issue with a closing or Refs keyword, or whose head is one of its linked branches.
+func pullsFor(i issue, pulls []pull) []pull {
+	var out []pull
 	for _, p := range pulls {
 		named := slices.ContainsFunc(issueRef.FindAllStringSubmatch(p.Body, -1), func(m []string) bool {
 			return m[1] == strconv.Itoa(i.Number)
 		})
-		if named || slices.Contains(i.Branches, p.Head) {
-			out = append(out, p.Number)
+		if named || p.Head.Repo != "" && slices.Contains(i.Branches, p.Head) {
+			out = append(out, p)
 		}
 	}
-	slices.Sort(out)
+	slices.SortFunc(out, func(a, b pull) int { return a.Number - b.Number })
 	return out
+}
+
+// work returns the names of the linked branches and of the pull requests' heads, once each, qualifying branches of other repositories as owner/name:branch and leaving out heads whose repository is gone.
+func work(repo string, linked []branch, pulls []pull) []string {
+	branches := slices.Clone(linked)
+	for _, p := range pulls {
+		if p.Head.Repo != "" && !slices.Contains(branches, p.Head) {
+			branches = append(branches, p.Head)
+		}
+	}
+	names := make([]string, len(branches))
+	for k, b := range branches {
+		names[k] = b.Name
+		if b.Repo != repo {
+			names[k] = b.Repo + ":" + b.Name
+		}
+	}
+	return names
 }
 
 // group orders ready issues by priority, then by block parent, issues without a parent last.

@@ -52,10 +52,30 @@ func TestBoardGolden(t *testing.T) {
 }
 
 func TestRunReportsFetchFailure(t *testing.T) {
-	failing := func(...string) ([]byte, error) { return nil, errors.New("HTTP 401") }
-	err := run(&bytes.Buffer{}, failing)
-	if err == nil || !strings.Contains(err.Error(), "fetch issues: HTTP 401") {
-		t.Fatalf("run error = %v, want the failed fetch", err)
+	tests := []struct {
+		name, failing, want string
+	}{
+		{"issues", "issues(", "fetch issues: HTTP 401"},
+		{"pull requests after issues", "pullRequests(", "fetch pull requests: HTTP 401"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := fixtureGH(t)
+			gh := func(args ...string) ([]byte, error) {
+				if strings.Contains(args[len(args)-1], tt.failing) {
+					return nil, errors.New("HTTP 401")
+				}
+				return fixture(args...)
+			}
+			var out bytes.Buffer
+			err := run(&out, gh)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("run error = %v, want %q", err, tt.want)
+			}
+			if out.Len() > 0 {
+				t.Errorf("run wrote %q, want nothing", out.String())
+			}
+		})
 	}
 }
 
@@ -103,6 +123,8 @@ func TestTouches(t *testing.T) {
 		{"backticks", "Touches: `internal/tuner`, `docs/spec/tuner.md`", []string{"internal/tuner", "docs/spec/tuner.md"}},
 		{"bare paths", "Touches: internal/watch,justfile", []string{"internal/watch", "justfile"}},
 		{"trailing slash", "Touches: `cmd/togi/`", []string{"cmd/togi"}},
+		{"dot components", "Touches: ./internal/tuner, `internal//watch/./frame.go`", []string{"internal/tuner", "internal/watch/frame.go"}},
+		{"root", "Touches: `.`, `./`", []string{".", "."}},
 		{"inside a body with CRLF", "## Why\r\n\r\nTouches: `a`, `b`\r\n\r\n## Links", []string{"a", "b"}},
 		{"empty line", "Touches:\n<!-- comment -->", nil},
 		{"not at line start", "It Touches: a", nil},
@@ -128,6 +150,8 @@ func TestOverlaps(t *testing.T) {
 		{"internal/tuner", "internal/tunerx", false},
 		{"internal/tuner/hunt.go", "internal/tuner/evidence.go", false},
 		{"docs", "docs/spec/tuner.md", true},
+		{".", "internal/tuner/hunt.go", true},
+		{"justfile", ".", true},
 	}
 	for _, tt := range tests {
 		if got := overlaps(tt.a, tt.b); got != tt.want {
@@ -137,16 +161,36 @@ func TestOverlaps(t *testing.T) {
 }
 
 func TestPullsFor(t *testing.T) {
+	linked := branch{Repo: "shgew/togi", Name: "linked"}
 	pulls := []pull{
+		{Number: 5, Body: "Resolves #12, Refs #4"},
 		{Number: 1, Body: "Closes #12"},
 		{Number: 2, Body: "Refs #120"},
 		{Number: 3, Body: "Mentions #12 in passing"},
-		{Number: 4, Head: "linked"},
-		{Number: 5, Body: "Resolves #12, Refs #4"},
+		{Number: 4, Head: linked},
+		{Number: 6, Head: branch{Repo: "someone/togi", Name: "linked"}},
+		{Number: 7, Head: branch{Name: "linked"}},
 	}
-	got := pullsFor(issue{Number: 12, Branches: []string{"linked"}}, pulls)
+	var got []int
+	for _, p := range pullsFor(issue{Number: 12, Branches: []branch{linked}}, pulls) {
+		got = append(got, p.Number)
+	}
 	if diff := cmp.Diff([]int{1, 4, 5}, got); diff != "" {
 		t.Errorf("pullsFor mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestWorkAddsPullHeads(t *testing.T) {
+	linked := branch{Repo: "shgew/togi", Name: "linked"}
+	pulls := []pull{
+		{Number: 1, Head: linked},
+		{Number: 2, Head: branch{Repo: "shgew/togi", Name: "opened"}},
+		{Number: 3, Head: branch{Repo: "someone/togi", Name: "linked"}},
+		{Number: 4, Head: branch{Name: "gone"}},
+	}
+	got := work("shgew/togi", []branch{linked}, pulls)
+	if diff := cmp.Diff([]string{"linked", "opened", "someone/togi:linked"}, got); diff != "" {
+		t.Errorf("work mismatch (-want +got):\n%s", diff)
 	}
 }
 

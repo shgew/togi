@@ -22,7 +22,7 @@ func render(w io.Writer, b board) error {
 		if i.Parent != nil {
 			p.line("    block: #%d %s", i.Parent.Number, i.Parent.Title)
 		}
-		p.line("    branches: %s", list(i.Branches))
+		p.line("    branches: %s", list(i.Work))
 		p.line("    pull requests: %s", list(refs(i.Pulls)))
 		p.line("    touches: %s", list(i.Touches))
 	}

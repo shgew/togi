@@ -13,6 +13,7 @@ import (
 
 const issuesQuery = `query($owner: String!, $name: String!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
+    nameWithOwner
     issues(states: OPEN, first: 100, after: $endCursor) {
       pageInfo { hasNextPage endCursor }
       nodes {
@@ -21,7 +22,7 @@ const issuesQuery = `query($owner: String!, $name: String!, $endCursor: String) 
         assignees(first: 20) { nodes { login } }
         parent { number title }
         blockedBy(first: 50) { nodes { number state } }
-        linkedBranches(first: 20) { nodes { ref { name } } }
+        linkedBranches(first: 20) { nodes { ref { name repository { nameWithOwner } } } }
         subIssuesSummary { total completed }
       }
     }
@@ -32,7 +33,7 @@ const pullsQuery = `query($owner: String!, $name: String!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequests(states: OPEN, first: 100, after: $endCursor) {
       pageInfo { hasNextPage endCursor }
-      nodes { number body headRefName }
+      nodes { number body headRefName headRepository { nameWithOwner } }
     }
   }
 }`
@@ -58,7 +59,7 @@ func main() {
 }
 
 func run(w io.Writer, gh ghFunc) error {
-	issues, err := fetchIssues(gh)
+	repo, issues, err := fetchIssues(gh)
 	if err != nil {
 		return err
 	}
@@ -66,7 +67,7 @@ func run(w io.Writer, gh ghFunc) error {
 	if err != nil {
 		return err
 	}
-	return render(w, build(issues, pulls))
+	return render(w, build(repo, issues, pulls))
 }
 
 // query runs a paginated GraphQL query against the current repository and returns its pages.
@@ -76,6 +77,10 @@ func query(gh ghFunc, q string) ([]byte, error) {
 
 type nodes[T any] struct {
 	Nodes []T `json:"nodes"`
+}
+
+type repository struct {
+	NameWithOwner string `json:"nameWithOwner"`
 }
 
 type issueNode struct {
@@ -91,7 +96,10 @@ type issueNode struct {
 		State  string
 	}] `json:"blockedBy"`
 	LinkedBranches nodes[struct {
-		Ref *struct{ Name string }
+		Ref *struct {
+			Name       string
+			Repository repository
+		}
 	}] `json:"linkedBranches"`
 	SubIssuesSummary struct {
 		Total     int
@@ -100,28 +108,33 @@ type issueNode struct {
 }
 
 type pullNode struct {
-	Number      int    `json:"number"`
-	Body        string `json:"body"`
-	HeadRefName string `json:"headRefName"`
+	Number         int         `json:"number"`
+	Body           string      `json:"body"`
+	HeadRefName    string      `json:"headRefName"`
+	HeadRepository *repository `json:"headRepository"`
 }
 
-func fetchIssues(gh ghFunc) ([]issue, error) {
+// fetchIssues returns the owner/name of the current repository and its open issues.
+func fetchIssues(gh ghFunc) (string, []issue, error) {
 	out, err := query(gh, issuesQuery)
 	if err != nil {
-		return nil, fmt.Errorf("fetch issues: %w", err)
+		return "", nil, fmt.Errorf("fetch issues: %w", err)
 	}
 	var pages []struct {
 		Data struct {
 			Repository struct {
+				repository
 				Issues nodes[issueNode] `json:"issues"`
 			} `json:"repository"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(out, &pages); err != nil {
-		return nil, fmt.Errorf("decode issues: %w", err)
+		return "", nil, fmt.Errorf("decode issues: %w", err)
 	}
+	var repo string
 	var issues []issue
 	for _, page := range pages {
+		repo = page.Data.Repository.NameWithOwner
 		for _, n := range page.Data.Repository.Issues.Nodes {
 			i := issue{Number: n.Number, Title: n.Title, Body: n.Body, Pinned: n.IsPinned, Parent: n.Parent,
 				SubIssues: n.SubIssuesSummary.Total, SubClosed: n.SubIssuesSummary.Completed}
@@ -138,13 +151,13 @@ func fetchIssues(gh ghFunc) ([]issue, error) {
 			}
 			for _, b := range n.LinkedBranches.Nodes {
 				if b.Ref != nil {
-					i.Branches = append(i.Branches, b.Ref.Name)
+					i.Branches = append(i.Branches, branch{Repo: b.Ref.Repository.NameWithOwner, Name: b.Ref.Name})
 				}
 			}
 			issues = append(issues, i)
 		}
 	}
-	return issues, nil
+	return repo, issues, nil
 }
 
 func fetchPulls(gh ghFunc) ([]pull, error) {
@@ -165,7 +178,11 @@ func fetchPulls(gh ghFunc) ([]pull, error) {
 	var pulls []pull
 	for _, page := range pages {
 		for _, n := range page.Data.Repository.PullRequests.Nodes {
-			pulls = append(pulls, pull{Number: n.Number, Body: n.Body, Head: n.HeadRefName})
+			p := pull{Number: n.Number, Body: n.Body, Head: branch{Name: n.HeadRefName}}
+			if n.HeadRepository != nil {
+				p.Head.Repo = n.HeadRepository.NameWithOwner
+			}
+			pulls = append(pulls, p)
 		}
 	}
 	return pulls, nil
