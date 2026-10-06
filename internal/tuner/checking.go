@@ -192,23 +192,7 @@ func (s *State) coveredEnd() (Action, bool) {
 	if s.retry != nil || !s.canDeepen() {
 		return Action{}, false
 	}
-	complete := true
-	for i := range s.checking.steps {
-		if s.checking.steps[i] == machine.R7 && !s.r7ChainsComplete(i) {
-			complete = false
-			break
-		}
-		for _, q := range s.requirements(i) {
-			if q.count > 0 && s.passes(q.class, s.checking.profile, s.checking.startSeq, cycleEvidence) < q.count {
-				complete = false
-				break
-			}
-		}
-		if !complete {
-			break
-		}
-	}
-	if complete {
+	if s.checkingStepsDone() == len(s.checking.steps) {
 		return Action{}, false
 	}
 	seq := s.covering()
