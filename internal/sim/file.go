@@ -26,15 +26,16 @@ func LoadMachine(path string) (Config, error) {
 			BoostLimitMHz int    `toml:"boost_limit_mhz"`
 		} `toml:"bios_context"`
 		Model struct {
-			PastLimitRate *float64                      `toml:"past_limit_rate"`
-			Growth        *float64                      `toml:"growth"`
-			NearLimitRate *float64                      `toml:"near_limit_rate"`
-			CrashMCE      *float64                      `toml:"crash_mce"`
-			CoreLocalBank *float64                      `toml:"core_local_bank"`
-			OnsetS        *float64                      `toml:"onset_s"`
-			OnsetBoost    *float64                      `toml:"onset_boost"`
-			Signals       map[machine.Signal]float64    `toml:"signals"`
-			Reset         map[machine.ResetKind]float64 `toml:"reset"`
+			PastLimitRate *float64                                      `toml:"past_limit_rate"`
+			Growth        *float64                                      `toml:"growth"`
+			NearLimitRate *float64                                      `toml:"near_limit_rate"`
+			CrashMCE      *float64                                      `toml:"crash_mce"`
+			CoreLocalBank *float64                                      `toml:"core_local_bank"`
+			OnsetS        *float64                                      `toml:"onset_s"`
+			OnsetBoost    *float64                                      `toml:"onset_boost"`
+			Signals       map[machine.Signal]float64                    `toml:"signals"`
+			RegimeSignals map[machine.Regime]map[machine.Signal]float64 `toml:"regime_signals"`
+			Reset         map[machine.ResetKind]float64                 `toml:"reset"`
 		} `toml:"model"`
 		Core []struct {
 			ID       int            `toml:"id"`
@@ -96,6 +97,7 @@ func LoadMachine(path string) (Config, error) {
 	if f.Model.Signals != nil {
 		model.Signals = f.Model.Signals
 	}
+	model.RegimeSignals = f.Model.RegimeSignals
 	if f.Model.Reset != nil {
 		model.Reset = f.Model.Reset
 	}

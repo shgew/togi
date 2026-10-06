@@ -24,7 +24,7 @@
 // Config.CCD adds an R7 hazard only on each loaded CCD, at rate
 // exp(LogRate + Effect[ccd] + Slope*(mean applied CCD depth-25)).
 // An active joint with any member on that CCD suppresses its smooth hazard.
-// CCD failures are unattributed crashes. The same rate drives draws and scores;
+// CCD failures are unattributed crashes unless Model.RegimeSignals lists R7. The same rate drives draws and scores;
 // onset boosts apply as they do to per-core hazards. Files without [ccd] retain
 // the limit/joint model unchanged.
 //
@@ -46,7 +46,9 @@
 // The opt-in model also emits synthetic requests and clocks in streamed samples.
 // See docs/simulating.md for the machine-file contract and formulas.
 //
-// A failing core produces one signal, drawn by the Model.Signals weights:
+// A failing core produces one signal, drawn by the Model.RegimeSignals weights for the trial's regime, else by the
+// Model.Signals weights. Where the regime has weights, loaded joints without a signal and CCD failures draw from them
+// instead of crashing:
 //   - computation_error, stall, unexpected_exit: the trial ends at the failure time with that signal;
 //   - corrected_mce: a corrected MCE on the core's first logical CPU enters the current boot's kernel log and the
 //     trial runs to its end, so only the kernel log shows the failure;

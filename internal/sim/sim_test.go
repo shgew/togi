@@ -450,7 +450,7 @@ func TestNewSignalWeights(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := m.drawSignal(0.5); got != tc.want {
+			if got := drawSignal(m.signals(machine.R1), 0.5); got != tc.want {
 				t.Fatalf("drawSignal = %s; want %s", got, tc.want)
 			}
 		})
