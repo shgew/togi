@@ -72,6 +72,28 @@ func TestSimReplayRequiresMachineBeforeStateChanges(t *testing.T) {
 	}
 }
 
+func TestSimInvalidMachineCreatesNoTemporaryState(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	machine := filepath.Join(t.TempDir(), "machine.toml")
+	if err := os.WriteFile(machine, []byte("unknown_machine_key = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"--machine", machine}, {"--replay-facts"}} {
+		var out bytes.Buffer
+		if got := run(args, &out); got != 1 || strings.Contains(out.String(), "state directory") {
+			t.Fatalf("%v: exit %d, output %q", args, got, out.String())
+		}
+	}
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("invalid input created temporary state: %v", entries)
+	}
+}
+
 func TestSimSamplesAreOptIn(t *testing.T) {
 	t.Parallel()
 	for _, writeSamples := range []bool{false, true} {

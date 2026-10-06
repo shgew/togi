@@ -51,14 +51,6 @@ func run(args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "sim: --max-boots must be a positive integer")
 		return 2
 	}
-	if *dir == "" {
-		var err error
-		if *dir, err = os.MkdirTemp("", "togi-sim-"); err != nil {
-			fmt.Fprintf(stderr, "sim: %v\n", err)
-			return 1
-		}
-		fmt.Fprintf(stderr, "sim: state directory %s\n", *dir)
-	}
 	machineConfig := sim.Config{Seed: *seed}
 	var err error
 	if *machineFile != "" {
@@ -75,6 +67,13 @@ func run(args []string, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "sim: %v\n", err)
 			return 1
 		}
+	}
+	if *dir == "" {
+		if *dir, err = os.MkdirTemp("", "togi-sim-"); err != nil {
+			fmt.Fprintf(stderr, "sim: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stderr, "sim: state directory %s\n", *dir)
 	}
 	cfg, err := sim.Resume(*dir, machineConfig)
 	if err != nil {
