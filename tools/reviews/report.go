@@ -62,7 +62,7 @@ type totals struct {
 	FirstRecords []time.Duration
 }
 
-// summarize builds one row per pull request, ascending by number. Each finding entry of a record counts once, except that an entry of a later record updates the outcome of one not-yet-updated entry of earlier records with the same source, priority and text, preferring one at the same location.
+// summarize builds one row per pull request, ascending by number. Each finding entry of a record counts once, except that an entry of a later record updates the outcome of one not-yet-updated entry of earlier records with the same source, priority, text and location.
 func summarize(pulls []pull) ([]row, error) {
 	rows := make([]row, 0, len(pulls))
 	for _, p := range pulls {
@@ -101,21 +101,22 @@ func summarize(pulls []pull) ([]row, error) {
 	return rows, nil
 }
 
-// earlierMatch returns the index of the first entry of earlier not yet updated with f's source, priority and text, preferring one at f's location, or -1.
+// earlierMatch returns the index of the first entry of earlier not yet updated with f's source, priority, text and location, or -1.
 func earlierMatch(earlier []finding, updated []bool, f finding) int {
-	match := -1
 	for i, e := range earlier {
-		if updated[i] || e.Source != f.Source || e.Priority != f.Priority || e.Finding != f.Finding {
-			continue
-		}
-		if bytes.Equal(e.Location, f.Location) {
+		if !updated[i] && e.Source == f.Source && e.Priority == f.Priority && e.Finding == f.Finding && bytes.Equal(location(e), location(f)) {
 			return i
 		}
-		if match < 0 {
-			match = i
-		}
 	}
-	return match
+	return -1
+}
+
+// location returns f's raw location, with an absent location read as null.
+func location(f finding) []byte {
+	if f.Location == nil {
+		return []byte("null")
+	}
+	return f.Location
 }
 
 func total(rows []row) totals {

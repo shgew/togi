@@ -73,21 +73,45 @@ func TestSummarizeMalformedRecord(t *testing.T) {
 
 func TestSummarizeSharedText(t *testing.T) {
 	t.Parallel()
-	at := func(location, status string) finding {
-		return finding{Source: "A", Priority: "P2", Finding: "unchecked error", Location: json.RawMessage(`"` + location + `"`), Outcome: outcome{Status: status}}
+	at := func(location, status string) string {
+		return `{"source":"A","priority":"P2","finding":"unchecked error"` + location + `,"outcome":{"status":"` + status + `"}}`
 	}
-	pulls := []pull{{Number: 1, Opened: opened, Comments: []comment{
-		{URL: "first", Created: opened.Add(time.Hour), Body: recordBody(t, at("a.go:1", "deferred"), at("b.go:2", "rejected"))},
-		{URL: "second", Created: opened.Add(2 * time.Hour), Body: recordBody(t, at("b.go:2", "fixed"))},
-	}}}
-	rows, err := summarize(pulls)
-	if err != nil {
-		t.Fatal(err)
+	body := func(findings ...string) string {
+		return `<!-- togi-review {"version":3,"findings":[` + strings.Join(findings, ",") + `]} -->`
 	}
-	want := []row{{Number: 1, Records: 2, FirstRecord: time.Hour,
-		Findings: counts{Priority: [4]int{0, 0, 2, 0}, Outcome: [3]int{1, 0, 1}}}}
-	if diff := cmp.Diff(want, rows); diff != "" {
-		t.Errorf("rows (-want +got):\n%s", diff)
+	for _, tc := range []struct {
+		name          string
+		first, second string
+		want          counts
+	}{
+		{"update one of two locations",
+			body(at(`,"location":"a.go:1"`, "deferred"), at(`,"location":"b.go:2"`, "rejected")), body(at(`,"location":"b.go:2"`, "fixed")),
+			counts{Priority: [4]int{0, 0, 2, 0}, Outcome: [3]int{1, 0, 1}}},
+		{"new location",
+			body(at(`,"location":"a.go:1"`, "deferred")), body(at(`,"location":"b.go:2"`, "fixed")),
+			counts{Priority: [4]int{0, 0, 2, 0}, Outcome: [3]int{1, 0, 1}}},
+		{"null then absent location",
+			body(at(`,"location":null`, "deferred")), body(at("", "fixed")),
+			counts{Priority: [4]int{0, 0, 1, 0}, Outcome: [3]int{1, 0, 0}}},
+		{"absent then null location",
+			body(at("", "deferred")), body(at(`,"location":null`, "fixed")),
+			counts{Priority: [4]int{0, 0, 1, 0}, Outcome: [3]int{1, 0, 0}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			pulls := []pull{{Number: 1, Opened: opened, Comments: []comment{
+				{URL: "first", Created: opened.Add(time.Hour), Body: tc.first},
+				{URL: "second", Created: opened.Add(2 * time.Hour), Body: tc.second},
+			}}}
+			rows, err := summarize(pulls)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []row{{Number: 1, Records: 2, FirstRecord: time.Hour, Findings: tc.want}}
+			if diff := cmp.Diff(want, rows); diff != "" {
+				t.Errorf("rows (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
