@@ -1,14 +1,35 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/facts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
+
+// failingFirstWrite fails its first write and accepts every later one.
+type failingFirstWrite struct{ failed bool }
+
+var errFirstWrite = errors.New("first write failed")
+
+func (w *failingFirstWrite) Write(p []byte) (int, error) {
+	if !w.failed {
+		w.failed = true
+		return 0, errFirstWrite
+	}
+	return len(p), nil
+}
+
+func TestReportReturnsEarlierSectionWriteError(t *testing.T) {
+	if err := report(&failingFirstWrite{}, facts.FromEvents(nil), time.Time{}); !errors.Is(err, errFirstWrite) {
+		t.Fatalf("report error = %v, want %v", err, errFirstWrite)
+	}
+}
 
 func TestReviewBoundaryReport(t *testing.T) {
 	at := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
@@ -67,93 +88,77 @@ func TestReviewBoundaryReport(t *testing.T) {
 	}
 	add(&journal.HuntEnd{Hunt: 2, Result: "combination", Members: []journal.CombinationMember{{Core: 1, Offset: -10}, {Core: 0, Offset: -10}}})
 	for _, since := range []time.Time{{}, cutoff} {
-		if diff := cmp.Diff([][]string{{"2", "1", "part", "1", "1", "true", "1", "0", "1", "0.017"}, {"2", "2", "part", "1", "1", "true", "0", "1", "1", "0.017"}, {"2", "3", "part", "1", "1", "true", "0", "0", "1", "0.017"}}, reportRows(t, events, "Prior evidence per hunt group", since)); diff != "" {
+		m := computeEvents(events, since)
+		wantGroups := []groupReuse{
+			{hunt: 2, group: 1, stage: "part", prior: 1, required: 1, established: true, passes: 1, trials: 1, seconds: 60},
+			{hunt: 2, group: 2, stage: "part", prior: 1, required: 1, established: true, failures: 1, trials: 1, seconds: 60},
+			{hunt: 2, group: 3, stage: "part", prior: 1, required: 1, established: true, trials: 1, seconds: 60},
+		}
+		if diff := cmp.Diff(wantGroups, m.evidence.groups, metricFields); diff != "" {
 			t.Fatal(diff)
 		}
-		if diff := cmp.Diff([][]string{{"0002", "part", "3", "3", "1", "1", "3", "0.050"}}, reportRows(t, events, "Prior evidence by hunt and stage", since)); diff != "" {
+		wantStages := []entry[stageKey, stageReuse]{{stageKey{2, "part"}, stageReuse{groups: 3, established: 3, passed: 1, failed: 1, trials: 3, seconds: 180}}}
+		if diff := cmp.Diff(wantStages, m.evidence.stages, metricFields); diff != "" {
 			t.Fatal(diff)
 		}
 	}
-	if diff := cmp.Diff([][]string{{"0001", "R6", "00,01", "failure", "1"}, {"0001", "R6", "00,01", "pass", "1"}}, reportRows(t, events, "Checking steps and together outcomes")); diff != "" {
+	all, recent := computeEvents(events, time.Time{}), computeEvents(events, cutoff)
+	wantSteps := []entry[stepKey, int]{
+		{stepKey{cycle: 1, regime: machine.R6, cores: "00,01", outcome: "failure"}, 1},
+		{stepKey{cycle: 1, regime: machine.R6, cores: "00,01", outcome: "pass"}, 1},
+	}
+	if diff := cmp.Diff(wantSteps, all.checking.steps, metricFields); diff != "" {
 		t.Fatalf("legacy all-core expansion (-want +got):\n%s", diff)
 	}
-	rows := reportRows(t, events, "Hunts")
-	if diff := cmp.Diff("1/0/0/1", rows[0][6]); diff != "" {
+	cancelled := all.hunts[0]
+	if diff := cmp.Diff([4]int{1, 0, 0, 1}, [4]int{len(cancelled.groups), cancelled.ran, cancelled.inferred, cancelled.skipped}); diff != "" {
+		t.Fatalf("planned/run/inferred/skipped (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(parkedSeq, cancelled.start.ParkedSeq); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff(fmt.Sprintf("#%d", parkedSeq), rows[0][4]); diff != "" {
+	if len(recent.hunts) != 1 || recent.hunts[0].start.Hunt != 2 {
+		t.Fatalf("cutoff hunts = %v", recent.hunts)
+	}
+	if diff := cmp.Diff([]entry[string, int]{{"inconclusive", 1}}, recent.evidence.warnings, metricFields); diff != "" {
 		t.Fatal(diff)
 	}
-	if got := reportRows(t, events, "Hunts", cutoff); len(got) != 1 || got[0][0] != "2" {
-		t.Fatalf("cutoff hunts = %v", got)
-	}
-	if diff := cmp.Diff([][]string{{"inconclusive", "1"}, {"decisions", "resting", "on", "a", "single", "carried", "failure", "0"}}, reportRows(t, events, "Evidence quality", cutoff)); diff != "" {
+	if diff := cmp.Diff(0, recent.evidence.singleCarried); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff([][]string{{"2", "parked", "no", "reliable", "result"}}, reportRows(t, events, "Inconclusive trials")); diff != "" {
+	if len(all.inconclusive) != 1 || all.inconclusive[0].Intent.Trial != "2" || all.inconclusive[0].Intent.Condition != machine.Parked || all.inconclusive[0].End.Reason != "no reliable result" {
+		t.Fatalf("inconclusive trials = %v", all.inconclusive)
+	}
+	if diff := cmp.Diff(checkingMetrics{}, recent.checking, metricFields); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff([][]string{{"cycles", "started", "0"}, {"cycles", "ended", "0"}, {"full", "cycles", "0"}, {"reruns", "0"}, {"reruns", "failing", "first", "trial", "0"}}, reportRows(t, events, "Checking", cutoff)); diff != "" {
+	if diff := cmp.Diff([]entry[exposureKey, exposure]{{exposureKey{machine.R6, "load"}, exposure{trials: 3, seconds: 180, failures: 1}}}, recent.exposure, metricFields); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff([][]string{{"R6", "load", "3", "0.050", "1"}}, reportRows(t, events, "Exposure", cutoff)); diff != "" {
+	if diff := cmp.Diff([]entry[failureKey, int]{{failureKey{machine.R6, "load", machine.ComputationError, journal.Unattributed}, 1}}, recent.failures.counts, metricFields); diff != "" {
 		t.Fatal(diff)
 	}
-	if diff := cmp.Diff([][]string{{"R6", "load", string(machine.ComputationError), "unattributed", "1"}}, reportRows(t, events, "Failures", cutoff)); diff != "" {
+	if diff := cmp.Diff([]string{"1.2.3"}, recent.session.builds); diff != "" {
 		t.Fatal(diff)
 	}
-	fields := map[string]string{}
-	for _, row := range reportRows(t, events, "Session", cutoff) {
-		if row[0] == "builds" || row[0] == "since" {
-			fields[row[0]] = row[1]
-		}
-	}
-	if diff := cmp.Diff(map[string]string{"builds": "1.2.3", "since": cutoff.Format(time.RFC3339)}, fields); diff != "" {
-		t.Fatal(diff)
-	}
+	checkGolden(t, "review-boundary.golden", renderTable(t, func(tab *table) {
+		renderSession(tab, recent.session, recent.runs, recent.since)
+		renderEvidence(tab, recent.evidence)
+		renderOutcomes(tab, recent.inconclusive, recent.tctl)
+	}))
 }
 
 func TestReviewEvenRecoveryMedian(t *testing.T) {
 	var events []journal.Event
 	for i, gap := range []int{90, 10, 50, 30} {
-		crash := interruptedEvents(0, &journal.TrialProgress{Trial: "trial"}, machine.Crash)
-		crash[0].Data = &journal.ConfigLoaded{}
-		if i == 0 {
-			crash[0].Data = &journal.SessionStart{Session: "review", Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}}
-		}
-		intent := crash[1].Data.(*journal.TrialIntent)
-		intent.Hunt = 0
-		intent.Phase = journal.PhaseChecking
-		intent.Condition = machine.Together
-		intent.Profile = []int{-10, -10}
-		intent.DurationS = 120
-		crash[8].Data = &journal.Shutdown{Reason: journal.ShutdownCommand}
-		for j := range crash {
-			crash[j].Seq += i * 9
-			crash[j].Time = crash[j].Time.Add(time.Duration(i) * time.Hour)
-			crash[j].Boot = fmt.Sprintf("%d-%s", i, crash[j].Boot)
-			if j >= 4 {
-				crash[j].Time = crash[j].Time.Add(time.Duration(gap-80) * time.Second)
-			}
-			switch p := crash[j].Data.(type) {
-			case *journal.TrialIntent:
-				p.Trial = fmt.Sprint(i)
-			case *journal.TrialStart:
-				p.Trial = fmt.Sprint(i)
-			case *journal.TrialProgress:
-				p.Trial = fmt.Sprint(i)
-			case *journal.TrialEnd:
-				p.Trial = fmt.Sprint(i)
-			case *journal.Failure:
-				p.Trial = fmt.Sprint(i)
-			case *journal.CrashDetected:
-				p.PreviousBoot = fmt.Sprintf("%d-a", i)
-				p.InFlight = new(i*9 + 2)
-			}
-		}
-		events = append(events, crash...)
+		id := fmt.Sprint(i)
+		c := interrupted(&journal.TrialProgress{Trial: id}, machine.Crash)
+		c.hunt, c.trial = i+1, id
+		c.at = c.at.Add(time.Duration(i) * time.Hour)
+		c.recovery = time.Duration(gap) * time.Second
+		events = append(events, c.events(len(events)+1)...)
 	}
-	if diff := cmp.Diff([][]string{{"4", "10.000", "40.000", "90.000"}}, reportRows(t, events, "Recovery gap")); diff != "" {
+	if diff := cmp.Diff(recoveryGap{4, 10, 40, 90}, computeEvents(events, time.Time{}).recovery, metricFields); diff != "" {
 		t.Fatal(diff)
 	}
 }
@@ -161,28 +166,16 @@ func TestReviewEvenRecoveryMedian(t *testing.T) {
 func TestCrashTimingBoundaries(t *testing.T) {
 	for _, duration := range []int{30, 59, 60, 119} {
 		t.Run(fmt.Sprint(duration), func(t *testing.T) {
-			events := interruptedEvents(0, &journal.TrialProgress{Trial: "trial"}, machine.Crash)
-			events[3].Time = events[3].Time.Add(time.Duration(duration-20) * time.Second)
-			events[3].Mono += int64(duration-20) * 1000
-			events[6].Data.(*journal.TrialEnd).DurationS = duration
-			for i := 4; i < len(events); i++ {
-				events[i].Time = events[i].Time.Add(time.Duration(duration-20) * time.Second)
-			}
-			events[0].Data = &journal.SessionStart{Session: "review", Cores: []machine.CoreInfo{{Core: 0}, {Core: 1}}}
-			intent := events[1].Data.(*journal.TrialIntent)
-			intent.Hunt = 0
-			intent.Phase = journal.PhaseChecking
-			intent.Condition = machine.Together
-			intent.Profile = []int{-10, -10}
-			intent.DurationS = 120
-			events[8].Data = &journal.Shutdown{Reason: journal.ShutdownCommand}
-			want := [][]string{{"0", "0"}, {"1-29", "0"}, {"30-59", "0"}, {"60-119", "0"}, {"120+", "0"}}
+			c := interrupted(&journal.TrialProgress{Trial: "trial"}, machine.Crash)
+			c.ran = time.Duration(duration) * time.Second
+			events := c.events(1)
+			var want crashTiming
 			bin := 2
 			if duration >= 60 {
 				bin = 3
 			}
-			want[bin][1] = "1"
-			if diff := cmp.Diff(want, reportRows(t, events, "Crash timing (last evidence)")); diff != "" {
+			want[bin] = 1
+			if diff := cmp.Diff(want, computeEvents(events, time.Time{}).failures.timing); diff != "" {
 				t.Fatal(diff)
 			}
 		})

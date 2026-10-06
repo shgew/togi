@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"slices"
@@ -14,19 +15,38 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
+// table writes report sections to out. It keeps the first write error, so a
+// failure in any section reaches the exit status.
 type table struct {
 	out    io.Writer
 	writer *tabwriter.Writer
+	err    error
+}
+
+func (t *table) Write(p []byte) (int, error) {
+	n, err := t.out.Write(p)
+	if t.err == nil {
+		t.err = err
+	}
+	return n, err
 }
 
 func (t *table) section(name, header string) {
 	if t.writer != nil {
 		_ = t.writer.Flush()
-		fmt.Fprintln(t.out)
+		fmt.Fprintln(t)
 	}
-	fmt.Fprintln(t.out, name)
-	t.writer = tabwriter.NewWriter(t.out, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(t, name)
+	t.writer = tabwriter.NewWriter(t, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(t.writer, header)
+}
+
+// close flushes the last section and returns the first write error.
+func (t *table) close() error {
+	if t.writer != nil {
+		_ = t.writer.Flush()
+	}
+	return t.err
 }
 func (t *table) row(format string, args ...any) { fmt.Fprintf(t.writer, format+"\n", args...) }
 func keys[V any](m map[string]V) []string {
@@ -37,48 +57,114 @@ func keys[V any](m map[string]V) []string {
 	slices.Sort(k)
 	return k
 }
+
+type entry[K, V any] struct {
+	key   K
+	value V
+}
+
+func sorted[K comparable, V any](m map[K]V, compare func(a, b K) int) []entry[K, V] {
+	out := make([]entry[K, V], 0, len(m))
+	for k, v := range m {
+		out = append(out, entry[K, V]{k, v})
+	}
+	slices.SortFunc(out, func(a, b entry[K, V]) int { return compare(a.key, b.key) })
+	return out
+}
 func stamp(t time.Time) string                   { return t.UTC().Format(time.RFC3339) }
 func selected(t time.Time, since time.Time) bool { return !t.Before(since) }
 func seconds(t *trial) int {
-	if t.end == nil {
+	if t.End == nil {
 		return 0
 	}
-	return t.end.DurationS
+	return t.End.DurationS
 }
 func outcome(t *trial) string {
-	if t.end == nil {
+	if t.End == nil {
 		return "open"
 	}
-	return string(t.end.Outcome)
+	return string(t.End.Outcome)
 }
 func crash(t *trial) bool {
-	return t.crashed || t.end != nil && t.end.Outcome == journal.OutcomeFailure && t.end.Signal == machine.Crash
+	return t.Crashed || t.End != nil && t.End.Outcome == journal.OutcomeFailure && t.End.Signal == machine.Crash
+}
+
+// metrics holds every figure the report shows, computed before any is rendered.
+type metrics struct {
+	since        time.Time
+	session      sessionMetrics
+	runs         []selectedRun
+	trialTime    timeMetrics
+	failures     failureMetrics
+	exposure     []entry[exposureKey, exposure]
+	recovery     recoveryGap
+	hunts        []huntMetrics
+	checking     checkingMetrics
+	evidence     evidenceMetrics
+	r7           r7Decisions
+	depth        []depthRate
+	requests     requestMetrics
+	inconclusive []*trial
+	tctl         []entry[tctlKey, int]
 }
 
 func report(out io.Writer, session facts.Session, since time.Time) error {
-	events := session.Events
-	p := project(session)
-	tab := &table{out: out}
-	renderSession(tab, p, events, since)
-	gaps := renderTime(tab, p, since)
-	renderFailures(tab, p, events, since, gaps)
-	renderHunts(tab, p, since)
-	renderChecking(tab, p, events, since)
-	renderEvidence(tab, p, events, since)
-	renderR7Decisions(tab, events, since)
-	renderDepth(tab, p, since)
-	renderRequests(tab, r7Measurements(session, p, since))
-	return renderOutcomes(tab, p, since)
+	return render(out, compute(session, since))
 }
 
-func renderSession(tab *table, p *projection, events []journal.Event, since time.Time) {
-	tab.section("Session", "field\tvalue")
+func compute(session facts.Session, since time.Time) metrics {
+	events := session.Events
+	p := project(session)
+	downtime, gaps := crashRecovery(p, since)
+	return metrics{
+		since:        since,
+		session:      computeSession(events),
+		runs:         selectRuns(p, since),
+		trialTime:    timeMetrics{phases: phaseTime(p, since), downtimeS: downtime},
+		failures:     computeFailures(p, events, since),
+		exposure:     computeExposure(p, since),
+		recovery:     summarizeGaps(gaps),
+		hunts:        computeHunts(p, since),
+		checking:     computeChecking(p, events, since),
+		evidence:     computeEvidence(p, events, since),
+		r7:           computeR7Decisions(events, since),
+		depth:        computeDepth(p, since),
+		requests:     computeRequests(r7Measurements(session, p, since)),
+		inconclusive: inconclusiveTrials(p, since),
+		tctl:         passingTctl(p, since),
+	}
+}
+
+func render(out io.Writer, m metrics) error {
+	tab := &table{out: out}
+	renderSession(tab, m.session, m.runs, m.since)
+	renderTime(tab, m.trialTime)
+	renderFailures(tab, m.failures, m.exposure, m.recovery)
+	renderHunts(tab, m.hunts)
+	renderChecking(tab, m.checking)
+	renderEvidence(tab, m.evidence)
+	renderR7Decisions(tab, m.r7)
+	renderDepth(tab, m.depth)
+	renderRequests(tab, m.requests)
+	renderOutcomes(tab, m.inconclusive, m.tctl)
+	return tab.close()
+}
+
+type sessionMetrics struct {
+	ids              []string
+	rulesets, builds []string
+	events           int
+	first, last      time.Time
+}
+
+func computeSession(events []journal.Event) sessionMetrics {
+	var s sessionMetrics
 	rules := map[string]int{}
 	builds := map[string]int{}
 	for _, e := range events {
 		switch v := e.Data.(type) {
 		case *journal.SessionStart:
-			tab.row("id\t%s", v.Session)
+			s.ids = append(s.ids, v.Session)
 			rules[strconv.Itoa(max(v.Ruleset, 1))]++
 		case *journal.ConfigLoaded:
 			builds[buildName(v.Build)]++
@@ -87,61 +173,124 @@ func renderSession(tab *table, p *projection, events []journal.Event, since time
 			}
 		}
 	}
-	tab.row("rulesets\t%s", strings.Join(keys(rules), ", "))
-	tab.row("builds\t%s", strings.Join(keys(builds), ", "))
+	s.rulesets, s.builds = keys(rules), keys(builds)
+	s.events = len(events)
 	if len(events) > 0 {
-		tab.row("first\t%s", stamp(events[0].Time))
-		tab.row("last\t%s", stamp(events[len(events)-1].Time))
+		s.first, s.last = events[0].Time, events[len(events)-1].Time
+	}
+	return s
+}
+
+type selectedRun struct {
+	number int
+	*runInfo
+}
+
+func selectRuns(p *projection, since time.Time) []selectedRun {
+	var runs []selectedRun
+	for i, r := range p.runs {
+		if selected(r.end, since) {
+			runs = append(runs, selectedRun{i + 1, r})
+		}
+	}
+	return runs
+}
+
+func renderSession(tab *table, s sessionMetrics, runs []selectedRun, since time.Time) {
+	tab.section("Session", "field\tvalue")
+	for _, id := range s.ids {
+		tab.row("id\t%s", id)
+	}
+	tab.row("rulesets\t%s", strings.Join(s.rulesets, ", "))
+	tab.row("builds\t%s", strings.Join(s.builds, ", "))
+	if s.events > 0 {
+		tab.row("first\t%s", stamp(s.first))
+		tab.row("last\t%s", stamp(s.last))
 	}
 	if !since.IsZero() {
 		tab.row("since\t%s", stamp(since))
 	}
 	tab.section("Runs", "run\tstart\tend\tbuild\ttrials\tcrashes\tended")
-	for i, r := range p.runs {
-		if selected(r.end, since) {
-			tab.row("%d\t%s\t%s\t%s\t%d\t%d\t%s", i+1, stamp(r.start), stamp(r.end), strings.Join(keys(r.builds), ","), r.trials, r.crashes, r.ending)
-		}
+	for _, r := range runs {
+		tab.row("%d\t%s\t%s\t%s\t%d\t%d\t%s", r.number, stamp(r.start), stamp(r.end), strings.Join(keys(r.builds), ","), r.trials, r.crashes, r.ending)
 	}
 }
 
-func renderTime(tab *table, p *projection, since time.Time) []float64 {
-	tab.section("Time", "phase / condition / regime / outcome\ttrial seconds\thours")
-	times := map[string]int{}
+type phaseKey struct {
+	phase     journal.Phase
+	condition machine.Condition
+	regime    machine.Regime
+	outcome   string
+}
+
+type timeMetrics struct {
+	phases    []entry[phaseKey, int]
+	downtimeS float64
+}
+
+func phaseTime(p *projection, since time.Time) []entry[phaseKey, int] {
+	times := map[phaseKey]int{}
 	for _, t := range p.trials {
-		if selected(t.time, since) {
-			k := fmt.Sprintf("%s / %s / %s / %s", t.intent.Phase, t.intent.Condition, t.intent.Regime, outcome(t))
-			times[k] += seconds(t)
+		if selected(t.Time, since) {
+			times[phaseKey{t.Intent.Phase, t.Intent.Condition, t.Intent.Regime, outcome(t)}] += seconds(t)
 		}
 	}
-	for _, k := range keys(times) {
-		tab.row("%s\t%d\t%.3f", k, times[k], float64(times[k])/3600)
-	}
-	downtime := 0.0
-	gaps := []float64{}
+	return sorted(times, func(a, b phaseKey) int {
+		return cmp.Or(cmp.Compare(a.phase, b.phase), cmp.Compare(a.condition, b.condition), cmp.Compare(a.regime, b.regime), cmp.Compare(a.outcome, b.outcome))
+	})
+}
+
+// crashRecovery returns the seconds from each selected crash's last evidence
+// to the start of the next boot, and the gaps to that boot's first event.
+func crashRecovery(p *projection, since time.Time) (downtime float64, gaps []float64) {
 	for _, t := range p.trials {
-		if !selected(t.time, since) || !crash(t) {
+		if !selected(t.Time, since) || !crash(t) {
 			continue
 		}
-		if next, ok := p.nextBoot[t.boot]; ok {
+		if next, ok := p.nextBoot[t.Boot]; ok {
 			boot := p.boots[next]
-			gaps = append(gaps, boot.firstEvent.Sub(t.lastEvidence).Seconds())
-			downtime += boot.start.Sub(t.lastEvidence).Seconds()
+			gaps = append(gaps, boot.firstEvent.Sub(t.LastEvidence).Seconds())
+			downtime += boot.start.Sub(t.LastEvidence).Seconds()
 		}
 	}
-	tab.row("crash downtime (last evidence to next boot)\t%.3f\t%.3f", downtime, downtime/3600)
-	return gaps
+	return downtime, gaps
 }
 
-func renderFailures(tab *table, p *projection, events []journal.Event, since time.Time, gaps []float64) {
-	tab.section("Failures", "regime\tworkload\tsignal\tattribution\tcount")
-	failures := map[string]int{}
+func renderTime(tab *table, m timeMetrics) {
+	tab.section("Time", "phase / condition / regime / outcome\ttrial seconds\thours")
+	for _, x := range m.phases {
+		k := x.key
+		tab.row("%s / %s / %s / %s\t%d\t%.3f", k.phase, k.condition, k.regime, k.outcome, x.value, float64(x.value)/3600)
+	}
+	tab.row("crash downtime (last evidence to next boot)\t%.3f\t%.3f", m.downtimeS, m.downtimeS/3600)
+}
+
+type failureKey struct {
+	regime      machine.Regime
+	workload    string
+	signal      machine.Signal
+	attribution journal.Attribution
+}
+
+// crashTiming counts crashes by trial seconds before the last evidence:
+// 0, 1-29, 30-59, 60-119 and 120 or more.
+type crashTiming [5]int
+
+type failureMetrics struct {
+	counts     []entry[failureKey, int]
+	loadedCCDs []entry[string, int]
+	timing     crashTiming
+	resets     []entry[string, int]
+}
+
+func computeFailures(p *projection, events []journal.Event, since time.Time) failureMetrics {
+	failures := map[failureKey]int{}
 	ccds := map[int]int{}
 	for _, c := range p.cores {
 		ccds[c.Core] = c.CCD
 	}
 	loadedCCDs := map[string]int{}
 	resets := map[string]int{}
-	histogram := make([]int, 5)
 	for _, e := range events {
 		if !selected(e.Time, since) {
 			continue
@@ -155,12 +304,12 @@ func renderFailures(tab *table, p *projection, events []journal.Event, since tim
 			regime := v.Regime
 			tr := p.byID[v.Trial]
 			if tr != nil {
-				workload = tr.intent.Workload
+				workload = tr.Intent.Workload
 				if regime == "" {
-					regime = tr.intent.Regime
+					regime = tr.Intent.Regime
 				}
 			}
-			failures[fmt.Sprintf("%s\t%s\t%s\t%s", regime, workload, v.Signal, v.Attribution)]++
+			failures[failureKey{regime, workload, v.Signal, v.Attribution}]++
 			if v.Signal == machine.Crash && v.Attribution == journal.Unattributed {
 				loadedCCDs[loadedCCD(tr, p.cores, ccds)]++
 			}
@@ -172,12 +321,9 @@ func renderFailures(tab *table, p *projection, events []journal.Event, since tim
 			resets[reason]++
 		}
 	}
-	for _, k := range keys(failures) {
-		tab.row("%s\t%d", k, failures[k])
-	}
-	renderExposure(tab, p, since)
+	var timing crashTiming
 	for _, t := range p.trials {
-		if selected(t.time, since) && crash(t) {
+		if selected(t.Time, since) && crash(t) {
 			d := seconds(t)
 			b := 4
 			switch {
@@ -190,81 +336,136 @@ func renderFailures(tab *table, p *projection, events []journal.Event, since tim
 			case d < 120:
 				b = 3
 			}
-			histogram[b]++
+			timing[b]++
 		}
 	}
+	return failureMetrics{
+		counts: sorted(failures, func(a, b failureKey) int {
+			return cmp.Or(cmp.Compare(a.regime, b.regime), cmp.Compare(a.workload, b.workload), cmp.Compare(a.signal, b.signal), cmp.Compare(a.attribution, b.attribution))
+		}),
+		loadedCCDs: sorted(loadedCCDs, strings.Compare),
+		timing:     timing,
+		resets:     sorted(resets, strings.Compare),
+	}
+}
+
+type recoveryGap struct {
+	count                     int
+	shortest, median, longest float64
+}
+
+func summarizeGaps(gaps []float64) recoveryGap {
+	if len(gaps) == 0 {
+		return recoveryGap{}
+	}
+	slices.Sort(gaps)
+	median := gaps[len(gaps)/2]
+	if len(gaps)%2 == 0 {
+		median = (gaps[len(gaps)/2-1] + median) / 2
+	}
+	return recoveryGap{len(gaps), gaps[0], median, gaps[len(gaps)-1]}
+}
+
+func renderFailures(tab *table, m failureMetrics, exposures []entry[exposureKey, exposure], gap recoveryGap) {
+	tab.section("Failures", "regime\tworkload\tsignal\tattribution\tcount")
+	for _, x := range m.counts {
+		k := x.key
+		tab.row("%s\t%s\t%s\t%s\t%d", k.regime, k.workload, k.signal, k.attribution, x.value)
+	}
+	renderExposure(tab, exposures)
 	tab.section("Unattributed crashes by loaded CCD", "CCD(s)\tcount")
-	for _, k := range keys(loadedCCDs) {
-		tab.row("%s\t%d", k, loadedCCDs[k])
+	for _, x := range m.loadedCCDs {
+		tab.row("%s\t%d", x.key, x.value)
 	}
 	tab.section("Crash timing (last evidence)", "seconds\tcount")
 	for i, k := range []string{"0", "1-29", "30-59", "60-119", "120+"} {
-		tab.row("%s\t%d", k, histogram[i])
+		tab.row("%s\t%d", k, m.timing[i])
 	}
 	tab.section("Reset reasons", "reason\tcount")
-	for _, k := range keys(resets) {
-		tab.row("%s\t%d", k, resets[k])
+	for _, x := range m.resets {
+		tab.row("%s\t%d", x.key, x.value)
 	}
 	tab.section("Recovery gap", "count\tmin seconds\tmedian seconds\tmax seconds")
-	if len(gaps) > 0 {
-		slices.Sort(gaps)
-		median := gaps[len(gaps)/2]
-		if len(gaps)%2 == 0 {
-			median = (gaps[len(gaps)/2-1] + median) / 2
-		}
-		tab.row("%d\t%.3f\t%.3f\t%.3f", len(gaps), gaps[0], median, gaps[len(gaps)-1])
+	if gap.count > 0 {
+		tab.row("%d\t%.3f\t%.3f\t%.3f", gap.count, gap.shortest, gap.median, gap.longest)
 	} else {
 		tab.row("0\t-\t-\t-")
 	}
 }
 
-func renderOutcomes(tab *table, p *projection, since time.Time) error {
-	tab.section("Inconclusive trials", "trial\tcondition\treason")
+func inconclusiveTrials(p *projection, since time.Time) []*trial {
+	var trials []*trial
 	for _, t := range p.trials {
-		if selected(t.time, since) && t.end != nil && t.end.Outcome == journal.OutcomeInconclusive {
-			tab.row("%s\t%s\t%s", t.intent.Trial, t.intent.Condition, t.end.Reason)
+		if selected(t.Time, since) && t.End != nil && t.End.Outcome == journal.OutcomeInconclusive {
+			trials = append(trials, t)
 		}
 	}
-	tab.section("Tctl", "regime\tmax C\tpassing trials")
-	temps := map[string]int{}
-	for _, t := range p.trials {
-		if selected(t.time, since) && t.end != nil && t.end.Outcome == journal.OutcomePass && t.end.TctlMaxC != nil {
-			temps[fmt.Sprintf("%s\t%03d", t.intent.Regime, *t.end.TctlMaxC)]++
-		}
-	}
-	for _, k := range keys(temps) {
-		regime, temp, _ := strings.Cut(k, "\t")
-		n, _ := strconv.Atoi(temp)
-		tab.row("%s\t%d\t%d", regime, n, temps[k])
-	}
-	return tab.writer.Flush()
+	return trials
 }
 
-func renderExposure(tab *table, p *projection, since time.Time) {
-	tab.section("Exposure", "regime\tworkload\ttrials\thours\tfailures")
-	type exposure struct{ trials, seconds, failures int }
-	exposures := map[string]*exposure{}
+type tctlKey struct {
+	regime machine.Regime
+	maxC   int
+}
+
+// passingTctl counts passing trials by regime and peak Tctl.
+func passingTctl(p *projection, since time.Time) []entry[tctlKey, int] {
+	temps := map[tctlKey]int{}
 	for _, t := range p.trials {
-		if !selected(t.time, since) {
+		if selected(t.Time, since) && t.End != nil && t.End.Outcome == journal.OutcomePass && t.End.TctlMaxC != nil {
+			temps[tctlKey{t.Intent.Regime, *t.End.TctlMaxC}]++
+		}
+	}
+	return sorted(temps, func(a, b tctlKey) int {
+		return cmp.Or(cmp.Compare(a.regime, b.regime), cmp.Compare(a.maxC, b.maxC))
+	})
+}
+
+func renderOutcomes(tab *table, inconclusive []*trial, tctl []entry[tctlKey, int]) {
+	tab.section("Inconclusive trials", "trial\tcondition\treason")
+	for _, t := range inconclusive {
+		tab.row("%s\t%s\t%s", t.Intent.Trial, t.Intent.Condition, t.End.Reason)
+	}
+	tab.section("Tctl", "regime\tmax C\tpassing trials")
+	for _, x := range tctl {
+		tab.row("%s\t%d\t%d", x.key.regime, x.key.maxC, x.value)
+	}
+}
+
+type exposureKey struct {
+	regime   machine.Regime
+	workload string
+}
+
+type exposure struct{ trials, seconds, failures int }
+
+func computeExposure(p *projection, since time.Time) []entry[exposureKey, exposure] {
+	exposures := map[exposureKey]exposure{}
+	for _, t := range p.trials {
+		if !selected(t.Time, since) {
 			continue
 		}
-		k := fmt.Sprintf("%s\t%s", t.intent.Regime, t.intent.Workload)
+		k := exposureKey{t.Intent.Regime, t.Intent.Workload}
 		x := exposures[k]
-		if x == nil {
-			x = &exposure{}
-			exposures[k] = x
-		}
-		if t.started {
+		if t.Started {
 			x.trials++
 		}
 		x.seconds += seconds(t)
-		if t.end != nil && t.end.Outcome == journal.OutcomeFailure {
+		if t.End != nil && t.End.Outcome == journal.OutcomeFailure {
 			x.failures++
 		}
+		exposures[k] = x
 	}
-	for _, k := range keys(exposures) {
-		x := exposures[k]
-		tab.row("%s\t%d\t%.3f\t%d", k, x.trials, float64(x.seconds)/3600, x.failures)
+	return sorted(exposures, func(a, b exposureKey) int {
+		return cmp.Or(cmp.Compare(a.regime, b.regime), cmp.Compare(a.workload, b.workload))
+	})
+}
+
+func renderExposure(tab *table, exposures []entry[exposureKey, exposure]) {
+	tab.section("Exposure", "regime\tworkload\ttrials\thours\tfailures")
+	for _, e := range exposures {
+		x := e.value
+		tab.row("%s\t%s\t%d\t%.3f\t%d", e.key.regime, e.key.workload, x.trials, float64(x.seconds)/3600, x.failures)
 	}
 }
 
@@ -273,7 +474,7 @@ func loadedCCD(t *trial, cores []machine.CoreInfo, ccds map[int]int) string {
 		return "idle/unknown"
 	}
 	set := map[string]int{}
-	for _, c := range loaded(t.intent, cores) {
+	for _, c := range loaded(t.Intent, cores) {
 		if ccd, ok := ccds[c]; ok {
 			set[strconv.Itoa(ccd)]++
 		}
@@ -288,8 +489,26 @@ func loadedCCD(t *trial, cores []machine.CoreInfo, ccds map[int]int) string {
 // by voltage-targeted backoff.
 const voltageTargetedRuleset = 9
 
-func renderR7Decisions(tab *table, events []journal.Event, since time.Time) {
-	tab.section("R7 voltage-targeted backoffs", "seq\tdecision\tcore\tfrom\tto\tcounts\tcauses\treason")
+// r7Backoff is a voltage-targeted backoff; steps is how many offset counts it moved.
+type r7Backoff struct {
+	seq      int
+	decision *journal.TunerDecision
+	steps    int
+	causes   []int
+}
+
+type r7Chain struct {
+	seq   int
+	chain *journal.CheckingChain
+}
+
+type r7Decisions struct {
+	backoffs []r7Backoff
+	chains   []r7Chain
+}
+
+func computeR7Decisions(events []journal.Event, since time.Time) r7Decisions {
+	var r r7Decisions
 	bySeq := make(map[int]journal.Event, len(events))
 	intents := make(map[string]*journal.TrialIntent)
 	for _, e := range events {
@@ -323,17 +542,30 @@ func renderR7Decisions(tab *table, events []journal.Event, since time.Time) {
 			}
 		}
 		if r7 {
-			tab.row("%d\t%s\t%02d\t%d\t%d\t%d\t%v\t%s", e.Seq, d.Decision, d.Core, d.FromOffset, d.ToOffset, d.ToOffset-d.FromOffset, e.Cause, journal.EscapeText(d.Reason))
+			r.backoffs = append(r.backoffs, r7Backoff{e.Seq, d, d.ToOffset - d.FromOffset, e.Cause})
 		}
 	}
-	tab.section("R7 chain derivations", "seq\tcycle\tstep\tCCD\tworkload\tpart\trequest groups\tloaded cores\tsources")
 	for _, e := range events {
 		if d, ok := e.Data.(*journal.CheckingChain); ok && selected(e.Time, since) {
-			source := fmt.Sprint(d.SourceSeqs)
-			if len(d.SourceSeqs) == 0 {
-				source = "offset fallback"
-			}
-			tab.row("%d\t%d\t%d\t%d\t%s\t%s\t%v\t%s\t%s", e.Seq, d.Cycle, d.Step, d.CCD, journal.EscapeText(d.Workload), journal.EscapeText(d.Part), d.Groups, coreList(d.Cores), source)
+			r.chains = append(r.chains, r7Chain{e.Seq, d})
 		}
+	}
+	return r
+}
+
+func renderR7Decisions(tab *table, r r7Decisions) {
+	tab.section("R7 voltage-targeted backoffs", "seq\tdecision\tcore\tfrom\tto\tcounts\tcauses\treason")
+	for _, b := range r.backoffs {
+		d := b.decision
+		tab.row("%d\t%s\t%02d\t%d\t%d\t%d\t%v\t%s", b.seq, d.Decision, d.Core, d.FromOffset, d.ToOffset, b.steps, b.causes, journal.EscapeText(d.Reason))
+	}
+	tab.section("R7 chain derivations", "seq\tcycle\tstep\tCCD\tworkload\tpart\trequest groups\tloaded cores\tsources")
+	for _, c := range r.chains {
+		d := c.chain
+		source := fmt.Sprint(d.SourceSeqs)
+		if len(d.SourceSeqs) == 0 {
+			source = "offset fallback"
+		}
+		tab.row("%d\t%d\t%d\t%d\t%s\t%s\t%v\t%s\t%s", c.seq, d.Cycle, d.Step, d.CCD, journal.EscapeText(d.Workload), journal.EscapeText(d.Part), d.Groups, coreList(d.Cores), source)
 	}
 }

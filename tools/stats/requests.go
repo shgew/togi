@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"cmp"
 	"math"
 	"time"
 
@@ -32,11 +32,11 @@ func r7Measurements(session facts.Session, p *projection, since time.Time) []r7M
 	}
 	var out []r7Measurement
 	for _, t := range p.trials {
-		if t.intent.Regime != machine.R7 || !selected(t.time, since) || !t.started || t.end == nil {
+		if t.Intent.Regime != machine.R7 || !selected(t.Time, since) || !t.Started || t.End == nil {
 			continue
 		}
-		m := r7Measurement{key: t.key, failed: t.end.Outcome == journal.OutcomeFailure, requests: t.end.VoltageRequestsV, top: t.end.TopRequesters}
-		if f, ok := recovered[t.endSeq]; ok && (len(m.requests) == 0 || len(m.top) == 0) {
+		m := r7Measurement{key: t.key, failed: t.End.Outcome == journal.OutcomeFailure, requests: t.End.VoltageRequestsV, top: t.End.TopRequesters}
+		if f, ok := recovered[t.EndSeq]; ok && (len(m.requests) == 0 || len(m.top) == 0) {
 			m.requests, m.top = f.VoltageRequestsV, f.TopRequesters
 		}
 		out = append(out, m)
@@ -58,9 +58,27 @@ func r7Measurements(session facts.Session, p *projection, since time.Time) []r7M
 	return out
 }
 
-func renderRequests(tab *table, measurements []r7Measurement) {
-	type counts struct{ trials, failures int }
-	bins, requesters := map[string]counts{}, map[string]counts{}
+// requestBin is a class's top voltage request rounded down to its 4 mV bin.
+type requestBin struct {
+	class string
+	low   float64
+}
+
+type requester struct {
+	class string
+	core  int
+}
+
+type requestCounts struct{ trials, failures int }
+
+type requestMetrics struct {
+	missingFailures int
+	bins            []entry[requestBin, requestCounts]
+	requesters      []entry[requester, requestCounts]
+}
+
+func computeRequests(measurements []r7Measurement) requestMetrics {
+	bins, requesters := map[requestBin]requestCounts{}, map[requester]requestCounts{}
 	missingFailures := 0
 	for _, m := range measurements {
 		top, ok := requests.Top(m.requests)
@@ -70,36 +88,46 @@ func renderRequests(tab *table, measurements []r7Measurement) {
 			}
 			continue
 		}
-		add := func(counted map[string]counts, key string) {
-			x := counted[key]
+		count := func(x requestCounts) requestCounts {
 			x.trials++
 			if m.failed {
 				x.failures++
 			}
-			counted[key] = x
+			return x
 		}
-		low := math.Floor(top*250+1e-9) / 250
-		add(bins, fmt.Sprintf("%s\t[%.3f, %.3f)", m.key, low, low+0.004))
+		bin := requestBin{m.key, math.Floor(top*250+1e-9) / 250}
+		bins[bin] = count(bins[bin])
 		for _, core := range m.top {
-			add(requesters, fmt.Sprintf("%s\t%02d", m.key, core))
+			r := requester{m.key, core}
+			requesters[r] = count(requesters[r])
 		}
 	}
+	return requestMetrics{
+		missingFailures: missingFailures,
+		bins: sorted(bins, func(a, b requestBin) int {
+			return cmp.Or(cmp.Compare(a.class, b.class), cmp.Compare(a.low, b.low))
+		}),
+		requesters: sorted(requesters, func(a, b requester) int {
+			return cmp.Or(cmp.Compare(a.class, b.class), cmp.Compare(a.core, b.core))
+		}),
+	}
+}
+
+func renderRequests(tab *table, m requestMetrics) {
 	tab.section("R7 voltage requests", "field\tcount")
-	tab.row("failures without request telemetry\t%d", missingFailures)
+	tab.row("failures without request telemetry\t%d", m.missingFailures)
 	tab.section("R7 trials by top request (4 mV bins)", "class\ttop request V\ttrials\tfailures")
-	if len(bins) == 0 {
+	if len(m.bins) == 0 {
 		tab.row("none")
 	}
-	for _, key := range keys(bins) {
-		x := bins[key]
-		tab.row("%s\t%d\t%d", key, x.trials, x.failures)
+	for _, x := range m.bins {
+		tab.row("%s\t[%.3f, %.3f)\t%d\t%d", x.key.class, x.key.low, x.key.low+0.004, x.value.trials, x.value.failures)
 	}
 	tab.section("R7 trials by top requester", "class\tcore\ttrials\tfailures")
-	if len(requesters) == 0 {
+	if len(m.requesters) == 0 {
 		tab.row("none")
 	}
-	for _, key := range keys(requesters) {
-		x := requesters[key]
-		tab.row("%s\t%d\t%d", key, x.trials, x.failures)
+	for _, x := range m.requesters {
+		tab.row("%s\t%02d\t%d\t%d", x.key.class, x.key.core, x.value.trials, x.value.failures)
 	}
 }

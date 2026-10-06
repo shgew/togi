@@ -1,0 +1,38 @@
+Session
+field     value
+id        review
+rulesets  1
+builds    1.2.3
+first     2026-09-25T00:00:00Z
+last      2026-09-25T00:30:00Z
+since     2026-09-25T00:15:00Z
+
+Runs
+run  start                 end                   build  trials  crashes  ended
+1    2026-09-25T00:01:00Z  2026-09-25T00:30:00Z  1.2.3  5       0        open
+
+Evidence quality
+warning                                        count
+inconclusive                                   1
+decisions resting on a single carried failure  0
+
+Failures after prior passes
+trial class        failures with prior passes
+R6/load/00,01/60s  1
+
+Prior evidence per hunt group
+hunt  group  stage  prior passes  required  established  passes again  failures again  trials  hours
+2     1      part   1             1         true         1             0               1       0.017
+2     2      part   1             1         true         0             1               1       0.017
+2     3      part   1             1         true         0             0               1       0.017
+
+Prior evidence by hunt and stage
+hunt  stage  ran groups  established groups  passed again  failed again  redundant trials  redundant hours
+0002  part   3           3                   1             1             3                 0.050
+
+Inconclusive trials
+trial  condition  reason
+2      parked     no reliable result
+
+Tctl
+regime  max C  passing trials
