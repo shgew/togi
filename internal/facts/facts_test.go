@@ -18,25 +18,11 @@ func writeJournal(t *testing.T, path string, events []journal.Event, tail string
 	t.Helper()
 	var lines strings.Builder
 	for i, e := range events {
-		var fields map[string]any
+		e.Seq = i + 1
 		if e.Data != nil {
-			data, err := json.Marshal(e.Data)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := json.Unmarshal(data, &fields); err != nil {
-				t.Fatal(err)
-			}
-			e.Kind = e.Data.Kind()
-		} else {
-			fields = map[string]any{}
+			e.Kind, e.Msg = e.Data.Kind(), e.Data.Message()
 		}
-		fields["seq"], fields["kind"] = i+1, e.Kind
-		fields["time"], fields["boot"] = e.Time, e.Boot
-		if len(e.Cause) > 0 {
-			fields["cause"] = e.Cause
-		}
-		data, err := json.Marshal(fields)
+		data, err := json.Marshal(e)
 		if err != nil {
 			t.Fatal(err)
 		}

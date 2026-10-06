@@ -88,10 +88,18 @@ type Event struct {
 	Raw   []byte
 }
 
+func (e Event) MarshalJSON() ([]byte, error) {
+	return encode(e)
+}
+
 func encode(e Event, stamp ...bool) ([]byte, error) {
-	payload, err := marshal(e.Data)
-	if err != nil {
-		return nil, fmt.Errorf("encode %s payload: %w", e.Kind, err)
+	var payload []byte
+	if e.Data != nil {
+		var err error
+		payload, err = marshal(e.Data)
+		if err != nil {
+			return nil, fmt.Errorf("encode %s payload: %w", e.Kind, err)
+		}
 	}
 	header, err := marshal(struct {
 		Time string `json:"time"`

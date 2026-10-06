@@ -2,7 +2,6 @@ package journal
 
 import (
 	"bufio"
-	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +12,8 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
+// The fixtures retain each shipped session's header and all config.loaded lines,
+// with their original sequence numbers and bytes.
 func TestConfigLoadedDecodesEveryShippedJournalBody(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -25,16 +26,11 @@ func TestConfigLoadedDecodesEveryShippedJournalBody(t *testing.T) {
 		{"20260927T221954Z", 2, map[int]int{0: -31, 1: -38, 2: -37, 3: -34, 4: -36, 5: -36, 6: -45, 7: -43, 8: -48, 9: -48, 10: -49, 11: -46, 12: -50, 13: -48, 14: -50, 15: -50}, []machine.Regime{machine.R2, machine.R7, machine.R6, machine.R5, machine.R1, machine.R3, machine.R4, machine.R6}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, err := os.Open(filepath.Join("..", "carry", "testdata", tc.name+".jsonl.gz"))
+			f, err := os.Open(filepath.Join("testdata", tc.name+"-config.jsonl"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer f.Close()
-			gz, err := gzip.NewReader(f)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer gz.Close()
 			want := ConfigSnapshot{
 				StartOffsets: map[int]int{}, CandidateSoloLimits: tc.candidates,
 				Durations: ConfigDurations{SearchTrialS: 90, CheckingTrialS: 120, CheckingIdleS: 900, CheckingAllCoreS: 1200},
@@ -42,7 +38,7 @@ func TestConfigLoadedDecodesEveryShippedJournalBody(t *testing.T) {
 				DeadEnds:  ConfigDeadEnds{InconclusiveInARow: 3, StrayCrashesInARow: 3},
 				Backends:  ConfigBackends{Mprime: "/nix/store/64hjzgj1msiyndpdxrk9l3gkjf3sczgj-mprime-31.04b02", Ycruncher: "/nix/store/n5g91xa9pzcfqyyh62xpwz3v53f87y0a-y-cruncher-0.8.7.9547"},
 			}
-			scan := bufio.NewScanner(gz)
+			scan := bufio.NewScanner(f)
 			found := false
 			for scan.Scan() {
 				var kind struct {
