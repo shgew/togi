@@ -82,8 +82,9 @@ func TestPrepare(t *testing.T) {
 			}
 		})
 	}
-	if _, err := m.Prepare(machine.Workload{ID: "unsupported", Base: "unsupported"}, t.TempDir(), []int{2}); err == nil || err.Error() != "mprime: no configuration for workload unsupported" {
-		t.Fatalf("unsupported workload: %v", err)
+	_, err := m.Prepare(machine.Workload{ID: "unsupported-smt", Base: "unsupported"}, t.TempDir(), []int{2})
+	if err == nil || errors.Is(err, machine.ErrBackendMissing) || !strings.Contains(err.Error(), "unsupported-smt") {
+		t.Fatalf("unsupported workload must fail naming it, not as a missing backend: %v", err)
 	}
 }
 

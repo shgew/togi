@@ -154,8 +154,9 @@ func TestPrepare(t *testing.T) {
 			}
 		})
 	}
-	if _, err := y.Prepare(machine.Workload{ID: "unsupported", Base: "unsupported"}, t.TempDir(), []int{2}); err == nil || err.Error() != "y-cruncher: no configuration for workload unsupported" {
-		t.Fatalf("unsupported workload: %v", err)
+	_, err := y.Prepare(machine.Workload{ID: "unsupported-derived", Base: "unsupported"}, t.TempDir(), []int{2})
+	if err == nil || errors.Is(err, machine.ErrBackendMissing) || !strings.Contains(err.Error(), "unsupported-derived") {
+		t.Fatalf("unsupported workload must fail naming it, not as a missing backend: %v", err)
 	}
 }
 
