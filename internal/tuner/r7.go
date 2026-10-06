@@ -182,6 +182,9 @@ func (s *State) consumeR7(ev journal.Event, id int) {
 			s.r7Handled[f.seq] = map[int]bool{}
 		}
 		s.r7Handled[f.seq][id] = true
+		if loc, ok := s.located[f.seq]; ok && loc.named != nil {
+			s.r7Handled[f.seq][*loc.named] = true
+		}
 		if failed := s.r7FailureEntry(*f); failed != nil {
 			for _, other := range s.failureTargets(*failed) {
 				if s.r7NamedCulprit(*failed) || s.ccd[other] == s.ccd[id] {
@@ -211,6 +214,15 @@ func (s *State) r7PendingDecision() (Action, bool) {
 			if loc.result != "loaded" {
 				continue
 			}
+			if loc.named != nil {
+				if s.r7Handled[f.seq][*loc.named] {
+					continue
+				}
+				if a, ok := s.r7LocatedNamedDecision(f, loc); ok {
+					return a, true
+				}
+				continue
+			}
 			located = &loc
 		} else if s.locatable(f) != nil {
 			continue
@@ -227,6 +239,26 @@ func (s *State) r7PendingDecision() (Action, bool) {
 		}
 	}
 	return Action{}, false
+}
+
+// r7LocatedNamedDecision charges the loaded core that a located hunt's group failure named: the hunt ended
+// loaded, and that failure decides the move under the named-core rules with its own failed trial, as it would
+// have outside the hunt. The decision cites the hunted failure first, so the same move consumes it.
+func (s *State) r7LocatedNamedDecision(source pendingFailure, loc locatedHunt) (Action, bool) {
+	g := s.failureBySeq(loc.failure)
+	c := s.core(*loc.named)
+	if g == nil || c == nil {
+		return Action{}, false
+	}
+	failed := s.r7FailureEntry(*g)
+	if failed == nil {
+		return Action{}, false
+	}
+	a, ok := s.r7CoreDecision(*g, *failed, c, &loc)
+	if ok {
+		a.Cause = append([]int{source.seq}, a.Cause...)
+	}
+	return a, ok
 }
 
 func (s *State) r7FailureEntry(f pendingFailure) *entry {
@@ -327,7 +359,11 @@ func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core, located 
 	if located != nil {
 		locatedSeqs = []int{located.end}
 		clause := fmt.Sprintf("hunt %d kept the failure on the loaded cores", located.hunt)
-		if located.failure != 0 {
+		switch {
+		case located.named != nil:
+			clause = fmt.Sprintf("hunt %d ended loaded after failure #%d named loaded core %02d, which also answers failure #%d", located.hunt, located.failure, *located.named, located.source)
+			locatedSeqs = append(locatedSeqs, located.failure)
+		case located.failure != 0:
 			clause += fmt.Sprintf(" after failure #%d with every unloaded core at CO 0", located.failure)
 			locatedSeqs = append(locatedSeqs, located.failure)
 		}

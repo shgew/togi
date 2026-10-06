@@ -14,8 +14,8 @@
   0:40 of 2:00                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 
   if 5 of 5 pass       next: hunt 1 group 2: R7 all-core on 00-07 · 08-11 at failing offsets, 12-15 parked at 0, idle
-  if it fails          hunt 1 keeps the failure on loaded 00-07 → core 05 -9 → -8 per offset order → next: rerun R7 all-core on 00-07 · 2m
-  if inconclusive      the same trial runs again
+  if none is named     hunt 1 keeps the failure on loaded 00-07 → core 05 -9 → -8 per offset order → next: rerun R7 all-core on 00-07 · 2m
+  if a core is named   its failure point is recorded → hunt 1 keeps the failure on loaded 00-07 → it backs off per offset order → next: rerun R7 all-core on 00-07 · 2m
 
   CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  parked at 0, idle
   ► 00  -37  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                -38                                            08    0  PARKED    ···························█                          -28   returns to -27

@@ -1,16 +1,16 @@
- togi   02:26:52   session 26h26m   72 failures · 17 crashes   last observed failure 01:59, 27m ago
+ togi   02:27:15   session 26h26m   71 failures · 17 crashes   last observed failure 01:59, 27m ago
  ■ SOLO ─ ► CYCLE 1 ─ ○ DEEPEN ─ CLEAN 1
 
  ▌  I restored safer offsets before stopping. togi run picks up where I left off.
 
- STOPPED  02:26:12 · requested clean cycles completed
+ STOPPED  02:26:35 · requested clean cycles completed
  Rows show the saved profile, not applied now.
 
  CCD 0 idle       0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
    00 -37 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38             08 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄█·              -25
    01 -31 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·           -32             09 -16 AT LIMIT ▄▄▄▄▄▄▄▄█                   -17
    02 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -36             10 -15 AT LIMIT ▄▄▄▄▄▄▄█                    -16
-   03 -17 AT LIMIT ▄▄▄▄▄▄▄▄█                   -18             11  -3 AT LIMIT ▄█··                         -4
+   03 -17 AT LIMIT ▄▄▄▄▄▄▄▄█                   -18             11  -4 AT LIMIT ▄▄█·                         -5
    04 -32 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33             12  -7 AT LIMIT ▄▄▄█·                        -8
    05  -7 AT LIMIT ▄▄▄█·                        -8             13 -22 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄█                -23
    06 -27 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█·             -28             14   0 AT LIMIT █·                           -1

@@ -6,7 +6,7 @@
   R7   all-core load  on 00-07 · 08-15 parked at 0, idle   mprime AVX2 36K-248K · 8 workers           HUNT 1 · GROUP 1
  ███████████████████████████████████████████████████████████████████████████████████████████  1:20 left  0/5 ► · · · ·
 
- 5/5 pass → group 2   fail → hunt ends   inconclusive → same trial again   backoffs per offset order
+ 5/5 pass → group 2   none named → hunt ends   core named → hunt ends   backoffs per offset order
 
  CCD 0 all loaded 0  2 counts/cell       -50 fail            CCD 1 parked     0  2 counts/cell       -50 fail  back
  ► 00 -37 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38             08   0 PARKED   ·············█              -28  -27

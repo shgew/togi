@@ -904,3 +904,71 @@ func TestR7ZeroLoadedCCDDeadEndsOnlyAfterFailedLocate(t *testing.T) {
 		})
 	}
 }
+
+func TestR7LocatedFailureNamingALoadedCoreChargesThatCore(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		fails  func([]int) bool
+		groups int
+	}{
+		{"locate", func([]int) bool { return true }, 1},
+		{"narrowing group", func(p []int) bool { return p[2] != 0 || p[3] != 0 }, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := r7Harness(t)
+			_, failure := failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}})
+			var named int
+			a := runLocated(h, func(p []int) *int {
+				if !tc.fails(p) {
+					return nil
+				}
+				named = len(h.events) + 2
+				return new(1)
+			})
+			end, ok := a.Payload.(*journal.HuntEnd)
+			if !ok || end.Result != "loaded" || !slices.Equal(end.Cores, []int{0, 1}) || end.Groups != tc.groups {
+				t.Fatalf("hunt end %+v", a)
+			}
+			ended := h.decide(a)
+			a = h.next()
+			move, ok := a.Payload.(*journal.TunerDecision)
+			if !ok || move.Decision != journal.Backoff || move.Core != 1 || move.FromOffset != -30 || move.ToOffset != -29 || move.FailurePoint == nil || *move.FailurePoint != -30 {
+				t.Fatalf("named loaded core backoff %+v, want core 01 from -30 to -29 with failure point -30", a)
+			}
+			if a.Cause[0] != failure.Seq {
+				t.Fatalf("backoff cause %v must cite the hunted failure #%d first", a.Cause, failure.Seq)
+			}
+			for _, seq := range []int{ended.Seq, named} {
+				if !slices.Contains(a.Cause, seq) {
+					t.Fatalf("backoff cause %v omits #%d", a.Cause, seq)
+				}
+			}
+			if want := fmt.Sprintf("hunt 1 ended loaded after failure #%d named loaded core 01, which also answers failure #%d", named, failure.Seq); !strings.Contains(move.Reason, want) {
+				t.Fatalf("reason %q lacks %q", move.Reason, want)
+			}
+			h.decide(a)
+			if _, pending := h.s.Drain(); pending {
+				t.Fatal("the hunted failure moved a second core")
+			}
+			for a = h.next(); a.Kind == Decide; a = h.next() {
+				if move, ok := a.Payload.(*journal.TunerDecision); ok {
+					t.Fatalf("the located failure moved another core: %+v", move)
+				}
+				h.decide(a)
+			}
+			if a.Kind != RunTrial || a.Trial.Profile != nil && a.Trial.Profile[1] <= -30 {
+				t.Fatalf("next trial %+v reapplies core 01 at its failure point", a)
+			}
+			if diff := cmp.Diff([]int{-30, -29, -30, -30}, h.s.offsets()); diff != "" {
+				t.Fatalf("offsets (-want +got):\n%s", diff)
+			}
+			if _, reaches := h.s.reaches(h.s.offsets()); reaches {
+				t.Fatal("the offsets reach a recorded failure point")
+			}
+			if _, reaches := h.s.reaches([]int{-30, -30, -30, -30}); !reaches {
+				t.Fatal("core 01's failure point at -30 was not recorded")
+			}
+			assertProjectionReplay(h)
+		})
+	}
+}

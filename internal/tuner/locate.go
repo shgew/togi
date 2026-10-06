@@ -9,10 +9,12 @@ import (
 )
 
 // locatedHunt records how a located hunt answered an unattributed multi-core R7 failure: open while result is
-// empty, consumed by any end but loaded, and charged to the loaded cores after a loaded end.
+// empty, consumed by any end but loaded, and charged to the loaded cores after a loaded end. A loaded end whose
+// group failure named a loaded core records that core: the named failure decides the charge.
 type locatedHunt struct {
-	hunt, end, failure int
-	result             string
+	hunt, end, failure, source int
+	named                      *int
+	result                     string
 }
 
 // located reports a hunt of a failed multi-core R7 load: it keeps the loaded cores at their failing offsets
@@ -141,20 +143,32 @@ func (s *State) locateFailure(h *hunt) int {
 	return failure
 }
 
-// locatedLoadedFailure ends a located hunt loaded when its latest group failed naming a loaded core.
-func (s *State) locatedLoadedFailure(h *hunt) (Action, bool) {
+// locatedLoadedNamed returns the failure that rejected the hunt's latest group, or 0, and the loaded core it
+// named, if any.
+func (s *State) locatedLoadedNamed(h *hunt) (int, *int) {
 	failure := s.locateFailure(h)
-	if !h.located() || failure == 0 {
-		return Action{}, false
+	if failure == 0 {
+		return 0, nil
 	}
 	for _, e := range s.ledger[h.class.withDuration(h.groups[len(h.groups)-1].payload.DurationS)] {
-		if e.seq != failure || e.named == nil || !slices.Contains(h.start.Cores, *e.named) {
-			continue
+		if e.seq == failure && e.named != nil && slices.Contains(h.start.Cores, *e.named) {
+			return failure, new(*e.named)
 		}
-		reason := fmt.Sprintf("failure #%d named loaded core %02d, so the failure stays with the loaded cores", failure, *e.named)
-		return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: "loaded", Cores: slices.Clone(h.start.Cores), Groups: len(h.groups), Reason: reason}, Cause: []int{h.seq, failure}}, true
 	}
-	return Action{}, false
+	return failure, nil
+}
+
+// locatedLoadedFailure ends a located hunt loaded when its latest group failed naming a loaded core.
+func (s *State) locatedLoadedFailure(h *hunt) (Action, bool) {
+	if !h.located() {
+		return Action{}, false
+	}
+	failure, named := s.locatedLoadedNamed(h)
+	if named == nil {
+		return Action{}, false
+	}
+	reason := fmt.Sprintf("failure #%d named loaded core %02d, so the failure stays with the loaded cores and core %02d is charged for it", failure, *named, *named)
+	return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: "loaded", Cores: slices.Clone(h.start.Cores), Groups: len(h.groups), Reason: reason}, Cause: []int{h.seq, failure}}, true
 }
 
 func (s *State) endLocatedHunt(h *hunt, e journal.Event, p *journal.HuntEnd) {
@@ -163,7 +177,8 @@ func (s *State) endLocatedHunt(h *hunt, e journal.Event, p *journal.HuntEnd) {
 		delete(s.located, h.start.Failure)
 		s.hunt = nil
 	case "loaded":
-		s.located[h.start.Failure] = locatedHunt{hunt: p.Hunt, end: e.Seq, failure: s.locateFailure(h), result: p.Result}
+		failure, named := s.locatedLoadedNamed(h)
+		s.located[h.start.Failure] = locatedHunt{hunt: p.Hunt, end: e.Seq, failure: failure, source: h.start.Failure, named: named, result: p.Result}
 		s.hunt = nil
 	default:
 		s.located[h.start.Failure] = locatedHunt{hunt: p.Hunt, end: e.Seq, result: p.Result}
