@@ -23,13 +23,13 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 - `tools/fit/program.md`: autonomous simulator model research; follow it when changing how the simulator models failures or how `tools/fit` fits them.
 - `docs/adr/`: decisions and the alternatives rejected, with statuses in [the index](docs/adr/README.md). The specs describe current behavior; where they disagree with an ADR, the spec wins and the index is out of date. Reversing a decision needs a new ADR, which updates the index in the same pull request.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
-- Issues on `github.com/shgew/togi`: the plan, ideas and bugs (Issues, below).
+- Issues on `github.com/shgew/togi`: the plan, ideas, bugs and who works on what (Issues, below).
 
 ## Workflow
 
 Every change, docs included, lands as a pull request against `main` on `github.com/shgew/togi`, or as a layer of a stack of pull requests that ends on `main`. The owner merges; agents merge only when the owner asks. When a change is done, open its pull request without asking, unless told otherwise. The one commit that reaches `main` without a pull request is the release commit the release workflow pushes (`docs/releasing.md`).
 
-- Branch from `main` with a short descriptive name; in a stack, each layer above the bottom branches from the layer below.
+- Claim the issue first (Issues, below): `just claim` creates the branch from `main`, with a short descriptive name. In a stack, each layer above the bottom branches from the layer below.
 - Agents act on GitHub with the owner's account through `gh`: open pull requests, push, comment, reply, resolve threads and perform merges the owner asked for. `robotogi[bot]` only posts reviews: the review record and the `review` check, through `just bot`. Set `ROBOTOGI_KEY_FILE` to the App's PEM private key file path in the environment.
 - Plan the pull requests while designing the implementation, before writing code. A pull request is one merge unit: a change the owner would accept or revert whole, usually one issue or one entry in a design's Pull requests list. Review scales to a large diff by splitting it among reviewers, so size alone is no reason to split a merge unit. Commits carry the structure inside it: a behavior-preserving refactor in its own commit apart from the change it enables, a new seam apart from the behavior built on it.
 - Stack only when a lower layer is a merge unit of its own, worth merging even if the layers above never land; every fix to a lower layer restacks and re-reviews the layers above it. Stacked pull requests always use [`gh stack`](https://github.com/github/gh-stack) (`gh extension install github/gh-stack`): each layer is a branch with its own pull request based on the layer below, a lower layer holds what the ones above depend on, and every layer passes `just check` on its own. Open the stack with `gh stack submit`, keep it current with `gh stack sync`, and merge it with `gh stack merge`, never layer by layer by hand.
@@ -46,11 +46,18 @@ Every change, docs included, lands as a pull request against `main` on `github.c
 
 ## Issues
 
-Planning lives in issues, filed from the templates in `.github/ISSUE_TEMPLATE/`.
+Planning and coordination live in issues, filed from the templates in `.github/ISSUE_TEMPLATE/`. Run `just board` before choosing work.
 
-- Labels name the kind: `idea` (a thought, not yet discussed), `design` (decided, waiting to be scheduled), `feature` (ready to build), `bugfix`, and `breaking` on issues and pull requests alike.
-- The `1.0` milestone holds what ships in 1.0.
-- Lifecycle: an idea is discussed until decided, then its issue becomes a design with Why, Decided, Acceptance, Open, Pull requests and Links; Pull requests lists the planned pull requests in landing order. When a discussion settles decisions, file or update the issue before it ends. Each pull request that implements part of a design moves its decisions into the spec or an ADR; the last one closes the issue. The spec and ADRs stay the lasting record.
+- **Labels.** Kind: `idea` (a thought, not yet discussed), `design` (decided), `feature` (behavior ready to build), `bugfix`, `research` (opened by an autonomous research run), and `breaking` on issues and pull requests alike. Priority: `P0`–`P3`, as their label descriptions define them; no priority label means triaged and deliberately not scheduled. `needs-triage`: nobody has triaged it yet. `needs-decision`: waiting on the owner, with the question in a comment. The `1.0` milestone holds what ships in 1.0.
+- **Lifecycle:** an idea is discussed until decided, then its issue becomes a design with Why, Decided, Acceptance, Open, Pull requests, Links and a `Touches:` line; Pull requests lists the planned pull requests in landing order. When a discussion settles decisions, file or update the issue before it ends. Each pull request that implements part of a design moves its decisions into the spec or an ADR; the last one closes the issue. The spec and ADRs stay the lasting record.
+- **Triage:** every template adds `needs-triage`. A triage pass removes it and either schedules the issue (kind, priority, block, `Touches:`) or leaves it an unscheduled idea. Triage runs after each target-machine retro and whenever `just board` lists untriaged issues.
+- **Blocks** are parent issues titled `Block: …` whose sub-issues one agent can take together. GitHub's "blocked by" relation orders issues; a block's body holds only that order and its reasons, since GitHub shows which sub-issues are open and who holds them.
+- **No work without an issue.** File one from a template, under its block, before writing code. Work found mid-task (a deferred finding, a split, a design that does not hold) becomes a sub-issue right away. Exceptions: fixes to an open pull request, whose pull request is the record, and the release commit.
+- **`Touches:`** every ready issue carries one line, `Touches: path, path`, naming the packages or files its change edits. Paths overlap when equal or when one is a directory containing the other; `just board` lists ready issues that overlap work in progress. Check it before claiming.
+- **Ready** means a `design`, `feature` or `bugfix` with a priority label, no open blocker and no assignee. An `idea` inside a block is claimed to write a design comment first; code waits until the owner approves it and relabels it `design`.
+- **Claiming:** `just claim N BRANCH [PLAN]` refuses an issue that is already assigned and shows who holds it; otherwise it assigns the issue to the account `gh` acts as, links BRANCH from `main` with `gh issue develop` and posts the start comment naming the branch and the plan. Then fetch BRANCH and create your worktree from it. Assigned means taken. A claim with no commit, pull request or comment for 24 hours is stale; another agent may take it over after saying so in a comment.
+- **Updates** are comments on state changes only: started; blocked or waiting on the owner (add `needs-decision` and ask in the comment); scope changed; stopped unfinished (where it stopped and what is left, then unassign). Opening and merging a pull request show in the timeline through `Refs`/`Closes`. The body is always the current state; the comments are the history.
+- **The next ruleset:** one pinned issue titled `Ruleset N` is always open. Its sub-issues are the changes that bump `tuner.Ruleset` and the default strategy settings that change decisions, so they share one bench gate, one baseline and one session transition: decided sub-issues, and `idea` candidates that are grilled or moved out before release. A retro action or kept research result that would change tuner decisions becomes one of its sub-issues. The owner decides when it ships; a `P1` sub-issue forces a release once it is ready. The pull request that bumps `tuner.Ruleset` closes it; whoever merges that pull request opens and pins `Ruleset N+1` and moves the unfinished sub-issues to it.
 
 ## Keeping docs current
 
@@ -76,6 +83,8 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | Command | Use |
 |---|---|
 | `just` | List the recipes |
+| `just board` | What waits on the owner, untriaged issues, work in progress with its branches, pull requests and `Touches:`, ready work by priority and block, overlaps between ready and in-progress `Touches:`, and the open `Ruleset N` issue (`go run ./tools/board`) |
+| `just claim N BRANCH [PLAN]` | Claim issue N: refuse if it is assigned, else assign it, link BRANCH from `main` and post the start comment |
 | `just bot <gh args>` | Post review records and `review` checks as robotogi, using the private key file named by `ROBOTOGI_KEY_FILE` |
 | `just test` | The tight loop |
 | `just gate` | Every non-VM flake check, sequentially, cheapest first: fmt, lint, module and changes, the Go modules vendored for `vendorHash` against `go.mod` and `go.sum`, shuffled integration-tagged tests, race, and, on Linux, the hardware-tagged trial test compile. Uses warm dev-shell Go caches |
@@ -127,7 +136,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
 | `nix/` | NixOS module and VM tests |
-| `tools/*` | Development programs, never shipped: `audit`, `bench`, `carry-facts`, `cover`, `facts`, `fit`, `release`, `replay`, `sim`, `stats`; shared evaluation packages `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
+| `tools/*` | Development programs, never shipped: `audit`, `bench`, `board`, `carry-facts`, `cover`, `facts`, `fit`, `release`, `replay`, `sim`, `stats`; shared evaluation packages `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
 
 A package owns one responsibility, and its exported API is the seam. Split a package when it holds two responsibilities that change for different reasons.
 

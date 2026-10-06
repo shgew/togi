@@ -1,8 +1,10 @@
 ---
 name: Bug
 about: Something togi does wrong.
-labels: ["bugfix"]
+labels: ["bugfix", "needs-triage"]
 ---
+
+<!-- Maintainers: during triage, add a `Touches:` line naming the packages or files the fix edits (see AGENTS.md, Issues). -->
 
 ## What happened
 
