@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-26.04
     outputs:
       checks: ${{ steps.list.outputs.checks }}
+      vm-checks: ${{ steps.list.outputs.vm-checks }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
@@ -25,7 +26,9 @@ jobs:
         run: nix flake check --no-build
       - id: list
         name: List the checks
-        run: echo "checks=$(nix eval --json .#checks.x86_64-linux --apply builtins.attrNames)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "checks=$(nix eval --json .#checks.x86_64-linux --apply builtins.attrNames)" >> "$GITHUB_OUTPUT"
+          echo "vm-checks=$(nix eval --json .#checks.x86_64-linux --apply 'checks: builtins.filter (name: checks.${name} ? driver) (builtins.attrNames checks)')" >> "$GITHUB_OUTPUT"
 
   build:
     needs: eval
@@ -40,6 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Give build users KVM
+        if: contains(fromJSON(needs.eval.outputs.vm-checks), matrix.check)
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
           sudo udevadm control --reload-rules
