@@ -92,8 +92,8 @@ func TestReadJournalDecisiveFacts(t *testing.T) {
 				t.Fatalf("session identity: %+v", s)
 			}
 			want := []Fact{
-				{Kind: TrialFact, Session: s.ID, Seq: 5, Time: time.Unix(4, 0).UTC(), Build: build, Ruleset: 1, Trial: "alone", Boot: "a", Class: Class{Regime: machine.R1, Workload: "one", Cores: []int{4}, DurationS: 90}, Condition: machine.Alone, Phase: journal.PhaseSearch, Profile: []int{0, -10}, Outcome: journal.OutcomePass, DurationS: 89},
-				{Kind: TrialFact, Session: s.ID, Seq: 9, Time: time.Unix(8, 0).UTC(), Build: build, Ruleset: 1, Trial: "together", Boot: "a", Class: Class{Regime: machine.R7, Workload: "all", Cores: []int{2, 4}, DurationS: 900}, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: []int{-20, -30}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 12},
+				{Kind: TrialFact, Session: s.ID, Seq: 5, Time: time.Unix(4, 0).UTC(), Build: build, Trial: "alone", Boot: "a", Class: Class{Regime: machine.R1, Workload: "one", Cores: []int{4}, DurationS: 90}, Condition: machine.Alone, Phase: journal.PhaseSearch, Profile: []int{0, -10}, Outcome: journal.OutcomePass, DurationS: 89},
+				{Kind: TrialFact, Session: s.ID, Seq: 9, Time: time.Unix(8, 0).UTC(), Build: build, Trial: "together", Boot: "a", Class: Class{Regime: machine.R7, Workload: "all", Cores: []int{2, 4}, DurationS: 900}, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: []int{-20, -30}, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 12},
 			}
 			newBuild := journal.Build{Version: "new", Rev: "bbbb", Schema: schema, Ruleset: 6}
 			for _, tc := range []struct {
@@ -115,7 +115,7 @@ func TestReadJournalDecisiveFacts(t *testing.T) {
 				if tc.rerun {
 					class.Regime, class.Workload, class.Cores = machine.R2, "one", []int{2}
 				}
-				want = append(want, Fact{Kind: TrialFact, Session: s.ID, Seq: tc.seq, Time: time.Unix(int64(tc.seq-1), 0).UTC(), Build: newBuild, Ruleset: 6, Trial: tc.id, Boot: "a", Class: class, Condition: tc.condition, Phase: tc.phase, Rerun: tc.rerun, Profile: tc.profile, Outcome: tc.outcome, Signal: tc.signal, DurationS: tc.duration})
+				want = append(want, Fact{Kind: TrialFact, Session: s.ID, Seq: tc.seq, Time: time.Unix(int64(tc.seq-1), 0).UTC(), Build: newBuild, Trial: tc.id, Boot: "a", Class: class, Condition: tc.condition, Phase: tc.phase, Rerun: tc.rerun, Profile: tc.profile, Outcome: tc.outcome, Signal: tc.signal, DurationS: tc.duration})
 			}
 			if diff := cmp.Diff(want, s.Facts); diff != "" {
 				t.Fatal(diff)
@@ -158,7 +158,7 @@ func TestIdleFailures(t *testing.T) {
 			}
 			var want []Fact
 			if tc.want {
-				want = []Fact{{Kind: IdleFact, Session: "session", Seq: 2, Time: at, Build: build, Ruleset: 6, Epoch: 1, Boot: "boot", Class: Class{Regime: machine.R6, Cores: []int{0, 1}}, Condition: tc.condition, Profile: tc.profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Idle: &journal.Failure{Signal: machine.Crash, Condition: tc.condition, Attribution: tc.attribution, Profile: tc.profile}}}
+				want = []Fact{{Kind: IdleFact, Session: "session", Seq: 2, Time: at, Build: build, Epoch: 1, Boot: "boot", Class: Class{Regime: machine.R6, Cores: []int{0, 1}}, Condition: tc.condition, Profile: tc.profile, Outcome: journal.OutcomeFailure, Signal: machine.Crash, Idle: &IdleContext{Attribution: tc.attribution}}}
 			}
 			if diff := cmp.Diff(want, s.Facts); diff != "" {
 				t.Fatal(diff)
@@ -191,7 +191,7 @@ func TestResetHistoryPreservesFacts(t *testing.T) {
 	}
 	var got []string
 	for _, f := range s.Facts {
-		got = append(got, fmt.Sprintf("%s/%d/%v/%s", f.Trial, f.Ruleset, f.Profile, f.Outcome))
+		got = append(got, fmt.Sprintf("%s/%d/%v/%s", f.Trial, f.Build.Ruleset, f.Profile, f.Outcome))
 	}
 	if diff := cmp.Diff([]string{"before/1/[-10]/pass", "after/1/[-5]/failure"}, got); diff != "" {
 		t.Fatal(diff)

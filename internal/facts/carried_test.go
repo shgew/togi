@@ -30,7 +30,7 @@ func TestCarriedFactsKeepOriginalProvenance(t *testing.T) {
 	if !original.Facts[0].RecordOnly || original.Facts[1].RecordOnly {
 		t.Fatalf("record-only marker changed across extraction: %+v", original.Facts)
 	}
-	if diff := cmp.Diff(idle, original.Facts[1].Idle); diff != "" {
+	if diff := cmp.Diff(*idle, original.Facts[1].Payload().(*journal.FailureCarried).Failure); diff != "" {
 		t.Fatal(diff)
 	}
 	if diff := cmp.Diff(map[int]float64{3: 1.125, 7: 1.25}, original.Facts[0].VoltageRequestsV); diff != "" {

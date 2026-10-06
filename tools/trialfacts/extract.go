@@ -61,7 +61,7 @@ func Extract(dir string, dst io.Writer) (int, error) {
 			class := f.Class
 			class.Cores = slices.Clone(class.Cores)
 			slices.Sort(class.Cores)
-			r := Record{Session: f.Session, Build: f.Build, Ruleset: f.Ruleset, Context: session.Context, Seq: f.Seq, Trial: f.Trial, Kind: f.Kind, Class: class, Condition: f.Condition, Phase: f.Phase, RecordOnly: f.RecordOnly, Profile: f.Profile, Outcome: f.Outcome, Signal: f.Signal, DurationS: f.DurationS, Core: f.Core, StalledCore: f.StalledCore, VoltageRequestsV: f.VoltageRequestsV, TopRequesters: f.TopRequesters, CCDMHz: f.CCDMHz}
+			r := Record{Session: f.Session, Build: f.Build, Ruleset: f.Build.Ruleset, Context: session.Context, Seq: f.Seq, Trial: f.Trial, Kind: f.Kind, Class: class, Condition: f.Condition, Phase: f.Phase, RecordOnly: f.RecordOnly, Profile: f.Profile, Outcome: f.Outcome, Signal: f.Signal, DurationS: f.DurationS, Core: f.Core, StalledCore: f.StalledCore, VoltageRequestsV: f.VoltageRequestsV, TopRequesters: f.TopRequesters, CCDMHz: f.CCDMHz}
 			if err := encoder.Encode(r); err != nil {
 				return count, fmt.Errorf("encode fact: %w", err)
 			}
