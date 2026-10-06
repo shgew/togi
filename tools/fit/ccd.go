@@ -4,11 +4,10 @@ import (
 	"math"
 
 	"github.com/shgew/togi/internal/machine"
-	"github.com/shgew/togi/internal/sim"
 )
 
-func (l *likelihood) fitCCD(cfg *sim.Config) {
-	c := cfg.CCD
+func (l *likelihood) fitCCD() {
+	c := l.cfg.CCD
 	indices := l.selectObs(func(o observation) bool { return o.spec.Regime == machine.R7 })
 	for range 12 {
 		before := l.score(indices)

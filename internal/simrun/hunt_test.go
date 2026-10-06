@@ -742,13 +742,13 @@ func TestScriptedJointAndIdleLimits(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := huntConfig(4)
 			cfg.Ranking = []int{2, 1, 0, 3}
-			cfg.Script = map[string]sim.Outcome{}
 			if tc.idle {
 				cfg.Limits[3].Idle = new(-5)
 			} else {
 				cfg.Joints = []sim.Joint{{Members: map[int]int{0: -6, 2: -6}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
 			}
-			stop, events, _ := runHunt(t, cfg, nil, func(in *Input) {
+			var m *sim.Machine
+			stop, events, _ := runHunt(t, cfg, func(machine *sim.Machine) { m = machine }, func(in *Input) {
 				if tc.idle {
 					checkingR1First(in)
 				}
@@ -757,7 +757,9 @@ func TestScriptedJointAndIdleLimits(t *testing.T) {
 					if !ok {
 						return false
 					}
-					cfg.Script[p.Trial] = scriptedSharpOutcome(cfg, p)
+					if err := m.ScriptTrial(p.Trial, scriptedSharpOutcome(cfg, p)); err != nil {
+						t.Error(err)
+					}
 					return false
 				}
 			})

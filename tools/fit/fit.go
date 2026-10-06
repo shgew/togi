@@ -158,12 +158,14 @@ func (l *likelihood) discrete(dst *int, indices []int) {
 	best, score := *dst, l.score(indices)
 	for limit := -50; limit <= 1; limit++ {
 		*dst = limit
+		l.rebuild()
 		candidate := l.rawScore(indices)
 		if candidate < score-1e-9 && l.admissible() {
 			best, score = limit, candidate
 		}
 	}
 	*dst = best
+	l.rebuild()
 }
 
 func (l *likelihood) continuous(get func() float64, set func(float64), indices []int, low, high float64) {
@@ -173,6 +175,7 @@ func (l *likelihood) continuous(get func() float64, set func(float64), indices [
 	best, score := get(), l.score(indices)
 	evaluate := func(x float64) float64 {
 		set(x)
+		l.rebuild()
 		v := l.score(indices)
 		if v < score-1e-9 {
 			best, score = x, v
@@ -196,6 +199,7 @@ func (l *likelihood) continuous(get func() float64, set func(float64), indices [
 		}
 	}
 	set(best)
+	l.rebuild()
 }
 
 func initialConfig(records []trialfacts.Record) sim.Config {
@@ -259,41 +263,40 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 	all := l.selectObs(func(observation) bool { return true })
 	previous := math.Inf(1)
 	for range 12 {
-		if cfg.CCD == nil {
-			l.fitJoints(&cfg)
+		if l.cfg.CCD == nil {
+			l.fitJoints()
 			for ccd := range 2 {
-				l.addJoint(&cfg, records, ccd)
+				l.addJoint(records, ccd)
 			}
 		} else {
-			l.fitCCD(&cfg)
+			l.fitCCD()
 		}
-		l.fitRegimeLimits(&cfg)
-		l.fitWorkloads(&cfg)
-		l.fitHazardShape(cfg.Model, all)
-		l.fitFlat(&cfg)
-		l.fitIdle(&cfg)
-		l.fitLimitRateShift(&cfg, all)
+		l.fitRegimeLimits()
+		l.fitWorkloads()
+		l.fitHazardShape(all)
+		l.fitFlat()
+		l.fitIdle()
+		l.fitLimitRateShift(all)
 		score := l.score(all)
 		if previous-score < 1e-5 {
 			break
 		}
 		previous = score
 	}
-	if cfg.CCD == nil {
-		cfg.CCD = &sim.CCD{LogRate: -9, Slope: 0.1}
-		l.cfg = cfg
+	if l.cfg.CCD == nil {
+		l.cfg.CCD = &sim.CCD{LogRate: -9, Slope: 0.1}
 		l.rebuild()
-		l.fitCCD(&cfg)
+		l.fitCCD()
 	}
-	return cfg, l.score(all)
+	return l.cfg, l.score(all)
 }
 
-func (l *likelihood) fitJoints(cfg *sim.Config) {
-	for j := range cfg.Joints {
-		joint := &cfg.Joints[j]
+func (l *likelihood) fitJoints() {
+	for j := range l.cfg.Joints {
+		joint := &l.cfg.Joints[j]
 		indices := l.selectObs(func(o observation) bool { return slices.Contains(joint.Regimes, o.spec.Regime) })
 		l.continuous(func() float64 { return joint.Rate }, func(x float64) { joint.Rate = max(x, 1e-12) }, indices, 1e-7, 0.5)
-		for core := range cfg.Cores {
+		for core := range l.cfg.Cores {
 			limit, ok := joint.Members[core]
 			if !ok {
 				continue
@@ -301,20 +304,22 @@ func (l *likelihood) fitJoints(cfg *sim.Config) {
 			best, score := limit, l.score(indices)
 			for candidate := -50; candidate <= 0; candidate++ {
 				joint.Members[core] = candidate
+				l.rebuild()
 				v := l.rawScore(indices)
 				if v < score-1e-9 && l.admissible() {
 					best, score = candidate, v
 				}
 			}
 			joint.Members[core] = best
+			l.rebuild()
 		}
 	}
 }
 
-func (l *likelihood) fitRegimeLimits(cfg *sim.Config) {
-	for core := range cfg.Limits {
+func (l *likelihood) fitRegimeLimits() {
+	for core := range l.cfg.Limits {
 		for r, regime := range machine.Regimes {
-			if cfg.CCD != nil && regime == machine.R7 {
+			if l.cfg.CCD != nil && regime == machine.R7 {
 				continue
 			}
 			for _, alone := range []bool{true, false} {
@@ -334,16 +339,17 @@ func (l *likelihood) fitRegimeLimits(cfg *sim.Config) {
 					return only == alone
 				})
 				if alone {
-					l.discrete(&cfg.Limits[core].Alone[r], indices)
+					l.discrete(&l.cfg.Limits[core].Alone[r], indices)
 				} else {
-					l.discrete(&cfg.Limits[core].Together[r], indices)
+					l.discrete(&l.cfg.Limits[core].Together[r], indices)
 				}
 			}
 		}
 	}
 }
 
-func (l *likelihood) fitHazardShape(model *sim.Model, all []int) {
+func (l *likelihood) fitHazardShape(all []int) {
+	model := l.cfg.Model
 	for _, dst := range []*float64{&model.PastLimitRate, &model.Growth, &model.NearLimitRate} {
 		low, high := 1e-8, 0.5
 		if dst == &model.Growth {
@@ -356,21 +362,20 @@ func (l *likelihood) fitHazardShape(model *sim.Model, all []int) {
 				x = max(x, 1.05)
 			}
 			*dst = x
-			l.rebuild()
 		}, all, low, high)
 	}
 }
 
-func (l *likelihood) fitFlat(cfg *sim.Config) {
-	for core := range cfg.Limits {
+func (l *likelihood) fitFlat() {
+	for core := range l.cfg.Limits {
 		indices := l.selectObs(func(o observation) bool { return o.profile[core] < 0 })
-		dst := &cfg.Limits[core].Flat
+		dst := &l.cfg.Limits[core].Flat
 		l.continuous(func() float64 { return *dst }, func(x float64) { *dst = x }, indices, 1e-10, 0.001)
 	}
 }
 
-func (l *likelihood) fitIdle(cfg *sim.Config) {
-	for core := range cfg.Limits {
+func (l *likelihood) fitIdle() {
+	for core := range l.cfg.Limits {
 		hasExposure := false
 		indices := l.selectObs(func(o observation) bool {
 			if slices.Contains(o.spec.Cores, core) {
@@ -380,24 +385,27 @@ func (l *likelihood) fitIdle(cfg *sim.Config) {
 			return true
 		})
 		idle := -50
-		if cfg.Limits[core].Idle != nil {
-			idle = *cfg.Limits[core].Idle
+		if l.cfg.Limits[core].Idle != nil {
+			idle = *l.cfg.Limits[core].Idle
 		}
-		cfg.Limits[core].Idle = &idle
+		l.cfg.Limits[core].Idle = &idle
+		l.rebuild()
 		// Zero-offset trials constrain Idle=1, but cannot alone identify an idle limit.
 		if hasExposure {
 			l.discrete(&idle, indices)
 		}
 		if idle == -50 {
-			cfg.Limits[core].Idle = nil
+			l.cfg.Limits[core].Idle = nil
+			l.rebuild()
 		}
 	}
 }
 
-func (l *likelihood) addJoint(cfg *sim.Config, records []trialfacts.Record, ccd int) {
+func (l *likelihood) addJoint(records []trialfacts.Record, ccd int) {
+	cores := l.cfg.Cores
 	count := 0
-	for _, joint := range cfg.Joints {
-		if _, ok := joint.Members[ccd*cfg.Cores/2]; ok {
+	for _, joint := range l.cfg.Joints {
+		if _, ok := joint.Members[ccd*cores/2]; ok {
 			count++
 		}
 	}
@@ -409,23 +417,22 @@ func (l *likelihood) addJoint(cfg *sim.Config, records []trialfacts.Record, ccd 
 	bestScore := baseline - 0.5
 	var best sim.Joint
 	seen := make(map[string]bool)
-	original := len(cfg.Joints)
-	cfg.Joints = append(cfg.Joints, sim.Joint{Regimes: []machine.Regime{machine.R7}, Rate: 0.001, Signal: machine.Crash})
-	l.cfg = *cfg
+	original := len(l.cfg.Joints)
+	l.cfg.Joints = append(l.cfg.Joints, sim.Joint{Regimes: []machine.Regime{machine.R7}, Rate: 0.001, Signal: machine.Crash})
 	l.rebuild()
-	candidate := &cfg.Joints[original]
+	candidate := &l.cfg.Joints[original]
 	for _, r := range records {
 		if r.Class.Regime != machine.R7 || r.Outcome != journal.OutcomeFailure {
 			continue
 		}
 		members := make(map[int]int)
-		for core := ccd * cfg.Cores / 2; core < (ccd+1)*cfg.Cores/2; core++ {
+		for core := ccd * cores / 2; core < (ccd+1)*cores/2; core++ {
 			if r.Profile[core] == 0 {
 				break
 			}
 			members[core] = r.Profile[core]
 		}
-		if len(members) != cfg.Cores/2 {
+		if len(members) != cores/2 {
 			continue
 		}
 		key, _ := json.Marshal(members)
@@ -434,13 +441,14 @@ func (l *likelihood) addJoint(cfg *sim.Config, records []trialfacts.Record, ccd 
 		}
 		seen[string(key)] = true
 		duplicate := false
-		for _, joint := range cfg.Joints[:original] {
+		for _, joint := range l.cfg.Joints[:original] {
 			duplicate = duplicate || maps.Equal(joint.Members, members)
 		}
 		if duplicate {
 			continue
 		}
 		candidate.Members, candidate.Rate = members, 0.001
+		l.rebuild()
 		l.continuous(func() float64 { return candidate.Rate }, func(x float64) { candidate.Rate = max(x, 1e-12) }, indices, 1e-7, 0.5)
 		score := l.score(indices)
 		if score < bestScore {
@@ -448,26 +456,25 @@ func (l *likelihood) addJoint(cfg *sim.Config, records []trialfacts.Record, ccd 
 		}
 	}
 	if best.Members == nil {
-		cfg.Joints = cfg.Joints[:original]
+		l.cfg.Joints = l.cfg.Joints[:original]
 	} else {
-		cfg.Joints[original] = best
+		l.cfg.Joints[original] = best
 	}
-	l.cfg = *cfg
 	l.rebuild()
 }
 
-func (l *likelihood) fitWorkloads(cfg *sim.Config) {
-	for core := range cfg.Limits {
+func (l *likelihood) fitWorkloads() {
+	for core := range l.cfg.Limits {
 		workloads := make(map[string]bool)
 		for _, o := range l.obs {
-			if cfg.CCD != nil && o.spec.Regime == machine.R7 {
+			if l.cfg.CCD != nil && o.spec.Regime == machine.R7 {
 				continue
 			}
 			if o.k > 0 && slices.Contains(o.spec.Cores, core) {
 				workloads[o.spec.Workload.ID] = true
 			}
 		}
-		limit := &cfg.Limits[core]
+		limit := &l.cfg.Limits[core]
 		for _, workload := range slices.Sorted(maps.Keys(workloads)) {
 			if workload == "" {
 				continue
@@ -491,6 +498,7 @@ func (l *likelihood) fitWorkloads(cfg *sim.Config) {
 			best, score := value, math.Inf(1)
 			for candidate := -50; candidate <= 1; candidate++ {
 				limit.Workload[workload] = candidate
+				l.rebuild()
 				loss := l.rawScore(indices)
 				if loss < score-1e-9 && l.admissible() {
 					best, score = candidate, loss
@@ -501,6 +509,7 @@ func (l *likelihood) fitWorkloads(cfg *sim.Config) {
 			} else {
 				limit.Workload[workload] = best
 			}
+			l.rebuild()
 		}
 		if len(limit.Workload) == 0 {
 			limit.Workload = nil
@@ -564,16 +573,17 @@ func limitShifts(cfg *sim.Config) []limitShift {
 	return shifts
 }
 
-func (l *likelihood) fitLimitRateShift(cfg *sim.Config, all []int) {
-	shifts := limitShifts(cfg)
-	if len(shifts) == 0 || cfg.Model.PastLimitRate == 0 {
+func (l *likelihood) fitLimitRateShift(all []int) {
+	model := l.cfg.Model
+	shifts := limitShifts(&l.cfg)
+	if len(shifts) == 0 || model.PastLimitRate == 0 {
 		return
 	}
 	low, high := -50, 50
 	for _, limit := range shifts {
 		low, high = max(low, -50-limit.value), min(high, 1-limit.value)
 	}
-	rate := cfg.Model.PastLimitRate
+	rate := model.PastLimitRate
 	apply := func(delta int, shiftedRate float64) {
 		for _, limit := range shifts {
 			if limit.dst != nil {
@@ -582,12 +592,12 @@ func (l *likelihood) fitLimitRateShift(cfg *sim.Config, all []int) {
 				limit.workload[limit.key] = limit.value + delta
 			}
 		}
-		cfg.Model.PastLimitRate = shiftedRate
+		model.PastLimitRate = shiftedRate
 		l.rebuild()
 	}
 	best, bestRate, score := 0, rate, l.score(all)
 	for delta := low; delta <= high; delta++ {
-		shiftedRate := rate * math.Pow(cfg.Model.Growth, float64(-delta))
+		shiftedRate := rate * math.Pow(model.Growth, float64(-delta))
 		if shiftedRate < 1e-8 || shiftedRate > 0.5 {
 			continue
 		}

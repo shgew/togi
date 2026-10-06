@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/machine"
@@ -158,6 +159,43 @@ func TestNewRejectsInvalidScriptCore(t *testing.T) {
 		if err == nil || err.Error() != want {
 			t.Fatalf("core %d: got %v, want %s", core, err, want)
 		}
+	}
+}
+
+func TestNewKeepsItsOwnConfig(t *testing.T) {
+	t.Parallel()
+	cfg := Config{Cores: 2, Limits: flat(2, -20, -20), Script: map[string]Outcome{"0001": {Signal: machine.Stall, AtS: 1}}}
+	m, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Limits[0].Alone = [5]int{-5, -5, -5, -5, -5}
+	delete(cfg.Script, "0001")
+	if got := m.AloneLimit(0); got != -20 {
+		t.Fatalf("alone limit %d after the caller changed its config, want -20", got)
+	}
+	res, err := runSpec(t, m, "0001", machine.R1, machine.PickWorkload(machine.R1, 0), []int{0}, time.Minute, nil)
+	if err != nil || res.Signal != machine.Stall || res.Ran != time.Second {
+		t.Fatalf("trial 0001: %+v, %v; want the script given to New", res, err)
+	}
+}
+
+func TestScriptTrialAfterNew(t *testing.T) {
+	t.Parallel()
+	m, err := New(Config{Cores: 2, Limits: flat(2, -20, -20)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ScriptTrial("0001", Outcome{Signal: machine.ComputationError, AtS: 2, Core: 1}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := runSpec(t, m, "0001", machine.R1, machine.PickWorkload(machine.R1, 0), []int{1}, time.Minute, nil)
+	if err != nil || res.Signal != machine.ComputationError || res.Core != 1 || res.Ran != 2*time.Second {
+		t.Fatalf("trial 0001: %+v, %v; want the scripted computation error", res, err)
+	}
+	want := "script simulator trial: script trial 0002 core 2 outside [0, 2)"
+	if err := m.ScriptTrial("0002", Outcome{Signal: machine.Crash, Core: 2}); err == nil || err.Error() != want {
+		t.Fatalf("got %v, want %s", err, want)
 	}
 }
 
