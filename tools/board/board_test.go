@@ -74,6 +74,8 @@ func TestReady(t *testing.T) {
 		{"no priority means unscheduled", func(i *issue) { i.Labels = []string{"feature"} }, false},
 		{"assigned", func(i *issue) { i.Assignees = []string{"someone"} }, false},
 		{"open blocker", func(i *issue) { i.OpenBlockers = []int{7} }, false},
+		{"open sub-issue", func(i *issue) { i.SubIssues, i.SubClosed = 3, 2 }, false},
+		{"every sub-issue closed", func(i *issue) { i.SubIssues, i.SubClosed = 3, 3 }, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

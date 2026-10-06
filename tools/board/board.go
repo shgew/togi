@@ -59,12 +59,13 @@ func (i issue) priority() string {
 	return ""
 }
 
-// ready reports whether an agent may claim the issue: decided, prioritized, unblocked and unassigned.
+// ready reports whether an agent may claim the issue: decided, prioritized, unblocked, unassigned, and not a container whose open sub-issues are the work.
 func (i issue) ready() bool {
 	return len(i.Assignees) == 0 &&
 		slices.ContainsFunc(readyKinds, i.has) &&
 		i.priority() != "" &&
-		len(i.OpenBlockers) == 0
+		len(i.OpenBlockers) == 0 &&
+		i.SubClosed == i.SubIssues
 }
 
 // touches parses the issue's `Touches:` line into paths.

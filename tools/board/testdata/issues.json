@@ -426,6 +426,36 @@
         "total": 0,
         "completed": 0
        }
+      },
+      {
+       "number": 513,
+       "title": "Make the simulator trustworthy",
+       "body": "Touches: `internal/sim`",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "design"
+         },
+         {
+          "name": "P2"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": []
+       },
+       "parent": null,
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 3,
+        "completed": 1
+       }
       }
      ]
     }
