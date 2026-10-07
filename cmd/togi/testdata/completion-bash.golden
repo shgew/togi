@@ -67,7 +67,7 @@ _togi() {
         if [[ $cur == -* ]]; then
             _togi_words --config --state-dir --version
         else
-            _togi_words completion events reset restart-limit run status watch
+            _togi_words completion doctor events reset restart-limit run status watch
         fi
         ;;
     completion)
@@ -82,6 +82,15 @@ _togi() {
         else
             _togi_words bash zsh fish nushell
         fi
+        ;;
+    doctor)
+        case $prev in
+        --config|--state-dir)
+            _togi_files
+            return
+            ;;
+        esac
+        _togi_words --config --state-dir
         ;;
     events)
         case $prev in

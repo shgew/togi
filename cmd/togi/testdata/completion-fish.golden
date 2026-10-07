@@ -35,6 +35,7 @@ end
 
 complete -c togi -f
 complete -c togi -n "__togi_command_is ''" -a completion -d 'Print a shell completion script'
+complete -c togi -n "__togi_command_is ''" -a doctor -d 'Check whether this machine is ready for a run, writing nothing'
 complete -c togi -n "__togi_command_is ''" -a events -d 'Render the journal'
 complete -c togi -n "__togi_command_is ''" -a reset -d 'Reset one core or archive the session'
 complete -c togi -n "__togi_command_is ''" -a restart-limit -d 'Recover after the tuning service reaches its restart limit'
@@ -46,6 +47,8 @@ complete -c togi -n "__togi_command_is ''" -l state-dir -r -F
 complete -c togi -n "__togi_command_is ''" -l version
 complete -c togi -n "__togi_command_is completion" -l state-dir -r -F
 complete -c togi -n "__togi_command_is completion" -a 'bash zsh fish nushell'
+complete -c togi -n "__togi_command_is doctor" -l config -r -F
+complete -c togi -n "__togi_command_is doctor" -l state-dir -r -F
 complete -c togi -n "__togi_command_is events" -l core -x
 complete -c togi -n "__togi_command_is events" -l json
 complete -c togi -n "__togi_command_is events" -l kind -x -a '(__togi_kinds)'

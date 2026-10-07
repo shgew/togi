@@ -23,6 +23,12 @@ export extern "togi completion" [
     --state-dir: path
 ]
 
+# Check whether this machine is ready for a run, writing nothing
+export extern "togi doctor" [
+    --config: path
+    --state-dir: path
+]
+
 # Render the journal
 export extern "togi events" [
     --core: string

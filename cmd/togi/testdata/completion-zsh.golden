@@ -9,6 +9,7 @@ _togi() {
   local curcontext=$curcontext state line
   local -a commands=(
     'completion:Print a shell completion script'
+    'doctor:Check whether this machine is ready for a run, writing nothing'
     'events:Render the journal'
     'reset:Reset one core or archive the session'
     'restart-limit:Recover after the tuning service reaches its restart limit'
@@ -32,6 +33,11 @@ _togi() {
       _arguments \
         '--state-dir=:path:_files' \
         '1:argument:(bash zsh fish nushell)'
+      ;;
+    doctor)
+      _arguments \
+        '--config=:path:_files' \
+        '--state-dir=:path:_files'
       ;;
     events)
       _arguments \
