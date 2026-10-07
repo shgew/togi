@@ -107,6 +107,14 @@ On Darwin, only copied-journal `reset` uses `/tmp/togi.lock`: the first operator
 
 Rebuild (`nixos-rebuild boot`, or your usual way), then reboot. In BIOS, every Curve Optimizer offset must be 0. Do not run another tool that writes Curve Optimizer offsets in the boot you tune from: togi reads the offsets it finds at the start of a session as the baseline.
 
+Then check that the machine is ready, without starting a session:
+
+```sh
+sudo togi doctor
+```
+
+It makes the checks `sudo togi run` makes before tuning and prints one row per check: `ok`, `FAIL`, `warn` or `skipped`. The last line is `ready`, or `not ready:` with the failed checks, which `run` would turn into a preflight dead end; fix those first. A `warn` on `watchdog` means no hardware watchdog is active in this boot, which the tuning boot provides. `doctor` appends nothing to the journal and changes no offset. Without `sudo` it makes only the checks that need no root, marks the rest `skipped` and ends with `not fully checked: run sudo togi doctor`.
+
 ## 3. A quick in-session test
 
 Start sessions from the [tuning boot](#4-overnight-the-tuning-boot), especially after a breaking update: it has hardware-watchdog reset protection. An in-session run is an optional way to watch a few trials on the desktop, not the recommended way to start a session.

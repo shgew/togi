@@ -37,6 +37,7 @@ Not yet:
 
 ```sh
 togi --version                         # version and git revision of this build
+sudo togi doctor                       # check this machine is ready for a run, writing nothing
 sudo togi run                          # tune this machine; Ctrl-C stops, the next run resumes
 sudo togi run --cycles 3            # stop after three clean cycles when deepening is complete
 togi status                            # activity, failure points and combinations, per-core offsets and evidence
