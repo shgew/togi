@@ -1198,3 +1198,26 @@ func TestR7NamedUnloadedCoreOffZeroIsNotLocated(t *testing.T) {
 	}
 	assertProjectionReplay(h)
 }
+
+// TestR7PassedZeroRerunLocatesCitingTheRerun names top requester core 0 at CO 0 in a live CCD 0 load: its all-zero
+// rerun passes, so the failure names no core and is located, and hunt.start cites that rerun.
+func TestR7PassedZeroRerunLocatesCitingTheRerun(t *testing.T) {
+	h := r7Harness(t)
+	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseHasRoom, Offset: 0, Reason: "test"})
+	h.add(&journal.ProfileChange{To: []int{0, -30, -30, -30}})
+	_, failure := failLiveR7(h, journal.TrialEnd{DurationS: 41, TopRequesters: []int{0}, Core: new(0)})
+	rerun := runZeroRerun(h, []int{0, 1}, false)
+	a := h.next()
+	start, ok := a.Payload.(*journal.HuntStart)
+	if !ok || start.Failure != failure.Seq || !slices.Equal(start.Candidates, []int{2, 3}) {
+		t.Fatalf("located hunt %+v", a)
+	}
+	if diff := cmp.Diff([]int{failure.Seq, rerun.Seq}, a.Cause); diff != "" {
+		t.Fatalf("hunt start cause (-want +got):\n%s", diff)
+	}
+	if want := fmt.Sprintf("the rerun of failure #%d with every core at CO 0 passed (#%d)", failure.Seq, rerun.Seq); !strings.Contains(start.Reason, want) {
+		t.Fatalf("reason %q lacks %q", start.Reason, want)
+	}
+	h.decide(a)
+	assertProjectionReplay(h)
+}

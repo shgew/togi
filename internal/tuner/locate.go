@@ -146,7 +146,12 @@ func (s *State) locateStart(f pendingFailure) Action {
 	}
 	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: loaded, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Parked: parked, Candidates: s.locateCandidates(f), Trials: s.n, TrialS: s.durations.ShortTrialS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
 	p.Reason = "no core is named, so the failure is located on the unloaded cores before it is charged to the loaded cores"
-	return Action{Kind: Decide, Payload: p, Cause: []int{f.seq}}
+	cause := []int{f.seq}
+	if r := s.zeroReruns[f.seq]; r != nil && r.passed {
+		p.Reason = fmt.Sprintf("the rerun of failure #%d with every core at CO 0 passed (#%d), so it names no core and is located on the unloaded cores before it is charged to the loaded cores", f.seq, r.end)
+		cause = append(cause, r.end)
+	}
+	return Action{Kind: Decide, Payload: p, Cause: cause}
 }
 
 // locatedCulprit returns the core a parked located-hunt failure names directly: an unloaded core at a nonzero
