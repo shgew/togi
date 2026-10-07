@@ -455,12 +455,21 @@ func (s *State) groupOutcome(h *hunt, m groupRecord) string {
 
 // citeGroup adds what established a group's outcome: the failure that rejected it, live or carried, or, for a group
 // whose failure was inferred, the hunt.group recording that inference and citing its failure. Of passing evidence, only
-// carried passes are cited.
+// carried passes are cited. A settled group is cited as it stood when the next group was recorded.
 func (s *State) citeGroup(cause []int, h *hunt, i int) []int {
 	m := h.groups[i]
 	cause = s.citeCarried(cause, m.cause...)
 	if m.payload.Inferred == "failure" {
 		return citeNew(cause, m.seq)
+	}
+	if h.settled(i) && !m.payload.Skipped && m.payload.Inferred == "" {
+		k := h.class.withDuration(m.payload.DurationS)
+		since, until := s.inferenceSince(m.payload, m.seq), h.groups[i+1].seq
+		if failure := s.failureBefore(k, m.payload.Profile, since, until); failure != 0 {
+			return citeNew(cause, failure)
+		}
+		seqs := s.passSeqsBefore(k, m.payload.Profile, since, until, huntEvidence)
+		return s.citeCarried(cause, seqs[:min(len(seqs), h.start.Trials)]...)
 	}
 	_, failure, seqs := s.groupEvidence(h, m, true)
 	if failure == 0 {
@@ -474,6 +483,14 @@ func (s *State) citeGroup(cause []int, h *hunt, i int) []int {
 		}
 	}
 	return citeNew(cause, failure)
+}
+
+// settled reports a group whose outcome no later decision reads again: a narrowing group the hunt followed with another.
+// The hunt's latest group, a located hunt's locate group, the narrowing group before the first member probe and every probe are
+// read again, so a failure recorded at their profile after the hunt moved on can decide them.
+func (h *hunt) settled(i int) bool {
+	m := h.groups[i].payload
+	return i+1 < len(h.groups) && m.Probe == nil && m.Stage != "locate" && h.groups[i+1].payload.Probe == nil
 }
 
 func (s *State) huntNext() (Action, bool) {

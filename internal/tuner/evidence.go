@@ -142,12 +142,17 @@ func (s *State) latestFailure(k trialClass, p []int, since int) int {
 }
 
 func (s *State) passSeqs(k trialClass, p []int, since int, rule evidenceRule) []int {
-	last := s.latestFailure(k, p, 0)
+	return s.passSeqsBefore(k, p, since, math.MaxInt, rule)
+}
+
+// passSeqsBefore is passSeqs as it stood before until: passes recorded before it and after the newest failure before it.
+func (s *State) passSeqsBefore(k trialClass, p []int, since, until int, rule evidenceRule) []int {
+	last := s.failureBefore(k, p, 0, until)
 	var seqs []int
 	entries := s.ledger[k]
 	for i := range entries {
 		e := &entries[i]
-		if e.pass && rule.admits(e, since) && e.seq > last && AtLeastDeep(e.profile, p) {
+		if e.pass && e.seq < until && rule.admits(e, since) && e.seq > last && AtLeastDeep(e.profile, p) {
 			seqs = append(seqs, e.seq)
 		}
 	}

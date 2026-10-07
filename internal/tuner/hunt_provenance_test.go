@@ -13,8 +13,9 @@ import (
 
 // carriedJointHunt runs a session whose only checking regime is R6. A carried R6 failure at the starting profile skips
 // the first trial and starts the hunt; live parked trials then fail whenever core 00 is at -30 or deeper and core 01 at
-// -27 or deeper. It stops after the hunt's first backoff and returns the carried failure's sequence.
-func carriedJointHunt(t *testing.T) (*harness, int) {
+// -27 or deeper. It calls decided, if not nil, after each recorded decision, stops after the hunt's first backoff and
+// returns the carried failure's sequence.
+func carriedJointHunt(t *testing.T, decided func(*harness, journal.Event)) (*harness, int) {
 	t.Helper()
 	starts := make([]coreStart, 4)
 	for i := range starts {
@@ -44,7 +45,10 @@ func carriedJointHunt(t *testing.T) (*harness, int) {
 			h.trial(a, end)
 			continue
 		}
-		h.decide(a)
+		e := h.decide(a)
+		if decided != nil {
+			decided(h, e)
+		}
 		if d, ok := a.Payload.(*journal.TunerDecision); ok && d.Phase == journal.PhaseHunt {
 			return h, carried
 		}
@@ -87,7 +91,7 @@ func huntFailures(events []journal.Event, hunt int) []int {
 }
 
 func TestHuntCommitmentsCiteDecisiveLiveFailures(t *testing.T) {
-	h, carried := carriedJointHunt(t)
+	h, carried := carriedJointHunt(t, nil)
 	var start, end, combination, backoff journal.Event
 	for _, e := range h.events {
 		switch p := e.Data.(type) {
@@ -128,6 +132,39 @@ func TestHuntCommitmentsCiteDecisiveLiveFailures(t *testing.T) {
 		}
 		if len(missing) > 0 {
 			t.Errorf("%s #%d cause %v does not reach live failures %v", e.Kind, e.Seq, e.Cause, missing)
+		}
+	}
+}
+
+// A crash after group 2 is recorded, before its profile is applied, leaves an unattributed parked failure at group 1's
+// profile. Group 1 had passed when the hunt moved on, and no later decision reads its outcome again, so no hunt decision
+// may cite that failure as deciding it.
+func TestHuntCausesOmitAFailureAfterTheGroupPassed(t *testing.T) {
+	late := 0
+	h, _ := carriedJointHunt(t, func(h *harness, e journal.Event) {
+		if g, ok := e.Data.(*journal.HuntGroup); ok && g.Group == 2 && late == 0 {
+			first := h.s.hunt.groups[0].payload
+			if first.Probe != nil || h.s.groupOutcome(h.s.hunt, h.s.hunt.groups[0]) != "pass" {
+				t.Fatalf("group 1 should be a passed part: %+v", first)
+			}
+			late = h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Parked, Regime: machine.R6, Profile: slices.Clone(first.Profile)}).Seq
+		}
+	})
+	if late == 0 {
+		t.Fatal("the hunt never recorded group 2")
+	}
+	for _, e := range h.events[late:] {
+		switch p := e.Data.(type) {
+		case *journal.HuntGroup, *journal.HuntEnd, *journal.Combination:
+		case *journal.TunerDecision:
+			if p.Phase != journal.PhaseHunt {
+				continue
+			}
+		default:
+			continue
+		}
+		if slices.Contains(e.Cause, late) {
+			t.Errorf("%s #%d cause %v cites failure #%d, recorded after group 1 passed", e.Kind, e.Seq, e.Cause, late)
 		}
 	}
 }
