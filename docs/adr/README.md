@@ -47,3 +47,4 @@ ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 - [0039: Remind only the main session](0039-remind-only-the-main-session.md) — **in force**.
 - [0041: The coordinator reviews small pull requests](0041-coordinator-reviews-small-pull-requests.md) — **in force**.
 - [0042: Opt in to the check cache locally](0042-opt-in-to-the-check-cache-locally.md) — **in force**.
+- [0043: Record work that waits on the target machine](0043-record-work-that-waits-on-the-target-machine.md) — **in force**.
