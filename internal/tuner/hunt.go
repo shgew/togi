@@ -336,25 +336,8 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 	}
 	if p.stage == "full" {
 		p.fullChecked = true
-		if outcome == "pass" && h.locatedFull(p) {
-			p.result = true
-			return p, false
-		}
 		if outcome == "pass" {
-			p.escalated = true
-			p.duration = h.start.DurationS
-			p.set = slices.Clone(h.start.Candidates)
-			p.g = 2
-			p.stage = "part"
-			p.index = 0
-			p.fullChecked = false
-			p.anyFailed = false
-			if len(p.set) == 1 {
-				p.result = true
-				return p, false
-			}
-			p.cores = s.split(h, p.set, p.g)[0]
-			return p, true
+			return s.afterPassedFull(h, p)
 		}
 	}
 	if p.stage == "part" || p.stage == "complement" {
@@ -384,6 +367,35 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 		p.cores = s.split(h, p.set, p.g)[0]
 		return p, true
 	}
+	return h.lastGroupPlan(p)
+}
+
+// afterPassedFull plans the step after a passed full group: a located hunt's full group at the failed duration
+// ends it; any other escalates the narrowing to the failed duration.
+func (s *State) afterPassedFull(h *hunt, p groupPlan) (groupPlan, bool) {
+	if h.locatedFull(p) {
+		p.result = true
+		return p, false
+	}
+	p.escalated = true
+	p.duration = h.start.DurationS
+	p.set = slices.Clone(h.start.Candidates)
+	p.g = 2
+	p.stage = "part"
+	p.index = 0
+	p.fullChecked = false
+	p.anyFailed = false
+	if len(p.set) == 1 {
+		p.result = true
+		return p, false
+	}
+	p.cores = s.split(h, p.set, p.g)[0]
+	return p, true
+}
+
+// lastGroupPlan ends narrowing, unless a located hunt with no failed group still needs its full failing profile at
+// the failed duration.
+func (h *hunt) lastGroupPlan(p groupPlan) (groupPlan, bool) {
 	if h.located() && !p.anyFailed && !h.locatedFull(p) {
 		p.stage, p.index, p.duration = "full", 0, h.start.DurationS
 		p.escalated = p.escalated || h.start.DurationS > h.start.TrialS
