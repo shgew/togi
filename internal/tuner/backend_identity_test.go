@@ -138,13 +138,14 @@ func TestBackendUpdateRestartsCarriedSoloLimitEvidence(t *testing.T) {
 
 func TestBackendUpdateRestartsUnfinishedSearchStep(t *testing.T) {
 	for _, tc := range []struct {
-		name              string
-		mprime, ycruncher string
-		rerunR1           bool
+		name    string
+		reload  [][2]string
+		rerunR1 bool
 	}{
-		{name: "same backends keep the R1 pass", mprime: mprimeOld, ycruncher: ycruncherOld},
-		{name: "other backend updated keeps the R1 pass", mprime: mprimeOld, ycruncher: ycruncherNew},
-		{name: "own backend updated reruns R1", mprime: mprimeNew, ycruncher: ycruncherOld, rerunR1: true},
+		{name: "same backends keep the R1 pass", reload: [][2]string{{mprimeOld, ycruncherOld}}},
+		{name: "other backend updated keeps the R1 pass", reload: [][2]string{{mprimeOld, ycruncherNew}}},
+		{name: "own backend updated reruns R1", reload: [][2]string{{mprimeNew, ycruncherOld}}, rerunR1: true},
+		{name: "own backend rolled back restores the R1 pass", reload: [][2]string{{mprimeNew, ycruncherOld}, {mprimeOld, ycruncherOld}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, searchAt(-10)...)
@@ -157,7 +158,9 @@ func TestBackendUpdateRestartsUnfinishedSearchStep(t *testing.T) {
 			if w, _ := machine.WorkloadByID(intent.Data.(*journal.TrialIntent).Workload); w.Backend != machine.Mprime {
 				t.Fatalf("first search R1 workload %s no longer runs mprime", w.ID)
 			}
-			loadBackends(h, tc.mprime, tc.ycruncher)
+			for _, paths := range tc.reload {
+				loadBackends(h, paths[0], paths[1])
+			}
 			replayed := New()
 			for _, e := range h.events {
 				replayed.Fold(e)
