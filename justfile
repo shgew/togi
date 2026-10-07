@@ -115,6 +115,11 @@ audit *args:
 same base="origin/main":
     dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT; git archive "$1" | tar -x -C "$dir"; {{ dev }} go run ./tools/bench --same "$dir"
 
+# Forecast a real run from a copy of its state directory with the target ensemble (`--out tools/bench/forecasts/<session>-<seq>.json`)
+[group('run')]
+forecast state_dir *args:
+    {{ dev }} go run ./tools/bench --forecast "$1" "${@:2}"
+
 [group('run')]
 bench-baseline:
     {{ dev }} go run ./tools/bench --split all --out tools/bench/baseline.jsonl

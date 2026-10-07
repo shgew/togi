@@ -25,11 +25,18 @@ func run(args []string, out, errOut io.Writer) error {
 	dir := flags.String("state-dir", "/var/lib/togi", "state directory containing events.jsonl")
 	file := flags.String("journal", "", "one current or archived journal file")
 	sinceArg := flags.String("since", "", "include activity starting at or after this RFC3339 time")
+	forecastFile := flags.String("forecast", "", "score the run in --state-dir against this forecast `file` from tools/bench --forecast, instead of reporting; refuses a state directory whose journal through the forecast's anchor changed")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("stats: unexpected arguments: %v", flags.Args())
+	}
+	if *forecastFile != "" {
+		if *file != "" || *sinceArg != "" {
+			return fmt.Errorf("stats: --forecast scores a whole --state-dir and cannot be combined with --journal or --since")
+		}
+		return scoreForecast(out, *dir, *forecastFile)
 	}
 	var since time.Time
 	if *sinceArg != "" {

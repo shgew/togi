@@ -16,8 +16,8 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
   - `runtime.md`: commands, preflight, configuration, tuning boot, NixOS module.
 - `docs/releasing.md`: versioning rules, the release workflow and publishing.
 - `docs/simulating.md`: running a simulated session with `tools/sim`.
-- `docs/reviewing.md`: reviewing an unattended run or archived journal with `just stats`, and writing its retro on the pinned "Target-machine runs" issue.
-- `docs/benchmarking.md`: measuring a tuner change's time to conclusion, depth and hazard across simulated machines with `tools/bench`; run it before and after any change to how the tuner decides.
+- `docs/reviewing.md`: reviewing an unattended run or archived journal with `just stats`, scoring it against its forecast, and writing its retro on the pinned "Target-machine runs" issue.
+- `docs/benchmarking.md`: measuring a tuner change's time to conclusion, depth and hazard across simulated machines with `tools/bench`; run it before and after any change to how the tuner decides. It also covers forecasting a real run with `just forecast` before the run starts.
 - `tools/bench/adversary.md`: autonomous adversarial search for simulated machines, consistent with the real evidence, that the tuner gets wrong; follow it when hunting for new bench scenarios.
 - `tools/bench/program.md`: autonomous tuner research; follow it when planning experiments, keeping bench wins and turning them into pull requests.
 - `tools/fit/program.md`: autonomous simulator model research; follow it when changing how the simulator models failures or how `tools/fit` fits them.
@@ -98,6 +98,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just bench [flags]` | The bench suite of simulated sessions, optionally compared against a baseline run (`go run ./tools/bench`, `docs/benchmarking.md`) |
 | `just audit [flags] [STATE-DIR...]` | Audit journal invariants; without state directories, sweep every bench scenario over 200 seeds and retain the evidence (`docs/benchmarking.md`) |
 | `just same [base]` | Prove a shape-only change leaves all simulated session journals unchanged; base defaults to `origin/main` (`docs/benchmarking.md`) |
+| `just forecast COPY-OF-STATE-DIR [flags]` | Forecast a real run from a copy of its state directory with the `target` ensemble, before the run; `--out tools/bench/forecasts/<session>-<seq>.json` writes the record that `just stats --forecast` scores afterwards (`docs/benchmarking.md`, `docs/reviewing.md`) |
 | `just facts STATE-DIR` | Regenerate the committed privacy-safe target evidence from a copied state directory (`docs/benchmarking.md`) |
 | `just fit [flags]` | Regenerate the target-machine fit and eight bootstrap refits, then report the forward-chained check on later sessions (`docs/benchmarking.md`) |
 | `just fit-shared-voltage [--facts EXTRACT --out DIRECTORY]` | Write the all-facts IN-SAMPLE shared-voltage anchor only if every eligible original-evidence group checks `ok`; not forward-validated (`docs/benchmarking.md`) |
@@ -140,7 +141,7 @@ A command needed twice gets a recipe, in the same pull request.
 | `internal/hardware` | Assembles the real machine: host, preflight, GRUB |
 | `internal/detect` | Kernel log, MCE, crash detection |
 | `nix/` | NixOS module and VM tests |
-| `tools/*` | Development programs, never shipped: `audit`, `bench`, `board`, `carry-facts`, `cover`, `facts`, `fit`, `release`, `replay`, `reviews`, `sim`, `stats`; shared evaluation packages `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
+| `tools/*` | Development programs, never shipped: `audit`, `bench`, `board`, `carry-facts`, `cover`, `facts`, `fit`, `release`, `replay`, `reviews`, `sim`, `stats`; shared evaluation packages `forecast`, `modelcheck` and `trialfacts`. Development and debugging behavior lives here, never in `cmd/togi` |
 
 A package owns one responsibility, and its exported API is the seam. Split a package when it holds two responsibilities that change for different reasons.
 

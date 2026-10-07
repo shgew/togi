@@ -1,0 +1,10 @@
+[[scenario]]
+name = "target"
+machine = ""
+dev = [1, 2]
+holdout = [101]
+
+[[scenario]]
+name = "other"
+machine = ""
+dev = [3]

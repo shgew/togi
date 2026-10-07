@@ -1,0 +1,24 @@
+forecast: after session 20260101T000000Z event 2565 at 2026-01-01T06:07:19Z
+forecast: commit 0123abc, ruleset 9, 3 target runs: 3 concluded, 0 dead ends, 0 censored
+forecast: hours run from the anchor to conclusion, over concluded runs only; hours are simulated; a simulated crash reboot takes 90 s, while real recovery took a median of 141 s on 2026-10-03 (about 37 minutes over that session), so real runs take longer; not corrected
+metric   median  p10..p90      min..max
+core 00  -19     -34..-17      -34..-17
+core 01  -31     -34..-6       -34..-6
+core 02  -14     -14..-6       -14..-6
+core 03  -23     -23..-17      -23..-17
+core 04  -25     -25..-12      -25..-12
+core 05  -7      -9..-2        -9..-2
+core 06  -17     -27..-10      -27..-10
+core 07  -4      -5..-3        -5..-3
+core 08  -21     -21..-16      -21..-16
+core 09  -16     -34..-2       -34..-2
+core 10  -13     -13..-7       -13..-7
+core 11  -4      -12..-1       -12..-1
+core 12  -12     -18..-7       -18..-7
+core 13  -24     -34..-22      -34..-22
+core 14  -7      -22..0        -22..0
+core 15  -18     -34..-1       -34..-1
+depth    -255    -275..-213    -275..-213
+hours    22.25   21.25..22.93  21.25..22.93
+crashes  15      11..17        11..17
+hunts    2       0..3          0..3
