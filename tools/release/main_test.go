@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,11 +27,12 @@ type fakeGit struct {
 	t         *testing.T
 	responses map[string]string
 	// failures fail every command equal to a key or starting with it and a space.
-	failures map[string]error
-	blobs    map[string]string
-	calls    []gitCmd
-	checked  []string
-	checkErr error
+	failures   map[string]error
+	blobs      map[string]string
+	calls      []gitCmd
+	checked    []string
+	queueReads int
+	checkErr   error
 }
 
 func (f *fakeGit) run(c gitCmd) (string, string, error) {
@@ -151,6 +153,10 @@ func releaseRunner(git *fakeGit, out *bytes.Buffer, commit bool) runner {
 		now:    func() time.Time { return time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC) },
 		out:    out,
 		commit: commit,
+		requireNoHardwareWait: func() error {
+			git.queueReads++
+			return nil
+		},
 		requireGreen: func(commit string) error {
 			git.checked = append(git.checked, commit)
 			return git.checkErr
@@ -238,6 +244,83 @@ func TestReleaseRefusesWithoutGreenCheck(t *testing.T) {
 	}
 }
 
+// pullRequests renders a page of n open pull requests, which the issues endpoint lists among issues.
+func pullRequests(n int) string {
+	records := make([]string, n)
+	for i := range records {
+		records[i] = fmt.Sprintf(`{"number":%d,"title":"A pull request","pull_request":{"url":"u"}}`, 1000+i)
+	}
+	return "[" + strings.Join(records, ",") + "]"
+}
+
+func TestReleaseWaitsOnTheTargetMachine(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, err string
+		pages     []string
+		mutations []string
+		checked   []string
+	}{
+		{
+			name:      "empty queue",
+			pages:     []string{`[{"number":40,"title":"A pull request","pull_request":{"url":"u"}}]`},
+			mutations: []string{"read-tree base", "hash-object -w --stdin", "update-index --cacheinfo 100644,blob0,version.txt", "hash-object -w --stdin", "update-index --cacheinfo 100644,blob1,CHANGELOG.md", "update-index --force-remove changes/35.md", "write-tree", "commit-tree tree -p base -F -", "checkout --quiet --detach commit"},
+			checked:   []string{"base"},
+		},
+		{
+			name:  "open issue",
+			pages: []string{`[{"number":417,"title":"Backends: shared check","pull_request":null},{"number":40,"title":"A pull request","pull_request":{"url":"u"}}]`},
+			err:   "refuse to release: open issues wait on a run on the target machine (needs-hardware): #417 Backends: shared check",
+		},
+		{
+			name:  "open issues",
+			pages: []string{`[{"number":417,"title":"Backends: shared check"},{"number":418,"title":"Hardware-layer names"}]`},
+			err:   "refuse to release: open issues wait on a run on the target machine (needs-hardware): #417 Backends: shared check; #418 Hardware-layer names",
+		},
+		{
+			name:  "open issue after a full page of pull requests",
+			pages: []string{pullRequests(100), `[{"number":417,"title":"Backends: shared check","pull_request":null}]`},
+			err:   "refuse to release: open issues wait on a run on the target machine (needs-hardware): #417 Backends: shared check",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var requests []string
+			api := github{base: "https://api.forge.example", token: "test-token", client: &http.Client{Transport: handlerTransport{http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				requests = append(requests, req.Method+" "+req.URL.RequestURI())
+				page, err := strconv.Atoi(req.URL.Query().Get("page"))
+				if err != nil || page < 1 || page > len(tc.pages) {
+					t.Errorf("request for page %q of %d", req.URL.Query().Get("page"), len(tc.pages))
+					http.NotFound(w, req)
+					return
+				}
+				fmt.Fprint(w, tc.pages[page-1])
+			})}}}
+			git := mainGit(t, "0.1.0", released, "sha\trefs/tags/v0.1.0\n", aFix)
+			var out bytes.Buffer
+			r := releaseRunner(git, &out, true)
+			r.requireNoHardwareWait = func() error { return requireNoHardwareWait(api, repository{"o", "r"}) }
+			err := r.release()
+			if got := fmt.Sprint(err); tc.err != "" && got != tc.err || tc.err == "" && err != nil {
+				t.Fatalf("release error = %v, want %q", err, tc.err)
+			}
+			var want []string
+			for page := range len(tc.pages) {
+				want = append(want, fmt.Sprintf("GET /repos/o/r/issues?labels=needs-hardware&page=%d&per_page=100&state=open", page+1))
+			}
+			if diff := cmp.Diff(want, requests); diff != "" {
+				t.Errorf("requests mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.mutations, git.mutations()); diff != "" {
+				t.Errorf("repository changes mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.checked, git.checked); diff != "" {
+				t.Errorf("green check mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestReleaseNothingToRelease(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -287,6 +370,9 @@ func TestReleaseResumesUnpublished(t *testing.T) {
 	if git.checked != nil {
 		t.Fatalf("resume required a green check for %v", git.checked)
 	}
+	if git.queueReads != 0 {
+		t.Fatalf("resume read the needs-hardware queue %d times", git.queueReads)
+	}
 }
 
 func TestReleasePreview(t *testing.T) {
@@ -305,6 +391,9 @@ func TestReleasePreview(t *testing.T) {
 	}
 	if git.checked != nil {
 		t.Fatalf("preview required a green check for %v", git.checked)
+	}
+	if git.queueReads != 0 {
+		t.Fatalf("preview read the needs-hardware queue %d times", git.queueReads)
 	}
 }
 

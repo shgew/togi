@@ -498,6 +498,43 @@
         "total": 0,
         "completed": 0
        }
+      },
+      {
+       "number": 515,
+       "title": "Name the hardware layer by what it does",
+       "body": "Touches: `internal/hardware`",
+       "isPinned": false,
+       "labels": {
+        "nodes": [
+         {
+          "name": "design"
+         },
+         {
+          "name": "P3"
+         },
+         {
+          "name": "needs-hardware"
+         }
+        ]
+       },
+       "assignees": {
+        "nodes": [
+         {
+          "login": "shgew"
+         }
+        ]
+       },
+       "parent": null,
+       "blockedBy": {
+        "nodes": []
+       },
+       "linkedBranches": {
+        "nodes": []
+       },
+       "subIssuesSummary": {
+        "total": 0,
+        "completed": 0
+       }
       }
      ]
     }
