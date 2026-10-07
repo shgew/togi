@@ -696,7 +696,7 @@ func sameTrial(n tuner.Trial, t *trialView) bool {
 	}
 	same := n.Regime == t.regime && n.Workload == t.workload.ID && time.Duration(n.DurationS)*time.Second == t.duration &&
 		n.Hunt == t.hunt && n.Group == t.group && n.Cycle == t.cycle && n.Step == t.step && n.Round == t.round &&
-		n.Rerun == t.rerun
+		n.Rerun == t.rerun && n.Condition == t.condition
 	if len(n.Cores) == 0 {
 		return same && t.condition == machine.Alone && n.Core == t.core && n.Offset == t.offset
 	}
