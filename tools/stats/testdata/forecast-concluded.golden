@@ -1,6 +1,6 @@
 Forecast: commit dev, ruleset 10, 3 runs: 2 concluded, 1 dead ends, 0 censored
 Anchor: session 20260101T000000Z event 2542 at 2026-01-01T06:07:19Z, unchanged
-Run: concluded 20.07 h after the anchor; builds after the anchor: rev dev ruleset 10
+Run: concluded 22.20 h after the anchor; builds after the anchor: rev dev ruleset 10
 Note: forecast hours run to conclusion over concluded runs only; hours are simulated; a simulated crash reboot takes 90 s, while real recovery took a median of 141 s on 2026-10-03 (about 37 minutes over that session), so real runs take longer; not corrected
 
 Forecast score
@@ -22,6 +22,6 @@ core 13  -2      above   +22    100         -24     -34..-22      -34..-22
 core 14  -22     yes     -15    17          -7      -22..0        -22..0
 core 15  -33     yes     -15    33          -18     -34..-1       -34..-1
 depth    -234    yes     +22    67          -256    -322..-168    -322..-168
-hours    20.07   yes     -0.43  50          20.50   20.00..21.00  20.00..21.00
+hours    22.20   above   +1.70  100         20.50   20.00..21.00  20.00..21.00
 crashes  17      above   +4     100         13      10..16        10..16
 hunts    5       above   +4     100         1       0..2          0..2
