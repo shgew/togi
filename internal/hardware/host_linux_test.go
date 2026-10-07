@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -252,4 +253,124 @@ func TestPreflightRefusesUnvalidatedHardware(t *testing.T) {
 			})
 		})
 	}
+}
+
+// countingMailbox fails every access, like preflightMailbox, and counts them.
+type countingMailbox struct{ calls int }
+
+func (m *countingMailbox) Command(uint32, [6]uint32) ([6]uint32, error) {
+	m.calls++
+	return [6]uint32{}, errors.New("mailbox unavailable")
+}
+
+func (m *countingMailbox) ReadSMN(uint32) (uint32, error) {
+	m.calls++
+	return 0, errors.New("mailbox unavailable")
+}
+
+// identityRoot is a sysfs root whose CPU and ryzen_smu identity checks pass.
+func identityRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for rel, text := range map[string]string{
+		"proc/cpuinfo": "cpu family : 26\nmodel : 68\nmodel name : Test CPU\n",
+		"sys/devices/system/cpu/cpu0/topology/core_id": "0",
+		"sys/devices/system/cpu/cpu0/topology/die_id":  "0",
+		"sys/kernel/ryzen_smu_drv/codename":            "23",
+		"sys/kernel/ryzen_smu_drv/drv_version":         "0.1",
+		"sys/kernel/ryzen_smu_drv/version":             "57.13",
+	} {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func checkNames(checks []machine.Check) []string {
+	names := make([]string, len(checks))
+	for i, c := range checks {
+		names[i] = c.Name
+	}
+	return names
+}
+
+func TestDiagnoseUnprivilegedMakesNoMailboxCalls(t *testing.T) {
+	mb := &countingMailbox{}
+	ran, skipped, err := diagnose(identityRoot(t), mb, config.Config{}, &machine.BIOSContext{BIOSVersion: "3.14"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(0, mb.calls); diff != "" {
+		t.Fatalf("mailbox calls (-want +got): %s", diff)
+	}
+	if diff := cmp.Diff([]string{"cpu", "ryzen_smu", "backends", "backend_user", "watchdog"}, checkNames(ran)); diff != "" {
+		t.Fatalf("checks run (-want +got):\n%s", diff)
+	}
+	if !ran[0].OK || !ran[1].OK {
+		t.Fatalf("identity checks failed: %+v", ran[:2])
+	}
+	var want []machine.Check
+	for _, name := range []string{"pm_table", "readback", "slot_mapping", "systemd_run", "bios_context"} {
+		want = append(want, machine.Check{Name: name, Detail: "needs root"})
+	}
+	if diff := cmp.Diff(want, skipped); diff != "" {
+		t.Fatalf("skipped checks (-want +got):\n%s", diff)
+	}
+}
+
+func TestDiagnoseCheckSetsPartitionPreflight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		root := identityRoot(t)
+		drv, err := smu.Open(root, preflightMailbox{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := host{drv: drv, pmTable: smu.NewPMTableReader(root, drv.Topology(), os.ReadFile), userErr: errors.New("backend_user not configured")}
+		preflight := checkNames(h.Preflight())
+		if diff := cmp.Diff("root", preflight[0]); diff != "" {
+			t.Fatalf("first preflight check (-want +got): %s", diff)
+		}
+		unprivileged, needsRoot, err := diagnose(root, &countingMailbox{}, config.Config{}, nil, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		privileged, skipped, err := diagnose(root, preflightMailbox{}, config.Config{}, nil, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := cmp.Diff([]machine.Check(nil), skipped); diff != "" {
+			t.Fatalf("privileged skipped checks (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(append(slices.Clone(preflight[1:]), "watchdog"), checkNames(privileged)); diff != "" {
+			t.Fatalf("privileged checks (-want +got):\n%s", diff)
+		}
+		union := slices.Concat(checkNames(unprivileged[:len(unprivileged)-1]), checkNames(needsRoot))
+		slices.Sort(union)
+		want := slices.Clone(preflight[1:])
+		slices.Sort(want)
+		if diff := cmp.Diff(want, union); diff != "" {
+			t.Fatalf("unprivileged and root-only checks do not partition preflight (-want +got):\n%s", diff)
+		}
+	})
+}
+
+func TestDiagnoseComparesBIOSContextOnlyAfterPassingChecks(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		mb := &countingMailbox{}
+		ran, skipped, err := diagnose(identityRoot(t), mb, config.Config{}, &machine.BIOSContext{BIOSVersion: "3.14"}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if slices.Contains(checkNames(ran), "bios_context") {
+			t.Fatalf("bios_context compared after failed checks: %+v", ran)
+		}
+		if diff := cmp.Diff([]machine.Check{{Name: "bios_context", Detail: "needs every other check to pass"}}, skipped); diff != "" {
+			t.Fatalf("skipped checks (-want +got):\n%s", diff)
+		}
+	})
 }
