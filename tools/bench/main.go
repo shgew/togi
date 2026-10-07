@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -38,7 +39,7 @@ type runSpec struct {
 	cfg      sim.Config
 }
 type options struct {
-	suite, split, out, baseline, keep, same string
+	suite, split, out, baseline, keep, same, forecast string
 
 	jobs    int
 	timeout time.Duration
@@ -52,10 +53,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	flags.StringVar(&o.suite, "suite", "tools/bench/suite.toml", "scenario TOML file; relative paths resolve in each tree with --same; machine paths are relative to this file")
 	flags.StringVar(&o.split, "split", "dev", "seed split: dev, holdout, or all; incompatible with --same")
-	flags.StringVar(&o.out, "out", "", "write one JSON object per run to this file; incompatible with --same")
+	flags.StringVar(&o.out, "out", "", "write one JSON object per run to this file, or with --forecast the forecast record; incompatible with --same")
 	flags.StringVar(&o.baseline, "baseline", "", "compare against a JSON Lines baseline; incompatible with --same")
 	flags.StringVar(&o.keep, "keep", "", "keep run directories under this directory; --same separates base and head")
 	flags.StringVar(&o.same, "same", "", "compare all session journals against checkout DIR, ignoring only build version, revision and description; skip metrics and model checks")
+	flags.StringVar(&o.forecast, "forecast", "", "forecast a real run from a copy of its state directory DIR with the suite's target scenario, counting only events after its last; the copy is read, never written; incompatible with --split, --baseline and --same")
 	flags.IntVar(&o.jobs, "jobs", runtime.NumCPU(), "maximum parallel simulator subprocesses")
 	flags.DurationVar(&o.timeout, "timeout", 180*time.Second, "wall timeout for each simulator subprocess")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
@@ -63,15 +65,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 	} else if err != nil {
 		return 2
 	}
-	if o.same != "" {
+	if o.same != "" || o.forecast != "" {
+		mode, conflicts := "same", []string{"split", "baseline", "out"}
+		if o.forecast != "" {
+			mode, conflicts = "forecast", []string{"split", "baseline", "same"}
+		}
 		conflict := ""
 		flags.Visit(func(f *flag.Flag) {
-			if f.Name == "split" || f.Name == "baseline" || f.Name == "out" {
+			if slices.Contains(conflicts, f.Name) {
 				conflict = f.Name
 			}
 		})
 		if conflict != "" {
-			fmt.Fprintf(stderr, "bench: --same cannot be combined with --%s\n", conflict)
+			fmt.Fprintf(stderr, "bench: --%s cannot be combined with --%s\n", mode, conflict)
 			return 2
 		}
 	}
@@ -86,6 +92,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		if different {
+			return 1
+		}
+		return 0
+	}
+	if o.forecast != "" {
+		if err := executeForecast(o, stdout, stderr); err != nil {
+			fmt.Fprintf(stderr, "bench: %v\n", err)
 			return 1
 		}
 		return 0
