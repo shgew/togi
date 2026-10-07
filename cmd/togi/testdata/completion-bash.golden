@@ -45,6 +45,9 @@ _togi() {
                 ((i++))
             fi
             ((i++))
+            while [[ ${COMP_WORDS[i+1]} == = ]] && ((i + 1 < COMP_CWORD)); do
+                ((i += 2))
+            done
             ;;
         -*) ;;
         *)

@@ -218,6 +218,9 @@ _togi() {
                 ((i++))
             fi
             ((i++))
+            while [[ ${COMP_WORDS[i+1]} == = ]] && ((i + 1 < COMP_CWORD)); do
+                ((i += 2))
+            done
             ;;
 {{- end}}
         -*) ;;
@@ -347,9 +350,32 @@ function __togi_kinds
     end
 end
 
-set -l togi_commands {{join .CommandNames " "}}
+function __togi_command_is
+    set -l tokens (commandline -opc)
+    set -e tokens[1]
+    set -l command
+    set -l skip
+    for token in $tokens
+        if test -n "$skip"
+            set skip
+            continue
+        end
+        switch $token
+{{- with .Top.ValueFlags}}
+            case {{join . " "}}
+                set skip 1
+{{- end}}
+            case '-*'
+            case '*'
+                set command $token
+                break
+        end
+    end
+    test "$command" = "$argv[1]"
+end
+
 complete -c togi -f
-{{- $top := "not __fish_seen_subcommand_from $togi_commands"}}
+{{- $top := "__togi_command_is ''"}}
 {{- range .Commands}}
 complete -c togi -n "{{$top}}" -a {{.Name}} -d {{sq .Summary}}
 {{- end}}
@@ -357,12 +383,12 @@ complete -c togi -n "{{$top}}" -a {{.Name}} -d {{sq .Summary}}
 complete -c togi -n "{{$top}}" {{template "flag" .}}
 {{- end}}
 {{- range .Commands}}
-{{- $seen := printf "__fish_seen_subcommand_from %s" .Name}}
+{{- $is := printf "__togi_command_is %s" .Name}}
 {{- range .Flags}}
-complete -c togi -n "{{$seen}}" {{template "flag" .}}
+complete -c togi -n "{{$is}}" {{template "flag" .}}
 {{- end}}
 {{- if .Args}}
-complete -c togi -n "{{$seen}}" -a {{sq (join .Args " ")}}
+complete -c togi -n "{{$is}}" -a {{sq (join .Args " ")}}
 {{- end}}
 {{- end}}
 {{define "flag"}}

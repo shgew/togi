@@ -9,39 +9,60 @@ function __togi_kinds
     end
 end
 
-set -l togi_commands completion events reset restart-limit run status watch
+function __togi_command_is
+    set -l tokens (commandline -opc)
+    set -e tokens[1]
+    set -l command
+    set -l skip
+    for token in $tokens
+        if test -n "$skip"
+            set skip
+            continue
+        end
+        switch $token
+            case --config --state-dir
+                set skip 1
+            case '-*'
+            case '*'
+                set command $token
+                break
+        end
+    end
+    test "$command" = "$argv[1]"
+end
+
 complete -c togi -f
-complete -c togi -n "not __fish_seen_subcommand_from $togi_commands" -a completion -d 'Print a shell completion script'
-complete -c togi -n "not __fish_seen_subcommand_from $togi_commands" -a events -d 'Render the journal'
-complete -c togi -n "not __fish_seen_subcommand_from $togi_commands" -a reset -d 'Reset one core or archive the session'
-complete -c togi -n "not __fish_seen_subcommand_from $togi_commands" -a restart-limit -d 'Recover after the tuning service reaches its restart limit'
-complete -c togi -n "not __fish_seen_subcommand_from $togi_commands" -a run -d 'Start or resume the session in the foreground'
-complete -c togi -n "not __fish_seen_subcommand_from $togi_commands" -a status -d 'Show core failure points, combinations, activity and clean cycles'
-complete -c togi -n "not __fish_seen_subcommand_from $togi_commands" -a watch -d 'Show the session as a live dashboard'
-complete -c togi -n "not __fish_seen_subcommand_from $togi_commands" -l config -r -F
-complete -c togi -n "not __fish_seen_subcommand_from $togi_commands" -l state-dir -r -F
-complete -c togi -n "not __fish_seen_subcommand_from $togi_commands" -l version
-complete -c togi -n "__fish_seen_subcommand_from completion" -l state-dir -r -F
-complete -c togi -n "__fish_seen_subcommand_from completion" -a 'bash zsh fish nushell'
-complete -c togi -n "__fish_seen_subcommand_from events" -l core -x
-complete -c togi -n "__fish_seen_subcommand_from events" -l json
-complete -c togi -n "__fish_seen_subcommand_from events" -l kind -x -a '(__togi_kinds)'
-complete -c togi -n "__fish_seen_subcommand_from events" -l since -x
-complete -c togi -n "__fish_seen_subcommand_from events" -l state-dir -r -F
-complete -c togi -n "__fish_seen_subcommand_from events" -l trial -x
-complete -c togi -n "__fish_seen_subcommand_from events" -l until -x
-complete -c togi -n "__fish_seen_subcommand_from reset" -l all
-complete -c togi -n "__fish_seen_subcommand_from reset" -l config -r -F
-complete -c togi -n "__fish_seen_subcommand_from reset" -l core -x
-complete -c togi -n "__fish_seen_subcommand_from reset" -l state-dir -r -F
-complete -c togi -n "__fish_seen_subcommand_from restart-limit" -l state-dir -r -F
-complete -c togi -n "__fish_seen_subcommand_from restart-limit" -l tuning-boot -r -F
-complete -c togi -n "__fish_seen_subcommand_from run" -l config -r -F
-complete -c togi -n "__fish_seen_subcommand_from run" -l cycles -x
-complete -c togi -n "__fish_seen_subcommand_from run" -l no-tui
-complete -c togi -n "__fish_seen_subcommand_from run" -l state-dir -r -F
-complete -c togi -n "__fish_seen_subcommand_from run" -l tuning-boot -r -F
-complete -c togi -n "__fish_seen_subcommand_from status" -l state-dir -r -F
-complete -c togi -n "__fish_seen_subcommand_from watch" -l height -x
-complete -c togi -n "__fish_seen_subcommand_from watch" -l state-dir -r -F
-complete -c togi -n "__fish_seen_subcommand_from watch" -l width -x
+complete -c togi -n "__togi_command_is ''" -a completion -d 'Print a shell completion script'
+complete -c togi -n "__togi_command_is ''" -a events -d 'Render the journal'
+complete -c togi -n "__togi_command_is ''" -a reset -d 'Reset one core or archive the session'
+complete -c togi -n "__togi_command_is ''" -a restart-limit -d 'Recover after the tuning service reaches its restart limit'
+complete -c togi -n "__togi_command_is ''" -a run -d 'Start or resume the session in the foreground'
+complete -c togi -n "__togi_command_is ''" -a status -d 'Show core failure points, combinations, activity and clean cycles'
+complete -c togi -n "__togi_command_is ''" -a watch -d 'Show the session as a live dashboard'
+complete -c togi -n "__togi_command_is ''" -l config -r -F
+complete -c togi -n "__togi_command_is ''" -l state-dir -r -F
+complete -c togi -n "__togi_command_is ''" -l version
+complete -c togi -n "__togi_command_is completion" -l state-dir -r -F
+complete -c togi -n "__togi_command_is completion" -a 'bash zsh fish nushell'
+complete -c togi -n "__togi_command_is events" -l core -x
+complete -c togi -n "__togi_command_is events" -l json
+complete -c togi -n "__togi_command_is events" -l kind -x -a '(__togi_kinds)'
+complete -c togi -n "__togi_command_is events" -l since -x
+complete -c togi -n "__togi_command_is events" -l state-dir -r -F
+complete -c togi -n "__togi_command_is events" -l trial -x
+complete -c togi -n "__togi_command_is events" -l until -x
+complete -c togi -n "__togi_command_is reset" -l all
+complete -c togi -n "__togi_command_is reset" -l config -r -F
+complete -c togi -n "__togi_command_is reset" -l core -x
+complete -c togi -n "__togi_command_is reset" -l state-dir -r -F
+complete -c togi -n "__togi_command_is restart-limit" -l state-dir -r -F
+complete -c togi -n "__togi_command_is restart-limit" -l tuning-boot -r -F
+complete -c togi -n "__togi_command_is run" -l config -r -F
+complete -c togi -n "__togi_command_is run" -l cycles -x
+complete -c togi -n "__togi_command_is run" -l no-tui
+complete -c togi -n "__togi_command_is run" -l state-dir -r -F
+complete -c togi -n "__togi_command_is run" -l tuning-boot -r -F
+complete -c togi -n "__togi_command_is status" -l state-dir -r -F
+complete -c togi -n "__togi_command_is watch" -l height -x
+complete -c togi -n "__togi_command_is watch" -l state-dir -r -F
+complete -c togi -n "__togi_command_is watch" -l width -x
