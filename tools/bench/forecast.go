@@ -69,13 +69,7 @@ func executeForecast(o options, stdout, stderr io.Writer) (err error) {
 	if err != nil {
 		return fmt.Errorf("create run directory: %w", err)
 	}
-	defer func() {
-		if err == nil && o.keep == "" {
-			os.RemoveAll(root)
-			return
-		}
-		fmt.Fprintf(stderr, "bench: keeping runs in %s\n", root)
-	}()
+	defer func() { finishRuns(root, o.keep != "", err, stderr) }()
 	launch := func(spec runSpec) (simulation, error) { return launchSimulator(binary, root, spec, o.timeout) }
 	record, err := makeForecast(o.forecast, root, anchor, runs, suiteDir, o.jobs, o.keep != "", launch)
 	if err != nil {
@@ -87,11 +81,7 @@ func executeForecast(o options, stdout, stderr io.Writer) (err error) {
 			return err
 		}
 	}
-	if err := reportForecast(stdout, record); err != nil {
-		return err
-	}
-	modelcheck.Report(stdout, checks)
-	return nil
+	return reportForecast(stdout, record, suiteDir, checks)
 }
 
 // ensembleRuns selects every dev and holdout run of the suite's forecast scenario.
@@ -134,6 +124,13 @@ func writeRecord(path string, record forecast.Record) error {
 // anchor. The record's commit, dirty flag and files are the caller's.
 func makeForecast(input, root string, anchor forecast.Anchor, specs []runSpec, suiteDir string, jobs int, keep bool, launch func(runSpec) (simulation, error)) (forecast.Record, error) {
 	runs := make([]forecast.Run, len(specs))
+	for i, spec := range specs {
+		machine, err := relativeTo(suiteDir, spec.scenario.Machine)
+		if err != nil {
+			return forecast.Record{}, err
+		}
+		runs[i] = forecast.Run{Machine: machine, Seed: spec.seed, Split: spec.split}
+	}
 	errs := make([]error, len(specs))
 	queue := make(chan int)
 	var wg sync.WaitGroup
@@ -145,7 +142,7 @@ func makeForecast(input, root string, anchor forecast.Anchor, specs []runSpec, s
 				if err != nil {
 					errs[i] = fmt.Errorf("forecast %s %s-%d: %w", spec.scenario.Name, spec.split, spec.seed, err)
 				}
-				runs[i] = forecast.Run{Machine: relativeTo(suiteDir, spec.scenario.Machine), Seed: spec.seed, Split: spec.split, Outcome: outcome}
+				runs[i].Outcome = outcome
 			}
 		})
 	}
@@ -155,7 +152,7 @@ func makeForecast(input, root string, anchor forecast.Anchor, specs []runSpec, s
 	close(queue)
 	wg.Wait()
 	if err := errors.Join(errs...); err != nil {
-		return forecast.Record{}, err
+		return forecast.Record{}, runsFailed{err}
 	}
 	summary, err := forecast.Summarize(runs)
 	if err != nil {
@@ -186,11 +183,9 @@ func forecastRun(input, root string, anchor forecast.Anchor, spec runSpec, keep 
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return forecast.Outcome{}, fmt.Errorf("read run log: %w", err)
 	}
-	var live []journal.Event
-	if len(sessions) > 0 {
-		live = sessions[len(sessions)-1].Events
-	}
-	switch status := runStatus(run.exit, run.timedOut, live, string(log)); status {
+	// Exit 1 is a dead end only when this invocation reached one: a dead_end after the anchor, or its own sim.log line
+	// when it finished one the copy left pending. A dead end in the copy is not this run's.
+	switch status := runStatus(run.exit, run.timedOut, eventsAfter(sessions, anchor), string(log)); status {
 	case forecast.DeadEnd:
 		outcome.Status = forecast.DeadEnd
 	case forecast.Concluded, forecast.Censored:
@@ -210,8 +205,30 @@ func forecastRun(input, root string, anchor forecast.Anchor, spec runSpec, keep 
 	return outcome, nil
 }
 
-// copyState copies the journals a resumed session reads from src into dst: the live journal, state.json, archived
-// journals and reset --all markers. src is only read.
+// eventsAfter returns the events sessions recorded after the anchor, oldest first.
+func eventsAfter(sessions []forecast.Session, a forecast.Anchor) []journal.Event {
+	var after []journal.Event
+	reached := false
+	for _, s := range sessions {
+		if s.ID != a.Session {
+			if reached {
+				after = append(after, s.Events...)
+			}
+			continue
+		}
+		reached = true
+		for _, e := range s.Events {
+			if e.Seq > a.Seq {
+				after = append(after, e)
+			}
+		}
+	}
+	return after
+}
+
+// copyState copies the journals a resumed session reads from src into dst: the live journal, state.json and every
+// session-bearing archive entry: archived journals, pending carry and compatibility markers, and reset --all markers.
+// src is only read.
 func copyState(src, dst string) error {
 	if err := os.MkdirAll(dst, 0755); err != nil {
 		return fmt.Errorf("create run %s: %w", dst, err)
@@ -228,9 +245,13 @@ func copyState(src, dst string) error {
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.Type().IsRegular() && (strings.HasSuffix(name, ".jsonl") || strings.HasSuffix(name, "-reset-all")) {
-			files = append(files, filepath.Join("archive", name))
+		if !sessionBearing(name) {
+			continue
 		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("archive entry %s is not a regular file", filepath.Join(src, "archive", name))
+		}
+		files = append(files, filepath.Join("archive", name))
 	}
 	if len(entries) > 0 {
 		if err := os.MkdirAll(filepath.Join(dst, "archive"), 0755); err != nil {
@@ -247,6 +268,16 @@ func copyState(src, dst string) error {
 		}
 	}
 	return nil
+}
+
+// sessionBearing matches the archive entries the journal reads a session from, as in journal.MarkResetAll.
+func sessionBearing(name string) bool {
+	for _, suffix := range []string{".jsonl", "-carry-pending", "-compat-pending", "-reset-all"} {
+		if strings.HasSuffix(name, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // ensembleFiles hashes each machine file and facts extract the runs read, in first-use order, by path relative to the
@@ -278,25 +309,63 @@ func ensembleFiles(suiteDir string, runs []runSpec, extracts trialfacts.Extracts
 			return nil, fmt.Errorf("hash ensemble file: %w", err)
 		}
 		sum := sha256.Sum256(data)
-		files = append(files, forecast.File{Path: relativeTo(suiteDir, path), SHA256: hex.EncodeToString(sum[:])})
+		rel, err := relativeTo(suiteDir, path)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, forecast.File{Path: rel, SHA256: hex.EncodeToString(sum[:])})
 	}
 	return files, nil
 }
 
-func relativeTo(dir, path string) string {
+// relativeTo names path relative to dir, resolving both first so either may be relative to the working directory. It
+// fails rather than return a local path.
+func relativeTo(dir, path string) (string, error) {
 	if path == "" {
-		return ""
+		return "", nil
 	}
-	if rel, err := filepath.Rel(dir, path); err == nil {
-		return filepath.ToSlash(rel)
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", dir, err)
 	}
-	return filepath.ToSlash(path)
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", path, err)
+	}
+	rel, err := filepath.Rel(absDir, absPath)
+	if err != nil {
+		return "", fmt.Errorf("name %s relative to %s: %w", path, dir, err)
+	}
+	return filepath.ToSlash(rel), nil
 }
 
-func reportForecast(w io.Writer, r forecast.Record) error {
+// runsFailed is the error of a forecast whose runs failed; their directories stay for inspection.
+type runsFailed struct{ error }
+
+// finishRuns removes the run root unless --keep asked for it or runs failed, and says where kept runs are. Successful
+// runs without --keep are already gone, so a root kept for failed runs holds only those.
+func finishRuns(root string, keep bool, err error, stderr io.Writer) {
+	if !keep && !errors.As(err, new(runsFailed)) {
+		os.RemoveAll(root)
+		return
+	}
+	fmt.Fprintf(stderr, "bench: keeping runs in %s\n", root)
+}
+
+// reportForecast prints the forecast and the ensemble's model checks, naming each checked machine relative to the
+// suite's directory so the output holds no local paths.
+func reportForecast(w io.Writer, r forecast.Record, suiteDir string, checks []*modelcheck.Result) error {
 	metrics, err := forecast.Metrics(r.Runs)
 	if err != nil {
 		return err
+	}
+	relative := make([]*modelcheck.Result, len(checks))
+	for i, check := range checks {
+		c := *check
+		if c.Machine, err = relativeTo(suiteDir, c.Machine); err != nil {
+			return err
+		}
+		relative[i] = &c
 	}
 	commit := r.Commit
 	if r.Dirty {
@@ -315,5 +384,9 @@ func reportForecast(w io.Writer, r forecast.Record) error {
 		}
 		fmt.Fprintf(tab, "%s\t%s\t%s..%s\t%s..%s\n", m.Name, m.Format(m.Range.Median), m.Format(m.Range.P10), m.Format(m.Range.P90), m.Format(m.Range.Min), m.Format(m.Range.Max))
 	}
-	return tab.Flush()
+	if err := tab.Flush(); err != nil {
+		return err
+	}
+	modelcheck.Report(w, relative)
+	return nil
 }

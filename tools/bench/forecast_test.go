@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -17,6 +18,7 @@ import (
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/simrun"
 	"github.com/shgew/togi/tools/forecast"
+	"github.com/shgew/togi/tools/modelcheck"
 	"github.com/shgew/togi/tools/trialfacts"
 )
 
@@ -191,7 +193,7 @@ func TestForecastFromSimulatedCopy(t *testing.T) {
 					t.Fatal(err)
 				}
 				record.Commit = "0123abc"
-				if err := reportForecast(&tables[i], record); err != nil {
+				if err := reportForecast(&tables[i], record, "testdata", nil); err != nil {
 					t.Fatal(err)
 				}
 				if err := record.Write(&records[i]); err != nil {
@@ -245,6 +247,202 @@ func TestForecastFailsOnFailedRun(t *testing.T) {
 		if _, err := makeForecast(input, root, anchor, specs, "testdata", 1, false, launch); err == nil {
 			t.Errorf("forecast accepted a run with exit %d, timed out %v and no conclusion", run.exit, run.timedOut)
 		}
+	}
+}
+
+func TestForecastRejectsDeadEndBeforeAnchor(t *testing.T) {
+	input := stoppedCopy(t, func(e journal.Event, _ []journal.Event) bool { return e.Kind == journal.KindTrialEnd }, false)
+	j, err := journal.Open(input, journal.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadEnd, err := j.Append(&journal.DeadEnd{Condition: journal.DeadEndThermalTrip, Detail: "thermal trip", Action: journal.ActionExit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Append(&journal.Shutdown{Reason: journal.ShutdownDeadEnd}, deadEnd.Seq); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	anchor, err := forecast.AnchorOf(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if anchor.Seq <= deadEnd.Seq {
+		t.Fatalf("anchor %d does not follow the dead end %d", anchor.Seq, deadEnd.Seq)
+	}
+	specs, err := ensembleRuns(filepath.Join("testdata", "forecast-suite.toml"), trialfacts.Extracts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch := func(spec runSpec) (simulation, error) { return simulation{exit: 1}, nil }
+	if _, err := makeForecast(input, t.TempDir(), anchor, specs, "testdata", 1, false, launch); err == nil {
+		t.Error("forecast accepted exit 1 as a dead end from a dead end the copy already held")
+	}
+}
+
+func TestCopyStateCopiesSessionBearingArchive(t *testing.T) {
+	src, dst := t.TempDir(), t.TempDir()
+	files := map[string]string{
+		"events.jsonl": "live\n",
+		"state.json":   "{}\n",
+		filepath.Join("archive", "20260101T000000Z.jsonl"):          "archived\n",
+		filepath.Join("archive", "20260102T000000Z-carry-pending"):  "carry\n",
+		filepath.Join("archive", "20260102T000000Z-compat-pending"): "compat\n",
+		filepath.Join("archive", "20260101T000000Z-reset-all"):      "",
+	}
+	if err := os.Mkdir(filepath.Join(src, "archive"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{}
+	for name, data := range files {
+		if err := os.WriteFile(filepath.Join(src, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		want[filepath.Join(dst, name)] = data
+	}
+	if err := os.WriteFile(filepath.Join(src, "archive", "notes"), []byte("not a session\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyState(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(want, snapshot(t, dst)); diff != "" {
+		t.Error(diff)
+	}
+}
+
+func TestCopyStateRejectsIrregularArchiveEntry(t *testing.T) {
+	for _, name := range []string{"20260101T000000Z.jsonl", "20260101T000000Z-carry-pending", "20260101T000000Z-compat-pending", "20260101T000000Z-reset-all"} {
+		src := t.TempDir()
+		if err := os.WriteFile(filepath.Join(src, "events.jsonl"), []byte("live\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(filepath.Join(src, "archive"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		target := filepath.Join(t.TempDir(), "elsewhere")
+		if err := os.WriteFile(target, []byte("archived\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, filepath.Join(src, "archive", name)); err != nil {
+			t.Fatal(err)
+		}
+		err := copyState(src, t.TempDir())
+		if err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("%s: copy error %v, want one naming the symlinked entry", name, err)
+		}
+	}
+}
+
+func TestFailedForecastKeepsOnlyFailedRuns(t *testing.T) {
+	input := stoppedCopy(t, func(e journal.Event, _ []journal.Event) bool { return e.Kind == journal.KindTrialEnd }, false)
+	anchor, err := forecast.AnchorOf(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	specs, err := ensembleRuns(filepath.Join("testdata", "forecast-suite.toml"), trialfacts.Extracts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exists := func(path string) bool {
+		_, err := os.Stat(path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal(err)
+		}
+		return err == nil
+	}
+	t.Run("failed run", func(t *testing.T) {
+		root := t.TempDir()
+		inProcess := launchInProcess(root)
+		launch := func(spec runSpec) (simulation, error) {
+			if runDir(root, spec) == runDir(root, specs[0]) {
+				return simulation{exit: 2}, nil
+			}
+			return inProcess(spec)
+		}
+		_, err := makeForecast(input, root, anchor, specs, "testdata", len(specs), false, launch)
+		if err == nil {
+			t.Fatal("forecast accepted a failed run")
+		}
+		var stderr bytes.Buffer
+		finishRuns(root, false, err, &stderr)
+		if diff := cmp.Diff("bench: keeping runs in "+root+"\n", stderr.String()); diff != "" {
+			t.Error(diff)
+		}
+		for i, spec := range specs {
+			if got, want := exists(runDir(root, spec)), i == 0; got != want {
+				t.Errorf("run %s-%d kept %v, want %v", spec.split, spec.seed, got, want)
+			}
+		}
+	})
+	t.Run("later step", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "runs")
+		record, err := makeForecast(input, root, anchor, specs, "testdata", len(specs), false, launchInProcess(root))
+		if err != nil {
+			t.Fatal(err)
+		}
+		file := filepath.Join(t.TempDir(), "file")
+		if err := os.WriteFile(file, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		err = writeRecord(filepath.Join(file, "forecast.json"), record)
+		if err == nil {
+			t.Fatal("wrote a record under a regular file")
+		}
+		var stderr bytes.Buffer
+		finishRuns(root, false, err, &stderr)
+		if stderr.Len() != 0 {
+			t.Errorf("printed %q with no failed run", stderr.String())
+		}
+		if exists(root) {
+			t.Error("kept the run root with no failed run")
+		}
+	})
+}
+
+func TestRelativeToResolvesMixedPaths(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ dir, path string }{
+		{"testdata", filepath.Join(wd, "testdata", "machines", "target.toml")},
+		{filepath.Join(wd, "testdata"), filepath.Join("testdata", "machines", "target.toml")},
+		{"testdata", filepath.Join("testdata", "machines", "target.toml")},
+	} {
+		got, err := relativeTo(tc.dir, tc.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := cmp.Diff("machines/target.toml", got); diff != "" {
+			t.Errorf("%s from %s: %s", tc.path, tc.dir, diff)
+		}
+	}
+}
+
+func TestForecastReportNamesMachinesRelativeToSuite(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	suiteDir := filepath.Join(wd, "testdata")
+	check := &modelcheck.Result{Machine: filepath.Join(suiteDir, "machines", "target.toml"), Status: "ok", Groups: []modelcheck.Group{}}
+	record := forecast.Record{Commit: "0123abc", Runs: []forecast.Run{{Status: forecast.Censored}}}
+	var out bytes.Buffer
+	if err := reportForecast(&out, record, suiteDir, []*modelcheck.Result{check}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), wd) {
+		t.Errorf("report holds the local path %s:\n%s", wd, out.String())
+	}
+	if want := "\nmachines/target.toml: ok (0 eligible groups; 0 idle failures without trial exposure)\n"; !strings.Contains(out.String(), want) {
+		t.Errorf("report lacks %q:\n%s", want, out.String())
+	}
+	if diff := cmp.Diff(filepath.Join(suiteDir, "machines", "target.toml"), check.Machine); diff != "" {
+		t.Errorf("report changed the check: %s", diff)
 	}
 }
 
