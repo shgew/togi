@@ -107,32 +107,8 @@ func prepareFacts(dir, id string, entries []defect.Entry, current *machine.BIOSC
 			break
 		}
 	}
-	for i := range carried {
-		f := &carried[i]
-		if f.Kind != facts.TrialFact || len(f.VoltageRequestsV) != 0 || len(f.TopRequesters) != 0 || len(f.CCDMHz) != 0 {
-			continue
-		}
-		original, ok := sessions[f.Session]
-		if !ok {
-			source, err := read(dir, f.Session)
-			if err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return nil, err
-			}
-			if err == nil {
-				original = facts.FromEvents(source.events)
-				original.ReadRequests(filepath.Join(dir, "archive", f.Session+"-trials"))
-			}
-			sessions[f.Session] = original
-		}
-		for _, source := range original.Facts {
-			if source.Seq == f.Seq {
-				f.VoltageRequestsV, f.TopRequesters, f.CCDMHz = source.VoltageRequestsV, source.TopRequesters, source.CCDMHz
-				if f.StalledCore == nil {
-					f.StalledCore = source.StalledCore
-				}
-				break
-			}
-		}
+	if err := fillFromOriginals(dir, carried, sessions); err != nil {
+		return nil, err
 	}
 	slices.SortFunc(carried, func(a, b facts.Fact) int {
 		if order := journal.CompareSessionIDs(a.Session, b.Session); order != 0 {
@@ -141,6 +117,60 @@ func prepareFacts(dir, id string, entries []defect.Entry, current *machine.BIOSC
 		return a.Seq - b.Seq
 	})
 	return carried, nil
+}
+
+// fillFromOriginals copies, from each carried fact's original session, request telemetry the fact lacks and a pass's
+// backend identity. The original is a walked session, or its archive when that survives.
+func fillFromOriginals(dir string, carried []facts.Fact, sessions map[string]facts.Session) error {
+	originals := make(map[string]map[int]facts.Fact)
+	for i := range carried {
+		f := &carried[i]
+		needsRequests := f.Kind == facts.TrialFact && len(f.VoltageRequestsV) == 0 && len(f.TopRequesters) == 0 && len(f.CCDMHz) == 0
+		if !needsRequests && f.Outcome != journal.OutcomePass {
+			continue
+		}
+		bySeq, ok := originals[f.Session]
+		if !ok {
+			original, err := originalSession(dir, f.Session, sessions)
+			if err != nil {
+				return err
+			}
+			bySeq = make(map[int]facts.Fact, len(original.Facts))
+			for _, o := range original.Facts {
+				bySeq[o.Seq] = o
+			}
+			originals[f.Session] = bySeq
+		}
+		source, ok := bySeq[f.Seq]
+		if !ok {
+			continue
+		}
+		if needsRequests {
+			f.VoltageRequestsV, f.TopRequesters, f.CCDMHz = source.VoltageRequestsV, source.TopRequesters, source.CCDMHz
+			if f.StalledCore == nil {
+				f.StalledCore = source.StalledCore
+			}
+		}
+		f.Backend = source.Backend
+	}
+	return nil
+}
+
+// originalSession returns a walked session, or reads the archived one; a missing archive yields no facts.
+func originalSession(dir, id string, sessions map[string]facts.Session) (facts.Session, error) {
+	if s, walked := sessions[id]; walked {
+		return s, nil
+	}
+	source, err := read(dir, id)
+	if errors.Is(err, fs.ErrNotExist) {
+		return facts.Session{}, nil
+	}
+	if err != nil {
+		return facts.Session{}, err
+	}
+	original := facts.FromEvents(source.events)
+	original.ReadRequests(filepath.Join(dir, "archive", id+"-trials"))
+	return original, nil
 }
 
 func sameFactContext(recorded, current *machine.BIOSContext) bool {

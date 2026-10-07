@@ -166,7 +166,7 @@ TOML at the `--config` path, produced by the NixOS module from `services.togi.se
 | `durations.checking_trial_s` | 120 | [1, 86400] |
 | `durations.checking_idle_s` | 900 | [1, 86400]; R6 |
 | `durations.checking_all_core_s` | 1200 | [4, 86400]; R7 long trials: a quarter per CCD, remainder all-core |
-| `checking.cycle` | `["R7", "R7", "R7", "R2", "R2", "R2", "R6", "R5", "R1", "R1", "R1", "R3", "R4", "R6"]` | Non-empty regime list; a passed cycle is not necessarily full |
+| `checking.cycle` | `["R7", "R7", "R7", "R2", "R2", "R2", "R6", "R5", "R1", "R1", "R1", "R3", "R3", "R3", "R4", "R4", "R4", "R6"]` | Non-empty regime list; a passed cycle is not necessarily full |
 | `evidence.miss` | 0.05 | Finite number strictly between 0 and 1 |
 | `evidence.rate` | 0.5 | Finite number strictly between 0 and 1; together with miss yields at most 1000 trials |
 | `dead_ends.inconclusive_in_a_row` | 3 | [1, 100] |

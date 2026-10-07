@@ -1,10 +1,12 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/machine"
 )
 
 func (a *auditor) mark(core int, offset *int, seq int) {
@@ -37,9 +39,25 @@ func (a *auditor) foldMarks(e journal.Event) {
 		a.trials[p.Trial] = p
 	case *journal.Failure:
 		// A carried known failure keeps its source trial ID, which may collide with a local record-only trial.
-		if intent := a.trials[p.Trial]; p.KnownFailure != 0 || intent == nil || !intent.RecordOnly {
-			if p.Attribution == journal.Attributed && p.Core != nil {
-				a.mark(*p.Core, p.Offset, e.Seq)
+		intent := a.trials[p.Trial]
+		if p.KnownFailure == 0 && intent != nil && intent.RecordOnly || p.Attribution != journal.Attributed || p.Core == nil {
+			break
+		}
+		// tuner.md, R7 attribution: a multi-core R7 failure naming a core at CO 0 that does not dead-end counts as
+		// unattributed, so it records a failure point only once a dead end cites it.
+		regime, condition := p.Regime, p.Condition
+		if intent != nil && p.KnownFailure == 0 {
+			regime, condition = cmp.Or(regime, intent.Regime), cmp.Or(condition, intent.Condition)
+		}
+		if regime == machine.R7 && (condition == machine.Together || condition == machine.Parked) && len(a.loadedCores(p, intent)) > 1 && p.Offset != nil && *p.Offset == 0 {
+			a.zeroNamed[e.Seq] = *p.Core
+			break
+		}
+		a.mark(*p.Core, p.Offset, e.Seq)
+	case *journal.DeadEnd:
+		for _, seq := range e.Cause {
+			if core, ok := a.zeroNamed[seq]; ok {
+				a.mark(core, new(0), seq)
 			}
 		}
 	case *journal.HuntStart:
@@ -67,6 +85,26 @@ func (a *auditor) foldMarks(e journal.Event) {
 	case *journal.Combination:
 		a.combinations[p.Combination] = combination{slices.Clone(p.Members), e.Seq}
 	}
+}
+
+// loadedCores is the failed trial's loaded cores; a known failure takes them from the fact it cites. Unknown cores
+// return nil, so the failure keeps the ordinary attributed handling rather than the multi-core R7 exception.
+func (a *auditor) loadedCores(p *journal.Failure, intent *journal.TrialIntent) []int {
+	if p.KnownFailure == 0 {
+		if intent == nil {
+			return nil
+		}
+		return intent.Cores
+	}
+	switch source := a.seen[p.KnownFailure].Data.(type) {
+	case *journal.TrialCarried:
+		return source.Class.Cores
+	case *journal.TrialEnd:
+		if t := a.trials[source.Trial]; t != nil {
+			return t.Cores
+		}
+	}
+	return nil
 }
 
 // tuner.md, Failure points and combinations: P[c] <= fail[c]; every P[m] <= C[m].

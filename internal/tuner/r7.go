@@ -182,6 +182,9 @@ func (s *State) consumeR7(ev journal.Event, id int) {
 			s.r7Handled[f.seq] = map[int]bool{}
 		}
 		s.r7Handled[f.seq][id] = true
+		if loc, ok := s.located[f.seq]; ok && loc.named != nil {
+			s.r7Handled[f.seq][*loc.named] = true
+		}
 		if failed := s.r7FailureEntry(*f); failed != nil {
 			for _, other := range s.failureTargets(*failed) {
 				if s.r7NamedCulprit(*failed) || s.ccd[other] == s.ccd[id] {
@@ -199,11 +202,29 @@ func (s *State) r7Decision() (Action, bool) {
 }
 func (s *State) r7PendingDecision() (Action, bool) {
 	for _, f := range s.pendingFailures {
-		if !s.multiR7(f.class) {
+		if !s.multiR7(f.class) || !f.carried && f.failure.Condition == machine.Parked {
 			continue
 		}
 		failed := s.r7FailureEntry(f)
 		if failed == nil {
+			continue
+		}
+		var located *locatedHunt
+		if loc, ok := s.located[f.seq]; ok {
+			if loc.result != "loaded" {
+				continue
+			}
+			if loc.named != nil {
+				if s.r7Handled[f.seq][*loc.named] {
+					continue
+				}
+				if a, ok := s.r7LocatedNamedDecision(f, loc); ok {
+					return a, true
+				}
+				continue
+			}
+			located = &loc
+		} else if s.locatable(f) != nil {
 			continue
 		}
 		for _, id := range s.failureTargets(*failed) {
@@ -211,7 +232,7 @@ func (s *State) r7PendingDecision() (Action, bool) {
 				continue
 			}
 			if c := s.core(id); c != nil {
-				if a, ok := s.r7CoreDecision(f, *failed, c); ok {
+				if a, ok := s.r7CoreDecision(f, *failed, c, located); ok {
 					return a, true
 				}
 			}
@@ -220,12 +241,39 @@ func (s *State) r7PendingDecision() (Action, bool) {
 	return Action{}, false
 }
 
+// r7LocatedNamedDecision charges the loaded core that a located hunt's group failure named: the hunt ended
+// loaded, and that failure decides the move under the named-core rules with its own failed trial, as it would
+// have outside the hunt. The decision cites the hunted failure first, so the same move consumes it.
+func (s *State) r7LocatedNamedDecision(source pendingFailure, loc locatedHunt) (Action, bool) {
+	g := s.failureBySeq(loc.failure)
+	c := s.core(*loc.named)
+	if g == nil || c == nil {
+		return Action{}, false
+	}
+	failed := s.r7FailureEntry(*g)
+	if failed == nil {
+		return Action{}, false
+	}
+	a, ok := s.r7CoreDecision(*g, *failed, c, &loc)
+	if ok && a.Kind == Decide {
+		a.Cause = append([]int{source.seq}, a.Cause...)
+	}
+	return a, ok
+}
+
+// r7FailureEntry returns a multi-core R7 failure's failed trial. Once its all-zero rerun passed, neither its named
+// core nor its stalled core confines it any more: it counts as unattributed against the cores still off CO 0.
 func (s *State) r7FailureEntry(f pendingFailure) *entry {
 	for i := range s.ledger[f.class] {
 		e := &s.ledger[f.class][i]
 		if s.sameR7Failure(e.seq, f.seq) {
 			if e.named == nil {
 				e.named = f.failure.Core
+			}
+			if r := s.zeroReruns[f.seq]; r != nil && r.passed {
+				unconfined := *e
+				unconfined.named, unconfined.stalled = nil, nil
+				return &unconfined
 			}
 			return e
 		}
@@ -237,6 +285,7 @@ type r7Order struct {
 	group   []int
 	sources []int
 	reason  string
+	located string
 	rail    float64
 	stepped bool
 	named   bool
@@ -304,16 +353,49 @@ func r7RequestGroups(part map[int]float64, top []int) [][]int {
 	return append([][]int{first}, groups...)
 }
 
-// r7CoreDecision returns the decision a failure requires against target c. It reports none when the core
-// the decision would move already sits shallower than in the failed trial: the failure needs no move
-// while that holds, and stays pending in case that core returns to its failing offset.
-func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core) (Action, bool) {
+// r7CoreDecision returns the decision a failure requires against target c, citing the located hunt that kept
+// it on the loaded cores, if any. It reports none when the core the decision would move already sits shallower
+// than in the failed trial: the failure needs no move while that holds, and stays pending in case that core
+// returns to its failing offset.
+func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core, located *locatedHunt) (Action, bool) {
 	if s.r7Answered(failed, c.id) {
 		return Action{}, false
 	}
 	order := s.r7TargetGroup(failed, c.id)
+	var locatedSeqs []int
+	if located != nil {
+		locatedSeqs = []int{located.end}
+		clause := fmt.Sprintf("hunt %d kept the failure on the loaded cores", located.hunt)
+		switch {
+		case located.named != nil:
+			clause = fmt.Sprintf("hunt %d ended loaded after failure #%d named loaded core %02d, which also answers failure #%d", located.hunt, located.failure, *located.named, located.source)
+			locatedSeqs = append(locatedSeqs, located.failure)
+		case located.failure != 0:
+			clause += fmt.Sprintf(" after failure #%d with every unloaded core at CO 0", located.failure)
+			locatedSeqs = append(locatedSeqs, located.failure)
+		}
+		order.located = clause
+		if order.reason != "" {
+			order.reason += "; "
+		}
+		order.reason += clause
+	}
+	if r := s.zeroReruns[f.seq]; r != nil && r.passed {
+		locatedSeqs = append(locatedSeqs, r.end)
+		if order.reason != "" {
+			order.reason += "; "
+		}
+		order.reason += fmt.Sprintf("the rerun of failure #%d with every core at CO 0 passed (#%d), so it counts as unattributed against the cores off CO 0", f.seq, r.end)
+	}
 	if len(order.group) == 0 || order.named && failed.profile[s.index(c.id)] == 0 {
-		return Action{Kind: Decide, Payload: s.r7FailedAtZero(failed, c.id, order), Cause: append([]int{f.seq}, order.sources...)}, true
+		cause := append([]int{f.seq}, locatedSeqs...)
+		cause = append(cause, order.sources...)
+		dead := s.r7FailedAtZero(failed, c.id, order)
+		if located != nil && located.allZero && located.failure != 0 {
+			// Every loaded core was at 0, so the failed locate was the all-zero rerun.
+			return Action{Kind: Decide, Payload: dead, Cause: cause}, true
+		}
+		return s.atZero(f, dead, cause)
 	}
 	if len(order.group) > 1 && s.rankingSeq == 0 {
 		return Action{Kind: ReadRanking}, true
@@ -327,7 +409,8 @@ func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core) (Action,
 	if s.r7ShallowerThanFailed(failed, chosen) {
 		return Action{}, false
 	}
-	cause := append([]int{f.seq}, order.sources...)
+	cause := append([]int{f.seq}, locatedSeqs...)
+	cause = append(cause, order.sources...)
 	if !order.named && s.rankingSeq > 0 {
 		cause = append(cause, s.rankingSeq)
 	}
@@ -387,7 +470,11 @@ func (s *State) r7FailedAtZero(failed entry, id int, order r7Order) *journal.Dea
 				loaded = append(loaded, core)
 			}
 		}
-		dead.Detail = fmt.Sprintf("%s counts against CCD %d's top group, and every loaded core of that CCD %v is at CO 0; the instability is not caused by Curve Optimizer", subject, s.ccd[id], loaded)
+		located := ""
+		if order.located != "" {
+			located = ", and " + order.located
+		}
+		dead.Detail = fmt.Sprintf("%s counts against CCD %d's top group, and every loaded core of that CCD %v is at CO 0%s; the instability is not caused by Curve Optimizer", subject, s.ccd[id], loaded, located)
 	}
 	return dead
 }
@@ -515,8 +602,9 @@ func (s *State) r7VoltageTarget(f entry, id int, request float64) (float64, []in
 		if class.regime != machine.R7 || class.workload != f.class.workload {
 			continue
 		}
-		for _, e := range entries {
-			if !e.pass || len(e.requests) == 0 || !slices.Contains(e.cores, id) {
+		for i := range entries {
+			e := &entries[i]
+			if !e.pass || len(e.requests) == 0 || !slices.Contains(e.cores, id) || !s.current(e) {
 				continue
 			}
 			if f.named == nil && !slices.Equal(e.cores, f.cores) {

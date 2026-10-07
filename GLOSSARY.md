@@ -49,6 +49,10 @@ The end of a session written by an older ruleset, schema or evidence epoch, with
 An external stress program togi drives: mprime or y-cruncher.
 _Avoid_: tool, stressor
 
+**Backend identity**:
+The package store path `config.loaded` records for a backend, such as `/nix/store/…-y-cruncher-0.8.7.9547`. A pass counts only while its backend keeps the identity it ran under; a failure counts whichever identity ran it.
+_Avoid_: backend version
+
 **Regime**:
 One of seven classes of load, R1 to R7, each exercising a different operating condition.
 _Avoid_: test type, mode, stage
@@ -71,7 +75,7 @@ A core that passes as a top requester for a given R7 workload.
 An R7 load that idles the top requesters found so far, in request order, to test the remaining cores.
 
 **Trial class**:
-The regime, workload, sorted loaded cores and duration of a trial. Pass evidence transfers only within this class.
+The regime, workload, sorted loaded cores and duration of a trial. Pass evidence transfers only within this class, under the backend identity it ran with.
 
 **Target**:
 The core or cores a trial loads.
@@ -89,7 +93,7 @@ A trial condition retaining the failed trial's workload and load, with a group's
 _Avoid_: masked
 
 **Parked offsets**:
-The newest passed full-cycle profile raised to the failing profile, each core at the shallower of its two offsets, when that differs from the failing profile; otherwise the next older passed full-cycle profile raised the same way, or all-zero.
+The newest passed full-cycle profile raised to the failing profile, each core at the shallower of its two offsets, when that differs from the failing profile; otherwise the next older passed full-cycle profile raised the same way, or all-zero. A located hunt parks its loaded cores at their failing offsets and its unloaded cores at 0.
 _Avoid_: anchor
 
 **Group**:
@@ -100,7 +104,10 @@ _Avoid_: mask
 The phase that finds and checks a core's candidate solo limit with R1 and R2 trials alone.
 
 **Hunt**:
-Parked trials that identify the core or combination behind an unattributed failure outside multi-core R7.
+Parked trials that identify the core or combination behind an unattributed failure outside multi-core R7, or a located hunt's unloaded cores.
+
+**Located hunt**:
+The hunt of an unattributed multi-core R7 failure whose unloaded cores were not all at 0. Its first group, locate, reruns the failed load with every unloaded core at 0 and the loaded cores at their failing offsets. A failed locate ends it `loaded` and the failure is charged to the loaded cores; a passed locate narrows only the unloaded cores.
 
 **Member probe**:
 A hunt's parked trial after it finds a combination: one member moves between its failing and parked offsets, members probed before it stay at their shallowest failing offsets and the rest at their failing offsets, to find how shallow that member must be for the combination to pass. Each member is probed in turn.
@@ -175,7 +182,7 @@ _Avoid_: carried mark
 A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original provenance and context. It is ordinary evidence subject to the current regime's rules, not a new trial or live exposure.
 
 **Evidence epoch**:
-The compatibility version of trial outcomes: workload content, backend binary and configuration, intended durations, and pass/failure detection. Passes carry only within the current epoch; eligible failures survive an epoch change.
+The compatibility version of trial outcomes: workload content, the backend configuration togi generates, intended durations, and pass/failure detection. Passes carry only within the current epoch; eligible failures survive an epoch change. A new backend build changes its backend identity instead.
 
 **Solo limit**:
 A core's checked candidate solo limit, tested alone; deepening together may move its offset.
@@ -202,6 +209,9 @@ The hardcoded strategy for search, hunts, deepening, checking and backoffs.
 
 **Dead end**:
 A condition under which togi cannot make progress and stops itself.
+
+**All-zero rerun**:
+The failing trial run again with every core at CO 0 before a `failure_at_zero` dead end. The dead end stands only if it fails too; a pass sends the failure to the cores off CO 0.
 
 ### Runtime
 

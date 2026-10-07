@@ -216,6 +216,25 @@ func TestCarryAndHistoryKeepHistoricalBuildStamp(t *testing.T) {
 	}
 }
 
+func TestCarryAndHistoryKeepHistoricalBackendPaths(t *testing.T) {
+	path := filepath.Join(t.TempDir(), eventsFile)
+	data := `{"seq":1,"kind":"session.start","session":"source","schema":1}` + "\n" +
+		`{"seq":2,"kind":"config.loaded","version":"recorded","config":{"durations":{"start_s":"obsolete"},"backends":{"mprime":"/nix/store/a-mprime","ycruncher":"/nix/store/b-y-cruncher"}}}` + "\n"
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, reader := range []func(string) ([]Event, error){ReadHistory, ReadForCarry} {
+		events, err := reader(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := &ConfigLoaded{Version: "recorded", Config: ConfigSnapshot{Backends: ConfigBackends{Mprime: "/nix/store/a-mprime", Ycruncher: "/nix/store/b-y-cruncher"}}}
+		if diff := cmp.Diff(want, events[len(events)-1].Data); diff != "" {
+			t.Fatalf("historical config.loaded (-want +got):\n%s", diff)
+		}
+	}
+}
+
 func TestCarryRejectsEmptyOrInvalidStamp(t *testing.T) {
 	for _, data := range []string{"", `{"kind":"session.start"}`, `{"kind":"session.start"}` + "\n" + `{"kind":"config.loaded","version":17}` + "\n"} {
 		path := filepath.Join(t.TempDir(), eventsFile)

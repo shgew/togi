@@ -142,6 +142,11 @@ type trialView struct {
 	passed, index, of int // trials of the current requirement: passed so far, the running one counting from 1, needed
 }
 
+// zeroRerun reports the all-zero rerun of a failing trial, run before a failure_at_zero dead end.
+func (t trialView) zeroRerun() bool {
+	return t.rerun && t.condition == machine.Parked && t.hunt == 0
+}
+
 type trialEnd struct {
 	id         string
 	at         time.Time
@@ -229,6 +234,12 @@ type huntView struct {
 	groups     []groupView // groups so far, oldest first
 	probes     []probeView
 	rerun      rerunPlan // what reruns once the hunt resolves
+}
+
+// locating reports a located hunt still rerunning its failed load with every unloaded core at 0.
+func (h *huntView) locating() bool {
+	n := len(h.groups)
+	return n > 0 && h.groups[n-1].stage == "locate" && h.groups[n-1].outcome == "running"
 }
 
 type huntCause struct {

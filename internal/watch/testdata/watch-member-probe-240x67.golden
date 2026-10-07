@@ -1,6 +1,6 @@
   togi   08:22:00   session 8h22m   8 failures · 8 crashes   last observed failure 08:22   screen paused until 08:24
 
-  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 7 of 14  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 7 of 18  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
   ▌  HUNT 1   03 11 crashed together at their offsets, and every smaller part of them that was tested passed.             last trial      CRASH  on 00-15
   ▌           So I probe each member: how shallow must it go for the rest to pass? Core 03 first.
@@ -15,7 +15,7 @@
 
   if 5 of 5 pass       next: hunt 1 group 43: R6 idle + bursts on 00-15 · 03 at failing offsets, core 11 at -9, 00-02 04-10 12-15 parked at 0
   if none is named     next: hunt 1 group 43: R6 idle + bursts on 00-15 · 11 at failing offsets, core 03 at -8, 00-02 04-10 12-15 parked at 0
-  if a core is named   its failure point is recorded → the hunt ends → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: tuning stops
+  if a core is named   its failure point is recorded → the hunt ends → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: rerun at CO 0
 
   CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  all under load
   ► 00    0  PARKED    ·········▀                                                  returns to -10                         ► 08    0  PARKED    ·········▀                                                  returns to -10

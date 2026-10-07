@@ -4,7 +4,7 @@ Normative rules for what a trial runs, how it is contained, and how its outcome 
 
 ## Evidence compatibility
 
-The evidence epoch (`tuner.EvidenceEpoch`, now 1; `tuner.md`, Ruleset) versions whether recorded passes remain comparable with current trials. Changes to workload content, a backend binary or its configuration, intended trial durations, or pass/failure detection must bump it when they change the evidence contract. An epoch bump drops older carried passes while retaining eligible failures; it does not change the journal schema or the strategy ruleset.
+The evidence epoch (`tuner.EvidenceEpoch`, now 1; `tuner.md`, Ruleset) versions whether recorded passes remain comparable with current trials. Changes to workload content, the backend configuration togi generates, intended trial durations, or pass/failure detection must bump it when they change the evidence contract. An epoch bump drops older carried passes while retaining eligible failures; it does not change the journal schema or the strategy ruleset. A new backend build needs no bump: passes are keyed by the backend's package store path (`tuner.md`, Evidence).
 
 ## Backends
 
@@ -49,9 +49,9 @@ Each watched-file polling read processes at most 64 KiB, including short complet
 | R6 idle | Normal power management with the profile applied | One confined 1-thread R1 instance per core, each stopped with SIGSTOP as soon as it enters its scope, before the next instance launches. Trial timing begins only after all instances are stopped. First half: no load at all. Second half: short bursts (SIGCONT, then SIGSTOP 100 ms later, every 2 s) on one core at a time in scheduling order |
 | R7 all-core | Self-sufficiency, package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance on each loaded core. For each CCD a checking step runs its full part then partial parts that idle successive top-request groups, ties within 1 mV together, while at least two cores remain loaded; the all-core part runs last. On one CCD the all-core part is its full part, run once before the chain |
 
-Within a regime, search cycles listed workloads; candidate-solo-limit checks freeze one R1 and one R2 workload. Checking's repeated R1, R2 and R7 steps cycle their catalogs, so three occurrences cover each workload. All parts of one R7 step share its selected R2 workload. Inconclusive trials retry the same class. Every R7 part requires passing trials; every failed multi-core R7 trial follows the request-based attribution and [voltage-targeted backoff rules](tuner.md#r7-voltage-targeted-backoff).
+Within a regime, search cycles listed workloads; candidate-solo-limit checks freeze one R1 and one R2 workload. Checking's repeated steps cycle their regime's catalog from the start of each cycle: three R1, R2 or R7 occurrences cover each workload, and three R3 or R4 occurrences run the first three entries of their longer catalogs. All parts of one R7 step share its selected R2 workload. Inconclusive trials retry the same class. Every R7 part requires passing trials; every failed multi-core R7 trial follows the request-based attribution and [voltage-targeted backoff rules](tuner.md#r7-voltage-targeted-backoff).
 
-R6 runs on the profile and in parked hunt trials; R7 runs on the profile and checks deepening rounds, with no hunts for multi-core R7 failures. R6 targets every core; an R7 trial can target part of a CCD, a full CCD or every core. `trial.intent.cores` lists exactly the loaded cores; the applied profile also includes idle cores. Each loaded core runs one instance on its first logical CPU, in its own scope and work directory, so a backend signal names that instance's core. Partial-chain derivation and its stopping reason are recorded in `checking.chain`; no partial with fewer than two loaded cores is launched.
+R6 runs on the profile and in parked hunt trials; R7 runs on the profile, checks deepening rounds and runs located hunts: a live unattributed multi-core R7 failure with an unloaded core off CO 0 is first located among the unloaded cores. R6 targets every core; an R7 trial can target part of a CCD, a full CCD or every core. `trial.intent.cores` lists exactly the loaded cores; the applied profile also includes idle cores. Each loaded core runs one instance on its first logical CPU, in its own scope and work directory, so a backend signal names that instance's core. Partial-chain derivation and its stopping reason are recorded in `checking.chain`; no partial with fewer than two loaded cores is launched.
 
 ### Load-step schedules
 
@@ -79,8 +79,8 @@ Default checking cycle, with elapsed time depending on the request ties and resu
 3. R6.
 4. R5 on every core.
 5. R1, R1, R1: every R1 workload on every core.
-6. R3 on every core.
-7. R4 on every core.
+6. R3, R3, R3: every R1 workload with load steps on every core.
+7. R4, R4, R4: every R1 workload on every core, at 25%, 50% and 75% duty respectively.
 8. R6.
 
 Full-cycle coverage, earlier-cycle credit, carried-evidence boundaries and per-core scheduling order are defined in [tuner.md, Checking](tuner.md#checking). Search time depends on solo limit distance and failed steps; candidate checks require five passes of each frozen R1 and R2 class by default, including eligible carried passes.

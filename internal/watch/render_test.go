@@ -423,3 +423,60 @@ func TestPartialTrialUsesOrdinaryEvidence(t *testing.T) {
 		t.Fatalf("partial failure must be decisive: %q tone %v", got, last.tone)
 	}
 }
+
+func TestAllZeroRerunIsNamedForWhatItDecides(t *testing.T) {
+	t.Parallel()
+	profile := []int{-20, 0, -10}
+	idle := machine.Workloads(machine.R6)[0].ID
+	events := dashboardEvents(dashboardSession(),
+		&journal.ProfileChange{To: profile},
+		&journal.TrialIntent{Trial: "failed", Cores: []int{0, 1, 2}, Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R6, Workload: idle, Profile: profile, DurationS: 120},
+		&journal.TrialStart{Trial: "failed"},
+		&journal.TrialEnd{Trial: "failed", Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(1)},
+		&journal.Failure{Trial: "failed", Signal: machine.ComputationError, Attribution: journal.Attributed, Core: new(1), Offset: new(0), Condition: machine.Together, Regime: machine.R6, Profile: profile},
+		&journal.TrialIntent{Trial: "zero", Cores: []int{0, 1, 2}, Condition: machine.Parked, Phase: journal.PhaseChecking, Regime: machine.R6, Workload: idle, Profile: []int{0, 0, 0}, DurationS: 120, Rerun: true},
+		&journal.TrialStart{Trial: "zero"},
+		&journal.TrialEnd{Trial: "zero", Outcome: journal.OutcomePass})
+	s := Project(events[:len(events)-1])
+	if s.trial == nil || !s.trial.zeroRerun() {
+		t.Fatalf("trial in flight %+v", s.trial)
+	}
+	if got := s.story(time.Time{}).label; got != "RERUN AT CO 0" {
+		t.Fatalf("story label %q", got)
+	}
+	if got := ansi.Strip(s.operation(*s.trial)); got != "RERUN AT CO 0" {
+		t.Fatalf("NOW %q", got)
+	}
+	ended := Project(events)
+	if got := ended.history[0].sentence(); !strings.Contains(got, "rerun of R6 idle + bursts on 00-02 with every core at 0") {
+		t.Fatalf("history %q", got)
+	}
+}
+
+func TestForecastNamesTheAllZeroRerunAfterARerun(t *testing.T) {
+	t.Parallel()
+	idle := machine.Workloads(machine.R6)[0].ID
+	loaded := []int{0, 1}
+	again := &tuner.Trial{Regime: machine.R6, Workload: idle, Cores: loaded, Condition: machine.Together, Profile: []int{0, -10}, DurationS: 120, Rerun: true, Retry: true}
+	zero := &tuner.Trial{Regime: machine.R6, Workload: idle, Cores: loaded, Condition: machine.Parked, Profile: []int{0, 0}, DurationS: 120, Rerun: true}
+	s := Snapshot{
+		cores: []coreView{{id: 0}, {id: 1}},
+		trial: &trialView{regime: machine.R6, workload: machine.Workload{ID: idle}, cores: loaded, condition: machine.Together, profile: []int{0, -10}, duration: 2 * time.Minute, rerun: true},
+		outcomes: []outcome{
+			{premise: ifInconclusive, next: again},
+			{premise: ifNamed, core: new(0), atZero: true, decisions: []journal.Payload{&journal.Failure{Core: new(0)}}, next: zero, withoutTelemetry: true},
+		},
+	}
+	var got []string
+	for _, row := range s.outcomeRows() {
+		got = append(got, row.label+" | "+fitPhrases(row.phrases, 400))
+	}
+	if len(got) != 2 || !slices.ContainsFunc(got, func(l string) bool { return strings.HasSuffix(l, "the same trial runs again") }) {
+		t.Fatalf("a retry of the rerun is the same trial: %q", got)
+	}
+	if !slices.ContainsFunc(got, func(l string) bool {
+		return strings.HasSuffix(l, "next: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m")
+	}) {
+		t.Fatalf("a core at 0 named on a rerun must forecast the all-zero rerun: %q", got)
+	}
+}

@@ -1,6 +1,6 @@
   [0;90mtogi   [0;97m08:22:00   [0;90msession [0;37m8h22m   8 [0;90mfailures · [0;37m8 [0;90mcrashes   last observed failure [0;37m08:22   [0;93mscreen paused until 08:24[m
 
-  [0;92m■ [0;37mSOLO LIMITS  [0;90m16/16  [0;35m───  [0;93m○ [0;37mCYCLE 1  [0;93mpaused at step 7 of 14  [0;35m───  [0;93m► [0;30;43m HUNT 1 [0;93m  member probes · member 1 of 2  [0;35m───  [0;90m○ DEEPEN  [0;35m───  [0;90mCLEAN CYCLES 0  [0;35m· repeats until stopped[m
+  [0;92m■ [0;37mSOLO LIMITS  [0;90m16/16  [0;35m───  [0;93m○ [0;37mCYCLE 1  [0;93mpaused at step 7 of 18  [0;35m───  [0;93m► [0;30;43m HUNT 1 [0;93m  member probes · member 1 of 2  [0;35m───  [0;90m○ DEEPEN  [0;35m───  [0;90mCLEAN CYCLES 0  [0;35m· repeats until stopped[m
 
   [0;93m▌  HUNT 1   [0;37m03 11 crashed together at their offsets, and every smaller part of them that was tested passed.             [0;90mlast trial      [0;91mCRASH  [0;90mon 00-15[m
   [0;93m▌           [0;37mSo I probe each member: how shallow must it go for the rest to pass? Core 03 first.[m
@@ -15,7 +15,7 @@
 
   [0;92mif 5 of 5 pass       [0;37mnext: hunt 1 group 43: R6 idle + bursts on 00-15 · 03 at failing offsets, core 11 at -9, 00-02 04-10 12-15 parked at 0[m
   [0;91mif none is named     [0;37mnext: hunt 1 group 43: R6 idle + bursts on 00-15 · 11 at failing offsets, core 03 at -8, 00-02 04-10 12-15 parked at 0[m
-  [0;91mif a core is named   [0;37mits failure point is recorded → the hunt ends → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: tuning stops[m
+  [0;91mif a core is named   [0;37mits failure point is recorded → the hunt ends → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: rerun at CO 0[m
 
   [0;97mCCD 0               [0;90m0       -10       -20       -30       -40       -50 fail pt  all under load                         [0;97mCCD 1               [0;90m0       -10       -20       -30       -40       -50 fail pt  all under load[m
   [0;96m► [0;37m00    0  [0;90mPARKED    ·········[0;91m▀                                                  [0;90mreturns to -10                         [0;96m► [0;37m08    0  [0;90mPARKED    ·········[0;91m▀                                                  [0;90mreturns to -10[m

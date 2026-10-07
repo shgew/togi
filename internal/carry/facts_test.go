@@ -294,7 +294,7 @@ func TestDeferredFactsRequireContextAndRetryFailedRead(t *testing.T) {
 	key, _ := factTrial(w, 0, journal.OutcomeFailure)
 	w.close()
 	c := prepare(t, dir, []defect.Entry{})
-	if err := c.ResolveFacts(nil); err == nil || len(c.Facts) != 0 {
+	if err := c.ResolveFacts(nil, journal.ConfigBackends{}); err == nil || len(c.Facts) != 0 {
 		t.Fatalf("unknown BIOS context accepted: facts %+v, error %v", c.Facts, err)
 	}
 	path := filepath.Join(dir, "archive", "A.jsonl")
@@ -305,13 +305,13 @@ func TestDeferredFactsRequireContextAndRetryFailedRead(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not JSON\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.ResolveFacts(&context); err == nil || len(c.Facts) != 0 {
+	if err := c.ResolveFacts(&context, journal.ConfigBackends{}); err == nil || len(c.Facts) != 0 {
 		t.Fatalf("broken deferred source accepted: facts %+v, error %v", c.Facts, err)
 	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.ResolveFacts(&context); err != nil {
+	if err := c.ResolveFacts(&context, journal.ConfigBackends{}); err != nil {
 		t.Fatal(err)
 	}
 	if diff := cmp.Diff([]factID{key}, factKeys(c.Facts), cmp.AllowUnexported(factID{})); diff != "" {
@@ -320,7 +320,7 @@ func TestDeferredFactsRequireContextAndRetryFailedRead(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not JSON\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.ResolveFacts(&context); err != nil {
+	if err := c.ResolveFacts(&context, journal.ConfigBackends{}); err != nil {
 		t.Fatalf("resolved carry reread its source: %v", err)
 	}
 	if diff := cmp.Diff([]factID{key}, factKeys(c.Facts), cmp.AllowUnexported(factID{})); diff != "" {

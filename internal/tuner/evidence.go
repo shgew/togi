@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -51,6 +52,9 @@ type entry struct {
 	top            []int
 	clocks         map[int]int
 	named, stalled *int
+	// backend runs the class's workload; path is its package store path when the trial was recorded.
+	backend machine.Backend
+	path    string
 }
 
 func classOf(p *journal.TrialIntent) trialClass {
@@ -113,6 +117,11 @@ const (
 	cycleEvidence
 )
 
+// current reports whether e ran under the store path its backend has now: only such passes count.
+func (s *State) current(e *entry) bool {
+	return e.path == s.backends.Path(e.backend)
+}
+
 func (r evidenceRule) admits(e *entry, since int) bool {
 	if e.carried {
 		return r != cycleEvidence
@@ -141,12 +150,17 @@ func (s *State) latestFailure(k trialClass, p []int, since int) int {
 }
 
 func (s *State) passSeqs(k trialClass, p []int, since int, rule evidenceRule) []int {
-	last := s.latestFailure(k, p, 0)
+	return s.passSeqsBefore(k, p, since, math.MaxInt, rule)
+}
+
+// passSeqsBefore is passSeqs as it stood before until: passes recorded before it and after the newest failure before it.
+func (s *State) passSeqsBefore(k trialClass, p []int, since, until int, rule evidenceRule) []int {
+	last := s.failureBefore(k, p, 0, until)
 	var seqs []int
 	entries := s.ledger[k]
 	for i := range entries {
 		e := &entries[i]
-		if e.pass && rule.admits(e, since) && e.seq > last && AtLeastDeep(e.profile, p) {
+		if e.pass && e.seq < until && rule.admits(e, since) && e.seq > last && AtLeastDeep(e.profile, p) && s.current(e) {
 			seqs = append(seqs, e.seq)
 		}
 	}
@@ -154,12 +168,16 @@ func (s *State) passSeqs(k trialClass, p []int, since int, rule evidenceRule) []
 }
 
 func (s *State) passes(k trialClass, p []int, since int, rule evidenceRule) int {
-	last := s.latestFailure(k, p, 0)
+	return s.passesBefore(k, p, since, math.MaxInt, rule)
+}
+
+func (s *State) passesBefore(k trialClass, p []int, since, until int, rule evidenceRule) int {
+	last := s.failureBefore(k, p, 0, until)
 	count := 0
 	entries := s.ledger[k]
 	for i := range entries {
 		e := &entries[i]
-		if e.pass && rule.admits(e, since) && e.seq > last && AtLeastDeep(e.profile, p) {
+		if e.pass && e.seq < until && rule.admits(e, since) && e.seq > last && AtLeastDeep(e.profile, p) && s.current(e) {
 			count++
 		}
 	}
@@ -167,20 +185,32 @@ func (s *State) passes(k trialClass, p []int, since int, rule evidenceRule) int 
 }
 
 func (s *State) failingSeq(k trialClass, p []int, since int) int {
-	if s.passes(k, p, 0, allEvidence) >= s.n {
+	return s.failingSeqBefore(k, p, since, math.MaxInt)
+}
+
+// failingSeqBefore is failingSeq as it stood before until: the newest failure recorded before it, unless passes
+// recorded before it cover that failure.
+func (s *State) failingSeqBefore(k trialClass, p []int, since, until int) int {
+	if s.passesBefore(k, p, 0, until, allEvidence) >= s.n {
 		return 0
 	}
-	last := admittedFailure(s.ledger[k], p, since, 0)
+	return s.failureBefore(k, p, since, until)
+}
+
+// failureBefore is the newest failure admitted since the boundary at an equal or shallower profile, recorded before
+// until, without failingSeq's check that newer passes cover it.
+func (s *State) failureBefore(k trialClass, p []int, since, until int) int {
+	last := admittedFailure(s.ledger[k], p, since, until, 0)
 	if k.regime == machine.R6 && len(s.idle) > 0 && k.cores == coresKey(s.ids()) {
-		last = admittedFailure(s.idle, p, since, last)
+		last = admittedFailure(s.idle, p, since, until, last)
 	}
 	return last
 }
 
-func admittedFailure(entries []entry, p []int, since, last int) int {
+func admittedFailure(entries []entry, p []int, since, until, last int) int {
 	for i := range entries {
 		e := &entries[i]
-		if !e.pass && e.seq > last && allEvidence.admits(e, since) && AtLeastShallow(e.profile, p) {
+		if !e.pass && e.seq > last && e.seq < until && allEvidence.admits(e, since) && AtLeastShallow(e.profile, p) {
 			last = e.seq
 		}
 	}
@@ -198,6 +228,13 @@ func (s *State) citeCarried(cause []int, seqs ...int) []int {
 		}
 	}
 	return cause
+}
+
+func citeNew(cause []int, seq int) []int {
+	if slices.Contains(cause, seq) {
+		return cause
+	}
+	return append(cause, seq)
 }
 
 func (s *State) carriedReason(seqs []int) string {
@@ -240,6 +277,8 @@ func (s *State) recordEvidence(ev journal.Event, p *journal.TrialIntent, end *jo
 		}
 	}
 	e := entry{seq: ev.Seq, profile: profile, pass: end.Outcome == journal.OutcomePass, condition: p.Condition, class: k, cores: p.Cores}
+	w, _ := machine.WorkloadByID(k.workload)
+	e.backend, e.path = w.Backend, s.backends.Path(w.Backend)
 	if p.Core != nil {
 		e.cores = []int{*p.Core}
 	}

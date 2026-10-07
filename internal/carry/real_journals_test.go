@@ -88,7 +88,7 @@ func TestPrepareRealArchiveChain(t *testing.T) {
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(Carry{})); diff != "" {
 		t.Fatalf("real archive carry (-want +got):\n%s", diff)
 	}
-	if err := got.ResolveFacts(got.Context); err != nil {
+	if err := got.ResolveFacts(got.Context, journal.ConfigBackends{Mprime: "/nix/store/64hjzgj1msiyndpdxrk9l3gkjf3sczgj-mprime-31.04b02", Ycruncher: "/nix/store/n5g91xa9pzcfqyyh62xpwz3v53f87y0a-y-cruncher-0.8.7.9547"}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join("testdata", "real-facts.json"))

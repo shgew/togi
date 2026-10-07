@@ -171,10 +171,7 @@ func decodeEvent(line []byte, history bool) (Event, error) {
 	var p Payload
 	var err error
 	if history && env.Kind == KindConfigLoaded {
-		// Historical configurations changed shape; fact readers need only their build stamp.
-		var build Build
-		err = json.Unmarshal(line, &build)
-		p = &ConfigLoaded{Build: build}
+		p, err = historicConfig(line)
 	} else {
 		p, err = decodePayload(env.Kind, line)
 	}
@@ -182,6 +179,24 @@ func decodeEvent(line []byte, history bool) (Event, error) {
 		return Event{}, err
 	}
 	return event(env, p, line), nil
+}
+
+// historicConfig decodes what history readers use from a config.loaded of any shipped schema: its build stamp and
+// backend store paths. A configuration of another shape leaves the paths empty instead of failing the read.
+func historicConfig(line []byte) (*ConfigLoaded, error) {
+	var build Build
+	if err := json.Unmarshal(line, &build); err != nil {
+		return nil, err
+	}
+	var config struct {
+		Config struct {
+			Backends ConfigBackends `json:"backends"`
+		} `json:"config"`
+	}
+	if json.Unmarshal(line, &config) != nil {
+		config.Config.Backends = ConfigBackends{}
+	}
+	return &ConfigLoaded{Build: build, Config: ConfigSnapshot{Backends: config.Config.Backends}}, nil
 }
 
 func event(env envelope, p Payload, line []byte) Event {

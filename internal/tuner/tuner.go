@@ -14,7 +14,7 @@ import (
 )
 
 // Ruleset must be bumped for changes to steps, offset range, phases, regimes, evidence, hunts, deepening or backoffs; this is breaking.
-const Ruleset = 9
+const Ruleset = 10
 
 const EvidenceEpoch = 1
 
@@ -96,7 +96,17 @@ type core struct {
 	decisionSeq    int
 	stepR1         bool
 	stepSeqs       []int
+	stepPasses     []stepPass
 	workloadIndex  map[machine.Regime]int
+}
+
+// stepPass is a search step pass and the backend store path it ran under; currentStep derives the core's stepR1 and
+// stepSeqs from those whose path is still current.
+type stepPass struct {
+	seq     int
+	r1      bool
+	backend machine.Backend
+	path    string
 }
 
 type pendingFailure struct {
@@ -135,6 +145,7 @@ type State struct {
 	durations               journal.ConfigDurations
 	evidence                journal.ConfigEvidence
 	n                       int
+	backends                journal.ConfigBackends
 	ccd                     map[int]int
 	parts                   [][]int
 	checking                checking
@@ -171,6 +182,9 @@ type State struct {
 	projectedHunt           *journal.HuntState
 	r7Handled               map[int]map[int]bool
 	r7Measurements          []entry
+	located                 map[int]locatedHunt
+	zeroReruns              map[int]*zeroRerun
+	zeroTrials              map[string]int
 }
 
 func New() *State {
@@ -253,6 +267,10 @@ func (s *State) Fold(e journal.Event) {
 		s.steps = slices.Clone(p.Config.Checking.Cycle)
 		s.durations = p.Config.Durations
 		s.evidence = p.Config.Evidence
+		s.backends = p.Config.Backends
+		for _, c := range s.cores {
+			s.currentStep(c)
+		}
 		s.n = int(math.Ceil(math.Log(s.evidence.Miss) / math.Log1p(-s.evidence.Rate)))
 		s.pendingRerun()
 		s.projectionDirty = true
@@ -325,6 +343,7 @@ func (s *State) Fold(e journal.Event) {
 		s.intents[p.Trial] = p
 		s.intentSeq[e.Seq] = p.Trial
 		s.recordCheckingTrial(p)
+		s.recordZeroRerun(e, p)
 		s.retry = nil
 		if p.Condition == machine.Alone && p.Core != nil {
 			s.cursor = slices.IndexFunc(s.cores, func(c *core) bool { return c.id == *p.Core })
@@ -338,6 +357,7 @@ func (s *State) Fold(e journal.Event) {
 			s.flight = nil
 		}
 		s.foldTrialEnd(e, p)
+		s.endZeroRerun(e, p)
 		s.pendingRerun()
 	case *journal.MCE:
 		s.mces[e.Seq] = p
@@ -433,6 +453,7 @@ func (s *State) Fold(e journal.Event) {
 func (s *State) decided(c *core, seq int) {
 	c.stepR1 = false
 	c.stepSeqs = nil
+	c.stepPasses = nil
 	c.pending = 0
 	c.lastSeq = seq
 	c.decisionSeq = seq
@@ -486,10 +507,9 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 	switch p.Outcome {
 	case journal.OutcomePass:
 		if c.phase == journal.PhaseSearch && *intent.Offset == c.offset && intent.Phase == journal.PhaseSearch && !c.check {
-			if intent.Regime == machine.R1 {
-				c.stepR1 = true
-			}
-			c.stepSeqs = append(c.stepSeqs, e.Seq)
+			w, _ := machine.WorkloadByID(intent.Workload)
+			c.stepPasses = append(c.stepPasses, stepPass{e.Seq, intent.Regime == machine.R1, w.Backend, s.backends.Path(w.Backend)})
+			s.currentStep(c)
 		}
 	case journal.OutcomeInconclusive:
 		t := trialFromIntent(intent)
@@ -547,6 +567,13 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 		}
 	}
 	if failure.class.regime == machine.R7 && len(s.classCores(failure.class)) > 1 {
+		if c := s.locatedCulprit(failure); c != nil {
+			c.pending = failure.seq
+		}
+		s.projectionDirty = true
+		return
+	}
+	if s.zeroRerunFailure(p) {
 		s.projectionDirty = true
 		return
 	}
@@ -697,6 +724,9 @@ func (s *State) next() Action {
 			return Action{Kind: ReadRanking}
 		}
 		return s.huntStartNext()
+	}
+	if a, ok := s.locateNext(); ok {
+		return a
 	}
 	if a, ok := s.rerunNext(); ok {
 		return a

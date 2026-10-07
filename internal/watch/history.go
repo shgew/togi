@@ -276,13 +276,16 @@ func (p *projector) stepWorkload(in *journal.TrialIntent) {
 func (p *projector) huntGroup(line entry, d *journal.HuntGroup) (entry, bool) {
 	p.groups[[2]int{d.Hunt, d.Group}] = d
 	start := p.huntStarts[d.Hunt]
-	if d.Probe == nil && !start.named && len(d.Cores) > 0 {
+	if d.Probe == nil && !start.named && (len(d.Cores) > 0 || d.Stage == "locate") {
 		start.named = true
 		p.huntStarts[d.Hunt] = start
 		for i := len(p.s.history) - 1; i >= 0; i-- {
 			h := &p.s.history[i]
 			if h.key == "hunt start" && h.hunt == d.Hunt {
 				h.text = fmt.Sprintf("#%d started · part 1: %s", d.Hunt, partLayout(d.Cores, start.candidates))
+				if d.Stage == "locate" {
+					h.text = fmt.Sprintf("#%d started · locate: %s at 0", d.Hunt, coreIDs(start.candidates))
+				}
 				break
 			}
 		}
@@ -439,6 +442,9 @@ func (p *projector) trialName(in *journal.TrialIntent) string {
 				}
 				return text + fmt.Sprintf(" · %s with core %02d at %d", coreIDs(members), g.Probe.Core, g.Probe.Offset)
 			}
+			if g.Stage == "locate" {
+				return text + " · locate, idle cores at 0"
+			}
 			return text + " · " + coreIDs(g.Cores) + " at failing offsets"
 		}
 		return text
@@ -452,7 +458,10 @@ func (p *projector) trialName(in *journal.TrialIntent) string {
 			text += fmt.Sprintf(" at %d", in.Profile[i])
 		}
 	}
-	if in.Rerun {
+	switch {
+	case in.Rerun && in.Condition == machine.Parked:
+		text = "rerun of " + text + " with every core at 0"
+	case in.Rerun:
 		text = "rerun of " + text
 	}
 	return text
@@ -550,6 +559,8 @@ func (p *projector) huntEndText(d *journal.HuntEnd, at time.Time) (string, strin
 		return tagHunt, text, warnTone
 	case "fallback":
 		return tagHunt, text + " · " + coreIDs(d.Cores) + " unresolved", warnTone
+	case "loaded":
+		return tagHunt, text + " · stays with loaded " + coreIDs(d.Cores), warnTone
 	case "cancelled":
 		return tagHunt, fmt.Sprintf("#%d cancelled", d.Hunt), plainTone
 	}

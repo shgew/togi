@@ -48,6 +48,10 @@ func (s Snapshot) story(now time.Time) story {
 		text := "The trial's intent is recorded; its offsets are being applied and its workload is starting."
 		return story{s.stageLabel(), []string{text}, text, plainTone}
 	}
+	if t.zeroRerun() {
+		lines := []string{"A failure at CO 0 would stop tuning. Before it does, the failed load runs again with every core at CO 0.", "If it fails too, the instability is not caused by Curve Optimizer and tuning stops; if it passes, the failure goes to the cores off CO 0."}
+		return story{"RERUN AT CO 0", lines, "The failed load runs again with every core at CO 0 before tuning stops.", plainTone}
+	}
 	if s.hunt != nil {
 		return s.huntStory()
 	}
@@ -161,6 +165,9 @@ func (s Snapshot) huntStory() story {
 		return story{label, []string{first, "So I probe each member: how shallow must it go for the rest to pass? " + which}, fmt.Sprintf("Probing members of %s: core %02d at %d.", coreIDs(group), t.probe.Core, t.probe.Offset), huntTone}
 	}
 	cause, named, brief := s.huntCauseStory()
+	if h.locating() {
+		return story{label, []string{cause, named + "I rerun that load with " + coreIDs(h.candidates) + " at 0 and the loaded cores at their offsets: a pass puts the failure on the idle cores."}, brief + " Rerunning it with " + coreIDs(h.candidates) + " at 0.", huntTone}
+	}
 	return story{label, []string{cause, named + "I rerun that load with " + s.splitWords() + "."}, brief + " Rerunning it with " + coreIDs(t.parked) + " parked.", huntTone}
 }
 
@@ -215,9 +222,9 @@ func (c huntCause) knownWords() string {
 // huntCauseStory tells what started the hunt: a sentence, whether a core was named, and a compact line.
 func (s Snapshot) huntCauseStory() (string, string, string) {
 	c := s.hunt.cause
-	named := "No core was named: "
+	named, nameBrief := "No core was named: ", "; no core named."
 	if c.core != nil {
-		named = fmt.Sprintf("Core %02d was named: ", *c.core)
+		named, nameBrief = fmt.Sprintf("Core %02d was named: ", *c.core), fmt.Sprintf("; core %02d named.", *c.core)
 	}
 	if c.known {
 		text := c.knownWords() + "."
@@ -225,21 +232,21 @@ func (s Snapshot) huntCauseStory() (string, string, string) {
 	}
 	if c.trial.regime == "" {
 		// An idle failure between trials starts a hunt without a failed trial.
-		return "The machine crashed while idle, with no trial running, and rebooted.", named, "Crashed while idle; no core named."
+		return "The machine crashed while idle, with no trial running, and rebooted.", named, "Crashed while idle" + nameBrief
 	}
 	what := fmt.Sprintf("the %s %s trial on %s", lengthWords(c.trial.duration), kindWords(c.trial.regime), coreIDs(c.trial.cores))
 	if c.rerunOf {
 		what = "the rerun of " + what
 	}
 	if c.signal != machine.Crash {
-		return fmt.Sprintf("%s ended with %s.", capitalize(what), signalText(c.signal)), named, fmt.Sprintf("%s in %s; no core named.", capitalize(signalText(c.signal)), trialName(c.trial))
+		return fmt.Sprintf("%s ended with %s.", capitalize(what), signalText(c.signal)), named, fmt.Sprintf("%s in %s%s", capitalize(signalText(c.signal)), trialName(c.trial), nameBrief)
 	}
 	when := lateness(c.end)
 	brief := "Crashed"
 	if when != "during" {
 		brief += " " + strings.Fields(when)[0]
 	}
-	return fmt.Sprintf("The machine crashed %s %s and rebooted.", when, what), named, brief + " in " + trialName(c.trial) + "; no core named."
+	return fmt.Sprintf("The machine crashed %s %s and rebooted.", when, what), named, brief + " in " + trialName(c.trial) + nameBrief
 }
 
 func (s Snapshot) recoverStory() story {
@@ -488,6 +495,8 @@ func (s Snapshot) operation(t trialView) string {
 			verb = "CONFIRM"
 		}
 		text = fmt.Sprintf("%s CORE %02d AT %d", verb, t.core, t.offset) + loadWord(t.regime)
+	case t.zeroRerun():
+		text = "RERUN AT CO 0"
 	case t.rerun:
 		text = "RERUN AFTER BACKOFF"
 	case t.round > 0:
@@ -609,6 +618,8 @@ func (s Snapshot) nextTrialWords(n tuner.Trial, after *trialView, shape huntShap
 		if layout != "" {
 			text += " · " + layout
 		}
+	case n.Rerun && n.Condition == machine.Parked:
+		text = "rerun " + what + " with every core at 0 · " + shortDuration(time.Duration(n.DurationS)*time.Second)
 	case n.Rerun:
 		text = "rerun " + what + " · " + shortDuration(time.Duration(n.DurationS)*time.Second)
 	case n.Cycle > 0:
@@ -685,7 +696,7 @@ func sameTrial(n tuner.Trial, t *trialView) bool {
 	}
 	same := n.Regime == t.regime && n.Workload == t.workload.ID && time.Duration(n.DurationS)*time.Second == t.duration &&
 		n.Hunt == t.hunt && n.Group == t.group && n.Cycle == t.cycle && n.Step == t.step && n.Round == t.round &&
-		n.Rerun == t.rerun
+		n.Rerun == t.rerun && n.Condition == t.condition
 	if len(n.Cores) == 0 {
 		return same && t.condition == machine.Alone && n.Core == t.core && n.Offset == t.offset
 	}
@@ -1023,6 +1034,9 @@ func compactNext(next string) string {
 		}
 		return name
 	}
+	if strings.HasPrefix(text, "rerun ") && strings.Contains(text, " with every core at 0") {
+		return "rerun at CO 0"
+	}
 	if strings.HasPrefix(text, "rerun ") {
 		return "rerun"
 	}
@@ -1174,6 +1188,8 @@ func huntEndPhrase(d *journal.HuntEnd, named bool) (string, bool) {
 		return fmt.Sprintf("hunt %d keeps %s together", d.Hunt, coreIDs(d.Cores)), false
 	case d.Result == "cancelled":
 		return fmt.Sprintf("hunt %d cancelled", d.Hunt), false
+	case d.Result == "loaded":
+		return fmt.Sprintf("hunt %d keeps the failure on loaded %s", d.Hunt, coreIDs(d.Cores)), false
 	}
 	return fmt.Sprintf("hunt %d ends", d.Hunt), false
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,6 +176,26 @@ func TestHuntCommitmentRequiresRecordedCause(t *testing.T) {
 			events = append(events, journal.Event{Seq: 4, Boot: "a", Cause: []int{tc.cause}, Data: &journal.TunerDecision{Phase: journal.PhaseSearch, Decision: journal.Backoff, Core: 0, FromOffset: -10, ToOffset: -9}})
 			if diff := cmp.Diff(tc.want, project(facts.FromEvents(events)).hunts[0].commitment); diff != "" {
 				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+func TestHuntParkedOffsets(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		start *journal.HuntStart
+		want  string
+	}{
+		{"all-zero", &journal.HuntStart{Hunt: 1, Trial: "0001", Parked: []int{0, 0}}, "all-zero"},
+		{"passed full cycle", &journal.HuntStart{Hunt: 1, Trial: "0001", Parked: []int{-10, 0}, ParkedSeq: 7}, "#7"},
+		{"located", &journal.HuntStart{Hunt: 1, Trial: "0001", Regime: machine.R7, Cores: []int{0, 1}, Parked: []int{-30, -28, 0, 0}, Candidates: []int{2, 3}}, "loaded-held"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := project(facts.FromEvents([]journal.Event{{Seq: 1, Boot: "a", Data: tc.start}}))
+			got := renderTable(t, func(tab *table) { renderHunts(tab, computeHunts(p, time.Time{})) })
+			if fields := strings.Fields(strings.Split(string(got), "\n")[2]); len(fields) < 5 || fields[4] != tc.want {
+				t.Fatalf("parked offsets column, want %q:\n%s", tc.want, got)
 			}
 		})
 	}

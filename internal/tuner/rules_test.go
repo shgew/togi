@@ -275,6 +275,8 @@ func TestThermalDeadEndNeedsNoEvidence(t *testing.T) {
 	}
 }
 
+// TestDirectFailureAtZero dead-ends a failure at CO 0 at once when its profile was all at 0, and otherwise once its
+// rerun with every core at 0 failed too, citing both failures.
 func TestDirectFailureAtZero(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -319,8 +321,22 @@ func TestDirectFailureAtZero(t *testing.T) {
 				}
 			}
 			a := h.next()
+			cause := []int{failure.Seq}
+			if !allZero(tc.profile) {
+				want := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1}, DurationS: 120, Condition: machine.Parked, Phase: journal.PhaseChecking, Profile: []int{0, 0}, Rerun: true}
+				if tc.condition == machine.Parked {
+					want.Phase = journal.PhaseHunt
+				}
+				if diff := cmp.Diff(Action{Kind: RunTrial, Trial: want, Cause: []int{failure.Seq}}, a); diff != "" {
+					t.Fatalf("all-zero rerun (-want +got):\n%s", diff)
+				}
+				_, rerun := h.trial(a, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+				h.decide(h.next())
+				cause = append(cause, rerun.Seq)
+				a = h.next()
+			}
 			dead, ok := a.Payload.(*journal.DeadEnd)
-			if !ok || dead.Condition != journal.DeadEndFailureAtZero || cmp.Diff(tc.core, dead.Core) != "" || !slices.Equal(a.Cause, []int{failure.Seq}) {
+			if !ok || dead.Condition != journal.DeadEndFailureAtZero || cmp.Diff(tc.core, dead.Core) != "" || !slices.Equal(a.Cause, cause) {
 				t.Fatalf("failure-at-zero transition: %+v", a)
 			}
 			before := h.s.Profile()

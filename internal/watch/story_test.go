@@ -174,6 +174,24 @@ func TestCarriedIdleFailureCauseIsNotATrial(t *testing.T) {
 	}
 }
 
+func TestHuntCauseBriefAgreesWithNamedCore(t *testing.T) {
+	t.Parallel()
+	trial := trialView{regime: machine.R7, condition: machine.Together, cores: []int{0, 1}}
+	for _, c := range []huntCause{{trial: trial, signal: machine.Crash}, {trial: trial, signal: machine.ComputationError}, {signal: machine.Crash}} {
+		c.core = new(9)
+		s := Snapshot{hunt: &huntView{cause: c}}
+		_, named, brief := s.huntCauseStory()
+		if !strings.HasPrefix(named, "Core 09 was named") || !strings.HasSuffix(brief, "; core 09 named.") {
+			t.Errorf("full text %q but brief %q", named, brief)
+		}
+		c.core = nil
+		s.hunt.cause = c
+		if _, _, brief := s.huntCauseStory(); !strings.HasSuffix(brief, "; no core named.") {
+			t.Errorf("unnamed brief %q", brief)
+		}
+	}
+}
+
 func TestStoryPartialExplainsOrdinaryEvidence(t *testing.T) {
 	t.Parallel()
 	s := Snapshot{session: true, trial: &trialView{hasStarted: true, regime: machine.R7, condition: machine.Together, cycle: 1, step: 1, partial: true, cores: []int{1}, parts: 2}}

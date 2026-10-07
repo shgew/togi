@@ -30,6 +30,13 @@ func (s *State) openHunt(e journal.Event, p *journal.HuntStart) {
 	s.nextHunt = max(s.nextHunt, p.Hunt)
 	s.lastPlanSeq = e.Seq
 	s.projectionDirty = true
+	if s.hunt.located() {
+		if s.located == nil {
+			s.located = map[int]locatedHunt{}
+		}
+		s.located[p.Failure] = locatedHunt{hunt: p.Hunt}
+		return
+	}
 	if len(s.queue) > 0 && s.queue[0].seq == p.Failure {
 		s.queue = s.queue[1:]
 	}
@@ -55,6 +62,10 @@ func (s *State) endHunt(e journal.Event, p *journal.HuntEnd) {
 	h.end, h.endSeq = p, e.Seq
 	if p.Result == "direct" && len(e.Cause) > 0 {
 		h.directFailure = e.Cause[0]
+	}
+	if h.located() {
+		s.endLocatedHunt(h, e, p)
+		return
 	}
 	if p.Result == "cancelled" {
 		f := s.failureBySeq(h.start.Failure)
@@ -244,7 +255,7 @@ type groupPlan struct {
 	held                              []journal.CombinationMember
 	priority                          []int
 	singleCorePrior                   [2]int
-	result                            bool
+	result, loaded                    bool
 }
 
 func planOf(m *journal.HuntGroup) groupPlan {
@@ -252,8 +263,12 @@ func planOf(m *journal.HuntGroup) groupPlan {
 }
 
 func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
+	if p, has, decided := s.locatePlan(h); decided {
+		return p, has
+	}
+	groups := h.narrowing()
 	p := groupPlan{set: slices.Clone(h.start.Candidates), g: 2, stage: "part", duration: h.start.TrialS}
-	if len(h.groups) == 0 && h.start.Trial != "" && h.start.DurationS > h.start.TrialS {
+	if len(groups) == 0 && h.start.Trial != "" && h.start.DurationS > h.start.TrialS {
 		shortFailed := slices.ContainsFunc(s.failures, func(e entry) bool {
 			return (e.carried || e.seq > s.resetSeq) && e.seq < h.start.Failure && e.class.regime == h.class.regime && e.class.duration <= h.start.TrialS
 		})
@@ -269,16 +284,16 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 	if len(p.set) == 0 {
 		return p, false
 	}
-	split := slices.IndexFunc(h.groups, func(m groupRecord) bool { return m.payload.Probe != nil })
+	split := slices.IndexFunc(groups, func(m groupRecord) bool { return m.payload.Probe != nil })
 	if split < 0 {
-		split = len(h.groups)
+		split = len(groups)
 	}
 	if split == 0 {
 		if len(p.set) == 1 {
 			p.result = true
 			return p, false
 		}
-		if len(h.groups) == 0 {
+		if len(groups) == 0 {
 			if id, prior, ok := s.repeatedParkedCore(h, p.duration); ok {
 				p.g, p.cores, p.singleCorePrior = len(p.set), []int{id}, prior
 				return p, true
@@ -287,7 +302,7 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 		p.cores = s.split(h, p.set, p.g)[0]
 		return p, true
 	}
-	last := h.groups[split-1]
+	last := groups[split-1]
 	m := last.payload
 	p = groupPlan{set: slices.Clone(m.Set), g: m.Granularity, stage: m.Stage, index: m.Index, duration: m.DurationS, escalated: m.Escalated, fullChecked: m.FullChecked, anyFailed: m.AnyFailed}
 	outcome := s.groupOutcome(h, last)
@@ -314,7 +329,7 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 		}
 		p.fullChecked = true
 	}
-	if len(h.groups) == 1 && m.Stage == "part" && len(m.Cores) == 1 && m.Granularity > 2 && m.Granularity == len(h.start.Candidates) {
+	if len(groups) == 1 && m.Stage == "part" && len(m.Cores) == 1 && m.Granularity > 2 && m.Granularity == len(h.start.Candidates) {
 		p.g, p.index = 2, 0
 		p.cores = s.split(h, p.set, p.g)[0]
 		return p, true
@@ -322,20 +337,7 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 	if p.stage == "full" {
 		p.fullChecked = true
 		if outcome == "pass" {
-			p.escalated = true
-			p.duration = h.start.DurationS
-			p.set = slices.Clone(h.start.Candidates)
-			p.g = 2
-			p.stage = "part"
-			p.index = 0
-			p.fullChecked = false
-			p.anyFailed = false
-			if len(p.set) == 1 {
-				p.result = true
-				return p, false
-			}
-			p.cores = s.split(h, p.set, p.g)[0]
-			return p, true
+			return s.afterPassedFull(h, p)
 		}
 	}
 	if p.stage == "part" || p.stage == "complement" {
@@ -363,6 +365,41 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 		p.stage = "part"
 		p.index = 0
 		p.cores = s.split(h, p.set, p.g)[0]
+		return p, true
+	}
+	return h.lastGroupPlan(p)
+}
+
+// afterPassedFull plans the step after a passed full group: a located hunt's full group at the failed duration
+// ends it; any other escalates the narrowing to the failed duration.
+func (s *State) afterPassedFull(h *hunt, p groupPlan) (groupPlan, bool) {
+	if h.locatedFull(p) {
+		p.result = true
+		return p, false
+	}
+	p.escalated = true
+	p.duration = h.start.DurationS
+	p.set = slices.Clone(h.start.Candidates)
+	p.g = 2
+	p.stage = "part"
+	p.index = 0
+	p.fullChecked = false
+	p.anyFailed = false
+	if len(p.set) == 1 {
+		p.result = true
+		return p, false
+	}
+	p.cores = s.split(h, p.set, p.g)[0]
+	return p, true
+}
+
+// lastGroupPlan ends narrowing, unless a located hunt with no failed group still needs its full failing profile at
+// the failed duration.
+func (h *hunt) lastGroupPlan(p groupPlan) (groupPlan, bool) {
+	if h.located() && !p.anyFailed && !h.locatedFull(p) {
+		p.stage, p.index, p.duration = "full", 0, h.start.DurationS
+		p.escalated = p.escalated || h.start.DurationS > h.start.TrialS
+		p.cores = slices.Clone(p.set)
 		return p, true
 	}
 	p.result = true
@@ -416,13 +453,44 @@ func (s *State) groupOutcome(h *hunt, m groupRecord) string {
 	return outcome
 }
 
-func (s *State) citeGroupCarried(cause []int, h *hunt, m groupRecord) []int {
+// citeGroup adds what established a group's outcome: the failure that rejected it, live or carried, or, for a group
+// whose failure was inferred, the hunt.group recording that inference and citing its failure. Of passing evidence, only
+// carried passes are cited. A settled group is cited as it stood when the next group was recorded.
+func (s *State) citeGroup(cause []int, h *hunt, i int) []int {
+	m := h.groups[i]
 	cause = s.citeCarried(cause, m.cause...)
-	_, failure, seqs := s.groupEvidence(h, m, true)
-	if failure != 0 {
-		return s.citeCarried(cause, failure)
+	if m.payload.Inferred == "failure" {
+		return citeNew(cause, m.seq)
 	}
-	return s.citeCarried(cause, seqs...)
+	if h.settled(i) && !m.payload.Skipped && m.payload.Inferred == "" {
+		k := h.class.withDuration(m.payload.DurationS)
+		since, until := s.inferenceSince(m.payload, m.seq), h.groups[i+1].seq
+		if failure := s.failingSeqBefore(k, m.payload.Profile, since, until); failure != 0 {
+			return citeNew(cause, failure)
+		}
+		seqs := s.passSeqsBefore(k, m.payload.Profile, since, until, huntEvidence)
+		return s.citeCarried(cause, seqs[:min(len(seqs), h.start.Trials)]...)
+	}
+	_, failure, seqs := s.groupEvidence(h, m, true)
+	if failure == 0 {
+		return s.citeCarried(cause, seqs...)
+	}
+	if i+1 < len(h.groups) {
+		// A later group's failure at a shallower profile also rejects this one; cite the failure seen before the hunt moved on.
+		k := h.class.withDuration(m.payload.DurationS)
+		if before := s.failingSeqBefore(k, m.payload.Profile, s.inferenceSince(m.payload, m.seq), h.groups[i+1].seq); before != 0 {
+			failure = before
+		}
+	}
+	return citeNew(cause, failure)
+}
+
+// settled reports a group whose outcome no later decision reads again: a narrowing group the hunt followed with another.
+// The hunt's latest group, a located hunt's locate group, the narrowing group before the first member probe and every probe are
+// read again, so a failure recorded at their profile after the hunt moved on can decide them.
+func (h *hunt) settled(i int) bool {
+	m := h.groups[i].payload
+	return i+1 < len(h.groups) && m.Probe == nil && m.Stage != "locate" && h.groups[i+1].payload.Probe == nil
 }
 
 func (s *State) huntNext() (Action, bool) {
@@ -443,15 +511,30 @@ func (s *State) huntNext() (Action, bool) {
 			return Action{Kind: RunTrial, Trial: t, Cause: []int{m.seq}}, true
 		}
 	}
+	if a, ok := s.locatedLoadedFailure(h); ok {
+		return a, true
+	}
 	next, has := s.nextGroupPlan(h)
 	if has {
-		return s.planGroup(h, next, "testing the part of the failing profile"), true
+		reason := "testing the part of the failing profile"
+		switch {
+		case next.stage == "locate":
+			reason = "rerunning the failed load with every unloaded core at CO 0 to locate the failure"
+		case h.locatedFull(next):
+			reason = "rerunning the full failing profile at the failed duration before the failure stays with the loaded cores"
+		}
+		return s.planGroup(h, next, reason), true
 	}
 	result, reason := "combination", "parked trial outcomes identified the minimal failing set"
 	var members []journal.CombinationMember
+	cores := slices.Clone(next.set)
 	switch {
+	case next.loaded:
+		result, reason, cores = "loaded", "the failed load failed again with every unloaded core at CO 0, so the failure stays with the loaded cores", slices.Clone(h.start.Cores)
 	case len(next.set) == 1:
 		result = "culprit"
+	case !next.anyFailed && h.located() && slices.ContainsFunc(h.start.Cores, func(id int) bool { return !s.atCOZero(h.start.Failing, id) }):
+		result, reason, cores = "loaded", "the full failing profile passed while narrowing the unloaded cores, so the failure stays with the loaded cores", slices.Clone(h.start.Cores)
 	case !next.anyFailed:
 		result, reason = "fallback", "no tested group failed, so the remaining candidates stay unresolved and form a combination"
 	default:
@@ -462,11 +545,16 @@ func (s *State) huntNext() (Action, bool) {
 		members, reason = found, reason+clause
 	}
 	cause := []int{h.seq}
-	for _, m := range h.groups {
-		cause = s.citeGroupCarried(cause, h, m)
+	if result == "loaded" {
+		if failure := s.locateFailure(h); failure != 0 {
+			cause = append(cause, failure)
+		}
+	}
+	for i := range h.groups {
+		cause = s.citeGroup(cause, h, i)
 	}
 	reason += s.carriedReason(cause)
-	return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: result, Cores: slices.Clone(next.set), Members: members, Groups: len(h.groups), Reason: reason}, Cause: cause}, true
+	return Action{Kind: Decide, Payload: &journal.HuntEnd{Hunt: h.start.Hunt, Result: result, Cores: cores, Members: members, Groups: len(h.groups), Reason: reason}, Cause: cause}, true
 }
 
 func (s *State) planGroup(h *hunt, p groupPlan, reason string) Action {
@@ -481,7 +569,7 @@ func (s *State) planGroup(h *hunt, p groupPlan, reason string) Action {
 		cause = s.citeCarried(cause, seqs...)
 	} else if failure := s.failingSeq(k, payload.Profile, since); failure != 0 {
 		payload.Inferred, payload.Reason = "failure", "a known failure establishes the group"
-		cause = s.citeCarried(cause, failure)
+		cause = citeNew(cause, failure)
 	} else if reachedConstraint, ok := s.reaches(payload.Profile); ok {
 		payload.Skipped, payload.Reason = true, "its profile reaches "+reachedConstraint
 	}
@@ -493,8 +581,8 @@ func (s *State) planGroup(h *hunt, p groupPlan, reason string) Action {
 		payload.Reason += fmt.Sprintf("; two parked failures in this class followed one-count backoffs on core %02d, so probe that core first", p.cores[0])
 		cause = append(cause, p.singleCorePrior[:]...)
 	}
-	for _, m := range h.groups {
-		cause = s.citeGroupCarried(cause, h, m)
+	for i := range h.groups {
+		cause = s.citeGroup(cause, h, i)
 	}
 	payload.Reason += s.carriedReason(cause)
 	return Action{Kind: Decide, Payload: payload, Cause: cause}

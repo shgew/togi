@@ -267,6 +267,9 @@ func (s *State) attributedDecision(c *core, f *journal.Failure, seq int) (Action
 		return Action{}, false
 	}
 	if *f.Offset == 0 {
+		if failure := s.failureBySeq(seq); failure != nil {
+			return s.atZero(*failure, failedAtZero(c.id), []int{seq})
+		}
 		return Action{Kind: Decide, Payload: failedAtZero(c.id), Cause: []int{seq}}, true
 	}
 	if s.hunt != nil && f.Condition == machine.Parked && s.hunt.end == nil {
@@ -374,7 +377,7 @@ func (s *State) rerunTrial(k trialClass) Action {
 	} else if c := s.core(target.cores[0]); c != nil {
 		t.Core, t.Offset = c.id, c.offset
 	}
-	if s.retry != nil && s.retry.Rerun {
+	if s.retry != nil && s.retry.Rerun && s.retry.Condition != machine.Parked {
 		t = *s.retry
 	}
 	failure := s.obligations[0].seq

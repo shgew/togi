@@ -8,7 +8,7 @@ import (
 )
 
 func (s *State) skipKnownFailure(a Action) Action {
-	if a.Kind != RunTrial || a.Trial.Regime == machine.R7 && len(a.Trial.Cores) > 1 {
+	if a.Kind != RunTrial || a.Trial.Regime == machine.R7 && len(a.Trial.Cores) > 1 || a.Trial.Rerun && a.Trial.Condition == machine.Parked {
 		return a
 	}
 	t := a.Trial

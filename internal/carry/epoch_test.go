@@ -96,7 +96,7 @@ func TestPrepareEvidenceEpochTransition(t *testing.T) {
 				t.Fatal("epoch-only upgrade must prepare a transition")
 			}
 			if tc.deferred {
-				if err := c.ResolveFacts(&context); err != nil {
+				if err := c.ResolveFacts(&context, journal.ConfigBackends{}); err != nil {
 					t.Fatal(err)
 				}
 			}

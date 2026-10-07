@@ -33,6 +33,8 @@ type Class = journal.TrialClass
 // Fact.Seq and Time name the decisive end or idle failure. Build and Boot name
 // the trial intent (the idle failure itself for idle facts). DurationS is measured,
 // while Class.DurationS is intended. Rerun retains the recorded flag beside Phase.
+// Backend is the package store path a pass ran under; failures, which are not keyed
+// by backend, leave it empty.
 type Fact struct {
 	Kind             Kind
 	Session          string
@@ -57,6 +59,7 @@ type Fact struct {
 	TopRequesters    []int
 	CCDMHz           map[int]int
 	Idle             *IdleContext
+	Backend          string
 }
 
 type IdleContext struct {
@@ -72,12 +75,14 @@ type IdleContext struct {
 // Trial retains nondecisive trials too, for readers reporting interrupted work.
 // Intent.Profile is reconstructed for old journals and is in core-ID order.
 // Build and Boot belong to the intent, even when a later build closes the trial.
+// Backend is the package store path of its workload's backend, from the config.loaded before the intent.
 type Trial struct {
 	Intent       *journal.TrialIntent
 	Seq          int
 	Time         time.Time
 	Boot         string
 	Build        journal.Build
+	Backend      string
 	Cause        []int
 	End          *journal.TrialEnd
 	EndSeq       int
@@ -98,6 +103,7 @@ type Reset struct {
 
 // Session.Schema and Ruleset are its opening stamp. Builds lists distinct stamps
 // in first-seen order. A nil Context means no BIOS context was recorded.
+// Backends are the package store paths of its latest config.loaded.
 type Session struct {
 	ID       string
 	Path     string
@@ -106,6 +112,7 @@ type Session struct {
 	Schema   int
 	Ruleset  int
 	Epoch    int
+	Backends journal.ConfigBackends
 	Builds   []journal.Build
 	Resets   []Reset
 	Facts    []Fact
@@ -210,6 +217,7 @@ func FromEvents(events []journal.Event) Session {
 			context := p.BIOSContext
 			s.Context = &context
 		case *journal.ConfigLoaded:
+			s.Backends = p.Config.Backends
 			if p.Version == "" {
 				continue
 			}
@@ -228,7 +236,7 @@ func FromEvents(events []journal.Event) Session {
 		case *journal.TrialIntent:
 			intent := *p
 			intent.Profile = trialProfile(p, ids, applied)
-			t := &Trial{Intent: &intent, Seq: e.Seq, Time: e.Time, Boot: e.Boot, Build: build, Cause: e.Cause, LastEvidence: e.Time}
+			t := &Trial{Intent: &intent, Seq: e.Seq, Time: e.Time, Boot: e.Boot, Build: build, Backend: s.Backends.WorkloadPath(p.Workload), Cause: e.Cause, LastEvidence: e.Time}
 			s.Trials = append(s.Trials, t)
 			byID[p.Trial], bySeq[e.Seq] = t, t
 		case *journal.TrialStart:
@@ -252,7 +260,13 @@ func FromEvents(events []journal.Event) Session {
 		case *journal.Failure:
 			s.recordIdleFailure(e, p, build, ids)
 		case *journal.TrialCarried:
-			s.Carried = append(s.Carried, carriedTrial(p))
+			f := carriedTrial(p)
+			if f.Outcome == journal.OutcomePass {
+				// A carry copies only passes run under the store path its session records; copies made before ruleset 10
+				// were not filtered, so carry prefers the original session's stamp when that archive survives.
+				f.Backend = s.Backends.WorkloadPath(p.Class.Workload)
+			}
+			s.Carried = append(s.Carried, f)
 		case *journal.FailureCarried:
 			s.Carried = append(s.Carried, carriedFailure(p))
 		case *journal.CommandReset:
@@ -273,7 +287,11 @@ func (s *Session) recordTrialEnd(e journal.Event, end *journal.TrialEnd, t *Tria
 		return
 	}
 	in := t.Intent
-	s.Facts = append(s.Facts, Fact{Kind: TrialFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: t.Build, Epoch: s.Epoch, Trial: end.Trial, Boot: t.Boot, Class: ClassOf(in), Condition: in.Condition, Phase: in.Phase, Rerun: in.Rerun, RecordOnly: in.RecordOnly, Profile: slices.Clone(in.Profile), Outcome: end.Outcome, Signal: end.Signal, DurationS: end.DurationS, Core: end.Core, StalledCore: end.StalledCore, VoltageRequestsV: maps.Clone(end.VoltageRequestsV), TopRequesters: slices.Clone(end.TopRequesters), CCDMHz: maps.Clone(end.CCDMHz)})
+	f := Fact{Kind: TrialFact, Session: s.ID, Seq: e.Seq, Time: e.Time, Build: t.Build, Epoch: s.Epoch, Trial: end.Trial, Boot: t.Boot, Class: ClassOf(in), Condition: in.Condition, Phase: in.Phase, Rerun: in.Rerun, RecordOnly: in.RecordOnly, Profile: slices.Clone(in.Profile), Outcome: end.Outcome, Signal: end.Signal, DurationS: end.DurationS, Core: end.Core, StalledCore: end.StalledCore, VoltageRequestsV: maps.Clone(end.VoltageRequestsV), TopRequesters: slices.Clone(end.TopRequesters), CCDMHz: maps.Clone(end.CCDMHz)}
+	if end.Outcome == journal.OutcomePass {
+		f.Backend = t.Backend
+	}
+	s.Facts = append(s.Facts, f)
 }
 
 func (s *Session) recordIdleFailure(e journal.Event, p *journal.Failure, build journal.Build, ids []int) {

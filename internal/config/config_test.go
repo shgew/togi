@@ -139,7 +139,7 @@ func TestEvidenceTrials(t *testing.T) {
 
 func TestDefaultCycle(t *testing.T) {
 	t.Parallel()
-	want := []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R4, machine.R6}
+	want := []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R2, machine.R2, machine.R2, machine.R6, machine.R5, machine.R1, machine.R1, machine.R1, machine.R3, machine.R3, machine.R3, machine.R4, machine.R4, machine.R4, machine.R6}
 	if diff := cmp.Diff(want, Default().Checking.Cycle); diff != "" {
 		t.Fatalf("default cycle mismatch (-want +got):\n%s", diff)
 	}

@@ -21,7 +21,7 @@ type Carry struct {
 	Sources []journal.CarriedSource
 	Context *machine.BIOSContext  // the BIOS context Sources[0] recorded; nil if it recorded none
 	Cores   []journal.CarriedCore // ascending core; each has a CandidateSoloLimit, a FailurePoint, or both
-	Facts   []facts.Fact
+	Facts   []facts.Fact          // final only after ResolveFacts, which drops passes of other backend store paths
 
 	factDir     string
 	factEntries []defect.Entry
@@ -117,20 +117,24 @@ func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, c
 	return c, nil
 }
 
-// ResolveFacts completes deferred eligibility after the session validates its actual BIOS context.
-func (c *Carry) ResolveFacts(current *machine.BIOSContext) error {
+// ResolveFacts completes deferred eligibility after the session validates its actual BIOS context, then keeps a pass
+// only when it ran under the package store path backends, the session's recorded configuration, names for its backend.
+// Failures stay whichever binary ran them.
+func (c *Carry) ResolveFacts(current *machine.BIOSContext, backends journal.ConfigBackends) error {
 	if current == nil {
 		return errors.New("carry: cannot prepare facts without the current BIOS context")
 	}
-	if c.factDir == "" {
-		return nil
+	if c.factDir != "" {
+		fs, err := prepareFacts(c.factDir, c.Sources[0].Session, c.factEntries, current, c.factEpoch)
+		if err != nil {
+			return err
+		}
+		c.Facts = fs
+		c.factDir, c.factEntries = "", nil
 	}
-	fs, err := prepareFacts(c.factDir, c.Sources[0].Session, c.factEntries, current, c.factEpoch)
-	if err != nil {
-		return err
-	}
-	c.Facts = fs
-	c.factDir, c.factEntries = "", nil
+	c.Facts = slices.DeleteFunc(c.Facts, func(f facts.Fact) bool {
+		return f.Outcome == journal.OutcomePass && f.Backend != backends.WorkloadPath(f.Class.Workload)
+	})
 	return nil
 }
 
@@ -226,25 +230,22 @@ func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
 	}
 	c := &Carry{Context: first.context}
 	cores := make(map[int]*journal.CarriedCore)
+	zeros := zeroConfirmations{dir: dir, bySession: make(map[string]map[int]bool)}
+	for _, s := range sources {
+		zeros.bySession[s.Session] = confirmedZeros(s.events)
+	}
 	for _, s := range sources {
 		c.Sources = append(c.Sources, s.CarriedSource)
 		for _, v := range s.candidates(entries) {
 			if boundary != "" && journal.CompareSessionIDs(v.session, boundary) <= 0 {
 				continue
 			}
-			cc, ok := cores[v.core]
-			if !ok {
-				cc = &journal.CarriedCore{Core: v.core}
-				cores[v.core] = cc
+			admitted, err := zeros.admits(v)
+			if err != nil {
+				return nil, err
 			}
-			if v.candidateSoloLimit {
-				if cc.CandidateSoloLimit == nil || v.offset < *cc.CandidateSoloLimit {
-					cc.CandidateSoloLimit, cc.CandidateSoloLimitSession, cc.CandidateSoloLimitSeq = new(v.offset), v.session, v.seq
-				}
-				continue
-			}
-			if cc.FailurePoint == nil || v.offset > *cc.FailurePoint {
-				cc.FailurePoint, cc.FailurePointSession, cc.FailurePointSeq, cc.FailurePointSignal = new(v.offset), v.session, v.seq, v.signal
+			if admitted {
+				merge(cores, v)
 			}
 		}
 	}
@@ -252,6 +253,114 @@ func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
 		c.Cores = append(c.Cores, *cores[core])
 	}
 	return c, nil
+}
+
+// merge keeps the deepest candidate solo limit and the shallowest failure point per core; on a tie, the first found.
+func merge(cores map[int]*journal.CarriedCore, v candidate) {
+	cc, ok := cores[v.core]
+	if !ok {
+		cc = &journal.CarriedCore{Core: v.core}
+		cores[v.core] = cc
+	}
+	if v.candidateSoloLimit {
+		if cc.CandidateSoloLimit == nil || v.offset < *cc.CandidateSoloLimit {
+			cc.CandidateSoloLimit, cc.CandidateSoloLimitSession, cc.CandidateSoloLimitSeq = new(v.offset), v.session, v.seq
+		}
+		return
+	}
+	if cc.FailurePoint == nil || v.offset > *cc.FailurePoint {
+		cc.FailurePoint, cc.FailurePointSession, cc.FailurePointSeq, cc.FailurePointSignal = new(v.offset), v.session, v.seq, v.signal
+	}
+}
+
+// zeroConfirmations caches, per original session, which of its failures at CO 0 it confirmed.
+type zeroConfirmations struct {
+	dir       string
+	bySession map[string]map[int]bool
+}
+
+// admits reports whether a candidate carries: every one but a failure point at CO 0 its session did not confirm.
+func (z zeroConfirmations) admits(v candidate) (bool, error) {
+	if v.candidateSoloLimit || v.offset != 0 {
+		return true, nil
+	}
+	return z.confirmed(v.session, v.seq)
+}
+
+// confirmed reports whether the failure at CO 0 recorded at seq in session was confirmed there. A session whose archive
+// is gone confirms nothing.
+func (z zeroConfirmations) confirmed(session string, seq int) (bool, error) {
+	seqs, ok := z.bySession[session]
+	if !ok {
+		events, err := journal.ReadForCarry(filepath.Join(z.dir, "archive", session+".jsonl"))
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+		case err != nil:
+			return false, fmt.Errorf("carry: read archived session %s: %w", session, err)
+		default:
+			seqs = confirmedZeros(events)
+		}
+		z.bySession[session] = seqs
+	}
+	return seqs[seq], nil
+}
+
+// confirmedZeros lists the failures at CO 0 a session confirmed, by the sequence a failure point cites: an attributed
+// failure or a single-core hunt culprit whose failing profile was all at CO 0 (as a trial alone at 0 is), or whose
+// all-zero rerun failed.
+func confirmedZeros(events []journal.Event) map[int]bool {
+	intents := make(map[string]*journal.TrialIntent)
+	for _, t := range facts.FromEvents(events).Trials {
+		intents[t.Intent.Trial] = t.Intent
+	}
+	reruns := make(map[string]int)
+	rerunFailed := make(map[int]bool)
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.TrialIntent:
+			if in := intents[p.Trial]; p.Condition == machine.Parked && p.Rerun && p.Hunt == 0 && len(e.Cause) > 0 && in != nil && allZero(in.Profile) {
+				reruns[p.Trial] = e.Cause[0]
+			}
+		case *journal.TrialEnd:
+			if failure, ok := reruns[p.Trial]; ok && p.Outcome == journal.OutcomeFailure {
+				rerunFailed[failure] = true
+			}
+		}
+	}
+	var ids []int
+	hunts := make(map[int]*journal.HuntStart)
+	confirmed := make(map[int]bool)
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.SessionStart:
+			ids = ids[:0]
+			for _, c := range p.Cores {
+				ids = append(ids, c.Core)
+			}
+		case *journal.Failure:
+			if p.Offset == nil || *p.Offset != 0 {
+				continue
+			}
+			in := intents[p.Trial]
+			profile := p.Profile
+			if len(profile) != len(ids) && in != nil {
+				profile = in.Profile
+			}
+			alone := p.Condition == machine.Alone || in != nil && in.Condition == machine.Alone
+			confirmed[e.Seq] = rerunFailed[e.Seq] || alone || allZero(profile)
+		case *journal.HuntStart:
+			hunts[p.Hunt] = p
+		case *journal.HuntEnd:
+			if start := hunts[p.Hunt]; start != nil && p.Result == "culprit" && len(p.Cores) == 1 {
+				confirmed[e.Seq] = rerunFailed[start.Failure] || allZero(start.Failing)
+			}
+		}
+	}
+	return confirmed
+}
+
+func allZero(profile []int) bool {
+	return len(profile) > 0 && !slices.ContainsFunc(profile, func(o int) bool { return o != 0 })
 }
 
 // olderArchives lists the archived sessions older than id, newest first.

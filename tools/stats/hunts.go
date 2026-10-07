@@ -48,8 +48,12 @@ func renderHunts(tab *table, hunts []huntMetrics) {
 	tab.section("Hunts", "hunt\tstart\thours\tfailing trial\tparked offsets\tcandidates\tplanned/run/inferred/skipped\ttrials\tcrashes\tresult\tmembers/culprit\tcommitment")
 	for _, h := range hunts {
 		parked := "all-zero"
-		if h.start.ParkedSeq != 0 {
+		switch {
+		case h.start.ParkedSeq != 0:
 			parked = fmt.Sprintf("#%d", h.start.ParkedSeq)
+		case slices.ContainsFunc(h.start.Parked, func(offset int) bool { return offset != 0 }):
+			// A located hunt holds its loaded cores at their failing offsets and parks the rest at 0.
+			parked = "loaded-held"
 		}
 		result, members := "open", "-"
 		if h.result != nil {

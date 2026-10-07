@@ -547,7 +547,7 @@ func (s Snapshot) huntGroupLines(t tables, width int) []string {
 		if g.probe != nil {
 			continue
 		}
-		if n := len(runs); n > 0 && runs[n-1].last.outcome == g.outcome && runs[n-1].last.inferred == g.inferred && g.outcome != "running" && g.outcome != "failure" {
+		if n := len(runs); n > 0 && g.stage != "locate" && runs[n-1].last.stage != "locate" && runs[n-1].last.outcome == g.outcome && runs[n-1].last.inferred == g.inferred && g.outcome != "running" && g.outcome != "failure" {
 			r := &runs[n-1]
 			r.last = g
 			r.passes += g.passes
@@ -573,6 +573,9 @@ func (s Snapshot) huntGroupLines(t tables, width int) []string {
 		what := coreIDs(r.first.cores) + " at failing offsets"
 		if rest := without(h.candidates, r.first.cores); len(rest) > 0 && ansi.StringWidth(what+", "+coreIDs(rest)+" parked") <= t.groups[1].w {
 			what += ", " + coreIDs(rest) + " parked"
+		}
+		if r.first.stage == "locate" {
+			what = "locate: " + coreIDs(h.candidates) + " at 0"
 		}
 		if r.first.id != r.last.id {
 			which = fmt.Sprintf("groups %d-%d", r.first.id, r.last.id)
@@ -874,6 +877,8 @@ func (s Snapshot) huntStage(short bool) string {
 		return fmt.Sprintf("member probes · member %d of %d", at, len(h.probes))
 	case len(h.groups) == 0:
 		return "starting"
+	case h.locating():
+		return "locate"
 	case len(h.plan) > 0:
 		// The part in flight, else one started but still short of its passes, else the next unstarted one.
 		at := 1 + slices.IndexFunc(h.plan, func(p huntPart) bool { return p.running })

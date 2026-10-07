@@ -289,8 +289,13 @@ func TestCyclePlanRunsNoPartDuringARerun(t *testing.T) {
 	p := h.start(a).Data.(*journal.TrialIntent)
 	h.add(&journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, DurationS: 10})
 	a = h.next()
-	for a.Kind == Decide {
-		h.decide(a)
+	for a.Kind == Decide || a.Trial.Hunt > 0 {
+		if a.Kind == RunTrial {
+			// The located hunt's locate fails too, so the failure stays with the loaded CCD.
+			h.trial(a, failed)
+		} else {
+			h.decide(a)
+		}
 		a = h.next()
 	}
 	if a.Kind != RunTrial || !a.Trial.Rerun || !slices.Equal(a.Trial.Cores, p.Cores) || a.Trial.DurationS != p.DurationS {

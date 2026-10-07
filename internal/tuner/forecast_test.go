@@ -30,14 +30,18 @@ func TestForecastFormerRecordOnlyPartialRequiresBackoff(t *testing.T) {
 	named, unnamed, all := false, false, false
 	for _, b := range f.Branches {
 		switch b.Premise {
-		case IfNamed, IfUnnamed:
-			named = named || b.Premise == IfNamed
-			unnamed = unnamed || b.Premise == IfUnnamed
+		case IfNamed:
+			named = true
 			if !slices.ContainsFunc(b.Decisions, func(d journal.Payload) bool {
 				p, ok := d.(*journal.TunerDecision)
 				return ok && p.Decision == journal.Backoff
 			}) || b.Next == nil || !b.Next.Rerun {
 				t.Fatalf("former record-only partial did not require an ordinary backoff/rerun: %+v", b)
+			}
+		case IfUnnamed:
+			unnamed = true
+			if !slices.ContainsFunc(b.Decisions, func(d journal.Payload) bool { _, ok := d.(*journal.HuntStart); return ok }) || b.Next == nil || b.Next.Condition != machine.Parked {
+				t.Fatalf("an unnamed partial failure with idle cores off CO 0 did not start its located hunt: %+v", b)
 			}
 		case IfPass:
 			if len(b.Decisions) != 0 || b.Next == nil {
@@ -170,7 +174,7 @@ func TestForecastInconclusiveRetainsTrial(t *testing.T) {
 }
 
 func TestForecastReusesRecordedRanking(t *testing.T) {
-	h := hasRoomHarness(t, -20, -20, -20, -20)
+	h := hasRoomHarness(t, -20, -20, 0, 0)
 	h.add(&journal.HostRanking{Ranking: []int{1, 0, 2, 3}})
 	h.start(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Phase: journal.PhaseChecking, Condition: machine.Together}})
 	for _, b := range Forecast(h.events).Branches {
@@ -298,13 +302,17 @@ func TestForecastNamesCoreAtZeroSeparately(t *testing.T) {
 	if len(named) != 2 || named[0].Core == nil || *named[0].Core != 0 || named[1].Core == nil || *named[1].Core != 1 {
 		t.Fatalf("named branches %+v, want core 00 standing in, then core 01 at 0", named)
 	}
-	if forecastDeadEnd(named[0]) || !forecastDeadEnd(named[1]) || named[1].Next != nil {
-		t.Fatalf("outside multi-core R7, a named failure at 0 must end tuning: %+v", named)
+	if forecastDeadEnd(named[0]) || forecastDeadEnd(named[1]) || !forecastZeroRerun(named[1]) {
+		t.Fatalf("outside multi-core R7, a named failure at 0 must rerun with every core at 0 before ending tuning: %+v", named)
 	}
 }
 
 func forecastDeadEnd(b ForecastBranch) bool {
 	return slices.ContainsFunc(b.Decisions, func(d journal.Payload) bool { _, ok := d.(*journal.DeadEnd); return ok })
+}
+
+func forecastZeroRerun(b ForecastBranch) bool {
+	return b.Next != nil && b.Next.Rerun && b.Next.Condition == machine.Parked && allZero(b.Next.Profile)
 }
 
 func TestForecastR7PremisesFoldDistinctOutcomesWithoutInventedTelemetry(t *testing.T) {
@@ -327,8 +335,8 @@ func TestForecastR7PremisesFoldDistinctOutcomesWithoutInventedTelemetry(t *testi
 		{IfAllPass, -1, -1, 0, false},
 		{IfNamed, 0, 0, -29, false},
 		{IfNamed, 2, 1, -16, false},
-		{IfNamed, 3, -1, 0, true},
-		{IfUnnamed, -1, 1, -16, false},
+		{IfNamed, 3, -1, 0, false},
+		{IfUnnamed, -1, -1, 0, false},
 		{IfInconclusive, -1, -1, 0, false},
 	}
 	var got []outcome
@@ -353,8 +361,13 @@ func TestForecastR7PremisesFoldDistinctOutcomesWithoutInventedTelemetry(t *testi
 					o.moved, o.to = d.Core, d.ToOffset
 				}
 			case *journal.HuntStart, *journal.HuntGroup, *journal.Combination:
-				t.Fatalf("multi-core R7 forecast entered a hunt: %+v", b)
+				if b.Premise != IfUnnamed {
+					t.Fatalf("a named multi-core R7 forecast entered a hunt: %+v", b)
+				}
 			}
+		}
+		if b.Premise == IfUnnamed && (b.Next == nil || b.Next.Condition != machine.Parked || b.Next.Hunt == 0 || !slices.Equal(b.Next.Profile, []int{-30, -30, 0, 0, 0, 0, 0, 0})) {
+			t.Fatalf("an unnamed failure did not locate with CCD 1 at CO 0: %+v", b)
 		}
 		got = append(got, o)
 		if o.dead {
@@ -427,7 +440,7 @@ func TestForecastR7PremisesFoldDistinctOutcomesWithoutInventedTelemetry(t *testi
 }
 
 func TestForecastR7UnnamedUsesOffsetFallbackWithoutRequests(t *testing.T) {
-	h := hasRoomHarness(t, 0, -30, -30, -30)
+	h := hasRoomHarness(t, 0, -30, 0, 0)
 	h.add(&journal.HostRanking{Ranking: h.s.ids()})
 	h.start(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: []int{0, 1}, DurationS: 120, Phase: journal.PhaseChecking, Condition: machine.Together}})
 	for _, b := range Forecast(h.events).Branches {
@@ -460,17 +473,17 @@ func TestForecastR7NamesACoreAtZeroOnEachCCD(t *testing.T) {
 	r7Fact(h, true, all, h.s.Profile(), map[int]float64{0: 1.2, 1: 1.1, 2: 1.1, 3: 1.2}, nil, nil, nil, nil)
 	h.start(Action{Kind: RunTrial, Trial: Trial{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: all, DurationS: 120, Phase: journal.PhaseChecking, Condition: machine.Together}})
 	type named struct {
-		core        int
-		atZero, top bool
-		dead        bool
-		moved       int
+		core           int
+		atZero, top    bool
+		dead, zeroRuns bool
+		moved          int
 	}
 	var got []named
 	for _, b := range Forecast(h.events).Branches {
 		if b.Premise != IfNamed {
 			continue
 		}
-		n := named{core: *b.Core, atZero: b.AtZero, top: b.TopRequester, dead: forecastDeadEnd(b), moved: -1}
+		n := named{core: *b.Core, atZero: b.AtZero, top: b.TopRequester, dead: forecastDeadEnd(b), zeroRuns: forecastZeroRerun(b), moved: -1}
 		for _, d := range b.Decisions {
 			if move, ok := d.(*journal.TunerDecision); ok && move.Decision == journal.Backoff {
 				n.moved = move.Core
@@ -479,11 +492,12 @@ func TestForecastR7NamesACoreAtZeroOnEachCCD(t *testing.T) {
 		got = append(got, n)
 	}
 	// Core 01 at 0 routes to CCD 0, whose cores are all at 0; core 02 at 0 routes to CCD 1, whose top requester moves.
+	// Neither CCD 0 failure ends tuning before its rerun with every core at 0.
 	want := []named{
 		{core: 3, top: true, moved: 3},
-		{core: 1, atZero: true, dead: true, moved: -1},
+		{core: 1, atZero: true, zeroRuns: true, moved: -1},
 		{core: 2, atZero: true, moved: 3},
-		{core: 0, atZero: true, top: true, dead: true, moved: -1},
+		{core: 0, atZero: true, top: true, zeroRuns: true, moved: -1},
 	}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(named{})); diff != "" {
 		t.Fatalf("named branches (-want +got):\n%s", diff)

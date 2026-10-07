@@ -2,7 +2,6 @@ package tuner
 
 import (
 	"github.com/shgew/togi/internal/journal"
-	"github.com/shgew/togi/internal/machine"
 	"slices"
 )
 
@@ -26,14 +25,7 @@ func (s *State) inferredEvidence(h *hunt, g groupRecord) ([]int, int) {
 		return seqs[:min(len(seqs), h.start.Trials)], 0
 	}
 	// The failure answering the group was recorded before it; later hunt failures must not rewrite its source.
-	before := func(entries []entry) []entry {
-		return slices.DeleteFunc(slices.Clone(entries), func(e entry) bool { return e.seq > g.seq })
-	}
-	last := admittedFailure(before(s.ledger[k]), g.payload.Profile, since, 0)
-	if k.regime == machine.R6 && len(s.idle) > 0 && k.cores == coresKey(s.ids()) {
-		last = admittedFailure(before(s.idle), g.payload.Profile, since, last)
-	}
-	return nil, last
+	return nil, s.failureBefore(k, g.payload.Profile, since, g.seq+1)
 }
 
 // HuntPlan projects the active split and member ladder from the hunt scheduler.
@@ -86,11 +78,13 @@ func (s *State) huntPart(h *hunt, plan groupPlan, cores []int) HuntPart {
 
 func (s *State) huntParts(h *hunt, plan groupPlan, groups []HuntGroup) []HuntPart {
 	var out []HuntPart
-	if plan.singleCorePrior[0] > 0 || len(h.groups) == 1 && plan.stage == "part" && plan.g > 2 && plan.g == len(plan.set) {
+	narrowing := h.narrowing()
+	if plan.singleCorePrior[0] > 0 || len(narrowing) == 1 && plan.stage == "part" && plan.g > 2 && plan.g == len(plan.set) {
 		// A corroborated core runs alone before any halves; if it passes, the split starts over from the halves.
 		part := s.huntPart(h, plan, plan.cores)
-		if len(h.groups) == 1 {
-			part.Group, part.Outcome, part.Running = h.groups[0].payload.Group, groups[0].Outcome, groups[0].Running
+		if len(narrowing) == 1 {
+			last := len(groups) - 1
+			part.Group, part.Outcome, part.Running = narrowing[0].payload.Group, groups[last].Outcome, groups[last].Running
 		}
 		return append(out, part)
 	}
