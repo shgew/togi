@@ -249,9 +249,12 @@ func TestHuntEndCitesALiveFailureInferredGroup(t *testing.T) {
 // failures: its hunt.end reaches the carried failure the hunt started from but none of the live failures that decided
 // the joint and core 01's edge. Replaying it reaches the same hunt.end, now citing them.
 func TestHuntLiveFailureCausesFixtureReplay(t *testing.T) {
-	events, err := journal.ReadHistory(filepath.Join("testdata", "hunt-live-failure-causes.jsonl"))
+	events, torn, err := journal.ReadFile(filepath.Join("testdata", "hunt-live-failure-causes.jsonl"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(torn) > 0 {
+		t.Fatalf("fixture has a torn tail: %q", torn)
 	}
 	at := slices.IndexFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindHuntEnd })
 	if at < 0 {
