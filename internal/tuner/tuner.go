@@ -100,8 +100,8 @@ type core struct {
 	workloadIndex  map[machine.Regime]int
 }
 
-// stepPass is a search step pass and the backend store path it ran under; the core's stepR1 and stepSeqs describe
-// those whose path is still current.
+// stepPass is a search step pass and the backend store path it ran under; currentStep derives the core's stepR1 and
+// stepSeqs from those whose path is still current.
 type stepPass struct {
 	seq     int
 	r1      bool
@@ -268,7 +268,9 @@ func (s *State) Fold(e journal.Event) {
 		s.durations = p.Config.Durations
 		s.evidence = p.Config.Evidence
 		s.backends = p.Config.Backends
-		s.currentSteps()
+		for _, c := range s.cores {
+			s.currentStep(c)
+		}
 		s.n = int(math.Ceil(math.Log(s.evidence.Miss) / math.Log1p(-s.evidence.Rate)))
 		s.pendingRerun()
 		s.projectionDirty = true
@@ -505,12 +507,9 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 	switch p.Outcome {
 	case journal.OutcomePass:
 		if c.phase == journal.PhaseSearch && *intent.Offset == c.offset && intent.Phase == journal.PhaseSearch && !c.check {
-			if intent.Regime == machine.R1 {
-				c.stepR1 = true
-			}
 			w, _ := machine.WorkloadByID(intent.Workload)
-			c.stepSeqs = append(c.stepSeqs, e.Seq)
 			c.stepPasses = append(c.stepPasses, stepPass{e.Seq, intent.Regime == machine.R1, w.Backend, s.backends.Path(w.Backend)})
+			s.currentStep(c)
 		}
 	case journal.OutcomeInconclusive:
 		t := trialFromIntent(intent)

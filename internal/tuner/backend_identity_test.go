@@ -141,11 +141,14 @@ func TestBackendUpdateRestartsUnfinishedSearchStep(t *testing.T) {
 		name    string
 		reload  [][2]string
 		rerunR1 bool
+		// rollback is recorded after the replacement R1 pass.
+		rollback [][2]string
 	}{
 		{name: "same backends keep the R1 pass", reload: [][2]string{{mprimeOld, ycruncherOld}}},
 		{name: "other backend updated keeps the R1 pass", reload: [][2]string{{mprimeOld, ycruncherNew}}},
 		{name: "own backend updated reruns R1", reload: [][2]string{{mprimeNew, ycruncherOld}}, rerunR1: true},
 		{name: "own backend rolled back restores the R1 pass", reload: [][2]string{{mprimeNew, ycruncherOld}, {mprimeOld, ycruncherOld}}},
+		{name: "rollback after the replacement R1 still needs R2", reload: [][2]string{{mprimeNew, ycruncherOld}}, rerunR1: true, rollback: [][2]string{{mprimeOld, ycruncherOld}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, searchAt(-10)...)
@@ -161,22 +164,36 @@ func TestBackendUpdateRestartsUnfinishedSearchStep(t *testing.T) {
 			for _, paths := range tc.reload {
 				loadBackends(h, paths[0], paths[1])
 			}
-			replayed := New()
-			for _, e := range h.events {
-				replayed.Fold(e)
+			assertNextReplays := func() Action {
+				t.Helper()
+				replayed := New()
+				for _, e := range h.events {
+					replayed.Fold(e)
+				}
+				a := h.next()
+				if diff := cmp.Diff(a, replayed.Next()); diff != "" {
+					t.Fatalf("replayed next action (-live +replayed):\n%s", diff)
+				}
+				return a
 			}
-			a = h.next()
-			if diff := cmp.Diff(a, replayed.Next()); diff != "" {
-				t.Fatalf("replayed next action (-live +replayed):\n%s", diff)
-			}
+			a = assertNextReplays()
 			want := []int{r1.Seq}
 			if tc.rerunR1 {
 				if a.Kind != RunTrial || a.Trial.Regime != machine.R1 {
 					t.Fatalf("step after the mprime update continues with %+v, want R1 again", a)
 				}
-				_, again := h.trial(a, passed)
-				want = []int{again.Seq}
-				a = h.next()
+				again, rerun := h.trial(a, passed)
+				want = []int{rerun.Seq}
+				if len(tc.rollback) > 0 {
+					if w, _ := machine.WorkloadByID(again.Data.(*journal.TrialIntent).Workload); w.Backend != machine.Ycruncher {
+						t.Fatalf("replacement search R1 workload %s no longer runs y-cruncher", w.ID)
+					}
+					for _, paths := range tc.rollback {
+						loadBackends(h, paths[0], paths[1])
+					}
+					want = []int{r1.Seq}
+				}
+				a = assertNextReplays()
 			}
 			if a.Kind != RunTrial || a.Trial.Regime != machine.R2 {
 				t.Fatalf("step continues with %+v, want R2", a)

@@ -75,16 +75,24 @@ func attributeAlone(intent *journal.TrialIntent, signal machine.Signal) *journal
 	return &journal.Failure{Signal: signal, Attribution: journal.Attributed, Core: intent.Core, Offset: intent.Offset, Trial: intent.Trial, Profile: slices.Clone(intent.Profile)}
 }
 
-// currentSteps re-derives each step's usable passes from those that ran under their backend's current store path:
-// a changed backend earns its step passes again, and recording the earlier path again restores them.
-func (s *State) currentSteps() {
-	for _, c := range s.cores {
-		c.stepR1, c.stepSeqs = false, c.stepSeqs[:0]
-		for _, p := range c.stepPasses {
-			if p.path == s.backends.Path(p.backend) {
-				c.stepSeqs = append(c.stepSeqs, p.seq)
-				c.stepR1 = c.stepR1 || p.r1
-			}
+// currentStep re-derives c's step from its passes that ran under their backend's current store path: the first such
+// R1 pass, then the first such R2 pass. A changed backend earns its step passes again, recording the earlier path
+// again restores them, and two restored R1 passes never stand in for R2.
+func (s *State) currentStep(c *core) {
+	r1, r2 := 0, 0
+	for _, p := range c.stepPasses {
+		switch {
+		case p.path != s.backends.Path(p.backend):
+		case p.r1 && r1 == 0:
+			r1 = p.seq
+		case !p.r1 && r2 == 0:
+			r2 = p.seq
+		}
+	}
+	c.stepR1, c.stepSeqs = r1 != 0, c.stepSeqs[:0]
+	for _, seq := range []int{r1, r2} {
+		if seq != 0 {
+			c.stepSeqs = append(c.stepSeqs, seq)
 		}
 	}
 }
