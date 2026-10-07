@@ -1,4 +1,4 @@
-// Command board prints the coordination board of the current repository: who may post on it, what waits on the owner, untriaged issues, work in progress, ready work and overlaps between them, and the open Ruleset issue.
+// Command board prints the coordination board of the current repository: who may post on it, what waits on the owner and on the target machine, untriaged issues, work in progress, ready work and overlaps between them, and the open Ruleset issue.
 package main
 
 import (

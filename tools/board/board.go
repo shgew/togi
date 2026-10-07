@@ -134,6 +134,7 @@ type overlap struct {
 type board struct {
 	Interactions string
 	Waiting      []issue
+	Hardware     []issue
 	Untriaged    []issue
 	InProgress   []progress
 	Ready        []readyGroup
@@ -176,6 +177,9 @@ func build(repo string, issues []issue, pulls []pull, limit interactionLimit, no
 	for _, i := range issues {
 		if i.has("needs-decision") {
 			b.Waiting = append(b.Waiting, i)
+		}
+		if i.has("needs-hardware") {
+			b.Hardware = append(b.Hardware, i)
 		}
 		if i.has("needs-triage") {
 			b.Untriaged = append(b.Untriaged, i)

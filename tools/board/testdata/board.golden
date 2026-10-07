@@ -4,6 +4,9 @@ Interactions
 Waiting on you (needs-decision)
   #503 Split the frame renderer (@shgew)
 
+Waiting on the target machine (needs-hardware)
+  #515 Name the hardware layer by what it does (@shgew)
+
 Untriaged (needs-triage)
   #504 Show the BIOS context
 
@@ -21,6 +24,10 @@ In progress
     branches: idle-shade, someone/togi:reason-text
     pull requests: #603, #604, #605
     touches: internal/tuner
+  #515 Name the hardware layer by what it does (@shgew)
+    branches: none
+    pull requests: none
+    touches: internal/hardware
 
 Ready
   P0

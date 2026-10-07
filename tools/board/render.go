@@ -14,6 +14,10 @@ func render(w io.Writer, b board) error {
 	for _, i := range b.Waiting {
 		p.line("  %s%s", head(i), assigned(i))
 	}
+	p.section("Waiting on the target machine (needs-hardware)", len(b.Hardware))
+	for _, i := range b.Hardware {
+		p.line("  %s%s", head(i), assigned(i))
+	}
 	p.section("Untriaged (needs-triage)", len(b.Untriaged))
 	for _, i := range b.Untriaged {
 		p.line("  %s", head(i))
