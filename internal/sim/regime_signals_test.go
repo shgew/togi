@@ -27,6 +27,7 @@ func TestRegimeSignalsReplaceModelSignalsInTheirRegime(t *testing.T) {
 func TestRegimeSignalsDrawUnattributedR7Failures(t *testing.T) {
 	t.Parallel()
 	computation := map[machine.Regime]map[machine.Signal]float64{machine.R7: {machine.ComputationError: 1}}
+	otherRegime := map[machine.Regime]map[machine.Signal]float64{machine.R2: {machine.ComputationError: 1}}
 	for _, tc := range []struct {
 		name    string
 		cfg     Config
@@ -47,6 +48,13 @@ func TestRegimeSignalsDrawUnattributedR7Failures(t *testing.T) {
 			loaded: []int{1, 0},
 		},
 		{
+			name:    "joint without signal in an unlisted regime draws the pooled mix",
+			cfg:     Config{Cores: 2, Joints: []Joint{{Members: map[int]int{0: -20, 1: -20}, Rate: 1e6}}},
+			regimes: otherRegime,
+			loaded:  []int{1, 0},
+			want:    machine.Result{Signal: machine.UnexpectedExit, Core: 1},
+		},
+		{
 			name:    "joint with a signal keeps it",
 			cfg:     Config{Cores: 2, Joints: []Joint{{Members: map[int]int{0: -20, 1: -20}, Rate: 1e6, Signal: machine.Stall}}},
 			regimes: computation,
@@ -60,6 +68,12 @@ func TestRegimeSignalsDrawUnattributedR7Failures(t *testing.T) {
 			loaded:  []int{0},
 		},
 		{
+			name:    "joint on unloaded cores in an unlisted regime crashes",
+			cfg:     Config{Cores: 4, Joints: []Joint{{Members: map[int]int{2: -20, 3: -20}, Rate: 1e6}}},
+			regimes: otherRegime,
+			loaded:  []int{0},
+		},
+		{
 			name:    "ccd hazard draws the regime mix",
 			cfg:     Config{Cores: 2, CCD: &CCD{LogRate: math.Log(1e6)}},
 			regimes: computation,
@@ -70,6 +84,13 @@ func TestRegimeSignalsDrawUnattributedR7Failures(t *testing.T) {
 			name:   "ccd hazard without regime mix crashes",
 			cfg:    Config{Cores: 2, CCD: &CCD{LogRate: math.Log(1e6)}},
 			loaded: []int{1},
+		},
+		{
+			name:    "ccd hazard in an unlisted regime draws the pooled mix",
+			cfg:     Config{Cores: 2, CCD: &CCD{LogRate: math.Log(1e6)}},
+			regimes: otherRegime,
+			loaded:  []int{1},
+			want:    machine.Result{Signal: machine.UnexpectedExit, Core: 1},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

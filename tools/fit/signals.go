@@ -18,7 +18,8 @@ import (
 // in model.signals, which regimes without failures draw from, and per regime with failures in
 // model.regime_signals. Signal weights are relative, so counts are their maximum-likelihood estimate. An
 // uncorrected MCE counts as a crash, which the simulator draws as a crash leaving an MCE with probability
-// crash_mce. Failures without a recorded signal are skipped; without any, the model keeps its signals.
+// crash_mce. Failures without a recorded signal are skipped; without any, the mix is the simulator's default
+// weights and no regime_signals, whatever the starting model held.
 func fitSignals(cfg *sim.Config, records []trialfacts.Record) {
 	pooled := map[machine.Signal]float64{}
 	regimes := map[machine.Regime]map[machine.Signal]float64{}
@@ -36,11 +37,12 @@ func fitSignals(cfg *sim.Config, records []trialfacts.Record) {
 		}
 		regimes[r.Class.Regime][signal]++
 	}
-	if len(pooled) == 0 {
-		return
-	}
 	model := *cfg.Model
-	model.Signals, model.RegimeSignals = pooled, regimes
+	if len(pooled) == 0 {
+		model.Signals, model.RegimeSignals = sim.DefaultModel().Signals, nil
+	} else {
+		model.Signals, model.RegimeSignals = pooled, regimes
+	}
 	cfg.Model = &model
 }
 

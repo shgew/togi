@@ -272,7 +272,7 @@ func (m *Machine) drawnFailure(spec machine.TrialSpec) (failure, bool) {
 		}
 		t := m.failureDraw(rate, 0, spec, core, fmt.Sprintf("ccd-%d", ccd))
 		if t < f.at {
-			f.core, f.at, f.signal = core, t, m.unattributedSignal(spec.Regime)
+			f.core, f.at, f.signal = core, t, m.unattributedSignal()
 			f.idle = false
 			f.joint = &Joint{}
 		}
@@ -304,7 +304,7 @@ func (m *Machine) drawnFailure(spec machine.TrialSpec) (failure, bool) {
 			if idle {
 				f.signal = machine.Crash
 			} else if f.signal == "" {
-				f.signal = m.unattributedSignal(spec.Regime)
+				f.signal = m.unattributedSignal()
 			}
 		}
 	}
@@ -466,9 +466,9 @@ func (m *Machine) signals(regime machine.Regime) map[machine.Signal]float64 {
 }
 
 // unattributedSignal is the signal of a loaded joint or [ccd] failure without its own signal: a crash, unless
-// the regime has its own mix, which the empty signal leaves to the draw.
-func (m *Machine) unattributedSignal(regime machine.Regime) machine.Signal {
-	if _, ok := m.model.RegimeSignals[regime]; ok {
+// the machine fits per-regime mixes, where the empty signal leaves it to the draw from m.signals.
+func (m *Machine) unattributedSignal() machine.Signal {
+	if len(m.model.RegimeSignals) > 0 {
 		return ""
 	}
 	return machine.Crash

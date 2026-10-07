@@ -44,3 +44,29 @@ func TestReportSignalsNamesFittedCounts(t *testing.T) {
 		t.Fatalf("report without failures (-want +got):\n%s", diff)
 	}
 }
+
+func TestFitSignalsWithoutSignaledFailuresResetsToDefaultWeights(t *testing.T) {
+	model := sim.DefaultModel()
+	model.Signals = map[machine.Signal]float64{machine.Crash: 3, machine.ComputationError: 1}
+	model.RegimeSignals = map[machine.Regime]map[machine.Signal]float64{machine.R7: {machine.Crash: 3, machine.ComputationError: 1}}
+	fitted := sim.DefaultModel()
+	fitted.Signals = map[machine.Signal]float64{machine.Crash: 3, machine.ComputationError: 1}
+	fitted.RegimeSignals = map[machine.Regime]map[machine.Signal]float64{machine.R7: {machine.Crash: 3, machine.ComputationError: 1}}
+	cfg := sim.Config{Model: &model}
+	fitSignals(&cfg, []trialfacts.Record{
+		{Class: facts.Class{Regime: machine.R7}, Outcome: journal.OutcomePass},
+		{Class: facts.Class{Regime: machine.R7}, Outcome: journal.OutcomeFailure},
+	})
+	want := []any{sim.DefaultModel().Signals, map[machine.Regime]map[machine.Signal]float64(nil)}
+	if diff := cmp.Diff(want, []any{cfg.Model.Signals, cfg.Model.RegimeSignals}); diff != "" {
+		t.Fatalf("signal mix (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(fitted, model); diff != "" {
+		t.Fatalf("caller's model (-want +got):\n%s", diff)
+	}
+	var got strings.Builder
+	reportSignals(&got, cfg.Model)
+	if diff := cmp.Diff("  signals: no failures; default weights\n", got.String()); diff != "" {
+		t.Fatalf("report (-want +got):\n%s", diff)
+	}
+}

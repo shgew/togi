@@ -79,8 +79,8 @@ type Model struct {
 	Growth        float64
 	NearLimitRate float64
 	Signals       map[machine.Signal]float64
-	// RegimeSignals replaces Signals for failures in each regime it lists. There, joints without a signal and
-	// [ccd] hazards draw from it too instead of crashing.
+	// RegimeSignals replaces Signals for failures in each regime it lists. When it lists any regime, joints without a
+	// signal and [ccd] hazards draw from their regime's weights, else from Signals, instead of crashing.
 	RegimeSignals map[machine.Regime]map[machine.Signal]float64
 	CrashMCE      float64
 	CoreLocalBank float64
