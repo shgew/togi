@@ -144,7 +144,7 @@ fit-shared-voltage *args:
 forward *args:
     {{ dev }} go run ./tools/fit --forward-only "$@"
 
-# Start the release workflow on main and follow it: unless an open issue is labeled needs-hardware, once check passes on main, it commits the release, builds the package, pushes to main and publishes
+# Start the release workflow on main and follow it: unless an issue, open or closed, is labeled needs-hardware, once check passes on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]
 release:
     url=$({{ dev }} gh workflow run release.yml --ref main); echo "$url"; {{ dev }} gh run watch "${url##*/}" --exit-status

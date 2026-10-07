@@ -4,11 +4,12 @@ Some changes can only be verified on the target machine: the SMU and PM-table pa
 
 ## Decision
 
-- The `needs-hardware` label marks an open issue that waits on a run on the target machine. A comment on the issue gives the exact steps: what to check out, which commands to run, what each must show and what it unblocks.
-- `just board` lists the open `needs-hardware` issues in their own section, "Waiting on the target machine (needs-hardware)", right after "Waiting on you (needs-decision)".
-- A pull request that needs the machine merges once everything else is green. It says `Refs #N` instead of `Closes #N`, and its issue keeps the label.
-- The queue must be empty before the owner updates the target machine's togi input or cuts a release. The release workflow refuses to commit a release while any open issue carries `needs-hardware`, naming each issue by number and title, before it waits on the check run; its token reads issues for that. Updating the machine's input happens outside this repository, so that half is a rule in `AGENTS.md` only.
-- At the machine, an agent may work the queue without asking: run each issue's steps, post the output as a comment, remove the label, and close the issue when nothing else in its Acceptance remains. On a failure it files a `bugfix` issue with a priority, links it from the original, and leaves the original open with its label.
+- The `needs-hardware` label marks an issue that waits on a run on the target machine, whether the issue is open or closed. A comment on the issue gives the exact steps: what to check out, which commands to run, what each must show and what it unblocks.
+- The label, not the open state, is what counts: `just claim` links the issue's branch with `gh issue develop`, and GitHub closes an issue when a linked pull request merges, even one whose body says `Refs #N`. That closed [#417](https://github.com/shgew/togi/issues/417) and [#418](https://github.com/shgew/togi/issues/418) when their pull requests merged ([#487](https://github.com/shgew/togi/issues/487)).
+- `just board` lists the `needs-hardware` issues, open or closed, in their own section, "Waiting on the target machine (needs-hardware)", right after "Waiting on you (needs-decision)", marking the closed ones.
+- A pull request that needs the machine merges once everything else is green. It says `Refs #N` instead of `Closes #N`, and its issue keeps the label, even when the merge closes it.
+- The queue must be empty before the owner updates the target machine's togi input or cuts a release. The release workflow refuses to commit a release while any issue, open or closed, carries `needs-hardware`, naming each issue by number and title and marking the closed ones, before it waits on the check run; its token reads issues for that. Updating the machine's input happens outside this repository, so that half is a rule in `AGENTS.md` only.
+- At the machine, an agent may work the queue without asking: run each issue's steps, post the output as a comment, and remove the label once they pass; then close the issue when nothing else in its Acceptance remains, or reopen it when something does and the merge closed it. On a failure it files a `bugfix` issue with a priority, links it from the original, and leaves the original with its label.
 
 ## Considered Options
 
@@ -16,6 +17,7 @@ Some changes can only be verified on the target machine: the SMU and PM-table pa
 - **Appending owed runs to [#260](https://github.com/shgew/togi/issues/260):** rejected. That issue holds the retros of target-machine runs; mixing obligations into a history hides what is still owed, and neither `just board` nor the release can query it.
 - **Keeping such pull requests open until the run:** rejected. The owner's time at the machine would then hold back reviewed, otherwise green changes, the stack layers above them and every issue whose `Touches:` overlaps them.
 - **A VM check for the backend suite:** rejected. QEMU has no SMU, the CPU check accepts only Granite Ridge desktops, GitHub-hosted runners do not guarantee AVX-512, and mprime's license does not clearly allow pushing built binaries to the public Cachix cache the checks substitute from.
+- **Unlinking the branch or pull request from the issue before merging:** rejected. It adds a manual step to every such merge, and one forgotten unlink silently drops the issue from the queue; counting the label holds whatever GitHub does to the issue's state.
 
 ## Consequences
 

@@ -18,12 +18,14 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the curr
 // fixtureNow is the clock the fixtures are read at.
 var fixtureNow = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
 
-// fixtureGH answers the board's two GraphQL queries and its interaction limit request from testdata.
+// fixtureGH answers the board's three GraphQL queries and its interaction limit request from testdata.
 func fixtureGH(t *testing.T) ghFunc {
 	t.Helper()
 	return func(args ...string) ([]byte, error) {
 		q := args[len(args)-1]
 		switch {
+		case strings.Contains(q, "issues(states: CLOSED"):
+			return os.ReadFile(filepath.Join("testdata", "closed-hardware.json"))
 		case strings.Contains(q, "issues("):
 			return os.ReadFile(filepath.Join("testdata", "issues.json"))
 		case strings.Contains(q, "pullRequests("):
@@ -61,8 +63,9 @@ func TestRunReportsFetchFailure(t *testing.T) {
 	tests := []struct {
 		name, failing, want string
 	}{
-		{"issues", "issues(", "fetch issues: HTTP 401"},
-		{"pull requests after issues", "pullRequests(", "fetch pull requests: HTTP 401"},
+		{"issues", "issues(states: OPEN", "fetch issues: HTTP 401"},
+		{"closed needs-hardware issues after issues", "issues(states: CLOSED", "fetch closed needs-hardware issues: HTTP 401"},
+		{"pull requests after closed needs-hardware issues", "pullRequests(", "fetch pull requests: HTTP 401"},
 		{"interaction limit after pull requests", "/interaction-limits", "fetch interaction limit: HTTP 401"},
 	}
 	for _, tt := range tests {
