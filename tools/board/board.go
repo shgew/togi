@@ -12,8 +12,9 @@ import (
 	"time"
 )
 
-// issue is an open issue as the board needs it.
+// issue is an issue as the board needs it: open, or closed and still labeled needs-hardware.
 type issue struct {
+	Closed       bool
 	Number       int
 	Title        string
 	Body         string
@@ -168,8 +169,9 @@ func interactions(l interactionLimit, now time.Time) string {
 	return fmt.Sprintf("collaborators only until %s, %d days left%s", until, int(math.Ceil(left.Hours()/24)), renew)
 }
 
-// build sorts the issues into the board; repo is the owner/name of their repository.
-func build(repo string, issues []issue, pulls []pull, limit interactionLimit, now time.Time) board {
+// build sorts the issues into the board; repo is the owner/name of their repository, and closedHardware holds the closed issues
+// still labeled needs-hardware, which wait on the target machine like open ones.
+func build(repo string, issues, closedHardware []issue, pulls []pull, limit interactionLimit, now time.Time) board {
 	issues = slices.Clone(issues)
 	slices.SortFunc(issues, func(a, b issue) int { return a.Number - b.Number })
 	b := board{Interactions: interactions(limit, now)}
@@ -199,6 +201,8 @@ func build(repo string, issues []issue, pulls []pull, limit interactionLimit, no
 			b.Rulesets = append(b.Rulesets, i)
 		}
 	}
+	b.Hardware = append(b.Hardware, closedHardware...)
+	slices.SortFunc(b.Hardware, func(x, y issue) int { return x.Number - y.Number })
 	b.Ready = group(ready)
 	for _, r := range ready {
 		for _, p := range b.InProgress {

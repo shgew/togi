@@ -5,7 +5,9 @@ Waiting on you (needs-decision)
   #503 Split the frame renderer (@shgew)
 
 Waiting on the target machine (needs-hardware)
+  #498 Check the backends on the machine (closed)
   #515 Name the hardware layer by what it does (@shgew)
+  #516 Read the PM table through the driver (closed, @shgew)
 
 Untriaged (needs-triage)
   #504 Show the BIOS context

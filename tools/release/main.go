@@ -26,7 +26,7 @@ const (
 	// checkTimeout is several times the ten minutes a check run takes, leaving room for runs waiting on a runner.
 	checkTimeout = time.Hour
 	checkPoll    = 30 * time.Second
-	// hardwareLabel marks an issue waiting on a run on the target machine; no release is cut while one is open (ADR 0043).
+	// hardwareLabel marks an issue waiting on a run on the target machine, open or closed; no release is cut while one carries it (ADR 0043).
 	hardwareLabel = "needs-hardware"
 	// issuesPerPage is the most records GitHub returns per page; a shorter page is the last one.
 	issuesPerPage = 100
@@ -412,24 +412,31 @@ func latestCheckRun(api github, repo repository, commit string) (checkRun, bool,
 	return result.WorkflowRuns[0], true, nil
 }
 
-// requireNoHardwareWait fails while any open issue carries hardwareLabel, naming each by number and title.
+// requireNoHardwareWait fails while any issue carries hardwareLabel, open or closed, naming each by number and title. The label, not the
+// open state, marks the wait: GitHub closes an issue when a pull request linked to it merges, before the run on the target machine.
 func requireNoHardwareWait(api github, repo repository) error {
 	path := "/repos/" + url.PathEscape(repo.owner) + "/" + url.PathEscape(repo.name) + "/issues"
 	var waiting []string
 	for page := 1; ; page++ {
-		query := url.Values{"labels": {hardwareLabel}, "state": {"open"}, "per_page": {strconv.Itoa(issuesPerPage)}, "page": {strconv.Itoa(page)}}
+		query := url.Values{"labels": {hardwareLabel}, "state": {"all"}, "per_page": {strconv.Itoa(issuesPerPage)}, "page": {strconv.Itoa(page)}}
 		var result []struct {
 			Number      int       `json:"number"`
 			Title       string    `json:"title"`
+			State       string    `json:"state"`
 			PullRequest *struct{} `json:"pull_request"`
 		}
 		if _, err := api.request(http.MethodGet, path+"?"+query.Encode(), nil, &result); err != nil {
-			return fmt.Errorf("list open %s issues: %w", hardwareLabel, err)
+			return fmt.Errorf("list %s issues: %w", hardwareLabel, err)
 		}
 		for _, i := range result {
-			if i.PullRequest == nil {
-				waiting = append(waiting, fmt.Sprintf("#%d %s", i.Number, i.Title))
+			if i.PullRequest != nil {
+				continue
 			}
+			name := fmt.Sprintf("#%d %s", i.Number, i.Title)
+			if i.State == "closed" {
+				name += " (closed)"
+			}
+			waiting = append(waiting, name)
 		}
 		if len(result) < issuesPerPage {
 			break
@@ -438,7 +445,7 @@ func requireNoHardwareWait(api github, repo repository) error {
 	if len(waiting) == 0 {
 		return nil
 	}
-	return fmt.Errorf("open issues wait on a run on the target machine (%s): %s", hardwareLabel, strings.Join(waiting, "; "))
+	return fmt.Errorf("issues wait on a run on the target machine (%s): %s", hardwareLabel, strings.Join(waiting, "; "))
 }
 
 // waitForGreenCheck polls the check run for commit until it completes or checkTimeout passes, and fails unless it succeeded.
@@ -475,7 +482,7 @@ func waitForGreenCheck(api github, repo repository, commit string, now func() ti
 func main() {
 	var commit, publish bool
 	var check string
-	flag.BoolVar(&commit, "commit", false, "commit the next release on top of origin/main and check it out, refusing while any open issue is labeled needs-hardware, once the check workflow passed on origin/main, waiting up to an hour for it (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
+	flag.BoolVar(&commit, "commit", false, "commit the next release on top of origin/main and check it out, refusing while any issue, open or closed, is labeled needs-hardware, once the check workflow passed on origin/main, waiting up to an hour for it (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
 	flag.BoolVar(&publish, "publish", false, "publish the release version.txt names at HEAD, if not yet published (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
 	flag.StringVar(&check, "check", "", "validate the changelog fragments in `dir` and exit (the changes flake check)")
 	flag.Usage = func() {

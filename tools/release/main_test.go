@@ -269,18 +269,23 @@ func TestReleaseWaitsOnTheTargetMachine(t *testing.T) {
 		},
 		{
 			name:  "open issue",
-			pages: []string{`[{"number":417,"title":"Backends: shared check","pull_request":null},{"number":40,"title":"A pull request","pull_request":{"url":"u"}}]`},
-			err:   "refuse to release: open issues wait on a run on the target machine (needs-hardware): #417 Backends: shared check",
+			pages: []string{`[{"number":417,"title":"Backends: shared check","state":"open","pull_request":null},{"number":40,"title":"A pull request","state":"open","pull_request":{"url":"u"}}]`},
+			err:   "refuse to release: issues wait on a run on the target machine (needs-hardware): #417 Backends: shared check",
 		},
 		{
-			name:  "open issues",
-			pages: []string{`[{"number":417,"title":"Backends: shared check"},{"number":418,"title":"Hardware-layer names"}]`},
-			err:   "refuse to release: open issues wait on a run on the target machine (needs-hardware): #417 Backends: shared check; #418 Hardware-layer names",
+			name:  "closed issue",
+			pages: []string{`[{"number":417,"title":"Backends: shared check","state":"closed","pull_request":null},{"number":40,"title":"A pull request","state":"closed","pull_request":{"url":"u"}}]`},
+			err:   "refuse to release: issues wait on a run on the target machine (needs-hardware): #417 Backends: shared check (closed)",
 		},
 		{
-			name:  "open issue after a full page of pull requests",
-			pages: []string{pullRequests(100), `[{"number":417,"title":"Backends: shared check","pull_request":null}]`},
-			err:   "refuse to release: open issues wait on a run on the target machine (needs-hardware): #417 Backends: shared check",
+			name:  "open and closed issues",
+			pages: []string{`[{"number":417,"title":"Backends: shared check","state":"open"},{"number":418,"title":"Hardware-layer names","state":"closed"}]`},
+			err:   "refuse to release: issues wait on a run on the target machine (needs-hardware): #417 Backends: shared check; #418 Hardware-layer names (closed)",
+		},
+		{
+			name:  "issue after a full page of pull requests",
+			pages: []string{pullRequests(100), `[{"number":417,"title":"Backends: shared check","state":"closed","pull_request":null}]`},
+			err:   "refuse to release: issues wait on a run on the target machine (needs-hardware): #417 Backends: shared check (closed)",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -306,7 +311,7 @@ func TestReleaseWaitsOnTheTargetMachine(t *testing.T) {
 			}
 			var want []string
 			for page := range len(tc.pages) {
-				want = append(want, fmt.Sprintf("GET /repos/o/r/issues?labels=needs-hardware&page=%d&per_page=100&state=open", page+1))
+				want = append(want, fmt.Sprintf("GET /repos/o/r/issues?labels=needs-hardware&page=%d&per_page=100&state=all", page+1))
 			}
 			if diff := cmp.Diff(want, requests); diff != "" {
 				t.Errorf("requests mismatch (-want +got):\n%s", diff)
