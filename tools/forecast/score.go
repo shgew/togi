@@ -2,7 +2,6 @@ package forecast
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/shgew/togi/internal/journal"
@@ -35,7 +34,8 @@ type Row struct {
 type Score struct {
 	Record  Record
 	Outcome Outcome
-	// Builds lists the distinct builds that recorded events after the anchor, in order.
+	// Builds lists the distinct builds that ran from the anchor through the run's terminal point, in order: the build
+	// in effect at the anchor when its invocation wrote events after it, then each build stamped after the anchor.
 	Builds []journal.Build
 	// Flags lists differences that make the forecast less comparable: another build revision or ruleset, or a
 	// forecast made from a dirty tree.
@@ -46,7 +46,7 @@ type Score struct {
 // Score scores the real run in sessions against the forecast. It refuses sessions that lack the anchor or changed
 // the journal through it.
 func (r Record) Score(sessions []Session) (Score, error) {
-	outcome, err := After(sessions, r.Anchor)
+	outcome, builds, err := after(sessions, r.Anchor)
 	if err != nil {
 		return Score{}, err
 	}
@@ -57,7 +57,7 @@ func (r Record) Score(sessions []Session) (Score, error) {
 	if cores := len(metrics) - 4; len(outcome.Profile) != cores {
 		return Score{}, fmt.Errorf("run has %d cores, forecast %d", len(outcome.Profile), cores)
 	}
-	s := Score{Record: r, Outcome: outcome, Builds: buildsAfter(sessions, r.Anchor)}
+	s := Score{Record: r, Outcome: outcome, Builds: builds}
 	if r.Dirty {
 		s.Flags = append(s.Flags, fmt.Sprintf("the forecast was made from a dirty tree at commit %s", r.Commit))
 	}
@@ -98,34 +98,17 @@ func (r Record) Score(sessions []Session) (Score, error) {
 	return s, nil
 }
 
-// buildsAfter lists each distinct build stamped by session.start or config.loaded after the anchor.
-func buildsAfter(sessions []Session, a Anchor) []journal.Build {
-	var builds []journal.Build
-	add := func(b journal.Build) {
-		b = journal.Build{Version: b.Version, Rev: b.Rev, Ruleset: b.Ruleset}
-		if !slices.Contains(builds, b) {
-			builds = append(builds, b)
+// stampOf returns the build that a session.start or config.loaded event stamps, with the session's ruleset.
+func stampOf(e journal.Event, ruleset int) (journal.Build, bool) {
+	switch p := e.Data.(type) {
+	case *journal.SessionStart:
+		return journal.Build{Version: p.Version, Rev: p.Rev, Ruleset: ruleset}, true
+	case *journal.ConfigLoaded:
+		if p.Version != "" {
+			return journal.Build{Version: p.Version, Rev: p.Rev, Ruleset: ruleset}, true
 		}
 	}
-	after := false
-	for _, s := range sessions {
-		ruleset := journal.BuildOf(s.Events).Ruleset
-		for _, e := range s.Events {
-			if !after {
-				after = s.ID == a.Session && e.Seq == a.Seq
-				continue
-			}
-			switch p := e.Data.(type) {
-			case *journal.SessionStart:
-				add(journal.Build{Version: p.Version, Rev: p.Rev, Ruleset: ruleset})
-			case *journal.ConfigLoaded:
-				if p.Version != "" {
-					add(journal.Build{Version: p.Version, Rev: p.Rev, Ruleset: ruleset})
-				}
-			}
-		}
-	}
-	return builds
+	return journal.Build{}, false
 }
 
 // sameRevision matches a build's short revision against a forecast commit, either of which may be abbreviated.

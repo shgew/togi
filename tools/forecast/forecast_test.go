@@ -1,15 +1,23 @@
 package forecast
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/simrun"
 	"github.com/shgew/togi/internal/tuner"
 )
 
@@ -18,7 +26,7 @@ var epoch = time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
 // session builds a configured journal whose events are an hour apart, numbered from seq.
 func session(t *testing.T, id string, seq int, payloads ...journal.Payload) Session {
 	t.Helper()
-	s := Session{ID: id, Configured: true}
+	s := Session{ID: id, Replayable: true}
 	for i, p := range payloads {
 		e := journal.Event{Seq: seq + i, Time: epoch.Add(time.Duration(seq+i) * time.Hour), Boot: "boot", Kind: p.Kind(), Msg: p.Message(), Data: p}
 		raw, err := e.MarshalJSON()
@@ -87,21 +95,40 @@ func TestAfter(t *testing.T) {
 		{
 			name: "concluded at the clean cycle the run stops at",
 			sessions: func() []Session {
-				s := extend(t, before, 5, crash, &journal.Shutdown{Reason: journal.ShutdownCycles, Cycles: 1}, crash)
+				s := extend(t, before, 5, crash, &journal.Shutdown{Reason: journal.ShutdownCycles, Cycles: 1})
 				return []Session{s}
 			},
-			want: Outcome{Status: Concluded, Hours: 2, Crashes: 2, Profile: []int{-10, -20}, Depth: -30},
+			want: Outcome{Status: Concluded, Hours: 2, Crashes: 1, Profile: []int{-10, -20}, Depth: -30},
+		},
+		{
+			name: "nothing after a cycles shutdown counts",
+			sessions: func() []Session {
+				s := extend(t, before, 5, crash, &journal.Shutdown{Reason: journal.ShutdownCycles, Cycles: 1}, crash, &journal.TrialIntent{Trial: "0002", Hunt: 8})
+				next := session(t, "b", 1, &journal.SessionStart{Session: "b", Schema: journal.Schema, Ruleset: tuner.Ruleset, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1, CCD: 1}}}, &journal.SessionBaseline{Offsets: []int{-12, -22}}, crash, &journal.TrialIntent{Trial: "0001", Hunt: 7}, &journal.DeadEnd{Condition: journal.DeadEndCondition("failure_at_zero")})
+				return []Session{s, next}
+			},
+			want: Outcome{Status: Concluded, Hours: 2, Crashes: 1, Profile: []int{-10, -20}, Depth: -30},
+		},
+		{
+			name: "a session after the terminal point need not be replayable",
+			sessions: func() []Session {
+				s := extend(t, before, 5, &journal.Shutdown{Reason: journal.ShutdownCycles, Cycles: 1})
+				next := session(t, "b", 1, start("b", "abc1234")...)
+				next.Replayable = false
+				return []Session{s, next}
+			},
+			want: Outcome{Status: Concluded, Hours: 1, Profile: []int{-10, -20}, Depth: -30},
 		},
 		{
 			name: "dead end",
 			sessions: func() []Session {
-				s := extend(t, before, 5, crash, &journal.DeadEnd{Condition: journal.DeadEndCondition("failure_at_zero")})
+				s := extend(t, before, 5, crash, &journal.DeadEnd{Condition: journal.DeadEndCondition("failure_at_zero")}, crash, &journal.Shutdown{Reason: journal.ShutdownCycles, Cycles: 1})
 				return []Session{s}
 			},
 			want: Outcome{Status: DeadEnd, Hours: 2, Crashes: 1, Profile: []int{-10, -20}, Depth: -30},
 		},
 		{
-			name: "a new session counts whole and supplies the profile",
+			name: "a new session without a terminal point supplies the profile",
 			sessions: func() []Session {
 				next := session(t, "b", 1, &journal.SessionStart{Session: "b", Schema: journal.Schema, Ruleset: tuner.Ruleset, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1, CCD: 1}}}, &journal.SessionBaseline{Offsets: []int{-12, -22}}, crash, &journal.TrialIntent{Trial: "0001", Hunt: 7})
 				return []Session{before, next}
@@ -124,9 +151,141 @@ func TestAfter(t *testing.T) {
 func TestAfterRequiresAReplayableNewestSession(t *testing.T) {
 	s := session(t, "a", 1, start("a", "abc1234")...)
 	anchor := anchorAt(s, 2)
-	s.Configured = false
+	s.Replayable = false
 	if _, err := After([]Session{s}, anchor); err == nil {
 		t.Fatal("projected a session this build cannot replay")
+	}
+}
+
+// simulate runs a simulated session in dir, resuming its journal, until it reaches cycles clean cycles (0 checks
+// endlessly) or until accepts an event.
+func simulate(t *testing.T, dir string, seed uint64, cycles int, until func(journal.Event) bool) {
+	t.Helper()
+	cfg, err := sim.Resume(dir, sim.Config{Seed: seed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := sim.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = simrun.Simulate(context.Background(), simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Log: io.Discard, Cycles: cycles, InMemoryJournal: true, Until: until})
+	if err != nil && !errors.Is(err, simrun.ErrBootCap) {
+		t.Fatal(err)
+	}
+}
+
+func copyState(t *testing.T, src string) string {
+	t.Helper()
+	dst := t.TempDir()
+	for _, name := range []string{"events.jsonl", "state.json"} {
+		data, err := os.ReadFile(filepath.Join(src, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dst, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dst
+}
+
+func isCycleStart(e journal.Event) bool {
+	c, ok := e.Data.(*journal.CheckingCycle)
+	return ok && c.Event == journal.CycleStart
+}
+
+func TestAfterScoresAnEndlessRunAsACyclesOneRun(t *testing.T) {
+	history := t.TempDir()
+	simulate(t, history, 42, 1, func(e journal.Event) bool { return e.Kind == journal.KindCrashDetected })
+	anchor, err := AnchorOf(history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopped := copyState(t, history)
+	starts := 0
+	simulate(t, stopped, 30, 1, func(e journal.Event) bool {
+		if isCycleStart(e) {
+			starts++
+		}
+		return false
+	})
+	// The endless run writes the cycle start a --cycles 1 run shuts down at, then checks one more cycle, which crashes
+	// with seed 30, and stops at the start of the cycle after it.
+	endless := copyState(t, history)
+	seen := 0
+	simulate(t, endless, 30, 0, func(e journal.Event) bool {
+		if isCycleStart(e) {
+			seen++
+		}
+		return seen == starts+2
+	})
+	outcome := func(dir string) (Outcome, []Session) {
+		sessions, err := ReadDir(dir, anchor.Session)
+		if err != nil {
+			t.Fatal(err)
+		}
+		o, err := After(sessions, anchor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return o, sessions
+	}
+	want, _ := outcome(stopped)
+	got, sessions := outcome(endless)
+	if want.Status != Concluded {
+		t.Fatalf("the --cycles 1 run did not conclude: %+v", want)
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatal(diff)
+	}
+	crashes := 0
+	for _, s := range sessions {
+		for _, e := range s.Events {
+			if e.Kind == journal.KindCrashDetected && (s.ID != anchor.Session || e.Seq > anchor.Seq) {
+				crashes++
+			}
+		}
+	}
+	if crashes <= got.Crashes {
+		t.Fatalf("the endless run recorded %d crashes after the anchor, none after its conclusion", crashes)
+	}
+}
+
+func TestReadDirRefusesAnotherRuleset(t *testing.T) {
+	dir := t.TempDir()
+	simulate(t, dir, 42, 1, func(e journal.Event) bool { return e.Kind == journal.KindTrialEnd })
+	path := filepath.Join(dir, "events.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	field := fmt.Appendf(nil, `"ruleset":%d,`, tuner.Ruleset)
+	if !bytes.Contains(data, field) {
+		t.Fatalf("journal records no %s", field)
+	}
+	data = bytes.ReplaceAll(data, field, fmt.Appendf(nil, `"ruleset":%d,`, tuner.Ruleset-1))
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := journal.ReadFile(path); err != nil {
+		t.Fatalf("read the journal of ruleset %d: %v", tuner.Ruleset-1, err)
+	}
+	sessions, err := ReadDir(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].Replayable {
+		t.Fatalf("read %d sessions, replayable %v", len(sessions), len(sessions) == 1 && sessions[0].Replayable)
+	}
+	anchor := anchorAt(sessions[0], sessions[0].Events[1].Seq)
+	want := fmt.Sprintf("session %s, ruleset %d, cannot be replayed by this build's ruleset %d", sessions[0].ID, tuner.Ruleset-1, tuner.Ruleset)
+	if _, err := After(sessions, anchor); err == nil || err.Error() != want {
+		t.Errorf("After error %v, want %s", err, want)
+	}
+	record := Record{Anchor: anchor, Ruleset: tuner.Ruleset, Runs: []Run{{Status: Concluded}}}
+	if _, err := record.Score(sessions); err == nil || err.Error() != want {
+		t.Errorf("Score error %v, want %s", err, want)
 	}
 }
 
@@ -295,6 +454,104 @@ func TestScore(t *testing.T) {
 				t.Error(diff)
 			}
 		})
+	}
+}
+
+func TestScoreBuildsCoverTheScoredSpan(t *testing.T) {
+	before := session(t, "a", 1, start("a", "0123456")...)
+	record := Record{Anchor: anchorAt(before, 2), Commit: "abc1234", Ruleset: tuner.Ruleset, Runs: []Run{{Status: Concluded, Profile: []int{-10, -20}, Depth: -30}}}
+	inEffect := journal.Build{Version: "1.0.0", Rev: "0123456", Ruleset: tuner.Ruleset}
+	forecastBuild := journal.Build{Version: "1.0.0", Rev: "abc1234", Ruleset: tuner.Ruleset}
+	inEffectFlag := "build revision 0123456 ran after the anchor; the forecast is at commit abc1234"
+	crash := &journal.CrashDetected{PreviousBoot: "boot"}
+	shutdown := &journal.Shutdown{Reason: journal.ShutdownCycles, Cycles: 1}
+	for _, tc := range []struct {
+		name       string
+		sessions   func() []Session
+		wantBuilds []journal.Build
+		wantFlags  []string
+	}{
+		{
+			name:       "the invocation running at the anchor keeps writing",
+			sessions:   func() []Session { return []Session{extend(t, before, 3, crash, shutdown)} },
+			wantBuilds: []journal.Build{inEffect},
+			wantFlags:  []string{inEffectFlag},
+		},
+		{
+			name: "the invocation running at the anchor writes before a new stamp",
+			sessions: func() []Session {
+				return []Session{extend(t, before, 3, crash, &journal.ConfigLoaded{Version: "1.0.0", Rev: "abc1234"}, shutdown)}
+			},
+			wantBuilds: []journal.Build{inEffect, forecastBuild},
+			wantFlags:  []string{inEffectFlag},
+		},
+		{
+			name: "a new stamp right after the anchor",
+			sessions: func() []Session {
+				return []Session{extend(t, before, 3, &journal.ConfigLoaded{Version: "1.0.0", Rev: "abc1234"}, crash, shutdown)}
+			},
+			wantBuilds: []journal.Build{forecastBuild},
+		},
+		{
+			name: "a new session after the anchor",
+			sessions: func() []Session {
+				return []Session{before, session(t, "b", 1, append(start("b", "abc1234"), shutdown)...)}
+			},
+			wantBuilds: []journal.Build{forecastBuild},
+		},
+		{
+			name: "stamps after the terminal point are ignored",
+			sessions: func() []Session {
+				return []Session{extend(t, before, 3, &journal.ConfigLoaded{Version: "1.0.0", Rev: "abc1234"}, shutdown, &journal.ConfigLoaded{Version: "1.0.1", Rev: "fedcba9"})}
+			},
+			wantBuilds: []journal.Build{forecastBuild},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := record.Score(tc.sessions())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tc.wantBuilds, got.Builds); diff != "" {
+				t.Error(diff)
+			}
+			if diff := cmp.Diff(tc.wantFlags, got.Flags); diff != "" {
+				t.Error(diff)
+			}
+		})
+	}
+}
+
+func TestScoreWithoutConcludedRuns(t *testing.T) {
+	before := session(t, "a", 1, start("a", "abc1234")...)
+	record := Record{Anchor: anchorAt(before, 2), Commit: "abc1234", Ruleset: tuner.Ruleset, Runs: []Run{
+		{Status: DeadEnd, Hours: 6, Crashes: 2, Hunts: 1, Profile: []int{-8, -24}, Depth: -32},
+		{Status: Censored, Hours: 5, Crashes: 1, Hunts: 0, Profile: []int{-10, -20}, Depth: -30},
+	}}
+	s := extend(t, before, 3, &journal.ConfigLoaded{Version: "1.0.0", Rev: "abc1234"}, &journal.CrashDetected{PreviousBoot: "boot"})
+	got, err := record.Score([]Session{s})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []row{
+		{"core 00", -10, false, Inside, -1, 25},
+		{"core 01", -20, false, Inside, 2, 75},
+		{"depth", -30, false, Inside, 1, 75},
+		{"hours", 2, true, Unforecast, 0, 0},
+		{"crashes", 1, true, Open, -0.5, 0},
+		{"hunts", 0, true, Open, -0.5, 0},
+	}
+	if diff := cmp.Diff(want, rows(got)); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestScoreRefusesAnotherCoreCount(t *testing.T) {
+	before := session(t, "a", 1, start("a", "abc1234")...)
+	record := Record{Anchor: anchorAt(before, 2), Commit: "abc1234", Ruleset: tuner.Ruleset, Runs: []Run{{Status: Concluded, Profile: []int{-10, -20, -30}, Depth: -60}}}
+	_, err := record.Score([]Session{extend(t, before, 3, &journal.Shutdown{Reason: journal.ShutdownCycles, Cycles: 1})})
+	if err == nil || err.Error() != "run has 2 cores, forecast 3" {
+		t.Fatalf("error %v, want run has 2 cores, forecast 3", err)
 	}
 }
 

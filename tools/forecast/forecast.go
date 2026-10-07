@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/shgew/togi/internal/journal"
@@ -51,16 +52,17 @@ type Anchor struct {
 	SHA256 string `json:"sha256"`
 }
 
-// Outcome is what a run did after the anchor.
+// Outcome is what a run did after the anchor, through its first terminal point: a conclusion or a dead end. Events
+// after that point are ignored.
 type Outcome struct {
 	Status string `json:"status"`
-	// Hours runs from the anchor to the conclusion, or to the last event of a run that did not conclude.
+	// Hours runs from the anchor to the terminal point, or to the last event of a run that has none.
 	Hours float64 `json:"hours"`
 	// Crashes counts crash.detected events.
 	Crashes int `json:"crashes"`
 	// Hunts counts hunts that ran a trial; hunts answered by carried facts alone run none.
 	Hunts int `json:"hunts"`
-	// Profile is the newest session's final profile, by core.
+	// Profile is the profile, by core, of the session holding the terminal point, or of the newest session.
 	Profile []int `json:"profile"`
 	Depth   int   `json:"depth"`
 }
@@ -69,9 +71,9 @@ type Outcome struct {
 type Session struct {
 	ID     string
 	Events []journal.Event
-	// Configured is true when the journal was read with its configuration, which needs this build's schema and
-	// ruleset; only a configured session can be replayed through the tuner.
-	Configured bool
+	// Replayable is true when the journal was read with its configuration and records this build's ruleset, so the
+	// tuner can replay it.
+	Replayable bool
 }
 
 // ReadDir reads the archived and live journals of a state directory, oldest session first, skipping archived sessions
@@ -110,14 +112,14 @@ func ReadDir(dir, from string) ([]Session, error) {
 
 func readSession(path string) (Session, error) {
 	events, _, err := journal.ReadFile(path)
-	configured := err == nil
+	replayable := err == nil
 	if err != nil {
 		var historyErr error
 		if events, historyErr = journal.ReadHistory(path); historyErr != nil {
 			return Session{}, err
 		}
 	}
-	s := Session{Events: events, Configured: configured}
+	s := Session{Events: events, Replayable: replayable && journal.BuildOf(events).Ruleset == tuner.Ruleset}
 	if len(events) > 0 {
 		if start, ok := events[0].Data.(*journal.SessionStart); ok {
 			s.ID = start.Session
@@ -172,83 +174,133 @@ func (a Anchor) find(sessions []Session) (int, int, error) {
 	return 0, 0, fmt.Errorf("%w: no journal holds session %s", ErrMissingAnchor, a.Session)
 }
 
-// After returns what the sessions record after the anchor. The newest session must be configured, so the tuner can
-// project its final profile.
+// After returns what the sessions record after the anchor, through the first terminal point: a checking.cycle start
+// after a clean cycle, where `togi run --cycles 1` shuts down instead (not counted), a shutdown with reason cycles, or
+// a dead end. The session holding that point, or the newest session when there is none, must be replayable, so the
+// tuner can project its profile.
 func After(sessions []Session, a Anchor) (Outcome, error) {
+	o, _, err := after(sessions, a)
+	return o, err
+}
+
+// after returns the outcome After returns and the distinct builds that ran in it, in order: the build in effect at
+// the anchor when its invocation wrote events after the anchor, then each build stamped after the anchor through the
+// terminal point.
+func after(sessions []Session, a Anchor) (Outcome, []journal.Build, error) {
 	first, at, err := a.find(sessions)
 	if err != nil {
-		return Outcome{}, err
+		return Outcome{}, nil, err
 	}
-	o := Outcome{Status: Censored}
-	last := a.Time
-	var concluded *time.Time
-	deadEnd := false
-	type huntKey struct {
-		session string
-		hunt    int
-	}
-	hunts := map[huntKey]bool{}
+	sc := scan{o: Outcome{Status: Censored}, last: a.Time, hunts: map[huntKey]bool{}}
+	var held Session
+	var t *tuner.State
+	var st journal.State
+walk:
 	for i, s := range sessions[first:] {
 		start := 0
 		if i == 0 {
 			start = at + 1
 		}
-		t := tuner.New()
-		var st journal.State
+		held, t, st = s, tuner.New(), journal.State{}
+		ruleset := journal.BuildOf(s.Events).Ruleset
+		var inEffect *journal.Build
 		for j, e := range s.Events {
-			if j >= start {
-				last = e.Time
-				switch p := e.Data.(type) {
-				case *journal.CheckingCycle:
-					if concluded == nil && s.Configured && p.Event == journal.CycleStart && t.CleanCycles() >= 1 {
-						concluded = new(e.Time)
-					}
-				case *journal.Shutdown:
-					if concluded == nil && p.Reason == journal.ShutdownCycles {
-						concluded = new(e.Time)
-					}
-				case *journal.CrashDetected:
-					o.Crashes++
-				case *journal.TrialIntent:
-					if p.Hunt > 0 {
-						hunts[huntKey{s.ID, p.Hunt}] = true
-					}
-				case *journal.DeadEnd:
-					deadEnd = true
+			end, fold := false, true
+			if j < start {
+				if b, ok := stampOf(e, ruleset); ok {
+					inEffect = &b
 				}
+			} else {
+				sc.stamp(e, ruleset, inEffect)
+				inEffect = nil
+				end, fold = sc.event(s, e, t)
 			}
-			if s.Configured {
+			if fold && s.Replayable {
 				st.Fold(e)
 				t.Fold(e)
 			}
-		}
-		if i == len(sessions[first:])-1 {
-			if !s.Configured {
-				return Outcome{}, fmt.Errorf("session %s, ruleset %d, cannot be replayed by this build's ruleset %d", s.ID, journal.BuildOf(s.Events).Ruleset, tuner.Ruleset)
-			}
-			t.Project(&st)
-			o.Profile = t.Profile()
-			if len(o.Profile) == 0 {
-				o.Profile = make([]int, len(st.Cores))
-				if st.Session != nil {
-					copy(o.Profile, st.Session.Baseline)
-				}
+			if end {
+				break walk
 			}
 		}
 	}
+	if !held.Replayable {
+		return Outcome{}, nil, fmt.Errorf("session %s, ruleset %d, cannot be replayed by this build's ruleset %d", held.ID, journal.BuildOf(held.Events).Ruleset, tuner.Ruleset)
+	}
+	o := sc.o
+	o.Profile = profileOf(t, &st)
 	for _, offset := range o.Profile {
 		o.Depth += offset
 	}
-	o.Hunts = len(hunts)
-	switch {
-	case deadEnd:
-		o.Status = DeadEnd
-	case concluded != nil:
-		o.Status = Concluded
-		last = *concluded
+	o.Hunts = len(sc.hunts)
+	o.Hours = sc.last.Sub(a.Time).Hours()
+	return o, sc.builds, nil
+}
+
+type huntKey struct {
+	session string
+	hunt    int
+}
+
+// scan accumulates a run's outcome and builds event by event after the anchor.
+type scan struct {
+	o      Outcome
+	last   time.Time
+	builds []journal.Build
+	hunts  map[huntKey]bool
+}
+
+// stamp records the build e stamps or, when it stamps none, the build in effect at the anchor.
+func (sc *scan) stamp(e journal.Event, ruleset int, inEffect *journal.Build) {
+	b, ok := stampOf(e, ruleset)
+	if !ok {
+		if inEffect == nil {
+			return
+		}
+		b = *inEffect
 	}
-	o.Hours = last.Sub(a.Time).Hours()
-	return o, nil
+	if !slices.Contains(sc.builds, b) {
+		sc.builds = append(sc.builds, b)
+	}
+}
+
+// event counts e from session s, whose tuner t has folded the events before it, and reports whether e is the
+// terminal point and whether it is folded.
+func (sc *scan) event(s Session, e journal.Event, t *tuner.State) (end, fold bool) {
+	switch p := e.Data.(type) {
+	case *journal.CheckingCycle:
+		if s.Replayable && p.Event == journal.CycleStart && t.CleanCycles() >= 1 {
+			sc.o.Status, sc.last = Concluded, e.Time
+			return true, false
+		}
+	case *journal.Shutdown:
+		if p.Reason == journal.ShutdownCycles {
+			sc.o.Status, end = Concluded, true
+		}
+	case *journal.CrashDetected:
+		sc.o.Crashes++
+	case *journal.TrialIntent:
+		if p.Hunt > 0 {
+			sc.hunts[huntKey{s.ID, p.Hunt}] = true
+		}
+	case *journal.DeadEnd:
+		sc.o.Status, end = DeadEnd, true
+	}
+	sc.last = e.Time
+	return end, true
+}
+
+// profileOf projects the folded session's profile, falling back to its baseline.
+func profileOf(t *tuner.State, st *journal.State) []int {
+	t.Project(st)
+	if profile := t.Profile(); len(profile) > 0 {
+		return profile
+	}
+	profile := make([]int, len(st.Cores))
+	if st.Session != nil {
+		copy(profile, st.Session.Baseline)
+	}
+	return profile
 }
 
 // File is a machine file or facts extract the ensemble read, with its content hash.
