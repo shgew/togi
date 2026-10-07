@@ -1,6 +1,6 @@
-Forecast: commit dev, ruleset 9, 3 runs: 0 concluded, 2 dead ends, 1 censored
+Forecast: commit dev, ruleset 10, 3 runs: 0 concluded, 2 dead ends, 1 censored
 Anchor: session 20260101T000000Z event 2542 at 2026-01-01T06:07:19Z, unchanged
-Run: censored 7.39 h after the anchor; builds after the anchor: rev dev ruleset 9
+Run: censored 7.35 h after the anchor; builds after the anchor: rev dev ruleset 10
 Censored: the run has not concluded, so its hours, crashes and hunts are lower bounds, and offsets and depth are those it stopped at
 Note: forecast hours run to conclusion over concluded runs only; hours are simulated; a simulated crash reboot takes 90 s, while real recovery took a median of 141 s on 2026-10-03 (about 37 minutes over that session), so real runs take longer; not corrected
 
@@ -13,16 +13,16 @@ core 03  -24     below   -1     0           -23     -23..-17    -23..-17
 core 04  -12     yes     +13    83          -25     -25..-12    -25..-12
 core 05  -10     below   -3     0           -7      -9..-2      -9..-2
 core 06  -23     yes     -6     33          -17     -27..-10    -27..-10
-core 07  -4      yes     +1     83          -5      -6..-4      -6..-4
+core 07  -6      yes     -1     17          -5      -6..-4      -6..-4
 core 08  -9      above   +12    100         -21     -21..-16    -21..-16
 core 09  -6      yes     +10    67          -16     -34..-2     -34..-2
 core 10  -13     yes     0      33          -13     -13..-7     -13..-7
-core 11  -6      yes     -2     33          -4      -12..-1     -12..-1
+core 11  -7      yes     -3     33          -4      -12..-1     -12..-1
 core 12  -20     below   -8     0           -12     -18..-7     -18..-7
 core 13  -5      above   +19    100         -24     -34..-22    -34..-22
 core 14  -22     yes     -15    17          -7      -22..0      -22..0
 core 15  -34     yes     -16    17          -18     -34..-1     -34..-1
-depth    -242    yes     +14    67          -256    -322..-168  -322..-168
-hours    >=7.39  -       -      -           -       -           -
+depth    -245    yes     +11    67          -256    -322..-168  -322..-168
+hours    >=7.35  -       -      -           -       -           -
 crashes  >=13    open    >=0    >=33        13      10..16      10..16
-hunts    >=0     open    >=-1   >=0         1       0..2        0..2
+hunts    >=2     open    >=+1   >=67        1       0..2        0..2

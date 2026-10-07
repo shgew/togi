@@ -1,6 +1,6 @@
-Forecast: commit dev, ruleset 9, 3 runs: 2 concluded, 1 dead ends, 0 censored
+Forecast: commit dev, ruleset 10, 3 runs: 2 concluded, 1 dead ends, 0 censored
 Anchor: session 20260101T000000Z event 2542 at 2026-01-01T06:07:19Z, unchanged
-Run: concluded 20.07 h after the anchor; builds after the anchor: rev dev ruleset 9
+Run: concluded 20.07 h after the anchor; builds after the anchor: rev dev ruleset 10
 Note: forecast hours run to conclusion over concluded runs only; hours are simulated; a simulated crash reboot takes 90 s, while real recovery took a median of 141 s on 2026-10-03 (about 37 minutes over that session), so real runs take longer; not corrected
 
 Forecast score
@@ -12,7 +12,7 @@ core 03  -24     below   -1     0           -23     -23..-17      -23..-17
 core 04  -11     above   +14    100         -25     -25..-12      -25..-12
 core 05  -10     below   -3     0           -7      -9..-2        -9..-2
 core 06  -23     yes     -6     33          -17     -27..-10      -27..-10
-core 07  -4      yes     +1     83          -5      -6..-4        -6..-4
+core 07  -6      yes     -1     17          -5      -6..-4        -6..-4
 core 08  -9      above   +12    100         -21     -21..-16      -21..-16
 core 09  -5      yes     +11    67          -16     -34..-2       -34..-2
 core 10  -13     yes     0      33          -13     -13..-7       -13..-7
@@ -21,7 +21,7 @@ core 12  -19     below   -7     0           -12     -18..-7       -18..-7
 core 13  -2      above   +22    100         -24     -34..-22      -34..-22
 core 14  -22     yes     -15    17          -7      -22..0        -22..0
 core 15  -33     yes     -15    33          -18     -34..-1       -34..-1
-depth    -232    yes     +24    67          -256    -322..-168    -322..-168
+depth    -234    yes     +22    67          -256    -322..-168    -322..-168
 hours    20.07   yes     -0.43  50          20.50   20.00..21.00  20.00..21.00
 crashes  17      above   +4     100         13      10..16        10..16
-hunts    3       above   +2     100         1       0..2          0..2
+hunts    5       above   +4     100         1       0..2          0..2
