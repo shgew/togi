@@ -56,8 +56,8 @@ The dashboard adapts to wide and compact terminals. It shows checking's cycle ch
 |[docs/howto.md](docs/howto.md)|Installing togi and running a tuning session|
 |[docs/releasing.md](docs/releasing.md)|Versioning, the release workflow and tags|
 |[docs/simulating.md](docs/simulating.md)|Running a simulated session for development|
-|[docs/reviewing.md](docs/reviewing.md)|Reviewing current and archived runs with `just stats`, and writing a run's retro|
-|[docs/benchmarking.md](docs/benchmarking.md)|Comparing tuner changes across simulated machines|
+|[docs/reviewing.md](docs/reviewing.md)|Reviewing current and archived runs with `just stats`, scoring a run against its forecast, and writing a run's retro|
+|[docs/benchmarking.md](docs/benchmarking.md)|Comparing tuner changes across simulated machines, and forecasting a real run|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
 |[GLOSSARY.md](GLOSSARY.md)|The vocabulary: offsets, phases, regimes, clean cycles|
 |[docs/spec/tuner.md](docs/spec/tuner.md)|How offsets are searched, hunted, deepened and checked|

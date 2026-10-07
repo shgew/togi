@@ -138,6 +138,31 @@ just bench --baseline tools/bench/baseline.jsonl
 just bench --split holdout --baseline tools/bench/baseline.jsonl
 ```
 
+## Forecasting a real run
+
+Before a hardware run, record what the simulator expects it to do, so that [`just stats` can score it afterwards](reviewing.md#scoring-a-forecast):
+
+```sh
+just forecast COPY-OF-STATE-DIR --out tools/bench/forecasts/<session>-<seq>.json
+# Equivalent: go run ./tools/bench --forecast COPY-OF-STATE-DIR [--out FILE] [--suite FILE] [--keep DIR] [--jobs N] [--timeout 180s]
+```
+
+The ensemble is the suite's `target` scenario with all its dev and holdout seeds, each run on its fitted member with real-fact replay, so new members join the forecast unchanged. For each run, the tool copies the given directory's `events.jsonl`, `state.json`, archived `archive/*.jsonl` journals and `archive/*-reset-all` markers into the run's own directory and resumes that copy with `tools/sim` under `config.Default()` until it concludes, as `togi run --cycles 1` would; the given directory is only read. Copy the journals as in [the transition recipe](reviewing.md#inspecting-a-transition-on-recorded-state), and take the copy while togi is not running a trial: a journal that ends inside a trial resumes, in every run, as a crash of that trial.
+
+The anchor is the last complete event of the copied live journal: its session, sequence and time, with a SHA-256 of the session's journal lines through it. Only events after the anchor count. For each run, the forecast records:
+
+- `status`: `concluded` (the run reached the clean cycle `togi run --cycles 1` stops at), `deadend`, or `censored` (still running at the simulator's boot cap). A run that times out or errors fails the whole forecast;
+- `hours`: from the anchor to the conclusion, or to the last event of a run that did not conclude;
+- `crashes`: `crash.detected` events;
+- `hunts`: hunts that ran a trial; a hunt answered only by carried facts runs none;
+- `profile` and `depth`: the newest session's final profile and its sum, as in `just bench` (its checking profile, or its baseline before one exists).
+
+The output names the anchor, the commit, the ruleset and the runs by status, then for each core's offset, the depth, hours, crashes and hunts the median, the 10th to 90th percentile and the minimum to maximum. Percentiles use the nearest rank, so each is a value some run produced; the median of an even count averages the middle two. Hours cover concluded runs only; the other rows include every run, so the crashes and hunts of runs that did not conclude enter as lower bounds. The model checks follow, as in `just bench`. Hours are simulated time, reported as is and not corrected: a simulated crash reboot takes 90 s, while real recovery took a median of 141 s on 2026-10-03, about 37 minutes over that session, so a real run takes longer than its forecast hours. The output prints this bias too.
+
+The output and the record are identical for a fixed copy, commit, suite, machine files and facts extract: they hold no wall times or local paths. `--out FILE` writes the record as JSON: the anchor; the short commit, a dirty flag and the ruleset; `files`, each machine file and facts extract the ensemble read, by path relative to the suite and SHA-256; each run's machine, seed, split and outcome; and the summary of statuses and ranges. Name it `tools/bench/forecasts/<session>-<seq>.json` after the anchor and commit it in a pull request that merges before the run starts, so the history shows that the forecast predates the run and anyone can score it again. The record holds the anchor's identity and simulated outcomes only, no journal content.
+
+`--split`, `--baseline` and `--same` are usage errors with `--forecast`. `--keep DIR` retains every run directory under a new directory in DIR; without it, a failed forecast keeps its runs and prints where.
+
 ## Checking a machine against real evidence
 
 A machine file may declare `facts = "../facts/target.jsonl.gz"`, resolved relative to the machine TOML. Every `target-fit-*.toml` declares the committed target-machine extract. Files without `facts` are not checked.
