@@ -1,9 +1,7 @@
 package mprime
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,15 +20,8 @@ func (m *Mprime) Name() string { return "mprime" }
 
 func (m *Mprime) Check() (string, error) {
 	bin := filepath.Join(m.pkg, "bin/mprime")
-	info, err := os.Stat(bin)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return "", fmt.Errorf("stat mprime binary %s: %w: %w", bin, machine.ErrBackendMissing, err)
-		}
-		return "", fmt.Errorf("stat mprime binary %s: %w", bin, err)
-	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
-		return "", fmt.Errorf("mprime binary %s is not executable", bin)
+	if err := backend.CheckExecutable("mprime", bin); err != nil {
+		return "", err
 	}
 	return bin, nil
 }
@@ -78,14 +69,14 @@ var setupErrors = regexp.MustCompile(`(?i)Error allocating memory|Out of memory|
 func (m *Mprime) Classify(line string) backend.Line {
 	for _, pattern := range computationErrors {
 		if pattern.MatchString(line) {
-			return backend.Line{Kind: backend.ComputationError, Detail: line}
+			return backend.Line{Kind: backend.ComputationError}
 		}
 	}
 	if setupErrors.MatchString(line) {
-		return backend.Line{Kind: backend.SetupError, Detail: line}
+		return backend.Line{Kind: backend.SetupError}
 	}
 	if match := progress.FindStringSubmatch(line); match != nil {
-		return backend.Line{Kind: backend.Progress, Detail: "self-test " + match[1] + " passed"}
+		return backend.Line{Kind: backend.Progress, Progress: "self-test " + match[1] + " passed"}
 	}
 	return backend.Line{Kind: backend.Other}
 }

@@ -208,7 +208,7 @@ func (t *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 func (t *running) classify(inst *instance, line string, stderr bool, result *machine.Result, report machine.Reporter) bool {
 	classified := t.backend.Classify(line)
 	if stderr && (strings.HasPrefix(line, "Failed to start transient scope unit") || strings.HasPrefix(line, "Failed to execute")) {
-		classified = backend.Line{Kind: backend.SetupError, Detail: "systemd-run: " + line}
+		classified = backend.Line{Kind: backend.SetupError}
 	}
 	return t.classifyLine(inst, line, classified, stderr, result, report)
 }
@@ -217,7 +217,7 @@ func (t *running) classifyLine(inst *instance, line string, classified backend.L
 	switch classified.Kind {
 	case backend.Progress:
 		if !stderr {
-			detail := classified.Detail
+			detail := classified.Progress
 			if len(t.instances) > 1 {
 				detail = fmt.Sprintf("core %02d %s", inst.Core, detail)
 			}

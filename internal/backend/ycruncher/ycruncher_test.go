@@ -154,8 +154,9 @@ func TestPrepare(t *testing.T) {
 			}
 		})
 	}
-	if _, err := y.Prepare(machine.Workload{ID: "unsupported", Base: "unsupported"}, t.TempDir(), []int{2}); err == nil || err.Error() != "y-cruncher: no configuration for workload unsupported" {
-		t.Fatalf("unsupported workload: %v", err)
+	_, err := y.Prepare(machine.Workload{ID: "unsupported-derived", Base: "unsupported"}, t.TempDir(), []int{2})
+	if err == nil || errors.Is(err, machine.ErrBackendMissing) || !strings.Contains(err.Error(), "unsupported-derived") {
+		t.Fatalf("unsupported workload must fail naming it, not as a missing backend: %v", err)
 	}
 }
 
@@ -172,34 +173,31 @@ func TestMissingZen5(t *testing.T) {
 func TestClassify(t *testing.T) {
 	y := New("")
 	for _, tc := range []struct {
-		line   string
-		kind   backend.Kind
-		detail string
-		cpu    int
+		line string
+		want backend.Line
 	}{
-		{"\x1b[31mFailed to set core affinity to core:  3\x1b[0m", backend.AffinityError, "Failed to set core affinity to core:  3", 3},
-		{"Error(s) encountered on logical core 3.", backend.ComputationError, "Error(s) encountered on logical core 3.", 0},
-		{"Coefficient is too large", backend.ComputationError, "Coefficient is too large", 0},
-		{"Checksum mismatch", backend.ComputationError, "Checksum mismatch", 0},
-		{"Running BKT: FAIL", backend.ComputationError, "Running BKT: FAIL", 0},
-		{"InvalidParametersException", backend.SetupError, "InvalidParametersException", 0},
-		{"Invalid Parameter: NOPE", backend.SetupError, "Invalid Parameter: NOPE", 0},
-		{"\x1b[32mRunning BKT: Passed\x1b[0m", backend.Progress, "BKT passed", 0},
+		{"\x1b[31mFailed to set core affinity to core:  3\x1b[0m", backend.Line{Kind: backend.AffinityError, CPU: 3}},
+		{"Error(s) encountered on logical core 3.", backend.Line{Kind: backend.ComputationError}},
+		{"Coefficient is too large", backend.Line{Kind: backend.ComputationError}},
+		{"Checksum mismatch", backend.Line{Kind: backend.ComputationError}},
+		{"Running BKT: FAIL", backend.Line{Kind: backend.ComputationError}},
+		{"InvalidParametersException", backend.Line{Kind: backend.SetupError}},
+		{"Invalid Parameter: NOPE", backend.Line{Kind: backend.SetupError}},
+		{"\x1b[32mRunning BKT: Passed\x1b[0m", backend.Line{Kind: backend.Progress, Progress: "BKT passed"}},
 	} {
-		got := y.Classify(tc.line)
-		if got.Kind != tc.kind || got.Detail != tc.detail || got.CPU != tc.cpu {
-			t.Errorf("Classify(%q) = %#v", tc.line, got)
+		if diff := cmp.Diff(tc.want, y.Classify(tc.line)); diff != "" {
+			t.Errorf("Classify(%q) (-want +got):\n%s", tc.line, diff)
 		}
 	}
-	var details []string
+	var passed []string
 	for line := range strings.SplitSeq("Running BKT: Passed\rRunning SFTv4: Passed", "\r") {
 		result := y.Classify(line)
 		if result.Kind != backend.Progress {
 			t.Fatalf("carriage-return progress %q: %#v", line, result)
 		}
-		details = append(details, result.Detail)
+		passed = append(passed, result.Progress)
 	}
-	if diff := cmp.Diff([]string{"BKT passed", "SFTv4 passed"}, details); diff != "" {
+	if diff := cmp.Diff([]string{"BKT passed", "SFTv4 passed"}, passed); diff != "" {
 		t.Errorf("carriage-return progress mismatch (-want +got):\n%s", diff)
 	}
 	for _, file := range []struct {

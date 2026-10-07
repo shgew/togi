@@ -82,8 +82,9 @@ func TestPrepare(t *testing.T) {
 			}
 		})
 	}
-	if _, err := m.Prepare(machine.Workload{ID: "unsupported", Base: "unsupported"}, t.TempDir(), []int{2}); err == nil || err.Error() != "mprime: no configuration for workload unsupported" {
-		t.Fatalf("unsupported workload: %v", err)
+	_, err := m.Prepare(machine.Workload{ID: "unsupported-smt", Base: "unsupported"}, t.TempDir(), []int{2})
+	if err == nil || errors.Is(err, machine.ErrBackendMissing) || !strings.Contains(err.Error(), "unsupported-smt") {
+		t.Fatalf("unsupported workload must fail naming it, not as a missing backend: %v", err)
 	}
 }
 
@@ -113,7 +114,7 @@ func TestClassify(t *testing.T) {
 			t.Errorf("%q classified as %v", line, got)
 		}
 	}
-	if got := m.Classify("Self-test 21K (thread 1 of 2) passed!"); got.Kind != backend.Progress || got.Detail != "self-test 21K passed" {
+	if got := m.Classify("Self-test 21K (thread 1 of 2) passed!"); got.Kind != backend.Progress || got.Progress != "self-test 21K passed" {
 		t.Errorf("progress: %#v", got)
 	}
 	if got := m.Classify("Torture Test completed 100 - 0 errors"); got.Kind != backend.Other {

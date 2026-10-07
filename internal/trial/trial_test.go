@@ -44,7 +44,7 @@ func classifyHelper(line string) backend.Line {
 		return backend.Line{Kind: backend.AffinityError, CPU: cpu}
 	}
 	if strings.HasPrefix(line, "progress") {
-		return backend.Line{Kind: backend.Progress, Detail: line}
+		return backend.Line{Kind: backend.Progress, Progress: line}
 	}
 	return backend.Line{}
 }
