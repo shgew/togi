@@ -96,7 +96,7 @@ func TestCompletionCoversCommands(t *testing.T) {
 			line, _, _ := strings.Cut(rest, "\n")
 			line = strings.TrimSuffix(line, "; do")
 			var kinds []string
-			for _, kind := range strings.Fields(strings.Trim(line, "[]")) {
+			for kind := range strings.FieldsSeq(strings.Trim(line, "[]")) {
 				kinds = append(kinds, strings.Trim(kind, `"`))
 			}
 			if diff := cmp.Diff(journal.KindSelectors(), kinds); diff != "" {
