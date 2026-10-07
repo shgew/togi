@@ -38,7 +38,7 @@ func TestRanking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diff := cmp.Diff([]int{125, 174}, got); diff != "" {
+	if diff := cmp.Diff([]machine.CoreRank{{Core: 0, Value: 125}, {Core: 8, Value: 174}}, got); diff != "" {
 		t.Fatalf("ranking (-want +got):\n%s", diff)
 	}
 	if err := os.Remove(filepath.Join(root, "sys/devices/system/cpu/cpufreq/policy8/amd_pstate_prefcore_ranking")); err != nil {
@@ -213,7 +213,7 @@ func TestPreflightRefusesUnvalidatedHardware(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				h := host{drv: drv, conditions: smu.NewConditions(root, drv.Topology(), os.ReadFile), userErr: errors.New("backend_user not configured")}
+				h := host{drv: drv, pmTable: smu.NewPMTableReader(root, drv.Topology(), os.ReadFile), userErr: errors.New("backend_user not configured")}
 				checks := h.Preflight()
 				var names []string
 				for _, check := range checks {

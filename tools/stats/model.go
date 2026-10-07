@@ -182,7 +182,7 @@ func loaded(t *journal.TrialIntent, cores []machine.CoreInfo) []int {
 	if len(c) == 0 && t.Core != nil {
 		c = []int{*t.Core}
 	}
-	if len(c) == 0 && t.Regime.AllCores() {
+	if len(c) == 0 && t.Regime.InstancePerCore() {
 		for _, core := range cores {
 			c = append(c, core.Core)
 		}

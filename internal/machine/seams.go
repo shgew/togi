@@ -27,11 +27,16 @@ type Host interface {
 	// ValidateSMU checks CPU family/model and driver codename without mailbox or SMN access.
 	ValidateSMU() error
 	BIOSContext() (BIOSContext, error)
-	// Ranking returns the raw preferred-core ranking value of each core, in core-id order.
-	Ranking() ([]int, error)
+	// Ranking returns preferred-core values paired with their cores, in topology order.
+	Ranking() ([]CoreRank, error)
 	// Preflight runs the common checks; BIOS context and tuning-boot watchdog readiness belong to the run loop.
 	Preflight() []Check
 	Watchdog() Check
+}
+
+type CoreRank struct {
+	Core  int
+	Value int
 }
 
 // Check names: root, cpu, ryzen_smu, readback, slot_mapping, backends, systemd_run, watchdog.

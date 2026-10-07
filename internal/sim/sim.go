@@ -688,14 +688,18 @@ func (h host) Topology() ([]machine.CoreInfo, error) {
 	return cores, nil
 }
 
-func (h host) Ranking() ([]int, error) {
+func (h host) Ranking() ([]machine.CoreRank, error) {
 	if h.m.crashed {
 		return nil, machine.ErrCrashed
 	}
 	if h.m.cfg.Ranking == nil {
 		return nil, errors.New("simulated preferred-core ranking unavailable")
 	}
-	return slices.Clone(h.m.cfg.Ranking), nil
+	ranking := make([]machine.CoreRank, len(h.m.cfg.Ranking))
+	for core, value := range h.m.cfg.Ranking {
+		ranking[core] = machine.CoreRank{Core: core, Value: value}
+	}
+	return ranking, nil
 }
 
 func (h host) ValidateSMU() error {

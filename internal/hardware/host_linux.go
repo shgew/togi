@@ -36,14 +36,14 @@ func New(cfg config.Config, stateDir string) (machine.Machine, error) {
 		backends[machine.Ycruncher] = ycruncher.New(cfg.Backends.Ycruncher)
 	}
 	cores := drv.Topology()
-	conditions := smu.NewConditions("/", cores, os.ReadFile)
+	pmTable := smu.NewPMTableReader("/", cores, os.ReadFile)
 	user, userErr := trial.LookupIdentity(cfg.BackendUser)
-	h := &host{drv: drv, cfg: cfg, backends: backends, user: user, userErr: userErr, conditions: conditions}
+	h := &host{drv: drv, cfg: cfg, backends: backends, user: user, userErr: userErr, pmTable: pmTable}
 	return machine.Machine{
 		Clock:  clock{},
 		SMU:    drv,
 		Host:   h,
-		Trials: trial.New(trial.Options{Dir: filepath.Join(stateDir, "trials"), Backends: backends, Cores: cores, User: user, Conditions: conditions}),
+		Trials: trial.New(trial.Options{Dir: filepath.Join(stateDir, "trials"), Backends: backends, Cores: cores, User: user, PMTable: pmTable}),
 		Kernel: detect.NewKernel(cores),
 	}, nil
 }
@@ -72,12 +72,12 @@ func (clock) Sleep(ctx context.Context, d time.Duration) error {
 }
 
 type host struct {
-	drv        *smu.Driver
-	cfg        config.Config
-	backends   map[machine.Backend]backend.Backend
-	user       trial.Identity
-	userErr    error
-	conditions *smu.Conditions
+	drv      *smu.Driver
+	cfg      config.Config
+	backends map[machine.Backend]backend.Backend
+	user     trial.Identity
+	userErr  error
+	pmTable  *smu.PMTableReader
 }
 
 func (h *host) BootID() (string, error) { return detect.BootID() }
@@ -88,10 +88,10 @@ func (h *host) ValidateSMU() error { return h.drv.ValidateSMU() }
 
 func (h *host) BIOSContext() (machine.BIOSContext, error) { return h.drv.BIOSContext() }
 
-func (h *host) Ranking() ([]int, error) { return ranking("/", h.drv.Topology()) }
+func (h *host) Ranking() ([]machine.CoreRank, error) { return ranking("/", h.drv.Topology()) }
 
-func ranking(root string, cores []machine.CoreInfo) ([]int, error) {
-	values := make([]int, len(cores))
+func ranking(root string, cores []machine.CoreInfo) ([]machine.CoreRank, error) {
+	values := make([]machine.CoreRank, len(cores))
 	for i, core := range cores {
 		path := filepath.Join(root, "sys/devices/system/cpu/cpufreq", fmt.Sprintf("policy%d", core.CPUs[0]), "amd_pstate_prefcore_ranking")
 		raw, err := os.ReadFile(path)
@@ -102,7 +102,7 @@ func ranking(root string, cores []machine.CoreInfo) ([]int, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read preferred-core ranking of cpu %d: %w", core.CPUs[0], err)
 		}
-		values[i] = value
+		values[i] = machine.CoreRank{Core: core.Core, Value: value}
 	}
 	return values, nil
 }
@@ -112,9 +112,10 @@ func (h *host) Preflight() []machine.Check {
 	if uid := os.Geteuid(); uid != 0 {
 		root = machine.Check{Name: "root", Detail: fmt.Sprintf("running as uid %d; run needs root", uid)}
 	}
-	identity := []machine.Check{root, h.drv.CheckCPU(), h.drv.CheckDriver(), h.conditions.Check()}
-	if !identity[1].OK || !identity[2].OK {
-		return identity
+	cpu, driver := h.drv.CheckCPU(), h.drv.CheckDriver()
+	checks := []machine.Check{root, cpu, driver, h.pmTable.Check()}
+	if !cpu.OK || !driver.OK {
+		return checks
 	}
 	systemdRun := machine.Check{Name: "systemd_run", OK: true}
 	detail, err := trial.CheckSystemdRun(h.user)
@@ -122,17 +123,7 @@ func (h *host) Preflight() []machine.Check {
 	if err != nil {
 		systemdRun.Detail, systemdRun.OK = err.Error(), false
 	}
-	return []machine.Check{
-		root,
-		h.drv.CheckCPU(),
-		h.drv.CheckDriver(),
-		identity[3],
-		h.drv.CheckReadback(),
-		h.drv.CheckSlotMapping(),
-		h.checkBackends(),
-		h.checkBackendUser(),
-		systemdRun,
-	}
+	return append(checks, h.drv.CheckReadback(), h.drv.CheckSlotMapping(), h.checkBackends(), h.checkBackendUser(), systemdRun)
 }
 
 func (h *host) Watchdog() machine.Check { return watchdog("/") }

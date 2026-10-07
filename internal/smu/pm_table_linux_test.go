@@ -44,7 +44,7 @@ func TestReadPMTable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				files := map[string][]byte{"pm_table_version": tc.version, "pm_table": tc.table}
-				c := NewConditions("/", pmTableCores(), func(path string) ([]byte, error) {
+				c := NewPMTableReader("/", pmTableCores(), func(path string) ([]byte, error) {
 					if raw := files[filepath.Base(path)]; raw != nil {
 						return raw, nil
 					}
@@ -99,7 +99,7 @@ func TestPMTableTopology(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				raw, want := syntheticPMTable()
 				var transfers atomic.Int64
-				c := NewConditions("/", tc.change(pmTableCores()), func(path string) ([]byte, error) {
+				c := NewPMTableReader("/", tc.change(pmTableCores()), func(path string) ([]byte, error) {
 					if filepath.Base(path) == "pm_table_version" {
 						return []byte{0x05, 0x02, 0x62, 0x00}, nil
 					}
@@ -134,7 +134,7 @@ func TestPMTableBlockingRead(t *testing.T) {
 				raw, want := syntheticPMTable()
 				release := make(chan struct{})
 				var blockedReads atomic.Int64
-				c := NewConditions("/", pmTableCores(), func(path string) ([]byte, error) {
+				c := NewPMTableReader("/", pmTableCores(), func(path string) ([]byte, error) {
 					if filepath.Base(path) == blockedFile {
 						blockedReads.Add(1)
 						<-release
@@ -190,7 +190,7 @@ func TestPMTableFreshness(t *testing.T) {
 				raw, want := syntheticPMTable()
 				release := make(chan struct{})
 				reads := 0
-				c := NewConditions("/", pmTableCores(), func(path string) ([]byte, error) {
+				c := NewPMTableReader("/", pmTableCores(), func(path string) ([]byte, error) {
 					if filepath.Base(path) == "pm_table_version" {
 						return []byte{0x05, 0x02, 0x62, 0x00}, nil
 					}
@@ -225,7 +225,7 @@ func TestPMTableCheckRefreshesCompletedRead(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		raw, _ := syntheticPMTable()
 		available := true
-		c := NewConditions("/", pmTableCores(), func(path string) ([]byte, error) {
+		c := NewPMTableReader("/", pmTableCores(), func(path string) ([]byte, error) {
 			if !available {
 				return nil, os.ErrNotExist
 			}

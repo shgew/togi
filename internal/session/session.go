@@ -1165,7 +1165,14 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 			if ctx.Err() != nil {
 				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
 			}
-			values, err := r.in.Machine.Host.Ranking()
+			ranks, err := r.in.Machine.Host.Ranking()
+			var values []int
+			if ranks != nil {
+				values = make([]int, len(ranks))
+				for i, rank := range ranks {
+					values[i] = rank.Value
+				}
+			}
 			ranking := make([]int, len(r.cores))
 			for i, c := range r.cores {
 				ranking[i] = c.Core
@@ -1179,16 +1186,15 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 			case len(values) > 0 && slices.Min(values) == slices.Max(values):
 				detail = fmt.Sprintf("every core ranks %d", values[0])
 			default:
-				value := make(map[int]int, len(r.cores))
-				for i, c := range r.cores {
-					value[c.Core] = values[i]
-				}
-				slices.SortFunc(ranking, func(a, b int) int {
-					if value[a] != value[b] {
-						return value[b] - value[a]
+				slices.SortFunc(ranks, func(a, b machine.CoreRank) int {
+					if a.Value != b.Value {
+						return b.Value - a.Value
 					}
-					return a - b
+					return a.Core - b.Core
 				})
+				for i, rank := range ranks {
+					ranking[i] = rank.Core
+				}
 			}
 			if _, err := r.append(&journal.HostRanking{Ranking: ranking, Values: values, Detail: detail}); err != nil {
 				return Stop{}, err

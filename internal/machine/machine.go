@@ -29,13 +29,11 @@ const (
 
 var Regimes = []Regime{R1, R2, R3, R4, R5, R6, R7}
 
-var ConfirmationRegimes = []Regime{R1, R2, R3, R4, R5}
-
 func (r Regime) Valid() bool {
 	return slices.Contains(Regimes, r)
 }
 
-func (r Regime) AllCores() bool {
+func (r Regime) InstancePerCore() bool {
 	return r == R6 || r == R7
 }
 
