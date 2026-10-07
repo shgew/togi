@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +28,8 @@ const (
 	checkPoll    = 30 * time.Second
 	// hardwareLabel marks an issue waiting on a run on the target machine; no release is cut while one is open (ADR 0043).
 	hardwareLabel = "needs-hardware"
+	// issuesPerPage is the most records GitHub returns per page; a shorter page is the last one.
+	issuesPerPage = 100
 )
 
 var repoPart = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
@@ -412,19 +415,24 @@ func latestCheckRun(api github, repo repository, commit string) (checkRun, bool,
 // requireNoHardwareWait fails while any open issue carries hardwareLabel, naming each by number and title.
 func requireNoHardwareWait(api github, repo repository) error {
 	path := "/repos/" + url.PathEscape(repo.owner) + "/" + url.PathEscape(repo.name) + "/issues"
-	query := url.Values{"labels": {hardwareLabel}, "state": {"open"}, "per_page": {"100"}}
-	var result []struct {
-		Number      int       `json:"number"`
-		Title       string    `json:"title"`
-		PullRequest *struct{} `json:"pull_request"`
-	}
-	if _, err := api.request(http.MethodGet, path+"?"+query.Encode(), nil, &result); err != nil {
-		return fmt.Errorf("list open %s issues: %w", hardwareLabel, err)
-	}
 	var waiting []string
-	for _, i := range result {
-		if i.PullRequest == nil {
-			waiting = append(waiting, fmt.Sprintf("#%d %s", i.Number, i.Title))
+	for page := 1; ; page++ {
+		query := url.Values{"labels": {hardwareLabel}, "state": {"open"}, "per_page": {strconv.Itoa(issuesPerPage)}, "page": {strconv.Itoa(page)}}
+		var result []struct {
+			Number      int       `json:"number"`
+			Title       string    `json:"title"`
+			PullRequest *struct{} `json:"pull_request"`
+		}
+		if _, err := api.request(http.MethodGet, path+"?"+query.Encode(), nil, &result); err != nil {
+			return fmt.Errorf("list open %s issues: %w", hardwareLabel, err)
+		}
+		for _, i := range result {
+			if i.PullRequest == nil {
+				waiting = append(waiting, fmt.Sprintf("#%d %s", i.Number, i.Title))
+			}
+		}
+		if len(result) < issuesPerPage {
+			break
 		}
 	}
 	if len(waiting) == 0 {
