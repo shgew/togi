@@ -68,17 +68,8 @@ func kindMatches(entry string, kind Kind) bool {
 	return group == entry
 }
 
-func ValidateKindSelector(name string) error {
-	if _, ok := payloadTypes[Kind(name)]; ok {
-		return nil
-	}
-	if name != "" && !strings.Contains(name, ".") {
-		for kind := range payloadTypes {
-			if kindMatches(name, kind) {
-				return nil
-			}
-		}
-	}
+// KindSelectors returns every exact kind and group that --kind accepts, sorted.
+func KindSelectors() []string {
 	names := make([]string, 0, 2*len(payloadTypes))
 	for kind := range payloadTypes {
 		names = append(names, string(kind))
@@ -86,7 +77,14 @@ func ValidateKindSelector(name string) error {
 		names = append(names, group)
 	}
 	slices.Sort(names)
-	names = slices.Compact(names)
+	return slices.Compact(names)
+}
+
+func ValidateKindSelector(name string) error {
+	names := KindSelectors()
+	if name != "" && slices.Contains(names, name) {
+		return nil
+	}
 	if name == "" {
 		return fmt.Errorf("empty kind list; valid names: %s", strings.Join(names, ", "))
 	}

@@ -40,27 +40,41 @@ type command struct {
 	summary string
 	help    string
 	flags   func(g *globals) *flag.FlagSet
-	run     func(g *globals, args []string, stdout, stderr io.Writer) int
+	// args lists the positional values the command accepts, for completion.
+	args []string
+	run  func(g *globals, args []string, stdout, stderr io.Writer) int
 }
 
-var commands = []command{
-	{name: "doctor", summary: "Check whether this machine is ready for a run, writing nothing", help: doctorHelp, flags: func(g *globals) *flag.FlagSet {
-		return newFlagSet("doctor", g)
-	}, run: runDoctor},
-	{name: "events", summary: "Render the journal", help: eventsHelp, flags: func(g *globals) *flag.FlagSet {
-		return eventsFlags(g, &journal.Filter{}, new(bool))
-	}, run: runEvents},
-	{name: "reset", summary: "Reset one core or archive the session", run: runReset},
-	{name: "restart-limit", summary: "Recover after the tuning service reaches its restart limit", help: restartLimitHelp, flags: func(g *globals) *flag.FlagSet {
-		return restartLimitFlags(g, new(string))
-	}, run: runRestartLimit},
-	{name: "run", summary: "Start or resume the session in the foreground", run: runRun},
-	{name: "status", summary: "Show core failure points, combinations, activity and clean cycles", help: statusHelp, flags: func(g *globals) *flag.FlagSet {
-		return newFlagSet("status", g)
-	}, run: runStatus},
-	{name: "watch", summary: "Show the session as a live dashboard", help: watchHelp, flags: func(g *globals) *flag.FlagSet {
-		return watchFlags(g, new(int), new(int))
-	}, run: runWatch},
+// commands is assigned in init because completion reads it.
+var commands []command
+
+func init() {
+	commands = []command{
+		{name: "completion", summary: "Print a shell completion script", help: completionHelp, flags: func(g *globals) *flag.FlagSet {
+			return newFlagSet("completion", g)
+		}, args: completionShellNames(), run: runCompletion},
+		{name: "doctor", summary: "Check whether this machine is ready for a run, writing nothing", help: doctorHelp, flags: func(g *globals) *flag.FlagSet {
+			return newFlagSet("doctor", g)
+		}, run: runDoctor},
+		{name: "events", summary: "Render the journal", help: eventsHelp, flags: func(g *globals) *flag.FlagSet {
+			return eventsFlags(g, &journal.Filter{}, new(bool))
+		}, run: runEvents},
+		{name: "reset", summary: "Reset one core or archive the session", help: resetHelp, flags: func(g *globals) *flag.FlagSet {
+			return resetFlags(g, new(*int), new(bool))
+		}, run: runReset},
+		{name: "restart-limit", summary: "Recover after the tuning service reaches its restart limit", help: restartLimitHelp, flags: func(g *globals) *flag.FlagSet {
+			return restartLimitFlags(g, new(string))
+		}, run: runRestartLimit},
+		{name: "run", summary: "Start or resume the session in the foreground", help: runHelp, flags: func(g *globals) *flag.FlagSet {
+			return runFlags(g, new(int), new(string), new(bool))
+		}, run: runRun},
+		{name: "status", summary: "Show core failure points, combinations, activity and clean cycles", help: statusHelp, flags: func(g *globals) *flag.FlagSet {
+			return newFlagSet("status", g)
+		}, run: runStatus},
+		{name: "watch", summary: "Show the session as a live dashboard", help: watchHelp, flags: func(g *globals) *flag.FlagSet {
+			return watchFlags(g, new(int), new(int))
+		}, run: runWatch},
+	}
 }
 
 func main() {
@@ -73,10 +87,7 @@ func cli(args []string, stdout, stderr io.Writer) int {
 
 func cliWithGlobals(args []string, stdout, stderr io.Writer, g globals) int {
 	var version bool
-	fs := flag.NewFlagSet("togi", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	registerGlobals(fs, &g)
-	fs.BoolVar(&version, "version", false, "print the build version and git revision")
+	fs := topFlags(&g, &version)
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			usage(stdout)
@@ -107,6 +118,14 @@ func cliWithGlobals(args []string, stdout, stderr io.Writer, g globals) int {
 		return flagError(c.flags(&g), c.help, errors.New("flag provided but not defined: -config"), stderr)
 	}
 	return c.run(&g, fs.Args()[1:], stdout, stderr)
+}
+
+func topFlags(g *globals, version *bool) *flag.FlagSet {
+	fs := flag.NewFlagSet("togi", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	registerGlobals(fs, g)
+	fs.BoolVar(version, "version", false, "print the build version and git revision")
+	return fs
 }
 
 func isGlobal(f *flag.Flag) bool {
@@ -145,9 +164,7 @@ func usage(w io.Writer) {
 	for _, c := range sorted {
 		fmt.Fprintf(&b, "  %-15s%s\n", c.name, c.summary)
 	}
-	fs := flag.NewFlagSet("togi", flag.ContinueOnError)
-	registerGlobals(fs, &globals{})
-	fs.Bool("version", false, "print the build version and git revision")
+	fs := topFlags(&globals{}, new(bool))
 	writeFlags(&b, "Flags", fs, func(*flag.Flag) bool { return true })
 	b.WriteString("\nRun 'togi <command> --help' for its description, examples and flags.\n")
 	_, _ = io.WriteString(w, b.String())

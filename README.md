@@ -44,6 +44,7 @@ togi status                            # activity, failure points and combinatio
 togi watch                             # full-width dashboard: current trial, tuner forecasts, every core
 togi --state-dir <dir> status          # inspect a copied journal
 togi --state-dir <dir> events --core 3 # everything that happened to core 3
+source <(togi completion bash)         # shell completions; the Nix package installs bash, zsh, fish and nushell ones
 ```
 
 The dashboard adapts to wide and compact terminals. It shows checking's cycle checklist, hunt parts and member probes, or search turns beside recent decisions; `?` explains the gauges and `l` opens the journal. Outcome lines come from the tuner itself. R6 idle trials hold the screen still, without a ticking clock, until the journal records their end.

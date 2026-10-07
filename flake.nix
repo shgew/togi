@@ -82,13 +82,22 @@
                 fileset = goFiles;
               };
               vendorHash = "sha256-KMcBcFvwlqulewo8hwkFBrsiy1PlEeUIWc71LdDEUT0=";
+              nativeBuildInputs = [ pkgs.installShellFiles ];
               nativeCheckInputs = [
                 pkgs.gitMinimal
+                pkgs.nushell
               ]
               ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.util-linux ];
               ldflags = [ "-X github.com/shgew/togi.rev=${rev}" ];
               subPackages = [ "cmd/togi" ];
               checkPhase = testPhase "" "./...";
+              postInstall = lib.optionalString (pkgs.stdenv.buildPlatform.canExecute pkgs.stdenv.hostPlatform) ''
+                installShellCompletion --cmd togi \
+                  --bash <($out/bin/togi completion bash) \
+                  --zsh <($out/bin/togi completion zsh) \
+                  --fish <($out/bin/togi completion fish) \
+                  --nushell <($out/bin/togi completion nushell)
+              '';
               meta = {
                 description = "Per-core Curve Optimizer tuner for Zen 5 desktop CPUs";
                 license = lib.licenses.gpl3Plus;
@@ -109,6 +118,7 @@
               pkgs.golangci-lint
               pkgs.just
               pkgs.nixfmt
+              pkgs.nushell
             ];
             TOGI_DEV_SHELL = "1";
           };
@@ -214,6 +224,8 @@
                   runHook postBuild
                 '';
                 doCheck = false;
+                # The test binary has no bin/togi to print completion scripts.
+                postInstall = "";
                 installPhase = ''
                   runHook preInstall
                   mkdir -p "$out/bin"
