@@ -236,28 +236,12 @@ func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
 			if boundary != "" && journal.CompareSessionIDs(v.session, boundary) <= 0 {
 				continue
 			}
-			if !v.candidateSoloLimit && v.offset == 0 {
-				confirmed, err := zeros.confirmed(v.session, v.seq)
-				if err != nil {
-					return nil, err
-				}
-				if !confirmed {
-					continue
-				}
+			admitted, err := zeros.admits(v)
+			if err != nil {
+				return nil, err
 			}
-			cc, ok := cores[v.core]
-			if !ok {
-				cc = &journal.CarriedCore{Core: v.core}
-				cores[v.core] = cc
-			}
-			if v.candidateSoloLimit {
-				if cc.CandidateSoloLimit == nil || v.offset < *cc.CandidateSoloLimit {
-					cc.CandidateSoloLimit, cc.CandidateSoloLimitSession, cc.CandidateSoloLimitSeq = new(v.offset), v.session, v.seq
-				}
-				continue
-			}
-			if cc.FailurePoint == nil || v.offset > *cc.FailurePoint {
-				cc.FailurePoint, cc.FailurePointSession, cc.FailurePointSeq, cc.FailurePointSignal = new(v.offset), v.session, v.seq, v.signal
+			if admitted {
+				merge(cores, v)
 			}
 		}
 	}
@@ -267,10 +251,36 @@ func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
 	return c, nil
 }
 
+// merge keeps the deepest candidate solo limit and the shallowest failure point per core; on a tie, the first found.
+func merge(cores map[int]*journal.CarriedCore, v candidate) {
+	cc, ok := cores[v.core]
+	if !ok {
+		cc = &journal.CarriedCore{Core: v.core}
+		cores[v.core] = cc
+	}
+	if v.candidateSoloLimit {
+		if cc.CandidateSoloLimit == nil || v.offset < *cc.CandidateSoloLimit {
+			cc.CandidateSoloLimit, cc.CandidateSoloLimitSession, cc.CandidateSoloLimitSeq = new(v.offset), v.session, v.seq
+		}
+		return
+	}
+	if cc.FailurePoint == nil || v.offset > *cc.FailurePoint {
+		cc.FailurePoint, cc.FailurePointSession, cc.FailurePointSeq, cc.FailurePointSignal = new(v.offset), v.session, v.seq, v.signal
+	}
+}
+
 // zeroConfirmations caches, per original session, which of its failures at CO 0 it confirmed.
 type zeroConfirmations struct {
 	dir       string
 	bySession map[string]map[int]bool
+}
+
+// admits reports whether a candidate carries: every one but a failure point at CO 0 its session did not confirm.
+func (z zeroConfirmations) admits(v candidate) (bool, error) {
+	if v.candidateSoloLimit || v.offset != 0 {
+		return true, nil
+	}
+	return z.confirmed(v.session, v.seq)
 }
 
 // confirmed reports whether the failure at CO 0 recorded at seq in session was confirmed there. A session whose archive
