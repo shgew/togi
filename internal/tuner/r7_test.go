@@ -698,19 +698,30 @@ func failLiveR7(h *harness, end journal.TrialEnd) (journal.Event, journal.Event)
 // action is neither a hunt group nor one of its trials.
 func runLocated(h *harness, fails func([]int) *int) Action {
 	h.t.Helper()
+	return runLocatedUntil(h, func(t Trial) *int { return fails(t.Profile) }, func(Action) bool { return false })
+}
+
+// runLocatedUntil is runLocated over the whole parked trial, stopping before deciding a hunt event that stop accepts.
+func runLocatedUntil(h *harness, fails func(Trial) *int, stop func(Action) bool) Action {
+	h.t.Helper()
 	for range 200 {
 		a := h.next()
 		switch a.Payload.(type) {
 		case *journal.HuntStart, *journal.HuntGroup:
+			if stop(a) {
+				return a
+			}
 			h.decide(a)
 			continue
 		}
 		if a.Kind != RunTrial || a.Trial.Condition != machine.Parked {
 			return a
 		}
-		named := fails(a.Trial.Profile)
+		named := fails(a.Trial)
 		if named == nil {
-			h.trial(a, passed)
+			end := passed
+			end.DurationS = a.Trial.DurationS
+			h.trial(a, end)
 			continue
 		}
 		end := failed

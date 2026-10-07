@@ -336,6 +336,10 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 	}
 	if p.stage == "full" {
 		p.fullChecked = true
+		if outcome == "pass" && h.locatedFull(p) {
+			p.result = true
+			return p, false
+		}
 		if outcome == "pass" {
 			p.escalated = true
 			p.duration = h.start.DurationS
@@ -378,6 +382,12 @@ func (s *State) nextGroupPlan(h *hunt) (groupPlan, bool) {
 		p.stage = "part"
 		p.index = 0
 		p.cores = s.split(h, p.set, p.g)[0]
+		return p, true
+	}
+	if h.located() && !p.anyFailed && !h.locatedFull(p) {
+		p.stage, p.index, p.duration = "full", 0, h.start.DurationS
+		p.escalated = p.escalated || h.start.DurationS > h.start.TrialS
+		p.cores = slices.Clone(p.set)
 		return p, true
 	}
 	p.result = true
@@ -464,8 +474,11 @@ func (s *State) huntNext() (Action, bool) {
 	next, has := s.nextGroupPlan(h)
 	if has {
 		reason := "testing the part of the failing profile"
-		if next.stage == "locate" {
+		switch {
+		case next.stage == "locate":
 			reason = "rerunning the failed load with every unloaded core at CO 0 to locate the failure"
+		case h.locatedFull(next):
+			reason = "rerunning the full failing profile at the failed duration before the failure stays with the loaded cores"
 		}
 		return s.planGroup(h, next, reason), true
 	}

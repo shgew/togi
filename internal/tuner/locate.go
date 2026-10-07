@@ -31,6 +31,12 @@ func (h *hunt) narrowing() []groupRecord {
 	return h.groups
 }
 
+// locatedFull reports a located hunt's full group at the failed duration: the failing profile itself, which must
+// pass before narrowing that found no failing group ends the hunt loaded. A short pass does not clear a long failure.
+func (h *hunt) locatedFull(p groupPlan) bool {
+	return h.located() && p.stage == "full" && p.duration == h.start.DurationS
+}
+
 // locatePlan decides a located hunt's plan until its locate group has passed: the locate group itself, or the
 // end `loaded` once it failed or was skipped.
 func (s *State) locatePlan(h *hunt) (plan groupPlan, has, decided bool) {
