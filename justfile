@@ -139,7 +139,7 @@ fit-shared-voltage *args:
 forward *args:
     {{ dev }} go run ./tools/fit --forward-only "$@"
 
-# Start the release workflow on main and follow it: once check passes on main, it commits the release, builds the package, pushes to main and publishes
+# Start the release workflow on main and follow it: unless an open issue is labeled needs-hardware, once check passes on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]
 release:
     url=$({{ dev }} gh workflow run release.yml --ref main); echo "$url"; {{ dev }} gh run watch "${url##*/}" --exit-status
@@ -154,7 +154,7 @@ release-preview:
 changes:
     {{ dev }} go run ./tools/release -check changes
 
-# Print who may post on the repository, what waits on the owner, untriaged issues, work in progress, ready work, overlaps and the open Ruleset issue
+# Print who may post on the repository, what waits on the owner and on the target machine, untriaged issues, work in progress, ready work, overlaps and the open Ruleset issue
 [group('github')]
 board:
     {{ dev }} go run ./tools/board

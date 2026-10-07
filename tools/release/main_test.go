@@ -147,10 +147,11 @@ func fragmentNames(fragments map[string]string) []string {
 
 func releaseRunner(git *fakeGit, out *bytes.Buffer, commit bool) runner {
 	return runner{
-		git:    git.run,
-		now:    func() time.Time { return time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC) },
-		out:    out,
-		commit: commit,
+		git:                   git.run,
+		now:                   func() time.Time { return time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC) },
+		out:                   out,
+		commit:                commit,
+		requireNoHardwareWait: func() error { return nil },
 		requireGreen: func(commit string) error {
 			git.checked = append(git.checked, commit)
 			return git.checkErr
@@ -235,6 +236,58 @@ func TestReleaseRefusesWithoutGreenCheck(t *testing.T) {
 	}
 	if got := git.mutations(); got != nil {
 		t.Fatalf("refused release changed the repository: %v", got)
+	}
+}
+
+func TestReleaseWaitsOnTheTargetMachine(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, issues, err string
+		mutations         []string
+		checked           []string
+	}{
+		{
+			name:      "empty queue",
+			issues:    `[{"number":40,"title":"A pull request","pull_request":{"url":"u"}}]`,
+			mutations: []string{"read-tree base", "hash-object -w --stdin", "update-index --cacheinfo 100644,blob0,version.txt", "hash-object -w --stdin", "update-index --cacheinfo 100644,blob1,CHANGELOG.md", "update-index --force-remove changes/35.md", "write-tree", "commit-tree tree -p base -F -", "checkout --quiet --detach commit"},
+			checked:   []string{"base"},
+		},
+		{
+			name:   "open issue",
+			issues: `[{"number":417,"title":"Backends: shared check","pull_request":null},{"number":40,"title":"A pull request","pull_request":{"url":"u"}}]`,
+			err:    "refuse to release: open issues wait on a run on the target machine (needs-hardware): #417 Backends: shared check",
+		},
+		{
+			name:   "open issues",
+			issues: `[{"number":417,"title":"Backends: shared check"},{"number":418,"title":"Hardware-layer names"}]`,
+			err:    "refuse to release: open issues wait on a run on the target machine (needs-hardware): #417 Backends: shared check; #418 Hardware-layer names",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var requests []string
+			api := github{base: "https://api.forge.example", token: "test-token", client: &http.Client{Transport: handlerTransport{http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				requests = append(requests, req.Method+" "+req.URL.RequestURI())
+				fmt.Fprint(w, tc.issues)
+			})}}}
+			git := mainGit(t, "0.1.0", released, "sha\trefs/tags/v0.1.0\n", aFix)
+			var out bytes.Buffer
+			r := releaseRunner(git, &out, true)
+			r.requireNoHardwareWait = func() error { return requireNoHardwareWait(api, repository{"o", "r"}) }
+			err := r.release()
+			if got := fmt.Sprint(err); tc.err != "" && got != tc.err || tc.err == "" && err != nil {
+				t.Fatalf("release error = %v, want %q", err, tc.err)
+			}
+			if diff := cmp.Diff([]string{"GET /repos/o/r/issues?labels=needs-hardware&per_page=100&state=open"}, requests); diff != "" {
+				t.Errorf("requests mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.mutations, git.mutations()); diff != "" {
+				t.Errorf("repository changes mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.checked, git.checked); diff != "" {
+				t.Errorf("green check mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

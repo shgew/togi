@@ -25,6 +25,8 @@ const (
 	// checkTimeout is several times the ten minutes a check run takes, leaving room for runs waiting on a runner.
 	checkTimeout = time.Hour
 	checkPoll    = 30 * time.Second
+	// hardwareLabel marks an issue waiting on a run on the target machine; no release is cut while one is open (ADR 0043).
+	hardwareLabel = "needs-hardware"
 )
 
 var repoPart = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
@@ -113,11 +115,12 @@ func (g github) request(method, path string, body any, result any, allowed ...in
 }
 
 type runner struct {
-	git          gitFunc
-	now          func() time.Time
-	out          io.Writer
-	commit       bool
-	requireGreen func(commit string) error
+	git                   gitFunc
+	now                   func() time.Time
+	out                   io.Writer
+	commit                bool
+	requireNoHardwareWait func() error
+	requireGreen          func(commit string) error
 }
 
 func (r runner) output(args ...string) (string, error) {
@@ -193,6 +196,9 @@ func (r runner) release() error {
 		notes, _ := sectionNamed(updated, next)
 		fmt.Fprintf(r.out, "Would release from %s:\n\n%s\n%s\n", base, message, releaseNotes(updated, notes))
 		return nil
+	}
+	if err := r.requireNoHardwareWait(); err != nil {
+		return fmt.Errorf("refuse to release: %w", err)
 	}
 	if err := r.requireGreen(baseCommit); err != nil {
 		return fmt.Errorf("require a passing check on %s: %w", base, err)
@@ -403,6 +409,30 @@ func latestCheckRun(api github, repo repository, commit string) (checkRun, bool,
 	return result.WorkflowRuns[0], true, nil
 }
 
+// requireNoHardwareWait fails while any open issue carries hardwareLabel, naming each by number and title.
+func requireNoHardwareWait(api github, repo repository) error {
+	path := "/repos/" + url.PathEscape(repo.owner) + "/" + url.PathEscape(repo.name) + "/issues"
+	query := url.Values{"labels": {hardwareLabel}, "state": {"open"}, "per_page": {"100"}}
+	var result []struct {
+		Number      int       `json:"number"`
+		Title       string    `json:"title"`
+		PullRequest *struct{} `json:"pull_request"`
+	}
+	if _, err := api.request(http.MethodGet, path+"?"+query.Encode(), nil, &result); err != nil {
+		return fmt.Errorf("list open %s issues: %w", hardwareLabel, err)
+	}
+	var waiting []string
+	for _, i := range result {
+		if i.PullRequest == nil {
+			waiting = append(waiting, fmt.Sprintf("#%d %s", i.Number, i.Title))
+		}
+	}
+	if len(waiting) == 0 {
+		return nil
+	}
+	return fmt.Errorf("open issues wait on a run on the target machine (%s): %s", hardwareLabel, strings.Join(waiting, "; "))
+}
+
 // waitForGreenCheck polls the check run for commit until it completes or checkTimeout passes, and fails unless it succeeded.
 func waitForGreenCheck(api github, repo repository, commit string, now func() time.Time, sleep func(time.Duration), out io.Writer) error {
 	deadline := now().Add(checkTimeout)
@@ -437,7 +467,7 @@ func waitForGreenCheck(api github, repo repository, commit string, now func() ti
 func main() {
 	var commit, publish bool
 	var check string
-	flag.BoolVar(&commit, "commit", false, "commit the next release on top of origin/main and check it out, once the check workflow passed on origin/main, waiting up to an hour for it (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
+	flag.BoolVar(&commit, "commit", false, "commit the next release on top of origin/main and check it out, refusing while any open issue is labeled needs-hardware, once the check workflow passed on origin/main, waiting up to an hour for it (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
 	flag.BoolVar(&publish, "publish", false, "publish the release version.txt names at HEAD, if not yet published (release workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)")
 	flag.StringVar(&check, "check", "", "validate the changelog fragments in `dir` and exit (the changes flake check)")
 	flag.Usage = func() {
@@ -485,6 +515,7 @@ func run(r runner, publish bool) error {
 	if publish {
 		return r.publish(api, repo)
 	}
+	r.requireNoHardwareWait = func() error { return requireNoHardwareWait(api, repo) }
 	r.requireGreen = func(commit string) error { return waitForGreenCheck(api, repo, commit, r.now, time.Sleep, r.out) }
 	return r.release()
 }

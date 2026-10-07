@@ -82,7 +82,7 @@ func (repo releaseRepository) write(t *testing.T, path, content string) {
 }
 
 func (repo releaseRepository) runner(out *bytes.Buffer, commit bool) runner {
-	return runner{git: repo.git, out: out, commit: commit, now: func() time.Time { return time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC) }, requireGreen: func(string) error { return nil }}
+	return runner{git: repo.git, out: out, commit: commit, now: func() time.Time { return time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC) }, requireNoHardwareWait: func() error { return nil }, requireGreen: func(string) error { return nil }}
 }
 
 func TestPublishTemporaryRepository(t *testing.T) {
