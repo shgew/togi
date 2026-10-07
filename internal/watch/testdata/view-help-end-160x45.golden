@@ -25,7 +25,7 @@
   │ partial part     R7 with top-requester groups idle, down to two loaded cores; passes and failures count as ordinary evidence
   │ top requester    loaded core with the highest voltage request; both CCDs share it. Within 1 mV ties; offset order is a fallback, not a measurement
   │ self-sufficient  observed passing as top requester for this R7 workload at equal or deeper offsets since reset; evidence, not a guarantee
-  █ record only      a trial whose result is kept but changes no decision
+  │ record only      a trial whose result is kept but changes no decision
   █ cycle            one pass through the checking schedule
   █ 
   █ 

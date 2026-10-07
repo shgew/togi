@@ -218,9 +218,9 @@ func (c huntCause) knownWords() string {
 // huntCauseStory tells what started the hunt: a sentence, whether a core was named, and a compact line.
 func (s Snapshot) huntCauseStory() (string, string, string) {
 	c := s.hunt.cause
-	named := "No core was named: "
+	named, nameBrief := "No core was named: ", "; no core named."
 	if c.core != nil {
-		named = fmt.Sprintf("Core %02d was named: ", *c.core)
+		named, nameBrief = fmt.Sprintf("Core %02d was named: ", *c.core), fmt.Sprintf("; core %02d named.", *c.core)
 	}
 	if c.known {
 		text := c.knownWords() + "."
@@ -228,21 +228,21 @@ func (s Snapshot) huntCauseStory() (string, string, string) {
 	}
 	if c.trial.regime == "" {
 		// An idle failure between trials starts a hunt without a failed trial.
-		return "The machine crashed while idle, with no trial running, and rebooted.", named, "Crashed while idle; no core named."
+		return "The machine crashed while idle, with no trial running, and rebooted.", named, "Crashed while idle" + nameBrief
 	}
 	what := fmt.Sprintf("the %s %s trial on %s", lengthWords(c.trial.duration), kindWords(c.trial.regime), coreIDs(c.trial.cores))
 	if c.rerunOf {
 		what = "the rerun of " + what
 	}
 	if c.signal != machine.Crash {
-		return fmt.Sprintf("%s ended with %s.", capitalize(what), signalText(c.signal)), named, fmt.Sprintf("%s in %s; no core named.", capitalize(signalText(c.signal)), trialName(c.trial))
+		return fmt.Sprintf("%s ended with %s.", capitalize(what), signalText(c.signal)), named, fmt.Sprintf("%s in %s%s", capitalize(signalText(c.signal)), trialName(c.trial), nameBrief)
 	}
 	when := lateness(c.end)
 	brief := "Crashed"
 	if when != "during" {
 		brief += " " + strings.Fields(when)[0]
 	}
-	return fmt.Sprintf("The machine crashed %s %s and rebooted.", when, what), named, brief + " in " + trialName(c.trial) + "; no core named."
+	return fmt.Sprintf("The machine crashed %s %s and rebooted.", when, what), named, brief + " in " + trialName(c.trial) + nameBrief
 }
 
 func (s Snapshot) recoverStory() story {

@@ -49,7 +49,7 @@ func (a *auditor) foldMarks(e journal.Event) {
 		if intent != nil && p.KnownFailure == 0 {
 			regime, condition = cmp.Or(regime, intent.Regime), cmp.Or(condition, intent.Condition)
 		}
-		if regime == machine.R7 && (condition == machine.Together || condition == machine.Parked) && p.Offset != nil && *p.Offset == 0 {
+		if regime == machine.R7 && (condition == machine.Together || condition == machine.Parked) && len(a.loadedCores(p, intent)) > 1 && p.Offset != nil && *p.Offset == 0 {
 			a.zeroNamed[e.Seq] = *p.Core
 			break
 		}
@@ -85,6 +85,26 @@ func (a *auditor) foldMarks(e journal.Event) {
 	case *journal.Combination:
 		a.combinations[p.Combination] = combination{slices.Clone(p.Members), e.Seq}
 	}
+}
+
+// loadedCores is the failed trial's loaded cores; a known failure takes them from the fact it cites. Unknown cores
+// return nil, so the failure keeps the ordinary attributed handling rather than the multi-core R7 exception.
+func (a *auditor) loadedCores(p *journal.Failure, intent *journal.TrialIntent) []int {
+	if p.KnownFailure == 0 {
+		if intent == nil {
+			return nil
+		}
+		return intent.Cores
+	}
+	switch source := a.seen[p.KnownFailure].Data.(type) {
+	case *journal.TrialCarried:
+		return source.Class.Cores
+	case *journal.TrialEnd:
+		if t := a.trials[source.Trial]; t != nil {
+			return t.Cores
+		}
+	}
+	return nil
 }
 
 // tuner.md, Failure points and combinations: P[c] <= fail[c]; every P[m] <= C[m].
