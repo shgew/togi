@@ -92,7 +92,6 @@ type core struct {
 	queueSeq       int
 	pending        int
 	zeroSeq        int
-	carriedZero    int // the carried failure behind a failure point at CO 0 carried into this session
 	lastSeq        int
 	decisionSeq    int
 	stepR1         bool
@@ -106,13 +105,6 @@ type pendingFailure struct {
 	profile []int
 	class   trialClass
 	carried bool
-}
-
-// carriedFailure is a carried failure fact with its original provenance.
-type carriedFailure struct {
-	seq       int
-	source    journal.FactSource
-	zeroRerun bool // a parked rerun, as an all-zero rerun is
 }
 
 type rerun struct {
@@ -182,9 +174,6 @@ type State struct {
 	located                 map[int]locatedHunt
 	zeroReruns              map[int]*zeroRerun
 	zeroTrials              map[string]int
-	carriedSeq              int
-	carriedFailures         []carriedFailure
-	carriedZeros            map[int]int
 }
 
 func New() *State {
@@ -305,12 +294,8 @@ func (s *State) Fold(e journal.Event) {
 			}
 			c.phaseSeq = e.Seq
 			c.queued = ""
-			c.carriedZero = 0
 			if p.FailurePoint != nil && *p.FailurePoint == 0 {
 				c.zeroSeq = e.Seq
-				if s.carriedSeq != 0 && slices.Contains(e.Cause, s.carriedSeq) {
-					c.carriedZero = s.carriedZeros[c.id]
-				}
 			}
 			s.decided(c, e.Seq)
 		}
@@ -358,7 +343,6 @@ func (s *State) Fold(e journal.Event) {
 		}
 		s.foldTrialEnd(e, p)
 		s.endZeroRerun(e, p)
-		s.answerCarriedZero(e)
 		s.pendingRerun()
 	case *journal.MCE:
 		s.mces[e.Seq] = p
@@ -366,22 +350,11 @@ func (s *State) Fold(e journal.Event) {
 		s.foldFailure(e, p)
 	case *journal.TrialCarried:
 		s.recordCarried(e, p)
-		if p.Outcome == journal.OutcomeFailure {
-			s.carriedFailures = append(s.carriedFailures, carriedFailure{seq: e.Seq, source: p.Source, zeroRerun: p.Rerun && p.Condition == machine.Parked})
-		}
 		s.pendingRerun()
 	case *journal.FailureCarried:
 		s.recordIdle(e, &p.Failure)
 		if _, recorded := s.carriedSources[e.Seq]; recorded {
 			s.rememberCarriedFailure(e.Seq, &p.Failure, trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, coresKey(s.ids()), s.durations.CheckingIdleS})
-			s.carriedFailures = append(s.carriedFailures, carriedFailure{seq: e.Seq, source: p.Source})
-		}
-	case *journal.SessionCarried:
-		s.carriedSeq = e.Seq
-		for _, cc := range p.Carried {
-			if cc.FailurePoint != nil && *cc.FailurePoint == 0 {
-				s.linkCarriedZero(cc)
-			}
 		}
 	case *journal.DeadEnd:
 		if p.Condition == journal.DeadEndThermalTrip {
@@ -639,48 +612,6 @@ func unattributedFailureAtZero(seq int) Action {
 	return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Detail: "unattributed failure with every core at CO 0; the instability is not caused by Curve Optimizer"}, Cause: []int{seq}}
 }
 
-// linkCarriedZero finds the carried failure behind a carried failure point at CO 0, whose all-zero rerun that point
-// awaits: the newest carried failure of the point's source session at or before its source sequence, with that core
-// at 0. A carried failed all-zero rerun of the same class after it already answers that rerun.
-func (s *State) linkCarriedZero(cc journal.CarriedCore) {
-	at := -1
-	for i, f := range s.carriedFailures {
-		if f.source.Session == cc.FailurePointSession && f.source.Seq <= cc.FailurePointSeq && (at < 0 || f.source.Seq > s.carriedFailures[at].source.Seq) {
-			at = i
-		}
-	}
-	if at < 0 {
-		return
-	}
-	f := s.failureBySeq(s.carriedFailures[at].seq)
-	if i := s.index(cc.Core); f == nil || i < 0 || i >= len(f.profile) || f.profile[i] != 0 {
-		return
-	}
-	if s.carriedZeros == nil {
-		s.carriedZeros = map[int]int{}
-	}
-	s.carriedZeros[cc.Core] = f.seq
-	for _, g := range s.carriedFailures[at+1:] {
-		if r := s.failureBySeq(g.seq); g.zeroRerun && r != nil && r.class == f.class && allZero(r.profile) {
-			if s.zeroReruns == nil {
-				s.zeroReruns, s.zeroTrials = map[int]*zeroRerun{}, map[string]int{}
-			}
-			s.zeroReruns[f.seq] = &zeroRerun{end: g.seq}
-			return
-		}
-	}
-}
-
-// answerCarriedZero drops a carried failure point at CO 0 once its all-zero rerun passed.
-func (s *State) answerCarriedZero(e journal.Event) {
-	for _, c := range s.cores {
-		if r := s.zeroReruns[c.carriedZero]; c.carriedZero != 0 && r != nil && r.end == e.Seq && r.passed {
-			c.fail, c.carriedZero = nil, 0
-			s.projectionDirty, s.bestDirty = true, true
-		}
-	}
-}
-
 func (s *State) Drain() (Action, bool) {
 	if a, ok := s.Attribution(); ok {
 		return a, true
@@ -739,19 +670,9 @@ func (s *State) next() Action {
 		return a
 	}
 	for _, c := range s.cores {
-		if c.fail == nil || *c.fail != 0 {
-			continue
+		if c.fail != nil && *c.fail == 0 {
+			return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Core: new(c.id), Detail: fmt.Sprintf("core %02d has a failure point at CO 0; only reset can clear it", c.id)}, Cause: []int{c.zeroSeq}}
 		}
-		if c.carriedZero != 0 {
-			if f := s.failureBySeq(c.carriedZero); f != nil {
-				dead := &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Core: new(c.id), Detail: fmt.Sprintf("core %02d has a failure point at CO 0 carried from session %s; %s", c.id, s.carriedSources[f.seq], notCurveOptimizer)}
-				if a, ok := s.atZero(*f, dead, []int{c.zeroSeq, f.seq}); ok {
-					return a
-				}
-				continue
-			}
-		}
-		return Action{Kind: Decide, Payload: &journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Core: new(c.id), Detail: fmt.Sprintf("core %02d has a failure point at CO 0; only reset can clear it", c.id)}, Cause: []int{c.zeroSeq}}
 	}
 	if len(s.queue) > 0 && allZero(s.queue[0].profile) {
 		return unattributedFailureAtZero(s.queue[0].seq)

@@ -226,11 +226,24 @@ func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
 	}
 	c := &Carry{Context: first.context}
 	cores := make(map[int]*journal.CarriedCore)
+	zeros := zeroConfirmations{dir: dir, bySession: make(map[string]map[int]bool)}
+	for _, s := range sources {
+		zeros.bySession[s.Session] = confirmedZeros(s.events)
+	}
 	for _, s := range sources {
 		c.Sources = append(c.Sources, s.CarriedSource)
 		for _, v := range s.candidates(entries) {
 			if boundary != "" && journal.CompareSessionIDs(v.session, boundary) <= 0 {
 				continue
+			}
+			if !v.candidateSoloLimit && v.offset == 0 {
+				confirmed, err := zeros.confirmed(v.session, v.seq)
+				if err != nil {
+					return nil, err
+				}
+				if !confirmed {
+					continue
+				}
 			}
 			cc, ok := cores[v.core]
 			if !ok {
@@ -252,6 +265,88 @@ func compute(dir, id string, entries []defect.Entry) (*Carry, error) {
 		c.Cores = append(c.Cores, *cores[core])
 	}
 	return c, nil
+}
+
+// zeroConfirmations caches, per original session, which of its failures at CO 0 it confirmed.
+type zeroConfirmations struct {
+	dir       string
+	bySession map[string]map[int]bool
+}
+
+// confirmed reports whether the failure at CO 0 recorded at seq in session was confirmed there. A session whose archive
+// is gone confirms nothing.
+func (z zeroConfirmations) confirmed(session string, seq int) (bool, error) {
+	seqs, ok := z.bySession[session]
+	if !ok {
+		events, err := journal.ReadForCarry(filepath.Join(z.dir, "archive", session+".jsonl"))
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+		case err != nil:
+			return false, fmt.Errorf("carry: read archived session %s: %w", session, err)
+		default:
+			seqs = confirmedZeros(events)
+		}
+		z.bySession[session] = seqs
+	}
+	return seqs[seq], nil
+}
+
+// confirmedZeros lists the failures at CO 0 a session confirmed, by the sequence a failure point cites: an attributed
+// failure or a single-core hunt culprit whose failing profile was all at CO 0 (as a trial alone at 0 is), or whose
+// all-zero rerun failed.
+func confirmedZeros(events []journal.Event) map[int]bool {
+	intents := make(map[string]*journal.TrialIntent)
+	for _, t := range facts.FromEvents(events).Trials {
+		intents[t.Intent.Trial] = t.Intent
+	}
+	reruns := make(map[string]int)
+	rerunFailed := make(map[int]bool)
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.TrialIntent:
+			if in := intents[p.Trial]; p.Condition == machine.Parked && p.Rerun && p.Hunt == 0 && len(e.Cause) > 0 && in != nil && allZero(in.Profile) {
+				reruns[p.Trial] = e.Cause[0]
+			}
+		case *journal.TrialEnd:
+			if failure, ok := reruns[p.Trial]; ok && p.Outcome == journal.OutcomeFailure {
+				rerunFailed[failure] = true
+			}
+		}
+	}
+	var ids []int
+	hunts := make(map[int]*journal.HuntStart)
+	confirmed := make(map[int]bool)
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.SessionStart:
+			ids = ids[:0]
+			for _, c := range p.Cores {
+				ids = append(ids, c.Core)
+			}
+		case *journal.Failure:
+			if p.Offset == nil || *p.Offset != 0 {
+				continue
+			}
+			in := intents[p.Trial]
+			profile := p.Profile
+			if len(profile) != len(ids) && in != nil {
+				profile = in.Profile
+			}
+			alone := p.Condition == machine.Alone || in != nil && in.Condition == machine.Alone
+			confirmed[e.Seq] = rerunFailed[e.Seq] || alone || allZero(profile)
+		case *journal.HuntStart:
+			hunts[p.Hunt] = p
+		case *journal.HuntEnd:
+			if start := hunts[p.Hunt]; start != nil && p.Result == "culprit" && len(p.Cores) == 1 {
+				confirmed[e.Seq] = rerunFailed[start.Failure] || allZero(start.Failing)
+			}
+		}
+	}
+	return confirmed
+}
+
+func allZero(profile []int) bool {
+	return len(profile) > 0 && !slices.ContainsFunc(profile, func(o int) bool { return o != 0 })
 }
 
 // olderArchives lists the archived sessions older than id, newest first.

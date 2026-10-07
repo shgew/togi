@@ -193,7 +193,7 @@ When the archived session was not itself seeded by a carry, the carry also reads
 
 If the BIOS context changed (BIOS version, microcode, board, CPU or boost limit), the next run archives the old session even without a ruleset update and starts a seeded session. Only candidate solo limits carry: old failure points do not apply under the changed BIOS. The `carried:` line explains the difference.
 
-A configured `candidate_solo_limits` or `start_offsets` value for a core wins over what is carried, but a carried failure point still clamps it. A core with a carried failure point at 0 failed at CO 0: the new session stops at a dead end for it, as the old one did, until you fix the cause and run `sudo togi reset --core N`.
+A configured `candidate_solo_limits` or `start_offsets` value for a core wins over what is carried, but a carried failure point still clamps it. A failure point at 0 carries only when the failure is confirmed: the failing profile was all at CO 0, or a rerun with every core at CO 0 failed too. Then the new session stops at a dead end for that core, as the old one did, until you fix the cause and run `sudo togi reset --core N`. Any other failure at CO 0 carries only as a known failure: the new session hunts or attributes it again among the cores off CO 0.
 
 To start over with nothing carried, run `sudo togi reset --all` instead of `togi run`. A session written by a newer ruleset or journal schema than the installed build's is still refused: install that build again, or archive the session with `sudo togi reset --all`.
 

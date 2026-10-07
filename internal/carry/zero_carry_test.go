@@ -1,87 +1,115 @@
 package carry
 
 import (
-	"slices"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
-	"github.com/shgew/togi/internal/tuner"
 )
 
-// A ruleset-9 hunt left a core-local MCE naming core 1, parked at CO 0, and dead-ended. The ruleset-10 session it
-// carries into reruns that failure with every core at CO 0 before any failure_at_zero dead end, unless the failing
-// profile was already all at CO 0.
-func TestRuleset9FailureAtZeroReachesTheAllZeroRerun(t *testing.T) {
+var zeroCores = []machine.CoreInfo{{Core: 0, CCD: 0}, {Core: 1, CCD: 0}, {Core: 2, CCD: 1}, {Core: 3, CCD: 1}}
+
+var zeroClass = journal.TrialClass{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1, 2, 3}, DurationS: 120}
+
+// zeroFailure records the #343 shape: a parked hunt trial whose core-local MCE named core 1, parked at CO 0. It
+// returns the failure's sequence.
+func zeroFailure(w *writer, trial string, profile []int) int {
+	w.add(&journal.TrialIntent{Trial: trial, Regime: zeroClass.Regime, Workload: zeroClass.Workload, Cores: zeroClass.Cores, DurationS: zeroClass.DurationS, Condition: machine.Parked, Phase: journal.PhaseHunt, Hunt: 1, Group: 1, Profile: profile})
+	end := w.add(&journal.TrialEnd{Trial: trial, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 40})
+	mce := w.add(&journal.MCE{Core: 1, BankType: machine.LoadStore, Trial: trial})
+	return w.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Attributed, Core: new(1), Offset: new(0), Trial: trial, Regime: zeroClass.Regime, Condition: machine.Parked, Profile: profile}, end, mce)
+}
+
+// zeroRerun records the failure's all-zero rerun as ruleset 10 schedules it.
+func zeroRerun(w *writer, failure int, outcome journal.Outcome) {
+	w.add(&journal.TrialIntent{Trial: "rerun", Regime: zeroClass.Regime, Workload: zeroClass.Workload, Cores: zeroClass.Cores, DurationS: zeroClass.DurationS, Condition: machine.Parked, Phase: journal.PhaseHunt, Rerun: true, Profile: []int{0, 0, 0, 0}}, failure)
+	w.add(&journal.TrialEnd{Trial: "rerun", Outcome: outcome, Signal: map[bool]machine.Signal{true: machine.Crash}[outcome == journal.OutcomeFailure], DurationS: 120})
+}
+
+// prepareNext prepares the transition from a source session with ruleset to the next ruleset.
+func prepareNext(dir string, ruleset int) (*Carry, error) {
+	j, err := journal.Lock(dir, opts())
+	if err != nil {
+		return nil, err
+	}
+	defer j.Close()
+	return Prepare(j, journal.Build{Schema: journal.Schema, Ruleset: ruleset + 1}, []defect.Entry{}, &context)
+}
+
+func TestPrepareCarriesOnlyConfirmedFailurePointsAtZero(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		profile []int
+		name      string
+		ruleset   int
+		profile   []int
+		rerun     journal.Outcome
+		confirmed bool
 	}{
-		{"another core off CO 0", []int{0, 0, -20, -25}},
-		{"all at CO 0", []int{0, 0, 0, 0}},
+		{name: "unconfirmed", ruleset: 9, profile: []int{0, 0, -20, -25}},
+		{name: "failing profile all at CO 0", ruleset: 9, profile: []int{0, 0, 0, 0}, confirmed: true},
+		{name: "all-zero rerun failed", ruleset: 10, profile: []int{0, 0, -20, -25}, rerun: journal.OutcomeFailure, confirmed: true},
+		{name: "all-zero rerun passed", ruleset: 10, profile: []int{0, 0, -20, -25}, rerun: journal.OutcomePass},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			cores := []machine.CoreInfo{{Core: 0, CCD: 0}, {Core: 1, CCD: 0}, {Core: 2, CCD: 1}, {Core: 3, CCD: 1}}
-			w := newJournal(t, dir, "X", 9, &context, cores...)
-			class := journal.TrialClass{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: []int{0, 1, 2, 3}, DurationS: 120}
-			w.add(&journal.TrialIntent{Trial: "0012", Regime: class.Regime, Workload: class.Workload, Cores: class.Cores, DurationS: class.DurationS, Condition: machine.Parked, Phase: journal.PhaseHunt, Hunt: 1, Group: 1, Profile: tc.profile})
-			end := w.add(&journal.TrialEnd{Trial: "0012", Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 40})
-			mce := w.add(&journal.MCE{Core: 1, BankType: machine.LoadStore, Trial: "0012"})
-			failure := w.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Attributed, Core: new(1), Offset: new(0), Trial: "0012", Regime: class.Regime, Condition: machine.Parked, Profile: tc.profile}, end, mce)
-			w.add(&journal.DeadEnd{Condition: journal.DeadEndFailureAtZero, Core: new(1), Detail: "core 01 failed at CO 0"}, failure)
+			w := newJournal(t, dir, "X", tc.ruleset, &context, zeroCores...)
+			failure := zeroFailure(w, "0012", tc.profile)
+			if tc.rerun != "" {
+				zeroRerun(w, failure, tc.rerun)
+			}
 			w.close()
-			j, err := journal.Lock(dir, opts())
+			c, err := prepareNext(dir, tc.ruleset)
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer j.Close()
-			c, err := Prepare(j, journal.Build{Schema: journal.Schema, Ruleset: 10}, []defect.Entry{}, &context)
+			var want []journal.CarriedCore
+			if tc.confirmed {
+				want = []journal.CarriedCore{{Core: 1, FailurePoint: new(0), FailurePointSession: "X", FailurePointSeq: failure, FailurePointSignal: machine.Crash}}
+			}
+			if diff := cmp.Diff(want, c.Cores); diff != "" {
+				t.Fatalf("carried failure points (-want +got):\n%s", diff)
+			}
+			if len(c.Facts) == 0 || c.Facts[0].Trial != "0012" || c.Facts[0].Outcome != journal.OutcomeFailure {
+				t.Fatalf("the failing trial must still carry as a fact: %+v", c.Facts)
+			}
+		})
+	}
+}
+
+// A failure point at CO 0 an older transition carried is checked against the session that recorded the failure.
+func TestPrepareChecksCarriedFailurePointsAtZeroAgainstTheirSession(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		profile   []int
+		archived  bool
+		confirmed bool
+	}{
+		{name: "unconfirmed", profile: []int{0, 0, -20, -25}, archived: true},
+		{name: "confirmed", profile: []int{0, 0, 0, 0}, archived: true, confirmed: true},
+		{name: "original archive gone", profile: []int{0, 0, 0, 0}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, original := t.TempDir(), t.TempDir()
+			if tc.archived {
+				original = dir
+			}
+			w := newJournal(t, original, "W", 8, &context, zeroCores...)
+			failure := zeroFailure(w, "0012", tc.profile)
+			w.archive(original)
+			x := newJournal(t, dir, "X", 9, &context, zeroCores...)
+			x.add(&journal.SessionCarried{Sources: []journal.CarriedSource{src("W", 8)}, FailurePoints: true, Carried: []journal.CarriedCore{{Core: 1, FailurePoint: new(0), FailurePointSession: "W", FailurePointSeq: failure, FailurePointSignal: machine.Crash}}})
+			x.close()
+			c, err := prepareNext(dir, 9)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if c == nil || len(c.Cores) != 1 || c.Cores[0].Core != 1 || c.Cores[0].FailurePoint == nil || *c.Cores[0].FailurePoint != 0 || c.Cores[0].FailurePointSeq != failure {
-				t.Fatalf("carried failure points %+v", c)
+			var want []journal.CarriedCore
+			if tc.confirmed {
+				want = []journal.CarriedCore{{Core: 1, FailurePoint: new(0), FailurePointSession: "W", FailurePointSeq: failure, FailurePointSignal: machine.Crash}}
 			}
-
-			s := tuner.New()
-			var seq int
-			add := func(p journal.Payload, cause ...int) int {
-				seq++
-				s.Fold(journal.Event{Seq: seq, Kind: p.Kind(), Data: p, Cause: cause})
-				return seq
-			}
-			begin := add(&journal.SessionStart{Schema: journal.Schema, Ruleset: 10, Session: "Y", Cores: cores})
-			fact := 0
-			for _, f := range c.Facts {
-				at := add(f.Payload())
-				if f.Session == "X" && f.Seq == end {
-					fact = at
-				}
-			}
-			if fact == 0 {
-				t.Fatalf("the failing trial was not carried: %+v", c.Facts)
-			}
-			carried := add(&journal.SessionCarried{Sources: c.Sources, FailurePoints: true, Carried: c.Cores})
-			phases := make([]int, len(cores))
-			for i, core := range cores {
-				p := &journal.CorePhase{Core: core.Core, To: journal.PhaseSearch, Reason: "baseline"}
-				if core.Core == 1 {
-					p.FailurePoint = new(0)
-				}
-				phases[i] = add(p, begin, carried)
-			}
-
-			a := s.Next()
-			if !slices.ContainsFunc(tc.profile, func(o int) bool { return o != 0 }) {
-				if dead, ok := a.Payload.(*journal.DeadEnd); !ok || dead.Condition != journal.DeadEndFailureAtZero || !slices.Equal(a.Cause, []int{phases[1], fact}) {
-					t.Fatalf("an all-zero failing profile must dead-end at once: %+v", a)
-				}
-				return
-			}
-			if a.Kind != tuner.RunTrial || !a.Trial.Rerun || a.Trial.Condition != machine.Parked || !slices.Equal(a.Trial.Profile, []int{0, 0, 0, 0}) || a.Trial.Regime != class.Regime || !slices.Equal(a.Cause, []int{fact}) {
-				t.Fatalf("first action %+v, want the all-zero rerun of #%d", a, fact)
+			if diff := cmp.Diff(want, c.Cores); diff != "" {
+				t.Fatalf("carried failure points (-want +got):\n%s", diff)
 			}
 		})
 	}
