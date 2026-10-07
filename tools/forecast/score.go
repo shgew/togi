@@ -2,6 +2,7 @@ package forecast
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/shgew/togi/internal/journal"
@@ -102,12 +103,9 @@ func buildsAfter(sessions []Session, a Anchor) []journal.Build {
 	var builds []journal.Build
 	add := func(b journal.Build) {
 		b = journal.Build{Version: b.Version, Rev: b.Rev, Ruleset: b.Ruleset}
-		for _, seen := range builds {
-			if seen == b {
-				return
-			}
+		if !slices.Contains(builds, b) {
+			builds = append(builds, b)
 		}
-		builds = append(builds, b)
 	}
 	after := false
 	for _, s := range sessions {

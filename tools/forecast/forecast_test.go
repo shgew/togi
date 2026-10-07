@@ -40,7 +40,7 @@ func extend(t *testing.T, s Session, seq int, payloads ...journal.Payload) Sessi
 
 func start(id string, rev string) []journal.Payload {
 	return []journal.Payload{
-		&journal.SessionStart{Session: id, Build: journal.Build{Version: "1.0.0", Rev: rev, Schema: journal.Schema, Ruleset: tuner.Ruleset}, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1, CCD: 1}}},
+		&journal.SessionStart{Session: id, Version: "1.0.0", Rev: rev, Schema: journal.Schema, Ruleset: tuner.Ruleset, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1, CCD: 1}}},
 		&journal.SessionBaseline{Offsets: []int{-10, -20}},
 	}
 }
@@ -103,7 +103,7 @@ func TestAfter(t *testing.T) {
 		{
 			name: "a new session counts whole and supplies the profile",
 			sessions: func() []Session {
-				next := session(t, "b", 1, &journal.SessionStart{Session: "b", Build: journal.Build{Schema: journal.Schema, Ruleset: tuner.Ruleset}, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1, CCD: 1}}}, &journal.SessionBaseline{Offsets: []int{-12, -22}}, crash, &journal.TrialIntent{Trial: "0001", Hunt: 7})
+				next := session(t, "b", 1, &journal.SessionStart{Session: "b", Schema: journal.Schema, Ruleset: tuner.Ruleset, Cores: []machine.CoreInfo{{Core: 0}, {Core: 1, CCD: 1}}}, &journal.SessionBaseline{Offsets: []int{-12, -22}}, crash, &journal.TrialIntent{Trial: "0001", Hunt: 7})
 				return []Session{before, next}
 			},
 			want: Outcome{Status: Censored, Hours: 0, Crashes: 1, Hunts: 1, Profile: []int{-12, -22}, Depth: -34},
@@ -233,9 +233,9 @@ func TestScore(t *testing.T) {
 	before := session(t, "a", 1, start("a", "abc1234")...)
 	anchor := anchorAt(before, 2)
 	record := Record{Anchor: anchor, Commit: "abc1234", Ruleset: tuner.Ruleset, Runs: []Run{
-		{Outcome: Outcome{Status: Concluded, Hours: 2, Crashes: 0, Hunts: 0, Profile: []int{-12, -20}, Depth: -32}},
-		{Outcome: Outcome{Status: Concluded, Hours: 4, Crashes: 1, Hunts: 1, Profile: []int{-10, -22}, Depth: -32}},
-		{Outcome: Outcome{Status: DeadEnd, Hours: 6, Crashes: 2, Hunts: 1, Profile: []int{-8, -24}, Depth: -32}},
+		{Status: Concluded, Hours: 2, Crashes: 0, Hunts: 0, Profile: []int{-12, -20}, Depth: -32},
+		{Status: Concluded, Hours: 4, Crashes: 1, Hunts: 1, Profile: []int{-10, -22}, Depth: -32},
+		{Status: DeadEnd, Hours: 6, Crashes: 2, Hunts: 1, Profile: []int{-8, -24}, Depth: -32},
 	}}
 	crash := &journal.CrashDetected{PreviousBoot: "boot"}
 	for _, tc := range []struct {
@@ -246,7 +246,7 @@ func TestScore(t *testing.T) {
 	}{
 		{
 			name:  "concluded with the forecast's build",
-			after: []journal.Payload{&journal.ConfigLoaded{Build: journal.Build{Version: "1.0.0", Rev: "abc1234"}}, crash, &journal.Shutdown{Reason: journal.ShutdownCycles}},
+			after: []journal.Payload{&journal.ConfigLoaded{Version: "1.0.0", Rev: "abc1234"}, crash, &journal.Shutdown{Reason: journal.ShutdownCycles}},
 			wantRows: []row{
 				{"core 00", -10, false, Inside, 0, 50},
 				{"core 01", -20, false, Inside, 2, 100 * 2.5 / 3},
@@ -258,7 +258,7 @@ func TestScore(t *testing.T) {
 		},
 		{
 			name:  "censored session bounds hours, crashes and hunts",
-			after: []journal.Payload{&journal.ConfigLoaded{Build: journal.Build{Version: "1.0.0", Rev: "abc1234"}}, crash, crash, crash},
+			after: []journal.Payload{&journal.ConfigLoaded{Version: "1.0.0", Rev: "abc1234"}, crash, crash, crash},
 			wantRows: []row{
 				{"core 00", -10, false, Inside, 0, 50},
 				{"core 01", -20, false, Inside, 2, 100 * 2.5 / 3},
@@ -270,7 +270,7 @@ func TestScore(t *testing.T) {
 		},
 		{
 			name:  "another build is flagged",
-			after: []journal.Payload{&journal.ConfigLoaded{Build: journal.Build{Version: "1.0.1", Rev: "fedcba9-dirty"}}, &journal.Shutdown{Reason: journal.ShutdownCycles}},
+			after: []journal.Payload{&journal.ConfigLoaded{Version: "1.0.1", Rev: "fedcba9-dirty"}, &journal.Shutdown{Reason: journal.ShutdownCycles}},
 			wantRows: []row{
 				{"core 00", -10, false, Inside, 0, 50},
 				{"core 01", -20, false, Inside, 2, 100 * 2.5 / 3},
@@ -300,8 +300,8 @@ func TestScore(t *testing.T) {
 
 func TestScoreFlagsRulesetAndDirtyForecast(t *testing.T) {
 	before := session(t, "a", 1, start("a", "abc1234")...)
-	record := Record{Anchor: anchorAt(before, 2), Commit: "abc1234", Dirty: true, Ruleset: tuner.Ruleset - 1, Runs: []Run{{Outcome: Outcome{Status: Concluded, Profile: []int{-10, -20}, Depth: -30}}}}
-	s := extend(t, before, 3, &journal.ConfigLoaded{Build: journal.Build{Version: "1.0.0", Rev: "abc1234"}})
+	record := Record{Anchor: anchorAt(before, 2), Commit: "abc1234", Dirty: true, Ruleset: tuner.Ruleset - 1, Runs: []Run{{Status: Concluded, Profile: []int{-10, -20}, Depth: -30}}}
+	s := extend(t, before, 3, &journal.ConfigLoaded{Version: "1.0.0", Rev: "abc1234"})
 	got, err := record.Score([]Session{s})
 	if err != nil {
 		t.Fatal(err)
@@ -317,7 +317,7 @@ func TestScoreFlagsRulesetAndDirtyForecast(t *testing.T) {
 
 func TestScoreRefusesMissingOrChangedAnchor(t *testing.T) {
 	before := session(t, "a", 1, start("a", "abc1234")...)
-	record := Record{Anchor: anchorAt(before, 2), Commit: "abc1234", Ruleset: tuner.Ruleset, Runs: []Run{{Outcome: Outcome{Status: Concluded, Profile: []int{-10, -20}, Depth: -30}}}}
+	record := Record{Anchor: anchorAt(before, 2), Commit: "abc1234", Ruleset: tuner.Ruleset, Runs: []Run{{Status: Concluded, Profile: []int{-10, -20}, Depth: -30}}}
 	changed := session(t, "a", 1, append(start("a", "abc1234")[:1], &journal.SessionBaseline{Offsets: []int{-11, -20}})...)
 	for _, tc := range []struct {
 		name     string
