@@ -75,6 +75,23 @@ func attributeAlone(intent *journal.TrialIntent, signal machine.Signal) *journal
 	return &journal.Failure{Signal: signal, Attribution: journal.Attributed, Core: intent.Core, Offset: intent.Offset, Trial: intent.Trial, Profile: slices.Clone(intent.Profile)}
 }
 
+// dropStaleSteps forgets the step passes whose backend's store path changed, so the step earns them again.
+func (s *State) dropStaleSteps() {
+	for _, c := range s.cores {
+		kept := 0
+		c.stepR1 = false
+		for i, p := range c.stepPasses {
+			if p.path != s.backends.Path(p.backend) {
+				continue
+			}
+			c.stepSeqs[kept], c.stepPasses[kept] = c.stepSeqs[i], p
+			c.stepR1 = c.stepR1 || p.r1
+			kept++
+		}
+		c.stepSeqs, c.stepPasses = c.stepSeqs[:kept], c.stepPasses[:kept]
+	}
+}
+
 func (s *State) perCore() (Action, bool) {
 	if s.cursor >= 0 {
 		c := s.cores[s.cursor]

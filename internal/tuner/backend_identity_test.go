@@ -24,12 +24,13 @@ func loadBackends(h *harness, mprime, ycruncher string) {
 	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: c})
 }
 
-func liveTrials(h *harness, w machine.Workload, profile []int, count int, end journal.TrialEnd) {
+func liveTrials(h *harness, w machine.Workload, profile []int, count int, outcome journal.TrialEnd) {
 	h.t.Helper()
 	for range count {
 		h.trials++
 		id := fmt.Sprintf("%04d", h.trials)
 		intent := h.add(&journal.TrialIntent{Trial: id, Regime: machine.R1, Workload: w.ID, Cores: []int{0}, DurationS: 90, Condition: machine.Together, Profile: profile})
+		end := outcome
 		end.Trial = id
 		h.add(&end, intent.Seq)
 	}
@@ -71,13 +72,22 @@ func TestEvidenceIsKeyedByBackendStorePath(t *testing.T) {
 			for _, paths := range tc.reload {
 				loadBackends(h, paths[0], paths[1])
 			}
-			got := map[string]int{
-				"mprime":     h.s.passes(classOfWorkload(mprime), profile, 0, allEvidence),
-				"y-cruncher": h.s.passes(classOfWorkload(ycruncher), profile, 0, allEvidence),
+			passesPerBackend := func(s *State) map[string]int {
+				return map[string]int{
+					"mprime":     s.passes(classOfWorkload(mprime), profile, 0, allEvidence),
+					"y-cruncher": s.passes(classOfWorkload(ycruncher), profile, 0, allEvidence),
+				}
 			}
 			want := map[string]int{"mprime": tc.mprime, "y-cruncher": tc.ycruncher}
-			if diff := cmp.Diff(want, got); diff != "" {
+			if diff := cmp.Diff(want, passesPerBackend(h.s)); diff != "" {
 				t.Fatalf("passes per backend after reload (-want +got):\n%s", diff)
+			}
+			replayed := New()
+			for _, e := range h.events {
+				replayed.Fold(e)
+			}
+			if diff := cmp.Diff(want, passesPerBackend(replayed)); diff != "" {
+				t.Fatalf("replayed passes per backend (-want +got):\n%s", diff)
 			}
 			if got := h.s.fails(classOfWorkload(mprime), profile, 0); got != tc.mprimeFailureValid {
 				t.Fatalf("failure under the old mprime valid = %t, want %t", got, tc.mprimeFailureValid)
@@ -122,6 +132,61 @@ func TestBackendUpdateRestartsCarriedSoloLimitEvidence(t *testing.T) {
 			if a.Kind != RunTrial || a.Trial.Regime != machine.R1 || a.Trial.Workload != r1.ID {
 				t.Fatalf("check answered by passes from the previous mprime: %+v", a)
 			}
+		})
+	}
+}
+
+func TestBackendUpdateRestartsUnfinishedSearchStep(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		mprime, ycruncher string
+		rerunR1           bool
+	}{
+		{name: "same backends keep the R1 pass", mprime: mprimeOld, ycruncher: ycruncherOld},
+		{name: "other backend updated keeps the R1 pass", mprime: mprimeOld, ycruncher: ycruncherNew},
+		{name: "own backend updated reruns R1", mprime: mprimeNew, ycruncher: ycruncherOld, rerunR1: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, searchAt(-10)...)
+			loadBackends(h, mprimeOld, ycruncherOld)
+			a := h.next()
+			if a.Kind != RunTrial || a.Trial.Regime != machine.R1 {
+				t.Fatalf("search step starts with %+v, want R1", a)
+			}
+			intent, r1 := h.trial(a, passed)
+			if w, _ := machine.WorkloadByID(intent.Data.(*journal.TrialIntent).Workload); w.Backend != machine.Mprime {
+				t.Fatalf("first search R1 workload %s no longer runs mprime", w.ID)
+			}
+			loadBackends(h, tc.mprime, tc.ycruncher)
+			replayed := New()
+			for _, e := range h.events {
+				replayed.Fold(e)
+			}
+			a = h.next()
+			if diff := cmp.Diff(a, replayed.Next()); diff != "" {
+				t.Fatalf("replayed next action (-live +replayed):\n%s", diff)
+			}
+			want := []int{r1.Seq}
+			if tc.rerunR1 {
+				if a.Kind != RunTrial || a.Trial.Regime != machine.R1 {
+					t.Fatalf("step after the mprime update continues with %+v, want R1 again", a)
+				}
+				_, again := h.trial(a, passed)
+				want = []int{again.Seq}
+				a = h.next()
+			}
+			if a.Kind != RunTrial || a.Trial.Regime != machine.R2 {
+				t.Fatalf("step continues with %+v, want R2", a)
+			}
+			_, r2 := h.trial(a, passed)
+			a = h.next()
+			if d, ok := a.Payload.(*journal.TunerDecision); a.Kind != Decide || !ok || d.Decision != journal.StepDeeper {
+				t.Fatalf("step ends with %+v, want step_deeper", a)
+			}
+			if diff := cmp.Diff(append(want, r2.Seq), a.Cause); diff != "" {
+				t.Fatalf("step_deeper cause (-want +got):\n%s", diff)
+			}
+			assertProjectionReplay(h)
 		})
 	}
 }

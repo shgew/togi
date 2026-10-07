@@ -96,7 +96,15 @@ type core struct {
 	decisionSeq    int
 	stepR1         bool
 	stepSeqs       []int
+	stepPasses     []stepPass
 	workloadIndex  map[machine.Regime]int
+}
+
+// stepPass is the backend store path a search step pass in stepSeqs ran under.
+type stepPass struct {
+	r1      bool
+	backend machine.Backend
+	path    string
 }
 
 type pendingFailure struct {
@@ -258,6 +266,7 @@ func (s *State) Fold(e journal.Event) {
 		s.durations = p.Config.Durations
 		s.evidence = p.Config.Evidence
 		s.backends = p.Config.Backends
+		s.dropStaleSteps()
 		s.n = int(math.Ceil(math.Log(s.evidence.Miss) / math.Log1p(-s.evidence.Rate)))
 		s.pendingRerun()
 		s.projectionDirty = true
@@ -440,6 +449,7 @@ func (s *State) Fold(e journal.Event) {
 func (s *State) decided(c *core, seq int) {
 	c.stepR1 = false
 	c.stepSeqs = nil
+	c.stepPasses = nil
 	c.pending = 0
 	c.lastSeq = seq
 	c.decisionSeq = seq
@@ -496,7 +506,9 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 			if intent.Regime == machine.R1 {
 				c.stepR1 = true
 			}
+			w, _ := machine.WorkloadByID(intent.Workload)
 			c.stepSeqs = append(c.stepSeqs, e.Seq)
+			c.stepPasses = append(c.stepPasses, stepPass{intent.Regime == machine.R1, w.Backend, s.backends.Path(w.Backend)})
 		}
 	case journal.OutcomeInconclusive:
 		t := trialFromIntent(intent)
