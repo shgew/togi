@@ -169,6 +169,58 @@ func TestHuntCausesOmitAFailureAfterTheGroupPassed(t *testing.T) {
 	}
 }
 
+// A carried failure at group 1's profile arrives while it runs, followed by n carried passes that cover it, so the group
+// passes on them. Every later hunt.group and hunt.end cites those passes for group 1, and no later hunt decision cites
+// the covered failure.
+func TestHuntCausesOmitAFailureCoveredBeforeTheGroupPassed(t *testing.T) {
+	covered := 0
+	var passes []int
+	h, _ := carriedJointHunt(t, func(h *harness, e journal.Event) {
+		g, ok := e.Data.(*journal.HuntGroup)
+		if !ok || g.Group != 1 || covered != 0 {
+			return
+		}
+		start := h.s.hunt.start
+		carry := func(outcome journal.Outcome, signal machine.Signal) int {
+			return h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "20261001T000000Z", Seq: 2, Trial: "0002", Evidence: EvidenceEpoch}, Class: journal.TrialClass{Regime: start.Regime, Workload: start.Workload, Cores: start.Cores, DurationS: g.DurationS}, Condition: machine.Parked, Phase: journal.PhaseHunt, Profile: slices.Clone(g.Profile), DurationS: g.DurationS, Outcome: outcome, Signal: signal}).Seq
+		}
+		covered = carry(journal.OutcomeFailure, machine.Crash)
+		for range h.s.n {
+			passes = append(passes, carry(journal.OutcomePass, ""))
+		}
+		if h.s.groupOutcome(h.s.hunt, h.s.hunt.groups[0]) != "pass" {
+			t.Fatal("the carried passes should pass group 1")
+		}
+	})
+	if covered == 0 {
+		t.Fatal("the hunt never recorded group 1")
+	}
+	var second int
+	for _, e := range h.events {
+		if g, ok := e.Data.(*journal.HuntGroup); ok && g.Group == 2 {
+			second = e.Seq
+			break
+		}
+	}
+	for _, e := range h.events[second:] {
+		switch p := e.Data.(type) {
+		case *journal.HuntGroup, *journal.HuntEnd:
+		case *journal.TunerDecision:
+			if p.Phase != journal.PhaseHunt {
+				continue
+			}
+		default:
+			continue
+		}
+		if slices.Contains(e.Cause, covered) {
+			t.Errorf("%s #%d cause %v cites failure #%d, covered before group 1 passed", e.Kind, e.Seq, e.Cause, covered)
+		}
+		if _, ok := e.Data.(*journal.TunerDecision); !ok && !slices.ContainsFunc(passes, func(seq int) bool { return slices.Contains(e.Cause, seq) }) {
+			t.Errorf("%s #%d cause %v cites none of group 1's carried passes %v", e.Kind, e.Seq, e.Cause, passes)
+		}
+	}
+}
+
 func TestHuntEndCitesALiveFailureInferredGroup(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10}, coreStart{phase: journal.PhaseAtLimit, offset: -10})
 	d := h.s.durations.ShortTrialS

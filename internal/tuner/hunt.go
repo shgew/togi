@@ -465,7 +465,7 @@ func (s *State) citeGroup(cause []int, h *hunt, i int) []int {
 	if h.settled(i) && !m.payload.Skipped && m.payload.Inferred == "" {
 		k := h.class.withDuration(m.payload.DurationS)
 		since, until := s.inferenceSince(m.payload, m.seq), h.groups[i+1].seq
-		if failure := s.failureBefore(k, m.payload.Profile, since, until); failure != 0 {
+		if failure := s.failingSeqBefore(k, m.payload.Profile, since, until); failure != 0 {
 			return citeNew(cause, failure)
 		}
 		seqs := s.passSeqsBefore(k, m.payload.Profile, since, until, huntEvidence)
@@ -478,7 +478,7 @@ func (s *State) citeGroup(cause []int, h *hunt, i int) []int {
 	if i+1 < len(h.groups) {
 		// A later group's failure at a shallower profile also rejects this one; cite the failure seen before the hunt moved on.
 		k := h.class.withDuration(m.payload.DurationS)
-		if before := s.failureBefore(k, m.payload.Profile, s.inferenceSince(m.payload, m.seq), h.groups[i+1].seq); before != 0 {
+		if before := s.failingSeqBefore(k, m.payload.Profile, s.inferenceSince(m.payload, m.seq), h.groups[i+1].seq); before != 0 {
 			failure = before
 		}
 	}

@@ -160,12 +160,16 @@ func (s *State) passSeqsBefore(k trialClass, p []int, since, until int, rule evi
 }
 
 func (s *State) passes(k trialClass, p []int, since int, rule evidenceRule) int {
-	last := s.latestFailure(k, p, 0)
+	return s.passesBefore(k, p, since, math.MaxInt, rule)
+}
+
+func (s *State) passesBefore(k trialClass, p []int, since, until int, rule evidenceRule) int {
+	last := s.failureBefore(k, p, 0, until)
 	count := 0
 	entries := s.ledger[k]
 	for i := range entries {
 		e := &entries[i]
-		if e.pass && rule.admits(e, since) && e.seq > last && AtLeastDeep(e.profile, p) {
+		if e.pass && e.seq < until && rule.admits(e, since) && e.seq > last && AtLeastDeep(e.profile, p) {
 			count++
 		}
 	}
@@ -173,10 +177,16 @@ func (s *State) passes(k trialClass, p []int, since int, rule evidenceRule) int 
 }
 
 func (s *State) failingSeq(k trialClass, p []int, since int) int {
-	if s.passes(k, p, 0, allEvidence) >= s.n {
+	return s.failingSeqBefore(k, p, since, math.MaxInt)
+}
+
+// failingSeqBefore is failingSeq as it stood before until: the newest failure recorded before it, unless passes
+// recorded before it cover that failure.
+func (s *State) failingSeqBefore(k trialClass, p []int, since, until int) int {
+	if s.passesBefore(k, p, 0, until, allEvidence) >= s.n {
 		return 0
 	}
-	return s.failureBefore(k, p, since, math.MaxInt)
+	return s.failureBefore(k, p, since, until)
 }
 
 // failureBefore is the newest failure admitted since the boundary at an equal or shallower profile, recorded before
