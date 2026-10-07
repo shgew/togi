@@ -28,6 +28,19 @@ func New(cfg config.Config, stateDir string) (machine.Machine, error) {
 	if err != nil {
 		return machine.Machine{}, fmt.Errorf("open SMU: %w", err)
 	}
+	cores := drv.Topology()
+	h := newHost(drv, cfg)
+	h.pmTable = smu.NewPMTableReader("/", cores, os.ReadFile)
+	return machine.Machine{
+		Clock:  clock{},
+		SMU:    drv,
+		Host:   h,
+		Trials: trial.New(trial.Options{Dir: filepath.Join(stateDir, "trials"), Backends: h.backends, Cores: cores, User: h.user, PMTable: h.pmTable}),
+		Kernel: detect.NewKernel(cores),
+	}, nil
+}
+
+func newHost(drv *smu.Driver, cfg config.Config) *host {
 	backends := map[machine.Backend]backend.Backend{}
 	if cfg.Backends.Mprime != "" {
 		backends[machine.Mprime] = mprime.New(cfg.Backends.Mprime)
@@ -35,17 +48,8 @@ func New(cfg config.Config, stateDir string) (machine.Machine, error) {
 	if cfg.Backends.Ycruncher != "" {
 		backends[machine.Ycruncher] = ycruncher.New(cfg.Backends.Ycruncher)
 	}
-	cores := drv.Topology()
-	pmTable := smu.NewPMTableReader("/", cores, os.ReadFile)
 	user, userErr := trial.LookupIdentity(cfg.BackendUser)
-	h := &host{drv: drv, cfg: cfg, backends: backends, user: user, userErr: userErr, pmTable: pmTable}
-	return machine.Machine{
-		Clock:  clock{},
-		SMU:    drv,
-		Host:   h,
-		Trials: trial.New(trial.Options{Dir: filepath.Join(stateDir, "trials"), Backends: backends, Cores: cores, User: user, PMTable: pmTable}),
-		Kernel: detect.NewKernel(cores),
-	}, nil
+	return &host{drv: drv, cfg: cfg, backends: backends, user: user, userErr: userErr}
 }
 
 type clock struct{}
@@ -107,23 +111,54 @@ func ranking(root string, cores []machine.CoreInfo) ([]machine.CoreRank, error) 
 	return values, nil
 }
 
+// preflightCheck is one check of run's preflight. The checks after a failed
+// identity check (cpu, ryzen_smu) need that identity, so they do not run.
+type preflightCheck struct {
+	name     string
+	identity bool
+	gated    bool
+	run      func(*host) machine.Check
+}
+
+var preflightChecks = []preflightCheck{
+	{name: "cpu", identity: true, run: func(h *host) machine.Check { return h.drv.CheckCPU() }},
+	{name: "ryzen_smu", identity: true, run: func(h *host) machine.Check { return h.drv.CheckDriver() }},
+	{name: "pm_table", run: func(h *host) machine.Check { return h.pmTable.Check() }},
+	{name: "readback", gated: true, run: func(h *host) machine.Check { return h.drv.CheckReadback() }},
+	{name: "slot_mapping", gated: true, run: func(h *host) machine.Check { return h.drv.CheckSlotMapping() }},
+	{name: "backends", gated: true, run: (*host).checkBackends},
+	{name: "backend_user", gated: true, run: (*host).checkBackendUser},
+	{name: "systemd_run", gated: true, run: (*host).checkSystemdRun},
+}
+
 func (h *host) Preflight() []machine.Check {
 	root := machine.Check{Name: "root", Detail: "uid 0", OK: true}
 	if uid := os.Geteuid(); uid != 0 {
 		root = machine.Check{Name: "root", Detail: fmt.Sprintf("running as uid %d; run needs root", uid)}
 	}
-	cpu, driver := h.drv.CheckCPU(), h.drv.CheckDriver()
-	checks := []machine.Check{root, cpu, driver, h.pmTable.Check()}
-	if !cpu.OK || !driver.OK {
-		return checks
+	checks := []machine.Check{root}
+	identified := true
+	for _, c := range preflightChecks {
+		if c.gated && !identified {
+			continue
+		}
+		check := c.run(h)
+		checks = append(checks, check)
+		if c.identity && !check.OK {
+			identified = false
+		}
 	}
-	systemdRun := machine.Check{Name: "systemd_run", OK: true}
+	return checks
+}
+
+func (h *host) checkSystemdRun() machine.Check {
+	c := machine.Check{Name: "systemd_run", OK: true}
 	detail, err := trial.CheckSystemdRun(h.user)
-	systemdRun.Detail = detail
+	c.Detail = detail
 	if err != nil {
-		systemdRun.Detail, systemdRun.OK = err.Error(), false
+		c.Detail, c.OK = err.Error(), false
 	}
-	return append(checks, h.drv.CheckReadback(), h.drv.CheckSlotMapping(), h.checkBackends(), h.checkBackendUser(), systemdRun)
+	return c
 }
 
 func (h *host) Watchdog() machine.Check { return watchdog("/") }
