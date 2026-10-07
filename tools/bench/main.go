@@ -217,18 +217,9 @@ func execute(o options, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	checksByMachine := make(map[string]*modelcheck.Result)
-	var checks []*modelcheck.Result
-	for _, spec := range runs {
-		if spec.cfg.Facts == "" || checksByMachine[spec.scenario.Machine] != nil {
-			continue
-		}
-		check, err := modelcheck.Check(spec.scenario.Machine, spec.cfg, extracts)
-		if err != nil {
-			return fmt.Errorf("check model %s: %w", spec.scenario.Machine, err)
-		}
-		checksByMachine[spec.scenario.Machine] = check
-		checks = append(checks, check)
+	checksByMachine, checks, err := modelChecks(runs, extracts)
+	if err != nil {
+		return err
 	}
 	var baseline []result
 	if o.baseline != "" {
@@ -250,11 +241,9 @@ func execute(o options, stdout, stderr io.Writer) error {
 		return fmt.Errorf("create build directory: %w", err)
 	}
 	defer os.RemoveAll(buildDir)
-	binary := filepath.Join(buildDir, "sim")
-	build := exec.Command("go", "build", "-o", binary, "./tools/sim")
-	build.Stdout, build.Stderr = stderr, stderr
-	if err := build.Run(); err != nil {
-		return fmt.Errorf("build simulator: %w", err)
+	binary, err := buildSimulator(buildDir, stderr)
+	if err != nil {
+		return err
 	}
 	var runRoot string
 	if o.keep == "" {
@@ -323,6 +312,35 @@ func execute(o options, stdout, stderr io.Writer) error {
 	return nil
 }
 
+// modelChecks checks each distinct machine with a facts extract against it, once.
+func modelChecks(runs []runSpec, extracts trialfacts.Extracts) (map[string]*modelcheck.Result, []*modelcheck.Result, error) {
+	byMachine := make(map[string]*modelcheck.Result)
+	var checks []*modelcheck.Result
+	for _, spec := range runs {
+		if spec.cfg.Facts == "" || byMachine[spec.scenario.Machine] != nil {
+			continue
+		}
+		check, err := modelcheck.Check(spec.scenario.Machine, spec.cfg, extracts)
+		if err != nil {
+			return nil, nil, fmt.Errorf("check model %s: %w", spec.scenario.Machine, err)
+		}
+		byMachine[spec.scenario.Machine] = check
+		checks = append(checks, check)
+	}
+	return byMachine, checks, nil
+}
+
+// buildSimulator builds tools/sim from the current tree into dir.
+func buildSimulator(dir string, stderr io.Writer) (string, error) {
+	binary := filepath.Join(dir, "sim")
+	build := exec.Command("go", "build", "-o", binary, "./tools/sim")
+	build.Stdout, build.Stderr = stderr, stderr
+	if err := build.Run(); err != nil {
+		return "", fmt.Errorf("build simulator: %w", err)
+	}
+	return binary, nil
+}
+
 type simulation struct {
 	dir      string
 	exit     int
@@ -331,7 +349,7 @@ type simulation struct {
 }
 
 func launchSimulator(binary, root string, spec runSpec, timeout time.Duration) (simulation, error) {
-	dir := filepath.Join(root, spec.scenario.Name, fmt.Sprintf("%s-%d", spec.split, spec.seed))
+	dir := runDir(root, spec)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return simulation{}, fmt.Errorf("create run %s: %w", dir, err)
 	}
@@ -370,6 +388,10 @@ func launchSimulator(binary, root string, spec runSpec, timeout time.Duration) (
 		}
 	}
 	return simulation{dir: dir, exit: exit, wall: wall, timedOut: timedOut}, nil
+}
+
+func runDir(root string, spec runSpec) string {
+	return filepath.Join(root, spec.scenario.Name, fmt.Sprintf("%s-%d", spec.split, spec.seed))
 }
 
 func simulate(binary, root string, spec runSpec, timeout time.Duration, keep bool) (result, error) {
