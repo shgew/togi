@@ -1,0 +1,12 @@
+CHECK         RESULT  DETAIL
+cpu           ok      family 0x1A model 0x44 AMD Ryzen 9 9950X 16-Core Processor
+ryzen_smu     ok      codename 23 (Granite Ridge), driver 0.7.1, SMU 98.92.0
+pm_table      ok      pm_table version 0x620205: decoding per-core power, voltage request, temperature and C-state lanes
+readback      ok      16 cores read back: 00:0 01:0 02:0 03:0 04:0 05:0 06:0 07:0 08:0 09:0 10:0 11:0 12:0 13:0 14:0 15:0
+slot_mapping  ok      CCD0 fuse 0x00: cores 00-07 on slots 0-7; CCD1 fuse 0x00: cores 08-15 on slots 0-7
+backends      ok      mprime: /nix/store/mprime/bin/mprime; y-cruncher: /nix/store/y-cruncher/bin/y-cruncher
+backend_user  ok      togi-trial: uid 990 gid 990
+systemd_run   ok      scope confined to cpu 0 created
+watchdog      warn    no hardware watchdog state available
+bios_context  ok      matches the session
+ready

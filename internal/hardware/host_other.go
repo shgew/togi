@@ -16,3 +16,7 @@ var errPlatform = fmt.Errorf("hardware runs need Linux: %w", errors.ErrUnsupport
 func CheckPlatform() error { return errPlatform }
 
 func New(config.Config, string) (machine.Machine, error) { return machine.Machine{}, errPlatform }
+
+func Diagnose(config.Config, *machine.BIOSContext, bool) (ran, skipped []machine.Check, err error) {
+	return nil, nil, errPlatform
+}

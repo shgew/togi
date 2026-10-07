@@ -1,6 +1,7 @@
 package smu
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,17 +25,50 @@ type Driver struct {
 }
 
 func Open(root string, mb Mailbox) (*Driver, error) {
-	cores, err := topology(root)
+	d, err := open(root, mb)
 	if err != nil {
-		return nil, fmt.Errorf("read CPU topology: %w", err)
+		return nil, err
 	}
-	d := &Driver{root: root, mb: mb, cores: cores, slots: make(map[int]location, len(cores))}
 	if err := d.ValidateSMU(); err != nil {
 		d.mappingErr = err
 		return d, nil
 	}
 	d.mapSlots()
 	return d, nil
+}
+
+// OpenIdentity opens the driver for the CPU and driver identity checks only.
+// It keeps whether ryzen_smu is loaded but replaces the mailbox with one that refuses every command and SMN read.
+func OpenIdentity(root string, mb Mailbox) (*Driver, error) {
+	if mb != nil {
+		mb = identityMailbox{}
+	}
+	d, err := open(root, mb)
+	if err != nil {
+		return nil, err
+	}
+	d.mappingErr = errIdentityOnly
+	return d, nil
+}
+
+var errIdentityOnly = errors.New("opened for identity checks only")
+
+type identityMailbox struct{}
+
+func (identityMailbox) Command(cmd uint32, _ [6]uint32) ([6]uint32, error) {
+	return [6]uint32{}, fmt.Errorf("mailbox command 0x%x refused: %w", cmd, errIdentityOnly)
+}
+
+func (identityMailbox) ReadSMN(addr uint32) (uint32, error) {
+	return 0, fmt.Errorf("SMN read 0x%x refused: %w", addr, errIdentityOnly)
+}
+
+func open(root string, mb Mailbox) (*Driver, error) {
+	cores, err := topology(root)
+	if err != nil {
+		return nil, fmt.Errorf("read CPU topology: %w", err)
+	}
+	return &Driver{root: root, mb: mb, cores: cores, slots: make(map[int]location, len(cores))}, nil
 }
 
 func (d *Driver) Topology() []machine.CoreInfo {

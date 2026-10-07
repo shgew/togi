@@ -439,6 +439,50 @@ func TestUnvalidatedDriverRefusesEveryAccess(t *testing.T) {
 	}
 }
 
+func TestOpenIdentityChecksWithoutMailbox(t *testing.T) {
+	root, mb := fixture(t, 8, true)
+	put(t, root, "sys/class/dmi/id/bios_version", "3.14\n")
+	put(t, root, "sys/class/dmi/id/board_vendor", "ASRock\n")
+	put(t, root, "sys/class/dmi/id/board_name", "X870E Taichi\n")
+	mb.smnRead = func(addr uint32) (uint32, error) {
+		t.Fatalf("identity driver read SMN 0x%x", addr)
+		return 0, nil
+	}
+	d, err := OpenIdentity(root, mb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range []machine.Check{d.CheckCPU(), d.CheckDriver()} {
+		if !check.OK {
+			t.Fatalf("identity check %s failed: %s", check.Name, check.Detail)
+		}
+	}
+	if err := d.ValidateSMU(); err != nil {
+		t.Fatalf("validate identity driver: %v", err)
+	}
+	if check := d.CheckSlotMapping(); check.OK {
+		t.Fatalf("identity driver mapped slots: %+v", check)
+	}
+	if _, err := d.Offset(0); err == nil {
+		t.Fatal("identity driver read an offset")
+	}
+	if err := d.SetOffset(0, -10); err == nil {
+		t.Fatal("identity driver wrote a per-core offset")
+	}
+	if check := d.CheckReadback(); check.OK {
+		t.Fatalf("identity driver read offsets back: %+v", check)
+	}
+	if err := d.SetAllOffsets(0); !errors.Is(err, errIdentityOnly) {
+		t.Fatalf("identity driver set all offsets: %v", err)
+	}
+	if _, err := d.BIOSContext(); !errors.Is(err, errIdentityOnly) {
+		t.Fatalf("identity driver read the BIOS context: %v", err)
+	}
+	if len(mb.commands) != 0 {
+		t.Fatalf("identity driver mailbox commands: %v", mb.commands)
+	}
+}
+
 func TestCPUDriverReadbackAndBIOS(t *testing.T) {
 	root, mb := fixture(t, 8, true)
 	put(t, root, "proc/cpuinfo", "processor : 0\ncpu family : 26\nmodel : 68\nmodel name : Zen Test\nmicrocode : 0xb404038\n\nprocessor : 1\nmodel name : not first\n")

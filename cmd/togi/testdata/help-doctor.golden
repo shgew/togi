@@ -1,0 +1,28 @@
+Usage: togi doctor
+
+Check whether this machine is ready for togi run without starting a session:
+run's preflight checks, the hardware watchdog and, when a session is recorded,
+whether the BIOS context still matches it. Writes no journal event, changes no
+offset and leaves GRUB alone. As root it makes every check and takes the
+host lock, so a running run or reset stops it. Without root it checks the CPU,
+the ryzen_smu driver identity, the backends, the backend user and the watchdog,
+and marks the PM table, readback, slot mapping, systemd-run and BIOS context
+checks skipped.
+
+Prints one row per check, with ok, FAIL, warn or skipped, then ready, not fully
+checked, or not ready with the failed checks: those run would turn into a
+preflight dead end. A missing hardware watchdog is a warning, as in a run
+started outside the tuning boot. A changed BIOS context is a warning too: run
+archives the session and starts a new one. A journal with a newer schema,
+ruleset or evidence epoch, or with unknown event kinds, is refused as run
+refuses it.
+
+Examples:
+  togi doctor        Make the checks that need no root
+  sudo togi doctor   Make every check run makes
+
+Flags:
+  --config <path>      configuration file path for doctor, run and reset (default /etc/togi/config.toml)
+
+Global flags:
+  --state-dir <path>   state directory path (default /var/lib/togi)

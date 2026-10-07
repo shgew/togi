@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,19 @@ func New(cfg config.Config, stateDir string) (machine.Machine, error) {
 	if err != nil {
 		return machine.Machine{}, fmt.Errorf("open SMU: %w", err)
 	}
+	cores := drv.Topology()
+	h := newHost(drv, cfg)
+	h.pmTable = smu.NewPMTableReader("/", cores, os.ReadFile)
+	return machine.Machine{
+		Clock:  clock{},
+		SMU:    drv,
+		Host:   h,
+		Trials: trial.New(trial.Options{Dir: filepath.Join(stateDir, "trials"), Backends: h.backends, Cores: cores, User: h.user, PMTable: h.pmTable}),
+		Kernel: detect.NewKernel(cores),
+	}, nil
+}
+
+func newHost(drv *smu.Driver, cfg config.Config) *host {
 	backends := map[machine.Backend]backend.Backend{}
 	if cfg.Backends.Mprime != "" {
 		backends[machine.Mprime] = mprime.New(cfg.Backends.Mprime)
@@ -35,17 +49,8 @@ func New(cfg config.Config, stateDir string) (machine.Machine, error) {
 	if cfg.Backends.Ycruncher != "" {
 		backends[machine.Ycruncher] = ycruncher.New(cfg.Backends.Ycruncher)
 	}
-	cores := drv.Topology()
-	pmTable := smu.NewPMTableReader("/", cores, os.ReadFile)
 	user, userErr := trial.LookupIdentity(cfg.BackendUser)
-	h := &host{drv: drv, cfg: cfg, backends: backends, user: user, userErr: userErr, pmTable: pmTable}
-	return machine.Machine{
-		Clock:  clock{},
-		SMU:    drv,
-		Host:   h,
-		Trials: trial.New(trial.Options{Dir: filepath.Join(stateDir, "trials"), Backends: backends, Cores: cores, User: user, PMTable: pmTable}),
-		Kernel: detect.NewKernel(cores),
-	}, nil
+	return &host{drv: drv, cfg: cfg, backends: backends, user: user, userErr: userErr}
 }
 
 type clock struct{}
@@ -107,23 +112,126 @@ func ranking(root string, cores []machine.CoreInfo) ([]machine.CoreRank, error) 
 	return values, nil
 }
 
+// preflightCheck is one check of run's preflight. The checks after a failed
+// identity check (cpu, ryzen_smu) need that identity, so they do not run.
+// Privileged checks need root: the SMU mailbox, the PM table or systemd.
+type preflightCheck struct {
+	name       string
+	identity   bool
+	gated      bool
+	privileged bool
+	run        func(*host) machine.Check
+}
+
+var preflightChecks = []preflightCheck{
+	{name: "cpu", identity: true, run: func(h *host) machine.Check { return h.drv.CheckCPU() }},
+	{name: "ryzen_smu", identity: true, run: func(h *host) machine.Check { return h.drv.CheckDriver() }},
+	{name: "pm_table", privileged: true, run: func(h *host) machine.Check { return h.pmTable.Check() }},
+	{name: "readback", gated: true, privileged: true, run: func(h *host) machine.Check { return h.drv.CheckReadback() }},
+	{name: "slot_mapping", gated: true, privileged: true, run: func(h *host) machine.Check { return h.drv.CheckSlotMapping() }},
+	{name: "backends", gated: true, run: (*host).checkBackends},
+	{name: "backend_user", gated: true, run: (*host).checkBackendUser},
+	{name: "systemd_run", gated: true, privileged: true, run: (*host).checkSystemdRun},
+}
+
+const needsRoot = "needs root"
+
 func (h *host) Preflight() []machine.Check {
 	root := machine.Check{Name: "root", Detail: "uid 0", OK: true}
 	if uid := os.Geteuid(); uid != 0 {
 		root = machine.Check{Name: "root", Detail: fmt.Sprintf("running as uid %d; run needs root", uid)}
 	}
-	cpu, driver := h.drv.CheckCPU(), h.drv.CheckDriver()
-	checks := []machine.Check{root, cpu, driver, h.pmTable.Check()}
-	if !cpu.OK || !driver.OK {
-		return checks
+	checks, _ := h.preflight(true)
+	return append([]machine.Check{root}, checks...)
+}
+
+// preflight runs the checks in order; unprivileged, it skips those that need root.
+func (h *host) preflight(privileged bool) (ran, skipped []machine.Check) {
+	identified := true
+	for _, c := range preflightChecks {
+		switch {
+		case c.privileged && !privileged:
+			skipped = append(skipped, machine.Check{Name: c.name, Detail: needsRoot})
+		case c.gated && !identified:
+			skipped = append(skipped, machine.Check{Name: c.name, Detail: "needs passing cpu and ryzen_smu checks"})
+		default:
+			check := c.run(h)
+			ran = append(ran, check)
+			if c.identity && !check.OK {
+				identified = false
+			}
+		}
 	}
-	systemdRun := machine.Check{Name: "systemd_run", OK: true}
-	detail, err := trial.CheckSystemdRun(h.user)
-	systemdRun.Detail = detail
+	return ran, skipped
+}
+
+// Diagnose runs the checks run's preflight makes, then the watchdog check and,
+// with a recorded BIOS context, the bios_context comparison. It writes
+// nothing. Unprivileged, it opens the SMU driver without SMN reads and
+// returns the checks that need root as skipped, each Detail saying why.
+// It fails, as run's session preflight does, when the current BIOS context cannot be read.
+func Diagnose(cfg config.Config, recorded *machine.BIOSContext, privileged bool) (ran, skipped []machine.Check, err error) {
+	return diagnose("/", smu.Sysfs("/"), cfg, recorded, privileged)
+}
+
+func diagnose(root string, mb smu.Mailbox, cfg config.Config, recorded *machine.BIOSContext, privileged bool) (ran, skipped []machine.Check, err error) {
+	open := smu.OpenIdentity
+	if privileged {
+		open = smu.Open
+	}
+	drv, err := open(root, mb)
 	if err != nil {
-		systemdRun.Detail, systemdRun.OK = err.Error(), false
+		return nil, nil, fmt.Errorf("open SMU: %w", err)
 	}
-	return append(checks, h.drv.CheckReadback(), h.drv.CheckSlotMapping(), h.checkBackends(), h.checkBackendUser(), systemdRun)
+	h := newHost(drv, cfg)
+	if privileged {
+		h.pmTable = smu.NewPMTableReader(root, drv.Topology(), os.ReadFile)
+	}
+	ran, skipped = h.preflight(privileged)
+	passed := !slices.ContainsFunc(ran, func(c machine.Check) bool { return !c.OK })
+	ran = append(ran, watchdog(root))
+	if recorded == nil {
+		return ran, skipped, nil
+	}
+	switch {
+	case !privileged:
+		skipped = append(skipped, machine.Check{Name: "bios_context", Detail: needsRoot})
+	case !passed:
+		// Like run, compare only after every other check passed: a failed one may leave the SMU unreachable.
+		skipped = append(skipped, machine.Check{Name: "bios_context", Detail: "needs every other check to pass"})
+	default:
+		check, err := biosContextCheck(drv, *recorded)
+		if err != nil {
+			return nil, nil, err
+		}
+		ran = append(ran, check)
+	}
+	return ran, skipped, nil
+}
+
+// biosContextCheck compares the current BIOS context with the one the session recorded.
+// A mismatch is not OK, yet it is no dead end: run archives the session and starts a new one.
+func biosContextCheck(drv *smu.Driver, recorded machine.BIOSContext) (machine.Check, error) {
+	current, err := drv.BIOSContext()
+	if err != nil {
+		return machine.Check{}, fmt.Errorf("read BIOS context: %w", err)
+	}
+	check := machine.Check{Name: "bios_context"}
+	check.Detail, check.OK = machine.CompareContext(recorded, current)
+	if !check.OK {
+		check.Detail += "; run archives this session and starts a new one"
+	}
+	return check, nil
+}
+
+func (h *host) checkSystemdRun() machine.Check {
+	c := machine.Check{Name: "systemd_run", OK: true}
+	detail, err := trial.CheckSystemdRun(h.user)
+	c.Detail = detail
+	if err != nil {
+		c.Detail, c.OK = err.Error(), false
+	}
+	return c
 }
 
 func (h *host) Watchdog() machine.Check { return watchdog("/") }

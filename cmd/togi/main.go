@@ -44,6 +44,9 @@ type command struct {
 }
 
 var commands = []command{
+	{name: "doctor", summary: "Check whether this machine is ready for a run, writing nothing", help: doctorHelp, flags: func(g *globals) *flag.FlagSet {
+		return newFlagSet("doctor", g)
+	}, run: runDoctor},
 	{name: "events", summary: "Render the journal", help: eventsHelp, flags: func(g *globals) *flag.FlagSet {
 		return eventsFlags(g, &journal.Filter{}, new(bool))
 	}, run: runEvents},

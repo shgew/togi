@@ -1,0 +1,12 @@
+CHECK         RESULT   DETAIL
+cpu           ok       family 0x1A model 0x44 AMD Ryzen 9 9950X 16-Core Processor
+ryzen_smu     ok       codename 23 (Granite Ridge), driver 0.7.1, SMU 98.92.0
+backends      ok       mprime: /nix/store/mprime/bin/mprime; y-cruncher: /nix/store/y-cruncher/bin/y-cruncher
+backend_user  ok       togi-trial: uid 990 gid 990
+watchdog      warn     no hardware watchdog state available
+pm_table      skipped  needs root
+readback      skipped  needs root
+slot_mapping  skipped  needs root
+systemd_run   skipped  needs root
+bios_context  skipped  needs root
+not fully checked: run sudo togi doctor

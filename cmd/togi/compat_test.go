@@ -341,6 +341,7 @@ func TestCommandsWithFutureKind(t *testing.T) {
 		{[]string{"events"}, exitOK},
 		{[]string{"events", "--json"}, exitOK},
 		{[]string{"watch", "--width", "120", "--height", "33"}, exitOK},
+		{[]string{"doctor"}, exitIncompatible},
 		{[]string{"run"}, exitIncompatible},
 		{[]string{"reset", "--core", "3"}, exitError},
 		{[]string{"reset", "--all"}, exitError},

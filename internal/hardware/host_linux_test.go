@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -248,6 +249,198 @@ func TestPreflightRefusesUnvalidatedHardware(t *testing.T) {
 					if checks[8].OK || !strings.HasPrefix(checks[8].Detail, "systemd-run backend_user:") {
 						t.Fatalf("systemd refusal hidden: %+v", checks[8])
 					}
+				}
+			})
+		})
+	}
+}
+
+// countingMailbox fails every access, like preflightMailbox, and counts them.
+type countingMailbox struct{ calls int }
+
+func (m *countingMailbox) Command(uint32, [6]uint32) ([6]uint32, error) {
+	m.calls++
+	return [6]uint32{}, errors.New("mailbox unavailable")
+}
+
+func (m *countingMailbox) ReadSMN(uint32) (uint32, error) {
+	m.calls++
+	return 0, errors.New("mailbox unavailable")
+}
+
+// identityRoot is a sysfs root whose CPU and ryzen_smu identity checks pass.
+func identityRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for rel, text := range map[string]string{
+		"proc/cpuinfo": "cpu family : 26\nmodel : 68\nmodel name : Test CPU\n",
+		"sys/devices/system/cpu/cpu0/topology/core_id": "0",
+		"sys/devices/system/cpu/cpu0/topology/die_id":  "0",
+		"sys/kernel/ryzen_smu_drv/codename":            "23",
+		"sys/kernel/ryzen_smu_drv/drv_version":         "0.1",
+		"sys/kernel/ryzen_smu_drv/version":             "57.13",
+	} {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func checkNames(checks []machine.Check) []string {
+	names := make([]string, len(checks))
+	for i, c := range checks {
+		names[i] = c.Name
+	}
+	return names
+}
+
+func TestDiagnoseUnprivilegedMakesNoMailboxCalls(t *testing.T) {
+	mb := &countingMailbox{}
+	ran, skipped, err := diagnose(identityRoot(t), mb, config.Config{}, &machine.BIOSContext{BIOSVersion: "3.14"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(0, mb.calls); diff != "" {
+		t.Fatalf("mailbox calls (-want +got): %s", diff)
+	}
+	if diff := cmp.Diff([]string{"cpu", "ryzen_smu", "backends", "backend_user", "watchdog"}, checkNames(ran)); diff != "" {
+		t.Fatalf("checks run (-want +got):\n%s", diff)
+	}
+	if !ran[0].OK || !ran[1].OK {
+		t.Fatalf("identity checks failed: %+v", ran[:2])
+	}
+	var want []machine.Check
+	for _, name := range []string{"pm_table", "readback", "slot_mapping", "systemd_run", "bios_context"} {
+		want = append(want, machine.Check{Name: name, Detail: "needs root"})
+	}
+	if diff := cmp.Diff(want, skipped); diff != "" {
+		t.Fatalf("skipped checks (-want +got):\n%s", diff)
+	}
+}
+
+func TestDiagnoseCheckSetsPartitionPreflight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		root := identityRoot(t)
+		drv, err := smu.Open(root, preflightMailbox{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := host{drv: drv, pmTable: smu.NewPMTableReader(root, drv.Topology(), os.ReadFile), userErr: errors.New("backend_user not configured")}
+		preflight := checkNames(h.Preflight())
+		if diff := cmp.Diff("root", preflight[0]); diff != "" {
+			t.Fatalf("first preflight check (-want +got): %s", diff)
+		}
+		unprivileged, needsRoot, err := diagnose(root, &countingMailbox{}, config.Config{}, nil, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		privileged, skipped, err := diagnose(root, preflightMailbox{}, config.Config{}, nil, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := cmp.Diff([]machine.Check(nil), skipped); diff != "" {
+			t.Fatalf("privileged skipped checks (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(append(slices.Clone(preflight[1:]), "watchdog"), checkNames(privileged)); diff != "" {
+			t.Fatalf("privileged checks (-want +got):\n%s", diff)
+		}
+		union := slices.Concat(checkNames(unprivileged[:len(unprivileged)-1]), checkNames(needsRoot))
+		slices.Sort(union)
+		want := slices.Clone(preflight[1:])
+		slices.Sort(want)
+		if diff := cmp.Diff(want, union); diff != "" {
+			t.Fatalf("unprivileged and root-only checks do not partition preflight (-want +got):\n%s", diff)
+		}
+	})
+}
+
+func TestDiagnoseComparesBIOSContextOnlyAfterPassingChecks(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		mb := &countingMailbox{}
+		ran, skipped, err := diagnose(identityRoot(t), mb, config.Config{}, &machine.BIOSContext{BIOSVersion: "3.14"}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if slices.Contains(checkNames(ran), "bios_context") {
+			t.Fatalf("bios_context compared after failed checks: %+v", ran)
+		}
+		if diff := cmp.Diff([]machine.Check{{Name: "bios_context", Detail: "needs every other check to pass"}}, skipped); diff != "" {
+			t.Fatalf("skipped checks (-want +got):\n%s", diff)
+		}
+	})
+}
+
+// boostMailbox answers the boost limit command 0x6e and fails every other access.
+type boostMailbox struct{}
+
+func (boostMailbox) Command(cmd uint32, _ [6]uint32) ([6]uint32, error) {
+	if cmd == 0x6e {
+		return [6]uint32{5750}, nil
+	}
+	return [6]uint32{}, errors.New("mailbox unavailable")
+}
+
+func (boostMailbox) ReadSMN(uint32) (uint32, error) {
+	return 0, errors.New("mailbox unavailable")
+}
+
+func TestBIOSContextCheck(t *testing.T) {
+	recorded := machine.BIOSContext{BIOSVersion: "3.14", Board: "ASRock X870E Taichi", CPUModel: "Test CPU", Microcode: "0xb404038", BoostLimitMHz: 5750}
+	changed := recorded
+	changed.BIOSVersion = "3.10"
+	for _, tc := range []struct {
+		name     string
+		recorded machine.BIOSContext
+		missing  string
+		want     machine.Check
+	}{
+		{name: "match", recorded: recorded, want: machine.Check{Name: "bios_context", Detail: "matches the session", OK: true}},
+		{name: "mismatch", recorded: changed, want: machine.Check{Name: "bios_context", Detail: "bios_version is 3.14; the session recorded 3.10; run archives this session and starts a new one"}},
+		{name: "read error", recorded: recorded, missing: "sys/class/dmi/id/board_name"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				root := identityRoot(t)
+				for rel, text := range map[string]string{
+					"proc/cpuinfo":                  "cpu family : 26\nmodel : 68\nmodel name : Test CPU\nmicrocode : 0xb404038\n",
+					"sys/class/dmi/id/bios_version": "3.14\n",
+					"sys/class/dmi/id/board_vendor": "ASRock\n",
+					"sys/class/dmi/id/board_name":   "X870E Taichi\n",
+				} {
+					path := filepath.Join(root, rel)
+					if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(path, []byte(text), 0644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if tc.missing != "" {
+					if err := os.Remove(filepath.Join(root, tc.missing)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				drv, err := smu.Open(root, boostMailbox{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := biosContextCheck(drv, tc.recorded)
+				if tc.missing != "" {
+					if !errors.Is(err, fs.ErrNotExist) || !strings.HasPrefix(err.Error(), "read BIOS context: ") {
+						t.Fatalf("read error = %v, want a read BIOS context error", err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Fatalf("bios_context check (-want +got):\n%s", diff)
 				}
 			})
 		})
