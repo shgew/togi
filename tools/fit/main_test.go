@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -42,7 +43,8 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 		{Class: facts.Class{Regime: machine.R1}, Outcome: journal.OutcomePass},
 	})
 	groups := []modelcheck.Group{{Class: facts.Class{Regime: machine.R7, Workload: "work", Cores: []int{0, 1}, DurationS: 120}, Depth: -24, N: 45, K: 5}}
-	content := encodeMachine(cfg, 2, 263, 45, 12.5, groups)
+	flagged := []modelcheck.Group{{Class: facts.Class{Regime: machine.R7, Workload: "work", Cores: []int{0, 1}, DurationS: 300}, Depth: -24, N: 24, K: 7, Interval: [2]int{0, 2}, Flagged: true}}
+	content := encodeMachine(cfg, 2, 263, 45, 12.5, groups, flagged)
 	path := filepath.Join(t.TempDir(), "fit.toml")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
@@ -164,95 +166,155 @@ func TestGenerateWritesCheckedReproducibleEnsemble(t *testing.T) {
 	}
 }
 
-func TestGenerateConstrainedRefitsMatchSerial(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		root := t.TempDir()
-		extract := filepath.Join(root, "facts.jsonl.gz")
-		var compressed bytes.Buffer
-		gz := gzip.NewWriter(&compressed)
-		encoder := json.NewEncoder(gz)
-		context := machine.BIOSContext{Board: "fixture", BIOSVersion: "A", CPUModel: "Zen 5 fixture", Microcode: "0x1", BoostLimitMHz: 5600}
-		for i := range 30 {
+func TestGenerateFlaggedMembersMatchSerial(t *testing.T) {
+	context := machine.BIOSContext{Board: "fixture", BIOSVersion: "A", CPUModel: "Zen 5 fixture", Microcode: "0x1", BoostLimitMHz: 5600}
+	class := facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}
+	trials := func(depth, n, failures int) []trialfacts.Record {
+		var records []trialfacts.Record
+		for i := range n {
 			outcome, signal := journal.OutcomePass, machine.Signal("")
-			if i == 0 {
+			if i < failures {
 				outcome, signal = journal.OutcomeFailure, machine.ComputationError
 			}
-			r := trialfacts.Record{Kind: facts.TrialFact, Outcome: outcome, Signal: signal, Profile: []int{-10, 0}, Context: &context, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
-			if err := encoder.Encode(r); err != nil {
-				t.Fatal(err)
-			}
+			records = append(records, trialfacts.Record{Kind: facts.TrialFact, Outcome: outcome, Signal: signal, Profile: []int{depth, 0}, Context: &context, Class: class})
 		}
-		if err := gz.Close(); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(extract, compressed.Bytes(), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		out := filepath.Join(root, "machines")
-		generated := func(jobs int) (string, [][]byte, []float64, []fitted) {
-			var report bytes.Buffer
-			fits, err := generate(extract, out, 263, 4, jobs, &report)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var machines [][]byte
-			var predictions []float64
-			for n := range 5 {
-				path := filepath.Join(out, "target-fit-"+strconv.Itoa(n)+".toml")
-				content, err := os.ReadFile(path)
-				if err != nil {
+		return records
+	}
+	group := func(depth, n, k int) modelcheck.Group {
+		return modelcheck.Group{Context: &context, Kind: facts.TrialFact, Class: class, Depth: depth, N: n, K: k, Flagged: true}
+	}
+	tests := []struct {
+		name        string
+		records     []trialfacts.Record
+		constrained [][]modelcheck.Group
+		flagged     [][]modelcheck.Group
+		unseeded    []int
+	}{
+		{
+			name:    "all-facts fit passes",
+			records: trials(-10, 30, 1),
+			// Seeds 264-266 resample none of the single failure, so refits 1-3 are flagged and refit from fit 0.
+			constrained: [][]modelcheck.Group{nil, {group(-10, 30, 1)}, {group(-10, 30, 1)}, {group(-10, 30, 1)}, nil},
+			flagged:     make([][]modelcheck.Group, 5),
+		},
+		{
+			name: "all-facts fit fails",
+			// Failing at -5 but never at the deeper -10 fits no hazard that grows with depth, so every member flags -5.
+			records:     append(trials(-10, 30, 0), trials(-5, 30, 15)...),
+			constrained: make([][]modelcheck.Group, 5),
+			flagged:     [][]modelcheck.Group{{group(-5, 30, 15)}, {group(-5, 30, 15)}, {group(-5, 30, 15)}, {group(-5, 30, 15)}, {group(-5, 30, 15)}},
+			unseeded:    []int{1, 2, 3, 4},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				root := t.TempDir()
+				extract := filepath.Join(root, "facts.jsonl.gz")
+				var compressed bytes.Buffer
+				gz := gzip.NewWriter(&compressed)
+				encoder := json.NewEncoder(gz)
+				for _, r := range test.records {
+					if err := encoder.Encode(r); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := gz.Close(); err != nil {
 					t.Fatal(err)
 				}
-				machines = append(machines, content)
-				cfg, err := sim.LoadMachine(path)
-				if err != nil {
+				if err := os.WriteFile(extract, compressed.Bytes(), 0o600); err != nil {
 					t.Fatal(err)
 				}
-				check, err := modelcheck.Check(path, cfg, trialfacts.Extracts{})
-				if err != nil {
-					t.Fatal(err)
+				out := filepath.Join(root, "machines")
+				generated := func(jobs int) (string, [][]byte, []fitted) {
+					var report bytes.Buffer
+					fits, err := generate(extract, out, 263, 4, jobs, &report)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var machines [][]byte
+					for n := range 5 {
+						content, err := os.ReadFile(filepath.Join(out, "target-fit-"+strconv.Itoa(n)+".toml"))
+						if err != nil {
+							t.Fatal(err)
+						}
+						machines = append(machines, content)
+					}
+					return report.String(), machines, fits
 				}
-				if check.Status != "ok" || len(check.Groups) != 1 {
-					t.Fatalf("jobs %d member %d fails the original evidence: %+v", jobs, n, check)
+				serialReport, serialMachines, fits := generated(1)
+				var constrained, flagged [][]modelcheck.Group
+				for n, f := range fits {
+					constrained = append(constrained, f.constrained)
+					flagged = append(flagged, f.flagged)
+					written := flaggedGroups(f.check)
+					if diff := cmp.Diff(written, f.flagged); diff != "" {
+						t.Fatalf("member %d flags before writing differ from the written file's (-file +header):\n%s", n, diff)
+					}
+					want := []string{"# Model check against the original extract: ok, no flagged groups."}
+					if len(written) > 0 {
+						want = []string{"# Model check against the original extract: flagged; this member cannot support a target-machine claim."}
+					}
+					for _, g := range written {
+						want = append(want, fmt.Sprintf("# Flagged: R1  cores=[0] duration=60s depth=%d n=%d k=%d interval=[%d,%d]", g.Depth, g.N, g.K, g.Interval[0], g.Interval[1]))
+					}
+					var got []string
+					for line := range strings.Lines(string(serialMachines[n])) {
+						if strings.HasPrefix(line, "# Model check") || strings.HasPrefix(line, "# Flagged:") {
+							got = append(got, strings.TrimSuffix(line, "\n"))
+						}
+					}
+					if diff := cmp.Diff(want, got); diff != "" {
+						t.Fatalf("member %d header flags (-want +got):\n%s", n, diff)
+					}
 				}
-				predictions = append(predictions, check.Groups[0].MeanP)
-			}
-			return report.String(), machines, predictions, fits
-		}
-		serialReport, serialMachines, predictions, fits := generated(1)
-		// Seeds 264-266 resample none of the single failure, so refits 1-3 are flagged and refit from fit 0.
-		group := modelcheck.Group{Context: &context, Kind: facts.TrialFact, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}, Depth: -10, N: 30, K: 1, Flagged: true}
-		var constrained [][]modelcheck.Group
-		for _, f := range fits {
-			constrained = append(constrained, f.constrained)
-		}
-		if diff := cmp.Diff([][]modelcheck.Group{nil, {group}, {group}, {group}, nil}, constrained, cmpopts.IgnoreFields(modelcheck.Group{}, "Interval", "MeanP")); diff != "" {
-			t.Fatalf("constrained refits (-want +got):\n%s", diff)
-		}
-		type evidence struct {
-			Trials int
-			Loss   float64
-		}
-		for n := 1; n <= 3; n++ {
-			if predictions[n] >= predictions[0] {
-				t.Fatalf("refit %d kept the all-facts prediction %g, want below it: %g", n, predictions[0], predictions[n])
-			}
-			want := evidence{30, -30 * math.Log1p(-predictions[n])}
-			if diff := cmp.Diff(want, evidence{len(fits[n].sample), fits[n].loss}, cmpopts.EquateApprox(0, 0.0001)); diff != "" {
-				t.Fatalf("refit %d likelihood on its failure-free resample (-want +got):\n%s", n, diff)
-			}
-			if !bytes.Contains(serialMachines[n], []byte("\n# No failures: default signal weights.\n")) {
-				t.Fatalf("refit %d keeps a signal mix its failure-free resample never recorded:\n%s", n, serialMachines[n])
-			}
-		}
-		parallelReport, parallelMachines, _, _ := generated(5)
-		if diff := cmp.Diff(serialReport, parallelReport); diff != "" {
-			t.Fatalf("parallel report differs from serial (-serial +parallel):\n%s", diff)
-		}
-		if diff := cmp.Diff(serialMachines, parallelMachines); diff != "" {
-			t.Fatalf("parallel machines differ from serial (-serial +parallel):\n%s", diff)
-		}
-	})
+				ignore := cmpopts.IgnoreFields(modelcheck.Group{}, "Interval", "MeanP")
+				if diff := cmp.Diff(test.constrained, constrained, ignore); diff != "" {
+					t.Fatalf("constrained refits (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(test.flagged, flagged, ignore); diff != "" {
+					t.Fatalf("flagged members (-want +got):\n%s", diff)
+				}
+				var unseeded []int
+				for line := range strings.Lines(serialReport) {
+					var n int
+					if _, err := fmt.Sscanf(line, "Refit %d written unconstrained:", &n); err == nil {
+						unseeded = append(unseeded, n)
+					}
+				}
+				if diff := cmp.Diff(test.unseeded, unseeded); diff != "" {
+					t.Fatalf("refits reported unconstrained (-want +got):\n%s", diff)
+				}
+				type evidence struct {
+					Trials int
+					Loss   float64
+				}
+				for n, groups := range test.constrained {
+					if groups == nil {
+						continue
+					}
+					prediction, base := fits[n].check.Groups[0].MeanP, fits[0].check.Groups[0].MeanP
+					if prediction >= base {
+						t.Fatalf("refit %d kept the all-facts prediction %g, want below it: %g", n, base, prediction)
+					}
+					want := evidence{30, -30 * math.Log1p(-prediction)}
+					if diff := cmp.Diff(want, evidence{len(fits[n].sample), fits[n].loss}, cmpopts.EquateApprox(0, 0.0001)); diff != "" {
+						t.Fatalf("refit %d likelihood on its failure-free resample (-want +got):\n%s", n, diff)
+					}
+					if !bytes.Contains(serialMachines[n], []byte("\n# No failures: default signal weights.\n")) {
+						t.Fatalf("refit %d keeps a signal mix its failure-free resample never recorded:\n%s", n, serialMachines[n])
+					}
+				}
+				parallelReport, parallelMachines, _ := generated(5)
+				if diff := cmp.Diff(serialReport, parallelReport); diff != "" {
+					t.Fatalf("parallel report differs from serial (-serial +parallel):\n%s", diff)
+				}
+				if diff := cmp.Diff(serialMachines, parallelMachines); diff != "" {
+					t.Fatalf("parallel machines differ from serial (-serial +parallel):\n%s", diff)
+				}
+			})
+		})
+	}
 }
 
 func TestGenerateRefusesMissingOrNondecisiveEvidence(t *testing.T) {
