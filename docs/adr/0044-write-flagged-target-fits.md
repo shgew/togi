@@ -12,8 +12,9 @@ The committed `target-fit-*` files therefore predated the refresh. Under the sam
 2. When the all-facts fit fails, `just fit` writes every bootstrap refit as fitted, without constraints, and its output says so for each flagged refit.
 3. Every written member's header records its model check against the original extract: `ok` with no flagged groups, or `flagged` with each flagged group's class, loaded cores, intended duration, depth, observed counts and interval. The fit report lists the same groups.
 4. The model check is unchanged, and so is ADR 0029 Decision 3: a flagged member cannot support a target-machine claim.
+5. A kept tuner experiment needs target model checks unchanged from the research setup instead of passing ones. ADR 0029's rule that it keeps the target fits passing cannot hold while the all-facts fit fails. A flagged member still blocks every target-machine claim under ADR 0029 Decision 3, so such an experiment is kept without one.
 
-This amends ADR 0029 Decision 4 for the case where the all-facts fit fails. A model pull request is then held to #306's merge bar: it flags no group that was not flagged before.
+This amends ADR 0029 Decision 4 for the case where the all-facts fit fails, and ADR 0029's rule that a kept tuner experiment keeps the target fits passing the model check. A model pull request is then held to #306's merge bar: it flags no group that was not flagged before.
 
 ## Considered Options
 
