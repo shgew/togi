@@ -255,7 +255,7 @@ func (s *State) r7LocatedNamedDecision(source pendingFailure, loc locatedHunt) (
 		return Action{}, false
 	}
 	a, ok := s.r7CoreDecision(*g, *failed, c, &loc)
-	if ok {
+	if ok && a.Kind == Decide {
 		a.Cause = append([]int{source.seq}, a.Cause...)
 	}
 	return a, ok
@@ -380,11 +380,18 @@ func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core, located 
 		}
 		order.reason += clause
 	}
+	if r := s.zeroReruns[f.seq]; r != nil && r.passed {
+		locatedSeqs = append(locatedSeqs, r.end)
+		if order.reason != "" {
+			order.reason += "; "
+		}
+		order.reason += fmt.Sprintf("the rerun of failure #%d with every core at CO 0 passed (#%d), so it counts as unattributed against the cores off CO 0", f.seq, r.end)
+	}
 	if len(order.group) == 0 || order.named && failed.profile[s.index(c.id)] == 0 {
 		cause := append([]int{f.seq}, locatedSeqs...)
 		cause = append(cause, order.sources...)
 		dead := s.r7FailedAtZero(failed, c.id, order)
-		if located != nil && located.failure != 0 {
+		if located != nil && located.allZero && located.failure != 0 {
 			// Every loaded core was at 0, so the failed locate was the all-zero rerun.
 			return Action{Kind: Decide, Payload: dead, Cause: cause}, true
 		}

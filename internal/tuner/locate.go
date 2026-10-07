@@ -10,11 +10,13 @@ import (
 
 // locatedHunt records how a located hunt answered an unattributed multi-core R7 failure: open while result is
 // empty, consumed by any end but loaded, and charged to the loaded cores after a loaded end. A loaded end whose
-// group failure named a loaded core records that core: the named failure decides the charge.
+// group failure named a loaded core records that core: the named failure decides the charge. allZero marks a hunt
+// whose loaded cores were all at CO 0, so its locate was the failure's all-zero rerun.
 type locatedHunt struct {
 	hunt, end, failure, source int
 	named                      *int
 	result                     string
+	allZero                    bool
 }
 
 // located reports a hunt of a failed multi-core R7 load: it keeps the loaded cores at their failing offsets
@@ -167,22 +169,27 @@ func (s *State) locateFailure(h *hunt) int {
 	return failure
 }
 
-// locatedLoadedNamed returns the failure that rejected the hunt's latest group, or 0, and the loaded core off CO 0
-// it named, if any. A loaded core named at CO 0 leaves the group failure unattributed.
+// allZeroLocated reports a located hunt whose loaded cores were all at CO 0: its locate is the all-zero rerun.
+func (s *State) allZeroLocated(h *hunt) bool {
+	return !slices.ContainsFunc(h.start.Cores, func(id int) bool { return !s.atCOZero(h.start.Failing, id) })
+}
+
+// locatedLoadedNamed returns the failure that rejected the hunt's latest group, or 0, and the loaded core it named,
+// if any. After a passed all-zero locate, a loaded core named at CO 0 leaves the group failure unattributed.
 func (s *State) locatedLoadedNamed(h *hunt) (int, *int) {
 	failure := s.locateFailure(h)
-	if failure == 0 {
-		return 0, nil
+	if failure == 0 || len(h.groups) > 1 && s.allZeroLocated(h) {
+		return failure, nil
 	}
 	for _, e := range s.ledger[h.class.withDuration(h.groups[len(h.groups)-1].payload.DurationS)] {
-		if e.seq == failure && e.named != nil && slices.Contains(h.start.Cores, *e.named) && !s.atCOZero(e.profile, *e.named) {
+		if e.seq == failure && e.named != nil && slices.Contains(h.start.Cores, *e.named) {
 			return failure, new(*e.named)
 		}
 	}
 	return failure, nil
 }
 
-// locatedLoadedFailure ends a located hunt loaded when its latest group failed naming a loaded core off CO 0.
+// locatedLoadedFailure ends a located hunt loaded when its latest group failed naming a loaded core.
 func (s *State) locatedLoadedFailure(h *hunt) (Action, bool) {
 	if !h.located() {
 		return Action{}, false
@@ -202,7 +209,7 @@ func (s *State) endLocatedHunt(h *hunt, e journal.Event, p *journal.HuntEnd) {
 		s.hunt = nil
 	case "loaded":
 		failure, named := s.locatedLoadedNamed(h)
-		s.located[h.start.Failure] = locatedHunt{hunt: p.Hunt, end: e.Seq, failure: failure, source: h.start.Failure, named: named, result: p.Result}
+		s.located[h.start.Failure] = locatedHunt{hunt: p.Hunt, end: e.Seq, failure: failure, source: h.start.Failure, named: named, result: p.Result, allZero: s.allZeroLocated(h)}
 		s.hunt = nil
 	default:
 		s.located[h.start.Failure] = locatedHunt{hunt: p.Hunt, end: e.Seq, result: p.Result}

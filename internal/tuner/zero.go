@@ -38,6 +38,8 @@ func (s *State) atZero(f pendingFailure, dead *journal.DeadEnd, cause []int) (Ac
 	return Action{Kind: Decide, Payload: dead, Cause: append(slices.Clone(cause), r.end)}, true
 }
 
+// zeroRerunTrial reruns the failed trial with every core at CO 0 in its own shape: a single-core trial stays one,
+// so the rerun loads the same CPUs as the failure it confirms.
 func (s *State) zeroRerunTrial(f pendingFailure) Action {
 	if s.retry != nil && s.retry.Rerun && s.retry.Condition == machine.Parked {
 		return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{f.seq}}
@@ -46,11 +48,23 @@ func (s *State) zeroRerunTrial(f pendingFailure) Action {
 	if f.failure.Condition == machine.Parked {
 		phase = journal.PhaseHunt
 	}
-	cores := slices.Clone(s.classCores(f.class))
-	if len(cores) == 0 {
-		cores = s.ids()
+	t := Trial{Regime: f.class.regime, Workload: f.class.workload, DurationS: f.class.duration, Condition: machine.Parked, Phase: phase, Profile: make([]int, len(s.cores)), Rerun: true}
+	var intent *journal.TrialIntent
+	if !f.carried {
+		intent = s.intents[f.failure.Trial]
 	}
-	t := Trial{Regime: f.class.regime, Workload: f.class.workload, Cores: cores, DurationS: f.class.duration, Condition: machine.Parked, Phase: phase, Profile: make([]int, len(s.cores)), Rerun: true}
+	target := s.classTargets[f.class.cores]
+	switch {
+	case intent != nil && intent.Core != nil && len(intent.Cores) == 0:
+		t.Core = *intent.Core
+	case intent == nil && !target.multi && len(target.cores) == 1:
+		t.Core = target.cores[0]
+	default:
+		t.Cores = slices.Clone(s.classCores(f.class))
+		if len(t.Cores) == 0 {
+			t.Cores = s.ids()
+		}
+	}
 	return Action{Kind: RunTrial, Trial: t, Cause: []int{f.seq}}
 }
 
@@ -90,8 +104,9 @@ func (s *State) endZeroRerun(e journal.Event, p *journal.TrialEnd) {
 	s.projectionDirty = true
 }
 
-// zeroRerunFailure reports a failed all-zero rerun, whose failure only answers its rerun.
+// zeroRerunFailure reports a failed all-zero rerun, whose failure only answers its rerun. A known-failure skip
+// carries its known failure's trial, which a carried failure took from another session, so it never matches.
 func (s *State) zeroRerunFailure(p *journal.Failure) bool {
 	_, ok := s.zeroTrials[p.Trial]
-	return ok && p.Trial != ""
+	return ok && p.Trial != "" && p.KnownFailure == 0
 }
