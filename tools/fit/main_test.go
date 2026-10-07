@@ -33,6 +33,14 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 	cfg.Facts = "../facts/extract.jsonl.gz"
 	cfg.Limits[0].Idle = &idle
 	cfg.Limits[0].Workload = map[string]int{"z": -24, "a": -20}
+	fitSignals(&cfg, []trialfacts.Record{
+		{Class: facts.Class{Regime: machine.R7}, Outcome: journal.OutcomeFailure, Signal: machine.Crash},
+		{Class: facts.Class{Regime: machine.R7}, Outcome: journal.OutcomeFailure, Signal: machine.UncorrectedMCE},
+		{Class: facts.Class{Regime: machine.R7}, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError},
+		{Class: facts.Class{Regime: machine.R2}, Outcome: journal.OutcomeFailure, Signal: machine.ComputationError},
+		{Class: facts.Class{Regime: machine.R2}, Outcome: journal.OutcomeFailure},
+		{Class: facts.Class{Regime: machine.R1}, Outcome: journal.OutcomePass},
+	})
 	groups := []modelcheck.Group{{Class: facts.Class{Regime: machine.R7, Workload: "work", Cores: []int{0, 1}, DurationS: 120}, Depth: -24, N: 45, K: 5}}
 	content := encodeMachine(cfg, 2, 263, 45, 12.5, groups)
 	path := filepath.Join(t.TempDir(), "fit.toml")
@@ -54,6 +62,11 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 	}
 	if got.Facts != cfg.Facts || got.Model.PastLimitRate != cfg.Model.PastLimitRate || got.Model.Growth != cfg.Model.Growth || got.Model.NearLimitRate != cfg.Model.NearLimitRate {
 		t.Fatalf("encoded fit lost parameters: %+v", got)
+	}
+	wantSignals := map[machine.Signal]float64{machine.Crash: 2, machine.ComputationError: 2}
+	wantRegimes := map[machine.Regime]map[machine.Signal]float64{machine.R7: {machine.Crash: 2, machine.ComputationError: 1}, machine.R2: {machine.ComputationError: 1}}
+	if diff := cmp.Diff([]any{wantSignals, wantRegimes}, []any{got.Model.Signals, got.Model.RegimeSignals}); diff != "" {
+		t.Fatalf("encoded signal mix (-want +got):\n%s", diff)
 	}
 	if *update {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {
@@ -160,11 +173,11 @@ func TestGenerateConstrainedRefitsMatchSerial(t *testing.T) {
 		encoder := json.NewEncoder(gz)
 		context := machine.BIOSContext{Board: "fixture", BIOSVersion: "A", CPUModel: "Zen 5 fixture", Microcode: "0x1", BoostLimitMHz: 5600}
 		for i := range 30 {
-			outcome := journal.OutcomePass
+			outcome, signal := journal.OutcomePass, machine.Signal("")
 			if i == 0 {
-				outcome = journal.OutcomeFailure
+				outcome, signal = journal.OutcomeFailure, machine.ComputationError
 			}
-			r := trialfacts.Record{Kind: facts.TrialFact, Outcome: outcome, Profile: []int{-10, 0}, Context: &context, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
+			r := trialfacts.Record{Kind: facts.TrialFact, Outcome: outcome, Signal: signal, Profile: []int{-10, 0}, Context: &context, Class: facts.Class{Regime: machine.R1, Cores: []int{0}, DurationS: 60}}
 			if err := encoder.Encode(r); err != nil {
 				t.Fatal(err)
 			}
@@ -227,6 +240,9 @@ func TestGenerateConstrainedRefitsMatchSerial(t *testing.T) {
 			want := evidence{30, -30 * math.Log1p(-predictions[n])}
 			if diff := cmp.Diff(want, evidence{len(fits[n].sample), fits[n].loss}, cmpopts.EquateApprox(0, 0.0001)); diff != "" {
 				t.Fatalf("refit %d likelihood on its failure-free resample (-want +got):\n%s", n, diff)
+			}
+			if !bytes.Contains(serialMachines[n], []byte("\n# No failures: default signal weights.\n")) {
+				t.Fatalf("refit %d keeps a signal mix its failure-free resample never recorded:\n%s", n, serialMachines[n])
 			}
 		}
 		parallelReport, parallelMachines, _, _ := generated(5)

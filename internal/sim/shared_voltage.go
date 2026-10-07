@@ -193,7 +193,7 @@ func (m *Machine) voltageState(profile []int, spec machine.TrialSpec) voltageSta
 func (m *Machine) voltageSignal(spec machine.TrialSpec, core int) machine.Signal {
 	weights := m.cfg.SharedVoltage.Workload[spec.Workload.ID].Core[core].Signals
 	if weights == nil {
-		weights = m.model.Signals
+		weights = m.signals(spec.Regime)
 	}
 	var total float64
 	for _, signal := range signalOrder {

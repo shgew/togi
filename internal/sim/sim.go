@@ -79,6 +79,9 @@ type Model struct {
 	Growth        float64
 	NearLimitRate float64
 	Signals       map[machine.Signal]float64
+	// RegimeSignals replaces Signals for failures in each regime it lists. When it lists any regime, joints without a
+	// signal and [ccd] hazards draw from their regime's weights, else from Signals, instead of crashing.
+	RegimeSignals map[machine.Regime]map[machine.Signal]float64
 	CrashMCE      float64
 	CoreLocalBank float64
 	OnsetS        float64
@@ -172,7 +175,19 @@ func validateSignals(signals map[machine.Signal]float64) error {
 		total += weight
 	}
 	if !(total > 0) {
-		return errors.New("model.signals weights must sum to a positive total")
+		return errors.New("weights must sum to a positive total")
+	}
+	return nil
+}
+
+func validateRegimeSignals(signals map[machine.Regime]map[machine.Signal]float64) error {
+	for _, regime := range slices.Sorted(maps.Keys(signals)) {
+		if !slices.Contains(machine.Regimes, regime) {
+			return fmt.Errorf("model.regime_signals regime %q is not supported", regime)
+		}
+		if err := validateSignals(signals[regime]); err != nil {
+			return fmt.Errorf("model.regime_signals.%s: %w", regime, err)
+		}
 	}
 	return nil
 }
@@ -232,6 +247,9 @@ func resolve(cfg Config) (Config, Model, error) {
 		model = *cfg.Model
 	}
 	if err := validateSignals(model.Signals); err != nil {
+		return Config{}, Model{}, fmt.Errorf("model.signals: %w", err)
+	}
+	if err := validateRegimeSignals(model.RegimeSignals); err != nil {
 		return Config{}, Model{}, err
 	}
 	if err := validateCCD(cfg.CCD); err != nil {
@@ -348,6 +366,13 @@ func (cfg Config) clone() Config {
 	if cfg.Model != nil {
 		model := *cfg.Model
 		model.Signals = maps.Clone(model.Signals)
+		if model.RegimeSignals != nil {
+			regimes := make(map[machine.Regime]map[machine.Signal]float64, len(model.RegimeSignals))
+			for regime, signals := range model.RegimeSignals {
+				regimes[regime] = maps.Clone(signals)
+			}
+			model.RegimeSignals = regimes
+		}
 		model.Reset = maps.Clone(model.Reset)
 		cfg.Model = &model
 	}

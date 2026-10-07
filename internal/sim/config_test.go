@@ -24,6 +24,8 @@ past_limit_rate = 0.7
 onset_boost = 2
 [model.signals]
 crash = 1
+[model.regime_signals]
+R7 = { crash = 79, computation_error = 5 }
 [model.reset]
 thermal_trip = 1
 [[core]]
@@ -63,6 +65,9 @@ then_crash = true
 	}
 	if cfg.Model.PastLimitRate != .7 || cfg.Model.OnsetS != 100 || cfg.Model.Reset[machine.ResetThermalTrip] != 1 || cfg.Limits[0].Workload["special"] != -27 || cfg.Joints[0].AfterS != 30 || !cfg.Script["0042"].ThenCrash {
 		t.Fatalf("incomplete config: %+v", cfg)
+	}
+	if diff := cmp.Diff(map[machine.Regime]map[machine.Signal]float64{machine.R7: {machine.Crash: 79, machine.ComputationError: 5}}, cfg.Model.RegimeSignals); diff != "" {
+		t.Fatalf("regime signals (-want +got):\n%s", diff)
 	}
 	if err := os.WriteFile(path, []byte(content+"unknown = 1\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -225,8 +230,8 @@ func TestNewRejectsInvalidModelWeights(t *testing.T) {
 		reset   map[machine.ResetKind]float64
 		want    string
 	}{
-		{"signal unknown sorted", map[machine.Signal]float64{"z": 1, "a": 1}, nil, `new simulator: signal "a" is not supported`},
-		{"signal negative sorted", map[machine.Signal]float64{machine.Stall: -1, machine.ComputationError: -2}, nil, `new simulator: signal "computation_error" weight -2 is negative`},
+		{"signal unknown sorted", map[machine.Signal]float64{"z": 1, "a": 1}, nil, `new simulator: model.signals: signal "a" is not supported`},
+		{"signal negative sorted", map[machine.Signal]float64{machine.Stall: -1, machine.ComputationError: -2}, nil, `new simulator: model.signals: signal "computation_error" weight -2 is negative`},
 		{"reset unknown sorted", nil, map[machine.ResetKind]float64{"z": 1, "a": 1}, `new simulator: reset "a" is not supported`},
 		{"reset negative sorted", nil, map[machine.ResetKind]float64{machine.ResetWatchdog: -1, machine.ResetThermalTrip: -2}, `new simulator: reset "thermal_trip" weight -2 is negative`},
 	} {
@@ -262,6 +267,9 @@ func TestNewRejectsInvalidHazardsAndSignals(t *testing.T) {
 		{"joint regime", Config{Cores: 2, Joints: []Joint{{Members: map[int]int{0: -5}, Regimes: []machine.Regime{"R9"}}}}, `new simulator: joint regime "R9" is not supported`},
 		{"joint signal", Config{Cores: 2, Joints: []Joint{{Members: map[int]int{0: -5}, Signal: "crsh"}}}, `new simulator: joint signal "crsh" is not supported`},
 		{"joint rate", Config{Cores: 2, Joints: []Joint{{Members: map[int]int{0: -5}, Rate: -1}}}, "new simulator: joint rate -1 or delay 0 is negative"},
+		{"regime signals regime", Config{Cores: 2, Model: &Model{Signals: map[machine.Signal]float64{machine.Crash: 1}, RegimeSignals: map[machine.Regime]map[machine.Signal]float64{"R9": {machine.Crash: 1}}}}, `new simulator: model.regime_signals regime "R9" is not supported`},
+		{"regime signals empty", Config{Cores: 2, Model: &Model{Signals: map[machine.Signal]float64{machine.Crash: 1}, RegimeSignals: map[machine.Regime]map[machine.Signal]float64{machine.R7: {}}}}, "new simulator: model.regime_signals.R7: weights must sum to a positive total"},
+		{"regime signals unsupported", Config{Cores: 2, Model: &Model{Signals: map[machine.Signal]float64{machine.Crash: 1}, RegimeSignals: map[machine.Regime]map[machine.Signal]float64{machine.R7: {machine.UncorrectedMCE: 1}}}}, `new simulator: model.regime_signals.R7: signal "uncorrected_mce" is not supported`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

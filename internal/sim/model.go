@@ -136,7 +136,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 		return res, nil
 	}
 	rng := m.trialRNG("signal", spec, f.core)
-	signal := m.drawSignal(rng.Float64())
+	signal := drawSignal(m.signals(spec.Regime), rng.Float64())
 	if f.signal != "" {
 		signal = f.signal
 	}
@@ -203,7 +203,7 @@ func (r *running) Wait(ctx context.Context, report machine.Reporter) (result mac
 		m.Crash()
 		return machine.Result{}, machine.ErrCrashed
 	}
-	return machine.Result{}, fmt.Errorf("simulated trial: no signal to draw from %v", m.model.Signals)
+	return machine.Result{}, fmt.Errorf("simulated trial: no signal to draw from %v", m.signals(spec.Regime))
 }
 
 // trialFailure answers a trial from a matching recorded fact, else from its script, else from the model's draws.
@@ -272,7 +272,7 @@ func (m *Machine) drawnFailure(spec machine.TrialSpec) (failure, bool) {
 		}
 		t := m.failureDraw(rate, 0, spec, core, fmt.Sprintf("ccd-%d", ccd))
 		if t < f.at {
-			f.core, f.at, f.signal = core, t, machine.Crash
+			f.core, f.at, f.signal = core, t, m.unattributedSignal()
 			f.idle = false
 			f.joint = &Joint{}
 		}
@@ -301,8 +301,10 @@ func (m *Machine) drawnFailure(spec machine.TrialSpec) (failure, bool) {
 			f.core, f.at, f.signal = core, t, joint.Signal
 			f.idle = idle
 			f.joint = &m.cfg.Joints[j]
-			if idle || f.signal == "" {
+			if idle {
 				f.signal = machine.Crash
+			} else if f.signal == "" {
+				f.signal = m.unattributedSignal()
 			}
 		}
 	}
@@ -455,14 +457,31 @@ func (m *Machine) drawReset(x float64) machine.ResetKind {
 	return machine.ResetWatchdog
 }
 
-func (m *Machine) drawSignal(x float64) machine.Signal {
+// signals returns the weights failures in regime draw their signal from.
+func (m *Machine) signals(regime machine.Regime) map[machine.Signal]float64 {
+	if weights, ok := m.model.RegimeSignals[regime]; ok {
+		return weights
+	}
+	return m.model.Signals
+}
+
+// unattributedSignal is the signal of a loaded joint or [ccd] failure without its own signal: a crash, unless
+// the machine fits per-regime mixes, where the empty signal leaves it to the draw from m.signals.
+func (m *Machine) unattributedSignal() machine.Signal {
+	if len(m.model.RegimeSignals) > 0 {
+		return ""
+	}
+	return machine.Crash
+}
+
+func drawSignal(weights map[machine.Signal]float64, x float64) machine.Signal {
 	var total float64
 	for _, s := range signalOrder {
-		total += m.model.Signals[s]
+		total += weights[s]
 	}
 	x *= total
 	for _, s := range signalOrder {
-		if w := m.model.Signals[s]; w > 0 {
+		if w := weights[s]; w > 0 {
 			if x < w {
 				return s
 			}

@@ -189,6 +189,7 @@ func generate(extract, out string, seed uint64, refits, jobs int, stdout io.Writ
 			}
 			fmt.Fprintf(stdout, "  CCD%d joint%d: members=%v rate=%.9g/s after=%.9gs\n", ccd, j, joint.Members, joint.Rate, joint.AfterS)
 		}
+		reportSignals(stdout, cfg.Model)
 	}
 	modelcheck.Report(stdout, checks)
 	if err := reportForwardCheck(stdout, trials, 0, jobs); err != nil {
@@ -207,8 +208,9 @@ func encodeMachine(cfg sim.Config, index int, seed uint64, trials int, loss floa
 	if cfg.CCD != nil {
 		fmt.Fprintln(&b, "# Fitted CCD residual: joint-gated loaded hazard with shared depth slope and shrunk CCD effects.")
 	}
+	encodeSignalsComment(&b, cfg.Model)
 	fmt.Fprintln(&b, "# Unsupported limits stay -50; unobserved idle exposure cannot identify idle hazards.")
-	fmt.Fprintln(&b, "# Fixed: onset boost=0, joint delay=0; default signals/MCE/reset.")
+	fmt.Fprintln(&b, "# Fixed: onset boost=0, joint delay=0; default MCE/reset.")
 	for _, group := range constrained {
 		fmt.Fprintf(&b, "# Constrained bootstrap: %s %s cores=%v duration=%ds depth=%d n=%d k=%d\n", group.Class.Regime, group.Class.Workload, group.Class.Cores, group.Class.DurationS, group.Depth, group.N, group.K)
 	}
@@ -224,6 +226,12 @@ func encodeConfiguration(b *bytes.Buffer, cfg sim.Config) {
 	}
 	m := cfg.Model
 	fmt.Fprintf(b, "\n[model]\npast_limit_rate = %.17g\ngrowth = %.17g\nnear_limit_rate = %.17g\nonset_boost = 0.0\n", m.PastLimitRate, m.Growth, m.NearLimitRate)
+	if m.RegimeSignals != nil {
+		fmt.Fprintf(b, "signals = %s\n\n[model.regime_signals]\n", encodeSignals(m.Signals))
+		for _, regime := range slices.Sorted(maps.Keys(m.RegimeSignals)) {
+			fmt.Fprintf(b, "%s = %s\n", strconv.Quote(string(regime)), encodeSignals(m.RegimeSignals[regime]))
+		}
+	}
 	if c := cfg.CCD; c != nil {
 		fmt.Fprintf(b, "\n[ccd]\nlog_rate = %.17g\nslope = %.17g\neffect = [%.17g, %.17g]\n", c.LogRate, c.Slope, c.Effect[0], c.Effect[1])
 	}
@@ -243,7 +251,7 @@ func encodeConfiguration(b *bytes.Buffer, cfg sim.Config) {
 		}
 	}
 	for _, joint := range cfg.Joints {
-		fmt.Fprintf(b, "\n[[joint]]\nregimes = [\"R7\"]\nrate = %.17g\nafter_s = 0.0\nsignal = \"crash\"\nmembers = {", joint.Rate)
+		fmt.Fprintf(b, "\n[[joint]]\nregimes = [\"R7\"]\nrate = %.17g\nafter_s = 0.0\nmembers = {", joint.Rate)
 		separator := ""
 		for core := range cfg.Cores {
 			if offset, ok := joint.Members[core]; ok {

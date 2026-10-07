@@ -241,7 +241,7 @@ func initialConfig(records []trialfacts.Record) sim.Config {
 			}
 		}
 		if found {
-			cfg.Joints = append(cfg.Joints, sim.Joint{Members: members, Regimes: []machine.Regime{machine.R7}, Rate: 0.005, Signal: machine.Crash})
+			cfg.Joints = append(cfg.Joints, sim.Joint{Members: members, Regimes: []machine.Regime{machine.R7}, Rate: 0.005})
 		}
 	}
 	return cfg
@@ -288,6 +288,7 @@ func fitFrom(records []trialfacts.Record, initial *sim.Config, guard *modelcheck
 		l.rebuild()
 		l.fitCCD()
 	}
+	fitSignals(&l.cfg, records)
 	return l.cfg, l.score(all)
 }
 
@@ -418,7 +419,7 @@ func (l *likelihood) addJoint(records []trialfacts.Record, ccd int) {
 	var best sim.Joint
 	seen := make(map[string]bool)
 	original := len(l.cfg.Joints)
-	l.cfg.Joints = append(l.cfg.Joints, sim.Joint{Regimes: []machine.Regime{machine.R7}, Rate: 0.001, Signal: machine.Crash})
+	l.cfg.Joints = append(l.cfg.Joints, sim.Joint{Regimes: []machine.Regime{machine.R7}, Rate: 0.001})
 	l.rebuild()
 	candidate := &l.cfg.Joints[original]
 	for _, r := range records {

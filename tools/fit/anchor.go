@@ -66,6 +66,7 @@ func generateSharedVoltageAnchor(extract, out string, stdout io.Writer, fitter s
 	}
 	fmt.Fprintln(stdout, "IN-SAMPLE shared-voltage fit; NOT forward-validated. The 2026-10-04 #306 R7 forward bar failed.")
 	fmt.Fprintf(stdout, "Shared-voltage candidate (record only): rate=%.17g/s margin_v=%.17g background_rate=%.17g/s\n", cfg.SharedVoltage.Rate, cfg.SharedVoltage.MarginV, cfg.SharedVoltage.BackgroundRate)
+	reportSignals(stdout, cfg.Model)
 	fmt.Fprintln(stdout, "\nModel check (unchanged 99% binomial intervals; full original extract)")
 	fmt.Fprintf(stdout, "%s: %s (%d eligible groups; %d idle failures without trial exposure)\n", path, check.Status, len(check.Groups), check.IdleFailures)
 	for _, g := range check.Groups {
@@ -126,6 +127,7 @@ func encodeSharedVoltageAnchor(cfg sim.Config, trials int, loss float64) []byte 
 	fmt.Fprintln(&b, "# Checked against every eligible group of the full original extract before writing.")
 	fmt.Fprintln(&b, "# Unsupported y-cruncher R7 thresholds: per-core max of AVX2/AVX-512; no hardware evidence.")
 	fmt.Fprintln(&b, "# Real-fact replay is enabled by replay=true on a bench suite scenario, not by a machine key.")
+	encodeSignalsComment(&b, cfg.Model)
 	encodeConfiguration(&b, cfg)
 	v := cfg.SharedVoltage
 	fmt.Fprintf(&b, "\n[shared_voltage]\nidle_v = %.17g\nmargin_v = %.17g\nrate = %.17g\nbackground_rate = %.17g\npower_limit_w = %.17g\nthermal_limit_w = %.17g\n", v.IdleV, v.MarginV, v.Rate, v.BackgroundRate, v.PowerLimitW, v.ThermalLimitW)
