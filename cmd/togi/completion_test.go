@@ -32,77 +32,199 @@ func TestCompletionScripts(t *testing.T) {
 	}
 }
 
-// completionForms says how each script spells a command, a flag and its list
-// of kind selectors.
-var completionForms = map[string]struct {
-	command    func(string) string
-	flag       func(string) string
+// completionLayouts say where each script offers its commands and each
+// command's flags, so a name missing from its own place fails even when it
+// appears elsewhere in the script. flags takes the empty command for the top
+// level.
+var completionLayouts = map[string]struct {
+	commands   func(script string) []string
+	flags      func(script, command string) []string
 	kindsAfter string
 }{
 	"bash": {
-		command:    func(name string) string { return "\n    " + name + ")\n" },
-		flag:       func(name string) string { return "--" + name },
+		commands: func(script string) []string {
+			return bashWords(section(script, "\n    \"\")\n", "\n        ;;\n"), false)
+		},
+		flags: func(script, command string) []string {
+			start := "\n    " + command + ")\n"
+			if command == "" {
+				start = "\n    \"\")\n"
+			}
+			return bashWords(section(script, start, "\n        ;;\n"), true)
+		},
 		kindsAfter: "    for kind in ",
 	},
 	"zsh": {
-		command:    func(name string) string { return "\n    '" + name + ":" },
-		flag:       func(name string) string { return "'--" + name },
+		commands: func(script string) []string {
+			var names []string
+			for line := range strings.Lines(section(script, "local -a commands=(\n", "\n  )\n")) {
+				name, _, _ := strings.Cut(strings.TrimSpace(line), ":")
+				names = append(names, strings.TrimPrefix(name, "'"))
+			}
+			return names
+		},
+		flags: func(script, command string) []string {
+			block := section(script, "\n    "+command+")\n", "\n      ;;\n")
+			if command == "" {
+				block = section(script, "_arguments -C \\\n", "'1:command:->command'")
+			}
+			var names []string
+			for line := range strings.Lines(block) {
+				if spec, ok := strings.CutPrefix(strings.TrimSpace(line), "'--"); ok {
+					names = append(names, "--"+strings.FieldsFunc(spec, func(r rune) bool { return r == '=' || r == '\'' })[0])
+				}
+			}
+			return names
+		},
 		kindsAfter: "  _sequence compadd - ",
 	},
 	"fish": {
-		command:    func(name string) string { return " -a " + name + " -d " },
-		flag:       func(name string) string { return " -l " + name },
+		commands: func(script string) []string {
+			return fishWords(script, "", "-a")
+		},
+		flags: func(script, command string) []string {
+			return fishWords(script, command, "-l")
+		},
 		kindsAfter: "    for kind in ",
 	},
 	"nushell": {
-		command:    func(name string) string { return `export extern "togi ` + name + `" [` },
-		flag:       func(name string) string { return "\n    --" + name },
+		commands: func(script string) []string {
+			var names []string
+			for line := range strings.Lines(script) {
+				if rest, ok := strings.CutPrefix(line, `export extern "togi `); ok {
+					name, _, _ := strings.Cut(rest, `"`)
+					names = append(names, name)
+				}
+			}
+			return names
+		},
+		flags: func(script, command string) []string {
+			start := `export extern "togi ` + command + `" [`
+			if command == "" {
+				start = `extern "togi" [`
+			}
+			var names []string
+			for line := range strings.Lines(section(script, "\n"+start+"\n", "\n]")) {
+				if strings.HasPrefix(strings.TrimSpace(line), "--") {
+					name, _, _ := strings.Cut(strings.TrimSpace(line), ":")
+					names = append(names, name)
+				}
+			}
+			return names
+		},
 		kindsAfter: "def \"nu-complete togi kinds\" [] {\n    ",
 	},
 }
 
+// section returns the text between start and the next end, or nothing when
+// the script lacks start.
+func section(script, start, end string) string {
+	_, rest, ok := strings.Cut(script, start)
+	if !ok {
+		return ""
+	}
+	s, _, _ := strings.Cut(rest, end)
+	return s
+}
+
+// bashWords returns the flags, or the other words, that the _togi_words lines
+// of block offer.
+func bashWords(block string, flags bool) []string {
+	var words []string
+	for line := range strings.Lines(block) {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "_togi_words ")
+		if !ok {
+			continue
+		}
+		for word := range strings.FieldsSeq(rest) {
+			if strings.HasPrefix(word, "--") == flags {
+				words = append(words, word)
+			}
+		}
+	}
+	return words
+}
+
+// fishWords returns the --name of each -l, or the name of each -a, on the
+// complete lines whose condition is that command is the given one.
+func fishWords(script, command, option string) []string {
+	condition := `-n "__togi_command_is ` + command + `" `
+	if command == "" {
+		condition = `-n "__togi_command_is ''" `
+	}
+	var words []string
+	for line := range strings.Lines(script) {
+		_, rest, ok := strings.Cut(line, condition)
+		if !ok {
+			continue
+		}
+		fields := strings.Fields(rest)
+		if len(fields) < 2 || fields[0] != option {
+			continue
+		}
+		if option == "-l" {
+			words = append(words, "--"+fields[1])
+		} else {
+			words = append(words, fields[1])
+		}
+	}
+	return words
+}
+
+func dashedFlags(fs *flag.FlagSet) []string {
+	var names []string
+	fs.VisitAll(func(f *flag.Flag) { names = append(names, "--"+f.Name) })
+	return names
+}
+
 func TestCompletionCoversCommands(t *testing.T) {
 	t.Parallel()
-	if got, want := slices.Sorted(maps.Keys(completionForms)), slices.Sorted(slices.Values(completionShellNames())); !slices.Equal(got, want) {
-		t.Fatalf("completion forms cover shells %v, want %v", got, want)
+	if got, want := slices.Sorted(maps.Keys(completionLayouts)), slices.Sorted(slices.Values(completionShellNames())); !slices.Equal(got, want) {
+		t.Fatalf("completion layouts cover shells %v, want %v", got, want)
 	}
 	for _, c := range commands {
 		if c.flags == nil {
 			t.Fatalf("command %s has no flags entry, so completion cannot offer its flags", c.name)
 		}
 	}
-	for shell, form := range completionForms {
+	for shell := range completionLayouts {
 		t.Run(shell, func(t *testing.T) {
 			t.Parallel()
-			script := completionScript(t, shell)
-			flags := func(fs *flag.FlagSet) {
-				fs.VisitAll(func(f *flag.Flag) {
-					if !strings.Contains(script, form.flag(f.Name)) {
-						t.Errorf("script omits flag --%s of %s", f.Name, fs.Name())
-					}
-				})
-			}
-			flags(topFlags(&globals{}, new(bool)))
-			for _, c := range commands {
-				if !strings.Contains(script, form.command(c.name)) {
-					t.Errorf("script omits command %s", c.name)
-				}
-				flags(c.flags(&globals{}))
-			}
-			_, rest, ok := strings.Cut(script, form.kindsAfter)
-			if !ok {
-				t.Fatalf("script has no kind list after %q", form.kindsAfter)
-			}
-			line, _, _ := strings.Cut(rest, "\n")
-			line = strings.TrimSuffix(line, "; do")
-			var kinds []string
-			for kind := range strings.FieldsSeq(strings.Trim(line, "[]")) {
-				kinds = append(kinds, strings.Trim(kind, `"`))
-			}
-			if diff := cmp.Diff(journal.KindSelectors(), kinds); diff != "" {
-				t.Errorf("kind list differs from journal.KindSelectors (-want +got):\n%s", diff)
-			}
+			checkCompletionCoverage(t, shell, completionScript(t, shell))
 		})
+	}
+}
+
+func checkCompletionCoverage(t *testing.T, shell, script string) {
+	t.Helper()
+	layout := completionLayouts[shell]
+	var names []string
+	for _, c := range commands {
+		names = append(names, c.name)
+	}
+	if diff := cmp.Diff(slices.Sorted(slices.Values(names)), slices.Sorted(slices.Values(layout.commands(script)))); diff != "" {
+		t.Errorf("offered commands differ (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(slices.Sorted(slices.Values(dashedFlags(topFlags(&globals{}, new(bool))))), slices.Sorted(slices.Values(layout.flags(script, "")))); diff != "" {
+		t.Errorf("top-level flags differ (-want +got):\n%s", diff)
+	}
+	for _, c := range commands {
+		if diff := cmp.Diff(slices.Sorted(slices.Values(dashedFlags(c.flags(&globals{})))), slices.Sorted(slices.Values(layout.flags(script, c.name)))); diff != "" {
+			t.Errorf("flags of %s differ (-want +got):\n%s", c.name, diff)
+		}
+	}
+	_, rest, ok := strings.Cut(script, layout.kindsAfter)
+	if !ok {
+		t.Fatalf("script has no kind list after %q", layout.kindsAfter)
+	}
+	line, _, _ := strings.Cut(rest, "\n")
+	line = strings.TrimSuffix(line, "; do")
+	var kinds []string
+	for kind := range strings.FieldsSeq(strings.Trim(line, "[]")) {
+		kinds = append(kinds, strings.Trim(kind, `"`))
+	}
+	if diff := cmp.Diff(journal.KindSelectors(), kinds); diff != "" {
+		t.Errorf("kind list differs from journal.KindSelectors (-want +got):\n%s", diff)
 	}
 }
 
