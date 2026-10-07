@@ -118,7 +118,7 @@ func TestBootstrapDeterminism(t *testing.T) {
 	}
 	first, lossA := fit(a)
 	second, lossB := fit(b)
-	if diff := cmp.Diff(encodeMachine(first, 1, 263, len(a), lossA, nil), encodeMachine(second, 1, 263, len(b), lossB, nil)); diff != "" {
+	if diff := cmp.Diff(encodeMachine(first, 1, 263, len(a), lossA, nil, nil), encodeMachine(second, 1, 263, len(b), lossB, nil, nil)); diff != "" {
 		t.Fatal(diff)
 	}
 	if cmp.Equal(a, bootstrap(records, 264)) {
@@ -279,7 +279,7 @@ func TestConstrainedFitRefitsCCDWithoutChangingR7Structure(t *testing.T) {
 		t.Fatalf("CCD refit mutated its all-facts seed: %s", diff)
 	}
 	second, secondLoss := fitFrom(sample, &base, checker)
-	if diff := cmp.Diff(encodeMachine(first, 1, 263, len(sample), loss, nil), encodeMachine(second, 1, 263, len(sample), secondLoss, nil)); diff != "" {
+	if diff := cmp.Diff(encodeMachine(first, 1, 263, len(sample), loss, nil, nil), encodeMachine(second, 1, 263, len(sample), secondLoss, nil, nil)); diff != "" {
 		t.Fatalf("CCD-seeded refit is not deterministic: %s", diff)
 	}
 }

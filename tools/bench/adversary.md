@@ -56,7 +56,7 @@ A machine built from the seeded default machine instead of a target fit has no P
 
 The committed `tools/bench/baseline.jsonl` already has unsafe conclusions. They are not new findings, but explaining them is the cheapest first experiment:
 
-- `target` holdout seeds 115 and 118 conclude with an R2 hazard of 8.2 and 26.1/h. Their mechanism is not yet explained.
+- `target` dev seed 3 and holdout seed 118 conclude with an R2 hazard of 10.0 and 7.7/h. Their mechanism is not yet explained.
 - `default` seeds 21, 104, 106 and 114 no longer conclude past a together R3 or R4 limit: under ruleset 9 they did so with a hazard of 92 failures/h, because the checking cycle ran a single trial of each, and the default cycle now runs three (#107).
 - `target-r4-limit`, `target-nonmember-mce`, `target-delayed-joint` and `target-flat-risk` are earlier findings of this program (#107, #348, #105); their unsafe runs are what those scenarios exist to show.
 

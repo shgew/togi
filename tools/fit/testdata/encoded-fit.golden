@@ -7,6 +7,8 @@
 # Unsupported limits stay -50; unobserved idle exposure cannot identify idle hazards.
 # Fixed: onset boost=0, joint delay=0; default MCE/reset.
 # Constrained bootstrap: R7 work cores=[0 1] duration=120s depth=-24 n=45 k=5
+# Model check against the original extract: flagged; this member cannot support a target-machine claim.
+# Flagged: R7 work cores=[0 1] duration=300s depth=-24 n=24 k=7 interval=[0,2]
 cores = 2
 facts = "../facts/extract.jsonl.gz"
 
