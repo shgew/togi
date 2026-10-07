@@ -214,11 +214,11 @@ _togi() {
         case ${COMP_WORDS[i]} in
 {{- with .Top.ValueFlags}}
         {{join . "|"}})
-            if [[ ${COMP_WORDS[i+1]} == = ]]; then
+            ((i++))
+            if ((i < COMP_CWORD)) && [[ ${COMP_WORDS[i]} =~ ^=+$ ]]; then
                 ((i++))
             fi
-            ((i++))
-            while [[ ${COMP_WORDS[i+1]} == = ]] && ((i + 1 < COMP_CWORD)); do
+            while ((i + 1 < COMP_CWORD)) && [[ ${COMP_WORDS[i+1]} =~ ^=+$ ]]; do
                 ((i += 2))
             done
             ;;
@@ -351,7 +351,9 @@ function __togi_kinds
 end
 
 function __togi_command_is
-    set -l tokens (commandline -opc)
+    # commandline -x, which expands variables, is fish 4 only.
+    set -l tokens (commandline -xpc 2>/dev/null)
+    or set tokens (commandline -opc)
     set -e tokens[1]
     set -l command
     set -l skip

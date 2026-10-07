@@ -10,7 +10,9 @@ function __togi_kinds
 end
 
 function __togi_command_is
-    set -l tokens (commandline -opc)
+    # commandline -x, which expands variables, is fish 4 only.
+    set -l tokens (commandline -xpc 2>/dev/null)
+    or set tokens (commandline -opc)
     set -e tokens[1]
     set -l command
     set -l skip
