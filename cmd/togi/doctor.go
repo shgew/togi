@@ -31,8 +31,10 @@ checks skipped.
 Prints one row per check, with ok, FAIL, warn or skipped, then ready, not fully
 checked, or not ready with the failed checks: those run would turn into a
 preflight dead end. A missing hardware watchdog is a warning, as in a run
-started outside the tuning boot. A journal with a newer schema, ruleset or
-evidence epoch, or with unknown event kinds, is refused as run refuses it.
+started outside the tuning boot. A changed BIOS context is a warning too: run
+archives the session and starts a new one. A journal with a newer schema,
+ruleset or evidence epoch, or with unknown event kinds, is refused as run
+refuses it.
 
 Examples:
   togi doctor        Make the checks that need no root
@@ -42,10 +44,10 @@ Examples:
 type diagnoseFunc func(cfg config.Config, recorded *machine.BIOSContext, privileged bool) (ran, skipped []machine.Check, err error)
 
 func runDoctor(g *globals, args []string, stdout, stderr io.Writer) int {
-	return doctor(g, args, stdout, stderr, os.Geteuid() == 0, hardware.Diagnose)
+	return doctor(g, args, stdout, stderr, os.Geteuid() == 0, hardware.CheckPlatform, hardware.Diagnose)
 }
 
-func doctor(g *globals, args []string, stdout, stderr io.Writer, privileged bool, diagnose diagnoseFunc) int {
+func doctor(g *globals, args []string, stdout, stderr io.Writer, privileged bool, checkPlatform func() error, diagnose diagnoseFunc) int {
 	flags := newFlagSet("doctor", g)
 	if code, ok := parseFlags(flags, args, doctorHelp, stdout, stderr); !ok {
 		return code
@@ -59,6 +61,10 @@ func doctor(g *globals, args []string, stdout, stderr io.Writer, privileged bool
 	if err != nil {
 		fmt.Fprintf(stderr, "togi doctor: %v\n", err)
 		return exitUsage
+	}
+	if err := checkPlatform(); err != nil {
+		fmt.Fprintf(stderr, "togi doctor: %v\n", err)
+		return exitError
 	}
 	if privileged {
 		lock, err := hostlock.Acquire(g.hostLockPath)
@@ -136,7 +142,7 @@ func writeDoctor(w io.Writer, ran, skipped []machine.Check) []string {
 		result := "ok"
 		switch {
 		case c.OK:
-		case c.Name == "watchdog":
+		case c.Name == "watchdog", c.Name == "bios_context":
 			result = "warn"
 		default:
 			result = "FAIL"

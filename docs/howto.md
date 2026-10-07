@@ -113,7 +113,7 @@ Then check that the machine is ready, without starting a session:
 sudo togi doctor
 ```
 
-It makes the checks `sudo togi run` makes before tuning and prints one row per check: `ok`, `FAIL`, `warn` or `skipped`. The last line is `ready`, or `not ready:` with the failed checks, which `run` would turn into a preflight dead end; fix those first. A `warn` on `watchdog` means no hardware watchdog is active in this boot, which the tuning boot provides. `doctor` appends nothing to the journal and changes no offset. Without `sudo` it makes only the checks that need no root, marks the rest `skipped` and ends with `not fully checked: run sudo togi doctor`.
+It makes the checks `sudo togi run` makes before tuning and prints one row per check: `ok`, `FAIL`, `warn` or `skipped`. The last line is `ready`, or `not ready:` with the failed checks, which `run` would turn into a preflight dead end; fix those first. A failed check gives `not ready` with or without `sudo`. A `warn` on `watchdog` means no hardware watchdog is active in this boot, which the tuning boot provides. A `warn` on `bios_context` means the BIOS context changed since the session started, so the next run archives the session and starts a new one ([section 7](#7-after-a-breaking-update)). `doctor` appends nothing to the journal and changes no offset. Without `sudo` it makes only the checks that need no root and marks the rest `skipped`; when none of its checks failed, it ends with `not fully checked: run sudo togi doctor`.
 
 ## 3. A quick in-session test
 

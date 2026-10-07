@@ -374,3 +374,75 @@ func TestDiagnoseComparesBIOSContextOnlyAfterPassingChecks(t *testing.T) {
 		}
 	})
 }
+
+// boostMailbox answers the boost limit command 0x6e and fails every other access.
+type boostMailbox struct{}
+
+func (boostMailbox) Command(cmd uint32, _ [6]uint32) ([6]uint32, error) {
+	if cmd == 0x6e {
+		return [6]uint32{5750}, nil
+	}
+	return [6]uint32{}, errors.New("mailbox unavailable")
+}
+
+func (boostMailbox) ReadSMN(uint32) (uint32, error) {
+	return 0, errors.New("mailbox unavailable")
+}
+
+func TestBIOSContextCheck(t *testing.T) {
+	recorded := machine.BIOSContext{BIOSVersion: "3.14", Board: "ASRock X870E Taichi", CPUModel: "Test CPU", Microcode: "0xb404038", BoostLimitMHz: 5750}
+	changed := recorded
+	changed.BIOSVersion = "3.10"
+	for _, tc := range []struct {
+		name     string
+		recorded machine.BIOSContext
+		missing  string
+		want     machine.Check
+	}{
+		{name: "match", recorded: recorded, want: machine.Check{Name: "bios_context", Detail: "matches the session", OK: true}},
+		{name: "mismatch", recorded: changed, want: machine.Check{Name: "bios_context", Detail: "bios_version is 3.14; the session recorded 3.10; run archives this session and starts a new one"}},
+		{name: "read error", recorded: recorded, missing: "sys/class/dmi/id/board_name"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				root := identityRoot(t)
+				for rel, text := range map[string]string{
+					"proc/cpuinfo":                  "cpu family : 26\nmodel : 68\nmodel name : Test CPU\nmicrocode : 0xb404038\n",
+					"sys/class/dmi/id/bios_version": "3.14\n",
+					"sys/class/dmi/id/board_vendor": "ASRock\n",
+					"sys/class/dmi/id/board_name":   "X870E Taichi\n",
+				} {
+					path := filepath.Join(root, rel)
+					if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(path, []byte(text), 0644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if tc.missing != "" {
+					if err := os.Remove(filepath.Join(root, tc.missing)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				drv, err := smu.Open(root, boostMailbox{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := biosContextCheck(drv, tc.recorded)
+				if tc.missing != "" {
+					if !errors.Is(err, fs.ErrNotExist) || !strings.HasPrefix(err.Error(), "read BIOS context: ") {
+						t.Fatalf("read error = %v, want a read BIOS context error", err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Fatalf("bios_context check (-want +got):\n%s", diff)
+				}
+			})
+		})
+	}
+}

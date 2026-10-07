@@ -169,6 +169,7 @@ func (h *host) preflight(privileged bool) (ran, skipped []machine.Check) {
 // with a recorded BIOS context, the bios_context comparison. It writes
 // nothing. Unprivileged, it opens the SMU driver without SMN reads and
 // returns the checks that need root as skipped, each Detail saying why.
+// It fails, as run's session preflight does, when the current BIOS context cannot be read.
 func Diagnose(cfg config.Config, recorded *machine.BIOSContext, privileged bool) (ran, skipped []machine.Check, err error) {
 	return diagnose("/", smu.Sysfs("/"), cfg, recorded, privileged)
 }
@@ -199,15 +200,28 @@ func diagnose(root string, mb smu.Mailbox, cfg config.Config, recorded *machine.
 		// Like run, compare only after every other check passed: a failed one may leave the SMU unreachable.
 		skipped = append(skipped, machine.Check{Name: "bios_context", Detail: "needs every other check to pass"})
 	default:
-		check := machine.Check{Name: "bios_context"}
-		if current, err := drv.BIOSContext(); err != nil {
-			check.Detail = err.Error()
-		} else {
-			check.Detail, check.OK = machine.CompareContext(*recorded, current)
+		check, err := biosContextCheck(drv, *recorded)
+		if err != nil {
+			return nil, nil, err
 		}
 		ran = append(ran, check)
 	}
 	return ran, skipped, nil
+}
+
+// biosContextCheck compares the current BIOS context with the one the session recorded.
+// A mismatch is not OK, yet it is no dead end: run archives the session and starts a new one.
+func biosContextCheck(drv *smu.Driver, recorded machine.BIOSContext) (machine.Check, error) {
+	current, err := drv.BIOSContext()
+	if err != nil {
+		return machine.Check{}, fmt.Errorf("read BIOS context: %w", err)
+	}
+	check := machine.Check{Name: "bios_context"}
+	check.Detail, check.OK = machine.CompareContext(recorded, current)
+	if !check.OK {
+		check.Detail += "; run archives this session and starts a new one"
+	}
+	return check, nil
 }
 
 func (h *host) checkSystemdRun() machine.Check {

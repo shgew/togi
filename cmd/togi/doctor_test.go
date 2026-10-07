@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -48,6 +50,8 @@ func (f *fakeDiagnose) diagnose(_ config.Config, recorded *machine.BIOSContext, 
 	return f.ran, f.skipped, f.err
 }
 
+func linuxPlatform() error { return nil }
+
 // doctorContextFixture is a journal stamped with ruleset whose session recorded doctorBIOS.
 func doctorContextFixture(t *testing.T, ruleset int) string {
 	t.Helper()
@@ -74,6 +78,8 @@ func TestDoctorOutput(t *testing.T) {
 	failed[3] = machine.Check{Name: "readback", Detail: "core 00: read core 00 offset: RSMU command 0xd5: status 0xfc (rejected: busy)"}
 	failed[7] = machine.Check{Name: "systemd_run", Detail: "systemd-run: exit status 1: Failed to start transient scope unit:\tAccess denied"}
 	failed = failed[:len(failed)-1]
+	changed := doctorReadyChecks()
+	changed[9] = machine.Check{Name: "bios_context", Detail: "bios_version is 3.15; the session recorded 3.14; run archives this session and starts a new one"}
 	for _, tc := range []struct {
 		name         string
 		privileged   bool
@@ -86,13 +92,14 @@ func TestDoctorOutput(t *testing.T) {
 			[]machine.Check{{Name: "pm_table", Detail: "needs root"}, {Name: "readback", Detail: "needs root"}, {Name: "slot_mapping", Detail: "needs root"}, {Name: "systemd_run", Detail: "needs root"}, {Name: "bios_context", Detail: "needs root"}},
 			exitOK},
 		{"doctor-failed", true, failed, []machine.Check{{Name: "bios_context", Detail: "needs every other check to pass"}}, exitPreflight},
+		{"doctor-context-changed", true, changed, nil, exitOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			g := testGlobals(t)
 			fake := &fakeDiagnose{ran: tc.ran, skipped: tc.skipped}
 			var stdout, stderr bytes.Buffer
-			if diff := cmp.Diff(tc.code, doctor(&g, nil, &stdout, &stderr, tc.privileged, fake.diagnose)); diff != "" {
+			if diff := cmp.Diff(tc.code, doctor(&g, nil, &stdout, &stderr, tc.privileged, linuxPlatform, fake.diagnose)); diff != "" {
 				t.Fatalf("exit (-want +got): %s; stderr %s", diff, stderr.String())
 			}
 			golden(t, tc.name, stdout.String())
@@ -109,11 +116,13 @@ func TestDoctorOutput(t *testing.T) {
 
 func TestDoctorExitCodes(t *testing.T) {
 	ok := []machine.Check{{Name: "cpu", OK: true}, {Name: "watchdog", Detail: "no hardware watchdog state available"}}
+	changedContext := append(slices.Clone(ok), machine.Check{Name: "bios_context", Detail: "bios_version is 3.15; the session recorded 3.14; run archives this session and starts a new one"})
 	for _, tc := range []struct {
 		name       string
 		privileged bool
 		state      func(t *testing.T, g *globals)
 		args       []string
+		platform   error
 		fake       fakeDiagnose
 		code       int
 		diagnosed  bool
@@ -123,14 +132,26 @@ func TestDoctorExitCodes(t *testing.T) {
 		{name: "unprivileged without failure", fake: fakeDiagnose{ran: ok, skipped: []machine.Check{{Name: "readback", Detail: "needs root"}}}, code: exitOK, diagnosed: true},
 		{name: "unprivileged failure", fake: fakeDiagnose{ran: []machine.Check{{Name: "backends", Detail: "backends.mprime not configured"}}}, code: exitPreflight, diagnosed: true, stderr: "not ready: backends"},
 		{name: "privileged failure", privileged: true, fake: fakeDiagnose{ran: []machine.Check{{Name: "slot_mapping", Detail: "CCD0 fuse reads disagree"}}}, code: exitPreflight, diagnosed: true, stderr: "not ready: slot_mapping"},
-		{name: "unsupported platform", privileged: true, fake: fakeDiagnose{err: errors.New("hardware runs need Linux: unsupported operation")}, code: exitError, diagnosed: true, stderr: "hardware runs need Linux"},
+		{name: "changed BIOS context warns", privileged: true, fake: fakeDiagnose{ran: changedContext}, code: exitOK, diagnosed: true},
+		{name: "unreadable BIOS context", privileged: true, fake: fakeDiagnose{err: errors.New("read BIOS context: read /sys/class/dmi/id/bios_version: no such file or directory")}, code: exitError, diagnosed: true, stderr: "togi doctor: read BIOS context: read /sys/class/dmi/id/bios_version"},
+		{name: "unsupported platform", privileged: true, platform: errors.New("hardware runs need Linux: unsupported operation"), fake: fakeDiagnose{ran: ok}, code: exitError, stderr: "togi doctor: hardware runs need Linux: unsupported operation"},
+		{name: "unsupported platform unprivileged", platform: errors.New("hardware runs need Linux: unsupported operation"), fake: fakeDiagnose{ran: ok}, code: exitError, stderr: "togi doctor: hardware runs need Linux: unsupported operation"},
 		{name: "host lock held", privileged: true, state: holdHostLock, fake: fakeDiagnose{ran: ok}, code: exitLocked, stderr: "another togi process holds the host lock"},
 		{name: "unprivileged ignores host lock", state: holdHostLock, fake: fakeDiagnose{ran: ok}, code: exitOK, diagnosed: true},
+		{name: "host lock unavailable", privileged: true, state: func(t *testing.T, g *globals) {
+			t.Helper()
+			g.hostLockPath = filepath.Join(t.TempDir(), "missing", "togi.lock")
+		}, fake: fakeDiagnose{ran: ok}, code: exitError, stderr: filepath.Join("missing", "togi.lock")},
 		{name: "missing explicit config", args: []string{"--config", "/nonexistent/togi.toml"}, fake: fakeDiagnose{ran: ok}, code: exitUsage, stderr: "/nonexistent/togi.toml"},
 		{name: "newer schema", privileged: true, state: func(t *testing.T, g *globals) { t.Helper(); g.stateDir, _ = incompatibleFixture(t, "schema") }, fake: fakeDiagnose{ran: ok}, code: exitIncompatible, stderr: "this journal was written by"},
 		{name: "newer ruleset", state: func(t *testing.T, g *globals) { t.Helper(); g.stateDir, _ = incompatibleFixture(t, "ruleset") }, fake: fakeDiagnose{ran: ok}, code: exitIncompatible, stderr: "ruleset 99"},
 		{name: "unknown kinds", privileged: true, state: func(t *testing.T, g *globals) { t.Helper(); currentRulesetJournal(t, g, true) }, fake: fakeDiagnose{ran: ok}, code: exitIncompatible, stderr: `unknown kind "future.fact"`},
 		{name: "unreadable journal", privileged: true, state: func(t *testing.T, g *globals) { t.Helper(); writeJournal(t, g.stateDir, []byte("not json\n")) }, fake: fakeDiagnose{ran: ok}, code: exitError, stderr: "read session.start stamp"},
+		{name: "malformed event after current stamp", privileged: true, state: func(t *testing.T, g *globals) {
+			t.Helper()
+			currentRulesetJournal(t, g, false)
+			appendJournal(t, g.stateDir, []byte("{\"kind\":\"trial.end\",\"data\":\n"))
+		}, fake: fakeDiagnose{ran: ok}, code: exitError, stderr: "events.jsonl: journal line"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			g := testGlobals(t)
@@ -139,7 +160,8 @@ func TestDoctorExitCodes(t *testing.T) {
 			}
 			before := directoryFiles(t, g.stateDir)
 			var stdout, stderr bytes.Buffer
-			code := doctor(&g, tc.args, &stdout, &stderr, tc.privileged, tc.fake.diagnose)
+			platform := func() error { return tc.platform }
+			code := doctor(&g, tc.args, &stdout, &stderr, tc.privileged, platform, tc.fake.diagnose)
 			if diff := cmp.Diff(tc.code, code); diff != "" {
 				t.Fatalf("exit (-want +got): %s; stdout %s; stderr %s", diff, stdout.String(), stderr.String())
 			}
@@ -154,6 +176,14 @@ func TestDoctorExitCodes(t *testing.T) {
 			}
 			if diff := cmp.Diff(before, directoryFiles(t, g.stateDir)); diff != "" {
 				t.Fatalf("doctor changed the state directory (-want +got): %s", diff)
+			}
+			if tc.platform != nil {
+				if _, err := os.Stat(g.hostLockPath); !errors.Is(err, fs.ErrNotExist) {
+					t.Fatalf("refused platform touched the host lock: %v", err)
+				}
+				if stdout.Len() != 0 {
+					t.Fatalf("refused platform printed %q", stdout.String())
+				}
 			}
 		})
 	}
@@ -192,6 +222,20 @@ func writeJournal(t *testing.T, dir string, data []byte) {
 	}
 }
 
+func appendJournal(t *testing.T, dir string, data []byte) {
+	t.Helper()
+	f, err := os.OpenFile(filepath.Join(dir, "events.jsonl"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDoctorPassesRecordedContext(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -215,7 +259,7 @@ func TestDoctorPassesRecordedContext(t *testing.T) {
 			}
 			fake := &fakeDiagnose{ran: []machine.Check{{Name: "cpu", OK: true}}}
 			var stdout, stderr bytes.Buffer
-			if code := doctor(&g, nil, &stdout, &stderr, true, fake.diagnose); code != exitOK {
+			if code := doctor(&g, nil, &stdout, &stderr, true, linuxPlatform, fake.diagnose); code != exitOK {
 				t.Fatalf("exit %d; stderr %s", code, stderr.String())
 			}
 			if diff := cmp.Diff(tc.want, fake.recorded); diff != "" {
@@ -244,7 +288,7 @@ func TestDoctorNotReadyStyle(t *testing.T) {
 			g := testGlobals(t)
 			fake := &fakeDiagnose{ran: []machine.Check{{Name: "readback", Detail: "core 00 refused"}}}
 			var stdout bytes.Buffer
-			if code := doctor(&g, nil, &stdout, stderr, true, fake.diagnose); code != exitPreflight {
+			if code := doctor(&g, nil, &stdout, stderr, true, linuxPlatform, fake.diagnose); code != exitPreflight {
 				t.Fatalf("exit %d, want %d", code, exitPreflight)
 			}
 			got, err := os.ReadFile(stderr.Name())

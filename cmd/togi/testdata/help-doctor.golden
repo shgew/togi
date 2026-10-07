@@ -12,8 +12,10 @@ checks skipped.
 Prints one row per check, with ok, FAIL, warn or skipped, then ready, not fully
 checked, or not ready with the failed checks: those run would turn into a
 preflight dead end. A missing hardware watchdog is a warning, as in a run
-started outside the tuning boot. A journal with a newer schema, ruleset or
-evidence epoch, or with unknown event kinds, is refused as run refuses it.
+started outside the tuning boot. A changed BIOS context is a warning too: run
+archives the session and starts a new one. A journal with a newer schema,
+ruleset or evidence epoch, or with unknown event kinds, is refused as run
+refuses it.
 
 Examples:
   togi doctor        Make the checks that need no root
