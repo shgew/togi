@@ -147,7 +147,18 @@ just forecast COPY-OF-STATE-DIR --out tools/bench/forecasts/<session>-<seq>.json
 # Equivalent: go run ./tools/bench --forecast COPY-OF-STATE-DIR [--out FILE] [--suite FILE] [--keep DIR] [--jobs N] [--timeout 180s]
 ```
 
-The ensemble is the suite's `target` scenario with all its dev and holdout seeds, each run on its fitted member with real-fact replay, so new members join the forecast unchanged. For each run, the tool copies the given directory's `events.jsonl`, `state.json` and every archive entry the journal reads sessions from (archived `archive/*.jsonl` journals, the `archive/*-carry-pending` and `archive/*-compat-pending` markers of an interrupted transition, and `archive/*-reset-all` markers) into the run's own directory and resumes that copy with `tools/sim` under `config.Default()` until it concludes, as `togi run --cycles 1` would; the given directory is only read. An archive entry of those names that is not a regular file, such as a symlink, fails the forecast with an error naming it. Copy the journals as in [the transition recipe](reviewing.md#inspecting-a-transition-on-recorded-state), and take the copy while togi is not running a trial: a journal that ends inside a trial resumes, in every run, as a crash of that trial.
+The ensemble is the suite's `target` scenario with all its dev and holdout seeds, each run on its fitted member with real-fact replay, so new members join the forecast unchanged. For each run, the tool copies the given directory's `events.jsonl`, `state.json` and every archive entry the journal reads sessions from (archived `archive/*.jsonl` journals, the `archive/*-carry-pending` and `archive/*-compat-pending` markers of an interrupted transition, and `archive/*-reset-all` markers) into the run's own directory and resumes that copy with `tools/sim` under `config.Default()` until it concludes, as `togi run --cycles 1` would; the given directory is only read. An archive entry of those names that is not a regular file, such as a symlink, fails the forecast with an error naming it.
+
+From a checkout on the target machine, copy those files and forecast from the copy (the sources are read-only). Take the copy while togi is not running a trial: a journal that ends inside a trial resumes, in every run, as a crash of that trial.
+
+```sh
+copy=$(mktemp -d)
+trap 'rm -rf "$copy"' EXIT
+mkdir "$copy/archive"
+sudo sh -c 'cp /var/lib/togi/events.jsonl "$1/events.jsonl"; [ ! -f /var/lib/togi/state.json ] || cp /var/lib/togi/state.json "$1/state.json"; for entry in /var/lib/togi/archive/*.jsonl /var/lib/togi/archive/*-reset-all /var/lib/togi/archive/*-carry-pending /var/lib/togi/archive/*-compat-pending; do [ ! -e "$entry" ] || cp -P "$entry" "$1/archive/"; done' sh "$copy"
+sudo chown -R "$(id -u):$(id -g)" "$copy"
+just forecast "$copy" --out tools/bench/forecasts/<session>-<seq>.json
+```
 
 The anchor is the last complete event of the copied live journal: its session, sequence and time, with a SHA-256 of the session's journal lines through it. Only events after the anchor count, and the outcome ends at the run's first conclusion or dead end after the anchor: events after that point do not count. A simulated run stops there; a real run that kept checking past its conclusion, as a tuning boot does, is therefore scored by `just stats` as what a `togi run --cycles 1` run with the same history would have recorded. For each run, the forecast records:
 

@@ -183,8 +183,8 @@ func forecastRun(input, root string, anchor forecast.Anchor, spec runSpec, keep 
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return forecast.Outcome{}, fmt.Errorf("read run log: %w", err)
 	}
-	// Exit 1 is a dead end only when this invocation reached one: a dead_end after the anchor, or its own sim.log line
-	// when it finished one the copy left pending. A dead end in the copy is not this run's.
+	// Exit 1 is a dead end only when this invocation reached one: a deadend event after the anchor, or its own sim.log
+	// line when it finished one the copy left pending. A dead end in the copy is not this run's.
 	switch status := runStatus(run.exit, run.timedOut, eventsAfter(sessions, anchor), string(log)); status {
 	case forecast.DeadEnd:
 		outcome.Status = forecast.DeadEnd
