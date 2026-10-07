@@ -34,7 +34,7 @@ ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 - [0026: Review only what changed](0026-review-only-what-changed.md) — **partly superseded** by [0030](0030-coverage-is-a-review-signal.md): the record's version-2 JSON, now version 3 with the coverage judgment; reviewing only what changed remains.
 - [0027: Carry trial facts across ruleset changes](0027-carry-trial-facts.md) — **partly superseded** by [0038](0038-self-sufficient-cores.md): multi-core R7 failures are processed once for voltage-targeted backoff instead of known-failure skips; carry provenance, exclusions and live-only full-cycle coverage remain.
 - [0028: Report qualified rotations instead of durability tiers](0028-remove-tiers.md) — **in force**.
-- [0029: Bench verdicts rest on fitted machines](0029-bench-verdicts-rest-on-fitted-machines.md) — **in force**.
+- [0029: Bench verdicts rest on fitted machines](0029-bench-verdicts-rest-on-fitted-machines.md) — **amended** by [0044](0044-write-flagged-target-fits.md): when the all-facts fit fails the model check, flagged refits are written unconstrained with their flags named; the check and the rule that a flagged member cannot support a target-machine claim remain.
 - [0030: Coverage is a review signal, not a target](0030-coverage-is-a-review-signal.md) — **partly superseded** by [0032](0032-coverage-lists-uncovered-changed-lines.md): whole-file blocks and reviewers matching them to hunks; coverage as a review signal, never a target, remains.
 - [0031: Pull requests under the owner's account](0031-pull-requests-under-the-owners-account.md) — **in force**.
 - [0032: Coverage lists uncovered changed lines](0032-coverage-lists-uncovered-changed-lines.md) — **in force**.
@@ -49,3 +49,4 @@ ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 - [0041: The coordinator reviews small pull requests](0041-coordinator-reviews-small-pull-requests.md) — **in force**.
 - [0042: Opt in to the check cache locally](0042-opt-in-to-the-check-cache-locally.md) — **in force**.
 - [0043: Record work that waits on the target machine](0043-record-work-that-waits-on-the-target-machine.md) — **in force**.
+- [0044: Write flagged target fits](0044-write-flagged-target-fits.md) — **in force**.

@@ -1,5 +1,7 @@
 # Bench verdicts rest on fitted machines
 
+Decision 4 is amended by [ADR 0044](0044-write-flagged-target-fits.md): when the all-facts fit itself fails the model check, `just fit` writes flagged bootstrap refits unconstrained and names every member's flagged groups in its header and the report. Decision 3 and the check are unchanged.
+
 ## Context
 
 The bench compares tuner strategies by simulated time to conclusion, with guards against losing conclusion, depth or final-profile safety. Hand-written adversarial machines are useful for testing known failure shapes, but a win on them is not enough to claim a win on the target machine. The former `shared-rail.toml` modeled a CCD0 joint and missed the target machine's CCD1 R7 joint.
