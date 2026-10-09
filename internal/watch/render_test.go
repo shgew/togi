@@ -438,7 +438,7 @@ func TestUndrawableGlyphsAreMeasuredEscaped(t *testing.T) {
 	if got := ansi.Strip(strings.Join(wrapStyled(text, 100, textStyle), "")); strings.Count(got, `\u754c`) != 60 {
 		t.Fatalf("wrapped escapes lost text: %q", got)
 	}
-	if got := trimWords(text, 30); ansi.StringWidth(got) > 30 || !strings.HasPrefix(got, "journal error") {
+	if got := cutWords(text, 30); ansi.StringWidth(got) > 30 || !strings.HasPrefix(got, "journal error") {
 		t.Fatalf("trimmed escape %q", got)
 	}
 }
@@ -705,7 +705,7 @@ func TestHeaderCountsAgreeInNumber(t *testing.T) {
 		{2, 1, "2 failures · 1 crash"},
 	} {
 		s := Snapshot{session: true, start: time.Unix(0, 0), failures: tt.failures, crashes: tt.crashes}
-		if got := ansi.Strip(s.header(time.Unix(60, 0))); !strings.Contains(got, tt.want) {
+		if got := ansi.Strip(s.header(time.Unix(60, 0), 240, false)); !strings.Contains(got, tt.want) {
 			t.Errorf("%d failures, %d crashes: header %q lacks %q", tt.failures, tt.crashes, got, tt.want)
 		}
 		s.trial = &trialView{hasStarted: true, regime: machine.R6, started: time.Unix(30, 0), duration: time.Minute}

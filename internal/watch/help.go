@@ -222,13 +222,10 @@ func renderLogBody(s Snapshot, width, height, scroll int) ([]string, int) {
 	}
 	for _, e := range s.log {
 		stamp := grey.Render(wallSecond(e.at)) + "  "
-		tag := trimWords(vtText(e.tag), 20)
+		tag := cutWords(vtText(e.tag), 20)
 		prefix := stamp + toneStyle(e.tone).Render(fmt.Sprintf("%-20s", tag)) + "  "
 		room := max(0, bodyWidth-ansi.StringWidth(prefix))
-		text := e.text
-		if ansi.StringWidth(text) > room {
-			text = trimWords(text, max(0, room-3)) + "..."
-		}
+		text := cutWords(e.text, room)
 		lines = append(lines, prefix+textStyle.Render(text))
 	}
 	return scrollBodyWithBar(lines, width, height, scroll)

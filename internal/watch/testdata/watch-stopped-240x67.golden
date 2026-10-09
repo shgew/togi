@@ -19,7 +19,7 @@
     06  -27  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··                        -28                                            14    0  AT LIMIT  █···                                                   -1
     07  -30  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·                      -31                                            15  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█···               -36
 
-  CYCLE 1 ──────────────────────────────────────────────────────────────────────────────────────── 18 steps · 18 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+  CYCLE 1 ──────────────────────────────────────────────────────────────────────────────────────── 18 steps · 18 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
 
     #   kind                  where                   workload                      schedule       result                 04:34  stop     stopped
   ■  1  R7 all-core           2 CCDs · 13 parts       mprime AVX2 36K-248K          13 parts       done                   04:34  cycle    cycle 1 passed, a full cycle of every kind of test
@@ -57,10 +57,10 @@
                                                                                                                           03:19  pass     R4 partial load on core 08 at -24 · passed · Tctl max 76°C
                                                                                                                           03:17  pass     R4 partial load on core 00 at -37 · passed · Tctl max 64°C
                                                                                                                           03:15  pass     R4 partial load on core 15 at -35 · passed · Tctl max 71°C
-                                                                                                                          03:13  note     cycle 1 step 3 CCD 1 ycruncher-fftv4-n63-vt3-allcore: partial 6 idles top group [8] from offset
-                                                                                                                          03:13  note     cycle 1 step 3 CCD 0 ycruncher-fftv4-n63-vt3-allcore: partial 6 idles top group [2] from offset
-                                                                                                                          03:13  note     cycle 1 step 2 CCD 1 mprime-avx512-36k-248k-allcore: partial 6 idles top group [8] from offset
-                                                                                                                          03:13  note     cycle 1 step 2 CCD 0 mprime-avx512-36k-248k-allcore: partial 6 idles top group [2] from offset
-                                                                                                                          +662 more
+                                                                                                                          03:13  note     cycle 1 step 3 CCD 1 ycruncher-fftv4-n63-vt3-allcore: partial 6 idles top group [8] from offset...
+                                                                                                                          03:13  note     cycle 1 step 3 CCD 0 ycruncher-fftv4-n63-vt3-allcore: partial 6 idles top group [2] from offset...
+                                                                                                                          03:13  note     cycle 1 step 2 CCD 1 mprime-avx512-36k-248k-allcore: partial 6 idles top group [8] from offset...
+                                                                                                                          03:13  note     cycle 1 step 2 CCD 0 mprime-avx512-36k-248k-allcore: partial 6 idles top group [2] from offset...
+                                                                                                                          +160 more
 
    ?  help    l  log    esc  back    q  close view

@@ -19,14 +19,14 @@
 
  TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ─────────────────────────────── l: last 400
 
-   13  search step: light, then   -15  passed -10 · next     02:47  crash    with the offsets applied, rebooted
-   06  search step: light, then   -15  passed -10 · next     02:45  backoff  core 12 -15 → -11
-   14  search step: 1 count       -2   passed -1 · next -2   02:45  fail     core 12 fails at -15
-   07  search step: light, then   -15  passed -10 · next     02:45  fail     core 12 · R1 light at -15 · wrong result
-   15  search step: light, then   -15  passed -10 · next     02:45  step     core 04 passed -15, next -20
-   00  search step: light, then   -20  passed -15 · next     02:42  step     core 11 passed -6, next -7
-   08  search step: light, then   -20  passed -15 · next     02:39  step     core 03 passed -15, next -20
-   01  search step: light, then   -20  passed -15 · next     02:36  step     core 10 passed -15, next -20
+   13  search step: light...      -15  p -10 · next -15      02:47  crash    with the offsets applied, rebooted
+   06  search step: light...      -15  p -10 · next -15      02:45  backoff  core 12 -15 → -11
+   14  search step: 1 count...    -2   passed -1 · next -2   02:45  fail     core 12 fails at -15
+   07  search step: light...      -15  p -10 · next -15      02:45  fail     core 12 · R1 light at -15 · wrong result
+   15  search step: light...      -15  p -10 · next -15      02:45  step     core 04 passed -15, next -20
+   00  search step: light...      -20  p -15 · next -20      02:42  step     core 11 passed -6, next -7
+   08  search step: light...      -20  p -15 · next -20      02:39  step     core 03 passed -15, next -20
+   01  search step: light...      -20  p -15 · next -20      02:36  step     core 10 passed -15, next -20
  +8 more                                                     +58 more
 
   ?  help    l  log    esc  back    q  close view

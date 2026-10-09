@@ -2,6 +2,7 @@ package watch
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -1300,4 +1301,15 @@ func workloadDisplayID(id string) string {
 		return workloadDisplay(w)
 	}
 	return vtText(id)
+}
+
+var nextTrialHead = regexp.MustCompile(`^(→ R\d) \S+ (on (?:core \d+|\d[\d -]*))`)
+
+// tightNext shortens a compact outcome that names the next trial to its regime and the cores it loads, leaving what
+// carries no core as it is.
+func tightNext(text string) string {
+	if m := nextTrialHead.FindStringSubmatch(text); m != nil {
+		return m[1] + " " + m[2]
+	}
+	return text
 }

@@ -32,7 +32,7 @@ func tableRow(cols []column, values ...string) string {
 			}
 			width = cols[j].at + cols[j].w - col.at
 		}
-		value := trimWords(values[i], width)
+		value := cutWords(values[i], width)
 		b.WriteString(strings.Repeat(" ", col.at-x))
 		b.WriteString(value)
 		x = col.at + ansi.StringWidth(value)
@@ -43,9 +43,9 @@ func tableRow(cols []column, values ...string) string {
 // fieldRow is a label/value row: the label in grey, the value starting at the plan's value column.
 func fieldRow(t tables, label, value string, width int) string {
 	if label == "" {
-		return trimWords(strings.Repeat(" ", t.field)+value, width)
+		return cutWords(strings.Repeat(" ", t.field)+value, width)
 	}
-	return trimWords(grey.Render(fmt.Sprintf("%-*s", t.field, label))+value, width)
+	return cutWords(grey.Render(fmt.Sprintf("%-*s", t.field, label))+value, width)
 }
 
 func stageMarker(mark string) string {
@@ -363,7 +363,7 @@ func (s Snapshot) combinationLines(t tables, width int, class sizeClass) []strin
 	}
 	if 0 < shown && shown < len(ids) {
 		// Too many member cores for the columns: say which ones the rows leave out rather than hide them.
-		out = append(out, grey.Render(trimWords(fmt.Sprintf("columns show %d of %d member cores; not shown: %s · l: last %d events", shown, len(ids), coreIDs(ids[shown:]), logLimit), width)))
+		out = append(out, grey.Render(cutWords(fmt.Sprintf("columns show %d of %d member cores; not shown: %s · l: last %d events", shown, len(ids), coreIDs(ids[shown:]), logLimit), width)))
 	}
 	for _, combo := range s.combos {
 		member := func(id int) (string, lipgloss.Style) {
@@ -815,7 +815,7 @@ func (s Snapshot) turnLines(t tables, width int, class sizeClass) []string {
 					what = fmt.Sprintf("confirm: heavy trial %d of %d", n.heavy+1, n.needed)
 				}
 				sofar = fmt.Sprintf("light %d/%d, heavy %d/%d", n.light, n.needed, n.heavy, n.needed)
-			} else if note := ansi.Strip(core.noteLine(34)); note != "" {
+			} else if note := ansi.Strip(core.noteLine(t.turns[len(t.turns)-1].w)); note != "" {
 				sofar = note
 			}
 		}
@@ -828,7 +828,7 @@ func (s Snapshot) turnLines(t tables, width int, class sizeClass) []string {
 		}
 	}
 	if len(found) > 0 {
-		out = append(out, "", trimWords("  "+grey.Render("waiting for the cycles  ")+textStyle.Render(coreIDs(found))+grey.Render("  · solo limits found"), width))
+		out = append(out, "", cutWords("  "+grey.Render("waiting for the cycles  ")+textStyle.Render(coreIDs(found))+grey.Render("  · solo limits found"), width))
 	}
 	return out
 }
@@ -852,7 +852,7 @@ func (s Snapshot) deepenLines(t tables, width int) []string {
 	}
 	out = append(out, "", grey.Render("CHECKS"))
 	for _, check := range d.checks {
-		out = append(out, trimWords(textStyle.Render(fmt.Sprintf("%s on %s  %d/%d passed", check.Regime, coreIDs(check.Cores), check.Passes, check.Needed))+"  "+grey.Render(workloadLabel(check.Workload)), width))
+		out = append(out, cutWords(textStyle.Render(fmt.Sprintf("%s on %s  %d/%d passed", check.Regime, coreIDs(check.Cores), check.Passes, check.Needed))+"  "+grey.Render(workloadLabel(check.Workload)), width))
 	}
 	return out
 }

@@ -18,15 +18,15 @@
  ► 06 -29 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄█             -30             14   0 PARKED   ··█                          -5   -4
  ► 07 -32 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33             15   0 PARKED   ···················█        -40  -39
 
- HUNT 1 ────────────────────────────────────── 10:16 · 40s   WHAT HAPPENED ─────────────────────────────── l: last 400
+ HUNT 1 ────────────────────────────────────── 10:16 · 40s   WHAT HAPPENED ──────────────────────────────────── l: all
 
- cause  crash in the rerun of R7 all-core on 00-07, no       10:16  hunt     #1 started · locate: 08-15 at 0
-                                                             10:16  crash    rerun of R7 all-core on 00-07 · rebooted
+ cause      crash in the rerun of R7 all-core on 00-07...    10:16  hunt     #1 started · locate: 08-15 at 0
+                                                             10:16  crash    rerun of R7 all-core on 00-07...
  group 1      locate: 08-15 at 0      running · 0/5 passed   10:14  backoff  core 06 -30 → -29
                                                              10:14  fail     core 06 fails at -30
- then   1  record a failure point or a combination           10:14  fail     rerun of R7 all-core on 00-07 · wrong
-        2  back off past it                                  10:14  backoff  core 05 -10 → -9
-        3  rerun R7 all-core: 5 x 2m                         10:14  fail     core 05 fails at -10
-                                                             +218 more
+ then       1  record a failure point or a combination       10:14  fail     rerun of R7 all-core on 00-07 · wrong...
+            2  back off past it                              10:14  backoff  core 05 -10 → -9
+            3  rerun R7 all-core: 5 x 2m                     10:14  fail     core 05 fails at -10
+                                                             +193 more
 
   ?  help    l  log    esc  back    q  close view

@@ -56,7 +56,7 @@ func (c *canvas) place(r rectangle, x, y int, text string, words bool) {
 	width := min(r.w-(x-r.x), c.width-x)
 	text = consoleText(text)
 	if words {
-		text = trimWords(text, width)
+		text = cutWords(text, width)
 	} else {
 		text = ansi.Truncate(text, width, "")
 	}

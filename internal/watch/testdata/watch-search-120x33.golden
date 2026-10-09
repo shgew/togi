@@ -20,13 +20,13 @@
 
  TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ─────────────────────────────── l: last 400
 
-   08  search step: light, then   -5   passed 0 · next -5    00:48  step     core 15 passed 0, next -5
-   01  search step: light, then   -5   passed 0 · next -5    00:45  step     core 07 passed 0, next -5
-   09  search step: light, then   -5   passed 0 · next -5    00:42  step     core 14 passed 0, next -5
-   02  search step: light, then   -5   passed 0 · next -5    00:39  step     core 06 passed 0, next -5
-   10  search step: light, then   -5   passed 0 · next -5    00:36  step     core 13 passed 0, next -5
-   03  search step: light, then   -5   passed 0 · next -5    00:33  step     core 05 passed 0, next -5
-   11  search step: light, then   -5   passed 0 · next -5    00:30  step     core 12 passed 0, next -5
+   08  search step: light...      -5   passed 0 · next -5    00:48  step     core 15 passed 0, next -5
+   01  search step: light...      -5   passed 0 · next -5    00:45  step     core 07 passed 0, next -5
+   09  search step: light...      -5   passed 0 · next -5    00:42  step     core 14 passed 0, next -5
+   02  search step: light...      -5   passed 0 · next -5    00:39  step     core 06 passed 0, next -5
+   10  search step: light...      -5   passed 0 · next -5    00:36  step     core 13 passed 0, next -5
+   03  search step: light...      -5   passed 0 · next -5    00:33  step     core 05 passed 0, next -5
+   11  search step: light...      -5   passed 0 · next -5    00:30  step     core 12 passed 0, next -5
  +9 more                                                     +10 more
 
   ?  help    l  log    esc  back    q  close view

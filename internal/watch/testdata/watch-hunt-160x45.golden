@@ -26,15 +26,15 @@
   HUNT 1 ───────────────────────────────────────── started 10:16 · 40s so far     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 
   cause       crash in the rerun of R7 all-core on 00-07 · no core named          10:16  hunt     #1 started · locate: 08-15 at 0
-  evidence    core 06's worker had stalled by the last sample, 0:02 into the      10:16  crash    rerun of R7 all-core on 00-07 · rebooted · early in trial
+  evidence    core 06's worker had stalled by the last sample, 0:02 into...       10:16  crash    rerun of R7 all-core on 00-07 · rebooted · early in...
   candidates  08-15, every core with an offset in the failing profile             10:14  backoff  core 06 -30 → -29
                                                                                   10:14  fail     core 06 fails at -30
-  parts       group 1      locate: 08-15 at 0            running · 0/5 passed     10:14  fail     rerun of R7 all-core on 00-07 · wrong result · core 06
+  parts       group 1      locate: 08-15 at 0            running · 0/5 passed     10:14  fail     rerun of R7 all-core on 00-07 · wrong result · core 06...
                                                                                   10:14  backoff  core 05 -10 → -9
   then        if the hunt resolves and the rerun passes:                          10:14  fail     core 05 fails at -10
-              1  record what it found: one core's failure point, or a             10:14  fail     R7 full CCD 0 on 00-07 · the stress program quit · core 05
+              1  record what it found: one core's failure point, or a...          10:14  fail     R7 full CCD 0 on 00-07 · the stress program quit · core...
               2  back off past it                                                 10:14  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
-              3  rerun R7 all-core on 00-07: 5 trials of 2m, its original         10:14  cycle    cycle 1 started · 18 steps
+              3  rerun R7 all-core on 00-07: 5 trials of 2m, its original...      10:14  cycle    cycle 1 started · 18 steps
               4  resume cycle 1                                                   10:14  limit    core 15 solo limit -39
                                                                                   10:13  limit    core 01 solo limit -34
                                                                                   10:13  limit    core 00 solo limit -37
