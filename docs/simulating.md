@@ -10,7 +10,7 @@ go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--
 - `--seed` (default 1) selects deterministic limits and failures; the same seed and history reproduce the journal.
 - `--machine FILE` loads an explicit simulator machine TOML, including limits, joints, ranking, outcome scripts and reset reasons; `--seed` still sets its seed.
 - `--replay-facts` answers exact trial-class/full-profile matches from the machine file's `facts` extract, under its declared BIOS context. Without this flag the file remains a fitted simulator alone.
-- `--cycles` (default 1) stops after N clean cycles valid for the current profile once every core is at its limit and deepening can reach no more depth. An earlier cycle can count after a deepening under the uncontradicted-profile rules in [the tuner spec](spec/tuner.md#checking).
+- `--cycles` (default 1) stops after N clean cycles; [Checking](spec/tuner.md#checking) says when a cycle counts and when the run stops.
 - `--state-dir` uses an existing directory; without it, `sim` creates a temporary one and prints its path to stderr.
 - `--samples` writes `trials/<trial-id>/samples.jsonl` for later inspection; by default trial samples stay in memory.
 - `--max-boots` (default 1000) caps the simulated boots of one invocation. A session still running after N boots stops with its journal and `state.json` as they stand, the reason on stderr, and exit 3.
@@ -33,7 +33,7 @@ go run ./cmd/togi --state-dir <dir> events --core 3
 go run ./cmd/togi --state-dir <dir> watch
 ```
 
-`status` reports clean cycles since the last deepening (the count and latest cycle number), valid per-workload trials and missing full-cycle coverage. Its Tctl peak comes from passes together since the last profile change and names the source trial-end event.
+`status` reports clean cycles since the last deepening, valid per-workload trials and missing full-cycle coverage, and the Tctl peak ([Commands](spec/runtime.md#commands)).
 
 A finished simulation's `watch` shows only its last moment. `just replay --state-dir <dir>` plays the whole journal through the dashboard on a simulated clock, 300 simulated seconds per second by default (`--speed`, which must be finite and positive), starting at `--from SEQ`; the dashboard's keys work as in `watch`. `--at SEQ` prints one frame as of that event instead, `--after 40s` that long after it, `--view help` or `--view log` for those views, with `--width`, `--height` and `--color` as for a frame on a terminal. It also plays a copied real journal.
 
