@@ -148,9 +148,13 @@ type ForecastBranch struct {
 
 // ForecastPlan holds conditional branches, or the next trial between trials.
 type ForecastPlan struct {
-	Branches     []ForecastBranch
-	Next         *Trial
-	NextStep     int
+	Branches []ForecastBranch
+	Next     *Trial
+	NextStep int
+	// Resume is the checking step, counting from 1, that the open cycle's next trial runs in once its reruns pass,
+	// after the decisions the tuner takes without a trial, such as R7 chain endings after a profile change; zero when
+	// the next trial is not a cycle trial.
+	Resume       int
 	Decisions    []journal.Payload
 	NeedsRanking bool
 	NeedsHistory bool

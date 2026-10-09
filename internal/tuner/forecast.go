@@ -236,6 +236,7 @@ func Forecast(events []journal.Event) ForecastPlan {
 		b := ForecastBranch{}
 		base.drain(&b)
 		out.Next, out.NextStep = b.Next, b.NextStep
+		out.Resume = base.resume(b)
 		out.Decisions = b.Decisions
 		out.NeedsRanking = b.NeedsRanking
 		out.NeedsHistory = b.NeedsHistory
@@ -283,6 +284,9 @@ func Forecast(events []journal.Event) ForecastPlan {
 		}
 		f.end(p, premise, pc.core)
 		f.drain(&b)
+		if premise == IfPass {
+			out.Resume = f.resume(b)
+		}
 		if premise == IfAllPass && !f.passRemaining(p, remaining, &b) {
 			// Another requirement's trial comes first, so the premise cannot hold on its own.
 			continue
@@ -295,6 +299,31 @@ func Forecast(events []journal.Event) ForecastPlan {
 		out.Branches = append(out.Branches, b)
 	}
 	return out
+}
+
+// resume returns the checking step the open cycle's next trial runs in once reruns pass, counting from 1, or zero when
+// the tuner's next trial is not a cycle trial. It passes each rerun the tuner schedules, so it consumes the state it
+// runs on and takes the branch by value.
+func (f *forecastState) resume(b ForecastBranch) int {
+	for n := 0; n < forecastSteps && b.Next != nil && !b.NeedsRanking && !b.NeedsHistory; n++ {
+		t := *b.Next
+		if t.Phase == journal.PhaseChecking && t.Cycle > 0 && t.Hunt == 0 && !t.Rerun {
+			return b.NextStep
+		}
+		if !t.Rerun {
+			return 0
+		}
+		intent, _, err := f.complete(t)
+		if err != nil {
+			return 0
+		}
+		intent.Trial = fmt.Sprintf("forecast-%d", f.seq+1)
+		f.fold(intent, nil)
+		f.end(intent, IfPass, nil)
+		b.Next = nil
+		f.drain(&b)
+	}
+	return 0
 }
 
 // passRemaining folds passes of the in-flight requirement's remaining trials. It reports false when the tuner

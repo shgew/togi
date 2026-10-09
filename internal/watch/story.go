@@ -68,8 +68,8 @@ func (s Snapshot) story(now time.Time) story {
 	}
 	if t.rerun {
 		lines := []string{"The failed load runs again after the offsets changed. This trial checks the new profile."}
-		if g := s.cycle; g != nil && g.current < len(g.steps) {
-			lines = append(lines, fmt.Sprintf("Cycle %d waits at step %d until the rerun passes.", g.number, g.current+1))
+		if g := s.cycle; g != nil && g.resumeStep() < len(g.steps) {
+			lines = append(lines, fmt.Sprintf("Cycle %d waits at step %d until the rerun passes.", g.number, g.resumeStep()+1))
 		}
 		brief := "The failed load runs again on the new profile."
 		if len(lines) > 1 {

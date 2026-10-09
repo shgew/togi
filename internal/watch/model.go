@@ -202,6 +202,16 @@ type cycleView struct {
 	steps   []cycleStep
 	current int  // index of the step running or next; len(steps) once every step is done
 	paused  bool // a hunt or a rerun holds the cycle at current
+	resume  int  // one-based step the tuner's next cycle trial runs in once reruns pass; 0 when it names none
+}
+
+// resumeStep is the index of the step checking runs next, which skips the steps whose chain endings the tuner records
+// without a trial; the first step not done when the tuner names none. It is len(steps) once every step is done.
+func (g *cycleView) resumeStep() int {
+	if g.resume >= 1 && g.resume <= len(g.steps) {
+		return g.resume - 1
+	}
+	return g.current
 }
 
 type cycleStep struct {
