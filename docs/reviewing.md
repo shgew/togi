@@ -62,7 +62,7 @@ A finding that holds beyond one run moves to where the next change reads it: how
 
 ## Inspecting a transition on recorded state
 
-`tools/carry-facts` is a development-only transition inspector and simulator, never a hardware runner. Its required `--state-dir` must name a copy beneath the system temporary directory; it rejects the real state path and symlinked archive, live journal or lock paths. Without `--simulate`, it locks the copy through the existing journal API, reads the live journal's recorded BIOS context and backend store paths with `internal/facts`, and prepares carry at the current evidence epoch with the current schema and ruleset + 1 to force a transition, keeping passes only under those store paths, printing carried pass/failure counts by original source session. With `--simulate`, it resumes the copy on the simulator under the current build using that recorded BIOS context and those backend store paths; `--seed` selects simulated outcomes (default 1). It runs until the first passed full cycle and reports carried counts, candidate-solo-limit answers, live solo limit-check starts and live cycle work. Both modes mutate only the copy. No `cmd/togi` flag is added.
+A copy of the target machine's journals shows what the next real run would carry. `tools/sim --state-dir` resumes the copy on the simulator under the current build, so a journal recorded under an older ruleset or schema goes through the transition the next `togi run` would make (`docs/simulating.md`), and `togi events --kind session.carried,trial.carried,failure.carried` lists what it carried, each fact with the session it came from. Run it only on a copy: preparation archives the live journal.
 
 From a checkout on the target machine, copy only the journals (the sources are read-only):
 
@@ -72,10 +72,11 @@ trap 'rm -rf "$copy"' EXIT
 mkdir "$copy/archive"
 sudo sh -c 'cp /var/lib/togi/archive/*.jsonl "$1/archive/"; for marker in /var/lib/togi/archive/*-reset-all; do [ ! -f "$marker" ] || cp "$marker" "$1/archive/"; done; cp /var/lib/togi/events.jsonl "$1/events.jsonl"' sh "$copy"
 sudo chown -R "$(id -u):$(id -g)" "$copy"
-go run ./tools/carry-facts --state-dir "$copy"
+go run ./tools/sim --state-dir "$copy"
+go run ./cmd/togi --state-dir "$copy" events --kind session.carried,trial.carried,failure.carried
 ```
 
-For the target history recorded through session `20261002T004254Z`, expect passes only from that latest session (epoch 1). Eligible failures can come from that session and earlier same-BIOS sessions after `reset --all` in `20260926T151414Z`; facts in that reset session must follow its reset, and no earlier session contributes. Older epochs contribute failures but zero passes, and so do backend builds other than the ones the live journal last recorded. Counts reflect any core-reset and defect exclusions. Numeric counts must come from running the command, not from this recipe. Simulation reuses the recorded BIOS context but draws outcomes from the simulator, not from hardware measurements. Use a fresh copy for each mode because preparation archives its live journal.
+Passes carry only from the current evidence epoch and under the backend builds the live journal last recorded; failures carry from same-BIOS sessions after the newest `reset --all`, and core resets and defect exclusions apply (`docs/spec/journal.md`, Fact eligibility). What the simulated session does after the transition draws outcomes from the simulator, not from hardware measurements.
 
 To inspect request telemetry from older trial ends, also copy their `archive/<session>-trials/` directories and the live `trials/` directory, or copy the whole state directory. Journal-only copies retain fields already recorded in trial ends but cannot recover measurements from absent samples.
 
