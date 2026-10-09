@@ -23,7 +23,9 @@ type scenario struct {
 	Smoke    []uint64 `toml:"smoke,omitempty"`
 }
 type suite struct {
-	Scenarios []scenario `toml:"scenario"`
+	// Gate is a ruleset gate of the bench suite; a sweep covers other seeds, so its output omits it.
+	Gate      map[string]any `toml:"gate,omitempty"`
+	Scenarios []scenario     `toml:"scenario"`
 }
 type runRecord struct {
 	Scenario string  `json:"scenario"`
@@ -112,6 +114,7 @@ func sweep(o options, _, stderr io.Writer) (string, string, error) {
 }
 
 func sweepSuite(input suite, base string, seeds int) suite {
+	input.Gate = nil
 	for i := range input.Scenarios {
 		s := &input.Scenarios[i]
 		if s.Machine != "" && !filepath.IsAbs(s.Machine) {

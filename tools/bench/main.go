@@ -71,7 +71,7 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	flags.StringVar(&o.suite, "suite", "tools/bench/suite.toml", "scenario TOML file; relative paths resolve in each tree with --same; machine paths are relative to this file")
 	flags.StringVar(&o.split, "split", "dev", "seed split: dev, holdout, or all; incompatible with --same")
 	flags.StringVar(&o.out, "out", "", "write one JSON object per run to this file, or with --forecast the forecast record; incompatible with --same")
-	flags.StringVar(&o.baseline, "baseline", "", "compare against a JSON Lines baseline; incompatible with --same")
+	flags.StringVar(&o.baseline, "baseline", "", "compare against a JSON Lines baseline and, when the suite registers a gate, judge it and exit by it; incompatible with --same")
 	flags.StringVar(&o.keep, "keep", "", "keep run directories under this directory; --same separates base and head")
 	flags.StringVar(&o.same, "same", "", "compare all session journals against checkout DIR, ignoring only build version, revision and description; skip metrics and model checks")
 	flags.StringVar(&o.forecast, "forecast", "", "forecast a real run from a copy of its state directory DIR with the suite's target scenario, counting only events after its last; the copy is read, never written; incompatible with --split, --baseline and --same")
@@ -132,16 +132,39 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	return 0
 }
 
-func loadRuns(path, split string, extracts trialfacts.Extracts) ([]runSpec, error) {
-	var suite struct {
-		Scenarios []scenario `toml:"scenario"`
-	}
+type suiteFile struct {
+	Gate      *gate      `toml:"gate"`
+	Scenarios []scenario `toml:"scenario"`
+}
+
+func decodeSuite(path string) (suiteFile, error) {
+	var suite suiteFile
 	md, err := toml.DecodeFile(path, &suite)
 	if err != nil {
-		return nil, fmt.Errorf("load suite: %w", err)
+		return suite, fmt.Errorf("load suite: %w", err)
 	}
 	if len(md.Undecoded()) > 0 {
-		return nil, fmt.Errorf("unknown suite key %s", md.Undecoded()[0])
+		return suite, fmt.Errorf("unknown suite key %s", md.Undecoded()[0])
+	}
+	return suite, nil
+}
+
+// loadGate returns the suite's registered gate, or nil when it has none.
+func loadGate(path string) (*gate, error) {
+	suite, err := decodeSuite(path)
+	if err != nil || suite.Gate == nil {
+		return nil, err
+	}
+	if err := suite.Gate.resolve(suite.Scenarios); err != nil {
+		return nil, fmt.Errorf("load suite: %w", err)
+	}
+	return suite.Gate, nil
+}
+
+func loadRuns(path, split string, extracts trialfacts.Extracts) ([]runSpec, error) {
+	suite, err := decodeSuite(path)
+	if err != nil {
+		return nil, err
 	}
 	seen := make(map[string]bool)
 	var runs []runSpec
@@ -269,6 +292,10 @@ func execute(o options, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	g, err := loadGate(o.suite)
+	if err != nil {
+		return err
+	}
 	var baseline []result
 	if o.baseline != "" {
 		baseline, err = readResults(o.baseline)
@@ -362,10 +389,18 @@ func execute(o options, stdout, stderr io.Writer) error {
 	}
 	reportSummary(stdout, results)
 	modelcheck.Report(stdout, checks)
+	var verdict gateResult
 	if o.baseline != "" {
 		reportComparison(stdout, results, baseline)
+		if g != nil {
+			verdict = judgeGate(g, results, baseline)
+			reportGate(stdout, g, verdict)
+		}
 	}
 	fmt.Fprintf(stdout, "harness_wall_s=%.3f\n", time.Since(started).Seconds())
+	if g != nil && o.baseline != "" && !verdict.pass() {
+		return errGateFailed
+	}
 	return nil
 }
 
