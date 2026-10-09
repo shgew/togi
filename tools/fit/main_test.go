@@ -44,7 +44,10 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 	})
 	groups := []modelcheck.Group{{Class: facts.Class{Regime: machine.R7, Workload: "work", Cores: []int{0, 1}, DurationS: 120}, Depth: -24, N: 45, K: 5}}
 	flagged := []modelcheck.Group{{Class: facts.Class{Regime: machine.R7, Workload: "work", Cores: []int{0, 1}, DurationS: 300}, Depth: -24, N: 24, K: 7, Interval: [2]int{0, 2}, Flagged: true}}
-	content := encodeMachine(cfg, 2, 263, 45, 12.5, groups, flagged)
+	content, err := encodeMachine(cfg, 2, 263, 45, 12.5, groups, flagged)
+	if err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(t.TempDir(), "fit.toml")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)

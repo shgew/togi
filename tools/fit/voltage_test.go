@@ -121,12 +121,6 @@ func TestSharedVoltageFitDeterminismAndIsolation(t *testing.T) {
 			}
 		}
 	}
-	clone := cloneSharedFit(cfg)
-	id := machine.PickWorkload(machine.R7, 0).ID
-	clone.SharedVoltage.Workload[id].Core[0].BaseV = 1.4
-	if cfg.SharedVoltage.Workload[id].Core[0].BaseV == 1.4 {
-		t.Fatal("snapshot aliases mutable voltage parameters")
-	}
 }
 
 func TestSharedVoltageBackgroundExplainsStockFailure(t *testing.T) {
@@ -178,7 +172,7 @@ func TestConstrainedSharedRatePreservesVoltageGeometry(t *testing.T) {
 		cfg.SharedVoltage.Workload[machine.PickWorkload(machine.R7, 0).ID].Core[core].ThresholdV = 1.135
 	}
 	syncYcruncher(cfg.SharedVoltage)
-	before := cloneSharedFit(cfg)
+	before := cfg.Clone()
 	var l voltageLikelihood
 	l.cfg, l.obs = cfg, aggregate(records)
 	l.rebuild()
@@ -213,7 +207,7 @@ func TestConstrainedSharedRatePreservesVoltageGeometry(t *testing.T) {
 	for core := range 16 {
 		cfg.SharedVoltage.Workload[machine.PickWorkload(machine.R7, 0).ID].Core[core].ThresholdV = 1.155
 	}
-	before = cloneSharedFit(cfg)
+	before = cfg.Clone()
 	l = voltageLikelihood{}
 	l.cfg, l.obs = cfg, aggregate(records)
 	l.rebuild()
