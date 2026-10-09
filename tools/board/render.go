@@ -16,15 +16,7 @@ func render(w io.Writer, b board) error {
 	}
 	p.section("Waiting on the target machine (needs-hardware)", len(b.Hardware))
 	for _, i := range b.Hardware {
-		if !i.Closed {
-			p.line("  %s%s", head(i), assigned(i))
-			continue
-		}
-		notes := []string{"closed"}
-		for _, a := range i.Assignees {
-			notes = append(notes, "@"+a)
-		}
-		p.line("  %s (%s)", head(i), strings.Join(notes, ", "))
+		p.line("  %s%s", head(i), assigned(i))
 	}
 	p.section("Untriaged (needs-triage)", len(b.Untriaged))
 	for _, i := range b.Untriaged {

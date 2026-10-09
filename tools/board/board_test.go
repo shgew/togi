@@ -18,14 +18,12 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the curr
 // fixtureNow is the clock the fixtures are read at.
 var fixtureNow = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
 
-// fixtureGH answers the board's three GraphQL queries and its interaction limit request from testdata.
+// fixtureGH answers the board's two GraphQL queries and its interaction limit request from testdata.
 func fixtureGH(t *testing.T) ghFunc {
 	t.Helper()
 	return func(args ...string) ([]byte, error) {
 		q := args[len(args)-1]
 		switch {
-		case strings.Contains(q, "issues(states: CLOSED"):
-			return os.ReadFile(filepath.Join("testdata", "closed-hardware.json"))
 		case strings.Contains(q, "issues("):
 			return os.ReadFile(filepath.Join("testdata", "issues.json"))
 		case strings.Contains(q, "pullRequests("):
@@ -64,8 +62,7 @@ func TestRunReportsFetchFailure(t *testing.T) {
 		name, failing, want string
 	}{
 		{"issues", "issues(states: OPEN", "fetch issues: HTTP 401"},
-		{"closed needs-hardware issues after issues", "issues(states: CLOSED", "fetch closed needs-hardware issues: HTTP 401"},
-		{"pull requests after closed needs-hardware issues", "pullRequests(", "fetch pull requests: HTTP 401"},
+		{"pull requests after issues", "pullRequests(", "fetch pull requests: HTTP 401"},
 		{"interaction limit after pull requests", "/interaction-limits", "fetch interaction limit: HTTP 401"},
 	}
 	for _, tt := range tests {
@@ -194,14 +191,11 @@ func TestOverlaps(t *testing.T) {
 }
 
 func TestPullsFor(t *testing.T) {
-	linked := branch{Repo: "shgew/togi", Name: "linked"}
 	pulls := []pull{
 		{Number: 5, Body: "Resolves #12, Refs #4"},
 		{Number: 1, Body: "Closes #12"},
 		{Number: 2, Body: "Refs #120"},
 		{Number: 3, Body: "Mentions #12 in passing"},
-		{Number: 4, Head: linked},
-		{Number: 6, Head: branch{Repo: "someone/togi", Name: "linked"}},
 		{Number: 7, Head: branch{Name: "linked"}},
 		{Number: 8, Body: "Fixes: #12"},
 		{Number: 9, Body: "Refs #12 too"},
@@ -209,10 +203,10 @@ func TestPullsFor(t *testing.T) {
 		{Number: 11, Body: "Closes\r\n#12"},
 	}
 	var got []int
-	for _, p := range pullsFor(issue{Number: 12, Branches: []branch{linked}}, pulls) {
+	for _, p := range pullsFor(issue{Number: 12}, pulls) {
 		got = append(got, p.Number)
 	}
-	if diff := cmp.Diff([]int{1, 4, 5, 8, 9}, got); diff != "" {
+	if diff := cmp.Diff([]int{1, 5, 8, 9}, got); diff != "" {
 		t.Errorf("pullsFor mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -225,7 +219,7 @@ func TestWorkAddsPullHeads(t *testing.T) {
 		{Number: 3, Head: branch{Repo: "someone/togi", Name: "linked"}},
 		{Number: 4, Head: branch{Name: "gone"}},
 	}
-	got := work("shgew/togi", []branch{linked}, pulls)
+	got := work("shgew/togi", pulls)
 	if diff := cmp.Diff([]string{"linked", "opened", "someone/togi:linked"}, got); diff != "" {
 		t.Errorf("work mismatch (-want +got):\n%s", diff)
 	}
@@ -250,5 +244,44 @@ func TestGroupOrdersByPriorityThenBlock(t *testing.T) {
 	}
 	if diff := cmp.Diff([][]int{{4}, {3, 5}, {2}, {1}}, got); diff != "" {
 		t.Errorf("groups mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestNeedsHardwareIsOnlyInItsOwnSection(t *testing.T) {
+	for _, assignees := range [][]string{nil, {"shgew"}} {
+		t.Run(strings.Join(assignees, ","), func(t *testing.T) {
+			issues := []issue{
+				{Number: 1, Labels: []string{"feature", "P1", "needs-hardware"}, Assignees: assignees, Body: "Touches: `internal/tuner`"},
+				{Number: 2, Labels: []string{"feature", "P2"}, Body: "Touches: `internal/tuner`"},
+				{Number: 3, Labels: []string{"feature", "P2"}, Assignees: []string{"shgew"}, Body: "Touches: `internal/tuner/hunt.go`"},
+			}
+			b := build("shgew/togi", issues, nil, interactionLimit{}, fixtureNow)
+			var hardware, inProgress, overlapping []int
+			for _, i := range b.Hardware {
+				hardware = append(hardware, i.Number)
+			}
+			for _, p := range b.InProgress {
+				inProgress = append(inProgress, p.Number)
+			}
+			for _, o := range b.Overlaps {
+				overlapping = append(overlapping, o.Ready.Number, o.Progress.Number)
+			}
+			if diff := cmp.Diff([]int{1}, hardware); diff != "" {
+				t.Errorf("hardware mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff([]int{3}, inProgress); diff != "" {
+				t.Errorf("in progress mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff([]int{2, 3}, overlapping); diff != "" {
+				t.Errorf("overlaps mismatch (-want +got):\n%s", diff)
+			}
+			for _, g := range b.Ready {
+				for _, r := range g.Issues {
+					if r.Number == 1 {
+						t.Errorf("needs-hardware issue #1 is ready")
+					}
+				}
+			}
+		})
 	}
 }

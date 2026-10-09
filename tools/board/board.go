@@ -12,9 +12,8 @@ import (
 	"time"
 )
 
-// issue is an issue as the board needs it: open, or closed and still labeled needs-hardware.
+// issue is an open issue as the board needs it.
 type issue struct {
-	Closed       bool
 	Number       int
 	Title        string
 	Body         string
@@ -23,7 +22,6 @@ type issue struct {
 	Assignees    []string
 	Parent       *parent
 	OpenBlockers []int
-	Branches     []branch
 	SubIssues    int
 	SubClosed    int
 }
@@ -110,7 +108,7 @@ func shared(a, b []string) []string {
 
 type progress struct {
 	issue
-	// Work holds the linked branches and the heads of the issue's pull requests, which GitHub unlinks once a pull request is opened from them.
+	// Work holds the heads of the issue's pull requests.
 	Work    []string
 	Touches []string
 	Pulls   []int
@@ -169,9 +167,8 @@ func interactions(l interactionLimit, now time.Time) string {
 	return fmt.Sprintf("collaborators only until %s, %d days left%s", until, int(math.Ceil(left.Hours()/24)), renew)
 }
 
-// build sorts the issues into the board; repo is the owner/name of their repository, and closedHardware holds the closed issues
-// still labeled needs-hardware, which wait on the target machine like open ones.
-func build(repo string, issues, closedHardware []issue, pulls []pull, limit interactionLimit, now time.Time) board {
+// build sorts the issues into the board; repo is the owner/name of their repository.
+func build(repo string, issues []issue, pulls []pull, limit interactionLimit, now time.Time) board {
 	issues = slices.Clone(issues)
 	slices.SortFunc(issues, func(a, b issue) int { return a.Number - b.Number })
 	b := board{Interactions: interactions(limit, now)}
@@ -180,29 +177,28 @@ func build(repo string, issues, closedHardware []issue, pulls []pull, limit inte
 		if i.has("needs-decision") {
 			b.Waiting = append(b.Waiting, i)
 		}
-		if i.has("needs-hardware") {
+		onMachine := i.has("needs-hardware")
+		if onMachine {
 			b.Hardware = append(b.Hardware, i)
 		}
 		if i.has("needs-triage") {
 			b.Untriaged = append(b.Untriaged, i)
 		}
-		if len(i.Assignees) > 0 {
+		if len(i.Assignees) > 0 && !onMachine {
 			own := pullsFor(i, pulls)
-			p := progress{issue: i, Work: work(repo, i.Branches, own), Touches: touches(i.Body)}
+			p := progress{issue: i, Work: work(repo, own), Touches: touches(i.Body)}
 			for _, pr := range own {
 				p.Pulls = append(p.Pulls, pr.Number)
 			}
 			b.InProgress = append(b.InProgress, p)
 		}
-		if i.ready() {
+		if i.ready() && !onMachine {
 			ready = append(ready, readyIssue{issue: i, Touches: touches(i.Body)})
 		}
 		if rulesetName.MatchString(i.Title) {
 			b.Rulesets = append(b.Rulesets, i)
 		}
 	}
-	b.Hardware = append(b.Hardware, closedHardware...)
-	slices.SortFunc(b.Hardware, func(x, y issue) int { return x.Number - y.Number })
 	b.Ready = group(ready)
 	for _, r := range ready {
 		for _, p := range b.InProgress {
@@ -214,14 +210,14 @@ func build(repo string, issues, closedHardware []issue, pulls []pull, limit inte
 	return b
 }
 
-// pullsFor returns, by number, the open pull requests that name the issue with a closing or Refs keyword, or whose head is one of its linked branches.
+// pullsFor returns, by number, the open pull requests that name the issue with a closing or Refs keyword.
 func pullsFor(i issue, pulls []pull) []pull {
 	var out []pull
 	for _, p := range pulls {
 		named := slices.ContainsFunc(issueRef.FindAllStringSubmatch(p.Body, -1), func(m []string) bool {
 			return m[1] == strconv.Itoa(i.Number)
 		})
-		if named || p.Head.Repo != "" && slices.Contains(i.Branches, p.Head) {
+		if named {
 			out = append(out, p)
 		}
 	}
@@ -229,9 +225,9 @@ func pullsFor(i issue, pulls []pull) []pull {
 	return out
 }
 
-// work returns the names of the linked branches and of the pull requests' heads, once each, qualifying branches of other repositories as owner/name:branch and leaving out heads whose repository is gone.
-func work(repo string, linked []branch, pulls []pull) []string {
-	branches := slices.Clone(linked)
+// work returns the names of the pull requests' heads, once each, qualifying branches of other repositories as owner/name:branch and leaving out heads whose repository is gone.
+func work(repo string, pulls []pull) []string {
+	var branches []branch
 	for _, p := range pulls {
 		if p.Head.Repo != "" && !slices.Contains(branches, p.Head) {
 			branches = append(branches, p.Head)
