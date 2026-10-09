@@ -88,6 +88,45 @@ func TestPrepare(t *testing.T) {
 	}
 }
 
+func TestPrepareCatalogWorkloads(t *testing.T) {
+	pkg := fakePackage(t)
+	b := New(pkg)
+	for _, regime := range machine.Regimes {
+		for _, w := range machine.Workloads(regime) {
+			if w.Backend != machine.Mprime {
+				continue
+			}
+			t.Run(string(regime)+"/"+w.ID, func(t *testing.T) {
+				dir := t.TempDir()
+				launch, err := b.Prepare(w, dir, []int{2, 18}[:w.Threads])
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(launch.Argv) == 0 || !filepath.IsAbs(launch.Argv[0]) {
+					t.Fatalf("launch argv = %q, want an absolute executable path", launch.Argv)
+				}
+				if rel, err := filepath.Rel(pkg, launch.Argv[0]); err != nil || !filepath.IsLocal(rel) {
+					t.Fatalf("executable %s is outside the package tree %s", launch.Argv[0], pkg)
+				}
+				if info, err := os.Stat(launch.Argv[0]); err != nil || info.Mode()&0111 == 0 {
+					t.Fatalf("executable %s: %v, %v", launch.Argv[0], info, err)
+				}
+				if len(launch.Files) == 0 {
+					t.Fatal("launch writes no files")
+				}
+				for _, name := range launch.Files {
+					if !filepath.IsLocal(name) {
+						t.Fatalf("file %q is not inside the work directory", name)
+					}
+					if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+						t.Fatalf("file %q was not written: %v", name, err)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestCheckNonExecutable(t *testing.T) {
 	pkg := fakePackage(t)
 	if err := os.Chmod(filepath.Join(pkg, "bin/mprime"), 0644); err != nil {
