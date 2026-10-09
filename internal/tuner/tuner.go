@@ -725,7 +725,7 @@ func (s *State) next() Action {
 		}
 		return s.afterReruns(s.roundStart())
 	}
-	return s.afterReruns(Action{Kind: Decide, Payload: &journal.CheckingCycle{Cycle: s.checking.cycle + 1, Event: journal.CycleStart, Steps: slices.Clone(s.steps)}, Cause: []int{s.checking.lastSeq}})
+	return s.afterReruns(Action{Kind: Decide, Payload: s.cycleStart(), Cause: []int{s.checking.lastSeq}})
 }
 
 func (s *State) anySearch() bool {
