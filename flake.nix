@@ -120,6 +120,7 @@
               pkgs.nixfmt
               pkgs.nushell
             ];
+            GOTOOLCHAIN = "local";
             TOGI_DEV_SHELL = "1";
           };
 

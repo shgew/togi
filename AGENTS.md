@@ -79,7 +79,7 @@ Pull requests that change the operator's steps update `docs/howto.md`.
 
 ## Commands
 
-Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes also work outside the dev shell: they enter it with `nix develop` when needed.
+Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout if you use direnv. Recipes that run Go or `gh` stop with that hint outside it; `just hardware` enters it itself, since `sudo` drops the environment. The shell sets `GOTOOLCHAIN=local`, so `go` uses the flake's pinned toolchain and fails instead of downloading another one when `go.mod` asks for a newer Go.
 
 | Command | Use |
 |---|---|
