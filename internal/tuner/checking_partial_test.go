@@ -6,14 +6,21 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
 
 func chainHarness(t *testing.T) *harness {
 	t.Helper()
-	h := hasRoomHarness(t, -10, -20, -30, -40, -20, -20, -20, -20)
-	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R7}})
+	return chainHarnessOn(t, topology(8), config.Default(), machine.R7)
+}
+
+func chainHarnessOn(t *testing.T, infos []machine.CoreInfo, cfg config.Config, steps ...machine.Regime) *harness {
+	t.Helper()
+	h := newHarnessOn(t, infos, cfg, hasRoomStarts(-10, -20, -30, -40, -20, -20, -20, -20)...)
+	h.decide(h.next())
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: steps})
 	h.decide(h.s.cycleNext())
 	return h
 }
@@ -212,11 +219,7 @@ func TestR7FullCycleIncludesEveryPartial(t *testing.T) {
 }
 
 func TestR7OneCCDRunsFullThenChainOnce(t *testing.T) {
-	h := chainHarness(t)
-	for id := range h.s.ccd {
-		h.s.ccd[id] = 0
-	}
-	h.s.parts = [][]int{h.s.ids()}
+	h := chainHarnessOn(t, onOneCCD(topology(8)), config.Default(), machine.R7)
 	passChainPart(t, h, h.s.ids(), nil)
 	a := h.s.cycleNext()
 	chain := a.Payload.(*journal.CheckingChain)
@@ -272,8 +275,8 @@ func TestR7PartialFailureDoesNotCompleteItsRequirement(t *testing.T) {
 }
 
 func TestRepeatedR7PartialClassesAddTrials(t *testing.T) {
-	h := chainHarness(t)
-	h.s.checking.steps = []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R7}
+	steps := []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R7}
+	h := chainHarnessOn(t, topology(8), config.Default(), steps...)
 	profile := h.s.Profile()
 	for _, step := range []int{1, 4} {
 		if step != 1 {

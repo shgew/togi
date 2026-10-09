@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -238,12 +239,8 @@ func TestR7AllCoreTargetsUseEachCCD(t *testing.T) {
 }
 
 func TestR7ZeroFailureDrainsWithoutReadingRanking(t *testing.T) {
-	h := r7Harness(t)
-	h.s.rankingSeq = 0
-	h.s.ranking = nil
-	for _, c := range h.s.cores {
-		c.offset = 0
-	}
+	h := newHarness(t, coreStart{phase: journal.PhaseHasRoom}, coreStart{phase: journal.PhaseHasRoom}, coreStart{phase: journal.PhaseHasRoom}, coreStart{phase: journal.PhaseHasRoom})
+	h.add(&journal.ProfileChange{To: []int{0, 0, 0, 0}})
 	r7Fact(h, false, []int{0, 1}, []int{0, 0, 0, 0}, nil, []int{0, 1}, nil, nil, nil)
 	a, ok := h.s.Drain()
 	dead, deadOK := a.Payload.(*journal.DeadEnd)
@@ -268,15 +265,18 @@ func TestR7BackoffReason(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := r7Harness(t)
-			h.s.n = 1
 			if tc.target > 0 {
-				r7Fact(h, true, []int{0, 1}, h.s.Profile(), map[int]float64{0: tc.target, 1: 1.08}, []int{0}, nil, nil, nil)
+				for range config.Default().Evidence.Trials() {
+					r7Fact(h, true, []int{0, 1}, h.s.Profile(), map[int]float64{0: tc.target, 1: 1.08}, []int{0}, nil, nil, nil)
+				}
 			}
-			r7Fact(h, false, []int{0, 1}, h.s.Profile(), tc.requests, []int{0}, new(0), nil, nil)
-			f := h.s.pendingFailures[len(h.s.pendingFailures)-1]
-			a := h.s.r7Backoff(f, *h.s.r7FailureEntry(f), h.s.core(0), []int{f.seq}, r7Order{named: true})
+			failure := r7Fact(h, false, []int{0, 1}, h.s.Profile(), tc.requests, []int{0}, new(0), nil, nil)
+			a, ok := h.s.Drain()
+			if !ok {
+				t.Fatal("failure did not move")
+			}
 			got := a.Payload.(*journal.TunerDecision).Reason
-			want := fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core 00 %s", f.seq, tc.want) + h.s.carriedReason(a.Cause)
+			want := fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core 00 %s", failure.Seq, tc.want) + h.s.carriedReason(a.Cause)
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Fatal(diff)
 			}

@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"slices"
@@ -138,8 +139,7 @@ func TestCyclePlanPartialProfileChanges(t *testing.T) {
 }
 
 func TestCyclePlanRepeatedPartialRequirements(t *testing.T) {
-	h := chainHarness(t)
-	h.s.checking.steps = []machine.Regime{machine.R7, machine.R7, machine.R7, machine.R7}
+	h := chainHarnessOn(t, topology(8), config.Default(), machine.R7, machine.R7, machine.R7, machine.R7)
 	cores := []int{1, 2, 3}
 	workload := machine.Workloads(machine.R7)[0].ID
 	for _, step := range []int{1, 4} {
@@ -198,12 +198,9 @@ func TestCyclePlanPartialEvidenceWindows(t *testing.T) {
 }
 
 func TestCyclePlanOneCCDMergesCoincidentDurations(t *testing.T) {
-	h := chainHarness(t)
-	for id := range h.s.ccd {
-		h.s.ccd[id] = 0
-	}
-	h.s.parts = [][]int{h.s.ids()}
-	h.s.durations.ShortTrialS = h.s.longS(h.s.ids())
+	cfg := config.Default()
+	cfg.Durations.ShortTrialS = cfg.Durations.CheckingAllCoreS
+	h := chainHarnessOn(t, onOneCCD(topology(8)), cfg, machine.R7)
 	plan := h.s.CyclePlan()
 	if got := plan.Steps[0].Parts; len(got) != 1 || !got[0].Full || got[0].Short != 4 || got[0].Long != 0 {
 		t.Fatalf("one CCD duplicated its full part or split one trial class: %+v", got)

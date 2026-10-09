@@ -107,7 +107,9 @@ func TestSkippedTogetherFailureMakesProgress(t *testing.T) {
 			failure := h.add(fact)
 			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R6}})
 			if attributed {
-				h.s.retry = &Trial{Regime: fact.Class.Regime, Workload: fact.Class.Workload, Cores: fact.Class.Cores, DurationS: fact.Class.DurationS, Condition: machine.Together, Phase: journal.PhaseChecking, Cycle: 1, Retry: true, Profile: fact.Profile}
+				// An inconclusive trial of the class is what leaves a retry to skip.
+				retry := Trial{Regime: fact.Class.Regime, Workload: fact.Class.Workload, Cores: fact.Class.Cores, DurationS: fact.Class.DurationS, Condition: machine.Together, Phase: journal.PhaseChecking, Cycle: 1, Profile: fact.Profile}
+				h.trial(Action{Kind: RunTrial, Trial: retry}, unsure)
 			}
 			found := false
 			for range 100 {
@@ -164,6 +166,7 @@ func TestSkippedDeepeningAndRerunFailures(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			h := newHarness(t, coreStart{phase: journal.PhaseHasRoom, offset: -19}, coreStart{phase: journal.PhaseAtLimit, offset: -20})
 			h.add(&journal.ProfileChange{To: []int{-19, -20}})
+			h.decide(h.next())
 			r := machine.R1
 			w := machine.Workloads(r)[0].ID
 			d := h.s.durations.ShortTrialS
@@ -175,20 +178,12 @@ func TestSkippedDeepeningAndRerunFailures(t *testing.T) {
 			if deepening {
 				h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleStart, Profile: []int{-20, -20}, Target: []int{-21, -20}, Cores: []int{0}, Trials: h.s.n, TrialS: d})
 			}
+			if !deepening {
+				h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -20, ToOffset: -19, FailurePoint: new(-20)}, failure.Seq)
+			}
 			h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseDeepening, Decision: journal.Deepen, FromOffset: -19, ToOffset: -20})
 			h.add(&journal.ProfileChange{To: []int{-20, -20}})
-			var scheduled Action
-			if deepening {
-				scheduled = h.s.roundCheck()
-			} else {
-				h.s.obligations = []rerun{{class: trialClass{r, w, "[0]", d}, seq: failure.Seq}}
-				var ok bool
-				scheduled, ok = h.s.rerunNext()
-				if !ok {
-					t.Fatal("rerun obligation disappeared")
-				}
-			}
-			skip := h.s.skipKnownFailure(scheduled)
+			skip := h.next()
 			p, ok := skip.Payload.(*journal.Failure)
 			if !ok || p.KnownFailure != failure.Seq {
 				t.Fatalf("known failure scheduled a live check: %+v", skip)

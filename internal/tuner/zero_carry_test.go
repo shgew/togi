@@ -61,7 +61,7 @@ func zeroCarryTransition(t *testing.T, profile []int) (*harness, int) {
 		t.Fatalf("carry %+v: %v", c, err)
 	}
 
-	h := &harness{t: t, s: New()}
+	h := bareHarness(t)
 	begin := h.add(&journal.SessionStart{Schema: journal.Schema, Ruleset: Ruleset, Session: "Y", Cores: cores})
 	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: snapshotConfig(config.Default())})
 	fact := 0
