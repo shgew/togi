@@ -1,0 +1,625 @@
+{
+  "Record": {
+    "anchor": {
+      "session": "20260101T000000Z",
+      "seq": 2542,
+      "time": "2026-01-01T06:07:19.259577976Z",
+      "sha256": "560da7ab2f009c0aa86462f25f61281b04f5a7fb59d1b8f6b6f4ff5cc89bbbf0"
+    },
+    "commit": "dev",
+    "dirty": false,
+    "ruleset": 10,
+    "files": null,
+    "runs": [
+      {
+        "machine": "machines/target.toml",
+        "seed": 1,
+        "split": "dev",
+        "status": "concluded",
+        "hours": 20,
+        "crashes": 10,
+        "hunts": 0,
+        "profile": [
+          -20,
+          -30,
+          -14,
+          -23,
+          -25,
+          -7,
+          -17,
+          -5,
+          -21,
+          -16,
+          -13,
+          -4,
+          -12,
+          -24,
+          -7,
+          -18
+        ],
+        "depth": -256
+      },
+      {
+        "machine": "machines/target.toml",
+        "seed": 2,
+        "split": "dev",
+        "status": "concluded",
+        "hours": 21,
+        "crashes": 13,
+        "hunts": 1,
+        "profile": [
+          -34,
+          -34,
+          -6,
+          -17,
+          -12,
+          -9,
+          -27,
+          -6,
+          -16,
+          -34,
+          -7,
+          -12,
+          -18,
+          -34,
+          -22,
+          -34
+        ],
+        "depth": -322
+      },
+      {
+        "machine": "machines/target.toml",
+        "seed": 3,
+        "split": "dev",
+        "status": "deadend",
+        "hours": 22,
+        "crashes": 16,
+        "hunts": 2,
+        "profile": [
+          -17,
+          -6,
+          -14,
+          -23,
+          -25,
+          -2,
+          -10,
+          -4,
+          -21,
+          -2,
+          -13,
+          -1,
+          -7,
+          -22,
+          0,
+          -1
+        ],
+        "depth": -168
+      }
+    ],
+    "summary": {
+      "runs": 3,
+      "concluded": 2,
+      "dead_ends": 1,
+      "censored": 0,
+      "hours": {
+        "min": 20,
+        "p10": 20,
+        "median": 20.5,
+        "p90": 21,
+        "max": 21
+      },
+      "crashes": {
+        "min": 10,
+        "p10": 10,
+        "median": 13,
+        "p90": 16,
+        "max": 16
+      },
+      "hunts": {
+        "min": 0,
+        "p10": 0,
+        "median": 1,
+        "p90": 2,
+        "max": 2
+      },
+      "depth": {
+        "min": -322,
+        "p10": -322,
+        "median": -256,
+        "p90": -168,
+        "max": -168
+      },
+      "cores": [
+        {
+          "min": -34,
+          "p10": -34,
+          "median": -20,
+          "p90": -17,
+          "max": -17
+        },
+        {
+          "min": -34,
+          "p10": -34,
+          "median": -30,
+          "p90": -6,
+          "max": -6
+        },
+        {
+          "min": -14,
+          "p10": -14,
+          "median": -14,
+          "p90": -6,
+          "max": -6
+        },
+        {
+          "min": -23,
+          "p10": -23,
+          "median": -23,
+          "p90": -17,
+          "max": -17
+        },
+        {
+          "min": -25,
+          "p10": -25,
+          "median": -25,
+          "p90": -12,
+          "max": -12
+        },
+        {
+          "min": -9,
+          "p10": -9,
+          "median": -7,
+          "p90": -2,
+          "max": -2
+        },
+        {
+          "min": -27,
+          "p10": -27,
+          "median": -17,
+          "p90": -10,
+          "max": -10
+        },
+        {
+          "min": -6,
+          "p10": -6,
+          "median": -5,
+          "p90": -4,
+          "max": -4
+        },
+        {
+          "min": -21,
+          "p10": -21,
+          "median": -21,
+          "p90": -16,
+          "max": -16
+        },
+        {
+          "min": -34,
+          "p10": -34,
+          "median": -16,
+          "p90": -2,
+          "max": -2
+        },
+        {
+          "min": -13,
+          "p10": -13,
+          "median": -13,
+          "p90": -7,
+          "max": -7
+        },
+        {
+          "min": -12,
+          "p10": -12,
+          "median": -4,
+          "p90": -1,
+          "max": -1
+        },
+        {
+          "min": -18,
+          "p10": -18,
+          "median": -12,
+          "p90": -7,
+          "max": -7
+        },
+        {
+          "min": -34,
+          "p10": -34,
+          "median": -24,
+          "p90": -22,
+          "max": -22
+        },
+        {
+          "min": -22,
+          "p10": -22,
+          "median": -7,
+          "p90": 0,
+          "max": 0
+        },
+        {
+          "min": -34,
+          "p10": -34,
+          "median": -18,
+          "p90": -1,
+          "max": -1
+        }
+      ]
+    }
+  },
+  "Outcome": {
+    "status": "concluded",
+    "hours": 22.19890604968028,
+    "crashes": 17,
+    "hunts": 5,
+    "profile": [
+      -18,
+      -19,
+      -14,
+      -24,
+      -11,
+      -10,
+      -23,
+      -6,
+      -9,
+      -5,
+      -13,
+      -6,
+      -19,
+      -2,
+      -22,
+      -33
+    ],
+    "depth": -234
+  },
+  "Builds": [
+    {
+      "version": "0.10.0",
+      "rev": "dev",
+      "ruleset": 10,
+      "schema": 0,
+      "fixes": 0
+    }
+  ],
+  "Flags": null,
+  "Rows": [
+    {
+      "Metric": {
+        "Name": "core 00",
+        "Range": {
+          "min": -34,
+          "p10": -34,
+          "median": -20,
+          "p90": -17,
+          "max": -17
+        }
+      },
+      "Actual": -18,
+      "Bound": false,
+      "Placement": "yes",
+      "Error": 2,
+      "Percentile": 66.66666666666667
+    },
+    {
+      "Metric": {
+        "Name": "core 01",
+        "Range": {
+          "min": -34,
+          "p10": -34,
+          "median": -30,
+          "p90": -6,
+          "max": -6
+        }
+      },
+      "Actual": -19,
+      "Bound": false,
+      "Placement": "yes",
+      "Error": 11,
+      "Percentile": 66.66666666666667
+    },
+    {
+      "Metric": {
+        "Name": "core 02",
+        "Range": {
+          "min": -14,
+          "p10": -14,
+          "median": -14,
+          "p90": -6,
+          "max": -6
+        }
+      },
+      "Actual": -14,
+      "Bound": false,
+      "Placement": "yes",
+      "Error": 0,
+      "Percentile": 33.333333333333336
+    },
+    {
+      "Metric": {
+        "Name": "core 03",
+        "Range": {
+          "min": -23,
+          "p10": -23,
+          "median": -23,
+          "p90": -17,
+          "max": -17
+        }
+      },
+      "Actual": -24,
+      "Bound": false,
+      "Placement": "below",
+      "Error": -1,
+      "Percentile": 0
+    },
+    {
+      "Metric": {
+        "Name": "core 04",
+        "Range": {
+          "min": -25,
+          "p10": -25,
+          "median": -25,
+          "p90": -12,
+          "max": -12
+        }
+      },
+      "Actual": -11,
+      "Bound": false,
+      "Placement": "above",
+      "Error": 14,
+      "Percentile": 100
+    },
+    {
+      "Metric": {
+        "Name": "core 05",
+        "Range": {
+          "min": -9,
+          "p10": -9,
+          "median": -7,
+          "p90": -2,
+          "max": -2
+        }
+      },
+      "Actual": -10,
+      "Bound": false,
+      "Placement": "below",
+      "Error": -3,
+      "Percentile": 0
+    },
+    {
+      "Metric": {
+        "Name": "core 06",
+        "Range": {
+          "min": -27,
+          "p10": -27,
+          "median": -17,
+          "p90": -10,
+          "max": -10
+        }
+      },
+      "Actual": -23,
+      "Bound": false,
+      "Placement": "yes",
+      "Error": -6,
+      "Percentile": 33.333333333333336
+    },
+    {
+      "Metric": {
+        "Name": "core 07",
+        "Range": {
+          "min": -6,
+          "p10": -6,
+          "median": -5,
+          "p90": -4,
+          "max": -4
+        }
+      },
+      "Actual": -6,
+      "Bound": false,
+      "Placement": "yes",
+      "Error": -1,
+      "Percentile": 16.666666666666668
+    },
+    {
+      "Metric": {
+        "Name": "core 08",
+        "Range": {
+          "min": -21,
+          "p10": -21,
+          "median": -21,
+          "p90": -16,
+          "max": -16
+        }
+      },
+      "Actual": -9,
+      "Bound": false,
+      "Placement": "above",
+      "Error": 12,
+      "Percentile": 100
+    },
+    {
+      "Metric": {
+        "Name": "core 09",
+        "Range": {
+          "min": -34,
+          "p10": -34,
+          "median": -16,
+          "p90": -2,
+          "max": -2
+        }
+      },
+      "Actual": -5,
+      "Bound": false,
+      "Placement": "yes",
+      "Error": 11,
+      "Percentile": 66.66666666666667
+    },
+    {
+      "Metric": {
+        "Name": "core 10",
+        "Range": {
+          "min": -13,
+          "p10": -13,
+          "median": -13,
+          "p90": -7,
+          "max": -7
+        }
+      },
+      "Actual": -13,
+      "Bound": false,
+      "Placement": "yes",
+      "Error": 0,
+      "Percentile": 33.333333333333336
+    },
+    {
+      "Metric": {
+        "Name": "core 11",
+        "Range": {
+          "min": -12,
+          "p10": -12,
+          "median": -4,
+          "p90": -1,
+          "max": -1
+        }
+      },
+      "Actual": -6,
+      "Bound": false,
+      "Placement": "yes",
+      "Error": -2,
+      "Percentile": 33.333333333333336
+    },
+    {
+      "Metric": {
+        "Name": "core 12",
+        "Range": {
+          "min": -18,
+          "p10": -18,
+          "median": -12,
+          "p90": -7,
+          "max": -7
+        }
+      },
+      "Actual": -19,
+      "Bound": false,
+      "Placement": "below",
+      "Error": -7,
+      "Percentile": 0
+    },
+    {
+      "Metric": {
+        "Name": "core 13",
+        "Range": {
+          "min": -34,
+          "p10": -34,
+          "median": -24,
+          "p90": -22,
+          "max": -22
+        }
+      },
+      "Actual": -2,
+      "Bound": false,
+      "Placement": "above",
+      "Error": 22,
+      "Percentile": 100
+    },
+    {
+      "Metric": {
+        "Name": "core 14",
+        "Range": {
+          "min": -22,
+          "p10": -22,
+          "median": -7,
+          "p90": 0,
+          "max": 0
+        }
+      },
+      "Actual": -22,
+      "Bound": false,
+      "Placement": "yes",
+      "Error": -15,
+      "Percentile": 16.666666666666668
+    },
+    {
+      "Metric": {
+        "Name": "core 15",
+        "Range": {
+          "min": -34,
+          "p10": -34,
+          "median": -18,
+          "p90": -1,
+          "max": -1
+        }
+      },
+      "Actual": -33,
+      "Bound": false,
+      "Placement": "yes",
+      "Error": -15,
+      "Percentile": 33.333333333333336
+    },
+    {
+      "Metric": {
+        "Name": "depth",
+        "Range": {
+          "min": -322,
+          "p10": -322,
+          "median": -256,
+          "p90": -168,
+          "max": -168
+        }
+      },
+      "Actual": -234,
+      "Bound": false,
+      "Placement": "yes",
+      "Error": 22,
+      "Percentile": 66.66666666666667
+    },
+    {
+      "Metric": {
+        "Name": "hours",
+        "Range": {
+          "min": 20,
+          "p10": 20,
+          "median": 20.5,
+          "p90": 21,
+          "max": 21
+        }
+      },
+      "Actual": 22.19890604968028,
+      "Bound": false,
+      "Placement": "above",
+      "Error": 1.6989060496802786,
+      "Percentile": 100
+    },
+    {
+      "Metric": {
+        "Name": "crashes",
+        "Range": {
+          "min": 10,
+          "p10": 10,
+          "median": 13,
+          "p90": 16,
+          "max": 16
+        }
+      },
+      "Actual": 17,
+      "Bound": false,
+      "Placement": "above",
+      "Error": 4,
+      "Percentile": 100
+    },
+    {
+      "Metric": {
+        "Name": "hunts",
+        "Range": {
+          "min": 0,
+          "p10": 0,
+          "median": 1,
+          "p90": 2,
+          "max": 2
+        }
+      },
+      "Actual": 5,
+      "Bound": false,
+      "Placement": "above",
+      "Error": 4,
+      "Percentile": 100
+    }
+  ]
+}
