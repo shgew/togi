@@ -125,9 +125,11 @@ bench-baseline: _dev-shell
     #!/usr/bin/env bash
     set -euo pipefail
     full=$(mktemp)
-    trap 'rm -f "$full"' EXIT
+    slim=$(mktemp)
+    trap 'rm -f "$full" "$slim"' EXIT
     go run ./tools/bench --split all --out "$full"
-    nu --stdin -c '$in | lines | each { from json | reject -o model_check wall_s partial_seconds | to json --raw } | to text' <"$full" >tools/bench/baseline.jsonl
+    nu --stdin -c '$in | lines | each { from json | reject -o model_check wall_s partial_seconds | to json --raw } | to text' <"$full" >"$slim"
+    mv "$slim" tools/bench/baseline.jsonl
 
 # Regenerate privacy-safe real facts from a copied state directory
 [group('run')]
