@@ -39,7 +39,8 @@ type Input struct {
 	Wrap   func(session.Journal) session.Journal
 	Until  func(journal.Event) bool
 	// InMemoryJournal retains the writer across simulated reboots and writes state only when Simulate returns.
-	// Leave it false when testing file recovery or injecting journal interruptions.
+	// Tests set it unless they inject journal interruptions; TestInMemoryJournalMatchesFileBacked pins that it leaves the
+	// files a file-backed run does, so it is the file-mode coverage of state.json persistence.
 	InMemoryJournal bool
 	WriteSamples    bool
 	// MaxBoots caps the simulated boots of one invocation; 0 uses 1000.

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -22,57 +21,9 @@ import (
 	"github.com/shgew/togi/internal/tuner"
 )
 
-var (
-	currentSessionOnce  sync.Once
-	currentSessionFiles map[string][]byte
-	currentSessionErr   error
-)
-
 func restampedRuleset3Session(t *testing.T) (dir, id string) {
 	t.Helper()
-	currentSessionOnce.Do(func() {
-		src := t.TempDir()
-		m, err := sim.New(sharedVoltageConfig(t, 1000))
-		if err != nil {
-			currentSessionErr = err
-			return
-		}
-		stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Cycles: 1})
-		if err != nil {
-			currentSessionErr = err
-			return
-		}
-		if stop.Reason != session.StopCycles {
-			currentSessionErr = fmt.Errorf("source session stopped with %+v, want a clean cycle", stop)
-			return
-		}
-		entries, err := os.ReadDir(src)
-		if err != nil {
-			currentSessionErr = err
-			return
-		}
-		currentSessionFiles = make(map[string][]byte, len(entries))
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			data, err := os.ReadFile(filepath.Join(src, e.Name()))
-			if err != nil {
-				currentSessionErr = err
-				return
-			}
-			currentSessionFiles[e.Name()] = data
-		}
-	})
-	if currentSessionErr != nil {
-		t.Fatal(currentSessionErr)
-	}
-	dir = t.TempDir()
-	for name, data := range currentSessionFiles {
-		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dir, _, _ = cleanCycleSession(t)
 	return dir, restampRuleset(t, dir, 3)
 }
 
@@ -99,7 +50,7 @@ func restampRuleset(t *testing.T, dir string, ruleset int) string {
 	return id
 }
 
-func simulateAgain(t *testing.T, dir string, cfg sim.Config, c config.Config) (session.Stop, []journal.Event) {
+func simulateAgain(t *testing.T, dir string, cfg sim.Config, c config.Config, until func(journal.Event) bool) (session.Stop, []journal.Event) {
 	t.Helper()
 	resumed, err := sim.Resume(dir, cfg)
 	if err != nil {
@@ -109,7 +60,7 @@ func simulateAgain(t *testing.T, dir string, cfg sim.Config, c config.Config) (s
 	if err != nil {
 		t.Fatal(err)
 	}
-	stop, err := Simulate(context.Background(), Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1})
+	stop, err := Simulate(context.Background(), Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true, Until: until})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +215,7 @@ func TestTransitionWithUnknownKinds(t *testing.T) {
 func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 	t.Parallel()
 	dir, id := restampedRuleset3Session(t)
-	stop, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1000), config.Default())
+	stop, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1000), config.Default(), nil)
 	if stop.Reason != session.StopCycles {
 		t.Fatalf("stopped with %+v", stop)
 	}
@@ -316,7 +267,7 @@ func TestARulesetTransitionAfterABIOSChangeCarriesOnlySoloLimits(t *testing.T) {
 	bios := machine.BIOSContext{BIOSVersion: "changed", Board: "board", CPUModel: "cpu", Microcode: "0x1", BoostLimitMHz: 5000}
 	cfg := sharedVoltageConfig(t, 1000)
 	cfg.BIOSContext = bios
-	_, events := simulateAgain(t, dir, cfg, config.Default())
+	_, events := simulateAgain(t, dir, cfg, config.Default(), afterInitialPhases(16))
 	carried := carriedEvent(t, events)
 	if carried.FailurePoints || !strings.Contains(carried.Detail, "bios_version") {
 		t.Fatalf("session.carried %+v, want failure points left behind for the BIOS change", carried)
@@ -353,13 +304,7 @@ func TestBIOSChangeArchivesAndChecksSoloLimits(t *testing.T) {
 	id := old[0].Data.(*journal.SessionStart).Session
 	m.SetBIOSContext(machine.BIOSContext{BIOSVersion: "new", Board: "sim", CPUModel: "sim", Microcode: "0x2", BoostLimitMHz: 5500})
 	m.Reboot()
-	phases := 0
-	in.Until = func(e journal.Event) bool {
-		if p, ok := e.Data.(*journal.CorePhase); ok && p.From == "" {
-			phases++
-		}
-		return phases == 4
-	}
+	in.Until = afterInitialPhases(4)
 	if _, err := Simulate(context.Background(), in); err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +338,7 @@ func TestAConfiguredCandidateSoloLimitStopsShortOfACarriedFailurePoint(t *testin
 	dir, _ := restampedRuleset3Session(t)
 	c := config.Default()
 	c.CandidateSoloLimits = map[int]int{0: -50}
-	_, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1000), c)
+	_, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1000), c, afterInitialPhases(16))
 	var failurePoint *int
 	for _, cc := range carriedEvent(t, events).Carried {
 		if cc.Core == 0 {
@@ -439,7 +384,7 @@ func TestACarriedFailurePointAtZeroDeadEndsTheCore(t *testing.T) {
 	if err := j.Close(); err != nil {
 		t.Fatal(err)
 	}
-	stop, _ := simulateAgain(t, dir, sim.Config{Seed: 1}, config.Default())
+	stop, _ := simulateAgain(t, dir, sim.Config{Seed: 1}, config.Default(), nil)
 	if stop.Reason != session.StopDeadEnd || stop.DeadEnd.Condition != journal.DeadEndFailureAtZero || stop.DeadEnd.Core == nil || *stop.DeadEnd.Core != 0 {
 		t.Fatalf("stopped with %+v, want core 00 dead-ended at CO 0", stop)
 	}

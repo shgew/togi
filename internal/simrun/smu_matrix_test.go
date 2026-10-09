@@ -87,19 +87,19 @@ func (matrix interruptionMatrix) run(t *testing.T, at, effectAt int) ([]journal.
 			return closed && at < 0
 		},
 	}
-	if at >= 0 {
-		in.Wrap = func(j session.Journal) session.Journal {
-			if crashed {
-				return j
-			}
-			if at == 0 {
-				crashed = true
-				m.NextReset(machine.ResetPowerLoss)
-				m.Crash()
-				return j
-			}
-			return &matrixCrash{Journal: j, machine: m, at: at, count: &appended, crashed: &crashed}
+	state := &memState{}
+	in.Wrap = func(j session.Journal) session.Journal {
+		var kept session.Journal = &memStateJournal{Journal: j, state: state}
+		if at < 0 || crashed {
+			return kept
 		}
+		if at == 0 {
+			crashed = true
+			m.NextReset(machine.ResetPowerLoss)
+			m.Crash()
+			return kept
+		}
+		return &matrixCrash{Journal: kept, machine: m, at: at, count: &appended, crashed: &crashed}
 	}
 	stop, err := Simulate(context.Background(), in)
 	if err != nil {

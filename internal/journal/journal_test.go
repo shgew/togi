@@ -122,62 +122,97 @@ func TestReplayTruncatedAtEveryOffset(t *testing.T) {
 	lines := bytes.SplitAfter(data, []byte("\n"))
 	lines = lines[:len(lines)-1]
 
-	for cut := 0; cut <= len(data); cut++ {
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, eventsFile), data[:cut], 0o644); err != nil {
-			t.Fatal(err)
-		}
-		j, err := Open(dir, Options{Boot: "next", Now: fixedClock()})
-		if err != nil {
-			t.Fatalf("cut %d: Open: %v", cut, err)
-		}
-		events := j.Events()
-		j.Close()
-
-		complete, start := 0, 0
-		for complete < len(lines) && start+len(lines[complete]) <= cut {
-			start += len(lines[complete])
+	starts := []int{0}
+	for _, line := range lines {
+		starts = append(starts, starts[len(starts)-1]+len(line))
+	}
+	split := func(cut int) (complete, start int) {
+		for complete < len(lines) && starts[complete+1] <= cut {
 			complete++
 		}
-		torn := data[start:cut]
-		want := complete
-		if len(torn) > 0 && complete > 0 {
-			want++
+		return complete, starts[complete]
+	}
+
+	for cut := 0; cut <= len(data); cut++ {
+		events, end, err := parse(data[:cut], Build{})
+		if err != nil {
+			t.Fatalf("cut %d: parse: %v", cut, err)
 		}
-		if len(events) != want {
-			t.Fatalf("cut %d: %d events, want %d", cut, len(events), want)
+		complete, start := split(cut)
+		if len(events) != complete || end != start {
+			t.Fatalf("cut %d: parsed %d events ending at %d, want %d ending at %d", cut, len(events), end, complete, start)
 		}
 		for i := range complete {
 			if !bytes.Equal(events[i].Raw, bytes.TrimSuffix(lines[i], []byte("\n"))) {
 				t.Fatalf("cut %d: event %d differs", cut, i+1)
 			}
 		}
-		after, err := os.ReadFile(filepath.Join(dir, eventsFile))
-		if err != nil {
-			t.Fatal(err)
+		if torn := tornTail(data[:cut], end); !bytes.Equal(torn, data[start:cut]) {
+			t.Fatalf("cut %d: torn tail %q, want %q", cut, torn, data[start:cut])
 		}
-		switch {
-		case complete == 0:
-			if len(after) != 0 {
-				t.Fatalf("cut %d: torn first line left %d bytes", cut, len(after))
+	}
+
+	cuts := map[string]int{
+		"empty":             0,
+		"inside first line": starts[1] / 2,
+		"at line boundary":  starts[3],
+		"inside later line": starts[3] + len(lines[3])/2,
+	}
+	for name, cut := range cuts {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, eventsFile), data[:cut], 0o644); err != nil {
+				t.Fatal(err)
 			}
-		case len(torn) == 0:
-			if !bytes.Equal(after, data[:cut]) {
-				t.Fatalf("cut %d: clean cut changed the file", cut)
+			j, err := Open(dir, Options{Boot: "next", Now: fixedClock()})
+			if err != nil {
+				t.Fatalf("cut %d: Open: %v", cut, err)
 			}
-		default:
-			tornEvent, ok := events[complete].Data.(*JournalTorn)
-			if !ok {
-				t.Fatalf("cut %d: last event is %s, want journal.torn", cut, events[complete].Kind)
+			events := j.Events()
+			j.Close()
+
+			complete, start := split(cut)
+			torn := data[start:cut]
+			want := complete
+			if len(torn) > 0 && complete > 0 {
+				want++
 			}
-			got, err := hex.DecodeString(tornEvent.BytesHex)
-			if err != nil || !bytes.Equal(got, torn) || tornEvent.Offset != int64(start) {
-				t.Fatalf("cut %d: journal.torn = %+v, want %d bytes at %d", cut, tornEvent, len(torn), start)
+			if len(events) != want {
+				t.Fatalf("cut %d: %d events, want %d", cut, len(events), want)
 			}
-			if !bytes.HasPrefix(after, data[:start]) {
-				t.Fatalf("cut %d: complete lines were rewritten", cut)
+			for i := range complete {
+				if !bytes.Equal(events[i].Raw, bytes.TrimSuffix(lines[i], []byte("\n"))) {
+					t.Fatalf("cut %d: event %d differs", cut, i+1)
+				}
 			}
-		}
+			after, err := os.ReadFile(filepath.Join(dir, eventsFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case complete == 0:
+				if len(after) != 0 {
+					t.Fatalf("cut %d: torn first line left %d bytes", cut, len(after))
+				}
+			case len(torn) == 0:
+				if !bytes.Equal(after, data[:cut]) {
+					t.Fatalf("cut %d: clean cut changed the file", cut)
+				}
+			default:
+				tornEvent, ok := events[complete].Data.(*JournalTorn)
+				if !ok {
+					t.Fatalf("cut %d: last event is %s, want journal.torn", cut, events[complete].Kind)
+				}
+				got, err := hex.DecodeString(tornEvent.BytesHex)
+				if err != nil || !bytes.Equal(got, torn) || tornEvent.Offset != int64(start) {
+					t.Fatalf("cut %d: journal.torn = %+v, want %d bytes at %d", cut, tornEvent, len(torn), start)
+				}
+				if !bytes.HasPrefix(after, data[:start]) {
+					t.Fatalf("cut %d: complete lines were rewritten", cut)
+				}
+			}
+		})
 	}
 }
 

@@ -133,7 +133,13 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 		t.Run(fmt.Sprintf("%d/%d cores", run.seed, run.cores), func(t *testing.T) {
 			events := simulatedForecastJournal(t, run.seed, run.cores)
 			checked, allChecked, missing, intents := 0, 0, 0, 0
+			s := tuner.New()
+			folded := 0
+			var ranking []int
 			for i, e := range events {
+				if p, ok := e.Data.(*journal.HostRanking); ok {
+					ranking = p.Ranking
+				}
 				intent, ok := e.Data.(*journal.TrialIntent)
 				if !ok {
 					continue
@@ -218,12 +224,7 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 				var decisions []journal.Payload
 				var next *journal.TrialIntent
 				nextAt := -1
-				var lastRanking []int
-				for j := 0; j <= i; j++ {
-					if p, ok := events[j].Data.(*journal.HostRanking); ok {
-						lastRanking = p.Ranking
-					}
-				}
+				lastRanking := ranking
 				if all != nil && end.Outcome == journal.OutcomePass && !all.NeedsRanking {
 					if decisions, next, ok := journalAllPass(events, endAt, all.Passes, lastRanking); ok {
 						if diff := cmp.Diff(decisions, all.Decisions, options...); diff != "" {
@@ -282,9 +283,11 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 				}
 				matchNext(t, intent.Trial, next, branch.Next)
 				if next.Phase == journal.PhaseChecking && next.Cycle > 0 && !next.Rerun && next.Hunt == 0 {
-					s := tuner.New()
-					for _, e := range events[:nextAt+1] {
-						s.Fold(e)
+					if nextAt+1 < folded {
+						t.Fatalf("trial %s next intent at %d precedes folded prefix %d", intent.Trial, nextAt, folded)
+					}
+					for ; folded <= nextAt; folded++ {
+						s.Fold(events[folded])
 					}
 					if want := s.CyclePlan().Current + 1; branch.NextStep != want {
 						t.Fatalf("trial %s next step %d, want %d when it runs", intent.Trial, branch.NextStep, want)
