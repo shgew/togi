@@ -40,29 +40,29 @@ var topHelp = helpSection{"THE TOP LINE", []helpItem{
 }}
 
 var tuningHelp = helpSection{"WHAT TOGI DOES", []helpItem{
-	{"SOLO LIMITS", "One core under load, the rest at 0. Step 5 counts deeper while light (R1) and heavy (R2) pass; near a failure, 1 count at a time. Confirm the deepest pass with the configured number of light and heavy trials in a row. A failure while confirming discards that pass and the search backs off."},
-	{"CYCLES", "All cores at their offsets, through the configured steps of a cycle. R7 runs each CCD's full part, then its partial parts idling top-requester groups in request order, and all cores together last. The loaded set freezes when the part starts, even if offsets change; passes and failures count as ordinary evidence."},
-	{"FAILURES", "Outside multi-core R7, a named failure sets a core's failure point; an unnamed failure starts a hunt unless already recorded. Multi-core R7 hunts only to locate, among idle cores off 0, a failure naming no loaded core (none, or one at 0 on an idle CCD) or one whose loaded cores were all at 0 and that names no core off 0 (that hunt reruns it with every core at 0); otherwise named failures count against that core, unnamed ones against top requesters. A multi-core R7 failure backs off a core by voltage-targeted counts unless that core already sits shallower. A failure at 0 stops tuning only if its load also fails with every core at 0."},
-	{"HUNT", "Rerun the failing load with a part of the candidates at their failing offsets and the rest parked; keep a part that fails. If no part fails, the group is kept as a combination, and member probes find how far one member must back off for the rest to pass."},
-	{"DEEPEN", "After a passed full cycle, aim at the deepest safe total and move each core with room halfway toward it, letting others yield first where they must; every move is checked."},
-	{"CLEAN CYCLES", "The goal: a passed full cycle, every step and R7 partial part passed, with every core at its limit and nothing left to deepen. Counted for the current profile; cycles repeat until stopped."},
+	{"SOLO LIMITS", "Search: each core alone, the rest at 0, finds its solo limit. The stage counts the cores whose solo limit is found and names the core being searched or confirmed."},
+	{"CYCLES", "Checking: every core at its offset together, through the steps of a cycle. The stage shows the cycle's number and step; the cycle panel lists its steps and R7 parts."},
+	{"HUNT", "An amber detour: parked trials that find the core or combination behind a failure. The hunt panel shows its groups and member probes."},
+	{"DEEPEN", "Deepening: rounds that move the profile deeper, as far as its failure points and combinations permit. The stage shows the round."},
+	{"CLEAN CYCLES", "The count of clean cycles still valid for the current profile; checking repeats cycles until stopped."},
 	{"R6", "During idle trials this screen holds still, clock included, so it cannot wake the cores."},
 	{"NO ETA", "A hunt can start at any time, so togi shows only what is scheduled and the time left in the current trial."},
+	{"RULES", "How togi decides what to do: https://github.com/shgew/togi/blob/main/docs/spec/tuner.md"},
 }}
 
 var wordsHelp = helpSection{"WORDS", []helpItem{
 	{"offset", "Curve Optimizer counts, 0 to -50; deeper is more negative"},
-	{"trial", "one launch of one workload; evidence is counted in trials"},
+	{"trial", "one launch of one workload on its target"},
 	{"solo limit", "the deepest offset a core confirmed under load alone"},
 	{"failure point", "the shallowest offset where a core failed on its own account"},
-	{"combination", "offsets at which a group of cores failed together; the profile is kept from reaching all of them at once. Unresolved: no smaller group was shown to fail"},
-	{"at its limit", "-50, or one count deeper reaches a failure point or combination"},
-	{"has room", "one count deeper reaches neither; deepening may take it"},
+	{"combination", "offsets at which a group of cores failed together. Unresolved: no smaller group was shown to fail"},
+	{"at its limit", "a core at -50, or one count deeper reaches a failure point or combination"},
+	{"has room", "a core past search that is not at its limit"},
 	{"suspect", "a core a hunt keeps at its failing offset"},
-	{"parked", "a core a hunt holds shallower: at its last passed full-cycle offset raised to the failing profile, or 0"},
-	{"partial part", "R7 with top-requester groups idle, down to two loaded cores; passes and failures count as ordinary evidence"},
-	{"top requester", "loaded core with the highest voltage request; both CCDs share it. Within 1 mV ties; offset order is a fallback, not a measurement"},
-	{"self-sufficient", "observed passing as top requester for this R7 workload at equal or deeper offsets since reset; evidence, not a guarantee"},
+	{"parked", "a core a hunt holds shallower than its failing offset"},
+	{"partial part", "an R7 part with the top requesters idle"},
+	{"top requester", "the loaded core with the highest voltage request, setting the shared core voltage; marked top on the CCD tables, by offset when offsets stand in for requests"},
+	{"self-sufficient", "observed passing as top requester for this R7 workload; evidence, not a guarantee"},
 	{"record only", "a trial whose result is kept but changes no decision"},
 	{"cycle", "one pass through the checking schedule"},
 }}
