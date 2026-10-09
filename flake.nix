@@ -128,12 +128,16 @@
             package = togi "dev";
             race = config.checks.package.overrideAttrs {
               pname = "togi-race";
+              src = lib.fileset.toSource {
+                root = ./.;
+                fileset = lib.fileset.difference goFiles ./tools;
+              };
               goModules = config.checks.package.goModules;
               buildPhase = ''
                 runHook preBuild
                 runHook postBuild
               '';
-              checkPhase = testPhase "-race" "./internal/trial ./internal/session ./internal/journal ./internal/watch";
+              checkPhase = testPhase "-race" "./internal/trial ./internal/journal ./internal/watch ./internal/smu ./cmd/togi";
               installPhase = "mkdir -p $out";
               dontFixup = true;
             };

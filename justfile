@@ -69,7 +69,7 @@ gate: _dev-shell
     go mod vendor -o "$fresh/vendor"
     diff -rq "$fresh/vendor" "$vendored" >&2 || { echo 'gate: the Go modules vendored for vendorHash in flake.nix differ from go.mod and go.sum; update vendorHash' >&2; exit 1; }
     go test -shuffle=on -tags integration ./...
-    go test -race -shuffle=on -tags integration ./internal/trial ./internal/session ./internal/journal ./internal/watch
+    go test -race -shuffle=on -tags integration ./internal/trial ./internal/journal ./internal/watch ./internal/smu ./cmd/togi
     if [[ "{{ os() }}" == linux ]]; then
         go test -c -tags hardware -o /dev/null ./internal/trial
     fi

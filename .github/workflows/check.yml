@@ -17,9 +17,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: check-${{ github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: false
-  queue: max
+  group: check-${{ github.ref }}${{ github.event_name == 'push' && format('-{0}', github.sha) || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   eval:

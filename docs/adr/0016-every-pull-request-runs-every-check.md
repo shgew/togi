@@ -8,7 +8,7 @@ Pull requests ran only `just ci`: lint, the formatting check and the Go tests. T
 
 - The flake's `checks` are every gate for their system: `package` (the tests, with the integration tests on Linux), `lint`, `fmt` (treefmt with `--ci` over the tracked Go, Nix and justfile sources) and, on Linux, `vm`. The VM test uses a copy of the package with `doCheck = false`, so it does not wait on the tests `package` already runs.
 - The race detector leaves the automated checks; `just test -race` runs it locally.
-- The `check` workflow runs on every pull request and push to `main`. An `eval` job evaluates the flake and lists `checks.x86_64-linux`; one job per check builds it in parallel; a `check` job passes only when all of them passed. A newer push to the same ref cancels the older run.
+- The `check` workflow runs on every pull request and push to `main`. An `eval` job evaluates the flake and lists `checks.x86_64-linux`; one job per check builds it in parallel; a `check` job passes only when all of them passed. A newer push to a pull request cancels its older run; every push to `main` runs to the end.
 - The release workflow refuses unless the `check` run for `main` HEAD succeeded, then builds only `packages.x86_64-linux.default` on the release commit before pushing it.
 - `govulncheck` and `just vuln` are removed. Dependabot version updates for the flake inputs and the GitHub Actions run weekly; Go modules stay on Dependabot security updates.
 
