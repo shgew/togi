@@ -175,7 +175,7 @@ func renderLogBody(s Snapshot, width, height, scroll int) ([]string, int) {
 		lines = append(lines, grey.Render("No journal entries yet."))
 	}
 	for _, e := range s.log {
-		stamp := grey.Render(e.at.Format("15:04:05")) + "  "
+		stamp := grey.Render(wallSecond(e.at)) + "  "
 		tag := trimWords(vtText(e.tag), 20)
 		prefix := stamp + toneStyle(e.tone).Render(fmt.Sprintf("%-20s", tag)) + "  "
 		room := max(0, bodyWidth-ansi.StringWidth(prefix))

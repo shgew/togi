@@ -494,3 +494,52 @@ func TestForecastNamesTheAllZeroRerunAfterARerun(t *testing.T) {
 		t.Fatalf("a core at 0 named on a rerun must forecast the all-zero rerun: %q", got)
 	}
 }
+
+// The journal stores UTC; every time on screen follows the header clock and `togi events` into the local zone.
+// It swaps time.Local, so it runs before the parallel tests resume and restores the zone after.
+func TestEveryTimeOnScreenIsLocal(t *testing.T) {
+	local := time.Local
+	t.Cleanup(func() { time.Local = local })
+	tokyo := time.FixedZone("UTC+9", 9*60*60)
+	time.Local = tokyo
+	at := func(v time.Time, layout string) string { return v.In(tokyo).Format(layout) }
+
+	cuts := map[string][]journal.Event{}
+	for _, c := range watchCuts(t) {
+		cuts[c.name] = c.events
+	}
+	frame := func(name string, view View) string {
+		events := cuts[name]
+		s := Project(events)
+		return ansi.Strip(strings.Join(RenderView(s, Screen{View: view, Width: 240, Height: 67}, cutTime(events)).Lines, "\n"))
+	}
+	require := func(name string, view View, want ...string) {
+		t.Helper()
+		text := frame(name, view)
+		for _, w := range want {
+			if !strings.Contains(text, w) {
+				t.Errorf("%s view %d lacks local %q:\n%s", name, view, w, text)
+			}
+		}
+	}
+
+	stopped := Project(cuts["stopped"])
+	require("stopped", MainView,
+		"togi   "+at(cutTime(cuts["stopped"]), "15:04:05"),
+		at(stopped.stopped.at, "15:04:05")+" · ",
+		"last observed failure "+at(*stopped.lastFailure, "15:04"),
+		at(stopped.history[0].at, "15:04")+"  ")
+	require("stopped", LogView, at(stopped.log[0].at, "15:04:05")+"  ")
+
+	recovering := Project(cuts["recovering"])
+	require("recovering", MainView, "detected "+at(recovering.recover.bootAt, "15:04:05"))
+	hunt := Project(cuts["hunt"])
+	require("hunt", MainView, "started "+at(hunt.hunt.started, "15:04"))
+
+	idle := Project(cuts["idle"])
+	until := idle.trial.started.Add(idle.trial.duration)
+	require("idle", MainView,
+		"togi   "+at(idle.trial.started, "15:04:05"),
+		"screen paused until "+at(until, "15:04"),
+		"started "+at(idle.trial.started, "15:04"))
+}
