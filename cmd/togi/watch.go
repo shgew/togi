@@ -33,8 +33,9 @@ reloads only when it changes.
 On a terminal it fills the screen until interrupted; otherwise it prints one
 frame of --width by --height and exits. An unreadable or incompatible journal
 appears in the frame and on stderr, and one-frame watch exits 1; live watch
-keeps showing the problem. No session yet is not an error. The tuning boot
-shows it on tty1. NO_COLOR turns colour off.
+keeps showing the problem and retries when the journal changes. A missing
+journal (no session yet) is not an error. The tuning boot shows it on tty1.
+NO_COLOR turns colour off.
 
 ` + examples(
 	example{"togi watch", "The session in the default state directory, full screen"},

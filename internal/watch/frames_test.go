@@ -386,7 +386,9 @@ func TestWatchWithoutJournal(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
 		golden(t, fmt.Sprintf("watch-missing-%dx%d", size[0], size[1]), ansi.Strip(Render(Load(dir), size[0], size[1], now))+"\n")
-		golden(t, fmt.Sprintf("watch-problem-%dx%d", size[0], size[1]), ansi.Strip(Render(Snapshot{problem: errors.New("read journal: permission denied")}, size[0], size[1], now))+"\n")
+		unreadable := Snapshot{problem: errors.New("read journal: permission denied")}
+		golden(t, fmt.Sprintf("watch-problem-%dx%d", size[0], size[1]), ansi.Strip(strings.Join(RenderView(unreadable, Screen{Width: size[0], Height: size[1]}, now).Lines, "\n"))+"\n")
+		golden(t, fmt.Sprintf("watch-problem-once-%dx%d", size[0], size[1]), ansi.Strip(Render(unreadable, size[0], size[1], now))+"\n")
 	}
 }
 

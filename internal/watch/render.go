@@ -55,12 +55,14 @@ const (
 	LogView
 )
 
-// Scroll counts lines from the top; a negative value selects the end.
+// Scroll counts lines from the top; a negative value selects the end. OneFrame is a frame printed once, which says
+// nothing of the journal changing later.
 type Screen struct {
 	View          View
 	Keys          bool
 	Scroll        int
 	Width, Height int
+	OneFrame      bool
 }
 
 type sizeClass int
@@ -270,7 +272,15 @@ func rule(width int, title, right string) string {
 }
 
 func Render(s Snapshot, w, h int, now time.Time) string {
-	return strings.Join(RenderView(s, Screen{View: MainView, Width: w, Height: h}, now).Lines, "\n")
+	return strings.Join(RenderView(s, Screen{View: MainView, Width: w, Height: h, OneFrame: true}, now).Lines, "\n")
+}
+
+// runMark is the stage marker of a stage the tuner is in: a running ► in style, or a plain ○ once the session stopped.
+func (s Snapshot) runMark(running lipgloss.Style) string {
+	if s.stopped != nil {
+		return track.Render("○ ")
+	}
+	return running.Render("► ")
 }
 
 func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
@@ -300,7 +310,7 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 		body, scroll = renderLogBody(s, p.body.w, p.body.h, sc.Scroll)
 		c.rows(p.body, body)
 	case MainView:
-		st := s.story(now)
+		st := s.story(now, sc.OneFrame)
 		if !s.session || s.problem != nil {
 			c.rows(p.body, narratorLines(st, p.body.w, p.body.h, false))
 		} else {
@@ -545,6 +555,9 @@ func (s Snapshot) header(now time.Time) string {
 	if s.starting {
 		return out + grey.Render("   starting")
 	}
+	if s.problem != nil {
+		return out + grey.Render("   can't read journal")
+	}
 	if !s.session {
 		return out + grey.Render("   no session yet")
 	}
@@ -591,7 +604,7 @@ func (s Snapshot) stageLine(class sizeClass, summary bool, now time.Time) string
 	cycle := s.cycleStage(names[1], short)
 	parts := []string{solo, cycle}
 	if h := s.hunt; h != nil {
-		hunt := amber.Render("► ") + lamp.Render(fmt.Sprintf(" HUNT %d ", h.id))
+		hunt := s.runMark(amber) + lamp.Render(fmt.Sprintf(" HUNT %d ", h.id))
 		if where := s.huntStage(short); where != "" {
 			hunt += amber.Render("  " + where)
 		}
@@ -599,7 +612,7 @@ func (s Snapshot) stageLine(class sizeClass, summary bool, now time.Time) string
 	}
 	deep := grey.Render("○ " + names[2])
 	if s.phase == journal.PhaseDeepening && s.hunt == nil {
-		deep = lit.Render("► ") + white.Render(names[2])
+		deep = s.runMark(lit) + white.Render(names[2])
 		if s.deepen != nil {
 			deep += textStyle.Render(fmt.Sprintf("  round %d", s.deepen.round))
 		}
@@ -607,7 +620,7 @@ func (s Snapshot) stageLine(class sizeClass, summary bool, now time.Time) string
 		deep += grey.Render(fmt.Sprintf("  after a passed full cycle · %d cores have room", room))
 	}
 	parts = append(parts, deep, grey.Render(fmt.Sprintf("%s %d", names[3], s.cleanCycles)))
-	if !short {
+	if !short && s.stopped == nil {
 		parts[len(parts)-1] += track.Render("  · repeats until stopped")
 	}
 	if summary && s.trial != nil && s.trial.hasStarted {
@@ -629,7 +642,7 @@ func (s Snapshot) soloStage(name string, found int, short bool) string {
 		}
 		return solo
 	}
-	solo := lit.Render("► ") + white.Render(name) + textStyle.Render(fmt.Sprintf("  %d of %d found", found, len(s.cores)))
+	solo := s.runMark(lit) + white.Render(name) + textStyle.Render(fmt.Sprintf("  %d of %d found", found, len(s.cores)))
 	if s.trial != nil && s.trial.condition == machine.Alone && !short {
 		verb := "searching"
 		if c := s.core(s.trial.core); c != nil && c.confirm != nil {
@@ -662,8 +675,10 @@ func (s Snapshot) cycleStage(name string, short bool) string {
 			}
 		}
 		cycle += amber.Render(at)
+	case s.stopped != nil && g.current >= len(g.steps):
+		cycle = green.Render("■ ") + textStyle.Render(name)
 	case s.phase == journal.PhaseChecking:
-		cycle = lit.Render("► ") + white.Render(name)
+		cycle = s.runMark(lit) + white.Render(name)
 		if short {
 			break
 		}

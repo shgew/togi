@@ -1,9 +1,9 @@
   togi   13:08:40   session 61h08m   8 failures · 8 crashes   last observed failure 08:22, 52h46m ago
 
-  ■ SOLO LIMITS  16/16  ───  ► CYCLE 2  step 18 of 18  ───  ○ DEEPEN  ───  CLEAN CYCLES 1  · repeats until stopped
+  ■ SOLO LIMITS  16/16  ───  ■ CYCLE 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 1
 
-  ▌  STOPPED   I restored safer offsets before stopping. togi run picks up        last trial      PASS  15:00 on 00-15 · Tctl max 66°C
-  ▌            where I left off.
+  ▌  STOPPED   The requested clean cycles are complete, so I restored safer       last trial      PASS  15:00 on 00-15 · Tctl max 66°C
+  ▌            offsets and stopped. togi run picks up where I left off.
 
   STOPPED ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   13:08:00 · requested clean cycles completed

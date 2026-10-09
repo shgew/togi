@@ -23,10 +23,10 @@ type story struct {
 	tone  tone
 }
 
-func (s Snapshot) story(now time.Time) story {
+func (s Snapshot) story(now time.Time, oneFrame bool) story {
 	switch {
 	case s.problem != nil:
-		return story{"I CAN'T READ THE JOURNAL", []string{vtText(s.problem.Error()), "I'll retry when the journal changes. Tuning itself is not affected by this screen."}, "", badTone}
+		return s.problemStory(oneFrame)
 	case s.starting:
 		text := "Checking the machine and the journal before the first trial; this screen follows the run as soon as it records something."
 		return story{"STARTING", []string{text}, text, plainTone}
@@ -35,13 +35,12 @@ func (s Snapshot) story(now time.Time) story {
 	case s.deadEnd != nil:
 		return s.deadEndStory()
 	case s.stopped != nil:
-		text := "I've stopped. Everything I learned is in the journal; togi run picks up where I left off."
-		if s.stopped.saved {
-			text = "I restored safer offsets before stopping. togi run picks up where I left off."
-		}
-		return story{"STOPPED", []string{text}, text, plainTone}
+		return s.stoppedStory()
 	case s.recover != nil:
 		return s.recoverStory()
+	case s.trial == nil && s.last == nil:
+		text := "No trial has run yet; the tuner records what it decides before the first one starts."
+		return story{s.stageLabel(), []string{text}, text, plainTone}
 	case s.trial == nil:
 		text := "The last trial has ended; the tuner records what it decided before the next one starts."
 		return story{s.stageLabel(), []string{text}, text, plainTone}
@@ -116,6 +115,29 @@ func (s Snapshot) story(now time.Time) story {
 		where = fmt.Sprintf("%d clean cycles count for this profile. Passing trials cannot prove it will never fail.", s.cleanCycles)
 	}
 	return story{name, []string{step, where}, brief, plainTone}
+}
+
+// problemStory is the journal that exists but cannot be read; oneFrame drops the promise to retry, which only live
+// watch keeps.
+func (s Snapshot) problemStory(oneFrame bool) story {
+	lines := []string{"can't read journal: " + vtText(s.problem.Error())}
+	if !oneFrame {
+		lines = append(lines, "I'll retry when the journal changes. Tuning itself is not affected by this screen.")
+	}
+	return story{"JOURNAL UNREADABLE", lines, "", badTone}
+}
+
+func (s Snapshot) stoppedStory() story {
+	text := "I've stopped. Everything I learned is in the journal; togi run picks up where I left off."
+	switch {
+	case s.stopped.reason == journal.ShutdownCycles && s.stopped.saved:
+		text = "The requested clean cycles are complete, so I restored safer offsets and stopped. togi run picks up where I left off."
+	case s.stopped.reason == journal.ShutdownCycles:
+		text = "The requested clean cycles are complete, so I've stopped. Everything I learned is in the journal; togi run picks up where I left off."
+	case s.stopped.saved:
+		text = "I restored safer offsets before stopping. togi run picks up where I left off."
+	}
+	return story{"STOPPED", []string{text}, text, plainTone}
 }
 
 const partialNote = "This partial idles the top-requester groups found so far. Its loaded set freezes when the part starts, even if offsets change. Passes and failures count as ordinary evidence."

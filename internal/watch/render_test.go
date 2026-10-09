@@ -556,7 +556,7 @@ func TestAllZeroRerunIsNamedForWhatItDecides(t *testing.T) {
 	if s.trial == nil || !s.trial.zeroRerun() {
 		t.Fatalf("trial in flight %+v", s.trial)
 	}
-	if got := s.story(time.Time{}).label; got != "RERUN AT CO 0" {
+	if got := s.story(time.Time{}, false).label; got != "RERUN AT CO 0" {
 		t.Fatalf("story label %q", got)
 	}
 	if got := ansi.Strip(s.operation(*s.trial)); got != "RERUN AT CO 0" {
