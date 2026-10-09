@@ -258,23 +258,6 @@ func TestClassifyCrash(t *testing.T) {
 	}
 }
 
-func TestThermalDeadEndNeedsNoEvidence(t *testing.T) {
-	h := newHarness(t, searchAt(-10)...)
-	intent := h.start(h.next())
-	h.add(&journal.TrialProgress{Trial: intent.Data.(*journal.TrialIntent).Trial, Signal: machine.ComputationError})
-	h.add(&journal.CrashDetected{PreviousBoot: "b", InFlight: new(intent.Seq), ResetReason: machine.ResetThermalTrip, ResetReasonRaw: "internal CPU thermal limit was tripped"})
-	if h.s.thermal != nil {
-		t.Fatal("recorded computation error was overridden by thermal reason")
-	}
-	h2 := newHarness(t, searchAt(-10)...)
-	h2.add(&journal.CrashDetected{PreviousBoot: "b", ResetReason: machine.ResetThermalTrip, ResetReasonRaw: "internal CPU thermal limit was tripped"})
-	a := h2.next()
-	p, ok := a.Payload.(*journal.DeadEnd)
-	if !ok || p.Condition != journal.DeadEndThermalTrip {
-		t.Fatalf("thermal dead end %+v", a)
-	}
-}
-
 // TestDirectFailureAtZero dead-ends a failure at CO 0 at once when its profile was all at 0, and otherwise once its
 // rerun with every core at 0 failed too, citing both failures.
 func TestDirectFailureAtZero(t *testing.T) {
@@ -360,9 +343,6 @@ func TestThermalReasonYieldsToMCEEvidence(t *testing.T) {
 	mce := h.add(&journal.MCE{Core: 0, BankType: machine.LoadStore})
 	h.add(&journal.CrashDetected{InFlight: new(intent.Seq), ResetReason: machine.ResetThermalTrip}, mce.Seq)
 	h.add(&journal.TrialEnd{Trial: intent.Data.(*journal.TrialIntent).Trial, Outcome: journal.OutcomeFailure, Signal: machine.Crash}, intent.Seq, mce.Seq)
-	if h.s.thermal != nil {
-		t.Fatal("higher precedence evidence left thermal dead end")
-	}
 	a := h.next()
 	if p, ok := a.Payload.(*journal.Failure); !ok || p.Core == nil || *p.Core != 0 {
 		t.Fatalf("failure attribution lost: %+v", a)

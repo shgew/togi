@@ -267,9 +267,6 @@ func (s *State) r7FailureEntry(f pendingFailure) *entry {
 	for i := range s.ledger[f.class] {
 		e := &s.ledger[f.class][i]
 		if s.sameR7Failure(e.seq, f.seq) {
-			if e.named == nil {
-				e.named = f.failure.Core
-			}
 			if r := s.zeroReruns[f.seq]; r != nil && r.passed {
 				unconfined := *e
 				unconfined.named, unconfined.stalled = nil, nil

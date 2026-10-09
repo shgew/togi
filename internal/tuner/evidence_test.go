@@ -39,16 +39,16 @@ func TestEvidenceValidity(t *testing.T) {
 	if got := h.s.passes(k, []int{-20, -11}, 0, allEvidence); got != 1 {
 		t.Errorf("group deep only on second core = %d, want 1", got)
 	}
-	if !h.s.fails(k, []int{-20, -10}, seqs[1]) {
+	if h.s.failingSeq(k, []int{-20, -10}, seqs[1]) == 0 {
 		t.Error("shallow failure did not invalidate class")
 	}
 	idle := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Regime: machine.R6, Profile: []int{-20, -10}})
 	idleK := trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, fmt.Sprint([]int{0, 1}), 900}
-	if !h.s.fails(idleK, []int{-20, -10}, 0) {
+	if h.s.failingSeq(idleK, []int{-20, -10}, 0) == 0 {
 		t.Fatalf("idle failure #%d did not invalidate R6", idle.Seq)
 	}
 	parked := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Parked, Regime: machine.R6, Profile: []int{-20, -10}})
-	if !h.s.fails(idleK, []int{-20, -10}, idle.Seq) || h.s.queue[len(h.s.queue)-1].class.regime != machine.R6 {
+	if h.s.failingSeq(idleK, []int{-20, -10}, idle.Seq) == 0 || h.s.queue[len(h.s.queue)-1].class.regime != machine.R6 {
 		t.Fatalf("parked idle failure #%d did not enter the R6 wildcard and hunt queue", parked.Seq)
 	}
 }

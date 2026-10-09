@@ -7,13 +7,6 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func (s *State) CheckingCoverage() (bool, []string) {
-	if s.checking.open {
-		return s.fullCycleCoverage(s.checking.steps)
-	}
-	return s.fullCycleCoverage(s.steps)
-}
-
 func (s *State) projectChecking() *journal.CheckingState {
 	g := &s.checking
 	if g.profileSeq == 0 {
@@ -41,10 +34,11 @@ func (s *State) projectChecking() *journal.CheckingState {
 	if g.open {
 		fullCycleCoverage, missing = s.fullCycleCoverage(g.steps)
 	}
+	stepsDone := g.stepsDone
 	if g.open {
-		g.stepsDone = s.checkingStepsDone()
+		stepsDone = s.checkingStepsDone()
 	}
-	out := &journal.CheckingState{Cycle: g.cycle, CycleOpen: g.open, Steps: slices.Clone(g.steps), StepsDone: g.stepsDone, Profile: slices.Clone(g.profile), ProfileSeq: g.profileSeq, Full: fullCycleCoverage, Missing: missing, CleanCycles: s.CleanCycles(), LastCleanCycle: lastCleanCycle, TctlMaxSeq: peakSeq}
+	out := &journal.CheckingState{Cycle: g.cycle, CycleOpen: g.open, Steps: slices.Clone(g.steps), StepsDone: stepsDone, Profile: slices.Clone(g.profile), ProfileSeq: g.profileSeq, Full: fullCycleCoverage, Missing: missing, CleanCycles: s.CleanCycles(), LastCleanCycle: lastCleanCycle, TctlMaxSeq: peakSeq}
 	if peakSeq != 0 {
 		out.TctlMaxC = new(peak)
 	}

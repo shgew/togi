@@ -267,15 +267,6 @@ func (s *State) Requirement(p *journal.TrialIntent) TrialRequirement {
 	return TrialRequirement{Passed: n, Trial: n + 1, Needed: needed}
 }
 
-// RerunPlan returns the original failed duration, not the short trial currently running.
-func (s *State) RerunPlan() *RerunPlan {
-	if len(s.obligations) == 0 {
-		return nil
-	}
-	p := s.rerunPlan(s.obligations[0].class)
-	return &p
-}
-
 func (s *State) rerunPlan(k trialClass) RerunPlan {
 	p := RerunPlan{Regime: k.regime, Cores: slices.Clone(s.classTargets[k.cores].cores), Short: s.n, ShortS: s.durations.ShortTrialS}
 	if k.duration != p.ShortS {

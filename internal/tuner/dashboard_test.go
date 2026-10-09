@@ -5,7 +5,6 @@ import (
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"slices"
-	"strconv"
 	"testing"
 )
 
@@ -224,26 +223,6 @@ func TestCyclePlanOneCCDMergesCoincidentDurations(t *testing.T) {
 	p := h.start(h.s.cycleNext()).Data.(*journal.TrialIntent)
 	if diff := cmp.Diff(TrialRequirement{Trial: 1, Needed: 4}, h.s.Requirement(p)); diff != "" {
 		t.Fatalf("merged partial class has wrong trial requirement: %s", diff)
-	}
-}
-
-func TestRerunPlanRetainsFailedLength(t *testing.T) {
-	for _, duration := range []int{120, 900} {
-		t.Run(strconv.Itoa(duration), func(t *testing.T) {
-			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10, fail: new(-11)})
-			h.add(&journal.ProfileChange{To: []int{-10}})
-			failure := carryTrials(h, machine.R1, []int{0}, []int{-10}, duration, 1, journal.OutcomeFailure)[0]
-			h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -10, ToOffset: -9, FailurePoint: new(-10)}, failure)
-			h.add(&journal.ProfileChange{From: []int{-10}, To: []int{-9}})
-			want := &RerunPlan{Regime: machine.R1, Cores: []int{0}, Short: h.s.n, ShortS: 120}
-			if duration != 120 {
-				want.Long = 1
-				want.LongS = duration
-			}
-			if diff := cmp.Diff(want, h.s.RerunPlan()); diff != "" {
-				t.Fatal(diff)
-			}
-		})
 	}
 }
 
