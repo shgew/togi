@@ -82,10 +82,7 @@ func TestEvidenceIsKeyedByBackendStorePath(t *testing.T) {
 			if diff := cmp.Diff(want, passesPerBackend(h.s)); diff != "" {
 				t.Fatalf("passes per backend after reload (-want +got):\n%s", diff)
 			}
-			replayed := New()
-			for _, e := range h.events {
-				replayed.Fold(e)
-			}
+			replayed := replayState(h.events)
 			if diff := cmp.Diff(want, passesPerBackend(replayed)); diff != "" {
 				t.Fatalf("replayed passes per backend (-want +got):\n%s", diff)
 			}
@@ -166,10 +163,7 @@ func TestBackendUpdateRestartsUnfinishedSearchStep(t *testing.T) {
 			}
 			assertNextReplays := func() Action {
 				t.Helper()
-				replayed := New()
-				for _, e := range h.events {
-					replayed.Fold(e)
-				}
+				replayed := replayState(h.events)
 				a := h.next()
 				if diff := cmp.Diff(a, replayed.Next()); diff != "" {
 					t.Fatalf("replayed next action (-live +replayed):\n%s", diff)

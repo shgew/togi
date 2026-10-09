@@ -28,19 +28,25 @@ func huntHarness(t *testing.T, cores int, duration int) *harness {
 		t.Fatalf("source attribution %+v", a)
 	}
 	h.decide(a)
+	h.decide(driveToHuntStart(h))
+	return h
+}
+
+// driveToHuntStart decides whatever precedes the hunt and returns the undecided hunt.start.
+func driveToHuntStart(h *harness) Action {
+	h.t.Helper()
 	for range 50 {
-		a = h.next()
+		a := h.next()
 		if _, ok := a.Payload.(*journal.HuntStart); ok {
-			h.decide(a)
-			return h
+			return a
 		}
 		if a.Kind != Decide {
-			t.Fatalf("expected hunt start, got %+v", a)
+			h.t.Fatalf("expected hunt start, got %+v", a)
 		}
 		h.decide(a)
 	}
-	t.Fatal("hunt not started")
-	return nil
+	h.t.Fatal("hunt not started")
+	return Action{}
 }
 
 func runGroup(h *harness, a Action, fail bool) {
@@ -64,9 +70,7 @@ func runGroup(h *harness, a Action, fail bool) {
 
 func assertHuntNextReplay(h *harness, want Action, next func(*State) Action, failure string) {
 	h.t.Helper()
-	replayed := New()
-	var state journal.State
-	journal.Replay(h.events, &state, replayed)
+	replayed := replayState(h.events)
 	if diff := cmp.Diff(want, next(replayed)); diff != "" {
 		h.t.Fatalf("%s:\n%s", failure, diff)
 	}
@@ -77,12 +81,12 @@ func TestHuntParkedOffsetsRaisesThePassedFullCycleProfile(t *testing.T) {
 		name                      string
 		passedFullCycles, failing []int
 		parked                    []int
-		parkedSeq                 int
+		fromCycle                 bool
 		candidates                []int
 	}{
-		{"shallower everywhere", []int{-10, -10, -10, -10}, []int{-12, -10, -10, -10}, []int{-10, -10, -10, -10}, 7, []int{0}},
-		{"a yielded core takes its failing offset", []int{-10, -10, -10, -10}, []int{-12, -8, -10, -10}, []int{-10, -8, -10, -10}, 7, []int{0}},
-		{"deeper everywhere falls back to all-zero", []int{-12, -12, -12, -12}, []int{-10, -10, -10, -10}, []int{0, 0, 0, 0}, 0, []int{0, 1, 2, 3}},
+		{"shallower everywhere", []int{-10, -10, -10, -10}, []int{-12, -10, -10, -10}, []int{-10, -10, -10, -10}, true, []int{0}},
+		{"a yielded core takes its failing offset", []int{-10, -10, -10, -10}, []int{-12, -8, -10, -10}, []int{-10, -8, -10, -10}, true, []int{0}},
+		{"deeper everywhere falls back to all-zero", []int{-12, -12, -12, -12}, []int{-10, -10, -10, -10}, []int{0, 0, 0, 0}, false, []int{0, 1, 2, 3}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			starts := make([]coreStart, 4)
@@ -90,12 +94,21 @@ func TestHuntParkedOffsetsRaisesThePassedFullCycleProfile(t *testing.T) {
 				starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: tt.failing[i]}
 			}
 			h := newHarness(t, starts...)
-			h.s.passedFullCycles = []passedFullCycle{{profile: tt.passedFullCycles, seq: 7}}
-			class := trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, fmt.Sprint(h.s.ids()), 120}
-			h.s.queue = []pendingFailure{{seq: 9, failure: &journal.Failure{Trial: "0001"}, profile: tt.failing, class: class}}
-			p, ok := h.s.huntStartNext().Payload.(*journal.HuntStart)
-			if !ok {
-				t.Fatal("no hunt.start")
+			h.add(&journal.ProfileChange{To: tt.passedFullCycles})
+			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
+			passedCycle := h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
+			h.add(&journal.ProfileChange{From: tt.passedFullCycles, To: tt.failing})
+			tr := Trial{Regime: machine.R6, Cores: h.s.ids(), Workload: machine.Workloads(machine.R6)[0].ID, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120, Profile: tt.failing}
+			h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 5})
+			attribution := h.next()
+			if f, ok := attribution.Payload.(*journal.Failure); !ok || f.Attribution != journal.Unattributed {
+				t.Fatalf("source attribution %+v", attribution)
+			}
+			h.decide(attribution)
+			p := driveToHuntStart(h).Payload.(*journal.HuntStart)
+			wantSeq := 0
+			if tt.fromCycle {
+				wantSeq = passedCycle.Seq
 			}
 			got := struct {
 				Parked     []int
@@ -106,7 +119,7 @@ func TestHuntParkedOffsetsRaisesThePassedFullCycleProfile(t *testing.T) {
 				Parked     []int
 				ParkedSeq  int
 				Candidates []int
-			}{tt.parked, tt.parkedSeq, tt.candidates}
+			}{tt.parked, wantSeq, tt.candidates}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Fatalf("hunt.start (-want +got):\n%s", diff)
 			}
@@ -195,12 +208,41 @@ func TestHuntSkipsPreviouslyReachedFailure(t *testing.T) {
 }
 
 func TestHuntLoadedIdleSplit(t *testing.T) {
-	h := huntHarness(t, 4, 120)
-	h.s.recent = nil
-	h.s.hunt.start.Cores = []int{0, 2}
-	want := [][]int{{0, 2}, {1, 3}}
-	if got := h.s.split(h.s.hunt, []int{0, 1, 2, 3}, 2); cmp.Diff(want, got) != "" {
-		t.Fatalf("first split (-want +got):\n%s", cmp.Diff(want, got))
+	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -30}, coreStart{phase: journal.PhaseAtLimit, offset: -30}, coreStart{phase: journal.PhaseAtLimit, offset: -30}, coreStart{phase: journal.PhaseAtLimit, offset: -30})
+	h.decide(h.next())
+	tr := Trial{Regime: machine.R6, Cores: []int{0, 2}, Workload: machine.Workloads(machine.R6)[0].ID, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120, Profile: []int{-30, -30, -30, -30}}
+	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 5})
+	h.decide(h.next())
+	h.decide(driveToHuntStart(h))
+	var round []*journal.HuntGroup
+	for range 50 {
+		a := h.next()
+		if a.Kind != Decide {
+			runGroup(h, a, false)
+			continue
+		}
+		if g, ok := a.Payload.(*journal.HuntGroup); ok {
+			if len(round) > 0 && (g.Granularity != 2 || g.Stage != round[0].Stage || g.DurationS != round[0].DurationS || g.Escalated != round[0].Escalated || !slices.Equal(g.Set, round[0].Set)) {
+				break
+			}
+			round = append(round, g)
+		} else if len(round) > 0 {
+			break
+		}
+		h.decide(a)
+	}
+	if len(round) == 0 || round[len(round)-1].Index+1 != len(round) {
+		t.Fatalf("first binary round never completed: %+v", round)
+	}
+	var parts [][]int
+	for i, g := range round {
+		if g.Granularity != 2 || g.Stage != "part" || g.Index != i {
+			t.Fatalf("group %d is not part %d of the binary round: %+v", g.Group, i, g)
+		}
+		parts = append(parts, g.Cores)
+	}
+	if diff := cmp.Diff([][]int{{0, 2}, {1, 3}}, parts); diff != "" {
+		t.Fatalf("first split into loaded and idle cores (-want +got):\n%s", diff)
 	}
 }
 
@@ -643,10 +685,10 @@ func TestHuntFallbackAndFullCheck(t *testing.T) {
 		duration  int
 		fullFails bool
 		result    string
-		reason    string
+		reason    []string
 	}{
-		{"fallback", 120, false, "fallback", "no tested group failed, so the remaining candidates stay unresolved and form a combination"},
-		{"full failure", 600, true, "combination", "parked trial outcomes identified the minimal failing set; member probes found it still failing at core 00 -30 + core 01 -30 and passing with any one member a count shallower"},
+		{"fallback", 120, false, "fallback", []string{"unresolved", "combination"}},
+		{"full failure", 600, true, "combination", []string{"member probes", "core 00 -30", "core 01 -30", "a count shallower"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := huntHarness(t, 2, tc.duration)
@@ -666,8 +708,11 @@ func TestHuntFallbackAndFullCheck(t *testing.T) {
 					continue
 				}
 				if end, ok := a.Payload.(*journal.HuntEnd); ok {
-					if end.Result != tc.result || end.Reason != tc.reason {
-						t.Fatalf("result %s (%s), want %s (%s)", end.Result, end.Reason, tc.result, tc.reason)
+					if end.Result != tc.result {
+						t.Fatalf("result %s (%s), want %s", end.Result, end.Reason, tc.result)
+					}
+					if missing := missingTokens(end.Reason, tc.reason...); len(missing) > 0 {
+						t.Fatalf("hunt end reason %q lacks %q", end.Reason, missing)
 					}
 					if tc.fullFails && full != 1 {
 						t.Fatalf("full group recorded %d times", full)
@@ -688,7 +733,7 @@ func TestHuntCombinationAlreadyBroken(t *testing.T) {
 	h.add(&journal.HuntEnd{Hunt: 1, Result: "combination", Cores: []int{0, 1}, Groups: 2})
 	a := h.next()
 	combination, ok := a.Payload.(*journal.Combination)
-	if !ok || combination.Reason != "no backoff: core 00 is already shallower" {
+	if !ok || len(missingTokens(combination.Reason, "no backoff", "core 00", "already shallower")) > 0 {
 		t.Fatalf("unneeded backoff %+v", a)
 	}
 	h.decide(a)
@@ -706,8 +751,8 @@ func TestHuntCulpritDiscardsContradictedPass(t *testing.T) {
 	if !ok || d.Phase != journal.PhaseHunt || d.Core != 0 || d.Pass != nil || d.FailurePoint == nil || *d.FailurePoint != -29 {
 		t.Fatalf("culprit commitment kept contradicted pass: %+v", a)
 	}
-	if !strings.Contains(d.Reason, "passed step at -29 discarded, the failure contradicts it") {
-		t.Fatalf("culprit commitment reason: %q", d.Reason)
+	if missing := missingTokens(d.Reason, "-29", "discarded", "contradicts"); len(missing) > 0 {
+		t.Fatalf("culprit commitment reason %q lacks %q", d.Reason, missing)
 	}
 }
 

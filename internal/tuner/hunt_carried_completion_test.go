@@ -50,10 +50,7 @@ func TestRunningHuntGroupCitesMixedCarriedAndLivePasses(t *testing.T) {
 		if !strings.Contains(a.Payload.Message(), "20261002T004254Z") {
 			t.Fatalf("group %d completion omits source session: %s", group+1, a.Payload.Message())
 		}
-		replayed := New()
-		for _, e := range h.events {
-			replayed.Fold(e)
-		}
+		replayed := replayState(h.events)
 		fromReplay, replayOK := replayed.huntNext()
 		if !replayOK || cmp.Diff(a, fromReplay) != "" {
 			t.Fatalf("completion changed after replay: %+v", fromReplay)

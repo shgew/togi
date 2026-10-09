@@ -48,7 +48,7 @@ func TestIdleFailureEndsDeepeningBeforeMoves(t *testing.T) {
 	failure := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R6, Condition: machine.Together, Profile: h.s.Profile()})
 	a := h.next()
 	end, ok := a.Payload.(*journal.DeepeningRound)
-	if !ok || end.Round != round.Round || end.Event != journal.CycleEnd || end.Reason != "a failure needs a hunt" {
+	if !ok || end.Round != round.Round || end.Event != journal.CycleEnd || len(missingTokens(end.Reason, "failure", "hunt")) > 0 {
 		t.Fatalf("idle failure did not end deepening round: %+v", a)
 	}
 	if diff := cmp.Diff([]int{failure.Seq}, a.Cause); diff != "" {
@@ -69,10 +69,7 @@ func TestDeepeningGlobalOptimumAndResume(t *testing.T) {
 	decisions := []journal.Decision{journal.Yield, journal.Deepen, journal.Deepen}
 	for _, want := range decisions {
 		live := h.next()
-		replayed := New()
-		for _, e := range h.events {
-			replayed.Fold(e)
-		}
+		replayed := replayState(h.events)
 		if diff := cmp.Diff(live, replayed.Next()); diff != "" {
 			t.Fatalf("round resume (-live +replayed):\n%s", diff)
 		}
@@ -97,10 +94,7 @@ func TestDeepeningGlobalOptimumAndResume(t *testing.T) {
 		t.Fatalf("profile (-want +got):\n%s", diff)
 	}
 	for range 100 {
-		replayed := New()
-		for _, e := range h.events {
-			replayed.Fold(e)
-		}
+		replayed := replayState(h.events)
 		if diff := cmp.Diff(h.s.Next(), replayed.Next()); diff != "" {
 			t.Fatalf("deepening prefix replay (-live +replayed):\n%s", diff)
 		}

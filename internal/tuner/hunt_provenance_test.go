@@ -268,10 +268,7 @@ func TestHuntLiveFailureCausesFixtureReplay(t *testing.T) {
 			t.Fatalf("recorded hunt.end %v already reaches live failure #%d", end.Cause, seq)
 		}
 	}
-	s := New()
-	for _, e := range events[:at] {
-		s.Fold(e)
-	}
+	s := replayState(events[:at])
 	a, ok := s.huntNext()
 	if !ok {
 		t.Fatal("replay did not end the hunt")

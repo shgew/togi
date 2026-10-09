@@ -2,12 +2,14 @@ package tuner
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/rand/v2"
 	"os"
 	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -39,12 +41,8 @@ func TestConstraints(t *testing.T) {
 }
 
 func TestTogetherCrashNamesTheSoleNonzeroCoreByID(t *testing.T) {
-	h := &harness{t: t, s: New()}
 	infos := []machine.CoreInfo{{Core: 0, CCD: 0, CPUs: []int{0, 16}}, {Core: 8, CCD: 1, CPUs: []int{8, 24}}}
-	begin := h.add(&journal.SessionStart{Schema: journal.Schema, Session: "s", Cores: infos})
-	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: snapshotConfig(config.Default())})
-	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Reason: "test"}, begin.Seq)
-	h.add(&journal.CorePhase{Core: 8, To: journal.PhaseAtLimit, Offset: -12, Reason: "test"}, begin.Seq)
+	h := newHarnessOn(t, infos, config.Default(), coreStart{phase: journal.PhaseAtLimit}, coreStart{phase: journal.PhaseAtLimit, offset: -12})
 	intent := h.add(&journal.TrialIntent{Trial: "0001", Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Cores: []int{0, 8}, Profile: []int{0, -12}})
 	h.add(&journal.TrialEnd{Trial: "0001", Outcome: journal.OutcomeFailure, Signal: machine.Crash}, intent.Seq)
 	a, ok := h.s.Attribution()
@@ -375,30 +373,70 @@ func TestClassTargetsPreserveHuntAndRerunLookup(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
 		offsets []int
-		key     string
+		loaded  []int
 		hunt    []int
 		rerun   []int
 		core    int
 		offset  int
+		idle    bool
 	}{
-		{"singleton before part in hunt", []int{-10}, "[0]", []int{0}, []int{0}, 0, 0},
-		{"single core", []int{-10, -11, -12, -13}, "[1]", []int{1}, nil, 1, -11},
-		{"CCD part", []int{-10, -11, -12, -13}, "[0 1]", []int{0, 1}, []int{0, 1}, 0, 0},
-		{"all cores", []int{-10, -11, -12, -13}, "[0 1 2 3]", []int{0, 1, 2, 3}, []int{0, 1, 2, 3}, 0, 0},
-		{"unknown target", []int{-10, -11, -12, -13}, "[0 2]", []int{0, 1, 2, 3}, nil, 0, 0},
-		{"empty target", []int{-10, -11, -12, -13}, "[]", []int{0, 1, 2, 3}, []int{}, 0, 0},
+		{"singleton before part in hunt", []int{-10}, nil, []int{0}, []int{0}, 0, 0, true},
+		{"single core", []int{-10, -11, -12, -13}, []int{1}, []int{1}, nil, 1, -11, false},
+		{"CCD part", []int{-10, -11, -12, -13}, []int{0, 1}, []int{0, 1}, []int{0, 1}, 0, 0, false},
+		{"all cores", []int{-10, -11, -12, -13}, []int{0, 1, 2, 3}, []int{0, 1, 2, 3}, []int{0, 1, 2, 3}, 0, 0, false},
+		{"unknown target", []int{-10, -11, -12, -13}, []int{0, 2}, []int{0, 2}, []int{0, 2}, 0, 0, false},
+		{"empty target", []int{-10, -11, -12, -13}, nil, []int{0, 1, 2, 3}, nil, 0, 0, false},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
+		failedHarness := func(t *testing.T) (*harness, journal.Event) {
+			t.Helper()
 			h := hasRoomHarness(t, tt.offsets...)
-			k := trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, tt.key, 120}
-			h.s.queue = []pendingFailure{{seq: 9, failure: &journal.Failure{Trial: "0001"}, profile: tt.offsets, class: k}}
-			start := h.s.huntStartNext().Payload.(*journal.HuntStart)
-			if diff := cmp.Diff(tt.hunt, start.Cores); diff != "" {
+			if tt.idle {
+				// An idle failure's class is the all-core key, which topology resolves to the part before any trial evidence does.
+				return h, h.add(&journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Together, Regime: machine.R6, Profile: tt.offsets})
+			}
+			workload := machine.Workloads(machine.R6)[0].ID
+			if tt.loaded == nil {
+				// A trial that loads no core cannot be completed by the runner, so its events are written out.
+				h.trials++
+				id := fmt.Sprintf("%04d", h.trials)
+				intent := h.add(&journal.TrialIntent{Trial: id, Regime: machine.R6, Workload: workload, DurationS: 120, Condition: machine.Together, Phase: journal.PhaseChecking, Profile: tt.offsets})
+				h.add(&journal.TrialEnd{Trial: id, Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 5}, intent.Seq)
+			} else {
+				tr := Trial{Regime: machine.R6, Cores: tt.loaded, Workload: workload, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120, Profile: tt.offsets}
+				h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 5})
+			}
+			attribution := h.next()
+			if _, ok := attribution.Payload.(*journal.Failure); !ok {
+				t.Fatalf("source attribution %+v", attribution)
+			}
+			return h, h.decide(attribution)
+		}
+		t.Run(tt.name, func(t *testing.T) {
+			h, _ := failedHarness(t)
+			start := driveToHuntStart(h).Payload.(*journal.HuntStart)
+			if diff := cmp.Diff(tt.hunt, start.Cores, cmpopts.EquateEmpty()); diff != "" {
 				t.Fatalf("hunt target (-want +got):\n%s", diff)
 			}
-			h.s.obligations = []rerun{{class: k, seq: 9}}
-			tr := h.s.rerunTrial(k).Trial
-			if diff := cmp.Diff([]any{tt.rerun, tt.core, tt.offset}, []any{tr.Cores, tr.Core, tr.Offset}); diff != "" {
+		})
+		t.Run(tt.name+"/rerun", func(t *testing.T) {
+			h, failure := failedHarness(t)
+			h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: tt.offsets[0], ToOffset: tt.offsets[0] + 1, FailurePoint: new(tt.offsets[0])}, failure.Seq)
+			var tr Trial
+			for range 50 {
+				a := h.next()
+				if a.Kind == RunTrial && a.Trial.Rerun {
+					tr = a.Trial
+					break
+				}
+				if a.Kind != Decide {
+					t.Fatalf("expected the failed class's rerun, got %+v", a)
+				}
+				h.decide(a)
+			}
+			if !tr.Rerun {
+				t.Fatal("no rerun reached within 50 actions")
+			}
+			if diff := cmp.Diff([]any{tt.rerun, tt.core, tt.offset}, []any{tr.Cores, tr.Core, tr.Offset}, cmpopts.EquateEmpty()); diff != "" {
 				t.Fatalf("rerun target (-want +got):\n%s", diff)
 			}
 		})

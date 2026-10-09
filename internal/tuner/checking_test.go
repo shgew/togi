@@ -10,13 +10,17 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func hasRoomHarness(t *testing.T, offsets ...int) *harness {
-	t.Helper()
+func hasRoomStarts(offsets ...int) []coreStart {
 	starts := make([]coreStart, len(offsets))
 	for i, x := range offsets {
 		starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: x, fail: new(x - 1), pass: new(x)}
 	}
-	h := newHarness(t, starts...)
+	return starts
+}
+
+func hasRoomHarness(t *testing.T, offsets ...int) *harness {
+	t.Helper()
+	h := newHarness(t, hasRoomStarts(offsets...)...)
 	h.decide(h.next())
 	return h
 }

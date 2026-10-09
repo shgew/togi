@@ -1,23 +1,32 @@
 package tuner
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
 
-func TestR7StatusSeparatesWorkloadsOffsetsAndTopRequesters(t *testing.T) {
-	s := New()
-	s.Fold(journal.Event{Seq: 1, Data: &journal.SessionStart{Cores: []machine.CoreInfo{{Core: 3, CCD: 0}, {Core: 7, CCD: 0}}}})
-	s.cores[0].offset, s.cores[1].offset = -20, -30
-	workload := machine.Workloads(machine.R7)[0].ID
-	class := trialClass{regime: machine.R7, workload: workload, duration: 120}
-	s.ledger[class] = []entry{
-		{seq: 2, pass: true, class: class, profile: []int{-21, -30}, cores: []int{3, 7}, top: []int{3}},
-		{seq: 3, pass: true, class: class, profile: []int{-19, -29}, cores: []int{3, 7}, top: []int{7}},
+func r7Infos(ids ...int) []machine.CoreInfo {
+	infos := make([]machine.CoreInfo, len(ids))
+	for i, id := range ids {
+		infos[i] = machine.CoreInfo{Core: id, CCD: 0, CPUs: []int{id, id + 32}}
 	}
-	for _, status := range s.R7Status() {
+	return infos
+}
+
+func carriedR7Pass(h *harness, cores, profile, top []int) journal.Event {
+	return h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Seq: len(h.events) + 1, Trial: fmt.Sprint(len(h.events)), Evidence: EvidenceEpoch}, Class: journal.TrialClass{Regime: machine.R7, Workload: machine.Workloads(machine.R7)[0].ID, Cores: cores, DurationS: 120}, Condition: machine.Together, Profile: profile, Outcome: journal.OutcomePass, DurationS: 120, TopRequesters: top})
+}
+
+func TestR7StatusSeparatesWorkloadsOffsetsAndTopRequesters(t *testing.T) {
+	h := newHarnessOn(t, r7Infos(3, 7), config.Default(), coreStart{phase: journal.PhaseAtLimit, offset: -20}, coreStart{phase: journal.PhaseAtLimit, offset: -30})
+	workload := machine.Workloads(machine.R7)[0].ID
+	carriedR7Pass(h, []int{3, 7}, []int{-21, -30}, []int{3})
+	carriedR7Pass(h, []int{3, 7}, []int{-19, -29}, []int{7})
+	for _, status := range h.s.R7Status() {
 		want := status.Workload == workload && status.Core == 3
 		if status.SelfSufficient != want {
 			t.Fatalf("self-sufficiency crosses workload, offset or top requester: %+v", status)
@@ -26,10 +35,10 @@ func TestR7StatusSeparatesWorkloadsOffsetsAndTopRequesters(t *testing.T) {
 			t.Fatalf("current offset fallback order: %+v", status)
 		}
 	}
-	s.ledger = map[trialClass][]entry{}
-	for _, status := range s.R7Status() {
+	h.add(&journal.CommandReset{Core: new(3)})
+	for _, status := range h.s.R7Status() {
 		if status.SelfSufficient || status.Passes != 0 {
-			t.Fatalf("cleared ledger retains self-sufficiency: %+v", status)
+			t.Fatalf("reset core retains self-sufficiency: %+v", status)
 		}
 	}
 }
@@ -42,8 +51,8 @@ func TestR7StatusIgnoresFailedStartsAsTopRequester(t *testing.T) {
 			if carried {
 				r7Fact(h, false, []int{0, 1}, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
 			} else {
-				class := trialClass{regime: machine.R7, workload: workload, cores: "[0 1]", duration: 120}
-				h.s.ledger[class] = append(h.s.ledger[class], entry{seq: 99, class: class, profile: h.s.Profile(), cores: []int{0, 1}, top: []int{0}})
+				tr := Trial{Regime: machine.R7, Workload: workload, Cores: []int{0, 1}, DurationS: 120, Phase: journal.PhaseChecking, Condition: machine.Together, Profile: h.s.Profile()}
+				h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, DurationS: 41, TopRequesters: []int{0}})
 			}
 			for _, status := range h.s.R7Status() {
 				if status.Workload == workload && status.Core == 0 && (status.Passes != 0 || status.SelfSufficient) {
@@ -55,12 +64,11 @@ func TestR7StatusIgnoresFailedStartsAsTopRequester(t *testing.T) {
 }
 
 func TestR7StatusUsesSortedProfileAndOnlyCCDParts(t *testing.T) {
-	s := New()
-	s.Fold(journal.Event{Seq: 1, Data: &journal.SessionStart{Cores: []machine.CoreInfo{{Core: 7, CCD: 1}, {Core: 3, CCD: 0}, {Core: 9, CCD: 1}, {Core: 5, CCD: 0}}}})
-	for _, c := range s.cores {
-		c.offset = map[int]int{3: -20, 5: -30, 7: -25, 9: -35}[c.id]
-	}
-	statuses := s.R7Status()
+	infos := []machine.CoreInfo{{Core: 7, CCD: 1}, {Core: 3, CCD: 0}, {Core: 9, CCD: 1}, {Core: 5, CCD: 0}}
+	h := newHarnessOn(t, infos, config.Default(),
+		coreStart{phase: journal.PhaseAtLimit, offset: -25}, coreStart{phase: journal.PhaseAtLimit, offset: -20},
+		coreStart{phase: journal.PhaseAtLimit, offset: -35}, coreStart{phase: journal.PhaseAtLimit, offset: -30})
+	statuses := h.s.R7Status()
 	if len(statuses) != 4*len(machine.Workloads(machine.R7)) {
 		t.Fatalf("all-core part duplicated status rows: %d", len(statuses))
 	}
@@ -79,11 +87,11 @@ func TestR7StatusUsesSortedProfileAndOnlyCCDParts(t *testing.T) {
 	}
 }
 
+// A journal always starts with its topology; this is the nearest input, a fact folded before any SessionStart.
 func TestR7StatusWithoutTopology(t *testing.T) {
-	s := New()
-	class := trialClass{regime: machine.R7, workload: machine.Workloads(machine.R7)[0].ID}
-	s.ledger[class] = []entry{{pass: true, cores: []int{3, 7}, profile: []int{-20, -30}}}
-	if got := s.R7Status(); len(got) != 0 {
+	h := bareHarness(t)
+	carriedR7Pass(h, []int{3, 7}, []int{-20, -30}, nil)
+	if got := h.s.R7Status(); len(got) != 0 {
 		t.Fatalf("status invented cores without topology: %+v", got)
 	}
 }

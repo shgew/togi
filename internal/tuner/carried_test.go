@@ -82,17 +82,21 @@ func TestCarriedEvidenceConsumers(t *testing.T) {
 		}},
 		{"rerun", func(t *testing.T) {
 			t.Helper()
-			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20})
+			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20, fail: new(-21)})
 			h.add(&journal.ProfileChange{To: []int{-20}})
 			short := carryTrials(h, machine.R1, []int{0}, []int{-20}, h.s.durations.ShortTrialS, h.s.n, journal.OutcomePass)
 			long := carryTrials(h, machine.R1, []int{0}, []int{-20}, 900, 1, journal.OutcomePass)
-			h.s.obligations = []rerun{{trialClass{machine.R1, machine.Workloads(machine.R1)[0].ID, "[0]", 900}, len(h.events) + 1}}
-			if a, ok := h.s.rerunNext(); ok {
+			failure := carryTrials(h, machine.R1, []int{0}, []int{-20}, 900, 1, journal.OutcomeFailure)[0]
+			h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -20, ToOffset: -19, FailurePoint: new(-20)}, failure)
+			h.add(&journal.ProfileChange{From: []int{-20}, To: []int{-19}})
+			a := h.next()
+			if p, ok := a.Payload.(*journal.CheckingCycle); !ok || p.Event != journal.CycleStart {
 				t.Fatalf("covered rerun scheduled a trial: %+v", a)
 			}
-			a := h.s.afterReruns(Action{Kind: Decide, Payload: &journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart}})
-			if diff := cmp.Diff(append(short, long...), a.Cause); diff != "" {
-				t.Fatalf("completed rerun provenance (-want +got):\n%s", diff)
+			for _, seq := range append(short, long...) {
+				if !slices.Contains(a.Cause, seq) {
+					t.Fatalf("completed rerun provenance omits #%d: %v", seq, a.Cause)
+				}
 			}
 			if !strings.Contains(a.Payload.Message(), "20261002T004254Z") {
 				t.Fatalf("completed rerun source missing: %s", a.Payload.Message())

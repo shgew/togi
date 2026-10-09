@@ -58,10 +58,7 @@ func TestKnownFailureSkipCompletesRunningMemberProbeGroup(t *testing.T) {
 			if diff := cmp.Diff(want, end.Members); diff != "" {
 				t.Fatalf("known member probe failure lost from combination bounds (-want +got):\n%s", diff)
 			}
-			replayed := New()
-			for _, event := range h.events {
-				replayed.Fold(event)
-			}
+			replayed := replayState(h.events)
 			if diff := cmp.Diff(a, replayed.Next()); diff != "" {
 				t.Fatalf("resumed member probe result (-live +replayed):\n%s", diff)
 			}
