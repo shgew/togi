@@ -1,9 +1,9 @@
  togi  08:22:00  paused until 08:24  session 8h22m  8 failures · 8 crashes
  ■ SOLO ─ ○ CYCLE 1 paused at 7/18 ─ ►  HUNT 1   member 1 of 2 ─ ○ DEEPEN ─
 
- │ self-sufficient  observed passing as top requester for this R7 workload at
- │                  equal or deeper offsets since reset; evidence, not a
- │                  guarantee
+ │                  offset when offsets stand in for requests
+ │ self-sufficient  observed passing as top requester for this R7 workload;
+ │                  evidence, not a guarantee
  │ record only      a trial whose result is kept but changes no decision
  │ cycle            one pass through the checking schedule
  │ 
@@ -16,7 +16,7 @@
  │ R4 partial load   light load at 25-75% duty: bursty work
  │ R5 both threads   both threads of one core: SMT pressure
  │ R6 idle + bursts  idle with short wake-ups: idle and boost
- │ R7 all-core       each CCD, then both: power and heat
+ █ R7 all-core       a CCD, part of one, or every core: power and heat
  █ 
  █ 
 

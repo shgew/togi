@@ -43,6 +43,20 @@ func TestHelpWideUsesThreeColumns(t *testing.T) {
 	}
 }
 
+func TestHelpLinksTunerSpecAndStatesNoRule(t *testing.T) {
+	t.Parallel()
+	help, _ := renderHelpBody(115, 1000, 0)
+	words := strings.Join(strings.Fields(ansi.Strip(strings.Join(help, "\n"))), " ")
+	if !strings.Contains(words, "https://github.com/shgew/togi/blob/main/docs/spec/tuner.md") {
+		t.Errorf("help lost the tuner specification link: %s", words)
+	}
+	for _, rule := range []string{"request order", "when the part starts", "voltage-targeted counts", "halfway", "then both"} {
+		if strings.Contains(words, rule) {
+			t.Errorf("help restates the tuning rule %q", rule)
+		}
+	}
+}
+
 func TestHelpNarrowScrollsOneColumn(t *testing.T) {
 	t.Parallel()
 	top, scroll := renderHelpBody(77, 19, 0)
