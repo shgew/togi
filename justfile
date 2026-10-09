@@ -119,9 +119,17 @@ same base="origin/main": _dev-shell
 forecast state_dir *args: _dev-shell
     go run ./tools/bench --forecast "$1" "${@:2}"
 
+# Re-record the committed bench baseline over all seeds, without model checks, wall times or retired fields
 [group('run')]
 bench-baseline: _dev-shell
-    go run ./tools/bench --split all --out tools/bench/baseline.jsonl
+    #!/usr/bin/env bash
+    set -euo pipefail
+    full=$(mktemp)
+    slim=$(mktemp)
+    trap 'rm -f "$full" "$slim"' EXIT
+    go run ./tools/bench --split all --out "$full"
+    nu --stdin -c '$in | lines | each { from json | reject -o model_check wall_s partial_seconds | to json --raw } | to text' <"$full" >"$slim"
+    mv "$slim" tools/bench/baseline.jsonl
 
 # Regenerate privacy-safe real facts from a copied state directory
 [group('run')]

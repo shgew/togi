@@ -146,12 +146,10 @@ Seeds are deterministic: the same commit always produces the same runs, so rerun
 Record the baseline again whenever the tuner on `main`, the suite, the facts or the fitted machines change:
 
 ```sh
-just bench --split all --out tools/bench/baseline.jsonl
-# Equivalent recipe:
 just bench-baseline
 ```
 
-The recorded run lives at `tools/bench/baseline.jsonl`, the path the research program compares against. It includes both dev and holdout seeds. Baselines recorded before the oracle ensemble do not cover `target`; do not reuse them for V4.
+The recorded run lives at `tools/bench/baseline.jsonl`, the path the research program compares against. It includes both dev and holdout seeds. The recipe runs `just bench --split all --out` into a temporary file and commits a projection of it that leaves out `model_check` (the fitted-machine check, repeated in every run of its machine and 93% of the full file), `wall_s` (each run's real duration) and `partial_seconds` (retired); every other field stays. Comparison reads none of the three, so it prints the same against the slim file as against the full one; `--out` itself still writes the full records. Baselines recorded before the oracle ensemble do not cover `target`; do not reuse them for V4.
 
 Compare a candidate with the recorded baseline:
 
