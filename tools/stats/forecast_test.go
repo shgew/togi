@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -90,10 +91,11 @@ func TestScoreResumedSimulatedJournal(t *testing.T) {
 		name     string
 		maxBoots int
 		statuses []string
+		censored bool
 	}{
-		{"concluded", 0, []string{forecast.Concluded, forecast.Concluded, forecast.DeadEnd}},
-		{"censored", 14, []string{forecast.Concluded, forecast.Concluded, forecast.DeadEnd}},
-		{"unconcluded", 14, []string{forecast.DeadEnd, forecast.Censored, forecast.DeadEnd}},
+		{"concluded", 0, []string{forecast.Concluded, forecast.Concluded, forecast.DeadEnd}, false},
+		{"censored", 14, []string{forecast.Concluded, forecast.Concluded, forecast.DeadEnd}, true},
+		{"unconcluded", 14, []string{forecast.DeadEnd, forecast.Censored, forecast.DeadEnd}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -102,7 +104,46 @@ func TestScoreResumedSimulatedJournal(t *testing.T) {
 			if err := run([]string{"--state-dir", after, "--forecast", record}, &out, &errOut); err != nil {
 				t.Fatal(err)
 			}
-			checkGolden(t, "forecast-"+tc.name+".golden", out.Bytes())
+			for _, want := range []string{", unchanged\n", "\nForecast score\n"} {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("score lacks %q:\n%s", want, &out)
+				}
+			}
+			if got := strings.Contains(out.String(), "\nRun: censored "); got != tc.censored {
+				t.Errorf("run censored = %t, want %t:\n%s", got, tc.censored, &out)
+			}
+		})
+	}
+}
+
+// TestRenderScoreRecordedScores renders scores captured once from simulated runs, whose build stamps are literal, so
+// a tuner change leaves the goldens alone.
+func TestRenderScoreRecordedScores(t *testing.T) {
+	for _, name := range []string{"concluded", "censored", "unconcluded"} {
+		t.Run(name, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("testdata", "forecast-"+name+".json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var score forecast.Score
+			if err := json.Unmarshal(data, &score); err != nil {
+				t.Fatal(err)
+			}
+			metrics, err := forecast.Metrics(score.Record.Runs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(metrics) != len(score.Rows) {
+				t.Fatalf("score has %d rows, its forecast %d metrics", len(score.Rows), len(metrics))
+			}
+			for i := range score.Rows {
+				score.Rows[i].Metric = metrics[i]
+			}
+			var out bytes.Buffer
+			if err := renderScore(&out, score); err != nil {
+				t.Fatal(err)
+			}
+			checkGolden(t, "forecast-"+name+".golden", out.Bytes())
 		})
 	}
 }

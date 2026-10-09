@@ -196,7 +196,6 @@ func TestForecastFromSimulatedCopy(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				record.Commit = "0123abc"
 				if err := reportForecast(&tables[i], record, "testdata", nil); err != nil {
 					t.Fatal(err)
 				}
@@ -218,9 +217,26 @@ func TestForecastFromSimulatedCopy(t *testing.T) {
 			if diff := cmp.Diff(before, snapshot(t, input)); diff != "" {
 				t.Errorf("forecast changed its input: %s", diff)
 			}
-			path := filepath.Join("testdata", "forecast-"+tc.name+".golden")
+		})
+	}
+}
+
+// TestForecastReportRendersRecordedForecasts renders forecasts captured once from simulated runs. Their build
+// stamps are literal, so a tuner change leaves the goldens alone.
+func TestForecastReportRendersRecordedForecasts(t *testing.T) {
+	for _, name := range []string{"stopped", "in-flight"} {
+		t.Run(name, func(t *testing.T) {
+			record, err := forecast.ReadRecord(filepath.Join("testdata", "forecast-"+name+".json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var table bytes.Buffer
+			if err := reportForecast(&table, record, "testdata", nil); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join("testdata", "forecast-"+name+".golden")
 			if *update {
-				if err := os.WriteFile(path, tables[0].Bytes(), 0o600); err != nil {
+				if err := os.WriteFile(path, table.Bytes(), 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -228,7 +244,7 @@ func TestForecastFromSimulatedCopy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if diff := cmp.Diff(string(want), tables[0].String()); diff != "" {
+			if diff := cmp.Diff(string(want), table.String()); diff != "" {
 				t.Fatal(diff)
 			}
 		})

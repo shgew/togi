@@ -210,16 +210,26 @@ func assertFrameBounds(t *testing.T, drawn Drawn, sc Screen) {
 	}
 }
 
+// allSizeGoldens names the cuts whose main frame is compared at every size: each draws a size-dependent panel that
+// no other kept cut draws. The other cuts are compared at the widest size only; every cut still renders at every
+// size under assertFrameBounds.
+var allSizeGoldens = map[string]bool{
+	"search": true, "checking": true, "hunt": true, "member-probe": true,
+	"deepening": true, "idle": true, "recovering": true, "combination": true,
+}
+
 func TestWatchFrames(t *testing.T) {
 	cuts := watchCuts(t)
 	for _, c := range cuts {
 		t.Run(c.name, func(t *testing.T) {
 			s, now := Project(c.events), cutTime(c.events)
-			for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
+			for i, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
 				sc := Screen{Width: size[0], Height: size[1], Keys: true}
 				drawn := RenderView(s, sc, now)
 				assertFrameBounds(t, drawn, sc)
-				golden(t, fmt.Sprintf("watch-%s-%dx%d", c.name, size[0], size[1]), ansi.Strip(strings.Join(drawn.Lines, "\n"))+"\n")
+				if i == 0 || allSizeGoldens[c.name] {
+					golden(t, fmt.Sprintf("watch-%s-%dx%d", c.name, size[0], size[1]), ansi.Strip(strings.Join(drawn.Lines, "\n"))+"\n")
+				}
 			}
 			for _, view := range []View{MainView, HelpView, LogView} {
 				for _, scroll := range []int{0, 3, -1, 100000} {
