@@ -132,14 +132,22 @@ func (s *State) perCore() (Action, bool) {
 			}
 			cause = s.citeCarried(cause, seqs[:s.n]...)
 		}
-		reason, atLimit := s.atLimit(c, s.offsets())
+		start := c.offset
+		margin := ""
+		if exp.Margin > 0 {
+			start = min(c.offset+exp.Margin, machine.MaxOffset)
+			margin = fmt.Sprintf("; experiment margin=%d: checking starts at %d, %d counts shallower than the solo limit", exp.Margin, start, start-c.offset)
+		}
+		profile := s.offsets()
+		profile[s.index(c.id)] = start
+		reason, atLimit := s.atLimit(c, profile)
 		phase := journal.PhaseHasRoom
 		if atLimit {
 			phase = journal.PhaseAtLimit
 		} else {
 			reason = "one count deeper reaches no failure point or combination"
 		}
-		return Action{Kind: Decide, Payload: &journal.CorePhase{Core: c.id, From: journal.PhaseSearch, To: phase, Offset: c.offset, Pass: new(c.offset), FailurePoint: c.fail, Reason: fmt.Sprintf("solo limit %d passed %d trials of R1 %s and R2 %s%s; %s", c.offset, s.n, c.checkWorkloads[0], c.checkWorkloads[1], s.carriedReason(cause), reason)}, Cause: cause}, true
+		return Action{Kind: Decide, Payload: &journal.CorePhase{Core: c.id, From: journal.PhaseSearch, To: phase, Offset: start, Pass: new(c.offset), FailurePoint: c.fail, Reason: fmt.Sprintf("solo limit %d passed %d trials of R1 %s and R2 %s%s; %s%s", c.offset, s.n, c.checkWorkloads[0], c.checkWorkloads[1], s.carriedReason(cause), reason, margin)}, Cause: cause}, true
 	}
 	return Action{}, false
 }

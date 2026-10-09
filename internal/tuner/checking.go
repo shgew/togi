@@ -186,7 +186,7 @@ func (s *State) cycleNext() Action {
 		}
 	}
 	fullCycleCoverage, missing := s.fullCycleCoverage(g.steps)
-	return Action{Kind: Decide, Payload: &journal.CheckingCycle{Cycle: g.cycle, Event: journal.CycleEnd, Passed: true, Full: fullCycleCoverage, Missing: missing}, Cause: []int{g.startSeq, g.lastSeq}}
+	return Action{Kind: Decide, Payload: &journal.CheckingCycle{Cycle: g.cycle, Event: journal.CycleEnd, Passed: true, Full: fullCycleCoverage, Missing: missing, Reason: s.p2CycleEndReason()}, Cause: []int{g.startSeq, g.lastSeq}}
 }
 
 func (s *State) coveredEnd() (Action, bool) {
