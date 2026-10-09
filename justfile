@@ -168,12 +168,12 @@ board: _dev-shell
 lock-interactions: _dev-shell
     gh api -X PUT 'repos/{owner}/{repo}/interaction-limits' -f limit=collaborators_only -f expiry=six_months
 
-# Claim issue N for BRANCH from BASE (default main): refuse if it is assigned; else assign yourself and post a start comment naming the branch, its base, WORKTREE and the one-line PLAN; then create BRANCH from BASE at WORKTREE yourself
+# Claim issue N for BRANCH from BASE (default main): refuse if it is assigned; else assign yourself and post a start comment naming the branch, its base and the one-line PLAN; then create BRANCH from BASE in a worktree yourself
 [group('github')]
-claim number branch worktree plan base="main": _dev-shell
+claim number branch plan base="main": _dev-shell
     #!/usr/bin/env bash
     set -euo pipefail
-    if [[ -z "$4" || "$4" == *$'\n'* ]]; then
+    if [[ -z "$3" || "$3" == *$'\n'* ]]; then
         echo "claim: PLAN must be one non-empty line" >&2
         exit 1
     fi
@@ -183,7 +183,7 @@ claim number branch worktree plan base="main": _dev-shell
         exit 1
     fi
     gh issue edit "$1" --add-assignee @me
-    body="Started on branch \`$2\` from \`$5\`, in worktree \`$3\`."$'\n'"Plan: $4"
+    body="Started on branch \`$2\` from \`$4\`."$'\n'"Plan: $3"
     if ! gh issue comment "$1" --body "$body"; then
         echo "claim: gh issue comment failed for #$1; removing your assignment" >&2
         gh issue edit "$1" --remove-assignee @me || echo "claim: could not unassign #$1; remove the assignment by hand" >&2
