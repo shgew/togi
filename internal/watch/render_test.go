@@ -543,3 +543,28 @@ func TestEveryTimeOnScreenIsLocal(t *testing.T) {
 		"screen paused until "+at(until, "15:04"),
 		"started "+at(idle.trial.started, "15:04"))
 }
+
+func TestGaugeCombinationHeldDepth(t *testing.T) {
+	ptr := func(v int) *int { return &v }
+	held := &limit{combination: 4}
+	core := func(applied, profile, solo int) coreView {
+		return coreView{applied: applied, profile: profile, solo: ptr(solo), fail: ptr(-45), holder: held}
+	}
+	tests := []struct {
+		name string
+		core coreView
+		want string
+	}{
+		{"applied at the saved offset", core(-43, -43, -44), strings.Repeat("▄", 43) + "░█"},
+		{"applied at 0 for another core's trial", core(0, -43, -44), strings.Repeat("·", 43) + "░█"},
+		{"solo limit equal to the held offset", core(-43, -43, -43), strings.Repeat("▄", 43) + " █"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := strings.TrimRight(ansi.Strip(tt.core.gauge(50)), " ")
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("gauge (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

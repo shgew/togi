@@ -1105,11 +1105,13 @@ func (c coreView) gauge(cells int) string {
 			back = *point
 		}
 	}
-	held := 0
+	// A combination holds the core at its profile offset: the depth it blocks
+	// runs from one count past that offset to the solo limit.
+	heldFrom, heldTo := 1, 0
 	if c.holder != nil && c.holder.combination > 0 {
-		held = back
+		heldFrom, heldTo = -c.profile+1, -back
 		if c.solo != nil {
-			held = *c.solo
+			heldTo = -*c.solo
 		}
 	}
 	var b strings.Builder
@@ -1133,7 +1135,7 @@ func (c coreView) gauge(cells int) string {
 			if c.judged {
 				style = white
 			}
-		case -held >= lo:
+		case max(lo, heldFrom) <= min(hi, heldTo):
 			glyph, style = "░", magenta
 		case -back >= lo:
 			glyph, style = "·", grey
