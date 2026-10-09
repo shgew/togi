@@ -135,7 +135,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	defer cancel()
 	var dash *dashboard
 	if out, ok := stderr.(*os.File); ok && !noTUI && interactive(out) {
-		dash = &dashboard{dir: g.stateDir, out: out}
+		dash = &dashboard{dir: g.stateDir, out: out, in: os.Stdin}
 	}
 	return runHardware(ctx, g, cfg, file, bootloader, cycles, stderr, renderer, dash, hardware.New)
 }
@@ -198,7 +198,7 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	if err != nil {
 		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 	}
-	prompt := defectPrompt(stderr)
+	prompt := defectPrompt(ctx, stderr)
 	if dash != nil {
 		dash.show()
 		if ask := prompt; ask != nil {
@@ -328,13 +328,19 @@ func commandOutput(ctx context.Context, name string, args ...string) ([]byte, er
 	return out, err
 }
 
-func defectPrompt(stderr io.Writer) func(defect.Finding) (bool, error) {
+func defectPrompt(ctx context.Context, stderr io.Writer) func(defect.Finding) (bool, error) {
 	out, ok := stderr.(*os.File)
 	if !ok || !interactive(out) {
 		return nil
 	}
-	reader := bufio.NewReader(os.Stdin)
+	return askDefect(ctx, stderr, bufio.NewReader(os.Stdin), func() { _ = discardInput(os.Stdin) })
+}
+
+// askDefect discards input typed before the question, so only an answer typed after it counts, and stops waiting
+// for the answer when ctx ends, so Ctrl-C at the prompt stops run without Enter.
+func askDefect(ctx context.Context, stderr io.Writer, answers *bufio.Reader, discard func()) func(defect.Finding) (bool, error) {
 	return func(f defect.Finding) (bool, error) {
+		discard()
 		fmt.Fprintf(stderr, "togi: defect %d: %s (fixed by pull request #%d); %s decisions %v affected cores %v\n", f.Entry.ID, f.Entry.Title, f.Entry.PR, f.Entry.Direction, f.Decisions, f.Cores)
 		if f.Entry.Detail != "" {
 			fmt.Fprintln(stderr, f.Entry.Detail)
@@ -347,8 +353,21 @@ func defectPrompt(stderr io.Writer) func(defect.Finding) (bool, error) {
 			fmt.Fprint(stderr, core)
 		}
 		fmt.Fprint(stderr, "? [y/N] ")
-		line, err := reader.ReadString('\n')
-		return parseDefectAnswer(line, err), nil
+		type answer struct {
+			line string
+			err  error
+		}
+		read := make(chan answer, 1)
+		go func() {
+			line, err := answers.ReadString('\n')
+			read <- answer{line, err}
+		}()
+		select {
+		case a := <-read:
+			return parseDefectAnswer(a.line, a.err), nil
+		case <-ctx.Done():
+			return false, ctx.Err()
+		}
 	}
 }
 

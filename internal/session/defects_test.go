@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"strings"
@@ -178,6 +179,25 @@ func TestDefectPromptFailureLeavesAnswerUncommitted(t *testing.T) {
 	}
 	if diff := cmp.Diff(before, r.in.Journal.Events()); diff != "" {
 		t.Fatalf("prompt failure recorded an answer or reset:\n%s", diff)
+	}
+}
+
+func TestDefectPromptCanceledStopsWithoutAnswering(t *testing.T) {
+	t.Parallel()
+	r, _, closeJournal := checkedRunner(t, []int{0, 0})
+	defer closeJournal()
+	r.in.Defects = []defect.Entry{testDefect(defect.TooAggressive)}
+	if _, err := r.append(&journal.DefectFound{ID: 2, Direction: string(defect.TooAggressive), Cores: []int{0}, Decisions: []int{1}}, 1); err != nil {
+		t.Fatal(err)
+	}
+	before := r.in.Journal.Events()
+	r.in.Prompt = func(defect.Finding) (bool, error) { return false, context.Canceled }
+	stop, err := r.checkDefects()
+	if err != nil || stop == nil || stop.Reason != StopSignal {
+		t.Fatalf("canceled operator prompt: %+v, %v", stop, err)
+	}
+	if diff := cmp.Diff(before, r.in.Journal.Events()); diff != "" {
+		t.Fatalf("canceled prompt recorded an answer:\n%s", diff)
 	}
 }
 

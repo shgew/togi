@@ -1,6 +1,8 @@
 package session
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -48,6 +50,10 @@ func (r *runner) checkDefects() (*Stop, error) {
 		}
 		if r.in.Prompt != nil {
 			yes, err := r.in.Prompt(defect.Finding{Entry: entry, Cores: found.Cores, Decisions: found.Decisions})
+			if errors.Is(err, context.Canceled) {
+				stop, shutdownErr := r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
+				return &stop, shutdownErr
+			}
 			if err != nil {
 				return nil, fmt.Errorf("ask whether to reset defect %d cores: %w", found.ID, err)
 			}
