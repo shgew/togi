@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/machine"
 )
 
-func TestConfigSnapshotPreservesCompleteWireShape(t *testing.T) {
+func TestConfigSnapshotPreservesCompleteWireShapeAndRoundTrips(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		config config.Config
@@ -31,6 +33,9 @@ func TestConfigSnapshotPreservesCompleteWireShape(t *testing.T) {
 			}
 			if string(wire) != tc.wire {
 				t.Fatalf("config snapshot wire:\n%s\nwant:\n%s", wire, tc.wire)
+			}
+			if diff := cmp.Diff(tc.config, ConfigFromSnapshot(configSnapshot(tc.config))); diff != "" {
+				t.Fatalf("config from its snapshot (-want +got):\n%s", diff)
 			}
 		})
 	}
