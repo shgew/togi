@@ -62,7 +62,7 @@ A finding that holds beyond one run moves to where the next change reads it: how
 
 ## Inspecting a transition on recorded state
 
-A copy of the target machine's journals shows what the next real run would carry. `tools/sim --state-dir` resumes the copy on the simulator under the current build, so a journal recorded under an older ruleset or schema goes through the transition the next `togi run` would make (`docs/simulating.md`), and `togi events --kind session.carried,trial.carried,failure.carried` lists what it carried, each fact with its source session and sequence. Run it only on a copy: preparation archives the live journal.
+A copy of the target machine's journals shows what the next real run would carry. `tools/sim --state-dir` resumes the copy on the simulator under the current build, so a journal recorded under an older ruleset or schema goes through the transition the next `togi run` would make (`docs/simulating.md`), and `togi events --kind session.carried,trial.carried,failure.carried` lists what it carried, each fact with the session it came from. Run it only on a copy: preparation archives the live journal.
 
 From a checkout on the target machine, copy only the journals (the sources are read-only):
 
