@@ -16,7 +16,7 @@ ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 - [0008: Every workload checks its own results](0008-self-checking-workloads.md) — **in force**.
 - [0009: Compatibility across updates](0009-compatibility-across-updates.md) — **partly superseded** by [0019](0019-a-ruleset-change-starts-a-seeded-session.md): refusal of older journals.
 - [0010: Development programs live in tools/](0010-development-programs-in-tools.md) — **in force**.
-- [0011: Blame unattributed failures by load and regain depth automatically](0011-blame-by-load-and-automatic-regain.md) — **partly superseded** by [0015](0015-avx-512-first-in-confirmation.md): confirmation order; by [0020](0020-hunt-and-refine.md): blame, depth retry and confirmation; the R7 CCD and all-core checking step remains.
+- [0011: Blame unattributed failures by load and regain depth automatically](0011-blame-by-load-and-automatic-regain.md) — **superseded** by [0015](0015-avx-512-first-in-confirmation.md): confirmation order; by [0020](0020-hunt-and-refine.md): blame, depth retry and confirmation; by [0038](0038-self-sufficient-cores.md): the R7 CCD and all-core checking step.
 - [0012: Releases open with a push and publish from CI](0012-release-by-push.md) — **superseded** by [0014](0014-release-from-a-workflow.md).
 - [0013: Candidate edges start a new session in confirmation](0013-candidate-edges-for-a-new-session.md) — **partly superseded** by [0019](0019-a-ruleset-change-starts-a-seeded-session.md): carrying nothing from archives; by [0020](0020-hunt-and-refine.md): candidate-solo-limit confirmation; by [0027](0027-carry-trial-facts.md): proving candidate solo limits only with new-session trials and rejecting carried passes; [0018](0018-crashes-are-not-a-cost.md) counts crash cost as reboot time; configured candidate solo limits remain.
 - [0014: Releases are made by a workflow started by hand](0014-release-from-a-workflow.md) — **partly superseded** by [0016](0016-every-pull-request-runs-every-check.md): release checks; by [0033](0033-changelog-fragments.md): reading entries from `[Unreleased]`.
@@ -50,5 +50,6 @@ ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 - [0042: Opt in to the check cache locally](0042-opt-in-to-the-check-cache-locally.md) — **in force**.
 - [0043: Record work that waits on the target machine](0043-record-work-that-waits-on-the-target-machine.md) — **in force**.
 - [0044: Write flagged target fits](0044-write-flagged-target-fits.md) — **in force**.
-- [0045: The tight loop reuses cached test results](0045-the-tight-loop-reuses-cached-test-results.md) — **in force**.
+- [0045: The tight loop reuses cached test results](0045-the-tight-loop-reuses-cached-test-results.md) — **amended** by [0047](0047-gate-before-every-push.md): `just gate` runs before every push, not every commit; the unshuffled tight loop remains.
 - [0046: macOS checks only the package, on `main`](0046-macos-checks-the-package-on-main.md) — **in force**.
+- [0047: Gate before every push](0047-gate-before-every-push.md) — **in force**.

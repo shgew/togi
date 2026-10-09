@@ -15,9 +15,9 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 |Scenario|Models|
 |---|---|
 |`default`|the seeded default machine|
-|`target`|real-fact replay over the all-facts target fit and eight checked bootstrap refits, including CCD0 and CCD1 R7 joints|
+|`target`|real-fact replay over the all-facts target fit and eight bootstrap refits, all flagged by the model check and the refits unconstrained ([ADR 0044](adr/0044-write-flagged-target-fits.md)), including CCD0 and CCD1 R7 joints|
 |`flat-hazard`|rare failures at any nonzero offset on two cores (issue #105)|
-|`late-onset`|R7 failures that start only after four minutes of load|
+|`late-onset`|R7 joint failures that start only after four minutes of load; the cores' own limits have no delay|
 |`idle-limit`|cores that fail idle at shallower offsets than under load (issue #106)|
 |`misleading-mce`|joint crashes that leave an MCE naming one core (issue #114)|
 |`target-r4-limit`|target-fit-derived one-count together R4 limit gap on core 15; each medium-duty checking trial misses it 70.55% of the time, so the default cycle's three still can (issue #107)|

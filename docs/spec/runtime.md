@@ -51,7 +51,7 @@ Top-level-only `togi --version` prints `togi x.y.z+rev` to stdout and exits 0; `
 
 `togi` without a command prints the wordmark and the tagline `per-core Curve Optimizer` above the usage, to stderr, and exits 2. `--help`, an unknown command and a flag error print the usage alone. The usage holds the synopsis, a description, examples, the commands, shared flags and `--version`.
 
-`togi <command> --help` prints the command's synopsis, a description of what it does, one or two examples, its own flags and then the shared `--state-dir` flag (not `--version`), to stdout, and exits 0. Only `doctor`, `run` and `reset` list `--config` among their own flags. A flag error prints the error and the same help to stderr and exits 2. Every flag is shown in its `--long` form.
+`togi <command> --help` prints the command's synopsis, a description of what it does, one to four examples, its own flags and then the shared `--state-dir` flag (not `--version`), to stdout, and exits 0. Only `doctor`, `run` and `reset` list `--config` among their own flags. A flag error prints the error and the same help to stderr and exits 2. Every flag is shown in its `--long` form.
 
 `run` needs Linux. On any other platform, once the journal compatibility check and the configuration pass, it prints `togi run: hardware runs need Linux: unsupported operation` and exits 1 before it reads the boot id or opens the journal.
 
@@ -129,11 +129,12 @@ Completed session preflight is the startup boundary for stale-scope containment 
 3. The CPU is family `0x1A`, model `0x40`-`0x4F` (Granite Ridge desktop).
 4. `ryzen_smu` is loaded and reports a matching codename.
 5. Every core's offset reads back through the SMU.
-6. Per-core access is supported only on full 8-core CCDs (`../prior-art.md`): each CCD fuse is read twice with distinct RSMU register reads interleaved, and the OS topology must contain eight cores per CCD. Within each CCD, sorted raw kernel core IDs must have `core_id % 8` equal to their slots 0–7. A mismatch refuses all per-core reads and writes before any per-core command, naming the CCD and every offending core ID, assigned slot and modulo-eight slot in the preflight detail. Any fused-off slot fails this check with the CCD, its fuse mask and a message that harvested CCDs are not yet supported. Indistinguishable RSMU probes, inconsistent fuse reads, or a live-core count mismatch also refuse all per-core access.
-7. Both backends are configured and present. mprime's `bin/mprime` and both selected y-cruncher binaries must be regular executable files; otherwise preflight fails naming the file. y-cruncher selects the lexically first name matching `<two-digit ISA index>-<alphanumeric ISA> ~ <name>` in `lib/y-cruncher/Binaries` for the lowest ISA and the first matching `24-ZN5 ~ <name>` for Zen 5, ignoring unrelated files.
-8. `backend_user` resolves to a non-root UID and primary GID.
-9. `systemd-run` can create a scope confined to CPU 0 with those credentials.
-10. The BIOS context matches the session, when resuming and all required checks passed.
+6. The PM table version, recorded as the `pm_table` check. It is informational and never fails preflight: without a decodable table, trials record no voltage requests.
+7. Per-core access is supported only on full 8-core CCDs (`../prior-art.md`): each CCD fuse is read twice with distinct RSMU register reads interleaved, and the OS topology must contain eight cores per CCD. Within each CCD, sorted raw kernel core IDs must have `core_id % 8` equal to their slots 0–7. A mismatch refuses all per-core reads and writes before any per-core command, naming the CCD and every offending core ID, assigned slot and modulo-eight slot in the preflight detail. Any fused-off slot fails this check with the CCD, its fuse mask and a message that harvested CCDs are not yet supported. Indistinguishable RSMU probes, inconsistent fuse reads, or a live-core count mismatch also refuse all per-core access.
+8. Both backends are configured and present. mprime's `bin/mprime` and both selected y-cruncher binaries must be regular executable files; otherwise preflight fails naming the file. y-cruncher selects the lexically first name matching `<two-digit ISA index>-<alphanumeric ISA> ~ <name>` in `lib/y-cruncher/Binaries` for the lowest ISA and the first matching `24-ZN5 ~ <name>` for Zen 5, ignoring unrelated files.
+9. `backend_user` resolves to a non-root UID and primary GID.
+10. `systemd-run` can create a scope confined to CPU 0 with those credentials.
+11. The BIOS context matches the session, when resuming and all required checks passed.
 
 Any failed check is a dead end. An unarmed watchdog after the bounded wait is dead end `preflight` (exit 15), with the tuning boot's usual saved-entry clear deferred until any required same-boot reconciliation succeeds; no SMU offset write or trial can happen before the watchdog check succeeds. When no same-boot reconciliation is required, a stop signal during the wait records `shutdown` and exits 0, rather than recording a watchdog failure.
 
@@ -183,7 +184,7 @@ The number of trials for a full evidence step is `ceil(ln(evidence.miss) / log1p
 
 The effective configuration is recorded in `config.loaded` at every start. Configuration that changes the meaning of existing evidence, such as trial durations, is allowed mid-session and takes effect from the next trial. The journal shows when it changed.
 
-The TOML configuration has no version field. Renamed or removed options are handled in the NixOS module with `mkRenamedOptionModule` or `mkRemovedOptionModule` and noted in the changelog; changed configurable defaults are not a ruleset break.
+The TOML configuration has no version field, and the Go configuration rejects unknown keys, so a removed or renamed option fails the command until the file is edited. The NixOS module keeps no `mkRenamedOptionModule` or `mkRemovedOptionModule` shims: the change is noted in the changelog. Changed configurable defaults are not a ruleset break.
 
 ## In-session run
 

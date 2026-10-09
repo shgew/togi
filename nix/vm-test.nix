@@ -8,6 +8,9 @@ let
   documentedLockProvision = pkgs.writeText "togi-documented-lock-provision.py" (
     builtins.elemAt (pkgs.lib.splitString "\nPY\n" (builtins.elemAt (pkgs.lib.splitString "<<'PY'\n" (builtins.readFile ../docs/howto.md)) 1)) 0
   );
+  # Both VM tests share this node: the NixOS module with the tuning specialisation, GRUB on a virtual disk
+  # and an i6300esb watchdog that resets the machine. Their nodes disable DHCP. The package excludes tools,
+  # the simulator, test files and testdata, so edits there reuse the cached image and result.
   tuningBoot =
     { pkgs, lib, ... }:
     {
@@ -34,6 +37,10 @@ let
     };
 in
 {
+  # Runs the trial package's hardware-tagged scope tests (trial-scope-tests) as root under real systemd,
+  # without stress backends or SMU access; edits to those retained tests or helpers rebuild this VM. Only
+  # the tuning specialisation's watchdog is overridden, to 10s (the module check pins the shipped 30s);
+  # the test still freezes PID 1 and observes the real hardware watchdog reset.
   tuning-boot = pkgs.testers.runNixOSTest {
     name = "togi-tuning-boot";
 
@@ -288,6 +295,10 @@ in
     '';
   };
 
+  # Systemd's restart-limit recovery with a stub package, so Go-only changes reuse the cached result: `run`
+  # and `restart-limit` exit 2 and other invocations sleep. It checks three failed starts, the fallback
+  # leave reason when `restart-limit` itself fails, recovery to the normal generation, GRUB's saved entry
+  # clearing and host-lock ownership.
   restart-limit = pkgs.testers.runNixOSTest {
     name = "togi-restart-limit";
 
