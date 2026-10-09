@@ -149,10 +149,6 @@ type envelope struct {
 	Cause []int     `json:"cause"`
 }
 
-func decode(line []byte) (Event, error) {
-	return decodeEvent(line, false)
-}
-
 func decodeEvent(line []byte, history bool) (Event, error) {
 	if kind, ok := leadingKind(line); ok && (!history || kind != KindConfigLoaded) {
 		if t, ok := payloadTypes[kind]; ok {

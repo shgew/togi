@@ -20,21 +20,6 @@ const (
 	PhaseDeepening Phase = "deepening"
 )
 
-// Word is the state word the dashboard and togi status show for a core in phase p.
-// Activity phases and unknown values have no core word and come back as their journal value.
-func (p Phase) Word() string {
-	switch p {
-	case PhaseSearch:
-		return "SEARCH"
-	case PhaseHasRoom:
-		return "HAS ROOM"
-	case PhaseAtLimit:
-		return "AT LIMIT"
-	case PhaseChecking, PhaseHunt, PhaseDeepening:
-	}
-	return string(p)
-}
-
 type Decision string
 
 const (

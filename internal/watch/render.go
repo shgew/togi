@@ -12,6 +12,7 @@ import (
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/render"
 )
 
 // Console backgrounds use slots 0-7; bold would change foreground slots on TERM=linux.
@@ -1072,15 +1073,15 @@ func (c coreView) stateWord() string {
 	case coreWaiting:
 		return "WAITING"
 	case coreSearch:
-		return journal.PhaseSearch.Word()
+		return render.PhaseWord(journal.PhaseSearch)
 	case coreConfirm:
 		return "CONFIRM"
 	case coreFound:
 		return "FOUND"
 	case coreAtLimit:
-		return journal.PhaseAtLimit.Word()
+		return render.PhaseWord(journal.PhaseAtLimit)
 	case coreHasRoom:
-		return journal.PhaseHasRoom.Word()
+		return render.PhaseWord(journal.PhaseHasRoom)
 	case coreSuspect:
 		return "SUSPECT"
 	case coreMember:
