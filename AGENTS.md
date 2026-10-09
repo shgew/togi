@@ -44,7 +44,8 @@ Pull requests that change the operator's steps update `docs/howto.md`.
 
 ## Writing
 
-- Write every file as if the repository were public: no personal hostnames, home paths, or setup specific to one machine or tool. Where there are several ways to get somewhere, name them, then continue as if the reader got there.
+- **Public:** this repository and its GitHub pages are public and permanent, history and pull request refs included: files, commits, branches, issues, comments, pull requests, reviews and releases. Publish what is true of togi and the hardware it runs on, never who or where is behind it: no personal details, whereabouts or routines, no credentials, no names, addresses or paths of private machines, networks or accounts, no identifier unique to one machine, nothing from other work or private projects. Machine output stays complete as evidence; replace only what identifies a person, place or machine, the same way each time. Reread the final text before it leaves the machine; when something ruled out here seems necessary, leave it out or ask the owner.
+- **Portable:** write for any reader's setup, nothing specific to one machine or tool. Where there are several ways to get somewhere, name them, then continue as if the reader got there.
 - Write commits, pull requests and docs for readers who have not seen the conversation that produced them.
 - Each rule has one owner, the spec. README, howto, ADRs and tool docs link to it instead of restating it.
 - Never overstate: claim only what the demo or the checks showed.
