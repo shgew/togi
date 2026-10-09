@@ -36,7 +36,11 @@ func launchInProcess(root string) func(runSpec) (simulation, error) {
 		if err != nil {
 			return simulation{}, err
 		}
-		stop, err := simrun.Simulate(context.Background(), simrun.Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Log: io.Discard, Cycles: 1, InMemoryJournal: true})
+		recorded, err := simrun.RecordedConfig(dir, config.Default())
+		if err != nil {
+			return simulation{}, err
+		}
+		stop, err := simrun.Simulate(context.Background(), simrun.Input{Config: recorded, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Log: io.Discard, Cycles: 1, InMemoryJournal: true})
 		exit := 0
 		switch {
 		case errors.Is(err, simrun.ErrBootCap):

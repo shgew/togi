@@ -17,3 +17,17 @@ func configSnapshot(c config.Config) journal.ConfigSnapshot {
 		BackendUser:         c.BackendUser,
 	}
 }
+
+// ConfigFromSnapshot returns the configuration a config.loaded recorded.
+func ConfigFromSnapshot(s journal.ConfigSnapshot) config.Config {
+	return config.Config{
+		StartOffsets:        s.StartOffsets,
+		CandidateSoloLimits: s.CandidateSoloLimits,
+		Durations:           config.Durations(s.Durations),
+		Evidence:            config.Evidence(s.Evidence),
+		Checking:            config.Checking(s.Checking),
+		DeadEnds:            config.DeadEnds(s.DeadEnds),
+		Backends:            config.Backends(s.Backends),
+		BackendUser:         s.BackendUser,
+	}
+}

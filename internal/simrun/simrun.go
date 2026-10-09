@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/shgew/togi/internal/carry"
@@ -26,6 +28,24 @@ const defaultMaxBoots = 1000
 // holds the partial session and state.json its projection. A capped run that then fails to finalize the journal
 // returns an error that is not ErrBootCap.
 var ErrBootCap = errors.New("simulated machine reached its boot cap without stopping")
+
+// RecordedConfig returns the configuration the latest config.loaded in the journal of dir recorded, as `togi run`
+// resumes it; fresh when dir holds no journal or no config.loaded.
+func RecordedConfig(dir string, fresh config.Config) (config.Config, error) {
+	events, _, err := journal.Read(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return fresh, nil
+	}
+	if err != nil {
+		return config.Config{}, fmt.Errorf("read recorded configuration: %w", err)
+	}
+	for _, e := range slices.Backward(events) {
+		if p, ok := e.Data.(*journal.ConfigLoaded); ok {
+			return session.ConfigFromSnapshot(p.Config), nil
+		}
+	}
+	return fresh, nil
+}
 
 type Input struct {
 	Config     config.Config
