@@ -190,7 +190,7 @@ claim number branch plan base="main": _dev-shell
         exit 1
     fi
 
-# Format, run `just gate` under a lock shared by every worktree of this clone, then push the current branch; stack layers use `gh stack push`
+# Format, run `just gate` under a lock shared by every worktree of this clone, then push the current branch to the branch of the same name on origin, replacing it after a rebase unless the remote branch has commits this one never contained; stack layers use `gh stack push`
 [group('github')]
 ship: _dev-shell
     #!/usr/bin/env bash
@@ -232,7 +232,7 @@ ship: _dev-shell
         flock 9
     fi
     just gate 9>&-
-    git push --set-upstream origin "$branch" 9>&-
+    git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch" 9>&-
 
 # Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready for the owner; never merges
 [group('github')]
