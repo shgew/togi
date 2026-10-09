@@ -88,6 +88,9 @@ func TestFilterCoreSelectsTrialOutcomes(t *testing.T) {
 		`{"seq":9,"time":"2026-10-01T12:00:08Z","kind":"trial.end","msg":"end 0003","trial":"0003","outcome":"failure","duration_s":1}`,
 		`{"seq":10,"time":"2026-10-01T12:00:09Z","kind":"failure","msg":"unattributed 0003","trial":"0003","signal":"crash","attribution":"unattributed"}`,
 		`{"seq":11,"time":"2026-10-01T12:00:10Z","kind":"session.shutdown","msg":"stop"}`,
+		`{"seq":12,"time":"2026-10-01T12:00:11Z","kind":"trial.carried","msg":"carried 0001 of another session","source":{"session":"old","seq":40,"build":{},"trial":"0001","time":"2026-09-01T12:00:00Z"},"class":{"regime":"R7","workload":"w","cores":[5]},"condition":"together","profile":[0],"outcome":"failure","signal":"crash","duration_s":1}`,
+		`{"seq":13,"time":"2026-10-01T12:00:12Z","kind":"failure","msg":"known failure #12","trial":"0001","signal":"crash","attribution":"unattributed","condition":"together","regime":"R7","known_failure":12,"reason":"known failure #12 answers this scheduled class"}`,
+		`{"seq":14,"time":"2026-10-01T12:00:13Z","kind":"failure","msg":"known failure #6","trial":"0002","signal":"crash","attribution":"unattributed","condition":"together","regime":"R7","known_failure":6,"reason":"known failure #6 answers this scheduled class"}`,
 	}
 	events := make([]Event, len(lines))
 	for i, line := range lines {
@@ -109,13 +112,15 @@ func TestFilterCoreSelectsTrialOutcomes(t *testing.T) {
 		filter Filter
 		want   []int
 	}{
-		{"direct core events and the trial.end of a trial loading it", Filter{Core: new(3)}, []int{2, 3, 4, 5, 6}},
-		{"a trial loading the core through cores", Filter{Core: new(2)}, []int{4, 5, 6, 7}},
+		{"direct core events and the trial.end of a trial loading it", Filter{Core: new(3)}, []int{2, 3, 4, 5, 6, 14}},
+		{"a trial loading the core through cores", Filter{Core: new(2)}, []int{4, 5, 6, 7, 14}},
 		{"a trial not loading the core is excluded", Filter{Core: new(3), Trial: "0003"}, nil},
 		{"session events never match", Filter{Core: new(9)}, nil},
-		{"a trial that started before since still counts", Filter{Core: new(3), Since: at.Add(4 * time.Second)}, []int{5, 6}},
+		{"a trial that started before since still counts", Filter{Core: new(3), Since: at.Add(4 * time.Second)}, []int{5, 6, 14}},
 		{"kinds narrow the outcomes", Filter{Core: new(3), Kinds: []string{"trial.end"}}, []int{3, 5}},
-		{"without a core the failure is not widened", Filter{Trial: "0002", Kinds: []string{"failure"}}, []int{6, 7}},
+		{"a carried known failure matches the cores of its source, not its colliding trial", Filter{Core: new(5)}, []int{8, 9, 10, 12, 13}},
+		{"a known failure matches through its source outside the window and kinds", Filter{Core: new(5), Kinds: []string{"failure"}, Since: at.Add(12 * time.Second)}, []int{13}},
+		{"without a core the failure is not widened", Filter{Trial: "0002", Kinds: []string{"failure"}}, []int{6, 7, 14}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if diff := cmp.Diff(tc.want, seqs(tc.filter)); diff != "" {
