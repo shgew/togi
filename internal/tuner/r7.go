@@ -384,6 +384,12 @@ func (s *State) r7CoreDecision(f pendingFailure, failed entry, c *core, located 
 		}
 		order.reason += fmt.Sprintf("the rerun of failure #%d with every core at CO 0 passed (#%d), so it counts as unattributed against the cores off CO 0", f.seq, r.end)
 	}
+	if skipped := s.locateSkippedReason(f); skipped != "" && located == nil {
+		if order.reason != "" {
+			order.reason += "; "
+		}
+		order.reason += skipped
+	}
 	if len(order.group) == 0 || order.named && failed.profile[s.index(c.id)] == 0 {
 		cause := append([]int{f.seq}, locatedSeqs...)
 		cause = append(cause, order.sources...)

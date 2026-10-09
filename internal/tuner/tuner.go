@@ -182,6 +182,7 @@ type State struct {
 	located                 map[int]locatedHunt
 	zeroReruns              map[int]*zeroRerun
 	zeroTrials              map[string]int
+	loadBackoffs            []loadBackoff
 }
 
 func New() *State {
@@ -313,6 +314,7 @@ func (s *State) Fold(e journal.Event) {
 		}
 	case *journal.TunerDecision:
 		if p.Decision == journal.Backoff {
+			s.recordLoadBackoff(e.Seq, e.Cause)
 			s.consumeR7(e, p.Core)
 		}
 		if c := s.core(p.Core); c != nil {

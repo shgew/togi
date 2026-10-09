@@ -60,7 +60,7 @@ func (s *State) locatePlan(h *hunt) (plan groupPlan, has, decided bool) {
 // locatable returns the failed trial of a multi-core R7 failure that is located before it is charged to the loaded
 // cores: a live unattributed one whose load left an unloaded core nonzero, and, carried or naming a core at CO 0,
 // one whose loaded cores were all at CO 0, where locate is its all-zero rerun.
-func (s *State) locatable(f pendingFailure) *entry {
+func (s *State) rulesetLocatable(f pendingFailure) *entry {
 	if !s.multiR7(f.class) || !f.carried && f.failure.Condition == machine.Parked || len(s.locateCandidates(f)) == 0 {
 		return nil
 	}
@@ -147,6 +147,10 @@ func (s *State) locateStart(f pendingFailure) Action {
 	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: loaded, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Parked: parked, Candidates: s.locateCandidates(f), Trials: s.n, TrialS: s.durations.ShortTrialS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
 	p.Reason = "no core is named, so the failure is located on the unloaded cores before it is charged to the loaded cores"
 	cause := []int{f.seq}
+	if reason, seqs := s.locateExperimentReason(f); reason != "" {
+		p.Reason += "; " + reason
+		cause = append(cause, seqs...)
+	}
 	if r := s.zeroReruns[f.seq]; r != nil && r.passed {
 		p.Reason = fmt.Sprintf("the rerun of failure #%d with every core at CO 0 passed (#%d), so it names no core and is located on the unloaded cores before it is charged to the loaded cores", f.seq, r.end)
 		cause = append(cause, r.end)
