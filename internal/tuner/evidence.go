@@ -217,10 +217,6 @@ func admittedFailure(entries []entry, p []int, since, until, last int) int {
 	return last
 }
 
-func (s *State) fails(k trialClass, p []int, since int) bool {
-	return s.failingSeq(k, p, since) != 0
-}
-
 func (s *State) citeCarried(cause []int, seqs ...int) []int {
 	for _, seq := range seqs {
 		if _, carried := s.carriedSources[seq]; carried && !slices.Contains(cause, seq) {

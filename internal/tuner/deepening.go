@@ -36,8 +36,6 @@ func totalDepth(p []int) int {
 
 func (s *State) deepeningDue() bool { return !s.checking.open && s.canDeepen() }
 
-func (s *State) CanDeepen() bool { return s.canDeepen() }
-
 func (s *State) canDeepen() bool {
 	if s.hunt != nil || len(s.queue) > 0 || len(s.obligations) > 0 || s.anySearch() || len(s.passedFullCycles) == 0 {
 		return false

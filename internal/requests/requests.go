@@ -112,16 +112,6 @@ func Groups(requests map[int]float64) [][]int {
 	return groups
 }
 
-// Shift moves requests measured on one profile to another: a shallower offset
-// raises a core's request by VoltsPerCount per count.
-func Shift(requests map[int]float64, measured, current []int) map[int]float64 {
-	shifted := make(map[int]float64, len(requests))
-	for core, v := range requests {
-		shifted[core] = v + VoltsPerCount*float64(current[core]-measured[core])
-	}
-	return shifted
-}
-
 // Counts returns the counts shallower that raise a request from v to at least
 // target, and at least one.
 func Counts(v, target float64) int {

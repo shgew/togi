@@ -66,7 +66,7 @@ func TestEvidenceIsKeyedByBackendStorePath(t *testing.T) {
 					h.add(&journal.TrialCarried{Source: journal.FactSource{Session: "old", Seq: len(h.events) + 1, Evidence: EvidenceEpoch}, Class: journal.TrialClass{Regime: machine.R1, Workload: w.ID, Cores: []int{0}, DurationS: 90}, Condition: machine.Together, Profile: profile, Outcome: journal.OutcomePass, DurationS: 90})
 				}
 			}
-			if h.s.fails(classOfWorkload(mprime), profile, 0) {
+			if h.s.failingSeq(classOfWorkload(mprime), profile, 0) != 0 {
 				t.Fatal("passes under the recording backend did not outweigh the earlier failure")
 			}
 			for _, paths := range tc.reload {
@@ -89,7 +89,7 @@ func TestEvidenceIsKeyedByBackendStorePath(t *testing.T) {
 			if diff := cmp.Diff(want, passesPerBackend(replayed)); diff != "" {
 				t.Fatalf("replayed passes per backend (-want +got):\n%s", diff)
 			}
-			if got := h.s.fails(classOfWorkload(mprime), profile, 0); got != tc.mprimeFailureValid {
+			if got := h.s.failingSeq(classOfWorkload(mprime), profile, 0) != 0; got != tc.mprimeFailureValid {
 				t.Fatalf("failure under the old mprime valid = %t, want %t", got, tc.mprimeFailureValid)
 			}
 			assertProjectionReplay(h)

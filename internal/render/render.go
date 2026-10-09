@@ -15,6 +15,21 @@ func FormatLine(e journal.Event, loc *time.Location) string {
 	return fmt.Sprintf("%s %-14s %s", e.Time.In(loc).Format("15:04:05"), EscapeText(string(e.Kind)), EscapeText(e.Msg))
 }
 
+// PhaseWord is the state word the dashboard and togi status show for a core in phase p.
+// Activity phases and unknown values have no core word and come back as their journal value.
+func PhaseWord(p journal.Phase) string {
+	switch p {
+	case journal.PhaseSearch:
+		return "SEARCH"
+	case journal.PhaseHasRoom:
+		return "HAS ROOM"
+	case journal.PhaseAtLimit:
+		return "AT LIMIT"
+	case journal.PhaseChecking, journal.PhaseHunt, journal.PhaseDeepening:
+	}
+	return string(p)
+}
+
 // EscapeText makes untrusted text inert on a terminal without changing readable Unicode.
 func EscapeText(text string) string {
 	const hex = "0123456789abcdef"

@@ -1,7 +1,6 @@
 summary: time, crashes and depth include all run statuses; hazard is steady-state failures/hour with all cores loaded.
 summary: censored runs reached the simulator's boot cap without concluding; their time and crashes are lower bounds.
-summary: partial_s/passed_cycle is measured record-only load seconds in completed passed cycles divided by their count, pooled across runs; zero when none completed.
-scenario          runs concluded censored median_h mean_h median_crashes mean_depth max_hazard/h real_answer_share partial_s/passed_cycle
-zeta                 3         1        1   10.000  104.667            4.0     -14.00     0.015000          0.000222                  70.000
-alpha                1         1        0    2.000    2.000            0.0     -40.00     0.000000          0.166667                 120.000
-TOTAL                4         2        1    7.000   79.000            3.0     -20.50     0.015000          0.000333                  82.500
+scenario          runs concluded censored median_h mean_h median_crashes mean_depth max_hazard/h real_answer_share
+zeta                 3         1        1   10.000  104.667            4.0     -14.00     0.015000          0.000222
+alpha                1         1        0    2.000    2.000            0.0     -40.00     0.000000          0.166667
+TOTAL                4         2        1    7.000   79.000            3.0     -20.50     0.015000          0.000333

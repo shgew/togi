@@ -148,7 +148,8 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 	case *journal.CorePhase:
 		return p.corePhase(line, d)
 	case *journal.CheckingCycle:
-		line.tag, line.text, line.tone = cycleText(d)
+		line.tag = tagCycle
+		line.text, line.tone = cycleText(d)
 		if d.Event == journal.CycleStart {
 			p.cycleSteps[d.Cycle] = d.Steps
 		}
@@ -165,13 +166,15 @@ func (p *projector) describe(e journal.Event) (entry, bool) {
 		}
 		line.key = fmt.Sprintf("step %d %d", d.Cycle, d.Step)
 	case *journal.HuntEnd:
-		line.tag, line.text, line.tone = p.huntEndText(d, e.Time)
+		line.tag = tagHunt
+		line.text, line.tone = p.huntEndText(d, e.Time)
 	case *journal.HuntSkipped:
 		line.tag, line.text = tagHunt, "not needed, these offsets already reach a known failure"
 	case *journal.Combination:
 		line.tag, line.text, line.tone = tagCombo, combinationText(d), comboTone
 	case *journal.DeepeningRound:
-		line.tag, line.text, line.tone = p.roundText(d)
+		line.tag = tagRound
+		line.text, line.tone = p.roundText(d)
 	case *journal.DeadEnd:
 		line.tag, line.text, line.tone = tagStop, "dead end: "+vtText(d.Detail), badTone
 	case *journal.Shutdown:
@@ -524,19 +527,19 @@ func phaseText(d *journal.CorePhase) (string, string, tone) {
 	return "", "", plainTone
 }
 
-func cycleText(d *journal.CheckingCycle) (string, string, tone) {
+func cycleText(d *journal.CheckingCycle) (string, tone) {
 	switch {
 	case d.Event == journal.CycleStart:
-		return tagCycle, fmt.Sprintf("cycle %d started · %s", d.Cycle, plural(len(d.Steps), "step")), plainTone
+		return fmt.Sprintf("cycle %d started · %s", d.Cycle, plural(len(d.Steps), "step")), plainTone
 	case d.Passed && d.Full:
-		return tagCycle, fmt.Sprintf("cycle %d passed, a full cycle of every kind of test", d.Cycle), goodTone
+		return fmt.Sprintf("cycle %d passed, a full cycle of every kind of test", d.Cycle), goodTone
 	case d.Passed:
-		return tagCycle, fmt.Sprintf("cycle %d passed but missing %s", d.Cycle, vtText(strings.Join(d.Missing, ", "))), warnTone
+		return fmt.Sprintf("cycle %d passed but missing %s", d.Cycle, vtText(strings.Join(d.Missing, ", "))), warnTone
 	}
-	return tagCycle, fmt.Sprintf("cycle %d ended early: %s", d.Cycle, vtText(d.Reason)), warnTone
+	return fmt.Sprintf("cycle %d ended early: %s", d.Cycle, vtText(d.Reason)), warnTone
 }
 
-func (p *projector) huntEndText(d *journal.HuntEnd, at time.Time) (string, string, tone) {
+func (p *projector) huntEndText(d *journal.HuntEnd, at time.Time) (string, tone) {
 	start := p.huntStarts[d.Hunt]
 	text := fmt.Sprintf("#%d done", d.Hunt)
 	if d.Groups > 0 {
@@ -550,21 +553,21 @@ func (p *projector) huntEndText(d *journal.HuntEnd, at time.Time) (string, strin
 	}
 	switch d.Result {
 	case "culprit", "direct":
-		return tagHunt, text + " · " + onlyCore(d.Cores) + " named", goodTone
+		return text + " · " + onlyCore(d.Cores) + " named", goodTone
 	case "combination":
 		text += " · " + coreIDs(d.Cores) + " kept together"
 		if p.probes[d.Hunt] {
 			text += ", probed"
 		}
-		return tagHunt, text, warnTone
+		return text, warnTone
 	case "fallback":
-		return tagHunt, text + " · " + coreIDs(d.Cores) + " unresolved", warnTone
+		return text + " · " + coreIDs(d.Cores) + " unresolved", warnTone
 	case "loaded":
-		return tagHunt, text + " · stays with loaded " + coreIDs(d.Cores), warnTone
+		return text + " · stays with loaded " + coreIDs(d.Cores), warnTone
 	case "cancelled":
-		return tagHunt, fmt.Sprintf("#%d cancelled", d.Hunt), plainTone
+		return fmt.Sprintf("#%d cancelled", d.Hunt), plainTone
 	}
-	return tagHunt, fmt.Sprintf("#%d ended: %s", d.Hunt, vtText(d.Reason)), plainTone
+	return fmt.Sprintf("#%d ended: %s", d.Hunt, vtText(d.Reason)), plainTone
 }
 
 func onlyCore(cores []int) string {
@@ -574,7 +577,7 @@ func onlyCore(cores []int) string {
 	return "cores " + coreIDs(cores)
 }
 
-func (p *projector) roundText(d *journal.DeepeningRound) (string, string, tone) {
+func (p *projector) roundText(d *journal.DeepeningRound) (string, tone) {
 	switch {
 	case d.Event == journal.CycleStart:
 		var moves []string
@@ -588,11 +591,11 @@ func (p *projector) roundText(d *journal.DeepeningRound) (string, string, tone) 
 			}
 			moves = append(moves, fmt.Sprintf("core %02d %s to %d", c.Core, move, d.Profile[i]))
 		}
-		return tagRound, fmt.Sprintf("#%d: %s", d.Round, strings.Join(moves, ", ")), plainTone
+		return fmt.Sprintf("#%d: %s", d.Round, strings.Join(moves, ", ")), plainTone
 	case d.Passed:
-		return tagRound, fmt.Sprintf("#%d passed, the proposed offsets held", d.Round), goodTone
+		return fmt.Sprintf("#%d passed, the proposed offsets held", d.Round), goodTone
 	}
-	return tagRound, fmt.Sprintf("#%d stopped: %s", d.Round, vtText(d.Reason)), warnTone
+	return fmt.Sprintf("#%d stopped: %s", d.Round, vtText(d.Reason)), warnTone
 }
 
 func coresText(cores []int, total int) string {
@@ -686,12 +689,6 @@ func mergeProbePasses(history []entry) []entry {
 		out = append(out, e)
 	}
 	return out
-}
-
-// sentence is the line of what happened as plain text.
-func (e entry) sentence() string {
-	before, alarm, after := e.sentenceParts()
-	return before + alarm + after
 }
 
 // sentenceParts splits the sentence around the words drawn as an alarm, such as the errors of a record-only part.

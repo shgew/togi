@@ -10,6 +10,7 @@ linters:
     gocognit:
       min-complexity: 50
   exclusions:
+    warn-unused: true
     presets: [std-error-handling]
     rules:
       - path: '_test\.go$'
@@ -32,20 +33,8 @@ linters:
       - path: '^internal/session/session\.go$'
         text: '^cognitive complexity [0-9]+ of func `\(\*runner\)\.loop` is high'
         linters: [gocognit]
-      - path: '^internal/sim/model\.go$'
-        text: '^cognitive complexity [0-9]+ of func `\(\*running\)\.Wait` is high'
-        linters: [gocognit]
-      - path: '^internal/sim/sim\.go$'
-        text: '^cognitive complexity [0-9]+ of func `New` is high'
-        linters: [gocognit]
       - path: '^internal/trial/run\.go$'
         text: '^cognitive complexity [0-9]+ of func `\(\*running\)\.Wait` is high'
-        linters: [gocognit]
-      - path: '^internal/tuner/constraints\.go$'
-        text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.optimum` is high'
-        linters: [gocognit]
-      - path: '^internal/tuner/checking_state\.go$'
-        text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.projectChecking` is high'
         linters: [gocognit]
       - path: '^internal/tuner/tuner\.go$'
         text: '^cognitive complexity [0-9]+ of func `\(\*State\)\.Fold` is high'

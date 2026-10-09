@@ -5,7 +5,6 @@ import (
 	"cmp"
 	"fmt"
 	"maps"
-	"math"
 	"slices"
 
 	"github.com/shgew/togi/internal/config"
@@ -175,8 +174,6 @@ type State struct {
 	bestDirty               bool
 	warning                 *journal.TunerWarning
 	warningSeq              int
-	thermal                 *journal.DeadEnd
-	thermalSeq              int
 	projectionDirty         bool
 	projectedChecking       *journal.CheckingState
 	projectedHunt           *journal.HuntState
@@ -271,7 +268,7 @@ func (s *State) Fold(e journal.Event) {
 		for _, c := range s.cores {
 			s.currentStep(c)
 		}
-		s.n = int(math.Ceil(math.Log(s.evidence.Miss) / math.Log1p(-s.evidence.Rate)))
+		s.n = config.Evidence(s.evidence).Trials()
 		s.pendingRerun()
 		s.projectionDirty = true
 	case *journal.SessionBaseline:
@@ -372,9 +369,6 @@ func (s *State) Fold(e journal.Event) {
 			s.rememberCarriedFailure(e.Seq, &p.Failure, trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, coresKey(s.ids()), s.durations.CheckingIdleS})
 		}
 	case *journal.DeadEnd:
-		if p.Condition == journal.DeadEndThermalTrip {
-			s.thermal = nil
-		}
 		if p.Condition == journal.DeadEndFailureAtZero && p.Core != nil {
 			if c := s.core(*p.Core); c != nil {
 				c.fail = new(0)
@@ -384,22 +378,6 @@ func (s *State) Fold(e journal.Event) {
 		}
 	case *journal.CrashDetected:
 		s.flight = nil
-		if p.ResetReason == machine.ResetThermalTrip && !p.Inconclusive {
-			evidence := false
-			if p.InFlight != nil {
-				evidence = s.signalled[s.intentSeq[*p.InFlight]]
-			}
-			for _, cause := range e.Cause {
-				if s.mces[cause] != nil {
-					evidence = true
-					break
-				}
-			}
-			if !evidence {
-				s.thermal = &journal.DeadEnd{Condition: journal.DeadEndThermalTrip, Detail: fmt.Sprintf("the machine reset on a thermal trip (%s); check cooling before tuning again", p.ResetReasonRaw)}
-				s.thermalSeq = e.Seq
-			}
-		}
 	case *journal.ProfileChange:
 		if len(s.checking.profile) == len(p.To) {
 			for i, x := range p.To {
@@ -468,9 +446,6 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 	intent := s.intents[p.Trial]
 	if intent == nil {
 		return
-	}
-	if s.thermal != nil && p.Outcome == journal.OutcomeFailure && p.Signal != machine.Crash {
-		s.thermal = nil
 	}
 	s.recordEvidence(e, intent, p)
 	s.recordR7Measurement(e.Seq, intent, p)
@@ -677,9 +652,6 @@ func (s *State) next() Action {
 	}
 	if s.warning != nil {
 		return s.warningAction()
-	}
-	if s.thermal != nil {
-		return Action{Kind: Decide, Payload: s.thermal, Cause: []int{s.thermalSeq}}
 	}
 	if a, ok := s.queuedReset(); ok {
 		return a

@@ -187,7 +187,7 @@ func TestCarriedFailureInvalidation(t *testing.T) {
 			for i := range h.s.n {
 				tr := Trial{Regime: r, Workload: w, Core: 0, Cores: []int{0}, Profile: []int{-20}, DurationS: d, Condition: machine.Together}
 				h.trial(Action{Kind: RunTrial, Trial: tr}, passed)
-				if got := h.s.fails(k, []int{-20}, boundary); got != (i+1 < h.s.n) {
+				if got := h.s.failingSeq(k, []int{-20}, boundary) != 0; got != (i+1 < h.s.n) {
 					t.Fatalf("class failing after %d live trials = %t", i+1, got)
 				}
 			}
@@ -214,7 +214,7 @@ func TestResetClearsCarriedCoreEvidence(t *testing.T) {
 				p[id] = -20
 				got := h.s.passes(k, p, 0, soloLimitEvidence) > 0
 				if outcome == journal.OutcomeFailure {
-					got = h.s.fails(k, p, 0)
+					got = h.s.failingSeq(k, p, 0) != 0
 				}
 				if got != (id == 1) {
 					t.Fatalf("core %d evidence after resetting core 0 = %t", id, got)
@@ -313,11 +313,11 @@ func TestResetClearsCarriedIdleFailure(t *testing.T) {
 	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20}, coreStart{phase: journal.PhaseAtLimit, offset: -20})
 	failure := h.add(&journal.FailureCarried{Source: journal.FactSource{Session: "old"}, Class: journal.TrialClass{Regime: machine.R6, Cores: []int{0, 1}}, Signal: machine.Crash, Condition: machine.Together, Profile: []int{-20, -20}})
 	k := trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, "[0 1]", 900}
-	if !h.s.fails(k, []int{-20, -20}, failure.Seq+1) {
+	if h.s.failingSeq(k, []int{-20, -20}, failure.Seq+1) == 0 {
 		t.Fatal("carried idle failure did not block the later R6 class")
 	}
 	h.add(&journal.CommandReset{Core: new(0)})
-	if h.s.fails(k, []int{-20, -20}, 0) || h.s.failureBySeq(failure.Seq) != nil {
+	if h.s.failingSeq(k, []int{-20, -20}, 0) != 0 || h.s.failureBySeq(failure.Seq) != nil {
 		t.Fatal("reset retained the carried all-core idle failure")
 	}
 }

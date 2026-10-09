@@ -95,7 +95,7 @@ func TestRealAnswerShares(t *testing.T) {
 		t.Fatal(diff)
 	}
 	columns := strings.Fields(summary.String())
-	if diff := cmp.Diff("0.250000", columns[len(columns)-2]); diff != "" {
+	if diff := cmp.Diff("0.250000", columns[len(columns)-1]); diff != "" {
 		t.Fatal(diff)
 	}
 }
