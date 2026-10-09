@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/simrun"
 )
@@ -164,21 +166,7 @@ func TestSimResumesUnderTheRecordedConfiguration(t *testing.T) {
 	recorded := config.Default()
 	recorded.Backends = config.Backends{Mprime: "/nix/store/recorded-mprime", Ycruncher: "/nix/store/recorded-ycruncher"}
 	recorded.Durations.SearchTrialS = 17
-	dir := t.TempDir()
-	m, err := sim.New(sim.Config{Seed: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ends := 0
-	until := func(e journal.Event) bool {
-		if e.Kind == journal.KindTrialEnd {
-			ends++
-		}
-		return ends == 2
-	}
-	if _, err := simrun.Simulate(context.Background(), simrun.Input{Config: recorded, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true, Until: until}); err != nil {
-		t.Fatal(err)
-	}
+	dir := recordTwoTrials(t, recorded)
 	if got := run([]string{"--state-dir", dir, "--max-boots", "1"}, io.Discard); got != 0 && got != 3 {
 		t.Fatalf("exit %d", got)
 	}
@@ -198,4 +186,65 @@ func TestSimResumesUnderTheRecordedConfiguration(t *testing.T) {
 	if diff := cmp.Diff(loaded[0], loaded[len(loaded)-1]); diff != "" {
 		t.Fatalf("configuration the resume recorded (-original +resumed):\n%s", diff)
 	}
+}
+
+func TestSimTransitionsAnOlderSchemaUnderTheRecordedBackends(t *testing.T) {
+	t.Parallel()
+	recorded := config.Default()
+	recorded.Backends = config.Backends{Mprime: "/nix/store/recorded-mprime", Ycruncher: "/nix/store/recorded-ycruncher"}
+	recorded.Durations.SearchTrialS = 17
+	dir := recordTwoTrials(t, recorded)
+	path := filepath.Join(dir, "events.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = bytes.Replace(data, fmt.Appendf(nil, `"schema":%d`, journal.Schema), fmt.Appendf(nil, `"schema":%d`, journal.Schema-1), 1)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := run([]string{"--state-dir", dir, "--max-boots", "1"}, io.Discard); got != 0 && got != 3 {
+		t.Fatalf("exit %d", got)
+	}
+	if archived, err := filepath.Glob(filepath.Join(dir, "archive", "*.jsonl")); err != nil || len(archived) != 1 {
+		t.Fatalf("archived journals %v: %v", archived, err)
+	}
+	events, _, err := journal.Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loaded *journal.ConfigLoaded
+	for _, e := range events {
+		if p, ok := e.Data.(*journal.ConfigLoaded); ok {
+			loaded = p
+		}
+	}
+	if loaded == nil {
+		t.Fatal("the new session recorded no config.loaded")
+	}
+	want := config.Default()
+	want.Backends = recorded.Backends
+	if diff := cmp.Diff(want, session.ConfigFromSnapshot(loaded.Config)); diff != "" {
+		t.Fatalf("configuration of the session that replaced the older schema (-want +got):\n%s", diff)
+	}
+}
+
+func recordTwoTrials(t *testing.T, recorded config.Config) string {
+	t.Helper()
+	dir := t.TempDir()
+	m, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ends := 0
+	until := func(e journal.Event) bool {
+		if e.Kind == journal.KindTrialEnd {
+			ends++
+		}
+		return ends == 2
+	}
+	if _, err := simrun.Simulate(context.Background(), simrun.Input{Config: recorded, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true, Until: until}); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

@@ -32,7 +32,7 @@ func run(args []string, stderr io.Writer) int {
 	cycles := flags.Int("cycles", 1, "stop after `N` clean cycles once every core is at its limit and deepening can reach no more depth")
 	machineFile := flags.String("machine", "", "load the simulated machine from this TOML `file`")
 	replay := flags.Bool("replay-facts", false, "answer exact class/profile matches from the machine's same-BIOS facts extract")
-	dir := flags.String("state-dir", "", "use this state `directory`, resuming a journal it holds under the configuration that journal recorded; default a new temporary one")
+	dir := flags.String("state-dir", "", "use this state `directory`, resuming a journal it holds under the configuration that journal recorded, or under the default configuration with its recorded backend store paths when the journal has an older schema; default a new temporary one")
 	samples := flags.Bool("samples", false, "write trials/<trial-id>/samples.jsonl in the state directory; default keep samples in memory")
 	maxBoots := flags.Int("max-boots", 1000, "stop with exit status 3 if the session is still running after `N` simulated boots")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
