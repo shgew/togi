@@ -190,6 +190,102 @@ claim number branch worktree plan base="main": _dev-shell
         exit 1
     fi
 
+# Format, run `just gate` under a lock shared by every worktree of this clone, then push the current branch; stack layers use `gh stack push`
+[group('github')]
+ship: _dev-shell
+    #!/usr/bin/env bash
+    set -euo pipefail
+    branch=$(git branch --show-current)
+    if [[ -z "$branch" || "$branch" == main ]]; then
+        echo 'ship: check out a pull request branch, not main or a detached HEAD' >&2
+        exit 1
+    fi
+    rc=0
+    gh stack view --json >/dev/null 2>&1 || rc=$?
+    case "$rc" in
+        0 | 6)
+            echo "ship: $branch is a gh stack layer; gate it with just gate and push the stack with gh stack push" >&2
+            exit 1
+            ;;
+        2) ;;
+        *)
+            extensions=$(gh extension list)
+            if [[ "$extensions" == *github/gh-stack* ]]; then
+                echo "ship: could not tell whether $branch is a gh stack layer (gh stack view exited $rc); see gh stack view" >&2
+                exit 1
+            fi
+            ;;
+    esac
+    if [[ -n "$(git status --porcelain)" ]]; then
+        echo 'ship: commit or stash every change first, untracked files included, so the gate checks what is pushed' >&2
+        exit 1
+    fi
+    just fmt
+    if [[ -n "$(git status --porcelain)" ]]; then
+        echo 'ship: just fmt changed files; review and commit them, then run just ship again' >&2
+        exit 1
+    fi
+    lock="$(git rev-parse --path-format=absolute --git-common-dir)/togi-gate.lock"
+    exec 9>"$lock"
+    if ! flock -n 9; then
+        echo "ship: another just ship holds $lock; waiting for it to exit" >&2
+        flock 9
+    fi
+    just gate 9>&-
+    git push --set-upstream origin "$branch" 9>&-
+
+# Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready for the owner; never merges
+[group('github')]
+land number: _dev-shell
+    #!/usr/bin/env bash
+    set -euo pipefail
+    last=
+    while true; do
+        while true; do
+            read -r state head < <(gh pr view "$1" --json state,headRefOid --jq '"\(.state) \(.headRefOid)"')
+            if [[ "$state" != OPEN ]]; then
+                echo "land: #$1 is $state" >&2
+                exit 1
+            fi
+            waiting=()
+            for name in check review; do
+                run=$(gh api "repos/{owner}/{repo}/commits/$head/check-runs?check_name=$name" --jq '.check_runs[0] // {} | "\(.status // "missing") \(.conclusion // "")"')
+                read -r status conclusion <<<"$run"
+                if [[ "$status" != completed ]]; then
+                    waiting+=("$name $status")
+                elif [[ "$conclusion" != success ]]; then
+                    echo "land: #$1 $name concluded $conclusion on $head" >&2
+                    exit 1
+                fi
+            done
+            if ((${#waiting[@]} == 0)); then
+                break
+            fi
+            now="$head: ${waiting[*]}"
+            if [[ "$now" != "$last" ]]; then
+                echo "land: #$1 waiting on $now"
+                last=$now
+            fi
+            sleep 30
+        done
+        unresolved=$(gh api graphql --paginate -F number="$1" -f query='query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewThreads(first: 100, after: $endCursor) { nodes { isResolved comments(first: 1) { nodes { url } } } pageInfo { hasNextPage endCursor } } } } }' -F owner='{owner}' -F repo='{repo}' --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) | .comments.nodes[0].url')
+        if [[ -n "$unresolved" ]]; then
+            echo "land: #$1 has unresolved review threads:" >&2
+            echo "$unresolved" >&2
+            exit 1
+        fi
+        read -r state current < <(gh pr view "$1" --json state,headRefOid --jq '"\(.state) \(.headRefOid)"')
+        if [[ "$state" != OPEN ]]; then
+            echo "land: #$1 is $state" >&2
+            exit 1
+        fi
+        if [[ "$current" == "$head" ]]; then
+            break
+        fi
+        echo "land: #$1 head moved from $head to $current"
+    done
+    echo "land: #$1 is ready for the owner to merge: check and review passed on $head and every review thread is resolved"
+
 # Run GitHub commands as robotogi
 [group('github')]
 bot +args: _dev-shell

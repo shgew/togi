@@ -111,6 +111,7 @@
 
           devShells.default = pkgs.mkShell {
             packages = [
+              pkgs.flock
               pkgs.go_1_27
               pkgs.gh
               pkgs.gh-token
