@@ -137,10 +137,11 @@ func (s *State) p2CycleEndReason() string {
 	switch {
 	case !s.p2.started:
 		cands, literal := s.p2Evaluate(s.checking.profile)
-		if len(cands) == 0 {
-			return fmt.Sprintf("%s: phase 1 first passed cycle, no candidate cores, the run concludes", p2Tag())
+		_, _, movable := s.p2Targets(cands)
+		if len(movable) == 0 {
+			return fmt.Sprintf("%s: phase 1 first passed cycle, candidate cores %v (the literal Q26 clause would allow %v), none can move without reaching a failure point or combination, the run concludes", p2Tag(), ids(cands), ids(literal))
 		}
-		return fmt.Sprintf("%s: phase 1 first passed cycle, candidate cores %v (the literal Q26 clause would allow %v), rounds follow", p2Tag(), ids(cands), ids(literal))
+		return fmt.Sprintf("%s: phase 1 first passed cycle, candidate cores %v (the literal Q26 clause would allow %v), movable now %v, rounds follow", p2Tag(), ids(cands), ids(literal), movable)
 	case s.p2.confirming && !s.p2.concluded:
 		return p2Tag() + ": confirmation cycle passed, the run concludes"
 	}
@@ -169,7 +170,7 @@ func (s *State) foldPhase2Cycle(e journal.Event, p *journal.CheckingCycle) {
 		}
 		q.candidates, q.literal = s.p2Evaluate(s.checking.profile)
 		q.done, q.consumed = map[int]bool{}, map[int]bool{}
-		if len(q.candidates) == 0 {
+		if _, _, movable := s.p2Targets(q.candidates); len(movable) == 0 {
 			q.confirming, q.concluded, q.concludeSeq = true, true, e.Seq
 		}
 		return
@@ -179,12 +180,12 @@ func (s *State) foldPhase2Cycle(e journal.Event, p *journal.CheckingCycle) {
 	}
 }
 
-func (s *State) p2Targets() (profile, target, changed []int) {
+func (s *State) p2Targets(cands map[int]bool) (profile, target, changed []int) {
 	cur := s.offsets()
 	profile = slices.Clone(cur)
 	target = slices.Clone(cur)
 	for _, c := range s.cores {
-		if !s.p2.candidates[c.id] || s.p2.done[c.id] || c.phase == journal.PhaseSearch || c.offset <= c.ceiling {
+		if !cands[c.id] || s.p2.done[c.id] || c.phase == journal.PhaseSearch || c.offset <= c.ceiling {
 			continue
 		}
 		step := 1
@@ -212,12 +213,12 @@ func (s *State) p2RoundDue() bool {
 	if exp.Phase2 == "" || !q.started || q.confirming || q.concluded || s.checking.open || s.round != nil || s.hunt != nil || len(s.queue) > 0 || len(s.obligations) > 0 || s.anySearch() {
 		return false
 	}
-	_, _, changed := s.p2Targets()
+	_, _, changed := s.p2Targets(q.candidates)
 	return len(changed) > 0
 }
 
 func (s *State) p2RoundStart() Action {
-	profile, target, changed := s.p2Targets()
+	profile, target, changed := s.p2Targets(s.p2.candidates)
 	base := s.passedFullCycles[len(s.passedFullCycles)-1]
 	reason := fmt.Sprintf("; %s: round moves cores %v toward their ceilings", p2Tag(), changed)
 	if s.nextRound == 0 {
@@ -374,10 +375,9 @@ func (s *State) p2Blame() (Action, bool) {
 		return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: x.rd.start.Round, Event: journal.CycleEnd, Reason: fmt.Sprintf("%s: failure #%d, blame goes to the deepened cores", p2Tag(), seq)}, Cause: []int{seq}}, true
 	}
 	if x.rd != nil {
-		for _, id := range x.deepened {
-			c := s.core(id)
-			i := s.index(id)
-			if id == blamed || c.offset == x.rd.initial[i] {
+		for _, c := range s.cores {
+			id, i := c.id, s.index(c.id)
+			if id == blamed || !slices.Contains(x.rd.start.Cores, id) || x.rd.start.Profile[i] >= x.rd.initial[i] || c.offset == x.rd.initial[i] {
 				continue
 			}
 			return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: id, Phase: journal.PhaseDeepening, Decision: journal.Yield, FromOffset: c.offset, ToOffset: x.rd.initial[i], Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("%s: round %d failed on core %02d, so core %02d returns to %d and may retry its target", p2Tag(), x.rd.start.Round, blamed, id, x.rd.initial[i])}, Cause: []int{seq}}, true
