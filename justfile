@@ -11,12 +11,12 @@ _default:
 # Run the Go test suite with optional test flags
 [group('test')]
 test *args:
-    {{ dev }} go test -shuffle=on ./... "$@"
+    {{ dev }} go test ./... "$@"
 
 # Run one package's tests with optional test flags (`just focus ./internal/tuner`, `just focus ./... -run TestChecking/crash`)
 [group('test')]
 focus package *args:
-    {{ dev }} go test -shuffle=on "$@"
+    {{ dev }} go test "$@"
 
 # Run the hardware tests on the target machine (Linux only)
 [group('test')]

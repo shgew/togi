@@ -1,5 +1,7 @@
 Serving CI only is amended by [ADR 0042](0042-opt-in-to-the-check-cache-locally.md): a machine whose Nix configuration trusts the cache downloads unchanged checks in local `just check`.
 
+Its consequence that flaky tests surface in local `just test` is amended by [ADR 0045](0045-the-tight-loop-reuses-cached-test-results.md): `just test` reuses cached results, and `just gate` draws a new `-shuffle=on` seed on every run.
+
 # Cache check outputs on Cachix
 
 A `check` run took about 3.3 minutes, set by the `vm` job. Much of it repeated work: the run on `main` after a squash-merge rebuilt the tree its pull request had just passed, and the release waits for that run ([ADR 0014](0014-release-from-a-workflow.md), [ADR 0016](0016-every-pull-request-runs-every-check.md)). A pull request touching only docs rebuilt every check, although no check's source includes the docs. The nixpkgs paths already come from cache.nixos.org, so a cache saves only what togi's flake builds, and it saved none of it while `packages.default` stamped the commit's revision and `lint` and `vm` were built from it: all three changed on every commit.

@@ -89,7 +89,7 @@ Enter the dev shell with `nix develop`, or with `direnv allow` once per checkout
 | `just lock-interactions` | Limit issues, comments, reactions and pull requests to collaborators for six months, GitHub's longest interaction limit; run it when `just board` asks |
 | `just bot <gh args>` | Post review records and `review` checks as robotogi, using the private key file named by `ROBOTOGI_KEY_FILE` |
 | `just reviews` | The review track record of the merged pull requests: per pull request, robotogi's `review` check on its head, its findings by priority and outcome from the review records, and the time from opening to the first record; then totals (`go run ./tools/reviews`) |
-| `just test` | The tight loop |
+| `just test` | The tight loop: unshuffled, so packages whose tests and inputs are unchanged reuse Go's cached results; `just gate` and CI shuffle (ADR 0045) |
 | `just gate` | Every non-VM flake check, sequentially, cheapest first: fmt, lint, module and changes, the Go modules vendored for `vendorHash` against `go.mod` and `go.sum`, shuffled integration-tagged tests, race, and, on Linux, the hardware-tagged trial test compile. Uses warm dev-shell Go caches |
 | `just check` | Every flake check the host builds, CI's definition of green: package (shuffled integration-tagged tests), race (trial, session, journal and watch), lint (Linux and macOS), fmt, changes (changelog fragments), module (NixOS module evaluation) and, on Linux, `trial-scope-tests` and the VM tests `vm` (tuning boot) and `vm-restart-limit`. Must pass before every push to a pull request head, review fixes included; CI also runs the Linux-only checks for macOS authors |
 | `just fmt` | Format Go, Nix and the justfile in place |
