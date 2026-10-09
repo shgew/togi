@@ -3,7 +3,7 @@ description: Review pull requests in parallel and record their merge gates
 argument-hint: "[PR numbers or URLs… | all]"
 ---
 
-Review `$ARGUMENTS` in this repository. Read `AGENTS.md` and `REVIEW.md` first. Use `gh` for GitHub actions, which act as the owner; only the review record and the `review` check go through `just bot`, which acts as robotogi. Keep temporary payloads outside the repository. Never merge; the owner merges.
+Review `$ARGUMENTS` in this repository. Read `AGENTS.md` and `REVIEW.md` first. Use `gh` for GitHub actions, which act as the owner; only the review record and the `review` check go through `just bot`, which acts as robotogi. Keep temporary payloads outside the repository. Review coordinators never merge; merging follows the merge rule in `AGENTS.md`.
 
 ## Resolve and fan out
 
