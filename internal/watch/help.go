@@ -168,9 +168,49 @@ func helpRule(title string, width int) string {
 	return white.Render(title) + " " + grey.Render(strings.Repeat("─", max(0, width-ansi.StringWidth(title)-1)))
 }
 
+// heldLog is the journal view's list while it is scrolled back: the entries it held when the reader left the end.
+// Events that arrive later stay out of it, so the rows the reader is on do not move.
+type heldLog struct {
+	held  bool
+	log   []entry
+	total int
+}
+
+// apply gives s the held list while sc is the journal view scrolled back, counting the events that arrived since, and
+// lets go of it when the view follows the end again or closes.
+func (h *heldLog) apply(s Snapshot, sc Screen) Snapshot {
+	if sc.View != LogView || sc.Scroll < 0 {
+		*h = heldLog{}
+		return s
+	}
+	if !h.held || s.logTotal < h.total {
+		*h = heldLog{held: true, log: s.log, total: s.logTotal}
+	}
+	s.log, s.logTotal, s.logArrived = h.log, h.total, s.logTotal-h.total
+	return s
+}
+
+// logRule heads the journal view and says what its list leaves out: events before the newest logLimit, and SMU and
+// preflight events, which the journal view never lists.
+func (s Snapshot) logRule(width int) string {
+	notes := []string{"SMU and preflight events left out"}
+	if s.logTotal > logLimit {
+		notes = []string{
+			fmt.Sprintf("last %d of %d events · SMU and preflight left out", logLimit, s.logTotal),
+			fmt.Sprintf("last %d of %d events", logLimit, s.logTotal),
+		}
+	}
+	for _, note := range notes {
+		if need := ansi.StringWidth("JOURNAL") + ansi.StringWidth(note) + 2; need <= width {
+			return helpRule("JOURNAL", width-ansi.StringWidth(note)-1) + " " + grey.Render(note)
+		}
+	}
+	return helpRule("JOURNAL", width)
+}
+
 func renderLogBody(s Snapshot, width, height, scroll int) ([]string, int) {
 	bodyWidth := max(1, width-2)
-	lines := []string{helpRule("JOURNAL", bodyWidth), ""}
+	lines := []string{s.logRule(bodyWidth), ""}
 	if len(s.log) == 0 {
 		lines = append(lines, grey.Render("No journal entries yet."))
 	}

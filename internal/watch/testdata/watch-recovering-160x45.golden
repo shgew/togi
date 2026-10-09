@@ -20,7 +20,7 @@
     06    0  SEARCH    ·····                              p -10 · n -15             14    0  SEARCH    · █                           -5   p -1 · n -2
     07    0  SEARCH    ·····                              p -10 · n -15             15    0  SEARCH    ·····                              p -10 · n -15
 
-  TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
+  TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 
     cor this turn                   at   so far                                   02:47  crash    with the offsets applied, rebooted
     13  search step: light, then    -15  passed -10 · next -15                    02:45  backoff  core 12 -15 → -11

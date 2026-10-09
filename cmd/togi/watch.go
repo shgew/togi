@@ -26,9 +26,10 @@ resized. togi says in plain words what it is doing and why, how far the
 current trial and cycle have come, and what each outcome would lead to. Each
 CCD's cores show their offsets and limits side by side; below them, the cycle,
 hunt or search beside what happened recently. On a terminal, keys switch
-views: ? explains the screen, l shows the journal, the arrow and page keys
-scroll both, q quits. Rendered from the journal, which it reloads only when it
-changes.
+views: ? explains the screen, l shows the newest 400 journal events, the arrow
+and page keys scroll both, q quits. A journal scrolled back holds its list
+still and counts new events until End. Rendered from the journal, which it
+reloads only when it changes.
 On a terminal it fills the screen until interrupted; otherwise it prints one
 frame of --width by --height and exits. An unreadable or incompatible journal
 appears in the frame and on stderr, and one-frame watch exits 1; live watch
