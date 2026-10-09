@@ -77,10 +77,7 @@ func TestCyclePlanDynamicChainRequirements(t *testing.T) {
 	if !plan.Steps[0].Done || plan.Current != 1 {
 		t.Fatalf("completed dynamic chain did not complete the projected step: %+v", plan)
 	}
-	replay := New()
-	for _, e := range h.events {
-		replay.Fold(e)
-	}
+	replay := replayState(h.events)
 	if diff := cmp.Diff(plan, replay.CyclePlan()); diff != "" {
 		t.Fatalf("chain projection changed across replay (-live +replay):\n%s", diff)
 	}
@@ -132,10 +129,7 @@ func TestCyclePlanPartialProfileChanges(t *testing.T) {
 					t.Fatalf("rederived partial was not projected: %s", diff)
 				}
 			}
-			replay := New()
-			for _, e := range h.events {
-				replay.Fold(e)
-			}
+			replay := replayState(h.events)
 			if diff := cmp.Diff(h.s.CyclePlan(), replay.CyclePlan()); diff != "" {
 				t.Fatalf("partial freeze changed across replay: %s", diff)
 			}

@@ -114,10 +114,7 @@ func TestR7ChainFreezesStartedPartsAndRederivesUnstartedParts(t *testing.T) {
 			p := slices.Clone(h.s.Profile())
 			p[1] = -1
 			h.add(&journal.ProfileChange{From: h.s.Profile(), To: p})
-			replay := New()
-			for _, e := range h.events {
-				replay.Fold(e)
-			}
+			replay := replayState(h.events)
 			a = replay.cycleNext()
 			if started {
 				if a.Kind != RunTrial || !a.Trial.Retry || !slices.Equal(a.Trial.Cores, old.Cores) {

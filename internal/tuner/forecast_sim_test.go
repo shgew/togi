@@ -286,9 +286,8 @@ func TestForecastMatchesSimulatedTrials(t *testing.T) {
 					if nextAt+1 < folded {
 						t.Fatalf("trial %s next intent at %d precedes folded prefix %d", intent.Trial, nextAt, folded)
 					}
-					for ; folded <= nextAt; folded++ {
-						s.Fold(events[folded])
-					}
+					journal.Replay(events[folded:nextAt+1], s)
+					folded = nextAt + 1
 					if want := s.CyclePlan().Current + 1; branch.NextStep != want {
 						t.Fatalf("trial %s next step %d, want %d when it runs", intent.Trial, branch.NextStep, want)
 					}
@@ -315,9 +314,7 @@ func BenchmarkDashboardProjectionForecast(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		s := tuner.New()
-		for _, e := range events {
-			s.Fold(e)
-		}
+		journal.Replay(events, s)
 		for id := range 16 {
 			_ = s.CoreLimit(id)
 		}

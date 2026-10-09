@@ -144,10 +144,7 @@ func TestIdleMonotonicityChoosesEarliestPassingClass(t *testing.T) {
 		}
 	}
 	for range 20 {
-		s := New()
-		for _, e := range h.events {
-			s.Fold(e)
-		}
+		s := replayState(h.events)
 		failure := journal.Event{Seq: len(h.events) + 1, Data: &journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Condition: machine.Together, Profile: []int{-10, -12}}}
 		s.Fold(failure)
 		a := s.Next()

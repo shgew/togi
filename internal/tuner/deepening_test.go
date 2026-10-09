@@ -69,10 +69,7 @@ func TestDeepeningGlobalOptimumAndResume(t *testing.T) {
 	decisions := []journal.Decision{journal.Yield, journal.Deepen, journal.Deepen}
 	for _, want := range decisions {
 		live := h.next()
-		replayed := New()
-		for _, e := range h.events {
-			replayed.Fold(e)
-		}
+		replayed := replayState(h.events)
 		if diff := cmp.Diff(live, replayed.Next()); diff != "" {
 			t.Fatalf("round resume (-live +replayed):\n%s", diff)
 		}
@@ -97,10 +94,7 @@ func TestDeepeningGlobalOptimumAndResume(t *testing.T) {
 		t.Fatalf("profile (-want +got):\n%s", diff)
 	}
 	for range 100 {
-		replayed := New()
-		for _, e := range h.events {
-			replayed.Fold(e)
-		}
+		replayed := replayState(h.events)
 		if diff := cmp.Diff(h.s.Next(), replayed.Next()); diff != "" {
 			t.Fatalf("deepening prefix replay (-live +replayed):\n%s", diff)
 		}

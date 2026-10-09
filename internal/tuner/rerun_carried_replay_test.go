@@ -66,10 +66,7 @@ func TestCarriedRerunCitationReplay(t *testing.T) {
 					}
 					h.trial(a, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: a.Trial.DurationS})
 				}
-				replayed := New()
-				for _, e := range h.events {
-					replayed.Fold(e)
-				}
+				replayed := replayState(h.events)
 				want, got := h.s.Next(), replayed.Next()
 				if want.Kind != Decide {
 					t.Fatalf("expected next journal decision: %+v", want)
@@ -109,10 +106,7 @@ func TestCarriedRerunBoundaryPreservesPendingChecks(t *testing.T) {
 				} else {
 					h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
 				}
-				replayed := New()
-				for _, e := range h.events {
-					replayed.Fold(e)
-				}
+				replayed := replayState(h.events)
 				want, got := h.s.Next(), replayed.Next()
 				if got.Kind != RunTrial || !got.Trial.Rerun || got.Trial.DurationS != duration || !slices.Equal(got.Cause, []int{failure}) {
 					t.Fatalf("boundary lost pending rerun: %+v", got)

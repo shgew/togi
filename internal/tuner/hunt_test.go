@@ -64,9 +64,7 @@ func runGroup(h *harness, a Action, fail bool) {
 
 func assertHuntNextReplay(h *harness, want Action, next func(*State) Action, failure string) {
 	h.t.Helper()
-	replayed := New()
-	var state journal.State
-	journal.Replay(h.events, &state, replayed)
+	replayed := replayState(h.events)
 	if diff := cmp.Diff(want, next(replayed)); diff != "" {
 		h.t.Fatalf("%s:\n%s", failure, diff)
 	}

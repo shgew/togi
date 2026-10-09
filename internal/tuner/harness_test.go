@@ -139,6 +139,13 @@ func (h *harness) next() Action {
 	return Action{}
 }
 
+// replayState folds recorded events into a fresh reducer, as a resumed session does.
+func replayState(events []journal.Event) *State {
+	s := New()
+	journal.Replay(events, s)
+	return s
+}
+
 func projected(h *harness) journal.State {
 	var st journal.State
 	journal.Replay(h.events, &st)
@@ -148,10 +155,7 @@ func projected(h *harness) journal.State {
 
 func assertProjectionReplay(h *harness) {
 	h.t.Helper()
-	replayed := New()
-	for _, e := range h.events {
-		replayed.Fold(e)
-	}
+	replayed := replayState(h.events)
 	var st journal.State
 	journal.Replay(h.events, &st)
 	replayed.Project(&st)

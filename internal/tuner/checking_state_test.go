@@ -54,10 +54,7 @@ func TestCreditedCycleReplays(t *testing.T) {
 	if state.Checking.CleanCycles != 1 || state.Checking.LastCleanCycle != 1 {
 		t.Fatalf("lost credited cycle: %+v", state.Checking)
 	}
-	replayed := New()
-	for _, event := range h.events {
-		replayed.Fold(event)
-	}
+	replayed := replayState(h.events)
 	var got journal.State
 	replayed.Project(&got)
 	if diff := cmp.Diff(state.Checking, got.Checking); diff != "" {

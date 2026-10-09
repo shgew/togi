@@ -206,10 +206,7 @@ func TestForecastWaitsForInitialCorePhases(t *testing.T) {
 		if diff := cmp.Diff(ForecastPlan{}, Forecast(events[:n])); diff != "" {
 			t.Fatal(diff)
 		}
-		s := New()
-		for _, e := range events[:n] {
-			s.Fold(e)
-		}
+		s := replayState(events[:n])
 		if len(s.DeepeningPlan().Room) != 0 {
 			t.Fatal("uninitialized core was given room")
 		}
@@ -387,10 +384,7 @@ func TestForecastR7PremisesFoldDistinctOutcomesWithoutInventedTelemetry(t *testi
 			continue
 		}
 		// Fold the actual telemetry-free outcome through the tuner independently.
-		s := New()
-		for _, e := range h.events {
-			s.Fold(e)
-		}
+		s := replayState(h.events)
 		end := &journal.TrialEnd{Trial: p.Trial, DurationS: p.DurationS, Outcome: journal.OutcomePass}
 		switch b.Premise {
 		case IfNamed:
