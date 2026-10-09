@@ -212,7 +212,7 @@ func openForCommand(name string, j *journal.Journal, stderr io.Writer, allowRule
 		if stamp, _, scanErr := journal.Scan(dir); scanErr == nil && stamp.Schema != 0 {
 			if err := journal.Classify(stamp, session.Build()).Refusal(journal.OpAppend); err != nil {
 				fmt.Fprintf(stderr, "togi %s: %s\n", name, render.EscapeText(err.Error()))
-				return "", exitError, false
+				return "", exitIncompatible, false
 			}
 		}
 	}
@@ -223,6 +223,9 @@ func openForCommand(name string, j *journal.Journal, stderr io.Writer, allowRule
 		return "", exitError, false
 	case err != nil:
 		fmt.Fprintf(stderr, "togi %s: %s\n", name, render.EscapeText(err.Error()))
+		if _, ok := errors.AsType[*journal.IncompatibleError](err); ok {
+			return "", exitIncompatible, false
+		}
 		return "", exitError, false
 	case len(events) == 0:
 		fmt.Fprintf(stderr, "togi %s: no session in %s\n", name, dir)
@@ -231,7 +234,7 @@ func openForCommand(name string, j *journal.Journal, stderr io.Writer, allowRule
 	if !allowRuleset {
 		if err := journal.Classify(journal.BuildOf(events), session.Build()).Refusal(journal.OpAppend); err != nil {
 			fmt.Fprintf(stderr, "togi %s: %s\n", name, render.EscapeText(err.Error()))
-			return "", exitError, false
+			return "", exitIncompatible, false
 		}
 	}
 	torn, err := j.Open()
