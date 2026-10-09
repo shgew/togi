@@ -415,6 +415,58 @@ func TestRecordedConfigResumesRecordedPassesAndDurations(t *testing.T) {
 	if diff := cmp.Diff(want, next(config.Default())); diff == "" {
 		t.Fatal("resuming under the default configuration repeated the recorded trial; the test cannot tell the configurations apart")
 	}
+
+	// The next trial alone cannot show that the recorded passes still count: the trial runs on core 1 alone, so it
+	// looks the same with the passes dropped. What the passes decide is the first step the resumed tuner takes.
+	type action struct {
+		Kind     journal.Kind
+		Decision journal.Decision
+		Core     int
+		Cause    []int
+	}
+	var recordedPasses []int
+	events, _, err := journal.Read(stopped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range events {
+		if e.Kind == journal.KindTrialEnd {
+			recordedPasses = append(recordedPasses, e.Seq)
+		}
+	}
+	first := func(cfg config.Config) action {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.CopyFS(dir, os.DirFS(stopped)); err != nil {
+			t.Fatal(err)
+		}
+		resume(dir, cfg, func(e journal.Event) bool {
+			return e.Kind == journal.KindTunerDecision || e.Kind == journal.KindTrialIntent
+		})
+		after, _, err := journal.Read(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range after[len(events):] {
+			switch p := e.Data.(type) {
+			case *journal.TunerDecision:
+				return action{e.Kind, p.Decision, p.Core, e.Cause}
+			case *journal.TrialIntent:
+				return action{Kind: e.Kind, Core: *p.Core}
+			}
+		}
+		t.Fatal("the resumed session took no decision or trial")
+		return action{}
+	}
+	wantFirst := action{journal.KindTunerDecision, journal.StepDeeper, *intents(stopped)[0].Core, recordedPasses}
+	if diff := cmp.Diff(wantFirst, first(got)); diff != "" {
+		t.Fatalf("first action after resuming under the recorded configuration (-want +got):\n%s", diff)
+	}
+	backendsDropped := recorded
+	backendsDropped.Backends = config.Backends{}
+	if diff := cmp.Diff(wantFirst, first(backendsDropped)); diff == "" {
+		t.Fatal("resuming with only the backends dropped still counted the recorded passes; the test cannot tell the backends apart")
+	}
 }
 
 func TestRecordedConfigWithoutJournalIsFresh(t *testing.T) {
