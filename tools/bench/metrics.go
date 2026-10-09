@@ -30,7 +30,6 @@ type result struct {
 	SimHours                float64                    `json:"sim_hours"`
 	FirstPassedCycleH       *float64                   `json:"first_passed_cycle_h"`
 	PassedCycles            int                        `json:"passed_cycles"`
-	PartialSeconds          float64                    `json:"partial_seconds"`
 	Crashes                 int                        `json:"crashes"`
 	Trials                  int                        `json:"trials"`
 	RealAnswers             int                        `json:"real_answers"`
@@ -50,8 +49,6 @@ func metrics(events []journal.Event, m *sim.Machine, cores int) result {
 	var r result
 	var start time.Time
 	var st journal.State
-	partialIntents := make(map[string]int)
-	partialSeconds := make(map[int]float64)
 	t := tuner.New()
 	journal.Replay(events, &st, t)
 	t.Project(&st)
@@ -78,24 +75,15 @@ func metrics(events []journal.Event, m *sim.Machine, cores int) result {
 		case *journal.CheckingCycle:
 			if p.Event == journal.CycleEnd && p.Passed {
 				r.PassedCycles++
-				r.PartialSeconds += partialSeconds[p.Cycle]
 				if r.FirstPassedCycleH == nil {
 					r.FirstPassedCycleH = new(h)
 				}
-			}
-		case *journal.TrialIntent:
-			if p.RecordOnly && p.Cycle > 0 {
-				partialIntents[p.Trial] = p.Cycle
 			}
 		case *journal.CrashDetected:
 			r.Crashes++
 		case *journal.TrialEnd:
 			r.Trials++
 			r.TrialHours += float64(p.DurationS) / 3600
-			if cycle, ok := partialIntents[p.Trial]; ok {
-				partialSeconds[cycle] += float64(p.DurationS)
-				delete(partialIntents, p.Trial)
-			}
 		case *journal.HuntStart:
 			r.Hunts++
 		case *journal.Combination:
@@ -193,13 +181,6 @@ func answerShare(real, trials int) float64 {
 		return 0
 	}
 	return float64(real) / float64(trials)
-}
-
-func partialSecondsPerPassedCycle(seconds float64, passedCycles int) float64 {
-	if passedCycles == 0 {
-		return 0
-	}
-	return seconds / float64(passedCycles)
 }
 
 func setScenarioShares(results []result) {

@@ -92,7 +92,6 @@ To control concurrency, timeouts or retention directly, use `go run ./tools/benc
 - `first_passed_cycle_h`: simulated time to the first passed cycle;
 - `crashes`, `trials`, `trial_hours`, `hunts` and `combinations`;
 - `passed_cycles`: completed `checking.cycle` ends marked passed, whether full or not;
-- `partial_seconds`: measured `trial.end.duration_s` summed for record-only trials belonging to those passed cycles, including passes, failures and inconclusive retries. Failed or unfinished cycles, unfinished trials, and trial-less crashes contribute no partial seconds.
 - `real_answers` and `real_answer_share`: the number and fraction of completed trials answered by matching real facts; inconclusive trials and failures before workload startup count in `trials` but not as real answers;
 - `scenario_real_answer_share`: real answers divided by completed trials across the scenario's selected runs, not an average of per-run fractions;
 - `machine`: the fitted ensemble member selected for the seed.
@@ -105,8 +104,6 @@ The commit, a dirty flag and the ruleset are recorded with every run.
 The summary counts each scenario's runs, `concluded` runs and `censored` runs. Its time, crash and depth columns include every status, so a censored run's time and crashes enter them as lower bounds.
 
 The summary prints each scenario's `real_answer_share` and a pooled total. Comparison scenario rows and the verdict line print the candidate and baseline shares over paired runs. These fractions describe how much of the observed path has direct real evidence, not a confidence score. Unfinished trials in a timed-out subprocess have no recorded outcome and are not counted. Hazard metrics and model checks still describe the fitted fallback, not an empirical oracle hazard.
-
-The summary's `partial_s/passed_cycle` divides pooled `partial_seconds` by pooled `passed_cycles`, not by runs or full cycles and not by an average of per-run ratios. It reports zero when no passed cycle completed. This legacy metric is the elapsed load cost of marked ruleset-8 record-only R7 partials per completed passed cycle: failed partials still cost their measured elapsed time, not their intended duration. It excludes reboot and other non-load overhead. The marker does not change the trial class. Ruleset 9 emits no record-only trials and treats eligible marked outcomes carried from ruleset 8 as ordinary decision evidence; this marker-based metric is not the cost of ruleset-9 partial chains.
 
 For shared-voltage runs the summary also prints `worst_r7_hazard/h`, the maximum `worst_r7_hazard_per_h` over the scenario's measured runs, and `worst_r7_runs`, their count. Legacy machines omit the JSON field and these diagnostic rows; their existing hazard metrics and reports remain unchanged.
 
@@ -124,8 +121,6 @@ Violations:
 - **V2:** a run's `hazard_max_per_h` rises by more than 0.01.
 - **V3:** depth gets shallower: by more than 1 count averaged over a scenario, or by more than 5 in one run.
 - **V4:** `target`, the target machine's replay-oracle ensemble, gets slower overall.
-
-Comparison rows and the verdict's diagnostic row report `partial_s_per_passed_cycle` and `baseline_partial_s_per_passed_cycle`. Each side pools partial seconds and passed cycles separately over the paired runs only. Older baseline records missing these fields contribute zero; a wholly older baseline therefore reports zero partial seconds per passed cycle. The candidate minus baseline value quantifies the added partial load time. This metric is informational and does not change the normal verdict or violations: issue #105's record-only layer is exempt from the benchmark gate.
 
 When both sides of a pair recorded `worst_r7_hazard_per_h`, comparison also reports `max_worst_r7_hazard_delta` (the largest candidate-minus-baseline difference) and `worst_r7_pairs` (the number of such pairs). Missing values are unavailable, not zero: older baselines cannot supply this comparison. This metric is diagnostic only; V2 continues to use `hazard_max_per_h`, and no verdict threshold changes.
 
