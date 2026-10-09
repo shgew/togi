@@ -2,6 +2,8 @@
 
 `just test` and `just focus` ran `go test -shuffle=on`. Go caches a package's test result only when every flag on the command line is one of its cacheable test flags (`go help test`), and `-shuffle` is not one of them. Every run therefore relinked every test binary into Go's build work directory and reran every package, however little had changed since the last run.
 
+[#151](https://github.com/shgew/togi/issues/151) proposed the same change and was closed because [ADR 0021](0021-cache-check-outputs-on-cachix.md) left local `just test` as the run that draws a fresh shuffle seed when CI substitutes a cached check. Since then `just gate`, required before every commit, runs the integration-tagged tests and the race run with `-shuffle=on` on every invocation, so it draws that seed instead.
+
 Measured on a 32-thread x86_64 Linux machine, rerunning the whole suite with nothing changed and the build cache warm:
 
 | Command | Wall | Written to disk with the temporary directory on btrfs | Packages from cache |
