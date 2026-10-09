@@ -80,11 +80,7 @@ func TestDashboardQuietsInputUntilItStops(t *testing.T) {
 
 func TestDiscardInputDropsTypedAhead(t *testing.T) {
 	slave, master := openPTY(t)
-	restore, err := quietInput(slave)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = restore() }()
+	defer quietInput(slave)()
 	if _, err := master.WriteString("y\n"); err != nil {
 		t.Fatal(err)
 	}

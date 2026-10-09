@@ -43,16 +43,14 @@ func (d *dashboard) show() {
 	if run == nil {
 		run = func(ctx context.Context, dir string, out *os.File) error { return watch.Run(ctx, dir, out, nil) }
 	}
-	restore := func() error { return nil }
+	restore := func() {}
 	if d.in != nil {
-		if undo, err := quietInput(d.in); err == nil {
-			restore = undo
-		}
+		restore = quietInput(d.in)
 	}
 	go func() {
 		defer close(done)
 		err := contained(func() error { return run(ctx, d.dir, d.out) })
-		_ = restore()
+		restore()
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		d.showing = false

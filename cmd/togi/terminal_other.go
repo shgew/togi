@@ -8,9 +8,8 @@ import (
 	"os"
 )
 
-func quietInput(*os.File) (func() error, error) {
-	return nil, fmt.Errorf("turn off terminal echo: %w", errors.ErrUnsupported)
-}
+// quietInput leaves the terminal as it is: echo control is implemented for Linux only.
+func quietInput(*os.File) (restore func()) { return func() {} }
 
 func discardInput(*os.File) error {
 	return fmt.Errorf("discard terminal input: %w", errors.ErrUnsupported)

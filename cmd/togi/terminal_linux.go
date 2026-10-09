@@ -8,25 +8,21 @@ import (
 )
 
 // quietInput turns off the terminal's echo and line buffering, leaving its signal keys, so Ctrl-C still sends SIGINT.
-// The returned function restores the previous settings.
-func quietInput(in *os.File) (func() error, error) {
+// The returned function restores the previous settings. A terminal that refuses the change keeps echoing; the
+// dashboard is only less tidy then, so there is nothing to report.
+func quietInput(in *os.File) (restore func()) {
 	fd := int(in.Fd())
 	saved, err := unix.IoctlGetTermios(fd, unix.TCGETS)
 	if err != nil {
-		return nil, fmt.Errorf("read terminal settings: %w", err)
+		return func() {}
 	}
 	quiet := *saved
 	quiet.Lflag &^= unix.ECHO | unix.ICANON
 	quiet.Cc[unix.VMIN], quiet.Cc[unix.VTIME] = 1, 0
 	if err := unix.IoctlSetTermios(fd, unix.TCSETS, &quiet); err != nil {
-		return nil, fmt.Errorf("turn off terminal echo: %w", err)
+		return func() {}
 	}
-	return func() error {
-		if err := unix.IoctlSetTermios(fd, unix.TCSETS, saved); err != nil {
-			return fmt.Errorf("restore terminal settings: %w", err)
-		}
-		return nil
-	}, nil
+	return func() { _ = unix.IoctlSetTermios(fd, unix.TCSETS, saved) }
 }
 
 // discardInput drops input the terminal received but nobody has read yet.
