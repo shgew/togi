@@ -128,6 +128,7 @@
             package = togi "dev";
             race = config.checks.package.overrideAttrs {
               pname = "togi-race";
+              goModules = config.checks.package.goModules;
               buildPhase = ''
                 runHook preBuild
                 runHook postBuild
@@ -138,6 +139,7 @@
             };
             lint = config.checks.package.overrideAttrs (old: {
               pname = "togi-lint";
+              goModules = config.checks.package.goModules;
               nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.golangci-lint ];
               buildPhase = ''
                 runHook preBuild
