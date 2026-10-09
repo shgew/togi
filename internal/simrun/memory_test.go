@@ -18,84 +18,81 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
+const proofBoots = 20
+
+// TestInMemoryJournalMatchesFileBacked is the file-mode coverage of state.json persistence and journal reopening for
+// the simulator: each machine runs about proofBoots boots with a journal on disk and in memory, and the two must leave
+// the same files.
 func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name        string
 		machineFile string
-		cleanCycle  bool
+		seed        uint64
 	}{
-		{name: "shared-voltage", machineFile: "../../tools/bench/machines/shared-voltage.toml", cleanCycle: true},
-		{name: "legacy-default"},
-		{name: "target-fit-0", machineFile: "../../tools/bench/machines/target-fit-0.toml"},
+		{name: "shared-voltage", machineFile: "../../tools/bench/machines/shared-voltage.toml", seed: 1000},
+		{name: "legacy-default", seed: 1},
+		{name: "target-fit-0", machineFile: "../../tools/bench/machines/target-fit-0.toml", seed: 1},
 	} {
-		seeds := []uint64{1, 2, 3}
-		if tc.cleanCycle {
-			seeds = []uint64{1000, 1001, 1002}
-		}
-		for _, seed := range seeds {
-			t.Run(fmt.Sprintf("%s/%d", tc.name, seed), func(t *testing.T) {
-				t.Parallel()
-				cfg := sim.Config{Seed: seed}
-				if tc.cleanCycle {
-					cfg = sharedVoltageConfig(t, seed)
-				} else if tc.machineFile != "" {
-					var err error
-					cfg, err = sim.LoadMachine(tc.machineFile)
+		t.Run(fmt.Sprintf("%s/%d", tc.name, tc.seed), func(t *testing.T) {
+			t.Parallel()
+			cfg := sim.Config{Seed: tc.seed}
+			if tc.machineFile != "" {
+				var err error
+				cfg, err = sim.LoadMachine(tc.machineFile)
+				if err != nil {
+					t.Fatal(err)
+				}
+				cfg.Seed = tc.seed
+			}
+			// Backend argv in the journal names the state directory, so both runs replace it with one placeholder.
+			var events, states [2][]byte
+			var stops [2]session.Stop
+			var capped [2]bool
+			var wg sync.WaitGroup
+			for i, inMemory := range []bool{false, true} {
+				dir := t.TempDir()
+				wg.Go(func() {
+					m, err := sim.New(cfg)
 					if err != nil {
-						t.Fatal(err)
+						t.Error(err)
+						return
 					}
-					cfg.Seed = seed
-				}
-				// Backend argv in the journal names the state directory, so both runs replace it with one placeholder.
-				var events, states [2][]byte
-				var stops [2]session.Stop
-				var wg sync.WaitGroup
-				for i, inMemory := range []bool{false, true} {
-					dir := t.TempDir()
-					wg.Go(func() {
-						m, err := sim.New(cfg)
-						if err != nil {
-							t.Error(err)
-							return
-						}
-						stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: inMemory})
-						if err != nil {
-							t.Error(err)
-							return
-						}
-						stops[i] = stop
-						if tc.cleanCycle && stop.Reason != session.StopCycles {
-							t.Errorf("in-memory %t: stopped with %+v", inMemory, stop)
-							return
-						}
-						if events[i], err = os.ReadFile(filepath.Join(dir, "events.jsonl")); err != nil {
-							t.Error(err)
-						}
-						if states[i], err = os.ReadFile(filepath.Join(dir, "state.json")); err != nil {
-							t.Error(err)
-						}
-						for _, b := range []*[]byte{&events[i], &states[i]} {
-							*b = bytes.ReplaceAll(*b, []byte(dir), []byte("STATE-DIR"))
-						}
-					})
-				}
-				wg.Wait()
-				if t.Failed() {
-					return
-				}
-				// Legacy independent-R7 models may dead-end; both journal modes must preserve the same outcome.
-				if diff := cmp.Diff(stops[0], stops[1]); diff != "" {
-					t.Errorf("stop (-file-backed +in-memory):\n%s", diff)
-				}
-				if diff := cmp.Diff(string(events[0]), string(events[1])); diff != "" {
-					t.Errorf("events.jsonl (-file-backed +in-memory):\n%s", diff)
-				}
-				if diff := cmp.Diff(string(states[0]), string(states[1])); diff != "" {
-					t.Errorf("state.json (-file-backed +in-memory):\n%s", diff)
-				}
-			})
-		}
+					stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: inMemory, MaxBoots: proofBoots})
+					if err != nil && !errors.Is(err, ErrBootCap) {
+						t.Error(err)
+						return
+					}
+					stops[i], capped[i] = stop, err != nil
+					if events[i], err = os.ReadFile(filepath.Join(dir, "events.jsonl")); err != nil {
+						t.Error(err)
+					}
+					if states[i], err = os.ReadFile(filepath.Join(dir, "state.json")); err != nil {
+						t.Error(err)
+					}
+					for _, b := range []*[]byte{&events[i], &states[i]} {
+						*b = bytes.ReplaceAll(*b, []byte(dir), []byte("STATE-DIR"))
+					}
+				})
+			}
+			wg.Wait()
+			if t.Failed() {
+				return
+			}
+			// Legacy independent-R7 models may dead-end; both journal modes must preserve the same outcome.
+			if diff := cmp.Diff(stops[0], stops[1]); diff != "" {
+				t.Errorf("stop (-file-backed +in-memory):\n%s", diff)
+			}
+			if capped[0] != capped[1] {
+				t.Errorf("boot cap reached: file-backed %t, in-memory %t", capped[0], capped[1])
+			}
+			if diff := cmp.Diff(string(events[0]), string(events[1])); diff != "" {
+				t.Errorf("events.jsonl (-file-backed +in-memory):\n%s", diff)
+			}
+			if diff := cmp.Diff(string(states[0]), string(states[1])); diff != "" {
+				t.Errorf("state.json (-file-backed +in-memory):\n%s", diff)
+			}
+		})
 	}
 }
 

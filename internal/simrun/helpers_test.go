@@ -2,6 +2,8 @@ package simrun
 
 import (
 	"context"
+	"encoding/json"
+	"io/fs"
 	"testing"
 
 	"github.com/shgew/togi/internal/config"
@@ -109,4 +111,48 @@ func (j *resetAtEvent) Append(p journal.Payload, cause ...int) (journal.Event, e
 		return e, machine.ErrCrashed
 	}
 	return e, err
+}
+
+func afterInitialPhases(n int) func(journal.Event) bool {
+	phases := 0
+	return func(e journal.Event) bool {
+		if p, ok := e.Data.(*journal.CorePhase); ok && p.From == "" {
+			phases++
+		}
+		return phases == n
+	}
+}
+
+// memState stands in for state.json across the boots of one run while the journal is still reopened from disk at
+// every boot. Like internal/session's tests it encodes the last written state when read, because a boot can end
+// before the runner folds anything further into the state it last wrote.
+type memState struct {
+	data    []byte
+	pending *journal.State
+}
+
+type memStateJournal struct {
+	session.Journal
+	state *memState
+}
+
+func (j *memStateJournal) WriteState(s journal.State) error {
+	j.state.pending = &s
+	return nil
+}
+
+func (j *memStateJournal) ReadState() (journal.State, error) {
+	var s journal.State
+	if p := j.state.pending; p != nil {
+		data, err := json.Marshal(*p)
+		if err != nil {
+			return s, err
+		}
+		j.state.data, j.state.pending = data, nil
+	}
+	if j.state.data == nil {
+		return s, fs.ErrNotExist
+	}
+	err := json.Unmarshal(j.state.data, &s)
+	return s, err
 }

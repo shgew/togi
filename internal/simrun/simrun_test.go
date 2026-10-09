@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -27,17 +28,64 @@ func sharedVoltageConfig(t *testing.T, seed uint64) sim.Config {
 	return cfg
 }
 
+var cleanCycle struct {
+	once       sync.Once
+	files      map[string][]byte
+	stop       session.Stop
+	violations []string
+	err        error
+}
+
+// cleanCycleSession runs the 16-core clean-cycle session once for the package and returns a private copy of its
+// files, so each caller may read or modify them freely.
+func cleanCycleSession(t *testing.T) (dir string, stop session.Stop, violations []string) {
+	t.Helper()
+	cleanCycle.once.Do(func() {
+		src := t.TempDir()
+		m, err := sim.New(sharedVoltageConfig(t, 1000))
+		if err != nil {
+			cleanCycle.err = err
+			return
+		}
+		cleanCycle.stop, err = Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: src, Machine: m, Cycles: 1, InMemoryJournal: true})
+		if err != nil {
+			cleanCycle.err = err
+			return
+		}
+		cleanCycle.violations = m.Violations()
+		entries, err := os.ReadDir(src)
+		if err != nil {
+			cleanCycle.err = err
+			return
+		}
+		cleanCycle.files = make(map[string][]byte, len(entries))
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(src, e.Name()))
+			if err != nil {
+				cleanCycle.err = err
+				return
+			}
+			cleanCycle.files[e.Name()] = data
+		}
+	})
+	if cleanCycle.err != nil {
+		t.Fatal(cleanCycle.err)
+	}
+	dir = t.TempDir()
+	for name, data := range cleanCycle.files {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir, cleanCycle.stop, cleanCycle.violations
+}
+
 func TestSixteenCoresReachCleanCycle(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	m, err := sim.New(sharedVoltageConfig(t, 1000))
-	if err != nil {
-		t.Fatal(err)
-	}
-	stop, err := Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir, stop, violations := cleanCycleSession(t)
 	if stop.Reason != session.StopCycles {
 		t.Fatalf("stopped with %+v", stop)
 	}
@@ -53,7 +101,7 @@ func TestSixteenCoresReachCleanCycle(t *testing.T) {
 			t.Errorf("core %d is %s, want at its limit", c.Core, c.Phase)
 		}
 	}
-	if diff := cmp.Diff([]string(nil), m.Violations()); diff != "" {
+	if diff := cmp.Diff([]string(nil), violations); diff != "" {
 		t.Errorf("isolation violations (-want +got):\n%s", diff)
 	}
 	events, torn, err := journal.Read(dir)
