@@ -84,7 +84,7 @@ func TestDiscardInputDropsTypedAhead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer restore()
+	defer func() { _ = restore() }()
 	if _, err := master.WriteString("y\n"); err != nil {
 		t.Fatal(err)
 	}
