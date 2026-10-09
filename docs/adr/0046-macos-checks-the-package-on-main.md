@@ -26,4 +26,4 @@ This supersedes ADR 0016's rejection of slow checks on push to `main` for the ma
 - A change that breaks the darwin build or its tests can merge. It shows as a failed `check` on `main`, which blocks the release until a fix merges. Authors touching `_darwin.go` or `!linux` files run `just check` on a Mac before review.
 - The release's wait on `check` for `main` HEAD includes the macOS job.
 - On pull requests, the macOS job shows as skipped.
-- CI pushes no darwin output from pull requests, and none of the five other darwin checks at all. Local `just check` on a Mac that trusts the cache ([ADR 0042](0042-opt-in-to-the-check-cache-locally.md)) substitutes only `package`, and only for trees that reached `main`; it builds the rest itself.
+- CI pushes no darwin output from pull requests, and none of the five other darwin checks at all. Local `just check` on a Mac that trusts the cache ([ADR 0042](0042-opt-in-to-the-check-cache-locally.md)) substitutes a darwin check only when CI already pushed an output for its inputs: `package` for trees that reached `main`, and any check whose inputs match an output pushed before this change. It builds the rest itself.
