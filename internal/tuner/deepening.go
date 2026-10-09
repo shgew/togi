@@ -21,6 +21,7 @@ func (s *State) foldRound(e journal.Event, p *journal.DeepeningRound) {
 		s.nextRound = max(s.nextRound, p.Round)
 		s.lastPlanSeq = e.Seq
 	} else if s.round != nil && p.Round == s.round.start.Round {
+		s.p2.lastRound = s.round
 		s.round = nil
 	}
 	s.projectionDirty = true
@@ -34,9 +35,17 @@ func totalDepth(p []int) int {
 	return sum
 }
 
-func (s *State) deepeningDue() bool { return !s.checking.open && s.canDeepen() }
+func (s *State) deepeningDue() bool {
+	if exp.OneWay {
+		return s.p2RoundDue()
+	}
+	return !s.checking.open && s.canDeepen()
+}
 
 func (s *State) canDeepen() bool {
+	if exp.OneWay {
+		return false
+	}
 	if s.hunt != nil || len(s.queue) > 0 || len(s.obligations) > 0 || s.anySearch() || len(s.passedFullCycles) == 0 {
 		return false
 	}
@@ -52,6 +61,9 @@ func (s *State) canDeepen() bool {
 }
 
 func (s *State) roundStart() Action {
+	if exp.Phase2 != "" {
+		return s.p2RoundStart()
+	}
 	p := s.offsets()
 	target := s.best()
 	q := slices.Clone(p)
@@ -87,6 +99,9 @@ func (s *State) roundMoves() (Action, bool) {
 			}
 			decision := journal.Deepen
 			reason := fmt.Sprintf("round %d: halfway toward %d", r.start.Round, r.start.Target[i])
+			if exp.Phase2 != "" {
+				reason = s.p2MoveReason(r.start.Round, r.start.Target[i])
+			}
 			if yield {
 				decision = journal.Yield
 				reason = fmt.Sprintf("round %d: yields to %d so the profile can reach %d counts", r.start.Round, target, -totalDepth(r.start.Target))

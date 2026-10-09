@@ -97,6 +97,8 @@ type core struct {
 	stepSeqs       []int
 	stepPasses     []stepPass
 	workloadIndex  map[machine.Regime]int
+	ceiling        int
+	charges        []charge
 }
 
 // stepPass is a search step pass and the backend store path it ran under; currentStep derives the core's stepR1 and
@@ -183,6 +185,7 @@ type State struct {
 	zeroReruns              map[int]*zeroRerun
 	zeroTrials              map[string]int
 	loadBackoffs            []loadBackoff
+	p2                      phase2State
 }
 
 func New() *State {
@@ -296,6 +299,12 @@ func (s *State) Fold(e journal.Event) {
 			if p.FailurePoint != nil && (c.fail == nil || *p.FailurePoint > *c.fail) {
 				s.recent = []int{c.id}
 			}
+			if p.From == journal.PhaseSearch && p.To != journal.PhaseSearch && p.Pass != nil {
+				c.ceiling = *p.Pass
+			}
+			if p.To == journal.PhaseSearch {
+				c.charges = nil
+			}
 			c.phase, c.offset, c.pass, c.fail = p.To, p.Offset, p.Pass, p.FailurePoint
 			c.check = p.CheckSoloLimit
 			c.checkWorkloads = [2]string{}
@@ -313,6 +322,7 @@ func (s *State) Fold(e journal.Event) {
 			s.decided(c, e.Seq)
 		}
 	case *journal.TunerDecision:
+		s.foldCharge(e, p)
 		if p.Decision == journal.Backoff {
 			s.recordLoadBackoff(e.Seq, e.Cause)
 			s.consumeR7(e, p.Core)
@@ -337,6 +347,7 @@ func (s *State) Fold(e journal.Event) {
 			}
 			s.commitHuntDecision(e, p)
 		}
+		s.p2Consume(e, p)
 	case *journal.TrialIntent:
 		s.flight = p
 		s.intents[p.Trial] = p
@@ -396,6 +407,7 @@ func (s *State) Fold(e journal.Event) {
 		s.projectionDirty = true
 	case *journal.CheckingCycle:
 		s.foldCycle(e, p)
+		s.foldPhase2Cycle(e, p)
 		s.rerunCauses = nil
 	case *journal.CheckingStep:
 		s.recordCheckingStep(e, p)
@@ -422,6 +434,7 @@ func (s *State) Fold(e journal.Event) {
 			s.recent = append(s.recent, m.Core)
 		}
 		s.recordHuntCombination(e, p)
+		s.foldCombinationCharges(e, p)
 	case *journal.DeepeningRound:
 		s.foldRound(e, p)
 		s.rerunCauses = nil
@@ -614,6 +627,9 @@ func (s *State) Drain() (Action, bool) {
 	if len(s.queue) > 0 && allZero(s.queue[0].profile) {
 		return unattributedFailureAtZero(s.queue[0].seq), true
 	}
+	if a, ok := s.p2Blame(); ok {
+		return a, true
+	}
 	if a, ok := s.pendingDecision(); ok && a.Kind == Decide {
 		return a, true
 	}
@@ -665,6 +681,9 @@ func (s *State) next() Action {
 	}
 	if len(s.queue) > 0 && allZero(s.queue[0].profile) {
 		return unattributedFailureAtZero(s.queue[0].seq)
+	}
+	if a, ok := s.p2Blame(); ok {
+		return a
 	}
 	if a, ok := s.pendingDecision(); ok {
 		return a
@@ -727,7 +746,9 @@ func (s *State) next() Action {
 		}
 		return s.afterReruns(s.roundStart())
 	}
-	return s.afterReruns(Action{Kind: Decide, Payload: s.cycleStart(), Cause: []int{s.checking.lastSeq}})
+	p := s.cycleStart()
+	p.Reason = s.p2CycleStartReason() + p.Reason
+	return s.afterReruns(Action{Kind: Decide, Payload: p, Cause: []int{s.checking.lastSeq}})
 }
 
 func (s *State) anySearch() bool {
@@ -778,7 +799,10 @@ func (s *State) CleanCycles() int {
 }
 
 func (s *State) eligibleCleanCycle(q passedFullCycle) bool {
-	return q.allAtLimit && (q.seq > s.lastDeepenSeq || s.uncontradicted(q))
+	if exp.Phase2 != "" && (!s.p2.concluded || q.seq < s.p2.concludeSeq) {
+		return false
+	}
+	return (q.allAtLimit || exp.OneWay) && (q.seq > s.lastDeepenSeq || s.uncontradicted(q))
 }
 
 func (s *State) uncontradicted(q passedFullCycle) bool {
