@@ -23,20 +23,8 @@ const issuesQuery = `query($owner: String!, $name: String!, $endCursor: String) 
         assignees(first: 20) { nodes { login } }
         parent { number title }
         blockedBy(first: 50) { nodes { number state } }
-        linkedBranches(first: 20) { nodes { ref { name repository { nameWithOwner } } } }
         subIssuesSummary { total completed }
       }
-    }
-  }
-}`
-
-// closedHardwareQuery lists the closed issues that still carry needs-hardware: GitHub closes an issue when a pull request linked to it merges,
-// before its run on the target machine, so the label, not the open state, marks the wait (ADR 0043).
-const closedHardwareQuery = `query($owner: String!, $name: String!, $endCursor: String) {
-  repository(owner: $owner, name: $name) {
-    issues(states: CLOSED, labels: ["needs-hardware"], first: 100, after: $endCursor) {
-      pageInfo { hasNextPage endCursor }
-      nodes { number title assignees(first: 20) { nodes { login } } }
     }
   }
 }`
@@ -75,10 +63,6 @@ func run(w io.Writer, gh ghFunc, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	closedHardware, err := fetchClosedHardware(gh)
-	if err != nil {
-		return err
-	}
 	pulls, err := fetchPulls(gh)
 	if err != nil {
 		return err
@@ -87,7 +71,7 @@ func run(w io.Writer, gh ghFunc, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	return render(w, build(repo, issues, closedHardware, pulls, limit, now))
+	return render(w, build(repo, issues, pulls, limit, now))
 }
 
 // query runs a paginated GraphQL query against the current repository and returns its pages.
@@ -131,12 +115,6 @@ type issueNode struct {
 		Number int
 		State  string
 	}] `json:"blockedBy"`
-	LinkedBranches nodes[struct {
-		Ref *struct {
-			Name       string
-			Repository repository
-		}
-	}] `json:"linkedBranches"`
 	SubIssuesSummary struct {
 		Total     int
 		Completed int
@@ -185,48 +163,10 @@ func fetchIssues(gh ghFunc) (string, []issue, error) {
 					i.OpenBlockers = append(i.OpenBlockers, b.Number)
 				}
 			}
-			for _, b := range n.LinkedBranches.Nodes {
-				if b.Ref != nil {
-					i.Branches = append(i.Branches, branch{Repo: b.Ref.Repository.NameWithOwner, Name: b.Ref.Name})
-				}
-			}
 			issues = append(issues, i)
 		}
 	}
 	return repo, issues, nil
-}
-
-// fetchClosedHardware returns the closed issues labeled needs-hardware.
-func fetchClosedHardware(gh ghFunc) ([]issue, error) {
-	out, err := query(gh, closedHardwareQuery)
-	if err != nil {
-		return nil, fmt.Errorf("fetch closed needs-hardware issues: %w", err)
-	}
-	var pages []struct {
-		Data struct {
-			Repository struct {
-				Issues nodes[struct {
-					Number    int                           `json:"number"`
-					Title     string                        `json:"title"`
-					Assignees nodes[struct{ Login string }] `json:"assignees"`
-				}] `json:"issues"`
-			} `json:"repository"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(out, &pages); err != nil {
-		return nil, fmt.Errorf("decode closed needs-hardware issues: %w", err)
-	}
-	var issues []issue
-	for _, page := range pages {
-		for _, n := range page.Data.Repository.Issues.Nodes {
-			i := issue{Number: n.Number, Title: n.Title, Closed: true, Labels: []string{"needs-hardware"}}
-			for _, a := range n.Assignees.Nodes {
-				i.Assignees = append(i.Assignees, a.Login)
-			}
-			issues = append(issues, i)
-		}
-	}
-	return issues, nil
 }
 
 func fetchPulls(gh ghFunc) ([]pull, error) {

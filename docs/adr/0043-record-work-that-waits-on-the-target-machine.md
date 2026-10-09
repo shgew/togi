@@ -4,12 +4,11 @@ Some changes can only be verified on the target machine: the SMU and PM-table pa
 
 ## Decision
 
-- The `needs-hardware` label marks an issue that waits on a run on the target machine, whether the issue is open or closed. A comment on the issue gives the exact steps: what to check out, which commands to run, what each must show and what it unblocks.
-- The label, not the open state, is what counts: `just claim` links the issue's branch with `gh issue develop`, and GitHub closes an issue when a linked pull request merges, even one whose body says `Refs #N`. That closed [#417](https://github.com/shgew/togi/issues/417) and [#418](https://github.com/shgew/togi/issues/418) when their pull requests merged ([#487](https://github.com/shgew/togi/issues/487)).
-- `just board` lists the `needs-hardware` issues, open or closed, in their own section, "Waiting on the target machine (needs-hardware)", right after "Waiting on you (needs-decision)", marking the closed ones.
-- A pull request that needs the machine merges once everything else is green. It says `Refs #N` instead of `Closes #N`, and its issue keeps the label, even when the merge closes it.
+- The `needs-hardware` label marks an issue that waits on a run on the target machine. A comment on the issue gives the exact steps: what to check out, which commands to run, what each must show and what it unblocks.
+- `just board` lists the open `needs-hardware` issues in their own section, "Waiting on the target machine (needs-hardware)", right after "Waiting on you (needs-decision)", and nowhere else: not under Ready, In progress or Overlaps, whether assigned or not.
+- A pull request that needs the machine merges once everything else is green. It says `Refs #N` instead of `Closes #N`, and its issue keeps the label.
 - The queue must be empty before the owner updates the target machine's togi input or cuts a release. The release workflow refuses to commit a release while any issue, open or closed, carries `needs-hardware`, naming each issue by number and title and marking the closed ones, before it waits on the check run; its token reads issues for that. Updating the machine's input happens outside this repository, so that half is a rule in `docs/issues.md` only.
-- At the machine, an agent may work the queue without asking: run each issue's steps, post the output as a comment, and remove the label once they pass; then close the issue when nothing else in its Acceptance remains, or reopen it when something does and the merge closed it. On a failure it files a `bugfix` issue with a priority, links it from the original, and leaves the original with its label.
+- At the machine, an agent may work the queue without asking: run each issue's steps, post the output as a comment, and remove the label once they pass; then close the issue when nothing else in its Acceptance remains. On a failure it files a `bugfix` issue with a priority, links it from the original, and leaves the original with its label.
 
 ## Considered Options
 
@@ -25,3 +24,7 @@ Some changes can only be verified on the target machine: the SMU and PM-table pa
 - `just release-preview` reads no GitHub data, so it does not check the queue; the refusal comes from the workflow run `just release` starts. Run `just board` first to see the queue.
 - A release whose commit already reached `main` and only needs publishing again is not refused, so a half-finished release can always complete.
 - Nothing enforces the rule for updating the target machine's togi input; it relies on the owner checking `just board` first.
+
+## Note, 2026-10-09
+
+`just claim` stopped linking branches with `gh issue develop` ([#500](https://github.com/shgew/togi/issues/500)), so a merge no longer closes an issue whose pull request says only `Refs`. Before that, GitHub closed such issues on merge ([#417](https://github.com/shgew/togi/issues/417), [#418](https://github.com/shgew/togi/issues/418)), and the board and the docs counted the label over the open state, including closed issues. The board now queries open issues only. The release refusal still reads issues in every state, which costs nothing and fails safe.

@@ -5,9 +5,8 @@ Waiting on you (needs-decision)
   #503 Split the frame renderer (@shgew)
 
 Waiting on the target machine (needs-hardware)
-  #498 Check the backends on the machine (closed)
   #515 Name the hardware layer by what it does (@shgew)
-  #516 Read the PM table through the driver (closed, @shgew)
+  #516 Read the PM table through the driver
 
 Untriaged (needs-triage)
   #504 Show the BIOS context
@@ -15,21 +14,17 @@ Untriaged (needs-triage)
 In progress
   #503 Split the frame renderer (@shgew)
     block: #502 Block: dashboard
-    branches: frame-split, other
+    branches: other
     pull requests: #601
     touches: internal/watch, docs/spec/runtime.md
   #512 Keep punctuation out of reasons (@shgew, @robotogi)
-    branches: reason-text, third
-    pull requests: #600, #602
+    branches: third
+    pull requests: #602
     touches: internal/journal, internal/tuner/hunt.go
   #514 Shade the idle cores (@shgew)
     branches: idle-shade, someone/togi:reason-text
     pull requests: #603, #604, #605
     touches: internal/tuner
-  #515 Name the hardware layer by what it does (@shgew)
-    branches: none
-    pull requests: none
-    touches: internal/hardware
 
 Ready
   P0
@@ -47,6 +42,10 @@ Ready
     #502 Block: dashboard
       #507 Name the dashboard columns
         touches: cmd/togi
+  P3
+    no block
+      #517 Report the hardware layer in the journal
+        touches: internal/hardware
 
 Overlaps
   #505 overlaps in-progress #512 on internal/tuner

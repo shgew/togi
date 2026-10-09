@@ -168,7 +168,7 @@ board: _dev-shell
 lock-interactions: _dev-shell
     gh api -X PUT 'repos/{owner}/{repo}/interaction-limits' -f limit=collaborators_only -f expiry=six_months
 
-# Claim issue N for BRANCH from BASE (default main): refuse if it is assigned; else assign yourself, link BRANCH and post a start comment naming the branch, WORKTREE and the one-line PLAN
+# Claim issue N for BRANCH from BASE (default main): refuse if it is assigned; else assign yourself and post a start comment naming the branch, its base, WORKTREE and the one-line PLAN; then create BRANCH from BASE at WORKTREE yourself
 [group('github')]
 claim number branch worktree plan base="main": _dev-shell
     #!/usr/bin/env bash
@@ -179,21 +179,16 @@ claim number branch worktree plan base="main": _dev-shell
     fi
     holders=$(gh issue view "$1" --json assignees --jq '[.assignees[].login] | join(", ")')
     if [[ -n "$holders" ]]; then
-        branches=$(gh issue develop --list "$1")
-        echo "claim: #$1 is already assigned to $holders; linked branches: ${branches:-none}" >&2
+        echo "claim: #$1 is already assigned to $holders" >&2
         exit 1
     fi
     gh issue edit "$1" --add-assignee @me
-    number=$1
-    unclaim() {
-        echo "claim: $1 failed for #$number; removing your assignment" >&2
-        gh issue edit "$number" --remove-assignee @me || echo "claim: could not unassign #$number; remove the assignment by hand" >&2
-        echo "claim: a branch linked before the failure may remain; rerunning with the same BRANCH reuses it" >&2
-        exit 1
-    }
-    gh issue develop "$1" --name "$2" --base "$5" || unclaim "gh issue develop"
     body="Started on branch \`$2\` from \`$5\`, in worktree \`$3\`."$'\n'"Plan: $4"
-    gh issue comment "$1" --body "$body" || unclaim "gh issue comment"
+    if ! gh issue comment "$1" --body "$body"; then
+        echo "claim: gh issue comment failed for #$1; removing your assignment" >&2
+        gh issue edit "$1" --remove-assignee @me || echo "claim: could not unassign #$1; remove the assignment by hand" >&2
+        exit 1
+    fi
 
 # Run GitHub commands as robotogi
 [group('github')]
