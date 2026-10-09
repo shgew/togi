@@ -5,7 +5,7 @@
 
 Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them through full checking cycles. Choose how long to keep testing with `run --cycles N`, or let checking continue indefinitely.
 
-- Searches each core alone, makes multi-core R7 cores self-sufficient through request-ordered partial loads and voltage-targeted backoffs, hunts unattributed failures outside multi-core R7 and on the idle cores of a failed multi-core R7 load, then deepens the profile before continuing checking.
+- [Searches](docs/spec/tuner.md#search) each core alone, makes multi-core R7 cores [self-sufficient](docs/spec/tuner.md#r7-request-order-and-attribution), [hunts](docs/spec/tuner.md#hunt) unattributed failures outside multi-core R7 and on the idle cores of a failed multi-core R7 load, then [deepens](docs/spec/tuner.md#deepening) the profile before continuing [checking](docs/spec/tuner.md#checking).
 - Tests with self-checking workloads (mprime, y-cruncher) across light, heavy, load-step, medium, SMT, idle and all-core regimes.
 - Survives crashes: the next run reads its journal, attributes the crash and continues.
 - Records every action in a plain-text journal you can read to see what it did and why.
@@ -17,11 +17,11 @@ Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains,
 
 Works today, on a simulated 16-core machine:
 - the full simulated tuning lifecycle: per-core search, failure hunts, combinations, deepening together, full checking cycles, crash resume and reset;
-- a seeded session after a ruleset update or BIOS change: a ruleset change carries eligible same-BIOS trial facts for candidate-solo-limit checks, hunt groups, reruns and deepening, while full-cycle requirements count only live passes; a BIOS change carries solo limits but not failure points or trial facts;
-- evidence-based hunt duration and singleton-probe scheduling, and credit for an earlier uncontradicted full cycle at an equal or deeper profile;
-- ruleset-9 R7 full parts followed by partial chains idling measured top requesters, with ordinary pass requirements and full-cycle coverage; a multi-core R7 failure backs off a core by voltage-targeted counts, not a hunt, unless that core already sits shallower than when it failed; since ruleset 10, an unattributed one with idle cores off CO 0 is first rerun with them at 0, and hunted among them if that passes;
-- since ruleset 10, a failure at CO 0 stops tuning only after the failing trial also fails with every core at CO 0; if that rerun passes, the failure goes to the cores off CO 0;
-- reading a session's hunt, combinations, clean cycles, top requesters, per-workload self-sufficiency and valid trials with `status`, `events` and the live `watch` dashboard; `status` shows the Tctl peak from passes together since the last profile change and its source trial.
+- a seeded session after a ruleset update or BIOS change, carrying what [Transitions](docs/spec/journal.md#transitions) and [Fact eligibility](docs/spec/journal.md#fact-eligibility) allow;
+- evidence-based hunt duration and singleton-probe scheduling ([Hunt](docs/spec/tuner.md#hunt)), and credit for an earlier clean cycle ([Checking](docs/spec/tuner.md#checking));
+- ruleset-9 R7 full parts and partial chains ([Together trial sequence](docs/spec/tuner.md#together-trial-sequence)), with [voltage-targeted backoff](docs/spec/tuner.md#r7-voltage-targeted-backoff) of multi-core R7 failures and, since ruleset 10, [located hunts](docs/spec/tuner.md#hunt) of unattributed ones;
+- since ruleset 10, an all-zero rerun before a failure at CO 0 stops tuning ([Dead ends](docs/spec/tuner.md#dead-ends));
+- reading a session's hunt, combinations, clean cycles, top requesters, per-workload self-sufficiency, valid trials and Tctl peak with `status`, `events` and the live `watch` dashboard ([Commands](docs/spec/runtime.md#commands)).
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:
 - the `ryzen_smu` driver on full 8-core CCDs only; CCDs with fused-off slots are not yet supported;
@@ -48,7 +48,7 @@ togi --state-dir <dir> events --core 3 # everything that happened to core 3
 source <(togi completion bash)         # shell completions; the Nix package installs bash, zsh, fish and nushell ones
 ```
 
-The dashboard adapts to wide and compact terminals. It shows checking's cycle checklist, hunt parts and member probes, or search turns beside recent decisions; `?` explains the gauges and `l` opens the journal. Outcome lines come from the tuner itself. R6 idle trials hold the screen still, without a ticking clock, until the journal records their end.
+The dashboard adapts to wide and compact terminals. It shows checking's cycle checklist, hunt parts and member probes, or search turns beside recent decisions; `?` explains the gauges and `l` opens the journal. Outcome lines come from the tuner itself. [Commands](docs/spec/runtime.md#commands) describes when the screen redraws.
 
 [docs/howto.md](docs/howto.md) walks through installing the NixOS module, a first in-session run and an overnight tuning boot. `togi --help` lists every command, and `togi <command> --help` gives its description, examples and flags. [Commands](docs/spec/runtime.md#commands) describes each one in full.
 
@@ -94,6 +94,6 @@ extra-trusted-public-keys = togi.cachix.org-1:1EZ2zQlDkNhHZmROZzR0n0/CcYGLPfAmPs
 
 or run `cachix use togi` as a user listed in `trusted-users`. After changing the system configuration file, by hand or by running `cachix use togi` as root outside NixOS, restart the Nix daemon, because it reads that file only when it starts. Local `just check` then downloads every check whose inputs are unchanged and builds only the rest. Trusting the key makes Nix on that machine accept any store path the cache serves, for any build and not only togi's checks, including outputs pushed by pull request runs that hold the push token ([ADR 0021](docs/adr/0021-cache-check-outputs-on-cachix.md)). The flake configures no cache ([ADR 0042](docs/adr/0042-opt-in-to-the-check-cache-locally.md)).
 
-Hardware tests share a private host lock with `run` and `reset`. Delegated users need explicit lock access as well as SMU and cpuset-controller permissions; see [host-lock provisioning](docs/howto.md#host-lock-and-delegated-hardware-tests). After upgrading from a public-readable lock, quiesce old lock openers or reboot before relying on the new permissions.
+Hardware tests share the [host lock](docs/spec/runtime.md#host-lock) with `run` and `reset`. Delegated users need lock access as well as SMU and cpuset-controller permissions; see [host-lock provisioning](docs/howto.md#host-lock-and-delegated-hardware-tests). After upgrading from a public-readable lock, quiesce old lock openers or reboot before relying on the new permissions.
 
 togi runs on NixOS. Development works on Linux and on macOS (aarch64-darwin). On macOS, the dev shell, the tests, `just sim`, every flake check except the VM tests and the trial scope tests, and `status`, `events` and `reset` against a copied state directory work; CI runs the Linux-only checks, and `togi run` exits with an error.
