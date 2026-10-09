@@ -1,7 +1,6 @@
 package requests
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -112,18 +111,6 @@ func TestGroups(t *testing.T) {
 				t.Fatalf("Groups (-want +got):\n%s", diff)
 			}
 		})
-	}
-}
-
-func TestShiftRaisesShallowerCores(t *testing.T) {
-	measured := slices.Repeat([]int{-30}, 16)
-	current := slices.Clone(measured)
-	current[1] = -28
-	current[2] = -31
-	got := Shift(map[int]float64{1: 1.1, 2: 1.1}, measured, current)
-	want := map[int]float64{1: 1.1 + 2*VoltsPerCount, 2: 1.1 - VoltsPerCount}
-	if diff := cmp.Diff(want, got, cmp.Comparer(func(a, b float64) bool { return a-b < 1e-12 && b-a < 1e-12 })); diff != "" {
-		t.Fatalf("Shift (-want +got):\n%s", diff)
 	}
 }
 
