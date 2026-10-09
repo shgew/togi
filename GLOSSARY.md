@@ -43,7 +43,7 @@ The identity of the firmware and CPU a session is tuned under: BIOS version, boa
 One tuning effort under one BIOS context, from the first `run` until `reset --all` or a transition, spanning any number of reboots.
 
 **Transition**:
-The end of a session whose ruleset, schema or evidence epoch is older, or whose BIOS context changed: the next `run` archives it and starts a new session seeded from eligible evidence ([Transitions](docs/spec/journal.md#transitions)).
+The end of a session written by an older ruleset, schema or evidence epoch, with no newer dimension, or of a compatible session whose BIOS context changed: the next `run` archives it and starts a new session seeded from eligible evidence ([Transitions](docs/spec/journal.md#transitions)).
 
 **Backend**:
 An external stress program togi drives: mprime or y-cruncher.
@@ -159,7 +159,7 @@ A failure whose evidence names one core.
 A failure whose evidence names no single core.
 
 **Failure point**:
-A failure's shallowest ruled-out offset for a core ([Failure points and combinations](docs/spec/tuner.md#failure-points-and-combinations)).
+A failure's shallowest ruled-out offset for a core, set by [attribution](docs/spec/tuner.md#checking), a [hunt](docs/spec/tuner.md#hunt) culprit, an [R7 backoff](docs/spec/tuner.md#r7-voltage-targeted-backoff) or a [carried failure point](docs/spec/journal.md#transitions) ([Failure points and combinations](docs/spec/tuner.md#failure-points-and-combinations)).
 _Avoid_: failed mark, mark of a core
 
 **Combination**:
