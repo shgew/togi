@@ -43,11 +43,6 @@ func (s *source) reload() bool {
 	return true
 }
 
-func (s *source) snapshot() Snapshot {
-	s.reload()
-	return s.snap
-}
-
 func (s *source) frame(sc Screen) Drawn {
 	return RenderView(s.snap, sc, time.Now())
 }

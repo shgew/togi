@@ -429,7 +429,7 @@ func (s Snapshot) huntLines(t tables, width int, class sizeClass, now time.Time)
 		out = append(out, "")
 		out = append(out, s.huntGroupLines(t, width)...)
 		out = append(out, "")
-		out = append(out, s.probeLines(t, width, class)...)
+		out = append(out, s.probeLines(t, class)...)
 	case len(h.plan) > 0:
 		if class != compactLayout {
 			out = append(out, "")
@@ -641,7 +641,7 @@ func without(ids, drop []int) []int {
 	return out
 }
 
-func (s Snapshot) probeLines(t tables, width int, class sizeClass) []string {
+func (s Snapshot) probeLines(t tables, class sizeClass) []string {
 	h := s.hunt
 	var out []string
 	if class != compactLayout {
