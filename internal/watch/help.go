@@ -74,7 +74,7 @@ var loadHelp = helpSection{"KINDS OF LOAD", []helpItem{
 	{"R4 partial load", "light load at 25-75% duty: bursty work"},
 	{"R5 both threads", "both threads of one core: SMT pressure"},
 	{"R6 idle + bursts", "idle with short wake-ups: idle and boost"},
-	{"R7 all-core", "each CCD, then both: power and heat"},
+	{"R7 all-core", "a CCD, part of one, or every core: power and heat"},
 }}
 
 func renderHelpBody(width, height, scroll int) ([]string, int) {

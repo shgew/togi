@@ -50,7 +50,7 @@ func TestHelpLinksTunerSpecAndStatesNoRule(t *testing.T) {
 	if !strings.Contains(words, "https://github.com/shgew/togi/blob/main/docs/spec/tuner.md") {
 		t.Errorf("help lost the tuner specification link: %s", words)
 	}
-	for _, rule := range []string{"request order", "when the part starts", "voltage-targeted counts", "halfway"} {
+	for _, rule := range []string{"request order", "when the part starts", "voltage-targeted counts", "halfway", "then both"} {
 		if strings.Contains(words, rule) {
 			t.Errorf("help restates the tuning rule %q", rule)
 		}
