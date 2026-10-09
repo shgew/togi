@@ -123,7 +123,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 				return resetError(boundaryErr, journal.ErrLocked, stderr)
 			}
 			path, archiveErr := j.ArchiveUnreadable(id)
-			if code, ok := closeCommand("reset", j, archiveErr, stderr); !ok {
+			if code, ok := closeCommand(j, archiveErr, stderr); !ok {
 				return code
 			}
 			fmt.Fprintf(stdout, "session %s archived to %s without appending to the incompatible journal; the next togi run starts a new session\n", render.EscapeText(id), render.EscapeText(path))
@@ -138,7 +138,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	if core != nil {
 		err := session.ResetCore(j, *core)
 		render.Renderer{}.Log(stderr, j.Events()[opened:]...)
-		if code, ok := closeCommand("reset", j, err, stderr); !ok {
+		if code, ok := closeCommand(j, err, stderr); !ok {
 			return code
 		}
 		fmt.Fprintf(stdout, "reset of core %02d queued; the next togi run restarts its search from the baseline\n", *core)
@@ -147,7 +147,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 	warnings := resetWarnings(j.Events(), g)
 	path, err := session.ResetAll(j)
 	render.Renderer{}.Log(stderr, j.Events()[opened:]...)
-	if code, ok := closeCommand("reset", j, err, stderr); !ok {
+	if code, ok := closeCommand(j, err, stderr); !ok {
 		return code
 	}
 	fmt.Fprintf(stdout, "session %s archived to %s; the next togi run starts a new session\n", render.EscapeText(id), render.EscapeText(path))
@@ -249,12 +249,12 @@ func openForCommand(name string, j *journal.Journal, stderr io.Writer, allowRule
 	return events[0].Data.(*journal.SessionStart).Session, exitOK, true
 }
 
-func closeCommand(name string, j *journal.Journal, err error, stderr io.Writer) (int, bool) {
+func closeCommand(j *journal.Journal, err error, stderr io.Writer) (int, bool) {
 	err = errors.Join(err, j.Close())
 	if err == nil {
 		return exitOK, true
 	}
-	fmt.Fprintf(stderr, "togi %s: %s\n", name, render.EscapeText(err.Error()))
+	fmt.Fprintf(stderr, "togi reset: %s\n", render.EscapeText(err.Error()))
 	if errors.Is(err, session.ErrNoSuchCore) {
 		return exitUsage, false
 	}

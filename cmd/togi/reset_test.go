@@ -390,7 +390,7 @@ func TestResetCoreCommandOutcome(t *testing.T) {
 			if !ok || code != exitOK {
 				t.Fatalf("open exit %d: %s", code, diagnostics.String())
 			}
-			code, ok = closeCommand("reset", j, session.ResetCore(j, core), &diagnostics)
+			code, ok = closeCommand(j, session.ResetCore(j, core), &diagnostics)
 			if core == 999 {
 				if code != exitUsage || ok || !strings.Contains(diagnostics.String(), "core 999") {
 					t.Fatalf("exit %d, ok %t: %s", code, ok, diagnostics.String())
