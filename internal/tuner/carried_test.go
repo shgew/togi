@@ -84,9 +84,9 @@ func TestCarriedEvidenceConsumers(t *testing.T) {
 			t.Helper()
 			h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -20, fail: new(-21)})
 			h.add(&journal.ProfileChange{To: []int{-20}})
-			failure := carryTrials(h, machine.R1, []int{0}, []int{-20}, 900, 1, journal.OutcomeFailure)[0]
 			short := carryTrials(h, machine.R1, []int{0}, []int{-20}, h.s.durations.ShortTrialS, h.s.n, journal.OutcomePass)
 			long := carryTrials(h, machine.R1, []int{0}, []int{-20}, 900, 1, journal.OutcomePass)
+			failure := carryTrials(h, machine.R1, []int{0}, []int{-20}, 900, 1, journal.OutcomeFailure)[0]
 			h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -20, ToOffset: -19, FailurePoint: new(-20)}, failure)
 			h.add(&journal.ProfileChange{From: []int{-20}, To: []int{-19}})
 			a := h.next()

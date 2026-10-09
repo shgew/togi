@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -255,13 +256,15 @@ func TestR7BackoffReason(t *testing.T) {
 		requests map[int]float64
 		target   float64
 		want     []string
+		count    int
+		noVolts  bool
 	}{
-		{"offset fallback", nil, 0, []string{"offsets", "CO -30", "no request telemetry", "1 count"}},
-		{"no pass", map[int]float64{0: 1.09447, 1: 1.08}, 0, []string{"request 1.094 V", "no qualifying pass", "1 count"}},
-		{"equal target", map[int]float64{0: 1.1539, 1: 1.08}, 1.1539, []string{"request 1.154 V", "already met", "passed target 1.154 V", "1 count"}},
-		{"higher than target", map[int]float64{0: 1.16, 1: 1.08}, 1.1539, []string{"request 1.160 V", "already met", "passed target 1.154 V", "1 count"}},
-		{"one count", map[int]float64{0: 1.15, 1: 1.08}, 1.153, []string{"request 1.150 V", "1.153 V", "1 count"}},
-		{"several counts", map[int]float64{0: 1.09447, 1: 1.08}, 1.1539, []string{"request 1.094 V", "1.154 V", "17 counts"}},
+		{"offset fallback", nil, 0, []string{"offsets", "CO -30", "no request telemetry"}, 1, true},
+		{"no pass", map[int]float64{0: 1.09447, 1: 1.08}, 0, []string{"request 1.094 V", "no qualifying pass"}, 1, false},
+		{"equal target", map[int]float64{0: 1.1539, 1: 1.08}, 1.1539, []string{"request 1.154 V", "already met", "passed target 1.154 V"}, 1, false},
+		{"higher than target", map[int]float64{0: 1.16, 1: 1.08}, 1.1539, []string{"request 1.160 V", "already met", "passed target 1.154 V"}, 1, false},
+		{"one count", map[int]float64{0: 1.15, 1: 1.08}, 1.153, []string{"request 1.150 V", "1.153 V"}, 1, false},
+		{"several counts", map[int]float64{0: 1.09447, 1: 1.08}, 1.1539, []string{"request 1.094 V", "1.154 V"}, 17, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := r7Harness(t)
@@ -279,6 +282,16 @@ func TestR7BackoffReason(t *testing.T) {
 			tokens := append([]string{"voltage-targeted R7 backoff", fmt.Sprintf("failure #%d", failure.Seq), "core 00", "ruleset8"}, tc.want...)
 			if missing := missingTokens(move.Reason, tokens...); len(missing) > 0 {
 				t.Fatalf("reason %q lacks %q", move.Reason, missing)
+			}
+			unit := "counts"
+			if tc.count == 1 {
+				unit = "count"
+			}
+			if !regexp.MustCompile(fmt.Sprintf(`(?:^|\D)%d %s(?:[^A-Za-z]|$)`, tc.count, unit)).MatchString(move.Reason) {
+				t.Fatalf("reason %q does not report exactly %d %s", move.Reason, tc.count, unit)
+			}
+			if tc.noVolts && regexp.MustCompile(`[0-9] V(?:[^A-Za-z]|$)`).MatchString(move.Reason) {
+				t.Fatalf("reason %q prints a voltage without request telemetry", move.Reason)
 			}
 			if !slices.Contains(a.Cause, failure.Seq) {
 				t.Fatalf("backoff cause %v omits failure #%d", a.Cause, failure.Seq)

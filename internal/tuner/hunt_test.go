@@ -214,22 +214,34 @@ func TestHuntLoadedIdleSplit(t *testing.T) {
 	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 5})
 	h.decide(h.next())
 	h.decide(driveToHuntStart(h))
-	var halves [][]int
+	var round []*journal.HuntGroup
 	for range 50 {
 		a := h.next()
-		if a.Kind == Decide {
-			if g, ok := a.Payload.(*journal.HuntGroup); ok && g.Granularity == 2 && len(halves) < 2 && !slices.ContainsFunc(halves, func(h []int) bool { return slices.Equal(h, g.Cores) }) {
-				halves = append(halves, g.Cores)
-			}
-			h.decide(a)
+		if a.Kind != Decide {
+			runGroup(h, a, false)
 			continue
 		}
-		runGroup(h, a, false)
-		if len(halves) == 2 {
+		if g, ok := a.Payload.(*journal.HuntGroup); ok {
+			if len(round) > 0 && (g.Granularity != 2 || g.Stage != round[0].Stage || g.DurationS != round[0].DurationS || g.Escalated != round[0].Escalated || !slices.Equal(g.Set, round[0].Set)) {
+				break
+			}
+			round = append(round, g)
+		} else if len(round) > 0 {
 			break
 		}
+		h.decide(a)
 	}
-	if diff := cmp.Diff([][]int{{0, 2}, {1, 3}}, halves); diff != "" {
+	if len(round) == 0 || round[len(round)-1].Index+1 != len(round) {
+		t.Fatalf("first binary round never completed: %+v", round)
+	}
+	var parts [][]int
+	for i, g := range round {
+		if g.Granularity != 2 || g.Stage != "part" || g.Index != i {
+			t.Fatalf("group %d is not part %d of the binary round: %+v", g.Group, i, g)
+		}
+		parts = append(parts, g.Cores)
+	}
+	if diff := cmp.Diff([][]int{{0, 2}, {1, 3}}, parts); diff != "" {
 		t.Fatalf("first split into loaded and idle cores (-want +got):\n%s", diff)
 	}
 }

@@ -433,6 +433,9 @@ func TestClassTargetsPreserveHuntAndRerunLookup(t *testing.T) {
 				}
 				h.decide(a)
 			}
+			if !tr.Rerun {
+				t.Fatal("no rerun reached within 50 actions")
+			}
 			if diff := cmp.Diff([]any{tt.rerun, tt.core, tt.offset}, []any{tr.Cores, tr.Core, tr.Offset}, cmpopts.EquateEmpty()); diff != "" {
 				t.Fatalf("rerun target (-want +got):\n%s", diff)
 			}
