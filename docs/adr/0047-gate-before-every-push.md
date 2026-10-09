@@ -12,7 +12,7 @@ This removes the premise of [ADR 0042](0042-opt-in-to-the-check-cache-locally.md
 
 ## Considered Options
 
-- **Keep `just check` before every push:** rejected. CI runs the same checks on the same head; the hermetic checks matter locally only when the flake or the Nix sources change.
+- **Keep `just check` before every push:** rejected. CI runs the same Linux checks on the same head; the hermetic checks matter locally only when the flake or the Nix sources change, or, on a Mac, for darwin-only files that pull-request CI does not build (ADR 0046).
 
 ## Consequences
 
