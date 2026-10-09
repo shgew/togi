@@ -4,7 +4,7 @@ about: Something togi does wrong.
 labels: ["bugfix", "needs-triage"]
 ---
 
-<!-- Maintainers: during triage, add a `Touches:` line naming the packages or files the fix edits (see AGENTS.md, Issues). -->
+<!-- Maintainers: during triage, add a `Touches:` line naming the packages or files the fix edits (see docs/issues.md). -->
 
 ## What happened
 

@@ -1,3 +1,5 @@
+# Evaluates the x86_64-linux NixOS configuration on every host, VM-free: GRUB mirror constraints, the
+# grubenv mount dependency, package overrides and the tuning specialisation's spec'd 30s watchdog.
 {
   pkgs,
   hostPkgs,

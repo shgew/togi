@@ -1,3 +1,11 @@
+# CI's definition of green: every Linux flake check on GitHub-hosted runners, one job per check so the VM
+# tests boot in parallel. On pushes to `main` only, a native arm64 runner also builds
+# `checks.aarch64-darwin.package`; pull requests skip it (ADR 0046). The aggregating `check` job requires
+# the Linux checks, and on `main` the macOS job too. Jobs substitute from the public Cachix cache `togi`
+# and push each check's output when CACHIX_AUTH_TOKEN is available, so a check whose inputs are unchanged
+# passes without running; the checks build the package with the revision `dev` so that a new commit alone
+# changes none of them (ADR 0021).
+# The release workflow only builds the package on the release commit.
 name: check
 
 on:
