@@ -29,19 +29,42 @@ const defaultMaxBoots = 1000
 // returns an error that is not ErrBootCap.
 var ErrBootCap = errors.New("simulated machine reached its boot cap without stopping")
 
-// RecordedConfig returns the configuration the latest config.loaded in the journal of dir recorded, as `togi run`
-// resumes it; fresh when dir holds no journal or no config.loaded.
+// RecordedConfig returns the configuration a resume of dir runs under: the one the latest config.loaded in its journal
+// recorded, standing in for the configuration file `togi run` would load. A journal of an older schema, which the
+// resume archives, contributes only its recorded backend store paths on top of fresh. It returns fresh when dir holds
+// no journal or no config.loaded.
 func RecordedConfig(dir string, fresh config.Config) (config.Config, error) {
-	events, _, err := journal.Read(dir)
+	recorded, _, err := journal.Scan(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return fresh, nil
 	}
 	if err != nil {
 		return config.Config{}, fmt.Errorf("read recorded configuration: %w", err)
 	}
+	if recorded.Schema < journal.Schema {
+		return recordedBackends(dir, fresh)
+	}
+	events, _, err := journal.Read(dir)
+	if err != nil {
+		return config.Config{}, fmt.Errorf("read recorded configuration: %w", err)
+	}
 	for _, e := range slices.Backward(events) {
 		if p, ok := e.Data.(*journal.ConfigLoaded); ok {
 			return session.ConfigFromSnapshot(p.Config), nil
+		}
+	}
+	return fresh, nil
+}
+
+func recordedBackends(dir string, fresh config.Config) (config.Config, error) {
+	events, err := journal.ReadHistory(filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		return config.Config{}, fmt.Errorf("read recorded backends: %w", err)
+	}
+	for _, e := range slices.Backward(events) {
+		if p, ok := e.Data.(*journal.ConfigLoaded); ok {
+			fresh.Backends = config.Backends(p.Config.Backends)
+			return fresh, nil
 		}
 	}
 	return fresh, nil
