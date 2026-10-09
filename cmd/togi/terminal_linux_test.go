@@ -2,11 +2,17 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
 	"strconv"
 	"syscall"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/config"
+	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/render"
+	"github.com/shgew/togi/internal/sim"
 	"golang.org/x/sys/unix"
 )
 
@@ -96,5 +102,43 @@ func TestDiscardInputDropsTypedAhead(t *testing.T) {
 	}
 	if pending, err := unix.IoctlGetInt(int(slave.Fd()), unix.TIOCINQ); err != nil || pending != 0 {
 		t.Fatalf("pending input after discard %d, %v; want 0", pending, err)
+	}
+}
+
+type panickingTrials struct{ machine.Trials }
+
+func (panickingTrials) Start(context.Context, machine.TrialSpec) (machine.Running, error) {
+	panic("trial start panic")
+}
+
+func TestRunHardwareRestoresTerminalWhenSessionPanics(t *testing.T) {
+	g := testGlobals(t)
+	slave, _ := openPTY(t)
+	before := localFlags(t, slave)
+	out, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	dash := &dashboard{out: out, in: slave, run: func(ctx context.Context, _ string, _ *os.File) error { <-ctx.Done(); return nil }}
+	sm, err := sim.New(sim.Config{Seed: 82})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newMachine := func(config.Config, string) (machine.Machine, error) {
+		seams := sm.Seams()
+		seams.Trials = panickingTrials{Trials: seams.Trials}
+		return seams, nil
+	}
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		runHardware(context.Background(), &g, config.Default(), false, nil, 0, io.Discard, render.Renderer{}, dash, newMachine)
+	}()
+	if diff := cmp.Diff(any("trial start panic"), recovered); diff != "" {
+		t.Errorf("recovered panic (-want +got): %s", diff)
+	}
+	if diff := cmp.Diff(before, localFlags(t, slave)); diff != "" {
+		t.Errorf("terminal flags after the panic (-want +got): %s", diff)
 	}
 }

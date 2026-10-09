@@ -201,6 +201,7 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	prompt := defectPrompt(ctx, stderr)
 	if dash != nil {
 		dash.show()
+		defer dash.hide()
 		if ask := prompt; ask != nil {
 			prompt = func(f defect.Finding) (bool, error) {
 				dash.hide()
