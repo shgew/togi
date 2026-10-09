@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -56,14 +57,12 @@ func cpu(t *testing.T, root string, cpuID, coreID, ccd int, cache bool) {
 	}
 }
 
-func fixture(t *testing.T, coresPerCCD int, cache bool) (string, *fakeMailbox) {
+func writeFixture(t *testing.T, root string, coresPerCCD int, cache bool) {
 	t.Helper()
-	root := t.TempDir()
 	put(t, root, "proc/cpuinfo", "cpu family : 26\nmodel : 68\nmodel name : Zen Test\n")
 	put(t, root, "sys/kernel/ryzen_smu_drv/codename", "23\n")
 	put(t, root, "sys/kernel/ryzen_smu_drv/drv_version", "0.1\n")
 	put(t, root, "sys/kernel/ryzen_smu_drv/version", "57.13\n")
-	mb := &fakeMailbox{fuses: map[uint32]uint32{0x03b10570: 1, 0x03b10524: 0x6e}, responses: map[uint32][6]uint32{}}
 	for ccd := range 2 {
 		for index := range coresPerCCD {
 			core := ccd*8 + index
@@ -71,7 +70,54 @@ func fixture(t *testing.T, coresPerCCD int, cache bool) (string, *fakeMailbox) {
 			cpu(t, root, core+16, core, ccd, cache)
 		}
 	}
-	return root, mb
+}
+
+func newMailbox() *fakeMailbox {
+	return &fakeMailbox{fuses: map[uint32]uint32{0x03b10570: 1, 0x03b10524: 0x6e}, responses: map[uint32][6]uint32{}}
+}
+
+func fixture(t *testing.T, coresPerCCD int, cache bool) (string, *fakeMailbox) {
+	t.Helper()
+	root := t.TempDir()
+	writeFixture(t, root, coresPerCCD, cache)
+	return root, newMailbox()
+}
+
+type shape struct {
+	coresPerCCD int
+	cache       bool
+}
+
+var shared = struct {
+	sync.Mutex
+	dir   string
+	roots map[shape]string
+}{roots: map[shape]string{}}
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "smu-fixtures-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	shared.dir = dir
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+func sharedFixture(t *testing.T, coresPerCCD int, cache bool) (string, *fakeMailbox) {
+	t.Helper()
+	shared.Lock()
+	defer shared.Unlock()
+	s := shape{coresPerCCD, cache}
+	root, ok := shared.roots[s]
+	if !ok {
+		root = filepath.Join(shared.dir, fmt.Sprintf("%d-%t", coresPerCCD, cache))
+		writeFixture(t, root, coresPerCCD, cache)
+		shared.roots[s] = root
+	}
+	return root, newMailbox()
 }
 
 func TestTopologyAndEncoding(t *testing.T) {
@@ -152,7 +198,7 @@ func TestMappingAndFallback(t *testing.T) {
 		{"full-fuse-missing-cores", 6, 0x00, 0, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			root, mb := fixture(t, tc.cores, tc.cache)
+			root, mb := sharedFixture(t, tc.cores, tc.cache)
 			mb.fuses[0x304a03dc+uint32(tc.ccd)<<25] = tc.fuse
 			if tc.cores != 8 {
 				mb.fuses[0x304a03dc+1<<25] = tc.fuse
@@ -290,7 +336,7 @@ func TestSlotIdentityPreflight(t *testing.T) {
 func TestStaleCCDFuseRefusesPerCoreAccess(t *testing.T) {
 	for _, failRead := range [][]int{{1}, {2}, {1, 2}} {
 		t.Run(fmt.Sprint(failRead), func(t *testing.T) {
-			root, mb := fixture(t, 8, true)
+			root, mb := sharedFixture(t, 8, true)
 			const ccd0 = 0x304a03dc
 			const ccd1 = ccd0 + 1<<25
 			var previous uint32
@@ -336,7 +382,7 @@ func TestFuseEqualToProbeAcceptedWhenFresh(t *testing.T) {
 		{"indistinguishable", 0x00, 0x00, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			root, mb := fixture(t, 8, true)
+			root, mb := sharedFixture(t, 8, true)
 			mb.fuses[0x03b10570] = tc.response
 			mb.fuses[0x03b10524] = tc.cmd
 			d, err := Open(root, mb)
@@ -624,7 +670,7 @@ func TestInvalidIdentityFilesPreventHardwareAccess(t *testing.T) {
 }
 
 func TestMailboxWriteFailureIsReported(t *testing.T) {
-	root, mb := fixture(t, 8, true)
+	root, mb := sharedFixture(t, 8, true)
 	d, err := Open(root, mb)
 	if err != nil {
 		t.Fatal(err)
@@ -654,7 +700,7 @@ func TestMailboxWriteFailureIsReported(t *testing.T) {
 func TestFuseReadFailureRefusesPerCoreAccess(t *testing.T) {
 	for failed := 1; failed <= 4; failed++ {
 		t.Run(fmt.Sprint(failed), func(t *testing.T) {
-			root, mb := fixture(t, 8, true)
+			root, mb := sharedFixture(t, 8, true)
 			reads := 0
 			unavailable := errors.New("SMN unavailable")
 			mb.smnRead = func(addr uint32) (uint32, error) {
