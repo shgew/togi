@@ -214,7 +214,7 @@ togi uses the GRUB environment of the first `boot.loader.grub.mirroredBoots` ent
    The second command must not show `saved_entry`. Reboot.
 3. If you entered offsets in BIOS, set Curve Optimizer back to 0 there.
 
-## 10. Removing togi
+## 9. Removing togi
 
 Do this from the normal system:
 

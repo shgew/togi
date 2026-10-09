@@ -16,7 +16,7 @@ The evidence epoch (`tuner.EvidenceEpoch`, now 1; `tuner.md`, Ruleset) versions 
 Every workload must check its own results: silent computation errors are a known failure mode ([ADR 0008](../adr/0008-self-checking-workloads.md)).
 
 A backend integration:
-- writes its configuration files into the trial's work directory, naming the exact logical CPUs and thread count, because both programs set their own affinity and would otherwise start workers on every CPU;
+- writes its configuration files into the trial's work directory with the thread count, and with the exact logical CPUs where the program takes them: y-cruncher sets its own affinity from its config and would otherwise start workers on every CPU, while mprime names no CPUs (`EnableSetAffinity=0`) and the trial's scope confines it;
 - produces the argument vector to launch;
 - parses output as it arrives into progress, computation error and fatal setup error;
 - reports setup problems as inconclusive, never as failures.

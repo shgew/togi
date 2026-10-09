@@ -1,6 +1,6 @@
 # togi
 
-togi finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them to measure how durable they are.
+togi finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them for breadth: it reports clean cycles, not a durability grade.
 
 ## Language
 
@@ -97,7 +97,7 @@ The newest passed full-cycle profile raised to the failing profile, each core at
 _Avoid_: anchor
 
 **Group**:
-One hunt trial plan: the selected cores kept at failing offsets, with every other core at parked offsets. Member probes vary one member's offset while holding the other members at their recorded failing offsets.
+One hunt trial plan: the selected cores kept at failing offsets, with every other core at parked offsets. Member probes vary one member's offset while holding the other members at their failing offsets: members probed earlier stay at the newly found failing offsets, the rest at their recorded ones.
 _Avoid_: mask
 
 **Search**:
