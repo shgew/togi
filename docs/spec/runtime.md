@@ -184,7 +184,7 @@ The number of trials for a full evidence step is `ceil(ln(evidence.miss) / log1p
 
 The effective configuration is recorded in `config.loaded` at every start. Configuration that changes the meaning of existing evidence, such as trial durations, is allowed mid-session and takes effect from the next trial. The journal shows when it changed.
 
-The TOML configuration has no version field, and the Go configuration rejects unknown keys, so a removed or renamed option fails the command until the file is edited. The NixOS module keeps no `mkRenamedOptionModule` or `mkRemovedOptionModule` shims: the change is noted in the changelog as breaking. Changed configurable defaults are not a ruleset break.
+The TOML configuration has no version field, and the Go configuration rejects unknown keys, so a removed or renamed option fails the command until the file is edited. The NixOS module keeps no `mkRenamedOptionModule` or `mkRemovedOptionModule` shims: the change is noted in the changelog. Changed configurable defaults are not a ruleset break.
 
 ## In-session run
 

@@ -10,7 +10,7 @@ Status: Accepted.
 - An agent decides a reversible question that changes no tuner decisions, records the answer under the issue's Decided as agent-decided and continues. `needs-decision` is for every other question.
 - `just gate` runs before every push. `just check` is required only for changes to `flake.nix` or `nix/`. CI stays the definition of green: it runs every flake check on the exact head of every pull request ([ADR 0016](0016-every-pull-request-runs-every-check.md)), and `just check` stays exactly that set ([ADR 0036](0036-flake-checks-stay-hermetic.md)).
 
-This reverses ADR 0025's sentence "The owner merges. Agents merge only when the owner asks." Its recorded review, `review` check and ruleset stay. It also removes the premise of [ADR 0042](0042-opt-in-to-the-check-cache-locally.md) that local `just check` runs before every push; the opt-in cache remains useful for the pushes that need it.
+This reverses ADR 0025's sentence "The owner merges. Agents merge only when the owner asks." Its recorded review, `review` check and ruleset stay. It also reverses [ADR 0029](0029-bench-verdicts-rest-on-fitted-machines.md)'s "The owner merges every pull request"; deployment to the target machine stays with the owner. It also removes the premise of [ADR 0042](0042-opt-in-to-the-check-cache-locally.md) that local `just check` runs before every push; the opt-in cache remains useful for the pushes that need it.
 
 ## Considered Options
 
