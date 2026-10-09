@@ -321,3 +321,110 @@ func TestJournalUntilCancelsAfterFirstMatchingAppend(t *testing.T) {
 		t.Errorf("trial ends %d, want 1", ends)
 	}
 }
+
+func TestRecordedConfigResumesRecordedPassesAndDurations(t *testing.T) {
+	recorded := config.Default()
+	recorded.Backends = config.Backends{Mprime: "/nix/store/recorded-mprime", Ycruncher: "/nix/store/recorded-ycruncher"}
+	recorded.Durations.SearchTrialS = 17
+
+	resume := func(dir string, cfg config.Config, until func(journal.Event) bool) {
+		t.Helper()
+		machineConfig, err := sim.Resume(dir, sim.Config{Seed: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := sim.New(machineConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Simulate(context.Background(), Input{Config: cfg, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true, Until: until}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nth := func(n int, match func(journal.Event) bool) func(journal.Event) bool {
+		seen := 0
+		return func(e journal.Event) bool {
+			if match(e) {
+				seen++
+			}
+			return seen == n
+		}
+	}
+	isIntent := func(e journal.Event) bool { return e.Kind == journal.KindTrialIntent }
+	isEnd := func(e journal.Event) bool { return e.Kind == journal.KindTrialEnd }
+	intents := func(dir string) []*journal.TrialIntent {
+		t.Helper()
+		events, _, err := journal.Read(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []*journal.TrialIntent
+		for _, e := range events {
+			if p, ok := e.Data.(*journal.TrialIntent); ok {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	type trial struct {
+		Profile   []int
+		Core      *int
+		Offset    *int
+		Regime    machine.Regime
+		Workload  string
+		DurationS int
+		Phase     journal.Phase
+	}
+	shape := func(p *journal.TrialIntent) trial {
+		return trial{p.Profile, p.Core, p.Offset, p.Regime, p.Workload, p.DurationS, p.Phase}
+	}
+
+	reference := t.TempDir()
+	resume(reference, recorded, nth(3, isIntent))
+	want := shape(intents(reference)[2])
+
+	stopped := t.TempDir()
+	resume(stopped, recorded, nth(2, isEnd))
+	done := len(intents(stopped))
+
+	got, err := RecordedConfig(stopped, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(recorded, got); diff != "" {
+		t.Fatalf("recorded configuration (-want +got):\n%s", diff)
+	}
+
+	next := func(cfg config.Config) trial {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.CopyFS(dir, os.DirFS(stopped)); err != nil {
+			t.Fatal(err)
+		}
+		resume(dir, cfg, nth(1, isIntent))
+		return shape(intents(dir)[done])
+	}
+	if diff := cmp.Diff(want, next(got)); diff != "" {
+		t.Fatalf("first trial after resuming under the recorded configuration (-want +got):\n%s", diff)
+	}
+	for _, p := range intents(stopped) {
+		if p.DurationS != recorded.Durations.SearchTrialS {
+			t.Fatalf("trial %s lasts %d s, want the recorded %d s", p.Trial, p.DurationS, recorded.Durations.SearchTrialS)
+		}
+	}
+	if diff := cmp.Diff(want, next(config.Default())); diff == "" {
+		t.Fatal("resuming under the default configuration repeated the recorded trial; the test cannot tell the configurations apart")
+	}
+}
+
+func TestRecordedConfigWithoutJournalIsFresh(t *testing.T) {
+	fresh := config.Default()
+	fresh.Durations.SearchTrialS = 5
+	got, err := RecordedConfig(t.TempDir(), fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(fresh, got); diff != "" {
+		t.Fatalf("configuration of an empty state directory (-want +got):\n%s", diff)
+	}
+}

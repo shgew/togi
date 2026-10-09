@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,7 +11,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
+	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/simrun"
 )
 
 func TestSimRefusesInvalidInputs(t *testing.T) {
@@ -152,5 +156,46 @@ func TestSimSamplesAreOptIn(t *testing.T) {
 				t.Fatalf("sample files exist (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestSimResumesUnderTheRecordedConfiguration(t *testing.T) {
+	t.Parallel()
+	recorded := config.Default()
+	recorded.Backends = config.Backends{Mprime: "/nix/store/recorded-mprime", Ycruncher: "/nix/store/recorded-ycruncher"}
+	recorded.Durations.SearchTrialS = 17
+	dir := t.TempDir()
+	m, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ends := 0
+	until := func(e journal.Event) bool {
+		if e.Kind == journal.KindTrialEnd {
+			ends++
+		}
+		return ends == 2
+	}
+	if _, err := simrun.Simulate(context.Background(), simrun.Input{Config: recorded, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true, Until: until}); err != nil {
+		t.Fatal(err)
+	}
+	if got := run([]string{"--state-dir", dir, "--max-boots", "1"}, io.Discard); got != 0 && got != 3 {
+		t.Fatalf("exit %d", got)
+	}
+	events, _, err := journal.Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loaded []journal.ConfigSnapshot
+	for _, e := range events {
+		if p, ok := e.Data.(*journal.ConfigLoaded); ok {
+			loaded = append(loaded, p.Config)
+		}
+	}
+	if len(loaded) < 2 {
+		t.Fatalf("%d config.loaded events, want the original and the resume", len(loaded))
+	}
+	if diff := cmp.Diff(loaded[0], loaded[len(loaded)-1]); diff != "" {
+		t.Fatalf("configuration the resume recorded (-original +resumed):\n%s", diff)
 	}
 }
