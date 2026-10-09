@@ -42,6 +42,7 @@ type requirement struct {
 
 func (s *State) fullCycleCoverage(steps []machine.Regime) (bool, []string) {
 	want := map[machine.Regime]int{machine.R1: 3, machine.R2: 3, machine.R3: 1, machine.R4: 1, machine.R5: 1, machine.R6: 1, machine.R7: 3}
+	want = weightedCoverageWant(want)
 	var missing []string
 	for _, r := range machine.Regimes {
 		got := 0
