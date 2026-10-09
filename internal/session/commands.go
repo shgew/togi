@@ -22,7 +22,7 @@ func replayFor(j Journal) (replayed, error) {
 	if len(events) == 0 {
 		return r, ErrNoSession
 	}
-	if err := journal.Compatible(journal.BuildOf(events), Build()); err != nil {
+	if err := journal.Classify(journal.BuildOf(events), Build()).Refusal(journal.OpAppend); err != nil {
 		return r, err
 	}
 	journal.Replay(events, &r.state, r.tuner)

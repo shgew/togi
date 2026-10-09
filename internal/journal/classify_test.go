@@ -2,6 +2,8 @@ package journal
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -119,5 +121,41 @@ func TestClassifyUnknownKinds(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLockedReadReusesDecodeUntilFileChanges(t *testing.T) {
+	dir := t.TempDir()
+	j := openTest(t, dir)
+	appendAll(t, j, []Payload{sessionStart()})
+	if err := j.Close(); err != nil {
+		t.Fatal(err)
+	}
+	locked, err := Lock(dir, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer locked.Close()
+	first, _, err := locked.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := locked.Read()
+	if err != nil || len(second) != 1 || &first[0] != &second[0] {
+		t.Fatalf("unchanged file was decoded again: %v", err)
+	}
+	f, err := os.OpenFile(filepath.Join(dir, eventsFile), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(`{"seq":2,"kind":"shutdown","reason":"command"}` + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	third, _, err := locked.Read()
+	if err != nil || len(third) != 2 {
+		t.Fatalf("changed file: %d events, %v", len(third), err)
 	}
 }

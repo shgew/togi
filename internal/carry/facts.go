@@ -218,7 +218,8 @@ func (s sessionFacts) eligible(f facts.Fact, cleared map[int]bool, epoch int) bo
 	if position, ok := s.positions[factID{f.Session, f.Seq}]; ok {
 		at = position
 	}
-	if at <= s.allReset || f.Outcome == journal.OutcomePass && f.Epoch != epoch {
+	sameEpoch := journal.Classify(journal.Build{EvidenceEpoch: f.Epoch}, journal.Build{EvidenceEpoch: epoch}).Epoch == journal.DirSame
+	if at <= s.allReset || f.Outcome == journal.OutcomePass && !sameEpoch {
 		return false
 	}
 	return !slices.ContainsFunc(f.Class.Cores, func(core int) bool { return cleared[core] || at <= s.coreResets[core] })

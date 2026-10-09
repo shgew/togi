@@ -67,7 +67,7 @@ func (e *UnknownKindError) Error() string {
 	return fmt.Sprintf("unknown kind %q in journal written by %s (schema %d, ruleset %d); this build, %s (schema %d, ruleset %d), cannot safely modify it; install the build that wrote it", e.Kind, e.Journal.name(), e.Journal.Schema, e.Journal.Ruleset, e.Binary.name(), e.Binary.Schema, e.Binary.Ruleset)
 }
 
-func KnownKinds(events []Event, binary Build) error {
+func knownKinds(events []Event, binary Build) error {
 	for _, e := range events {
 		if _, ok := payloadTypes[e.Kind]; !ok {
 			if binary.Schema == 0 {
@@ -176,6 +176,19 @@ func (c Compat) Err() error {
 	return &IncompatibleError{Field: field, Journal: c.Journal, Binary: c.Binary}
 }
 
+// Refusal is Err when op may not use the journal, and nil otherwise.
+func (c Compat) Refusal(op Operation) error {
+	if c.Access(op) == AccessRefuse {
+		return c.Err()
+	}
+	return nil
+}
+
+// shippedSchema reports whether recorded has a schema some togi build shipped and this build can translate.
+func shippedSchema(recorded Build) bool {
+	return recorded.Schema >= 1 && Classify(recorded, Build{Schema: Schema}).Access(OpHistory) == AccessUse
+}
+
 // Operation is what a command does with a journal; each has its own permission (runtime.md, journal.md).
 type Operation int
 
@@ -262,7 +275,7 @@ func (c Compat) Kinds(op Operation, events []Event) error {
 	case OpInspect, OpReplay, OpHistory:
 		return nil
 	}
-	return KnownKinds(events, c.Binary)
+	return knownKinds(events, c.Binary)
 }
 
 // Scan reads only the build stamps, ignoring all other payloads and unknown event kinds.
@@ -344,14 +357,4 @@ func BuildOf(events []Event) Build {
 // RulesetWarning reports that read-only output uses this build's strategy.
 func RulesetWarning(recorded, binary Build) string {
 	return "warning: journal written by " + recorded.name() + fmt.Sprintf(" (ruleset %d); rendered with this build's rules (ruleset %d)", recorded.Ruleset, binary.Ruleset)
-}
-
-// Compatible checks schema, ruleset, then evidence epoch. A missing ruleset stamp means ruleset 1.
-func Compatible(recorded, binary Build) error {
-	return Classify(recorded, binary).Err()
-}
-
-// Older reports whether recorded has an earlier schema, ruleset or evidence epoch and no later dimension.
-func Older(recorded, binary Build) bool {
-	return Classify(recorded, binary).Older()
 }

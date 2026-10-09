@@ -265,7 +265,7 @@ func (r *runner) checkCompatibility(events []journal.Event) error {
 	if !warm {
 		recorded = journal.BuildOf(events)
 	}
-	err := journal.Compatible(recorded, Build())
+	err := journal.Classify(recorded, Build()).Refusal(journal.OpAppend)
 	if err == nil {
 		return nil
 	}

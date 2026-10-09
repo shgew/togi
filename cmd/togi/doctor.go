@@ -102,17 +102,18 @@ func doctor(g *globals, args []string, stdout, stderr io.Writer, privileged bool
 func doctorJournal(dir string, stderr io.Writer, renderer render.Renderer) (*machine.BIOSContext, int, bool) {
 	build := session.Build()
 	stamp, _, err := journal.Scan(dir)
+	c := journal.Classify(stamp, build)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return nil, exitOK, true
 	case err != nil:
 		fmt.Fprintf(stderr, "togi doctor: %s\n", render.EscapeText(err.Error()))
 		return nil, exitError, false
-	case stamp.Schema == 0 || journal.Older(stamp, build):
+	case stamp.Schema == 0 || c.Access(journal.OpResume) == journal.AccessArchive:
 		// run archives an older journal and starts a new session.
 		return nil, exitOK, true
 	}
-	if err := journal.Compatible(stamp, build); err != nil {
+	if err := c.Refusal(journal.OpResume); err != nil {
 		fmt.Fprintln(stderr, renderer.Styled(render.RedBold, "togi doctor: "+err.Error()))
 		return nil, exitIncompatible, false
 	}
@@ -121,7 +122,7 @@ func doctorJournal(dir string, stderr io.Writer, renderer render.Renderer) (*mac
 		fmt.Fprintf(stderr, "togi doctor: %s\n", render.EscapeText(err.Error()))
 		return nil, exitError, false
 	}
-	if err := journal.KnownKinds(events, build); err != nil {
+	if err := c.Kinds(journal.OpResume, events); err != nil {
 		fmt.Fprintln(stderr, renderer.Styled(render.RedBold, "togi doctor: "+err.Error()))
 		return nil, exitIncompatible, false
 	}

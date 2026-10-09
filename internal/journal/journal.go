@@ -124,7 +124,8 @@ func (j *Journal) SetBoot(boot string) {
 	j.opts.Boot = boot
 }
 
-// Read decodes the locked journal like Read(j.Dir()); Open reuses the decoded events while the file is unchanged.
+// Read decodes the locked journal like Read(j.Dir()); Open reuses the decoded events while the file is unchanged, and
+// so does another Read. The returned events are shared with that cache and must not be modified.
 func (j *Journal) Read() (events []Event, torn []byte, err error) {
 	if err := j.flush(); err != nil {
 		return nil, nil, err
@@ -133,6 +134,12 @@ func (j *Journal) Read() (events []Event, torn []byte, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read journal %s: %w", path, err)
+	}
+	if d := j.decoded; d != nil && bytes.Equal(d.data, data) {
+		if err := checkStart(data, Build{}, readLive); err != nil {
+			return nil, nil, fmt.Errorf("read journal %s: %w", path, err)
+		}
+		return d.events, tornTail(data, d.end), nil
 	}
 	events, end, err := j.decode(data, Build{})
 	if err != nil {
@@ -206,7 +213,7 @@ func (j *Journal) Open() (torn []Event, err error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := KnownKinds(events, opts.Build); err != nil {
+	if err := Classify(BuildOf(events), opts.Build).Kinds(OpAppend, events); err != nil {
 		return nil, err
 	}
 	if n := len(events); n > 0 && end == len(data) {
@@ -392,7 +399,7 @@ func checkStart(data []byte, binary Build, mode readMode) error {
 	if err := json.Unmarshal(line, &first); err != nil {
 		return fmt.Errorf("journal line 1: %w", err)
 	}
-	if mode != readLive && (first.Schema < 1 || first.Schema > Schema) {
+	if mode != readLive && !shippedSchema(first.Build) {
 		return fmt.Errorf("journal schema %d cannot be read by schema %d", first.Schema, Schema)
 	}
 	if first.Kind != KindSessionStart || mode == readHistory {
@@ -401,25 +408,23 @@ func checkStart(data []byte, binary Build, mode readMode) error {
 	if binary.Schema == 0 {
 		binary = binarySchemaBuild()
 	}
-	recordedRuleset := first.Ruleset
-	if recordedRuleset == 0 {
-		recordedRuleset = 1
-	}
+	c := Classify(first.Build, binary)
 	if mode == readReplay {
-		if recordedRuleset != binary.Ruleset {
-			return fmt.Errorf("journal ruleset %d cannot be replayed by ruleset %d; replay needs a journal from the current ruleset", recordedRuleset, binary.Ruleset)
+		if c.Ruleset != DirSame {
+			return fmt.Errorf("journal ruleset %d cannot be replayed by ruleset %d; replay needs a journal from the current ruleset", c.Journal.Ruleset, binary.Ruleset)
 		}
 		return nil
 	}
 	if binary.Ruleset == 0 {
-		binary.Ruleset = recordedRuleset
+		binary.Ruleset = c.Journal.Ruleset
+		c = Classify(first.Build, binary)
 	}
-	if first.Schema != binary.Schema || recordedRuleset != binary.Ruleset {
+	if c.Schema != DirSame || c.Ruleset != DirSame {
 		stamp, _, err := scanBuild(data)
 		if err != nil {
 			return err
 		}
-		return Compatible(stamp, binary)
+		return Classify(stamp, binary).Err()
 	}
 	return nil
 }
@@ -515,10 +520,11 @@ func decodeParts(parts [][]byte, history bool, schema, before int) ([]Event, err
 // decodePart decodes lines until the first that fails.
 func decodePart(part []byte, history bool, schema int) decodedPart {
 	var d decodedPart
+	olderSchema := Classify(Build{Schema: schema}, Build{Schema: Schema}).Schema == DirOlder
 	for len(part) > 0 {
 		i := bytes.IndexByte(part, '\n')
 		line := part[:i]
-		if schema < Schema {
+		if olderSchema {
 			var err error
 			line, err = translateSchema(line, schema)
 			if err != nil {
@@ -617,6 +623,7 @@ func ReadForCarry(path string) ([]Event, error) {
 	}
 	var events []Event
 	schema := Schema
+	olderSchema := false
 	for n := 1; ; n++ {
 		line, rest, ok := bytes.Cut(data, []byte{'\n'})
 		if !ok {
@@ -630,9 +637,10 @@ func ReadForCarry(path string) ([]Event, error) {
 				return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)
 			}
 			schema = build.Schema
-			if schema < 1 || schema > Schema {
+			if !shippedSchema(build) {
 				return nil, fmt.Errorf("journal schema %d cannot be read by schema %d", schema, Schema)
 			}
+			olderSchema = Classify(build, Build{Schema: Schema}).Schema == DirOlder
 		}
 		var env envelope
 		if err := json.Unmarshal(line, &env); err != nil {
@@ -657,7 +665,7 @@ func ReadForCarry(path string) ([]Event, error) {
 		var p Payload
 		switch {
 		case carryKinds[env.Kind]:
-			if schema < Schema {
+			if olderSchema {
 				line, err = translateSchema(line, schema)
 				if err != nil {
 					return nil, fmt.Errorf("read journal %s line %d: %w", path, n, err)

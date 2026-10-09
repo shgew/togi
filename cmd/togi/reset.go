@@ -89,11 +89,8 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 		return resetError(err, journal.ErrLocked, stderr)
 	}
 	defer j.Close()
-	if events, _, readErr := journal.Read(g.stateDir); readErr == nil {
-		if err := journal.KnownKinds(events, session.Build()); err != nil {
-			fmt.Fprintf(stderr, "togi reset: %s\n", render.EscapeText(err.Error()))
-			return exitError
-		}
+	if refusedKinds(j, all, stderr) {
+		return exitError
 	}
 	if all {
 		dropped, dropErr := j.DropPendingCarry()
@@ -118,7 +115,7 @@ func runReset(g *globals, args []string, stdout, stderr io.Writer) int {
 				return exitOK
 			}
 		}
-		if err == nil && stamp.Schema != journal.Schema {
+		if err == nil && journal.Classify(stamp, session.Build()).Access(journal.OpResetAll) == journal.AccessArchive {
 			if boundaryErr := j.MarkResetAll(); boundaryErr != nil {
 				return resetError(boundaryErr, journal.ErrLocked, stderr)
 			}
@@ -213,13 +210,13 @@ func openForCommand(name string, j *journal.Journal, stderr io.Writer, allowRule
 	dir := j.Dir()
 	if !allowRuleset {
 		if stamp, _, scanErr := journal.Scan(dir); scanErr == nil && stamp.Schema != 0 {
-			if err := journal.Compatible(stamp, session.Build()); err != nil {
+			if err := journal.Classify(stamp, session.Build()).Refusal(journal.OpAppend); err != nil {
 				fmt.Fprintf(stderr, "togi %s: %s\n", name, render.EscapeText(err.Error()))
 				return "", exitError, false
 			}
 		}
 	}
-	events, _, err := journal.Read(dir)
+	events, _, err := j.Read()
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		fmt.Fprintf(stderr, "togi %s: no journal at %s\n", name, filepath.Join(dir, "events.jsonl"))
@@ -232,7 +229,7 @@ func openForCommand(name string, j *journal.Journal, stderr io.Writer, allowRule
 		return "", exitError, false
 	}
 	if !allowRuleset {
-		if err := journal.Compatible(journal.BuildOf(events), session.Build()); err != nil {
+		if err := journal.Classify(journal.BuildOf(events), session.Build()).Refusal(journal.OpAppend); err != nil {
 			fmt.Fprintf(stderr, "togi %s: %s\n", name, render.EscapeText(err.Error()))
 			return "", exitError, false
 		}
@@ -270,4 +267,22 @@ func coreFlag(dst **int) func(string) error {
 		*dst = &n
 		return nil
 	}
+}
+
+// refusedKinds reports, after printing why, that the locked journal holds events of a kind this build does not know
+// where reset must understand them: reset --core always, reset --all when it appends under the current schema.
+func refusedKinds(j *journal.Journal, all bool, stderr io.Writer) bool {
+	events, _, err := j.Read()
+	if err != nil {
+		return false
+	}
+	op := journal.OpAppend
+	if all {
+		op = journal.OpResetAll
+	}
+	if err := journal.Classify(journal.BuildOf(events), session.Build()).Kinds(op, events); err != nil {
+		fmt.Fprintf(stderr, "togi reset: %s\n", render.EscapeText(err.Error()))
+		return true
+	}
+	return false
 }

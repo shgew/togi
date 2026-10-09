@@ -24,7 +24,7 @@ func TestCompatible(t *testing.T) {
 		{"old unstamped session", "ruleset", Build{Schema: 1}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := Compatible(tc.journal, binary)
+			err := Classify(tc.journal, binary).Err()
 			if tc.field == "" {
 				if err != nil {
 					t.Fatal(err)
@@ -40,13 +40,13 @@ func TestCompatible(t *testing.T) {
 			}
 		})
 	}
-	if err := Compatible(Build{Schema: 1}, Build{Schema: 1, Ruleset: 1}); err != nil {
+	if err := Classify(Build{Schema: 1}, Build{Schema: 1, Ruleset: 1}).Err(); err != nil {
 		t.Fatalf("ruleset 1 must accept an unstamped session: %v", err)
 	}
 }
 
 func TestRefusalOfAnOlderJournalNamesTheCarry(t *testing.T) {
-	err := Compatible(Build{Version: "0.4.0", Schema: 2, Ruleset: 3}, Build{Version: "0.5.0", Schema: 2, Ruleset: 4})
+	err := Classify(Build{Version: "0.4.0", Schema: 2, Ruleset: 3}, Build{Version: "0.5.0", Schema: 2, Ruleset: 4}).Err()
 	want := "this journal was written by togi 0.4.0 (schema 2, ruleset 3); this build, togi 0.5.0, uses ruleset 4. togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over."
 	if err == nil || err.Error() != want {
 		t.Fatalf("Compatible: %v, want %q", err, want)
@@ -67,7 +67,7 @@ func TestOlder(t *testing.T) {
 		{"newer schema, older ruleset", Build{Schema: 3, Ruleset: 1}, false},
 		{"unstamped ruleset", Build{Schema: 2}, true},
 	} {
-		if got := Older(tc.recorded, binary); got != tc.want {
+		if got := Classify(tc.recorded, binary).Older(); got != tc.want {
 			t.Errorf("%s: Older(%+v) = %v, want %v", tc.name, tc.recorded, got, tc.want)
 		}
 	}
@@ -143,7 +143,7 @@ func TestEvidenceEpochCompatibilityDiagnostics(t *testing.T) {
 		{"newer epoch", Build{Version: "future", Schema: Schema, Ruleset: 7, EvidenceEpoch: 3}, "this journal was written by togi future (schema 4, ruleset 7, evidence epoch 3); this build, togi new, uses evidence epoch 2. Install togi future to continue this session, or run togi reset --all to archive it and start over."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := Compatible(tc.recorded, binary)
+			err := Classify(tc.recorded, binary).Err()
 			if err == nil {
 				t.Fatal("incompatible epoch accepted")
 			}

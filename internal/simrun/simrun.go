@@ -41,7 +41,7 @@ func RecordedConfig(dir string, fresh config.Config) (config.Config, error) {
 	if err != nil {
 		return config.Config{}, fmt.Errorf("read recorded configuration: %w", err)
 	}
-	if recorded.Schema < journal.Schema {
+	if journal.Classify(recorded, journal.Build{Schema: journal.Schema}).Schema == journal.DirOlder {
 		return recordedBackends(dir, fresh)
 	}
 	events, _, err := journal.Read(dir)

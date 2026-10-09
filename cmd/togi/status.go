@@ -93,7 +93,7 @@ func loadSession(name, dir string, stderr io.Writer) ([]journal.Event, journal.S
 func warnRuleset(events []journal.Event, stderr io.Writer) {
 	recorded := journal.BuildOf(events)
 	binary := session.Build()
-	if recorded.Ruleset != binary.Ruleset {
+	if journal.Classify(recorded, binary).Ruleset != journal.DirSame {
 		fmt.Fprintln(stderr, render.NewRenderer(stderr, os.Getenv).Styled(render.Yellow, journal.RulesetWarning(recorded, binary)))
 	}
 }
