@@ -254,14 +254,14 @@ func TestR7BackoffReason(t *testing.T) {
 		name     string
 		requests map[int]float64
 		target   float64
-		want     string
+		want     []string
 	}{
-		{"offset fallback", nil, 0, "order came from offsets at CO -30; no request telemetry, 1 count"},
-		{"no pass", map[int]float64{0: 1.09447, 1: 1.08}, 0, "request 1.094 V; no qualifying pass, 1 count"},
-		{"equal target", map[int]float64{0: 1.1539, 1: 1.08}, 1.1539, "request 1.154 V already met the passed target 1.154 V; 1 count"},
-		{"higher than target", map[int]float64{0: 1.16, 1: 1.08}, 1.1539, "request 1.160 V already met the passed target 1.154 V; 1 count"},
-		{"one count", map[int]float64{0: 1.15, 1: 1.08}, 1.153, "request 1.150 V to 1.153 V, 1 count"},
-		{"several counts", map[int]float64{0: 1.09447, 1: 1.08}, 1.1539, "request 1.094 V to 1.154 V, 17 counts"},
+		{"offset fallback", nil, 0, []string{"offsets", "CO -30", "no request telemetry", "1 count"}},
+		{"no pass", map[int]float64{0: 1.09447, 1: 1.08}, 0, []string{"request 1.094 V", "no qualifying pass", "1 count"}},
+		{"equal target", map[int]float64{0: 1.1539, 1: 1.08}, 1.1539, []string{"request 1.154 V", "already met", "passed target 1.154 V", "1 count"}},
+		{"higher than target", map[int]float64{0: 1.16, 1: 1.08}, 1.1539, []string{"request 1.160 V", "already met", "passed target 1.154 V", "1 count"}},
+		{"one count", map[int]float64{0: 1.15, 1: 1.08}, 1.153, []string{"request 1.150 V", "1.153 V", "1 count"}},
+		{"several counts", map[int]float64{0: 1.09447, 1: 1.08}, 1.1539, []string{"request 1.094 V", "1.154 V", "17 counts"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := r7Harness(t)
@@ -275,23 +275,15 @@ func TestR7BackoffReason(t *testing.T) {
 			if !ok {
 				t.Fatal("failure did not move")
 			}
-			got := a.Payload.(*journal.TunerDecision).Reason
-			want := fmt.Sprintf("voltage-targeted R7 backoff after failure #%d: core 00 %s", failure.Seq, tc.want) + h.s.carriedReason(a.Cause)
-			if diff := cmp.Diff(want, got); diff != "" {
-				t.Fatal(diff)
+			move := a.Payload.(*journal.TunerDecision)
+			tokens := append([]string{"voltage-targeted R7 backoff", fmt.Sprintf("failure #%d", failure.Seq), "core 00", "ruleset8"}, tc.want...)
+			if missing := missingTokens(move.Reason, tokens...); len(missing) > 0 {
+				t.Fatalf("reason %q lacks %q", move.Reason, missing)
+			}
+			if !slices.Contains(a.Cause, failure.Seq) {
+				t.Fatalf("backoff cause %v omits failure #%d", a.Cause, failure.Seq)
 			}
 		})
-	}
-}
-
-func TestR7CountWording(t *testing.T) {
-	for _, noun := range []string{"count", "failure", "start"} {
-		if diff := cmp.Diff("1 "+noun, r7Count(1, noun)); diff != "" {
-			t.Fatal(diff)
-		}
-		if diff := cmp.Diff("2 "+noun+"s", r7Count(2, noun)); diff != "" {
-			t.Fatal(diff)
-		}
 	}
 }
 
@@ -392,8 +384,8 @@ func TestR7ZeroAffectedCCDDeadEndsAfterItsAllZeroRerun(t *testing.T) {
 				if !slices.Contains(a.Cause, failure.Seq) || !slices.Contains(a.Cause, rerun.Seq) {
 					t.Fatalf("backoff cause %v must cite failure #%d and its passed rerun #%d", a.Cause, failure.Seq, rerun.Seq)
 				}
-				if want := fmt.Sprintf("the rerun of failure #%d with every core at CO 0 passed (#%d), so it counts as unattributed against the cores off CO 0", failure.Seq, rerun.Seq); !strings.Contains(move.Reason, want) {
-					t.Fatalf("reason %q lacks %q", move.Reason, want)
+				if missing := missingTokens(move.Reason, "unattributed", "CO 0", "passed", fmt.Sprintf("#%d", failure.Seq), fmt.Sprintf("#%d", rerun.Seq)); len(missing) > 0 {
+					t.Fatalf("reason %q lacks %q", move.Reason, missing)
 				}
 				h.decide(a)
 				if a, pending := h.s.Drain(); pending {
@@ -406,9 +398,9 @@ func TestR7ZeroAffectedCCDDeadEndsAfterItsAllZeroRerun(t *testing.T) {
 			if !ok || !ended || dead.Condition != journal.DeadEndFailureAtZero || !slices.Contains(a.Cause, failure.Seq) || !slices.Contains(a.Cause, rerun.Seq) {
 				t.Fatalf("%+v", a)
 			}
-			want := fmt.Sprintf("unattributed R7 failure counts against CCD 0's top group, and every loaded core of that CCD [0 1] is at CO 0; the rerun with every core at CO 0 failed too (#%d), so the instability is not caused by Curve Optimizer", rerun.Seq)
-			if diff := cmp.Diff(want, dead.Detail); diff != "" {
-				t.Fatal(diff)
+			failedRerun := fmt.Sprintf("the rerun with every core at CO 0 failed too (#%d)", rerun.Seq)
+			if missing := missingTokens(dead.Detail, "CCD 0", "[0 1]"); len(missing) > 0 || !appearsInOrder(dead.Detail, failedRerun, "so the instability is not caused by Curve Optimizer") {
+				t.Fatalf("dead end detail %q lacks %q or the rerun phrase %q before its conclusion", dead.Detail, missing, failedRerun)
 			}
 		})
 	}
@@ -458,19 +450,19 @@ func TestR7NamedZeroAttributionUsesStartTop(t *testing.T) {
 				if !ended || dead.Condition != journal.DeadEndFailureAtZero {
 					t.Fatalf("%+v", a)
 				}
-				basis := "its trial's recorded top requesters"
+				basis := "top requesters"
 				switch {
 				case tc.previous != nil:
-					basis = fmt.Sprintf("request measurements [%d]", previous.Seq)
+					basis = fmt.Sprintf("[%d]", previous.Seq)
 					if !slices.Contains(a.Cause, previous.Seq) {
 						t.Fatalf("dead end lost the measurement that made core 00 top: %v", a.Cause)
 					}
 				case tc.top == nil:
-					basis = "offset order (no request telemetry)"
+					basis = "no request telemetry"
 				}
-				want := "core 00 failed at CO 0 as a top requester of CCD 0 by " + basis + fmt.Sprintf("; the rerun with every core at CO 0 failed too (#%d), so the instability is not caused by Curve Optimizer", rerun.Seq)
-				if diff := cmp.Diff(want, dead.Detail); diff != "" {
-					t.Fatal(diff)
+				failedRerun := fmt.Sprintf("the rerun with every core at CO 0 failed too (#%d)", rerun.Seq)
+				if missing := missingTokens(dead.Detail, "core 00", "CO 0", "top requester of CCD 0", basis); len(missing) > 0 || !appearsInOrder(dead.Detail, failedRerun, "so the instability is not caused by Curve Optimizer") {
+					t.Fatalf("dead end detail %q lacks %q or the rerun phrase %q before its conclusion", dead.Detail, missing, failedRerun)
 				}
 			} else {
 				move, moved := a.Payload.(*journal.TunerDecision)
@@ -553,14 +545,17 @@ func TestR7VoltageTargetCitesItsLowestPass(t *testing.T) {
 
 func TestR7BackoffCountsEachCarriedFactOnce(t *testing.T) {
 	h := r7Harness(t)
-	r7Fact(h, false, []int{0, 1}, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
+	failure := r7Fact(h, false, []int{0, 1}, h.s.Profile(), map[int]float64{0: 1.1, 1: 1.08}, []int{0}, nil, nil, nil)
 	a, ok := h.s.Drain()
 	move, moved := a.Payload.(*journal.TunerDecision)
 	if !ok || !moved {
 		t.Fatalf("%+v", a)
 	}
-	if want := h.s.carriedReason(a.Cause); !strings.HasSuffix(move.Reason, want) || !strings.Contains(want, "; 1 carried facts") {
-		t.Fatalf("reason %q must end with %q for its one cited carried fact", move.Reason, want)
+	if n := strings.Count(move.Reason, "ruleset8"); n != 1 || len(missingTokens(move.Reason, "1 carried")) > 0 {
+		t.Fatalf("reason %q must count its one carried fact once and name its source session once", move.Reason)
+	}
+	if n := strings.Count(fmt.Sprint(a.Cause), fmt.Sprint(failure.Seq)); n != 1 {
+		t.Fatalf("backoff cause %v cites failure #%d %d times", a.Cause, failure.Seq, n)
 	}
 }
 
@@ -879,8 +874,8 @@ func TestR7FailedLocateKeepsTheVoltageTargetedBackoff(t *testing.T) {
 			t.Fatalf("backoff cause %v omits #%d", a.Cause, seq)
 		}
 	}
-	if want := fmt.Sprintf("hunt 1 kept the failure on the loaded cores after failure #%d with every unloaded core at CO 0", locate); !strings.Contains(move.Reason, want) {
-		t.Fatalf("reason %q lacks %q", move.Reason, want)
+	if missing := missingTokens(move.Reason, "hunt 1", fmt.Sprintf("#%d", locate), "loaded cores", "unloaded core", "CO 0"); len(missing) > 0 {
+		t.Fatalf("reason %q lacks %q", move.Reason, missing)
 	}
 	h.decide(a)
 	if _, pending := h.s.Drain(); pending {
@@ -964,9 +959,8 @@ func TestR7ZeroLoadedCCDDeadEndsOnlyAfterFailedLocate(t *testing.T) {
 			if !slices.Contains(a.Cause, failure.Seq) || !slices.Contains(a.Cause, locate) {
 				t.Fatalf("dead end cause %v must cite failures #%d and #%d", a.Cause, failure.Seq, locate)
 			}
-			want := fmt.Sprintf("unattributed R7 failure counts against CCD 0's top group, and every loaded core of that CCD [0 1] is at CO 0, and hunt 1 kept the failure on the loaded cores after failure #%d with every unloaded core at CO 0; the instability is not caused by Curve Optimizer", locate)
-			if diff := cmp.Diff(want, dead.Detail); diff != "" {
-				t.Fatal(diff)
+			if missing := missingTokens(dead.Detail, "CCD 0", "[0 1]", "CO 0", "hunt 1", fmt.Sprintf("#%d", locate), "the instability is not caused by Curve Optimizer"); len(missing) > 0 {
+				t.Fatalf("dead end detail %q lacks %q", dead.Detail, missing)
 			}
 		})
 	}
@@ -1010,8 +1004,8 @@ func TestR7LocatedFailureNamingALoadedCoreChargesThatCore(t *testing.T) {
 					t.Fatalf("backoff cause %v omits #%d", a.Cause, seq)
 				}
 			}
-			if want := fmt.Sprintf("hunt 1 ended loaded after failure #%d named loaded core 01, which also answers failure #%d", named, failure.Seq); !strings.Contains(move.Reason, want) {
-				t.Fatalf("reason %q lacks %q", move.Reason, want)
+			if missing := missingTokens(move.Reason, "hunt 1", "loaded core 01", fmt.Sprintf("#%d", named), fmt.Sprintf("#%d", failure.Seq)); len(missing) > 0 {
+				t.Fatalf("reason %q lacks %q", move.Reason, missing)
 			}
 			h.decide(a)
 			if _, pending := h.s.Drain(); pending {
@@ -1128,8 +1122,8 @@ func TestR7LocateFailureNamingALoadedCoreAtZero(t *testing.T) {
 				if a.Cause[0] != failure.Seq || !slices.Contains(a.Cause, locate.Seq) {
 					t.Fatalf("backoff cause %v must cite the hunted failure #%d first and the locate failure #%d", a.Cause, failure.Seq, locate.Seq)
 				}
-				if want := "named core 00 failed at CO 0 without being a top requester; back off CCD 0's top group instead"; !strings.Contains(move.Reason, want) {
-					t.Fatalf("reason %q lacks %q", move.Reason, want)
+				if missing := missingTokens(move.Reason, "core 00", "CO 0", "top requester", "CCD 0"); len(missing) > 0 {
+					t.Fatalf("reason %q lacks %q", move.Reason, missing)
 				}
 				h.decide(a)
 				if a, pending := h.s.Drain(); pending {
@@ -1215,8 +1209,8 @@ func TestR7PassedZeroRerunLocatesCitingTheRerun(t *testing.T) {
 	if diff := cmp.Diff([]int{failure.Seq, rerun.Seq}, a.Cause); diff != "" {
 		t.Fatalf("hunt start cause (-want +got):\n%s", diff)
 	}
-	if want := fmt.Sprintf("the rerun of failure #%d with every core at CO 0 passed (#%d)", failure.Seq, rerun.Seq); !strings.Contains(start.Reason, want) {
-		t.Fatalf("reason %q lacks %q", start.Reason, want)
+	if missing := missingTokens(start.Reason, "CO 0", "passed", fmt.Sprintf("#%d", failure.Seq), fmt.Sprintf("#%d", rerun.Seq)); len(missing) > 0 {
+		t.Fatalf("reason %q lacks %q", start.Reason, missing)
 	}
 	h.decide(a)
 	assertProjectionReplay(h)

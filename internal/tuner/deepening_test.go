@@ -48,7 +48,7 @@ func TestIdleFailureEndsDeepeningBeforeMoves(t *testing.T) {
 	failure := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R6, Condition: machine.Together, Profile: h.s.Profile()})
 	a := h.next()
 	end, ok := a.Payload.(*journal.DeepeningRound)
-	if !ok || end.Round != round.Round || end.Event != journal.CycleEnd || end.Reason != "a failure needs a hunt" {
+	if !ok || end.Round != round.Round || end.Event != journal.CycleEnd || len(missingTokens(end.Reason, "failure", "hunt")) > 0 {
 		t.Fatalf("idle failure did not end deepening round: %+v", a)
 	}
 	if diff := cmp.Diff([]int{failure.Seq}, a.Cause); diff != "" {

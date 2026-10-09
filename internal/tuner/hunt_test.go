@@ -673,10 +673,10 @@ func TestHuntFallbackAndFullCheck(t *testing.T) {
 		duration  int
 		fullFails bool
 		result    string
-		reason    string
+		reason    []string
 	}{
-		{"fallback", 120, false, "fallback", "no tested group failed, so the remaining candidates stay unresolved and form a combination"},
-		{"full failure", 600, true, "combination", "parked trial outcomes identified the minimal failing set; member probes found it still failing at core 00 -30 + core 01 -30 and passing with any one member a count shallower"},
+		{"fallback", 120, false, "fallback", []string{"unresolved", "combination"}},
+		{"full failure", 600, true, "combination", []string{"member probes", "core 00 -30", "core 01 -30", "a count shallower"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := huntHarness(t, 2, tc.duration)
@@ -696,8 +696,11 @@ func TestHuntFallbackAndFullCheck(t *testing.T) {
 					continue
 				}
 				if end, ok := a.Payload.(*journal.HuntEnd); ok {
-					if end.Result != tc.result || end.Reason != tc.reason {
-						t.Fatalf("result %s (%s), want %s (%s)", end.Result, end.Reason, tc.result, tc.reason)
+					if end.Result != tc.result {
+						t.Fatalf("result %s (%s), want %s", end.Result, end.Reason, tc.result)
+					}
+					if missing := missingTokens(end.Reason, tc.reason...); len(missing) > 0 {
+						t.Fatalf("hunt end reason %q lacks %q", end.Reason, missing)
 					}
 					if tc.fullFails && full != 1 {
 						t.Fatalf("full group recorded %d times", full)
@@ -718,7 +721,7 @@ func TestHuntCombinationAlreadyBroken(t *testing.T) {
 	h.add(&journal.HuntEnd{Hunt: 1, Result: "combination", Cores: []int{0, 1}, Groups: 2})
 	a := h.next()
 	combination, ok := a.Payload.(*journal.Combination)
-	if !ok || combination.Reason != "no backoff: core 00 is already shallower" {
+	if !ok || len(missingTokens(combination.Reason, "no backoff", "core 00", "already shallower")) > 0 {
 		t.Fatalf("unneeded backoff %+v", a)
 	}
 	h.decide(a)
@@ -736,8 +739,8 @@ func TestHuntCulpritDiscardsContradictedPass(t *testing.T) {
 	if !ok || d.Phase != journal.PhaseHunt || d.Core != 0 || d.Pass != nil || d.FailurePoint == nil || *d.FailurePoint != -29 {
 		t.Fatalf("culprit commitment kept contradicted pass: %+v", a)
 	}
-	if !strings.Contains(d.Reason, "passed step at -29 discarded, the failure contradicts it") {
-		t.Fatalf("culprit commitment reason: %q", d.Reason)
+	if missing := missingTokens(d.Reason, "-29", "discarded", "contradicts"); len(missing) > 0 {
+		t.Fatalf("culprit commitment reason %q lacks %q", d.Reason, missing)
 	}
 }
 

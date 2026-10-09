@@ -3,6 +3,7 @@ package tuner
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
@@ -193,6 +194,30 @@ func replayState(events []journal.Event) *State {
 	s := New()
 	journal.Replay(events, s)
 	return s
+}
+
+// missingTokens returns the tokens s lacks. Reasons and details are human text; tests pin the tokens docs/spec/journal.md
+// mandates and the facts under test, not the sentence around them.
+func missingTokens(s string, tokens ...string) []string {
+	var missing []string
+	for _, token := range tokens {
+		if !strings.Contains(s, token) {
+			missing = append(missing, token)
+		}
+	}
+	return missing
+}
+
+// appearsInOrder reports whether s holds each phrase, the next one after the end of the previous.
+func appearsInOrder(s string, phrases ...string) bool {
+	for _, phrase := range phrases {
+		i := strings.Index(s, phrase)
+		if i < 0 {
+			return false
+		}
+		s = s[i+len(phrase):]
+	}
+	return true
 }
 
 func projected(h *harness) journal.State {
