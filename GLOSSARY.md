@@ -43,14 +43,14 @@ The identity of the firmware and CPU a session is tuned under: BIOS version, boa
 One tuning effort under one BIOS context, from the first `run` until `reset --all` or a transition, spanning any number of reboots.
 
 **Transition**:
-The end of a session written by an older ruleset, schema or evidence epoch, with no newer dimension, or of a compatible session whose BIOS context changed: the next `run` archives it and starts a new session seeded from eligible evidence.
+The end of a session whose ruleset, schema or evidence epoch is older, or whose BIOS context changed: the next `run` archives it and starts a new session seeded from eligible evidence ([Transitions](docs/spec/journal.md#transitions)).
 
 **Backend**:
 An external stress program togi drives: mprime or y-cruncher.
 _Avoid_: tool, stressor
 
 **Backend identity**:
-The package store path `config.loaded` records for a backend, such as `/nix/store/…-y-cruncher-0.8.7.9547`. A pass counts only while its backend keeps the identity it ran under; a failure counts whichever identity ran it.
+The package store path `config.loaded` records for a backend, such as `/nix/store/…-y-cruncher-0.8.7.9547`. What it changes about evidence is in [Evidence](docs/spec/tuner.md#evidence).
 _Avoid_: backend version
 
 **Regime**:
@@ -75,7 +75,7 @@ A core that passes as a top requester for a given R7 workload.
 An R7 load that idles the top requesters found so far, in request order, to test the remaining cores.
 
 **Trial class**:
-The regime, workload, sorted loaded cores and duration of a trial. Pass evidence transfers only within this class, under the backend identity it ran with.
+The regime, workload, sorted loaded cores and duration of a trial. Evidence transfers by class ([Evidence](docs/spec/tuner.md#evidence)).
 
 **Target**:
 The core or cores a trial loads.
@@ -93,11 +93,11 @@ A trial condition retaining the failed trial's workload and load, with a group's
 _Avoid_: masked
 
 **Parked offsets**:
-The newest passed full-cycle profile raised to the failing profile, each core at the shallower of its two offsets, when that differs from the failing profile; otherwise the next older passed full-cycle profile raised the same way, or all-zero. A located hunt parks its loaded cores at their failing offsets and its unloaded cores at 0.
+The offsets at which a hunt group holds every core outside its selected candidates ([Hunt](docs/spec/tuner.md#hunt)).
 _Avoid_: anchor
 
 **Group**:
-One hunt trial plan: the selected cores kept at failing offsets, with every other core at parked offsets. Member probes vary one member's offset while holding the other members at their failing offsets: members probed earlier stay at the newly found failing offsets, the rest at their recorded ones.
+One hunt trial plan: the selected cores kept at failing offsets, with every other core at parked offsets ([Hunt](docs/spec/tuner.md#hunt)).
 _Avoid_: mask
 
 **Search**:
@@ -107,10 +107,10 @@ The phase that finds and checks a core's candidate solo limit with R1 and R2 tri
 Parked trials that identify the core or combination behind an unattributed failure outside multi-core R7, or a located hunt's unloaded cores.
 
 **Located hunt**:
-The hunt of an unattributed multi-core R7 failure whose unloaded cores were not all at 0. Its first group, locate, reruns the failed load with every unloaded core at 0 and the loaded cores at their failing offsets. A failed locate ends it `loaded` and the failure is charged to the loaded cores; a passed locate narrows only the unloaded cores.
+The hunt of an unattributed multi-core R7 failure whose unloaded cores were not all at 0. Its first group, locate, reruns the failed load with the unloaded cores at 0 ([Hunt](docs/spec/tuner.md#hunt)).
 
 **Member probe**:
-A hunt's parked trial after it finds a combination: one member moves between its failing and parked offsets, members probed before it stay at their shallowest failing offsets and the rest at their failing offsets, to find how shallow that member must be for the combination to pass. Each member is probed in turn.
+A hunt's parked trial after it finds a combination, which moves one member to find how shallow it must be for the combination to pass ([Hunt](docs/spec/tuner.md#hunt)).
 _Avoid_: edge probe
 
 **Deepening**:
@@ -126,7 +126,7 @@ One pass through the configured checking schedule, whose requirements are trials
 _Avoid_: rotation
 
 **Full cycle**:
-A cycle covering every R1 and R2 workload on every core, every part of every R7 workload occurrence, partials included, and R3, R4, R5 and R6.
+A cycle covering every R1 and R2 workload on every core, every part of every R7 workload occurrence, partials included, and R3, R4, R5 and R6 ([Checking](docs/spec/tuner.md#checking)).
 _Avoid_: qualifying rotation
 
 **Clean cycle**:
@@ -159,7 +159,7 @@ A failure whose evidence names one core.
 A failure whose evidence names no single core.
 
 **Failure point**:
-A failure's shallowest ruled-out offset for a core, established by attribution, a hunt culprit or an R7 voltage-targeted backoff since its last reset, or its carried failure point if that is shallower.
+A failure's shallowest ruled-out offset for a core ([Failure points and combinations](docs/spec/tuner.md#failure-points-and-combinations)).
 _Avoid_: failed mark, mark of a core
 
 **Combination**:
@@ -167,7 +167,7 @@ A failed combination of offsets on multiple cores; profiles at least as deep on 
 _Avoid_: joint mark
 
 **At its limit**:
-A core at -50, or one for which taking one more count deeper would reach a failure point or combination. Re-evaluated when offsets, failure points or combinations change.
+A core at -50, or one for which one more count deeper would reach a failure point or combination ([Failure points and combinations](docs/spec/tuner.md#failure-points-and-combinations)).
 _Avoid_: done
 
 **Has room**:
@@ -175,28 +175,28 @@ A core that has finished search but is not at its limit: at least one count deep
 _Avoid_: resident (core state or phase)
 
 **Carried failure point**:
-A failure point a transition brings into the new session: the shallowest offset of an attributed failure or hunt culprit of that core in the archived sessions, recorded in `session.carried` with the session and `seq` it came from. A BIOS change leaves it behind.
+A failure point a transition brings into the new session, recorded in `session.carried` with the session and `seq` it came from ([Transitions](docs/spec/journal.md#transitions)).
 _Avoid_: carried mark
 
 **Carried fact**:
-A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original provenance and context. It is ordinary evidence subject to the current regime's rules, not a new trial or live exposure.
+A decisive trial outcome or idle failure copied into a later same-BIOS session, retaining its original provenance. It is not a new trial or live exposure ([Evidence](docs/spec/tuner.md#evidence)).
 
 **Evidence epoch**:
-The compatibility version of trial outcomes: workload content, the backend configuration togi generates, intended durations, and pass/failure detection. Passes carry only within the current epoch; eligible failures survive an epoch change. A new backend build changes its backend identity instead.
+The compatibility version of trial outcomes: workload content, the backend configuration togi generates, intended durations, and pass/failure detection ([Evidence compatibility](docs/spec/workloads.md#evidence-compatibility)).
 
 **Solo limit**:
 A core's checked candidate solo limit, tested alone; deepening together may move its offset.
 _Avoid_: edge, stable value, optimal offset, result
 
 **Candidate solo limit**:
-An offset proposed as a core's solo limit, which still needs the required passing trials in its frozen R1 and R2 trial classes. Search, configuration or carried evidence can supply it.
+An offset proposed as a core's solo limit, which still needs passing trials in its frozen R1 and R2 trial classes ([Search](docs/spec/tuner.md#search)). Search, configuration or carried evidence can supply it.
 _Avoid_: candidate edge
 
 **Backoff**:
 Moving a core shallower after a failure.
 
 **Voltage-targeted backoff**:
-A backoff that raises a core's request to a voltage at which the load passed, using the counts needed to reach that target.
+A backoff that raises a core's request to a voltage at which the load passed ([R7 voltage-targeted backoff](docs/spec/tuner.md#r7-voltage-targeted-backoff)).
 
 **Proven backoff**:
 A backoff after attribution or a hunt identifies a failed offset or combination, recording the failure point or combination.
@@ -211,7 +211,7 @@ The hardcoded strategy for search, hunts, deepening, checking and backoffs.
 A condition under which togi cannot make progress and stops itself.
 
 **All-zero rerun**:
-The failing trial run again with every core at CO 0 before a `failure_at_zero` dead end. The dead end stands only if it fails too; a pass sends the failure to the cores off CO 0.
+The failing trial run again with every core at CO 0 before a `failure_at_zero` dead end ([Dead ends](docs/spec/tuner.md#dead-ends)).
 
 ### Runtime
 
