@@ -1,5 +1,5 @@
- togi  08:22:00  paused until 08:24  session 8h22m  8 failures · 8 crashes
- ■ SOLO ─ ○ CYCLE 1 paused at 7/18 ─ ►  HUNT 1   member 1 of 2 ─ ○ DEEPEN ─
+ togi   08:22:00   paused until 08:24   session 8h22m   8 failures · 8 crashes
+ ■ SOLO ─ ○ CYCLE 1 paused at 7/18 ─ ►  HUNT 1   member 1 of 2 ─ ○ DEEPEN ─...
 
  │ top requester    the loaded core with the highest voltage request, setting
  │                  the shared core voltage; marked top on the CCD tables, by

@@ -10,6 +10,7 @@ import (
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 func appendStoryEvents(events []journal.Event, payloads ...journal.Payload) []journal.Event {
@@ -202,4 +203,83 @@ func TestStoryPartialExplainsOrdinaryEvidence(t *testing.T) {
 			t.Errorf("partial narrative lost %q: %s", want, text)
 		}
 	}
+}
+
+func TestTightNextKeepsTrialTargets(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		regime machine.Regime
+		kind   string
+	}{
+		{machine.R1, "light"},
+		{machine.R2, "heavy vector"},
+		{machine.R3, "load steps"},
+		{machine.R4, "partial load"},
+		{machine.R5, "both threads"},
+		{machine.R6, "idle + bursts"},
+		{machine.R7, "all-core"},
+	} {
+		t.Run(string(tc.regime), func(t *testing.T) {
+			for _, target := range []struct {
+				name      string
+				condition machine.Condition
+				cores     []int
+				full      string
+				short     string
+			}{
+				{"alone", machine.Alone, nil, "on core 03 alone at -16", "on core 03"},
+				{"profile core", machine.Together, nil, "on core 03 at -16", "on core 03"},
+				{"one loaded core", machine.Together, []int{3}, "on 03", "on 03"},
+				{"core ranges", machine.Together, []int{0, 1, 2, 8, 9, 10, 15}, "on 00-02 08-10 15", "on 00-02 08-10 15"},
+			} {
+				t.Run(target.name, func(t *testing.T) {
+					s := Snapshot{}
+					next := tuner.Trial{Regime: tc.regime, Core: 3, Offset: -16, Condition: target.condition, Cores: target.cores}
+					wantWords := string(tc.regime) + " " + tc.kind + " " + target.full
+					if diff := cmp.Diff(wantWords, s.nextTrialWords(next, nil, huntShape{})); diff != "" {
+						t.Fatalf("next trial description (-want +got):\n%s", diff)
+					}
+					_, compact, _ := s.outcomeWords(outcome{premise: ifPasses, next: &next})
+					if diff := cmp.Diff("→ "+wantWords, compact); diff != "" {
+						t.Fatalf("compact outcome (-want +got):\n%s", diff)
+					}
+					want := "→ " + string(tc.regime) + " " + target.short
+					if diff := cmp.Diff(want, tightNext(compact)); diff != "" {
+						t.Errorf("tight next trial target (-want +got):\n%s", diff)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestTightNextLeavesNonCoreOutcomesUnchanged(t *testing.T) {
+	t.Parallel()
+	for _, text := range []string{
+		"→ R2 heavy vector",
+		"→ R6 idle + bursts",
+		"→ R2 heavy vector on no cores",
+		"→ step 3",
+		"→ part 2",
+		"→ group 4",
+		"→ rerun",
+		"→ no next trial projected",
+	} {
+		t.Run(text, func(t *testing.T) {
+			if diff := cmp.Diff(text, tightNext(text)); diff != "" {
+				t.Errorf("outcome without a core changed (-want +got):\n%s", diff)
+			}
+		})
+	}
+	t.Run("checking step consumer", func(t *testing.T) {
+		s := Snapshot{}
+		next := tuner.Trial{Regime: machine.R2, Core: 3, Offset: -16, Condition: machine.Together, Cycle: 1, Step: 3}
+		_, compact, _ := s.outcomeWords(outcome{premise: ifPasses, next: &next})
+		if diff := cmp.Diff("→ step 3", compact); diff != "" {
+			t.Fatalf("checking step compact outcome (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(compact, tightNext(compact)); diff != "" {
+			t.Errorf("checking step without a core changed (-want +got):\n%s", diff)
+		}
+	})
 }

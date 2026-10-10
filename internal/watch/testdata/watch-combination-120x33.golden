@@ -1,7 +1,7 @@
  togi   13:08:40   session 61h08m   8 failures · 8 crashes   last observed failure 08:22, 52h46m ago
  ■ SOLO ─ ■ CYCLE 2 ─ ○ DEEPEN ─ CLEAN 1
 
- ▌  The requested clean cycles are complete, so I restored safer offsets and stopped. togi run picks up where I left
+ ▌  The requested clean cycles are complete, so I restored safer offsets and stopped. togi run picks up where I...
 
  STOPPED  13:08:00 · requested clean cycles completed
  Rows show the saved profile, not applied now.
@@ -19,14 +19,14 @@
  CYCLE 2 ────────────────────────────── 18 steps · 18 done   WHAT HAPPENED ─────────────────────────────── l: last 400
 
  ■  1 R7 all-core       4 parts       done                   13:08  stop     stopped
- ■  2 R7 all-core       4 parts       done                   13:08  cycle    cycle 2 passed, a full cycle of every
- ■  3 R7 all-core       4 parts       done                   13:08  pass     R6 idle + bursts on 00-15 · passed
- ■  4 R2 heavy vector   16 x 2m       done                   12:53  pass     R4 partial load on core 15 at -50
- +18 more                                                    12:51  pass     R4 partial load on core 07 at -50
-                                                             12:49  pass     R4 partial load on core 14 at -50
- R7 ────────────── top ───────────── self-sufficient ─────   12:47  pass     R4 partial load on core 06 at -50
- mprime AVX2       00-0... by offset all                     12:45  pass     R4 partial load on core 13 at -50
- mprime AVX-512    00-0... by offset all                     12:43  pass     R4 partial load on core 05 at -50
- y-cruncher FFTv4  00-0... by offset all                     +634 more
+ ■  2 R7 all-core       4 parts       done                   13:08  cycle    cycle 2 passed, a full cycle of every...
+ ■  3 R7 all-core       4 parts       done                   13:08  pass     R6 idle + bursts on 00-15 · passed...
+ ■  4 R2 heavy vector   16 x 2m       done                   12:53  pass     R4 partial load on core 15 at -50...
+ +18 more                                                    12:51  pass     R4 partial load on core 07 at -50...
+                                                             12:49  pass     R4 partial load on core 14 at -50...
+ R7 ────────────── top ───────────── self-sufficient ─────   12:47  pass     R4 partial load on core 06 at -50...
+ mprime AVX2       by offset         all                     12:45  pass     R4 partial load on core 13 at -50...
+ mprime AVX-512    by offset         all                     12:43  pass     R4 partial load on core 05 at -50...
+ y-cruncher FFTv4  by offset         all                     +634 more
 
   ?  help    l  log    esc  back    q  close view

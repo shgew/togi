@@ -57,10 +57,10 @@
                                                                                                                           03:19  pass     R4 partial load on core 08 at -24 · passed · Tctl max 76°C
                                                                                                                           03:17  pass     R4 partial load on core 00 at -37 · passed · Tctl max 64°C
                                                                                                                           03:15  pass     R4 partial load on core 15 at -35 · passed · Tctl max 71°C
-                                                                                                                          03:13  note     cycle 1 step 3 CCD 1 ycruncher-fftv4-n63-vt3-allcore: partial 6 idles top group [8] from offset
-                                                                                                                          03:13  note     cycle 1 step 3 CCD 0 ycruncher-fftv4-n63-vt3-allcore: partial 6 idles top group [2] from offset
-                                                                                                                          03:13  note     cycle 1 step 2 CCD 1 mprime-avx512-36k-248k-allcore: partial 6 idles top group [8] from offset
-                                                                                                                          03:13  note     cycle 1 step 2 CCD 0 mprime-avx512-36k-248k-allcore: partial 6 idles top group [2] from offset
+                                                                                                                          03:13  note     cycle 1 step 3 CCD 1 ycruncher-fftv4-n63-vt3-allcore: partial 6 idles top group [8] from offset...
+                                                                                                                          03:13  note     cycle 1 step 3 CCD 0 ycruncher-fftv4-n63-vt3-allcore: partial 6 idles top group [2] from offset...
+                                                                                                                          03:13  note     cycle 1 step 2 CCD 1 mprime-avx512-36k-248k-allcore: partial 6 idles top group [8] from offset...
+                                                                                                                          03:13  note     cycle 1 step 2 CCD 0 mprime-avx512-36k-248k-allcore: partial 6 idles top group [2] from offset...
                                                                                                                           +662 more
 
    ?  help    l  log    esc  back    q  close view

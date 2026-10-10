@@ -1,6 +1,6 @@
   togi   08:22:00   session 8h22m   8 failures · 8 crashes   last observed failure 08:22   screen paused until 08:24
 
-  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 7 of 18  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0
+  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 7 of 18  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0...
 
   ▌  HUNT 1   Probing members of 03 11: core 03 at -9.                            last trial      CRASH  on 00-15
 
@@ -17,7 +17,7 @@
   ► 00    0  PARKED    ····▀                              returns to -10          ► 08    0  PARKED    ····▀                              returns to -10
   ► 01    0  PARKED    ····▀                              returns to -10          ► 09    0  PARKED    ····▀                              returns to -10
   ► 02    0  PARKED    ····▀                              returns to -10          ► 10    0  PARKED    ····▀                              returns to -10
-  ► 03   -9  PROBE     ▄▄▄▄▀                              -10                     ► 11  -10  MEMBER    ▄▄▄▄▀                    
+  ► 03   -9  PROBE     ▄▄▄▄▀                              group failed at -10     ► 11  -10  MEMBER    ▄▄▄▄▀                    
   ► 04    0  PARKED    ····▀                              returns to -10          ► 12    0  PARKED    ····▀                              returns to -10
   ► 05    0  PARKED    ····▀                              returns to -10          ► 13    0  PARKED    ····▀                              returns to -10
   ► 06    0  PARKED    ····▀                              returns to -10          ► 14    0  PARKED    ····▀                              returns to -10
@@ -25,20 +25,20 @@
 
   HUNT 1 ────────────────────────────────────── started 07:31 · 50m30s so far     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 
-  cause       crash in R6 idle + bursts on 00-15 · cycle 1 step 7, trial 1        08:22  group    hunt 1 groups 40-41 · parts of 03 11 · all passed on
+  cause       crash in R6 idle + bursts on 00-15 · cycle 1 step 7, trial 1...     08:22  group    hunt 1 groups 40-41 · parts of 03 11 · all passed on...
   candidates  00-15, every core with an offset in the failing profile             08:22  crash    hunt 1 group 39 · 03 11 at failing offsets · rebooted
-                                                                                  08:20  group    hunt 1 groups 35-38 · parts of 03 10 11 · all passed on
+                                                                                  08:20  group    hunt 1 groups 35-38 · parts of 03 10 11 · all passed on...
   parts       groups 1-2   parts of 00-15                all passed               08:20  crash    hunt 1 group 34 · 03 10 11 at failing offsets · rebooted
-              group 3      00-15 at failing offsets      crashed                  08:19  group    hunt 1 groups 28-33 · parts of 02 03 10 11 · all passed on
-              groups 4-8   parts of 00-15 and their      all passed               08:19  crash    hunt 1 group 27 · 02 03 10 11 at failing offsets · rebooted
-              group 9      00-03 08-15 at failing        crashed                  08:17  group    hunt 1 groups 23-26 · parts of 02 03 08-11 · all passed on
-              groups 10-14 parts of 00-03 08-15 and      all passed               08:17  crash    hunt 1 group 22 · 02 03 08-11 at failing offsets · rebooted
-              group 15     00-03 08-11 at failing        crashed                  08:16  group    hunt 1 groups 16-21 · parts of 00-03 08-11 · all passed on
+              group 3      00-15 at failing offsets      crashed                  08:19  group    hunt 1 groups 28-33 · parts of 02 03 10 11 · all passed...
+              groups 4-8   parts of 00-15 and their...   all passed               08:19  crash    hunt 1 group 27 · 02 03 10 11 at failing offsets · rebooted
+              group 9      00-03 08-15 at failing...     crashed                  08:17  group    hunt 1 groups 23-26 · parts of 02 03 08-11 · all passed...
+              groups 10-14 parts of 00-03 08-15 and...   all passed               08:17  crash    hunt 1 group 22 · 02 03 08-11 at failing offsets · rebooted
+              group 15     00-03 08-11 at failing...     crashed                  08:16  group    hunt 1 groups 16-21 · parts of 00-03 08-11 · all passed...
               groups 16-21 parts of 00-03 08-11          all passed               08:16  crash    hunt 1 group 15 · 00-03 08-11 at failing offsets · rebooted
-              group 22     02 03 08-11 at failing        crashed                  08:14  pass     hunt 1 group 14 · 00-03 12-15 at failing offsets · 5 of 5
-              groups 23-26 parts of 02 03 08-11 and      all passed               08:04  group    hunt 1 groups 10-13 · parts of 00-03 08-15 · all passed on
-              group 27     02 03 10 11 at failing        crashed                  08:04  crash    hunt 1 group 9 · 00-03 08-15 at failing offsets · rebooted
-              groups 28-33 parts of 02 03 10 11          all passed               08:03  pass     hunt 1 group 8 · 04-15 at failing offsets · 5 of 5 passed
+              group 22     02 03 08-11 at failing...     crashed                  08:14  pass     hunt 1 group 14 · 00-03 12-15 at failing offsets · 5 of...
+              groups 23-26 parts of 02 03 08-11 and...   all passed               08:04  group    hunt 1 groups 10-13 · parts of 00-03 08-15 · all passed...
+              group 27     02 03 10 11 at failing...     crashed                  08:04  crash    hunt 1 group 9 · 00-03 08-15 at failing offsets · rebooted
+              groups 28-33 parts of 02 03 10 11          all passed               08:03  pass     hunt 1 group 8 · 04-15 at failing offsets · 5 of 5...
   +15 more                                                                        +75 more
 
    ?  help    l  log    esc  back    q  close view

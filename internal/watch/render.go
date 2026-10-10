@@ -142,12 +142,12 @@ func tableColumns(class sizeClass, width int) tables {
 	case compactLayout:
 	}
 	return tables{
-		field:  7,
+		field:  11,
 		cycle:  []column{{0, 1}, {2, 2}, {5, 17}, {23, 13}, none, none, rest(37)},
 		parts:  []column{{0, 1}, {2, 8}, {11, 25}, none, none, rest(37)},
 		groups: []column{{0, 12}, {13, 23}, rest(37)},
 		probes: []column{{2, 5}, {8, 4}, {13, 11}, {25, 11}, rest(37)},
-		steps:  []column{{7, 2}, rest(10)},
+		steps:  []column{{11, 2}, rest(14)},
 		turns:  []column{{0, 1}, {2, 3}, {6, 26}, {33, 4}, none, rest(38)},
 		combos: []column{{0, 3}, none, {4, 7}, rest(12)},
 	}
@@ -263,9 +263,12 @@ func boundedRows(lines []string, height int) []string {
 
 func rule(width int, title, right string) string {
 	width = max(width, 0)
-	title = ansi.Truncate(title, width, "")
+	title = cutWords(title, width)
 	tw, rw := ansi.StringWidth(title), ansi.StringWidth(right)
 	if rw == 0 || tw+rw+2 > width {
+		if tw == width {
+			return title
+		}
 		return title + " " + track.Render(strings.Repeat("─", max(width-tw-1, 0)))
 	}
 	return title + " " + track.Render(strings.Repeat("─", width-tw-rw-2)) + " " + right
@@ -292,13 +295,7 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 	if !planned.IsZero() {
 		now, until = s.trial.started, heldUntilRecorded
 	}
-	header := s.header(now)
-	if p.class == compactLayout && !planned.IsZero() {
-		header = grey.Render("togi") + "  " + white.Render(wallSecond(now)) + "  " + amber.Render("paused until "+wallMinute(planned)) +
-			grey.Render("  session ") + textStyle.Render(hm(now.Sub(s.start))) +
-			grey.Render(fmt.Sprintf("  %s · %s", plural(s.failures, "failure"), plural(s.crashes, "crash")))
-	}
-	c.put(p.header, 0, 0, header)
+	c.put(p.header, 0, 0, s.header(now, p.header.w, p.class == compactLayout))
 	c.put(p.stage, 0, 0, s.stageLine(p.class, sc.View != MainView, now))
 	scroll := 0
 	switch sc.View {
@@ -331,15 +328,12 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 		}
 	}
 	if sc.Keys {
-		hints := keyHints(sc.View)
+		var arrival []clause
 		if sc.View == LogView && s.logArrived > 0 {
-			arrival := amber.Render(plural(s.logArrived, "new event") + " · End: latest")
-			hints = trimWords(hints, p.header.w-ansi.StringWidth(consoleText(arrival))-3)
-			if hints != "" {
-				hints += "   "
-			}
-			hints += arrival
+			count := plural(s.logArrived, "new event")
+			arrival = []clause{{"   ", []form{{amber.Render(count + " · End: latest"), 2}, {amber.Render(count), 2}, {}}}}
 		}
+		hints := keyHints(sc.View, p.header.w, arrival...)
 		c.put(rectangle{p.header.x, p.hint, p.header.w, 1}, 0, 0, hints)
 	}
 	return Drawn{Lines: fit(c.lines(), p.width, sc.Height), Scroll: scroll, Until: until}
@@ -358,6 +352,14 @@ func (s Snapshot) r7Lines(p layout) []string {
 		name, top = 30, 24
 	case p.class == mediumLayout && width >= 70:
 		name, top = 24, 20
+	}
+	if width < name+top+1 {
+		name = min(name, max(width-1-len("by offset"), 0))
+		top = width - name
+		if name > 0 {
+			top--
+		}
+		top = max(top, 0)
 	}
 	current := s.r7Workload()
 	out := []string{r7Rule(width, name, top)}
@@ -400,8 +402,12 @@ func (s Snapshot) r7Lines(p layout) []string {
 		if w.ID == current {
 			style = textStyle
 		}
-		line := asciiCell(label, name) + " " + asciiCell(topCell(measured, byOffset, top), top) + " " + suff
-		out = append(out, style.Render(ansi.Truncate(line, width, "...")))
+		line := fitClauses(width,
+			whole("", asciiCell(label, name)),
+			whole(" ", asciiCell(topCell(measured, byOffset, top), top)),
+			clause{" ", []form{{suff, 1}, {}}},
+		)
+		out = append(out, style.Render(line))
 	}
 	return out
 }
@@ -411,26 +417,24 @@ func (s Snapshot) r7Lines(p layout) []string {
 func topCell(measured, byOffset []int, width int) string {
 	const by = " by offset"
 	m, o := coreIDs(measured), coreIDs(byOffset)
-	switch {
-	case len(byOffset) == 0:
-		return cmp.Or(m, "-")
-	case len(measured) == 0:
-		if ansi.StringWidth(o+by) <= width {
-			return o + by
+	if len(byOffset) == 0 {
+		return cutWords(cmp.Or(m, "-"), width)
+	}
+	if len(measured) > 0 {
+		if both := m + "; " + o + by; ansi.StringWidth(both) <= width {
+			return both
 		}
-		return ansi.Truncate(o, width-len(by), "...") + by
+		if kept := cutWords(m, width-len("; ")-ansi.StringWidth(o+by)); kept != "" {
+			return kept + "; " + o + by
+		}
 	}
-	if both := m + "; " + o + by; ansi.StringWidth(both) <= width {
-		return both
+	if kept := cutWords(o, width-len(by)); kept != "" {
+		return kept + by
 	}
-	if room := width - len("; ") - ansi.StringWidth(o+by); room >= len("0...") {
-		return ansi.Truncate(m, room, "...") + "; " + o + by
+	if width >= len("by offset") {
+		return "by offset"
 	}
-	if room := width - len("...; ") - len(by); room >= min(ansi.StringWidth(o), len("0...")) {
-		return "...; " + ansi.Truncate(o, room, "...") + by
-	}
-	// Too narrow for both: the measured list shrinks to its cut marker.
-	return "...;" + ansi.Truncate(o, width-len("...;")-len(by), "...") + by
+	return ""
 }
 
 // r7Rule heads the R7 lines with its column names; on a wide panel it says the evidence is no guarantee.
@@ -448,12 +452,23 @@ func r7Rule(width, name, top int) string {
 	if rest := width - ansi.StringWidth(line) - 1; rest > 0 {
 		return line + " " + dashes(rest)
 	}
-	return ansi.Truncate(line, width, "")
+	if ansi.StringWidth(line) <= width {
+		return line
+	}
+	line = fitClauses(width,
+		whole("", grey.Render("R7")),
+		clause{" ", []form{{grey.Render(topLabel), 2}, {grey.Render("top"), 1}, {}}},
+		clause{" ", []form{{grey.Render("self-sufficient"), 1}, {}}},
+	)
+	if rest := width - ansi.StringWidth(line) - 1; rest > 0 {
+		line += " " + dashes(rest)
+	}
+	return line
 }
 
-// asciiCell fits plain text to exactly width cells, cutting it with an ASCII marker the console font can draw.
+// asciiCell pads whole-word fitted text to exactly width cells.
 func asciiCell(text string, width int) string {
-	text = ansi.Truncate(text, width, "...")
+	text = cutWords(text, width)
 	return text + strings.Repeat(" ", max(width-ansi.StringWidth(text), 0))
 }
 
@@ -508,7 +523,7 @@ func narratorLines(st story, width, height int, brief bool) []string {
 		if text == "" && len(st.lines) > 0 {
 			text = st.lines[0]
 		}
-		return []string{bar + trimWords(textStyle.Render(text), max(width-3, 0))}
+		return []string{bar + cutWords(textStyle.Render(text), max(width-3, 0))}
 	}
 	indent := ansi.StringWidth(st.label) + 3
 	var wrapped []string
@@ -521,7 +536,7 @@ func narratorLines(st story, width, height int, brief bool) []string {
 		} else {
 			wrapped = wrapped[:0]
 			for _, line := range st.lines {
-				wrapped = append(wrapped, trimWords(textStyle.Render(line), max(width-3-indent, 1)))
+				wrapped = append(wrapped, cutWords(textStyle.Render(line), max(width-3-indent, 1)))
 			}
 		}
 	}
@@ -551,16 +566,21 @@ func (s Snapshot) quietUntil() time.Time {
 	return time.Time{}
 }
 
-func (s Snapshot) header(now time.Time) string {
-	out := grey.Render("togi") + "   " + white.Render(wallSecond(now))
+// header is the top line fitted to width cells. Drop order, first to last: how long ago the last failure was and
+// then its time, "session" before the session's length, the words after the failure and crash counts, the pause
+// notice. The clock, the session's length and the counts are never left out. A compact screen paused for an idle
+// trial names the pause beside the clock.
+func (s Snapshot) header(now time.Time, width int, compact bool) string {
+	const gap = "   "
+	head := grey.Render("togi") + gap + white.Render(wallSecond(now))
 	if s.starting {
-		return out + grey.Render("   starting")
+		return fitClauses(width, whole("", head), whole("", grey.Render("   starting")))
 	}
 	if s.problem != nil {
-		return out + grey.Render("   can't read journal")
+		return fitClauses(width, whole("", head), whole("", grey.Render("   can't read journal")))
 	}
 	if !s.session {
-		return out + grey.Render("   no session yet")
+		return fitClauses(width, whole("", head), whole("", grey.Render("   no session yet")))
 	}
 	end := now
 	if s.deadEnd != nil {
@@ -568,17 +588,36 @@ func (s Snapshot) header(now time.Time) string {
 	} else if s.stopped != nil {
 		end = s.stopped.at
 	}
-	out += grey.Render("   session ") + textStyle.Render(hm(end.Sub(s.start))) + "   " + textStyle.Render(fmt.Sprint(s.failures)) + grey.Render(" "+noun(s.failures, "failure")+" · ") + textStyle.Render(fmt.Sprint(s.crashes)) + grey.Render(" "+noun(s.crashes, "crash"))
-	if s.lastFailure != nil {
-		out += grey.Render("   last observed failure ") + textStyle.Render(wallMinute(*s.lastFailure))
-		if s.quietUntil().IsZero() {
-			out += grey.Render(", " + ago(now.Sub(*s.lastFailure)))
-		}
-	}
+	paused := time.Time{}
 	if until := s.quietUntil(); !until.IsZero() && now.Before(until) {
-		out += "   " + amber.Render("screen paused until "+wallMinute(until))
+		paused = until
 	}
-	return out
+	clauses := []clause{whole("", head)}
+	pausedBeside := compact && !s.quietUntil().IsZero()
+	if pausedBeside {
+		// A compact screen held for an idle trial states the planned end, not the screen's wall clock.
+		clauses = append(clauses, clause{gap, []form{{amber.Render("paused until " + wallMinute(s.quietUntil())), 0}}})
+		paused = time.Time{}
+	}
+	hours := hm(end.Sub(s.start))
+	clauses = append(clauses,
+		clause{gap, []form{{grey.Render("session ") + textStyle.Render(hours), 2}, {textStyle.Render(hours), 0}}},
+		clause{gap, []form{
+			{textStyle.Render(fmt.Sprint(s.failures)) + grey.Render(" "+noun(s.failures, "failure")+" · ") + textStyle.Render(fmt.Sprint(s.crashes)) + grey.Render(" "+noun(s.crashes, "crash")), 1},
+			{textStyle.Render(fmt.Sprint(s.failures)) + grey.Render(" fail · ") + textStyle.Render(fmt.Sprint(s.crashes)) + grey.Render(" crash"), 0},
+		}})
+	if s.lastFailure != nil && !pausedBeside {
+		at := textStyle.Render(wallMinute(*s.lastFailure))
+		forms := []form{{grey.Render("last observed failure ") + at, 5}, {}}
+		if s.quietUntil().IsZero() {
+			forms = append([]form{{grey.Render("last observed failure ") + at + grey.Render(", "+ago(now.Sub(*s.lastFailure))), 6}}, forms...)
+		}
+		clauses = append(clauses, clause{gap, forms})
+	}
+	if !paused.IsZero() {
+		clauses = append(clauses, clause{gap, []form{{amber.Render("screen paused until " + wallMinute(paused)), 4}, {amber.Render("paused until " + wallMinute(paused)), 3}, {}}})
+	}
+	return fitClauses(width, clauses...)
 }
 
 func (s Snapshot) stageLine(class sizeClass, summary bool, now time.Time) string {
@@ -705,13 +744,13 @@ func (s Snapshot) cycleStage(name string, short bool) string {
 	return cycle
 }
 
-func keyHints(view View) string {
+func keyHints(view View, width int, after ...clause) string {
 	type key struct {
 		key, label      string
 		active, current bool
 	}
 	keys := []key{{"?", "help", true, view == HelpView}, {"l", "log", true, view == LogView}, {"esc", "back", view != MainView, false}, {"q", "close view", true, false}}
-	parts := make([]string, 0, len(keys))
+	clauses := make([]clause, 0, len(keys)+len(after))
 	for _, k := range keys {
 		style, label := chip, grey
 		if k.current {
@@ -719,9 +758,17 @@ func keyHints(view View) string {
 		} else if !k.active {
 			style, label = track, track
 		}
-		parts = append(parts, style.Render(" "+k.key+" ")+" "+label.Render(k.label))
+		forms := []form{{style.Render(" "+k.key+" ") + " " + label.Render(k.label), 10}}
+		if k.key == "q" {
+			forms = append(forms, form{style.Render(" q ") + " " + label.Render("close"), 10})
+		}
+		forms = append(forms, form{style.Render(k.key), 1})
+		if k.key != "q" {
+			forms = append(forms, form{})
+		}
+		clauses = append(clauses, clause{"   ", forms})
 	}
-	return strings.Join(parts, "   ")
+	return fitClauses(width, append(clauses, after...)...)
 }
 
 // resting is true when no trial is in flight to show, or the session has stopped, met a dead end or just recovered
@@ -845,17 +892,30 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 	}
 	t := s.trial
 	op := s.operation(*t)
-	description := chip.Render(" "+string(t.regime)+" ") + "  " + white.Render(loadWords(t.regime)) + "  " + textStyle.Render(s.trialWhere(*t)) + "   " + grey.Render(workloadDisplay(t.workload))
+	// Left out first to last: the worker count, the workload, what the load is called; the chip and where the trial
+	// loads stay.
+	leave := func(sep, text string, rank int) clause { return clause{sep, []form{{text, rank}, {}}} }
+	description := []clause{
+		whole("", chip.Render(" "+string(t.regime)+" ")),
+		leave("  ", white.Render(loadWords(t.regime)), 2),
+		whole("  ", textStyle.Render(s.trialWhere(*t))),
+		leave("   ", grey.Render(workloadDisplay(t.workload)), 3),
+	}
 	if workers := len(t.cores) * t.workload.Threads; workers > 0 {
 		suffix := "s"
 		if workers == 1 {
 			suffix = ""
 		}
-		description += grey.Render(fmt.Sprintf(" · %d worker%s", workers, suffix))
+		description = append(description, leave("", grey.Render(fmt.Sprintf(" · %d worker%s", workers, suffix)), 4))
 	}
 	quiet := t.hasStarted && t.regime == machine.R6 && now.Before(t.started.Add(t.duration))
 	if quiet {
-		description = chip.Render(" R6 ") + "  " + white.Render("idle + bursts") + "  " + textStyle.Render("on "+coresText(t.cores, len(s.cores))) + "   " + grey.Render("short wake-ups, no workers in between")
+		description = []clause{
+			whole("", chip.Render(" R6 ")),
+			leave("  ", white.Render("idle + bursts"), 2),
+			whole("  ", textStyle.Render("on "+coresText(t.cores, len(s.cores)))),
+			leave("   ", grey.Render("short wake-ups, no workers in between"), 3),
+		}
 	}
 	if p.class == wideLayout || p.class == mediumLayout {
 		c.put(r, 0, 0, rule(r.w, grey.Render("NOW"), grey.Render("trial "+vtText(t.id))))
@@ -865,7 +925,7 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 		descY = 1
 	}
 	opWidth := ansi.StringWidth(op)
-	c.put(r, 0, descY, trimWords(description, max(r.w-opWidth-3, 0)))
+	c.put(r, 0, descY, fitClauses(max(r.w-opWidth-3, 0), description...))
 	c.put(r, max(r.w-opWidth, 0), descY, op)
 	if !t.hasStarted {
 		c.put(r, 0, r.h-1, grey.Render("preparing · workload has not started yet · planned "+clock(t.duration)))
@@ -1001,21 +1061,25 @@ func drawOutcomes(c *canvas, p layout, s Snapshot) {
 	if p.class == compactLayout {
 		parts := make([]string, len(rows))
 		basis := ""
-		join := func(brief bool) string {
+		join := func(level int) string {
 			for i, o := range rows {
 				text := o.compact
-				if brief {
+				if level >= 1 {
 					text = o.brief
+				}
+				if level >= 2 {
+					text = tightNext(text)
 				}
 				parts[i] = o.style.Render(o.short) + " " + textStyle.Render(text)
 				basis = cmp.Or(basis, o.basis)
 			}
 			return strings.Join(parts, "   ")
 		}
-		line := join(false)
-		if ansi.StringWidth(line) > p.outcomes.w {
-			// Count the folded cores at 0 rather than cut the outcomes after them.
-			line = join(true)
+		// Each level keeps less of the outcomes and never the next trial's core: first the folded cores at 0 are
+		// counted rather than spelled out, then the next trial is named by its regime and core alone.
+		line := join(0)
+		for level := 1; level <= 2 && ansi.StringWidth(line) > p.outcomes.w; level++ {
+			line = join(level)
 		}
 		if basis != "" {
 			// The basis must stay on screen: it marks backoffs that new telemetry can change.
@@ -1045,7 +1109,7 @@ func drawCCD(c *canvas, r rectangle, col coreColumns, id int, s Snapshot) {
 	role, short := s.ccdRole(id)
 	if col.brief {
 		name := fmt.Sprintf("CCD %d", id)
-		c.put(r, 0, 0, white.Render(name)+" "+grey.Render(trimWords(short, col.gauge-len(name)-3)))
+		c.put(r, 0, 0, white.Render(name)+" "+grey.Render(cutWords(short, col.gauge-len(name)-3)))
 	} else {
 		c.put(r, 0, 0, white.Render(fmt.Sprintf("CCD %d", id)))
 	}
@@ -1065,10 +1129,7 @@ func drawCCD(c *canvas, r rectangle, col coreColumns, id int, s Snapshot) {
 		}
 	} else {
 		c.put(r, col.failure-1, 0, grey.Render("fail pt"))
-		if ansi.StringWidth(role) > r.w-col.note {
-			role = short
-		}
-		c.put(r, col.note, 0, grey.Render(role))
+		c.put(r, col.note, 0, grey.Render(fitClauses(r.w-col.note, clause{"", []form{{role, 1}, {short, 0}}})))
 	}
 	var cores []coreView
 	for _, core := range s.cores {
@@ -1118,11 +1179,13 @@ func drawCCD(c *canvas, r rectangle, col coreColumns, id int, s Snapshot) {
 		if byOffset, ok := top[core.id]; ok {
 			note = topNote(note, byOffset, width)
 		}
-		c.put(r, col.note, y, trimWords(note, width))
+		c.put(r, col.note, y, cutWords(note, width))
 	}
 }
 
-// topNote marks a top requester of the current R7 workload, after the core's own note when both fit.
+// topNote marks a top requester of the current R7 workload after the core's own note, in "top" alone on a column too
+// narrow for the words. The mark is left out when it does not fit beside the note, and "top" that does not fit
+// alone is not drawn.
 func topNote(note string, byOffset bool, width int) string {
 	word := "top"
 	if width >= len("top requester") {
@@ -1132,12 +1195,9 @@ func topNote(note string, byOffset bool, width int) string {
 		}
 	}
 	if note == "" {
-		return textStyle.Render(word)
+		return textStyle.Render(fitClauses(width, whole("", word)))
 	}
-	if ansi.StringWidth(note)+ansi.StringWidth(" · ")+len(word) <= width {
-		return note + grey.Render(" · ") + textStyle.Render(word)
-	}
-	return note
+	return fitClauses(width, whole("", note), clause{grey.Render(" · "), []form{{textStyle.Render(word), 1}, {}}})
 }
 
 func (c coreView) stateWord() string {
@@ -1222,71 +1282,57 @@ func (c coreView) gauge(cells int) string {
 	return b.String()
 }
 
+// noteLine is the note beside a core's gauge, fitted to width cells. Each line gives its clauses in drop order: a
+// value (an offset, a core, a count) is never left out, only its label shortens; context goes first.
 func (c coreView) noteLine(width int) string {
+	sep := " · "
+	short := func(style lipgloss.Style, clauses ...clause) string {
+		return style.Render(fitClauses(width, clauses...))
+	}
+	one := func(forms ...form) clause { return clause{sep, forms} }
 	switch {
 	case c.state == coreProbe && len(c.groupFails) > 0:
-		prefix := "group failed at "
-		if width < 34 {
-			prefix = ""
-		}
-		return textStyle.Render(prefix + offsetList(c.groupFails))
+		list := offsetList(c.groupFails)
+		return short(textStyle, one(form{"group failed at " + list, 1}, form{list, 0}))
 	case c.returnsTo != nil:
-		if width < 12 {
-			return grey.Render(fmt.Sprintf("%4d", *c.returnsTo))
-		}
-		return grey.Render(fmt.Sprintf("returns to %d", *c.returnsTo))
+		// The bare offset is padded to 4 cells where it fits, so the offsets of a column line up.
+		return short(grey, one(form{fmt.Sprintf("returns to %d", *c.returnsTo), 1}, form{fmt.Sprintf("%4d", *c.returnsTo), 1}, form{fmt.Sprint(*c.returnsTo), 0}))
 	case c.confirm != nil:
 		n := c.confirm
-		if width < 34 {
-			return textStyle.Render(fmt.Sprintf("L%d/%d H%d/%d", n.light, n.needed, n.heavy, n.needed))
-		}
-		return textStyle.Render(fmt.Sprintf("%d: light %d/%d, heavy %d/%d", n.offset, n.light, n.needed, n.heavy, n.needed))
+		return short(textStyle, one(
+			form{fmt.Sprintf("%d: light %d/%d, heavy %d/%d", n.offset, n.light, n.needed, n.heavy, n.needed), 1},
+			form{fmt.Sprintf("L%d/%d H%d/%d", n.light, n.needed, n.heavy, n.needed), 0}))
 	case c.holder != nil && c.holder.combination > 0:
 		label := fmt.Sprintf("C%d", c.holder.combination)
-		if width >= 34 {
-			label = "held by " + label
+		clauses := []clause{one(form{"held by " + label, 2}, form{label, 0})}
+		if c.solo != nil {
+			clauses = append(clauses, one(form{fmt.Sprintf("solo %d", *c.solo), 1}, form{"", 0}))
 		}
-		out := magenta.Render(label)
-		if c.solo != nil && width >= 12 {
-			out += grey.Render(fmt.Sprintf(" · solo %d", *c.solo))
-		}
-		return out
+		return short(magenta, clauses...)
 	case c.gaveBack > 0:
-		out := fmt.Sprintf("C%d", c.gaveBack)
-		if width >= 34 {
-			out = "backed off after " + out
+		label := fmt.Sprintf("C%d", c.gaveBack)
+		clauses := []clause{one(form{"backed off after " + label, 2}, form{label, 0})}
+		if c.solo != nil {
+			clauses = append(clauses, one(form{fmt.Sprintf("solo %d", *c.solo), 1}, form{"", 0}))
 		}
-		if c.solo != nil && width >= 12 {
-			out += fmt.Sprintf(" · solo %d", *c.solo)
-		}
-		return grey.Render(out)
+		return short(grey, clauses...)
 	case c.state == coreFound && c.solo != nil:
-		if width < 12 {
-			return grey.Render(fmt.Sprint(*c.solo))
-		}
-		return grey.Render(fmt.Sprintf("solo %d", *c.solo))
+		return short(grey, one(form{fmt.Sprintf("solo %d", *c.solo), 1}, form{fmt.Sprint(*c.solo), 0}))
 	case c.state == coreSearch:
-		if width < 12 && c.next != nil {
-			return grey.Render(fmt.Sprintf("→ %d", *c.next))
-		}
-		var out []string
+		var clauses []clause
 		if c.pass != nil {
-			label := "passed "
-			if width < 34 {
-				label = "p "
+			pass := one(form{fmt.Sprintf("passed %d", *c.pass), 4}, form{fmt.Sprintf("p %d", *c.pass), 2})
+			if c.next != nil {
+				pass.forms = append(pass.forms, form{})
 			}
-			out = append(out, fmt.Sprintf("%s%d", label, *c.pass))
+			clauses = append(clauses, pass)
 		}
 		if c.next != nil {
-			label := "next "
-			if width < 34 {
-				label = "n "
-			}
-			out = append(out, fmt.Sprintf("%s%d", label, *c.next))
+			clauses = append(clauses, one(form{fmt.Sprintf("next %d", *c.next), 3}, form{fmt.Sprintf("→ %d", *c.next), 0}))
 		}
-		return grey.Render(strings.Join(out, " · "))
+		return short(grey, clauses...)
 	case c.queued != "":
-		return grey.Render(vtText(c.queued))
+		return grey.Render(cutWords(vtText(c.queued), width))
 	}
 	return ""
 }
@@ -1392,7 +1438,7 @@ func (s Snapshot) historyPanel(width, height int) []string {
 	for _, e := range s.history[:shown] {
 		before, alarm, after := e.sentenceParts()
 		text := textStyle.Render(before) + red.Render(alarm) + textStyle.Render(after)
-		out = append(out, grey.Render(wallMinute(e.at))+"  "+tagStyle(e.tag).Render(fmt.Sprintf("%-8s", e.tag))+" "+trimWords(text, max(width-16, 0)))
+		out = append(out, grey.Render(wallMinute(e.at))+"  "+tagStyle(e.tag).Render(fmt.Sprintf("%-8s", e.tag))+" "+cutWords(text, max(width-16, 0)))
 	}
 	if hidden > 0 {
 		out = append(out, grey.Render(fmt.Sprintf("+%d more", hidden)))
@@ -1494,8 +1540,59 @@ func consoleText(text string) string {
 	return b.String()
 }
 
-// trimWords measures text as the console will show it, after consoleText escapes glyphs it cannot draw.
-func trimWords(text string, width int) string {
+// cutMarker ends text cut to fit; the console font has no "…".
+const cutMarker = "..."
+
+// form is one way a clause reads. rank is how early the clause leaves this form for the next one when the line
+// does not fit: the higher rank goes first, and of equal ranks the later clause.
+type form struct {
+	text string
+	rank int
+}
+
+// clause is a part of a line that shows whole in one of its forms, from longest to shortest; an empty last form lets
+// the line leave the clause out, and a value has none. sep goes before the clause unless it opens the line.
+type clause struct {
+	sep   string
+	forms []form
+}
+
+// whole is a clause with one form, never shortened or left out.
+func whole(sep, text string) clause { return clause{sep, []form{{text, 0}}} }
+
+// fitClauses joins clauses into width cells as the console will show them, shortening or leaving out the clauses
+// the caller ranks lowest until the line fits; once none has another form, cutWords cuts the line.
+func fitClauses(width int, clauses ...clause) string {
+	at := make([]int, len(clauses))
+	for {
+		var b strings.Builder
+		for i, c := range clauses {
+			text := c.forms[at[i]].text
+			if text == "" {
+				continue
+			}
+			if b.Len() > 0 {
+				b.WriteString(c.sep)
+			}
+			b.WriteString(text)
+		}
+		line := b.String()
+		next := -1
+		for i, c := range clauses {
+			if at[i]+1 < len(c.forms) && (next < 0 || c.forms[at[i]].rank >= clauses[next].forms[at[next]].rank) {
+				next = i
+			}
+		}
+		if next < 0 || ansi.StringWidth(consoleText(line)) <= max(width, 0) {
+			return cutWords(line, width)
+		}
+		at[next]++
+	}
+}
+
+// cutWords fits text to width cells as the console will show it, after consoleText escapes glyphs it cannot draw.
+// Text that does not fit keeps the whole words that fit and ends with cutMarker, or is left out when no word fits.
+func cutWords(text string, width int) string {
 	if width <= 0 {
 		return ""
 	}
@@ -1503,13 +1600,20 @@ func trimWords(text string, width int) string {
 	if ansi.StringWidth(text) <= width {
 		return text
 	}
-	cut := ansi.Truncate(text, width, "")
-	plainCut := ansi.Strip(cut)
-	if i := strings.LastIndexByte(plainCut, ' '); i > 0 {
-		kept := strings.TrimRight(plainCut[:i], " ·→,;:")
-		return ansi.Truncate(cut, ansi.StringWidth(kept), "")
+	room := width - len(cutMarker)
+	if room < 0 {
+		return ""
 	}
-	return cut
+	plain := ansi.Strip(text)
+	kept := ansi.Strip(ansi.Truncate(text, room, ""))
+	if !strings.HasPrefix(plain[len(kept):], " ") {
+		kept = kept[:max(strings.LastIndexByte(kept, ' '), 0)]
+	}
+	kept = strings.TrimRight(kept, " ·→,;:")
+	if kept == "" {
+		return ""
+	}
+	return ansi.Truncate(text, ansi.StringWidth(kept)+len(cutMarker), cutMarker)
 }
 
 // wrapStyled wraps text as the console will show it, after consoleText escapes glyphs it cannot draw.

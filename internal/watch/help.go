@@ -129,12 +129,14 @@ func helpReading(width int) []string {
 		{9, 0, -48, "PARKED", "parked at 0 by a hunt; returns to -47", grey.Render(strings.Repeat("·", 47)) + red.Render("█")},
 		{0, -26, -32, "PROBE", "probe: the group failed with core 00 at -30, -29, -27", white.Render(strings.Repeat("▄", 26)) + red.Render("▀ ▀▀ █")},
 	} {
-		prefix := fmt.Sprintf("► %02d  %3d  %-8s ", example.core, example.offset, example.state)
+		marker := "► "
 		if example.state == "PARKED" {
-			prefix = "  " + prefix[4:]
+			marker = "  "
 		}
+		prefix := fmt.Sprintf("%s%02d  %3d  %-8s ", marker, example.core, example.offset, example.state)
 		gauge := example.gauge + strings.Repeat(" ", max(0, 50-ansi.StringWidth(example.gauge)))
-		out = append(out, ansi.Truncate(white.Render(prefix)+gauge+"  "+red.Render(fmt.Sprintf("%3d", example.failure)), width, ""))
+		failure := fmt.Sprintf("%3d", example.failure)
+		out = append(out, helpExampleRow(width, []string{prefix, fmt.Sprintf("%s%02d  %3d ", marker, example.core, example.offset), fmt.Sprintf("%s%02d ", marker, example.core), ""}, gauge, failure))
 		indent := min(ansi.StringWidth(prefix), max(0, width-20))
 		for _, line := range wrapStyled(example.note, max(1, width-indent), grey) {
 			out = append(out, strings.Repeat(" ", indent)+line)
@@ -144,6 +146,32 @@ func helpReading(width int) []string {
 	items := helpSectionLines(screenHelp, width, false)
 	out = append(out, items[2:]...)
 	return out
+}
+
+// helpExampleRow keeps the text of a help example whole: its heads run from the full core, offset and state to
+// nothing, each with its failure point or without, and the first that fits wins. Only the gauge is clipped by cells.
+func helpExampleRow(width int, heads []string, gauge, failure string) string {
+	for _, head := range heads {
+		for _, withFailure := range []bool{true, false} {
+			used := ansi.StringWidth(head)
+			if withFailure {
+				used += 2 + ansi.StringWidth(failure)
+			}
+			if used > width {
+				continue
+			}
+			line := gauge
+			if head != "" {
+				line = white.Render(head) + line
+			}
+			line = ansi.Truncate(line, width-used+ansi.StringWidth(head), "")
+			if withFailure {
+				line += "  " + red.Render(failure)
+			}
+			return line
+		}
+	}
+	return ""
 }
 
 func helpSectionLines(section helpSection, width int, spaced bool) []string {
@@ -158,7 +186,7 @@ func helpSectionLines(section helpSection, width int, spaced bool) []string {
 		for row, line := range text {
 			label := strings.Repeat(" ", labelWidth)
 			if row == 0 {
-				name := ansi.Truncate(item.label, labelWidth-1, "")
+				name := cutWords(item.label, labelWidth-1)
 				label = white.Render(name) + strings.Repeat(" ", labelWidth-ansi.StringWidth(name))
 			}
 			out = append(out, ansi.Truncate(label+line, width, ""))
@@ -171,6 +199,11 @@ func helpSectionLines(section helpSection, width int, spaced bool) []string {
 }
 
 func helpRule(title string, width int) string {
+	width = max(width, 0)
+	title = cutWords(title, width)
+	if ansi.StringWidth(title) == width {
+		return white.Render(title)
+	}
 	return white.Render(title) + " " + grey.Render(strings.Repeat("─", max(0, width-ansi.StringWidth(title)-1)))
 }
 
@@ -218,20 +251,25 @@ func renderLogBody(s Snapshot, width, height, scroll int) ([]string, int) {
 	bodyWidth := max(1, width-2)
 	lines := []string{s.logRule(bodyWidth), ""}
 	if len(s.log) == 0 {
-		lines = append(lines, grey.Render("No journal entries yet."))
+		lines = append(lines, grey.Render(cutWords("No journal entries yet.", bodyWidth)))
 	}
 	for _, e := range s.log {
-		stamp := grey.Render(wallSecond(e.at)) + "  "
-		tag := trimWords(vtText(e.tag), 20)
-		prefix := stamp + toneStyle(e.tone).Render(fmt.Sprintf("%-20s", tag)) + "  "
-		room := max(0, bodyWidth-ansi.StringWidth(prefix))
-		text := e.text
-		if ansi.StringWidth(text) > room {
-			text = trimWords(text, max(0, room-3)) + "..."
-		}
-		lines = append(lines, prefix+textStyle.Render(text))
+		lines = append(lines, logRow(e, bodyWidth))
 	}
 	return scrollBodyWithBar(lines, width, height, scroll)
+}
+
+// logRow is one journal entry in width cells: the time, the 20-cell event column and the message when a whole word of
+// the message fits beside them, else the time and the event, else the time, else nothing.
+func logRow(e entry, width int) string {
+	stamp := grey.Render(wallSecond(e.at))
+	tag := cutWords(vtText(e.tag), 20)
+	style := toneStyle(e.tone)
+	prefix := stamp + "  " + style.Render(fmt.Sprintf("%-20s", tag)) + "  "
+	if text := cutWords(e.text, width-ansi.StringWidth(prefix)); text != "" {
+		return prefix + textStyle.Render(text)
+	}
+	return fitClauses(width, whole("", stamp), clause{"  ", []form{{style.Render(tag), 0}, {}}})
 }
 
 func scrollBody(lines []string, width, height, scroll int) ([]string, int) {
