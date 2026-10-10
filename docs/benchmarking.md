@@ -49,6 +49,8 @@ Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds s
 
 The [`gate` object in `tools/bench/suite.json`](../tools/bench/suite.json) is the open ruleset's bench gate, committed before the ruleset is scored. It names the gate `id`, the `baseline` it is judged against (the ruleset and the commits that recorded the runs; a pull request that re-records runs adds its commit), the seed `split`, the `gated` scenarios, the `pooled` subset, the `conclude` scenarios, the `quantiles`, the bootstrap (`confidence`, `resamples`, `bootstrap_seed`) and `max_time_ratio`. The object and its `note` are the definition and the rationale; this page does not restate them per ruleset, and [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate it replaced. The gate comes from [issue #491](https://github.com/shgew/togi/issues/491) and [issue #570](https://github.com/shgew/togi/issues/570).
 
+The gate's `notes` array preserves accompanying provenance and caveats as JSON data; it does not affect scoring.
+
 With `--baseline`, `just bench` judges the gate after the generic verdict below, prints each criterion with its estimate, interval, threshold and `PASS` or `FAIL`, then an overall `gate ID: PASS` or `FAIL`, and exits 0 only when the gate passes. Run it as `just bench --split all --baseline tools/bench/baseline.jsonl`, scored once on every seed of the gate's split; a different `--split`, a candidate or baseline run missing for a required seed, a baseline recorded at another ruleset or commit than the gate names, or a missing `worst_r7_hazard_per_h` fails the gate with a refusal that names the cause. A suite without a `gate` prints no gate and exits as before. The criteria, per scenario unless noted:
 
 - **Conclusion:** every seed the baseline concluded is still concluded by the candidate, on each gated and each `conclude` scenario.
@@ -83,19 +85,20 @@ There is no `--scenario` flag. Write a scratch suite containing just the scenari
 ```sh
 scratch=$(mktemp -d)
 repo=$(pwd -P)
-cat > "$scratch/suite.toml" <<EOF
-[[scenario]]
-name = "target-shared-voltage"
-machine = "$repo/tools/bench/machines/target-shared-voltage.toml"
-replay = true
-dev = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-holdout = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]
+cat > "$scratch/suite.json" <<EOF
+{"scenarios": [{
+  "name": "target-shared-voltage",
+  "machine": "$repo/tools/bench/machines/target-shared-voltage.json",
+  "replay": true,
+  "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  "holdout": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]
+}]}
 EOF
-go run ./tools/bench --suite "$scratch/suite.toml" --split all \
+go run ./tools/bench --suite "$scratch/suite.json" --split all \
   --keep "$scratch/runs" --out "$scratch/results.jsonl" --timeout 15m
 ```
 
-Keep `scratch` until inspection is finished. To select another scenario, copy its seed lists and `replay` setting from `tools/bench/suite.toml`. For an ensemble, use `machines = ["ABSOLUTE-MEMBER-0.toml", "ABSOLUTE-MEMBER-1.toml"]` instead of `machine`. Facts paths still resolve relative to each machine file.
+Keep `scratch` until inspection is finished. To select another scenario, copy its seed lists and `replay` setting from `tools/bench/suite.json`. For an ensemble, use `"machines": ["ABSOLUTE-MEMBER-0.json", "ABSOLUTE-MEMBER-1.json"]` instead of `"machine"`. Facts paths still resolve relative to each machine file.
 
 ### Reproducing an older ruleset
 
@@ -120,7 +123,7 @@ git -C "$older/ruleset9" diff --exit-code "$sim_ref" -- \
   tools/bench/machines/target-shared-voltage.toml tools/bench/facts
 ```
 
-The diff must be empty. In that detached worktree, enter the dev shell and run the one-scenario recipe above. For ruleset 10, use a detached worktree at `645f529` without the port. Both runs must use the same scenario name, seeds, machine and replay setting. Preserve the worktrees and scratch results until analysis ends; their diffs explain the deliberately dirty ruleset-9 records.
+The diff must be empty. In that detached worktree, enter the dev shell and run the one-scenario recipe above, written in that revision's TOML suite and machine format (its machine is the restored `.toml` file). For ruleset 10, use a detached worktree at `645f529` without the port. Both runs must use the same scenario name, seeds, machine and replay setting. Preserve the worktrees and scratch results until analysis ends; their diffs explain the deliberately dirty ruleset-9 records.
 
 For a comparison on a later simulator, review **every** commit that changed the simulator paths since the older ruleset, not just those two signal-mix commits:
 
@@ -249,11 +252,11 @@ func main() {
 
 func containsDeadEnd(log string) bool { return strings.Contains(log, "sim: dead end ") }
 EOF
-go run "$score" MACHINE.toml '[OFFSET0,OFFSET1,OFFSET2,OFFSET3,OFFSET4,OFFSET5,OFFSET6,OFFSET7,OFFSET8,OFFSET9,OFFSET10,OFFSET11,OFFSET12,OFFSET13,OFFSET14,OFFSET15]'
+go run "$score" MACHINE.json '[OFFSET0,OFFSET1,OFFSET2,OFFSET3,OFFSET4,OFFSET5,OFFSET6,OFFSET7,OFFSET8,OFFSET9,OFFSET10,OFFSET11,OFFSET12,OFFSET13,OFFSET14,OFFSET15]'
 rm -r "$score"
 ```
 
-Replace `MACHINE.toml` and the JSON-array placeholders. A `profile.change` event's `to` gives the tuning profile after that change; a `trial.intent` event's `profile` gives the entire applied trial profile, which may instead be a parked hunt profile. Choose the one the checkpoint means. Score with the metric helper and machine from the same pinned simulator revision used for the comparison. This is fitted steady-state risk, without replay draws or an assertion that the checkpoint passed a cycle.
+Replace `MACHINE.json` and the JSON-array placeholders. A `profile.change` event's `to` gives the tuning profile after that change; a `trial.intent` event's `profile` gives the entire applied trial profile, which may instead be a parked hunt profile. Choose the one the checkpoint means. Score with the metric helper and machine from the same pinned simulator revision used for the comparison. This is fitted steady-state risk, without replay draws or an assertion that the checkpoint passed a cycle.
 
 ## Comparing two versions
 

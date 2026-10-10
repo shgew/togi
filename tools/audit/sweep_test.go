@@ -54,7 +54,21 @@ func TestSweepSuiteWire(t *testing.T) {
 		}
 		return string(b)
 	}
-	in := `{"scenarios":[
+	in := `{"gate":{
+		"id":"ruleset-11",
+		"note":"Ruleset 11 gate, decided 2026-10-09 (issues 491 and 570).",
+		"notes":["The bench gate of the open ruleset, committed before it is scored.","target-nonmember-mce stays as a labelled synthetic conclusion guard."],
+		"split":"all",
+		"gated":["relative","ensemble"],
+		"pooled":["relative"],
+		"conclude":["default"],
+		"quantiles":[0.5,0.9],
+		"confidence":0.95,
+		"resamples":10000,
+		"bootstrap_seed":[1,1],
+		"max_time_ratio":2.0,
+		"baseline":{"ruleset":10,"commits":["3a9b894"]}
+	},"scenarios":[
 		{"name":"default","dev":[100],"holdout":[200],"smoke":[300]},
 		{"name":"relative","machine":"machines/one.json","dev":[7]},
 		{"name":"absolute","machine":` + quote(abs) + `,"holdout":[9]},

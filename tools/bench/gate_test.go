@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -244,7 +245,7 @@ func TestGateBaselineIdentity(t *testing.T) {
 }
 
 func TestCommittedBaselineIsTheGatesBaseline(t *testing.T) {
-	g, err := loadGate("suite.toml")
+	g, err := loadGate("suite.json")
 	if err != nil || g == nil {
 		t.Fatalf("loadGate = %v, %v", g, err)
 	}
@@ -254,7 +255,7 @@ func TestCommittedBaselineIsTheGatesBaseline(t *testing.T) {
 	}
 	for _, r := range baseline {
 		if r.Ruleset != g.Baseline.Ruleset || !slices.Contains(g.Baseline.Commits, r.Commit) {
-			t.Fatalf("baseline run %s/%d is ruleset %d at %s; the gate names ruleset %d at %v: a pull request that re-records baseline runs lists its commit in [gate.baseline]", r.Scenario, r.Seed, r.Ruleset, r.Commit, g.Baseline.Ruleset, g.Baseline.Commits)
+			t.Fatalf("baseline run %s/%d is ruleset %d at %s; the gate names ruleset %d at %v: a pull request that re-records baseline runs lists its commit in gate.baseline", r.Scenario, r.Seed, r.Ruleset, r.Commit, g.Baseline.Ruleset, g.Baseline.Commits)
 		}
 	}
 	have := make(map[key]bool, len(baseline))
@@ -325,7 +326,7 @@ func TestGateReportGolden(t *testing.T) {
 
 func TestLoadGate(t *testing.T) {
 	t.Run("committed suite", func(t *testing.T) {
-		g, err := loadGate("suite.toml")
+		g, err := loadGate("suite.json")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -347,31 +348,32 @@ func TestLoadGate(t *testing.T) {
 	if err := (&gate{ID: "g", Baseline: gateBaseline{1, []string{"x"}}, Split: "all", Gated: []string{"a"}, Pooled: []string{"b"}, Quantiles: []float64{0.5}, Confidence: 0.95, Resamples: 10, MaxTimeRatio: 2}).resolve([]scenario{{Name: "a", Dev: []uint64{1}}, {Name: "b", Dev: []uint64{1}}}); err == nil || !strings.Contains(err.Error(), `pooled scenario "b" is not gated`) {
 		t.Fatalf("resolve error = %v", err)
 	}
-	scenarios := "\n[[scenario]]\nname = 'a'\ndev = [1]\nholdout = [101]\n"
-	valid := "[gate]\nid = 'g'\nsplit = 'all'\ngated = ['a']\nquantiles = [0.5]\nconfidence = 0.95\nresamples = 10\nmax_time_ratio = 2\n[gate.baseline]\nruleset = 1\ncommits = ['x']\n"
+	scenarios := `"scenarios":[{"name":"a","dev":[1],"holdout":[101]}]`
+	valid := `{"gate":{"id":"g","split":"all","gated":["a"],"quantiles":[0.5],"confidence":0.95,"resamples":10,"max_time_ratio":2,"baseline":{"ruleset":1,"commits":["x"]}},` + scenarios + `}`
 	for _, tc := range []struct {
 		name, suite, want string
 	}{
-		{"valid", valid + scenarios, ""},
-		{"no gate", scenarios, ""},
-		{"unknown gate key", strings.Replace(valid, "id = 'g'", "id = 'g'\nextra = 1", 1) + scenarios, "unknown suite key gate.extra"},
-		{"unknown scenario", strings.Replace(valid, "['a']", "['b']", 1) + scenarios, `unknown scenario "b"`},
-		{"bad quantile", strings.Replace(valid, "[0.5]", "[1]", 1) + scenarios, "quantile 1 outside"},
-		{"nan quantile", strings.Replace(valid, "[0.5]", "[nan]", 1) + scenarios, "quantile NaN outside"},
-		{"no quantiles", strings.Replace(valid, "[0.5]", "[]", 1) + scenarios, "needs gated scenarios and quantiles"},
-		{"no gated", strings.Replace(valid, "gated = ['a']", "gated = []", 1) + scenarios, "needs gated scenarios and quantiles"},
-		{"zero confidence", strings.Replace(valid, "confidence = 0.95", "confidence = 0.0", 1) + scenarios, "needs confidence in (0, 1)"},
-		{"unit confidence", strings.Replace(valid, "confidence = 0.95", "confidence = 1.0", 1) + scenarios, "needs confidence in (0, 1)"},
-		{"nan confidence", strings.Replace(valid, "confidence = 0.95", "confidence = nan", 1) + scenarios, "needs confidence in (0, 1)"},
-		{"zero resamples", strings.Replace(valid, "resamples = 10", "resamples = 0", 1) + scenarios, "positive resamples"},
-		{"zero time ratio", strings.Replace(valid, "max_time_ratio = 2", "max_time_ratio = 0", 1) + scenarios, "positive max_time_ratio"},
-		{"nan time ratio", strings.Replace(valid, "max_time_ratio = 2", "max_time_ratio = nan", 1) + scenarios, "positive max_time_ratio"},
-		{"no split seeds", strings.Replace(valid, "'all'", "'holdout'", 1) + strings.Replace(scenarios, "holdout = [101]\n", "", 1), "scenario a has no holdout seeds"},
-		{"bad split", strings.Replace(valid, "'all'", "'x'", 1) + scenarios, "split must be"},
-		{"no baseline", strings.Replace(valid, "commits = ['x']", "", 1) + scenarios, "needs an id and a baseline"},
+		{"valid", valid, ""},
+		{"no gate", `{` + scenarios + `}`, ""},
+		{"unknown gate key", strings.Replace(valid, `"id":"g"`, `"id":"g","extra":1`, 1), `unknown object member name "extra"`},
+		{"unknown baseline key", strings.Replace(valid, `"ruleset":1`, `"ruleset":1,"extra":1`, 1), `unknown object member name "extra"`},
+		{"unknown scenario", strings.Replace(valid, `["a"]`, `["b"]`, 1), `unknown scenario "b"`},
+		{"bad quantile", strings.Replace(valid, "[0.5]", "[1]", 1), "quantile 1 outside"},
+		{"nan quantile", strings.Replace(valid, "[0.5]", "[NaN]", 1), "load suite:"},
+		{"no quantiles", strings.Replace(valid, "[0.5]", "[]", 1), "needs gated scenarios and quantiles"},
+		{"no gated", strings.Replace(valid, `"gated":["a"]`, `"gated":[]`, 1), "needs gated scenarios and quantiles"},
+		{"zero confidence", strings.Replace(valid, `"confidence":0.95`, `"confidence":0.0`, 1), "needs confidence in (0, 1)"},
+		{"unit confidence", strings.Replace(valid, `"confidence":0.95`, `"confidence":1.0`, 1), "needs confidence in (0, 1)"},
+		{"nan confidence", strings.Replace(valid, `"confidence":0.95`, `"confidence":NaN`, 1), "load suite:"},
+		{"zero resamples", strings.Replace(valid, `"resamples":10`, `"resamples":0`, 1), "positive resamples"},
+		{"zero time ratio", strings.Replace(valid, `"max_time_ratio":2`, `"max_time_ratio":0`, 1), "positive max_time_ratio"},
+		{"nan time ratio", strings.Replace(valid, `"max_time_ratio":2`, `"max_time_ratio":NaN`, 1), "load suite:"},
+		{"no split seeds", strings.Replace(strings.Replace(valid, `"all"`, `"holdout"`, 1), `,"holdout":[101]`, "", 1), "scenario a has no holdout seeds"},
+		{"bad split", strings.Replace(valid, `"all"`, `"x"`, 1), "split must be"},
+		{"no baseline", strings.Replace(valid, `"commits":["x"]`, `"commits":[]`, 1), "needs an id and a baseline"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "suite.toml")
+			path := filepath.Join(t.TempDir(), "suite.json")
 			if err := os.WriteFile(path, []byte(tc.suite), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -384,6 +386,25 @@ func TestLoadGate(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("loadGate error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+	// JSON cannot spell NaN, so the semantic checks for nonfinite values are exercised directly.
+	nan := math.NaN()
+	for _, tc := range []struct {
+		name   string
+		mutate func(*gate)
+		want   string
+	}{
+		{"nan quantile", func(g *gate) { g.Quantiles = []float64{nan} }, "quantile NaN outside"},
+		{"nan confidence", func(g *gate) { g.Confidence = nan }, "needs confidence in (0, 1)"},
+		{"nan time ratio", func(g *gate) { g.MaxTimeRatio = nan }, "positive max_time_ratio"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &gate{ID: "g", Baseline: gateBaseline{1, []string{"x"}}, Split: "all", Gated: []string{"a"}, Quantiles: []float64{0.5}, Confidence: 0.95, Resamples: 10, MaxTimeRatio: 2}
+			tc.mutate(g)
+			if err := g.resolve([]scenario{{Name: "a", Dev: []uint64{1}}}); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("resolve error = %v, want %q", err, tc.want)
 			}
 		})
 	}

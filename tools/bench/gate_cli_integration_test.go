@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,7 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BurntSushi/toml"
 	"github.com/shgew/togi/internal/sim"
 )
 
@@ -56,13 +56,13 @@ func TestGateCLIIntegration(t *testing.T) {
 	t.Chdir(filepath.Join("..", ".."))
 	hermeticGit(t)
 	dir := t.TempDir()
-	writeTOML := func(t *testing.T, path string, value any) {
+	writeJSON := func(t *testing.T, path string, value any) {
 		t.Helper()
-		var data bytes.Buffer
-		if err := toml.NewEncoder(&data).Encode(value); err != nil {
+		data, err := jsonv2.Marshal(value, jsonv2.Deterministic(true))
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, data.Bytes(), 0o600); err != nil {
+		if err := os.WriteFile(path, data, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -87,15 +87,15 @@ func TestGateCLIIntegration(t *testing.T) {
 		}
 		cfg.SharedVoltage.Workload[id] = workload
 	}
-	writeTOML(t, filepath.Join(dir, "machine.toml"), struct {
-		Cores         int                `toml:"cores"`
-		Model         map[string]float64 `toml:"model"`
-		SharedVoltage *sim.SharedVoltage `toml:"shared_voltage"`
+	writeJSON(t, filepath.Join(dir, "machine.json"), struct {
+		Cores         int                `json:"cores"`
+		Model         map[string]float64 `json:"model"`
+		SharedVoltage *sim.SharedVoltage `json:"shared_voltage"`
 	}{cfg.Cores, map[string]float64{"past_limit_rate": 0, "near_limit_rate": 0}, cfg.SharedVoltage})
 
-	suite := suiteFile{Scenarios: []scenario{{Name: "tiny", Machine: "machine.toml", Dev: []uint64{1}}}}
-	plainSuite := filepath.Join(dir, "plain.toml")
-	writeTOML(t, plainSuite, suite)
+	suite := suiteFile{Scenarios: []scenario{{Name: "tiny", Machine: "machine.json", Dev: []uint64{1}}}}
+	plainSuite := filepath.Join(dir, "plain.json")
+	writeJSON(t, plainSuite, suite)
 	recordedPath := filepath.Join(dir, "recorded.jsonl")
 	if code, stdout, stderr := invoke(plainSuite, "", recordedPath); code != 0 || stderr != "" {
 		t.Fatalf("record fixture: exit %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
@@ -124,8 +124,8 @@ func TestGateCLIIntegration(t *testing.T) {
 		BootstrapSeed: [2]uint64{1, 1},
 		MaxTimeRatio:  2,
 	}
-	gatedSuite := filepath.Join(dir, "gated.toml")
-	writeTOML(t, gatedSuite, suite)
+	gatedSuite := filepath.Join(dir, "gated.json")
+	writeJSON(t, gatedSuite, suite)
 
 	passing := original
 	passing.WorstR7HazardPerH = new(*original.WorstR7HazardPerH + 1)
