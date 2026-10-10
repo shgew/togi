@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/shgew/togi/internal/journal"
+	togisession "github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/tuner"
 )
@@ -119,7 +120,7 @@ func readSession(path string) (Session, error) {
 			return Session{}, err
 		}
 	}
-	s := Session{Events: events, Replayable: replayable && journal.BuildOf(events).Ruleset == tuner.Ruleset}
+	s := Session{Events: events, Replayable: replayable && journal.Classify(journal.BuildOf(events), togisession.Build()).Ruleset == journal.DirSame}
 	if len(events) > 0 {
 		if start, ok := events[0].Data.(*journal.SessionStart); ok {
 			s.ID = start.Session

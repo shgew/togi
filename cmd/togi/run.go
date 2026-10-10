@@ -112,8 +112,8 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		bootloader = hardware.GRUB{Env: grubenv}
 	}
 	if stamp, _, scanErr := journal.Scan(g.stateDir); scanErr == nil {
-		if stamp.Schema != 0 && !journal.Older(stamp, session.Build()) {
-			if err := journal.Compatible(stamp, session.Build()); err != nil {
+		if stamp.Schema != 0 {
+			if err := journal.Classify(stamp, session.Build()).Refusal(journal.OpResume); err != nil {
 				return runStartupRefusal(g, err, stderr, renderer, bootloader)
 			}
 		}
@@ -121,8 +121,8 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "togi run: %s\n", render.EscapeText(scanErr.Error()))
 		return exitError
 	}
-	if events, _, readErr := journal.Read(g.stateDir); readErr == nil && !journal.Older(journal.BuildOf(events), session.Build()) {
-		if err := journal.KnownKinds(events, session.Build()); err != nil {
+	if events, _, readErr := journal.Read(g.stateDir); readErr == nil {
+		if err := journal.Classify(journal.BuildOf(events), session.Build()).Kinds(journal.OpResume, events); err != nil {
 			return runStartupRefusal(g, err, stderr, renderer, bootloader)
 		}
 	}

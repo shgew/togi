@@ -123,12 +123,61 @@ func TestResetAllArchivesUnrecognizedSchema(t *testing.T) {
 func TestResetCoreRefusesDifferentRuleset(t *testing.T) {
 	dir, original := incompatibleFixture(t, "ruleset")
 	var stdout, stderr bytes.Buffer
-	if code := testCLI(t, []string{"--state-dir", dir, "reset", "--core", "3"}, &stdout, &stderr); code != exitError || !strings.Contains(stderr.String(), fmt.Sprintf("uses ruleset %d", session.Build().Ruleset)) {
+	if code := testCLI(t, []string{"--state-dir", dir, "reset", "--core", "3"}, &stdout, &stderr); code != exitIncompatible || !strings.Contains(stderr.String(), fmt.Sprintf("uses ruleset %d", session.Build().Ruleset)) {
 		t.Fatalf("reset --core exit %d, stderr %q", code, stderr.String())
 	}
 	after, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
 	if err != nil || !bytes.Equal(after, original) {
 		t.Fatalf("reset --core changed journal: %v", err)
+	}
+}
+
+func TestResetCoreExitCodeForEveryStampMismatch(t *testing.T) {
+	build := session.Build()
+	for _, tc := range []struct {
+		name                   string
+		schema, ruleset, epoch int
+		unknownKind            bool
+		wantCode               int
+		wantMessage            string
+	}{
+		{"older ruleset", build.Schema, build.Ruleset - 1, build.Epoch(), false, exitIncompatible, "uses ruleset"},
+		{"newer ruleset", build.Schema, build.Ruleset + 1, build.Epoch(), false, exitIncompatible, "uses ruleset"},
+		{"older schema", build.Schema - 1, build.Ruleset, build.Epoch(), false, exitIncompatible, "uses schema"},
+		{"newer schema", build.Schema + 1, build.Ruleset, build.Epoch(), false, exitIncompatible, "uses schema"},
+		{"missing schema", 0, build.Ruleset, build.Epoch(), false, exitIncompatible, "uses schema"},
+		{"newer evidence epoch", build.Schema, build.Ruleset, build.Epoch() + 1, false, exitIncompatible, "uses evidence epoch"},
+		{"unknown kind keeps exit 1", build.Schema, build.Ruleset, build.Epoch(), true, exitError, `unknown kind "retired.fact"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "events.jsonl")
+			original := fmt.Appendf(nil, `{"seq":1,"time":"2026-09-01T00:00:00Z","boot":"old","kind":"session.start","session":"20260901T000000Z","schema":%d,"ruleset":%d,"evidence":%d}`+"\n", tc.schema, tc.ruleset, tc.epoch)
+			if tc.schema == 0 {
+				original = bytes.Replace(original, []byte(`,"schema":0`), nil, 1)
+			}
+			if tc.unknownKind {
+				original = append(original, `{"seq":2,"time":"2026-09-01T00:00:01Z","boot":"old","kind":"retired.fact","msg":"unknown fact"}`+"\n"...)
+			}
+			if err := os.WriteFile(path, original, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			code := testCLI(t, []string{"--state-dir", dir, "reset", "--core", "3"}, &stdout, &stderr)
+			if diff := cmp.Diff(tc.wantCode, code); diff != "" {
+				t.Fatalf("reset --core exit (-want +got): %s; stderr %q", diff, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), tc.wantMessage) {
+				t.Fatalf("reset --core stderr %q, want %q", stderr.String(), tc.wantMessage)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(original, after); diff != "" {
+				t.Fatalf("reset --core changed journal (-want +got): %s", diff)
+			}
+		})
 	}
 }
 

@@ -24,10 +24,10 @@ func TestEvidenceEpochCompatibility(t *testing.T) {
 		{"older epoch with newer schema", Build{Schema: 3, Ruleset: 6, EvidenceEpoch: 1}, false, "schema"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := Older(tc.recorded, binary); got != tc.older {
+			if got := Classify(tc.recorded, binary).Older(); got != tc.older {
 				t.Fatalf("Older(%+v, %+v) = %t, want %t", tc.recorded, binary, got, tc.older)
 			}
-			err := Compatible(tc.recorded, binary)
+			err := Classify(tc.recorded, binary).Err()
 			if tc.field == "" {
 				if err != nil {
 					t.Fatal(err)
@@ -40,7 +40,7 @@ func TestEvidenceEpochCompatibility(t *testing.T) {
 			}
 		})
 	}
-	if err := Compatible(Build{Schema: 2, Ruleset: 6, EvidenceEpoch: 1}, Build{Schema: 2, Ruleset: 6}); err != nil {
+	if err := Classify(Build{Schema: 2, Ruleset: 6, EvidenceEpoch: 1}, Build{Schema: 2, Ruleset: 6}).Err(); err != nil {
 		t.Fatalf("unstamped binary build must default to epoch one: %v", err)
 	}
 }

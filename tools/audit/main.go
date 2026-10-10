@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/shgew/togi/internal/journal"
+	togisession "github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/tuner"
 )
 
@@ -175,12 +176,13 @@ func auditDirectory(dir string, simulated bool) ([]violation, int, error) {
 		}
 		// Replay needs the current ruleset; an older session has no current projection.
 		build := journal.BuildOf(events)
-		if build.Ruleset != 0 && build.Ruleset != tuner.Ruleset {
+		compat := journal.Classify(build, togisession.Build())
+		if build.Ruleset != 0 && compat.Ruleset != journal.DirSame {
 			continue
 		}
 		// Projection always stamps the current schema, so a session from an older
 		// schema cannot match it; the next run archives that session.
-		if build.Schema > 0 && build.Schema < journal.Schema {
+		if build.Schema > 0 && compat.Schema == journal.DirOlder {
 			continue
 		}
 		// History reading intentionally omits configuration. Replay uses the complete

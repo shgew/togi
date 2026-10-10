@@ -45,23 +45,24 @@ func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, c
 		return nil, nil
 	}
 	events, _, readErr := j.Read()
-	if readErr == nil && !journal.Older(journal.BuildOf(events), binary) {
-		if err := journal.KnownKinds(events, binary); err != nil {
+	if readErr == nil {
+		if err := journal.Classify(journal.BuildOf(events), binary).Kinds(journal.OpResume, events); err != nil {
 			return nil, err
 		}
 	}
+	compat := journal.Classify(stamp, binary)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
 		return nil, fmt.Errorf("carry: %w", err)
-	case stamp.Schema == binary.Schema && readErr != nil:
+	case compat.Schema == journal.DirSame && readErr != nil:
 		return nil, fmt.Errorf("carry: %w", readErr)
 	case stamp.Schema == 0:
-	case journal.Older(stamp, binary):
+	case compat.Access(journal.OpResume) == journal.AccessArchive:
 		if err := archive(j, id); err != nil {
 			return nil, err
 		}
-	case journal.Compatible(stamp, binary) == nil && current != nil:
+	case compat.Access(journal.OpResume) == journal.AccessUse && current != nil:
 		recorded, err := journal.RecordedContext(dir)
 		if err != nil {
 			return nil, fmt.Errorf("carry: read recorded BIOS context: %w", err)
@@ -73,7 +74,7 @@ func Prepare(j *journal.Journal, binary journal.Build, entries []defect.Entry, c
 				}
 			}
 		}
-	case journal.Compatible(stamp, binary) != nil:
+	case compat.Access(journal.OpResume) == journal.AccessRefuse:
 		return nil, nil
 	}
 	pending, err := journal.PendingCarry(dir)
