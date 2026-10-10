@@ -634,6 +634,8 @@ func TestEveryTimeOnScreenIsLocal(t *testing.T) {
 
 	recovering := Project(cuts["recovering"])
 	require("recovering", MainView, "detected "+at(recovering.recover.bootAt, "15:04:05"))
+	crashed := Project(cuts["crashed"])
+	require("crashed", MainView, " · started "+at(crashed.trial.started, "15:04:05"))
 	hunt := Project(cuts["hunt"])
 	require("hunt", MainView, "started "+at(hunt.hunt.started, "15:04"))
 

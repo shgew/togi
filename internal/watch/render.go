@@ -804,7 +804,7 @@ func (s Snapshot) crashedLines() []string {
 		first += " · " + where
 	}
 	if t.hasStarted {
-		first += " · started " + t.started.Format("15:04:05")
+		first += " · started " + wallSecond(t.started)
 	}
 	return []string{first, "A later boot has written events, so the machine restarted before this trial recorded its end.", "togi run records the crash and picks up from the journal."}
 }
