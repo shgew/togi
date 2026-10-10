@@ -1,5 +1,7 @@
 Status: see [the index](README.md).
 
+Note (2026-10-10): the epoch below no longer versions the backend binary. Since ruleset 10 a new backend build needs no epoch bump: passes are keyed by backend identity, the package store path that `config.loaded` records for the backend running the class's workload ([tuner.md, Evidence](../spec/tuner.md#evidence); [workloads.md, Evidence compatibility](../spec/workloads.md#evidence-compatibility)).
+
 # Carry trial facts across ruleset changes
 
 ## Context

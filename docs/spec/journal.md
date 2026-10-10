@@ -100,12 +100,12 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 
 | Group | Kinds |
 |---|---|
-| Session | `session.start` (session ID, cores and build stamp), `session.context` (BIOS context), `session.baseline` (baseline profile), `session.notice`, `session.archived`, `session.carried` (what a transition carries in, Transitions below) |
+| Session | `session.start` (session ID, cores and build stamp), `session.context` (BIOS context: BIOS version, board, CPU model, microcode and boost limit; no Curve Optimizer offsets), `session.baseline` (`offsets`: every core's offset read once at the session's first `run`), `session.notice`, `session.archived`, `session.carried` (what a transition carries in, Transitions below) |
 | Session warnings | `session.warning` (`operation`, optional `trial`, `error`): nonfatal session maintenance failure or advisory; passed-trial marker or prune failures cite the durable passing `trial.end`; state projection write failures cite the durable event when there is one; `operation: "check hardware watchdog"` records an in-session run without an active hardware watchdog (`runtime.md`, Preflight) |
 | Config and preflight | `config.loaded` (effective config and build stamp), `preflight.check` (one per check, with result) |
 | SMU | `smu.intent`, `smu.write`, `smu.readback`, `smu.error` |
-| Profile | `profile.applied` (applied condition), `profile.change` (profile, `from` null on entering checking), `profile.restored` (before shutdown) |
-| Trials | `trial.intent` (applied `profile` in core-id order, optional `hunt`, `group`, `round`, `cycle`, `rerun`, `retry` (the trial repeats the preceding inconclusive trial of its class; its message says `(retry)`), legacy `record_only`, `step`; R7 partials name their 1-based checking step and loaded cores), `trial.start` (pid, scope, cpus, argv, files, instances), `trial.progress` (optional backend `signal` and `core`), `trial.signal`, `trial.sample`, `trial.end` (optional `backend_missing`, `containment_error`, request measurements and `stalled_core`; `core` on backend-ended together and parked trials) |
+| Profile | `profile.applied` (`offsets` and `condition`), `profile.change` (`from` and `to`; `from` null on entering checking), `profile.restored` (`offsets`, before shutdown) |
+| Trials | `trial.intent` (applied `profile` in core-id order, optional `phase`, `hunt`, `group`, `round`, `cycle`, `rerun`, `retry` (the trial repeats the preceding inconclusive trial of its class; its message says `(retry)`), legacy `record_only`, `step`; R7 partials name their 1-based checking step and loaded cores; [which fields identify which activity](#trial-activity)), `trial.start` (pid, scope, cpus, argv, files, instances), `trial.progress` (optional backend `signal` and `core`), `trial.signal`, `trial.sample`, `trial.end` (optional `backend_missing`, `containment_error`, request measurements and `stalled_core`; `core` on backend-ended together and parked trials) |
 | Evidence | `failure` (kind, attribution, evidence seq, optional applied `profile`; `known_failure`, `reason` and `round` for a known-failure skip), `mce`, `crash.detected` (previous boot, in-flight action, optional `reset_reason`, `reset_reason_raw`, `inconclusive`, `pstore`; message suffixes `; reset reason: <raw or kind>`, `; inconclusive: <why>` and `; pstore: <path>`) |
 | Carried evidence | `trial.carried` (decisive trial fact), `failure.carried` (idle failure fact); original provenance in `source`, fields below |
 | Tuner | `tuner.decision` (`step_deeper`, `backoff`, `check_solo_limit`, `deepen`, `yield`; `workloads` on solo-limit check, `failure_point`), `core.phase` (`check_solo_limit`, `workloads`, `failure_point`, `cleared_combination`), `checking.cycle` (`cycle`, start/end, end `passed`, `full` and `missing`), `checking.step` (R7 step-start snapshot), `checking.chain` (derived next partial and request-order sources, below) |
@@ -171,6 +171,23 @@ Plan kinds and their payloads (optional fields are omitted when empty):
 | `deepening.round` | `round`, `event` (`start`, `end`); start: `base` (the newest passed full-cycle profile the round starts from), `base_seq` (its cycle-end sequence), `target`, proposed `profile`, changed `cores`, `ranking`, `trials`, `trial_s`; end: optional `passed`, `reason` | `deepening round 2 start: 5 cores toward …` / `deepening round 2 end: passed` |
 | `tuner.warning` | `warning` (`monotonicity`), `trial`, `passes` (contradicted live or carried pass seqs), `detail` (failed profile, class and valid-pass count, plus carried source sessions when present) | `monotonicity: <detail>` |
 | `backend.retry` | `backend` (or `kernel_log`), `attempt` (1–3), `wait_s` (60, 300, 1800), `reason` | `backend mprime: retry 2 of 3 after 300s: setup failed: …` |
+
+### Trial activity
+
+A `trial.intent` names the activity that asked for the trial through these fields, all from the event itself except the hunt stage:
+
+| Activity | `phase` | `condition` | Identifying fields | Absent |
+|---|---|---|---|---|
+| Search | `search` | `alone` | `core`, `offset` | `cycle`, `hunt`, `round` |
+| Checking cycle trial | `checking` | `together` | `cycle`; R7 parts also `step` | `rerun`, `hunt`, `round` |
+| Backoff rerun in checking | `checking` | `together` | `rerun: true` | `cycle` (the rerun belongs to no cycle) |
+| Hunt group trial | `hunt` | `parked` | `hunt`, `group` | `cycle`, `round`, `rerun` |
+| Located hunt trial | `hunt` | `parked` | `hunt`, `group`, as for any hunt trial; no flag marks it | `cycle`, `round`, `rerun` |
+| Deepening check | `deepening` | `alone` for R1/R2, `together` for R7 | `round` | `cycle`, `hunt` |
+| All-zero rerun before `failure_at_zero` | `checking`, or `hunt` when the failure came from a parked trial | `parked` | `rerun: true`, `profile` all 0 | `hunt`, `cycle` |
+| Retry of an inconclusive trial | the original's | the original's | `retry: true` plus the original's fields | |
+
+A located hunt has `hunt.start.regime: R7`, at least two loaded `cores`, and no overlap between its `candidates` and those loaded cores. Its `reason` explains the location, and its first `hunt.group` has stage `locate`; there is no located-hunt flag. A hunt trial's stage, granularity and candidate set are not on the `trial.intent`: join its `hunt` and `group` to the `hunt.group` event with the same numbers.
 
 ## Transitions
 

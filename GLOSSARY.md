@@ -68,13 +68,16 @@ One launch of one workload on its target under a fixed profile, ending as a pass
 _Avoid_: start, test, iteration, run
 
 **Top requester**:
-The loaded core with the highest voltage request, setting the shared core voltage. Cores within 1 mV of the highest are tied top requesters; an all-core load has top requesters on each CCD.
+Globally, the loaded core with the highest voltage request sets the shared core rail voltage. R7 attribution uses a separate top-request group on each loaded CCD, with cores within 1 mV of that CCD's highest request tied. A CCD's top group need not contain the global rail maximum ([R7 request order and attribution](docs/spec/tuner.md#r7-request-order-and-attribution)).
 
 **Self-sufficient**:
-A core that passes as a top requester for a given R7 workload.
+A core with observed passing evidence as a top requester for a given R7 workload at an equal or deeper offset. An evidence descriptor, not proof of future stability or permission to tolerate failures ([R7 self-sufficiency evidence](docs/spec/tuner.md#r7-self-sufficiency-evidence)).
 
 **Partial part**:
 An R7 load that idles the top requesters found so far, in request order, to test the remaining cores.
+
+**Multi-core / single-core R7**:
+An R7 trial loading at least two cores / exactly one core. Multi-core R7 uses request-based attribution and voltage-targeted backoff; single-core R7 retains the ordinary first-failure rules. Checking's partial chain never launches a single-core part.
 
 **Trial class**:
 The regime, workload, sorted loaded cores and duration of a trial. Evidence transfers by class ([Evidence](docs/spec/tuner.md#evidence)).
@@ -132,17 +135,20 @@ A cycle covering every R1 and R2 workload on every core, every part of every R7 
 _Avoid_: qualifying rotation
 
 **Clean cycle**:
-A passed full cycle that ended with every core at its limit and remains valid for the current profile under checking's evidence rules.
+A passed full cycle that ended with every core at its limit and remains valid for the current profile under checking's evidence rules. A passed cycle can be not clean because room remained and deepening reopened afterwards, not because it ended on a failed trial.
 _Avoid_: qualified rotation
 
 **Passed cycle**:
-A cycle whose requirements all passed. It need not be full or end with every core at its limit.
+A cycle whose requirements all passed. Failures and backoffs inside it do not end it; it can pass after dozens of them. For example, cycle 1 can fail an R7 part, back off and rerun it, then fulfill its remaining requirements and end passed, still as cycle 1. It need not be full or end with every core at its limit.
 _Avoid_: clean rotation
 
 **Inconclusive**:
 A trial outcome that says nothing about stability, such as a backend that failed to start.
 
 ### Evidence
+
+**Pass rule**:
+The number of passing launches needed to accept a trial class: `ceil(ln(evidence.miss) / log1p(-evidence.rate))`. `evidence.rate` is the failure probability per independent trial that the rule aims to detect; `evidence.miss` is the maximum probability of missing that rate by observing only passes. Defaults 0.5 and 0.05 require five passes. These are heuristic settings, not a bound on every real failure mode ([Evidence](docs/spec/tuner.md#evidence)).
 
 **Failure**:
 Evidence of instability: a computation error, a stall, a corrected MCE, an uncorrected MCE or a crash.

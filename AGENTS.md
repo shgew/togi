@@ -6,6 +6,7 @@ Go CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and kee
 
 - `README.md`: what togi does, what works today, and the common commands.
 - `GLOSSARY.md`: the vocabulary. Name code, events and docs with its terms.
+- `docs/how-togi-tunes.md`: read first to understand the tuning sequence, phase costs and ruleset history; the specs own the rules.
 - `REVIEW.md`: defect criteria, recurring lessons and the review record. Read it before reviewing a pull request.
 - `.omp/`: reviewer rules, the `review-coordinator` agent and `/review-pr`, the omp command for reviewing pull requests in parallel and recording their gates.
 - `docs/spec/`: normative behavior (`tuner.md`, `workloads.md`, `journal.md`, `runtime.md`). Read the relevant spec before changing behavior, and change spec and code in the same pull request or in layers of one stack merged together.
@@ -40,6 +41,7 @@ A pull request updates everything that describes the old state, in the same pull
 - the README's Status when what works changes, and its Usage when the common commands change;
 - a changelog fragment, `changes/<N>.md` named by the pull request's number and added once it is opened, for every change a user of togi would notice: commands, flags, behavior, output, configuration. One line per change under `### Added`, `### Changed`, `### Removed` or `### Fixed`, stating the effect and ending with a period; the release adds the pull request link (ADR 0033). A `**BREAKING**` line starts with what the operator must do or will see, then the mechanism. A change to something not yet released edits that change's fragment instead. Refactors, tests and doc edits that leave the tool unchanged get no fragment;
 - the specs, and any comment the change makes wrong.
+- `docs/how-togi-tunes.md` when tuner behavior changes.
 
 Pull requests that change the operator's steps update `docs/howto.md`.
 

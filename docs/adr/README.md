@@ -6,6 +6,30 @@ A new ADR adds its line here and updates the status of any ADR it supersedes.
 
 ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-from-screen-to-journal.md) and [0037](0037-cycles-and-trials.md) translate it to the terms in `GLOSSARY.md` without changing the tuning decisions.
 
+## Ruleset chronology
+
+[How togi tunes, Ruleset history](../how-togi-tunes.md#ruleset-history) owns the chronology of ruleset changes, their merge commits and their decision sources. The rows below record each ADR's current status.
+
+## ADR 0020 terms today
+
+[ADR 0020](0020-hunt-and-refine.md) records the ruleset-4 decision, not all of today's rules. Use the [glossary](../../GLOSSARY.md) for the current terms and the linked spec sections for the current rules.
+
+| ADR 0020 term or rule | Today's term or rule | Decision sources |
+|---|---|---|
+| Start, unit of pass evidence | [Trial](../../GLOSSARY.md#testing) | [0037](0037-cycles-and-trials.md) |
+| Edge; candidate edge | Solo limit; candidate solo limit ([Search](../spec/tuner.md#search)) | 0020; [0034](0034-one-vocabulary-from-screen-to-journal.md) renames them |
+| Failed mark; joint mark | Failure point; combination ([Failure points and combinations](../spec/tuner.md#failure-points-and-combinations)) | 0020; [0034](0034-one-vocabulary-from-screen-to-journal.md) renames them |
+| Mask; masked trial; anchor offsets; edge probe | Group; parked trial; parked offsets; member probe ([Hunt](../spec/tuner.md#hunt)) | 0020; [0023](0023-hunts-that-converge-on-shared-voltage.md) changes parked offsets and combination backoff; [0024](0024-schedule-from-uncontradicted-evidence.md) changes planning; [0034](0034-one-vocabulary-from-screen-to-journal.md) renames them |
+| Refinement; refine; yield | Deepening; yield ([Deepening](../spec/tuner.md#deepening)) | 0020; [0024](0024-schedule-from-uncontradicted-evidence.md) changes when it can reopen; [0034](0034-one-vocabulary-from-screen-to-journal.md) renames refinement |
+| Resident core; done core | Has room; at its limit ([Failure points and combinations](../spec/tuner.md#failure-points-and-combinations)) | 0020; [0034](0034-one-vocabulary-from-screen-to-journal.md) renames them |
+| Resident condition; guard; rotation | Together; checking; cycle ([Checking](../spec/tuner.md#checking)) | 0020; [0034](0034-one-vocabulary-from-screen-to-journal.md) and [0037](0037-cycles-and-trials.md) rename them |
+| Qualifying rotation; qualified rotation; clean rotation | Full cycle; clean cycle; passed cycle ([Checking](../spec/tuner.md#checking)) | 0020; [0024](0024-schedule-from-uncontradicted-evidence.md) permits earlier valid credit; [0034](0034-one-vocabulary-from-screen-to-journal.md) and [0037](0037-cycles-and-trials.md) rename them |
+| Bronze, Silver, Gold; tier clock and clean-hour bounds | Removed, not renamed. Clean-cycle evidence and `run --cycles N` remain ([Checking](../spec/tuner.md#checking)) | [0028](0028-remove-tiers.md) |
+| Hunt every unattributed together failure | Hunts remain outside multi-core R7. Multi-core R7 uses request attribution and voltage-targeted backoff, with located hunts when unloaded cores were not all at 0 ([R7 request order and attribution](../spec/tuner.md#r7-request-order-and-attribution), [Hunt](../spec/tuner.md#hunt)) | [0038](0038-self-sufficient-cores.md); [0040](0040-located-hunts.md) |
+| Prove candidate limits, hunt groups, reruns and deepening checks | Eligible carried facts can answer them; cycle coverage stays live ([Evidence](../spec/tuner.md#evidence)) | [0027](0027-carry-trial-facts.md) |
+
+## Status
+
 - [0001: Go as the implementation language](0001-go.md) — **superseded** by [0048](0048-rust.md): the language, once the Rust cutover lands (Go stays the shipped language until then); its Bubble Tea consequence no longer holds: `togi watch` uses a custom redraw loop with Lip Gloss rendering.
 - [0002: Clean-room rewrite, not a port of linux-corecycler](0002-clean-room-rewrite.md) — **in force**.
 - [0003: The journal is the source of truth; no database](0003-journal-is-source-of-truth.md) — **in force**.

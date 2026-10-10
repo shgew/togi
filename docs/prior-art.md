@@ -30,6 +30,7 @@ What togi takes from existing tools and research, and what it deliberately leave
 - Write the intended offset durably before the SMU write, then read it back.
 - Confine backends with a cgroup cpuset (`AllowedCPUs`) rather than trusting their own affinity settings.
 - Tell a same-boot process restart apart from a real reboot by boot ID.
+- Vary offsets across reboots to locate an unattributed failure. togi uses a journaled parked [hunt](spec/tuner.md#hunt), testing parts and complements rather than only bisecting the loaded set ([ADR 0020](adr/0020-hunt-and-refine.md)). Multi-core R7 uses [measured top requesters and partial chains](spec/tuner.md#r7-request-order-and-attribution) with [voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff); a located hunt comes first for an unattributed failure whose unloaded cores were not all at 0 ([ADR 0038](adr/0038-self-sufficient-cores.md), [ADR 0040](adr/0040-located-hunts.md)).
 
 ### Rejected
 
@@ -38,8 +39,7 @@ What togi takes from existing tools and research, and what it deliberately leave
 | Qt GUI, desktop entry, notifications | CLI first; `togi watch` reads the journal as a TUI |
 | Full monitoring subsystem (hwmon, SPD, RAPL, APERF/MPERF, Super I/O) | Not needed to judge a trial; togi samples temperatures, per-core clocks, the PM table and package energy-derived power, not a general monitoring subsystem |
 | SQLite history | [ADR 0003](adr/0003-journal-is-source-of-truth.md) |
-| Seven validation stages, endurance banks, annealing | Replaced by [alone search](spec/tuner.md#search), [hunts](spec/tuner.md#hunt), [deepening](spec/tuner.md#deepening) and [checking](spec/tuner.md#checking) ([ADR 0020](adr/0020-hunt-and-refine.md), [ADR 0028](adr/0028-remove-tiers.md)) |
-| Multi-boot crash hunt and bisection | Adopted outside multi-core R7 as a journaled parked [hunt](spec/tuner.md#hunt) ([ADR 0020](adr/0020-hunt-and-refine.md)); multi-core R7 instead uses [measured top requesters](spec/tuner.md#r7-request-order-and-attribution), [partial chains](spec/tuner.md#together-trial-sequence) and [voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff) ([ADR 0038](adr/0038-self-sufficient-cores.md)); not simple load-splitting bisection |
+| A fixed validation-stage sequence, accumulated clean-time budgets and deeper probes earned by those budgets | The fork calls the last two endurance banks and annealing ([its usage guide](https://github.com/shgew/linux-corecycler/blob/main/docs/usage.md#auto-tuner)). togi instead uses [alone search](spec/tuner.md#search), [hunts](spec/tuner.md#hunt), [deepening](spec/tuner.md#deepening) and [checking](spec/tuner.md#checking); it reports cycle evidence, not durability tiers ([ADR 0020](adr/0020-hunt-and-refine.md), [ADR 0028](adr/0028-remove-tiers.md)) |
 | Zen 1-5 command table, APU dialects | Zen 5 desktop only; other generations are [#20](https://github.com/shgew/togi/issues/20) |
 | stress-ng and stressapptest backends | [ADR 0008](adr/0008-self-checking-workloads.md) |
 | PBO limit, scalar and frequency control | togi tunes CO only; the rest is BIOS context |
@@ -58,7 +58,7 @@ What togi takes from existing tools and research, and what it deliberately leave
 
 ### Rejected
 
-- **One-way search**, which only moves offsets shallower after errors and never looks for the deepest stable value.
+- **Starting at the deepest offset and only backing off after errors.** CoreCycler's Automatic Test Mode starts at −50 and backs off one count per error. It runs 3 × 20 s of y-cruncher per core per iteration; the [2026-10-07 prior-art survey](https://github.com/shgew/togi/issues/493#issuecomment-6040930168) reports about 8 h for 12 cores. This does seek a passing value from the deep side; it is not a failure to search for depth. togi instead searches from the session baseline ([ADR 0006](adr/0006-start-from-bios-values.md)) and can later regain depth through [deepening](spec/tuner.md#deepening).
 - **Resume via a Windows logon task**, and restarting the core order after a crash (issue #106).
 - A CPU-load threshold without a startup grace period, which falsely failed y-cruncher on slow starts (issue #146).
 

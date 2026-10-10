@@ -30,6 +30,19 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 |`target-r7-vf-boost`|anchor-derived AVX2 core-5 required voltage rises faster than its request as partial CCD0 loads boost; in-sample, not forward-validated|
 |`target-r7-request-gap`|anchor-derived AVX-512 required-voltage curves leave core 11 dependent on core 10's rail support: full CCD1 loads pass but partial loads without core 10 can fail; requests unchanged; in-sample, not forward-validated|
 
+The failure sources are separate from the signals they produce:
+
+| Scenarios | Failure sources |
+|---|---|
+| `default` | Seeded loaded-core limits. No unloaded-core hazard or joint. |
+| `flat-hazard`, `idle-limit`, `late-onset`, `misleading-mce` | Loaded-core limits, plus respectively nonzero-offset flat hazards on loaded or unloaded cores, unloaded-core idle limits, delayed R7 joints, or R7 joints with misleading MCE attribution. |
+| `target` | Exact real-fact answers where matched; otherwise fitted loaded-core limits, any fitted flat hazards, R7 joints and the residual `[ccd]` hazard where no joint applies. |
+| `target-r4-limit`, `target-nonmember-mce`, `target-delayed-joint`, `target-flat-risk`, `target-flat-cost` | Exact real-fact answers where matched; otherwise the legacy limit/joint fit with the named adversary change. Flat hazards also apply when their cores are unloaded. |
+| `shared-voltage` | Loaded-core voltage-margin hazards for multi-core R7; loaded-core limits elsewhere. No replay, unloaded-core hazard or platform background rate. |
+| `target-shared-voltage`, `target-r7-vf-boost`, `target-r7-request-gap` | Exact real-fact answers where matched; otherwise loaded-core voltage-margin hazards and a CO-independent platform background rate for multi-core R7, and fitted loaded-core limits elsewhere. No unloaded-core hazard. |
+
+On `target-shared-voltage`, changing only unloaded cores' offsets cannot change the fitted multi-core R7 hazard. All `flat` rates are zero and no core has an `idle` limit; the voltage model computes power, clocks and the rail from loaded cores only. The same is true of its two shared-voltage adversaries. Parking unloaded cores can still change which real facts match, since replay matches the **whole** profile. A failure during a parked locate on this anchor is therefore not proof of an unloaded-core voltage dependency: it can come from a loaded core, the background rate or replay. This is a limitation of these scenarios, not a statement about hardware ([simulator model](simulating.md#shared-voltage-r7-model)).
+
 Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds stay unseen by the change being tuned.
 
 ### Ruleset-9 evaluation
@@ -46,9 +59,13 @@ Score ruleset 9 once on dev, then confirm once on holdout; changes after the dev
 
 The hand-set scenarios `default`, `idle-limit` and `late-onset` are gated as well: no run that the committed ruleset-9 baseline concluded on the same seed may fail to conclude. Ruleset 9 reported those scenarios without gating them, and lost `idle-limit` and `late-onset` runs that way ([#415](https://github.com/shgew/togi/issues/415)). The legacy `target` fits stay reported only, because they fail the model check against the refreshed evidence. The gate was scored after [#376](https://github.com/shgew/togi/issues/376) landed, since it changes the unloaded-core draws the located hunt depends on.
 
+**Historical score, 2026-10-07:** the following gate numbers used the anchor merged at `0ccbe089` (generated at `0f6b5d23`), before its signal-mix regeneration in [#461](https://github.com/shgew/togi/pull/461), merge `bf7230d`. They are simulated results on that earlier evaluation environment, not current-anchor timings.
+
 Scored after the review fixes, in which a located hunt reruns its full failing profile at the failed duration before it ends `loaded`, ruleset 10 fails one criterion of this gate: the pooled median worst R7 hazard on `target-r7-vf-boost` rises from 2.79 to 2.82 per hour. Every other criterion holds: from ruleset 9 to 10, pooled median / 90th-percentile worst R7 hazard per hour goes 3.10→2.49 / 4.95→3.52 on `target-shared-voltage`, 2.79→2.82 / 5.88→4.07 on `target-r7-vf-boost`, 4.05→3.11 / 4.99→4.89 on `target-r7-request-gap` and 0.47→0.47 / 1.74→1.74 on `shared-voltage`; the pooled adversary median falls from 3.17 to 2.64; time is at most 1.90× ruleset 9's without #107 (`target-shared-voltage`) and 2.03× with it; and `default`, `idle-limit` and `late-onset` conclude 48/48, 8/8 and 8/8. The maxima, reported only, go 11.55→5.28, 7.40→5.98 and 5.16→6.46 on the three adversaries.
 
 The owner merged Ruleset 10 on 2026-10-07 with that criterion failing, as an exception: the rise is within noise (12 of 24 `target-r7-vf-boost` seeds are worse and 12 better, the 95% bootstrap interval of the median change is −1.07 to +0.83 per hour, and its 90th percentile fell 5.88→4.07 and its maximum 7.40→5.98), and it comes from the fix that makes located hunts follow [#415](https://github.com/shgew/togi/issues/415); Ruleset 11 fixes how the gate treats noise before it is scored ([#416](https://github.com/shgew/togi/issues/416)).
+
+On the regenerated anchor (`18a51a63`, merged at `bf7230d`), the [2026-10-07 #493 measurements](https://github.com/shgew/togi/issues/493#issuecomment-6040930168) report **simulated** median total time of 53.1 h for ruleset 9 and 249.8 h for ruleset 10, about 4.7×, on `target-shared-voltage` with 24 seeds. Ruleset 10 ran at `645f529`; ruleset 9 ran at `84c2a01` with the same simulator and regenerated machine. That anchor remains unchanged at `2f318490` (2026-10-10). The earlier 1.90×/2.03× claims do not describe it. See [How togi tunes](how-togi-tunes.md) for the measured phase breakdown and [the reproduction recipe](#reproducing-an-older-ruleset).
 
 A scenario may also list `smoke` seeds, each one of its dev or holdout seeds: the sessions `just smoke` compares ([below](#proving-unchanged-decisions)). The list holds one session per scenario, the one with the most crashes and the longest history that takes about two seconds of CPU or less on the current simulator, so it changes in a reviewed pull request, never silently.
 
@@ -61,6 +78,62 @@ Every run is a `tools/sim` subprocess with its own state directory, in parallel 
 Each simulator subprocess retains parsed events across its simulated reboots and writes `state.json` only at stop, avoiding journal re-parsing and per-event state-file rewrites. It still appends every event to `events.jsonl`; `--keep` leaves the journal and final state available for inspection. This changes wall-clock overhead, not simulated durations or tuner decisions. Recovery and interruption tests use the file-backed path, and fixed-seed equivalence tests compare both output files byte for byte on the default machine and `target-fit-0.toml`.
 
 Trial samples stay in memory; retained sessions have no `trials/<trial-id>/samples.jsonl`. Their journal evidence, final state and read-only dashboards are unchanged. For per-second sample files, run `tools/sim` with `--samples` ([simulating](simulating.md)).
+
+### Running one scenario
+
+There is no `--scenario` flag. Write a scratch suite containing just the scenario, with an absolute machine path so the suite may live outside the checkout. From the checkout, in the dev shell:
+
+```sh
+scratch=$(mktemp -d)
+repo=$(pwd -P)
+cat > "$scratch/suite.toml" <<EOF
+[[scenario]]
+name = "target-shared-voltage"
+machine = "$repo/tools/bench/machines/target-shared-voltage.toml"
+replay = true
+dev = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+holdout = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]
+EOF
+go run ./tools/bench --suite "$scratch/suite.toml" --split all \
+  --keep "$scratch/runs" --out "$scratch/results.jsonl" --timeout 15m
+```
+
+Keep `scratch` until inspection is finished. To select another scenario, copy its seed lists and `replay` setting from `tools/bench/suite.toml`. For an ensemble, use `machines = ["ABSOLUTE-MEMBER-0.toml", "ABSOLUTE-MEMBER-1.toml"]` instead of `machine`. Facts paths still resolve relative to each machine file.
+
+### Reproducing an older ruleset
+
+Pin the tuner, simulator, machine and facts separately. These are the commits used by the [#493 measurements](https://github.com/shgew/togi/issues/493#issuecomment-6040930168), not a claim that an arbitrary later `main` gives the same numbers:
+
+| Ruleset | Tuner reference | Shared simulator reference |
+|---|---|---|
+| 9 | `84c2a01` | `645f529` |
+| 10 | `c660ba6` (the ruleset-10 merge) | `645f529` (the measured main checkout) |
+
+The ruleset-9 port needs `ab7b9b2` and only the `internal/sim` changes of `e559b81`, plus the regenerated machine. Restoring the named paths from the shared reference gives that same simulator and also keeps facts together with their machine. Run from the repository:
+
+```sh
+sim_ref=645f529
+older=$(mktemp -d)
+git worktree add --detach "$older/ruleset9" 84c2a01
+git -C "$older/ruleset9" restore --source="$sim_ref" --staged --worktree -- \
+  internal/sim tools/sim \
+  tools/bench/machines/target-shared-voltage.toml tools/bench/facts
+git -C "$older/ruleset9" diff --exit-code "$sim_ref" -- \
+  internal/sim tools/sim \
+  tools/bench/machines/target-shared-voltage.toml tools/bench/facts
+```
+
+The diff must be empty. In that detached worktree, enter the dev shell and run the one-scenario recipe above. For ruleset 10, use a detached worktree at `645f529` without the port. Both runs must use the same scenario name, seeds, machine and replay setting. Preserve the worktrees and scratch results until analysis ends; their diffs explain the deliberately dirty ruleset-9 records.
+
+For a comparison on a later simulator, review **every** commit that changed the simulator paths since the older ruleset, not just those two signal-mix commits:
+
+```sh
+git log --reverse --no-merges --format='%h %s' 84c2a01..origin/main -- \
+  internal/sim tools/sim
+git log --oneline 645f529..origin/main -- internal/sim tools/sim
+```
+
+The two-commit port is not sufficient for main at `2f318490` (2026-10-10). Later changes couple the simulator to `internal/simrun`, session recovery and journal buffering. `0ea69fc1` also changes samples from maps to `machine.PerCore`, with corresponding changes in requests and session code. Copying only `internal/sim` and `tools/sim` then fails to build against the older infrastructure. A current-simulator port must carry those dependencies without importing newer tuning decisions, and still leave the simulator, machine and facts diff empty against its pinned reference. A generic current-main port procedure moves to [the redesign, #493](https://github.com/shgew/togi/issues/493): this needs an infrastructure compatibility boundary, not a guessed cherry-pick list. The pinned recipe above reproduces the documented measurements.
 
 ## Auditing journals
 
@@ -131,7 +204,59 @@ The summary counts each scenario's runs, `concluded` runs and `censored` runs. I
 
 The summary prints each scenario's `real_answer_share` and a pooled total. Comparison scenario rows and the verdict line print the candidate and baseline shares over paired runs. These fractions describe how much of the observed path has direct real evidence, not a confidence score. Unfinished trials of a censored session have no recorded outcome and are not counted. Hazard metrics and model checks still describe the fitted fallback, not an empirical oracle hazard.
 
+For example, `real_answer_share = 0.2` means matching real facts answered one fifth of completed trials, not one fifth of simulated hours or one fifth of the profile's risk. The rest of the path used the fitted fallback or includes completed trials that cannot count as real answers. A low share can simply mean the tuner explored profiles or load classes absent from the extract; it does not measure fit quality. Replay is enabled by the suite, not by the presence of `facts` in a machine file.
+
 For shared-voltage runs the summary also prints `worst_r7_hazard/h`, the maximum `worst_r7_hazard_per_h` over the scenario's measured runs, and `worst_r7_runs`, their count. Legacy machines omit the JSON field and these diagnostic rows; their existing hazard metrics and reports remain unchanged.
+
+### Scoring an intermediate profile
+
+Bench records compute `worst_r7_hazard_per_h` only for `final_profile`, even when a run is censored. They do not score every journal profile. For an intermediate checkpoint, use that checkpoint's 16 offsets and the same machine file. Copy `tools/bench/metrics.go` into a temporary program **inside the checkout**, so Go's `internal` imports remain legal. Include its `containsDeadEnd` dependency in the program, even though scoring does not call that function. This avoids the separate-module `go.work` workaround and reuses the exact partial-chain scoring helper:
+
+```sh
+score=$(mktemp -d "$PWD/.r7-score.XXXXXX")
+cp tools/bench/metrics.go "$score/metrics.go"
+cat > "$score/main.go" <<'EOF'
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/shgew/togi/internal/sim"
+)
+
+func main() {
+	cfg, err := sim.LoadMachine(os.Args[1])
+	if err != nil {
+		panic(err)
+	}
+	m, err := sim.New(cfg)
+	if err != nil {
+		panic(err)
+	}
+	var profile []int
+	if err := json.Unmarshal([]byte(os.Args[2]), &profile); err != nil {
+		panic(err)
+	}
+	if len(profile) != 16 {
+		panic("supply all 16 offsets in core-ID order")
+	}
+	hazard := worstR7HazardPerH(m, profile)
+	if hazard == nil {
+		panic("machine has no shared-voltage R7 model")
+	}
+	fmt.Printf("worst_r7_hazard_per_h=%.6f\n", *hazard)
+}
+
+func containsDeadEnd(log string) bool { return strings.Contains(log, "sim: dead end ") }
+EOF
+go run "$score" MACHINE.toml '[OFFSET0,OFFSET1,OFFSET2,OFFSET3,OFFSET4,OFFSET5,OFFSET6,OFFSET7,OFFSET8,OFFSET9,OFFSET10,OFFSET11,OFFSET12,OFFSET13,OFFSET14,OFFSET15]'
+rm -r "$score"
+```
+
+Replace `MACHINE.toml` and the JSON-array placeholders. A `profile.change` event's `to` gives the tuning profile after that change; a `trial.intent` event's `profile` gives the entire applied trial profile, which may instead be a parked hunt profile. Choose the one the checkpoint means. Score with the metric helper and machine from the same pinned simulator revision used for the comparison. This is fitted steady-state risk, without replay draws or an assertion that the checkpoint passed a cycle.
 
 ## Comparing two versions
 
@@ -149,6 +274,8 @@ Violations:
 - **V4:** `target`, the target machine's replay-oracle ensemble, gets slower overall.
 
 When both sides of a pair recorded `worst_r7_hazard_per_h`, comparison also reports `max_worst_r7_hazard_delta` (the largest candidate-minus-baseline difference) and `worst_r7_pairs` (the number of such pairs). Missing values are unavailable, not zero: older baselines cannot supply this comparison. This metric is diagnostic only; V2 continues to use `hazard_max_per_h`, and no verdict threshold changes.
+
+`depth_delta` is the mean of **candidate minus baseline** profile sums over paired runs, including runs that did not conclude. Offsets are negative: a positive delta is shallower and a negative delta is deeper. For example, changing one core from −30 to −28 adds +2; changing it to −32 adds −2. It is a profile-sum difference in counts, not an average per-core offset. `crash_delta` and `max_hazard_delta` also use candidate minus baseline.
 
 Seeds are deterministic: the same commit always produces the same runs, so rerunning cannot change a result. A change to how the tuner decides moves later sessions onto different random paths, so compare whole scenarios, not single seeds.
 

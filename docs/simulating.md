@@ -61,6 +61,8 @@ If an active joint has any member on a loaded CCD, that CCD's smooth hazard is s
 
 `[shared_voltage]` opts into a common-rail model on a 16-core, two-CCD machine. It **replaces** loaded-core limit/flat hazards, `[ccd]` hazards and joints for multi-core R7 only. Unloaded-core idle hazards, single-core R7, and R1–R6 retain their existing rules. Files without this table retain their exact previous behavior, including journals.
 
+Here multi-core R7 means an R7 trial loading at least two cores; single-core R7 loads exactly one. It does not mean a failure attributed to one core within a multi-core load. The shared-rail model tests `len(spec.Cores) > 1`; the tuner's normal R7 partial chains stop before a one-core load ([workloads](spec/workloads.md#regimes)).
+
 ```sh
 just sim 1 --machine tools/bench/machines/shared-voltage.toml
 ```
@@ -86,6 +88,8 @@ For each of the three R7 workload IDs, `[shared_voltage.workload.<id>]` supplies
 For a loaded CCD, clock is `full_mhz[ccd] + idle_gain_mhz*(8-loaded_count) - package_mhz_per_w*max(0, package_watts-budget)`. When both CCDs load, subtract `balance_mhz_per_w*(ccd_watts-package_watts/2)` too. Power sums `max(0, watts_per_core + offset_watts_per_count*(offset+35))` over loaded cores only. Round clocks to whole MHz, at least 1. This captures package pressure and cross-CCD power redistribution without a feedback solver. At −35 on the supplied machine, whole-CCD AVX2 runs 5.24/5.22 GHz and seven cores gain 30 MHz. All-core AVX-512 runs 4.799 GHz; setting CCD0 to offset 0 gives 4.329/4.889 GHz.
 
 Each workload requires 16 `[[shared_voltage.workload.<id>.core]]` tables in core-ID order. Each supplies `base_v` at offset 0, `threshold_v` at the reference clock, `count_v` (default 0.0036 V/count), and `clock_v_per_100mhz`. The optional `threshold_clock_v_per_100mhz` defaults to zero. Both clock coefficients must be finite and nonnegative; no upper bound is imposed by the machine decoder. Loaded request is `base_v + count_v*offset + clock_v_per_100mhz*(clock-reference_mhz)/100`. Idle requests equal `idle_v` and **never set the modeled rail**. The shared voltage is the maximum loaded request across both CCDs.
+
+The 3.6 mV/count default is a modeling assumption, not a hardware-calibrated constant. It is the fallback in `internal/sim/shared_voltage.go`; the tuner's fixed request-shift slope is a separate assumption ([R7 request order](spec/tuner.md#r7-request-order-and-attribution)). Explicit `count_v` values in a machine file replace the simulator default; fitted values are in-sample parameters, not validation of the fixed tuner slope.
 
 Required voltage for a loaded core is `threshold_v + threshold_clock_v_per_100mhz*(clock-reference_mhz)/100`, using that core's CCD clock. This optional V/F term models the voltage needed to sustain a higher frequency, separately from the voltage the core requests. Equal request and required-voltage slopes cancel a common clock shift when the same CCD supplies the rail; a different CCD setting the rail need not cancel it. With the default zero coefficient, existing machines keep their clock-independent thresholds and exact previous behavior.
 
@@ -123,9 +127,19 @@ go run ./tools/sim --seed 1 --machine tools/bench/machines/target-fit-0.toml --r
 
 The extract path in `facts` is relative to the machine file, and replay requires a declared BIOS context. `sim.NewReplay` and `sim.Config.Replay` are the simulator seam; the shared evaluation reader supplies decisive trial records, never idle facts. Matching uses regime, workload, sorted loaded cores, intended duration and every applied offset, including unloaded cores. It deliberately ignores condition and phase. Only facts from the declared BIOS context participate. A match draws uniformly from all matching records, deterministically from seed and trial ID/index, preserving the recorded outcome, failure signal and duration. Replayed failures occur at that recorded duration; after a crash it is only the last-evidence lower bound and can be zero, not a measured time to failure. A pass runs to the intended duration.
 
+For example, a matching crash fact with `duration_s = 0` crashes at the simulated trial's start. It has zero trial exposure, then pays the simulated reboot time; replay does not spread such a failure uniformly through the intended trial or replace zero with a guessed duration.
+
 Non-matching trials and trial-less failures still come from the fitted machine underneath. The privacy-safe extract records the `core` a backend signal named in a together trial's `trial.end`, but neither a core named only by an MCE nor the MCE bank, and replay does not use the recorded core: replayed backend failures name the first sorted loaded core, replayed crashes stay unattributed, and MCE signals use simulated bank evidence. These attribution details are not replayed hardware facts. The tuner receives ordinary journal evidence only; it cannot inspect the oracle. `Machine.Hazard` and `Machine.FailureProbability` continue to describe the fitted fallback. The [bench target scenario](benchmarking.md#the-suite) runs this oracle over the fitted ensemble and reports the share of trial outcomes supplied by real facts.
 
 Replayed crashes record progress at their recorded exposure and use a simulated watchdog reset, independent of the fallback reset distribution, so recovery keeps their decisive failure. Replayed uncorrected machine checks record the signal before a simulated sync-flood reset; their core attribution still comes from simulated MCE bank evidence, not a backend-instance core.
+
+### Failure timing
+
+`internal/sim/model.go` answers a trial in this order: a matching replay fact, a scripted outcome, then fitted-model draws. A replayed pass runs the full intended duration; a replayed failure uses the fact's recorded duration. This preserves the extract's exposure convention, not an inferred hardware crash time.
+
+For the fitted fallback, every active failure source draws an exponential waiting time independently in its seeded RNG domain. The earliest draw before the intended end wins; if none occurs, the trial passes. These sources include loaded and unloaded cores, voltage margins, CCD residuals, joints and platform background where the machine enables them. A joint's `after_s` delays its hazard. During the initial `onset_s` window, `onset_boost` multiplies an active rate by `1 + onset_boost`; after that window the steady-state rate applies. The fitter does not estimate onset or delay from binary pass/failure counts ([fitting limits](benchmarking.md#fitting-the-target-machine)).
+
+Computation errors, stalls, unexpected exits and crashes stop at the selected time. A fallback corrected MCE is logged at that time but lets the trial finish its intended duration; a replayed corrected MCE instead uses the recorded duration. An uncorrected MCE causes a reset at its selected time. Each crash reboot adds 90 simulated seconds outside trial exposure. `Machine.Hazard` reports steady-state risk without delays or onset boosts; `Machine.FailureProbability` integrates them over the intended duration. Neither uses replayed outcomes.
 
 ## Measured reference journals
 
