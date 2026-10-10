@@ -529,6 +529,28 @@ func TestWatchWithoutJournal(t *testing.T) {
 	}
 }
 
+// The open round's candidates keep their rows at every height, whether or not R7 keeps its rows below them: cutting
+// the round's checks takes a "+N more" row of its own, so it must never take the candidate row.
+// Below 120x33, the smallest size the dashboard is drawn for, the panel has no rows to spare.
+func TestRoundKeepsItsCandidatesAtEveryHeight(t *testing.T) {
+	var events []journal.Event
+	for _, c := range watchCuts(t) {
+		if c.name == "round" {
+			events = c.events
+		}
+	}
+	s, now := Project(events), cutTime(events)
+	for _, width := range []int{120, 160} {
+		for height := 33; height <= 60; height++ {
+			sc := Screen{Width: width, Height: height, Keys: true}
+			text := ansi.Strip(strings.Join(s.contextLines(measure(s, sc), now), "\n"))
+			if !strings.Contains(text, "gap ") {
+				t.Errorf("%dx%d: the round lost its candidate rows:\n%s", width, height, text)
+			}
+		}
+	}
+}
+
 func TestWatchBetweenTrialMCE(t *testing.T) {
 	t.Parallel()
 	events := simulated(t, sessionJournal)

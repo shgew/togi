@@ -133,13 +133,14 @@ func (s Snapshot) activityLines(p layout) []string {
 
 // roundLines is the open phase 2 round with the R7 lines under it. The round's heading, its bound and its candidates
 // come first: R7 keeps its rows only when they fit under all of those, and the round's checks give up rows before it.
+// Rows cut off the round end with a "+N more" row, so cutting any needs a row beyond the candidates.
 func (s Snapshot) roundLines(p layout, r7 []string) []string {
 	out, head := s.phase2Lines(p.tables, p.context.w)
 	if len(r7) == 0 {
 		return boundedRows(out, p.context.h)
 	}
 	room := p.context.h - len(r7) - 1
-	if room < head {
+	if room < len(out) && room < head+1 {
 		return boundedRows(out, p.context.h)
 	}
 	return append(append(boundedRows(out, room), ""), r7...)
