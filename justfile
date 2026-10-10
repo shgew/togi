@@ -238,7 +238,7 @@ _push-ready recipe stack_hint: _dev-shell
         exit 1
     fi
 
-# Format, run `just gate` under a lock shared by every worktree of this clone, then push the current branch to the branch of the same name on origin, replacing it after a rebase unless the remote branch has commits this one never contained; stack layers use `gh stack push`
+# Format, run `just gate` under a lock shared by every worktree of this clone and release it, then push the current branch to the branch of the same name on origin, replacing it after a rebase unless the remote branch has commits this one never contained; stack layers use `gh stack push`
 [group('github')]
 ship: (_push-ready "ship" "gate it with just gate and push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -251,7 +251,38 @@ ship: (_push-ready "ship" "gate it with just gate and push the stack with gh sta
         flock 9
     fi
     just gate 9>&-
-    git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch" 9>&-
+    exec 9>&-
+    git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
+
+# Print the Go packages changed between a pushed head and HEAD, one per line: `./...` when go.mod or go.sum changed, nothing when no Go file did
+_touched-packages pushed:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git diff --name-only --diff-filter=d "$1" HEAD | while IFS= read -r file; do
+        case "$file" in
+            go.mod | go.sum) echo './...' ;;
+            *.go) dir=$(dirname "$file"); [[ "$dir" == . ]] && echo . || echo "./$dir" ;;
+        esac
+    done | sort -u
+
+# Push a fix to a pull request under review: format, lint, run `just focus` on the packages changed since the last pushed head, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
+[group('github')]
+push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    branch=$(git branch --show-current)
+    pushed=$(git rev-parse --verify --quiet "refs/remotes/origin/$branch") || {
+        echo "push-fix: origin has no $branch; push its first head with just ship" >&2
+        exit 1
+    }
+    mapfile -t packages < <(just _touched-packages "$pushed")
+    just lint
+    if ((${#packages[@]} == 0)); then
+        echo "push-fix: no Go package changed since $pushed; nothing to focus" >&2
+    else
+        just focus "${packages[@]}"
+    fi
+    git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
 # Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready for the owner; never merges
 [group('github')]
