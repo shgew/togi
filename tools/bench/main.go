@@ -32,19 +32,21 @@ type scenario struct {
 	Replay   bool     `toml:"replay"`
 	Dev      []uint64 `toml:"dev"`
 	Holdout  []uint64 `toml:"holdout"`
+	Smoke    []uint64 `toml:"smoke"`
 }
 type runSpec struct {
 	scenario scenario
 	seed     uint64
 	split    string
 	cfg      sim.Config
+	smoke    bool
 }
 type options struct {
 	suite, split, out, baseline, keep, same, forecast, cache string
 	ctx                                                      context.Context
 	jobs, maxBoots                                           int
 	timeout                                                  time.Duration
-	keepGoing, noCache                                       bool
+	keepGoing, noCache, smoke                                bool
 }
 
 func main() {
@@ -74,6 +76,7 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	flags.IntVar(&o.maxBoots, "max-boots", 1000, "maximum simulated boots per session; unfinished sessions exit 3 (censored)")
 	flags.StringVar(&o.cache, "cache", "", "digest and scheduling cache directory (default: user cache directory/togi/bench)")
 	flags.BoolVar(&o.keepGoing, "keep-going", false, "with --same, report every differing session instead of stopping at the first difference")
+	flags.BoolVar(&o.smoke, "smoke", false, "with --same, compare only the suite's smoke sessions")
 	flags.BoolVar(&o.noCache, "no-cache", false, "with --same, run every session on both trees instead of using cached digests; --keep implies it")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
 		return 0
@@ -184,8 +187,13 @@ func loadRuns(path, split string, extracts trialfacts.Extracts) ([]runSpec, erro
 					member := index % len(configs)
 					selected := s
 					selected.Machine = resolved[member]
-					runs = append(runs, runSpec{selected, seed, group.name, configs[member]})
+					runs = append(runs, runSpec{selected, seed, group.name, configs[member], slices.Contains(s.Smoke, seed)})
 				}
+			}
+		}
+		for _, seed := range s.Smoke {
+			if !seeds[seed] {
+				return nil, fmt.Errorf("scenario %s smoke seed %d is in neither dev nor holdout", s.Name, seed)
 			}
 		}
 	}
@@ -381,6 +389,8 @@ type simulation struct {
 	dir  string
 	exit int
 	wall float64
+	// cpu is the user and system CPU time of the simulator process, in seconds.
+	cpu float64
 }
 
 func launchSimulator(parent context.Context, binary, root string, spec runSpec, maxBoots int, timeout time.Duration) (simulation, error) {
@@ -423,7 +433,11 @@ func launchSimulator(parent context.Context, binary, root string, spec runSpec, 
 		}
 		exit = exited.ExitCode()
 	}
-	return simulation{dir: dir, exit: exit, wall: wall}, nil
+	var cpu float64
+	if cmd.ProcessState != nil {
+		cpu = (cmd.ProcessState.UserTime() + cmd.ProcessState.SystemTime()).Seconds()
+	}
+	return simulation{dir: dir, exit: exit, wall: wall, cpu: cpu}, nil
 }
 
 func runDir(root string, spec runSpec) string {

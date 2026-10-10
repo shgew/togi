@@ -660,3 +660,34 @@ func TestSameInterruptRemovesRuns(t *testing.T) {
 		t.Errorf("runs kept starting after the interrupt: %v", l.launches)
 	}
 }
+
+func TestSameReportsCPUTimeWithoutFailing(t *testing.T) {
+	caches, costs := openTestCaches(t)
+	pairs := samePairs(1, 2, 3)
+	cpu := map[[2]uint64]float64{{0, 1}: 10, {1, 1}: 21, {0, 2}: 10, {1, 2}: 20, {0, 3}: 1, {1, 3}: 5}
+	launch := func(_ context.Context, side int, spec runSpec) (simulation, error) {
+		dir := filepath.Join(t.TempDir(), "run")
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return simulation{}, err
+		}
+		if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte("{}\n"), 0600); err != nil {
+			return simulation{}, err
+		}
+		return simulation{dir: dir, wall: 1, cpu: cpu[[2]uint64{uint64(side), spec.seed}]}, nil
+	}
+	cfg := sameConfig{jobs: 2, caches: caches, costs: costs}
+	want := "same: CPU time of the compared sessions: base 21.0s, head 46.0s\n" +
+		"same: 2 sessions took more than 2x their base's CPU time (informational)\n" +
+		"  s/dev-3: head 5.0s, base 1.0s, 5.0x\n" +
+		"  s/dev-1: head 21.0s, base 10.0s, 2.1x\n" +
+		"same: 0 of 3 sessions differ\n"
+	for _, run := range []string{"ran", "cached"} {
+		var report bytes.Buffer
+		if different, err := runSame(context.Background(), &report, pairs, cfg, launch); err != nil || different {
+			t.Fatalf("%s: different=%v, err=%v", run, different, err)
+		}
+		if diff := cmp.Diff(want, report.String()); diff != "" {
+			t.Fatalf("%s report (-want +got):\n%s", run, diff)
+		}
+	}
+}

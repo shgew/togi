@@ -27,6 +27,7 @@ func TestLoadRunsRejectsInvalidSuite(t *testing.T) {
 		{"repeated selected seed", "[[scenario]]\nname = 'x'\ndev = [1, 1]", "scenario x repeats seed 1"},
 		{"repeated unselected seed", "[[scenario]]\nname = 'x'\ndev = [1]\nholdout = [2, 2]", "scenario x repeats seed 2"},
 		{"overlapping splits", "[[scenario]]\nname = 'x'\ndev = [1]\nholdout = [1]", "scenario x repeats seed 1"},
+		{"smoke seed outside both splits", "[[scenario]]\nname = 'x'\ndev = [1]\nsmoke = [2]", "scenario x smoke seed 2 is in neither dev nor holdout"},
 		{"no selected runs", "[[scenario]]\nname = 'x'\nholdout = [1]", "suite has no selected runs"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -86,4 +87,25 @@ func TestReadResults(t *testing.T) {
 			t.Fatalf("readResults error = %v, want open baseline diagnostic", err)
 		}
 	})
+}
+
+func TestLoadRunsMarksSmokeSessions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "suite.toml")
+	suite := "[[scenario]]\nname = 'x'\ndev = [1, 2]\nholdout = [3]\nsmoke = [2, 3]\n[[scenario]]\nname = 'y'\ndev = [1]\n"
+	if err := os.WriteFile(path, []byte(suite), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := loadRuns(path, "all", trialfacts.Extracts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, run := range runs {
+		if run.smoke {
+			got = append(got, sessionKey{run.scenario.Name, run.split, run.seed}.String())
+		}
+	}
+	if diff := cmp.Diff([]string{"x/dev-2", "x/holdout-3"}, got); diff != "" {
+		t.Fatal(diff)
+	}
 }

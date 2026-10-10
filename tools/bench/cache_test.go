@@ -21,42 +21,69 @@ func TestCacheKey(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// A tree is a simulator binary and a machine file inside it.
-	tree := func(binary, machine string) (string, string) {
-		dir := t.TempDir()
-		write(filepath.Join(dir, "sim"), binary)
-		write(filepath.Join(dir, "machines", "m.toml"), machine)
-		return dir, filepath.Join(dir, "machines", "m.toml")
+	binary := func(content string) string {
+		path := filepath.Join(t.TempDir(), "sim")
+		write(path, content)
+		return path
 	}
-	key := func(dir, machine string, seed uint64, maxBoots int) string {
+	key := func(binary string, maxBoots int) string {
 		t.Helper()
-		runs := []runSpec{{scenario: scenario{Name: "s", Machine: machine}, split: "dev", seed: seed}}
-		got, err := cacheKey(filepath.Join(dir, "sim"), dir, runs, maxBoots)
+		got, err := cacheKey(binary, maxBoots)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return got
 	}
-	dir, machine := tree("binary", "cores = 8\n")
-	base := key(dir, machine, 1, 1000)
-	otherDir, otherMachine := tree("binary", "cores = 8\n")
-	if key(otherDir, otherMachine, 1, 1000) != base {
-		t.Error("trees with the same simulator and inputs must share a key wherever they are")
+	base := key(binary("simulator"), 1000)
+	if key(binary("simulator"), 1000) != base {
+		t.Error("the key must depend on the simulator's bytes, not on where it is")
 	}
-	binaryDir, binaryMachine := tree("binary 2", "cores = 8\n")
-	machineDir, machineMachine := tree("binary", "cores = 16\n")
-	for name, got := range map[string]string{
-		"simulator":    key(binaryDir, binaryMachine, 1, 1000),
-		"machine file": key(machineDir, machineMachine, 1, 1000),
-		"seed":         key(dir, machine, 2, 1000),
-		"boot cap":     key(dir, machine, 1, 5),
-	} {
-		if got == base {
-			t.Errorf("changing the %s must change the key", name)
-		}
+	if key(binary("simulator 2"), 1000) == base {
+		t.Error("changing the simulator must change the key")
 	}
-	if _, err := cacheKey(filepath.Join(dir, "missing"), dir, nil, 1); err == nil {
+	if key(binary("simulator"), 5) == base {
+		t.Error("changing the boot cap must change the key")
+	}
+	if _, err := cacheKey(filepath.Join(t.TempDir(), "missing"), 1); err == nil {
 		t.Error("a missing simulator must not produce a key")
+	}
+
+	// A session's inputs are its identity and the machine and facts files it names, wherever the tree is.
+	tree := func(machine string) (string, runSpec) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "machines", "m.toml")
+		write(path, machine)
+		return dir, runSpec{scenario: scenario{Name: "s", Machine: path}, split: "dev", seed: 1}
+	}
+	inputs := func(dir string, spec runSpec) string {
+		t.Helper()
+		got, err := runInputs(dir, spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	dir, spec := tree("cores = 8\n")
+	want := inputs(dir, spec)
+	otherDir, otherSpec := tree("cores = 8\n")
+	if inputs(otherDir, otherSpec) != want {
+		t.Error("the same inputs in another tree must hash alike")
+	}
+	changedDir, changed := tree("cores = 16\n")
+	if inputs(changedDir, changed) == want {
+		t.Error("changing a machine file must change the inputs")
+	}
+	for name, mutate := range map[string]func(*runSpec){
+		"seed":   func(s *runSpec) { s.seed = 2 },
+		"split":  func(s *runSpec) { s.split = "holdout" },
+		"replay": func(s *runSpec) { s.scenario.Replay = true },
+		"name":   func(s *runSpec) { s.scenario.Name = "t" },
+	} {
+		other := spec
+		mutate(&other)
+		if inputs(dir, other) == want {
+			t.Errorf("changing the %s must change the inputs", name)
+		}
 	}
 }
 
@@ -67,24 +94,27 @@ func TestSessionCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := sessionKey{"s", "dev", 1}
-	if _, ok := cache.get(key); ok {
+	if _, ok := cache.get(key, "in"); ok {
 		t.Fatal("empty cache hit")
 	}
-	want := sessionRecord{Digest: "abc", Exit: 3, WallS: 1.5}
+	want := sessionRecord{Digest: "abc", Exit: 3, WallS: 1.5, CPUS: 1.25, Inputs: "in"}
 	if err := cache.put(key, want); err != nil {
 		t.Fatal(err)
 	}
-	if got, ok := cache.get(key); !ok || got != want {
+	if got, ok := cache.get(key, "in"); !ok || got != want {
 		t.Fatalf("get = %+v, %v; want %+v", got, ok, want)
+	}
+	if _, ok := cache.get(key, "other"); ok {
+		t.Error("a record made from other inputs must miss")
 	}
 	if err := os.WriteFile(cache.path(key), []byte("{"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := cache.get(key); ok {
+	if _, ok := cache.get(key, "in"); ok {
 		t.Error("a corrupt record must miss")
 	}
 	var none *sessionCache
-	if _, ok := none.get(key); ok || none.put(key, want) != nil {
+	if _, ok := none.get(key, "in"); ok || none.put(key, want) != nil {
 		t.Error("a nil cache must miss and store nothing")
 	}
 }

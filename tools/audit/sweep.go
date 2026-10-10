@@ -20,6 +20,7 @@ type scenario struct {
 	Replay   bool     `toml:"replay,omitempty"`
 	Dev      []uint64 `toml:"dev"`
 	Holdout  []uint64 `toml:"holdout,omitempty"`
+	Smoke    []uint64 `toml:"smoke,omitempty"`
 }
 type suite struct {
 	Scenarios []scenario `toml:"scenario"`
@@ -125,7 +126,7 @@ func sweepSuite(input suite, base string, seeds int) suite {
 		for j := range seeds {
 			s.Dev[j] = uint64(j + 1)
 		}
-		s.Holdout = nil
+		s.Holdout, s.Smoke = nil, nil
 	}
 	return input
 }

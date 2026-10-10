@@ -21,16 +21,19 @@ import (
 )
 
 const (
-	cacheFormat = "togi-bench-same-v1"
+	cacheFormat = "togi-bench-same-v2"
 	keptKeys    = 8
 )
 
 // sessionRecord is what the same cache keeps for one finished simulation: the digest of its normalized journals, which
-// stands in for the journals themselves, and its exit status.
+// stands in for the journals themselves, its exit status, the CPU time of its process, and the digest of the inputs the
+// simulator read for it besides its own binary.
 type sessionRecord struct {
 	Digest string  `json:"digest"`
 	Exit   int     `json:"exit"`
 	WallS  float64 `json:"wall_s"`
+	CPUS   float64 `json:"cpu_s"`
+	Inputs string  `json:"inputs"`
 }
 
 // sessionCache holds one tree's session records under a key that names the tree's contents and build environment. A
@@ -75,13 +78,13 @@ func (c *sessionCache) path(key sessionKey) string {
 	return filepath.Join(c.dir, key.scenario, fmt.Sprintf("%s-%d.json", key.split, key.seed))
 }
 
-func (c *sessionCache) get(key sessionKey) (sessionRecord, bool) {
+func (c *sessionCache) get(key sessionKey, inputs string) (sessionRecord, bool) {
 	if c == nil {
 		return sessionRecord{}, false
 	}
 	b, err := os.ReadFile(c.path(key))
 	var rec sessionRecord
-	if err != nil || json.Unmarshal(b, &rec) != nil || rec.Digest == "" {
+	if err != nil || json.Unmarshal(b, &rec) != nil || rec.Digest == "" || rec.Inputs != inputs {
 		return sessionRecord{}, false
 	}
 	return rec, true
@@ -123,10 +126,10 @@ func writeFileAtomic(path string, content []byte) error {
 // location out, -buildvcs=false its revision.
 var simulatorBuildFlags = []string{"-trimpath", "-buildvcs=false"}
 
-// cacheKey hashes everything the digests of one tree's sessions depend on: the simulator binary, which carries the code,
-// the Go version and the platform, the boot cap, and the sessions with the machine and facts files they read. Trees
-// whose simulators are byte for byte equal share their records, whatever else differs between them.
-func cacheKey(binary, tree string, runs []runSpec, maxBoots int) (string, error) {
+// cacheKey names the simulator whose sessions a cache holds: the hash of its binary, which carries the code, the Go
+// version and the platform, and the boot cap. Trees whose simulators are byte for byte equal share their records,
+// whatever else differs between them.
+func cacheKey(binary string, maxBoots int) (string, error) {
 	if _, err := os.Stat(binary); err != nil {
 		return "", fmt.Errorf("find simulator: %w", err)
 	}
@@ -135,18 +138,23 @@ func cacheKey(binary, tree string, runs []runSpec, maxBoots int) (string, error)
 	if err := hashFile(h, binary, "simulator"); err != nil {
 		return "", err
 	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// runInputs hashes what one session's simulator reads besides its binary: the session's identity and the machine and
+// facts files it names, by name relative to the tree when inside it.
+func runInputs(tree string, spec runSpec) (string, error) {
 	inTree := func(path string) string {
 		if rel, err := filepath.Rel(tree, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return rel
 		}
 		return path
 	}
-	for _, spec := range runs {
-		fmt.Fprintf(h, "run %s %s %d replay=%t machine=%s\n", spec.scenario.Name, spec.split, spec.seed, spec.scenario.Replay, inTree(spec.scenario.Machine))
-		for _, file := range []string{spec.scenario.Machine, factsPath(spec)} {
-			if err := hashFile(h, file, inTree(file)); err != nil {
-				return "", err
-			}
+	h := sha256.New()
+	fmt.Fprintf(h, "run %s %s %d replay=%t machine=%s\n", spec.scenario.Name, spec.split, spec.seed, spec.scenario.Replay, inTree(spec.scenario.Machine))
+	for _, file := range []string{spec.scenario.Machine, factsPath(spec)} {
+		if err := hashFile(h, file, inTree(file)); err != nil {
+			return "", err
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
@@ -159,16 +167,29 @@ func factsPath(spec runSpec) string {
 	return filepath.Join(filepath.Dir(spec.scenario.Machine), spec.cfg.Facts)
 }
 
+// fileSums remembers the hash of each file by name, size and modification time: sessions share their machine and facts
+// files.
+var fileSums sync.Map
+
 // hashFile adds a file's content, or its absence, to h under name.
 func hashFile(h hash.Hash, path, name string) error {
 	if path == "" {
 		return nil
 	}
-	f, err := os.Open(path)
+	info, err := os.Stat(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		fmt.Fprintf(h, "absent %s\n", name)
 		return nil
 	} else if err != nil {
+		return err
+	}
+	memo := fmt.Sprintf("%s|%d|%d", path, info.Size(), info.ModTime().UnixNano())
+	if sum, ok := fileSums.Load(memo); ok {
+		fmt.Fprintf(h, "file %s %x\n", name, sum)
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
 		return err
 	}
 	defer f.Close()
@@ -176,6 +197,7 @@ func hashFile(h hash.Hash, path, name string) error {
 	if _, err := io.Copy(sum, f); err != nil {
 		return fmt.Errorf("hash %s: %w", path, err)
 	}
+	fileSums.Store(memo, sum.Sum(nil))
 	fmt.Fprintf(h, "file %s %x\n", name, sum.Sum(nil))
 	return nil
 }

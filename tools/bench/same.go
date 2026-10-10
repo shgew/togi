@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/tools/trialfacts"
@@ -37,6 +38,8 @@ var sameSides = [2]string{"base", "head"}
 type samePair struct {
 	key  sessionKey
 	runs [2]*runSpec
+	// inputs holds each side's runInputs digest, which a cached record must match to stand in for a run.
+	inputs [2]string
 }
 
 type journalDifference struct {
@@ -55,6 +58,7 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 		return false, fmt.Errorf("resolve base tree: %w", err)
 	}
 	trees := [2]string{base, head}
+	started := time.Now()
 	extracts := trialfacts.Extracts{}
 	var runs [2][]runSpec
 	for side, tree := range trees {
@@ -67,6 +71,23 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 			return false, fmt.Errorf("load %s suite: %w", tree, err)
 		}
 	}
+	if o.smoke {
+		smoke := make(map[sessionKey]bool)
+		for _, spec := range runs[1] {
+			if spec.smoke {
+				smoke[sessionKey{spec.scenario.Name, spec.split, spec.seed}] = true
+			}
+		}
+		if len(smoke) == 0 {
+			return false, errors.New("suite has no smoke sessions")
+		}
+		for side := range runs {
+			runs[side] = slices.DeleteFunc(runs[side], func(spec runSpec) bool {
+				return !smoke[sessionKey{spec.scenario.Name, spec.split, spec.seed}]
+			})
+		}
+	}
+	loaded := time.Since(started)
 	cacheRoot, err := o.cacheDir()
 	if err != nil {
 		return false, err
@@ -91,6 +112,7 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 		})
 	}
 	builds.Wait()
+	built := time.Since(started)
 	if o.ctx.Err() != nil {
 		return false, errors.New("interrupted")
 	}
@@ -99,13 +121,28 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 	}
 	var keys [2]string
 	var caches [2]*sessionCache
-	for side, tree := range trees {
-		if keys[side], err = cacheKey(binaries[side], tree, runs[side], o.maxBoots); err != nil {
+	for side := range trees {
+		if keys[side], err = cacheKey(binaries[side], o.maxBoots); err != nil {
 			return false, fmt.Errorf("key %s cache: %w", sameSides[side], err)
 		}
 	}
-	if keys[0] == keys[1] && !o.noCache && o.keep == "" {
-		fmt.Fprintf(stdout, "same: both trees build the same simulator and read the same inputs; 0 of %d sessions differ\n", len(runs[0]))
+	pairs := pairRuns(runs)
+	identical := keys[0] == keys[1]
+	for i := range pairs {
+		for side, spec := range pairs[i].runs {
+			if spec == nil {
+				continue
+			}
+			if pairs[i].inputs[side], err = runInputs(trees[side], *spec); err != nil {
+				return false, fmt.Errorf("hash %s inputs of %s: %w", sameSides[side], pairs[i].key, err)
+			}
+		}
+		identical = identical && pairs[i].runs[0] != nil && pairs[i].runs[1] != nil && pairs[i].inputs[0] == pairs[i].inputs[1]
+	}
+	keyed := time.Since(started)
+	fmt.Fprintf(stderr, "bench: harness overhead: suites %s, builds %s, keys %s\n", loaded.Round(time.Millisecond), (built - loaded).Round(time.Millisecond), (keyed - built).Round(time.Millisecond))
+	if identical && !o.noCache && o.keep == "" {
+		fmt.Fprintf(stdout, "same: both trees build the same simulator and read the same inputs; 0 of %d sessions differ\n", len(pairs))
 		return false, nil
 	}
 	for side := range caches {
@@ -133,7 +170,7 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 	launch := func(ctx context.Context, side int, spec runSpec) (simulation, error) {
 		return launchSimulator(ctx, binaries[side], filepath.Join(root, sameSides[side]), spec, o.maxBoots, o.timeout)
 	}
-	different, err := runSame(o.ctx, stdout, pairRuns(runs), sameConfig{
+	different, err := runSame(o.ctx, stdout, pairs, sameConfig{
 		jobs:      o.jobs,
 		keep:      o.keep != "",
 		keepGoing: o.keepGoing,
@@ -142,6 +179,7 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 		costs:     costs,
 		log:       stderr,
 	}, launch)
+	fmt.Fprintf(stderr, "bench: sessions took %s\n", (time.Since(started) - keyed).Round(time.Millisecond))
 	if o.ctx.Err() != nil {
 		err = errors.New("interrupted")
 	}
@@ -208,7 +246,16 @@ type sameRun struct {
 	mu     sync.Mutex
 	states []pairState
 	diffs  []sameDifference
+	// cpu totals the compared sessions' CPU time per side, and slow lists those whose head took more than slowCPURatio
+	// times their base's.
+	cpu  [2]float64
+	slow []int
 }
+
+const (
+	slowCPURatio = 2
+	slowShown    = 10
+)
 
 // pairState holds what is known of one session: each side's record, and the run directory of a side that ran and
 // whose pair is not yet compared.
@@ -245,7 +292,7 @@ func runSame(parent context.Context, w io.Writer, pairs []samePair, cfg sameConf
 			if spec == nil {
 				continue
 			}
-			if rec, ok := cfg.caches[side].get(p.key); ok && !cfg.fresh {
+			if rec, ok := cfg.caches[side].get(p.key, p.inputs[side]); ok && !cfg.fresh {
 				r.states[i].rec[side] = &rec
 				cached[side]++
 				continue
@@ -273,6 +320,7 @@ func runSame(parent context.Context, w io.Writer, pairs []samePair, cfg sameConf
 	for _, d := range r.diffs {
 		fmt.Fprintf(w, "same: %s\n  %s:%d\n  base: %s\n  head: %s\n", pairs[d.pair].key, d.file, d.line, d.base, d.head)
 	}
+	r.reportCPU(w)
 	switch {
 	case len(r.diffs) != 0 && !cfg.keepGoing:
 		fmt.Fprintln(w, "same: stopped at the first difference; --keep-going reports every differing session")
@@ -280,6 +328,28 @@ func runSame(parent context.Context, w io.Writer, pairs []samePair, cfg sameConf
 		fmt.Fprintf(w, "same: %d of %d sessions differ\n", len(r.diffs), len(pairs))
 	}
 	return len(r.diffs) != 0, nil
+}
+
+// reportCPU prints the CPU time of the compared sessions and the sessions whose head took far more than their base. It
+// informs and never decides the verdict.
+func (r *sameRun) reportCPU(w io.Writer) {
+	if r.cpu[0] == 0 && r.cpu[1] == 0 {
+		return
+	}
+	fmt.Fprintf(w, "same: CPU time of the compared sessions: base %.1fs, head %.1fs\n", r.cpu[0], r.cpu[1])
+	ratio := func(i int) float64 { return r.states[i].rec[1].CPUS / r.states[i].rec[0].CPUS }
+	slices.SortFunc(r.slow, func(a, b int) int { return cmp.Compare(ratio(b), ratio(a)) })
+	if len(r.slow) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "same: %d sessions took more than %dx their base's CPU time (informational)\n", len(r.slow), slowCPURatio)
+	for _, i := range r.slow[:min(len(r.slow), slowShown)] {
+		st := r.states[i]
+		fmt.Fprintf(w, "  %s: head %.1fs, base %.1fs, %.1fx\n", r.pairs[i].key, st.rec[1].CPUS, st.rec[0].CPUS, ratio(i))
+	}
+	if len(r.slow) > slowShown {
+		fmt.Fprintf(w, "  and %d more\n", len(r.slow)-slowShown)
+	}
 }
 
 // runSide runs one side of a session, records its digest and, if that completes the pair, compares the pair.
@@ -296,6 +366,7 @@ func (r *sameRun) runSide(ctx context.Context, i, side int) error {
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", sameSides[side], p.key, err)
 	}
+	rec.Inputs = p.inputs[side]
 	if err := r.cfg.caches[side].put(p.key, rec); err != nil {
 		fmt.Fprintf(r.cfg.log, "bench: cache %s %s: %v\n", sameSides[side], p.key, err)
 	}
@@ -314,6 +385,14 @@ func (r *sameRun) runSide(ctx context.Context, i, side int) error {
 // resolve compares a session whose sides all have records, and drops its run directories when they match.
 func (r *sameRun) resolve(ctx context.Context, i int) error {
 	p, st := r.pairs[i], &r.states[i]
+	if p.runs[0] != nil && p.runs[1] != nil {
+		r.mu.Lock()
+		r.cpu = [2]float64{r.cpu[0] + st.rec[0].CPUS, r.cpu[1] + st.rec[1].CPUS}
+		if st.rec[0].CPUS > 0 && st.rec[1].CPUS > slowCPURatio*st.rec[0].CPUS {
+			r.slow = append(r.slow, i)
+		}
+		r.mu.Unlock()
+	}
 	var diff *journalDifference
 	switch {
 	case p.runs[0] == nil:
@@ -394,7 +473,7 @@ func (r *sameRun) removeUnresolvedRuns() {
 // digestRun takes the digest of a finished simulation's journals.
 func digestRun(run simulation) (sessionRecord, error) {
 	digest, err := journalDigest(run.dir)
-	return sessionRecord{Digest: digest, Exit: run.exit, WallS: run.wall}, err
+	return sessionRecord{Digest: digest, Exit: run.exit, WallS: run.wall, CPUS: run.cpu}, err
 }
 
 // journalDigest hashes a run's current and archived journals after build normalization, with their names.
