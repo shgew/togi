@@ -105,7 +105,14 @@ func run(args []string, stderr io.Writer) int {
 		steps := 0
 		checkTuner = func(s *tuner.State) error {
 			steps++
-			return tuner.CheckMemos(s, steps%64 == 0)
+			deep := steps%64 == 0
+			if err := tuner.CheckMemos(s, deep); err != nil || !deep {
+				return err
+			}
+			// Simulations defer projection, which alone fills the exposure memo; fill it as togi run does so the
+			// following checks cover it.
+			s.Project(&journal.State{})
+			return nil
 		}
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
