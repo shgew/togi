@@ -200,7 +200,7 @@ func (s *journals) open(in Input, id string, current machine.BIOSContext) (bootJ
 		s.kept.SetBoot(id)
 		return s.kept.boot(), nil
 	}
-	j, err := journal.Lock(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Monotonic: in.Machine.Monotonic, Build: session.Build(), Prefix: &s.prefix})
+	j, err := journal.Lock(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Monotonic: in.Machine.Monotonic, Build: session.Build(), Prefix: &s.prefix, Buffered: in.InMemoryJournal})
 	if err != nil {
 		return bootJournal{}, err
 	}

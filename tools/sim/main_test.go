@@ -249,3 +249,25 @@ func recordTwoTrials(t *testing.T, recorded config.Config) string {
 	}
 	return dir
 }
+
+func TestBufferedLogReachesAFileOnlyWhenFlushedAndATerminalAtOnce(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	log, flush := bufferedLog(&out)
+	fmt.Fprint(log, "line\n")
+	if out.Len() != 0 {
+		t.Fatalf("buffered log wrote %q before the flush", out.String())
+	}
+	flush()
+	if out.String() != "line\n" {
+		t.Fatalf("flushed log %q, want the line", out.String())
+	}
+	terminal, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer terminal.Close()
+	if log, _ := bufferedLog(terminal); log != io.Writer(terminal) {
+		t.Fatal("a character device was buffered")
+	}
+}

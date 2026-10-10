@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
@@ -24,6 +25,8 @@ const (
 	lockFile      = "lock"
 	archiveDir    = "archive"
 	trialsDir     = "trials"
+	// bufferSize is the size of a buffered journal's write buffer.
+	bufferSize = 64 << 10
 )
 
 type Options struct {
@@ -31,7 +34,11 @@ type Options struct {
 	Now       func() time.Time
 	Monotonic func() time.Duration
 	Sync      bool
-	Build     Build
+	// Buffered holds appended lines in memory until the journal is closed or something reads the file back. A crash
+	// of the process loses them, so only a simulator that never crashes its own process sets it; it cannot be combined
+	// with Sync.
+	Buffered bool
+	Build    Build
 	// Prefix, shared by every Lock of one journal, lets a simulation that reopens it each boot decode only the lines appended since.
 	Prefix *Prefix
 }
@@ -53,6 +60,8 @@ type Journal struct {
 	fs        journalFilesystem
 	appendErr error
 	decoded   *decodedFile
+	// w buffers appends to f when Options.Buffered is set.
+	w *bufio.Writer
 }
 
 type decodedFile struct {
@@ -99,12 +108,27 @@ func (j *Journal) Dir() string {
 	return j.dir
 }
 
+// flush writes the appends a buffered journal still holds, so that the file holds every event before anything reads it.
+func (j *Journal) flush() error {
+	if j.w == nil {
+		return nil
+	}
+	if err := j.w.Flush(); err != nil {
+		j.appendErr = fmt.Errorf("flush journal: %w", err)
+		return j.appendErr
+	}
+	return nil
+}
+
 func (j *Journal) SetBoot(boot string) {
 	j.opts.Boot = boot
 }
 
 // Read decodes the locked journal like Read(j.Dir()); Open reuses the decoded events while the file is unchanged.
 func (j *Journal) Read() (events []Event, torn []byte, err error) {
+	if err := j.flush(); err != nil {
+		return nil, nil, err
+	}
 	path := filepath.Join(j.dir, eventsFile)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -201,6 +225,9 @@ func (j *Journal) Open() (torn []Event, err error) {
 		torn = []Event{e}
 		events, data, end = append(events, e), nil, 0
 	}
+	if opts.Buffered && opts.Sync {
+		return nil, errors.New("open journal: a buffered journal cannot sync each append")
+	}
 	f, err := j.fs.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, err
@@ -214,6 +241,9 @@ func (j *Journal) Open() (torn []Event, err error) {
 		}
 	}
 	j.f, j.events = f, events
+	if opts.Buffered {
+		j.w = bufio.NewWriterSize(f, bufferSize)
+	}
 	if end == len(data) {
 		return torn, nil
 	}
@@ -690,6 +720,9 @@ func (j *Journal) Archive(session string) (string, error) {
 func (j *Journal) ArchiveUnreadable(session string) (string, error) {
 	rel := filepath.Join(archiveDir, session+".jsonl")
 	// A previous build may already have recorded session.archived before the update.
+	if err := j.flush(); err != nil {
+		return "", err
+	}
 	data, err := os.ReadFile(filepath.Join(j.dir, eventsFile))
 	if err != nil {
 		return "", fmt.Errorf("read incompatible journal for archive recovery: %w", err)
@@ -763,6 +796,9 @@ func (j *Journal) ArchiveUnreadable(session string) (string, error) {
 const carrySuffix = "-carry-pending"
 
 func (j *Journal) ArchiveForCarry(session string) (string, error) {
+	if err := j.flush(); err != nil {
+		return "", err
+	}
 	data, err := os.ReadFile(filepath.Join(j.dir, eventsFile))
 	if err != nil {
 		return "", fmt.Errorf("read journal for carry: %w", err)
@@ -917,6 +953,9 @@ func (j *Journal) finishArchive(rel string) error {
 			}
 		}
 	}
+	if err := j.flush(); err != nil {
+		return err
+	}
 	if err := j.fs.Rename(filepath.Join(dir, eventsFile), filepath.Join(dir, rel)); err != nil {
 		return err
 	}
@@ -951,7 +990,11 @@ func (j *Journal) Append(p Payload, cause ...int) (Event, error) {
 		return Event{}, err
 	}
 	kind := e.Kind
-	n, err := j.f.Write(raw)
+	var w io.Writer = j.f
+	if j.w != nil {
+		w = j.w
+	}
+	n, err := w.Write(raw)
 	if err == nil && n != len(raw) {
 		err = io.ErrShortWrite
 	}
@@ -1008,6 +1051,10 @@ func (j *Journal) next(seq int, p Payload, cause []int) (Event, []byte, error) {
 
 func (j *Journal) Close() error {
 	var errs []error
+	if j.w != nil {
+		errs = append(errs, j.w.Flush())
+		j.w = nil
+	}
 	if j.f != nil {
 		if j.opts.Sync {
 			errs = append(errs, j.f.Sync())

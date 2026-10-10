@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -100,22 +101,36 @@ func run(args []string, stderr io.Writer) int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	renderer := render.NewRenderer(stderr, os.Getenv)
-	stop, err := simrun.Simulate(ctx, simrun.Input{Config: recorded, ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: stderr, Renderer: renderer, Cycles: *cycles, InMemoryJournal: true, WriteSamples: *samples, MaxBoots: *maxBoots, ColdBoots: *coldBoots, VerifyEvery: *verifyEvery})
+	log, flush := bufferedLog(stderr)
+	defer flush()
+	stop, err := simrun.Simulate(ctx, simrun.Input{Config: recorded, ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: log, Renderer: renderer, Cycles: *cycles, InMemoryJournal: true, WriteSamples: *samples, MaxBoots: *maxBoots, ColdBoots: *coldBoots, VerifyEvery: *verifyEvery})
 	if errors.Is(err, simrun.ErrBootCap) {
-		fmt.Fprintf(stderr, "sim: %v\n", err)
+		fmt.Fprintf(log, "sim: %v\n", err)
 		return 3
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "sim: %v\n", err)
+		fmt.Fprintf(log, "sim: %v\n", err)
 		return 1
 	}
 	if stop.Reason != session.StopDeadEnd {
 		return 0
 	}
 	line := fmt.Sprintf("sim: dead end %s: %s", stop.DeadEnd.Condition, stop.DeadEnd.Detail)
-	fmt.Fprintln(stderr, renderer.Text(journal.Event{Kind: journal.KindDeadEnd, Data: stop.DeadEnd}, line))
+	fmt.Fprintln(log, renderer.Text(journal.Event{Kind: journal.KindDeadEnd, Data: stop.DeadEnd}, line))
 	for _, e := range stop.Evidence {
-		fmt.Fprintln(stderr, renderer.PrefixedLine(e, time.Local, "  evidence: "))
+		fmt.Fprintln(log, renderer.PrefixedLine(e, time.Local, "  evidence: "))
 	}
 	return 1
+}
+
+// bufferedLog returns w for a terminal, where the log has to keep pace with the run, and otherwise a buffer in front of
+// w that the returned function flushes: the run writes one line per event, a write call each.
+func bufferedLog(w io.Writer) (io.Writer, func()) {
+	if f, ok := w.(*os.File); ok {
+		if info, err := f.Stat(); err == nil && info.Mode()&os.ModeCharDevice != 0 {
+			return w, func() {}
+		}
+	}
+	buffer := bufio.NewWriterSize(w, 64<<10)
+	return buffer, func() { _ = buffer.Flush() }
 }
