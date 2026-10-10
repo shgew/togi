@@ -31,6 +31,13 @@ func CheckMemos(s *State, deep bool) error {
 			return fmt.Errorf("round checks = %+v %v, want %+v %v", s.roundChecksMemo, s.roundSourcesMemo, checks, sources)
 		}
 	}
+	if s.exposure != nil && s.exposureProfileSeq == g.profileSeq {
+		for k, got := range s.exposure {
+			if want := s.computeExposure(k, s.ledger[k]); got != want {
+				return fmt.Errorf("exposure(%+v) = %d, want %d", k, got, want)
+			}
+		}
+	}
 	for seq, p := range s.failurePos {
 		want := -1
 		s.eachFailureEntry(p.class, seq, func(i int) {

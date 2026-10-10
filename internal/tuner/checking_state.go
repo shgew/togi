@@ -54,19 +54,7 @@ func (s *State) projectChecking() *journal.CheckingState {
 	for k, entries := range s.ledger {
 		n, ok := s.exposure[k]
 		if !ok {
-			valid, checked := 0, false
-			for i := range entries {
-				e := &entries[i]
-				if !e.pass || e.carried || e.condition == machine.Alone || !AtLeastDeep(e.profile, g.profile) || !s.current(e) {
-					continue
-				}
-				if !checked {
-					valid, checked = s.latestFailure(k, g.profile, 0), true
-				}
-				if e.seq > valid {
-					n++
-				}
-			}
+			n = s.computeExposure(k, entries)
 			s.exposure[k] = n
 		}
 		if n > 0 {
@@ -82,6 +70,26 @@ func (s *State) projectChecking() *journal.CheckingState {
 	}
 	s.projectedChecking = out
 	return out
+}
+
+// computeExposure counts class k's current passing trials at least as deep as the checking profile since the
+// latest failure that invalidates them; projectChecking memoizes it per class.
+func (s *State) computeExposure(k trialClass, entries []entry) int {
+	g := &s.checking
+	n, valid, checked := 0, 0, false
+	for i := range entries {
+		e := &entries[i]
+		if !e.pass || e.carried || e.condition == machine.Alone || !AtLeastDeep(e.profile, g.profile) || !s.current(e) {
+			continue
+		}
+		if !checked {
+			valid, checked = s.latestFailure(k, g.profile, 0), true
+		}
+		if e.seq > valid {
+			n++
+		}
+	}
+	return n
 }
 
 func (s *State) checkingStepsDone() int {
