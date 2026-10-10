@@ -88,6 +88,38 @@ func TestPhasePlan(t *testing.T) {
 			{Core: 1, Offset: -11, SoloLimit: -11, Carried: true},
 		}})
 	})
+	t.Run("a round re-checking carried cores in place does not move them", func(t *testing.T) {
+		h := cleanCycleHarness(t, []int{-10, -10}, nil)
+		nextRound(h)
+		applyRound(h)
+		h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleEnd, Reason: "a failure needs a hunt"}, h.s.round.seq)
+		second := nextRound(h)
+		assertPlan(t, h, journal.PhasesState{Phase: 2, Phase1End: h.s.phases.phase1End, Round: second.Round, RoundsLeft: 1, Candidates: []journal.CandidateState{
+			{Core: 0, Offset: -11, SoloLimit: -11, Carried: true},
+			{Core: 1, Offset: -11, SoloLimit: -11, Carried: true},
+		}})
+	})
+	t.Run("a fresh mover shows the round's baseline", func(t *testing.T) {
+		h := newHarness(t, soloCore(-10, -12), soloCore(-10, -12))
+		h.add(&journal.ProfileChange{To: []int{-10, -10}})
+		h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: h.s.steps})
+		h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
+		h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -10, ToOffset: -7, Pass: new(-12), FailurePoint: new(-13)})
+		h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleStart, Profile: []int{-8, -11}, Target: []int{-12, -12}, Cores: []int{0, 1}, Trials: 1, TrialS: 30})
+		plan := h.s.PhasePlan()
+		got := map[int]int{}
+		for _, c := range plan.Candidates {
+			if c.Moving {
+				got[c.Core] = c.Offset
+			}
+		}
+		if diff := cmp.Diff(map[int]int{0: -7, 1: -10}, got); diff != "" {
+			t.Fatalf("moving offsets (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(plan, replayState(h.events).PhasePlan()); diff != "" {
+			t.Fatalf("phase plan after replay (-live +replayed):\n%s", diff)
+		}
+	})
 	t.Run("the confirmation cycle leaves no rounds", func(t *testing.T) {
 		h := newHarness(t, soloCore(-10, -13))
 		end := endPhase1(h, -10)

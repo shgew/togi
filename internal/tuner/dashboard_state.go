@@ -210,7 +210,7 @@ func (s *State) PhasePlan() *journal.PhasesState {
 	if r := s.round; r != nil {
 		out.RoundsLeft, out.Round = 1, r.start.Round
 		for _, id := range r.start.Cores {
-			if _, ok := ph.moves[id]; ok {
+			if m, ok := ph.moves[id]; ok && m.round == r.start.Round {
 				gaps[id]++
 				moving[id] = true
 			} else {
@@ -240,7 +240,7 @@ func (s *State) PhasePlan() *journal.PhasesState {
 		}
 		offset := c.offset
 		if moving[c.id] {
-			offset = ph.passed[s.index(c.id)]
+			offset = s.round.initial[s.index(c.id)]
 		}
 		out.Candidates = append(out.Candidates, journal.CandidateState{Core: c.id, Offset: offset, SoloLimit: c.soloLimit, Gap: gaps[c.id], Carried: carried[c.id], Moving: moving[c.id]})
 	}
