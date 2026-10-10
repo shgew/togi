@@ -23,8 +23,8 @@ func TestRunRefusesNewerEvidenceEpochBeforeConfig(t *testing.T) {
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	config := filepath.Join(t.TempDir(), "invalid.toml")
-	if err := os.WriteFile(config, []byte("removed_key = true\n"), 0o644); err != nil {
+	config := filepath.Join(t.TempDir(), "invalid.json")
+	if err := os.WriteFile(config, []byte(`{"removed_key":true}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer

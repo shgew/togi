@@ -28,7 +28,7 @@ func newFlagSet(name string, g *globals) *flag.FlagSet {
 
 func registerGlobals(fs *flag.FlagSet, g *globals) {
 	if fs.Name() == "togi" || acceptsConfig(fs.Name()) {
-		fs.Func("config", "configuration file `path` for doctor, run and reset (default "+config.DefaultPath+")", func(s string) error {
+		fs.Func("config", "JSON configuration file `path` for doctor, run and reset (default "+config.DefaultPath+")", func(s string) error {
 			g.config, g.configSet = s, true
 			return nil
 		})

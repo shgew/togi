@@ -241,31 +241,14 @@ func TestJointCrashMachineEvidence(t *testing.T) {
 		core *int
 	}{
 		{name: "default"},
-		{name: "misleading core zero", key: "crash_mce_core = 0", core: new(0)},
-		{name: "misleading core one", key: "crash_mce_core = 1", core: new(1)},
-		{name: "negative core", key: "crash_mce_core = -1"},
-		{name: "outside topology", key: "crash_mce_core = 2"},
+		{name: "misleading core zero", key: `,"crash_mce_core":0`, core: new(0)},
+		{name: "misleading core one", key: `,"crash_mce_core":1`, core: new(1)},
+		{name: "negative core", key: `,"crash_mce_core":-1`},
+		{name: "outside topology", key: `,"crash_mce_core":2`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "machine.toml")
-			content := fmt.Sprintf(`cores = 2
-bios = [-20, -20]
-[model]
-crash_mce = 1
-core_local_bank = 0
-[[core]]
-id = 0
-alone = [-30, -30, -30, -30, -30]
-together = [-30, -30, -30, -30, -30, -30, -30]
-[[core]]
-id = 1
-alone = [-30, -30, -30, -30, -30]
-together = [-30, -30, -30, -30, -30, -30, -30]
-[[joint]]
-members = { "0" = -20, "1" = -20 }
-rate = 1000000
-%s
-`, tc.key)
+			path := filepath.Join(t.TempDir(), "machine.json")
+			content := fmt.Sprintf(`{"cores":2,"bios":[-20,-20],"model":{"crash_mce":1,"core_local_bank":0},"core":[{"id":0,"alone":[-30,-30,-30,-30,-30],"together":[-30,-30,-30,-30,-30,-30,-30]},{"id":1,"alone":[-30,-30,-30,-30,-30],"together":[-30,-30,-30,-30,-30,-30,-30]}],"joint":[{"members":{"0":-20,"1":-20},"rate":1000000%s}]}`, tc.key)
 			if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 				t.Fatal(err)
 			}

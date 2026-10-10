@@ -142,7 +142,7 @@ func TestDoctorExitCodes(t *testing.T) {
 			t.Helper()
 			g.hostLockPath = filepath.Join(t.TempDir(), "missing", "togi.lock")
 		}, fake: fakeDiagnose{ran: ok}, code: exitError, stderr: filepath.Join("missing", "togi.lock")},
-		{name: "missing explicit config", args: []string{"--config", "/nonexistent/togi.toml"}, fake: fakeDiagnose{ran: ok}, code: exitUsage, stderr: "/nonexistent/togi.toml"},
+		{name: "missing explicit config", args: []string{"--config", "/nonexistent/togi.json"}, fake: fakeDiagnose{ran: ok}, code: exitUsage, stderr: "/nonexistent/togi.json"},
 		{name: "newer schema", privileged: true, state: func(t *testing.T, g *globals) { t.Helper(); g.stateDir, _ = incompatibleFixture(t, "schema") }, fake: fakeDiagnose{ran: ok}, code: exitIncompatible, stderr: "this journal was written by"},
 		{name: "newer ruleset", state: func(t *testing.T, g *globals) { t.Helper(); g.stateDir, _ = incompatibleFixture(t, "ruleset") }, fake: fakeDiagnose{ran: ok}, code: exitIncompatible, stderr: "ruleset 99"},
 		{name: "unknown kinds", privileged: true, state: func(t *testing.T, g *globals) { t.Helper(); currentRulesetJournal(t, g, true) }, fake: fakeDiagnose{ran: ok}, code: exitIncompatible, stderr: `unknown kind "future.fact"`},

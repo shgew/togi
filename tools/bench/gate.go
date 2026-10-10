@@ -12,18 +12,19 @@ import (
 
 // gate is a ruleset's bench gate, registered in the suite file before it is scored.
 type gate struct {
-	ID            string       `toml:"id"`
-	Note          string       `toml:"note"`
-	Baseline      gateBaseline `toml:"baseline"`
-	Split         string       `toml:"split"`
-	Gated         []string     `toml:"gated"`
-	Pooled        []string     `toml:"pooled"`
-	Conclude      []string     `toml:"conclude"`
-	Quantiles     []float64    `toml:"quantiles"`
-	Confidence    float64      `toml:"confidence"`
-	Resamples     int          `toml:"resamples"`
-	BootstrapSeed [2]uint64    `toml:"bootstrap_seed"`
-	MaxTimeRatio  float64      `toml:"max_time_ratio"`
+	ID            string       `json:"id"`
+	Note          string       `json:"note"`
+	Notes         []string     `json:"notes,omitzero"` // rationale for reviewers; never scored
+	Baseline      gateBaseline `json:"baseline"`
+	Split         string       `json:"split"`
+	Gated         []string     `json:"gated"`
+	Pooled        []string     `json:"pooled"`
+	Conclude      []string     `json:"conclude"`
+	Quantiles     []float64    `json:"quantiles"`
+	Confidence    float64      `json:"confidence"`
+	Resamples     int          `json:"resamples"`
+	BootstrapSeed [2]uint64    `json:"bootstrap_seed"`
+	MaxTimeRatio  float64      `json:"max_time_ratio"`
 
 	// seeds holds each gated scenario's seeds in the gate's split, in suite order.
 	seeds map[string][]uint64
@@ -33,8 +34,8 @@ type gate struct {
 // the ruleset and one of the commits, so a pull request that re-records some runs lists its
 // recording commit here.
 type gateBaseline struct {
-	Ruleset int      `toml:"ruleset"`
-	Commits []string `toml:"commits"`
+	Ruleset int      `json:"ruleset"`
+	Commits []string `json:"commits"`
 }
 
 var errGateFailed = errors.New("gate failed")

@@ -217,8 +217,8 @@ func TestRestartLimitFailuresStopOrRemoveRetryMarker(t *testing.T) {
 func TestRestartLimitDispatchRejectsConfig(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
-		{"restart-limit", "--config", "unused.toml", "--help"},
-		{"--config", "unused.toml", "restart-limit", "--help"},
+		{"restart-limit", "--config", "unused.json", "--help"},
+		{"--config", "unused.json", "restart-limit", "--help"},
 	} {
 		var out, diagnostics bytes.Buffer
 		if code := cli(args, &out, &diagnostics); code != exitUsage || out.Len() != 0 || !strings.Contains(diagnostics.String(), "--config applies only to doctor, run and reset") {

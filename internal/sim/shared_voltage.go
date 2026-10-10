@@ -12,33 +12,33 @@ import (
 
 // SharedVoltage models the common rail, with independent loaded-core hazards.
 type SharedVoltage struct {
-	IdleV          float64                    `toml:"idle_v"`
-	MarginV        float64                    `toml:"margin_v"`
-	Rate           float64                    `toml:"rate"`
-	BackgroundRate float64                    `toml:"background_rate"`
-	PowerLimitW    float64                    `toml:"power_limit_w"`
-	ThermalLimitW  float64                    `toml:"thermal_limit_w"`
-	Workload       map[string]VoltageWorkload `toml:"workload"`
+	IdleV          float64                    `json:"idle_v"`
+	MarginV        float64                    `json:"margin_v"`
+	Rate           float64                    `json:"rate"`
+	BackgroundRate float64                    `json:"background_rate"`
+	PowerLimitW    float64                    `json:"power_limit_w"`
+	ThermalLimitW  float64                    `json:"thermal_limit_w"`
+	Workload       map[string]VoltageWorkload `json:"workload"`
 }
 
 type VoltageWorkload struct {
-	ReferenceMHz        float64       `toml:"reference_mhz"`
-	FullMHz             [2]float64    `toml:"full_mhz"`
-	IdleGainMHz         float64       `toml:"idle_gain_mhz"`
-	WattsPerCore        float64       `toml:"watts_per_core"`
-	OffsetWattsPerCount float64       `toml:"offset_watts_per_count"`
-	PackageMHzPerW      float64       `toml:"package_mhz_per_w"`
-	BalanceMHzPerW      float64       `toml:"balance_mhz_per_w"`
-	Core                []VoltageCore `toml:"core"`
+	ReferenceMHz        float64       `json:"reference_mhz"`
+	FullMHz             [2]float64    `json:"full_mhz"`
+	IdleGainMHz         float64       `json:"idle_gain_mhz"`
+	WattsPerCore        float64       `json:"watts_per_core"`
+	OffsetWattsPerCount float64       `json:"offset_watts_per_count"`
+	PackageMHzPerW      float64       `json:"package_mhz_per_w"`
+	BalanceMHzPerW      float64       `json:"balance_mhz_per_w"`
+	Core                []VoltageCore `json:"core"`
 }
 
 type VoltageCore struct {
-	BaseV                    float64                    `toml:"base_v"`
-	ThresholdV               float64                    `toml:"threshold_v"`
-	CountV                   float64                    `toml:"count_v"`
-	ClockVPer100MHz          float64                    `toml:"clock_v_per_100mhz"`
-	ThresholdClockVPer100MHz float64                    `toml:"threshold_clock_v_per_100mhz"`
-	Signals                  map[machine.Signal]float64 `toml:"signals"`
+	BaseV                    float64                    `json:"base_v"`
+	ThresholdV               float64                    `json:"threshold_v"`
+	CountV                   float64                    `json:"count_v"`
+	ClockVPer100MHz          float64                    `json:"clock_v_per_100mhz"`
+	ThresholdClockVPer100MHz float64                    `json:"threshold_clock_v_per_100mhz"`
+	Signals                  map[machine.Signal]float64 `json:"signals,omitzero"`
 }
 
 func normalizeVoltage(v *SharedVoltage, cores int) (*SharedVoltage, error) {

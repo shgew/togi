@@ -65,8 +65,8 @@ func TestResetAllCandidateSoloLimits(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := resetCandidateFixture(t, tt.failurePoint)
-			cfg := filepath.Join(t.TempDir(), "config.toml")
-			if err := os.WriteFile(cfg, []byte(fmt.Sprintf("[candidate_solo_limits]\n\"%d\" = %d\n", tt.core, tt.soloLimit)), 0o644); err != nil {
+			cfg := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(cfg, []byte(fmt.Sprintf(`{"candidate_solo_limits":{"%d":%d}}`, tt.core, tt.soloLimit)), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			var stdout, stderr bytes.Buffer
@@ -136,7 +136,7 @@ func TestResetLogsTheEventsItRecords(t *testing.T) {
 				t.Fatal(err)
 			}
 			var stdout, stderr bytes.Buffer
-			g := &globals{config: filepath.Join(t.TempDir(), "config.toml"), stateDir: dir, hostLockPath: filepath.Join(t.TempDir(), "togi.lock")}
+			g := &globals{config: filepath.Join(t.TempDir(), "config.json"), stateDir: dir, hostLockPath: filepath.Join(t.TempDir(), "togi.lock")}
 			if code := runReset(g, tc.args, &stdout, &stderr); code != exitOK {
 				t.Fatalf("reset exit %d: %s", code, stderr.String())
 			}
@@ -162,12 +162,12 @@ func TestResetAllSkipsUnavailableConfig(t *testing.T) {
 	}{
 		{"default missing", "", false, false},
 		{"explicit missing", "", true, true},
-		{"default invalid", "removed_key = true\n", false, false},
-		{"explicit invalid", "removed_key = true\n", true, true},
+		{"default invalid", `{"removed_key":true}`, false, false},
+		{"explicit invalid", `{"removed_key":true}`, true, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := resetCandidateFixture(t, -10)
-			cfg := filepath.Join(t.TempDir(), "config.toml")
+			cfg := filepath.Join(t.TempDir(), "config.json")
 			if tt.config != "" {
 				if err := os.WriteFile(cfg, []byte(tt.config), 0o644); err != nil {
 					t.Fatal(err)
@@ -220,7 +220,7 @@ func TestResetAllDropsAPendingCarry(t *testing.T) {
 				defer j.Close()
 			}
 			var stdout, stderr bytes.Buffer
-			g := &globals{config: filepath.Join(t.TempDir(), "config.toml"), stateDir: dir, hostLockPath: filepath.Join(t.TempDir(), "togi.lock")}
+			g := &globals{config: filepath.Join(t.TempDir(), "config.json"), stateDir: dir, hostLockPath: filepath.Join(t.TempDir(), "togi.lock")}
 			if code := runReset(g, []string{"--all"}, &stdout, &stderr); code != tc.code {
 				t.Fatalf("reset exit %d, want %d: %s", code, tc.code, stderr.String())
 			}
@@ -249,7 +249,7 @@ func TestResetAllFindsPendingMarkersInPatternLikeStateDir(t *testing.T) {
 					}
 				}
 				var stdout, stderr bytes.Buffer
-				g := &globals{config: filepath.Join(t.TempDir(), "config.toml"), stateDir: dir, hostLockPath: filepath.Join(t.TempDir(), "togi.lock")}
+				g := &globals{config: filepath.Join(t.TempDir(), "config.json"), stateDir: dir, hostLockPath: filepath.Join(t.TempDir(), "togi.lock")}
 				if code := runReset(g, []string{"--all"}, &stdout, &stderr); code != exitOK {
 					t.Fatalf("reset exit %d, want %d: %s", code, exitOK, stderr.String())
 				}
@@ -275,8 +275,8 @@ func TestResetAllWarnsAcrossRulesets(t *testing.T) {
 	if err := os.WriteFile(path, []byte(older), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg := filepath.Join(t.TempDir(), "config.toml")
-	if err := os.WriteFile(cfg, []byte("[candidate_solo_limits]\n\"3\" = -10\n"), 0o644); err != nil {
+	cfg := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfg, []byte(`{"candidate_solo_limits":{"3":-10}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer

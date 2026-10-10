@@ -118,7 +118,7 @@ func TestBootstrapDeterminism(t *testing.T) {
 	}
 	first, lossA := fit(a)
 	second, lossB := fit(b)
-	if diff := cmp.Diff(mustEncodeMachine(t, first, 1, 263, len(a), lossA), mustEncodeMachine(t, second, 1, 263, len(b), lossB)); diff != "" {
+	if diff := cmp.Diff(encodedMachine(t, first, 1, 263, len(a), lossA, nil, nil), encodedMachine(t, second, 1, 263, len(b), lossB, nil, nil)); diff != "" {
 		t.Fatal(diff)
 	}
 	if cmp.Equal(a, bootstrap(records, 264)) {
@@ -279,7 +279,7 @@ func TestConstrainedFitRefitsCCDWithoutChangingR7Structure(t *testing.T) {
 		t.Fatalf("CCD refit mutated its all-facts seed: %s", diff)
 	}
 	second, secondLoss := fitFrom(sample, &base, checker)
-	if diff := cmp.Diff(mustEncodeMachine(t, first, 1, 263, len(sample), loss), mustEncodeMachine(t, second, 1, 263, len(sample), secondLoss)); diff != "" {
+	if diff := cmp.Diff(encodedMachine(t, first, 1, 263, len(sample), loss, nil, nil), encodedMachine(t, second, 1, 263, len(sample), secondLoss, nil, nil)); diff != "" {
 		t.Fatalf("CCD-seeded refit is not deterministic: %s", diff)
 	}
 }
@@ -373,15 +373,6 @@ func TestDecisiveFiltersNonTrialsAndPreservesContext(t *testing.T) {
 			t.Fatalf("missing context mixed with known: %v", err)
 		}
 	}
-}
-
-func mustEncodeMachine(t *testing.T, cfg sim.Config, index int, seed uint64, trials int, loss float64) string {
-	t.Helper()
-	content, err := encodeMachine(cfg, index, seed, trials, loss, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(content)
 }
 
 func TestJointSearchSeparatesCleanBoundary(t *testing.T) {

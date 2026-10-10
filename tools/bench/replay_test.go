@@ -102,7 +102,7 @@ func TestRealAnswerShares(t *testing.T) {
 
 func TestTargetSuite(t *testing.T) {
 	extracts := trialfacts.Extracts{}
-	runs, err := loadRuns("suite.toml", "all", extracts)
+	runs, err := loadRuns("suite.json", "all", extracts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestTargetSuite(t *testing.T) {
 	}
 	want := map[string]splitCounts{}
 	for i := range 9 {
-		want[fmt.Sprintf("target-fit-%d.toml", i)] = splitCounts{2, 2}
+		want[fmt.Sprintf("target-fit-%d.json", i)] = splitCounts{2, 2}
 	}
 	if diff := cmp.Diff(want, members); diff != "" {
 		t.Fatal(diff)

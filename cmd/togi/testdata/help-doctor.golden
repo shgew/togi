@@ -22,7 +22,7 @@ Examples:
   sudo togi doctor   Make every check run makes
 
 Flags:
-  --config <path>      configuration file path for doctor, run and reset (default /etc/togi/config.toml)
+  --config <path>      JSON configuration file path for doctor, run and reset (default /etc/togi/config.json)
 
 Global flags:
   --state-dir <path>   state directory path (default /var/lib/togi)

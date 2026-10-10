@@ -76,7 +76,7 @@ func TestResetAllPathsCannotReviveFactsSoloLimitsOrFailurePoints(t *testing.T) {
 				}
 			}
 			var out, diagnostics bytes.Buffer
-			g := &globals{stateDir: dir, config: filepath.Join(t.TempDir(), "missing.toml"), hostLockPath: filepath.Join(t.TempDir(), "host.lock")}
+			g := &globals{stateDir: dir, config: filepath.Join(t.TempDir(), "missing.json"), hostLockPath: filepath.Join(t.TempDir(), "host.lock")}
 			if code := runReset(g, []string{"--all"}, &out, &diagnostics); code != exitOK {
 				t.Fatalf("reset exit %d: %s", code, diagnostics.String())
 			}

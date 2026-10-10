@@ -15,23 +15,23 @@ func TestLoadRunsRejectsInvalidSuite(t *testing.T) {
 		name, suite, want string
 	}{
 		{"syntax", "[", "load suite:"},
-		{"unknown key", "extra = true", "unknown suite key extra"},
-		{"empty name", "[[scenario]]\ndev = [1]", "invalid or duplicate scenario"},
-		{"duplicate name", "[[scenario]]\nname = 'x'\ndev = [1]\n[[scenario]]\nname = 'x'\ndev = [2]", "invalid or duplicate scenario"},
-		{"nested name", "[[scenario]]\nname = 'x/y'\ndev = [1]", "invalid or duplicate scenario"},
-		{"dot name", "[[scenario]]\nname = '.'\ndev = [1]", "invalid or duplicate scenario"},
-		{"parent name", "[[scenario]]\nname = '..'\ndev = [1]", "invalid or duplicate scenario"},
-		{"conflicting machines", "[[scenario]]\nname = 'x'\nmachine = 'a'\nmachines = ['b']\ndev = [1]", "load scenario x: machine and machines are mutually exclusive"},
-		{"missing machine", "[[scenario]]\nname = 'x'\nmachine = 'missing.toml'\ndev = [1]", "load scenario x:"},
-		{"replay without facts", "[[scenario]]\nname = 'x'\nreplay = true\ndev = [1]", "load scenario x:"},
-		{"repeated selected seed", "[[scenario]]\nname = 'x'\ndev = [1, 1]", "scenario x repeats seed 1"},
-		{"repeated unselected seed", "[[scenario]]\nname = 'x'\ndev = [1]\nholdout = [2, 2]", "scenario x repeats seed 2"},
-		{"overlapping splits", "[[scenario]]\nname = 'x'\ndev = [1]\nholdout = [1]", "scenario x repeats seed 1"},
-		{"smoke seed outside both splits", "[[scenario]]\nname = 'x'\ndev = [1]\nsmoke = [2]", "scenario x smoke seed 2 is in neither dev nor holdout"},
-		{"no selected runs", "[[scenario]]\nname = 'x'\nholdout = [1]", "suite has no selected runs"},
+		{"unknown key", "{\"extra\":true}", "unknown object member name"},
+		{"empty name", "{\"scenarios\":[{\"dev\":[1]}]}", "invalid or duplicate scenario"},
+		{"duplicate name", "{\"scenarios\":[{\"name\":\"x\",\"dev\":[1]},{\"name\":\"x\",\"dev\":[2]}]}", "invalid or duplicate scenario"},
+		{"nested name", "{\"scenarios\":[{\"name\":\"x/y\",\"dev\":[1]}]}", "invalid or duplicate scenario"},
+		{"dot name", "{\"scenarios\":[{\"name\":\".\",\"dev\":[1]}]}", "invalid or duplicate scenario"},
+		{"parent name", "{\"scenarios\":[{\"name\":\"..\",\"dev\":[1]}]}", "invalid or duplicate scenario"},
+		{"conflicting machines", "{\"scenarios\":[{\"name\":\"x\",\"machine\":\"a\",\"machines\":[\"b\"],\"dev\":[1]}]}", "load scenario x: machine and machines are mutually exclusive"},
+		{"missing machine", "{\"scenarios\":[{\"name\":\"x\",\"machine\":\"missing.json\",\"dev\":[1]}]}", "load scenario x:"},
+		{"replay without facts", "{\"scenarios\":[{\"name\":\"x\",\"replay\":true,\"dev\":[1]}]}", "load scenario x:"},
+		{"repeated selected seed", "{\"scenarios\":[{\"name\":\"x\",\"dev\":[1,1]}]}", "scenario x repeats seed 1"},
+		{"repeated unselected seed", "{\"scenarios\":[{\"name\":\"x\",\"dev\":[1],\"holdout\":[2,2]}]}", "scenario x repeats seed 2"},
+		{"overlapping splits", "{\"scenarios\":[{\"name\":\"x\",\"dev\":[1],\"holdout\":[1]}]}", "scenario x repeats seed 1"},
+		{"smoke seed outside both splits", "{\"scenarios\":[{\"name\":\"x\",\"dev\":[1],\"smoke\":[2]}]}", "scenario x smoke seed 2 is in neither dev nor holdout"},
+		{"no selected runs", "{\"scenarios\":[{\"name\":\"x\",\"holdout\":[1]}]}", "suite has no selected runs"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "suite.toml")
+			path := filepath.Join(t.TempDir(), "suite.json")
 			if err := os.WriteFile(path, []byte(tc.suite), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -42,7 +42,7 @@ func TestLoadRunsRejectsInvalidSuite(t *testing.T) {
 		})
 	}
 	t.Run("missing suite", func(t *testing.T) {
-		_, err := loadRuns(filepath.Join(t.TempDir(), "missing.toml"), "dev", trialfacts.Extracts{})
+		_, err := loadRuns(filepath.Join(t.TempDir(), "missing.json"), "dev", trialfacts.Extracts{})
 		if err == nil || !strings.Contains(err.Error(), "load suite:") {
 			t.Fatalf("loadRuns error = %v, want load suite diagnostic", err)
 		}
@@ -90,8 +90,8 @@ func TestReadResults(t *testing.T) {
 }
 
 func TestLoadRunsMarksSmokeSessions(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "suite.toml")
-	suite := "[[scenario]]\nname = 'x'\ndev = [1, 2]\nholdout = [3]\nsmoke = [2, 3]\n[[scenario]]\nname = 'y'\ndev = [1]\n"
+	path := filepath.Join(t.TempDir(), "suite.json")
+	suite := "{\"scenarios\":[{\"name\":\"x\",\"dev\":[1,2],\"holdout\":[3],\"smoke\":[2,3]},{\"name\":\"y\",\"dev\":[1]}]}"
 	if err := os.WriteFile(path, []byte(suite), 0600); err != nil {
 		t.Fatal(err)
 	}

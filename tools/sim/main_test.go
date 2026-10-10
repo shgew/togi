@@ -55,8 +55,8 @@ func TestSimBootCapExitsCensored(t *testing.T) {
 func TestSimInvalidMachineLeavesStateUntouched(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	path := filepath.Join(root, "machine.toml")
-	if err := os.WriteFile(path, []byte("unknown_machine_key = 1\n"), 0o600); err != nil {
+	path := filepath.Join(root, "machine.json")
+	if err := os.WriteFile(path, []byte("{\"unknown_machine_key\":1}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	state := filepath.Join(root, "state")
@@ -84,8 +84,8 @@ func TestSimReplayRequiresMachineBeforeStateChanges(t *testing.T) {
 func TestSimInvalidMachineCreatesNoTemporaryState(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
-	machine := filepath.Join(t.TempDir(), "machine.toml")
-	if err := os.WriteFile(machine, []byte("unknown_machine_key = 1\n"), 0o600); err != nil {
+	machine := filepath.Join(t.TempDir(), "machine.json")
+	if err := os.WriteFile(machine, []byte("{\"unknown_machine_key\":1}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{{"--machine", machine}, {"--replay-facts"}} {

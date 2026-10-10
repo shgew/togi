@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 )
@@ -21,7 +20,7 @@ func TestEncodeMachineRoundTripsEveryField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "machine.toml")
+	path := filepath.Join(t.TempDir(), "machine.json")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -53,8 +52,8 @@ func TestEncodeMachineLeavesDefaultModelFieldsOut(t *testing.T) {
 			t.Errorf("default model wrote %s:\n%s", key, content)
 		}
 	}
-	if !strings.Contains(string(content), "onset_boost = 0.0\n") {
-		t.Errorf("onset_boost not written with a decimal point:\n%s", content)
+	if !strings.Contains(string(content), `"onset_boost": 0`) {
+		t.Errorf("onset_boost not written explicitly:\n%s", content)
 	}
 }
 
@@ -88,7 +87,7 @@ func encodeRoundTrip(t *testing.T, cfg Config) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "machine.toml")
+	path := filepath.Join(t.TempDir(), "machine.json")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +95,7 @@ func encodeRoundTrip(t *testing.T, cfg Config) string {
 	if err != nil {
 		t.Fatalf("%v\n%s", err, content)
 	}
-	if diff := cmp.Diff(cfg, got, cmpopts.EquateNaNs()); diff != "" {
+	if diff := cmp.Diff(cfg, got); diff != "" {
 		t.Fatalf("round trip changed the config (-want +got):\n%s", diff)
 	}
 	again, err := EncodeMachine(got)
@@ -118,21 +117,7 @@ func TestEncodeMachineRoundTripsControlCharacterStrings(t *testing.T) {
 	for _, trial := range []string{"bell\a", "tab\v", "\x01\x1f\x7f", `literal\a\v`, "é✓\u2028"} {
 		cfg.Script[trial] = Outcome{Signal: machine.Crash, Core: 1}
 	}
-	content := encodeRoundTrip(t, cfg)
-	for _, want := range []string{
-		`facts = "\b\f\n\r\t\"\\"` + "\n",
-		`board = "board\u0007"` + "\n",
-		`"w\u000b" = -22`,
-		`trial = "bell\u0007"` + "\n",
-		`trial = "tab\u000b"` + "\n",
-		`trial = "\u0001\u001f\u007f"` + "\n",
-		`trial = "literal\\a\\v"` + "\n",
-		`trial = "é✓\u2028"` + "\n",
-	} {
-		if !strings.Contains(content, want) {
-			t.Errorf("missing %s in:\n%s", want, content)
-		}
-	}
+	encodeRoundTrip(t, cfg)
 }
 
 func TestEncodeMachineRoundTripsLargeWholeFloats(t *testing.T) {
@@ -140,52 +125,48 @@ func TestEncodeMachineRoundTripsLargeWholeFloats(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		set  func(*Config)
-		want string
 	}{
-		{"reset weight at the safe integer limit", func(c *Config) { c.Model.Reset[machine.ResetWatchdog] = 1<<53 - 1 }, `"watchdog" = 9007199254740991`},
-		{"reset weight past the safe integer limit", func(c *Config) { c.Model.Reset[machine.ResetWatchdog] = 1 << 53 }, `"watchdog" = 9007199254740992.0`},
-		{"reset weight 1e16", func(c *Config) { c.Model.Reset[machine.ResetWatchdog] = 1e16 }, `"watchdog" = 10000000000000000.0`},
-		{"small onset_s", func(c *Config) { c.Model.OnsetS = 50 }, "onset_s = 50\n"},
-		{"onset_s at the negative safe integer limit", func(c *Config) { c.Model.OnsetS = -(1<<53 - 1) }, "onset_s = -9007199254740991\n"},
-		{"onset_s 1e16", func(c *Config) { c.Model.OnsetS = 1e16 }, "onset_s = 10000000000000000.0\n"},
-		{"onset_s -1e16", func(c *Config) { c.Model.OnsetS = -1e16 }, "onset_s = -10000000000000000.0\n"},
-		{"at_s just below 1e17", func(c *Config) { c.Script["0001"] = Outcome{AtS: 99999999999999984, Core: 2} }, "at_s = 99999999999999984.0\n"},
-		{"ccd log_rate -1e16", func(c *Config) { c.CCD.LogRate = -1e16 }, "log_rate = -10000000000000000.0\n"},
-		{"core flat 1e16", func(c *Config) { c.Limits[1].Flat = 1e16 }, "flat = 10000000000000000.0\n"},
-		{"onset_boost 1e16", func(c *Config) { c.Model.OnsetBoost = 1e16 }, "onset_boost = 10000000000000000.0\n"},
+		{"reset weight at the safe integer limit", func(c *Config) { c.Model.Reset[machine.ResetWatchdog] = 1<<53 - 1 }},
+		{"reset weight past the safe integer limit", func(c *Config) { c.Model.Reset[machine.ResetWatchdog] = 1 << 53 }},
+		{"reset weight 1e16", func(c *Config) { c.Model.Reset[machine.ResetWatchdog] = 1e16 }},
+		{"small onset_s", func(c *Config) { c.Model.OnsetS = 50 }},
+		{"onset_s at the negative safe integer limit", func(c *Config) { c.Model.OnsetS = -(1<<53 - 1) }},
+		{"onset_s 1e16", func(c *Config) { c.Model.OnsetS = 1e16 }},
+		{"onset_s -1e16", func(c *Config) { c.Model.OnsetS = -1e16 }},
+		{"at_s just below 1e17", func(c *Config) { c.Script["0001"] = Outcome{AtS: 99999999999999984, Core: 2} }},
+		{"ccd log_rate -1e16", func(c *Config) { c.CCD.LogRate = -1e16 }},
+		{"core flat 1e16", func(c *Config) { c.Limits[1].Flat = 1e16 }},
+		{"onset_boost 1e16", func(c *Config) { c.Model.OnsetBoost = 1e16 }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			cfg := fullMachineConfig(t)
 			tc.set(&cfg)
-			if content := encodeRoundTrip(t, cfg); !strings.Contains(content, tc.want) {
-				t.Errorf("missing %s in:\n%s", tc.want, content)
-			}
+			encodeRoundTrip(t, cfg)
 		})
 	}
 }
 
-func TestEncodeMachineRoundTripsNonFiniteFloats(t *testing.T) {
+func TestEncodeMachineRejectsNonFiniteFloats(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		set  func(*Config)
-		want string
 	}{
-		{"onset_s inf", func(c *Config) { c.Model.OnsetS = math.Inf(1) }, "onset_s = inf\n"},
-		{"onset_s -inf", func(c *Config) { c.Model.OnsetS = math.Inf(-1) }, "onset_s = -inf\n"},
-		{"past_limit_rate nan", func(c *Config) { c.Model.PastLimitRate = math.NaN() }, "past_limit_rate = nan\n"},
-		{"onset_boost -inf", func(c *Config) { c.Model.OnsetBoost = math.Inf(-1) }, "onset_boost = -inf\n"},
-		{"reset weight inf", func(c *Config) { c.Model.Reset[machine.ResetWatchdog] = math.Inf(1) }, `"watchdog" = inf`},
-		{"at_s nan", func(c *Config) { c.Script["0001"] = Outcome{AtS: math.NaN(), Core: 2} }, "at_s = nan\n"},
-		{"core flat inf", func(c *Config) { c.Limits[1].Flat = math.Inf(1) }, "flat = inf\n"},
+		{"onset_s inf", func(c *Config) { c.Model.OnsetS = math.Inf(1) }},
+		{"onset_s -inf", func(c *Config) { c.Model.OnsetS = math.Inf(-1) }},
+		{"past_limit_rate nan", func(c *Config) { c.Model.PastLimitRate = math.NaN() }},
+		{"onset_boost -inf", func(c *Config) { c.Model.OnsetBoost = math.Inf(-1) }},
+		{"reset weight inf", func(c *Config) { c.Model.Reset[machine.ResetWatchdog] = math.Inf(1) }},
+		{"at_s nan", func(c *Config) { c.Script["0001"] = Outcome{AtS: math.NaN(), Core: 2} }},
+		{"core flat inf", func(c *Config) { c.Limits[1].Flat = math.Inf(1) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			cfg := fullMachineConfig(t)
 			tc.set(&cfg)
-			if content := encodeRoundTrip(t, cfg); !strings.Contains(content, tc.want) {
-				t.Errorf("missing %s in:\n%s", tc.want, content)
+			if content, err := EncodeMachine(cfg); err == nil || content != nil {
+				t.Errorf("encoded a non-finite number: %q, %v", content, err)
 			}
 		})
 	}

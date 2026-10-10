@@ -21,6 +21,9 @@ func TestCommandHelpConfigScope(t *testing.T) {
 			if got := strings.Contains(stdout.String(), "--config <path>"); got != wantConfig {
 				t.Fatalf("config flag in help: %v, want %v; stdout %s", got, wantConfig, stdout.String())
 			}
+			if wantConfig && !strings.Contains(stdout.String(), "(default /etc/togi/config.json)") {
+				t.Fatalf("help omits default JSON config path: %s", stdout.String())
+			}
 			if !strings.Contains(stdout.String(), "--state-dir <path>") {
 				t.Fatalf("help omits shared state-dir flag: %s", stdout.String())
 			}
@@ -35,9 +38,9 @@ func TestReadOnlyCommandsRejectConfig(t *testing.T) {
 		for _, placement := range []string{"before", "after"} {
 			t.Run(name+"/"+placement, func(t *testing.T) {
 				t.Parallel()
-				args := []string{name, "--config", "unused.toml", "--help"}
+				args := []string{name, "--config", "unused.json", "--help"}
 				if placement == "before" {
-					args = []string{"--config", "unused.toml", name, "--help"}
+					args = []string{"--config", "unused.json", name, "--help"}
 				}
 				var stdout, stderr bytes.Buffer
 				if code := cli(args, &stdout, &stderr); code != exitUsage {
@@ -60,9 +63,9 @@ func TestWriteCommandsAcceptConfigPlacements(t *testing.T) {
 		for _, placement := range []string{"before", "after"} {
 			t.Run(name+"/"+placement, func(t *testing.T) {
 				t.Parallel()
-				args := []string{name, "--config", "unused.toml", "--help"}
+				args := []string{name, "--config", "unused.json", "--help"}
 				if placement == "before" {
-					args = []string{"--config", "unused.toml", name, "--help"}
+					args = []string{"--config", "unused.json", name, "--help"}
 				}
 				var stdout, stderr bytes.Buffer
 				if code := cli(args, &stdout, &stderr); code != exitOK || stderr.Len() != 0 {
@@ -91,7 +94,7 @@ func TestLeadingConfigRejectionPrecedesCommandArguments(t *testing.T) {
 	} {
 		t.Run(tc.name+"/"+strings.Join(tc.args, " "), func(t *testing.T) {
 			t.Parallel()
-			args := append([]string{"--config", "unused.toml", tc.name}, tc.args...)
+			args := append([]string{"--config", "unused.json", tc.name}, tc.args...)
 			var stdout, stderr bytes.Buffer
 			if code := cli(args, &stdout, &stderr); code != exitUsage {
 				t.Fatalf("exit %d, want %d; stderr %s", code, exitUsage, stderr.String())

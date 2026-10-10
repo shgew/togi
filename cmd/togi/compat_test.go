@@ -183,8 +183,8 @@ func TestResetCoreExitCodeForEveryStampMismatch(t *testing.T) {
 
 func TestRunChecksCompatibilityBeforeConfig(t *testing.T) {
 	dir, original := incompatibleFixture(t, "ruleset")
-	configPath := filepath.Join(t.TempDir(), "invalid.toml")
-	if err := os.WriteFile(configPath, []byte("removed_key = true\n"), 0o644); err != nil {
+	configPath := filepath.Join(t.TempDir(), "invalid.json")
+	if err := os.WriteFile(configPath, []byte(`{"removed_key":true}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
@@ -201,8 +201,8 @@ func TestRunStillRejectsInvalidConfigForCompatibleJournal(t *testing.T) {
 	dir := t.TempDir()
 	fixture := installJournalFixture(t, dir)
 	path := filepath.Join(dir, "events.jsonl")
-	configPath := filepath.Join(t.TempDir(), "invalid.toml")
-	if err := os.WriteFile(configPath, []byte("removed_key = true\n"), 0o644); err != nil {
+	configPath := filepath.Join(t.TempDir(), "invalid.json")
+	if err := os.WriteFile(configPath, []byte(`{"removed_key":true}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
@@ -332,8 +332,8 @@ func TestUnknownKindsBeforeRunConfigAndReset(t *testing.T) {
 			if err := os.WriteFile(path, original, 0o644); err != nil {
 				t.Fatal(err)
 			}
-			configPath := filepath.Join(dir, "invalid.toml")
-			if err := os.WriteFile(configPath, []byte("removed_key = true\n"), 0o644); err != nil {
+			configPath := filepath.Join(dir, "invalid.json")
+			if err := os.WriteFile(configPath, []byte(`{"removed_key":true}`), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			var stdout, stderr bytes.Buffer

@@ -10,7 +10,7 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 
 ## The suite
 
-`tools/bench/suite.toml` lists scenarios. Each scenario names a simulator `machine` file in `tools/bench/machines/` (none means the seeded default machine), or an ensemble in `machines`, and two sets of seeds, `dev` and `holdout`. Ensemble seeds select successive members round-robin by their position within each split, not by the seed value. `replay = true` enables the same-BIOS replay oracle over the selected fitted member:
+`tools/bench/suite.json` lists scenarios in a top-level `scenarios` array. Each scenario names a simulator `machine` JSON file in `tools/bench/machines/` (none means the seeded default machine), or an ensemble in `machines`, and two sets of seeds, `dev` and `holdout`. Ensemble seeds select successive members round-robin by their position within each split, not by the seed value. `"replay": true` enables the same-BIOS replay oracle over the selected fitted member:
 
 |Scenario|Models|
 |---|---|
@@ -47,9 +47,11 @@ Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds s
 
 ### The gate
 
-The [`[gate]` table in `tools/bench/suite.toml`](../tools/bench/suite.toml) is the open ruleset's bench gate, committed before the ruleset is scored. It names the gate `id`, the `baseline` it is judged against (the ruleset and the commits that recorded the runs; a pull request that re-records runs adds its commit), the seed `split`, the `gated` scenarios, the `pooled` subset, the `conclude` scenarios, the `quantiles`, the bootstrap (`confidence`, `resamples`, `bootstrap_seed`) and `max_time_ratio`. The table and its `note` are the definition and the rationale; this page does not restate them per ruleset, and [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate it replaced. The gate comes from [issue #491](https://github.com/shgew/togi/issues/491) and [issue #570](https://github.com/shgew/togi/issues/570).
+The [`gate` object in `tools/bench/suite.json`](../tools/bench/suite.json) is the open ruleset's bench gate, committed before the ruleset is scored. It names the gate `id`, the `baseline` it is judged against (the ruleset and the commits that recorded the runs; a pull request that re-records runs adds its commit), the seed `split`, the `gated` scenarios, the `pooled` subset, the `conclude` scenarios, the `quantiles`, the bootstrap (`confidence`, `resamples`, `bootstrap_seed`) and `max_time_ratio`. The object and its `note` are the definition and the rationale; this page does not restate them per ruleset, and [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate it replaced. The gate comes from [issue #491](https://github.com/shgew/togi/issues/491) and [issue #570](https://github.com/shgew/togi/issues/570).
 
-With `--baseline`, `just bench` judges the gate after the generic verdict below, prints each criterion with its estimate, interval, threshold and `PASS` or `FAIL`, then an overall `gate ID: PASS` or `FAIL`, and exits 0 only when the gate passes. Run it as `just bench --split all --baseline tools/bench/baseline.jsonl`, scored once on every seed of the gate's split; a different `--split`, a candidate or baseline run missing for a required seed, a baseline recorded at another ruleset or commit than the gate names, or a missing `worst_r7_hazard_per_h` fails the gate with a refusal that names the cause. A suite without a `[gate]` prints no gate and exits as before. The criteria, per scenario unless noted:
+The gate's `notes` array preserves accompanying provenance and caveats as JSON data; it does not affect scoring.
+
+With `--baseline`, `just bench` judges the gate after the generic verdict below, prints each criterion with its estimate, interval, threshold and `PASS` or `FAIL`, then an overall `gate ID: PASS` or `FAIL`, and exits 0 only when the gate passes. Run it as `just bench --split all --baseline tools/bench/baseline.jsonl`, scored once on every seed of the gate's split; a different `--split`, a candidate or baseline run missing for a required seed, a baseline recorded at another ruleset or commit than the gate names, or a missing `worst_r7_hazard_per_h` fails the gate with a refusal that names the cause. A suite without a `gate` prints no gate and exits as before. The criteria, per scenario unless noted:
 
 - **Conclusion:** every seed the baseline concluded is still concluded by the candidate, on each gated and each `conclude` scenario.
 - **Median and 90th percentile** (linear interpolation) of the final-profile `worst_r7_hazard_per_h`: fails only when the `confidence` interval of the change lies entirely above 0. The change is the candidate's quantile minus the baseline's, not the quantile of per-pair differences. The interval resamples seed pairs `resamples` times, drawing from a fresh PCG seeded with `bootstrap_seed`, so a run always prints the same interval. Over 24 seeds the interval is wide, so the 90th-percentile criterion has low power: it catches a large tail rise, not a small one.
@@ -72,7 +74,7 @@ The target scenario has 18 dev and 18 holdout seeds: two seeds per ensemble memb
 
 Every run is a `tools/sim` subprocess with its own state directory, in parallel up to `--jobs`. `--max-boots` bounds each session by simulated work, not wall time: a session still running after that many simulated boots stops with `censored` status ([simulating](simulating.md)), so a slow or loaded host makes a run take longer but never changes its status. `--timeout` (default 30m) is only a safety net against a hung simulator: a run that exceeds it is killed and the command fails with a harness error naming the session, never recording a session outcome. Runs start longest first, by the wall times recorded by earlier runs in the user cache directory (`togi/bench/costs.json` under `$XDG_CACHE_HOME` or `~/.cache` on Linux, `~/Library/Caches` on macOS), and in suite order for sessions without a record. The first failed run cancels the rest. SIGINT and SIGTERM kill the simulators and remove the temporary directories. `--keep DIR` keeps the state directories under a new `DIR/bench-*/<scenario>/<split>-<seed>` (the path is printed), so the read-only commands can inspect a run with `--state-dir`. Without `--keep`, each run's state directory is removed as soon as its metrics are read, so a full-suite run holds at most `--jobs` of them at once.
 
-Each simulator subprocess retains parsed events across its simulated reboots and writes `state.json` only at stop, avoiding journal re-parsing and per-event state-file rewrites. It still appends every event to `events.jsonl`; `--keep` leaves the journal and final state available for inspection. This changes wall-clock overhead, not simulated durations or tuner decisions. Recovery and interruption tests use the file-backed path, and fixed-seed equivalence tests compare both output files byte for byte on the default machine and `target-fit-0.toml`.
+Each simulator subprocess retains parsed events across its simulated reboots and writes `state.json` only at stop, avoiding journal re-parsing and per-event state-file rewrites. It still appends every event to `events.jsonl`; `--keep` leaves the journal and final state available for inspection. This changes wall-clock overhead, not simulated durations or tuner decisions. Recovery and interruption tests use the file-backed path, and fixed-seed equivalence tests compare both output files byte for byte on the default machine and `target-fit-0.json`.
 
 Trial samples stay in memory; retained sessions have no `trials/<trial-id>/samples.jsonl`. Their journal evidence, final state and read-only dashboards are unchanged. For per-second sample files, run `tools/sim` with `--samples` ([simulating](simulating.md)).
 
@@ -83,19 +85,20 @@ There is no `--scenario` flag. Write a scratch suite containing just the scenari
 ```sh
 scratch=$(mktemp -d)
 repo=$(pwd -P)
-cat > "$scratch/suite.toml" <<EOF
-[[scenario]]
-name = "target-shared-voltage"
-machine = "$repo/tools/bench/machines/target-shared-voltage.toml"
-replay = true
-dev = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-holdout = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]
+cat > "$scratch/suite.json" <<EOF
+{"scenarios": [{
+  "name": "target-shared-voltage",
+  "machine": "$repo/tools/bench/machines/target-shared-voltage.json",
+  "replay": true,
+  "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  "holdout": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]
+}]}
 EOF
-go run ./tools/bench --suite "$scratch/suite.toml" --split all \
+go run ./tools/bench --suite "$scratch/suite.json" --split all \
   --keep "$scratch/runs" --out "$scratch/results.jsonl" --timeout 15m
 ```
 
-Keep `scratch` until inspection is finished. To select another scenario, copy its seed lists and `replay` setting from `tools/bench/suite.toml`. For an ensemble, use `machines = ["ABSOLUTE-MEMBER-0.toml", "ABSOLUTE-MEMBER-1.toml"]` instead of `machine`. Facts paths still resolve relative to each machine file.
+Keep `scratch` until inspection is finished. To select another scenario, copy its seed lists and `replay` setting from `tools/bench/suite.json`. For an ensemble, use `"machines": ["ABSOLUTE-MEMBER-0.json", "ABSOLUTE-MEMBER-1.json"]` instead of `"machine"`. Facts paths still resolve relative to each machine file.
 
 ### Reproducing an older ruleset
 
@@ -120,7 +123,7 @@ git -C "$older/ruleset9" diff --exit-code "$sim_ref" -- \
   tools/bench/machines/target-shared-voltage.toml tools/bench/facts
 ```
 
-The diff must be empty. In that detached worktree, enter the dev shell and run the one-scenario recipe above. For ruleset 10, use a detached worktree at `645f529` without the port. Both runs must use the same scenario name, seeds, machine and replay setting. Preserve the worktrees and scratch results until analysis ends; their diffs explain the deliberately dirty ruleset-9 records.
+The diff must be empty. In that detached worktree, enter the dev shell and run the one-scenario recipe above, written in that revision's TOML suite and machine format (its machine is the restored `.toml` file). For ruleset 10, use a detached worktree at `645f529` without the port. Both runs must use the same scenario name, seeds, machine and replay setting. Preserve the worktrees and scratch results until analysis ends; their diffs explain the deliberately dirty ruleset-9 records.
 
 For a comparison on a later simulator, review **every** commit that changed the simulator paths since the older ruleset, not just those two signal-mix commits:
 
@@ -249,11 +252,11 @@ func main() {
 
 func containsDeadEnd(log string) bool { return strings.Contains(log, "sim: dead end ") }
 EOF
-go run "$score" MACHINE.toml '[OFFSET0,OFFSET1,OFFSET2,OFFSET3,OFFSET4,OFFSET5,OFFSET6,OFFSET7,OFFSET8,OFFSET9,OFFSET10,OFFSET11,OFFSET12,OFFSET13,OFFSET14,OFFSET15]'
+go run "$score" MACHINE.json '[OFFSET0,OFFSET1,OFFSET2,OFFSET3,OFFSET4,OFFSET5,OFFSET6,OFFSET7,OFFSET8,OFFSET9,OFFSET10,OFFSET11,OFFSET12,OFFSET13,OFFSET14,OFFSET15]'
 rm -r "$score"
 ```
 
-Replace `MACHINE.toml` and the JSON-array placeholders. A `profile.change` event's `to` gives the tuning profile after that change; a `trial.intent` event's `profile` gives the entire applied trial profile, which may instead be a parked hunt profile. Choose the one the checkpoint means. Score with the metric helper and machine from the same pinned simulator revision used for the comparison. This is fitted steady-state risk, without replay draws or an assertion that the checkpoint passed a cycle.
+Replace `MACHINE.json` and the JSON-array placeholders. A `profile.change` event's `to` gives the tuning profile after that change; a `trial.intent` event's `profile` gives the entire applied trial profile, which may instead be a parked hunt profile. Choose the one the checkpoint means. Score with the metric helper and machine from the same pinned simulator revision used for the comparison. This is fitted steady-state risk, without replay draws or an assertion that the checkpoint passed a cycle.
 
 ## Comparing two versions
 
@@ -330,7 +333,7 @@ The output and the record are identical for a fixed copy, commit, suite, machine
 
 ## Checking a machine against real evidence
 
-A machine file may declare `facts = "../facts/target.jsonl.gz"`, resolved relative to the machine TOML. Every `target-fit-*.toml` declares the committed target-machine extract. Files without `facts` are not checked.
+A machine file may declare `"facts": "../facts/target.jsonl.gz"`, resolved relative to the machine JSON file. Every `target-fit-*.json` declares the committed target-machine extract. Files without `facts` are not checked.
 
 Regenerate the extract from a temporary copy of the state directory, never the live state:
 
@@ -343,7 +346,7 @@ The extract also retains an optional attributed `core` on failures, including co
 
 The model check groups decisive trials by BIOS context, trial class (regime, workload, sorted loaded cores and intended duration), and the shallowest loaded-core offset in the applied profile. Any loaded core at 0 puts the trial at depth 0. If the machine declares a BIOS context, only matching facts are checked; otherwise contexts are checked separately.
 
-This check uses decisive pass/failure trials only; interrupted and inconclusive trials are omitted. A facts-declaring machine with positive `thermal_trip` or `power_loss` weights in `[model.reset]` is rejected: those resets can turn simulated crashes into inconclusive outcomes, while the simulator's failure probability includes the full failure hazard. Comparing that probability to decisive-only trials would use incompatible denominators.
+This check uses decisive pass/failure trials only; interrupted and inconclusive trials are omitted. A facts-declaring machine with positive `thermal_trip` or `power_loss` weights in `model.reset` is rejected: those resets can turn simulated crashes into inconclusive outcomes, while the simulator's failure probability includes the full failure hazard. Comparing that probability to decisive-only trials would use incompatible denominators.
 
 For each group with at least 10 trials, the simulator computes each trial's exact failure probability over its intended duration, including onset boosts, unloaded-core hazards and delayed joints. The check averages these probabilities and compares observed failures against quantiles 0.005 and 0.995 of Binomial(n, mean_p). A count outside that inclusive interval flags the machine. Idle failures are retained as their own fact class but have no trial duration or exposure denominator, so the report counts them separately rather than inventing a per-trial prediction.
 
@@ -356,7 +359,7 @@ just fit
 # Optional: --facts EXTRACT.jsonl.gz --out DIRECTORY --seed 263 --bootstrap 8 --jobs N
 ```
 
-`tools/fit` reads the same privacy-safe extract as the model check. It writes `target-fit-0.toml` from all decisive trials and `target-fit-1.toml` through `target-fit-8.toml` from whole-trial bootstrap samples drawn with replacement. The default seed is 263; refit `n` uses seed `263+n`. Every file declares its extract relative to the output directory and its BIOS context. Mixed-context extracts are refused: split them before fitting. The `target` scenario spreads separate dev and holdout seeds across all nine files, with the replay oracle above each.
+`tools/fit` reads the same privacy-safe extract as the model check. It writes `target-fit-0.json` from all decisive trials and `target-fit-1.json` through `target-fit-8.json` from whole-trial bootstrap samples drawn with replacement. The default seed is 263; refit `n` uses seed `263+n`. Every file declares its extract relative to the output directory and its BIOS context. Mixed-context extracts are refused: split them before fitting. The `target` scenario spreads separate dev and holdout seeds across all nine files, with the replay oracle above each.
 
 The independent fits run in parallel up to `--jobs`, which defaults to the CPU count. Unconstrained fits finish before any flagged bootstrap members restart from a passing all-facts fit; those constrained refits also run in parallel. `--jobs 1` runs one fit at a time. Inside a fit, the candidates of one search step, such as the 52 limits of one core, are scored concurrently on every CPU, and in a default `just fit` the forward-chained check runs alongside the ensemble's fits; neither is bounded by `--jobs`. Concurrent scores are summed in a fixed order, so machine bytes and report order do not depend on the worker count or the CPU count.
 
@@ -364,11 +367,11 @@ Each bootstrap sample is fitted without constraints first. If its model check ag
 
 If the all-facts fit itself fails the model check, there is no passing fit to restart from, so `just fit` writes every bootstrap refit as fitted, without constraints, and prints `Refit N written unconstrained` for each flagged one ([ADR 0044](adr/0044-write-flagged-target-fits.md)). The check is unchanged, and a flagged member still cannot support a target-machine claim ([ADR 0029](adr/0029-bench-verdicts-rest-on-fitted-machines.md) Decision 3).
 
-Each generated header records the bootstrap index, the constrained groups' class, depth and observed counts, and the serialized member's model check against the original extract: `ok, no flagged groups`, or `flagged` followed by one `# Flagged:` line per flagged group with its class, loaded cores, intended duration, depth, observed counts and interval. The final model-check report checks the written files and lists the same groups with their mean probability.
+Each generated file's `notes` array of strings records its generated provenance, the bootstrap index, the constrained groups' class, depth and observed counts, and the serialized member's model check against the original extract: `ok, no flagged groups`, or `flagged` followed by one `Flagged:` note per flagged group with its class, loaded cores, intended duration, depth, observed counts and interval. These are JSON data, not comments. The final model-check report checks the written files and lists the same groups with their mean probability.
 
 Before the telemetry refresh, seed-263 refits **2 and 8** required the constraint on `R7 mprime-avx2-36k-248k-allcore`, cores 0–7, 120 s, depth -24 (`n=45`, `k=5`). Their unconstrained predictions were respectively `mean_p=0.0178977`, interval `[0,4]`, and `mean_p=0.0125439`, interval `[0,3]`. That ensemble reported `ok` on its then-current 44 eligible groups. These historical numbers do not validate regenerated machines against the refreshed evidence; use the current `just fit` model-check report.
 
-Against the refreshed evidence, the legacy all-facts fit itself fails the model check: on `R7 mprime-avx2-36k-248k-allcore`, cores 0–7, 300 s, depth −24, it predicts `mean_p=0.0718896`, interval `[0,6]`, against 7 failures in 24 trials. The committed `target-fit-*` files are therefore unconstrained. Each member flags that group, the same workload's cores 8–15, 120 s, depth −39 group (13 failures in 38 trials), or both, and its header names which. None of the nine supports a target-machine claim until a fit passes the check, such as the shared-voltage fit [#480](https://github.com/shgew/togi/issues/480) plans.
+Against the refreshed evidence, the legacy all-facts fit itself fails the model check: on `R7 mprime-avx2-36k-248k-allcore`, cores 0–7, 300 s, depth −24, it predicts `mean_p=0.0718896`, interval `[0,6]`, against 7 failures in 24 trials. The committed `target-fit-*` files are therefore unconstrained. Each member flags that group, the same workload's cores 8–15, 120 s, depth −39 group (13 failures in 38 trials), or both, and its `notes` name which. None of the nine supports a target-machine claim until a fit passes the check, such as the shared-voltage fit [#480](https://github.com/shgew/togi/issues/480) plans.
 
 The objective is the Bernoulli negative log likelihood of observed passes and failures, using `sim.Machine.FailureProbability` over each trial's **intended**, not measured, duration. Equal profile/class observations are aggregated without losing their counts. This includes unloaded-core failures and uses exactly the prediction the model check uses. A bounded coordinate search fits integer per-core alone/together regime limits, the shared past-limit rate and growth, the shared near-limit rate, per-core flat rates and unloaded-core idle limits. R7 failures support layered CCD shared-rail joints: each CCD starts with one all-member joint, and additional failure-profile candidates are accepted when they improve negative log likelihood by at least 0.5, up to eight layers per CCD. Joint member thresholds are fitted independently, not forced to a common depth. Workload limit overrides require at least 10 loaded trials, a failure, and the same minimum likelihood improvement. Search stops after twelve sweeps or negligible likelihood improvement; it is a local maximum-likelihood fit conditional on the selected structure, not a guarantee of a global optimum.
 
@@ -376,11 +379,11 @@ Each sweep also searches coupled integer limit/rate shifts. Moving active per-co
 
 The positive-rate search covers past-limit rates from `1e-8` to `0.5` failures/s, near-limit rates from `1e-8` to `0.001`/s, flat rates from `1e-10` to `0.001`/s, and joint rates from `1e-7` to `0.5`/s. Growth ranges from `1.05` to `8`. Zero is also considered for past-limit, near-limit and flat rates; the joint search's zero candidate is clamped to `1e-12`/s because the simulator interprets a literal zero joint rate as the default past-limit rate. Limits range from -50 to 1, matching the simulator's stock-failure representation.
 
-The fitter retains the original limit/joint fit, then adds a smooth loaded-CCD `[ccd]` hazard only where no fitted joint on that CCD applies. The residual stage freezes the existing joints and introduces no new joint candidates. It fits a shared log rate, nonnegative shared depth slope and two CCD effects with unit-normal shrinkage toward zero. Rate bounds are `1e-7` to `0.1`/s (zero is represented by `1e-12`/s), slope is zero or `1e-4` to `0.5` per mean depth count, and effects are bounded to [−5, 5]. Reported likelihood includes shrinkage. Existing machine files without `[ccd]` retain the original model.
+The fitter retains the original limit/joint fit, then adds a smooth loaded-CCD `ccd` hazard only where no fitted joint on that CCD applies. The residual stage freezes the existing joints and introduces no new joint candidates. It fits a shared log rate, nonnegative shared depth slope and two CCD effects with unit-normal shrinkage toward zero. Rate bounds are `1e-7` to `0.1`/s (zero is represented by `1e-12`/s), slope is zero or `1e-4` to `0.5` per mean depth count, and effects are bounded to [−5, 5]. Reported likelihood includes shrinkage. Existing machine files without `ccd` retain the original model.
 
-The extract cannot identify every simulator parameter. Unsupported or all-passing limit boundaries stay at -50; absence of failures does not prove that boundary. The fit shares the hazard shape across cores and regimes because sparse failures cannot resolve a separate shape for each. Unsupported workload overrides stay absent; flat rates stay zero without supporting failures. Onset boost and joint delays stay at zero: decisive binary trials do not identify failure-time shapes. Crash-MCE probability, bank attribution and reset kinds retain simulator defaults; these are not parameters of the binary likelihood. Idle facts without trials are counted by the check but provide no idle exposure denominator. Idle limits can be fitted only through decisive trials with nonzero offsets on unloaded cores; otherwise they stay disabled. Offset-zero unloaded trials also constrain idle-limit candidates, since a limit of 1 adds a hazard at stock offsets. Failure-only joint activation sets identify a lower bound, not an upper bound on the rate; a saturated fitted rate is a deterministic representative on that likelihood plateau, not a precise physical measurement. Generated headers summarize the fitted parameter families, the signal mix's failure count, unsupported-limit and unobserved-idle limits, and the fixed onset, delay, MCE and reset settings.
+The extract cannot identify every simulator parameter. Unsupported or all-passing limit boundaries stay at -50; absence of failures does not prove that boundary. The fit shares the hazard shape across cores and regimes because sparse failures cannot resolve a separate shape for each. Unsupported workload overrides stay absent; flat rates stay zero without supporting failures. Onset boost and joint delays stay at zero: decisive binary trials do not identify failure-time shapes. Crash-MCE probability, bank attribution and reset kinds retain simulator defaults; these are not parameters of the binary likelihood. Idle facts without trials are counted by the check but provide no idle exposure denominator. Idle limits can be fitted only through decisive trials with nonzero offsets on unloaded cores; otherwise they stay disabled. Offset-zero unloaded trials also constrain idle-limit candidates, since a limit of 1 adds a hazard at stock offsets. Failure-only joint activation sets identify a lower bound, not an upper bound on the rate; a saturated fitted rate is a deterministic representative on that likelihood plateau, not a precise physical measurement. Generated `notes` summarize the fitted parameter families, the signal mix's failure count, unsupported-limit and unobserved-idle limits, and the fixed onset, delay, MCE and reset settings.
 
-The failure signal mix is fitted per regime, apart from the binary likelihood: which signal a failure produces does not change whether it fails, so the forward-chained check and the model check do not see it. Each fit counts the recorded signals of its sample's failures: `[model] signals` holds the counts pooled over every regime, and `[model.regime_signals]` the counts of each regime with failures. Counts are the maximum-likelihood weights, so a signal the sample never recorded gets no weight, and a regime without failures draws from the pooled counts. An uncorrected machine check counts as a crash, which the simulator draws as a crash that leaves an MCE with probability `crash_mce`; a failure without a recorded signal is not counted. A sample without any recorded failure signal, such as a bootstrap resample without failures, keeps the simulator's default weights and writes neither table. Fitted joints and the `[ccd]` residual carry no signal of their own, so their R7 failures draw from the R7 counts, or the pooled counts when the sample has no R7 failures, instead of always crashing. The shared-voltage anchor fits the same counts from all decisive trials.
+The failure signal mix is fitted per regime, apart from the binary likelihood: which signal a failure produces does not change whether it fails, so the forward-chained check and the model check do not see it. Each fit counts the recorded signals of its sample's failures: `model.signals` holds the counts pooled over every regime, and `model.regime_signals` the counts of each regime with failures. Counts are the maximum-likelihood weights, so a signal the sample never recorded gets no weight, and a regime without failures draws from the pooled counts. An uncorrected machine check counts as a crash, which the simulator draws as a crash that leaves an MCE with probability `crash_mce`; a failure without a recorded signal is not counted. A sample without any recorded failure signal, such as a bootstrap resample without failures, keeps the simulator's default weights and writes neither object. Fitted joints and the `ccd` residual carry no signal of their own, so their R7 failures draw from the R7 counts, or the pooled counts when the sample has no R7 failures, instead of always crashing. The shared-voltage anchor fits the same counts from all decisive trials.
 
 Generation prints likelihoods, CCD joint parameters, the fitted signal counts per regime with the number of failures behind them, model checks against the **original** extract (also for bootstrap fits), and elapsed wall time. Files contain no timestamps and use stable ordering and full-precision parameters, so fixed inputs and seed reproduce them byte for byte on one architecture. Between amd64 and arm64 they can differ in the last digits: Go implements its math functions separately for each architecture, and the arm64 compiler fuses multiply-adds. A last-digit difference after refitting on the other architecture is not a model change. A model-check flag is not silently repaired or excluded: inspect the named class, depth and interval before using that ensemble member as target evidence. A flag may reflect a poor local optimum, the current model's shared-shape/joint assumptions, or a sparse failure absent from a bootstrap sample; it is not by itself proof of an impossible fit. The shared `tools/modelcheck` implementation is used by both `just fit` and `just bench`, with the same 99% intervals.
 
@@ -392,7 +395,7 @@ just fit-shared-voltage
 # Equivalent: go run ./tools/fit --shared-voltage-in-sample
 ```
 
-This opt-in mode fits **all decisive trials**, including record-only facts, to the 16-core shared-voltage model and writes only `target-shared-voltage.toml`. It requires one nonempty BIOS context and 16-core profiles. It leaves the default `just fit`, `just forward`, bootstrap dispatch and `target-fit-*` files unchanged. The anchor mode rejects `--bootstrap`, `--seed`, `--forward-only` and `--seal`, even when their supplied values equal their defaults.
+This opt-in mode fits **all decisive trials**, including record-only facts, to the 16-core shared-voltage model and writes only `target-shared-voltage.json`. It requires one nonempty BIOS context and 16-core profiles. It leaves the default `just fit`, `just forward`, bootstrap dispatch and `target-fit-*` files unchanged. The anchor mode rejects `--bootstrap`, `--seed`, `--forward-only` and `--seal`, even when their supplied values equal their defaults.
 
 Before creating the output directory or changing an anchor, it runs the **unchanged model check on the full original extract**, not a bootstrap or selected subset. It reports `ok` only when every eligible group passes (52 groups on the committed telemetry refresh). A non-ok result prints each exact flagged class, loaded cores, intended duration, depth, observed counts, interval and full-precision mean probability, then exits with failure without writing. A passing in-sample check does not validate later-session predictions.
 
@@ -419,23 +422,28 @@ Shared-voltage parameter bounds:
 
 The request reference is fixed at 5240 MHz. Power and thermal limits are fixed at 192 W; workload power is 13 W/core for mprime AVX2 and 15 W/core for AVX-512 and y-cruncher, plus 0.12 W per offset count relative to −35. Full-load clocks use measured medians; unsupported ones retain fixed priors. Unsupported y-cruncher R7 uses, per core, the more demanding (maximum) of the mprime AVX2/AVX-512 thresholds, not a hardware-validated threshold.
 
-The generated header explicitly says **IN-SAMPLE, NOT forward-validated**, records the failed 2026-10-04 [#306](https://github.com/shgew/togi/issues/306#issuecomment-5979625589) bar, and declares relative `facts` and `[bios_context]`. Workloads and cores have stable order; floating-point parameters have full precision. Reports print raw total and per-trial in-sample Bernoulli log loss for all trials and R7, and predicted/observed R7 counts **for record-only purposes**, not as held-out scores. These diagnostics also print for a flagged fit before failure returns without writing an anchor. Fixed inputs reproduce files and reports on one architecture, excluding the elapsed line.
+The generated `notes` array explicitly says **IN-SAMPLE, NOT forward-validated** and records the failed 2026-10-04 [#306](https://github.com/shgew/togi/issues/306#issuecomment-5979625589) bar; the file declares relative `facts` and `bios_context`. Workloads and cores have stable order; floating-point parameters have full precision. Reports print raw total and per-trial in-sample Bernoulli log loss for all trials and R7, and predicted/observed R7 counts **for record-only purposes**, not as held-out scores. These diagnostics also print for a flagged fit before failure returns without writing an anchor. Fixed inputs reproduce files and reports on one architecture, excluding the elapsed line.
 
 **Q17 forward bar remains authoritative.** A shared-voltage fit used for forward claims or regeneration of `target-fit-*` must beat the constant predictor's log loss on a held-out session's R7 trials and predict total R7 failures within a factor of 2 ([#105](https://github.com/shgew/togi/issues/105)). The first candidate failed on 2026-10-04: 36.0 predicted against 17 observed (above the allowed 34), despite log loss 0.270 below constant 0.399. That check was not blind; it was not retuned afterwards, and a future forward claim needs a new blind session. This all-facts anchor neither reruns nor supersedes that check and does not authorize `target-fit-*` regeneration.
 
-To replay exact real facts over the anchor, set `replay = true` on a **bench suite scenario**, not in the machine TOML (that key is unsupported there). For example, place this one-scenario suite at `tools/bench/shared-voltage-suite.toml`:
+To replay exact real facts over the anchor, set `"replay": true` on a **bench suite scenario**, not in the machine JSON (that key is unsupported there). For example, place this one-scenario suite at `tools/bench/shared-voltage-suite.json`:
 
-```toml
-[[scenario]]
-name = "target-shared-voltage-in-sample"
-machine = "machines/target-shared-voltage.toml"
-replay = true
-dev = [1]
-holdout = [101]
+```json
+{
+  "scenarios": [
+    {
+      "name": "target-shared-voltage-in-sample",
+      "machine": "machines/target-shared-voltage.json",
+      "replay": true,
+      "dev": [1],
+      "holdout": [101]
+    }
+  ]
+}
 ```
 
 ```sh
-just bench --suite tools/bench/shared-voltage-suite.toml --split dev
+just bench --suite tools/bench/shared-voltage-suite.json --split dev
 ```
 
 Machine paths resolve relative to the suite; facts resolve relative to the machine. The declared facts and BIOS context let `trialfacts.Extracts.Replay` construct `sim.NewReplay` for matching decisive trials, with fitted fallback on unmatched classes/profiles. The bench process reads each extract once and shares it between its metric replay oracles and the model checks of every member that declares it; each simulated session's simulator still loads the extract itself. A replay run remains in-sample evidence, not forward validation.

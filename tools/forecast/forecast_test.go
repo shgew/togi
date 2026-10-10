@@ -295,7 +295,7 @@ func TestSummarize(t *testing.T) {
 		for _, p := range profile {
 			o.Depth += p
 		}
-		return Run{Machine: "m.toml", Outcome: o}
+		return Run{Machine: "m.json", Outcome: o}
 	}
 	for _, tc := range []struct {
 		name string

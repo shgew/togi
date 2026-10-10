@@ -17,7 +17,7 @@ Examples:
 
 Flags:
   --all                archive the session; the next run starts a new one
-  --config <path>      configuration file path for doctor, run and reset (default /etc/togi/config.toml)
+  --config <path>      JSON configuration file path for doctor, run and reset (default /etc/togi/config.json)
   --core <N>           reset core N: clear its failure point and every combination that includes it; restart its search from the baseline
 
 Global flags:

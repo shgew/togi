@@ -12,7 +12,7 @@
     "files": null,
     "runs": [
       {
-        "machine": "machines/target.toml",
+        "machine": "machines/target.json",
         "seed": 1,
         "split": "dev",
         "status": "concluded",
@@ -40,7 +40,7 @@
         "depth": -256
       },
       {
-        "machine": "machines/target.toml",
+        "machine": "machines/target.json",
         "seed": 2,
         "split": "dev",
         "status": "concluded",
@@ -68,7 +68,7 @@
         "depth": -322
       },
       {
-        "machine": "machines/target.toml",
+        "machine": "machines/target.json",
         "seed": 3,
         "split": "dev",
         "status": "deadend",
