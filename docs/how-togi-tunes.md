@@ -62,6 +62,8 @@ The breadth is intentional ([ADR 0020](adr/0020-hunt-and-refine.md)); the precis
 
 **A failure or backoff does not restart or fail the cycle.** It invalidates contradicted evidence, repairs the profile and reruns the failed class. Uncontradicted passes on deeper profiles can still cover the now-shallower profile. The same cycle resumes its remaining requirements. It can pass after dozens of failures and backoffs. For example, cycle 1 can fail an R7 part, hunt and back off, rerun that part, and later end passed—all still cycle 1.
 
+After a profile change, every R7 chain re-derives from its full load. A part whose loaded set is unchanged keeps its passes and runs no new trial; a part whose set changed needs its own three short and one long trial; a set that left the chain is no longer required. The cycle therefore passes only after the ending profile's riskiest loads have run ([ADR 0055](adr/0055-rederive-r7-chains-after-a-backoff.md), [Together trial sequence](spec/tuner.md#together-trial-sequence)).
+
 A **passed cycle** has fulfilled its requirements. A **full cycle** additionally has the required workload breadth. A **clean cycle** is a passed full cycle that ended at or after phase 2's conclusion. A passed cycle that is not clean ended before that, as phase 1's first confirmed cycle does, not because its trials failed. The exact rules are in [Checking](spec/tuner.md#checking).
 
 ### Hunts: identify an unattributed cause

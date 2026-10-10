@@ -337,6 +337,9 @@ func TestR7ChainRerunsAFailedClassThatLeftTheChain(t *testing.T) {
 		h.trial(a, passed)
 		a = h.next()
 	}
+	if diff := cmp.Diff(h.s.cycleNext(), a); diff != "" {
+		t.Fatalf("the scheduler did not resume the cycle after the %d reruns (-cycle +next):\n%s", h.s.n, diff)
+	}
 	rederive(t, h, "partial 1", []int{1, 2, 3}, "changed")
 	if slices.ContainsFunc(h.s.r7StepParts(0), func(cores []int) bool { return slices.Equal(cores, old) }) {
 		t.Fatalf("a class that left the chain is still required: %v", h.s.r7StepParts(0))
