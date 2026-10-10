@@ -19,7 +19,7 @@
     "max_time_ratio": 2.0,
     "baseline": {
       "ruleset": 10,
-      "commits": ["3a9b894"]
+      "commits": ["3a9b894", "21052983"]
     }
   },
   "scenarios": [
