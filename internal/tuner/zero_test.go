@@ -51,6 +51,7 @@ func TestSingleCoreZeroRerunKeepsItsShape(t *testing.T) {
 	}
 	a := h.next()
 	want := Trial{Core: 0, Regime: machine.R5, Workload: w, DurationS: 120, Condition: machine.Parked, Phase: journal.PhaseChecking, Profile: []int{0, 0}, Rerun: true}
+	want.Requirement = ScheduledRequirement{Kind: "unclassified", Class: ScheduledClass{Regime: want.Regime, Workload: want.Workload, Cores: "[0]", DurationS: want.DurationS}, Rule: cycleEvidence, Needed: 1}
 	if diff := cmp.Diff(Action{Kind: RunTrial, Trial: want, Cause: []int{failure.Seq}}, a); diff != "" {
 		t.Fatalf("all-zero rerun (-want +got):\n%s", diff)
 	}

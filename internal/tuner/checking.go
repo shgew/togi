@@ -181,15 +181,17 @@ func (s *State) cycleNext() Action {
 			}
 			continue
 		}
-		for _, q := range s.requirements(i) {
+		req := s.requirements(i)
+		for j, q := range req {
 			if q.count == 0 {
 				continue
 			}
 			if s.cyclePasses(q.class) >= q.count {
 				continue
 			}
+			selected, _ := s.cycleRequirement(req, i, j)
 			if s.retry != nil && s.retry.Cycle == g.cycle && s.retry.Condition == machine.Together {
-				return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{g.lastSeq}}
+				return s.runRetry(*s.retry, selected, []int{g.lastSeq})
 			}
 			t := Trial{Regime: q.class.regime, Workload: q.class.workload, DurationS: q.class.duration, Phase: journal.PhaseChecking, Condition: machine.Together, Cycle: g.cycle}
 			if q.class.regime == machine.R6 || q.class.regime == machine.R7 {
@@ -197,7 +199,7 @@ func (s *State) cycleNext() Action {
 			} else {
 				t.Core, t.Offset = q.core, q.offset
 			}
-			return Action{Kind: RunTrial, Trial: t, Cause: []int{g.lastSeq}}
+			return s.runTrial(t, selected, []int{g.lastSeq})
 		}
 	}
 	fullCycleCoverage, missing := s.fullCycleCoverage(g.steps)
@@ -378,6 +380,15 @@ func (s *State) afterReruns(a Action) Action {
 }
 
 func (s *State) rerunTrial(k trialClass) Action {
+	failure := s.obligations[0].seq
+	for _, r := range s.obligations[1:] {
+		if r.class == s.obligations[0].class && r.seq > failure {
+			failure = r.seq
+		}
+	}
+	if s.retry != nil && s.retry.Rerun && s.retry.Condition != machine.Parked {
+		return s.retryTrial(*s.retry, []int{failure})
+	}
 	t := Trial{Regime: k.regime, Workload: k.workload, Phase: journal.PhaseChecking, Condition: machine.Together, DurationS: k.duration, Rerun: true}
 	target := s.classTargets[k.cores]
 	if target.multi || len(target.cores) == 0 {
@@ -385,14 +396,10 @@ func (s *State) rerunTrial(k trialClass) Action {
 	} else if c := s.core(target.cores[0]); c != nil {
 		t.Core, t.Offset = c.id, c.offset
 	}
-	if s.retry != nil && s.retry.Rerun && s.retry.Condition != machine.Parked {
-		t = *s.retry
+	class := k
+	if k.workload == "" || len(target.cores) == 0 || !slices.IsSorted(target.cores) || !target.multi && s.core(target.cores[0]) == nil {
+		// The built shape no longer matches the selected class (legacy journals), so the journal will record its own.
+		class = s.shapeClass(t)
 	}
-	failure := s.obligations[0].seq
-	for _, r := range s.obligations[1:] {
-		if r.class == s.obligations[0].class && r.seq > failure {
-			failure = r.seq
-		}
-	}
-	return Action{Kind: RunTrial, Trial: t, Cause: []int{failure}}
+	return s.runTrial(t, s.rerunRequirement(class), []int{failure})
 }

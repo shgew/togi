@@ -155,6 +155,7 @@ func TestForecastInconclusiveRetainsTrial(t *testing.T) {
 		}
 		p := h.start(h.next()).Data.(*journal.TrialIntent)
 		want := trialFromIntent(p)
+		want.Requirement = h.s.StoredRequirement(p.Trial)
 		want.Retry = true
 		found := false
 		for _, b := range Forecast(h.events).Branches {

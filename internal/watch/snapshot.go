@@ -41,8 +41,27 @@ func projectRead(events []journal.Event, err error) Snapshot {
 func Project(events []journal.Event) Snapshot {
 	var st journal.State
 	t := tuner.New()
-	requirements := requirementRecorder{t: t, intents: map[string]*journal.TrialIntent{}, failed: map[string]tuner.TrialRequirement{}, counts: map[string]trialCount{}, steps: map[string]int{}}
-	journal.Replay(events, &st, &requirements, t)
+	journal.Replay(events, &st, t)
+	intents := map[string]*journal.TrialIntent{}
+	failed := map[string]tuner.TrialRequirement{}
+	counts := map[string]trialCount{}
+	steps := map[string]int{}
+	for _, e := range events {
+		switch d := e.Data.(type) {
+		case *journal.TrialIntent:
+			intents[d.Trial] = d
+		case *journal.TrialEnd:
+			h := t.TrialHistory(d.Trial)
+			if d.Outcome == journal.OutcomeFailure {
+				failed[d.Trial] = h.Requirement
+			}
+			counts[d.Trial] = trialCount{h.Requirement.Trial, h.Requirement.Needed}
+			if h.PartNeeded > 0 {
+				counts[d.Trial] = trialCount{h.PartTrial, h.PartNeeded}
+			}
+			steps[d.Trial] = h.Step
+		}
+	}
 	t.Project(&st)
 	if st.Session == nil {
 		return Snapshot{}
@@ -51,7 +70,7 @@ func Project(events []journal.Event) Snapshot {
 	for _, c := range st.Cores {
 		s.order = append(s.order, c.Core)
 	}
-	p := projector{s: &s, st: &st, intents: requirements.intents, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{}, applied: map[int]int{}, tuned: map[int]int{}, solo: map[int]int{}, failures: map[int]*failureView{}, backs: map[int]int{}, sources: map[int]int{}, combinationSeqs: map[int]int{}, probes: map[int]bool{}, requirements: requirements.failed, counts: requirements.counts, steps: requirements.steps, checkHunts: map[[2]int][]int{}, cycleSteps: map[int][]machine.Regime{}, huntStarts: map[int]huntStartView{}, groups: map[[2]int]*journal.HuntGroup{}}
+	p := projector{s: &s, st: &st, intents: intents, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{}, applied: map[int]int{}, tuned: map[int]int{}, solo: map[int]int{}, failures: map[int]*failureView{}, backs: map[int]int{}, sources: map[int]int{}, combinationSeqs: map[int]int{}, probes: map[int]bool{}, requirements: failed, counts: counts, steps: steps, checkHunts: map[[2]int][]int{}, cycleSteps: map[int][]machine.Regime{}, huntStarts: map[int]huntStartView{}, groups: map[[2]int]*journal.HuntGroup{}}
 	for _, e := range events {
 		p.fold(e)
 	}
@@ -59,76 +78,8 @@ func Project(events []journal.Event) Snapshot {
 	return s
 }
 
-type requirementRecorder struct {
-	t       *tuner.State
-	intents map[string]*journal.TrialIntent
-	failed  map[string]tuner.TrialRequirement
-	counts  map[string]trialCount
-	steps   map[string]int // the one-based checking step each cycle trial ran in
-}
-
 // trialCount is which trial of its checking part, or else of its requirement, a trial was: index of of.
 type trialCount struct{ index, of int }
-
-// Fold runs before the tuner folds the same event, so it sees each trial's requirement as the trial ran.
-func (r *requirementRecorder) Fold(e journal.Event) {
-	switch d := e.Data.(type) {
-	case *journal.TrialIntent:
-		r.intents[d.Trial] = d
-	case *journal.TrialEnd:
-		in := r.intents[d.Trial]
-		if in == nil {
-			return
-		}
-		req := r.t.Requirement(in)
-		if d.Outcome == journal.OutcomeFailure {
-			r.failed[d.Trial] = req
-		}
-		r.counts[d.Trial] = trialCount{req.Trial, req.Needed}
-		if in.Cycle > 0 {
-			plan := r.t.CyclePlan()
-			if part, ok := cyclePartOf(plan, in.Cycle, in.Step, trialCores(in)); ok {
-				r.counts[d.Trial] = partCount(part)
-			}
-			step := in.Step
-			if step == 0 && plan.Number == in.Cycle {
-				step = plan.Current + 1
-			}
-			r.steps[d.Trial] = step
-		}
-	}
-}
-
-// cyclePartOf finds the part of a checking step that loads these cores: the part the tuner runs now when one matches,
-// else the matching part of the given step, where step 0 means the step the cycle is at.
-func cyclePartOf(plan tuner.CyclePlan, cycle, step int, cores []int) (tuner.CyclePart, bool) {
-	if plan.Number != cycle {
-		return tuner.CyclePart{}, false
-	}
-	want := slices.Sorted(slices.Values(cores))
-	matches := func(part tuner.CyclePart) bool {
-		return slices.Equal(slices.Sorted(slices.Values(part.Cores)), want)
-	}
-	for i, s := range plan.Steps {
-		for _, part := range s.Parts {
-			if part.Running && matches(part) && (step == 0 || step == i+1) {
-				return part, true
-			}
-		}
-	}
-	if step == 0 {
-		step = plan.Current + 1
-	}
-	if step < 1 || step > len(plan.Steps) {
-		return tuner.CyclePart{}, false
-	}
-	for _, part := range plan.Steps[step-1].Parts {
-		if matches(part) {
-			return part, true
-		}
-	}
-	return tuner.CyclePart{}, false
-}
 
 // partCount is which trial of its part the next trial is: only passes count toward a part.
 func partCount(part tuner.CyclePart) trialCount {

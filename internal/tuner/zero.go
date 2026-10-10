@@ -42,7 +42,7 @@ func (s *State) atZero(f pendingFailure, dead *journal.DeadEnd, cause []int) (Ac
 // so the rerun loads the same CPUs as the failure it confirms.
 func (s *State) zeroRerunTrial(f pendingFailure) Action {
 	if s.retry != nil && s.retry.Rerun && s.retry.Condition == machine.Parked {
-		return Action{Kind: RunTrial, Trial: *s.retry, Cause: []int{f.seq}}
+		return s.retryTrial(*s.retry, []int{f.seq})
 	}
 	phase := journal.PhaseChecking
 	if f.failure.Condition == machine.Parked {
@@ -65,7 +65,7 @@ func (s *State) zeroRerunTrial(f pendingFailure) Action {
 			t.Cores = s.ids()
 		}
 	}
-	return Action{Kind: RunTrial, Trial: t, Cause: []int{f.seq}}
+	return s.runTrial(t, s.rerunRequirement(s.shapeClass(t)), []int{f.seq})
 }
 
 // recordZeroRerun remembers an all-zero rerun by the failure its intent cites.

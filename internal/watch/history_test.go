@@ -299,11 +299,25 @@ func unboundedHistory(events []journal.Event) []entry {
 
 func historyFixtureProjector(events []journal.Event) projector {
 	var st journal.State
-	r := requirementRecorder{t: tuner.New(), intents: map[string]*journal.TrialIntent{}, failed: map[string]tuner.TrialRequirement{}, counts: map[string]trialCount{}, steps: map[string]int{}}
-	journal.Replay(events, &st, &r, r.t)
+	t := tuner.New()
+	journal.Replay(events, &st, t)
+	intents := map[string]*journal.TrialIntent{}
+	counts := map[string]trialCount{}
+	for _, e := range events {
+		switch d := e.Data.(type) {
+		case *journal.TrialIntent:
+			intents[d.Trial] = d
+		case *journal.TrialEnd:
+			h := t.TrialHistory(d.Trial)
+			counts[d.Trial] = trialCount{h.Requirement.Trial, h.Requirement.Needed}
+			if h.PartNeeded > 0 {
+				counts[d.Trial] = trialCount{h.PartTrial, h.PartNeeded}
+			}
+		}
+	}
 	return projector{
 		s: &Snapshot{carried: map[int]bool{}, shapes: map[int]huntShape{}}, st: &st,
-		intents: r.intents, counts: r.counts, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{},
+		intents: intents, counts: counts, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{},
 		huntStarts: map[int]huntStartView{}, groups: map[[2]int]*journal.HuntGroup{}, probes: map[int]bool{},
 	}
 }
