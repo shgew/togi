@@ -18,7 +18,7 @@ import (
 
 type Config struct {
 	Seed uint64
-	// Cores defaults to 16; it must be even and at least 2. Core c is on CCD c/(Cores/2) with CPUs c and c+Cores.
+	// Cores defaults to 16; it must be even, at least 2 and at most 16 (machine.PerCoreMax). Core c is on CCD c/(Cores/2) with CPUs c and c+Cores.
 	Cores  int
 	Facts  string
 	Replay *Replay
@@ -154,8 +154,8 @@ type Machine struct {
 }
 
 func validateCores(cores int) error {
-	if cores < 2 || cores%2 != 0 {
-		return fmt.Errorf("%d cores: must be even and at least 2", cores)
+	if cores < 2 || cores%2 != 0 || cores > machine.PerCoreMax {
+		return fmt.Errorf("%d cores: must be even and at least 2, and at most %d", cores, machine.PerCoreMax)
 	}
 	return nil
 }

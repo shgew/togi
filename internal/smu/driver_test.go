@@ -270,10 +270,22 @@ func TestSlotIdentityPreflight(t *testing.T) {
 			detail: "CCD0 core IDs disagree with modulo-eight slots: core 08 at slot 6, want slot 0; core 09 at slot 7, want slot 1",
 		},
 		{
-			name:   "second-ccd-id",
+			name:   "second-ccd-id-outside-range",
 			cores:  [2][8]int{{0, 1, 2, 3, 4, 5, 6, 7}, {8, 9, 10, 11, 12, 13, 14, 16}},
 			cache:  true,
-			detail: "CCD1 core IDs disagree with modulo-eight slots: core 16 at slot 7, want slot 0",
+			detail: "CCD1 core IDs 16 outside supported range 0-15",
+		},
+		{
+			name:   "ccd-numbered-16-to-23",
+			cores:  [2][8]int{{0, 1, 2, 3, 4, 5, 6, 7}, {16, 17, 18, 19, 20, 21, 22, 23}},
+			cache:  true,
+			detail: "CCD1 core IDs 16, 17, 18, 19, 20, 21, 22, 23 outside supported range 0-15",
+		},
+		{
+			name:   "both-ccds-outside-range",
+			cores:  [2][8]int{{16, 17, 18, 19, 20, 21, 22, 23}, {24, 25, 26, 27, 28, 29, 30, 31}},
+			cache:  true,
+			detail: "CCD0 core IDs 16, 17, 18, 19, 20, 21, 22, 23; CCD1 core IDs 24, 25, 26, 27, 28, 29, 30, 31 outside supported range 0-15",
 		},
 		{
 			name:   "cross-ccd-die-fallback",
