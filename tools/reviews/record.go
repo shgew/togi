@@ -18,7 +18,7 @@ var (
 	outcomes   = [...]string{"fixed", "rejected", "deferred"}
 )
 
-// record is the part of a review record's hidden JSON block this report reads; versions 1, 2 and 3 share it (REVIEW.md, Review record).
+// record is the part of a review record's hidden JSON block this report reads; versions 1, 2 and 3 share it (docs/review-record.md).
 type record struct {
 	Version  int       `json:"version"`
 	Findings []finding `json:"findings"`

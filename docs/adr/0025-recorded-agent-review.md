@@ -12,7 +12,7 @@ Opening a pull request starts this review before its author reports done. `.omp/
 
 Findings follow `AGENTS.md`: fix real defects and reply with reasons to the rest. Fix commits get their own independent review. CodeRabbit is removed because the owner ended its trial.
 
-The record is one App comment per reviewed head commit. It names the commit, covered files and reviewers, lists every finding with priority and outcome, and states the verdict. `REVIEW.md` defines the human format and version-1 JSON in the final hidden `togi-review` block so reporting tools can parse it. No per-pull-request record is committed to the repository.
+The record is one App comment per reviewed head commit. It names the commit, covered files and reviewers, lists every finding with priority and outcome, and states the verdict. `docs/review-record.md` defines the human format and version-1 JSON in the final hidden `togi-review` block so reporting tools can parse it. No per-pull-request record is committed to the repository.
 
 After recording the review, the App posts a completed check run named `review` on that exact head with a summary linking the comment. Success requires an outcome for every finding and no open P0/P1; deferring such a finding does not clear it. After this change merges, the owner configures the `main` ruleset to require `review` from robotogi and resolved review threads, alongside CI. A new push needs a new check. A pure rebase carries review forward only when `git range-diff` pairs every patch in the layer unchanged; the new head gets a check linking the earlier record, without another review comment.
 

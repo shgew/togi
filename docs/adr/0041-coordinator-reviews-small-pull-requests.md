@@ -8,7 +8,7 @@ The review coordinator reviews a small pull request itself instead of spawning r
 
 ADR 0025's gate holds: the coordinator is independent of the pull request's author, applies `REVIEW.md`, triages findings by `AGENTS.md`, and posts the review record and the `review` check. Review of only what changed ([ADR 0026](0026-review-only-what-changed.md)) is unchanged: the coordinator reviews later rounds of a pull request that is still small, and one that grows past small gets reviewers for its delta.
 
-`AGENTS.md` keeps the review's trigger, identity and finding disposition and leaves its execution to `.omp/commands/review-pr.md`; `REVIEW.md` keeps the criteria and the record. No review rule is restated in all three.
+`AGENTS.md` keeps the review's trigger, identity and finding disposition and leaves its execution to `.omp/commands/review-pr.md`; `REVIEW.md` keeps the criteria and `docs/review-record.md` the record. No review rule is restated in all three.
 
 ## Considered Options
 

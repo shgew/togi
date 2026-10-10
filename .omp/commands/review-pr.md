@@ -3,7 +3,7 @@ description: Review pull requests in parallel and record their merge gates
 argument-hint: "[PR numbers or URLs… | all]"
 ---
 
-Review `$ARGUMENTS` in this repository. Read `AGENTS.md` and `REVIEW.md` first. Use `gh` for GitHub actions, which act as the owner; only the review record and the `review` check go through `just bot`, which acts as robotogi. Keep temporary payloads outside the repository. Never merge; the owner merges.
+Review `$ARGUMENTS` in this repository. Read `AGENTS.md` and `REVIEW.md` first; a coordinator also reads `docs/review-record.md`. Use `gh` for GitHub actions, which act as the owner; only the review record and the `review` check go through `just bot`, which acts as robotogi. Keep temporary payloads outside the repository. Never merge; the owner merges.
 
 ## Resolve and fan out
 
@@ -37,7 +37,7 @@ After fixes, freeze the new head and fix diff once, with the same exclusions and
 
 ## Coordinator: record and check
 
-Fetch the head again. If it changed outside reviewed fixes, review the new changes before proceeding. Prepare the record in the layout of `REVIEW.md`'s Review record section: verdict first, the findings table only when there are findings, the review data in a collapsed `<details>` block, commit SHAs and `#N` references bare, and the version-3 `togi-review` JSON last, carrying the same data as the text. A first record covers the latest reviewed SHA, all covered files, exclusions and all findings across review rounds; a later record covers only its delta. Post ONE record for that reviewed head with `just bot pr comment <N> --body-file <record-file>`; keep its returned URL. Reuse an existing record for the head rather than posting another.
+Fetch the head again. If it changed outside reviewed fixes, review the new changes before proceeding. Prepare the record in the layout of `docs/review-record.md`: verdict first, the findings table only when there are findings, the review data in a collapsed `<details>` block, commit SHAs and `#N` references bare, and the version-3 `togi-review` JSON last, carrying the same data as the text. A first record covers the latest reviewed SHA, all covered files, exclusions and all findings across review rounds; a later record covers only its delta. Post ONE record for that reviewed head with `just bot pr comment <N> --body-file <record-file>`; keep its returned URL. Reuse an existing record for the head rather than posting another.
 
 Only when every finding has an outcome and no P0/P1 is open, prepare this payload with the reviewed SHA and record URL:
 
