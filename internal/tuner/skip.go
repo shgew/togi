@@ -40,6 +40,9 @@ func (s *State) skipKnownFailure(a Action) Action {
 		return Action{Kind: Decide, Payload: s.makeGroup(h, planOf(m.payload), m.payload.Group, "failure", false, reason), Cause: []int{m.seq, seq}}
 	}
 	known := s.failureBySeq(seq)
+	if known != nil && s.later.held[known.seq] {
+		return a
+	}
 	if known == nil {
 		panic(fmt.Sprintf("tuner: known failure #%d has no attribution", seq))
 	}

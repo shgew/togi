@@ -66,6 +66,7 @@ func (s *State) foldCycle(e journal.Event, p *journal.CheckingCycle) {
 		g.stepsDone = 0
 		g.partial = map[int]*checkingStep{}
 		s.foldPhaseCycleStart(e)
+		s.pruneStrikes()
 		s.projectionDirty = true
 		return
 	}
@@ -77,6 +78,7 @@ func (s *State) foldCycle(e journal.Event, p *journal.CheckingCycle) {
 	if p.Passed && p.Full {
 		s.passedFullCycles = append(s.passedFullCycles, passedFullCycle{profile: slices.Clone(g.profile), seq: e.Seq, cycle: p.Cycle})
 		s.foldPhaseCycleEnd(e)
+		s.foldLaterCycleEnd(e)
 	}
 	s.projectionDirty = true
 }
@@ -228,6 +230,14 @@ func (s *State) attributeTogether(a *awaiting) *journal.Failure {
 }
 
 func (s *State) pendingDecision() (Action, bool) {
+	a, ok := s.ordinaryDecision()
+	if !ok {
+		return a, false
+	}
+	return s.laterDecision(a), true
+}
+
+func (s *State) ordinaryDecision() (Action, bool) {
 	if a, ok := s.r7Decision(); ok {
 		return a, true
 	}
