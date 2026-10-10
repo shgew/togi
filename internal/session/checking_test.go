@@ -3,6 +3,7 @@ package session
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -121,5 +122,79 @@ func TestCrashEvidenceIsClaimedOnce(t *testing.T) {
 	}
 	if got := f.recordedFor("b", "c"); len(got) != 0 {
 		t.Fatalf("evidence of boot b: %v, want none", got)
+	}
+}
+
+// nextBootMCEKernel adds an uncorrected machine check to every boot but the crashed one.
+type nextBootMCEKernel struct {
+	machine.Kernel
+	crashed string
+}
+
+func (k *nextBootMCEKernel) MCEs(boot string, since time.Duration) ([]machine.MCE, error) {
+	mces, err := k.Kernel.MCEs(boot, since)
+	if err != nil || boot == k.crashed {
+		return mces, err
+	}
+	return append(mces, machine.MCE{CPU: 0, Core: 0, Bank: 0, BankType: machine.LoadStore, Lines: []string{"[Hardware Error]: Uncorrected error on CPU 0 (test)"}}), nil
+}
+
+func TestThermalTripIdleCrashNeedsNoEvidenceForDeadEnd(t *testing.T) {
+	t.Parallel()
+	_, ref := reference(t, small())
+	applied := slices.IndexFunc(ref, func(e journal.Event) bool {
+		p, ok := e.Data.(*journal.ProfileApplied)
+		return ok && p.Condition == machine.Together
+	})
+	if applied < 0 {
+		t.Fatal("reference run never applied the profile")
+	}
+	for _, tc := range []struct {
+		name     string
+		evidence bool
+	}{
+		{"uncorrected MCE in the next boot is an idle failure", true},
+		{"no evidence is a thermal dead end", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			in := simInput(t.TempDir(), newSim(t, small()))
+			if tc.evidence {
+				seams := in.Machine.Seams()
+				seams.Kernel = &nextBootMCEKernel{Kernel: seams.Kernel, crashed: ref[applied].Boot}
+				in.Seams = &seams
+			}
+			gate := crashAt(ref[applied].Seq, in.Machine)
+			gate.do = func(journal.Event) error {
+				in.Machine.NextReset(machine.ResetThermalTrip)
+				in.Machine.Crash()
+				return machine.ErrCrashed
+			}
+			stop := drive(t, in, gate)
+			events := readEvents(t, in.Dir)
+			crash, ok := crashDetectedFor(events, ref[applied].Boot)
+			if !ok {
+				t.Fatal("no crash.detected")
+			}
+			p := crash.Data.(*journal.CrashDetected)
+			if p.ResetReason != machine.ResetThermalTrip || p.Inconclusive == tc.evidence {
+				t.Fatalf("crash %+v, want thermal_trip with inconclusive=%v", p, !tc.evidence)
+			}
+			failure := failureCiting(events, crash.Seq)
+			if !tc.evidence {
+				if failure != nil || stop.Reason != StopDeadEnd || stop.DeadEnd.Condition != journal.DeadEndThermalTrip {
+					t.Fatalf("failure %+v, stop %+v, want the thermal dead end", failure, stop)
+				}
+				return
+			}
+			if failure == nil || failure.Signal != machine.Crash || failure.Regime != machine.R6 || failure.Condition != machine.Together {
+				t.Fatalf("idle failure: %+v", failure)
+			}
+			for _, e := range events {
+				if d, ok := e.Data.(*journal.DeadEnd); ok && d.Condition == journal.DeadEndThermalTrip {
+					t.Fatalf("thermal dead end after a crash with evidence: %+v", d)
+				}
+			}
+		})
 	}
 }

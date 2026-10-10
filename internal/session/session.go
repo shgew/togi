@@ -695,10 +695,10 @@ func (r *runner) closeOpenTrial() error {
 		}
 		crash := r.eventAt(seq).Data.(*journal.CrashDetected)
 		reset := &journal.TrialEnd{Outcome: journal.OutcomeInconclusive}
-		switch {
-		case crash.ResetReason == machine.ResetThermalTrip && crash.Inconclusive:
+		switch tuner.RecordedCrashKind(crash, true) {
+		case tuner.CrashThermal:
 			reset.Reason = "thermal trip during the trial"
-		case crash.Inconclusive:
+		case tuner.CrashInconclusive:
 			reset.Reason = "the machine lost power during the trial"
 		default:
 			reset.Outcome, reset.Signal, reset.Reason = journal.OutcomeFailure, machine.Crash, "machine crashed during the trial"
