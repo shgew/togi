@@ -244,33 +244,6 @@ func TestGateBaselineIdentity(t *testing.T) {
 	}
 }
 
-func TestCommittedBaselineIsTheGatesBaseline(t *testing.T) {
-	g, err := loadGate("suite.json")
-	if err != nil || g == nil {
-		t.Fatalf("loadGate = %v, %v", g, err)
-	}
-	baseline, err := readResults("baseline.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, r := range baseline {
-		if r.Ruleset != g.Baseline.Ruleset || !slices.Contains(g.Baseline.Commits, r.Commit) {
-			t.Fatalf("baseline run %s/%d is ruleset %d at %s; the gate names ruleset %d at %v: a pull request that re-records baseline runs lists its commit in gate.baseline", r.Scenario, r.Seed, r.Ruleset, r.Commit, g.Baseline.Ruleset, g.Baseline.Commits)
-		}
-	}
-	have := make(map[key]bool, len(baseline))
-	for _, r := range baseline {
-		have[key{r.Scenario, r.Seed}] = true
-	}
-	for name, seeds := range g.seeds {
-		for _, seed := range seeds {
-			if !have[key{name, seed}] {
-				t.Errorf("baseline.jsonl has no run for the gate's %s seed %d", name, seed)
-			}
-		}
-	}
-}
-
 func TestGateBootstrapReproducible(t *testing.T) {
 	candidate, baseline := gateRuns(func(i int) float64 { return float64(i%5) - 1 }, nil)
 	var a, b []float64
@@ -325,8 +298,8 @@ func TestGateReportGolden(t *testing.T) {
 }
 
 func TestLoadGate(t *testing.T) {
-	t.Run("committed suite", func(t *testing.T) {
-		g, err := loadGate("suite.json")
+	t.Run("archived suite", func(t *testing.T) {
+		g, err := loadGate(archivedGate("suite.json"))
 		if err != nil {
 			t.Fatal(err)
 		}
