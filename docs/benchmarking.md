@@ -45,25 +45,22 @@ On `target-shared-voltage`, changing only unloaded cores' offsets cannot change 
 
 Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds stay unseen by the change being tuned.
 
-### Ruleset-9 evaluation
+### The gate
 
-For the shared-voltage strategy, [ADR 0038](adr/0038-self-sufficient-cores.md) and [issue #105](https://github.com/shgew/togi/issues/105) define a separate owner-approved gate, not a change to the generic comparison verdict below. Rework ruleset 9 before creating adversaries. Search adversaries against ruleset 8 only, using an in-sample all-facts `target-shared-voltage.toml` anchor labelled not forward-validated that passes the model check on every eligible group. If no in-sample fit passes, hand-set adversaries must state that they have no anchor.
+The [`[gate]` table in `tools/bench/suite.toml`](../tools/bench/suite.toml) is the open ruleset's bench gate, committed before the ruleset is scored. It names the gate `id`, the `baseline` it is judged against (the ruleset and the commits that recorded the runs; a pull request that re-records runs adds its commit), the seed `split`, the `gated` scenarios, the `pooled` subset, the `conclude` scenarios, the `quantiles`, the bootstrap (`confidence`, `resamples`, `bootstrap_seed`) and `max_time_ratio`. The table and its `note` are the definition and the rationale; this page does not restate them per ruleset, and [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate it replaced. The gate comes from [issue #491](https://github.com/shgew/togi/issues/491) and [issue #570](https://github.com/shgew/togi/issues/570).
 
-Compare every shared-voltage scenario, each adversary and the hand-set `shared-voltage.toml`, with 12 dev and 12 holdout seeds each against ruleset 8. Ruleset 9 must conclude wherever ruleset 8 concluded; median and maximum final-profile worst R7 hazard must be no higher; and time must be at most 2× ruleset 8's. Pooled across adversaries, median worst R7 hazard must be strictly lower. Report legacy scenarios, crashes and depth without gating them. Stop for the owner's decision if no anchored adversary makes ruleset 8 worse or if the gate fails.
+With `--baseline`, `just bench` judges the gate after the generic verdict below, prints each criterion with its estimate, interval, threshold and `PASS` or `FAIL`, then an overall `gate ID: PASS` or `FAIL`, and exits 0 only when the gate passes. Run it as `just bench --split all --baseline tools/bench/baseline.jsonl`, scored once on every seed of the gate's split; a different `--split`, a candidate or baseline run missing for a required seed, a baseline recorded at another ruleset or commit than the gate names, or a missing `worst_r7_hazard_per_h` fails the gate with a refusal that names the cause. A suite without a `[gate]` prints no gate and exits as before. The criteria, per scenario unless noted:
 
-Score ruleset 9 once on dev, then confirm once on holdout; changes after the dev score are defect fixes with tests. Ordinary dev iteration above does not apply to this evaluation. No multi-core R7 failure is tolerated: the rejected 5%/0.2 tolerance raised the hand-set machine's worst R7 hazard from 0.47 to 1.74/h without depth or time gain ([#386](https://github.com/shgew/togi/issues/386)).
+- **Conclusion:** every seed the baseline concluded is still concluded by the candidate, on each gated and each `conclude` scenario.
+- **Median and 90th percentile** (linear interpolation) of the final-profile `worst_r7_hazard_per_h`: fails only when the `confidence` interval of the change lies entirely above 0. The change is the candidate's quantile minus the baseline's, not the quantile of per-pair differences. The interval resamples seed pairs `resamples` times, drawing from a fresh PCG seeded with `bootstrap_seed`, so a run always prints the same interval. Over 24 seeds the interval is wide, so the 90th-percentile criterion has low power: it catches a large tail rise, not a small one.
+- **Time:** the geometric mean over pairs both concluded of candidate `sim_hours` over baseline's is at most `max_time_ratio`, with no exemption.
+- **Pooled median:** the median over the `pooled` scenarios' seeds together is strictly lower than the baseline's; equal fails.
 
-### Ruleset-10 evaluation
+Maxima and everything else are reported by the summary and the comparison, not gated. Treat a failed gate as the owner's decision, not a threshold to renegotiate after scoring.
 
-[ADR 0040](adr/0040-located-hunts.md) records the gate the owner amended on 2026-10-07. Ruleset 10 is scored once against ruleset 9 on all 24 seeds per scenario pooled, dev and holdout together, not on dev and then holdout. On each anchored adversary scenario it must conclude wherever ruleset 9 concluded; the median and the 90th percentile (linear interpolation) of final-profile `worst_r7_hazard_per_h` must be no higher; and time must be at most 2× ruleset 9's, with the cost of [#107](https://github.com/shgew/togi/issues/107)'s default cycle (R3 and R4 three times, about 1.07×) exempt and reported separately. The per-scenario maximum is reported, not gated, because one draw of a pass with a 20–60% probability decided it. Pooled across adversaries, the median must be strictly lower.
+### Historical measurements
 
-The hand-set scenarios `default`, `idle-limit` and `late-onset` are gated as well: no run that the committed ruleset-9 baseline concluded on the same seed may fail to conclude. Ruleset 9 reported those scenarios without gating them, and lost `idle-limit` and `late-onset` runs that way ([#415](https://github.com/shgew/togi/issues/415)). The legacy `target` fits stay reported only, because they fail the model check against the refreshed evidence. The gate was scored after [#376](https://github.com/shgew/togi/issues/376) landed, since it changes the unloaded-core draws the located hunt depends on.
-
-**Historical score, 2026-10-07:** the following gate numbers used the anchor merged at `0ccbe089` (generated at `0f6b5d23`), before its signal-mix regeneration in [#461](https://github.com/shgew/togi/pull/461), merge `bf7230d`. They are simulated results on that earlier evaluation environment, not current-anchor timings.
-
-Scored after the review fixes, in which a located hunt reruns its full failing profile at the failed duration before it ends `loaded`, ruleset 10 fails one criterion of this gate: the pooled median worst R7 hazard on `target-r7-vf-boost` rises from 2.79 to 2.82 per hour. Every other criterion holds: from ruleset 9 to 10, pooled median / 90th-percentile worst R7 hazard per hour goes 3.10→2.49 / 4.95→3.52 on `target-shared-voltage`, 2.79→2.82 / 5.88→4.07 on `target-r7-vf-boost`, 4.05→3.11 / 4.99→4.89 on `target-r7-request-gap` and 0.47→0.47 / 1.74→1.74 on `shared-voltage`; the pooled adversary median falls from 3.17 to 2.64; time is at most 1.90× ruleset 9's without #107 (`target-shared-voltage`) and 2.03× with it; and `default`, `idle-limit` and `late-onset` conclude 48/48, 8/8 and 8/8. The maxima, reported only, go 11.55→5.28, 7.40→5.98 and 5.16→6.46 on the three adversaries.
-
-The owner merged Ruleset 10 on 2026-10-07 with that criterion failing, as an exception: the rise is within noise (12 of 24 `target-r7-vf-boost` seeds are worse and 12 better, the 95% bootstrap interval of the median change is −1.07 to +0.83 per hour, and its 90th percentile fell 5.88→4.07 and its maximum 7.40→5.98), and it comes from the fix that makes located hunts follow [#415](https://github.com/shgew/togi/issues/415); Ruleset 11 fixes how the gate treats noise before it is scored ([#416](https://github.com/shgew/togi/issues/416)).
+The **historical score of 2026-10-07**, recorded in [ADR 0040](adr/0040-located-hunts.md), used the anchor merged at `0ccbe089` (generated at `0f6b5d23`), before its signal-mix regeneration in [#461](https://github.com/shgew/togi/pull/461), merge `bf7230d`. Those gate numbers are simulated results on that earlier evaluation environment, not current-anchor timings.
 
 On the regenerated anchor (`18a51a63`, merged at `bf7230d`), the [2026-10-07 #493 measurements](https://github.com/shgew/togi/issues/493#issuecomment-6040930168) report **simulated** median total time of 53.1 h for ruleset 9 and 249.8 h for ruleset 10, about 4.7×, on `target-shared-voltage` with 24 seeds. Ruleset 10 ran at `645f529`; ruleset 9 ran at `84c2a01` with the same simulator and regenerated machine. That anchor remains unchanged at `2f318490` (2026-10-10). The earlier 1.90×/2.03× claims do not describe it. See [How togi tunes](how-togi-tunes.md) for the measured phase breakdown and [the reproduction recipe](#reproducing-an-older-ruleset).
 
@@ -179,7 +176,7 @@ Cite a check as evidence only for the packages it exercises. `just gate` runs th
 | `vm-restart-limit` | Linux only: a NixOS VM whose `togi` is a stub that exits 2 for `run` and `restart-limit` | The module's units and scripts: three failed starts, the start limit, the fallback leave reason, the return to the normal generation, the cleared GRUB saved entry and the lock file's ownership | Any Go code, including togi's own `restart-limit` command |
 | `just same` | Both trees' `tools/sim` across every dev and holdout seed of their suites, with journals compared byte for byte (above) | The session, tuner, carry and journal on the paths the suite's scenarios reach, through the simulator's SMU, host, trials and kernel | Any change to trial, detect, smu, hardware or the backends, which the simulator replaces; paths no scenario reaches |
 | `just smoke` | One session per scenario of both trees' `tools/sim`, the suite's `smoke` list, compared as `just same` does | The same simulated paths as `just same`, on the sessions with the most crashes and longest histories of each scenario | Anything `just same` does not prove, and the paths the other sessions reach: run `just same` before relying on it |
-| `just bench` | Simulated sessions for the chosen split (dev by default) and the model checks; with `--baseline FILE`, a comparison with that baseline by metric thresholds | The same simulated paths as `just same` | Unchanged decisions (one changed decision with unchanged totals can pass), or anything about the packages the simulator replaces |
+| `just bench` | Simulated sessions for the chosen split (dev by default) and the model checks; with `--baseline FILE`, a comparison with that baseline by metric thresholds and, when the suite registers one, [the gate](#the-gate) | The same simulated paths as `just same` | Unchanged decisions (one changed decision with unchanged totals can pass), or anything about the packages the simulator replaces |
 | `just hardware` | On the target machine, `go test -tags hardware -p 1 ./...` | Every ordinary test, plus the hardware tests: both real backends running each R1 and R2 catalog workload on core 2 in a real scope; detect reading the real kernel log; smu's driver checks, writing each core's current offset back and reading it, its BIOS context and PM table; hardware's diagnosis leaving offsets unchanged; trial's scope tests with helper backends | R3 to R7 workloads or multi-core loads on real backends, a new offset written to the SMU, the host's full preflight or ranking, or a tuning session: those need `togi doctor` or `togi run` evidence from the target machine |
 
 ## What a run records
@@ -266,6 +263,8 @@ Run the base version with `--out base.jsonl` and the candidate with `--baseline 
 - `ACCEPT`: no violation and the interval's upper bound below 1.0;
 - `NEUTRAL`: anything else.
 
+This generic verdict is separate from [the gate](#the-gate), which a suite registers for its ruleset and which sets the exit status.
+
 Violations:
 
 - **V1:** a run the base concluded no longer concludes, including a censored run.
@@ -290,8 +289,7 @@ The recorded run lives at `tools/bench/baseline.jsonl`, the path the research pr
 Compare a candidate with the recorded baseline:
 
 ```sh
-just bench --baseline tools/bench/baseline.jsonl
-just bench --split holdout --baseline tools/bench/baseline.jsonl
+just bench --split all --baseline tools/bench/baseline.jsonl
 ```
 
 ## Forecasting a real run
