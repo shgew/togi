@@ -2,6 +2,7 @@ package tuner
 
 import (
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
 	"slices"
@@ -544,4 +545,100 @@ func TestForecastUnmeasuredChainEndingFollowsOffsetOrder(t *testing.T) {
 		h.add(&journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomePass, DurationS: p.DurationS})
 	}
 	t.Fatal("no pass forecast derived the CCD's chain")
+}
+
+// displayedCycle is the number of the cycle on display: the one the last checking cycle event, start or end, names.
+func displayedCycle(events []journal.Event) int {
+	for _, e := range slices.Backward(events) {
+		if p, ok := e.Data.(*journal.CheckingCycle); ok {
+			return p.Cycle
+		}
+	}
+	return 0
+}
+
+// Passing the reruns of a backoff can complete the open cycle, and the tuner's next cycle trial is then the first trial
+// of the next one. Resume names a step of the cycle on display, so it stays zero while that cycle is shown; Next and
+// the branches still name the next cycle's trial, and Resume returns once that cycle is the one shown.
+func TestForecastResumeNamesNoStepOfALaterCycle(t *testing.T) {
+	cfg := config.Default()
+	cfg.Checking.Cycle = []machine.Regime{machine.R1, machine.R6}
+	h := newHarnessOn(t, topology(2), cfg, hasRoomStarts(-20, -20)...)
+	failedR6 := false
+	var reruns []ForecastPlan
+	var between, ended, later int
+	for range 200 {
+		if failedR6 {
+			plan := Forecast(h.events)
+			switch {
+			case displayedCycle(h.events) == 1:
+				// Between trials of the cycle that holds the failure, and after the rerun has passed it.
+				if plan.Resume != 0 {
+					t.Fatalf("cycle 1 is shown after the R6 backoff, yet Resume names step %d of the next cycle (next %+v)", plan.Resume, plan.Next)
+				}
+				between++
+				if c, ok := h.events[len(h.events)-1].Data.(*journal.CheckingCycle); ok && c.Event == journal.CycleEnd {
+					// The end is recorded; the next cycle's start is not.
+					ended++
+					if plan.Next == nil || plan.Next.Cycle != 2 || plan.Next.Rerun {
+						t.Fatalf("after cycle 1's end the forecast must name cycle 2's first trial: %+v", plan.Next)
+					}
+				}
+			case plan.Next != nil && !plan.Next.Rerun:
+				later++
+				if plan.NextStep != 1 || plan.Resume != 1 {
+					t.Fatalf("with cycle 2 shown, Resume is %d and NextStep %d, want both 1", plan.Resume, plan.NextStep)
+				}
+			}
+		}
+		a := h.next()
+		switch {
+		case a.Kind == Decide:
+			h.decide(a)
+			continue
+		case a.Trial.Rerun:
+			started := h.start(a)
+			plan := Forecast(h.events)
+			if plan.Resume != 0 {
+				t.Fatalf("rerun %d in flight: Resume names step %d of the cycle after the one on display", len(reruns)+1, plan.Resume)
+			}
+			reruns = append(reruns, plan)
+			h.add(&journal.TrialEnd{Trial: started.Data.(*journal.TrialIntent).Trial, Outcome: journal.OutcomePass, DurationS: a.Trial.DurationS}, started.Seq)
+			continue
+		case a.Trial.Cycle == 2:
+		case a.Trial.Regime == machine.R6 && !failedR6:
+			failedR6 = true
+			h.trial(a, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0), DurationS: 41})
+			continue
+		case failedR6:
+			t.Fatalf("fixture: cycle 1 ran %+v after its R6 failure instead of completing on the reruns", a.Trial)
+		default:
+			h.trial(a, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: a.Trial.DurationS})
+			continue
+		}
+		break
+	}
+	if len(reruns) == 0 || between == 0 || ended == 0 || later == 0 {
+		t.Fatalf("fixture must pass reruns that complete cycle 1 and start cycle 2: %d reruns in flight, %d between-trial forecasts of cycle 1, %d after its end, %d in cycle 2", len(reruns), between, ended, later)
+	}
+	final := reruns[len(reruns)-1]
+	i := slices.IndexFunc(final.Branches, func(b ForecastBranch) bool { return b.Premise == IfPass })
+	if i < 0 {
+		t.Fatalf("final rerun has no pass branch: %+v", final.Branches)
+	}
+	pass := final.Branches[i]
+	if pass.Next == nil || pass.Next.Cycle != 2 || pass.Next.Rerun || pass.NextStep != 1 {
+		t.Fatalf("the pass branch must still name cycle 2's first trial: next %+v, step %d", pass.Next, pass.NextStep)
+	}
+	closes := slices.ContainsFunc(pass.Decisions, func(d journal.Payload) bool {
+		c, ok := d.(*journal.CheckingCycle)
+		return ok && c.Event == journal.CycleEnd && c.Cycle == 1
+	})
+	opens := slices.ContainsFunc(pass.Decisions, func(d journal.Payload) bool {
+		c, ok := d.(*journal.CheckingCycle)
+		return ok && c.Event == journal.CycleStart && c.Cycle == 2
+	})
+	if !closes || !opens {
+		t.Fatalf("the pass branch must close cycle 1 and open cycle 2: %+v", pass.Decisions)
+	}
 }

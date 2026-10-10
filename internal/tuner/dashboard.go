@@ -151,9 +151,10 @@ type ForecastPlan struct {
 	Branches []ForecastBranch
 	Next     *Trial
 	NextStep int
-	// Resume is the checking step, counting from 1, that the open cycle's next trial runs in once its reruns pass,
-	// after the decisions the tuner takes without a trial, such as R7 chain endings after a profile change; zero when
-	// the next trial is not a cycle trial.
+	// Resume is the checking step, counting from 1, that the cycle on display runs next once its reruns pass, after the
+	// decisions the tuner takes without a trial, such as R7 chain endings after a profile change; zero when the next
+	// trial is not a trial of that cycle: not a cycle trial, or the first trial of the next cycle because passing the
+	// reruns completes this one.
 	Resume       int
 	Decisions    []journal.Payload
 	NeedsRanking bool

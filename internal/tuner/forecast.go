@@ -231,12 +231,14 @@ func Forecast(events []journal.Event) ForecastPlan {
 			return out
 		}
 	}
+	// The cycle on display; draining folds decisions that can close it and start the next one.
+	cycle := base.state.checking.cycle
 	p := base.state.inFlight()
 	if p == nil {
 		b := ForecastBranch{}
 		base.drain(&b)
 		out.Next, out.NextStep = b.Next, b.NextStep
-		out.Resume = base.resume(b)
+		out.Resume = base.resume(b, cycle)
 		out.Decisions = b.Decisions
 		out.NeedsRanking = b.NeedsRanking
 		out.NeedsHistory = b.NeedsHistory
@@ -285,7 +287,7 @@ func Forecast(events []journal.Event) ForecastPlan {
 		f.end(p, premise, pc.core)
 		f.drain(&b)
 		if premise == IfPass {
-			out.Resume = f.resume(b)
+			out.Resume = f.resume(b, cycle)
 		}
 		if premise == IfAllPass && !f.passRemaining(p, remaining, &b) {
 			// Another requirement's trial comes first, so the premise cannot hold on its own.
@@ -302,12 +304,16 @@ func Forecast(events []journal.Event) ForecastPlan {
 }
 
 // resume returns the checking step the open cycle's next trial runs in once reruns pass, counting from 1, or zero when
-// the tuner's next trial is not a cycle trial. It passes each rerun the tuner schedules, so it consumes the state it
-// runs on and takes the branch by value.
-func (f *forecastState) resume(b ForecastBranch) int {
+// the tuner's next trial is not a trial of that cycle: not a cycle trial, or a trial of a later cycle because passing
+// the reruns completes this one. cycle is the open cycle's number before any forecast decision. It passes each rerun
+// the tuner schedules, so it consumes the state it runs on and takes the branch by value.
+func (f *forecastState) resume(b ForecastBranch, cycle int) int {
 	for n := 0; n < forecastSteps && b.Next != nil && !b.NeedsRanking && !b.NeedsHistory; n++ {
 		t := *b.Next
 		if t.Phase == journal.PhaseChecking && t.Cycle > 0 && t.Hunt == 0 && !t.Rerun {
+			if t.Cycle != cycle {
+				return 0
+			}
 			return b.NextStep
 		}
 		if !t.Rerun {
