@@ -61,12 +61,12 @@ func reportSignals(w io.Writer, model *sim.Model) {
 	}
 }
 
-// signalsNote says where a machine's signal weights came from.
+// signalsNote says how many failures a machine's signal weights were counted from.
 func signalsNote(model *sim.Model) string {
 	if model.RegimeSignals == nil {
-		return "No failures: default signal weights."
+		return "Signal mix: no failures; default weights."
 	}
-	return fmt.Sprintf("Fitted signal mix: counts of %s' signals per regime; regimes without failures use the pooled counts.", failureCount(model.Signals))
+	return fmt.Sprintf("Signal mix: counted from %s.", failureCount(model.Signals))
 }
 
 func failureCount(counts map[machine.Signal]float64) string {
