@@ -1,6 +1,7 @@
 package tuner
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -29,7 +30,7 @@ func drive(t *testing.T, h *harness, done func() bool) {
 		if diff := cmp.Diff(h.s.Next(), replayState(h.events).Next()); diff != "" {
 			t.Fatalf("resume after event %d (-live +replayed):\n%s", len(h.events), diff)
 		}
-		if live, replayed := h.s.phases, replayState(h.events).phases; live.phase1End != replayed.phase1End || live.confirmStart != replayed.confirmStart || live.concluded != replayed.concluded || !slices.Equal(live.passed, replayed.passed) || !slices.Equal(live.confirmed, replayed.confirmed) {
+		if live, replayed := h.s.phases, replayState(h.events).phases; live.phase1End != replayed.phase1End || live.confirmStart != replayed.confirmStart || live.concluded != replayed.concluded || !slices.Equal(live.passed, replayed.passed) || !slices.Equal(live.confirmed, replayed.confirmed) || !maps.Equal(live.finished, replayed.finished) {
 			t.Fatalf("phase state after event %d: live %+v, replayed %+v", len(h.events), live, replayed)
 		}
 		a := h.next()
@@ -266,7 +267,7 @@ func roundFailure(t *testing.T, h *harness, core int) journal.Event {
 	return h.decide(h.next())
 }
 
-func TestRoundFailureBlamesTheLoadedDeepenedCoreAndRollsBackOnlyLoadedMovers(t *testing.T) {
+func TestRoundFailureBlamesTheLoadedDeepenedCoreAndEveryOtherMoverYieldsAndIsFinished(t *testing.T) {
 	h := cleanCycleHarness(t, []int{-10, -10, -10, -10}, nil)
 	drive(t, h, func() bool { return h.s.round != nil && len(h.s.round.start.Cores) == 4 })
 	for {
@@ -283,38 +284,71 @@ func TestRoundFailureBlamesTheLoadedDeepenedCoreAndRollsBackOnlyLoadedMovers(t *
 		t.Fatalf("round end %+v", a)
 	}
 	h.decide(a)
+	var yielded []int
+	for range 3 {
+		a = h.next()
+		y, ok := a.Payload.(*journal.TunerDecision)
+		if !ok || y.Phase != journal.PhaseDeepening || y.Decision != journal.Yield || y.ToOffset != -10 || !slices.Equal(a.Cause, []int{failure.Seq}) {
+			t.Fatalf("yield of an unloaded mover: %+v", a)
+		}
+		yielded = append(yielded, y.Core)
+		h.decide(a)
+	}
+	slices.Sort(yielded)
+	if !slices.Equal(yielded, []int{1, 2, 3}) {
+		t.Fatalf("yielded %v, want the three unloaded movers", yielded)
+	}
 	a = h.next()
 	back, ok := a.Payload.(*journal.TunerDecision)
 	if !ok || back.Phase != journal.PhaseDeepening || back.Decision != journal.Backoff || back.Core != 0 || back.ToOffset != -10 || back.FailurePoint == nil || *back.FailurePoint != -11 || !slices.Equal(a.Cause, []int{failure.Seq}) {
 		t.Fatalf("blamed backoff %+v", a)
 	}
 	h.decide(a)
-	if got := h.s.offsets(); !slices.Equal(got, []int{-10, -11, -11, -11}) {
-		t.Fatalf("unloaded movers did not keep their offset: %v", got)
+	if got := h.s.offsets(); !slices.Equal(got, []int{-10, -10, -10, -10}) {
+		t.Fatalf("every mover must be back at its last passed offset: %v", got)
 	}
 	for _, c := range h.s.cores {
 		if c.pending != 0 {
 			t.Fatalf("core %d still pending failure #%d", c.id, c.pending)
 		}
 	}
-	for range 40 {
-		a = h.next()
-		if p, ok := a.Payload.(*journal.DeepeningRound); ok && p.Event == journal.CycleStart {
-			if !slices.Equal(p.Cores, []int{1, 2, 3}) || !slices.Equal(p.Profile, []int{-10, -11, -11, -11}) {
-				t.Fatalf("second round %+v", p)
-			}
-			return
+	from := len(h.events)
+	drive(t, h, func() bool { return h.s.phases.confirmStart != 0 })
+	for _, e := range h.events[from:] {
+		if p, ok := e.Data.(*journal.DeepeningRound); ok && p.Event == journal.CycleStart {
+			t.Fatalf("a round started after every core was finished: %+v", p)
 		}
-		if _, ok := a.Payload.(*journal.HuntStart); ok {
-			t.Fatalf("the consumed failure started a hunt: %+v", a)
-		}
-		if a.Kind == RunTrial {
-			h.trial(a, passed)
-		} else {
-			h.decide(a)
+		if _, ok := e.Data.(*journal.HuntStart); ok {
+			t.Fatalf("the consumed failure started a hunt: %+v", e.Data)
 		}
 	}
-	t.Fatal("no second round")
+	if got := h.s.phases.finished; !maps.Equal(got, map[int]bool{1: true, 2: true, 3: true}) {
+		t.Fatalf("finished cores %v, want the three yielded movers", got)
+	}
+}
+
+func TestRoundThatEndsUnpassedWithoutBlameKeepsItsMoversForARecheckInPlace(t *testing.T) {
+	h := cleanCycleHarness(t, []int{-10, -10, -10, -10}, nil)
+	nextRound(h)
+	for {
+		a, ok := h.s.roundMoves()
+		if !ok {
+			break
+		}
+		h.decide(a)
+	}
+	moved := h.s.offsets()
+	h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleEnd, Reason: "a failure needs a hunt"}, h.s.round.seq)
+	second := nextRound(h)
+	if !slices.Equal(second.Cores, []int{0, 1, 2, 3}) || !slices.Equal(second.Profile, moved) || !strings.Contains(second.Reason, "checked again") {
+		t.Fatalf("second round %+v, want every mover re-checked in place at %v", second, moved)
+	}
+	if len(h.s.phases.finished) != 0 {
+		t.Fatalf("a round without a blame finished cores %v", h.s.phases.finished)
+	}
+	if diff := cmp.Diff(h.s.Next(), replayState(h.events).Next()); diff != "" {
+		t.Fatalf("resume (-live +replayed):\n%s", diff)
+	}
 }
 
 func TestRoundFailureMovesNothingIntoARecordedFailurePoint(t *testing.T) {
@@ -436,6 +470,7 @@ func TestRoundFailureBlamesTopRequestGroupOfAnR7Load(t *testing.T) {
 		t.Fatal("the round never ran an R7 check")
 	}
 	loaded := slices.Clone(r7.Trial.Cores)
+	roundCores := slices.Clone(h.s.round.start.Cores)
 	h.trial(r7, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash})
 	failure := h.decide(h.next())
 	end := h.next()
@@ -444,7 +479,8 @@ func TestRoundFailureBlamesTopRequestGroupOfAnR7Load(t *testing.T) {
 	}
 	h.decide(end)
 	var blamed *journal.TunerDecision
-	for range 6 {
+	var yielded []int
+	for range 8 {
 		a := h.next()
 		d, ok := a.Payload.(*journal.TunerDecision)
 		if !ok || d.Phase != journal.PhaseDeepening {
@@ -455,17 +491,175 @@ func TestRoundFailureBlamesTopRequestGroupOfAnR7Load(t *testing.T) {
 			blamed = d
 			break
 		}
-		if !slices.Contains(loaded, d.Core) {
-			t.Fatalf("rollback yielded unloaded core %d (loaded %v)", d.Core, loaded)
-		}
+		yielded = append(yielded, d.Core)
 	}
 	if blamed == nil || !slices.Contains(loaded, blamed.Core) {
 		t.Fatalf("blamed %+v outside the loaded cores %v", blamed, loaded)
+	}
+	slices.Sort(yielded)
+	var others []int
+	for _, c := range roundCores {
+		if c != blamed.Core {
+			others = append(others, c)
+		}
+	}
+	if !slices.Equal(yielded, others) {
+		t.Fatalf("yielded %v, want every other mover %v, loaded or not", yielded, others)
 	}
 	if want := loaded[len(loaded)-1]; blamed.Core != want {
 		t.Fatalf("blamed core %d, want the least preferred loaded core %d", blamed.Core, want)
 	}
 	if len(h.s.loads) != 0 {
 		t.Fatalf("a phase-2 blame counted toward escalation: %v", h.s.loads)
+	}
+}
+
+func TestYieldedMoverIsFinishedAndNeverMovesAgain(t *testing.T) {
+	h := cleanCycleHarness(t, []int{-10, -10, -10, -10}, nil)
+	drive(t, h, func() bool { return h.s.round != nil })
+	for {
+		a, ok := h.s.roundMoves()
+		if !ok {
+			break
+		}
+		h.decide(a)
+	}
+	var r7 Action
+	for range 400 {
+		a := h.next()
+		if a.Kind == RunTrial && a.Trial.Regime == machine.R7 && a.Trial.Round != 0 {
+			r7 = a
+			break
+		}
+		if a.Kind == RunTrial {
+			h.trial(a, passed)
+		} else {
+			h.decide(a)
+		}
+	}
+	if r7.Kind != RunTrial {
+		t.Fatal("the round never ran an R7 check")
+	}
+	h.trial(r7, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+	h.decide(h.next())
+	h.decide(h.next())
+	var yielded []int
+	for range 6 {
+		a := h.next()
+		d, ok := a.Payload.(*journal.TunerDecision)
+		if !ok || d.Phase != journal.PhaseDeepening {
+			t.Fatalf("action %+v", a)
+		}
+		h.decide(a)
+		if d.Decision == journal.Backoff {
+			break
+		}
+		yielded = append(yielded, d.Core)
+	}
+	if len(yielded) == 0 {
+		t.Fatal("no loaded co-mover yielded")
+	}
+	from := len(h.events)
+	drive(t, h, func() bool { return h.s.phases.confirmStart != 0 })
+	for _, e := range h.events[from:] {
+		p, ok := e.Data.(*journal.DeepeningRound)
+		if !ok || p.Event != journal.CycleStart {
+			continue
+		}
+		for _, id := range yielded {
+			if slices.Contains(p.Cores, id) || p.Profile[id] != -10 {
+				t.Fatalf("round %d moves core %d again, which yielded: %+v", p.Round, id, p)
+			}
+		}
+	}
+	for _, id := range yielded {
+		if c := h.s.core(id); c.offset != -10 {
+			t.Fatalf("yielded core %d ended at %d, want its last passed offset -10", id, c.offset)
+		}
+	}
+}
+
+func TestConfirmationFailureRevertsTheDeepestMovedCoreFirst(t *testing.T) {
+	h := newHarness(t, soloCore(-10, -11), soloCore(-10, -12))
+	h.add(&journal.ProfileChange{To: []int{-10, -10}})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: h.s.steps})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
+	drive(t, h, func() bool { return h.s.phases.confirmStart != 0 && h.s.checking.open })
+	if got := h.s.offsets(); !slices.Equal(got, []int{-11, -12}) {
+		t.Fatalf("cores moved to %v, want core 1 two counts and core 0 one", got)
+	}
+	failure := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R6, Condition: machine.Together, Profile: []int{-11, -12}})
+	a := h.next()
+	d, ok := a.Payload.(*journal.TunerDecision)
+	if !ok || d.Phase != journal.PhaseDeepening || d.Decision != journal.Backoff || d.Core != 1 || d.ToOffset != -10 || d.FailurePoint == nil || *d.FailurePoint != -12 || !slices.Equal(a.Cause, []int{failure.Seq}) {
+		t.Fatalf("first revert %+v, want core 1 back to its phase-1 offset -10 with failure point -12", a)
+	}
+	h.decide(a)
+	if got := h.s.offsets(); !slices.Equal(got, []int{-11, -10}) {
+		t.Fatalf("offsets %v: a phase-1 core stepped back before the deepest mover", got)
+	}
+}
+
+func TestIdleFailureAfterTheMovedProfileIsAppliedBlamesTheDeepenedCores(t *testing.T) {
+	h := cleanCycleHarness(t, []int{-10, -10, -10, -10}, nil)
+	round := nextRound(h)
+	for {
+		a, ok := h.s.roundMoves()
+		if !ok {
+			break
+		}
+		h.decide(a)
+	}
+	failure := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R6, Condition: machine.Together, Profile: h.s.offsets()})
+	a := h.next()
+	end, ok := a.Payload.(*journal.DeepeningRound)
+	if !ok || end.Round != round.Round || end.Event != journal.CycleEnd || !strings.Contains(end.Reason, "blame goes to the deepened cores") || !slices.Equal(a.Cause, []int{failure.Seq}) {
+		t.Fatalf("idle failure after the moves: %+v", a)
+	}
+	if diff := cmp.Diff(a, replayState(h.events).Next()); diff != "" {
+		t.Fatalf("resume (-live +replayed):\n%s", diff)
+	}
+	h.decide(a)
+	for range 6 {
+		a = h.next()
+		d, ok := a.Payload.(*journal.TunerDecision)
+		if !ok || d.Phase != journal.PhaseDeepening {
+			t.Fatalf("action %+v", a)
+		}
+		h.decide(a)
+		if d.Decision == journal.Backoff {
+			break
+		}
+	}
+	if got := h.s.offsets(); !slices.Equal(got, []int{-10, -10, -10, -10}) {
+		t.Fatalf("idle failure rollback left %v, want every mover back at -10", got)
+	}
+}
+
+func TestRoundBaselineOfAFreshMoverIsItsCurrentOffset(t *testing.T) {
+	h := newHarness(t, soloCore(-10, -12), soloCore(-10, -12))
+	h.add(&journal.ProfileChange{To: []int{-10, -10}})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: h.s.steps})
+	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
+	h.add(&journal.TunerDecision{Core: 0, Phase: journal.PhaseChecking, Decision: journal.Backoff, FromOffset: -10, ToOffset: -7, Pass: new(-12), FailurePoint: new(-13)})
+	h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleStart, Profile: []int{-8, -11}, Target: []int{-12, -12}, Cores: []int{0, 1}, Trials: 1, TrialS: 30})
+	r := h.s.round
+	if !slices.Equal(r.initial, []int{-7, -10}) {
+		t.Fatalf("round baseline %v, want core 0's current offset -7 and core 1's -10", r.initial)
+	}
+	if !h.s.roundDeepened([]int{0}) {
+		t.Fatal("core 0's -8, deeper than its pre-round -7, is not treated as deepened")
+	}
+	var alone []int
+	for _, q := range h.s.roundChecks() {
+		if q.class.regime == machine.R1 {
+			alone = append(alone, q.core)
+		}
+	}
+	if !slices.Contains(alone, 0) {
+		t.Fatalf("no alone check for core 0: %v", alone)
+	}
+	if diff := cmp.Diff(r.initial, replayState(h.events).round.initial); diff != "" {
+		t.Fatalf("resume baseline (-live +replayed):\n%s", diff)
 	}
 }

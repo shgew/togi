@@ -149,6 +149,11 @@ func TestLiveDeepeningFailureEndsRoundBeforeBackoff(t *testing.T) {
 	}
 	h.decide(a)
 	a = h.next()
+	if yield, ok := a.Payload.(*journal.TunerDecision); !ok || yield.Decision != journal.Yield || yield.Core != 1 {
+		t.Fatalf("the unloaded mover did not yield before the backoff: %+v", a)
+	}
+	h.decide(a)
+	a = h.next()
 	back, ok := a.Payload.(*journal.TunerDecision)
 	if !ok || back.Phase != journal.PhaseDeepening || back.ToOffset != r.Profile[0]+1 || back.FailurePoint == nil || *back.FailurePoint != r.Profile[0] {
 		t.Fatalf("live deepening failure lost failure point: %+v", a)

@@ -400,7 +400,7 @@ func (s *State) Fold(e journal.Event) {
 			}
 			s.commitHuntDecision(e, p)
 		}
-		s.consumePhase2(e, p)
+		s.foldPhase2Decision(e, p)
 	case *journal.TrialIntent:
 		s.scheduled[p.Trial] = s.scheduledFor(p, e.Cause)
 		s.flight, s.flightCrashed = p, false

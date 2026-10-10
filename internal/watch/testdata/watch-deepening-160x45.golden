@@ -10,7 +10,7 @@
   ███████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
 
   if 5 of 5 pass       next: deepening round 1: R2 heavy vector on core 00 alone at -11
-  if a core is named   its failure point is recorded → deepening round 1 ends → it backs off → next: rerun R1 light on core 00 at -10 · 2m
+  if a core is named   its failure point is recorded → ... → core 15 yields -11 → -10 → it backs off → next: rerun R1 light on core 00 at -10 · 2m
   if inconclusive      the same trial runs again
 
   CCD 0               0  2 counts/cell       -50 fail pt  one loaded              CCD 1               0  2 counts/cell       -50 fail pt  waiting at 0

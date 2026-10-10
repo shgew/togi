@@ -94,8 +94,8 @@ func TestScoreResumedSimulatedJournal(t *testing.T) {
 		censored bool
 	}{
 		{"concluded", 0, []string{forecast.Concluded, forecast.Concluded, forecast.DeadEnd}, false},
-		{"censored", 14, []string{forecast.Concluded, forecast.Concluded, forecast.DeadEnd}, true},
-		{"unconcluded", 14, []string{forecast.DeadEnd, forecast.Censored, forecast.DeadEnd}, true},
+		{"censored", 10, []string{forecast.Concluded, forecast.Concluded, forecast.DeadEnd}, true},
+		{"unconcluded", 10, []string{forecast.DeadEnd, forecast.Censored, forecast.DeadEnd}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

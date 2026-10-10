@@ -13,12 +13,15 @@ import (
 type moveMark struct{ round, seq int }
 
 // phases is the state of the two-phase method, rebuilt from the journal. Phase 1 ends at the first passed full cycle
-// after every core left search; phase 2 is the rounds after it and the confirmation cycle that concludes it.
+// after every core left search; phase 2 is the rounds after it and the confirmation cycle that concludes it. A core
+// that yields after a failed round is finished: no later round moves it. passed is each core's last passed offset;
+// a round's baseline is the shallower of that and the core's offset when the round began.
 type phases struct {
 	phase1End    int
 	confirmed    []int
 	passed       []int
 	moves        map[int]moveMark
+	finished     map[int]bool
 	candidates   []pendingFailure
 	lastRound    *round
 	confirmStart int
@@ -72,16 +75,32 @@ func (s *State) foldPhaseRoundEnd(p *journal.DeepeningRound) {
 	}
 }
 
+// trackPhaseFailure keeps a phase-2 failure as a blame candidate. A failure that recorded no profile is charged
+// against the profile in effect when it was folded.
 func (s *State) trackPhaseFailure(f pendingFailure) {
 	if ph := &s.phases; ph.phase1End != 0 && ph.concluded == 0 && !f.carried && f.failure.KnownFailure == 0 {
+		if len(f.profile) != len(s.cores) {
+			f.profile = s.offsets()
+		}
 		ph.candidates = append(ph.candidates, f)
 	}
 }
 
-// consumePhase2 settles every failure a phase-2 backoff cites: no other decision answers it.
-func (s *State) consumePhase2(e journal.Event, p *journal.TunerDecision) {
+// foldPhase2Decision finishes a core that yields in phase 2 and settles every failure a phase-2 backoff cites: no
+// other decision answers it.
+func (s *State) foldPhase2Decision(e journal.Event, p *journal.TunerDecision) {
 	ph := &s.phases
-	if p.Phase != journal.PhaseDeepening || p.Decision != journal.Backoff || ph.phase1End == 0 || e.Seq <= ph.phase1End {
+	if p.Phase != journal.PhaseDeepening || ph.phase1End == 0 || e.Seq <= ph.phase1End {
+		return
+	}
+	if p.Decision == journal.Yield {
+		if ph.finished == nil {
+			ph.finished = map[int]bool{}
+		}
+		ph.finished[p.Core] = true
+		return
+	}
+	if p.Decision != journal.Backoff {
 		return
 	}
 	for _, seq := range e.Cause {
@@ -111,7 +130,9 @@ func coreList(ids []int) string {
 }
 
 // phase2Moves returns the profile one round moves to, the cores it moves one count toward their solo limits, and the
-// cores that kept an unverified offset from a failed round and are checked again without moving.
+// cores that kept an unverified offset from a round that ended unpassed without a blame (a failure with no deepened core
+// loaded, or a profile that reached a constraint) and are checked again in place without moving. A core that yielded is
+// finished and never moves again.
 func (s *State) phase2Moves() (profile, moved, carried []int) {
 	profile = s.offsets()
 	passed := s.phases.passed
@@ -119,6 +140,7 @@ func (s *State) phase2Moves() (profile, moved, carried []int) {
 		i := s.index(c.id)
 		switch {
 		case c.phase == journal.PhaseSearch:
+		case s.phases.finished[c.id]:
 		case i < len(passed) && c.offset < passed[i]:
 			carried = append(carried, c.id)
 		case !c.hasSoloLimit || c.offset <= c.soloLimit:
@@ -153,7 +175,7 @@ func (s *State) phase2RoundStart() Action {
 	base := s.passedFullCycles[len(s.passedFullCycles)-1]
 	reason := fmt.Sprintf("; phase 2: cores %s move one count toward their solo limits", coreList(moved))
 	if len(carried) > 0 {
-		reason += fmt.Sprintf("; cores %s kept their offset from the failed round and are checked again", coreList(carried))
+		reason += fmt.Sprintf("; cores %s kept their offset from the round that ended unpassed and are checked again", coreList(carried))
 	}
 	return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: s.nextRound + 1, Event: journal.CycleStart, Base: slices.Clone(base.profile), BaseSeq: base.seq, Target: target, Profile: profile, Cores: cores, Ranking: slices.Clone(s.ranking), Trials: s.n, TrialS: s.durations.ShortTrialS, Reason: reason}, Cause: []int{base.seq}}
 }
@@ -201,6 +223,13 @@ func (s *State) phase2Find() (blame, bool) {
 					break
 				}
 			}
+		} else if b.intent == nil {
+			for _, r := range []*round{s.round, ph.lastRound} {
+				if r != nil && f.seq > r.seq && (r.end == 0 || f.seq < r.end) {
+					b.round = r
+					break
+				}
+			}
 		}
 		if b.round == nil && (ph.confirmStart == 0 || f.seq < ph.confirmStart) {
 			continue
@@ -225,7 +254,8 @@ func (s *State) phase2Find() (blame, bool) {
 		for _, id := range b.loaded {
 			i := s.index(id)
 			if b.round != nil {
-				if slices.Contains(b.round.start.Cores, id) && b.round.start.Profile[i] < b.round.initial[i] {
+				// A failure with no trial is charged to the cores its recorded profile had already moved.
+				if slices.Contains(b.round.start.Cores, id) && b.round.start.Profile[i] < b.round.initial[i] && (b.intent != nil || b.profile[i] < b.round.initial[i]) {
 					b.deepened = append(b.deepened, id)
 				}
 			} else if len(b.profile) == len(s.cores) && b.profile[i] < ph.confirmed[i] {
@@ -289,8 +319,9 @@ func (s *State) preferredShallow(group []int) int {
 	return chosen
 }
 
-// phase2Blame answers a failure with a deepened core loaded: it ends the round, returns the other deepened movers to
-// their last passed offsets, then backs the blamed core off to its last passed offset past its new failure point.
+// phase2Blame answers a failure with a deepened core loaded: it ends the round, returns every other deepened mover,
+// loaded or not, to its baseline and finishes it, then backs the blamed core off to its baseline past its new failure
+// point.
 func (s *State) phase2Blame() (Action, bool) {
 	b, ok := s.phase2Find()
 	if !ok {
@@ -305,7 +336,7 @@ func (s *State) phase2Blame() (Action, bool) {
 		for _, c := range s.cores {
 			i := s.index(c.id)
 			mover := slices.Contains(b.round.start.Cores, c.id) && b.round.start.Profile[i] < b.round.initial[i]
-			if c.id == blamed || !mover || c.offset >= b.round.initial[i] || !slices.Contains(b.loaded, c.id) {
+			if c.id == blamed || !mover || c.offset >= b.round.initial[i] {
 				continue
 			}
 			return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseDeepening, Decision: journal.Yield, FromOffset: c.offset, ToOffset: b.round.initial[i], Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("round %d failed on core %02d, so core %02d returns to its last passed offset %d", b.round.start.Round, blamed, c.id, b.round.initial[i])}, Cause: []int{seq}}, true

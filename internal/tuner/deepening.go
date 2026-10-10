@@ -9,23 +9,31 @@ import (
 	"github.com/shgew/togi/internal/requests"
 )
 
+// round is one phase-2 round. initial is each core's baseline: the shallower of its last passed offset and its offset
+// when the round began, so a core that an ordinary backoff moved shallower than its last passed offset is judged
+// against where it stood. Only an unverified offset carried from a failed round, deeper than the last passed one,
+// keeps the last passed offset as its baseline. end is the seq that closed the round, 0 while it is open.
 type round struct {
 	start   *journal.DeepeningRound
 	seq     int
+	end     int
 	initial []int
 }
 
 func (s *State) foldRound(e journal.Event, p *journal.DeepeningRound) {
 	if p.Event == journal.CycleStart {
-		initial := slices.Clone(s.phases.passed)
-		if initial == nil {
-			initial = s.offsets()
+		initial := s.offsets()
+		if passed := s.phases.passed; len(passed) == len(initial) {
+			for i, v := range passed {
+				initial[i] = max(initial[i], v)
+			}
 		}
 		s.foldPhaseRoundStart(e, p, initial)
 		s.round = &round{start: p, seq: e.Seq, initial: initial}
 		s.nextRound = max(s.nextRound, p.Round)
 		s.lastPlanSeq = e.Seq
 	} else if s.round != nil && p.Round == s.round.start.Round {
+		s.round.end = e.Seq
 		s.foldPhaseRoundEnd(p)
 		s.round = nil
 	}
