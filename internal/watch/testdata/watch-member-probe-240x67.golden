@@ -27,7 +27,7 @@
   ► 06    0  PARKED    ·········▀                                                  returns to -10                         ► 14    0  PARKED    ·········▀                                                  returns to -10
   ► 07    0  PARKED    ·········▀                                                  returns to -10                         ► 15    0  PARKED    ·········▀                                                  returns to -10
 
-  HUNT 1 ────────────────────────────────────────────────────────────────────────────── started 07:31 · 50m30s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
+  HUNT 1 ────────────────────────────────────────────────────────────────────────────── started 07:31 · 50m30s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 
   cause       crash in R6 idle + bursts on 00-15 · cycle 1 step 7, trial 1 of 1 · no core named                           08:22  group    hunt 1 groups 40-41 · parts of 03 11 · all passed on existing evidence
   candidates  00-15, every core with an offset in the failing profile                                                     08:22  crash    hunt 1 group 39 · 03 11 at failing offsets · rebooted

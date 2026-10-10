@@ -23,7 +23,7 @@
   ► 06  -30  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█             -31                             14   -4  AT LIMIT  ▄▄█                           -5   top by offset
   ► 07  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -33                             15  -39  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -40
 
-  CYCLE 1 ───────────────────────────────────────────────── 18 steps · 0 done     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
+  CYCLE 1 ───────────────────────────────────────────────── 18 steps · 0 done     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 
     #  kind              where               schedule      result                 10:14  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
   ►  1 R7 all-core       2 CCDs · 3+ parts   3+ parts      part 1 of 3            10:14  cycle    cycle 1 started · 18 steps
@@ -39,6 +39,6 @@
   R7 ───────────────────── top requesters ───── self-sufficient ─────────────     09:41  limit    core 03 solo limit -17
   mprime AVX2 36K-248K     05 14 by offset      none yet                          09:25  limit    core 10 solo limit -16
   mprime AVX-512 36K-248K  05 14 by offset      none yet                          09:14  limit    core 14 solo limit -4
-  y-cruncher FFTv4         05 14 by offset      none yet                          +186 more
+  y-cruncher FFTv4         05 14 by offset      none yet                          +203 more
 
    ?  help    l  log    esc  back    q  close view

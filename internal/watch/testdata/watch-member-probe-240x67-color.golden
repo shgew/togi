@@ -27,7 +27,7 @@
   [0;96m► [0;37m06    0  [0;90mPARKED    ·········[0;91m▀                                                  [0;90mreturns to -10                         [0;96m► [0;37m14    0  [0;90mPARKED    ·········[0;91m▀                                                  [0;90mreturns to -10[m
   [0;96m► [0;37m07    0  [0;90mPARKED    ·········[0;91m▀                                                  [0;90mreturns to -10                         [0;96m► [0;37m15    0  [0;90mPARKED    ·········[0;91m▀                                                  [0;90mreturns to -10[m
 
-  [0;90mHUNT 1 [0;35m────────────────────────────────────────────────────────────────────────────── [0;90mstarted 07:31 · 50m30s so far     WHAT HAPPENED [0;35m─────────────────────────────────────────────────────────────────────── [0;90mnewest first · l: every event[m
+  [0;90mHUNT 1 [0;35m────────────────────────────────────────────────────────────────────────────── [0;90mstarted 07:31 · 50m30s so far     WHAT HAPPENED [0;35m─────────────────────────────────────────────────────────────────── [0;90mnewest first · l: last 400 events[m
 
   [0;90mcause       [0;37mcrash in R6 idle + bursts on 00-15 · cycle 1 step 7, trial 1 of 1 · no core named                           [0;90m08:22  [0;93mgroup    [0;37mhunt 1 groups 40-41 · parts of 03 11 · all passed on existing evidence[m
   [0;90mcandidates  [0;37m00-15, every core with an offset in the failing profile                                                     [0;90m08:22  [0;91mcrash    [0;37mhunt 1 group 39 · 03 11 at failing offsets · rebooted[m

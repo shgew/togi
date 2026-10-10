@@ -19,7 +19,7 @@
     06  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                                   14  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
     07  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                                   15  -50  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
 
-  CYCLE 2 ──────────────────────────────────────────────────────────────────────────────────────── 18 steps · 18 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
+  CYCLE 2 ──────────────────────────────────────────────────────────────────────────────────────── 18 steps · 18 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 
     #   kind                  where                   workload                      schedule       result                 13:08  stop     stopped
   ■  1  R7 all-core           2 CCDs · 4 parts        mprime AVX2 36K-248K          4 parts        done                   13:08  cycle    cycle 2 passed, a full cycle of every kind of test
@@ -61,6 +61,6 @@
                                                                                                                           11:45  pass     R4 partial load on core 14 at -50 · passed · Tctl max 76°C
                                                                                                                           11:43  pass     R4 partial load on core 06 at -50 · passed · Tctl max 72°C
                                                                                                                           11:41  pass     R4 partial load on core 13 at -50 · passed · Tctl max 62°C
-                                                                                                                          +160 more
+                                                                                                                          +603 more
 
    ?  help    l  log    esc  back    q  close view

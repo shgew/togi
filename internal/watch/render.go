@@ -316,11 +316,20 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 				drawCCD(&c, r, p.columns[i], p.ccdIDs[i], s)
 			}
 			c.rows(p.context, s.contextLines(p, now))
-			c.rows(p.history, s.historyPanel(p.history.w))
+			c.rows(p.history, s.historyPanel(p.history.w, p.history.h))
 		}
 	}
 	if sc.Keys {
-		c.put(rectangle{p.header.x, p.hint, p.header.w, 1}, 0, 0, keyHints(sc.View))
+		hints := keyHints(sc.View)
+		if sc.View == LogView && s.logArrived > 0 {
+			arrival := amber.Render(plural(s.logArrived, "new event") + " · End: latest")
+			hints = trimWords(hints, p.header.w-ansi.StringWidth(consoleText(arrival))-3)
+			if hints != "" {
+				hints += "   "
+			}
+			hints += arrival
+		}
+		c.put(rectangle{p.header.x, p.hint, p.header.w, 1}, 0, 0, hints)
 	}
 	return Drawn{Lines: fit(c.lines(), p.width, sc.Height), Scroll: scroll, Until: until}
 }
@@ -1286,19 +1295,44 @@ func (s Snapshot) ccdRole(id int) (string, string) {
 	return fmt.Sprintf("%d under load · %d judged", loaded, judged), fmt.Sprintf("%d loaded", loaded)
 }
 
-func (s Snapshot) historyPanel(width int) []string {
-	if width <= 0 {
+// historyPanel lists what happened in height rows. Its last row counts the entries it leaves out, those that do not
+// fit and those older than the entries the snapshot keeps.
+func (s Snapshot) historyPanel(width, height int) []string {
+	if width <= 0 || height <= 0 {
 		return nil
 	}
-	right := "newest first · l: every event"
-	if width < 100 {
-		right = "l: all"
+	room := max(height-2, 0)
+	shown := min(len(s.history), room)
+	if s.historyDropped > 0 || len(s.history) > room {
+		shown = min(len(s.history), max(room-1, 0))
 	}
-	out := []string{rule(width, grey.Render("WHAT HAPPENED"), grey.Render(right)), ""}
-	for _, e := range s.history {
+	hidden := s.historyDropped + len(s.history) - shown
+	headerRows := min(height, 2)
+	if hidden > 0 {
+		headerRows = min(height-1, 2)
+	}
+	rows := headerRows + shown
+	if hidden > 0 {
+		rows++
+	}
+	out := make([]string, 0, rows)
+	if headerRows > 0 {
+		right := fmt.Sprintf("newest first · l: last %d events", logLimit)
+		if width < 100 {
+			right = fmt.Sprintf("l: last %d", logLimit)
+		}
+		out = append(out, rule(width, grey.Render("WHAT HAPPENED"), grey.Render(right)))
+	}
+	if headerRows > 1 {
+		out = append(out, "")
+	}
+	for _, e := range s.history[:shown] {
 		before, alarm, after := e.sentenceParts()
 		text := textStyle.Render(before) + red.Render(alarm) + textStyle.Render(after)
 		out = append(out, grey.Render(wallMinute(e.at))+"  "+tagStyle(e.tag).Render(fmt.Sprintf("%-8s", e.tag))+" "+trimWords(text, max(width-16, 0)))
+	}
+	if hidden > 0 {
+		out = append(out, grey.Render(fmt.Sprintf("+%d more", hidden)))
 	}
 	return out
 }

@@ -27,7 +27,7 @@
   [0;96m► [0;97m06  -27  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█[0;90m··                        [0;37m-28                                          [0;96m► [0;97m14    0  [0;37mAT LIMIT  [0;91m█[0;90m···                                                   [0;37m-1[m
   [0;96m► [0;97m07  -32  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█                     [0;37m-33                                          [0;96m► [0;97m15  -38  [0;37mAT LIMIT  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;91m█               [0;37m-39[m
 
-  [0;90mCYCLE 1 [0;35m───────────────────────────────────────────────────────────────────────────────────────── [0;90m18 steps · 6 done     WHAT HAPPENED [0;35m─────────────────────────────────────────────────────────────────────── [0;90mnewest first · l: every event[m
+  [0;90mCYCLE 1 [0;35m───────────────────────────────────────────────────────────────────────────────────────── [0;90m18 steps · 6 done     WHAT HAPPENED [0;35m─────────────────────────────────────────────────────────────────── [0;90mnewest first · l: last 400 events[m
 
     [0;90m#   kind                  where                   workload                      schedule       result                 20:22  [0;92mpass     [0;37mR2 heavy vector on core 15 at -38 · passed · Tctl max 73°C[m
   [0;92m■  [0;37m1  [0;97mR7 [0;37mall-core           2 CCDs · 13 parts       [0;90mmprime AVX2 36K-248K          [0;37m13 parts       [0;92mdone                   [0;90m20:20  [0;92mpass     [0;37mR2 heavy vector on core 07 at -32 · passed · Tctl max 73°C[m
@@ -61,6 +61,6 @@
                                                                                                                           [0;90m19:24  [0;92mpass     [0;37mR2 heavy vector on core 01 at -33 · passed · Tctl max 62°C[m
                                                                                                                           [0;90m19:22  [0;92mpass     [0;37mR2 heavy vector on core 08 at -26 · passed · Tctl max 68°C[m
                                                                                                                           [0;90m19:20  [0;92mpass     [0;37mR2 heavy vector on core 00 at -37 · passed · Tctl max 72°C[m
-                                                                                                                          [0;90m+168 more[m
+                                                                                                                          [0;90m+402 more[m
 
 

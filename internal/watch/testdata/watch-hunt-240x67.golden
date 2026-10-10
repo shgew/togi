@@ -27,7 +27,7 @@
   ► 06  -29  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                        -30                                            14    0  PARKED    ····█                                                  -5   returns to -4 · top by offset
   ► 07  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            15    0  PARKED    ·······································█              -40   returns to -39
 
-  HUNT 1 ───────────────────────────────────────────────────────────────────────────────── started 10:16 · 40s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────────── newest first · l: every event
+  HUNT 1 ───────────────────────────────────────────────────────────────────────────────── started 10:16 · 40s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 
   cause       crash in the rerun of R7 all-core on 00-07 · no core named                                                  10:16  hunt     #1 started · locate: 08-15 at 0
   evidence    core 06's worker had stalled by the last sample, 0:02 into the trial · not enough to attribute              10:16  crash    rerun of R7 all-core on 00-07 · rebooted · early in trial 1 of 5 · no core named
@@ -61,6 +61,6 @@
                                                                                                                           06:59  crash    core 00 · R1 light at -38 · rebooted · early in trial 1 of 1
                                                                                                                           06:57  step     core 15 passed -37, next -38
                                                                                                                           06:54  confirm  core 07 confirming -32 as its solo limit
-                                                                                                                          +168 more
+                                                                                                                          +193 more
 
    ?  help    l  log    esc  back    q  close view

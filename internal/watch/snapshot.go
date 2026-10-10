@@ -294,8 +294,24 @@ func (p *projector) fold(e journal.Event) {
 	if line, ok := p.describe(e); ok {
 		s.history = foldEntry(s.history, line)
 		if len(s.history) > 2*historyLimit {
-			s.history = slices.Clone(s.history[len(s.history)-historyLimit:])
+			s.compactHistory()
 		}
+	}
+}
+
+func (s *Snapshot) compactHistory() {
+	// The latest group can still gain trials; compact only the prefix, but count a complete tail
+	// with the prefix it will join when the final display lines are folded.
+	n := len(s.history)
+	last := s.history[n-1]
+	s.history = append(mergeProbePasses(s.history[:n-1]), last)
+	drop := len(s.history) - historyLimit
+	if n := len(s.history); n > 1 && mergeableProbePasses(&s.history[n-2], &s.history[n-1]) {
+		drop--
+	}
+	if drop > 0 {
+		s.historyDropped += drop
+		s.history = slices.Clone(s.history[drop:])
 	}
 }
 
@@ -330,17 +346,18 @@ func (p *projector) recent(events []journal.Event) {
 	s := p.s
 	s.history = mergeProbePasses(s.history)
 	if len(s.history) > historyLimit {
+		s.historyDropped += len(s.history) - historyLimit
 		s.history = s.history[len(s.history)-historyLimit:]
 	}
 	slices.Reverse(s.history)
 	for _, e := range slices.Backward(events) {
-		if len(s.log) == logLimit {
-			break
-		}
 		if e.Kind == journal.KindSMUIntent || e.Kind == journal.KindSMUWrite || e.Kind == journal.KindSMUReadback || e.Kind == journal.KindPreflightCheck {
 			continue
 		}
-		s.log = append(s.log, entry{at: e.Time, tag: journalTag(e, p.intents), text: vtText(e.Msg)})
+		s.logTotal++
+		if len(s.log) < logLimit {
+			s.log = append(s.log, entry{at: e.Time, tag: journalTag(e, p.intents), text: vtText(e.Msg)})
+		}
 	}
 	slices.Reverse(s.log)
 }

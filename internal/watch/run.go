@@ -25,6 +25,7 @@ type source struct {
 	info os.FileInfo
 	err  error
 	snap Snapshot
+	held heldLog // the journal view's list while scrolled back
 }
 
 func (s *source) reload() bool {
@@ -33,18 +34,32 @@ func (s *source) reload() bool {
 		if s.err != nil && s.err.Error() == err.Error() {
 			return false
 		}
+		s.held = heldLog{}
 		s.info, s.err, s.snap = nil, err, Load(s.dir)
 		return true
 	}
-	if s.info != nil && os.SameFile(s.info, info) && info.Size() == s.info.Size() && info.ModTime().Equal(s.info.ModTime()) {
-		return false
+	if s.info != nil {
+		same := os.SameFile(s.info, info)
+		if same && info.Size() == s.info.Size() && info.ModTime().Equal(s.info.ModTime()) {
+			return false
+		}
+		if !same || info.Size() < s.info.Size() {
+			s.held = heldLog{}
+		}
 	}
 	s.info, s.err, s.snap = info, nil, Load(s.dir)
+	if s.snap.Err() != nil || !s.snap.session {
+		s.held = heldLog{}
+	}
 	return true
 }
 
 func (s *source) frame(sc Screen) Drawn {
-	return RenderView(s.snap, sc, time.Now())
+	if s.snap.Err() != nil || !s.snap.session {
+		s.held = heldLog{}
+		return RenderView(s.snap, sc, time.Now())
+	}
+	return RenderView(s.held.apply(s.snap, sc), sc, time.Now())
 }
 
 // profile is the colour profile of out; NO_COLOR with any value turns colour off, as no-color.org defines it.
@@ -438,7 +453,8 @@ func (c *refreshClock) schedule(until time.Time) <-chan time.Time {
 
 // press applies a key to the screen: ? and L toggle the help and the event log, Esc returns to the main view, the
 // arrow, page, Home and End keys (or k, j, b, space, g and G) scroll a view that can scroll up to scrolled lines, and
-// q, Ctrl-C and Ctrl-D quit. The help opens at its top and the log at its end, which keeps following new events.
+// q, Ctrl-C and Ctrl-D quit. The help opens at its top and the log at its end, which keeps following new events; a log
+// scrolled back holds its list still (see heldLog) until a scroll reaches the end again.
 func press(sc Screen, k key, scrolled int) (Screen, bool) {
 	page := max(sc.Height-8, 1)
 	at := sc.Scroll

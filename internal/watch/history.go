@@ -675,20 +675,23 @@ func foldEntry(history []entry, line entry) []entry {
 func mergeProbePasses(history []entry) []entry {
 	out := history[:0]
 	for _, e := range history {
-		complete := e.probe && e.tag == tagPass && e.of > 0 && e.runs == e.of && e.first == 1
-		if n := len(out); n > 0 && complete {
+		if n := len(out); n > 0 && mergeableProbePasses(&out[n-1], &e) {
 			last := &out[n-1]
-			if last.probe && last.tag == tagPass && last.hunt == e.hunt && last.lastGroup+1 == e.firstGroup && last.of == e.of && last.runs == last.of && last.first == 1 {
-				last.at, last.lastGroup = e.at, e.lastGroup
-				if e.peak != nil && (last.peak == nil || *e.peak > *last.peak) {
-					last.peak = e.peak
-				}
-				continue
+			last.at, last.lastGroup = e.at, e.lastGroup
+			if e.peak != nil && (last.peak == nil || *e.peak > *last.peak) {
+				last.peak = e.peak
 			}
+			continue
 		}
 		out = append(out, e)
 	}
 	return out
+}
+
+func mergeableProbePasses(last, line *entry) bool {
+	return line.probe && line.tag == tagPass && line.of > 0 && line.runs == line.of && line.first == 1 &&
+		last.probe && last.tag == tagPass && last.hunt == line.hunt && last.lastGroup+1 == line.firstGroup &&
+		last.of == line.of && last.runs == last.of && last.first == 1
 }
 
 // sentenceParts splits the sentence around the words drawn as an alarm, such as the errors of a record-only part.

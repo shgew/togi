@@ -363,7 +363,7 @@ func (s Snapshot) combinationLines(t tables, width int, class sizeClass) []strin
 	}
 	if 0 < shown && shown < len(ids) {
 		// Too many member cores for the columns: say which ones the rows leave out rather than hide them.
-		out = append(out, grey.Render(trimWords(fmt.Sprintf("columns show %d of %d member cores; not shown: %s · l: every event", shown, len(ids), coreIDs(ids[shown:])), width)))
+		out = append(out, grey.Render(trimWords(fmt.Sprintf("columns show %d of %d member cores; not shown: %s · l: last %d events", shown, len(ids), coreIDs(ids[shown:]), logLimit), width)))
 	}
 	for _, combo := range s.combos {
 		member := func(id int) (string, lipgloss.Style) {

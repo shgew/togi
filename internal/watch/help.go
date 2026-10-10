@@ -51,6 +51,11 @@ var tuningHelp = helpSection{"WHAT TOGI DOES", []helpItem{
 }}
 
 var wordsHelp = helpSection{"WORDS", []helpItem{
+	{"SEARCH", "finding its solo limit with light and heavy-vector trials alone"},
+	{"CONFIRM", "checking its candidate solo limit with repeated light and heavy-vector trials alone"},
+	{"FOUND", "solo limit checked; waiting at 0 until every core has one"},
+	{"WAITING", "at 0, waiting for its first search turn"},
+	{"MEMBER", "kept with its hunt group at its failing offset; another member may be probed"},
 	{"offset", "Curve Optimizer counts, 0 to -50; deeper is more negative"},
 	{"trial", "one launch of one workload on its target"},
 	{"solo limit", "the deepest offset a core confirmed under load alone"},
@@ -78,14 +83,15 @@ var loadHelp = helpSection{"KINDS OF LOAD", []helpItem{
 }}
 
 func renderHelpBody(width, height, scroll int) ([]string, int) {
+	bodyWidth := max(1, width-2)
 	if width >= 195 {
-		leftWidth := (width - 8) * 81 / 227
-		middleWidth := (width - 8) * 75 / 227
-		rightWidth := width - 8 - leftWidth - middleWidth
+		leftWidth := (bodyWidth - 8) * 81 / 227
+		middleWidth := (bodyWidth - 8) * 75 / 227
+		rightWidth := bodyWidth - 8 - leftWidth - middleWidth
 		columns := [][]string{
-			append(helpReading(leftWidth), helpSectionLines(topHelp, leftWidth, false)...),
+			append(append(helpReading(leftWidth), "", ""), helpSectionLines(topHelp, leftWidth, false)...),
 			helpSectionLines(tuningHelp, middleWidth, true),
-			append(helpSectionLines(wordsHelp, rightWidth, false), helpSectionLines(loadHelp, rightWidth, false)...),
+			append(append(helpSectionLines(wordsHelp, rightWidth, false), "", ""), helpSectionLines(loadHelp, rightWidth, false)...),
 		}
 		rows := max(len(columns[0]), len(columns[1]), len(columns[2]))
 		lines := make([]string, rows)
@@ -101,11 +107,11 @@ func renderHelpBody(width, height, scroll int) ([]string, int) {
 				}
 			}
 		}
-		return scrollBody(lines, width, height, scroll)
+		return scrollBodyWithBar(lines, width, height, scroll)
 	}
-	bodyWidth := max(1, width-2)
 	lines := helpReading(bodyWidth)
 	for _, section := range []helpSection{topHelp, tuningHelp, wordsHelp, loadHelp} {
+		lines = append(lines, "", "")
 		lines = append(lines, helpSectionLines(section, bodyWidth, section.title == tuningHelp.title)...)
 	}
 	return scrollBodyWithBar(lines, width, height, scroll)
@@ -147,7 +153,7 @@ func helpSectionLines(section helpSection, width int, spaced bool) []string {
 		labelWidth = max(labelWidth, ansi.StringWidth(item.label))
 	}
 	labelWidth = min(labelWidth+2, max(1, width/3))
-	for _, item := range section.items {
+	for i, item := range section.items {
 		text := wrapStyled(item.text, max(1, width-labelWidth), textStyle)
 		for row, line := range text {
 			label := strings.Repeat(" ", labelWidth)
@@ -157,20 +163,60 @@ func helpSectionLines(section helpSection, width int, spaced bool) []string {
 			}
 			out = append(out, ansi.Truncate(label+line, width, ""))
 		}
-		if spaced {
+		if spaced && i < len(section.items)-1 {
 			out = append(out, "")
 		}
 	}
-	return append(out, "", "")
+	return out
 }
 
 func helpRule(title string, width int) string {
 	return white.Render(title) + " " + grey.Render(strings.Repeat("─", max(0, width-ansi.StringWidth(title)-1)))
 }
 
+// heldLog is the journal view's list while it is scrolled back: the entries it held when the reader left the end.
+// Events that arrive later stay out of it, so the rows the reader is on do not move.
+type heldLog struct {
+	held  bool
+	log   []entry
+	total int
+}
+
+// apply gives s the held list while sc is the journal view scrolled back, counting the events that arrived since, and
+// lets go of it when the view follows the end again or closes.
+func (h *heldLog) apply(s Snapshot, sc Screen) Snapshot {
+	if sc.View != LogView || sc.Scroll < 0 {
+		*h = heldLog{}
+		return s
+	}
+	if !h.held || s.logTotal < h.total {
+		*h = heldLog{held: true, log: s.log, total: s.logTotal}
+	}
+	s.log, s.logTotal, s.logArrived = h.log, h.total, s.logTotal-h.total
+	return s
+}
+
+// logRule heads the journal view and says what its list leaves out: events before the newest logLimit, and SMU and
+// preflight events, which the journal view never lists.
+func (s Snapshot) logRule(width int) string {
+	notes := []string{"SMU and preflight events left out"}
+	if s.logTotal > logLimit {
+		notes = []string{
+			fmt.Sprintf("last %d of %d events · SMU and preflight left out", logLimit, s.logTotal),
+			fmt.Sprintf("last %d of %d events", logLimit, s.logTotal),
+		}
+	}
+	for _, note := range notes {
+		if need := ansi.StringWidth("JOURNAL") + ansi.StringWidth(note) + 2; need <= width {
+			return helpRule("JOURNAL", width-ansi.StringWidth(note)-1) + " " + grey.Render(note)
+		}
+	}
+	return helpRule("JOURNAL", width)
+}
+
 func renderLogBody(s Snapshot, width, height, scroll int) ([]string, int) {
 	bodyWidth := max(1, width-2)
-	lines := []string{helpRule("JOURNAL", bodyWidth), ""}
+	lines := []string{s.logRule(bodyWidth), ""}
 	if len(s.log) == 0 {
 		lines = append(lines, grey.Render("No journal entries yet."))
 	}

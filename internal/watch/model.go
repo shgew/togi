@@ -41,6 +41,10 @@ type Snapshot struct {
 	history []entry // what happened, newest first
 	log     []entry // the journal's own lines, oldest first
 
+	historyDropped int // history entries older than the kept ones
+	logTotal       int // every event the journal view lists, kept or not; SMU and preflight events are not listed
+	logArrived     int // events past the frozen journal view; set only while it is scrolled back
+
 	order   []int             // core IDs in the session's order, the order of every profile
 	carried map[int]bool      // sequence numbers of trials carried from earlier sessions
 	shapes  map[int]huntShape // each hunt's failing and parked profiles

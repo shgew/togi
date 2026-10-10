@@ -23,7 +23,7 @@
     06    0  SEARCH                                       p 0 · n -5                14    0  SEARCH                                       p 0 · n -5
     07    0  SEARCH                                       p 0 · n -5                15    0  SEARCH                                       p 0 · n -5
 
-  TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ────────────────────────────────────────────────────── l: all
+  TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 
     cor this turn                   at   so far                                   00:48  step     core 15 passed 0, next -5
     08  search step: light, then    -5   passed 0 · next -5                       00:45  step     core 07 passed 0, next -5

@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 
@@ -8,6 +9,7 @@ import (
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 func historySentences(s Snapshot) []string {
@@ -278,5 +280,213 @@ func TestTallyNeverCountsPastTheRequirement(t *testing.T) {
 		if got := (entry{first: tc.first, runs: tc.runs, of: tc.of}).tally(); got != tc.want {
 			t.Errorf("first %d, runs %d, of %d: %q, want %q", tc.first, tc.runs, tc.of, got, tc.want)
 		}
+	}
+}
+
+// unboundedHistory folds the fixture's descriptions without Project's retention step.
+func unboundedHistory(events []journal.Event) []entry {
+	p := historyFixtureProjector(events)
+	for _, e := range events {
+		if d, ok := e.Data.(*journal.HuntGroup); ok && d.Probe != nil {
+			p.probes[d.Hunt] = true
+		}
+		if line, ok := p.describe(e); ok {
+			p.s.history = foldEntry(p.s.history, line)
+		}
+	}
+	return mergeProbePasses(p.s.history)
+}
+
+func historyFixtureProjector(events []journal.Event) projector {
+	var st journal.State
+	r := requirementRecorder{t: tuner.New(), intents: map[string]*journal.TrialIntent{}, failed: map[string]tuner.TrialRequirement{}, counts: map[string]trialCount{}, steps: map[string]int{}}
+	journal.Replay(events, &st, &r, r.t)
+	return projector{
+		s: &Snapshot{carried: map[int]bool{}, shapes: map[int]huntShape{}}, st: &st,
+		intents: r.intents, counts: r.counts, ends: map[string]*trialEnd{}, groupSignals: map[[2]int]machine.Signal{},
+		huntStarts: map[int]huntStartView{}, groups: map[[2]int]*journal.HuntGroup{}, probes: map[int]bool{},
+	}
+}
+
+func assertHistoryReference(t *testing.T, events []journal.Event) Snapshot {
+	t.Helper()
+	want := unboundedHistory(events)
+	s := Project(events)
+	if diff := cmp.Diff(len(want), s.historyDropped+len(s.history)); diff != "" {
+		t.Fatalf("kept and dropped history must count folded display lines (-want +got):\n%s", diff)
+	}
+	if len(s.history) > historyLimit {
+		t.Fatalf("visible history exceeds its retention limit: %d entries", len(s.history))
+	}
+	want = slices.Clone(want[len(want)-len(s.history):])
+	slices.Reverse(want)
+	if diff := cmp.Diff(want, s.history, cmp.AllowUnexported(entry{})); diff != "" {
+		t.Fatalf("retention must keep the unbounded reference's newest folded lines (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(historySentences(Snapshot{history: want}), historySentences(s)); diff != "" {
+		t.Fatalf("visible history sentences changed at retention (-want +got):\n%s", diff)
+	}
+	return s
+}
+
+func historyWarnings(count int) []journal.Payload {
+	var payloads []journal.Payload
+	for i := range count {
+		payloads = append(payloads, &journal.SessionWarning{Operation: "projection", Error: fmt.Sprint(i)})
+	}
+	return payloads
+}
+
+func historyProbeStart(trials int) *journal.HuntStart {
+	return &journal.HuntStart{Hunt: 1, Regime: machine.R2, Workload: "mprime-avx2-36k-248k", Cores: []int{0, 1}, Candidates: []int{0, 1}, Failing: []int{-20, -20, 0}, Parked: []int{-10, -10, 0}, Trials: trials, TrialS: 90, DurationS: 90}
+}
+
+func historyProbeGroup(group, trials int) []journal.Payload {
+	core := (group - 1) % 2
+	profile := []int{-19, -19, 0}
+	held := journal.CombinationMember{Core: 1 - core, Offset: -19}
+	payloads := []journal.Payload{
+		&journal.HuntGroup{Hunt: 1, Group: group, Stage: "probe", Cores: []int{0, 1}, Set: []int{0, 1}, Profile: profile, Probe: &journal.CombinationMember{Core: core, Offset: -19}, Held: []journal.CombinationMember{held}, DurationS: 90},
+	}
+	for trial := range trials {
+		id := fmt.Sprintf("probe-%d-%d", group, trial+1)
+		payloads = append(payloads,
+			&journal.TrialIntent{Trial: id, Condition: machine.Parked, Phase: journal.PhaseHunt, Regime: machine.R2, Workload: "mprime-avx2-36k-248k", Cores: []int{0, 1}, Profile: profile, DurationS: 90, Hunt: 1, Group: group},
+			&journal.TrialEnd{Trial: id, Outcome: journal.OutcomePass, TctlMaxC: new(60 + group%20)})
+	}
+	return payloads
+}
+
+func TestProjectProbeHistoryBeforeRetention(t *testing.T) {
+	t.Parallel()
+	payloads := []journal.Payload{dashboardSession(), historyProbeStart(1)}
+	payloads = append(payloads, historyProbeGroup(1, 1)...)
+	payloads = append(payloads, historyProbeGroup(2, 1)...)
+	payloads = append(payloads, &journal.HuntEnd{Hunt: 1, Result: "combination", Cores: []int{0, 1}})
+	prefix := unboundedHistory(dashboardEvents(payloads...))
+	slices.Reverse(prefix)
+	if diff := cmp.Diff([]string{
+		"start: session started on 3 cores",
+		"hunt: #1 started · candidates 00 01",
+		"pass: hunt 1 groups 1-2 · member probes · each 1 passed",
+		"hunt: #1 done · 00 01 kept together, probed",
+	}, historySentences(Snapshot{history: prefix})); diff != "" {
+		t.Fatalf("probe fixture must fold into four display lines (-want +got):\n%s", diff)
+	}
+	payloads = append(payloads, historyWarnings(396)...)
+	s := assertHistoryReference(t, dashboardEvents(payloads...))
+	if s.historyDropped != 200 || len(s.history) != 200 {
+		t.Fatalf("400 folded lines must keep 200 and omit 200: dropped=%d kept=%d", s.historyDropped, len(s.history))
+	}
+}
+
+func TestProjectProbeHistoryAcrossRetentionBoundary(t *testing.T) {
+	t.Parallel()
+	payloads := append([]journal.Payload{dashboardSession()}, historyWarnings(198)...)
+	payloads = append(payloads, historyProbeStart(1))
+	payloads = append(payloads, historyProbeGroup(1, 1)...)
+	payloads = append(payloads, historyProbeGroup(2, 1)...)
+	payloads = append(payloads, historyWarnings(199)...)
+	s := assertHistoryReference(t, dashboardEvents(payloads...))
+	if got := s.history[len(s.history)-1].sentence(); got != "hunt 1 groups 1-2 · member probes · each 1 passed" {
+		t.Fatalf("a probe run straddling the raw trim boundary lost its first group: %q", got)
+	}
+}
+
+func TestProjectProbeHistoryLongRun(t *testing.T) {
+	t.Parallel()
+	payloads := []journal.Payload{dashboardSession(), historyProbeStart(1)}
+	for group := 1; group <= 1205; group++ {
+		payloads = append(payloads, historyProbeGroup(group, 1)...)
+	}
+	payloads = append(payloads, historyWarnings(150)...)
+	events := dashboardEvents(payloads...)
+	s := assertHistoryReference(t, events)
+	if s.historyDropped != 0 || len(s.history) != 153 {
+		t.Fatalf("a long contiguous probe run is one line, not a dropped journal prefix: dropped=%d kept=%d", s.historyDropped, len(s.history))
+	}
+	if got := s.history[150].sentence(); got != "hunt 1 groups 1-1205 · member probes · each 1 passed" {
+		t.Fatalf("long probe summary changed: %q", got)
+	}
+	p := historyFixtureProjector(events)
+	for _, e := range events {
+		p.fold(e)
+		if len(p.s.history) > 2*historyLimit {
+			t.Fatalf("periodic compaction retained an unbounded probe history at event %d: %d entries", e.Seq, len(p.s.history))
+		}
+	}
+}
+
+func TestProjectProbeHistoryCompletesAfterRetention(t *testing.T) {
+	t.Parallel()
+	payloads := append([]journal.Payload{dashboardSession()}, historyWarnings(396)...)
+	payloads = append(payloads, historyProbeStart(2))
+	payloads = append(payloads, historyProbeGroup(1, 2)...)
+	payloads = append(payloads, historyProbeGroup(2, 2)...)
+	last := historyProbeGroup(3, 2)
+	payloads = append(payloads, last[:3]...)
+	pending := assertHistoryReference(t, dashboardEvents(payloads...))
+	if pending.history[0].runs != 1 || pending.history[0].of != 2 || pending.history[1].lastGroup != 2 {
+		t.Fatalf("an incomplete probe must remain separate from the completed prefix: %+v", pending.history[:2])
+	}
+	payloads = append(payloads, last[3:]...)
+	complete := assertHistoryReference(t, dashboardEvents(payloads...))
+	if got := complete.history[0].sentence(); got != "hunt 1 groups 1-3 · member probes · each 2 of 2 passed" {
+		t.Fatalf("completing a retained probe did not finish the full run: %q", got)
+	}
+	if complete.historyDropped != pending.historyDropped || len(complete.history) != len(pending.history)-1 {
+		t.Fatalf("completing the tail must merge retained lines, not adjust the omitted prefix: before=%d+%d after=%d+%d", pending.historyDropped, len(pending.history), complete.historyDropped, len(complete.history))
+	}
+}
+
+func TestProjectProbeHistoryCompleteTailRemainsMutable(t *testing.T) {
+	t.Parallel()
+	payloads := append([]journal.Payload{dashboardSession()}, historyWarnings(397)...)
+	payloads = append(payloads, historyProbeStart(1))
+	payloads = append(payloads, historyProbeGroup(1, 1)...)
+	last := historyProbeGroup(2, 2)
+	payloads = append(payloads, last[:3]...)
+	complete := assertHistoryReference(t, dashboardEvents(payloads...))
+	if complete.historyDropped != 200 || len(complete.history) != 200 {
+		t.Fatalf("a complete tail must be counted before choosing the retained window: dropped=%d kept=%d", complete.historyDropped, len(complete.history))
+	}
+	if got := complete.history[0].sentence(); got != "hunt 1 groups 1-2 · member probes · each 1 passed" {
+		t.Fatalf("a complete tail must count as part of its preceding summary: %q", got)
+	}
+	payloads = append(payloads, last[3:]...)
+	extra := assertHistoryReference(t, dashboardEvents(payloads...))
+	if extra.history[0].firstGroup != 2 || extra.history[0].lastGroup != 2 || extra.history[0].runs != 2 || extra.history[1].lastGroup != 1 {
+		t.Fatalf("a later trial of the same group must not change the preceding group's tally: %+v", extra.history[:2])
+	}
+}
+
+func TestProjectRecordCrashHistoryShrinksAfterRetention(t *testing.T) {
+	t.Parallel()
+	payloads := append([]journal.Payload{dashboardSession()}, historyWarnings(398)...)
+	for i := 1; i <= 2; i++ {
+		id := fmt.Sprintf("record-%d", i)
+		intent := len(payloads) + 1
+		payloads = append(payloads,
+			&journal.TrialIntent{Trial: id, Condition: machine.Together, Phase: journal.PhaseChecking, Regime: machine.R7, Workload: "mprime-avx2-36k-248k-allcore", Cores: []int{0, 2}, Profile: []int{-20, -20, -20}, DurationS: 120, RecordOnly: true},
+			&journal.CrashDetected{PreviousBoot: "boot", Condition: machine.Together, InFlight: new(intent)},
+			&journal.TrialEnd{Trial: id, Outcome: journal.OutcomeFailure, Signal: machine.Crash})
+	}
+	events := dashboardEvents(payloads...)
+	for i := 400; i < len(events); i++ {
+		events[i].Boot = "next"
+	}
+	for i := 403; i < len(events); i++ {
+		events[i].Boot = "last"
+	}
+	events[403].Data.(*journal.CrashDetected).PreviousBoot = "next"
+	events[401].Cause = []int{events[400].Seq}
+	events[404].Cause = []int{events[403].Seq}
+	pending := assertHistoryReference(t, events[:404])
+	complete := assertHistoryReference(t, events)
+	if pending.historyDropped != 201 || len(pending.history) != 200 || complete.historyDropped != 201 || len(complete.history) != 199 {
+		t.Fatalf("enriching and merging retained crashes must leave the omitted prefix alone: before=%d+%d after=%d+%d", pending.historyDropped, len(pending.history), complete.historyDropped, len(complete.history))
+	}
+	if got := complete.history[0].sentence(); got != "R7 all-core on 00 02 · 2 crashes · record only" {
+		t.Fatalf("retained crash summarization changed: %q", got)
 	}
 }
