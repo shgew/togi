@@ -21,7 +21,7 @@ import (
 	"github.com/shgew/togi/internal/tuner"
 )
 
-const statusHelp = `Usage: togi status
+var statusHelp = `Usage: togi status
 
 Show the session at a glance: search, hunt, deepening or checking activity and
 clean cycles since the last deepening, then each core's offset, failure point
@@ -35,9 +35,10 @@ Lists reset commands for unanswered too-cautious defects. Read-only; rendered
 from the journal. A different ruleset warns before rendering; a different schema
 is refused.
 
-Examples:
-  togi status                     The session in the default state directory
-  togi --state-dir <dir> status   The session in <dir>, such as a copied state directory`
+` + examples(
+	example{"togi status", "The session in the default state directory"},
+	example{"togi --state-dir <dir> status", "The session in <dir>, such as a copied state directory"},
+)
 
 func runStatus(g *globals, args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("status", g)
@@ -139,40 +140,42 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	if gs := st.Checking; gs != nil {
 		clean, latest = gs.CleanCycles, gs.LastCleanCycle
 	}
-	fmt.Fprintf(w, "%s | clean cycles since last deepening: %d, latest cycle %d\n", render.EscapeText(activity), clean, latest)
+	wrapLines(w, "", "  ", fmt.Sprintf("%s | clean cycles since last deepening: %d, latest cycle %d", render.EscapeText(activity), clean, latest))
 	fmt.Fprintf(w, "session %s started %s\n", render.EscapeText(st.Session.ID), st.Session.Start.UTC().Format(time.RFC3339))
 	writeBIOSLine(w, st.Session)
 	if f := st.InFlight; f != nil {
-		fmt.Fprintf(w, "in flight: [#%d] %s\n", f.Seq, render.EscapeText(f.Msg))
+		wrapLines(w, "", "  ", fmt.Sprintf("in flight: [#%d] %s", f.Seq, render.EscapeText(f.Msg)))
 	} else {
 		fmt.Fprintln(w, "in flight: none")
 	}
 	if d := st.DeadEnd; d != nil {
-		fmt.Fprintf(w, "dead end: %s [#%d]\n", render.EscapeText(string(d.Condition)), d.Seq)
+		wrapLines(w, "", "  ", fmt.Sprintf("dead end: %s [#%d]", render.EscapeText(string(d.Condition)), d.Seq))
 	}
 	for _, e := range events {
 		if e.Kind == journal.KindSessionCarried {
-			fmt.Fprintf(w, "carried: [#%d] %s\n", e.Seq, render.EscapeText(e.Msg))
+			wrapLines(w, "", "  ", fmt.Sprintf("carried: [#%d] %s", e.Seq, render.EscapeText(e.Msg)))
 		}
 	}
 
 	fmt.Fprintln(w)
-	tw := newTable(w)
-	fmt.Fprintln(tw, "CORE\tCCD\tSLOT\tOFFSET\tPHASE\tFAILURE\tCOMBINATIONS\tQUEUED\tLAST DECISION")
+	rows := []notedRow{{cells: "CORE\tCCD\tSLOT\tOFFSET\tPHASE\tFAILURE\tQUEUED"}}
 	for _, c := range st.Cores {
-		last := "-"
+		var notes []rowNote
+		if len(c.Combinations) != 0 {
+			notes = append(notes, rowNote{"combinations", strings.ReplaceAll(combinationIDs(c.Combinations), ",", ", ")})
+		}
 		if d := c.LastDecision; d != nil {
-			last = fmt.Sprintf("[#%d] %s", d.Seq, render.EscapeText(d.Msg))
+			notes = append(notes, rowNote{"last decision", fmt.Sprintf("[#%d] %s", d.Seq, render.EscapeText(d.Msg))})
 		}
 		queued := cmp.Or(c.Queued, "-")
-		fmt.Fprintf(tw, "%02d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\n", c.Core, c.CCD, c.Core%8, c.Offset, render.EscapeText(render.PhaseWord(c.Phase)), failurePoint(c.FailurePoint), combinationIDs(c.Combinations), render.EscapeText(queued), last)
+		rows = append(rows, notedRow{cells: fmt.Sprintf("%02d\t%d\t%d\t%d\t%s\t%s\t%s", c.Core, c.CCD, c.Core%8, c.Offset, render.EscapeText(render.PhaseWord(c.Phase)), failurePoint(c.FailurePoint), render.EscapeText(queued)), notes: notes})
 	}
-	_ = tw.Flush()
+	writeNotedTable(w, rows)
 	writeCombinations(w, st.Combinations)
 	writeR7Status(w, events)
 	for _, e := range events {
 		if p, ok := e.Data.(*journal.MCE); ok && p.BetweenTrials {
-			fmt.Fprintf(w, "\nbetween-trial evidence [#%d]: %s\n", e.Seq, render.EscapeText(e.Msg))
+			wrapLines(w, "\n", "  ", fmt.Sprintf("between-trial evidence [#%d]: %s", e.Seq, render.EscapeText(e.Msg)))
 		}
 	}
 	if h := st.Hunt; h != nil {
@@ -200,31 +203,30 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 				break
 			}
 		}
-		fmt.Fprintf(w, "\nhunt %d [#%d]: unattributed %s in %s trial %s; parked offsets %s\n", h.Hunt, h.Seq, render.EscapeText(signal), render.EscapeText(string(h.Regime)), render.EscapeText(cmp.Or(h.Trial, "-")), parked)
-		fmt.Fprintf(w, "  candidates %s\n", coreIDs(h.Candidates))
-		tw := newTable(w)
-		fmt.Fprintln(tw, "GROUP\tCORES\tOUTCOME\tTRIALS")
+		wrapLines(w, "\n", "  ", fmt.Sprintf("hunt %d [#%d]: unattributed %s in %s trial %s; parked offsets %s", h.Hunt, h.Seq, render.EscapeText(signal), render.EscapeText(string(h.Regime)), render.EscapeText(cmp.Or(h.Trial, "-")), parked))
+		wrapLines(w, "  ", "    ", "candidates "+coreIDs(h.Candidates))
+		groups := []notedRow{{cells: "GROUP\tCORES\tOUTCOME\tPASS EVIDENCE\tNEED"}}
 		for _, m := range h.Groups {
-			cores := coreIDs(m.Cores)
+			cores, notes := coreIDs(m.Cores), []rowNote(nil)
 			if m.Probe != nil {
 				held := make([]string, len(m.Held))
 				for i, h := range m.Held {
 					held[i] = fmt.Sprintf("%02d at %d", h.Core, h.Offset)
 				}
-				cores = fmt.Sprintf("%02d at %d with %s", m.Probe.Core, m.Probe.Offset, strings.Join(held, ", "))
+				cores = "probe"
+				notes = []rowNote{{"probe", fmt.Sprintf("%02d at %d with %s", m.Probe.Core, m.Probe.Offset, strings.Join(held, ", "))}}
 			}
-			fmt.Fprintf(tw, "G%d\t%s\t%s\t%d/%d\n", m.Group, cores, render.EscapeText(m.Outcome), m.Passes, m.Needed)
+			groups = append(groups, notedRow{cells: fmt.Sprintf("G%d\t%s\t%s\t%d\t%d", m.Group, cores, render.EscapeText(m.Outcome), m.Passes, m.Needed), notes: notes})
 		}
-		_ = tw.Flush()
+		writeNotedTable(w, groups)
 	}
 	if r := st.Deepening; r != nil {
-		fmt.Fprintf(w, "\ndeepening round %d [#%d]: target %v; proposed %v\n", r.Round, r.Seq, r.Target, r.Profile)
-		tw := newTable(w)
-		fmt.Fprintln(tw, "CHECK\tCORES\tPASSES")
+		wrapLines(w, "\n", "  ", fmt.Sprintf("deepening round %d [#%d]: target %v; proposed %v", r.Round, r.Seq, r.Target, r.Profile))
+		checks := []notedRow{{cells: "CHECK\tCORES\tPASSES"}}
 		for _, check := range r.Checks {
-			fmt.Fprintf(tw, "%s %s\t%s\t%d/%d\n", render.EscapeText(string(check.Regime)), render.EscapeText(check.Workload), coreIDs(check.Cores), check.Passes, check.Needed)
+			checks = append(checks, notedRow{cells: fmt.Sprintf("%s %s\t%s\t%d/%d", render.EscapeText(string(check.Regime)), render.EscapeText(check.Workload), coreIDs(check.Cores), check.Passes, check.Needed)})
 		}
-		_ = tw.Flush()
+		writeNotedTable(w, checks)
 	}
 	var findings []journal.DefectFound
 	for _, event := range events {
@@ -249,7 +251,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		if len(finding.Cores) == 0 {
 			continue
 		}
-		fmt.Fprintf(w, "\ndefect %d: %s (fixed by pull request #%d); decisions %v affected cores %v\n", finding.ID, render.EscapeText(finding.Title), finding.PR, finding.Decisions, finding.Cores)
+		wrapLines(w, "\n", "  ", fmt.Sprintf("defect %d: %s (fixed by pull request #%d); decisions %v affected cores %v", finding.ID, render.EscapeText(finding.Title), finding.PR, finding.Decisions, finding.Cores))
 		for _, core := range finding.Cores {
 			fmt.Fprintf(w, "  togi reset --core %d\n", core)
 		}
@@ -260,7 +262,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		return
 	}
 	fmt.Fprintln(w)
-	tw = newTable(w)
+	tw := newTable(w)
 	fmt.Fprintln(tw, "REGIME\tWORKLOAD\tTRIALS")
 	for _, r := range gs.Exposure {
 		fmt.Fprintf(tw, "%s\t%s\t%d\n", render.EscapeText(string(r.Regime)), render.EscapeText(r.Workload), r.Trials)
@@ -280,9 +282,8 @@ func writeR7Status(w io.Writer, events []journal.Event) {
 	if len(status) == 0 {
 		return
 	}
-	fmt.Fprintln(w, "\nR7 self-sufficiency (passed as top requester at equal or deeper offsets; not a guarantee)")
-	tw := newTable(w)
-	fmt.Fprintln(tw, "CORE\tCCD\tWORKLOAD\tSELF-SUFFICIENT\tTOP REQUESTER")
+	wrapLines(w, "\n", "  ", "R7 self-sufficiency (passed as top requester at equal or deeper offsets; not a guarantee)")
+	rows := []notedRow{{cells: "CORE\tCCD\tSELF-SUFFICIENT\tTOP REQUESTER"}}
 	for _, c := range status {
 		self := "not yet demonstrated"
 		if c.SelfSufficient {
@@ -295,9 +296,9 @@ func writeR7Status(w io.Writer, events []journal.Event) {
 		if c.OffsetFallback {
 			top += " (offset fallback)"
 		}
-		fmt.Fprintf(tw, "%02d\t%d\t%s\t%s\t%s\n", c.Core, c.CCD, render.EscapeText(c.Workload), self, top)
+		rows = append(rows, notedRow{cells: fmt.Sprintf("%02d\t%d\t%s\t%s", c.Core, c.CCD, self, top), notes: []rowNote{{"workload", render.EscapeText(c.Workload)}}})
 	}
-	_ = tw.Flush()
+	writeNotedTable(w, rows)
 }
 
 func combinationIDs(ids []int) string {
@@ -336,13 +337,13 @@ func writeCombinations(w io.Writer, combinations []journal.CombinationState) {
 		if combination.Fallback {
 			source = fmt.Sprintf("fallback over every candidate of hunt %d", combination.Hunt)
 		}
-		fmt.Fprintf(w, "  C%d %s, %s [#%d]\n", combination.Combination, strings.Join(members, " + "), source, combination.Seq)
+		wrapLines(w, "  ", "      ", fmt.Sprintf("C%d %s, %s [#%d]", combination.Combination, strings.Join(members, " + "), source, combination.Seq))
 	}
 }
 
 func writeBIOSLine(w io.Writer, s *journal.SessionInfo) {
 	if b := s.BIOSContext; b != nil {
-		fmt.Fprintf(w, "BIOS %s on %s, %s, microcode %s, boost limit %d MHz\n", render.EscapeText(b.BIOSVersion), render.EscapeText(b.Board), render.EscapeText(b.CPUModel), render.EscapeText(b.Microcode), b.BoostLimitMHz)
+		wrapLines(w, "", "  ", fmt.Sprintf("BIOS %s on %s, %s, microcode %s, boost limit %d MHz", render.EscapeText(b.BIOSVersion), render.EscapeText(b.Board), render.EscapeText(b.CPUModel), render.EscapeText(b.Microcode), b.BoostLimitMHz))
 	}
 }
 

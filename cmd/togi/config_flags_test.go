@@ -43,7 +43,7 @@ func TestReadOnlyCommandsRejectConfig(t *testing.T) {
 				if code := cli(args, &stdout, &stderr); code != exitUsage {
 					t.Fatalf("exit %d, want %d; stderr %s", code, exitUsage, stderr.String())
 				}
-				if stdout.Len() != 0 || !strings.Contains(stderr.String(), "flag provided but not defined: -config") {
+				if stdout.Len() != 0 || !strings.Contains(stderr.String(), "--config applies only to doctor, run and reset") {
 					t.Fatalf("stdout %q, stderr %q; want unknown config flag on stderr only", stdout.String(), stderr.String())
 				}
 				if strings.Contains(stderr.String(), "--config <path>") {
@@ -100,7 +100,7 @@ func TestLeadingConfigRejectionPrecedesCommandArguments(t *testing.T) {
 				t.Fatalf("stdout (-want +got): %s", diff)
 			}
 			diagnostic, help, _ := strings.Cut(stderr.String(), "\n")
-			want := "togi " + tc.name + ": flag provided but not defined: -config"
+			want := "togi " + tc.name + ": --config applies only to doctor, run and reset"
 			if diff := cmp.Diff(want, diagnostic); diff != "" {
 				t.Fatalf("config diagnostic (-want +got): %s", diff)
 			}

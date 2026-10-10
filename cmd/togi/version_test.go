@@ -38,11 +38,12 @@ func TestVersion(t *testing.T) {
 				if stdout.Len() != 0 {
 					t.Fatalf("stdout %q, want none", stdout.String())
 				}
-				if got := stderr.String(); !strings.Contains(got, "flag provided but not defined: -version") {
-					t.Fatalf("stderr %q, want unknown-flag error", got)
+				diagnostic, usage, _ := strings.Cut(stderr.String(), "\n")
+				if !strings.Contains(diagnostic, "flag provided but not defined: --version") {
+					t.Fatalf("stderr %q, want unknown-flag error", stderr.String())
 				}
-				if strings.Contains(stderr.String(), "--version") {
-					t.Fatalf("subcommand usage lists --version: %s", stderr.String())
+				if strings.Contains(usage, "--version") {
+					t.Fatalf("subcommand usage lists --version: %s", usage)
 				}
 			}
 			entries, err := os.ReadDir(dir)

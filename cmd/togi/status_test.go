@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/shgew/togi/internal/journal"
@@ -41,7 +42,7 @@ func TestStatus(t *testing.T) {
 		t.Fatalf("status: exit %d, stderr %s", code, stderr.String())
 	}
 	status := stdout.String()
-	if want := fmt.Sprintf("clean cycles since last deepening: %d, latest cycle %d", st.Checking.CleanCycles, st.Checking.LastCleanCycle); !strings.Contains(status, want) {
+	if want := fmt.Sprintf("clean cycles since last deepening: %d, latest cycle %d", st.Checking.CleanCycles, st.Checking.LastCleanCycle); !strings.Contains(strings.Join(strings.Fields(status), " "), want) {
 		t.Fatalf("status lacks %q:\n%s", want, status)
 	}
 	checkRows(t, "status", status, regexp.MustCompile(`(?m)^(\d\d)  +\d  +\d  +(-?\d+)  `), st)
@@ -305,5 +306,156 @@ func TestStatusRecordOnlyPartial(t *testing.T) {
 	writeStatus(&out, st, nil)
 	if !strings.Contains(out.String(), "record-only") || !strings.Contains(out.String(), "cores 01, 02, 03, 04, 05, 06, 07") {
 		t.Fatalf("status did not identify the partial: %s", out.String())
+	}
+}
+
+func TestWriteStatusWrapsWideBIOS(t *testing.T) {
+	t.Parallel()
+	board := strings.TrimSpace(strings.Repeat("日本 ", 20))
+	st := journal.State{
+		Session: &journal.SessionInfo{
+			ID: "s1", Start: time.Unix(100, 0).UTC(),
+			BIOSContext: &machine.BIOSContext{BIOSVersion: "b", Board: board, CPUModel: "c", Microcode: "m"},
+		},
+	}
+	var out bytes.Buffer
+	writeStatus(&out, st, nil)
+	for line := range strings.SplitSeq(strings.TrimSuffix(out.String(), "\n"), "\n") {
+		if cells := ansi.StringWidth(line); cells > statusWidth {
+			t.Errorf("status line uses %d cells, want at most %d: %q", cells, statusWidth, line)
+		}
+	}
+	_, bios, ok := strings.Cut(out.String(), "\nBIOS ")
+	if !ok {
+		t.Fatalf("status has no BIOS context:\n%s", out.String())
+	}
+	bios, _, ok = strings.Cut(bios, "\nin flight: none\n")
+	if !ok {
+		t.Fatalf("status has no end to BIOS context:\n%s", out.String())
+	}
+	lines := strings.Split("BIOS "+bios, "\n")
+	if len(lines) < 2 {
+		t.Fatalf("wide BIOS context did not wrap:\n%s", bios)
+	}
+	for _, line := range lines[1:] {
+		if !strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "   ") {
+			t.Errorf("BIOS continuation is not indented two cells: %q", line)
+		}
+	}
+	want := fmt.Sprintf("BIOS b on %s, c, microcode m, boost limit 0 MHz", board)
+	if diff := cmp.Diff(want, strings.Join(strings.Fields(strings.Join(lines, " ")), " ")); diff != "" {
+		t.Fatalf("wrapped BIOS context changed text (-want +got):\n%s", diff)
+	}
+}
+
+func TestWriteStatusWrapsWideDecisionNotes(t *testing.T) {
+	t.Parallel()
+	queued := strings.TrimSpace(strings.Repeat("日本 ", 20))
+	decision := strings.TrimSpace(strings.Repeat("日本 ", 24))
+	st := journal.State{
+		Session: &journal.SessionInfo{ID: "s1", Start: time.Unix(100, 0).UTC()},
+		Cores: []journal.CoreState{
+			{Core: 3, CCD: 0, Offset: -9, Phase: journal.PhaseAtLimit, Queued: queued, LastDecision: &journal.DecisionRef{Seq: 42, Msg: decision}},
+			{Core: 7, CCD: 0, Offset: -8, Phase: journal.PhaseAtLimit, LastDecision: &journal.DecisionRef{Seq: 43, Msg: "next core"}},
+		},
+	}
+	var out bytes.Buffer
+	writeStatus(&out, st, nil)
+	for line := range strings.SplitSeq(strings.TrimSuffix(out.String(), "\n"), "\n") {
+		if cells := ansi.StringWidth(line); cells > statusWidth {
+			t.Errorf("status line uses %d cells, want at most %d: %q", cells, statusWidth, line)
+		}
+	}
+	const prefix = "  last decision "
+	before, note, ok := strings.Cut(out.String(), "\n"+prefix+"[#42] ")
+	if !ok {
+		t.Fatalf("status has no core 03 decision:\n%s", out.String())
+	}
+	rowStart := strings.LastIndex(before, "\n03 ")
+	if rowStart < 0 {
+		t.Fatalf("decision has no preceding core 03 row:\n%s", before)
+	}
+	rowLines := strings.Split(before[rowStart+1:], "\n")
+	if len(rowLines) < 2 {
+		t.Fatalf("wide core row did not wrap:\n%s", before[rowStart+1:])
+	}
+	for _, line := range rowLines[1:] {
+		if !strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "   ") {
+			t.Errorf("core row continuation is not indented two cells: %q", line)
+		}
+	}
+	wantRow := "03 0 3 -9 AT LIMIT - " + queued
+	if diff := cmp.Diff(wantRow, strings.Join(strings.Fields(strings.Join(rowLines, " ")), " ")); diff != "" {
+		t.Fatalf("wrapped core row changed values (-want +got):\n%s", diff)
+	}
+	note, nextRow, ok := strings.Cut(note, "\n07 ")
+	if !ok {
+		t.Fatalf("core 03 decision has no following core 07 row:\n%s", out.String())
+	}
+	noteLines := strings.Split(note, "\n")
+	if len(noteLines) < 2 {
+		t.Fatalf("wide decision did not wrap:\n%s", note)
+	}
+	indent := strings.Repeat(" ", ansi.StringWidth(prefix))
+	for _, line := range noteLines[1:] {
+		if !strings.HasPrefix(line, indent) || strings.HasPrefix(line, indent+" ") {
+			t.Errorf("decision continuation does not align with its value: %q", line)
+		}
+	}
+	if diff := cmp.Diff(decision, strings.Join(strings.Fields(note), " ")); diff != "" {
+		t.Fatalf("wrapped decision changed text (-want +got):\n%s", diff)
+	}
+	if !strings.Contains(nextRow, "\n"+prefix+"[#43] next core\n") {
+		t.Fatalf("core 07 lost its own decision:\n%s", nextRow)
+	}
+}
+
+func TestWriteStatusPreservesUnicodeWords(t *testing.T) {
+	t.Parallel()
+	const prefix = "  last decision "
+	const first = prefix + "[#42] "
+	rest := strings.Repeat(" ", ansi.StringWidth(prefix))
+	for _, tc := range []struct {
+		name     string
+		word     string
+		overlong bool
+	}{
+		{name: "wide exact fit", word: strings.Repeat("界", (statusWidth-ansi.StringWidth(first))/2)},
+		{name: "combining exact fit", word: strings.Repeat("e\u0301", statusWidth-ansi.StringWidth(first))},
+		{name: "overlong word", word: strings.Repeat("界", statusWidth/2+1), overlong: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			st := journal.State{
+				Session: &journal.SessionInfo{ID: "s1", Start: time.Unix(100, 0).UTC()},
+				Cores: []journal.CoreState{
+					{Core: 3, CCD: 0, Offset: -9, Phase: journal.PhaseAtLimit, LastDecision: &journal.DecisionRef{Seq: 42, Msg: tc.word + " tail"}},
+				},
+			}
+			var out bytes.Buffer
+			writeStatus(&out, st, nil)
+			_, note, ok := strings.Cut(out.String(), "\n"+prefix)
+			if !ok {
+				t.Fatalf("status has no decision:\n%s", out.String())
+			}
+			want := first + tc.word + "\n" + rest + "tail\n"
+			if tc.overlong {
+				want = strings.TrimSuffix(first, " ") + "\n" + rest + tc.word + "\n" + rest + "tail\n"
+			} else if cells := ansi.StringWidth(first + tc.word); cells != statusWidth {
+				t.Fatalf("exact-fit fixture uses %d cells, want %d", cells, statusWidth)
+			}
+			got, _, _ := strings.Cut(prefix+note, "tail\n")
+			if diff := cmp.Diff(want, got+"tail\n"); diff != "" {
+				t.Fatalf("word wrapping changed words or alignment (-want +got):\n%s", diff)
+			}
+			for line := range strings.SplitSeq(strings.TrimSuffix(out.String(), "\n"), "\n") {
+				if tc.overlong && strings.Contains(line, tc.word) {
+					continue
+				}
+				if cells := ansi.StringWidth(line); cells > statusWidth {
+					t.Errorf("status line uses %d cells, want at most %d: %q", cells, statusWidth, line)
+				}
+			}
+		})
 	}
 }

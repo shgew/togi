@@ -13,7 +13,7 @@ import (
 	"github.com/shgew/togi/internal/tuningboot"
 )
 
-const restartLimitHelp = `Usage: togi restart-limit --tuning-boot <grubenv>
+var restartLimitHelp = `Usage: togi restart-limit --tuning-boot <grubenv>
 
 Recover after the tuning service reaches its restart limit. Persist the count
 and leave reason in the GRUB environment before requesting a reboot. The first
@@ -26,8 +26,9 @@ shutdown service keeps the tuning entry selected. A failed reboot removes the
 marker. Errors exit unsuccessfully so the service can fall back to a normal boot.
 This command does not open the journal or access the CPU hardware.
 
-Examples:
-  sudo togi restart-limit --tuning-boot /boot/grub/grubenv`
+` + examples(
+	example{command: "sudo togi restart-limit --tuning-boot /boot/grub/grubenv"},
+)
 
 type restartLimitOperations struct {
 	bootloader func(string) tuningboot.Bootloader

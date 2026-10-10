@@ -18,8 +18,8 @@ keeps showing the problem. No session yet is not an error. The tuning boot
 shows it on tty1. NO_COLOR turns colour off.
 
 Examples:
-  togi watch                                  The session in the default state directory, full screen
-  togi --state-dir <dir> watch > frame.txt    One 240x67 frame of the session in <dir>
+  togi watch                                 The session in the default state directory, full screen
+  togi --state-dir <dir> watch > frame.txt   One 240x67 frame of the session in <dir>
 
 Flags:
   --height <rows>      frame height in rows when stdout is not a terminal

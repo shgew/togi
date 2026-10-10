@@ -18,7 +18,7 @@ func TestStatusR7SelfSufficiencyAndTopRequester(t *testing.T) {
 	}
 	var out bytes.Buffer
 	writeR7Status(&out, events)
-	for _, want := range []string{"R7 self-sufficiency", "not a guarantee", "not yet demonstrated", "TOP REQUESTER", w} {
+	for _, want := range []string{"R7 self-sufficiency", "not a\n  guarantee", "not yet demonstrated", "TOP REQUESTER", w} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("missing %q in status:\n%s", want, out.String())
 		}

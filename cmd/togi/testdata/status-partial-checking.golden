@@ -1,9 +1,10 @@
-checking cycle 4, steps 0/1, not full: core 03 has no R1 pass | clean cycles since last deepening: 0, latest cycle 0
+checking cycle 4, steps 0/1, not full: core 03 has no R1 pass | clean cycles
+  since last deepening: 0, latest cycle 0
 session s1 started 1970-01-01T00:01:40Z
 in flight: none
 
-CORE  CCD  SLOT  OFFSET  PHASE     FAILURE  COMBINATIONS  QUEUED  LAST DECISION
-03    0    3     -9      AT LIMIT  -        -             -       -
-07    0    7     -8      AT LIMIT  -        -             -       -
+CORE  CCD  SLOT  OFFSET  PHASE     FAILURE  QUEUED
+03    0    3     -9      AT LIMIT  -        -
+07    0    7     -8      AT LIMIT  -        -
 
 REGIME  WORKLOAD  TRIALS

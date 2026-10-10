@@ -239,7 +239,7 @@ func TestCompletionExitCodes(t *testing.T) {
 		{name: "no shell", args: []string{"completion"}, code: exitUsage, err: "missing shell"},
 		{name: "unknown shell", args: []string{"completion", "tcsh"}, code: exitUsage, err: `unknown shell "tcsh"`},
 		{name: "two shells", args: []string{"completion", "bash", "zsh"}, code: exitUsage, err: `unexpected argument "zsh"`},
-		{name: "unknown flag", args: []string{"completion", "--shell", "bash"}, code: exitUsage, err: "flag provided but not defined: -shell"},
+		{name: "unknown flag", args: []string{"completion", "--shell", "bash"}, code: exitUsage, err: "flag provided but not defined: --shell"},
 		{name: "bash", args: []string{"completion", "bash"}, code: exitOK},
 		{name: "global flag", args: []string{"--state-dir", "unused", "completion", "fish"}, code: exitOK},
 	} {

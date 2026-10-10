@@ -17,7 +17,7 @@ import (
 	"github.com/shgew/togi/internal/watch"
 )
 
-const watchHelp = `Usage: togi watch [--width <columns>] [--height <rows>]
+var watchHelp = `Usage: togi watch [--width <columns>] [--height <rows>]
 
 Show the session as a read-only dashboard. It redraws when the journal changes
 and once a second for the clock. During an idle trial it holds still, clock
@@ -36,9 +36,10 @@ appears in the frame and on stderr, and one-frame watch exits 1; live watch
 keeps showing the problem. No session yet is not an error. The tuning boot
 shows it on tty1. NO_COLOR turns colour off.
 
-Examples:
-  togi watch                                  The session in the default state directory, full screen
-  togi --state-dir <dir> watch > frame.txt    One 240x67 frame of the session in <dir>`
+` + examples(
+	example{"togi watch", "The session in the default state directory, full screen"},
+	example{"togi --state-dir <dir> watch > frame.txt", "One 240x67 frame of the session in <dir>"},
+)
 
 func watchFlags(g *globals, width, height *int) *flag.FlagSet {
 	flags := newFlagSet("watch", g)

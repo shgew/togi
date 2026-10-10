@@ -221,7 +221,7 @@ func TestRestartLimitDispatchRejectsConfig(t *testing.T) {
 		{"--config", "unused.toml", "restart-limit", "--help"},
 	} {
 		var out, diagnostics bytes.Buffer
-		if code := cli(args, &out, &diagnostics); code != exitUsage || out.Len() != 0 || !strings.Contains(diagnostics.String(), "flag provided but not defined: -config") {
+		if code := cli(args, &out, &diagnostics); code != exitUsage || out.Len() != 0 || !strings.Contains(diagnostics.String(), "--config applies only to doctor, run and reset") {
 			t.Fatalf("exit %d stdout=%q stderr=%q", code, out.String(), diagnostics.String())
 		}
 	}

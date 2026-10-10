@@ -13,7 +13,7 @@ import (
 	"github.com/shgew/togi/internal/journal"
 )
 
-const completionHelp = `Usage: togi completion bash|zsh|fish|nushell
+var completionHelp = `Usage: togi completion bash|zsh|fish|nushell
 
 Print the completion script for one shell to stdout. It completes command
 names, each command's flags, file paths for --config, --state-dir and
@@ -22,11 +22,12 @@ In nushell, --kind completes one kind or group, not the items after a comma;
 the script needs nushell 0.115.1 or newer. The Nix package installs all four
 scripts; regenerate a script you saved yourself after updating togi.
 
-Examples:
-  source <(togi completion bash)    Load completions in bash, such as from ~/.bashrc
-  source <(togi completion zsh)     Load completions in zsh after compinit
-  togi completion fish | source     Load completions in fish
-  togi completion nushell | save -f togi.nu   Write a script for nushell's source command`
+` + examples(
+	example{"source <(togi completion bash)", "Load completions in bash, such as from ~/.bashrc"},
+	example{"source <(togi completion zsh)", "Load completions in zsh after compinit"},
+	example{"togi completion fish | source", "Load completions in fish"},
+	example{"togi completion nushell | save -f togi.nu", "Write a script for nushell's source command"},
+)
 
 type completionShell struct {
 	name   string
