@@ -51,7 +51,7 @@ func TestCacheKey(t *testing.T) {
 	// A session's inputs are its identity and the machine and facts files it names, wherever the tree is.
 	tree := func(machine string) (string, runSpec) {
 		dir := t.TempDir()
-		path := filepath.Join(dir, "machines", "m.toml")
+		path := filepath.Join(dir, "machines", "m.json")
 		write(path, machine)
 		return dir, runSpec{scenario: scenario{Name: "s", Machine: path}, split: "dev", seed: 1}
 	}
@@ -63,13 +63,13 @@ func TestCacheKey(t *testing.T) {
 		}
 		return got
 	}
-	dir, spec := tree("cores = 8\n")
+	dir, spec := tree(`{"cores":8}`)
 	want := inputs(dir, spec)
-	otherDir, otherSpec := tree("cores = 8\n")
+	otherDir, otherSpec := tree(`{"cores":8}`)
 	if inputs(otherDir, otherSpec) != want {
 		t.Error("the same inputs in another tree must hash alike")
 	}
-	changedDir, changed := tree("cores = 16\n")
+	changedDir, changed := tree(`{"cores":16}`)
 	if inputs(changedDir, changed) == want {
 		t.Error("changing a machine file must change the inputs")
 	}

@@ -52,9 +52,9 @@ type Limits struct {
 
 // CCD adds a smooth R7 hazard for each loaded CCD, using its mean applied depth.
 type CCD struct {
-	LogRate float64    `toml:"log_rate"`
-	Slope   float64    `toml:"slope"`
-	Effect  [2]float64 `toml:"effect"`
+	LogRate float64    `json:"log_rate"`
+	Slope   float64    `json:"slope"`
+	Effect  [2]float64 `json:"effect"`
 }
 
 type Joint struct {

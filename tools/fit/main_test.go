@@ -44,11 +44,8 @@ func TestEncodeMachineRetainsFitEvidenceAndParameters(t *testing.T) {
 	})
 	groups := []modelcheck.Group{{Class: facts.Class{Regime: machine.R7, Workload: "work", Cores: []int{0, 1}, DurationS: 120}, Depth: -24, N: 45, K: 5}}
 	flagged := []modelcheck.Group{{Class: facts.Class{Regime: machine.R7, Workload: "work", Cores: []int{0, 1}, DurationS: 300}, Depth: -24, N: 24, K: 7, Interval: [2]int{0, 2}, Flagged: true}}
-	content, err := encodeMachine(cfg, 2, 263, 45, 12.5, groups, flagged)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(t.TempDir(), "fit.toml")
+	content := encodedMachine(t, cfg, 2, 263, 45, 12.5, groups, flagged)
+	path := filepath.Join(t.TempDir(), "fit.json")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +122,7 @@ func TestGenerateWritesCheckedReproducibleEnsemble(t *testing.T) {
 			t.Fatal(err)
 		}
 		for n := range 2 {
-			path := filepath.Join(out, "target-fit-"+strconv.Itoa(n)+".toml")
+			path := filepath.Join(out, "target-fit-"+strconv.Itoa(n)+".json")
 			content, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
@@ -237,7 +234,7 @@ func TestGenerateFlaggedMembersMatchSerial(t *testing.T) {
 					}
 					var machines [][]byte
 					for n := range 5 {
-						content, err := os.ReadFile(filepath.Join(out, "target-fit-"+strconv.Itoa(n)+".toml"))
+						content, err := os.ReadFile(filepath.Join(out, "target-fit-"+strconv.Itoa(n)+".json"))
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -254,17 +251,23 @@ func TestGenerateFlaggedMembersMatchSerial(t *testing.T) {
 					if diff := cmp.Diff(written, f.flagged); diff != "" {
 						t.Fatalf("member %d flags before writing differ from the written file's (-file +header):\n%s", n, diff)
 					}
-					want := []string{"# Model check against the original extract: ok, no flagged groups."}
+					want := []string{"Model check against the original extract: ok, no flagged groups."}
 					if len(written) > 0 {
-						want = []string{"# Model check against the original extract: flagged; this member cannot support a target-machine claim."}
+						want = []string{"Model check against the original extract: flagged; this member cannot support a target-machine claim."}
 					}
 					for _, g := range written {
-						want = append(want, fmt.Sprintf("# Flagged: R1  cores=[0] duration=60s depth=%d n=%d k=%d interval=[%d,%d]", g.Depth, g.N, g.K, g.Interval[0], g.Interval[1]))
+						want = append(want, fmt.Sprintf("Flagged: R1  cores=[0] duration=60s depth=%d n=%d k=%d interval=[%d,%d]", g.Depth, g.N, g.K, g.Interval[0], g.Interval[1]))
+					}
+					var metadata struct {
+						Notes []string `json:"notes"`
+					}
+					if err := json.Unmarshal(serialMachines[n], &metadata); err != nil {
+						t.Fatal(err)
 					}
 					var got []string
-					for line := range strings.Lines(string(serialMachines[n])) {
-						if strings.HasPrefix(line, "# Model check") || strings.HasPrefix(line, "# Flagged:") {
-							got = append(got, strings.TrimSuffix(line, "\n"))
+					for _, note := range metadata.Notes {
+						if strings.HasPrefix(note, "Model check") || strings.HasPrefix(note, "Flagged:") {
+							got = append(got, note)
 						}
 					}
 					if diff := cmp.Diff(want, got); diff != "" {
@@ -304,7 +307,7 @@ func TestGenerateFlaggedMembersMatchSerial(t *testing.T) {
 					if diff := cmp.Diff(want, evidence{len(fits[n].sample), fits[n].loss}, cmpopts.EquateApprox(0, 0.0001)); diff != "" {
 						t.Fatalf("refit %d likelihood on its failure-free resample (-want +got):\n%s", n, diff)
 					}
-					if !bytes.Contains(serialMachines[n], []byte("\n# No failures: default signal weights.\n")) {
+					if !bytes.Contains(serialMachines[n], []byte(`"No failures: default signal weights."`)) {
 						t.Fatalf("refit %d keeps a signal mix its failure-free resample never recorded:\n%s", n, serialMachines[n])
 					}
 				}
@@ -370,7 +373,7 @@ func TestGenerateRefusesConflictingDestinations(t *testing.T) {
 			conflict := out
 			want := "create output directory"
 			if directory {
-				conflict = filepath.Join(out, "target-fit-0.toml")
+				conflict = filepath.Join(out, "target-fit-0.json")
 				want = "fit 0 write fitted machine"
 				if err := os.MkdirAll(conflict, 0700); err != nil {
 					t.Fatal(err)
@@ -439,4 +442,13 @@ func TestRunForwardOnly(t *testing.T) {
 	if _, err := os.Stat(out); !os.IsNotExist(err) {
 		t.Fatalf("forward-only run created the output directory: %v", err)
 	}
+}
+
+func encodedMachine(t *testing.T, cfg sim.Config, index int, seed uint64, trials int, loss float64, constrained, flagged []modelcheck.Group) []byte {
+	t.Helper()
+	content, err := encodeMachine(cfg, index, seed, trials, loss, constrained, flagged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return content
 }

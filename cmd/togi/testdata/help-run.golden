@@ -47,7 +47,7 @@ Examples:
   sudo togi run --no-tui     Print one line per event instead of the dashboard
 
 Flags:
-  --config <path>      configuration file path for doctor, run and reset (default /etc/togi/config.toml)
+  --config <path>      configuration file path for doctor, run and reset (default /etc/togi/config.json)
   --cycles <N>         stop after N clean cycles valid for the current profile once every core is at its limit and deepening can reach no more depth (default endless)
   --no-tui             print one line per event instead of the dashboard on a terminal
   --tuning-boot <file> run as the tuning boot service: require an armed hardware watchdog within 30s; reset retry count on the first durable journal append; persist a leave reason before clearing saved_entry in this GRUB environment file, and reboot after a boot loop

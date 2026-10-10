@@ -182,7 +182,7 @@ func TestForecastFromSimulatedCopy(t *testing.T) {
 			if earlier == 0 {
 				t.Fatal("the copy has no crash before the anchor to exclude")
 			}
-			specs, err := ensembleRuns(filepath.Join("testdata", "forecast-suite.toml"), trialfacts.Extracts{})
+			specs, err := ensembleRuns(filepath.Join("testdata", "forecast-suite.json"), trialfacts.Extracts{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -257,7 +257,7 @@ func TestForecastFailsOnFailedRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	specs, err := ensembleRuns(filepath.Join("testdata", "forecast-suite.toml"), trialfacts.Extracts{})
+	specs, err := ensembleRuns(filepath.Join("testdata", "forecast-suite.json"), trialfacts.Extracts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestForecastRejectsDeadEndBeforeAnchor(t *testing.T) {
 	if anchor.Seq <= deadEnd.Seq {
 		t.Fatalf("anchor %d does not follow the dead end %d", anchor.Seq, deadEnd.Seq)
 	}
-	specs, err := ensembleRuns(filepath.Join("testdata", "forecast-suite.toml"), trialfacts.Extracts{})
+	specs, err := ensembleRuns(filepath.Join("testdata", "forecast-suite.json"), trialfacts.Extracts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +363,7 @@ func TestFailedForecastKeepsOnlyFailedRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	specs, err := ensembleRuns(filepath.Join("testdata", "forecast-suite.toml"), trialfacts.Extracts{})
+	specs, err := ensembleRuns(filepath.Join("testdata", "forecast-suite.json"), trialfacts.Extracts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,15 +459,15 @@ func TestRelativeToResolvesMixedPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ dir, path string }{
-		{"testdata", filepath.Join(wd, "testdata", "machines", "target.toml")},
-		{filepath.Join(wd, "testdata"), filepath.Join("testdata", "machines", "target.toml")},
-		{"testdata", filepath.Join("testdata", "machines", "target.toml")},
+		{"testdata", filepath.Join(wd, "testdata", "machines", "target.json")},
+		{filepath.Join(wd, "testdata"), filepath.Join("testdata", "machines", "target.json")},
+		{"testdata", filepath.Join("testdata", "machines", "target.json")},
 	} {
 		got, err := relativeTo(tc.dir, tc.path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if diff := cmp.Diff("machines/target.toml", got); diff != "" {
+		if diff := cmp.Diff("machines/target.json", got); diff != "" {
 			t.Errorf("%s from %s: %s", tc.path, tc.dir, diff)
 		}
 	}
@@ -479,7 +479,7 @@ func TestForecastReportNamesMachinesRelativeToSuite(t *testing.T) {
 		t.Fatal(err)
 	}
 	suiteDir := filepath.Join(wd, "testdata")
-	check := &modelcheck.Result{Machine: filepath.Join(suiteDir, "machines", "target.toml"), Status: "ok", Groups: []modelcheck.Group{}}
+	check := &modelcheck.Result{Machine: filepath.Join(suiteDir, "machines", "target.json"), Status: "ok", Groups: []modelcheck.Group{}}
 	record := forecast.Record{Commit: "0123abc", Runs: []forecast.Run{{Status: forecast.Censored}}}
 	var out bytes.Buffer
 	if err := reportForecast(&out, record, suiteDir, []*modelcheck.Result{check}); err != nil {
@@ -488,10 +488,10 @@ func TestForecastReportNamesMachinesRelativeToSuite(t *testing.T) {
 	if strings.Contains(out.String(), wd) {
 		t.Errorf("report holds the local path %s:\n%s", wd, out.String())
 	}
-	if want := "\nmachines/target.toml: ok (0 eligible groups; 0 idle failures without trial exposure)\n"; !strings.Contains(out.String(), want) {
+	if want := "\nmachines/target.json: ok (0 eligible groups; 0 idle failures without trial exposure)\n"; !strings.Contains(out.String(), want) {
 		t.Errorf("report lacks %q:\n%s", want, out.String())
 	}
-	if diff := cmp.Diff(filepath.Join(suiteDir, "machines", "target.toml"), check.Machine); diff != "" {
+	if diff := cmp.Diff(filepath.Join(suiteDir, "machines", "target.json"), check.Machine); diff != "" {
 		t.Errorf("report changed the check: %s", diff)
 	}
 }

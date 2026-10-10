@@ -30,9 +30,9 @@ func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 		machineFile string
 		seed        uint64
 	}{
-		{name: "shared-voltage", machineFile: "../../tools/bench/machines/shared-voltage.toml", seed: 1000},
+		{name: "shared-voltage", machineFile: "../../tools/bench/machines/shared-voltage.json", seed: 1000},
 		{name: "legacy-default", seed: 1},
-		{name: "target-fit-0", machineFile: "../../tools/bench/machines/target-fit-0.toml", seed: 1},
+		{name: "target-fit-0", machineFile: "../../tools/bench/machines/target-fit-0.json", seed: 1},
 	} {
 		t.Run(fmt.Sprintf("%s/%d", tc.name, tc.seed), func(t *testing.T) {
 			t.Parallel()
@@ -110,10 +110,10 @@ func TestWarmResumeMatchesColdReplay(t *testing.T) {
 		machineFile string
 		seed        uint64
 	}{
-		{machineFile: "../../tools/bench/machines/flat-hazard.toml", seed: 102},
-		{machineFile: "../../tools/bench/machines/flat-hazard.toml", seed: 7},
-		{machineFile: "../../tools/bench/machines/misleading-mce.toml", seed: 3},
-		{machineFile: "../../tools/bench/machines/shared-voltage.toml", seed: 1000},
+		{machineFile: "../../tools/bench/machines/flat-hazard.json", seed: 102},
+		{machineFile: "../../tools/bench/machines/flat-hazard.json", seed: 7},
+		{machineFile: "../../tools/bench/machines/misleading-mce.json", seed: 3},
+		{machineFile: "../../tools/bench/machines/shared-voltage.json", seed: 1000},
 	} {
 		t.Run(fmt.Sprintf("%s/%d", filepath.Base(tc.machineFile), tc.seed), func(t *testing.T) {
 			t.Parallel()

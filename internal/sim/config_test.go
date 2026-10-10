@@ -14,45 +14,108 @@ import (
 )
 
 func TestLoadMachine(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "machine.toml")
-	content := `cores = 2
-bios = [0, -1]
-ranking = [9, 7]
-old_kernel = true
-[model]
-past_limit_rate = 0.7
-onset_boost = 2
-[model.signals]
-crash = 1
-[model.regime_signals]
-R7 = { crash = 79, computation_error = 5 }
-[model.reset]
-thermal_trip = 1
-[[core]]
-id = 0
-alone = [-30, -30, -30, -30, -30]
-together = [-29, -29, -29, -29, -29, -29, -29]
-idle = -45
-workload = { "special" = -27 }
-flat = 0.1
-[[core]]
-id = 1
-alone = [-30, -30, -30, -30, -30]
-together = [-29, -29, -29, -29, -29, -29, -29]
-[[joint]]
-members = { "0" = -20, "1" = -20 }
-regimes = ["R7"]
-rate = 0.05
-after_s = 30
-signal = "crash"
-[[script]]
-trial = "0042"
-signal = "crash"
-at_s = 3
-core = 1
-reset = "watchdog"
-then_crash = true
-`
+	path := filepath.Join(t.TempDir(), "machine.json")
+	content := `{
+  "description": "Fixture machine",
+  "notes": [
+    "Generated fixture provenance"
+  ],
+  "cores": 2,
+  "bios": [
+    0,
+    -1
+  ],
+  "ranking": [
+    9,
+    7
+  ],
+  "old_kernel": true,
+  "model": {
+    "past_limit_rate": 0.7,
+    "onset_boost": 2,
+    "signals": {
+      "crash": 1
+    },
+    "regime_signals": {
+      "R7": {
+        "crash": 79,
+        "computation_error": 5
+      }
+    },
+    "reset": {
+      "thermal_trip": 1
+    }
+  },
+  "core": [
+    {
+      "id": 0,
+      "alone": [
+        -30,
+        -30,
+        -30,
+        -30,
+        -30
+      ],
+      "together": [
+        -29,
+        -29,
+        -29,
+        -29,
+        -29,
+        -29,
+        -29
+      ],
+      "idle": -45,
+      "workload": {
+        "special": -27
+      },
+      "flat": 0.1
+    },
+    {
+      "id": 1,
+      "alone": [
+        -30,
+        -30,
+        -30,
+        -30,
+        -30
+      ],
+      "together": [
+        -29,
+        -29,
+        -29,
+        -29,
+        -29,
+        -29,
+        -29
+      ]
+    }
+  ],
+  "joint": [
+    {
+      "members": {
+        "0": -20,
+        "1": -20
+      },
+      "regimes": [
+        "R7"
+      ],
+      "rate": 0.05,
+      "after_s": 30,
+      "signal": "crash"
+    }
+  ],
+  "script": [
+    {
+      "trial": "0042",
+      "signal": "crash",
+      "at_s": 3,
+      "core": 1,
+      "reset": "watchdog",
+      "then_crash": true
+    }
+  ]
+}`
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +132,7 @@ then_crash = true
 	if diff := cmp.Diff(map[machine.Regime]map[machine.Signal]float64{machine.R7: {machine.Crash: 79, machine.ComputationError: 5}}, cfg.Model.RegimeSignals); diff != "" {
 		t.Fatalf("regime signals (-want +got):\n%s", diff)
 	}
-	if err := os.WriteFile(path, []byte(content+"unknown = 1\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(strings.TrimSuffix(content, "}")+`,"unknown":1}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := LoadMachine(path); err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "unknown") {
@@ -78,21 +141,28 @@ then_crash = true
 }
 
 func TestLoadMachineInvalidDefinitions(t *testing.T) {
-	core := "[[core]]\nid = %d\nalone = [-10, -10, -10, -10, -10]\ntogether = [-10, -10, -10, -10, -10, -10, -10]\n"
+	core := `{"id":%d,"alone":[-10,-10,-10,-10,-10],"together":[-10,-10,-10,-10,-10,-10,-10]}`
 	for _, tc := range []struct{ name, content, want string }{
-		{"syntax", "cores = [", "load simulator machine"},
-		{"negative core", "cores = 2\n" + fmt.Sprintf(core, -1), "invalid or duplicate core -1"},
-		{"outside core", "cores = 2\n" + fmt.Sprintf(core, 2), "invalid or duplicate core 2"},
-		{"duplicate core", "cores = 2\n" + fmt.Sprintf(core, 0) + fmt.Sprintf(core, 0), "invalid or duplicate core 0"},
-		{"limit shape", "cores = 2\n[[core]]\nid = 0\nalone = [-10]\n", "needs five alone and seven together limits"},
-		{"missing core", "cores = 2\n" + fmt.Sprintf(core, 0), "missing core 1"},
-		{"default topology incomplete", fmt.Sprintf(core, 0), "missing core 1"},
-		{"joint identity", "cores = 2\n[[joint]]\nmembers = { nope = -10 }\n", "joint member \"nope\""},
-		{"empty script", "cores = 2\n[[script]]\ntrial = \"\"\n", "empty script trial"},
-		{"duplicate script", "cores = 2\n[[script]]\ntrial = \"0001\"\n[[script]]\ntrial = \"0001\"\n", "duplicate script trial 0001"},
+		{"syntax", `{"cores":[`, "load simulator machine"},
+		{"negative core", fmt.Sprintf(`{"cores":2,"core":[%s]}`, fmt.Sprintf(core, -1)), "invalid or duplicate core -1"},
+		{"outside core", fmt.Sprintf(`{"cores":2,"core":[%s]}`, fmt.Sprintf(core, 2)), "invalid or duplicate core 2"},
+		{"duplicate core", fmt.Sprintf(`{"cores":2,"core":[%s,%s]}`, fmt.Sprintf(core, 0), fmt.Sprintf(core, 0)), "invalid or duplicate core 0"},
+		{"limit shape", `{"cores":2,"core":[{"id":0,"alone":[-10]}]}`, "needs five alone and seven together limits"},
+		{"missing core", fmt.Sprintf(`{"cores":2,"core":[%s]}`, fmt.Sprintf(core, 0)), "missing core 1"},
+		{"default topology incomplete", fmt.Sprintf(`{"core":[%s]}`, fmt.Sprintf(core, 0)), "missing core 1"},
+		{"joint identity", `{"cores":2,"joint":[{"members":{"nope":-10}}]}`, "joint member \"nope\""},
+		{"empty script", `{"cores":2,"script":[{"trial":""}]}`, "empty script trial"},
+		{"duplicate script", `{"cores":2,"script":[{"trial":"0001"},{"trial":"0001"}]}`, "duplicate script trial 0001"},
+		{"unknown top-level field", `{"cores":2,"unknown":1}`, "unknown object member name"},
+		{"unknown nested field", `{"cores":2,"model":{"unknown":1}}`, "unknown object member name"},
+		{"trailing object", `{"cores":2} {}`, "after top-level value"},
+		{"duplicate key", `{"cores":2,"cores":4}`, "duplicate object member"},
+		{"wrong case", `{"Cores":2}`, "unknown object member name"},
+		{"short fixed array", `{"cores":2,"ccd":{"effect":[0]}}`, "too few array elements"},
+		{"long fixed array", `{"cores":2,"ccd":{"effect":[0,0,0]}}`, "too many array elements"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "machine.toml")
+			path := filepath.Join(t.TempDir(), "machine.json")
 			if err := os.WriteFile(path, []byte(tc.content), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -116,8 +186,8 @@ func TestLoadMachineRejectsInvalidCoreCountBeforeLimits(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			path := filepath.Join(t.TempDir(), "machine.toml")
-			if err := os.WriteFile(path, []byte(fmt.Sprintf("cores = %d\n[[core]]\nid = 0\n", tc.cores)), 0600); err != nil {
+			path := filepath.Join(t.TempDir(), "machine.json")
+			if err := os.WriteFile(path, []byte(fmt.Sprintf(`{"cores":%d,"core":[{"id":0}]}`, tc.cores)), 0600); err != nil {
 				t.Fatal(err)
 			}
 			_, err := LoadMachine(path)
@@ -148,13 +218,13 @@ func TestLoadMachineBIOSContext(t *testing.T) {
 		content string
 		want    machine.BIOSContext
 	}{
-		{"unset", "cores = 2\n", machine.BIOSContext{}},
-		{"present", "cores = 2\n[bios_context]\nbios_version = \"B.2\"\nboard = \"X670\"\ncpu_model = \"Zen 5\"\nmicrocode = \"0x123\"\nboost_limit_mhz = 5900\n", machine.BIOSContext{BIOSVersion: "B.2", Board: "X670", CPUModel: "Zen 5", Microcode: "0x123", BoostLimitMHz: 5900}},
-		{"partial", "cores = 2\n[bios_context]\nbios_version = \"SIM.2\"\n", machine.BIOSContext{BIOSVersion: "SIM.2", Board: defaultBIOSContext.Board, CPUModel: defaultBIOSContext.CPUModel, Microcode: defaultBIOSContext.Microcode, BoostLimitMHz: defaultBIOSContext.BoostLimitMHz}},
+		{"unset", "{\"cores\":2}", machine.BIOSContext{}},
+		{"present", "{\"cores\":2,\"bios_context\":{\"bios_version\":\"B.2\",\"board\":\"X670\",\"cpu_model\":\"Zen 5\",\"microcode\":\"0x123\",\"boost_limit_mhz\":5900}}", machine.BIOSContext{BIOSVersion: "B.2", Board: "X670", CPUModel: "Zen 5", Microcode: "0x123", BoostLimitMHz: 5900}},
+		{"partial", "{\"cores\":2,\"bios_context\":{\"bios_version\":\"SIM.2\"}}", machine.BIOSContext{BIOSVersion: "SIM.2", Board: defaultBIOSContext.Board, CPUModel: defaultBIOSContext.CPUModel, Microcode: defaultBIOSContext.Microcode, BoostLimitMHz: defaultBIOSContext.BoostLimitMHz}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			path := filepath.Join(t.TempDir(), "machine.toml")
+			path := filepath.Join(t.TempDir(), "machine.json")
 			if err := os.WriteFile(path, []byte(tc.content), 0600); err != nil {
 				t.Fatal(err)
 			}

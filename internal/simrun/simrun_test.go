@@ -20,7 +20,7 @@ import (
 
 func sharedVoltageConfig(t *testing.T, seed uint64) sim.Config {
 	t.Helper()
-	cfg, err := sim.LoadMachine("../../tools/bench/machines/shared-voltage.toml")
+	cfg, err := sim.LoadMachine("../../tools/bench/machines/shared-voltage.json")
 	if err != nil {
 		t.Fatal(err)
 	}

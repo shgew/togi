@@ -8,7 +8,7 @@ go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--
 ```
 
 - `--seed` (default 1) selects deterministic limits and failures; the same seed and history reproduce the journal.
-- `--machine FILE` loads an explicit simulator machine TOML, including limits, joints, ranking, outcome scripts and reset reasons; `--seed` still sets its seed.
+- `--machine FILE` loads an explicit simulator machine JSON file, including limits, joints, ranking, outcome scripts and reset reasons; `--seed` still sets its seed.
 - `--replay-facts` answers exact trial-class/full-profile matches from the machine file's `facts` extract, under its declared BIOS context. Without this flag the file remains a fitted simulator alone.
 - `--cycles` (default 1) stops after N clean cycles; [Checking](spec/tuner.md#checking) says when a cycle counts and when the run stops.
 - `--state-dir` uses an existing directory; without it, `sim` creates a temporary one and prints its path to stderr.
@@ -23,9 +23,9 @@ A state directory that already holds a journal or archives resumes the simulated
 
 Simulated trials keep samples in memory by default: each loaded worker's cumulative CPU milliseconds advance once per simulated second. The simulator retains only the last trial's specification, duration, stall metadata and (when enabled) fixed-size voltage/clock snapshot, generating its samples lazily when read. With `--samples`, trials instead write `trials/<trial-id>/samples.jsonl`, encoding samples as they are generated without retaining the series. On a crash the loaded culprit's worker stops first, two seconds before the reset when the trial ran long enough, so the recovered `trial.end` can demonstrate `stalled_core` and `worker_stalled_ms` outside R6, which omits stalled-worker evidence because its workers are suspended by design. Samples in memory last one invocation, across its simulated reboots: when a new invocation closes a trial an interrupted one left open, its `trial.end` carries sample evidence only if both invocations ran with `--samples`. Otherwise both paths produce the same journal evidence.
 
-Without `[shared_voltage]`, the simulator reports no SMU `pm_table` lanes: samples omit `pm_table`, and an informational `preflight.check` explains that the version is unavailable. With that table, every sample includes all 16 voltage requests and the loaded cores' clocks. Preflight identifies these as simulated lanes. The session summarizes them using the same warmup and minimum-sample rules as hardware; reading telemetry does not change failure draws.
+Without `shared_voltage`, the simulator reports no SMU `pm_table` lanes: samples omit `pm_table`, and an informational `preflight.check` explains that the version is unavailable. With that object, every sample includes all 16 voltage requests and the loaded cores' clocks. Preflight identifies these as simulated lanes. The session summarizes them using the same warmup and minimum-sample rules as hardware; reading telemetry does not change failure draws.
 
-A fresh state directory uses the default configuration, never `/etc/togi/config.toml`. A state directory with a journal resumes under the configuration its latest `config.loaded` recorded: the backend store paths, durations, evidence, checking cycle and dead-end settings, so passes recorded under a real machine's backend store paths keep counting. That snapshot stands in for the configuration file the real machine would load: `togi run` loads its configuration file on every start and records it in a new `config.loaded`, never reading it back from the journal, so a simulated resume matches the next real run only while that file is unchanged since the recorded `config.loaded`. The simulator names no backend packages of its own, so a fresh session records none. The session runs unattended: an unanswered too-aggressive defect is a dead end. `sim` exits 0 when the session stops cleanly, 1 at a dead end or on an error, 2 on a flag error and 3 at the boot cap. A journal written under an older ruleset or schema is archived and seeds a new session, as `togi run` does; the resumed machine reports the BIOS context the journals recorded, so their failure points carry. A live journal of an older schema keeps only its recorded backend store paths, on top of the default configuration, because the reader for older schemas keeps nothing else of a `config.loaded`. A journal written under a newer ruleset or schema is refused before another event is appended.
+A fresh state directory uses the default configuration, never `/etc/togi/config.json`. A state directory with a journal resumes under the configuration its latest `config.loaded` recorded: the backend store paths, durations, evidence, checking cycle and dead-end settings, so passes recorded under a real machine's backend store paths keep counting. That snapshot stands in for the configuration file the real machine would load: `togi run` loads its configuration file on every start and records it in a new `config.loaded`, never reading it back from the journal, so a simulated resume matches the next real run only while that file is unchanged since the recorded `config.loaded`. The simulator names no backend packages of its own, so a fresh session records none. The session runs unattended: an unanswered too-aggressive defect is a dead end. `sim` exits 0 when the session stops cleanly, 1 at a dead end or on an error, 2 on a flag error and 3 at the boot cap. A journal written under an older ruleset or schema is archived and seeds a new session, as `togi run` does; the resumed machine reports the BIOS context the journals recorded, so their failure points carry. A live journal of an older schema keeps only its recorded backend store paths, on top of the default configuration, because the reader for older schemas keeps nothing else of a `config.loaded`. A journal written under a newer ruleset or schema is refused before another event is appended.
 
 The read-only commands work on the result:
 
@@ -47,33 +47,33 @@ Replay accepts all shipped journal schemas from the current ruleset, including s
 
 Playback spaces consecutive events by their recorded boot-local `mono_ms` when both stamps are present and their boot IDs match; zero is a valid stamp. Across boots or with a missing stamp (including older journals), it uses the nonnegative wall-clock interval instead. The dashboard clock follows each consumed event's recorded `time`, then advances until the next event, so recorded wall-clock corrections remain visible without shortening or extending same-boot playback intervals.
 
-Fault injection, explicit limits and the failure model are a Go API for tests (`sim.Config`, `sim.Limits`, `sim.Model` and the methods on `sim.Machine`); `internal/sim/doc.go` describes the model. `Machine.Hazard` returns the steady-state failure rate a trial would see at a given profile, from the same rules that draw trial failures, so a tool can judge a final profile against the model's truth. `internal/simrun` drives a session on the simulator across its crashes for tests that need a simulated journal. Its journal remains file-backed by default for recovery and interruption tests, and `Input.WriteSamples` opts into sample files. `tools/sim` opts into the in-memory journal path, which is checked against byte-identical journal and final-state files for fixed seeds on the default machine and `target-fit-0.toml`.
+Fault injection, explicit limits and the failure model are a Go API for tests (`sim.Config`, `sim.Limits`, `sim.Model` and the methods on `sim.Machine`); `internal/sim/doc.go` describes the model. `Machine.Hazard` returns the steady-state failure rate a trial would see at a given profile, from the same rules that draw trial failures, so a tool can judge a final profile against the model's truth. `internal/simrun` drives a session on the simulator across its crashes for tests that need a simulated journal. Its journal remains file-backed by default for recovery and interruption tests, and `Input.WriteSamples` opts into sample files. `tools/sim` opts into the in-memory journal path, which is checked against byte-identical journal and final-state files for fixed seeds on the default machine and `target-fit-0.json`.
 
-If a machine file sets `[model.signals]`, it replaces the default signal weights. Weights must be non-negative and sum to a positive total; an empty or all-zero map is rejected before the session starts.
+If a machine file sets `model.signals`, it replaces the default signal weights. Weights must be non-negative and sum to a positive total; an empty or all-zero map is rejected before the session starts.
 
-`[model.regime_signals]` sets signal weights per regime, under the same rules, for example `R7 = { crash = 79, computation_error = 5 }`. A failure in a listed regime draws its signal from that regime's weights instead of `[model.signals]`. When the table lists any regime, a loaded joint without its own `signal` and a `[ccd]` failure, which otherwise crash, draw their signal too: from their regime's weights if listed, else from `[model.signals]`. A joint whose members are all unloaded still crashes. `just fit` writes both tables from the extract's recorded failure signals ([benchmarking](benchmarking.md#fitting-the-target-machine)). Files without `[model.regime_signals]` keep their exact previous behavior.
+`model.regime_signals` sets signal weights per regime, under the same rules, for example an `"R7": {"crash": 79, "computation_error": 5}` member. A failure in a listed regime draws its signal from that regime's weights instead of `model.signals`. When the object lists any regime, a loaded joint without its own `signal` and a `ccd` failure, which otherwise crash, draw their signal too: from their regime's weights if listed, else from `model.signals`. A joint whose members are all unloaded still crashes. `just fit` writes both objects from the extract's recorded failure signals ([benchmarking](benchmarking.md#fitting-the-target-machine)). Files without `model.regime_signals` keep their exact previous behavior.
 
-`[ccd]` opts into an additional smooth R7 hazard for each loaded CCD. The rate in failures/second is `exp(log_rate + effect[ccd] + slope*(mean applied CCD depth-25))`; `effect` contains the two CCD log-rate effects, and mean depth includes every core's applied offset on that CCD, including zeros. A CCD contributes nothing when none of its cores are loaded. Its failures are unattributed crashes without core-local MCE evidence, unless `[model.regime_signals]` lists any regime: then they draw from the R7 weights, else from `[model.signals]`, and a computation error names the CCD's first loaded core. All parameters must be finite and slope nonnegative. Existing core and joint hazards still contribute; files without this table keep the old model exactly.
+`ccd` opts into an additional smooth R7 hazard for each loaded CCD. The rate in failures/second is `exp(log_rate + effect[ccd] + slope*(mean applied CCD depth-25))`; `effect` contains the two CCD log-rate effects, and mean depth includes every core's applied offset on that CCD, including zeros. A CCD contributes nothing when none of its cores are loaded. Its failures are unattributed crashes without core-local MCE evidence, unless `model.regime_signals` lists any regime: then they draw from the R7 weights, else from `model.signals`, and a computation error names the CCD's first loaded core. All parameters must be finite and slope nonnegative. Existing core and joint hazards still contribute; files without this object keep the old model exactly.
 
 If an active joint has any member on a loaded CCD, that CCD's smooth hazard is suppressed: joint explanations take precedence over extrapolation. A joint on the other CCD does not suppress this CCD's residual hazard.
 
 ### Shared-voltage R7 model
 
-`[shared_voltage]` opts into a common-rail model on a 16-core, two-CCD machine. It **replaces** loaded-core limit/flat hazards, `[ccd]` hazards and joints for multi-core R7 only. Unloaded-core idle hazards, single-core R7, and R1–R6 retain their existing rules. Files without this table retain their exact previous behavior, including journals.
+`shared_voltage` opts into a common-rail model on a 16-core, two-CCD machine. It **replaces** loaded-core limit/flat hazards, `ccd` hazards and joints for multi-core R7 only. Unloaded-core idle hazards, single-core R7, and R1–R6 retain their existing rules. Files without this object retain their exact previous behavior, including journals.
 
 Here multi-core R7 means an R7 trial loading at least two cores; single-core R7 loads exactly one. It does not mean a failure attributed to one core within a multi-core load. The shared-rail model tests `len(spec.Cores) > 1`; the tuner's normal R7 partial chains stop before a one-core load ([workloads](spec/workloads.md#regimes)).
 
 ```sh
-just sim 1 --machine tools/bench/machines/shared-voltage.toml
+just sim 1 --machine tools/bench/machines/shared-voltage.json
 ```
 
 That hand-set scenario is shaped after measured request spreads and clocks, not a fitted target-machine claim or a new bench baseline. Its CCD0 bases span 48 mV and CCD1 bases 30 mV; AVX-512 core 11 needs core 10 or 13 to supply a sufficient request on the example deep profile. y-cruncher uses the more demanding of each core's AVX2 and AVX-512 thresholds, pending hardware evidence.
 
-The table supplies `idle_v`, `margin_v` (hazard smoothing width), `rate` (failures/second per core at its threshold), and `power_limit_w` and `thermal_limit_w`. Both limits are effective steady-state package-power budgets in watts; the smaller applies. This is a simple steady-state model, not a heat-soak simulation. All must be finite and positive.
+The object supplies `idle_v`, `margin_v` (hazard smoothing width), `rate` (failures/second per core at its threshold), and `power_limit_w` and `thermal_limit_w`. Both limits are effective steady-state package-power budgets in watts; the smaller applies. This is a simple steady-state model, not a heat-soak simulation. All must be finite and positive.
 
 Optional `background_rate` defaults to zero and must be finite and nonnegative. It adds one CO-independent platform-failure rate per multi-core R7 trial, in failures/second, independent of workload, profile (including all-zero offsets), and loaded-core count. It is separate from the voltage-margin hazards: drawing it always produces an unattributed crash, without MCEs or a fabricated stalled worker. The usual onset boost applies; draws, `Hazard`, and `FailureProbability` use the same rate. It does not apply to single-core R7 or other regimes, and replayed outcomes bypass it. Omitting it preserves existing behavior.
 
-For each of the three R7 workload IDs, `[shared_voltage.workload.<id>]` supplies:
+For each of the three R7 workload IDs, `shared_voltage.workload.<id>` supplies:
 
 | Key | Meaning |
 |---|---|
@@ -87,7 +87,7 @@ For each of the three R7 workload IDs, `[shared_voltage.workload.<id>]` supplies
 
 For a loaded CCD, clock is `full_mhz[ccd] + idle_gain_mhz*(8-loaded_count) - package_mhz_per_w*max(0, package_watts-budget)`. When both CCDs load, subtract `balance_mhz_per_w*(ccd_watts-package_watts/2)` too. Power sums `max(0, watts_per_core + offset_watts_per_count*(offset+35))` over loaded cores only. Round clocks to whole MHz, at least 1. This captures package pressure and cross-CCD power redistribution without a feedback solver. At −35 on the supplied machine, whole-CCD AVX2 runs 5.24/5.22 GHz and seven cores gain 30 MHz. All-core AVX-512 runs 4.799 GHz; setting CCD0 to offset 0 gives 4.329/4.889 GHz.
 
-Each workload requires 16 `[[shared_voltage.workload.<id>.core]]` tables in core-ID order. Each supplies `base_v` at offset 0, `threshold_v` at the reference clock, `count_v` (default 0.0036 V/count), and `clock_v_per_100mhz`. The optional `threshold_clock_v_per_100mhz` defaults to zero. Both clock coefficients must be finite and nonnegative; no upper bound is imposed by the machine decoder. Loaded request is `base_v + count_v*offset + clock_v_per_100mhz*(clock-reference_mhz)/100`. Idle requests equal `idle_v` and **never set the modeled rail**. The shared voltage is the maximum loaded request across both CCDs.
+Each workload requires a `core` array of 16 objects in core-ID order at `shared_voltage.workload.<id>.core`. Each supplies `base_v` at offset 0, `threshold_v` at the reference clock, `count_v` (default 0.0036 V/count), and `clock_v_per_100mhz`. The optional `threshold_clock_v_per_100mhz` defaults to zero. Both clock coefficients must be finite and nonnegative; no upper bound is imposed by the machine decoder. Loaded request is `base_v + count_v*offset + clock_v_per_100mhz*(clock-reference_mhz)/100`. Idle requests equal `idle_v` and **never set the modeled rail**. The shared voltage is the maximum loaded request across both CCDs.
 
 The 3.6 mV/count default is a modeling assumption, not a hardware-calibrated constant. It is the fallback in `internal/sim/shared_voltage.go`; the tuner's fixed request-shift slope is a separate assumption ([R7 request order](spec/tuner.md#r7-request-order-and-attribution)). Explicit `count_v` values in a machine file replace the simulator default; fitted values are in-sample parameters, not validation of the fixed tuner slope.
 
@@ -95,34 +95,169 @@ Required voltage for a loaded core is `threshold_v + threshold_clock_v_per_100mh
 
 Each loaded core has margin `shared_voltage-required_voltage` and rate `rate*softplus(-margin/margin_v)/ln(2)`, where `softplus(x)=ln(1+exp(x))`. Hazards are smooth above and below the threshold, increase below it, and sum across loaded cores. The usual onset boost applies equally to draws and `FailureProbability`; `Hazard` returns the steady-state sum. `Machine.R7FailureShare` exposes an individual loaded core's shared-voltage rate divided by the total steady-state hazard, including platform background and unloaded-core hazards, for attribution likelihoods. Background contributes no named-core numerator. The method returns zero for invalid or unloaded cores, trials outside multi-core shared-voltage R7, or zero total hazard.
 
-A failing core draws from its optional `signals` map, otherwise from R7's `[model.regime_signals]` weights, otherwise `[model.signals]`. Only a computation-error draw remains a computation error naming that core; every other signal becomes an unattributed crash, without fabricated MCEs. Worker-stall telemetry can still name the core that stopped first. Fixed seed and history reproduce failures and telemetry. Non-R7 samples use the AVX2 request/clock parameters illustratively, without changing their hazards. Other PM-table arrays are synthetic: loaded C0 is 100%, idle CC6 is 100%, and unmodeled power and temperature lanes are zero.
+A failing core draws from its optional `signals` map, otherwise from R7's `model.regime_signals` weights, otherwise `model.signals`. Only a computation-error draw remains a computation error naming that core; every other signal becomes an unattributed crash, without fabricated MCEs. Worker-stall telemetry can still name the core that stopped first. Fixed seed and history reproduce failures and telemetry. Non-R7 samples use the AVX2 request/clock parameters illustratively, without changing their hazards. Other PM-table arrays are synthetic: loaded C0 is 100%, idle CC6 is 100%, and unmodeled power and temperature lanes are zero.
 
 
-Each `[[core]]` table uses `alone` for its five R1–R5 limits and `together` for its seven R1–R7 limits. In `[model]`, `past_limit_rate` is the failure rate one count past a limit, `growth` scales the rate for each additional count, and `near_limit_rate` is the loaded-core rate at or shallower than the limit.
+Each object in the `core` array uses `alone` for its five R1–R5 limits and `together` for its seven R1–R7 limits. In `model`, `past_limit_rate` is the failure rate one count past a limit, `growth` scales the rate for each additional count, and `near_limit_rate` is the loaded-core rate at or shallower than the limit.
 
-`internal/sim` owns the machine-file format: `sim.LoadMachine` decodes it and `sim.EncodeMachine` writes every machine-file field. Encoding rejects nonzero `Seed`, `Boots` and `Start` and a non-nil `Replay`, which belong to a run rather than a machine file. Every string value and quoted key is a TOML basic string, with control characters as TOML escapes (for example `\u0007`), and every float is written so `LoadMachine` reads the same value back: whole numbers beyond ±9007199254740991 carry a `.0`, and non-finite values are `inf`, `-inf` and `nan`. `tools/fit` adds only its provenance header to the encoded configuration. `sim.Config.Clone` copies every mutable field, including shared-voltage workload tables; a copied replay shares only its immutable facts.
+`internal/sim` owns the machine-file format: `sim.LoadMachine` decodes it and `sim.EncodeMachine` writes every machine-file field. Encoding rejects nonzero `Seed`, `Boots` and `Start` and a non-nil `Replay`, which belong to a run rather than a machine file. Strings and quoted keys use JSON escapes, and finite floats round-trip without changing their numeric values. Encoding rejects non-finite floats because JSON cannot represent them as numbers. `tools/fit` supplies only its provenance notes to the encoder. `sim.Config.Clone` copies every mutable field, including shared-voltage workload tables; a copied replay shares only its immutable facts.
 
 A machine file sets the core count, BIOS context, ranking, model parameters, per-core limits, joints and scripted outcomes; unset keys keep the seeded defaults, and an unknown key is an error. If it specifies any per-core limits, it must provide a `[[core]]` table for every core. Set `[bios_context]` with `bios_version`, `board`, `cpu_model`, `microcode` and `boost_limit_mhz` to override the simulator's BIOS context. This one adds a pair that crashes only when cores 03 and 11 are both at −30 or deeper under R7:
+||||||| parent of 074103e1 (Use JSON for first-party data files)
+A machine file sets the core count, BIOS context, ranking, model parameters, per-core limits, joints and scripted outcomes; unset keys keep the seeded defaults, and an unknown key is an error. If it specifies any per-core limits, it must provide a `[[core]]` table for every core. Set `[bios_context]` with `bios_version`, `board`, `cpu_model`, `microcode` and `boost_limit_mhz` to override the simulator's BIOS context. This one adds a pair that crashes only when cores 03 and 11 are both at −30 or deeper under R7:
+=======
+A machine JSON file sets the core count, BIOS context, ranking, model parameters, per-core limits, joints and scripted outcomes; unset keys keep the seeded defaults, and an unknown member is an error. If it specifies any per-core limits, its `core` array must provide an object for every core. Set `bios_context` with `bios_version`, `board`, `cpu_model`, `microcode` and `boost_limit_mhz` to override the simulator's BIOS context. A hand-written machine's `description` string explains the scenario; generated fits use a `notes` array of strings for provenance and model-check qualifications. Neither metadata field changes simulated behavior. This one adds a pair that crashes only when cores 03 and 11 are both at −30 or deeper under R7:
+>>>>>>> 074103e1 (Use JSON for first-party data files)
 
-```toml
-cores = 16
-
-[model.signals]
-crash = 1
-
-[[joint]]
-members = { "3" = -30, "11" = -30 }
-regimes = ["R7"]
+```json
+{
+  "description": "Cores 03 and 11 crash together at offsets -30 or deeper under R7.",
+  "cores": 16,
+  "model": {"signals": {"crash": 1}},
+  "joint": [
+    {
+      "members": {"3": -30, "11": -30},
+      "regimes": ["R7"]
+    }
+  ]
+}
 ```
 
-A joint-triggered crash produces no MCE by default, even when `[model] crash_mce` enables MCEs for per-core crashes. To deliberately mislead attribution, add `crash_mce_core = 3` to the `[[joint]]` table: each crash from that joint leaves an uncorrected load-store MCE naming core 03 in the next boot. The named core must exist, but need not be a joint member or loaded. This explicit evidence takes precedence over an unattributed crash and can produce a single-core failure point instead of a combination; scenarios using it must state that expected attribution.
+A joint-triggered crash produces no MCE by default, even when `model.crash_mce` enables MCEs for per-core crashes. To deliberately mislead attribution, add `"crash_mce_core": 3` to the object in the `joint` array: each crash from that joint leaves an uncorrected load-store MCE naming core 03 in the next boot. The named core must exist, but need not be a joint member or loaded. This explicit evidence takes precedence over an unattributed crash and can produce a single-core failure point instead of a combination; scenarios using it must state that expected attribution.
 
 Run it with `go run ./tools/sim --machine <file> --state-dir <dir>` and inspect `events --kind hunt,combination,deepening` along with `status` and `watch`. `sim.Config` also models late-onset hazards (six minutes of R6 idle or four minutes of R7 heat soak), a flat rare hazard, a failure on an idle core, a backend error just before a crash, and watchdog, power-loss and thermal-trip resets. A scripted outcome pins a particular trial and time for deterministic interruption tests. The simulator has separate wall and boot-local monotonic clocks, so a wall-clock jump need not change which MCE belongs to a trial.
 
 ## Replaying real answers
 
 ```sh
-go run ./tools/sim --seed 1 --machine tools/bench/machines/target-fit-0.toml --replay-facts --state-dir <dir>
+go run ./tools/sim --seed 1 --machine tools/bench/machines/target-fit-0.json --replay-facts --state-dir <dir>
+```
+
+The extract path in `facts` is relative to the machine file, and replay requires a declared BIOS context. `sim.NewReplay` and `sim.Config.Replay` are the simulator seam; the shared evaluation reader supplies decisive trial records, never idle facts. Matching uses regime, workload, sorted loaded cores, intended duration and every applied offset, including unloaded cores. It deliberately ignores condition and phase. Only facts from the declared BIOS context participate. A match draws uniformly from all matching records, deterministically from seed and trial ID/index, preserving the recorded outcome, failure signal and duration. Replayed failures occur at that recorded duration; after a crash it is only the last-evidence lower bound and can be zero, not a measured time to failure. A pass runs to the intended duration.
+
+Non-matching trials and trial-less failures still come from the fitted machine underneath. The privacy-safe extract records the `core` a backend signal named in a together trial's `trial.end`, but neither a core named only by an MCE nor the MCE bank, and replay does not use the recorded core: replayed backend failures name the first sorted loaded core, replayed crashes stay unattributed, and MCE signals use simulated bank evidence. These attribution details are not replayed hardware facts. The tuner receives ordinary journal evidence only; it cannot inspect the oracle. `Machine.Hazard` and `Machine.FailureProbability` continue to describe the fitted fallback. The [bench target scenario](benchmarking.md#the-suite) runs this oracle over the fitted ensemble and reports the share of trial outcomes supplied by real facts.
+
+Replayed crashes record progress at their recorded exposure and use a simulated watchdog reset, independent of the fallback reset distribution, so recovery keeps their decisive failure. Replayed uncorrected machine checks record the signal before a simulated sync-flood reset; their core attribution still comes from simulated MCE bank evidence, not a backend-instance core.
+
+## Measured reference journals
+
+[`just stats`](reviewing.md) reports exposure and failures from real journals; it does not fit simulator defaults. These three archived sessions came from one Ryzen 9 9950X3D2 under one BIOS context. The session IDs identify the unmodified compressed fixtures in `internal/carry/testdata/`.
+
+|Session (ruleset)|Regime|Trials|Trial hours|Crashes|Computation errors|Unexpected exits|
+|---|---|---:|---:|---:|---:|---:|
+|20260924T204352Z (1)|R1|388|12.854|15|0|1|
+|20260924T204352Z (1)|R2|271|8.109|13|14|0|
+|20260924T204352Z (1)|R3|54|2.900|0|0|0|
+|20260924T204352Z (1)|R4|54|2.900|0|0|0|
+|20260924T204352Z (1)|R5|22|1.572|4|1|1|
+|20260924T204352Z (1)|R6|2|0.500|0|0|0|
+|20260924T204352Z (1)|R7|2|0.008|2|0|0|
+|20260926T151414Z (2)|R1|197|11.394|1|0|0|
+|20260926T151414Z (2)|R2|155|8.395|9|8|0|
+|20260926T151414Z (2)|R3|57|2.776|0|0|0|
+|20260926T151414Z (2)|R4|50|2.567|0|0|0|
+|20260926T151414Z (2)|R5|18|1.415|2|0|0|
+|20260926T151414Z (2)|R6|3|0.750|0|0|0|
+|20260926T151414Z (2)|R7|2|0.000|1|1|0|
+|20260927T221954Z (3)|R1|51|4.250|0|0|0|
+|20260927T221954Z (3)|R2|282|11.838|1|3|0|
+|20260927T221954Z (3)|R3|17|1.417|0|0|0|
+|20260927T221954Z (3)|R4|17|1.417|0|0|0|
+|20260927T221954Z (3)|R5|17|1.378|0|1|0|
+|20260927T221954Z (3)|R6|0|0.000|0|0|0|
+|20260927T221954Z (3)|R7|20|0.701|9|4|0|
+
+R2's failures concentrate in mprime AVX-512 (16, 15 and 4 respectively), with y-cruncher FFTv4/N63/VT3 contributing 11, 2 and 0. R7 mprime AVX2 contributes 1, 1 and 5, mprime AVX-512 1, 1 and 4, and y-cruncher 0, 0 and 4. Unattributed crashes load CCD0 alone 3, 1 and 7 times, both CCDs 2, 0 and 1 times, and CCD1 alone 0, 0 and 1 times. Failures contradicting earlier passes of the same class at equal-or-deeper profiles number 0, 1 and 4.
+
+These are observed trials and last-evidence trial hours, not wall-clock session duration. A crash can have zero recorded exposure, and older journals can record a failure before `trial.start`. Rulesets, offsets, workloads and intended durations changed between sessions, so pooled rates are not per-offset failure probabilities. The simulator's fast seeded default remains unchanged. The synthetic bench machines are adversarial scenarios; the `target-fit-*` ensemble instead fits the committed extract and is checked against its eligible groups, with the limits described in [benchmarking](benchmarking.md#fitting-the-target-machine). The tables provide no evidence for adding R3 or R4 schedule-dependent hazards.
+
+A machine JSON file sets the core count, BIOS context, ranking, model parameters, per-core limits, joints and scripted outcomes; unset keys keep the seeded defaults, and an unknown member is an error. If it specifies any per-core limits, its `core` array must provide an object for every core. Set `bios_context` with `bios_version`, `board`, `cpu_model`, `microcode` and `boost_limit_mhz` to override the simulator's BIOS context. A hand-written machine's `description` string explains the scenario; generated fits use a `notes` array of strings for provenance and model-check qualifications. Neither metadata field changes simulated behavior. This one adds a pair that crashes only when cores 03 and 11 are both at −30 or deeper under R7:
+>>>>>>> 074103e1 (Use JSON for first-party data files)
+
+```json
+{
+  "description": "Cores 03 and 11 crash together at offsets -30 or deeper under R7.",
+  "cores": 16,
+  "model": {"signals": {"crash": 1}},
+  "joint": [
+    {
+      "members": {"3": -30, "11": -30},
+      "regimes": ["R7"]
+    }
+  ]
+}
+```
+
+A joint-triggered crash produces no MCE by default, even when `model.crash_mce` enables MCEs for per-core crashes. To deliberately mislead attribution, add `"crash_mce_core": 3` to the object in the `joint` array: each crash from that joint leaves an uncorrected load-store MCE naming core 03 in the next boot. The named core must exist, but need not be a joint member or loaded. This explicit evidence takes precedence over an unattributed crash and can produce a single-core failure point instead of a combination; scenarios using it must state that expected attribution.
+
+Run it with `go run ./tools/sim --machine <file> --state-dir <dir>` and inspect `events --kind hunt,combination,deepening` along with `status` and `watch`. `sim.Config` also models late-onset hazards (six minutes of R6 idle or four minutes of R7 heat soak), a flat rare hazard, a failure on an idle core, a backend error just before a crash, and watchdog, power-loss and thermal-trip resets. A scripted outcome pins a particular trial and time for deterministic interruption tests. The simulator has separate wall and boot-local monotonic clocks, so a wall-clock jump need not change which MCE belongs to a trial.
+
+## Replaying real answers
+
+```sh
+go run ./tools/sim --seed 1 --machine tools/bench/machines/target-fit-0.json --replay-facts --state-dir <dir>
+```
+
+The extract path in `facts` is relative to the machine file, and replay requires a declared BIOS context. `sim.NewReplay` and `sim.Config.Replay` are the simulator seam; the shared evaluation reader supplies decisive trial records, never idle facts. Matching uses regime, workload, sorted loaded cores, intended duration and every applied offset, including unloaded cores. It deliberately ignores condition and phase. Only facts from the declared BIOS context participate. A match draws uniformly from all matching records, deterministically from seed and trial ID/index, preserving the recorded outcome, failure signal and duration. Replayed failures occur at that recorded duration; after a crash it is only the last-evidence lower bound and can be zero, not a measured time to failure. A pass runs to the intended duration.
+
+Non-matching trials and trial-less failures still come from the fitted machine underneath. The privacy-safe extract records the `core` a backend signal named in a together trial's `trial.end`, but neither a core named only by an MCE nor the MCE bank, and replay does not use the recorded core: replayed backend failures name the first sorted loaded core, replayed crashes stay unattributed, and MCE signals use simulated bank evidence. These attribution details are not replayed hardware facts. The tuner receives ordinary journal evidence only; it cannot inspect the oracle. `Machine.Hazard` and `Machine.FailureProbability` continue to describe the fitted fallback. The [bench target scenario](benchmarking.md#the-suite) runs this oracle over the fitted ensemble and reports the share of trial outcomes supplied by real facts.
+
+Replayed crashes record progress at their recorded exposure and use a simulated watchdog reset, independent of the fallback reset distribution, so recovery keeps their decisive failure. Replayed uncorrected machine checks record the signal before a simulated sync-flood reset; their core attribution still comes from simulated MCE bank evidence, not a backend-instance core.
+
+## Measured reference journals
+
+[`just stats`](reviewing.md) reports exposure and failures from real journals; it does not fit simulator defaults. These three archived sessions came from one Ryzen 9 9950X3D2 under one BIOS context. The session IDs identify the unmodified compressed fixtures in `internal/carry/testdata/`.
+
+|Session (ruleset)|Regime|Trials|Trial hours|Crashes|Computation errors|Unexpected exits|
+|---|---|---:|---:|---:|---:|---:|
+|20260924T204352Z (1)|R1|388|12.854|15|0|1|
+|20260924T204352Z (1)|R2|271|8.109|13|14|0|
+|20260924T204352Z (1)|R3|54|2.900|0|0|0|
+|20260924T204352Z (1)|R4|54|2.900|0|0|0|
+|20260924T204352Z (1)|R5|22|1.572|4|1|1|
+|20260924T204352Z (1)|R6|2|0.500|0|0|0|
+|20260924T204352Z (1)|R7|2|0.008|2|0|0|
+|20260926T151414Z (2)|R1|197|11.394|1|0|0|
+|20260926T151414Z (2)|R2|155|8.395|9|8|0|
+|20260926T151414Z (2)|R3|57|2.776|0|0|0|
+|20260926T151414Z (2)|R4|50|2.567|0|0|0|
+|20260926T151414Z (2)|R5|18|1.415|2|0|0|
+|20260926T151414Z (2)|R6|3|0.750|0|0|0|
+|20260926T151414Z (2)|R7|2|0.000|1|1|0|
+|20260927T221954Z (3)|R1|51|4.250|0|0|0|
+|20260927T221954Z (3)|R2|282|11.838|1|3|0|
+|20260927T221954Z (3)|R3|17|1.417|0|0|0|
+|20260927T221954Z (3)|R4|17|1.417|0|0|0|
+|20260927T221954Z (3)|R5|17|1.378|0|1|0|
+|20260927T221954Z (3)|R6|0|0.000|0|0|0|
+|20260927T221954Z (3)|R7|20|0.701|9|4|0|
+
+R2's failures concentrate in mprime AVX-512 (16, 15 and 4 respectively), with y-cruncher FFTv4/N63/VT3 contributing 11, 2 and 0. R7 mprime AVX2 contributes 1, 1 and 5, mprime AVX-512 1, 1 and 4, and y-cruncher 0, 0 and 4. Unattributed crashes load CCD0 alone 3, 1 and 7 times, both CCDs 2, 0 and 1 times, and CCD1 alone 0, 0 and 1 times. Failures contradicting earlier passes of the same class at equal-or-deeper profiles number 0, 1 and 4.
+
+These are observed trials and last-evidence trial hours, not wall-clock session duration. A crash can have zero recorded exposure, and older journals can record a failure before `trial.start`. Rulesets, offsets, workloads and intended durations changed between sessions, so pooled rates are not per-offset failure probabilities. The simulator's fast seeded default remains unchanged. The synthetic bench machines are adversarial scenarios; the `target-fit-*` ensemble instead fits the committed extract and is checked against its eligible groups, with the limits described in [benchmarking](benchmarking.md#fitting-the-target-machine). The tables provide no evidence for adding R3 or R4 schedule-dependent hazards.
+
+```json
+{
+  "description": "Cores 03 and 11 crash together at offsets -30 or deeper under R7.",
+  "cores": 16,
+  "model": {"signals": {"crash": 1}},
+  "joint": [
+    {
+      "members": {"3": -30, "11": -30},
+      "regimes": ["R7"]
+    }
+  ]
+}
+```
+
+A joint-triggered crash produces no MCE by default, even when `model.crash_mce` enables MCEs for per-core crashes. To deliberately mislead attribution, add `"crash_mce_core": 3` to the object in the `joint` array: each crash from that joint leaves an uncorrected load-store MCE naming core 03 in the next boot. The named core must exist, but need not be a joint member or loaded. This explicit evidence takes precedence over an unattributed crash and can produce a single-core failure point instead of a combination; scenarios using it must state that expected attribution.
+
+Run it with `go run ./tools/sim --machine <file> --state-dir <dir>` and inspect `events --kind hunt,combination,deepening` along with `status` and `watch`. `sim.Config` also models late-onset hazards (six minutes of R6 idle or four minutes of R7 heat soak), a flat rare hazard, a failure on an idle core, a backend error just before a crash, and watchdog, power-loss and thermal-trip resets. A scripted outcome pins a particular trial and time for deterministic interruption tests. The simulator has separate wall and boot-local monotonic clocks, so a wall-clock jump need not change which MCE belongs to a trial.
+
+## Replaying real answers
+
+```sh
+go run ./tools/sim --seed 1 --machine tools/bench/machines/target-fit-0.json --replay-facts --state-dir <dir>
 ```
 
 The extract path in `facts` is relative to the machine file, and replay requires a declared BIOS context. `sim.NewReplay` and `sim.Config.Replay` are the simulator seam; the shared evaluation reader supplies decisive trial records, never idle facts. Matching uses regime, workload, sorted loaded cores, intended duration and every applied offset, including unloaded cores. It deliberately ignores condition and phase. Only facts from the declared BIOS context participate. A match draws uniformly from all matching records, deterministically from seed and trial ID/index, preserving the recorded outcome, failure signal and duration. Replayed failures occur at that recorded duration; after a crash it is only the last-evidence lower bound and can be zero, not a measured time to failure. A pass runs to the intended duration.

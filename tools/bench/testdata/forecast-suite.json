@@ -1,0 +1,15 @@
+{
+  "scenarios": [
+    {
+      "name": "target",
+      "machine": "",
+      "dev": [1, 2],
+      "holdout": [101]
+    },
+    {
+      "name": "other",
+      "machine": "",
+      "dev": [3]
+    }
+  ]
+}

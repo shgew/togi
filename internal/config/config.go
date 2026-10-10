@@ -1,22 +1,22 @@
-// Package config loads and validates the TOML configuration.
+// Package config loads and validates the JSON configuration.
 package config
 
 import (
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
 	"math"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
-
-	"github.com/BurntSushi/toml"
 
 	"github.com/shgew/togi/internal/machine"
 )
 
-const DefaultPath = "/etc/togi/config.toml"
+const DefaultPath = "/etc/togi/config.json"
 
 type Config struct {
 	StartOffsets        map[int]int `json:"start_offsets"`
@@ -30,16 +30,16 @@ type Config struct {
 }
 
 type Durations struct {
-	SearchTrialS     int `toml:"search_trial_s" json:"search_trial_s"`
-	ShortTrialS      int `toml:"short_trial_s" json:"short_trial_s"`
-	CheckingTrialS   int `toml:"checking_trial_s" json:"checking_trial_s"`
-	CheckingIdleS    int `toml:"checking_idle_s" json:"checking_idle_s"`
-	CheckingAllCoreS int `toml:"checking_all_core_s" json:"checking_all_core_s"`
+	SearchTrialS     int `json:"search_trial_s"`
+	ShortTrialS      int `json:"short_trial_s"`
+	CheckingTrialS   int `json:"checking_trial_s"`
+	CheckingIdleS    int `json:"checking_idle_s"`
+	CheckingAllCoreS int `json:"checking_all_core_s"`
 }
 
 type Evidence struct {
-	Miss float64 `toml:"miss" json:"miss"`
-	Rate float64 `toml:"rate" json:"rate"`
+	Miss float64 `json:"miss"`
+	Rate float64 `json:"rate"`
 }
 
 func (e Evidence) Trials() int {
@@ -47,17 +47,17 @@ func (e Evidence) Trials() int {
 }
 
 type Checking struct {
-	Cycle []machine.Regime `toml:"cycle" json:"cycle"`
+	Cycle []machine.Regime `json:"cycle"`
 }
 
 type DeadEnds struct {
-	InconclusiveInARow int `toml:"inconclusive_in_a_row" json:"inconclusive_in_a_row"`
-	StrayCrashesInARow int `toml:"stray_crashes_in_a_row" json:"stray_crashes_in_a_row"`
+	InconclusiveInARow int `json:"inconclusive_in_a_row"`
+	StrayCrashesInARow int `json:"stray_crashes_in_a_row"`
 }
 
 type Backends struct {
-	Mprime    string `toml:"mprime" json:"mprime"`
-	Ycruncher string `toml:"ycruncher" json:"ycruncher"`
+	Mprime    string `json:"mprime"`
+	Ycruncher string `json:"ycruncher"`
 }
 
 func Default() Config {
@@ -83,14 +83,14 @@ func Default() Config {
 }
 
 type file struct {
-	StartOffsets        map[string]int `toml:"start_offsets"`
-	CandidateSoloLimits map[string]int `toml:"candidate_solo_limits"`
-	Durations           *Durations     `toml:"durations"`
-	Evidence            *Evidence      `toml:"evidence"`
-	Checking            *Checking      `toml:"checking"`
-	DeadEnds            *DeadEnds      `toml:"dead_ends"`
-	Backends            *Backends      `toml:"backends"`
-	BackendUser         *string        `toml:"backend_user"`
+	StartOffsets        map[string]int `json:"start_offsets"`
+	CandidateSoloLimits map[string]int `json:"candidate_solo_limits"`
+	Durations           *Durations     `json:"durations"`
+	Evidence            *Evidence      `json:"evidence"`
+	Checking            *Checking      `json:"checking"`
+	DeadEnds            *DeadEnds      `json:"dead_ends"`
+	Backends            *Backends      `json:"backends"`
+	BackendUser         *string        `json:"backend_user"`
 }
 
 func Load(path string) (Config, error) {
@@ -104,19 +104,20 @@ func Load(path string) (Config, error) {
 func load(path string) (Config, error) {
 	c := Default()
 	f := file{Durations: &c.Durations, Evidence: &c.Evidence, Checking: &c.Checking, DeadEnds: &c.DeadEnds, Backends: &c.Backends, BackendUser: &c.BackendUser}
-	md, err := toml.DecodeFile(path, &f)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, err
 	}
-	if md.IsDefined("durations", "confirmation_trial_s") {
+	var removed struct {
+		Durations struct {
+			ConfirmationTrialS *jsontext.Value `json:"confirmation_trial_s"`
+		} `json:"durations"`
+	}
+	if json.Unmarshal(data, &removed) == nil && removed.Durations.ConfirmationTrialS != nil {
 		return Config{}, errors.New("durations.confirmation_trial_s was removed in togi 0.5.0: confirmation no longer exists; delete the key")
 	}
-	if undecoded := md.Undecoded(); len(undecoded) > 0 {
-		keys := make([]string, len(undecoded))
-		for i, k := range undecoded {
-			keys[i] = k.String()
-		}
-		return Config{}, fmt.Errorf("unknown keys: %s", strings.Join(keys, ", "))
+	if err := json.Unmarshal(data, &f, json.RejectUnknownMembers(true)); err != nil {
+		return Config{}, err
 	}
 	if err := convertOffsets("start_offsets", f.StartOffsets, c.StartOffsets); err != nil {
 		return Config{}, err

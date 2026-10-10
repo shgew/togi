@@ -81,7 +81,7 @@
                 root = ./.;
                 fileset = goFiles;
               };
-              vendorHash = "sha256-KMcBcFvwlqulewo8hwkFBrsiy1PlEeUIWc71LdDEUT0=";
+              vendorHash = "sha256-w1Kcniaoea7gPne6mde/KhZiSAVNGJ/H9mNED8lmDMA=";
               nativeBuildInputs = [ pkgs.installShellFiles ];
               nativeCheckInputs = [
                 pkgs.gitMinimal

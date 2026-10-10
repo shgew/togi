@@ -88,7 +88,7 @@ func TestOpenFinishesRenamedIncompatibleArchive(t *testing.T) {
 func samplePayloads() []Payload {
 	return []Payload{
 		sessionStart(),
-		&ConfigLoaded{Path: "/etc/togi/config.toml", Config: sampleConfig()},
+		&ConfigLoaded{Path: "/etc/togi/config.json", Config: sampleConfig()},
 		&SMUIntent{Op: SMUSet, Core: new(7), Offset: -32},
 		&SMUWrite{Op: SMUSet, Core: new(7), Offset: -32},
 		&TrialIntent{Trial: "0001", Regime: machine.R6, Workload: "idle", DurationS: 900, Condition: machine.Together},
@@ -247,7 +247,7 @@ func TestRoundTrip(t *testing.T) {
 		&SessionNotice{Notice: NoticeNonzeroBaseline, Cores: []int{7}},
 		&SessionArchived{Session: "20261002T011407Z", Path: "archive/20261002T011407Z.jsonl"},
 		&SessionCarried{Sources: []CarriedSource{{Session: "20261001T000000Z", Path: "archive/20261001T000000Z.jsonl", Schema: 2, Ruleset: 2}}, FailurePoints: true, Carried: []CarriedCore{{Core: 7, CandidateSoloLimit: new(-30), CandidateSoloLimitSession: "20261001T000000Z", CandidateSoloLimitSeq: 12, FailurePoint: new(-31), FailurePointSession: "20261001T000000Z", FailurePointSeq: 14, FailurePointSignal: machine.Crash}}},
-		&ConfigLoaded{Path: "/etc/togi/config.toml", File: true, Config: cfg},
+		&ConfigLoaded{Path: "/etc/togi/config.json", File: true, Config: cfg},
 		&PreflightCheck{Check: "root", Detail: "uid 0", OK: true},
 		&SMUIntent{Op: SMUSetAll, Offset: 0},
 		&SMUWrite{Op: SMUSet, Core: new(7), Offset: -32},

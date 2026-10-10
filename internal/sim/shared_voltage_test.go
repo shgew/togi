@@ -19,7 +19,7 @@ import (
 
 func voltageConfig(t *testing.T) Config {
 	t.Helper()
-	cfg, err := LoadMachine("../../tools/bench/machines/shared-voltage.toml")
+	cfg, err := LoadMachine("../../tools/bench/machines/shared-voltage.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,13 +407,13 @@ func TestSharedVoltageThresholdClockValidation(t *testing.T) {
 }
 
 func TestSharedVoltageThresholdClockDecodeAndOwnership(t *testing.T) {
-	source, err := os.ReadFile("../../tools/bench/machines/shared-voltage.toml")
+	source, err := os.ReadFile("../../tools/bench/machines/shared-voltage.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "machine.toml")
-	content := strings.ReplaceAll(string(source), "threshold_v =", "threshold_clock_v_per_100mhz = 0.027\nthreshold_v =")
-	content = strings.ReplaceAll(content, "[shared_voltage]", "[shared_voltage]\nbackground_rate = 0.001")
+	path := filepath.Join(t.TempDir(), "machine.json")
+	content := strings.ReplaceAll(string(source), `"threshold_clock_v_per_100mhz": 0`, `"threshold_clock_v_per_100mhz": 0.027`)
+	content = strings.ReplaceAll(content, `"background_rate": 0`, `"background_rate": 0.001`)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}

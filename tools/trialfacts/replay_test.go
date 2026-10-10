@@ -48,7 +48,7 @@ func TestExtractsReplaySelectsTrialEvidence(t *testing.T) {
 	}
 	for _, extract := range []string{"facts.gz", path} {
 		cfg := sim.Config{Seed: 1, Cores: 2, BIOSContext: context, Facts: extract}
-		cfg.Replay, err = Extracts{}.Replay(filepath.Join(dir, "machine.toml"), cfg)
+		cfg.Replay, err = Extracts{}.Replay(filepath.Join(dir, "machine.json"), cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -73,7 +73,7 @@ func TestExtractsReplaySelectsTrialEvidence(t *testing.T) {
 		{"no-context", sim.Config{Facts: path}, "BIOS context is required"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			replay, err := Extracts{}.Replay(filepath.Join(dir, "machine.toml"), tc.cfg)
+			replay, err := Extracts{}.Replay(filepath.Join(dir, "machine.json"), tc.cfg)
 			if replay != nil || err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Replay=%v, %v; want %s", replay, err, tc.want)
 			}
@@ -100,7 +100,7 @@ func TestExtractsReadEachExtractOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	extracts := Extracts{}
-	for _, machinePath := range []string{filepath.Join(dir, "first.toml"), filepath.Join(dir, "second.toml")} {
+	for _, machinePath := range []string{filepath.Join(dir, "first.json"), filepath.Join(dir, "second.json")} {
 		got, records, err := extracts.Load(machinePath, sim.Config{Facts: "facts.gz"})
 		if err != nil {
 			t.Fatal(err)

@@ -44,7 +44,7 @@ func TestResetRefusesHostLock(t *testing.T) {
 				t.Fatal(err)
 			}
 			var stdout, stderr bytes.Buffer
-			g := &globals{config: filepath.Join(t.TempDir(), "config.toml"), stateDir: dir, hostLockPath: path}
+			g := &globals{config: filepath.Join(t.TempDir(), "config.json"), stateDir: dir, hostLockPath: path}
 			code := runReset(g, args, &stdout, &stderr)
 			if diff := cmp.Diff(exitLocked, code); diff != "" {
 				t.Errorf("contention exit (-want +got): %s; stderr %s", diff, stderr.String())
@@ -114,7 +114,7 @@ func TestResetBelowProtectedSharedAncestorHonorsHostLock(t *testing.T) {
 func testGlobals(t *testing.T) globals {
 	t.Helper()
 	return globals{
-		config:       filepath.Join(t.TempDir(), "config.toml"),
+		config:       filepath.Join(t.TempDir(), "config.json"),
 		stateDir:     t.TempDir(),
 		hostLockPath: filepath.Join(t.TempDir(), "togi.lock"),
 	}

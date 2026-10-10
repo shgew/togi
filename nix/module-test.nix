@@ -11,7 +11,10 @@ let
   evaluate =
     mirrors: selectedPackage: hardwareTestGroup:
     (import (pkgs.path + "/nixos/lib/eval-config.nix") {
-      inherit pkgs;
+      # Keep generated configuration files native while evaluating Linux boot settings on every host.
+      pkgs = pkgs // {
+        formats = hostPkgs.formats;
+      };
       system = pkgs.stdenv.hostPlatform.system;
       modules = [
         module
@@ -37,6 +40,16 @@ let
             package = lib.mkIf (selectedPackage != null) selectedPackage;
             inherit hardwareTestGroup;
             tuning.enable = true;
+            settings = {
+              start_offsets."3" = -10;
+              candidate_solo_limits."5" = -20;
+              durations.search_trial_s = 60;
+              checking.cycle = [ "R7" ];
+              evidence = {
+                miss = 0.001;
+                rate = 0.25;
+              };
+            };
           };
           hardware.cpu.amd.ryzen-smu.enable = false;
           users.groups = lib.optionalAttrs (hardwareTestGroup != null) {
@@ -66,11 +79,17 @@ let
   tuning = one.specialisation.togi.configuration;
   restartLimitScript = tuning.systemd.services.togi-restart-limit.script;
   leaveTuningBoot = tuning.systemd.services.togi-leave-tuning-boot;
+  generatedConfig = one.environment.etc."togi/config.json";
+  expectedSettings = hostPkgs.writeText "togi-module-settings.json" (
+    builtins.toJSON one.services.togi.settings
+  );
 in
 assert rejectsMirrors zero;
 assert lib.all (a: a.assertion) one.assertions;
 assert !rejectsMirrors one;
 assert rejectsMirrors two;
+assert generatedConfig.target == "togi/config.json";
+assert one.services.togi.settings.backend_user == "togi-trial";
 assert builtins.elem "noauto" tuning.fileSystems."/boot".options;
 assert tuning.systemd.services.togi.unitConfig.RequiresMountsFor == "/boot/grub/grubenv";
 assert lib.hasInfix "RequiresMountsFor=/boot/grub/grubenv" tuning.systemd.units."togi.service".text;
@@ -121,6 +140,8 @@ assert lib.hasInfix
 assert
   overriddenTuning.systemd.services.togi-watch.serviceConfig.ExecStart
   == "${lib.getExe pkgs.hello} watch";
-hostPkgs.runCommand "togi-module-check" { } ''
+hostPkgs.runCommand "togi-module-check" { nativeBuildInputs = [ hostPkgs.jq ]; } ''
+  jq --exit-status --slurpfile expected ${expectedSettings} \
+    '. == $expected[0]' ${generatedConfig.source}
   touch "$out"
 ''

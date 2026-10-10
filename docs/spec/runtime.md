@@ -55,7 +55,7 @@ When stdin and stderr are both terminals (the same check) and `--no-tui` is not 
 
 The clean-stop summary ignores interleaved or trailing `session.warning` events when selecting the closing restoration and shutdown lines, preserving their journal order. It stops at any other event kind or a preceding shutdown, so earlier restoration and shutdown lines are not repeated as the current run's outcome.
 
-`--state-dir <path>` (default `/var/lib/togi`) is shared by every command and accepted before or after the command name. `--config <path>` (default `/etc/togi/config.toml`) is accepted before or after the command name only for `doctor`, `run` and `reset`. `status`, `events` and `watch` reject an explicit `--config`, before or after the command name, with the usage error `--config applies only to doctor, run and reset` (exit 2); so do `completion` and `restart-limit`.
+`--state-dir <path>` (default `/var/lib/togi`) is shared by every command and accepted before or after the command name. `--config <path>` (default `/etc/togi/config.json`) is accepted before or after the command name only for `doctor`, `run` and `reset`. `status`, `events` and `watch` reject an explicit `--config`, before or after the command name, with the usage error `--config applies only to doctor, run and reset` (exit 2); so do `completion` and `restart-limit`.
 
 Top-level-only `togi --version` prints `togi x.y.z+rev` to stdout and exits 0; `--version` after a command is an unknown-flag usage error (exit 2). The version is read from root `version.txt` by both Go and the flake. An explicit revision supplied with `-X github.com/shgew/togi.rev=...` takes precedence, as for the flake's `packages.default`. Otherwise the revision comes from Go's VCS build information: the first seven characters of `vcs.revision`, followed by `-dirty` when `vcs.modified` is true. Without either revision it is `dev`; `go run` and the flake checks continue to report `dev`.
 
@@ -166,7 +166,19 @@ After every successful nonwriting preflight, on fresh start and resume in either
 
 ## Configuration
 
-TOML at the `--config` path, produced by the NixOS module from `services.togi.settings`:
+JSON at the `--config` path (default `/etc/togi/config.json`), produced by the NixOS module from `services.togi.settings`. Keys remain snake_case; nested settings are JSON objects and core IDs are object keys written as decimal strings:
+
+```json
+{
+  "backend_user": "togi-trial",
+  "start_offsets": {"3": -10},
+  "candidate_solo_limits": {"11": -20},
+  "durations": {"short_trial_s": 120},
+  "evidence": {"miss": 0.05, "rate": 0.5}
+}
+```
+
+The example assumes the `togi-trial` account exists; [Privileges](#privileges) defines the backend account requirements. Omitted settings retain their defaults.
 
 | Key | Default | Valid |
 |---|---|---|
@@ -186,7 +198,7 @@ TOML at the `--config` path, produced by the NixOS module from `services.togi.se
 | `backends.ycruncher` | not configured | Absolute path of the package (`lib/y-cruncher/Binaries` inside it) |
 | `backend_user` | not configured; module sets `"togi-trial"` | Existing account with non-root UID and primary GID; checked by hardware preflight |
 
-Unknown keys and out-of-range values are errors. When `--config` is not given and no file exists at the default path, the defaults apply.
+Unknown members, including members of nested objects, and out-of-range values are errors. TOML, JSON with comments and YAML are not accepted ([ADR 0050](../adr/0050-json-for-first-party-data-files.md)). When `--config` is not given and no file exists at the default path, the defaults apply.
 
 `durations.confirmation_trial_s` was removed: a file still setting it fails with `durations.confirmation_trial_s was removed in togi 0.5.0: confirmation no longer exists; delete the key`. Invalid evidence values report `evidence.miss = %g: must be within (0, 1)` (likewise rate); an evidence pair requiring over 1000 trials reports `evidence: miss %g and rate %g need more than 1000 trials per step`.
 
@@ -194,9 +206,9 @@ The number of trials for a full evidence step is `ceil(ln(evidence.miss) / log1p
 
 The probability interpretation, independence assumption and heuristic choice of defaults are specified in [tuner.md, Evidence](tuner.md#evidence). These settings determine a replicated check's pass count; they are not a tolerated failure rate or a guarantee about future use.
 
-The effective configuration is recorded in `config.loaded` at every start. Configuration that changes the meaning of existing evidence, such as trial durations, is allowed mid-session and takes effect from the next trial. The journal shows when it changed.
+The effective configuration is recorded in `config.loaded` at every start. The JSON file cutover leaves that snapshot's shape unchanged and does not change the journal schema. Configuration that changes the meaning of existing evidence, such as trial durations, is allowed mid-session and takes effect from the next trial. The journal shows when it changed.
 
-The TOML configuration has no version field, and the Go configuration rejects unknown keys, so a removed or renamed option fails the command until the file is edited. The NixOS module keeps no `mkRenamedOptionModule` or `mkRemovedOptionModule` shims: the change is noted in the changelog. Changed configurable defaults are not a ruleset break.
+The JSON configuration has no version field, and the Go configuration rejects unknown members, so a removed or renamed option fails the command until the file is edited. The NixOS module keeps no `mkRenamedOptionModule` or `mkRemovedOptionModule` shims: the change is noted in the changelog. Changed configurable defaults are not a ruleset break.
 
 Configuration keys keep their names once released. A change of vocabulary in `GLOSSARY.md` renames prose, messages, help and docs, never a key, so a vocabulary change alone never makes an existing configuration file fail. Event kinds and fields follow the same rule (`journal.md`, Event format).
 
@@ -270,7 +282,7 @@ If a `run` starts after `deadend` but before `boot.saved_entry`, it completes th
 | `services.togi.tuning.enable` | Add the tuning boot specialisation above |
 | `services.togi.tuning.leaveOnShutdown` | Default `true`: an orderly operator shutdown or reboot of the tuning boot clears GRUB's saved entry, so the next boot is the normal system; a marked restart-limit retry reboot preserves it. `false` keeps the tuning boot selected until a dead end, exhausted restart-limit retries, or you pick another entry |
 | `services.togi.tuning.consoleFont` | The tuning boot's console font, as `console.font` takes it, whatever the system sets. Default `null`: the kernel's built-in font, 8x16 below 2560x1080 and Terminus 16x32 bold from there. Both give the 240x67 frame the dashboard is laid out for at 1080p and 4K, and both cover IBM437, whose block and box glyphs the dashboard draws with; a system font such as `Lat2-Terminus16` does not (it lacks `▀`). A font set here must cover IBM437 as well: Terminus' `ter-i` fonts, such as `"${pkgs.terminus_font}/share/consolefonts/ter-i32b.psf.gz"`, do, while `ter-v` and `Lat2-Terminus` fonts do not |
-| `services.togi.settings` | Freeform attrset rendered to `/etc/togi/config.toml`; `backend_user` defaults to the module-declared `togi-trial` system user. An override must name an existing unprivileged account |
+| `services.togi.settings` | Freeform attrset rendered to `/etc/togi/config.json`; `backend_user` defaults to the module-declared `togi-trial` system user. An override must name an existing unprivileged account |
 | `services.togi.backends.mprime.enable` | Set `settings.backends.mprime` to the nixpkgs `mprime` package (unfree) |
 | `services.togi.backends.ycruncher.enable` | Set `settings.backends.ycruncher` to the nixpkgs `y-cruncher` package (unfree) |
 

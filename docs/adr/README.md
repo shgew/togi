@@ -79,3 +79,4 @@ ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 - [0047: Gate before every push](0047-gate-before-every-push.md) — **in force**.
 - [0048: Rust as the implementation language](0048-rust.md) — **in force**; supersedes [0001](0001-go.md) for the language. The migration's rules are in [`docs/porting.md`](../porting.md), its log in [`docs/rust-migration.md`](../rust-migration.md).
 - [0049: Count self-sufficiency per core and workload](0049-count-self-sufficiency-per-core-and-workload.md) — **in force**.
+- [0050: JSON for every first-party data file](0050-json-for-first-party-data-files.md) — **in force**.

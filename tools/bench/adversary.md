@@ -6,7 +6,7 @@ This loop never changes the tuner, the simulator or the bench. It writes only un
 
 ## The score
 
-A candidate is a simulator machine file run through the bench with its own suite file (`just bench --suite FILE`, machine paths relative to it) with `replay = true` and eight dev and eight holdout seeds.
+A candidate is a simulator machine JSON file run through the bench with its own JSON suite file (`just bench --suite FILE`, machine paths relative to it) with `"replay": true` on its scenario and eight dev and eight holdout seeds.
 
 - **Primary:** `unsafe`, the number of the eight dev runs that end without concluding, or conclude with a final profile whose `hazard_max_per_h` is at least 1: the machine's own failure model says that profile fails at least once an hour in some regime with every core loaded. Higher is better. Tie-break by the largest `hazard_max_per_h`.
 - **Secondary:** a run that takes more than three times the unmodified machine's median `sim_hours` is a cost finding, scored separately.
@@ -17,9 +17,9 @@ An unsafe-profile finding must beat the unmodified starting machine by at least 
 
 A machine the tuner cannot possibly handle teaches nothing. Every candidate must satisfy all of these:
 
-- **P1, consistent with real evidence.** Start from a committed target fit, `tools/bench/machines/target-fit-<k>.toml`. Keep its `[bios_context]` and point `facts` at `tools/bench/facts/target.jsonl.gz` relative to the new file. The bench's model check must report `ok`: the machine still explains every real group with at least 10 trials. A flagged model check disqualifies the candidate. Keep `replay = true`, so trials matching real facts get real answers and the perturbation acts only where the real machine was not measured.
+- **P1, consistent with real evidence.** Start from a committed target fit, `tools/bench/machines/target-fit-<k>.json`. Keep its `bios_context` object and point `facts` at `tools/bench/facts/target.jsonl.gz` relative to the new file. Preserve the fit's provenance and qualifications in its `notes` array of strings. The bench's model check must report `ok`: the machine still explains every real group with at least 10 trials. A flagged model check disqualifies the candidate. Keep `"replay": true` on the suite scenario, so trials matching real facts get real answers and the perturbation acts only where the real machine was not measured.
 - **P2, existing mechanisms only.** Use the parameters `docs/simulating.md` and `internal/sim/doc.go` describe. Keep rates and limits inside the fitter's ranges in [benchmarking](../../docs/benchmarking.md#fitting-the-target-machine).
-- **P3, a physical story.** State in one sentence what about a real CPU the change represents, such as a core whose AVX-512 limit is two counts shallower than its SSE limit.
+- **P3, a physical story.** State in the machine's `description` string what about a real CPU the change represents, such as a core whose AVX-512 limit is two counts shallower than its SSE limit.
 
 A machine built from the seeded default machine instead of a target fit has no P1 evidence. Report such findings separately as unanchored.
 

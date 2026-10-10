@@ -131,7 +131,7 @@ func TestSharedVoltageAnchorCheckedDeterministicAndReplayable(t *testing.T) {
 			if code := runWithSharedVoltageFit([]string{"--shared-voltage-in-sample", "--facts", extract, "--out", out}, &stdout, &stderr, fitter); code != 0 || calls != 1 || stderr.Len() != 0 {
 				t.Fatalf("code=%d calls=%d stderr=%s", code, calls, stderr.String())
 			}
-			path := filepath.Join(out, "target-shared-voltage.toml")
+			path := filepath.Join(out, "target-shared-voltage.json")
 			content, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
@@ -168,12 +168,12 @@ func TestSharedVoltageAnchorCheckedDeterministicAndReplayable(t *testing.T) {
 			if !m.HasRealAnswer(r.Profile, spec) {
 				t.Fatal("generated provenance cannot answer matching facts")
 			}
-			for _, text := range []string{"IN-SAMPLE", "NOT forward-validated", "2026-10-04 #306", "threshold_clock_v_per_100mhz", fmt.Sprintf("background_rate = %.17g", want.SharedVoltage.BackgroundRate)} {
+			for _, text := range []string{"IN-SAMPLE", "NOT forward-validated", "2026-10-04 #306", "threshold_clock_v_per_100mhz"} {
 				if !bytes.Contains(content, []byte(text)) {
 					t.Fatalf("missing anchor header/parameter %q", text)
 				}
 			}
-			for _, text := range []string{"Whole-trial bootstrap", "layered R7 CCD joints", "\nreplay ="} {
+			for _, text := range []string{"Whole-trial bootstrap", "layered R7 CCD joints", `"replay":`} {
 				if bytes.Contains(content, []byte(text)) {
 					t.Fatalf("misleading or unsupported anchor content %q", text)
 				}
@@ -197,7 +197,7 @@ func TestSharedVoltageAnchorCheckedDeterministicAndReplayable(t *testing.T) {
 			} else if !bytes.Equal(firstContent, content) || firstReport != stdout.String() {
 				t.Fatal("fixed inputs changed anchor or deterministic report")
 			}
-			if _, err := os.Stat(filepath.Join(out, "target-fit-0.toml")); !os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(out, "target-fit-0.json")); !os.IsNotExist(err) {
 				t.Fatalf("anchor mode generated legacy fit: %v", err)
 			}
 		}
@@ -210,7 +210,7 @@ func TestSharedVoltageAnchorFlaggedFitNeverWrites(t *testing.T) {
 			root := t.TempDir()
 			extract, out := filepath.Join(root, "facts.gz"), filepath.Join(root, "machines")
 			writeAnchorExtract(t, extract, anchorRecords())
-			path := filepath.Join(out, "target-shared-voltage.toml")
+			path := filepath.Join(out, "target-shared-voltage.json")
 			if existing {
 				if err := os.MkdirAll(out, 0o700); err != nil {
 					t.Fatal(err)

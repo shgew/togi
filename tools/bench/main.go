@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,7 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/tuner"
@@ -26,13 +26,13 @@ import (
 )
 
 type scenario struct {
-	Name     string   `toml:"name"`
-	Machine  string   `toml:"machine"`
-	Machines []string `toml:"machines"`
-	Replay   bool     `toml:"replay"`
-	Dev      []uint64 `toml:"dev"`
-	Holdout  []uint64 `toml:"holdout"`
-	Smoke    []uint64 `toml:"smoke"`
+	Name     string   `json:"name"`
+	Machine  string   `json:"machine"`
+	Machines []string `json:"machines"`
+	Replay   bool     `json:"replay"`
+	Dev      []uint64 `json:"dev"`
+	Holdout  []uint64 `json:"holdout"`
+	Smoke    []uint64 `json:"smoke"`
 }
 type runSpec struct {
 	scenario scenario
@@ -68,7 +68,7 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	o := options{ctx: ctx}
 	flags := flag.NewFlagSet("bench", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	flags.StringVar(&o.suite, "suite", "tools/bench/suite.toml", "scenario TOML file; relative paths resolve in each tree with --same; machine paths are relative to this file")
+	flags.StringVar(&o.suite, "suite", "tools/bench/suite.json", "scenario JSON file; relative paths resolve in each tree with --same; machine paths are relative to this file")
 	flags.StringVar(&o.split, "split", "dev", "seed split: dev, holdout, or all; incompatible with --same")
 	flags.StringVar(&o.out, "out", "", "write one JSON object per run to this file, or with --forecast the forecast record; incompatible with --same")
 	flags.StringVar(&o.baseline, "baseline", "", "compare against a JSON Lines baseline and, when the suite registers a gate, judge it and exit by it; incompatible with --same")
@@ -133,18 +133,18 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 }
 
 type suiteFile struct {
-	Gate      *gate      `toml:"gate"`
-	Scenarios []scenario `toml:"scenario"`
+	Gate      *gate      `json:"gate"`
+	Scenarios []scenario `json:"scenarios"`
 }
 
 func decodeSuite(path string) (suiteFile, error) {
 	var suite suiteFile
-	md, err := toml.DecodeFile(path, &suite)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return suite, fmt.Errorf("load suite: %w", err)
 	}
-	if len(md.Undecoded()) > 0 {
-		return suite, fmt.Errorf("unknown suite key %s", md.Undecoded()[0])
+	if err := jsonv2.Unmarshal(data, &suite, jsonv2.RejectUnknownMembers(true)); err != nil {
+		return suite, fmt.Errorf("load suite: %w", err)
 	}
 	return suite, nil
 }

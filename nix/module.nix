@@ -7,7 +7,7 @@
 }:
 let
   cfg = config.services.togi;
-  toml = pkgs.formats.toml { };
+  json = pkgs.formats.json { };
   grub = config.boot.loader.grub;
   grubenv = "${(lib.head grub.mirroredBoots).path}/grub/grubenv";
 in
@@ -41,9 +41,9 @@ in
       description = "Console font of the tuning boot, as console.font takes it. The default, null, is the kernel's built-in font whatever the system sets: 8x16 below 2560x1080 and Terminus 16x32 bold from there, which make the 240x67 frame the dashboard is laid out for at 1080p and 4K, and which cover IBM437, whose block and box glyphs the dashboard draws with. A font set here must cover them too: Terminus' ter-i fonts do, while ter-v and Lat2-Terminus fonts lack the half block the digits use.";
     };
     settings = lib.mkOption {
-      type = toml.type;
+      type = json.type;
       default = { };
-      description = "Configuration rendered to /etc/togi/config.toml. backend_user defaults to the module-declared togi-trial system user; togi stays root while workloads run as that user with no supplementary groups.";
+      description = "Configuration rendered to /etc/togi/config.json. backend_user defaults to the module-declared togi-trial system user; togi stays root while workloads run as that user with no supplementary groups.";
     };
   };
 
@@ -52,7 +52,7 @@ in
       {
         environment.systemPackages = [ cfg.package ];
         hardware.cpu.amd.ryzen-smu.enable = lib.mkDefault true;
-        environment.etc."togi/config.toml".source = toml.generate "togi-config.toml" cfg.settings;
+        environment.etc."togi/config.json".source = json.generate "togi-config.json" cfg.settings;
         users.groups.togi-trial = { };
         users.users.togi-trial = {
           isSystemUser = true;

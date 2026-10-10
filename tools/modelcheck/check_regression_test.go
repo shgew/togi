@@ -29,7 +29,7 @@ func TestModelCheckResetWeights(t *testing.T) {
 			{"positive", 1},
 		} {
 			t.Run(string(kind)+"/"+tc.name, func(t *testing.T) {
-				const path = "testdata/model-ok.toml"
+				const path = "testdata/model-ok.json"
 				cfg, err := sim.LoadMachine(path)
 				if err != nil {
 					t.Fatal(err)
@@ -54,7 +54,7 @@ func TestModelCheckResetWeights(t *testing.T) {
 }
 
 func TestModelCheckEligibility(t *testing.T) {
-	const machinePath = "testdata/model-ok.toml"
+	const machinePath = "testdata/model-ok.json"
 	cfg, err := sim.LoadMachine(machinePath)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +115,7 @@ func TestModelCheckEligibility(t *testing.T) {
 }
 
 func TestCheckRefusesUnreadableExtract(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "machine.toml")
+	path := filepath.Join(t.TempDir(), "machine.json")
 	got, err := Check(path, sim.Config{Facts: "missing.jsonl.gz"}, trialfacts.Extracts{})
 	if got != nil || !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), "missing.jsonl.gz") {
 		t.Fatalf("missing extract: result=%v err=%v", got, err)
@@ -123,7 +123,7 @@ func TestCheckRefusesUnreadableExtract(t *testing.T) {
 }
 
 func TestCheckRecordsRefusesInvalidMachine(t *testing.T) {
-	got, err := CheckRecords("machine.toml", "facts.jsonl.gz", sim.Config{Cores: 3}, nil)
+	got, err := CheckRecords("machine.json", "facts.jsonl.gz", sim.Config{Cores: 3}, nil)
 	if got != nil || err == nil || !strings.Contains(err.Error(), "must be even and at least 2") {
 		t.Fatalf("invalid machine: result=%v err=%v", got, err)
 	}

@@ -1,0 +1,135 @@
+{
+  "gate": {
+    "id": "ruleset-11",
+    "note": "Ruleset 11 gate, decided 2026-10-09 (issues 491 and 570). The 90th-percentile criterion has low power at 24 seeds: the interval over 24 pairs is wide, so it catches only a large tail rise.",
+    "split": "all",
+    "gated": ["target-shared-voltage", "target-r7-vf-boost", "target-r7-request-gap", "shared-voltage"],
+    "pooled": ["target-shared-voltage", "target-r7-vf-boost", "target-r7-request-gap"],
+    "conclude": ["default", "idle-limit", "late-onset", "target-nonmember-mce"],
+    "quantiles": [0.5, 0.9],
+    "confidence": 0.95,
+    "resamples": 10000,
+    "bootstrap_seed": [1, 1],
+    "max_time_ratio": 2.0,
+    "baseline": {
+      "ruleset": 10,
+      "commits": ["3a9b894"]
+    }
+  },
+  "scenarios": [
+    {
+      "name": "default",
+      "machine": "",
+      "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
+      "holdout": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124],
+      "smoke": [122]
+    },
+    {
+      "name": "target",
+      "machines": ["machines/target-fit-0.json", "machines/target-fit-1.json", "machines/target-fit-2.json", "machines/target-fit-3.json", "machines/target-fit-4.json", "machines/target-fit-5.json", "machines/target-fit-6.json", "machines/target-fit-7.json", "machines/target-fit-8.json"],
+      "replay": true,
+      "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+      "holdout": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118],
+      "smoke": [115]
+    },
+    {
+      "name": "flat-hazard",
+      "machine": "machines/flat-hazard.json",
+      "dev": [1, 2, 3, 4],
+      "holdout": [101, 102, 103, 104],
+      "smoke": [104]
+    },
+    {
+      "name": "late-onset",
+      "machine": "machines/late-onset.json",
+      "dev": [1, 2, 3, 4],
+      "holdout": [101, 102, 103, 104],
+      "smoke": [101]
+    },
+    {
+      "name": "idle-limit",
+      "machine": "machines/idle-limit.json",
+      "dev": [1, 2, 3, 4],
+      "holdout": [101, 102, 103, 104],
+      "smoke": [103]
+    },
+    {
+      "name": "misleading-mce",
+      "machine": "machines/misleading-mce.json",
+      "dev": [1, 2, 3, 4],
+      "holdout": [101, 102, 103, 104],
+      "smoke": [104]
+    },
+    {
+      "name": "target-r4-limit",
+      "machine": "machines/target-r4-limit.json",
+      "replay": true,
+      "dev": [1, 2, 3, 4],
+      "holdout": [101, 102, 103, 104],
+      "smoke": [103]
+    },
+    {
+      "name": "target-nonmember-mce",
+      "machine": "machines/target-nonmember-mce.json",
+      "replay": true,
+      "dev": [1, 2, 3, 4],
+      "holdout": [101, 102, 103, 104],
+      "smoke": [103]
+    },
+    {
+      "name": "target-delayed-joint",
+      "machine": "machines/target-delayed-joint.json",
+      "replay": true,
+      "dev": [1, 2, 3, 4],
+      "holdout": [101, 102, 103, 104],
+      "smoke": [2]
+    },
+    {
+      "name": "target-flat-risk",
+      "machine": "machines/target-flat-risk.json",
+      "replay": true,
+      "dev": [1, 2, 3, 4],
+      "holdout": [101, 102, 103, 104],
+      "smoke": [101]
+    },
+    {
+      "name": "target-flat-cost",
+      "machine": "machines/target-flat-cost.json",
+      "replay": true,
+      "dev": [1, 2, 3, 4],
+      "holdout": [101, 102, 103, 104],
+      "smoke": [101]
+    },
+    {
+      "name": "shared-voltage",
+      "machine": "machines/shared-voltage.json",
+      "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "holdout": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112],
+      "smoke": [103]
+    },
+    {
+      "name": "target-shared-voltage",
+      "machine": "machines/target-shared-voltage.json",
+      "replay": true,
+      "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "holdout": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112],
+      "smoke": [104]
+    },
+    {
+      "name": "target-r7-vf-boost",
+      "machine": "machines/target-r7-vf-boost.json",
+      "replay": true,
+      "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "holdout": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112],
+      "smoke": [110]
+    },
+    {
+      "name": "target-r7-request-gap",
+      "machine": "machines/target-r7-request-gap.json",
+      "replay": true,
+      "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "holdout": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112],
+      "smoke": [10]
+    }
+  ]
+}

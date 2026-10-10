@@ -2,72 +2,92 @@ package sim
 
 import (
 	"cmp"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
+	"os"
 	"strconv"
 
-	"github.com/BurntSushi/toml"
 	"github.com/shgew/togi/internal/machine"
 )
 
-func LoadMachine(path string) (Config, error) {
-	var f struct {
-		Cores         int            `toml:"cores"`
-		Facts         string         `toml:"facts"`
-		BIOS          []int          `toml:"bios"`
-		Ranking       []int          `toml:"ranking"`
-		OldKernel     bool           `toml:"old_kernel"`
-		CCD           *CCD           `toml:"ccd"`
-		SharedVoltage *SharedVoltage `toml:"shared_voltage"`
-		BIOSContext   *struct {
-			BIOSVersion   string `toml:"bios_version"`
-			Board         string `toml:"board"`
-			CPUModel      string `toml:"cpu_model"`
-			Microcode     string `toml:"microcode"`
-			BoostLimitMHz int    `toml:"boost_limit_mhz"`
-		} `toml:"bios_context"`
-		Model struct {
-			PastLimitRate *float64                                      `toml:"past_limit_rate"`
-			Growth        *float64                                      `toml:"growth"`
-			NearLimitRate *float64                                      `toml:"near_limit_rate"`
-			CrashMCE      *float64                                      `toml:"crash_mce"`
-			CoreLocalBank *float64                                      `toml:"core_local_bank"`
-			OnsetS        *float64                                      `toml:"onset_s"`
-			OnsetBoost    *float64                                      `toml:"onset_boost"`
-			Signals       map[machine.Signal]float64                    `toml:"signals"`
-			RegimeSignals map[machine.Regime]map[machine.Signal]float64 `toml:"regime_signals"`
-			Reset         map[machine.ResetKind]float64                 `toml:"reset"`
-		} `toml:"model"`
-		Core []struct {
-			ID       int            `toml:"id"`
-			Alone    []int          `toml:"alone"`
-			Together []int          `toml:"together"`
-			Idle     *int           `toml:"idle"`
-			Workload map[string]int `toml:"workload"`
-			Flat     float64        `toml:"flat"`
-		} `toml:"core"`
-		Joint []struct {
-			Members      map[string]int   `toml:"members"`
-			Regimes      []machine.Regime `toml:"regimes"`
-			Rate         float64          `toml:"rate"`
-			AfterS       float64          `toml:"after_s"`
-			Signal       machine.Signal   `toml:"signal"`
-			CrashMCECore *int             `toml:"crash_mce_core"`
-		} `toml:"joint"`
-		Script []struct {
-			Trial     string            `toml:"trial"`
-			Signal    machine.Signal    `toml:"signal"`
-			AtS       float64           `toml:"at_s"`
-			Core      int               `toml:"core"`
-			Reset     machine.ResetKind `toml:"reset"`
-			ThenCrash bool              `toml:"then_crash"`
-		} `toml:"script"`
+// MachineFile is the JSON shape of a simulated machine file. Description says what a hand-written machine models;
+// Notes carry a generated machine's provenance. Neither changes the simulated machine.
+type MachineFile struct {
+	Description   string               `json:"description,omitzero"`
+	Notes         []string             `json:"notes,omitzero"`
+	Cores         int                  `json:"cores,omitzero"`
+	Facts         string               `json:"facts,omitzero"`
+	BIOS          []int                `json:"bios,omitzero"`
+	Ranking       []int                `json:"ranking,omitzero"`
+	OldKernel     bool                 `json:"old_kernel,omitzero"`
+	BIOSContext   *machine.BIOSContext `json:"bios_context,omitzero"`
+	Model         FileModel            `json:"model,omitzero"`
+	CCD           *CCD                 `json:"ccd,omitzero"`
+	Core          []FileCore           `json:"core,omitzero"`
+	Joint         []FileJoint          `json:"joint,omitzero"`
+	Script        []FileScript         `json:"script,omitzero"`
+	SharedVoltage *SharedVoltage       `json:"shared_voltage,omitzero"`
+}
+
+// FileModel overrides DefaultModel field by field; an absent field keeps the default.
+type FileModel struct {
+	PastLimitRate *float64                                      `json:"past_limit_rate,omitzero"`
+	Growth        *float64                                      `json:"growth,omitzero"`
+	NearLimitRate *float64                                      `json:"near_limit_rate,omitzero"`
+	CrashMCE      *float64                                      `json:"crash_mce,omitzero"`
+	CoreLocalBank *float64                                      `json:"core_local_bank,omitzero"`
+	OnsetS        *float64                                      `json:"onset_s,omitzero"`
+	OnsetBoost    *float64                                      `json:"onset_boost,omitzero"`
+	Signals       map[machine.Signal]float64                    `json:"signals,omitzero"`
+	RegimeSignals map[machine.Regime]map[machine.Signal]float64 `json:"regime_signals,omitzero"`
+	Reset         map[machine.ResetKind]float64                 `json:"reset,omitzero"`
+}
+
+type FileCore struct {
+	ID       int            `json:"id"`
+	Alone    []int          `json:"alone"`
+	Together []int          `json:"together"`
+	Flat     float64        `json:"flat"`
+	Idle     *int           `json:"idle,omitzero"`
+	Workload map[string]int `json:"workload,omitzero"`
+}
+
+type FileJoint struct {
+	Regimes      []machine.Regime `json:"regimes"`
+	Rate         float64          `json:"rate"`
+	AfterS       float64          `json:"after_s"`
+	Members      map[string]int   `json:"members"`
+	Signal       machine.Signal   `json:"signal,omitzero"`
+	CrashMCECore *int             `json:"crash_mce_core,omitzero"`
+}
+
+type FileScript struct {
+	Trial     string            `json:"trial"`
+	Signal    machine.Signal    `json:"signal,omitzero"`
+	AtS       float64           `json:"at_s,omitzero"`
+	Core      int               `json:"core,omitzero"`
+	Reset     machine.ResetKind `json:"reset,omitzero"`
+	ThenCrash bool              `json:"then_crash,omitzero"`
+}
+
+// Encode renders the file as indented JSON with sorted map keys, ending in a newline.
+func (f MachineFile) Encode() ([]byte, error) {
+	b, err := json.Marshal(f, json.Deterministic(true), jsontext.WithIndent("  "))
+	if err != nil {
+		return nil, fmt.Errorf("encode simulator machine: %w", err)
 	}
-	md, err := toml.DecodeFile(path, &f)
+	return append(b, '\n'), nil
+}
+
+func LoadMachine(path string) (Config, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("load simulator machine %s: %w", path, err)
 	}
-	if keys := md.Undecoded(); len(keys) != 0 {
-		return Config{}, fmt.Errorf("load simulator machine %s: unknown key %s", path, keys[0])
+	var f MachineFile
+	if err := json.Unmarshal(data, &f, json.RejectUnknownMembers(true)); err != nil {
+		return Config{}, fmt.Errorf("load simulator machine %s: %w", path, err)
 	}
 	cfg := Config{Cores: f.Cores, BIOS: f.BIOS, Ranking: f.Ranking, OldKernel: f.OldKernel, Facts: f.Facts}
 	cfg.CCD = f.CCD

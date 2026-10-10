@@ -69,7 +69,7 @@ func resumedCopy(t *testing.T, maxBoots int, statuses ...string) (string, string
 		for _, offset := range o.Profile {
 			o.Depth += offset
 		}
-		record.Runs = append(record.Runs, forecast.Run{Machine: "machines/target.toml", Seed: uint64(i + 1), Split: "dev", Outcome: o})
+		record.Runs = append(record.Runs, forecast.Run{Machine: "machines/target.json", Seed: uint64(i + 1), Split: "dev", Outcome: o})
 	}
 	record.Summary, err = forecast.Summarize(record.Runs)
 	if err != nil {
