@@ -17,7 +17,7 @@
    06   0 SEARCH   ·····                           → -15       14   0 SEARCH   · █                          -5 → -2
    07   0 SEARCH   ·····                           → -15       15   0 SEARCH   ·····                           → -15
 
- TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ──────────────────────────────────── l: all
+ TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ─────────────────────────────── l: last 400
 
    13  search step: light, then   -15  passed -10 · next     02:47  resume   session resumed
    06  search step: light, then   -15  passed -10 · next     02:45  backoff  core 12 -15 → -11
