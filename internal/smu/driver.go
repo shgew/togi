@@ -150,6 +150,22 @@ func (d *Driver) mapSlots() {
 		ccds = append(ccds, ccd)
 	}
 	slices.Sort(ccds)
+	var outside []string
+	for _, ccd := range ccds {
+		var ids []string
+		for _, core := range byCCD[ccd] {
+			if core < 0 || core >= machine.PerCoreMax {
+				ids = append(ids, strconv.Itoa(core))
+			}
+		}
+		if len(ids) != 0 {
+			outside = append(outside, fmt.Sprintf("CCD%d core IDs %s", ccd, strings.Join(ids, ", ")))
+		}
+	}
+	if len(outside) != 0 {
+		d.mappingErr = fmt.Errorf("%s outside supported range 0-%d", strings.Join(outside, "; "), machine.PerCoreMax-1)
+		return
+	}
 	var details []string
 	for _, ccd := range ccds {
 		const rsmuResponse = 0x03b10570

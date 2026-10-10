@@ -21,7 +21,7 @@ func requestSamples(count int) []machine.TrialConditions {
 	for i := range count {
 		table := &machine.PMTable{}
 		table.VoltageRequestV[0], table.VoltageRequestV[1], table.VoltageRequestV[15] = 1.125, 1.1255, 3
-		samples = append(samples, machine.TrialConditions{ElapsedMS: int64(5000 + i*1000), PMTable: table, CoreMHz: map[int]int{0: 5000, 1: 5100, 15: 6000}})
+		samples = append(samples, machine.TrialConditions{ElapsedMS: int64(5000 + i*1000), PMTable: table, CoreMHz: machine.PerCoreFrom(map[int]int{0: 5000, 1: 5100, 15: 6000})})
 	}
 	return samples
 }

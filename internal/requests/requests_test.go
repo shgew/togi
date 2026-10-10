@@ -18,7 +18,7 @@ func samples(from, to int64, lanes func(elapsedMS int64) (map[int]float32, map[i
 			for core, v := range requests {
 				table.VoltageRequestV[core] = v
 			}
-			if !yield(machine.TrialConditions{ElapsedMS: ms, CoreMHz: mhz, PMTable: table}) {
+			if !yield(machine.TrialConditions{ElapsedMS: ms, CoreMHz: machine.PerCoreFrom(mhz), PMTable: table}) {
 				return
 			}
 		}
@@ -85,7 +85,7 @@ func TestSummarizeNeedsMinClockSamplesPerCCD(t *testing.T) {
 func TestSummarizeSkipsSamplesWithoutLanes(t *testing.T) {
 	seq := func(yield func(machine.TrialConditions) bool) {
 		for ms := int64(WarmupMS); ms < WarmupMS+60000; ms += 1000 {
-			if !yield(machine.TrialConditions{ElapsedMS: ms, CoreMHz: map[int]int{2: 5000}}) {
+			if !yield(machine.TrialConditions{ElapsedMS: ms, CoreMHz: machine.PerCoreFrom(map[int]int{2: 5000})}) {
 				return
 			}
 		}

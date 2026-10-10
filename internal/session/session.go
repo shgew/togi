@@ -733,7 +733,7 @@ func (r *runner) closeOpenTrial() error {
 		if sample := summary.last; sample != nil && crashed {
 			end.LastSampleS = new(int(sample.ElapsedMS / 1000))
 			end.LastSampleTctlC = sample.TctlC
-			for _, mhz := range sample.CoreMHz {
+			for _, mhz := range sample.CoreMHz.All() {
 				if end.LastSampleMinMHz == nil || mhz < *end.LastSampleMinMHz {
 					end.LastSampleMinMHz = new(mhz)
 				}

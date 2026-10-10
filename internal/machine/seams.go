@@ -124,8 +124,8 @@ type TrialConditions struct {
 	ElapsedMS     int64          `json:"elapsed_ms"`
 	TctlC         *int           `json:"tctl_c,omitempty"`
 	TccdC         map[string]int `json:"tccd_c,omitempty"`
-	CoreMHz       map[int]int    `json:"core_mhz,omitempty"`
-	WorkerCPUMS   map[int]int64  `json:"worker_cpu_ms,omitempty"`
+	CoreMHz       PerCore[int]   `json:"core_mhz,omitzero"`
+	WorkerCPUMS   PerCore[int64] `json:"worker_cpu_ms,omitzero"`
 	PackagePowerW *float64       `json:"package_power_w,omitempty"`
 	PMTable       *PMTable       `json:"pm_table,omitempty"`
 }

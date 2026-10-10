@@ -26,16 +26,15 @@ type trialSamples struct {
 }
 
 // conditions yields one sample per simulated second. The clocks and PM table never change within a trial, so every
-// sample shares them; each sample has its own worker CPU times.
+// sample shares them; worker CPU times are per-core values, so no sample shares state with another.
 func (s trialSamples) conditions() iter.Seq[machine.TrialConditions] {
 	return func(yield func(machine.TrialConditions) bool) {
 		var pm *machine.PMTable
-		var mhz map[int]int
+		var mhz machine.PerCore[int]
 		if s.voltage != nil {
 			pm = &machine.PMTable{VoltageRequestV: s.voltage.requests}
-			mhz = make(map[int]int, len(s.spec.Cores))
 			for _, core := range s.spec.Cores {
-				mhz[core] = s.voltage.clocks[core/8]
+				mhz.Set(core, s.voltage.clocks[core/8])
 				pm.C0Pct[core] = 100
 			}
 			for core := range 16 {
@@ -43,9 +42,9 @@ func (s trialSamples) conditions() iter.Seq[machine.TrialConditions] {
 			}
 		}
 		for at := time.Second; at < s.ran; at += time.Second {
-			cpu := make(map[int]int64, len(s.spec.Cores))
+			var cpu machine.PerCore[int64]
 			for _, core := range s.spec.Cores {
-				cpu[core] = s.workerCPUMS(core, at)
+				cpu.Set(core, s.workerCPUMS(core, at))
 			}
 			if !yield(machine.TrialConditions{ElapsedMS: at.Milliseconds(), WorkerCPUMS: cpu, PMTable: pm, CoreMHz: mhz}) {
 				return

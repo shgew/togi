@@ -26,11 +26,11 @@ func TestCrashWorkerSamplesSurviveRecovery(t *testing.T) {
 	m.Reboot()
 	samples := slices.Collect(m.Seams().Trials.Samples("0001"))
 	want := []machine.TrialConditions{
-		{ElapsedMS: 1000, WorkerCPUMS: map[int]int64{0: 1000, 1: 1000}},
-		{ElapsedMS: 2000, WorkerCPUMS: map[int]int64{0: 2000, 1: 2000}},
-		{ElapsedMS: 3000, WorkerCPUMS: map[int]int64{0: 3000, 1: 3000}},
-		{ElapsedMS: 4000, WorkerCPUMS: map[int]int64{0: 4000, 1: 4000}},
-		{ElapsedMS: 5000, WorkerCPUMS: map[int]int64{0: 5000, 1: 4000}},
+		{ElapsedMS: 1000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{0: 1000, 1: 1000})},
+		{ElapsedMS: 2000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{0: 2000, 1: 2000})},
+		{ElapsedMS: 3000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{0: 3000, 1: 3000})},
+		{ElapsedMS: 4000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{0: 4000, 1: 4000})},
+		{ElapsedMS: 5000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{0: 5000, 1: 4000})},
 	}
 	if diff := cmp.Diff(want, samples); diff != "" {
 		t.Fatal(diff)
@@ -53,22 +53,22 @@ func TestSimulatedSamples(t *testing.T) {
 		{"before first tick", 500 * time.Millisecond, -1, nil},
 		{"at first tick", time.Second, -1, nil},
 		{"between ticks", 2500 * time.Millisecond, -1, []machine.TrialConditions{
-			{ElapsedMS: 1000, WorkerCPUMS: map[int]int64{2: 2000, 7: 2000}},
-			{ElapsedMS: 2000, WorkerCPUMS: map[int]int64{2: 4000, 7: 4000}},
+			{ElapsedMS: 1000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{2: 2000, 7: 2000})},
+			{ElapsedMS: 2000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{2: 4000, 7: 4000})},
 		}},
 		{"short crash", 2500 * time.Millisecond, 7, []machine.TrialConditions{
-			{ElapsedMS: 1000, WorkerCPUMS: map[int]int64{2: 2000, 7: 2000}},
-			{ElapsedMS: 2000, WorkerCPUMS: map[int]int64{2: 4000, 7: 2000}},
+			{ElapsedMS: 1000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{2: 2000, 7: 2000})},
+			{ElapsedMS: 2000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{2: 4000, 7: 2000})},
 		}},
 		{"fractional crash", 4500 * time.Millisecond, 7, []machine.TrialConditions{
-			{ElapsedMS: 1000, WorkerCPUMS: map[int]int64{2: 2000, 7: 2000}},
-			{ElapsedMS: 2000, WorkerCPUMS: map[int]int64{2: 4000, 7: 4000}},
-			{ElapsedMS: 3000, WorkerCPUMS: map[int]int64{2: 6000, 7: 5000}},
-			{ElapsedMS: 4000, WorkerCPUMS: map[int]int64{2: 8000, 7: 5000}},
+			{ElapsedMS: 1000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{2: 2000, 7: 2000})},
+			{ElapsedMS: 2000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{2: 4000, 7: 4000})},
+			{ElapsedMS: 3000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{2: 6000, 7: 5000})},
+			{ElapsedMS: 4000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{2: 8000, 7: 5000})},
 		}},
 		{"idle culprit", 3 * time.Second, 0, []machine.TrialConditions{
-			{ElapsedMS: 1000, WorkerCPUMS: map[int]int64{2: 2000, 7: 2000}},
-			{ElapsedMS: 2000, WorkerCPUMS: map[int]int64{2: 4000, 7: 4000}},
+			{ElapsedMS: 1000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{2: 2000, 7: 2000})},
+			{ElapsedMS: 2000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{2: 4000, 7: 4000})},
 		}},
 	} {
 		for _, fileBacked := range []bool{false, true} {
@@ -132,7 +132,7 @@ func TestInMemorySampleRetentionDoesNotGrowWithDuration(t *testing.T) {
 		first = &sample
 		break
 	}
-	want := &machine.TrialConditions{ElapsedMS: 1000, WorkerCPUMS: map[int]int64{0: 1000, 1: 1000}}
+	want := &machine.TrialConditions{ElapsedMS: 1000, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{0: 1000, 1: 1000})}
 	if diff := cmp.Diff(want, first); diff != "" {
 		t.Fatal(diff)
 	}

@@ -84,8 +84,8 @@ func TestTrialConditionsSamples(t *testing.T) {
 			got = append(got, p)
 		}
 		want := []machine.TrialConditions{
-			{ElapsedMS: 1000, TctlC: new(71), TccdC: map[string]int{"Tccd1": 65}, CoreMHz: map[int]int{0: 5420, 1: 5610}, WorkerCPUMS: map[int]int64{0: 1000, 1: 1000}, PackagePowerW: new(10.0)},
-			{ElapsedMS: 2000, TctlC: new(72), TccdC: map[string]int{"Tccd1": 65}, CoreMHz: map[int]int{0: 5420, 1: 5610}, WorkerCPUMS: map[int]int64{0: 2000, 1: 2000}, PackagePowerW: new(10.0)},
+			{ElapsedMS: 1000, TctlC: new(71), TccdC: map[string]int{"Tccd1": 65}, CoreMHz: machine.PerCoreFrom(map[int]int{0: 5420, 1: 5610}), WorkerCPUMS: machine.PerCoreFrom(map[int]int64{0: 1000, 1: 1000}), PackagePowerW: new(10.0)},
+			{ElapsedMS: 2000, TctlC: new(72), TccdC: map[string]int{"Tccd1": 65}, CoreMHz: machine.PerCoreFrom(map[int]int{0: 5420, 1: 5610}), WorkerCPUMS: machine.PerCoreFrom(map[int]int64{0: 2000, 1: 2000}), PackagePowerW: new(10.0)},
 		}
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Fatal(diff)
@@ -369,7 +369,7 @@ func TestSamplesSetupCancellation(t *testing.T) {
 		if diff := cmp.Diff(150*time.Millisecond, result.Ran); diff != "" {
 			t.Fatal(diff)
 		}
-		if diff := cmp.Diff([]machine.TrialConditions{{ElapsedMS: 100, WorkerCPUMS: map[int]int64{0: 100}}}, f.samples); diff != "" {
+		if diff := cmp.Diff([]machine.TrialConditions{{ElapsedMS: 100, WorkerCPUMS: machine.PerCoreFrom(map[int]int64{0: 100})}}, f.samples); diff != "" {
 			t.Fatal(diff)
 		}
 		if !f.closed {

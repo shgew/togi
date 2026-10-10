@@ -106,14 +106,38 @@ func TestLoadMachineInvalidDefinitions(t *testing.T) {
 
 func TestLoadMachineRejectsInvalidCoreCountBeforeLimits(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join(t.TempDir(), "machine.toml")
-	if err := os.WriteFile(path, []byte("cores = -2\n[[core]]\nid = 0\n"), 0600); err != nil {
-		t.Fatal(err)
+	for _, tc := range []struct {
+		name  string
+		cores int
+		want  string
+	}{
+		{"negative", -2, "-2 cores: must be even and at least 2, and at most 16"},
+		{"above per-core bound", 18, "18 cores: must be even and at least 2, and at most 16"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "machine.toml")
+			if err := os.WriteFile(path, []byte(fmt.Sprintf("cores = %d\n[[core]]\nid = 0\n", tc.cores)), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadMachine(path)
+			want := fmt.Sprintf("load simulator machine %s: new simulator: %s", path, tc.want)
+			if err == nil || err.Error() != want {
+				t.Fatalf("got %v, want %s", err, want)
+			}
+		})
 	}
-	_, err := LoadMachine(path)
-	want := fmt.Sprintf("load simulator machine %s: new simulator: -2 cores: must be even and at least 2", path)
-	if err == nil || err.Error() != want {
-		t.Fatalf("got %v, want %s", err, want)
+}
+
+func TestValidateCoresBound(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		cores int
+		valid bool
+	}{{2, true}, {16, true}, {18, false}, {0, false}, {3, false}} {
+		if diff := cmp.Diff(tc.valid, validateCores(tc.cores) == nil); diff != "" {
+			t.Errorf("validateCores(%d) valid (-want +got):\n%s", tc.cores, diff)
+		}
 	}
 }
 

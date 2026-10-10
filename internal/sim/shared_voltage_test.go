@@ -200,7 +200,7 @@ func TestSharedVoltageSamplesAndDeterminism(t *testing.T) {
 			t.Fatal(diff)
 		}
 		for _, sample := range samples {
-			if sample.PMTable == nil || len(sample.CoreMHz) != 3 || sample.PMTable.VoltageRequestV[8] != .8 {
+			if sample.PMTable == nil || sample.CoreMHz.Len() != 3 || sample.PMTable.VoltageRequestV[8] != .8 {
 				t.Fatalf("incomplete lanes: %+v", sample)
 			}
 		}
