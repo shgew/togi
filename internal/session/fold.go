@@ -120,6 +120,14 @@ type fold struct {
 	trials   int
 	index    map[int]map[machine.Regime]int
 	allIndex map[machine.Regime]int
+
+	// build is journal.BuildOf of the events folded so far, kept current as they arrive; nil until the session start.
+	build *journal.Build
+	// deadEnd is the latest dead end; deadEndEntry and deadEndShutdown say whether its saved-entry clearing and its
+	// shutdown have followed it.
+	deadEnd         *journal.Event
+	deadEndEntry    bool
+	deadEndShutdown bool
 }
 
 func newFold() *fold {
@@ -150,6 +158,9 @@ func mceKey(boot string, lines []string) string {
 }
 
 func (f *fold) Fold(e journal.Event) {
+	if f.deadEnd != nil {
+		f.followDeadEnd(e)
+	}
 	if _, seen := f.lastKind[e.Boot]; !seen {
 		f.boots = append(f.boots, e.Boot)
 		f.lastKind[e.Boot] = e.Kind
@@ -158,6 +169,9 @@ func (f *fold) Fold(e journal.Event) {
 	}
 	switch p := e.Data.(type) {
 	case *journal.SessionStart:
+		if f.build == nil {
+			f.build = new(journal.BuildOf([]journal.Event{e}))
+		}
 		f.started = true
 		f.ids = make([]int, len(p.Cores))
 		f.ccds = make(map[int]int, len(p.Cores))
@@ -167,6 +181,9 @@ func (f *fold) Fold(e journal.Event) {
 		}
 		slices.Sort(f.ids)
 	case *journal.ConfigLoaded:
+		if f.build != nil && p.Version != "" {
+			f.build.Version, f.build.Rev, f.build.Fixes = p.Version, p.Rev, p.Fixes
+		}
 		f.backends = p.Config.Backends
 		f.kernelBoundary(e, p.KernelBoundary)
 	case *journal.Shutdown:
@@ -317,6 +334,7 @@ func (f *fold) Fold(e journal.Event) {
 			f.retryFollowed[b] = false
 		}
 	case *journal.DeadEnd:
+		f.deadEnd, f.deadEndEntry, f.deadEndShutdown = &e, false, false
 		switch p.Condition {
 		case journal.DeadEndSMU:
 			f.smuSeq = 0
@@ -460,4 +478,22 @@ func (f *fold) lastIntentIn(boot string) *int {
 		}
 	}
 	return nil
+}
+
+// pendingDeadEnd returns the latest dead end unless a dead-end shutdown followed it, and whether its saved boot entry
+// still has to be cleared.
+func (f *fold) pendingDeadEnd() (*journal.Event, bool) {
+	if f.deadEnd == nil || f.deadEndShutdown {
+		return nil, false
+	}
+	return f.deadEnd, !f.deadEndEntry
+}
+
+func (f *fold) followDeadEnd(e journal.Event) {
+	if e.Kind == journal.KindBootSavedEntry {
+		f.deadEndEntry = f.deadEndEntry || slices.Contains(e.Cause, f.deadEnd.Seq)
+	}
+	if shutdown, ok := e.Data.(*journal.Shutdown); ok {
+		f.deadEndShutdown = f.deadEndShutdown || shutdown.Reason == journal.ShutdownDeadEnd
+	}
 }

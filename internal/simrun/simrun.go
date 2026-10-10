@@ -88,14 +88,32 @@ type Input struct {
 	WriteSamples    bool
 	// MaxBoots caps the simulated boots of one invocation; 0 uses 1000.
 	MaxBoots int
+	// ColdBoots replays the whole journal at every boot, as `togi run` does. Otherwise, with InMemoryJournal, a boot after a
+	// simulated crash resumes from the state the crashed boot folded.
+	ColdBoots bool
+	// VerifyEvery makes every Nth boot that ends in a crash replay the whole journal into fresh state and fail unless it
+	// equals the state the next boot would resume from; 0 verifies only when the invocation ends: the session stops, an
+	// error ends it or it reaches the boot cap.
+	VerifyEvery int
+	// verify replaces (*session.Warm).Verify when set; tests observe the checks through it.
+	verify func(*session.Warm, []journal.Event) error
 }
 
 func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 	journals := &journals{}
+	var warm *session.Warm
+	if in.InMemoryJournal && !in.ColdBoots {
+		warm = &session.Warm{}
+	}
 	defer func() {
 		kept := journals.kept
 		if kept == nil {
 			return
+		}
+		if state, ok := warm.TakePending(); ok {
+			if writeErr := journals.last.WriteState(state); writeErr != nil {
+				err = errors.Join(err, writeErr)
+			}
 		}
 		finalizeErr := errors.Join(kept.flush(in.Log, in.Renderer), kept.Close())
 		if finalizeErr != nil && errors.Is(err, ErrBootCap) {
@@ -114,18 +132,49 @@ func Simulate(ctx context.Context, in Input) (stop session.Stop, err error) {
 	if maxBoots == 0 {
 		maxBoots = defaultMaxBoots
 	}
-	for range maxBoots {
-		stop, err = boot(ctx, in, journals)
-		if errors.Is(err, machine.ErrCrashed) {
-			in.Machine.Reboot()
-			continue
+	verifyWarm := func(n int) error {
+		if warm == nil || warm.Empty() {
+			return nil
 		}
-		return stop, err
+		verify := (*session.Warm).Verify
+		if in.verify != nil {
+			verify = in.verify
+		}
+		if verifyErr := verify(warm, journals.kept.Events()); verifyErr != nil {
+			return fmt.Errorf("verify warm resume after boot %d: %w", n, verifyErr)
+		}
+		return nil
+	}
+	verifiedBoot := 0
+	for n := 1; n <= maxBoots; n++ {
+		stop, err = boot(ctx, in, journals, warm)
+		if !errors.Is(err, machine.ErrCrashed) {
+			if verifyErr := verifyWarm(n); verifyErr != nil {
+				if err == nil {
+					return session.Stop{}, verifyErr
+				}
+				return stop, errors.Join(err, verifyErr)
+			}
+			return stop, err
+		}
+		if in.VerifyEvery > 0 && n%in.VerifyEvery == 0 {
+			if verifyErr := verifyWarm(n); verifyErr != nil {
+				return session.Stop{}, verifyErr
+			}
+			verifiedBoot = n
+		}
+		in.Machine.Reboot()
+	}
+	if verifiedBoot != maxBoots {
+		// The cap ends the invocation like a stop does; a failed check is an error, not a censored session.
+		if verifyErr := verifyWarm(maxBoots); verifyErr != nil {
+			return session.Stop{}, verifyErr
+		}
 	}
 	return session.Stop{}, fmt.Errorf("simulate session: %w after %d boots", ErrBootCap, maxBoots)
 }
 
-func boot(ctx context.Context, in Input, journals *journals) (stop session.Stop, err error) {
+func boot(ctx context.Context, in Input, journals *journals, warm *session.Warm) (stop session.Stop, err error) {
 	seams := in.Machine.Seams()
 	id, err := seams.Host.BootID()
 	if err != nil {
@@ -153,7 +202,8 @@ func boot(ctx context.Context, in Input, journals *journals) (stop session.Stop,
 	if in.Wrap != nil {
 		wrapped = in.Wrap(wrapped)
 	}
-	return session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Carry: j.carried, Stderr: in.Log, Log: in.Log, Renderer: in.Renderer, SessionID: j.sessionID})
+	journals.last = wrapped
+	return session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Carry: j.carried, Stderr: in.Log, Log: in.Log, Renderer: in.Renderer, SessionID: j.sessionID, Warm: warm, DeferState: in.InMemoryJournal})
 }
 
 // journals gives each boot its journal: one locked for the boot and closed when it ends or, with InMemoryJournal, one
@@ -161,6 +211,8 @@ func boot(ctx context.Context, in Input, journals *journals) (stop session.Stop,
 type journals struct {
 	prefix journal.Prefix
 	kept   *memoryJournal
+	// last is the last boot's journal as the session saw it, which writes the state projection a crash left pending.
+	last session.Journal
 }
 
 type bootJournal struct {
@@ -176,7 +228,7 @@ func (s *journals) open(in Input, id string, current machine.BIOSContext) (bootJ
 		s.kept.SetBoot(id)
 		return s.kept.boot(), nil
 	}
-	j, err := journal.Lock(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Monotonic: in.Machine.Monotonic, Build: session.Build(), Prefix: &s.prefix})
+	j, err := journal.Lock(in.Dir, journal.Options{Boot: id, Now: in.Machine.Now, Monotonic: in.Machine.Monotonic, Build: session.Build(), Prefix: &s.prefix, Buffered: in.InMemoryJournal})
 	if err != nil {
 		return bootJournal{}, err
 	}

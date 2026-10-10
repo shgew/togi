@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/tuner"
 )
@@ -132,5 +133,32 @@ func TestUnansweredMatchesAnswersByDefectID(t *testing.T) {
 				t.Fatalf("pending operator findings (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestIndexExtendedEventByEventAnswersLikeAFreshScan(t *testing.T) {
+	events := fixture(t)
+	events = append(events,
+		journal.Event{Seq: len(events) + 1, Boot: "boot-c", Kind: journal.KindDefectFound, Data: &journal.DefectFound{ID: 1}},
+		journal.Event{Seq: len(events) + 2, Boot: "boot-c", Kind: journal.KindDefectAnswered, Data: &journal.DefectAnswered{ID: 1, Answer: "yes"}},
+	)
+	var index Index
+	for n := range len(events) + 1 {
+		prefix := events[:n]
+		if diff := cmp.Diff(FindWith(prefix, Entries()), index.Find(prefix, Entries()), cmpopts.IgnoreFields(DecisionMatch{}, "Predicate")); diff != "" {
+			t.Fatalf("findings after %d events (-fresh +index):\n%s", n, diff)
+		}
+		if diff := cmp.Diff(FailuresWith(prefix, Entries()), index.Failures(prefix, Entries())); diff != "" {
+			t.Fatalf("failures after %d events (-fresh +index):\n%s", n, diff)
+		}
+		if diff := cmp.Diff(Unanswered(prefix), index.Unanswered(prefix)); diff != "" {
+			t.Fatalf("unanswered after %d events (-fresh +index):\n%s", n, diff)
+		}
+	}
+	if got := index.Yes(events); len(got) != 1 || got[0].Seq != len(events) {
+		t.Fatalf("yes answers %v, want the last event", got)
+	}
+	if got := index.FoundSeq(events, 1); got != len(events)-1 {
+		t.Fatalf("finding seq %d, want %d", got, len(events)-1)
 	}
 }

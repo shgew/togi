@@ -32,6 +32,7 @@ func TestSimRefusesInvalidInputs(t *testing.T) {
 		{"zero cycles", []string{"--cycles", "0"}, 2, "sim: --cycles must be a positive integer"},
 		{"negative cycles", []string{"--cycles", "-1"}, 2, "sim: --cycles must be a positive integer"},
 		{"zero boots", []string{"--max-boots", "0"}, 2, "sim: --max-boots must be a positive integer"},
+		{"negative verify interval", []string{"--verify-every", "-1"}, 2, "sim: --verify-every must not be negative"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
@@ -247,4 +248,26 @@ func recordTwoTrials(t *testing.T, recorded config.Config) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+func TestBufferedLogReachesAFileOnlyWhenFlushedAndATerminalAtOnce(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	log, flush := bufferedLog(&out)
+	fmt.Fprint(log, "line\n")
+	if out.Len() != 0 {
+		t.Fatalf("buffered log wrote %q before the flush", out.String())
+	}
+	flush()
+	if out.String() != "line\n" {
+		t.Fatalf("flushed log %q, want the line", out.String())
+	}
+	terminal, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer terminal.Close()
+	if log, _ := bufferedLog(terminal); log != io.Writer(terminal) {
+		t.Fatal("a character device was buffered")
+	}
 }

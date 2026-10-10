@@ -4,7 +4,7 @@
 
 ```sh
 just sim [SEED [--machine FILE] [--cycles N] [--state-dir DIR]] # search, deepening and one clean cycle; flags follow an explicit seed
-go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples] [--max-boots N]
+go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
 ```
 
 - `--seed` (default 1) selects deterministic limits and failures; the same seed and history reproduce the journal.
@@ -14,8 +14,10 @@ go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--
 - `--state-dir` uses an existing directory; without it, `sim` creates a temporary one and prints its path to stderr.
 - `--samples` writes `trials/<trial-id>/samples.jsonl` for later inspection; by default trial samples stay in memory.
 - `--max-boots` (default 1000) caps the simulated boots of one invocation. A session still running after N boots stops with its journal and `state.json` as they stand, the reason on stderr, and exit 3.
+- `--verify-every` (default 0) replays the whole journal into fresh state after every Nth simulated crash, and fails unless it equals the state the next boot resumes from; 0 checks only when the invocation ends: the session stops, an error ends it or it reaches `--max-boots`.
+- `--cold-boots` replays the whole journal at every boot, as `togi run` does, instead of resuming from the state the crashed boot folded.
 
-A crash reboots the simulated machine in-process and the next boot resumes the journal, as a real reboot would. Within one invocation, parsed events stay in memory across simulated reboots; `events.jsonl` is still appended on every event, but `state.json` is written only when the invocation stops. Journal lines go to stderr as `togi run` logs them, and nothing is fsynced. The state-directory writer lock stays held across simulated reboots. Read-only commands can inspect the final state after the invocation returns; during a run, `state.json` can be absent or still describe the previous invocation.
+A crash reboots the simulated machine in-process and the next boot resumes the journal, as a real reboot would, from the state the crashed boot folded rather than a replay of the whole journal ([Journal](spec/journal.md#rules) lists what still runs at every boot and how the state is verified). Within one invocation, parsed events stay in memory across simulated reboots; `events.jsonl` is still appended on every event, but `state.json` is written only when the invocation stops. Journal lines go to stderr as `togi run` logs them, and nothing is fsynced. When stderr is not a terminal, both the log and the appended journal lines are buffered (64 KiB each) and written at exit, including on SIGINT, SIGTERM and SIGHUP, so a killed process loses its last unwritten lines and `events.jsonl` lags the run; on a terminal the log is written line by line. The state-directory writer lock stays held across simulated reboots. Read-only commands can inspect the final state after the invocation returns; during a run, `state.json` can be absent or still describe the previous invocation.
 
 A state directory that already holds a journal or archives resumes the simulated machine after them: boot numbering continues and the clock starts after the last event, so a crash in the new run is never mistaken for an old boot, and a session after `reset --all` gets a new id. A new invocation reads the file-backed journal before tuning; only reboots within that invocation reuse the parsed events. Real `togi run` sessions retain their file-backed recovery and per-event state writes.
 

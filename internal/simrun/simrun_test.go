@@ -270,6 +270,54 @@ func TestBootCapLeavesPartialSessionInJournal(t *testing.T) {
 	}
 }
 
+func TestBootCapVerifiesWarmStateOnceAndReportsFailure(t *testing.T) {
+	t.Parallel()
+	const maxBoots = 3
+	for _, tc := range []struct {
+		name        string
+		verifyEvery int
+		wantCalls   int
+	}{
+		{"verify every 0 checks at the cap", 0, 1},
+		{"verify every 1 does not recheck the last boot", 1, maxBoots},
+		{"verify every 2 checks the cap after boot 2", 2, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m, err := sim.New(huntConfig(2))
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			verify := func(w *session.Warm, events []journal.Event) error {
+				calls++
+				return w.Verify(events)
+			}
+			_, err = Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: t.TempDir(), Machine: m, Cycles: 1, InMemoryJournal: true, MaxBoots: maxBoots, VerifyEvery: tc.verifyEvery, verify: verify})
+			if !errors.Is(err, ErrBootCap) {
+				t.Fatalf("capped run: %v, want ErrBootCap", err)
+			}
+			if calls != tc.wantCalls {
+				t.Fatalf("verifications: %d, want %d", calls, tc.wantCalls)
+			}
+		})
+	}
+
+	t.Run("a failed final check is not a censored session", func(t *testing.T) {
+		t.Parallel()
+		m, err := sim.New(huntConfig(2))
+		if err != nil {
+			t.Fatal(err)
+		}
+		errDiverged := errors.New("warm state diverged")
+		verify := func(*session.Warm, []journal.Event) error { return errDiverged }
+		_, err = Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: t.TempDir(), Machine: m, Cycles: 1, InMemoryJournal: true, MaxBoots: maxBoots, verify: verify})
+		if errors.Is(err, ErrBootCap) || !errors.Is(err, errDiverged) || !strings.Contains(err.Error(), "verify warm resume after boot 3") {
+			t.Fatalf("capped run with a failed check: %v, want the verification error and not ErrBootCap", err)
+		}
+	})
+}
+
 func TestBootCapWithFailedFlushIsNotErrBootCap(t *testing.T) {
 	t.Parallel()
 	m, err := sim.New(huntConfig(2))

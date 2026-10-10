@@ -96,6 +96,68 @@ func TestInMemoryJournalMatchesFileBacked(t *testing.T) {
 	}
 }
 
+const (
+	warmBoots    = 120
+	warmMinBoots = 20
+)
+
+// TestWarmResumeMatchesColdReplay runs crash-heavy machines with each boot after a crash resuming from the crashed
+// boot's folded state and again replaying the whole journal at every boot. The journals and projections must be byte
+// identical, and with VerifyEvery 1 every crash also checks the warm state against a replay.
+func TestWarmResumeMatchesColdReplay(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		machineFile string
+		seed        uint64
+	}{
+		{machineFile: "../../tools/bench/machines/flat-hazard.toml", seed: 102},
+		{machineFile: "../../tools/bench/machines/flat-hazard.toml", seed: 7},
+		{machineFile: "../../tools/bench/machines/misleading-mce.toml", seed: 3},
+		{machineFile: "../../tools/bench/machines/shared-voltage.toml", seed: 1000},
+	} {
+		t.Run(fmt.Sprintf("%s/%d", filepath.Base(tc.machineFile), tc.seed), func(t *testing.T) {
+			t.Parallel()
+			cfg, err := sim.LoadMachine(tc.machineFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.Seed = tc.seed
+			var events, states [2][]byte
+			var boots [2]int
+			for i, cold := range []bool{false, true} {
+				dir := t.TempDir()
+				m, err := sim.New(cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true, ColdBoots: cold, VerifyEvery: 1, MaxBoots: warmBoots})
+				if err != nil && !errors.Is(err, ErrBootCap) {
+					t.Fatalf("cold=%t: %v", cold, err)
+				}
+				if events[i], err = os.ReadFile(filepath.Join(dir, "events.jsonl")); err != nil {
+					t.Fatal(err)
+				}
+				if states[i], err = os.ReadFile(filepath.Join(dir, "state.json")); err != nil {
+					t.Fatal(err)
+				}
+				for _, b := range []*[]byte{&events[i], &states[i]} {
+					*b = bytes.ReplaceAll(*b, []byte(dir), []byte("STATE-DIR"))
+				}
+				boots[i] = bytes.Count(events[i], []byte(`"kind":"config.loaded"`))
+			}
+			if boots[0] < warmMinBoots {
+				t.Fatalf("%d boots recorded, want at least %d so that resumes are covered", boots[0], warmMinBoots)
+			}
+			if diff := cmp.Diff(string(events[1]), string(events[0])); diff != "" {
+				t.Errorf("events.jsonl (-cold +warm):\n%s", diff)
+			}
+			if diff := cmp.Diff(string(states[1]), string(states[0])); diff != "" {
+				t.Errorf("state.json (-cold +warm):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestInMemoryProjectionFailureWarnsAfterStop(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
