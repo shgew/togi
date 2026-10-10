@@ -55,7 +55,7 @@ lint *args: _dev-shell
 fmt:
     nix fmt
 
-# Run every non-VM flake check, cheapest first, using warm dev-shell Go caches
+# Run every non-VM flake check except the sim-verify shards, which only CI and `just check` run, cheapest first, using warm dev-shell Go caches
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
@@ -74,12 +74,12 @@ gate: _dev-shell
         go test -c -tags hardware -o /dev/null ./internal/trial
     fi
 
-# Run every flake check this host builds: package, race, lint, fmt, changes, module and, on Linux, trial-scope-tests and the VM tests
+# Run every flake check this host builds: package, race, lint, fmt, changes, module and, on Linux, trial-scope-tests, the sim-verify shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check "$@"
 
-# Build named flake checks: package, race, lint, fmt, changes, module or, on Linux, trial-scope-tests, vm and vm-restart-limit (`just check-one race`)
+# Build named flake checks: package, race, lint, fmt, changes, module or, on Linux, trial-scope-tests, sim-verify-0 to sim-verify-3, vm and vm-restart-limit (`just check-one race`)
 [group('nix')]
 check-one +names:
     nix build --no-link $(printf '.#checks.{{ system }}.%s ' "$@")

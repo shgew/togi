@@ -72,6 +72,8 @@
             go test -p $NIX_BUILD_CORES ${flags} -shuffle=on -tags integration ${packages}
             runHook postCheck
           '';
+          # Each shard of the bench suite takes about 200 s on a four-CPU runner (docs/benchmarking.md).
+          simVerifyShards = 4;
           togi =
             rev:
             pkgs.buildGo127Module {
@@ -244,6 +246,28 @@
               vm = vm.tuning-boot;
               vm-restart-limit = vm.restart-limit;
             }
+            // lib.genAttrs (builtins.genList (i: "sim-verify-${toString i}") simVerifyShards) (
+              name:
+              let
+                shard = lib.removePrefix "sim-verify-" name;
+              in
+              config.checks.package.overrideAttrs {
+                pname = "togi-${name}";
+                goModules = config.checks.package.goModules;
+                buildPhase = ''
+                  runHook preBuild
+                  runHook postBuild
+                '';
+                checkPhase = ''
+                  runHook preCheck
+                  export GOFLAGS=''${GOFLAGS//-trimpath/}
+                  go run ./tools/bench --split all --shard ${shard}/${toString simVerifyShards} --jobs $NIX_BUILD_CORES --sim-flags "--verify-every 1 --check-memos"
+                  runHook postCheck
+                '';
+                installPhase = "mkdir -p $out";
+                dontFixup = true;
+              }
+            )
           );
 
           formatter = pkgs.treefmt.withConfig {

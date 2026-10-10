@@ -4,7 +4,7 @@
 
 ```sh
 just sim [SEED [--machine FILE] [--cycles N] [--state-dir DIR]] # search, deepening and one clean cycle; flags follow an explicit seed
-go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
+go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots] [--check-memos]
 ```
 
 - `--seed` (default 1) selects deterministic limits and failures; the same seed and history reproduce the journal.
@@ -16,6 +16,9 @@ go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--
 - `--max-boots` (default 1000) caps the simulated boots of one invocation. A session still running after N boots stops with its journal and `state.json` as they stand, the reason on stderr, and exit 3.
 - `--verify-every` (default 0) replays the whole journal into fresh state after every Nth simulated crash, and fails unless it equals the state the next boot resumes from; 0 checks only when the invocation ends: the session stops, an error ends it or it reaches `--max-boots`.
 - `--cold-boots` replays the whole journal at every boot, as `togi run` does, instead of resuming from the state the crashed boot folded.
+- `--check-memos` recomputes the tuner's indexes and memos from the folded events after every tuner step (the ledger indexes and per-trial derived requests every 64th step) and fails the run, exit 1, on the first one that differs, naming it and the event the run had reached. It is a development check that makes a session several times slower; `togi run` has no such check. `TestMemosMatchRecomputation` runs the same check, `tuner.CheckMemos`, over a few journals.
+
+CI runs every simulated session of the bench suite with `--verify-every 1 --check-memos`, in the `sim-verify-*` flake checks ([Benchmarking](benchmarking.md#verifying-every-simulated-session)).
 
 A crash reboots the simulated machine in-process and the next boot resumes the journal, as a real reboot would, from the state the crashed boot folded rather than a replay of the whole journal ([Journal](spec/journal.md#rules) lists what still runs at every boot and how the state is verified). Within one invocation, parsed events stay in memory across simulated reboots; `events.jsonl` is still appended on every event, but `state.json` is written only when the invocation stops. Journal lines go to stderr as `togi run` logs them, and nothing is fsynced. When stderr is not a terminal, both the log and the appended journal lines are buffered (64 KiB each) and written at exit, including on SIGINT, SIGTERM and SIGHUP, so a killed process loses its last unwritten lines and `events.jsonl` lags the run; on a terminal the log is written line by line. The state-directory writer lock stays held across simulated reboots. Read-only commands can inspect the final state after the invocation returns; during a run, `state.json` can be absent or still describe the previous invocation.
 
