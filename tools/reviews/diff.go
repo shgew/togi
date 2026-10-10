@@ -13,6 +13,16 @@ import (
 // span is an inclusive range of line numbers.
 type span struct{ First, Last int }
 
+// hunk is one hunk of a file's section.
+type hunk struct {
+	// Text is the hunk verbatim, its @@ line included.
+	Text string
+	// Removals holds the old-side lines the hunk removes, merged into spans.
+	Removals []span
+	// Added holds the text of the lines the hunk adds.
+	Added []string
+}
+
 // fileDiff is one file's section of a unified diff.
 type fileDiff struct {
 	Path           string
@@ -26,6 +36,9 @@ type fileDiff struct {
 	Changed []span
 	// Removals holds the old-side lines the section removes, merged into spans.
 	Removals []span
+	// Header is the section's lines before its first hunk; Hunks are the hunks, so Header plus every hunk's Text is Text.
+	Header string
+	Hunks  []hunk
 	// Mode is the section's mode lines (old mode, new mode, new file mode, deleted file mode), one per line.
 	Mode string
 	// Blob is the object a binary section's index line names as the file's new content; Payload is the body of its GIT binary patch.
@@ -127,29 +140,47 @@ func parseSection(section string) (fileDiff, error) {
 	if f.Status == "deleted" && oldName != "" {
 		f.Path = oldName
 	}
+	f.Header = strings.Join(lines[:i], "")
 	old, next := 0, 0
-	var changed, removed []int
+	var changed, removed, hunkRemoved []int
+	var cur *hunk
+	flush := func() {
+		if cur != nil {
+			cur.Removals = spans(hunkRemoved)
+			f.Hunks = append(f.Hunks, *cur)
+		}
+	}
 	for ; i < len(lines); i++ {
 		line := lines[i]
 		if m := hunkHeader.FindStringSubmatch(line); m != nil {
+			flush()
+			cur, hunkRemoved = &hunk{Text: line}, nil
 			old, _ = strconv.Atoi(m[1])
 			next, _ = strconv.Atoi(m[2])
 			continue
+		}
+		if cur != nil {
+			cur.Text += line
 		}
 		switch {
 		case strings.HasPrefix(line, "+"):
 			f.Added++
 			changed = append(changed, next)
 			next++
+			if cur != nil {
+				cur.Added = append(cur.Added, strings.TrimSuffix(line[1:], "\n"))
+			}
 		case strings.HasPrefix(line, "-"):
 			f.Removed++
 			removed = append(removed, old)
+			hunkRemoved = append(hunkRemoved, old)
 			old++
 		case strings.HasPrefix(line, " "):
 			old++
 			next++
 		}
 	}
+	flush()
 	f.Changed, f.Removals = spans(changed), spans(removed)
 	return f, nil
 }
@@ -269,8 +300,8 @@ func sameBinary(x, y fileDiff) bool {
 	return x.Blob == y.Blob && x.Payload == y.Payload
 }
 
-// excludedReason names why the review skips the file from its diff section alone, or "" when it is included. A generated marker the section does not show is found by exclusionOf, which reads the file.
-func excludedReason(f fileDiff) string {
+// fixedExclusion names why the review skips the file by its path or kind alone, or "" when the file needs a look at its contents.
+func fixedExclusion(f fileDiff) string {
 	switch base := path.Base(f.Path); {
 	case base == "go.sum", base == "flake.lock":
 		return "generated"
@@ -278,7 +309,16 @@ func excludedReason(f fileDiff) string {
 		return "test data (`**/testdata/**`)"
 	case f.Binary:
 		return "binary"
-	case isGenerated(f):
+	}
+	return ""
+}
+
+// excludedReason names why the review skips the file from its diff section alone, or "" when it is included. A generated marker the section does not show is found by exclusionOf, which reads the file.
+func excludedReason(f fileDiff) string {
+	if reason := fixedExclusion(f); reason != "" {
+		return reason
+	}
+	if isGenerated(f) {
 		return "generated"
 	}
 	return ""
@@ -302,15 +342,33 @@ func isGenerated(f fileDiff) bool {
 	return false
 }
 
-// generatedContent reports whether a file's contents carry the generated marker the way Go defines it: on a comment line before the first line that is neither blank nor a line comment.
+// generatedContent reports whether a file's contents carry the generated marker the way Go defines it: as a whole line comment before the first source token. Blank space and complete line and block comments, however many lines a block spans, may come first; the marker inside a block comment does not count.
 func generatedContent(content string) bool {
+	inBlock := false
 	for line := range strings.Lines(content) {
-		line = strings.TrimRight(line, "\r\n")
-		switch {
-		case isGeneratedMarker(line):
+		rest := strings.TrimRight(line, "\r\n")
+		if !inBlock && isGeneratedMarker(rest) {
 			return true
-		case line != "" && !strings.HasPrefix(line, "//"):
-			return false
+		}
+		for rest != "" {
+			if inBlock {
+				_, after, closed := strings.Cut(rest, "*/")
+				if !closed {
+					break
+				}
+				inBlock, rest = false, after
+				continue
+			}
+			rest = strings.TrimLeft(rest, " \t")
+			switch {
+			case rest == "":
+			case strings.HasPrefix(rest, "//"):
+				rest = ""
+			case strings.HasPrefix(rest, "/*"):
+				inBlock, rest = true, rest[2:]
+			default:
+				return false
+			}
 		}
 	}
 	return false

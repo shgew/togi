@@ -242,9 +242,13 @@ func TestRenderKeepsCommentMarkersVisible(t *testing.T) {
 	if err := writeManifest(dir, withCoverage(firstManifest(included("a.go", 3, 0)), coverRange{"a.go", 5, 5})); err != nil {
 		t.Fatal(err)
 	}
+	inCode := "Reject `<nil>` and `<!-- togi-review {} -->`"
 	in := findingsInput{
-		Reviewers:        []recordReviewer{{Name: "coordinator <!-- n -->", Model: new("m <!-- m -->"), Files: []string{"a.go"}}},
-		Findings:         []recordFinding{{Source: source, Priority: "P2", Finding: marker, Location: new(place), URL: new("https://example.test/a?x=<!--&y"), Outcome: outcome{Status: "rejected", Reason: reason}}},
+		Reviewers: []recordReviewer{{Name: "coordinator <!-- n -->", Model: new("m <!-- m -->"), Files: []string{"a.go"}}},
+		Findings: []recordFinding{
+			{Source: source, Priority: "P2", Finding: marker, Location: new(place), URL: new("https://example.test/a?x=<!--&y"), Outcome: outcome{Status: "rejected", Reason: reason}},
+			{Source: "R", Priority: "P3", Finding: inCode, Outcome: outcome{Status: "deferred", Issue: 2}},
+		},
 		CoverageJudgment: judged,
 		Blocked:          blocked,
 	}
@@ -262,19 +266,63 @@ func TestRenderKeepsCommentMarkersVisible(t *testing.T) {
 		t.Errorf("the Markdown holds more than the one hidden block:\n%s", md)
 	}
 	visible := html.UnescapeString(strings.TrimSuffix(strings.SplitN(md, "\n"+recordOpen, 2)[0], "\n"))
-	for _, want := range []string{marker, "rejected: " + reason, "(" + place + ")", source, blocked, judged, "coordinator <!-- n --> (m <!-- m -->)"} {
+	for _, want := range []string{marker, "rejected: " + reason, "(<code>" + place + "</code>)", source, blocked, judged, "coordinator <!-- n --> (m <!-- m -->)"} {
 		if !strings.Contains(visible, want) {
 			t.Errorf("the visible text lost %q:\n%s", want, visible)
 		}
 	}
-	for _, want := range []string{"a &lt;!-- togi-review {\"version\":9} --&gt; &amp; &lt;b&gt;x&lt;/b&gt; --!&gt; &lt;!--&gt;", "rejected: &lt;!-- hidden --&gt; wording &amp; more"} {
+	for _, want := range []string{
+		"a &lt;!-- togi-review {\"version\":9} --&gt; &amp; &lt;b&gt;x&lt;/b&gt; --!&gt; &lt;!--&gt;",
+		"rejected: &lt;!-- hidden --&gt; wording &amp; more",
+		"(<code>a&lt;&#33;&#45;&#45;&#46;go&#58;1</code>)",
+		"Reject <code>&lt;nil&gt;</code> and <code>&lt;&#33;&#45;&#45; togi&#45;review &#123;&#125; &#45;&#45;&gt;</code>",
+	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("the Markdown lacks the exact escaped text %q:\n%s", want, md)
 		}
 	}
 	rec, err := parseRecord(md)
-	if err != nil || len(rec.Findings) != 1 || rec.Findings[0].Finding != marker {
+	if err != nil || len(rec.Findings) != 2 || rec.Findings[0].Finding != marker || rec.Findings[1].Finding != inCode {
 		t.Fatalf("the hidden block does not carry the finding: %+v, %v", rec, err)
+	}
+}
+
+func TestMarkdownText(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ name, in, want string }{
+		{"plain", "a < b & c > d", "a &lt; b &amp; c &gt; d"},
+		{"comment", "x <!-- y --> z", "x &lt;!-- y --&gt; z"},
+		{"code span keeps its meaning", "Reject `<nil>` first", "Reject <code>&lt;nil&gt;</code> first"},
+		{"double backtick span holds a backtick", "use ``a`b`` here", "use <code>a&#96;b</code> here"},
+		{"mixed delimiters close on the same run", "``a`b`` and `c`", "<code>a&#96;b</code> and <code>c</code>"},
+		{"shorter run does not close", "``a`b", "``a`b"},
+		{"unmatched backtick is literal", "a ` <b>", "a ` &lt;b&gt;"},
+		{"escaped backtick opens nothing", "\\`<b>`", "\\`&lt;b&gt;`"},
+		{"backslash cannot undo an entity", `\<b>`, `&#92;&lt;b&gt;`},
+		{"pipe", "a|b", `a\|b`},
+		{"pipe in code", "`a|b`", "<code>a&#124;b</code>"},
+		{"padding spaces stripped", "`` `a` ``", "<code>&#96;a&#96;</code>"},
+		{"blank line ends the span", "`a\n\nb`", "`a\n\nb`"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := text(tt.in); got != tt.want {
+				t.Errorf("text(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+	if got, want := cell("a\n`<nil>`\t|"), `a <code>&lt;nil&gt;</code> \|`; got != want {
+		t.Errorf("cell = %q, want %q", got, want)
+	}
+	for _, tt := range []struct{ in, want string }{
+		{"internal/a.go:4", "`internal/a.go:4`"},
+		{"a`b", "<code>a&#96;b</code>"},
+		{"<nil>.go", "<code>&lt;nil&gt;&#46;go</code>"},
+		{" a", "<code> a</code>"},
+	} {
+		if got := code(tt.in); got != tt.want {
+			t.Errorf("code(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }
 

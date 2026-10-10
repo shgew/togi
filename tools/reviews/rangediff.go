@@ -87,13 +87,13 @@ func classifyRange(git gitFunc, oldBase, oldHead, newBase, newHead string) (delt
 		case '=':
 			s.Status = "unchanged"
 		case '<':
-			// The patch left the range, but its effect may live on: a commit moved into the new base is inherited, not removed. Only the files whose effect newHead no longer has are the delta's reversal.
+			// The patch left the range, but its effects may live on: a commit moved into the new base is inherited, not removed. The delta holds the reversal of only what neither the new base nor the new head keeps.
 			s.Status = "removed"
 			_, files, err := patch(e.Old, e.Old+"^")
 			if err != nil {
 				return deltaResult{}, err
 			}
-			kept, err := goneEffects(git, e.Old, newHead, files)
+			kept, err := goneEffects(git, e.Old, newBase, newHead, files)
 			if err != nil {
 				return deltaResult{}, err
 			}
@@ -132,61 +132,94 @@ func classifyRange(git gitFunc, oldBase, oldHead, newBase, newHead string) (delt
 	return d, nil
 }
 
-// goneEffects returns the sections of a removed patch's reversal whose file newHead no longer has the patch's effect on, with no changed new-side lines. oldPatch is the removed commit, files the sections of its reversal: their removed lines are what the patch added, their added lines what it removed. The patch's effect on a file survives, inherited from the new base or kept by the new range, when comparing the file at the patch with newHead leaves the lines it added untouched and does not bring back the lines it removed.
-func goneEffects(git gitFunc, oldPatch, newHead string, files []fileDiff) ([]fileDiff, error) {
+// goneEffects returns the sections of a removed patch's reversal that undo effects the new range really lost, with no changed new-side lines. oldPatch is the removed commit, files the sections of its reversal: their removed lines are what the patch added, their added lines what it removed. Each hunk, and each file's mode or binary change, is traced separately against newBase, which may have inherited the effect, and against newHead, which may keep it through other commits; only what neither has is gone, so one lost hunk never reverses another a lower layer already carries.
+func goneEffects(git gitFunc, oldPatch, newBase, newHead string, files []fileDiff) ([]fileDiff, error) {
 	var kept []fileDiff
 	for _, f := range files {
 		name := f.Path
 		if f.OldPath != "" {
 			name = f.OldPath // the reversal's source is the file as the patch left it
 		}
-		out, err := git("diff", "--no-color", "--no-ext-diff", "-U0", oldPatch, newHead, "--", ":(literal)"+name)
-		if err != nil {
-			return nil, fmt.Errorf("diff %s %s -- %s: %w", oldPatch, newHead, name, err)
+		var base, head []fileDiff
+		for _, side := range []struct {
+			target string
+			since  *[]fileDiff
+		}{{newBase, &base}, {newHead, &head}} {
+			out, err := git("diff", "--no-color", "--no-ext-diff", "-U0", oldPatch, side.target, "--", ":(literal)"+name)
+			if err != nil {
+				return nil, fmt.Errorf("diff %s %s -- %s: %w", oldPatch, side.target, name, err)
+			}
+			if *side.since, err = parseDiff(string(out)); err != nil {
+				return nil, fmt.Errorf("diff %s %s -- %s: %w", oldPatch, side.target, name, err)
+			}
 		}
-		since, err := parseDiff(string(out))
-		if err != nil {
-			return nil, fmt.Errorf("diff %s %s -- %s: %w", oldPatch, newHead, name, err)
-		}
-		if effectGone(f, since) {
-			f.Changed = nil
-			kept = append(kept, f)
+		if lost, ok := lostEffects(f, base, head); ok {
+			kept = append(kept, lost)
 		}
 	}
 	return kept, nil
 }
 
-// effectGone reports whether the changes since the removed patch (its file to newHead) undo what the patch did to the file, whose reversal is f. Anything it cannot tell apart counts as gone, so a file is never dropped from the review wrongly.
-func effectGone(f fileDiff, since []fileDiff) bool {
-	if len(since) == 0 {
-		return false
+// lostEffects narrows f, the reversal of a removed patch's changes to one file, to the parts that neither the new base (since: the changes from the patch to it) nor the new head keep. It reports false when nothing is lost. Anything it cannot tell apart counts as lost, so an effect is never dropped from the review wrongly.
+func lostEffects(f fileDiff, base, head []fileDiff) (fileDiff, bool) {
+	f.Changed = nil
+	if f.Binary || len(f.Hunks) == 0 {
+		return f, effectLost(f, base) && effectLost(f, head)
 	}
-	hunks := f.Added+f.Removed > 0
-	var restored []string
-	if hunks {
-		for _, l := range f.changedLines() {
-			if t, ok := strings.CutPrefix(l, "+"); ok {
-				restored = append(restored, t)
+	var lost []hunk
+	for _, h := range f.Hunks {
+		if touches(h, base) && touches(h, head) {
+			lost = append(lost, h)
+		}
+	}
+	modeLost := f.Mode != "" && changesMode(base) && changesMode(head)
+	if len(lost) == 0 && !modeLost {
+		return f, false
+	}
+	f.Text, f.Hunks, f.Added, f.Removed, f.Removals = f.Header, lost, 0, 0, nil
+	for _, h := range lost {
+		f.Text += h.Text
+		f.Removals = append(f.Removals, h.Removals...)
+		for line := range strings.Lines(h.Text) {
+			switch {
+			case strings.HasPrefix(line, "+"):
+				f.Added++
+			case strings.HasPrefix(line, "-"):
+				f.Removed++
 			}
 		}
 	}
+	return f, true
+}
+
+// effectLost reports whether the changes since the patch (its file to a later commit) undo a binary or header-only change of f.
+func effectLost(f fileDiff, since []fileDiff) bool {
 	for _, s := range since {
-		switch {
-		case f.Binary || s.Binary || !hunks:
-			if !f.Binary && !s.Binary && f.Mode != "" && s.Mode == "" {
-				continue // a header-only patch of mode changes: the file's mode is the same
-			}
+		if f.Binary || s.Binary || f.Mode == "" || s.Mode != "" {
 			return true
-		case f.Mode != "" && s.Mode != "":
+		}
+		// A header-only change of mode, and the file's mode is the same.
+	}
+	return false
+}
+
+func changesMode(since []fileDiff) bool {
+	return slices.ContainsFunc(since, func(s fileDiff) bool { return s.Mode != "" })
+}
+
+// touches reports whether the changes since the patch undo the hunk's reversal: they remove lines the patch added, or bring back lines it removed.
+func touches(h hunk, since []fileDiff) bool {
+	for _, s := range since {
+		if s.Binary {
 			return true
 		}
 		for _, r := range s.Removals {
-			if slices.ContainsFunc(f.Removals, func(a span) bool { return r.First <= a.Last && a.First <= r.Last }) {
+			if slices.ContainsFunc(h.Removals, func(a span) bool { return r.First <= a.Last && a.First <= r.Last }) {
 				return true
 			}
 		}
 		for _, l := range s.changedLines() {
-			if t, ok := strings.CutPrefix(l, "+"); ok && slices.Contains(restored, t) {
+			if t, ok := strings.CutPrefix(l, "+"); ok && slices.Contains(h.Added, t) {
 				return true
 			}
 		}

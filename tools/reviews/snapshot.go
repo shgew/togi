@@ -218,19 +218,27 @@ func movedSince(pr int, before, after pullInfo) error {
 	return nil
 }
 
-// exclusionOf names why the review skips the file, or "" when it is included. A section shows the generated marker only when it adds it or deletes the file, so any other file is read at the frozen head: a marker in context or outside the hunks counts. complete says the sections hold each file's whole change, as the pull request's diff does, so an added or deleted file's section is its whole content.
+// exclusionOf names why the review skips the file, or "" when it is included. Paths and kinds exclude by themselves. Whether a file is generated is its state at the frozen head: a marker in context or outside the hunks counts, and one the final head no longer has does not, however an earlier patch of a delta added it. complete says the sections hold each file's whole change, as the pull request's diff does, so an added or deleted file's section is its whole content and the marker lines it shows count. A file the head lacks has only its patches to show.
 func exclusionOf(t tools, repo, head string, f fileDiff, complete bool) (string, error) {
-	if reason := excludedReason(f); reason != "" {
+	if reason := fixedExclusion(f); reason != "" {
 		return reason, nil
 	}
-	if complete && (f.Status == "added" || f.Status == "deleted") {
-		return "", nil
+	if complete {
+		if isGenerated(f) {
+			return "generated", nil
+		}
+		if f.Status == "added" || f.Status == "deleted" {
+			return "", nil
+		}
 	}
 	content, found, err := fileAt(t.gh, repo, head, f.Path)
 	if err != nil {
 		return "", err
 	}
-	if found && generatedContent(content) {
+	switch {
+	case found && generatedContent(content):
+		return "generated", nil
+	case !found && !complete && isGenerated(f):
 		return "generated", nil
 	}
 	return "", nil

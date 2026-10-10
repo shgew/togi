@@ -258,7 +258,7 @@ func (r recordModel) markdown() string {
 	var b strings.Builder
 	b.WriteString("## Review record\n\n")
 	if r.blocker != "" {
-		fmt.Fprintf(&b, "**%s** on %s: %s.\n\n", r.Verdict, r.HeadSHA, entities(r.blocker))
+		fmt.Fprintf(&b, "**%s** on %s: %s.\n\n", r.Verdict, r.HeadSHA, text(r.blocker))
 	} else {
 		fmt.Fprintf(&b, "**%s** on %s.\n\n", r.Verdict, r.HeadSHA)
 	}
@@ -273,7 +273,7 @@ func (r recordModel) markdown() string {
 			}
 			text := cell(f.Finding)
 			if f.Location != nil {
-				text += " (" + locationText(*f.Location) + ")"
+				text += " (" + code(strings.Join(strings.Fields(*f.Location), " ")) + ")"
 			}
 			fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", source, f.Priority, text, cell(f.Outcome.text()))
 		}
@@ -290,15 +290,15 @@ func (r recordModel) markdown() string {
 	if len(r.ExcludedFiles) > 0 {
 		parts := make([]string, len(r.ExcludedFiles))
 		for i, e := range r.ExcludedFiles {
-			parts[i] = "`" + e.Path + "` (" + e.Reason + ")"
+			parts[i] = code(e.Path) + " (" + e.Reason + ")"
 		}
 		fmt.Fprintf(&b, "- Excluded: %s\n", strings.Join(parts, ", "))
 	}
 	parts := make([]string, len(r.Reviewers))
 	for i, rv := range r.Reviewers {
-		parts[i] = entities(rv.Name)
+		parts[i] = text(rv.Name)
 		if rv.Model != nil {
-			parts[i] += " (" + entities(*rv.Model) + ")"
+			parts[i] += " (" + text(*rv.Model) + ")"
 		}
 		parts[i] += ": " + codeList(rv.Files)
 	}
@@ -308,7 +308,7 @@ func (r recordModel) markdown() string {
 		if c.Uncovered == 1 {
 			noun = "range"
 		}
-		fmt.Fprintf(&b, "- Coverage: %d uncovered %s. %s\n", c.Uncovered, noun, entities(c.Judgment))
+		fmt.Fprintf(&b, "- Coverage: %d uncovered %s. %s\n", c.Uncovered, noun, text(c.Judgment))
 	}
 	b.WriteString("\n</details>\n")
 	return b.String()
@@ -324,9 +324,9 @@ func (o outcome) text() string {
 	return fmt.Sprintf("deferred: #%d", o.Issue)
 }
 
-// cell makes text safe for one table cell and for the record's hidden block: it escapes &, < and > so human text can open no HTML comment, and shows them as written.
+// cell makes text safe for one table cell: it joins it onto one line and writes it as text does.
 func cell(s string) string {
-	return strings.ReplaceAll(entities(strings.Join(strings.Fields(s), " ")), "|", `\|`)
+	return text(strings.Join(strings.Fields(s), " "))
 }
 
 var htmlEntities = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
@@ -336,18 +336,102 @@ func entities(s string) string {
 	return htmlEntities.Replace(s)
 }
 
-// locationText writes a finding location as a code span; one holding &, < or > is plain escaped text, because a code span would show the entities.
-func locationText(s string) string {
-	if strings.ContainsAny(s, "&<>") {
-		return cell(s)
+// text writes human text so Markdown shows it as written and it holds no HTML comment or tag, leaving the record's block the only hidden one. Outside code spans it writes &, < and > as entities and escapes |; a backslash before one of them becomes an entity so it cannot undo that. A code span, a run of backticks closed by the next run of exactly as many, keeps its meaning but is written as <code> with literal content, since a backtick span would show entities verbatim and would carry markers as raw bytes. An unmatched run is literal backticks.
+func text(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		c := s[i]
+		switch {
+		case c == '\\' && i+1 < len(s) && strings.IndexByte("&<>|", s[i+1]) >= 0:
+			b.WriteString("&#92;")
+			i++
+		case c == '\\' && i+1 < len(s) && (s[i+1] == '`' || s[i+1] == '\\'):
+			b.WriteString(s[i : i+2])
+			i += 2
+		case c == '`':
+			n := backtickRun(s, i)
+			content, end, ok := codeSpan(s, i+n, n)
+			if !ok {
+				b.WriteString(s[i : i+n])
+				i += n
+				continue
+			}
+			b.WriteString("<code>" + literal(content) + "</code>")
+			i = end
+		case c == '|':
+			b.WriteString(`\|`)
+			i++
+		default:
+			b.WriteString(entities(s[i : i+1]))
+			i++
+		}
 	}
-	return "`" + cell(s) + "`"
+	return b.String()
+}
+
+// backtickRun is the length of the run of backticks at s[i].
+func backtickRun(s string, i int) int {
+	n := 0
+	for i+n < len(s) && s[i+n] == '`' {
+		n++
+	}
+	return n
+}
+
+// codeSpan finds the run of exactly n backticks that closes a code span whose content starts at s[start], and returns the content as Markdown shows it: line endings as spaces, one space stripped from each side when both sides have one and it is not all spaces. A blank line ends the paragraph, so no span crosses one.
+func codeSpan(s string, start, n int) (string, int, bool) {
+	for j := start; j < len(s); {
+		if s[j] != '`' {
+			j++
+			continue
+		}
+		m := backtickRun(s, j)
+		if m != n {
+			j += m
+			continue
+		}
+		content := s[start:j]
+		if strings.Contains(content, "\n\n") {
+			return "", 0, false
+		}
+		content = strings.ReplaceAll(content, "\n", " ")
+		if len(content) > 1 && content[0] == ' ' && content[len(content)-1] == ' ' && strings.Trim(content, " ") != "" {
+			content = content[1 : len(content)-1]
+		}
+		return content, j + m, true
+	}
+	return "", 0, false
+}
+
+// literal writes s for inside <code>: Markdown still parses there, so every ASCII punctuation character is an entity and shows as itself.
+func literal(s string) string {
+	var b strings.Builder
+	for i := range len(s) {
+		c := s[i]
+		switch {
+		case c == '&' || c == '<' || c == '>':
+			b.WriteString(entities(s[i : i+1]))
+		case c < 0x80 && strings.IndexByte("!\"#$%'()*+,-./:;=?@[\\]^_`{|}~", c) >= 0:
+			fmt.Fprintf(&b, "&#%d;", c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// code writes s, such as a path or location, as code: a backtick span when that shows it verbatim, otherwise <code> with literal content.
+func code(s string) string {
+	if s != "" && !strings.ContainsAny(s, "`&<>|") && s[0] != ' ' && s[len(s)-1] != ' ' {
+		return "`" + s + "`"
+	}
+	return "<code>" + literal(s) + "</code>"
 }
 
 func codeList(items []string) string {
 	parts := make([]string, len(items))
 	for i, s := range items {
-		parts[i] = "`" + s + "`"
+		parts[i] = code(s)
 	}
 	return orNone(strings.Join(parts, ", "))
 }

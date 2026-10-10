@@ -393,15 +393,21 @@ func (r reReview) tools(t *testing.T) (tools, *fakeRunner) {
 			return []byte(r.rangeDiff), nil
 		case "diff":
 			n := len(args)
-			key := args[n-2] + " " + args[n-1]
 			if args[n-2] == "--" {
-				// The changes since a removed commit: git diff -U0 <commit> <newHead> -- :(literal)<path>.
-				if args[n-3] != headSHA {
-					return nil, fmt.Errorf("changes since a removed commit were read against %s, not the frozen head: %v", args[n-3], args)
+				// The changes since a removed commit: git diff -U0 <commit> <newBase or newHead> -- :(literal)<path>. A key names the target, base or head, or serves both without one.
+				target := map[string]string{baseSHA: "base", headSHA: "head"}[args[n-3]]
+				if target == "" {
+					return nil, fmt.Errorf("changes since a removed commit were read against %s, neither the frozen base nor head: %v", args[n-3], args)
 				}
-				key = args[n-4] + " -- " + strings.TrimPrefix(args[n-1], ":(literal)")
+				name := strings.TrimPrefix(args[n-1], ":(literal)")
+				for _, key := range []string{args[n-4] + " " + target + " -- " + name, args[n-4] + " -- " + name} {
+					if p, ok := r.patches[key]; ok {
+						return []byte(p), nil
+					}
+				}
+				return nil, fmt.Errorf("unexpected git %v", args)
 			}
-			if p, ok := r.patches[key]; ok {
+			if p, ok := r.patches[args[n-2]+" "+args[n-1]]; ok {
 				return []byte(p), nil
 			}
 		}
