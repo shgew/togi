@@ -274,6 +274,58 @@ func TestHelpLabelsKeepWholeWords(t *testing.T) {
 	}
 }
 
+func TestHelpExamplesKeepWholeValues(t *testing.T) {
+	t.Parallel()
+	examples := [][]string{
+		{"►", "04", "-28", "AT", "LIMIT", "-36"},
+		{"►", "00", "-26", "HAS", "ROOM", "-32"},
+		{"09", "0", "PARKED", "-48"},
+		{"►", "00", "-26", "PROBE", "-32"},
+	}
+	for width := 1; width <= 100; width++ {
+		lines := helpReading(width)
+		at := 2
+		for i, tokens := range examples {
+			row := ansi.Strip(lines[at])
+			fields := strings.Fields(row)
+			for _, field := range fields {
+				if strings.Trim(field, "▄░·█▀") != "" && !slices.Contains(tokens, field) {
+					t.Errorf("width %d example %d: text or value cut to %q: %q", width, i, field, row)
+				}
+			}
+			for _, pair := range [][2]string{{"AT", "LIMIT"}, {"HAS", "ROOM"}} {
+				if slices.Contains(fields, pair[0]) != slices.Contains(fields, pair[1]) {
+					t.Errorf("width %d example %d: state word cut: %q", width, i, row)
+				}
+			}
+			if ansi.StringWidth(lines[at]) > width {
+				t.Errorf("width %d example %d: row exceeds width: %q", width, i, row)
+			}
+			if width == 100 && (fields[len(fields)-1] != tokens[len(tokens)-1] || !slices.Contains(fields, tokens[len(tokens)-2])) {
+				t.Errorf("wide example %d lost its state or failure point: %q", i, row)
+			}
+			for lines[at] != "" {
+				at++
+			}
+			at++
+		}
+	}
+}
+
+func TestHelpViewExamplesKeepWholeValues(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1000, 0).UTC()
+	for _, width := range []int{13, 20} {
+		sc := Screen{View: HelpView, Width: width, Height: 60}
+		for _, line := range RenderView(Snapshot{}, sc, now).Lines {
+			fields := strings.Fields(ansi.Strip(line))
+			if slices.Contains(fields, "-2") || slices.Contains(fields, "AT") && !slices.Contains(fields, "LIMIT") {
+				t.Errorf("width %d: help example cut a value or state word: %q", width, ansi.Strip(line))
+			}
+		}
+	}
+}
+
 func TestRenderFooterKeepsKeys(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(1000, 0).UTC()

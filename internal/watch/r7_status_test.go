@@ -143,6 +143,29 @@ func TestR7NarrowRowsKeepOffsetProvenance(t *testing.T) {
 	}
 }
 
+func TestR7ProvenanceExactFit(t *testing.T) {
+	t.Parallel()
+	workload := machine.Workloads(machine.R7)[0].ID
+	s := Snapshot{cycle: &cycleView{}}
+	for _, id := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15} {
+		s.r7 = append(s.r7, tuner.R7CoreStatus{Core: id, CCD: id / 8, Workload: workload, TopRequester: true, OffsetFallback: true})
+	}
+	for _, tc := range []struct {
+		width int
+		want  string
+	}{{8, ""}, {9, "by offset"}, {10, "by offset"}} {
+		rows := s.r7Lines(layout{context: rectangle{w: tc.width}})
+		if diff := cmp.Diff(tc.want, strings.TrimSpace(ansi.Strip(rows[1]))); diff != "" {
+			t.Errorf("width %d: provenance must show whenever it fits (-want +got):\n%s", tc.width, diff)
+		}
+		for _, line := range rows {
+			if ansi.StringWidth(line) > tc.width {
+				t.Errorf("width %d: R7 row exceeds its rectangle: %q", tc.width, ansi.Strip(line))
+			}
+		}
+	}
+}
+
 func TestR7EvidenceStaysOutOfTheForecast(t *testing.T) {
 	t.Parallel()
 	w := machine.Workloads(machine.R7)[0].ID

@@ -358,7 +358,11 @@ func (s Snapshot) r7Lines(p layout) []string {
 	}
 	if width < name+top+1 {
 		name = min(name, max(width-1-len("by offset"), 0))
-		top = max(width-name-1, 0)
+		top = width - name
+		if name > 0 {
+			top--
+		}
+		top = max(top, 0)
 	}
 	current := s.r7Workload()
 	out := []string{r7Rule(width, name, top)}

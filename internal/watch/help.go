@@ -129,12 +129,14 @@ func helpReading(width int) []string {
 		{9, 0, -48, "PARKED", "parked at 0 by a hunt; returns to -47", grey.Render(strings.Repeat("·", 47)) + red.Render("█")},
 		{0, -26, -32, "PROBE", "probe: the group failed with core 00 at -30, -29, -27", white.Render(strings.Repeat("▄", 26)) + red.Render("▀ ▀▀ █")},
 	} {
-		prefix := fmt.Sprintf("► %02d  %3d  %-8s ", example.core, example.offset, example.state)
+		marker := "► "
 		if example.state == "PARKED" {
-			prefix = "  " + prefix[4:]
+			marker = "  "
 		}
+		prefix := fmt.Sprintf("%s%02d  %3d  %-8s ", marker, example.core, example.offset, example.state)
 		gauge := example.gauge + strings.Repeat(" ", max(0, 50-ansi.StringWidth(example.gauge)))
-		out = append(out, ansi.Truncate(white.Render(prefix)+gauge+"  "+red.Render(fmt.Sprintf("%3d", example.failure)), width, ""))
+		failure := fmt.Sprintf("%3d", example.failure)
+		out = append(out, helpExampleRow(width, []string{prefix, fmt.Sprintf("%s%02d  %3d ", marker, example.core, example.offset), fmt.Sprintf("%s%02d ", marker, example.core), ""}, gauge, failure))
 		indent := min(ansi.StringWidth(prefix), max(0, width-20))
 		for _, line := range wrapStyled(example.note, max(1, width-indent), grey) {
 			out = append(out, strings.Repeat(" ", indent)+line)
@@ -144,6 +146,32 @@ func helpReading(width int) []string {
 	items := helpSectionLines(screenHelp, width, false)
 	out = append(out, items[2:]...)
 	return out
+}
+
+// helpExampleRow keeps the text of a help example whole: its heads run from the full core, offset and state to
+// nothing, each with its failure point or without, and the first that fits wins. Only the gauge is clipped by cells.
+func helpExampleRow(width int, heads []string, gauge, failure string) string {
+	for _, head := range heads {
+		for _, withFailure := range []bool{true, false} {
+			used := ansi.StringWidth(head)
+			if withFailure {
+				used += 2 + ansi.StringWidth(failure)
+			}
+			if used > width {
+				continue
+			}
+			line := gauge
+			if head != "" {
+				line = white.Render(head) + line
+			}
+			line = ansi.Truncate(line, width-used+ansi.StringWidth(head), "")
+			if withFailure {
+				line += "  " + red.Render(failure)
+			}
+			return line
+		}
+	}
+	return ""
 }
 
 func helpSectionLines(section helpSection, width int, spaced bool) []string {
