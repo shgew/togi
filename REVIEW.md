@@ -25,6 +25,7 @@ Style, wording, naming taste and optional refactors are not findings. Handle fin
 When the same kind of finding occurs in two pull requests, add a lesson in the pull request that fixes the second. Cite the source pull requests or issues.
 
 - **Net release behavior:** pending changelog fragments in `changes/` describe the behavior that will ship, not each intermediate commit. A later layer of the same release edits or deletes the fragment of a feature it supersedes or removes. Sources: [#269](https://github.com/shgew/togi/pull/269), [#285](https://github.com/shgew/togi/pull/285).
+- **Hermetic package source:** package unit and integration tests run without the full checkout, its Git metadata or non-shipped documentation. Fixtures must own their inputs, including any temporary Git repository, or use files in the package source set rather than assuming checkout-only files exist. Check invariants about non-shipped documentation at repository review level. Sources: [#659](https://github.com/shgew/togi/pull/659), [#667](https://github.com/shgew/togi/pull/667).
 
 ## Review record
 

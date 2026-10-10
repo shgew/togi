@@ -51,15 +51,6 @@ func TestDeletedScenariosAreGone(t *testing.T) {
 	if diff := cmp.Diff(8, nonmember); diff != "" {
 		t.Errorf("target-nonmember-mce baseline records (-want +got):\n%s", diff)
 	}
-	docs, err := os.ReadFile(filepath.Join("..", "..", "docs", "benchmarking.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range deletedScenarios {
-		if strings.Contains(string(docs), "`"+name+"`") {
-			t.Errorf("docs/benchmarking.md still names deleted scenario %s", name)
-		}
-	}
 }
 
 func TestDefaultSuiteRunCounts(t *testing.T) {
