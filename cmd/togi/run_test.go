@@ -463,19 +463,61 @@ func TestRunFirstResultFlag(t *testing.T) {
 	}
 }
 
+// TestRunRefusesFirstResultWithCycles pins that the combination exits 2 before
+// any state access: a state directory that does not exist stays absent, and a
+// malformed journal, which the startup scan would refuse with exit 1, is never
+// read. No host lock is taken either.
 func TestRunRefusesFirstResultWithCycles(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	g := globals{stateDir: dir}
-	var stdout, stderr bytes.Buffer
-	if code := runRun(&g, []string{"--first-result", "--cycles", "1"}, &stdout, &stderr); code != exitUsage {
-		t.Fatalf("exit %d, want %d", code, exitUsage)
-	}
-	if !strings.Contains(stderr.String(), "--first-result and --cycles cannot be combined") {
-		t.Fatalf("stderr %q", stderr.String())
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) != 0 {
-		t.Fatalf("state directory %v (%v) was touched", entries, err)
+	const malformed = "not a journal\n{}\n"
+	for _, tc := range []struct {
+		name    string
+		journal bool
+	}{
+		{name: "absent state directory"},
+		{name: "malformed journal", journal: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			dir := filepath.Join(root, "state")
+			events := filepath.Join(dir, "events.jsonl")
+			if tc.journal {
+				if err := os.Mkdir(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(events, []byte(malformed), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			g := globals{
+				stateDir:     dir,
+				config:       filepath.Join(root, "config.json"),
+				hostLockPath: filepath.Join(root, "togi.lock"),
+			}
+			var stdout, stderr bytes.Buffer
+			if code := runRun(&g, []string{"--first-result", "--cycles", "1"}, &stdout, &stderr); code != exitUsage {
+				t.Fatalf("exit %d, want %d; stderr %q", code, exitUsage, stderr.String())
+			}
+			if !strings.HasPrefix(stderr.String(), "togi run: --first-result and --cycles cannot be combined\n") || stdout.Len() != 0 {
+				t.Fatalf("stdout %q, stderr %q", stdout.String(), stderr.String())
+			}
+			if _, err := os.Stat(g.hostLockPath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("host lock %s taken: %v", g.hostLockPath, err)
+			}
+			if !tc.journal {
+				if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("state directory %s created: %v", dir, err)
+				}
+				return
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 1 {
+				t.Fatalf("state directory entries %v (%v), want only the journal", entries, err)
+			}
+			if data, err := os.ReadFile(events); err != nil || string(data) != malformed {
+				t.Fatalf("journal %q (%v) changed", data, err)
+			}
+		})
 	}
 }

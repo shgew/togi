@@ -399,7 +399,7 @@ func writeBIOSNote(w io.Writer, st journal.State) {
 	case len(b.Unconfirmed) == 0:
 		wrapLines(w, "", "  ", fmt.Sprintf("BIOS profile confirmed by the passed full cycle [#%d]", b.Confirmed))
 	default:
-		wrapLines(w, "", "  ", fmt.Sprintf("* unconfirmed since [#%d]: cores %s show a stepped-back offset, the profile confirmed by the passed full cycle [#%d] otherwise; the next passed full cycle confirms it", b.Since, coreIDs(b.Unconfirmed), b.Confirmed))
+		wrapLines(w, "", "  ", fmt.Sprintf("* unconfirmed since [#%d]: cores %s show a stepped-back offset, the profile confirmed by the passed full cycle [#%d] otherwise; a passed full cycle confirms it, except a held failure's stepped-back offset, which stays marked until the hold ends", b.Since, coreIDs(b.Unconfirmed), b.Confirmed))
 	}
 }
 
