@@ -787,3 +787,35 @@ func TestBIOSProfileProjectsAPairedHuntsPendingBackoffPastItsCombination(t *test
 	assertShown(t, h, after)
 	assertLaterReplay(h)
 }
+
+// A direct end names the core the probe observed failing: the shown profile moves it at once, before the tuning move.
+func TestBIOSProfileProjectsAPairedHuntsDirectBackoffBeforeItIsRecorded(t *testing.T) {
+	h := laterHarness(t, -10, -12)
+	confirmed := h.s.BIOSProfile().Confirmed
+	startCycle(h, 4)
+	idleFailure(h)
+	hold := h.decide(h.next())
+	idleFailure(h)
+	h.decide(driveToHuntStart(h))
+	h.add(&journal.Failure{Attribution: journal.Attributed, Core: new(1), Offset: new(-11), Condition: machine.Parked, Regime: machine.R1, Profile: []int{-9, -11}, Signal: machine.ComputationError})
+	a := h.next()
+	if end, ok := a.Payload.(*journal.HuntEnd); !ok || end.Result != "direct" {
+		t.Fatalf("hunt end %+v", a)
+	}
+	h.decide(a)
+	if diff := cmp.Diff([]int{-10, -12}, h.s.offsets()); diff != "" {
+		t.Fatalf("the tuning profile moved before the backoff (-want +got):\n%s", diff)
+	}
+	pending := BIOSProfile{Offsets: []int{-9, -10}, Confirmed: confirmed, Unconfirmed: []int{0, 1}, Since: hold.Seq}
+	assertShown(t, h, pending)
+	d, a := nextDecision(h)
+	if d.Phase != journal.PhaseHunt || d.Core != 1 || d.ToOffset != -10 {
+		t.Fatalf("direct backoff %+v", d)
+	}
+	commit := h.decide(a)
+	assertShown(t, h, BIOSProfile{Offsets: []int{-10, -10}, Confirmed: confirmed, Unconfirmed: []int{1}, Since: commit.Seq})
+	if h.s.hunt != nil || len(h.s.later.strikes) != 0 {
+		t.Fatalf("hold stayed after the commitment: hunt %v strikes %+v", h.s.hunt, h.s.later.strikes)
+	}
+	assertLaterReplay(h)
+}

@@ -84,8 +84,13 @@ func (s *State) BIOSProfile() BIOSProfile {
 		}
 	}
 	if h := s.hunt; h != nil && h.pairedStrike != nil && h.end != nil && s.strikeValid(*h.pairedStrike) {
-		// The hunt's pending commitment moves one core: show it, so the profile never reaches the constraint the hunt learned.
-		if a, ok := s.huntCommitment(h); ok {
+		// What the tuner decides next moves one core: show it, so the profile never reaches what the hunt learned or
+		// observed failing. Next decides a pending ordinary decision, such as a direct end's backoff, before the commitment.
+		a, ok := s.pendingDecision()
+		if !ok {
+			a, ok = s.huntCommitment(h)
+		}
+		if ok {
 			if d, ok := a.Payload.(*journal.TunerDecision); ok && d.Decision == journal.Backoff {
 				if i := s.index(d.Core); i >= 0 && d.ToOffset > confirmed[i] && d.ToOffset > out.Offsets[i] {
 					out.Offsets[i] = d.ToOffset
