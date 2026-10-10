@@ -35,6 +35,7 @@ func (s *State) openHunt(e journal.Event, p *journal.HuntStart) {
 			s.located = map[int]locatedHunt{}
 		}
 		s.located[p.Failure] = locatedHunt{hunt: p.Hunt}
+		s.r7Epoch++
 		return
 	}
 	if len(s.queue) > 0 && s.queue[0].seq == p.Failure {

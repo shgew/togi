@@ -77,6 +77,7 @@ func (s *State) recordZeroRerun(e journal.Event, p *journal.TrialIntent) {
 		s.zeroReruns, s.zeroTrials = map[int]*zeroRerun{}, map[string]int{}
 	}
 	s.zeroReruns[e.Cause[0]] = &zeroRerun{trial: p.Trial}
+	s.r7Epoch++
 	s.zeroTrials[p.Trial] = e.Cause[0]
 }
 
@@ -89,6 +90,7 @@ func (s *State) endZeroRerun(e journal.Event, p *journal.TrialEnd) {
 	}
 	r := s.zeroReruns[seq]
 	r.end, r.passed = e.Seq, p.Outcome == journal.OutcomePass
+	s.r7Epoch++
 	f := s.failureBySeq(seq)
 	if !r.passed || f == nil || s.multiR7(f.class) {
 		return

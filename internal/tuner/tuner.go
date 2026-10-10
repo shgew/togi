@@ -159,6 +159,7 @@ type State struct {
 	queue                   []pendingFailure
 	pendingFailures         []pendingFailure
 	failureIndex            map[int]int
+	failureGroups           map[int][]int
 	obligations             []rerun
 	rerunCauses             []int
 	hunt                    *hunt
@@ -176,12 +177,44 @@ type State struct {
 	warningSeq              int
 	projectionDirty         bool
 	projectedChecking       *journal.CheckingState
+	exposure                map[trialClass]int
+	exposureProfileSeq      int
 	projectedHunt           *journal.HuntState
 	r7Handled               map[int]map[int]bool
 	r7Measurements          []entry
 	located                 map[int]locatedHunt
 	zeroReruns              map[int]*zeroRerun
 	zeroTrials              map[string]int
+
+	// Indexes and memos over the folded events, so a query costs what changed recently rather than the whole
+	// history. Each is a function of the folded events alone.
+	allKey        string
+	classFailures map[trialClass][]int // per class, the ledger positions of its failures, in seq order
+	measurements  map[measurementKey][]int
+	ccdKeys       map[int]string
+	derivedBySeq  map[int]*derived
+	failurePos    map[int]failurePos
+	// gen counts folded events; memos keyed by it hold only until the next fold.
+	gen                int
+	reqEpoch, roundGen int
+	reqByStep          map[int][]requirement
+	cycleCheckingEpoch int
+	cycleMemo          map[trialClass]int
+	// checkingEpoch changes with every event that can change the checking cycle, its partial chains, the checking
+	// profile, core offsets or durations; evidenceEpoch with every change to idle failures, backends or deleted
+	// evidence. A new ledger entry drops only its own class from cycleMemo.
+	checkingEpoch, evidenceEpoch int
+	cycleEvidenceEpoch           int
+	// limitEpoch changes with every event that can change a core's phase, offset, pass, failure point or the
+	// combinations; phasesSettled holds while phaseNext found nothing to decide at phasesEpoch.
+	limitEpoch, phasesEpoch int
+	phasesSettled           bool
+	roundMemo               bool
+	roundChecksMemo         []requirement
+	roundSourcesMemo        []int
+	r7Epoch, r7OpenEpoch    int
+	r7Open                  []int
+	r7OpenBuilt             bool
 }
 
 func New() *State {
@@ -244,8 +277,20 @@ func (s *State) index(id int) int {
 }
 
 func (s *State) Fold(e journal.Event) {
+	s.gen++
+	switch e.Data.(type) {
+	case *journal.SessionStart, *journal.ConfigLoaded, *journal.CorePhase, *journal.TunerDecision, *journal.ProfileChange,
+		*journal.CheckingCycle, *journal.CheckingStep, *journal.CheckingChain:
+		s.checkingEpoch++
+	}
+	switch e.Data.(type) {
+	case *journal.SessionStart, *journal.CorePhase, *journal.TunerDecision, *journal.DeadEnd, *journal.Combination:
+		s.limitEpoch++
+	}
 	switch p := e.Data.(type) {
 	case *journal.SessionStart:
+		s.exposure, s.derivedBySeq, s.ccdKeys = nil, nil, nil
+		s.r7Epoch++
 		s.cores = nil
 		for _, id := range machine.Order(p.Cores) {
 			s.cores = append(s.cores, &core{id: id})
@@ -257,6 +302,7 @@ func (s *State) Fold(e journal.Event) {
 		for i, c := range s.sortedCores {
 			s.indexByID[c.id] = i
 		}
+		s.allKey = coresKey(s.ids())
 		s.indexClassTargets()
 		s.bestDirty = true
 		s.projectionDirty = true
@@ -265,6 +311,9 @@ func (s *State) Fold(e journal.Event) {
 		s.durations = p.Config.Durations
 		s.evidence = p.Config.Evidence
 		s.backends = p.Config.Backends
+		s.evidenceEpoch++
+		s.exposure, s.derivedBySeq = nil, nil
+		s.r7Epoch++
 		for _, c := range s.cores {
 			s.currentStep(c)
 		}
@@ -508,7 +557,7 @@ func trialFromIntent(p *journal.TrialIntent) Trial {
 
 func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 	if a := s.awaiting; a != nil && a.intent.Trial == p.Trial {
-		s.failureIndex[a.seq] = len(s.pendingFailures)
+		s.setFailureIndex(a.seq)
 		s.awaiting = nil
 	}
 	profile := slices.Clone(p.Profile)
@@ -526,20 +575,16 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 		}
 	}
 	if p.KnownFailure != 0 {
-		s.failureIndex[p.KnownFailure] = len(s.pendingFailures)
+		s.setFailureIndex(p.KnownFailure)
 	} else if intent := s.intents[p.Trial]; intent != nil {
 		failure.class = classOf(intent)
 	} else if p.Trial == "" && (p.Condition == machine.Together || p.Condition == machine.Parked) {
 		failure.class = trialClass{machine.R6, machine.Workloads(machine.R6)[0].ID, coresKey(s.ids()), s.durations.CheckingIdleS}
 	}
-	s.failureIndex[e.Seq] = len(s.pendingFailures)
+	s.setFailureIndex(e.Seq)
 	s.pendingFailures = append(s.pendingFailures, failure)
 	if s.multiR7(failure.class) {
-		for i := range s.ledger[failure.class] {
-			if s.sameR7Failure(s.ledger[failure.class][i].seq, e.Seq) {
-				s.ledger[failure.class][i].named = p.Core
-			}
-		}
+		s.eachFailureEntry(failure.class, e.Seq, func(i int) { s.ledger[failure.class][i].named = p.Core })
 	}
 	if failure.class.regime == machine.R7 && len(s.classCores(failure.class)) > 1 {
 		if c := s.locatedCulprit(failure); c != nil {
@@ -744,6 +789,15 @@ func (s *State) profileNext() Action {
 }
 
 func (s *State) phaseNext() (Action, bool) {
+	if s.phasesSettled && s.phasesEpoch == s.limitEpoch {
+		return Action{}, false
+	}
+	a, ok := s.computePhaseNext()
+	s.phasesSettled, s.phasesEpoch = !ok, s.limitEpoch
+	return a, ok
+}
+
+func (s *State) computePhaseNext() (Action, bool) {
 	p := s.offsets()
 	for _, c := range s.cores {
 		if c.phase == journal.PhaseSearch {

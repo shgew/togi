@@ -100,12 +100,13 @@ func (s *State) locateCandidates(f pendingFailure) []int {
 }
 
 // locateDue returns the first failure that waits for its located hunt and would otherwise move a core or end
-// the session.
+// the session. A settled failure never waits: it is not locatable, or every core it counts against was handled.
 func (s *State) locateDue() (pendingFailure, bool) {
 	if s.hunt != nil {
 		return pendingFailure{}, false
 	}
-	for _, f := range s.pendingFailures {
+	for _, i := range s.r7OpenFailures() {
+		f := s.pendingFailures[i]
 		if _, ok := s.located[f.seq]; ok {
 			continue
 		}
@@ -208,6 +209,7 @@ func (s *State) locatedLoadedFailure(h *hunt) (Action, bool) {
 }
 
 func (s *State) endLocatedHunt(h *hunt, e journal.Event, p *journal.HuntEnd) {
+	s.r7Epoch++
 	switch p.Result {
 	case "cancelled":
 		delete(s.located, h.start.Failure)

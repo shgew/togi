@@ -64,7 +64,10 @@ func (s *State) recordCheckingTrial(p *journal.TrialIntent) {
 				// A started part's loaded set depends on its predecessors, so
 				// they freeze with it even if cycle evidence already met theirs.
 				for _, predecessor := range chain[:i+1] {
-					predecessor.started = true
+					if !predecessor.started {
+						predecessor.started = true
+						s.checkingEpoch++
+					}
 				}
 			}
 		}
@@ -136,7 +139,7 @@ func (s *State) deriveCheckingChain(step, ccd, index int, previous []int) Action
 func (s *State) r7PartNext(step int, part []int, duration int) (Action, bool) {
 	g := &s.checking
 	for _, q := range s.requirements(step) {
-		if !slices.Equal(q.cores, part) || q.count == 0 || s.passes(q.class, g.profile, g.startSeq, cycleEvidence) >= q.count {
+		if !slices.Equal(q.cores, part) || q.count == 0 || s.cyclePasses(q.class) >= q.count {
 			continue
 		}
 		// The partial uses its full CCD's duration, not the all-core duration.
