@@ -110,10 +110,10 @@ func load(path string) (Config, error) {
 	}
 	var removed struct {
 		Durations struct {
-			ConfirmationTrialS *jsontext.Value `json:"confirmation_trial_s"`
+			ConfirmationTrialS jsontext.Value `json:"confirmation_trial_s"`
 		} `json:"durations"`
 	}
-	if json.Unmarshal(data, &removed) == nil && removed.Durations.ConfirmationTrialS != nil {
+	if json.Unmarshal(data, &removed) == nil && len(removed.Durations.ConfirmationTrialS) > 0 {
 		return Config{}, errors.New("durations.confirmation_trial_s was removed in togi 0.5.0: confirmation no longer exists; delete the key")
 	}
 	if err := json.Unmarshal(data, &f, json.RejectUnknownMembers(true)); err != nil {

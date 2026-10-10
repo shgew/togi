@@ -62,6 +62,7 @@ func TestLoad(t *testing.T) {
 		{name: "removed significance", content: `{"evidence":{"significance":0.3}}`, reject: true},
 		{name: "too many trials", content: `{"evidence":{"rate":1e-300}}`, wantErr: "evidence: miss 0.05 and rate 1e-300 need more than 1000 trials per step"},
 		{name: "removed confirmation key takes precedence", content: `{"durations":{"confirmation_trial_s":300,"bogus":1}}`, wantErr: "durations.confirmation_trial_s was removed in togi 0.5.0: confirmation no longer exists; delete the key"},
+		{name: "removed confirmation key even when null", content: `{"durations":{"confirmation_trial_s":null}}`, wantErr: "durations.confirmation_trial_s was removed in togi 0.5.0: confirmation no longer exists; delete the key"},
 		{name: "all-core duration too short to split", content: `{"durations":{"checking_all_core_s":3}}`, reject: true},
 		{name: "unknown top-level key", content: `{"bogus":1}`, reject: true},
 		{name: "unknown nested key", content: `{"durations":{"search_s":1}}`, reject: true},
