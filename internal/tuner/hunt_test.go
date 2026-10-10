@@ -875,6 +875,65 @@ func TestHuntDurationPriorRespectsEvidenceAndShortFailures(t *testing.T) {
 	}
 }
 
+func TestHuntDurationEscalationOnlyForLongerFailure(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		duration int
+		groups   []string
+	}{
+		{"shorter", 90, []string{"part/120s/false", "part/120s/false"}},
+		{"equal", 120, []string{"part/120s/false", "part/120s/false"}},
+		{"longer", 600, []string{"part/120s/false", "part/120s/false", "full/120s/false", "part/600s/true", "part/600s/true"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := huntHarness(t, 2, tt.duration)
+			var groups []string
+			trials := 0
+			for range 100 {
+				a, drained := h.s.Drain()
+				if !drained {
+					a = h.next()
+				}
+				if group, ok := a.Payload.(*journal.HuntGroup); ok {
+					groups = append(groups, fmt.Sprintf("%s/%ds/%t", group.Stage, group.DurationS, group.Escalated))
+					h.decide(a)
+					continue
+				}
+				if a.Kind == RunTrial {
+					if a.Trial.DurationS != h.s.hunt.groups[len(h.s.hunt.groups)-1].payload.DurationS {
+						t.Fatalf("trial does not use its group's duration: %+v", a)
+					}
+					trials++
+					runGroup(h, a, false)
+					continue
+				}
+				if end, ok := a.Payload.(*journal.HuntEnd); ok {
+					if !drained || end.Result != "fallback" {
+						t.Fatalf("drain did not finish the passing hunt: %+v", a)
+					}
+					if diff := cmp.Diff(tt.groups, groups); diff != "" {
+						t.Fatalf("hunt duration sequence (-want +got):\n%s", diff)
+					}
+					if want := len(tt.groups) * h.s.n; trials != want {
+						t.Fatalf("hunt ran %d trials, want %d", trials, want)
+					}
+					replayed, ok := replayState(h.events).Drain()
+					if !ok {
+						t.Fatal("replayed hunt did not drain")
+					}
+					if diff := cmp.Diff(a, replayed); diff != "" {
+						t.Fatalf("resumed hunt end (-live +replayed):\n%s", diff)
+					}
+					h.decide(a)
+					return
+				}
+				t.Fatalf("unexpected hunt action: %+v", a)
+			}
+			t.Fatal("hunt did not end")
+		})
+	}
+}
+
 func TestHuntEscalationAndInferredGroup(t *testing.T) {
 	h := huntHarness(t, 2, 600)
 	first := h.next()
