@@ -138,6 +138,7 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 	}
 	switch {
 	case o.keep != "" && o.ctx.Err() == nil, o.ctx.Err() == nil && (err != nil || different):
+		removeEmptyDirs(root)
 		fmt.Fprintf(stderr, "bench: keeping runs in %s\n", root)
 	default:
 		os.RemoveAll(root)
@@ -219,6 +220,21 @@ func hashPairInputs(trees [2]string, pairs []samePair) (bool, error) {
 		same = same && pairs[i].runs[0] != nil && pairs[i].runs[1] != nil && pairs[i].inputs[0] == pairs[i].inputs[1]
 	}
 	return same, nil
+}
+
+// removeEmptyDirs removes the empty directories under root, leaving root itself, so that what remains of a run is only
+// what it kept.
+func removeEmptyDirs(root string) {
+	var dirs []string
+	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && entry.IsDir() && path != root {
+			dirs = append(dirs, path)
+		}
+		return err
+	})
+	for _, dir := range slices.Backward(dirs) {
+		os.Remove(dir)
+	}
 }
 
 func pairRuns(runs [2][]runSpec) []samePair {
