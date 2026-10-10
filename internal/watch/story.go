@@ -89,9 +89,9 @@ func (s Snapshot) story(now time.Time) story {
 	if t.regime == machine.R6 {
 		until := t.started.Add(t.duration)
 		if now.Before(until) {
-			return story{name, []string{fmt.Sprintf("Step %d leaves every core idle for %s, with short wake-ups, to test idle and boost states.", t.step, minutes(t.duration)), "This screen holds still until " + until.Format("15:04") + ", clock included, so drawing it cannot wake the cores."}, "Every core idle with short wake-ups; this screen holds still.", plainTone}
+			return story{name, []string{fmt.Sprintf("Step %d leaves every core idle for %s, with short wake-ups, to test idle and boost states.", t.step, minutes(t.duration)), "This screen holds still until " + wallMinute(until) + ", clock included, so drawing it cannot wake the cores."}, "Every core idle with short wake-ups; this screen holds still.", plainTone}
 		}
-		text := fmt.Sprintf("The idle trial was planned to end at %s. I'm waiting for its result in the journal.", until.Format("15:04"))
+		text := fmt.Sprintf("The idle trial was planned to end at %s. I'm waiting for its result in the journal.", wallMinute(until))
 		return story{name, []string{text}, text, plainTone}
 	}
 	step := fmt.Sprintf("Step %d is %s %s with %s.", t.step, t.regime, kindWords(t.regime), workloadDisplay(t.workload))

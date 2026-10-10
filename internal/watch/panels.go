@@ -412,9 +412,9 @@ func (s Snapshot) combinationLines(t tables, width int, class sizeClass) []strin
 
 func (s Snapshot) huntLines(t tables, width int, class sizeClass, now time.Time) []string {
 	h := s.hunt
-	right := "started " + h.started.Format("15:04") + " · " + age(now.Sub(h.started)) + " so far"
+	right := "started " + wallMinute(h.started) + " · " + age(now.Sub(h.started)) + " so far"
 	if class == compactLayout {
-		right = h.started.Format("15:04") + " · " + age(now.Sub(h.started))
+		right = wallMinute(h.started) + " · " + age(now.Sub(h.started))
 	}
 	out := []string{rule(width, grey.Render(fmt.Sprintf("HUNT %d", h.id)), grey.Render(right)), ""}
 	out = append(out, fieldRow(t, "cause", textStyle.Render(s.huntCauseWords(class)), width))

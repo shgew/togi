@@ -283,7 +283,7 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 	}
 	header := s.header(now)
 	if p.class == compactLayout && !planned.IsZero() {
-		header = grey.Render("togi") + "  " + white.Render(now.Format("15:04:05")) + "  " + amber.Render("paused until "+planned.Format("15:04")) +
+		header = grey.Render("togi") + "  " + white.Render(wallSecond(now)) + "  " + amber.Render("paused until "+wallMinute(planned)) +
 			grey.Render("  session ") + textStyle.Render(hm(now.Sub(s.start))) +
 			grey.Render(fmt.Sprintf("  %d failures · %d crashes", s.failures, s.crashes))
 	}
@@ -532,7 +532,7 @@ func (s Snapshot) quietUntil() time.Time {
 }
 
 func (s Snapshot) header(now time.Time) string {
-	out := grey.Render("togi") + "   " + white.Render(now.Format("15:04:05"))
+	out := grey.Render("togi") + "   " + white.Render(wallSecond(now))
 	if !s.session {
 		return out + grey.Render("   no session yet")
 	}
@@ -544,13 +544,13 @@ func (s Snapshot) header(now time.Time) string {
 	}
 	out += grey.Render("   session ") + textStyle.Render(hm(end.Sub(s.start))) + "   " + textStyle.Render(fmt.Sprint(s.failures)) + grey.Render(" failures · ") + textStyle.Render(fmt.Sprint(s.crashes)) + grey.Render(" crashes")
 	if s.lastFailure != nil {
-		out += grey.Render("   last observed failure ") + textStyle.Render(s.lastFailure.Format("15:04"))
+		out += grey.Render("   last observed failure ") + textStyle.Render(wallMinute(*s.lastFailure))
 		if s.quietUntil().IsZero() {
 			out += grey.Render(", " + ago(now.Sub(*s.lastFailure)))
 		}
 	}
 	if until := s.quietUntil(); !until.IsZero() && now.Before(until) {
-		out += "   " + amber.Render("screen paused until "+until.Format("15:04"))
+		out += "   " + amber.Render("screen paused until "+wallMinute(until))
 	}
 	return out
 }
@@ -601,7 +601,7 @@ func (s Snapshot) stageLine(class sizeClass, summary bool, now time.Time) string
 	if summary && s.trial != nil && s.trial.hasStarted {
 		t := s.trial
 		if until := s.quietUntil(); !until.IsZero() && now.Before(until) {
-			parts = append(parts, grey.Render("screen paused until "+until.Format("15:04")))
+			parts = append(parts, grey.Render("screen paused until "+wallMinute(until)))
 		} else {
 			parts = append(parts, white.Render(clock(max(t.duration-now.Sub(t.started), 0))+" left"))
 		}
@@ -707,7 +707,7 @@ func (s Snapshot) restingBand() (string, lipgloss.Style, []string) {
 		}
 		return "DEAD END", red, lines
 	case s.stopped != nil:
-		lines := []string{s.stopped.at.Format("15:04:05") + " · " + stopWords(s.stopped.reason)}
+		lines := []string{wallSecond(s.stopped.at) + " · " + stopWords(s.stopped.reason)}
 		if s.stopped.saved {
 			lines = append(lines, "Rows show the saved profile, not applied now.")
 		}
@@ -725,7 +725,7 @@ func (s Snapshot) restingBand() (string, lipgloss.Style, []string) {
 // recoveredLines say what the crash ended, how late, what the journal holds about it, and what runs next.
 func (s Snapshot) recoveredLines() []string {
 	r := s.recover
-	detected := "detected " + r.bootAt.Format("15:04:05")
+	detected := "detected " + wallSecond(r.bootAt)
 	if r.reset != "" && r.reset != machine.ResetUnknown {
 		detected += " after a " + strings.ReplaceAll(string(r.reset), "_", " ") + " reset"
 	}
@@ -817,7 +817,7 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 		cells := max(r.w-23, 0)
 		digits, style := clock(remaining), white
 		if quiet {
-			digits, style = t.started.Add(t.duration).Format("15:04"), grey
+			digits, style = wallMinute(t.started.Add(t.duration)), grey
 		}
 		for y := 3; y <= 5; y++ {
 			glyph := "█"
@@ -839,7 +839,7 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 		if quiet {
 			msg := "  screen paused until " + digits + " so it cannot wake the idle cores  "
 			c.put(r, max((cells-ansi.StringWidth(msg))/2, 0), 4, textStyle.Render(msg))
-			c.put(r, 0, 6, grey.Render("started ")+textStyle.Render(t.started.Format("15:04"))+grey.Render(" · "+clock(t.duration)))
+			c.put(r, 0, 6, grey.Render("started ")+textStyle.Render(wallMinute(t.started))+grey.Render(" · "+clock(t.duration)))
 			c.put(r, r.w-7, 6, grey.Render("ends at"))
 		} else {
 			c.put(r, 0, 6, textStyle.Render(clock(elapsed))+grey.Render(" of "+clock(t.duration)))
@@ -851,7 +851,7 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 		y := r.h - 1
 		label := white.Render(clock(remaining)) + grey.Render(" left") + "  " + requirementLine(*t, true)
 		if quiet {
-			label = grey.Render("screen paused · ends at ") + textStyle.Render(t.started.Add(t.duration).Format("15:04"))
+			label = grey.Render("screen paused · ends at ") + textStyle.Render(wallMinute(t.started.Add(t.duration)))
 		}
 		cells := max(r.w-ansi.StringWidth(label)-2, 0)
 		line := progressBar(cells, frac, "█")
@@ -1296,7 +1296,7 @@ func (s Snapshot) historyPanel(width int) []string {
 	for _, e := range s.history {
 		before, alarm, after := e.sentenceParts()
 		text := textStyle.Render(before) + red.Render(alarm) + textStyle.Render(after)
-		out = append(out, grey.Render(e.at.Format("15:04"))+"  "+tagStyle(e.tag).Render(fmt.Sprintf("%-8s", e.tag))+" "+trimWords(text, max(width-16, 0)))
+		out = append(out, grey.Render(wallMinute(e.at))+"  "+tagStyle(e.tag).Render(fmt.Sprintf("%-8s", e.tag))+" "+trimWords(text, max(width-16, 0)))
 	}
 	return out
 }
@@ -1513,4 +1513,14 @@ func clock(d time.Duration) string {
 func hm(d time.Duration) string {
 	d = max(d, 0)
 	return fmt.Sprintf("%dh%02dm", int(d/time.Hour), int(d/time.Minute)%60)
+}
+
+// Every time on screen is local, like the header clock and `togi events`: the journal stores UTC, so each
+// journal time passes through these two formats and nothing else formats a time.
+func wallSecond(t time.Time) string {
+	return t.Local().Format("15:04:05")
+}
+
+func wallMinute(t time.Time) string {
+	return t.Local().Format("15:04")
 }
