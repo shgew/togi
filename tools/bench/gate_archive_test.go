@@ -11,6 +11,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/shgew/togi/internal/tuner"
+	"github.com/shgew/togi/tools/trialfacts"
 )
 
 const archivedGateDir = "gates/ruleset-11"
@@ -95,5 +98,31 @@ func TestCommittedSuiteRegistersNoGate(t *testing.T) {
 	g, err := loadGate("suite.json")
 	if err != nil || g != nil {
 		t.Fatalf("loadGate(suite.json) = %+v, %v; the Ruleset 11 gate is archived and the next gate is not registered yet", g, err)
+	}
+}
+
+func TestCommittedBaselineIsRuleset11(t *testing.T) {
+	baseline, err := readResults("baseline.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := loadRuns("suite.json", "all", trialfacts.Extracts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	have := make(map[key]bool, len(baseline))
+	for _, r := range baseline {
+		if r.Ruleset != tuner.Ruleset || r.Dirty || r.Commit != "5145f657" {
+			t.Fatalf("baseline run %s/%d is ruleset %d at %s (dirty %v), want ruleset %d at the clean commit 5145f657 that recorded it: re-record with just bench-baseline at a clean commit and update this pin", r.Scenario, r.Seed, r.Ruleset, r.Commit, r.Dirty, tuner.Ruleset)
+		}
+		have[key{r.Scenario, r.Seed}] = true
+	}
+	if len(baseline) != len(runs) || len(have) != len(runs) {
+		t.Fatalf("baseline has %d runs over %d distinct seeds, the suite has %d", len(baseline), len(have), len(runs))
+	}
+	for _, run := range runs {
+		if !have[key{run.scenario.Name, run.seed}] {
+			t.Errorf("baseline has no run for %s seed %d", run.scenario.Name, run.seed)
+		}
 	}
 }
