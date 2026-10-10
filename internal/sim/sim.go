@@ -121,25 +121,28 @@ var epoch = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 const RebootTime = 90 * time.Second
 
 type Machine struct {
-	cfg        Config
-	model      Model
-	limits     []Limits
-	regs       []int
-	boot       int
-	bootID     string
-	boots      []string
-	now        time.Time
-	bootAt     time.Time
-	wallOffset time.Duration
-	crashed    bool
-	logs       map[string][]machine.MCE
-	queued     []machine.MCE
-	violations []string
-	bios       machine.BIOSContext
-	reasons    map[string]machine.ResetReason
-	nextReset  machine.ResetKind
-	samples    trialSamples
-	samplesDir string
+	cfg            Config
+	model          Model
+	limits         []Limits
+	joints         [][]jointMember
+	jointRegimes   []uint8
+	workloadLimits [][]workloadLimit
+	regs           []int
+	boot           int
+	bootID         string
+	boots          []string
+	now            time.Time
+	bootAt         time.Time
+	wallOffset     time.Duration
+	crashed        bool
+	logs           map[string][]machine.MCE
+	queued         []machine.MCE
+	violations     []string
+	bios           machine.BIOSContext
+	reasons        map[string]machine.ResetReason
+	nextReset      machine.ResetKind
+	samples        trialSamples
+	samplesDir     string
 
 	failWrite        bool
 	failWriteAt      int
@@ -218,6 +221,22 @@ func New(cfg Config) (*Machine, error) {
 	}
 	if m.limits == nil {
 		m.limits = m.drawLimits()
+	}
+	m.workloadLimits = make([][]workloadLimit, len(m.limits))
+	for core, limits := range m.limits {
+		for id, limit := range limits.Workload {
+			m.workloadLimits[core] = append(m.workloadLimits[core], workloadLimit{id: id, limit: limit})
+		}
+	}
+	m.joints = make([][]jointMember, len(cfg.Joints))
+	m.jointRegimes = make([]uint8, len(cfg.Joints))
+	for j, joint := range cfg.Joints {
+		for core, offset := range joint.Members {
+			m.joints[j] = append(m.joints[j], jointMember{core: core, offset: offset})
+		}
+		for _, regime := range joint.Regimes {
+			m.jointRegimes[j] |= 1 << regimeIndex(regime)
+		}
 	}
 	m.startBoot()
 	return m, nil

@@ -281,7 +281,7 @@ func (m *Machine) drawnFailure(spec machine.TrialSpec) (failure, bool) {
 		if m.sharedR7(spec) {
 			break
 		}
-		rate := m.jointRate(m.regs, spec.Regime, joint)
+		rate := m.jointRate(m.regs, spec.Regime, j)
 		if rate <= 0 {
 			continue
 		}
@@ -414,25 +414,26 @@ func (m *Machine) failureDraw(rate, afterS float64, spec machine.TrialSpec, core
 	return time.Duration((afterS + seconds) * float64(time.Second))
 }
 
-func (m *Machine) limit(profile []int, core int, r machine.Regime, workload string) int {
-	if limit, ok := m.limits[core].Workload[workload]; ok {
-		return limit
+func regimeIndex(r machine.Regime) int {
+	if len(r) == 2 && r[0] == 'R' && r[1] >= '1' && r[1] <= '7' {
+		return int(r[1] - '1')
 	}
-	i := slices.Index(machine.Regimes, r)
+	return -1
+}
+
+// limit is the deepest offset core passes in regime r; alone reports that every other core is at offset 0.
+func (m *Machine) limit(core int, r machine.Regime, workload string, alone bool) int {
+	for _, w := range m.workloadLimits[core] {
+		if w.id == workload {
+			return w.limit
+		}
+	}
+	i := regimeIndex(r)
 	if i < 0 {
 		return 0
 	}
-	if i < len(m.limits[core].Alone) {
-		only := true
-		for c, offset := range profile {
-			if c != core && offset != 0 {
-				only = false
-				break
-			}
-		}
-		if only {
-			return m.limits[core].Alone[i]
-		}
+	if alone && i < len(m.limits[core].Alone) {
+		return m.limits[core].Alone[i]
 	}
 	return m.limits[core].Together[i]
 }
