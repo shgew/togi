@@ -37,7 +37,7 @@ func (b *parkedBoundary) match(atReadback bool) func(journal.Payload, journal.Ev
 			if v.Condition != machine.Parked {
 				b.group, b.intent = 0, 0
 			}
-		case *journal.ProfileChange, *journal.ProfileRestored, *journal.HuntEnd:
+		case *journal.ProfileChange, *journal.HuntEnd:
 			b.group, b.intent = 0, 0
 		case *journal.SMUIntent:
 			restoring := slices.ContainsFunc(e.Cause, func(c int) bool { return slices.Contains(b.baselines, c) })
@@ -103,6 +103,66 @@ func TestParkedApplicationCrash(t *testing.T) {
 	}
 }
 
+// A same-boot resume restores the offsets, which does not close the running hunt group: the tuner runs its parked trial
+// again without a new hunt.group, so a crash in that re-application is a parked crash and the hunt ends direct.
+func TestParkedApplicationCrashAfterSameBootRestore(t *testing.T) {
+	t.Parallel()
+	_, ref := reference(t, small())
+	applied := slices.IndexFunc(ref, func(e journal.Event) bool {
+		p, ok := e.Data.(*journal.ProfileApplied)
+		return ok && p.Condition == machine.Together
+	})
+	if applied < 0 {
+		t.Fatal("reference run never applied the profile")
+	}
+	m := newSim(t, small())
+	in := simInput(t.TempDir(), m)
+	b := &parkedBoundary{}
+	boundary := b.match(true)
+	phase := 0
+	gate := &appendGate{after: true}
+	gate.match = func(p journal.Payload, e journal.Event) bool {
+		bounded := boundary(p, e)
+		switch phase {
+		case 0:
+			return e.Seq == ref[applied].Seq
+		case 1:
+			_, group := p.(*journal.HuntGroup)
+			return group
+		default:
+			return bounded
+		}
+	}
+	gate.do = func(e journal.Event) error {
+		phase++
+		gate.fired, gate.seen = false, 0
+		switch phase {
+		case 1:
+			m.Crash()
+			return machine.ErrCrashed
+		case 2:
+			return errKilled
+		}
+		b.crashes = append(b.crashes, e.Seq)
+		m.Crash()
+		return machine.ErrCrashed
+	}
+	if stop := drive(t, in, gate); stop.Reason != StopCycles {
+		t.Fatalf("stopped with %+v", stop)
+	}
+	events := readEvents(t, in.Dir)
+	if len(b.crashes) != 1 {
+		t.Fatalf("crashed in %d hunt group re-applications, want 1", len(b.crashes))
+	}
+	if b.groups != 1 {
+		t.Fatalf("%d hunt.group events, want 1: the resume must not open a new group", b.groups)
+	}
+	if !slices.ContainsFunc(events, func(e journal.Event) bool { return e.Seq > b.group && e.Kind == journal.KindProfileRestored }) {
+		t.Fatal("the resume did not restore the offsets while the group was open")
+	}
+	checkParkedCrash(t, events, b.crashes[0], b, true)
+}
+
 func checkParkedCrash(t *testing.T, events []journal.Event, crashSeq int, b *parkedBoundary, atReadback bool) {
 	t.Helper()
 	var boot string
@@ -157,9 +217,9 @@ func checkParkedCrash(t *testing.T, events []journal.Event, crashSeq int, b *par
 }
 
 // A hunt.group arms the parked condition for its application's first nonzero write, whatever cause that write cites.
-// It stays armed through the group's parked profile.applied, trial.intent and a crash, because a resumed session may
-// run the same group again without a new hunt.group; a together profile.applied or trial.intent, a profile change and the
-// hunt's end disarm it, so later applications keep their own condition.
+// It stays armed through the group's parked profile.applied, trial.intent, a crash and a restoration, because a resumed
+// session may run the same group again without a new hunt.group; a together profile.applied or trial.intent, a profile
+// change and the hunt's end disarm it, so later applications keep their own condition.
 func TestHuntGroupArmsParkedUntilReplaced(t *testing.T) {
 	t.Parallel()
 	f := newFold()
@@ -194,6 +254,12 @@ func TestHuntGroupArmsParkedUntilReplaced(t *testing.T) {
 	check("parked profile.applied", machine.Parked)
 	fold(&journal.SMUIntent{Op: journal.SMUSet, Core: &core, Offset: -10}, profile)
 	check("write of the same group after its profile.applied", machine.Parked)
+	fold(&journal.ProfileRestored{Offsets: []int{0, 0}}, baseline)
+	check("profile.restored while the group is open", "")
+	fold(&journal.SMUIntent{Op: journal.SMUSet, Core: &core, Offset: 0}, baseline)
+	check("restoration write after profile.restored", "")
+	fold(&journal.SMUIntent{Op: journal.SMUSet, Core: &core, Offset: -10}, profile)
+	check("first nonzero write of the group's re-application after profile.restored", machine.Parked)
 
 	fold(&journal.ProfileApplied{Offsets: []int{-12, -10}, Condition: machine.Together}, profile)
 	check("together profile.applied after the group", machine.Together)

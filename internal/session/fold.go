@@ -104,10 +104,10 @@ type fold struct {
 	kernelRetrySeqs  []int
 	kernelDeadDetail string
 	kernelCursors    map[string]string
-	// huntGroup is set by a hunt.group and stays set through the group's parked profile.applied, parked trial.intent
-	// and any interruption, because a resumed session may run the same recorded group again without a new hunt.group. A
-	// together profile.applied or trial.intent, a profile change or restoration, or the hunt's end clears it. While it
-	// is set, a nonzero write that is not a restoration is the group's parked application and counts as parked from its
+	// huntGroup is set by a hunt.group and stays set through the group's parked profile.applied, parked trial.intent,
+	// a restoration and any interruption, because a resumed session may run the same recorded group again without a new
+	// hunt.group. A together profile.applied or trial.intent, a profile change or the hunt's end clears it. While it is
+	// set, a nonzero write that is not a restoration is the group's parked application and counts as parked from its
 	// first write, before profile.applied.
 	huntGroup bool
 
@@ -182,7 +182,7 @@ func (f *fold) Fold(e journal.Event) {
 		f.huntGroup = f.huntGroup && p.Condition == machine.Parked
 	case *journal.TrialIntent:
 		f.huntGroup = f.huntGroup && p.Condition == machine.Parked
-	case *journal.ProfileChange, *journal.ProfileRestored, *journal.HuntEnd:
+	case *journal.ProfileChange, *journal.HuntEnd:
 		f.huntGroup = false
 	}
 	switch p := e.Data.(type) {
