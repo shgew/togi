@@ -328,15 +328,12 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 		}
 	}
 	if sc.Keys {
-		hints := keyHints(sc.View, p.header.w)
+		var arrival []clause
 		if sc.View == LogView && s.logArrived > 0 {
-			arrival := amber.Render(plural(s.logArrived, "new event") + " · End: latest")
-			hints = keyHints(sc.View, max(p.header.w-ansi.StringWidth(consoleText(arrival))-3, 0))
-			if hints != "" {
-				hints += "   "
-			}
-			hints += arrival
+			count := plural(s.logArrived, "new event")
+			arrival = []clause{{"   ", []form{{amber.Render(count + " · End: latest"), 2}, {amber.Render(count), 2}, {}}}}
 		}
+		hints := keyHints(sc.View, p.header.w, arrival...)
 		c.put(rectangle{p.header.x, p.hint, p.header.w, 1}, 0, 0, hints)
 	}
 	return Drawn{Lines: fit(c.lines(), p.width, sc.Height), Scroll: scroll, Until: until}
@@ -747,13 +744,13 @@ func (s Snapshot) cycleStage(name string, short bool) string {
 	return cycle
 }
 
-func keyHints(view View, width int) string {
+func keyHints(view View, width int, after ...clause) string {
 	type key struct {
 		key, label      string
 		active, current bool
 	}
 	keys := []key{{"?", "help", true, view == HelpView}, {"l", "log", true, view == LogView}, {"esc", "back", view != MainView, false}, {"q", "close view", true, false}}
-	clauses := make([]clause, 0, len(keys))
+	clauses := make([]clause, 0, len(keys)+len(after))
 	for _, k := range keys {
 		style, label := chip, grey
 		if k.current {
@@ -771,7 +768,7 @@ func keyHints(view View, width int) string {
 		}
 		clauses = append(clauses, clause{"   ", forms})
 	}
-	return fitClauses(width, clauses...)
+	return fitClauses(width, append(clauses, after...)...)
 }
 
 // resting is true when no trial is in flight to show, or the session has stopped, met a dead end or just recovered

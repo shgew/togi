@@ -53,6 +53,75 @@ func TestHeldJournalArrivalNoticeFitsFrame(t *testing.T) {
 	}
 }
 
+func TestHeldLogArrivalKeepsKeys(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1000, 0).UTC()
+	keys := []string{"?", "l", "esc", "q"}
+	footer := func(arrivals int, sc Screen) (Drawn, string) {
+		var held heldLog
+		held.apply(Project(warningEvents(logLimit+50)), sc)
+		frame := RenderView(held.apply(Project(warningEvents(logLimit+50+arrivals)), sc), sc, now)
+		return frame, frame.Lines[len(frame.Lines)-1]
+	}
+	for _, arrivals := range []int{1, 8} {
+		count := fmt.Sprintf("%d new events", arrivals)
+		if arrivals == 1 {
+			count = "1 new event"
+		}
+		countWords := strings.Fields(count)
+		wide := Screen{View: LogView, Scroll: 0, Width: 120, Height: 33, Keys: true}
+		_, wideFooter := footer(arrivals, wide)
+		if got := ansi.Strip(wideFooter); !strings.Contains(got, count+" · End: latest") {
+			t.Errorf("%d arrivals: wide notice changed: %q", arrivals, got)
+		}
+		reference := newCanvas(layout{width: 120, height: 1})
+		reference.put(rectangle{w: 120, h: 1}, 0, 0, wideFooter)
+		for _, width := range []int{20, 30, 40, 50} {
+			sc := Screen{View: LogView, Scroll: 0, Width: width, Height: 33, Keys: true}
+			frame, line := footer(arrivals, sc)
+			assertFrameBounds(t, frame, sc)
+			got := ansi.Strip(line)
+			fields := strings.Fields(got)
+			styled := newCanvas(layout{width: width, height: 1})
+			styled.put(rectangle{w: width, h: 1}, 0, 0, line)
+			for _, key := range keys {
+				if !slices.Contains(fields, key) {
+					t.Errorf("%d arrivals width %d: footer lost key %q: %q", arrivals, width, key, got)
+					continue
+				}
+				at := strings.Index(" "+got+" ", " "+key+" ")
+				wantAt := strings.Index(" "+ansi.Strip(wideFooter)+" ", " "+key+" ")
+				if diff := cmp.Diff(reference.cells[0][wantAt].style, styled.cells[0][at].style, cmp.AllowUnexported(sgr{})); diff != "" {
+					t.Errorf("%d arrivals width %d: key %q lost its style (-want +got):\n%s", arrivals, width, key, diff)
+				}
+			}
+			if strings.Contains(got, "...") {
+				t.Errorf("%d arrivals width %d: footer cut text: %q", arrivals, width, got)
+			}
+			if strings.Contains(got, "new") && !strings.Contains(got, count) {
+				t.Errorf("%d arrivals width %d: arrival count cut: %q", arrivals, width, got)
+			}
+			if width == 50 && !strings.Contains(got, count) {
+				t.Errorf("%d arrivals width 50: arrival count has room beside the keys: %q", arrivals, got)
+			}
+		}
+		for _, width := range []int{4, 5, 6, 10} {
+			sc := Screen{View: LogView, Scroll: 0, Width: width, Height: 33, Keys: true}
+			frame, line := footer(arrivals, sc)
+			assertFrameBounds(t, frame, sc)
+			fields := strings.Fields(ansi.Strip(line))
+			if !slices.Contains(fields, "q") {
+				t.Errorf("%d arrivals width %d: closing key must survive first: %q", arrivals, width, ansi.Strip(line))
+			}
+			for _, field := range fields {
+				if !slices.Contains(keys, field) && !slices.Contains(countWords, field) {
+					t.Errorf("%d arrivals width %d: tiny footer cut a key or notice: %q", arrivals, width, ansi.Strip(line))
+				}
+			}
+		}
+	}
+}
+
 func TestHistoryPanelTinyAndTallBudgetsCountDroppedEntries(t *testing.T) {
 	t.Parallel()
 	s := Project(warningEvents(700))

@@ -251,17 +251,25 @@ func renderLogBody(s Snapshot, width, height, scroll int) ([]string, int) {
 	bodyWidth := max(1, width-2)
 	lines := []string{s.logRule(bodyWidth), ""}
 	if len(s.log) == 0 {
-		lines = append(lines, grey.Render("No journal entries yet."))
+		lines = append(lines, grey.Render(cutWords("No journal entries yet.", bodyWidth)))
 	}
 	for _, e := range s.log {
-		stamp := grey.Render(wallSecond(e.at)) + "  "
-		tag := cutWords(vtText(e.tag), 20)
-		prefix := stamp + toneStyle(e.tone).Render(fmt.Sprintf("%-20s", tag)) + "  "
-		room := max(0, bodyWidth-ansi.StringWidth(prefix))
-		text := cutWords(e.text, room)
-		lines = append(lines, prefix+textStyle.Render(text))
+		lines = append(lines, logRow(e, bodyWidth))
 	}
 	return scrollBodyWithBar(lines, width, height, scroll)
+}
+
+// logRow is one journal entry in width cells: the time, the 20-cell event column and the message when a whole word of
+// the message fits beside them, else the time and the event, else the time, else nothing.
+func logRow(e entry, width int) string {
+	stamp := grey.Render(wallSecond(e.at))
+	tag := cutWords(vtText(e.tag), 20)
+	style := toneStyle(e.tone)
+	prefix := stamp + "  " + style.Render(fmt.Sprintf("%-20s", tag)) + "  "
+	if text := cutWords(e.text, width-ansi.StringWidth(prefix)); text != "" {
+		return prefix + textStyle.Render(text)
+	}
+	return fitClauses(width, whole("", stamp), clause{"  ", []form{{style.Render(tag), 0}, {}}})
 }
 
 func scrollBody(lines []string, width, height, scroll int) ([]string, int) {
