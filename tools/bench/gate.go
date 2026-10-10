@@ -111,12 +111,11 @@ func (r gateResult) pass() bool {
 	return r.Refused == "" && !slices.ContainsFunc(r.Criteria, func(c criterion) bool { return !c.Pass })
 }
 
-// judgeGate scores candidate against baseline under g. It refuses unless the baseline is the
-// one g names and every required seed is paired with the metrics its criteria need.
-func judgeGate(g *gate, candidate, baseline []result) gateResult {
+// pairGateRuns checks baseline identity and pairs every required seed with the metrics the gate needs.
+func pairGateRuns(g *gate, candidate, baseline []result) (map[string][]pair, error) {
 	for _, r := range baseline {
 		if r.Ruleset != g.Baseline.Ruleset || !slices.Contains(g.Baseline.Commits, r.Commit) {
-			return gateResult{Refused: fmt.Sprintf("baseline run %s/%d is ruleset %d at %s, not ruleset %d at %s", r.Scenario, r.Seed, r.Ruleset, r.Commit, g.Baseline.Ruleset, strings.Join(g.Baseline.Commits, " or "))}
+			return nil, fmt.Errorf("baseline run %s/%d is ruleset %d at %s, not ruleset %d at %s", r.Scenario, r.Seed, r.Ruleset, r.Commit, g.Baseline.Ruleset, strings.Join(g.Baseline.Commits, " or "))
 		}
 	}
 	index := func(results []result) map[key]result {
@@ -144,7 +143,7 @@ func judgeGate(g *gate, candidate, baseline []result) gateResult {
 				missing = append(missing, "baseline")
 			}
 			if len(missing) > 0 {
-				return gateResult{Refused: fmt.Sprintf("incomplete pairing: %s seed %d has no %s run; the gate needs every %s seed of its scenarios", name, seed, strings.Join(missing, " or "), g.Split)}
+				return nil, fmt.Errorf("incomplete pairing: %s seed %d has no %s run; the gate needs every %s seed of its scenarios", name, seed, strings.Join(missing, " or "), g.Split)
 			}
 			pairs[name] = append(pairs[name], pair{a, b})
 		}
@@ -152,9 +151,19 @@ func judgeGate(g *gate, candidate, baseline []result) gateResult {
 	for _, name := range g.Gated {
 		for _, p := range pairs[name] {
 			if p.candidate.WorstR7HazardPerH == nil || p.baseline.WorstR7HazardPerH == nil {
-				return gateResult{Refused: fmt.Sprintf("%s seed %d lacks worst_r7_hazard_per_h on a run", name, p.candidate.Seed)}
+				return nil, fmt.Errorf("%s seed %d lacks worst_r7_hazard_per_h on a run", name, p.candidate.Seed)
 			}
 		}
+	}
+	return pairs, nil
+}
+
+// judgeGate scores candidate against baseline under g. It refuses unless the baseline is the
+// one g names and every required seed is paired with the metrics its criteria need.
+func judgeGate(g *gate, candidate, baseline []result) gateResult {
+	pairs, err := pairGateRuns(g, candidate, baseline)
+	if err != nil {
+		return gateResult{Refused: err.Error()}
 	}
 
 	var out gateResult
