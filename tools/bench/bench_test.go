@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"math"
-	"slices"
 	"testing"
 	"time"
 
@@ -201,23 +200,5 @@ func TestBootCapRunIsCensoredCost(t *testing.T) {
 	}{"censored", 3, true}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("capped run record (-want +got):\n%s", diff)
-	}
-}
-
-func TestSimulatorEnv(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		env, want []string
-	}{
-		{"defaults", []string{"PATH=/bin"}, []string{"PATH=/bin", "GOGC=400", "GOMAXPROCS=2"}},
-		{"explicit GOGC", []string{"GOGC=100"}, []string{"GOGC=100", "GOMAXPROCS=2"}},
-		{"explicit GOMAXPROCS", []string{"GOMAXPROCS=8"}, []string{"GOMAXPROCS=8", "GOGC=400"}},
-		{"both", []string{"GOGC=off", "GOMAXPROCS=1"}, []string{"GOGC=off", "GOMAXPROCS=1"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if diff := cmp.Diff(tc.want, simulatorEnv(slices.Clone(tc.env))); diff != "" {
-				t.Fatal(diff)
-			}
-		})
 	}
 }

@@ -426,7 +426,6 @@ func launchSimulator(parent context.Context, binary, root string, spec runSpec, 
 	}
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Stdout, cmd.Stderr = log, log
-	cmd.Env = simulatorEnv(os.Environ())
 	started := time.Now()
 	err = cmd.Run()
 	wall := time.Since(started).Seconds()
@@ -452,19 +451,6 @@ func launchSimulator(parent context.Context, binary, root string, spec runSpec, 
 		cpu = (cmd.ProcessState.UserTime() + cmd.ProcessState.SystemTime()).Seconds()
 	}
 	return simulation{dir: dir, exit: exit, wall: wall, cpu: cpu}, nil
-}
-
-// simulatorEnv adds the garbage collector settings that make a suite of single-threaded simulators cheapest to the
-// environment of one simulator child, unless it already sets them: a collection every four times the live heap, and
-// two threads each, so that dozens of children in parallel do not oversubscribe the host with collector threads.
-func simulatorEnv(env []string) []string {
-	for _, setting := range []string{"GOGC=400", "GOMAXPROCS=2"} {
-		name, _, _ := strings.Cut(setting, "=")
-		if !slices.ContainsFunc(env, func(entry string) bool { return strings.HasPrefix(entry, name+"=") }) {
-			env = append(env, setting)
-		}
-	}
-	return env
 }
 
 func runDir(root string, spec runSpec) string {
