@@ -58,6 +58,9 @@ type Input struct {
 	// in Warm for Warm.TakePending. Journal.WriteState must not fail and nothing may read the written state while the
 	// run is in progress, which holds for the simulator's in-memory journal.
 	DeferState bool
+	// CheckTuner, when non-nil, runs after every tuner.Next with the state it asked; an error ends the run. It is a
+	// development check for the simulator: togi run leaves it nil.
+	CheckTuner func(*tuner.State) error
 }
 
 type Bootloader interface {
@@ -1194,6 +1197,11 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 			return deref(stop), err
 		}
 		a := r.tuner.Next()
+		if r.in.CheckTuner != nil {
+			if err := r.in.CheckTuner(r.tuner); err != nil {
+				return Stop{}, fmt.Errorf("check tuner after event %d: %w", r.folded, err)
+			}
+		}
 		switch a.Kind {
 		case tuner.Decide:
 			if d, ok := a.Payload.(*journal.DeadEnd); ok {

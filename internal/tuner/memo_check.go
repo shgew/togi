@@ -6,9 +6,10 @@ import (
 	"slices"
 )
 
-// CheckMemos recomputes every index and every memo State still holds as valid, and reports the first that differs
-// from what the folded events give. Deep also checks the per-trial derived requests, which cost a pass over the
-// ledger.
+// CheckMemos is a development check: it recomputes every index and every memo State still holds as valid, and reports
+// the first that differs from what the folded events give. Deep also checks the ledger indexes and the per-trial
+// derived requests, which cost a pass over the ledger. It costs a recomputation of what the memos save: tests and
+// tools/sim --check-memos call it, togi run never does.
 func CheckMemos(s *State, deep bool) error {
 	g := &s.checking
 	if s.reqByStep != nil && s.reqEpoch == s.checkingEpoch {
@@ -87,8 +88,10 @@ func CheckMemos(s *State, deep bool) error {
 	}
 	measurements := s.measurements
 	s.indexMeasurements()
-	if !reflect.DeepEqual(measurements, s.measurements) && (len(measurements) != 0 || len(s.measurements) != 0) {
-		return fmt.Errorf("measurement index = %v, want %v", measurements, s.measurements)
+	fresh := s.measurements
+	s.measurements = measurements
+	if !reflect.DeepEqual(measurements, fresh) && (len(measurements) != 0 || len(fresh) != 0) {
+		return fmt.Errorf("measurement index = %v, want %v", measurements, fresh)
 	}
 	bySeq := map[int]entry{}
 	for _, entries := range s.ledger {

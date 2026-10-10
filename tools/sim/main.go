@@ -19,6 +19,7 @@ import (
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/simrun"
+	"github.com/shgew/togi/internal/tuner"
 	"github.com/shgew/togi/tools/trialfacts"
 )
 
@@ -38,6 +39,7 @@ func run(args []string, stderr io.Writer) int {
 	maxBoots := flags.Int("max-boots", 1000, "stop with exit status 3 if the session is still running after `N` simulated boots")
 	verifyEvery := flags.Int("verify-every", 0, "after every `N`th simulated crash, replay the whole journal into fresh state and fail unless it equals the state the next boot resumes from; 0 checks only when the session stops")
 	coldBoots := flags.Bool("cold-boots", false, "replay the whole journal at every boot, as togi run does, instead of resuming from the state the crashed boot folded")
+	checkMemos := flags.Bool("check-memos", false, "after every tuner step, recompute the tuner's indexes and memos from the folded events and fail the run on the first that differs; much slower, a development check")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
 		return 0
 	} else if err != nil {
@@ -98,12 +100,20 @@ func run(args []string, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "sim: %v\n", err)
 		return 1
 	}
+	var checkTuner func(*tuner.State) error
+	if *checkMemos {
+		steps := 0
+		checkTuner = func(s *tuner.State) error {
+			steps++
+			return tuner.CheckMemos(s, steps%64 == 0)
+		}
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	renderer := render.NewRenderer(stderr, os.Getenv)
 	log, flush := bufferedLog(stderr)
 	defer flush()
-	stop, err := simrun.Simulate(ctx, simrun.Input{Config: recorded, ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: log, Renderer: renderer, Cycles: *cycles, InMemoryJournal: true, WriteSamples: *samples, MaxBoots: *maxBoots, ColdBoots: *coldBoots, VerifyEvery: *verifyEvery})
+	stop, err := simrun.Simulate(ctx, simrun.Input{Config: recorded, ConfigPath: config.DefaultPath, Dir: *dir, Machine: m, Log: log, Renderer: renderer, Cycles: *cycles, InMemoryJournal: true, WriteSamples: *samples, MaxBoots: *maxBoots, ColdBoots: *coldBoots, VerifyEvery: *verifyEvery, CheckTuner: checkTuner})
 	if errors.Is(err, simrun.ErrBootCap) {
 		fmt.Fprintf(log, "sim: %v\n", err)
 		return 3

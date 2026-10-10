@@ -16,6 +16,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 func sharedVoltageConfig(t *testing.T, seed uint64) sim.Config {
@@ -574,5 +575,37 @@ func TestRecordedConfigWithoutJournalIsFresh(t *testing.T) {
 	}
 	if diff := cmp.Diff(fresh, got); diff != "" {
 		t.Fatalf("configuration of an empty state directory (-want +got):\n%s", diff)
+	}
+}
+
+func TestCheckTunerRunsAfterTunerStepsAndAFailureEndsTheRun(t *testing.T) {
+	t.Parallel()
+	errStale := errors.New("stale memo")
+	for _, tc := range []struct {
+		name   string
+		failAt int
+	}{{"passing check", 0}, {"failing check", 5}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m, err := sim.New(huntConfig(2))
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			check := func(*tuner.State) error {
+				calls++
+				if calls == tc.failAt {
+					return errStale
+				}
+				return nil
+			}
+			_, err = Simulate(context.Background(), Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: t.TempDir(), Machine: m, Cycles: 1, InMemoryJournal: true, CheckTuner: check})
+			if tc.failAt == 0 && (err != nil || calls == 0) {
+				t.Fatalf("passing check: %d calls, error %v", calls, err)
+			}
+			if tc.failAt > 0 && (!errors.Is(err, errStale) || calls != tc.failAt) {
+				t.Fatalf("failing check: %d calls, error %v, want the run to end at call %d with the check's error", calls, err, tc.failAt)
+			}
+		})
 	}
 }

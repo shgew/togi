@@ -20,6 +20,7 @@ import (
 	"github.com/shgew/togi/internal/render"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 const defaultMaxBoots = 1000
@@ -95,6 +96,8 @@ type Input struct {
 	// equals the state the next boot would resume from; 0 verifies only when the invocation ends: the session stops, an
 	// error ends it or it reaches the boot cap.
 	VerifyEvery int
+	// CheckTuner is session.Input.CheckTuner for every boot.
+	CheckTuner func(*tuner.State) error
 	// verify replaces (*session.Warm).Verify when set; tests observe the checks through it.
 	verify func(*session.Warm, []journal.Event) error
 }
@@ -203,7 +206,7 @@ func boot(ctx context.Context, in Input, journals *journals, warm *session.Warm)
 		wrapped = in.Wrap(wrapped)
 	}
 	journals.last = wrapped
-	return session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Carry: j.carried, Stderr: in.Log, Log: in.Log, Renderer: in.Renderer, SessionID: j.sessionID, Warm: warm, DeferState: in.InMemoryJournal})
+	return session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Carry: j.carried, Stderr: in.Log, Log: in.Log, Renderer: in.Renderer, SessionID: j.sessionID, Warm: warm, DeferState: in.InMemoryJournal, CheckTuner: in.CheckTuner})
 }
 
 // journals gives each boot its journal: one locked for the boot and closed when it ends or, with InMemoryJournal, one
