@@ -22,7 +22,7 @@ _Avoid_: CCX, chiplet
 
 **Offset**:
 A core's Curve Optimizer value in counts, from -50 to 0.
-_Avoid_: undervolt, margin, voltage, CO value
+_Avoid_: undervolt, voltage, CO value
 
 **Deeper / Shallower**:
 More negative / less negative offset.
@@ -118,12 +118,28 @@ The hunt of an unattributed multi-core R7 failure whose unloaded cores were not 
 A hunt's parked trial after it finds a combination, which moves one member to find how shallow it must be for the combination to pass ([Hunt](docs/spec/tuner.md#hunt)).
 _Avoid_: edge probe
 
+**Margin**:
+The one count by which a core's checking starts shallower than its solo limit. A method constant, not fitted to any machine ([Phase 1](docs/spec/tuner.md#phase-1)).
+_Avoid_: tolerance, safety offset
+
+**Phase 1**:
+Checking from the margin offsets until the first passed full cycle that ends after every core left search. It never deepens: group failures only step cores back ([Phase 1](docs/spec/tuner.md#phase-1)).
+
+**Phase 2**:
+The bounded phase after phase 1: rounds that move each candidate one count toward its solo limit, then the confirmation cycle ([Phase 2](docs/spec/tuner.md#phase-2)).
+
 **Deepening**:
-Rounds that move the profile toward the greatest total depth permitted by its failure points and combinations.
+Phase 2's rounds: each moves every candidate one count toward its solo limit and checks the moved cores. Nothing deepens outside search and these rounds.
 _Avoid_: refinement, refine
 
+**Confirmed profile**:
+The profile of phase 1's first passed full cycle (the first confirmed profile), then that of the confirmation cycle's passed full end.
+
+**Confirmation cycle**:
+The cycle that starts once phase 1 has ended and no round is due. Its first passed full end concludes phase 2; checking then continues indefinitely without deepening ([Phase 2](docs/spec/tuner.md#phase-2)).
+
 **Checking**:
-Testing together across all regimes; it continues after search and deepening finish.
+Testing together across all regimes; it continues indefinitely after phase 2 concludes.
 _Avoid_: guard
 
 **Cycle**:
@@ -135,7 +151,7 @@ A cycle covering every R1 and R2 workload on every core, every part of every R7 
 _Avoid_: qualifying rotation
 
 **Clean cycle**:
-A passed full cycle that ended with every core at its limit and remains valid for the current profile under checking's evidence rules. A passed cycle can be not clean because room remained and deepening reopened afterwards, not because it ended on a failed trial.
+A passed full cycle that ended at or after phase 2's conclusion. The phase-1 cycle never counts, and nothing earlier is credited. A passed cycle can be not clean because it ended before the conclusion, not because it ended on a failed trial ([Checking](docs/spec/tuner.md#checking)).
 _Avoid_: qualified rotation
 
 **Passed cycle**:
@@ -179,7 +195,7 @@ A core at -50, or one for which one more count deeper would reach a failure poin
 _Avoid_: done
 
 **Has room**:
-A core that has finished search but is not at its limit: at least one count deeper is within [-50, 0] and does not reach a failure point or combination.
+A core that has finished search but is not at its limit: at least one count deeper is within [-50, 0] and does not reach a failure point or combination. A descriptive phase: only a has-room core shallower than its solo limit is a phase-2 candidate.
 _Avoid_: resident (core state or phase)
 
 **Carried failure point**:
@@ -193,7 +209,7 @@ A decisive trial outcome or idle failure copied into a later same-BIOS session, 
 The compatibility version of trial outcomes: workload content, the backend configuration togi generates, intended durations, and pass/failure detection ([Evidence compatibility](docs/spec/workloads.md#evidence-compatibility)).
 
 **Solo limit**:
-A core's checked candidate solo limit, tested alone; deepening together may move its offset.
+A core's checked candidate solo limit, tested alone. Checking starts one count shallower (the margin); phase 2 may return to it.
 _Avoid_: edge, stable value, optimal offset, result
 
 **Candidate solo limit**:
@@ -210,10 +226,10 @@ A backoff that raises a core's request to a voltage at which the load passed ([R
 A backoff after attribution or a hunt identifies a failed offset or combination, recording the failure point or combination.
 
 **Yield**:
-A deepening move to a shallower offset that allows other cores to move deeper and improve total depth.
+A move back to a core's offset from before a failed phase-2 round, made by a loaded deepened core that is not blamed.
 
 **Ruleset**:
-The hardcoded strategy for search, hunts, deepening, checking and backoffs.
+The hardcoded strategy for search, hunts, the two phases, checking and backoffs.
 
 **Dead end**:
 A condition under which togi cannot make progress and stops itself.

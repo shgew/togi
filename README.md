@@ -5,7 +5,7 @@
 
 Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them through full checking cycles. Choose how long to keep testing with `run --cycles N`, or let checking continue indefinitely.
 
-- [Searches](docs/spec/tuner.md#search) each core alone, makes multi-core R7 cores [self-sufficient](docs/spec/tuner.md#r7-request-order-and-attribution), [hunts](docs/spec/tuner.md#hunt) unattributed failures outside multi-core R7 and on the idle cores of a failed multi-core R7 load, then [deepens](docs/spec/tuner.md#deepening) the profile before continuing [checking](docs/spec/tuner.md#checking).
+- [Searches](docs/spec/tuner.md#search) each core alone, makes multi-core R7 cores [self-sufficient](docs/spec/tuner.md#r7-request-order-and-attribution), [hunts](docs/spec/tuner.md#hunt) unattributed failures outside multi-core R7 and on the idle cores of a failed multi-core R7 load, starts [checking](docs/spec/tuner.md#phase-1) one count shallower than each solo limit, [takes that margin back](docs/spec/tuner.md#phase-2) in a bounded phase 2 and confirms it before continuing [checking](docs/spec/tuner.md#checking).
 - Tests with self-checking workloads (mprime, y-cruncher) across light, heavy, load-step, medium, SMT, idle and all-core regimes.
 - Survives crashes: the next run reads its journal, attributes the crash and continues.
 - Records every action in a plain-text journal you can read to see what it did and why.
@@ -16,9 +16,9 @@ Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains,
 ## Status
 
 Works today, on a simulated 16-core machine:
-- the full simulated tuning lifecycle: per-core search, failure hunts, combinations, deepening together, full checking cycles, crash resume and reset;
+- the full simulated tuning lifecycle: per-core search, failure hunts, combinations, the two tuning phases, full checking cycles, crash resume and reset;
 - a seeded session after a ruleset update or BIOS change, carrying what [Transitions](docs/spec/journal.md#transitions) and [Fact eligibility](docs/spec/journal.md#fact-eligibility) allow;
-- evidence-based hunt duration and singleton-probe scheduling ([Hunt](docs/spec/tuner.md#hunt)), and credit for an earlier clean cycle ([Checking](docs/spec/tuner.md#checking));
+- evidence-based hunt duration and singleton-probe scheduling ([Hunt](docs/spec/tuner.md#hunt));
 - R7 full parts and partial chains ([Together trial sequence](docs/spec/tuner.md#together-trial-sequence)), with [voltage-targeted backoff](docs/spec/tuner.md#r7-voltage-targeted-backoff) of multi-core R7 failures and [located hunts](docs/spec/tuner.md#hunt) of unattributed ones;
 - an all-zero rerun before a failure at CO 0 stops tuning ([Dead ends](docs/spec/tuner.md#dead-ends));
 - reading a session's hunt, combinations, clean cycles, top requesters, per-workload self-sufficiency, valid trials and Tctl peak with `status`, `events` and the live `watch` dashboard ([Commands](docs/spec/runtime.md#commands)).
@@ -40,7 +40,7 @@ Not yet:
 togi --version                         # version and git revision of this build
 sudo togi doctor                       # check this machine is ready for a run, without starting a session or writing the journal
 sudo togi run                          # tune this machine; Ctrl-C stops, the next run resumes
-sudo togi run --cycles 3            # stop after three clean cycles when deepening is complete
+sudo togi run --cycles 3            # stop after three clean cycles, counted from phase 2's confirmation
 togi status                            # activity, failure points and combinations, per-core offsets and evidence
 togi watch                             # full-width dashboard: current trial, tuner forecasts, every core
 togi --state-dir <dir> status          # inspect a copied journal
@@ -66,7 +66,7 @@ The dashboard adapts to wide and compact terminals. It shows checking's cycle ch
 |[docs/benchmarking.md](docs/benchmarking.md)|Comparing tuner changes across simulated machines, and forecasting a real run|
 |[CHANGELOG.md](CHANGELOG.md)|What changed, newest first|
 |[GLOSSARY.md](GLOSSARY.md)|The vocabulary: offsets, phases, regimes, clean cycles|
-|[docs/spec/tuner.md](docs/spec/tuner.md)|How offsets are searched, hunted, deepened and checked|
+|[docs/spec/tuner.md](docs/spec/tuner.md)|How offsets are searched, hunted and checked, in two phases|
 |[docs/spec/workloads.md](docs/spec/workloads.md)|The workload regimes and how failures are detected|
 |[docs/spec/journal.md](docs/spec/journal.md)|The journal, its events and the state file|
 |[docs/spec/runtime.md](docs/spec/runtime.md)|Commands, configuration, the tuning boot and the NixOS module|

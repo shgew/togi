@@ -35,7 +35,7 @@ go run ./cmd/togi --state-dir <dir> events --core 3
 go run ./cmd/togi --state-dir <dir> watch
 ```
 
-`status` reports clean cycles since the last deepening, valid per-workload trials and missing full-cycle coverage, and the Tctl peak ([Commands](spec/runtime.md#commands)).
+`status` reports clean cycles, valid per-workload trials and missing full-cycle coverage, and the Tctl peak ([Commands](spec/runtime.md#commands)).
 
 A finished simulation's `watch` shows only its last moment. `just replay --state-dir <dir>` plays the whole journal through the dashboard on a simulated clock, 300 simulated seconds per second by default (`--speed`, which must be finite and positive), starting at `--from SEQ`; the dashboard's keys work as in `watch`. `--at SEQ` prints one frame as of that event instead, `--after 40s` that long after it, `--view help` or `--view log` for those views, with `--width`, `--height` and `--color` as for a frame on a terminal. It also plays a copied real journal.
 
