@@ -144,6 +144,8 @@ func TestLoadMachineInvalidDefinitions(t *testing.T) {
 	core := `{"id":%d,"alone":[-10,-10,-10,-10,-10],"together":[-10,-10,-10,-10,-10,-10,-10]}`
 	for _, tc := range []struct{ name, content, want string }{
 		{"syntax", `{"cores":[`, "load simulator machine"},
+		{"null root", `null`, "want JSON object"},
+		{"null root whitespace", " \n\tnull\r\n", "want JSON object"},
 		{"negative core", fmt.Sprintf(`{"cores":2,"core":[%s]}`, fmt.Sprintf(core, -1)), "invalid or duplicate core -1"},
 		{"outside core", fmt.Sprintf(`{"cores":2,"core":[%s]}`, fmt.Sprintf(core, 2)), "invalid or duplicate core 2"},
 		{"duplicate core", fmt.Sprintf(`{"cores":2,"core":[%s,%s]}`, fmt.Sprintf(core, 0), fmt.Sprintf(core, 0)), "invalid or duplicate core 0"},
@@ -171,6 +173,28 @@ func TestLoadMachineInvalidDefinitions(t *testing.T) {
 				t.Fatalf("load error = %v, want path and %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestLoadMachineEmptyObjectUsesDefaults(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "machine.json")
+	if err := os.WriteFile(path, []byte(" {} \n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadMachine(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := DefaultModel()
+	if cfg.Model == nil {
+		t.Fatal("model is nil")
+	}
+	if diff := cmp.Diff(want, *cfg.Model); diff != "" {
+		t.Fatalf("model mismatch (-want +got):\n%s", diff)
+	}
+	if cfg.Cores != 0 || cfg.Limits != nil || cfg.Script != nil || cfg.Joints != nil {
+		t.Fatalf("empty object config = %+v, want unset topology", cfg)
 	}
 }
 

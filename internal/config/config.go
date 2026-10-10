@@ -83,14 +83,25 @@ func Default() Config {
 }
 
 type file struct {
-	StartOffsets        map[string]int `json:"start_offsets"`
-	CandidateSoloLimits map[string]int `json:"candidate_solo_limits"`
-	Durations           *Durations     `json:"durations"`
-	Evidence            *Evidence      `json:"evidence"`
-	Checking            *Checking      `json:"checking"`
-	DeadEnds            *DeadEnds      `json:"dead_ends"`
-	Backends            *Backends      `json:"backends"`
-	BackendUser         *string        `json:"backend_user"`
+	StartOffsets        map[string]offset `json:"start_offsets"`
+	CandidateSoloLimits map[string]offset `json:"candidate_solo_limits"`
+	Durations           *Durations        `json:"durations"`
+	Evidence            *Evidence         `json:"evidence"`
+	Checking            *Checking         `json:"checking"`
+	DeadEnds            *DeadEnds         `json:"dead_ends"`
+	Backends            *Backends         `json:"backends"`
+	BackendUser         *string           `json:"backend_user"`
+}
+
+// offset is an override value that must be a JSON integer; a null must not
+// silently decode to the valid offset 0.
+type offset int
+
+func (o *offset) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	if dec.PeekKind() == 'n' {
+		return errors.New("offset must be an integer, not null")
+	}
+	return json.UnmarshalDecode(dec, (*int)(o))
 }
 
 func Load(path string) (Config, error) {
@@ -116,6 +127,9 @@ func load(path string) (Config, error) {
 	if json.Unmarshal(data, &removed) == nil && len(removed.Durations.ConfirmationTrialS) > 0 {
 		return Config{}, errors.New("durations.confirmation_trial_s was removed in togi 0.5.0: confirmation no longer exists; delete the key")
 	}
+	if kind := jsontext.Value(data).Kind(); kind != '{' {
+		return Config{}, fmt.Errorf("configuration must be a JSON object, not %v", kind)
+	}
 	if err := json.Unmarshal(data, &f, json.RejectUnknownMembers(true)); err != nil {
 		return Config{}, err
 	}
@@ -131,17 +145,17 @@ func load(path string) (Config, error) {
 	return c, nil
 }
 
-func convertOffsets(table string, in map[string]int, out map[int]int) error {
+func convertOffsets(table string, in map[string]offset, out map[int]int) error {
 	keys := slices.Sorted(maps.Keys(in))
 	for _, key := range keys {
 		core, err := strconv.Atoi(key)
 		if err != nil || core < 0 || strconv.Itoa(core) != key {
 			return fmt.Errorf("%s.%q: core must be a non-negative integer", table, key)
 		}
-		out[core] = in[key]
+		out[core] = int(in[key])
 	}
 	for _, key := range keys {
-		if v := in[key]; v < machine.MinOffset || v > machine.MaxOffset {
+		if v := int(in[key]); v < machine.MinOffset || v > machine.MaxOffset {
 			return fmt.Errorf("%s.%q = %d: offset must be within [%d, %d]", table, key, v, machine.MinOffset, machine.MaxOffset)
 		}
 	}

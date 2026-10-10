@@ -89,6 +89,10 @@ func LoadMachine(path string) (Config, error) {
 	if err := json.Unmarshal(data, &f, json.RejectUnknownMembers(true)); err != nil {
 		return Config{}, fmt.Errorf("load simulator machine %s: %w", path, err)
 	}
+	// A null root unmarshals cleanly into the zero file; machine documents must be objects.
+	if kind := jsontext.Value(data).Kind(); kind != '{' {
+		return Config{}, fmt.Errorf("load simulator machine %s: root is %v, want JSON object", path, kind)
+	}
 	cfg := Config{Cores: f.Cores, BIOS: f.BIOS, Ranking: f.Ranking, OldKernel: f.OldKernel, Facts: f.Facts}
 	cfg.CCD = f.CCD
 	cfg.SharedVoltage = f.SharedVoltage

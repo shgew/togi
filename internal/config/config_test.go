@@ -25,6 +25,10 @@ func TestLoad(t *testing.T) {
 	soloLimits := Default()
 	soloLimits.StartOffsets = map[int]int{2: -5}
 	soloLimits.CandidateSoloLimits = map[int]int{3: -36}
+	zeroOffset := Default()
+	zeroOffset.StartOffsets = map[int]int{3: 0}
+	zeroLimit := Default()
+	zeroLimit.CandidateSoloLimits = map[int]int{3: 0}
 	cycle := Default()
 	allCore := Default()
 	allCore.Durations.CheckingAllCoreS = 4
@@ -41,6 +45,13 @@ func TestLoad(t *testing.T) {
 	}{
 		{name: "empty object", content: `{}`, want: Default()},
 		{name: "empty file", content: "", reject: true},
+		{name: "null root", content: " \n\tnull\n ", wantErr: "configuration must be a JSON object, not null"},
+		{name: "array root", content: `[]`, wantErr: "configuration must be a JSON object, not ["},
+		{name: "null start offset", content: `{"start_offsets":{"3":null}}`, wantErr: "offset must be an integer, not null"},
+		{name: "null candidate solo limit", content: `{"candidate_solo_limits":{"3":null}}`, wantErr: "offset must be an integer, not null"},
+		{name: "zero start offset", content: `{"start_offsets":{"3":0}}`, want: zeroOffset},
+		{name: "zero candidate solo limit", content: `{"candidate_solo_limits":{"3":0}}`, want: zeroLimit},
+		{name: "empty offset tables", content: `{"start_offsets":{},"candidate_solo_limits":{}}`, want: Default()},
 		{name: "backend user", content: `{"backend_user":"togi-trial"}`, want: user},
 		{name: "backend user wrong type", content: `{"backend_user":1001}`, reject: true},
 		{name: "partial file", content: `{"durations":{"search_trial_s":60}}`, want: partial},

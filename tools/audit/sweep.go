@@ -36,22 +36,10 @@ type runRecord struct {
 }
 
 func sweep(o options, _, stderr io.Writer) (string, string, error) {
-	var input suite
-	data, err := os.ReadFile(o.suite)
+	input, err := loadSweepSuite(o.suite, o.seeds)
 	if err != nil {
-		return "", "", fmt.Errorf("read suite: %w", err)
+		return "", "", err
 	}
-	if err := jsonv2.Unmarshal(data, &input, jsonv2.RejectUnknownMembers(true)); err != nil {
-		return "", "", fmt.Errorf("read suite: %w", err)
-	}
-	if len(input.Scenarios) == 0 {
-		return "", "", fmt.Errorf("suite has no scenarios")
-	}
-	source, err := filepath.Abs(filepath.Dir(o.suite))
-	if err != nil {
-		return "", "", fmt.Errorf("resolve suite: %w", err)
-	}
-	input = sweepSuite(input, source, o.seeds)
 	parent := o.keep
 	if parent == "" {
 		parent, err = os.MkdirTemp("", "togi-audit-")
@@ -67,12 +55,8 @@ func sweep(o options, _, stderr io.Writer) (string, string, error) {
 		return "", "", fmt.Errorf("create sweep directory: %w", err)
 	}
 	suitePath := filepath.Join(evidence, "suite.json")
-	encoded, err := jsonv2.Marshal(input, jsontext.WithIndent("  "))
-	if err != nil {
-		return "", "", fmt.Errorf("write sweep suite: %w", err)
-	}
-	if err := os.WriteFile(suitePath, append(encoded, '\n'), 0o644); err != nil {
-		return "", "", fmt.Errorf("write sweep suite: %w", err)
+	if err := writeSweepSuite(suitePath, input); err != nil {
+		return "", "", err
 	}
 	records := filepath.Join(evidence, "records.jsonl")
 	log, err := os.Create(filepath.Join(evidence, "bench.log"))
@@ -106,6 +90,39 @@ func sweep(o options, _, stderr io.Writer) (string, string, error) {
 	}
 	fmt.Fprintf(stderr, "audit: records=%s root=%s\n", records, roots[0])
 	return records, roots[0], nil
+}
+
+// loadSweepSuite strictly reads the audit suite at path and returns it as a dev-only sweep over seeds 1..seeds,
+// with relative machine paths resolved against the suite's directory.
+func loadSweepSuite(path string, seeds int) (suite, error) {
+	var input suite
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return suite{}, fmt.Errorf("read suite: %w", err)
+	}
+	if err := jsonv2.Unmarshal(data, &input, jsonv2.RejectUnknownMembers(true)); err != nil {
+		return suite{}, fmt.Errorf("read suite: %w", err)
+	}
+	if len(input.Scenarios) == 0 {
+		return suite{}, fmt.Errorf("suite has no scenarios")
+	}
+	source, err := filepath.Abs(filepath.Dir(path))
+	if err != nil {
+		return suite{}, fmt.Errorf("resolve suite: %w", err)
+	}
+	return sweepSuite(input, source, seeds), nil
+}
+
+// writeSweepSuite writes s as the suite file tools/bench reads.
+func writeSweepSuite(path string, s suite) error {
+	encoded, err := jsonv2.Marshal(s, jsontext.WithIndent("  "))
+	if err != nil {
+		return fmt.Errorf("write sweep suite: %w", err)
+	}
+	if err := os.WriteFile(path, append(encoded, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write sweep suite: %w", err)
+	}
+	return nil
 }
 
 func sweepSuite(input suite, base string, seeds int) suite {
