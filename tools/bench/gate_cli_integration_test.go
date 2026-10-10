@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,9 +17,44 @@ import (
 	"github.com/shgew/togi/internal/sim"
 )
 
+// hermeticGit points every Git command of the test, including the bench's own, at a fresh repository with one commit
+// whose work tree is the current source root, so the run needs no checkout metadata: source archives have no .git.
+// Host config, inherited repository overrides and the user's identity cannot reach it.
+func hermeticGit(t *testing.T) {
+	t.Helper()
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_NAMESPACE", "GIT_CEILING_DIRECTORIES"} {
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_AUTHOR_NAME", "Bench Test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "bench@example.com")
+	t.Setenv("GIT_AUTHOR_DATE", "2000-01-01T00:00:00Z")
+	t.Setenv("GIT_COMMITTER_NAME", "Bench Test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "bench@example.com")
+	t.Setenv("GIT_COMMITTER_DATE", "2000-01-01T00:00:00Z")
+	fixture := t.TempDir()
+	t.Setenv("GIT_DIR", filepath.Join(fixture, ".git"))
+	t.Setenv("GIT_WORK_TREE", fixture)
+	for _, args := range [][]string{{"init", "--initial-branch=main", "--template="}, {"commit", "--allow-empty", "--no-verify", "-m", "Fixture"}} {
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, out)
+		}
+	}
+	t.Setenv("GIT_WORK_TREE", root)
+}
+
 func TestGateCLIIntegration(t *testing.T) {
 	// execute builds ./tools/sim from the repository root, as the bench command does.
 	t.Chdir(filepath.Join("..", ".."))
+	hermeticGit(t)
 	dir := t.TempDir()
 	writeTOML := func(t *testing.T, path string, value any) {
 		t.Helper()
