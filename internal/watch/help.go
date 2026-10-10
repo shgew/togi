@@ -158,7 +158,7 @@ func helpSectionLines(section helpSection, width int, spaced bool) []string {
 		for row, line := range text {
 			label := strings.Repeat(" ", labelWidth)
 			if row == 0 {
-				name := ansi.Truncate(item.label, labelWidth-1, "")
+				name := cutWords(item.label, labelWidth-1)
 				label = white.Render(name) + strings.Repeat(" ", labelWidth-ansi.StringWidth(name))
 			}
 			out = append(out, ansi.Truncate(label+line, width, ""))
@@ -171,6 +171,11 @@ func helpSectionLines(section helpSection, width int, spaced bool) []string {
 }
 
 func helpRule(title string, width int) string {
+	width = max(width, 0)
+	title = cutWords(title, width)
+	if ansi.StringWidth(title) == width {
+		return white.Render(title)
+	}
 	return white.Render(title) + " " + grey.Render(strings.Repeat("─", max(0, width-ansi.StringWidth(title)-1)))
 }
 

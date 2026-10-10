@@ -263,9 +263,12 @@ func boundedRows(lines []string, height int) []string {
 
 func rule(width int, title, right string) string {
 	width = max(width, 0)
-	title = ansi.Truncate(title, width, "")
+	title = cutWords(title, width)
 	tw, rw := ansi.StringWidth(title), ansi.StringWidth(right)
 	if rw == 0 || tw+rw+2 > width {
+		if tw == width {
+			return title
+		}
 		return title + " " + track.Render(strings.Repeat("─", max(width-tw-1, 0)))
 	}
 	return title + " " + track.Render(strings.Repeat("─", width-tw-rw-2)) + " " + right
@@ -325,10 +328,10 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 		}
 	}
 	if sc.Keys {
-		hints := keyHints(sc.View)
+		hints := keyHints(sc.View, p.header.w)
 		if sc.View == LogView && s.logArrived > 0 {
 			arrival := amber.Render(plural(s.logArrived, "new event") + " · End: latest")
-			hints = trimWords(hints, p.header.w-ansi.StringWidth(consoleText(arrival))-3)
+			hints = keyHints(sc.View, max(p.header.w-ansi.StringWidth(consoleText(arrival))-3, 0))
 			if hints != "" {
 				hints += "   "
 			}
@@ -352,6 +355,10 @@ func (s Snapshot) r7Lines(p layout) []string {
 		name, top = 30, 24
 	case p.class == mediumLayout && width >= 70:
 		name, top = 24, 20
+	}
+	if width < name+top+1 {
+		name = min(name, max(width-1-len("by offset"), 0))
+		top = max(width-name-1, 0)
 	}
 	current := s.r7Workload()
 	out := []string{r7Rule(width, name, top)}
@@ -394,8 +401,12 @@ func (s Snapshot) r7Lines(p layout) []string {
 		if w.ID == current {
 			style = textStyle
 		}
-		line := asciiCell(label, name) + " " + asciiCell(topCell(measured, byOffset, top), top) + " " + suff
-		out = append(out, style.Render(ansi.Truncate(line, width, "...")))
+		line := fitClauses(width,
+			whole("", asciiCell(label, name)),
+			whole(" ", asciiCell(topCell(measured, byOffset, top), top)),
+			clause{" ", []form{{suff, 1}, {}}},
+		)
+		out = append(out, style.Render(line))
 	}
 	return out
 }
@@ -405,26 +416,24 @@ func (s Snapshot) r7Lines(p layout) []string {
 func topCell(measured, byOffset []int, width int) string {
 	const by = " by offset"
 	m, o := coreIDs(measured), coreIDs(byOffset)
-	switch {
-	case len(byOffset) == 0:
-		return cmp.Or(m, "-")
-	case len(measured) == 0:
-		if ansi.StringWidth(o+by) <= width {
-			return o + by
+	if len(byOffset) == 0 {
+		return cutWords(cmp.Or(m, "-"), width)
+	}
+	if len(measured) > 0 {
+		if both := m + "; " + o + by; ansi.StringWidth(both) <= width {
+			return both
 		}
-		return ansi.Truncate(o, width-len(by), "...") + by
+		if kept := cutWords(m, width-len("; ")-ansi.StringWidth(o+by)); kept != "" {
+			return kept + "; " + o + by
+		}
 	}
-	if both := m + "; " + o + by; ansi.StringWidth(both) <= width {
-		return both
+	if kept := cutWords(o, width-len(by)); kept != "" {
+		return kept + by
 	}
-	if room := width - len("; ") - ansi.StringWidth(o+by); room >= len("0...") {
-		return ansi.Truncate(m, room, "...") + "; " + o + by
+	if width >= len("by offset") {
+		return "by offset"
 	}
-	if room := width - len("...; ") - len(by); room >= min(ansi.StringWidth(o), len("0...")) {
-		return "...; " + ansi.Truncate(o, room, "...") + by
-	}
-	// Too narrow for both: the measured list shrinks to its cut marker.
-	return "...;" + ansi.Truncate(o, width-len("...;")-len(by), "...") + by
+	return ""
 }
 
 // r7Rule heads the R7 lines with its column names; on a wide panel it says the evidence is no guarantee.
@@ -442,12 +451,23 @@ func r7Rule(width, name, top int) string {
 	if rest := width - ansi.StringWidth(line) - 1; rest > 0 {
 		return line + " " + dashes(rest)
 	}
-	return ansi.Truncate(line, width, "")
+	if ansi.StringWidth(line) <= width {
+		return line
+	}
+	line = fitClauses(width,
+		whole("", grey.Render("R7")),
+		clause{" ", []form{{grey.Render(topLabel), 2}, {grey.Render("top"), 1}, {}}},
+		clause{" ", []form{{grey.Render("self-sufficient"), 1}, {}}},
+	)
+	if rest := width - ansi.StringWidth(line) - 1; rest > 0 {
+		line += " " + dashes(rest)
+	}
+	return line
 }
 
-// asciiCell fits plain text to exactly width cells, cutting it with an ASCII marker the console font can draw.
+// asciiCell pads whole-word fitted text to exactly width cells.
 func asciiCell(text string, width int) string {
-	text = ansi.Truncate(text, width, "...")
+	text = cutWords(text, width)
 	return text + strings.Repeat(" ", max(width-ansi.StringWidth(text), 0))
 }
 
@@ -723,13 +743,13 @@ func (s Snapshot) cycleStage(name string, short bool) string {
 	return cycle
 }
 
-func keyHints(view View) string {
+func keyHints(view View, width int) string {
 	type key struct {
 		key, label      string
 		active, current bool
 	}
 	keys := []key{{"?", "help", true, view == HelpView}, {"l", "log", true, view == LogView}, {"esc", "back", view != MainView, false}, {"q", "close view", true, false}}
-	parts := make([]string, 0, len(keys))
+	clauses := make([]clause, 0, len(keys))
 	for _, k := range keys {
 		style, label := chip, grey
 		if k.current {
@@ -737,9 +757,17 @@ func keyHints(view View) string {
 		} else if !k.active {
 			style, label = track, track
 		}
-		parts = append(parts, style.Render(" "+k.key+" ")+" "+label.Render(k.label))
+		forms := []form{{style.Render(" "+k.key+" ") + " " + label.Render(k.label), 10}}
+		if k.key == "q" {
+			forms = append(forms, form{style.Render(" q ") + " " + label.Render("close"), 10})
+		}
+		forms = append(forms, form{style.Render(k.key), 1})
+		if k.key != "q" {
+			forms = append(forms, form{})
+		}
+		clauses = append(clauses, clause{"   ", forms})
 	}
-	return strings.Join(parts, "   ")
+	return fitClauses(width, clauses...)
 }
 
 // resting is true when no trial is in flight to show, or the session has stopped, met a dead end or just recovered
@@ -1562,8 +1590,7 @@ func fitClauses(width int, clauses ...clause) string {
 }
 
 // cutWords fits text to width cells as the console will show it, after consoleText escapes glyphs it cannot draw.
-// Text that does not fit keeps the whole words that fit and ends with cutMarker, alone when no word fits; under the
-// marker's width it is left out.
+// Text that does not fit keeps the whole words that fit and ends with cutMarker, or is left out when no word fits.
 func cutWords(text string, width int) string {
 	if width <= 0 {
 		return ""
@@ -1582,6 +1609,9 @@ func cutWords(text string, width int) string {
 		kept = kept[:max(strings.LastIndexByte(kept, ' '), 0)]
 	}
 	kept = strings.TrimRight(kept, " ·→,;:")
+	if kept == "" {
+		return ""
+	}
 	return ansi.Truncate(text, ansi.StringWidth(kept)+len(cutMarker), cutMarker)
 }
 

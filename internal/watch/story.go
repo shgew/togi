@@ -1303,7 +1303,7 @@ func workloadDisplayID(id string) string {
 	return vtText(id)
 }
 
-var nextTrialHead = regexp.MustCompile(`^(→ R\d) \S+ (on (?:core \d+|\d[\d -]*))`)
+var nextTrialHead = regexp.MustCompile(`^(→ R\d) (?:\S+ )+(on (?:core \d+|\d[\d -]*))`)
 
 // tightNext shortens a compact outcome that names the next trial to its regime and the cores it loads, leaving what
 // carries no core as it is.

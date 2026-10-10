@@ -25,7 +25,7 @@
 
   TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 
-    ... this turn                   at   so far                                   00:48  step     core 15 passed 0, next -5
+        this turn                   at   so far                                   00:48  step     core 15 passed 0, next -5
     08  search step: light, then... -5   passed 0 · next -5                       00:45  step     core 07 passed 0, next -5
     01  search step: light, then... -5   passed 0 · next -5                       00:42  step     core 14 passed 0, next -5
     09  search step: light, then... -5   passed 0 · next -5                       00:39  step     core 06 passed 0, next -5

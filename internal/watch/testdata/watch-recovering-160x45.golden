@@ -22,7 +22,7 @@
 
   TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 
-    ... this turn                   at   so far                                   02:47  crash    with the offsets applied, rebooted
+        this turn                   at   so far                                   02:47  crash    with the offsets applied, rebooted
     13  search step: light, then... -15  passed -10 · next -15                    02:45  backoff  core 12 -15 → -11
     06  search step: light, then... -15  passed -10 · next -15                    02:45  fail     core 12 fails at -15
     14  search step: 1 count deeper -2   passed -1 · next -2                      02:45  fail     core 12 · R1 light at -15 · wrong result

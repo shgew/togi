@@ -56,21 +56,90 @@ func TestR7LinesNameTopRequestersAndSelfSufficiency(t *testing.T) {
 	}
 	for _, p := range []layout{{class: wideLayout, context: rectangle{w: 115}}, {class: mediumLayout, context: rectangle{w: 80}}, {class: compactLayout, context: rectangle{w: 57}}} {
 		row := ansi.Strip(mixed.r7Lines(p)[1])
-		if !strings.Contains(row, "; 08 by offset") || strings.Contains(row, "06 by offset") {
+		if !strings.Contains(row, "08 by offset") || strings.Contains(row, "06 by offset") {
 			t.Fatalf("width %d: measured and offset top requesters lost their own labels: %q", p.context.w, row)
 		}
 	}
-	// Too narrow for both lists, the dropped measured cores still leave a cut marker.
-	if got := topCell([]int{0}, []int{8, 9, 10, 11, 12, 13, 14, 15}, 17); got != "...;... by offset" {
+	// A measured list that has no fitting word leaves the whole proxy range and its provenance.
+	if got := topCell([]int{0}, []int{8, 9, 10, 11, 12, 13, 14, 15}, 17); got != "08-15 by offset" {
 		t.Fatalf("narrow mixed cell = %q", got)
 	}
-	// The tuning boot's console font covers IBM437 only, so truncation uses ASCII.
+	// The narrow row keeps provenance rather than a broken range or a marker with no fitting word.
 	narrow := ansi.Strip(s.r7Lines(layout{context: rectangle{w: 24}})[1])
-	if !strings.HasSuffix(narrow, "...") || strings.ContainsFunc(narrow, func(r rune) bool { return r > 0x7e }) {
-		t.Fatalf("narrow row %q must truncate with ASCII", narrow)
+	if !strings.Contains(narrow, "by offset") || strings.ContainsFunc(narrow, func(r rune) bool { return r > 0x7e }) {
+		t.Fatalf("narrow row %q must retain offset provenance with ASCII text", narrow)
 	}
 	if lines := (Snapshot{r7: s.r7}).r7Lines(layout{context: rectangle{w: 57}}); lines != nil {
 		t.Fatalf("R7 status appeared before checking had a cycle: %q", lines)
+	}
+}
+
+func TestR7WholeValues(t *testing.T) {
+	t.Parallel()
+	workload := machine.Workloads(machine.R7)[0].ID
+	for _, tc := range []struct {
+		name              string
+		measured, proxies []int
+		class             sizeClass
+		width, nameWidth  int
+		topWidth          int
+		want              string
+	}{
+		{"compact proxy ranges", nil, []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15}, compactLayout, 57, 17, 17, "by offset"},
+		{"medium proxy ranges", nil, []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15}, mediumLayout, 80, 24, 20, "00-10... by offset"},
+		{"wide proxy ranges", nil, []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15}, wideLayout, 115, 30, 24, "00-10 12-15 by offset"},
+		{"compact measured yields first", []int{0, 1, 2, 3, 4, 5, 6}, []int{8, 9, 10, 11, 12, 13, 14, 15}, compactLayout, 57, 17, 17, "08-15 by offset"},
+		{"medium measured yields first", []int{0, 1, 2, 3, 4, 5, 6}, []int{8, 9, 10, 11, 12, 13, 14, 15}, mediumLayout, 80, 24, 20, "08-15 by offset"},
+		{"wide keeps measured and proxies", []int{0, 1, 2, 3, 4, 5, 6}, []int{8, 9, 10, 11, 12, 13, 14, 15}, wideLayout, 115, 30, 24, "00-06; 08-15 by offset"},
+		{"compact measured list", []int{0, 2, 4, 6, 8, 10, 12, 14}, nil, compactLayout, 57, 17, 17, "00 02 04 06 08..."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := Snapshot{cycle: &cycleView{}}
+			for _, id := range tc.measured {
+				s.r7 = append(s.r7, tuner.R7CoreStatus{Core: id, CCD: id / 8, Workload: workload, TopRequester: true})
+			}
+			for _, id := range tc.proxies {
+				s.r7 = append(s.r7, tuner.R7CoreStatus{Core: id, CCD: id / 8, Workload: workload, TopRequester: true, OffsetFallback: true})
+			}
+			rows := s.r7Lines(layout{class: tc.class, context: rectangle{w: tc.width}})
+			row := ansi.Strip(rows[1])
+			got := strings.TrimSpace(row[tc.nameWidth+1 : tc.nameWidth+1+tc.topWidth])
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("top requesters must retain whole ranges and provenance (-want +got):\n%s\nrow: %q", diff, row)
+			}
+			if ansi.StringWidth(rows[1]) > tc.width {
+				t.Errorf("R7 row exceeds %d cells: %q", tc.width, row)
+			}
+		})
+	}
+}
+
+func TestR7NarrowRowsKeepOffsetProvenance(t *testing.T) {
+	t.Parallel()
+	workload := machine.Workloads(machine.R7)[0].ID
+	s := Snapshot{cycle: &cycleView{}}
+	for _, id := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15} {
+		s.r7 = append(s.r7, tuner.R7CoreStatus{Core: id, CCD: id / 8, Workload: workload, TopRequester: true, OffsetFallback: true})
+	}
+	for _, width := range []int{24, 30, 35, 40} {
+		rows := s.r7Lines(layout{context: rectangle{w: width}})
+		row := ansi.Strip(rows[1])
+		if !strings.Contains(row, "by offset") {
+			t.Errorf("width %d: offset proxies lost their provenance: %q", width, row)
+		}
+		if strings.Contains(row, "00-0...") || strings.Contains(row, "00-1...") || strings.Contains(row, "12-1...") {
+			t.Errorf("width %d: R7 row cut inside a core range: %q", width, row)
+		}
+		for word := range strings.FieldsSeq(ansi.Strip(rows[0])) {
+			if strings.Trim(word, "─") != "" && !slices.Contains([]string{"R7", "top", "requesters", "self-sufficient"}, word) {
+				t.Errorf("width %d: R7 rule cut inside a column heading: %q", width, ansi.Strip(rows[0]))
+			}
+		}
+		for _, line := range rows {
+			if ansi.StringWidth(line) > width {
+				t.Errorf("width %d: R7 row exceeds its rectangle: %q", width, ansi.Strip(line))
+			}
+		}
 	}
 }
 

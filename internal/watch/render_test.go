@@ -251,6 +251,87 @@ func TestHelpLogBodiesFitSmallRectangles(t *testing.T) {
 	}
 }
 
+func TestHelpLabelsKeepWholeWords(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		label      string
+		width      int
+		labelWidth int
+		want       string
+	}{
+		{"requester", 20, 6, ""},
+		{"top requester", 30, 10, "top..."},
+		{"top requester", 60, 15, "top requester"},
+	} {
+		lines := helpSectionLines(helpSection{"WORDS", []helpItem{{tc.label, "evidence"}}}, tc.width, false)
+		row := ansi.Strip(lines[2])
+		if diff := cmp.Diff(tc.want, strings.TrimSpace(row[:tc.labelWidth])); diff != "" {
+			t.Errorf("width %d: help label must fit by whole words (-want +got):\n%s", tc.width, diff)
+		}
+		if got := strings.TrimSpace(row[tc.labelWidth:]); got != "evidence" {
+			t.Errorf("width %d: fitted label lost its text gap: %q", tc.width, row)
+		}
+	}
+}
+
+func TestRenderFooterKeepsKeys(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1000, 0).UTC()
+	for _, view := range []View{MainView, HelpView, LogView} {
+		wide := RenderView(Snapshot{}, Screen{View: view, Width: 80, Height: 12, Keys: true}, now)
+		wideFooter := wide.Lines[len(wide.Lines)-1]
+		reference := newCanvas(layout{width: 80, height: 1})
+		reference.put(rectangle{w: 80, h: 1}, 0, 0, wideFooter)
+		for _, width := range []int{20, 30, 40, 50} {
+			t.Run(fmt.Sprintf("view_%d_width_%d", view, width), func(t *testing.T) {
+				sc := Screen{View: view, Width: width, Height: 12, Keys: true}
+				frame := RenderView(Snapshot{}, sc, now)
+				footer := ansi.Strip(frame.Lines[len(frame.Lines)-1])
+				styled := newCanvas(layout{width: width, height: 1})
+				styled.put(rectangle{w: width, h: 1}, 0, 0, frame.Lines[len(frame.Lines)-1])
+				for _, key := range []string{"?", "l", "esc", "q"} {
+					if !slices.Contains(strings.Fields(footer), key) {
+						t.Errorf("footer lost whole key %q: %q", key, footer)
+					}
+					at := strings.Index(" "+footer+" ", " "+key+" ")
+					wantAt := strings.Index(" "+ansi.Strip(wideFooter)+" ", " "+key+" ")
+					if at >= 0 && wantAt >= 0 {
+						if diff := cmp.Diff(reference.cells[0][wantAt].style, styled.cells[0][at].style, cmp.AllowUnexported(sgr{})); diff != "" {
+							t.Errorf("key %q lost its active/current style (-want +got):\n%s", key, diff)
+						}
+					}
+				}
+				if strings.Contains(footer, "...") {
+					t.Errorf("key hints must shorten labels, not cut keys: %q", footer)
+				}
+				assertFrameBounds(t, frame, sc)
+			})
+		}
+	}
+}
+
+func TestRenderFooterKeepsCloseKeyFirst(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1000, 0).UTC()
+	for _, view := range []View{MainView, HelpView, LogView} {
+		for _, width := range []int{4, 5, 6, 10} {
+			sc := Screen{View: view, Width: width, Height: 12, Keys: true}
+			frame := RenderView(Snapshot{}, sc, now)
+			footer := ansi.Strip(frame.Lines[len(frame.Lines)-1])
+			keys := strings.Fields(footer)
+			if !slices.Contains(keys, "q") {
+				t.Errorf("view %d width %d: closing key must survive first: %q", view, width, footer)
+			}
+			for _, key := range keys {
+				if !slices.Contains([]string{"?", "l", "esc", "q"}, key) {
+					t.Errorf("view %d width %d: tiny footer cut a key or label: %q", view, width, footer)
+				}
+			}
+			assertFrameBounds(t, frame, sc)
+		}
+	}
+}
+
 func TestPress(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
