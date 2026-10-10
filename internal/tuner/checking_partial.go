@@ -42,36 +42,28 @@ func (s *State) recordCheckingChain(e journal.Event, p *journal.CheckingChain) {
 		return
 	}
 	chain := step.chains[p.CCD]
-	for i, node := range chain {
-		if node.start.Part == p.Part {
-			chain = chain[:i]
-			break
-		}
+	node := &checkingChain{start: p, seq: e.Seq}
+	switch i := slices.IndexFunc(chain, func(n *checkingChain) bool { return n.start.Part == p.Part }); {
+	case i < 0:
+		chain = append(chain, node)
+	case len(p.Cores) == 0:
+		chain = append(chain[:i], node)
+	default:
+		chain[i] = node
 	}
-	step.chains[p.CCD] = append(chain, &checkingChain{start: p, seq: e.Seq})
+	step.chains[p.CCD] = chain
 	g.lastSeq = e.Seq
 	s.projectionDirty = true
 }
 
-func (s *State) recordCheckingTrial(p *journal.TrialIntent) {
-	step := s.checking.partial[p.Step]
-	if p.Cycle != s.checking.cycle || step == nil || p.Regime != machine.R7 {
-		return
-	}
-	for _, chain := range step.chains {
-		for i, node := range chain {
-			if node.start.Workload == p.Workload && slices.Equal(node.start.Cores, p.Cores) {
-				// A started part's loaded set depends on its predecessors, so
-				// they freeze with it even if cycle evidence already met theirs.
-				for _, predecessor := range chain[:i+1] {
-					if !predecessor.started {
-						predecessor.started = true
-						s.checkingEpoch++
-					}
-				}
-			}
+func (s *State) currentChain(step *checkingStep, ccd int) []*checkingChain {
+	chain := step.chains[ccd]
+	for i, node := range chain {
+		if !slices.Equal(node.start.Profile, s.checking.profile) {
+			return chain[:i]
 		}
 	}
+	return chain
 }
 
 func (s *State) stepWorkload(step int) string {
@@ -92,8 +84,8 @@ func (s *State) r7StepParts(step int) [][]int {
 	for _, full := range s.ccdParts() {
 		out = append(out, full)
 		if started != nil {
-			for _, node := range started.chains[s.ccd[full[0]]] {
-				if len(node.start.Cores) >= 2 && (node.started || slices.Equal(node.start.Profile, s.checking.profile)) {
+			for _, node := range s.currentChain(started, s.ccd[full[0]]) {
+				if len(node.start.Cores) >= 2 {
 					out = append(out, node.start.Cores)
 				}
 			}
@@ -128,6 +120,13 @@ func (s *State) deriveCheckingChain(step, ccd, index int, previous []int) Action
 		order = "offset fallback (no request telemetry)"
 	}
 	msg := fmt.Sprintf("cycle %d step %d CCD %d %s: partial %d idles top group %v from %s; loads %v", g.cycle, step+1, ccd, w, index+1, top, order, cores)
+	if chain := s.checking.partial[step+1].chains[ccd]; index < len(chain) {
+		change := "changed, so it needs passes of its own"
+		if slices.Equal(chain[index].start.Cores, cores) {
+			change = "unchanged, so its earlier passes still count"
+		}
+		msg += fmt.Sprintf("; re-derived after a profile change, loaded set %s", change)
+	}
 	if len(cores) == 0 {
 		msg += "; chain ends because removing the top group leaves fewer than two cores"
 	}
@@ -165,12 +164,12 @@ func (s *State) r7StepNext(step int) (Action, bool) {
 	for _, full := range s.ccdParts() {
 		previous := full
 		ccd := s.ccd[full[0]]
-		chain := started.chains[ccd]
+		chain := s.currentChain(started, ccd)
 		for index := 0; ; index++ {
 			if a, pending := s.r7PartNext(step, previous, s.longS(full)); pending {
 				return a, true
 			}
-			if index == len(chain) || !chain[index].started && !slices.Equal(chain[index].start.Profile, s.checking.profile) {
+			if index == len(chain) {
 				return s.deriveCheckingChain(step, ccd, index, previous), true
 			}
 			previous = chain[index].start.Cores
@@ -191,16 +190,8 @@ func (s *State) r7ChainsComplete(step int) bool {
 		return false
 	}
 	for _, full := range s.ccdParts() {
-		chain := started.chains[s.ccd[full[0]]]
-		if len(chain) == 0 {
-			return false
-		}
-		for _, node := range chain {
-			if !node.started && !slices.Equal(node.start.Profile, s.checking.profile) {
-				return false
-			}
-		}
-		if len(chain[len(chain)-1].start.Cores) != 0 {
+		chain := s.currentChain(started, s.ccd[full[0]])
+		if len(chain) == 0 || len(chain[len(chain)-1].start.Cores) != 0 {
 			return false
 		}
 	}

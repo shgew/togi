@@ -195,7 +195,7 @@ func TestStoryPartialExplainsOrdinaryEvidence(t *testing.T) {
 	s := Snapshot{session: true, trial: &trialView{hasStarted: true, regime: machine.R7, condition: machine.Together, cycle: 1, step: 1, partial: true, cores: []int{1}, parts: 2}}
 	st := s.story(time.Time{}, false)
 	text := strings.Join(st.lines, "\n")
-	for _, want := range []string{"top-requester groups", "when the part starts", "even if offsets change", "Passes and failures count as ordinary evidence"} {
+	for _, want := range []string{"top-requester groups", "A backoff re-derives it", "an unchanged loaded set keeps its passes", "Passes and failures count as ordinary evidence"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("partial narrative lost %q: %s", want, text)
 		}
