@@ -210,7 +210,7 @@ func (s *State) Requirement(p *journal.TrialIntent) TrialRequirement {
 	}
 	q, ok := s.scheduled[p.Trial]
 	if !ok {
-		q = s.scheduledFor(p)
+		q = s.scheduledFor(p, nil)
 	}
 	if q.ended != nil {
 		return q.ended.Requirement

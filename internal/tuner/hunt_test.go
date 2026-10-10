@@ -1147,7 +1147,7 @@ func TestParkedFailureNamingACoreAtZeroRerunsAllZero(t *testing.T) {
 			failure := h.decide(a)
 			a = h.next()
 			want := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Cores: h.s.ids(), DurationS: 120, Condition: machine.Parked, Phase: journal.PhaseHunt, Profile: []int{0, 0, 0, 0}, Rerun: true}
-			want.Requirement = ScheduledRequirement{Kind: "unclassified", Class: ScheduledClass{Regime: want.Regime, Workload: want.Workload, Cores: coresKey(want.Cores), DurationS: want.DurationS}, Rule: cycleEvidence, Needed: 1}
+			want.Requirement = ScheduledRequirement{Kind: "zero-rerun", Class: ScheduledClass{Regime: want.Regime, Workload: want.Workload, Cores: coresKey(want.Cores), DurationS: want.DurationS}, Since: failure.Seq, Rule: rerunEvidence, Needed: 1}
 			if diff := cmp.Diff(Action{Kind: RunTrial, Trial: want, Cause: []int{failure.Seq}}, a); diff != "" {
 				t.Fatalf("all-zero rerun (-want +got):\n%s", diff)
 			}

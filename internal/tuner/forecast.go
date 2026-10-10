@@ -237,6 +237,10 @@ func Forecast(events []journal.Event) ForecastPlan {
 	// The cycle on display; draining folds decisions that can close it and start the next one.
 	cycle := base.state.checking.cycle
 	p := base.state.inFlight()
+	if base.state.flightCrashed {
+		// Recovery closes the crashed trial next; what follows is what the forecast shows.
+		p = nil
+	}
 	if p == nil {
 		b := ForecastBranch{}
 		base.drain(&b)

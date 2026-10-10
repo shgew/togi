@@ -140,6 +140,7 @@ type State struct {
 	intentSeq               map[int]string
 	signalled               map[string]bool
 	flight                  *journal.TrialIntent
+	flightCrashed           bool // crash.detected named the boot of flight; recovery has yet to close it
 	awaiting                *awaiting
 	mces                    map[int]*journal.MCE
 	steps                   []machine.Regime
@@ -387,8 +388,8 @@ func (s *State) Fold(e journal.Event) {
 			s.commitHuntDecision(e, p)
 		}
 	case *journal.TrialIntent:
-		s.scheduled[p.Trial] = s.scheduledFor(p)
-		s.flight = p
+		s.scheduled[p.Trial] = s.scheduledFor(p, e.Cause)
+		s.flight, s.flightCrashed = p, false
 		s.intents[p.Trial] = p
 		s.intentSeq[e.Seq] = p.Trial
 		s.recordCheckingTrial(p)
@@ -404,7 +405,7 @@ func (s *State) Fold(e journal.Event) {
 	case *journal.TrialEnd:
 		s.recordTrialHistory(p)
 		if s.flight != nil && s.flight.Trial == p.Trial {
-			s.flight = nil
+			s.flight, s.flightCrashed = nil, false
 		}
 		s.foldTrialEnd(e, p)
 		s.endZeroRerun(e, p)
@@ -430,7 +431,8 @@ func (s *State) Fold(e journal.Event) {
 			}
 		}
 	case *journal.CrashDetected:
-		s.flight = nil
+		// The crashed trial stays in flight until recovery closes it with its trial.end, as the session's fold keeps it.
+		s.flightCrashed = s.flight != nil
 	case *journal.ProfileChange:
 		if len(s.checking.profile) == len(p.To) {
 			for i, x := range p.To {

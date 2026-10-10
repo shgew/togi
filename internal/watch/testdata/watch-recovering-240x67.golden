@@ -38,7 +38,7 @@
     11     search step: 1 count deeper    -7     y-cruncher BKT + SFTv4    passed -6 · next -7                            02:18  step     core 15 passed -10, next -15
     04     search step: light, then heavy -20    y-cruncher BKT + SFTv4    passed -15 · next -20                          02:15  step     core 07 passed -10, next -15
     12     search step: 1 count deeper    -11    y-cruncher BKT + SFTv4    passed -10 · next -11                          02:12  step     core 14 passed -1, next -2
-    05     search step: light, then heavy -15    mprime SSE 4K-21K         passed -10 · next -15                          02:09  step     core 06 passed -10, next -15
+  ► 05     search step: light, then heavy -15    mprime SSE 4K-21K         passed -10 · next -15                          02:09  step     core 06 passed -10, next -15
                                                                                                                           02:06  step     core 13 passed -10, next -15
                                                                                                                           02:03  step     core 05 passed -10, next -15
                                                                                                                           02:00  step     core 12 passed -10, next -15
