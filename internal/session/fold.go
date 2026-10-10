@@ -312,6 +312,7 @@ func (f *fold) Fold(e journal.Event) {
 			f.stray = append(f.stray, e.Seq)
 		case tuner.CrashIdle:
 			f.pendingIdle = append(f.pendingIdle, e.Seq)
+		case tuner.CrashInTrial, tuner.CrashInconclusive, tuner.CrashThermal:
 		}
 	case *journal.TrialEnd:
 		f.kernelBoundary(e, p.KernelBoundary)

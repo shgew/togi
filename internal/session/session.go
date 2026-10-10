@@ -700,7 +700,7 @@ func (r *runner) closeOpenTrial() error {
 			reset.Reason = "thermal trip during the trial"
 		case tuner.CrashInconclusive:
 			reset.Reason = "the machine lost power during the trial"
-		default:
+		case tuner.CrashInTrial, tuner.CrashIdle, tuner.CrashStray:
 			reset.Outcome, reset.Signal, reset.Reason = journal.OutcomeFailure, machine.Crash, "machine crashed during the trial"
 		}
 		evidence.reset = reset

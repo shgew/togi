@@ -252,6 +252,14 @@ func TestClassifyCrash(t *testing.T) {
 			if got := ClassifyCrash(tt.facts); got != tt.want {
 				t.Fatalf("ClassifyCrash(%+v) = %d, want %d", tt.facts, got, tt.want)
 			}
+			recorded := &journal.CrashDetected{
+				Stray:        tt.want == CrashStray,
+				Inconclusive: tt.want == CrashInconclusive || tt.want == CrashThermal,
+				ResetReason:  tt.facts.Reason.Kind,
+			}
+			if got := RecordedCrashKind(recorded, tt.facts.InTrial); got != tt.want {
+				t.Fatalf("RecordedCrashKind(%+v, %v) = %d, want %d", recorded, tt.facts.InTrial, got, tt.want)
+			}
 		})
 	}
 }

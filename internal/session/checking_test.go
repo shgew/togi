@@ -139,7 +139,7 @@ func (k *nextBootMCEKernel) MCEs(boot string, since time.Duration) ([]machine.MC
 	return append(mces, machine.MCE{CPU: 0, Core: 0, Bank: 0, BankType: machine.LoadStore, Lines: []string{"[Hardware Error]: Uncorrected error on CPU 0 (test)"}}), nil
 }
 
-func TestThermalTripIdleCrashNeedsNoEvidenceForDeadEnd(t *testing.T) {
+func TestThermalTripIdleCrashClassification(t *testing.T) {
 	t.Parallel()
 	_, ref := reference(t, small())
 	applied := slices.IndexFunc(ref, func(e journal.Event) bool {
@@ -187,8 +187,18 @@ func TestThermalTripIdleCrashNeedsNoEvidenceForDeadEnd(t *testing.T) {
 				}
 				return
 			}
-			if failure == nil || failure.Signal != machine.Crash || failure.Regime != machine.R6 || failure.Condition != machine.Together {
+			if failure == nil || failure.Signal != machine.Crash || failure.Regime != machine.R6 || failure.Condition != machine.Together || failure.Attribution != journal.Unattributed {
 				t.Fatalf("idle failure: %+v", failure)
+			}
+			if len(crash.Cause) != 1 {
+				t.Fatalf("crash evidence %v, want the next boot's MCE", crash.Cause)
+			}
+			mce := events[crash.Cause[0]-1].Data.(*journal.MCE)
+			if mce.Corrected || mce.FromBoot == p.PreviousBoot {
+				t.Fatalf("crash evidence %+v, want an uncorrected MCE from the next boot", mce)
+			}
+			if failureCiting(events, crash.Cause[0]) != failure {
+				t.Fatal("idle failure does not cite the crash's MCE")
 			}
 			for _, e := range events {
 				if d, ok := e.Data.(*journal.DeadEnd); ok && d.Condition == journal.DeadEndThermalTrip {
