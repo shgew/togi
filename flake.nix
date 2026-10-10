@@ -261,7 +261,7 @@
                 checkPhase = ''
                   runHook preCheck
                   export GOFLAGS=''${GOFLAGS//-trimpath/}
-                  go run ./tools/bench --split all --shard ${shard}/${toString simVerifyShards} --jobs $NIX_BUILD_CORES --timeout 30m --sim-flags "--verify-every 1 --check-memos"
+                  go run ./tools/bench --split all --shard ${shard}/${toString simVerifyShards} --jobs $NIX_BUILD_CORES --sim-flags "--verify-every 1 --check-memos"
                   runHook postCheck
                 '';
                 installPhase = "mkdir -p $out";
