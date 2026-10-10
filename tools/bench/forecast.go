@@ -72,7 +72,7 @@ func executeForecast(o options, stdout, stderr io.Writer) (err error) {
 	}
 	defer func() { finishRuns(root, o.keep != "", err, stderr) }()
 	launch := func(spec runSpec) (simulation, error) {
-		return launchSimulator(o.ctx, binary, root, spec, o.maxBoots, o.timeout)
+		return launchSimulator(o.ctx, binary, root, spec, o.maxBoots, o.timeout, strings.Fields(o.simFlags))
 	}
 	record, err := makeForecast(o.ctx, o.forecast, root, anchor, runs, suiteDir, o.jobs, o.keep != "", launch)
 	if err != nil {

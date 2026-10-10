@@ -46,11 +46,11 @@ type runSpec struct {
 const benchCostScope = "bench"
 
 type options struct {
-	suite, split, out, baseline, keep, same, forecast, cache string
-	ctx                                                      context.Context
-	jobs, maxBoots                                           int
-	timeout                                                  time.Duration
-	keepGoing, noCache, smoke                                bool
+	suite, split, out, baseline, keep, same, forecast, cache, shard, simFlags string
+	ctx                                                                       context.Context
+	jobs, maxBoots                                                            int
+	timeout                                                                   time.Duration
+	keepGoing, noCache, smoke                                                 bool
 }
 
 func main() {
@@ -77,6 +77,8 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	flags.StringVar(&o.forecast, "forecast", "", "forecast a real run from a copy of its state directory DIR with the suite's target scenario, counting only events after its last; the copy is read, never written; incompatible with --split, --baseline and --same")
 	flags.IntVar(&o.jobs, "jobs", runtime.NumCPU(), "maximum parallel simulator subprocesses")
 	flags.DurationVar(&o.timeout, "timeout", 30*time.Minute, "hang safety limit per simulator; exceeding it is a harness error, never a session outcome")
+	flags.StringVar(&o.shard, "shard", "", "verify one shard `I/N` of the selected sessions: run it with --sim-flags and require every session to reach a normal end, reporting no metrics; the shards balance measured cost and together hold every session once; incompatible with --same, --forecast, --baseline, --out and --keep")
+	flags.StringVar(&o.simFlags, "sim-flags", "", "pass these space-separated `flags` to every simulator subprocess, such as \"--verify-every 1 --check-memos\"")
 	flags.IntVar(&o.maxBoots, "max-boots", 1000, "maximum simulated boots per session; unfinished sessions exit 3 (censored)")
 	flags.StringVar(&o.cache, "cache", "", "digest and scheduling cache directory (default: user cache directory/togi/bench)")
 	flags.BoolVar(&o.keepGoing, "keep-going", false, "with --same, report every differing session instead of stopping at the first difference")
@@ -106,6 +108,23 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	if flags.NArg() != 0 || o.jobs < 1 || o.maxBoots < 1 || o.timeout <= 0 || (o.split != "dev" && o.split != "holdout" && o.split != "all") {
 		fmt.Fprintln(stderr, "bench: require no positional arguments, positive --jobs, --max-boots and --timeout, and --split dev|holdout|all")
 		return 2
+	}
+	if o.shard != "" {
+		conflict := ""
+		flags.Visit(func(f *flag.Flag) {
+			if slices.Contains([]string{"same", "forecast", "baseline", "out", "keep"}, f.Name) {
+				conflict = f.Name
+			}
+		})
+		if conflict != "" {
+			fmt.Fprintf(stderr, "bench: --shard cannot be combined with --%s\n", conflict)
+			return 2
+		}
+		if err := executeShard(o, stdout, stderr); err != nil {
+			fmt.Fprintf(stderr, "bench: %v\n", err)
+			return 1
+		}
+		return 0
 	}
 	if o.same != "" {
 		different, err := executeSame(o, stdout, stderr)
@@ -327,7 +346,7 @@ func execute(o options, stdout, stderr io.Writer) error {
 	key := func(i int) sessionKey { return sessionKey{runs[i].scenario.Name, runs[i].split, runs[i].seed} }
 	order := longestFirst(len(runs), func(i int) (float64, bool) { return costs.get(benchCostScope, key(i)) })
 	err = runPool(o.ctx, o.jobs, order, func(ctx context.Context, i int) error {
-		r, err := simulate(ctx, binary, runRoot, runs[i], o.maxBoots, o.timeout, o.keep != "")
+		r, err := simulate(ctx, binary, runRoot, runs[i], o.maxBoots, o.timeout, o.keep != "", strings.Fields(o.simFlags))
 		if err != nil {
 			return fmt.Errorf("%s: %w", key(i), err)
 		}
@@ -406,7 +425,7 @@ type simulation struct {
 	cpu float64
 }
 
-func launchSimulator(parent context.Context, binary, root string, spec runSpec, maxBoots int, timeout time.Duration) (simulation, error) {
+func launchSimulator(parent context.Context, binary, root string, spec runSpec, maxBoots int, timeout time.Duration, extra []string) (simulation, error) {
 	dir := runDir(root, spec)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return simulation{}, fmt.Errorf("create run %s: %w", dir, err)
@@ -424,7 +443,7 @@ func launchSimulator(parent context.Context, binary, root string, spec runSpec, 
 	if spec.scenario.Replay {
 		args = append(args, "--replay-facts")
 	}
-	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd := exec.CommandContext(ctx, binary, append(args, extra...)...)
 	cmd.Stdout, cmd.Stderr = log, log
 	started := time.Now()
 	err = cmd.Run()
@@ -457,8 +476,8 @@ func runDir(root string, spec runSpec) string {
 	return filepath.Join(root, spec.scenario.Name, fmt.Sprintf("%s-%d", spec.split, spec.seed))
 }
 
-func simulate(ctx context.Context, binary, root string, spec runSpec, maxBoots int, timeout time.Duration, keep bool) (result, error) {
-	run, err := launchSimulator(ctx, binary, root, spec, maxBoots, timeout)
+func simulate(ctx context.Context, binary, root string, spec runSpec, maxBoots int, timeout time.Duration, keep bool, extra []string) (result, error) {
+	run, err := launchSimulator(ctx, binary, root, spec, maxBoots, timeout, extra)
 	if err != nil {
 		return result{}, err
 	}

@@ -26,9 +26,9 @@ func TestCacheKey(t *testing.T) {
 		write(path, content)
 		return path
 	}
-	key := func(binary string, maxBoots int) string {
+	key := func(binary string, maxBoots int, simFlags ...string) string {
 		t.Helper()
-		got, err := cacheKey(binary, maxBoots)
+		got, err := cacheKey(binary, maxBoots, simFlags)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,7 +44,10 @@ func TestCacheKey(t *testing.T) {
 	if key(binary("simulator"), 5) == base {
 		t.Error("changing the boot cap must change the key")
 	}
-	if _, err := cacheKey(filepath.Join(t.TempDir(), "missing"), 1); err == nil {
+	if key(binary("simulator"), 1000, "--cycles", "2") == base {
+		t.Error("changing the simulator flags must change the key")
+	}
+	if _, err := cacheKey(filepath.Join(t.TempDir(), "missing"), 1, nil); err == nil {
 		t.Error("a missing simulator must not produce a key")
 	}
 

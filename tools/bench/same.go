@@ -81,7 +81,7 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 	var keys [2]string
 	var caches [2]*sessionCache
 	for side := range trees {
-		if keys[side], err = cacheKey(binaries[side], o.maxBoots); err != nil {
+		if keys[side], err = cacheKey(binaries[side], o.maxBoots, strings.Fields(o.simFlags)); err != nil {
 			return false, fmt.Errorf("key %s cache: %w", sameSides[side], err)
 		}
 	}
@@ -120,7 +120,7 @@ func executeSame(o options, stdout, stderr io.Writer) (bool, error) {
 		return false, fmt.Errorf("create run directory: %w", err)
 	}
 	launch := func(ctx context.Context, side int, spec runSpec) (simulation, error) {
-		return launchSimulator(ctx, binaries[side], filepath.Join(root, sameSides[side]), spec, o.maxBoots, o.timeout)
+		return launchSimulator(ctx, binaries[side], filepath.Join(root, sameSides[side]), spec, o.maxBoots, o.timeout, strings.Fields(o.simFlags))
 	}
 	different, err := runSame(o.ctx, stdout, pairs, sameConfig{
 		jobs:      o.jobs,

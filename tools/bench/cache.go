@@ -142,14 +142,17 @@ func writeFileAtomic(path string, content []byte) error {
 var simulatorBuildFlags = []string{"-trimpath", "-buildvcs=false"}
 
 // cacheKey names the simulator whose sessions a cache holds: the hash of its binary, which carries the code, the Go
-// version and the platform, and the boot cap. Trees whose simulators are byte for byte equal share their records,
-// whatever else differs between them.
-func cacheKey(binary string, maxBoots int) (string, error) {
+// version and the platform, the boot cap and the extra simulator flags. Trees whose simulators are byte for byte equal
+// share their records, whatever else differs between them.
+func cacheKey(binary string, maxBoots int, simFlags []string) (string, error) {
 	if _, err := os.Stat(binary); err != nil {
 		return "", fmt.Errorf("find simulator: %w", err)
 	}
 	h := sha256.New()
 	fmt.Fprintf(h, "%s boots=%d\n", cacheFormat, maxBoots)
+	if len(simFlags) > 0 {
+		fmt.Fprintf(h, "flags=%q\n", simFlags)
+	}
 	if err := hashFile(h, binary, "simulator"); err != nil {
 		return "", err
 	}
