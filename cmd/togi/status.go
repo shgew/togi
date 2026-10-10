@@ -205,7 +205,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		}
 		wrapLines(w, "\n", "  ", fmt.Sprintf("hunt %d [#%d]: unattributed %s in %s trial %s; parked offsets %s", h.Hunt, h.Seq, render.EscapeText(signal), render.EscapeText(string(h.Regime)), render.EscapeText(cmp.Or(h.Trial, "-")), parked))
 		wrapLines(w, "  ", "    ", "candidates "+coreIDs(h.Candidates))
-		groups := []notedRow{{cells: "GROUP\tCORES\tOUTCOME\tTRIALS"}}
+		groups := []notedRow{{cells: "GROUP\tCORES\tOUTCOME\tPASS EVIDENCE\tNEED"}}
 		for _, m := range h.Groups {
 			cores, notes := coreIDs(m.Cores), []rowNote(nil)
 			if m.Probe != nil {
@@ -216,7 +216,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 				cores = "probe"
 				notes = []rowNote{{"probe", fmt.Sprintf("%02d at %d with %s", m.Probe.Core, m.Probe.Offset, strings.Join(held, ", "))}}
 			}
-			groups = append(groups, notedRow{cells: fmt.Sprintf("G%d\t%s\t%s\t%d/%d", m.Group, cores, render.EscapeText(m.Outcome), min(m.Passes, m.Needed), m.Needed), notes: notes})
+			groups = append(groups, notedRow{cells: fmt.Sprintf("G%d\t%s\t%s\t%d\t%d", m.Group, cores, render.EscapeText(m.Outcome), m.Passes, m.Needed), notes: notes})
 		}
 		writeNotedTable(w, groups)
 	}

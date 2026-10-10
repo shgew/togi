@@ -139,7 +139,7 @@ func TestWrapLines(t *testing.T) {
 	t.Parallel()
 	var b bytes.Buffer
 	wrapLines(&b, "\nnote ", "  ", strings.Repeat("word ", 20)+"unbreakable"+strings.Repeat("x", 90))
-	for _, line := range strings.Split(strings.TrimSpace(b.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(b.String()), "\n") {
 		if n := utf8.RuneCountInString(line); n > statusWidth && !strings.Contains(line, "unbreakable") {
 			t.Errorf("line of %d columns: %q", n, line)
 		}
@@ -149,7 +149,7 @@ func TestWrapLines(t *testing.T) {
 	}
 }
 
-func TestStatusHuntTrialsNeverExceedTheNeed(t *testing.T) {
+func TestStatusHuntLabelsAccumulatedPassEvidence(t *testing.T) {
 	t.Parallel()
 	st := journal.State{
 		Phase: string(journal.PhaseHunt),
@@ -162,12 +162,12 @@ func TestStatusHuntTrialsNeverExceedTheNeed(t *testing.T) {
 	}
 	var out bytes.Buffer
 	writeStatus(&out, st, nil)
-	for _, want := range []string{"pass     5/5", "failure  0/5", "pending  2/5"} {
+	for _, want := range []string{"PASS EVIDENCE", "NEED", "pass     37", "failure  0", "pending  2"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("status lacks %q:\n%s", want, out.String())
 		}
 	}
-	if strings.Contains(out.String(), "37") {
-		t.Errorf("status shows accumulated passes above the need:\n%s", out.String())
+	if strings.Contains(out.String(), "37/5") {
+		t.Errorf("status displays accumulated evidence as the group's own trials:\n%s", out.String())
 	}
 }

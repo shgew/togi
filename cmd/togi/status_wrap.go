@@ -20,7 +20,7 @@ func wrapLines(w io.Writer, first, rest, text string) {
 	fmt.Fprint(w, first[:len(first)-len(body)])
 	line, width := body, utf8.RuneCountInString(body)
 	empty := true
-	for _, word := range strings.Fields(text) {
+	for word := range strings.FieldsSeq(text) {
 		n := utf8.RuneCountInString(word)
 		if !empty && width+1+n > statusWidth {
 			fmt.Fprintln(w, line)

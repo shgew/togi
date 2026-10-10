@@ -9,6 +9,6 @@ CORE  CCD  SLOT  OFFSET  PHASE     FAILURE  QUEUED
 hunt 2 [#40]: unattributed computation_error in R7 trial 0001; parked offsets
   cycle end #20
   candidates 03 07
-GROUP  CORES  OUTCOME  TRIALS
-G3     probe  running  2/5
+GROUP  CORES  OUTCOME  PASS EVIDENCE  NEED
+G3     probe  running  2              5
   probe 03 at -10 with 07 at -8
