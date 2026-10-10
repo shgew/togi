@@ -589,3 +589,86 @@ func TestRecordedConfigWithoutJournalIsFresh(t *testing.T) {
 		t.Fatalf("configuration of an empty state directory (-want +got):\n%s", diff)
 	}
 }
+
+func TestFirstResultStopsAfterPhaseOnesPassedCycle(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	run := func(in Input) session.Stop {
+		t.Helper()
+		m, err := sim.New(sharedVoltageConfig(t, 1000))
+		if err != nil {
+			t.Fatal(err)
+		}
+		in.Config, in.ConfigPath, in.Dir, in.Machine, in.InMemoryJournal = config.Default(), config.DefaultPath, dir, m, true
+		stop, err := Simulate(context.Background(), in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return stop
+	}
+	if stop := run(Input{FirstResult: true}); stop.Reason != session.StopFirstResult {
+		t.Fatalf("stopped with %+v", stop)
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || torn != nil {
+		t.Fatalf("read journal: %v, torn %q", err, torn)
+	}
+	var phase1End journal.Event
+	phase1Index, cycleStarts := 0, 0
+	for i, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.DeepeningRound:
+			t.Fatalf("phase 2 ran a round: %s", e.Msg)
+		case *journal.CheckingCycle:
+			if p.Event == journal.CycleStart {
+				cycleStarts++
+			}
+			if p.Event == journal.CycleEnd && p.Passed && p.Full && phase1End.Seq == 0 {
+				phase1End, phase1Index = e, i
+			}
+		}
+	}
+	if phase1End.Seq == 0 || cycleStarts == 0 {
+		t.Fatalf("no passed full cycle in %d events", len(events))
+	}
+	tail := events[len(events)-1]
+	if p, ok := tail.Data.(*journal.Shutdown); !ok || p.Reason != journal.ShutdownFirstResult {
+		t.Fatalf("last event %s %s", tail.Kind, tail.Msg)
+	}
+	restored := false
+	for _, e := range events[phase1Index:] {
+		switch e.Data.(type) {
+		case *journal.TrialIntent:
+			t.Fatalf("a trial started after phase 1's passed cycle: %s", e.Msg)
+		case *journal.ProfileRestored:
+			restored = true
+		}
+	}
+	if !restored {
+		t.Fatal("offsets were not restored before the shutdown")
+	}
+	st, err := journal.ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.BIOS == nil || st.BIOS.Confirmed != phase1End.Seq || len(st.BIOS.Unconfirmed) != 0 || st.Phases == nil || st.Phases.Phase != 2 {
+		t.Fatalf("state BIOS %+v, phases %+v, want the profile confirmed by #%d in phase 2", st.BIOS, st.Phases, phase1End.Seq)
+	}
+	before := len(events)
+	if stop := run(Input{FirstResult: true}); stop.Reason != session.StopFirstResult {
+		t.Fatalf("resume stopped with %+v", stop)
+	}
+	resumed, _, err := journal.Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range resumed[before:] {
+		switch e.Data.(type) {
+		case *journal.TrialIntent, *journal.DeepeningRound, *journal.CheckingCycle:
+			t.Fatalf("the resumed run did more work: %s", e.Msg)
+		}
+	}
+	if stop := run(Input{Cycles: 1}); stop.Reason != session.StopCycles {
+		t.Fatalf("run without the option stopped with %+v", stop)
+	}
+}

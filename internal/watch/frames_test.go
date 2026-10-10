@@ -20,6 +20,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/simrun"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 type watchCut struct {
@@ -31,13 +32,18 @@ type watchCut struct {
 // journal at the current ruleset. Its config.loaded events name a fixed build, so a release's version bump leaves the
 // frames unchanged.
 func simulate(m *sim.Machine, cfg config.Config, until func(journal.Event) bool) ([]journal.Event, error) {
+	return simulateWith(m, cfg, until, simrun.Input{Cycles: 1})
+}
+
+// simulateWith is simulate with the stop options in stop: Cycles or FirstResult.
+func simulateWith(m *sim.Machine, cfg config.Config, until func(journal.Event) bool, stop simrun.Input) ([]journal.Event, error) {
 	dir, err := os.MkdirTemp("", "togi-watch-frames")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(dir)
 	_, err = simrun.Simulate(context.Background(), simrun.Input{
-		Config: cfg, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true, Until: until,
+		Config: cfg, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: stop.Cycles, FirstResult: stop.FirstResult, InMemoryJournal: true, Until: until,
 	})
 	if err != nil {
 		return nil, err
@@ -63,6 +69,34 @@ var sessionJournal = sync.OnceValues(func() ([]journal.Event, error) {
 		return nil, err
 	}
 	return simulate(m, config.Default(), nil)
+})
+
+// concludedJournal is the default simulated machine through two clean cycles, so checking runs on after phase 2.
+var concludedJournal = sync.OnceValues(func() ([]journal.Event, error) {
+	m, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		return nil, err
+	}
+	return simulateWith(m, config.Default(), nil, simrun.Input{Cycles: 2})
+})
+
+// unconfirmedJournal is seed 30 of the default simulated machine through three clean cycles: a later failure leaves
+// the BIOS profile unconfirmed. [INFERENCE: other seeds steer clear of it; the seed was found by scanning 1-40.]
+var unconfirmedJournal = sync.OnceValues(func() ([]journal.Event, error) {
+	m, err := sim.New(sim.Config{Seed: 30})
+	if err != nil {
+		return nil, err
+	}
+	return simulateWith(m, config.Default(), nil, simrun.Input{Cycles: 3})
+})
+
+// firstResultJournal is the default simulated machine stopped at its first confirmed BIOS profile.
+var firstResultJournal = sync.OnceValues(func() ([]journal.Event, error) {
+	m, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		return nil, err
+	}
+	return simulateWith(m, config.Default(), nil, simrun.Input{FirstResult: true})
 })
 
 // probeMachine fails together only through a combination of cores 03 and 11 in R6, where a failure naming no core
@@ -137,6 +171,16 @@ func cutAt(tb testing.TB, events []journal.Event, accept func(journal.Event) boo
 	return nil
 }
 
+// cutWhen folds the events through a tuner state and cuts at the first event after which accept holds.
+func cutWhen(tb testing.TB, events []journal.Event, accept func(*tuner.State, journal.Event) bool) []journal.Event {
+	tb.Helper()
+	t := tuner.New()
+	return cutAt(tb, events, func(e journal.Event) bool {
+		t.Fold(e)
+		return accept(t, e)
+	})
+}
+
 func cutTrial(tb testing.TB, events []journal.Event, accept func(*journal.TrialIntent) bool) []journal.Event {
 	tb.Helper()
 	trial := ""
@@ -198,7 +242,17 @@ func watchCuts(t *testing.T) []watchCut {
 		{"checking", checking},
 		{"hunt", cutTrial(t, simulated(t, sessionJournal), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseHunt })},
 		{"member-probe", memberProbe},
-		{"deepening", cutTrial(t, probes, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })},
+		{"round", cutTrial(t, probes, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })},
+		{"confirmation", cutWhen(t, events, func(s *tuner.State, e journal.Event) bool {
+			return e.Kind == journal.KindTrialStart && s.PhasePlan().Phase == 2 && s.PhasePlan().Confirming
+		})},
+		{"concluded", cutWhen(t, simulated(t, concludedJournal), func(s *tuner.State, e journal.Event) bool {
+			return e.Kind == journal.KindTrialStart && s.PhasePlan().Phase == 0
+		})},
+		{"unconfirmed", cutWhen(t, simulated(t, unconfirmedJournal), func(s *tuner.State, e journal.Event) bool {
+			return e.Kind == journal.KindTrialStart && len(s.BIOSProfile().Unconfirmed) > 0
+		})},
+		{"first-result", simulated(t, firstResultJournal)},
 		{"idle", cutTrial(t, events, func(p *journal.TrialIntent) bool { return p.Regime == machine.R6 })},
 		{"between", cutPassedCheckingTrial(t, events)},
 		{"crashed", beforeCrashDetected(t, events)},
@@ -243,7 +297,7 @@ func assertFrameBounds(t *testing.T, drawn Drawn, sc Screen) {
 // size under assertFrameBounds.
 var allSizeGoldens = map[string]bool{
 	"search": true, "checking": true, "hunt": true, "member-probe": true,
-	"deepening": true, "idle": true, "crashed": true, "recovering": true, "combination": true,
+	"round": true, "confirmation": true, "concluded": true, "unconfirmed": true, "idle": true, "crashed": true, "recovering": true, "combination": true,
 }
 
 func TestWatchFrames(t *testing.T) {

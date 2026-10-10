@@ -1,6 +1,6 @@
   [0;90mtogi   [0;97m10:15:17   [0;90msession [0;37m10h15m   28 [0;90mfailures · [0;37m7 [0;90mcrashes   last observed failure [0;37m06:59[0;90m, 3h15m ago[m
 
-  [0;92m■ [0;37mSOLO LIMITS  [0;90m16/16  [0;35m───  [0;96m► [0;97mCYCLE 1  [0;37mstep 1 of 18 · part 1 of 3 · trial 1 of 4  [0;35m───  [0;90m○ DEEPEN  after a passed full cycle · 16 cores have room  [0;35m───  [0;90mCLEAN CYCLES 0  [0;35m· repeats until stopped[m
+  [0;92m■ [0;37mSOLO LIMITS  [0;90m16/16  [0;35m───  [0;96m► [0;97mPHASE 1  [0;35m───  [0;90m○ PHASE 2  [0;35m───  [0;90mCLEAN CYCLES 0  [0;35m───  [0;96m► [0;97mCYCLE 1  [0;37mstep 1 of 18 · part 1 of 3 · trial 1 of 4[m
 
   [0;96m▌  CYCLE 1   [0;37mStep 1 is R7 all-core with mprime AVX2 36K-248K.                                                           [0;90mlast trial      [0;92mPASS  [0;90m1:30 on core 15 · Tctl max 71°C[m
   [0;96m▌            [0;37mPart 1 of 3 loads 00-07 for 2 minutes.[m
@@ -27,39 +27,39 @@
   [0;96m► [0;97m06  -29  [0;37mHAS ROOM  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;90m·[0;91m█                       [0;37m-31                                            14   -3  HAS ROOM  [0;90m▄▄▄·[0;91m█                                                  [0;90m-5   [0;37mtop by offset[m
   [0;96m► [0;97m07  -31  [0;37mHAS ROOM  [0;97m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄[0;90m·[0;91m█                     [0;37m-33                                            15  -38  HAS ROOM  [0;90m▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·[0;91m█              [0;90m-40[m
 
-  [0;90mCYCLE 1 [0;35m───────────────────────────────────────────────────────────────────────────────────────── [0;90m18 steps · 0 done     WHAT HAPPENED [0;35m─────────────────────────────────────────────────────────────────── [0;90mnewest first · l: last 400 events[m
-
-    [0;90m#   kind                  where                   workload                      schedule       result                 10:14  [0;37mstep     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K[m
-  [0;96m►  [0;97m1  R7 all-core           2 CCDs · 3+ parts       [0;90mmprime AVX2 36K-248K          [0;97m3+ parts       [0;96mpart 1 of 3            [0;90m10:14  [0;37mcycle    cycle 1 started · 18 steps[m
-  [0;96m►     [0;35m├ [0;97mfull CCD 0          00-07                                                 3 x 2m + 5m    [0;96mtrial 1 of 4           [0;90m10:14  [0;37mlimit    core 15 solo limit -38[m
-        [0;35m├ [0;37mfull CCD 1          08-15                                                 [0;90m3 x 2m + 5m                           10:13  [0;37mlimit    core 01 solo limit -33[m
-        [0;35m├ [0;37mfull CCD 0+1        00-15                                                 [0;90m3 x 2m + 10m                          10:13  [0;37mlimit    core 00 solo limit -36[m
-        [0;35m└ [0;90mpartials may follow                                                                                             10:11  [0;37mlimit    cores 04, 07 solo limit -31[m
-  [0;35m○  [0;90m2  [0;37mR7 [0;90mall-core           2 CCDs · 3+ parts       mprime AVX-512 36K-248K       3+ parts                              10:05  [0;37mlimit    core 13 solo limit -23[m
-  [0;35m○  [0;90m3  [0;37mR7 [0;90mall-core           2 CCDs · 3+ parts       y-cruncher FFTv4 + N63 + VT3  3+ parts                              10:04  [0;37mlimit    core 02 solo limit -34[m
-  [0;35m○  [0;90m4  [0;37mR2 [0;90mheavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m                               10:02  [0;37mlimit    core 08 solo limit -26[m
-  [0;35m○  [0;90m5  [0;37mR2 [0;90mheavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m                               09:58  [0;37mlimit    core 06 solo limit -29[m
-  [0;35m○  [0;90m6  [0;37mR2 [0;90mheavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m                               09:53  [0;37mlimit    core 09 solo limit -17[m
-  [0;35m○  [0;90m7  [0;37mR6 [0;90midle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   09:41  [0;37mlimit    core 03 solo limit -16[m
-  [0;35m○  [0;90m8  [0;37mR5 [0;90mboth threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               09:25  [0;37mlimit    core 10 solo limit -15[m
-  [0;35m○  [0;90m9  [0;37mR1 [0;90mlight              one core at a time      mprime SSE 4K-21K             16 x 2m                               09:14  [0;37mlimit    core 14 solo limit -3[m
-  [0;35m○ [0;90m10  [0;37mR1 [0;90mlight              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               09:10  [0;37mlimit    core 11 solo limit -6[m
-  [0;35m○ [0;90m11  [0;37mR1 [0;90mlight              one core at a time      y-cruncher SNT + SVT          16 x 2m                               08:52  [0;37mlimit    cores 05, 12 solo limit -9[m
-  [0;35m○ [0;90m12  [0;37mR3 [0;90mload steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               07:50  [0;37mconfirm  core 15 confirming -39 as its solo limit[m
-  [0;35m○ [0;90m13  [0;37mR3 [0;90mload steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               07:25  [0;37mstep     core 15 passed -38, next -39[m
-  [0;35m○ [0;90m14  [0;37mR3 [0;90mload steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               07:04  [0;37mconfirm  core 01 confirming -34 as its solo limit[m
-  [0;35m○ [0;90m15  [0;37mR4 [0;90mpartial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               06:59  [0;37mconfirm  core 00 confirming -37 as its solo limit[m
-  [0;35m○ [0;90m16  [0;37mR4 [0;90mpartial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               06:59  [0;91mfail     [0;37mcore 00 fails at -38[m
-  [0;35m○ [0;90m17  [0;37mR4 [0;90mpartial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               06:59  [0;91mcrash    [0;37mcore 00 · R1 light at -38 · rebooted · early in trial 1 of 1[m
-  [0;35m○ [0;90m18  [0;37mR6 [0;90midle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   06:57  [0;37mstep     core 15 passed -37, next -38[m
-                                                                                                                          [0;90m06:54  [0;37mconfirm  core 07 confirming -32 as its solo limit[m
-  [0;90mR7 [0;35m─────────────────────────── [0;90mtop requesters [0;35m───────── [0;90mself-sufficient [0;35m───────────────── [0;90mobserved, not a guarantee     06:54  [0;91mfail     [0;37mcore 07 fails at -33[m
-  [0;37mmprime AVX2 36K-248K           05 14 by offset          none yet                                                        [0;90m06:54  [0;91mcrash    [0;37mcore 07 · R1 light at -33 · rebooted · early in trial 1 of 1[m
-  [0;90mmprime AVX-512 36K-248K        05 14 by offset          none yet                                                        06:45  [0;37mconfirm  core 04 confirming -32 as its solo limit[m
-  [0;90my-cruncher FFTv4 + N63 + VT3   05 14 by offset          none yet                                                        06:45  [0;91mfail     [0;37mcore 04 fails at -33[m
-                                                                                                                          [0;90m06:45  [0;91mcrash    [0;37mcore 04 · R2 heavy vector at -33 · rebooted · early in trial 1 of 1[m
-                                                                                                                          [0;90m06:34  [0;37mstep     core 01 passed -33, next -34[m
-                                                                                                                          [0;90m06:30  [0;37mstep     core 00 passed -37, next -38[m
+  [0;90mBIOS PROFILE [0;35m──────────────────────────────────────────────────────────────────────────────────────────────────────     [0;90mWHAT HAPPENED [0;35m─────────────────────────────────────────────────────────────────── [0;90mnewest first · l: last 400 events[m
+  [0;90mnone confirmed yet: phase 1 has not passed a full cycle[m
+                                                                                                                          [0;90m10:14  [0;37mstep     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K[m
+  [0;90mCYCLE 1 [0;35m───────────────────────────────────────────────────────────────────────────────────────── [0;90m18 steps · 0 done     10:14  [0;37mcycle    cycle 1 started · 18 steps[m
+                                                                                                                          [0;90m10:14  [0;37mlimit    core 15 solo limit -39[m
+    [0;90m#   kind                  where                   workload                      schedule       result                 10:13  [0;37mlimit    core 01 solo limit -34[m
+  [0;96m►  [0;97m1  R7 all-core           2 CCDs · 3+ parts       [0;90mmprime AVX2 36K-248K          [0;97m3+ parts       [0;96mpart 1 of 3            [0;90m10:13  [0;37mlimit    core 00 solo limit -37[m
+  [0;96m►     [0;35m├ [0;97mfull CCD 0          00-07                                                 3 x 2m + 5m    [0;96mtrial 1 of 4           [0;90m10:11  [0;37mlimit    cores 04, 07 solo limit -32[m
+        [0;35m├ [0;37mfull CCD 1          08-15                                                 [0;90m3 x 2m + 5m                           10:05  [0;37mlimit    core 13 solo limit -24[m
+        [0;35m├ [0;37mfull CCD 0+1        00-15                                                 [0;90m3 x 2m + 10m                          10:04  [0;37mlimit    core 02 solo limit -35[m
+        [0;35m└ [0;90mpartials may follow                                                                                             10:02  [0;37mlimit    core 08 solo limit -27[m
+  [0;35m○  [0;90m2  [0;37mR7 [0;90mall-core           2 CCDs · 3+ parts       mprime AVX-512 36K-248K       3+ parts                              09:58  [0;37mlimit    core 06 solo limit -30[m
+  [0;35m○  [0;90m3  [0;37mR7 [0;90mall-core           2 CCDs · 3+ parts       y-cruncher FFTv4 + N63 + VT3  3+ parts                              09:53  [0;37mlimit    core 09 solo limit -18[m
+  [0;35m○  [0;90m4  [0;37mR2 [0;90mheavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m                               09:41  [0;37mlimit    core 03 solo limit -17[m
+  [0;35m○  [0;90m5  [0;37mR2 [0;90mheavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m                               09:25  [0;37mlimit    core 10 solo limit -16[m
+  [0;35m○  [0;90m6  [0;37mR2 [0;90mheavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m                               09:14  [0;37mlimit    core 14 solo limit -4[m
+  [0;35m○  [0;90m7  [0;37mR6 [0;90midle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   09:10  [0;37mlimit    core 11 solo limit -7[m
+  [0;35m○  [0;90m8  [0;37mR5 [0;90mboth threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               08:52  [0;37mlimit    cores 05, 12 solo limit -10[m
+  [0;35m○  [0;90m9  [0;37mR1 [0;90mlight              one core at a time      mprime SSE 4K-21K             16 x 2m                               07:50  [0;37mconfirm  core 15 confirming -39 as its solo limit[m
+  [0;35m○ [0;90m10  [0;37mR1 [0;90mlight              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               07:25  [0;37mstep     core 15 passed -38, next -39[m
+  [0;35m○ [0;90m11  [0;37mR1 [0;90mlight              one core at a time      y-cruncher SNT + SVT          16 x 2m                               07:04  [0;37mconfirm  core 01 confirming -34 as its solo limit[m
+  [0;35m○ [0;90m12  [0;37mR3 [0;90mload steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               06:59  [0;37mconfirm  core 00 confirming -37 as its solo limit[m
+  [0;35m○ [0;90m13  [0;37mR3 [0;90mload steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               06:59  [0;91mfail     [0;37mcore 00 fails at -38[m
+  [0;35m○ [0;90m14  [0;37mR3 [0;90mload steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               06:59  [0;91mcrash    [0;37mcore 00 · R1 light at -38 · rebooted · early in trial 1 of 1[m
+  [0;35m○ [0;90m15  [0;37mR4 [0;90mpartial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               06:57  [0;37mstep     core 15 passed -37, next -38[m
+  [0;35m○ [0;90m16  [0;37mR4 [0;90mpartial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               06:54  [0;37mconfirm  core 07 confirming -32 as its solo limit[m
+  [0;35m○ [0;90m17  [0;37mR4 [0;90mpartial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               06:54  [0;91mfail     [0;37mcore 07 fails at -33[m
+  [0;35m○ [0;90m18  [0;37mR6 [0;90midle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   06:54  [0;91mcrash    [0;37mcore 07 · R1 light at -33 · rebooted · early in trial 1 of 1[m
+                                                                                                                          [0;90m06:45  [0;37mconfirm  core 04 confirming -32 as its solo limit[m
+  [0;90mR7 [0;35m─────────────────────────── [0;90mtop requesters [0;35m───────── [0;90mself-sufficient [0;35m───────────────── [0;90mobserved, not a guarantee     06:45  [0;91mfail     [0;37mcore 04 fails at -33[m
+  [0;37mmprime AVX2 36K-248K           05 14 by offset          none yet                                                        [0;90m06:45  [0;91mcrash    [0;37mcore 04 · R2 heavy vector at -33 · rebooted · early in trial 1 of 1[m
+  [0;90mmprime AVX-512 36K-248K        05 14 by offset          none yet                                                        06:34  [0;37mstep     core 01 passed -33, next -34[m
+  [0;90my-cruncher FFTv4 + N63 + VT3   05 14 by offset          none yet                                                        06:30  [0;37mstep     core 00 passed -37, next -38[m
                                                                                                                           [0;90m06:27  [0;37mstep     core 15 passed -36, next -37[m
                                                                                                                           [0;90m+185 more[m
 

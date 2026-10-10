@@ -163,13 +163,13 @@ Shut down or reboot. The next boot is your normal system; with `leaveOnShutdown`
 togi status
 ```
 
-`status` lists the profile to enter in BIOS, one offset per core, with each core's failure point and combinations and its phase. It also reports clean cycles, valid trials per workload, missing full-cycle coverage and the Tctl peak ([Commands](spec/runtime.md#commands)). After deepening those offsets can differ from the checked solo limits search found. Picking "NixOS - togi" again continues the session.
+`status` lists the profile to enter in BIOS in its `BIOS` column, one offset per core, with each core's failure point and combinations and its phase. A `*` marks an offset that is not confirmed yet: the next passed full cycle confirms it, and until phase 1's first passed cycle there is no confirmed profile. `status` also names the phase and, in phase 2, how many rounds remain at most before one full cycle, then the clean cycles once phase 2 has concluded, valid trials per workload, missing full-cycle coverage and the Tctl peak ([Commands](spec/runtime.md#commands)). Those offsets can differ from the solo limits search found, because phase 2 moves cores toward them. Picking "NixOS - togi" again continues the session.
 
-Choose how long to keep testing with `sudo togi run --cycles N`, replacing N with a positive count; [Checking](spec/tuner.md#checking) says when it stops. Without the flag, checking continues indefinitely.
+Choose how long to keep testing with `sudo togi run --cycles N`, replacing N with a positive count; [Checking](spec/tuner.md#checking) says when it stops. Without the flag, checking continues indefinitely. To stop at the first confirmed profile instead, right after phase 1's passed cycle and before phase 2 moves any core, use `sudo togi run --first-result` (not together with `--cycles`); run again without it to continue with phase 2.
 
 A clean cycle is workload breadth, not proof of stability. The default cycle's R3 and R4 trials on every core ([schedule](spec/workloads.md#durations-and-checking-schedule)) add about 2.1 hours per cycle on 16 cores in simulation (a failure-free simulated cycle takes 15.6 hours instead of 13.5). A rare failure can still pass them: under the simulator's limit model, three R4 trials miss a failure one count past a core's limit about 0.01% of the time, against 4.6% for one trial; on a machine fitted to real evidence where one trial misses it 70.6% of the time, three still miss it 35.1% of the time. More cycles provide more testing, but neither a count nor a Tctl peak guarantees safety in untested real use.
 
-The table labels those values `OFFSET` and shows each core's `CCD` and `SLOT` (0-7 within that CCD). Match every row to the BIOS per-core Curve Optimizer controls by CCD and slot, not by Linux core number alone. BIOS labels vary by board; confirm every row before saving. Stop if the labels cannot be reconciled with the recorded CCD and slot.
+The table shows the current `OFFSET` and, in `BIOS`, the profile to enter, and shows each core's `CCD` and `SLOT` (0-7 within that CCD). Enter the `BIOS` column of every row in the BIOS per-core Curve Optimizer controls by CCD and slot, not by Linux core number alone. BIOS labels vary by board; confirm every row before saving. Stop if the labels cannot be reconciled with the recorded CCD and slot.
 
 ## 6. Dead ends
 

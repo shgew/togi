@@ -1,0 +1,66 @@
+  togi   07:58:42   session 31h58m   52 failures · 9 crashes   last observed failure 02:14, 5h44m ago
+
+  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ► PHASE 2  confirmation cycle  ───  CLEAN CYCLES 0  ───  ► CYCLE 2  step 1 of 18 · part 1 of 3 · trial 1 of 4
+
+  ▌  CYCLE 2   Step 1 is R7 all-core with mprime AVX2 36K-248K.                                                           last trial      PASS  2:00 on 08-10 13 15 · Tctl max 75°C
+  ▌            Part 1 of 3 loads 00-07 for 2 minutes.
+
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 1003
+   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers                                                                                                                                                  CYCLE 2 · STEP 1 · PART 1
+
+  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          ▀█    ▀▀█ █▀█
+  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░           █  ▀ █▀▀ █ █
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
+  0:40 of 2:00                                                                                                                                                                        0 passed · trial 1 of 4  ► · · ·                   left
+
+  if 3 of 4 pass       next: trial 4 of 4 · 5m
+  if a core is named   its failure point is recorded → it backs off per offset order → next: rerun R7 all-core on 00-07 · 2m
+  if none is named     core 03 -17 → -16 per offset order → next: rerun R7 all-core on 00-07 · 2m
+
+  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
+  ► 00  -37  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                -38                                            08  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··                           -25
+  ► 01  -31  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··                    -32                                            09  -16  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·                                    -17
+  ► 02  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                  -36                                            10  -16  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                     -17
+  ► 03  -17  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                    -18                                            11   -4  AT LIMIT  ▄▄▄▄█··                                                -5
+  ► 04  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            12   -7  AT LIMIT  ▄▄▄▄▄▄▄█··                                             -8
+  ► 05   -7  AT LIMIT  ▄▄▄▄▄▄▄█··                                             -8   top by offset                            13  -22  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·                              -23
+  ► 06  -27  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··                        -28                                            14    0  AT LIMIT  █···                                                   -1   top by offset
+  ► 07  -30  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·                      -31                                            15  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█···               -36
+
+  BIOS PROFILE ────────────────────────────────────────────────────────────────── confirmed by the cycle ending #6908     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+  slot      0    1    2    3    4    5    6    7 
+  CCD 0   -36  -31  -34  -16  -31   -7  -27  -30                                                                          07:58  step     cycle 2 step 1: R7 all-core, mprime AVX2 36K-248K
+  CCD 1   -24  -16  -15   -4   -7  -22    0  -35                                                                          07:58  cycle    cycle 2 started · 18 steps
+                                                                                                                          07:58  round    #1 passed, the proposed offsets held
+  CYCLE 2 ───────────────────────────────────────────────────────────────────────────────────────── 18 steps · 0 done     07:58  pass     R7 all-core on 08-10 13 15 · 5 of 5 passed · Tctl max 75°C
+                                                                                                                          07:48  pass     R7 all-core on 00 02 · 5 of 5 passed · Tctl max 75°C
+    #   kind                  where                   workload                      schedule       result                 07:38  pass     R7 all-core on 00 02 04 · 5 of 5 passed · Tctl max 69°C
+  ►  1  R7 all-core           2 CCDs · 3+ parts       mprime AVX2 36K-248K          3+ parts       part 1 of 3            07:28  pass     R7 all-core on 00-04 06 07 · 5 of 5 passed · Tctl max 74°C
+  ►     ├ full CCD 0          00-07                                                 3 x 2m + 5m    trial 1 of 4           07:18  pass     R7 all-core on 08-10 13 15 · 5 of 5 passed · Tctl max 75°C
+        ├ full CCD 1          08-15                                                 3 x 2m + 5m                           07:08  pass     R7 all-core on 00 02 · 5 of 5 passed · Tctl max 74°C
+        ├ full CCD 0+1        00-15                                                 3 x 2m + 10m                          06:58  pass     R7 all-core on 00 02 04 · 5 of 5 passed · Tctl max 74°C
+        └ partials may follow                                                                                             06:48  pass     R7 all-core on 00-04 06 07 · 5 of 5 passed · Tctl max 75°C
+  ○  2  R7 all-core           2 CCDs · 3+ parts       mprime AVX-512 36K-248K       3+ parts                              06:38  pass     R7 all-core on 08-10 13 15 · 5 of 5 passed · Tctl max 72°C
+  ○  3  R7 all-core           2 CCDs · 3+ parts       y-cruncher FFTv4 + N63 + VT3  3+ parts                              06:28  pass     R7 all-core on 00 02 · 5 of 5 passed · Tctl max 74°C
+  ○  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m                               06:18  pass     R7 all-core on 00 02 04 · 5 of 5 passed · Tctl max 74°C
+  ○  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m                               06:08  pass     R7 all-core on 00-04 06 07 · 5 of 5 passed · Tctl max 73°C
+  ○  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m                               04:18  room     core 04 -31 → -32
+  ○  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   04:18  room     core 03 -16 → -17
+  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               04:18  room     core 10 -15 → -16
+  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               04:18  room     core 02 -34 → -35
+  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               04:18  room     core 00 -36 → -37
+  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               04:18  round    #1: core 00 goes deeper to -37, core 02 goes deeper to -35, core 03 goes deeper to -17, core 04...
+  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               04:18  cycle    cycle 1 passed, a full cycle of every kind of test
+  ○ 13  R3 load steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               04:18  pass     R6 idle + bursts on 00-15 · passed · Tctl max 68°C
+  ○ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               04:03  pass     R4 partial load on core 15 at -35 · passed · Tctl max 67°C
+  ○ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               04:01  pass     R4 partial load on core 07 at -30 · passed · Tctl max 74°C
+  ○ 16  R4 partial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               03:59  pass     R4 partial load on core 14 at 0 · passed · Tctl max 64°C
+  ○ 17  R4 partial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               03:57  pass     R4 partial load on core 06 at -27 · passed · Tctl max 70°C
+  ○ 18  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   03:55  pass     R4 partial load on core 13 at -22 · passed · Tctl max 74°C
+                                                                                                                          03:53  pass     R4 partial load on core 05 at -7 · passed · Tctl max 72°C
+  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     03:51  pass     R4 partial load on core 12 at -7 · passed · Tctl max 66°C
+  mprime AVX2 36K-248K           05 14 by offset          01-14                                                           03:49  pass     R4 partial load on core 04 at -31 · passed · Tctl max 70°C
+  mprime AVX-512 36K-248K        05 14 by offset          01-14                                                           03:47  pass     R4 partial load on core 11 at -4 · passed · Tctl max 70°C
+  y-cruncher FFTv4 + N63 + VT3   05 14 by offset          01-14                                                           +783 more
+
+   ?  help    l  log    esc  back    q  close view

@@ -897,5 +897,7 @@ func (s *State) Project(st *journal.State) {
 	st.Hunt = s.projectHunt()
 	st.Deepening = s.projectRound()
 	st.Checking = s.projectChecking()
+	st.Phases = s.PhasePlan()
+	st.BIOS = s.projectBIOS()
 	s.projectionDirty = false
 }

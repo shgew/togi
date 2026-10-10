@@ -1,6 +1,6 @@
   togi   00:48:40   session 0h48m   0 failures · 0 crashes
 
-  ► SOLO LIMITS  0 of 16 found · core 00 searching -5  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ► SOLO LIMITS  0 of 16 found · core 00 searching -5  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
 
   ▌  SOLO LIMITS   I'm finding core 00's solo limit, one turn at a time, now at -5.                                       last trial      PASS  1:30 on core 15 · Tctl max 66°C
   ▌                One core at a time with the rest at 0, so any failure belongs to the loaded core.

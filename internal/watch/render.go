@@ -624,25 +624,20 @@ func (s Snapshot) stageLine(class sizeClass, summary bool, now time.Time) string
 	if !s.session || s.problem != nil {
 		return ""
 	}
-	found, room := 0, 0
+	found := 0
 	for _, c := range s.cores {
 		if c.solo != nil {
 			found++
 		}
-		if c.state == coreHasRoom {
-			room++
-		}
 	}
 	short := class == compactLayout
-	names := []string{"SOLO LIMITS", "CYCLES", "DEEPEN", "CLEAN CYCLES"}
+	names := []string{"SOLO LIMITS", "PHASE 1", "PHASE 2", "CLEAN CYCLES", "CYCLE"}
 	join := "  " + track.Render("───") + "  "
 	if short {
-		names = []string{"SOLO", "CYCLE", "DEEPEN", "CLEAN"}
+		names = []string{"SOLO", "P1", "P2", "CLEAN", "CYCLE"}
 		join = " " + track.Render("─") + " "
 	}
-	solo := s.soloStage(names[0], found, short)
-	cycle := s.cycleStage(names[1], short)
-	parts := []string{solo, cycle}
+	parts := []string{s.soloStage(names[0], found, short)}
 	if h := s.hunt; h != nil {
 		hunt := s.runMark(amber) + lamp.Render(fmt.Sprintf(" HUNT %d ", h.id))
 		if where := s.huntStage(short); where != "" {
@@ -650,19 +645,11 @@ func (s Snapshot) stageLine(class sizeClass, summary bool, now time.Time) string
 		}
 		parts = append(parts, hunt)
 	}
-	deep := grey.Render("○ " + names[2])
-	if s.phase == journal.PhaseDeepening && s.hunt == nil {
-		deep = s.runMark(lit) + white.Render(names[2])
-		if s.deepen != nil {
-			deep += textStyle.Render(fmt.Sprintf("  round %d", s.deepen.round))
-		}
-	} else if !short && s.hunt == nil && room > 0 {
-		deep += grey.Render(fmt.Sprintf("  after a passed full cycle · %d cores have room", room))
-	}
-	parts = append(parts, deep, grey.Render(fmt.Sprintf("%s %d", names[3], s.cleanCycles)))
-	if !short && s.stopped == nil {
+	parts = append(parts, s.phase1Stage(names[1], found), s.phase2Stage(names[2], short), grey.Render(fmt.Sprintf("%s %d", names[3], s.cleanCycles)))
+	if !short && s.stopped == nil && s.phases != nil && s.phases.phase == 0 {
 		parts[len(parts)-1] += track.Render("  · repeats until stopped")
 	}
+	parts = append(parts, s.cycleStage(names[4], short))
 	if summary && s.trial != nil && s.trial.hasStarted {
 		t := s.trial
 		if until := s.quietUntil(); !until.IsZero() && now.Before(until) {
@@ -695,6 +682,47 @@ func (s Snapshot) soloStage(name string, found int, short bool) string {
 		solo += textStyle.Render(fmt.Sprintf(" · core %02d %s %d", s.trial.core, verb, s.trial.offset))
 	}
 	return solo
+}
+
+// phase1Stage is search plus the first cycle: it ends at that cycle's pass, which confirms the first BIOS profile.
+func (s Snapshot) phase1Stage(name string, found int) string {
+	switch {
+	case s.phases == nil || s.phases.phase == 1 && (found < len(s.cores) || s.hunt != nil):
+		return grey.Render("○ " + name)
+	case s.phases.phase == 1:
+		return s.runMark(lit) + white.Render(name)
+	}
+	return green.Render("■ ") + textStyle.Render(name)
+}
+
+// phase2Stage is the rounds and the confirmation cycle, and in a round or between rounds the most that is left.
+func (s Snapshot) phase2Stage(name string, short bool) string {
+	ph := s.phases
+	switch {
+	case ph == nil || ph.phase == 1:
+		return grey.Render("○ " + name)
+	case ph.phase == 0:
+		stage := green.Render("■ ") + textStyle.Render(name)
+		if !short {
+			stage += grey.Render("  concluded")
+		}
+		return stage
+	}
+	stage := s.runMark(lit) + white.Render(name)
+	if s.hunt != nil {
+		stage = amber.Render("○ ") + textStyle.Render(name)
+	}
+	switch {
+	case ph.round > 0 && short:
+		stage += textStyle.Render(fmt.Sprintf(" r%d", ph.round))
+	case ph.round > 0:
+		stage += textStyle.Render(fmt.Sprintf("  round %d · at most %d left", ph.round, ph.roundsLeft))
+	case ph.confirming && !short:
+		stage += textStyle.Render("  confirmation cycle")
+	case !ph.confirming && !short:
+		stage += textStyle.Render(fmt.Sprintf("  at most %s left", plural(ph.roundsLeft, "round")))
+	}
+	return stage
 }
 
 func (s Snapshot) cycleStage(name string, short bool) string {

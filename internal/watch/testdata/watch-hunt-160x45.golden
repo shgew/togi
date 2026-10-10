@@ -1,6 +1,6 @@
   togi   20:24:00   session 20h24m   40 failures · 8 crashes   last observed failure 20:23, a moment ago
 
-  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 8 of 18, part 2  ───  ►  HUNT 1   parts · part 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0...
+  ■ SOLO LIMITS  16/16  ───  ►  HUNT 1   parts · part 1 of 2  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE 1  paused at step 8 of 18...
 
   ▌  HUNT 1   Corrected hardware error in R5 both threads on 08; no core          last trial      FAILURE  2:00 on core 08 · corrected hardware error...
   ▌           named. Rerunning it with 00-07 09-15 parked.
@@ -17,7 +17,7 @@
     00    0  PARKED    ··················█          -38   returns to -36          ► 08  -26  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄█               -28
     01    0  PARKED    ·················█           -35   returns to -33            09    0  PARKED    ········█                    -17   returns to -16
     02    0  PARKED    ·················█           -36   returns to -34            10    0  PARKED    ········█                    -17   returns to -15
-    03    0  PARKED    ········█                    -18   returns to -16            11    0  PARKED    ··█                           -5   returns to -4
+    03    0  PARKED    ········█                    -18   returns to -16            11    0  PARKED    ··█·                          -5   returns to -4
     04    0  PARKED    ················█            -33   returns to -31            12    0  PARKED    ·····█                       -11   returns to -9
     05    0  PARKED    ···█·                         -8   returns to -7             13    0  PARKED    ···········█                 -23   returns to -22
     06    0  PARKED    ·············█·              -28   returns to -27            14    0  AT LIMIT  █·                            -1

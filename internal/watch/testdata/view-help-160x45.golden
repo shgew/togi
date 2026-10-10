@@ -1,6 +1,6 @@
   togi   08:22:00   session 8h22m   8 failures · 8 crashes   last observed failure 08:22   screen paused until 08:24
 
-  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 7 of 18  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0...
+  ■ SOLO LIMITS  16/16  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE 1  paused at...
 
   █ READING THE SCREEN ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   █ 
@@ -16,7 +16,7 @@
   █ ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ █                    -32
   █                     probe: the group failed with core 00 at -30, -29, -27
   █ 
-  █ ►         the core carries load in this trial
+  │ ►         the core carries load in this trial
   │ ▄▄▄       offset applied now, or saved after a stop restored the hardware; white when this trial judges the core
   │ grey ▄▄▄  the same depth, grey when the core is not judged
   │ ···       depth it reached but does not use now: given back, parked, waiting

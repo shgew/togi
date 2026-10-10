@@ -37,9 +37,10 @@ func TestRunFlagsCycleLimit(t *testing.T) {
 			t.Parallel()
 			var g globals
 			var cycles int
+			var firstResult bool
 			var grubenv string
 			var noTUI bool
-			flags := runFlags(&g, &cycles, &grubenv, &noTUI)
+			flags := runFlags(&g, &cycles, &firstResult, &grubenv, &noTUI)
 			var stdout, stderr bytes.Buffer
 			if code, ok := parseFlags(flags, tc.args, runHelp, &stdout, &stderr); !ok || code != exitOK {
 				t.Fatalf("parse: exit %d, ok %v, stderr %q", code, ok, stderr.String())
@@ -301,6 +302,7 @@ func TestRunResultExitCodes(t *testing.T) {
 	}{
 		{"signal", session.Stop{Reason: session.StopSignal}, nil, 0, ""},
 		{"cycles", session.Stop{Reason: session.StopCycles}, nil, 0, ""},
+		{"first-result", session.Stop{Reason: session.StopFirstResult}, nil, 0, ""},
 		{"missing-core", session.Stop{}, session.ErrNoSuchCore, 2, "togi run: no such core\n"},
 		{"journal-locked", session.Stop{}, journal.ErrLocked, 3, "togi run: another togi process holds the journal lock\n"},
 		{"ordinary-error", session.Stop{}, errors.New("read failed\x1b[2J\nforged"), 1, "togi run: read failed\\x1b[2J\\nforged\n"},
@@ -445,5 +447,35 @@ func TestRunRefusalStillClearsAfterReasonWriteFailure(t *testing.T) {
 				t.Fatalf("clear result or error classification: %s", diagnostics.String())
 			}
 		})
+	}
+}
+
+func TestRunFirstResultFlag(t *testing.T) {
+	t.Parallel()
+	var g globals
+	var cycles int
+	var firstResult bool
+	var grubenv string
+	var noTUI bool
+	var stdout, stderr bytes.Buffer
+	if code, ok := parseFlags(runFlags(&g, &cycles, &firstResult, &grubenv, &noTUI), []string{"--first-result"}, runHelp, &stdout, &stderr); !ok || code != exitOK || !firstResult || cycles != 0 {
+		t.Fatalf("parse: exit %d, ok %v, first result %v, cycles %d, stderr %q", code, ok, firstResult, cycles, stderr.String())
+	}
+}
+
+func TestRunRefusesFirstResultWithCycles(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	g := globals{stateDir: dir}
+	var stdout, stderr bytes.Buffer
+	if code := runRun(&g, []string{"--first-result", "--cycles", "1"}, &stdout, &stderr); code != exitUsage {
+		t.Fatalf("exit %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(stderr.String(), "--first-result and --cycles cannot be combined") {
+		t.Fatalf("stderr %q", stderr.String())
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("state directory %v (%v) was touched", entries, err)
 	}
 }

@@ -1,0 +1,20 @@
+phase 2 round 2, checks 1/2 | phase 2: at most 3 rounds left, then one full
+  cycle
+session 20260101T000000Z started 2026-01-01T00:00:00Z
+in flight: none
+
+CORE  CCD  SLOT  OFFSET  BIOS  PHASE     FAILURE  QUEUED
+03    0    3     -9      -9    AT LIMIT  -        -
+05    0    5     -6      -6    AT LIMIT  -        -
+BIOS profile confirmed by the passed full cycle [#30]
+
+phase 2 round 2 [#42]
+
+CANDIDATE  OFFSET  SOLO  GAP  STATE
+03         -9      -12   3    moving
+05         -6      -7    1    moving
+
+worst case if no round fails: 3 rounds left, then one full cycle
+CHECK                    CORES  PASSES
+R1 mprime-sse-4k-21k     03     5/5
+R2 mprime-avx2-36k-248k  03     2/5

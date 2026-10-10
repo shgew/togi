@@ -1,6 +1,6 @@
   togi   08:22:00   session 8h22m   8 failures · 8 crashes   last observed failure 08:22   screen paused until 08:24
 
-  ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 7 of 18  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0...
+  ■ SOLO LIMITS  16/16  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE 1  paused at...
 
   │ NO ETA        A hunt can start at any time, so togi shows only what is scheduled and the time left in the current trial.
   │ 
@@ -25,7 +25,7 @@
   │ parked           a core a hunt holds shallower than its failing offset
   │ partial part     an R7 part with the top requesters idle
   │ top requester    the loaded core with the highest voltage request, setting the shared core voltage; marked top on the CCD tables, by offset when offsets
-  █                  stand in for requests
+  │                  stand in for requests
   █ self-sufficient  observed passing as top requester for this R7 workload; evidence, not a guarantee
   █ record only      a trial whose result is kept but changes no decision
   █ cycle            one pass through the checking schedule

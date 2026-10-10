@@ -42,10 +42,10 @@ func TestStatus(t *testing.T) {
 		t.Fatalf("status: exit %d, stderr %s", code, stderr.String())
 	}
 	status := stdout.String()
-	if want := fmt.Sprintf("clean cycles since last deepening: %d, latest cycle %d", st.Checking.CleanCycles, st.Checking.LastCleanCycle); !strings.Contains(strings.Join(strings.Fields(status), " "), want) {
+	if want := fmt.Sprintf("phase 2 concluded: clean cycles %d, latest cycle %d", st.Checking.CleanCycles, st.Checking.LastCleanCycle); !strings.Contains(strings.Join(strings.Fields(status), " "), want) {
 		t.Fatalf("status lacks %q:\n%s", want, status)
 	}
-	checkRows(t, "status", status, regexp.MustCompile(`(?m)^(\d\d)  +\d  +\d  +(-?\d+)  `), st)
+	checkRows(t, "status", status, regexp.MustCompile(`(?m)^(\d\d)  +\d  +\d  +(-?\d+)  +(-?\d+\*?|-)  `), st)
 	golden(t, "status", status)
 }
 
@@ -162,23 +162,66 @@ func TestStatusCombinationAndOpenHunt(t *testing.T) {
 	}
 }
 
-func TestStatusOpenDeepening(t *testing.T) {
-	t.Parallel()
-	st := journal.State{
+func phase2Status() journal.State {
+	return journal.State{
 		Session: &journal.SessionInfo{ID: "20260101T000000Z", Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)},
 		Phase:   string(journal.PhaseDeepening),
-		Cores:   []journal.CoreState{{Core: 3, CCD: 0, Offset: -9, Phase: journal.PhaseAtLimit}},
+		Cores: []journal.CoreState{
+			{Core: 3, CCD: 0, Offset: -9, Phase: journal.PhaseAtLimit},
+			{Core: 5, CCD: 0, Offset: -6, Phase: journal.PhaseAtLimit},
+		},
+		Phases: &journal.PhasesState{
+			Phase: 2, Phase1End: 30, RoundsLeft: 3,
+			Candidates: []journal.CandidateState{
+				{Core: 3, Offset: -9, SoloLimit: -12, Gap: 3, Moving: true},
+				{Core: 5, Offset: -6, SoloLimit: -7, Gap: 1, Moving: true},
+			},
+		},
+		BIOS: &journal.BIOSState{Offsets: []int{-9, -6}, Confirmed: 30},
 		Deepening: &journal.DeepeningState{
-			Round: 2, Seq: 42, Target: []int{-10}, Profile: []int{-9}, Cores: []int{3},
+			Round: 2, Seq: 42, Target: []int{-10, -7}, Profile: []int{-9, -6}, Cores: []int{3, 5},
 			Checks: []journal.CheckState{
 				{Regime: machine.R1, Workload: "mprime-sse-4k-21k", Cores: []int{3}, Passes: 5, Needed: 5},
 				{Regime: machine.R2, Workload: "mprime-avx2-36k-248k", Cores: []int{3}, Passes: 2, Needed: 5},
 			},
 		},
 	}
-	var out bytes.Buffer
-	writeStatus(&out, st, nil)
-	golden(t, "status-deepening", out.String())
+}
+
+func TestStatusPhases(t *testing.T) {
+	t.Parallel()
+	unconfirmed := phase2Status()
+	unconfirmed.Deepening = nil
+	unconfirmed.Phase = string(journal.PhaseChecking)
+	unconfirmed.Phases = &journal.PhasesState{Phase: 2, Phase1End: 30, Confirming: true}
+	unconfirmed.BIOS = &journal.BIOSState{Offsets: []int{-8, -6}, Confirmed: 30, Unconfirmed: []int{3}, Since: 44}
+	phase1 := phase2Status()
+	phase1.Deepening = nil
+	phase1.Phase = string(journal.PhaseSearch)
+	phase1.Phases = &journal.PhasesState{Phase: 1}
+	phase1.BIOS = nil
+	for _, tc := range []struct {
+		name  string
+		st    journal.State
+		wants []string
+	}{
+		{"phase2", phase2Status(), []string{"phase 2 round 2, checks 1/2 | phase 2: at most 3 rounds left, then one full cycle", "BIOS profile confirmed by the passed full cycle [#30]"}},
+		{"phase1", phase1, []string{"| phase 1", "BIOS profile: none confirmed yet"}},
+		{"unconfirmed", unconfirmed, []string{"phase 2: confirmation cycle", "-8*", "unconfirmed"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			writeStatus(&out, tc.st, nil)
+			flat := strings.Join(strings.Fields(out.String()), " ")
+			for _, want := range tc.wants {
+				if !strings.Contains(flat, want) {
+					t.Errorf("status lacks %q:\n%s", want, out.String())
+				}
+			}
+			golden(t, "status-"+tc.name, out.String())
+		})
+	}
 }
 
 func TestStatusShowsUnresetDefectResetCommands(t *testing.T) {
@@ -384,7 +427,7 @@ func TestWriteStatusWrapsWideDecisionNotes(t *testing.T) {
 			t.Errorf("core row continuation is not indented two cells: %q", line)
 		}
 	}
-	wantRow := "03 0 3 -9 AT LIMIT - " + queued
+	wantRow := "03 0 3 -9 - AT LIMIT - " + queued
 	if diff := cmp.Diff(wantRow, strings.Join(strings.Fields(strings.Join(rowLines, " ")), " ")); diff != "" {
 		t.Fatalf("wrapped core row changed values (-want +got):\n%s", diff)
 	}

@@ -321,7 +321,7 @@ func BenchmarkDashboardProjectionForecast(b *testing.B) {
 		_ = s.CyclePlan()
 		_ = s.HuntPlan()
 		_ = s.SearchTurns()
-		_ = s.DeepeningPlan()
+		_ = s.PhasePlan()
 		_ = tuner.Forecast(events)
 	}
 	b.ReportMetric(float64(len(events)), "events")

@@ -1,9 +1,12 @@
 Usage: togi status
 
-Show the session at a glance: search, hunt, deepening or checking activity and
-clean cycles since the last deepening, then each core's offset, failure point
-and combinations, phase, queued work and last decision. An open hunt shows
-groups and trials; an open deepening round shows checks and passes. Evidence
+Show the session at a glance: search, hunt, phase 2 round or checking activity,
+the phase and, once phase 2 concluded, the clean cycles; the BIOS profile to
+enter, marked * while unconfirmed; then each core's offset, BIOS offset,
+failure point and combinations, phase, queued work and last decision. In phase 2
+it lists the candidates with their remaining gaps and the most rounds left if
+none fails, then one full cycle. An open hunt shows groups and trials; an open
+phase 2 round shows checks and passes. Evidence
 includes workloads, valid trials and the Tctl peak since the last profile
 change, and lists between-trial MCEs without treating them as failures.
 Shows each core's observed self-sufficiency for each R7 workload and its CCD's

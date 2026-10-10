@@ -237,7 +237,7 @@ func TestProjectedState(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(start), 0600); err != nil {
 				t.Fatal(err)
 			}
-			cached := journal.State{Schema: tc.snapshot, LastSeq: 1, Phase: "checking", Session: &journal.SessionInfo{ID: "test"}, Cores: []journal.CoreState{{Core: 0, CCD: 0, CPUs: []int{0, 1}}, {Core: 8, CCD: 1, CPUs: []int{2, 3}}}}
+			cached := journal.State{Schema: tc.snapshot, LastSeq: 1, Phase: "checking", Session: &journal.SessionInfo{ID: "test"}, Cores: []journal.CoreState{{Core: 0, CCD: 0, CPUs: []int{0, 1}}, {Core: 8, CCD: 1, CPUs: []int{2, 3}}}, Phases: &journal.PhasesState{Phase: 1}}
 			events := handwritten(t, "")
 			cached.Session.Start = events[0].Time
 			cached.LastSeq, cached.Phase = tc.lastSeq, tc.phase

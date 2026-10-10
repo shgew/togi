@@ -105,7 +105,7 @@ Checking starts each core one count shallower than its solo limit, the **margin*
 
 Phase 2 always ends with one full confirmation cycle, also when no core could move. A failure in it returns a loaded deepened core to its phase-1 offset first. Its first passed full end concludes phase 2; checking then continues without ever deepening again, and failures only step cores back. Once the profile has passed a cycle after the conclusion, a core steps back on its second failure within 5 cycles, not its first, so single background failures do not wear the profile down; the BIOS profile does not wait: it shows a held failure's core already stepped back, marked unconfirmed, and returns to the held offset if 5 cycles pass with no second failure. [Phase 1](spec/tuner.md#phase-1), [Phase 2](spec/tuner.md#phase-2) and [Later failures](spec/tuner.md#later-failures) own the rules; [ADR 0054](adr/0054-two-phases-replace-the-deepening-loop.md) and [ADR 0056](adr/0056-later-failures-step-back-in-pairs.md) record why.
 
-With `run --cycles 1`, togi stops right after the confirmation cycle; a larger N counts further cycles of indefinite checking. Without `--cycles`, checking continues. Stopping and resuming uses the journal; the session can span many reboots.
+With `run --cycles 1`, togi stops right after the confirmation cycle; a larger N counts further cycles of indefinite checking. `run --first-result` stops earlier, right after phase 1's passed cycle, so the operator can enter the first confirmed profile before phase 2 moves anything. Without either flag, checking continues. Stopping and resuming uses the journal; the session can span many reboots.
 
 ## How long does it take?
 

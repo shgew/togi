@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestInterruptedStateWriteKeepsPrevious(t *testing.T) {
@@ -164,5 +165,30 @@ func TestStateCloseFailureKeepsPreviousProjection(t *testing.T) {
 	}
 	if diff := cmp.Diff(previous.Session, stored.Session); diff != "" {
 		t.Fatalf("unconfirmed temp file replaced session: %s", diff)
+	}
+}
+
+func TestStatePhasesAndBIOSRoundTrip(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	j := openTest(t, dir)
+	want := State{Schema: Schema, LastSeq: 9, Phase: "checking",
+		Phases: &PhasesState{Phase: 2, Phase1End: 5, Round: 1, RoundsLeft: 3, Candidates: []CandidateState{{Core: 3, Offset: -10, SoloLimit: -12, Gap: 2, Moving: true}}},
+		BIOS:   &BIOSState{Offsets: []int{-10, -8}, Confirmed: 5, Unconfirmed: []int{1}, Since: 8},
+	}
+	if err := j.WriteState(want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(State{})); diff != "" {
+		t.Fatalf("state (-want +got):\n%s", diff)
+	}
+	missing := want
+	missing.BIOS = nil
+	if diff := DiffFields(want, missing); len(diff) != 1 || diff[0] != "bios" {
+		t.Fatalf("DiffFields = %v, want [bios]", diff)
 	}
 }

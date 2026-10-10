@@ -1,4 +1,4 @@
-Usage: togi run [--cycles <N>] [--tuning-boot <grubenv>] [--no-tui]
+Usage: togi run [--cycles <N> | --first-result] [--tuning-boot <grubenv>] [--no-tui]
 
 Start or resume the tuning session in the foreground: search for each core's
 solo limit, hunt the core or combination behind unattributed failures with
@@ -32,6 +32,12 @@ events.jsonl still records every event. --no-tui prints the lines instead.
 phase 2's confirmation cycle. --cycles 1 stops right after the confirmation; a
 larger N counts further cycles of indefinite checking.
 
+--first-result stops once the BIOS profile is first confirmed: right after
+phase 1's passed cycle, before phase 2 moves any core. togi status shows the
+profile to enter in BIOS. Run again without it to continue with phase 2. A later
+run with it stops at the next round or cycle start whose profile is confirmed,
+never on an unconfirmed one. It cannot be combined with --cycles.
+
 Without --tuning-boot, run checks the hardware watchdog once and records a
 session.warning if none is active, then continues; the dashboard and togi events
 show it. A freeze without reset protection needs a manual reset; start sessions
@@ -43,13 +49,15 @@ records a pending leave reason once. Dead ends and incompatible or unknown-kind
 journals persist a short leave reason before clearing the saved GRUB entry.
 
 Examples:
-  sudo togi run              Tune this machine until a signal or a dead end
-  sudo togi run --cycles 1   Stop once phase 2's confirmation cycle has passed
-  sudo togi run --no-tui     Print one line per event instead of the dashboard
+  sudo togi run                  Tune this machine until a signal or a dead end
+  sudo togi run --cycles 1       Stop once phase 2's confirmation cycle has passed
+  sudo togi run --first-result   Stop at the first confirmed BIOS profile, after phase 1's passed cycle
+  sudo togi run --no-tui         Print one line per event instead of the dashboard
 
 Flags:
   --config <path>      JSON configuration file path for doctor, run and reset (default /etc/togi/config.json)
   --cycles <N>         stop after N clean cycles, each a passed full cycle ending at or after phase 2's confirmation cycle (default endless)
+  --first-result       stop once the BIOS profile is first confirmed, after phase 1's passed cycle and before phase 2 moves a core (not with --cycles)
   --no-tui             print one line per event instead of the dashboard on a terminal
   --tuning-boot <file> run as the tuning boot service: require an armed hardware watchdog within 30s; reset retry count on the first durable journal append; persist a leave reason before clearing saved_entry in this GRUB environment file, and reboot after a boot loop
 

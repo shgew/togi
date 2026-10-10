@@ -1,6 +1,6 @@
   togi   02:47:42   session 2h47m   3 failures · 1 crash   last observed failure 02:45, 2m ago
 
-  ► SOLO LIMITS  0 of 16 found  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ► SOLO LIMITS  0 of 16 found  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
 
   ▌  RECOVERED   I picked up from the journal after the reboot; nothing it recorded is lost.                              last trial      FAILURE  0:00 on core 12 · wrong result · Tctl max 67°C
 

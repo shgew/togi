@@ -1,11 +1,11 @@
-checking not started | clean cycles since last deepening: 0, latest cycle 0
+checking not started
 session s1 started 1970-01-01T00:01:40Z
 in flight: none
 
-CORE  CCD  SLOT  OFFSET  PHASE     FAILURE  QUEUED
-03    0    3     -9      AT LIMIT  -        -
+CORE  CCD  SLOT  OFFSET  BIOS  PHASE     FAILURE  QUEUED
+03    0    3     -9      -     AT LIMIT  -        -
   combinations C2
-07    0    7     -8      AT LIMIT  -        -
+07    0    7     -8      -     AT LIMIT  -        -
   combinations C2
 
 combinations:

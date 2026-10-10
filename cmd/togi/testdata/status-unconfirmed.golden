@@ -1,0 +1,12 @@
+checking not started | phase 2: confirmation cycle
+session 20260101T000000Z started 2026-01-01T00:00:00Z
+in flight: none
+
+CORE  CCD  SLOT  OFFSET  BIOS  PHASE     FAILURE  QUEUED
+03    0    3     -9      -8*   AT LIMIT  -        -
+05    0    5     -6      -6    AT LIMIT  -        -
+* unconfirmed since [#44]: cores 03 show a stepped-back offset, the profile
+  confirmed by the passed full cycle [#30] otherwise; the next passed full cycle
+  confirms it
+
+no core can move: the confirmation cycle is all that is left

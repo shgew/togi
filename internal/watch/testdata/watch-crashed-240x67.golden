@@ -1,6 +1,6 @@
   togi   02:47:42   session 2h47m   3 failures · 0 crashes   last observed failure 02:45, 2m ago
 
-  ○ SOLO LIMITS  0 of 16 found  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ○ SOLO LIMITS  0 of 16 found  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
 
   ▌  CRASHED   Trial 0114 crashed: a later boot has written events. togi run records the crash.                           last trial      FAILURE  0:00 on core 12 · wrong result · Tctl max 67°C
 

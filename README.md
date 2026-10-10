@@ -3,7 +3,7 @@
 > [!WARNING]
 > togi is pre-1.0. It writes Curve Optimizer offsets to your CPU through `ryzen_smu`, and finding each core's solo limit means running it until it fails: expect crashes, reboots and lost work in anything else running. A new version can refuse to continue a session written by an older one. Run it at your own risk.
 
-Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them through full checking cycles. Choose how long to keep testing with `run --cycles N`, or let checking continue indefinitely.
+Finds the deepest per-core Curve Optimizer offsets a Zen 5 desktop CPU sustains, then keeps testing them through full checking cycles. Choose how long to keep testing with `run --cycles N`, stop at the first confirmed profile with `run --first-result`, or let checking continue indefinitely.
 
 - [Searches](docs/spec/tuner.md#search) each core alone, makes multi-core R7 cores [self-sufficient](docs/spec/tuner.md#r7-request-order-and-attribution), [hunts](docs/spec/tuner.md#hunt) unattributed failures outside multi-core R7 and on the idle cores of a failed multi-core R7 load, starts [checking](docs/spec/tuner.md#phase-1) one count shallower than each solo limit, [takes that margin back](docs/spec/tuner.md#phase-2) in a bounded phase 2 and confirms it before continuing [checking](docs/spec/tuner.md#checking).
 - Tests with self-checking workloads (mprime, y-cruncher) across light, heavy, load-step, medium, SMT, idle and all-core regimes.
@@ -21,7 +21,7 @@ Works today, on a simulated 16-core machine:
 - evidence-based hunt duration and singleton-probe scheduling ([Hunt](docs/spec/tuner.md#hunt));
 - R7 full parts and partial chains ([Together trial sequence](docs/spec/tuner.md#together-trial-sequence)), with [voltage-targeted backoff](docs/spec/tuner.md#r7-voltage-targeted-backoff) of multi-core R7 failures and [located hunts](docs/spec/tuner.md#hunt) of unattributed ones;
 - an all-zero rerun before a failure at CO 0 stops tuning ([Dead ends](docs/spec/tuner.md#dead-ends));
-- reading a session's hunt, combinations, clean cycles, top requesters, per-workload self-sufficiency, valid trials and Tctl peak with `status`, `events` and the live `watch` dashboard ([Commands](docs/spec/runtime.md#commands)).
+- reading a session's phase, BIOS profile with its unconfirmed marker, phase 2's remaining work, hunt, combinations, clean cycles, top requesters, per-workload self-sufficiency, valid trials and Tctl peak with `status`, `events` and the live `watch` dashboard ([Commands](docs/spec/runtime.md#commands)).
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:
 - the `ryzen_smu` driver on full 8-core CCDs only; CCDs with fused-off slots are not yet supported;
@@ -41,7 +41,8 @@ togi --version                         # version and git revision of this build
 sudo togi doctor                       # check this machine is ready for a run, without starting a session or writing the journal
 sudo togi run                          # tune this machine; Ctrl-C stops, the next run resumes
 sudo togi run --cycles 3            # stop after three clean cycles, counted from phase 2's confirmation
-togi status                            # activity, failure points and combinations, per-core offsets and evidence
+sudo togi run --first-result        # stop at the first confirmed BIOS profile, after phase 1's passed cycle
+togi status                            # phase, BIOS profile, failure points and combinations, per-core offsets and evidence
 togi watch                             # full-width dashboard: current trial, tuner forecasts, every core
 togi --state-dir <dir> status          # inspect a copied journal
 togi --state-dir <dir> events --core 3 # everything that happened to core 3

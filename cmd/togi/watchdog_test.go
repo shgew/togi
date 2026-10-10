@@ -123,7 +123,7 @@ func TestRunWatchdogWarning(t *testing.T) {
 					return nil
 				}}
 			}
-			code := runHardware(ctx, &g, config.Default(), false, bootloader, 0, &stderr, render.Renderer{}, dash, newMachine)
+			code := runHardware(ctx, &g, config.Default(), false, bootloader, runLimits{}, &stderr, render.Renderer{}, dash, newMachine)
 			if diff := cmp.Diff(tt.code, code); diff != "" {
 				t.Fatalf("exit (-want +got): %s; stderr: %s", diff, &stderr)
 			}

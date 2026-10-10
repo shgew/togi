@@ -79,8 +79,10 @@ type Input struct {
 	Renderer   render.Renderer
 	// Cycles is the number of clean cycles of one profile after which the run stops; 0 keeps checking endlessly.
 	Cycles int
-	Wrap   func(session.Journal) session.Journal
-	Until  func(journal.Event) bool
+	// FirstResult stops the run at the first round or cycle start once the BIOS profile is confirmed.
+	FirstResult bool
+	Wrap        func(session.Journal) session.Journal
+	Until       func(journal.Event) bool
 	// InMemoryJournal retains the writer across simulated reboots and writes state only when Simulate returns.
 	// Tests set it unless they inject journal interruptions; TestInMemoryJournalMatchesFileBacked pins that it leaves the
 	// files a file-backed run does, so it is the file-mode coverage of state.json persistence.
@@ -203,7 +205,7 @@ func boot(ctx context.Context, in Input, journals *journals, warm *session.Warm)
 		wrapped = in.Wrap(wrapped)
 	}
 	journals.last = wrapped
-	return session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Cycles: in.Cycles, Carry: j.carried, Stderr: in.Log, Log: in.Log, Renderer: in.Renderer, SessionID: j.sessionID, Warm: warm, DeferState: in.InMemoryJournal})
+	return session.Run(runCtx, session.Input{Config: in.Config, ConfigPath: in.ConfigPath, Boot: id, Journal: wrapped, Machine: seams, Cycles: in.Cycles, FirstResult: in.FirstResult, Carry: j.carried, Stderr: in.Log, Log: in.Log, Renderer: in.Renderer, SessionID: j.sessionID, Warm: warm, DeferState: in.InMemoryJournal})
 }
 
 // journals gives each boot its journal: one locked for the boot and closed when it ends or, with InMemoryJournal, one

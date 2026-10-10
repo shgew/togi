@@ -1,6 +1,6 @@
   togi   00:00:40   session 0h00m   0 failures · 0 crashes
 
-  ► SOLO LIMITS  0 of 16 found · core 00 confirming -11  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ► SOLO LIMITS  0 of 16 found · core 00 confirming -11  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
 
   ▌  SOLO LIMITS   -11 is core 00's candidate solo limit, and I'm confirming it.
   ▌                One core at a time with the rest at 0, so any failure belongs to the loaded core.

@@ -125,8 +125,14 @@ _Avoid_: tolerance, safety offset
 **Phase 1**:
 Checking from the margin offsets until the first passed full cycle that ends after every core left search. It never deepens: group failures only step cores back ([Phase 1](docs/spec/tuner.md#phase-1)).
 
+**First result**:
+The first confirmed profile: phase 1's passed full cycle. `run --first-result` stops there, before phase 2 moves a core ([BIOS profile](docs/spec/tuner.md#bios-profile)).
+
 **Phase 2**:
 The bounded phase after phase 1: rounds that move each candidate one count toward its solo limit, then the confirmation cycle ([Phase 2](docs/spec/tuner.md#phase-2)).
+
+**Remaining work**:
+Phase 2's worst case shown to the operator: each candidate's gap to its solo limit, the most rounds left if none fails, then one full cycle. It never estimates through future failures ([Remaining work](docs/spec/tuner.md#phase-2)).
 
 **Deepening**:
 Phase 2's rounds: each moves every candidate one count toward its solo limit and checks the moved cores. Nothing deepens outside search and these rounds.

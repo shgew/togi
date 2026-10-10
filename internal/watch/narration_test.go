@@ -14,6 +14,7 @@ import (
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 // words joins a frame's text on single spaces, so a sentence wrapped over rows still matches.
@@ -87,7 +88,9 @@ func TestStoppedStageLineShowsNoRunningStage(t *testing.T) {
 		t.Fatal("fixture must end stopped")
 	}
 	stopped.stopped.reason = journal.ShutdownCycles
-	running := Project(cutTrial(t, events, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseChecking }))
+	running := Project(cutWhen(t, simulated(t, concludedJournal), func(s *tuner.State, e journal.Event) bool {
+		return e.Kind == journal.KindTrialStart && s.PhasePlan().Phase == 0
+	}))
 	if running.stopped != nil {
 		t.Fatal("fixture must be running")
 	}
