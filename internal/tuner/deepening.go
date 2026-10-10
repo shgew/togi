@@ -210,8 +210,8 @@ func (s *State) roundCheck() Action {
 			continue
 		}
 		selected := s.deepeningRequirement(q.class, q.count)
-		if s.retry != nil && s.retry.Round == r.start.Round {
-			return s.runRetry(*s.retry, selected, []int{r.seq})
+		if t, ok := s.retryFor(selected); ok {
+			return s.runTrial(t, selected, []int{r.seq})
 		}
 		t := Trial{Regime: q.class.regime, Workload: q.class.workload, Condition: machine.Together, Phase: journal.PhaseDeepening, DurationS: q.class.duration, Round: r.start.Round}
 		if q.class.regime == machine.R7 {

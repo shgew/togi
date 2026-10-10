@@ -36,7 +36,7 @@ and requested number of clean cycles valid?
         +-- otherwise: keep checking
 ```
 
-A **trial** is one launch of one workload, under one fixed applied profile and one loaded set, for a specified duration. It passes, fails or is inconclusive. An inconclusive trial contributes no stability evidence and is retried. Five passes by default means five launches, not five minutes or five backend messages. The [pass rule](spec/tuner.md#evidence) tests a chosen failure-rate bound: with independent trials each failing with probability 0.5, five passes have probability 0.03125, below the configured miss probability 0.05. These defaults are a heuristic, not a fitted failure model or a guarantee about rare failures.
+A **trial** is one launch of one workload, under one fixed applied profile and one loaded set, for a specified duration. It passes, fails or is inconclusive. An inconclusive trial contributes no stability evidence; its retry follows the [scheduling rule](spec/tuner.md#scheduling) and is dropped if its context ends or its requirement changes. Five passes by default means five launches, not five minutes or five backend messages. The [pass rule](spec/tuner.md#evidence) tests a chosen failure-rate bound: with independent trials each failing with probability 0.5, five passes have probability 0.03125, below the configured miss probability 0.05. These defaults are a heuristic, not a fitted failure model or a guarantee about rare failures.
 
 ### Search: a core alone
 

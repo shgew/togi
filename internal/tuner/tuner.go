@@ -134,7 +134,7 @@ type State struct {
 	sortedCores             []*core
 	indexByID               map[int]int
 	cursor                  int
-	retry                   *Trial
+	retry                   *savedRetry
 	intents                 map[string]*journal.TrialIntent
 	scheduled               map[string]scheduledTrial
 	intentSeq               map[int]string
@@ -336,6 +336,7 @@ func (s *State) Fold(e journal.Event) {
 				s.projectionDirty = true
 				s.resetEvidence(*p.Core)
 				c.queued, c.queueSeq = queuedReset, e.Seq
+				s.retry = nil // a pending reset supersedes every saved retry
 			}
 		}
 	case *journal.CorePhase:
@@ -481,6 +482,7 @@ func (s *State) Fold(e journal.Event) {
 	case *journal.TunerWarning:
 		s.warning = nil
 	}
+	s.dropEndedRetry()
 }
 
 func (s *State) decided(c *core, seq int) {
@@ -492,7 +494,7 @@ func (s *State) decided(c *core, seq int) {
 	c.decisionSeq = seq
 	s.projectionDirty = true
 	s.bestDirty = true
-	if s.retry != nil && s.retry.Condition == machine.Alone && s.retry.Core == c.id {
+	if s.retry != nil && s.retry.trial.Condition == machine.Alone && s.retry.trial.Core == c.id {
 		s.retry = nil
 	}
 }
@@ -517,9 +519,7 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 			s.checking.lastSeq = e.Seq
 		}
 		if p.Outcome == journal.OutcomeInconclusive {
-			t := trialFromIntent(intent)
-			t.Retry = true
-			s.retry = &t
+			s.saveRetry(intent)
 		}
 		if p.Outcome == journal.OutcomeFailure {
 			s.awaiting = &awaiting{intent, p, e.Seq, e.Cause}
@@ -542,9 +542,7 @@ func (s *State) foldTrialEnd(e journal.Event, p *journal.TrialEnd) {
 			s.currentStep(c)
 		}
 	case journal.OutcomeInconclusive:
-		t := trialFromIntent(intent)
-		t.Retry = true
-		s.retry = &t
+		s.saveRetry(intent)
 	case journal.OutcomeFailure:
 		s.awaiting = &awaiting{intent, p, e.Seq, e.Cause}
 	}

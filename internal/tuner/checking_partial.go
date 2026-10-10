@@ -149,8 +149,8 @@ func (s *State) r7PartNext(step int, part []int, duration int) (Action, bool) {
 		}
 		selected, _ := s.cycleRequirement(req, step, j)
 		t := Trial{Regime: machine.R7, Workload: q.class.workload, Cores: slices.Clone(part), DurationS: q.class.duration, Phase: journal.PhaseChecking, Condition: machine.Together, Cycle: g.cycle, Step: step + 1}
-		if s.retry != nil && s.retry.Cycle == g.cycle && s.retry.Step == step+1 && s.retry.Workload == t.Workload && s.retry.DurationS == t.DurationS && slices.Equal(s.retry.Cores, part) {
-			return s.runRetry(*s.retry, selected, []int{g.lastSeq}), true
+		if retry, ok := s.retryFor(selected); ok {
+			return s.runTrial(retry, selected, []int{g.lastSeq}), true
 		}
 		return s.runTrial(t, selected, []int{g.lastSeq}), true
 	}
