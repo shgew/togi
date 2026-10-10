@@ -975,9 +975,9 @@ func (p *Shutdown) Message() string {
 		return "stopped at a dead end"
 	case ShutdownCycles:
 		if p.Cycles == 1 {
-			return "every core is at its limit and the profile passed the requested clean cycle; stopping"
+			return "phase 2 is confirmed and the profile passed the requested clean cycle; stopping"
 		}
-		return fmt.Sprintf("every core is at its limit and the profile passed the requested %d clean cycles; stopping", p.Cycles)
+		return fmt.Sprintf("phase 2 is confirmed and the profile passed the requested %d clean cycles; stopping", p.Cycles)
 	case ShutdownCommand:
 		return "command finished"
 	}

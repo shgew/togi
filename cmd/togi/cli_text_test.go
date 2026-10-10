@@ -63,8 +63,8 @@ func TestCyclesExampleWordedOnce(t *testing.T) {
 			t.Errorf("%s lacks the --cycles 1 example %q:\n%s", name, cyclesOneExample, help)
 		}
 	}
-	if !strings.Contains(cyclesOneExample, "at its limit") || !strings.Contains(cyclesOneExample, "deepening") {
-		t.Errorf("example %q must name the limit and deepening conditions", cyclesOneExample)
+	if !strings.Contains(cyclesOneExample, "phase 2") || !strings.Contains(cyclesOneExample, "confirmation") {
+		t.Errorf("example %q must name phase 2's confirmation cycle", cyclesOneExample)
 	}
 }
 

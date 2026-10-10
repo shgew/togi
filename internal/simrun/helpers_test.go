@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io/fs"
+	"strings"
 	"testing"
 
 	"github.com/shgew/togi/internal/config"
@@ -40,6 +41,41 @@ func runHunt(t *testing.T, cfg sim.Config, setup func(*sim.Machine), tweak func(
 	if tweak != nil {
 		tweak(&in)
 	}
+	stop, err := Simulate(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, torn, err := journal.Read(dir)
+	if err != nil || torn != nil {
+		t.Fatalf("read events: %v, torn %q", err, torn)
+	}
+	return stop, events, dir
+}
+
+func phaseTwoConfirmed(e journal.Event) bool {
+	p, ok := e.Data.(*journal.CheckingCycle)
+	return ok && p.Event == journal.CycleEnd && p.Passed && p.Full && strings.Contains(p.Reason, "phase 2 ends")
+}
+
+// runHuntAfterConfirmation runs cfg until phase 2's confirmation passes, then resumes the session on a machine that also
+// has joints, so the failures they cause come with parked offsets from a passed full cycle, and runs on to one more clean cycle.
+func runHuntAfterConfirmation(t *testing.T, cfg sim.Config, joints []sim.Joint, tweak func(*Input)) (session.Stop, []journal.Event, string) {
+	t.Helper()
+	_, _, dir := runHunt(t, cfg, nil, func(in *Input) {
+		tweak(in)
+		in.Until = phaseTwoConfirmed
+	})
+	cfg.Joints = joints
+	resumed, err := sim.Resume(dir, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := sim.New(resumed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := Input{Config: config.Default(), ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 2, InMemoryJournal: true}
+	tweak(&in)
 	stop, err := Simulate(context.Background(), in)
 	if err != nil {
 		t.Fatal(err)

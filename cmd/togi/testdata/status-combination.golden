@@ -1,5 +1,5 @@
-checking cycle 1, steps 14/14 | clean cycles since last deepening: 1, latest
-  cycle 1
+checking cycle 1, steps 14/14 | clean cycles since last deepening: 0, latest
+  cycle 0
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz

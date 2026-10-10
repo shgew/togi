@@ -102,7 +102,7 @@ type SearchTurn struct {
 type DeepeningPlan struct {
 	Round int
 	Room  []int
-	// Profile is the profile the round moves to, halfway toward its target.
+	// Profile is the profile the round moves to, one count toward each moved core's solo limit.
 	Profile []int
 	Checks  []journal.CheckState
 	Waiting bool

@@ -1,6 +1,6 @@
 # How togi tunes
 
-This is the entry point to **ruleset 10**, not a proposal for the next tuner. It explains the sequence and its cost; [the tuner spec](spec/tuner.md) owns the rules, [the workload spec](spec/workloads.md) owns what runs, and [the glossary](../GLOSSARY.md) owns the terms. The redesign in [#493](https://github.com/shgew/togi/issues/493) changes this sequence when it lands.
+This is the entry point to the tuning sequence. It explains the sequence and its cost; [the tuner spec](spec/tuner.md) owns the rules, [the workload spec](spec/workloads.md) owns what runs, and [the glossary](../GLOSSARY.md) owns the terms. The two-phase sequence below is the design of [#493](https://github.com/shgew/togi/issues/493) ([ADR 0054](adr/0054-two-phases-replace-the-deepening-loop.md)); the measured tables under [How long does it take?](#how-long-does-it-take) describe ruleset 10, before it.
 
 Togi searches for negative Curve Optimizer offsets, from 0 to −50 counts. More negative is **deeper**. A **profile** is all cores' offsets. It deliberately encounters failures, including crashes; a clean cycle is evidence of the workloads tested, not a promise that the machine cannot fail later.
 
@@ -13,27 +13,31 @@ Search each core alone: R1 then R2, coarse then fine
         |
 Check each candidate solo limit: five passes per class
         |
-Apply all cores' offsets together
+Apply all cores' offsets together, one count shallower
+than each solo limit (the margin)
         |
-Checking cycle across R1–R7 <-----------------------+
-        |                                          |
-        +-- failure --> attribute or hunt          |
-        |                |                         |
-        |             backoff --> rerun -----------+
+PHASE 1: checking cycle across R1–R7 <---------------+
+        |                                           |
+        +-- failure --> attribute or hunt           |
+        |                |                          |
+        |             backoff --> rerun ------------+
+        |             (only ever shallower)
         |
-Cycle passed
+First passed full cycle: the first confirmed profile
         |
-More total depth reachable? -- yes --> deepening checks
-        |                                  |
-        |                            new checking cycle
-        |                                  |
-        +----------------------------------+
+PHASE 2: rounds, while a core is shallower than its solo limit
+        |   each round: one count toward the solo limit, check the
+        |   moved cores; a failure blames a deepened core and rolls back
         |
-Every core at its limit, no deeper total reachable,
-and requested number of clean cycles valid?
+Confirmation cycle (always runs, even when no core could move)
         |
-        +-- yes: stop if --cycles was given
-        +-- otherwise: keep checking
+        +-- failure --> deepened loaded cores return to their
+        |               phase-1 offsets, then the cycle continues
+        |
+First passed full confirmation cycle: the confirmed profile
+        |
+Clean cycles count from here. Stop after --cycles N clean cycles,
+or keep checking, never deepening again
 ```
 
 A **trial** is one launch of one workload, under one fixed applied profile and one loaded set, for a specified duration. It passes, fails or is inconclusive. An inconclusive trial contributes no stability evidence; its retry follows the [scheduling rule](spec/tuner.md#scheduling) and is dropped if its context ends or its requirement changes. Five passes by default means five launches, not five minutes or five backend messages. The [pass rule](spec/tuner.md#evidence) tests a chosen failure-rate bound: with independent trials each failing with probability 0.5, five passes have probability 0.03125, below the configured miss probability 0.05. These defaults are a heuristic, not a fitted failure model or a guarantee about rare failures.
@@ -58,7 +62,7 @@ The breadth is intentional ([ADR 0020](adr/0020-hunt-and-refine.md)); the precis
 
 **A failure or backoff does not restart or fail the cycle.** It invalidates contradicted evidence, repairs the profile and reruns the failed class. Uncontradicted passes on deeper profiles can still cover the now-shallower profile. The same cycle resumes its remaining requirements. It can pass after dozens of failures and backoffs. For example, cycle 1 can fail an R7 part, hunt and back off, rerun that part, and later end passed—all still cycle 1.
 
-A **passed cycle** has fulfilled its requirements. A **full cycle** additionally has the required workload breadth. A **clean cycle** is a passed full cycle that ended with every core at its limit and remains valid for the current profile. A passed cycle that is not clean often means room remained and deepening reopened afterwards, not that its trials failed. Earlier-cycle credit and exact validity rules are in [Checking](spec/tuner.md#checking).
+A **passed cycle** has fulfilled its requirements. A **full cycle** additionally has the required workload breadth. A **clean cycle** is a passed full cycle that ended at or after phase 2's conclusion. A passed cycle that is not clean ended before that, as phase 1's first confirmed cycle does, not because its trials failed. The exact rules are in [Checking](spec/tuner.md#checking).
 
 ### Hunts: identify an unattributed cause
 
@@ -89,15 +93,17 @@ The loaded cores share a voltage rail. Attribution groups are per CCD: a named c
 
 This is the common path, not a second definition of edge cases. Carried failures, pending failures whose selected core is already shallower, CO-0 named non-top requesters, and all-zero-locate outcomes follow [R7 attribution](spec/tuner.md#r7-request-order-and-attribution), [voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff) and [Dead ends](spec/tuner.md#dead-ends). The conversion of 3.6 mV per count used for estimated request shifts is an assumption, not a measured constant established for every core and operating point.
 
-### Deepening: use the room still permitted
+### Phases: take the margin back, then confirm
 
 A **failure point** forbids that core's failing offset and deeper values. A **combination** forbids reaching all its members' recorded offsets together. These constraints apply to the tuning profile; a hunt deliberately tests a failed group profile.
 
-After a passed full cycle, **deepening** seeks the permitted profile with the greatest total depth, with preferred-core ranking and then core ID breaking ties. Backoffs can move several counts shallower, leaving room above a failure point. Combinations also leave trade-offs: yielding one core shallower can let others deepen enough to improve the total. Thus a passed cycle does not necessarily end tuning.
+Checking starts each core one count shallower than its solo limit, the **margin**. The margin is a method constant of one count, not fitted to any machine; it avoids failures that would each cost a step back. **Phase 1** is checking from those offsets until the first passed full cycle. It never deepens: group failures only step cores back. That cycle's profile is the first confirmed profile.
 
-A round moves deepening cores halfway toward the selected target, rounding the number of counts moved up: a three-count gap moves two counts, and a one-count gap moves one. Yielding cores move to their target. It checks only the deepened cores' R1/R2 classes and affected R7 parts, with five short passes per class by default. The halfway step is a heuristic for approaching the target without taking the whole remaining gap in one move. A deeper profile must earn checking coverage again. [Deepening](spec/tuner.md#deepening) owns target selection and the failure paths; [ADR 0020](adr/0020-hunt-and-refine.md) explains why a locally blocked core does not necessarily mean the whole profile is deepest.
+**Phase 2** follows by default. Its candidates are the cores shallower than their solo limit, whether by the margin or by a backoff of several counts. Each round moves every candidate one count toward its solo limit through offsets that reach no recorded failure point or combination, and checks only the moved cores' R1/R2 classes and affected R7 parts, with five short passes per class by default. A recorded failure point is never retried, so phase 2 can only take back margins and voltage-targeted backoffs; it barely deepens. When a round fails, the deepened core the failure blames backs off and every other mover, loaded or not, yields to its round baseline (the shallower of its last passed offset and its offset when the round began) and is finished: no later round moves it, so every core tries each offset at most once. Rounds are bounded: at most the largest gap plus the number of rounds that end unpassed.
 
-With `run --cycles 1`, togi stops only when a clean cycle is valid, every core is at its limit, and no globally deeper total is reachable. Without `--cycles`, checking continues. Stopping and resuming uses the journal; the session can span many reboots.
+Phase 2 always ends with one full confirmation cycle, also when no core could move. A failure in it returns a loaded deepened core to its phase-1 offset first. Its first passed full end concludes phase 2; checking then continues without ever deepening again, and failures only step cores back. [Phase 1](spec/tuner.md#phase-1) and [Phase 2](spec/tuner.md#phase-2) own the rules; [ADR 0054](adr/0054-two-phases-replace-the-deepening-loop.md) records why.
+
+With `run --cycles 1`, togi stops right after the confirmation cycle; a larger N counts further cycles of indefinite checking. Without `--cycles`, checking continues. Stopping and resuming uses the journal; the session can span many reboots.
 
 ## How long does it take?
 
@@ -114,7 +120,7 @@ These are scheduled trial-duration totals with no failures, reruns or inconclusi
 | R7 partial chains | 0–12 additional parts per occurrence, each 3 × 120 + 300 s | 0–144 | 0–6.60 |
 | **Total** | | **246–390** | **9.3–15.9** |
 
-Each eight-core CCD can supply up to six partials (seven down to two loaded cores), or none when top-request ties end the chain at once. Startup, teardown, crashes, hunts, backoffs and deepening add time. Search and hunts have variable numbers of steps/groups; a search step is two 90-second trials, a candidate check is five 90-second trials per class, a hunt group up to five trials at its selected duration, and a deepening class five 120-second trials. Their rules determine how many are needed; they are not fixed-length phases.
+Each eight-core CCD can supply up to six partials (seven down to two loaded cores), or none when top-request ties end the chain at once. Startup, teardown, crashes, hunts, backoffs and phase-2 rounds add time. Search and hunts have variable numbers of steps/groups; a search step is two 90-second trials, a candidate check is five 90-second trials per class, a hunt group up to five trials at its selected duration, and a phase-2 round class five 120-second trials. Their rules determine how many are needed; they are not fixed-length phases.
 
 ### Measured simulated sessions
 

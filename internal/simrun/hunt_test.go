@@ -79,8 +79,8 @@ func TestHuntCulpritAfterCleanCycleParkedOffsets(t *testing.T) {
 		cfg.Limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
 		cfg.Limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
 	}
-	cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
-	stop, events, _ := runHunt(t, cfg, nil, func(in *Input) {
+	joint := []sim.Joint{{Members: map[int]int{1: -10}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
+	stop, events, _ := runHuntAfterConfirmation(t, cfg, joint, func(in *Input) {
 		in.Config.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 	})
 	if stop.Reason != session.StopCycles {
@@ -108,11 +108,11 @@ func TestParkedOffsetBackendFailureRaisesParkedOffsets(t *testing.T) {
 		cfg.Limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
 		cfg.Limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
 	}
-	cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
+	joint := []sim.Joint{{Members: map[int]int{1: -10}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
 	candidates := func(in *Input) {
 		in.Config.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 	}
-	_, probe, _ := runHunt(t, cfg, nil, candidates)
+	_, probe, _ := runHuntAfterConfirmation(t, cfg, joint, candidates)
 	first, ok := findPayload(probe, func(p *journal.HuntStart) bool { return p.ParkedSeq > 0 })
 	if !ok {
 		t.Fatal("no parked offsets from a clean cycle")
@@ -148,7 +148,7 @@ func TestParkedOffsetBackendFailureRaisesParkedOffsets(t *testing.T) {
 		t.Fatalf("no held core at a nonzero parked offset: %+v", group)
 	}
 	cfg.Script = map[string]sim.Outcome{trial: {Signal: machine.ComputationError, Core: held, AtS: 1}}
-	_, events, _ := runHunt(t, cfg, nil, candidates)
+	_, events, _ := runHuntAfterConfirmation(t, cfg, joint, candidates)
 	end, ok := findPayload(events, func(p *journal.HuntEnd) bool {
 		return p.Hunt == first.Hunt && p.Result == "direct" && cmp.Diff([]int{held}, p.Cores) == ""
 	})
@@ -267,8 +267,8 @@ func TestDelayedHuntEscalates(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := huntConfig(4)
-			cfg.Joints = []sim.Joint{{Members: map[int]int{1: -10}, Regimes: []machine.Regime{machine.R6}, AfterS: tc.after, Rate: 10}}
-			stop, events, _ := runHunt(t, cfg, nil, nil)
+			joint := []sim.Joint{{Members: map[int]int{1: -10}, Regimes: []machine.Regime{machine.R6}, AfterS: tc.after, Rate: 10}}
+			stop, events, _ := runHuntAfterConfirmation(t, cfg, joint, func(*Input) {})
 			if stop.Reason != session.StopCycles {
 				t.Fatalf("delayed session stop %+v", stop)
 			}

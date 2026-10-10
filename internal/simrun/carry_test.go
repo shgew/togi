@@ -457,25 +457,49 @@ func TestRulesetTransitionCarriesCulpritAndDirectHuntFailurePoints(t *testing.T)
 					cfg.Limits[i].Alone = [5]int{-50, -50, -50, -50, -50}
 					cfg.Limits[i].Together = [7]int{-50, -50, -50, -50, -50, -50, -50}
 				}
-				cfg.Joints = []sim.Joint{{Members: map[int]int{1: -20}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
 				c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 			} else {
 				cfg.Limits[1].Together[5] = -5
 			}
 			finished := false
-			_, source, dir := runHunt(t, cfg, nil, func(in *Input) {
-				in.Config = c
-				in.Until = func(e journal.Event) bool {
-					if p, ok := e.Data.(*journal.HuntEnd); ok && p.Result == result && len(p.Cores) == 1 && p.Cores[0] == 1 {
-						finished = true
-						return result == "direct"
-					}
-					if p, ok := e.Data.(*journal.TunerDecision); ok && finished && result == "culprit" && p.Phase == journal.PhaseHunt && p.Decision == journal.Backoff && p.Core == 1 {
-						return true
-					}
-					return false
+			until := func(e journal.Event) bool {
+				if p, ok := e.Data.(*journal.HuntEnd); ok && p.Result == result && len(p.Cores) == 1 && p.Cores[0] == 1 {
+					finished = true
+					return result == "direct"
 				}
-			})
+				if p, ok := e.Data.(*journal.TunerDecision); ok && finished && result == "culprit" && p.Phase == journal.PhaseHunt && p.Decision == journal.Backoff && p.Core == 1 {
+					return true
+				}
+				return false
+			}
+			var source []journal.Event
+			var dir string
+			if result == "culprit" {
+				_, _, dir = runHunt(t, cfg, nil, func(in *Input) {
+					in.Config = c
+					in.Until = phaseTwoConfirmed
+				})
+				cfg.Joints = []sim.Joint{{Members: map[int]int{1: -10}, Regimes: []machine.Regime{machine.R6}, Rate: 10}}
+				resumed, err := sim.Resume(dir, cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				m, err := sim.New(resumed)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := Simulate(context.Background(), Input{Config: c, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, InMemoryJournal: true, Until: until}); err != nil {
+					t.Fatal(err)
+				}
+				if source, _, err = journal.Read(dir); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				_, source, dir = runHunt(t, cfg, nil, func(in *Input) {
+					in.Config = c
+					in.Until = until
+				})
+			}
 			end, ok := findPayload(source, func(p *journal.HuntEnd) bool {
 				return p.Result == result && len(p.Cores) == 1 && p.Cores[0] == 1
 			})
@@ -670,9 +694,13 @@ func firstPassedFullCycleLivePasses(t *testing.T, events []journal.Event) map[st
 func TestCurrentRulesetStartsHuntFromCarriedTogetherFailure(t *testing.T) {
 	t.Parallel()
 	cfg := huntConfig(4)
+	for i := range cfg.Limits {
+		cfg.Limits[i].Alone = [5]int{-11, -11, -11, -11, -11}
+		cfg.Limits[i].Together = [7]int{-11, -11, -11, -11, -11, -11, -50}
+	}
 	cfg.Limits[1].Together[5] = -5
 	c := config.Default()
-	c.CandidateSoloLimits = map[int]int{0: -9, 1: -9, 2: -9, 3: -9}
+	c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
 	_, source, dir := runHunt(t, cfg, nil, func(in *Input) {
 		in.Config = c
 		in.Until = func(e journal.Event) bool {
@@ -693,7 +721,7 @@ func TestCurrentRulesetStartsHuntFromCarriedTogetherFailure(t *testing.T) {
 	if diff := cmp.Diff([]int{-9, -9, -9, -9}, intent.Profile); diff != "" {
 		t.Fatalf("source failing profile (-want +got):\n%s", diff)
 	}
-	c.CandidateSoloLimits = map[int]int{0: -10, 1: -10, 2: -10, 3: -10}
+	c.CandidateSoloLimits = map[int]int{0: -11, 1: -11, 2: -11, 3: -11}
 	id := restampRuleset(t, dir, 6)
 	resumed, err := sim.Resume(dir, cfg)
 	if err != nil {

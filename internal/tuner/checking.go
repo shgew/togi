@@ -38,6 +38,7 @@ type requirement struct {
 	count  int
 	core   int
 	offset int
+	since  int
 }
 
 func (s *State) fullCycleCoverage(steps []machine.Regime) (bool, []string) {
@@ -65,6 +66,7 @@ func (s *State) foldCycle(e journal.Event, p *journal.CheckingCycle) {
 		g.steps = slices.Clone(p.Steps)
 		g.stepsDone = 0
 		g.partial = map[int]*checkingStep{}
+		s.foldPhaseCycleStart(e)
 		s.projectionDirty = true
 		return
 	}
@@ -74,18 +76,10 @@ func (s *State) foldCycle(e journal.Event, p *journal.CheckingCycle) {
 	}
 	g.open = false
 	if p.Passed && p.Full {
-		s.passedFullCycles = append(s.passedFullCycles, passedFullCycle{profile: slices.Clone(g.profile), seq: e.Seq, cycle: p.Cycle, allAtLimit: s.allAtLimit()})
+		s.passedFullCycles = append(s.passedFullCycles, passedFullCycle{profile: slices.Clone(g.profile), seq: e.Seq, cycle: p.Cycle})
+		s.foldPhaseCycleEnd(e)
 	}
 	s.projectionDirty = true
-}
-
-func (s *State) allAtLimit() bool {
-	for _, c := range s.cores {
-		if c.phase != journal.PhaseAtLimit {
-			return false
-		}
-	}
-	return true
 }
 
 func (s *State) longS(part []int) int {
@@ -146,7 +140,7 @@ func (s *State) computeRequirements(step int) []requirement {
 				total += count
 			}
 		}
-		req = append(req, requirement{k, slices.Clone(cores), total, core, offset})
+		req = append(req, requirement{class: k, cores: slices.Clone(cores), count: total, core: core, offset: offset})
 	}
 	switch r {
 	case machine.R1, machine.R2, machine.R3, machine.R4, machine.R5:
@@ -203,31 +197,7 @@ func (s *State) cycleNext() Action {
 		}
 	}
 	fullCycleCoverage, missing := s.fullCycleCoverage(g.steps)
-	return Action{Kind: Decide, Payload: &journal.CheckingCycle{Cycle: g.cycle, Event: journal.CycleEnd, Passed: true, Full: fullCycleCoverage, Missing: missing}, Cause: []int{g.startSeq, g.lastSeq}}
-}
-
-func (s *State) coveredEnd() (Action, bool) {
-	if s.retry != nil || !s.canDeepen() {
-		return Action{}, false
-	}
-	if s.checkingStepsDone() == len(s.checking.steps) {
-		return Action{}, false
-	}
-	seq := s.covering()
-	if seq == 0 {
-		return Action{}, false
-	}
-	reason := fmt.Sprintf("clean cycle #%d already covers this profile with no contradicting failure, and deepening is due", seq)
-	return Action{Kind: Decide, Payload: &journal.CheckingCycle{Cycle: s.checking.cycle, Event: journal.CycleEnd, Reason: reason}, Cause: []int{seq, s.checking.lastSeq}}, true
-}
-
-func (s *State) covering() int {
-	for _, q := range slices.Backward(s.passedFullCycles) {
-		if q.allAtLimit && s.uncontradicted(q) {
-			return q.seq
-		}
-	}
-	return 0
+	return Action{Kind: Decide, Payload: &journal.CheckingCycle{Cycle: g.cycle, Event: journal.CycleEnd, Passed: true, Full: fullCycleCoverage, Missing: missing, Reason: s.cycleEndReason(fullCycleCoverage)}, Cause: []int{g.startSeq, g.lastSeq}}
 }
 
 func (s *State) attributeTogether(a *awaiting) *journal.Failure {

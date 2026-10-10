@@ -65,6 +65,11 @@ func TestStopDrainsDurableFailureBoundaries(t *testing.T) {
 			in.Config.CandidateSoloLimits = map[int]int{0: -30, 1: -30, 2: -30, 3: -30}
 			if combination || unattributed {
 				in.Config.Checking.Cycle = []machine.Regime{machine.R6}
+				if !zero {
+					for core := range in.Config.CandidateSoloLimits {
+						in.Config.CandidateSoloLimits[core] = -31
+					}
+				}
 			}
 			bootloader := &fakeBootloader{}
 			if zero {

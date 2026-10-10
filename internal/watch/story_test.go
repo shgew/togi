@@ -84,10 +84,7 @@ func TestTrialIntentDoesNotFreezeBeforeStart(t *testing.T) {
 
 func TestBetweenTrialsNamesLastOutcomeInsteadOfCountdown(t *testing.T) {
 	t.Parallel()
-	events := simulated(t, sessionJournal)
-	checking := cutTrial(t, events, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseChecking })
-	last := checking[len(checking)-1]
-	ended := cutAt(t, events, func(e journal.Event) bool { return e.Seq > last.Seq && e.Kind == journal.KindTrialEnd })
+	ended := cutPassedCheckingTrial(t, simulated(t, sessionJournal))
 	s := Project(ended)
 	if s.trial != nil || s.last == nil {
 		t.Fatal("fixture must stop between trials")
@@ -143,7 +140,7 @@ func TestDeepeningChecksSayHowTheyLoad(t *testing.T) {
 	t.Parallel()
 	alone := cutTrial(t, probeEvents(t), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })
 	text := ansi.Strip(Render(Project(alone), 240, 67, cutTime(alone)))
-	if !strings.Contains(text, "DEEPEN · ROUND 1 · CORE 00 AT -30 · LIGHT") || !strings.Contains(text, "Core 00 runs alone at its proposed -30") || strings.Contains(text, "solo limit, one turn at a time") {
+	if !strings.Contains(text, "DEEPEN · ROUND 1 · CORE 00 AT -11 · LIGHT") || !strings.Contains(text, "Core 00 runs alone at its proposed -11") || strings.Contains(text, "solo limit, one turn at a time") {
 		t.Fatalf("a deepened core's light check runs alone as part of its round, not as a solo-limit search:\n%s", text)
 	}
 	together := cutTrial(t, simulated(t, combinationJournal), func(p *journal.TrialIntent) bool {

@@ -2,43 +2,43 @@
 
   ■ SOLO LIMITS  16/16  ───  ■ CYCLE 1  ───  ► DEEPEN  round 1  ───  CLEAN CYCLES 0  · repeats until stopped
 
-  ▌  DEEPEN · ROUND 1   Deepening check: core 00 alone at its proposed -30.       last trial      PASS  15:00 on 00-15 · Tctl max 67°C
+  ▌  DEEPEN · ROUND 1   Deepening check: core 00 alone at its proposed -11.       last trial      PASS  15:00 on 00-15 · Tctl max 67°C
 
 
   NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0462
-   R1   light load  on core 00 alone at -30   mprime SSE 4K-21K · 1 worker                                          DEEPEN · ROUND 1 · CORE 00 AT -30 · LIGHT
+   R1   light load  on core 00 alone at -11   mprime SSE 4K-21K · 1 worker                                          DEEPEN · ROUND 1 · CORE 00 AT -11 · LIGHT
   ███████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
 
-  if 5 of 5 pass       next: deepening round 1: R2 heavy vector on core 00 alone at -30
-  if a core is named   its failure point is recorded → deepening round 1 ends → it backs off → next: rerun R1 light on core 00 at -29 · 2m
+  if 5 of 5 pass       next: deepening round 1: R2 heavy vector on core 00 alone at -11
+  if a core is named   its failure point is recorded → ... → core 15 yields -11 → -10 → it backs off → next: rerun R1 light on core 00 at -10 · 2m
   if inconclusive      the same trial runs again
 
   CCD 0               0  2 counts/cell       -50 fail pt  one loaded              CCD 1               0  2 counts/cell       -50 fail pt  waiting at 0
-  ► 00  -30  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                              08    0  HAS ROOM  ·····                    
-    01    0  HAS ROOM  ·····                                                        09    0  HAS ROOM  ·····                    
-    02    0  HAS ROOM  ·····                                                        10    0  HAS ROOM  ·····                    
-    03    0  HAS ROOM  ·····                                                        11    0  AT LIMIT  ····░                              C1 · solo -10
-    04    0  HAS ROOM  ·····                                                        12    0  HAS ROOM  ·····                    
-    05    0  HAS ROOM  ·····                                                        13    0  HAS ROOM  ·····                    
-    06    0  HAS ROOM  ·····                                                        14    0  HAS ROOM  ·····                    
-    07    0  HAS ROOM  ·····                                                        15    0  HAS ROOM  ·····                    
+  ► 00  -11  HAS ROOM  ▄▄▄▄▄▄                                                       08    0  HAS ROOM  ······                   
+    01    0  HAS ROOM  ······                                                       09    0  HAS ROOM  ······                   
+    02    0  HAS ROOM  ······                                                       10    0  HAS ROOM  ······                   
+    03    0  HAS ROOM  ······                                                       11    0  AT LIMIT  ····░·                             C1 · solo -10
+    04    0  HAS ROOM  ······                                                       12    0  HAS ROOM  ······                   
+    05    0  HAS ROOM  ······                                                       13    0  HAS ROOM  ······                   
+    06    0  HAS ROOM  ······                                                       14    0  HAS ROOM  ······                   
+    07    0  HAS ROOM  ······                                                       15    0  HAS ROOM  ······                   
 
   DEEPEN · ROUND 1 ──────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 
-  has room    00-10 12-15 · in this order                                         15:15  room     core 15 -10 → -30
-                                                                                  15:15  room     core 07 -10 → -30
-  CHECKS                                                                          15:15  room     core 14 -10 → -30
-  R1 on 00  0/5 passed  mprime SSE 4K-21K                                         15:15  room     core 06 -10 → -30
-  R2 on 00  0/5 passed  mprime AVX2 36K-248K                                      15:15  room     core 13 -10 → -30
-  R1 on 08  0/5 passed  mprime SSE 4K-21K                                         15:15  room     core 05 -10 → -30
-  R2 on 08  0/5 passed  mprime AVX2 36K-248K                                      15:15  room     core 12 -10 → -30
-  R1 on 01  0/5 passed  mprime SSE 4K-21K                                         15:15  room     core 04 -10 → -30
-  R2 on 01  0/5 passed  mprime AVX2 36K-248K                                      15:15  room     core 03 -10 → -30
-  +30 more                                                                        15:15  room     core 10 -10 → -30
-                                                                                  15:15  room     core 02 -10 → -30
-  R7 ───────────────────── top requesters ───── self-sufficient ─────────────     15:15  room     core 09 -10 → -30
-  mprime AVX2 36K-248K     00-07 11 by offset   11                                15:15  room     core 01 -10 → -30
-  mprime AVX-512 36K-248K  00-07 11 by offset   11                                15:15  room     core 08 -10 → -30
+  has room    00-10 12-15 · in this order                                         15:15  room     core 15 -10 → -11
+                                                                                  15:15  room     core 07 -10 → -11
+  CHECKS                                                                          15:15  room     core 14 -10 → -11
+  R1 on 00  0/5 passed  mprime SSE 4K-21K                                         15:15  room     core 06 -10 → -11
+  R2 on 00  0/5 passed  mprime AVX2 36K-248K                                      15:15  room     core 13 -10 → -11
+  R1 on 08  0/5 passed  mprime SSE 4K-21K                                         15:15  room     core 05 -10 → -11
+  R2 on 08  0/5 passed  mprime AVX2 36K-248K                                      15:15  room     core 12 -10 → -11
+  R1 on 01  0/5 passed  mprime SSE 4K-21K                                         15:15  room     core 04 -10 → -11
+  R2 on 01  0/5 passed  mprime AVX2 36K-248K                                      15:15  room     core 03 -10 → -11
+  +30 more                                                                        15:15  room     core 10 -10 → -11
+                                                                                  15:15  room     core 02 -10 → -11
+  R7 ───────────────────── top requesters ───── self-sufficient ─────────────     15:15  room     core 09 -10 → -11
+  mprime AVX2 36K-248K     00-07 11 by offset   11                                15:15  room     core 01 -10 → -11
+  mprime AVX-512 36K-248K  00-07 11 by offset   11                                15:15  room     core 08 -10 → -11
   y-cruncher FFTv4         00-07 11 by offset   11                                +270 more
 
    ?  help    l  log    esc  back    q  close view

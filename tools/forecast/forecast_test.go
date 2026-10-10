@@ -161,7 +161,18 @@ func TestAfterRequiresAReplayableNewestSession(t *testing.T) {
 // endlessly) or until accepts an event.
 func simulate(t *testing.T, dir string, seed uint64, cycles int, until func(journal.Event) bool) {
 	t.Helper()
+	simulateNear(t, dir, seed, cycles, 0, until)
+}
+
+// simulateNear is simulate with a near-limit failure rate, so a profile that sits at its limits can still crash.
+func simulateNear(t *testing.T, dir string, seed uint64, cycles int, near float64, until func(journal.Event) bool) {
+	t.Helper()
 	cfg, err := sim.Resume(dir, sim.Config{Seed: seed})
+	if near > 0 {
+		model := sim.DefaultModel()
+		model.NearLimitRate = near
+		cfg.Model = &model
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,6 +206,8 @@ func isCycleStart(e journal.Event) bool {
 	return ok && c.Event == journal.CycleStart
 }
 
+const nearLimitRate = 1e-5
+
 func TestAfterScoresAnEndlessRunAsACyclesOneRun(t *testing.T) {
 	history := t.TempDir()
 	simulate(t, history, 42, 1, func(e journal.Event) bool { return e.Kind == journal.KindCrashDetected })
@@ -204,17 +217,17 @@ func TestAfterScoresAnEndlessRunAsACyclesOneRun(t *testing.T) {
 	}
 	stopped := copyState(t, history)
 	starts := 0
-	simulate(t, stopped, 30, 1, func(e journal.Event) bool {
+	simulateNear(t, stopped, 30, 1, nearLimitRate, func(e journal.Event) bool {
 		if isCycleStart(e) {
 			starts++
 		}
 		return false
 	})
-	// The endless run writes the cycle start a --cycles 1 run shuts down at, then checks one more cycle, which crashes
-	// with seed 30, and stops at the start of the cycle after it.
+	// A --cycles 1 run stops at the end of the confirmation cycle. The endless run goes on to check one more cycle,
+	// which crashes with seed 30 and the near-limit rate, and stops at the start of the cycle after it.
 	endless := copyState(t, history)
 	seen := 0
-	simulate(t, endless, 30, 0, func(e journal.Event) bool {
+	simulateNear(t, endless, 30, 0, nearLimitRate, func(e journal.Event) bool {
 		if isCycleStart(e) {
 			seen++
 		}

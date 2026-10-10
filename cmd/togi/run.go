@@ -37,15 +37,17 @@ var runHelp = `Usage: togi run [--cycles <N>] [--tuning-boot <grubenv>] [--no-tu
 
 Start or resume the tuning session in the foreground: search for each core's
 solo limit, hunt the core or combination behind unattributed failures with
-parked trials, deepen the profile to the most total depth its failure points
-and combinations allow, then keep checking it with full cycles. After a crash,
+parked trials, check the profile from one count shallower than each solo limit
+(phase 1), move cores back toward their solo limits one count per round and
+confirm the result with a full cycle (phase 2), then keep checking it with full
+cycles. After a crash,
 the next run attributes it from the journal and continues. On resume, known defects
 affecting past decisions name the cores; in a terminal run offers to reset them.
 An unanswered too-aggressive defect stops an unattended run. It needs root.
 A journal from an older ruleset, schema or evidence epoch, and no newer one,
 is archived. The new session starts each core from its solo limit and failure point,
 carrying eligible same-BIOS trial facts for solo-limit checks, hunts, reruns and
-deepening. Passes carry only from the current evidence epoch; cycles still
+phase-2 rounds. Passes carry only from the current evidence epoch; cycles still
 require live passes. A newer ruleset, schema or evidence epoch stops the run
 before another event is written; reset --all archives that session. An older
 journal is archived even with unknown event kinds; carry uses only known events.
@@ -61,10 +63,9 @@ dashboard instead of one line per event, and prints the outcome when it stops:
 the restored offsets and why it stopped, or the dead end or error;
 events.jsonl still records every event. --no-tui prints the lines instead.
 
---cycles N stops after N clean cycles valid for the current
-profile once every core is at its limit and deepening can reach no more depth. An
-earlier cycle can count after a deepening if its profile was at least as deep
-and no failure since the last reset contradicted it.
+--cycles N stops after N clean cycles: passed full cycles ending at or after
+phase 2's confirmation cycle. --cycles 1 stops right after the confirmation; a
+larger N counts further cycles of indefinite checking.
 
 Without --tuning-boot, run checks the hardware watchdog once and records a
 session.warning if none is active, then continues; the dashboard and togi events
@@ -83,11 +84,11 @@ journals persist a short leave reason before clearing the saved GRUB entry.
 )
 
 // cyclesOneExample describes `run --cycles 1` in the run help and in togi --help.
-const cyclesOneExample = "Stop once every core is at its limit, deepening can reach no more depth and one clean cycle has passed"
+const cyclesOneExample = "Stop once phase 2's confirmation cycle has passed"
 
 func runFlags(g *globals, cycles *int, grubenv *string, noTUI *bool) *flag.FlagSet {
 	flags := newFlagSet("run", g)
-	flags.Func("cycles", "stop after `N` clean cycles valid for the current profile once every core is at its limit and deepening can reach no more depth (default endless)", func(s string) error {
+	flags.Func("cycles", "stop after `N` clean cycles, each a passed full cycle ending at or after phase 2's confirmation cycle (default endless)", func(s string) error {
 		v, err := strconv.Atoi(s)
 		if err != nil || v < 1 {
 			return errors.New("must be a positive integer")

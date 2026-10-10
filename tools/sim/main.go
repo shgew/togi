@@ -30,7 +30,7 @@ func run(args []string, stderr io.Writer) int {
 	flags := flag.NewFlagSet("sim", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	seed := flags.Uint64("seed", 1, "draw the simulated machine's limits and failures from this `seed`")
-	cycles := flags.Int("cycles", 1, "stop after `N` clean cycles once every core is at its limit and deepening can reach no more depth")
+	cycles := flags.Int("cycles", 1, "stop after `N` clean cycles, each a passed full cycle ending at or after phase 2's confirmation cycle")
 	machineFile := flags.String("machine", "", "load the simulated machine from this JSON `file`")
 	replay := flags.Bool("replay-facts", false, "answer exact class/profile matches from the machine's same-BIOS facts extract")
 	dir := flags.String("state-dir", "", "use this state `directory`, resuming a journal it holds under the configuration that journal recorded, or under the default configuration with its recorded backend store paths when the journal has an older schema; default a new temporary one")

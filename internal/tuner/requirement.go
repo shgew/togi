@@ -89,14 +89,14 @@ func (s *State) scheduledFor(p *journal.TrialIntent, cause []int) scheduledTrial
 		if s.round == nil || s.round.start.Round != p.Round {
 			break
 		}
-		needed := 1
+		needed, since := 1, s.round.seq
 		for _, r := range s.roundChecks() {
 			if r.class == k {
-				needed = r.count
+				needed, since = r.count, r.since
 				break
 			}
 		}
-		q = s.deepeningRequirement(k, needed)
+		q = s.deepeningRequirement(k, needed, since)
 	case p.Cycle > 0:
 		q.Since = s.checking.startSeq
 		n := 0
@@ -154,8 +154,8 @@ func zeroRerunRequirement(k trialClass, cause []int) ScheduledRequirement {
 	return newRequirement("zero-rerun", k, since, rerunEvidence, 1)
 }
 
-func (s *State) deepeningRequirement(k trialClass, needed int) ScheduledRequirement {
-	return newRequirement("deepening", k, s.round.seq, deepeningEvidence, needed)
+func (s *State) deepeningRequirement(k trialClass, needed, since int) ScheduledRequirement {
+	return newRequirement("deepening", k, since, deepeningEvidence, needed)
 }
 
 // cycleRequirement is the obligation of req[j], one of step's requirements, and the part holding it: the run of

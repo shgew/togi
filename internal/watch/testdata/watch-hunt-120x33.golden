@@ -1,32 +1,32 @@
- togi   11:38:05   session 11h38m   40 failures · 10 crashes   last observed failure 11:37, a moment ago
- ■ SOLO ─ ○ CYCLE 1 paused at 1/18 ─ ►  HUNT 1   locate ─ ○ DEEPEN ─ CLEAN 0
+ togi   20:24:00   session 20h24m   40 failures · 8 crashes   last observed failure 20:23, a moment ago
+ ■ SOLO ─ ○ CYCLE 1 paused at 8/18 ─ ►  HUNT 1   part 1 of 2 ─ ○ DEEPEN ─ CLEAN 0
 
- ▌  Crashed early in R7 all-core on 08-15; no core named. Rerunning it with 00-07 at 0.
+ ▌  Corrected hardware error in R5 both threads on 08; no core named. Rerunning it with 00-07 09-15 parked.
 
-  R7   all-core load  on 08-15 · 00-07 parked at 0, idle   mprime AVX2 36K-248K · 8 workers           HUNT 1 · GROUP 1
+  R5   both threads  on 08 · 00-07 09-13 15 parked at 0, idle   mprime SSE 4K-21K · 2 workers     HUNT 1 · PART 1 OF 2
  ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
 
- 5/5 pass → group 2   none named → hunt ends   core named → hunt ends   backoffs per offset order
+ 5/5 pass → part 2: 00-07   core named → hunt ends   inconclusive → same trial again
 
- CCD 0 parked     0  2 counts/cell       -50 fail  back      CCD 1 all loaded 0  2 counts/cell       -50 fail
-   00   0 PARKED   ··················█         -38  -37      ► 08 -27 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -28
-   01   0 PARKED   ·················█          -35  -34      ► 09 -18 AT LIMIT ▄▄▄▄▄▄▄▄▄█                  -19
-   02   0 PARKED   ·················█          -36  -35      ► 10 -16 AT LIMIT ▄▄▄▄▄▄▄▄█                   -17
-   03   0 PARKED   ········█                   -18  -17      ► 11  -5 AT LIMIT ▄▄█·                         -6
-   04   0 PARKED   ················█           -33  -32      ► 12 -10 AT LIMIT ▄▄▄▄▄█                      -11
-   05   0 PARKED   ···█·                        -8   -7      ► 13 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄█               -25
-   06   0 PARKED   ·············█·             -28  -27      ► 14  -1 AT LIMIT █·                           -2 top
-   07   0 PARKED   ················█           -33  -32      ► 15 -39 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█        -40
+ CCD 0 parked     0  2 counts/cell       -50 fail  back      CCD 1 one loaded 0  2 counts/cell       -50 fail  back
+   00   0 PARKED   ··················█         -38  -36      ► 08 -26 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -28
+   01   0 PARKED   ·················█          -35  -33        09   0 PARKED   ········█                   -17  -16
+   02   0 PARKED   ·················█          -36  -34        10   0 PARKED   ········█                   -17  -15
+   03   0 PARKED   ········█                   -18  -16        11   0 PARKED   ··█                          -5   -4
+   04   0 PARKED   ················█           -33  -31        12   0 PARKED   ·····█                      -11   -9
+   05   0 PARKED   ···█·                        -8   -7        13   0 PARKED   ···········█                -23  -22
+   06   0 PARKED   ·············█·             -28  -27        14   0 AT LIMIT █·                           -1
+   07   0 PARKED   ················█           -33  -31        15   0 PARKED   ···················█        -40  -38
 
- HUNT 1 ────────────────────────────────────── 11:37 · 40s   WHAT HAPPENED ─────────────────────────────── l: last 400
+ HUNT 1 ────────────────────────────────────── 20:23 · 40s   WHAT HAPPENED ─────────────────────────────── l: last 400
 
- cause      crash in the rerun of R7 all-core on 08-15...    11:37  hunt     #1 started · locate: 00-07 at 0
-                                                             11:37  crash    rerun of R7 all-core on 08-15...
- group 1      locate: 00-07 at 0      running · 0/5 passed   11:35  backoff  core 14 -2 → -1
-                                                             11:35  crash    rerun of R7 all-core on 08-15...
- then       1  record a failure point or a combination       11:34  backoff  core 11 -6 → -5
-            2  back off past it                              11:34  fail     core 11 fails at -6
-            3  rerun R7 all-core: 5 x 2m                     11:34  fail     rerun of R7 all-core on 08-15 · wrong...
-                                                             +254 more
+ cause      corrected hardware error in R5 both threads...   20:23  hunt     #1 started · part 1: 08 at failing...
+ ► part 1/2 08 at failing offsets     trial 1/5              20:23  fail     R5 both threads on core 08 at -26...
+   part 2/2 00-07 09-13 15 at...      if part 1 passes       20:21  pass     R5 both threads on core 00 at -36...
+                                                             20:19  pass     R6 idle + bursts on 00-15 · passed...
+ then       1  record a failure point or a combination       20:04  pass     R2 heavy vector on core 15 at -38...
+            2  back off past it                              20:02  pass     R2 heavy vector on core 07 at -31...
+            3  rerun R5 both threads: 5 x 2m                 20:00  pass     R2 heavy vector on core 14 at 0...
+                                                             +380 more
 
   ?  help    l  log    esc  back    q  close view

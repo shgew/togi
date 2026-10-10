@@ -1,6 +1,6 @@
   togi   10:16:17   session 10h15m   28 failures · 7 crashes   last observed failure 06:59, 3h16m ago
 
-  ■ SOLO LIMITS  16/16  ───  ► CYCLE 1  step 1 of 18 · part 1 of 3 · trial 1 of 4  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ■ SOLO LIMITS  16/16  ───  ► CYCLE 1  step 1 of 18 · part 1 of 3 · trial 1 of 4  ───  ○ DEEPEN  after a passed full cycle · 16 cores have room  ───  CLEAN CYCLES 0  · repeats until stopped
 
   ▌  DEAD END   I couldn't obtain usable failure evidence, so I can't continue testing safely. Check the recorded         last trial      PASS  1:30 on core 15 · Tctl max 71°C
   ▌             details before tuning again.
@@ -9,34 +9,34 @@
   no evidence: five trials in a row proved nothing
 
   CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
-  ► 00  -37  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                -38                                            08  -27  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                          -28
-  ► 01  -34  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                   -35                                            09  -18  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                   -19
-  ► 02  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                  -36                                            10  -16  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                     -17
-  ► 03  -17  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                                    -18                                            11   -7  AT LIMIT  ▄▄▄▄▄▄▄█                                               -8
-  ► 04  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            12  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11
-  ► 05  -10  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄█                                           -11   top by offset                            13  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                             -25
-  ► 06  -30  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                       -31                                            14   -4  AT LIMIT  ▄▄▄▄█                                                  -5   top by offset
-  ► 07  -32  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█                     -33                                            15  -39  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█              -40
+  ► 00  -36  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                -38                                            08  -26  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                          -28
+  ► 01  -33  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                   -35                                            09  -17  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                                   -19
+  ► 02  -34  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                  -36                                            10  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                                     -17
+  ► 03  -16  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                                    -18                                            11   -6  HAS ROOM  ▄▄▄▄▄▄·█                                               -8
+  ► 04  -31  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                     -33                                            12   -9  HAS ROOM  ▄▄▄▄▄▄▄▄▄·█                                           -11
+  ► 05   -9  HAS ROOM  ▄▄▄▄▄▄▄▄▄·█                                           -11   top by offset                            13  -23  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                             -25
+  ► 06  -29  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                       -31                                            14   -3  HAS ROOM  ▄▄▄·█                                                  -5   top by offset
+  ► 07  -31  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█                     -33                                            15  -38  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·█              -40
 
   CYCLE 1 ───────────────────────────────────────────────────────────────────────────────────────── 18 steps · 0 done     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 
     #   kind                  where                   workload                      schedule       result                 10:15  stop     dead end: five trials in a row proved nothing
   ►  1  R7 all-core           2 CCDs · 3+ parts       mprime AVX2 36K-248K          3+ parts       part 1 of 3            10:14  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
   ►     ├ full CCD 0          00-07                                                 3 x 2m + 5m    trial 1 of 4           10:14  cycle    cycle 1 started · 18 steps
-        ├ full CCD 1          08-15                                                 3 x 2m + 5m                           10:14  limit    core 15 solo limit -39
-        ├ full CCD 0+1        00-15                                                 3 x 2m + 10m                          10:13  limit    core 01 solo limit -34
-        └ partials may follow                                                                                             10:13  limit    core 00 solo limit -37
-  ○  2  R7 all-core           2 CCDs · 3+ parts       mprime AVX-512 36K-248K       3+ parts                              10:11  limit    cores 04, 07 solo limit -32
-  ○  3  R7 all-core           2 CCDs · 3+ parts       y-cruncher FFTv4 + N63 + VT3  3+ parts                              10:05  limit    core 13 solo limit -24
-  ○  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m                               10:04  limit    core 02 solo limit -35
-  ○  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m                               10:02  limit    core 08 solo limit -27
-  ○  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m                               09:58  limit    core 06 solo limit -30
-  ○  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   09:53  limit    core 09 solo limit -18
-  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               09:41  limit    core 03 solo limit -17
-  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               09:25  limit    core 10 solo limit -16
-  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               09:14  limit    core 14 solo limit -4
-  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               09:10  limit    core 11 solo limit -7
-  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               08:52  limit    cores 05, 12 solo limit -10
+        ├ full CCD 1          08-15                                                 3 x 2m + 5m                           10:14  limit    core 15 solo limit -38
+        ├ full CCD 0+1        00-15                                                 3 x 2m + 10m                          10:13  limit    core 01 solo limit -33
+        └ partials may follow                                                                                             10:13  limit    core 00 solo limit -36
+  ○  2  R7 all-core           2 CCDs · 3+ parts       mprime AVX-512 36K-248K       3+ parts                              10:11  limit    cores 04, 07 solo limit -31
+  ○  3  R7 all-core           2 CCDs · 3+ parts       y-cruncher FFTv4 + N63 + VT3  3+ parts                              10:05  limit    core 13 solo limit -23
+  ○  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m                               10:04  limit    core 02 solo limit -34
+  ○  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m                               10:02  limit    core 08 solo limit -26
+  ○  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m                               09:58  limit    core 06 solo limit -29
+  ○  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   09:53  limit    core 09 solo limit -17
+  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               09:41  limit    core 03 solo limit -16
+  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               09:25  limit    core 10 solo limit -15
+  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               09:14  limit    core 14 solo limit -3
+  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               09:10  limit    core 11 solo limit -6
+  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               08:52  limit    cores 05, 12 solo limit -9
   ○ 13  R3 load steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               07:50  confirm  core 15 confirming -39 as its solo limit
   ○ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               07:25  step     core 15 passed -38, next -39
   ○ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               07:04  confirm  core 01 confirming -34 as its solo limit

@@ -18,14 +18,14 @@
   if a core is named   its failure point is recorded → the hunt ends → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: rerun at CO 0
 
   CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  all under load
-  ► 00    0  PARKED    ·········▀                                                  returns to -10                         ► 08    0  PARKED    ·········▀                                                  returns to -10
-  ► 01    0  PARKED    ·········▀                                                  returns to -10                         ► 09    0  PARKED    ·········▀                                                  returns to -10
-  ► 02    0  PARKED    ·········▀                                                  returns to -10                         ► 10    0  PARKED    ·········▀                                                  returns to -10
-  ► 03   -9  PROBE     ▄▄▄▄▄▄▄▄▄▀                                                  group failed at -10                    ► 11  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▀                                        
-  ► 04    0  PARKED    ·········▀                                                  returns to -10                         ► 12    0  PARKED    ·········▀                                                  returns to -10
-  ► 05    0  PARKED    ·········▀                                                  returns to -10                         ► 13    0  PARKED    ·········▀                                                  returns to -10
-  ► 06    0  PARKED    ·········▀                                                  returns to -10                         ► 14    0  PARKED    ·········▀                                                  returns to -10
-  ► 07    0  PARKED    ·········▀                                                  returns to -10                         ► 15    0  PARKED    ·········▀                                                  returns to -10
+  ► 00    0  PARKED    ·········▀·                                                 returns to -10                         ► 08    0  PARKED    ·········▀·                                                 returns to -10
+  ► 01    0  PARKED    ·········▀·                                                 returns to -10                         ► 09    0  PARKED    ·········▀·                                                 returns to -10
+  ► 02    0  PARKED    ·········▀·                                                 returns to -10                         ► 10    0  PARKED    ·········▀·                                                 returns to -10
+  ► 03   -9  PROBE     ▄▄▄▄▄▄▄▄▄▀·                                                 group failed at -10                    ► 11  -10  MEMBER    ▄▄▄▄▄▄▄▄▄▀·                                       
+  ► 04    0  PARKED    ·········▀·                                                 returns to -10                         ► 12    0  PARKED    ·········▀·                                                 returns to -10
+  ► 05    0  PARKED    ·········▀·                                                 returns to -10                         ► 13    0  PARKED    ·········▀·                                                 returns to -10
+  ► 06    0  PARKED    ·········▀·                                                 returns to -10                         ► 14    0  PARKED    ·········▀·                                                 returns to -10
+  ► 07    0  PARKED    ·········▀·                                                 returns to -10                         ► 15    0  PARKED    ·········▀·                                                 returns to -10
 
   HUNT 1 ────────────────────────────────────────────────────────────────────────────── started 07:31 · 50m30s so far     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 

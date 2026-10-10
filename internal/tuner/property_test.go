@@ -20,8 +20,8 @@ func TestSearchConverges(t *testing.T) {
 			if a.Kind == Decide {
 				e := h.decide(a)
 				if p, ok := e.Data.(*journal.CorePhase); ok && p.To != journal.PhaseSearch {
-					if p.Offset != threshold {
-						t.Fatalf("seed %d: solo limit %d, want %d", seed, p.Offset, threshold)
+					if p.Pass == nil || *p.Pass != threshold || p.Offset != min(threshold+1, 0) {
+						t.Fatalf("seed %d: solo limit %v at checking offset %d, want %d at %d", seed, p.Pass, p.Offset, threshold, min(threshold+1, 0))
 					}
 					settled = true
 					break

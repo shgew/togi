@@ -1,51 +1,51 @@
   togi   00:00:40   session 0h00m   0 failures · 0 crashes
 
-  ► SOLO LIMITS  0 of 16 found · core 00 confirming -10  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ► SOLO LIMITS  0 of 16 found · core 00 confirming -11  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
 
-  ▌  SOLO LIMITS   -10 is core 00's candidate solo limit, and I'm confirming it.
+  ▌  SOLO LIMITS   -11 is core 00's candidate solo limit, and I'm confirming it.
   ▌                One core at a time with the rest at 0, so any failure belongs to the loaded core.
 
   NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0001
-   R1   light load  on core 00 alone at -10   mprime SSE 4K-21K · 1 worker                                                                                                                                     CONFIRM CORE 00 AT -10 · LIGHT
+   R1   light load  on core 00 alone at -11   mprime SSE 4K-21K · 1 worker                                                                                                                                     CONFIRM CORE 00 AT -11 · LIGHT
 
   ██████████████████████████████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          █▀█   █▀▀ █▀█
   ██████████████████████████████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          █ █ ▀ ▀▀█ █ █
   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
   0:40 of 1:30                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 
-  if it passes         next: R1 light on core 08 alone at -10
-  if a core is named   its failure point is recorded → it backs off → next: R1 light on core 08 alone at -10
+  if it passes         next: R1 light on core 08 alone at -11
+  if a core is named   its failure point is recorded → it backs off → next: R1 light on core 08 alone at -11
   if inconclusive      the same trial runs again
 
   CCD 0               0       -10       -20       -30       -40       -50 fail pt  one core under load at a time          CCD 1               0       -10       -20       -30       -40       -50 fail pt  waiting at 0
-  ► 00  -10  CONFIRM   ▄▄▄▄▄▄▄▄▄▄                                                  -10: light 0/5, heavy 0/5                08    0  CONFIRM                                                               -10: light 0/5, heavy 0/5
-    01    0  CONFIRM                                                               -10: light 0/5, heavy 0/5                09    0  CONFIRM                                                               -10: light 0/5, heavy 0/5
-    02    0  CONFIRM                                                               -10: light 0/5, heavy 0/5                10    0  CONFIRM                                                               -10: light 0/5, heavy 0/5
-    03    0  CONFIRM                                                               -10: light 0/5, heavy 0/5                11    0  CONFIRM                                                               -10: light 0/5, heavy 0/5
-    04    0  CONFIRM                                                               -10: light 0/5, heavy 0/5                12    0  CONFIRM                                                               -10: light 0/5, heavy 0/5
-    05    0  CONFIRM                                                               -10: light 0/5, heavy 0/5                13    0  CONFIRM                                                               -10: light 0/5, heavy 0/5
-    06    0  CONFIRM                                                               -10: light 0/5, heavy 0/5                14    0  CONFIRM                                                               -10: light 0/5, heavy 0/5
-    07    0  CONFIRM                                                               -10: light 0/5, heavy 0/5                15    0  CONFIRM                                                               -10: light 0/5, heavy 0/5
+  ► 00  -11  CONFIRM   ▄▄▄▄▄▄▄▄▄▄▄                                                 -11: light 0/5, heavy 0/5                08    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+    01    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                09    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+    02    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                10    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+    03    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                11    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+    04    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                12    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+    05    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                13    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+    06    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                14    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+    07    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                15    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
 
   TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 
     core   this turn                      at     workload                  so far                                         00:00  start    session started on 16 cores
-    08     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    01     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    09     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    02     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    10     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    03     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    11     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    04     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    12     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    05     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    13     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    06     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    14     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    07     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-    15     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
-  ► 00     confirm: light trial 1 of 5    -10    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    08     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    01     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    09     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    02     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    10     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    03     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    11     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    04     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    12     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    05     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    13     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    06     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    14     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    07     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+    15     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+  ► 00     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
 
 
 

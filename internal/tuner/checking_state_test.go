@@ -8,57 +8,24 @@ import (
 	"github.com/shgew/togi/internal/machine"
 )
 
-func TestEarlierCycleCreditsAnUncontradictedShallowerOrEqualProfile(t *testing.T) {
-	failure := func(profile []int) journal.Payload {
-		return &journal.Failure{Attribution: journal.Unattributed, Signal: machine.Crash, Condition: machine.Together, Regime: machine.R6, Profile: profile}
-	}
-	for _, tt := range []struct {
-		name  string
-		after []journal.Payload
-		final []int
-		want  int
-	}{
-		{"returns to the passed full-cycle profile", nil, []int{-10, -12}, 1},
-		{"shallower than the passed full-cycle profile", nil, []int{-10, -11}, 1},
-		{"deeper than the passed full-cycle profile", nil, []int{-11, -12}, 0},
-		{"failure at the passed full-cycle profile", []journal.Payload{failure([]int{-10, -12})}, []int{-10, -12}, 0},
-		{"failure at a deeper profile", []journal.Payload{failure([]int{-11, -13})}, []int{-10, -12}, 1},
-		{"incomplete failure profile", []journal.Payload{failure([]int{-10})}, []int{-10, -12}, 0},
-		{"failure at an incomparable profile", []journal.Payload{failure([]int{-11, -11})}, []int{-10, -12}, 1},
-		{"failure at a profile as shallow as the passed full-cycle one", []journal.Payload{failure([]int{-9, -12})}, []int{-10, -12}, 0},
-		{"reset after the passed full cycle", []journal.Payload{&journal.CommandReset{Core: new(1)}}, []int{-10, -12}, 0},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			h := hasRoomHarness(t, -10, -12)
-			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
-			h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
-			h.add(&journal.ProfileChange{From: []int{-10, -12}, To: []int{-11, -11}})
-			for _, p := range tt.after {
-				h.add(p)
-			}
-			h.add(&journal.ProfileChange{From: []int{-11, -11}, To: tt.final})
-			if got := h.s.CleanCycles(); got != tt.want {
-				t.Fatalf("clean cycles = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestCreditedCycleReplays(t *testing.T) {
+func TestConcludedPhasesReplay(t *testing.T) {
 	h := hasRoomHarness(t, -10, -12)
-	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
-	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
-	h.add(&journal.ProfileChange{From: []int{-10, -12}, To: []int{-11, -12}})
-	h.add(&journal.ProfileChange{From: []int{-11, -12}, To: []int{-10, -12}})
+	for n := 1; n <= 2; n++ {
+		h.add(&journal.CheckingCycle{Cycle: n, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
+		h.add(&journal.CheckingCycle{Cycle: n, Event: journal.CycleEnd, Passed: true, Full: true})
+	}
 	state := projected(h)
-	if state.Checking.CleanCycles != 1 || state.Checking.LastCleanCycle != 1 {
-		t.Fatalf("lost credited cycle: %+v", state.Checking)
+	if state.Checking.CleanCycles != 1 || state.Checking.LastCleanCycle != 2 {
+		t.Fatalf("confirmation cycle did not conclude phase 2: %+v", state.Checking)
 	}
 	replayed := replayState(h.events)
 	var got journal.State
 	replayed.Project(&got)
 	if diff := cmp.Diff(state.Checking, got.Checking); diff != "" {
-		t.Fatalf("credited cycle after replay (-want +got):\n%s", diff)
+		t.Fatalf("concluded phase 2 after replay (-want +got):\n%s", diff)
+	}
+	if h.s.phases.phase1End != replayed.phases.phase1End || h.s.phases.confirmStart != replayed.phases.confirmStart || h.s.phases.concluded != replayed.phases.concluded {
+		t.Fatalf("phases after replay: live %+v, replayed %+v", h.s.phases, replayed.phases)
 	}
 }
 
@@ -80,33 +47,40 @@ func TestUnpassedCycleStepsDoneReplays(t *testing.T) {
 	assertProjectionReplay(h)
 }
 
-func TestCleanCycleSummaryAfterDeepening(t *testing.T) {
-	h := hasRoomHarness(t, -10)
-	for _, cycle := range []int{3, 7} {
-		h.add(&journal.CheckingCycle{Cycle: cycle, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
-		h.add(&journal.CheckingCycle{Cycle: cycle, Event: journal.CycleEnd, Passed: true, Full: true})
+func TestCleanCyclesCountFromPhase2Conclusion(t *testing.T) {
+	h := hasRoomHarness(t, -10, -12)
+	cycle := func(n int) {
+		h.add(&journal.CheckingCycle{Cycle: n, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
+		h.add(&journal.CheckingCycle{Cycle: n, Event: journal.CycleEnd, Passed: true, Full: true})
 	}
-	g := projected(h).Checking
-	if g.CleanCycles != 2 || g.LastCleanCycle != 7 {
-		t.Fatalf("clean cycle summary: %+v", g)
+	cycle(1)
+	if g := projected(h).Checking; g.CleanCycles != 0 || g.LastCleanCycle != 0 {
+		t.Fatalf("phase 1's cycle counted: %+v", g)
 	}
-	h.add(&journal.ProfileChange{From: []int{-10}, To: []int{-11}})
-	g = projected(h).Checking
-	if g.CleanCycles != 0 || g.LastCleanCycle != 0 {
-		t.Fatalf("deepening retained shallower cycle credit: %+v", g)
+	cycle(2)
+	if g := projected(h).Checking; g.CleanCycles != 1 || g.LastCleanCycle != 2 {
+		t.Fatalf("confirmation cycle did not count once: %+v", g)
+	}
+	h.add(&journal.ProfileChange{From: []int{-10, -12}, To: []int{-9, -12}})
+	cycle(3)
+	if g := projected(h).Checking; g.CleanCycles != 2 || g.LastCleanCycle != 3 {
+		t.Fatalf("indefinite checking cycle after a step back: %+v", g)
 	}
 }
 
-func TestEarlierCycleRequiresCoresAtLimitAtItsEnd(t *testing.T) {
-	h := newHarness(t, coreStart{phase: journal.PhaseHasRoom, offset: -10})
-	h.decide(h.next())
-	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
-	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
-	h.add(&journal.CorePhase{Core: 0, To: journal.PhaseAtLimit, Offset: -10, FailurePoint: new(-11)})
-	h.add(&journal.ProfileChange{From: []int{-10}, To: []int{-11}})
-	h.add(&journal.ProfileChange{From: []int{-11}, To: []int{-10}})
-	if got := h.s.CleanCycles(); got != 0 {
-		t.Fatalf("cycle that ended before every core was at its limit counted: %d", got)
+func TestResetReturnsToPhase1(t *testing.T) {
+	h := hasRoomHarness(t, -10, -12)
+	for n := 1; n <= 2; n++ {
+		h.add(&journal.CheckingCycle{Cycle: n, Event: journal.CycleStart, Steps: []machine.Regime{machine.R1}})
+		h.add(&journal.CheckingCycle{Cycle: n, Event: journal.CycleEnd, Passed: true, Full: true})
+	}
+	if h.s.CleanCycles() != 1 || h.s.phases.concluded == 0 {
+		t.Fatalf("phase 2 not concluded: %d clean cycles", h.s.CleanCycles())
+	}
+	h.add(&journal.CommandReset{Core: new(1)})
+	h.add(&journal.CorePhase{Core: 1, From: journal.PhaseAtLimit, To: journal.PhaseSearch, Offset: -12})
+	if h.s.CleanCycles() != 0 || h.s.phases.phase1End != 0 || h.s.phases.concluded != 0 {
+		t.Fatalf("reset kept phase state: %+v, %d clean cycles", h.s.phases, h.s.CleanCycles())
 	}
 }
 

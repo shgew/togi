@@ -84,7 +84,7 @@ func probeMachine() (*sim.Machine, config.Config, error) {
 	cfg := config.Default()
 	cfg.CandidateSoloLimits = make(map[int]int, 16)
 	for core := range 16 {
-		cfg.CandidateSoloLimits[core] = -10
+		cfg.CandidateSoloLimits[core] = -11
 	}
 	return m, cfg, err
 }
@@ -153,6 +153,22 @@ func cutTrial(tb testing.TB, events []journal.Event, accept func(*journal.TrialI
 	})
 }
 
+// cutPassedCheckingTrial cuts just after the first checking trial that passed, the point between that trial and the
+// next, which the first checking trial itself may not be: it can end in a crash that a later boot records.
+func cutPassedCheckingTrial(tb testing.TB, events []journal.Event) []journal.Event {
+	tb.Helper()
+	checking := map[string]bool{}
+	return cutAt(tb, events, func(e journal.Event) bool {
+		switch p := e.Data.(type) {
+		case *journal.TrialIntent:
+			checking[p.Trial] = p.Phase == journal.PhaseChecking
+		case *journal.TrialEnd:
+			return checking[p.Trial] && p.Outcome == journal.OutcomePass
+		}
+		return false
+	})
+}
+
 func probeEvents(t *testing.T) []journal.Event {
 	t.Helper()
 	return simulated(t, probeJournal)
@@ -184,7 +200,7 @@ func watchCuts(t *testing.T) []watchCut {
 		{"member-probe", memberProbe},
 		{"deepening", cutTrial(t, probes, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })},
 		{"idle", cutTrial(t, events, func(p *journal.TrialIntent) bool { return p.Regime == machine.R6 })},
-		{"between", cutAt(t, events, func(e journal.Event) bool { return e.Seq > last.Seq && e.Kind == journal.KindTrialEnd })},
+		{"between", cutPassedCheckingTrial(t, events)},
 		{"crashed", beforeCrashDetected(t, events)},
 		{"recovering", cutAt(t, events, func(e journal.Event) bool { return e.Kind == journal.KindCrashDetected })},
 		{"stopped", events},
