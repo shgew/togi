@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,8 +45,8 @@ func shardRuns(runs []runSpec, weights map[string]float64, index, count int) []r
 	mean := 1.0
 	if len(weights) > 0 {
 		total := 0.0
-		for _, w := range weights {
-			total += w
+		for _, key := range slices.Sorted(maps.Keys(weights)) {
+			total += weights[key]
 		}
 		mean = total / float64(len(weights))
 	}
@@ -141,7 +142,7 @@ func executeShard(o options, stdout, stderr io.Writer) error {
 				}
 				status := shardStatus(run, string(log))
 				outcomes[i] = outcome{status: status, wall: run.wall}
-				if status == "error" {
+				if status == "error" || status == "censored" {
 					outcomes[i].log = lastLines(string(log), 5)
 				}
 				_ = os.RemoveAll(run.dir)

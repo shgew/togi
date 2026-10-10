@@ -28,7 +28,7 @@ func TestShardsHoldEverySessionOnceAndBalanceWeight(t *testing.T) {
 		r := runSpec{scenario: scenario{Name: "s"}, seed: seed, split: "dev"}
 		runs = append(runs, r)
 		if seed%7 != 0 {
-			weights[sessionKey{"s", "dev", seed}.String()] = float64(seed * seed)
+			weights[sessionKey{"s", "dev", seed}.String()] = float64(seed*seed)/7 + 0.1
 		}
 	}
 	const count = 4
@@ -50,11 +50,15 @@ func TestShardsHoldEverySessionOnceAndBalanceWeight(t *testing.T) {
 			t.Fatalf("shards hold sessions %v, want each of 1 to 20 once", seen)
 		}
 	}
-	if got := slices.Max(loads) - slices.Min(loads); got > 400 {
+	if got := slices.Max(loads) - slices.Min(loads); got > 60 {
 		t.Errorf("shard weights %v differ by %v, want a balanced split", loads, got)
 	}
-	if !slices.EqualFunc(shardRuns(runs, weights, 1, count), shardRuns(runs, weights, 1, count), func(a, b runSpec) bool { return a.seed == b.seed }) {
-		t.Error("a shard differs between two calls")
+	for range 50 {
+		for i := range count {
+			if !slices.EqualFunc(shardRuns(runs, weights, i, count), shardRuns(runs, weights, i, count), func(a, b runSpec) bool { return a.seed == b.seed }) {
+				t.Fatalf("shard %d differs between two calls", i)
+			}
+		}
 	}
 }
 
