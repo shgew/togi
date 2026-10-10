@@ -708,7 +708,7 @@ func TestHeaderCountsAgreeInNumber(t *testing.T) {
 		}
 		s.trial = &trialView{hasStarted: true, regime: machine.R6, started: time.Unix(30, 0), duration: time.Minute}
 		got := ansi.Strip(Render(s, 120, 33, time.Unix(60, 0)))
-		header := strings.SplitN(got, "\n", 2)[0]
+		header, _, _ := strings.Cut(got, "\n")
 		if !strings.Contains(header, "paused until") || !strings.Contains(header, tt.want) {
 			t.Errorf("paused compact header %q lacks %q", header, tt.want)
 		}
