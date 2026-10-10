@@ -1178,20 +1178,40 @@ func TestParkedFailureNamingACoreAtZeroRerunsAllZero(t *testing.T) {
 }
 
 func TestTogetherFailureNamingACoreAtZeroIsHuntedAfterAPassedRerun(t *testing.T) {
-	h := hasRoomHarness(t, 0, -10)
-	tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Phase: journal.PhaseChecking, Condition: machine.Together, DurationS: 120, Cores: []int{0, 1}}
-	h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)})
-	failure := h.decide(h.next())
-	h.trial(h.next(), passed)
-	a := h.next()
-	start, ok := a.Payload.(*journal.HuntStart)
-	if !ok || start.Failure != failure.Seq || !slices.Equal(start.Candidates, []int{1}) {
-		t.Fatalf("the failure was not hunted among the nonzero cores: %+v", a)
+	for _, tt := range []struct {
+		name     string
+		gateOpen bool
+	}{{"gate closed", false}, {"later-failure gate open", true}} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := hasRoomHarness(t, 0, -10)
+			if tt.gateOpen {
+				passCycles(h, 1, 3)
+				startCycle(h, 4)
+				if !h.s.laterGate() {
+					t.Fatal("later-failure gate closed")
+				}
+			}
+			tr := Trial{Regime: machine.R6, Workload: machine.Workloads(machine.R6)[0].ID, Phase: journal.PhaseChecking, Condition: machine.Together, DurationS: 120, Cores: []int{0, 1}}
+			h.trial(Action{Kind: RunTrial, Trial: tr}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.ComputationError, Core: new(0)})
+			failure := h.decide(h.next())
+			h.trial(h.next(), passed)
+			a := h.next()
+			start, ok := a.Payload.(*journal.HuntStart)
+			if !ok || start.Failure != failure.Seq || !slices.Equal(start.Candidates, []int{1}) {
+				t.Fatalf("the failure was not hunted among the nonzero cores: %+v", a)
+			}
+			if len(h.s.later.strikes) != 0 {
+				t.Fatalf("a failure at CO 0 was held: %+v", h.s.later.strikes)
+			}
+			if diff := cmp.Diff(a, replayState(h.events).Next()); diff != "" {
+				t.Fatalf("next after replay (-live +replayed):\n%s", diff)
+			}
+			h.decide(a)
+			a = h.next()
+			if end, ok := a.Payload.(*journal.HuntEnd); !ok || end.Result != "culprit" || !slices.Equal(end.Cores, []int{1}) {
+				t.Fatalf("hunt end %+v", a)
+			}
+			assertProjectionReplay(h)
+		})
 	}
-	h.decide(a)
-	a = h.next()
-	if end, ok := a.Payload.(*journal.HuntEnd); !ok || end.Result != "culprit" || !slices.Equal(end.Cores, []int{1}) {
-		t.Fatalf("hunt end %+v", a)
-	}
-	assertProjectionReplay(h)
 }

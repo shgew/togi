@@ -115,6 +115,7 @@ type pendingFailure struct {
 	seq     int
 	failure *journal.Failure
 	profile []int
+	cycle   int
 	class   trialClass
 	carried bool
 	// loadBackoffs are the voltage-targeted backoffs of the failed load since its latest passing trial, as folded
@@ -178,6 +179,7 @@ type State struct {
 	rankingSeq, lastPlanSeq int
 	passedFullCycles        []passedFullCycle
 	phases                  phases
+	later                   laterState
 	warning                 *journal.TunerWarning
 	warningSeq              int
 	projectionDirty         bool
@@ -357,6 +359,7 @@ func (s *State) Fold(e journal.Event) {
 			if p.To == journal.PhaseSearch {
 				c.hasSoloLimit = false
 				s.phases = phases{}
+				s.later = laterState{}
 			}
 			c.check = p.CheckSoloLimit
 			c.checkWorkloads = [2]string{}
@@ -374,8 +377,17 @@ func (s *State) Fold(e journal.Event) {
 			s.decided(c, e.Seq)
 		}
 	case *journal.TunerDecision:
+		var held *pendingFailure
+		var back map[int]int
+		if p.Phase == journal.PhaseChecking && p.Decision == journal.Backoff {
+			if p.ToOffset != p.FromOffset {
+				e, _ = s.releaseStrike(e, []int{p.Core})
+			} else if held = s.laterHold(e, p); held != nil {
+				back = s.holdBack(e, p)
+			}
+		}
 		if p.Decision == journal.Backoff {
-			if p.Phase != journal.PhaseDeepening {
+			if p.Phase != journal.PhaseDeepening && held == nil {
 				s.recordLoadBackoff(e)
 			}
 			s.consumeR7(e, p.Core)
@@ -399,6 +411,11 @@ func (s *State) Fold(e journal.Event) {
 				s.pendingRerun()
 			}
 			s.commitHuntDecision(e, p)
+			s.noteMove(e.Seq, c)
+			s.pruneStrikes()
+			if held != nil {
+				s.addStrike(held, e.Seq, []int{c.id}, back)
+			}
 		}
 		s.foldPhase2Decision(e, p)
 	case *journal.TrialIntent:
@@ -463,12 +480,20 @@ func (s *State) Fold(e journal.Event) {
 		s.ranking = slices.Clone(p.Ranking)
 		s.rankingSeq = e.Seq
 	case *journal.HuntStart:
+		var released *strike
+		e, released = s.releaseStrike(e, p.Cores)
 		s.openHunt(e, p)
+		if released != nil && s.hunt != nil {
+			s.hunt.paired, s.hunt.pairedStrike = released.failure, released
+		}
 	case *journal.HuntGroup:
 		s.recordGroup(e, p)
 	case *journal.HuntEnd:
 		s.endHunt(e, p)
 	case *journal.HuntSkipped:
+		if f := s.laterHuntHold(p); f != nil {
+			s.addStrike(f, e.Seq, s.huntCores(*f), s.huntBack(*f))
+		}
 		s.skipHunt(p)
 	case *journal.Combination:
 		s.combinations = append(s.combinations, journal.CombinationState{Combination: p.Combination, Members: slices.Clone(p.Members), Fallback: p.Fallback, Hunt: p.Hunt, Seq: e.Seq})
@@ -571,7 +596,7 @@ func (s *State) foldFailure(e journal.Event, p *journal.Failure) {
 			profile = slices.Clone(intent.Profile)
 		}
 	}
-	failure := pendingFailure{seq: e.Seq, failure: p, profile: profile}
+	failure := pendingFailure{seq: e.Seq, failure: p, profile: profile, cycle: s.checking.cycle}
 	if p.KnownFailure != 0 {
 		s.retry = nil
 		if known := s.failureBySeq(p.KnownFailure); known != nil {

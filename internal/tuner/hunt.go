@@ -26,6 +26,10 @@ type hunt struct {
 	groups                                []groupRecord
 	end                                   *journal.HuntEnd
 	endSeq, combinationSeq, directFailure int
+	// paired is the held earlier failure whose second failure started this hunt, or 0. pairedStrike is that hold: its
+	// stepped-back display stays in the BIOS profile until the hunt's commitment, or its end without one, replaces it.
+	paired       int
+	pairedStrike *strike
 }
 
 func (s *State) openHunt(e journal.Event, p *journal.HuntStart) {
@@ -125,13 +129,45 @@ func (s *State) failureBySeq(seq int) *pendingFailure {
 	return nil
 }
 
+func (s *State) huntCores(f pendingFailure) []int {
+	cores := slices.Clone(s.classTargets[f.class.cores].cores)
+	if len(cores) == 0 {
+		cores = s.ids()
+	}
+	return cores
+}
+
 func (s *State) huntStartNext() Action {
 	f := s.queue[0]
 	if reachedConstraint, ok := s.reaches(f.profile); ok {
 		return Action{Kind: Decide, Payload: &journal.HuntSkipped{Failure: f.seq, Reason: "its profile reaches " + reachedConstraint}, Cause: []int{f.seq}}
 	}
-	parked := make([]int, len(f.profile))
-	parkedSeq := 0
+	cores := s.huntCores(f)
+	skip, pair := s.laterHunt(f, cores)
+	if skip != nil {
+		return *skip
+	}
+	parked, parkedSeq, candidates := s.huntCandidates(f)
+	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: cores, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Parked: parked, ParkedSeq: parkedSeq, Candidates: candidates, Trials: s.n, TrialS: s.durations.ShortTrialS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
+	p.Reason = f.failure.Reason
+	cause := []int{f.seq}
+	if parkedSeq != 0 {
+		cause = append(cause, parkedSeq)
+	}
+	if pair != nil {
+		cause = append(cause, pair.failure)
+		if p.Reason != "" {
+			p.Reason += "; "
+		}
+		p.Reason += s.pairClause(pair, s.laterFailure(f.seq))
+	}
+	return Action{Kind: Decide, Payload: p, Cause: cause}
+}
+
+// huntCandidates returns the profile a hunt of f parks the cores at, the latest passed full cycle it comes from (0 for
+// all cores at 0), and the candidates: the cores f's profile has deeper than the parked profile, ascending by ID.
+func (s *State) huntCandidates(f pendingFailure) (parked []int, parkedSeq int, candidates []int) {
+	parked = make([]int, len(f.profile))
 	for _, q := range slices.Backward(s.passedFullCycles) {
 		if len(q.profile) != len(f.profile) {
 			continue
@@ -147,23 +183,12 @@ func (s *State) huntStartNext() Action {
 		parkedSeq = q.seq
 		break
 	}
-	var candidates []int
 	for i, c := range s.byID() {
 		if f.profile[i] < parked[i] {
 			candidates = append(candidates, c.id)
 		}
 	}
-	cores := slices.Clone(s.classTargets[f.class.cores].cores)
-	if len(cores) == 0 {
-		cores = s.ids()
-	}
-	p := &journal.HuntStart{Hunt: s.nextHunt + 1, Failure: f.seq, Trial: f.failure.Trial, Regime: f.class.regime, Workload: f.class.workload, Cores: cores, DurationS: f.class.duration, Failing: slices.Clone(f.profile), Parked: parked, ParkedSeq: parkedSeq, Candidates: candidates, Trials: s.n, TrialS: s.durations.ShortTrialS, Miss: s.evidence.Miss, Rate: s.evidence.Rate, Ranking: slices.Clone(s.ranking)}
-	p.Reason = f.failure.Reason
-	cause := []int{f.seq}
-	if parkedSeq != 0 {
-		cause = append(cause, parkedSeq)
-	}
-	return Action{Kind: Decide, Payload: p, Cause: cause}
+	return parked, parkedSeq, candidates
 }
 
 func (h *hunt) split(set []int, g int) [][]int {
@@ -727,7 +752,7 @@ func (s *State) huntCommitment(h *hunt) (Action, bool) {
 		}
 		to := max(c.offset, x+1)
 		pass, discarded := keepPass(c.pass, failurePoint)
-		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailurePoint: new(failurePoint), Reason: fmt.Sprintf("hunt %d found core %02d; failure point %d%s", h.start.Hunt, c.id, failurePoint, discarded)}, Cause: []int{h.endSeq}}, true
+		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: pass, FailurePoint: new(failurePoint), Reason: fmt.Sprintf("hunt %d found core %02d; failure point %d%s%s", h.start.Hunt, c.id, failurePoint, discarded, h.pairedClause())}, Cause: []int{h.endSeq}}, true
 	}
 	var recordedCombination *journal.CombinationState
 	for i := range s.combinations {
@@ -750,25 +775,33 @@ func (s *State) huntCommitment(h *hunt) (Action, bool) {
 				break
 			}
 		}
-		return Action{Kind: Decide, Payload: &journal.Combination{Combination: s.nextCombination + 1, Members: members, Fallback: end.Result == "fallback", Hunt: h.start.Hunt, Reason: reason}, Cause: []int{h.endSeq}}, true
+		return Action{Kind: Decide, Payload: &journal.Combination{Combination: s.nextCombination + 1, Members: members, Fallback: end.Result == "fallback", Hunt: h.start.Hunt, Reason: reason + h.pairedClause()}, Cause: []int{h.endSeq}}, true
 	}
 
-	for _, m := range recordedCombination.Members {
+	return s.combinationCommitment(h, recordedCombination.Members, recordedCombination.Combination, recordedCombination.Seq)
+}
+
+// combinationCommitment is the backoff that follows a combination of the hunt once it is recorded (seq is its event,
+// number its C): the backoff to a tested probe, else the member whose backoff leaves the most counts reachable. It
+// reports nothing when a member is already shallower, and takes the members from the caller so a pending
+// combination can be projected before it is recorded.
+func (s *State) combinationCommitment(h *hunt, members []journal.CombinationMember, number, seq int) (Action, bool) {
+	for _, m := range members {
 		if s.checking.profile[s.index(m.Core)] > m.Offset {
 			return Action{}, false
 		}
 	}
 	if c, probe, ok := s.testedBackoff(h); ok {
 		to := probe.payload.Probe.Offset
-		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("combination C%d: backing off core %02d to %d, where hunt %d group %d passed with the rest of the combination at its failing offsets", recordedCombination.Combination, c.id, to, h.start.Hunt, probe.payload.Group)}, Cause: []int{recordedCombination.Seq, probe.seq}}, true
+		return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("combination C%d: backing off core %02d to %d, where hunt %d group %d passed with the rest of the combination at its failing offsets%s", number, c.id, to, h.start.Hunt, probe.payload.Group, h.pairedClause())}, Cause: []int{seq, probe.seq}}, true
 	}
-	chosen, reach, ok := s.combinationBackoff(recordedCombination.Members, s.huntRanking(h))
+	chosen, reach, ok := s.combinationBackoff(members, s.huntRanking(h))
 	if !ok {
 		return Action{}, false
 	}
 	c := s.core(chosen.Core)
 	to := max(c.offset, chosen.Offset+1)
-	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("combination C%d: backing off core %02d leaves %d counts reachable", recordedCombination.Combination, c.id, reach)}, Cause: []int{recordedCombination.Seq}}, true
+	return Action{Kind: Decide, Payload: &journal.TunerDecision{Core: c.id, Phase: journal.PhaseHunt, Decision: journal.Backoff, FromOffset: c.offset, ToOffset: to, Pass: c.pass, FailurePoint: c.fail, Reason: fmt.Sprintf("combination C%d: backing off core %02d leaves %d counts reachable%s", number, c.id, reach, h.pairedClause())}, Cause: []int{seq}}, true
 }
 
 func (s *State) testedBackoff(h *hunt) (*core, groupRecord, bool) {
