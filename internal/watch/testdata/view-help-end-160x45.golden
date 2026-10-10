@@ -2,16 +2,18 @@
 
   ■ SOLO LIMITS  16/16  ───  ○ CYCLE 1  paused at step 7 of 18  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ DEEPEN  ───  CLEAN CYCLES 0
 
-  │ R6            During idle trials this screen holds still, clock included, so it cannot wake the cores.
-  │ 
   │ NO ETA        A hunt can start at any time, so togi shows only what is scheduled and the time left in the current trial.
   │ 
   │ RULES         How togi decides what to do: https://github.com/shgew/togi/blob/main/docs/spec/tuner.md
   │ 
   │ 
-  │ 
   │ WORDS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   │ 
+  │ SEARCH           finding its solo limit with light and heavy-vector trials alone
+  │ CONFIRM          checking its candidate solo limit with repeated light and heavy-vector trials alone
+  │ FOUND            solo limit checked; waiting at 0 until every core has one
+  │ WAITING          at 0, waiting for its first search turn
+  │ MEMBER           kept with its hunt group at its failing offset; another member may be probed
   │ offset           Curve Optimizer counts, 0 to -50; deeper is more negative
   │ trial            one launch of one workload on its target
   │ solo limit       the deepest offset a core confirmed under load alone
@@ -23,7 +25,7 @@
   │ parked           a core a hunt holds shallower than its failing offset
   │ partial part     an R7 part with the top requesters idle
   │ top requester    the loaded core with the highest voltage request, setting the shared core voltage; marked top on the CCD tables, by offset when offsets
-  │                  stand in for requests
+  █                  stand in for requests
   █ self-sufficient  observed passing as top requester for this R7 workload; evidence, not a guarantee
   █ record only      a trial whose result is kept but changes no decision
   █ cycle            one pass through the checking schedule
@@ -38,7 +40,5 @@
   █ R5 both threads   both threads of one core: SMT pressure
   █ R6 idle + bursts  idle with short wake-ups: idle and boost
   █ R7 all-core       a CCD, part of one, or every core: power and heat
-  █ 
-  █ 
 
    ?  help    l  log    esc  back    q  close view

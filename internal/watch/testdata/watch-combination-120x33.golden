@@ -27,6 +27,6 @@
  R7 ────────────── top ───────────── self-sufficient ─────   12:47  pass     R4 partial load on core 06 at -50
  mprime AVX2       00-0... by offset all                     12:45  pass     R4 partial load on core 13 at -50
  mprime AVX-512    00-0... by offset all                     12:43  pass     R4 partial load on core 05 at -50
- y-cruncher FFTv4  00-0... by offset all                     +635 more
+ y-cruncher FFTv4  00-0... by offset all                     +634 more
 
   ?  help    l  log    esc  back    q  close view

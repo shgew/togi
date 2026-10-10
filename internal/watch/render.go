@@ -322,7 +322,12 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 	if sc.Keys {
 		hints := keyHints(sc.View)
 		if sc.View == LogView && s.logArrived > 0 {
-			hints += "   " + amber.Render(plural(s.logArrived, "new event")+" · End: latest")
+			arrival := amber.Render(plural(s.logArrived, "new event") + " · End: latest")
+			hints = trimWords(hints, p.header.w-ansi.StringWidth(consoleText(arrival))-3)
+			if hints != "" {
+				hints += "   "
+			}
+			hints += arrival
 		}
 		c.put(rectangle{p.header.x, p.hint, p.header.w, 1}, 0, 0, hints)
 	}
@@ -1291,27 +1296,43 @@ func (s Snapshot) ccdRole(id int) (string, string) {
 // historyPanel lists what happened in height rows. Its last row counts the entries it leaves out, those that do not
 // fit and those older than the entries the snapshot keeps.
 func (s Snapshot) historyPanel(width, height int) []string {
-	if width <= 0 {
+	if width <= 0 || height <= 0 {
 		return nil
 	}
-	right := fmt.Sprintf("newest first · l: last %d events", logLimit)
-	if width < 100 {
-		right = fmt.Sprintf("l: last %d", logLimit)
+	room := max(height-2, 0)
+	shown := min(len(s.history), room)
+	if s.historyDropped > 0 || len(s.history) > room {
+		shown = min(len(s.history), max(room-1, 0))
 	}
-	out := []string{rule(width, grey.Render("WHAT HAPPENED"), grey.Render(right)), ""}
-	lines := make([]string, 0, len(s.history))
-	for _, e := range s.history {
+	hidden := s.historyDropped + len(s.history) - shown
+	headerRows := min(height, 2)
+	if hidden > 0 {
+		headerRows = min(height-1, 2)
+	}
+	rows := headerRows + shown
+	if hidden > 0 {
+		rows++
+	}
+	out := make([]string, 0, rows)
+	if headerRows > 0 {
+		right := fmt.Sprintf("newest first · l: last %d events", logLimit)
+		if width < 100 {
+			right = fmt.Sprintf("l: last %d", logLimit)
+		}
+		out = append(out, rule(width, grey.Render("WHAT HAPPENED"), grey.Render(right)))
+	}
+	if headerRows > 1 {
+		out = append(out, "")
+	}
+	for _, e := range s.history[:shown] {
 		before, alarm, after := e.sentenceParts()
 		text := textStyle.Render(before) + red.Render(alarm) + textStyle.Render(after)
-		lines = append(lines, grey.Render(e.at.Format("15:04"))+"  "+tagStyle(e.tag).Render(fmt.Sprintf("%-8s", e.tag))+" "+trimWords(text, max(width-16, 0)))
+		out = append(out, grey.Render(e.at.Format("15:04"))+"  "+tagStyle(e.tag).Render(fmt.Sprintf("%-8s", e.tag))+" "+trimWords(text, max(width-16, 0)))
 	}
-	room := height - len(out)
-	if room < 1 || s.historyDropped == 0 && len(lines) <= room {
-		return append(out, lines...)
+	if hidden > 0 {
+		out = append(out, grey.Render(fmt.Sprintf("+%d more", hidden)))
 	}
-	shown := min(len(lines), room-1)
-	out = append(out, lines[:shown]...)
-	return append(out, grey.Render(fmt.Sprintf("+%d more", s.historyDropped+len(lines)-shown)))
+	return out
 }
 
 // tagStyle colours a history tag by what kind of event it names, so the eye finds a crash or a hunt down the column.

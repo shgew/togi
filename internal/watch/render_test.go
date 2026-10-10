@@ -41,6 +41,64 @@ func TestHelpWideUsesThreeColumns(t *testing.T) {
 			t.Errorf("row %d exceeds help rectangle", row)
 		}
 	}
+	if strings.TrimSpace(ansi.Strip(body[len(body)-1])) == "" {
+		t.Error("wide help ends on a blank content row")
+	}
+	for _, section := range []helpSection{topHelp, tuningHelp, loadHelp} {
+		lines := helpSectionLines(section, 70, section.title == tuningHelp.title)
+		if strings.TrimSpace(ansi.Strip(lines[len(lines)-1])) == "" {
+			t.Errorf("wide column's final section %q ends on blank padding", section.title)
+		}
+	}
+	for _, width := range []int{195, 235} {
+		t.Run(fmt.Sprintf("%dx19", width), func(t *testing.T) {
+			top, scroll := renderHelpBody(width, 19, 0)
+			end, endScroll := renderHelpBody(width, 19, -1)
+			clamped, _ := renderHelpBody(width, 19, scroll+100)
+			if scroll == 0 || endScroll != scroll {
+				t.Fatalf("short wide help must scroll: top=%d end=%d", scroll, endScroll)
+			}
+			if diff := cmp.Diff(end, clamped); diff != "" {
+				t.Errorf("scroll beyond end (-want +got):\n%s", diff)
+			}
+			for _, title := range []string{"READING THE SCREEN", "WHAT TOGI DOES", "WORDS"} {
+				if !strings.Contains(ansi.Strip(top[0]), title) {
+					t.Errorf("short wide help lost column %q: %q", title, top[0])
+				}
+			}
+			thumb := max(1, 19*19/(scroll+19))
+			for _, page := range []struct {
+				name  string
+				lines []string
+				bar   string
+			}{
+				{"top", top, strings.Repeat("█", thumb) + strings.Repeat("│", 19-thumb)},
+				{"end", end, strings.Repeat("│", 19-thumb) + strings.Repeat("█", thumb)},
+			} {
+				if len(page.lines) != 19 {
+					t.Fatalf("%s page has %d rows, want 19", page.name, len(page.lines))
+				}
+				var bar strings.Builder
+				for row, line := range page.lines {
+					if ansi.StringWidth(line) > width {
+						t.Errorf("%s row %d exceeds the help rectangle: %q", page.name, row, line)
+					}
+					plain := []rune(ansi.Strip(line))
+					if len(plain) < 2 || plain[1] != ' ' {
+						t.Fatalf("%s row %d loses the scrollbar's two columns: %q", page.name, row, line)
+					}
+					bar.WriteRune(plain[0])
+				}
+				if diff := cmp.Diff(page.bar, bar.String()); diff != "" {
+					t.Errorf("%s scrollbar (-want +got):\n%s", page.name, diff)
+				}
+			}
+			last := []rune(ansi.Strip(end[len(end)-1]))
+			if strings.TrimSpace(string(last[2:])) == "" {
+				t.Fatal("short wide help ends on a blank content row")
+			}
+		})
+	}
 }
 
 func TestHelpLinksTunerSpecAndStatesNoRule(t *testing.T) {
@@ -54,6 +112,45 @@ func TestHelpLinksTunerSpecAndStatesNoRule(t *testing.T) {
 		if strings.Contains(words, rule) {
 			t.Errorf("help restates the tuning rule %q", rule)
 		}
+	}
+	for _, width := range []int{115, 235} {
+		t.Run(fmt.Sprintf("%d columns", width), func(t *testing.T) {
+			body, scroll := renderHelpBody(width, 1000, 0)
+			if scroll != 0 || len(body) == 0 {
+				t.Fatalf("full help was not rendered: rows=%d scroll=%d", len(body), scroll)
+			}
+			column := 0
+			if width >= 195 {
+				first := ansi.Strip(body[0])
+				prefix, _, found := strings.Cut(first, "WORDS")
+				if !found {
+					t.Fatalf("wide help lost the words column: %s", first)
+				}
+				column = ansi.StringWidth(prefix)
+			}
+			lines := make([]string, len(body))
+			for row, line := range body {
+				if ansi.StringWidth(line) > width {
+					t.Errorf("full help row %d exceeds its rectangle: %q", row, line)
+				}
+				lines[row] = string([]rune(ansi.Strip(line))[column:])
+			}
+			words := strings.Join(strings.Fields(strings.Join(lines, "\n")), " ")
+			for _, explanation := range []string{
+				"SEARCH finding its solo limit with light and heavy-vector trials alone",
+				"CONFIRM checking its candidate solo limit with repeated light and heavy-vector trials alone",
+				"FOUND solo limit checked; waiting at 0 until every core has one",
+				"WAITING at 0, waiting for its first search turn",
+				"MEMBER kept with its hunt group at its failing offset; another member may be probed",
+			} {
+				if !strings.Contains(words, explanation) {
+					t.Errorf("help lost state explanation %q", explanation)
+				}
+			}
+			if strings.TrimSpace(ansi.Strip(body[len(body)-1])) == "" {
+				t.Fatal("full help ends on a blank content row")
+			}
+		})
 	}
 }
 
@@ -76,6 +173,10 @@ func TestHelpNarrowScrollsOneColumn(t *testing.T) {
 	}
 	if strings.Contains(ansi.Strip(top[0]), "WHAT TOGI DOES") {
 		t.Fatal("narrow help squeezes columns together")
+	}
+	last := []rune(ansi.Strip(end[len(end)-1]))
+	if len(last) < 2 || strings.TrimSpace(string(last[2:])) == "" {
+		t.Fatal("narrow help ends on a blank content row")
 	}
 	for _, lines := range [][]string{top, end} {
 		if len(lines) > 19 {
@@ -130,7 +231,7 @@ func TestLogFollowsNewEntriesOnlyAtEnd(t *testing.T) {
 func TestHelpLogBodiesFitSmallRectangles(t *testing.T) {
 	t.Parallel()
 	s := Snapshot{log: []entry{{at: time.Unix(0, 0).UTC(), tag: "trial.intent", text: strings.Repeat("long journal line ", 20)}}}
-	for _, width := range []int{0, 1, 2, 10, 77, 155, 235} {
+	for _, width := range []int{0, 1, 2, 10, 77, 155, 194, 195, 196, 197, 235} {
 		for _, height := range []int{0, 1, 19, 61} {
 			for _, scroll := range []int{0, 7, -1} {
 				help, _ := renderHelpBody(width, height, scroll)

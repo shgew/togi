@@ -34,17 +34,31 @@ func (s *source) reload() bool {
 		if s.err != nil && s.err.Error() == err.Error() {
 			return false
 		}
+		s.held = heldLog{}
 		s.info, s.err, s.snap = nil, err, Load(s.dir)
 		return true
 	}
-	if s.info != nil && os.SameFile(s.info, info) && info.Size() == s.info.Size() && info.ModTime().Equal(s.info.ModTime()) {
-		return false
+	if s.info != nil {
+		same := os.SameFile(s.info, info)
+		if same && info.Size() == s.info.Size() && info.ModTime().Equal(s.info.ModTime()) {
+			return false
+		}
+		if !same || info.Size() < s.info.Size() {
+			s.held = heldLog{}
+		}
 	}
 	s.info, s.err, s.snap = info, nil, Load(s.dir)
+	if s.snap.Err() != nil || !s.snap.session {
+		s.held = heldLog{}
+	}
 	return true
 }
 
 func (s *source) frame(sc Screen) Drawn {
+	if s.snap.Err() != nil || !s.snap.session {
+		s.held = heldLog{}
+		return RenderView(s.snap, sc, time.Now())
+	}
 	return RenderView(s.held.apply(s.snap, sc), sc, time.Now())
 }
 

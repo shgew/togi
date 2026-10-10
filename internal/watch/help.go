@@ -51,6 +51,11 @@ var tuningHelp = helpSection{"WHAT TOGI DOES", []helpItem{
 }}
 
 var wordsHelp = helpSection{"WORDS", []helpItem{
+	{"SEARCH", "finding its solo limit with light and heavy-vector trials alone"},
+	{"CONFIRM", "checking its candidate solo limit with repeated light and heavy-vector trials alone"},
+	{"FOUND", "solo limit checked; waiting at 0 until every core has one"},
+	{"WAITING", "at 0, waiting for its first search turn"},
+	{"MEMBER", "kept with its hunt group at its failing offset; another member may be probed"},
 	{"offset", "Curve Optimizer counts, 0 to -50; deeper is more negative"},
 	{"trial", "one launch of one workload on its target"},
 	{"solo limit", "the deepest offset a core confirmed under load alone"},
@@ -78,14 +83,15 @@ var loadHelp = helpSection{"KINDS OF LOAD", []helpItem{
 }}
 
 func renderHelpBody(width, height, scroll int) ([]string, int) {
+	bodyWidth := max(1, width-2)
 	if width >= 195 {
-		leftWidth := (width - 8) * 81 / 227
-		middleWidth := (width - 8) * 75 / 227
-		rightWidth := width - 8 - leftWidth - middleWidth
+		leftWidth := (bodyWidth - 8) * 81 / 227
+		middleWidth := (bodyWidth - 8) * 75 / 227
+		rightWidth := bodyWidth - 8 - leftWidth - middleWidth
 		columns := [][]string{
-			append(helpReading(leftWidth), helpSectionLines(topHelp, leftWidth, false)...),
+			append(append(helpReading(leftWidth), "", ""), helpSectionLines(topHelp, leftWidth, false)...),
 			helpSectionLines(tuningHelp, middleWidth, true),
-			append(helpSectionLines(wordsHelp, rightWidth, false), helpSectionLines(loadHelp, rightWidth, false)...),
+			append(append(helpSectionLines(wordsHelp, rightWidth, false), "", ""), helpSectionLines(loadHelp, rightWidth, false)...),
 		}
 		rows := max(len(columns[0]), len(columns[1]), len(columns[2]))
 		lines := make([]string, rows)
@@ -101,11 +107,11 @@ func renderHelpBody(width, height, scroll int) ([]string, int) {
 				}
 			}
 		}
-		return scrollBody(lines, width, height, scroll)
+		return scrollBodyWithBar(lines, width, height, scroll)
 	}
-	bodyWidth := max(1, width-2)
 	lines := helpReading(bodyWidth)
 	for _, section := range []helpSection{topHelp, tuningHelp, wordsHelp, loadHelp} {
+		lines = append(lines, "", "")
 		lines = append(lines, helpSectionLines(section, bodyWidth, section.title == tuningHelp.title)...)
 	}
 	return scrollBodyWithBar(lines, width, height, scroll)
@@ -147,7 +153,7 @@ func helpSectionLines(section helpSection, width int, spaced bool) []string {
 		labelWidth = max(labelWidth, ansi.StringWidth(item.label))
 	}
 	labelWidth = min(labelWidth+2, max(1, width/3))
-	for _, item := range section.items {
+	for i, item := range section.items {
 		text := wrapStyled(item.text, max(1, width-labelWidth), textStyle)
 		for row, line := range text {
 			label := strings.Repeat(" ", labelWidth)
@@ -157,11 +163,11 @@ func helpSectionLines(section helpSection, width int, spaced bool) []string {
 			}
 			out = append(out, ansi.Truncate(label+line, width, ""))
 		}
-		if spaced {
+		if spaced && i < len(section.items)-1 {
 			out = append(out, "")
 		}
 	}
-	return append(out, "", "")
+	return out
 }
 
 func helpRule(title string, width int) string {

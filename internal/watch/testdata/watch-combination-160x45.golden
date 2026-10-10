@@ -39,6 +39,6 @@
   R7 ───────────────────── top requesters ───── self-sufficient ─────────────     12:29  pass     R4 partial load on core 09 at -50 · passed · Tctl max 73°C
   mprime AVX2 36K-248K     00-07 11 by offset   all                               12:27  pass     R4 partial load on core 01 at -50 · passed · Tctl max 69°C
   mprime AVX-512 36K-248K  00-07 11 by offset   all                               12:25  pass     R4 partial load on core 08 at -50 · passed · Tctl max 66°C
-  y-cruncher FFTv4         00-07 11 by offset   all                               +626 more
+  y-cruncher FFTv4         00-07 11 by offset   all                               +625 more
 
    ?  help    l  log    esc  back    q  close view
