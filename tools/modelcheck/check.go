@@ -63,22 +63,33 @@ func CheckRecords(path, extract string, cfg sim.Config, records []trialfacts.Rec
 }
 
 func binomialInterval(n int, p float64) [2]int {
-	return intervalWithWeights(n, p, make([]float64, n+1))
+	return intervalWithWeights(n, p, make([]float64, n+1), logChoose(n))
 }
 
-func intervalWithWeights(n int, p float64, weights []float64) [2]int {
+// logChoose returns ln C(n, k) for each k in [0, n].
+func logChoose(n int) []float64 {
+	choose := make([]float64, n+1)
+	logN, _ := math.Lgamma(float64(n + 1))
+	for k := range choose {
+		a, _ := math.Lgamma(float64(k + 1))
+		b, _ := math.Lgamma(float64(n - k + 1))
+		choose[k] = logN - a - b
+	}
+	return choose
+}
+
+// intervalWithWeights uses weights as scratch space; choose is logChoose(n).
+func intervalWithWeights(n int, p float64, weights, choose []float64) [2]int {
 	if p <= 0 {
 		return [2]int{0, 0}
 	}
 	if p >= 1 {
 		return [2]int{n, n}
 	}
-	logN, _ := math.Lgamma(float64(n + 1))
+	logP, log1mP := math.Log(p), math.Log1p(-p)
 	largest := math.Inf(-1)
 	for k := range weights {
-		a, _ := math.Lgamma(float64(k + 1))
-		b, _ := math.Lgamma(float64(n - k + 1))
-		weights[k] = logN - a - b + float64(k)*math.Log(p) + float64(n-k)*math.Log1p(-p)
+		weights[k] = choose[k] + float64(k)*logP + float64(n-k)*log1mP
 		largest = max(largest, weights[k])
 	}
 	var total float64

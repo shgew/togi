@@ -33,7 +33,7 @@ func runWithSharedVoltageFit(args []string, stdout, stderr io.Writer, fitter sha
 	out := flags.String("out", "tools/bench/machines", "output directory for fitted machine files")
 	seed := flags.Uint64("seed", 263, "fixed bootstrap seed")
 	refits := flags.Int("bootstrap", 8, "number of whole-trial bootstrap refits")
-	jobs := flags.Int("jobs", runtime.NumCPU(), "maximum parallel fits")
+	jobs := flags.Int("jobs", runtime.NumCPU(), "maximum parallel fits (candidate scoring inside a fit uses every CPU)")
 	forwardOnly := flags.Bool("forward-only", false, "run only the forward-chained check: fit no ensemble and write no machine files")
 	seal := flags.Int("seal", 0, "with --forward-only, leave the newest N sessions out of the forward-chained check")
 	sharedVoltage := flags.Bool("shared-voltage-in-sample", false, "fit all decisive facts to target-shared-voltage.toml; in-sample only, not forward-validated; incompatible with --forward-only, --seal, --seed and --bootstrap")
@@ -109,6 +109,13 @@ func generate(extract, out string, seed uint64, refits, jobs int, stdout io.Writ
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return nil, fmt.Errorf("create output directory: %w", err)
 	}
+	forwarded := startForwardCheck(trials, 0, jobs)
+	forwardPending := true
+	defer func() {
+		if forwardPending {
+			<-forwarded
+		}
+	}()
 	fits, err := fitParallel(refits+1, jobs, func(n int) (fitted, error) {
 		sample := trials
 		if n > 0 {
@@ -194,7 +201,9 @@ func generate(extract, out string, seed uint64, refits, jobs int, stdout io.Writ
 		reportSignals(stdout, cfg.Model)
 	}
 	modelcheck.Report(stdout, checks)
-	if err := reportForwardCheck(stdout, trials, 0, jobs); err != nil {
+	outcome := <-forwarded
+	forwardPending = false
+	if err := writeForwardCheck(stdout, outcome, 0); err != nil {
 		return nil, err
 	}
 	fmt.Fprintf(stdout, "Fit elapsed: %s\n", time.Since(started).Round(time.Millisecond))
