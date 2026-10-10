@@ -203,41 +203,47 @@ claim number branch plan base="main": _dev-shell
         exit 1
     fi
 
-# Format, run `just gate` under a lock shared by every worktree of this clone, then push the current branch to the branch of the same name on origin, replacing it after a rebase unless the remote branch has commits this one never contained; stack layers use `gh stack push`
-[group('github')]
-ship: _dev-shell
+# Refuse unless HEAD is a clean pull request branch outside a gh stack, then format and refuse if that changed files; RECIPE names the caller, STACK_HINT says what a stack layer does instead
+_push-ready recipe stack_hint: _dev-shell
     #!/usr/bin/env bash
     set -euo pipefail
     branch=$(git branch --show-current)
     if [[ -z "$branch" || "$branch" == main ]]; then
-        echo 'ship: check out a pull request branch, not main or a detached HEAD' >&2
+        echo "$1: check out a pull request branch, not main or a detached HEAD" >&2
         exit 1
     fi
     rc=0
     gh stack view --json >/dev/null 2>&1 || rc=$?
     case "$rc" in
         0 | 6)
-            echo "ship: $branch is a gh stack layer; gate it with just gate and push the stack with gh stack push" >&2
+            echo "$1: $branch is a gh stack layer; $2" >&2
             exit 1
             ;;
         2) ;;
         *)
             extensions=$(gh extension list)
             if [[ "$extensions" == *github/gh-stack* ]]; then
-                echo "ship: could not tell whether $branch is a gh stack layer (gh stack view exited $rc); see gh stack view" >&2
+                echo "$1: could not tell whether $branch is a gh stack layer (gh stack view exited $rc); see gh stack view" >&2
                 exit 1
             fi
             ;;
     esac
     if [[ -n "$(git status --porcelain)" ]]; then
-        echo 'ship: commit or stash every change first, untracked files included, so the gate checks what is pushed' >&2
+        echo "$1: commit or stash every change first, untracked files included, so the checks run on what is pushed" >&2
         exit 1
     fi
     just fmt
     if [[ -n "$(git status --porcelain)" ]]; then
-        echo 'ship: just fmt changed files; review and commit them, then run just ship again' >&2
+        echo "$1: just fmt changed files; review and commit them, then run just $1 again" >&2
         exit 1
     fi
+
+# Format, run `just gate` under a lock shared by every worktree of this clone and release it, then push the current branch to the branch of the same name on origin, replacing it after a rebase unless the remote branch has commits this one never contained; stack layers use `gh stack push`
+[group('github')]
+ship: (_push-ready "ship" "gate it with just gate and push the stack with gh stack push")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    branch=$(git branch --show-current)
     lock="$(git rev-parse --path-format=absolute --git-common-dir)/togi-gate.lock"
     exec 9>"$lock"
     if ! flock -n 9; then
@@ -245,7 +251,44 @@ ship: _dev-shell
         flock 9
     fi
     just gate 9>&-
-    git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch" 9>&-
+    exec 9>&-
+    git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
+
+# Print the Go packages changed between a pushed head and HEAD, one per line: `./...` when go.mod or go.sum changed, nothing when no Go file did; a package whose Go files were deleted or moved away counts while it still has Go files at HEAD
+_touched-packages pushed:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    files=$(git diff --name-only --no-renames "$1" HEAD)
+    if grep -qxE 'go\.(mod|sum)' <<<"$files"; then
+        echo './...'
+        exit
+    fi
+    { grep -E '\.go$' <<<"$files" || true; } | while IFS= read -r file; do
+        dir=$(dirname "$file")
+        [[ "$dir" == . ]] && tree=HEAD: || tree="HEAD:$dir"
+        names=$(git ls-tree --name-only "$tree" 2>/dev/null) || continue
+        grep -qE '\.go$' <<<"$names" || continue
+        [[ "$dir" == . ]] && echo . || echo "./$dir"
+    done | sort -u
+
+# Push a fix to a pull request under review: format, lint, run `just focus` on the packages changed since the last pushed head, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
+[group('github')]
+push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    branch=$(git branch --show-current)
+    pushed=$(git rev-parse --verify --quiet "refs/remotes/origin/$branch") || {
+        echo "push-fix: origin has no $branch; push its first head with just ship" >&2
+        exit 1
+    }
+    mapfile -t packages < <(just _touched-packages "$pushed")
+    just lint
+    if ((${#packages[@]} == 0)); then
+        echo "push-fix: no Go package changed since $pushed; nothing to focus" >&2
+    else
+        just focus "${packages[@]}"
+    fi
+    git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
 # Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready for the owner; never merges
 [group('github')]
