@@ -236,7 +236,7 @@ func cycleCompletedByRerun(t *testing.T) (running [][]journal.Event, passed, end
 // stageLine is the dashboard's stage line: the first line that names the cycle.
 func stageLine(t *testing.T, text string) string {
 	t.Helper()
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		if strings.Contains(line, "CYCLE 1") {
 			return strings.TrimSpace(line)
 		}
