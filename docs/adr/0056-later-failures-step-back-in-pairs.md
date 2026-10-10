@@ -61,6 +61,8 @@ Outcome:
 
 K = 5 is the smallest K that passes. K = 8 and the unbounded window measured the same as K = 5 within the horizon of ten cycles, so the measurement cannot separate K of 5 or more; K = 5 keeps the window bounded, as Q30 requires. K is not fitted to any one machine's history.
 
+An earlier run of the same sweep, on a tree without #527's review changes to phase 2's failed rounds, found no K that passed rule 2: on `target-r7-request-gap` every K's lower bound stayed above zero (+0.02 at K = 5), because a hold by construction leaves a failing core at its offset until a second failure. The base is excluded by Q30, so K = 5 was chosen then as the K with the smallest excess shown hazard among those that passed the other rules (K = 1 failed rule 3 there). The rerun above, on the final tree, confirmed that choice under the rule.
+
 Median over seeds, with the shown hazard as median / p90 and the final hazard as median, in hazard per hour; crashes are those after the conclusion.
 
 | Scenario | Variant | Shown hazard | Final hazard | Wear | Step-backs | Futile step-backs | Holds | Pairs | Crashes |
