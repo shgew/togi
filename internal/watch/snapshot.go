@@ -150,6 +150,7 @@ type projector struct {
 	applied, tuned, solo map[int]int
 	current              *journal.TrialIntent
 	currentBoot          string
+	currentBootEnded     bool           // a later boot wrote events while the current trial was unfinished
 	steps                map[string]int // the one-based checking step each cycle trial ran in
 	huntFail             *failureView
 	failures             map[int]*failureView
@@ -192,6 +193,9 @@ func (p *projector) clearsCombination(e journal.Event) {
 func (p *projector) fold(e journal.Event) {
 	s := p.s
 	p.clearsCombination(e)
+	if p.current != nil && e.Boot != "" && p.currentBoot != "" && e.Boot != p.currentBoot {
+		p.currentBootEnded = true
+	}
 	if e.Kind != journal.KindShutdown && e.Kind != journal.KindProfileRestored && e.Kind != journal.KindSessionWarning {
 		p.stopped = false
 	}
@@ -213,7 +217,7 @@ func (p *projector) fold(e journal.Event) {
 			}
 		}
 	case *journal.TrialIntent:
-		p.current, p.currentBoot = d, e.Boot
+		p.current, p.currentBoot, p.currentBootEnded = d, e.Boot, false
 		p.intents[d.Trial] = d
 		p.restored = false
 	case *journal.TrialStart:
@@ -332,6 +336,7 @@ func (p *projector) finish(events []journal.Event, t *tuner.State) {
 		p.s.trial = newTrial(p.current, events)
 		r := t.Requirement(p.current)
 		p.s.trial.passed, p.s.trial.index, p.s.trial.of = r.Passed, r.Trial, r.Needed
+		p.s.trial.crashed = p.currentBootEnded
 	}
 	p.cyclePlan(t.CyclePlan())
 	p.huntPlan(t.HuntPlan(), events)

@@ -132,6 +132,7 @@ type trialView struct {
 	profile    []int
 	started    time.Time
 	hasStarted bool
+	crashed    bool // a later boot has written events and this trial never recorded an end
 	duration   time.Duration
 	recordOnly bool
 	partial    bool

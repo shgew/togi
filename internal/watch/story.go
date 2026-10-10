@@ -46,8 +46,16 @@ func (s Snapshot) story(now time.Time, oneFrame bool) story {
 		return story{s.stageLabel(), []string{text}, text, plainTone}
 	}
 	t := s.trial
+	if t.crashed {
+		text := fmt.Sprintf("Trial %s crashed: a later boot has written events. togi run records the crash.", vtText(t.id))
+		return story{"CRASHED", []string{text}, text, warnTone}
+	}
 	if !t.hasStarted {
 		text := "The trial's intent is recorded; its offsets are being applied and its workload is starting."
+		return story{s.stageLabel(), []string{text}, text, plainTone}
+	}
+	if past := t.pastEnd(now); past > 0 {
+		text := fmt.Sprintf("%s past its planned end, nothing recorded since. Its deadline or watchdog may still be running.", clock(past))
 		return story{s.stageLabel(), []string{text}, text, plainTone}
 	}
 	if t.zeroRerun() {

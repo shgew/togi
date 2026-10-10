@@ -144,3 +144,72 @@ func TestLoadTellsMissingFromUnreadable(t *testing.T) {
 		t.Fatalf("Err of a missing, then an unreadable journal (-want +got):\n%s", diff)
 	}
 }
+
+func TestCrashedTrialNotYetRecoveredIsNotNarratedAsRunning(t *testing.T) {
+	t.Parallel()
+	events := beforeCrashDetected(t, simulated(t, sessionJournal))
+	s := Project(events)
+	if s.trial == nil || !s.trial.crashed || s.recover != nil {
+		t.Fatalf("fixture must end on an unfinished trial a later boot outlived: trial %+v, recover %v", s.trial, s.recover)
+	}
+	now := cutTime(events)
+	if line := ansi.Strip(s.stageLine(wideLayout, true, now)); strings.Contains(line, "►") || strings.Contains(line, "left") || !strings.Contains(line, "trial crashed") {
+		t.Errorf("stage line of a crashed trial: %q", line)
+	}
+	for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
+		frame := Render(s, size[0], size[1], now)
+		text := words(frame)
+		for _, want := range []string{"crashed", "togi run records the crash", "trial " + s.trial.id} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%dx%d lacks %q:\n%s", size[0], size[1], want, text)
+			}
+		}
+		for _, bad := range []string{"left", "past its end", "I'm finding", "I'm confirming"} {
+			if strings.Contains(text, bad) {
+				t.Errorf("%dx%d still says %q for a crashed trial:\n%s", size[0], size[1], bad, text)
+			}
+		}
+	}
+	// A trial whose boot is still the journal's latest is running, not crashed.
+	started := Project(cutTrial(t, simulated(t, sessionJournal), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseSearch }))
+	if started.trial == nil || started.trial.crashed {
+		t.Fatalf("a trial in the latest boot is running: %+v", started.trial)
+	}
+}
+
+func TestTrialPastItsPlannedEndShowsHowLongWithoutClaimingACrash(t *testing.T) {
+	t.Parallel()
+	events := cutTrial(t, simulated(t, sessionJournal), func(p *journal.TrialIntent) bool {
+		return p.Phase == journal.PhaseSearch && p.Regime != machine.R6
+	})
+	s := Project(events)
+	tr := s.trial
+	if tr == nil || tr.crashed || !tr.hasStarted || tr.duration <= 0 {
+		t.Fatalf("fixture must end on a started trial in the latest boot: %+v", tr)
+	}
+	end := tr.started.Add(tr.duration)
+	for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
+		sc := Screen{View: MainView, Width: size[0], Height: size[1]}
+		before := words(strings.Join(RenderView(s, sc, end.Add(-time.Second)).Lines, "\n"))
+		if !strings.Contains(before, "left") || strings.Contains(before, "past") {
+			t.Errorf("%dx%d before the planned end:\n%s", size[0], size[1], before)
+		}
+		drawn := RenderView(s, sc, end.Add(42*time.Second))
+		text := words(strings.Join(drawn.Lines, "\n"))
+		if !strings.Contains(text, "0:42") || !strings.Contains(text, "past") || !strings.Contains(text, "may still be running") {
+			t.Errorf("%dx%d lacks the time past the end and the reason it is no crash:\n%s", size[0], size[1], text)
+		}
+		for _, bad := range []string{"0:00 left", "crashed", "togi run records", "CRASHED"} {
+			if strings.Contains(text, bad) {
+				t.Errorf("%dx%d says %q past the planned end with nothing following:\n%s", size[0], size[1], bad, text)
+			}
+		}
+		if !drawn.Until.IsZero() {
+			t.Errorf("%dx%d: frame past the end holds still until %s; live watch must keep ticking", size[0], size[1], drawn.Until)
+		}
+	}
+	line := ansi.Strip(s.stageLine(wideLayout, true, end.Add(42*time.Second)))
+	if !strings.Contains(line, "0:42 past its end") {
+		t.Errorf("stage line lacks the time past the end: %q", line)
+	}
+}
