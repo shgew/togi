@@ -209,8 +209,9 @@ func (s *State) roundCheck() Action {
 			cause = s.citeCarried(cause, seqs[:q.count]...)
 			continue
 		}
+		selected := s.deepeningRequirement(q.class, q.count)
 		if s.retry != nil && s.retry.Round == r.start.Round {
-			return s.runTrial(*s.retry, []int{r.seq})
+			return s.runRetry(*s.retry, selected, []int{r.seq})
 		}
 		t := Trial{Regime: q.class.regime, Workload: q.class.workload, Condition: machine.Together, Phase: journal.PhaseDeepening, DurationS: q.class.duration, Round: r.start.Round}
 		if q.class.regime == machine.R7 {
@@ -220,7 +221,7 @@ func (s *State) roundCheck() Action {
 			t.Core, t.Offset = q.core, q.offset
 			t.Condition = machine.Alone
 		}
-		return s.runTrial(t, cause)
+		return s.runTrial(t, selected, cause)
 	}
 	return Action{Kind: Decide, Payload: &journal.DeepeningRound{Round: r.start.Round, Event: journal.CycleEnd, Passed: true, Reason: s.carriedReason(cause)}, Cause: cause}
 }

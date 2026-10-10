@@ -53,99 +53,175 @@ func (s *State) TrialHistory(trial string) TrialHistory {
 	return TrialHistory{}
 }
 
+func newRequirement(kind string, k trialClass, since int, rule evidenceRule, needed int) ScheduledRequirement {
+	return ScheduledRequirement{Kind: kind, Class: ScheduledClass{Regime: k.regime, Workload: k.workload, Cores: k.cores, DurationS: k.duration}, Since: since, Rule: rule, Needed: needed}
+}
+
+// scheduledFor reconstructs the requirement of a recorded intent from the journal alone. Fold stores it per trial; a
+// builder never calls it for a trial it chose the requirement of.
 func (s *State) scheduledFor(p *journal.TrialIntent) scheduledTrial {
 	k := classOf(p)
-	q := ScheduledRequirement{Kind: "unclassified", Class: ScheduledClass{Regime: k.regime, Workload: k.workload, Cores: k.cores, DurationS: k.duration}, Rule: cycleEvidence, Needed: 1}
-	out := scheduledTrial{}
+	q := newRequirement("unclassified", k, 0, cycleEvidence, 1)
 	switch {
 	case p.Condition == machine.Alone && p.Round == 0:
 		var c *core
 		if p.Core != nil {
 			c = s.core(*p.Core)
 		}
-		q.Kind = "search"
-		if c != nil && c.check {
-			q.Kind, q.Since, q.Rule, q.Needed = "solo-limit", c.phaseSeq, soloLimitEvidence, s.n
-		}
+		q = s.soloRequirement(c, k)
 	case p.Hunt > 0 && s.hunt != nil:
-		q.Kind, q.Rule, q.Needed = "hunt", huntEvidence, s.hunt.start.Trials
+		q = newRequirement("hunt", k, 0, huntEvidence, s.hunt.start.Trials)
 		for _, g := range s.hunt.groups {
 			if g.payload.Group == p.Group {
-				q.Since = s.inferenceSince(g.payload, g.seq)
+				q = s.huntRequirement(k, g)
 				break
 			}
 		}
 	case p.Rerun && len(s.obligations) > 0:
-		q.Kind, q.Since, q.Rule = "rerun", s.obligations[0].seq, rerunEvidence
-		if p.DurationS == s.durations.ShortTrialS {
-			q.Needed = s.n
-		}
+		q = s.rerunRequirement(k)
 	case p.Round > 0 && s.round != nil:
-		q.Kind, q.Since, q.Rule = "deepening", s.round.seq, deepeningEvidence
+		needed := 1
 		for _, r := range s.roundChecks() {
 			if r.class == k {
-				q.Needed = r.count
+				needed = r.count
 				break
 			}
 		}
+		q = s.deepeningRequirement(k, needed)
 	case p.Cycle > 0:
 		q.Since = s.checking.startSeq
-		n := s.passes(k, p.Profile, q.Since, q.Rule)
+		n := 0
+		if p.Step == 0 {
+			n = s.passes(k, p.Profile, q.Since, q.Rule)
+		}
 		first, last := 0, len(s.checking.steps)
 		if p.Step > 0 && p.Step <= last {
 			first, last = p.Step-1, p.Step
 		}
 		for i := first; i < last; i++ {
 			req := s.requirements(i)
-			part := 0
-			for a := 0; a < len(req); {
-				b := a + 1
-				for b < len(req) && slices.Equal(req[a].cores, req[b].cores) {
-					b++
+			for j, r := range req {
+				if r.class == k && r.count > 0 && (p.Step > 0 || n < r.count) {
+					cycle, part := s.cycleRequirement(req, i, j)
+					return scheduledTrial{requirement: cycle, part: part}
 				}
-				part++
-				for _, r := range req[a:b] {
-					if r.class == k && r.count > 0 && (p.Step > 0 || n < r.count) {
-						q.Kind, q.Needed, q.Step, q.Part = "cycle", r.count, i+1, part
-						out.requirement, out.part = q, req[a:b]
-						return out
-					}
-				}
-				a = b
 			}
 		}
 	}
-	out.requirement = q
-	return out
+	return scheduledTrial{requirement: q}
 }
 
-func (s *State) runTrial(t Trial, cause []int) Action {
-	workload := t.Workload
-	if workload == "" {
-		index := 0
-		if c := s.core(t.Core); c != nil {
-			index = c.workloadIndex[t.Regime]
-		}
-		workload = machine.PickWorkload(t.Regime, index).ID
+func (s *State) soloRequirement(c *core, k trialClass) ScheduledRequirement {
+	if c != nil && c.check {
+		return newRequirement("solo-limit", k, c.phaseSeq, soloLimitEvidence, s.n)
 	}
-	p := journal.TrialIntent{Regime: t.Regime, Workload: workload, DurationS: t.DurationS, Condition: t.Condition, Phase: t.Phase, Cores: t.Cores, Profile: t.Profile, Cycle: t.Cycle, Hunt: t.Hunt, Group: t.Group, Round: t.Round, Rerun: t.Rerun, Step: t.Step}
+	return newRequirement("search", k, 0, cycleEvidence, 1)
+}
+
+func (s *State) huntRequirement(k trialClass, g groupRecord) ScheduledRequirement {
+	return newRequirement("hunt", k, s.inferenceSince(g.payload, g.seq), huntEvidence, s.hunt.start.Trials)
+}
+
+// rerunRequirement is the requirement of a rerun of class k: the oldest rerun obligation's, or none, which leaves the
+// rerun unclassified.
+func (s *State) rerunRequirement(k trialClass) ScheduledRequirement {
+	if len(s.obligations) == 0 {
+		return newRequirement("unclassified", k, 0, cycleEvidence, 1)
+	}
+	needed := 1
+	if k.duration == s.durations.ShortTrialS {
+		needed = s.n
+	}
+	return newRequirement("rerun", k, s.obligations[0].seq, rerunEvidence, needed)
+}
+
+func (s *State) deepeningRequirement(k trialClass, needed int) ScheduledRequirement {
+	return newRequirement("deepening", k, s.round.seq, deepeningEvidence, needed)
+}
+
+// cycleRequirement is the obligation of req[j], one of step's requirements, and the part holding it: the run of
+// consecutive requirements on the same cores. Step and Part are one-based ordinals; Needed is the class's count.
+func (s *State) cycleRequirement(req []requirement, step, j int) (ScheduledRequirement, []requirement) {
+	part := 0
+	for a := 0; ; {
+		b := a + 1
+		for b < len(req) && slices.Equal(req[a].cores, req[b].cores) {
+			b++
+		}
+		part++
+		if j < b {
+			q := newRequirement("cycle", req[j].class, s.checking.startSeq, cycleEvidence, req[j].count)
+			q.Step, q.Part = step+1, part
+			return q, req[a:b]
+		}
+		a = b
+	}
+}
+
+// shapeWorkload is the workload the trial will run: an unset one is the next in the core's rotation.
+func (s *State) shapeWorkload(t Trial) string {
+	if t.Workload != "" {
+		return t.Workload
+	}
+	index := 0
+	if c := s.core(t.Core); c != nil {
+		index = c.workloadIndex[t.Regime]
+	}
+	return machine.PickWorkload(t.Regime, index).ID
+}
+
+// shapeClass is the class the journal will record for trial t, for builders that choose a requirement by the shape
+// they built rather than by a class they selected.
+func (s *State) shapeClass(t Trial) trialClass {
+	cores := t.Cores
+	if len(cores) == 0 {
+		cores = []int{t.Core}
+	} else if !slices.IsSorted(cores) {
+		cores = slices.Sorted(slices.Values(cores))
+	}
+	return trialClass{t.Regime, s.shapeWorkload(t), coresKey(cores), t.DurationS}
+}
+
+// runTrial schedules t with the requirement its builder selected.
+func (s *State) runTrial(t Trial, q ScheduledRequirement, cause []int) Action {
+	t.Requirement = q
+	return Action{Kind: RunTrial, Trial: t, Cause: cause}
+}
+
+// runRetry schedules retry t. When t repeats the selected requirement q, q is its requirement; a retry keeps the shape
+// of its earlier intent, so after a config or profile change it may not, and then it takes the requirement the fold
+// will reconstruct for it.
+func (s *State) runRetry(t Trial, q ScheduledRequirement, cause []int) Action {
+	if s.retryRepeats(t, q) {
+		return s.runTrial(t, q, cause)
+	}
+	return s.retryTrial(t, cause)
+}
+
+func (s *State) retryRepeats(t Trial, q ScheduledRequirement) bool {
+	if t.Hunt != 0 || t.Rerun || s.shapeClass(t) != q.class() {
+		return false
+	}
+	switch q.Kind {
+	case "cycle":
+		current := len(t.Profile) == 0 || slices.Equal(t.Profile, s.checking.profile)
+		return t.Cycle > 0 && t.Round == 0 && t.Condition != machine.Alone && (t.Step == q.Step || t.Step == 0 && current)
+	case "deepening":
+		return t.Round > 0
+	}
+	return false
+}
+
+// retryTrial schedules a retry whose requirement is reconstructed from its shape as the fold will reconstruct it.
+func (s *State) retryTrial(t Trial, cause []int) Action {
+	p := journal.TrialIntent{Regime: t.Regime, Workload: s.shapeWorkload(t), DurationS: t.DurationS, Condition: t.Condition, Phase: t.Phase, Cores: t.Cores, Profile: t.Profile, Cycle: t.Cycle, Hunt: t.Hunt, Group: t.Group, Round: t.Round, Rerun: t.Rerun, Step: t.Step}
 	if len(t.Cores) == 0 {
 		p.Core, p.Offset = &t.Core, &t.Offset
 	}
 	if len(p.Profile) == 0 {
 		p.Profile = s.checking.profile
 	}
-	q := s.scheduledFor(&p).requirement
-	return Action{Kind: RunTrial, Trial: q.trial(t), Cause: cause}
-}
-
-func (q ScheduledRequirement) trial(shape Trial) Trial {
-	shape.Regime, shape.DurationS = q.Class.Regime, q.Class.DurationS
-	if shape.Workload != "" {
-		shape.Workload = q.Class.Workload
-	}
-	shape.Requirement = q
-	return shape
+	return s.runTrial(t, s.scheduledFor(&p).requirement, cause)
 }
 
 func (s *State) requirementProgress(p *journal.TrialIntent, q ScheduledRequirement) TrialRequirement {
@@ -170,12 +246,17 @@ func (s *State) recordTrialHistory(p *journal.TrialEnd) {
 	q := stored.requirement
 	h := TrialHistory{Requirement: s.requirementProgress(in, q), Step: q.Step}
 	if in.Cycle > 0 && in.Cycle == s.checking.cycle && len(stored.part) > 0 {
-		passed, needed := 0, 0
+		selected, passed, needed := q.class(), 0, 0
 		for _, r := range stored.part {
-			if r.count > 0 {
-				passed += s.passes(r.class, in.Profile, q.Since, q.Rule)
-				needed += r.count
+			if r.count == 0 {
+				continue
 			}
+			if r.class == selected {
+				passed += h.Requirement.Passed
+			} else {
+				passed += s.passes(r.class, in.Profile, q.Since, q.Rule)
+			}
+			needed += r.count
 		}
 		h.PartTrial, h.PartNeeded = min(passed+1, max(needed, 1)), needed
 	}

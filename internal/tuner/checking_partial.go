@@ -138,7 +138,8 @@ func (s *State) deriveCheckingChain(step, ccd, index int, previous []int) Action
 
 func (s *State) r7PartNext(step int, part []int, duration int) (Action, bool) {
 	g := &s.checking
-	for _, q := range s.requirements(step) {
+	req := s.requirements(step)
+	for j, q := range req {
 		if !slices.Equal(q.cores, part) || q.count == 0 || s.cyclePasses(q.class) >= q.count {
 			continue
 		}
@@ -146,11 +147,12 @@ func (s *State) r7PartNext(step int, part []int, duration int) (Action, bool) {
 		if q.class.duration != s.durations.ShortTrialS && q.class.duration != duration {
 			continue
 		}
+		selected, _ := s.cycleRequirement(req, step, j)
 		t := Trial{Regime: machine.R7, Workload: q.class.workload, Cores: slices.Clone(part), DurationS: q.class.duration, Phase: journal.PhaseChecking, Condition: machine.Together, Cycle: g.cycle, Step: step + 1}
 		if s.retry != nil && s.retry.Cycle == g.cycle && s.retry.Step == step+1 && s.retry.Workload == t.Workload && s.retry.DurationS == t.DurationS && slices.Equal(s.retry.Cores, part) {
-			t = *s.retry
+			return s.runRetry(*s.retry, selected, []int{g.lastSeq}), true
 		}
-		return s.runTrial(t, []int{g.lastSeq}), true
+		return s.runTrial(t, selected, []int{g.lastSeq}), true
 	}
 	return Action{}, false
 }

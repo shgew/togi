@@ -105,7 +105,7 @@ func (s *State) perCore() (Action, bool) {
 		}
 	}
 	if s.retry != nil && s.retry.Condition == machine.Alone {
-		return s.runTrial(*s.retry, []int{s.core(s.retry.Core).lastSeq}), true
+		return s.retryTrial(*s.retry, []int{s.core(s.retry.Core).lastSeq}), true
 	}
 	if s.cursor >= 0 {
 		c := s.cores[s.cursor]
@@ -145,5 +145,6 @@ func (s *State) perCore() (Action, bool) {
 }
 
 func (s *State) searchTrial(c *core, r machine.Regime, w string) Action {
-	return s.runTrial(Trial{Core: c.id, Offset: c.offset, Regime: r, Phase: journal.PhaseSearch, Condition: machine.Alone, DurationS: s.durations.SearchTrialS, Workload: w}, []int{c.lastSeq})
+	t := Trial{Core: c.id, Offset: c.offset, Regime: r, Phase: journal.PhaseSearch, Condition: machine.Alone, DurationS: s.durations.SearchTrialS, Workload: w}
+	return s.runTrial(t, s.soloRequirement(c, s.shapeClass(t)), []int{c.lastSeq})
 }

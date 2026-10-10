@@ -69,3 +69,45 @@ func TestStoredRequirementSeparatesClassCountAndPart(t *testing.T) {
 		t.Fatalf("class count was replaced by the combined part count: %+v", history)
 	}
 }
+
+func TestRetryRequirementMatchesFold(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		step      machine.Regime
+		change    func(*config.Config)
+		wantRetry bool
+	}{
+		{"same shape cycle", machine.R1, func(*config.Config) {}, true},
+		{"stale cycle duration", machine.R1, func(c *config.Config) { c.Durations.CheckingTrialS++ }, true},
+		{"same shape R7 part", machine.R7, func(*config.Config) {}, true},
+		// An R7 part ignores a retry whose duration no longer matches the part's and schedules a fresh trial.
+		{"stale R7 part duration", machine.R7, func(c *config.Config) { c.Durations.ShortTrialS++ }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.Default()
+			var h *harness
+			if tc.step == machine.R7 {
+				h = chainHarnessOn(t, topology(8), cfg, tc.step)
+			} else {
+				h = newHarnessOn(t, topology(8), cfg, hasRoomStarts(-10, -20, -30, -40, -20, -20, -20, -20)...)
+				h.decide(h.next())
+				h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: []machine.Regime{tc.step}})
+			}
+			first := h.s.cycleNext()
+			if first.Kind != RunTrial || first.Trial.Requirement.Kind != "cycle" || first.Trial.Requirement.Step != 1 || first.Trial.Requirement.Part != 1 {
+				t.Fatalf("first trial's selected requirement: %+v", first)
+			}
+			h.trial(first, unsure)
+			tc.change(&cfg)
+			h.add(&journal.ConfigLoaded{Config: snapshotConfig(cfg)})
+			retry := h.s.cycleNext()
+			if retry.Kind != RunTrial || retry.Trial.Retry != tc.wantRetry {
+				t.Fatalf("retry = %t, want %t: %+v", retry.Trial.Retry, tc.wantRetry, retry)
+			}
+			p := h.start(retry).Data.(*journal.TrialIntent)
+			if diff := cmp.Diff(retry.Trial.Requirement, h.s.StoredRequirement(p.Trial)); diff != "" {
+				t.Fatalf("attached requirement differs from the fold's (-attached +stored):\n%s", diff)
+			}
+		})
+	}
+}
