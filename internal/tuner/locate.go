@@ -3,6 +3,7 @@ package tuner
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
@@ -158,6 +159,9 @@ func (s *State) locateStart(f pendingFailure) Action {
 		reason, backoffs := s.escalationReason(f)
 		p.Reason += "; " + reason
 		cause = append(cause, backoffs...)
+	}
+	if s.loadedAtZero(f) && !strings.Contains(p.Reason, loadedAtZeroReason) {
+		p.Reason += "; " + loadedAtZeroReason
 	}
 	return Action{Kind: Decide, Payload: p, Cause: cause}
 }

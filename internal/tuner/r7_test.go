@@ -724,6 +724,9 @@ func TestR7NamedIdleZeroCoreCountsAgainstLoadedCCD(t *testing.T) {
 				if !started || !slices.Equal(start.Parked, []int{0, 0, 0, 0}) || !slices.Equal(start.Candidates, []int{3}) {
 					t.Fatalf("located hunt %+v", a)
 				}
+				if missing := missingTokens(start.Reason, "every loaded core", "CO 0", "cannot help"); len(missing) > 0 {
+					t.Fatalf("carried hunt reason %q lacks %q", start.Reason, missing)
+				}
 				return
 			}
 			if !ok {

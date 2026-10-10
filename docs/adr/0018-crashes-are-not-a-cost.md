@@ -1,5 +1,7 @@
 # Crashes are not a cost
 
+Status: see [the index](README.md).
+
 togi finds edges by running cores past them, and past an edge a core often freezes the whole machine. The tuning boot's hardware watchdog resets it and the next boot resumes the journal. A live session on the target machine recorded ten crash reboots in 21 hours. A search that treats crashes as something to ration gives up depth or time to avoid them: a crash budget per search, a daily cap, a pause after a run of crashes, or a preference for tests that pass over tests that crash.
 
 A crash costs nothing but the time of its reboot. togi only moves offsets within [-50, 0]: a negative Curve Optimizer offset lowers the voltage the CPU requests at each frequency, and the CPU's own voltage, current and power limits stay in force, so togi's writes never take the hardware past what its firmware allows. The offsets are volatile and gone after the reset ([ADR 0004](0004-find-only.md)). The watchdog and the tuning boot bring the machine back unattended ([runtime spec](../spec/runtime.md)), and the journal survives the reset: every event is fsynced before the action it records, and a torn last line is repaired on replay ([journal spec](../spec/journal.md)).

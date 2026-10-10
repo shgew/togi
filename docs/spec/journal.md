@@ -187,7 +187,7 @@ A `trial.intent` names the activity that asked for the trial through these field
 | All-zero rerun before `failure_at_zero` | `checking`, or `hunt` when the failure came from a parked trial | `parked` | `rerun: true`, `profile` all 0 | `hunt`, `cycle` |
 | Retry of an inconclusive trial | the original's | the original's | `retry: true` plus the original's fields | |
 
-A located hunt has `hunt.start.regime: R7`, at least two loaded `cores`, and no overlap between its `candidates` and those loaded cores. Its `reason` explains the location and why it escalated: it cites the load's backoffs in `cause` and names them, or says that every loaded core on the affected CCDs is at CO 0. Its first `hunt.group` has stage `locate`; there is no located-hunt flag. A hunt trial's stage, granularity and candidate set are not on the `trial.intent`: join its `hunt` and `group` to the `hunt.group` event with the same numbers.
+A located hunt has `hunt.start.regime: R7`, at least two loaded `cores`, and no overlap between its `candidates` and those loaded cores. Its `reason` explains the location and why the failure was located: it cites the load's backoffs in `cause` and names them, or says that every loaded core on the affected CCDs is at CO 0. Its first `hunt.group` has stage `locate`; there is no located-hunt flag. A hunt trial's stage, granularity and candidate set are not on the `trial.intent`: join its `hunt` and `group` to the `hunt.group` event with the same numbers.
 
 ## Transitions
 

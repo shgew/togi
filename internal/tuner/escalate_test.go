@@ -175,3 +175,51 @@ func TestEscalationWhenLoadedCoresCannotBackOff(t *testing.T) {
 		}
 	})
 }
+
+// A reset of a loaded core discards the load's failed trials, so the backoffs they caused no longer count: the next
+// failure of the load is its first backoff again, live and on replay. A reset of a core outside the load keeps them.
+func TestEscalationResetDropsDiscardedBackoffs(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		reset int
+		hunt  bool
+	}{
+		{"reset of a loaded core restarts the count", 0, false},
+		{"reset of a core outside the load keeps the count", 3, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := r7Harness(t)
+			a := play(h, "AA")
+			h.decide(a)
+			h.add(&journal.ProfileChange{To: h.s.offsets()})
+			offsets := h.s.offsets()
+			h.add(&journal.CommandReset{Core: new(tc.reset)})
+			for range 4 {
+				reset := h.next()
+				if _, ok := reset.Payload.(*journal.CorePhase); !ok {
+					break
+				}
+				h.decide(reset)
+			}
+			// Put the reset core back where it was, so the next failure of the load is decided by the escalation rule alone.
+			h.add(&journal.CorePhase{Core: tc.reset, To: journal.PhaseHasRoom, Offset: offsets[h.s.index(tc.reset)], Reason: "test"})
+			h.add(&journal.ProfileChange{To: offsets})
+			a = play(h, "A")
+			if tc.hunt {
+				if _, ok := a.Payload.(*journal.HuntStart); !ok {
+					t.Fatalf("expected a located hunt, got %+v", a)
+				}
+				assertHuntNextReplay(h, a, (*State).Next, "replay lost the backoff count")
+				return
+			}
+			move, ok := a.Payload.(*journal.TunerDecision)
+			if !ok || move.Decision != journal.Backoff {
+				t.Fatalf("expected a voltage-targeted backoff, got %+v", a)
+			}
+			if !strings.Contains(move.Reason, "backoff 1 of this load") {
+				t.Fatalf("reason %q lacks backoff 1", move.Reason)
+			}
+			assertHuntNextReplay(h, a, (*State).Next, "replay kept the discarded backoffs")
+		})
+	}
+}

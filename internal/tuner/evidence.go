@@ -417,8 +417,12 @@ func (s *State) failureAfter(f pendingFailure, since int) bool {
 
 func (s *State) resetEvidence(core int) {
 	s.evidenceEpoch++
+	discards := func(e entry) bool {
+		return slices.Contains(e.cores, core) || s.multiR7(e.class) && e.named != nil && *e.named == core
+	}
+	s.forgetLoadBackoffs(discards)
 	involves := func(e entry) bool {
-		if slices.Contains(e.cores, core) || s.multiR7(e.class) && e.named != nil && *e.named == core {
+		if discards(e) {
 			delete(s.carriedSources, e.seq)
 			return true
 		}

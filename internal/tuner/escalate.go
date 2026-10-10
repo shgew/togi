@@ -25,6 +25,30 @@ func (s *State) recordLoadPass(k trialClass) {
 	delete(s.loads, loadOf(k))
 }
 
+// forgetLoadBackoffs drops every backoff whose failure a reset discards, from the loads and from the backoffs folded
+// into pending failures, so a load's count restarts from the evidence the reset keeps. It runs before the reset
+// deletes the failed trials from the ledger.
+func (s *State) forgetLoadBackoffs(discards func(entry) bool) {
+	discarded := func(b loadBackoff) bool {
+		f := s.failureBySeq(b.failure)
+		if f == nil {
+			return false
+		}
+		i := s.failureEntryPos(f.class, f.seq)
+		return i >= 0 && discards(s.ledger[f.class][i])
+	}
+	for k, backoffs := range s.loads {
+		if backoffs = slices.DeleteFunc(backoffs, discarded); len(backoffs) == 0 {
+			delete(s.loads, k)
+		} else {
+			s.loads[k] = backoffs
+		}
+	}
+	for i := range s.pendingFailures {
+		s.pendingFailures[i].loadBackoffs = slices.DeleteFunc(s.pendingFailures[i].loadBackoffs, discarded)
+	}
+}
+
 // recordLoadBackoff counts a backoff decision against the load of the multi-core R7 failure it answers, unless that
 // failure named a core: only unattributed failures are charged by request order and can escalate.
 func (s *State) recordLoadBackoff(e journal.Event) {
@@ -71,11 +95,14 @@ func (s *State) escalates(f pendingFailure, failed entry) bool {
 	return loadBackoffCount(f.loadBackoffs) >= escalateAfter || s.loadedStuckAtZero(failed)
 }
 
+// loadedAtZeroReason explains a located hunt whose loaded cores cannot back off.
+const loadedAtZeroReason = "every loaded core of the affected CCDs is at CO 0 while an unloaded core is not, so backing off the loaded cores cannot help"
+
 // escalationReason explains why failure f is located, and cites the backoffs that led to it.
 func (s *State) escalationReason(f pendingFailure) (string, []int) {
 	failed := s.r7FailureEntry(f)
 	if failed != nil && s.loadedStuckAtZero(*failed) {
-		return "every loaded core of the affected CCDs is at CO 0 while an unloaded core is not, so backing off the loaded cores cannot help", nil
+		return loadedAtZeroReason, nil
 	}
 	var cause []int
 	var decisions []string

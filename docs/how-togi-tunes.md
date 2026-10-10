@@ -76,7 +76,8 @@ The loaded cores share a voltage rail. Attribution groups are per CCD: a named c
 
 | Situation | Next action |
 |---|---|
-| Live unattributed failure, with an unloaded core off CO 0 | Locate first. Keep the loaded cores at their failing offsets; put unloaded cores at 0. Do not move a loaded core while the hunt is open. |
+| Live unattributed failure, with an unloaded core off CO 0 | Charge the loaded cores by voltage-targeted backoff, as in the rows below. Its reason says which backoff of this load it is since the load last passed. |
+| Such a failure that [escalates](spec/tuner.md#escalation-to-a-located-hunt): its load was backed off twice since it last passed, or no loaded core on the affected CCDs can step back | Locate it. Keep the loaded cores at their failing offsets; put unloaded cores at 0. Do not move a loaded core while the hunt is open. |
 | Locate fails | End `loaded`; charge the loaded-side failure. A group failure naming a loaded core charges that core. |
 | Locate passes | Narrow the unloaded candidates with parts and complements; a culprit or combination backs off those candidates. If no narrower group fails, rerun the full failing profile at the failed duration before deciding `loaded`. |
 | Failure charged to loaded cores | Choose a movable core in the affected request group, or the named core, and raise its request toward an eligible passing voltage target; without one, move one count shallower. Record its failure point. |
