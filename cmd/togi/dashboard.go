@@ -14,6 +14,7 @@ import (
 type dashboard struct {
 	dir     string
 	out     *os.File
+	in      *os.File                                                  // terminal whose echo is off while the dashboard shows; nil leaves it alone
 	run     func(ctx context.Context, dir string, out *os.File) error // watch.Run when nil
 	mu      sync.Mutex
 	showing bool
@@ -30,6 +31,8 @@ func (d *dashboard) Write(p []byte) (int, error) {
 	return d.out.Write(p)
 }
 
+// show starts the dashboard. The terminal's echo and line buffering stay off until the dashboard stops, however it
+// stops, so typed keys neither print over the frame nor scroll it.
 func (d *dashboard) show() {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -40,9 +43,14 @@ func (d *dashboard) show() {
 	if run == nil {
 		run = func(ctx context.Context, dir string, out *os.File) error { return watch.Run(ctx, dir, out, nil) }
 	}
+	restore := func() {}
+	if d.in != nil {
+		restore = quietInput(d.in)
+	}
 	go func() {
 		defer close(done)
 		err := contained(func() error { return run(ctx, d.dir, d.out) })
+		restore()
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		d.showing = false

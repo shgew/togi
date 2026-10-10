@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/shgew/togi/internal/defect"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/render"
 	"github.com/shgew/togi/internal/session"
@@ -112,8 +115,35 @@ func TestDefectPromptRejectsCharacterDevicesThatAreNotTerminals(t *testing.T) {
 	stdin := os.Stdin
 	os.Stdin = null
 	defer func() { os.Stdin = stdin }()
-	if prompt := defectPrompt(null); prompt != nil {
+	if prompt := defectPrompt(context.Background(), null); prompt != nil {
 		t.Fatal("/dev/null must not be treated as a terminal")
+	}
+}
+
+func TestDefectPromptAnswersOnlyInputTypedAfterTheQuestion(t *testing.T) {
+	t.Parallel()
+	pr, pw := io.Pipe()
+	var out bytes.Buffer
+	ask := askDefect(context.Background(), &out, bufio.NewReader(pr), func() { out.WriteString("discarded\n") })
+	go fmt.Fprint(pw, "y\n")
+	yes, err := ask(defect.Finding{Entry: defect.Entry{ID: 2, Title: "t"}, Cores: []int{3}})
+	if err != nil || !yes {
+		t.Fatalf("answer %t, %v", yes, err)
+	}
+	if got := out.String(); !strings.HasPrefix(got, "discarded\ntogi: defect 2:") || !strings.HasSuffix(got, "Reset cores 3? [y/N] ") {
+		t.Fatalf("prompt output %q: want pending input discarded before the question", got)
+	}
+}
+
+func TestDefectPromptReturnsWhenRunIsStopped(t *testing.T) {
+	t.Parallel()
+	ctx, stop := context.WithCancel(context.Background())
+	stop()
+	pr, _ := io.Pipe()
+	ask := askDefect(ctx, io.Discard, bufio.NewReader(pr), func() {})
+	yes, err := ask(defect.Finding{Cores: []int{3}})
+	if yes || !errors.Is(err, context.Canceled) {
+		t.Fatalf("answer %t, %v; want no answer and context.Canceled with nothing typed", yes, err)
 	}
 }
 
