@@ -69,7 +69,7 @@ func (s *State) atLimit(c *core, p []int) (string, bool) {
 }
 
 func (s *State) limitAt(c *core, p []int) (Limit, int, int) {
-	if c.offset == machine.MinOffset {
+	if p[s.index(c.id)] == machine.MinOffset {
 		return Limit{Floor: true}, 0, 0
 	}
 	q := slices.Clone(p)
@@ -243,12 +243,4 @@ func deeperOnTie(p, best, order []int) bool {
 		}
 	}
 	return false
-}
-
-func (s *State) best() []int {
-	if s.bestDirty {
-		s.bestProfile = s.optimum(make([]int, len(s.cores)), s.ranking)
-		s.bestDirty = false
-	}
-	return s.bestProfile
 }

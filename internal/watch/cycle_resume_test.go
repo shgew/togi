@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/shgew/togi/internal/config"
 	"github.com/shgew/togi/internal/journal"
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/tuner"
 )
 
@@ -107,10 +109,20 @@ func nextCycleTrial(events []journal.Event) (next *journal.TrialIntent, chains, 
 	return nil, chains, false
 }
 
+// crashedCycleJournal is a default simulated machine through its first clean cycle, on a seed whose checking crashes
+// are followed by a backoff that moves the cycle on.
+var crashedCycleJournal = sync.OnceValues(func() ([]journal.Event, error) {
+	m, err := sim.New(sim.Config{Seed: 5})
+	if err != nil {
+		return nil, err
+	}
+	return simulate(m, config.Default(), nil)
+})
+
 // A crash recovery names the step the crashed trial ran in, also after a backoff has moved the cycle on.
 func TestRecoveryNamesTheStepTheCrashedTrialRanIn(t *testing.T) {
 	t.Parallel()
-	events := simulated(t, sessionJournal)
+	events := simulated(t, crashedCycleJournal)
 	intents := map[string]*journal.TrialIntent{}
 	started := map[string]int{}
 	checked, moved := 0, 0

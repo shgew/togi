@@ -451,3 +451,11 @@ func TestClassTargetsPreserveHuntAndRerunLookup(t *testing.T) {
 		})
 	}
 }
+
+func totalDepth(p []int) int {
+	sum := 0
+	for _, v := range p {
+		sum += v
+	}
+	return sum
+}

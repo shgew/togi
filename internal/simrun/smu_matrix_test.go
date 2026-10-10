@@ -216,11 +216,19 @@ func TestPowerLossDuringDeepeningResume(t *testing.T) {
 
 func runInterruptionMatrix(t *testing.T, name string, cfg sim.Config, c config.Config, open func(journal.Event) bool, closeWindow func(journal.Event, *bool) bool) {
 	t.Helper()
-	_, prefix, _ := runHunt(t, cfg, nil, func(in *Input) {
+	prefixTweak := func(in *Input) {
 		in.Config = c
 		in.Cycles = 0
 		in.Until = open
-	})
+	}
+	var prefix []journal.Event
+	if name == "hunt" {
+		quiet := cfg
+		quiet.Joints = nil
+		_, prefix, _ = runHuntAfterConfirmation(t, quiet, cfg.Joints, prefixTweak)
+	} else {
+		_, prefix, _ = runHunt(t, cfg, nil, prefixTweak)
+	}
 	openIndex := slices.IndexFunc(prefix, open)
 	if openIndex < 0 {
 		t.Fatalf("%s prefix missing opening event", name)

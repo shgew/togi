@@ -50,12 +50,12 @@ func TestSearchAndSoloLimitCheck(t *testing.T) {
 	}
 	a := h.next()
 	phase, ok := a.Payload.(*journal.CorePhase)
-	if !ok || phase.To != journal.PhaseAtLimit || phase.Pass == nil || *phase.Pass != -50 {
+	if !ok || phase.To != journal.PhaseHasRoom || phase.Offset != -49 || phase.Pass == nil || *phase.Pass != -50 {
 		t.Fatalf("solo limit completion %+v", a)
 	}
 	h.decide(a)
 	profile := h.next()
-	if p, ok := profile.Payload.(*journal.ProfileChange); !ok || cmp.Diff([]int{-50}, p.To) != "" {
+	if p, ok := profile.Payload.(*journal.ProfileChange); !ok || cmp.Diff([]int{-49}, p.To) != "" {
 		t.Fatalf("profile %+v", profile)
 	}
 }

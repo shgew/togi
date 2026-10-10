@@ -47,7 +47,7 @@ func TestRestoreAfterCombinationHuntCommitmentNeverReachesCombination(t *testing
 	model.CrashMCE = 0
 	cfg.Model = &model
 	in := simInput(t.TempDir(), newSim(t, cfg))
-	in.Config.CandidateSoloLimits = map[int]int{0: -30, 1: -30, 2: -30, 3: -30}
+	in.Config.CandidateSoloLimits = map[int]int{0: -31, 1: -31, 2: -31, 3: -31}
 	in.Config.Checking.Cycle = []machine.Regime{machine.R6}
 	in.Config.Durations.ShortTrialS = 1
 	in.Config.Durations.CheckingTrialS = 1

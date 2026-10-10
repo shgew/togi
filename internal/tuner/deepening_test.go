@@ -13,7 +13,11 @@ func cleanCycleHarness(t *testing.T, offsets []int, combinations [][]int) *harne
 	t.Helper()
 	starts := make([]coreStart, len(offsets))
 	for i, v := range offsets {
-		starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: v}
+		solo := max(v-1, machine.MinOffset)
+		starts[i] = coreStart{from: journal.PhaseSearch, phase: journal.PhaseHasRoom, offset: v, pass: new(solo)}
+		if solo > machine.MinOffset {
+			starts[i].fail = new(solo - 1)
+		}
 	}
 	h := newHarness(t, starts...)
 	for i, pair := range combinations {
@@ -43,7 +47,7 @@ func nextRound(h *harness) *journal.DeepeningRound {
 }
 
 func TestIdleFailureEndsDeepeningBeforeMoves(t *testing.T) {
-	h := cleanCycleHarness(t, []int{-49, -49, -49, -50}, [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}})
+	h := cleanCycleHarness(t, []int{-10, -10, -10, -10}, [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}})
 	round := nextRound(h)
 	failure := h.add(&journal.Failure{Signal: machine.Crash, Attribution: journal.Unattributed, Regime: machine.R6, Condition: machine.Together, Profile: h.s.Profile()})
 	a := h.next()
@@ -53,97 +57,6 @@ func TestIdleFailureEndsDeepeningBeforeMoves(t *testing.T) {
 	}
 	if diff := cmp.Diff([]int{failure.Seq}, a.Cause); diff != "" {
 		t.Fatalf("round end cause (-want +got):\n%s", diff)
-	}
-}
-
-func TestDeepeningGlobalOptimumAndResume(t *testing.T) {
-	combinations := [][]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {1, 3}}
-	h := cleanCycleHarness(t, []int{-49, -49, -49, -50}, combinations)
-	r := nextRound(h)
-	if diff := cmp.Diff([]int{-50, -49, -50, -49}, r.Target); diff != "" {
-		t.Fatalf("global optimum (-want +got):\n%s", diff)
-	}
-	if diff := cmp.Diff(r.Target, r.Profile); diff != "" {
-		t.Fatalf("proposed profile (-want +got):\n%s", diff)
-	}
-	decisions := []journal.Decision{journal.Yield, journal.Deepen, journal.Deepen}
-	for _, want := range decisions {
-		live := h.next()
-		replayed := replayState(h.events)
-		if diff := cmp.Diff(live, replayed.Next()); diff != "" {
-			t.Fatalf("round resume (-live +replayed):\n%s", diff)
-		}
-		d, ok := live.Payload.(*journal.TunerDecision)
-		if !ok || d.Decision != want {
-			t.Fatalf("move %+v, want %s", live, want)
-		}
-		h.decide(live)
-	}
-	for range 15 {
-		a := h.next()
-		if _, ok := a.Payload.(*journal.ProfileChange); ok {
-			h.decide(a)
-			break
-		}
-		if a.Kind != Decide {
-			t.Fatalf("expected profile change: %+v", a)
-		}
-		h.decide(a)
-	}
-	if diff := cmp.Diff(r.Profile, h.s.Profile()); diff != "" {
-		t.Fatalf("profile (-want +got):\n%s", diff)
-	}
-	for range 100 {
-		replayed := replayState(h.events)
-		if diff := cmp.Diff(h.s.Next(), replayed.Next()); diff != "" {
-			t.Fatalf("deepening prefix replay (-live +replayed):\n%s", diff)
-		}
-		a := h.next()
-		if a.Kind == RunTrial {
-			if a.Trial.Round != r.Round {
-				t.Fatalf("trial lost round: %+v", a.Trial)
-			}
-			h.trial(a, passed)
-			continue
-		}
-		if end, ok := a.Payload.(*journal.DeepeningRound); ok && end.Event == journal.CycleEnd {
-			if !end.Passed {
-				t.Fatalf("failed round %+v", end)
-			}
-			h.decide(a)
-			return
-		}
-		t.Fatalf("unexpected check action %+v", a)
-	}
-	t.Fatal("round checks never finished")
-}
-
-func TestDeepeningHalfwayTowardFailurePoint(t *testing.T) {
-	h := newHarness(t, coreStart{phase: journal.PhaseHasRoom, offset: -10, fail: new(-50)})
-	h.add(&journal.ProfileChange{To: []int{-10}})
-	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: h.s.steps})
-	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
-	r := nextRound(h)
-	if diff := cmp.Diff([]int{-30}, r.Profile); diff != "" {
-		t.Fatalf("first halfway (-want +got):\n%s", diff)
-	}
-	h.decide(h.next())
-	h.decide(h.next())
-	for range 30 {
-		a := h.next()
-		if a.Kind == RunTrial {
-			h.trial(a, passed)
-			continue
-		}
-		if p, ok := a.Payload.(*journal.DeepeningRound); ok && p.Event == journal.CycleEnd {
-			h.decide(a)
-			break
-		}
-		t.Fatalf("unexpected halfway action %+v", a)
-	}
-	next := nextRound(h)
-	if diff := cmp.Diff([]int{-40}, next.Profile); diff != "" {
-		t.Fatalf("second halfway (-want +got):\n%s", diff)
 	}
 }
 

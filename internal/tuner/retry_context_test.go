@@ -60,10 +60,7 @@ func roundStartSeq(h *harness, round int) int {
 // roundCheckRetry opens round 1 of two cores through the live decisions and ends its first alone check inconclusively.
 func roundCheckRetry(t *testing.T) (*harness, journal.Event) {
 	t.Helper()
-	h := newHarness(t, coreStart{phase: journal.PhaseHasRoom, offset: -10, fail: new(-50)}, coreStart{phase: journal.PhaseHasRoom, offset: -10, fail: new(-50)})
-	h.add(&journal.ProfileChange{To: []int{-10, -10}})
-	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: h.s.steps})
-	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
+	h := cleanCycleHarness(t, []int{-10, -10}, nil)
 	nextRound(h)
 	begin := h.events[roundStartSeq(h, 1)-1]
 	a := nextRoundCheck(t, h, 1)
@@ -106,8 +103,6 @@ func TestCancelledRoundCheckRetryDoesNotRun(t *testing.T) {
 	t.Run("a failure ends the round and the next round runs its own check", func(t *testing.T) {
 		h, begin := roundCheckRetry(t)
 		h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleEnd, Reason: "a failure needs a hunt"}, begin.Seq)
-		h.add(&journal.CheckingCycle{Cycle: 2, Event: journal.CycleStart, Steps: h.s.steps})
-		h.add(&journal.CheckingCycle{Cycle: 2, Event: journal.CycleEnd, Passed: true, Full: true})
 		nextRound(h)
 		got := requireTrial(t, nextRoundCheck(t, h, 2))
 		if got.Retry || got.Round != 2 {

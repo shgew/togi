@@ -15,6 +15,7 @@ import (
 
 type coreStart struct {
 	phase      journal.Phase
+	from       journal.Phase
 	offset     int
 	pass, fail *int
 	check      bool
@@ -75,7 +76,7 @@ func newHarnessOn(t *testing.T, infos []machine.CoreInfo, cfg config.Config, sta
 	begin := h.add(&journal.SessionStart{Schema: journal.Schema, Session: "s", Cores: infos})
 	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: snapshotConfig(cfg)})
 	for i, c := range starts {
-		p := &journal.CorePhase{Core: infos[i].Core, To: c.phase, Offset: c.offset, Pass: c.pass, FailurePoint: c.fail, CheckSoloLimit: c.check, Reason: "test"}
+		p := &journal.CorePhase{Core: infos[i].Core, From: c.from, To: c.phase, Offset: c.offset, Pass: c.pass, FailurePoint: c.fail, CheckSoloLimit: c.check, Reason: "test"}
 		if c.check {
 			p.Workloads = []string{machine.Workloads(machine.R1)[0].ID, machine.Workloads(machine.R2)[0].ID}
 		}

@@ -96,9 +96,22 @@ func TestSixteenCoresReachCleanCycle(t *testing.T) {
 	if len(st.Cores) != 16 || st.Deepening != nil || st.Checking == nil || st.Checking.CleanCycles == 0 {
 		t.Fatalf("state has %d cores, deepening %+v, checking %+v", len(st.Cores), st.Deepening, st.Checking)
 	}
+	history, _, err := journal.Read(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backedOff := map[int]bool{}
+	for _, e := range history {
+		if p, ok := e.Data.(*journal.TunerDecision); ok && p.Decision == journal.Backoff {
+			backedOff[p.Core] = true
+		}
+	}
 	for _, c := range st.Cores {
-		if c.Phase != journal.PhaseAtLimit {
-			t.Errorf("core %d is %s, want at its limit", c.Core, c.Phase)
+		switch {
+		case c.Phase == journal.PhaseAtLimit:
+		case c.Phase == journal.PhaseHasRoom && backedOff[c.Core] && c.FailurePoint != nil && c.Offset > *c.FailurePoint:
+		default:
+			t.Errorf("core %d is %s at %d, want at its limit or backed off short of its failure point", c.Core, c.Phase, c.Offset)
 		}
 	}
 	if diff := cmp.Diff([]string(nil), violations); diff != "" {
