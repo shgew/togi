@@ -1,6 +1,8 @@
 package facts
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,9 +15,10 @@ import (
 )
 
 func TestReadJournalSummarizesPersistedRequests(t *testing.T) {
-	for _, layout := range []string{"live", "archive"} {
+	for _, layout := range []string{"live", "archive", "live compressed", "archive compressed"} {
 		for _, count := range []int{0, 19, 20} {
 			t.Run(fmt.Sprintf("%s/%d samples", layout, count), func(t *testing.T) {
+				layout, compressed := strings.TrimSuffix(layout, " compressed"), strings.HasSuffix(layout, " compressed")
 				dir := t.TempDir()
 				path, trials := filepath.Join(dir, "events.jsonl"), filepath.Join(dir, "trials")
 				if layout == "archive" {
@@ -36,7 +39,19 @@ func TestReadJournalSummarizesPersistedRequests(t *testing.T) {
 					}
 					warmup := "{\"elapsed_ms\":4999,\"pm_table\":{\"voltage_request_v\":[2,2,2]}}\n"
 					sample := "{\"elapsed_ms\":5000,\"pm_table\":{\"voltage_request_v\":[1.125,2,1.25]},\"core_mhz\":{\"0\":4800,\"1\":5000,\"2\":4900}}\n"
-					if err := os.WriteFile(filepath.Join(dir, "samples.jsonl"), []byte(strings.Repeat(warmup, 20)+strings.Repeat(sample, count)), 0600); err != nil {
+					contents, name := []byte(strings.Repeat(warmup, 20)+strings.Repeat(sample, count)), "samples.jsonl"
+					if compressed {
+						var buf bytes.Buffer
+						zw := gzip.NewWriter(&buf)
+						if _, err := zw.Write(contents); err != nil {
+							t.Fatal(err)
+						}
+						if err := zw.Close(); err != nil {
+							t.Fatal(err)
+						}
+						contents, name = buf.Bytes(), name+".gz"
+					}
+					if err := os.WriteFile(filepath.Join(dir, name), contents, 0600); err != nil {
 						t.Fatal(err)
 					}
 				}

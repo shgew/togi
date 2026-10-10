@@ -4,13 +4,15 @@ import (
 	"bufio"
 	"encoding/json"
 	"iter"
-	"os"
 	"path/filepath"
+
+	"github.com/shgew/togi/internal/trialfiles"
 )
 
+// ReadSamples yields the complete samples of the trial directory dir, from either form of its samples file.
 func ReadSamples(dir string) iter.Seq[TrialConditions] {
 	return func(yield func(TrialConditions) bool) {
-		f, err := os.Open(filepath.Join(dir, "samples.jsonl"))
+		f, err := trialfiles.Open(filepath.Join(dir, trialfiles.Samples))
 		if err != nil {
 			return
 		}

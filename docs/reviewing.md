@@ -1,6 +1,6 @@
 # Reviewing a run
 
-`tools/stats` is a read-only development program, not part of the installed togi binary. Run it from a source checkout. It reads `events.jsonl` and, for R7 request telemetry only, the journal's persisted trial samples (`trials/<id>/samples.jsonl` beside a live journal, `archive/<session>-trials/<id>/samples.jsonl` beside an archived one); it never reads `state.json`, other trial output or hardware. Current journals and archives from older shipped schemas are accepted. A live journal's unfinished final line is ignored.
+`tools/stats` is a read-only development program, not part of the installed togi binary. Run it from a source checkout. It reads `events.jsonl` and, for R7 request telemetry only, the journal's persisted trial samples (`trials/<id>/samples.jsonl` beside a live journal, `archive/<session>-trials/<id>/samples.jsonl` beside an archived one, either as `.gz` once its trial ended); it never reads `state.json`, other trial output or hardware. Current journals and archives from older shipped schemas are accepted. A live journal's unfinished final line is ignored.
 
 ```sh
 just stats                                                # target machine: /var/lib/togi/events.jsonl

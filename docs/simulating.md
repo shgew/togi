@@ -12,7 +12,7 @@ go run ./tools/sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--
 - `--replay-facts` answers exact trial-class/full-profile matches from the machine file's `facts` extract, under its declared BIOS context. Without this flag the file remains a fitted simulator alone.
 - `--cycles` (default 1) stops after N clean cycles; [Checking](spec/tuner.md#checking) says when a cycle counts and when the run stops.
 - `--state-dir` uses an existing directory; without it, `sim` creates a temporary one and prints its path to stderr.
-- `--samples` writes `trials/<trial-id>/samples.jsonl` for later inspection; by default trial samples stay in memory.
+- `--samples` writes `trials/<trial-id>/samples.jsonl` for later inspection, gzip-compressed on trial end (`journal.md`, Files); by default trial samples stay in memory.
 - `--max-boots` (default 1000) caps the simulated boots of one invocation. A session still running after N boots stops with its journal and `state.json` as they stand, the reason on stderr, and exit 3.
 - `--verify-every` (default 0) replays the whole journal into fresh state after every Nth simulated crash, and fails unless it equals the state the next boot resumes from; 0 checks only when the invocation ends: the session stops, an error ends it or it reaches `--max-boots`.
 - `--cold-boots` replays the whole journal at every boot, as `togi run` does, instead of resuming from the state the crashed boot folded.

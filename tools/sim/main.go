@@ -34,7 +34,7 @@ func run(args []string, stderr io.Writer) int {
 	machineFile := flags.String("machine", "", "load the simulated machine from this JSON `file`")
 	replay := flags.Bool("replay-facts", false, "answer exact class/profile matches from the machine's same-BIOS facts extract")
 	dir := flags.String("state-dir", "", "use this state `directory`, resuming a journal it holds under the configuration that journal recorded, or under the default configuration with its recorded backend store paths when the journal has an older schema; default a new temporary one")
-	samples := flags.Bool("samples", false, "write trials/<trial-id>/samples.jsonl in the state directory; default keep samples in memory")
+	samples := flags.Bool("samples", false, "write trials/<trial-id>/samples.jsonl in the state directory, gzip-compressed on trial end; default keep samples in memory")
 	maxBoots := flags.Int("max-boots", 1000, "stop with exit status 3 if the session is still running after `N` simulated boots")
 	verifyEvery := flags.Int("verify-every", 0, "after every `N`th simulated crash, replay the whole journal into fresh state and fail unless it equals the state the next boot resumes from; 0 checks only when the session stops")
 	coldBoots := flags.Bool("cold-boots", false, "replay the whole journal at every boot, as togi run does, instead of resuming from the state the crashed boot folded")

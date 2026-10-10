@@ -220,7 +220,7 @@ func (r *runner) run(ctx context.Context) (Stop, error) {
 		return deref(stop), err
 	}
 	if sameBoot {
-		if stop, err := r.resumeSameBoot(); stop != nil || err != nil {
+		if stop, err := r.resumeSameBoot(recoveryCanceled); stop != nil || err != nil {
 			return deref(stop), err
 		}
 	}
@@ -562,6 +562,28 @@ func (r *runner) recoverCrashes(ctx context.Context) error {
 		}
 		r.kernelWaited = 0
 	}
+	if open := r.fold.open; open != nil && open.boot == boot {
+		return nil // closed after the sweep in run
+	}
+	return r.finishRecovery()
+}
+
+// finishSameBootRecovery closes a trial opened in this boot once the sweep succeeded: its owner may have died while its
+// scope lived on, and only the sweep proves its samples and backend logs are no longer written. A pending dead end
+// skipped crash recovery, whose follow-up work the same-boot drain then performs.
+func (r *runner) finishSameBootRecovery(canceled bool) error {
+	if open := r.fold.open; canceled || open == nil || open.boot != r.in.Boot {
+		return nil
+	}
+	if pending, _ := r.fold.pendingDeadEnd(); pending != nil {
+		return r.closeOpenTrial()
+	}
+	return r.finishRecovery()
+}
+
+// finishRecovery closes the open trial, then records the failures and attributions the recovered evidence requires.
+func (r *runner) finishRecovery() error {
+	boot := r.in.Boot
 	if err := r.closeOpenTrial(); err != nil {
 		return err
 	}
@@ -743,7 +765,7 @@ func (r *runner) closeOpenTrial() error {
 			}
 		}
 	}
-	_, err := r.append(end, cause...)
+	_, err := r.appendTrialEnd(end, cause...)
 	return err
 }
 
@@ -801,7 +823,11 @@ func (r *runner) resumeDeadEnd() (*Stop, error) {
 	return r.finishDeadEnd(*e, clear)
 }
 
-func (r *runner) resumeSameBoot() (*Stop, error) {
+func (r *runner) resumeSameBoot(recoveryCanceled bool) (*Stop, error) {
+	if err := r.finishSameBootRecovery(recoveryCanceled); err != nil {
+		result, err := r.afterEvidence(err)
+		return &result, err
+	}
 	a, pending, err := r.drainDecisions()
 	if err != nil {
 		return nil, err

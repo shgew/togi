@@ -265,7 +265,14 @@ func assertOnlyRestorationWrites(t *testing.T, events []journal.Event, after int
 
 type containmentTrials struct {
 	machine.Trials
+	t       *testing.T
 	atStart bool
+}
+
+// Ended is the finalization a trial whose cleanup cannot be confirmed must never reach: its writers may still run.
+func (t containmentTrials) Ended(id string) error {
+	t.t.Errorf("trial %s files finalized after unconfirmed cleanup", id)
+	return t.Trials.Ended(id)
 }
 
 func (t containmentTrials) Start(ctx context.Context, spec machine.TrialSpec) (machine.Running, error) {
@@ -300,7 +307,7 @@ func TestUnconfirmedCleanupDeadEnd(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			run := func(in simRun, killed *appendGate) (Stop, error) {
 				seams := in.Machine.Seams()
-				seams.Trials = containmentTrials{Trials: seams.Trials, atStart: atStart}
+				seams.Trials = containmentTrials{Trials: seams.Trials, t: t, atStart: atStart}
 				in.Seams = &seams
 				return simulateBoot(context.Background(), in, wrapFor(in, killed))
 			}

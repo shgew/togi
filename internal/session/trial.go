@@ -305,20 +305,29 @@ func (tr *trialRun) finish(ctx context.Context, since time.Duration, res machine
 	if end.Outcome == journal.OutcomeFailure {
 		end.StalledCore, end.WorkerStalledMS = summary.stalledCore, summary.workerStalledMS
 	}
-	ended, err := r.append(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...)
+	_, err := r.appendTrialEnd(end, append([]int{tr.start}, tr.mceSeqs(mces)...)...)
 	if err != nil {
 		if containment != "" {
 			return errors.Join(err, runnerErr)
 		}
 		return err
 	}
-	if end.Outcome == journal.OutcomePass {
-		if err := r.in.Machine.Trials.Passed(tr.id); err != nil {
-			_, warningErr := r.append(&journal.SessionWarning{Operation: "retain passed trial", Trial: tr.id, Error: err.Error()}, ended.Seq)
-			return warningErr
-		}
-	}
 	return runnerErrIfCrashed(runnerErr)
+}
+
+func (r *runner) appendTrialEnd(end *journal.TrialEnd, cause ...int) (journal.Event, error) {
+	var compressionErr error
+	if end.ContainmentError == "" {
+		compressionErr = r.in.Machine.Trials.Ended(end.Trial)
+	}
+	ended, err := r.append(end, cause...)
+	if err != nil {
+		return ended, err
+	}
+	if compressionErr != nil {
+		_, err = r.append(&journal.SessionWarning{Operation: "compress trial files", Trial: end.Trial, Error: compressionErr.Error()}, ended.Seq)
+	}
+	return ended, err
 }
 
 func runnerErrIfCrashed(err error) error {

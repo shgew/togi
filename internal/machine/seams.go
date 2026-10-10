@@ -133,8 +133,8 @@ type TrialConditions struct {
 type Trials interface {
 	Sweep(ctx context.Context) (detail string, err error)
 	Start(ctx context.Context, spec TrialSpec) (Running, error)
-	// Passed failurePoints a passed trial's work directory so retention may prune it.
-	Passed(id string) error
+	// Ended finalizes retained files after all trial writers have stopped. Retrying it after a crash is safe.
+	Ended(id string) error
 	// Samples yields complete persisted conditions samples in order.
 	Samples(id string) iter.Seq[TrialConditions]
 }

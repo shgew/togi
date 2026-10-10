@@ -1,6 +1,8 @@
 package session
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -142,11 +144,13 @@ func TestCrashRecoveryRequestTelemetry(t *testing.T) {
 		name    string
 		count   int
 		offline bool
+		gzip    bool
 	}{
-		{"19", 19, false},
-		{"20", 20, false},
+		{"19", 19, false, false},
+		{"20", 20, false, false},
+		{"20 in the compressed form", 20, false, true},
 		// The recorded topology still maps a loaded core that is offline after the reset.
-		{"20 with a loaded core offline", 20, true},
+		{"20 with a loaded core offline", 20, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -165,8 +169,21 @@ func TestCrashRecoveryRequestTelemetry(t *testing.T) {
 				contents = append(contents, append(line, '\n')...)
 			}
 			contents = append(contents, []byte(`{"elapsed_ms":100000,"pm_table":`)...)
-			if err := os.WriteFile(filepath.Join(trialDir, "samples.jsonl"), contents, 0644); err != nil {
+			name := "samples.jsonl"
+			if tc.gzip {
+				contents, name = gzipBytes(t, contents), name+".gz"
+			}
+			if err := os.WriteFile(filepath.Join(trialDir, name), contents, 0644); err != nil {
 				t.Fatal(err)
+			}
+			logDir := filepath.Join(trialDir, "work")
+			if err := os.Mkdir(logDir, 0755); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"stdout.log", "stderr.log"} {
+				if err := os.WriteFile(filepath.Join(logDir, name), []byte("interrupted output\n"), 0644); err != nil {
+					t.Fatal(err)
+				}
 			}
 			seams := in.Machine.Seams()
 			seams.Trials = sampledTrials{Trials: seams.Trials, reader: trial.New(trial.Options{Dir: dir})}
@@ -177,6 +194,29 @@ func TestCrashRecoveryRequestTelemetry(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertRequestTelemetry(t, readEvents(t, in.Dir), tc.count, true)
+			if !tc.offline {
+				for _, plain := range []string{filepath.Join(trialDir, "samples.jsonl"), filepath.Join(logDir, "stdout.log"), filepath.Join(logDir, "stderr.log")} {
+					if _, err := os.Stat(plain); !os.IsNotExist(err) {
+						t.Errorf("recovery left plain file %s: %v", filepath.Base(plain), err)
+					}
+					if _, err := os.Stat(plain + ".gz"); err != nil {
+						t.Errorf("recovery compressed file %s: %v", filepath.Base(plain), err)
+					}
+				}
+			}
 		})
 	}
+}
+
+func gzipBytes(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	if _, err := zw.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }

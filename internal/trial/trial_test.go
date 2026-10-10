@@ -518,40 +518,6 @@ func TestR6Bursts(t *testing.T) {
 	})
 }
 
-func TestRetention(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	r := New(Options{Dir: dir})
-	failed := filepath.Join(dir, "9898")
-	if err := os.Mkdir(failed, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(failed, "stderr"), []byte("failure evidence"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	for i := range 202 {
-		id := fmt.Sprintf("%04d", 9899+i)
-		if err := os.Mkdir(filepath.Join(dir, id), 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := r.Passed(id); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, id := range []string{"9899", "9900"} {
-		if _, err := os.Stat(filepath.Join(dir, id)); !os.IsNotExist(err) {
-			t.Fatalf("%s retained: %v", id, err)
-		}
-	}
-	for _, id := range []string{"9901", "10100", "9898"} {
-		if _, err := os.Stat(filepath.Join(dir, id)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if data, err := os.ReadFile(filepath.Join(failed, "stderr")); err != nil || string(data) != "failure evidence" {
-		t.Fatalf("retention lost failed-trial evidence: %q, %v", data, err)
-	}
-}
 func TestPlans(t *testing.T) {
 	t.Parallel()
 	cores := []machine.CoreInfo{{Core: 0, CCD: 0}, {Core: 1, CCD: 1}, {Core: 2, CCD: 0}, {Core: 3, CCD: 1}}
@@ -856,14 +822,6 @@ func TestR6ScopeReadinessBeforeInitialStop(t *testing.T) {
 				}
 			})
 		})
-	}
-}
-
-func TestPassedMissingTrialDirectory(t *testing.T) {
-	root := t.TempDir()
-	r := New(Options{Dir: root})
-	if err := r.Passed("0001"); !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "mark trial 0001 passed") {
-		t.Fatalf("missing marker directory: %v", err)
 	}
 }
 

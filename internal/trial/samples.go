@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/shgew/togi/internal/machine"
+	"github.com/shgew/togi/internal/trialfiles"
 )
 
 type conditionsSampler struct {
@@ -171,7 +172,7 @@ func (w sampleWriter) close() error {
 }
 
 func openSamples(dir string) (sampleFile, error) {
-	f, err := os.OpenFile(filepath.Join(dir, "samples.jsonl"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	f, err := os.OpenFile(filepath.Join(dir, trialfiles.Samples), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("create trial samples: %w", err)
 	}

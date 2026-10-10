@@ -497,6 +497,10 @@ func (t sampledTrials) Samples(id string) iter.Seq[machine.TrialConditions] {
 	return t.reader.Samples(id)
 }
 
+func (t sampledTrials) Ended(id string) error {
+	return t.reader.Ended(id)
+}
+
 func TestCrashRecoveryLastSample(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
