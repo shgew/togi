@@ -76,3 +76,24 @@ JSON version 3 has these fields, all required:
 - `verdict`: `success` or `blocked`.
 
 Human text and JSON carry the same data. Version 1 lacked `base_sha` and `previous`; read a version-1 record as a first record. Version 2 lacked `coverage`; read it as unknown. A successful check named `review` from robotogi points to this record on exactly `head_sha`. A pure rebase can carry it forward only after `git range-diff` proves the layer's own changes unchanged; the new head gets a new check linking the earlier record, not a new record claiming a fresh review.
+
+## Tooling
+
+`tools/reviews` does the mechanical steps; the coordinator keeps the judgment: grouping files, triage, fixes and re-review reasoning. Run it as `just reviews <subcommand>`; with no subcommand it prints the track record of merged pull requests.
+
+- `just reviews snapshot [--previous <record comment URL>] [--cover <file or ->] <PR>` freezes the pull request's head and base and writes `$TMPDIR/togi-review/<PR>-<short head>/`: `manifest.json`, `pr.diff` (the frozen diff, byte for byte) and `files/<index>.diff`, one hunk file per included file, named in the manifest. It refuses when the head or base moved while it ran. The manifest holds the head and base SHAs, every changed file with its status and added and removed counts, the exclusions with reasons, L and F, the reviewer count by the sizing rule in `.omp/commands/review-pr.md` and whether the pull request is small by that command's rule. With `--previous` it also fetches both ranges, runs `git range-diff` and writes `delta.diff`, the new version of every changed patch, every added patch and the reverse of every removed one, with each patch classified unchanged, changed, added or removed. A patch whose added and removed lines are unchanged and whose only difference is its context lines counts as unchanged. When every patch is unchanged the manifest says `carry_forward`. A previous record without a base gets the whole layer and a `fallback` reason instead of a delta. The hunk files of a delta hold the delta's patches, so line numbers of a patch that a later patch shifts can differ from the head's.
+- `just reviews snapshot --cover <file or -> <snapshot directory>` adds `just cover` output to an existing snapshot, which `snapshot --cover` also does when it creates one. The manifest keeps the uncovered ranges that lie inside the frozen hunks, the delta's on a re-review, and the not-built files among the covered ones, and records how many ranges it was given.
+- `just reviews render <snapshot directory> <findings file>` writes `record.md` and `record.json` there from one model: the Markdown and the version 3 block carry the same data. The findings file is JSON, read strictly:
+
+  ```json
+  {
+    "reviewers": [{"name": "reviewer-1", "model": "<model or null>", "files": ["internal/tuner/step.go"]}],
+    "findings": [{"source": "reviewer-1", "priority": "P2", "finding": "…", "location": "internal/tuner/step.go:42", "url": null,
+                  "outcome": {"status": "fixed", "sha": "<full sha>"}}],
+    "coverage_judgment": "How the uncovered ranges were judged; required when the diff changes Go code.",
+    "blocked": "A blocker the findings do not show, such as an unresolved review thread."
+  }
+  ```
+
+  The reviewers must cover every included file. The verdict is `blocked` when a P0 or P1 finding is deferred or `blocked` is set, and `success` otherwise.
+- `just as-bot go run ./tools/reviews publish <snapshot directory>` posts `record.md` and, for a `success` verdict, the `review` check, both with one robotogi App token. It refuses when the pull request's head is no longer the snapshot's, reuses a record already posted for the head, verifies the returned check run is robotogi's on the reviewed SHA and links the record, and prints the record URL. For a `carry_forward` snapshot it posts only the check, linking the previous record.
