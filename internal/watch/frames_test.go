@@ -185,6 +185,7 @@ func watchCuts(t *testing.T) []watchCut {
 		{"deepening", cutTrial(t, probes, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })},
 		{"idle", cutTrial(t, events, func(p *journal.TrialIntent) bool { return p.Regime == machine.R6 })},
 		{"between", cutAt(t, events, func(e journal.Event) bool { return e.Seq > last.Seq && e.Kind == journal.KindTrialEnd })},
+		{"crashed", beforeCrashDetected(t, events)},
 		{"recovering", cutAt(t, events, func(e journal.Event) bool { return e.Kind == journal.KindCrashDetected })},
 		{"stopped", events},
 		{"combination", simulated(t, combinationJournal)},
@@ -192,6 +193,17 @@ func watchCuts(t *testing.T) []watchCut {
 			{Seq: last.Seq + 1, Time: last.Time.Add(time.Minute), Boot: last.Boot, Kind: deadEnd.Kind(), Msg: deadEnd.Message(), Data: deadEnd},
 		})},
 	}
+}
+
+// beforeCrashDetected is the journal a crashed session shows after the machine restarted and before togi run records
+// the crash: it ends with the events a later boot wrote first.
+func beforeCrashDetected(tb testing.TB, events []journal.Event) []journal.Event {
+	tb.Helper()
+	i := slices.IndexFunc(events, func(e journal.Event) bool { return e.Kind == journal.KindCrashDetected })
+	if i < 1 {
+		tb.Fatal("no crash in the simulated journal")
+	}
+	return events[:i]
 }
 
 func cutTime(events []journal.Event) time.Time {
@@ -215,7 +227,7 @@ func assertFrameBounds(t *testing.T, drawn Drawn, sc Screen) {
 // size under assertFrameBounds.
 var allSizeGoldens = map[string]bool{
 	"search": true, "checking": true, "hunt": true, "member-probe": true,
-	"deepening": true, "idle": true, "recovering": true, "combination": true,
+	"deepening": true, "idle": true, "crashed": true, "recovering": true, "combination": true,
 }
 
 func TestWatchFrames(t *testing.T) {
@@ -386,7 +398,9 @@ func TestWatchWithoutJournal(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	for _, size := range [][2]int{{240, 67}, {160, 45}, {120, 33}} {
 		golden(t, fmt.Sprintf("watch-missing-%dx%d", size[0], size[1]), ansi.Strip(Render(Load(dir), size[0], size[1], now))+"\n")
-		golden(t, fmt.Sprintf("watch-problem-%dx%d", size[0], size[1]), ansi.Strip(Render(Snapshot{problem: errors.New("read journal: permission denied")}, size[0], size[1], now))+"\n")
+		unreadable := Snapshot{problem: errors.New("read journal: permission denied")}
+		golden(t, fmt.Sprintf("watch-problem-%dx%d", size[0], size[1]), ansi.Strip(strings.Join(RenderView(unreadable, Screen{Width: size[0], Height: size[1]}, now).Lines, "\n"))+"\n")
+		golden(t, fmt.Sprintf("watch-problem-once-%dx%d", size[0], size[1]), ansi.Strip(Render(unreadable, size[0], size[1], now))+"\n")
 	}
 }
 

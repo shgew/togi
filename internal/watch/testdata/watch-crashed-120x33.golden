@@ -1,0 +1,32 @@
+ togi   02:47:42   session 2h47m   3 failures · 0 crashes   last observed failure 02:45, 2m ago
+ ○ SOLO  0 of 16 found ─ ○ CYCLE ─ ○ DEEPEN ─ CLEAN 0
+
+ ▌  Trial 0114 crashed: a later boot has written events. togi run records the crash.
+
+ CRASHED, NOT YET RECOVERED  trial 0114 · core 05 · R1 light at -15 · started 02:45:31
+ A later boot has written events, so the machine restarted before this trial recorded its end.
+ togi run records the crash and picks up from the journal.
+
+ CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 waiting    0  2 counts/cell       -50 fail
+   00   0 SEARCH   ········                        → -20       08   0 SEARCH   ········                        → -20
+   01   0 SEARCH   ········                        → -20       09   0 SEARCH   ········                        → -20
+   02   0 SEARCH   ········                        → -20       10   0 SEARCH   ········                        → -20
+   03   0 SEARCH   ········                        → -20       11   0 SEARCH   ··· █                       -10 → -7
+   04   0 SEARCH   ········                        → -20       12   0 SEARCH   ·····  █                    -15 → -11
+ ► 05 -15 SEARCH   ▄▄▄▄▄▄▄▄                        → -15       13   0 SEARCH   ·····                           → -15
+   06   0 SEARCH   ·····                           → -15       14   0 SEARCH   · █                          -5 → -2
+   07   0 SEARCH   ·····                           → -15       15   0 SEARCH   ·····                           → -15
+
+ TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ─────────────────────────────── l: last 400
+
+   13  search step: light, then   -15  passed -10 · next     02:47  resume   session resumed
+   06  search step: light, then   -15  passed -10 · next     02:45  backoff  core 12 -15 → -11
+   14  search step: 1 count       -2   passed -1 · next -2   02:45  fail     core 12 fails at -15
+   07  search step: light, then   -15  passed -10 · next     02:45  fail     core 12 · R1 light at -15 · wrong result
+   15  search step: light, then   -15  passed -10 · next     02:45  step     core 04 passed -15, next -20
+   00  search step: light, then   -20  passed -15 · next     02:42  step     core 11 passed -6, next -7
+   08  search step: light, then   -20  passed -15 · next     02:39  step     core 03 passed -15, next -20
+   01  search step: light, then   -20  passed -15 · next     02:36  step     core 10 passed -15, next -20
+ +8 more                                                     +58 more
+
+  ?  help    l  log    esc  back    q  close view

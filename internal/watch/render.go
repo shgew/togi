@@ -55,12 +55,14 @@ const (
 	LogView
 )
 
-// Scroll counts lines from the top; a negative value selects the end.
+// Scroll counts lines from the top; a negative value selects the end. OneFrame is a frame printed once, which says
+// nothing of the journal changing later.
 type Screen struct {
 	View          View
 	Keys          bool
 	Scroll        int
 	Width, Height int
+	OneFrame      bool
 }
 
 type sizeClass int
@@ -270,7 +272,16 @@ func rule(width int, title, right string) string {
 }
 
 func Render(s Snapshot, w, h int, now time.Time) string {
-	return strings.Join(RenderView(s, Screen{View: MainView, Width: w, Height: h}, now).Lines, "\n")
+	return strings.Join(RenderView(s, Screen{View: MainView, Width: w, Height: h, OneFrame: true}, now).Lines, "\n")
+}
+
+// runMark is the stage marker of a stage the tuner is in: a running ► in style, or a plain ○ once the session stopped
+// or its trial crashed.
+func (s Snapshot) runMark(running lipgloss.Style) string {
+	if s.stopped != nil || s.crashedTrial() {
+		return track.Render("○ ")
+	}
+	return running.Render("► ")
 }
 
 func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
@@ -300,7 +311,7 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 		body, scroll = renderLogBody(s, p.body.w, p.body.h, sc.Scroll)
 		c.rows(p.body, body)
 	case MainView:
-		st := s.story(now)
+		st := s.story(now, sc.OneFrame)
 		if !s.session || s.problem != nil {
 			c.rows(p.body, narratorLines(st, p.body.w, p.body.h, false))
 		} else {
@@ -534,7 +545,7 @@ var heldUntilRecorded = time.Date(9999, time.January, 1, 0, 0, 0, 0, time.UTC)
 
 // quietUntil is a started idle trial's planned end, or zero when no idle trial is running.
 func (s Snapshot) quietUntil() time.Time {
-	if s.problem == nil && s.session && s.deadEnd == nil && s.stopped == nil && s.trial != nil && s.trial.hasStarted && s.trial.regime == machine.R6 && s.trial.duration > 0 {
+	if s.problem == nil && s.session && s.deadEnd == nil && s.stopped == nil && s.trial != nil && !s.trial.crashed && s.trial.hasStarted && s.trial.regime == machine.R6 && s.trial.duration > 0 {
 		return s.trial.started.Add(s.trial.duration)
 	}
 	return time.Time{}
@@ -544,6 +555,9 @@ func (s Snapshot) header(now time.Time) string {
 	out := grey.Render("togi") + "   " + white.Render(wallSecond(now))
 	if s.starting {
 		return out + grey.Render("   starting")
+	}
+	if s.problem != nil {
+		return out + grey.Render("   can't read journal")
 	}
 	if !s.session {
 		return out + grey.Render("   no session yet")
@@ -591,7 +605,7 @@ func (s Snapshot) stageLine(class sizeClass, summary bool, now time.Time) string
 	cycle := s.cycleStage(names[1], short)
 	parts := []string{solo, cycle}
 	if h := s.hunt; h != nil {
-		hunt := amber.Render("► ") + lamp.Render(fmt.Sprintf(" HUNT %d ", h.id))
+		hunt := s.runMark(amber) + lamp.Render(fmt.Sprintf(" HUNT %d ", h.id))
 		if where := s.huntStage(short); where != "" {
 			hunt += amber.Render("  " + where)
 		}
@@ -599,7 +613,7 @@ func (s Snapshot) stageLine(class sizeClass, summary bool, now time.Time) string
 	}
 	deep := grey.Render("○ " + names[2])
 	if s.phase == journal.PhaseDeepening && s.hunt == nil {
-		deep = lit.Render("► ") + white.Render(names[2])
+		deep = s.runMark(lit) + white.Render(names[2])
 		if s.deepen != nil {
 			deep += textStyle.Render(fmt.Sprintf("  round %d", s.deepen.round))
 		}
@@ -607,13 +621,17 @@ func (s Snapshot) stageLine(class sizeClass, summary bool, now time.Time) string
 		deep += grey.Render(fmt.Sprintf("  after a passed full cycle · %d cores have room", room))
 	}
 	parts = append(parts, deep, grey.Render(fmt.Sprintf("%s %d", names[3], s.cleanCycles)))
-	if !short {
+	if !short && s.stopped == nil {
 		parts[len(parts)-1] += track.Render("  · repeats until stopped")
 	}
 	if summary && s.trial != nil && s.trial.hasStarted {
 		t := s.trial
 		if until := s.quietUntil(); !until.IsZero() && now.Before(until) {
 			parts = append(parts, grey.Render("screen paused until "+wallMinute(until)))
+		} else if t.crashed {
+			parts = append(parts, amber.Render("trial crashed"))
+		} else if past := t.pastEnd(now); past > 0 {
+			parts = append(parts, amber.Render(clock(past)+" past its end"))
 		} else {
 			parts = append(parts, white.Render(clock(max(t.duration-now.Sub(t.started), 0))+" left"))
 		}
@@ -629,8 +647,8 @@ func (s Snapshot) soloStage(name string, found int, short bool) string {
 		}
 		return solo
 	}
-	solo := lit.Render("► ") + white.Render(name) + textStyle.Render(fmt.Sprintf("  %d of %d found", found, len(s.cores)))
-	if s.trial != nil && s.trial.condition == machine.Alone && !short {
+	solo := s.runMark(lit) + white.Render(name) + textStyle.Render(fmt.Sprintf("  %d of %d found", found, len(s.cores)))
+	if s.trial != nil && s.trial.condition == machine.Alone && !short && !s.trial.crashed {
 		verb := "searching"
 		if c := s.core(s.trial.core); c != nil && c.confirm != nil {
 			verb = "confirming"
@@ -662,8 +680,10 @@ func (s Snapshot) cycleStage(name string, short bool) string {
 			}
 		}
 		cycle += amber.Render(at)
+	case s.stopped != nil && g.current >= len(g.steps):
+		cycle = green.Render("■ ") + textStyle.Render(name)
 	case s.phase == journal.PhaseChecking:
-		cycle = lit.Render("► ") + white.Render(name)
+		cycle = s.runMark(lit) + white.Render(name)
 		if short {
 			break
 		}
@@ -707,7 +727,7 @@ func keyHints(view View) string {
 // resting is true when no trial is in flight to show, or the session has stopped, met a dead end or just recovered
 // from a crash.
 func (s Snapshot) resting() bool {
-	return s.session && s.problem == nil && (s.deadEnd != nil || s.stopped != nil || s.recover != nil || s.trial == nil)
+	return s.session && s.problem == nil && (s.deadEnd != nil || s.stopped != nil || s.recover != nil || s.crashedTrial() || s.trial == nil)
 }
 
 // restingBand is the NOW band when no trial runs: its title and the rows it needs.
@@ -719,6 +739,8 @@ func (s Snapshot) restingBand() (string, lipgloss.Style, []string) {
 			lines = append(lines, "Rows show the saved profile, not applied now.")
 		}
 		return "DEAD END", red, lines
+	case s.crashedTrial():
+		return "CRASHED, NOT YET RECOVERED", amber, s.crashedLines()
 	case s.stopped != nil:
 		lines := []string{wallSecond(s.stopped.at) + " · " + stopWords(s.stopped.reason)}
 		if s.stopped.saved {
@@ -770,6 +792,35 @@ func (s Snapshot) recoveredLines() []string {
 	return []string{first, strings.Join(second, " · "), s.nextLine()}
 }
 
+// crashedTrial is true when the journal's tail is a trial whose boot a later boot has outlived: the trial crashed, and
+// the next togi run has yet to record it.
+func (s Snapshot) crashedTrial() bool { return s.trial != nil && s.trial.crashed }
+
+// crashedLines say which trial the journal's later boot ended and what records the crash.
+func (s Snapshot) crashedLines() []string {
+	t := *s.trial
+	first := "trial " + vtText(t.id) + " · " + trialName(t)
+	if where := cyclePlace(t); where != "" {
+		first += " · " + where
+	}
+	if t.hasStarted {
+		first += " · started " + wallSecond(t.started)
+	}
+	return []string{first, "A later boot has written events, so the machine restarted before this trial recorded its end.", "togi run records the crash and picks up from the journal."}
+}
+
+// pastEnd is how long a started trial is past its planned end without a recorded end, or zero. A crashed trial has no
+// end to be past.
+func (t trialView) pastEnd(now time.Time) time.Duration {
+	if !t.hasStarted || t.crashed || t.duration <= 0 {
+		return 0
+	}
+	if past := now.Sub(t.started.Add(t.duration)); past >= time.Second {
+		return past
+	}
+	return 0
+}
+
 func drawRestingNow(c *canvas, p layout, s Snapshot) {
 	r := p.now
 	title, style, lines := s.restingBand()
@@ -788,7 +839,7 @@ func drawRestingNow(c *canvas, p layout, s Snapshot) {
 
 func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 	r := p.now
-	if s.deadEnd != nil || s.stopped != nil || s.recover != nil || s.trial == nil {
+	if s.deadEnd != nil || s.stopped != nil || s.recover != nil || s.crashedTrial() || s.trial == nil {
 		drawRestingNow(c, p, s)
 		return
 	}
@@ -822,6 +873,7 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 	}
 	elapsed := min(max(now.Sub(t.started), 0), max(t.duration, 0))
 	remaining := max(t.duration-elapsed, 0)
+	past := t.pastEnd(now)
 	frac := 0.0
 	if t.duration > 0 {
 		frac = float64(elapsed) / float64(t.duration)
@@ -829,6 +881,10 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 	if p.class == wideLayout {
 		cells := max(r.w-23, 0)
 		digits, style := clock(remaining), white
+		label := "left"
+		if past > 0 {
+			digits, style, label = clock(past), amber, "past end"
+		}
 		if quiet {
 			digits, style = wallMinute(t.started.Add(t.duration)), grey
 		}
@@ -858,11 +914,14 @@ func drawNow(c *canvas, p layout, s Snapshot, now time.Time) {
 			c.put(r, 0, 6, textStyle.Render(clock(elapsed))+grey.Render(" of "+clock(t.duration)))
 			trials := requirementLine(*t, false)
 			c.put(r, max(cells-ansi.StringWidth(trials), 0), 6, trials)
-			c.put(r, r.w-4, 6, grey.Render("left"))
+			c.put(r, r.w-ansi.StringWidth(label), 6, grey.Render(label))
 		}
 	} else {
 		y := r.h - 1
 		label := white.Render(clock(remaining)) + grey.Render(" left") + "  " + requirementLine(*t, true)
+		if past > 0 {
+			label = amber.Render(clock(past)+" past its end") + "  " + requirementLine(*t, true)
+		}
 		if quiet {
 			label = grey.Render("screen paused · ends at ") + textStyle.Render(wallMinute(t.started.Add(t.duration)))
 		}
@@ -935,7 +994,7 @@ func bigDigits(text string) [3]string {
 }
 
 func drawOutcomes(c *canvas, p layout, s Snapshot) {
-	if s.trial == nil || s.stopped != nil || s.deadEnd != nil || s.recover != nil {
+	if s.trial == nil || s.stopped != nil || s.deadEnd != nil || s.recover != nil || s.crashedTrial() {
 		return
 	}
 	rows := s.outcomeRows()

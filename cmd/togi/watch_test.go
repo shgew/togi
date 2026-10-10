@@ -62,6 +62,11 @@ func TestWatchProblemFrame(t *testing.T) {
 			if !strings.Contains(stderr.String(), "togi watch: ") || !strings.Contains(stderr.String(), tc.problem) {
 				t.Errorf("stderr %q, want watch error %q", stderr.String(), tc.problem)
 			}
+			// An unreadable journal is not a missing one, and a one-frame print never promises a retry.
+			frame := strings.Join(strings.Fields(stdout.String()), " ")
+			if strings.Contains(frame, "no session yet") || strings.Contains(frame, "retry") || !strings.Contains(frame, "can't read journal") {
+				t.Errorf("stdout %q, want an unreadable-journal frame without a retry promise", stdout.String())
+			}
 		})
 	}
 }

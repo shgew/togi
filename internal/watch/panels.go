@@ -808,8 +808,11 @@ func (s Snapshot) turnLines(t tables, width int, class sizeClass) []string {
 			if turn.confirm && core.confirm != nil {
 				n := core.confirm
 				what = fmt.Sprintf("confirm: light trial %d of %d", min(n.light+1, n.needed), n.needed)
-				if n.light >= n.needed {
-					what = fmt.Sprintf("confirm: heavy trial %d of %d", min(n.heavy+1, n.needed), n.needed)
+				switch {
+				case n.light >= n.needed && n.heavy >= n.needed:
+					what = "records the solo limit"
+				case n.light >= n.needed:
+					what = fmt.Sprintf("confirm: heavy trial %d of %d", n.heavy+1, n.needed)
 				}
 				sofar = fmt.Sprintf("light %d/%d, heavy %d/%d", n.light, n.needed, n.heavy, n.needed)
 			} else if note := ansi.Strip(core.noteLine(34)); note != "" {

@@ -556,7 +556,7 @@ func TestAllZeroRerunIsNamedForWhatItDecides(t *testing.T) {
 	if s.trial == nil || !s.trial.zeroRerun() {
 		t.Fatalf("trial in flight %+v", s.trial)
 	}
-	if got := s.story(time.Time{}).label; got != "RERUN AT CO 0" {
+	if got := s.story(time.Time{}, false).label; got != "RERUN AT CO 0" {
 		t.Fatalf("story label %q", got)
 	}
 	if got := ansi.Strip(s.operation(*s.trial)); got != "RERUN AT CO 0" {
@@ -634,6 +634,8 @@ func TestEveryTimeOnScreenIsLocal(t *testing.T) {
 
 	recovering := Project(cuts["recovering"])
 	require("recovering", MainView, "detected "+at(recovering.recover.bootAt, "15:04:05"))
+	crashed := Project(cuts["crashed"])
+	require("crashed", MainView, " · started "+at(crashed.trial.started, "15:04:05"))
 	hunt := Project(cuts["hunt"])
 	require("hunt", MainView, "started "+at(hunt.hunt.started, "15:04"))
 
