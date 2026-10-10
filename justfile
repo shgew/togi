@@ -254,17 +254,20 @@ ship: (_push-ready "ship" "gate it with just gate and push the stack with gh sta
     exec 9>&-
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Print the Go packages changed between a pushed head and HEAD, one per line: `./...` when go.mod or go.sum changed, nothing when no Go file did
+# Print the Go packages changed between a pushed head and HEAD, one per line: `./...` when go.mod or go.sum changed, nothing when no Go file did; a package whose Go files were deleted or moved away counts while it still has Go files at HEAD
 _touched-packages pushed:
     #!/usr/bin/env bash
     set -euo pipefail
-    files=$(git diff --name-only --diff-filter=d "$1" HEAD)
+    files=$(git diff --name-only --no-renames "$1" HEAD)
     if grep -qxE 'go\.(mod|sum)' <<<"$files"; then
         echo './...'
         exit
     fi
     { grep -E '\.go$' <<<"$files" || true; } | while IFS= read -r file; do
         dir=$(dirname "$file")
+        [[ "$dir" == . ]] && tree=HEAD: || tree="HEAD:$dir"
+        names=$(git ls-tree --name-only "$tree" 2>/dev/null) || continue
+        grep -qE '\.go$' <<<"$names" || continue
         [[ "$dir" == . ]] && echo . || echo "./$dir"
     done | sort -u
 
