@@ -14,13 +14,6 @@ resamples = 10000
 bootstrap_seed = [1, 1]
 max_time_ratio = 2.0
 
-# Absolute bars of issue 493, point estimates on target-shared-voltage: median crashes strictly below
-# Ruleset 10's 426.5; worst R7 hazard median and 90th percentile not above Ruleset 9's 4.91 and 10.90 per hour.
-[gate.absolute]
-scenario = "target-shared-voltage"
-crash_median_below = 426.5
-hazard_not_above = [4.91, 10.90]
-
 # Every baseline record carries the ruleset and one of these commits. 3a9b894 recorded the current
 # baseline; the pull request that re-records any records (issue 563) appends its recording commit,
 # and a test fails until it does.

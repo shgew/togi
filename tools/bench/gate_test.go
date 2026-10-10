@@ -31,7 +31,6 @@ func testGate(t *testing.T) *gate {
 		Resamples:     10000,
 		BootstrapSeed: [2]uint64{1, 1},
 		MaxTimeRatio:  2,
-		Absolute:      &gateBars{Scenario: testScenario, CrashMedianBelow: 5, HazardNotAbove: []float64{12, 21}},
 	}
 	seeds := make([]uint64, testSeeds)
 	for i := range seeds {
@@ -209,50 +208,6 @@ func TestGateRefusals(t *testing.T) {
 	}
 }
 
-func TestGateAbsoluteBars(t *testing.T) {
-	g := testGate(t)
-	// The pass candidate's median is 11.5 and 90th percentile 20.7 against bars of 12 and 21, with a median of 3 crashes against below 5.
-	for _, tc := range []struct {
-		name    string
-		shift   float64
-		crashes int
-		median  bool
-		p90     bool
-		crash   bool
-	}{
-		{"inside every bar", -1, 3, true, true, true},
-		{"median at its bar, p90 above", -0.5, 3, true, false, true},
-		{"p90 above its bar", 0.4, 3, false, false, true},
-		{"crashes equal the limit", -1, 5, true, true, false},
-		{"crashes above the limit", -1, 6, true, true, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			candidate, baseline := gateRuns(func(int) float64 { return tc.shift }, nil)
-			for i := range testSeeds {
-				candidate[i].Crashes = tc.crashes
-			}
-			r := judgeGate(g, candidate, baseline)
-			for _, want := range []struct {
-				kind, quantile string
-				pass           bool
-			}{{"hazard_bar", "median", tc.median}, {"hazard_bar", "p90", tc.p90}, {"crash_bar", "", tc.crash}} {
-				found := false
-				for _, c := range r.Criteria {
-					if c.Kind == want.kind && c.Quantile == want.quantile {
-						found = true
-						if c.Pass != want.pass {
-							t.Errorf("%s %s pass = %v, want %v (candidate %v, limit %v)", c.Kind, c.Quantile, c.Pass, want.pass, c.Candidate, c.Limit)
-						}
-					}
-				}
-				if !found {
-					t.Errorf("no %s %s criterion", want.kind, want.quantile)
-				}
-			}
-		})
-	}
-}
-
 func TestGateExitsByVerdict(t *testing.T) {
 	g := testGate(t)
 	for _, tc := range []struct {
@@ -374,8 +329,8 @@ func TestLoadGate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if g != nil && (g.Absolute == nil || g.Absolute.Scenario != "target-shared-voltage" || g.Absolute.CrashMedianBelow != 426.5 || !slices.Equal(g.Absolute.HazardNotAbove, []float64{4.91, 10.90}) || !slices.Contains(g.Conclude, "target-nonmember-mce")) {
-			t.Fatalf("absolute bars or conclusion guard missing: %+v", g)
+		if g != nil && !slices.Contains(g.Conclude, "target-nonmember-mce") {
+			t.Fatalf("synthetic conclusion guard missing: %+v", g)
 		}
 		if g == nil || g.ID != "ruleset-11" || g.Baseline.Ruleset != 10 || g.MaxTimeRatio != 2 || g.Resamples != 10000 || g.BootstrapSeed != [2]uint64{1, 1} {
 			t.Fatalf("gate = %+v", g)

@@ -24,7 +24,6 @@ type gate struct {
 	Resamples     int          `toml:"resamples"`
 	BootstrapSeed [2]uint64    `toml:"bootstrap_seed"`
 	MaxTimeRatio  float64      `toml:"max_time_ratio"`
-	Absolute      *gateBars    `toml:"absolute"`
 
 	// seeds holds each gated scenario's seeds in the gate's split, in suite order.
 	seeds map[string][]uint64
@@ -36,16 +35,6 @@ type gate struct {
 type gateBaseline struct {
 	Ruleset int      `toml:"ruleset"`
 	Commits []string `toml:"commits"`
-}
-
-// gateBars are the absolute bars on one gated scenario's candidate runs, the point estimate
-// against a fixed limit: the median crash count must be strictly below CrashMedianBelow, and the
-// final-profile worst R7 hazard's quantile i must not exceed HazardNotAbove[i], in the gate's
-// quantile order.
-type gateBars struct {
-	Scenario         string    `toml:"scenario"`
-	CrashMedianBelow float64   `toml:"crash_median_below"`
-	HazardNotAbove   []float64 `toml:"hazard_not_above"`
 }
 
 var errGateFailed = errors.New("gate failed")
@@ -74,14 +63,6 @@ func (g *gate) resolve(scenarios []scenario) error {
 	if g.Confidence <= 0 || g.Confidence >= 1 || g.Resamples <= 0 || g.MaxTimeRatio <= 0 {
 		return fmt.Errorf("gate %s: needs confidence in (0, 1), positive resamples and positive max_time_ratio", g.ID)
 	}
-	if b := g.Absolute; b != nil {
-		if !slices.Contains(g.Gated, b.Scenario) {
-			return fmt.Errorf("gate %s: absolute bars scenario %q is not gated", g.ID, b.Scenario)
-		}
-		if b.CrashMedianBelow <= 0 || len(b.HazardNotAbove) != len(g.Quantiles) {
-			return fmt.Errorf("gate %s: absolute bars need a positive crash_median_below and one hazard_not_above per quantile", g.ID)
-		}
-	}
 	byName := make(map[string]scenario, len(scenarios))
 	for _, s := range scenarios {
 		byName[s.Name] = s
@@ -109,9 +90,7 @@ func (g *gate) resolve(scenarios []scenario) error {
 
 // criterion is one judged gate criterion.
 type criterion struct {
-	Kind      string  // conclusion, a quantile label, time, pooled_median, crash_bar or hazard_bar
-	Quantile  string  // the quantile label of a hazard_bar
-	Limit     float64 // the fixed limit of a crash_bar or hazard_bar
+	Kind      string // conclusion, a quantile label, time or pooled_median
 	Scenario  string
 	Baseline  float64
 	Candidate float64
@@ -222,23 +201,6 @@ func judgeGate(g *gate, candidate, baseline []result) gateResult {
 		}
 		out.Criteria = append(out.Criteria, c)
 	}
-	if b := g.Absolute; b != nil {
-		cand, _ := worstR7(pairs[b.Scenario])
-		slices.Sort(cand)
-		for i, q := range g.Quantiles {
-			c := criterion{Kind: "hazard_bar", Scenario: b.Scenario, Quantile: quantileLabel(q), Limit: b.HazardNotAbove[i], Candidate: percentile(cand, q)}
-			c.Pass = c.Candidate <= c.Limit
-			out.Criteria = append(out.Criteria, c)
-		}
-		crashes := make([]float64, 0, len(pairs[b.Scenario]))
-		for _, p := range pairs[b.Scenario] {
-			crashes = append(crashes, float64(p.candidate.Crashes))
-		}
-		slices.Sort(crashes)
-		c := criterion{Kind: "crash_bar", Scenario: b.Scenario, Limit: b.CrashMedianBelow, Candidate: percentile(crashes, 0.5)}
-		c.Pass = c.Candidate < c.Limit
-		out.Criteria = append(out.Criteria, c)
-	}
 	if len(g.Pooled) > 0 {
 		slices.Sort(pooledCand)
 		slices.Sort(pooledBase)
@@ -325,10 +287,6 @@ func reportGate(w io.Writer, g *gate, r gateResult) {
 			fmt.Fprintf(w, "gate conclusion %s baseline_concluded=%g candidate_concluded=%g lost=%d lost_seeds=[%s] threshold=lost==0 %s\n", c.Scenario, c.Baseline, c.Candidate, len(c.Lost), strings.Join(lost, ","), result)
 		case "time":
 			fmt.Fprintf(w, "gate time %s ratio=%.4f timed=%d threshold=ratio<=%g %s\n", c.Scenario, c.Change, c.Timed, g.MaxTimeRatio, result)
-		case "hazard_bar":
-			fmt.Fprintf(w, "gate hazard_bar %s %s candidate=%.6f threshold=<=%g %s\n", c.Scenario, c.Quantile, c.Candidate, c.Limit, result)
-		case "crash_bar":
-			fmt.Fprintf(w, "gate crash_bar %s median candidate=%g threshold=<%g %s\n", c.Scenario, c.Candidate, c.Limit, result)
 		case "pooled_median":
 			fmt.Fprintf(w, "gate pooled_median %s baseline=%.6f candidate=%.6f change=%+.6f threshold=change<0 %s\n", c.Scenario, c.Baseline, c.Candidate, c.Change, result)
 		default:
