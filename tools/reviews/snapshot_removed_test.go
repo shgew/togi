@@ -22,7 +22,7 @@ func gitCalls(git *fakeRunner, prefix string) []string {
 	return out
 }
 
-// TestSnapshotRemovedPatchInheritedWithLaterLowerEdits: the old range had A (x = 1); the new base contains A, as itself or rewritten, and then a lower commit C edits x further. Comparing A with the new base shows x changing, which read by lines looks like the layer dropping A. Provenance comes first: A is inherited, so nothing of it is the layer's removal.
+// TestSnapshotRemovedPatchInheritedWithLaterLowerEdits: the old range had A (x = 1); the new base contains A, as itself or rewritten at another position, and then a lower commit C edits x further. Comparing A with the new base shows x changing, which read by lines looks like the layer dropping A. Provenance comes first: A is inherited, so nothing of it is the layer's removal. A rewrite is proven by a base commit with exactly A's changed lines; the log's first candidate differs only in whitespace and proves nothing.
 func TestSnapshotRemovedPatchInheritedWithLaterLowerEdits(t *testing.T) {
 	t.Parallel()
 	rangeDiff := "1:  aaa1111 < -:  ------- A, in the base\n2:  aaa2222 = 1:  bbb2222 D, another file\n"
@@ -30,11 +30,14 @@ func TestSnapshotRemovedPatchInheritedWithLaterLowerEdits(t *testing.T) {
 	// What reading by lines would see: C changed x on top of A, in the base and the head alike.
 	patches := map[string]string{
 		"aaa1111 aaa1111^": file + "@@ -5,3 +5,3 @@\n ctx\n-x = 1\n+x = 0\n tail\n",
+		"aaa1111^ aaa1111": file + "@@ -5,3 +5,3 @@\n ctx\n-x = 0\n+x = 1\n tail\n",
 		"aaa1111 -- x.go":  file + "@@ -6 +6 @@\n-x = 1\n+x = 2\n",
 	}
+	rewritten := "\x00\n\n" + file + "@@ -5,3 +5,3 @@\n ctx\n-x = 0\n+x =1\n tail\n" +
+		"\x00\n\n" + file + "@@ -9,3 +9,3 @@\n other\n-x = 0\n+x = 1\n end\n"
 	for name, r := range map[string]reReview{
-		"ancestor":   {ancestors: map[string]bool{"aaa1111": true}},
-		"equivalent": {equivalents: map[string]bool{"aaa1111": true}},
+		"ancestor":  {ancestors: map[string]bool{"aaa1111": true}},
+		"rewritten": {logs: map[string]string{"aaa1111": rewritten}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -61,17 +64,48 @@ func TestSnapshotRemovedPatchInheritedWithLaterLowerEdits(t *testing.T) {
 			if got := readFile(t, filepath.Join(dir, "delta.diff")); got != "" {
 				t.Errorf("delta.diff = %q, want empty", got)
 			}
-			if calls := gitCalls(git, "git diff"); len(calls) != 0 {
-				t.Errorf("git read lines of an inherited commit: %q", calls)
+			if calls := gitCalls(git, "git diff"); slices.ContainsFunc(calls, func(c string) bool { return strings.Contains(c, " -- ") }) {
+				t.Errorf("git traced the lines of an inherited commit: %q", calls)
 			}
 			if got, want := gitCalls(git, "git merge-base"), []string{"git merge-base --is-ancestor aaa1111 " + baseSHA}; !slices.Equal(got, want) {
 				t.Errorf("ancestry checks = %q, want %q", got, want)
 			}
-			wantCherry := name == "equivalent"
-			if got := len(gitCalls(git, "git cherry "+baseSHA+" aaa1111 aaa1111^")) == 1; got != wantCherry {
-				t.Errorf("patch-id check ran = %t, want %t: it is only asked when the commit is not an ancestor", got, wantCherry)
+			wantLog := name == "rewritten"
+			if got := len(gitCalls(git, "git log")) == 1; got != wantLog {
+				t.Errorf("rewrite check ran = %t, want %t: it is only asked when the commit is not an ancestor", got, wantLog)
 			}
 		})
+	}
+}
+
+// TestSnapshotRemovedPatchWhitespaceRewriteIsNoProof: the old range had A (x = "a b"); the new base has a commit that differs from A only in whitespace (x = "ab"), so patch IDs, as git cherry compares them, match. The values differ, so A is not inherited: its loss is traced by lines and its reversal is the layer's removal.
+func TestSnapshotRemovedPatchWhitespaceRewriteIsNoProof(t *testing.T) {
+	t.Parallel()
+	rangeDiff := "1:  aaa1111 < -:  ------- A, x = \"a b\"\n"
+	const file = "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n"
+	patches := map[string]string{
+		"aaa1111 aaa1111^": file + "@@ -5,3 +5,3 @@\n ctx\n-x = \"a b\"\n+x = 0\n tail\n",
+		"aaa1111^ aaa1111": file + "@@ -5,3 +5,3 @@\n ctx\n-x = 0\n+x = \"a b\"\n tail\n",
+		"aaa1111 -- x.go":  file + "@@ -6 +6 @@\n-x = \"a b\"\n+x = \"ab\"\n",
+	}
+	logs := map[string]string{"aaa1111": "\x00\n\n" + file + "@@ -5,3 +5,3 @@\n ctx\n-x = 0\n+x = \"ab\"\n tail\n"}
+	tl, git := reReview{body: previousBody(3, oldBaseSHA), rangeDiff: rangeDiff, patches: patches, logs: logs}.tools(t)
+	if err := runSnapshot(tl, []string{"--previous", previousURL, "700"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(gitCalls(git, "git log")) != 1 {
+		t.Fatalf("git calls = %q, want one rewrite check", git.joined())
+	}
+	dir := snapshotDir(tl)
+	m, err := readManifest(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Files) != 1 || m.Files[0].Path != "x.go" {
+		t.Errorf("files = %+v, want the traced removal of x.go", m.Files)
+	}
+	if got := readFile(t, filepath.Join(dir, "delta.diff")); !strings.Contains(got, "\n-x = \"a b\"\n") {
+		t.Errorf("delta.diff = %q, want the reversal of x = \"a b\"", got)
 	}
 }
 
@@ -92,7 +126,7 @@ func TestSnapshotRemovedPatchWithoutProvenanceIsTracedByLines(t *testing.T) {
 		kinds = append(kinds, strings.Fields(c)[1])
 	}
 	// fetch and range-diff come first.
-	if diff := cmp.Diff([]string{"merge-base", "cherry", "diff", "diff", "diff"}, kinds); diff != "" {
+	if diff := cmp.Diff([]string{"merge-base", "diff", "log", "diff", "diff"}, kinds); diff != "" {
 		t.Errorf("git calls after range-diff (-want +got):\n%s", diff)
 	}
 	m, err := readManifest(snapshotDir(tl))

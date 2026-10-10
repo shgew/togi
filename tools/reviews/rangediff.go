@@ -92,16 +92,23 @@ func classifyRange(git gitFunc, oldBase, oldHead, newBase, newHead string) (delt
 			// The patch left the range, but its effects may live on: a commit moved into the new base is inherited, not removed. The delta holds the reversal of only what neither the new base nor the new head keeps.
 			s.Status = "removed"
 			// A commit the new base contains, itself or rewritten, is inherited whatever lower commits did to its lines since.
-			inherited, err := inheritedBy(git, e.Old, newBase)
+			ancestor, err := isAncestor(git, e.Old, newBase)
 			if err != nil {
 				return deltaResult{}, err
 			}
-			if inherited {
+			if ancestor {
 				break
 			}
 			_, files, err := patch(e.Old, e.Old+"^")
 			if err != nil {
 				return deltaResult{}, err
+			}
+			rewritten, err := rewrittenInto(git, e.Old, newBase, files)
+			if err != nil {
+				return deltaResult{}, err
+			}
+			if rewritten {
+				break
 			}
 			kept, err := goneEffects(git, e.Old, newBase, newHead, files)
 			if err != nil {
@@ -375,8 +382,8 @@ func narrowHeader(f fileDiff, cur string, survives, modeLost, partial, hunks boo
 	return b.String()
 }
 
-// inheritedBy reports whether the new base already contains commit: as an ancestor, or, when the base was rewritten, as a commit with the same patch (git cherry). Git's exit status 1 means the commit is not an ancestor; any other failure is an error. Only proof counts; when none exists the removal is traced by its lines instead.
-func inheritedBy(git gitFunc, commit, base string) (bool, error) {
+// isAncestor reports whether the new base contains commit itself. Git's exit status 1 means it does not; any other failure is an error.
+func isAncestor(git gitFunc, commit, base string) (bool, error) {
 	_, err := git("merge-base", "--is-ancestor", commit, base)
 	if err == nil {
 		return true, nil
@@ -385,9 +392,49 @@ func inheritedBy(git gitFunc, commit, base string) (bool, error) {
 	if !errors.As(err, &exit) || exit.ExitCode() != 1 {
 		return false, fmt.Errorf("merge-base --is-ancestor %s %s: %w", commit, base, err)
 	}
-	out, err := git("cherry", base, commit, commit+"^")
-	if err != nil {
-		return false, fmt.Errorf("cherry %s %s: %w", base, commit, err)
+	return false, nil
+}
+
+// rewrittenInto reports whether the new base, which does not contain commit itself, contains it rewritten: a commit of the base that changes the files commit touches (those of files, its reversal) exactly as commit does. sameChanges is the proof: the same added and removed lines byte for byte, modes and binary contents, wherever the hunks sit. Patch IDs, as git cherry compares them, are no proof: they ignore whitespace, so "a b" and "ab" would match. When no proof exists the removal is traced by its lines instead.
+func rewrittenInto(git gitFunc, commit, base string, files []fileDiff) (bool, error) {
+	var specs []string
+	for _, f := range files {
+		for _, p := range []string{f.Path, f.OldPath} {
+			if spec := ":(literal)" + p; p != "" && !slices.Contains(specs, spec) {
+				specs = append(specs, spec)
+			}
+		}
 	}
-	return strings.HasPrefix(string(out), "- "), nil
+	if len(specs) == 0 {
+		return false, nil
+	}
+	exact := []string{"--no-color", "--no-ext-diff", "--no-renames", "--full-index"}
+	// Each commit of the base that touches those files, as its patch limited to them, after a NUL.
+	args := append(append([]string{"log", "--no-merges", "--no-show-signature", "-p", "--format=%x00"}, exact...), commit+".."+base, "--")
+	out, err := git(append(args, specs...)...)
+	if err != nil {
+		return false, fmt.Errorf("log %s..%s: %w", commit, base, err)
+	}
+	candidates := strings.Split(string(out), "\x00")[1:]
+	if len(candidates) == 0 {
+		return false, nil
+	}
+	out, err = git(append(append([]string{"diff"}, exact...), commit+"^", commit)...)
+	if err != nil {
+		return false, fmt.Errorf("diff %s^ %s: %w", commit, commit, err)
+	}
+	own, err := parseDiff(string(out))
+	if err != nil {
+		return false, fmt.Errorf("diff %s^ %s: %w", commit, commit, err)
+	}
+	for _, c := range candidates {
+		theirs, err := parseDiff(strings.TrimLeft(c, "\n"))
+		if err != nil {
+			return false, fmt.Errorf("log %s..%s: %w", commit, base, err)
+		}
+		if sameChanges(own, theirs) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

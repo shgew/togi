@@ -357,8 +357,9 @@ type reReview struct {
 	login string
 	// onAPI and onGit run before a gh api or git call is answered.
 	onAPI, onGit func(args []string)
-	// ancestors are the removed commits the new base contains; equivalents those it contains in a rewritten form. Any other commit is neither.
-	ancestors, equivalents map[string]bool
+	// ancestors are the removed commits the new base contains itself. logs answers the new base's log of a removed commit: what git log -p prints, one NUL-led patch per commit, for the base's commits that touch its files; none when a commit has no key.
+	ancestors map[string]bool
+	logs      map[string]string
 	// ancestryErr makes the ancestry check of a commit fail with the error.
 	ancestryErr map[string]error
 }
@@ -408,15 +409,14 @@ func (r reReview) tools(t *testing.T) (tools, *fakeRunner) {
 				return nil, nil
 			}
 			return nil, fmt.Errorf("git merge-base: %w", exitStatus(1))
-		case "cherry":
-			// git cherry <newBase> <commit> <commit>^: "- " marks a commit with an equivalent in the base.
-			if len(args) != 4 || args[1] != baseSHA || args[3] != args[2]+"^" {
+		case "log":
+			// git log ... <commit>..<newBase> -- :(literal)<path>...
+			at := slices.Index(args, "--")
+			commit, base, ok := strings.Cut(args[max(at-1, 0)], "..")
+			if at < 1 || !ok || base != baseSHA || len(args) == at+1 {
 				return nil, fmt.Errorf("unexpected git %v", args)
 			}
-			if r.equivalents[args[2]] {
-				return []byte("- " + args[2] + "\n"), nil
-			}
-			return []byte("+ " + args[2] + "\n"), nil
+			return []byte(r.logs[commit]), nil
 		case "diff":
 			n := len(args)
 			if at := slices.Index(args, "--"); at >= 0 {
