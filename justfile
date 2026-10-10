@@ -258,11 +258,14 @@ ship: (_push-ready "ship" "gate it with just gate and push the stack with gh sta
 _touched-packages pushed:
     #!/usr/bin/env bash
     set -euo pipefail
-    git diff --name-only --diff-filter=d "$1" HEAD | while IFS= read -r file; do
-        case "$file" in
-            go.mod | go.sum) echo './...' ;;
-            *.go) dir=$(dirname "$file"); [[ "$dir" == . ]] && echo . || echo "./$dir" ;;
-        esac
+    files=$(git diff --name-only --diff-filter=d "$1" HEAD)
+    if grep -qxE 'go\.(mod|sum)' <<<"$files"; then
+        echo './...'
+        exit
+    fi
+    { grep -E '\.go$' <<<"$files" || true; } | while IFS= read -r file; do
+        dir=$(dirname "$file")
+        [[ "$dir" == . ]] && echo . || echo "./$dir"
     done | sort -u
 
 # Push a fix to a pull request under review: format, lint, run `just focus` on the packages changed since the last pushed head, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
