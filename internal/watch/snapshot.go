@@ -388,6 +388,10 @@ func (p *projector) cyclePlan(cp tuner.CyclePlan) {
 	}
 	if s.recover != nil && s.recover.trial != nil {
 		tr := s.recover.trial
+		if tr.step == 0 {
+			// The trial ran in the step the cycle was at when it ended; a backoff since then may have moved it.
+			tr.step = p.steps[tr.id]
+		}
 		p.placeInCycle(tr)
 		if count, ok := p.counts[tr.id]; ok {
 			tr.index, tr.of = count.index, count.of
@@ -658,6 +662,9 @@ func (p *projector) combinations() {
 
 func (p *projector) forecasts(forecast tuner.ForecastPlan) {
 	p.s.next = atStep(forecast.Next, forecast.NextStep)
+	if p.s.cycle != nil {
+		p.s.cycle.resume = forecast.Resume
+	}
 	for _, b := range forecast.Branches {
 		pr := ifPasses
 		switch b.Premise {

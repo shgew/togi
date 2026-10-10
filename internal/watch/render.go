@@ -651,12 +651,13 @@ func (s Snapshot) cycleStage(name string, short bool) string {
 	case g.paused || s.hunt != nil:
 		cycle = amber.Render("○ ") + textStyle.Render(name)
 		if short {
-			cycle += amber.Render(fmt.Sprintf(" paused at %d/%d", min(g.current+1, len(g.steps)), len(g.steps)))
+			cycle += amber.Render(fmt.Sprintf(" paused at %d/%d", min(g.resumeStep()+1, len(g.steps)), len(g.steps)))
 			break
 		}
-		at := fmt.Sprintf("  paused at step %d of %d", min(g.current+1, len(g.steps)), len(g.steps))
-		if g.current < len(g.steps) && len(g.steps[g.current].parts) > 1 {
-			if part := firstOpenPart(g.steps[g.current]); part > 0 {
+		resume := g.resumeStep()
+		at := fmt.Sprintf("  paused at step %d of %d", min(resume+1, len(g.steps)), len(g.steps))
+		if resume < len(g.steps) && len(g.steps[resume].parts) > 1 {
+			if part := firstOpenPart(g.steps[resume]); part > 0 {
 				at += fmt.Sprintf(", part %d", part)
 			}
 		}
@@ -666,7 +667,7 @@ func (s Snapshot) cycleStage(name string, short bool) string {
 		if short {
 			break
 		}
-		step := min(g.current+1, len(g.steps))
+		step := min(g.resumeStep()+1, len(g.steps))
 		t := s.trial
 		if t != nil && t.cycle == g.number && t.step > 0 {
 			step = t.step
