@@ -11,6 +11,22 @@ import (
 // derived requests, which cost a pass over the ledger. It costs a recomputation of what the memos save: tests and
 // tools/sim --check-memos call it, togi run never does.
 func CheckMemos(s *State, deep bool) error {
+	if err := s.checkCheckingMemos(); err != nil {
+		return err
+	}
+	if err := s.checkFailureMemos(); err != nil {
+		return err
+	}
+	if !deep {
+		return nil
+	}
+	if err := s.checkLedgerIndexes(); err != nil {
+		return err
+	}
+	return s.checkDerivedRequests()
+}
+
+func (s *State) checkCheckingMemos() error {
 	g := &s.checking
 	if s.reqByStep != nil && s.reqEpoch == s.checkingEpoch {
 		for step, got := range s.reqByStep {
@@ -39,6 +55,10 @@ func CheckMemos(s *State, deep bool) error {
 			}
 		}
 	}
+	return nil
+}
+
+func (s *State) checkFailureMemos() error {
 	for seq, p := range s.failurePos {
 		want := -1
 		s.eachFailureEntry(p.class, seq, func(i int) {
@@ -69,9 +89,10 @@ func CheckMemos(s *State, deep bool) error {
 			return fmt.Errorf("phases settled but phaseNext decides %+v", a.Payload)
 		}
 	}
-	if !deep {
-		return nil
-	}
+	return nil
+}
+
+func (s *State) checkLedgerIndexes() error {
 	for k, entries := range s.ledger {
 		var want []int
 		for i, e := range entries {
@@ -93,6 +114,10 @@ func CheckMemos(s *State, deep bool) error {
 	if !reflect.DeepEqual(measurements, fresh) && (len(measurements) != 0 || len(fresh) != 0) {
 		return fmt.Errorf("measurement index = %v, want %v", measurements, fresh)
 	}
+	return nil
+}
+
+func (s *State) checkDerivedRequests() error {
 	bySeq := map[int]entry{}
 	for _, entries := range s.ledger {
 		for _, e := range entries {
