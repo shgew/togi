@@ -73,7 +73,7 @@
             runHook postCheck
           '';
           # Each shard of the bench suite takes about 200 s on a four-CPU runner (docs/benchmarking.md).
-          simVerifyShards = 4;
+          simVerifyShards = 2;
           togi =
             rev:
             pkgs.buildGo127Module {
