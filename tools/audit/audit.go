@@ -41,6 +41,10 @@ type auditor struct {
 	trials          map[string]*journal.TrialIntent
 	hunts           map[int][]int
 	zeroNamed       map[int]int
+	// build is the build of the latest config.loaded, or of session.start before the first.
+	build journal.Build
+	// rebuilt is a state.rebuilt without last_seq awaiting its run's config.loaded.
+	rebuilt *journal.Event
 }
 
 // auditEvents deliberately does not use tuner predicates or projected failure marks.
@@ -52,6 +56,7 @@ func auditEvents(events []journal.Event, closed bool) []violation {
 	// A live real journal may be read between a write and its readback.
 	if closed {
 		a.flushWrites()
+		a.flushRebuild()
 		if len(events) > 0 && !a.lastStop {
 			a.add(events[len(events)-1], "termination", "finished simulated run has neither conclusion nor dead end with a reason")
 		}
@@ -71,6 +76,8 @@ func (a *auditor) fold(e journal.Event) {
 		slices.Sort(a.cores)
 	}
 	if e.Boot != a.boot {
+		// The rebuild's run records config.loaded in its own boot.
+		a.flushRebuild()
 		// journal.md rule 2: a reboot may interrupt a write before its readback.
 		clear(a.pending)
 		a.boot = e.Boot
@@ -85,6 +92,7 @@ func (a *auditor) fold(e journal.Event) {
 	a.foldMarks(e)
 	a.checkChosenOffsets(e)
 	a.foldWrites(e)
+	a.foldBuild(e)
 	a.foldConclusion(e)
 	a.seen[e.Seq] = e
 }
@@ -116,9 +124,39 @@ func (a *auditor) foldConclusion(e journal.Event) {
 	case *journal.SessionWarning:
 		// Nonfatal projection warnings may follow the final shutdown.
 		a.lastStop = previous
+	}
+}
+
+// foldBuild judges a state.rebuilt that omits last_seq: a current snapshot disagreed with replay. A run checks its
+// snapshot before it records config.loaded, so that run's config.loaded names the build that replayed. A build other
+// than the previous run's may project fields an older snapshot lacks, which is a legitimate upgrade; the same build
+// disagreeing with its own current snapshot is a violation.
+func (a *auditor) foldBuild(e journal.Event) {
+	switch p := e.Data.(type) {
+	case *journal.SessionStart:
+		a.build = p.Build
+	case *journal.ConfigLoaded:
+		if a.rebuilt != nil && a.build == p.Build {
+			a.add(*a.rebuilt, "replay", "state.rebuilt records disagreement with a current state.json snapshot")
+		}
+		a.rebuilt = nil
+		a.build = p.Build
 	case *journal.StateRebuilt:
 		if !slices.Contains(p.Fields, "last_seq") {
-			a.add(e, "replay", "state.rebuilt records disagreement with a current state.json snapshot")
+			a.flushRebuild()
+			a.rebuilt = &e
 		}
+	case *journal.Shutdown, *journal.DeadEnd, *journal.SessionArchived:
+		a.flushRebuild()
+	}
+}
+
+// flushRebuild flags a rebuild whose run ended without config.loaded, so no build change explains it. A run ends at
+// its shutdown, a dead end, a session archive or a later boot; a finished simulated journal ends its last run. A live
+// real journal may be read before its run records config.loaded, so a rebuild pending at its end is deferred.
+func (a *auditor) flushRebuild() {
+	if a.rebuilt != nil {
+		a.add(*a.rebuilt, "replay", "state.rebuilt records disagreement with a current state.json snapshot")
+		a.rebuilt = nil
 	}
 }

@@ -140,14 +140,14 @@ func TestDeepeningChecksSayHowTheyLoad(t *testing.T) {
 	t.Parallel()
 	alone := cutTrial(t, probeEvents(t), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })
 	text := ansi.Strip(Render(Project(alone), 240, 67, cutTime(alone)))
-	if !strings.Contains(text, "DEEPEN · ROUND 1 · CORE 00 AT -11 · LIGHT") || !strings.Contains(text, "Core 00 runs alone at its proposed -11") || strings.Contains(text, "solo limit, one turn at a time") {
+	if !strings.Contains(text, "PHASE 2 · ROUND 1 · CORE 00 AT -11 · LIGHT") || !strings.Contains(text, "Core 00 runs alone at its proposed -11") || strings.Contains(text, "solo limit, one turn at a time") {
 		t.Fatalf("a deepened core's light check runs alone as part of its round, not as a solo-limit search:\n%s", text)
 	}
 	together := cutTrial(t, simulated(t, combinationJournal), func(p *journal.TrialIntent) bool {
 		return p.Phase == journal.PhaseDeepening && p.Regime == machine.R7
 	})
 	text = ansi.Strip(Render(Project(together), 240, 67, cutTime(together)))
-	if !strings.Contains(text, "DEEPEN · ROUND") || strings.Contains(text, " alone at ") {
+	if !strings.Contains(text, "PHASE 2 · ROUND") || strings.Contains(text, " alone at ") {
 		t.Fatalf("R7 deepening checks run with the proposed profile applied, not alone:\n%s", text)
 	}
 }

@@ -212,8 +212,8 @@ func TestForecastWaitsForInitialCorePhases(t *testing.T) {
 			t.Fatal(diff)
 		}
 		s := replayState(events[:n])
-		if len(s.DeepeningPlan().Room) != 0 {
-			t.Fatal("uninitialized core was given room")
+		if plan := s.PhasePlan(); plan != nil && len(plan.Candidates) != 0 {
+			t.Fatal("uninitialized core was made a phase 2 candidate")
 		}
 	}
 }

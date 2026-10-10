@@ -58,24 +58,47 @@ func stageMarker(mark string) string {
 	return track.Render(mark)
 }
 
+// contextLines is the BIOS profile with the panel under it: a hunt, the search turns, or the activity. The profile is
+// always shown; the panel under it keeps the rows it leaves.
 func (s Snapshot) contextLines(p layout, now time.Time) []string {
+	var panel []string
+	switch {
+	case s.hunt != nil:
+		panel = s.huntLines(p.tables, p.context.w, p.class, now)
+	case len(s.turns) > 0:
+		panel = s.turnLines(p.tables, p.context.w, p.class)
+	}
+	bios := s.biosLines(p.context.w, p.class)
+	if len(bios) == 0 {
+		if panel != nil {
+			return panel
+		}
+		return s.activityLines(p)
+	}
+	p.context.h -= len(bios) + 1
+	if panel != nil {
+		if len(panel) > p.context.h && p.class == compactLayout {
+			// The compact size has no rows to spare under the profile: the panel gives up its blank rows first.
+			panel = slices.DeleteFunc(slices.Clone(panel), func(row string) bool { return ansi.Strip(row) == "" })
+		}
+		return append(append(bios, ""), boundedRows(panel, p.context.h)...)
+	}
+	return append(append(bios, ""), s.activityLines(p)...)
+}
+
+// activityLines is the context panel below the BIOS profile: the open round, or the cycle, the combinations and R7.
+func (s Snapshot) activityLines(p layout) []string {
 	w, t := p.context.w, p.tables
-	if s.hunt != nil {
-		return s.huntLines(t, w, p.class, now)
-	}
-	if len(s.turns) > 0 {
-		return s.turnLines(t, w, p.class)
-	}
 	r7 := s.r7Lines(p)
+	if s.phase == journal.PhaseDeepening && s.phases != nil && s.phases.round > 0 {
+		return s.roundLines(p, r7)
+	}
 	room := p.context.h
 	if len(r7) > 0 {
 		room -= len(r7) + 1
 	}
 	// lines also returns the running part's row, or -1.
 	lines := func(height int) ([]string, int) {
-		if s.phase == journal.PhaseDeepening && s.deepen != nil {
-			return s.deepenLines(t, w), -1
-		}
 		var out []string
 		focus := -1
 		if s.cycle != nil {
@@ -106,6 +129,21 @@ func (s Snapshot) contextLines(p layout, now time.Time) []string {
 		out = append(out, "")
 	}
 	return append(out, r7...)
+}
+
+// roundLines is the open phase 2 round with the R7 lines under it. The round's heading, its bound and its candidates
+// come first: R7 keeps its rows only when they fit under all of those, and the round's checks give up rows before it.
+// Rows cut off the round end with a "+N more" row, so cutting any needs a row beyond the candidates.
+func (s Snapshot) roundLines(p layout, r7 []string) []string {
+	out, head := s.phase2Lines(p.tables, p.context.w)
+	if len(r7) == 0 {
+		return boundedRows(out, p.context.h)
+	}
+	room := p.context.h - len(r7) - 1
+	if room < len(out) && room < head+1 {
+		return boundedRows(out, p.context.h)
+	}
+	return append(append(boundedRows(out, room), ""), r7...)
 }
 
 // cycleLines keeps the running part, or else the current step, within height rows: it leaves out the rows above it
@@ -833,28 +871,95 @@ func (s Snapshot) turnLines(t tables, width int, class sizeClass) []string {
 	return out
 }
 
-func (s Snapshot) deepenLines(t tables, width int) []string {
-	d := s.deepen
-	out := []string{rule(width, grey.Render(fmt.Sprintf("DEEPEN · ROUND %d", d.round)), ""), ""}
-	if d.waiting {
-		out = append(out, textStyle.Render("Waiting for a passed full cycle."))
+// biosLines is the profile to enter in BIOS, one row per CCD in slot order, with a star on every unconfirmed offset.
+// The compact layout has no rows to spare for saying that phase 1 has confirmed nothing: its phase 1 stage says so.
+func (s Snapshot) biosLines(width int, class sizeClass) []string {
+	if s.phases == nil {
+		return nil
 	}
-	out = append(out, fieldRow(t, "has room", textStyle.Render(coreIDs(d.room)+" · in this order"), width))
-	for i, target := range d.profile {
-		if i >= len(s.cores) || target == s.cores[i].profile {
-			continue
-		}
-		verb := "goes deeper"
-		if target > s.cores[i].profile {
-			verb = "yields"
-		}
-		out = append(out, fieldRow(t, "move", textStyle.Render(fmt.Sprintf("core %02d %s: %d → %d", s.cores[i].id, verb, s.cores[i].profile, target)), width))
+	if s.bios == nil && class == compactLayout {
+		return nil
 	}
+	if s.bios == nil {
+		return []string{rule(width, grey.Render("BIOS PROFILE"), ""), cutWords(grey.Render("none confirmed yet: phase 1 has not passed a full cycle"), width)}
+	}
+	b := s.bios
+	left, right := grey.Render("BIOS PROFILE"), grey.Render(fmt.Sprintf("confirmed by the cycle ending #%d", b.confirmed))
+	if class == compactLayout {
+		right = grey.Render(fmt.Sprintf("confirmed #%d", b.confirmed))
+	}
+	if len(b.unconfirmed) > 0 {
+		right = amber.Render(fmt.Sprintf("UNCONFIRMED since #%d · cores %s", b.since, coreIDs(b.unconfirmed)))
+		if class == compactLayout {
+			right = amber.Render(fmt.Sprintf("UNCONFIRMED since #%d", b.since))
+		}
+	}
+	out := []string{rule(width, left, right)}
+	var ccds []int
+	cells := map[int][]string{}
+	slots := map[int][]int{}
+	for i, c := range s.cores {
+		if i >= len(b.offsets) {
+			break
+		}
+		if _, ok := cells[c.ccd]; !ok {
+			ccds = append(ccds, c.ccd)
+		}
+		cell, style := fmt.Sprintf("%4d ", b.offsets[i]), textStyle
+		if slices.Contains(b.unconfirmed, c.id) {
+			cell, style = fmt.Sprintf("%4d*", b.offsets[i]), amber
+		}
+		cells[c.ccd] = append(cells[c.ccd], style.Render(cell))
+		slots[c.ccd] = append(slots[c.ccd], c.id%8)
+	}
+	slices.Sort(ccds)
+	if len(ccds) > 0 {
+		var header strings.Builder
+		for _, slot := range slots[ccds[0]] {
+			fmt.Fprintf(&header, "%4d ", slot)
+		}
+		out = append(out, grey.Render("slot   ")+grey.Render(header.String()))
+	}
+	for _, ccd := range ccds {
+		out = append(out, grey.Render(fmt.Sprintf("CCD %d  ", ccd))+strings.Join(cells[ccd], ""))
+	}
+	if len(b.unconfirmed) > 0 {
+		out = append(out, cutWords(amber.Render("* ")+grey.Render("not confirmed: a passed cycle confirms it, unless held"), width))
+	}
+	return out
+}
+
+// phase2Lines is the open round: its candidates with their gaps, the bound on what is left, and its checks. It also
+// returns how many leading rows are the heading, the bound and the candidates, which the panel keeps first.
+func (s Snapshot) phase2Lines(t tables, width int) ([]string, int) {
+	d := s.phases
+	out := []string{rule(width, grey.Render(fmt.Sprintf("PHASE 2 · ROUND %d", d.round)), ""), "", cutWords(grey.Render(fmt.Sprintf("at most %s left, then one full cycle", plural(d.roundsLeft, "round"))), width)}
+	type shape struct {
+		offset, solo, gap int
+		moving            bool
+	}
+	var shapes []shape
+	groups := map[shape][]int{}
+	for _, c := range d.candidates {
+		k := shape{c.Offset, c.SoloLimit, c.Gap, c.Moving}
+		if _, ok := groups[k]; !ok {
+			shapes = append(shapes, k)
+		}
+		groups[k] = append(groups[k], c.Core)
+	}
+	for _, k := range shapes {
+		note := grey.Render("  checked again in place")
+		if k.moving {
+			note = grey.Render("  moving")
+		}
+		out = append(out, cutWords(textStyle.Render(fmt.Sprintf("%s %s  %d → solo %d  gap %d", noun(len(groups[k]), "core"), coreIDs(groups[k]), k.offset, k.solo, k.gap))+note, width))
+	}
+	head := len(out)
 	out = append(out, "", grey.Render("CHECKS"))
 	for _, check := range d.checks {
 		out = append(out, cutWords(textStyle.Render(fmt.Sprintf("%s on %s  %d/%d passed", check.Regime, coreIDs(check.Cores), check.Passes, check.Needed))+"  "+grey.Render(workloadLabel(check.Workload)), width))
 	}
-	return out
+	return out, head
 }
 
 // numberRanges writes numbers compactly: a run of consecutive numbers becomes a range.

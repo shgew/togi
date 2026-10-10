@@ -41,9 +41,11 @@ var topHelp = helpSection{"THE TOP LINE", []helpItem{
 
 var tuningHelp = helpSection{"WHAT TOGI DOES", []helpItem{
 	{"SOLO LIMITS", "Search: each core alone, the rest at 0, finds its solo limit. The stage counts the cores whose solo limit is found and names the core being searched or confirmed."},
-	{"CYCLES", "Checking: every core at its offset together, through the steps of a cycle. The stage shows the cycle's number and step; the cycle panel lists its steps and R7 parts."},
+	{"PHASE 1", "Search, then the first full cycle with every core one count shallower than its solo limit. Its pass confirms the first BIOS profile."},
 	{"HUNT", "An amber detour: parked trials that find the core or combination behind a failure. The hunt panel shows its groups and member probes."},
-	{"DEEPEN", "Deepening: rounds that move the profile deeper, as far as its failure points and combinations permit. The stage shows the round."},
+	{"PHASE 2", "Rounds that move each candidate one count toward its solo limit, as far as its failure points and combinations permit, then one confirmation cycle. A round lists its candidates, their gaps and the most rounds left if none fails."},
+	{"BIOS PROFILE", "The profile to enter in BIOS, one row per CCD in slot order. A * marks an offset not yet confirmed: the profile changed after the last passed full cycle. A passed full cycle confirms it, except for a core a held failure still shows stepped back: that offset stays marked until the hold expires (the core then shows its held offset again) or a second failure steps it back for good."},
+	{"CYCLE", "Checking: every core at its offset together, through the steps of a cycle. The stage shows the cycle's number and step; the cycle panel lists its steps and R7 parts."},
 	{"CLEAN CYCLES", "The count of clean cycles still valid for the current profile; checking repeats cycles until stopped."},
 	{"R6", "During idle trials this screen holds still, clock included, so it cannot wake the cores."},
 	{"NO ETA", "A hunt can start at any time, so togi shows only what is scheduled and the time left in the current trial."},

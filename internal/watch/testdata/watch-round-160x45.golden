@@ -1,12 +1,12 @@
   togi   15:15:40   session 15h15m   8 failures · 8 crashes   last observed failure 08:22, 6h53m ago
 
-  ■ SOLO LIMITS  16/16  ───  ■ CYCLE 1  ───  ► DEEPEN  round 1  ───  CLEAN CYCLES 0  · repeats until stopped
+  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ► PHASE 2  round 1 · at most 1 left  ───  CLEAN CYCLES 0  ───  ■ CYCLE 1
 
-  ▌  DEEPEN · ROUND 1   Deepening check: core 00 alone at its proposed -11.       last trial      PASS  15:00 on 00-15 · Tctl max 67°C
+  ▌  PHASE 2 · ROUND 1   Round check: core 00 alone at its proposed -11.          last trial      PASS  15:00 on 00-15 · Tctl max 67°C
 
 
   NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0462
-   R1   light load  on core 00 alone at -11   mprime SSE 4K-21K · 1 worker                                          DEEPEN · ROUND 1 · CORE 00 AT -11 · LIGHT
+   R1   light load  on core 00 alone at -11   mprime SSE 4K-21K · 1 worker                                         PHASE 2 · ROUND 1 · CORE 00 AT -11 · LIGHT
   ███████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
 
   if 5 of 5 pass       next: deepening round 1: R2 heavy vector on core 00 alone at -11
@@ -17,24 +17,24 @@
   ► 00  -11  HAS ROOM  ▄▄▄▄▄▄                                                       08    0  HAS ROOM  ······                   
     01    0  HAS ROOM  ······                                                       09    0  HAS ROOM  ······                   
     02    0  HAS ROOM  ······                                                       10    0  HAS ROOM  ······                   
-    03    0  HAS ROOM  ······                                                       11    0  AT LIMIT  ····░·                             C1 · solo -10
+    03    0  HAS ROOM  ······                                                       11    0  AT LIMIT  ····░░                             C1 · solo -11
     04    0  HAS ROOM  ······                                                       12    0  HAS ROOM  ······                   
     05    0  HAS ROOM  ······                                                       13    0  HAS ROOM  ······                   
     06    0  HAS ROOM  ······                                                       14    0  HAS ROOM  ······                   
     07    0  HAS ROOM  ······                                                       15    0  HAS ROOM  ······                   
 
-  DEEPEN · ROUND 1 ──────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
-
-  has room    00-10 12-15 · in this order                                         15:15  room     core 15 -10 → -11
-                                                                                  15:15  room     core 07 -10 → -11
-  CHECKS                                                                          15:15  room     core 14 -10 → -11
-  R1 on 00  0/5 passed  mprime SSE 4K-21K                                         15:15  room     core 06 -10 → -11
-  R2 on 00  0/5 passed  mprime AVX2 36K-248K                                      15:15  room     core 13 -10 → -11
-  R1 on 08  0/5 passed  mprime SSE 4K-21K                                         15:15  room     core 05 -10 → -11
-  R2 on 08  0/5 passed  mprime AVX2 36K-248K                                      15:15  room     core 12 -10 → -11
-  R1 on 01  0/5 passed  mprime SSE 4K-21K                                         15:15  room     core 04 -10 → -11
-  R2 on 01  0/5 passed  mprime AVX2 36K-248K                                      15:15  room     core 03 -10 → -11
-  +30 more                                                                        15:15  room     core 10 -10 → -11
+  BIOS PROFILE ────────────────────────── confirmed by the cycle ending #3382     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+  slot      0    1    2    3    4    5    6    7 
+  CCD 0   -10  -10  -10  -10  -10  -10  -10  -10                                  15:15  room     core 15 -10 → -11
+  CCD 1   -10  -10  -10   -9  -10  -10  -10  -10                                  15:15  room     core 07 -10 → -11
+                                                                                  15:15  room     core 14 -10 → -11
+  PHASE 2 · ROUND 1 ─────────────────────────────────────────────────────────     15:15  room     core 06 -10 → -11
+                                                                                  15:15  room     core 13 -10 → -11
+  at most 1 round left, then one full cycle                                       15:15  room     core 05 -10 → -11
+  cores 00-10 12-15  -10 → solo -11  gap 1  moving                                15:15  room     core 12 -10 → -11
+                                                                                  15:15  room     core 04 -10 → -11
+  CHECKS                                                                          15:15  room     core 03 -10 → -11
+  +36 more                                                                        15:15  room     core 10 -10 → -11
                                                                                   15:15  room     core 02 -10 → -11
   R7 ───────────────────── top requesters ───── self-sufficient ─────────────     15:15  room     core 09 -10 → -11
   mprime AVX2 36K-248K     00-07 11 by offset   11                                15:15  room     core 01 -10 → -11

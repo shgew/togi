@@ -147,7 +147,7 @@ func TestRunRefusesHostLockBeforeHardwareAndCarry(t *testing.T) {
 	}
 	var stderr bytes.Buffer
 	bootloader := &clearingBootloader{}
-	code := runHardware(context.Background(), &g, config.Default(), false, bootloader, 0, &stderr, render.Renderer{}, nil, newMachine)
+	code := runHardware(context.Background(), &g, config.Default(), false, bootloader, runLimits{}, &stderr, render.Renderer{}, nil, newMachine)
 	if diff := cmp.Diff(exitLocked, code); diff != "" {
 		t.Errorf("contention exit (-want +got): %s; stderr %s", diff, stderr.String())
 	}
@@ -191,7 +191,7 @@ func TestRunRefusesUnsafeHostLockBeforeHardwareAndCarry(t *testing.T) {
 			}
 			bootloader := &clearingBootloader{}
 			var stderr bytes.Buffer
-			code := runHardware(context.Background(), &g, config.Default(), false, bootloader, 0, &stderr, render.Renderer{}, nil, newMachine)
+			code := runHardware(context.Background(), &g, config.Default(), false, bootloader, runLimits{}, &stderr, render.Renderer{}, nil, newMachine)
 			if code != exitError || !strings.Contains(stderr.String(), g.hostLockPath) {
 				t.Fatalf("unsafe lock: exit %d, stderr %s", code, stderr.String())
 			}
@@ -287,7 +287,7 @@ func TestRunRefusesIdentityBeforeBIOSOrSMUAccess(t *testing.T) {
 			}
 			bootloader := &clearingBootloader{}
 			var stderr bytes.Buffer
-			code := runHardware(context.Background(), &g, config.Default(), false, bootloader, 0, &stderr, render.Renderer{}, nil, newMachine)
+			code := runHardware(context.Background(), &g, config.Default(), false, bootloader, runLimits{}, &stderr, render.Renderer{}, nil, newMachine)
 			if code != exitPreflight || !strings.Contains(stderr.String(), detail) {
 				t.Fatalf("identity refusal: exit %d, stderr %s", code, stderr.String())
 			}
@@ -337,7 +337,7 @@ func TestRunReportsConstructionError(t *testing.T) {
 		return machine.Machine{}, errors.New("read CPU topology: unavailable")
 	}
 	var stderr bytes.Buffer
-	code := runHardware(context.Background(), &g, config.Default(), false, nil, 0, &stderr, render.Renderer{}, nil, newMachine)
+	code := runHardware(context.Background(), &g, config.Default(), false, nil, runLimits{}, &stderr, render.Renderer{}, nil, newMachine)
 	if code != exitError || !strings.Contains(stderr.String(), "read CPU topology: unavailable") {
 		t.Fatalf("construction error: exit %d, stderr %s", code, stderr.String())
 	}
@@ -366,7 +366,7 @@ func TestRunOpensJournalBeforeShowingDashboard(t *testing.T) {
 		return m.Seams(), nil
 	}
 	var stderr bytes.Buffer
-	code := runHardware(context.Background(), &g, config.Default(), false, nil, 0, &stderr, render.Renderer{}, dash, newMachine)
+	code := runHardware(context.Background(), &g, config.Default(), false, nil, runLimits{}, &stderr, render.Renderer{}, dash, newMachine)
 	if diff := cmp.Diff(exitError, code); diff != "" {
 		t.Errorf("journal open exit (-want +got): %s", diff)
 	}

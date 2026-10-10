@@ -260,7 +260,7 @@ Illustrative journal sequence, not a recorded run: on two CCDs at the defaults, 
 
 Other classes' earlier passes remain usable if they cover Q and have not been invalidated. If a failure or profile change leaves some class uncovered, only its unmet requirements need more trials. The five short and one long launches above are not a universal cost: eligible carried passes or live passes after the obligation's failure boundary can reduce it.
 
-A clean cycle is a passed full cycle that ends at or after phase 2's conclusion ([Phase 2](#phase-2)). The phase-1 cycle never counts, and no earlier cycle is credited: a cycle is not ended early because an earlier one covers its profile. `run --cycles N` checks its stop rule before starting the next cycle and stops after N clean cycles: `--cycles 1` stops right after the confirmation cycle, and a larger N counts further cycles of indefinite checking. Without the flag checking continues indefinitely. `status` reports the clean cycles, their count and the latest one's number. A clean cycle establishes workload breadth, not a guarantee against rare failures or untested real use.
+A clean cycle is a passed full cycle that ends at or after phase 2's conclusion ([Phase 2](#phase-2)). The phase-1 cycle never counts, and no earlier cycle is credited: a cycle is not ended early because an earlier one covers its profile. `run --cycles N` checks its stop rule before starting the next cycle and stops after N clean cycles: `--cycles 1` stops right after the confirmation cycle, and a larger N counts further cycles of indefinite checking. Without the flag checking continues indefinitely. `run --first-result` stops before the next round or cycle starts once the BIOS profile is confirmed with no unconfirmed core, which on a fresh session is right after phase 1's passed cycle and before phase 2 moves a core, and never while a core is shown stepped back. `status` reports the clean cycles, their count and the latest one's number. A clean cycle establishes workload breadth, not a guarantee against rare failures or untested real use.
 
 A cycle that passes before phase 2 concludes is therefore passed, not clean: it ends before the profile is confirmed, however few failures it contained. This is the usual distinction behind “passed, not clean”, not a count of failures within the cycle.
 
@@ -390,6 +390,8 @@ Phase 2 follows phase 1 by default. It is bounded: rounds that take margins back
 
 These `deepening` backoffs do not count toward [escalation](#escalation-to-a-located-hunt).
 
+**Remaining work.** While phase 2 runs, the operator surfaces show its worst case, with no estimate through future failures (#310): each candidate's gap, the most rounds left, then one full cycle. The bound simulates the rounds that follow if every round passes, with the round rule above, its failure-point and combination blocking, and its finished cores; an open round counts as one. A carried core stays in place while its round re-checks it, and that round counts in the bound whether or not it also moves other candidates, so a core with a gap of 0 can still leave a round. The confirmation cycle is all that remains only when no candidate can move and none is carried. A candidate's solo limit is the offset the core passed alone in search (`core.phase`'s `pass`), not its margin offset.
+
 **Confirmation cycle.** Once phase 1 has ended and no round is due, the next `checking.cycle` start is phase 2's confirmation cycle, and its reason names it. This holds also when no candidate could move at phase 1's end: phase 2 is then that cycle alone. Phase 2 never concludes at phase 1's cycle. The confirmation is an ordinary cycle identified by its order.
 
 A failure inside the confirmation, between its start and its passed end, whose failing profile has a loaded core deeper than its first-confirmed offset, returns one such core per failure to its first-confirmed offset with a failure point: the blame order above applies, top requester first, and the decision is a `deepening` backoff that consumes the failure (#493, Q29). Today's rerun-and-continue rules then apply. A failure with no deepened core loaded follows the ordinary rules, so a phase-1 core steps back only when the failure recurs with every deepened loaded core reverted. If the confirmation ends without passing, the next cycle is still the confirmation; rounds never reopen.
@@ -426,7 +428,7 @@ A failure invalidates every earlier pass of its class at a profile at least as d
 
 ### BIOS profile
 
-The BIOS profile is what the operator enters in BIOS ([ADR 0004](../adr/0004-find-only.md)). It is derived from the journal, with no event of its own:
+The BIOS profile is what the operator enters in BIOS ([ADR 0004](../adr/0004-find-only.md)). It is derived from the journal, with no event of its own. `status` and the dashboard show it, marking unconfirmed offsets ([Status](runtime.md#status)):
 
 - The last confirmed profile is the checking profile at the latest passed full cycle ending at or after phase 1's end.
 - Each core shows the shallowest of its confirmed offset, its current offset and the targets of the valid holds that name it. A core deepened by a phase-2 round shows its confirmed offset until a passed cycle confirms it, and a step-back replaces the shown offset at the decision that records it, before its `profile.change`.

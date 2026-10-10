@@ -23,10 +23,13 @@ import (
 
 var statusHelp = `Usage: togi status
 
-Show the session at a glance: search, hunt, deepening or checking activity and
-clean cycles since the last deepening, then each core's offset, failure point
-and combinations, phase, queued work and last decision. An open hunt shows
-groups and trials; an open deepening round shows checks and passes. Evidence
+Show the session at a glance: search, hunt, phase 2 round or checking activity,
+the phase and, once phase 2 concluded, the clean cycles; the BIOS profile to
+enter, marked * while unconfirmed; then each core's offset, BIOS offset,
+failure point and combinations, phase, queued work and last decision. In phase 2
+it lists the candidates with their remaining gaps and the most rounds left if
+none fails, then one full cycle. An open hunt shows groups and trials; an open
+phase 2 round shows checks and passes. Evidence
 includes workloads, valid trials and the Tctl peak since the last profile
 change, and lists between-trial MCEs without treating them as failures.
 Shows each core's observed self-sufficiency for each R7 workload and its CCD's
@@ -126,7 +129,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 					done++
 				}
 			}
-			activity = fmt.Sprintf("deepening round %d, checks %d/%d", r.Round, done, len(r.Checks))
+			activity = fmt.Sprintf("phase 2 round %d, checks %d/%d", r.Round, done, len(r.Checks))
 		}
 	case string(journal.PhaseChecking):
 		if gs := st.Checking; gs != nil {
@@ -136,11 +139,11 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 			}
 		}
 	}
-	clean, latest := 0, 0
-	if gs := st.Checking; gs != nil {
-		clean, latest = gs.CleanCycles, gs.LastCleanCycle
+	header := render.EscapeText(activity)
+	if clause := phaseClause(st); clause != "" {
+		header += " | " + clause
 	}
-	wrapLines(w, "", "  ", fmt.Sprintf("%s | clean cycles since last deepening: %d, latest cycle %d", render.EscapeText(activity), clean, latest))
+	wrapLines(w, "", "  ", header)
 	fmt.Fprintf(w, "session %s started %s\n", render.EscapeText(st.Session.ID), st.Session.Start.UTC().Format(time.RFC3339))
 	writeBIOSLine(w, st.Session)
 	if f := st.InFlight; f != nil {
@@ -158,8 +161,8 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 	}
 
 	fmt.Fprintln(w)
-	rows := []notedRow{{cells: "CORE\tCCD\tSLOT\tOFFSET\tPHASE\tFAILURE\tQUEUED"}}
-	for _, c := range st.Cores {
+	rows := []notedRow{{cells: "CORE\tCCD\tSLOT\tOFFSET\tBIOS\tPHASE\tFAILURE\tQUEUED"}}
+	for i, c := range st.Cores {
 		var notes []rowNote
 		if len(c.Combinations) != 0 {
 			notes = append(notes, rowNote{"combinations", strings.ReplaceAll(combinationIDs(c.Combinations), ",", ", ")})
@@ -168,9 +171,10 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 			notes = append(notes, rowNote{"last decision", fmt.Sprintf("[#%d] %s", d.Seq, render.EscapeText(d.Msg))})
 		}
 		queued := cmp.Or(c.Queued, "-")
-		rows = append(rows, notedRow{cells: fmt.Sprintf("%02d\t%d\t%d\t%d\t%s\t%s\t%s", c.Core, c.CCD, c.Core%8, c.Offset, render.EscapeText(render.PhaseWord(c.Phase)), failurePoint(c.FailurePoint), render.EscapeText(queued)), notes: notes})
+		rows = append(rows, notedRow{cells: fmt.Sprintf("%02d\t%d\t%d\t%d\t%s\t%s\t%s\t%s", c.Core, c.CCD, c.Core%8, c.Offset, biosCell(st.BIOS, i, c.Core), render.EscapeText(render.PhaseWord(c.Phase)), failurePoint(c.FailurePoint), render.EscapeText(queued)), notes: notes})
 	}
 	writeNotedTable(w, rows)
+	writeBIOSNote(w, st)
 	writeCombinations(w, st.Combinations)
 	writeR7Status(w, events)
 	for _, e := range events {
@@ -220,14 +224,7 @@ func writeStatus(w io.Writer, st journal.State, events []journal.Event) {
 		}
 		writeNotedTable(w, groups)
 	}
-	if r := st.Deepening; r != nil {
-		wrapLines(w, "\n", "  ", fmt.Sprintf("deepening round %d [#%d]: target %v; proposed %v", r.Round, r.Seq, r.Target, r.Profile))
-		checks := []notedRow{{cells: "CHECK\tCORES\tPASSES"}}
-		for _, check := range r.Checks {
-			checks = append(checks, notedRow{cells: fmt.Sprintf("%s %s\t%s\t%d/%d", render.EscapeText(string(check.Regime)), render.EscapeText(check.Workload), coreIDs(check.Cores), check.Passes, check.Needed)})
-		}
-		writeNotedTable(w, checks)
-	}
+	writePhase2(w, st)
 	var findings []journal.DefectFound
 	for _, event := range events {
 		switch p := event.Data.(type) {
@@ -356,4 +353,93 @@ func failurePoint(p *int) string {
 		return "-"
 	}
 	return strconv.Itoa(*p)
+}
+
+func phaseClause(st journal.State) string {
+	ph := st.Phases
+	switch {
+	case ph == nil:
+		return ""
+	case ph.Phase == 1:
+		return "phase 1"
+	case ph.Phase == 0:
+		clean, latest := 0, 0
+		if gs := st.Checking; gs != nil {
+			clean, latest = gs.CleanCycles, gs.LastCleanCycle
+		}
+		return fmt.Sprintf("phase 2 concluded: clean cycles %d, latest cycle %d", clean, latest)
+	case ph.Confirming:
+		return "phase 2: confirmation cycle"
+	}
+	return fmt.Sprintf("phase 2: at most %d %s left, then one full cycle", ph.RoundsLeft, plural(ph.RoundsLeft, "round"))
+}
+
+func plural(n int, word string) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
+}
+
+func biosCell(b *journal.BIOSState, i, core int) string {
+	if b == nil || i >= len(b.Offsets) {
+		return "-"
+	}
+	if slices.Contains(b.Unconfirmed, core) {
+		return fmt.Sprintf("%d*", b.Offsets[i])
+	}
+	return fmt.Sprint(b.Offsets[i])
+}
+
+func writeBIOSNote(w io.Writer, st journal.State) {
+	switch b := st.BIOS; {
+	case b == nil && st.Phases != nil && st.Phases.Phase == 1:
+		wrapLines(w, "", "  ", "BIOS profile: none confirmed yet; phase 1 has not passed a full cycle")
+	case b == nil:
+	case len(b.Unconfirmed) == 0:
+		wrapLines(w, "", "  ", fmt.Sprintf("BIOS profile confirmed by the passed full cycle [#%d]", b.Confirmed))
+	default:
+		wrapLines(w, "", "  ", fmt.Sprintf("* unconfirmed since [#%d]: cores %s show a stepped-back offset, the profile confirmed by the passed full cycle [#%d] otherwise; a passed full cycle confirms it, except a held failure's stepped-back offset, which stays marked until the hold ends", b.Since, coreIDs(b.Unconfirmed), b.Confirmed))
+	}
+}
+
+func writePhase2(w io.Writer, st journal.State) {
+	ph := st.Phases
+	if r := st.Deepening; r != nil {
+		wrapLines(w, "\n", "  ", fmt.Sprintf("phase 2 round %d [#%d]", r.Round, r.Seq))
+	}
+	if ph != nil && ph.Phase == 2 {
+		writeCandidates(w, ph, st.Deepening != nil)
+	}
+	if r := st.Deepening; r != nil {
+		checks := []notedRow{{cells: "CHECK\tCORES\tPASSES"}}
+		for _, check := range r.Checks {
+			checks = append(checks, notedRow{cells: fmt.Sprintf("%s %s\t%s\t%d/%d", render.EscapeText(string(check.Regime)), render.EscapeText(check.Workload), coreIDs(check.Cores), check.Passes, check.Needed)})
+		}
+		writeNotedTable(w, checks)
+	}
+}
+
+func writeCandidates(w io.Writer, ph *journal.PhasesState, open bool) {
+	if len(ph.Candidates) > 0 {
+		rows := []notedRow{{cells: "CANDIDATE\tOFFSET\tSOLO\tGAP\tSTATE"}}
+		for _, c := range ph.Candidates {
+			state := "waits"
+			switch {
+			case c.Moving:
+				state = "moving"
+			case c.Carried:
+				state = "checked again in place"
+			}
+			rows = append(rows, notedRow{cells: fmt.Sprintf("%02d\t%d\t%d\t%d\t%s", c.Core, c.Offset, c.SoloLimit, c.Gap, state)})
+		}
+		fmt.Fprintln(w)
+		writeNotedTable(w, rows)
+	}
+	switch {
+	case ph.Confirming && !open:
+		wrapLines(w, "\n", "  ", "no core can move: the confirmation cycle is all that is left")
+	default:
+		wrapLines(w, "\n", "  ", fmt.Sprintf("worst case if no round fails: %d %s left, then one full cycle", ph.RoundsLeft, plural(ph.RoundsLeft, "round")))
+	}
 }

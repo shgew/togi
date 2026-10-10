@@ -1,6 +1,6 @@
   togi   00:48:40   session 0h48m   0 failures · 0 crashes
 
-  ► SOLO LIMITS  0 of 16 found · core 00 searching -5  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ► SOLO LIMITS  0 of 16 found · core 00 searching -5  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
 
   ▌  SOLO LIMITS   I'm finding core 00's solo limit, one turn at a time, now      last trial      PASS  1:30 on core 15 · Tctl max 66°C
   ▌                at -5.
@@ -23,22 +23,22 @@
     06    0  SEARCH                                       passed 0 · next -5        14    0  SEARCH                                       passed 0 · next -5
     07    0  SEARCH                                       passed 0 · next -5        15    0  SEARCH                                       passed 0 · next -5
 
-  TURNS ──────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
-
-        this turn                   at   so far                                   00:48  step     core 15 passed 0, next -5
-    08  search step: light, then... -5   passed 0 · next -5                       00:45  step     core 07 passed 0, next -5
-    01  search step: light, then... -5   passed 0 · next -5                       00:42  step     core 14 passed 0, next -5
-    09  search step: light, then... -5   passed 0 · next -5                       00:39  step     core 06 passed 0, next -5
-    02  search step: light, then... -5   passed 0 · next -5                       00:36  step     core 13 passed 0, next -5
-    10  search step: light, then... -5   passed 0 · next -5                       00:33  step     core 05 passed 0, next -5
-    03  search step: light, then... -5   passed 0 · next -5                       00:30  step     core 12 passed 0, next -5
-    11  search step: light, then... -5   passed 0 · next -5                       00:27  step     core 04 passed 0, next -5
-    04  search step: light, then... -5   passed 0 · next -5                       00:24  step     core 11 passed 0, next -5
-    12  search step: light, then... -5   passed 0 · next -5                       00:21  step     core 03 passed 0, next -5
-    05  search step: light, then... -5   passed 0 · next -5                       00:18  step     core 10 passed 0, next -5
-    13  search step: light, then... -5   passed 0 · next -5                       00:15  step     core 02 passed 0, next -5
-    06  search step: light, then... -5   passed 0 · next -5                       00:12  step     core 09 passed 0, next -5
-    14  search step: light, then... -5   passed 0 · next -5                       00:09  step     core 01 passed 0, next -5
-  +3 more                                                                         +3 more
+  BIOS PROFILE ──────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+  none confirmed yet: phase 1 has not passed a full cycle
+                                                                                  00:48  step     core 15 passed 0, next -5
+  TURNS ──────────────────────────────────── one core per turn, in this order     00:45  step     core 07 passed 0, next -5
+                                                                                  00:42  step     core 14 passed 0, next -5
+        this turn                   at   so far                                   00:39  step     core 06 passed 0, next -5
+    08  search step: light, then... -5   passed 0 · next -5                       00:36  step     core 13 passed 0, next -5
+    01  search step: light, then... -5   passed 0 · next -5                       00:33  step     core 05 passed 0, next -5
+    09  search step: light, then... -5   passed 0 · next -5                       00:30  step     core 12 passed 0, next -5
+    02  search step: light, then... -5   passed 0 · next -5                       00:27  step     core 04 passed 0, next -5
+    10  search step: light, then... -5   passed 0 · next -5                       00:24  step     core 11 passed 0, next -5
+    03  search step: light, then... -5   passed 0 · next -5                       00:21  step     core 03 passed 0, next -5
+    11  search step: light, then... -5   passed 0 · next -5                       00:18  step     core 10 passed 0, next -5
+    04  search step: light, then... -5   passed 0 · next -5                       00:15  step     core 02 passed 0, next -5
+    12  search step: light, then... -5   passed 0 · next -5                       00:12  step     core 09 passed 0, next -5
+    05  search step: light, then... -5   passed 0 · next -5                       00:09  step     core 01 passed 0, next -5
+  +6 more                                                                         +3 more
 
    ?  help    l  log    esc  back    q  close view

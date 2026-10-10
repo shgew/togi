@@ -64,6 +64,7 @@ complete -c togi -n "__togi_command_is restart-limit" -l state-dir -r -F
 complete -c togi -n "__togi_command_is restart-limit" -l tuning-boot -r -F
 complete -c togi -n "__togi_command_is run" -l config -r -F
 complete -c togi -n "__togi_command_is run" -l cycles -x
+complete -c togi -n "__togi_command_is run" -l first-result
 complete -c togi -n "__togi_command_is run" -l no-tui
 complete -c togi -n "__togi_command_is run" -l state-dir -r -F
 complete -c togi -n "__togi_command_is run" -l tuning-boot -r -F

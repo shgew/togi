@@ -1,5 +1,5 @@
  togi   02:47:42   session 2h47m   3 failures · 0 crashes   last observed failure 02:45, 2m ago
- ○ SOLO  0 of 16 found ─ ○ CYCLE ─ ○ DEEPEN ─ CLEAN 0
+ ○ SOLO  0 of 16 found ─ ○ P1 ─ ○ P2 ─ CLEAN 0 ─ ○ CYCLE
 
  ▌  Trial 0114 crashed: a later boot has written events. togi run records the crash.
 

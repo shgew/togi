@@ -37,9 +37,10 @@ func TestRunFlagsCycleLimit(t *testing.T) {
 			t.Parallel()
 			var g globals
 			var cycles int
+			var firstResult bool
 			var grubenv string
 			var noTUI bool
-			flags := runFlags(&g, &cycles, &grubenv, &noTUI)
+			flags := runFlags(&g, &cycles, &firstResult, &grubenv, &noTUI)
 			var stdout, stderr bytes.Buffer
 			if code, ok := parseFlags(flags, tc.args, runHelp, &stdout, &stderr); !ok || code != exitOK {
 				t.Fatalf("parse: exit %d, ok %v, stderr %q", code, ok, stderr.String())
@@ -301,6 +302,7 @@ func TestRunResultExitCodes(t *testing.T) {
 	}{
 		{"signal", session.Stop{Reason: session.StopSignal}, nil, 0, ""},
 		{"cycles", session.Stop{Reason: session.StopCycles}, nil, 0, ""},
+		{"first-result", session.Stop{Reason: session.StopFirstResult}, nil, 0, ""},
 		{"missing-core", session.Stop{}, session.ErrNoSuchCore, 2, "togi run: no such core\n"},
 		{"journal-locked", session.Stop{}, journal.ErrLocked, 3, "togi run: another togi process holds the journal lock\n"},
 		{"ordinary-error", session.Stop{}, errors.New("read failed\x1b[2J\nforged"), 1, "togi run: read failed\\x1b[2J\\nforged\n"},
@@ -443,6 +445,78 @@ func TestRunRefusalStillClearsAfterReasonWriteFailure(t *testing.T) {
 			}
 			if !strings.Contains(diagnostics.String(), wantClear) || strings.Contains(diagnostics.String(), "journal-write") {
 				t.Fatalf("clear result or error classification: %s", diagnostics.String())
+			}
+		})
+	}
+}
+
+func TestRunFirstResultFlag(t *testing.T) {
+	t.Parallel()
+	var g globals
+	var cycles int
+	var firstResult bool
+	var grubenv string
+	var noTUI bool
+	var stdout, stderr bytes.Buffer
+	if code, ok := parseFlags(runFlags(&g, &cycles, &firstResult, &grubenv, &noTUI), []string{"--first-result"}, runHelp, &stdout, &stderr); !ok || code != exitOK || !firstResult || cycles != 0 {
+		t.Fatalf("parse: exit %d, ok %v, first result %v, cycles %d, stderr %q", code, ok, firstResult, cycles, stderr.String())
+	}
+}
+
+// TestRunRefusesFirstResultWithCycles pins that the combination exits 2 before
+// any state access: a state directory that does not exist stays absent, and a
+// malformed journal, which the startup scan would refuse with exit 1, is never
+// read. No host lock is taken either.
+func TestRunRefusesFirstResultWithCycles(t *testing.T) {
+	t.Parallel()
+	const malformed = "not a journal\n{}\n"
+	for _, tc := range []struct {
+		name    string
+		journal bool
+	}{
+		{name: "absent state directory"},
+		{name: "malformed journal", journal: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			dir := filepath.Join(root, "state")
+			events := filepath.Join(dir, "events.jsonl")
+			if tc.journal {
+				if err := os.Mkdir(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(events, []byte(malformed), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			g := globals{
+				stateDir:     dir,
+				config:       filepath.Join(root, "config.json"),
+				hostLockPath: filepath.Join(root, "togi.lock"),
+			}
+			var stdout, stderr bytes.Buffer
+			if code := runRun(&g, []string{"--first-result", "--cycles", "1"}, &stdout, &stderr); code != exitUsage {
+				t.Fatalf("exit %d, want %d; stderr %q", code, exitUsage, stderr.String())
+			}
+			if !strings.HasPrefix(stderr.String(), "togi run: --first-result and --cycles cannot be combined\n") || stdout.Len() != 0 {
+				t.Fatalf("stdout %q, stderr %q", stdout.String(), stderr.String())
+			}
+			if _, err := os.Stat(g.hostLockPath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("host lock %s taken: %v", g.hostLockPath, err)
+			}
+			if !tc.journal {
+				if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("state directory %s created: %v", dir, err)
+				}
+				return
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 1 {
+				t.Fatalf("state directory entries %v (%v), want only the journal", entries, err)
+			}
+			if data, err := os.ReadFile(events); err != nil || string(data) != malformed {
+				t.Fatalf("journal %q (%v) changed", data, err)
 			}
 		})
 	}

@@ -139,7 +139,7 @@ _togi() {
             return
             ;;
         esac
-        _togi_words --config --cycles --no-tui --state-dir --tuning-boot
+        _togi_words --config --cycles --first-result --no-tui --state-dir --tuning-boot
         ;;
     status)
         case $prev in

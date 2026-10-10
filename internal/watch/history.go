@@ -226,7 +226,7 @@ func (p *projector) corePhase(line entry, d *journal.CorePhase) (entry, bool) {
 	}
 	line.tag, line.text, line.tone = phaseText(d)
 	if line.tag == tagLimit {
-		line.kind, line.cores, line.offset, line.key = limitsEntry, []int{d.Core}, d.Offset, "limit"
+		line.kind, line.cores, line.offset, line.key = limitsEntry, []int{d.Core}, soloLimit(d), "limit"
 	}
 	return line, line.text != ""
 }
@@ -513,6 +513,15 @@ func decisionText(d *journal.TunerDecision) (string, string, tone) {
 	return tagBackoff, fmt.Sprintf("core %02d %d → %d", d.Core, d.FromOffset, d.ToOffset), warnTone
 }
 
+// soloLimit is the offset a core passed alone. A search exit's Offset is the margin one count shallower, so Pass is
+// the limit; a legacy or hand-made exit with no pass has only its offset.
+func soloLimit(d *journal.CorePhase) int {
+	if d.Pass != nil {
+		return *d.Pass
+	}
+	return d.Offset
+}
+
 // phaseText tells when a core finds its solo limit, has room again or starts its search over; the other changes show
 // on its row.
 func phaseText(d *journal.CorePhase) (string, string, tone) {
@@ -520,7 +529,7 @@ func phaseText(d *journal.CorePhase) (string, string, tone) {
 	case d.To == journal.PhaseSearch && d.From != "":
 		return tagSearch, fmt.Sprintf("core %02d starts over from %d", d.Core, d.Offset), warnTone
 	case d.From == journal.PhaseSearch:
-		return tagLimit, fmt.Sprintf("core %02d solo limit %d", d.Core, d.Offset), goodTone
+		return tagLimit, fmt.Sprintf("core %02d solo limit %d", d.Core, soloLimit(d)), goodTone
 	case d.From == journal.PhaseAtLimit && d.To == journal.PhaseHasRoom:
 		return tagDeeper, fmt.Sprintf("core %02d has room again at %d", d.Core, d.Offset), plainTone
 	}

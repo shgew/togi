@@ -34,8 +34,9 @@ type Snapshot struct {
 
 	cycle   *cycleView
 	hunt    *huntView
-	turns   []turnView // the search's turns, in the order the tuner takes them; empty once every core has a solo limit
-	deepen  *deepenView
+	turns   []turnView    // the search's turns, in the order the tuner takes them; empty once every core has a solo limit
+	phases  *phaseView    // where the two-phase method stands; nil before the session has cores
+	bios    *biosView     // the profile to enter in BIOS; nil until phase 1 has a confirmed profile
 	recover *recoveryView // a crash was detected on this boot and no trial has started since
 	stopped *stopView
 	deadEnd *deadEndView
@@ -328,12 +329,21 @@ type turnView struct {
 	running  bool
 }
 
-type deepenView struct {
-	round   int
-	room    []int // cores with room, in the order deepening tries them
-	profile []int // the profile the round moves to
-	checks  []journal.CheckState
-	waiting bool // deepening waits for a passed full cycle
+type phaseView struct {
+	phase      int // 1, 2, or 0 once phase 2 concluded
+	phase1End  int
+	confirming bool
+	round      int // the open round, or 0
+	roundsLeft int // rounds that would still run if none failed, the open one included
+	candidates []journal.CandidateState
+	checks     []journal.CheckState // the open round's checks
+}
+
+type biosView struct {
+	offsets     []int // in core-ID order
+	confirmed   int
+	unconfirmed []int // core IDs
+	since       int
 }
 
 type recoveryView struct {

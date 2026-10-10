@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/shgew/togi/internal/machine"
 	"github.com/shgew/togi/internal/sim"
 	"github.com/shgew/togi/internal/simrun"
+	"github.com/shgew/togi/internal/tuner"
 )
 
 type watchCut struct {
@@ -31,13 +33,18 @@ type watchCut struct {
 // journal at the current ruleset. Its config.loaded events name a fixed build, so a release's version bump leaves the
 // frames unchanged.
 func simulate(m *sim.Machine, cfg config.Config, until func(journal.Event) bool) ([]journal.Event, error) {
+	return simulateWith(m, cfg, until, simrun.Input{Cycles: 1})
+}
+
+// simulateWith is simulate with the stop options in stop: Cycles or FirstResult.
+func simulateWith(m *sim.Machine, cfg config.Config, until func(journal.Event) bool, stop simrun.Input) ([]journal.Event, error) {
 	dir, err := os.MkdirTemp("", "togi-watch-frames")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(dir)
 	_, err = simrun.Simulate(context.Background(), simrun.Input{
-		Config: cfg, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: 1, InMemoryJournal: true, Until: until,
+		Config: cfg, ConfigPath: config.DefaultPath, Dir: dir, Machine: m, Cycles: stop.Cycles, FirstResult: stop.FirstResult, InMemoryJournal: true, Until: until,
 	})
 	if err != nil {
 		return nil, err
@@ -63,6 +70,70 @@ var sessionJournal = sync.OnceValues(func() ([]journal.Event, error) {
 		return nil, err
 	}
 	return simulate(m, config.Default(), nil)
+})
+
+// concludedJournal is the default simulated machine through two clean cycles, so checking runs on after phase 2.
+var concludedJournal = sync.OnceValues(func() ([]journal.Event, error) {
+	m, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		return nil, err
+	}
+	return simulateWith(m, config.Default(), nil, simrun.Input{Cycles: 2})
+})
+
+// unconfirmedJournal is seed 30 of the default simulated machine through three clean cycles: a later failure leaves
+// the BIOS profile unconfirmed. [INFERENCE: other seeds steer clear of it; the seed was found by scanning 1-40.]
+var unconfirmedJournal = sync.OnceValues(func() ([]journal.Event, error) {
+	m, err := sim.New(sim.Config{Seed: 30})
+	if err != nil {
+		return nil, err
+	}
+	return simulateWith(m, config.Default(), nil, simrun.Input{Cycles: 3})
+})
+
+// laterHuntJournal is the default simulated machine through six clean cycles, rerun with a burst of crashes that name
+// no core, scripted on the trials from the first checking trial of cycle 4 on: after a held first failure, a second
+// one makes a hunt while the confirmed profile shows a held, unconfirmed core. [INFERENCE: the burst length was found
+// by scanning; a shorter one stays within the hold.]
+var laterHuntJournal = sync.OnceValues(func() ([]journal.Event, error) {
+	m, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		return nil, err
+	}
+	base, err := simulateWith(m, config.Default(), nil, simrun.Input{Cycles: 6})
+	if err != nil {
+		return nil, err
+	}
+	first := -1
+	for _, e := range base {
+		if p, ok := e.Data.(*journal.TrialIntent); ok && p.Phase == journal.PhaseChecking && p.Cycle >= 4 && p.Regime != machine.R7 {
+			if first, err = strconv.Atoi(p.Trial); err != nil {
+				return nil, err
+			}
+			break
+		}
+	}
+	if first < 0 {
+		return nil, errors.New("no checking trial in cycle 4")
+	}
+	script := map[string]sim.Outcome{}
+	for id := first; id <= first+5; id++ {
+		script[fmt.Sprintf("%04d", id)] = sim.Outcome{Signal: machine.Crash, AtS: 7, Core: 3}
+	}
+	m, err = sim.New(sim.Config{Seed: 1, Script: script})
+	if err != nil {
+		return nil, err
+	}
+	return simulateWith(m, config.Default(), nil, simrun.Input{Cycles: 6})
+})
+
+// firstResultJournal is the default simulated machine stopped at its first confirmed BIOS profile.
+var firstResultJournal = sync.OnceValues(func() ([]journal.Event, error) {
+	m, err := sim.New(sim.Config{Seed: 1})
+	if err != nil {
+		return nil, err
+	}
+	return simulateWith(m, config.Default(), nil, simrun.Input{FirstResult: true})
 })
 
 // probeMachine fails together only through a combination of cores 03 and 11 in R6, where a failure naming no core
@@ -137,6 +208,16 @@ func cutAt(tb testing.TB, events []journal.Event, accept func(journal.Event) boo
 	return nil
 }
 
+// cutWhen folds the events through a tuner state and cuts at the first event after which accept holds.
+func cutWhen(tb testing.TB, events []journal.Event, accept func(*tuner.State, journal.Event) bool) []journal.Event {
+	tb.Helper()
+	t := tuner.New()
+	return cutAt(tb, events, func(e journal.Event) bool {
+		t.Fold(e)
+		return accept(t, e)
+	})
+}
+
 func cutTrial(tb testing.TB, events []journal.Event, accept func(*journal.TrialIntent) bool) []journal.Event {
 	tb.Helper()
 	trial := ""
@@ -198,7 +279,18 @@ func watchCuts(t *testing.T) []watchCut {
 		{"checking", checking},
 		{"hunt", cutTrial(t, simulated(t, sessionJournal), func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseHunt })},
 		{"member-probe", memberProbe},
-		{"deepening", cutTrial(t, probes, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })},
+		{"round", cutTrial(t, probes, func(p *journal.TrialIntent) bool { return p.Phase == journal.PhaseDeepening })},
+		{"confirmation", cutWhen(t, events, func(s *tuner.State, e journal.Event) bool {
+			return e.Kind == journal.KindTrialStart && s.PhasePlan().Phase == 2 && s.PhasePlan().Confirming
+		})},
+		{"concluded", cutWhen(t, simulated(t, concludedJournal), func(s *tuner.State, e journal.Event) bool {
+			return e.Kind == journal.KindTrialStart && s.PhasePlan().Phase == 0
+		})},
+		{"unconfirmed", cutWhen(t, simulated(t, unconfirmedJournal), func(s *tuner.State, e journal.Event) bool {
+			return e.Kind == journal.KindTrialStart && len(s.BIOSProfile().Unconfirmed) > 0
+		})},
+		{"hunt-bios", huntWithUnconfirmedProfile(t, simulated(t, laterHuntJournal))},
+		{"first-result", simulated(t, firstResultJournal)},
 		{"idle", cutTrial(t, events, func(p *journal.TrialIntent) bool { return p.Regime == machine.R6 })},
 		{"between", cutPassedCheckingTrial(t, events)},
 		{"crashed", beforeCrashDetected(t, events)},
@@ -209,6 +301,23 @@ func watchCuts(t *testing.T) []watchCut {
 			{Seq: last.Seq + 1, Time: last.Time.Add(time.Minute), Boot: last.Boot, Kind: deadEnd.Kind(), Msg: deadEnd.Message(), Data: deadEnd},
 		})},
 	}
+}
+
+// huntWithUnconfirmedProfile cuts at the first trial start of a hunt run while the BIOS profile is confirmed and a
+// core shows an unconfirmed offset: the BIOS rows must stay beside the hunt panel.
+func huntWithUnconfirmedProfile(tb testing.TB, events []journal.Event) []journal.Event {
+	tb.Helper()
+	hunt := map[string]bool{}
+	return cutWhen(tb, events, func(s *tuner.State, e journal.Event) bool {
+		switch p := e.Data.(type) {
+		case *journal.TrialIntent:
+			hunt[p.Trial] = p.Phase == journal.PhaseHunt
+		case *journal.TrialStart:
+			b := s.BIOSProfile()
+			return hunt[p.Trial] && b.Confirmed > 0 && len(b.Unconfirmed) > 0
+		}
+		return false
+	})
 }
 
 // beforeCrashDetected is the journal a crashed session shows after the machine restarted and before togi run records
@@ -243,7 +352,7 @@ func assertFrameBounds(t *testing.T, drawn Drawn, sc Screen) {
 // size under assertFrameBounds.
 var allSizeGoldens = map[string]bool{
 	"search": true, "checking": true, "hunt": true, "member-probe": true,
-	"deepening": true, "idle": true, "crashed": true, "recovering": true, "combination": true,
+	"round": true, "confirmation": true, "concluded": true, "unconfirmed": true, "hunt-bios": true, "idle": true, "crashed": true, "recovering": true, "combination": true,
 }
 
 func TestWatchFrames(t *testing.T) {
@@ -417,6 +526,28 @@ func TestWatchWithoutJournal(t *testing.T) {
 		unreadable := Snapshot{problem: errors.New("read journal: permission denied")}
 		golden(t, fmt.Sprintf("watch-problem-%dx%d", size[0], size[1]), ansi.Strip(strings.Join(RenderView(unreadable, Screen{Width: size[0], Height: size[1]}, now).Lines, "\n"))+"\n")
 		golden(t, fmt.Sprintf("watch-problem-once-%dx%d", size[0], size[1]), ansi.Strip(Render(unreadable, size[0], size[1], now))+"\n")
+	}
+}
+
+// The open round's candidates keep their rows at every height, whether or not R7 keeps its rows below them: cutting
+// the round's checks takes a "+N more" row of its own, so it must never take the candidate row.
+// Below 120x33, the smallest size the dashboard is drawn for, the panel has no rows to spare.
+func TestRoundKeepsItsCandidatesAtEveryHeight(t *testing.T) {
+	var events []journal.Event
+	for _, c := range watchCuts(t) {
+		if c.name == "round" {
+			events = c.events
+		}
+	}
+	s, now := Project(events), cutTime(events)
+	for _, width := range []int{120, 160} {
+		for height := 33; height <= 60; height++ {
+			sc := Screen{Width: width, Height: height, Keys: true}
+			text := ansi.Strip(strings.Join(s.contextLines(measure(s, sc), now), "\n"))
+			if !strings.Contains(text, "gap ") {
+				t.Errorf("%dx%d: the round lost its candidate rows:\n%s", width, height, text)
+			}
+		}
 	}
 }
 

@@ -134,19 +134,24 @@ func coreList(ids []int) string {
 // loaded, or a profile that reached a constraint) and are checked again in place without moving. A core that yielded is
 // finished: no later round moves it, though an ordinary backoff can still step it back.
 func (s *State) phase2Moves() (profile, moved, carried []int) {
-	profile = s.offsets()
-	passed := s.phases.passed
+	return s.phase2MovesAt(s.offsets(), s.phases.passed)
+}
+
+// phase2MovesAt is phase2Moves from the given profile and last passed offsets instead of the current ones.
+func (s *State) phase2MovesAt(from, passed []int) (profile, moved, carried []int) {
+	profile = slices.Clone(from)
 	for _, c := range s.cores {
 		i := s.index(c.id)
+		offset := from[i]
 		switch {
 		case c.phase == journal.PhaseSearch:
 		case s.phases.finished[c.id]:
-		case i < len(passed) && c.offset < passed[i]:
+		case i < len(passed) && offset < passed[i]:
 			carried = append(carried, c.id)
-		case !c.hasSoloLimit || c.offset <= c.soloLimit:
+		case !c.hasSoloLimit || offset <= c.soloLimit:
 		default:
 			q := slices.Clone(profile)
-			q[i] = c.offset - 1
+			q[i] = offset - 1
 			if _, hit := s.reaches(q); !hit {
 				profile, moved = q, append(moved, c.id)
 			}

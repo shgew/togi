@@ -34,8 +34,10 @@ type Input struct {
 	Boot       string
 	Journal    Journal
 	Machine    machine.Machine
-	// Cycles is the number of clean cycles after search and deepening.
+	// Cycles is the number of clean cycles after phase 2's conclusion.
 	Cycles int
+	// FirstResult stops the run at the next round or cycle start once the BIOS profile is confirmed.
+	FirstResult bool
 	// Bootloader is set only in the tuning boot, where a dead end hands the next boot back to the normal system.
 	Bootloader Bootloader
 	// Prompt is nil when stdin or stderr is not a terminal.
@@ -79,6 +81,8 @@ const (
 	StopSignal  StopReason = "signal"
 	StopDeadEnd StopReason = "dead_end"
 	StopCycles  StopReason = "cycles"
+	// StopFirstResult is a run stopped by Input.FirstResult.
+	StopFirstResult StopReason = "first_result"
 )
 
 type Stop struct {
@@ -1229,6 +1233,9 @@ func (r *runner) loop(ctx context.Context) (Stop, error) {
 			if g, ok := a.Payload.(*journal.CheckingCycle); ok && g.Event == journal.CycleStart && r.reachedCycles() {
 				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownCycles, Cycles: r.in.Cycles}, StopCycles)
 			}
+			if r.reachedFirstResult(a.Payload) {
+				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownFirstResult}, StopFirstResult)
+			}
 			if ctx.Err() != nil {
 				return r.shutdown(&journal.Shutdown{Reason: journal.ShutdownSignal}, StopSignal)
 			}
@@ -1329,6 +1336,19 @@ func (r *runner) retryBackend(ctx context.Context, t tuner.Trial) error {
 
 func (r *runner) reachedCycles() bool {
 	return r.in.Cycles > 0 && r.tuner.CleanCycles() >= r.in.Cycles
+}
+
+func (r *runner) reachedFirstResult(next journal.Payload) bool {
+	if !r.in.FirstResult || !r.tuner.FirstResult() {
+		return false
+	}
+	switch p := next.(type) {
+	case *journal.DeepeningRound:
+		return p.Event == journal.CycleStart
+	case *journal.CheckingCycle:
+		return p.Event == journal.CycleStart
+	}
+	return false
 }
 
 func (r *runner) shutdown(p *journal.Shutdown, stop StopReason) (Stop, error) {

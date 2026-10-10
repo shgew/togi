@@ -202,7 +202,7 @@ func (p *projector) fold(e journal.Event) {
 			// A reset core searches again; its old solo limit no longer holds.
 			delete(p.solo, d.Core)
 		case d.From == journal.PhaseSearch:
-			p.solo[d.Core] = d.Offset
+			p.solo[d.Core] = soloLimit(d)
 		}
 	case *journal.TunerDecision:
 		p.tuned[d.Core] = d.ToOffset
@@ -297,11 +297,23 @@ func (p *projector) finish(events []journal.Event, t *tuner.State) {
 	for _, tr := range turns {
 		p.s.turns = append(p.s.turns, turnView{core: tr.Core, confirm: tr.Confirm, regimes: tr.Regimes, offset: tr.Offset, workload: tr.Workload, step: tr.Step, running: tr.Running})
 	}
-	dp := t.DeepeningPlan()
-	p.s.deepen = &deepenView{round: dp.Round, room: dp.Room, profile: dp.Profile, checks: dp.Checks, waiting: dp.Waiting}
+	p.phaseViews()
 	p.coreViews(t, turns)
 	p.combinations()
 	p.forecasts(tuner.Forecast(events))
+}
+
+func (p *projector) phaseViews() {
+	p.s.phases, p.s.bios = nil, nil
+	if ph := p.st.Phases; ph != nil {
+		p.s.phases = &phaseView{phase: ph.Phase, phase1End: ph.Phase1End, confirming: ph.Confirming, round: ph.Round, roundsLeft: ph.RoundsLeft, candidates: ph.Candidates}
+		if p.st.Deepening != nil {
+			p.s.phases.checks = p.st.Deepening.Checks
+		}
+	}
+	if b := p.st.BIOS; b != nil {
+		p.s.bios = &biosView{offsets: b.Offsets, confirmed: b.Confirmed, unconfirmed: b.Unconfirmed, since: b.Since}
+	}
 }
 
 func (p *projector) recent(events []journal.Event) {

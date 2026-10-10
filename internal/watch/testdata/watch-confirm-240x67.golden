@@ -1,6 +1,6 @@
   togi   00:00:40   session 0h00m   0 failures · 0 crashes
 
-  ► SOLO LIMITS  0 of 16 found · core 00 confirming -11  ───  ○ CYCLES  ───  ○ DEEPEN  ───  CLEAN CYCLES 0  · repeats until stopped
+  ► SOLO LIMITS  0 of 16 found · core 00 confirming -11  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
 
   ▌  SOLO LIMITS   -11 is core 00's candidate solo limit, and I'm confirming it.
   ▌                One core at a time with the rest at 0, so any failure belongs to the loaded core.
@@ -27,9 +27,12 @@
     06    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                14    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
     07    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                15    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
 
-  TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+  none confirmed yet: phase 1 has not passed a full cycle
+                                                                                                                          00:00  start    session started on 16 cores
+  TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order
 
-    core   this turn                      at     workload                  so far                                         00:00  start    session started on 16 cores
+    core   this turn                      at     workload                  so far
     08     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
     01     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
     09     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
@@ -46,9 +49,6 @@
     07     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
     15     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
   ► 00     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
-
-
-
 
 
 

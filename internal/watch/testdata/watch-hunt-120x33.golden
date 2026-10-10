@@ -1,5 +1,5 @@
  togi   20:24:00   session 20h24m   40 failures · 8 crashes   last observed failure 20:23, a moment ago
- ■ SOLO ─ ○ CYCLE 1 paused at 8/18 ─ ►  HUNT 1   part 1 of 2 ─ ○ DEEPEN ─ CLEAN 0
+ ■ SOLO ─ ►  HUNT 1   part 1 of 2 ─ ○ P1 ─ ○ P2 ─ CLEAN 0 ─ ○ CYCLE 1 paused at 8/18
 
  ▌  Corrected hardware error in R5 both threads on 08; no core named. Rerunning it with 00-07 09-15 parked.
 
@@ -12,7 +12,7 @@
    00   0 PARKED   ··················█         -38  -36      ► 08 -26 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -28
    01   0 PARKED   ·················█          -35  -33        09   0 PARKED   ········█                   -17  -16
    02   0 PARKED   ·················█          -36  -34        10   0 PARKED   ········█                   -17  -15
-   03   0 PARKED   ········█                   -18  -16        11   0 PARKED   ··█                          -5   -4
+   03   0 PARKED   ········█                   -18  -16        11   0 PARKED   ··█·                         -5   -4
    04   0 PARKED   ················█           -33  -31        12   0 PARKED   ·····█                      -11   -9
    05   0 PARKED   ···█·                        -8   -7        13   0 PARKED   ···········█                -23  -22
    06   0 PARKED   ·············█·             -28  -27        14   0 AT LIMIT █·                           -1

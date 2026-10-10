@@ -98,16 +98,6 @@ type SearchTurn struct {
 	Running              bool
 }
 
-// DeepeningPlan describes eligible cores in move order and the full-cycle prerequisite.
-type DeepeningPlan struct {
-	Round int
-	Room  []int
-	// Profile is the profile the round moves to, one count toward each moved core's solo limit.
-	Profile []int
-	Checks  []journal.CheckState
-	Waiting bool
-}
-
 // Premise identifies the hypothetical ending used by a forecast branch.
 type Premise string
 

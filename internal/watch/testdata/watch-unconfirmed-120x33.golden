@@ -1,0 +1,32 @@
+ togi   17:39:23   session 41h39m   58 failures · 15 crashes   last observed failure 17:38, a moment ago
+ ■ SOLO ─ ■ P1 ─ ► P2 ─ CLEAN 0 ─ ○ CYCLE 2 paused at 8/18
+
+ ▌  The failed load runs again on the new profile; cycle 2 waits at step 8 until the rerun passes.
+
+  R5   both threads  on 01   mprime SSE 4K-21K · 2 workers                                         RERUN AFTER BACKOFF
+ ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
+
+ 5/5 pass → step 8   pass → rerun   core named → backs off
+
+ CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
+   00 -12 AT LIMIT ▄▄▄▄▄▄█·                    -13             08 -17 HAS ROOM ▄▄▄▄▄▄▄▄▄█                  -19
+ ► 01 -34 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -35             09 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·         -36
+   02 -32 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -34             10 -10 AT LIMIT ▄▄▄▄▄█·                     -11
+   03 -33 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··         -34             11 -35 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -37
+   04 -19 AT LIMIT ▄▄▄▄▄▄▄▄▄█·                 -20             12  -6 AT LIMIT ▄▄▄█·                        -7 top
+   05   0 AT LIMIT █·                           -1 top         13 -29 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·            -30
+   06 -11 AT LIMIT ▄▄▄▄▄█                      -12             14 -28 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·            -29
+   07 -36 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·        -37             15 -17 AT LIMIT ▄▄▄▄▄▄▄▄█·                  -18
+
+ BIOS PROFILE ──────────────────── UNCONFIRMED since #9099   WHAT HAPPENED ─────────────────────────────── l: last 400
+ slot      0    1    2    3    4    5    6    7 
+ CCD 0   -12  -34* -32  -33  -19    0  -11  -36              17:38  backoff  core 01 -35 → -34
+ CCD 1   -17  -35  -10  -35   -6  -29  -28  -17              17:38  fail     core 01 fails at -35
+ * not confirmed: a passed cycle confirms it, unless held    17:38  crash    R5 both threads on core 01 at -35...
+                                                             17:36  pass     R5 both threads on core 08 at -17...
+ R7 ────────────── top ───────────── self-sufficient ─────   17:34  pass     R5 both threads on core 00 at -12...
+ mprime AVX2       05 12 by offset   00-06 08-15             17:32  pass     R6 idle + bursts on 00-15 · passed...
+ mprime AVX-512    05 12 by offset   00-06 08-15             17:17  pass     R2 heavy vector on core 15 at -17...
+ y-cruncher FFTv4  05 12 by offset   00-06 08-15             +1151 more
+
+  ?  help    l  log    esc  back    q  close view

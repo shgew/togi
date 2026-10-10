@@ -1,0 +1,44 @@
+  togi   17:39:23   session 41h39m   58 failures · 15 crashes   last observed failure 17:38, a moment ago
+
+  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ► PHASE 2  confirmation cycle  ───  CLEAN CYCLES 0  ───  ○ CYCLE 2  paused at step 8 of 18, part 3
+
+  ▌  RERUN   The failed load runs again on the new profile; cycle 2 waits at      last trial      CRASH  on core 01
+  ▌          step 8 until the rerun passes.
+
+  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 1216
+   R5   both threads  on 01   mprime SSE 4K-21K · 2 workers                                                                               RERUN AFTER BACKOFF
+  ███████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
+
+  if 5 of 5 pass       CCD 0 partial on 00-04 06 07 → ... → CCD 1 partials end → next: step 8: R5 both threads with mprime SSE 4K-21K
+  if it passes         next: rerun R5 both threads on core 01 at -34 · 2m
+  if a core is named   its failure point is recorded → it backs off → next: rerun R5 both threads on core 01 at -33 · 2m
+
+  CCD 0               0  2 counts/cell       -50 fail pt  one loaded              CCD 1               0  2 counts/cell       -50 fail pt  not under load
+    00  -12  AT LIMIT  ▄▄▄▄▄▄█·                     -13                             08  -17  HAS ROOM  ▄▄▄▄▄▄▄▄▄█                   -19
+  ► 01  -34  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -35                             09  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·          -36
+    02  -32  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -34                             10  -10  AT LIMIT  ▄▄▄▄▄█·                      -11
+    03  -33  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··          -34                             11  -35  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -37
+    04  -19  AT LIMIT  ▄▄▄▄▄▄▄▄▄█·                  -20                             12   -6  AT LIMIT  ▄▄▄█·                         -7   top by offset
+    05    0  AT LIMIT  █·                            -1   top by offset             13  -29  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·             -30
+    06  -11  AT LIMIT  ▄▄▄▄▄█                       -12                             14  -28  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·             -29
+    07  -36  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·         -37                             15  -17  AT LIMIT  ▄▄▄▄▄▄▄▄█·                   -18
+
+  BIOS PROFILE ─────────────────────────── UNCONFIRMED since #9099 · cores 01     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+  slot      0    1    2    3    4    5    6    7 
+  CCD 0   -12  -34* -32  -33  -19    0  -11  -36                                  17:38  backoff  core 01 -35 → -34
+  CCD 1   -17  -35  -10  -35   -6  -29  -28  -17                                  17:38  fail     core 01 fails at -35
+  * not confirmed: a passed cycle confirms it, unless held                        17:38  crash    R5 both threads on core 01 at -35 · rebooted · midway...
+                                                                                  17:36  pass     R5 both threads on core 08 at -17 · passed · Tctl max 76°C
+  CYCLE 2 ───────────────────────────────────────────────── 18 steps · 4 done     17:34  pass     R5 both threads on core 00 at -12 · passed · Tctl max 66°C
+                                                                                  17:32  pass     R6 idle + bursts on 00-15 · passed · Tctl max 70°C
+    #  kind              where               schedule      result                 17:17  pass     R2 heavy vector on core 15 at -17 · passed · Tctl max 70°C
+  ○  1 R7 all-core       2 CCDs · 3+ parts   3+ parts      paused                 17:15  pass     R2 heavy vector on core 07 at -36 · passed · Tctl max 72°C
+       ├ full CCD 0      00-07               3 x 2m + 5m   4/4 passed             17:13  pass     R2 heavy vector on core 14 at -28 · passed · Tctl max 64°C
+  +20 more                                                                        17:11  pass     R2 heavy vector on core 06 at -11 · passed · Tctl max 65°C
+                                                                                  17:09  pass     R2 heavy vector on core 13 at -29 · passed · Tctl max 65°C
+  R7 ───────────────────── top requesters ───── self-sufficient ─────────────     17:07  pass     R2 heavy vector on core 05 at 0 · passed · Tctl max 76°C
+  mprime AVX2 36K-248K     05 12 by offset      00-06 08-15                       17:05  pass     R2 heavy vector on core 12 at -6 · passed · Tctl max 65°C
+  mprime AVX-512 36K-248K  05 12 by offset      00-06 08-15                       17:03  pass     R2 heavy vector on core 04 at -19 · passed · Tctl max 76°C
+  y-cruncher FFTv4         05 12 by offset      00-06 08-15                       +1144 more
+
+   ?  help    l  log    esc  back    q  close view

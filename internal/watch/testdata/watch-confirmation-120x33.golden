@@ -1,0 +1,32 @@
+ togi   07:58:42   session 31h58m   52 failures · 9 crashes   last observed failure 02:14, 5h44m ago
+ ■ SOLO ─ ■ P1 ─ ► P2 ─ CLEAN 0 ─ ► CYCLE 2
+
+ ▌  Step 1, R7 all-core: part 1 of 3 loads 00-07 for 2 minutes.
+
+  R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers                            CYCLE 2 · STEP 1 · PART 1
+ ███████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/4 ► · · ·
+
+ 3/4 pass → trial 4 of 4 · 5m   core named → backs off   none named → backs off   backoffs per offset order
+
+ CCD 0 all loaded 0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
+ ► 00 -37 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38             08 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄█·              -25
+ ► 01 -31 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█·           -32             09 -16 AT LIMIT ▄▄▄▄▄▄▄▄█                   -17
+ ► 02 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -36             10 -16 AT LIMIT ▄▄▄▄▄▄▄▄█                   -17
+ ► 03 -17 AT LIMIT ▄▄▄▄▄▄▄▄█                   -18             11  -4 AT LIMIT ▄▄█·                         -5
+ ► 04 -32 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33             12  -7 AT LIMIT ▄▄▄█·                        -8
+ ► 05  -7 AT LIMIT ▄▄▄█·                        -8 top         13 -22 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄█                -23
+ ► 06 -27 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█·             -28             14   0 AT LIMIT █·                           -1 top
+ ► 07 -30 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█            -31             15 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█··        -36
+
+ BIOS PROFILE ──────────────────────────── confirmed #6908   WHAT HAPPENED ─────────────────────────────── l: last 400
+ slot      0    1    2    3    4    5    6    7 
+ CCD 0   -36  -31  -34  -16  -31   -7  -27  -30              07:58  step     cycle 2 step 1: R7 all-core, mprime...
+ CCD 1   -24  -16  -15   -4   -7  -22    0  -35              07:58  cycle    cycle 2 started · 18 steps
+                                                             07:58  round    #1 passed, the proposed offsets held
+ R7 ────────────── top ───────────── self-sufficient ─────   07:58  pass     R7 all-core on 08-10 13 15 · 5 of 5...
+ mprime AVX2       05 14 by offset   01-14                   07:48  pass     R7 all-core on 00 02 · 5 of 5 passed...
+ mprime AVX-512    05 14 by offset   01-14                   07:38  pass     R7 all-core on 00 02 04 · 5 of 5...
+ y-cruncher FFTv4  05 14 by offset   01-14                   07:28  pass     R7 all-core on 00-04 06 07 · 5 of 5...
+                                                             +808 more
+
+  ?  help    l  log    esc  back    q  close view

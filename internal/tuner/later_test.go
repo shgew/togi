@@ -1077,3 +1077,32 @@ func TestBIOSProfileStepsOnlyTheHeldCoresOfAnObservedHuntFailure(t *testing.T) {
 	}
 	t.Fatal("hunt never ran its member probe")
 }
+
+func TestFirstResultNeedsAConfirmedProfile(t *testing.T) {
+	h := newHarness(t, soloCore(-10, -12))
+	if h.s.FirstResult() {
+		t.Fatal("first result before phase 1 ended")
+	}
+	h.add(&journal.ProfileChange{To: []int{-10}})
+	startCycle(h, 1)
+	endCycle(h, 1)
+	if !h.s.FirstResult() {
+		t.Fatalf("no first result after phase 1's passed cycle: %+v", h.s.BIOSProfile())
+	}
+	passCycles(h, 2, 3)
+	startCycle(h, 4)
+	failCore(h, 0)
+	h.decide(h.next())
+	if h.s.FirstResult() || len(h.s.BIOSProfile().Unconfirmed) == 0 {
+		t.Fatalf("a held profile is a first result: %+v", h.s.BIOSProfile())
+	}
+	endCycle(h, 4)
+	passCycles(h, 5, 4+laterWindow-1)
+	if h.s.FirstResult() {
+		t.Fatalf("a valid hold's stepped-back profile is a first result: %+v", h.s.BIOSProfile())
+	}
+	startCycle(h, 4+laterWindow)
+	if !h.s.FirstResult() {
+		t.Fatalf("the expired hold did not return to the confirmed profile: %+v", h.s.BIOSProfile())
+	}
+}

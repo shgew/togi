@@ -137,7 +137,7 @@ func TestRunHardwareRestoresTerminalWhenSessionPanics(t *testing.T) {
 	var recovered any
 	func() {
 		defer func() { recovered = recover() }()
-		runHardware(context.Background(), &g, config.Default(), false, nil, 0, io.Discard, render.Renderer{}, dash, newMachine)
+		runHardware(context.Background(), &g, config.Default(), false, nil, runLimits{}, io.Discard, render.Renderer{}, dash, newMachine)
 	}()
 	if diff := cmp.Diff(any("trial start panic"), recovered); diff != "" {
 		t.Errorf("recovered panic (-want +got): %s", diff)
@@ -213,7 +213,7 @@ func panicOverStoppedRun(t *testing.T) (beforeFirstEvent, whole string, recovere
 	}
 	stopped, cancel := context.WithCancel(context.Background())
 	cancel()
-	code := runHardware(stopped, &g, config.Default(), false, nil, 0, io.Discard, render.Renderer{}, nil, func(config.Config, string) (machine.Machine, error) { return first.Seams(), nil })
+	code := runHardware(stopped, &g, config.Default(), false, nil, runLimits{}, io.Discard, render.Renderer{}, nil, func(config.Config, string) (machine.Machine, error) { return first.Seams(), nil })
 	if code != exitOK {
 		t.Fatalf("the first run exited %d", code)
 	}
@@ -239,7 +239,7 @@ func panicOverStoppedRun(t *testing.T) (beforeFirstEvent, whole string, recovere
 	dash := &dashboard{dir: g.stateDir, out: slave}
 	func() {
 		defer func() { recovered = recover() }()
-		runHardware(context.Background(), &g, config.Default(), false, nil, 0, io.Discard, render.Renderer{}, dash, newMachine)
+		runHardware(context.Background(), &g, config.Default(), false, nil, runLimits{}, io.Discard, render.Renderer{}, dash, newMachine)
 	}()
 	if _, err := slave.WriteString("end of run"); err != nil {
 		t.Fatal(err)

@@ -58,6 +58,7 @@ export extern "togi restart-limit" [
 export extern "togi run" [
     --config: path
     --cycles: string
+    --first-result
     --no-tui
     --state-dir: path
     --tuning-boot: path

@@ -32,6 +32,8 @@ type State struct {
 	Combinations []CombinationState `json:"combinations"`
 	Hunt         *HuntState         `json:"hunt"`
 	Deepening    *DeepeningState    `json:"deepening"`
+	Phases       *PhasesState       `json:"phases"`
+	BIOS         *BIOSState         `json:"bios"`
 
 	open []openIntent
 }
@@ -112,6 +114,37 @@ type DeepeningState struct {
 	Profile []int        `json:"profile"`
 	Cores   []int        `json:"cores"`
 	Checks  []CheckState `json:"checks"`
+}
+
+// PhasesState is where the two-phase method stands. Phase is 1, 2, or 0 once phase 2 concluded. In phase 2,
+// RoundsLeft counts the rounds that would still run if none failed, the open one included, before one full cycle.
+type PhasesState struct {
+	Phase      int              `json:"phase"`
+	Phase1End  int              `json:"phase_1_end"`
+	Confirming bool             `json:"confirming"`
+	Concluded  int              `json:"concluded"`
+	Round      int              `json:"round"`
+	RoundsLeft int              `json:"rounds_left"`
+	Candidates []CandidateState `json:"candidates"`
+}
+
+// CandidateState is a core phase 2 still moves or checks again: its Gap is the counts it moves if every round passes.
+type CandidateState struct {
+	Core      int  `json:"core"`
+	Offset    int  `json:"offset"`
+	SoloLimit int  `json:"solo_limit"`
+	Gap       int  `json:"gap"`
+	Carried   bool `json:"carried,omitempty"`
+	Moving    bool `json:"moving,omitempty"`
+}
+
+// BIOSState is the profile to enter in BIOS, in core-id order. Unconfirmed lists the cores stepped back or held
+// since the confirming cycle ended at Confirmed; Since is the earliest such event, 0 when the profile is confirmed.
+type BIOSState struct {
+	Offsets     []int `json:"offsets"`
+	Confirmed   int   `json:"confirmed"`
+	Unconfirmed []int `json:"unconfirmed"`
+	Since       int   `json:"since"`
 }
 
 type CheckState struct {

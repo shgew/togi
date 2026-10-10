@@ -1,74 +1,75 @@
-hunt 1, group 1 | clean cycles since last deepening: 0, latest cycle 0
+hunt 1, group 1 | phase 1
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
 in flight: none
 
-CORE  CCD  SLOT  OFFSET  PHASE     FAILURE  QUEUED
-00    0    0     -10     AT LIMIT  -11      -
+CORE  CCD  SLOT  OFFSET  BIOS  PHASE     FAILURE  QUEUED
+00    0    0     -10     -     AT LIMIT  -11      -
   last decision [#3632] core 00 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 00)
-01    0    1     -10     AT LIMIT  -11      -
+01    0    1     -10     -     AT LIMIT  -11      -
   last decision [#3634] core 01 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 01)
-02    0    2     -10     AT LIMIT  -11      -
+02    0    2     -10     -     AT LIMIT  -11      -
   last decision [#3636] core 02 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 02)
-03    0    3     -10     AT LIMIT  -11      -
+03    0    3     -10     -     AT LIMIT  -11      -
   last decision [#3638] core 03 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 03)
-04    0    4     -10     AT LIMIT  -11      -
+04    0    4     -10     -     AT LIMIT  -11      -
   last decision [#3640] core 04 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 04)
-05    0    5     -10     AT LIMIT  -11      -
+05    0    5     -10     -     AT LIMIT  -11      -
   last decision [#3642] core 05 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 05)
-06    0    6     -10     AT LIMIT  -11      -
+06    0    6     -10     -     AT LIMIT  -11      -
   last decision [#3644] core 06 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 06)
-07    0    7     -10     AT LIMIT  -11      -
+07    0    7     -10     -     AT LIMIT  -11      -
   last decision [#3646] core 07 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 07)
-08    1    0     -10     AT LIMIT  -11      -
+08    1    0     -10     -     AT LIMIT  -11      -
   last decision [#3633] core 08 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 08)
-09    1    1     -10     AT LIMIT  -11      -
+09    1    1     -10     -     AT LIMIT  -11      -
   last decision [#3635] core 09 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 09)
-10    1    2     -10     AT LIMIT  -11      -
+10    1    2     -10     -     AT LIMIT  -11      -
   last decision [#3637] core 10 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 10)
-11    1    3     -10     AT LIMIT  -11      -
+11    1    3     -10     -     AT LIMIT  -11      -
   last decision [#3639] core 11 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 11)
-12    1    4     -10     AT LIMIT  -11      -
+12    1    4     -10     -     AT LIMIT  -11      -
   last decision [#3641] core 12 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 12)
-13    1    5     -10     AT LIMIT  -11      -
+13    1    5     -10     -     AT LIMIT  -11      -
   last decision [#3643] core 13 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 13)
-14    1    6     -10     AT LIMIT  -11      -
+14    1    6     -10     -     AT LIMIT  -11      -
   last decision [#3645] core 14 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 14)
-15    1    7     -10     AT LIMIT  -11      -
+15    1    7     -10     -     AT LIMIT  -11      -
   last decision [#3647] core 15 search -> at its limit at -10 (solo limit -10
                 passed 5 starts of R1 mprime-sse-4k-21k and R2
                 mprime-avx2-36k-248k; failure point -11 of core 15)
+BIOS profile: none confirmed yet; phase 1 has not passed a full cycle
 
 R7 self-sufficiency (passed as top requester at equal or deeper offsets; not a
   guarantee)

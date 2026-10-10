@@ -84,6 +84,8 @@ const (
 	ShutdownDeadEnd ShutdownReason = "dead_end"
 	ShutdownCycles  ShutdownReason = "cycles"
 	ShutdownCommand ShutdownReason = "command"
+	// ShutdownFirstResult is a stop at the first confirmed BIOS profile.
+	ShutdownFirstResult ShutdownReason = "first_result"
 )
 
 func coreID(c int) string { return fmt.Sprintf("%02d", c) }
@@ -978,6 +980,8 @@ func (p *Shutdown) Message() string {
 			return "phase 2 is confirmed and the profile passed the requested clean cycle; stopping"
 		}
 		return fmt.Sprintf("phase 2 is confirmed and the profile passed the requested %d clean cycles; stopping", p.Cycles)
+	case ShutdownFirstResult:
+		return "the BIOS profile is confirmed; stopping at the first result as requested"
 	case ShutdownCommand:
 		return "command finished"
 	}

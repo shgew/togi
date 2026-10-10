@@ -184,6 +184,20 @@ func (s *State) pendingHuntBackoff(h *hunt) (core, to int, ok bool) {
 	return 0, 0, false
 }
 
+func (s *State) projectBIOS() *journal.BIOSState {
+	b := s.BIOSProfile()
+	if b.Confirmed == 0 {
+		return nil
+	}
+	return &journal.BIOSState{Offsets: b.Offsets, Confirmed: b.Confirmed, Unconfirmed: b.Unconfirmed, Since: b.Since}
+}
+
+// FirstResult reports that the BIOS profile is confirmed and no core has been stepped back or held since.
+func (s *State) FirstResult() bool {
+	b := s.BIOSProfile()
+	return b.Confirmed != 0 && len(b.Unconfirmed) == 0
+}
+
 func (s *State) foldLaterCycleEnd(e journal.Event) {
 	if s.phases.phase1End == 0 {
 		return

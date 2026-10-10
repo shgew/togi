@@ -65,6 +65,7 @@ _togi() {
       _arguments \
         '--config=:path:_files' \
         '--cycles=:N: ' \
+        '--first-result' \
         '--no-tui' \
         '--state-dir=:path:_files' \
         '--tuning-boot=:file:_files'

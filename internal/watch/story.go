@@ -88,12 +88,12 @@ func (s Snapshot) story(now time.Time, oneFrame bool) story {
 		return story{"RERUN", lines, brief, plainTone}
 	}
 	if t.round > 0 || s.phase == journal.PhaseDeepening {
-		label := fmt.Sprintf("DEEPEN · ROUND %d", t.round)
+		label := fmt.Sprintf("PHASE 2 · ROUND %d", t.round)
 		if t.condition == machine.Alone {
-			text := fmt.Sprintf("Core %02d runs alone at its proposed %d, like every deepened core's light and heavy checks.", t.core, t.offset)
-			return story{label, []string{text, "R7 then checks the parts where a deepened core is a top requester."}, fmt.Sprintf("Deepening check: core %02d alone at its proposed %d.", t.core, t.offset), plainTone}
+			text := fmt.Sprintf("Core %02d runs alone at its proposed %d, like every moved core's light and heavy checks.", t.core, t.offset)
+			return story{label, []string{text, "R7 then checks the parts where a moved core is a top requester."}, fmt.Sprintf("Round check: core %02d alone at its proposed %d.", t.core, t.offset), plainTone}
 		}
-		return story{label, []string{"These offsets passed a full cycle. I check the deepening plan's proposed profile together.", "The checks below distinguish cores that go deeper from members that yield shallower."}, "Checking the deepening plan's proposed profile.", plainTone}
+		return story{label, []string{s.roundMoves(t.round), "The checks below distinguish cores that stay moved from members that yield shallower."}, fmt.Sprintf("Checking round %d's proposed profile.", t.round), plainTone}
 	}
 	name := fmt.Sprintf("CYCLE %d", t.cycle)
 	if t.regime == machine.R6 {
@@ -107,6 +107,12 @@ func (s Snapshot) story(now time.Time, oneFrame bool) story {
 	step := fmt.Sprintf("Step %d is %s %s with %s.", t.step, t.regime, kindWords(t.regime), workloadDisplay(t.workload))
 	brief := step
 	where := "Every core runs at its profile offset. The cycle keeps testing until stopped."
+	switch {
+	case s.phases != nil && s.phases.phase == 1:
+		where = "Every core runs at its profile offset. Phase 1's cycle: its pass confirms the first BIOS profile."
+	case s.phases != nil && s.phases.phase == 2:
+		where = "Every core runs at its profile offset. Phase 2's confirmation cycle: its pass concludes phase 2."
+	}
 	if t.parts > 1 {
 		where = fmt.Sprintf("Part %d of %d loads %s for %s.", t.part, t.parts, coreIDs(t.cores), minutes(t.duration))
 		brief = fmt.Sprintf("Step %d, %s %s: part %d of %d loads %s for %s.", t.step, t.regime, kindWords(t.regime), t.part, t.parts, coreIDs(t.cores), minutes(t.duration))
@@ -125,6 +131,25 @@ func (s Snapshot) story(now time.Time, oneFrame bool) story {
 	return story{name, []string{step, where}, brief, plainTone}
 }
 
+// roundMoves says what the open round moves and the most that is left after it.
+func (s Snapshot) roundMoves(round int) string {
+	var moving []int
+	left := 0
+	if s.phases != nil {
+		left = s.phases.roundsLeft
+		for _, c := range s.phases.candidates {
+			if c.Moving {
+				moving = append(moving, c.Core)
+			}
+		}
+	}
+	what := fmt.Sprintf("Round %d checks again the offsets kept from the round that ended unpassed", round)
+	if len(moving) > 0 {
+		what = fmt.Sprintf("Round %d moves %s %s one count toward their solo limits", round, noun(len(moving), "core"), commaIDs(moving))
+	}
+	return fmt.Sprintf("%s; at most %s left, then one full cycle.", what, plural(left, "round"))
+}
+
 // problemStory is the journal that exists but cannot be read; oneFrame drops the promise to retry, which only live
 // watch keeps.
 func (s Snapshot) problemStory(oneFrame bool) story {
@@ -138,6 +163,8 @@ func (s Snapshot) problemStory(oneFrame bool) story {
 func (s Snapshot) stoppedStory() story {
 	text := "I've stopped. Everything I learned is in the journal; togi run picks up where I left off."
 	switch {
+	case s.stopped.reason == journal.ShutdownFirstResult:
+		text = "The BIOS profile is confirmed, so I stopped at the first result as asked. togi status shows it; togi run continues with phase 2."
 	case s.stopped.reason == journal.ShutdownCycles && s.stopped.saved:
 		text = "The requested clean cycles are complete, so I restored safer offsets and stopped. togi run picks up where I left off."
 	case s.stopped.reason == journal.ShutdownCycles:
@@ -158,7 +185,7 @@ func (s Snapshot) stageLabel() string {
 	case len(s.turns) > 0:
 		return "SOLO LIMITS"
 	case s.phase == journal.PhaseDeepening:
-		return "DEEPEN"
+		return "PHASE 2"
 	case s.cycle != nil:
 		return fmt.Sprintf("CYCLE %d", s.cycle.number)
 	}
@@ -327,6 +354,8 @@ func stopWords(reason journal.ShutdownReason) string {
 		return "stopped by a signal"
 	case journal.ShutdownCycles:
 		return "requested clean cycles completed"
+	case journal.ShutdownFirstResult:
+		return "stopped at the first confirmed result"
 	case journal.ShutdownCommand:
 		return "read-only command finished; no applied offsets changed"
 	case journal.ShutdownDeadEnd:
@@ -533,7 +562,7 @@ func (s Snapshot) operation(t trialView) string {
 	case t.rerun:
 		text = "RERUN AFTER BACKOFF"
 	case t.round > 0:
-		text = fmt.Sprintf("DEEPEN · ROUND %d", t.round)
+		text = fmt.Sprintf("PHASE 2 · ROUND %d", t.round)
 		if t.condition == machine.Alone {
 			text += fmt.Sprintf(" · CORE %02d AT %d", t.core, t.offset) + loadWord(t.regime)
 		}
@@ -1129,7 +1158,7 @@ func (s Snapshot) decisionPhrases(decisions []journal.Payload, named bool) []phr
 		case *journal.CorePhase:
 			switch {
 			case d.From == journal.PhaseSearch && d.To != journal.PhaseSearch:
-				add(fmt.Sprintf("core %02d solo limit %d", d.Core, d.Offset))
+				add(fmt.Sprintf("core %02d solo limit %d", d.Core, soloLimit(d)))
 			case named:
 			case d.To == journal.PhaseSearch:
 				add(fmt.Sprintf("core %02d starts its search over", d.Core))

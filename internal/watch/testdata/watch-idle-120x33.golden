@@ -1,5 +1,5 @@
  togi   20:04:20   paused until 20:19   session 20h04m   39 failures · 8 crashes
- ■ SOLO ─ ► CYCLE 1 ─ ○ DEEPEN ─ CLEAN 0
+ ■ SOLO ─ ► P1 ─ ○ P2 ─ CLEAN 0 ─ ► CYCLE 1
 
  ▌  Every core idle with short wake-ups; this screen holds still.
 
@@ -12,7 +12,7 @@
  ► 00 -36 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█         -38           ► 08 -26 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄█              -28
  ► 01 -33 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -35           ► 09 -16 AT LIMIT ▄▄▄▄▄▄▄▄█                   -17
  ► 02 -34 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█          -36           ► 10 -15 HAS ROOM ▄▄▄▄▄▄▄▄█                   -17
- ► 03 -16 HAS ROOM ▄▄▄▄▄▄▄▄█                   -18           ► 11  -4 AT LIMIT ▄▄█                          -5
+ ► 03 -16 HAS ROOM ▄▄▄▄▄▄▄▄█                   -18           ► 11  -4 AT LIMIT ▄▄█·                         -5
  ► 04 -31 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█           -33           ► 12  -9 HAS ROOM ▄▄▄▄▄█                      -11
  ► 05  -7 AT LIMIT ▄▄▄█·                        -8           ► 13 -22 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄█                -23
  ► 06 -27 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄█·             -28           ► 14   0 AT LIMIT █·                           -1

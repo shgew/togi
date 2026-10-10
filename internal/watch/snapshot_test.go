@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/shgew/togi/internal/journal"
@@ -526,5 +527,36 @@ func TestProjectHuntCausedByCarriedFacts(t *testing.T) {
 				t.Fatalf("hunt cause %q, want %q without %q", text, tc.want, tc.avoid)
 			}
 		})
+	}
+}
+
+func TestProjectSoloLimitIsTheOffsetThePassedAlone(t *testing.T) {
+	t.Parallel()
+	s := Project(dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, To: journal.PhaseSearch, Offset: 0},
+		&journal.CorePhase{Core: 0, From: journal.PhaseSearch, To: journal.PhaseHasRoom, Offset: -19, Pass: new(-20), FailurePoint: new(-21)},
+		&journal.CorePhase{Core: 1, From: journal.PhaseSearch, To: journal.PhaseHasRoom, Offset: -9}))
+	if got := s.cores[0].solo; got == nil || *got != -20 {
+		t.Fatalf("solo limit %v, want -20: the margin -19 is not the offset the core passed alone", got)
+	}
+	if got := s.cores[1].solo; got == nil || *got != -9 {
+		t.Fatalf("solo limit %v for an exit with no pass, want its offset -9", got)
+	}
+}
+
+func TestProjectPhaseAndBIOSProfile(t *testing.T) {
+	t.Parallel()
+	s := Project(dashboardEvents(dashboardSession(),
+		&journal.CorePhase{Core: 0, From: journal.PhaseSearch, To: journal.PhaseHasRoom, Offset: -9, Pass: new(-10)},
+		&journal.CorePhase{Core: 1, From: journal.PhaseSearch, To: journal.PhaseHasRoom, Offset: -9, Pass: new(-10)},
+		&journal.CorePhase{Core: 2, From: journal.PhaseSearch, To: journal.PhaseHasRoom, Offset: -9, Pass: new(-10)}))
+	if s.phases == nil || s.phases.phase != 1 || s.bios != nil {
+		t.Fatalf("phases %+v, BIOS %+v before phase 1 ends", s.phases, s.bios)
+	}
+	if lines := s.biosLines(80, wideLayout); len(lines) != 2 || !strings.Contains(ansi.Strip(lines[1]), "none confirmed yet") {
+		t.Fatalf("BIOS rows before phase 1 ends: %q", lines)
+	}
+	if lines := s.biosLines(80, compactLayout); len(lines) != 0 {
+		t.Fatalf("compact layout spends rows on no profile: %q", lines)
 	}
 }

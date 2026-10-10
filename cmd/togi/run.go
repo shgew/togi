@@ -33,7 +33,7 @@ import (
 	"github.com/shgew/togi/internal/tuningboot"
 )
 
-var runHelp = `Usage: togi run [--cycles <N>] [--tuning-boot <grubenv>] [--no-tui]
+var runHelp = `Usage: togi run [--cycles <N> | --first-result] [--tuning-boot <grubenv>] [--no-tui]
 
 Start or resume the tuning session in the foreground: search for each core's
 solo limit, hunt the core or combination behind unattributed failures with
@@ -67,6 +67,12 @@ events.jsonl still records every event. --no-tui prints the lines instead.
 phase 2's confirmation cycle. --cycles 1 stops right after the confirmation; a
 larger N counts further cycles of indefinite checking.
 
+--first-result stops once the BIOS profile is first confirmed: right after
+phase 1's passed cycle, before phase 2 moves any core. togi status shows the
+profile to enter in BIOS. Run again without it to continue with phase 2. A later
+run with it stops at the next round or cycle start whose profile is confirmed,
+never on an unconfirmed one. It cannot be combined with --cycles.
+
 Without --tuning-boot, run checks the hardware watchdog once and records a
 session.warning if none is active, then continues; the dashboard and togi events
 show it. A freeze without reset protection needs a manual reset; start sessions
@@ -80,13 +86,23 @@ journals persist a short leave reason before clearing the saved GRUB entry.
 ` + examples(
 	example{"sudo togi run", "Tune this machine until a signal or a dead end"},
 	example{"sudo togi run --cycles 1", cyclesOneExample},
+	example{"sudo togi run --first-result", firstResultExample},
 	example{"sudo togi run --no-tui", "Print one line per event instead of the dashboard"},
 )
 
 // cyclesOneExample describes `run --cycles 1` in the run help and in togi --help.
 const cyclesOneExample = "Stop once phase 2's confirmation cycle has passed"
 
-func runFlags(g *globals, cycles *int, grubenv *string, noTUI *bool) *flag.FlagSet {
+// firstResultExample describes `run --first-result` in the run help.
+const firstResultExample = "Stop at the first confirmed BIOS profile, after phase 1's passed cycle"
+
+// runLimits is what ends a run besides a signal or a dead end; at most one is set.
+type runLimits struct {
+	cycles      int
+	firstResult bool
+}
+
+func runFlags(g *globals, cycles *int, firstResult *bool, grubenv *string, noTUI *bool) *flag.FlagSet {
 	flags := newFlagSet("run", g)
 	flags.Func("cycles", "stop after `N` clean cycles, each a passed full cycle ending at or after phase 2's confirmation cycle (default endless)", func(s string) error {
 		v, err := strconv.Atoi(s)
@@ -96,6 +112,7 @@ func runFlags(g *globals, cycles *int, grubenv *string, noTUI *bool) *flag.FlagS
 		*cycles = v
 		return nil
 	})
+	flags.BoolVar(firstResult, "first-result", false, "stop once the BIOS profile is first confirmed, after phase 1's passed cycle and before phase 2 moves a core (not with --cycles)")
 	flags.StringVar(grubenv, "tuning-boot", "", "run as the tuning boot service: require an armed hardware watchdog within 30s; reset retry count on the first durable journal append; persist a leave reason before clearing saved_entry in this GRUB environment `file`, and reboot after a boot loop")
 	flags.BoolVar(noTUI, "no-tui", false, "print one line per event instead of the dashboard on a terminal")
 	return flags
@@ -103,13 +120,18 @@ func runFlags(g *globals, cycles *int, grubenv *string, noTUI *bool) *flag.FlagS
 
 func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	var (
-		cycles  int
-		grubenv string
-		noTUI   bool
+		cycles      int
+		firstResult bool
+		grubenv     string
+		noTUI       bool
 	)
-	flags := runFlags(g, &cycles, &grubenv, &noTUI)
+	flags := runFlags(g, &cycles, &firstResult, &grubenv, &noTUI)
 	if code, ok := parseFlags(flags, args, runHelp, stdout, stderr); !ok {
 		return code
+	}
+	if firstResult && cycles != 0 {
+		fmt.Fprintf(stderr, "togi run: --first-result and --cycles cannot be combined\n\n%s", runHelp)
+		return exitUsage
 	}
 	renderer := render.NewRenderer(stderr, os.Getenv)
 	var bootloader session.Bootloader
@@ -142,7 +164,7 @@ func runRun(g *globals, args []string, stdout, stderr io.Writer) int {
 	if out, ok := stderr.(*os.File); ok && !noTUI && interactive(out) {
 		dash = &dashboard{dir: g.stateDir, out: out, in: os.Stdin}
 	}
-	return runHardware(ctx, g, cfg, file, bootloader, cycles, stderr, renderer, dash, hardware.New)
+	return runHardware(ctx, g, cfg, file, bootloader, runLimits{cycles, firstResult}, stderr, renderer, dash, hardware.New)
 }
 
 func runStartupRefusal(g *globals, err error, stderr io.Writer, renderer render.Renderer, bootloader session.Bootloader) int {
@@ -160,7 +182,7 @@ func runStartupRefusal(g *globals, err error, stderr io.Writer, renderer render.
 	return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 }
 
-func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, cycles int, stderr io.Writer, renderer render.Renderer, dash *dashboard, newMachine func(config.Config, string) (machine.Machine, error)) int {
+func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, bootloader session.Bootloader, limits runLimits, stderr io.Writer, renderer render.Renderer, dash *dashboard, newMachine func(config.Config, string) (machine.Machine, error)) int {
 	if err := hardware.CheckPlatform(); err != nil {
 		fmt.Fprintf(stderr, "togi run: %v\n", err)
 		return exitError
@@ -228,7 +250,7 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	if dash != nil {
 		sessionStderr = &hidden
 	}
-	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Cycles: cycles, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr, Log: log, Renderer: renderer, Close: j.Close, SessionID: j.SessionID})
+	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Cycles: limits.cycles, FirstResult: limits.firstResult, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr, Log: log, Renderer: renderer, Close: j.Close, SessionID: j.SessionID})
 	if dash != nil {
 		dash.hide()
 		_, _ = hidden.WriteTo(stderr)
@@ -301,7 +323,7 @@ func runResult(stop session.Stop, err error, stderr io.Writer, renderer render.R
 		return exitError
 	}
 	switch stop.Reason {
-	case session.StopSignal, session.StopCycles:
+	case session.StopSignal, session.StopCycles, session.StopFirstResult:
 		return exitOK
 	case session.StopDeadEnd:
 		line := fmt.Sprintf("togi: dead end %s: %s", stop.DeadEnd.Condition, stop.DeadEnd.Detail)

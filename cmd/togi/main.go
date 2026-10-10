@@ -66,7 +66,7 @@ func init() {
 			return restartLimitFlags(g, new(string))
 		}, run: runRestartLimit},
 		{name: "run", summary: "Start or resume the session in the foreground", help: runHelp, flags: func(g *globals) *flag.FlagSet {
-			return runFlags(g, new(int), new(string), new(bool))
+			return runFlags(g, new(int), new(bool), new(string), new(bool))
 		}, run: runRun},
 		{name: "status", summary: "Show core failure points, combinations, activity and clean cycles", help: statusHelp, flags: func(g *globals) *flag.FlagSet {
 			return newFlagSet("status", g)

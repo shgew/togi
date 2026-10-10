@@ -16,6 +16,11 @@ import (
 
 var header = fmt.Sprintf(`{"seq":1,"time":"2026-01-01T00:00:00.000000000Z","boot":"b","kind":"session.start","session":"test","schema":4,"ruleset":%d,"cores":[{"core":0,"ccd":0,"cpus":[0,1]},{"core":8,"ccd":1,"cpus":[2,3]}]}`, tuner.Ruleset) + "\n"
 
+// configLoaded is a config.loaded of the header's build, with fixes counting the build's bug fixes.
+func configLoaded(seq, ruleset, fixes int) string {
+	return fmt.Sprintf(`{"seq":%d,"boot":"b","kind":"config.loaded","version":"","rev":"","ruleset":%d,"schema":4,"fixes":%d,"path":"","file":false,"config":{}}`+"\n", seq, ruleset, fixes)
+}
+
 func handwritten(t *testing.T, body string) []journal.Event {
 	t.Helper()
 	dir := t.TempDir()
@@ -172,7 +177,28 @@ func TestAuditInvariants(t *testing.T) {
 		{"stale rebuilt snapshot", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores","last_seq"]}
 `, false, nil},
 		{"current rebuilt snapshot disagrees", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+` + configLoaded(3, tuner.Ruleset, 0), false, []finding{{2, "replay"}}},
+		{"rebuilt then shutdown without config", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+{"seq":3,"boot":"b","kind":"shutdown","reason":"cycles"}
 `, false, []finding{{2, "replay"}}},
+		{"rebuilt then dead end without config", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+{"seq":3,"boot":"b","kind":"deadend","condition":"preflight","detail":"unsupported machine"}
+`, false, []finding{{2, "replay"}}},
+		{"rebuilt then archive without config", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+{"seq":3,"boot":"b","kind":"session.archived","session":"test","path":"archive"}
+`, false, []finding{{2, "replay"}}},
+		{"rebuilt then later boot without config", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+{"seq":3,"boot":"c","kind":"core.phase","core":0}
+`, false, []finding{{2, "replay"}}},
+		{"rebuilt in a finished journal without config", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+`, true, []finding{{2, "replay"}, {2, "termination"}}},
+		{"rebuilt at the end of an open journal", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores"]}
+`, false, nil},
+		{"stale rebuilt then shutdown", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["cores","last_seq"]}
+{"seq":3,"boot":"b","kind":"shutdown","reason":"cycles"}
+`, false, nil},
+		{"rebuilt after a build change", `{"seq":2,"boot":"b","kind":"state.rebuilt","fields":["bios","phases"]}
+` + configLoaded(3, tuner.Ruleset, 1), false, nil},
 		{"reset clears marks", `{"seq":2,"boot":"b","kind":"core.phase","core":0,"failure_point":-30}
 {"seq":3,"boot":"b","kind":"combination","combination":1,"members":[{"core":0,"offset":-30},{"core":8,"offset":-20}]}
 {"seq":4,"boot":"b","kind":"command.reset","core":0}
@@ -237,7 +263,7 @@ func TestProjectedState(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(start), 0600); err != nil {
 				t.Fatal(err)
 			}
-			cached := journal.State{Schema: tc.snapshot, LastSeq: 1, Phase: "checking", Session: &journal.SessionInfo{ID: "test"}, Cores: []journal.CoreState{{Core: 0, CCD: 0, CPUs: []int{0, 1}}, {Core: 8, CCD: 1, CPUs: []int{2, 3}}}}
+			cached := journal.State{Schema: tc.snapshot, LastSeq: 1, Phase: "checking", Session: &journal.SessionInfo{ID: "test"}, Cores: []journal.CoreState{{Core: 0, CCD: 0, CPUs: []int{0, 1}}, {Core: 8, CCD: 1, CPUs: []int{2, 3}}}, Phases: &journal.PhasesState{Phase: 1}}
 			events := handwritten(t, "")
 			cached.Session.Start = events[0].Time
 			cached.LastSeq, cached.Phase = tc.lastSeq, tc.phase

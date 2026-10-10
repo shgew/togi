@@ -184,21 +184,65 @@ func (s *State) SearchTurns() []SearchTurn {
 	return out
 }
 
-// DeepeningPlan returns cores with room in the order round moves visit them.
-func (s *State) DeepeningPlan() DeepeningPlan {
-	out := DeepeningPlan{Waiting: len(s.passedFullCycles) == 0}
-	p := s.offsets()
-	for _, c := range s.cores {
-		if c.phase != "" && c.phase != journal.PhaseSearch {
-			if _, limited := s.atLimit(c, p); !limited {
-				out.Room = append(out.Room, c.id)
+// PhasePlan reports where the two-phase method stands and, in phase 2, the worst-case remaining work: the rounds that
+// would still run if none failed, then one full cycle. It is nil before the session has cores.
+func (s *State) PhasePlan() *journal.PhasesState {
+	if len(s.cores) == 0 {
+		return nil
+	}
+	ph := &s.phases
+	out := &journal.PhasesState{Phase: 2, Phase1End: ph.phase1End, Concluded: ph.concluded}
+	switch {
+	case ph.phase1End == 0:
+		out.Phase = 1
+		return out
+	case ph.concluded != 0:
+		out.Phase = 0
+		return out
+	case ph.confirmStart != 0:
+		out.Confirming = true
+		return out
+	}
+	gaps := map[int]int{}
+	carried := map[int]bool{}
+	moving := map[int]bool{}
+	from, passed := s.offsets(), ph.passed
+	if r := s.round; r != nil {
+		out.RoundsLeft, out.Round = 1, r.start.Round
+		for _, id := range r.start.Cores {
+			if m, ok := ph.moves[id]; ok && m.round == r.start.Round {
+				gaps[id]++
+				moving[id] = true
+			} else {
+				carried[id] = true
 			}
 		}
+		from, passed = slices.Clone(r.start.Profile), slices.Clone(r.start.Profile)
 	}
-	if r := s.round; r != nil {
-		out.Round = r.start.Round
-		out.Profile = slices.Clone(r.start.Profile)
-		out.Checks = s.projectRound().Checks
+	for range 2 - machine.MinOffset {
+		profile, moved, kept := s.phase2MovesAt(from, passed)
+		if len(moved)+len(kept) == 0 {
+			break
+		}
+		out.RoundsLeft++
+		for _, id := range moved {
+			gaps[id]++
+		}
+		for _, id := range kept {
+			carried[id] = true
+		}
+		from, passed = profile, profile
+	}
+	out.Confirming = out.RoundsLeft == 0
+	for _, c := range s.byID() {
+		if gaps[c.id] == 0 && !carried[c.id] {
+			continue
+		}
+		offset := c.offset
+		if moving[c.id] {
+			offset = s.round.initial[s.index(c.id)]
+		}
+		out.Candidates = append(out.Candidates, journal.CandidateState{Core: c.id, Offset: offset, SoloLimit: c.soloLimit, Gap: gaps[c.id], Carried: carried[c.id], Moving: moving[c.id]})
 	}
 	return out
 }
