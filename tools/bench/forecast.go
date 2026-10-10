@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -73,7 +74,7 @@ func executeForecast(o options, stdout, stderr io.Writer) (err error) {
 	launch := func(spec runSpec) (simulation, error) {
 		return launchSimulator(o.ctx, binary, root, spec, o.maxBoots, o.timeout)
 	}
-	record, err := makeForecast(o.forecast, root, anchor, runs, suiteDir, o.jobs, o.keep != "", launch)
+	record, err := makeForecast(o.ctx, o.forecast, root, anchor, runs, suiteDir, o.jobs, o.keep != "", launch)
 	if err != nil {
 		return err
 	}
@@ -123,8 +124,9 @@ func writeRecord(path string, record forecast.Record) error {
 }
 
 // makeForecast runs the ensemble from copies of the state directory input and summarizes what each run did after the
-// anchor. The record's commit, dirty flag and files are the caller's.
-func makeForecast(input, root string, anchor forecast.Anchor, specs []runSpec, suiteDir string, jobs int, keep bool, launch func(runSpec) (simulation, error)) (forecast.Record, error) {
+// anchor. The record's commit, dirty flag and files are the caller's. Once ctx is cancelled it starts no more runs and
+// fails as interrupted rather than with failed runs, so their directories go unless --keep asked for them.
+func makeForecast(ctx context.Context, input, root string, anchor forecast.Anchor, specs []runSpec, suiteDir string, jobs int, keep bool, launch func(runSpec) (simulation, error)) (forecast.Record, error) {
 	runs := make([]forecast.Run, len(specs))
 	for i, spec := range specs {
 		machine, err := relativeTo(suiteDir, spec.scenario.Machine)
@@ -139,6 +141,9 @@ func makeForecast(input, root string, anchor forecast.Anchor, specs []runSpec, s
 	for range min(jobs, len(specs)) {
 		wg.Go(func() {
 			for i := range queue {
+				if ctx.Err() != nil {
+					continue
+				}
 				spec := specs[i]
 				outcome, err := forecastRun(input, root, anchor, spec, keep, launch)
 				if err != nil {
@@ -153,6 +158,9 @@ func makeForecast(input, root string, anchor forecast.Anchor, specs []runSpec, s
 	}
 	close(queue)
 	wg.Wait()
+	if ctx.Err() != nil {
+		return forecast.Record{}, errors.New("interrupted")
+	}
 	if err := errors.Join(errs...); err != nil {
 		return forecast.Record{}, runsFailed{err}
 	}

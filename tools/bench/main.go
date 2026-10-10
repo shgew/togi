@@ -329,7 +329,7 @@ func execute(o options, stdout, stderr io.Writer) error {
 	err = runPool(o.ctx, o.jobs, order, func(ctx context.Context, i int) error {
 		r, err := simulate(ctx, binary, runRoot, runs[i], o.maxBoots, o.timeout, o.keep != "")
 		if err != nil {
-			return err
+			return fmt.Errorf("%s: %w", key(i), err)
 		}
 		r.Commit, r.Dirty, r.Ruleset = commit, dirty, tuner.Ruleset
 		r.ModelCheck = checksByMachine[runs[i].scenario.Machine]
