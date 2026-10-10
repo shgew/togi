@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"github.com/shgew/togi/internal/journal"
 	"io"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -142,3 +146,126 @@ func TestRunHardwareRestoresTerminalWhenSessionPanics(t *testing.T) {
 		t.Errorf("terminal flags after the panic (-want +got): %s", diff)
 	}
 }
+
+// capture collects what the dashboard draws on a pseudo-terminal, so a test can wait for the screen to say something
+// instead of for time to pass.
+type capture struct {
+	mu   sync.Mutex
+	cond *sync.Cond
+	text string
+}
+
+func captureTerminal(t *testing.T, master *os.File) *capture {
+	t.Helper()
+	c := &capture{}
+	c.cond = sync.NewCond(&c.mu)
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := master.Read(buf)
+			c.mu.Lock()
+			c.text += string(buf[:n])
+			if err != nil {
+				c.text += "\x00closed"
+			}
+			c.cond.Broadcast()
+			c.mu.Unlock()
+			if err != nil {
+				return
+			}
+		}
+	}()
+	return c
+}
+
+// waitFor returns the screen once any of the words is on it, or once the terminal is closed.
+func (c *capture) waitFor(words ...string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for !slices.ContainsFunc(words, func(w string) bool { return strings.Contains(c.text, w) }) && !strings.Contains(c.text, "\x00closed") {
+		c.cond.Wait()
+	}
+	return c.text
+}
+
+// gatedHost holds the session at its first look at the machine, before it records anything.
+type gatedHost struct {
+	machine.Host
+	wait func()
+}
+
+func (h gatedHost) Topology() ([]machine.CoreInfo, error) {
+	h.wait()
+	return h.Host.Topology()
+}
+
+// panicOverStoppedRun stops a session cleanly, then starts another whose trial panics, with the dashboard on a
+// pseudo-terminal. It returns the screen when the second run has recorded nothing yet, and the whole screen once the
+// panic has propagated out of runHardware.
+func panicOverStoppedRun(t *testing.T) (beforeFirstEvent, whole string, recovered any) {
+	t.Helper()
+	t.Setenv("TERM", "linux")
+	t.Setenv("NO_COLOR", "1")
+	g := testGlobals(t)
+	first, err := sim.New(sim.Config{Seed: 82})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopped, cancel := context.WithCancel(context.Background())
+	cancel()
+	code := runHardware(stopped, &g, config.Default(), false, nil, 0, io.Discard, render.Renderer{}, nil, func(config.Config, string) (machine.Machine, error) { return first.Seams(), nil })
+	if code != exitOK {
+		t.Fatalf("the first run exited %d", code)
+	}
+	if events, _, err := journal.Read(g.stateDir); err != nil || len(events) == 0 || events[len(events)-1].Kind != journal.KindShutdown {
+		t.Fatalf("the first run did not leave a stopped session: %d events, %v", len(events), err)
+	}
+
+	slave, master := openPTY(t)
+	if err := unix.IoctlSetWinsize(int(master.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 45, Col: 160}); err != nil {
+		t.Fatal(err)
+	}
+	screen := captureTerminal(t, master)
+	second, err := sim.New(sim.Config{Seed: 82})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newMachine := func(config.Config, string) (machine.Machine, error) {
+		seams := second.Seams()
+		seams.Trials = panickingTrials{Trials: seams.Trials}
+		seams.Host = gatedHost{Host: seams.Host, wait: func() { beforeFirstEvent = screen.waitFor("STARTING", "STOPPED", "NO SESSION YET") }}
+		return seams, nil
+	}
+	dash := &dashboard{dir: g.stateDir, out: slave}
+	func() {
+		defer func() { recovered = recover() }()
+		runHardware(context.Background(), &g, config.Default(), false, nil, 0, io.Discard, render.Renderer{}, dash, newMachine)
+	}()
+	if _, err := slave.WriteString("end of run"); err != nil {
+		t.Fatal(err)
+	}
+	return beforeFirstEvent, screen.waitFor("end of run"), recovered
+}
+
+func TestRunHardwareFirstFrameIsThisRunsNotThePreviousOnes(t *testing.T) {
+	beforeFirstEvent, _, _ := panicOverStoppedRun(t)
+	if !strings.Contains(beforeFirstEvent, "STARTING") || strings.Contains(beforeFirstEvent, "STOPPED") {
+		t.Errorf("before this run recorded anything the screen was:\n%q", beforeFirstEvent)
+	}
+}
+
+func TestRunHardwareRestoresCursorAndPaletteWhenSessionPanics(t *testing.T) {
+	_, whole, recovered := panicOverStoppedRun(t)
+	if diff := cmp.Diff(any("trial start panic"), recovered); diff != "" {
+		t.Errorf("recovered panic (-want +got): %s", diff)
+	}
+	hide, show := strings.Index(whole, "\x1b[?25l"), strings.LastIndex(whole, "\x1b[?25h")
+	if hide < 0 || show < hide {
+		t.Errorf("cursor hidden at %d, last shown at %d: %q", hide, show, whole)
+	}
+	if set, reset := strings.Index(whole, "\x1b]P"), strings.LastIndex(whole, paletteResetEscape); set < 0 || reset < set {
+		t.Errorf("palette set at %d, reset at %d: %q", set, reset, whole)
+	}
+}
+
+const paletteResetEscape = "\x1b]R"

@@ -308,3 +308,31 @@ func TestCyclePlanRunsOnlyTheCurrentStepsPart(t *testing.T) {
 		h.add(&journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomePass, DurationS: p.DurationS})
 	}
 }
+
+func TestHuntCutCountsSplitsAcrossTheHunt(t *testing.T) {
+	group := func(stage string, set []int, g, index, duration int) groupRecord {
+		return groupRecord{payload: &journal.HuntGroup{Stage: stage, Set: set, Granularity: g, Index: index, DurationS: duration}}
+	}
+	all := []int{0, 1, 2, 3}
+	h := &hunt{start: &journal.HuntStart{}, groups: []groupRecord{
+		group("part", all, 2, 0, 60),
+		group("part", all, 2, 1, 60),
+		group("complement", all, 2, 0, 60),
+		group("part", []int{0, 1}, 2, 0, 60),
+	}}
+	for _, tt := range []struct {
+		name string
+		plan groupPlan
+		want int
+	}{
+		{"first split, its complements included", groupPlan{stage: "complement", set: all, g: 2, duration: 60}, 1},
+		{"failed part cut finer", groupPlan{stage: "part", set: []int{0, 1}, g: 2, duration: 60}, 2},
+		{"next split not yet run", groupPlan{stage: "part", set: []int{0}, g: 2, duration: 60}, 3},
+		{"the same cores at another trial length", groupPlan{stage: "part", set: all, g: 2, duration: 120}, 3},
+		{"not a split", groupPlan{stage: "full", set: all, duration: 60}, 0},
+	} {
+		if got := huntCut(h, tt.plan); got != tt.want {
+			t.Errorf("%s: cut %d, want %d", tt.name, got, tt.want)
+		}
+	}
+}

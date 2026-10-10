@@ -60,7 +60,7 @@ func TestShowWritesOnlyChangedRows(t *testing.T) {
 				t.Fatalf("terminal writes (-want +got):\n%s", diff)
 			}
 		}
-		initial := "\x1b[2J\x1b[1;1Hfirst\x1b[K\x1b[2;1Hsecond\x1b[K\x1b[3;1Hthird\x1b[K"
+		initial := "\x1b[1;1Hfirst\x1b[K\x1b[2;1Hsecond\x1b[K\x1b[3;1Hthird\x1b[K"
 		check(paletteSet()+terminalEnter, initial)
 		lines[1] = "short"
 		tick <- time.Time{}
@@ -297,7 +297,7 @@ func TestShowKeyboardDispatch(t *testing.T) {
 			}
 			lastWrites = len(out.writes)
 		}
-		check(MainView, 0, true)
+		check(MainView, 0, false) // the terminal was cleared on entry
 		for _, step := range []struct {
 			key    key
 			view   View
@@ -678,4 +678,67 @@ func TestRefreshClockArmsNothingForAnIdleTrialHold(t *testing.T) {
 	if ch := clock.schedule(heldUntilRecorded); ch != nil || clock.ticker != nil {
 		t.Fatalf("idle-trial hold armed a clock: channel %v, ticker %v", ch, clock.ticker)
 	}
+}
+
+func TestShowClearsTheScreenOncePerSizeNotTwiceAtStartup(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		winch := make(chan os.Signal)
+		out := &terminalOutput{}
+		w := 80
+		done := make(chan error, 1)
+		go func() {
+			done <- show(ctx, out, func() (int, int, error) { return w, 12, nil }, nil, winch, colorprofile.ASCII,
+				func(Screen) Drawn { return Drawn{Lines: []string{"first"}} }, options{})
+		}()
+		clears := func() int { return strings.Count(strings.Join(out.writes, ""), "\x1b[2J") }
+		synctest.Wait()
+		if got := clears(); got != 1 {
+			t.Fatalf("startup cleared the screen %d times: %q", got, out.writes)
+		}
+		w = 100
+		winch <- syscall.SIGWINCH
+		synctest.Wait()
+		if got := clears(); got != 2 {
+			t.Fatalf("a resize did not clear the screen once more: %d clears in %q", got, out.writes)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestShowRestoresTerminalBeforeAnOutsidePanicPropagates(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		out := &terminalOutput{}
+		original := &struct{ message string }{"session panic"}
+		var recovered any
+		func() {
+			defer func() { recovered = recover() }()
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			defer func() {
+				cancel()
+				if err := <-done; err != nil {
+					t.Error(err)
+				}
+			}()
+			go func() {
+				done <- show(ctx, out, func() (int, int, error) { return 80, 12, nil }, nil, nil, colorprofile.ASCII,
+					func(Screen) Drawn { return Drawn{Lines: []string{"this run"}} }, options{palette: true})
+			}()
+			synctest.Wait()
+			panic(original)
+		}()
+		if recovered != original {
+			t.Fatalf("panic changed: got %v, want %v", recovered, original)
+		}
+		if out.writes[0] != paletteSet()+terminalEnter || out.writes[len(out.writes)-1] != terminalLeave+paletteReset {
+			t.Fatalf("terminal not restored before panic propagated: %q", out.writes)
+		}
+	})
 }

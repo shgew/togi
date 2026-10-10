@@ -202,8 +202,16 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	if err != nil {
 		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
 	}
+	torn, err := j.Open()
+	if err != nil {
+		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
+	}
+	renderer.Log(log, torn...)
 	prompt := defectPrompt(ctx, stderr)
 	if dash != nil {
+		if events := j.Events(); len(events) > 0 {
+			dash.since = events[len(events)-1].Seq
+		}
 		dash.show()
 		defer dash.hide()
 		if ask := prompt; ask != nil {
@@ -219,14 +227,6 @@ func runHardware(ctx context.Context, g *globals, cfg config.Config, file bool, 
 	if dash != nil {
 		sessionStderr = &hidden
 	}
-	torn, err := j.Open()
-	if err != nil {
-		if dash != nil {
-			dash.hide()
-		}
-		return runResult(session.Stop{}, err, stderr, renderer, bootloader)
-	}
-	renderer.Log(log, torn...)
 	stop, err := session.Run(ctx, session.Input{Config: cfg, ConfigPath: g.config, ConfigFile: file, Boot: boot, Journal: j, Machine: m, Cycles: cycles, Bootloader: bootloader, Prompt: prompt, Carry: carried, Stderr: sessionStderr, Log: log, Renderer: renderer, Close: j.Close, SessionID: j.SessionID})
 	if dash != nil {
 		dash.hide()

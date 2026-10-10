@@ -27,6 +27,9 @@ func (s Snapshot) story(now time.Time) story {
 	switch {
 	case s.problem != nil:
 		return story{"I CAN'T READ THE JOURNAL", []string{vtText(s.problem.Error()), "I'll retry when the journal changes. Tuning itself is not affected by this screen."}, "", badTone}
+	case s.starting:
+		text := "Checking the machine and the journal before the first trial; this screen follows the run as soon as it records something."
+		return story{"STARTING", []string{text}, text, plainTone}
 	case !s.session:
 		return story{"NO SESSION YET", []string{"Nothing has been recorded yet. Start with togi run, or boot the togi entry, and I'll tell you what I'm doing here."}, "", plainTone}
 	case s.deadEnd != nil:
@@ -485,7 +488,7 @@ func (s Snapshot) operation(t trialView) string {
 		case t.probe != nil:
 			text += fmt.Sprintf(" · GROUP %d · CORE %02d AT %d", t.group, t.probe.Core, t.probe.Offset)
 		case t.huntParts > 0:
-			text += fmt.Sprintf(" · PART %d OF %d", t.huntPart, t.huntParts)
+			text += fmt.Sprintf(" · %sPART %d OF %d", recutWords(t.huntCut, "RE-CUT %d · "), t.huntPart, t.huntParts)
 		case t.group > 0:
 			text += fmt.Sprintf(" · GROUP %d", t.group)
 		}

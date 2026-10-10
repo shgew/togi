@@ -44,6 +44,7 @@ func (s *State) HuntPlan() *HuntPlan {
 		}
 	}
 	out.Parts = s.huntParts(h, plan, out.Groups)
+	out.Cut = huntCut(h, plan)
 	probing := slices.ContainsFunc(h.groups, func(g groupRecord) bool { return g.payload.Probe != nil })
 	if probing || (!pending && plan.result && len(plan.set) > 1 && plan.anyFailed) {
 		out.Probes = s.huntProbes(h, plan, out.Groups)
@@ -64,6 +65,30 @@ func (s *State) huntGroups(h *hunt) []HuntGroup {
 		groups = append(groups, v)
 	}
 	return groups
+}
+
+// huntCut numbers the split plan belongs to among the hunt's splits, in the order the hunt first ran them. A split is
+// the set, granularity and trial length its parts and their complements share.
+func huntCut(h *hunt, plan groupPlan) int {
+	if plan.stage != "part" && plan.stage != "complement" {
+		return 0
+	}
+	cut := 0
+	var previous *journal.HuntGroup
+	for _, g := range h.narrowing() {
+		m := g.payload
+		if (m.Stage != "part" && m.Stage != "complement") || m.Probe != nil {
+			continue
+		}
+		if previous == nil || m.Granularity != previous.Granularity || m.DurationS != previous.DurationS || !slices.Equal(m.Set, previous.Set) {
+			cut++
+			previous = m
+		}
+		if m.Granularity == plan.g && m.DurationS == plan.duration && slices.Equal(m.Set, plan.set) {
+			return cut
+		}
+	}
+	return cut + 1
 }
 
 func (s *State) huntPart(h *hunt, plan groupPlan, cores []int) HuntPart {

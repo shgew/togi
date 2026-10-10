@@ -13,8 +13,10 @@ import (
 type Snapshot struct {
 	problem error
 	session bool
-	start   time.Time
-	phase   journal.Phase
+	// starting marks a journal a session is about to append to, before it has recorded anything: nothing in it describes this run.
+	starting bool
+	start    time.Time
+	phase    journal.Phase
 
 	failures    int        // failure decisions, skips of trials that already failed included
 	crashes     int        // boots that ended without a clean shutdown
@@ -139,6 +141,7 @@ type trialView struct {
 	cycle, step, part, parts int // checking position; part and parts count from 1, zero outside R7 parts
 	hunt, group              int
 	huntPart, huntParts      int // the part of the hunt's current split, counting from 1
+	huntCut                  int // that split's number among the hunt's splits, counting from 1
 	probe                    *journal.CombinationMember
 	core, offset             int // search and confirm: the core judged and its offset
 	round                    int // deepening round
@@ -234,6 +237,7 @@ type huntView struct {
 	cause      huntCause
 	candidates []int
 	parkedZero bool        // parked cores run at offset 0
+	cut        int         // the current split's number among the hunt's splits, counting from 1; 0 when the plan is not a split
 	plan       []huntPart  // the current split: run, running and to come
 	groups     []groupView // groups so far, oldest first
 	probes     []probeView

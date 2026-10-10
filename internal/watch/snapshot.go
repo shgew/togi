@@ -24,6 +24,11 @@ func (s Snapshot) Err() error { return s.problem }
 
 func Load(dir string) Snapshot {
 	events, _, err := journal.Read(dir)
+	return projectRead(events, err)
+}
+
+// projectRead is the snapshot of a journal read: empty without a journal, a problem when it cannot be read.
+func projectRead(events []journal.Event, err error) Snapshot {
 	if errors.Is(err, fs.ErrNotExist) {
 		return Snapshot{}
 	}
@@ -480,6 +485,7 @@ func (p *projector) huntPlan(hp *tuner.HuntPlan, events []journal.Event) {
 			}
 		}
 	}
+	h.cut = hp.Cut
 	for _, part := range hp.Parts {
 		h.plan = append(h.plan, huntPart{failing: part.Failing, parked: part.Parked, trials: part.Trials, length: time.Duration(part.DurationS) * time.Second, group: part.Group, outcome: part.Outcome, running: part.Running})
 	}
@@ -490,7 +496,7 @@ func (p *projector) huntPlan(hp *tuner.HuntPlan, events []journal.Event) {
 		h.probes = append(h.probes, probeView{member: pr.Member, now: pr.Offset, failedAt: pr.FailedAt, passedAt: pr.PassedAt, carried: pr.Carried, running: pr.Running, done: pr.Done})
 	}
 	if tr := p.s.trial; tr != nil && tr.hunt == hp.Number {
-		tr.huntParts = len(h.plan)
+		tr.huntParts, tr.huntCut = len(h.plan), h.cut
 		for i, part := range h.plan {
 			if part.running {
 				tr.huntPart = i + 1
