@@ -24,23 +24,36 @@ type gate struct {
 	Resamples     int          `toml:"resamples"`
 	BootstrapSeed [2]uint64    `toml:"bootstrap_seed"`
 	MaxTimeRatio  float64      `toml:"max_time_ratio"`
+	Absolute      *gateBars    `toml:"absolute"`
 
 	// seeds holds each gated scenario's seeds in the gate's split, in suite order.
 	seeds map[string][]uint64
 }
 
-// gateBaseline names the recorded runs a gate is judged against.
+// gateBaseline names the recorded runs a gate is judged against: every baseline run must carry
+// the ruleset and one of the commits, so a pull request that re-records some runs lists its
+// recording commit here.
 type gateBaseline struct {
-	Ruleset int    `toml:"ruleset"`
-	Commit  string `toml:"commit"`
+	Ruleset int      `toml:"ruleset"`
+	Commits []string `toml:"commits"`
+}
+
+// gateBars are the absolute bars on one gated scenario's candidate runs, the point estimate
+// against a fixed limit: the median crash count must be strictly below CrashMedianBelow, and the
+// final-profile worst R7 hazard's quantile i must not exceed HazardNotAbove[i], in the gate's
+// quantile order.
+type gateBars struct {
+	Scenario         string    `toml:"scenario"`
+	CrashMedianBelow float64   `toml:"crash_median_below"`
+	HazardNotAbove   []float64 `toml:"hazard_not_above"`
 }
 
 var errGateFailed = errors.New("gate failed")
 
 // resolve checks the gate against the suite's scenarios and records the seeds it requires.
 func (g *gate) resolve(scenarios []scenario) error {
-	if g.ID == "" || g.Baseline.Ruleset <= 0 || g.Baseline.Commit == "" {
-		return errors.New("gate needs an id and a baseline ruleset and commit")
+	if g.ID == "" || g.Baseline.Ruleset <= 0 || len(g.Baseline.Commits) == 0 || slices.Contains(g.Baseline.Commits, "") {
+		return errors.New("gate needs an id and a baseline ruleset and commits")
 	}
 	if g.Split != "dev" && g.Split != "holdout" && g.Split != "all" {
 		return fmt.Errorf("gate %s: split must be dev, holdout or all", g.ID)
@@ -60,6 +73,14 @@ func (g *gate) resolve(scenarios []scenario) error {
 	}
 	if g.Confidence <= 0 || g.Confidence >= 1 || g.Resamples <= 0 || g.MaxTimeRatio <= 0 {
 		return fmt.Errorf("gate %s: needs confidence in (0, 1), positive resamples and positive max_time_ratio", g.ID)
+	}
+	if b := g.Absolute; b != nil {
+		if !slices.Contains(g.Gated, b.Scenario) {
+			return fmt.Errorf("gate %s: absolute bars scenario %q is not gated", g.ID, b.Scenario)
+		}
+		if b.CrashMedianBelow <= 0 || len(b.HazardNotAbove) != len(g.Quantiles) {
+			return fmt.Errorf("gate %s: absolute bars need a positive crash_median_below and one hazard_not_above per quantile", g.ID)
+		}
 	}
 	byName := make(map[string]scenario, len(scenarios))
 	for _, s := range scenarios {
@@ -88,7 +109,9 @@ func (g *gate) resolve(scenarios []scenario) error {
 
 // criterion is one judged gate criterion.
 type criterion struct {
-	Kind      string // conclusion, a quantile label, time or pooled_median
+	Kind      string  // conclusion, a quantile label, time, pooled_median, crash_bar or hazard_bar
+	Quantile  string  // the quantile label of a hazard_bar
+	Limit     float64 // the fixed limit of a crash_bar or hazard_bar
 	Scenario  string
 	Baseline  float64
 	Candidate float64
@@ -113,8 +136,8 @@ func (r gateResult) pass() bool {
 // one g names and every required seed is paired with the metrics its criteria need.
 func judgeGate(g *gate, candidate, baseline []result) gateResult {
 	for _, r := range baseline {
-		if r.Ruleset != g.Baseline.Ruleset || r.Commit != g.Baseline.Commit {
-			return gateResult{Refused: fmt.Sprintf("baseline run %s/%d is ruleset %d at %s, not ruleset %d at %s", r.Scenario, r.Seed, r.Ruleset, r.Commit, g.Baseline.Ruleset, g.Baseline.Commit)}
+		if r.Ruleset != g.Baseline.Ruleset || !slices.Contains(g.Baseline.Commits, r.Commit) {
+			return gateResult{Refused: fmt.Sprintf("baseline run %s/%d is ruleset %d at %s, not ruleset %d at %s", r.Scenario, r.Seed, r.Ruleset, r.Commit, g.Baseline.Ruleset, strings.Join(g.Baseline.Commits, " or "))}
 		}
 	}
 	index := func(results []result) map[key]result {
@@ -199,6 +222,23 @@ func judgeGate(g *gate, candidate, baseline []result) gateResult {
 		}
 		out.Criteria = append(out.Criteria, c)
 	}
+	if b := g.Absolute; b != nil {
+		cand, _ := worstR7(pairs[b.Scenario])
+		slices.Sort(cand)
+		for i, q := range g.Quantiles {
+			c := criterion{Kind: "hazard_bar", Scenario: b.Scenario, Quantile: quantileLabel(q), Limit: b.HazardNotAbove[i], Candidate: percentile(cand, q)}
+			c.Pass = c.Candidate <= c.Limit
+			out.Criteria = append(out.Criteria, c)
+		}
+		crashes := make([]float64, 0, len(pairs[b.Scenario]))
+		for _, p := range pairs[b.Scenario] {
+			crashes = append(crashes, float64(p.candidate.Crashes))
+		}
+		slices.Sort(crashes)
+		c := criterion{Kind: "crash_bar", Scenario: b.Scenario, Limit: b.CrashMedianBelow, Candidate: percentile(crashes, 0.5)}
+		c.Pass = c.Candidate < c.Limit
+		out.Criteria = append(out.Criteria, c)
+	}
 	if len(g.Pooled) > 0 {
 		slices.Sort(pooledCand)
 		slices.Sort(pooledBase)
@@ -249,8 +289,19 @@ func quantileChange(candidate, baseline []float64, q, confidence float64, resamp
 	return base, cand, percentile(boot, tail), percentile(boot, 1-tail)
 }
 
+// judgeAndReport prints the gate's verdict and returns errGateFailed unless it passed, so the
+// command exits nonzero on a failed or refused gate.
+func judgeAndReport(w io.Writer, g *gate, candidate, baseline []result) error {
+	verdict := judgeGate(g, candidate, baseline)
+	reportGate(w, g, verdict)
+	if !verdict.pass() {
+		return errGateFailed
+	}
+	return nil
+}
+
 func reportGate(w io.Writer, g *gate, r gateResult) {
-	fmt.Fprintf(w, "gate %s: judged against ruleset %d at %s on every %s seed; quantiles of worst_r7_hazard_per_h fail only when the %g%% interval of candidate minus baseline (%d paired resamples, PCG(%d,%d)) lies above 0; time is the geometric mean ratio over pairs both concluded.\n", g.ID, g.Baseline.Ruleset, g.Baseline.Commit, g.Split, g.Confidence*100, g.Resamples, g.BootstrapSeed[0], g.BootstrapSeed[1])
+	fmt.Fprintf(w, "gate %s: judged against ruleset %d at %s on every %s seed; quantiles of worst_r7_hazard_per_h fail only when the %g%% interval of candidate minus baseline (%d paired resamples, PCG(%d,%d)) lies above 0; time is the geometric mean ratio over pairs both concluded.\n", g.ID, g.Baseline.Ruleset, strings.Join(g.Baseline.Commits, " or "), g.Split, g.Confidence*100, g.Resamples, g.BootstrapSeed[0], g.BootstrapSeed[1])
 	if g.Note != "" {
 		fmt.Fprintf(w, "gate %s: %s\n", g.ID, g.Note)
 	}
@@ -274,6 +325,10 @@ func reportGate(w io.Writer, g *gate, r gateResult) {
 			fmt.Fprintf(w, "gate conclusion %s baseline_concluded=%g candidate_concluded=%g lost=%d lost_seeds=[%s] threshold=lost==0 %s\n", c.Scenario, c.Baseline, c.Candidate, len(c.Lost), strings.Join(lost, ","), result)
 		case "time":
 			fmt.Fprintf(w, "gate time %s ratio=%.4f timed=%d threshold=ratio<=%g %s\n", c.Scenario, c.Change, c.Timed, g.MaxTimeRatio, result)
+		case "hazard_bar":
+			fmt.Fprintf(w, "gate hazard_bar %s %s candidate=%.6f threshold=<=%g %s\n", c.Scenario, c.Quantile, c.Candidate, c.Limit, result)
+		case "crash_bar":
+			fmt.Fprintf(w, "gate crash_bar %s median candidate=%g threshold=<%g %s\n", c.Scenario, c.Candidate, c.Limit, result)
 		case "pooled_median":
 			fmt.Fprintf(w, "gate pooled_median %s baseline=%.6f candidate=%.6f change=%+.6f threshold=change<0 %s\n", c.Scenario, c.Baseline, c.Candidate, c.Change, result)
 		default:

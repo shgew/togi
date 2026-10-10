@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,7 +21,7 @@ func testGate(t *testing.T) *gate {
 	t.Helper()
 	g := &gate{
 		ID:            "test",
-		Baseline:      gateBaseline{Ruleset: 10, Commit: "abc"},
+		Baseline:      gateBaseline{Ruleset: 10, Commits: []string{"abc"}},
 		Split:         "dev",
 		Gated:         []string{testScenario},
 		Pooled:        []string{testScenario},
@@ -29,6 +31,7 @@ func testGate(t *testing.T) *gate {
 		Resamples:     10000,
 		BootstrapSeed: [2]uint64{1, 1},
 		MaxTimeRatio:  2,
+		Absolute:      &gateBars{Scenario: testScenario, CrashMedianBelow: 5, HazardNotAbove: []float64{12, 21}},
 	}
 	seeds := make([]uint64, testSeeds)
 	for i := range seeds {
@@ -49,7 +52,7 @@ func gateRuns(shift func(i int) float64, hours func(i int) (candidate, baseline 
 		if hours != nil {
 			ch, bh = hours(i)
 		}
-		candidate = append(candidate, result{Scenario: testScenario, Seed: uint64(i + 1), Split: "dev", Status: "concluded", SimHours: ch, WorstR7HazardPerH: &w})
+		candidate = append(candidate, result{Scenario: testScenario, Seed: uint64(i + 1), Split: "dev", Status: "concluded", SimHours: ch, Crashes: 3, WorstR7HazardPerH: &w})
 		baseline = append(baseline, result{Scenario: testScenario, Seed: uint64(i + 1), Split: "dev", Status: "concluded", SimHours: bh, WorstR7HazardPerH: &v, Ruleset: 10, Commit: "abc"})
 	}
 	for seed := uint64(1); seed <= 2; seed++ {
@@ -206,6 +209,112 @@ func TestGateRefusals(t *testing.T) {
 	}
 }
 
+func TestGateAbsoluteBars(t *testing.T) {
+	g := testGate(t)
+	// The pass candidate's median is 11.5 and 90th percentile 20.7 against bars of 12 and 21, with a median of 3 crashes against below 5.
+	for _, tc := range []struct {
+		name    string
+		shift   float64
+		crashes int
+		median  bool
+		p90     bool
+		crash   bool
+	}{
+		{"inside every bar", -1, 3, true, true, true},
+		{"median at its bar, p90 above", -0.5, 3, true, false, true},
+		{"p90 above its bar", 0.4, 3, false, false, true},
+		{"crashes equal the limit", -1, 5, true, true, false},
+		{"crashes above the limit", -1, 6, true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate, baseline := gateRuns(func(int) float64 { return tc.shift }, nil)
+			for i := range testSeeds {
+				candidate[i].Crashes = tc.crashes
+			}
+			r := judgeGate(g, candidate, baseline)
+			for _, want := range []struct {
+				kind, quantile string
+				pass           bool
+			}{{"hazard_bar", "median", tc.median}, {"hazard_bar", "p90", tc.p90}, {"crash_bar", "", tc.crash}} {
+				found := false
+				for _, c := range r.Criteria {
+					if c.Kind == want.kind && c.Quantile == want.quantile {
+						found = true
+						if c.Pass != want.pass {
+							t.Errorf("%s %s pass = %v, want %v (candidate %v, limit %v)", c.Kind, c.Quantile, c.Pass, want.pass, c.Candidate, c.Limit)
+						}
+					}
+				}
+				if !found {
+					t.Errorf("no %s %s criterion", want.kind, want.quantile)
+				}
+			}
+		})
+	}
+}
+
+func TestGateExitsByVerdict(t *testing.T) {
+	g := testGate(t)
+	for _, tc := range []struct {
+		name  string
+		shift float64
+		drop  int
+		want  error
+	}{{"pass", -1, 0, nil}, {"fail", 1, 0, errGateFailed}, {"refused", -1, 1, errGateFailed}} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate, baseline := gateRuns(func(int) float64 { return tc.shift }, nil)
+			var out bytes.Buffer
+			if err := judgeAndReport(&out, g, candidate[tc.drop:], baseline); !errors.Is(err, tc.want) {
+				t.Fatalf("judgeAndReport = %v, want %v; report:\n%s", err, tc.want, out.String())
+			}
+			if want := "gate test: " + map[string]string{"pass": "PASS", "fail": "FAIL", "refused": "FAIL"}[tc.name]; !strings.Contains(out.String(), want) {
+				t.Errorf("report lacks %q:\n%s", want, out.String())
+			}
+		})
+	}
+}
+
+func TestGateBaselineIdentity(t *testing.T) {
+	g := testGate(t)
+	candidate, baseline := gateRuns(none, nil)
+	baseline[0].Commit = "def"
+	g.Baseline.Commits = []string{"abc", "def"}
+	if r := judgeGate(g, candidate, baseline); r.Refused != "" {
+		t.Fatalf("a baseline mixing the named commits was refused: %s", r.Refused)
+	}
+	baseline[1].Ruleset = 9
+	if r := judgeGate(g, candidate, baseline); !strings.Contains(r.Refused, "is ruleset 9 at abc, not ruleset 10 at abc or def") {
+		t.Fatalf("refused = %q", r.Refused)
+	}
+}
+
+func TestCommittedBaselineIsTheGatesBaseline(t *testing.T) {
+	g, err := loadGate("suite.toml")
+	if err != nil || g == nil {
+		t.Fatalf("loadGate = %v, %v", g, err)
+	}
+	baseline, err := readResults("baseline.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range baseline {
+		if r.Ruleset != g.Baseline.Ruleset || !slices.Contains(g.Baseline.Commits, r.Commit) {
+			t.Fatalf("baseline run %s/%d is ruleset %d at %s; the gate names ruleset %d at %v: a pull request that re-records baseline runs lists its commit in [gate.baseline]", r.Scenario, r.Seed, r.Ruleset, r.Commit, g.Baseline.Ruleset, g.Baseline.Commits)
+		}
+	}
+	have := make(map[key]bool, len(baseline))
+	for _, r := range baseline {
+		have[key{r.Scenario, r.Seed}] = true
+	}
+	for name, seeds := range g.seeds {
+		for _, seed := range seeds {
+			if !have[key{name, seed}] {
+				t.Errorf("baseline.jsonl has no run for the gate's %s seed %d", name, seed)
+			}
+		}
+	}
+}
+
 func TestGateBootstrapReproducible(t *testing.T) {
 	candidate, baseline := gateRuns(func(i int) float64 { return float64(i%5) - 1 }, nil)
 	var a, b []float64
@@ -265,6 +374,9 @@ func TestLoadGate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if g != nil && (g.Absolute == nil || g.Absolute.Scenario != "target-shared-voltage" || g.Absolute.CrashMedianBelow != 426.5 || !slices.Equal(g.Absolute.HazardNotAbove, []float64{4.91, 10.90}) || !slices.Contains(g.Conclude, "target-nonmember-mce")) {
+			t.Fatalf("absolute bars or conclusion guard missing: %+v", g)
+		}
 		if g == nil || g.ID != "ruleset-11" || g.Baseline.Ruleset != 10 || g.MaxTimeRatio != 2 || g.Resamples != 10000 || g.BootstrapSeed != [2]uint64{1, 1} {
 			t.Fatalf("gate = %+v", g)
 		}
@@ -277,11 +389,11 @@ func TestLoadGate(t *testing.T) {
 			t.Errorf("target-r7-vf-boost seeds = %d, want 24", len(g.seeds["target-r7-vf-boost"]))
 		}
 	})
-	if err := (&gate{ID: "g", Baseline: gateBaseline{1, "x"}, Split: "all", Gated: []string{"a"}, Pooled: []string{"b"}, Quantiles: []float64{0.5}, Confidence: 0.95, Resamples: 10, MaxTimeRatio: 2}).resolve([]scenario{{Name: "a", Dev: []uint64{1}}, {Name: "b", Dev: []uint64{1}}}); err == nil || !strings.Contains(err.Error(), `pooled scenario "b" is not gated`) {
+	if err := (&gate{ID: "g", Baseline: gateBaseline{1, []string{"x"}}, Split: "all", Gated: []string{"a"}, Pooled: []string{"b"}, Quantiles: []float64{0.5}, Confidence: 0.95, Resamples: 10, MaxTimeRatio: 2}).resolve([]scenario{{Name: "a", Dev: []uint64{1}}, {Name: "b", Dev: []uint64{1}}}); err == nil || !strings.Contains(err.Error(), `pooled scenario "b" is not gated`) {
 		t.Fatalf("resolve error = %v", err)
 	}
 	scenarios := "\n[[scenario]]\nname = 'a'\ndev = [1]\nholdout = [101]\n"
-	valid := "[gate]\nid = 'g'\nsplit = 'all'\ngated = ['a']\nquantiles = [0.5]\nconfidence = 0.95\nresamples = 10\nmax_time_ratio = 2\n[gate.baseline]\nruleset = 1\ncommit = 'x'\n"
+	valid := "[gate]\nid = 'g'\nsplit = 'all'\ngated = ['a']\nquantiles = [0.5]\nconfidence = 0.95\nresamples = 10\nmax_time_ratio = 2\n[gate.baseline]\nruleset = 1\ncommits = ['x']\n"
 	for _, tc := range []struct {
 		name, suite, want string
 	}{
@@ -291,7 +403,7 @@ func TestLoadGate(t *testing.T) {
 		{"unknown scenario", strings.Replace(valid, "['a']", "['b']", 1) + scenarios, `unknown scenario "b"`},
 		{"bad quantile", strings.Replace(valid, "[0.5]", "[1]", 1) + scenarios, "quantile 1 outside"},
 		{"bad split", strings.Replace(valid, "'all'", "'x'", 1) + scenarios, "split must be"},
-		{"no baseline", strings.Replace(valid, "commit = 'x'", "", 1) + scenarios, "needs an id and a baseline"},
+		{"no baseline", strings.Replace(valid, "commits = ['x']", "", 1) + scenarios, "needs an id and a baseline"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "suite.toml")

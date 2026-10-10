@@ -389,19 +389,15 @@ func execute(o options, stdout, stderr io.Writer) error {
 	}
 	reportSummary(stdout, results)
 	modelcheck.Report(stdout, checks)
-	var verdict gateResult
+	var gateErr error
 	if o.baseline != "" {
 		reportComparison(stdout, results, baseline)
 		if g != nil {
-			verdict = judgeGate(g, results, baseline)
-			reportGate(stdout, g, verdict)
+			gateErr = judgeAndReport(stdout, g, results, baseline)
 		}
 	}
 	fmt.Fprintf(stdout, "harness_wall_s=%.3f\n", time.Since(started).Seconds())
-	if g != nil && o.baseline != "" && !verdict.pass() {
-		return errGateFailed
-	}
-	return nil
+	return gateErr
 }
 
 // modelChecks checks each distinct machine with a facts extract against it, once.

@@ -6,16 +6,27 @@ note = "Ruleset 11 gate, decided 2026-10-09 (issues 491 and 570). The 90th-perce
 split = "all"
 gated = ["target-shared-voltage", "target-r7-vf-boost", "target-r7-request-gap", "shared-voltage"]
 pooled = ["target-shared-voltage", "target-r7-vf-boost", "target-r7-request-gap"]
-conclude = ["default", "idle-limit", "late-onset"]
+# target-nonmember-mce stays as a labelled synthetic conclusion guard (#563, #530); no hazard or time claim.
+conclude = ["default", "idle-limit", "late-onset", "target-nonmember-mce"]
 quantiles = [0.5, 0.9]
 confidence = 0.95
 resamples = 10000
 bootstrap_seed = [1, 1]
 max_time_ratio = 2.0
 
+# Absolute bars of issue 493, point estimates on target-shared-voltage: median crashes strictly below
+# Ruleset 10's 426.5; worst R7 hazard median and 90th percentile not above Ruleset 9's 4.91 and 10.90 per hour.
+[gate.absolute]
+scenario = "target-shared-voltage"
+crash_median_below = 426.5
+hazard_not_above = [4.91, 10.90]
+
+# Every baseline record carries the ruleset and one of these commits. 3a9b894 recorded the current
+# baseline; the pull request that re-records any records (issue 563) appends its recording commit,
+# and a test fails until it does.
 [gate.baseline]
 ruleset = 10
-commit = "3a9b894"
+commits = ["3a9b894"]
 
 [[scenario]]
 name = "default"
