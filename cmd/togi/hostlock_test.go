@@ -20,7 +20,6 @@ import (
 	"github.com/shgew/togi/internal/render"
 	"github.com/shgew/togi/internal/session"
 	"github.com/shgew/togi/internal/sim"
-	"golang.org/x/sys/unix"
 )
 
 func TestResetRefusesHostLock(t *testing.T) {
@@ -344,7 +343,7 @@ func TestRunReportsConstructionError(t *testing.T) {
 	}
 }
 
-func TestRunStopsDashboardAfterJournalOpenFailure(t *testing.T) {
+func TestRunOpensJournalBeforeShowingDashboard(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("hardware runs need Linux")
 	}
@@ -353,20 +352,12 @@ func TestRunStopsDashboardAfterJournalOpenFailure(t *testing.T) {
 	if err := os.Symlink(filepath.Join(g.stateDir, "missing", "events.jsonl"), path); err != nil {
 		t.Fatal(err)
 	}
-	out, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
+	out, err := os.CreateTemp(t.TempDir(), "screen")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer out.Close()
-	if err := unix.IoctlSetWinsize(int(out.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 10, Col: 20}); err != nil {
-		t.Fatal(err)
-	}
 	dash := &dashboard{dir: g.stateDir, out: out}
-	defer func() {
-		if dash.cancel != nil {
-			dash.hide()
-		}
-	}()
 	m, err := sim.New(sim.Config{Seed: 82})
 	if err != nil {
 		t.Fatal(err)
@@ -382,19 +373,11 @@ func TestRunStopsDashboardAfterJournalOpenFailure(t *testing.T) {
 	if !strings.Contains(stderr.String(), "togi run: open "+path+":") {
 		t.Errorf("missing journal open diagnostic: %s", stderr.String())
 	}
-	dash.mu.Lock()
-	showing, done := dash.showing, dash.done
-	dash.mu.Unlock()
-	if done == nil {
-		t.Fatal("run returned before showing the dashboard")
+	if dash.done != nil {
+		t.Error("the dashboard showed before the journal opened")
 	}
-	if diff := cmp.Diff(false, showing); diff != "" {
-		t.Errorf("dashboard showing after return (-want +got): %s", diff)
-	}
-	select {
-	case <-done:
-	default:
-		t.Error("dashboard redraw goroutine still running after return")
+	if screen, err := os.ReadFile(out.Name()); err != nil || len(screen) != 0 {
+		t.Errorf("a run that never started drew on the terminal: %q, %v", screen, err)
 	}
 }
 

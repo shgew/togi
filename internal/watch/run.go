@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/colorprofile"
+	"github.com/shgew/togi/internal/journal"
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
@@ -21,11 +23,15 @@ import (
 // source reloads the journal only when events.jsonl is a different file or changed size or modification time since
 // the last read.
 type source struct {
-	dir  string
-	info os.FileInfo
-	err  error
-	snap Snapshot
-	held heldLog // the journal view's list while scrolled back
+	dir string
+	// With waiting, the snapshot stays the starting one until the journal holds an event after sequence number since,
+	// the last one before this run's session started.
+	waiting bool
+	since   int
+	info    os.FileInfo
+	err     error
+	snap    Snapshot
+	held    heldLog // the journal view's list while scrolled back
 }
 
 func (s *source) reload() bool {
@@ -35,7 +41,7 @@ func (s *source) reload() bool {
 			return false
 		}
 		s.held = heldLog{}
-		s.info, s.err, s.snap = nil, err, Load(s.dir)
+		s.info, s.err, s.snap = nil, err, s.load()
 		return true
 	}
 	if s.info != nil {
@@ -47,11 +53,22 @@ func (s *source) reload() bool {
 			s.held = heldLog{}
 		}
 	}
-	s.info, s.err, s.snap = info, nil, Load(s.dir)
+	s.info, s.err, s.snap = info, nil, s.load()
 	if s.snap.Err() != nil || !s.snap.session {
 		s.held = heldLog{}
 	}
 	return true
+}
+
+func (s *source) load() Snapshot {
+	if !s.waiting {
+		return Load(s.dir)
+	}
+	events, _, err := journal.Read(s.dir)
+	if (err == nil || errors.Is(err, fs.ErrNotExist)) && (len(events) == 0 || events[len(events)-1].Seq <= s.since) {
+		return Snapshot{starting: true}
+	}
+	return projectRead(events, err)
 }
 
 func (s *source) frame(sc Screen) Drawn {
@@ -91,7 +108,17 @@ const paletteReset = "\x1b]R"
 // Run redraws on journal changes and once a second for the clock, holding still before a frame's Until.
 // With in a terminal, keys switch views and scroll the help and the event log.
 func Run(ctx context.Context, dir string, out, in *os.File) error {
-	src := source{dir: dir}
+	return run(ctx, dir, out, in, false, 0)
+}
+
+// RunAfter is Run for a journal a run is about to append to. Until the journal holds an event after sequence number
+// since, the screen says the run is starting instead of showing what an earlier run left in it.
+func RunAfter(ctx context.Context, dir string, out, in *os.File, since int) error {
+	return run(ctx, dir, out, in, true, since)
+}
+
+func run(ctx context.Context, dir string, out, in *os.File, waiting bool, since int) error {
+	src := source{dir: dir, waiting: waiting, since: since}
 	changes, reloaded, stop, err := watchJournal(ctx, dir, func() { src.reload() })
 	if err != nil {
 		return fmt.Errorf("watch journal: %w", err)
@@ -330,6 +357,7 @@ func show(ctx context.Context, out io.Writer, size func() (int, int, error), tic
 	var buf bytes.Buffer
 	styled := &colorprofile.Writer{Forward: &buf, Profile: p}
 	var lastW, lastH int
+	cleared := true // enter has just cleared the screen; only a resize clears it again
 	var previous []string
 	var clock refreshClock
 	defer clock.stop()
@@ -342,7 +370,10 @@ func show(ctx context.Context, out io.Writer, size func() (int, int, error), tic
 		buf.Reset()
 		full := w != lastW || h != lastH
 		if full {
-			buf.WriteString("\x1b[2J")
+			if !cleared {
+				buf.WriteString("\x1b[2J")
+			}
+			cleared = false
 			lastW, lastH = w, h
 		}
 		sc.Width, sc.Height = w, h

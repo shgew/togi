@@ -304,3 +304,20 @@ func TestLiveJournalProblemAndRecovery(t *testing.T) {
 		}
 	})
 }
+
+func TestHeldSourceStartsWithTheRunNotTheJournalItFound(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "events.jsonl")
+	src := source{dir: dir, waiting: true, since: 2}
+	watchSourceFrame(t, &src, "STARTING", "NO SESSION YET")
+	if err := os.WriteFile(path, watchSessionLine(t, "from an earlier run"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	watchSourceFrame(t, &src, "STARTING", "from an earlier run")
+	grown := append(watchSessionLine(t, "from an earlier run"), watchWarningLine(t, "this run")...)
+	if err := os.WriteFile(path, grown, 0644); err != nil {
+		t.Fatal(err)
+	}
+	watchSourceFrame(t, &src, "this run", "STARTING")
+}

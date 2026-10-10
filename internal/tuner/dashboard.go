@@ -50,10 +50,13 @@ type HuntPlan struct {
 	FailureSeq int
 	Trial      string
 	Candidates []int
-	Parts      []HuntPart
-	Groups     []HuntGroup
-	Probes     []MemberProbe
-	Rerun      RerunPlan
+	// Cut numbers the split Parts belongs to, counting from 1 across the hunt: a failed part is cut finer into a new
+	// split whose parts count again from 1. Zero when the plan is not a split.
+	Cut    int
+	Parts  []HuntPart
+	Groups []HuntGroup
+	Probes []MemberProbe
+	Rerun  RerunPlan
 }
 
 // HuntPart describes a group within the current split.

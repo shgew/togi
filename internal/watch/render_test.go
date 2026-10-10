@@ -669,3 +669,62 @@ func TestGaugeCombinationHeldDepth(t *testing.T) {
 		})
 	}
 }
+
+func TestHuntStageSaysWhenPartsWereRecut(t *testing.T) {
+	t.Parallel()
+	h := &huntView{groups: []groupView{{id: 3, outcome: "running"}}, cut: 1, plan: []huntPart{{group: 3, outcome: "running", running: true}, {}}}
+	s := Snapshot{hunt: h}
+	for _, tt := range []struct {
+		cut         int
+		short, long string
+	}{
+		{1, "part 1 of 2", "parts · part 1 of 2"},
+		{2, "re-cut 1 · part 1 of 2", "parts · re-cut 1 · part 1 of 2"},
+		{3, "re-cut 2 · part 1 of 2", "parts · re-cut 2 · part 1 of 2"},
+	} {
+		h.cut = tt.cut
+		if got := s.huntStage(true); got != tt.short {
+			t.Errorf("cut %d short: %q, want %q", tt.cut, got, tt.short)
+		}
+		if got := s.huntStage(false); got != tt.long {
+			t.Errorf("cut %d: %q, want %q", tt.cut, got, tt.long)
+		}
+	}
+}
+
+func TestHeaderCountsAgreeInNumber(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		failures, crashes int
+		want              string
+	}{
+		{0, 0, "0 failures · 0 crashes"},
+		{1, 1, "1 failure · 1 crash"},
+		{2, 1, "2 failures · 1 crash"},
+	} {
+		s := Snapshot{session: true, start: time.Unix(0, 0), failures: tt.failures, crashes: tt.crashes}
+		if got := ansi.Strip(s.header(time.Unix(60, 0))); !strings.Contains(got, tt.want) {
+			t.Errorf("%d failures, %d crashes: header %q lacks %q", tt.failures, tt.crashes, got, tt.want)
+		}
+		s.trial = &trialView{hasStarted: true, regime: machine.R6, started: time.Unix(30, 0), duration: time.Minute}
+		got := ansi.Strip(Render(s, 120, 33, time.Unix(60, 0)))
+		header, _, _ := strings.Cut(got, "\n")
+		if !strings.Contains(header, "paused until") || !strings.Contains(header, tt.want) {
+			t.Errorf("paused compact header %q lacks %q", header, tt.want)
+		}
+	}
+}
+
+func TestStartingScreenNamesNoEarlierRun(t *testing.T) {
+	t.Parallel()
+	s := Snapshot{starting: true}
+	text := ansi.Strip(Render(s, 160, 45, time.Unix(2000, 0).UTC()))
+	if !strings.Contains(text, "STARTING") || !strings.Contains(text, "starting") {
+		t.Errorf("starting screen does not say so:\n%s", text)
+	}
+	for _, stale := range []string{"NO SESSION YET", "STOPPED", "no session yet"} {
+		if strings.Contains(text, stale) {
+			t.Errorf("starting screen shows %q:\n%s", stale, text)
+		}
+	}
+}

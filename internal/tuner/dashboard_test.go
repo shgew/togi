@@ -308,3 +308,155 @@ func TestCyclePlanRunsOnlyTheCurrentStepsPart(t *testing.T) {
 		h.add(&journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomePass, DurationS: p.DurationS})
 	}
 }
+
+func TestHuntCutCountsSplitsAcrossTheHunt(t *testing.T) {
+	group := func(stage string, set []int, g, index, duration int) groupRecord {
+		return groupRecord{payload: &journal.HuntGroup{Stage: stage, Set: set, Granularity: g, Index: index, DurationS: duration}}
+	}
+	all := []int{0, 1, 2, 3}
+	h := &hunt{start: &journal.HuntStart{}, groups: []groupRecord{
+		group("part", all, 2, 0, 60),
+		group("part", all, 2, 1, 60),
+		group("complement", all, 2, 0, 60),
+		group("part", []int{0, 1}, 2, 0, 60),
+	}}
+	for _, tt := range []struct {
+		name    string
+		history int // recorded groups the plan follows; 0 is all of them
+		plan    groupPlan
+		want    int
+	}{
+		{"first split, its complements included", 3, groupPlan{stage: "complement", set: all, g: 2, duration: 60}, 1},
+		{"failed part cut finer", 0, groupPlan{stage: "part", set: []int{0, 1}, g: 2, duration: 60}, 2},
+		{"first split recurring after the finer cut", 0, groupPlan{stage: "complement", set: all, g: 2, duration: 60}, 3},
+		{"next split not yet run", 0, groupPlan{stage: "part", set: []int{0}, g: 2, duration: 60}, 3},
+		{"the same cores at another trial length", 0, groupPlan{stage: "part", set: all, g: 2, duration: 120}, 3},
+		{"not a split", 0, groupPlan{stage: "full", set: all, duration: 60}, 0},
+	} {
+		seen := &hunt{start: h.start, groups: h.groups}
+		if tt.history > 0 {
+			seen.groups = h.groups[:tt.history]
+		}
+		if got := huntCut(seen, tt.plan); got != tt.want {
+			t.Errorf("%s: cut %d, want %d", tt.name, got, tt.want)
+		}
+	}
+	// A split the hunt returns to after other cuts is a new cut; only the final processed split can still be the plan's.
+	recurring := &hunt{start: &journal.HuntStart{}, groups: []groupRecord{
+		group("part", all, 4, 0, 60),
+		group("part", all, 2, 0, 60),
+		group("part", all, 2, 1, 60),
+		group("part", all, 4, 0, 60),
+		group("part", all, 4, 1, 60),
+	}}
+	for _, tt := range []struct {
+		name string
+		plan groupPlan
+		want int
+	}{
+		{"recorded split recurring after other cuts", groupPlan{stage: "part", set: all, g: 4, index: 2, duration: 60}, 3},
+		{"complement of the recorded recurring split", groupPlan{stage: "complement", set: all, g: 4, duration: 60}, 3},
+		{"not yet recorded signature recurring after other cuts", groupPlan{stage: "part", set: all, g: 2, duration: 60}, 4},
+		{"unrecorded signature", groupPlan{stage: "part", set: all, g: 8, duration: 60}, 4},
+		{"not a split", groupPlan{stage: "full", set: all, duration: 60}, 0},
+	} {
+		if got := huntCut(recurring, tt.plan); got != tt.want {
+			t.Errorf("recurring hunt, %s: cut %d, want %d", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestHuntPlanCutAdvancesWhenPassingSplitsReturnToTheSingletonGranularity(t *testing.T) {
+	starts := make([]coreStart, 16)
+	for i := range starts {
+		starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: -10, fail: new(-11)}
+	}
+	h := newHarness(t, starts...)
+	c := config.Default()
+	c.Checking.Cycle = []machine.Regime{machine.R6}
+	h.add(&journal.ConfigLoaded{Path: config.DefaultPath, Config: snapshotConfig(c)})
+	// Reach the corroborated singleton group exactly as the repeated-parked-core probe test does.
+	for range 1000 {
+		a := h.next()
+		if m, ok := a.Payload.(*journal.HuntGroup); ok && m.Hunt == 3 && m.Group == 1 {
+			break
+		}
+		if a.Kind == Decide {
+			h.decide(a)
+			continue
+		}
+		if a.Kind != RunTrial {
+			t.Fatalf("unexpected action: %+v", a)
+		}
+		intent := h.start(a)
+		p := intent.Data.(*journal.TrialIntent)
+		end := &journal.TrialEnd{Trial: p.Trial, Outcome: journal.OutcomePass, DurationS: p.DurationS}
+		if p.Profile[3] < -8 || p.Profile[3] < 0 && p.Profile[4] < -9 {
+			end.Outcome, end.Signal = journal.OutcomeFailure, machine.Crash
+		}
+		h.add(end, intent.Seq)
+	}
+	if h.s.hunt == nil || len(h.s.hunt.groups) != 0 {
+		t.Fatalf("corroborated singleton probe was never scheduled: %+v", h.s.hunt)
+	}
+	n := len(h.s.hunt.start.Candidates)
+	// A cut is a run of groups on one granularity: the singleton at n, then every finer split that passes.
+	previous, want := n, 1
+	assertCut := func(when string) {
+		t.Helper()
+		got := h.s.HuntPlan().Cut
+		if got != want {
+			t.Fatalf("%s: cut %d, want %d", when, got, want)
+		}
+		if replayed := replayState(h.events).HuntPlan().Cut; replayed != got {
+			t.Fatalf("%s: replayed cut %d, want %d", when, replayed, got)
+		}
+	}
+	revisited := false
+	for range 2000 {
+		if h.s.hunt == nil {
+			break
+		}
+		a := h.next()
+		if m, ok := a.Payload.(*journal.HuntGroup); ok && a.Kind == Decide && m.Probe == nil && (m.Stage == "part" || m.Stage == "complement") {
+			// Once a group is recorded and passed the projection moves on to the next planned group, so each group is
+			// checked as the upcoming plan, before it is recorded.
+			if m.Granularity != previous {
+				previous, want = m.Granularity, want+1
+			}
+			assertCut("planned group")
+			h.decide(a)
+			if m.Granularity == n && len(m.Set) == n && want > 1 {
+				revisited = true
+				break
+			}
+			continue
+		}
+		if a.Kind == Decide {
+			h.decide(a)
+			continue
+		}
+		if a.Kind != RunTrial {
+			t.Fatalf("unexpected action: %+v", a)
+		}
+		// A trial runs for the last recorded group, so the projection is still that group's cut.
+		assertCut("running group")
+		h.trial(a, journal.TrialEnd{Outcome: journal.OutcomePass, DurationS: a.Trial.DurationS})
+	}
+	if revisited {
+		if a := h.next(); a.Kind == RunTrial {
+			assertCut("running revisited group")
+		}
+	}
+	// The singleton is cut 1; halves, then each doubling up to n are one cut each, never cut 1 again.
+	finer := 0
+	for g := 2; ; finer++ {
+		if g >= n {
+			break
+		}
+		g = min(2*g, n)
+	}
+	if !revisited || want != 2+finer {
+		t.Fatalf("the hunt never returned to granularity %d after finer passing splits (cut %d, want %d)", n, want, 2+finer)
+	}
+}

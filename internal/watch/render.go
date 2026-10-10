@@ -285,7 +285,7 @@ func RenderView(s Snapshot, sc Screen, now time.Time) Drawn {
 	if p.class == compactLayout && !planned.IsZero() {
 		header = grey.Render("togi") + "  " + white.Render(wallSecond(now)) + "  " + amber.Render("paused until "+wallMinute(planned)) +
 			grey.Render("  session ") + textStyle.Render(hm(now.Sub(s.start))) +
-			grey.Render(fmt.Sprintf("  %d failures · %d crashes", s.failures, s.crashes))
+			grey.Render(fmt.Sprintf("  %s · %s", plural(s.failures, "failure"), plural(s.crashes, "crash")))
 	}
 	c.put(p.header, 0, 0, header)
 	c.put(p.stage, 0, 0, s.stageLine(p.class, sc.View != MainView, now))
@@ -542,6 +542,9 @@ func (s Snapshot) quietUntil() time.Time {
 
 func (s Snapshot) header(now time.Time) string {
 	out := grey.Render("togi") + "   " + white.Render(wallSecond(now))
+	if s.starting {
+		return out + grey.Render("   starting")
+	}
 	if !s.session {
 		return out + grey.Render("   no session yet")
 	}
@@ -551,7 +554,7 @@ func (s Snapshot) header(now time.Time) string {
 	} else if s.stopped != nil {
 		end = s.stopped.at
 	}
-	out += grey.Render("   session ") + textStyle.Render(hm(end.Sub(s.start))) + "   " + textStyle.Render(fmt.Sprint(s.failures)) + grey.Render(" failures · ") + textStyle.Render(fmt.Sprint(s.crashes)) + grey.Render(" crashes")
+	out += grey.Render("   session ") + textStyle.Render(hm(end.Sub(s.start))) + "   " + textStyle.Render(fmt.Sprint(s.failures)) + grey.Render(" "+noun(s.failures, "failure")+" · ") + textStyle.Render(fmt.Sprint(s.crashes)) + grey.Render(" "+noun(s.crashes, "crash"))
 	if s.lastFailure != nil {
 		out += grey.Render("   last observed failure ") + textStyle.Render(wallMinute(*s.lastFailure))
 		if s.quietUntil().IsZero() {

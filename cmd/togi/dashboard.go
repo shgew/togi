@@ -13,6 +13,7 @@ import (
 // watch updates the clock once a second outside idle trials and holds still during an idle trial until the journal changes.
 type dashboard struct {
 	dir     string
+	since   int // the journal's last sequence number before this run; the screen says it is starting until a later event exists
 	out     *os.File
 	in      *os.File                                                  // terminal whose echo is off while the dashboard shows; nil leaves it alone
 	run     func(ctx context.Context, dir string, out *os.File) error // watch.Run when nil
@@ -41,7 +42,9 @@ func (d *dashboard) show() {
 	d.mu.Unlock()
 	run := d.run
 	if run == nil {
-		run = func(ctx context.Context, dir string, out *os.File) error { return watch.Run(ctx, dir, out, nil) }
+		run = func(ctx context.Context, dir string, out *os.File) error {
+			return watch.RunAfter(ctx, dir, out, nil, d.since)
+		}
 	}
 	restore := func() {}
 	if d.in != nil {

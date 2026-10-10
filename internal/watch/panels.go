@@ -765,14 +765,28 @@ func rerunWords(r rerunPlan, class sizeClass) (string, string) {
 	return where + " on " + coreIDs(r.cores), length
 }
 
+// recutWords says, in the format with its %d, that the hunt has cut its parts finer: cut is the split's number among
+// the hunt's splits, and the first split was cut by no one.
+func recutWords(cut int, format string) string {
+	if cut < 2 {
+		return ""
+	}
+	return fmt.Sprintf(format, cut-1)
+}
+
 func plural(n int, word string) string {
+	return fmt.Sprintf("%d %s", n, noun(n, word))
+}
+
+// noun is word in the number n takes, without the number.
+func noun(n int, word string) string {
 	switch {
 	case n == 1:
-		return "1 " + word
+		return word
 	case strings.HasSuffix(word, "sh"):
-		return fmt.Sprintf("%d %ses", n, word)
+		return word + "es"
 	}
-	return fmt.Sprintf("%d %ss", n, word)
+	return word + "s"
 }
 
 func (s Snapshot) turnLines(t tables, width int, class sizeClass) []string {
@@ -891,10 +905,11 @@ func (s Snapshot) huntStage(short bool) string {
 		if at == 0 {
 			return fmt.Sprintf("group %d", h.groups[len(h.groups)-1].id)
 		}
+		recut := recutWords(h.cut, "re-cut %d · ")
 		if short {
-			return fmt.Sprintf("part %d of %d", at, len(h.plan))
+			return fmt.Sprintf("%spart %d of %d", recut, at, len(h.plan))
 		}
-		return fmt.Sprintf("parts · part %d of %d", at, len(h.plan))
+		return fmt.Sprintf("parts · %spart %d of %d", recut, at, len(h.plan))
 	}
 	return fmt.Sprintf("group %d", h.groups[len(h.groups)-1].id)
 }
