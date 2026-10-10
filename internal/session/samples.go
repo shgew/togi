@@ -25,7 +25,7 @@ func sampleEvidence(samples iter.Seq[machine.TrialConditions], cores []int, regi
 		stall *int64
 	}
 	workers := make([]worker, len(cores))
-	var last *machine.TrialConditions
+	var last machine.TrialConditions
 	valid := len(cores) >= 2 && regime != machine.R6
 	count := 0
 	var voltage requestedVoltage
@@ -34,7 +34,7 @@ func sampleEvidence(samples iter.Seq[machine.TrialConditions], cores []int, regi
 		for sample := range samples {
 			voltage.add(sample, cores)
 			for i, core := range cores {
-				cpu, present := sample.WorkerCPUMS[core]
+				cpu, present := sample.WorkerCPUMS.Get(core)
 				if !present || cpu < 0 || count > 0 && (cpu < workers[i].cpu || sample.ElapsedMS <= last.ElapsedMS) {
 					valid = false
 				}
@@ -47,7 +47,7 @@ func sampleEvidence(samples iter.Seq[machine.TrialConditions], cores []int, regi
 				}
 				workers[i].cpu = cpu
 			}
-			last = &sample
+			last = sample
 			count++
 			if more {
 				more = yield(sample)
@@ -61,7 +61,10 @@ func sampleEvidence(samples iter.Seq[machine.TrialConditions], cores []int, regi
 		telemetry, _ = requests.Summarize(observed, cores, func(core int) int { return ccds[core] })
 	}
 	median, minimum := voltage.medianMinimum()
-	summary := sampleSummary{last: last, voltageMedianV: median, voltageMinV: minimum, requests: telemetry}
+	summary := sampleSummary{voltageMedianV: median, voltageMinV: minimum, requests: telemetry}
+	if count > 0 {
+		summary.last = &last
+	}
 	if !valid || count < 2 {
 		return summary
 	}

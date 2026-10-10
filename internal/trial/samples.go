@@ -36,14 +36,14 @@ func newConditionsSampler(o Options, spec machine.TrialSpec, started time.Time) 
 }
 
 func (s *conditionsSampler) sample(started time.Time) machine.TrialConditions {
-	p := machine.TrialConditions{CoreMHz: make(map[int]int)}
+	var p machine.TrialConditions
 	p.TctlC, p.TccdC = readTemperatures(s.options.Hwmon)
 	if s.options.PMTable != nil {
 		p.PMTable = s.options.PMTable.PMTable()
 	}
 	for core, path := range s.cpus {
 		if value := readSensor(path); value != nil && *value >= 0 {
-			p.CoreMHz[core] = int(*value / 1000)
+			p.CoreMHz.Set(core, int(*value/1000))
 		}
 	}
 	energy := readSensor(filepath.Join(s.options.Powercap, "intel-rapl:0", "energy_uj"))

@@ -34,7 +34,7 @@ func TestSampleEvidenceStalledWorker(t *testing.T) {
 			t.Parallel()
 			samples := make([]machine.TrialConditions, len(tc.readings))
 			for i, reading := range tc.readings {
-				samples[i] = machine.TrialConditions{ElapsedMS: int64(i+1) * 1000, WorkerCPUMS: reading}
+				samples[i] = machine.TrialConditions{ElapsedMS: int64(i+1) * 1000, WorkerCPUMS: machine.PerCoreFrom(reading)}
 			}
 			summary := sampleEvidence(slices.Values(samples), tc.cores, tc.regime, nil)
 			if len(samples) > 0 {

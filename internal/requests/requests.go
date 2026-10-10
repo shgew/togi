@@ -54,7 +54,7 @@ func Summarize(samples iter.Seq[machine.TrialConditions], cores []int, ccdOf fun
 		}
 		for _, core := range cores {
 			requests[core] = append(requests[core], float64(lanes[core]))
-			if mhz, ok := sample.CoreMHz[core]; ok {
+			if mhz, ok := sample.CoreMHz.Get(core); ok {
 				perCCD[ccdOf(core)] = append(perCCD[ccdOf(core)], float64(mhz))
 			}
 		}
