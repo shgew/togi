@@ -48,14 +48,34 @@ func forward(extract string, seal, jobs int, stdout io.Writer) error {
 	return reportForwardCheck(stdout, trials, seal, jobs)
 }
 
+type forwardOutcome struct {
+	rows    []forwardRow
+	pooled  forwardScore
+	err     error
+	elapsed time.Duration
+}
+
+// startForwardCheck runs forwardCheck in the background; the channel yields exactly one outcome.
+func startForwardCheck(trials []trialfacts.Record, seal, jobs int) <-chan forwardOutcome {
+	outcome := make(chan forwardOutcome, 1)
+	go func() {
+		started := time.Now()
+		rows, pooled, err := forwardCheck(trials, seal, jobs)
+		outcome <- forwardOutcome{rows: rows, pooled: pooled, err: err, elapsed: time.Since(started)}
+	}()
+	return outcome
+}
+
 func reportForwardCheck(w io.Writer, trials []trialfacts.Record, seal, jobs int) error {
-	started := time.Now()
-	rows, pooled, err := forwardCheck(trials, seal, jobs)
-	if err != nil {
-		return err
+	return writeForwardCheck(w, <-startForwardCheck(trials, seal, jobs), seal)
+}
+
+func writeForwardCheck(w io.Writer, outcome forwardOutcome, seal int) error {
+	if outcome.err != nil {
+		return outcome.err
 	}
-	reportForward(w, rows, pooled, seal)
-	fmt.Fprintf(w, "Forward-chained elapsed: %s\n", time.Since(started).Round(time.Millisecond))
+	reportForward(w, outcome.rows, outcome.pooled, seal)
+	fmt.Fprintf(w, "Forward-chained elapsed: %s\n", outcome.elapsed.Round(time.Millisecond))
 	return nil
 }
 

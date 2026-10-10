@@ -1,6 +1,31 @@
 package main
 
-import "sync"
+import (
+	"runtime"
+	"sync"
+	"sync/atomic"
+)
+
+// parallelFor calls do(k) for every k in [0, n) on at most GOMAXPROCS goroutines, the caller's included, and waits
+// for all of them. Each call must write only its own results.
+func parallelFor(n int, do func(k int)) {
+	var next atomic.Int64
+	work := func() {
+		for {
+			k := int(next.Add(1)) - 1
+			if k >= n {
+				return
+			}
+			do(k)
+		}
+	}
+	var wg sync.WaitGroup
+	for range min(n, runtime.GOMAXPROCS(0)) - 1 {
+		wg.Go(work)
+	}
+	work()
+	wg.Wait()
+}
 
 func fitParallel[T any](count, jobs int, fit func(int) (T, error)) ([]T, error) {
 	results := make([]T, count)

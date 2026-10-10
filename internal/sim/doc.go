@@ -28,6 +28,10 @@
 // onset boosts apply as they do to per-core hazards. Files without [ccd] retain
 // the limit/joint model unchanged.
 //
+// Machine.Hazard and Machine.FailureProbability need only the failure rates, so a Predictor, built by NewPredictor
+// from the same Config with explicit Limits, reports the same values without the simulated host. It is much cheaper to
+// build, which suits callers such as the fitter that evaluate many configurations.
+//
 // Config.SharedVoltage replaces loaded-core and joint/CCD hazards for multi-core
 // R7 with a common rail: the highest loaded core request across both CCDs sets
 // voltage. Requests depend on workload, offset and the modeled CCD clock; clocks

@@ -24,7 +24,7 @@ type observation struct {
 
 type likelihood struct {
 	cfg   sim.Config
-	m     *sim.Machine
+	m     *sim.Predictor
 	obs   []observation
 	guard *modelcheck.Checker
 }
@@ -92,17 +92,21 @@ func bootstrap(records []trialfacts.Record, seed uint64) []trialfacts.Record {
 	return out
 }
 
-func (l *likelihood) rebuild() {
-	m, err := sim.New(l.cfg)
+func (l *likelihood) newMachine() *sim.Predictor {
+	m, err := sim.NewPredictor(l.cfg)
 	if err != nil {
 		panic(err)
 	}
-	l.m = m
+	return m
 }
 
-func (l *likelihood) value(i int) float64 {
+func (l *likelihood) rebuild() {
+	l.m = l.newMachine()
+}
+
+func (l *likelihood) valueOf(m *sim.Predictor, i int) float64 {
 	o := &l.obs[i]
-	p := l.m.FailureProbability(o.profile, o.spec)
+	p := m.FailureProbability(o.profile, o.spec)
 	var loss float64
 	if o.k > 0 {
 		if p <= 0 {
@@ -141,9 +145,13 @@ func (l *likelihood) admissible() bool {
 }
 
 func (l *likelihood) rawScore(indices []int) float64 {
+	return l.rawScoreOn(l.m, indices)
+}
+
+func (l *likelihood) rawScoreOn(m *sim.Predictor, indices []int) float64 {
 	var loss float64
 	for _, i := range indices {
-		loss += l.value(i)
+		loss += l.valueOf(m, i)
 	}
 	if c := l.cfg.CCD; c != nil {
 		loss += 0.5 * (c.Effect[0]*c.Effect[0] + c.Effect[1]*c.Effect[1])
@@ -151,17 +159,32 @@ func (l *likelihood) rawScore(indices []int) float64 {
 	return loss
 }
 
+// scan sets l.cfg to each of n candidate configurations in turn through apply, builds their machines, then
+// scores all of them over indices concurrently. apply must change l.cfg only; the scan never changes l.m.
+func (l *likelihood) scan(n int, apply func(k int), indices []int) ([]*sim.Predictor, []float64) {
+	machines := make([]*sim.Predictor, n)
+	for k := range n {
+		apply(k)
+		machines[k] = l.newMachine()
+	}
+	losses := make([]float64, n)
+	parallelFor(n, func(k int) { losses[k] = l.rawScoreOn(machines[k], indices) })
+	return machines, losses
+}
+
 func (l *likelihood) discrete(dst *int, indices []int) {
 	if len(indices) == 0 {
 		return
 	}
 	best, score := *dst, l.score(indices)
-	for limit := -50; limit <= 1; limit++ {
-		*dst = limit
-		l.rebuild()
-		candidate := l.rawScore(indices)
-		if candidate < score-1e-9 && l.admissible() {
-			best, score = limit, candidate
+	const first, last = -50, 1
+	machines, losses := l.scan(last-first+1, func(k int) { *dst = first + k }, indices)
+	for k, candidate := range losses {
+		if candidate < score-1e-9 {
+			l.m = machines[k]
+			if l.admissible() {
+				best, score = first+k, candidate
+			}
 		}
 	}
 	*dst = best
@@ -303,12 +326,13 @@ func (l *likelihood) fitJoints() {
 				continue
 			}
 			best, score := limit, l.score(indices)
-			for candidate := -50; candidate <= 0; candidate++ {
-				joint.Members[core] = candidate
-				l.rebuild()
-				v := l.rawScore(indices)
-				if v < score-1e-9 && l.admissible() {
-					best, score = candidate, v
+			machines, losses := l.scan(51, func(k int) { joint.Members[core] = -50 + k }, indices)
+			for k, v := range losses {
+				if v < score-1e-9 {
+					l.m = machines[k]
+					if l.admissible() {
+						best, score = -50+k, v
+					}
 				}
 			}
 			joint.Members[core] = best
@@ -416,12 +440,9 @@ func (l *likelihood) addJoint(records []trialfacts.Record, ccd int) {
 	indices := l.selectObs(func(o observation) bool { return o.spec.Regime == machine.R7 })
 	baseline := l.score(indices)
 	bestScore := baseline - 0.5
-	var best sim.Joint
 	seen := make(map[string]bool)
 	original := len(l.cfg.Joints)
-	l.cfg.Joints = append(l.cfg.Joints, sim.Joint{Regimes: []machine.Regime{machine.R7}, Rate: 0.001})
-	l.rebuild()
-	candidate := &l.cfg.Joints[original]
+	var candidates []map[int]int
 	for _, r := range records {
 		if r.Class.Regime != machine.R7 || r.Outcome != journal.OutcomeFailure {
 			continue
@@ -442,24 +463,35 @@ func (l *likelihood) addJoint(records []trialfacts.Record, ccd int) {
 		}
 		seen[string(key)] = true
 		duplicate := false
-		for _, joint := range l.cfg.Joints[:original] {
+		for _, joint := range l.cfg.Joints {
 			duplicate = duplicate || maps.Equal(joint.Members, members)
 		}
 		if duplicate {
 			continue
 		}
-		candidate.Members, candidate.Rate = members, 0.001
-		l.rebuild()
-		l.continuous(func() float64 { return candidate.Rate }, func(x float64) { candidate.Rate = max(x, 1e-12) }, indices, 1e-7, 0.5)
-		score := l.score(indices)
-		if score < bestScore {
-			best, bestScore = *candidate, score
+		candidates = append(candidates, members)
+	}
+	type fitted struct {
+		joint sim.Joint
+		score float64
+	}
+	results := make([]fitted, len(candidates))
+	parallelFor(len(candidates), func(k int) {
+		trial := likelihood{cfg: cloneMachine(l.cfg), obs: l.obs, guard: l.guard}
+		trial.cfg.Joints = append(trial.cfg.Joints, sim.Joint{Regimes: []machine.Regime{machine.R7}, Members: candidates[k], Rate: 0.001})
+		trial.rebuild()
+		candidate := &trial.cfg.Joints[original]
+		trial.continuous(func() float64 { return candidate.Rate }, func(x float64) { candidate.Rate = max(x, 1e-12) }, indices, 1e-7, 0.5)
+		results[k] = fitted{joint: *candidate, score: trial.score(indices)}
+	})
+	var best sim.Joint
+	for _, result := range results {
+		if result.score < bestScore {
+			best, bestScore = result.joint, result.score
 		}
 	}
-	if best.Members == nil {
-		l.cfg.Joints = l.cfg.Joints[:original]
-	} else {
-		l.cfg.Joints[original] = best
+	if best.Members != nil {
+		l.cfg.Joints = append(l.cfg.Joints, best)
 	}
 	l.rebuild()
 }
@@ -497,12 +529,14 @@ func (l *likelihood) fitWorkloads() {
 				value = -50
 			}
 			best, score := value, math.Inf(1)
-			for candidate := -50; candidate <= 1; candidate++ {
-				limit.Workload[workload] = candidate
-				l.rebuild()
-				loss := l.rawScore(indices)
-				if loss < score-1e-9 && l.admissible() {
-					best, score = candidate, loss
+			const first, last = -50, 1
+			machines, losses := l.scan(last-first+1, func(k int) { limit.Workload[workload] = first + k }, indices)
+			for k, loss := range losses {
+				if loss < score-1e-9 {
+					l.m = machines[k]
+					if l.admissible() {
+						best, score = first+k, loss
+					}
 				}
 			}
 			if !exists && baseline-score < 0.5 {
@@ -585,7 +619,7 @@ func (l *likelihood) fitLimitRateShift(all []int) {
 		low, high = max(low, -50-limit.value), min(high, 1-limit.value)
 	}
 	rate := model.PastLimitRate
-	apply := func(delta int, shiftedRate float64) {
+	set := func(delta int, shiftedRate float64) {
 		for _, limit := range shifts {
 			if limit.dst != nil {
 				*limit.dst = limit.value + delta
@@ -594,19 +628,26 @@ func (l *likelihood) fitLimitRateShift(all []int) {
 			}
 		}
 		model.PastLimitRate = shiftedRate
-		l.rebuild()
 	}
-	best, bestRate, score := 0, rate, l.score(all)
+	var deltas []int
+	var rates []float64
 	for delta := low; delta <= high; delta++ {
 		shiftedRate := rate * math.Pow(model.Growth, float64(-delta))
 		if shiftedRate < 1e-8 || shiftedRate > 0.5 {
 			continue
 		}
-		apply(delta, shiftedRate)
-		candidate := l.rawScore(all)
-		if candidate < score-1e-9 && l.admissible() {
-			best, bestRate, score = delta, shiftedRate, candidate
+		deltas, rates = append(deltas, delta), append(rates, shiftedRate)
+	}
+	best, bestRate, score := 0, rate, l.score(all)
+	machines, losses := l.scan(len(deltas), func(k int) { set(deltas[k], rates[k]) }, all)
+	for k, candidate := range losses {
+		if candidate < score-1e-9 {
+			l.m = machines[k]
+			if l.admissible() {
+				best, bestRate, score = deltas[k], rates[k], candidate
+			}
 		}
 	}
-	apply(best, bestRate)
+	set(best, bestRate)
+	l.rebuild()
 }

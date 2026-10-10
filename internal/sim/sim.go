@@ -121,9 +121,7 @@ var epoch = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 const RebootTime = 90 * time.Second
 
 type Machine struct {
-	cfg        Config
-	model      Model
-	limits     []Limits
+	hazards
 	regs       []int
 	boot       int
 	bootID     string
@@ -219,6 +217,7 @@ func New(cfg Config) (*Machine, error) {
 	if m.limits == nil {
 		m.limits = m.drawLimits()
 	}
+	m.index(cfg.Joints)
 	m.startBoot()
 	return m, nil
 }
@@ -327,10 +326,12 @@ func validateLimits(limits []Limits, cores int) error {
 	if limits != nil && len(limits) != cores {
 		return fmt.Errorf("%d limits for %d cores", len(limits), cores)
 	}
-	for c, e := range limits {
-		for _, v := range slices.Concat(e.Alone[:], e.Together[:]) {
-			if v < machine.MinOffset || v > 1 {
-				return fmt.Errorf("limit %d of core %d outside [-50, 1]", v, c)
+	for c := range limits {
+		for _, values := range [][]int{limits[c].Alone[:], limits[c].Together[:]} {
+			for _, v := range values {
+				if v < machine.MinOffset || v > 1 {
+					return fmt.Errorf("limit %d of core %d outside [-50, 1]", v, c)
+				}
 			}
 		}
 	}
@@ -338,7 +339,8 @@ func validateLimits(limits []Limits, cores int) error {
 }
 
 func validateLimitHazards(limits []Limits) error {
-	for c, e := range limits {
+	for c := range limits {
+		e := &limits[c]
 		if e.Idle != nil && (*e.Idle < machine.MinOffset || *e.Idle > 1) {
 			return fmt.Errorf("idle limit %d of core %d outside [-50, 1]", *e.Idle, c)
 		}
@@ -412,26 +414,41 @@ func validateOutcome(trial string, s Outcome, cores int) error {
 }
 
 func validateJoints(joints []Joint, cores int) error {
-	for _, joint := range joints {
-		for c, offset := range joint.Members {
-			if c < 0 || c >= cores || offset < machine.MinOffset || offset > machine.MaxOffset {
-				return fmt.Errorf("joint member core %d offset %d invalid", c, offset)
+	for j := range joints {
+		for c, offset := range joints[j].Members {
+			if err := validateJointMember(c, offset, cores); err != nil {
+				return err
 			}
 		}
-		for _, r := range joint.Regimes {
-			if !slices.Contains(machine.Regimes, r) {
-				return fmt.Errorf("joint regime %q is not supported", r)
-			}
+		if err := validateJointFields(&joints[j], cores); err != nil {
+			return err
 		}
-		if joint.Signal != "" && !slices.Contains(signalOrder, joint.Signal) {
-			return fmt.Errorf("joint signal %q is not supported", joint.Signal)
+	}
+	return nil
+}
+
+func validateJointMember(core, offset, cores int) error {
+	if core < 0 || core >= cores || offset < machine.MinOffset || offset > machine.MaxOffset {
+		return fmt.Errorf("joint member core %d offset %d invalid", core, offset)
+	}
+	return nil
+}
+
+// validateJointFields checks everything about a joint except its members.
+func validateJointFields(joint *Joint, cores int) error {
+	for _, r := range joint.Regimes {
+		if !slices.Contains(machine.Regimes, r) {
+			return fmt.Errorf("joint regime %q is not supported", r)
 		}
-		if joint.Rate < 0 || joint.AfterS < 0 {
-			return fmt.Errorf("joint rate %g or delay %g is negative", joint.Rate, joint.AfterS)
-		}
-		if core := joint.CrashMCECore; core != nil && (*core < 0 || *core >= cores) {
-			return fmt.Errorf("joint crash MCE core %d outside [0, %d)", *core, cores)
-		}
+	}
+	if joint.Signal != "" && !slices.Contains(signalOrder, joint.Signal) {
+		return fmt.Errorf("joint signal %q is not supported", joint.Signal)
+	}
+	if joint.Rate < 0 || joint.AfterS < 0 {
+		return fmt.Errorf("joint rate %g or delay %g is negative", joint.Rate, joint.AfterS)
+	}
+	if core := joint.CrashMCECore; core != nil && (*core < 0 || *core >= cores) {
+		return fmt.Errorf("joint crash MCE core %d outside [0, %d)", *core, cores)
 	}
 	return nil
 }

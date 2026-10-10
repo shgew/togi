@@ -298,7 +298,7 @@ func TestLikelihoodRejectsImpossibleOutcomes(t *testing.T) {
 	}{{0, 1, true}, {100, 0, true}, {0, 0, false}, {100, 1, false}} {
 		l.cfg.Limits[0].Flat, l.obs[0].k = tc.flat, tc.failures
 		l.rebuild()
-		loss := l.value(0)
+		loss := l.valueOf(l.m, 0)
 		if tc.impossible {
 			if !math.IsInf(loss, 1) {
 				t.Errorf("flat=%g failures=%d: impossible outcome has finite loss %g", tc.flat, tc.failures, loss)

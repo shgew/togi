@@ -104,7 +104,7 @@ func TestSharedVoltageFitDeterminismAndIsolation(t *testing.T) {
 	if diff := cmp.Diff(before, voltageConfig(records)); diff != "" {
 		t.Fatalf("fitting mutated input telemetry: %s", diff)
 	}
-	m, err := sim.New(cfg)
+	m, err := sim.NewPredictor(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
