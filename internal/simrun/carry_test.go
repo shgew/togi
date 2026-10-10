@@ -261,6 +261,123 @@ func TestARulesetTransitionSeedsTheNextSession(t *testing.T) {
 	}
 }
 
+func TestAPreviousRulesetSessionTransitionsToASeededSession(t *testing.T) {
+	t.Parallel()
+	dir, _, _ := cleanCycleSession(t)
+	source, err := journal.ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decisions := map[int]journal.CoreState{}
+	for _, c := range source.Cores {
+		decisions[c.Core] = c
+	}
+	previous := tuner.Ruleset - 1
+	id := restampRuleset(t, dir, previous)
+	stop, events := simulateAgain(t, dir, sharedVoltageConfig(t, 1000), config.Default(), nil)
+	if stop.Reason != session.StopCycles {
+		t.Fatalf("stopped with %+v", stop)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "archive", id+".jsonl")); err != nil {
+		t.Fatalf("archived session: %v", err)
+	}
+	start := events[0].Data.(*journal.SessionStart)
+	if start.Ruleset != tuner.Ruleset || start.Session == id {
+		t.Fatalf("new session stamp %+v, want ruleset %d and a new session", start, tuner.Ruleset)
+	}
+	carried := carriedEvent(t, events)
+	if len(carried.Sources) != 1 || carried.Sources[0].Session != id || carried.Sources[0].Ruleset != previous {
+		t.Fatalf("session.carried sources %+v, want session %s at ruleset %d", carried.Sources, id, previous)
+	}
+	var carriedSeq int
+	var facts, liveTrials int
+	for _, e := range events {
+		switch p := e.Data.(type) {
+		case *journal.SessionCarried:
+			carriedSeq = e.Seq
+		case *journal.TrialCarried, *journal.FailureCarried:
+			facts++
+			if carriedSeq != 0 {
+				t.Errorf("seq %d carries a fact after session.carried at seq %d", e.Seq, carriedSeq)
+			}
+		case *journal.TrialEnd:
+			liveTrials++
+		case *journal.CheckingCycle:
+			if p.Passed && liveTrials == 0 {
+				t.Errorf("seq %d passes a checking cycle before any live trial", e.Seq)
+			}
+		}
+	}
+	if facts == 0 {
+		t.Fatal("no trial or idle-failure facts carried before session.carried")
+	}
+	phases := firstPhases(events)
+	if len(phases) == 0 {
+		t.Fatal("no core phase recorded")
+	}
+	for core, p := range phases {
+		if p.To != journal.PhaseSearch {
+			t.Errorf("core %02d starts in %s, want a fresh search", core, p.To)
+		}
+	}
+	if len(carried.Carried) == 0 {
+		t.Fatal("no cores carried")
+	}
+	discriminating := false
+	withFailurePoints := 0
+	for _, cc := range carried.Carried {
+		p := phases[cc.Core]
+		if p == nil {
+			t.Fatalf("carried core %02d has no initial core phase", cc.Core)
+		}
+		if cc.CandidateSoloLimit == nil {
+			t.Fatalf("carried core %02d has no candidate solo limit", cc.Core)
+		}
+		want := *cc.CandidateSoloLimit
+		if cc.FailurePoint != nil {
+			withFailurePoints++
+			want = max(want, *cc.FailurePoint+1)
+		}
+		if p.To != journal.PhaseSearch || !p.CheckSoloLimit || p.Offset != want || p.Pass != nil {
+			t.Errorf("core %02d starts %+v, want checking search at %d with no pass", cc.Core, p, want)
+		}
+		if diff := cmp.Diff(cc.FailurePoint, p.FailurePoint); diff != "" {
+			t.Errorf("core %02d failure point (-carried +start):\n%s", cc.Core, diff)
+		}
+		decision, ok := decisions[cc.Core]
+		if !ok {
+			t.Fatalf("carried core %02d has no source decision", cc.Core)
+		}
+		discriminating = discriminating || decision.Offset != want || decision.Pass != nil
+	}
+	if !carried.FailurePoints || withFailurePoints == 0 {
+		t.Fatal("no failure points carried")
+	}
+	if !discriminating {
+		t.Fatal("fixture cannot discriminate decision carry: every source decision matches its fact-derived start with no pass")
+	}
+}
+
+func TestAPreviousRulesetTransitionStartsPhaseOneWithNothingConfirmed(t *testing.T) {
+	t.Parallel()
+	dir, _, _ := cleanCycleSession(t)
+	restampRuleset(t, dir, tuner.Ruleset-1)
+	simulateAgain(t, dir, sharedVoltageConfig(t, 1000), config.Default(), func(e journal.Event) bool { return e.Kind == journal.KindSessionCarried })
+	state, err := journal.ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Phases == nil || state.Phases.Phase != 1 || state.Phases.Concluded != 0 || state.Phases.Confirming || len(state.Phases.Candidates) != 0 {
+		t.Errorf("phases %+v, want phase 1 with phase 2 not begun", state.Phases)
+	}
+	if state.BIOS != nil {
+		t.Errorf("bios %+v, want none: no profile is confirmed until a confirming cycle ends", state.BIOS)
+	}
+	if state.Checking != nil && (state.Checking.CleanCycles != 0 || state.Checking.LastCleanCycle != 0) {
+		t.Errorf("checking %+v, want no clean cycle carried", state.Checking)
+	}
+}
+
 func TestARulesetTransitionAfterABIOSChangeCarriesOnlySoloLimits(t *testing.T) {
 	t.Parallel()
 	dir, _ := restampedRuleset3Session(t)

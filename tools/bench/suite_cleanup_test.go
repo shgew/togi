@@ -71,7 +71,7 @@ func TestDefaultSuiteRunCounts(t *testing.T) {
 
 func TestNonmemberIsSyntheticConclusionGuardOnly(t *testing.T) {
 	const name = "target-nonmember-mce"
-	g, err := loadGate("suite.json")
+	g, err := loadGate(archivedGate("suite.json"))
 	if err != nil || g == nil {
 		t.Fatalf("loadGate = %v, %v", g, err)
 	}
@@ -157,13 +157,13 @@ func TestReportSuiteNotes(t *testing.T) {
 		t.Fatalf("notes output (-want +got):\n%s", diff)
 	}
 
-	g, err := loadGate("suite.json")
+	g, err := loadGate(archivedGate("suite.json"))
 	if err != nil || g == nil {
 		t.Fatalf("loadGate = %v, %v", g, err)
 	}
 	out.Reset()
 	reportSuiteNotes(&out, g)
 	if !strings.Contains(out.String(), "suite: target-nonmember-mce stays as a labelled synthetic conclusion guard") {
-		t.Fatalf("committed suite's notes do not label the synthetic guard:\n%s", out.String())
+		t.Fatalf("archived gate's notes do not label the synthetic guard:\n%s", out.String())
 	}
 }

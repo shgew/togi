@@ -20,7 +20,7 @@ just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR]
 |`late-onset`|R7 joint failures that start only after four minutes of load; the cores' own limits have no delay|
 |`idle-limit`|cores that fail idle at shallower offsets than under load (issue #106)|
 |`misleading-mce`|joint crashes that leave an MCE naming one core (issue #114)|
-|`target-nonmember-mce`|synthetic conclusion guard for #530, not an admitted adversary and with no adversary admission: CCD0 joint crashes deliberately name nonmember core 15; parked hunts can stop at that core's parked offset of zero (related to issue #114). It makes no hazard or time claim.|
+|`target-nonmember-mce`|synthetic conclusion guard of the archived Ruleset 11 gate, not an admitted adversary and with no adversary admission: CCD0 joint crashes deliberately name nonmember core 15; parked hunts can stop at that core's parked offset of zero (related to issue #114). It makes no hazard or time claim.|
 |`shared-voltage`|hand-set shared-rail R7 model with workload-dependent requests, clocks and per-core voltage demand; no facts or replay|
 |`target-shared-voltage`|real-fact replay over the all-facts shared-voltage anchor; an in-sample fit, not forward-validated|
 |`target-r7-vf-boost`|overlay of the anchor: AVX2 core-5 required voltage rises faster than its request as partial CCD0 loads boost; in-sample, not forward-validated|
@@ -43,11 +43,11 @@ Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds s
 
 ### The gate
 
-The [`gate` object in `tools/bench/suite.json`](../tools/bench/suite.json) is the open ruleset's bench gate, committed before the ruleset is scored. It names the gate `id`, the `baseline` it is judged against (the ruleset and the commits that recorded the runs; a pull request that re-records runs adds its commit), the seed `split`, the `gated` scenarios, the `pooled` subset, the `conclude` scenarios, the `quantiles`, the bootstrap (`confidence`, `resamples`, `bootstrap_seed`) and `max_time_ratio`. The object and its `note` are the definition and the rationale; this page does not restate them per ruleset, and [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate it replaced. The gate comes from [issue #491](https://github.com/shgew/togi/issues/491) and [issue #570](https://github.com/shgew/togi/issues/570).
+A ruleset's bench gate is the `gate` object in [`tools/bench/suite.json`](../tools/bench/suite.json), committed before the ruleset is scored. It names the gate `id`, the `baseline` it is judged against (the ruleset and the commits that recorded the runs; a pull request that re-records runs adds its commit), the seed `split`, the `gated` scenarios, the `pooled` subset, the `conclude` scenarios, the `quantiles`, the bootstrap (`confidence`, `resamples`, `bootstrap_seed`) and `max_time_ratio`. The object and its `note` are the definition and the rationale; this page does not restate them per ruleset. The gate comes from [issue #491](https://github.com/shgew/togi/issues/491) and [issue #570](https://github.com/shgew/togi/issues/570).
 
-The gate's `notes` array preserves accompanying provenance and caveats as JSON data; it does not affect scoring.
+No gate is registered now: the suite has none until the next ruleset's is committed, so `just bench` prints no gate. The Ruleset 11 gate was scored once, then archived with its baseline, candidate runs and report in [`tools/bench/gates/ruleset-11/`](../tools/bench/gates/ruleset-11/) ([below](#the-archived-ruleset-11-gate)); [ADR 0040](adr/0040-located-hunts.md) records the Ruleset 10 gate.
 
-`just bench` prints each `notes` entry as a `suite: ...` line before its summary, so the default run visibly labels `target-nonmember-mce` as the synthetic conclusion guard.
+A gate's `notes` array preserves accompanying provenance and caveats as JSON data; it does not affect scoring. `just bench` prints each `notes` entry of a registered gate as a `suite: ...` line before its summary.
 
 With `--baseline`, `just bench` judges the gate after the generic verdict below, prints each criterion with its estimate, interval, threshold and `PASS` or `FAIL`, then an overall `gate ID: PASS` or `FAIL`, and exits 0 only when the gate passes. Run it as `just bench --split all --baseline tools/bench/baseline.jsonl`, scored once on every seed of the gate's split; a different `--split`, a candidate or baseline run missing for a required seed, a baseline recorded at another ruleset or commit than the gate names, or a missing `worst_r7_hazard_per_h` fails the gate with a refusal that names the cause. A suite without a `gate` prints no gate and exits as before. The criteria, per scenario unless noted:
 
@@ -57,6 +57,34 @@ With `--baseline`, `just bench` judges the gate after the generic verdict below,
 - **Pooled median:** the median over the `pooled` scenarios' seeds together is strictly lower than the baseline's; equal fails.
 
 Maxima and everything else are reported by the summary and the comparison, not gated. Treat a failed gate as the owner's decision, not a threshold to renegotiate after scoring.
+
+### The archived Ruleset 11 gate
+
+[`tools/bench/gates/ruleset-11/`](../tools/bench/gates/ruleset-11/) keeps the Ruleset 11 gate as it was scored, once, at commit `c7e8794a`, the clean commit that bumped `tuner.Ruleset` to 11:
+
+- `suite.json` is byte-identical to the suite that registered the gate, scenarios included. Its machine paths are relative to `tools/bench/`, so they do not resolve from the archive; the gate only reads its seeds.
+- `baseline.jsonl` is the Ruleset 10 baseline the gate was judged against (220 runs at `3a9b894` and `21052983`).
+- `candidate.jsonl` holds the 220 scored runs, projected like the baseline (no `model_check`, `wall_s` or `partial_seconds`).
+- `report.txt` is the output as scored, less its first line, the dev shell's fetch notice, which named a local path.
+
+`TestArchivedRuleset11Gate` pins the four files' hashes and re-judges the candidate against the baseline to the `gate` lines of `report.txt`.
+
+**Result: FAIL, 5 of 21 criteria.** The median worst R7 hazard rose on `target-shared-voltage`, `target-r7-vf-boost` and `target-r7-request-gap` against Ruleset 10 (3.94, 3.31 and 3.17 against 1.60, 1.70 and 1.88 per hour, each interval above 0), so did the 90th percentile on `target-shared-voltage` (6.73 against 2.64), and the pooled median is higher (3.31 against 1.72). All eight conclusion criteria and all four time criteria passed: all 220 runs concluded.
+
+The owner granted an exception ([comment](https://github.com/shgew/togi/issues/530#issuecomment-6102890949)) on the absolute bars of [#493](https://github.com/shgew/togi/issues/493) Q24, worst R7 hazard median and p90 not above Ruleset 9's final 4.91 and 10.90 per hour, judged on the point estimates; all pass. The registered criteria compare against Ruleset 10, whose hazard Ruleset 11 does not keep. The gate did not pass and is recorded as FAIL.
+
+Simulated `target-shared-voltage`, 24 seeds, against the Ruleset 10 baseline:
+
+| | Ruleset 10 | Ruleset 11 | Target (#493) |
+|---|---|---|---|
+| Median hours to conclusion | 249.8 | 66.5 | about 48 |
+| 90th percentile hours (linear) | 390.8 | 70.7 | about 72 |
+| Median hours to first confirmed result | 61.6 | 48.6 | 33–43 |
+| Median crashes | 426.5 | 202.5 | below 426.5 |
+| Worst R7 hazard, median per hour | 1.60 | 3.94 (interval of the change +1.13 to +2.96) | not above 4.91 |
+| Worst R7 hazard, 90th percentile per hour | 2.64 | 6.73 (interval of the change +2.40 to +6.87) | not above 10.90 |
+
+The conclusion time misses its ballpark by about 18 hours and the first result by about 6; the ballparks are not gates ([#493](https://github.com/shgew/togi/issues/493) Q28). These are simulated results, not hardware measurements.
 
 ### Historical measurements
 
@@ -295,7 +323,7 @@ Compare a candidate with the recorded baseline:
 just bench --split all --baseline tools/bench/baseline.jsonl
 ```
 
-The one exception to re-recording a whole baseline is [#563](https://github.com/shgew/togi/issues/563): the two anchor overlays changed from frozen copies to genuine overlays of today's anchor, so only their two 24-seed scenarios (`target-r7-vf-boost`, `target-r7-request-gap`) were re-recorded. The other records stay as they were, the deleted scenarios' records are gone, and the recording commit is appended to the gate's `baseline.commits` ([#659](https://github.com/shgew/togi/issues/659)). The registered criteria, groups and limits did not change, and this records no official #530 score and admits no adversary.
+The active baseline is Ruleset 11, recorded whole by `just bench-baseline` at a clean commit; the Ruleset 10 baseline it replaced is archived with the Ruleset 11 gate. That Ruleset 10 baseline had one partial re-recording, [#563](https://github.com/shgew/togi/issues/563): the two anchor overlays changed from frozen copies to genuine overlays of today's anchor, so only their two 24-seed scenarios (`target-r7-vf-boost`, `target-r7-request-gap`) were re-recorded at `21052983`, and the recording commit was appended to the gate's `baseline.commits` ([#659](https://github.com/shgew/togi/issues/659)).
 
 ## Forecasting a real run
 

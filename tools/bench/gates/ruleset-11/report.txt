@@ -1,0 +1,107 @@
+go run ./tools/bench "$@"
+suite: The bench gate of the open ruleset, committed before it is scored (docs/benchmarking.md#the-gate).
+suite: `just bench --split all --baseline tools/bench/baseline.jsonl` judges it and exits by it.
+suite: target-nonmember-mce stays as a labelled synthetic conclusion guard (#563, #530); no hazard or time claim.
+suite: Every baseline record carries the declared ruleset and recording commit (3a9b894 recorded the current baseline); the pull request that re-records any records (issue 563) appends its recording commit, and a test fails until it does.
+summary: time, crashes and depth include all run statuses; hazard is steady-state failures/hour with all cores loaded.
+summary: censored runs reached the simulator's boot cap without concluding; their time and crashes are lower bounds.
+scenario          runs concluded censored median_h mean_h median_crashes mean_depth max_hazard/h real_answer_share
+summary: worst_r7_hazard/h is the maximum shared-voltage final-profile hazard over every R7 workload, full CCD loads, request-ordered partials with at least two cores, and all-core; absent on legacy machines.
+default             48        48        0   46.239   46.141           10.0    -299.77     0.000000          0.000000
+target              36        36        0   51.710   52.503           83.0    -660.36    16.268917          0.311940
+flat-hazard          8         8        0   98.083   99.104           84.0    -622.38     0.806400          0.000000
+late-onset           8         8        0   77.673   77.645          308.0    -525.00     0.000000          0.000000
+idle-limit           8         8        0   57.714   57.726          115.0    -631.62     0.000000          0.000000
+misleading-mce       8         8        0   52.903   54.044           66.5    -622.12     0.000000          0.000000
+target-nonmember-mce    8         8        0   56.884   55.161           36.0    -670.12     0.072081          0.295878
+shared-voltage      24        24        0   56.399   56.194           24.0    -641.88     0.000000          0.000000
+shared-voltage worst_r7_hazard/h=1.759612 worst_r7_runs=24
+target-shared-voltage   24        24        0   66.538   67.154          202.5    -522.21    12.280544          0.250935
+target-shared-voltage worst_r7_hazard/h=9.800088 worst_r7_runs=24
+target-r7-vf-boost   24        24        0   66.653   67.161          203.5    -510.67    12.280544          0.250833
+target-r7-vf-boost worst_r7_hazard/h=7.666135 worst_r7_runs=24
+target-r7-request-gap   24        24        0   71.964   71.900          282.0    -438.54    12.280544          0.234230
+target-r7-request-gap worst_r7_hazard/h=11.819540 worst_r7_runs=24
+TOTAL              220       220        0   57.308   59.782           83.5    -515.69    16.268917          0.148978
+TOTAL worst_r7_hazard/h=11.819540 worst_r7_runs=96
+
+Model check (99% binomial intervals)
+tools/bench/machines/target-fit-0.json: flagged (52 eligible groups; 0 idle failures without trial exposure)
+  R7 mprime-avx2-36k-248k-allcore cores=[0 1 2 3 4 5 6 7] duration=300s depth=-24 n=24 k=7 interval=[0,6] mean_p=0.0718896
+tools/bench/machines/target-fit-1.json: flagged (52 eligible groups; 0 idle failures without trial exposure)
+  R7 mprime-avx2-36k-248k-allcore cores=[8 9 10 11 12 13 14 15] duration=120s depth=-39 n=38 k=13 interval=[1,11] mean_p=0.13679
+tools/bench/machines/target-fit-2.json: flagged (52 eligible groups; 0 idle failures without trial exposure)
+  R7 mprime-avx2-36k-248k-allcore cores=[0 1 2 3 4 5 6 7] duration=300s depth=-24 n=24 k=7 interval=[0,4] mean_p=0.0425844
+  R7 mprime-avx2-36k-248k-allcore cores=[8 9 10 11 12 13 14 15] duration=120s depth=-39 n=38 k=13 interval=[1,12] mean_p=0.158082
+tools/bench/machines/target-fit-3.json: flagged (52 eligible groups; 0 idle failures without trial exposure)
+  R7 mprime-avx2-36k-248k-allcore cores=[0 1 2 3 4 5 6 7] duration=300s depth=-24 n=24 k=7 interval=[0,5] mean_p=0.0564921
+  R7 mprime-avx2-36k-248k-allcore cores=[8 9 10 11 12 13 14 15] duration=120s depth=-39 n=38 k=13 interval=[1,12] mean_p=0.148368
+tools/bench/machines/target-fit-4.json: flagged (52 eligible groups; 0 idle failures without trial exposure)
+  R7 mprime-avx2-36k-248k-allcore cores=[0 1 2 3 4 5 6 7] duration=300s depth=-24 n=24 k=7 interval=[0,5] mean_p=0.0690091
+tools/bench/machines/target-fit-5.json: flagged (52 eligible groups; 0 idle failures without trial exposure)
+  R7 mprime-avx2-36k-248k-allcore cores=[0 1 2 3 4 5 6 7] duration=300s depth=-24 n=24 k=7 interval=[0,5] mean_p=0.0615343
+  R7 mprime-avx2-36k-248k-allcore cores=[8 9 10 11 12 13 14 15] duration=120s depth=-39 n=38 k=13 interval=[1,11] mean_p=0.138409
+tools/bench/machines/target-fit-6.json: flagged (52 eligible groups; 0 idle failures without trial exposure)
+  R7 mprime-avx2-36k-248k-allcore cores=[0 1 2 3 4 5 6 7] duration=300s depth=-24 n=24 k=7 interval=[0,4] mean_p=0.041111
+tools/bench/machines/target-fit-7.json: flagged (52 eligible groups; 0 idle failures without trial exposure)
+  R7 mprime-avx2-36k-248k-allcore cores=[0 1 2 3 4 5 6 7] duration=300s depth=-24 n=24 k=7 interval=[0,5] mean_p=0.0517795
+tools/bench/machines/target-fit-8.json: flagged (52 eligible groups; 0 idle failures without trial exposure)
+  R7 mprime-avx2-36k-248k-allcore cores=[0 1 2 3 4 5 6 7] duration=300s depth=-24 n=24 k=7 interval=[0,4] mean_p=0.0395233
+  R7 mprime-avx2-36k-248k-allcore cores=[8 9 10 11 12 13 14 15] duration=120s depth=-39 n=38 k=13 interval=[0,9] mean_p=0.101541
+tools/bench/machines/target-nonmember-mce.json: flagged (52 eligible groups; 0 idle failures without trial exposure)
+  R7 mprime-avx2-36k-248k-allcore cores=[0 1 2 3 4 5 6 7] duration=120s depth=-27 n=104 k=23 interval=[3,19] mean_p=0.0977121
+  R7 mprime-avx2-36k-248k-allcore cores=[0 1 2 3 4 5 6 7] duration=300s depth=-24 n=24 k=7 interval=[0,2] mean_p=0.00966689
+  R7 mprime-avx2-36k-248k-allcore cores=[8 9 10 11 12 13 14 15] duration=120s depth=-39 n=38 k=13 interval=[0,1] mean_p=0.00239983
+  R7 mprime-avx2-36k-248k-allcore cores=[8 9 10 11 12 13 14 15] duration=120s depth=0 n=65 k=0 interval=[5,22] mean_p=0.200586
+  R7 mprime-avx512-36k-248k-allcore cores=[0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15] duration=600s depth=0 n=29 k=1 interval=[12,25] mean_p=0.657574
+tools/bench/machines/target-shared-voltage.json: ok (52 eligible groups; 0 idle failures without trial exposure)
+tools/bench/machines/target-r7-vf-boost.json: ok (52 eligible groups; 0 idle failures without trial exposure)
+tools/bench/machines/target-r7-request-gap.json: ok (52 eligible groups; 0 idle failures without trial exposure)
+comparison: overall ratio weights scenarios equally; CI resamples pairs within each scenario (10000, fixed seed). V1=lost conclusion; V2=hazard increase >0.01/h; V3=mean depth increase >1 or pair >5; V4=target ratio >1. Positive depth delta is shallower.
+comparison: worst R7 hazard deltas use only pairs with shared-voltage metrics on both sides; missing is unavailable, not zero. Diagnostic only, not a verdict gate.
+default ratio=1.632 ci=[1.615,1.649] pairs=48 timed=48 faster=0 slower=48 equal=0 crash_delta=-2.771 depth_delta=1.833 max_hazard_delta=0.000000 real_answer_share=0.000000 baseline_real_answer_share=0.000000 violations=V1:0,V2:0,V3:2,V4:0
+flat-hazard ratio=0.097 ci=[0.082,0.113] pairs=8 timed=8 faster=8 slower=0 equal=0 crash_delta=-510.000 depth_delta=-164.875 max_hazard_delta=0.806400 real_answer_share=0.000000 baseline_real_answer_share=0.000000 violations=V1:0,V2:7,V3:0,V4:0
+idle-limit ratio=1.733 ci=[1.732,1.734] pairs=8 timed=8 faster=0 slower=8 equal=0 crash_delta=19.375 depth_delta=30.375 max_hazard_delta=0.000000 real_answer_share=0.000000 baseline_real_answer_share=0.000000 violations=V1:0,V2:0,V3:9,V4:0
+late-onset ratio=1.295 ci=[1.282,1.313] pairs=8 timed=8 faster=0 slower=8 equal=0 crash_delta=-15.250 depth_delta=8.125 max_hazard_delta=0.000000 real_answer_share=0.000000 baseline_real_answer_share=0.000000 violations=V1:0,V2:0,V3:9,V4:0
+misleading-mce ratio=0.619 ci=[0.473,0.779] pairs=8 timed=8 faster=8 slower=0 equal=0 crash_delta=-37.500 depth_delta=35.000 max_hazard_delta=0.000000 real_answer_share=0.000000 baseline_real_answer_share=0.000000 violations=V1:0,V2:0,V3:8,V4:0
+shared-voltage ratio=1.858 ci=[1.739,1.958] pairs=24 timed=24 faster=0 slower=24 equal=0 crash_delta=-0.250 depth_delta=2.917 max_hazard_delta=0.000000 real_answer_share=0.000000 baseline_real_answer_share=0.000000 violations=V1:0,V2:0,V3:5,V4:0
+shared-voltage max_worst_r7_hazard_delta=1.311629 worst_r7_pairs=24
+target ratio=0.683 ci=[0.577,0.806] pairs=36 timed=36 faster=27 slower=9 equal=0 crash_delta=-60.667 depth_delta=-1.361 max_hazard_delta=16.268917 real_answer_share=0.311940 baseline_real_answer_share=0.202118 violations=V1:0,V2:6,V3:13,V4:0
+target-nonmember-mce ratio=0.692 ci=[0.475,0.989] pairs=8 timed=8 faster=6 slower=2 equal=0 crash_delta=-43.250 depth_delta=11.125 max_hazard_delta=0.000000 real_answer_share=0.295878 baseline_real_answer_share=0.193163 violations=V1:0,V2:0,V3:8,V4:0
+target-r7-request-gap ratio=0.294 ci=[0.249,0.348] pairs=24 timed=24 faster=24 slower=0 equal=0 crash_delta=-224.917 depth_delta=-14.458 max_hazard_delta=12.029431 real_answer_share=0.234230 baseline_real_answer_share=0.072014 violations=V1:0,V2:6,V3:7,V4:0
+target-r7-request-gap max_worst_r7_hazard_delta=10.208773 worst_r7_pairs=24
+target-r7-vf-boost ratio=0.298 ci=[0.248,0.366] pairs=24 timed=24 faster=24 slower=0 equal=0 crash_delta=-217.000 depth_delta=-14.542 max_hazard_delta=12.028192 real_answer_share=0.250833 baseline_real_answer_share=0.076818 violations=V1:0,V2:16,V3:3,V4:0
+target-r7-vf-boost max_worst_r7_hazard_delta=4.703447 worst_r7_pairs=24
+target-shared-voltage ratio=0.263 ci=[0.232,0.297] pairs=24 timed=24 faster=24 slower=0 equal=0 crash_delta=-226.667 depth_delta=-16.167 max_hazard_delta=12.029197 real_answer_share=0.250935 baseline_real_answer_share=0.070338 violations=V1:0,V2:17,V3:1,V4:0
+target-shared-voltage max_worst_r7_hazard_delta=7.592208 worst_r7_pairs=24
+verdict: REJECT ratio=0.611 ci=[0.579,0.644] pairs=220 timed=220 faster=121 slower=99 equal=0 crash_delta=-104.827 depth_delta=-7.350 max_hazard_delta=16.268917 real_answer_share=0.148978 baseline_real_answer_share=0.063460 violations=V1:0,V2:52,V3:65,V4:0
+verdict: REJECT max_worst_r7_hazard_delta=10.208773 worst_r7_pairs=96
+gate ruleset-11: judged against ruleset 10 at 3a9b894 or 21052983 on every all seed; quantiles of worst_r7_hazard_per_h fail only when the 95% interval of candidate minus baseline (10000 paired resamples, PCG(1,1)) lies above 0; time is the geometric mean ratio over pairs both concluded.
+gate ruleset-11: Ruleset 11 gate, decided 2026-10-09 (issues 491 and 570). The 90th-percentile criterion has low power at 24 seeds: the interval over 24 pairs is wide, so it catches only a large tail rise.
+gate conclusion target-shared-voltage baseline_concluded=24 candidate_concluded=24 lost=0 lost_seeds=[] threshold=lost==0 PASS
+gate conclusion target-r7-vf-boost baseline_concluded=24 candidate_concluded=24 lost=0 lost_seeds=[] threshold=lost==0 PASS
+gate conclusion target-r7-request-gap baseline_concluded=24 candidate_concluded=24 lost=0 lost_seeds=[] threshold=lost==0 PASS
+gate conclusion shared-voltage baseline_concluded=24 candidate_concluded=24 lost=0 lost_seeds=[] threshold=lost==0 PASS
+gate conclusion default baseline_concluded=48 candidate_concluded=48 lost=0 lost_seeds=[] threshold=lost==0 PASS
+gate conclusion idle-limit baseline_concluded=8 candidate_concluded=8 lost=0 lost_seeds=[] threshold=lost==0 PASS
+gate conclusion late-onset baseline_concluded=8 candidate_concluded=8 lost=0 lost_seeds=[] threshold=lost==0 PASS
+gate conclusion target-nonmember-mce baseline_concluded=8 candidate_concluded=8 lost=0 lost_seeds=[] threshold=lost==0 PASS
+gate median target-shared-voltage baseline=1.598370 candidate=3.938049 change=+2.339679 ci=[+1.127923,+2.956730] threshold=ci_low<=0 FAIL
+gate p90 target-shared-voltage baseline=2.638409 candidate=6.732458 change=+4.094049 ci=[+2.403558,+6.874322] threshold=ci_low<=0 FAIL
+gate time target-shared-voltage ratio=0.2628 timed=24 threshold=ratio<=2 PASS
+gate median target-r7-vf-boost baseline=1.704952 candidate=3.310834 change=+1.605882 ci=[+0.537322,+2.396269] threshold=ci_low<=0 FAIL
+gate p90 target-r7-vf-boost baseline=3.741985 candidate=5.876867 change=+2.134882 ci=[-5.491493,+4.363066] threshold=ci_low<=0 PASS
+gate time target-r7-vf-boost ratio=0.2983 timed=24 threshold=ratio<=2 PASS
+gate median target-r7-request-gap baseline=1.884011 candidate=3.174892 change=+1.290882 ci=[+0.692689,+1.984630] threshold=ci_low<=0 FAIL
+gate p90 target-r7-request-gap baseline=3.236843 candidate=5.105604 change=+1.868761 ci=[-0.007621,+7.136986] threshold=ci_low<=0 PASS
+gate time target-r7-request-gap ratio=0.2938 timed=24 threshold=ratio<=2 PASS
+gate median shared-voltage baseline=0.468772 candidate=0.447982 change=-0.020790 ci=[-0.020790,+0.000000] threshold=ci_low<=0 PASS
+gate p90 shared-voltage baseline=1.738200 candidate=1.738200 change=+0.000000 ci=[-1.269428,+1.269428] threshold=ci_low<=0 PASS
+gate time shared-voltage ratio=1.8579 timed=24 threshold=ratio<=2 PASS
+gate pooled_median target-shared-voltage+target-r7-vf-boost+target-r7-request-gap baseline=1.717254 candidate=3.310834 change=+1.593580 threshold=change<0 FAIL
+gate ruleset-11: FAIL 5 of 21 criteria
+harness_wall_s=3.412
+bench: gate failed
+exit status 1
+error: recipe `bench` failed on line 105 with exit code 1
+exit=1

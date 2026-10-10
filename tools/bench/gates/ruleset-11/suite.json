@@ -1,4 +1,27 @@
 {
+  "gate": {
+    "id": "ruleset-11",
+    "note": "Ruleset 11 gate, decided 2026-10-09 (issues 491 and 570). The 90th-percentile criterion has low power at 24 seeds: the interval over 24 pairs is wide, so it catches only a large tail rise.",
+    "notes": [
+      "The bench gate of the open ruleset, committed before it is scored (docs/benchmarking.md#the-gate).",
+      "`just bench --split all --baseline tools/bench/baseline.jsonl` judges it and exits by it.",
+      "target-nonmember-mce stays as a labelled synthetic conclusion guard (#563, #530); no hazard or time claim.",
+      "Every baseline record carries the declared ruleset and recording commit (3a9b894 recorded the current baseline); the pull request that re-records any records (issue 563) appends its recording commit, and a test fails until it does."
+    ],
+    "split": "all",
+    "gated": ["target-shared-voltage", "target-r7-vf-boost", "target-r7-request-gap", "shared-voltage"],
+    "pooled": ["target-shared-voltage", "target-r7-vf-boost", "target-r7-request-gap"],
+    "conclude": ["default", "idle-limit", "late-onset", "target-nonmember-mce"],
+    "quantiles": [0.5, 0.9],
+    "confidence": 0.95,
+    "resamples": 10000,
+    "bootstrap_seed": [1, 1],
+    "max_time_ratio": 2.0,
+    "baseline": {
+      "ruleset": 10,
+      "commits": ["3a9b894", "21052983"]
+    }
+  },
   "scenarios": [
     {
       "name": "default",
