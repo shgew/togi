@@ -322,7 +322,7 @@ func (s *pairState) complete(p samePair) bool {
 
 // runSame compares every pair of sessions by digest. A side with a cached record is not run; every other side is run
 // once, longest recorded session first, and its digest taken from its journals. A difference stops the comparison
-// unless keepGoing, and a pair whose digests differ is shown by rerunning whichever side has no run directory left.
+// unless keepGoing, and a differing session is shown by rerunning whichever side has no run directory left.
 func runSame(parent context.Context, w io.Writer, pairs []samePair, cfg sameConfig, launch sameLauncher) (bool, error) {
 	if cfg.log == nil {
 		cfg.log = io.Discard
@@ -433,16 +433,25 @@ func (r *sameRun) runSide(ctx context.Context, i, side int) error {
 	return r.resolve(ctx, i)
 }
 
-// resolve compares a session whose sides all have records, and drops its run directories when they match.
+// resolve compares a session whose sides all have records, and drops its run directories when they match. A differing
+// session is kept with every present side's journals, and reported unless the comparison was stopped or, without
+// keepGoing, another session was reported first.
 func (r *sameRun) resolve(ctx context.Context, i int) error {
 	p, st := r.pairs[i], &r.states[i]
-	if p.runs[0] != nil && p.runs[1] != nil {
+	both := p.runs[0] != nil && p.runs[1] != nil
+	if both {
 		r.mu.Lock()
 		r.cpu = [2]float64{r.cpu[0] + st.rec[0].CPUS, r.cpu[1] + st.rec[1].CPUS}
 		if st.rec[0].CPUS > 0 && st.rec[1].CPUS > slowCPURatio*st.rec[0].CPUS {
 			r.slow = append(r.slow, i)
 		}
 		r.mu.Unlock()
+		if st.rec[0].Digest == st.rec[1].Digest && st.rec[0].Exit == st.rec[1].Exit {
+			return r.removeRuns(i)
+		}
+	}
+	if err := r.rerunCached(ctx, i); err != nil {
+		return fmt.Errorf("compare %s: %w", p.key, err)
 	}
 	var diff *journalDifference
 	switch {
@@ -452,16 +461,20 @@ func (r *sameRun) resolve(ctx context.Context, i int) error {
 		diff = &journalDifference{file: "<session>", base: "<present>", head: "<missing>"}
 	case st.rec[0].Digest != st.rec[1].Digest:
 		var err error
-		if diff, err = r.journalDifference(ctx, i); err != nil {
+		if diff, err = compareJournals(st.dirs[0], st.dirs[1]); err != nil {
 			return fmt.Errorf("compare %s: %w", p.key, err)
 		}
-	case st.rec[0].Exit != st.rec[1].Exit:
+		if diff == nil {
+			diff = &journalDifference{file: "<journal digest>", base: st.rec[0].Digest, head: st.rec[1].Digest}
+		}
+	default:
 		diff = &journalDifference{file: "<exit code>", base: fmt.Sprint(st.rec[0].Exit), head: fmt.Sprint(st.rec[1].Exit)}
 	}
-	if diff == nil {
+	r.mu.Lock()
+	if ctx.Err() != nil || !r.cfg.keepGoing && len(r.diffs) != 0 {
+		r.mu.Unlock()
 		return r.removeRuns(i)
 	}
-	r.mu.Lock()
 	r.diffs = append(r.diffs, sameDifference{i, diff})
 	r.mu.Unlock()
 	if !r.cfg.keepGoing {
@@ -470,25 +483,23 @@ func (r *sameRun) resolve(ctx context.Context, i int) error {
 	return nil
 }
 
-// journalDifference finds the first differing line of a session whose digests differ, rerunning any side that has no
-// run directory.
-func (r *sameRun) journalDifference(ctx context.Context, i int) (*journalDifference, error) {
+// rerunCached reruns each present side of a session that has no run directory, so that its journals can be shown.
+func (r *sameRun) rerunCached(ctx context.Context, i int) error {
 	p, st := r.pairs[i], &r.states[i]
 	for side, spec := range p.runs {
-		if st.dirs[side] != "" {
+		if spec == nil || st.dirs[side] != "" {
 			continue
 		}
 		run, err := r.launch(ctx, side, *spec)
 		if err != nil {
-			return nil, fmt.Errorf("rerun %s: %w", sameSides[side], err)
+			if ctx.Err() != nil && run.dir != "" {
+				os.RemoveAll(run.dir)
+			}
+			return fmt.Errorf("rerun %s: %w", sameSides[side], err)
 		}
 		st.dirs[side] = run.dir
 	}
-	diff, err := compareJournals(st.dirs[0], st.dirs[1])
-	if diff == nil && err == nil {
-		diff = &journalDifference{file: "<journal digest>", base: st.rec[0].Digest, head: st.rec[1].Digest}
-	}
-	return diff, err
+	return nil
 }
 
 func (r *sameRun) removeRuns(i int) error {
