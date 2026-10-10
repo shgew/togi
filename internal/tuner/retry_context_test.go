@@ -30,23 +30,45 @@ func drainsNoTrial(t *testing.T, s *State) {
 	}
 }
 
-// roundCheckRetry opens round 1 on core 0 of two at -10, deepened to -15, and ends its alone R1 check inconclusively.
+// nextRoundCheck decides what the round's moves require, as the live loop does, and returns its first alone check.
+func nextRoundCheck(t *testing.T, h *harness, round int) Action {
+	t.Helper()
+	for range 30 {
+		a := h.next()
+		if a.Kind == RunTrial {
+			if c := a.Trial; c.Round != round || c.Condition != machine.Alone || c.Core != 0 || c.Regime != machine.R1 {
+				t.Fatalf("round %d check %+v", round, c)
+			}
+			return a
+		}
+		h.decide(a)
+	}
+	t.Fatalf("round %d never reached its check", round)
+	return Action{}
+}
+
+func roundStartSeq(h *harness, round int) int {
+	for _, e := range slices.Backward(h.events) {
+		if p, ok := e.Data.(*journal.DeepeningRound); ok && p.Round == round && p.Event == journal.CycleStart {
+			return e.Seq
+		}
+	}
+	h.t.Fatalf("round %d never started", round)
+	return 0
+}
+
+// roundCheckRetry opens round 1 of two cores through the live decisions and ends its first alone check inconclusively.
 func roundCheckRetry(t *testing.T) (*harness, journal.Event) {
 	t.Helper()
-	h := newHarness(t, coreStart{phase: journal.PhaseAtLimit, offset: -10, fail: new(-11)}, coreStart{phase: journal.PhaseAtLimit, offset: -10, fail: new(-11)})
+	h := newHarness(t, coreStart{phase: journal.PhaseHasRoom, offset: -10, fail: new(-50)}, coreStart{phase: journal.PhaseHasRoom, offset: -10, fail: new(-50)})
 	h.add(&journal.ProfileChange{To: []int{-10, -10}})
 	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleStart, Steps: h.s.steps})
 	h.add(&journal.CheckingCycle{Cycle: 1, Event: journal.CycleEnd, Passed: true, Full: true})
-	h.add(&journal.SessionBaseline{Offsets: []int{-7, -7}})
-	round := &journal.DeepeningRound{Round: 1, Event: journal.CycleStart, Profile: []int{-15, -10}, Target: []int{-20, -10}, Cores: []int{0}, Trials: h.s.n, TrialS: h.s.durations.ShortTrialS}
-	begin := h.add(round)
-	h.add(&journal.ProfileChange{From: h.s.Profile(), To: round.Profile}, begin.Seq)
-	check := requireTrial(t, h.s.roundCheck())
-	if check.Round != 1 || check.Condition != machine.Alone || check.Core != 0 || check.Regime != machine.R1 {
-		t.Fatalf("round check %+v", check)
-	}
-	h.trial(h.s.roundCheck(), unsure)
-	if again := requireTrial(t, h.s.roundCheck()); !again.Retry || again.Round != 1 || again.Core != 0 {
+	nextRound(h)
+	begin := h.events[roundStartSeq(h, 1)-1]
+	a := nextRoundCheck(t, h, 1)
+	h.trial(a, unsure)
+	if again := requireTrial(t, h.next()); !again.Retry || again.Round != 1 || again.Core != 0 {
 		t.Fatalf("the round's own check did not retry: %+v", again)
 	}
 	return h, begin
@@ -84,9 +106,10 @@ func TestCancelledRoundCheckRetryDoesNotRun(t *testing.T) {
 	t.Run("a failure ends the round and the next round runs its own check", func(t *testing.T) {
 		h, begin := roundCheckRetry(t)
 		h.add(&journal.DeepeningRound{Round: 1, Event: journal.CycleEnd, Reason: "a failure needs a hunt"}, begin.Seq)
-		next := h.add(&journal.DeepeningRound{Round: 2, Event: journal.CycleStart, Profile: []int{-15, -10}, Target: []int{-20, -10}, Cores: []int{0}, Trials: h.s.n, TrialS: h.s.durations.ShortTrialS})
-		h.add(&journal.ProfileChange{From: h.s.Profile(), To: []int{-15, -10}}, next.Seq)
-		got := requireTrial(t, h.s.roundCheck())
+		h.add(&journal.CheckingCycle{Cycle: 2, Event: journal.CycleStart, Steps: h.s.steps})
+		h.add(&journal.CheckingCycle{Cycle: 2, Event: journal.CycleEnd, Passed: true, Full: true})
+		nextRound(h)
+		got := requireTrial(t, nextRoundCheck(t, h, 2))
 		if got.Retry || got.Round != 2 {
 			t.Fatalf("round 2 ran round 1's retry: %+v", got)
 		}
@@ -332,4 +355,85 @@ func TestHuntGroupRetryBelongsToItsGroup(t *testing.T) {
 		}
 		h.decide(next)
 	}
+}
+
+// TestHuntRetryStaysWithItsGroup gives two groups of one hunt the same requirement: both parts count evidence since the
+// reset. Passes recorded under an older backend do not count until a resume restores it. Group 1 ends inconclusive and
+// its retry is saved; the restore then establishes group 1 from those passes and the hunt plans group 2. Group 2 runs its
+// own trial at its own profile, and group 1's retry is gone.
+func TestHuntRetryStaysWithItsGroup(t *testing.T) {
+	// session records the session up to its hunt start. Passes at prior, when set, precede the source failure, as an
+	// earlier session's parked trials would, recorded under the old backend and followed by the new one.
+	session := func(prior []int, duration int) *harness {
+		t.Helper()
+		starts := make([]coreStart, 4)
+		for i := range starts {
+			starts[i] = coreStart{phase: journal.PhaseAtLimit, offset: -30, fail: new(-31)}
+		}
+		h := newHarness(t, starts...)
+		h.decide(h.next())
+		ids, workload := h.s.ids(), machine.Workloads(machine.R6)[0].ID
+		if prior != nil {
+			loadBackends(h, mprimeOld, ycruncherOld)
+			parked := Trial{Regime: machine.R6, Cores: ids, Workload: workload, Condition: machine.Parked, DurationS: duration, Profile: prior}
+			for range h.s.n {
+				h.trial(Action{Kind: RunTrial, Trial: parked}, passed)
+			}
+		}
+		loadBackends(h, mprimeNew, ycruncherNew)
+		source := Trial{Regime: machine.R6, Cores: ids, Workload: workload, Condition: machine.Together, Phase: journal.PhaseChecking, DurationS: 120, Profile: h.s.offsets()}
+		h.trial(Action{Kind: RunTrial, Trial: source}, journal.TrialEnd{Outcome: journal.OutcomeFailure, Signal: machine.Crash, DurationS: 5})
+		h.decide(h.next())
+		h.decide(driveToHuntStart(h))
+		return h
+	}
+	plan := func(h *harness, number int) (*journal.HuntGroup, Action) {
+		t.Helper()
+		a := h.next()
+		g, ok := a.Payload.(*journal.HuntGroup)
+		if !ok {
+			t.Fatalf("next %T %+v, want hunt group %d", a.Payload, a, number)
+		}
+		if g.Group != number || g.Stage != "part" && g.Stage != "complement" || g.Inferred != "" || g.Skipped {
+			t.Fatalf("hunt group %+v, want group %d to run as a part or complement", *g, number)
+		}
+		return g, a
+	}
+	// A session without the passes plans the same group 1, which tells where to record them.
+	g1, _ := plan(session(nil, 0), 1)
+	p1 := slices.Clone(g1.Profile)
+
+	h := session(p1, g1.DurationS)
+	g1, a1 := plan(h, 1)
+	if !slices.Equal(g1.Profile, p1) {
+		t.Fatalf("group 1 plans %v with the old passes unrestored, want %v", g1.Profile, p1)
+	}
+	h.decide(a1)
+	a := h.next()
+	first := requireTrial(t, a)
+	if first.Group != 1 || !slices.Equal(first.Profile, p1) {
+		t.Fatalf("group 1 trial %+v", first)
+	}
+	h.trial(a, unsure)
+	if got := requireTrial(t, h.next()); !got.Retry || got.Hunt != first.Hunt || got.Group != 1 || !slices.Equal(got.Profile, p1) {
+		t.Fatalf("group 1 did not retry: %+v", got)
+	}
+	loadBackends(h, mprimeOld, ycruncherOld)
+	g2, a2 := plan(h, 2)
+	p2 := slices.Clone(g2.Profile)
+	if slices.Equal(p1, p2) {
+		t.Fatalf("groups 1 and 2 share profile %v", p1)
+	}
+	second := h.decide(a2)
+	drainsNoTrial(t, h.s)
+	want := h.next()
+	got := requireTrial(t, want)
+	if got.Retry || got.Hunt != first.Hunt || got.Group != 2 || !slices.Equal(got.Profile, p2) || !slices.Equal(want.Cause, []int{second.Seq}) {
+		t.Fatalf("group 2 ran %+v, want its own trial at %v citing %d", want, p2, second.Seq)
+	}
+	if h.s.retry != nil {
+		t.Fatalf("group 1's retry outlived its group: %+v", h.s.retry)
+	}
+	assertHuntNextReplay(h, want, (*State).Next, "replay changed group 2's trial")
+	assertProjectionReplay(h)
 }

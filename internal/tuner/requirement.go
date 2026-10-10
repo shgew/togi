@@ -209,8 +209,8 @@ func (s *State) runTrial(t Trial, q ScheduledRequirement, cause []int) Action {
 
 // savedRetry is the inconclusive trial to repeat, with the requirement it was scheduled under. That requirement names
 // its context: the search turn's core and offset, the deepening round, the cycle and step, the rerun obligation or the
-// all-zero rerun's source failure, with the class, count and window. Only a builder selecting the same requirement
-// serves it.
+// all-zero rerun's source failure, with the class, count and window. A hunt's groups can share one requirement, so a hunt
+// retry also keeps its hunt and group. Only a builder selecting the same context serves it.
 type savedRetry struct {
 	intent      *journal.TrialIntent
 	trial       Trial
@@ -249,6 +249,11 @@ func (s *State) retryHolds(r *savedRetry) bool {
 	switch {
 	case p.Rerun && p.Condition == machine.Parked:
 		return s.failureBySeq(r.requirement.Since) != nil && s.scheduledFor(p, cause).requirement == r.requirement
+	case p.Hunt > 0:
+		// Equal requirements do not tell groups apart: parts and complements count the same window.
+		if s.hunt == nil || s.hunt.end != nil || s.hunt.start.Hunt != p.Hunt || len(s.hunt.groups) == 0 || s.hunt.groups[len(s.hunt.groups)-1].payload.Group != p.Group {
+			return false
+		}
 	case p.Condition == machine.Alone && p.Round == 0 && p.Hunt == 0:
 		if p.Core == nil || p.Offset == nil || p.DurationS != s.durations.SearchTrialS {
 			return false

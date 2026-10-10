@@ -512,7 +512,7 @@ func (s *State) huntNext() (Action, bool) {
 				class = s.shapeClass(t)
 			}
 			q := s.huntRequirement(class, m)
-			if retry, ok := s.retryFor(q); ok {
+			if retry, ok := s.retryFor(q); ok && retry.Hunt == h.start.Hunt && retry.Group == m.payload.Group {
 				return s.runTrial(retry, q, []int{m.seq}), true
 			}
 			return s.runTrial(t, q, []int{m.seq}), true
