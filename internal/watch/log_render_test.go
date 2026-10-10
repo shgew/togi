@@ -2,7 +2,6 @@ package watch
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +50,7 @@ func TestLogBodyRowKeepsWholeValuesAtEveryWidth(t *testing.T) {
 		{46, 41, stamp + "  start"},
 		{47, 42, stamp + "  start" + pad + "  session..."},
 		{57, 52, stamp + "  start" + pad + "  session dashboard..."},
+		{63, 58, stamp + "  start" + pad + "  session dashboard..."},
 		{160, 155, stamp + "  start" + pad + "  " + startMessage},
 	} {
 		t.Run(fmt.Sprint(tc.width), func(t *testing.T) {
@@ -65,11 +65,9 @@ func TestLogBodyRowKeepsWholeValuesAtEveryWidth(t *testing.T) {
 			}
 		})
 	}
-	// cutWords drops the separators that end the words it keeps before its marker, so "0," may show as "0...".
-	whole := []string{stamp, tagStart}
-	for word := range strings.FieldsSeq(startMessage) {
-		whole = append(whole, strings.TrimRight(word, ",;:"))
-	}
+	// The row is the time, then the event, then the message's leading words in order. cutWords drops the separators
+	// that end the last word it keeps before its marker, so "0," may show as "0...".
+	words := strings.Fields(startMessage)
 	for width := 6; width <= 160; width++ {
 		sc := Screen{View: LogView, Scroll: 0, Width: width, Height: 33, Keys: true}
 		got, text := logBodyText(t, s, sc, 2)
@@ -77,20 +75,27 @@ func TestLogBodyRowKeepsWholeValuesAtEveryWidth(t *testing.T) {
 			t.Errorf("width %d: journal row exceeds %d text cells: %q", width, text, got)
 		}
 		fields := strings.Fields(got)
-		for i, field := range fields {
-			if i == len(fields)-1 {
-				field = strings.TrimSuffix(field, cutMarker)
-			}
-			field = strings.TrimRight(field, ",;:")
-			if !slices.Contains(whole, field) {
-				t.Errorf("width %d: journal row cuts inside %q: %q", width, field, got)
-			}
-		}
 		if len(fields) > 0 && fields[0] != stamp {
-			t.Errorf("width %d: journal row loses its time before its event: %q", width, got)
+			t.Errorf("width %d: journal row cuts its time: %q", width, got)
 		}
-		if len(fields) > 2 && fields[1] != tagStart {
-			t.Errorf("width %d: journal row keeps text without its event: %q", width, got)
+		if len(fields) > 1 && fields[1] != tagStart {
+			t.Errorf("width %d: journal row cuts its event: %q", width, got)
+		}
+		message := fields[min(len(fields), 2):]
+		if len(message) > len(words) {
+			t.Errorf("width %d: journal message has extra words: %q", width, got)
+			continue
+		}
+		for i, field := range message {
+			want := words[i]
+			if last := i == len(message)-1; last && strings.HasSuffix(field, cutMarker) {
+				field, want = strings.TrimRight(strings.TrimSuffix(field, cutMarker), ",;:"), strings.TrimRight(want, ",;:")
+			} else if last && len(message) < len(words) {
+				t.Errorf("width %d: journal message ends early without %q: %q", width, cutMarker, got)
+			}
+			if field != want {
+				t.Errorf("width %d: journal message word %d is %q, want %q: %q", width, i, field, want, got)
+			}
 		}
 	}
 }
